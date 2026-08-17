@@ -1,6 +1,6 @@
 # PLAN-005 Stage 2.0 - Embedded ARM A/B upgrade system (U-Boot dual-slot FIT + Uptane-secured updates)
 
-- **status**: draft
+- **status**: rejected (superseded by PLAN-006)
 - **createdAt**: 2026-08-16 00:00
 - **approvedAt**: -
 - **completedAt**: -
