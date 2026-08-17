@@ -8,6 +8,7 @@
   - `boards.md` — BSP contract: artifacts, kernel assertions, new-board checklist
   - `remote-management.md` — webd vs apid, SideroLink fleet path
   - `display.md` — HDMI kiosk UI: cage+WPE rendering webd locally
+  - `provisioning.md` — configuration without a network: three-layer model
 - `research/` — decision-basis studies
   - `os-comparison.md` — balena/Torizon/Talos/Yocto evaluation and rejected alternatives
 - `plan/` — PMA plans (numbered, with status index)
