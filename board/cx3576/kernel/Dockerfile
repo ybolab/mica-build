@@ -34,6 +34,7 @@ RUN cd /ksrc && for p in $(ls /patches/*.patch 2>/dev/null | sort); do \
     done
 
 COPY kernel/config/kernel-cx3576z.config /ksrc/.config
+COPY kernel/config/mos-required.fragment /mos-required.fragment
 
 ARG KERNEL_EXPECT=6.1.115
 RUN cd /ksrc && \
@@ -49,6 +50,8 @@ RUN cd /ksrc && \
                    `# 树内目录门禁 SPARD_WLAN_SUPPORT 无 Kconfig 定义(坑!),0002 补丁改由` \
                    `# AIC_WLAN_SUPPORT 门禁;子 Makefile 强制 :=m,三件套编成模块。` \
                    --set-str AIC_FW_PATH "/lib/firmware" && \
+    ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- \
+        scripts/kconfig/merge_config.sh -m .config /mos-required.fragment && \
     make ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- olddefconfig && \
     grep -q "^CONFIG_SQUASHFS_ZSTD=y" .config && \
     grep -q "^CONFIG_OVERLAY_FS=y" .config && \
@@ -70,6 +73,12 @@ RUN cd /ksrc && \
         IP6_NF_NAT IP6_NF_TARGET_MASQUERADE; do \
         grep -q "^CONFIG_${option}=y" .config || { \
             echo "missing Docker kernel option: CONFIG_${option}=y" >&2; \
+            exit 1; \
+        }; \
+    done && \
+    for line in $(sed -n 's/^\(CONFIG_[A-Z0-9_]*=y\)$/\1/p' /mos-required.fragment); do \
+        grep -q "^${line}$" .config || { \
+            echo "missing mos-required option: ${line}" >&2; \
             exit 1; \
         }; \
     done
