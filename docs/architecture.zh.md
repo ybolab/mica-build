@@ -34,7 +34,9 @@
                          变体）      变体）                    关闭）
 ```
 
-\* 仅 debug 变体存在；prod 镜像在构建期即不包含。
+\* sshd 在 prod 与 debug 中均内置（默认关闭；仅 `sealed` profile 不含）；
+tty3 console shell 仅 debug。带显示的板卡另有 `kiosk` system extension
+（cage + WPE WebKit）在 HDMI 上渲染 webd（design/display.md）。
 
 - **machined** — Talos PID 1：服务监督、COSI controller、启动序列。appliance
   机型（`TypeAppliance`）门控关闭 k8s/etcd/trustd/CRI/dashboard（PLAN-007）。
@@ -79,8 +81,9 @@ Lockbox： 介质携带同套元数据；有效期使过期的现场介质自动
 
 1. **配网向导**（tty2 TUI / AP 强制门户）：资源白名单、弱认证（一机一密
    PIN），覆盖"现场无网"。
-2. **完整 shell**（tty3 / SSH）：仅 debug 变体；阶段一为一机一密默认密码，
-   后续离线挑战-响应；META 持久化防爆破计数；审计入 syslogd。
+2. **完整 shell**（tty3 / SSH）：SSH 在 prod（默认关、管理员可开）与 debug
+   均内置；console shell 仅 debug；`sealed` profile 两者皆无。阶段一为一机
+   一密默认密码，后续离线挑战-响应；META 持久化防爆破计数；审计入 syslogd。
 3. **Rescue**：物理接触级恢复，位于 OS 之下。
 
 分层禁用：配置开关（运行期）→ META lockdown（不 wipe 不可逆）→ prod 镜像

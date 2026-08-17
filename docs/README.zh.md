@@ -7,6 +7,7 @@
   - `access.md` — 调试/维护访问：通道、认证阶段、分层禁用
   - `boards.md` — BSP 契约：产物接口、内核断言、新板接入 checklist
   - `remote-management.md` — webd 与 apid 分工、SideroLink 机队路径
+  - `display.md` — HDMI kiosk UI：cage+WPE 本地渲染 webd
 - `research/` — 决策依据研究
   - `os-comparison.md` — balena/Torizon/Talos/Yocto 评估与被否决方案
 - `plan/` — PMA 计划（编号 + 状态索引；仅英文）

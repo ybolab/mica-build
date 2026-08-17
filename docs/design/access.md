@@ -22,8 +22,9 @@
 
 | Channel | Capability | Auth | Availability |
 |---|---|---|---|
-| Network wizard (tty2 TUI; AP captive portal via connd/webd) | whitelisted network COSI resources only; no secrets, no exec, no raw logs | per-device PIN | all variants |
-| Full shell (tty3 console; SSH via Go sshd + busybox) | root | phase 1: per-device default password; phase 2+: offline challenge-response | debug variant only |
+| Network wizard (tty2 TUI; AP captive portal; HDMI local wizard via kiosk) | whitelisted network COSI resources only; no secrets, no exec, no raw logs | per-device PIN | all variants |
+| SSH (Go sshd + busybox) | root | phase 1: per-device default password; phase 2+: offline challenge-response | **prod and debug** (default off; absent only in the `sealed` profile) |
+| Console shell (tty3) | root | same as SSH | debug variant only |
 | Rescue (`talos.rescue=1` / all-slots-failed FIT entry) | chroot repair environment | physical access (cmdline / boot failure) | all variants |
 | Factory (rockusb / SoC loader mode) | full reflash | physical access + recovery key | hardware-level |
 
@@ -79,10 +80,19 @@ open, 1h23m remaining") from the same resource.
    ignores config and never registers the services. Cleared only by full wipe
    — but factory reset (STATE/EPHEMERAL wipe) deliberately does NOT clear it:
    "forgot the password" is self-serviceable, "un-lock the shell" is not.
-3. **Image variant**: prod images exclude busybox/sshd/console-shell at build
-   time. This is the only layer an attacker with config/META write access
-   cannot cross, and on non-UEFI ARM (no PCR measurement) it is what makes
-   "no shell" part of the signed image identity.
+3. **Image variant**: three build profiles (decision 2026-08-17 — prod ships
+   SSH):
+   - `prod` (default): sshd + busybox included, **SSH disabled by default**;
+     enabling requires an authenticated admin action (webd/apid config write).
+     Console shell is NOT included.
+   - `debug`: adds the tty3 console shell and permissive defaults for
+     development.
+   - `sealed` (optional): the fully shell-free build for high-security
+     deployments — the only profile where "no shell" is part of the signed
+     image identity.
+   Trade-off accepted with the prod decision: for `prod`, compile-time absence
+   no longer protects SSH; the effective defenses are default-off config,
+   auth strength (§4), META lockdown (§5.2), and audit (§6).
 
 ## 6. Brute force & audit
 
@@ -101,7 +111,9 @@ open, 1h23m remaining") from the same resource.
    possession of the boot medium already implies full control).
 2. Signed config drop via USB (udev-triggered import; vendor-key signature).
 3. AP-mode captive setup (connd + webd; PLAN-008 Part D).
-4. Console wizard (tty2) as the no-WiFi fallback.
+4. HDMI local setup: kiosk display renders the webd wizard with USB
+   keyboard/touch input (design/display.md).
+5. Console wizard (tty2) as the no-display, no-WiFi fallback.
 
 ## 8. Phasing & campaign mapping
 

@@ -35,7 +35,10 @@ rather than inventing them:
                           variant)   variant)                  default)   containers
 ```
 
-\* debug-variant only; excluded from prod images at build time.
+\* sshd ships in prod and debug (default off; absent only in the `sealed`
+profile); the tty3 console shell is debug-only. A `kiosk` system extension
+(cage + WPE WebKit) renders webd on the HDMI output for boards with a display
+(design/display.md).
 
 - **machined** — Talos PID 1: service supervision, COSI controllers, sequencer.
   Appliance machine type (`TypeAppliance`) gates off k8s/etcd/trustd/CRI/dashboard
@@ -82,8 +85,9 @@ Three channels, three strengths — never one shell for everything:
 
 1. **Network wizard** (tty2 TUI / AP captive portal): resource-whitelisted,
    weak auth (per-device PIN), covers "no network on site".
-2. **Full shell** (tty3 / SSH): debug variant only; phase 1 = per-device
-   default password, later offline challenge-response; META-persisted
+2. **Full shell** (tty3 / SSH): SSH ships in prod (default off, admin-enabled)
+   and debug; console shell debug-only; `sealed` profile has neither. Phase 1 =
+   per-device default password, later offline challenge-response; META-persisted
    brute-force counters; audit to syslogd.
 3. **Rescue**: physical-access recovery, below the OS.
 

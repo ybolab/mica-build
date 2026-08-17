@@ -19,8 +19,9 @@
 
 | 通道 | 能力 | 认证 | 存在范围 |
 |---|---|---|---|
-| 配网向导（tty2 TUI；connd/webd 的 AP 强制门户） | 仅白名单网络 COSI 资源；无 secrets、无命令执行、无原始日志 | 一机一密 PIN | 全部变体 |
-| 完整 shell（tty3 console；Go sshd + busybox 的 SSH） | root | 阶段一：一机一密默认密码；阶段二+：离线挑战-响应 | 仅 debug 变体 |
+| 配网向导（tty2 TUI；AP 强制门户；kiosk 的 HDMI 本地向导） | 仅白名单网络 COSI 资源；无 secrets、无命令执行、无原始日志 | 一机一密 PIN | 全部变体 |
+| SSH（Go sshd + busybox） | root | 阶段一：一机一密默认密码；阶段二+：离线挑战-响应 | **prod 与 debug**（默认关闭；仅 `sealed` profile 不包含） |
+| Console shell（tty3） | root | 同 SSH | 仅 debug 变体 |
 | Rescue（`talos.rescue=1` / 全槽失败 FIT 条目） | chroot 修复环境 | 物理接触（cmdline/启动失败） | 全部变体 |
 | 工厂（rockusb / SoC loader 模式） | 完整重刷 | 物理接触 + recovery 按键 | 硬件级 |
 
@@ -72,9 +73,15 @@ lockdown: false                # 单向；见 §5
 2. **META lockdown**：META 分区单向置位；置位后 machined 无视配置、根本不
    注册这些服务。只有整机 wipe 才能清除——但恢复出厂（仅清 STATE/EPHEMERAL）
    **有意不清它**："忘记密码"可现场自助，"解锁 shell"不可以。
-3. **镜像变体**：prod 镜像构建期排除 busybox/sshd/console-shell。这是唯一
-   一层攻击者改配置/改 META 也跨不过去的防线；在无 UEFI 的 ARM 上（无 PCR
-   度量），正是它把"无 shell"变成签名镜像身份的一部分。
+3. **镜像变体**：三个构建 profile（2026-08-17 决策——prod 内置 SSH）：
+   - `prod`（默认）：包含 sshd + busybox，**SSH 默认关闭**；开启需经认证的
+     管理操作（webd/apid 配置写入）。不包含 console shell。
+   - `debug`：增加 tty3 console shell 与面向开发的宽松默认值。
+   - `sealed`（可选）：完全无 shell 的构建，供高安全部署——只有此 profile
+     中"无 shell"仍是签名镜像身份的一部分。
+   随 prod 决策接受的取舍：对 `prod` 而言，编译期不存在这层防线不再覆盖
+   SSH；实际防线为默认关闭配置、认证强度（§4）、META lockdown（§5.2）与
+   审计（§6）。
 
 ## 6. 防爆破与审计
 
@@ -91,7 +98,9 @@ lockdown: false                # 单向；见 §5
    意味着完全控制）。
 2. USB 签名配置投放（udev 触发导入；厂商密钥签名校验）。
 3. AP 模式强制门户设置（connd + webd；PLAN-008 Part D）。
-4. Console 向导（tty2），无 WiFi 时的兜底。
+4. HDMI 本地设置：kiosk 显示渲染 webd 向导，USB 键盘/触摸输入
+   （design/display.md）。
+5. Console 向导（tty2），无显示器、无 WiFi 时的兜底。
 
 ## 8. 分期与 campaign 映射
 
