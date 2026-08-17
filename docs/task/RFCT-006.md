@@ -1,6 +1,6 @@
 # RFCT-006 cx3576 board bring-up (B1: BSP readiness)
 
-- **status**: in progress
+- **status**: completed
 - **priority**: P1
 - **owner**: ai-agent
 - **createdAt**: 2026-08-17 06:00

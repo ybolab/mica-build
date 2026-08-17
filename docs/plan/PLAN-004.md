@@ -91,3 +91,12 @@ Possible, but it requires the operator to remember to pass `--embedded-config-pa
 ## Annotations
 
 (Pending review; this plan was authored and implemented in the same session as the cleanup. Operator validation of an end-to-end QEMU boot is required before marking complete.)
+
+## Post-rebase note (2026-08-17)
+
+`hack/appliance/build-iso.sh` referenced above exists only on the pre-rebase
+lineage (tag `archive/fork-pre-rebase` in the talos repo). On the current
+upstream-gated lineage the equivalent flows are the talos repo make targets
+(`make image-cx3576` for the cx3576 board per PLAN-009/B2; upstream imager
+targets for amd64). This plan is retained unmodified above as a historical
+record.

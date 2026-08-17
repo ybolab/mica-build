@@ -1,9 +1,9 @@
 # PLAN-009 cx3576 board bring-up (B1: BSP readiness)
 
-- **status**: implementing
+- **status**: completed
 - **createdAt**: 2026-08-17 06:00
 - **approvedAt**: 2026-08-17 06:00
-- **completedAt**: -
+- **completedAt**: 2026-08-17 12:00
 - **relatedTask**: RFCT-006
 
 ## Context
