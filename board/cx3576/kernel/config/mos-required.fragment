@@ -15,13 +15,15 @@ CONFIG_OVERLAY_FS=y
 # machined decides enforcing per machine config.
 CONFIG_HUGETLBFS=y
 CONFIG_HUGETLB_PAGE=y
-# TRACEFS is promptless (only reachable via select from TRACING);
-# ENABLE_DEFAULT_TRACERS (nop tracer, minimal overhead) is the visible knob
-# that pulls it in. The TRACEFS=y line stays as the build assertion.
-CONFIG_ENABLE_DEFAULT_TRACERS=y
-CONFIG_TRACEFS=y
+# tracefs has NO Kconfig symbol of its own — fs/tracefs is built by
+# CONFIG_TRACING (selected by the baseline's FUNCTION_TRACER). The line below
+# is an assertion only.
+CONFIG_TRACING=y
 CONFIG_AUDIT=y
 CONFIG_SECURITY=y
 CONFIG_SECURITY_NETWORK=y
 CONFIG_SECURITY_SELINUX=y
 CONFIG_SECURITY_SELINUX_DEVELOP=y
+# SELinux must also be in the LSM boot list or selinuxfs never registers
+# (compiled-but-inactive); string option, not covered by the =y assertion loop.
+CONFIG_LSM="landlock,lockdown,yama,loadpin,safesetid,integrity,selinux,bpf"
