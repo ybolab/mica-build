@@ -16,3 +16,17 @@ kernel:
 cmdlineExtra: "storagemedia=emmc androidboot.storagemedia=emmc net.ifnames=0 rootwait"
 wifi: [AP6275S-bcmdhd-sdio, AIC8800D80]   # dual SKU; firmware in rootfs/firmware/
 features: [wifi, bluetooth, can, emmc]
+
+# Display defaults (design/display.md section 5)
+display:
+  output: hdmi
+  rotation: 0
+
+# Build outputs consumed by the Talos image phase (B2); paths relative to board/cx3576/
+artifacts:
+  kernel:
+    image: out/kernel/Image
+    modules: out/kernel/modules.tar
+    dtb: out/kernel/rk3576-src.dtb
+  uboot:
+    binary: out/uboot/u-boot-rockchip.bin
