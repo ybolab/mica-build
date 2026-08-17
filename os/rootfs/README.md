@@ -34,6 +34,22 @@ this list.
 `PermitRootLogin yes`. **Dev only — never use for production images.** By
 default (unset), root stays locked and SSH root login is not enabled.
 
+## First-boot growth
+
+The flashed ~1.5 GiB image lands on much larger media (cx3576 eMMC: 116 GiB),
+so the rootfs grows to fill the disk automatically on first boot:
+
+- `/etc/repart.d/50-rootfs.conf` (`Type=linux-generic`) makes systemd-repart
+  grow partition 2 and relocate the backup GPT. The service is statically
+  enabled in bookworm's systemd and only activates when `/etc/repart.d` is
+  non-empty; unmatched partitions are never touched.
+- `/etc/fstab` mounts the rootfs with `x-systemd.growfs`, which emits a unit
+  running `systemd-growfs` (online ext4 grow).
+
+Both steps are systemd-native (zero extra packages), idempotent (no-op when
+there is no free space), and cannot wedge boot. A growpart/cloud-guest-utils
+fallback was rejected as unnecessary since repart ships in bookworm's systemd.
+
 ## Determinism deviation
 
 SSH host keys are generated at build time by the openssh-server postinst and

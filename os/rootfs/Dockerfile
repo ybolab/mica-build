@@ -67,6 +67,17 @@ RUN printf '%s\n' \
 # /etc/resolv.conf cannot be replaced here (bind-mounted by buildkit during RUN);
 # the stub-resolv.conf symlink is created in the pack stage instead.
 
+# First-boot disk growth: systemd-repart grows partition 2 to fill the media
+# and relocates the backup GPT. The service is statically enabled in bookworm
+# (sysinit.target.wants) and condition-gated on /etc/repart.d being non-empty —
+# no systemctl enable needed. x-systemd.growfs makes the fstab-generator emit
+# an online ext4 grow unit (systemd-growfs). Both are idempotent and boot-safe.
+RUN mkdir -p /etc/repart.d && \
+    printf '%s\n' '[Partition]' 'Type=linux-generic' \
+        > /etc/repart.d/50-rootfs.conf && \
+    printf '%s\n' 'PARTLABEL=rootfs / ext4 defaults,x-systemd.growfs 0 0' \
+        > /etc/fstab
+
 # journald in RAM only for M1 (no persistent /var/log/journal)
 RUN mkdir -p /etc/systemd/journald.conf.d && \
     printf '%s\n' '[Journal]' 'Storage=volatile' \
