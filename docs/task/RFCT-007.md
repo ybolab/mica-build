@@ -26,15 +26,26 @@ Scope / deliverables:
    at 16 MiB carrying `extlinux.conf`, 1024 MiB ext4 rootfs partition; deterministic
    content (fixed partition GUIDs, FAT volume-id, and file mtimes); output
    `_out/cx3576/cx3576-mos-<epoch>.img` plus a `cx3576-mos-latest.img` symlink.
-3. `os/verify-image.sh`: image assertions (partition table, boot files, rootfs
+3. First-boot disk growth, fully automatic and systemd-native: `systemd-repart`
+   (`/etc/repart.d/50-rootfs.conf`, `Type=linux-generic`) grows the rootfs partition to
+   fill the eMMC and relocates the backup GPT header; the ext4 filesystem grows online
+   via the `x-systemd.growfs` fstab option (systemd-growfs). Rationale: zero extra
+   packages (systemd-repart ships inside bookworm's systemd 252 package; verified),
+   idempotent on every boot, cannot wedge boot on failure; the boot partition carries
+   the ESP typecode so the repart definition uniquely matches the rootfs partition.
+   A growpart fallback was rejected as unnecessary.
+4. `os/verify-image.sh`: image assertions (partition table, boot files, rootfs
    contents), including at least one negative test.
-4. Root `Makefile` targets `os-image-cx3576` / `os-verify-cx3576`.
+5. Root `Makefile` targets `os-image-cx3576` / `os-verify-cx3576`.
 
 Acceptance:
 
 - `make os-image-cx3576` builds from a clean tree given the BSP artifacts.
 - `make os-verify-cx3576` reports all-PASS.
 - Rootfs <= 400 MB uncompressed.
+- First-boot growth config (repart definition + `x-systemd.growfs` fstab option)
+  asserted by `os/verify-image.sh`; actual on-device growth (116 GiB eMMC) is part of
+  the user's hardware acceptance.
 - Hardware boot to sshd over DHCP is the user's manual acceptance — **pending user
   validation**; never claimed done by agents.
 
