@@ -1,0 +1,9 @@
+# mos-required kernel options — single source of truth, consumed by the
+# Talos image phase for dm-verity boot. dm-verity no-initramfs boot cannot
+# load modules, so these must be built-in =y, never =m.
+CONFIG_BLK_DEV_DM=y
+CONFIG_DM_INIT=y
+CONFIG_DM_VERITY=y
+CONFIG_SQUASHFS=y
+CONFIG_SQUASHFS_ZSTD=y
+CONFIG_OVERLAY_FS=y
