@@ -21,6 +21,7 @@ TOTAL_SIZE_BYTES=$((1554 * 1024 * 1024))
 DISK_GUID="5AC35760-0001-4000-8000-000000000000"
 BOOT_GUID="5AC35760-0001-4000-8000-000000000001"
 ROOTFS_GUID="5AC35760-0001-4000-8000-000000000002"
+ESP_TYPE="C12A7328-F81F-11D2-BA4B-00A0C93EC93B"
 LINUX_FS_DATA="0FC63DAF-8483-4772-8E79-3D69D8477DE4"
 ROOTFS_UUID="5ac35760-0002-4000-8000-000000000002"
 BOOT_FIRST_SECTOR=32768
@@ -195,6 +196,12 @@ if [[ "${p1_attrs}" =~ ^[0-9A-Fa-f]+$ ]] && [ $((16#${p1_attrs} & 4)) -ne 0 ]; t
     pass "p1 attribute bit 2 is set (flags ${p1_attrs})"
 else
     fail "p1 attribute bit 2 not set (flags '${p1_attrs}')"
+fi
+p1_type="$(sg_field "${p1}" "Partition GUID code" | awk '{print $1}')"
+if [ "${p1_type^^}" = "${ESP_TYPE}" ]; then
+    pass "p1 typecode is ${ESP_TYPE} (ESP)"
+else
+    fail "p1 typecode is '${p1_type}', expected ${ESP_TYPE} (ESP)"
 fi
 p1_guid="$(sg_field "${p1}" "Partition unique GUID")"
 if [ "${p1_guid^^}" = "${BOOT_GUID}" ]; then
@@ -400,6 +407,19 @@ if dbg "cat /etc/systemd/network/80-dhcp.network" | grep -q "DHCP=yes"; then
     pass "/etc/systemd/network/80-dhcp.network has DHCP=yes"
 else
     fail "/etc/systemd/network/80-dhcp.network missing or lacks DHCP=yes"
+fi
+repart_conf="$(dbg "cat /etc/repart.d/50-rootfs.conf")"
+if echo "${repart_conf}" | grep -qF "[Partition]" &&
+    echo "${repart_conf}" | grep -q "Type=linux-generic"; then
+    pass "/etc/repart.d/50-rootfs.conf has [Partition] and Type=linux-generic"
+else
+    fail "/etc/repart.d/50-rootfs.conf missing or lacks [Partition]/Type=linux-generic"
+fi
+if dbg "cat /etc/fstab" |
+    awk '$1 == "PARTLABEL=rootfs" && $2 == "/" && $3 == "ext4" && $4 ~ /(^|,)x-systemd\.growfs(,|$)/ {found = 1} END {exit !found}'; then
+    pass "/etc/fstab has a PARTLABEL=rootfs / ext4 entry with x-systemd.growfs"
+else
+    fail "/etc/fstab lacks a PARTLABEL=rootfs / ext4 entry with x-systemd.growfs"
 fi
 if dbg "cat /etc/systemd/journald.conf.d/00-volatile.conf" | grep -q "Storage=volatile"; then
     pass "/etc/systemd/journald.conf.d/00-volatile.conf has Storage=volatile"
