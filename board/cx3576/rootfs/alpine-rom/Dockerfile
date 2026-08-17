@@ -60,17 +60,19 @@ RUN mkdir -p /etc/docker /srv && printf '%s\n' \
     '  "log-opts": { "max-size": "10m", "max-file": "3" }' \
     '}' > /etc/docker/daemon.json
 
-# WiFi 自动连接（Roy.wifi）
-RUN mkdir -p /etc/wpa_supplicant && cat > /etc/wpa_supplicant/wpa_supplicant.conf <<'WPA'
-ctrl_interface=/var/run/wpa_supplicant
-update_config=1
-
-network={
-	ssid="Roy.wifi"
-	psk="wifiaaaa"
-	key_mgmt=WPA-PSK
-}
-WPA
+# WiFi auto-connect (optional: --build-arg WIFI_SSID=... --build-arg WIFI_PSK=...)
+ARG WIFI_SSID=""
+ARG WIFI_PSK=""
+RUN mkdir -p /etc/wpa_supplicant && \
+    printf '%s\n' \
+        'ctrl_interface=/var/run/wpa_supplicant' \
+        'update_config=1' \
+        > /etc/wpa_supplicant/wpa_supplicant.conf && \
+    if [ -n "$WIFI_SSID" ]; then \
+        printf '\nnetwork={\n\tssid="%s"\n\tpsk="%s"\n\tkey_mgmt=WPA-PSK\n}\n' \
+            "$WIFI_SSID" "$WIFI_PSK" \
+            >> /etc/wpa_supplicant/wpa_supplicant.conf; \
+    fi
 
 # 板级开机脚本：USB OTG host + WiFi 驱动/连接 + 全 eth* DHCP（OpenRC local.d）
 RUN mkdir -p /etc/local.d && cat > /etc/local.d/rk3576.start <<'BOARD' && chmod +x /etc/local.d/rk3576.start
@@ -79,7 +81,7 @@ RUN mkdir -p /etc/local.d && cat > /etc/local.d/rk3576.start <<'BOARD' && chmod 
 M=$(cat /etc/usb-otg-mode 2>/dev/null || echo host)
 echo "$M" > /sys/devices/platform/2602e000.syscon/2602e000.syscon:usb2-phy@0/otg_mode 2>/dev/null
 
-# WiFi：加载驱动(双 SKU),出 wlan0 后连 Roy.wifi
+# WiFi: load drivers (dual SKU); associate via wpa_supplicant.conf once wlan0 appears
 modprobe bcmdhd 2>/dev/null || true
 modprobe aic8800_fdrv 2>/dev/null || true
 ( for i in $(seq 1 20); do
