@@ -28,6 +28,11 @@ through the tunnel (the mechanism underlying Omni; protocol and config types
 are in-tree). Topologically equivalent to balena's VPN dial-back, but
 upstream-maintained.
 
+Beyond API reach, the siderolink protocol also carries device→server event
+streaming and kernel log push — management and telemetry share one
+device-initiated tunnel. In fleet profiles apid is bound to the tunnel
+interface only (invisible on the LAN); consumer deployments configure neither.
+
 Not scheduled yet; prerequisite decisions when it lands: management endpoint
 hosting, device enrollment (join tokens vs pre-provisioned), and how ECU
 version manifests (PLAN-006 phase 2 director) share that channel.
@@ -42,6 +47,18 @@ server-side beyond static content hosting.
 Fleet stage (phase 2): director repo adds per-device targeting; apid/SideroLink
 adds imperative reach (trigger upgrade, fetch logs). webd remains the local
 fallback at every stage.
+
+**apid as the remote upgrade entry (decision 2026-08-17).** The
+`MachineService.Upgrade` RPC is kept as a *trigger into* the PLAN-006 updater
+state machine, never a bypass of it:
+
+- RPC parameter semantics change from "installer container image" to "update
+  target/version"; the updater still runs full TUF metadata verification and
+  hash pinning before RAUC touches a slot. A compromised management endpoint
+  cannot produce an installable payload (TUF online keys cannot sign bundles).
+- Three triggers, one trust path: policy pull (`UpdateConfig`), remote trigger
+  (Upgrade RPC over SideroLink), local trigger (webd button / lockbox) — all
+  converge on the same updater state machine, health gate, and rollback.
 
 ## 4. Security posture
 

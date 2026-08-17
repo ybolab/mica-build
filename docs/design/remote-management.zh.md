@@ -25,6 +25,10 @@ PKI（controlplane 式），已在基线切换 campaign 中实现并有测试覆
 WireGuard 隧道，apid 经隧道可达（Omni 的底层机制；协议与配置类型均在树内）。
 拓扑上等价于 balena 的 VPN 回连，但由上游持续维护。
 
+除 API 触达外，siderolink 协议还承载设备→服务端的事件流与内核日志推送——
+管理与遥测共用同一条设备发起的隧道。机队 profile 下 apid 仅绑定隧道接口
+（LAN 上不可见）；消费级部署两者都不配置。
+
 尚未排期；落地时的前置决策：管理端托管方式、设备注册（join token vs 预置）、
 以及 ECU 版本清单（PLAN-006 phase 2 director）如何复用该通道。
 
@@ -36,6 +40,16 @@ WireGuard 隧道，apid 经隧道可达（Omni 的底层机制；协议与配置
 
 机队阶段（phase 2）：director 仓库增加按设备定向；apid/SideroLink 提供指令
 式触达（触发升级、取日志）。webd 在任何阶段都是本地兜底。
+
+**apid 作为远程升级入口（2026-08-17 决策）。**`MachineService.Upgrade` RPC
+保留为 PLAN-006 updater 状态机的*触发入口*，绝不是它的旁路：
+
+- RPC 参数语义从"installer 容器镜像"改为"升级 target/版本"；updater 在
+  RAUC 触碰任何槽之前仍执行完整的 TUF 元数据验证与 hash 钉住。管理端被
+  攻破也产不出能安装的载荷（TUF 在线密钥签不了 bundle）。
+- 三种触发、一条信任路径：策略拉取（`UpdateConfig`）、远程触发（经
+  SideroLink 的 Upgrade RPC）、本地触发（webd 按钮 / lockbox）——全部汇入
+  同一个 updater 状态机、健康门与回滚逻辑。
 
 ## 4. 安全姿态
 
