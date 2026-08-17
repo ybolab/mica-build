@@ -1,0 +1,17 @@
+aic8800_sdio 目录在 drivers/net/wireless/Makefile 里被 CONFIG_SPARD_WLAN_SUPPORT
+门禁——但这个符号没有任何 Kconfig 定义（olddefconfig 会清掉手工写入），导致
+AIC_WLAN_SUPPORT=y 时目录照样不编译（原厂因此只能走树外 .ko）。
+改用真实存在的 CONFIG_AIC_WLAN_SUPPORT 作门禁；子 Makefile 强制 :=m，
+三件套（aic8800_bsp/fdrv/btlpm）编成模块，可控加载。
+
+--- a/drivers/net/wireless/Makefile
++++ b/drivers/net/wireless/Makefile
+@@ -4,7 +4,7 @@
+ #
+
+ obj-$(CONFIG_WLAN_VENDOR_ADMTEK) += admtek/
+-obj-$(CONFIG_SPARD_WLAN_SUPPORT) += aic8800_sdio/
++obj-$(CONFIG_AIC_WLAN_SUPPORT) += aic8800_sdio/
+ obj-$(CONFIG_WLAN_VENDOR_ATH) += ath/
+ obj-$(CONFIG_WLAN_VENDOR_ATMEL) += atmel/
+ obj-$(CONFIG_WLAN_VENDOR_BROADCOM) += broadcom/

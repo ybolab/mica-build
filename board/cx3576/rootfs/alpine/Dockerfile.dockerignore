@@ -1,0 +1,6 @@
+# rootfs/alpine 上下文白名单（上下文=仓库根）
+*
+!rootfs/assets/
+!rootfs/firmware/
+!scripts/rs485-pair-test.sh
+!out/kernel/modules.tar

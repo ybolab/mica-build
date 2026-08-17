@@ -1,0 +1,18 @@
+# Board metadata — CX3576-Z (Rockchip RK3576)
+name: cx3576
+arch: arm64
+soc: rk3576
+bootChain: uboot-rockchip        # SPL+U-Boot at eMMC sector 64, FIT boot (PLAN-006)
+console: ttyFIQ0,1500000
+earlycon: uart8250,mmio32,0x2ad40000
+storage:
+  media: emmc
+  device: /dev/mmcblk0
+  ubootOffsetSectors: 64
+kernel:
+  source: armbian/linux-rockchip rk-6.1-rkr5.1
+  version: 6.1.115
+  dtb: rk3576-cx3576z.dtb
+cmdlineExtra: "storagemedia=emmc androidboot.storagemedia=emmc net.ifnames=0 rootwait"
+wifi: [AP6275S-bcmdhd-sdio, AIC8800D80]   # dual SKU; firmware in rootfs/firmware/
+features: [wifi, bluetooth, can, emmc]

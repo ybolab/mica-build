@@ -1,0 +1,75 @@
+# syntax=docker/dockerfile:1
+# =============================================================================
+# Alpine 调试盘组装器（根级镜像合成）
+#
+# 输入均为上游构建好的成品，本级不编译 U-Boot、内核或 rootfs：
+#   out/uboot/u-boot-rockchip.bin
+#   out/kernel/Image
+#   out/kernel/rk3576-src.dtb
+#   out/rootfs/rootfs.img
+#
+# 固定磁盘布局：
+#   sector 64        idbloader + U-Boot FIT
+#   p1 @ 16 MiB      boot，64 MiB FAT32，包含 extlinux、Image、DTB
+#   p2 @ 80 MiB      Alpine ext4 rootfs，首启扩到 eMMC 末尾
+#
+# 产物：out/disk.img（make image）
+# =============================================================================
+
+FROM --platform=$BUILDPLATFORM ubuntu:24.04 AS assemble
+
+ARG DEBIAN_FRONTEND=noninteractive
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+        dosfstools \
+        gdisk \
+        mtools \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY out/uboot/u-boot-rockchip.bin /input/u-boot-rockchip.bin
+COPY out/kernel/Image /input/Image
+COPY out/kernel/rk3576-src.dtb /input/rk3576-src.dtb
+COPY out/rootfs/rootfs.img /input/rootfs.img
+
+ARG CMDLINE="earlycon=uart8250,mmio32,0x2ad40000 console=ttyFIQ0,1500000 console=tty1 root=PARTLABEL=rootfs rw rootwait net.ifnames=0 storagemedia=emmc androidboot.storagemedia=emmc"
+ARG BOOT_SIZE_MIB=64
+
+RUN set -eu; \
+    boot_start_mib=16; \
+    rootfs_start_mib=$((boot_start_mib + BOOT_SIZE_MIB)); \
+    rootfs_size_bytes="$(stat -c %s /input/rootfs.img)"; \
+    rootfs_size_mib=$(((rootfs_size_bytes + 1048575) / 1048576)); \
+    disk_size_mib=$((rootfs_start_mib + rootfs_size_mib + 4)); \
+    uboot_limit_bytes=$((boot_start_mib * 1048576 - 64 * 512)); \
+    test "$(stat -c %s /input/u-boot-rockchip.bin)" -le "$uboot_limit_bytes"; \
+    test "$BOOT_SIZE_MIB" -ge 32; \
+    mkdir -p /work/boot/extlinux /output; \
+    cp /input/Image /input/rk3576-src.dtb /work/boot/; \
+    printf '%s\n' \
+        'default rk3576' \
+        'timeout 3' \
+        'label rk3576' \
+        '    kernel /Image' \
+        '    fdt /rk3576-src.dtb' \
+        "    append ${CMDLINE}" \
+        > /work/boot/extlinux/extlinux.conf; \
+    truncate -s "${BOOT_SIZE_MIB}M" /work/boot.img; \
+    mkfs.vfat -F 32 -n BOOT /work/boot.img >/dev/null; \
+    mcopy -s -i /work/boot.img /work/boot/* ::/; \
+    truncate -s "${disk_size_mib}M" /output/disk.img; \
+    sgdisk --clear \
+        --new=1:32768:+${BOOT_SIZE_MIB}M --change-name=1:boot --attributes=1:set:2 \
+        --new=2:0:+${rootfs_size_mib}M --change-name=2:rootfs \
+        /output/disk.img >/dev/null; \
+    dd if=/input/u-boot-rockchip.bin of=/output/disk.img \
+        bs=512 seek=64 conv=notrunc status=none; \
+    dd if=/work/boot.img of=/output/disk.img \
+        bs=1M seek="$boot_start_mib" conv=notrunc status=none; \
+    dd if=/input/rootfs.img of=/output/disk.img \
+        bs=1M seek="$rootfs_start_mib" conv=notrunc status=none; \
+    sgdisk --verify /output/disk.img; \
+    echo ">> disk=${disk_size_mib}MiB boot=${BOOT_SIZE_MIB}MiB rootfs=${rootfs_size_mib}MiB"; \
+    sgdisk --print /output/disk.img
+
+FROM scratch AS artifact
+COPY --from=assemble /output/disk.img /

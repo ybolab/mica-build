@@ -1,0 +1,4 @@
+# rootfs/alpine-rom 上下文白名单（上下文=仓库根）
+*
+!rootfs/firmware/
+!out/kernel/modules.tar

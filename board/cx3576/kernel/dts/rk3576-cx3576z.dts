@@ -1,0 +1,463 @@
+// SPDX-License-Identifier: (GPL-2.0+ OR MIT)
+/*
+ * CX3576-Z — RK3576 板卡（Rockchip EVB1 V10 改版，ODM: jawest）完整开源板级 dts
+ *
+ * 基线 = 上游 rk3576-evb1-v10-linux.dts 的 include 组合；板级差异来自把原厂 dtb
+ * 反编译后与上游编译产物做节点级+属性级全量对照（报告: docs/dts-delta/），
+ * 已核实的差异全部落在本文件，每处都注明出处。
+ *
+ * 构建：kernel 工程随内核一起 make dtbs → out/kernel/rk3576-src.dtb；
+ * 合成级把它作为 extlinux 唯一启动项（原厂 dtb+overlay 回退路径已移除）。
+ *
+ * 已裁剪（板上无引出接口，节点不引入）：DSI/触摸、HDMI-IN(tc35874x)、摄像头、eDP。
+ */
+
+/dts-v1/;
+
+#include "rk3576.dtsi"
+#include "rk3576-evb1.dtsi"
+#include "rk3576-evb1-cam-dcphy0.dtsi"
+#include "rk3576-linux.dtsi"
+
+/ {
+	model = "CX3576-Z (RK3576)";
+	compatible = "jawest,cx3576z", "rockchip,rk3576-evb1-v10",
+		     "rockchip,rk3576";
+};
+
+/* 板子是 eMMC 方案，UFS 控制器上无设备——BSP ufshcd 在空 UFS 链路上挂死启动。
+ * cmdline 的 storagemedia=emmc 拦不住，必须从 dtb 关掉。
+ */
+&ufs {
+	status = "disabled";
+};
+
+/* ODM 改板把 YT8531 的复位脚从 EVB1 的 gpio2_13 挪到了 gpio2_11。
+ * 沿用上游脚位会让 PHY 永远复位不到，链路起不来。（出处: prop-diff ethernet@2a220000）
+ */
+&gmac0 {
+	snps,reset-gpio = <&gpio2 RK_PB3 GPIO_ACTIVE_LOW>;
+};
+
+/* gmac1 不使用,保持禁用。本板两个 RJ45 是 gmac0(YT8531,eth0) + PCIe 网卡
+ * (Realtek 10ec:8168 → r8168,见下方 pcie@2a200000)——第二网口走 PCIe,不是 gmac1。
+ * (早期曾误判第二口=gmac1,已由 android-live 证伪。gmac1 的 RGMII 会占 gpio2_C/D,
+ *  与 uart6/9/11 冲突,但既然不启用即无影响。)
+ */
+&gmac1 {
+	status = "disabled";
+};
+
+/* CAN0 没有引出外部接口，实机不可用；明确禁用，避免用户态出现虚假 can0。 */
+&can0 {
+	status = "disabled";
+};
+
+/* 本板唯一可用的 CAN 外部接口是 CAN1。原厂启用了 CAN0/CAN1 两个控制器，
+ * 但硬件只引出 CAN1；CAN1 保持原厂 200MHz 时钟、m3 引脚组和 RX DMA。
+ * （出处: 实机接口核定 + prop-diff can@2ac10000）
+ */
+&can1 {
+	status = "okay";
+	assigned-clocks = <&cru CLK_CAN1>;
+	assigned-clock-rates = <200000000>;
+	pinctrl-names = "default";
+	pinctrl-0 = <&can1m3_pins>;
+	dmas = <&{/dma-controller@2abb0000} 21>;
+	dma-names = "rx";
+};
+
+/* RTC：ODM 禁掉 EVB1 在 i2c2 上的 hym8563，改在 i2c7 挂 AnalogTek AT8563。
+ * AT8563 是 HYM8563 克隆，BSP 无专用驱动（原厂用私有 .ko），加 haoyu,hym8563
+ * 兜底 compatible 让树内 rtc-hym8563 驱动接管（内核需 RTC_DRV_HYM8563）。
+ * （出处: 节点对照 vendor 独有 /i2c@2aca0000/at8563@51）
+ */
+&i2c7 {
+	status = "okay";
+
+	at8563: rtc@51 {
+		compatible = "AnalogTek,AT8563", "haoyu,hym8563";
+		reg = <0x51>;
+		#clock-cells = <0>;
+		clock-output-names = "AT8563";
+	};
+
+	/* 板载 EEPROM（原厂 at24@50,compatible 原样复刻） */
+	at24@50 {
+		compatible = "24c32";
+		reg = <0x50>;
+	};
+};
+
+/* USB：本板 OTG 口无 Type-C PD——原厂把 EVB1 的 Type-C 全家桶（husb311 连接器图、
+ * usbdp phy 的 orientation-switch/sbu 脚/端点）整个拆掉，换成经典 extcon 方案。
+ * 不跟着拆则 usbdp phy probe EBUSY → USB 链路残废（2026-08-16 实机日志）。
+ * 以下逐项对齐原厂 android-live。（出处: prop-diff usb@23000000/phy@2b010000）
+ */
+&{/phy@2b010000} {
+	rockchip,dp-lane-mux = <2 3>;
+	/delete-property/ orientation-switch;
+	/delete-property/ sbu1-dc-gpios;
+	/delete-property/ sbu2-dc-gpios;
+	/delete-property/ svid;
+	/delete-node/ port;
+};
+
+&{/usb@23000000} {
+	extcon = <&u2phy0>;
+	/delete-property/ usb-role-switch;
+	/delete-node/ port;
+};
+
+&u2phy0_otg {
+	vbus-supply = <&vbus5v0_typec>;
+	/delete-property/ rockchip,typec-vbus-det;
+	/* 原厂调优：OTG 口禁 U2 phy 挂起,避免 host 模式下误进 suspend 掉链路。
+	 * （出处: prop-diff usb2-phy@0/otg-port，android-live 有此属性） */
+	rockchip,dis-u2-susphy;
+};
+
+/* drd0 端口 VBUS 开关：ODM 改板挪到 gpio2_B6（EVB1 在 gpio0_D1）。
+ * 不改则 host 模式下开错脚,USB host 口与外设永远无电。
+ * （出处: prop-diff vbus5v0-typec + 实机全总线空）
+ */
+&vbus5v0_typec {
+	gpio = <&gpio2 RK_PB6 GPIO_ACTIVE_HIGH>;
+};
+
+/* stale pinctrl 修正（出处: docs/dts-delta/android-live-vs-current-audit.md）：
+ * 上面把 VBUS 使能脚、下面 es8388 把 hp-det 脚都改到了 gpio2,但对应的 pinmux 组
+ * 还停在 EVB1 的旧脚——GPIO 属性对、pinctrl 组错,导致目标脚 pull 不生效、还白占
+ * gpio0_D1/D3。按原厂 android-live 的组值对齐:
+ *   usb-otg0-pwren: gpio0_D1 → gpio2_B6 (pull-none)
+ *   hp-det        : gpio0_D3 → gpio2_B7 (pull-up)
+ */
+&{/pinctrl/usb/usb-otg0-pwren} {
+	rockchip,pins = <2 RK_PB6 0 &pcfg_pull_none>;
+};
+
+&{/pinctrl/headphone/hp-det} {
+	rockchip,pins = <2 RK_PB7 0 &pcfg_pull_up>;
+};
+
+/* HDMI：EVB1 基线给 hdmi 配了 enable-gpios(gpio2_8=全局 pin72)，原厂没有——
+ * 该脚在本板是 uart1 的引脚,不删会 pin 冲突（实机 WARNING 风暴:
+ * "pin 72 already requested by 27310000.serial"）。（出处: prop-diff hdmi@27da0000 + 实机日志）
+ */
+&{/hdmi@27da0000} {
+	/delete-property/ enable-gpios;
+};
+
+/* 串口：EVB1 基线只开 uart4，原厂开了 7 个外设串口。
+ * 两个实机 RS485 接口已确认对应 uart1=/dev/ttyS1、uart6=/dev/ttyS6，可互接双向收发。
+ * 其余串口逐个按原厂的引脚复用组补齐。（出处: 实机互测 + 节点对照 serial@* status/pinctrl）
+ */
+&uart1 {
+	status = "okay";
+	pinctrl-names = "default";
+	pinctrl-0 = <&uart1m1_xfer>;
+};
+
+&uart3 {
+	status = "okay";
+	pinctrl-names = "default";
+	pinctrl-0 = <&uart3m1_xfer>;
+};
+
+&uart4 {
+	status = "okay";
+	pinctrl-names = "default";
+	pinctrl-0 = <&uart4m1_xfer &uart4m1_ctsn>;
+};
+
+&uart6 {
+	status = "okay";
+	pinctrl-names = "default";
+	pinctrl-0 = <&uart6m1_xfer>;
+};
+
+&uart8 {
+	status = "okay";
+	pinctrl-names = "default";
+	pinctrl-0 = <&uart8m2_xfer>;
+};
+
+&uart9 {
+	status = "okay";
+	pinctrl-names = "default";
+	pinctrl-0 = <&uart9m0_xfer>;
+};
+
+&uart11 {
+	status = "okay";
+	pinctrl-names = "default";
+	pinctrl-0 = <&uart11m1_xfer>;
+};
+/* 注：uart6/9/11 的引脚也属 gmac1 RGMII 总线,但本板第二网口走 PCIe、gmac1 永不启用,
+ * 故三个 uart 可长期占用,无冲突。 */
+
+/* WiFi(AP6275,SDIO)：EVB1 基线把 SDIO host 和 pwrseq 关着，原厂打开并把 pwrseq 的
+ * 外部时钟接到 AT8563 RTC 的 32kHz 输出（正好用上面 RTC 节点的 clock 输出）。
+ * SDIO 引脚两边一致。（wireless-wlan rfkill 节点另在下方禁用——本板是 AIC 非博通）
+ * （出处: prop-diff mmc@2a320000/sdio-pwrseq）
+ */
+&{/mmc@2a320000} {
+	status = "okay";
+};
+
+&{/sdio-pwrseq} {
+	status = "okay";
+	clocks = <&at8563>;
+	clock-names = "ext_clock";
+};
+
+/* PCIe：第二个网口 = PCIe 网卡,挂在 pcie0(@2a200000)上——原厂 android-live 里
+ * pcie0=okay,之前误判为"无 PCIe 外设"整个禁掉,导致 Linux 下只剩 gmac0 一个口。
+ * 复位脚也与 EVB1 不同：EVB1=gpio2_B4(pin12),本板=gpio2_D4(pin28)高有效
+ * (值出处: android-live.dtb pcie@2a200000 reset-gpios <&gpio2 RK_PD4>)。
+ * pcie1(@2a210000)原厂仍禁,不动。
+ * 注: 网卡芯片 = Realtek RTL8168(PCI 10ec:8168),驱动 CONFIG_R8168=y 已在内核 config,
+ *     dts 拉起 link 后即枚举为 eth1。（芯片型号出处: android-live 审计 r8168 绑定）
+ */
+&{/pcie@2a200000} {
+	status = "okay";
+	reset-gpios = <&gpio2 RK_PD4 GPIO_ACTIVE_HIGH>;
+	/* EVB1 base 给 pcie0 挂了引脚复用组,本板不适用/会冲突,删掉 */
+	/delete-property/ pinctrl-names;
+	/delete-property/ pinctrl-0;
+};
+
+/* EVB1 有、本板没有的 i2c 器件：
+ *   husb311  Type-C 控制器——必须整节点删除（其 endpoint 引用上面已删的
+ *            usbdp/usb port 标签,留着节点会编译报 dangling reference）
+ *   hym8563  EVB1 的 RTC（本板换成 i2c7 的 AT8563）,禁用
+ *   imx415@1a EVB1 的摄像头（本板摄像头未引出,整组裁剪）,禁用
+ */
+&{/i2c@2ac50000} {
+	/delete-node/ husb311@4e;
+};
+
+&{/i2c@2ac50000/hym8563@51} {
+	status = "disabled";
+};
+
+&{/i2c@2ac70000/imx415@1a} {
+	status = "disabled";
+};
+
+/* ===== 完整复刻审计（2026-08-16,全树 status+属性对照,报告:docs/dts-delta/ ）=====
+ * 以下为 vendor 与 evb1 基线的全部 status 差异对齐。
+ * 唯一不复刻的例外：&ufs 保持 disabled——mainline u-boot 下 BSP ufshcd 在空 UFS
+ * 链路上挂死启动（实机血案）；vendor u-boot 有私有处理才敢开。
+ */
+
+/* vendor 开、基线关的。三个例外不跟随（audit.aa.md 定案）：
+ *   route-dp0——src 的 dp@27e40000 无 endpoint(Type-C 拆除的连带),开着只污染 DRM 拓扑;
+ *   csi2-dphy0/mipi1-csi2/rkcif-lvds1——摄像头已裁剪,空媒体链只产噪声/功耗。
+ */
+&{/pwm@2ade5000} { status = "okay"; };
+&{/watchdog@2ace0000} { status = "okay"; };
+
+/* HDMI-IN：本板无 HDMI-in 输入,sai4(sai@2a640000,HDMI-in 音频采集)禁用
+ * （原厂 android-live 里此采集口亦为 disabled）。 */
+&{/sai@2a640000} { status = "disabled"; };
+
+/* SATA：本板无 SATA 接口(用户确认)。原厂 android-live 里 sata@2a240000 亦为
+ * disabled——之前误随 EVB/base 参考开成 okay,实机只会刷 "SATA link down"。关掉。
+ */
+&{/sata@2a240000} { status = "disabled"; };
+
+/* DSI 链整体禁用（用户拍板裁剪;EVB 基线的 1080x1920 竖屏参数与原厂 1920x1080 屏
+ * 完全不符,开着只会点错屏,audit.dts.md §3.1）。要支持板载屏时需完整移植原厂
+ * panel 时序/初始化序列/GPIO/供电/mipi-backlight。
+ */
+&{/dsi@27d80000} { status = "disabled"; };
+
+/* VOP2 图层分配：base dtsi 没给 vp0/1/2 配 plane-mask,VOP2 驱动默认全 0——
+ * 实机日志 "vpN assign plane mask:[0x0], primary plane INVALID[-1]"(dmesg.txt),
+ * 各视频口拿不到图层=无显示输出。原厂 android-live 逐口指定了 mask/primary,
+ * 同 SoC 同 rockchip,rk3576-vop 驱动,plane ID 通用,照抄即可。
+ * 值出处: android-live.dtb vop@27d00000/ports。
+ * 注: reset-names(dclk_vpN) 是你内核 base dtsi 建模的,原厂内核版本没有,保留不动;
+ *     GPU clock-names 属跨内核版本绑定差异,同理不覆盖。
+ */
+&{/vop@27d00000} {
+	support-multi-area;
+};
+
+&{/vop@27d00000/ports/port@0} {
+	rockchip,plane-mask = <0x04>;
+	rockchip,primary-plane = <0x02>;
+};
+
+&{/vop@27d00000/ports/port@1} {
+	rockchip,plane-mask = <0x08>;
+	rockchip,primary-plane = <0x03>;
+};
+
+&{/vop@27d00000/ports/port@2} {
+	rockchip,plane-mask = <0x100>;
+	rockchip,primary-plane = <0x08>;
+};
+
+/* es8388 声卡：EVB 基线的三个 GPIO 全错——hp-det 在 gpio0_27(原厂:gpio2_B7 高有效)、
+ * hp-con 占用 gpio3_D6(原厂无此属性,该脚是原厂的 spk-con)、spk-con 在 gpio2_9
+ * (=pin73,与 uart1 冲突,实机 WARNING)。
+ * 修正(2026-08-16 对照 android-live.dtb)：喇叭走 LOUT2/ROUT2——之前误判为
+ * LOUT1/ROUT1(那是耳机口),原厂实际 Speaker→LOUT2/ROUT2,否则喇叭无声。
+ * （audit.dts.md §3.5,已按原厂逐项对齐）
+ */
+&{/es8388-sound} {
+	hp-det-gpio = <&gpio2 RK_PB7 GPIO_ACTIVE_HIGH>;
+	spk-con-gpio = <&gpio3 RK_PD6 GPIO_ACTIVE_HIGH>;
+	/delete-property/ hp-con-gpio;
+	rockchip,audio-routing =
+		"Headphone", "LOUT1",
+		"Headphone", "ROUT1",
+		"Speaker", "LOUT2",
+		"Speaker", "ROUT2",
+		"Headphone", "Headphone Power",
+		"Headphone", "Headphone Power",
+		"Speaker", "Speaker Power",
+		"Speaker", "Speaker Power",
+		"LINPUT1", "Main Mic",
+		"LINPUT2", "Main Mic",
+		"RINPUT1", "Headset Mic",
+		"RINPUT2", "Headset Mic";
+};
+
+/* RK806：原厂没有关机序列属性,EVB 的不应沿用（直接影响 PMIC 掉电顺序,
+ * audit.dts.md §3.7）*/
+&{/i2c@2ac40000/pmic@23} {
+	/delete-property/ shutdown-sequence;
+	/delete-property/ vb-shutdown-sequence;
+};
+
+/* vendor 关、基线开的 */
+&{/backlight} { status = "disabled"; };
+&{/dp0-sound} { status = "disabled"; };
+&{/i2c@27300000} { status = "disabled"; };
+&{/i2c@27300000/gt1x@14} { status = "disabled"; };
+&{/i2c@2ac70000/imx464-0@1a} { status = "disabled"; };
+&{/i2c@2ac70000/imx464-1@36} { status = "disabled"; };
+&{/i2c@2ac70000/os04a10@36} { status = "disabled"; };
+&{/i2c@2ac70000/sc4336@30} { status = "disabled"; };
+&{/i2c@2aca0000/icm_acc@68} { status = "disabled"; };
+&{/i2c@2aca0000/icm_gyro@68} { status = "disabled"; };
+
+/* ADC 按键：本板无实体按键电路(用户确认),SARADC 通道 1 悬空会误报按键。
+ * 原厂 android-live 亦为 disabled。关掉。 */
+&{/adc-keys} { status = "disabled"; };
+
+/* DP(dp@27e40000)：Type-C 端点已拆、route-dp0 已禁,控制器悬空无输出通路。
+ * 原厂 android-live 亦为 disabled。关掉。 */
+&{/dp@27e40000} { status = "disabled"; };
+
+/* SD 卡供电：vendor 独有节点（基线的 sd 槽没接供电,SD 救援启动要用）。
+ * vcc_sd: gpio0_B6 低有效使能;vcc5v0_3v3: gpio4_B2 常开总供电。 */
+/ {
+	sdmmc_reg: sdmmc-regulator {
+		compatible = "regulator-fixed";
+		regulator-name = "vcc_sd";
+		regulator-min-microvolt = <3300000>;
+		regulator-max-microvolt = <3300000>;
+		gpio = <&gpio0 RK_PB6 GPIO_ACTIVE_LOW>;
+		enable-active-low;
+		pinctrl-names = "default";
+		pinctrl-0 = <&sdmmc_pwr>;
+	};
+
+	vcc5v0_3v3: vcc5v0-3v3 {
+		compatible = "regulator-fixed";
+		regulator-name = "vcc5v0_3v3";
+		regulator-always-on;
+		regulator-boot-on;
+		regulator-min-microvolt = <3300000>;
+		regulator-max-microvolt = <3300000>;
+		gpio = <&gpio4 RK_PB2 GPIO_ACTIVE_HIGH>;
+		enable-active-high;
+		pinctrl-names = "default";
+		pinctrl-0 = <&vcc5v0_3v3_pwren>;
+	};
+};
+
+&pinctrl {
+	sdmmc-pwr-en {
+		sdmmc_pwr: sdmmc-pwr {
+			rockchip,pins = <0 RK_PB6 0 &pcfg_pull_none>;
+		};
+	};
+
+	vcc5v0-3v3-en {
+		vcc5v0_3v3_pwren: vcc5v0-3v3-pwren {
+			rockchip,pins = <4 RK_PB2 0 &pcfg_pull_none>;
+		};
+	};
+};
+
+&{/mmc@2a310000} {
+	vmmc-supply = <&sdmmc_reg>;
+	/* evb1 基线多挂 sdmmc0-pwren 复用组,与 vcc_sd regulator 抢 gpio0_B6
+	 * (实机: pin gpio0-14 already requested)。原厂就是这 4 组。 */
+	pinctrl-0 = <&sdmmc0_clk &sdmmc0_cmd &sdmmc0_det &sdmmc0_bus4>;
+};
+
+/* sai1(es8388 声卡) 引脚对齐原厂：输出走 sdo2(evb1 错用 sdo0)。
+ * (sai4=HDMI-IN 采集已禁用,其引脚覆盖一并移除) */
+&{/sai@2a610000} {
+	pinctrl-0 = <&sai1m0_lrck &sai1m0_sclk &sai1m0_sdi0 &sai1m0_sdo2>;
+};
+
+/* 以下电源脚在原厂固件里由闭源 jwsioc / jawest-ctrl-z 驱动拉高。我们不移植那个
+ * 驱动，改用 gpio-hog 让内核开机自动拉高。不拉高则 USB host 口/4G 模组/WiFi 无电。
+ *
+ * 引脚出处：原厂 dtb 的 jawest-z-ctrl 节点
+ *   host-pwren = gpio0_23   host1-pwren = gpio2_6
+ *   host3-pwren = gpio2_7   modem-power = gpio2_12
+ * WiFi 供电 gpio1_22 来自实机排查。
+ *
+ * 注：jawest-z-ctrl 还有 modem-reset(gpio3_22)，极性与时序未知，贸然 hog 住
+ * 可能让 4G 模组常驻复位态，故此处不动。
+ */
+/* 注意：gpio0_23(host-pwren) 在 evb1 基线里已建模为 vcc5v0-host regulator 的
+ * 使能脚(always-on)——不再加 hog,一个脚一个 owner（见 docs/audit.aa.md）。
+ * overlay/vendor-dtb 路线无此 regulator 建模,那边 hog 保留。
+ */
+
+/* WiFi = AIC8800D80(SDIO, vid 0xC8A1),不是 EVB 基线声明的 Broadcom AP6275P。
+ * 整个 wireless-wlan(rockchip rfkill_rk)节点禁用——它按 wifi_chip_type=ap6275p 驱动
+ * bcmdhd 的供电/初始化仪式,在 AIC 芯片上必然失败("failed to power up
+ * DHD",白等 ~2.6s),且其 rfkill 电源脚会与 sdio-pwrseq 抢 owner。
+ * 禁用后 WiFi 供电交给 sdio-pwrseq(gpio1_C6 reset),AIC 驱动自己 SDIO probe 建 wlan0。
+ * 代价:丢 rfkill 的 OOB host-wake 中断,退回 SDIO 带内中断,功能可用。证据见 docs/audit.aa.md。
+ * (旧 overlay 路线早已这么做并验证,见 audit.aa.md)
+ */
+&{/wireless-wlan} {
+	status = "disabled";
+};
+
+/* 注意：这里没有 wifi 供电 hog——gpio1_C6 的 owner 是 sdio-pwrseq(reset-gpios)。
+ * 曾经加过 hog,结果 pwrseq probe -EBUSY,WiFi 直接不枚举（audit.dts.md §3.4 实机定案）。
+ */
+&gpio2 {
+	usb-host1-pwren-hog {
+		gpio-hog;
+		gpios = <RK_PA6 GPIO_ACTIVE_HIGH>;
+		output-high;
+		line-name = "usb-host1-pwren";
+	};
+
+	usb-host3-pwren-hog {
+		gpio-hog;
+		gpios = <RK_PA7 GPIO_ACTIVE_HIGH>;
+		output-high;
+		line-name = "usb-host3-pwren";
+	};
+
+	modem-pwren-hog {
+		gpio-hog;
+		gpios = <RK_PB4 GPIO_ACTIVE_HIGH>;
+		output-high;
+		line-name = "modem-pwren";
+	};
+};

@@ -1,2 +1,3 @@
 talos/
-board-cx3576/
+out/
+board/*/out/

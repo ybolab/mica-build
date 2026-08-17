@@ -1,0 +1,12 @@
+# Board metadata — generic x86_64 platform (UEFI)
+name: x64
+arch: amd64
+soc: generic
+bootChain: uefi                  # upstream Talos boot chain (systemd-boot / GRUB), no BSP build
+console: ttyS0,115200
+storage:
+  media: generic                 # nvme / sata / virtio
+kernel:
+  source: upstream-talos         # stock Talos kernel and modules, no vendor tree
+cmdlineExtra: ""
+features: [uefi, qemu]
