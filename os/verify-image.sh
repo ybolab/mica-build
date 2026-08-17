@@ -97,7 +97,7 @@ if [ "${INNER}" -eq 0 ]; then
         inner_args+=("${img_in}")
         rc=0
         docker run --rm "${mounts[@]}" -e BOARD_DIR=/board alpine:3.21 \
-            sh -c 'apk add --no-cache -q bash coreutils diffutils gptfdisk sgdisk dosfstools mtools e2fsprogs && exec bash /work/os/verify-image.sh "$@"' \
+            sh -c 'apk add --no-cache -q bash coreutils diffutils gptfdisk sgdisk dosfstools mtools e2fsprogs e2fsprogs-extra && exec bash /work/os/verify-image.sh "$@"' \
             _ "${inner_args[@]}" || rc=$?
         if [ -n "${tmp_board}" ]; then
             rmdir "${tmp_board}" 2>/dev/null || true
