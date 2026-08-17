@@ -70,6 +70,27 @@ webd + kiosk (one UI, local/remote paths)    RAUC (native) + tough (TUF signing)
   (first-boot self-provisioning in mosd), connd reconcilers over
   wpa_supplicant/hostapd (much thinner: systemd owns lifecycles).
 
+### M6 - workload layer: balena-engine
+
+**Decision (2026-08-17, user): the container engine is balena-engine**
+(balena-os/balena-engine, Apache-2.0 Moby fork), not containerd/docker.
+Rationale — it is engineered for exactly our field constraints:
+
+- **container deltas** (10-70x bandwidth reduction) — the app-layer answer to
+  PLAN-006's delta story;
+- **atomic, durable image pulls** — power-cut-safe by design (same invariant
+  class as our A/B updates);
+- single static binary, ~3.5x smaller than docker, conservative RAM/storage;
+- Docker-API compatible: compose-based app delivery works unchanged, and mosd
+  drives it from Rust via the mature `bollard` client crate.
+
+Scope: balena-engine as a systemd unit (data-root on EPHEMERAL); app
+delivery = compose bundle managed by mosd, versioned as the Uptane secondary
+ECU per PLAN-006 Part I. Integration notes: engine tracks Moby with version
+lag (acceptable for an appliance); balena's delta *generation* is server-side
+infra — phase 1 uses plain pulls, delta serving evaluated with the fleet
+phase (openBalena delta service vs registry-native alternatives).
+
 ## Out of scope / retired
 
 - talos repo: reference-only, archived at its final commit; no further fixes.
