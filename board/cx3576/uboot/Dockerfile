@@ -69,11 +69,15 @@ RUN cd /uboot && \
                    --enable BUTTON_ADC \
                    --enable CMD_BUTTON \
                    --enable CMD_ADC \
+                   --enable FIT \
+                   --set-val SYS_BOOTM_LEN 0x8000000 \
                    --enable USE_PREBOOT \
                    --set-str PREBOOT "if button recovery; then echo RECOVERY KEY - entering rockusb; rockusb 0 mmc 0; fi" \
                    --set-str BOOTCOMMAND "bootflow scan -lb; echo BOOT FAILED - entering rockusb; rockusb 0 mmc 0" && \
     make olddefconfig && \
     grep -E "^CONFIG_PREBOOT=|^CONFIG_BUTTON_ADC=|^CONFIG_CMD_ROCKUSB=" .config && \
+    { grep -q "^CONFIG_FIT=y" .config || { echo "ERROR: CONFIG_FIT=y missing from .config" >&2; exit 1; }; } && \
+    { grep -q "^CONFIG_SYS_BOOTM_LEN=0x8000000" .config || { echo "ERROR: CONFIG_SYS_BOOTM_LEN=0x8000000 missing from .config" >&2; exit 1; }; } && \
     make -j"$(nproc)" \
         CROSS_COMPILE=aarch64-linux-gnu- \
         ROCKCHIP_TPL="$DDR" BL31="$BL31" && \
