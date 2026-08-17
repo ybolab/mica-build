@@ -2,6 +2,13 @@
 
 > English | [中文](architecture.zh.md)
 >
+> **MIGRATION NOTICE (2026-08-17): Plan B adopted** — the OS core moves from
+> Talos/machined to **systemd + mosd (Rust management plane)**; see
+> research/init-strategy.md (decision) and plan/PLAN-010.md (migration).
+> Sections describing machined/COSI are the outgoing architecture; the BSP
+> contract, update design (PLAN-006), trust chain, access/provisioning/display
+> models remain valid. This file is rewritten as PLAN-010 milestones land.
+>
 > Status: living document. Detailed designs live in `design/` and `plan/`;
 > this file is the top-level map. Last updated: 2026-08-17.
 

@@ -7,6 +7,23 @@
 > PID 1 in Rust. Includes measured data, the industry survey, and the concrete
 > triggers that would change the decision.
 
+## DECISION 2026-08-17 (late): Plan B ADOPTED
+
+The user decision superseded the trigger framework the same day it was
+written, on accumulated evidence: (a) hardware bring-up on the 6.1 vendor
+kernel hit successive machined/new-kernel-API incompatibilities (mount API
+lowerdir+/SET_FD, then FSCONFIG_CMD_CREATE EINVAL on the legacy fallback) —
+trigger 2's "structural incompatibility" firing in real time; (b) 4.x-kernel
+boards expected in the pipeline; (c) Venus OS research showed the management
+plane reduces to one Rust service (state tree + reconciler + bridge) once
+systemd/networkd/RAUC own the execution layer. The bring-up flash validated
+the entire BSP/boot chain (kernel, U-Boot, extlinux, eMMC, mounts up to
+machined userland) — that work carries over unchanged.
+
+Migration plan: docs/plan/PLAN-010. The talos repo becomes reference-only
+(no further fixes; the fsopen legacy fallback stays as-is, unused).
+Plan A sections below are retained as the historical record.
+
 ## 1. Measured scope of "what Talos provides" (non-test Go LOC)
 
 | Subsystem | LOC |

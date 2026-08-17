@@ -30,3 +30,6 @@ CONFIG_SECURITY_SELINUX_DEVELOP=y
 # SELinux must also be in the LSM boot list or selinuxfs never registers
 # (compiled-but-inactive); string option, not covered by the =y assertion loop.
 CONFIG_LSM="landlock,lockdown,yama,loadpin,safesetid,integrity,selinux,bpf"
+
+# Fleet remote-management tunnel (systemd-networkd native netdev support).
+CONFIG_WIREGUARD=y

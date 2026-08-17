@@ -6,6 +6,20 @@
 > 用户态（Bottlerocket 模型）、还是 Rust 重写 PID 1。含实测数据、行业调研
 > 与改变决策的具体触发器。
 
+## 决策 2026-08-17（当日晚）：采纳 Plan B
+
+用户决策在触发器框架写下的当天即将其取代，依据的累积证据：(a) 6.1 厂商
+内核上的真机 bring-up 连续撞上 machined 的新内核 API 假设（挂载 API
+lowerdir+/SET_FD，随后旧语法回退亦遇 FSCONFIG_CMD_CREATE EINVAL）——
+触发器 2 的"结构性不兼容"实时应验；(b) 管线中预期出现 4.x 内核板卡；
+(c) Venus OS 调研表明：一旦 systemd/networkd/RAUC 承担执行层，管理平面
+收敛为一个 Rust 服务（状态树 + 协调器 + 桥接）。本次刷机验证了完整的
+BSP/引导链（内核、U-Boot、extlinux、eMMC、挂载直至 machined 用户态）——
+这些工作原样延续。
+
+迁移计划：docs/plan/PLAN-010。talos 仓库转为仅参考（不再修复；fsopen
+旧语法回退保留原样、不再使用）。下文 Plan A 各节作为历史记录保留。
+
 ## 1. "Talos 提供了什么"的量化（非测试 Go LOC）
 
 | 子系统 | LOC |

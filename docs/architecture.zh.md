@@ -2,6 +2,12 @@
 
 > [English](architecture.md) | 中文
 >
+> **迁移通告（2026-08-17）：已采纳 Plan B** —— OS 核心由 Talos/machined 迁往
+> **systemd + mosd（Rust 管理平面）**；见 research/init-strategy.md（决策）与
+> plan/PLAN-010.md（迁移计划）。文中涉及 machined/COSI 的部分为退出中的旧
+> 架构；BSP 契约、升级设计（PLAN-006）、信任链、access/provisioning/display
+> 模型继续有效。本文件将随 PLAN-010 里程碑逐步改写。
+>
 > 状态：持续更新的文档。详细设计见 `design/` 与 `plan/`；本文是顶层地图。
 > 最后更新：2026-08-17。
 

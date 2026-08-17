@@ -13,7 +13,7 @@ kernel:
   source: armbian/linux-rockchip rk-6.1-rkr5.1
   version: 6.1.115
   dtb: rk3576-cx3576z.dtb
-cmdlineExtra: "storagemedia=emmc androidboot.storagemedia=emmc net.ifnames=0 rootwait"
+cmdlineExtra: "storagemedia=emmc net.ifnames=0 rootwait"
 wifi: [AP6275S-bcmdhd-sdio, AIC8800D80]   # dual SKU; firmware in rootfs/firmware/
 features: [wifi, bluetooth, can, emmc]
 
