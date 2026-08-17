@@ -12,7 +12,7 @@ uboot:
 	docker buildx build -f uboot/Dockerfile -o $(OUT)/uboot uboot
 
 kernel:
-	docker buildx build -f kernel/Dockerfile -o $(OUT)/kernel .
+	docker buildx build --build-context mos-common=../common -f kernel/Dockerfile -o $(OUT)/kernel .
 
 rootfs:
 	docker buildx build -f rootfs/$(ROOTFS)/Dockerfile -o $(OUT)/rootfs .

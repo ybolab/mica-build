@@ -53,8 +53,11 @@ release 一致，镜像组装期断言。
   启动（PLAN-006 Part D）在挂根之前没有加载模块的机会。
 - 运行时：cgroup v2 全套、containerd/netfilter 前置（cx3576 Dockerfile 已
   断言的 docker 集合）、seccomp。
-- Talos 基线片段：维护为 `kernel/config/mos-required.fragment`，在
-  olddefconfig 之前合入（上述清单的唯一权威来源）。
+- Talos 基线片段：全板共享、只维护一份，位于
+  `board/common/mos-required.fragment`（buildx 命名 context `mos-common`），
+  在 olddefconfig 之前合入——上述清单及 machined 必需伪文件系统（hugetlbfs、
+  tracing、SELinux + LSM 启动列表）的唯一权威来源。板级特有需求留在各板
+  自己的配置基线里。
 
 ## 5. U-Boot 要求（uboot 引导链板卡）
 

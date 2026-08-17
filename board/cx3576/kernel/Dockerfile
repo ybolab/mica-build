@@ -34,7 +34,10 @@ RUN cd /ksrc && for p in $(ls /patches/*.patch 2>/dev/null | sort); do \
     done
 
 COPY kernel/config/kernel-cx3576z.config /ksrc/.config
-COPY kernel/config/mos-required.fragment /mos-required.fragment
+# Shared Talos runtime baseline from board/common/ — requires the named build
+# context: docker buildx build --build-context mos-common=../common ...
+# (wired in the board Makefile; a bare build without it fails here, loudly).
+COPY --from=mos-common mos-required.fragment /mos-required.fragment
 
 ARG KERNEL_EXPECT=6.1.115
 RUN cd /ksrc && \

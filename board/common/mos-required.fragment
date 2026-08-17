@@ -1,6 +1,9 @@
-# mos-required kernel options — single source of truth, consumed by the
-# Talos image phase for dm-verity boot. dm-verity no-initramfs boot cannot
-# load modules, so these must be built-in =y, never =m.
+# mos-required kernel options — the board-independent Talos runtime baseline,
+# shared by every board (board/common/, referenced as buildx named context
+# `mos-common`). Board kernels merge this BEFORE olddefconfig and assert every
+# =y line against the final .config. dm-verity no-initramfs boot cannot load
+# modules, so these must be built-in =y, never =m. Board-specific requirements
+# (storage controller, etc.) belong in the board's own config, not here.
 CONFIG_BLK_DEV_DM=y
 CONFIG_DM_INIT=y
 CONFIG_DM_VERITY=y

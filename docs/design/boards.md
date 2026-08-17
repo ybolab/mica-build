@@ -54,8 +54,11 @@ assert (grep on the final .config, fail the build otherwise):
   (PLAN-006 Part D) cannot load modules before root is mounted.
 - Runtime: cgroup v2 set, containerd/netfilter prerequisites (the docker set
   already asserted in cx3576's Dockerfile), seccomp.
-- Talos baseline fragment: maintained as `kernel/config/mos-required.fragment`
-  merged before olddefconfig (source of truth for the list above).
+- Talos baseline fragment: maintained once for all boards at
+  `board/common/mos-required.fragment` (buildx named context `mos-common`),
+  merged before olddefconfig — the source of truth for the list above plus the
+  machined-required pseudo filesystems (hugetlbfs, tracing, SELinux + LSM boot
+  list). Board-specific requirements stay in the board's own config baseline.
 
 ## 5. U-Boot requirements (uboot-chain boards)
 
