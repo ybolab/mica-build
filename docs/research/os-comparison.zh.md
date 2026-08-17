@@ -51,7 +51,25 @@
 | OCI/registry 作为升级传输 | 静态 HTTP + lockbox 无论如何都要存在；registry 徒增一个有状态服务、零收益 |
 | 维持删除式派生 | 401 commit 的漂移已证明不可合并；上游 k8s-less 门控（9ffa772ba）使其失去存在意义 |
 
-## 4. 定位
+## 4. 附录：Bottlerocket（2026-08-17 评估）
+
+AWS 从零自研的不可变 OS：上游 LTS 内核 + glibc + **systemd** + 打补丁的
+GRUB（signpost 的 GPT 优先级位 A/B），管理用户态全 Rust（apiserver、
+updog/TUF、migrator），主机访问经 admin/control 容器，dm-verity rootfs，
+SELinux enforcing。构建体系：Rust `buildsys` 驱动内部 RPM spec（运行时无
+包管理器）。
+
+结论：**与 mos 独立收敛出的架构模式相同**（不可变 + verity + A/B + TUF +
+受控访问 + 镜像变体）；不作为基座采用，因为 signpost 不支持 U-Boot、其
+settings 树没有协调回路（撑不起 connd 级网络）、AWS 耦合的构建体系加上
+薄弱的非 AWS 社区使派生比 Talos 路线更贵。其 init 选择（无聊的 systemd、
+Rust 只在边缘）已记录为 research/init-strategy.md 的 Plan B。
+
+无论如何吸收的部分：**tough**（Rust TUF 库）用于 `update/sign`、
+**migrator** 模式用于配置 schema 迁移、**admin 容器**模式作为 `sealed`
+profile 的访问选项、**waves** 用于机队灰度。
+
+## 5. 定位
 
 balenaOS 赢在云管容器机队；Torizon 赢在工业 SoM 与升级标准；Talos 赢在
 不可变性与声明式纯粹。mos 以 Talos 架构为差异化根基，回补其数据中心出身

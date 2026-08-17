@@ -56,7 +56,27 @@
 | OCI/registry as update transport | second transport beside static HTTP + lockbox must exist anyway; registry adds a stateful service for zero gain |
 | Keeping the deletion-based fork | 401-commit drift proved unmergeable; upstream k8s-less gating (9ffa772ba) made it obsolete |
 
-## 4. Positioning
+## 4. Addendum: Bottlerocket (evaluated 2026-08-17)
+
+AWS's from-scratch immutable OS: upstream LTS kernel + glibc + **systemd** +
+patched GRUB (GPT-priority A/B via signpost), all management userland in Rust
+(apiserver, updog/TUF, migrator), host access via admin/control containers,
+dm-verity rootfs, SELinux enforcing. Build system: Rust `buildsys` driving
+internal RPM specs (no runtime package manager).
+
+Verdict: **same architectural pattern mos converged on independently**
+(immutable + verity + A/B + TUF + gated access + image variants); not adopted
+as a base because signpost speaks no U-Boot, its settings tree has no
+reconciliation loop (too weak for connd-class networking), and the
+AWS-coupled build system plus thin non-AWS community make derivation more
+expensive than the Talos path. Its init choice (boring systemd, Rust only at
+the edges) is recorded as Plan B in research/init-strategy.md.
+
+Adopted from it regardless: **tough** (Rust TUF library) for `update/sign`,
+the **migrator** pattern for config schema migrations, the **admin container**
+pattern as a `sealed`-profile access option, **waves** for fleet rollout.
+
+## 5. Positioning
 
 balenaOS wins at cloud-managed container fleets; Torizon wins at industrial
 SoM + update standards; Talos wins at immutability and declarative purity. mos

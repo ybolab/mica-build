@@ -67,7 +67,18 @@ release 一致，镜像组装期断言。
 （cx3576：recovery 按键 → rockusb，启动失败兜底 → rockusb）。启动脚本与
 RAUC `system.conf` 由同一来源（`GenerateAssets`）生成，杜绝漂移。
 
-## 6. 新板接入 checklist
+## 6. 内核支持政策（2026-08-17 决策）
+
+Talos 基座有硬性内核下限（fsopen/fsconfig 挂载 API = 5.2；`dm-mod.create=`
+verity = 5.1；< 6.7 已内置 overlay 旧语法回退）。板卡准入分档：
+
+| 档 | 内核 | 支持 |
+|---|---|---|
+| 1 | >= 5.10 LTS | 完整支持（主流厂商 BSP：RK 5.10/6.1、NXP 5.15/6.6、TI 6.1） |
+| 2 | 5.4 | 按板评估；预期小 shim，无结构性工作 |
+| — | 4.x | **Talos 基座不支持。**按序评估：(a) 厂商内核升级 / SoC 主线化；(b) 该板走 "mos-lite" 形态（Alpine 级底座 + mos 服务容器化）；(c) 若 4.x 板成为主力需求，触发 init 战略 Plan B（research/init-strategy.md） |
+
+## 7. 新板接入 checklist
 
 1. 建 `board/<name>/`，写 board.yaml（非 UEFI 另加 kernel/uboot 目录）。
 2. 内核：厂商树 + mos-required 片段合入；断言全绿。
@@ -77,7 +88,7 @@ RAUC `system.conf` 由同一来源（`GenerateAssets`）生成，杜绝漂移。
 5. 消费 BSP 产物的 Talos 镜像在真机启动到 webd healthz。
 6. 拔电压测台跑过，板卡才算 supported。
 
-## 7. 现有板卡
+## 8. 现有板卡
 
 | 板卡 | 架构 | 引导链 | 状态 |
 |---|---|---|---|

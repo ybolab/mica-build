@@ -11,6 +11,7 @@
   - `provisioning.md` — configuration without a network: three-layer model
 - `research/` — decision-basis studies
   - `os-comparison.md` — balena/Torizon/Talos/Yocto evaluation and rejected alternatives
+  - `init-strategy.md` — init core strategy: Plan A Talos / Plan B systemd+Rust / Plan C Rust PID1, with triggers
 - `plan/` — PMA plans (numbered, with status index)
 - `task/` — PMA task tracking
 

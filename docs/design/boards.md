@@ -69,7 +69,19 @@ rescue path (cx3576: recovery-key → rockusb, boot-failure → rockusb fallback
 The boot script and RAUC `system.conf` are generated from one source
 (`GenerateAssets`) to prevent drift.
 
-## 6. Adding a new board — checklist
+## 6. Kernel support policy (decision 2026-08-17)
+
+The Talos-based OS core has hard kernel floors (fsopen/fsconfig mount API =
+5.2; `dm-mod.create=` verity = 5.1; legacy-overlay fallback shipped for < 6.7).
+Board intake tiers:
+
+| Tier | Kernel | Support |
+|---|---|---|
+| 1 | >= 5.10 LTS | Full support (mainstream vendor BSPs: RK 5.10/6.1, NXP 5.15/6.6, TI 6.1) |
+| 2 | 5.4 | Per-board evaluation; small shims expected, no structural work |
+| — | 4.x | **Not supported by the Talos core.** Options in order: (a) vendor kernel uplift / mainline the SoC; (b) "mos-lite" profile for that board (Alpine-class base + mos services as containers); (c) if 4.x boards become a primary requirement, that fires the init-strategy Plan B trigger (research/init-strategy.md) |
+
+## 7. Adding a new board — checklist
 
 1. Create `board/<name>/` with board.yaml (+ kernel/uboot dirs if not UEFI).
 2. Kernel: vendor tree + mos-required fragment merged; assertions green.
@@ -79,7 +91,7 @@ The boot script and RAUC `system.conf` are generated from one source
 5. Talos image consuming the artifacts boots to webd healthz on hardware.
 6. Power-cut rig run before the board is called supported.
 
-## 7. Current boards
+## 8. Current boards
 
 | Board | Arch | Boot chain | Status |
 |---|---|---|---|

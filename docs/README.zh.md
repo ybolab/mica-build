@@ -11,6 +11,7 @@
   - `provisioning.md` — 无网配置：三层供给模型
 - `research/` — 决策依据研究
   - `os-comparison.md` — balena/Torizon/Talos/Yocto 评估与被否决方案
+  - `init-strategy.md` — init 核心战略：Plan A Talos / Plan B systemd+Rust / Plan C Rust PID1 与触发器
 - `plan/` — PMA 计划（编号 + 状态索引；仅英文）
 - `task/` — PMA 任务跟踪（仅英文）
 
