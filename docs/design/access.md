@@ -1,5 +1,7 @@
 # Design: Debug & Maintenance Access
 
+> English | [中文](access.zh.md)
+>
 > Shell/SSH/console access for an immutable appliance — configuration-driven,
 > auditable, lockable, and absent from production images. Companion to
 > architecture.md §5. Implementation is phased; phase 1 ships a per-device

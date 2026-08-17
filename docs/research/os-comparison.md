@@ -1,5 +1,7 @@
 # Research: OS Landscape Comparison (decision basis)
 
+> English | [中文](os-comparison.zh.md)
+>
 > Condensed from the 2026-08 evaluation of balenaOS, Talos, Torizon OS, Venus
 > OS, and Yocto-from-scratch. Records what was chosen from whom and what was
 > rejected — so future contributors don't re-litigate settled trade-offs.

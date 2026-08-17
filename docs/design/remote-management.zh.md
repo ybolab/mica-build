@@ -1,0 +1,46 @@
+# 设计：远程管理与 API 面
+
+> [English](remote-management.md) | 中文
+>
+> 谁通过什么协议、以何种信任与设备对话。关于保留 apid（上游机器 API）与
+> webd（产品 UI）并存的决策记录。
+
+## 1. 双前端，一个 machined
+
+| | webd | apid + talosctl |
+|---|---|---|
+| 受众 | 终端用户 / 设备所有者 | 运维、自动化、未来机队管理面 |
+| 协议 | HTTPS + 会话认证（首启设置） | gRPC :50000，双向 TLS（talosconfig） |
+| 范围 | 设置向导、状态、网络、升级 UI | 完整机器 API：apply-config、upgrade、日志、事件、reset |
+| 维护方 | 我们 | **上游 Talos**（保留它的决定性理由） |
+| 默认 | 开 | **关**（或仅绑管理网段）；按部署启用 |
+
+两者都是 `/run/machined.sock` 之上的薄前端，都不持有状态。trustd 保持关闭
+（节点间信任在单机 appliance 上没有角色）；appliance 的 apid 使用本地签发
+PKI（controlplane 式），已在基线切换 campaign 中实现并有测试覆盖。
+
+## 2. 触达 NAT 后的设备
+
+采纳上游方案作为规划中的机队路径：**SideroLink** —— 设备主动向管理端拨出
+WireGuard 隧道，apid 经隧道可达（Omni 的底层机制；协议与配置类型均在树内）。
+拓扑上等价于 balena 的 VPN 回连，但由上游持续维护。
+
+尚未排期；落地时的前置决策：管理端托管方式、设备注册（join token vs 预置）、
+以及 ECU 版本清单（PLAN-006 phase 2 director）如何复用该通道。
+
+## 3. 升级控制流
+
+第一阶段（day-1）：设备拉取——updater 按 `UpdateConfig` 策略检查静态 Uptane
+仓库；webd 提供手动检查/应用；lockbox 覆盖离线。此阶段不存在管理服务器，
+服务端除静态内容托管外无任何可运维/可攻破的组件。
+
+机队阶段（phase 2）：director 仓库增加按设备定向；apid/SideroLink 提供指令
+式触达（触发升级、取日志）。webd 在任何阶段都是本地兜底。
+
+## 4. 安全姿态
+
+- apid 默认关闭 ⇒ 消费级部署在局域网上只暴露 webd。
+- talosconfig 客户端证书是运维凭据——绝不下发到终端用户设备的所有者手里。
+- SideroLink 隧道由设备侧发起；设备不开任何入站端口。
+- 三个平面（webd 会话、apid mTLS、SideroLink WG）是独立凭据域；攻破其一
+  不授予其余。

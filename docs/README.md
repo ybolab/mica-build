@@ -1,5 +1,7 @@
 # mos documentation
 
+> English | [中文](README.zh.md)
+
 - `architecture.md` — top-level system architecture and component map (start here)
 - `design/` — subsystem design records
   - `access.md` — debug/maintenance access: channels, auth phases, lockdown layers
@@ -10,5 +12,8 @@
 - `plan/` — PMA plans (numbered, with status index)
 - `task/` — PMA task tracking
 
-Rules: English only in repo docs; plans follow the PMA lifecycle
-(investigate → proposal → implement) with status markers in `plan/index.md`.
+Rules: architecture/design/research docs are bilingual (`*.zh.md` is the
+Chinese counterpart; English is authoritative on conflict, update both
+together); `plan/` and `task/` are PMA process docs, English only, following
+the PMA lifecycle (investigate → proposal → implement) with status markers in
+`plan/index.md`.

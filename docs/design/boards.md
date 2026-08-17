@@ -1,5 +1,7 @@
 # Design: Board Support (BSP) Contract
 
+> English | [中文](boards.zh.md)
+>
 > How a board joins mos: what it must produce, what the OS build consumes, and
 > the hard assertions between them. Reference implementation: `board/cx3576`.
 

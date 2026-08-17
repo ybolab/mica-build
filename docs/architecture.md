@@ -1,5 +1,7 @@
 # mos System Architecture
 
+> English | [中文](architecture.zh.md)
+>
 > Status: living document. Detailed designs live in `design/` and `plan/`;
 > this file is the top-level map. Last updated: 2026-08-17.
 

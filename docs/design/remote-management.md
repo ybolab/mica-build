@@ -1,5 +1,7 @@
 # Design: Remote Management & API Surface
 
+> English | [中文](remote-management.zh.md)
+>
 > Who talks to the device, over what, with which trust. Decision record for
 > keeping apid (upstream machine API) alongside webd (product UI).
 
