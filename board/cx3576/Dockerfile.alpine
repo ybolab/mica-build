@@ -1,19 +1,20 @@
 # syntax=docker/dockerfile:1
 # =============================================================================
-# Alpine 调试盘组装器（根级镜像合成）
+# Alpine debug-disk assembler (top-level image composition)
 #
-# 输入均为上游构建好的成品，本级不编译 U-Boot、内核或 rootfs：
+# All inputs are prebuilt upstream artifacts; this stage does not build U-Boot,
+# the kernel, or the rootfs:
 #   out/uboot/u-boot-rockchip.bin
 #   out/kernel/Image
 #   out/kernel/rk3576-src.dtb
 #   out/rootfs/rootfs.img
 #
-# 固定磁盘布局：
+# Fixed disk layout:
 #   sector 64        idbloader + U-Boot FIT
-#   p1 @ 16 MiB      boot，64 MiB FAT32，包含 extlinux、Image、DTB
-#   p2 @ 80 MiB      Alpine ext4 rootfs，首启扩到 eMMC 末尾
+#   p1 @ 16 MiB      boot, 64 MiB FAT32, holds extlinux, Image, DTB
+#   p2 @ 80 MiB      Alpine ext4 rootfs, grown to the end of eMMC on first boot
 #
-# 产物：out/disk.img（make image）
+# Output: out/disk.img (make image)
 # =============================================================================
 
 FROM --platform=$BUILDPLATFORM ubuntu:24.04 AS assemble

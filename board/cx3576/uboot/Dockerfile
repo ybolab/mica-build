@@ -1,19 +1,22 @@
 # syntax=docker/dockerfile:1
 # =============================================================================
-# uboot/ — mainline U-Boot for CX3576-Z（交叉编译，任意架构主机）
+# uboot/ — mainline U-Boot for CX3576-Z (cross-compiled, any host arch)
 #
-#   make uboot   （= docker buildx build -f uboot/Dockerfile -o out/uboot uboot）
-#   → out/uboot/u-boot-rockchip.bin   （idbloader+FIT 合一，写 eMMC 扇区 64）
+#   make uboot   (= docker buildx build -f uboot/Dockerfile -o out/uboot uboot)
+#   → out/uboot/u-boot-rockchip.bin   (idbloader+FIT combined; write to eMMC sector 64)
 #
-# 组合：U-Boot v2026.07(tag,同 armbian 参考板) + rkbin DDR v1.12 / BL31 v1.24
-#   （blob 显式钉版：armbian 报告 v1.09+ 在部分 rk3576 板启动失败，本板 v1.12 实测 OK）
-# 定制（详见 docs/uboot.md）：
-#   · adc-keys：按住 recovery 键(saradc ch1,17mV 档)上电 → preboot 进 rockusb
-#   · saradc 补 vdd-microvolts=1.8V（mainline 驱动无 vref 则 probe 失败——按键失灵的根因）
-#   · bootcmd 兜底：引导失败自动进 rockusb
+# Combination: U-Boot v2026.07 (tag, same as the armbian reference board) + rkbin
+#   DDR v1.12 / BL31 v1.24 (blobs pinned explicitly: armbian reports v1.09+ fails
+#   to boot on some rk3576 boards; v1.12 verified OK on this board)
+# Customizations:
+#   · adc-keys: hold the recovery key (saradc ch1, 17mV level) at power-on →
+#     preboot enters rockusb
+#   · saradc: add vdd-microvolts=1.8V (the mainline driver fails to probe without
+#     a vref — the root cause of the dead recovery key)
+#   · bootcmd fallback: automatically enter rockusb when boot fails
 #   · patches/*.patch: rockusb enumerates as Loader (bcdUSB=0x0201) and honors
 #     K_FW_RESET subcode 3/6 -> boot-mode-reg flag, so upgrade_tool uf /
-#     rkdeveloptool rd 3 can bounce the board into real maskrom (RFCT-007)
+#     rkdeveloptool rd 3 can bounce the board into real maskrom
 # =============================================================================
 FROM --platform=$BUILDPLATFORM ubuntu:24.04 AS build
 
@@ -64,8 +67,8 @@ RUN cd /uboot && \
       '' \
       '&saradc {' \
       '	status = "okay";' \
-      '	/* u-boot 的 rockchip-saradc 拿不到 vref 会 probe 失败(按键就永远读不到)。' \
-      '	 * generic 板级没配 PMIC,用 vdd-microvolts 兜底 = 板上 vcca_1v8_s0(1.8V,常开) */' \
+      '	/* u-boot rockchip-saradc fails to probe without a vref (so the key can never be read).' \
+      '	 * The generic board has no PMIC config; vdd-microvolts is the fallback = on-board vcca_1v8_s0 (1.8V, always-on) */' \
       '	vdd-microvolts = <1800000>;' \
       '};' >> "$DTSFILE" && \
     scripts/config --enable CMD_ROCKUSB \

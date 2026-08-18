@@ -1,19 +1,19 @@
 # syntax=docker/dockerfile:1
 # =============================================================================
-# kernel/ — armbian/linux-rockchip rk-6.1-rkr5.1 (6.1.115)（交叉编译）
+# kernel/ — armbian/linux-rockchip rk-6.1-rkr5.1 (6.1.115) (cross-compiled)
 #
-#   make kernel   （= docker buildx build -f kernel/Dockerfile -o out/kernel .）
-#   → out/kernel/Image          内核
-#   → out/kernel/modules.tar    内核模块（rootfs 工程负责解到 /lib/modules）
-#   → out/kernel/rk3576-src.dtb  成品 dtb（入树源码 dts 编译,合成级直接用）
+#   make kernel   (= docker buildx build -f kernel/Dockerfile -o out/kernel .)
+#   → out/kernel/Image          kernel image
+#   → out/kernel/modules.tar    kernel modules (rootfs project unpacks them into /lib/modules)
+#   → out/kernel/rk3576-src.dtb  final dtb (built from the in-tree source dts; used as-is by the assembly stage)
 #
-# .config 基线 = kernel/config/kernel-cx3576z.config
-#   （原厂 ikconfig + squashfs-zstd/overlayfs/docker 前置/fbcon，6.1.84 实机验证过，
-#    olddefconfig 自动迁移到 6.1.115）
-# WiFi：AP6275P 走树内 bcmdhd(AP6XXX=m)，SDIO 接口，编成模块
-# 补丁：kernel/patches/*.patch 按文件名顺序施加（YT8531 原厂初始化序列等）
-# dtb：入树源码 kernel/dts/rk3576-cx3576z.dts 直接编译（原厂 base+overlay 路线已废弃）
-# 上下文 = 仓库根（见同目录 Dockerfile.dockerignore 白名单）
+# .config baseline = kernel/config/kernel-cx3576z.config
+#   (vendor ikconfig + squashfs-zstd/overlayfs/docker prerequisites/fbcon;
+#    olddefconfig migrates it to 6.1.115 automatically)
+# WiFi: AP6275P uses in-tree bcmdhd (AP6XXX=m), SDIO interface, built as modules
+# Patches: kernel/patches/*.patch applied in filename order (YT8531 vendor init sequence, etc.)
+# dtb: built directly from the in-tree source kernel/dts/rk3576-cx3576z.dts
+# Context = repo root (see the Dockerfile.dockerignore allowlist next to this file)
 # =============================================================================
 FROM --platform=$BUILDPLATFORM ubuntu:24.04 AS build
 
@@ -42,16 +42,17 @@ COPY --from=mos-common mos-required.fragment /mos-required.fragment
 ARG KERNEL_EXPECT=6.1.115
 RUN cd /ksrc && \
     scripts/config --disable LOCALVERSION_AUTO \
-                   `# WiFi: 本板 AP6275 走 SDIO（原厂 dtb: sdio host+pwrseq 开,WiFi 在 SDIO 上——` \
-                   `#       pcie0 上另挂 Realtek 网卡,与 WiFi 无关,别混淆）。固件路径改标准位置` \
+                   `# WiFi: AP6275 on this board is on SDIO (vendor dtb: sdio host+pwrseq on, WiFi on SDIO --` \
+                   `#       pcie0 carries a separate Realtek NIC unrelated to WiFi, do not confuse them).` \
+                   `#       Firmware paths moved to the standard locations` \
                    --enable BCMDHD_SDIO --disable BCMDHD_PCIE \
                    --set-str BCMDHD_FW_PATH "/lib/firmware/fw_bcmdhd.bin" \
                    --set-str BCMDHD_NVRAM_PATH "/lib/firmware/nvram.txt" \
-                   `# RTC: 板载 AT8563(HYM8563 克隆),原厂用私有 .ko,我们走树内驱动` \
+                   `# RTC: on-board AT8563 (HYM8563 clone); vendor uses a private .ko, we use the in-tree driver` \
                    --enable RTC_DRV_HYM8563 \
-                   `# WiFi 备选:aic8800(双 SKU 设计,原厂 rootfs 同时带 bcmdhd 与 aic8800 .ko)。` \
-                   `# 树内目录门禁 SPARD_WLAN_SUPPORT 无 Kconfig 定义(坑!),0002 补丁改由` \
-                   `# AIC_WLAN_SUPPORT 门禁;子 Makefile 强制 :=m,三件套编成模块。` \
+                   `# WiFi alternative: aic8800 (dual-SKU design; vendor rootfs ships both bcmdhd and aic8800 .ko).` \
+                   `# The in-tree directory gate SPARD_WLAN_SUPPORT has no Kconfig definition (trap!); patch 0002` \
+                   `# switches the gate to AIC_WLAN_SUPPORT; the sub-Makefile forces :=m, all three built as modules.` \
                    --set-str AIC_FW_PATH "/lib/firmware" && \
     ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- \
         scripts/kconfig/merge_config.sh -m .config /mos-required.fragment && \
@@ -95,7 +96,7 @@ RUN cd /ksrc && \
     tar -C /kmods -cf /modules.tar lib && \
     ls /kmods/lib/modules/
 
-# 入树源码 dtb（完整开源路线,extlinux 默认且唯一启动项）
+# In-tree source dtb; the sole extlinux boot entry
 COPY kernel/dts/rk3576-cx3576z.dts /ksrc/arch/arm64/boot/dts/rockchip/
 RUN cd /ksrc && \
     echo 'dtb-$(CONFIG_ARCH_ROCKCHIP) += rk3576-cx3576z.dtb' \
