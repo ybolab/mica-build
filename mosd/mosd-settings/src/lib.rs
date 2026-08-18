@@ -1,36 +1,19 @@
-//! Settings schema for mosd.
+//! Settings library for mosd.
 //!
-//! Stub: a later subtask owns the full schema.
+//! Provides the typed settings tree (schema v1), a Venus-style dot-path
+//! get/set API, atomic TOML persistence on STATE, and a Bottlerocket-style
+//! bidirectional migration framework.
 
 #![forbid(unsafe_code)]
 
-/// Persistent mosd settings tree.
-#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
-pub struct Settings {
-    pub schema_version: u32,
-    pub hostname: String,
-}
+mod error;
+mod migration;
+mod model;
+mod path;
+mod store;
 
-impl Default for Settings {
-    fn default() -> Self {
-        Self {
-            schema_version: 1,
-            hostname: "mos".to_string(),
-        }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn default_roundtrips_via_toml() {
-        let settings = Settings::default();
-        let text = toml::to_string(&settings).unwrap();
-        let parsed: Settings = toml::from_str(&text).unwrap();
-        assert_eq!(parsed, settings);
-        assert_eq!(parsed.schema_version, 1);
-        assert_eq!(parsed.hostname, "mos");
-    }
-}
+pub use error::SettingsError;
+pub use migration::{MigrateV0ToV1, Migration, MigrationRegistry, migrate};
+pub use model::{IfaceSettings, SCHEMA_VERSION, Settings, StaticConfig};
+pub use path::json_path_get;
+pub use store::{DEFAULT_PATH, Store};
