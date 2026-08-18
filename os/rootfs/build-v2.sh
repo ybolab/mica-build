@@ -218,7 +218,7 @@ fi
 # NOTE: os/mkimage-v2.sh currently cross-checks this table against
 # ${ROOTFS_x_GUID} with a case-SENSITIVE shell substring test, and the layout
 # env holds those GUIDs uppercase, so the v2 image assembly fails until
-# RFCT-012 makes that assertion case-insensitive. That is a bug on the
+# RFCT-020 makes that assertion case-insensitive. That is a bug on the
 # assertion side, not here; do not "fix" it by uppercasing this.
 write_cmdline() {
     local out="$1" guid="$2"

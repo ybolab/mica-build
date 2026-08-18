@@ -188,7 +188,7 @@ extlinux before `boot.scr`, which would bypass the RAUC A/B handshake.) So:
   compares with `strncasecmp` and accepts either.
   Caveat: `os/mkimage-v2.sh` currently cross-checks the cmdline against the
   layout env's uppercase `ROOTFS_x_GUID` **case-sensitively**, so v2 image
-  assembly fails until RFCT-012 makes that assertion case-insensitive. Do not
+  assembly fails until RFCT-020 makes that assertion case-insensitive. Do not
   work around it by uppercasing the cmdline.
 
 ## Pack
