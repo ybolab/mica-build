@@ -406,9 +406,31 @@ Every `/etc` write path in the v1 rootfs, and what happens to it under v2:
 | networkd unit rendering by mosd | **No writer exists.** mosd and webd write only `/var/lib/mos/settings.toml` and `/var/lib/mos/webd` (`mosd-settings/src/store.rs`, `webd/src/config.rs`); both land on STATE through `var-lib-mos.mount`. The static `/etc/systemd/network/80-dhcp.network` is baked at build time. If a later milestone adds runtime network rendering it must target `/run/systemd/network`, which networkd reads at higher precedence than `/etc`. |
 | hostname persistence | **Solved**, and it had a live consumer — see below. `/etc/hostname` is bound from `/mnt/state/hostname` and re-applied by `mos-apply-hostname.service`. |
 | `/etc/machine-id` | **Solved via the U-Boot env** (§5), transient until RFCT-018's U-Boot ships. |
+| `/etc/mos/otg-mode` (hwinit-otg override) | **Read-only in v2.** The documented per-device USB OTG role override cannot be created on the device. Defaults from `otg.conf` are unaffected — see below. |
 | `/etc/adjtime` (hwclock) | Not written: no RTC sync unit is enabled. |
 | `/etc/mtab` | Symlink to `/proc/self/mounts` in Debian; never written. |
 | `/etc/.updated`, `/etc/.pwd.lock` | systemd/shadow best-effort writes; they fail silently on EROFS and nothing depends on them. |
+
+### Board hardware-init units under a read-only root
+
+All six `os/hwinit` units are read-only-root safe, checked rather than assumed:
+every `/etc` reference in `hwinit-modules`, `hwinit-otg`, `hwinit-can`,
+`hwinit-bt`, `hwinit-mac` and `hwinit-gadget` is a **read** of its
+`/etc/mos/*.conf` fact file. Their writes go to configfs
+(`/sys/kernel/config/usb_gadget/...` for the CDC ACM gadget), to sysfs, or
+through `ip link` — none of them to the root filesystem.
+
+One consequence is worth recording, because it is a silent capability loss
+rather than an error. `hwinit-otg` supports a per-device override at
+`/etc/mos/otg-mode` (`[ -r /etc/mos/otg-mode ] && mode=$(head -n1 ...)`). On v2
+that path is inside the verity-protected squashfs, so an operator cannot create
+it on the device: the override is effectively unavailable and the board always
+takes the `mode=` from `otg.conf`. Nothing regresses for the default
+configuration, and no code needs changing for it today. When the override is
+actually wanted, the fix is the same shape as everything else here — read it
+from `/mnt/state` (persistent) or `/run` (per-boot) with the `/etc/mos` path
+kept as a fallback. That is a change to `os/hwinit`, which is shared with v1,
+so it is deliberately not made unilaterally from the v2 side.
 
 ### Correction: hostname was not a latent gap
 

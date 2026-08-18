@@ -155,18 +155,36 @@ RUN if [ "$WITH_MOSD" = "1" ] && [ -f /tmp/mosd/mosd ]; then \
 # mechanism) + per-board facts staged from BOARD_DIR/init into /etc/mos.
 # BOARD_INIT_DIR may be an empty dir (boards without hw-init facts): every unit
 # is condition-gated on its conf file, so enabling them is safe either way.
+#
+# The enable list is ENUMERATED from the units that are actually present, never
+# restated here. A hardcoded list is what let this file drift behind the v1
+# Dockerfile once already: mos-mac and mos-gadget were installed but silently
+# left disabled, costing the image its stable MAC and its USB debug console
+# with no error anywhere. Adding a unit to os/hwinit/ is now enough.
+#
+# No board fact appears in this stage. Module names, sysfs paths, UART device,
+# CAN bitrate, MAC seed and gadget IDs all live in BOARD_INIT_DIR and are read
+# from /etc/mos at runtime by the units.
 ARG BOARD_INIT_DIR
 COPY os/hwinit/ /tmp/hwinit/
 COPY ${BOARD_INIT_DIR}/ /tmp/board-init/
-RUN mkdir -p /etc/mos /usr/lib/mos /etc/systemd/system/multi-user.target.wants && \
-    cp -a /tmp/board-init/. /etc/mos/ && \
-    install -m 0755 /tmp/hwinit/hwinit-* /usr/lib/mos/ && \
-    install -m 0644 /tmp/hwinit/*.service /usr/lib/systemd/system/ && \
-    for u in mos-modules mos-otg mos-can mos-bt; do \
-        ln -sf "/usr/lib/systemd/system/$u.service" \
-               "/etc/systemd/system/multi-user.target.wants/$u.service" && \
-        test -L "/etc/systemd/system/multi-user.target.wants/$u.service"; \
-    done && \
+RUN set -eu; \
+    mkdir -p /etc/mos /usr/lib/mos /etc/systemd/system/multi-user.target.wants \
+        /usr/lib/udev/rules.d; \
+    cp -a /tmp/board-init/. /etc/mos/; \
+    install -m 0755 /tmp/hwinit/hwinit-* /usr/lib/mos/; \
+    install -m 0644 /tmp/hwinit/*.service /usr/lib/systemd/system/; \
+    install -m 0644 /tmp/hwinit/*.rules /usr/lib/udev/rules.d/; \
+    enabled=0; \
+    for f in /tmp/hwinit/*.service; do \
+        u="$(basename "$f")"; \
+        ln -sf "/usr/lib/systemd/system/$u" \
+               "/etc/systemd/system/multi-user.target.wants/$u"; \
+        test -L "/etc/systemd/system/multi-user.target.wants/$u"; \
+        enabled=$((enabled + 1)); \
+    done; \
+    test "$enabled" -gt 0; \
+    echo "hwinit: enabled $enabled unit(s)"; \
     rm -rf /tmp/hwinit /tmp/board-init
 
 # journald in RAM only, as in v1. /var is writable under v2, so persistent
@@ -207,6 +225,37 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         squashfs-tools cryptsetup-bin libcap2-bin \
     && rm -rf /var/lib/apt/lists/*
 COPY --from=rootfs / /rootfs/
+
+# Guard the mos-owned files against CJK text (repo rule: code and docs are
+# English). Same mechanism and same character ranges as the v1 pack stage, with
+# the v2-only paths added: the overlay's mount units, seed scripts, repart.d
+# definitions and fw_env.config. Only our own paths are scanned; vendor
+# packages ship translations and are none of our business.
+RUN set -e; \
+    mos_paths=""; \
+    for f in /rootfs/usr/lib/mos /rootfs/etc/mos \
+             /rootfs/usr/lib/udev/rules.d/60-mos-*.rules \
+             /rootfs/usr/lib/systemd/system/mos-*.service \
+             /rootfs/usr/lib/systemd/system/mosd.service \
+             /rootfs/usr/lib/systemd/system/webd.service \
+             /rootfs/usr/share/dbus-1/system.d/com.mos.mosd.conf \
+             /rootfs/etc/systemd/network/*.network \
+             /rootfs/etc/systemd/system/mos-*.service \
+             /rootfs/etc/systemd/system/etc-ssh.mount \
+             /rootfs/etc/systemd/system/etc-hostname.mount \
+             /rootfs/etc/systemd/system/var-lib-mos.mount \
+             /rootfs/etc/repart.d /rootfs/etc/fstab \
+             /rootfs/etc/fw_env.config; do \
+        if [ -e "$f" ]; then mos_paths="$mos_paths $f"; fi; \
+    done; \
+    test -n "$mos_paths"; \
+    hits=$(grep -rlP '[\x{3400}-\x{4dbf}\x{4e00}-\x{9fff}\x{f900}-\x{faff}]' \
+        $mos_paths 2>/dev/null || true); \
+    if [ -n "$hits" ]; then \
+        echo 'CJK text found in mos-owned image files:' >&2; \
+        echo "$hits" >&2; \
+        exit 1; \
+    fi
 
 # Tree surgery that cannot happen in the rootfs stage, either because buildkit
 # bind-mounts the file during RUN or because it would break dpkg.
