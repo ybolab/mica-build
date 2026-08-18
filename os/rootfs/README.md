@@ -220,14 +220,23 @@ iproute2 bluez rfkill) **plus**:
   has to touch a Dockerfile.
 - **`libubootenv-tool`** — provides `fw_printenv` / `fw_setenv`. RAUC's U-Boot
   backend needs it, and so does the first-boot machine-id oneshot (RFCT-015).
+- **`curl`** — the health gate's webd probe (`os/health/mos-health`) fetches
+  `https://127.0.0.1/healthz`. It prefers `curl`, falls back to `wget`, and
+  SKIPs when neither is present. `rauc` links libcurl but does not ship the
+  binary, so without this package the gate reported green while covering two of
+  its three components instead of three — a probe that skips is not a probe that
+  passes. One line to revert if the size budget is ever revisited.
 
 Deliberately **not** added: `squashfs-tools` and `cryptsetup-bin`. Packing the
 root is a build-stage job (they are installed in `Dockerfile.v2`'s pack stage
 only), and the kernel opens the verity device straight from `dm-mod.create=`
 with no userspace tool involved.
 
-Installed size: **216 MB against the 400 MB budget** (v1 is 204 MB). The two new
-packages and their dependencies account for the 12 MB; the budget is unchanged.
+Installed size: **217 MB against the 400 MB budget** (v1 is 204 MB). rauc,
+libubootenv-tool and curl plus their dependencies account for the 13 MB; the
+budget is unchanged. curl's own chain is about 1 MB of that (`curl` 537 KB,
+`libcurl4` 860 KB, `libssh2-1` 345 KB, `libnghttp2-14` 228 KB, `libpsl5` 152 KB,
+`librtmp1` 142 KB, per `rootfs-report-v2.txt`).
 
 ## Read-only root wiring (`overlay-v2/`)
 

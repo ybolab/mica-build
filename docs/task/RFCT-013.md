@@ -623,6 +623,62 @@ and exactly one definition must carry `Weight=1000`.
   `sgdisk --verify` "No problems found".
 - `make os-image-cx3576` + `make os-verify-cx3576` — **RESULT: PASS (88/88)**.
 
+## curl added to the v2 allowlist (2026-08-18, user decision)
+
+RFCT-015's health gate probes systemd, mosd and webd. The webd probe fetches
+`https://127.0.0.1/healthz`, preferring `curl` and falling back to `wget`
+(`os/health/mos-health`), and SKIPped because neither binary shipped — `rauc`
+links libcurl but does not provide the executable.
+
+A probe that skips is the failure class recorded above wearing another hat: the
+gate was green and the gate was correct, it simply was not checking one of the
+three things it claimed to cover. ~1 MB buys the third component.
+
+Changed: `curl` added to the v2 package allowlist in `os/rootfs/Dockerfile.v2`,
+documented in `os/rootfs/README.md` beside the rauc and libubootenv-tool
+entries, as that file requires. `os/rootfs/Dockerfile` (v1) is untouched and
+`os/health/**` is untouched — the probe already prefers curl, so shipping the
+binary is the whole change. One line to revert if the size budget is revisited.
+
+Deliberately not attempted: exercising the probe end to end. webd does not run
+in a build container, so a live `/healthz` response is on-device behaviour and
+stays with hardware acceptance. The deliverable is that the binary exists so the
+probe stops skipping.
+
+### Verification
+
+- `make os-rootfs-cx3576-v2` — green. `TOTAL_MB` **216 -> 217** against the
+  400 MB budget, i.e. **+1 MB**, leaving 183 MB of headroom. The curl chain is
+  about 1 MB by dpkg Installed-Size: `curl` 537 KB, `libcurl4` 860 KB,
+  `libssh2-1` 345 KB, `libnghttp2-14` 228 KB, `libpsl5` 152 KB, `librtmp1`
+  142 KB (`libcurl3-gnutls` was already present for rauc).
+- **Reproducibility**, two cache-hot runs:
+  `sha256(rootfs-verity.img)` =
+  `9ec8e97c19e7c4440a21431cd07210b319f1abd276eab74d061eaf5353bdeacd` both runs,
+  `cmp` clean; `VERITY_ROOT_HASH` =
+  `757e0831a06191412f636bc92fb2ece861b88f6b3d830f66838970cd3171b4a2` both runs.
+  Both changed from the previous build, as expected — a new package changes
+  rootfs content and the root hash covers it.
+- **Binary present in the PACKED squashfs**, not merely in the Dockerfile:
+  ```
+  -rwxr-xr-x root/root  329888  squashfs-root/usr/bin/curl
+  ```
+  executable bit set, and `file` reports
+  `ELF 64-bit LSB pie executable, ARM aarch64 ... dynamically linked`, with
+  `libcurl.so.4 -> libcurl.so.4.8.0` present alongside it. This is the check
+  that matters: the package being in the allowlist is not the same as the binary
+  being in the image, which is exactly how `mos-mac`/`mos-gadget` shipped
+  installed-but-disabled earlier in this task.
+- `veritysetup verify` in a container, userspace, no host device-mapper: OK.
+- `make os-image-cx3576-v2` — green. Rootfs payload 53 -> **54 MiB**, slot and
+  image sizes unchanged (256 MiB slot, 1315 MiB image); `sgdisk --verify`
+  "No problems found".
+- `make os-devkeys && make os-bundle-cx3576` — green; bundle verifies against
+  the dev keyring and its rootfs checksum matches the built image.
+- `make os-image-cx3576` + `make os-verify-cx3576` — **RESULT: PASS (88/88)**,
+  and `curl` does not appear in the v1 `rootfs-report.txt`, confirming the v1
+  allowlist is unchanged.
+
 ## Escalations
 
 - `board/common/mos-required.fragment` on this branch's base (`fd6233f`) does
