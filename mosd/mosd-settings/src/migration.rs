@@ -72,7 +72,7 @@ impl MigrationRegistry {
 impl Default for MigrationRegistry {
     /// Registry holding every migration shipped with this crate.
     fn default() -> Self {
-        Self::new(vec![Box::new(MigrateV0ToV1)])
+        Self::new(vec![Box::new(MigrateV0ToV1), Box::new(MigrateV1ToV2)])
     }
 }
 
@@ -110,6 +110,34 @@ impl Migration for MigrateV0ToV1 {
     fn down(&self, doc: &mut toml::Table) -> Result<(), SettingsError> {
         doc.remove("schema_version");
         doc.remove("network");
+        Ok(())
+    }
+}
+
+/// v1 -> v2: adds the webd-owned `access` subtree.
+///
+/// `up` stamps `schema_version = 2` and adds an empty `access` table when
+/// absent; `down` removes the `access` key entirely. Rolling back to v1 drops
+/// the web admin password, which is acceptable because v1 software has no
+/// webd.
+pub struct MigrateV1ToV2;
+
+impl Migration for MigrateV1ToV2 {
+    fn target_version(&self) -> u32 {
+        2
+    }
+
+    fn up(&self, doc: &mut toml::Table) -> Result<(), SettingsError> {
+        doc.insert("schema_version".to_string(), toml::Value::Integer(2));
+        if !doc.contains_key("access") {
+            doc.insert("access".to_string(), toml::Value::Table(toml::Table::new()));
+        }
+        Ok(())
+    }
+
+    fn down(&self, doc: &mut toml::Table) -> Result<(), SettingsError> {
+        doc.insert("schema_version".to_string(), toml::Value::Integer(1));
+        doc.remove("access");
         Ok(())
     }
 }
