@@ -679,6 +679,98 @@ probe stops skipping.
   and `curl` does not appear in the v1 `rootfs-report.txt`, confirming the v1
   allowlist is unchanged.
 
+## rauc-service added to the v2 allowlist (2026-08-18)
+
+Third instance of the same failure shape in two days: an image that builds
+clean, passes every check, and cannot do the one thing it exists for.
+
+Confirmed the defect before changing anything rather than taking it on trust:
+
+- The packed image contained `/usr/bin/rauc`, `/etc/rauc/system.conf` and
+  nothing else RAUC-related — no `de.pengutronix.rauc.conf`, no
+  `system-services/de.pengutronix.rauc.service`.
+- `rauc` 1.8-2 `Depends: libc6, libcurl3-gnutls, libfdisk1, libglib2.0-0,
+  libjson-glib-1.0-0, libssl3, dbus, systemd` — and has **no `Recommends` line
+  at all**, so `--no-install-recommends` is not what dropped it. The dependency
+  simply runs the other way: `rauc-service` `Depends: rauc`.
+
+Debian's CLI is built *with* service support, so it never operates locally — it
+proxies every call over D-Bus. Without the service package `rauc status` fails
+with *"The name de.pengutronix.rauc was not provided by any .service files"*,
+the health gate never marks the slot good, and every update rolls back.
+
+`rauc-service` added to the v2 allowlist and documented in
+`os/rootfs/README.md`. It is 47 KB.
+
+### Unit ordering: nothing is needed, and here is why
+
+`mos-health.service` calls `rauc status`, so the question is whether it needs an
+ordering dependency on the D-Bus service. It does not, and the reasoning is
+worth recording so the conclusion can be rechecked rather than re-derived:
+
+- Activation is systemd-mediated, not `Exec`-forked:
+  `de.pengutronix.rauc.service` carries `SystemdService=rauc.service`, so
+  dbus-daemon asks systemd to start the unit on first call.
+- `rauc.service` is `Type=dbus`, `BusName=de.pengutronix.rauc`,
+  `After=dbus.service`. It is activated on demand and therefore needs no
+  `[Install]` section and no enable step — nothing to wire up.
+- `mos-health.service` is `After=multi-user.target` and `WantedBy=multi-user.target`.
+  `dbus.service` is long since running by the time `multi-user.target` is
+  reached, so the activation path is available whenever the gate runs.
+
+The activation chain was verified to close *inside the packed image*: the
+activation file names `rauc.service`, and `/usr/lib/systemd/system/rauc.service`
+is present. A dangling `SystemdService=` would have been the same class of
+silent gap as an installed-but-not-enabled unit.
+
+`os/health/**`, `os/rauc/**`, `os/boot/**` and `os/mkimage-v2.sh` were not
+touched.
+
+### PLAN-006 contradiction — reported, not resolved
+
+PLAN-006 Part F specifies RAUC built CLI-only (`-Dservice=false`, "no D-Bus, no
+resident daemon; invoked as a short-lived process"). That does not hold for the
+Debian packaging: its CLI *requires* the daemon, so shipping `rauc-service` is a
+deviation from the plan, not an implementation of it. Adding the package is the
+right call for M4 — building rauc from source to honour the CLI-only model is a
+subproject, not a package line — but the plan says otherwise and this must not
+be papered over. RFCT-019 owns recording it in PLAN-006's implementation notes.
+Not edited here.
+
+### Verification
+
+- `make os-rootfs-cx3576-v2` — green. `TOTAL_MB` **217, unchanged**: at 47 KB
+  by dpkg Installed-Size, `rauc-service` is below the megabyte rounding.
+  183 MB of headroom against the 400 MB budget.
+- **Reproducibility**, two cache-hot runs:
+  `sha256(rootfs-verity.img)` =
+  `7ea720d59892d2e127e32355edb094b206c2d3cd5bcc265280b9521ec5a25843` both runs,
+  `cmp` clean; `VERITY_ROOT_HASH` =
+  `fdb10b3d36c7f1946deb381c05e59ab3fdd47bacd764d835436e35ac2b86e8fd` both runs.
+- **D-Bus files present in the PACKED squashfs**, paths and sizes quoted from
+  `unsquashfs -ll`:
+  ```
+  -rw-r--r-- root/root  458  usr/share/dbus-1/system.d/de.pengutronix.rauc.conf
+  -rw-r--r-- root/root  116  usr/share/dbus-1/system-services/de.pengutronix.rauc.service
+  -rw-r--r-- root/root  238  usr/lib/systemd/system/rauc.service
+  -rw-r--r-- root/root 4133  usr/share/dbus-1/interfaces/de.pengutronix.rauc.Installer.xml
+  -rwxr-xr-x root/root  110  usr/share/rauc/rauc-service.sh
+  ```
+  The policy grants `own` to root and `send_destination` to default context.
+- `veritysetup verify` in a container, userspace, no host device-mapper: OK.
+- `make os-image-cx3576-v2` — green. Image 1315 MiB, `sgdisk --verify`
+  "No problems found".
+- `make os-devkeys && make os-bundle-cx3576` — green; bundle verifies and its
+  rootfs checksum matches the built image.
+- `make os-image-cx3576` + `make os-verify-cx3576` — **RESULT: PASS (88/88)**,
+  and neither `rauc-service` nor `curl` appears in the v1 `rootfs-report.txt`,
+  confirming the v1 allowlist is unchanged in content as well as in checks.
+
+Not attempted: running `rauc status` end to end. There is no system bus and no
+booted slot in a build container, so a live D-Bus round trip is on-device
+behaviour and stays with hardware acceptance. What is verified here is that the
+activation chain is complete in the image.
+
 ## Escalations
 
 - `board/common/mos-required.fragment` on this branch's base (`fd6233f`) does
