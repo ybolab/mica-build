@@ -3,8 +3,11 @@ set -euo pipefail
 
 # Verifies a cx3576 mos disk image against the PLAN-010 M1 image contract:
 # GPT layout, raw u-boot, FAT boot partition contents and the Debian systemd
-# rootfs on p2. Emits one PASS:/FAIL: line per check and a final
+# rootfs on p2, plus the mosd daemon integration (binary, unit, D-Bus policy).
+# Emits one PASS:/FAIL: line per check and a final
 # "RESULT: PASS|FAIL (n/m checks)" summary; exits non-zero if any check fails.
+# Expected total on the default path: 47 checks (42 for the M1 contract + 5
+# for mosd).
 #
 # No loop mounts and no --privileged: GPT is inspected with sgdisk, the FAT
 # partition with mtools at an offset, and the ext4 partition by dd-extracting
@@ -426,6 +429,29 @@ if dbg "cat /etc/systemd/journald.conf.d/00-volatile.conf" | grep -q "Storage=vo
 else
     fail "/etc/systemd/journald.conf.d/00-volatile.conf missing or lacks Storage=volatile"
 fi
+
+# --- mosd daemon integration ---
+ext_regular /usr/bin/mosd
+MOSD_BIN="${TMP}/mosd-bin"
+dbg "dump /usr/bin/mosd ${MOSD_BIN}" >/dev/null
+elf_head="$(od -An -tx1 -N20 "${MOSD_BIN}" 2>/dev/null | tr -d ' \n')"
+# ELF magic 7f454c46; e_machine at offset 18 is 0xB7 (aarch64, little-endian).
+if [ "${elf_head:0:8}" = "7f454c46" ] && [ "${elf_head:36:4}" = "b700" ]; then
+    pass "/usr/bin/mosd is an aarch64 ELF"
+else
+    fail "/usr/bin/mosd is not an aarch64 ELF (header: '${elf_head:0:40}')"
+fi
+if dbg "cat /usr/lib/systemd/system/mosd.service" | grep -q "BusName=com.mos.mosd"; then
+    pass "/usr/lib/systemd/system/mosd.service present with BusName=com.mos.mosd"
+else
+    fail "/usr/lib/systemd/system/mosd.service missing or lacks BusName=com.mos.mosd"
+fi
+if dbg "stat /etc/systemd/system/multi-user.target.wants/mosd.service" | grep -q "Inode:"; then
+    pass "mosd.service is enabled (multi-user.target.wants)"
+else
+    fail "mosd.service enablement symlink missing"
+fi
+ext_regular /usr/share/dbus-1/system.d/com.mos.mosd.conf
 
 # --- summary ---
 total=$((PASS_N + FAIL_N))

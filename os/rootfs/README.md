@@ -28,6 +28,21 @@ Only: systemd systemd-sysv systemd-resolved udev dbus kmod openssh-server
 iproute2 (plus their hard dependencies). Do not add packages without updating
 this list.
 
+## mosd
+
+The mos management daemon is cross-built on the host
+(`mosd/hack/build-aarch64.sh`, rust target `aarch64-unknown-linux-gnu` linked
+with `aarch64-linux-gnu-gcc`) and installed into the rootfs:
+
+- `/usr/bin/mosd` — aarch64 release binary
+- `/usr/lib/systemd/system/mosd.service` — enabled via the
+  `multi-user.target.wants` symlink
+- `/usr/share/dbus-1/system.d/com.mos.mosd.conf` — D-Bus system bus policy
+- `/var/lib/mos` — daemon state directory
+
+No new apt packages: mosd only needs `dbus` and `systemd`, both already in the
+allowlist. Set `WITH_MOSD=0` to build the rootfs without mosd (default is on).
+
 ## Dev profile — root login
 
 `ROOT_PASSWORD=... bash os/rootfs/build.sh` sets the root password and writes
