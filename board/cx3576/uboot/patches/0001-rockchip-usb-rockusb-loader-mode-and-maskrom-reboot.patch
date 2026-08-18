@@ -1,0 +1,54 @@
+rockchip: usb: report rockusb as loader; honor K_FW_RESET reboot subcodes
+
+Rockchip host tools (rkdeveloptool / upgrade_tool / RKDevTool) classify a
+device purely by bcdUSB & 1: 0x0200 = maskrom (BootROM), 0x0201 = loader.
+Mainline g_dnl keeps the default 0x0200, so rockusb shows up as Maskrom and
+tools enable maskrom-only paths (0x471/0x472 control transfers) that this
+gadget cannot serve. Vendor U-Boot sets 0x0201 in its g_dnl_bind_fixup.
+
+Also implement the rkusb_set_reboot_flag() weak hook: tools send K_FW_RESET
+with subcode 0x03 (reboot to BootROM download / maskrom) or 0x06 (reboot to
+loader). Writing the matching flag to the boot mode register lets
+'upgrade_tool uf' and 'rkdeveloptool rd 3' bounce the board from our rockusb
+into real maskrom, mirroring stock loader behavior.
+
+Upstream-Status: Pending (against v2026.07)
+---
+--- a/arch/arm/mach-rockchip/board.c	2026-08-17 19:57:20.112408388 +0000
++++ b/arch/arm/mach-rockchip/board.c	2026-08-17 19:57:41.943812044 +0000
+@@ -226,8 +226,35 @@
+ 	else
+ 		put_unaligned(CONFIG_USB_GADGET_PRODUCT_NUM, &dev->idProduct);
+ 
++	/*
++	 * Rockchip host tools read bcdUSB & 1 as loader-vs-maskrom. Without
++	 * the odd value they treat rockusb as a BootROM device and speak the
++	 * 0x471/0x472 maskrom protocol this gadget does not implement.
++	 */
++	if (!strcmp(name, "usb_dnl_rockusb"))
++		put_unaligned(cpu_to_le16(0x0201), &dev->bcdUSB);
++
+ 	return 0;
+ }
++
++#if IS_ENABLED(CONFIG_USB_FUNCTION_ROCKUSB)
++void rkusb_set_reboot_flag(int flag);
++void rkusb_set_reboot_flag(int flag)
++{
++	/*
++	 * K_FW_RESET subcodes sent by Rockchip host tools ("uf" bounces a
++	 * loader-mode device back to real maskrom this way):
++	 * 0x03 = reboot to BootROM download, 0x06 = reboot to loader.
++	 */
++	if (!CONFIG_ROCKCHIP_BOOT_MODE_REG)
++		return;
++
++	if (flag == 0x03)
++		writel(BOOT_BROM_DOWNLOAD, CONFIG_ROCKCHIP_BOOT_MODE_REG);
++	else if (flag == 0x06)
++		writel(BOOT_LOADER, CONFIG_ROCKCHIP_BOOT_MODE_REG);
++}
++#endif /* CONFIG_USB_FUNCTION_ROCKUSB */
+ #endif /* CONFIG_USB_GADGET_DOWNLOAD */
+ 
+ #if IS_ENABLED(CONFIG_USB_GADGET_DWC2_OTG) && !IS_ENABLED(CONFIG_DM_USB_GADGET)
