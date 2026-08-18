@@ -29,11 +29,27 @@ if [ ! -f "${LAYOUT_ENV}" ]; then
     echo "error: ${LAYOUT_ENV} not found" >&2
     exit 1
 fi
-# An explicit environment pin must survive sourcing the defaults.
-_slot_pin="${MOS_ROOTFS_SLOT_MIB:-}"
+# Two slot-sizing modes, distinguished by whether MOS_ROOTFS_SLOT_MIB was
+# supplied from the environment at all — never by its value, so a release that
+# legitimately pins the same number as the built-in default still gets the
+# strict mode. The pin has to be captured here because sourcing the layout
+# defaults would otherwise overwrite it.
+if [ -n "${MOS_ROOTFS_SLOT_MIB+set}" ]; then
+    ROOTFS_SLOT_PINNED=1
+    _slot_pin="${MOS_ROOTFS_SLOT_MIB}"
+else
+    ROOTFS_SLOT_PINNED=0
+    _slot_pin=""
+fi
 # shellcheck source=layout/cx3576-v2.env
 . "${LAYOUT_ENV}"
-[ -n "${_slot_pin}" ] && MOS_ROOTFS_SLOT_MIB="${_slot_pin}"
+if [ "${ROOTFS_SLOT_PINNED}" = 1 ]; then
+    if ! [[ "${_slot_pin}" =~ ^[1-9][0-9]*$ ]]; then
+        echo "error: MOS_ROOTFS_SLOT_MIB='${_slot_pin}' is not a positive whole number of MiB" >&2
+        exit 1
+    fi
+    MOS_ROOTFS_SLOT_MIB="${_slot_pin}"
+fi
 export E2FSPROGS_FAKE_TIME
 
 # The four rootfs-side inputs all come from the same producer; name it in every
@@ -129,18 +145,28 @@ assemble() {
         exit 1
     fi
 
-    # SLOT_MIB = max(pin, align16(ceil(verity_mib * 125 / 100))). The pin acts
-    # as a floor: once a device is flashed its slot size is frozen, so releases
-    # meant for existing devices must pin MOS_ROOTFS_SLOT_MIB explicitly.
-    local slot_mib
-    slot_mib=$(((verity_mib * ROOTFS_SLOT_HEADROOM_PCT + 99) / 100))
-    slot_mib=$(((slot_mib + ROOTFS_SLOT_ALIGN_MIB - 1) / ROOTFS_SLOT_ALIGN_MIB * ROOTFS_SLOT_ALIGN_MIB))
-    if [ "${slot_mib}" -lt "${MOS_ROOTFS_SLOT_MIB}" ]; then
+    # Slot sizing. Pinned: the geometry is FROZEN at the pin, and an oversized
+    # rootfs is a build failure — growing the slot would move rootfs-b, meta,
+    # state and ephemeral, producing a GPT that no already-flashed device can
+    # accept and RAUC bundles that no longer fit the deployed slot. Unpinned
+    # (dev path): the built-in default acts as a floor and the slot grows with
+    # the content.
+    local slot_mib mode
+    if [ "${ROOTFS_SLOT_PINNED}" = 1 ]; then
+        mode="pinned"
         slot_mib="${MOS_ROOTFS_SLOT_MIB}"
-    fi
-    if [ "${verity_mib}" -gt "${slot_mib}" ]; then
-        echo "error: ${ROOTFS_VERITY_IMG} is ${verity_mib} MiB but the resolved rootfs slot is ${slot_mib} MiB; raise MOS_ROOTFS_SLOT_MIB or shrink the rootfs" >&2
-        exit 1
+        if [ "${verity_mib}" -gt "${slot_mib}" ]; then
+            echo "error: rootfs slot geometry is pinned at MOS_ROOTFS_SLOT_MIB=${slot_mib} MiB but ${ROOTFS_VERITY_IMG} is ${verity_mib} MiB — $((verity_mib - slot_mib)) MiB too large." >&2
+            echo "The slot size is frozen for every device already flashed with this layout, so it cannot be grown: shrink the rootfs instead." >&2
+            exit 1
+        fi
+    else
+        mode="floor"
+        slot_mib=$(((verity_mib * ROOTFS_SLOT_HEADROOM_PCT + 99) / 100))
+        slot_mib=$(((slot_mib + ROOTFS_SLOT_ALIGN_MIB - 1) / ROOTFS_SLOT_ALIGN_MIB * ROOTFS_SLOT_ALIGN_MIB))
+        if [ "${slot_mib}" -lt "${MOS_ROOTFS_SLOT_MIB}" ]; then
+            slot_mib="${MOS_ROOTFS_SLOT_MIB}"
+        fi
     fi
 
     local rootfs_b_start_mib meta_start_mib state_start_mib ephemeral_start_mib total_size_mib
@@ -149,7 +175,11 @@ assemble() {
     state_start_mib=$((meta_start_mib + META_SIZE_MIB))
     ephemeral_start_mib=$((state_start_mib + STATE_SIZE_MIB))
     total_size_mib=$((ephemeral_start_mib + EPHEMERAL_SIZE_MIB + IMAGE_TAIL_SLACK_MIB))
-    echo "rootfs payload ${verity_mib} MiB -> rootfs slot ${slot_mib} MiB (pin ${MOS_ROOTFS_SLOT_MIB}, ${ROOTFS_SLOT_HEADROOM_PCT}% headroom, ${ROOTFS_SLOT_ALIGN_MIB} MiB aligned); boot ${BOOT_SIZE_MIB}+${BOOT_SIZE_MIB} MiB; image ${total_size_mib} MiB"
+    if [ "${mode}" = "pinned" ]; then
+        echo "rootfs payload ${verity_mib} MiB -> rootfs slot ${slot_mib} MiB (pinned, frozen geometry); boot ${BOOT_SIZE_MIB}+${BOOT_SIZE_MIB} MiB; image ${total_size_mib} MiB"
+    else
+        echo "rootfs payload ${verity_mib} MiB -> rootfs slot ${slot_mib} MiB (floor ${MOS_ROOTFS_SLOT_MIB}, ${ROOTFS_SLOT_HEADROOM_PCT}% headroom, ${ROOTFS_SLOT_ALIGN_MIB} MiB aligned); boot ${BOOT_SIZE_MIB}+${BOOT_SIZE_MIB} MiB; image ${total_size_mib} MiB"
+    fi
     echo "verity root hash ${root_hash}"
 
     mkboot "${workdir}/boot-a.img" "${BOOT_A_FAT_LABEL}" "${BOOT_A_FAT_VOLUME_ID}" "${BOOT_CMDLINE_A}"
@@ -272,12 +302,22 @@ host_can_assemble() {
     return "${rc}"
 }
 
+# The inner run must see the pin only when this one was actually pinned:
+# passing the resolved value unconditionally would turn every build into a
+# frozen-geometry build.
+INNER_ENV=()
+DOCKER_PIN_ARGS=()
+if [ "${ROOTFS_SLOT_PINNED}" = 1 ]; then
+    INNER_ENV=("MOS_ROOTFS_SLOT_MIB=${MOS_ROOTFS_SLOT_MIB}")
+    DOCKER_PIN_ARGS=(-e "MOS_ROOTFS_SLOT_MIB=${MOS_ROOTFS_SLOT_MIB}")
+fi
+
 if host_can_assemble; then
-    KERNEL_IMAGE="${KERNEL_IMAGE}" DTB="${DTB}" UBOOT="${UBOOT}" \
+    env KERNEL_IMAGE="${KERNEL_IMAGE}" DTB="${DTB}" UBOOT="${UBOOT}" \
         ROOTFS_VERITY_IMG="${ROOTFS_VERITY_IMG}" ROOTFS_VERITY_ENV="${ROOTFS_VERITY_ENV}" \
         BOOT_CMDLINE_A="${BOOT_CMDLINE_A}" BOOT_CMDLINE_B="${BOOT_CMDLINE_B}" \
-        IMG_OUT="${OUT_DIR}/${IMG_NAME}" MOS_ROOTFS_SLOT_MIB="${MOS_ROOTFS_SLOT_MIB}" \
-        "${BASH_SOURCE[0]}" --assemble
+        IMG_OUT="${OUT_DIR}/${IMG_NAME}" "${INNER_ENV[@]}" \
+        bash "${BASH_SOURCE[0]}" --assemble
 else
     echo "sgdisk/mkfs.vfat/mcopy/mke2fs(>=1.47) not all available on the host; assembling in a container"
     docker run --rm \
@@ -291,7 +331,7 @@ else
         -e BOOT_CMDLINE_A=/work/_out/cx3576/boot-cmdline-a.txt \
         -e BOOT_CMDLINE_B=/work/_out/cx3576/boot-cmdline-b.txt \
         -e IMG_OUT="/work/_out/cx3576/${IMG_NAME}" \
-        -e MOS_ROOTFS_SLOT_MIB="${MOS_ROOTFS_SLOT_MIB}" \
+        "${DOCKER_PIN_ARGS[@]}" \
         alpine:3.21 \
         sh -c 'apk add --no-cache -q bash coreutils sgdisk dosfstools mtools e2fsprogs && exec bash /work/os/mkimage-v2.sh --assemble'
 fi
