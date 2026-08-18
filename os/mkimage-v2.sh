@@ -2,9 +2,9 @@
 set -euo pipefail
 
 # Assembles the flashable cx3576 (Rockchip RK3576, eMMC /dev/mmcblk0) A/B GPT
-# disk image — layout v2, nine partitions: a redundant U-Boot env pair, two
+# disk image — layout v2, ten partitions: a redundant U-Boot env pair, two
 # FAT32 boot slots, two raw squashfs+dm-verity rootfs slots and the
-# meta/state/ephemeral ext4 partitions. Every layout constant comes from
+# meta/state/ephemeral/data ext4 partitions. Every layout constant comes from
 # os/layout/cx3576-v2.env; nothing is duplicated here.
 #
 # Each boot slot holds Image, rk3576-src.dtb, the shared boot.scr compiled from
@@ -266,17 +266,19 @@ assemble() {
         fi
     fi
 
-    local rootfs_b_start_mib meta_start_mib state_start_mib ephemeral_start_mib total_size_mib
+    local rootfs_b_start_mib meta_start_mib state_start_mib ephemeral_start_mib data_start_mib total_size_mib
     rootfs_b_start_mib=$((ROOTFS_A_START_MIB + slot_mib))
     meta_start_mib=$((rootfs_b_start_mib + slot_mib))
     state_start_mib=$((meta_start_mib + META_SIZE_MIB))
     ephemeral_start_mib=$((state_start_mib + STATE_SIZE_MIB))
-    total_size_mib=$((ephemeral_start_mib + EPHEMERAL_SIZE_MIB + IMAGE_TAIL_SLACK_MIB))
+    data_start_mib=$((ephemeral_start_mib + MOS_VAR_MIB))
+    total_size_mib=$((data_start_mib + DATA_SIZE_MIB + IMAGE_TAIL_SLACK_MIB))
     if [ "${mode}" = "pinned" ]; then
-        echo "rootfs payload ${verity_mib} MiB -> rootfs slot ${slot_mib} MiB (pinned, frozen geometry); boot ${BOOT_SIZE_MIB}+${BOOT_SIZE_MIB} MiB; image ${total_size_mib} MiB"
+        echo "rootfs payload ${verity_mib} MiB -> rootfs slot ${slot_mib} MiB (pinned, frozen geometry); boot ${BOOT_SIZE_MIB}+${BOOT_SIZE_MIB} MiB; meta ${META_SIZE_MIB} + state ${STATE_SIZE_MIB} + var ${MOS_VAR_MIB} + data ${DATA_SIZE_MIB} MiB; image ${total_size_mib} MiB"
     else
-        echo "rootfs payload ${verity_mib} MiB -> rootfs slot ${slot_mib} MiB (floor ${MOS_ROOTFS_SLOT_MIB}, ${ROOTFS_SLOT_HEADROOM_PCT}% headroom, ${ROOTFS_SLOT_ALIGN_MIB} MiB aligned); boot ${BOOT_SIZE_MIB}+${BOOT_SIZE_MIB} MiB; image ${total_size_mib} MiB"
+        echo "rootfs payload ${verity_mib} MiB -> rootfs slot ${slot_mib} MiB (floor ${MOS_ROOTFS_SLOT_MIB}, ${ROOTFS_SLOT_HEADROOM_PCT}% headroom, ${ROOTFS_SLOT_ALIGN_MIB} MiB aligned); boot ${BOOT_SIZE_MIB}+${BOOT_SIZE_MIB} MiB; meta ${META_SIZE_MIB} + state ${STATE_SIZE_MIB} + var ${MOS_VAR_MIB} + data ${DATA_SIZE_MIB} MiB; image ${total_size_mib} MiB"
     fi
+    echo "data is the last partition and the only growth target; systemd-repart extends it to the end of the disk on first boot"
     echo "verity root hash ${root_hash}"
 
     mkbootscr "${workdir}/${BOOT_SCRIPT_NAME}"
@@ -286,7 +288,8 @@ assemble() {
         "${BOOT_CMDLINE_B}" B "${ROOTFS_B_GUID}"
     mkext4 "${workdir}/meta.img" "${META_SIZE_MIB}" "${META_FS_LABEL}" "${META_FS_UUID}"
     mkext4 "${workdir}/state.img" "${STATE_SIZE_MIB}" "${STATE_FS_LABEL}" "${STATE_FS_UUID}"
-    mkext4 "${workdir}/ephemeral.img" "${EPHEMERAL_SIZE_MIB}" "${EPHEMERAL_FS_LABEL}" "${EPHEMERAL_FS_UUID}"
+    mkext4 "${workdir}/ephemeral.img" "${MOS_VAR_MIB}" "${EPHEMERAL_FS_LABEL}" "${EPHEMERAL_FS_UUID}"
+    mkext4 "${workdir}/data.img" "${DATA_SIZE_MIB}" "${DATA_FS_LABEL}" "${DATA_FS_UUID}"
 
     local img_tmp="${IMG_OUT}.tmp"
     rm -f "${img_tmp}"
@@ -328,20 +331,29 @@ assemble() {
         --change-name="${STATE_PARTNUM}:${STATE_LABEL}" \
         --typecode="${STATE_PARTNUM}:${STATE_TYPECODE}" \
         --partition-guid="${STATE_PARTNUM}:${STATE_GUID}" \
-        --new="${EPHEMERAL_PARTNUM}:$((ephemeral_start_mib * MIB_BYTES / SECTOR_SIZE)):+${EPHEMERAL_SIZE_MIB}M" \
+        --new="${EPHEMERAL_PARTNUM}:$((ephemeral_start_mib * MIB_BYTES / SECTOR_SIZE)):+${MOS_VAR_MIB}M" \
         --change-name="${EPHEMERAL_PARTNUM}:${EPHEMERAL_LABEL}" \
         --typecode="${EPHEMERAL_PARTNUM}:${EPHEMERAL_TYPECODE}" \
         --partition-guid="${EPHEMERAL_PARTNUM}:${EPHEMERAL_GUID}" \
+        --new="${DATA_PARTNUM}:$((data_start_mib * MIB_BYTES / SECTOR_SIZE)):+${DATA_SIZE_MIB}M" \
+        --change-name="${DATA_PARTNUM}:${DATA_LABEL}" \
+        --typecode="${DATA_PARTNUM}:${DATA_TYPECODE}" \
+        --partition-guid="${DATA_PARTNUM}:${DATA_GUID}" \
         "${img_tmp}" >/dev/null
 
     # uenv-a/uenv-b and rootfs-b stay holes: nothing is written into them.
-    dd if="${UBOOT}" of="${img_tmp}" bs=512 seek="${UBOOT_SEEK_SECTOR}" conv=notrunc status=none
-    dd if="${workdir}/boot-a.img" of="${img_tmp}" bs=1M seek="${BOOT_A_START_MIB}" conv=notrunc status=none
-    dd if="${workdir}/boot-b.img" of="${img_tmp}" bs=1M seek="${BOOT_B_START_MIB}" conv=notrunc status=none
-    dd if="${ROOTFS_VERITY_IMG}" of="${img_tmp}" bs=1M seek="${ROOTFS_A_START_MIB}" conv=notrunc status=none
-    dd if="${workdir}/meta.img" of="${img_tmp}" bs=1M seek="${meta_start_mib}" conv=notrunc status=none
-    dd if="${workdir}/state.img" of="${img_tmp}" bs=1M seek="${state_start_mib}" conv=notrunc status=none
-    dd if="${workdir}/ephemeral.img" of="${img_tmp}" bs=1M seek="${ephemeral_start_mib}" conv=notrunc status=none
+    # conv=sparse on the payloads keeps the rest of the image sparse too: the
+    # FAT and ext4 images are mostly zeros, and the destination is a freshly
+    # truncated hole, so seeking over a zero block leaves exactly the same
+    # bytes as writing it. Content is unaffected; only allocation is.
+    dd if="${UBOOT}" of="${img_tmp}" bs=512 seek="${UBOOT_SEEK_SECTOR}" conv=notrunc,sparse status=none
+    dd if="${workdir}/boot-a.img" of="${img_tmp}" bs=1M seek="${BOOT_A_START_MIB}" conv=notrunc,sparse status=none
+    dd if="${workdir}/boot-b.img" of="${img_tmp}" bs=1M seek="${BOOT_B_START_MIB}" conv=notrunc,sparse status=none
+    dd if="${ROOTFS_VERITY_IMG}" of="${img_tmp}" bs=1M seek="${ROOTFS_A_START_MIB}" conv=notrunc,sparse status=none
+    dd if="${workdir}/meta.img" of="${img_tmp}" bs=1M seek="${meta_start_mib}" conv=notrunc,sparse status=none
+    dd if="${workdir}/state.img" of="${img_tmp}" bs=1M seek="${state_start_mib}" conv=notrunc,sparse status=none
+    dd if="${workdir}/ephemeral.img" of="${img_tmp}" bs=1M seek="${ephemeral_start_mib}" conv=notrunc,sparse status=none
+    dd if="${workdir}/data.img" of="${img_tmp}" bs=1M seek="${data_start_mib}" conv=notrunc,sparse status=none
 
     local verify
     verify="$(sgdisk --verify "${img_tmp}")"

@@ -21,11 +21,12 @@ Evidence convention used throughout:
   `6.1.115` [V]), fetched read-only.
 - **[U]** UNVERIFIED — cannot be established without a board build or hardware.
 
-`os/layout/cx3576-v2.env` (RFCT-020) has **not** landed on this branch base
-(`fd6233f`); `ls os/layout/` → no such directory [V]. Every constant below is
-therefore quoted from the campaign layout-v2 table, and every generated file
-(defconfig fragment, `fw_env.config`, `boot.cmd`) **must be regenerated from
-`os/layout/cx3576-v2.env` once it exists** so the two sides cannot drift.
+`os/layout/cx3576-v2.env` (RFCT-020) had **not** landed when this analysis was
+written against branch base `fd6233f`; `ls os/layout/` → no such directory [V].
+Every constant below is therefore quoted from the campaign layout-v2 table. The
+file has since landed with RFCT-020, so every generated file (defconfig
+fragment, `fw_env.config`, `boot.cmd`) **must be regenerated from
+`os/layout/cx3576-v2.env`** so the two sides cannot drift.
 
 `CONFIG_SQUASHFS_XATTR` is out of scope here: L1 approved and applied it to
 `board/common/mos-required.fragment` directly. No action in this document.
@@ -282,7 +283,8 @@ slot re-selected.
 ### 3.2 Defconfig fragment (paste into the custom defconfig)
 
 Verified symbol names and semantics against `v2026.07`. Regenerate the three
-hex values from `os/layout/cx3576-v2.env` once RFCT-020 lands.
+hex values from `os/layout/cx3576-v2.env`, which has since landed with
+RFCT-020, whenever the layout changes.
 
 ```
 # --- persistent environment: redundant pair in the eMMC user area -----------

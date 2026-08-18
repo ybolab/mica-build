@@ -199,10 +199,10 @@ fi
 IMG="${WORK}/one.img"
 # SLOT_MIB = max(pin, align16(ceil(4 * 125 / 100))) = max(256, 16) = 256
 SLOT_MIB="${MOS_ROOTFS_SLOT_MIB}"
-EXPECT_TOTAL_MIB=$((ROOTFS_A_START_MIB + 2 * SLOT_MIB + META_SIZE_MIB + STATE_SIZE_MIB + EPHEMERAL_SIZE_MIB + IMAGE_TAIL_SLACK_MIB))
+EXPECT_TOTAL_MIB=$((ROOTFS_A_START_MIB + 2 * SLOT_MIB + META_SIZE_MIB + STATE_SIZE_MIB + MOS_VAR_MIB + DATA_SIZE_MIB + IMAGE_TAIL_SLACK_MIB))
 check "image size is ${EXPECT_TOTAL_MIB} MiB" \
     "$(stat -c %s "${IMG}")" "$((EXPECT_TOTAL_MIB * MIB_BYTES))"
-check "partition count" "$(sgdisk --print "${IMG}" | awk '$1 ~ /^[0-9]+$/ {n++} END {print n+0}')" 9
+check "partition count" "$(sgdisk --print "${IMG}" | awk '$1 ~ /^[0-9]+$/ {n++} END {print n+0}')" 10
 check "disk GUID" "$(sgdisk --print "${IMG}" | sed -n 's/^Disk identifier (GUID): //p')" "${DISK_GUID}"
 
 part_field() { sgdisk -i "$1" "${IMG}" | sed -n "s/^$2: //p"; }
@@ -219,6 +219,7 @@ ROOTFS_B_START_MIB=$((ROOTFS_A_START_MIB + SLOT_MIB))
 META_START_MIB=$((ROOTFS_B_START_MIB + SLOT_MIB))
 STATE_START_MIB=$((META_START_MIB + META_SIZE_MIB))
 EPHEMERAL_START_MIB=$((STATE_START_MIB + STATE_SIZE_MIB))
+DATA_START_MIB=$((EPHEMERAL_START_MIB + MOS_VAR_MIB))
 
 check "p${UENV_A_PARTNUM} offset is ${UENV_A_OFFSET_BYTES} bytes" \
     "$(($(part_field "${UENV_A_PARTNUM}" 'First sector' | cut -d' ' -f1) * SECTOR_SIZE))" \
@@ -244,7 +245,36 @@ assert_part "${META_PARTNUM}" "${META_LABEL}" "${META_GUID}" "${META_TYPECODE}" 
 assert_part "${STATE_PARTNUM}" "${STATE_LABEL}" "${STATE_GUID}" "${STATE_TYPECODE}" \
     "$((STATE_START_MIB * MIB_BYTES / SECTOR_SIZE))" "$((STATE_SIZE_MIB * MIB_BYTES / SECTOR_SIZE))"
 assert_part "${EPHEMERAL_PARTNUM}" "${EPHEMERAL_LABEL}" "${EPHEMERAL_GUID}" "${EPHEMERAL_TYPECODE}" \
-    "$((EPHEMERAL_START_MIB * MIB_BYTES / SECTOR_SIZE))" "$((EPHEMERAL_SIZE_MIB * MIB_BYTES / SECTOR_SIZE))"
+    "$((EPHEMERAL_START_MIB * MIB_BYTES / SECTOR_SIZE))" "$((MOS_VAR_MIB * MIB_BYTES / SECTOR_SIZE))"
+assert_part "${DATA_PARTNUM}" "${DATA_LABEL}" "${DATA_GUID}" "${DATA_TYPECODE}" \
+    "$((DATA_START_MIB * MIB_BYTES / SECTOR_SIZE))" "$((DATA_SIZE_MIB * MIB_BYTES / SECTOR_SIZE))"
+
+# data must be LAST: systemd-repart can only extend the final partition to the
+# end of the disk. Nothing may sit between its end and the backup-GPT slack.
+check "data is the last partition" \
+    "$(sgdisk --print "${IMG}" | awk '$1 ~ /^[0-9]+$/ {n=$1} END {print n}')" "${DATA_PARTNUM}"
+check "data ends ${IMAGE_TAIL_SLACK_MIB} MiB before the end of the image" \
+    "$(($(part_field "${DATA_PARTNUM}" 'Last sector' | cut -d' ' -f1) + 1))" \
+    "$(((EXPECT_TOTAL_MIB - IMAGE_TAIL_SLACK_MIB) * MIB_BYTES / SECTOR_SIZE))"
+check "ephemeral is exactly MOS_VAR_MIB (${MOS_VAR_MIB} MiB), no longer a growth target" \
+    "$(part_field "${EPHEMERAL_PARTNUM}" 'Partition size' | cut -d' ' -f1)" \
+    "$((MOS_VAR_MIB * MIB_BYTES / SECTOR_SIZE))"
+
+# The four ext4 partitions must carry the pinned label and fs UUID and hold no
+# content beyond what mke2fs itself creates.
+assert_ext4() { # partnum start-mib size-mib fs-label fs-uuid
+    local part="${WORK}/ext4-p$1.img"
+    dd if="${IMG}" bs=1M skip="$2" count="$3" status=none > "${part}"
+    check "p$1 fs label" "$(dumpe2fs -h "${part}" 2>/dev/null | sed -n 's/^Filesystem volume name: *//p')" "$4"
+    check "p$1 fs UUID" "$(dumpe2fs -h "${part}" 2>/dev/null | sed -n 's/^Filesystem UUID: *//p')" "$5"
+    check "p$1 is empty apart from lost+found" \
+        "$(debugfs -R 'ls -p /' "${part}" 2>/dev/null | tr '/' '\n' | grep -cvE '^$|^[0-9]+$|^\.$|^\.\.$|^lost\+found$')" 0
+    rm -f "${part}"
+}
+assert_ext4 "${META_PARTNUM}" "${META_START_MIB}" "${META_SIZE_MIB}" "${META_FS_LABEL}" "${META_FS_UUID}"
+assert_ext4 "${STATE_PARTNUM}" "${STATE_START_MIB}" "${STATE_SIZE_MIB}" "${STATE_FS_LABEL}" "${STATE_FS_UUID}"
+assert_ext4 "${EPHEMERAL_PARTNUM}" "${EPHEMERAL_START_MIB}" "${MOS_VAR_MIB}" "${EPHEMERAL_FS_LABEL}" "${EPHEMERAL_FS_UUID}"
+assert_ext4 "${DATA_PARTNUM}" "${DATA_START_MIB}" "${DATA_SIZE_MIB}" "${DATA_FS_LABEL}" "${DATA_FS_UUID}"
 
 # Both FAT slots carry the kernel, the dtb and the shared boot.scr, plus their
 # own mos-verity.env — and NO extlinux config, which would win over boot.scr in
@@ -351,7 +381,7 @@ else
 fi
 
 IMG="${WORK}/pinned.img"
-PIN_TOTAL_MIB=$((ROOTFS_A_START_MIB + 2 * PIN_MIB + META_SIZE_MIB + STATE_SIZE_MIB + EPHEMERAL_SIZE_MIB + IMAGE_TAIL_SLACK_MIB))
+PIN_TOTAL_MIB=$((ROOTFS_A_START_MIB + 2 * PIN_MIB + META_SIZE_MIB + STATE_SIZE_MIB + MOS_VAR_MIB + DATA_SIZE_MIB + IMAGE_TAIL_SLACK_MIB))
 check "pinned image size is ${PIN_TOTAL_MIB} MiB" \
     "$(stat -c %s "${IMG}")" "$((PIN_TOTAL_MIB * MIB_BYTES))"
 check "pinned rootfs-a size is exactly the pin, not the grown size" \
@@ -363,6 +393,8 @@ check "pinned rootfs-b starts at $((ROOTFS_A_START_MIB + PIN_MIB)) MiB" \
 check "pinned meta starts at $((ROOTFS_A_START_MIB + 2 * PIN_MIB)) MiB" \
     "$(part_field "${META_PARTNUM}" 'First sector' | cut -d' ' -f1)" \
     "$(((ROOTFS_A_START_MIB + 2 * PIN_MIB) * MIB_BYTES / SECTOR_SIZE))"
+check "pinned data is still the last partition" \
+    "$(sgdisk --print "${IMG}" | awk '$1 ~ /^[0-9]+$/ {n=$1} END {print n}')" "${DATA_PARTNUM}"
 check "pinned uenv-a offset is still ${UENV_A_OFFSET_BYTES} bytes" \
     "$(($(part_field "${UENV_A_PARTNUM}" 'First sector' | cut -d' ' -f1) * SECTOR_SIZE))" \
     "${UENV_A_OFFSET_BYTES}"
