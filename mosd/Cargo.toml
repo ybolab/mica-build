@@ -35,3 +35,4 @@ maud = "0.27"
 hmac = "0.12"
 sha2 = "0.10"
 tower = { version = "0.5", features = ["util"] }
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "cookies"] }
