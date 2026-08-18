@@ -6,8 +6,7 @@ set -euo pipefail
 # rootfs on p2, plus the mosd daemon integration (binary, unit, D-Bus policy).
 # Emits one PASS:/FAIL: line per check and a final
 # "RESULT: PASS|FAIL (n/m checks)" summary; exits non-zero if any check fails.
-# Expected total on the default path: 47 checks (42 for the M1 contract + 5
-# for mosd).
+# Totals are dynamic (PASS_N/total); nothing to hand-bump when checks change.
 #
 # No loop mounts and no --privileged: GPT is inspected with sgdisk, the FAT
 # partition with mtools at an offset, and the ext4 partition by dd-extracting
@@ -19,8 +18,9 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(dirname "${SCRIPT_DIR}")"
 BOARD_DIR="${BOARD_DIR:-${REPO_ROOT}/board/cx3576}"
 
-# Image contract constants.
-TOTAL_SIZE_BYTES=$((1554 * 1024 * 1024))
+# Image contract constants. The rootfs (p2) size is content-derived, so it is
+# read from the GPT instead of being fixed here; the total image size follows
+# as 16 MiB pre-boot area + 512 MiB boot + p2 + 1 MiB backup-GPT slack.
 DISK_GUID="5AC35760-0001-4000-8000-000000000000"
 BOOT_GUID="5AC35760-0001-4000-8000-000000000001"
 ROOTFS_GUID="5AC35760-0001-4000-8000-000000000002"
@@ -30,11 +30,10 @@ ROOTFS_UUID="5ac35760-0002-4000-8000-000000000002"
 BOOT_FIRST_SECTOR=32768
 BOOT_SIZE_SECTORS=$((512 * 2048))
 ROOTFS_FIRST_SECTOR=1081344
-ROOTFS_SIZE_SECTORS=$((1024 * 2048))
 UBOOT_OFFSET_BYTES=$((64 * 512))
 FAT_OFFSET_BYTES=$((16 * 1024 * 1024))
 ROOTFS_OFFSET_MIB=528
-ROOTFS_SIZE_MIB=1024
+FREE_FLOOR_BYTES=$((32 * 1024 * 1024))
 KERNEL_VERSION="6.1.115"
 APPEND_LINE="append root=PARTLABEL=rootfs rw console=ttyFIQ0,1500000 earlycon=uart8250,mmio32,0x2ad40000 storagemedia=emmc net.ifnames=0 rootwait"
 
@@ -64,7 +63,7 @@ if [ ! -e "${IMG}" ]; then
 fi
 
 # Re-exec in a container when the host lacks any required tool.
-REQUIRED_TOOLS=(sgdisk mdir mcopy debugfs tune2fs cmp)
+REQUIRED_TOOLS=(sgdisk mdir mcopy debugfs tune2fs dumpe2fs e2fsck cmp)
 if [ "${INNER}" -eq 0 ]; then
     missing=0
     for tool in "${REQUIRED_TOOLS[@]}"; do
@@ -133,14 +132,6 @@ if [ "${EXPECT_SYMLINK}" -eq 1 ]; then
     else
         fail "default path must be a symlink to cx3576-mos-<epoch>.img in the same directory (got: ${link_target:-not a symlink})"
     fi
-fi
-
-# --- image size ---
-actual_size="$(stat -Lc %s "${IMG}" 2>/dev/null || echo 0)"
-if [ "${actual_size}" = "${TOTAL_SIZE_BYTES}" ]; then
-    pass "image size is ${TOTAL_SIZE_BYTES} bytes (1554 MiB)"
-else
-    fail "image size is ${actual_size} bytes, expected ${TOTAL_SIZE_BYTES} (1554 MiB)"
 fi
 
 # --- GPT: sgdisk --verify ---
@@ -234,10 +225,12 @@ else
     fail "p2 first sector is '${p2_first}', expected ${ROOTFS_FIRST_SECTOR}"
 fi
 p2_size="$(sg_field "${p2}" "Partition size" | awk '{print $1}')"
-if [ "${p2_size}" = "${ROOTFS_SIZE_SECTORS}" ]; then
-    pass "p2 size is ${ROOTFS_SIZE_SECTORS} sectors (1024 MiB)"
+if [[ "${p2_size}" =~ ^[0-9]+$ ]] && [ "${p2_size}" -gt 0 ] && [ $((p2_size % 2048)) -eq 0 ]; then
+    ROOTFS_SIZE_MIB=$((p2_size / 2048))
+    pass "p2 size is ${p2_size} sectors (${ROOTFS_SIZE_MIB} MiB, a whole-MiB multiple)"
 else
-    fail "p2 size is '${p2_size}' sectors, expected ${ROOTFS_SIZE_SECTORS} (1024 MiB)"
+    ROOTFS_SIZE_MIB=0
+    fail "p2 size is '${p2_size}' sectors, expected a positive whole-MiB multiple"
 fi
 p2_type="$(sg_field "${p2}" "Partition GUID code" | awk '{print $1}')"
 if [ "${p2_type^^}" = "${LINUX_FS_DATA}" ]; then
@@ -250,6 +243,15 @@ if [ "${p2_guid^^}" = "${ROOTFS_GUID}" ]; then
     pass "p2 GUID is ${ROOTFS_GUID}"
 else
     fail "p2 GUID is '${p2_guid}', expected ${ROOTFS_GUID}"
+fi
+
+# --- image size: 16 MiB pre-boot + 512 MiB boot + p2 + 1 MiB backup-GPT slack ---
+expected_size=$(((16 + 512 + ROOTFS_SIZE_MIB + 1) * 1024 * 1024))
+actual_size="$(stat -Lc %s "${IMG}" 2>/dev/null || echo 0)"
+if [ "${ROOTFS_SIZE_MIB}" -gt 0 ] && [ "${actual_size}" = "${expected_size}" ]; then
+    pass "image size is ${expected_size} bytes (16 + 512 + ${ROOTFS_SIZE_MIB} + 1 MiB)"
+else
+    fail "image size is ${actual_size} bytes, expected ${expected_size} (16 + 512 + ${ROOTFS_SIZE_MIB} + 1 MiB)"
 fi
 
 # --- raw u-boot at sector 64 ---
@@ -346,6 +348,31 @@ if [ "${e2uuid,,}" = "${ROOTFS_UUID}" ]; then
     pass "p2 ext4 UUID is ${ROOTFS_UUID}"
 else
     fail "p2 ext4 UUID is '${e2uuid}', expected ${ROOTFS_UUID}"
+fi
+
+# Filesystem geometry and health: the packed ext4 must exactly fill p2, pass
+# fsck, and keep the early-boot free-space margin (writes before repart/growfs).
+e2fs_header="$(dumpe2fs -h "${P2_IMG}" 2>/dev/null || true)"
+block_count="$(echo "${e2fs_header}" | sed -n 's/^Block count:[[:space:]]*//p')"
+block_size="$(echo "${e2fs_header}" | sed -n 's/^Block size:[[:space:]]*//p')"
+free_blocks="$(echo "${e2fs_header}" | sed -n 's/^Free blocks:[[:space:]]*//p')"
+p2_bytes=$((ROOTFS_SIZE_MIB * 1024 * 1024))
+fs_bytes=$((${block_count:-0} * ${block_size:-0}))
+if [ "${fs_bytes}" -gt 0 ] && [ "${fs_bytes}" -eq "${p2_bytes}" ]; then
+    pass "p2 ext4 size (${block_count} blocks x ${block_size} bytes) matches the partition size"
+else
+    fail "p2 ext4 size is ${fs_bytes} bytes, expected ${p2_bytes} (partition size)"
+fi
+free_bytes=$((${free_blocks:-0} * ${block_size:-0}))
+if [ "${free_bytes}" -ge "${FREE_FLOOR_BYTES}" ]; then
+    pass "p2 free space is $((free_bytes / 1048576)) MiB (>= 32 MiB early-boot floor)"
+else
+    fail "p2 free space is ${free_bytes} bytes, below the 32 MiB early-boot floor"
+fi
+if e2fsck -fn "${P2_IMG}" >/dev/null 2>&1; then
+    pass "e2fsck -fn on p2 is clean"
+else
+    fail "e2fsck -fn on p2 reported errors"
 fi
 
 # Run a single debugfs command against the extracted p2.

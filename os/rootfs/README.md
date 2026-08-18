@@ -1,8 +1,24 @@
 # os/rootfs — Debian systemd arm64 rootfs (cx3576, PLAN-010 M1)
 
 Builds a minimal Debian bookworm + systemd root filesystem for the cx3576
-board as a fixed-size 1024 MiB ext4 image, ready to be dd'd into the disk
-image by the assembly step.
+board as a minimally-sized, content-derived ext4 image, ready to be dd'd into
+the disk image by the assembly step.
+
+## Sizing
+
+The pack stage computes the image size from content only (deterministic — no
+clock, no randomness):
+
+```
+size_mib = ceil(du_mib(/rootfs) * 115 / 100) + 48
+```
+
+The 15% headroom scales with content; the fixed 48 MiB margin covers ext4
+metadata (journal, inode tables, bitmaps) plus everything that must be written
+BEFORE systemd-repart + growfs expand the partition on first boot: journal
+replay, systemd first-boot machine-id and /var directories, and ssh host key
+generation. `os/verify-image.sh` asserts that at least 32 MiB of that margin
+survives packing as free space.
 
 ## Build
 
@@ -12,8 +28,8 @@ image by the assembly step.
 BOARD_DIR=/srv/ai/mos/board/cx3576 bash os/rootfs/build.sh
 ```
 
-Outputs to `_out/cx3576/`: `rootfs.img` (ext4, exactly 1024 MiB) and
-`rootfs-report.txt` (package list + installed size; the build fails if the
+Outputs to `_out/cx3576/`: `rootfs.img` (ext4, content-derived whole-MiB size)
+and `rootfs-report.txt` (package list + installed size; the build fails if the
 installed size exceeds 400 MB).
 
 On x86 hosts, arm64 emulation comes from binfmt
@@ -51,8 +67,9 @@ default (unset), root stays locked and SSH root login is not enabled.
 
 ## First-boot growth
 
-The flashed ~1.5 GiB image lands on much larger media (cx3576 eMMC: 116 GiB),
-so the rootfs grows to fill the disk automatically on first boot:
+The flashed image is packed minimally but lands on much larger media (cx3576
+eMMC: 116 GiB), so the rootfs grows to fill the disk automatically on first
+boot:
 
 - `/etc/repart.d/50-rootfs.conf` (`Type=linux-generic`) makes systemd-repart
   grow partition 2 and relocate the backup GPT. The service is statically
