@@ -21,7 +21,8 @@ Scope / deliverables:
    free space >= 32 MiB floor. The repart/growfs first-boot contract is
    unchanged.
 2. Content-derived boot partition (c5bd469): boot partition sized at
-   `max(128, payload+32)` MiB with GPT-derived verify assertions.
+   `align4(max(64, payload+16))` MiB — the 64 MiB floor matches the M4
+   BOOT-A/B slots (PLAN-006) — with GPT-derived verify assertions.
 3. Board hardware-init layer (3197b78): generic oneshot units in `os/hwinit/`
    with board facts split into NEW `board/cx3576/init/` conf files —
    - `mos-modules`: `modprobe -q` dual-SKU WiFi, replacing
@@ -62,6 +63,9 @@ Final verification on integration branch head `fbf20dd`:
   1 MiB slack; byte-identical across cache-hot rebuilds.
 - `bash mosd/hack/check.sh` green on the same head (no Rust changes in this
   task, gate kept green).
+- Boot floor lowered afterwards from 128 to 64 MiB with 4 MiB alignment (the
+  43 MiB payload never needed 128, and M4 reserves 64 MiB BOOT-A/B slots):
+  boot partition 64 MiB, image 390070272 bytes (372 MiB), verify 71/71.
 - Pending user hardware acceptance: wlan0 exists (either WiFi SKU); can0 UP at
   bitrate 500000; hci0 present after boot.
 
