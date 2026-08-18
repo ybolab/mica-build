@@ -1,0 +1,153 @@
+//! HMAC-signed session cookies backed by an in-process session table.
+//!
+//! A cookie value is `<id>.<mac>` where `id` is 16 random bytes hex-encoded
+//! (128 bits) and `mac` is the hex HMAC-SHA256 of `id` under the persistent
+//! signing key. Sessions live in memory only and expire after 24 hours, so a
+//! webd restart logs everyone out.
+
+use std::collections::HashMap;
+use std::sync::Mutex;
+use std::time::{Duration, Instant};
+
+use axum::http::HeaderMap;
+use hmac::{Hmac, Mac};
+use rand::RngCore;
+use sha2::Sha256;
+
+/// Session cookie name.
+pub const COOKIE_NAME: &str = "webd_session";
+const SESSION_TTL: Duration = Duration::from_secs(24 * 60 * 60);
+
+type HmacSha256 = Hmac<Sha256>;
+
+/// Signed-cookie session table.
+pub struct SessionStore {
+    key: [u8; 32],
+    sessions: Mutex<HashMap<String, Instant>>,
+}
+
+impl SessionStore {
+    /// Store signing cookies with `key`.
+    pub fn new(key: [u8; 32]) -> Self {
+        Self {
+            key,
+            sessions: Mutex::new(HashMap::new()),
+        }
+    }
+
+    fn mac(&self, id: &str) -> HmacSha256 {
+        let mut mac = HmacSha256::new_from_slice(&self.key).expect("HMAC accepts any key length");
+        mac.update(id.as_bytes());
+        mac
+    }
+
+    /// Create a session and return the signed cookie value.
+    pub fn create(&self) -> String {
+        let mut id_bytes = [0u8; 16];
+        rand::rngs::OsRng.fill_bytes(&mut id_bytes);
+        let id = hex_encode(&id_bytes);
+        let mac = hex_encode(&self.mac(&id).finalize().into_bytes());
+        self.sessions
+            .lock()
+            .expect("session lock")
+            .insert(id.clone(), Instant::now() + SESSION_TTL);
+        format!("{id}.{mac}")
+    }
+
+    /// Split a cookie value into its id, verifying the signature.
+    fn verify_signature(&self, value: &str) -> Option<String> {
+        let (id, mac_hex) = value.split_once('.')?;
+        let mac_bytes = hex_decode(mac_hex)?;
+        self.mac(id).verify_slice(&mac_bytes).ok()?;
+        Some(id.to_string())
+    }
+
+    /// True when `value` is well-signed and names a live session.
+    pub fn verify(&self, value: &str) -> bool {
+        let Some(id) = self.verify_signature(value) else {
+            return false;
+        };
+        let mut sessions = self.sessions.lock().expect("session lock");
+        match sessions.get(&id) {
+            Some(expiry) if *expiry > Instant::now() => true,
+            Some(_) => {
+                sessions.remove(&id);
+                false
+            }
+            None => false,
+        }
+    }
+
+    /// Drop the session named by `value`, if any.
+    pub fn remove(&self, value: &str) {
+        if let Some(id) = self.verify_signature(value) {
+            self.sessions.lock().expect("session lock").remove(&id);
+        }
+    }
+}
+
+/// `Set-Cookie` value establishing a session.
+pub fn session_cookie(value: &str) -> String {
+    format!("{COOKIE_NAME}={value}; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=86400")
+}
+
+/// `Set-Cookie` value clearing the session cookie.
+pub fn clear_cookie() -> String {
+    format!("{COOKIE_NAME}=; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=0")
+}
+
+/// Extract the session cookie value from request headers.
+pub fn cookie_from_headers(headers: &HeaderMap) -> Option<String> {
+    let prefix = format!("{COOKIE_NAME}=");
+    for header in headers.get_all(axum::http::header::COOKIE) {
+        let Ok(text) = header.to_str() else { continue };
+        for pair in text.split(';') {
+            if let Some(value) = pair.trim().strip_prefix(&prefix) {
+                return Some(value.to_string());
+            }
+        }
+    }
+    None
+}
+
+fn hex_encode(bytes: &[u8]) -> String {
+    bytes.iter().map(|byte| format!("{byte:02x}")).collect()
+}
+
+fn hex_decode(text: &str) -> Option<Vec<u8>> {
+    if !text.len().is_multiple_of(2) {
+        return None;
+    }
+    (0..text.len())
+        .step_by(2)
+        .map(|i| u8::from_str_radix(text.get(i..i + 2)?, 16).ok())
+        .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn roundtrip_and_tamper() {
+        let store = SessionStore::new([1u8; 32]);
+        let value = store.create();
+        assert!(store.verify(&value));
+
+        let mut tampered = value.clone().into_bytes();
+        let last = tampered.last_mut().unwrap();
+        *last = if *last == b'a' { b'b' } else { b'a' };
+        assert!(!store.verify(&String::from_utf8(tampered).unwrap()));
+
+        store.remove(&value);
+        assert!(!store.verify(&value));
+    }
+
+    #[test]
+    fn hex_helpers() {
+        assert_eq!(hex_encode(&[0x00, 0xff, 0x1a]), "00ff1a");
+        assert_eq!(hex_decode("00ff1a"), Some(vec![0x00, 0xff, 0x1a]));
+        assert_eq!(hex_decode("0g"), None);
+        assert_eq!(hex_decode("abc"), None);
+    }
+}
