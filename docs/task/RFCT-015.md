@@ -1,7 +1,7 @@
 # RFCT-015 Health gate + machine-id oneshot (PLAN-010 M4)
 
-- **status**: implementation complete — pending integration with RFCT-013/RFCT-014
-  and user hardware acceptance
+- **status**: implementation complete (reworked after the RAUC parse defect) —
+  pending user hardware acceptance
 - **priority**: P1
 - **owner**: ai-agent
 - **createdAt**: 2026-08-18 03:39
@@ -52,6 +52,9 @@ Ordered, each bounded by `probe-timeout-sec` (default 10s) via `timeout`:
   `systemctl list-units --state=failed` appears in the `tolerate-failed=`
   allowlist; a failed unit outside the allowlist is a health FAILURE. Any other
   state (`maintenance`, `stopping`, `offline`, `unknown`) is a FAILURE.
+  The booted slot is read from `RAUC_SYSTEM_BOOTED_BOOTNAME`. See
+  "The RAUC status parse" below — the original implementation grepped a variable
+  that does not exist.
 - **b. mosd.** `busctl --system call com.mos.mosd /com/mos/mosd com.mos.mosd1
   GetState s ""` — the cheapest call that already exists on the interface. No new
   ping/health method was needed for reachability. Skipped when `mosd.service` is
@@ -61,6 +64,51 @@ Ordered, each bounded by `probe-timeout-sec` (default 10s) via `timeout`:
   because webd serves a self-signed certificate. Skipped when `webd.service` is
   not installed or when the image ships neither client — no new HTTP surface was
   invented.
+
+### The RAUC status parse (reworked)
+
+The first implementation read the booted slot out of `RAUC_SYSTEM_BOOTED_SLOT`.
+**rauc 1.8 never emits that variable.** `BOOTED` was therefore always empty, the
+gate logged "rauc reports no booted slot", exited 0, and never reached
+`rauc status mark-good` — so every installed slot would have gone unconfirmed and
+been rolled back by U-Boot when the boot credits ran out. An always-passing health
+gate is worse than no gate at all.
+
+Verified directly, not taken on trust: `rauc 1.8-2` (the version the bookworm
+allowlist installs) driving the rendered `os/rootfs/overlay-v2/etc/rauc/system.conf`,
+with `rauc.slot=A` on the kernel command line, emits
+
+    RAUC_SYSTEM_COMPATIBLE='mos-cx3576'
+    RAUC_SYSTEM_VARIANT=''
+    RAUC_SYSTEM_BOOTED_BOOTNAME='A'
+    RAUC_BOOT_PRIMARY=''
+    RAUC_SYSTEM_SLOTS='rootfs.1 boot.0 rootfs.0 boot.1'
+    RAUC_SLOTS='1 2 3 4'
+    RAUC_SLOT_STATE_3='booted'
+    RAUC_SLOT_BOOTNAME_3='A'
+    ... (RAUC_SLOT_* rows for slots 1..4)
+
+and zero occurrences of the variable the gate used to grep for.
+
+`RAUC_SYSTEM_BOOTED_BOOTNAME` was chosen over deriving the slot from the per-slot
+`RAUC_SLOT_STATE_n='booted'` rows. Both are emitted, but the per-slot route needs
+the numeric index `n` mapped back to a slot through the positional order of
+`RAUC_SYSTEM_SLOTS`, and that ordering is not a documented guarantee. The
+top-level scalar is populated exactly when rauc has identified the booted slot,
+every rootfs slot we ship carries a bootname (the U-Boot backend requires one),
+and it names the slot the same way U-Boot does (`A` / `B`), so the log line
+matches what `BOOT_ORDER` and `BOOT_x_LEFT` talk about.
+
+**The three silences are now distinct**, which is what let the defect hide:
+
+| Situation | Behaviour |
+|---|---|
+| `rauc` not installed | clean no-op, exit 0 — v1 image or container |
+| `rauc status` answered, but names no booted slot | clean no-op, exit 0, its own log line |
+| `rauc status` exited non-zero, or its output has no `RAUC_SYSTEM_COMPATIBLE` line | **LOUD failure**, exit 1, quoting rauc's own error |
+
+"I could not read rauc" is a broken gate, not an absent one, and must never
+present as the latter.
 
 ### /var pressure is reported, never fatal
 
@@ -148,6 +196,14 @@ webd absent, `/var` over and under threshold, and the four machine-id paths
 (no tool, unreadable env, generate, already set). The last five cases assert the
 staged overlay copies have not drifted from the `os/health/` sources.
 
+The rauc cases run against a fixture that is the **verbatim shape** of real
+`rauc status --output-format=shell` output from rauc 1.8-2 against the rendered
+`system.conf` — variable names and quoting exactly as observed — rather than
+against an assumed format. That is the specific mistake the rework exists to
+correct, so the test now pins the real thing. The negative cases cover output
+that parses to no slot, a non-zero `rauc status`, and unparseable output, each
+asserted to be distinguishable from rauc simply being missing.
+
 The mosd `ReportHealth` method is covered in `mosd/mosd/tests/bus.rs` on a
 private `dbus-daemon --session`, exactly like the existing round-trip test.
 
@@ -156,11 +212,20 @@ private `dbus-daemon --session`, exactly like the existing round-trip test.
 - `bash mosd/hack/check.sh` green (54 tests).
 - `make os-health-test` green.
 - `make os-image-cx3576` + `make os-verify-cx3576` (v1) still green.
-- `make os-image-cx3576-v2` with both units present and enabled: **cannot be run
-  from this task's base**, which carries no `os/rootfs/Dockerfile.v2` and no v2
-  target (RFCT-013 is in flight). The units and their enablement symlinks are
-  staged in `os/rootfs/overlay-v2`; verifying them in an assembled v2 image is an
-  integration step for whoever merges RFCT-013 and RFCT-015.
+- `make os-image-cx3576-v2` green, with both units present and enabled in the
+  assembled image, and `make os-verify-cx3576-v2` at **211/213**: the mos-health
+  RAUC-parse assertion passes, and the two remaining FAILs are RFCT-020's
+  `rauc.slot=` boot-path defect. 213/213 is the end state once that lands.
+- **Known gap, not fixed here** — the v2 package allowlist installs Debian's
+  `rauc` (CLI) but not `rauc-service`. Debian builds the CLI with D-Bus support,
+  so `rauc status` and `rauc status mark-good` proxy to `de.pengutronix.rauc` and
+  fail without the service package, which is what ships the D-Bus activation
+  file, the bus policy and `rauc.service`. Verified: with only `rauc` installed,
+  `rauc status --output-format=shell` exits 1 with "Error retrieving slot status
+  via D-Bus: error creating proxy: Could not connect". After this rework the gate
+  reports that loudly instead of exiting 0, which is the correct behaviour, but
+  confirming a slot on device needs `rauc-service` in the image. That is a
+  Dockerfile.v2 / RAUC-integration change, not a health-gate change.
 - On-device confirm/rollback behaviour — a bad slot booting, failing the gate and
   being rolled back by `BOOT_x_LEFT` — is the **user's hardware acceptance**. It is
   not claimed done here and no agent may claim it.
@@ -171,6 +236,6 @@ Adding the boot health gate and the first-boot machine-id oneshot.
 
 ## Dependencies
 
-- **blocked by**: RFCT-013 (v2 rootfs and its overlay mechanism), RFCT-014 (RAUC
-  config, `/etc/fw_env.config`, `libubootenv-tool` in the v2 rootfs)
+- **blocked by**: RFCT-020 (the `rauc.slot=` boot-path defect — without it rauc
+  cannot identify the booted slot at all, so the gate fails loudly by design)
 - **blocks**: -

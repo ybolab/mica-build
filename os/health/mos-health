@@ -50,21 +50,63 @@ report_health() {
 }
 
 # --- gate 0: is there anything to confirm? ----------------------------------
+#
+# Three outcomes, deliberately kept distinct. Conflating them is what let an
+# always-passing gate hide for a whole campaign, so each gets its own log line:
+#
+#   1. rauc is not installed        -> clean no-op, exit 0 (v1 image, container)
+#   2. rauc ran and answered, but   -> clean no-op, exit 0
+#      names no booted slot
+#   3. rauc ran and FAILED, or its  -> LOUD failure, exit 1
+#      output cannot be parsed
+#
+# Case 3 must never look like case 1: "I could not read rauc" is a broken gate,
+# not an absent one.
 have rauc || {
     log "rauc not installed - no A/B slot to confirm (v1 image or container); exiting 0"
     exit 0
 }
-BOOTED=$(run rauc status --output-format=shell 2>/dev/null |
-    sed -n 's/^RAUC_SYSTEM_BOOTED_SLOT=//p' | head -n1 | tr -d "\"'")
+
+RAUC_ERR=$(mktemp 2>/dev/null) || RAUC_ERR=/dev/null
+[ "$RAUC_ERR" = /dev/null ] || trap 'rm -f "$RAUC_ERR"' EXIT INT TERM
+rauc_out=$(run rauc status --output-format=shell 2>"$RAUC_ERR")
+rauc_rc=$?
+if [ "$rauc_rc" -ne 0 ]; then
+    fail "\`rauc status\` exited $rauc_rc, so the booted slot is unknown and the" \
+        "slot cannot be confirmed. rauc said:" \
+        "$(sed -n '/^[^[:space:]]/p' "$RAUC_ERR" | tail -n1)"
+fi
+# Anchor on a variable every rauc shell dump starts with. If it is missing, the
+# output is not what this parser was written against - say so loudly instead of
+# quietly reading an empty slot out of it.
+case "$rauc_out" in
+*RAUC_SYSTEM_COMPATIBLE=*) ;;
+*)
+    fail "\`rauc status --output-format=shell\` produced output this gate cannot" \
+        "parse (no RAUC_SYSTEM_COMPATIBLE line). Refusing to guess at the booted slot."
+    ;;
+esac
+
+# The booted slot is read from RAUC_SYSTEM_BOOTED_BOOTNAME rather than derived
+# from the per-slot RAUC_SLOT_STATE_n='booted' rows. Both are emitted by rauc
+# 1.8, but the per-slot route needs the numeric index n mapped back to a slot
+# through the positional order of RAUC_SYSTEM_SLOTS, and that ordering is not a
+# documented guarantee. RAUC_SYSTEM_BOOTED_BOOTNAME is a single top-level
+# scalar, is populated exactly when rauc has identified the booted slot, and
+# every rootfs slot we ship carries a bootname because the U-Boot backend
+# requires one. It also names the slot the same way U-Boot does (A / B), so the
+# log line here matches what BOOT_ORDER and BOOT_x_LEFT talk about.
+BOOTED=$(printf '%s\n' "$rauc_out" |
+    sed -n 's/^RAUC_SYSTEM_BOOTED_BOOTNAME=//p' | head -n1 | tr -d "\"'")
 [ -n "$BOOTED" ] || {
-    log "rauc reports no booted slot - nothing to confirm; exiting 0"
+    log "rauc answered but names no booted slot (no bootname) - nothing to confirm; exiting 0"
     exit 0
 }
 have systemctl || {
     log "systemctl not available - not a systemd system; exiting 0"
     exit 0
 }
-log "booted slot: $BOOTED"
+log "booted slot bootname: $BOOTED"
 
 # --- probe a: systemd ------------------------------------------------------
 SETTLE=$(conf_get settle-sec)
@@ -159,8 +201,8 @@ esac
 
 # --- confirm ---------------------------------------------------------------
 if run rauc status mark-good >/dev/null 2>&1; then
-    log "slot $BOOTED marked good (PENDING_CONFIRM -> CONFIRMED)"
+    log "booted slot $BOOTED marked good (PENDING_CONFIRM -> CONFIRMED)"
 else
-    fail "rauc status mark-good failed for slot $BOOTED"
+    fail "rauc status mark-good failed for booted slot $BOOTED"
 fi
 exit 0
