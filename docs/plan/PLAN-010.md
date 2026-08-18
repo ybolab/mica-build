@@ -122,9 +122,9 @@ webd + kiosk (one UI, local/remote paths)    RAUC (native) + tough (TUF signing)
   `RESULT: PASS (88/88 checks)`.
 - `make os-image-cx3576-v2` — ten-partition image, 1315 MiB apparent / ~161 MiB
   on disk (sparse).
-- `make os-verify-cx3576-v2` — `RESULT: PASS (207/207 checks)`.
+- `make os-verify-cx3576-v2` — `RESULT: PASS (228/228 checks)`.
 - `bash os/mkimage-v2-selftest.sh` — `RESULT: PASS`, 137 checks.
-- `make os-health-test` — `RESULT: PASS (43/43)`.
+- `make os-health-test` — `RESULT: PASS (54/54 checks)`.
 - `make os-devkeys` + `make os-bundle-cx3576` — signed verity bundle;
   `rauc info` validates it against the shipped `system.conf`;
   `compatible=mos-cx3576`.
@@ -133,7 +133,7 @@ webd + kiosk (one UI, local/remote paths)    RAUC (native) + tough (TUF signing)
 Every number above is a local build/verify result. None of them is a hardware
 result.
 
-The 207 checks can actually fail, which was demonstrated rather than assumed.
+The 228 checks can actually fail, which was demonstrated rather than assumed.
 RFCT-017 ran three negative tests, each against a copy of the image: a single
 byte flipped 1 MiB into the ROOTFS-A payload fails dm-verity at exactly that
 position; an `extlinux/extlinux.conf` injected into BOOT-A is caught; and the
@@ -204,18 +204,63 @@ defconfig or kernel-fragment change proposed by
 `docs/design/uboot-ab-handshake.md` is applied by the user, never by this
 repository's OS-side tasks.
 
+#### The three integration defects, and why they are one class
+
+Three defects were found **after** the branch had passed seven green gates.
+They are recorded together because they are the same defect, and because each
+one alone was enough to break every update:
+
+| Defect | Shape |
+|---|---|
+| `rauc.slot=` missing from the kernel command line | config present, value inert |
+| `mos-health` parsed `RAUC_SYSTEM_BOOTED_SLOT`, which rauc 1.8 never emits (it emits `RAUC_SYSTEM_BOOTED_BOOTNAME`) | script present, parse never matches |
+| `rauc-service` absent from the image | binary present, daemon absent |
+
+- **`rauc.slot=`.** The v2 root is `/dev/dm-0`, a device-mapper node. rauc can
+  never match that against a slot's `bootname`, its slot name, or
+  `realpath(device)` — the identification simply has no input, so it must be
+  told the slot explicitly on the command line. Fixed in
+  `os/boot/cx3576-boot.cmd` (RFCT-020); the reasoning and the rauc 1.8 evidence
+  are in RFCT-017.
+- **`RAUC_SYSTEM_BOOTED_SLOT`.** The gate parsed a variable name that does not
+  exist in rauc's output under any configuration. Fixed in `os/health/`
+  (RFCT-015).
+- **`rauc-service`.** Debian splits `rauc` (CLI) from `rauc-service` (D-Bus
+  daemon), and builds the CLI *with* service support, so it proxies every call
+  over D-Bus and cannot work alone. Fixed in the v2 package allowlist
+  (RFCT-013); PLAN-006 Part E is amended accordingly.
+
+Together they meant **every update would silently roll back**: the health gate
+read an empty slot, exited 0, never ran `mark-good`, and U-Boot reverted when
+the credits ran out. The device boots, looks healthy, and stays on the old
+version — no error anywhere.
+
+**One wrong lesson to refuse.** `--no-install-recommends` was *not* the cause of
+the missing `rauc-service`, and "drop `--no-install-recommends`" must not be
+recorded as the fix. `rauc` 1.8-2 has **no `Recommends` line at all**, and the
+dependency runs the other way — `rauc-service` `Depends: rauc` — so a
+recommends-enabled build would not have installed it either (RFCT-013). The
+actual lesson is the one below.
+
 #### Lesson carried out of M4
 
-The same failure class occurred five times: extlinux silently winning over
+The same failure class occurred eight times: extlinux silently winning over
 `boot.scr`; hwinit units installed but not enabled; the debug U-Boot blob in a
-v2 image; the unsuffixed `mos-verity.env` making every update roll back; and a
-missing `DATA_GUID` silently producing a nine-partition layout. In every case
-the full gate was green and the gate was right — the checks were consistent
-with the artifact, they simply were not checking the thing that was wrong.
-Each was found by reading or by an explicit cross-check, never by a failing
-test.
+v2 image; the unsuffixed `mos-verity.env` making every update roll back; a
+missing `DATA_GUID` silently producing a nine-partition layout; and the three
+RAUC integration defects above. In every case the full gate was green and the
+gate was right — the checks were consistent with the artifact, they simply were
+not checking the thing that was wrong. Each was found by reading or by an
+explicit cross-check, never by a failing test.
 
-That is why M4 ends with assertions at build time rather than verification
+The sharper form the last three give it: **asserting that a thing exists is not
+asserting that it works.** A config file with an inert value, a script whose
+parse never matches, and a binary whose daemon is missing all pass an
+existence check and all fail in production. The check has to follow the value
+through to whatever consumes it — which is why `os/verify-image-v2.sh` now
+asserts the runtime machinery behind each component rather than its presence.
+
+That is also why M4 ends with assertions at build time rather than verification
 alone: the setuid/setgid inventory diff, the precious-data bind checks, the
 U-Boot variant pairing guard, the required-layout-constants check, and the
 `boot.cmd` / bundle-filename drift guards. A verifier can only check what it

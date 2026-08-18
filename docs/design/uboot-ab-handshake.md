@@ -524,16 +524,26 @@ are *not* baked in — they are imported from the chosen slot's boot partition
 (§7.3), so the script is byte-identical in both boot partitions.
 
 **This block is synced to the shipped `os/boot/cx3576-boot.cmd`**, which is what
-`os/mkimage-v2.sh` compiles into `boot.scr`. The one change against the version
-first published here is the slot-suffixed verity env: the script sets
-`slotsuffix` alongside `bootslot` and loads `mos-verity-${slotsuffix}.env`,
-falling back to the unsuffixed name. The reason is RFCT-014's boot payload — a
-RAUC bundle installs one boot image into whichever slot is inactive, so it must
-ship *both* slots' verity files under distinct names and an unsuffixed file
-cannot identify a slot. With the original unsuffixed load, every installed slot
-took the else-branch and rolled back silently. The unsuffixed fallback is kept
-only for hand-assembled boot partitions; nothing this tree builds relies on it.
-The shipped script carries the same note in its provenance header.
+`os/mkimage-v2.sh` compiles into `boot.scr`. It now differs from the version
+first published here in **two** places. Both were defects that made every update
+revert silently, and both are recorded in the shipped script's provenance header:
+
+1. **The slot-suffixed verity env.** The script sets `slotsuffix` alongside
+   `bootslot` and loads `mos-verity-${slotsuffix}.env`, falling back to the
+   unsuffixed name. A RAUC bundle installs one boot image into whichever slot is
+   inactive, so it must ship *both* slots' verity files under distinct names and
+   an unsuffixed file cannot identify a slot. With the original unsuffixed load,
+   every installed slot took the else-branch and rolled back. The unsuffixed
+   fallback is kept only for hand-assembled boot partitions; nothing this tree
+   builds relies on it. (RFCT-014 escalation E1.)
+2. **`bootargs` carries `rauc.slot=${bootslot}`.** The root device is
+   `/dev/dm-0`, a device-mapper node rather than a partition, and rauc cannot
+   match that against any slot's `bootname`, slot name or `realpath(device)`.
+   Verified against rauc 1.8: without `rauc.slot=` it fails with *"Did not find
+   booted slot (matching '/dev/dm-0')"*, so the health gate never reaches
+   `rauc status mark-good` and the installed slot is rolled back. This is a
+   requirement on the boot path that only became visible once the handshake was
+   integrated end to end. (RFCT-017 integration check, fixed by RFCT-020.)
 
 ```sh
 # boot.cmd — mos A/B handshake for CX3576-Z (layout v2).
@@ -616,7 +626,18 @@ fi
 
 setenv consoleargs "console=ttyFIQ0,1500000 earlycon=uart8250,mmio32,0x2ad40000"
 setenv rootargs "root=/dev/dm-0 rootfstype=squashfs ro rootwait"
-setenv bootargs "${rootargs} ${verity_args} ${consoleargs} storagemedia=emmc net.ifnames=0 ${machineid_arg}"
+
+# rauc.slot= is how rauc identifies which slot it is running from. It cannot be
+# derived from root=: the verity design makes root a device-mapper node, and
+# rauc matches the boot slot by bootname, slot name or realpath(device), none of
+# which /dev/dm-0 can ever be. ${bootslot} is A or B, which are exactly the
+# bootname values /etc/rauc/system.conf declares, so no separate mapping exists
+# to drift. Without this, `rauc status` fails, the health gate never runs
+# `rauc status mark-good`, and U-Boot rolls the new slot back on credit
+# exhaustion — an update that reverts while the device looks healthy.
+setenv raucargs "rauc.slot=${bootslot}"
+
+setenv bootargs "${rootargs} ${verity_args} ${raucargs} ${consoleargs} storagemedia=emmc net.ifnames=0 ${machineid_arg}"
 
 # --- load and go -----------------------------------------------------------
 load mmc 0:${bootpart} ${kernel_addr_r} Image
@@ -1101,6 +1122,16 @@ ones that blocked M4 entirely; all three are resolved by `8b24f9d`.
    instead of the pinned offsets (§3.2) [V].
 8. **Keep the rescue paths**: `PREBOOT` recovery-button → rockusb, and the
    `bootcmd` tail entering rockusb on boot failure (§5.2).
+9. **`bootargs` must carry `rauc.slot=${bootslot}`** (§5.3). Added after
+   `8b24f9d` resolved items 1-3, so it is not covered by that commit: it is a
+   requirement on the **boot script**, not on the U-Boot build, and it emerged
+   only once the handshake was integrated end to end. rauc identifies its booted
+   slot from `rauc.slot=`, the `root=` device, or `realpath(device)`; the v2 root
+   is `/dev/dm-0`, a device-mapper node that matches no slot's `bootname`, slot
+   name or device path, so the other two routes have nothing to work with.
+   Verified against rauc 1.8: without it, `rauc status` reports *"Did not find
+   booted slot (matching '/dev/dm-0')"*, `mark-good` is never reached, and every
+   installed slot rolls back. Shipped in `os/boot/cx3576-boot.cmd`.
 
 Dependencies this creates on other subtasks, for scheduling:
 
