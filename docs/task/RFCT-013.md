@@ -535,23 +535,61 @@ full ten-partition layout rather than the fallback.
 
 ## Fallback retirement (2026-08-18)
 
-Partition 10 has landed, so `build-v2.sh`'s nine-partition fallback is
-unreachable in normal operation. It has been deleted rather than left in place,
-and I agree with the reasoning: unreachable code that silently changes the
-shipped layout is the failure class this work exists to prevent. Had a DATA
-constant gone missing through a bad merge or an editing slip, the build would
-not have failed — it would have emitted a nine-partition rootfs with `/var`
-growing and no `/srv`, and v1 verify, the v2 image build, the bundle and the
-reproducibility proof would all still have passed. There is no argument for
-keeping it; the fallback earned its keep only while the two halves could land in
-either order.
+Partition 10 has landed, so `build-v2.sh`'s nine-partition fallback became
+unreachable in normal operation and has been deleted. The fallback earned its
+keep only while the two halves could land in either order.
+
+### A green gate proves the checks are consistent with the artifact, not that the artifact is right
+
+This is the part worth reading, and it generalises well past this change.
+
+"Unreachable code" undersells the risk. The question that matters is: if
+`DATA_GUID` had gone missing from the layout env — a bad merge, an editing slip
+— what would have caught it? The answer is **nothing**. The build would have
+emitted a nine-partition rootfs with `/var` growing and no `/srv`, and then:
+
+| Check | Result with the wrong layout |
+|---|---|
+| `make os-verify-cx3576` (v1) | PASS, 88/88 — it does not look at v2 |
+| `make os-image-cx3576-v2` | green — the assembler builds whatever the layout env describes |
+| `make os-bundle-cx3576` | green — the bundle carries the rootfs it was handed |
+| two-run byte-identical proof | PASS — the wrong artifact is reproducibly wrong |
+
+Every one of those checks is *consistent with either layout*, so none of them
+can distinguish the two. The gate would have been fully green and the first
+symptom would have been `/srv` missing on a device.
+
+That is this campaign's recurring failure class stated plainly: **a green gate
+proves the checks are consistent with the artifact, not that the artifact is
+right.** Every silent-loss bug found in this task has the same shape — the
+hardcoded hwinit enable list that installed `mos-mac`/`mos-gadget` but never
+enabled them; `-all-root` producing setgid-root binaries; a lone repart
+definition attaching the grow flag to `uenv-a`; `/var/lib/dbus/machine-id`
+carrying a shared build-time identity. In each case the build was green and the
+artifact was wrong. The defence is not more checks of the same kind but checks
+that can *only* pass for the intended artifact — which is why the fixes in this
+task are build-time assertions (the setuid/setgid diff, the precious-path bind
+check, the repart definition count) rather than review notes.
+
+### The required constants
 
 `DATA_GUID`, `DATA_PARTNUM`, `DATA_FS_UUID` and `MOS_VAR_MIB` are now required,
-with an error naming `os/layout/cx3576-v2.env` and the missing keys. All four
-are demanded even though only `DATA_GUID` is read in `build-v2.sh`, because the
-failure being guarded against is a partially-edited layout env: the assembler
-needs the other three, and a rootfs built against half a layout is the kind of
-artifact that reaches hardware before anyone notices.
+with an error naming `os/layout/cx3576-v2.env` and the missing keys.
+
+All four are demanded even though only `DATA_GUID` is read in `build-v2.sh`.
+The hazard is a *partially* edited layout env, and a consumer that validates
+only its own reads cannot see that hazard by construction. `build-v2.sh` is also
+the first step of `os-image-cx3576-v2`, so failing here costs seconds rather
+than a full rootfs build followed by an assembler error — the earliest consumer
+is the cheapest place to catch it.
+
+The cost of that choice, named so it is not a surprise later: **if a future
+constant is added to the layout env, this list goes stale and will not check
+it.** That is a silent gap rather than a break, and the smaller of the two
+failure modes. If the list ever grows past a handful, the better shape is a
+single shared "required keys" assertion that the layout env's consumers call,
+rather than several hand-maintained lists. Deliberately not built now — two
+checks over four keys does not justify the machinery.
 
 Both existing assertions are kept — the staged definition count must be eight,
 and exactly one definition must carry `Weight=1000`.
