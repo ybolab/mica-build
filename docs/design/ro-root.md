@@ -178,7 +178,7 @@ console=ttyFIQ0,1500000 earlycon=uart8250,mmio32,0x2ad40000 storagemedia=emmc ne
   Note that `os/mkimage-v2.sh` currently cross-checks each slot's table against
   `ROOTFS_A_GUID` / `ROOTFS_B_GUID` — which the layout env holds in uppercase —
   with a case-**sensitive** shell substring test, so v2 image assembly fails
-  until RFCT-012 makes that assertion case-insensitive. That is a bug on the
+  until RFCT-020 makes that assertion case-insensitive. That is a bug on the
   assertion side; do not "fix" it by uppercasing the cmdline.
 - The console/earlycon/storagemedia/net.ifnames arguments are carried over from
   the v1 `APPEND` in `os/mkimage.sh`. v1's `root=PARTLABEL=rootfs rw` is

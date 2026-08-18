@@ -121,7 +121,7 @@ Host: `BOARD_DIR=/srv/ai/mos/board/cx3576` (prebuilt BSP artifacts).
   placeholder.
 - `make os-image-cx3576-v2` — assembled green at the time of the first pass
   (`SLOT_MIB 256`, boot 64+64 MiB, total 803 MiB / 842006528 bytes,
-  `sgdisk --verify` "No problems found"). It now FAILS on RFCT-012's
+  `sgdisk --verify` "No problems found"). It now FAILS on RFCT-020's
   case-sensitive GUID assertion; see Rework item 3.
 - `make os-image-cx3576` + `make os-verify-cx3576` (v1 regression) —
   **RESULT: PASS (71/71 checks)**, unchanged.
@@ -191,7 +191,7 @@ cmdline is not part of the squashfs.
   `/usr/bin/hostname` present, baked `/etc/hostname` = `mos`.
 - `/etc/machine-id` still a 0-byte regular file.
 - `make os-image-cx3576` + `make os-verify-cx3576` (v1) — **PASS (71/71)**.
-- `make os-image-cx3576-v2` — FAILS on RFCT-012's case-sensitive GUID
+- `make os-image-cx3576-v2` — FAILS on RFCT-020's case-sensitive GUID
   assertion, as anticipated by the review. Not worked around.
 - No host state mutated: pack in buildkit stages, inspections in throwaway
   containers with the output directory bind-mounted read-only.
@@ -251,7 +251,7 @@ records this as solved.
 
 The previous turn had switched the cmdline GUIDs to uppercase to satisfy
 `os/mkimage-v2.sh`'s case-sensitive cross-check. Per review, the lowercase
-choice is the correct one and the assertion is what is being fixed (RFCT-012,
+choice is the correct one and the assertion is what is being fixed (RFCT-020,
 in parallel). Reverted to lowercase, matching `/etc/fstab` and udev's
 `by-partuuid` symlinks. Consequence, as anticipated by the review:
 `make os-image-cx3576-v2` currently FAILS with
