@@ -1,6 +1,6 @@
 # RFCT-009 mosd skeleton (Rust management plane, PLAN-010 M2)
 
-- **status**: in progress
+- **status**: implementation complete — pending user hardware acceptance
 - **priority**: P1
 - **owner**: ai-agent
 - **createdAt**: 2026-08-18 01:16
@@ -32,12 +32,12 @@ Scope / deliverables:
 
 Work checklist:
 
-- [ ] Workspace scaffold + quality gates (`mosd/hack/check.sh`)
-- [ ] `mosd-settings` crate (settings tree v1, persistence, migrations)
-- [ ] Daemon (zbus service) + systemd unit + D-Bus policy
-- [ ] Reconcilers (hostname, network) behind mockable executor traits
-- [ ] aarch64 cross build + image/verify integration
-- [ ] Docs finalize
+- [x] Workspace scaffold + quality gates (`mosd/hack/check.sh`)
+- [x] `mosd-settings` crate (settings tree v1, persistence, migrations)
+- [x] Daemon (zbus service) + systemd unit + D-Bus policy
+- [x] Reconcilers (hostname, network) behind mockable executor traits
+- [x] aarch64 cross build + image/verify integration
+- [x] Docs finalize
 
 Acceptance:
 
@@ -45,6 +45,24 @@ Acceptance:
 - `make os-image-cx3576` + `make os-verify-cx3576` green with mosd included.
 - On-device "settings applied live + survive reboot" is the user's hardware
   acceptance — out of scope here; never claimed done by agents.
+
+## Verification (2026-08-18)
+
+Final verification on integration branch head `bca53e5`:
+
+- `./mosd/hack/check.sh` — ALL CHECKS PASSED: `cargo fmt --check`, clippy
+  `-D warnings`, cargo nextest 19 tests (incl. private-session-bus daemon
+  integration test and 8 reconciler mock/golden tests), cargo-deny
+  licenses/bans/advisories ok.
+- `bash mosd/hack/build-aarch64.sh` — aarch64 ELF produced
+  (`mosd/target/aarch64-unknown-linux-gnu/release/mosd`).
+- `make os-image-cx3576` — image built; rootfs 191 MB installed, within the
+  400 MB budget; `WITH_MOSD=0` fallback path also builds (187 MB, mosd absent).
+- `make os-verify-cx3576` — RESULT: PASS (47/47 checks), including the 5 new
+  mosd checks (binary present, aarch64 ELF, unit with BusName, unit enabled,
+  D-Bus policy).
+- Pending user hardware acceptance: settings applied live on device + survive
+  reboot (flash + boot test).
 
 ## ActiveForm
 
