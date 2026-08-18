@@ -21,6 +21,7 @@ pub trait SettingsApi: Send + Sync {
 pub struct FakeSettings {
     tree: std::sync::Mutex<Value>,
     state: std::sync::Mutex<Value>,
+    set_log: std::sync::Mutex<Vec<String>>,
 }
 
 #[cfg(test)]
@@ -29,7 +30,23 @@ impl FakeSettings {
         Self {
             tree: std::sync::Mutex::new(tree),
             state: std::sync::Mutex::new(Value::Object(serde_json::Map::new())),
+            set_log: std::sync::Mutex::new(Vec::new()),
         }
+    }
+
+    /// Insert `value` at top-level `key` of the live-state tree.
+    pub fn set_state_entry(&self, key: &str, value: Value) {
+        self.state
+            .lock()
+            .unwrap()
+            .as_object_mut()
+            .expect("state root is an object")
+            .insert(key.to_string(), value);
+    }
+
+    /// Dot-paths passed to `set_settings`, in call order.
+    pub fn set_paths(&self) -> Vec<String> {
+        self.set_log.lock().unwrap().clone()
     }
 }
 
@@ -52,6 +69,7 @@ impl SettingsApi for FakeSettings {
     }
 
     async fn set_settings(&self, path: &str, value: &Value) -> anyhow::Result<()> {
+        self.set_log.lock().unwrap().push(path.to_string());
         let mut segments: Vec<&str> = path.split('.').collect();
         let last = segments.pop().expect("split yields at least one segment");
         let mut tree = self.tree.lock().unwrap();
