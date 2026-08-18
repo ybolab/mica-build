@@ -1,6 +1,9 @@
 [Unit]
 Description=Attach Bluetooth HCI over UART
 ConditionPathExists=/etc/mos/bt.conf
+# The BT core of a combo chip only answers once its WiFi/BT modules are
+# loaded, so attach after mos-modules has run.
+After=mos-modules.service
 
 [Service]
 # btattach is long-running, so this is a plain simple service. Best-effort:
