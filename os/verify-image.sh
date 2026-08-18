@@ -18,9 +18,11 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(dirname "${SCRIPT_DIR}")"
 BOARD_DIR="${BOARD_DIR:-${REPO_ROOT}/board/cx3576}"
 
-# Image contract constants. The rootfs (p2) size is content-derived, so it is
-# read from the GPT instead of being fixed here; the total image size follows
-# as 16 MiB pre-boot area + 512 MiB boot + p2 + 1 MiB backup-GPT slack.
+# Image contract constants. Both partition sizes are content-derived, so they
+# are read from the GPT instead of being fixed here — p1 only has to clear the
+# BOOT_MIN_SIZE_MIB floor, and the p2 start plus the FAT/rootfs extraction
+# offsets follow from the partition entries. The total image size follows as
+# 16 MiB pre-boot area + p1 + p2 + 1 MiB backup-GPT slack.
 DISK_GUID="5AC35760-0001-4000-8000-000000000000"
 BOOT_GUID="5AC35760-0001-4000-8000-000000000001"
 ROOTFS_GUID="5AC35760-0001-4000-8000-000000000002"
@@ -28,11 +30,8 @@ ESP_TYPE="C12A7328-F81F-11D2-BA4B-00A0C93EC93B"
 LINUX_FS_DATA="0FC63DAF-8483-4772-8E79-3D69D8477DE4"
 ROOTFS_UUID="5ac35760-0002-4000-8000-000000000002"
 BOOT_FIRST_SECTOR=32768
-BOOT_SIZE_SECTORS=$((512 * 2048))
-ROOTFS_FIRST_SECTOR=1081344
+BOOT_MIN_SIZE_MIB=128
 UBOOT_OFFSET_BYTES=$((64 * 512))
-FAT_OFFSET_BYTES=$((16 * 1024 * 1024))
-ROOTFS_OFFSET_MIB=528
 FREE_FLOOR_BYTES=$((32 * 1024 * 1024))
 KERNEL_VERSION="6.1.115"
 APPEND_LINE="append root=PARTLABEL=rootfs rw console=ttyFIQ0,1500000 earlycon=uart8250,mmio32,0x2ad40000 storagemedia=emmc net.ifnames=0 rootwait"
@@ -179,11 +178,19 @@ if [ "${p1_first}" = "${BOOT_FIRST_SECTOR}" ]; then
 else
     fail "p1 first sector is '${p1_first}', expected ${BOOT_FIRST_SECTOR}"
 fi
-p1_size="$(sg_field "${p1}" "Partition size" | awk '{print $1}')"
-if [ "${p1_size}" = "${BOOT_SIZE_SECTORS}" ]; then
-    pass "p1 size is ${BOOT_SIZE_SECTORS} sectors (512 MiB)"
+if [[ "${p1_first}" =~ ^[0-9]+$ ]]; then
+    FAT_OFFSET_BYTES=$((p1_first * 512))
 else
-    fail "p1 size is '${p1_size}' sectors, expected ${BOOT_SIZE_SECTORS} (512 MiB)"
+    FAT_OFFSET_BYTES=$((BOOT_FIRST_SECTOR * 512))
+fi
+p1_size="$(sg_field "${p1}" "Partition size" | awk '{print $1}')"
+if [[ "${p1_size}" =~ ^[0-9]+$ ]] && [ $((p1_size % 2048)) -eq 0 ] &&
+    [ "${p1_size}" -ge $((BOOT_MIN_SIZE_MIB * 2048)) ]; then
+    BOOT_SIZE_MIB=$((p1_size / 2048))
+    pass "p1 size is ${p1_size} sectors (${BOOT_SIZE_MIB} MiB, whole-MiB and >= ${BOOT_MIN_SIZE_MIB} MiB floor)"
+else
+    BOOT_SIZE_MIB=0
+    fail "p1 size is '${p1_size}' sectors, expected a whole-MiB multiple of at least ${BOOT_MIN_SIZE_MIB} MiB"
 fi
 p1_attrs="$(sg_field "${p1}" "Attribute flags")"
 if [[ "${p1_attrs}" =~ ^[0-9A-Fa-f]+$ ]] && [ $((16#${p1_attrs} & 4)) -ne 0 ]; then
@@ -205,9 +212,9 @@ else
 fi
 fat_sig="$(dd if="${IMG}" skip=$((FAT_OFFSET_BYTES + 82)) count=5 iflag=skip_bytes,count_bytes status=none 2>/dev/null || true)"
 if [ "${fat_sig}" = "FAT32" ]; then
-    pass "p1 has a FAT32 boot sector signature"
+    pass "p1 has a FAT32 boot sector signature at $((FAT_OFFSET_BYTES / 1048576)) MiB"
 else
-    fail "p1 FAT32 signature not found at offset 16 MiB + 82"
+    fail "p1 FAT32 signature not found at offset $((FAT_OFFSET_BYTES / 1048576)) MiB + 82"
 fi
 
 # --- p2 (rootfs) ---
@@ -219,10 +226,13 @@ else
     fail "p2 name is ${p2_name:-unreadable}, expected 'rootfs'"
 fi
 p2_first="$(sg_field "${p2}" "First sector" | awk '{print $1}')"
-if [ "${p2_first}" = "${ROOTFS_FIRST_SECTOR}" ]; then
-    pass "p2 first sector is ${ROOTFS_FIRST_SECTOR} (528 MiB)"
+ROOTFS_FIRST_SECTOR=$(((BOOT_FIRST_SECTOR / 2048 + BOOT_SIZE_MIB) * 2048))
+if [ "${BOOT_SIZE_MIB}" -gt 0 ] && [ "${p2_first}" = "${ROOTFS_FIRST_SECTOR}" ]; then
+    ROOTFS_OFFSET_MIB=$((p2_first / 2048))
+    pass "p2 first sector is ${ROOTFS_FIRST_SECTOR} (${ROOTFS_OFFSET_MIB} MiB, right after p1)"
 else
-    fail "p2 first sector is '${p2_first}', expected ${ROOTFS_FIRST_SECTOR}"
+    ROOTFS_OFFSET_MIB=0
+    fail "p2 first sector is '${p2_first}', expected ${ROOTFS_FIRST_SECTOR} (16 MiB pre-boot + ${BOOT_SIZE_MIB} MiB boot)"
 fi
 p2_size="$(sg_field "${p2}" "Partition size" | awk '{print $1}')"
 if [[ "${p2_size}" =~ ^[0-9]+$ ]] && [ "${p2_size}" -gt 0 ] && [ $((p2_size % 2048)) -eq 0 ]; then
@@ -245,13 +255,15 @@ else
     fail "p2 GUID is '${p2_guid}', expected ${ROOTFS_GUID}"
 fi
 
-# --- image size: 16 MiB pre-boot + 512 MiB boot + p2 + 1 MiB backup-GPT slack ---
-expected_size=$(((16 + 512 + ROOTFS_SIZE_MIB + 1) * 1024 * 1024))
+# --- image size: 16 MiB pre-boot + p1 + p2 + 1 MiB backup-GPT slack ---
+pre_boot_mib=$((BOOT_FIRST_SECTOR / 2048))
+expected_size=$(((pre_boot_mib + BOOT_SIZE_MIB + ROOTFS_SIZE_MIB + 1) * 1024 * 1024))
+size_terms="${pre_boot_mib} + ${BOOT_SIZE_MIB} + ${ROOTFS_SIZE_MIB} + 1 MiB"
 actual_size="$(stat -Lc %s "${IMG}" 2>/dev/null || echo 0)"
-if [ "${ROOTFS_SIZE_MIB}" -gt 0 ] && [ "${actual_size}" = "${expected_size}" ]; then
-    pass "image size is ${expected_size} bytes (16 + 512 + ${ROOTFS_SIZE_MIB} + 1 MiB)"
+if [ "${BOOT_SIZE_MIB}" -gt 0 ] && [ "${ROOTFS_SIZE_MIB}" -gt 0 ] && [ "${actual_size}" = "${expected_size}" ]; then
+    pass "image size is ${expected_size} bytes (${size_terms})"
 else
-    fail "image size is ${actual_size} bytes, expected ${expected_size} (16 + 512 + ${ROOTFS_SIZE_MIB} + 1 MiB)"
+    fail "image size is ${actual_size} bytes, expected ${expected_size} (${size_terms})"
 fi
 
 # --- raw u-boot at sector 64 ---
