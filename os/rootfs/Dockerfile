@@ -99,6 +99,14 @@ RUN if [ "$WITH_MOSD" = "1" ] && [ -f /tmp/mosd/mosd ]; then \
         ln -sf /usr/lib/systemd/system/mosd.service \
                /etc/systemd/system/multi-user.target.wants/mosd.service && \
         test -L /etc/systemd/system/multi-user.target.wants/mosd.service; \
+    fi && \
+    if [ "$WITH_MOSD" = "1" ] && [ -f /tmp/mosd/webd ]; then \
+        install -m 0755 /tmp/mosd/webd /usr/bin/webd && \
+        install -m 0644 /tmp/mosd/webd.service /usr/lib/systemd/system/webd.service && \
+        mkdir -p /etc/systemd/system/multi-user.target.wants && \
+        ln -sf /usr/lib/systemd/system/webd.service \
+               /etc/systemd/system/multi-user.target.wants/webd.service && \
+        test -L /etc/systemd/system/multi-user.target.wants/webd.service; \
     fi && rm -rf /tmp/mosd
 
 # Board hardware init: generic best-effort oneshots (os/hwinit, board-agnostic
