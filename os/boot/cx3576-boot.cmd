@@ -1,12 +1,20 @@
 # Source for the boot.scr written into BOOT-A and BOOT-B. Compiled by
 # os/mkimage-v2.sh with SOURCE_DATE_EPOCH pinned to the layout-v2 FILE_MTIME.
 # Body follows docs/design/uboot-ab-handshake.md section 5.3 (RFCT-018), with
-# ONE deliberate divergence that section 5.3 predates: the verity parameters are
-# loaded from the slot-suffixed mos-verity-<slot>.env, falling back to the
-# unsuffixed name. A RAUC bundle installs a single boot payload into whichever
-# slot is inactive, so it has to ship both slots' files under distinct names;
-# an unsuffixed file cannot identify a slot. Without this, every update rolled
-# back silently (RFCT-014 escalation E1). Section 5.3 should be synced to match.
+# TWO deliberate divergences that section 5.3 predates. Both were defects that
+# made updates silently revert; section 5.3 should be synced to match.
+#
+# 1. The verity parameters are loaded from the slot-suffixed
+#    mos-verity-<slot>.env, falling back to the unsuffixed name. A RAUC bundle
+#    installs a single boot payload into whichever slot is inactive, so it has
+#    to ship both slots' files under distinct names; an unsuffixed file cannot
+#    identify a slot (RFCT-014 escalation E1).
+# 2. bootargs carries rauc.slot=${bootslot}. The root device is /dev/dm-0, a
+#    device-mapper node rather than a partition, which rauc cannot match against
+#    any slot's bootname, slot name or realpath(device) — verified against rauc
+#    1.8: without rauc.slot= it fails with "Did not find booted slot (matching
+#    '/dev/dm-0')", so the health gate never reaches `rauc status mark-good`
+#    and the installed slot is rolled back (RFCT-017 integration check).
 #
 # boot.cmd — mos A/B handshake for CX3576-Z (layout v2).
 # Compiled to boot.scr and written to BOTH boot partitions by the assembler.
@@ -88,7 +96,18 @@ fi
 
 setenv consoleargs "console=ttyFIQ0,1500000 earlycon=uart8250,mmio32,0x2ad40000"
 setenv rootargs "root=/dev/dm-0 rootfstype=squashfs ro rootwait"
-setenv bootargs "${rootargs} ${verity_args} ${consoleargs} storagemedia=emmc net.ifnames=0 ${machineid_arg}"
+
+# rauc.slot= is how rauc identifies which slot it is running from. It cannot be
+# derived from root=: the verity design makes root a device-mapper node, and
+# rauc matches the boot slot by bootname, slot name or realpath(device), none of
+# which /dev/dm-0 can ever be. ${bootslot} is A or B, which are exactly the
+# bootname values /etc/rauc/system.conf declares, so no separate mapping exists
+# to drift. Without this, `rauc status` fails, the health gate never runs
+# `rauc status mark-good`, and U-Boot rolls the new slot back on credit
+# exhaustion — an update that reverts while the device looks healthy.
+setenv raucargs "rauc.slot=${bootslot}"
+
+setenv bootargs "${rootargs} ${verity_args} ${raucargs} ${consoleargs} storagemedia=emmc net.ifnames=0 ${machineid_arg}"
 
 # --- load and go -----------------------------------------------------------
 load mmc 0:${bootpart} ${kernel_addr_r} Image
