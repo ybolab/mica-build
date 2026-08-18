@@ -492,6 +492,34 @@ else
 fi
 ext_regular /usr/share/dbus-1/system.d/com.mos.mosd.conf
 
+# --- webd daemon integration ---
+ext_regular /usr/bin/webd
+WEBD_BIN="${TMP}/webd-bin"
+dbg "dump /usr/bin/webd ${WEBD_BIN}" >/dev/null
+elf_head="$(od -An -tx1 -N20 "${WEBD_BIN}" 2>/dev/null | tr -d ' \n')"
+# ELF magic 7f454c46; e_machine at offset 18 is 0xB7 (aarch64, little-endian).
+if [ "${elf_head:0:8}" = "7f454c46" ] && [ "${elf_head:36:4}" = "b700" ]; then
+    pass "/usr/bin/webd is an aarch64 ELF"
+else
+    fail "/usr/bin/webd is not an aarch64 ELF (header: '${elf_head:0:40}')"
+fi
+webd_unit="$(dbg "cat /usr/lib/systemd/system/webd.service")"
+if echo "${webd_unit}" | grep -q "After=.*mosd.service"; then
+    pass "/usr/lib/systemd/system/webd.service orders After= mosd.service"
+else
+    fail "/usr/lib/systemd/system/webd.service missing or lacks After=...mosd.service"
+fi
+if echo "${webd_unit}" | grep -q "StateDirectory=mos/webd"; then
+    pass "/usr/lib/systemd/system/webd.service has StateDirectory=mos/webd"
+else
+    fail "/usr/lib/systemd/system/webd.service missing or lacks StateDirectory=mos/webd"
+fi
+if dbg "stat /etc/systemd/system/multi-user.target.wants/webd.service" | grep -q "Inode:"; then
+    pass "webd.service is enabled (multi-user.target.wants)"
+else
+    fail "webd.service enablement symlink missing"
+fi
+
 # --- board hardware init ---
 modules_conf="$(dbg "cat /etc/mos/modules.conf")"
 if echo "${modules_conf}" | grep -q "bcmdhd" && echo "${modules_conf}" | grep -q "aic8800_fdrv"; then
