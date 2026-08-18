@@ -56,15 +56,23 @@ VERITY_DATA_BLOCKS=768
 VERITY_HASH_START_BLOCK=768
 VERITY_DATA_SECTORS=6144
 EOF
-echo "root=/dev/dm-0 rootfstype=squashfs ro selftest-slot=a" > "${WORK}/boot-cmdline-a.txt"
-echo "root=/dev/dm-0 rootfstype=squashfs ro selftest-slot=b" > "${WORK}/boot-cmdline-b.txt"
+# The cmdline files stand in for what os/rootfs/build-v2.sh emits: a full
+# kernel append line whose verity table points at that slot's own rootfs
+# partition, plus the dm-mod.waitfor= the assembler insists on.
+mkcmdline() { # out-file rootfs-partition-guid
+    printf 'root=/dev/dm-0 rootfstype=squashfs ro rootwait dm-mod.create="mos,,0,ro,0 6144 verity 1 PARTUUID=%s PARTUUID=%s 4096 4096 768 768 sha256 %s %s" dm-mod.waitfor=PARTUUID=%s console=ttyFIQ0,1500000\n' \
+        "$2" "$2" "${FAKE_ROOT_HASH}" "${VERITY_SALT}" "$2" > "$1"
+}
+mkcmdline "${WORK}/boot-cmdline-a.txt" "${ROOTFS_A_GUID}"
+mkcmdline "${WORK}/boot-cmdline-b.txt" "${ROOTFS_B_GUID}"
 
 # --- assemble twice ----------------------------------------------------------
 # mke2fs must be able to switch orphan_file off (e2fsprogs >= 1.47); when the
 # host cannot, run the assembler in the same Alpine image mkimage-v2.sh uses.
 host_can_assemble() {
     command -v sgdisk >/dev/null && command -v mkfs.vfat >/dev/null &&
-        command -v mcopy >/dev/null && command -v mke2fs >/dev/null || return 1
+        command -v mcopy >/dev/null && command -v mke2fs >/dev/null &&
+        command -v mkimage >/dev/null || return 1
     local probe rc=0
     probe="${WORK}/mke2fs-probe.img"
     truncate -s "${META_SIZE_MIB}M" "${probe}"
@@ -122,19 +130,20 @@ run_assemble() {
             -e BOOT_CMDLINE_B=/t/boot-cmdline-b.txt \
             -e IMG_OUT="/t/${out}" "${pin_args[@]}" \
             alpine:3.21 \
-            sh -c 'apk add --no-cache -q bash coreutils sgdisk dosfstools mtools e2fsprogs && exec bash /work/os/mkimage-v2.sh --assemble'
+            sh -c 'apk add --no-cache -q bash coreutils sgdisk dosfstools mtools e2fsprogs u-boot-tools && exec bash /work/os/mkimage-v2.sh --assemble'
     fi
 }
 
-# expect_pin_failure <label> <verity-img-name> <pin> <expected-substring>...
-expect_pin_failure() {
+# expect_failure <label> <verity-img-name> <pin> <expected-substring>...
+# An empty pin means an unpinned (floor-mode) run.
+expect_failure() {
     local label="$1" verity="$2" pin="$3"
     shift 3
-    local log="${WORK}/pinfail.log"
-    if run_assemble pinfail.img "${verity}" "${pin}" > "${log}" 2>&1; then
+    local log="${WORK}/expectfail.log"
+    if run_assemble expectfail.img "${verity}" "${pin}" > "${log}" 2>&1; then
         echo "FAIL: ${label}: the build succeeded but should have refused"
         FAILED=1
-        rm -f "${WORK}/pinfail.img"
+        rm -f "${WORK}/expectfail.img"
         return
     fi
     echo "PASS: ${label}: exits non-zero"
@@ -147,7 +156,7 @@ expect_pin_failure() {
             FAILED=1
         fi
     done
-    rm -f "${WORK}/pinfail.img"
+    rm -f "${WORK}/expectfail.img"
 }
 
 host_can_assemble || require_visible_workspace
@@ -221,26 +230,64 @@ assert_part "${STATE_PARTNUM}" "${STATE_LABEL}" "${STATE_GUID}" "${STATE_TYPECOD
 assert_part "${EPHEMERAL_PARTNUM}" "${EPHEMERAL_LABEL}" "${EPHEMERAL_GUID}" "${EPHEMERAL_TYPECODE}" \
     "$((EPHEMERAL_START_MIB * MIB_BYTES / SECTOR_SIZE))" "$((EPHEMERAL_SIZE_MIB * MIB_BYTES / SECTOR_SIZE))"
 
-# The FAT slots must both be populated, each with its own slot's cmdline.
+# Both FAT slots carry the kernel, the dtb and the shared boot.scr, plus their
+# own mos-verity.env — and NO extlinux config, which would win over boot.scr in
+# U-Boot and silently bypass the A/B handshake.
 for slot in a b; do
     case "${slot}" in
-    a) off="${BOOT_A_OFFSET_BYTES}" ;;
-    b) off="${BOOT_B_OFFSET_BYTES}" ;;
+    a) off="${BOOT_A_OFFSET_BYTES}"; guid="${ROOTFS_A_GUID}" ;;
+    b) off="${BOOT_B_OFFSET_BYTES}"; guid="${ROOTFS_B_GUID}" ;;
     esac
     listing="$(mdir -i "${IMG}@@${off}" -b ::/ 2>/dev/null || true)"
-    for f in ::/Image ::/rk3576-src.dtb ::/extlinux/; do
-        if echo "${listing}" | grep -q "^${f}"; then
+    for f in "::/Image" "::/rk3576-src.dtb" "::/${BOOT_SCRIPT_NAME}" "::/${BOOT_VERITY_ENV_NAME}"; do
+        if echo "${listing}" | grep -qF "${f}"; then
             echo "PASS: boot-${slot} contains ${f}"
         else
             echo "FAIL: boot-${slot} is missing ${f}"
             FAILED=1
         fi
     done
-    conf="$(mtype -i "${IMG}@@${off}" ::/extlinux/extlinux.conf 2>/dev/null || true)"
-    check "boot-${slot} extlinux.conf uses the slot-${slot} cmdline" \
-        "$(echo "${conf}" | sed -n 's/^    append //p')" \
-        "$(cat "${WORK}/boot-cmdline-${slot}.txt")"
+    if echo "${listing}" | grep -qi "extlinux"; then
+        echo "FAIL: boot-${slot} contains an extlinux entry: ${listing}"
+        FAILED=1
+    else
+        echo "PASS: boot-${slot} has no extlinux directory or config"
+    fi
+
+    mcopy -n -i "${IMG}@@${off}" "::/${BOOT_SCRIPT_NAME}" "${WORK}/bootscr-${slot}"
+    mcopy -n -i "${IMG}@@${off}" "::/${BOOT_VERITY_ENV_NAME}" "${WORK}/verityenv-${slot}"
+
+    check "boot-${slot} ${BOOT_VERITY_ENV_NAME} is a single verity_args line" \
+        "$(grep -c '^verity_args=dm-mod\.create=' "${WORK}/verityenv-${slot}")" 1
+    if grep -qF "PARTUUID=${guid}" "${WORK}/verityenv-${slot}"; then
+        echo "PASS: boot-${slot} verity table points at its own rootfs (${guid})"
+    else
+        echo "FAIL: boot-${slot} verity table does not reference ${guid}"
+        FAILED=1
+    fi
+    if grep -qF "dm-mod.waitfor=PARTUUID=${guid}" "${WORK}/verityenv-${slot}"; then
+        echo "PASS: boot-${slot} verity args carry dm-mod.waitfor for its own rootfs"
+    else
+        echo "FAIL: boot-${slot} verity args lack dm-mod.waitfor=PARTUUID=${guid}"
+        FAILED=1
+    fi
 done
+
+if cmp -s "${WORK}/bootscr-a" "${WORK}/bootscr-b"; then
+    echo "PASS: boot.scr is byte-identical in both slots"
+else
+    echo "FAIL: the two slots carry different boot.scr"
+    FAILED=1
+fi
+# 0x27051956 big-endian is the legacy uImage magic mkimage writes.
+check "boot.scr is a legacy U-Boot image" \
+    "$(od -An -tx1 -N4 "${WORK}/bootscr-a" | tr -d ' \n')" 27051956
+if cmp -s "${WORK}/verityenv-a" "${WORK}/verityenv-b"; then
+    echo "FAIL: both slots carry the same mos-verity.env; they must differ"
+    FAILED=1
+else
+    echo "PASS: the two slots carry different mos-verity.env"
+fi
 
 # rootfs-a carries the payload; rootfs-b stays zero-filled.
 check "rootfs-a holds the verity payload" \
@@ -285,7 +332,7 @@ check "pinned uenv-a offset is still ${UENV_A_OFFSET_BYTES} bytes" \
 
 # --- pinned mode: refuses a rootfs that does not fit -------------------------
 echo "--- pinned-mode refusal ---"
-expect_pin_failure "pin below the payload" rootfs-verity.img 2 \
+expect_failure "pin below the payload" rootfs-verity.img 2 \
     "MOS_ROOTFS_SLOT_MIB=2 MiB" "is ${VERITY_MIB} MiB" \
     "$((VERITY_MIB - 2)) MiB too large" "frozen"
 
@@ -293,10 +340,27 @@ expect_pin_failure "pin below the payload" rootfs-verity.img 2 \
 # "was it supplied", not by comparing against 256.
 OVERSIZE_MIB=$((MOS_ROOTFS_SLOT_MIB + 44))
 truncate -s "${OVERSIZE_MIB}M" "${WORK}/rootfs-verity-oversize.img"
-expect_pin_failure "pin equal to the built-in default" rootfs-verity-oversize.img \
+expect_failure "pin equal to the built-in default" rootfs-verity-oversize.img \
     "${MOS_ROOTFS_SLOT_MIB}" \
     "MOS_ROOTFS_SLOT_MIB=${MOS_ROOTFS_SLOT_MIB} MiB" "is ${OVERSIZE_MIB} MiB" \
     "44 MiB too large"
+
+# A cmdline that lost dm-mod.waitfor= is a cross-task mismatch, not something
+# the assembler may paper over.
+echo "--- missing dm-mod.waitfor ---"
+cp "${WORK}/boot-cmdline-b.txt" "${WORK}/boot-cmdline-b.orig"
+sed -i 's/ dm-mod\.waitfor=[^ ]*//' "${WORK}/boot-cmdline-b.txt"
+expect_failure "cmdline without dm-mod.waitfor" rootfs-verity.img "" \
+    "carries no dm-mod.waitfor=" "cross-task mismatch" "os/rootfs/build-v2.sh"
+mv "${WORK}/boot-cmdline-b.orig" "${WORK}/boot-cmdline-b.txt"
+
+# A slot whose verity table points at the other slot's rootfs is refused too.
+echo "--- wrong-slot verity table ---"
+cp "${WORK}/boot-cmdline-b.txt" "${WORK}/boot-cmdline-b.orig"
+mkcmdline "${WORK}/boot-cmdline-b.txt" "${ROOTFS_A_GUID}"
+expect_failure "slot-b cmdline pointing at rootfs-a" rootfs-verity.img "" \
+    "does not reference PARTUUID ${ROOTFS_B_GUID}"
+mv "${WORK}/boot-cmdline-b.orig" "${WORK}/boot-cmdline-b.txt"
 
 # The same oversize payload grows the slot instead when nothing is pinned.
 echo "--- floor-mode growth ---"

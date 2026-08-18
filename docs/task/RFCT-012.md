@@ -5,7 +5,7 @@
 - **owner**: ai-agent
 - **createdAt**: 2026-08-18 03:39
 - **claimedAt**: 2026-08-18 03:39
-- **completedAt**: 2026-08-18 05:05
+- **completedAt**: 2026-08-18 06:10
 
 ## Description
 
@@ -28,7 +28,7 @@ p8    state       -            64 MiB      ext4, label state
 p9    ephemeral   -            64 MiB      ext4, label ephemeral (grown by repart)
 ```
 
-Two design points worth recording:
+Design points worth recording:
 
 - **The UENV pair sits before the rootfs slots.** PLAN-006 Part C sketched it
   after them. Placing it first makes `UENV_A_OFFSET_BYTES` (16 MiB) and
@@ -53,6 +53,51 @@ Two design points worth recording:
   strict behaviour. The host wrapper forwards the pin to the inner `--assemble`
   run only when it really was pinned; forwarding the resolved value
   unconditionally would silently freeze every build.
+- **The v2 boot slots carry `boot.scr`, not `extlinux/extlinux.conf`.** This
+  replaces the extlinux config the first version of this assembler wrote.
+  RFCT-018 (`docs/design/uboot-ab-handshake.md` sections 5.4-5.5) established
+  that both U-Boot boot frameworks try extlinux *before* `boot.scr` — bootstd
+  orders bootmeths by numbered driver name (`bootmeth_1extlinux` before
+  `bootmeth_2script`) and the legacy path runs `scan_dev_for_extlinux` before
+  `scan_dev_for_scripts`. An extlinux config in a v2 boot slot therefore wins
+  outright and the entire RAUC A/B handshake — `BOOT_ORDER`, the attempt
+  counters, rollback — is bypassed with no error at all. A device would simply
+  never fail over. That is the worst failure mode available to this campaign,
+  so extlinux is gone from the v2 path entirely rather than kept as a fallback;
+  a fallback *is* the bypass. v1's `os/mkimage.sh` keeps its extlinux config
+  and is untouched.
+  Each slot's FAT root now holds `Image`, `rk3576-src.dtb`, the shared
+  `boot.scr`, and a per-slot `mos-verity.env`. `boot.scr` is byte-identical in
+  both slots — the running copy may boot either — and `mos-verity.env` is the
+  only thing that differs, which is what lets one script serve both slots.
+- **`boot.scr` provenance and determinism.** The source is
+  `os/boot/cx3576-boot.cmd`, whose body is verbatim from
+  `docs/design/uboot-ab-handshake.md` section 5.3; that document is the
+  authority. It is compiled with
+  `SOURCE_DATE_EPOCH=<FILE_MTIME> mkimage -T script -C none -n "mos boot"`.
+  `SOURCE_DATE_EPOCH` is mandatory, not hygiene: RFCT-018 found `mkimage`
+  stamps the legacy image header with wall-clock time without it, and that was
+  confirmed here — two compiles of the same `boot.cmd` two seconds apart differ
+  at byte 5 without it and are byte-identical with it. The epoch is taken from
+  the layout env's `FILE_MTIME` so the number is pinned in one place.
+- **`mos-verity.env` is derived, not re-derived.** Each slot's file holds one
+  line, `verity_args=dm-mod.create="..." dm-mod.waitfor=...`, lifted out of
+  that slot's `boot-cmdline-{a,b}.txt` — already a documented RFCT-013 output.
+  Nothing about the verity table is recomputed here, so there is exactly one
+  producer of it and no new contract for RFCT-013 to satisfy. The assembler
+  does assert what it extracted: the table must reference that slot's own
+  rootfs PARTUUID (`...0005` for A, `...0006` for B), must carry the root hash
+  from `rootfs-verity.env`, and must carry `dm-mod.waitfor=`. A missing
+  `dm-mod.waitfor=` fails the build as an explicit cross-task mismatch rather
+  than being synthesised: RFCT-018 established it exists on 6.1.115 and is
+  required, because `dm_init_init()` runs at `late_initcall` and its
+  `wait_for_device_probe()` does not cover eMMC card discovery.
+- **Boot-attempt credits are pinned to 1..9.** RAUC writes `BOOT_x_LEFT` with
+  `%x` and reads it base 16, while U-Boot's `test -gt` parses decimal; the two
+  radices agree only for 0-9. `BOOT_ATTEMPTS_MIN/MAX/DEFAULT` live in the
+  layout env with that rationale, and the assembler refuses to compile a
+  `boot.cmd` whose credit literals fall outside the range. RFCT-014 applies the
+  same limit to `boot-attempts` / `boot-attempts-primary` in `system.conf`.
 - **No GPT partition attribute bits are set, and none are required.** v1 sets
   legacy-BIOS-bootable (bit 2) on its single boot partition; v2 sets nothing.
   Verified against mainline U-Boot v2026.07 (the ref `board/cx3576/uboot`
@@ -82,6 +127,8 @@ Owned here:
 - `os/layout/cx3576-v2.env` - the constants file (`KEY=value` only).
 - `os/mkimage-v2.sh` - the v2 assembler.
 - `os/mkimage-v2-selftest.sh` - BSP-free assembler selftest.
+- `os/boot/cx3576-boot.cmd` - the tracked `boot.scr` source (OS-side data;
+  nothing under `board/**`).
 - `Makefile` - all M4 v2 targets, added up front so no other M4 task has to
   touch this file.
 - `docs/task/RFCT-012.md`.
@@ -114,6 +161,29 @@ Consumed as documented interfaces, not implemented here:
 - [x] Strict pinned mode vs. floor mode, covered in the selftest in all three
       shapes (pin that fits, pin that refuses, unpinned growth)
 - [x] GPT attribute bits confirmed unnecessary against the U-Boot source
+- [x] extlinux dropped from the v2 boot slots; `boot.scr` compiled from
+      `os/boot/cx3576-boot.cmd` with a pinned `SOURCE_DATE_EPOCH` and written
+      identically to both slots
+- [x] Per-slot `mos-verity.env` derived from the slot's cmdline, with
+      PARTUUID / root-hash / `dm-mod.waitfor=` assertions
+- [x] Boot-attempt credits constrained to 1..9 and documented
+
+## Boot-path dependency (expected non-booting state)
+
+The v2 image will **not** boot on today's U-Boot build, and that is the correct
+state, not a regression. The image is being built to the RFCT-018 contract while
+the U-Boot side is applied separately by the user. Today's `generic-rk3576`
+build has `CONFIG_ENV_IS_NOWHERE=y` — no persistent environment at all — and
+explicitly disables `CONFIG_CMD_SETEXPR`, without which the attempt counter
+cannot be decremented from a script. The boot path therefore depends on the
+custom U-Boot carrying the commands in RFCT-018 escalation item 2
+(`CONFIG_CMD_SETEXPR` in particular, plus `CMD_SOURCE`, `CMD_IMPORTENV`,
+`CMD_FS_GENERIC`, `CMD_BOOTI`, `LEGACY_IMAGE_FORMAT`) on top of the persistent
+redundant environment of item 1.
+
+No extlinux fallback is provided "so that it boots in the meantime". Such a
+fallback is precisely the silent-bypass failure this design removes: it would
+boot, look healthy, and never honour `BOOT_ORDER` or roll back.
 
 ## Acceptance
 
@@ -123,7 +193,7 @@ Consumed as documented interfaces, not implemented here:
   RFCT-013 lands - the expected state, not a defect.
 - `bash os/mkimage-v2-selftest.sh` reports `RESULT: PASS`.
 
-## Verification (2026-08-18, re-run after the strict-pin rework)
+## Verification (2026-08-18, re-run after the boot.scr rework)
 
 - `bash -n os/mkimage-v2.sh` and `bash -n os/mkimage-v2-selftest.sh` clean.
   `shellcheck -x -P os -s bash os/mkimage-v2.sh os/mkimage-v2-selftest.sh`
@@ -134,12 +204,20 @@ Consumed as documented interfaces, not implemented here:
 - `make os-image-cx3576-v2` -> `bash: os/rootfs/build-v2.sh: No such file or
   directory`; `bash os/mkimage-v2.sh` alone -> `error: .../rootfs-verity.img
   not found; run 'bash os/rootfs/build-v2.sh' first`.
-- `bash os/mkimage-v2-selftest.sh` - `RESULT: PASS`, 79 checks: two
+- `bash os/mkimage-v2-selftest.sh` - `RESULT: PASS`, 96 checks: two
   consecutive assemblies byte-identical, image 803 MiB (146 + 2*256 + 16 + 64
   + 64 + 1), all nine partitions matching the pinned labels / unique GUIDs /
   typecodes / start sectors / sizes, both FAT slots carrying Image + dtb +
   their own cmdline, rootfs-a holding the payload, rootfs-b and the uenv pair
-  fully zero-filled. Slot sizing is covered in all three shapes: a pin of 64
+  fully zero-filled. Boot-slot contract: both slots contain `Image`,
+  `rk3576-src.dtb`, `boot.scr` and `mos-verity.env` and **no** extlinux entry;
+  `boot.scr` is byte-identical across the two slots and carries the legacy
+  uImage magic `27051956`; each slot's `mos-verity.env` is a single
+  `verity_args=` line referencing its own rootfs PARTUUID with a matching
+  `dm-mod.waitfor=`, and the two slots' files differ. Refusals: a cmdline with
+  `dm-mod.waitfor=` stripped fails as a cross-task mismatch naming
+  `os/rootfs/build-v2.sh`, and a slot-B cmdline pointing at rootfs-A's PARTUUID
+  fails naming the expected GUID. Slot sizing is covered in all three shapes: a pin of 64
   MiB produces a 419 MiB image with rootfs-a exactly 64 MiB, rootfs-b at 210
   MiB and meta at 274 MiB while uenv-a stays at 16 MiB; a pin of 2 MiB against
   a 4 MiB rootfs exits non-zero naming the pin, the size, the 2 MiB shortfall
@@ -147,6 +225,12 @@ Consumed as documented interfaces, not implemented here:
   MiB rootfs likewise refuses, proving the mode is chosen by supply and not by
   value; and the same 300 MiB rootfs unpinned grows the slot to 384 MiB.
 - Sparseness: the 803 MiB image occupies 278 MiB on disk.
+- `mkimage` determinism confirmed directly: two compiles of the same
+  `boot.cmd` two seconds apart differ at byte 5 without `SOURCE_DATE_EPOCH` and
+  are byte-identical with it.
+- The 1..9 boot-attempts guard was exercised against a mutated `boot.cmd`
+  (`BOOT_A_LEFT 16`): it aborts the build. The tracked `boot.cmd`'s four credit
+  literals are all 3.
 - Host note: the assembly runs in the alpine:3.21 container because host
   e2fsprogs is 1.46.5, which can neither switch `orphan_file` off nor honour
   `-E hash_seed`. `os/mkimage-v2.sh` probes for that with a `mke2fs -n` dry run
