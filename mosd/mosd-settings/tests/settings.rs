@@ -6,7 +6,7 @@ use serde_json::json;
 
 use mosd_settings::{
     DEFAULT_PATH, IfaceSettings, MigrateV0ToV1, Migration, MigrationRegistry, SCHEMA_VERSION,
-    Settings, SettingsError, StaticConfig, Store, json_path_get, migrate,
+    Settings, SettingsError, StaticConfig, Store, WebAdminSettings, json_path_get, migrate,
 };
 
 fn populated() -> Settings {
@@ -43,7 +43,7 @@ fn save_load_roundtrip_with_network() {
 
     let text = fs::read_to_string(dir.path().join("settings.toml")).unwrap();
     let doc: toml::Table = text.parse().unwrap();
-    assert_eq!(doc.get("schema_version"), Some(&toml::Value::Integer(1)));
+    assert_eq!(doc.get("schema_version"), Some(&toml::Value::Integer(2)));
 
     assert_eq!(store.load().unwrap(), settings);
 }
@@ -151,6 +151,29 @@ fn set_scalar_and_create_intermediate_entries() {
 }
 
 #[test]
+fn set_and_get_web_admin_roundtrip() {
+    let mut settings = Settings::default();
+    assert!(matches!(
+        settings.get("access.webAdmin"),
+        Err(SettingsError::NotFound(_))
+    ));
+
+    settings
+        .set("access.webAdmin", json!({"password_hash": "x"}))
+        .unwrap();
+    assert_eq!(
+        settings.access.web_admin,
+        Some(WebAdminSettings {
+            password_hash: "x".to_string()
+        })
+    );
+    assert_eq!(
+        settings.get("access.webAdmin.password_hash").unwrap(),
+        json!("x")
+    );
+}
+
+#[test]
 fn set_whole_tree_replaces_settings() {
     let mut settings = Settings::default();
     let replacement = populated();
@@ -166,7 +189,7 @@ fn set_errors_leave_state_unchanged() {
     let before = settings.clone();
 
     assert!(matches!(
-        settings.set("schema_version", json!(2)),
+        settings.set("schema_version", json!(3)),
         Err(SettingsError::ReadOnly(_))
     ));
     assert!(matches!(
@@ -187,7 +210,7 @@ fn set_errors_leave_state_unchanged() {
     ));
 
     let mut wrong_version = serde_json::to_value(&before).unwrap();
-    wrong_version["schema_version"] = json!(2);
+    wrong_version["schema_version"] = json!(1);
     assert!(matches!(
         settings.set("", wrong_version),
         Err(SettingsError::ReadOnly(_))
@@ -204,14 +227,67 @@ fn v0_document_migrates_up_and_back_down() {
     let original = doc.clone();
 
     migrate(&mut doc, 0, 1).unwrap();
+    assert_eq!(doc.get("schema_version"), Some(&toml::Value::Integer(1)));
+    assert_eq!(
+        doc.get("hostname"),
+        Some(&toml::Value::String("legacy".to_string()))
+    );
+    assert!(doc.contains_key("network"));
+
+    migrate(&mut doc, 1, 0).unwrap();
+    assert_eq!(doc, original);
+}
+
+#[test]
+fn v1_document_migrates_up_to_v2() {
+    let mut doc: toml::Table = "schema_version = 1\nhostname = \"legacy\"\n\n[network]\n"
+        .parse()
+        .unwrap();
+
+    migrate(&mut doc, 1, 2).unwrap();
     let text = toml::to_string(&doc).unwrap();
     let settings: Settings = toml::from_str(&text).unwrap();
     assert_eq!(settings.schema_version, SCHEMA_VERSION);
     assert_eq!(settings.hostname, "legacy");
     assert!(settings.network.is_empty());
+    assert!(settings.access.web_admin.is_none());
+    assert_eq!(
+        doc.get("access"),
+        Some(&toml::Value::Table(toml::Table::new()))
+    );
+}
 
-    migrate(&mut doc, 1, 0).unwrap();
-    assert_eq!(doc, original);
+#[test]
+fn v2_document_migrates_down_to_v1_dropping_access() {
+    let mut doc: toml::Table = concat!(
+        "schema_version = 2\n",
+        "hostname = \"mos\"\n\n",
+        "[network]\n\n",
+        "[access.webAdmin]\n",
+        "password_hash = \"$argon2id$v=19$m=19456,t=2,p=1$abc$def\"\n",
+    )
+    .parse()
+    .unwrap();
+
+    migrate(&mut doc, 2, 1).unwrap();
+    assert_eq!(doc.get("schema_version"), Some(&toml::Value::Integer(1)));
+    assert!(!doc.contains_key("access"));
+}
+
+#[test]
+fn store_load_migrates_v1_file() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("settings.toml");
+    fs::write(
+        &path,
+        "schema_version = 1\nhostname = \"legacy\"\n\n[network]\n",
+    )
+    .unwrap();
+
+    let settings = Store::new(&path).load().unwrap();
+    assert_eq!(settings.schema_version, SCHEMA_VERSION);
+    assert_eq!(settings.hostname, "legacy");
+    assert!(settings.access.web_admin.is_none());
 }
 
 #[test]
