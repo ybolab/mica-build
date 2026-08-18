@@ -116,11 +116,13 @@ RUN if [ "$WITH_MOSD" = "1" ] && [ -f /tmp/mosd/mosd ]; then \
 ARG BOARD_INIT_DIR
 COPY os/hwinit/ /tmp/hwinit/
 COPY ${BOARD_INIT_DIR}/ /tmp/board-init/
-RUN mkdir -p /etc/mos /usr/lib/mos /etc/systemd/system/multi-user.target.wants && \
+RUN mkdir -p /etc/mos /usr/lib/mos /etc/systemd/system/multi-user.target.wants \
+        /usr/lib/udev/rules.d && \
     cp -a /tmp/board-init/. /etc/mos/ && \
     install -m 0755 /tmp/hwinit/hwinit-* /usr/lib/mos/ && \
     install -m 0644 /tmp/hwinit/*.service /usr/lib/systemd/system/ && \
-    for u in mos-modules mos-otg mos-can mos-bt; do \
+    install -m 0644 /tmp/hwinit/*.rules /usr/lib/udev/rules.d/ && \
+    for u in mos-modules mos-otg mos-can mos-bt mos-mac mos-gadget; do \
         ln -sf "/usr/lib/systemd/system/$u.service" \
                "/etc/systemd/system/multi-user.target.wants/$u.service" && \
         test -L "/etc/systemd/system/multi-user.target.wants/$u.service"; \
@@ -167,6 +169,29 @@ COPY --from=rootfs / /rootfs/
 # systemd-repart/growfs expand p2 (journal replay, first-boot machine-id and
 # /var dirs, ssh host key generation). -b 4096 pins the block size: below
 # 512 MiB mke2fs's "small" profile would silently switch to 1 KiB blocks.
+# Guard the mos-owned files against CJK text (repo rule: code and docs are
+# English). Only our own paths are scanned; vendor packages ship translations
+# and are none of our business.
+RUN set -e; \
+    mos_paths=""; \
+    for f in /rootfs/usr/lib/mos /rootfs/etc/mos \
+             /rootfs/usr/lib/udev/rules.d/60-mos-*.rules \
+             /rootfs/usr/lib/systemd/system/mos-*.service \
+             /rootfs/usr/lib/systemd/system/mosd.service \
+             /rootfs/usr/lib/systemd/system/webd.service \
+             /rootfs/usr/share/dbus-1/system.d/com.mos.mosd.conf \
+             /rootfs/etc/systemd/network/*.network; do \
+        if [ -e "$f" ]; then mos_paths="$mos_paths $f"; fi; \
+    done; \
+    test -n "$mos_paths"; \
+    hits=$(grep -rlP '[\x{3400}-\x{4dbf}\x{4e00}-\x{9fff}\x{f900}-\x{faff}]' \
+        $mos_paths 2>/dev/null || true); \
+    if [ -n "$hits" ]; then \
+        echo 'CJK text found in mos-owned image files:' >&2; \
+        echo "$hits" >&2; \
+        exit 1; \
+    fi
+
 RUN mkdir -p /out && \
     mv /rootfs/rootfs-report.txt /out/rootfs-report.txt && \
     ln -sf ../run/systemd/resolve/stub-resolv.conf /rootfs/etc/resolv.conf && \
