@@ -1,21 +1,23 @@
 # syntax=docker/dockerfile:1
 # =============================================================================
-# rootfs/alpine — Alpine 3.24.1 可写主机系统
+# rootfs/alpine — Alpine 3.24.1 writable host system
 #
-# 目标体验接近一台普通 KVM Alpine 虚拟机：
-#   - BusyBox init + OpenRC 服务管理
-#   - ttyFIQ0/tty1 登录提示（不再提供免密 shell）
-#   - OpenSSH、Docker/Compose、ifupdown-ng + 按接口调用 dhcpcd
-#   - DHCP 只配置地址/路由；DNS 固定为 1.1.1.1、8.8.8.8
+# Target experience: close to an ordinary KVM Alpine virtual machine:
+#   - BusyBox init + OpenRC service management
+#   - login prompts on ttyFIQ0/tty1 (no passwordless shell)
+#   - OpenSSH, Docker/Compose, ifupdown-ng + per-interface dhcpcd invocation
+#   - DHCP only configures address/routes; DNS is fixed to 1.1.1.1, 8.8.8.8
 #
 #   make rootfs
-#   -> out/rootfs/rootfs.img（ext4，可直接组装/dd）
+#   -> out/rootfs/rootfs.img (ext4, ready for assembly/dd)
 #
-# 默认实验室账号：root / root，普通用户 alpine / alpine。首次登录后应立即修改密码。
-# 依赖 out/kernel/modules.tar（make rootfs 会先构建 kernel）。
+# Default lab accounts: root / root, regular user alpine / alpine.
+# Change the passwords immediately after first login.
+# Depends on out/kernel/modules.tar (make rootfs builds kernel first).
 # =============================================================================
 
-# 固定 3.24.1 的多架构 OCI manifest，避免 alpine:3.24 漂移到后续维护版本。
+# Pin the 3.24.1 multi-arch OCI manifest so alpine:3.24 cannot drift to a later
+# maintenance release.
 ARG ALPINE_IMAGE=alpine:3.24.1@sha256:28bd5fe8b56d1bd048e5babf5b10710ebe0bae67db86916198a6eec434943f8b
 FROM --platform=linux/arm64 ${ALPINE_IMAGE} AS rootfs
 
@@ -39,10 +41,11 @@ RUN apk add --no-cache \
     visudo -cf /etc/sudoers && \
     echo 'rk3576-alpine' > /etc/hostname
 
-# 内核模块必须与 out/kernel/Image 来自同一次构建。
+# Kernel modules must come from the same build as out/kernel/Image.
 ADD out/kernel/modules.tar /
 
-# Wi-Fi/BT 固件：AIC8800D80 为当前板主路径，Broadcom 用于兼容其他 SKU。
+# Wi-Fi/BT firmware: AIC8800D80 is the primary path on this board; the Broadcom
+# blobs cover the other SKU.
 COPY rootfs/firmware/ /lib/firmware/
 RUN ln -sf fw_bcm43752a2_ag.bin /lib/firmware/fw_bcmdhd.bin && \
     ln -sf fw_bcm43752a2_ag_apsta.bin /lib/firmware/fw_bcmdhd_apsta.bin && \
@@ -52,28 +55,31 @@ RUN ln -sf fw_bcm43752a2_ag.bin /lib/firmware/fw_bcmdhd.bin && \
 COPY scripts/rs485-pair-test.sh /usr/local/sbin/rs485-pair-test
 RUN chmod 0755 /usr/local/sbin/rs485-pair-test
 
-# networking/ifupdown-ng 是唯一接口控制器；DHCP stanza 按接口调用 dhcpcd，
-# 不启动全局 dhcpcd OpenRC 服务。ifupdown-ng 会优先自动选择已安装的 dhcpcd；
-# /etc/dhcpcd.conf 的 background 让无 carrier 接口在后台等待，不阻塞启动。
+# networking/ifupdown-ng is the sole interface controller; the DHCP stanza runs
+# dhcpcd per interface, no global dhcpcd OpenRC service is started. ifupdown-ng
+# automatically prefers the installed dhcpcd; background in /etc/dhcpcd.conf
+# lets carrier-less interfaces wait in the background instead of blocking boot.
 RUN mkdir -p /etc/network/interfaces.d && \
     cat > /etc/network/interfaces <<'INTERFACES'
 # /etc/network/interfaces -- managed by ifupdown-ng/OpenRC networking
 auto lo
 iface lo inet loopback
 
-# 板载 GMAC0 + YT8531
+# On-board GMAC0 + YT8531
 auto eth0
 iface eth0 inet dhcp
 
-# PCIe RTL8168 第二网口
+# PCIe RTL8168 second Ethernet port
 auto eth1
 iface eth1 inet dhcp
 
-# Wi-Fi 服务默认启动；未配置 network={} 时保持空闲。写入凭据后重载或重启即可连接。
+# The Wi-Fi service starts by default and stays idle until a network={} block is
+# configured. Write credentials, then reload or reboot to connect.
 auto wlan0
 iface wlan0 inet dhcp
 
-# 静态地址示例（替换对应 DHCP stanza 后执行 ifdown eth0; ifup eth0）：
+# Static address example (replace the matching DHCP stanza, then run
+# ifdown eth0; ifup eth0):
 # auto eth0
 # iface eth0 inet static
 #	address 192.168.1.100/24
@@ -82,8 +88,9 @@ iface wlan0 inet dhcp
 source /etc/network/interfaces.d/*
 INTERFACES
 
-# ifupdown-ng 自动检测 /sbin/dhcpcd 并读取此公共配置；全局 dhcpcd 服务不启动。
-# background 立即返回并监听 carrier：无链路时不发 DHCP，链路恢复后自动获取租约。
+# ifupdown-ng auto-detects /sbin/dhcpcd and reads this shared config; the global
+# dhcpcd service is not started. background returns immediately and watches
+# carrier: no DHCP is sent without link; a lease is acquired once link returns.
 RUN cat > /etc/dhcpcd.conf <<'DHCPCD'
 background
 hostname
@@ -102,23 +109,26 @@ ctrl_interface=/run/wpa_supplicant
 update_config=1
 country=CN
 
-# Wi-Fi demo（整段保持注释，默认不会连接）：
+# Wi-Fi demo (the whole block stays commented; no connection by default):
 #   wpa_passphrase 'DemoWiFi' 'ChangeMe1234'
-# 生成结果：
+# generates:
 # network={
 #	ssid="DemoWiFi"
 #	#psk="ChangeMe1234"
 #	psk=2865d37bfe4035f2c5274b6831c4863ac29edbd3fcf554ea5b59483cd349960d
 # }
 #
-# 实际使用时运行 wpa_passphrase，并把输出的 network={} 追加到本文件。
+# For real use, run wpa_passphrase and append the resulting network={} block to
+# this file.
 WPA
 
-# wpa_supplicant 默认启动且必须等待 rk-board 加载无线驱动、创建 wlan0。
+# wpa_supplicant starts by default and must wait for rk-board to load the
+# wireless driver and create wlan0.
 RUN printf '%s\n' 'rc_need="rk-board"' >> /etc/conf.d/wpa_supplicant
 
-# OpenSSH 提供真正的主机登录体验。主机密钥由 Alpine sshd OpenRC 服务在首次启动时
-# 生成，避免所有刷写同一镜像的设备共用一套 host key。
+# OpenSSH provides the real host login experience. Host keys are generated on
+# first boot by the Alpine sshd OpenRC service, so devices flashed from the same
+# image do not share one host key set.
 RUN sed -i \
         -e 's/^#\?PermitRootLogin .*/PermitRootLogin yes/' \
         -e 's/^#\?PasswordAuthentication .*/PasswordAuthentication yes/' \
@@ -129,7 +139,8 @@ RUN sed -i \
         'ClientAliveCountMax 3' \
         >> /etc/ssh/sshd_config
 
-# Docker 使用可写 p2 根分区；首启扩容后 /var/lib/docker 可使用整个 eMMC。
+# Docker uses the writable p2 root partition; after first-boot expansion
+# /var/lib/docker can use the whole eMMC.
 RUN mkdir -p /etc/docker && cat > /etc/docker/daemon.json <<'DOCKER'
 {
   "storage-driver": "overlay2",
@@ -141,8 +152,9 @@ RUN mkdir -p /etc/docker && cat > /etc/docker/daemon.json <<'DOCKER'
 }
 DOCKER
 
-# 板级早期初始化：OTG 默认 host；为无 EEPROM 的 RTL8168 派生稳定本地 MAC；
-# 尝试加载两种可能 SKU 的 Wi-Fi 驱动。networking 通过 rc_need 等待本服务。
+# Early board init: OTG defaults to host; derive a stable locally-administered
+# MAC for the EEPROM-less RTL8168; try loading the Wi-Fi drivers of both
+# possible SKUs. networking waits for this service via rc_need.
 RUN cat > /etc/init.d/rk-board <<'BOARD' && chmod 0755 /etc/init.d/rk-board
 #!/sbin/openrc-run
 
@@ -184,8 +196,9 @@ BOARD
 
 RUN printf '%s\n' 'rc_need="rk-board"' > /etc/conf.d/networking
 
-# 把整盘镜像写入更大的 eMMC 后，修复 GPT 备份头并在线扩展 p2/ext4。
-# 在 virtio/KVM 等没有 mmcblk0p2 的环境中安全跳过。
+# After the whole-disk image is written to a larger eMMC, fix the backup GPT
+# header and grow p2/ext4 online. Safely skipped in environments without
+# mmcblk0p2, such as virtio/KVM.
 RUN cat > /etc/init.d/resize-rootfs <<'RESIZE' && chmod 0755 /etc/init.d/resize-rootfs
 #!/sbin/openrc-run
 
@@ -206,14 +219,17 @@ start() {
 
 	ebegin "Expanding rootfs partition"
 
-	# 整盘镜像写入更大 eMMC 后，先把备份 GPT 移到真实磁盘末尾。
+	# After the whole-disk image lands on a larger eMMC, first move the backup
+	# GPT to the real end of the disk.
 	if ! sgdisk -e /dev/mmcblk0 >/dev/null 2>&1; then
 		eend 1 "GPT relocation failed; it will be retried next boot"
 		return 1
 	fi
 
-	# growpart 能处理已挂载根分区，并用 partx --update 通知内核。NOCHANGE 也可能表示
-	# 分区已经是最大值，因此不依据退出码判定成功，以下面 sysfs 尺寸为准。
+	# growpart can handle a mounted root partition and notifies the kernel via
+	# partx --update. NOCHANGE may also mean the partition is already at its
+	# maximum, so success is not judged by the exit code; the sysfs sizes below
+	# are authoritative.
 	growpart --update force /dev/mmcblk0 2 >/dev/null 2>&1 || true
 	partprobe /dev/mmcblk0 >/dev/null 2>&1 || true
 
@@ -231,7 +247,8 @@ start() {
 		return 1
 	fi
 
-	# resize2fs 在“无需扩容”时也会返回成功，因此必须独立核对 ext4 与分区尺寸。
+	# resize2fs also returns success when no resize was needed, so the ext4 and
+	# partition sizes must be cross-checked independently.
 	fs_blocks=$(LC_ALL=C tune2fs -l /dev/mmcblk0p2 2>/dev/null | \
 		awk -F: '/^Block count:/ {gsub(/[[:space:]]/, "", $2); print $2}')
 	fs_block_size=$(LC_ALL=C tune2fs -l /dev/mmcblk0p2 2>/dev/null | \
@@ -253,13 +270,14 @@ start() {
 }
 RESIZE
 
-# 标准登录控制台：HDMI tty1 + RK UART ttyFIQ0。没有 -n/-l /bin/sh，因此必须认证。
+# Standard login consoles: HDMI tty1 + RK UART ttyFIQ0. No -n/-l /bin/sh, so
+# authentication is required.
 RUN sed -i '/^tty[2-6]::/d; /^#\?ttyS0::/d; /^ttyFIQ0::/d' /etc/inittab && \
     printf '%s\n' \
         'ttyFIQ0::respawn:/sbin/getty -L 1500000 ttyFIQ0 vt100' \
         >> /etc/inittab
 
-# 建立完整 OpenRC 启动顺序。
+# Establish the full OpenRC boot ordering.
 RUN for service in devfs dmesg mdev hwdrivers; do rc-update add "$service" sysinit; done && \
     for service in modules sysctl hostname bootmisc cgroups machine-id seedrng \
                    syslog klogd wpa_supplicant networking resize-rootfs; do \
@@ -280,13 +298,14 @@ RUN for service in devfs dmesg mdev hwdrivers; do rc-update add "$service" sysin
     grep -qx 'background' /etc/dhcpcd.conf && \
     grep -qx 'nohook resolv.conf, wpa_supplicant' /etc/dhcpcd.conf
 
-# ---- 打包成 ext4 块设备镜像 ----
+# ---- Pack into an ext4 block-device image ----
 FROM --platform=$BUILDPLATFORM ubuntu:24.04 AS pack
 RUN apt-get update && apt-get install -y --no-install-recommends e2fsprogs \
     && rm -rf /var/lib/apt/lists/*
 COPY --from=rootfs / /rootfs/
 
-# /etc/resolv.conf 在 OCI 构建阶段是运行时注入文件，因此必须在 pack 阶段写入最终 rootfs。
+# During OCI builds /etc/resolv.conf is a runtime-injected file, so the final
+# rootfs copy must be written in the pack stage.
 RUN rm -f /rootfs/etc/resolv.conf && \
     printf '%s\n' \
         '# Static DNS; DHCP DNS is disabled in /etc/dhcpcd.conf' \

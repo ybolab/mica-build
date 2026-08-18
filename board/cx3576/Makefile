@@ -2,7 +2,7 @@
 # Requires docker buildx; on x86 hosts run once: docker run --privileged --rm tonistiigi/binfmt --install arm64
 
 OUT ?= out
-ROOTFS ?= alpine-rom
+ROOTFS ?= alpine
 
 .PHONY: all uboot kernel rootfs image clean
 

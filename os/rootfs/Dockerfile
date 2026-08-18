@@ -78,6 +78,22 @@ RUN mkdir -p /etc/repart.d && \
     printf '%s\n' 'PARTLABEL=rootfs / ext4 defaults,x-systemd.growfs 0 0' \
         > /etc/fstab
 
+# mosd management daemon: binary + systemd unit (enabled) + D-Bus system policy.
+# build.sh always stages MOSD_DIR (empty when WITH_MOSD=0), so the COPY works
+# on both paths and the RUN installs only when the binary was staged.
+ARG MOSD_DIR
+ARG WITH_MOSD=1
+COPY ${MOSD_DIR}/ /tmp/mosd/
+RUN if [ "$WITH_MOSD" = "1" ] && [ -f /tmp/mosd/mosd ]; then \
+        install -m 0755 /tmp/mosd/mosd /usr/bin/mosd && \
+        install -m 0644 /tmp/mosd/mosd.service /usr/lib/systemd/system/mosd.service && \
+        install -m 0644 /tmp/mosd/com.mos.mosd.conf /usr/share/dbus-1/system.d/com.mos.mosd.conf && \
+        mkdir -p /var/lib/mos /etc/systemd/system/multi-user.target.wants && \
+        ln -sf /usr/lib/systemd/system/mosd.service \
+               /etc/systemd/system/multi-user.target.wants/mosd.service && \
+        test -L /etc/systemd/system/multi-user.target.wants/mosd.service; \
+    fi && rm -rf /tmp/mosd
+
 # journald in RAM only for M1 (no persistent /var/log/journal)
 RUN mkdir -p /etc/systemd/journald.conf.d && \
     printf '%s\n' '[Journal]' 'Storage=volatile' \
