@@ -480,6 +480,32 @@ else
 fi
 ext_regular /usr/share/dbus-1/system.d/com.mos.mosd.conf
 
+# --- board hardware init ---
+modules_conf="$(dbg "cat /etc/mos/modules.conf")"
+if echo "${modules_conf}" | grep -q "bcmdhd" && echo "${modules_conf}" | grep -q "aic8800_fdrv"; then
+    pass "/etc/mos/modules.conf lists bcmdhd and aic8800_fdrv"
+else
+    fail "/etc/mos/modules.conf missing or lacks bcmdhd/aic8800_fdrv"
+fi
+ext_regular /etc/mos/otg.conf
+ext_regular /etc/mos/can.conf
+ext_regular /etc/mos/bt.conf
+for u in mos-modules mos-otg mos-can mos-bt; do
+    ext_regular "/usr/lib/systemd/system/${u}.service"
+    if dbg "stat /etc/systemd/system/multi-user.target.wants/${u}.service" | grep -q "Inode:"; then
+        pass "${u}.service is enabled (multi-user.target.wants)"
+    else
+        fail "${u}.service enablement symlink missing"
+    fi
+done
+ext_regular /usr/bin/btattach
+ext_symlink /usr/lib/firmware/brcm/BCM4362A2.hcd SYN43756B0.hcd
+if dbg "stat /etc/modules-load.d/wifi.conf" | grep -q "Inode:"; then
+    fail "/etc/modules-load.d/wifi.conf still present (superseded by mos-modules)"
+else
+    pass "/etc/modules-load.d/wifi.conf is gone (superseded by mos-modules)"
+fi
+
 # --- summary ---
 total=$((PASS_N + FAIL_N))
 if [ "${FAIL_N}" -eq 0 ]; then

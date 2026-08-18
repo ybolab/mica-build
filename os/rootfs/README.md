@@ -18,7 +18,9 @@ metadata (journal, inode tables, bitmaps) plus everything that must be written
 BEFORE systemd-repart + growfs expand the partition on first boot: journal
 replay, systemd first-boot machine-id and /var directories, and ssh host key
 generation. `os/verify-image.sh` asserts that at least 32 MiB of that margin
-survives packing as free space.
+survives packing as free space. The ext4 block size is pinned to 4 KiB
+(`mke2fs -b 4096`, matching the page size) so mke2fs's "small" profile cannot
+silently switch to 1 KiB blocks now that the filesystem is under 512 MiB.
 
 ## Build
 
@@ -41,8 +43,13 @@ named `mos-arm64`, whose buildkit image bundles its own QEMU emulators.
 ## Package allowlist
 
 Only: systemd systemd-sysv systemd-resolved udev dbus kmod openssh-server
-iproute2 (plus their hard dependencies). Do not add packages without updating
-this list.
+iproute2 bluez rfkill (plus their hard dependencies). Do not add packages
+without updating this list.
+
+bluez and rfkill exist for the board hardware-init layer (btattach + rfkill
+unblock in `mos-bt`); with their new dependencies (libglib2.0-0, libdw1,
+libelf1) they add about 11 MB of installed size (TOTAL_MB 204, budget 400) —
+see `rootfs-report.txt`.
 
 ## mosd
 
@@ -58,6 +65,16 @@ with `aarch64-linux-gnu-gcc`) and installed into the rootfs:
 
 No new apt packages: mosd only needs `dbus` and `systemd`, both already in the
 allowlist. Set `WITH_MOSD=0` to build the rootfs without mosd (default is on).
+
+## Board hardware init
+
+Generic, board-agnostic mechanism in `os/hwinit/` (four best-effort units +
+scripts: `mos-modules`, `mos-otg`, `mos-can`, `mos-bt`); board-specific facts
+(module names, sysfs paths, UART device, CAN defaults) in conf files staged
+from `BOARD_DIR/init/` (falling back to the in-repo `board/cx3576/init/`) into
+`/etc/mos/`. Every unit is condition-gated on its conf file and never blocks,
+delays, or fails the boot; WiFi association / BT pairing stay with connd. The
+units are enabled via `multi-user.target.wants` symlinks like mosd.
 
 ## Dev profile — root login
 
