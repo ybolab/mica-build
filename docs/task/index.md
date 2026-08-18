@@ -40,3 +40,5 @@ Each task is a single line linking to its detail file. All detailed information 
 - [-] [**RFCT-007 cx3576 flashing: rockusb loader-mode descriptor + RK update.img packaging**](RFCT-007.md) `P2`
 - [-] [**RFCT-008 PLAN-010 M1 - systemd rootfs prototype image for cx3576**](RFCT-008.md) `P1`
 - [-] [**RFCT-009 mosd skeleton (Rust management plane, PLAN-010 M2)**](RFCT-009.md) `P1`
+- [-] [**RFCT-010 webd v1 on the mosd bus (PLAN-010 M3)**](RFCT-010.md) `P1`
+- [-] [**RFCT-011 Minimal image sizing + board hardware init (cx3576)**](RFCT-011.md) `P1`

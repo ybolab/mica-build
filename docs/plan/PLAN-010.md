@@ -61,6 +61,13 @@ webd + kiosk (one UI, local/remote paths)    RAUC (native) + tough (TUF signing)
 
 ### M3 - webd on mosd
 
+- **Status**: implementation complete — RFCT-010 (plus RFCT-011 for the
+  image-sizing and board hardware-init continuations delivered in the same
+  campaign). Done criteria met locally (2026-08-18): `mosd/hack/check.sh`
+  green incl. the webd e2e test; `make os-image-cx3576` +
+  `make os-verify-cx3576` green (verify 70/70, image ~427 MiB); on-device
+  "browser to `https://<board-ip>/` -> wizard -> applied settings survive"
+  remains the user's hardware acceptance (pending).
 - Port webd's UI/HTTP layer to the mosd API (drop machined socket client);
   first-run setup + status + network config pane; kiosk deferred to display
   phase.
