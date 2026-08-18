@@ -20,12 +20,14 @@ set -euo pipefail
 
 # Disk layout (sectors are 512 bytes). Only the pre-boot area is fixed: both
 # partition sizes are content-derived (whole MiB). Boot is the staged payload
-# plus BOOT_HEADROOM_MIB, never below BOOT_MIN_SIZE_MIB — headroom for future
-# kernels/initramfs experiments. Rootfs is the packed rootfs.img. Total image =
-# 16 MiB pre-boot area + boot + rootfs + 1 MiB backup-GPT slack.
+# plus BOOT_HEADROOM_MIB, never below BOOT_MIN_SIZE_MIB, rounded up to a
+# BOOT_ALIGN_MIB multiple — the floor matches the 64 MiB BOOT-A/B slots the M4
+# A/B layout reserves. Rootfs is the packed rootfs.img. Total image = 16 MiB
+# pre-boot area + boot + rootfs + 1 MiB backup-GPT slack.
 BOOT_START_SECTOR=32768 # 16 MiB
-BOOT_MIN_SIZE_MIB=128
-BOOT_HEADROOM_MIB=32
+BOOT_MIN_SIZE_MIB=64
+BOOT_HEADROOM_MIB=16
+BOOT_ALIGN_MIB=4
 UBOOT_SEEK_SECTOR=64
 
 APPEND="root=PARTLABEL=rootfs rw console=ttyFIQ0,1500000 earlycon=uart8250,mmio32,0x2ad40000 storagemedia=emmc net.ifnames=0 rootwait"
@@ -80,8 +82,9 @@ EOF
     if [ "${boot_size_mib}" -lt "${BOOT_MIN_SIZE_MIB}" ]; then
         boot_size_mib="${BOOT_MIN_SIZE_MIB}"
     fi
+    boot_size_mib=$(((boot_size_mib + BOOT_ALIGN_MIB - 1) / BOOT_ALIGN_MIB * BOOT_ALIGN_MIB))
     total_size_mib=$((BOOT_START_SECTOR / 2048 + boot_size_mib + rootfs_size_mib + 1))
-    echo "boot payload ${boot_content_mib} MiB -> boot partition ${boot_size_mib} MiB; rootfs ${rootfs_size_mib} MiB; image ${total_size_mib} MiB"
+    echo "boot payload ${boot_content_mib} MiB -> boot partition ${boot_size_mib} MiB (min ${BOOT_MIN_SIZE_MIB}, +${BOOT_HEADROOM_MIB} headroom, ${BOOT_ALIGN_MIB} MiB aligned); rootfs ${rootfs_size_mib} MiB; image ${total_size_mib} MiB"
 
     truncate -s "${boot_size_mib}M" "${workdir}/boot.img"
     mkfs.vfat --invariant -F 32 -n BOOT -i "${FAT_VOLUME_ID}" "${workdir}/boot.img" >/dev/null

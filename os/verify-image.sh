@@ -20,9 +20,10 @@ BOARD_DIR="${BOARD_DIR:-${REPO_ROOT}/board/cx3576}"
 
 # Image contract constants. Both partition sizes are content-derived, so they
 # are read from the GPT instead of being fixed here — p1 only has to clear the
-# BOOT_MIN_SIZE_MIB floor, and the p2 start plus the FAT/rootfs extraction
-# offsets follow from the partition entries. The total image size follows as
-# 16 MiB pre-boot area + p1 + p2 + 1 MiB backup-GPT slack.
+# BOOT_MIN_SIZE_MIB floor and land on a BOOT_ALIGN_MIB boundary, and the p2
+# start plus the FAT/rootfs extraction offsets follow from the partition
+# entries. The total image size follows as 16 MiB pre-boot area + p1 + p2 +
+# 1 MiB backup-GPT slack.
 DISK_GUID="5AC35760-0001-4000-8000-000000000000"
 BOOT_GUID="5AC35760-0001-4000-8000-000000000001"
 ROOTFS_GUID="5AC35760-0001-4000-8000-000000000002"
@@ -30,7 +31,8 @@ ESP_TYPE="C12A7328-F81F-11D2-BA4B-00A0C93EC93B"
 LINUX_FS_DATA="0FC63DAF-8483-4772-8E79-3D69D8477DE4"
 ROOTFS_UUID="5ac35760-0002-4000-8000-000000000002"
 BOOT_FIRST_SECTOR=32768
-BOOT_MIN_SIZE_MIB=128
+BOOT_MIN_SIZE_MIB=64
+BOOT_ALIGN_MIB=4
 UBOOT_OFFSET_BYTES=$((64 * 512))
 FREE_FLOOR_BYTES=$((32 * 1024 * 1024))
 KERNEL_VERSION="6.1.115"
@@ -191,6 +193,11 @@ if [[ "${p1_size}" =~ ^[0-9]+$ ]] && [ $((p1_size % 2048)) -eq 0 ] &&
 else
     BOOT_SIZE_MIB=0
     fail "p1 size is '${p1_size}' sectors, expected a whole-MiB multiple of at least ${BOOT_MIN_SIZE_MIB} MiB"
+fi
+if [ "${BOOT_SIZE_MIB}" -gt 0 ] && [ $((BOOT_SIZE_MIB % BOOT_ALIGN_MIB)) -eq 0 ]; then
+    pass "p1 size ${BOOT_SIZE_MIB} MiB is a multiple of ${BOOT_ALIGN_MIB} MiB"
+else
+    fail "p1 size ${BOOT_SIZE_MIB} MiB is not a multiple of ${BOOT_ALIGN_MIB} MiB"
 fi
 p1_attrs="$(sg_field "${p1}" "Attribute flags")"
 if [[ "${p1_attrs}" =~ ^[0-9A-Fa-f]+$ ]] && [ $((16#${p1_attrs} & 4)) -ne 0 ]; then
