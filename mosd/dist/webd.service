@@ -1,0 +1,13 @@
+[Unit]
+Description=mos web UI daemon
+After=network.target mosd.service
+Wants=mosd.service
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/webd
+Restart=on-failure
+StateDirectory=mos/webd
+
+[Install]
+WantedBy=multi-user.target

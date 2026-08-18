@@ -1,4 +1,4 @@
-//! Typed settings tree (schema v1) and its dot-path accessors.
+//! Typed settings tree (schema v2) and its dot-path accessors.
 
 use std::collections::BTreeMap;
 
@@ -8,9 +8,9 @@ use crate::error::SettingsError;
 use crate::path::{json_path_get, json_path_set, split_path};
 
 /// Current settings schema version written by this crate.
-pub const SCHEMA_VERSION: u32 = 1;
+pub const SCHEMA_VERSION: u32 = 2;
 
-/// Persistent mosd settings tree (schema v1).
+/// Persistent mosd settings tree (schema v2).
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Settings {
@@ -20,6 +20,9 @@ pub struct Settings {
     pub hostname: String,
     /// Per-interface network configuration, keyed by interface name.
     pub network: BTreeMap<String, IfaceSettings>,
+    /// Access control settings, owned by webd.
+    #[serde(default)]
+    pub access: AccessSettings,
 }
 
 impl Default for Settings {
@@ -28,8 +31,26 @@ impl Default for Settings {
             schema_version: SCHEMA_VERSION,
             hostname: "mos".to_string(),
             network: BTreeMap::new(),
+            access: AccessSettings::default(),
         }
     }
+}
+
+/// Access control settings.
+#[derive(Debug, Clone, PartialEq, Default, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct AccessSettings {
+    /// Web admin credentials; absent until webd sets them.
+    #[serde(rename = "webAdmin", default, skip_serializing_if = "Option::is_none")]
+    pub web_admin: Option<WebAdminSettings>,
+}
+
+/// Web admin credentials, written by webd.
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct WebAdminSettings {
+    /// Argon2id password hash in PHC string format.
+    pub password_hash: String,
 }
 
 /// Network configuration for a single interface.
@@ -123,5 +144,6 @@ mod tests {
         assert_eq!(parsed.schema_version, SCHEMA_VERSION);
         assert_eq!(parsed.hostname, "mos");
         assert!(parsed.network.is_empty());
+        assert!(parsed.access.web_admin.is_none());
     }
 }

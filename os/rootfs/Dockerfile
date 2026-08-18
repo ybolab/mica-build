@@ -3,7 +3,7 @@
 # os/rootfs — Debian systemd arm64 rootfs for cx3576 (PLAN-010 M1)
 #
 #   bash os/rootfs/build.sh
-#   → _out/cx3576/rootfs.img         ext4 root (exactly 1024 MiB)
+#   → _out/cx3576/rootfs.img         ext4 root (minimal, content-derived size)
 #   → _out/cx3576/rootfs-report.txt  package list + installed size
 #
 # Build context = repo root. Depends on board/cx3576/out/kernel/modules.tar,
@@ -27,6 +27,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         kmod \
         openssh-server \
         iproute2 \
+        bluez \
+        rfkill \
     && rm -rf /var/lib/apt/lists/*
 
 # Kernel modules. Debian is merged-usr (/lib -> usr/lib) and the tar's paths
@@ -39,12 +41,17 @@ RUN mkdir -p /tmp/mods /usr/lib/modules && \
     cp -a /tmp/mods/lib/modules/. /usr/lib/modules/ && \
     rm -rf /tmp/mods /tmp/modules.tar
 
-# WiFi firmware (AP6275S / AIC8800D80 dual SKU) + driver autoload
+# WiFi/BT firmware (AP6275S / AIC8800D80 dual SKU). Driver loading is done by
+# the mos-modules unit (best-effort, silent on the absent SKU) instead of
+# modules-load.d. The brcm/ symlink serves the BT patchram: the btbcm driver
+# identifies the AP6275S BT core (BCM43752A2) as BCM4362A2 and requests
+# brcm/BCM4362A2.hcd, which resolves to the vendor SYN43756B0.hcd blob.
 COPY board/cx3576/rootfs/firmware/ /usr/lib/firmware/
 RUN ln -sf fw_bcm43752a2_ag.bin /usr/lib/firmware/fw_bcmdhd.bin && \
     ln -sf nvram_ap6275s.txt /usr/lib/firmware/nvram.txt && \
     ln -sf clm_bcm43752a2_ag.blob /usr/lib/firmware/clm_bcmdhd.blob && \
-    printf '%s\n' 'bcmdhd' 'aic8800_fdrv' > /etc/modules-load.d/wifi.conf
+    mkdir -p /usr/lib/firmware/brcm && \
+    ln -sf ../SYN43756B0.hcd /usr/lib/firmware/brcm/BCM4362A2.hcd
 
 # Networking: DHCP on all eth* (kernel cmdline has net.ifnames=0)
 RUN printf '%s\n' \
@@ -92,7 +99,33 @@ RUN if [ "$WITH_MOSD" = "1" ] && [ -f /tmp/mosd/mosd ]; then \
         ln -sf /usr/lib/systemd/system/mosd.service \
                /etc/systemd/system/multi-user.target.wants/mosd.service && \
         test -L /etc/systemd/system/multi-user.target.wants/mosd.service; \
+    fi && \
+    if [ "$WITH_MOSD" = "1" ] && [ -f /tmp/mosd/webd ]; then \
+        install -m 0755 /tmp/mosd/webd /usr/bin/webd && \
+        install -m 0644 /tmp/mosd/webd.service /usr/lib/systemd/system/webd.service && \
+        mkdir -p /etc/systemd/system/multi-user.target.wants && \
+        ln -sf /usr/lib/systemd/system/webd.service \
+               /etc/systemd/system/multi-user.target.wants/webd.service && \
+        test -L /etc/systemd/system/multi-user.target.wants/webd.service; \
     fi && rm -rf /tmp/mosd
+
+# Board hardware init: generic best-effort oneshots (os/hwinit, board-agnostic
+# mechanism) + per-board facts staged from BOARD_DIR/init into /etc/mos.
+# BOARD_INIT_DIR may be an empty dir (boards without hw-init facts): every unit
+# is condition-gated on its conf file, so enabling them is safe either way.
+ARG BOARD_INIT_DIR
+COPY os/hwinit/ /tmp/hwinit/
+COPY ${BOARD_INIT_DIR}/ /tmp/board-init/
+RUN mkdir -p /etc/mos /usr/lib/mos /etc/systemd/system/multi-user.target.wants && \
+    cp -a /tmp/board-init/. /etc/mos/ && \
+    install -m 0755 /tmp/hwinit/hwinit-* /usr/lib/mos/ && \
+    install -m 0644 /tmp/hwinit/*.service /usr/lib/systemd/system/ && \
+    for u in mos-modules mos-otg mos-can mos-bt; do \
+        ln -sf "/usr/lib/systemd/system/$u.service" \
+               "/etc/systemd/system/multi-user.target.wants/$u.service" && \
+        test -L "/etc/systemd/system/multi-user.target.wants/$u.service"; \
+    done && \
+    rm -rf /tmp/hwinit /tmp/board-init
 
 # journald in RAM only for M1 (no persistent /var/log/journal)
 RUN mkdir -p /etc/systemd/journald.conf.d && \
@@ -121,22 +154,31 @@ RUN { dpkg-query -W -f='${Package}\t${Installed-Size}\n'; \
     } > /rootfs-report.txt
 
 # ---------------------------------------------------------------------------
-# Pack: ext4 image, fixed 1024 MiB
+# Pack: ext4 image, minimal content-derived size
 # ---------------------------------------------------------------------------
 FROM --platform=$BUILDPLATFORM debian:bookworm-slim AS pack
 RUN apt-get update && apt-get install -y --no-install-recommends e2fsprogs \
     && rm -rf /var/lib/apt/lists/*
 COPY --from=rootfs / /rootfs/
 # ^orphan_file is mandatory — kernel 6.1 cannot mount orphan_file filesystems.
+# Size is derived from content only (no clock, no randomness):
+#   size_mib = ceil(du_mib * 115 / 100) + 48
+# The 48 MiB fixed margin covers ext4 metadata plus early-boot writes BEFORE
+# systemd-repart/growfs expand p2 (journal replay, first-boot machine-id and
+# /var dirs, ssh host key generation). -b 4096 pins the block size: below
+# 512 MiB mke2fs's "small" profile would silently switch to 1 KiB blocks.
 RUN mkdir -p /out && \
     mv /rootfs/rootfs-report.txt /out/rootfs-report.txt && \
     ln -sf ../run/systemd/resolve/stub-resolv.conf /rootfs/etc/resolv.conf && \
     echo 'mos' > /rootfs/etc/hostname && \
     echo '127.0.1.1 mos' >> /rootfs/etc/hosts && \
     : > /rootfs/etc/machine-id && \
-    mke2fs -q -t ext4 -L rootfs -U 5ac35760-0002-4000-8000-000000000002 \
+    du_mib=$(du -sxm /rootfs | cut -f1) && \
+    size_mib=$(( (du_mib * 115 + 99) / 100 + 48 )) && \
+    echo "pack: content ${du_mib} MiB -> image ${size_mib} MiB" && \
+    mke2fs -q -t ext4 -b 4096 -L rootfs -U 5ac35760-0002-4000-8000-000000000002 \
         -d /rootfs -O ^orphan_file,^metadata_csum_seed \
-        -E root_owner=0:0 /out/rootfs.img 1024M
+        -E root_owner=0:0 /out/rootfs.img "${size_mib}M"
 
 FROM scratch AS artifact
 COPY --from=pack /out/rootfs.img /

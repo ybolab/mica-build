@@ -18,13 +18,17 @@ set -euo pipefail
 # container (--assemble mode); epoch naming and the -latest symlink always
 # happen on the host side.
 
-# Fixed disk layout (sectors are 512 bytes).
-TOTAL_SIZE_MIB=1554
+# Disk layout (sectors are 512 bytes). Only the pre-boot area is fixed: both
+# partition sizes are content-derived (whole MiB). Boot is the staged payload
+# plus BOOT_HEADROOM_MIB, never below BOOT_MIN_SIZE_MIB, rounded up to a
+# BOOT_ALIGN_MIB multiple — the floor matches the 64 MiB BOOT-A/B slots the M4
+# A/B layout reserves. Rootfs is the packed rootfs.img. Total image = 16 MiB
+# pre-boot area + boot + rootfs + 1 MiB backup-GPT slack.
 BOOT_START_SECTOR=32768 # 16 MiB
-BOOT_SIZE_MIB=512
-ROOTFS_SIZE_MIB=1024
+BOOT_MIN_SIZE_MIB=64
+BOOT_HEADROOM_MIB=16
+BOOT_ALIGN_MIB=4
 UBOOT_SEEK_SECTOR=64
-ROOTFS_SIZE_BYTES=1073741824
 
 APPEND="root=PARTLABEL=rootfs rw console=ttyFIQ0,1500000 earlycon=uart8250,mmio32,0x2ad40000 storagemedia=emmc net.ifnames=0 rootwait"
 
@@ -50,10 +54,13 @@ assemble() {
         echo "error: ${UBOOT} does not fit between sector ${UBOOT_SEEK_SECTOR} and the boot partition" >&2
         exit 1
     fi
-    if [ "$(stat -c %s "${ROOTFS_IMG}")" -ne "${ROOTFS_SIZE_BYTES}" ]; then
-        echo "error: ${ROOTFS_IMG} is $(stat -c %s "${ROOTFS_IMG}") bytes, expected exactly ${ROOTFS_SIZE_BYTES} (1 GiB)" >&2
+    local rootfs_bytes rootfs_size_mib boot_content_mib boot_size_mib total_size_mib
+    rootfs_bytes="$(stat -c %s "${ROOTFS_IMG}")"
+    if [ $((rootfs_bytes % 1048576)) -ne 0 ]; then
+        echo "error: ${ROOTFS_IMG} is ${rootfs_bytes} bytes, not a whole-MiB multiple" >&2
         exit 1
     fi
+    rootfs_size_mib=$((rootfs_bytes / 1048576))
 
     mkdir -p "${workdir}/boot/extlinux"
     cp "${KERNEL_IMAGE}" "${workdir}/boot/Image"
@@ -68,25 +75,37 @@ label cx3576
 EOF
     find "${workdir}/boot" -exec touch -h -d "${FILE_MTIME}" {} +
 
-    truncate -s "${BOOT_SIZE_MIB}M" "${workdir}/boot.img"
+    # --apparent-size keeps the measurement independent of the block size of
+    # whatever filesystem mktemp landed on; -m rounds up to whole MiB.
+    boot_content_mib="$(du -sm --apparent-size "${workdir}/boot" | cut -f1)"
+    boot_size_mib=$((boot_content_mib + BOOT_HEADROOM_MIB))
+    if [ "${boot_size_mib}" -lt "${BOOT_MIN_SIZE_MIB}" ]; then
+        boot_size_mib="${BOOT_MIN_SIZE_MIB}"
+    fi
+    boot_size_mib=$(((boot_size_mib + BOOT_ALIGN_MIB - 1) / BOOT_ALIGN_MIB * BOOT_ALIGN_MIB))
+    total_size_mib=$((BOOT_START_SECTOR / 2048 + boot_size_mib + rootfs_size_mib + 1))
+    echo "boot payload ${boot_content_mib} MiB -> boot partition ${boot_size_mib} MiB (min ${BOOT_MIN_SIZE_MIB}, +${BOOT_HEADROOM_MIB} headroom, ${BOOT_ALIGN_MIB} MiB aligned); rootfs ${rootfs_size_mib} MiB; image ${total_size_mib} MiB"
+
+    truncate -s "${boot_size_mib}M" "${workdir}/boot.img"
     mkfs.vfat --invariant -F 32 -n BOOT -i "${FAT_VOLUME_ID}" "${workdir}/boot.img" >/dev/null
     mcopy -s -m -i "${workdir}/boot.img" "${workdir}"/boot/* ::/
 
     local img_tmp="${IMG_OUT}.tmp"
     rm -f "${img_tmp}"
-    truncate -s "${TOTAL_SIZE_MIB}M" "${img_tmp}"
+    truncate -s "${total_size_mib}M" "${img_tmp}"
 
-    # boot at 16 MiB; rootfs right after it at 528 MiB, grown to fill the
-    # eMMC on first boot by systemd-repart + x-systemd.growfs.
+    # boot at 16 MiB; rootfs right after it (sgdisk picks the next MiB-aligned
+    # sector), grown to fill the eMMC on first boot by systemd-repart +
+    # x-systemd.growfs.
     sgdisk --clear \
         --disk-guid="${DISK_GUID}" \
-        --new=1:${BOOT_START_SECTOR}:+${BOOT_SIZE_MIB}M --change-name=1:boot --typecode=1:"${ESP_TYPE}" --attributes=1:set:2 --partition-guid=1:"${BOOT_GUID}" \
-        --new=2:0:+${ROOTFS_SIZE_MIB}M --change-name=2:rootfs --typecode=2:"${LINUX_FS_DATA}" --partition-guid=2:"${ROOTFS_GUID}" \
+        --new=1:${BOOT_START_SECTOR}:+${boot_size_mib}M --change-name=1:boot --typecode=1:"${ESP_TYPE}" --attributes=1:set:2 --partition-guid=1:"${BOOT_GUID}" \
+        --new=2:0:+${rootfs_size_mib}M --change-name=2:rootfs --typecode=2:"${LINUX_FS_DATA}" --partition-guid=2:"${ROOTFS_GUID}" \
         "${img_tmp}" >/dev/null
 
     dd if="${UBOOT}" of="${img_tmp}" bs=512 seek=${UBOOT_SEEK_SECTOR} conv=notrunc status=none
     dd if="${workdir}/boot.img" of="${img_tmp}" bs=1M seek=$((BOOT_START_SECTOR / 2048)) conv=notrunc status=none
-    dd if="${ROOTFS_IMG}" of="${img_tmp}" bs=1M seek=$((BOOT_START_SECTOR / 2048 + BOOT_SIZE_MIB)) conv=notrunc status=none
+    dd if="${ROOTFS_IMG}" of="${img_tmp}" bs=1M seek=$((BOOT_START_SECTOR / 2048 + boot_size_mib)) conv=notrunc status=none
 
     local verify
     verify="$(sgdisk --verify "${img_tmp}")"

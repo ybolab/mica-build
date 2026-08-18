@@ -6,8 +6,7 @@ set -euo pipefail
 # rootfs on p2, plus the mosd daemon integration (binary, unit, D-Bus policy).
 # Emits one PASS:/FAIL: line per check and a final
 # "RESULT: PASS|FAIL (n/m checks)" summary; exits non-zero if any check fails.
-# Expected total on the default path: 47 checks (42 for the M1 contract + 5
-# for mosd).
+# Totals are dynamic (PASS_N/total); nothing to hand-bump when checks change.
 #
 # No loop mounts and no --privileged: GPT is inspected with sgdisk, the FAT
 # partition with mtools at an offset, and the ext4 partition by dd-extracting
@@ -19,8 +18,12 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(dirname "${SCRIPT_DIR}")"
 BOARD_DIR="${BOARD_DIR:-${REPO_ROOT}/board/cx3576}"
 
-# Image contract constants.
-TOTAL_SIZE_BYTES=$((1554 * 1024 * 1024))
+# Image contract constants. Both partition sizes are content-derived, so they
+# are read from the GPT instead of being fixed here — p1 only has to clear the
+# BOOT_MIN_SIZE_MIB floor and land on a BOOT_ALIGN_MIB boundary, and the p2
+# start plus the FAT/rootfs extraction offsets follow from the partition
+# entries. The total image size follows as 16 MiB pre-boot area + p1 + p2 +
+# 1 MiB backup-GPT slack.
 DISK_GUID="5AC35760-0001-4000-8000-000000000000"
 BOOT_GUID="5AC35760-0001-4000-8000-000000000001"
 ROOTFS_GUID="5AC35760-0001-4000-8000-000000000002"
@@ -28,13 +31,10 @@ ESP_TYPE="C12A7328-F81F-11D2-BA4B-00A0C93EC93B"
 LINUX_FS_DATA="0FC63DAF-8483-4772-8E79-3D69D8477DE4"
 ROOTFS_UUID="5ac35760-0002-4000-8000-000000000002"
 BOOT_FIRST_SECTOR=32768
-BOOT_SIZE_SECTORS=$((512 * 2048))
-ROOTFS_FIRST_SECTOR=1081344
-ROOTFS_SIZE_SECTORS=$((1024 * 2048))
+BOOT_MIN_SIZE_MIB=64
+BOOT_ALIGN_MIB=4
 UBOOT_OFFSET_BYTES=$((64 * 512))
-FAT_OFFSET_BYTES=$((16 * 1024 * 1024))
-ROOTFS_OFFSET_MIB=528
-ROOTFS_SIZE_MIB=1024
+FREE_FLOOR_BYTES=$((32 * 1024 * 1024))
 KERNEL_VERSION="6.1.115"
 APPEND_LINE="append root=PARTLABEL=rootfs rw console=ttyFIQ0,1500000 earlycon=uart8250,mmio32,0x2ad40000 storagemedia=emmc net.ifnames=0 rootwait"
 
@@ -64,7 +64,7 @@ if [ ! -e "${IMG}" ]; then
 fi
 
 # Re-exec in a container when the host lacks any required tool.
-REQUIRED_TOOLS=(sgdisk mdir mcopy debugfs tune2fs cmp)
+REQUIRED_TOOLS=(sgdisk mdir mcopy debugfs tune2fs dumpe2fs e2fsck cmp)
 if [ "${INNER}" -eq 0 ]; then
     missing=0
     for tool in "${REQUIRED_TOOLS[@]}"; do
@@ -135,14 +135,6 @@ if [ "${EXPECT_SYMLINK}" -eq 1 ]; then
     fi
 fi
 
-# --- image size ---
-actual_size="$(stat -Lc %s "${IMG}" 2>/dev/null || echo 0)"
-if [ "${actual_size}" = "${TOTAL_SIZE_BYTES}" ]; then
-    pass "image size is ${TOTAL_SIZE_BYTES} bytes (1554 MiB)"
-else
-    fail "image size is ${actual_size} bytes, expected ${TOTAL_SIZE_BYTES} (1554 MiB)"
-fi
-
 # --- GPT: sgdisk --verify ---
 verify_out="$(sgdisk --verify "${IMG}" 2>&1 || true)"
 complaints="$(echo "${verify_out}" | grep -E "Caution|Warning" | grep -Ev "doesn't (begin|end) on a|degraded performance" || true)"
@@ -188,11 +180,24 @@ if [ "${p1_first}" = "${BOOT_FIRST_SECTOR}" ]; then
 else
     fail "p1 first sector is '${p1_first}', expected ${BOOT_FIRST_SECTOR}"
 fi
-p1_size="$(sg_field "${p1}" "Partition size" | awk '{print $1}')"
-if [ "${p1_size}" = "${BOOT_SIZE_SECTORS}" ]; then
-    pass "p1 size is ${BOOT_SIZE_SECTORS} sectors (512 MiB)"
+if [[ "${p1_first}" =~ ^[0-9]+$ ]]; then
+    FAT_OFFSET_BYTES=$((p1_first * 512))
 else
-    fail "p1 size is '${p1_size}' sectors, expected ${BOOT_SIZE_SECTORS} (512 MiB)"
+    FAT_OFFSET_BYTES=$((BOOT_FIRST_SECTOR * 512))
+fi
+p1_size="$(sg_field "${p1}" "Partition size" | awk '{print $1}')"
+if [[ "${p1_size}" =~ ^[0-9]+$ ]] && [ $((p1_size % 2048)) -eq 0 ] &&
+    [ "${p1_size}" -ge $((BOOT_MIN_SIZE_MIB * 2048)) ]; then
+    BOOT_SIZE_MIB=$((p1_size / 2048))
+    pass "p1 size is ${p1_size} sectors (${BOOT_SIZE_MIB} MiB, whole-MiB and >= ${BOOT_MIN_SIZE_MIB} MiB floor)"
+else
+    BOOT_SIZE_MIB=0
+    fail "p1 size is '${p1_size}' sectors, expected a whole-MiB multiple of at least ${BOOT_MIN_SIZE_MIB} MiB"
+fi
+if [ "${BOOT_SIZE_MIB}" -gt 0 ] && [ $((BOOT_SIZE_MIB % BOOT_ALIGN_MIB)) -eq 0 ]; then
+    pass "p1 size ${BOOT_SIZE_MIB} MiB is a multiple of ${BOOT_ALIGN_MIB} MiB"
+else
+    fail "p1 size ${BOOT_SIZE_MIB} MiB is not a multiple of ${BOOT_ALIGN_MIB} MiB"
 fi
 p1_attrs="$(sg_field "${p1}" "Attribute flags")"
 if [[ "${p1_attrs}" =~ ^[0-9A-Fa-f]+$ ]] && [ $((16#${p1_attrs} & 4)) -ne 0 ]; then
@@ -214,9 +219,9 @@ else
 fi
 fat_sig="$(dd if="${IMG}" skip=$((FAT_OFFSET_BYTES + 82)) count=5 iflag=skip_bytes,count_bytes status=none 2>/dev/null || true)"
 if [ "${fat_sig}" = "FAT32" ]; then
-    pass "p1 has a FAT32 boot sector signature"
+    pass "p1 has a FAT32 boot sector signature at $((FAT_OFFSET_BYTES / 1048576)) MiB"
 else
-    fail "p1 FAT32 signature not found at offset 16 MiB + 82"
+    fail "p1 FAT32 signature not found at offset $((FAT_OFFSET_BYTES / 1048576)) MiB + 82"
 fi
 
 # --- p2 (rootfs) ---
@@ -228,16 +233,21 @@ else
     fail "p2 name is ${p2_name:-unreadable}, expected 'rootfs'"
 fi
 p2_first="$(sg_field "${p2}" "First sector" | awk '{print $1}')"
-if [ "${p2_first}" = "${ROOTFS_FIRST_SECTOR}" ]; then
-    pass "p2 first sector is ${ROOTFS_FIRST_SECTOR} (528 MiB)"
+ROOTFS_FIRST_SECTOR=$(((BOOT_FIRST_SECTOR / 2048 + BOOT_SIZE_MIB) * 2048))
+if [ "${BOOT_SIZE_MIB}" -gt 0 ] && [ "${p2_first}" = "${ROOTFS_FIRST_SECTOR}" ]; then
+    ROOTFS_OFFSET_MIB=$((p2_first / 2048))
+    pass "p2 first sector is ${ROOTFS_FIRST_SECTOR} (${ROOTFS_OFFSET_MIB} MiB, right after p1)"
 else
-    fail "p2 first sector is '${p2_first}', expected ${ROOTFS_FIRST_SECTOR}"
+    ROOTFS_OFFSET_MIB=0
+    fail "p2 first sector is '${p2_first}', expected ${ROOTFS_FIRST_SECTOR} (16 MiB pre-boot + ${BOOT_SIZE_MIB} MiB boot)"
 fi
 p2_size="$(sg_field "${p2}" "Partition size" | awk '{print $1}')"
-if [ "${p2_size}" = "${ROOTFS_SIZE_SECTORS}" ]; then
-    pass "p2 size is ${ROOTFS_SIZE_SECTORS} sectors (1024 MiB)"
+if [[ "${p2_size}" =~ ^[0-9]+$ ]] && [ "${p2_size}" -gt 0 ] && [ $((p2_size % 2048)) -eq 0 ]; then
+    ROOTFS_SIZE_MIB=$((p2_size / 2048))
+    pass "p2 size is ${p2_size} sectors (${ROOTFS_SIZE_MIB} MiB, a whole-MiB multiple)"
 else
-    fail "p2 size is '${p2_size}' sectors, expected ${ROOTFS_SIZE_SECTORS} (1024 MiB)"
+    ROOTFS_SIZE_MIB=0
+    fail "p2 size is '${p2_size}' sectors, expected a positive whole-MiB multiple"
 fi
 p2_type="$(sg_field "${p2}" "Partition GUID code" | awk '{print $1}')"
 if [ "${p2_type^^}" = "${LINUX_FS_DATA}" ]; then
@@ -250,6 +260,17 @@ if [ "${p2_guid^^}" = "${ROOTFS_GUID}" ]; then
     pass "p2 GUID is ${ROOTFS_GUID}"
 else
     fail "p2 GUID is '${p2_guid}', expected ${ROOTFS_GUID}"
+fi
+
+# --- image size: 16 MiB pre-boot + p1 + p2 + 1 MiB backup-GPT slack ---
+pre_boot_mib=$((BOOT_FIRST_SECTOR / 2048))
+expected_size=$(((pre_boot_mib + BOOT_SIZE_MIB + ROOTFS_SIZE_MIB + 1) * 1024 * 1024))
+size_terms="${pre_boot_mib} + ${BOOT_SIZE_MIB} + ${ROOTFS_SIZE_MIB} + 1 MiB"
+actual_size="$(stat -Lc %s "${IMG}" 2>/dev/null || echo 0)"
+if [ "${BOOT_SIZE_MIB}" -gt 0 ] && [ "${ROOTFS_SIZE_MIB}" -gt 0 ] && [ "${actual_size}" = "${expected_size}" ]; then
+    pass "image size is ${expected_size} bytes (${size_terms})"
+else
+    fail "image size is ${actual_size} bytes, expected ${expected_size} (${size_terms})"
 fi
 
 # --- raw u-boot at sector 64 ---
@@ -346,6 +367,31 @@ if [ "${e2uuid,,}" = "${ROOTFS_UUID}" ]; then
     pass "p2 ext4 UUID is ${ROOTFS_UUID}"
 else
     fail "p2 ext4 UUID is '${e2uuid}', expected ${ROOTFS_UUID}"
+fi
+
+# Filesystem geometry and health: the packed ext4 must exactly fill p2, pass
+# fsck, and keep the early-boot free-space margin (writes before repart/growfs).
+e2fs_header="$(dumpe2fs -h "${P2_IMG}" 2>/dev/null || true)"
+block_count="$(echo "${e2fs_header}" | sed -n 's/^Block count:[[:space:]]*//p')"
+block_size="$(echo "${e2fs_header}" | sed -n 's/^Block size:[[:space:]]*//p')"
+free_blocks="$(echo "${e2fs_header}" | sed -n 's/^Free blocks:[[:space:]]*//p')"
+p2_bytes=$((ROOTFS_SIZE_MIB * 1024 * 1024))
+fs_bytes=$((${block_count:-0} * ${block_size:-0}))
+if [ "${fs_bytes}" -gt 0 ] && [ "${fs_bytes}" -eq "${p2_bytes}" ]; then
+    pass "p2 ext4 size (${block_count} blocks x ${block_size} bytes) matches the partition size"
+else
+    fail "p2 ext4 size is ${fs_bytes} bytes, expected ${p2_bytes} (partition size)"
+fi
+free_bytes=$((${free_blocks:-0} * ${block_size:-0}))
+if [ "${free_bytes}" -ge "${FREE_FLOOR_BYTES}" ]; then
+    pass "p2 free space is $((free_bytes / 1048576)) MiB (>= 32 MiB early-boot floor)"
+else
+    fail "p2 free space is ${free_bytes} bytes, below the 32 MiB early-boot floor"
+fi
+if e2fsck -fn "${P2_IMG}" >/dev/null 2>&1; then
+    pass "e2fsck -fn on p2 is clean"
+else
+    fail "e2fsck -fn on p2 reported errors"
 fi
 
 # Run a single debugfs command against the extracted p2.
@@ -452,6 +498,60 @@ else
     fail "mosd.service enablement symlink missing"
 fi
 ext_regular /usr/share/dbus-1/system.d/com.mos.mosd.conf
+
+# --- webd daemon integration ---
+ext_regular /usr/bin/webd
+WEBD_BIN="${TMP}/webd-bin"
+dbg "dump /usr/bin/webd ${WEBD_BIN}" >/dev/null
+elf_head="$(od -An -tx1 -N20 "${WEBD_BIN}" 2>/dev/null | tr -d ' \n')"
+# ELF magic 7f454c46; e_machine at offset 18 is 0xB7 (aarch64, little-endian).
+if [ "${elf_head:0:8}" = "7f454c46" ] && [ "${elf_head:36:4}" = "b700" ]; then
+    pass "/usr/bin/webd is an aarch64 ELF"
+else
+    fail "/usr/bin/webd is not an aarch64 ELF (header: '${elf_head:0:40}')"
+fi
+webd_unit="$(dbg "cat /usr/lib/systemd/system/webd.service")"
+if echo "${webd_unit}" | grep -q "After=.*mosd.service"; then
+    pass "/usr/lib/systemd/system/webd.service orders After= mosd.service"
+else
+    fail "/usr/lib/systemd/system/webd.service missing or lacks After=...mosd.service"
+fi
+if echo "${webd_unit}" | grep -q "StateDirectory=mos/webd"; then
+    pass "/usr/lib/systemd/system/webd.service has StateDirectory=mos/webd"
+else
+    fail "/usr/lib/systemd/system/webd.service missing or lacks StateDirectory=mos/webd"
+fi
+if dbg "stat /etc/systemd/system/multi-user.target.wants/webd.service" | grep -q "Inode:"; then
+    pass "webd.service is enabled (multi-user.target.wants)"
+else
+    fail "webd.service enablement symlink missing"
+fi
+
+# --- board hardware init ---
+modules_conf="$(dbg "cat /etc/mos/modules.conf")"
+if echo "${modules_conf}" | grep -q "bcmdhd" && echo "${modules_conf}" | grep -q "aic8800_fdrv"; then
+    pass "/etc/mos/modules.conf lists bcmdhd and aic8800_fdrv"
+else
+    fail "/etc/mos/modules.conf missing or lacks bcmdhd/aic8800_fdrv"
+fi
+ext_regular /etc/mos/otg.conf
+ext_regular /etc/mos/can.conf
+ext_regular /etc/mos/bt.conf
+for u in mos-modules mos-otg mos-can mos-bt; do
+    ext_regular "/usr/lib/systemd/system/${u}.service"
+    if dbg "stat /etc/systemd/system/multi-user.target.wants/${u}.service" | grep -q "Inode:"; then
+        pass "${u}.service is enabled (multi-user.target.wants)"
+    else
+        fail "${u}.service enablement symlink missing"
+    fi
+done
+ext_regular /usr/bin/btattach
+ext_symlink /usr/lib/firmware/brcm/BCM4362A2.hcd SYN43756B0.hcd
+if dbg "stat /etc/modules-load.d/wifi.conf" | grep -q "Inode:"; then
+    fail "/etc/modules-load.d/wifi.conf still present (superseded by mos-modules)"
+else
+    pass "/etc/modules-load.d/wifi.conf is gone (superseded by mos-modules)"
+fi
 
 # --- summary ---
 total=$((PASS_N + FAIL_N))

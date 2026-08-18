@@ -32,8 +32,24 @@ if [ "$WITH_MOSD" = "1" ]; then
     cp "$REPO_ROOT/mosd/target/aarch64-unknown-linux-gnu/release/mosd" "$MOSD_STAGE/mosd"
     cp "$REPO_ROOT/mosd/dist/mosd.service" "$MOSD_STAGE/mosd.service"
     cp "$REPO_ROOT/mosd/dist/com.mos.mosd.conf" "$MOSD_STAGE/com.mos.mosd.conf"
+    cp "$REPO_ROOT/mosd/target/aarch64-unknown-linux-gnu/release/webd" "$MOSD_STAGE/webd"
+    cp "$REPO_ROOT/mosd/dist/webd.service" "$MOSD_STAGE/webd.service"
 else
     echo "note: WITH_MOSD=0; building rootfs without mosd"
+fi
+
+# Board hardware-init facts (confs consumed by the os/hwinit units), staged
+# like mosd so the Dockerfile COPY always has a directory (may be empty).
+# Prefer BOARD_DIR so prebuilt-artifact boards work; fall back to the in-repo
+# board dir when the artifact tree carries no init/ (the facts live in git,
+# not in build outputs).
+INIT_STAGE="$OUT_DIR/init"
+rm -rf "$INIT_STAGE"
+mkdir -p "$INIT_STAGE"
+if [ -d "$BOARD_DIR/init" ]; then
+    cp -a "$BOARD_DIR/init/." "$INIT_STAGE/"
+elif [ -d "$REPO_ROOT/board/cx3576/init" ]; then
+    cp -a "$REPO_ROOT/board/cx3576/init/." "$INIT_STAGE/"
 fi
 
 # If the current builder cannot run linux/arm64 (e.g. host binfmt registration
@@ -55,6 +71,7 @@ if ! docker buildx build \
         -f "$SCRIPT_DIR/Dockerfile" \
         --build-arg MODULES_TAR=_out/cx3576/modules.tar \
         --build-arg MOSD_DIR=_out/cx3576/mosd \
+        --build-arg BOARD_INIT_DIR=_out/cx3576/init \
         --build-arg WITH_MOSD="$WITH_MOSD" \
         ${ROOT_PASSWORD:+--build-arg ROOT_PASSWORD="$ROOT_PASSWORD"} \
         --target artifact \
