@@ -412,12 +412,11 @@ never live on `/var`.**
 
 ### D. Stale references
 
-All five fixed, both the number (RFCT-020, not RFCT-012 — master took that slot
-for its Alpine-rootfs task) and the tense (the assertion has been
-case-insensitive since 31e1c06; the v2 image builds green). The substantive
-point — lowercase is correct for udev and fstab — is kept.
-`grep -rn RFCT-012 docs/ os/` now returns only the user's Alpine task and the
-PLAN-010 line that legitimately cites it.
+All fixed: the layout-v2 task is RFCT-020 (master took the earlier number for
+its Alpine-rootfs task), and the tense is corrected — the GUID comparison has
+been case-insensitive since 31e1c06 and the v2 image builds green. The
+substantive point, that lowercase is correct for udev and fstab and was never
+the bug, is kept.
 
 ## Verification after the layout revision (2026-08-18)
 
@@ -445,6 +444,93 @@ PLAN-010 line that legitimately cites it.
   to `../../../etc/machine-id`, `/srv` mountpoint present.
 - `make os-image-cx3576-v2` — green (nine-partition image, since p10 is
   RFCT-020's half).
+- `make os-image-cx3576` + `make os-verify-cx3576` — **RESULT: PASS (88/88)**.
+
+## RAUC config rendering + stale-header cleanup (2026-08-18)
+
+Two handoffs from RFCT-014's escalations, plus the outstanding prose fixes.
+
+### 1. system.conf is rendered, not committed (RFCT-014 E2)
+
+RFCT-014 had to commit `os/rootfs/overlay-v2/etc/rauc/system.conf` because the
+overlay renderer lives in `build-v2.sh`, which it could not edit. A rendered
+artifact in git can drift from its template, and `os/bundle.sh`'s
+`render-config.sh --check` reports drift after the fact rather than preventing
+it.
+
+`build-v2.sh` now runs `bash os/rauc/render-config.sh` before staging the
+overlay, and asserts the staged file is non-empty. The committed copy was
+deleted in the same change and the path added to `.gitignore`, so the tree was
+never without one. The renderer writes into the source overlay, which is why it
+runs before the staging copy rather than after.
+
+`--check` still passes (`rauc config current: .../system.conf`). Its role
+narrows to catching a hand-edit of the generated file after the last build;
+committed-copy drift can no longer happen. No ordering hazard: `bundle.sh`
+consumes `rootfs-verity.img` as well, so `build-v2.sh` has necessarily run and
+the file exists.
+
+### 2. Stale PROVISIONAL header (RFCT-014 E3)
+
+The header in `etc/fw_env.config.in` had already been corrected by RFCT-014 in
+the merge — it now records that this is the single `fw_env.config` source and
+that `render-config.sh` asserts its structure. What remained was the same
+obsolete framing in **my** files, now fixed:
+
+- `os/rootfs/README.md` no longer calls the template provisional.
+- `docs/design/ro-root.md` §5 no longer says `/etc/fw_env.config` "is
+  provisional — RFCT-014 may replace it"; it records the assertions RFCT-014
+  makes about it instead (two device lines, GUID match, offset 0, size
+  `UENV_SIZE_BYTES`, and the partition-start cross-check against
+  `UENV_A/B_OFFSET_BYTES`).
+- The "inert until the custom U-Boot lands" caveat is replaced with the actual
+  state, which is more specific than the review's phrasing: the U-Boot half is
+  **fully** live — `uboot-mos` is on main, the v2 image carries it, the
+  assembler refuses the debug variant, and `os/boot/cx3576-boot.cmd` really
+  does append `systemd.machine_id=${machine_id}` behind a `test -n` guard.
+  What is still pending is only RFCT-015's oneshot that *populates* the
+  variable. So machine-id stays per-boot transient until that lands, and for
+  one boot after it, since the value it writes reaches the cmdline on the
+  following boot.
+
+### 3. Stale-tense sentences
+
+Fixed in all six locations. The merge conflicted here because the renumber task
+had corrected the number on the same lines; resolved in favour of this branch,
+which already had both the number and the tense right. Also removed a
+self-referential `grep -rn RFCT-012` line from this record that was itself a
+hit.
+
+## Verification after the RAUC-rendering change (2026-08-18)
+
+RFCT-020's partition 10 landed in this merge, so this is the first run of the
+full ten-partition layout rather than the fallback.
+
+- `make os-rootfs-cx3576-v2` — green.
+  `rendered .../etc/rauc/system.conf (compatible=mos-cx3576,
+  statusfile=/mnt/meta/rauc.status, boot-attempts=3)` — RFCT-014 adopted the
+  META recommendation from the previous turn.
+  `layout: DATA present -> /srv grows, /var fixed, 8 repart definitions`.
+  `TOTAL_MB 216` (budget 400).
+- **Reproducibility**, two cache-hot runs:
+  `sha256(rootfs-verity.img)` =
+  `cd3c0e9a97ca832109eee77b43c6c9cc79fd8548971878effb468909be06221d` both runs,
+  `cmp` clean; `VERITY_ROOT_HASH` =
+  `753606747806990ac18375c40c46d3f10d21abd28145b37f3a44c1dbd637ed91` both runs.
+- `veritysetup verify` in a container, userspace, no host device-mapper: OK.
+- Packed image: **8** repart definitions with `80-data.conf` the only
+  `Weight=1000`; `/srv` mounted from `PARTUUID=…0010` with
+  `noatime,x-systemd.growfs`; `/var` with plain `noatime`; the rendered
+  `system.conf` carrying `statusfile=/mnt/meta/rauc.status`; the rendered
+  `fw_env.config` with its two by-partuuid lines.
+- `make os-image-cx3576-v2` — green. Ten partitions,
+  `meta 16 + state 64 + var 512 + data 64 MiB`, image **1315 MiB**,
+  `sgdisk --verify` "No problems found".
+- `make os-devkeys && make os-bundle-cx3576` — green. RAUC logs
+  `Using central status file /mnt/meta/rauc.status`; bundle verifies against
+  the dev keyring; `rauc info` reports `compatible=mos-cx3576` and a rootfs
+  image checksum matching the built `rootfs-verity.img`.
+- `bash os/rauc/render-config.sh --check` — clean.
 - `make os-image-cx3576` + `make os-verify-cx3576` — **RESULT: PASS (88/88)**.
 
 ## Escalations
