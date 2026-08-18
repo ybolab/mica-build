@@ -2,8 +2,13 @@
 # =============================================================================
 # uboot/ — mainline U-Boot for CX3576-Z (cross-compiled, any host arch)
 #
-#   make uboot   (= docker buildx build -f uboot/Dockerfile -o out/uboot uboot)
+#   make uboot      (= docker buildx build -f uboot/Dockerfile -o out/uboot uboot)
 #   → out/uboot/u-boot-rockchip.bin   (idbloader+FIT combined; write to eMMC sector 64)
+#   make uboot-mos  (--target artifact-mos -o out/uboot-mos)
+#   → out/uboot-mos/u-boot-rockchip.bin  mos A/B variant: same tree plus the
+#     persistent redundant environment + boot.scr contract from
+#     docs/design/uboot-ab-handshake.md (uenv pair at 16/17 MiB, setexpr,
+#     bootmeth order pinned to script). The debug variant keeps ENV_IS_NOWHERE.
 #
 # Combination: U-Boot v2026.07 (tag, same as the armbian reference board) + rkbin
 #   DDR v1.12 / BL31 v1.24 (blobs pinned explicitly: armbian reports v1.09+ fails
@@ -93,6 +98,62 @@ RUN cd /uboot && \
         CROSS_COMPILE=aarch64-linux-gnu- \
         ROCKCHIP_TPL="$DDR" BL31="$BL31" && \
     ls -la u-boot-rockchip.bin spl/u-boot-spl.bin u-boot.itb
+
+# mos A/B variant — reconfigures the already-built tree with the env/boot
+# contract of docs/design/uboot-ab-handshake.md §3.2/§10 and rebuilds:
+# · redundant env pair pinned at uenv-a 0x1000000 / uenv-b 0x1100000, 64 KiB
+#   each, eMMC user area (ENV_SIZE must stay 0x10000: the Rockchip default
+#   0x1f000 would overrun into uenv-b)
+# · ENV_MMC_USE_DT / ENV_MMC_USE_SW_PARTITION / PARTITION_TYPE_GUID stay off,
+#   or env/mmc.c relocates the env to a partition END instead of the offsets
+# · boot.scr is the only auto-discoverable entry: bootmeth order pinned to
+#   script; the rockusb rescue tail and PREBOOT recovery key are preserved
+FROM build AS build-mos
+ARG DDR_BLOB=rk3576_ddr_lp4_2112MHz_lp5_2736MHz_v1.12.bin
+ARG BL31_BLOB=rk3576_bl31_v1.24.elf
+RUN cd /uboot && \
+    scripts/config --disable ENV_IS_NOWHERE \
+                   --enable ENV_IS_IN_MMC \
+                   --set-val ENV_OFFSET 0x1000000 \
+                   --set-val ENV_SIZE 0x10000 \
+                   --enable ENV_REDUNDANT \
+                   --set-val ENV_OFFSET_REDUND 0x1100000 \
+                   --set-val ENV_MMC_DEVICE_INDEX 0 \
+                   --set-val ENV_MMC_EMMC_HW_PARTITION 0 \
+                   --enable SAVEENV --enable CMD_SAVEENV \
+                   --enable CMD_SETEXPR --enable CMD_SOURCE --enable CMD_IMPORTENV \
+                   --enable CMD_FS_GENERIC --enable CMD_FAT --enable CMD_BOOTI --enable CMD_PART \
+                   --enable LEGACY_IMAGE_FORMAT --enable HUSH_PARSER \
+                   --disable ENV_MMC_USE_DT --disable ENV_MMC_USE_SW_PARTITION \
+                   --disable PARTITION_TYPE_GUID \
+                   --set-str BOOTCOMMAND "bootmeth order script; bootflow scan -lb; echo BOOT FAILED - entering rockusb; rockusb 0 mmc 0" && \
+    make olddefconfig && \
+    for line in \
+        CONFIG_ENV_IS_IN_MMC=y \
+        CONFIG_ENV_OFFSET=0x1000000 \
+        CONFIG_ENV_SIZE=0x10000 \
+        CONFIG_ENV_REDUNDANT=y \
+        CONFIG_ENV_OFFSET_REDUND=0x1100000 \
+        CONFIG_CMD_SETEXPR=y \
+        CONFIG_CMD_SAVEENV=y \
+        CONFIG_HUSH_PARSER=y; do \
+        grep -q "^${line}$" .config || { echo "ERROR: ${line} missing from mos .config" >&2; exit 1; }; \
+    done && \
+    for sym in CONFIG_ENV_IS_NOWHERE CONFIG_ENV_MMC_USE_DT \
+               CONFIG_ENV_MMC_USE_SW_PARTITION CONFIG_PARTITION_TYPE_GUID; do \
+        if grep -q "^${sym}=y" .config; then \
+            echo "ERROR: ${sym}=y would relocate the env off the pinned offsets" >&2; exit 1; \
+        fi; \
+    done && \
+    make -j"$(nproc)" \
+        CROSS_COMPILE=aarch64-linux-gnu- \
+        ROCKCHIP_TPL=/rkbin/bin/rk35/${DDR_BLOB} BL31=/rkbin/bin/rk35/${BL31_BLOB} && \
+    ls -la u-boot-rockchip.bin spl/u-boot-spl.bin u-boot.itb
+
+FROM scratch AS artifact-mos
+COPY --from=build-mos /uboot/u-boot-rockchip.bin /
+COPY --from=build-mos /uboot/spl/u-boot-spl.bin /
+COPY --from=build-mos /uboot/u-boot.itb /
 
 FROM scratch AS artifact
 COPY --from=build /uboot/u-boot-rockchip.bin /

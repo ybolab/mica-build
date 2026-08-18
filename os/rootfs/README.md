@@ -68,13 +68,43 @@ allowlist. Set `WITH_MOSD=0` to build the rootfs without mosd (default is on).
 
 ## Board hardware init
 
-Generic, board-agnostic mechanism in `os/hwinit/` (four best-effort units +
-scripts: `mos-modules`, `mos-otg`, `mos-can`, `mos-bt`); board-specific facts
-(module names, sysfs paths, UART device, CAN defaults) in conf files staged
-from `BOARD_DIR/init/` (falling back to the in-repo `board/cx3576/init/`) into
-`/etc/mos/`. Every unit is condition-gated on its conf file and never blocks,
-delays, or fails the boot; WiFi association / BT pairing stay with connd. The
-units are enabled via `multi-user.target.wants` symlinks like mosd.
+Generic, board-agnostic mechanism in `os/hwinit/` (six best-effort units +
+scripts); board-specific facts (module names, sysfs paths, UART device, CAN
+defaults, MAC seed, gadget IDs) in conf files staged from `BOARD_DIR/init/`
+(falling back to the in-repo `board/cx3576/init/`) into `/etc/mos/`. Every unit
+is condition-gated on its conf file and never blocks, delays, or fails the
+boot; WiFi association / BT pairing stay with connd. The units are enabled via
+`multi-user.target.wants` symlinks like mosd.
+
+| Unit | Conf | Does |
+|---|---|---|
+| `mos-modules` | `modules.conf` | `modprobe -q` the board's hardware modules; a module for an absent SKU is skipped |
+| `mos-otg` | `otg.conf` | write the USB OTG role to its syscon node (`/etc/mos/otg-mode` overrides) |
+| `mos-can` | `can.conf` | set bitrate / restart-ms / CAN FD and bring the interface up |
+| `mos-bt` | `bt.conf` | rfkill unblock + `btattach` on the configured UART (ordered after `mos-modules`) |
+| `mos-mac` | `mac.conf` | give every `eth*` with a kernel-random MAC a stable address derived from a hardware identity |
+| `mos-gadget` | `gadget.conf` | build the CDC ACM debug console gadget and bind it to the UDC |
+
+`mos-mac` exists because neither cx3576 NIC has a MAC in hardware, so the
+kernel invents a random one on every boot: gmac0/eth0's dts node carries
+neither `mac-address` nor `nvmem-cells`, and the PCIe RTL8168 has no EEPROM.
+The address is derived as `02:` + `md5(seed + ifname)`, with the seed being the
+eMMC CID — a read-only chip register that is unaffected by reflashing the
+media, so a board keeps its MACs (and DHCP reservations) across image updates.
+Interfaces whose `addr_assign_type` is not `NET_ADDR_RANDOM` are left alone,
+and the unit is ordered before `network-pre.target` so networkd configures the
+final addresses. The SoC OTP CPUID would be a deeper root of identity but has
+no dts node in this tree and no hardware validation.
+
+`mos-gadget` gives the board an out-of-band console: with the OTG port in `otg`
+role the PHY enumerates as a device when a host PC is plugged in, and a udev
+rule (`60-mos-gadget-getty.rules`) pulls in `serial-getty@ttyGS0` when the port
+appears. The gadget serial number reuses the `mac.conf` seed, so USB identity
+is stable too.
+
+The Bluetooth adapter name needs no unit of its own: bluez's hostname plugin
+is loaded by default and overrides `Name`, so the adapter follows the system
+hostname as long as `/etc/bluetooth/main.conf` does not pin one.
 
 ## Dev profile — root login
 
@@ -104,3 +134,132 @@ fallback was rejected as unnecessary since repart ships in bookworm's systemd.
 SSH host keys are generated at build time by the openssh-server postinst and
 baked into the image — acceptable for the dev profile, not for reproducible
 production builds.
+
+---
+
+# Layout v2 — squashfs + dm-verity rootfs (PLAN-010 M4)
+
+`build-v2.sh` / `Dockerfile.v2` / `overlay-v2/` are a **sibling** of the v1 path
+above, not a replacement. v1 keeps building the writable single-slot ext4 root
+and is untouched; `make os-image-cx3576` and `make os-verify-cx3576` keep
+passing. Everything below applies only to v2.
+
+The design record is `docs/design/ro-root.md` — read it before changing
+anything here.
+
+## Build
+
+```sh
+# same prerequisites as v1
+BOARD_DIR=/srv/ai/mos/board/cx3576 make os-rootfs-cx3576-v2   # rootfs only
+BOARD_DIR=/srv/ai/mos/board/cx3576 make os-image-cx3576-v2    # rootfs + full v2 image
+```
+
+Outputs to `_out/cx3576/`, all consumed by `os/mkimage-v2.sh`:
+
+| File | Contents |
+|---|---|
+| `rootfs-verity.img` | squashfs-zstd with the dm-verity hash tree appended, padded to a whole MiB |
+| `rootfs-verity.env` | verity parameters as strict `KEY=value` |
+| `boot-cmdline-a.txt` / `-b.txt` | the full kernel `append` line for each slot |
+| `rootfs-report-v2.txt` | package list, installed size, setuid/setgid inventory, file capabilities |
+
+Every layout constant is read from `os/layout/cx3576-v2.env`; none is duplicated
+in `build-v2.sh`, `Dockerfile.v2` or the overlay. The one thing that is *not* a
+layout constant is the board console/storage cmdline fragment
+(`console=ttyFIQ0,… earlycon=… storagemedia=emmc net.ifnames=0`), carried over
+verbatim from v1's `APPEND` and kept in `build-v2.sh`.
+
+### The cmdline files are a contract
+
+`os/mkimage-v2.sh` does not re-derive the verity table: it lifts the
+`dm-mod.create="..."` and `dm-mod.waitfor=` fragments straight out of these two
+files with `sed` and writes them into each boot slot's `mos-verity.env`, next to
+the shared `boot.scr`. (The v2 slots carry no `extlinux.conf` — U-Boot tries
+extlinux before `boot.scr`, which would bypass the RAUC A/B handshake.) So:
+
+- `dm-mod.waitfor=PARTUUID=<that slot's rootfs GUID>` is **required**, and the
+  assembler fails the build without it. `dm_init_init()` is a `late_initcall`
+  and its `wait_for_device_probe()` does not cover eMMC card discovery.
+- The `dm-mod.create=` table must be double-quoted, with the spaces inside the
+  quotes.
+- GUIDs are **lowercase** everywhere — cmdline and `fstab` alike — matching
+  udev's `by-partuuid` symlinks, which libblkid formats lowercase. The kernel
+  compares with `strncasecmp` and accepts either.
+  Caveat: `os/mkimage-v2.sh` currently cross-checks the cmdline against the
+  layout env's uppercase `ROOTFS_x_GUID` **case-sensitively**, so v2 image
+  assembly fails until RFCT-012 makes that assertion case-insensitive. Do not
+  work around it by uppercasing the cmdline.
+
+## Pack
+
+Three steps: `mksquashfs -comp zstd -Xcompression-level 19 -noappend
+-no-exports -mkfs-time <FILE_MTIME> -all-time <FILE_MTIME> -processors 1`, then
+the ownership gate, then `veritysetup format` against the same file with
+`--hash-offset=<squashfs bytes>`, the pinned `VERITY_SALT` and a pinned
+`--uuid`. `-processors 1` and the two pinned UUID/salt values are what make the
+image byte-reproducible; see the determinism table in
+`docs/design/ro-root.md`.
+
+**No `-all-root`** (and no `-force-uid`/`-force-gid`). Those rewrite ownership
+but not mode bits, so every setgid binary whose group was not root ships
+setgid-**root** — `ssh-agent`, `chage`, `expiry`, `unix_chkpwd`,
+`dbus-daemon-launch-helper`. Ownership does not need forcing to be
+deterministic: it comes from a pinned base image and a pinned package set.
+Step 2 of the pack diffs the packed image's setuid/setgid inventory against the
+source tree's and **fails the build** on any difference, so re-adding the flag
+is a build error rather than a review finding. The verified inventory is in
+`rootfs-report-v2.txt`.
+
+## v2 package allowlist
+
+v1's list (systemd systemd-sysv systemd-resolved udev dbus kmod openssh-server
+iproute2 bluez rfkill) **plus**:
+
+- **`rauc`** — the update client itself. Required by RFCT-014 (slot definitions,
+  `system.conf`) and RFCT-015 (install flow). Installed here so no other task
+  has to touch a Dockerfile.
+- **`libubootenv-tool`** — provides `fw_printenv` / `fw_setenv`. RAUC's U-Boot
+  backend needs it, and so does the first-boot machine-id oneshot (RFCT-015).
+
+Deliberately **not** added: `squashfs-tools` and `cryptsetup-bin`. Packing the
+root is a build-stage job (they are installed in `Dockerfile.v2`'s pack stage
+only), and the kernel opens the verity device straight from `dm-mod.create=`
+with no userspace tool involved.
+
+Installed size: **216 MB against the 400 MB budget** (v1 is 204 MB). The two new
+packages and their dependencies account for the 12 MB; the budget is unchanged.
+
+## Read-only root wiring (`overlay-v2/`)
+
+Staged into the build context by `build-v2.sh`, with `*.in` templates rendered
+from the layout env so the shipped image carries no placeholder:
+
+| Path | Purpose |
+|---|---|
+| `etc/fstab.in` | `/var` from EPHEMERAL (`noatime,x-systemd.growfs`), `/mnt/state` from STATE, `/mnt/meta` from META, tmpfs `/tmp` — all keyed on lowercased `PARTUUID=` |
+| `etc/fw_env.config.in` | the redundant U-Boot env pair, addressed by partition GUID (provisional; RFCT-014 may replace it) |
+| `etc/repart.d/*.conf` | seven definitions in disk order; only `70-ephemeral.conf` grows. v1's root-growing definition is gone |
+| `etc/systemd/system/mos-seed-var.service` | first-boot restore of `/var` from `/usr/share/factory/var` |
+| `etc/systemd/system/mos-seed-state.service` | first-boot STATE directories + per-device sshd host keys |
+| `etc/systemd/system/var-lib-mos.mount` | binds `/mnt/state/mos` onto `/var/lib/mos` so mosd's paths are unchanged |
+| `etc/systemd/system/etc-ssh.mount` | binds `/mnt/state/ssh` onto `/etc/ssh` |
+| `etc/systemd/system/etc-hostname.mount` | binds `/mnt/state/hostname` onto `/etc/hostname`, so mosd's hostname reconciler can persist a change |
+| `etc/systemd/system/mos-apply-hostname.service` | re-applies the persisted hostname after the bind — PID 1 read the squashfs copy long before mount units ran |
+| `usr/lib/mos/mos-seed-*` | the two seed scripts |
+
+`fstrim.timer` is enabled. Why all seven repart definitions are needed, why the
+growth target moved off the root, and what happens to `/etc/machine-id` are all
+explained in `docs/design/ro-root.md`.
+
+## Determinism, and what still deviates
+
+Two cache-hot `make os-rootfs-cx3576-v2` runs produce a byte-identical
+`rootfs-verity.img`. Unlike v1, sshd host keys are **not** baked into the image
+— they would be a private key shared by every device and would change the verity
+root hash on every cold build; `mos-seed-state` generates them per device on
+first boot instead.
+
+What still deviates on a cold build: the byte layout depends on the
+`squashfs-tools` and `cryptsetup` versions pulled from `debian:bookworm-slim` in
+the pack stage. Pinning that base image by digest is the follow-up.

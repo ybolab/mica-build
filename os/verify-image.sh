@@ -537,7 +537,9 @@ fi
 ext_regular /etc/mos/otg.conf
 ext_regular /etc/mos/can.conf
 ext_regular /etc/mos/bt.conf
-for u in mos-modules mos-otg mos-can mos-bt; do
+ext_regular /etc/mos/mac.conf
+ext_regular /etc/mos/gadget.conf
+for u in mos-modules mos-otg mos-can mos-bt mos-mac mos-gadget; do
     ext_regular "/usr/lib/systemd/system/${u}.service"
     if dbg "stat /etc/systemd/system/multi-user.target.wants/${u}.service" | grep -q "Inode:"; then
         pass "${u}.service is enabled (multi-user.target.wants)"
@@ -547,6 +549,68 @@ for u in mos-modules mos-otg mos-can mos-bt; do
 done
 ext_regular /usr/bin/btattach
 ext_symlink /usr/lib/firmware/brcm/BCM4362A2.hcd SYN43756B0.hcd
+
+# CAN: classic CAN at 250 kbit/s with CAN FD off (board bring-up facts).
+can_conf="$(dbg "cat /etc/mos/can.conf")"
+if echo "${can_conf}" | grep -qx "bitrate=250000" && \
+   echo "${can_conf}" | grep -qx "fd=off"; then
+    pass "/etc/mos/can.conf sets bitrate 250000 and fd off"
+else
+    fail "/etc/mos/can.conf must set bitrate=250000 and fd=off"
+fi
+
+# BT: verified AIC8800D80 combination (H:4 at 1.5 Mbit/s on UART4).
+bt_conf="$(dbg "cat /etc/mos/bt.conf")"
+if echo "${bt_conf}" | grep -qx "uart=/dev/ttyS4" && \
+   echo "${bt_conf}" | grep -qx "proto=h4" && \
+   echo "${bt_conf}" | grep -qx "speed=1500000"; then
+    pass "/etc/mos/bt.conf sets the verified AIC8800D80 attach parameters"
+else
+    fail "/etc/mos/bt.conf must set uart=/dev/ttyS4, proto=h4, speed=1500000"
+fi
+if echo "${modules_conf}" | grep -qx "aic8800_btlpm"; then
+    pass "/etc/mos/modules.conf lists aic8800_btlpm (BT core of the combo chip)"
+else
+    fail "/etc/mos/modules.conf lacks aic8800_btlpm"
+fi
+
+# USB OTG: role must stay "otg" so attaching a host PC brings up the gadget.
+if dbg "cat /etc/mos/otg.conf" | grep -qx "mode=otg"; then
+    pass "/etc/mos/otg.conf sets mode=otg (gadget enumerates on host attach)"
+else
+    fail "/etc/mos/otg.conf must set mode=otg"
+fi
+
+# Stable MAC derivation from the eMMC CID.
+if dbg "cat /etc/mos/mac.conf" | grep -qx "seed=/sys/block/mmcblk0/device/cid"; then
+    pass "/etc/mos/mac.conf derives MACs from the eMMC CID"
+else
+    fail "/etc/mos/mac.conf must set seed=/sys/block/mmcblk0/device/cid"
+fi
+for h in hwinit-mac hwinit-gadget; do
+    ext_regular "/usr/lib/mos/${h}"
+done
+ext_regular /usr/lib/udev/rules.d/60-mos-gadget-getty.rules
+if dbg "cat /usr/lib/udev/rules.d/60-mos-gadget-getty.rules" | \
+        grep -q "serial-getty@ttyGS0.service"; then
+    pass "udev rule pulls in serial-getty@ttyGS0 when the gadget enumerates"
+else
+    fail "udev rule missing the serial-getty@ttyGS0 SYSTEMD_WANTS"
+fi
+
+# Bluetooth adapter name: bluez's hostname plugin overrides Name and falls back
+# to the system hostname, so main.conf must not pin a Name of its own.
+if dbg "cat /etc/bluetooth/main.conf" | grep -qE "^[[:space:]]*Name[[:space:]]*="; then
+    fail "/etc/bluetooth/main.conf pins Name (blocks the hostname plugin)"
+else
+    pass "/etc/bluetooth/main.conf leaves Name to the hostname plugin"
+fi
+if dbg "stat /etc/systemd/system/bluetooth.target.wants/bluetooth.service" | \
+        grep -q "Inode:"; then
+    pass "bluetooth.service is enabled"
+else
+    fail "bluetooth.service enablement symlink missing"
+fi
 if dbg "stat /etc/modules-load.d/wifi.conf" | grep -q "Inode:"; then
     fail "/etc/modules-load.d/wifi.conf still present (superseded by mos-modules)"
 else
