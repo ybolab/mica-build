@@ -205,14 +205,22 @@ fi
 # name_to_dev_t -> devt_from_partuuid (case-insensitive), verified against the
 # vendor tree; see docs/design/ro-root.md.
 #
-# dm-mod.waitfor= is set to the same slot partition. dm_init_init already calls
-# wait_for_device_probe(), but the eMMC host probes asynchronously and dm-init
-# is only a late_initcall; without waitfor a slow probe turns into a silent
-# "no /dev/dm-0" and then an unexplained rootwait hang.
+# dm-mod.waitfor= is MANDATORY, not an optimisation. dm_init_init runs at
+# late_initcall and its wait_for_device_probe() does not cover eMMC card
+# discovery, which happens on a delayed workqueue; without the wait the verity
+# table is built before the partitions exist, so the boot breaks intermittently
+# rather than cleanly. os/mkimage-v2.sh rejects a cmdline file that lacks it.
+#
+# The GUID goes in verbatim from the layout env (uppercase), unlike fstab which
+# needs it lowercased. Two consumers, two rules: the kernel compares with
+# strncasecmp and accepts either, but os/mkimage-v2.sh cross-checks each slot's
+# table against ${ROOTFS_x_GUID} with a case-SENSITIVE shell substring test and
+# then lifts this exact text into that slot's mos-verity.env. Only udev's
+# by-partuuid symlinks, which fstab resolves through, are lowercase-only.
 write_cmdline() {
     local out="$1" guid="$2"
     local partuuid
-    partuuid="PARTUUID=$(lower "$guid")"
+    partuuid="PARTUUID=${guid}"
     printf '%s\n' "dm-mod.create=\"rootfs,,,ro,0 ${DATA_SECTORS} verity 1 ${partuuid} ${partuuid} ${DATA_BLOCK_SIZE} ${HASH_BLOCK_SIZE} ${DATA_BLOCKS} ${HASH_START_BLOCK} ${HASH_ALGO} ${ROOT_HASH} ${VERITY_SALT}\" dm-mod.waitfor=${partuuid} root=/dev/dm-0 rootfstype=squashfs ro rootwait ${BOARD_CMDLINE_ARGS}" > "$out"
 }
 write_cmdline "$OUT_DIR/boot-cmdline-a.txt" "$ROOTFS_A_GUID"

@@ -140,6 +140,24 @@ layout constant is the board console/storage cmdline fragment
 (`console=ttyFIQ0,… earlycon=… storagemedia=emmc net.ifnames=0`), carried over
 verbatim from v1's `APPEND` and kept in `build-v2.sh`.
 
+### The cmdline files are a contract
+
+`os/mkimage-v2.sh` does not re-derive the verity table: it lifts the
+`dm-mod.create="..."` and `dm-mod.waitfor=` fragments straight out of these two
+files with `sed` and writes them into each boot slot's `mos-verity.env`, next to
+the shared `boot.scr`. (The v2 slots carry no `extlinux.conf` — U-Boot tries
+extlinux before `boot.scr`, which would bypass the RAUC A/B handshake.) So:
+
+- `dm-mod.waitfor=PARTUUID=<that slot's rootfs GUID>` is **required**, and the
+  assembler fails the build without it. `dm_init_init()` is a `late_initcall`
+  and its `wait_for_device_probe()` does not cover eMMC card discovery.
+- The `dm-mod.create=` table must be double-quoted, with the spaces inside the
+  quotes.
+- GUIDs in the cmdline are the layout env's **uppercase** form — the assembler
+  cross-checks them case-sensitively. The `PARTUUID=` values in `fstab` are the
+  opposite (lowercase), because udev's `by-partuuid` symlinks come from
+  libblkid. Do not "normalise" one to match the other.
+
 ## Pack
 
 `mksquashfs -comp zstd -Xcompression-level 19 -noappend -all-root -no-exports
