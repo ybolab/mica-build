@@ -9,6 +9,9 @@ CONFIG_DM_INIT=y
 CONFIG_DM_VERITY=y
 CONFIG_SQUASHFS=y
 CONFIG_SQUASHFS_ZSTD=y
+# Without XATTR support a squashfs root silently drops file capabilities and
+# security xattrs (e.g. Debian's cap_net_raw on ping).
+CONFIG_SQUASHFS_XATTR=y
 CONFIG_OVERLAY_FS=y
 
 # machined early boot fsopen()s these pseudo filesystems unconditionally
