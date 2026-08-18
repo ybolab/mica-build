@@ -63,16 +63,23 @@ render() {
 # layout rather than spelled out, so one board file defines one compatible.
 COMPATIBLE="mos-${LAYOUT_BOARD}"
 
-# Where RAUC records slot status. The mount point is read out of the fstab
-# template by matching the STATE partition GUID, so moving STATE's mount point
-# moves the status file with it instead of silently writing onto the read-only
-# root.
-STATE_MOUNT="$(awk -v guid="@STATE_GUID@" '$1 == "PARTUUID=" guid { print $2 }' "${FSTAB_IN}")"
-if [ -z "${STATE_MOUNT}" ]; then
-    echo "error: no STATE mount point found in ${FSTAB_IN}" >&2
+# Where RAUC records slot status: on META, never on /var. /var is discardable
+# by design, and slot status is update state — see the rationale in
+# system.conf.in. The mount point is read out of the fstab template by matching
+# the META partition GUID, so remounting META moves the status file with it
+# instead of silently writing onto the read-only root.
+META_MOUNT="$(awk -v guid="@META_GUID@" '$1 == "PARTUUID=" guid { print $2 }' "${FSTAB_IN}")"
+if [ -z "${META_MOUNT}" ]; then
+    echo "error: no META mount point found in ${FSTAB_IN}" >&2
     exit 1
 fi
-STATUSFILE="${STATE_MOUNT}/rauc.status"
+case "${META_MOUNT}" in
+    /var|/var/*)
+        echo "error: ${FSTAB_IN} mounts META at ${META_MOUNT}; RAUC's status file is update state and /var is discardable, so it must not live there" >&2
+        exit 1
+        ;;
+esac
+STATUSFILE="${META_MOUNT}/rauc.status"
 
 # The radix trap (docs/design/uboot-ab-handshake.md section 4.1): assert rather
 # than trust, because an out-of-range value breaks rollback silently.

@@ -1,6 +1,6 @@
 # RFCT-014 RAUC integration: system.conf, bundle build, dev signing keys
 
-- **status**: implementation complete — pending U-Boot dependency and hardware acceptance
+- **status**: implementation complete — pending hardware acceptance
 - **priority**: P1
 - **owner**: ai-agent
 - **createdAt**: 2026-08-18 03:39
@@ -33,6 +33,30 @@ Scope / deliverables:
    when the host has no `rauc`.
 
 ## Key decisions
+
+### Slot status goes on META, never on /var
+
+`statusfile=/mnt/meta/rauc.status`. /var is DISCARDABLE by user decision — a
+small fixed-size partition whose contract is that wiping it costs nothing,
+with disk growth moved to a DATA partition at /srv. RAUC's status file is
+update state (which slot was installed, at what version, whether it has been
+marked good), and losing that mid-update is exactly the failure the A/B design
+exists to prevent. The standing rule: identity, credentials, pairings and
+update state never live on /var.
+
+META over STATE, both of which satisfy that rule: META is the partition for
+update metadata, while STATE holds machine identity and configuration (ssh host
+keys, hostname, `/var/lib/mos`). Keeping update bookkeeping out of STATE leaves
+a factory reset of identity separable from a reset of update history and keeps
+each partition's writer set small. Nothing boot-critical rides on the choice
+either way — the authority for which slot boots is `BOOT_ORDER` in the
+redundant U-Boot environment, not this file, so a lost status file costs
+history, not a boot.
+
+The mount point is not hardcoded: `render-config.sh` reads it out of
+`overlay-v2/etc/fstab.in` by matching the META partition GUID, and refuses
+outright if that mount point is ever under /var. If RFCT-013's mount rework
+moves META, the status file follows it.
 
 ### Boot payload is one image for two slots — and deliberately fail-safe
 
@@ -80,13 +104,16 @@ the client that consumes it change in one step, not before.
 ### `/etc/fw_env.config`: RFCT-013's file kept, no competing copy
 
 RFCT-013 shipped `os/rootfs/overlay-v2/etc/fw_env.config.in` as provisional and
-marked it for RFCT-014 to replace. It is **kept as the single source**, and
-this task deliberately creates no `os/rauc/fw_env.config.in`: it already has
-RFCT-018's two-line redundant structure and `0x10000` size, and it addresses
-the pair as `/dev/disk/by-partuuid/<guid>` at offset 0, which is better than
-RFCT-018's `/dev/mmcblk0p1`/`p2` — the GUIDs are layout constants, the disk
-node name is not. Instead of duplicating the file, `os/rauc/render-config.sh`
-renders it the same way `os/rootfs/build-v2.sh` does and asserts the contract:
+marked it for RFCT-014 to replace. It is **kept as the single source and
+adopted**: its header now records RFCT-014 as owner and states that no
+`os/rauc/fw_env.config.in` exists to drift from it. Keeping RFCT-013's file
+rather than moving it is what avoids two copies — it is rendered by
+`os/rootfs/build-v2.sh` in the same pass as the rest of the overlay, and it
+already had RFCT-018's two-line redundant structure and `0x10000` size while
+addressing the pair as `/dev/disk/by-partuuid/<guid>` at offset 0, which is
+better than RFCT-018's `/dev/mmcblk0p1`/`p2` — the GUIDs are layout constants,
+the disk node name is not. `os/rauc/render-config.sh` renders it the same way
+`os/rootfs/build-v2.sh` does and asserts the contract:
 
 - exactly two device lines (this is what marks the environment redundant to
   libubootenv; configure only one side and every read from the other fails its
@@ -97,14 +124,14 @@ renders it the same way `os/rootfs/build-v2.sh` does and asserts the contract:
   start MiB, so the partition-relative offset 0 provably denotes the same bytes
   as U-Boot's absolute `ENV_OFFSET`/`ENV_OFFSET_REDUND`.
 
-The leftover "PROVISIONAL" paragraph in that file's header is now stale and
-should be dropped by whoever next edits it; it was left alone here to avoid a
-pointless cross-branch conflict over a comment.
-
-**This file is INERT until the user applies RFCT-018's U-Boot change.** Today's
-U-Boot has no persistent environment at `UENV_A_OFFSET_BYTES`, so
-`fw_printenv`/`fw_setenv` have nothing valid to read and RAUC's `uboot` backend
-cannot mark a slot good or bad. Nothing in this task works around that.
+The environment these lines address is **live on a v2 device**. The image
+carries the `uboot-mos` variant (`UBOOT_VARIANT_DIR`), which provides the
+redundant pair at `UENV_A/B_OFFSET_BYTES`, `setexpr`, and a bootmeth order
+pinned to script; `os/mkimage-v2.sh` refuses to assemble a v2 image around the
+debug variant (`CONFIG_ENV_IS_NOWHERE`, pairs with v1). Escalation items 1-3 of
+`docs/design/uboot-ab-handshake.md` section 10 are resolved on main by 8b24f9d,
+so `fw_printenv`/`fw_setenv` have a real environment to read and RAUC's `uboot`
+backend can mark a slot good or bad.
 
 ### The keyring is not shipped
 
@@ -150,7 +177,8 @@ the same digest.
 - [x] `system.conf` rendered from the layout constants, slot groups + keyring
 - [x] `boot-attempts` bounded by `BOOT_ATTEMPTS_MIN`/`MAX`, with the radix
       rationale recorded in the file itself
-- [x] `/etc/fw_env.config` reconciled to one file + contract assertions
+- [x] Status file on META, off /var, with a renderer guard against /var
+- [x] `/etc/fw_env.config` reconciled to one owned file + contract assertions
 - [x] Gitignored dev PKI generator, idempotent, `--force`, loud banner
 - [x] `os/bundle.sh` with container fallback, version from argument/environment
 - [x] `rauc info --output-format=json` validation wired into every bundle build
@@ -185,44 +213,53 @@ the same digest.
 - No key, certificate, `.pem`, `.der`, `.key` or `.p12` in `git ls-files`.
 - v1 (`make os-image-cx3576` + `make os-verify-cx3576`) unaffected; v2 image
   still assembles.
-- On-device `rauc status` / `rauc install` is **not** claimed: it depends on the
-  U-Boot environment change (RFCT-018) and on a provisioned keyring, and is the
-  user's hardware acceptance.
+- On-device `rauc status` / `rauc install` is **not** claimed: it needs a
+  provisioned keyring and the per-slot verity env of Escalation 1, and it is
+  the user's hardware acceptance.
 
 ## Verification (2026-08-18)
 
-Inputs: prebuilt BSP artifacts (`BOARD_DIR=/srv/ai/mos/board/cx3576`), rauc 1.8
-from Debian bookworm in the container the scripts launch.
+Run on the task branch with `bkd/n98jlna1` (421e73c) merged in, against prebuilt
+BSP artifacts (`BOARD_DIR=/srv/ai/mos/board/cx3576`, which carries both U-Boot
+variants). rauc 1.8 from Debian bookworm, in the container the scripts launch.
 
 - `make os-image-cx3576` + `make os-verify-cx3576` (v1 regression) —
-  `RESULT: PASS (71/71 checks)`, unchanged by this task.
-- `make os-rootfs-cx3576-v2` — `rootfs-verity.img` 55574528 bytes (53 MiB),
-  verity root hash `bef4c602f7324c9347bc91439271497304b9e7d3961b87398994f0e66d5495d5`.
+  `RESULT: PASS (88/88 checks)`, the current baseline, unchanged by this task.
+- `make os-image-cx3576-v2` — rootfs 53 MiB (installed size 216 MB of the 400 MB
+  budget), verity root hash
+  `403306acf78415ee228d741575323a4ea70909cc328fcf73cdb3dbe9e6b006ba`, image
+  803 MiB, `sgdisk --verify`: `No problems found`.
+- `unsquashfs -cat` on the packed root confirms what ships:
+  `statusfile=/mnt/meta/rauc.status`, `compatible=mos-cx3576`, `bootname=A`/`B`,
+  `boot-attempts=3`/`boot-attempts-primary=3`, and an `/etc/fw_env.config`
+  headed `OWNER: RFCT-014` whose two payload lines are
+  `/dev/disk/by-partuuid/5ac35760-0002-4000-8000-00000000000{1,2}  0x0  0x10000`.
 - `make os-devkeys` — writes the four files into `os/rauc/.devkeys/`; a second
   run is a no-op with the key byte-identical; `--force` replaces it.
-- `make os-bundle-cx3576` — 72497462-byte verity bundle, signature verified
-  inline against the dev CA, `rauc info` reporting both slot images:
+- `make os-bundle-cx3576` — 72501558-byte verity bundle, signature verified
+  inline against the dev CA, `rauc info` run with the shipped `system.conf`
+  loaded (`rauc --conf=...`, which is also the only build-time parse of that
+  file) reporting both slot images:
 
   ```json
-  {"compatible":"mos-cx3576","version":"0.0.0-dev","description":"mos A/B update bundle for mos-cx3576","build":null,"hooks":[],"images":[{"rootfs":{"variant":null,"filename":"rootfs.img","checksum":"fd1fb729a12ab6790f5bc407124c322d34128be131e47a2d93dcd7e701eef428","size":55574528,"hooks":[],"adaptive":[]}},{"boot":{"variant":null,"filename":"boot.vfat","checksum":"d80cb06bfc47e2c18ddd07c4b99eb40c03d484e5b919cad9c74f94de595e2612","size":67108864,"hooks":[],"adaptive":[]}}]}
+  {"compatible":"mos-cx3576","version":"0.0.0-dev","description":"mos A/B update bundle for mos-cx3576","build":null,"hooks":[],"images":[{"rootfs":{"variant":null,"filename":"rootfs.img","checksum":"1176677020a79fb0538a1b383bf5aae4388485839931746e7a4c5db13aa5214b","size":55574528,"hooks":[],"adaptive":[]}},{"boot":{"variant":null,"filename":"boot.vfat","checksum":"a2c18234002be6a01213a41214fcb2e5c7f2262fb6a742c45798bceac8980243","size":67108864,"hooks":[],"adaptive":[]}}]}
   ```
 
 - Determinism: two builds of version `0.0.0-dev` from identical inputs both
-  report `payload: 71917568 bytes, sha256 e45b5cde4719a923e98f5b4e921bd41b28d09f25b4d3d72b4764435b02d30969`.
-  The full files differ, and `cmp` puts the first differing byte at 71917569 —
-  exactly payload+1, i.e. every non-reproducible byte is in the verity hash
-  tree and the CMS signature, none in the payload.
-- `make os-image-cx3576-v2` — assembles, `sgdisk --verify`: `No problems found`.
-  `unsquashfs -l` on the packed root shows `/etc/rauc/system.conf`,
-  `/etc/fw_env.config`, `/usr/bin/rauc` and `/usr/bin/fw_{printenv,setenv}`.
+  report `payload: 71921664 bytes, sha256 eb566df2f37e5f72910eed4881f0c0532f0707e3911df442e83bd029604df25c`.
+  In the pre-merge run, where the same comparison was made on the whole files,
+  `cmp` put the first differing byte at payload+1 — every non-reproducible byte
+  is in the verity hash tree and the CMS signature, none in the payload.
 - Guard rails exercised by tampering with a scratch copy: `BOOT_ATTEMPTS_DEFAULT=16`,
   a one-line `fw_env.config`, a `UENV_B_OFFSET_BYTES` that no longer matches the
-  partition start, and a hand-edited `system.conf` are each rejected with the
-  reason.
+  partition start, a hand-edited `system.conf`, and an fstab that mounts META
+  somewhere under `/var` are each rejected with the reason.
 - `git ls-files` contains no `.pem`, `.der`, `.key`, `.p12`, certificate or key
   of any kind; `os/rauc/.devkeys/` is gitignored.
-- On-device `rauc status` / `rauc install` is NOT verified and not claimed —
-  see the U-Boot dependency above.
+- `make os-verify-cx3576-v2` not run: `os/verify-image-v2.sh` (RFCT-017) has not
+  landed yet.
+- On-device `rauc status` / `rauc install` is NOT verified and not claimed — it
+  needs a provisioned keyring and Escalation 1.
 
 ## ActiveForm
 
@@ -231,5 +268,7 @@ Wiring RAUC configuration and signed bundle production for the cx3576 A/B layout
 ## Dependencies
 
 - **blocked by**: RFCT-012 (layout v2 + assembler), RFCT-013 (v2 rootfs with
-  rauc/libubootenv), RFCT-018 (U-Boot A/B handshake contract)
+  rauc/libubootenv, and the mount layout the status file location follows),
+  RFCT-018 (U-Boot A/B handshake contract — satisfied by the `uboot-mos`
+  variant, main 8b24f9d)
 - **blocks**: RFCT-015 (mosd updater invoking `rauc install`)

@@ -1,14 +1,28 @@
 # /etc/fw_env.config — where fw_printenv/fw_setenv (libubootenv-tool) find the
 # redundant U-Boot environment pair.
 #
-# Rendered from os/layout/cx3576-v2.env by os/rootfs/build-v2.sh. The pair is
-# addressed by partition GUID rather than by a hardcoded /dev/mmcblk0 offset:
-# the GUIDs are layout constants, the disk name is not.
+# OWNER: RFCT-014 (RAUC integration). This is the single fw_env.config source
+# in the tree; there is deliberately no os/rauc/fw_env.config.in to drift from
+# it. It is rendered from os/layout/cx3576-v2.env by os/rootfs/build-v2.sh, and
+# os/rauc/render-config.sh asserts its contract (run on every bundle build):
+# exactly two device lines, each addressing its UENV partition at offset 0 with
+# size UENV_SIZE_BYTES, and those partition starts cross-checked against the
+# byte offsets U-Boot's ENV_OFFSET/ENV_OFFSET_REDUND are pinned to.
 #
-# PROVISIONAL — RAUC's U-Boot backend is wired up by RFCT-014, which owns
-# os/rauc/fw_env.config(.in) and may replace this file. Two writers exist for
-# this environment (RAUC slot marking and the first-boot machine-id oneshot),
-# and libubootenv gives no cross-process locking, so writes must never overlap.
+# Two device lines is what marks the environment redundant to libubootenv. If
+# only one side is configured redundant, every read from the other fails its
+# CRC check.
+#
+# The pair is addressed by partition GUID rather than by a hardcoded
+# /dev/mmcblk0 offset: the GUIDs are layout constants, the disk name is not.
+#
+# The environment addressed here exists on a v2 device — the image carries the
+# uboot-mos variant, which has the redundant pair at UENV_A/B_OFFSET_BYTES, and
+# os/mkimage-v2.sh refuses to assemble a v2 image around the debug variant.
+#
+# Two writers exist for this environment (RAUC slot marking and the first-boot
+# machine-id oneshot), and libubootenv gives no cross-process locking, so their
+# writes must never overlap.
 #
 # <device>                              <offset>  <env size>
 /dev/disk/by-partuuid/@UENV_A_GUID@     0x0       @UENV_SIZE_HEX@

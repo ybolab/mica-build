@@ -11,11 +11,26 @@
 compatible=@COMPATIBLE@
 bootloader=uboot
 
-# Slot status lives on the STATE partition. The root filesystem is a read-only
-# dm-verity squashfs, so RAUC has nowhere on / to record anything, and STATE is
-# the one partition that survives both an update and a rollback. The mount
-# point is not restated here — the renderer reads it out of
-# os/rootfs/overlay-v2/etc/fstab.in, keyed on the STATE partition GUID.
+# Slot status lives on the META partition, and explicitly NOT on /var.
+#
+# /var is DISCARDABLE by design: its contract is that wiping it costs nothing.
+# RAUC's status file is update state — which slot was installed, at what
+# version, and whether it has been marked good — and losing it in the middle of
+# an update is precisely the failure the A/B design exists to prevent. The
+# standing rule is that identity, credentials, pairings and update state never
+# live on /var.
+#
+# META over STATE: META is the partition for update metadata, while STATE holds
+# machine identity and configuration (ssh host keys, hostname, /var/lib/mos).
+# Keeping update bookkeeping out of STATE means a factory reset of identity and
+# a reset of update history stay separable, and it keeps the writer set of each
+# partition small. Note that nothing boot-critical is at stake either way: the
+# authority for which slot boots is BOOT_ORDER in the redundant U-Boot
+# environment, not this file, so a lost status file costs history, not a boot.
+#
+# The mount point is not restated here — the renderer reads it out of
+# os/rootfs/overlay-v2/etc/fstab.in, keyed on the META partition GUID, so
+# remounting META moves the status file with it.
 statusfile=@STATUSFILE@
 
 # Boot credits: RAUC writes these into BOOT_A_LEFT / BOOT_B_LEFT via fw_setenv.
