@@ -34,7 +34,7 @@ from the image rather than hardcoded, because the hwinit set grows and a
 hardcoded list is precisely how a newly added unit falls outside coverage
 (`mos-mac` and `mos-gadget` shipped disabled once already for that reason).
 
-## Check inventory — 213 checks
+## Check inventory — 228 checks
 
 | # | Category | Checks |
 |---|---|---|
@@ -46,6 +46,7 @@ hardcoded list is precisely how a newly added unit falls outside coverage
 | 5 | UENV-A / UENV-B all-zero | 2 |
 | 6 | META/STATE/EPHEMERAL/DATA: label, UUID, no `orphan_file`, fs fills partition, `e2fsck -fn`, empty at build (4 x 6) | 24 |
 | 7 | Packed rootfs contents (see below) | 79 |
+| 8 | Integration machinery (see below) | 15 |
 
 Category 7 covers: squashfs unpack; kernel modules and firmware files/symlinks;
 base services (ssh, networkd, DHCP, journald `Storage=volatile`); mosd and webd
@@ -129,13 +130,81 @@ their presence and their own-PARTUUID contents are not factory-scoped.
   The keyring is deliberately not shipped and not committed; `rauc install`
   fails closed until one is provisioned, and its absence is not a defect.
 
-## Two integration findings — REPORTED, not fixed
+## Integration findings — REPORTED, not fixed
 
 Both were carried over from RFCT-015 as "nobody has verified this end to end".
 Both were verified here, both FAIL, and both are defects in producers this task
 does not own. `os/verify-image-v2.sh` now asserts them, so
 `make os-verify-cx3576-v2` is RED until the owners fix them. That is the
 intended outcome: a verifier that stays green on a broken artifact is worthless.
+
+### The defect class this category exists for
+
+Three defects of the same shape have now been found in M4, all by these checks:
+
+| # | Defect | Shape |
+|---|---|---|
+| 1 | `rauc.slot=` missing from the cmdline | config present, value inert |
+| 2 | `mos-health` parses a variable rauc never emits | script present, parse never matches |
+| 3 | `rauc-service` not installed while `/usr/bin/rauc` is | binary present, daemon absent |
+
+In every case the component was present, the existing checks passed, and the
+integration did not work. None would have been caught by asserting existence.
+
+So the verifier now asserts, wherever it says something EXISTS, the runtime
+machinery that makes it USABLE. Category 8 is that sweep (15 checks):
+
+- **rauc D-Bus service** — policy, activation file and systemd unit, not just
+  `/usr/bin/rauc` (finding 3).
+- **The system bus** — `dbus.service` + `dbus.socket`, which rauc, mosd and
+  bluez all depend on; the bluez policy at `/etc/dbus-1/system.d/bluetooth.conf`;
+  and that mosd's policy actually grants `own=` of its name. A policy that does
+  not grant `own` is as good as no policy: the daemon starts, fails to take its
+  name, and every client call errors.
+- **DNS** — `systemd-resolved` enabled AND `/etc/resolv.conf` symlinked to the
+  stub resolver, which is the only path by which it is reachable.
+- **modprobe** — `modules.dep`, without which the modprobe-driven `mos-modules`
+  unit cannot resolve anything.
+- **Storage** — `systemd-repart.service` (the repart definitions are inert
+  without it), `systemd-growfs` (what implements `x-systemd.growfs` on /srv),
+  `fstrim.service` (a timer without its service does nothing), and
+  `systemd-tmpfiles-clean.timer` (the only thing that applies the /var age
+  policies).
+- **Units referenced by name** — `serial-getty@.service`, which the gadget udev
+  rule pulls in.
+- **Mountpoints** — `/mnt/state`, `/mnt/meta`, `/srv`, `/var` must exist in the
+  read-only root; a verity root cannot create them at runtime.
+
+Two of these needed a broader enablement helper: distro units are statically
+enabled by a `.wants` symlink shipped under `/usr/lib/systemd/system`, never by
+one under `/etc`, so `sq_enabled_any()` searches both trees. Asserting only
+`/etc` would have failed on a correctly enabled unit.
+
+Surface audited and found already complete: `fw_setenv`/`fw_printenv` (their
+`/etc/fw_env.config` was already asserted, offsets included), `btattach` (unit
+enablement and firmware symlink already covered), `curl` (no machinery beyond
+the binary), and mosd/webd units (already asserted present AND enabled). rauc
+was the only component asserted by binary alone.
+
+### Finding 3 — `rauc-service` is not installed (package split)
+
+`/usr/bin/rauc` is present; the daemon that makes it work is not. Debian
+bookworm splits them, `rauc` (1.8-2) has **no** `Depends` or `Recommends` on
+`rauc-service`, and Debian builds the CLI WITH service support, so it proxies
+every command over D-Bus rather than operating locally. Verified against the
+package: `rauc-service` is what ships
+
+```
+/usr/share/dbus-1/system.d/de.pengutronix.rauc.conf          (bus policy)
+/usr/share/dbus-1/system-services/de.pengutronix.rauc.service (activation)
+/lib/systemd/system/rauc.service                              (unit)
+```
+
+and the `rauc` package ships no D-Bus or systemd file at all. Without them
+every `rauc status` fails with "The name de.pengutronix.rauc was not provided
+by any .service files", so the health gate no-ops for a third independent
+reason. Fix belongs in `os/rootfs/Dockerfile.v2` (RFCT-013, in flight): add
+`rauc-service` to the allowlist.
 
 ### Finding 1 — `rauc status` cannot identify the booted slot (boot path)
 
@@ -261,10 +330,14 @@ Built and verified against a real artifact on branch head `8178d57`, with
 `BOARD_DIR=/srv/ai/mos/board/cx3576 MOS_ROOTFS_SLOT_MIB=256`:
 
 - `make os-image-cx3576-v2` + `make os-verify-cx3576-v2` —
-  **RESULT: FAIL (210/213 checks)**, the three FAILs being the two integration
-  findings above (slot A and slot B `rauc.slot=`, plus the `mos-health`
-  variable-name mismatch). Every other assertion passes. Before the amendment
-  added those three checks the same image scored **PASS (207/207)**. Image 1378877440 bytes (1315 MiB apparent,
+  **RESULT: FAIL (224/228 checks)**. The four FAILs are the three
+  `rauc-service` files (finding 3, RFCT-013 in flight) and the `mos-health`
+  variable name (finding 2, RFCT-015 in flight). Finding 1 is FIXED: RFCT-020
+  landed `rauc.slot=${bootslot}` in `os/boot/cx3576-boot.cmd` (commit
+  `d1a6520`) and both slot checks now pass. Every other assertion passes, and
+  all 11 non-rauc machinery checks pass.
+  Score history: 207/207 -> 210/213 (amendment added 3 checks, 3 failing) ->
+  212/213 (rauc.slot= fixed) -> 224/228 (this sweep added 15 checks, 3 failing). Image 1378877440 bytes (1315 MiB apparent,
   ~161 MiB on disk, sparse); ten partitions; rootfs payload 53 MiB in a pinned
   256 MiB slot; verity root hash
   `5c0b6c7ec07594310502437ebe36dcb33cad7fedca4c9d5fcf851ecd2a030be8`.

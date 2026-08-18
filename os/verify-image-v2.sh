@@ -742,11 +742,28 @@ sq_symlink() {
 # local-fs.target.wants or timers.target.wants depending on what they do.
 sq_enabled() {
     local unit="$1" found
-    found="$(find "${ROOT}/etc/systemd/system" -name "${unit}" -path '*.wants/*' 2>/dev/null | head -n1)"
+    found="$(find "${ROOT}/etc/systemd/system" -name "${unit}" -path '*.wants/*' 2>/dev/null || true)"
+    found="${found%%$'\n'*}"
     if [ -n "${found}" ]; then
         pass "${unit} is enabled (${found#"${ROOT}"})"
     else
         fail "${unit} enablement symlink missing (no *.wants entry under /etc/systemd/system)"
+    fi
+}
+
+# Same, but also accepting the vendor preset tree. Distro units (the systemd
+# timers, repart) are statically enabled by a .wants symlink shipped under
+# /usr/lib/systemd/system, never by one under /etc, so asserting only /etc
+# would fail on a correctly enabled unit.
+sq_enabled_any() {
+    local unit="$1" found
+    found="$(find "${ROOT}/etc/systemd/system" "${ROOT}/usr/lib/systemd/system" \
+        -name "${unit}" -path '*.wants/*' 2>/dev/null || true)"
+    found="${found%%$'\n'*}"
+    if [ -n "${found}" ]; then
+        pass "${unit} is enabled (${found#"${ROOT}"})"
+    else
+        fail "${unit} enablement symlink missing (no *.wants entry under /etc or /usr/lib systemd trees)"
     fi
 }
 
@@ -777,7 +794,7 @@ sq_symlink /usr/lib/firmware/clm_bcmdhd.blob clm_bcm43752a2_ag.blob
 
 # --- base services (carried over from v1) ---
 sq_enabled ssh.service
-if [ -n "$(find "${ROOT}/etc/systemd/system" -name 'systemd-networkd.service' -path '*.wants/*' 2>/dev/null)" ] ||
+if [ -n "$(find "${ROOT}/etc/systemd/system" -name 'systemd-networkd.service' -path '*.wants/*' 2>/dev/null || true)" ] ||
     [ -e "${ROOT}/etc/systemd/system/dbus-org.freedesktop.network1.service" ]; then
     pass "systemd-networkd is enabled"
 else
@@ -835,7 +852,7 @@ else
     # list is exactly how the next added unit falls outside coverage.
     not_enabled=""
     for u in ${hw_units}; do
-        if [ -z "$(find "${ROOT}/etc/systemd/system" -name "${u}" -path '*.wants/*' 2>/dev/null | head -n1)" ]; then
+        if [ -z "$(find "${ROOT}/etc/systemd/system" -name "${u}" -path '*.wants/*' 2>/dev/null || true)" ]; then
             not_enabled="${not_enabled} ${u}"
         fi
     done
@@ -912,6 +929,78 @@ fi
 # its absence is correct, and `rauc install` fails closed until one is added.
 sq_grep /etc/rauc/system.conf '^path=/etc/rauc/keyring\.pem$' \
     "RAUC keyring path is /etc/rauc/keyring.pem (the keyring itself is deliberately not shipped)"
+
+# ===========================================================================
+# INTEGRATION MACHINERY
+#
+# A recurring defect class in this tree: the component is present, the checks
+# pass, and the integration does not work. Three instances have now been found
+# in M4 alone -- a missing rauc.slot= on the cmdline, a health gate parsing a
+# variable rauc never emits, and the rauc D-Bus service package missing while
+# /usr/bin/rauc is present. Each shipped a binary or a config file that looked
+# right and was inert at runtime.
+#
+# So wherever this verifier asserts that something EXISTS, it also asserts the
+# runtime machinery that makes it USABLE: the D-Bus policy and activation that
+# let a bus name be owned, the systemd units that actually apply a timer or a
+# definition file, the tools an fstab option is implemented by, and the
+# mountpoints a bind mount needs.
+# ===========================================================================
+
+# rauc: Debian bookworm SPLITS the CLI from the daemon. `rauc` does not depend
+# on, or even recommend, `rauc-service`, and Debian builds the CLI WITH service
+# support so it proxies every command over D-Bus instead of operating locally.
+# With /usr/bin/rauc alone there is no bus policy, no activation file and no
+# unit, so every `rauc status` dies with "The name de.pengutronix.rauc was not
+# provided by any .service files" -- and the health gate, which depends on that
+# command, silently no-ops. Asserting the binary alone is what missed this.
+sq_regular /usr/share/dbus-1/system.d/de.pengutronix.rauc.conf
+sq_regular /usr/share/dbus-1/system-services/de.pengutronix.rauc.service
+sq_regular /usr/lib/systemd/system/rauc.service
+
+# The system bus itself, which rauc, mosd and bluez all depend on.
+if [ -f "${ROOT}/usr/lib/systemd/system/dbus.service" ] &&
+    [ -f "${ROOT}/usr/lib/systemd/system/dbus.socket" ]; then
+    pass "the D-Bus system bus (dbus.service + dbus.socket) is present, so bus-activated services can run"
+else
+    fail "dbus.service and/or dbus.socket missing; rauc, mosd and bluez all address each other over the system bus"
+fi
+# A policy file that does not grant `own` is as good as no policy file: the
+# daemon starts, fails to take its name, and every client call errors.
+sq_grep /usr/share/dbus-1/system.d/com.mos.mosd.conf 'allow own="com\.mos\.mosd"' \
+    "the mosd D-Bus policy actually grants own= of com.mos.mosd (a policy that does not is inert)"
+sq_regular /etc/dbus-1/system.d/bluetooth.conf
+
+# DNS: systemd-resolved is only reachable through the stub resolver symlink.
+sq_enabled systemd-resolved.service
+sq_symlink /etc/resolv.conf stub-resolv.conf
+
+# modprobe needs the dependency index; mos-modules is modprobe-driven.
+sq_regular "/usr/lib/modules/${KERNEL_VERSION}/modules.dep"
+
+# The repart definitions asserted above are inert without the unit that applies
+# them, and it is enabled by a vendor preset rather than by anything in /etc.
+sq_enabled_any systemd-repart.service
+# x-systemd.growfs on the /srv entry is implemented by this helper binary.
+sq_regular /usr/lib/systemd/systemd-growfs
+# A timer without its service does nothing.
+sq_regular /usr/lib/systemd/system/fstrim.service
+# The /var age policies in tmpfiles.d are applied only by this timer.
+sq_enabled_any systemd-tmpfiles-clean.timer
+# The gadget udev rule pulls in this template unit by name.
+sq_regular /usr/lib/systemd/system/serial-getty@.service
+
+# fstab entries and the STATE binds need their mountpoints to exist in the
+# read-only root: nothing can create them at runtime.
+missing_mp=""
+for d in /mnt/state /mnt/meta /srv /var; do
+    [ -d "${ROOT}${d}" ] || missing_mp="${missing_mp} ${d}"
+done
+if [ -z "${missing_mp}" ]; then
+    pass "every fstab/bind mountpoint exists in the read-only root (/mnt/state /mnt/meta /srv /var)"
+else
+    fail "mountpoint(s) missing from the read-only root:${missing_mp}; a verity root cannot create them at runtime, so the mount fails"
+fi
 
 # --- M4 integration: RAUC must be able to identify the BOOTED slot ---
 #
@@ -1103,7 +1192,7 @@ for pair in "var-lib-mos.mount:/var/lib/mos" "var-lib-bluetooth.mount:/var/lib/b
         fail "${unit} does not mount ${where}"
     elif ! grep -qE '^What=/mnt/state/' "${f}"; then
         fail "${unit} is not backed by STATE (What= must be under /mnt/state)"
-    elif [ -z "$(find "${ROOT}/etc/systemd/system" -name "${unit}" -path '*.wants/*' 2>/dev/null | head -n1)" ]; then
+    elif [ -z "$(find "${ROOT}/etc/systemd/system" -name "${unit}" -path '*.wants/*' 2>/dev/null || true)" ]; then
         fail "${unit} exists but is not enabled; ${where} would stay on the discardable /var"
     else
         pass "${where} is a STATE-backed bind via ${unit} (survives a /var wipe)"
