@@ -131,6 +131,46 @@ Host: `BOARD_DIR=/srv/ai/mos/board/cx3576` (prebuilt BSP artifacts).
   the verity/squashfs inspections all ran inside containers the scripts (or the
   verification step) launched, with the repo bind-mounted.
 
+## Spec amendment (2026-08-18, folded in)
+
+Three additive requirements arrived after the first pass, driven by RFCT-018's
+findings and by two commits that landed on the integration branch after this
+branch's base (`ee8f0bf` -> `789f514`). All three are satisfied.
+
+1. **`dm-mod.waitfor=` is mandatory, not optional.** Already emitted, and the
+   reasoning is now recorded as settled rather than as an open question: the
+   `wait_for_device_probe()` inside `dm_init_init()` does not cover eMMC card
+   discovery (a delayed workqueue), so without the wait the boot breaks
+   intermittently. RFCT-018 reached the same conclusion independently on every
+   point — `waitfor` exists, `PARTUUID=` resolves via the `name_to_dev_t()`
+   fallback, and dm-verity's SHA-256 is already built in. No disagreement to
+   escalate.
+
+2. **Cmdline file shape is now a contract**, because the assembler derives each
+   slot's `mos-verity.env` from these files with `sed` and the v2 boot slots no
+   longer carry `extlinux.conf`. This exposed a **real defect in the first
+   pass**: the cmdline emitted lowercased GUIDs, but the new
+   `os/mkimage-v2.sh` cross-checks each slot's table against `ROOTFS_x_GUID`
+   with a case-SENSITIVE shell substring test (`[ "${create#*"$4"}" = ... ]`),
+   and the layout env holds them uppercase. Integration would have aborted.
+   Fixed: the cmdline now uses the env GUID verbatim. `fstab` deliberately
+   still lowercases, because udev's `by-partuuid` symlinks come from libblkid.
+   The kernel is case-insensitive either way (`strncasecmp`), so on-device
+   behaviour is unchanged.
+
+3. **Empty `/etc/machine-id` regular file.** Already shipped by the pack stage;
+   re-verified as a 0-byte regular file in the packed squashfs. Without it
+   systemd has nothing to bind-mount the transient id over on a read-only
+   `/etc`.
+
+Verified by running the **new** `os/mkimage-v2.sh` (from `bkd/n98jlna1`)
+against these outputs in a scratch tree, without merging it: it assembled the
+803 MiB image, and both boot slots came out holding `Image`, `rk3576-src.dtb`,
+a byte-identical `boot.scr` and a per-slot `mos-verity.env` carrying that
+slot's own GUID (A -> `...0005`, B -> `...0006`), with no `extlinux` directory.
+`rootfs-verity.img` and `VERITY_ROOT_HASH` are unchanged by the fix — the
+cmdline is not part of the squashfs.
+
 ## Escalations
 
 - `board/common/mos-required.fragment` on this branch's base (`fd6233f`) does

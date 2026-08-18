@@ -122,16 +122,34 @@ boot slot and permanent RAM for the cpio, which is exactly what PLAN-006 Part D
 set out to avoid. The cmdline generated here stays valid either way, so the
 decision is re-testable on hardware without a rebuild.
 
-RFCT-018 is analysing the same question in parallel. The findings above are
-read directly from the vendor tree; if RFCT-018 reports differently, the
-disagreement must be resolved before hardware bring-up rather than silently
-picking one.
+RFCT-018 has since reached the same conclusions independently and they are now
+settled, not open: `dm-mod.waitfor=` exists and is required
+(`drivers/md/dm-init.c:26,297-305,324`); `PARTUUID=` resolves through the
+`name_to_dev_t()` fallback in `dm_get_dev_t()`
+(`drivers/md/dm-table.c:334-341`, `init/do_mounts.c:277-295`, and
+`name_to_dev_t` is `EXPORT_SYMBOL_GPL`, not `__init`); dm-verity's SHA-256 is
+already built in (`CRYPTO_SHA256=y`, `CRYPTO_SHA256_ARM64=y`,
+`CRYPTO_SHA2_ARM64_CE=y`), so no kernel fragment change is needed. The two
+investigations agree on every point.
 
 ### The generated cmdline
 
 `build-v2.sh` writes one line per slot into `boot-cmdline-a.txt` /
-`boot-cmdline-b.txt`, which `os/mkimage-v2.sh` drops verbatim into that slot's
-`extlinux.conf` `append`:
+`boot-cmdline-b.txt`. The boot slots deliberately carry **no**
+`extlinux/extlinux.conf`: RFCT-018 found that both U-Boot boot frameworks try
+extlinux *before* `boot.scr`, so an extlinux config in a slot would silently
+bypass the whole RAUC A/B handshake. `os/mkimage-v2.sh` instead compiles
+`os/boot/cx3576-boot.cmd` into a `boot.scr` shared by both slots and derives a
+per-slot `mos-verity.env` by extracting the `dm-mod.create="..."` and
+`dm-mod.waitfor=` fragments out of these files with `sed`.
+
+That makes the *shape* of these two files part of the contract, not just their
+values: a quoted `dm-mod.create=` table with spaces inside the quotes, followed
+by `dm-mod.waitfor=PARTUUID=<that slot's rootfs GUID>`, then the rest of the
+append line. The files themselves stay exactly as specified — this task does
+not produce `mos-verity.env`.
+
+The generated line:
 
 ```
 dm-mod.create="rootfs,,,ro,0 <DATA_SECTORS> verity 1 PARTUUID=<slot> PARTUUID=<slot> 4096 4096 <DATA_BLOCKS> <HASH_START_BLOCK> sha256 <ROOT_HASH> <SALT>"
@@ -144,15 +162,23 @@ console=ttyFIQ0,1500000 earlycon=uart8250,mmio32,0x2ad40000 storagemedia=emmc ne
 
 - The same PARTUUID appears twice because the data device and the hash device
   are the same partition; `<HASH_START_BLOCK>` is where the tree begins.
-- `dm-mod.waitfor=` is set even though `dm_init_init()` already calls
-  `wait_for_device_probe()`. The eMMC host probes asynchronously and `dm-init`
-  is only a `late_initcall`; without it, a slow probe produces no `/dev/dm-0`
-  and the failure then surfaces as an unexplained `rootwait` hang instead of a
-  logged wait. This is an addition to the cmdline template in the task spec and
-  is called out as such.
+- `dm-mod.waitfor=` is **mandatory**, not an optimisation, and
+  `os/mkimage-v2.sh` rejects a cmdline file that lacks it. `dm_init_init()`
+  runs at `late_initcall` and the `wait_for_device_probe()` it already calls
+  does **not** cover eMMC card discovery, which happens on a delayed
+  workqueue. Without the wait, the verity table is built before the partitions
+  exist: the boot breaks *intermittently* rather than cleanly, which is the
+  worst failure mode to ship. Each slot waits on its own rootfs partition.
 - The value of `dm-mod.create=` contains spaces and is therefore quoted. The
-  kernel's `next_arg()` (`lib/cmdline.c`) handles a double-quoted value, and
-  U-Boot's extlinux parser passes everything after `append ` through verbatim.
+  kernel's `next_arg()` (`lib/cmdline.c`) handles a double-quoted value.
+- The GUIDs here are the layout env's **uppercase** form, unlike `/etc/fstab`,
+  which needs them lowercased. Two consumers, two rules. The kernel compares
+  with `strncasecmp` and accepts either. `os/mkimage-v2.sh` cross-checks each
+  slot's table against `ROOTFS_A_GUID` / `ROOTFS_B_GUID` with a
+  case-**sensitive** shell substring test and then lifts this exact text into
+  the slot's `mos-verity.env`, so the cmdline must match the env byte for byte.
+  Only udev's `by-partuuid` symlinks, which fstab resolves through, are
+  lowercase-only.
 - The console/earlycon/storagemedia/net.ifnames arguments are carried over from
   the v1 `APPEND` in `os/mkimage.sh`. v1's `root=PARTLABEL=rootfs rw` is
   replaced by `root=/dev/dm-0 ... ro`.
@@ -318,8 +344,13 @@ that U-Boot ships, nothing puts `systemd.machine_id=` on the cmdline, so systemd
 finds an empty `/etc/machine-id` on a read-only filesystem, falls back to a
 transient id in `/run` and bind-mounts it over `/etc/machine-id`. The machine-id
 is therefore **per-boot transient** in the interim: the system boots and works,
-but the id changes on every reboot. `/etc/machine-id` must exist as an empty
-file for that fallback to work, and the pack stage creates it.
+but the id changes on every reboot.
+
+That fallback has a hard prerequisite, independently flagged by RFCT-018: the
+image must ship `/etc/machine-id` as an **empty regular file**. systemd
+bind-mounts the transient id over that path, and if the file is absent there is
+nothing to mount over. The pack stage creates it (`: > /rootfs/etc/machine-id`),
+and it is verified present and zero-length in the packed squashfs.
 
 **Constraint — one writer at a time.** RAUC's U-Boot backend and this oneshot
 both write the same redundant environment pair through libubootenv, which
