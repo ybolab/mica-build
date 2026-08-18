@@ -218,6 +218,15 @@ iproute2 bluez rfkill) **plus**:
 - **`rauc`** — the update client itself. Required by RFCT-014 (slot definitions,
   `system.conf`) and RFCT-015 (install flow). Installed here so no other task
   has to touch a Dockerfile.
+- **`rauc-service`** — the D-Bus service half. **Not optional, and not pulled in
+  by `rauc`**: Debian splits the project in two, and `rauc` neither Depends on
+  nor Recommends `rauc-service` (`rauc` 1.8-2 lists no `Recommends` at all).
+  Debian's CLI is built *with* service support, so it never operates locally —
+  it proxies every call over D-Bus. With `rauc` alone the image has no
+  `de.pengutronix.rauc.conf` policy and no `de.pengutronix.rauc.service`
+  activation file, so `rauc status` fails with *"The name de.pengutronix.rauc
+  was not provided by any .service files"*, the health gate can never mark the
+  slot good, and every update rolls back. 47 KB.
 - **`libubootenv-tool`** — provides `fw_printenv` / `fw_setenv`. RAUC's U-Boot
   backend needs it, and so does the first-boot machine-id oneshot (RFCT-015).
 - **`curl`** — the health gate's webd probe (`os/health/mos-health`) fetches
@@ -233,8 +242,9 @@ only), and the kernel opens the verity device straight from `dm-mod.create=`
 with no userspace tool involved.
 
 Installed size: **217 MB against the 400 MB budget** (v1 is 204 MB). rauc,
-libubootenv-tool and curl plus their dependencies account for the 13 MB; the
-budget is unchanged. curl's own chain is about 1 MB of that (`curl` 537 KB,
+rauc-service, libubootenv-tool and curl plus their dependencies account for the
+13 MB; the budget is unchanged. `rauc-service` is 47 KB by dpkg Installed-Size,
+which is below the megabyte rounding of `TOTAL_MB` — it did not move the number. curl's own chain is about 1 MB of that (`curl` 537 KB,
 `libcurl4` 860 KB, `libssh2-1` 345 KB, `libnghttp2-14` 228 KB, `libpsl5` 152 KB,
 `librtmp1` 142 KB, per `rootfs-report-v2.txt`).
 

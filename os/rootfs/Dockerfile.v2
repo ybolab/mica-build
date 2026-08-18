@@ -25,11 +25,23 @@
 FROM --platform=linux/arm64 debian:bookworm-slim AS rootfs
 
 # Strict package allowlist — add nothing here without documenting it in README.md.
-# v2 additions over v1: rauc (update client, RFCT-014), libubootenv-tool
-# (fw_printenv/fw_setenv — RAUC's U-Boot backend and the machine-id oneshot of
-# RFCT-015) and curl (the health gate's webd probe; rauc links libcurl but does
-# not provide the binary, so without this the probe silently SKIPs and the gate
-# covers two of three components while still reporting green).
+# v2 additions over v1: rauc + rauc-service (update client, RFCT-014),
+# libubootenv-tool (fw_printenv/fw_setenv — RAUC's U-Boot backend and the
+# machine-id oneshot of RFCT-015) and curl (the health gate's webd probe; rauc
+# links libcurl but does not provide the binary, so without this the probe
+# silently SKIPs and the gate covers two of three components while still
+# reporting green).
+#
+# rauc-service is NOT optional and NOT implied. Debian splits the project in
+# two and `rauc` neither Depends on nor Recommends `rauc-service` (checked:
+# rauc 1.8-2 Depends is libc6, libcurl3-gnutls, libfdisk1, libglib2.0-0,
+# libjson-glib-1.0-0, libssl3, dbus, systemd — no Recommends at all). Debian's
+# CLI is built WITH service support, so it does not operate locally: it proxies
+# every call over D-Bus. With `rauc` alone there is no
+# /usr/share/dbus-1/system.d/de.pengutronix.rauc.conf and no
+# .../system-services/de.pengutronix.rauc.service, so `rauc status` fails with
+# "The name de.pengutronix.rauc was not provided by any .service files", the
+# health gate never marks the slot good, and every update rolls back.
 # squashfs-tools and cryptsetup-bin are deliberately absent: packing the root is
 # a build-stage job, and the kernel opens the verity device from the cmdline
 # without any userspace tool.
@@ -45,6 +57,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         bluez \
         rfkill \
         rauc \
+        rauc-service \
         libubootenv-tool \
         curl \
     && rm -rf /var/lib/apt/lists/*
