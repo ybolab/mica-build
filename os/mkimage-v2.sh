@@ -7,6 +7,12 @@ set -euo pipefail
 # meta/state/ephemeral ext4 partitions. Every layout constant comes from
 # os/layout/cx3576-v2.env; nothing is duplicated here.
 #
+# Each boot slot holds Image, rk3576-src.dtb, the shared boot.scr compiled from
+# os/boot/cx3576-boot.cmd, and a per-slot mos-verity.env. It holds NO
+# extlinux/extlinux.conf: U-Boot tries extlinux before boot.scr in both boot
+# frameworks, so an extlinux config here would silently bypass the RAUC A/B
+# handshake (docs/design/uboot-ab-handshake.md sections 5.4-5.5).
+#
 # v1 (os/mkimage.sh) is untouched and keeps building the single-slot image.
 #
 # The output filename carries the assembly-time epoch, but the image CONTENT is
@@ -55,6 +61,10 @@ export E2FSPROGS_FAKE_TIME
 # The four rootfs-side inputs all come from the same producer; name it in every
 # error message so a missing input is actionable.
 ROOTFS_PRODUCER="os/rootfs/build-v2.sh"
+BOOT_CMD="${SCRIPT_DIR}/boot/cx3576-boot.cmd"
+
+# Set by assemble() from rootfs-verity.env, read by mkverityenv().
+root_hash=""
 
 # Reads one KEY=value out of a plain env-style file without executing it.
 env_file_get() {
@@ -69,27 +79,70 @@ mkext4() {
         -O "${EXT4_FEATURES}" -E "root_owner=0:0,hash_seed=$4" "$1"
 }
 
-# Stages one boot slot's FAT32 filesystem. Args: out-file fat-label volume-id
-# cmdline-file
-mkboot() {
-    local stage="${workdir}/stage-$3"
-    mkdir -p "${stage}/extlinux"
-    cp "${KERNEL_IMAGE}" "${stage}/Image"
-    cp "${DTB}" "${stage}/rk3576-src.dtb"
-    local append
-    append="$(tr -d '\n' < "$4")"
-    if [ -z "${append}" ]; then
-        echo "error: $4 is empty; regenerate it with ${ROOTFS_PRODUCER}" >&2
+# Compiles boot.cmd into the boot.scr both slots share. SOURCE_DATE_EPOCH is
+# mandatory: without it mkimage stamps the legacy image header with the current
+# time, which would break the byte-identical rebuild contract.
+mkbootscr() {
+    if [ ! -f "${BOOT_CMD}" ]; then
+        echo "error: ${BOOT_CMD} not found" >&2
         exit 1
     fi
-    cat > "${stage}/extlinux/extlinux.conf" <<EOF
-default cx3576
-timeout 3
-label cx3576
-    kernel /Image
-    fdt /rk3576-src.dtb
-    append ${append}
-EOF
+    # The credits the script installs on a virgin environment have to stay in
+    # the range where RAUC's hex counter and U-Boot's decimal `test -gt` agree.
+    local credits
+    while read -r credits; do
+        if [ "${credits}" -lt "${BOOT_ATTEMPTS_MIN}" ] || [ "${credits}" -gt "${BOOT_ATTEMPTS_MAX}" ]; then
+            echo "error: ${BOOT_CMD} sets a boot-attempts value of ${credits}; RAUC writes this counter in hex and U-Boot compares it in decimal, so it must stay in ${BOOT_ATTEMPTS_MIN}..${BOOT_ATTEMPTS_MAX}" >&2
+            exit 1
+        fi
+    done < <(grep -oE 'BOOT_[AB]_LEFT [0-9]+' "${BOOT_CMD}" | awk '{print $2}')
+    SOURCE_DATE_EPOCH="${FILE_MTIME#@}" \
+        mkimage -T script -C none -n "mos boot" -d "${BOOT_CMD}" "$1" >/dev/null
+}
+
+# Renders one slot's mos-verity.env from that slot's kernel cmdline. The verity
+# table is not re-derived here: it is lifted out of the cmdline the rootfs
+# producer already emits, so there is exactly one place that computes it.
+# Args: out-file cmdline-file slot-letter rootfs-partition-guid
+mkverityenv() {
+    local create waitfor
+    create="$(sed -n 's/.*\(dm-mod\.create="[^"]*"\).*/\1/p' "$2")"
+    waitfor="$(sed -n 's/.*\(dm-mod\.waitfor=[^ ]*\).*/\1/p' "$2")"
+    if [ -z "${create}" ]; then
+        echo "error: $2 carries no dm-mod.create= verity table; fix ${ROOTFS_PRODUCER}" >&2
+        exit 1
+    fi
+    # dm_init_init() runs at late_initcall and wait_for_device_probe() does not
+    # cover eMMC card discovery, so the wait is required, not decorative.
+    if [ -z "${waitfor}" ]; then
+        echo "error: $2 carries no dm-mod.waitfor=; it is required on kernel 6.1 because the verity table would otherwise be built before the eMMC partitions exist." >&2
+        echo "This is a cross-task mismatch with ${ROOTFS_PRODUCER}, not something this assembler can synthesise: the cmdline files must carry dm-mod.waitfor=PARTUUID=<slot rootfs GUID>." >&2
+        exit 1
+    fi
+    if [ "${create#*"$4"}" = "${create}" ]; then
+        echo "error: the slot-$3 verity table in $2 does not reference PARTUUID $4; each slot must point dm-verity at its own rootfs partition. Fix ${ROOTFS_PRODUCER}." >&2
+        exit 1
+    fi
+    if [ "${create#*"${root_hash}"}" = "${create}" ]; then
+        echo "error: the slot-$3 verity table in $2 does not carry the root hash from ${ROOTFS_VERITY_ENV}; fix ${ROOTFS_PRODUCER}" >&2
+        exit 1
+    fi
+    printf 'verity_args=%s %s\n' "${create}" "${waitfor}" > "$1"
+}
+
+# Stages one boot slot's FAT32 filesystem. The slots hold the same kernel, dtb
+# and boot.scr; only mos-verity.env differs, and it is what points the shared
+# script at this slot's rootfs. Deliberately no extlinux/extlinux.conf: both
+# U-Boot boot frameworks try extlinux before boot.scr, so one here would
+# silently bypass the A/B handshake.
+# Args: out-file fat-label volume-id cmdline-file slot-letter rootfs-guid
+mkboot() {
+    local stage="${workdir}/stage-$3"
+    mkdir -p "${stage}"
+    cp "${KERNEL_IMAGE}" "${stage}/Image"
+    cp "${DTB}" "${stage}/rk3576-src.dtb"
+    cp "${workdir}/${BOOT_SCRIPT_NAME}" "${stage}/${BOOT_SCRIPT_NAME}"
+    mkverityenv "${stage}/${BOOT_VERITY_ENV_NAME}" "$4" "$5" "$6"
     find "${stage}" -exec touch -h -d "${FILE_MTIME}" {} +
 
     truncate -s "${BOOT_SIZE_MIB}M" "$1"
@@ -133,7 +186,7 @@ assemble() {
     fi
     verity_mib=$((verity_bytes / MIB_BYTES))
 
-    local root_hash verity_salt
+    local verity_salt
     root_hash="$(env_file_get "${ROOTFS_VERITY_ENV}" VERITY_ROOT_HASH)"
     verity_salt="$(env_file_get "${ROOTFS_VERITY_ENV}" VERITY_SALT)"
     if [ -z "${root_hash}" ]; then
@@ -182,8 +235,11 @@ assemble() {
     fi
     echo "verity root hash ${root_hash}"
 
-    mkboot "${workdir}/boot-a.img" "${BOOT_A_FAT_LABEL}" "${BOOT_A_FAT_VOLUME_ID}" "${BOOT_CMDLINE_A}"
-    mkboot "${workdir}/boot-b.img" "${BOOT_B_FAT_LABEL}" "${BOOT_B_FAT_VOLUME_ID}" "${BOOT_CMDLINE_B}"
+    mkbootscr "${workdir}/${BOOT_SCRIPT_NAME}"
+    mkboot "${workdir}/boot-a.img" "${BOOT_A_FAT_LABEL}" "${BOOT_A_FAT_VOLUME_ID}" \
+        "${BOOT_CMDLINE_A}" A "${ROOTFS_A_GUID}"
+    mkboot "${workdir}/boot-b.img" "${BOOT_B_FAT_LABEL}" "${BOOT_B_FAT_VOLUME_ID}" \
+        "${BOOT_CMDLINE_B}" B "${ROOTFS_B_GUID}"
     mkext4 "${workdir}/meta.img" "${META_SIZE_MIB}" "${META_FS_LABEL}" "${META_FS_UUID}"
     mkext4 "${workdir}/state.img" "${STATE_SIZE_MIB}" "${STATE_FS_LABEL}" "${STATE_FS_UUID}"
     mkext4 "${workdir}/ephemeral.img" "${EPHEMERAL_SIZE_MIB}" "${EPHEMERAL_FS_LABEL}" "${EPHEMERAL_FS_UUID}"
@@ -292,7 +348,8 @@ IMG_NAME="${IMAGE_NAME_PREFIX}$(date +%s)${IMAGE_NAME_SUFFIX}"
 # -E hash_seed; older host tools silently cannot, so probe instead of guessing.
 host_can_assemble() {
     command -v sgdisk >/dev/null && command -v mkfs.vfat >/dev/null &&
-        command -v mcopy >/dev/null && command -v mke2fs >/dev/null || return 1
+        command -v mcopy >/dev/null && command -v mke2fs >/dev/null &&
+        command -v mkimage >/dev/null || return 1
     local probe rc=0
     probe="$(mktemp)"
     truncate -s "${META_SIZE_MIB}M" "${probe}"
@@ -319,7 +376,7 @@ if host_can_assemble; then
         IMG_OUT="${OUT_DIR}/${IMG_NAME}" "${INNER_ENV[@]}" \
         bash "${BASH_SOURCE[0]}" --assemble
 else
-    echo "sgdisk/mkfs.vfat/mcopy/mke2fs(>=1.47) not all available on the host; assembling in a container"
+    echo "sgdisk/mkfs.vfat/mcopy/mkimage/mke2fs(>=1.47) not all available on the host; assembling in a container"
     docker run --rm \
         -v "${REPO_ROOT}:/work" \
         -v "${BOARD_DIR}:/board:ro" \
@@ -333,7 +390,7 @@ else
         -e IMG_OUT="/work/_out/cx3576/${IMG_NAME}" \
         "${DOCKER_PIN_ARGS[@]}" \
         alpine:3.21 \
-        sh -c 'apk add --no-cache -q bash coreutils sgdisk dosfstools mtools e2fsprogs && exec bash /work/os/mkimage-v2.sh --assemble'
+        sh -c 'apk add --no-cache -q bash coreutils sgdisk dosfstools mtools e2fsprogs u-boot-tools && exec bash /work/os/mkimage-v2.sh --assemble'
 fi
 
 ln -sfn "${IMG_NAME}" "${OUT_DIR}/${IMAGE_LATEST_NAME}"
