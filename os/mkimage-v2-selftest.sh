@@ -86,42 +86,84 @@ require_visible_workspace() {
     exit 1
 }
 
+# run_assemble <out-name> <verity-img-name> [slot-pin]
+# The pin is forwarded only when non-empty, so the unpinned run really is
+# unpinned (that is what selects the floor mode inside the assembler).
 run_assemble() {
+    local out="$1" verity="$2" pin="${3-}"
     if host_can_assemble; then
-        KERNEL_IMAGE="${WORK}/bsp/Image" \
+        local pin_env=()
+        if [ -n "${pin}" ]; then
+            pin_env=("MOS_ROOTFS_SLOT_MIB=${pin}")
+        fi
+        env KERNEL_IMAGE="${WORK}/bsp/Image" \
             DTB="${WORK}/bsp/rk3576-src.dtb" \
             UBOOT="${WORK}/bsp/u-boot-rockchip.bin" \
-            ROOTFS_VERITY_IMG="${WORK}/rootfs-verity.img" \
+            ROOTFS_VERITY_IMG="${WORK}/${verity}" \
             ROOTFS_VERITY_ENV="${WORK}/rootfs-verity.env" \
             BOOT_CMDLINE_A="${WORK}/boot-cmdline-a.txt" \
             BOOT_CMDLINE_B="${WORK}/boot-cmdline-b.txt" \
-            IMG_OUT="${WORK}/$1" \
+            IMG_OUT="${WORK}/${out}" "${pin_env[@]}" \
             bash "${SCRIPT_DIR}/mkimage-v2.sh" --assemble
     else
+        local pin_args=()
+        if [ -n "${pin}" ]; then
+            pin_args=(-e "MOS_ROOTFS_SLOT_MIB=${pin}")
+        fi
         docker run --rm \
             -v "${REPO_ROOT}:/work:ro" \
             -v "${WORK}:/t" \
             -e KERNEL_IMAGE=/t/bsp/Image \
             -e DTB=/t/bsp/rk3576-src.dtb \
             -e UBOOT=/t/bsp/u-boot-rockchip.bin \
-            -e ROOTFS_VERITY_IMG=/t/rootfs-verity.img \
+            -e ROOTFS_VERITY_IMG="/t/${verity}" \
             -e ROOTFS_VERITY_ENV=/t/rootfs-verity.env \
             -e BOOT_CMDLINE_A=/t/boot-cmdline-a.txt \
             -e BOOT_CMDLINE_B=/t/boot-cmdline-b.txt \
-            -e IMG_OUT="/t/$1" \
+            -e IMG_OUT="/t/${out}" "${pin_args[@]}" \
             alpine:3.21 \
             sh -c 'apk add --no-cache -q bash coreutils sgdisk dosfstools mtools e2fsprogs && exec bash /work/os/mkimage-v2.sh --assemble'
     fi
 }
 
+# expect_pin_failure <label> <verity-img-name> <pin> <expected-substring>...
+expect_pin_failure() {
+    local label="$1" verity="$2" pin="$3"
+    shift 3
+    local log="${WORK}/pinfail.log"
+    if run_assemble pinfail.img "${verity}" "${pin}" > "${log}" 2>&1; then
+        echo "FAIL: ${label}: the build succeeded but should have refused"
+        FAILED=1
+        rm -f "${WORK}/pinfail.img"
+        return
+    fi
+    echo "PASS: ${label}: exits non-zero"
+    local want
+    for want in "$@"; do
+        if grep -qF -- "${want}" "${log}"; then
+            echo "PASS: ${label}: message states '${want}'"
+        else
+            echo "FAIL: ${label}: message lacks '${want}' — got: $(tr '\n' ' ' < "${log}")"
+            FAILED=1
+        fi
+    done
+    rm -f "${WORK}/pinfail.img"
+}
+
 host_can_assemble || require_visible_workspace
 
-echo "--- assembly 1 ---"
-run_assemble one.img
-echo "--- assembly 2 ---"
-run_assemble two.img
+echo "--- assembly 1 (unpinned, floor mode) ---"
+run_assemble one.img rootfs-verity.img | tee "${WORK}/one.log"
+echo "--- assembly 2 (unpinned, floor mode) ---"
+run_assemble two.img rootfs-verity.img
 
 echo "--- assertions ---"
+if grep -qF "(floor ${MOS_ROOTFS_SLOT_MIB}," "${WORK}/one.log"; then
+    echo "PASS: an unpinned build reports floor mode"
+else
+    echo "FAIL: an unpinned build did not report floor mode"
+    FAILED=1
+fi
 if cmp -s "${WORK}/one.img" "${WORK}/two.img"; then
     echo "PASS: the two assemblies are byte-identical"
 else
@@ -210,6 +252,61 @@ check "rootfs-b is zero-filled" \
 check "uenv pair is zero-filled" \
     "$(dd if="${IMG}" bs=1 skip="${UENV_A_OFFSET_BYTES}" count=$((UENV_B_OFFSET_BYTES - UENV_A_OFFSET_BYTES + UENV_SIZE_BYTES)) status=none | tr -d '\0' | wc -c)" \
     0
+
+# --- pinned mode: frozen geometry that fits ----------------------------------
+PIN_MIB=64
+echo "--- assembly 3 (pinned ${PIN_MIB} MiB) ---"
+run_assemble pinned.img rootfs-verity.img "${PIN_MIB}" | tee "${WORK}/pinned.log"
+
+echo "--- pinned-mode assertions ---"
+if grep -qF "(pinned, frozen geometry)" "${WORK}/pinned.log"; then
+    echo "PASS: a pinned build reports frozen geometry"
+else
+    echo "FAIL: a pinned build did not report frozen geometry"
+    FAILED=1
+fi
+
+IMG="${WORK}/pinned.img"
+PIN_TOTAL_MIB=$((ROOTFS_A_START_MIB + 2 * PIN_MIB + META_SIZE_MIB + STATE_SIZE_MIB + EPHEMERAL_SIZE_MIB + IMAGE_TAIL_SLACK_MIB))
+check "pinned image size is ${PIN_TOTAL_MIB} MiB" \
+    "$(stat -c %s "${IMG}")" "$((PIN_TOTAL_MIB * MIB_BYTES))"
+check "pinned rootfs-a size is exactly the pin, not the grown size" \
+    "$(part_field "${ROOTFS_A_PARTNUM}" 'Partition size' | cut -d' ' -f1)" \
+    "$((PIN_MIB * MIB_BYTES / SECTOR_SIZE))"
+check "pinned rootfs-b starts at $((ROOTFS_A_START_MIB + PIN_MIB)) MiB" \
+    "$(part_field "${ROOTFS_B_PARTNUM}" 'First sector' | cut -d' ' -f1)" \
+    "$(((ROOTFS_A_START_MIB + PIN_MIB) * MIB_BYTES / SECTOR_SIZE))"
+check "pinned meta starts at $((ROOTFS_A_START_MIB + 2 * PIN_MIB)) MiB" \
+    "$(part_field "${META_PARTNUM}" 'First sector' | cut -d' ' -f1)" \
+    "$(((ROOTFS_A_START_MIB + 2 * PIN_MIB) * MIB_BYTES / SECTOR_SIZE))"
+check "pinned uenv-a offset is still ${UENV_A_OFFSET_BYTES} bytes" \
+    "$(($(part_field "${UENV_A_PARTNUM}" 'First sector' | cut -d' ' -f1) * SECTOR_SIZE))" \
+    "${UENV_A_OFFSET_BYTES}"
+
+# --- pinned mode: refuses a rootfs that does not fit -------------------------
+echo "--- pinned-mode refusal ---"
+expect_pin_failure "pin below the payload" rootfs-verity.img 2 \
+    "MOS_ROOTFS_SLOT_MIB=2 MiB" "is ${VERITY_MIB} MiB" \
+    "$((VERITY_MIB - 2)) MiB too large" "frozen"
+
+# A pin equal to the built-in default must still be strict: selection is by
+# "was it supplied", not by comparing against 256.
+OVERSIZE_MIB=$((MOS_ROOTFS_SLOT_MIB + 44))
+truncate -s "${OVERSIZE_MIB}M" "${WORK}/rootfs-verity-oversize.img"
+expect_pin_failure "pin equal to the built-in default" rootfs-verity-oversize.img \
+    "${MOS_ROOTFS_SLOT_MIB}" \
+    "MOS_ROOTFS_SLOT_MIB=${MOS_ROOTFS_SLOT_MIB} MiB" "is ${OVERSIZE_MIB} MiB" \
+    "44 MiB too large"
+
+# The same oversize payload grows the slot instead when nothing is pinned.
+echo "--- floor-mode growth ---"
+run_assemble grown.img rootfs-verity-oversize.img > "${WORK}/grown.log" 2>&1
+GROWN_SLOT_MIB=$(((OVERSIZE_MIB * ROOTFS_SLOT_HEADROOM_PCT + 99) / 100))
+GROWN_SLOT_MIB=$(((GROWN_SLOT_MIB + ROOTFS_SLOT_ALIGN_MIB - 1) / ROOTFS_SLOT_ALIGN_MIB * ROOTFS_SLOT_ALIGN_MIB))
+IMG="${WORK}/grown.img"
+check "unpinned build grows the slot past the floor" \
+    "$(part_field "${ROOTFS_A_PARTNUM}" 'Partition size' | cut -d' ' -f1)" \
+    "$((GROWN_SLOT_MIB * MIB_BYTES / SECTOR_SIZE))"
 
 if [ "${FAILED}" -eq 0 ]; then
     echo "RESULT: PASS"

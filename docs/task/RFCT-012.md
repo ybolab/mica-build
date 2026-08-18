@@ -5,7 +5,7 @@
 - **owner**: ai-agent
 - **createdAt**: 2026-08-18 03:39
 - **claimedAt**: 2026-08-18 03:39
-- **completedAt**: 2026-08-18 04:20
+- **completedAt**: 2026-08-18 05:05
 
 ## Description
 
@@ -37,14 +37,39 @@ Two design points worth recording:
   Behind a variable-size rootfs slot the env offset would move with every
   release that changes SLOT_MIB, which would strand the RAUC boot-order
   handshake on already-flashed devices.
-- **SLOT_MIB freeze.** `SLOT_MIB = max(MOS_ROOTFS_SLOT_MIB,
-  align16(ceil(verity_image_MiB * 125 / 100)))`, default
-  `MOS_ROOTFS_SLOT_MIB=256`. Once a device is flashed its slot size is frozen:
-  rootfs-b, meta, state and ephemeral all sit at offsets derived from it, and no
-  update can move them. Production releases must therefore pin
-  `MOS_ROOTFS_SLOT_MIB` explicitly to the value the fleet was flashed with
-  rather than letting it float with content; the assembler fails loudly if the
-  verity image does not fit the resolved slot.
+- **SLOT_MIB has two modes, selected by whether the pin was supplied.**
+  Supplying `MOS_ROOTFS_SLOT_MIB` from the environment means FROZEN GEOMETRY:
+  `SLOT_MIB` equals the pin exactly and the build fails, naming the pin, the
+  actual verity size and the shortfall, if the rootfs does not fit. This is the
+  release path. Growing a slot silently is the failure mode that matters for an
+  A/B system: rootfs-b, meta, state and ephemeral all sit at offsets derived
+  from `SLOT_MIB`, so a grown slot yields a GPT no already-flashed device can
+  accept, and RAUC bundles whose rootfs image no longer fits the deployed slot
+  fail at install time on the fielded fleet — the worst place to find out.
+  Not supplying it selects the dev path, where the built-in default 256 is a
+  floor and `SLOT_MIB = max(256, align16(ceil(verity_MiB * 125 / 100)))`.
+  The two modes are distinguished with `${MOS_ROOTFS_SLOT_MIB+set}`, never by
+  comparing against 256, so a release that legitimately pins 256 still gets the
+  strict behaviour. The host wrapper forwards the pin to the inner `--assemble`
+  run only when it really was pinned; forwarding the resolved value
+  unconditionally would silently freeze every build.
+- **No GPT partition attribute bits are set, and none are required.** v1 sets
+  legacy-BIOS-bootable (bit 2) on its single boot partition; v2 sets nothing.
+  Verified against mainline U-Boot v2026.07 (the ref `board/cx3576/uboot`
+  builds): `disk/part_efi.c:get_bootable()` marks a partition bootable if
+  *either* its type GUID is the ESP GUID *or* attribute bit 2 is set, and
+  `boot/bootdev-uclass.c` only restricts its scan to bootable partitions
+  (`part_get_bootable()`), so the ESP typecode that boot-a and boot-b already
+  carry is sufficient — bit 2 would add nothing. RFCT-017 should therefore
+  assert that the attribute flags are clear on all nine partitions. RFCT-018
+  should note the corollary: because both boot slots are ESP-typed, U-Boot's
+  own scan would find them in partition order, which cannot express the RAUC
+  `BOOT_ORDER`; the v2 boot path must select the slot explicitly from the
+  environment rather than rely on the bootable-partition scan. On the Linux
+  side no attribute matters either — the data partitions use the generic Linux
+  filesystem type GUID rather than a Discoverable Partitions Specification type
+  GUID, so systemd's GPT partition flags play no role, and ephemeral is grown
+  by an explicit systemd-repart definition, not by a flag.
 
 The v2 image identifiers use the `...-0002-...` GUID namespace so v1 and v2
 images can never be confused with one another. v1 (`os/mkimage.sh`,
@@ -86,6 +111,9 @@ Consumed as documented interfaces, not implemented here:
 - [x] Makefile v2 targets + help text; v1 targets byte-identical
 - [x] `os/mkimage-v2-selftest.sh` proving byte-identical rebuilds and the
       pinned GPT
+- [x] Strict pinned mode vs. floor mode, covered in the selftest in all three
+      shapes (pin that fits, pin that refuses, unpinned growth)
+- [x] GPT attribute bits confirmed unnecessary against the U-Boot source
 
 ## Acceptance
 
@@ -95,7 +123,7 @@ Consumed as documented interfaces, not implemented here:
   RFCT-013 lands - the expected state, not a defect.
 - `bash os/mkimage-v2-selftest.sh` reports `RESULT: PASS`.
 
-## Verification (2026-08-18)
+## Verification (2026-08-18, re-run after the strict-pin rework)
 
 - `bash -n os/mkimage-v2.sh` and `bash -n os/mkimage-v2-selftest.sh` clean.
   `shellcheck -x -P os -s bash os/mkimage-v2.sh os/mkimage-v2-selftest.sh`
@@ -106,12 +134,18 @@ Consumed as documented interfaces, not implemented here:
 - `make os-image-cx3576-v2` -> `bash: os/rootfs/build-v2.sh: No such file or
   directory`; `bash os/mkimage-v2.sh` alone -> `error: .../rootfs-verity.img
   not found; run 'bash os/rootfs/build-v2.sh' first`.
-- `bash os/mkimage-v2-selftest.sh` - `RESULT: PASS`, 62 checks: two
+- `bash os/mkimage-v2-selftest.sh` - `RESULT: PASS`, 79 checks: two
   consecutive assemblies byte-identical, image 803 MiB (146 + 2*256 + 16 + 64
   + 64 + 1), all nine partitions matching the pinned labels / unique GUIDs /
   typecodes / start sectors / sizes, both FAT slots carrying Image + dtb +
   their own cmdline, rootfs-a holding the payload, rootfs-b and the uenv pair
-  fully zero-filled.
+  fully zero-filled. Slot sizing is covered in all three shapes: a pin of 64
+  MiB produces a 419 MiB image with rootfs-a exactly 64 MiB, rootfs-b at 210
+  MiB and meta at 274 MiB while uenv-a stays at 16 MiB; a pin of 2 MiB against
+  a 4 MiB rootfs exits non-zero naming the pin, the size, the 2 MiB shortfall
+  and the freeze; a pin of 256 MiB (the built-in default value) against a 300
+  MiB rootfs likewise refuses, proving the mode is chosen by supply and not by
+  value; and the same 300 MiB rootfs unpinned grows the slot to 384 MiB.
 - Sparseness: the 803 MiB image occupies 278 MiB on disk.
 - Host note: the assembly runs in the alpine:3.21 container because host
   e2fsprogs is 1.46.5, which can neither switch `orphan_file` off nor honour
