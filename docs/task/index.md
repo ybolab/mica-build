@@ -47,6 +47,7 @@ Each task is a single line linking to its detail file. All detailed information 
 - [-] [**RFCT-014 RAUC integration: system.conf, bundle build, dev signing keys**](RFCT-014.md) `P1`
 - [-] [**RFCT-015 Health gate + machine-id oneshot (PLAN-010 M4)**](RFCT-015.md) `P1`
 - [x] [**RFCT-016 update/sign: TUF (tough) signing skeleton**](RFCT-016.md) `P1`
+- [x] [**RFCT-017 Image contract verification for layout v2 (cx3576)**](RFCT-017.md) `P1`
 - [x] [**RFCT-018 U-Boot A/B handshake contract for a custom mainline U-Boot**](RFCT-018.md) `P0`
-- [-] [**RFCT-019 PMA documentation finalize for PLAN-010 M4**](RFCT-019.md) `P1`
+- [x] [**RFCT-019 PMA documentation finalize for PLAN-010 M4**](RFCT-019.md) `P1`
 - [-] [**RFCT-020 Partition layout v2 constants + mkimage v2 mode (cx3576)**](RFCT-020.md) `P1`

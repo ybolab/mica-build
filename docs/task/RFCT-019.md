@@ -1,11 +1,11 @@
 # RFCT-019 PMA documentation finalize for PLAN-010 M4
 
-- **status**: implementation complete — one follow-up item outstanding (RFCT-017)
+- **status**: implementation complete
 - **priority**: P1
 - **owner**: ai-agent
 - **createdAt**: 2026-08-18 03:39
 - **claimedAt**: 2026-08-18 03:39
-- **completedAt**: -
+- **completedAt**: 2026-08-18
 
 ## Description
 
@@ -115,7 +115,7 @@ doing and is noted under Escalations.
 
 - [x] `docs/task/index.md`: RFCT-013, -014, -015, -016, -018, -019 appended
       (RFCT-020 was already indexed by another subtask and is not duplicated)
-- [ ] `docs/task/index.md`: RFCT-017 line — blocked, see Remaining
+- [x] `docs/task/index.md`: RFCT-017 line, added once its record merged
 - [x] `docs/plan/PLAN-010.md`: M4 status block, M6 data-root pin
 - [x] `docs/plan/PLAN-006.md`: status header + implementation notes
 - [x] `docs/plan/index.md`: PLAN-006 marker
@@ -165,8 +165,8 @@ were run from one tree, not quoted from other records:
   (`rootfs.img` 55574528 bytes, `boot.vfat` 67108864 bytes).
 - `bash mosd/hack/check.sh` — `ALL CHECKS PASSED` (`advisories ok, bans ok,
   licenses ok`).
-- `make os-verify-cx3576-v2` — not run here; `os/verify-image-v2.sh` (RFCT-017)
-  had not landed on this base. See Remaining.
+- `make os-verify-cx3576-v2` — deferred to the follow-up turn below;
+  `os/verify-image-v2.sh` (RFCT-017) had not landed on this base.
 
 Documentation hygiene:
 
@@ -197,14 +197,51 @@ Documentation hygiene:
   has a Chinese counterpart. Whether to keep the translations current is the
   user's call; they are not tracked as stale today.
 
-## Remaining
+## Follow-up turn (2026-08-18, RFCT-017 merged as `b1dfc04`)
 
-- `docs/task/index.md` has no RFCT-017 line, and PLAN-010's M4 verification block
-  has no `make os-verify-cx3576-v2` result. Both are deliberate: this task was
-  dispatched in parallel with RFCT-017 and its record and verifier had not landed
-  on this base. Writing a guessed title or an invented check count would put a
-  fabricated number into a milestone status block, which is worse than a stated
-  gap. Both are single-line additions once RFCT-017 merges.
+The two items deliberately withheld above are now closed with real values.
+Worktree fast-forwarded to `bkd/n98jlna1` head `b1dfc04`.
+
+1. **`docs/task/index.md`** — the RFCT-017 line was inserted into the slot left
+   open between RFCT-016 and RFCT-018. Marker `[x]`, matching RFCT-016 and
+   RFCT-018: its record reads `implementation complete` with a `completedAt`
+   and names no pending hardware acceptance of its own.
+
+   **Title discrepancy, resolved toward the record.** The follow-up brief gave
+   the title as "verify-image v2" and described it as exact. The record's own H1
+   is `RFCT-017 Image contract verification for layout v2 (cx3576)`. Every other
+   line in this index reproduces its record's H1 verbatim, and the brief also
+   said to match the surrounding convention exactly, so the H1 was used and the
+   discrepancy reported rather than silently resolved either way.
+
+2. **`docs/plan/PLAN-010.md` M4 verification block** — the
+   `recorded with RFCT-017` placeholder is replaced by
+   `make os-verify-cx3576-v2` -> `RESULT: PASS (207/207 checks)`, and the block
+   gained two paragraphs from RFCT-017: the three negative tests that prove the
+   207 checks can fail, and the `CONFIG_SQUASHFS_XATTR` gap.
+
+The xattr paragraph is the one worth the space. The user applied that kernel
+fragment change specifically for M4, so a milestone record that says nothing
+would read as though it had been verified. It has not been: the rootfs installs
+zero cap-carrying files, so there is nothing whose survival could be shown.
+RFCT-017 stated that as a gap and rejected the two weaker checks available —
+the `NO_XATTR` flag assertion passes here only because the build host runs
+SELinux (host-dependent, worse than none), and a throwaway squashfs tests the
+verifier's host rather than the shipped artifact. The M4 notes now say plainly
+that the fragment's effect is not proven end-to-end in this tree, and that the
+fix is on the producer side (`os/rootfs/**`, RFCT-013 scope, not done).
+
+### Verification of the follow-up turn (on `b1dfc04`)
+
+- `make os-image-cx3576` + `make os-verify-cx3576` — `RESULT: PASS (88/88 checks)`.
+- `make os-verify-cx3576-v2` — `RESULT: PASS (207/207 checks)`.
+- `grep -rInP '[\x{4e00}-\x{9fff}]' docs/plan docs/task os update mosd` — clean.
+- `docs/task/index.md` lists RFCT-012 through RFCT-020 with no duplicates, in
+  numeric order, and `git diff` shows only insertions — no existing line
+  rewritten.
+
+Nothing outside `docs/task/index.md`, `docs/plan/PLAN-010.md` and this record was
+touched; `os/verify-image-v2.sh` and every other subtask's files are unmodified.
 
 ## ActiveForm
 
@@ -212,6 +249,6 @@ Finalizing the PMA plan and task records for PLAN-010 M4.
 
 ## Dependencies
 
-- **blocked by**: RFCT-013, RFCT-014, RFCT-015, RFCT-016, RFCT-018, RFCT-020
-  (all merged); RFCT-017 (not merged — see Remaining)
+- **blocked by**: RFCT-013, RFCT-014, RFCT-015, RFCT-016, RFCT-017, RFCT-018,
+  RFCT-020 (all merged)
 - **blocks**: -
