@@ -140,14 +140,16 @@ investigations agree on every point.
 extlinux *before* `boot.scr`, so an extlinux config in a slot would silently
 bypass the whole RAUC A/B handshake. `os/mkimage-v2.sh` instead compiles
 `os/boot/cx3576-boot.cmd` into a `boot.scr` shared by both slots and derives a
-per-slot `mos-verity.env` by extracting the `dm-mod.create="..."` and
-`dm-mod.waitfor=` fragments out of these files with `sed`.
+per-slot `mos-verity-<slot>.env` by extracting the `dm-mod.create="..."` and
+`dm-mod.waitfor=` fragments out of these files with `sed`. The filename carries
+the slot because a RAUC bundle installs one boot payload into whichever slot is
+inactive, so it must ship both slots' files under distinct names.
 
 That makes the *shape* of these two files part of the contract, not just their
 values: a quoted `dm-mod.create=` table with spaces inside the quotes, followed
 by `dm-mod.waitfor=PARTUUID=<that slot's rootfs GUID>`, then the rest of the
 append line. The files themselves stay exactly as specified — this task does
-not produce `mos-verity.env`.
+not produce `mos-verity-<slot>.env`.
 
 The generated line:
 
@@ -162,6 +164,11 @@ console=ttyFIQ0,1500000 earlycon=uart8250,mmio32,0x2ad40000 storagemedia=emmc ne
 
 - The same PARTUUID appears twice because the data device and the hash device
   are the same partition; `<HASH_START_BLOCK>` is where the tree begins.
+- The device-mapper device is named `rootfs`. The name is cosmetic — it only
+  shows up in `dmsetup` output, because the boot path mounts `root=/dev/dm-0`
+  and never `/dev/mapper/<name>` (there is no udev at root-mount time).
+  `docs/design/uboot-ab-handshake.md` §7.3 originally said `mos`; this
+  generator is the authority and that section has been reconciled.
 - `dm-mod.waitfor=` is **mandatory**, not an optimisation, and
   `os/mkimage-v2.sh` rejects a cmdline file that lacks it. `dm_init_init()`
   runs at `late_initcall` and the `wait_for_device_probe()` it already calls
@@ -267,6 +274,24 @@ Two operations follow from that table:
 - **Log cleanup** wipes `/var` alone, and by contract costs nothing that
   matters. It is a recovery action that can be taken on a wedged device
   without asking the user whether they mind losing anything.
+
+**Why `/var` is exactly 512 MiB (`MOS_VAR_MIB`).** The factory `/var` seed is
+~9 MiB; journald runs `Storage=volatile` so there is no persistent journal to
+grow; the remaining consumers are `/var/tmp`, `/var/cache` and dpkg working
+space; and balena-engine's data-root is pinned to `/srv/balena-engine`
+(PLAN-010 M6), on DATA, so no container layer ever lands here. 512 MiB is ~50x
+the seeded content and under 2% of the smallest realistic eMMC, so `/var` can
+never compete with DATA for the disk. Changing the number moves DATA's start
+offset, so it is frozen for a flashed fleet in the same way
+`MOS_ROOTFS_SLOT_MIB` is; the constant and this rationale live in
+`os/layout/cx3576-v2.env`.
+
+**Standing review criterion for future units**, not a one-off audit result:
+**identity, credentials, pairings and update state never live on `/var`.** Any
+new unit that wants to write one of those must be pointed at STATE (or META for
+update bookkeeping) with a bind mount, and the build-time check below must be
+extended to cover it. `/var` may hold only what the device can lose at any
+moment without a user noticing.
 
 The growth target has now moved twice, and the reasoning is worth keeping.
 v1 grew the root. Early v2 grew EPHEMERAL, on the assumption that `/var` was
