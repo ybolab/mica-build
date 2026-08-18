@@ -123,6 +123,15 @@ mkbootscr() {
         echo "error: BOOT_VERITY_ENV_A_NAME/BOOT_VERITY_ENV_B_NAME must be '${verity_base}-a.env'/'${verity_base}-b.env' to match what os/bundle.sh writes into a RAUC boot payload" >&2
         exit 1
     fi
+    # rauc identifies the booted slot from rauc.slot= on the kernel cmdline; it
+    # cannot use root=, because the verity root is /dev/dm-0 and rauc matches
+    # only bootname / slot name / realpath(device). Losing this token makes
+    # every update roll back while the device looks healthy, so it is a build
+    # failure, not something to find on a verifier run.
+    if ! grep -qF "rauc.slot=\${bootslot}" "${BOOT_CMD}"; then
+        echo "error: ${BOOT_CMD} does not set rauc.slot=\${bootslot} on the kernel cmdline; rauc cannot identify the booted slot from root=/dev/dm-0, so 'rauc status' fails, the health gate never runs 'rauc status mark-good' and every installed slot is rolled back" >&2
+        exit 1
+    fi
     if ! grep -qF "${verity_base}-\${slotsuffix}.env" "${BOOT_CMD}"; then
         echo "error: ${BOOT_CMD} does not load the per-slot verity env '${verity_base}-\${slotsuffix}.env'; a RAUC-installed slot carries only the slot-suffixed files, so an unsuffixed load would roll every update back" >&2
         exit 1
