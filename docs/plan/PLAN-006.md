@@ -45,6 +45,7 @@ Unchanged from PLAN-005 (these parts carry over verbatim):
 - Health-gated commit, upgrade policy config, lockbox offline updates, power-cut stress
   acceptance, containerd = workload layer only (never in the update path).
 - machined remains the update orchestrator; RAUC is a tool it invokes, not a resident daemon.
+  (Amended for the systemd base — see the RAUC packaging note in Part E.)
 
 ## Proposal
 
@@ -162,8 +163,33 @@ IDLE -> SYNC_METADATA -> INSTALLING (RAUC) -> STAGED -(reboot)-> PENDING_CONFIRM
   optional custom app-ready hook). On success machined runs `rauc status mark-good`
   (resets attempt counter, confirms slot); on failure it does nothing and the exhausted
   counter makes U-Boot fall back on next reboot. ECU version manifest reporting as PLAN-005.
-- RAUC is built CLI-only (`-Dservice=false`): no D-Bus, no resident daemon; invoked as a
-  short-lived process by machined's updater, output parsed as JSON (`--output-format=json`).
+- **RAUC packaging — AMENDED 2026-08-18 for the systemd base (L1 decision).**
+
+  *Original wording, kept for the record:* "RAUC is built CLI-only
+  (`-Dservice=false`): no D-Bus, no resident daemon; invoked as a short-lived process by
+  machined's updater, output parsed as JSON (`--output-format=json`)."
+
+  That constraint was written for the **Talos** base, where there was no system D-Bus at all
+  and machined invoked updaters as short-lived processes. Its premise is gone. PLAN-010
+  replaced that base with systemd, whose native integration is exactly what RAUC is built for
+  — PLAN-010 says as much, that RAUC integration *simplifies* on this base — and mosd is
+  itself a resident D-Bus service on the same system bus. This is not a deviation from a rule
+  we still intend to keep; the rule described a world we no longer live in.
+
+  *Amended, and what the image actually ships:* Debian's `rauc` (CLI) **and** `rauc-service`
+  (the D-Bus daemon), with the daemon **activated on the system bus**. Debian's CLI is built
+  *with* service support, so it never operates locally — it proxies every call over D-Bus and
+  cannot work without the service package at all. Output is still parsed as JSON
+  (`--output-format=json`). Building RAUC from source to honour the CLI-only wording is a
+  subproject, not a package line, and was not reopened.
+
+  **This changes the runtime model, not only the build**, so it is stated rather than quietly
+  dropped: the image now contains an on-demand, D-Bus-activated **root** daemon.
+  `de.pengutronix.rauc.service` carries `SystemdService=rauc.service`; `rauc.service` is
+  `Type=dbus`, `After=dbus.service`, started by systemd on the first call and exiting on its
+  own lifecycle. So it is **not** a boot-time cost and nothing waits on it — but "no resident
+  daemon" is no longer literally true, and that phrase should not be quoted as if it still
+  described the system. (RFCT-013; the user was informed.)
 
 ### Part F: Power-loss safety
 
@@ -221,7 +247,8 @@ battery guards, health gate).
 Accepted cost of adopting RAUC (kept minimal, all built as buildkit pkg stages, no Yocto in
 the OS build):
 
-- `rauc` (CLI-only build) + GLib + libcurl (streaming) — ~6-10MB
+- `rauc` + GLib + libcurl (streaming) — ~6-10MB. **Amended**: shipped as Debian's `rauc`
+  plus `rauc-service` (47 KB), not a CLI-only source build — see Part E.
 - `libubootenv` (`fw_printenv`/`fw_setenv`) — RAUC's U-Boot backend requires it; it becomes
   the single owner of env writes. The PLAN-005 Go `ubootenv` package shrinks to a read-only
   helper for status display (env writes from Go are dropped to keep one writer).
@@ -243,7 +270,7 @@ publishes bundle + TUF metadata as static content. Lockbox builder wraps the sam
 | `internal/pkg/update/healthgate/` | Unchanged; success path calls `rauc status mark-good` |
 | `internal/pkg/ubootenv/` | Reduced to read-only (status display) |
 | `internal/app/machined/.../mount` pipeline | rootfs source: verity device instead of initramfs loop; fallback micro-initramfs profile |
-| `Dockerfile` | New pkg stages: rauc (CLI-only), glib, libubootenv; rootfs no longer embedded in initramfs for this profile |
+| `Dockerfile` | New pkg stages: rauc, glib, libubootenv (as shipped: packaged `rauc` + `rauc-service`, see Part E); rootfs no longer embedded in initramfs for this profile |
 | `pkg/machinery/meta/constants.go` | Uptane metadata counters only (slot state now owned by RAUC/env) |
 | `pkg/machinery/config/types/update/` | `UpdateConfig` document (as PLAN-005) |
 | `internal/pkg/webd/` | Upgrade UI unchanged; reads slot status via `rauc status` JSON |
@@ -257,7 +284,7 @@ publishes bundle + TUF metadata as static content. Lockbox builder wraps the sam
    -> verify: boots on hardware with < 40MB non-reclaimable OS RAM (vs ~130MB in PLAN-005
    profile); tampering any rootfs block causes boot failure (verity), and the FIT cmdline
    root hash is the only trust input.
-2. RAUC CLI-only build + system.conf + U-Boot BOOT_ORDER script
+2. RAUC (packaged `rauc` + `rauc-service`, see Part E) + system.conf + U-Boot BOOT_ORDER script
    -> verify: `rauc status` reports both slot groups; manual `rauc install` of a local bundle
    flips slots; `BOOT_x_LEFT` exhaustion falls back automatically after 3 failed boots; with
    BOTH ROOTFS slots deliberately corrupted, U-Boot selects the rescue FIT configuration and

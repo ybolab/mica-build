@@ -1,6 +1,6 @@
 # RFCT-019 PMA documentation finalize for PLAN-010 M4
 
-- **status**: implementation complete
+- **status**: implementation complete (re-opened once for the integration-defect catch-up, closed again)
 - **priority**: P1
 - **owner**: ai-agent
 - **createdAt**: 2026-08-18 03:39
@@ -134,6 +134,11 @@ doing and is noted under Escalations.
 
 ## Verification (2026-08-18)
 
+> Numbers in this section and the next are as measured **at the time of those
+> turns**. Two of them were superseded when the integration defects landed — see
+> "Second follow-up" below for the current values. They are kept as written
+> because they are the record of what was true then, not a current claim.
+
 Run on this worktree at base `b3d9a51` (`bkd/n98jlna1`), against the prebuilt
 BSP artifacts (`BOARD_DIR=/srv/ai/mos/board/cx3576`, which carries both U-Boot
 variants). This is the campaign's final integration check, so all four gates
@@ -242,6 +247,117 @@ fix is on the producer side (`os/rootfs/**`, RFCT-013 scope, not done).
 
 Nothing outside `docs/task/index.md`, `docs/plan/PLAN-010.md` and this record was
 touched; `os/verify-image-v2.sh` and every other subtask's files are unmodified.
+
+## Second follow-up (2026-08-18, base `1073c68`)
+
+The branch was signalled ready and the signal then retracted: RFCT-017's
+amendment found two integration defects, fixing them uncovered a third, and all
+three landed afterwards. Two numbers written here in the previous turn became
+false as a result. This turn re-runs the gates and catches the shared documents
+up.
+
+### Numbers corrected in PLAN-010's M4 verification block
+
+Both were correct when written and are now wrong, which is exactly the kind of
+staleness a milestone status block must not carry:
+
+| Line | Was | Now |
+|---|---|---|
+| `make os-verify-cx3576-v2` | `PASS (207/207 checks)` | `PASS (228/228 checks)` |
+| `make os-health-test` | `PASS (43/43)` | `PASS (54/54 checks)` |
+
+The prose that said "the 207 checks can actually fail" was updated with them, so
+the negative-test paragraph does not quote a superseded total.
+
+### The three integration defects, recorded as a class
+
+New subsection in PLAN-010 M4, before the lesson. All three were found **after**
+the branch had passed seven green gates, and none was catchable by asserting
+existence: `rauc.slot=` missing from the cmdline (config present, value inert);
+`mos-health` parsing `RAUC_SYSTEM_BOOTED_SLOT`, which rauc 1.8 never emits
+(script present, parse never matches); `rauc-service` absent while `/usr/bin/rauc`
+is present (binary present, daemon absent). Together they meant every update
+would silently roll back — the gate read an empty slot, exited 0, never ran
+`mark-good`, and U-Boot reverted when the credits ran out.
+
+Each defect is attributed to the record that owns its fix (RFCT-020, RFCT-015,
+RFCT-013) rather than restated; all three had already written their own records,
+so nothing was duplicated.
+
+The section also refuses one wrong lesson explicitly. `--no-install-recommends`
+was **not** the cause of the missing `rauc-service`: `rauc` 1.8-2 has no
+`Recommends` line at all and the dependency runs the other way
+(`rauc-service` `Depends: rauc`), so a recommends-enabled build would not have
+installed it either. Recording "drop `--no-install-recommends`" as the fix would
+put a false causal claim in the plan, and it is the kind of plausible-sounding
+lesson that gets applied elsewhere.
+
+The M4 lesson section was rewritten from five instances to eight and given the
+sharper form these three supply: **asserting that a thing exists is not asserting
+that it works.** A config file with an inert value, a script whose parse never
+matches, and a binary whose daemon is missing all pass an existence check and all
+fail in production.
+
+### PLAN-006: the RAUC packaging constraint is AMENDED, not deviated from
+
+The instruction first given was to record shipping `rauc-service` as a deviation
+from the CLI-only mandate; it was corrected to an amendment, and the corrected
+framing is the one implemented. The distinction is not cosmetic. The CLI-only
+wording (`-Dservice=false`, "no D-Bus, no resident daemon") was written for the
+**Talos** base, which had no system D-Bus and invoked updaters as short-lived
+processes. PLAN-010 replaced that base with systemd, whose native integration is
+what RAUC is built for, and mosd is itself a resident D-Bus service on the same
+bus. The premise of the constraint is gone — this is not a rule we are breaking
+while intending to keep it. Recorded as an **L1 decision**; the user was
+informed. Building RAUC from source to honour the original wording was not
+reopened: RFCT-013's `rauc-service` package is the shipped answer.
+
+The original wording is quoted verbatim inside the amendment rather than deleted,
+because the record of why it was once written that way is worth more than a
+clean-looking spec.
+
+Two things the amendment states rather than glosses:
+
+- The change is to the **runtime model**, not only the build. The image now
+  carries an on-demand, D-Bus-activated **root** daemon. It is systemd-activated
+  (`SystemdService=rauc.service`, `Type=dbus`, `After=dbus.service`), starts on
+  the first call and exits on its own lifecycle, so it is not a boot-time cost
+  and nothing waits on it — but "no resident daemon" is no longer literally true
+  and should not be quoted as if it still described the system.
+- Debian's CLI is built *with* service support, so it never operates locally; it
+  proxies every call over D-Bus and cannot work without the service package.
+
+**Location note.** The instruction named Part F. The CLI-only mandate is
+actually the last bullet of **Part E** (Part F is the power-loss matrix, which
+needed no change). The amendment was written where the text lives, and the three
+other places that repeated "CLI-only" — Part K's component list, Part M's
+`Dockerfile` row and implementation stage 2 — were pointed at it so the plan does
+not contradict itself in four places.
+
+### Design-doc syncs
+
+- **§5.3** now diverged from the shipped `os/boot/cx3576-boot.cmd` in **two**
+  places, not one: the per-slot `mos-verity-<slot>.env` load and
+  `rauc.slot=${bootslot}`. The fenced block was re-synced from the script and the
+  preamble rewritten to name both, each with its failure mode.
+- **§10** gained a ninth requirement, `bootargs` must carry
+  `rauc.slot=${bootslot}`, placed after the eight and marked as *not* covered by
+  `8b24f9d`: it is a requirement on the boot script rather than on the U-Boot
+  build, and it emerged only once the handshake was integrated end to end.
+
+### Verification of this turn (on `1073c68`)
+
+- `make os-image-cx3576` + `make os-verify-cx3576` — `RESULT: PASS (88/88 checks)`.
+- `make os-verify-cx3576-v2` — `RESULT: PASS (228/228 checks)`.
+- `grep -rInP '[\x{4e00}-\x{9fff}]' docs/plan docs/task os update mosd` — clean.
+
+Both numbers written into PLAN-010 this turn were produced by these runs, not
+carried forward. The other five gate results quoted in that block were measured
+on this same head and supplied with the task; they are attributed as such rather
+than re-derived here.
+
+Scope held: `docs/` only. `os/verify-image-v2.sh`, `os/health/**`, `os/boot/**`,
+`os/rootfs/**` and every layout constant are untouched.
 
 ## ActiveForm
 
