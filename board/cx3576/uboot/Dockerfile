@@ -11,6 +11,9 @@
 #   · adc-keys：按住 recovery 键(saradc ch1,17mV 档)上电 → preboot 进 rockusb
 #   · saradc 补 vdd-microvolts=1.8V（mainline 驱动无 vref 则 probe 失败——按键失灵的根因）
 #   · bootcmd 兜底：引导失败自动进 rockusb
+#   · patches/*.patch: rockusb enumerates as Loader (bcdUSB=0x0201) and honors
+#     K_FW_RESET subcode 3/6 -> boot-mode-reg flag, so upgrade_tool uf /
+#     rkdeveloptool rd 3 can bounce the board into real maskrom (RFCT-007)
 # =============================================================================
 FROM --platform=$BUILDPLATFORM ubuntu:24.04 AS build
 
@@ -26,6 +29,11 @@ RUN git clone --depth=1 https://github.com/rockchip-linux/rkbin /rkbin
 
 ARG UBOOT_REF=v2026.07
 RUN git clone --depth=1 -b "${UBOOT_REF}" https://github.com/u-boot/u-boot.git /uboot
+
+COPY patches/ /patches/
+RUN cd /uboot && for p in $(ls /patches/*.patch | sort); do \
+        echo ">> applying $(basename $p)" && git apply -v "$p"; \
+    done
 
 ARG DDR_BLOB=rk3576_ddr_lp4_2112MHz_lp5_2736MHz_v1.12.bin
 ARG BL31_BLOB=rk3576_bl31_v1.24.elf
@@ -81,7 +89,10 @@ RUN cd /uboot && \
     make -j"$(nproc)" \
         CROSS_COMPILE=aarch64-linux-gnu- \
         ROCKCHIP_TPL="$DDR" BL31="$BL31" && \
-    ls -la u-boot-rockchip.bin
+    ls -la u-boot-rockchip.bin spl/u-boot-spl.bin u-boot.itb
 
 FROM scratch AS artifact
 COPY --from=build /uboot/u-boot-rockchip.bin /
+# Split artifacts for the update.img path (boot_merger loader + uboot partition)
+COPY --from=build /uboot/spl/u-boot-spl.bin /
+COPY --from=build /uboot/u-boot.itb /
