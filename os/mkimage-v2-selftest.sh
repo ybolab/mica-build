@@ -281,11 +281,11 @@ assert_ext4 "${DATA_PARTNUM}" "${DATA_START_MIB}" "${DATA_SIZE_MIB}" "${DATA_FS_
 # U-Boot and silently bypass the A/B handshake.
 for slot in a b; do
     case "${slot}" in
-    a) off="${BOOT_A_OFFSET_BYTES}"; guid="${ROOTFS_A_GUID}" ;;
-    b) off="${BOOT_B_OFFSET_BYTES}"; guid="${ROOTFS_B_GUID}" ;;
+    a) off="${BOOT_A_OFFSET_BYTES}"; guid="${ROOTFS_A_GUID}"; venv="${BOOT_VERITY_ENV_A_NAME}" ;;
+    b) off="${BOOT_B_OFFSET_BYTES}"; guid="${ROOTFS_B_GUID}"; venv="${BOOT_VERITY_ENV_B_NAME}" ;;
     esac
     listing="$(mdir -i "${IMG}@@${off}" -b ::/ 2>/dev/null || true)"
-    for f in "::/Image" "::/rk3576-src.dtb" "::/${BOOT_SCRIPT_NAME}" "::/${BOOT_VERITY_ENV_NAME}"; do
+    for f in "::/Image" "::/rk3576-src.dtb" "::/${BOOT_SCRIPT_NAME}" "::/${venv}"; do
         if echo "${listing}" | grep -qF "${f}"; then
             echo "PASS: boot-${slot} contains ${f}"
         else
@@ -300,10 +300,20 @@ for slot in a b; do
         echo "PASS: boot-${slot} has no extlinux directory or config"
     fi
 
-    mcopy -n -i "${IMG}@@${off}" "::/${BOOT_SCRIPT_NAME}" "${WORK}/bootscr-${slot}"
-    mcopy -n -i "${IMG}@@${off}" "::/${BOOT_VERITY_ENV_NAME}" "${WORK}/verityenv-${slot}"
+    # A RAUC-installed slot carries ONLY the slot-suffixed files, so a factory
+    # slot must too: any unsuffixed file here would mean the layout a device
+    # boots from after an update differs from the one it was flashed with.
+    if echo "${listing}" | grep -qF "::/${BOOT_VERITY_ENV_NAME}"; then
+        echo "FAIL: boot-${slot} carries the unsuffixed ${BOOT_VERITY_ENV_NAME}; a RAUC-installed slot never has one"
+        FAILED=1
+    else
+        echo "PASS: boot-${slot} carries no unsuffixed ${BOOT_VERITY_ENV_NAME} (bundle-shaped layout)"
+    fi
 
-    check "boot-${slot} ${BOOT_VERITY_ENV_NAME} is a single verity_args line" \
+    mcopy -n -i "${IMG}@@${off}" "::/${BOOT_SCRIPT_NAME}" "${WORK}/bootscr-${slot}"
+    mcopy -n -i "${IMG}@@${off}" "::/${venv}" "${WORK}/verityenv-${slot}"
+
+    check "boot-${slot} ${venv} is a single verity_args line" \
         "$(grep -c '^verity_args=dm-mod\.create=' "${WORK}/verityenv-${slot}")" 1
     if grep -qiF "PARTUUID=${guid}" "${WORK}/verityenv-${slot}"; then
         echo "PASS: boot-${slot} verity table points at its own rootfs (${guid}, either case)"
@@ -344,11 +354,39 @@ fi
 check "boot.scr is a legacy U-Boot image" \
     "$(od -An -tx1 -N4 "${WORK}/bootscr-a" | tr -d ' \n')" 27051956
 if cmp -s "${WORK}/verityenv-a" "${WORK}/verityenv-b"; then
-    echo "FAIL: both slots carry the same mos-verity.env; they must differ"
+    echo "FAIL: both slots carry the same verity env; they must differ"
     FAILED=1
 else
-    echo "PASS: the two slots carry different mos-verity.env"
+    echo "PASS: the two slots carry different per-slot verity env files"
 fi
+
+# Contract cross-check: the filename boot.scr builds at runtime must be the one
+# that is actually present in that slot. Both halves are read out of
+# os/boot/cx3576-boot.cmd rather than restated here, so this fails if either
+# the load line or the slotsuffix assignments drift.
+BOOT_CMD_FILE="${SCRIPT_DIR}/boot/cx3576-boot.cmd"
+VERITY_BASE="${BOOT_VERITY_ENV_NAME%.env}"
+check "boot.cmd loads the per-slot verity env first" \
+    "$(sed -n '/^if load mmc/{s/.*[[:space:]]\([^[:space:]]*\);[[:space:]]*then$/\1/p;q}' "${BOOT_CMD_FILE}")" \
+    "${VERITY_BASE}-\${slotsuffix}.env"
+check "boot.cmd falls back to the unsuffixed name" \
+    "$(sed -n '/^elif load mmc/{s/.*[[:space:]]\([^[:space:]]*\);[[:space:]]*then$/\1/p;q}' "${BOOT_CMD_FILE}")" \
+    "${BOOT_VERITY_ENV_NAME}"
+for slot in a b; do
+    case "${slot}" in
+    a) off="${BOOT_A_OFFSET_BYTES}" ;;
+    b) off="${BOOT_B_OFFSET_BYTES}" ;;
+    esac
+    suffix="$(grep -oE "^ +setenv slotsuffix ${slot}\$" "${BOOT_CMD_FILE}" | awk '{print $3}')"
+    check "boot.cmd sets slotsuffix=${slot} for that slot" "${suffix}" "${slot}"
+    want="${VERITY_BASE}-${suffix}.env"
+    if mdir -i "${IMG}@@${off}" -b ::/ 2>/dev/null | grep -qF "::/${want}"; then
+        echo "PASS: boot-${slot} contains ${want}, the exact name boot.scr will load"
+    else
+        echo "FAIL: boot-${slot} does not contain ${want}, the name boot.scr will load"
+        FAILED=1
+    fi
+done
 
 # rootfs-a carries the payload; rootfs-b stays zero-filled.
 check "rootfs-a holds the verity payload" \
