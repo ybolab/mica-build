@@ -280,18 +280,24 @@ holds what is worth the whole disk, so it is the partition that grows and
 Capping `/var` creates a fill-up mode that did not exist while it grew, which
 is what §4's "Fill-up containment" below is for.
 
-**Landing order.** The DATA partition itself (p10, plus the fixed `MOS_VAR_MIB`
-size for EPHEMERAL) is RFCT-020's half, in `os/layout/cx3576-v2.env` and the
-assembler. This half adapts to whichever is present, because a mismatch is
-dangerous in exactly one direction: repart pairs definitions with partitions by
-type UUID in disk order, so shipping the eight-definition set against a
-nine-partition image would leave the eighth definition unmatched and repart
-would **create** a partition nobody asked for. `build-v2.sh` therefore keys off
-`DATA_GUID`: present, and it renders `/srv`, drops growfs from `/var` and stages
-eight definitions; absent, and it falls back to the previous nine-partition
-arrangement exactly — seven definitions, EPHEMERAL grows, no `/srv` — with a
-warning on stdout rather than a half-migrated image. It also asserts that the
-definition count matches the mode and that exactly one definition carries
+**The DATA constants are required, and the build proves it.** `build-v2.sh`
+fails if `DATA_GUID`, `DATA_PARTNUM`, `DATA_FS_UUID` or `MOS_VAR_MIB` is absent
+from `os/layout/cx3576-v2.env`, naming the file and the missing keys. All four
+are demanded even though only `DATA_GUID` is read here, because a
+partially-edited layout env is the failure being guarded against: the assembler
+needs the other three, and a rootfs built against half a layout is the kind of
+artifact that reaches hardware before anyone notices.
+
+While p10 was still being added, this build carried a nine-partition fallback so
+the two halves could land in either order. That path is now unreachable and has
+been deleted. Keeping it would have been worse than useless: if a constant went
+missing through a bad merge or an editing slip, the build would not have failed
+— it would have quietly emitted a nine-partition rootfs with `/var` growing and
+no `/srv`, and every downstream check would have passed. Silently shipping the
+superseded layout is exactly the failure mode the repart hazard below describes.
+
+Two assertions survive from that period and stay meaningful: the staged
+definition count must be eight, and exactly one definition must carry
 `Weight=1000`.
 
 The three block mounts are `/etc/fstab` entries rather than hand-written

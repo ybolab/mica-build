@@ -315,10 +315,12 @@ bind mount whose mountpoint exists in the factory `/var`. Today that covers
 The rule is: **identity, credentials, pairings and update state never live on
 `/var`**. Full audit in `docs/design/ro-root.md` §4.
 
-DATA (partition 10) is RFCT-020's half of the layout. Until it lands,
-`build-v2.sh` warns and falls back to the previous nine-partition arrangement
-(seven repart definitions, EPHEMERAL grows, no `/srv`) rather than shipping a
-half-migrated image — repart would otherwise create an unmatched partition.
+The DATA constants (`DATA_GUID`, `DATA_PARTNUM`, `DATA_FS_UUID`,
+`MOS_VAR_MIB`) are **required**: `build-v2.sh` fails if any is missing from
+`os/layout/cx3576-v2.env`. There is deliberately no fallback. A build that
+quietly emitted the superseded nine-partition arrangement — `/var` growing, no
+`/srv` — would pass every downstream check, which is precisely the class of
+silent-wrong-artifact this layout work exists to prevent.
 
 ## CJK guard
 
