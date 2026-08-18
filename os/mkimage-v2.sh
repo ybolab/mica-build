@@ -66,6 +66,14 @@ BOOT_CMD="${SCRIPT_DIR}/boot/cx3576-boot.cmd"
 # Set by assemble() from rootfs-verity.env, read by mkverityenv().
 root_hash=""
 
+# The v2 image may only carry the uboot-mos variant. Stated once because both
+# the host wrapper and the inner assembly need to say it.
+uboot_missing_error() {
+    echo "error: $1 not found; build it with 'make -C board/cx3576 uboot-mos'." >&2
+    echo "The v1 blob under out/${UBOOT_DEBUG_VARIANT_DIR}/ is NOT a substitute. It is the debug variant: CONFIG_ENV_IS_NOWHERE (no persistent environment at all) and no pinned bootmeth order, so a v2 image built with it would boot, look healthy, and silently never run the RAUC A/B handshake — no BOOT_ORDER, no attempt counters, no rollback." >&2
+    exit 1
+}
+
 # Reads one KEY=value out of a plain env-style file without executing it.
 env_file_get() {
     sed -n "s/^$2=//p" "$1" | tail -n1
@@ -175,18 +183,30 @@ mkboot() {
 }
 
 # Assembly, running either natively or inside the container. Inputs/output are
-# taken from the environment: KERNEL_IMAGE, DTB, UBOOT, ROOTFS_VERITY_IMG,
+# taken from the environment: KERNEL_IMAGE, DTB, UBOOT, UBOOT_DEBUG (optional,
+# only used for the pairing guard), ROOTFS_VERITY_IMG,
 # ROOTFS_VERITY_ENV, BOOT_CMDLINE_A, BOOT_CMDLINE_B, IMG_OUT.
 assemble() {
     workdir="$(mktemp -d)"
     trap 'rm -rf "${workdir:-}"' EXIT
 
-    for input in "${KERNEL_IMAGE}" "${DTB}" "${UBOOT}"; do
+    for input in "${KERNEL_IMAGE}" "${DTB}"; do
         if [ ! -f "${input}" ]; then
             echo "error: ${input} not found" >&2
             exit 1
         fi
     done
+    if [ ! -f "${UBOOT}" ]; then
+        uboot_missing_error "${UBOOT}"
+    fi
+    # Pairing guard: catches the whole family of "someone copied or symlinked
+    # the debug build into uboot-mos because the real build was inconvenient".
+    if [ -n "${UBOOT_DEBUG:-}" ] && [ -f "${UBOOT_DEBUG}" ] && cmp -s "${UBOOT}" "${UBOOT_DEBUG}"; then
+        echo "error: the U-Boot blob at ${UBOOT} is byte-identical to the debug build at ${UBOOT_DEBUG}." >&2
+        echo "A v2 image must carry the uboot-mos variant: redundant environment at ${UENV_A_OFFSET_BYTES}/${UENV_B_OFFSET_BYTES}, setexpr, bootmeth order pinned to script. The debug build has none of that and the A/B handshake would silently never run." >&2
+        echo "Rebuild it with 'make -C board/cx3576 uboot-mos'; do not copy or symlink the other variant into place." >&2
+        exit 1
+    fi
     for input in "${ROOTFS_VERITY_IMG}" "${ROOTFS_VERITY_ENV}" \
         "${BOOT_CMDLINE_A}" "${BOOT_CMDLINE_B}"; do
         if [ ! -f "${input}" ]; then
@@ -348,7 +368,8 @@ BOOT_CMDLINE_A="${OUT_DIR}/boot-cmdline-a.txt"
 BOOT_CMDLINE_B="${OUT_DIR}/boot-cmdline-b.txt"
 KERNEL_IMAGE="${BOARD_DIR}/out/kernel/Image"
 DTB="${BOARD_DIR}/out/kernel/rk3576-src.dtb"
-UBOOT="${BOARD_DIR}/out/uboot/u-boot-rockchip.bin"
+UBOOT="${BOARD_DIR}/out/${UBOOT_VARIANT_DIR}/${UBOOT_BIN_NAME}"
+UBOOT_DEBUG="${BOARD_DIR}/out/${UBOOT_DEBUG_VARIANT_DIR}/${UBOOT_BIN_NAME}"
 
 for input in "${ROOTFS_VERITY_IMG}" "${ROOTFS_VERITY_ENV}" "${BOOT_CMDLINE_A}" "${BOOT_CMDLINE_B}"; do
     if [ ! -f "${input}" ]; then
@@ -356,12 +377,16 @@ for input in "${ROOTFS_VERITY_IMG}" "${ROOTFS_VERITY_ENV}" "${BOOT_CMDLINE_A}" "
         exit 1
     fi
 done
-for input in "${KERNEL_IMAGE}" "${DTB}" "${UBOOT}"; do
+for input in "${KERNEL_IMAGE}" "${DTB}"; do
     if [ ! -f "${input}" ]; then
         echo "error: ${input} not found; build the BSP or set BOARD_DIR (currently: ${BOARD_DIR})" >&2
         exit 1
     fi
 done
+if [ ! -f "${UBOOT}" ]; then
+    echo "note: BOARD_DIR is currently ${BOARD_DIR}" >&2
+    uboot_missing_error "${UBOOT}"
+fi
 
 mkdir -p "${OUT_DIR}"
 
@@ -394,7 +419,7 @@ if [ "${ROOTFS_SLOT_PINNED}" = 1 ]; then
 fi
 
 if host_can_assemble; then
-    env KERNEL_IMAGE="${KERNEL_IMAGE}" DTB="${DTB}" UBOOT="${UBOOT}" \
+    env KERNEL_IMAGE="${KERNEL_IMAGE}" DTB="${DTB}" UBOOT="${UBOOT}" UBOOT_DEBUG="${UBOOT_DEBUG}" \
         ROOTFS_VERITY_IMG="${ROOTFS_VERITY_IMG}" ROOTFS_VERITY_ENV="${ROOTFS_VERITY_ENV}" \
         BOOT_CMDLINE_A="${BOOT_CMDLINE_A}" BOOT_CMDLINE_B="${BOOT_CMDLINE_B}" \
         IMG_OUT="${OUT_DIR}/${IMG_NAME}" "${INNER_ENV[@]}" \
@@ -406,7 +431,8 @@ else
         -v "${BOARD_DIR}:/board:ro" \
         -e KERNEL_IMAGE=/board/out/kernel/Image \
         -e DTB=/board/out/kernel/rk3576-src.dtb \
-        -e UBOOT=/board/out/uboot/u-boot-rockchip.bin \
+        -e UBOOT="/board/out/${UBOOT_VARIANT_DIR}/${UBOOT_BIN_NAME}" \
+        -e UBOOT_DEBUG="/board/out/${UBOOT_DEBUG_VARIANT_DIR}/${UBOOT_BIN_NAME}" \
         -e ROOTFS_VERITY_IMG=/work/_out/cx3576/rootfs-verity.img \
         -e ROOTFS_VERITY_ENV=/work/_out/cx3576/rootfs-verity.env \
         -e BOOT_CMDLINE_A=/work/_out/cx3576/boot-cmdline-a.txt \

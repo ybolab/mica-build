@@ -21,7 +21,7 @@ Evidence convention used throughout:
   `6.1.115` [V]), fetched read-only.
 - **[U]** UNVERIFIED — cannot be established without a board build or hardware.
 
-`os/layout/cx3576-v2.env` (RFCT-012) has **not** landed on this branch base
+`os/layout/cx3576-v2.env` (RFCT-020) has **not** landed on this branch base
 (`fd6233f`); `ls os/layout/` → no such directory [V]. Every constant below is
 therefore quoted from the campaign layout-v2 table, and every generated file
 (defconfig fragment, `fw_env.config`, `boot.cmd`) **must be regenerated from
@@ -282,7 +282,7 @@ slot re-selected.
 ### 3.2 Defconfig fragment (paste into the custom defconfig)
 
 Verified symbol names and semantics against `v2026.07`. Regenerate the three
-hex values from `os/layout/cx3576-v2.env` once RFCT-012 lands.
+hex values from `os/layout/cx3576-v2.env` once RFCT-020 lands.
 
 ```
 # --- persistent environment: redundant pair in the eMMC user area -----------
@@ -647,7 +647,7 @@ so `script` here, and `rauc` if option (B) is taken. Names are matched exactly
 (`u-boot/boot/bootmeth-uclass.c:259-272`) [V]. `CONFIG_CMD_BOOTMETH=y` is
 already on in the current config [V].
 
-### 5.5 `mkimage` invocation and the RFCT-012 handoff
+### 5.5 `mkimage` invocation and the RFCT-020 handoff
 
 ```sh
 SOURCE_DATE_EPOCH=1577836800 \
@@ -661,7 +661,7 @@ is the layout-v2 fixed mtime (2020-01-01T00:00:00Z). `-C none` because the
 script is not compressed; `-T script` requires `CONFIG_LEGACY_IMAGE_FORMAT=y`
 in U-Boot, which is already set [V].
 
-**Owner of the assembly step: RFCT-012** (`os/mkimage-v2.sh`). What it must do:
+**Owner of the assembly step: RFCT-020** (`os/mkimage-v2.sh`). What it must do:
 
 1. Build `boot.scr` from the `boot.cmd` above with the exact invocation above,
    and write the **same** `boot.scr` to both BOOT-A and BOOT-B (FAT root, since
@@ -1049,7 +1049,7 @@ entirely.
 
 Dependencies this creates on other subtasks, for scheduling:
 
-- **RFCT-012** (`os/mkimage-v2.sh`): generate and install `boot.scr` +
+- **RFCT-020** (`os/mkimage-v2.sh`): generate and install `boot.scr` +
   per-slot `mos-verity.env`, drop `extlinux.conf` from v2 boot slots, zero-fill
   p1/p2 (§5.5).
 - **RFCT-014** (rootfs): add `libubootenv-tool` to the package allowlist, ship
