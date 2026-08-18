@@ -41,12 +41,49 @@ fake() {
     chmod 0755 "$BIN/$name"
 }
 
+# Verbatim shape of `rauc status --output-format=shell` as emitted by rauc 1.8-2
+# (the version the bookworm allowlist installs) driving the rendered
+# os/rauc/system.conf, captured in a container with rauc.slot=A on the kernel
+# command line. Trimmed to the rows a parser can care about; every variable NAME
+# and the quoting are exactly as observed. $1 is the booted bootname, empty for
+# the "rauc answered but names no booted slot" case.
+write_rauc_status() {
+    cat >"$CASE/rauc-status.txt" <<FIXTURE
+RAUC_SYSTEM_COMPATIBLE='mos-cx3576'
+RAUC_SYSTEM_VARIANT=''
+RAUC_SYSTEM_BOOTED_BOOTNAME='$1'
+RAUC_BOOT_PRIMARY=''
+RAUC_SYSTEM_SLOTS='rootfs.1 boot.0 rootfs.0 boot.1'
+RAUC_SLOTS='1 2 3 4'
+RAUC_SLOT_STATE_1='inactive'
+RAUC_SLOT_CLASS_1='rootfs'
+RAUC_SLOT_DEVICE_1='/dev/disk/by-partuuid/5ac35760-0002-4000-8000-000000000006'
+RAUC_SLOT_BOOTNAME_1='B'
+RAUC_SLOT_STATE_2='active'
+RAUC_SLOT_CLASS_2='boot'
+RAUC_SLOT_BOOTNAME_2=''
+RAUC_SLOT_PARENT_2='rootfs.0'
+RAUC_SLOT_STATE_3='booted'
+RAUC_SLOT_CLASS_3='rootfs'
+RAUC_SLOT_DEVICE_3='/dev/disk/by-partuuid/5ac35760-0002-4000-8000-000000000005'
+RAUC_SLOT_BOOTNAME_3='A'
+RAUC_SLOT_STATE_4='inactive'
+RAUC_SLOT_CLASS_4='boot'
+RAUC_SLOT_BOOTNAME_4=''
+RAUC_SLOT_PARENT_4='rootfs.1'
+FIXTURE
+}
+
 # Defaults: a healthy A/B system with mosd and webd both answering.
 healthy_fakes() {
+    write_rauc_status A
     fake rauc '
 case "$1 $2" in
-  "status --output-format=shell") echo "RAUC_SYSTEM_BOOTED_SLOT='"'"'rootfs.0'"'"'" ;;
-  "status mark-good") ;;
+  "status --output-format=shell")
+      [ -n "${FAKE_RAUC_STDERR:-}" ] && echo "$FAKE_RAUC_STDERR" >&2
+      [ "${FAKE_RAUC_STATUS_RC:-0}" = 0 ] && cat "$CASE_DIR/rauc-status.txt"
+      exit ${FAKE_RAUC_STATUS_RC:-0} ;;
+  "status mark-good") exit ${FAKE_MARKGOOD_RC:-0} ;;
 esac
 exit 0'
     fake systemctl '
@@ -64,6 +101,7 @@ exit 0'
 
 run_health() {
     env -i PATH="$BIN:/usr/bin:/bin" CALLS_FILE="$CALLS" MOS_HEALTH_CONF="$CONF" \
+        CASE_DIR="$CASE" \
         "$@" sh "$HERE/mos-health"
 }
 
@@ -90,13 +128,41 @@ new_case rauc-absent
 out=$(run_health 2>&1) && rc=0 || rc=$?
 check "rauc absent -> exit 0" "0" "$rc"
 check "rauc absent -> logged" "yes" "$(grep -q 'rauc not installed' <<<"$out" && echo yes || echo no)"
+check "rauc absent -> not confused with a parse failure" "no" \
+    "$(grep -q 'cannot parse' <<<"$out" && echo yes || echo no)"
 
-new_case no-booted-slot
+# The three silences must never be confused with one another. A gate that
+# cannot read rauc is broken, not idle, and must say so loudly.
+new_case rauc-answers-no-slot
 healthy_fakes
-fake rauc 'exit 0'
+write_rauc_status ''
 out=$(run_health 2>&1) && rc=0 || rc=$?
-check "no booted slot -> exit 0" "0" "$rc"
-check "no booted slot -> no mark-good" "no" "$(marked_good)"
+check "rauc answers, no bootname -> exit 0" "0" "$rc"
+check "rauc answers, no bootname -> no mark-good" "no" "$(marked_good)"
+check "rauc answers, no bootname -> distinct log" "yes" \
+    "$(grep -q 'answered but names no booted slot' <<<"$out" && echo yes || echo no)"
+check "rauc answers, no bootname -> not confused with absence" "no" \
+    "$(grep -q 'rauc not installed' <<<"$out" && echo yes || echo no)"
+
+new_case rauc-errors
+healthy_fakes
+out=$(run_health FAKE_RAUC_STATUS_RC=1 \
+    FAKE_RAUC_STDERR='Error retrieving slot status via D-Bus: error calling D-Bus method "GetSlotStatus": Failed to determine slot states: Did not find booted slot' 2>&1) && rc=0 || rc=$?
+check "rauc status fails -> exit 1" "1" "$rc"
+check "rauc status fails -> no mark-good" "no" "$(marked_good)"
+check "rauc status fails -> quotes rauc's reason" "yes" \
+    "$(grep -q 'Did not find booted slot' <<<"$out" && echo yes || echo no)"
+check "rauc status fails -> not confused with absence" "no" \
+    "$(grep -q 'rauc not installed' <<<"$out" && echo yes || echo no)"
+
+new_case rauc-unparseable
+healthy_fakes
+printf 'some unexpected output\n' >"$CASE/rauc-status.txt"
+out=$(run_health 2>&1) && rc=0 || rc=$?
+check "unparseable rauc output -> exit 1" "1" "$rc"
+check "unparseable rauc output -> no mark-good" "no" "$(marked_good)"
+check "unparseable rauc output -> says so" "yes" \
+    "$(grep -q 'cannot parse' <<<"$out" && echo yes || echo no)"
 
 # --- health gate: success ---------------------------------------------------
 new_case healthy
@@ -106,6 +172,8 @@ check "healthy -> exit 0" "0" "$rc"
 check "healthy -> mark-good" "yes" "$(marked_good)"
 check "healthy -> confirmed log" "yes" \
     "$(grep -q 'PENDING_CONFIRM -> CONFIRMED' <<<"$out" && echo yes || echo no)"
+check "healthy -> bootname parsed from real 1.8 output" "yes" \
+    "$(grep -q 'booted slot bootname: A' <<<"$out" && echo yes || echo no)"
 
 new_case idempotent
 healthy_fakes
