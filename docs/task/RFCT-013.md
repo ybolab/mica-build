@@ -265,6 +265,80 @@ tool versions; the board console cmdline living in `build-v2.sh`; the Debian
 base image's apt-daily/e2scrub_all timers; `CONFIG_SQUASHFS_XATTR` predating
 this branch's base with the `getcap -r` tripwire as the response.
 
+## Addendum (2026-08-18): parity with the reworked v1 rootfs
+
+Merged `bkd/n98jlna1` (master 090fde1, "adopt the verified Alpine rootfs, port
+its board facts to os/rootfs"). That commit added two hwinit units and a udev
+rule to the v1 `Dockerfile`, and `Dockerfile.v2` — a sibling copy — did not
+pick them up.
+
+The concrete drift: `hwinit-mac`/`hwinit-gadget` and
+`mos-mac.service`/`mos-gadget.service` WERE installed (the existing `hwinit-*`
+and `*.service` globs caught them) but NEITHER WAS ENABLED, because the enable
+loop was a hardcoded `mos-modules mos-otg mos-can mos-bt`; and
+`60-mos-gadget-getty.rules` was not installed at all. Both are silent losses —
+a v2 image would have booted fine while getting a fresh random MAC every boot
+and no USB debug console.
+
+Fixed:
+
+1. `Dockerfile.v2` now installs `hwinit-*`, `*.service` and `*.rules`, matching
+   v1 as it stands on the merged base.
+2. The enable list is **enumerated** from `/tmp/hwinit/*.service`, not
+   restated, so the next unit added to `os/hwinit/` is picked up automatically.
+   The build also asserts at least one unit was enabled, so a glob matching
+   nothing fails loudly instead of producing an image with no hwinit.
+   Build output confirms `hwinit: enabled 6 unit(s)`.
+3. No board fact is encoded in the v2 layer. Verified after the change by
+   reading `/etc/mos` back out of the packed squashfs: `bitrate=250000`,
+   `fd=off`, `mode=otg`, `aic8800_btlpm`, `proto=h4`, `speed=1500000`, plus the
+   new `gadget.conf` and `mac.conf` — all of master's new semantics, none of
+   them restated anywhere in `Dockerfile.v2`, `build-v2.sh` or `overlay-v2/`.
+4. Nothing else in the v1 `Dockerfile` needed porting. The commit touched it in
+   exactly two places (hwinit, +5 lines; CJK guard, +24). Confirmed by diffing
+   the two rootfs stages instruction-by-instruction after the fix: every
+   remaining difference is an intentional v2 one (rauc/libubootenv-tool, the
+   removed host keys, the overlay, the removed v1 repart/fstab). The v1 README
+   additions are v1-side documentation of the hwinit units; the v2 README now
+   carries its own parity section rather than duplicating the unit table.
+5. The CJK guard is the **same mechanism** as v1's, same character ranges, in
+   the v2 pack stage, extended with the v2-only mos-owned paths (overlay mount
+   units, seed scripts, `repart.d`, `fstab`, `fw_env.config`). Not a second
+   check with different shape. Deliberately NOT refactored into a shared script
+   used by both Dockerfiles, since that would mean editing the v1 `Dockerfile`
+   the user had just written, for no behavioural gain.
+
+New finding while checking the units are read-only-root safe (they are — every
+`/etc` reference in all six is a read of its own conf file; writes go to
+configfs, sysfs and `ip link`): `hwinit-otg` supports a per-device override at
+`/etc/mos/otg-mode`, which cannot be created on a verity-protected `/etc`. The
+override is therefore unavailable on v2; defaults from `otg.conf` are
+unaffected. Recorded in `docs/design/ro-root.md` §6 with the fix shape
+(`/mnt/state` or `/run` with `/etc/mos` as fallback). Not implemented here
+because `os/hwinit` is shared with v1 and this is not the task's call to make.
+
+## Verification after the addendum (2026-08-18)
+
+- `make os-rootfs-cx3576-v2` — green, `hwinit: enabled 6 unit(s)`, CJK guard
+  clean, ownership gate clean, `TOTAL_MB 216` (budget 400).
+- **Reproducibility**, two cache-hot runs:
+  `sha256(rootfs-verity.img)` =
+  `056a3a792c4fe16735962d666640ab493337ea09432006e9d3e8fbdcefc65381` both runs,
+  `cmp` clean; `VERITY_ROOT_HASH` =
+  `c4eda6266f5d51fb0e74fd4d71154ae3d80af4b9366893d2adf62520a4f02e53` both runs.
+  (Both differ from the pre-merge values because the merge changed rootfs
+  content — the two new units, the udev rule and the new board facts.)
+- `veritysetup verify` in a container, userspace, no host device-mapper: OK.
+- Packed squashfs: all six `mos-*.service` present under
+  `/usr/lib/systemd/system` AND symlinked in
+  `/etc/systemd/system/multi-user.target.wants`; `60-mos-gadget-getty.rules`
+  present in `/usr/lib/udev/rules.d`; all six `/etc/mos/*.conf` staged.
+- `make os-image-cx3576-v2` — **green**. RFCT-012's GUID assertion is now
+  case-insensitive, so the lowercase cmdline passes. `SLOT_MIB 256`, boot
+  64+64 MiB, image 803 MiB, `sgdisk --verify` "No problems found".
+- `make os-image-cx3576` + `make os-verify-cx3576` — **RESULT: PASS (88/88)**,
+  matching the new baseline.
+
 ## Escalations
 
 - `board/common/mos-required.fragment` on this branch's base (`fd6233f`) does

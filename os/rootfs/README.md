@@ -246,11 +246,50 @@ from the layout env so the shipped image carries no placeholder:
 | `etc/systemd/system/etc-ssh.mount` | binds `/mnt/state/ssh` onto `/etc/ssh` |
 | `etc/systemd/system/etc-hostname.mount` | binds `/mnt/state/hostname` onto `/etc/hostname`, so mosd's hostname reconciler can persist a change |
 | `etc/systemd/system/mos-apply-hostname.service` | re-applies the persisted hostname after the bind — PID 1 read the squashfs copy long before mount units ran |
+
+Six hwinit units (`mos-modules`, `mos-otg`, `mos-can`, `mos-bt`, `mos-mac`,
+`mos-gadget`) are installed and enabled on the v2 path exactly as on v1; all of
+them are read-only-root safe (they read `/etc/mos` and write only configfs and
+sysfs). See `docs/design/ro-root.md` §6 for the one override that read-only
+`/etc` does take away.
 | `usr/lib/mos/mos-seed-*` | the two seed scripts |
 
 `fstrim.timer` is enabled. Why all seven repart definitions are needed, why the
 growth target moved off the root, and what happens to `/etc/machine-id` are all
 explained in `docs/design/ro-root.md`.
+
+## Board hardware init — parity with v1 is enumerated, not restated
+
+`Dockerfile.v2` installs `hwinit-*`, `*.service` **and** `*.rules` from
+`os/hwinit/`, and derives the enable list by iterating the units that are
+actually present:
+
+```
+for f in /tmp/hwinit/*.service; do u="$(basename "$f")"; ln -sf ... ; done
+```
+
+This is not a style preference. The previous hardcoded
+`for u in mos-modules mos-otg mos-can mos-bt` list is exactly how this file
+drifted behind the v1 `Dockerfile` once already: when `mos-mac` and
+`mos-gadget` were added, both were *installed* by the existing globs but never
+*enabled*, and `60-mos-gadget-getty.rules` was not installed at all — so a v2
+image silently lost its stable MAC and its USB debug console with no error
+anywhere. Adding a unit to `os/hwinit/` is now sufficient; the build also
+asserts at least one unit was enabled, so a glob that matches nothing fails
+loudly.
+
+No board fact is restated in the v2 layer. Module names, sysfs paths, UART
+device and speed, CAN bitrate and FD flag, MAC seed and gadget IDs all live in
+`BOARD_INIT_DIR` and are staged verbatim into `/etc/mos`, where the units read
+them at runtime.
+
+## CJK guard
+
+The v2 pack stage runs the same CJK check as the v1 pack stage, over the same
+character ranges, extended with the v2-only mos-owned paths (the overlay's
+mount units, seed scripts, `repart.d` definitions, `fstab` and
+`fw_env.config`). Vendor packages ship translations and are deliberately not
+scanned.
 
 ## Determinism, and what still deviates
 
