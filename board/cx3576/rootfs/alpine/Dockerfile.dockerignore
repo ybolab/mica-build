@@ -1,6 +1,4 @@
-# rootfs/alpine context allowlist (context = repo root)
+# rootfs/alpine build context: only the target filesystem overlay is needed.
 *
-!rootfs/assets/
-!rootfs/firmware/
-!scripts/rs485-pair-test.sh
-!out/kernel/modules.tar
+!rootfs/
+!rootfs/**

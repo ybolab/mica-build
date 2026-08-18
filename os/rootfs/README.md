@@ -68,13 +68,43 @@ allowlist. Set `WITH_MOSD=0` to build the rootfs without mosd (default is on).
 
 ## Board hardware init
 
-Generic, board-agnostic mechanism in `os/hwinit/` (four best-effort units +
-scripts: `mos-modules`, `mos-otg`, `mos-can`, `mos-bt`); board-specific facts
-(module names, sysfs paths, UART device, CAN defaults) in conf files staged
-from `BOARD_DIR/init/` (falling back to the in-repo `board/cx3576/init/`) into
-`/etc/mos/`. Every unit is condition-gated on its conf file and never blocks,
-delays, or fails the boot; WiFi association / BT pairing stay with connd. The
-units are enabled via `multi-user.target.wants` symlinks like mosd.
+Generic, board-agnostic mechanism in `os/hwinit/` (six best-effort units +
+scripts); board-specific facts (module names, sysfs paths, UART device, CAN
+defaults, MAC seed, gadget IDs) in conf files staged from `BOARD_DIR/init/`
+(falling back to the in-repo `board/cx3576/init/`) into `/etc/mos/`. Every unit
+is condition-gated on its conf file and never blocks, delays, or fails the
+boot; WiFi association / BT pairing stay with connd. The units are enabled via
+`multi-user.target.wants` symlinks like mosd.
+
+| Unit | Conf | Does |
+|---|---|---|
+| `mos-modules` | `modules.conf` | `modprobe -q` the board's hardware modules; a module for an absent SKU is skipped |
+| `mos-otg` | `otg.conf` | write the USB OTG role to its syscon node (`/etc/mos/otg-mode` overrides) |
+| `mos-can` | `can.conf` | set bitrate / restart-ms / CAN FD and bring the interface up |
+| `mos-bt` | `bt.conf` | rfkill unblock + `btattach` on the configured UART (ordered after `mos-modules`) |
+| `mos-mac` | `mac.conf` | give every `eth*` with a kernel-random MAC a stable address derived from a hardware identity |
+| `mos-gadget` | `gadget.conf` | build the CDC ACM debug console gadget and bind it to the UDC |
+
+`mos-mac` exists because neither cx3576 NIC has a MAC in hardware, so the
+kernel invents a random one on every boot: gmac0/eth0's dts node carries
+neither `mac-address` nor `nvmem-cells`, and the PCIe RTL8168 has no EEPROM.
+The address is derived as `02:` + `md5(seed + ifname)`, with the seed being the
+eMMC CID — a read-only chip register that is unaffected by reflashing the
+media, so a board keeps its MACs (and DHCP reservations) across image updates.
+Interfaces whose `addr_assign_type` is not `NET_ADDR_RANDOM` are left alone,
+and the unit is ordered before `network-pre.target` so networkd configures the
+final addresses. The SoC OTP CPUID would be a deeper root of identity but has
+no dts node in this tree and no hardware validation.
+
+`mos-gadget` gives the board an out-of-band console: with the OTG port in `otg`
+role the PHY enumerates as a device when a host PC is plugged in, and a udev
+rule (`60-mos-gadget-getty.rules`) pulls in `serial-getty@ttyGS0` when the port
+appears. The gadget serial number reuses the `mac.conf` seed, so USB identity
+is stable too.
+
+The Bluetooth adapter name needs no unit of its own: bluez's hostname plugin
+is loaded by default and overrides `Name`, so the adapter follows the system
+hostname as long as `/etc/bluetooth/main.conf` does not pin one.
 
 ## Dev profile — root login
 
