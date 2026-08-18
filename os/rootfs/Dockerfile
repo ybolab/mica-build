@@ -3,7 +3,7 @@
 # os/rootfs — Debian systemd arm64 rootfs for cx3576 (PLAN-010 M1)
 #
 #   bash os/rootfs/build.sh
-#   → _out/cx3576/rootfs.img         ext4 root (exactly 1024 MiB)
+#   → _out/cx3576/rootfs.img         ext4 root (minimal, content-derived size)
 #   → _out/cx3576/rootfs-report.txt  package list + installed size
 #
 # Build context = repo root. Depends on board/cx3576/out/kernel/modules.tar,
@@ -121,22 +121,30 @@ RUN { dpkg-query -W -f='${Package}\t${Installed-Size}\n'; \
     } > /rootfs-report.txt
 
 # ---------------------------------------------------------------------------
-# Pack: ext4 image, fixed 1024 MiB
+# Pack: ext4 image, minimal content-derived size
 # ---------------------------------------------------------------------------
 FROM --platform=$BUILDPLATFORM debian:bookworm-slim AS pack
 RUN apt-get update && apt-get install -y --no-install-recommends e2fsprogs \
     && rm -rf /var/lib/apt/lists/*
 COPY --from=rootfs / /rootfs/
 # ^orphan_file is mandatory — kernel 6.1 cannot mount orphan_file filesystems.
+# Size is derived from content only (no clock, no randomness):
+#   size_mib = ceil(du_mib * 115 / 100) + 48
+# The 48 MiB fixed margin covers ext4 metadata plus early-boot writes BEFORE
+# systemd-repart/growfs expand p2 (journal replay, first-boot machine-id and
+# /var dirs, ssh host key generation).
 RUN mkdir -p /out && \
     mv /rootfs/rootfs-report.txt /out/rootfs-report.txt && \
     ln -sf ../run/systemd/resolve/stub-resolv.conf /rootfs/etc/resolv.conf && \
     echo 'mos' > /rootfs/etc/hostname && \
     echo '127.0.1.1 mos' >> /rootfs/etc/hosts && \
     : > /rootfs/etc/machine-id && \
+    du_mib=$(du -sxm /rootfs | cut -f1) && \
+    size_mib=$(( (du_mib * 115 + 99) / 100 + 48 )) && \
+    echo "pack: content ${du_mib} MiB -> image ${size_mib} MiB" && \
     mke2fs -q -t ext4 -L rootfs -U 5ac35760-0002-4000-8000-000000000002 \
         -d /rootfs -O ^orphan_file,^metadata_csum_seed \
-        -E root_owner=0:0 /out/rootfs.img 1024M
+        -E root_owner=0:0 /out/rootfs.img "${size_mib}M"
 
 FROM scratch AS artifact
 COPY --from=pack /out/rootfs.img /

@@ -18,13 +18,12 @@ set -euo pipefail
 # container (--assemble mode); epoch naming and the -latest symlink always
 # happen on the host side.
 
-# Fixed disk layout (sectors are 512 bytes).
-TOTAL_SIZE_MIB=1554
+# Fixed disk layout (sectors are 512 bytes). The rootfs partition size is
+# derived from the packed rootfs.img (content-sized, whole MiB); total image =
+# 16 MiB pre-boot area + 512 MiB boot + rootfs + 1 MiB backup-GPT slack.
 BOOT_START_SECTOR=32768 # 16 MiB
 BOOT_SIZE_MIB=512
-ROOTFS_SIZE_MIB=1024
 UBOOT_SEEK_SECTOR=64
-ROOTFS_SIZE_BYTES=1073741824
 
 APPEND="root=PARTLABEL=rootfs rw console=ttyFIQ0,1500000 earlycon=uart8250,mmio32,0x2ad40000 storagemedia=emmc net.ifnames=0 rootwait"
 
@@ -50,10 +49,14 @@ assemble() {
         echo "error: ${UBOOT} does not fit between sector ${UBOOT_SEEK_SECTOR} and the boot partition" >&2
         exit 1
     fi
-    if [ "$(stat -c %s "${ROOTFS_IMG}")" -ne "${ROOTFS_SIZE_BYTES}" ]; then
-        echo "error: ${ROOTFS_IMG} is $(stat -c %s "${ROOTFS_IMG}") bytes, expected exactly ${ROOTFS_SIZE_BYTES} (1 GiB)" >&2
+    local rootfs_bytes rootfs_size_mib total_size_mib
+    rootfs_bytes="$(stat -c %s "${ROOTFS_IMG}")"
+    if [ $((rootfs_bytes % 1048576)) -ne 0 ]; then
+        echo "error: ${ROOTFS_IMG} is ${rootfs_bytes} bytes, not a whole-MiB multiple" >&2
         exit 1
     fi
+    rootfs_size_mib=$((rootfs_bytes / 1048576))
+    total_size_mib=$((BOOT_START_SECTOR / 2048 + BOOT_SIZE_MIB + rootfs_size_mib + 1))
 
     mkdir -p "${workdir}/boot/extlinux"
     cp "${KERNEL_IMAGE}" "${workdir}/boot/Image"
@@ -74,14 +77,14 @@ EOF
 
     local img_tmp="${IMG_OUT}.tmp"
     rm -f "${img_tmp}"
-    truncate -s "${TOTAL_SIZE_MIB}M" "${img_tmp}"
+    truncate -s "${total_size_mib}M" "${img_tmp}"
 
     # boot at 16 MiB; rootfs right after it at 528 MiB, grown to fill the
     # eMMC on first boot by systemd-repart + x-systemd.growfs.
     sgdisk --clear \
         --disk-guid="${DISK_GUID}" \
         --new=1:${BOOT_START_SECTOR}:+${BOOT_SIZE_MIB}M --change-name=1:boot --typecode=1:"${ESP_TYPE}" --attributes=1:set:2 --partition-guid=1:"${BOOT_GUID}" \
-        --new=2:0:+${ROOTFS_SIZE_MIB}M --change-name=2:rootfs --typecode=2:"${LINUX_FS_DATA}" --partition-guid=2:"${ROOTFS_GUID}" \
+        --new=2:0:+${rootfs_size_mib}M --change-name=2:rootfs --typecode=2:"${LINUX_FS_DATA}" --partition-guid=2:"${ROOTFS_GUID}" \
         "${img_tmp}" >/dev/null
 
     dd if="${UBOOT}" of="${img_tmp}" bs=512 seek=${UBOOT_SEEK_SECTOR} conv=notrunc status=none
