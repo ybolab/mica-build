@@ -175,11 +175,9 @@ console=ttyFIQ0,1500000 earlycon=uart8250,mmio32,0x2ad40000 storagemedia=emmc ne
   same one udev gives `/dev/disk/by-partuuid/` (libblkid formats GUIDs
   lowercase). The kernel compares with `strncasecmp` and accepts either, so one
   canonical lowercase spelling everywhere is the least surprising choice.
-  Note that `os/mkimage-v2.sh` currently cross-checks each slot's table against
-  `ROOTFS_A_GUID` / `ROOTFS_B_GUID` — which the layout env holds in uppercase —
-  with a case-**sensitive** shell substring test, so v2 image assembly fails
-  until RFCT-012 makes that assertion case-insensitive. That is a bug on the
-  assertion side; do not "fix" it by uppercasing the cmdline.
+  `os/mkimage-v2.sh` cross-checks each slot's table against `ROOTFS_A_GUID` /
+  `ROOTFS_B_GUID` — which the layout env holds in uppercase — comparing
+  case-insensitively (RFCT-020), so the two spellings coexist by design.
 - The console/earlycon/storagemedia/net.ifnames arguments are carried over from
   the v1 `APPEND` in `os/mkimage.sh`. v1's `root=PARTLABEL=rootfs rw` is
   replaced by `root=/dev/dm-0 ... ro`.
@@ -238,14 +236,63 @@ partitions absorb everything:
 | Path | Backing | Options |
 |---|---|---|
 | `/` | rootfs-a / rootfs-b (`/dev/dm-0`) | squashfs, `ro` |
-| `/var` | EPHEMERAL (p9) | ext4, `noatime,x-systemd.growfs` |
+| `/srv` | DATA (p10) | ext4, `noatime,x-systemd.growfs` |
 | `/mnt/state` | STATE (p8) | ext4, `noatime` |
 | `/mnt/meta` | META (p7) | ext4, `noatime` |
+| `/var` | EPHEMERAL (p9) | ext4, `noatime` — **no** growfs |
 | `/tmp` | tmpfs | `noatime,nosuid,nodev,mode=1777` |
-| `/var/lib/mos` | bind from `/mnt/state/mos` | |
-| `/etc/ssh` | bind from `/mnt/state/ssh` | |
+| `/var/lib/mos` | bind from `/mnt/state/mos` | mosd settings, webd credentials |
+| `/var/lib/bluetooth` | bind from `/mnt/state/bluetooth` | pairing keys |
+| `/etc/ssh` | bind from `/mnt/state/ssh` | sshd config + host keys |
 | `/etc/hostname` | bind from `/mnt/state/hostname` | file bind, not a directory |
 | `/run`, `/run/lock`, `/dev/shm` | tmpfs | systemd API mounts, unchanged |
+
+### Storage tiers
+
+Four partitions, four different answers to "what happens if this is lost?".
+The tier decides where a given piece of state belongs, and the mount options
+follow from the tier rather than the other way round.
+
+| Tier | Mount | Contents | Grows? | Lost when |
+|---|---|---|---|---|
+| **STATE** (p8) | `/mnt/state` | configuration and identity: mosd settings, the webd admin password hash and session key, sshd host keys, hostname, Bluetooth pairings | no — small and fixed | factory reset only |
+| **DATA** (p10) | `/srv` | application data | **yes** — fills the media | factory reset only |
+| **META** (p7) | `/mnt/meta` | update and appliance metadata | no | factory reset only |
+| **EPHEMERAL** (p9) | `/var` | disposable runtime residue: logs, caches, package bookkeeping | no — **fixed** size | factory reset **and** routine log cleanup |
+
+Two operations follow from that table:
+
+- **Factory reset** wipes DATA + STATE + `/var`. The device comes back as if
+  freshly flashed: new host keys, new machine-id, default hostname.
+- **Log cleanup** wipes `/var` alone, and by contract costs nothing that
+  matters. It is a recovery action that can be taken on a wedged device
+  without asking the user whether they mind losing anything.
+
+The growth target has now moved twice, and the reasoning is worth keeping.
+v1 grew the root. Early v2 grew EPHEMERAL, on the assumption that `/var` was
+the filesystem that needed the disk. Neither is right: the root is a
+fixed-size verity image in a frozen A/B slot and must never be resized, and
+`/var` is disposable — spending 100 GB of eMMC on log space would be an odd
+choice while the data worth keeping sat in a fixed partition. DATA/`/srv`
+holds what is worth the whole disk, so it is the partition that grows and
+`/var` is deliberately capped.
+
+Capping `/var` creates a fill-up mode that did not exist while it grew, which
+is what §4's "Fill-up containment" below is for.
+
+**Landing order.** The DATA partition itself (p10, plus the fixed `MOS_VAR_MIB`
+size for EPHEMERAL) is RFCT-020's half, in `os/layout/cx3576-v2.env` and the
+assembler. This half adapts to whichever is present, because a mismatch is
+dangerous in exactly one direction: repart pairs definitions with partitions by
+type UUID in disk order, so shipping the eight-definition set against a
+nine-partition image would leave the eighth definition unmatched and repart
+would **create** a partition nobody asked for. `build-v2.sh` therefore keys off
+`DATA_GUID`: present, and it renders `/srv`, drops growfs from `/var` and stages
+eight definitions; absent, and it falls back to the previous nine-partition
+arrangement exactly — seven definitions, EPHEMERAL grows, no `/srv` — with a
+warning on stdout rather than a half-migrated image. It also asserts that the
+definition count matches the mode and that exactly one definition carries
+`Weight=1000`.
 
 The three block mounts are `/etc/fstab` entries rather than hand-written
 `.mount` units, so that `x-systemd.growfs` works through the fstab generator
@@ -263,23 +310,84 @@ else issues discards.
 under v2, so a persistent journal is now possible; enabling it is a separate
 decision about flash wear and retention and is left to a follow-up.
 
-### First-boot growth moved to EPHEMERAL
+### Nothing precious on /var — audited, and asserted at build time
+
+Calling `/var` disposable is a claim about every file on it, so it is checked
+rather than asserted in prose. The pack stage fails the build unless each
+precious path under `/var` is redirected onto STATE by a bind mount that is
+**actually enabled**, mounts the path it claims to, is backed by `/mnt/state`,
+and has a mountpoint in the factory `/var` that gets restored on first boot:
+
+```
+precious: /var/lib/mos -> STATE via var-lib-mos.mount
+precious: /var/lib/bluetooth -> STATE via var-lib-bluetooth.mount
+precious: journald Storage=volatile (journal never lands on /var)
+```
+
+The standing rule the check enforces: **identity, credentials, pairings and
+update state never live on `/var`.**
+
+What the audit of the built tree found:
+
+| Path | Shape | Disposition |
+|---|---|---|
+| `/var/lib/mos` | credentials — mosd settings, webd admin password hash and session key | **STATE**, via `var-lib-mos.mount`. webd's `StateDirectory=mos/webd` lands inside it, so it is covered too. |
+| `/var/lib/bluetooth` | pairings — bluez link keys | **STATE**, via `var-lib-bluetooth.mount`. Seeded 0700, which bluez requires. |
+| `/var/lib/dbus/machine-id` | identity | **Fixed.** It was a *regular file* holding a build-time id — the same D-Bus machine id on every device that flashes the release, sitting on a disposable filesystem. Now a symlink to `/etc/machine-id`, which is the Debian convention and makes it follow the real machine-id (§5). The build asserts it is a symlink. |
+| `/var/lib/systemd/random-seed` | entropy | **Left on `/var`**, deliberately. Persisting it is more fiddly than it looks: the unit path escapes to `var-lib-systemd-random\x2dseed.mount`, the file must pre-exist with mode 0600 for a file bind to work, and `systemd-random-seed` loads at early boot and saves at shutdown, either side of the local-fs mount phase. The payoff is small — a wiped `/var` leaves the device exactly where a freshly-flashed one starts, and the SoC has other entropy sources. Not worth the machinery. |
+| `/var/lib/systemd/deb-systemd-helper-enabled`, `/var/lib/systemd/catalog` | packaging bookkeeping, regenerable | accepted-discardable |
+| `/var/lib/dpkg`, `/var/lib/apt`, `/var/cache/*`, `/var/log/*` | package db, caches, logs | accepted-discardable; restored from the factory copy on first boot |
+| RAUC statusfile | **update state** | Must NOT be on `/var`. See below. |
+
+**RAUC statusfile — recommend META.** RFCT-014 owns the `statusfile=` line in
+`system.conf`, and of the two safe tiers META is the right one. STATE is
+configuration and identity — things a user sets. META is update and appliance
+metadata, which is exactly what slot status is, and PLAN-006 Part C already
+scopes it that way. Putting it on META also keeps STATE's contents entirely
+user-meaningful, which matters for describing what a factory reset destroys.
+`/mnt/meta` is an fstab mount brought up in the local-fs phase, long before
+anything invokes RAUC, so there is no ordering obstacle. Concretely:
+`statusfile=/mnt/meta/rauc.status`. (RAUC's own default would put it under
+`/var/lib/rauc`, which is precisely the failure this rule exists to prevent —
+losing slot status mid-update is what the A/B design is there to survive.)
+
+### Fill-up containment
+
+While `/var` grew to fill the disk, filling it was hard. Now that it is a
+fixed-size partition, it is a real failure mode, so the image degrades rather
+than dies:
+
+- **journald stays `Storage=volatile`** — confirmed, and now asserted by the
+  same build check. The journal lives in RAM and never touches `/var` at all,
+  which removes the single largest source of unbounded growth.
+- **`/etc/tmpfiles.d/mos-var.conf`** ages the two remaining unbounded
+  directories, applied daily by `systemd-tmpfiles-clean.timer`:
+  `q /var/tmp 1777 root root 10d` (Debian's own rule says 30d; an appliance has
+  no long-lived interactive sessions, so 10d is the more useful default) and
+  `e /var/cache 0755 root root 30d` (regenerable by definition — apt archives,
+  ldconfig and debconf caches — and no distro rule ages it today).
+
+Ordinary housekeeping, deliberately not a garbage collector. Reporting `/var`
+pressure as a degraded health signal is RFCT-015's side, and it must **not**
+fail `mark-good`: a log flood must never trigger an update rollback.
+
+### First-boot growth moved to DATA
 
 v1 grew the root partition with `/etc/repart.d/50-rootfs.conf`. Under v2 the
 root is a fixed-size verity image inside a frozen A/B slot and must never be
-resized, so that definition is gone from the v2 rootfs and EPHEMERAL grows
-instead. Filesystem growth is still `x-systemd.growfs` on the `/var` fstab
-entry; repart only moves the partition boundary and relocates the backup GPT,
-which is why the assembled image reserves only a 1 MiB tail.
+resized, so that definition is gone from the v2 rootfs and DATA grows instead.
+Filesystem growth is `x-systemd.growfs` on the `/srv` fstab entry; repart only
+moves the partition boundary and relocates the backup GPT, which is why the
+assembled image reserves only a 1 MiB tail.
 
 There is a trap here worth recording. systemd-repart pairs definition files
 with existing partitions **by partition type UUID, in order**: the Nth
 definition of a type matches the Nth on-disk partition of that type
-(`man 5 repart.d`). Seven of the nine v2 partitions carry the `linux-generic`
-type — uenv-a, uenv-b, rootfs-a, rootfs-b, meta, state, ephemeral — so a lone
-"grow the last one" file would have silently attached itself to **uenv-a**.
-`/etc/repart.d/` therefore holds all seven definitions in disk order
-(`10-uenv-a` … `70-ephemeral`); the first six carry `Weight=0`/`PaddingWeight=0`
+(`man 5 repart.d`). Eight of the ten v2 partitions carry the `linux-generic`
+type — uenv-a, uenv-b, rootfs-a, rootfs-b, meta, state, ephemeral, data — so a
+lone "grow the last one" file would have silently attached itself to
+**uenv-a**. `/etc/repart.d/` therefore holds all eight definitions in disk
+order (`10-uenv-a` … `80-data`); the first seven carry `Weight=0`/`PaddingWeight=0`
 and no size, exist only to hold their position, and are inert because repart
 never shrinks, moves or deletes an existing partition. No size is pinned on the
 rootfs slots because their size is resolved by the image assembler, long after
@@ -325,6 +433,10 @@ into it if they are absent. `etc-ssh.mount` binds `/mnt/state/ssh` over
 `/etc/ssh` afterwards and is ordered `Before=ssh.service`, so sshd sees a
 writable directory with per-device keys that survive every A/B update. Binding
 over a mountpoint does not write to the underlying read-only filesystem.
+
+It also creates `/mnt/state/bluetooth` at mode 0700 (bluez refuses a laxer
+directory), which `var-lib-bluetooth.mount` binds over `/var/lib/bluetooth` so
+pairings survive a `/var` wipe.
 
 It seeds `/mnt/state/hostname` the same way, from the `/etc/hostname` baked
 into the image, and `etc-hostname.mount` binds that file over `/etc/hostname`.
@@ -454,7 +566,11 @@ change. Nothing depends on it — systemd's `nss-myhostname`, which is in
 
 ## 7. What this task does not cover
 
-- The RAUC slot definitions and `system.conf` (RFCT-014).
+- The RAUC slot definitions and `system.conf`, including the `statusfile=`
+  line this document recommends putting on META (RFCT-014).
+- The DATA partition and the fixed EPHEMERAL size in the layout env and the
+  assembler (RFCT-020).
+- Reporting `/var` pressure as a degraded health signal (RFCT-015).
 - The machine-id oneshot (RFCT-015).
 - The U-Boot side: `ENV_OFFSET` pinning, `BOOT_ORDER` handshake, appending
   `systemd.machine_id=` (RFCT-018).

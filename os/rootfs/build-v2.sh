@@ -112,10 +112,55 @@ render() {
     fi
 }
 
+# Storage tiers. /srv (DATA, partition 10) is the only filesystem that grows;
+# /var (EPHEMERAL) is fixed-size disposable residue and must NOT carry
+# x-systemd.growfs.
+#
+# DATA_GUID is added to the layout env by RFCT-020 together with partition 10
+# in the assembler. The two halves have to land together and this build adapts
+# to whichever is present, because the mismatch is dangerous in one direction:
+# systemd-repart pairs definitions with partitions by type UUID in disk order,
+# so shipping the eight-definition set against a nine-partition image would
+# leave the eighth definition unmatched and repart would CREATE a partition
+# nobody asked for. When DATA is absent we therefore fall back to the previous
+# arrangement exactly — seven definitions, ephemeral grows, no /srv — rather
+# than shipping a half-migrated image.
+if [ -n "${DATA_GUID:-}" ]; then
+    SRV_LINE="PARTUUID=$(lower "$DATA_GUID")	/srv	ext4	noatime,x-systemd.growfs	0	2"
+    VAR_OPTS="noatime"
+    echo "layout: DATA present -> /srv grows, /var fixed, 8 repart definitions"
+else
+    echo "warning: DATA_GUID is not in $LAYOUT_ENV, so partition 10 does not exist yet" >&2
+    echo "warning: falling back to the 9-partition arrangement (ephemeral grows, no /srv)." >&2
+    echo "warning: this is RFCT-020's half; re-run once it has landed." >&2
+    SRV_LINE="# /srv is absent: the layout env defines no DATA partition yet (RFCT-020)."
+    VAR_OPTS="noatime,x-systemd.growfs"
+    rm -f "$OVERLAY_STAGE/etc/repart.d/80-data.conf"
+    sed -i 's/^Weight=0$/Weight=1000/' "$OVERLAY_STAGE/etc/repart.d/70-ephemeral.conf"
+    grep -q '^Weight=1000$' "$OVERLAY_STAGE/etc/repart.d/70-ephemeral.conf"
+fi
+
+# The repart definition count must equal the number of linux-generic partitions
+# on the disk, or repart silently attaches the grow flag to the wrong one.
+want_defs=$([ -n "${DATA_GUID:-}" ] && echo 8 || echo 7)
+have_defs=$(find "$OVERLAY_STAGE/etc/repart.d" -name '*.conf' | wc -l)
+if [ "$have_defs" -ne "$want_defs" ]; then
+    echo "error: $have_defs repart definitions staged, expected $want_defs" >&2
+    exit 1
+fi
+grow_defs=$(grep -l '^Weight=1000$' "$OVERLAY_STAGE"/etc/repart.d/*.conf | wc -l)
+if [ "$grow_defs" -ne 1 ]; then
+    echo "error: $grow_defs repart definitions carry Weight=1000, expected exactly 1" >&2
+    exit 1
+fi
+echo "layout: $have_defs repart definitions, 1 of them growing"
+
 render "$OVERLAY_STAGE/etc/fstab.in" "$OVERLAY_STAGE/etc/fstab" \
     EPHEMERAL_GUID "$(lower "$EPHEMERAL_GUID")" \
     STATE_GUID "$(lower "$STATE_GUID")" \
-    META_GUID "$(lower "$META_GUID")"
+    META_GUID "$(lower "$META_GUID")" \
+    VAR_OPTS "$VAR_OPTS" \
+    SRV_LINE "$SRV_LINE"
 
 render "$OVERLAY_STAGE/etc/fw_env.config.in" "$OVERLAY_STAGE/etc/fw_env.config" \
     UENV_A_GUID "$(lower "$UENV_A_GUID")" \
@@ -215,11 +260,9 @@ fi
 # udev gives /dev/disk/by-partuuid/ (libblkid formats GUIDs lowercase). The
 # kernel compares with strncasecmp and accepts either, so one canonical
 # lowercase spelling everywhere is the least surprising choice.
-# NOTE: os/mkimage-v2.sh currently cross-checks this table against
-# ${ROOTFS_x_GUID} with a case-SENSITIVE shell substring test, and the layout
-# env holds those GUIDs uppercase, so the v2 image assembly fails until
-# RFCT-012 makes that assertion case-insensitive. That is a bug on the
-# assertion side, not here; do not "fix" it by uppercasing this.
+# os/mkimage-v2.sh cross-checks this table against ${ROOTFS_x_GUID}, which the
+# layout env holds uppercase, comparing case-insensitively (RFCT-020). Do not
+# "fix" anything by uppercasing this: lowercase is what udev and fstab use.
 write_cmdline() {
     local out="$1" guid="$2"
     local partuuid

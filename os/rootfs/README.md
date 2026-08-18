@@ -186,10 +186,9 @@ extlinux before `boot.scr`, which would bypass the RAUC A/B handshake.) So:
 - GUIDs are **lowercase** everywhere — cmdline and `fstab` alike — matching
   udev's `by-partuuid` symlinks, which libblkid formats lowercase. The kernel
   compares with `strncasecmp` and accepts either.
-  Caveat: `os/mkimage-v2.sh` currently cross-checks the cmdline against the
-  layout env's uppercase `ROOTFS_x_GUID` **case-sensitively**, so v2 image
-  assembly fails until RFCT-012 makes that assertion case-insensitive. Do not
-  work around it by uppercasing the cmdline.
+  `os/mkimage-v2.sh` cross-checks the cmdline against the layout env's
+  uppercase `ROOTFS_x_GUID` case-insensitively (RFCT-020), so the two spellings
+  coexist by design. Do not "reconcile" them by uppercasing the cmdline.
 
 ## Pack
 
@@ -237,12 +236,14 @@ from the layout env so the shipped image carries no placeholder:
 
 | Path | Purpose |
 |---|---|
-| `etc/fstab.in` | `/var` from EPHEMERAL (`noatime,x-systemd.growfs`), `/mnt/state` from STATE, `/mnt/meta` from META, tmpfs `/tmp` — all keyed on lowercased `PARTUUID=` |
+| `etc/fstab.in` | `/srv` from DATA (`noatime,x-systemd.growfs`), `/mnt/state` from STATE, `/mnt/meta` from META, `/var` from EPHEMERAL (`noatime`, **no** growfs), tmpfs `/tmp` — all keyed on lowercased `PARTUUID=` |
 | `etc/fw_env.config.in` | the redundant U-Boot env pair, addressed by partition GUID (provisional; RFCT-014 may replace it) |
-| `etc/repart.d/*.conf` | seven definitions in disk order; only `70-ephemeral.conf` grows. v1's root-growing definition is gone |
+| `etc/repart.d/*.conf` | eight definitions in disk order; only `80-data.conf` grows. v1's root-growing definition is gone |
+| `etc/tmpfiles.d/mos-var.conf` | age policies for `/var/tmp` and `/var/cache` — `/var` is now a fixed-size partition |
 | `etc/systemd/system/mos-seed-var.service` | first-boot restore of `/var` from `/usr/share/factory/var` |
 | `etc/systemd/system/mos-seed-state.service` | first-boot STATE directories + per-device sshd host keys |
 | `etc/systemd/system/var-lib-mos.mount` | binds `/mnt/state/mos` onto `/var/lib/mos` so mosd's paths are unchanged |
+| `etc/systemd/system/var-lib-bluetooth.mount` | binds `/mnt/state/bluetooth` onto `/var/lib/bluetooth` so pairings survive a `/var` wipe |
 | `etc/systemd/system/etc-ssh.mount` | binds `/mnt/state/ssh` onto `/etc/ssh` |
 | `etc/systemd/system/etc-hostname.mount` | binds `/mnt/state/hostname` onto `/etc/hostname`, so mosd's hostname reconciler can persist a change |
 | `etc/systemd/system/mos-apply-hostname.service` | re-applies the persisted hostname after the bind — PID 1 read the squashfs copy long before mount units ran |
@@ -282,6 +283,28 @@ No board fact is restated in the v2 layer. Module names, sysfs paths, UART
 device and speed, CAN bitrate and FD flag, MAC seed and gadget IDs all live in
 `BOARD_INIT_DIR` and are staged verbatim into `/etc/mos`, where the units read
 them at runtime.
+
+## Storage tiers, and the /var contract
+
+`/srv` (DATA) grows to fill the media and holds the application data worth the
+disk. `/mnt/state` (STATE) holds configuration and identity. `/mnt/meta` (META)
+holds update metadata. `/var` (EPHEMERAL) is **fixed-size disposable residue** —
+logs, caches, package bookkeeping — and wiping it is a supported recovery
+action.
+
+That contract is enforced, not just documented: the pack stage fails the build
+unless every precious path under `/var` is redirected onto STATE by an enabled
+bind mount whose mountpoint exists in the factory `/var`. Today that covers
+`/var/lib/mos` (mosd settings, webd credentials) and `/var/lib/bluetooth`
+(pairing keys), plus an assertion that journald is `Storage=volatile` and that
+`/var/lib/dbus/machine-id` is a symlink rather than a baked per-image identity.
+The rule is: **identity, credentials, pairings and update state never live on
+`/var`**. Full audit in `docs/design/ro-root.md` §4.
+
+DATA (partition 10) is RFCT-020's half of the layout. Until it lands,
+`build-v2.sh` warns and falls back to the previous nine-partition arrangement
+(seven repart definitions, EPHEMERAL grows, no `/srv`) rather than shipping a
+half-migrated image — repart would otherwise create an unmatched partition.
 
 ## CJK guard
 

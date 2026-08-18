@@ -121,8 +121,9 @@ Host: `BOARD_DIR=/srv/ai/mos/board/cx3576` (prebuilt BSP artifacts).
   placeholder.
 - `make os-image-cx3576-v2` — assembled green at the time of the first pass
   (`SLOT_MIB 256`, boot 64+64 MiB, total 803 MiB / 842006528 bytes,
-  `sgdisk --verify` "No problems found"). It now FAILS on RFCT-012's
-  case-sensitive GUID assertion; see Rework item 3.
+  `sgdisk --verify` "No problems found"). It briefly failed on the then
+  case-sensitive GUID assertion; RFCT-020 made that comparison
+  case-insensitive in 31e1c06 and the v2 image builds green again.
 - `make os-image-cx3576` + `make os-verify-cx3576` (v1 regression) —
   **RESULT: PASS (71/71 checks)**, unchanged.
 - `bash mosd/hack/check.sh` not run: no Rust code was touched by this task.
@@ -191,8 +192,10 @@ cmdline is not part of the squashfs.
   `/usr/bin/hostname` present, baked `/etc/hostname` = `mos`.
 - `/etc/machine-id` still a 0-byte regular file.
 - `make os-image-cx3576` + `make os-verify-cx3576` (v1) — **PASS (71/71)**.
-- `make os-image-cx3576-v2` — FAILS on RFCT-012's case-sensitive GUID
-  assertion, as anticipated by the review. Not worked around.
+- `make os-image-cx3576-v2` — failed at the time on the then case-sensitive
+  GUID assertion, as anticipated by the review, and was deliberately not worked
+  around. RFCT-020 has since made the comparison case-insensitive (31e1c06),
+  and the image builds green; see the addendum verification below.
 - No host state mutated: pack in buildkit stages, inspections in throwaway
   containers with the output directory bind-mounted read-only.
 
@@ -251,12 +254,13 @@ records this as solved.
 
 The previous turn had switched the cmdline GUIDs to uppercase to satisfy
 `os/mkimage-v2.sh`'s case-sensitive cross-check. Per review, the lowercase
-choice is the correct one and the assertion is what is being fixed (RFCT-012,
+choice is the correct one and the assertion was what needed fixing (RFCT-020,
 in parallel). Reverted to lowercase, matching `/etc/fstab` and udev's
-`by-partuuid` symlinks. Consequence, as anticipated by the review:
-`make os-image-cx3576-v2` currently FAILS with
+`by-partuuid` symlinks. That briefly made `make os-image-cx3576-v2` fail with
 `error: the slot-A verity table ... does not reference PARTUUID
-5AC35760-0002-4000-8000-000000000005`. Not worked around on this side.
+5AC35760-0002-4000-8000-000000000005`, which was deliberately not worked around
+on this side. RFCT-020 landed the case-insensitive comparison in 31e1c06 and
+the image builds green.
 
 ### Unchanged, recorded, no action
 
@@ -333,11 +337,115 @@ because `os/hwinit` is shared with v1 and this is not the task's call to make.
   `/usr/lib/systemd/system` AND symlinked in
   `/etc/systemd/system/multi-user.target.wants`; `60-mos-gadget-getty.rules`
   present in `/usr/lib/udev/rules.d`; all six `/etc/mos/*.conf` staged.
-- `make os-image-cx3576-v2` — **green**. RFCT-012's GUID assertion is now
+- `make os-image-cx3576-v2` — **green**. RFCT-020's GUID assertion is now
   case-insensitive, so the lowercase cmdline passes. `SLOT_MIB 256`, boot
   64+64 MiB, image 803 MiB, `sgdisk --verify` "No problems found".
 - `make os-image-cx3576` + `make os-verify-cx3576` — **RESULT: PASS (88/88)**,
   matching the new baseline.
+
+## Layout revision + /var discardability audit (2026-08-18)
+
+### A. Growth moves from /var to /srv
+
+`/srv` (DATA, p10) now grows to fill the media; `/var` (EPHEMERAL, p9) is
+fixed-size and disposable. My half:
+
+- `/etc/repart.d/` becomes **eight** definitions. `80-data.conf` carries
+  `Weight=1000`; `70-ephemeral.conf` drops to `Weight=0`/`PaddingWeight=0` like
+  its siblings. The count matters for the reason found earlier in this task:
+  repart pairs definitions with partitions by type UUID in disk order, so an
+  eighth linux-generic partition against seven definitions would attach the
+  grow flag to the wrong partition.
+- `/srv` mounted from DATA, ext4, `noatime,x-systemd.growfs`, keyed on
+  lowercased `PARTUUID=`, same style as the existing three. `/var` keeps its
+  mount and loses `x-systemd.growfs`.
+- Tier semantics recorded in `docs/design/ro-root.md` §4, including what
+  factory reset destroys versus what log cleanup destroys.
+
+**Landing order.** RFCT-020's p10 is NOT on this base — the layout env has no
+`DATA_*` and no `MOS_VAR_MIB`, and the assembler still builds nine partitions.
+Shipping the eight-definition set against a nine-partition image is actively
+harmful (the unmatched definition would make repart CREATE a partition), so
+`build-v2.sh` keys off `DATA_GUID`: present → `/srv`, `/var` without growfs,
+eight definitions; absent → the previous nine-partition arrangement exactly,
+with a warning. It also asserts the definition count matches the mode and that
+exactly one definition grows. The DATA path was exercised by supplying
+`DATA_GUID` from the environment and verified to render correctly.
+
+### B. Precious-data audit
+
+The `/var`-is-disposable contract is now a **build assertion**, not a claim:
+each precious path must have an enabled STATE bind that mounts what it says it
+mounts and has a mountpoint in the factory `/var`.
+
+- `/var/lib/mos` — already STATE-backed by design; now proven. webd's
+  `StateDirectory=mos/webd` lands inside it, so credentials are covered.
+- `/var/lib/bluetooth` — NEW bind to `/mnt/state/bluetooth`, seeded 0700
+  (bluez requires it). Pairings survive a `/var` wipe.
+- `/var/lib/systemd/random-seed` — left on `/var`, deliberately. The unit path
+  escapes to `var-lib-systemd-random\x2dseed.mount`, a file bind needs the file
+  to pre-exist at 0600, and `systemd-random-seed` loads at early boot and saves
+  at shutdown, either side of the local-fs phase. Payoff is small: a wiped
+  `/var` leaves the device where a freshly-flashed one starts.
+- **`/var/lib/dbus/machine-id` — found and fixed.** It was a regular file
+  holding a build-time id, i.e. the same D-Bus machine id on every device
+  flashing the release, on a disposable filesystem. Now a symlink to
+  `/etc/machine-id` (the Debian convention), asserted at build time.
+- **RAUC statusfile — recommend `statusfile=/mnt/meta/rauc.status`.** RFCT-014
+  owns the line. META is update/appliance metadata, which is what slot status
+  is; STATE stays purely user-meaningful configuration and identity, which
+  matters for describing factory reset. `/mnt/meta` is mounted in the local-fs
+  phase, long before RAUC runs. RAUC's own default (`/var/lib/rauc`) is exactly
+  the failure this rule prevents.
+
+Standing rule recorded: **identity, credentials, pairings and update state
+never live on `/var`.**
+
+### C. Fill-up containment
+
+- journald `Storage=volatile` — confirmed, and now asserted by the same build
+  check, so the journal never touches `/var`.
+- `/etc/tmpfiles.d/mos-var.conf`: `q /var/tmp 1777 root root 10d` (Debian's own
+  rule says 30d; an appliance has no long-lived interactive sessions) and
+  `e /var/cache 0755 root root 30d` (regenerable, and no distro rule ages it).
+  Applied daily by `systemd-tmpfiles-clean.timer`.
+
+### D. Stale references
+
+All five fixed, both the number (RFCT-020, not RFCT-012 — master took that slot
+for its Alpine-rootfs task) and the tense (the assertion has been
+case-insensitive since 31e1c06; the v2 image builds green). The substantive
+point — lowercase is correct for udev and fstab — is kept.
+`grep -rn RFCT-012 docs/ os/` now returns only the user's Alpine task and the
+PLAN-010 line that legitimately cites it.
+
+## Verification after the layout revision (2026-08-18)
+
+- `make os-rootfs-cx3576-v2` — green. `layout: 7 repart definitions, 1 of them
+  growing` (fallback mode, DATA not yet in the env), `hwinit: enabled 6
+  unit(s)`, and the precious assertions:
+  `precious: /var/lib/mos -> STATE via var-lib-mos.mount`,
+  `precious: /var/lib/bluetooth -> STATE via var-lib-bluetooth.mount`,
+  `precious: journald Storage=volatile`. `TOTAL_MB 216` (budget 400).
+- **DATA path exercised** by supplying `DATA_GUID` from the environment:
+  `layout: DATA present -> /srv grows, /var fixed, 8 repart definitions`,
+  `80-data.conf` the only `Weight=1000`, `/srv` rendered with
+  `noatime,x-systemd.growfs` and `/var` with plain `noatime`. Artifact
+  discarded; the shipped build is the fallback one.
+- **Reproducibility**, two cache-hot runs:
+  `sha256(rootfs-verity.img)` =
+  `e5e59a36161c6e77919a19052aa04f9423dc664779c47861ba30f012846d8607` both runs,
+  `cmp` clean; `VERITY_ROOT_HASH` =
+  `5dbab5b5f3b1a843d3c312c3e23720cb53a7243b10520903b5ca03bd507c59ee` both runs.
+- `veritysetup verify` in a container, userspace, no host device-mapper: OK.
+- Packed image: 7 repart definitions (fallback), all seven local-fs binds and
+  seeds enabled including `var-lib-bluetooth.mount`, six `mos-*.service`
+  enabled including mac and gadget, `60-mos-gadget-getty.rules` installed,
+  `/etc/tmpfiles.d/mos-var.conf` present, `/var/lib/dbus/machine-id` a symlink
+  to `../../../etc/machine-id`, `/srv` mountpoint present.
+- `make os-image-cx3576-v2` — green (nine-partition image, since p10 is
+  RFCT-020's half).
+- `make os-image-cx3576` + `make os-verify-cx3576` — **RESULT: PASS (88/88)**.
 
 ## Escalations
 
