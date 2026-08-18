@@ -42,7 +42,7 @@ of its content. Every source of variation is pinned:
 |---|---|
 | mksquashfs thread count | `-processors 1` — multi-threaded packing is not byte-reproducible |
 | superblock and inode timestamps | `-mkfs-time` and `-all-time` set to `FILE_MTIME` (2020-01-01T00:00:00Z) |
-| build-container uid/gid map | `-all-root` |
+| file ownership | *not* forced. It comes from a pinned base image and a pinned package set, and is gated by the assertion below |
 | leftover state from a previous run | `-noappend` |
 | NFS export table | `-no-exports` (unused, and it embeds inode ordering) |
 | verity salt | `--salt=$VERITY_SALT` from the layout env; the default is random |
@@ -171,14 +171,15 @@ console=ttyFIQ0,1500000 earlycon=uart8250,mmio32,0x2ad40000 storagemedia=emmc ne
   worst failure mode to ship. Each slot waits on its own rootfs partition.
 - The value of `dm-mod.create=` contains spaces and is therefore quoted. The
   kernel's `next_arg()` (`lib/cmdline.c`) handles a double-quoted value.
-- The GUIDs here are the layout env's **uppercase** form, unlike `/etc/fstab`,
-  which needs them lowercased. Two consumers, two rules. The kernel compares
-  with `strncasecmp` and accepts either. `os/mkimage-v2.sh` cross-checks each
-  slot's table against `ROOTFS_A_GUID` / `ROOTFS_B_GUID` with a
-  case-**sensitive** shell substring test and then lifts this exact text into
-  the slot's `mos-verity.env`, so the cmdline must match the env byte for byte.
-  Only udev's `by-partuuid` symlinks, which fstab resolves through, are
-  lowercase-only.
+- The GUIDs are **lowercase**, the same spelling used in `/etc/fstab` and the
+  same one udev gives `/dev/disk/by-partuuid/` (libblkid formats GUIDs
+  lowercase). The kernel compares with `strncasecmp` and accepts either, so one
+  canonical lowercase spelling everywhere is the least surprising choice.
+  Note that `os/mkimage-v2.sh` currently cross-checks each slot's table against
+  `ROOTFS_A_GUID` / `ROOTFS_B_GUID` — which the layout env holds in uppercase —
+  with a case-**sensitive** shell substring test, so v2 image assembly fails
+  until RFCT-012 makes that assertion case-insensitive. That is a bug on the
+  assertion side; do not "fix" it by uppercasing the cmdline.
 - The console/earlycon/storagemedia/net.ifnames arguments are carried over from
   the v1 `APPEND` in `os/mkimage.sh`. v1's `root=PARTLABEL=rootfs rw` is
   replaced by `root=/dev/dm-0 ... ro`.
@@ -202,17 +203,32 @@ The pack stage records the actual privilege inventory in
   survive the buildkit layer export is currently moot for this image. It stops
   being moot the moment a package with capabilities is added — the report
   section is the tripwire.
-- **`-all-root` and setgid binaries.** `-all-root` rewrites ownership but not
-  mode bits, so a setgid binary whose group was not root becomes setgid-root.
-  In this image that affects `usr/bin/ssh-agent` (was `_ssh`),
-  `usr/bin/chage`, `usr/bin/expiry`, `usr/sbin/unix_chkpwd` (were `shadow`) and
-  `usr/lib/dbus-1.0/dbus-daemon-launch-helper` (setuid root, group `messagebus`,
-  and `-all-root` makes it group-root and world-executable in effect). None of
-  these are reachable by an unprivileged user on an appliance image with no
-  interactive non-root accounts, but the effect is real and is a follow-up worth
-  taking: either drop the setgid bits in the rootfs stage or replace
-  `-all-root` with a pinned `-force-uid 0 -force-gid 0`. `-all-root` is
-  mandated by the M4 spec, so it is not changed here.
+- **`-all-root` was dropped, and the build now asserts it stays dropped.**
+  The M4 spec originally mandated `-all-root` for determinism. That reasoning
+  was wrong on both halves. It is not needed — mksquashfs carries the source
+  tree's ownership through, and the source tree comes from a pinned base image
+  with a pinned package set, so ownership is already deterministic. And it is
+  actively harmful: `-all-root` rewrites ownership but **not** mode bits, so
+  every setgid binary whose group was not root shipped **setgid-root** —
+  `usr/bin/ssh-agent` (was `_ssh`), `usr/bin/chage`, `usr/bin/expiry`,
+  `usr/sbin/unix_chkpwd` (were `shadow`), plus
+  `usr/lib/dbus-1.0/dbus-daemon-launch-helper` (setuid root, group
+  `messagebus`). That widens a privilege boundary inside the part of the system
+  that is supposed to be the trustworthy one. It also broke `unix_chkpwd` in
+  the *other* direction: it needs egid `shadow` to read `/etc/shadow`, and egid
+  root does not grant that, so non-root PAM password verification would have
+  stopped working. `-force-uid`/`-force-gid` have the identical mode-bit
+  problem and are not an escape hatch.
+
+  Rather than rely on nobody re-adding the flag, the pack stage now proves it:
+  it records the setuid/setgid inventory of the **source tree** before packing
+  (`find -printf '%M %U %G %P'`), extracts the same inventory from the packed
+  image afterwards (`unsquashfs -lln`), and fails the build on any difference.
+  Numeric uid/gid on both sides, because the tree is arm64 Debian while the
+  pack stage runs on the build platform, whose `/etc/passwd` cannot resolve ids
+  like `_ssh` or `messagebus`. The verified inventory is appended to
+  `rootfs-report-v2.txt`. Verified negatively as well as positively: re-adding
+  `-all-root` fails the build with the expected diff.
 
 ## 4. Where writes go
 
@@ -228,6 +244,7 @@ partitions absorb everything:
 | `/tmp` | tmpfs | `noatime,nosuid,nodev,mode=1777` |
 | `/var/lib/mos` | bind from `/mnt/state/mos` | |
 | `/etc/ssh` | bind from `/mnt/state/ssh` | |
+| `/etc/hostname` | bind from `/mnt/state/hostname` | file bind, not a directory |
 | `/run`, `/run/lock`, `/dev/shm` | tmpfs | systemd API mounts, unchanged |
 
 The three block mounts are `/etc/fstab` entries rather than hand-written
@@ -309,6 +326,16 @@ into it if they are absent. `etc-ssh.mount` binds `/mnt/state/ssh` over
 writable directory with per-device keys that survive every A/B update. Binding
 over a mountpoint does not write to the underlying read-only filesystem.
 
+It seeds `/mnt/state/hostname` the same way, from the `/etc/hostname` baked
+into the image, and `etc-hostname.mount` binds that file over `/etc/hostname`.
+One extra step is needed there that `/etc/ssh` does not need: PID 1 reads
+`/etc/hostname` and sets the kernel hostname long before any mount unit runs,
+so at that moment it still sees the squashfs copy. `mos-apply-hostname.service`
+runs right after the bind and re-applies the persisted value with
+`hostname -F /etc/hostname`. Without it, a hostname set through the web UI
+would be written to STATE correctly and then silently revert to the image
+default on every reboot. See §6.
+
 **Known consequence:** because the whole of `/etc/ssh` is bound, not just the
 key files, changes an update makes to `sshd_config` (or to `sshd_config.d/`)
 never reach a device that has already been seeded. This is the shape the M4
@@ -377,11 +404,31 @@ Every `/etc` write path in the v1 rootfs, and what happens to it under v2:
 | sshd host key generation | **Redirected.** Keys are not baked; `mos-seed-state` generates them into `/mnt/state/ssh`, bound over `/etc/ssh`. |
 | `/etc/resolv.conf` | **Already fine.** v1 makes it a symlink to `../run/systemd/resolve/stub-resolv.conf`; the target is on tmpfs and stays writable. Carried into v2 unchanged. |
 | networkd unit rendering by mosd | **No writer exists.** mosd and webd write only `/var/lib/mos/settings.toml` and `/var/lib/mos/webd` (`mosd-settings/src/store.rs`, `webd/src/config.rs`); both land on STATE through `var-lib-mos.mount`. The static `/etc/systemd/network/80-dhcp.network` is baked at build time. If a later milestone adds runtime network rendering it must target `/run/systemd/network`, which networkd reads at higher precedence than `/etc`. |
-| hostname persistence | **Known breakage.** `/etc/hostname` is baked as `mos` and `hostnamectl set-hostname` fails with EROFS. Nothing in mos sets it today. The fix, when it is needed, is `/etc/hostname` as a symlink into `/mnt/state` plus a `systemd-hostnamed` drop-in, or a `hostname` variable in the same U-Boot env used for machine-id — deliberately not built speculatively. |
+| hostname persistence | **Solved**, and it had a live consumer — see below. `/etc/hostname` is bound from `/mnt/state/hostname` and re-applied by `mos-apply-hostname.service`. |
 | `/etc/machine-id` | **Solved via the U-Boot env** (§5), transient until RFCT-018's U-Boot ships. |
 | `/etc/adjtime` (hwclock) | Not written: no RTC sync unit is enabled. |
 | `/etc/mtab` | Symlink to `/proc/self/mounts` in Debian; never written. |
 | `/etc/.updated`, `/etc/.pwd.lock` | systemd/shadow best-effort writes; they fail silently on EROFS and nothing depends on them. |
+
+### Correction: hostname was not a latent gap
+
+An earlier revision of this document claimed "nothing in mos sets the hostname
+today". That was wrong. `mosd/mosd/src/reconciler/hostname.rs` is a merged M2
+reconciler that calls `SetStaticHostname` on `org.freedesktop.hostname1`, and
+`systemd-hostnamed` implements that by writing `/etc/hostname`. It is reachable
+from the M3 first-run wizard, so on a read-only `/etc` "set the hostname in the
+web UI" would have failed with EROFS — a user-visible functional regression in
+v2, not a gap waiting for a future consumer.
+
+It is fixed with the mechanism already built for `/etc/ssh` rather than a new
+one: seed `/mnt/state/hostname` on first boot, bind it over `/etc/hostname`,
+re-apply it once the bind is in place. `mosd` is unchanged — the reconciler was
+correct as written; the filesystem underneath it was not writable.
+
+One cosmetic gap remains and is deliberately not chased: `/etc/hosts` still
+carries the baked `127.0.1.1 mos` line, so it does not follow a hostname
+change. Nothing depends on it — systemd's `nss-myhostname`, which is in
+`nsswitch.conf`, resolves the current hostname regardless.
 
 ## 7. What this task does not cover
 

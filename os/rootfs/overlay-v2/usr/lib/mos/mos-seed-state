@@ -21,6 +21,12 @@ STAMP=/mnt/state/.mos-state-seeded
 mkdir -p /mnt/state/mos /mnt/state/ssh
 cp -a /etc/ssh/. /mnt/state/ssh/
 
+# The hostname has to be writable: mosd's reconciler sets it through
+# systemd-hostnamed, which writes /etc/hostname. Seed it from the value baked
+# into the image while /etc/hostname still shows the squashfs copy;
+# etc-hostname.mount binds this file over it immediately afterwards.
+[ -f /mnt/state/hostname ] || cp -a /etc/hostname /mnt/state/hostname
+
 for t in rsa ecdsa ed25519; do
     key="/mnt/state/ssh/ssh_host_${t}_key"
     [ -f "$key" ] || ssh-keygen -q -t "$t" -f "$key" -N '' -C ''

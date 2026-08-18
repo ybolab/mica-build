@@ -107,10 +107,9 @@ Host: `BOARD_DIR=/srv/ai/mos/board/cx3576` (prebuilt BSP artifacts).
   (53 MiB, whole-MiB multiple); squashfs 55078912 B; 13447 data blocks; 107
   hash blocks. `TOTAL_MB 216` against the 400 MB budget (v1: 204).
 - **Reproducibility**: two cache-hot runs, `rootfs-verity.img` byte-identical
-  (`cmp` clean, sha256
-  `741aed4eb4e3452d6e13b9259853b22018db65c0cefb84dadeb38bc80d340c25` both
-  times), `VERITY_ROOT_HASH` unchanged
-  (`bb710ec6090a6acdca98765f0f646a1b89bab0145ab18d92443e4a8fd311acd7`).
+  (`cmp` clean). Hashes below are from the post-rework build; the pre-rework
+  values are superseded by the `-all-root` removal, which legitimately changes
+  ownership and therefore the root hash.
 - **Verity integrity**: `veritysetup verify` (userspace, no device-mapper) in a
   throwaway container returns OK against the recorded root hash;
   `veritysetup dump` confirms the pinned salt, the pinned UUID
@@ -120,9 +119,10 @@ Host: `BOARD_DIR=/srv/ai/mos/board/cx3576` (prebuilt BSP artifacts).
   `/usr/share/factory/var` holds the tree, `/etc/ssh` carries no host key, and
   the rendered `fstab` / `fw_env.config` contain lowercased GUIDs and no
   placeholder.
-- `make os-image-cx3576-v2` — green. Resolved `SLOT_MIB 256` (the pin; the
-  53 MiB payload would only have required 80), boot 64+64 MiB, **total image
-  803 MiB / 842006528 bytes**. `sgdisk --verify`: "No problems found".
+- `make os-image-cx3576-v2` — assembled green at the time of the first pass
+  (`SLOT_MIB 256`, boot 64+64 MiB, total 803 MiB / 842006528 bytes,
+  `sgdisk --verify` "No problems found"). It now FAILS on RFCT-012's
+  case-sensitive GUID assertion; see Rework item 3.
 - `make os-image-cx3576` + `make os-verify-cx3576` (v1 regression) —
   **RESULT: PASS (71/71 checks)**, unchanged.
 - `bash mosd/hack/check.sh` not run: no Rust code was touched by this task.
@@ -170,6 +170,100 @@ a byte-identical `boot.scr` and a per-slot `mos-verity.env` carrying that
 slot's own GUID (A -> `...0005`, B -> `...0006`), with no `extlinux` directory.
 `rootfs-verity.img` and `VERITY_ROOT_HASH` are unchanged by the fix — the
 cmdline is not part of the squashfs.
+
+## Verification after rework (2026-08-18)
+
+- `make os-rootfs-cx3576-v2` — green. `rootfs-verity.img` 55574528 bytes
+  (53 MiB, whole-MiB multiple), `TOTAL_MB 216` against the 400 MB budget.
+- **Reproducibility**, two cache-hot runs:
+  `sha256(rootfs-verity.img)` =
+  `f6e37f8791bc12064929040eae5ab89cebb796335679edf4a49fb0691bef732a` both runs,
+  `cmp` clean; `VERITY_ROOT_HASH` =
+  `b8f6645dbff95b4206991f2eb346e1fef2856f8523abbd95af724587497d6fa7` both runs.
+  (Both values differ from the pre-rework build because dropping `-all-root`
+  legitimately changes file ownership, which is covered by the hash.)
+- Ownership gate: passes on the real build; fails as designed when `-all-root`
+  is re-added.
+- `veritysetup verify` in a throwaway container (userspace, no device-mapper):
+  OK.
+- Hostname wiring present in the packed image: `etc-hostname.mount`,
+  `mos-apply-hostname.service`, both symlinked into `local-fs.target.wants`,
+  `/usr/bin/hostname` present, baked `/etc/hostname` = `mos`.
+- `/etc/machine-id` still a 0-byte regular file.
+- `make os-image-cx3576` + `make os-verify-cx3576` (v1) — **PASS (71/71)**.
+- `make os-image-cx3576-v2` — FAILS on RFCT-012's case-sensitive GUID
+  assertion, as anticipated by the review. Not worked around.
+- No host state mutated: pack in buildkit stages, inspections in throwaway
+  containers with the output directory bind-mounted read-only.
+
+## Rework (2026-08-18, post-merge review of 8b15862)
+
+Two fixes plus one correction, all applied.
+
+### 1. Security: `-all-root` dropped
+
+`-all-root` rewrites ownership but not mode bits, so the shipped image had
+`ssh-agent` (was `_ssh`), `chage`, `expiry`, `unix_chkpwd` (were `shadow`) and
+`dbus-daemon-launch-helper` (was `messagebus`) all owned root:root — i.e.
+**setgid-root** — inside a signed read-only rootfs. It also broke `unix_chkpwd`
+the other way: egid `shadow` is what lets it read `/etc/shadow`, and egid root
+does not, so non-root PAM password verification would have failed.
+
+The determinism justification for the flag did not hold: mksquashfs carries the
+source tree's ownership through, and the source tree comes from a pinned base
+image and a pinned package set. Flag removed; every other determinism knob
+(`-mkfs-time`/`-all-time`, `-processors 1`, `-noappend`, `-no-exports`, pinned
+salt and UUID) is unchanged.
+
+The inventory is now a **build gate**, not just a report section. The pack
+stage records the source tree's setuid/setgid inventory
+(`find -printf '%M %U %G %P'`), extracts the same from the packed image
+(`unsquashfs -lln`, numeric ids so arm64 names need not resolve on the build
+platform), and fails the build on any difference. Verified in both directions:
+the real build passes, and re-adding `-all-root` fails with
+`error: packing changed setuid/setgid ownership or modes`.
+
+Determinism did not regress — see the two-run proof in Verification below.
+Ownership in the packed image is now `ssh-agent` gid 106, `chage`/`expiry`/
+`unix_chkpwd` gid 42, `dbus-daemon-launch-helper` gid 105, journal gid 999.
+
+### 2. Correction: hostname had a live consumer
+
+The §6 audit previously said "hostname persistence -> known breakage, nothing
+in mos sets it today". The second half was wrong.
+`mosd/mosd/src/reconciler/hostname.rs` is a merged M2 reconciler calling
+`SetStaticHostname` on `org.freedesktop.hostname1`; `systemd-hostnamed`
+implements that by writing `/etc/hostname`. It is reachable from the M3
+first-run wizard, so on v2 "set the hostname in the web UI" would have failed
+EROFS — a user-visible regression, not a latent gap.
+
+Fixed with the existing `/etc/ssh` mechanism rather than a new pattern:
+`mos-seed-state` also seeds `/mnt/state/hostname` from the baked value, and
+`etc-hostname.mount` binds it over `/etc/hostname`. One extra step was
+genuinely required: PID 1 reads `/etc/hostname` and sets the kernel hostname
+before any mount unit runs, so `mos-apply-hostname.service` re-applies the
+persisted value (`hostname -F /etc/hostname`) once the bind is in place —
+without it a hostname set in the UI would persist to STATE and then silently
+revert on every reboot. `mosd` is untouched. `docs/design/ro-root.md` §6 now
+records this as solved.
+
+### 3. Cmdline PARTUUID case reverted to lowercase
+
+The previous turn had switched the cmdline GUIDs to uppercase to satisfy
+`os/mkimage-v2.sh`'s case-sensitive cross-check. Per review, the lowercase
+choice is the correct one and the assertion is what is being fixed (RFCT-012,
+in parallel). Reverted to lowercase, matching `/etc/fstab` and udev's
+`by-partuuid` symlinks. Consequence, as anticipated by the review:
+`make os-image-cx3576-v2` currently FAILS with
+`error: the slot-A verity table ... does not reference PARTUUID
+5AC35760-0002-4000-8000-000000000005`. Not worked around on this side.
+
+### Unchanged, recorded, no action
+
+`/etc/ssh` bound wholesale; cold-build reproducibility tied to bookworm-slim
+tool versions; the board console cmdline living in `build-v2.sh`; the Debian
+base image's apt-daily/e2scrub_all timers; `CONFIG_SQUASHFS_XATTR` predating
+this branch's base with the `getcap -r` tripwire as the response.
 
 ## Escalations
 

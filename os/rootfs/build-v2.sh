@@ -211,16 +211,19 @@ fi
 # table is built before the partitions exist, so the boot breaks intermittently
 # rather than cleanly. os/mkimage-v2.sh rejects a cmdline file that lacks it.
 #
-# The GUID goes in verbatim from the layout env (uppercase), unlike fstab which
-# needs it lowercased. Two consumers, two rules: the kernel compares with
-# strncasecmp and accepts either, but os/mkimage-v2.sh cross-checks each slot's
-# table against ${ROOTFS_x_GUID} with a case-SENSITIVE shell substring test and
-# then lifts this exact text into that slot's mos-verity.env. Only udev's
-# by-partuuid symlinks, which fstab resolves through, are lowercase-only.
+# The GUID is lowercased, the same form used in /etc/fstab and the same form
+# udev gives /dev/disk/by-partuuid/ (libblkid formats GUIDs lowercase). The
+# kernel compares with strncasecmp and accepts either, so one canonical
+# lowercase spelling everywhere is the least surprising choice.
+# NOTE: os/mkimage-v2.sh currently cross-checks this table against
+# ${ROOTFS_x_GUID} with a case-SENSITIVE shell substring test, and the layout
+# env holds those GUIDs uppercase, so the v2 image assembly fails until
+# RFCT-012 makes that assertion case-insensitive. That is a bug on the
+# assertion side, not here; do not "fix" it by uppercasing this.
 write_cmdline() {
     local out="$1" guid="$2"
     local partuuid
-    partuuid="PARTUUID=${guid}"
+    partuuid="PARTUUID=$(lower "$guid")"
     printf '%s\n' "dm-mod.create=\"rootfs,,,ro,0 ${DATA_SECTORS} verity 1 ${partuuid} ${partuuid} ${DATA_BLOCK_SIZE} ${HASH_BLOCK_SIZE} ${DATA_BLOCKS} ${HASH_START_BLOCK} ${HASH_ALGO} ${ROOT_HASH} ${VERITY_SALT}\" dm-mod.waitfor=${partuuid} root=/dev/dm-0 rootfstype=squashfs ro rootwait ${BOARD_CMDLINE_ARGS}" > "$out"
 }
 write_cmdline "$OUT_DIR/boot-cmdline-a.txt" "$ROOTFS_A_GUID"

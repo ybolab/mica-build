@@ -183,19 +183,33 @@ extlinux before `boot.scr`, which would bypass the RAUC A/B handshake.) So:
   and its `wait_for_device_probe()` does not cover eMMC card discovery.
 - The `dm-mod.create=` table must be double-quoted, with the spaces inside the
   quotes.
-- GUIDs in the cmdline are the layout env's **uppercase** form — the assembler
-  cross-checks them case-sensitively. The `PARTUUID=` values in `fstab` are the
-  opposite (lowercase), because udev's `by-partuuid` symlinks come from
-  libblkid. Do not "normalise" one to match the other.
+- GUIDs are **lowercase** everywhere — cmdline and `fstab` alike — matching
+  udev's `by-partuuid` symlinks, which libblkid formats lowercase. The kernel
+  compares with `strncasecmp` and accepts either.
+  Caveat: `os/mkimage-v2.sh` currently cross-checks the cmdline against the
+  layout env's uppercase `ROOTFS_x_GUID` **case-sensitively**, so v2 image
+  assembly fails until RFCT-012 makes that assertion case-insensitive. Do not
+  work around it by uppercasing the cmdline.
 
 ## Pack
 
-`mksquashfs -comp zstd -Xcompression-level 19 -noappend -all-root -no-exports
--mkfs-time <FILE_MTIME> -all-time <FILE_MTIME> -processors 1`, then
-`veritysetup format` against the same file with `--hash-offset=<squashfs bytes>`,
-the pinned `VERITY_SALT` and a pinned `--uuid`. `-processors 1` and the two
-pinned UUID/salt values are what make the image byte-reproducible; see the
-determinism table in `docs/design/ro-root.md`.
+Three steps: `mksquashfs -comp zstd -Xcompression-level 19 -noappend
+-no-exports -mkfs-time <FILE_MTIME> -all-time <FILE_MTIME> -processors 1`, then
+the ownership gate, then `veritysetup format` against the same file with
+`--hash-offset=<squashfs bytes>`, the pinned `VERITY_SALT` and a pinned
+`--uuid`. `-processors 1` and the two pinned UUID/salt values are what make the
+image byte-reproducible; see the determinism table in
+`docs/design/ro-root.md`.
+
+**No `-all-root`** (and no `-force-uid`/`-force-gid`). Those rewrite ownership
+but not mode bits, so every setgid binary whose group was not root ships
+setgid-**root** — `ssh-agent`, `chage`, `expiry`, `unix_chkpwd`,
+`dbus-daemon-launch-helper`. Ownership does not need forcing to be
+deterministic: it comes from a pinned base image and a pinned package set.
+Step 2 of the pack diffs the packed image's setuid/setgid inventory against the
+source tree's and **fails the build** on any difference, so re-adding the flag
+is a build error rather than a review finding. The verified inventory is in
+`rootfs-report-v2.txt`.
 
 ## v2 package allowlist
 
@@ -230,6 +244,8 @@ from the layout env so the shipped image carries no placeholder:
 | `etc/systemd/system/mos-seed-state.service` | first-boot STATE directories + per-device sshd host keys |
 | `etc/systemd/system/var-lib-mos.mount` | binds `/mnt/state/mos` onto `/var/lib/mos` so mosd's paths are unchanged |
 | `etc/systemd/system/etc-ssh.mount` | binds `/mnt/state/ssh` onto `/etc/ssh` |
+| `etc/systemd/system/etc-hostname.mount` | binds `/mnt/state/hostname` onto `/etc/hostname`, so mosd's hostname reconciler can persist a change |
+| `etc/systemd/system/mos-apply-hostname.service` | re-applies the persisted hostname after the bind — PID 1 read the squashfs copy long before mount units ran |
 | `usr/lib/mos/mos-seed-*` | the two seed scripts |
 
 `fstrim.timer` is enabled. Why all seven repart definitions are needed, why the
