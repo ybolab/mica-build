@@ -96,10 +96,11 @@ RUN printf '%s\n' \
 # STATE instead (see overlay-v2/usr/lib/mos/mos-seed-state).
 RUN rm -f /etc/ssh/ssh_host_*
 
-# Read-only root wiring: fstab (EPHEMERAL /var, STATE, META, tmpfs /tmp),
-# the repart.d set that grows EPHEMERAL, the three STATE bind mounts
-# (/var/lib/mos, /etc/ssh, /etc/hostname), the first-boot seed oneshots and the
-# fw_env.config pointing at the uenv pair.
+# Read-only root wiring: fstab (DATA /srv, STATE, META, EPHEMERAL /var, tmpfs
+# /tmp), the repart.d set that grows DATA, the four STATE bind mounts
+# (/var/lib/mos, /var/lib/bluetooth, /etc/ssh, /etc/hostname), the first-boot
+# seed oneshots, the /var fill-up policies and the fw_env.config pointing at
+# the uenv pair.
 # The tree is rendered from os/layout/cx3576-v2.env by build-v2.sh; nothing
 # here duplicates a layout constant. Modes are set explicitly so the packed
 # image cannot inherit a host umask.
@@ -109,15 +110,18 @@ RUN cp -a /tmp/overlay/. / && \
     rm -rf /tmp/overlay && \
     chmod 0755 /usr/lib/mos/mos-seed-var /usr/lib/mos/mos-seed-state && \
     chmod 0644 /etc/fstab /etc/fw_env.config /etc/repart.d/*.conf \
+               /etc/tmpfiles.d/mos-var.conf \
                /etc/systemd/system/mos-seed-*.service \
                /etc/systemd/system/mos-apply-hostname.service \
                /etc/systemd/system/var-lib-mos.mount \
+               /etc/systemd/system/var-lib-bluetooth.mount \
                /etc/systemd/system/etc-ssh.mount \
                /etc/systemd/system/etc-hostname.mount && \
-    mkdir -p /mnt/state /mnt/meta /etc/systemd/system/local-fs.target.wants \
+    mkdir -p /srv /mnt/state /mnt/meta /etc/systemd/system/local-fs.target.wants \
              /etc/systemd/system/timers.target.wants && \
     for u in mos-seed-var.service mos-seed-state.service var-lib-mos.mount \
-             etc-ssh.mount etc-hostname.mount mos-apply-hostname.service; do \
+             var-lib-bluetooth.mount etc-ssh.mount etc-hostname.mount \
+             mos-apply-hostname.service; do \
         ln -sf "/etc/systemd/system/$u" "/etc/systemd/system/local-fs.target.wants/$u" && \
         test -L "/etc/systemd/system/local-fs.target.wants/$u"; \
     done && \
@@ -273,7 +277,39 @@ RUN mkdir -p /out && \
     : > /rootfs/etc/machine-id && \
     mkdir -p /rootfs/usr/share/factory && \
     mv /rootfs/var /rootfs/usr/share/factory/var && \
-    mkdir -m 0755 /rootfs/var
+    mkdir -m 0755 /rootfs/var && \
+    ln -sf ../../../etc/machine-id \
+        /rootfs/usr/share/factory/var/lib/dbus/machine-id
+
+# /var is declared DISPOSABLE (fixed-size EPHEMERAL, wipeable for log
+# cleanup), and that contract is only real if nothing that matters lives there.
+# Assert it instead of trusting the design: every precious path under /var must
+# be redirected onto STATE by a bind mount that is actually ENABLED, and its
+# mountpoint must exist in the factory /var that gets restored on first boot.
+# A silently-missing bind here would mean losing the webd admin password hash
+# or every Bluetooth pairing on a /var wipe.
+RUN set -eu; \
+    for w in /var/lib/mos /var/lib/bluetooth; do \
+        unit="$(echo "${w#/}" | tr / -).mount"; \
+        f="/rootfs/etc/systemd/system/${unit}"; \
+        if [ ! -f "$f" ]; then \
+            echo "error: ${w} holds precious state but ${unit} does not exist" >&2; exit 1; \
+        fi; \
+        if [ ! -L "/rootfs/etc/systemd/system/local-fs.target.wants/${unit}" ]; then \
+            echo "error: ${unit} exists but is not enabled; ${w} would stay on the disposable /var" >&2; exit 1; \
+        fi; \
+        grep -q "^Where=${w}\$" "$f" || { echo "error: ${unit} does not mount ${w}" >&2; exit 1; }; \
+        grep -qE "^What=/mnt/state/" "$f" || { echo "error: ${unit} is not backed by STATE" >&2; exit 1; }; \
+        if [ ! -d "/rootfs/usr/share/factory${w}" ]; then \
+            echo "error: ${w} is missing from the factory /var, so the bind would have no mountpoint" >&2; exit 1; \
+        fi; \
+        echo "precious: ${w} -> STATE via ${unit}"; \
+    done; \
+    grep -q '^Storage=volatile$' /rootfs/etc/systemd/journald.conf.d/00-volatile.conf || \
+        { echo "error: journald is not Storage=volatile; the journal would fill the fixed-size /var" >&2; exit 1; }; \
+    echo "precious: journald Storage=volatile (journal never lands on /var)"; \
+    test -L /rootfs/usr/share/factory/var/lib/dbus/machine-id || \
+        { echo "error: /var/lib/dbus/machine-id is not a symlink; a baked D-Bus id is per-image identity on a disposable filesystem" >&2; exit 1; }
 
 # Privilege inventory of the SOURCE tree, captured before packing so the packed
 # image can be diffed against it. Numeric uid/gid deliberately: the tree is

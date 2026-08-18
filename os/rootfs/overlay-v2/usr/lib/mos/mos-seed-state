@@ -19,6 +19,11 @@ STAMP=/mnt/state/.mos-state-seeded
 [ -e "$STAMP" ] && exit 0
 
 mkdir -p /mnt/state/mos /mnt/state/ssh
+
+# Bluetooth link keys are credentials and must outlive a /var wipe.
+# bluez expects 0700 on this directory and refuses to use a laxer one.
+mkdir -p /mnt/state/bluetooth
+chmod 0700 /mnt/state/bluetooth
 cp -a /etc/ssh/. /mnt/state/ssh/
 
 # The hostname has to be writable: mosd's reconciler sets it through
