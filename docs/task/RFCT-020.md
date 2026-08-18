@@ -190,22 +190,46 @@ Consumed as documented interfaces, not implemented here:
 - [x] All GUID/hash comparisons folded to one case via a single helper, with
       the uppercase/lowercase rule recorded beside the layout constants
 
-## Boot-path dependency (expected non-booting state)
+## Boot-path pairing (uboot-mos) and the acceptance that remains
 
-The v2 image will **not** boot on today's U-Boot build, and that is the correct
-state, not a regression. The image is being built to the RFCT-018 contract while
-the U-Boot side is applied separately by the user. Today's `generic-rk3576`
-build has `CONFIG_ENV_IS_NOWHERE=y` — no persistent environment at all — and
-explicitly disables `CONFIG_CMD_SETEXPR`, without which the attempt counter
-cannot be decremented from a script. The boot path therefore depends on the
-custom U-Boot carrying the commands in RFCT-018 escalation item 2
-(`CONFIG_CMD_SETEXPR` in particular, plus `CMD_SOURCE`, `CMD_IMPORTENV`,
-`CMD_FS_GENERIC`, `CMD_BOOTI`, `LEGACY_IMAGE_FORMAT`) on top of the persistent
-redundant environment of item 1.
+The v2 image pairs with the **`uboot-mos`** U-Boot variant, not the debug one.
+Master commit `8b24f9d` adds it alongside the existing build:
+`make -C board/cx3576 uboot-mos` builds into `board/cx3576/out/uboot-mos/`, and
+it implements the full `docs/design/uboot-ab-handshake.md` contract — the
+redundant environment pair at `0x1000000` / `0x1100000`, `setexpr` / `source` /
+`importenv` / `fs_generic` / `fat` / `booti` / `part`, `LEGACY_IMAGE_FORMAT`,
+`HUSH_PARSER`, `bootmeth order` pinned to `script`, and the rockusb rescue tail
+preserved. Escalation items 1-3 of §10 of that document — the three marked as
+blocking M4 entirely — are resolved by `8b24f9d`, so the A/B handshake is
+expected to work on hardware.
 
-No extlinux fallback is provided "so that it boots in the meantime". Such a
-fallback is precisely the silent-bypass failure this design removes: it would
-boot, look healthy, and never honour `BOOT_ORDER` or roll back.
+The existing `make -C board/cx3576 uboot` debug variant is unchanged and still
+pairs with the v1 image.
+
+**Pairing hazard — the two variants are not interchangeable in either
+direction, and neither failure announces itself.**
+
+- `uboot-mos` on a **v1** image corrupts the boot FAT partition on the first
+  `saveenv`. v1 starts its boot partition at sector 32768, which is 16 MiB —
+  exactly `0x1000000`, the mos env copy A offset — so the env write lands on the
+  FAT boot sector itself, and copy B at `0x1100000` lands 1 MiB into the same
+  partition. Layout v2 exists precisely to keep that region clear (`uenv-a` /
+  `uenv-b` own 16 MiB and 17 MiB, with the boot slots pushed to 18 MiB).
+- The **debug** variant on a **v2** image silently never runs the A/B handshake.
+  It has no persistent environment (`CONFIG_ENV_IS_NOWHERE=y`), so `BOOT_ORDER`
+  can be neither read nor written: the board boots and looks healthy while never
+  honouring a slot switch or a rollback.
+
+The variant must therefore be selected from the image version, never mixed.
+
+No extlinux fallback is provided in the v2 boot slots. Such a fallback is
+precisely the silent-bypass failure this design removes: it would boot, look
+healthy, and never honour `BOOT_ORDER` or roll back.
+
+**Unchanged, and still the user's hardware acceptance:** the on-device A/B
+switch and rollback have not been executed on real hardware. "Expected to work"
+above is a statement about the U-Boot build satisfying the documented contract,
+not a test result, and must never be reported as done by an agent.
 
 ## Acceptance
 
