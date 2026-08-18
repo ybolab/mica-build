@@ -25,11 +25,14 @@
 FROM --platform=linux/arm64 debian:bookworm-slim AS rootfs
 
 # Strict package allowlist — add nothing here without documenting it in README.md.
-# v2 additions over v1: rauc (update client, RFCT-014) and libubootenv-tool
+# v2 additions over v1: rauc (update client, RFCT-014), libubootenv-tool
 # (fw_printenv/fw_setenv — RAUC's U-Boot backend and the machine-id oneshot of
-# RFCT-015). squashfs-tools and cryptsetup-bin are deliberately absent: packing
-# the root is a build-stage job, and the kernel opens the verity device from
-# the cmdline without any userspace tool.
+# RFCT-015) and curl (the health gate's webd probe; rauc links libcurl but does
+# not provide the binary, so without this the probe silently SKIPs and the gate
+# covers two of three components while still reporting green).
+# squashfs-tools and cryptsetup-bin are deliberately absent: packing the root is
+# a build-stage job, and the kernel opens the verity device from the cmdline
+# without any userspace tool.
 RUN apt-get update && apt-get install -y --no-install-recommends \
         systemd \
         systemd-sysv \
@@ -43,6 +46,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         rfkill \
         rauc \
         libubootenv-tool \
+        curl \
     && rm -rf /var/lib/apt/lists/*
 
 # Kernel modules. Debian is merged-usr (/lib -> usr/lib) and the tar's paths

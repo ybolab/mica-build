@@ -412,12 +412,11 @@ never live on `/var`.**
 
 ### D. Stale references
 
-All five fixed, both the number (RFCT-020, not RFCT-012 — master took that slot
-for its Alpine-rootfs task) and the tense (the assertion has been
-case-insensitive since 31e1c06; the v2 image builds green). The substantive
-point — lowercase is correct for udev and fstab — is kept.
-`grep -rn RFCT-012 docs/ os/` now returns only the user's Alpine task and the
-PLAN-010 line that legitimately cites it.
+All fixed: the layout-v2 task is RFCT-020 (master took the earlier number for
+its Alpine-rootfs task), and the tense is corrected — the GUID comparison has
+been case-insensitive since 31e1c06 and the v2 image builds green. The
+substantive point, that lowercase is correct for udev and fstab and was never
+the bug, is kept.
 
 ## Verification after the layout revision (2026-08-18)
 
@@ -446,6 +445,239 @@ PLAN-010 line that legitimately cites it.
 - `make os-image-cx3576-v2` — green (nine-partition image, since p10 is
   RFCT-020's half).
 - `make os-image-cx3576` + `make os-verify-cx3576` — **RESULT: PASS (88/88)**.
+
+## RAUC config rendering + stale-header cleanup (2026-08-18)
+
+Two handoffs from RFCT-014's escalations, plus the outstanding prose fixes.
+
+### 1. system.conf is rendered, not committed (RFCT-014 E2)
+
+RFCT-014 had to commit `os/rootfs/overlay-v2/etc/rauc/system.conf` because the
+overlay renderer lives in `build-v2.sh`, which it could not edit. A rendered
+artifact in git can drift from its template, and `os/bundle.sh`'s
+`render-config.sh --check` reports drift after the fact rather than preventing
+it.
+
+`build-v2.sh` now runs `bash os/rauc/render-config.sh` before staging the
+overlay, and asserts the staged file is non-empty. The committed copy was
+deleted in the same change and the path added to `.gitignore`, so the tree was
+never without one. The renderer writes into the source overlay, which is why it
+runs before the staging copy rather than after.
+
+`--check` still passes (`rauc config current: .../system.conf`). Its role
+narrows to catching a hand-edit of the generated file after the last build;
+committed-copy drift can no longer happen. No ordering hazard: `bundle.sh`
+consumes `rootfs-verity.img` as well, so `build-v2.sh` has necessarily run and
+the file exists.
+
+### 2. Stale PROVISIONAL header (RFCT-014 E3)
+
+The header in `etc/fw_env.config.in` had already been corrected by RFCT-014 in
+the merge — it now records that this is the single `fw_env.config` source and
+that `render-config.sh` asserts its structure. What remained was the same
+obsolete framing in **my** files, now fixed:
+
+- `os/rootfs/README.md` no longer calls the template provisional.
+- `docs/design/ro-root.md` §5 no longer says `/etc/fw_env.config` "is
+  provisional — RFCT-014 may replace it"; it records the assertions RFCT-014
+  makes about it instead (two device lines, GUID match, offset 0, size
+  `UENV_SIZE_BYTES`, and the partition-start cross-check against
+  `UENV_A/B_OFFSET_BYTES`).
+- The "inert until the custom U-Boot lands" caveat is replaced with the actual
+  state, which is more specific than the review's phrasing: the U-Boot half is
+  **fully** live — `uboot-mos` is on main, the v2 image carries it, the
+  assembler refuses the debug variant, and `os/boot/cx3576-boot.cmd` really
+  does append `systemd.machine_id=${machine_id}` behind a `test -n` guard.
+  What is still pending is only RFCT-015's oneshot that *populates* the
+  variable. So machine-id stays per-boot transient until that lands, and for
+  one boot after it, since the value it writes reaches the cmdline on the
+  following boot.
+
+### 3. Stale-tense sentences
+
+Fixed in all six locations. The merge conflicted here because the renumber task
+had corrected the number on the same lines; resolved in favour of this branch,
+which already had both the number and the tense right. Also removed a
+self-referential `grep -rn RFCT-012` line from this record that was itself a
+hit.
+
+## Verification after the RAUC-rendering change (2026-08-18)
+
+RFCT-020's partition 10 landed in this merge, so this is the first run of the
+full ten-partition layout rather than the fallback.
+
+- `make os-rootfs-cx3576-v2` — green.
+  `rendered .../etc/rauc/system.conf (compatible=mos-cx3576,
+  statusfile=/mnt/meta/rauc.status, boot-attempts=3)` — RFCT-014 adopted the
+  META recommendation from the previous turn.
+  `layout: DATA present -> /srv grows, /var fixed, 8 repart definitions`.
+  `TOTAL_MB 216` (budget 400).
+- **Reproducibility**, two cache-hot runs:
+  `sha256(rootfs-verity.img)` =
+  `cd3c0e9a97ca832109eee77b43c6c9cc79fd8548971878effb468909be06221d` both runs,
+  `cmp` clean; `VERITY_ROOT_HASH` =
+  `753606747806990ac18375c40c46d3f10d21abd28145b37f3a44c1dbd637ed91` both runs.
+- `veritysetup verify` in a container, userspace, no host device-mapper: OK.
+- Packed image: **8** repart definitions with `80-data.conf` the only
+  `Weight=1000`; `/srv` mounted from `PARTUUID=…0010` with
+  `noatime,x-systemd.growfs`; `/var` with plain `noatime`; the rendered
+  `system.conf` carrying `statusfile=/mnt/meta/rauc.status`; the rendered
+  `fw_env.config` with its two by-partuuid lines.
+- `make os-image-cx3576-v2` — green. Ten partitions,
+  `meta 16 + state 64 + var 512 + data 64 MiB`, image **1315 MiB**,
+  `sgdisk --verify` "No problems found".
+- `make os-devkeys && make os-bundle-cx3576` — green. RAUC logs
+  `Using central status file /mnt/meta/rauc.status`; bundle verifies against
+  the dev keyring; `rauc info` reports `compatible=mos-cx3576` and a rootfs
+  image checksum matching the built `rootfs-verity.img`.
+- `bash os/rauc/render-config.sh --check` — clean.
+- `make os-image-cx3576` + `make os-verify-cx3576` — **RESULT: PASS (88/88)**.
+
+## Fallback retirement (2026-08-18)
+
+Partition 10 has landed, so `build-v2.sh`'s nine-partition fallback became
+unreachable in normal operation and has been deleted. The fallback earned its
+keep only while the two halves could land in either order.
+
+### A green gate proves the checks are consistent with the artifact, not that the artifact is right
+
+This is the part worth reading, and it generalises well past this change.
+
+"Unreachable code" undersells the risk. The question that matters is: if
+`DATA_GUID` had gone missing from the layout env — a bad merge, an editing slip
+— what would have caught it? The answer is **nothing**. The build would have
+emitted a nine-partition rootfs with `/var` growing and no `/srv`, and then:
+
+| Check | Result with the wrong layout |
+|---|---|
+| `make os-verify-cx3576` (v1) | PASS, 88/88 — it does not look at v2 |
+| `make os-image-cx3576-v2` | green — the assembler builds whatever the layout env describes |
+| `make os-bundle-cx3576` | green — the bundle carries the rootfs it was handed |
+| two-run byte-identical proof | PASS — the wrong artifact is reproducibly wrong |
+
+Every one of those checks is *consistent with either layout*, so none of them
+can distinguish the two. The gate would have been fully green and the first
+symptom would have been `/srv` missing on a device.
+
+That is this campaign's recurring failure class stated plainly: **a green gate
+proves the checks are consistent with the artifact, not that the artifact is
+right.** Every silent-loss bug found in this task has the same shape — the
+hardcoded hwinit enable list that installed `mos-mac`/`mos-gadget` but never
+enabled them; `-all-root` producing setgid-root binaries; a lone repart
+definition attaching the grow flag to `uenv-a`; `/var/lib/dbus/machine-id`
+carrying a shared build-time identity. In each case the build was green and the
+artifact was wrong. The defence is not more checks of the same kind but checks
+that can *only* pass for the intended artifact — which is why the fixes in this
+task are build-time assertions (the setuid/setgid diff, the precious-path bind
+check, the repart definition count) rather than review notes.
+
+### The required constants
+
+`DATA_GUID`, `DATA_PARTNUM`, `DATA_FS_UUID` and `MOS_VAR_MIB` are now required,
+with an error naming `os/layout/cx3576-v2.env` and the missing keys.
+
+All four are demanded even though only `DATA_GUID` is read in `build-v2.sh`.
+The hazard is a *partially* edited layout env, and a consumer that validates
+only its own reads cannot see that hazard by construction. `build-v2.sh` is also
+the first step of `os-image-cx3576-v2`, so failing here costs seconds rather
+than a full rootfs build followed by an assembler error — the earliest consumer
+is the cheapest place to catch it.
+
+The cost of that choice, named so it is not a surprise later: **if a future
+constant is added to the layout env, this list goes stale and will not check
+it.** That is a silent gap rather than a break, and the smaller of the two
+failure modes. If the list ever grows past a handful, the better shape is a
+single shared "required keys" assertion that the layout env's consumers call,
+rather than several hand-maintained lists. Deliberately not built now — two
+checks over four keys does not justify the machinery.
+
+Both existing assertions are kept — the staged definition count must be eight,
+and exactly one definition must carry `Weight=1000`.
+
+## Verification after the fallback retirement (2026-08-18)
+
+- **Negative test**, same shape as the `-all-root` one. `DATA_GUID`,
+  `DATA_FS_UUID` and `MOS_VAR_MIB` were removed from the layout env in place
+  (backed up first, restored immediately, `git diff --quiet` confirmed clean
+  afterwards). The build failed before reaching docker, exit code **1**:
+
+  ```
+  error: .../os/layout/cx3576-v2.env is missing: DATA_GUID DATA_FS_UUID MOS_VAR_MIB
+  The DATA partition (/srv) and the fixed /var size are part of layout v2;
+  a rootfs built without them would silently ship the superseded
+  nine-partition arrangement. Restore the constants in .../cx3576-v2.env.
+  ```
+
+- `make os-rootfs-cx3576-v2` — green, still the eight-definition DATA shape:
+  `layout: DATA present -> /srv grows, /var fixed` and
+  `layout: 8 repart definitions, 1 of them growing`. `TOTAL_MB 216`.
+- **Reproducibility**, two cache-hot runs:
+  `sha256(rootfs-verity.img)` =
+  `650b05a10858571c66a4049affe2c19b6bce4cb4e17ad254e72e01283e4670a3` both runs,
+  `cmp` clean; `VERITY_ROOT_HASH` =
+  `5c0b6c7ec07594310502437ebe36dcb33cad7fedca4c9d5fcf851ecd2a030be8` both runs.
+  (Changed from the previous turn because RFCT-015's health and machine-id
+  units merged into the overlay.)
+- `make os-image-cx3576-v2` — green. Ten partitions,
+  `meta 16 + state 64 + var 512 + data 64 MiB`, image 1315 MiB,
+  `sgdisk --verify` "No problems found".
+- `make os-image-cx3576` + `make os-verify-cx3576` — **RESULT: PASS (88/88)**.
+
+## curl added to the v2 allowlist (2026-08-18, user decision)
+
+RFCT-015's health gate probes systemd, mosd and webd. The webd probe fetches
+`https://127.0.0.1/healthz`, preferring `curl` and falling back to `wget`
+(`os/health/mos-health`), and SKIPped because neither binary shipped — `rauc`
+links libcurl but does not provide the executable.
+
+A probe that skips is the failure class recorded above wearing another hat: the
+gate was green and the gate was correct, it simply was not checking one of the
+three things it claimed to cover. ~1 MB buys the third component.
+
+Changed: `curl` added to the v2 package allowlist in `os/rootfs/Dockerfile.v2`,
+documented in `os/rootfs/README.md` beside the rauc and libubootenv-tool
+entries, as that file requires. `os/rootfs/Dockerfile` (v1) is untouched and
+`os/health/**` is untouched — the probe already prefers curl, so shipping the
+binary is the whole change. One line to revert if the size budget is revisited.
+
+Deliberately not attempted: exercising the probe end to end. webd does not run
+in a build container, so a live `/healthz` response is on-device behaviour and
+stays with hardware acceptance. The deliverable is that the binary exists so the
+probe stops skipping.
+
+### Verification
+
+- `make os-rootfs-cx3576-v2` — green. `TOTAL_MB` **216 -> 217** against the
+  400 MB budget, i.e. **+1 MB**, leaving 183 MB of headroom. The curl chain is
+  about 1 MB by dpkg Installed-Size: `curl` 537 KB, `libcurl4` 860 KB,
+  `libssh2-1` 345 KB, `libnghttp2-14` 228 KB, `libpsl5` 152 KB, `librtmp1`
+  142 KB (`libcurl3-gnutls` was already present for rauc).
+- **Reproducibility**, two cache-hot runs:
+  `sha256(rootfs-verity.img)` =
+  `9ec8e97c19e7c4440a21431cd07210b319f1abd276eab74d061eaf5353bdeacd` both runs,
+  `cmp` clean; `VERITY_ROOT_HASH` =
+  `757e0831a06191412f636bc92fb2ece861b88f6b3d830f66838970cd3171b4a2` both runs.
+  Both changed from the previous build, as expected — a new package changes
+  rootfs content and the root hash covers it.
+- **Binary present in the PACKED squashfs**, not merely in the Dockerfile:
+  ```
+  -rwxr-xr-x root/root  329888  squashfs-root/usr/bin/curl
+  ```
+  executable bit set, and `file` reports
+  `ELF 64-bit LSB pie executable, ARM aarch64 ... dynamically linked`, with
+  `libcurl.so.4 -> libcurl.so.4.8.0` present alongside it. This is the check
+  that matters: the package being in the allowlist is not the same as the binary
+  being in the image, which is exactly how `mos-mac`/`mos-gadget` shipped
+  installed-but-disabled earlier in this task.
+- `veritysetup verify` in a container, userspace, no host device-mapper: OK.
+- `make os-image-cx3576-v2` — green. Rootfs payload 53 -> **54 MiB**, slot and
+  image sizes unchanged (256 MiB slot, 1315 MiB image); `sgdisk --verify`
+  "No problems found".
+- `make os-devkeys && make os-bundle-cx3576` — green; bundle verifies against
+  the dev keyring and its rootfs checksum matches the built image.
+- `make os-image-cx3576` + `make os-verify-cx3576` — **RESULT: PASS (88/88)**,
+  and `curl` does not appear in the v1 `rootfs-report.txt`, confirming the v1
+  allowlist is unchanged.
 
 ## Escalations
 

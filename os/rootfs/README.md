@@ -220,14 +220,23 @@ iproute2 bluez rfkill) **plus**:
   has to touch a Dockerfile.
 - **`libubootenv-tool`** — provides `fw_printenv` / `fw_setenv`. RAUC's U-Boot
   backend needs it, and so does the first-boot machine-id oneshot (RFCT-015).
+- **`curl`** — the health gate's webd probe (`os/health/mos-health`) fetches
+  `https://127.0.0.1/healthz`. It prefers `curl`, falls back to `wget`, and
+  SKIPs when neither is present. `rauc` links libcurl but does not ship the
+  binary, so without this package the gate reported green while covering two of
+  its three components instead of three — a probe that skips is not a probe that
+  passes. One line to revert if the size budget is ever revisited.
 
 Deliberately **not** added: `squashfs-tools` and `cryptsetup-bin`. Packing the
 root is a build-stage job (they are installed in `Dockerfile.v2`'s pack stage
 only), and the kernel opens the verity device straight from `dm-mod.create=`
 with no userspace tool involved.
 
-Installed size: **216 MB against the 400 MB budget** (v1 is 204 MB). The two new
-packages and their dependencies account for the 12 MB; the budget is unchanged.
+Installed size: **217 MB against the 400 MB budget** (v1 is 204 MB). rauc,
+libubootenv-tool and curl plus their dependencies account for the 13 MB; the
+budget is unchanged. curl's own chain is about 1 MB of that (`curl` 537 KB,
+`libcurl4` 860 KB, `libssh2-1` 345 KB, `libnghttp2-14` 228 KB, `libpsl5` 152 KB,
+`librtmp1` 142 KB, per `rootfs-report-v2.txt`).
 
 ## Read-only root wiring (`overlay-v2/`)
 
@@ -237,7 +246,7 @@ from the layout env so the shipped image carries no placeholder:
 | Path | Purpose |
 |---|---|
 | `etc/fstab.in` | `/srv` from DATA (`noatime,x-systemd.growfs`), `/mnt/state` from STATE, `/mnt/meta` from META, `/var` from EPHEMERAL (`noatime`, **no** growfs), tmpfs `/tmp` — all keyed on lowercased `PARTUUID=` |
-| `etc/fw_env.config.in` | the redundant U-Boot env pair, addressed by partition GUID (provisional; RFCT-014 may replace it) |
+| `etc/fw_env.config.in` | the redundant U-Boot env pair, addressed by partition GUID. The single `fw_env.config` source in the tree; RFCT-014's `render-config.sh` asserts its structure rather than shipping a competing file |
 | `etc/repart.d/*.conf` | eight definitions in disk order; only `80-data.conf` grows. v1's root-growing definition is gone |
 | `etc/tmpfiles.d/mos-var.conf` | age policies for `/var/tmp` and `/var/cache` — `/var` is now a fixed-size partition |
 | `etc/systemd/system/mos-seed-var.service` | first-boot restore of `/var` from `/usr/share/factory/var` |
@@ -284,6 +293,20 @@ device and speed, CAN bitrate and FD flag, MAC seed and gadget IDs all live in
 `BOARD_INIT_DIR` and are staged verbatim into `/etc/mos`, where the units read
 them at runtime.
 
+## RAUC system.conf is rendered, not committed
+
+`os/rootfs/overlay-v2/etc/rauc/system.conf` is **generated** by
+`os/rauc/render-config.sh` (RFCT-014's renderer, which owns the template and
+its assertions) and is gitignored. `build-v2.sh` runs the renderer before
+staging the overlay, so the template plus `os/layout/cx3576-v2.env` are the
+single source of truth and the rendered file cannot drift from them.
+
+`os/bundle.sh` still runs `render-config.sh --check`. It now guards a narrower
+case — someone hand-editing the generated file after the last build — rather
+than committed-copy drift, which can no longer happen. Note that `bundle.sh`
+consumes `rootfs-verity.img` too, so `build-v2.sh` has necessarily run first
+and the file is present.
+
 ## Storage tiers, and the /var contract
 
 `/srv` (DATA) grows to fill the media and holds the application data worth the
@@ -301,10 +324,12 @@ bind mount whose mountpoint exists in the factory `/var`. Today that covers
 The rule is: **identity, credentials, pairings and update state never live on
 `/var`**. Full audit in `docs/design/ro-root.md` §4.
 
-DATA (partition 10) is RFCT-020's half of the layout. Until it lands,
-`build-v2.sh` warns and falls back to the previous nine-partition arrangement
-(seven repart definitions, EPHEMERAL grows, no `/srv`) rather than shipping a
-half-migrated image — repart would otherwise create an unmatched partition.
+The DATA constants (`DATA_GUID`, `DATA_PARTNUM`, `DATA_FS_UUID`,
+`MOS_VAR_MIB`) are **required**: `build-v2.sh` fails if any is missing from
+`os/layout/cx3576-v2.env`. There is deliberately no fallback. A build that
+quietly emitted the superseded nine-partition arrangement — `/var` growing, no
+`/srv` — would pass every downstream check, which is precisely the class of
+silent-wrong-artifact this layout work exists to prevent.
 
 ## CJK guard
 

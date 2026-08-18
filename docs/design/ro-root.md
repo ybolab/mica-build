@@ -140,14 +140,16 @@ investigations agree on every point.
 extlinux *before* `boot.scr`, so an extlinux config in a slot would silently
 bypass the whole RAUC A/B handshake. `os/mkimage-v2.sh` instead compiles
 `os/boot/cx3576-boot.cmd` into a `boot.scr` shared by both slots and derives a
-per-slot `mos-verity.env` by extracting the `dm-mod.create="..."` and
-`dm-mod.waitfor=` fragments out of these files with `sed`.
+per-slot `mos-verity-<slot>.env` by extracting the `dm-mod.create="..."` and
+`dm-mod.waitfor=` fragments out of these files with `sed`. The filename carries
+the slot because a RAUC bundle installs one boot payload into whichever slot is
+inactive, so it must ship both slots' files under distinct names.
 
 That makes the *shape* of these two files part of the contract, not just their
 values: a quoted `dm-mod.create=` table with spaces inside the quotes, followed
 by `dm-mod.waitfor=PARTUUID=<that slot's rootfs GUID>`, then the rest of the
 append line. The files themselves stay exactly as specified — this task does
-not produce `mos-verity.env`.
+not produce `mos-verity-<slot>.env`.
 
 The generated line:
 
@@ -162,6 +164,11 @@ console=ttyFIQ0,1500000 earlycon=uart8250,mmio32,0x2ad40000 storagemedia=emmc ne
 
 - The same PARTUUID appears twice because the data device and the hash device
   are the same partition; `<HASH_START_BLOCK>` is where the tree begins.
+- The device-mapper device is named `rootfs`. The name is cosmetic — it only
+  shows up in `dmsetup` output, because the boot path mounts `root=/dev/dm-0`
+  and never `/dev/mapper/<name>` (there is no udev at root-mount time).
+  `docs/design/uboot-ab-handshake.md` §7.3 originally said `mos`; this
+  generator is the authority and that section has been reconciled.
 - `dm-mod.waitfor=` is **mandatory**, not an optimisation, and
   `os/mkimage-v2.sh` rejects a cmdline file that lacks it. `dm_init_init()`
   runs at `late_initcall` and the `wait_for_device_probe()` it already calls
@@ -268,6 +275,24 @@ Two operations follow from that table:
   matters. It is a recovery action that can be taken on a wedged device
   without asking the user whether they mind losing anything.
 
+**Why `/var` is exactly 512 MiB (`MOS_VAR_MIB`).** The factory `/var` seed is
+~9 MiB; journald runs `Storage=volatile` so there is no persistent journal to
+grow; the remaining consumers are `/var/tmp`, `/var/cache` and dpkg working
+space; and balena-engine's data-root is pinned to `/srv/balena-engine`
+(PLAN-010 M6), on DATA, so no container layer ever lands here. 512 MiB is ~50x
+the seeded content and under 2% of the smallest realistic eMMC, so `/var` can
+never compete with DATA for the disk. Changing the number moves DATA's start
+offset, so it is frozen for a flashed fleet in the same way
+`MOS_ROOTFS_SLOT_MIB` is; the constant and this rationale live in
+`os/layout/cx3576-v2.env`.
+
+**Standing review criterion for future units**, not a one-off audit result:
+**identity, credentials, pairings and update state never live on `/var`.** Any
+new unit that wants to write one of those must be pointed at STATE (or META for
+update bookkeeping) with a bind mount, and the build-time check below must be
+extended to cover it. `/var` may hold only what the device can lose at any
+moment without a user noticing.
+
 The growth target has now moved twice, and the reasoning is worth keeping.
 v1 grew the root. Early v2 grew EPHEMERAL, on the assumption that `/var` was
 the filesystem that needed the disk. Neither is right: the root is a
@@ -280,18 +305,24 @@ holds what is worth the whole disk, so it is the partition that grows and
 Capping `/var` creates a fill-up mode that did not exist while it grew, which
 is what §4's "Fill-up containment" below is for.
 
-**Landing order.** The DATA partition itself (p10, plus the fixed `MOS_VAR_MIB`
-size for EPHEMERAL) is RFCT-020's half, in `os/layout/cx3576-v2.env` and the
-assembler. This half adapts to whichever is present, because a mismatch is
-dangerous in exactly one direction: repart pairs definitions with partitions by
-type UUID in disk order, so shipping the eight-definition set against a
-nine-partition image would leave the eighth definition unmatched and repart
-would **create** a partition nobody asked for. `build-v2.sh` therefore keys off
-`DATA_GUID`: present, and it renders `/srv`, drops growfs from `/var` and stages
-eight definitions; absent, and it falls back to the previous nine-partition
-arrangement exactly — seven definitions, EPHEMERAL grows, no `/srv` — with a
-warning on stdout rather than a half-migrated image. It also asserts that the
-definition count matches the mode and that exactly one definition carries
+**The DATA constants are required, and the build proves it.** `build-v2.sh`
+fails if `DATA_GUID`, `DATA_PARTNUM`, `DATA_FS_UUID` or `MOS_VAR_MIB` is absent
+from `os/layout/cx3576-v2.env`, naming the file and the missing keys. All four
+are demanded even though only `DATA_GUID` is read here, because a
+partially-edited layout env is the failure being guarded against: the assembler
+needs the other three, and a rootfs built against half a layout is the kind of
+artifact that reaches hardware before anyone notices.
+
+While p10 was still being added, this build carried a nine-partition fallback so
+the two halves could land in either order. That path is now unreachable and has
+been deleted. Keeping it would have been worse than useless: if a constant went
+missing through a bad merge or an editing slip, the build would not have failed
+— it would have quietly emitted a nine-partition rootfs with `/var` growing and
+no `/srv`, and every downstream check would have passed. Silently shipping the
+superseded layout is exactly the failure mode the repart hazard below describes.
+
+Two assertions survive from that period and stay meaningful: the staged
+definition count must be eight, and exactly one definition must carry
 `Weight=1000`.
 
 The three block mounts are `/etc/fstab` entries rather than hand-written
@@ -478,12 +509,23 @@ The mechanism:
 That is the only form systemd accepts for `systemd.machine_id=` and for
 `/etc/machine-id`; a dashed UUID is rejected.
 
-**Caveat — inert until the custom U-Boot lands.** Step 2 is RFCT-018's work. Until
-that U-Boot ships, nothing puts `systemd.machine_id=` on the cmdline, so systemd
-finds an empty `/etc/machine-id` on a read-only filesystem, falls back to a
-transient id in `/run` and bind-mounts it over `/etc/machine-id`. The machine-id
-is therefore **per-boot transient** in the interim: the system boots and works,
-but the id changes on every reboot.
+**Status — steps 1 and 2 are live; step 3 is what remains.** The U-Boot half has
+landed: `uboot-mos` is on main, a v2 image carries it (and `os/mkimage-v2.sh`
+refuses to assemble a v2 image around the debug variant), and
+`os/boot/cx3576-boot.cmd` appends `systemd.machine_id=${machine_id}` whenever
+that environment variable is set. The redundant environment this design depends
+on genuinely exists on a v2 device, which is also why `/etc/fw_env.config`
+addresses something real rather than something planned.
+
+What is still pending is the oneshot that *populates* `machine_id`, which is
+RFCT-015's. Until it lands and has run once, nothing sets the variable, the
+boot script's `test -n` guard leaves the cmdline argument off, and systemd finds
+an empty `/etc/machine-id` on a read-only filesystem, falls back to a transient
+id in `/run` and bind-mounts it over `/etc/machine-id`. The machine-id is
+therefore **per-boot transient** in the interim: the system boots and works, but
+the id changes on every reboot. Note it stays transient for one extra boot even
+after the oneshot lands, since the value it writes only reaches the cmdline on
+the following boot.
 
 That fallback has a hard prerequisite, independently flagged by RFCT-018: the
 image must ship `/etc/machine-id` as an **empty regular file**. systemd
@@ -501,8 +543,14 @@ respect this.
 `/etc/fw_env.config` is shipped by this task pointing both entries at the uenv
 partitions by GUID (`/dev/disk/by-partuuid/…`, offset 0, size 64 KiB) rather
 than at a hardcoded `/dev/mmcblk0` offset: the GUIDs are layout constants, the
-disk name is not. It is provisional — RFCT-014 owns `os/rauc/fw_env.config(.in)`
-and may replace it.
+disk name is not. It is the single `fw_env.config` source in the tree — RFCT-014
+deliberately did not create a competing `os/rauc/fw_env.config.in` and instead
+**asserts this file's structure** in `os/rauc/render-config.sh`: exactly two
+device lines (which is what marks the environment redundant to libubootenv),
+each matching its UENV GUID case-insensitively at offset 0 with size
+`UENV_SIZE_BYTES`, and the partition starts cross-checked against
+`UENV_A/B_OFFSET_BYTES` so that the partition-relative offset provably denotes
+the same bytes as U-Boot's absolute `ENV_OFFSET`.
 
 The oneshot itself is **RFCT-015's** deliverable and the U-Boot side is
 **RFCT-018's**; neither is implemented here.
@@ -517,7 +565,7 @@ Every `/etc` write path in the v1 rootfs, and what happens to it under v2:
 | `/etc/resolv.conf` | **Already fine.** v1 makes it a symlink to `../run/systemd/resolve/stub-resolv.conf`; the target is on tmpfs and stays writable. Carried into v2 unchanged. |
 | networkd unit rendering by mosd | **No writer exists.** mosd and webd write only `/var/lib/mos/settings.toml` and `/var/lib/mos/webd` (`mosd-settings/src/store.rs`, `webd/src/config.rs`); both land on STATE through `var-lib-mos.mount`. The static `/etc/systemd/network/80-dhcp.network` is baked at build time. If a later milestone adds runtime network rendering it must target `/run/systemd/network`, which networkd reads at higher precedence than `/etc`. |
 | hostname persistence | **Solved**, and it had a live consumer — see below. `/etc/hostname` is bound from `/mnt/state/hostname` and re-applied by `mos-apply-hostname.service`. |
-| `/etc/machine-id` | **Solved via the U-Boot env** (§5), transient until RFCT-018's U-Boot ships. |
+| `/etc/machine-id` | **Solved via the U-Boot env** (§5). The U-Boot half is live; transient per boot until RFCT-015's oneshot populates the `machine_id` variable. |
 | `/etc/mos/otg-mode` (hwinit-otg override) | **Read-only in v2.** The documented per-device USB OTG role override cannot be created on the device. Defaults from `otg.conf` are unaffected — see below. |
 | `/etc/adjtime` (hwclock) | Not written: no RTC sync unit is enabled. |
 | `/etc/mtab` | Symlink to `/proc/self/mounts` in Debian; never written. |
@@ -573,6 +621,6 @@ change. Nothing depends on it — systemd's `nss-myhostname`, which is in
 - Reporting `/var` pressure as a degraded health signal (RFCT-015).
 - The machine-id oneshot (RFCT-015).
 - The U-Boot side: `ENV_OFFSET` pinning, `BOOT_ORDER` handshake, appending
-  `systemd.machine_id=` (RFCT-018).
+  `systemd.machine_id=` (RFCT-018 — since landed).
 - v2 image contract verification (RFCT-017).
 - Any initramfs. Per §2, M4 ships none.

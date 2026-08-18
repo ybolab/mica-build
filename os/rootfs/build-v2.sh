@@ -91,9 +91,24 @@ fi
 # resolves PARTUUID= through those symlinks without normalising case.
 OVERLAY_SRC="$SCRIPT_DIR/overlay-v2"
 OVERLAY_STAGE="$OUT_DIR/overlay-v2"
+
+# The RAUC system.conf is rendered from os/rauc/system.conf.in and the layout
+# env by RFCT-014's renderer, which owns that template and its assertions (the
+# statusfile must not land on /var, the boot-attempts radix range, and the
+# fw_env.config structure). It is generated rather than committed: a rendered
+# artifact in git can drift from its template, and os/bundle.sh's --check can
+# only report that drift after the fact, not prevent it. Rendering it here, on
+# the build path that consumes it, makes the template the single source of
+# truth. The renderer writes into OVERLAY_SRC, so it must run before staging.
+bash "$REPO_ROOT/os/rauc/render-config.sh"
+
 rm -rf "$OVERLAY_STAGE"
 mkdir -p "$OVERLAY_STAGE"
 cp -a "$OVERLAY_SRC/." "$OVERLAY_STAGE/"
+if [ ! -s "$OVERLAY_STAGE/etc/rauc/system.conf" ]; then
+    echo "error: os/rauc/render-config.sh produced no system.conf to stage" >&2
+    exit 1
+fi
 
 lower() { echo "$1" | tr 'A-Z' 'a-z'; }
 render() {
@@ -116,33 +131,38 @@ render() {
 # /var (EPHEMERAL) is fixed-size disposable residue and must NOT carry
 # x-systemd.growfs.
 #
-# DATA_GUID is added to the layout env by RFCT-020 together with partition 10
-# in the assembler. The two halves have to land together and this build adapts
-# to whichever is present, because the mismatch is dangerous in one direction:
-# systemd-repart pairs definitions with partitions by type UUID in disk order,
-# so shipping the eight-definition set against a nine-partition image would
-# leave the eighth definition unmatched and repart would CREATE a partition
-# nobody asked for. When DATA is absent we therefore fall back to the previous
-# arrangement exactly — seven definitions, ephemeral grows, no /srv — rather
-# than shipping a half-migrated image.
-if [ -n "${DATA_GUID:-}" ]; then
-    SRV_LINE="PARTUUID=$(lower "$DATA_GUID")	/srv	ext4	noatime,x-systemd.growfs	0	2"
-    VAR_OPTS="noatime"
-    echo "layout: DATA present -> /srv grows, /var fixed, 8 repart definitions"
-else
-    echo "warning: DATA_GUID is not in $LAYOUT_ENV, so partition 10 does not exist yet" >&2
-    echo "warning: falling back to the 9-partition arrangement (ephemeral grows, no /srv)." >&2
-    echo "warning: this is RFCT-020's half; re-run once it has landed." >&2
-    SRV_LINE="# /srv is absent: the layout env defines no DATA partition yet (RFCT-020)."
-    VAR_OPTS="noatime,x-systemd.growfs"
-    rm -f "$OVERLAY_STAGE/etc/repart.d/80-data.conf"
-    sed -i 's/^Weight=0$/Weight=1000/' "$OVERLAY_STAGE/etc/repart.d/70-ephemeral.conf"
-    grep -q '^Weight=1000$' "$OVERLAY_STAGE/etc/repart.d/70-ephemeral.conf"
+# The DATA constants are REQUIRED, not optional. While partition 10 was still
+# being added to the layout env this build carried a nine-partition fallback so
+# the two halves could land in either order. That path is now unreachable, and
+# leaving it in would be worse than useless: if a constant went missing from the
+# layout env through a bad merge or an editing slip, the build would not fail —
+# it would quietly emit a nine-partition rootfs with /var growing and no /srv,
+# and every downstream check would pass. Fail loudly instead.
+#
+# All four are demanded even though only DATA_GUID is read here, because a
+# partially-edited layout env is exactly the failure this guards against: the
+# assembler needs the other three, and a rootfs built against half a layout is
+# the kind of artifact that reaches hardware before anyone notices.
+missing=""
+for key in DATA_GUID DATA_PARTNUM DATA_FS_UUID MOS_VAR_MIB; do
+    eval "value=\${$key:-}"
+    [ -n "$value" ] || missing="$missing $key"
+done
+if [ -n "$missing" ]; then
+    echo "error: $LAYOUT_ENV is missing:$missing" >&2
+    echo "The DATA partition (/srv) and the fixed /var size are part of layout v2;" >&2
+    echo "a rootfs built without them would silently ship the superseded" >&2
+    echo "nine-partition arrangement. Restore the constants in $LAYOUT_ENV." >&2
+    exit 1
 fi
 
+SRV_LINE="PARTUUID=$(lower "$DATA_GUID")	/srv	ext4	noatime,x-systemd.growfs	0	2"
+VAR_OPTS="noatime"
+
 # The repart definition count must equal the number of linux-generic partitions
-# on the disk, or repart silently attaches the grow flag to the wrong one.
-want_defs=$([ -n "${DATA_GUID:-}" ] && echo 8 || echo 7)
+# on the disk, or repart silently attaches the grow flag to the wrong one — and
+# an unmatched definition does not fail, it makes repart CREATE a partition.
+want_defs=8
 have_defs=$(find "$OVERLAY_STAGE/etc/repart.d" -name '*.conf' | wc -l)
 if [ "$have_defs" -ne "$want_defs" ]; then
     echo "error: $have_defs repart definitions staged, expected $want_defs" >&2
@@ -153,6 +173,7 @@ if [ "$grow_defs" -ne 1 ]; then
     echo "error: $grow_defs repart definitions carry Weight=1000, expected exactly 1" >&2
     exit 1
 fi
+echo "layout: DATA present -> /srv grows, /var fixed"
 echo "layout: $have_defs repart definitions, 1 of them growing"
 
 render "$OVERLAY_STAGE/etc/fstab.in" "$OVERLAY_STAGE/etc/fstab" \

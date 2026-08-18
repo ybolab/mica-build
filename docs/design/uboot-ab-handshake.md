@@ -523,6 +523,18 @@ Slot-agnostic: the running copy may boot either slot. Per-slot verity parameters
 are *not* baked in — they are imported from the chosen slot's boot partition
 (§7.3), so the script is byte-identical in both boot partitions.
 
+**This block is synced to the shipped `os/boot/cx3576-boot.cmd`**, which is what
+`os/mkimage-v2.sh` compiles into `boot.scr`. The one change against the version
+first published here is the slot-suffixed verity env: the script sets
+`slotsuffix` alongside `bootslot` and loads `mos-verity-${slotsuffix}.env`,
+falling back to the unsuffixed name. The reason is RFCT-014's boot payload — a
+RAUC bundle installs one boot image into whichever slot is inactive, so it must
+ship *both* slots' verity files under distinct names and an unsuffixed file
+cannot identify a slot. With the original unsuffixed load, every installed slot
+took the else-branch and rolled back silently. The unsuffixed fallback is kept
+only for hand-assembled boot partitions; nothing this tree builds relies on it.
+The shipped script carries the same note in its provenance header.
+
 ```sh
 # boot.cmd — mos A/B handshake for CX3576-Z (layout v2).
 # Compiled to boot.scr and written to BOTH boot partitions by the assembler.
@@ -547,6 +559,7 @@ for slot in ${BOOT_ORDER}; do
         if test ${BOOT_A_LEFT} -gt 0; then
             setexpr BOOT_A_LEFT ${BOOT_A_LEFT} - 1
             setenv bootslot A
+            setenv slotsuffix a
             setenv bootpart 3
             setenv rootpart 5
         fi
@@ -554,6 +567,7 @@ for slot in ${BOOT_ORDER}; do
         if test ${BOOT_B_LEFT} -gt 0; then
             setexpr BOOT_B_LEFT ${BOOT_B_LEFT} - 1
             setenv bootslot B
+            setenv slotsuffix b
             setenv bootpart 4
             setenv rootpart 6
         fi
@@ -575,12 +589,20 @@ saveenv
 echo "mos: booting slot ${bootslot} (A=${BOOT_A_LEFT} B=${BOOT_B_LEFT} left)"
 
 # --- per-slot verity parameters, from the chosen slot's boot partition ------
-# mos-verity.env is a one-line text env file written by the assembler; it
-# defines verity_args= with the full dm-mod.create=/dm-mod.waitfor= tail.
-if load mmc 0:${bootpart} ${verityaddr} mos-verity.env; then
+# mos-verity-<slot>.env is a one-line text env file defining verity_args= with
+# the full dm-mod.create=/dm-mod.waitfor= tail for THIS slot's rootfs.
+# The name carries the slot because one RAUC boot payload can be installed into
+# either boot partition: it ships both slots' files, so the slot-identifying
+# file cannot be slot-neutral. slotsuffix is set alongside bootslot above,
+# lowercase to match the filenames, rather than leaning on FAT case folding.
+# The unsuffixed name is a fallback for older, hand-assembled boot partitions;
+# nothing this tree builds relies on it.
+if load mmc 0:${bootpart} ${verityaddr} mos-verity-${slotsuffix}.env; then
+    env import -t ${verityaddr} ${filesize}
+elif load mmc 0:${bootpart} ${verityaddr} mos-verity.env; then
     env import -t ${verityaddr} ${filesize}
 else
-    echo "mos: slot ${bootslot} has no mos-verity.env"
+    echo "mos: slot ${bootslot} has no mos-verity-${slotsuffix}.env"
     setenv BOOT_${bootslot}_LEFT 0
     saveenv
     reset
@@ -669,9 +691,10 @@ in U-Boot, which is already set [V].
    and write the **same** `boot.scr` to both BOOT-A and BOOT-B (FAT root, since
    bootstd's default filename prefixes are `/` and `/boot/` —
    `u-boot/boot/bootstd-uclass.c:24` [V]).
-2. Write a per-slot `mos-verity.env` into each boot partition, containing
-   exactly one line:
-   `verity_args=dm-mod.create="mos,,0,ro,<table>" dm-mod.waitfor=PARTUUID=<slot rootfs PARTUUID>`
+2. Write a per-slot `mos-verity-<slot>.env` into each boot partition
+   (`mos-verity-a.env` in BOOT-A, `mos-verity-b.env` in BOOT-B — see §5.3 for
+   why the name carries the slot), containing exactly one line:
+   `verity_args=dm-mod.create="rootfs,,0,ro,<table>" dm-mod.waitfor=PARTUUID=<slot rootfs PARTUUID>`
    with `<table>` built from that slot's verity metadata (§7.3). Slot A's file
    references PARTUUID `...0005`, slot B's references `...0006`.
 3. Not write `extlinux/extlinux.conf` into the v2 boot slots (§5.4).
@@ -683,7 +706,7 @@ in U-Boot, which is already set [V].
 Inputs it needs that this design does not provide: the verity root hash, data
 block count and hash-tree start block for each slot — those come from the
 `veritysetup format` step in the rootfs/verity task, which must surface them as
-shell variables for the `mos-verity.env` renderer.
+shell variables for the `mos-verity-<slot>.env` renderer.
 
 ---
 
@@ -872,7 +895,11 @@ dm-mod.create="<name>,<uuid>,<minor>,<flags>,<start> <len> verity <ver> <data_de
 
 with, for slot A:
 
-- `<name>` = `mos`, `<uuid>` empty, `<minor>` `0`, `<flags>` `ro`
+- `<name>` = `rootfs`, `<uuid>` empty, `<minor>` `0`, `<flags>` `ro`. (Earlier
+  drafts of this section said `mos`. The shipped generator
+  (`os/rootfs/build-v2.sh`) emits `rootfs`, and that is the authority. Nothing
+  depends on the choice: the boot path uses `root=/dev/dm-0`, never
+  `/dev/mapper/<name>`, so the name is only what shows up in `dmsetup` output.)
 - `<data_dev>` = `<hash_dev>` = `PARTUUID=5AC35760-0002-4000-8000-000000000005`
   (hash tree appended to the same partition)
 - `<alg>` = `sha256`, `<salt>` = the layout-v2 pinned salt
@@ -880,10 +907,10 @@ with, for slot A:
 - `<digest>`, `<n_blocks>`, `<hash_start>` from `veritysetup format` output
 
 and `PARTUUID=...0006` for slot B. This whole string is what the assembler puts
-into each slot's `mos-verity.env` as `verity_args=` (§5.5), together with
+into each slot's `mos-verity-<slot>.env` as `verity_args=` (§5.3, §5.5), together with
 `dm-mod.waitfor=PARTUUID=<same GUID>`.
 
-Root device: **`root=/dev/dm-0`**, not `/dev/mapper/mos` — there is no udev at
+Root device: **`root=/dev/dm-0`**, not `/dev/mapper/rootfs` — there is no udev at
 root-mount time, and `devt_from_devname()` resolves `dm-0` through
 `blk_lookup_devt()` (`linux/init/do_mounts.c:184-200`) [V]. Add
 `rootfstype=squashfs ro rootwait`.
@@ -951,11 +978,11 @@ Run in order on the custom U-Boot. Each step is independently observable.
    PARTUUID `...0006`. Set it back to `"A B"` and confirm slot A.
 6. **Command line integrity.** `cat /proc/cmdline` must show the complete
    `dm-mod.create="..."` string with both quotes present and the digest at full
-   length, plus `dm-mod.waitfor=`. `dmsetup table mos` must show a `verity`
+   length, plus `dm-mod.waitfor=`. `dmsetup table rootfs` must show a `verity`
    target. `findmnt /` must show `/dev/dm-0` with `squashfs` and `ro`.
 7. **Counter exhaustion falls through.** `fw_setenv BOOT_A_LEFT 1`, then
-   deliberately corrupt slot A's kernel (or point slot A's `mos-verity.env` at a
-   wrong digest) and reboot twice. Boot 1 tries A and fails; boot 2 must report
+   deliberately corrupt slot A's kernel (or point slot A's `mos-verity-a.env`
+   at a wrong digest) and reboot twice. Boot 1 tries A and fails; boot 2 must report
    `mos: booting slot B`. Then confirm `fw_printenv BOOT_A_LEFT` reads `0`.
 8. **Refill on total exhaustion.** `fw_setenv BOOT_A_LEFT 0; fw_setenv
    BOOT_B_LEFT 0`, reboot. U-Boot must print the reset message, refill both
@@ -1017,22 +1044,48 @@ Ordered by how badly each could sink the approach.
 
 ## 10. Requirements summary (the escalation)
 
-What the custom U-Boot must satisfy, in dependency order. Items 1–3 block M4
-entirely.
+> **Status update — items 1-3 are RESOLVED.** The user landed a second U-Boot
+> variant as commit `8b24f9d` ("board(cx3576): add uboot-mos A/B variant
+> alongside the debug build"). `make -C board/cx3576 uboot-mos` builds into
+> `board/cx3576/out/uboot-mos/` and implements this contract: the redundant
+> environment pair at `0x1000000` / `0x1100000`, `setexpr` / `source` /
+> `importenv` / `fs_generic` / `fat` / `booti` / `part`, `LEGACY_IMAGE_FORMAT`,
+> `HUSH_PARSER`, `bootmeth order` pinned to `script`, and the rockusb rescue
+> tail preserved. The analysis below is kept as written, because it is the
+> reasoning the variant was built against and the record of why each item is
+> required.
+>
+> The existing `make -C board/cx3576 uboot` debug variant is unchanged and pairs
+> with the **v1** image. The two are not interchangeable in either direction and
+> neither mistake announces itself: `uboot-mos` on a v1 image corrupts the boot
+> FAT partition on the first `saveenv` (v1's boot partition starts at 16 MiB,
+> exactly the copy-A offset), and the debug variant on a v2 image has no
+> persistent environment, so it boots, looks healthy, and silently never runs
+> the A/B handshake. `os/mkimage-v2.sh` asserts both directions.
+>
+> Items 4-8 were requirements on the build and are satisfied by that variant;
+> they remain listed as the contract it must keep satisfying. On-device A/B
+> switch and rollback remain the user's hardware acceptance — see §8.
+
+What the custom U-Boot must satisfy, in dependency order. Items 1–3 were the
+ones that blocked M4 entirely; all three are resolved by `8b24f9d`.
 
 1. **Persistent redundant environment** at `0x1000000` / `0x1100000`, `0x10000`
    each, eMMC user area, device index 0 — the defconfig fragment in §3.2.
    Without it: no `BOOT_ORDER` persistence, RAUC's `uboot` backend is
-   non-functional, machine-id cannot persist. Today the build has
-   `CONFIG_ENV_IS_NOWHERE=y` [V].
+   non-functional, machine-id cannot persist. The **debug** variant still has
+   `CONFIG_ENV_IS_NOWHERE=y` [V], which is why it must never be paired with a
+   v2 image. **RESOLVED for `uboot-mos` by `8b24f9d`.**
 2. **`CONFIG_CMD_SETEXPR=y`** plus `CMD_SOURCE`, `CMD_IMPORTENV`,
    `CMD_FS_GENERIC`, `CMD_BOOTI`, `LEGACY_IMAGE_FORMAT` (§3.2). Without
    `setexpr` the attempt counter cannot be decremented in a script; the generic
-   defconfig disables it [V].
+   defconfig disables it [V]. **RESOLVED by `8b24f9d`.**
 3. **`boot.scr` must be the only automatically discoverable boot entry** in
    BOOT-A/BOOT-B — no `extlinux/extlinux.conf` in v2 boot slots — and `bootcmd`
    should pin `bootmeth order script` (§5.4). Without this, extlinux wins and
    the handshake is silently bypassed in both bootstd and `distro_bootcmd` [V].
+   **RESOLVED by `8b24f9d` (`bootmeth order script`) together with
+   `os/mkimage-v2.sh`, which writes no extlinux config into a v2 boot slot.**
 4. **Preserve the three existing customisations**: DDR `v1.12` + BL31 `v1.24`
    blob pins, the saradc `vdd-microvolts` DT append, and the rockusb loader-mode
    patch (§2). Without them, respectively: no boot, no recovery button, no
@@ -1052,8 +1105,8 @@ entirely.
 Dependencies this creates on other subtasks, for scheduling:
 
 - **RFCT-020** (`os/mkimage-v2.sh`): generate and install `boot.scr` +
-  per-slot `mos-verity.env`, drop `extlinux.conf` from v2 boot slots, zero-fill
-  p1/p2 (§5.5).
+  per-slot `mos-verity-<slot>.env`, drop `extlinux.conf` from v2 boot slots,
+  zero-fill p1/p2 (§5.5). **Delivered.**
 - **RFCT-014** (rootfs): add `libubootenv-tool` to the package allowlist, ship
   `/etc/fw_env.config` from §3.3, ship an empty `/etc/machine-id` (§6.2).
 - **RFCT-015**: the machine-id oneshot of §6.4, inert until this U-Boot lands.
