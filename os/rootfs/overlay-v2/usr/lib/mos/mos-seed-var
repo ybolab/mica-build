@@ -1,0 +1,23 @@
+#!/bin/sh
+# Seed /var on first boot.
+#
+# /var is a mount of the EPHEMERAL partition, which the image assembler creates
+# as an empty ext4 filesystem. Mounting it over the image's /var would hide the
+# tree the installed packages expect (dpkg database, spool and lib directories,
+# the mosd state mountpoint), so the build stages that tree at
+# /usr/share/factory/var and this script copies it out once, on the first boot
+# after a flash or after EPHEMERAL has been wiped.
+#
+# Runs before systemd-tmpfiles-setup so that tmpfiles' own /var entries are
+# applied on top of the seeded tree rather than racing it.
+set -eu
+
+STAMP=/var/.mos-var-seeded
+FACTORY=/usr/share/factory/var
+
+[ -d "$FACTORY" ] || { echo "no $FACTORY to seed from" >&2; exit 1; }
+[ -e "$STAMP" ] && exit 0
+
+cp -a "$FACTORY/." /var/
+sync
+: > "$STAMP"
