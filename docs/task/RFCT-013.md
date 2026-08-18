@@ -533,6 +533,58 @@ full ten-partition layout rather than the fallback.
 - `bash os/rauc/render-config.sh --check` — clean.
 - `make os-image-cx3576` + `make os-verify-cx3576` — **RESULT: PASS (88/88)**.
 
+## Fallback retirement (2026-08-18)
+
+Partition 10 has landed, so `build-v2.sh`'s nine-partition fallback is
+unreachable in normal operation. It has been deleted rather than left in place,
+and I agree with the reasoning: unreachable code that silently changes the
+shipped layout is the failure class this work exists to prevent. Had a DATA
+constant gone missing through a bad merge or an editing slip, the build would
+not have failed — it would have emitted a nine-partition rootfs with `/var`
+growing and no `/srv`, and v1 verify, the v2 image build, the bundle and the
+reproducibility proof would all still have passed. There is no argument for
+keeping it; the fallback earned its keep only while the two halves could land in
+either order.
+
+`DATA_GUID`, `DATA_PARTNUM`, `DATA_FS_UUID` and `MOS_VAR_MIB` are now required,
+with an error naming `os/layout/cx3576-v2.env` and the missing keys. All four
+are demanded even though only `DATA_GUID` is read in `build-v2.sh`, because the
+failure being guarded against is a partially-edited layout env: the assembler
+needs the other three, and a rootfs built against half a layout is the kind of
+artifact that reaches hardware before anyone notices.
+
+Both existing assertions are kept — the staged definition count must be eight,
+and exactly one definition must carry `Weight=1000`.
+
+## Verification after the fallback retirement (2026-08-18)
+
+- **Negative test**, same shape as the `-all-root` one. `DATA_GUID`,
+  `DATA_FS_UUID` and `MOS_VAR_MIB` were removed from the layout env in place
+  (backed up first, restored immediately, `git diff --quiet` confirmed clean
+  afterwards). The build failed before reaching docker, exit code **1**:
+
+  ```
+  error: .../os/layout/cx3576-v2.env is missing: DATA_GUID DATA_FS_UUID MOS_VAR_MIB
+  The DATA partition (/srv) and the fixed /var size are part of layout v2;
+  a rootfs built without them would silently ship the superseded
+  nine-partition arrangement. Restore the constants in .../cx3576-v2.env.
+  ```
+
+- `make os-rootfs-cx3576-v2` — green, still the eight-definition DATA shape:
+  `layout: DATA present -> /srv grows, /var fixed` and
+  `layout: 8 repart definitions, 1 of them growing`. `TOTAL_MB 216`.
+- **Reproducibility**, two cache-hot runs:
+  `sha256(rootfs-verity.img)` =
+  `650b05a10858571c66a4049affe2c19b6bce4cb4e17ad254e72e01283e4670a3` both runs,
+  `cmp` clean; `VERITY_ROOT_HASH` =
+  `5c0b6c7ec07594310502437ebe36dcb33cad7fedca4c9d5fcf851ecd2a030be8` both runs.
+  (Changed from the previous turn because RFCT-015's health and machine-id
+  units merged into the overlay.)
+- `make os-image-cx3576-v2` — green. Ten partitions,
+  `meta 16 + state 64 + var 512 + data 64 MiB`, image 1315 MiB,
+  `sgdisk --verify` "No problems found".
+- `make os-image-cx3576` + `make os-verify-cx3576` — **RESULT: PASS (88/88)**.
+
 ## Escalations
 
 - `board/common/mos-required.fragment` on this branch's base (`fd6233f`) does
