@@ -1,10 +1,10 @@
 # PLAN-010 Plan B migration - systemd base + mosd management plane
 
-- **status**: draft
+- **status**: in progress
 - **createdAt**: 2026-08-17 20:30
 - **approvedAt**: 2026-08-17 20:30 (user decision; see research/init-strategy.md)
 - **completedAt**: -
-- **relatedTask**: (created per-milestone on dispatch)
+- **relatedTask**: RFCT-008 (M1); further tasks created per-milestone on dispatch
 
 ## Context
 
@@ -32,6 +32,9 @@ webd + kiosk (one UI, local/remote paths)    RAUC (native) + tough (TUF signing)
 
 ### M1 - systemd rootfs prototype boots on cx3576
 
+- **Status**: in progress — RFCT-008. Done criteria: image build + verify script green
+  locally; hardware boot to sshd over DHCP is the user's manual acceptance (pending
+  user validation).
 - buildkit-assembled Debian-based (bookworm/trixie slim) arm64 rootfs with
   systemd, systemd-networkd (DHCP default), sshd (dev profile), dropping onto
   the EXISTING boot chain (U-Boot -> extlinux -> BSP kernel + initramfs or

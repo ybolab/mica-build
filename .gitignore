@@ -1,3 +1,4 @@
 talos/
 out/
 board/*/out/
+_out/

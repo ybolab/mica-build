@@ -2,8 +2,8 @@
 
 > English | [中文](mosd.zh.md)
 >
-> Status: PROPOSAL — the two open decisions of PLAN-010 M2, with
-> recommendations. Becomes the mosd design record once decided.
+> Status: APPROVED 2026-08-18 (user) — D-Bus/zbus IPC and the settings model
+> below are the M2 contract.
 
 ## 1. What mosd is
 
