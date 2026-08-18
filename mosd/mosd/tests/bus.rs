@@ -45,6 +45,7 @@ trait Mosd {
     fn get_settings(&self, path: &str) -> zbus::Result<String>;
     fn set_settings(&self, path: &str, value_json: &str) -> zbus::Result<()>;
     fn get_state(&self, path: &str) -> zbus::Result<String>;
+    fn report_health(&self, component: &str, status: &str, detail: &str) -> zbus::Result<()>;
     #[zbus(signal)]
     fn settings_changed(&self, path: &str, value_json: &str) -> zbus::Result<()>;
 }
@@ -125,6 +126,17 @@ async fn bus_roundtrip() -> anyhow::Result<()> {
     let state = proxy.get_state("").await?;
     let state: serde_json::Value = serde_json::from_str(&state)?;
     assert_eq!(state["dry_run"], true);
+
+    // ReportHealth: the health gate's /var pressure report lands in the
+    // live-state tree and reads back through the existing GetState call.
+    proxy
+        .report_health("var", "degraded", "/var at 91% of capacity (threshold 85%)")
+        .await?;
+    let health = proxy.get_state("health.var").await?;
+    let health: serde_json::Value = serde_json::from_str(&health)?;
+    assert_eq!(health["status"], "degraded");
+    assert_eq!(health["detail"], "/var at 91% of capacity (threshold 85%)");
+    assert!(proxy.report_health("", "ok", "").await.is_err());
 
     assert!(proxy.get_settings("no.such.path").await.is_err());
     assert!(proxy.set_settings("hostname", "not json").await.is_err());
