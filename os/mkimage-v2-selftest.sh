@@ -40,7 +40,13 @@ echo "workspace ${WORK}"
 mkdir -p "${WORK}/bsp"
 fill "${WORK}/bsp/Image" $((4 * 1024 * 1024)) K
 fill "${WORK}/bsp/rk3576-src.dtb" $((64 * 1024)) D
-fill "${WORK}/bsp/u-boot-rockchip.bin" $((1024 * 1024)) U
+# Two distinct U-Boot blobs, mirroring the board's two variants. The v2 image
+# may only carry uboot-mos; the debug one exists here so the pairing guard has
+# something to compare against.
+fill "${WORK}/bsp/u-boot-mos.bin" $((1024 * 1024)) M
+fill "${WORK}/bsp/u-boot-debug.bin" $((1024 * 1024)) U
+UBOOT_FIXTURE="${WORK}/bsp/u-boot-mos.bin"
+UBOOT_DEBUG_FIXTURE="${WORK}/bsp/u-boot-debug.bin"
 
 # --- synthetic rootfs-verity inputs (stand-ins for os/rootfs/build-v2.sh) -----
 VERITY_MIB=4
@@ -114,7 +120,8 @@ run_assemble() {
         fi
         env KERNEL_IMAGE="${WORK}/bsp/Image" \
             DTB="${WORK}/bsp/rk3576-src.dtb" \
-            UBOOT="${WORK}/bsp/u-boot-rockchip.bin" \
+            UBOOT="${UBOOT_FIXTURE}" \
+            UBOOT_DEBUG="${UBOOT_DEBUG_FIXTURE}" \
             ROOTFS_VERITY_IMG="${WORK}/${verity}" \
             ROOTFS_VERITY_ENV="${WORK}/rootfs-verity.env" \
             BOOT_CMDLINE_A="${WORK}/boot-cmdline-a.txt" \
@@ -131,7 +138,8 @@ run_assemble() {
             -v "${WORK}:/t" \
             -e KERNEL_IMAGE=/t/bsp/Image \
             -e DTB=/t/bsp/rk3576-src.dtb \
-            -e UBOOT=/t/bsp/u-boot-rockchip.bin \
+            -e UBOOT="/t/${UBOOT_FIXTURE#"${WORK}/"}" \
+            -e UBOOT_DEBUG="/t/${UBOOT_DEBUG_FIXTURE#"${WORK}/"}" \
             -e ROOTFS_VERITY_IMG="/t/${verity}" \
             -e ROOTFS_VERITY_ENV=/t/rootfs-verity.env \
             -e BOOT_CMDLINE_A=/t/boot-cmdline-a.txt \
@@ -319,6 +327,12 @@ check "rootfs-a holds the verity payload" \
 check "rootfs-b is zero-filled" \
     "$(dd if="${IMG}" bs=1M skip="${ROOTFS_B_START_MIB}" count="${SLOT_MIB}" status=none | tr -d '\0' | wc -c)" \
     0
+check "sector ${UBOOT_SEEK_SECTOR} carries the uboot-mos blob, not the debug one" \
+    "$(dd if="${IMG}" bs=512 skip="${UBOOT_SEEK_SECTOR}" count=2048 status=none | cmp -s - <(head -c $((1024 * 1024)) "${UBOOT_FIXTURE}") && echo mos || echo other)" \
+    mos
+check "the two U-Boot fixtures really differ" \
+    "$(cmp -s "${UBOOT_FIXTURE}" "${UBOOT_DEBUG_FIXTURE}" && echo same || echo differ)" \
+    differ
 check "uenv pair is zero-filled" \
     "$(dd if="${IMG}" bs=1 skip="${UENV_A_OFFSET_BYTES}" count=$((UENV_B_OFFSET_BYTES - UENV_A_OFFSET_BYTES + UENV_SIZE_BYTES)) status=none | tr -d '\0' | wc -c)" \
     0
@@ -384,6 +398,22 @@ mkcmdline "${WORK}/boot-cmdline-b.txt" "$(lc "${ROOTFS_A_GUID}")"
 expect_failure "slot-b cmdline pointing at rootfs-a" rootfs-verity.img "" \
     "does not reference PARTUUID ${ROOTFS_B_GUID}" "found: dm-mod.create="
 mv "${WORK}/boot-cmdline-b.orig" "${WORK}/boot-cmdline-b.txt"
+
+# --- U-Boot variant pairing ---------------------------------------------------
+# The two board variants are not interchangeable and neither mistake announces
+# itself on hardware, so both have to be build-time errors.
+echo "--- missing uboot-mos ---"
+UBOOT_FIXTURE="${WORK}/bsp/u-boot-mos-absent.bin"
+expect_failure "uboot-mos blob absent" rootfs-verity.img "" \
+    "make -C board/cx3576 uboot-mos" "NOT a substitute" "CONFIG_ENV_IS_NOWHERE"
+UBOOT_FIXTURE="${WORK}/bsp/u-boot-mos.bin"
+
+echo "--- uboot-mos identical to the debug build ---"
+cp "${WORK}/bsp/u-boot-debug.bin" "${WORK}/bsp/u-boot-mos-copy.bin"
+UBOOT_FIXTURE="${WORK}/bsp/u-boot-mos-copy.bin"
+expect_failure "uboot-mos byte-identical to the debug build" rootfs-verity.img "" \
+    "byte-identical to the debug build" "do not copy or symlink"
+UBOOT_FIXTURE="${WORK}/bsp/u-boot-mos.bin"
 
 # The same oversize payload grows the slot instead when nothing is pinned.
 echo "--- floor-mode growth ---"
