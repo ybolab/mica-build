@@ -194,7 +194,7 @@ Packing the cx3576 root as squashfs+dm-verity and wiring up the read-only root.
 
 ## Dependencies
 
-- **blocked by**: RFCT-012 (layout v2 constants + v2 image assembler)
+- **blocked by**: RFCT-020 (layout v2 constants + v2 image assembler)
 - **blocks**: RFCT-014 (RAUC slot definitions), RFCT-015 (update flow +
   machine-id oneshot), RFCT-017 (v2 image contract verification),
   RFCT-018 (U-Boot A/B handshake)

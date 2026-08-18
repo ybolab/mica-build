@@ -26,7 +26,7 @@ Scope covered by the document:
    paste-able defconfig fragment plus the matching `/etc/fw_env.config`.
 4. Environment variable contract against RAUC's actual `uboot` backend.
 5. Slot selection: options weighed, `boot.cmd` source, `mkimage` invocation,
-   composition with `extlinux.conf`, handoff to RFCT-012's assembler.
+   composition with `extlinux.conf`, handoff to RFCT-020's assembler.
 6. machine-id persisted through the U-Boot environment (new M4 scope).
 7. Kernel command line / dm-verity contract, verified against the 6.1.115 tree.
 8. Bring-up checklist, risks, and the condensed requirements summary.
@@ -77,7 +77,7 @@ Scope covered by the document:
   because eMMC discovery runs from a delayed workqueue that
   `wait_for_device_probe()` does not cover.
 - `mkimage -T script` stamps a wall-clock timestamp unless `SOURCE_DATE_EPOCH`
-  is set — a determinism trap for RFCT-012's assembler.
+  is set — a determinism trap for RFCT-020's assembler.
 - In Debian bookworm `fw_printenv`/`fw_setenv` come from `libubootenv-tool`, not
   `u-boot-tools`, and no `/etc/fw_env.config` is shipped by default.
 
@@ -126,8 +126,8 @@ Specifying the U-Boot A/B handshake contract for the custom mainline build.
 
 ## Dependencies
 
-- **blocked by**: RFCT-012 (layout constants file — absent on this base, so the
+- **blocked by**: RFCT-020 (layout constants file — absent on this base, so the
   document uses the campaign literals and states that it must be regenerated)
-- **blocks**: RFCT-012 (assembler must ship `boot.scr` + `mos-verity.env`),
+- **blocks**: RFCT-020 (assembler must ship `boot.scr` + `mos-verity.env`),
   RFCT-014 (`/etc/fw_env.config`, `libubootenv-tool`, empty `/etc/machine-id`),
   RFCT-015 (machine-id oneshot), and the user's custom U-Boot build
