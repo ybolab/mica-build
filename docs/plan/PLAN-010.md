@@ -46,6 +46,10 @@ webd + kiosk (one UI, local/remote paths)    RAUC (native) + tough (TUF signing)
 
 ### M2 - mosd skeleton (Rust)
 
+- **Status**: in progress — RFCT-009. Done criteria: `./mosd/hack/check.sh` green;
+  `make os-image-cx3576` + `make os-verify-cx3576` green with mosd included;
+  on-device "settings applied live + survive reboot" is the user's hardware
+  acceptance (out of scope for the task).
 - Workspace per pma-rust baseline; state tree + settings persistence
   (STATE partition), IPC endpoint, first two reconcilers: hostname, network
   (rendering networkd units).
