@@ -381,19 +381,24 @@ check_boot_slot() {
 
     local volid
     volid="$(minfo -i "${fatimg}" 2>/dev/null | sed -n 's/^serial number: //p' | tr -d ' ' || true)"
-    eq_ci "BOOT-${slot} FAT volume id" "${volid}" "${want_volid}"
+    # FACTORY ONLY. mkfs.vfat --invariant gives a bundle's boot.vfat the default
+    # volume id 1234ABCD, so an updated slot legitimately differs. Nothing
+    # resolves a boot slot by volume id, and RAUC writes partition CONTENTS
+    # without touching the GPT, so the PARTLABEL and partition GUID (asserted
+    # above) survive an install and remain the real identity.
+    eq_ci "factory: BOOT-${slot} FAT volume id" "${volid}" "${want_volid}"
 
-    # FACTORY IMAGE ONLY: a RAUC-installed boot slot gets the neutral label
-    # "BOOT", because one bundle payload is installed into whichever slot is
-    # inactive. Nothing addresses a boot slot by label (boot.scr uses
-    # "mmc 0:${bootpart}"), so this is a factory-assembly assertion, not a
-    # runtime contract.
+    # FACTORY ONLY, same reason as the volume id: a RAUC-installed boot slot
+    # gets the neutral label "BOOT". Nothing addresses a boot slot by label
+    # (boot.scr uses "mmc 0:${bootpart}"), so this is a factory-assembly
+    # assertion, not a runtime contract. Relaxing it belongs in a future
+    # --post-update mode, not here.
     local label
     label="$(mlabel -s -i "${fatimg}" :: 2>/dev/null | sed -n 's/^ *Volume label is //p' | sed 's/ *$//' || true)"
     if [ "${label}" = "${want_label}" ]; then
-        pass "BOOT-${slot} FAT volume label is '${want_label}' (factory image only; an updated slot is labelled 'BOOT')"
+        pass "factory: BOOT-${slot} FAT volume label is '${want_label}' (an updated slot legitimately reads 'BOOT')"
     else
-        fail "BOOT-${slot} FAT volume label is '${label}', expected '${want_label}' on a factory image"
+        fail "factory: BOOT-${slot} FAT volume label is '${label}', expected '${want_label}' on a factory image"
     fi
 
     local listing
@@ -438,9 +443,9 @@ check_boot_slot() {
         elif [ ! -f "${src}" ]; then
             fail "BOOT-${slot} ${f} compare source not found: ${src}"
         elif cmp -s "${out}" "${src}"; then
-            pass "BOOT-${slot} ${f} matches ${src}"
+            pass "factory: BOOT-${slot} ${f} matches the local BSP artifact ${src}"
         else
-            fail "BOOT-${slot} ${f} differs from ${src}"
+            fail "factory: BOOT-${slot} ${f} differs from the local BSP artifact ${src}"
         fi
     done
 
@@ -454,9 +459,9 @@ check_boot_slot B "${BOOT_B_IMG}" "${BOOT_B_OFFSET_BYTES}" "${BOOT_B_FAT_LABEL}"
 # boot.scr is deliberately identical in both slots: whichever copy U-Boot runs
 # may boot either slot, so they must not diverge.
 if [ -f "${TMP}/scr-A" ] && [ -f "${TMP}/scr-B" ] && cmp -s "${TMP}/scr-A" "${TMP}/scr-B"; then
-    pass "${BOOT_SCRIPT_NAME} is byte-identical in BOOT-A and BOOT-B"
+    pass "factory: ${BOOT_SCRIPT_NAME} is byte-identical in BOOT-A and BOOT-B"
 else
-    fail "${BOOT_SCRIPT_NAME} differs between BOOT-A and BOOT-B (or is missing); the same script must be able to boot either slot"
+    fail "factory: ${BOOT_SCRIPT_NAME} differs between BOOT-A and BOOT-B (or is missing); the same script must be able to boot either slot"
 fi
 
 scr_magic="$(od -An -tx1 -N4 "${TMP}/scr-A" 2>/dev/null | tr -d ' \n' || true)"
@@ -551,7 +556,9 @@ ROOTFS_VERITY_ENV="${REPO_ROOT}/_out/cx3576/rootfs-verity.env"
 if [ ! -f "${ROOTFS_VERITY_ENV}" ]; then
     fail "verity parameter file not found: ${ROOTFS_VERITY_ENV} (produce it with os/rootfs/build-v2.sh)"
 else
-    eq_ci "root hash in BOOT-A's cmdline vs rootfs-verity.env" "${cmdline_hash}" "$(env_file_get "${ROOTFS_VERITY_ENV}" VERITY_ROOT_HASH)"
+    # FACTORY ONLY: after an update, ROOTFS-A may hold a different release than
+    # the rootfs-verity.env sitting in the local _out/ tree.
+    eq_ci "factory: root hash in BOOT-A's cmdline vs the locally built rootfs-verity.env" "${cmdline_hash}" "$(env_file_get "${ROOTFS_VERITY_ENV}" VERITY_ROOT_HASH)"
 fi
 
 eq_ci "verity salt on the cmdline" "${cmdline_salt}" "${VERITY_SALT}"
@@ -609,9 +616,9 @@ fi
 # ROOTFS-B is zero-filled at build: the first update is what fills it.
 rootfs_b_nonzero="$(dd if="${IMG}" bs=1M skip="${rootfs_b_start_mib}" count="${SLOT_MIB}" status=none 2>/dev/null | tr -d '\0' | wc -c || echo -1)"
 if [ "${SLOT_MIB}" -gt 0 ] && [ "${rootfs_b_nonzero}" = "0" ]; then
-    pass "ROOTFS-B is entirely zero (${SLOT_MIB} MiB; the first update fills it)"
+    pass "factory: ROOTFS-B is entirely zero (${SLOT_MIB} MiB; the first update fills it)"
 else
-    fail "ROOTFS-B contains ${rootfs_b_nonzero} non-zero bytes, expected none"
+    fail "factory: ROOTFS-B contains ${rootfs_b_nonzero} non-zero bytes, expected none"
 fi
 
 # ===========================================================================
@@ -622,9 +629,9 @@ for pair in "A:${UENV_A_OFFSET_BYTES}" "B:${UENV_B_OFFSET_BYTES}"; do
     IFS=':' read -r slot offset <<<"${pair}"
     nonzero="$(dd if="${IMG}" skip="${offset}" count="${UENV_SIZE_BYTES}" iflag=skip_bytes,count_bytes status=none 2>/dev/null | tr -d '\0' | wc -c || echo -1)"
     if [ "${nonzero}" = "0" ]; then
-        pass "UENV-${slot} is entirely zero ($((UENV_SIZE_BYTES / 1024)) KiB at ${offset} bytes; U-Boot populates it on first boot)"
+        pass "factory: UENV-${slot} is entirely zero ($((UENV_SIZE_BYTES / 1024)) KiB at ${offset} bytes; U-Boot populates it on first boot)"
     else
-        fail "UENV-${slot} contains ${nonzero} non-zero bytes, expected none"
+        fail "factory: UENV-${slot} contains ${nonzero} non-zero bytes, expected none"
     fi
 done
 
@@ -680,9 +687,9 @@ check_ext4() {
     entries="$(debugfs -R "ls -p /" "${img}" 2>/dev/null |
         awk -F/ 'NF >= 7 && $6 != "." && $6 != ".." && $6 != "lost+found" {print $6}' || true)"
     if [ -z "${entries}" ]; then
-        pass "${name} is empty at build (nothing but lost+found)"
+        pass "factory: ${name} is empty at build (nothing but lost+found)"
     else
-        fail "${name} is not empty at build; it contains: $(echo "${entries}" | tr '\n' ' ')"
+        fail "factory: ${name} is not empty at build; it contains: $(echo "${entries}" | tr '\n' ' ')"
     fi
 }
 
@@ -905,6 +912,88 @@ fi
 # its absence is correct, and `rauc install` fails closed until one is added.
 sq_grep /etc/rauc/system.conf '^path=/etc/rauc/keyring\.pem$' \
     "RAUC keyring path is /etc/rauc/keyring.pem (the keyring itself is deliberately not shipped)"
+
+# --- M4 integration: RAUC must be able to identify the BOOTED slot ---
+#
+# os/health/mos-health reads RAUC_SYSTEM_BOOTED_SLOT out of
+# `rauc status --output-format=shell` and exits 0 early when it is empty. If
+# rauc can never identify the booted slot the gate silently no-ops forever:
+# `rauc status mark-good` is never reached, the installed slot is never
+# confirmed, and U-Boot rolls back once the boot credits are spent. A health
+# gate that always passes is worse than none, so the preconditions are checked
+# here rather than assumed.
+#
+# rauc 1.8 get_cmdline_bootname() (src/context.c) reads /proc/cmdline and takes
+# the FIRST of: `rauc.external`, `rauc.slot=<x>`, barebox bootstate (n/a for
+# bootloader=uboot), then `root=<x>`. determine_slot_states() (src/install.c)
+# then matches that string against each slot's bootname, its slot name, or
+# realpath(device) -- and errors with "Did not find booted slot" if none match.
+#
+# A v2 image boots `root=/dev/dm-0`, the verity device. That is not a bootname
+# ("A"/"B"), not a slot name ("rootfs.0"/"rootfs.1"), and not the realpath of
+# any slot device (/dev/mmcblk0pN), so the root= fallback CANNOT work here and
+# `rauc.slot=` is required. This is a property of the boot path, not of RAUC.
+sq_grep /etc/rauc/system.conf '^bootloader=uboot$' \
+    "RAUC system.conf selects the uboot bootloader backend"
+if [ "$(grep -c '^bootname=[AB]$' "${RAUC_CONF}" 2>/dev/null || true)" = "2" ]; then
+    pass "RAUC system.conf gives both rootfs slots a bootname (A and B), so a booted slot can be named at all"
+else
+    fail "RAUC system.conf must give both rootfs slots a bootname=A / bootname=B; without one, rauc has no bootable slot group"
+fi
+
+# The effective cmdline is assembled by boot.scr from its own rootargs plus the
+# per-slot verity env, so either may legitimately carry rauc.slot=.
+for pair in "A:${ROOTFS_A_GUID}" "B:${ROOTFS_B_GUID}"; do
+    IFS=':' read -r slot guid <<<"${pair}"
+    cmdline_src="$(cat "${TMP}/scr-A" "${TMP}/verity-${slot}.env" 2>/dev/null | tr -d '\0' || true)"
+    root_arg="$(printf '%s' "${cmdline_src}" | grep -ao 'root=[^ "]*' | head -n1 || true)"
+    if printf '%s' "${cmdline_src}" | grep -aqE "rauc\.slot=(\\\$\{bootslot\}|${slot})"; then
+        pass "slot ${slot}: the boot path sets rauc.slot=, so rauc can identify the booted slot"
+    elif [ "$(lc "${root_arg}")" = "root=partuuid=$(lc "${guid}")" ]; then
+        pass "slot ${slot}: root= names the slot's own PARTUUID, so rauc's root= fallback identifies the booted slot"
+    else
+        fail "slot ${slot}: the boot path sets neither rauc.slot= nor a root= naming the slot device (found '${root_arg:-none}'). rauc 1.8 derives the booted slot from rauc.slot= or root= and matches it against bootname / slot name / realpath(device); '${root_arg:-none}' matches none of those, so \`rauc status\` fails with \"Did not find booted slot\", RAUC_SYSTEM_BOOTED_SLOT is never emitted, mos-health exits 0 without ever running \`rauc status mark-good\`, and every update rolls back when the boot credits run out. Fix belongs in the boot path (os/boot/cx3576-boot.cmd), NOT here"
+    fi
+done
+
+# The variable the shipped health gate parses must be one rauc actually emits.
+# Verified empirically against rauc 1.8 (the version the Debian bookworm
+# allowlist installs) driving THIS system.conf: with a slot matching the booted
+# root device, `rauc status --output-format=shell` emits
+#
+#   RAUC_SYSTEM_COMPATIBLE, RAUC_SYSTEM_VARIANT,
+#   RAUC_SYSTEM_BOOTED_BOOTNAME, RAUC_SYSTEM_SLOTS
+#
+# and per-slot RAUC_SLOT_STATE_n (the booted one reads 'booted'). There is NO
+# RAUC_SYSTEM_BOOTED_SLOT in the output under any configuration, so a gate that
+# greps for it always reads empty and always exits 0 without reaching
+# `rauc status mark-good` -- independently of the rauc.slot= problem above.
+if [ ! -f "${ROOT}/usr/lib/mos/mos-health" ]; then
+    fail "/usr/lib/mos/mos-health missing, so its RAUC status parsing cannot be checked"
+elif grep -q 'RAUC_SYSTEM_BOOTED_SLOT' "${ROOT}/usr/lib/mos/mos-health"; then
+    fail "mos-health parses RAUC_SYSTEM_BOOTED_SLOT, which rauc 1.8 NEVER emits. \`rauc status --output-format=shell\` emits RAUC_SYSTEM_BOOTED_BOOTNAME (plus per-slot RAUC_SLOT_STATE_n='booted'); verified against rauc 1.8 driving this exact system.conf. The gate therefore always reads an empty slot, always exits 0 and never reaches \`rauc status mark-good\`, so every update rolls back. Fix belongs in os/health/mos-health, NOT here"
+else
+    pass "mos-health does not depend on the non-existent RAUC_SYSTEM_BOOTED_SLOT variable"
+fi
+
+# --- M4 integration: webd's health probe needs an HTTP client ---
+# mos-health probe c calls curl (or wget) against https://127.0.0.1/healthz and
+# logs "SKIP (no curl or wget in the image)" when neither exists -- a silent
+# hole in the gate. curl was added to the rootfs allowlist deliberately (commit
+# 4c1180c, "ship curl in the v2 rootfs so the webd health probe stops
+# skipping"), so its absence is now a regression, not a neutral fact.
+http_client=""
+for c in /usr/bin/curl /usr/bin/wget /bin/curl /bin/wget; do
+    if [ -f "${ROOT}${c}" ]; then
+        http_client="${c}"
+        break
+    fi
+done
+if [ -n "${http_client}" ]; then
+    pass "webd health probe is LIVE: ${http_client} is in the image (mos-health probe c would SKIP without an HTTP client)"
+else
+    fail "no curl or wget in the image, so mos-health probe c degrades to 'SKIP (no curl or wget in the image)' and webd is never actually probed by the health gate"
+fi
 
 # --- M4: U-Boot environment access from Linux ---
 sq_regular /etc/fw_env.config

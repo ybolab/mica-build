@@ -1,6 +1,6 @@
 # RFCT-017 Image contract verification for layout v2 (cx3576)
 
-- **status**: implementation complete
+- **status**: implementation complete — verifier RED on two REPORTED image defects (not verifier bugs)
 - **priority**: P1
 - **owner**: ai-agent
 - **createdAt**: 2026-08-18 03:39
@@ -34,18 +34,18 @@ from the image rather than hardcoded, because the hwinit set grows and a
 hardcoded list is precisely how a newly added unit falls outside coverage
 (`mos-mac` and `mos-gadget` shipped disabled once already for that reason).
 
-## Check inventory — 207 checks
+## Check inventory — 213 checks
 
 | # | Category | Checks |
 |---|---|---|
 | 0 | Default path is the `-latest` symlink | 1 |
 | 1 | GPT: verify, disk GUID, count, per-partition label/typecode/GUID/size/start/attrs (10 x 6), slot A==B, slot floor, image size formula, DATA last + tail slack | 67 |
 | 2 | Raw area: uboot-mos match, debug-variant pairing guard, fits below UENV-A | 3 |
-| 3 | Boot slots: FAT32 sig, volume id, volume label, 4 files present, no extlinux, no initramfs, kernel+dtb byte-compare (x2 slots), plus boot.scr A==B, uImage magic, per-slot PARTUUID, A/B differ only by PARTUUID | 27 |
+| 3 | Boot slots (factory-scoped where noted): FAT32 sig, volume id, volume label, 4 files present, no extlinux, no initramfs, kernel+dtb byte-compare (x2 slots), plus boot.scr A==B, uImage magic, per-slot PARTUUID, A/B differ only by PARTUUID | 27 |
 | 4 | Verity / RO: `veritysetup verify`, hash vs `rootfs-verity.env`, salt, `dm-mod.waitfor=`, squashfs magic + zstd, no ext4 superblock, dm table `ro`, boot.scr root args, ROOTFS-B all-zero | 10 |
 | 5 | UENV-A / UENV-B all-zero | 2 |
 | 6 | META/STATE/EPHEMERAL/DATA: label, UUID, no `orphan_file`, fs fills partition, `e2fsck -fn`, empty at build (4 x 6) | 24 |
-| 7 | Packed rootfs contents (see below) | 73 |
+| 7 | Packed rootfs contents (see below) | 79 |
 
 Category 7 covers: squashfs unpack; kernel modules and firmware files/symlinks;
 base services (ssh, networkd, DHCP, journald `Storage=volatile`); mosd and webd
@@ -57,6 +57,34 @@ slot PARTUUIDs, statusfile and keyring path, `/etc/fw_env.config`, the health
 gate and machine-id oneshots, the `/etc/fstab` storage tiers, `fstrim.timer`,
 the repart definition set, the wipe-safety binds and the `/var` fill-up
 policies.
+
+### Factory-only scope (amendment)
+
+A RAUC bundle carries ONE boot payload, installed into whichever boot slot is
+inactive, so nothing in it can be slot-specific. After the first `rauc install`
+the written slot legitimately reads FAT label `BOOT` and volume id `1234ABCD`
+(the `mkfs.vfat --invariant` default) instead of the pinned `BOOT-A`/`C3576003`.
+That is not a defect: nothing resolves a boot slot by label or volume id
+(`boot.cmd` uses `mmc 0:${bootpart}` from the BOOT_ORDER walk), and RAUC writes
+partition CONTENTS without touching the GPT, so the PARTLABELs and the pinned
+partition GUIDs survive an install and remain the real identity.
+
+The pinned values are still asserted; the checks are simply NAMED `factory: ...`
+so the scope is visible in the output. They are deliberately NOT relaxed to
+accept both spellings under one name — that would weaken the factory assertion
+to buy tolerance nothing currently asks for. Relaxing belongs in a future
+`--post-update` mode, which is explicitly not built here.
+
+17 checks carry the `factory:` prefix: both slots' FAT label and volume id,
+both slots' kernel/dtb match against the LOCAL BSP artifacts, `boot.scr`
+identical across slots, the root hash vs the locally built `rootfs-verity.env`,
+ROOTFS-B all-zero, both UENV partitions all-zero, and the four ext4 partitions
+being empty at build.
+
+The per-slot verity env files are the counter-example and are asserted
+UNCONDITIONALLY: `mos-verity-a.env` and `mos-verity-b.env` are present in a
+bundle payload by design — that is precisely why the update path works — so
+their presence and their own-PARTUUID contents are not factory-scoped.
 
 ### Assertions worth naming explicitly
 
@@ -100,6 +128,84 @@ policies.
 - **RAUC keyring.** Only the `path=/etc/rauc/keyring.pem` line is asserted.
   The keyring is deliberately not shipped and not committed; `rauc install`
   fails closed until one is provisioned, and its absence is not a defect.
+
+## Two integration findings — REPORTED, not fixed
+
+Both were carried over from RFCT-015 as "nobody has verified this end to end".
+Both were verified here, both FAIL, and both are defects in producers this task
+does not own. `os/verify-image-v2.sh` now asserts them, so
+`make os-verify-cx3576-v2` is RED until the owners fix them. That is the
+intended outcome: a verifier that stays green on a broken artifact is worthless.
+
+### Finding 1 — `rauc status` cannot identify the booted slot (boot path)
+
+`os/health/mos-health` exits 0 early when it cannot read a booted slot, so the
+gate silently no-ops, `rauc status mark-good` is never reached, the installed
+slot is never confirmed, and U-Boot rolls back once the boot credits are spent.
+
+rauc 1.8 `get_cmdline_bootname()` (`src/context.c`) reads `/proc/cmdline` and
+takes the first of `rauc.external`, `rauc.slot=<x>`, the barebox bootstate
+(n/a for `bootloader=uboot`), then `root=<x>`. `determine_slot_states()`
+(`src/install.c`) matches that string against each slot's `bootname`, its slot
+name, or `realpath(device)`, and errors with "Did not find booted slot" if none
+match.
+
+A v2 image boots `root=/dev/dm-0`. That is not a bootname (`A`/`B`), not a slot
+name (`rootfs.0`/`rootfs.1`), and not the realpath of any slot device
+(`/dev/mmcblk0pN`), so the `root=` fallback cannot work and `rauc.slot=` is
+REQUIRED. Neither `os/boot/cx3576-boot.cmd` nor the per-slot verity env sets it.
+
+Reproduced against rauc 1.8 driving the shipped `system.conf`, with a booted
+root device matching no configured slot:
+
+```
+Error retrieving slot status via D-Bus: error calling D-Bus method
+"GetSlotStatus": Failed to determine slot states: Did not find booted slot
+(matching '/dev/disk/by-uuid/f1e71289-...')
+```
+
+`RAUC_SYSTEM_BOOTED_SLOT` lines emitted: 0.
+
+Fix belongs in the boot path (`os/boot/cx3576-boot.cmd`, RFCT-018): append
+`rauc.slot=${bootslot}` to `bootargs`, where `bootslot` is already `A`/`B`.
+
+### Finding 2 — the health gate parses a variable rauc never emits
+
+Independent of finding 1, and it survives fixing it. With a slot that DOES
+match the booted root device, `rauc status --output-format=shell` under rauc
+1.8 and this `system.conf` emits exactly:
+
+```
+RAUC_SYSTEM_COMPATIBLE='mos-cx3576'
+RAUC_SYSTEM_VARIANT=''
+RAUC_SYSTEM_BOOTED_BOOTNAME='/dev/slotA'
+RAUC_SYSTEM_SLOTS='rootfs.1 boot.0 rootfs.0 boot.1'
+```
+
+plus per-slot `RAUC_SLOT_STATE_n` (the booted one reads `booted`). There is no
+`RAUC_SYSTEM_BOOTED_SLOT` in the output under any configuration — but that is
+exactly what `mos-health` greps for:
+
+```
+BOOTED=$(run rauc status --output-format=shell 2>/dev/null |
+    sed -n 's/^RAUC_SYSTEM_BOOTED_SLOT=//p' | head -n1 | tr -d "\"'")
+```
+
+So `BOOTED` is always empty, the gate always logs "rauc reports no booted slot"
+and exits 0, and `mark-good` is never reached — even on a correctly booting
+device. Fix belongs in `os/health/mos-health` (RFCT-015): read
+`RAUC_SYSTEM_BOOTED_BOOTNAME`, or derive the slot from
+`RAUC_SLOT_STATE_n='booted'`.
+
+### webd health probe — no longer a gap
+
+The amendment expected the webd probe to SKIP because no HTTP client was in the
+rootfs allowlist. That premise is stale on this base: commit `4c1180c` ("ship
+curl in the v2 rootfs so the webd health probe stops skipping") added `curl`,
+and `/usr/bin/curl` is present in the packed image. The check therefore asserts
+the probe is LIVE and FAILS if the HTTP client disappears, rather than passing
+either way — shipping curl was a deliberate decision, so losing it is a
+regression, not a neutral fact.
 
 ## Known limitation — squashfs file capabilities
 
@@ -155,7 +261,10 @@ Built and verified against a real artifact on branch head `8178d57`, with
 `BOARD_DIR=/srv/ai/mos/board/cx3576 MOS_ROOTFS_SLOT_MIB=256`:
 
 - `make os-image-cx3576-v2` + `make os-verify-cx3576-v2` —
-  **RESULT: PASS (207/207 checks)**. Image 1378877440 bytes (1315 MiB apparent,
+  **RESULT: FAIL (210/213 checks)**, the three FAILs being the two integration
+  findings above (slot A and slot B `rauc.slot=`, plus the `mos-health`
+  variable-name mismatch). Every other assertion passes. Before the amendment
+  added those three checks the same image scored **PASS (207/207)**. Image 1378877440 bytes (1315 MiB apparent,
   ~161 MiB on disk, sparse); ten partitions; rootfs payload 53 MiB in a pinned
   256 MiB slot; verity root hash
   `5c0b6c7ec07594310502437ebe36dcb33cad7fedca4c9d5fcf851ecd2a030be8`.
