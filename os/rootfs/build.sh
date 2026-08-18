@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Build the Debian systemd arm64 rootfs image for cx3576.
-# Usage: [BOARD_DIR=...] [ROOT_PASSWORD=...] bash os/rootfs/build.sh
+# Usage: [BOARD_DIR=...] [ROOT_PASSWORD=...] [WITH_MOSD=0|1] bash os/rootfs/build.sh
 set -euo pipefail
 
 SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
@@ -8,6 +8,7 @@ REPO_ROOT=$(cd "$SCRIPT_DIR/../.." && pwd)
 BOARD_DIR=${BOARD_DIR:-"$REPO_ROOT/board/cx3576"}
 OUT_DIR="$REPO_ROOT/_out/cx3576"
 SIZE_BUDGET_MB=400
+WITH_MOSD=${WITH_MOSD:-1}
 
 MODULES_TAR="$BOARD_DIR/out/kernel/modules.tar"
 if [ ! -f "$MODULES_TAR" ]; then
@@ -19,6 +20,21 @@ fi
 
 mkdir -p "$OUT_DIR"
 cp "$MODULES_TAR" "$OUT_DIR/modules.tar"
+
+# mosd: cross-build and stage into the context like modules.tar. The staged
+# directory always exists (empty when WITH_MOSD=0) so the Dockerfile COPY works
+# on both paths.
+MOSD_STAGE="$OUT_DIR/mosd"
+rm -rf "$MOSD_STAGE"
+mkdir -p "$MOSD_STAGE"
+if [ "$WITH_MOSD" = "1" ]; then
+    bash "$REPO_ROOT/mosd/hack/build-aarch64.sh"
+    cp "$REPO_ROOT/mosd/target/aarch64-unknown-linux-gnu/release/mosd" "$MOSD_STAGE/mosd"
+    cp "$REPO_ROOT/mosd/dist/mosd.service" "$MOSD_STAGE/mosd.service"
+    cp "$REPO_ROOT/mosd/dist/com.mos.mosd.conf" "$MOSD_STAGE/com.mos.mosd.conf"
+else
+    echo "note: WITH_MOSD=0; building rootfs without mosd"
+fi
 
 # If the current builder cannot run linux/arm64 (e.g. host binfmt registration
 # is unavailable), fall back to a docker-container builder: its buildkit image
@@ -38,6 +54,8 @@ if ! docker buildx build \
         --platform linux/arm64 \
         -f "$SCRIPT_DIR/Dockerfile" \
         --build-arg MODULES_TAR=_out/cx3576/modules.tar \
+        --build-arg MOSD_DIR=_out/cx3576/mosd \
+        --build-arg WITH_MOSD="$WITH_MOSD" \
         ${ROOT_PASSWORD:+--build-arg ROOT_PASSWORD="$ROOT_PASSWORD"} \
         --target artifact \
         --output "type=local,dest=$OUT_DIR" \
