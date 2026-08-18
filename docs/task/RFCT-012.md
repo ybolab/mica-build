@@ -5,7 +5,7 @@
 - **owner**: ai-agent
 - **createdAt**: 2026-08-18 03:39
 - **claimedAt**: 2026-08-18 03:39
-- **completedAt**: 2026-08-18 06:10
+- **completedAt**: 2026-08-18 07:05
 
 ## Description
 
@@ -92,6 +92,26 @@ Design points worth recording:
   than being synthesised: RFCT-018 established it exists on 6.1.115 and is
   required, because `dm_init_init()` runs at `late_initcall` and its
   `wait_for_device_probe()` does not cover eMMC card discovery.
+- **GUID comparisons fold case; GUID *values* are never rewritten.** GPT
+  tooling (sgdisk, and therefore `os/layout/cx3576-v2.env`) spells GUIDs
+  uppercase; udev/libblkid spell `/dev/disk/by-partuuid/` names — and hence the
+  `PARTUUID=` forms a kernel cmdline must use — lowercase. Both denote the same
+  GUID. The first integration run against RFCT-013's real output failed here:
+  the assembler compared the extracted verity table against the uppercase
+  layout constant literally and rejected a perfectly correct lowercase cmdline.
+  The guard was right to exist (it caught a real class of error at build time
+  rather than on hardware) but wrong to compare literally. Every identifier
+  comparison in `os/mkimage-v2.sh` now folds case through a single `lc()`
+  helper — the slot PARTUUID in the verity table, the `dm-mod.waitfor=`
+  PARTUUID, the root hash and the verity salt — so the rule is stated once and
+  cannot drift between call sites. The producer's spelling is passed through
+  into `mos-verity.env` verbatim; nothing is normalised on the way. RFCT-013's
+  lowercase choice is correct and must not be "fixed": systemd's
+  fstab-generator does not normalise case either, so a lowercase cmdline is
+  what actually resolves on the device.
+  The same note now sits beside the GUID constants in the layout env, because
+  RFCT-014 (RAUC `system.conf` slot device paths) and RFCT-017 (verifier
+  assertions) will hit it too.
 - **Boot-attempt credits are pinned to 1..9.** RAUC writes `BOOT_x_LEFT` with
   `%x` and reads it base 16, while U-Boot's `test -gt` parses decimal; the two
   radices agree only for 0-9. `BOOT_ATTEMPTS_MIN/MAX/DEFAULT` live in the
@@ -167,6 +187,8 @@ Consumed as documented interfaces, not implemented here:
 - [x] Per-slot `mos-verity.env` derived from the slot's cmdline, with
       PARTUUID / root-hash / `dm-mod.waitfor=` assertions
 - [x] Boot-attempt credits constrained to 1..9 and documented
+- [x] All GUID/hash comparisons folded to one case via a single helper, with
+      the uppercase/lowercase rule recorded beside the layout constants
 
 ## Boot-path dependency (expected non-booting state)
 
@@ -193,7 +215,7 @@ boot, look healthy, and never honour `BOOT_ORDER` or roll back.
   RFCT-013 lands - the expected state, not a defect.
 - `bash os/mkimage-v2-selftest.sh` reports `RESULT: PASS`.
 
-## Verification (2026-08-18, re-run after the boot.scr rework)
+## Verification (2026-08-18, re-run after the GUID-case rework)
 
 - `bash -n os/mkimage-v2.sh` and `bash -n os/mkimage-v2-selftest.sh` clean.
   `shellcheck -x -P os -s bash os/mkimage-v2.sh os/mkimage-v2-selftest.sh`
@@ -204,7 +226,7 @@ boot, look healthy, and never honour `BOOT_ORDER` or roll back.
 - `make os-image-cx3576-v2` -> `bash: os/rootfs/build-v2.sh: No such file or
   directory`; `bash os/mkimage-v2.sh` alone -> `error: .../rootfs-verity.img
   not found; run 'bash os/rootfs/build-v2.sh' first`.
-- `bash os/mkimage-v2-selftest.sh` - `RESULT: PASS`, 96 checks: two
+- `bash os/mkimage-v2-selftest.sh` - `RESULT: PASS`, 99 checks: two
   consecutive assemblies byte-identical, image 803 MiB (146 + 2*256 + 16 + 64
   + 64 + 1), all nine partitions matching the pinned labels / unique GUIDs /
   typecodes / start sectors / sizes, both FAT slots carrying Image + dtb +
@@ -217,14 +239,32 @@ boot, look healthy, and never honour `BOOT_ORDER` or roll back.
   `dm-mod.waitfor=`, and the two slots' files differ. Refusals: a cmdline with
   `dm-mod.waitfor=` stripped fails as a cross-task mismatch naming
   `os/rootfs/build-v2.sh`, and a slot-B cmdline pointing at rootfs-A's PARTUUID
-  fails naming the expected GUID. Slot sizing is covered in all three shapes: a pin of 64
+  fails naming the expected GUID and echoing the table it found. GUID case is a
+  standing regression case: the slot-A fixture uses lowercase PARTUUIDs (the
+  shape the real producer emits) and the slot-B fixture uppercase, both are
+  accepted, both survive into `mos-verity.env` verbatim, and the wrong-slot
+  rejection is driven with a lowercase GUID so it proves case folding did not
+  simply disable the guard. Slot sizing is covered in all three shapes: a pin of 64
   MiB produces a 419 MiB image with rootfs-a exactly 64 MiB, rootfs-b at 210
   MiB and meta at 274 MiB while uenv-a stays at 16 MiB; a pin of 2 MiB against
   a 4 MiB rootfs exits non-zero naming the pin, the size, the 2 MiB shortfall
   and the freeze; a pin of 256 MiB (the built-in default value) against a 300
   MiB rootfs likewise refuses, proving the mode is chosen by supply and not by
   value; and the same 300 MiB rootfs unpinned grows the slot to 384 MiB.
-- Sparseness: the 803 MiB image occupies 278 MiB on disk.
+- End-to-end integration against RFCT-013's real outputs:
+  `BOARD_DIR=/srv/ai/mos/board/cx3576 MOS_ROOTFS_SLOT_MIB=256 make
+  os-image-cx3576-v2` succeeds. Verity payload 53 MiB (55574528 bytes,
+  13447 data blocks, root hash
+  `bb710ec6090a6acdca98765f0f646a1b89bab0145ab18d92443e4a8fd311acd7`),
+  pinned slot 256 MiB, assembled image 842006528 bytes (803 MiB).
+  `sgdisk --verify`: "No problems found. 38589 free sectors (18.8 MiB)
+  available in 4 segments, the largest of which is 32734 (16.0 MiB) in size."
+  Both boot slots hold exactly `Image`, `boot.scr`, `mos-verity.env`,
+  `rk3576-src.dtb` — no extlinux — with slot A's verity args naming
+  `PARTUUID=5ac35760-...-000000000005` and slot B's
+  `...-000000000006`, lowercase as emitted.
+- Sparseness: the 803 MiB image occupies 278 MiB on disk (synthetic selftest
+  payload); the real 803 MiB image occupies 335 MiB.
 - `mkimage` determinism confirmed directly: two compiles of the same
   `boot.cmd` two seconds apart differ at byte 5 without `SOURCE_DATE_EPOCH` and
   are byte-identical with it.

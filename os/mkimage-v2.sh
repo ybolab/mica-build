@@ -71,6 +71,15 @@ env_file_get() {
     sed -n "s/^$2=//p" "$1" | tail -n1
 }
 
+# GPT tooling — sgdisk, and therefore os/layout/cx3576-v2.env — writes GUIDs in
+# uppercase, while udev/libblkid write the /dev/disk/by-partuuid/ names in
+# lowercase, which is the form the kernel cmdline has to use. Both spellings
+# denote the same GUID, so every identifier comparison in this script folds
+# case first. Stated once, here, so the rule cannot drift between call sites.
+lc() {
+    printf '%s' "$1" | tr '[:upper:]' '[:lower:]'
+}
+
 # Formats one partition slot's ext4 filesystem into a standalone image file.
 # Args: out-file size-MiB fs-label fs-uuid
 mkext4() {
@@ -119,12 +128,27 @@ mkverityenv() {
         echo "This is a cross-task mismatch with ${ROOTFS_PRODUCER}, not something this assembler can synthesise: the cmdline files must carry dm-mod.waitfor=PARTUUID=<slot rootfs GUID>." >&2
         exit 1
     fi
-    if [ "${create#*"$4"}" = "${create}" ]; then
-        echo "error: the slot-$3 verity table in $2 does not reference PARTUUID $4; each slot must point dm-verity at its own rootfs partition. Fix ${ROOTFS_PRODUCER}." >&2
+    local create_lc waitfor_lc guid_lc hash_lc
+    create_lc="$(lc "${create}")"
+    waitfor_lc="$(lc "${waitfor}")"
+    guid_lc="$(lc "$4")"
+    hash_lc="$(lc "${root_hash}")"
+    if [ "${create_lc#*"${guid_lc}"}" = "${create_lc}" ]; then
+        echo "error: the slot-$3 verity table in $2 does not reference PARTUUID $4 (compared case-insensitively); each slot must point dm-verity at its own rootfs partition." >&2
+        echo "  found: ${create}" >&2
+        echo "Fix ${ROOTFS_PRODUCER}." >&2
         exit 1
     fi
-    if [ "${create#*"${root_hash}"}" = "${create}" ]; then
-        echo "error: the slot-$3 verity table in $2 does not carry the root hash from ${ROOTFS_VERITY_ENV}; fix ${ROOTFS_PRODUCER}" >&2
+    if [ "${waitfor_lc#*"${guid_lc}"}" = "${waitfor_lc}" ]; then
+        echo "error: the slot-$3 dm-mod.waitfor= in $2 does not reference PARTUUID $4 (compared case-insensitively); the wait must name the same partition the verity table uses." >&2
+        echo "  found: ${waitfor}" >&2
+        echo "Fix ${ROOTFS_PRODUCER}." >&2
+        exit 1
+    fi
+    if [ "${create_lc#*"${hash_lc}"}" = "${create_lc}" ]; then
+        echo "error: the slot-$3 verity table in $2 does not carry the root hash ${root_hash} from ${ROOTFS_VERITY_ENV} (compared case-insensitively)." >&2
+        echo "  found: ${create}" >&2
+        echo "Fix ${ROOTFS_PRODUCER}." >&2
         exit 1
     fi
     printf 'verity_args=%s %s\n' "${create}" "${waitfor}" > "$1"
@@ -193,7 +217,7 @@ assemble() {
         echo "error: VERITY_ROOT_HASH missing from ${ROOTFS_VERITY_ENV}; fix ${ROOTFS_PRODUCER}" >&2
         exit 1
     fi
-    if [ "${verity_salt}" != "${VERITY_SALT}" ]; then
+    if [ "$(lc "${verity_salt}")" != "$(lc "${VERITY_SALT}")" ]; then
         echo "error: ${ROOTFS_VERITY_ENV} salt '${verity_salt}' does not match the pinned VERITY_SALT '${VERITY_SALT}'; fix ${ROOTFS_PRODUCER}" >&2
         exit 1
     fi

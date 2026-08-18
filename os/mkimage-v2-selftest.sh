@@ -59,11 +59,19 @@ EOF
 # The cmdline files stand in for what os/rootfs/build-v2.sh emits: a full
 # kernel append line whose verity table points at that slot's own rootfs
 # partition, plus the dm-mod.waitfor= the assembler insists on.
+#
+# Slot A deliberately uses LOWERCASE PARTUUIDs, which is what the real producer
+# emits (udev/libblkid spell by-partuuid names lowercase) and what once tripped
+# the assembler's literal comparison against the uppercase layout constants.
+# Slot B deliberately uses UPPERCASE, the GPT/sgdisk spelling. Both must be
+# accepted; the two together are the case-insensitivity regression test.
+lc() { printf '%s' "$1" | tr '[:upper:]' '[:lower:]'; }
+
 mkcmdline() { # out-file rootfs-partition-guid
     printf 'root=/dev/dm-0 rootfstype=squashfs ro rootwait dm-mod.create="mos,,0,ro,0 6144 verity 1 PARTUUID=%s PARTUUID=%s 4096 4096 768 768 sha256 %s %s" dm-mod.waitfor=PARTUUID=%s console=ttyFIQ0,1500000\n' \
         "$2" "$2" "${FAKE_ROOT_HASH}" "${VERITY_SALT}" "$2" > "$1"
 }
-mkcmdline "${WORK}/boot-cmdline-a.txt" "${ROOTFS_A_GUID}"
+mkcmdline "${WORK}/boot-cmdline-a.txt" "$(lc "${ROOTFS_A_GUID}")"
 mkcmdline "${WORK}/boot-cmdline-b.txt" "${ROOTFS_B_GUID}"
 
 # --- assemble twice ----------------------------------------------------------
@@ -259,19 +267,34 @@ for slot in a b; do
 
     check "boot-${slot} ${BOOT_VERITY_ENV_NAME} is a single verity_args line" \
         "$(grep -c '^verity_args=dm-mod\.create=' "${WORK}/verityenv-${slot}")" 1
-    if grep -qF "PARTUUID=${guid}" "${WORK}/verityenv-${slot}"; then
-        echo "PASS: boot-${slot} verity table points at its own rootfs (${guid})"
+    if grep -qiF "PARTUUID=${guid}" "${WORK}/verityenv-${slot}"; then
+        echo "PASS: boot-${slot} verity table points at its own rootfs (${guid}, either case)"
     else
         echo "FAIL: boot-${slot} verity table does not reference ${guid}"
         FAILED=1
     fi
-    if grep -qF "dm-mod.waitfor=PARTUUID=${guid}" "${WORK}/verityenv-${slot}"; then
+    if grep -qiF "dm-mod.waitfor=PARTUUID=${guid}" "${WORK}/verityenv-${slot}"; then
         echo "PASS: boot-${slot} verity args carry dm-mod.waitfor for its own rootfs"
     else
         echo "FAIL: boot-${slot} verity args lack dm-mod.waitfor=PARTUUID=${guid}"
         FAILED=1
     fi
 done
+
+# The producer's lowercase spelling must survive into the boot slot unchanged:
+# the assembler compares case-insensitively, it does not rewrite the cmdline.
+if grep -qF "PARTUUID=$(lc "${ROOTFS_A_GUID}")" "${WORK}/verityenv-a"; then
+    echo "PASS: a lowercase PARTUUID cmdline is accepted and passed through verbatim"
+else
+    echo "FAIL: the lowercase PARTUUID from the slot-a cmdline did not survive"
+    FAILED=1
+fi
+if grep -qF "PARTUUID=${ROOTFS_B_GUID}" "${WORK}/verityenv-b"; then
+    echo "PASS: an uppercase PARTUUID cmdline is accepted and passed through verbatim"
+else
+    echo "FAIL: the uppercase PARTUUID from the slot-b cmdline did not survive"
+    FAILED=1
+fi
 
 if cmp -s "${WORK}/bootscr-a" "${WORK}/bootscr-b"; then
     echo "PASS: boot.scr is byte-identical in both slots"
@@ -357,9 +380,9 @@ mv "${WORK}/boot-cmdline-b.orig" "${WORK}/boot-cmdline-b.txt"
 # A slot whose verity table points at the other slot's rootfs is refused too.
 echo "--- wrong-slot verity table ---"
 cp "${WORK}/boot-cmdline-b.txt" "${WORK}/boot-cmdline-b.orig"
-mkcmdline "${WORK}/boot-cmdline-b.txt" "${ROOTFS_A_GUID}"
+mkcmdline "${WORK}/boot-cmdline-b.txt" "$(lc "${ROOTFS_A_GUID}")"
 expect_failure "slot-b cmdline pointing at rootfs-a" rootfs-verity.img "" \
-    "does not reference PARTUUID ${ROOTFS_B_GUID}"
+    "does not reference PARTUUID ${ROOTFS_B_GUID}" "found: dm-mod.create="
 mv "${WORK}/boot-cmdline-b.orig" "${WORK}/boot-cmdline-b.txt"
 
 # The same oversize payload grows the slot instead when nothing is pinned.
