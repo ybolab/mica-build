@@ -122,16 +122,51 @@ webd + kiosk (one UI, local/remote paths)    RAUC (native) + tough (TUF signing)
   `RESULT: PASS (88/88 checks)`.
 - `make os-image-cx3576-v2` — ten-partition image, 1315 MiB apparent / ~161 MiB
   on disk (sparse).
+- `make os-verify-cx3576-v2` — `RESULT: PASS (207/207 checks)`.
 - `bash os/mkimage-v2-selftest.sh` — `RESULT: PASS`, 137 checks.
 - `make os-health-test` — `RESULT: PASS (43/43)`.
 - `make os-devkeys` + `make os-bundle-cx3576` — signed verity bundle;
   `rauc info` validates it against the shipped `system.conf`;
   `compatible=mos-cx3576`.
 - `bash mosd/hack/check.sh` — `ALL CHECKS PASSED`.
-- `make os-verify-cx3576-v2` — recorded with RFCT-017.
 
 Every number above is a local build/verify result. None of them is a hardware
 result.
+
+The 207 checks can actually fail, which was demonstrated rather than assumed.
+RFCT-017 ran three negative tests, each against a copy of the image: a single
+byte flipped 1 MiB into the ROOTFS-A payload fails dm-verity at exactly that
+position; an `extlinux/extlinux.conf` injected into BOOT-A is caught; and the
+debug U-Boot blob written over sector 64 trips *both* halves of the pairing
+guard (differs-from-`uboot-mos` and identical-to-debug). A corrupted image runs
+to completion and ends in `RESULT: FAIL` rather than aborting part-way.
+
+#### One assertion that could not be made: `CONFIG_SQUASHFS_XATTR`
+
+The user applied `CONFIG_SQUASHFS_XATTR` to `board/common/mos-required.fragment`
+specifically for M4, so it should be clear that **nothing in this tree proves it
+end-to-end.** The rootfs package set installs zero files carrying file
+capabilities — `getcap -r` over the packed tree is empty — so there is no
+cap-carrying file whose survival through the squashfs could be demonstrated.
+
+RFCT-017 reported that as a gap instead of manufacturing a weaker check, and
+rejected two candidates for good reasons worth keeping: asserting the squashfs
+`NO_XATTR` superblock flag is clear passes here **only** because this build host
+runs SELinux, so it would fail on a non-SELinux builder for a reason unrelated
+to correctness, and a host-dependent assertion is worse than none; packing a
+throwaway squashfs with a cap-carrying file tests mksquashfs on the verifier's
+host, not the shipped artifact. What the verifier does instead is prove the
+verification environment can round-trip a `security.capability` xattr — without
+which an empty result is indistinguishable from an environment that silently
+drops `security.*` — and then assert the packed capability set equals the source
+inventory, with the PASS line stating that both are empty rather than claiming
+preservation was shown.
+
+It becomes a real tripwire the day a cap-carrying package is added. The proposed
+follow-up is on the producer side (`os/rootfs/**`, RFCT-013 scope, **not done**):
+give the image one cap-carrying file so the existing check has something to trip
+on. A verifier must not edit what it verifies, which is why RFCT-017 recorded it
+rather than implementing it.
 
 #### What remains the user's hardware acceptance
 
