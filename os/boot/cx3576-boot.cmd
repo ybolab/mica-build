@@ -1,7 +1,12 @@
 # Source for the boot.scr written into BOOT-A and BOOT-B. Compiled by
 # os/mkimage-v2.sh with SOURCE_DATE_EPOCH pinned to the layout-v2 FILE_MTIME.
-# Body is verbatim from docs/design/uboot-ab-handshake.md section 5.3
-# (RFCT-018); that document is the authority, change it there first.
+# Body follows docs/design/uboot-ab-handshake.md section 5.3 (RFCT-018), with
+# ONE deliberate divergence that section 5.3 predates: the verity parameters are
+# loaded from the slot-suffixed mos-verity-<slot>.env, falling back to the
+# unsuffixed name. A RAUC bundle installs a single boot payload into whichever
+# slot is inactive, so it has to ship both slots' files under distinct names;
+# an unsuffixed file cannot identify a slot. Without this, every update rolled
+# back silently (RFCT-014 escalation E1). Section 5.3 should be synced to match.
 #
 # boot.cmd — mos A/B handshake for CX3576-Z (layout v2).
 # Compiled to boot.scr and written to BOTH boot partitions by the assembler.
@@ -26,6 +31,7 @@ for slot in ${BOOT_ORDER}; do
         if test ${BOOT_A_LEFT} -gt 0; then
             setexpr BOOT_A_LEFT ${BOOT_A_LEFT} - 1
             setenv bootslot A
+            setenv slotsuffix a
             setenv bootpart 3
             setenv rootpart 5
         fi
@@ -33,6 +39,7 @@ for slot in ${BOOT_ORDER}; do
         if test ${BOOT_B_LEFT} -gt 0; then
             setexpr BOOT_B_LEFT ${BOOT_B_LEFT} - 1
             setenv bootslot B
+            setenv slotsuffix b
             setenv bootpart 4
             setenv rootpart 6
         fi
@@ -54,12 +61,20 @@ saveenv
 echo "mos: booting slot ${bootslot} (A=${BOOT_A_LEFT} B=${BOOT_B_LEFT} left)"
 
 # --- per-slot verity parameters, from the chosen slot's boot partition ------
-# mos-verity.env is a one-line text env file written by the assembler; it
-# defines verity_args= with the full dm-mod.create=/dm-mod.waitfor= tail.
-if load mmc 0:${bootpart} ${verityaddr} mos-verity.env; then
+# mos-verity-<slot>.env is a one-line text env file defining verity_args= with
+# the full dm-mod.create=/dm-mod.waitfor= tail for THIS slot's rootfs.
+# The name carries the slot because one RAUC boot payload can be installed into
+# either boot partition: it ships both slots' files, so the slot-identifying
+# file cannot be slot-neutral. slotsuffix is set alongside bootslot above,
+# lowercase to match the filenames, rather than leaning on FAT case folding.
+# The unsuffixed name is a fallback for older, hand-assembled boot partitions;
+# nothing this tree builds relies on it.
+if load mmc 0:${bootpart} ${verityaddr} mos-verity-${slotsuffix}.env; then
+    env import -t ${verityaddr} ${filesize}
+elif load mmc 0:${bootpart} ${verityaddr} mos-verity.env; then
     env import -t ${verityaddr} ${filesize}
 else
-    echo "mos: slot ${bootslot} has no mos-verity.env"
+    echo "mos: slot ${bootslot} has no mos-verity-${slotsuffix}.env"
     setenv BOOT_${bootslot}_LEFT 0
     saveenv
     reset

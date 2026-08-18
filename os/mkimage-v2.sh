@@ -113,6 +113,21 @@ mkbootscr() {
             exit 1
         fi
     done < <(grep -oE 'BOOT_[AB]_LEFT [0-9]+' "${BOOT_CMD}" | awk '{print $2}')
+    # The per-slot names, the pattern boot.scr builds at runtime and the pattern
+    # os/bundle.sh writes must all be the same derivation of the base name. Any
+    # of the three drifting means an updated slot silently fails to boot, so
+    # tie them together here rather than trusting three copies of a string.
+    local verity_base="${BOOT_VERITY_ENV_NAME%.env}"
+    if [ "${BOOT_VERITY_ENV_A_NAME}" != "${verity_base}-a.env" ] ||
+        [ "${BOOT_VERITY_ENV_B_NAME}" != "${verity_base}-b.env" ]; then
+        echo "error: BOOT_VERITY_ENV_A_NAME/BOOT_VERITY_ENV_B_NAME must be '${verity_base}-a.env'/'${verity_base}-b.env' to match what os/bundle.sh writes into a RAUC boot payload" >&2
+        exit 1
+    fi
+    if ! grep -qF "${verity_base}-\${slotsuffix}.env" "${BOOT_CMD}"; then
+        echo "error: ${BOOT_CMD} does not load the per-slot verity env '${verity_base}-\${slotsuffix}.env'; a RAUC-installed slot carries only the slot-suffixed files, so an unsuffixed load would roll every update back" >&2
+        exit 1
+    fi
+
     SOURCE_DATE_EPOCH="${FILE_MTIME#@}" \
         mkimage -T script -C none -n "mos boot" -d "${BOOT_CMD}" "$1" >/dev/null
 }
@@ -163,18 +178,23 @@ mkverityenv() {
 }
 
 # Stages one boot slot's FAT32 filesystem. The slots hold the same kernel, dtb
-# and boot.scr; only mos-verity.env differs, and it is what points the shared
-# script at this slot's rootfs. Deliberately no extlinux/extlinux.conf: both
+# and boot.scr; only the slot-suffixed mos-verity-<slot>.env differs, and it is
+# what points the shared script at this slot's rootfs. The unsuffixed name is
+# deliberately NOT written: a RAUC-installed slot only ever carries the
+# suffixed files, so writing it here would make a factory slot and an updated
+# slot differ in layout and leave the suffixed path untested until the first
+# update. Deliberately no extlinux/extlinux.conf: both
 # U-Boot boot frameworks try extlinux before boot.scr, so one here would
 # silently bypass the A/B handshake.
 # Args: out-file fat-label volume-id cmdline-file slot-letter rootfs-guid
+#       verity-env-filename
 mkboot() {
     local stage="${workdir}/stage-$3"
     mkdir -p "${stage}"
     cp "${KERNEL_IMAGE}" "${stage}/Image"
     cp "${DTB}" "${stage}/rk3576-src.dtb"
     cp "${workdir}/${BOOT_SCRIPT_NAME}" "${stage}/${BOOT_SCRIPT_NAME}"
-    mkverityenv "${stage}/${BOOT_VERITY_ENV_NAME}" "$4" "$5" "$6"
+    mkverityenv "${stage}/$7" "$4" "$5" "$6"
     find "${stage}" -exec touch -h -d "${FILE_MTIME}" {} +
 
     truncate -s "${BOOT_SIZE_MIB}M" "$1"
@@ -283,9 +303,9 @@ assemble() {
 
     mkbootscr "${workdir}/${BOOT_SCRIPT_NAME}"
     mkboot "${workdir}/boot-a.img" "${BOOT_A_FAT_LABEL}" "${BOOT_A_FAT_VOLUME_ID}" \
-        "${BOOT_CMDLINE_A}" A "${ROOTFS_A_GUID}"
+        "${BOOT_CMDLINE_A}" A "${ROOTFS_A_GUID}" "${BOOT_VERITY_ENV_A_NAME}"
     mkboot "${workdir}/boot-b.img" "${BOOT_B_FAT_LABEL}" "${BOOT_B_FAT_VOLUME_ID}" \
-        "${BOOT_CMDLINE_B}" B "${ROOTFS_B_GUID}"
+        "${BOOT_CMDLINE_B}" B "${ROOTFS_B_GUID}" "${BOOT_VERITY_ENV_B_NAME}"
     mkext4 "${workdir}/meta.img" "${META_SIZE_MIB}" "${META_FS_LABEL}" "${META_FS_UUID}"
     mkext4 "${workdir}/state.img" "${STATE_SIZE_MIB}" "${STATE_FS_LABEL}" "${STATE_FS_UUID}"
     mkext4 "${workdir}/ephemeral.img" "${MOS_VAR_MIB}" "${EPHEMERAL_FS_LABEL}" "${EPHEMERAL_FS_UUID}"

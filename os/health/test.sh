@@ -1,0 +1,244 @@
+#!/usr/bin/env bash
+# Offline tests for os/health. Every external command the scripts call (rauc,
+# systemctl, busctl, curl, df, fw_setenv, fw_printenv) is faked in a $TMPDIR
+# directory prepended to PATH, so no host state is ever read or written: the
+# real rauc/systemctl are never invoked and no U-Boot environment is touched.
+#
+#   bash os/health/test.sh
+# The fake bodies below are shell source passed as literal strings; their `$`
+# expressions are expanded when the fake runs, not when it is written.
+# shellcheck disable=SC2016
+set -euo pipefail
+
+HERE=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+WORK=$(mktemp -d)
+trap 'rm -rf "$WORK"' EXIT
+PASS=0
+FAIL=0
+
+# Per-case sandbox: $BIN holds the fakes, $CALLS records what was invoked.
+new_case() {
+    CASE=$WORK/case-$1
+    BIN=$CASE/bin
+    CALLS=$CASE/calls.log
+    CONF=$CASE/health.conf
+    rm -rf "$CASE"
+    mkdir -p "$BIN"
+    : >"$CALLS"
+    # Fast settle so the tests never sleep.
+    printf 'settle-sec=0\nprobe-timeout-sec=5\nvar-threshold-pct=85\n' >"$CONF"
+}
+
+# fake <name> <body...> — write an executable that logs its argv, then runs body.
+fake() {
+    local name=$1
+    shift
+    {
+        printf '#!/bin/sh\n'
+        printf 'echo "%s $*" >> "$CALLS_FILE"\n' "$name"
+        printf '%s\n' "$@"
+    } >"$BIN/$name"
+    chmod 0755 "$BIN/$name"
+}
+
+# Defaults: a healthy A/B system with mosd and webd both answering.
+healthy_fakes() {
+    fake rauc '
+case "$1 $2" in
+  "status --output-format=shell") echo "RAUC_SYSTEM_BOOTED_SLOT='"'"'rootfs.0'"'"'" ;;
+  "status mark-good") ;;
+esac
+exit 0'
+    fake systemctl '
+case "$1" in
+  is-system-running) echo "${FAKE_SYS_STATE:-running}" ;;
+  list-units) printf "%s" "${FAKE_FAILED_UNITS:-}" ;;
+  list-unit-files) case "${FAKE_UNITS:-mosd.service webd.service}" in *"$3"*) echo "$3 enabled" ;; esac ;;
+esac
+exit 0'
+    fake busctl 'exit ${FAKE_BUSCTL_RC:-0}'
+    fake curl 'exit ${FAKE_CURL_RC:-0}'
+    fake df 'printf "Filesystem 1024-blocks Used Available Capacity Mounted\n/dev/x 100 10 90 %s%% /var\n" "${FAKE_VAR_PCT:-12}"'
+    # wget must not shadow curl in these cases; the script prefers curl.
+}
+
+run_health() {
+    env -i PATH="$BIN:/usr/bin:/bin" CALLS_FILE="$CALLS" MOS_HEALTH_CONF="$CONF" \
+        "$@" sh "$HERE/mos-health"
+}
+
+run_machine_id() {
+    env -i PATH="$BIN:/usr/bin:/bin" CALLS_FILE="$CALLS" \
+        "$@" sh "$HERE/mos-machine-id"
+}
+
+check() {
+    local name=$1 want=$2 got=$3
+    if [ "$want" = "$got" ]; then
+        PASS=$((PASS + 1))
+        echo "PASS $name"
+    else
+        FAIL=$((FAIL + 1))
+        echo "FAIL $name: expected [$want], got [$got]"
+    fi
+}
+
+marked_good() { grep -qx 'rauc status mark-good' "$CALLS" && echo yes || echo no; }
+
+# --- health gate: no-op paths ----------------------------------------------
+new_case rauc-absent
+out=$(run_health 2>&1) && rc=0 || rc=$?
+check "rauc absent -> exit 0" "0" "$rc"
+check "rauc absent -> logged" "yes" "$(grep -q 'rauc not installed' <<<"$out" && echo yes || echo no)"
+
+new_case no-booted-slot
+healthy_fakes
+fake rauc 'exit 0'
+out=$(run_health 2>&1) && rc=0 || rc=$?
+check "no booted slot -> exit 0" "0" "$rc"
+check "no booted slot -> no mark-good" "no" "$(marked_good)"
+
+# --- health gate: success ---------------------------------------------------
+new_case healthy
+healthy_fakes
+out=$(run_health 2>&1) && rc=0 || rc=$?
+check "healthy -> exit 0" "0" "$rc"
+check "healthy -> mark-good" "yes" "$(marked_good)"
+check "healthy -> confirmed log" "yes" \
+    "$(grep -q 'PENDING_CONFIRM -> CONFIRMED' <<<"$out" && echo yes || echo no)"
+
+new_case idempotent
+healthy_fakes
+run_health >/dev/null 2>&1
+out=$(run_health 2>&1) && rc=0 || rc=$?
+check "second run -> exit 0" "0" "$rc"
+check "second run -> mark-good again" "2" "$(grep -cx 'rauc status mark-good' "$CALLS")"
+
+# --- health gate: systemd states -------------------------------------------
+new_case degraded-unlisted
+healthy_fakes
+out=$(run_health FAKE_SYS_STATE=degraded FAKE_FAILED_UNITS='broken.service loaded failed failed X
+' 2>&1) && rc=0 || rc=$?
+check "unlisted failed unit -> exit 1" "1" "$rc"
+check "unlisted failed unit -> no mark-good" "no" "$(marked_good)"
+check "unlisted failed unit -> named" "yes" \
+    "$(grep -q 'broken.service' <<<"$out" && echo yes || echo no)"
+
+new_case degraded-allowlisted
+healthy_fakes
+printf 'tolerate-failed=broken.service\n' >>"$CONF"
+out=$(run_health FAKE_SYS_STATE=degraded FAKE_FAILED_UNITS='broken.service loaded failed failed X
+' 2>&1) && rc=0 || rc=$?
+check "allowlisted failed unit -> exit 0" "0" "$rc"
+check "allowlisted failed unit -> mark-good" "yes" "$(marked_good)"
+
+new_case maintenance
+healthy_fakes
+out=$(run_health FAKE_SYS_STATE=maintenance 2>&1) && rc=0 || rc=$?
+check "maintenance -> exit 1" "1" "$rc"
+check "maintenance -> no mark-good" "no" "$(marked_good)"
+
+# --- health gate: mosd and webd --------------------------------------------
+new_case mosd-down
+healthy_fakes
+out=$(run_health FAKE_BUSCTL_RC=1 2>&1) && rc=0 || rc=$?
+check "mosd unreachable -> exit 1" "1" "$rc"
+check "mosd unreachable -> no mark-good" "no" "$(marked_good)"
+
+new_case mosd-absent
+healthy_fakes
+out=$(run_health FAKE_UNITS=webd.service 2>&1) && rc=0 || rc=$?
+check "mosd.service absent -> exit 0" "0" "$rc"
+check "mosd.service absent -> skip logged" "yes" \
+    "$(grep -q 'probe mosd: SKIP' <<<"$out" && echo yes || echo no)"
+
+new_case webd-down
+healthy_fakes
+out=$(run_health FAKE_CURL_RC=22 2>&1) && rc=0 || rc=$?
+check "webd healthz fails -> exit 1" "1" "$rc"
+check "webd healthz fails -> no mark-good" "no" "$(marked_good)"
+
+new_case webd-absent
+healthy_fakes
+out=$(run_health FAKE_UNITS=mosd.service 2>&1) && rc=0 || rc=$?
+check "webd.service absent -> exit 0" "0" "$rc"
+check "webd.service absent -> skip logged" "yes" \
+    "$(grep -q 'probe webd: SKIP' <<<"$out" && echo yes || echo no)"
+
+# --- health gate: /var pressure is reported, never fatal --------------------
+new_case var-pressure
+healthy_fakes
+out=$(run_health FAKE_VAR_PCT=91 2>&1) && rc=0 || rc=$?
+check "/var over threshold -> exit 0" "0" "$rc"
+check "/var over threshold -> mark-good" "yes" "$(marked_good)"
+check "/var over threshold -> reported degraded" "yes" \
+    "$(grep -q 'ReportHealth sss var degraded' "$CALLS" && echo yes || echo no)"
+check "/var over threshold -> flagged not fatal" "yes" \
+    "$(grep -q 'NOT fatal' <<<"$out" && echo yes || echo no)"
+
+new_case var-ok
+healthy_fakes
+out=$(run_health FAKE_VAR_PCT=12 2>&1) && rc=0 || rc=$?
+check "/var under threshold -> reported ok" "yes" \
+    "$(grep -q 'ReportHealth sss var ok' "$CALLS" && echo yes || echo no)"
+
+# --- machine id -------------------------------------------------------------
+new_case mid-no-tool
+out=$(run_machine_id 2>&1) && rc=0 || rc=$?
+check "fw_setenv absent -> exit 0" "0" "$rc"
+check "fw_setenv absent -> logged" "yes" \
+    "$(grep -q 'not installed' <<<"$out" && echo yes || echo no)"
+
+new_case mid-unreadable-env
+fake fw_printenv 'exit 1'
+fake fw_setenv 'exit 0'
+out=$(run_machine_id 2>&1) && rc=0 || rc=$?
+check "env unreadable -> exit 0" "0" "$rc"
+check "env unreadable -> no write" "no" \
+    "$(grep -q '^fw_setenv machine_id' "$CALLS" && echo yes || echo no)"
+
+new_case mid-generate
+fake fw_printenv '
+[ $# -eq 0 ] && exit 0
+[ -f "$CASE_DIR/env" ] && cat "$CASE_DIR/env"
+exit 0'
+fake fw_setenv 'printf "%s=%s\n" "$1" "$2" > "$CASE_DIR/env"; exit 0'
+out=$(run_machine_id CASE_DIR="$CASE" 2>&1) && rc=0 || rc=$?
+check "generate -> exit 0" "0" "$rc"
+generated=$(sed -n 's/^machine_id=//p' "$CASE/env")
+check "generated id is 32 dashless lowercase hex" "yes" \
+    "$(grep -Eq '^[0-9a-f]{32}$' <<<"$generated" && echo yes || echo no)"
+check "generate -> next-boot note" "yes" \
+    "$(grep -q 'NEXT boot' <<<"$out" && echo yes || echo no)"
+echo "     sample machine_id: $generated"
+
+new_case mid-already-set
+mkdir -p "$CASE"
+printf 'machine_id=0123456789abcdef0123456789abcdef\n' >"$CASE/env"
+fake fw_printenv '
+[ $# -eq 0 ] && exit 0
+cat "$CASE_DIR/env"
+exit 0'
+fake fw_setenv 'printf "%s=%s\n" "$1" "$2" > "$CASE_DIR/env"; exit 0'
+out=$(run_machine_id CASE_DIR="$CASE" 2>&1) && rc=0 || rc=$?
+check "already set -> exit 0" "0" "$rc"
+check "already set -> no rewrite" "no" \
+    "$(grep -q '^fw_setenv machine_id' "$CALLS" && echo yes || echo no)"
+
+# --- staged overlay copies must not drift from the sources ------------------
+OVERLAY=$HERE/../rootfs/overlay-v2
+for pair in \
+    "mos-health:$OVERLAY/usr/lib/mos/mos-health" \
+    "mos-machine-id:$OVERLAY/usr/lib/mos/mos-machine-id" \
+    "mos-health.service:$OVERLAY/usr/lib/systemd/system/mos-health.service" \
+    "mos-machine-id.service:$OVERLAY/usr/lib/systemd/system/mos-machine-id.service" \
+    "health.conf:$OVERLAY/etc/mos/health.conf"; do
+    src=${pair%%:*}
+    dst=${pair#*:}
+    check "overlay copy in sync: $src" "yes" \
+        "$(cmp -s "$HERE/$src" "$dst" && echo yes || echo no)"
+done
+
+echo
+echo "RESULT: $([ "$FAIL" -eq 0 ] && echo PASS || echo FAIL) ($PASS/$((PASS + FAIL)) checks)"
+[ "$FAIL" -eq 0 ]

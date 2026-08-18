@@ -187,17 +187,19 @@ the same digest.
 
 ## Escalations
 
-1. **`os/boot/cx3576-boot.cmd` (RFCT-018/RFCT-012 territory, not edited here)**
-   — a slot installed from a bundle is not bootable until `boot.scr` loads the
-   per-slot verity env:
+1. **`os/boot/cx3576-boot.cmd` (RFCT-018/RFCT-020 territory, not edited here)**
+   — IN PROGRESS with RFCT-020. A slot installed from a bundle is not bootable
+   until `boot.scr` loads the per-slot verity env:
 
    ```
    if load mmc 0:${bootpart} ${verityaddr} mos-verity-${bootslot}.env; then
    ```
 
-   with the existing unsuffixed name kept as a fallback for slots written by
-   the image assembler. Until then an installed slot rolls back cleanly instead
-   of booting.
+   RFCT-020 is making that change and having the assembler emit the per-slot
+   names too, so a factory slot and an installed slot end up with identical
+   layout — better than the fallback-on-the-unsuffixed-name shape proposed
+   here. Until it lands, an installed slot rolls back cleanly instead of
+   booting. Mark this resolved once it does.
 
 2. **`os/rootfs/build-v2.sh` (RFCT-013's file)** — add
    `os/rootfs/overlay-v2/etc/rauc/system.conf` to the rendered set (or call
@@ -267,7 +269,7 @@ Wiring RAUC configuration and signed bundle production for the cx3576 A/B layout
 
 ## Dependencies
 
-- **blocked by**: RFCT-012 (layout v2 + assembler), RFCT-013 (v2 rootfs with
+- **blocked by**: RFCT-020 (layout v2 + assembler), RFCT-013 (v2 rootfs with
   rauc/libubootenv, and the mount layout the status file location follows),
   RFCT-018 (U-Boot A/B handshake contract — satisfied by the `uboot-mos`
   variant, main 8b24f9d)

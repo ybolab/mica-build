@@ -1,0 +1,166 @@
+#!/bin/sh
+# mos health gate — PLAN-006 Part E, the PENDING_CONFIRM -> CONFIRMED edge.
+#
+# Probes the system in order (systemd state, mosd, webd), reports /var
+# pressure to mosd, and on success runs `rauc status mark-good` to confirm the
+# booted slot. On failure it does NOTHING: no mark-good, no reboot, no
+# remediation. Rollback is the U-Boot BOOT_x_LEFT counter's job and stealing it
+# would break the PLAN-006 Part F contract.
+#
+# No-op (exit 0) when rauc is absent or reports no booted slot — a v1 image or
+# a container. Idempotent: mark-good on an already-confirmed slot is not an
+# error. Configuration: /etc/mos/health.conf (override with MOS_HEALTH_CONF).
+set -u
+
+CONF=${MOS_HEALTH_CONF:-/etc/mos/health.conf}
+
+log() { echo "mos-health: $*"; }
+fail() { echo "mos-health: FAIL $*" >&2; exit 1; }
+
+# First value of `key=` in the conf, empty when the conf or the key is absent.
+conf_get() { [ -r "$CONF" ] && sed -n "s/^$1=//p" "$CONF" | head -n1; }
+# Every value of `key=` in the conf, one per line.
+conf_all() { [ -r "$CONF" ] && sed -n "s/^$1=//p" "$CONF"; }
+
+PROBE_TIMEOUT=$(conf_get probe-timeout-sec)
+: "${PROBE_TIMEOUT:=10}"
+
+# Run a probe under the configured timeout. `timeout` is coreutils and always
+# present on the target; the fallback keeps the script usable without it.
+run() {
+    if command -v timeout >/dev/null 2>&1; then
+        timeout "$PROBE_TIMEOUT" "$@"
+    else
+        "$@"
+    fi
+}
+
+have() { command -v "$1" >/dev/null 2>&1; }
+# `systemctl list-unit-files <name>` exits 0 with empty output on some
+# versions when the unit is absent, so test the output rather than $?.
+unit_present() { [ -n "$(run systemctl list-unit-files --no-legend "$1" 2>/dev/null)" ]; }
+
+# Best-effort health report into mosd's live-state tree at health.<component>.
+# Never fatal: the report is observability, not a gate.
+report_health() {
+    have busctl || return 0
+    run busctl --system --quiet call com.mos.mosd /com/mos/mosd \
+        com.mos.mosd1 ReportHealth sss "$1" "$2" "$3" >/dev/null 2>&1 ||
+        log "note: could not report $1 health to mosd"
+}
+
+# --- gate 0: is there anything to confirm? ----------------------------------
+have rauc || {
+    log "rauc not installed - no A/B slot to confirm (v1 image or container); exiting 0"
+    exit 0
+}
+BOOTED=$(run rauc status --output-format=shell 2>/dev/null |
+    sed -n 's/^RAUC_SYSTEM_BOOTED_SLOT=//p' | head -n1 | tr -d "\"'")
+[ -n "$BOOTED" ] || {
+    log "rauc reports no booted slot - nothing to confirm; exiting 0"
+    exit 0
+}
+have systemctl || {
+    log "systemctl not available - not a systemd system; exiting 0"
+    exit 0
+}
+log "booted slot: $BOOTED"
+
+# --- probe a: systemd ------------------------------------------------------
+SETTLE=$(conf_get settle-sec)
+: "${SETTLE:=60}"
+waited=0
+while :; do
+    sysstate=$(run systemctl is-system-running 2>/dev/null)
+    case "$sysstate" in
+    initializing | starting) ;;
+    *) break ;;
+    esac
+    [ "$waited" -ge "$SETTLE" ] && break
+    sleep 1
+    waited=$((waited + 1))
+done
+log "systemd is-system-running = ${sysstate:-unknown} (settled after ${waited}s)"
+case "$sysstate" in
+running)
+    log "probe systemd: OK"
+    ;;
+degraded)
+    failed=$(run systemctl list-units --state=failed --no-legend --plain --full 2>/dev/null |
+        awk '{print $1}')
+    for unit in $failed; do
+        tolerated=0
+        for allowed in $(conf_all tolerate-failed); do
+            [ "$unit" = "$allowed" ] && tolerated=1
+        done
+        [ "$tolerated" = 1 ] || fail "failed unit outside the allowlist: $unit"
+        log "tolerated failed unit: $unit"
+    done
+    log "probe systemd: OK (degraded, every failed unit allowlisted)"
+    ;;
+*)
+    fail "systemd is-system-running = ${sysstate:-unknown}"
+    ;;
+esac
+
+# --- probe b: mosd ---------------------------------------------------------
+# GetState("") is the cheapest existing call on com.mos.mosd1; reaching it
+# proves the daemon owns its bus name and is answering.
+if ! have busctl; then
+    log "probe mosd: SKIP (busctl not available)"
+elif ! unit_present mosd.service; then
+    log "probe mosd: SKIP (mosd.service not installed)"
+elif run busctl --system --quiet call com.mos.mosd /com/mos/mosd \
+    com.mos.mosd1 GetState s "" >/dev/null 2>&1; then
+    log "probe mosd: OK"
+else
+    fail "mosd did not answer com.mos.mosd1.GetState on the system bus"
+fi
+
+# --- probe c: webd ---------------------------------------------------------
+# webd serves HTTPS with a self-signed certificate, so the probe skips
+# verification; /healthz is webd's existing endpoint and bypasses its auth gate.
+if ! unit_present webd.service; then
+    log "probe webd: SKIP (webd.service not installed)"
+elif have curl; then
+    if run curl -sS -k -o /dev/null -f https://127.0.0.1/healthz; then
+        log "probe webd: OK"
+    else
+        fail "webd did not answer https://127.0.0.1/healthz"
+    fi
+elif have wget; then
+    if run wget -q --no-check-certificate -O /dev/null https://127.0.0.1/healthz; then
+        log "probe webd: OK"
+    else
+        fail "webd did not answer https://127.0.0.1/healthz"
+    fi
+else
+    log "probe webd: SKIP (no curl or wget in the image)"
+fi
+
+# --- report: /var pressure (never fatal) -----------------------------------
+THRESHOLD=$(conf_get var-threshold-pct)
+: "${THRESHOLD:=85}"
+used=$(df -P /var 2>/dev/null | awk 'NR==2 {gsub(/%/,"",$5); print $5}')
+case "$used" in
+'' | *[!0-9]*)
+    log "/var usage unknown - not reported"
+    ;;
+*)
+    if [ "$used" -ge "$THRESHOLD" ]; then
+        log "/var at ${used}% (threshold ${THRESHOLD}%) - reported as degraded, NOT fatal"
+        report_health var degraded "/var at ${used}% of capacity (threshold ${THRESHOLD}%)"
+    else
+        log "/var at ${used}% (threshold ${THRESHOLD}%)"
+        report_health var ok "/var at ${used}% of capacity"
+    fi
+    ;;
+esac
+
+# --- confirm ---------------------------------------------------------------
+if run rauc status mark-good >/dev/null 2>&1; then
+    log "slot $BOOTED marked good (PENDING_CONFIRM -> CONFIRMED)"
+else
+    fail "rauc status mark-good failed for slot $BOOTED"
+fi
+exit 0

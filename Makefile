@@ -4,7 +4,7 @@
 BOARDS := cx3576 x64
 
 .PHONY: help os os-image-cx3576 os-verify-cx3576 os-rootfs-cx3576-v2 \
-	os-image-cx3576-v2 os-verify-cx3576-v2 os-bundle-cx3576 os-devkeys \
+	os-image-cx3576-v2 os-verify-cx3576-v2 os-bundle-cx3576 os-devkeys os-health-test \
 	$(addsuffix -%,$(BOARDS))
 
 help:
@@ -18,6 +18,7 @@ help:
 	@echo "  os-verify-cx3576-v2 verify the assembled v2 image against the v2 image contract"
 	@echo "  os-bundle-cx3576    build the RAUC update bundle"
 	@echo "  os-devkeys          generate the gitignored development signing material"
+	@echo "  os-health-test      run the offline tests for the health gate and machine-id oneshots"
 	@echo "  cx3576-<t>          delegate target <t> to board/cx3576 (uboot|kernel|rootfs|image|clean)"
 	@echo "  x64-image           x64 uses the upstream talos image pipeline (see board/x64/README.md)"
 
@@ -46,6 +47,9 @@ os-bundle-cx3576:
 
 os-devkeys:
 	bash os/rauc/gen-dev-keys.sh
+
+os-health-test:
+	bash os/health/test.sh
 
 cx3576-%:
 	$(MAKE) -C board/cx3576 $*
