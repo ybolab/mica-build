@@ -1,0 +1,19 @@
+[Unit]
+Description=Prepare persistent directories and sshd host keys on STATE
+Documentation=file:/usr/lib/mos/mos-seed-state
+# Creates the bind sources for var-lib-mos.mount and etc-ssh.mount and, on a
+# fresh device, generates the sshd host keys. Both mounts order themselves
+# after this unit, so it has to complete inside the local mount phase.
+DefaultDependencies=no
+RequiresMountsFor=/mnt/state
+Before=local-fs.target shutdown.target
+Conflicts=shutdown.target
+ConditionPathExists=!/mnt/state/.mos-state-seeded
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/lib/mos/mos-seed-state
+
+[Install]
+WantedBy=local-fs.target

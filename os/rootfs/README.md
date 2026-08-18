@@ -104,3 +104,98 @@ fallback was rejected as unnecessary since repart ships in bookworm's systemd.
 SSH host keys are generated at build time by the openssh-server postinst and
 baked into the image — acceptable for the dev profile, not for reproducible
 production builds.
+
+---
+
+# Layout v2 — squashfs + dm-verity rootfs (PLAN-010 M4)
+
+`build-v2.sh` / `Dockerfile.v2` / `overlay-v2/` are a **sibling** of the v1 path
+above, not a replacement. v1 keeps building the writable single-slot ext4 root
+and is untouched; `make os-image-cx3576` and `make os-verify-cx3576` keep
+passing. Everything below applies only to v2.
+
+The design record is `docs/design/ro-root.md` — read it before changing
+anything here.
+
+## Build
+
+```sh
+# same prerequisites as v1
+BOARD_DIR=/srv/ai/mos/board/cx3576 make os-rootfs-cx3576-v2   # rootfs only
+BOARD_DIR=/srv/ai/mos/board/cx3576 make os-image-cx3576-v2    # rootfs + full v2 image
+```
+
+Outputs to `_out/cx3576/`, all consumed by `os/mkimage-v2.sh`:
+
+| File | Contents |
+|---|---|
+| `rootfs-verity.img` | squashfs-zstd with the dm-verity hash tree appended, padded to a whole MiB |
+| `rootfs-verity.env` | verity parameters as strict `KEY=value` |
+| `boot-cmdline-a.txt` / `-b.txt` | the full kernel `append` line for each slot |
+| `rootfs-report-v2.txt` | package list, installed size, setuid/setgid inventory, file capabilities |
+
+Every layout constant is read from `os/layout/cx3576-v2.env`; none is duplicated
+in `build-v2.sh`, `Dockerfile.v2` or the overlay. The one thing that is *not* a
+layout constant is the board console/storage cmdline fragment
+(`console=ttyFIQ0,… earlycon=… storagemedia=emmc net.ifnames=0`), carried over
+verbatim from v1's `APPEND` and kept in `build-v2.sh`.
+
+## Pack
+
+`mksquashfs -comp zstd -Xcompression-level 19 -noappend -all-root -no-exports
+-mkfs-time <FILE_MTIME> -all-time <FILE_MTIME> -processors 1`, then
+`veritysetup format` against the same file with `--hash-offset=<squashfs bytes>`,
+the pinned `VERITY_SALT` and a pinned `--uuid`. `-processors 1` and the two
+pinned UUID/salt values are what make the image byte-reproducible; see the
+determinism table in `docs/design/ro-root.md`.
+
+## v2 package allowlist
+
+v1's list (systemd systemd-sysv systemd-resolved udev dbus kmod openssh-server
+iproute2 bluez rfkill) **plus**:
+
+- **`rauc`** — the update client itself. Required by RFCT-014 (slot definitions,
+  `system.conf`) and RFCT-015 (install flow). Installed here so no other task
+  has to touch a Dockerfile.
+- **`libubootenv-tool`** — provides `fw_printenv` / `fw_setenv`. RAUC's U-Boot
+  backend needs it, and so does the first-boot machine-id oneshot (RFCT-015).
+
+Deliberately **not** added: `squashfs-tools` and `cryptsetup-bin`. Packing the
+root is a build-stage job (they are installed in `Dockerfile.v2`'s pack stage
+only), and the kernel opens the verity device straight from `dm-mod.create=`
+with no userspace tool involved.
+
+Installed size: **216 MB against the 400 MB budget** (v1 is 204 MB). The two new
+packages and their dependencies account for the 12 MB; the budget is unchanged.
+
+## Read-only root wiring (`overlay-v2/`)
+
+Staged into the build context by `build-v2.sh`, with `*.in` templates rendered
+from the layout env so the shipped image carries no placeholder:
+
+| Path | Purpose |
+|---|---|
+| `etc/fstab.in` | `/var` from EPHEMERAL (`noatime,x-systemd.growfs`), `/mnt/state` from STATE, `/mnt/meta` from META, tmpfs `/tmp` — all keyed on lowercased `PARTUUID=` |
+| `etc/fw_env.config.in` | the redundant U-Boot env pair, addressed by partition GUID (provisional; RFCT-014 may replace it) |
+| `etc/repart.d/*.conf` | seven definitions in disk order; only `70-ephemeral.conf` grows. v1's root-growing definition is gone |
+| `etc/systemd/system/mos-seed-var.service` | first-boot restore of `/var` from `/usr/share/factory/var` |
+| `etc/systemd/system/mos-seed-state.service` | first-boot STATE directories + per-device sshd host keys |
+| `etc/systemd/system/var-lib-mos.mount` | binds `/mnt/state/mos` onto `/var/lib/mos` so mosd's paths are unchanged |
+| `etc/systemd/system/etc-ssh.mount` | binds `/mnt/state/ssh` onto `/etc/ssh` |
+| `usr/lib/mos/mos-seed-*` | the two seed scripts |
+
+`fstrim.timer` is enabled. Why all seven repart definitions are needed, why the
+growth target moved off the root, and what happens to `/etc/machine-id` are all
+explained in `docs/design/ro-root.md`.
+
+## Determinism, and what still deviates
+
+Two cache-hot `make os-rootfs-cx3576-v2` runs produce a byte-identical
+`rootfs-verity.img`. Unlike v1, sshd host keys are **not** baked into the image
+— they would be a private key shared by every device and would change the verity
+root hash on every cold build; `mos-seed-state` generates them per device on
+first boot instead.
+
+What still deviates on a cold build: the byte layout depends on the
+`squashfs-tools` and `cryptsetup` versions pulled from `debian:bookworm-slim` in
+the pack stage. Pinning that base image by digest is the follow-up.
