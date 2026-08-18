@@ -237,7 +237,7 @@ from the layout env so the shipped image carries no placeholder:
 | Path | Purpose |
 |---|---|
 | `etc/fstab.in` | `/srv` from DATA (`noatime,x-systemd.growfs`), `/mnt/state` from STATE, `/mnt/meta` from META, `/var` from EPHEMERAL (`noatime`, **no** growfs), tmpfs `/tmp` — all keyed on lowercased `PARTUUID=` |
-| `etc/fw_env.config.in` | the redundant U-Boot env pair, addressed by partition GUID (provisional; RFCT-014 may replace it) |
+| `etc/fw_env.config.in` | the redundant U-Boot env pair, addressed by partition GUID. The single `fw_env.config` source in the tree; RFCT-014's `render-config.sh` asserts its structure rather than shipping a competing file |
 | `etc/repart.d/*.conf` | eight definitions in disk order; only `80-data.conf` grows. v1's root-growing definition is gone |
 | `etc/tmpfiles.d/mos-var.conf` | age policies for `/var/tmp` and `/var/cache` — `/var` is now a fixed-size partition |
 | `etc/systemd/system/mos-seed-var.service` | first-boot restore of `/var` from `/usr/share/factory/var` |
@@ -283,6 +283,20 @@ No board fact is restated in the v2 layer. Module names, sysfs paths, UART
 device and speed, CAN bitrate and FD flag, MAC seed and gadget IDs all live in
 `BOARD_INIT_DIR` and are staged verbatim into `/etc/mos`, where the units read
 them at runtime.
+
+## RAUC system.conf is rendered, not committed
+
+`os/rootfs/overlay-v2/etc/rauc/system.conf` is **generated** by
+`os/rauc/render-config.sh` (RFCT-014's renderer, which owns the template and
+its assertions) and is gitignored. `build-v2.sh` runs the renderer before
+staging the overlay, so the template plus `os/layout/cx3576-v2.env` are the
+single source of truth and the rendered file cannot drift from them.
+
+`os/bundle.sh` still runs `render-config.sh --check`. It now guards a narrower
+case — someone hand-editing the generated file after the last build — rather
+than committed-copy drift, which can no longer happen. Note that `bundle.sh`
+consumes `rootfs-verity.img` too, so `build-v2.sh` has necessarily run first
+and the file is present.
 
 ## Storage tiers, and the /var contract
 

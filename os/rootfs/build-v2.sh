@@ -91,9 +91,24 @@ fi
 # resolves PARTUUID= through those symlinks without normalising case.
 OVERLAY_SRC="$SCRIPT_DIR/overlay-v2"
 OVERLAY_STAGE="$OUT_DIR/overlay-v2"
+
+# The RAUC system.conf is rendered from os/rauc/system.conf.in and the layout
+# env by RFCT-014's renderer, which owns that template and its assertions (the
+# statusfile must not land on /var, the boot-attempts radix range, and the
+# fw_env.config structure). It is generated rather than committed: a rendered
+# artifact in git can drift from its template, and os/bundle.sh's --check can
+# only report that drift after the fact, not prevent it. Rendering it here, on
+# the build path that consumes it, makes the template the single source of
+# truth. The renderer writes into OVERLAY_SRC, so it must run before staging.
+bash "$REPO_ROOT/os/rauc/render-config.sh"
+
 rm -rf "$OVERLAY_STAGE"
 mkdir -p "$OVERLAY_STAGE"
 cp -a "$OVERLAY_SRC/." "$OVERLAY_STAGE/"
+if [ ! -s "$OVERLAY_STAGE/etc/rauc/system.conf" ]; then
+    echo "error: os/rauc/render-config.sh produced no system.conf to stage" >&2
+    exit 1
+fi
 
 lower() { echo "$1" | tr 'A-Z' 'a-z'; }
 render() {
