@@ -1,0 +1,16 @@
+[Unit]
+Description=Persist the machine id in the U-Boot environment
+Documentation=file:/usr/share/doc/mos/health
+# Once U-Boot supplies systemd.machine_id= there is nothing left to generate.
+ConditionKernelCommandLine=!systemd.machine_id
+After=local-fs.target
+# Deliberately not Before= any target: writing the U-Boot env touches storage
+# and must never hold up boot.
+
+[Service]
+Type=oneshot
+ExecStart=/usr/lib/mos/mos-machine-id
+TimeoutStartSec=30
+
+[Install]
+WantedBy=multi-user.target
