@@ -43,3 +43,4 @@ Each task is a single line linking to its detail file. All detailed information 
 - [-] [**RFCT-010 webd v1 on the mosd bus (PLAN-010 M3)**](RFCT-010.md) `P1`
 - [-] [**RFCT-011 Minimal image sizing + board hardware init (cx3576)**](RFCT-011.md) `P1`
 - [-] [**RFCT-012 Adopt the verified Alpine board rootfs and port its hardware facts to os/rootfs**](RFCT-012.md) `P1`
+- [-] [**RFCT-020 Partition layout v2 constants + mkimage v2 mode (cx3576)**](RFCT-020.md) `P1`
