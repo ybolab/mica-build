@@ -1,8 +1,11 @@
 //! Reconciler contract shared by all mosd reconcilers.
 
+mod hostname;
+mod network;
+
 use mosd_settings::Settings;
 
-// dead_code: no reconcilers are registered yet; drop this once the reconcilers subtask lands.
+// dead_code: name/subtree/apply are unused until the daemon loop lands; drop this then.
 #[allow(dead_code)]
 #[async_trait::async_trait]
 pub trait Reconciler: Send + Sync {
@@ -14,7 +17,13 @@ pub trait Reconciler: Send + Sync {
     async fn apply(&self, settings: &Settings) -> anyhow::Result<serde_json::Value>;
 }
 
-/// All reconcilers compiled into mosd with production executors. Stub: empty; the reconcilers subtask fills this in.
+/// All reconcilers compiled into mosd with production executors.
+///
+/// Safe to call anywhere: executors connect to the system bus lazily, so
+/// nothing touches the host until a reconciler's `apply` runs.
 pub fn all() -> Vec<Box<dyn Reconciler>> {
-    Vec::new()
+    vec![
+        Box::new(hostname::HostnameReconciler::new(hostname::Hostnamed)),
+        Box::new(network::NetworkReconciler::production()),
+    ]
 }
