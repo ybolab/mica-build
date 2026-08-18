@@ -1,0 +1,12 @@
+[Unit]
+Description=mos management daemon
+After=dbus.service
+
+[Service]
+Type=dbus
+BusName=com.mos.mosd
+ExecStart=/usr/bin/mosd
+Restart=on-failure
+
+[Install]
+WantedBy=multi-user.target
