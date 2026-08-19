@@ -23,11 +23,6 @@
 //! the device password into `/etc/shadow` and rendering the AP PSK into
 //! `hostapd.conf` all live elsewhere.
 
-// Every item here is called from the first-boot startup path and the access and
-// connd reconcilers, none of which exist yet; `mosd` is a binary crate, so
-// until they land the compiler sees the whole module as unreachable.
-#![allow(dead_code)]
-
 use std::fs::{self, DirBuilder, File, OpenOptions, Permissions};
 use std::io::{self, Write};
 use std::os::unix::fs::{DirBuilderExt, OpenOptionsExt, PermissionsExt};
@@ -162,6 +157,10 @@ pub fn ensure_identity(state_dir: &Path, settings: &mut Settings) -> Result<Outc
 /// # Errors
 ///
 /// Returns an error when the file exists but cannot be read.
+// dead_code: read back by the access and connd reconcilers, which do not exist
+// yet; `mosd` is a binary crate, so until they land the compiler sees these as
+// unreachable.
+#[allow(dead_code)]
 pub fn read_device_password(state_dir: &Path) -> Result<Option<String>> {
     read_secret(state_dir, DEVICE_PASSWORD_FILE)
 }
@@ -171,6 +170,10 @@ pub fn read_device_password(state_dir: &Path) -> Result<Option<String>> {
 /// # Errors
 ///
 /// Returns an error when the file exists but cannot be read.
+// dead_code: read back by the access and connd reconcilers, which do not exist
+// yet; `mosd` is a binary crate, so until they land the compiler sees these as
+// unreachable.
+#[allow(dead_code)]
 pub fn read_ap_psk(state_dir: &Path) -> Result<Option<String>> {
     read_secret(state_dir, AP_PSK_FILE)
 }
@@ -203,6 +206,10 @@ pub fn hash_password(password: &str) -> Result<String> {
 /// A malformed hash verifies as false rather than erroring: a corrupt stored
 /// credential must reject every password, not accept any.
 #[must_use]
+// dead_code: read back by the access and connd reconcilers, which do not exist
+// yet; `mosd` is a binary crate, so until they land the compiler sees these as
+// unreachable.
+#[allow(dead_code)]
 pub fn verify_password(hash: &str, password: &str) -> bool {
     PasswordHash::new(hash)
         .and_then(|parsed| Argon2::default().verify_password(password.as_bytes(), &parsed))
