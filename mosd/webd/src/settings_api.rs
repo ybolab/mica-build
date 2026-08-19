@@ -22,6 +22,12 @@ pub trait SettingsApi: Send + Sync {
     async fn reboot(&self) -> anyhow::Result<()>;
     /// Ask mosd to power the appliance off.
     async fn power_off(&self) -> anyhow::Result<()>;
+    /// Ask mosd to set a TRANSIENT root password, cleared on the next boot.
+    ///
+    /// Deliberately not a `set_settings` call: a password that reached the
+    /// settings tree would be persisted, re-applied on the next boot and
+    /// readable by anything that can call `GetSettings`.
+    async fn set_transient_root_password(&self, password: &str) -> anyhow::Result<()>;
 }
 
 /// In-memory [`SettingsApi`] used by the route tests.
@@ -31,6 +37,13 @@ pub struct FakeSettings {
     state: std::sync::Mutex<Value>,
     set_log: std::sync::Mutex<Vec<String>>,
     power_log: std::sync::Mutex<Vec<String>>,
+    /// How many times `set_transient_root_password` was called.
+    ///
+    /// A count, never the password. A fake that stored the password would let
+    /// a test assert "the right password arrived" and pass while the real path
+    /// leaks it somewhere else; there is nothing to assert about here except
+    /// whether the call happened and how often.
+    transient_password_calls: std::sync::Mutex<usize>,
 }
 
 #[cfg(test)]
@@ -41,6 +54,7 @@ impl FakeSettings {
             state: std::sync::Mutex::new(Value::Object(serde_json::Map::new())),
             set_log: std::sync::Mutex::new(Vec::new()),
             power_log: std::sync::Mutex::new(Vec::new()),
+            transient_password_calls: std::sync::Mutex::new(0),
         }
     }
 
@@ -62,6 +76,11 @@ impl FakeSettings {
     /// Power actions requested, in call order.
     pub fn power_calls(&self) -> Vec<String> {
         self.power_log.lock().unwrap().clone()
+    }
+
+    /// How many transient-password requests reached the backend.
+    pub fn transient_password_calls(&self) -> usize {
+        *self.transient_password_calls.lock().unwrap()
     }
 
     /// Poll [`Self::power_calls`] until it holds at least `count` entries or a
@@ -131,6 +150,12 @@ impl SettingsApi for FakeSettings {
 
     async fn power_off(&self) -> anyhow::Result<()> {
         self.power_log.lock().unwrap().push("power_off".to_string());
+        Ok(())
+    }
+
+    async fn set_transient_root_password(&self, _password: &str) -> anyhow::Result<()> {
+        // The password is dropped here on purpose; see the field's comment.
+        *self.transient_password_calls.lock().unwrap() += 1;
         Ok(())
     }
 }

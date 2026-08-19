@@ -2656,6 +2656,7 @@ dependencies = [
  "axum-server",
  "hmac",
  "maud",
+ "mosd-settings",
  "rand 0.8.7",
  "rcgen",
  "reqwest",

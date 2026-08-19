@@ -17,6 +17,7 @@ trait Mosd {
     fn get_state(&self, path: &str) -> zbus::Result<String>;
     fn reboot(&self) -> zbus::Result<()>;
     fn power_off(&self) -> zbus::Result<()>;
+    fn set_transient_root_password(&self, password: &str) -> zbus::Result<()>;
 }
 
 /// Lazily-connected mosd client. The proxy is built on first use and cached;
@@ -108,6 +109,20 @@ impl SettingsApi for BusSettings {
         let proxy = self.proxy().await?;
         match proxy.power_off().await {
             Ok(()) => Ok(()),
+            Err(err) => {
+                self.reset().await;
+                Err(err.into())
+            }
+        }
+    }
+
+    async fn set_transient_root_password(&self, password: &str) -> anyhow::Result<()> {
+        let proxy = self.proxy().await?;
+        match proxy.set_transient_root_password(password).await {
+            Ok(()) => Ok(()),
+            // The error is returned as mosd raised it. mosd's own contract is
+            // that no message it raises here carries the password, and nothing
+            // is added to it on the way back.
             Err(err) => {
                 self.reset().await;
                 Err(err.into())
