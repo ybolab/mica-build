@@ -537,6 +537,7 @@ mod tests {
             permit_root_login: false,
             password_authentication: false,
             listen_addresses: vec!["10.0.0.5".to_string(), "fd00::1".to_string()],
+            authorized_keys: Vec::new(),
         });
 
         assert_eq!(rendered, GOLDEN_LISTEN);
@@ -551,6 +552,7 @@ mod tests {
             permit_root_login: false,
             password_authentication: true,
             listen_addresses: vec!["10.0.0.5".to_string()],
+            authorized_keys: Vec::new(),
         };
 
         assert_eq!(render_drop_in(&ssh), render_drop_in(&ssh.clone()));
