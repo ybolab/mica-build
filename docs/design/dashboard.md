@@ -1,8 +1,8 @@
 # The mos dashboard: landing screen and information architecture
 
-> **Status:** proposal. This file contains **sections 1-4 only**. Sections 5-8
-> (technology posture; process architecture, the `webd` rename, and phasing) are
-> added by RFCT-044 and RFCT-046.
+> **Status:** proposal. This file contains **sections 1-5**. Section 5
+> (technology posture) was added by RFCT-044; sections 6-8 (process
+> architecture, the `webd` rename, and phasing) are added by RFCT-046.
 
 This document proposes turning the mos management UI from a set of forms into a
 dashboard. It proposes no code, no route handlers, no markup, and no rendering
@@ -834,3 +834,748 @@ hide-not-disable semantics let one UI serve an owner, an installer and a support
 engineer, where mos has a single `access.webAdmin` credential and one session
 gate (`venus-os-ui.md` section 7 item 5). Both are architecture questions rather
 than dashboard-layout questions, and both are left to RFCT-044 and RFCT-046.
+
+---
+
+## 5. Technology posture
+
+One question is answered here: **can the dashboard designed in sections 2 and 3
+be delivered inside `webd`'s existing constraints — server-rendered `maud`, no
+JavaScript build chain, rustls-only — and if so, how do live-ish values reach
+the screen?** Four transports are costed against one set of criteria, one is
+recommended, and the three things sections 2 and 3 explicitly deferred here are
+resolved: the live-install-progress tile (2.5), whether a partial-refresh
+mechanism can coexist with the form-POST model (3.2), and whether the `?saved=1`
+banner can be made to carry what `mosd` already computed (3.3).
+
+**Licence fence, restated here so it does not live only in the campaign record.**
+Venus OS gui-v2 ships under "Victron Energy OS license v1", which states *"USE OF
+THE SOFTWARE AND ITS MODIFICATIONS WITH SYSTEMS WHOSE CORE IS NOT VICTRON ENERGY
+PRODUCTS IS EXPRESSLY NOT AUTHORIZED"* (`gui-v2/LICENSE.txt:18-23` as verified by
+`docs/research/venus-os-ui.md` section 1.5, not re-verified here); Venus is a
+**study reference only** in this section as in the rest of the document, and no
+code, markup, asset name or verbatim string is borrowed from it — only ideas and
+interaction patterns, each attributed where used.
+
+**What this section deliberately does not decide.** Whether `webd` should be
+renamed, whether `webd` should be merged into `mosd`, and in what order any of
+this is delivered are all **RFCT-046's**, not this section's. Where a
+recommendation below would be changed by the process-architecture decision, that
+is flagged in one line and left open.
+
+**Hard constraint honoured, and the finding that goes with it.** No npm, no
+bundler, no TypeScript, no SPA framework, no component library, no CSS
+framework is proposed or assumed anywhere below. Stated as a finding rather than
+an assumption: **no option evaluated here requires one.** The dashboard of
+section 2 is deliverable without a build chain. If that were not true, the
+correct recommendation would be to abandon the dashboard rather than to acquire a
+front-end toolchain, and this section would say so.
+
+### 5.1 The constraint set, re-verified at the head of this branch
+
+`mos-ui-inventory.md` section 3 measured this at commit
+`d0bcae92656257021bb67bf7db72b8ac5bfb4651`. Everything below was re-opened and
+re-read on this branch, because no crate is costed here from memory. Where this
+section reads something the inventory did not, it says so.
+
+#### 5.1.1 Rendering and assets
+
+`webd`'s complete dependency list is 16 crates
+(`mosd/webd/Cargo.toml:11-28`): `anyhow`, `argon2`, `async-trait`, `axum`,
+`axum-server`, `hmac`, `maud`, `rand`, `rcgen`, `rustls`, `serde`, `serde_json`,
+`sha2`, `tokio`, `tracing`, `tracing-subscriber`, `zbus`. Dev-dependencies are
+`reqwest`, `tempfile`, `tower` (`Cargo.toml:30-33`). **`tower-http` is absent**,
+which is the mechanical reason there is no static-file route — and also, read out
+of that same absence, the reason **`webd` emits no HTTP compression at all**:
+compression in this stack comes from `tower_http::compression`, and the crate is
+not present. Every byte counted in section 5.3 is therefore an uncompressed byte
+on the wire.
+
+The single stylesheet is a `const STYLE` at `mosd/webd/src/routes.rs:147-154`,
+emitted into a `<style>` element at `routes.rs:165` through `PreEscaped`.
+Measured on this branch: **484 bytes** of CSS after line continuations are
+resolved. This matters below only because it is the existing, working precedent
+for *shipping browser-side text as a Rust string constant rather than as a build
+artefact* — it is what option B would have to imitate.
+
+`Multipart` and `http-equiv` appear nowhere under `mosd/` (grepped on this
+branch: 0 matches each), so there is no file-upload path and no auto-refresh
+today.
+
+#### 5.1.2 TLS and the crypto posture — and what a new crate is checked against
+
+- `rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12"] }`
+  (`mosd/Cargo.toml:38`), provider installed explicitly at
+  `mosd/webd/src/main.rs:46-48`; `axum-server` takes
+  `tls-rustls-no-provider` (`mosd/Cargo.toml:37`), which is why that install is
+  mandatory rather than decorative. `rcgen` is likewise pinned to the `ring`
+  backend (`mosd/Cargo.toml:39`).
+- The workspace **actively enforces a pure-Rust crypto posture**, and does so in
+  a comment rather than by accident: `tough` is pinned to `=0.18.0` with the
+  note *"tough 0.18 is the last release whose crypto backend is `ring`; 0.19+
+  hard-depend on aws-lc-rs, which builds C (AWS-LC). See docs/task/RFCT-016.md."*
+  (`mosd/Cargo.toml:33-35`).
+- Licence gate: `mosd/deny.toml:3-14` allows Apache-2.0, MIT, BSD-2-Clause,
+  BSD-3-Clause, ISC, Unicode-3.0, Zlib and nothing else; `[bans]
+  multiple-versions = "warn"` (`deny.toml:16-17`).
+
+**So "does this option need a new crate?" is answered below by three tests, in
+this order:** is it already in `mosd/Cargo.lock`; does it build C or pull
+`aws-lc-rs`; is its licence on the `deny.toml` allow-list. A crate that fails any
+of these is a cost, not a detail.
+
+#### 5.1.3 What the HTTPS listener actually speaks — read out of source, not documented anywhere in this repo
+
+This is new relative to `mos-ui-inventory.md` section 3.3, which covers the
+certificate and the provider but not the protocol, and it changes the cost of
+one option materially.
+
+`main.rs:72-79` builds the listener with `RustlsConfig::from_pem` and serves it
+through `axum_server::from_tcp_rustls`. Reading `axum-server` 0.7.3 from the
+local registry copy of the published crate:
+
+- `RustlsConfig::from_pem` reaches `config_from_pem` → `config_from_der`, which
+  sets `config.alpn_protocols = vec![b"h2".to_vec(), b"http/1.1".to_vec()]`
+  (`axum-server-0.7.3/src/tls_rustls/mod.rs:292`;
+  <https://docs.rs/axum-server/0.7.3/>).
+- `axum-server` serves connections through `hyper_util::server::conn::auto::Builder`
+  (`axum-server-0.7.3/src/server.rs:10`) and declares `hyper` with features
+  `["http1", "http2", "server"]` (`axum-server-0.7.3/Cargo.toml:158-164`).
+
+**Consequence: `webd`'s HTTPS listener already advertises and can serve HTTP/2,
+even though `axum` itself is on default features and its own `http2` feature is
+off** (`axum = "0.8"` at `mosd/Cargo.toml:36`; axum 0.8.9's default feature set
+is `form, http1, json, matched-path, original-uri, query, tokio, tower-log,
+tracing`, read from `axum-0.8.9/Cargo.toml:81-91`). Cargo feature unification
+means `axum-server`'s `hyper` features are the ones that apply. This is stated as
+**read out of source**; it is not documented in this repository and it was not
+observed on a running appliance (see 5.13).
+
+#### 5.1.4 The bus surface, and the single mutex behind it
+
+`mos-ui-inventory.md` section 4 gives the six-method, one-signal surface.
+Two properties read directly from `mosd/mosd/src/bus.rs` on this branch bound
+every option below:
+
+1. **`webd` does not subscribe to `SettingsChanged`.** Its zbus proxy declares
+   five methods and no signal member (`mosd/webd/src/bus_client.rs:9-20`).
+   Adding a `#[zbus(signal)]` member needs **no new crate**: `zbus` 5.19.0 is
+   already in the tree and already pulls `futures-core` (`mosd/Cargo.lock`, zbus
+   entry at `:2906-2931`), and signal streams are part of the proxy macro. The
+   workspace pin is `zbus = { version = "5", default-features = false, features = ["tokio"] }`
+   (`mosd/Cargo.toml:24`).
+2. **All of `mosd`'s settings and live state sit behind one `tokio::sync::Mutex`.**
+   `MosdService.inner: Mutex<Inner>` (`mosd/mosd/src/bus.rs:41-53`), whose own
+   doc comment says *"Mutable trees guarded by one lock so settings writes and
+   live-state updates stay consistent"* (`bus.rs:41-42`). `get_settings` takes it
+   at `bus.rs:161`, `get_state` at `:198`, `report_health` at `:215`. Critically,
+   `set_settings` takes it at `bus.rs:177` and **holds it across every
+   overlapping reconciler's `apply().await`** (loop at `:183-188`, released by
+   `drop(inner)` at `:189`).
+
+   Read out of that: **while a reconciler is applying, every dashboard read
+   blocks.** How long that is depends on the reconciler — the network reconciler
+   calls `org.freedesktop.network1 Manager.Reload`
+   (`mosd/mosd/src/reconciler/network.rs:36-43`), the sshd reconciler drives a
+   systemd unit (`mosd/mosd/src/reconciler/sshd.rs:386-404`). This is not a
+   defect to fix here; it is a **hard budget on how often a dashboard may poll**,
+   and it applies identically to all four options, because all four ultimately
+   read through the same lock. It is the single strongest argument in this
+   section against high-frequency polling of any kind.
+
+   One further load fact, already noted in section 3.4.1: the auth gate calls
+   `GetSettings("access")` on **every** request (`mosd/webd/src/routes.rs:120`),
+   so every browser request costs at least one bus round trip before a tile is
+   read.
+
+3. **`SetSettings` swallows reconciler failures.** `record` writes
+   `{"error": "<message>"}` into live state and logs (`bus.rs:126-137`), and
+   `set_settings` returns `Ok(())` regardless (`bus.rs:183-193`). This is a
+   precision refinement of section 3.3, not a contradiction of it: "stored versus
+   applied" *is* resolved before the call returns, but the resolution is written
+   **into the live-state tree**, not into the method's return value. Section 5.11
+   is built on this.
+
+#### 5.1.5 Two precision corrections, carried without editing sections 1-4
+
+Both are small, both are verified, and neither changes any conclusion in
+sections 1-4.
+
+- The post-submit redirect is **303 See Other**, not 302. `Redirect::to` uses
+  `StatusCode::SEE_OTHER` (`axum-0.8.9/src/response/redirect.rs:26-38`), and
+  `mosd/webd/src/tests.rs` asserts `StatusCode::SEE_OTHER` at 20 call sites
+  (for example `:41`, `:174`, `:394`, `:587`). `mos-ui-inventory.md` section 3.2
+  and section 1.2 of this document describe the pattern as "302"; the pattern —
+  POST/Redirect/GET — is the same either way, and 303 is the more correct of the
+  two for a form submit. Sections 1-4 are left as written.
+- The HTTP-listener redirect is 308 (`mosd/webd/src/routes.rs:61-65` and its doc
+  comment at `:59-60`); that one is stated correctly throughout.
+
+### 5.2 The criteria
+
+Every option in 5.3-5.6 is costed against the same six criteria, in the same
+order, so the four are comparable rather than merely described.
+
+| | Criterion | What is being measured |
+|---|---|---|
+| **C1** | **Bytes shipped to the browser** | Bytes beyond the HTML that would ship anyway, plus bytes re-shipped per update. Uncompressed, because `tower-http` is absent (5.1.1) |
+| **C2** | **New crates** | Named, and checked against `mosd/Cargo.toml`, `mosd/Cargo.lock` and `mosd/deny.toml` by the three tests in 5.1.2 |
+| **C3** | **JavaScript disabled** | What an operator with scripting off, or a text browser, or a hardened kiosk profile, still gets |
+| **C4** | **`mosd`-side work** | New bus method? New signal? Does it need `SettingsChanged` (`bus.rs:249-254`), which exists and is unsubscribed (`bus_client.rs:9-20`)? |
+| **C5** | **`mosd` down** | Today: lazy connect, cache dropped on error, per-request 502 pages, never a `webd` crash (`mosd/webd/src/bus_client.rs:22-25`, `:41-58`; `bus_error` at `routes.rs:95-105`). What does the option do to that? |
+| **C6** | **Operator-visible latency** | Worst-case delay between a value changing on the box and the operator seeing it |
+
+A seventh consideration — interaction with the existing form-POST + 303 +
+full re-render model — is not a per-option criterion because it has a single
+answer for all four; it is 5.10.
+
+### 5.3 Option A — full-page refresh
+
+`<meta http-equiv="refresh" content="15">` emitted into the `<head>` by
+`shell()` (`mosd/webd/src/routes.rs:157-185`) on pages that opt in.
+
+- **C1 — bytes.** ~45 bytes of markup, once. Per update: the **entire page,
+  uncompressed**. Estimate for the seven-tile dashboard of section 2, based on
+  the current shell plus 484 bytes of CSS (5.1.1) plus tile content: **4-6 KB per
+  refresh**. This is an estimate — the page does not exist — and is labelled as
+  one. At a 15-second interval that is roughly 300-400 bytes/second per open tab.
+- **C2 — new crates. Zero.** `maud` already emits arbitrary `<head>` children
+  (`routes.rs:160-166`); nothing else is required.
+- **C3 — JavaScript disabled. Everything works.** This is the only one of the
+  four options for which that sentence is true, and it is the whole of its case.
+  `meta refresh` is HTML, not script; it survives scripting being off, `noscript`
+  environments and text browsers.
+- **C4 — `mosd` work. None.** No new method, no signal, no subscription. Every
+  tile is a read at request time, which is exactly the shape section 2.1 rule 6
+  already designed for.
+- **C5 — `mosd` down.** Unchanged and already correct: the refresh re-issues a
+  GET, the gate's `GetSettings("access")` fails, and `bus_error` renders the
+  502 page *"The management daemon is unavailable."* (`routes.rs:95-105`). The
+  next refresh retries. **A dashboard that recovers by itself when `mosd` comes
+  back, with no code written for that at all**, is a genuine property of this
+  option and not of the other three, where a dead stream has to be reconnected
+  deliberately.
+- **C6 — latency.** Bounded by the interval: worst case one full interval, mean
+  half of it. At 15 s that is 7.5 s mean, 15 s worst.
+
+**Costs that must be stated, not buried.**
+
+1. **Accessibility. This is a documented WCAG failure**, not a matter of taste:
+   W3C technique **F41, "Failure of Success Criterion 2.2.1, 2.2.4, and 3.2.5 due
+   to using meta refresh to reload the page"**
+   (<https://www.w3.org/WAI/WCAG21/Techniques/failures/F41>, fetched and read).
+   The applicable criterion is 2.2.1 Timing Adjustable, which is satisfied when
+   the operator can turn the time limit off.
+   **[proposal]** Therefore auto-refresh must ship with a plain link that turns
+   it off — `/?refresh=off`, a GET with a cookie or query marker, no JavaScript
+   involved. That is one extra link in the page chrome and it is not optional.
+2. **Client-side UI state is destroyed on every refresh.** Scroll position,
+   focus, and — directly relevant — the expanded/collapsed state of section 2.3's
+   *"expandable to the failing detail"* health roll-up. **[proposal]** This
+   imposes a design constraint back onto section 2: **any expandable tile detail
+   must be encoded in the URL** (`/?open=network`) so that it survives the
+   navigation, or be rendered inline and always-open. `<details>` elements reset
+   to their markup-declared state on navigation, so the open state has to come
+   from the server. This is a real cost of option A and it is charged here rather
+   than discovered later.
+3. **History-entry behaviour is browser-dependent** and was not tested here
+   (5.13).
+4. **Bus load.** Seven tiles plus the gate is on the order of 8-10 bus round
+   trips per render (section 2.9's tile list plus `routes.rs:120`). Against the
+   single mutex of 5.1.4, a 15-second interval with a handful of tabs open is
+   comfortable; a 1-second interval is not. The interval is a real budget, not a
+   cosmetic setting.
+5. **It does not extend the session, which is correct.** `SessionStore::verify`
+   reads the expiry and never rewrites it (`mosd/webd/src/session.rs:66-79`);
+   `SESSION_TTL` is an absolute 24 hours from creation (`session.rs:19`). So a
+   tab left refreshing overnight lands on `/login` when the session expires,
+   exactly as a manually reloaded tab would. Options C and D do **not** have this
+   property (5.5, 5.6).
+
+### 5.4 Option B — fetch-fragment polling in hand-written JavaScript
+
+A `setInterval` that fetches per-tile HTML fragments from new routes and swaps
+them into the DOM. No framework, no npm, no bundler; the script ships as a Rust
+`const` string emitted through `PreEscaped`, exactly as `STYLE` does today
+(`routes.rs:147-154`, `:165`).
+
+- **C1 — bytes.** The script, once: **~800 bytes uncompressed** is the budget
+  proposed here — enough for a fetch loop, a failure path that marks tiles stale
+  instead of blanking them, and an exponential backoff. **[proposal, estimate]**
+  A naive one-line version is under 200 bytes; the difference is entirely error
+  handling, and shipping the naive version is how a dashboard silently shows
+  values from ten minutes ago. Per update: only the changed fragments,
+  **~200-600 bytes per tile** rather than 4-6 KB — roughly an order of magnitude
+  less than option A per update at equal interval.
+- **C2 — new crates. Zero.** A fragment route is a `maud` handler returning
+  `Html<String>` like every existing one; `axum` needs no additional feature.
+- **C3 — JavaScript disabled.** The initial server render still works — the page
+  is complete and correct at load — but it **never updates**. **[proposal]** That
+  makes a degraded mode mandatory rather than optional: the page must carry a
+  server-rendered "as of HH:MM:SS" stamp so that a non-updating page reads as a
+  snapshot rather than as a live view. Without that stamp this option ships the
+  exact failure mode section 2.4 exists to prevent, in the time dimension instead
+  of the configured/observed dimension.
+- **C4 — `mosd` work. None**, but it needs **new `webd` routes**: one per
+  refreshable tile, each behind the same auth gate (`routes.rs:54`), each
+  returning a fragment rather than a page. That is real surface area — section
+  1.1 counts ten routes today; seven tile routes would nearly double it.
+- **C5 — `mosd` down.** Each fragment route returns the 502 page body
+  (`routes.rs:95-105`), which would be swapped into a tile slot — visually wrong
+  unless the client script special-cases the status code. This is the first
+  option that needs code written specifically to degrade well.
+- **C6 — latency.** Same as option A: bounded by the interval. **Polling
+  frequency is not actually improved by this option** — the mutex budget of
+  5.1.4 is the binding constraint, not the byte count. What B buys is *cheaper*
+  updates at the same rate, and preserved scroll/focus/expansion state. What it
+  does not buy is *faster* ones.
+
+**The honest summary of B:** it is a real improvement on A in bytes and in
+preserved UI state, and it costs the repository's most distinctive property —
+the zero-JavaScript posture measured by four independent probes in
+`mos-ui-inventory.md` section 3.2. It is not a build chain and it is not a
+framework, and it should not be described as either. But once ~800 bytes of
+hand-written JavaScript are in the tree, "no JavaScript" stops being a checkable
+invariant and becomes a matter of degree.
+
+### 5.5 Option C — Server-Sent Events
+
+A long-lived `text/event-stream` response, consumed by the browser's built-in
+`EventSource`.
+
+- **C1 — bytes.** Client script: **~300-500 bytes** for an `EventSource` plus a
+  per-tile dispatch. **[proposal, estimate]** `EventSource` reconnects
+  automatically when the connection drops
+  (<https://developer.mozilla.org/en-US/docs/Web/API/Server-sent_events/Using_server-sent_events>),
+  so no reconnect logic is needed — this is genuinely cheaper than option D on
+  the client. Per update: only the changed payload, plus SSE framing and periodic
+  keep-alive comments.
+- **C2 — new crates. Effectively zero, and this surprised me.** `axum`'s SSE
+  support is **not feature-gated**: `pub mod sse;` is unconditional
+  (`axum-0.8.9/src/response/mod.rs:7`), and `sse.rs` imports only `bytes`,
+  `futures-util`, `http-body`, `pin-project-lite` and `sync_wrapper`
+  (`axum-0.8.9/src/response/sse.rs:36-48`) — all already non-optional `axum`
+  dependencies. To construct a stream, `webd` would add **`futures-util`** as a
+  direct dependency; it is already resolved in the tree at **0.3.34**
+  (`mosd/Cargo.lock`), licence `MIT OR Apache-2.0` (read from the local registry
+  copy of `futures-util-0.3.34/Cargo.toml`), which is on the `deny.toml`
+  allow-list (`deny.toml:6-14`). Pure Rust, no C. **So option C adds one line to
+  `mosd/webd/Cargo.toml` and zero crates to the compiled graph.** (`tokio-stream`
+  would be the more ergonomic choice and **is not** in `mosd/Cargo.lock` — that
+  one is a genuine new crate and is not needed.)
+- **C3 — JavaScript disabled.** Nothing updates. `EventSource` is a scripting
+  API; there is no markup-level SSE consumer. Identical degraded story to option
+  B, and it needs the same server-rendered timestamp.
+- **C4 — `mosd` work. This is where the option collapses, and it is the decisive
+  finding of this section.** SSE is a *push* transport, and push requires
+  something to push. `mosd` emits **exactly one signal**, `SettingsChanged`
+  (`mosd/mosd/src/bus.rs:249-254`, emitted at `:190-192`) — and it fires on
+  **settings** writes. For **live state** — the IP address of section 2.4, the
+  storage figures of 2.6, the slot state of 2.5, install progress — there is **no
+  signal of any kind**. `record` mutates the live-state tree in place
+  (`bus.rs:126-137`) and announces nothing.
+
+  So an SSE dashboard would be `webd` polling `mosd` on a timer internally and
+  forwarding to the browser: **the same bus load as option A, through the same
+  mutex, plus a persistent connection per tab.** The push is a fiction one hop
+  from the browser. Making it real means a new `mosd` signal — a `StateChanged`,
+  or a subscription mechanism — which is `mosd` work in the same class as gap
+  rows 1-5 and 14, and which nothing in this campaign has proposed or costed.
+- **C5 — `mosd` down.** Worse than A in a way that matters. `bus_client`'s
+  degradation is **per-request** by construction (`bus_client.rs:22-25`,
+  `:41-58`): an error drops the cached proxy so the *next request* reconnects.
+  An open SSE stream is not a next request. The stream handler has to detect the
+  failure, emit an error event, and either keep the stream open emitting failures
+  or close it and rely on `EventSource`'s automatic retry. Either is fine; both
+  are code that does not exist and that option A does not need.
+- **C6 — latency.** Sub-second *if* there were a real push source. Given C4,
+  actual latency equals `webd`'s internal poll interval, which is governed by the
+  same mutex budget as A and B. **The latency advantage is theoretical until
+  `mosd` grows a state-change signal.**
+
+**Two further costs specific to C.**
+
+- **Connection budget.** MDN documents the limit plainly: *"When not used over
+  HTTP/2, SSE suffers from a limitation to the maximum number of open
+  connections, which can be especially painful when opening multiple tabs, as
+  the limit is per browser and is set to a very low number (6)"*, against *"the
+  maximum number of simultaneous HTTP streams is negotiated between the server
+  and the client (defaults to 100)"* under HTTP/2
+  (<https://developer.mozilla.org/en-US/docs/Web/API/Server-sent_events/Using_server-sent_events>).
+  Per 5.1.3, `webd`'s HTTPS listener **does** advertise `h2` via ALPN, so this
+  limit probably does not bind — but that is read out of `axum-server`'s source
+  and was not confirmed against a browser negotiating h2 to `webd`'s self-signed
+  certificate after a security exception (5.13). Under HTTP/1.1 fallback, one
+  open dashboard tab consumes one of six connections for the whole origin.
+- **The session outlives the gate.** The auth gate is per-request middleware
+  (`routes.rs:115-138`). An established stream is not re-gated, so it keeps
+  delivering after the session's absolute 24-hour TTL expires
+  (`session.rs:19`, `:66-79`) until the connection drops. Option A has the
+  opposite and better behaviour (5.3, cost 5). Closing this needs an explicit
+  in-stream expiry check — again, code that A does not need.
+
+### 5.6 Option D — WebSocket
+
+- **C1 — bytes.** Client script **~900 bytes** **[proposal, estimate]** — larger
+  than C because `WebSocket` has **no** automatic reconnect, so the backoff loop
+  that `EventSource` provides for free must be hand-written. Per update: the
+  smallest framing of the four.
+- **C2 — new crates. Three, and this is the only option that fails the test.**
+  `axum`'s `ws` feature is
+  `["dep:hyper", "tokio", "dep:tokio-tungstenite", "dep:sha1", "dep:base64"]`
+  (`axum-0.8.9/Cargo.toml:133-139`), with `tokio-tungstenite` at 0.29.0
+  (`axum-0.8.9/Cargo.toml:264-266`). Checked against `mosd/Cargo.lock` on this
+  branch: **`tokio-tungstenite` — absent. `tungstenite` — absent. `sha1` —
+  absent.** (`base64` is present, at two versions.) `tungstenite` in turn pulls
+  its own dependency set. All are pure Rust and all are `MIT`/`Apache-2.0`-family
+  so the `deny.toml` gate would pass, but `[bans] multiple-versions = "warn"`
+  (`deny.toml:16-17`) would have more to warn about. Three new crates against
+  zero for options A, B and C is not a marginal difference.
+- **C3 — JavaScript disabled.** Nothing updates, same as B and C.
+- **C4 — `mosd` work.** Identical to option C, and the same collapse: there is
+  nothing to push. WebSocket's distinguishing feature over SSE is the
+  **client-to-server** direction, and the dashboard of section 2 is **read-only
+  by rule 1 of section 2.1**. The one capability D has that C lacks is the one
+  capability this design has explicitly refused.
+- **C5 — `mosd` down.** Same as C, but worse: no automatic reconnect.
+- **C6 — latency.** Same as C, and theoretical for the same reason.
+
+**The security cost that decides it.** `mos-ui-inventory.md` section 3.4 records
+that **there is no CSRF token anywhere in `webd`**; the only cross-site
+mitigation is `SameSite=Lax` (`mosd/webd/src/session.rs:91`) plus POST-only
+destructive routes with a confirmation field (`routes.rs:49-53`, `:820`).
+`SameSite` cookie semantics do not cover the WebSocket handshake, so a
+writable WebSocket endpoint on a box whose D-Bus policy already lets *any local
+process* call `Reboot` (`mosd/dist/com.mos.mosd.conf:4-11`, quoted in
+`mos-ui-inventory.md` section 3.6) would want explicit `Origin` checking before
+it shipped. **[my inference, from the absence of CSRF machinery plus the
+handshake's cookie semantics; not verified against an exploit and not something
+this campaign tested.]** Opening a bidirectional channel to buy a direction the
+design does not use, on an application with no CSRF defence, is the wrong trade.
+
+### 5.7 Side by side
+
+| | **A** full-page refresh | **B** fetch-fragment polling | **C** SSE | **D** WebSocket |
+|---|---|---|---|---|
+| **C1** bytes, one-off | ~45 B markup | ~800 B script *(est.)* | ~300-500 B script *(est.)* | ~900 B script *(est.)* |
+| **C1** bytes, per update | 4-6 KB, whole page, uncompressed *(est.)* | ~200-600 B/tile *(est.)* | payload + framing | payload + framing |
+| **C2** new crates | **0** | **0** | **0** (`futures-util` 0.3.34 already in `Cargo.lock`) | **3** — `tokio-tungstenite`, `tungstenite`, `sha1`, all absent from `Cargo.lock` |
+| **C3** JS disabled | **fully works** | initial render only | initial render only | initial render only |
+| **C4** `mosd` work | **none** | none (+7 `webd` routes) | none *to build it* — but the push is a fiction without a new state-change signal | same as C |
+| **C5** `mosd` down | already correct, self-healing, zero new code | fragment routes return the 502 body into a tile slot | stream needs explicit error/retry handling | same as C, plus hand-written reconnect |
+| **C6** latency | interval-bound (15 s proposed) | interval-bound — **no better than A** | sub-second *in theory*; interval-bound *in fact* | same as C |
+| **Preserves scroll / focus / expansion** | **no** | yes | yes | yes |
+| **Survives session expiry correctly** | **yes** | yes | no, without extra work | no, without extra work |
+| **Keeps the zero-JS invariant** | **yes** | no | no | no |
+
+### 5.8 Recommendation
+
+**Adopt option A — full-page refresh — as the dashboard's only live-value
+mechanism, at a 15-second default interval, with a no-JavaScript off switch.**
+
+The reasoning is four facts from above, not a preference:
+
+1. **C4 kills the push options.** `mosd` has one signal and it is about
+   *settings* (`bus.rs:249-254`). There is no live-state change notification of
+   any kind. C and D therefore do not deliver push; they deliver `webd` polling
+   `mosd` with a persistent browser connection stapled on. Their headline
+   advantage does not exist yet, and buying the transport before the signal is
+   paying for a pipe with nothing at the far end.
+2. **C6 is identical across all four options**, because the binding constraint is
+   `mosd`'s single mutex (5.1.4), not the wire format. No option evaluated here
+   makes the dashboard meaningfully fresher than any other.
+3. **C3 is the only criterion on which the options genuinely differ**, and A is
+   the only one that keeps working. Against a *headless appliance* — where the
+   browser may be an unfamiliar one on a phone on a setup access point — that is
+   worth more than 4 KB per refresh.
+4. **C2 and C5 both favour A**, and C5 favours it for free: `bus_client`'s
+   per-request degradation (`bus_client.rs:22-25`) is already exactly the right
+   behaviour for a page that re-fetches itself, and exactly the wrong shape for a
+   long-lived stream.
+
+**What this buys.** The dashboard of section 2 becomes deliverable with **no new
+crate, no new `mosd` mechanism, no new client-side technology and no change to
+the zero-JavaScript posture** — and every tile that section 2.9 marks **(a)
+available today** ships as soon as it is written. The technology question stops
+blocking anything.
+
+**What this forecloses, stated plainly.**
+
+- **Any value meaningful at sub-15-second resolution.** A moving needle, a
+  throughput graph, a load average — none of these are renderable under A.
+  Section 2.10 already refuses CPU, memory, load and temperature tiles on
+  independent grounds, so nothing currently proposed is lost. But if a future
+  tile needs a moving value, this recommendation is what has to be revisited, and
+  the revisit should start at option B.
+- **Client-side UI state.** Scroll, focus, and expanded detail are destroyed on
+  every refresh. Section 5.3 charges this as a design constraint back onto
+  section 2.3: **expandable detail must be URL-encoded, not client-side**. This
+  is the concrete price paid.
+- **Immediate reaction to a change made by another actor.** `SettingsChanged`
+  stays unsubscribed at the browser boundary, so a config change made from a
+  second session or by a local bus caller (which
+  `mosd/dist/com.mos.mosd.conf:4-11` permits any local process to do) appears
+  within one refresh interval rather than at once. For an appliance with one
+  admin credential (`mos-ui-inventory.md` section 3.4) this is the right trade.
+  Note the two are separable: **`webd` could subscribe to `SettingsChanged`
+  server-side** — no new crate, per 5.1.4 item 1 — for cache invalidation or a
+  render stamp, entirely independently of any browser transport. Gap row 16 is
+  therefore *partly* closable under this recommendation. Whether to do so is a
+  `webd` process-architecture question and belongs to RFCT-046.
+- **It does not foreclose option B.** A is not a one-way door: the fragment
+  routes of option B are additive to a server-rendered page, and 5.9 names the
+  single circumstance under which they should be built.
+
+**One line left open for RFCT-046:** if `webd` were merged into `mosd`, the
+mutex analysis of 5.1.4 changes shape — the bus round trip per tile disappears
+and the lock becomes an in-process one. That would lower the cost of every
+option, most of all the polling ones, and could make a shorter interval or
+option B cheaper than costed here. It does not change the C3 or C4 arguments,
+which are the load-bearing ones. Left open.
+
+### 5.9 The tile section 2.5 handed over: live install progress
+
+Section 2.5 flagged exactly one item as materially technology-dependent: *"a
+genuinely live progress bar is the one item on this screen that a server-rendered
+page cannot show well"*, borrowing from Venus's practice of publishing real
+percentage progress from the installer's own progress socket rather than guessing
+(`venus-os-access.md` section 5.4 and section 6 item 5, cited via section 2.5).
+
+**The first thing to say is that this tile cannot be built at all today, for
+reasons that have nothing to do with transport.** Gap row 4: there is no upload
+route, no file-receiving handler (`Multipart` appears nowhere under `mosd/`,
+re-grepped on this branch), and no `rauc install` caller anywhere in `mosd/`
+(`mos-ui-inventory.md` section 7 row 4; carried in section 4.1 item 4 of this
+document). There is no progress to display because there is no install. **The
+transport is not this tile's blocker and choosing SSE would not unblock it.**
+
+**Under the recommendation, once row 4 exists** — **[proposal]**:
+
+- The update page — **not the dashboard** — opts into a **2-second**
+  `meta refresh` for the duration of an install, and renders the percentage as
+  text plus a `<progress>` element, which is a native HTML element requiring no
+  script and no styling framework.
+- The 2-second interval is affordable **only because it is scoped to one page
+  during one operation**: it reads one live-state key rather than the dashboard's
+  eight to ten, and an install is a bounded event, not a steady state. The mutex
+  budget of 5.1.4 is respected because the load is one read every two seconds,
+  not eighty.
+- The refresh is emitted **only while an install is in progress** and removed on
+  completion, so the page settles rather than reloading forever. That also keeps
+  the WCAG exposure of 5.3 bounded to a screen the operator is actively watching,
+  and the off-switch link still applies.
+- The dashboard tile itself (section 2.5) shows the *state* — installing, at what
+  percentage as of the last render — and links to the update page. It does not
+  animate.
+
+**The degraded form, which is the part that matters.** Two distinct degradations,
+and they must not be conflated:
+
+- **If `meta refresh` is unavailable** (scripting is irrelevant here, but a text
+  browser or a hardened profile may ignore it): the page is still complete and
+  correct at load, showing the percentage as of that render, with the "as of"
+  stamp and an explicit **"Reload for current progress"** link. The operator gets
+  a manual refresh button instead of an automatic one. Nothing is hidden and
+  nothing is fabricated.
+- **If progress reporting itself is unavailable** — that is, row 4 lands with an
+  install method but no progress feed: the page must show **"installing, progress
+  not reported"** and the elapsed time since the install started. It must **not**
+  show an indeterminate animated bar, and it must **not** interpolate a
+  percentage. Section 2.4's rule applies unchanged in the time dimension: a
+  progress bar that moves without a source is the same lie as an IP address that
+  is really a configured intent. An honest elapsed-time counter is what stops an
+  operator power-cycling mid-install, and that is the entire purpose section 2.5
+  claimed for this tile.
+
+**What this concedes.** A 2-second page reload is a worse progress experience
+than a smoothly updating bar, and this section does not pretend otherwise. It is
+recommended because it costs nothing, ships with the rest of the dashboard, and
+is honest. **If, once row 4 exists, the 2-second reload measures as
+unacceptable in practice, option B is the pre-approved escalation for this one
+route** — a ~300-byte fetch loop against a single progress fragment, with the
+byte count stated in the commit and the script shipped as a `PreEscaped` string
+constant like `STYLE` (`routes.rs:147-154`, `:165`), never as a build artefact.
+It must not spread to the dashboard, and the trigger for it is a measurement, not
+a preference.
+
+### 5.10 Can a partial-refresh mechanism coexist with POST + 303 + full re-render?
+
+**Yes — under one rule, and the rule falls out of section 2.1 rather than being
+invented here.**
+
+**The rule: auto-refresh is permitted on read-only pages and forbidden on any
+page containing a form.** **[proposal]**
+
+This is not a compromise; it is a restatement of section 2.1 rule 1 — *"Read-only.
+No form, no control, no destructive action"* — which already makes the landing
+screen exactly the class of page that is safe to refresh. The result is a clean
+partition with no overlap:
+
+| Page class | Update path | Why |
+|---|---|---|
+| Dashboard, update page, diagnostics — **read-only** (section 2.1 rule 1, section 3.2) | `meta refresh`, GET, interval-bound | No form state to destroy. Nothing to lose on navigation except scroll and expansion, which 5.8 charges as a known cost |
+| Network, Access, Hostname, Power — **editors** (the form routes of `routes.rs:44-53`) | POST → 303 → full re-render, unchanged | A refresh mid-typing would discard the operator's input. Absolutely forbidden |
+
+**So the UI has one update path, not two.** Every update in the product — a
+refresh tick and a form submit alike — is *a GET that renders the whole page
+from current server state*. `meta refresh` does not introduce a second rendering
+model; it introduces a second **trigger** for the one that already exists. That
+is precisely why this option coexists and why options B, C and D do not without
+care: those three introduce a genuinely different rendering path — a fragment
+route producing markup that must stay consistent with the full-page render of the
+same tile — and therefore two places where a tile's HTML is defined. Under option
+B that duplication is manageable (one `maud` function called from both handlers)
+but it is real, and it is a maintenance cost worth naming since 5.9 leaves option
+B on the table for one route.
+
+Two mechanical points, verified:
+
+- The 303 target is a GET (`Redirect::to` → `SEE_OTHER`,
+  `axum-0.8.9/src/response/redirect.rs:26-38`), so a refreshing dashboard reached
+  after a submit re-renders normally with no resubmission prompt.
+- The power routes are POST-only with no GET handler (`routes.rs:49-53`, pinned
+  by `mosd/webd/src/tests.rs:563`). A `meta refresh` issues a GET and therefore
+  **cannot** trigger a power action even if one were somehow placed on a
+  refreshing page. Section 2.10's exclusion of power buttons from the landing
+  screen stands on its own reasoning; this is an independent second layer, and it
+  is worth recording that adopting auto-refresh does not weaken it.
+
+### 5.11 The `?saved=1` banner
+
+`mos-ui-inventory.md` section 3.2 and section 3.3 of this document both observe
+that `SetSettings` runs the overlapping reconcilers **before** returning, so
+"stored versus applied" is resolved server-side and the `?saved=1` marker
+(`routes.rs:205-209`, banner at `:201-203`) discards information `mosd` already
+computed. The question put to this section is whether the recommendation lets
+that information reach the operator.
+
+**Yes, fully — and the finding is that this was never a live-value transport
+question at all.** It is a server-rendering question, and it is answerable under
+option A exactly as well as under SSE. The evidence, read on this branch:
+
+1. **The outcome is not in the return value.** `set_settings` returns
+   `fdo::Result<()>` and calls `record` for each overlapping reconciler
+   (`mosd/mosd/src/bus.rs:183-188`); `record` writes `Ok(value)` or
+   `{"error": "<message>"}` into the live-state tree and **logs the failure
+   rather than propagating it** (`bus.rs:126-137`). `set_settings` then returns
+   `Ok(())` (`bus.rs:193`). So today, `webd`'s `Ok(())` from
+   `bus_client.rs:74-83` means *"persisted, and every overlapping reconciler
+   ran"* — **not** *"applied successfully"*. This refines section 3.3, which is
+   right that the resolution happens before the call returns; it happens into the
+   live-state tree, not into the reply.
+2. **Therefore the fix is one extra `GetState` on the redirect target**, and
+   nothing else. `network_submit` writes `network.<iface>` and 303s to
+   `/network?saved=1` (`routes.rs:696-720`); `network_form` then calls
+   `GetSettings("network")` (`routes.rs:687`). **[proposal]** It should also call
+   `GetState("network")` and render *the reconciler's recorded outcome* in place
+   of the generic banner: the applied result on success, and on failure the
+   recorded `error` string, in the error register rather than the green `.saved`
+   one (`STYLE` already carries both, `routes.rs:153-154`). The same shape
+   applies to `hostname_form` and to any future editor.
+3. **The read-after-write is sound.** `record` uses `map.insert` unconditionally
+   (`bus.rs:134-136`), so a successful apply always overwrites a stale `error`
+   entry from an earlier attempt. There is no risk of showing a previous
+   failure as if it were this one.
+4. **`GetState` on a not-yet-written key errors rather than returning null** —
+   `InvalidArgs` on an absent path (`bus.rs:198-202`) — so the handler must treat
+   "no state recorded for this reconciler" as its own case, distinct from
+   success and from failure.
+
+**Two caveats, stated because they are real.**
+
+- **A narrow race.** Between `SetSettings` returning and the follow-up
+  `GetState`, another writer could re-run the same reconciler and replace the
+  entry. `mosd`'s D-Bus policy permits any local process to call `SetSettings`
+  (`mosd/dist/com.mos.mosd.conf:4-11`). On a single-admin appliance this is
+  vanishingly unlikely, and the honest closure is a `mosd` change — returning the
+  outcome from `SetSettings`, or stamping `record` entries — not a `webd` one.
+  **`record` writes no timestamp and no generation** (`bus.rs:126-137`), so
+  `webd` cannot detect the race locally. Noted, not designed around.
+- **Cost.** One extra bus round trip on the redirect target only — on a form
+  submit, which is already the most expensive operation in the UI (a
+  `SetSettings` that runs reconcilers under the global mutex, 5.1.4). It is
+  irrelevant against that.
+
+**Why this belongs in the technology section and not only in section 3.3:** it is
+the clearest case in the whole campaign of a "live value" problem that has a
+**server-rendering** answer. mos already computes the thing the operator needs;
+what is missing is one read and one branch in a `maud` template. No transport,
+no crate, no `mosd` mechanism, no JavaScript. Section 4.2 item 3 records
+stored-versus-applied as a place mos is ahead of Venus — which needs
+`SettingSync`, a 500 ms/3000 ms give-up timer, and *still* cannot say whether a
+setting was applied (`venus-os-ui.md` section 5.4). Under this recommendation
+mos can say it, in the plainest possible way, and shipping `?saved=1` while
+holding that capability is the sharpest small example of section 1.2's thesis:
+**the appliance knows things it never says.**
+
+### 5.12 Summary of what section 5 decides
+
+**[proposal]**, all of it.
+
+| Question | Decision |
+|---|---|
+| Is the section 2-3 dashboard deliverable under the existing constraints? | **Yes**, with no new crate, no build chain and no change to the zero-JavaScript posture |
+| Live-value transport | **Option A**, `meta http-equiv="refresh"`, 15 s default on read-only pages, with a no-script off link (WCAG F41 / SC 2.2.1) |
+| Live install progress (section 2.5) | Update page only, 2 s refresh during an install, `<progress>` plus text; degraded forms specified in 5.9; **blocked on gap row 4 regardless of transport** |
+| Coexistence with POST + 303 | **Yes** — refresh on read-only pages, forbidden on editors; one rendering model, two triggers |
+| `?saved=1` | **Replace it** with the reconciler's recorded outcome via one extra `GetState` on the redirect target; not a transport question |
+| `SettingsChanged` (gap row 16) | Browser-side push: **not adopted**. Server-side subscription in `webd`: **possible with no new crate**, decision deferred to RFCT-046 |
+| Escalation path | Option B, hand-written, ~800 B as a `PreEscaped` string constant, for the install-progress route only, only on a measurement |
+| Options C and D | **Rejected**; C for delivering no real push until `mosd` has a state-change signal, D for that plus three new crates and a bidirectional channel the read-only design does not use |
+
+### 5.13 Unverified / gaps
+
+Listed because an unmarked wrong claim in a reference document is worse than an
+admitted gap.
+
+1. **Nothing in this section was observed on a running appliance.** No `webd`
+   binary was built or started, no browser connected, no protocol trace taken.
+   This is a documents-only campaign and `cargo` was deliberately not run. Every
+   claim above is read from source or from published documentation.
+2. **HTTP/2 in practice (5.1.3).** I verified that `axum-server` 0.7.3 sets
+   `alpn_protocols = ["h2", "http/1.1"]` and serves through `hyper-util`'s auto
+   builder with `hyper` features `http1`+`http2`, and that `main.rs:72-79` uses
+   that path. I did **not** verify that a browser negotiates `h2` to `webd`
+   *after the operator accepts the self-signed-certificate exception*
+   (`mosd/webd/src/tls.rs:47-81`). If it falls back to HTTP/1.1, MDN's
+   six-connection limit
+   applies to option C. This does not change the recommendation, which rejects C
+   on C4 grounds regardless.
+3. **All byte figures for markup and scripts that do not exist are estimates**
+   and are labelled `(est.)` in the table of 5.7. The two measured figures in
+   this section are the 484-byte inline stylesheet (5.1.1) and Venus's
+   15,793,432-byte compressed WASM payload (`venus-os-ui.md` section 2.3, not
+   re-measured here).
+4. **Crate resolution was read from `mosd/Cargo.lock` and from the local
+   registry copies of published crates**, not from a resolved build graph. In
+   particular, `mosd/Cargo.lock` includes entries for optional dependencies in
+   some cases, so "absent from the lock" is a stronger signal than "present in
+   the lock". The three crates named as new in option D — `tokio-tungstenite`,
+   `tungstenite`, `sha1` — are **absent**, which is the direction that matters.
+   `futures-util` 0.3.34 is **present**, which is the weaker of the two signals;
+   if it turned out to be an unactivated optional entry, option C would cost one
+   pure-Rust crate rather than zero, and the recommendation would be unchanged.
+5. **The CSRF/WebSocket-handshake argument in 5.6 is my inference**, drawn from
+   the absence of any CSRF token in `webd` (`mos-ui-inventory.md` section 3.4)
+   plus the cookie semantics of the WebSocket handshake. It was not tested and no
+   exploit was attempted. It is a reason to prefer not opening the channel, not a
+   report of a vulnerability.
+6. **The mutex-contention argument in 5.1.4 is read out of source and not
+   measured.** `mosd`'s single `Mutex<Inner>` is real and `set_settings` provably
+   holds it across `reconciler.apply().await` (`bus.rs:177-189`), but no reconcile
+   was timed. The 15-second and 2-second intervals proposed above are engineering
+   judgement calibrated against that structure, not against a measurement. If
+   this recommendation is implemented, the intervals should be re-derived from a
+   measured reconcile duration.
+7. **WCAG.** F41's title and the success criteria it fails were fetched and read
+   from <https://www.w3.org/WAI/WCAG21/Techniques/failures/F41>. The precise
+   wording of SC 2.2.1's exceptions was **not** re-read; the off-switch proposed
+   in 5.3 is the conventional remedy and should be checked against the criterion
+   text before implementation.
+8. **`docs/design/access.md`, `docs/design/provisioning.md` and
+   `docs/design/mosd.md`** are owned by the parallel `sshweb` campaign and were
+   not opened for this section. Where section 4 of this document cites
+   `docs/design/mosd.md:217-220`, that citation is carried through unchecked.
+   Likewise the in-flight SSH work on `bkd/hiu25adw` (`mos-ui-inventory.md`
+   section 8) is not in this tree; if it adds routes, the route count in 5.1.1
+   and the fragment-route count in 5.4 are both understated.
