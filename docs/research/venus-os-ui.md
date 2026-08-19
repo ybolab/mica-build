@@ -7,6 +7,12 @@
 > `docs/design/mosd.md:39`). This document describes Venus. It does not propose
 > an mos design; a sibling task owns that and cites this file.
 
+**Companion document:** `docs/research/venus-os-access.md` covers the other half
+of the same Venus study — SSH and root access, the local serial console, the
+vendor remote-support tunnel, the shipped access defaults, and the firmware
+update/rollback UX. A fold of the two into one file was specified, measured and
+dropped; the decision and its evidence are in `docs/task/RFCT-045.md`.
+
 ## 1. Scope and method
 
 **Date of research:** 2026-08-19. All repository line references below were read

@@ -62,3 +62,10 @@ Each task is a single line linking to its detail file. All detailed information 
 - [x] [**RFCT-029 /etc/shadow on STATE (symlink, factory copy, boot reconcile, verifier proof)**](RFCT-029.md) `P1`
 - [x] [**RFCT-030 Power actions: mosd Reboot/PowerOff + webd POST routes**](RFCT-030.md) `P1`
 - [x] [**RFCT-031 The Rockchip loader area becomes a real GPT partition**](RFCT-031.md) `P1`
+- [x] [**RFCT-040 Venus OS web UI and information architecture study**](RFCT-040.md) `P2`
+- [x] [**RFCT-041 Venus OS access and firmware-update UX study**](RFCT-041.md) `P2`
+- [x] [**RFCT-042 mos web/UI current-state inventory, measured**](RFCT-042.md) `P1`
+- [x] [**RFCT-043 Dashboard landing screen and information architecture**](RFCT-043.md) `P1`
+- [x] [**RFCT-044 Dashboard technology posture and live-value transport**](RFCT-044.md) `P1`
+- [x] [**RFCT-045 Consolidation, PMA records, and a build-enforced index check**](RFCT-045.md) `P1`
+- [x] [**RFCT-046 Dashboard process architecture, external contract, rename, and phasing**](RFCT-046.md) `P1`
