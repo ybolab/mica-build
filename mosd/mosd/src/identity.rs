@@ -30,7 +30,10 @@ use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result, anyhow};
 use argon2::Argon2;
-use argon2::password_hash::{PasswordHash, PasswordHasher, PasswordVerifier, SaltString};
+use argon2::password_hash::{PasswordHasher, SaltString};
+// Only `verify_password` needs these, and that function is `#[cfg(test)]`.
+#[cfg(test)]
+use argon2::password_hash::{PasswordHash, PasswordVerifier};
 use mosd_settings::Settings;
 use ring::rand::{SecureRandom, SystemRandom};
 
@@ -205,12 +208,19 @@ pub fn hash_password(password: &str) -> Result<String> {
 ///
 /// A malformed hash verifies as false rather than erroring: a corrupt stored
 /// credential must reject every password, not accept any.
+///
+/// **Test-only.** Nothing outside this module's tests calls it: the access and
+/// connd reconcilers it was written for verify nothing against
+/// `access.device.passwordHash`, and webd's admin login uses its own
+/// `webd::auth::verify_password`. It is kept rather than deleted because two
+/// `ensure_identity` tests use it as their assertion mechanism — "the stored
+/// hash verifies against the stored plaintext" — and deleting it would either
+/// drop those assertions or re-inline Argon2 twice. `#[cfg(test)]` removes the
+/// part that was actually hazardous: a security-control-shaped public API that
+/// nothing had wired up yet.
 #[must_use]
-// dead_code: read back by the access and connd reconcilers, which do not exist
-// yet; `mosd` is a binary crate, so until they land the compiler sees these as
-// unreachable.
-#[allow(dead_code)]
-pub fn verify_password(hash: &str, password: &str) -> bool {
+#[cfg(test)]
+fn verify_password(hash: &str, password: &str) -> bool {
     PasswordHash::new(hash)
         .and_then(|parsed| Argon2::default().verify_password(password.as_bytes(), &parsed))
         .is_ok()

@@ -5,10 +5,16 @@
 > Status: APPROVED 2026-08-18 (user) — D-Bus/zbus IPC and the settings model
 > below are the M2 contract.
 >
-> **Updated for PLAN-010 M5 (2026-08-19):** §5 records the settings tree as it
-> stands at schema v3, the reconcilers registered today, and the bus surface
-> including the two power methods. §1–§4 are the original M2 decision record and
-> are unchanged. The `.zh.md` sibling has not been updated and is stale.
+> **Updated for PLAN-010 M5 (2026-08-19):** §5 records the settings tree, the
+> reconcilers registered today, and the bus surface including the two power
+> methods. §1–§4 are the original M2 decision record; two statements in them
+> were stale against the code and now carry inline corrections (§2's transport
+> and §3's settings path). The `.zh.md` sibling has not been updated and is
+> stale.
+>
+> **Updated for campaign `sshweb` (2026-08-19):** the tree is at **schema v4**
+> (`access.ssh.authorizedKeys`), and the `SshdReconciler` row in §5.3 is
+> corrected — it watches `access.ssh` alone and no longer drives `/etc/shadow`.
 
 ## 1. What mosd is
 
@@ -32,6 +38,13 @@ later at the edge, not in the core (Venus gui-v2 pattern: local bus, remote
 bridge). varlink is elegant but its ecosystem is too thin to carry the
 integration burden D-Bus removes for free.
 
+> **Correction (2026-08-19): webd is not a WebSocket bridge.** The sentence
+> above is the M2 sketch and no longer describes the code. webd renders
+> server-side HTML (maud) over plain HTTP and calls mosd's D-Bus methods per
+> request; there is no WebSocket, no long-lived subscription and no generic
+> HTTP↔D-Bus passthrough. The live-value transport question is open and is
+> tracked in `docs/design/dashboard.md`, not here.
+
 ## 3. Decision 2 — settings schema & persistence
 
 **Recommendation:**
@@ -39,8 +52,14 @@ integration burden D-Bus removes for free.
 - Settings modeled as a typed Rust tree (serde), addressed by dot-paths
   (`network.eth0.dhcp`, `access.ssh.enabled`) — Venus-style addressing,
   self-documenting for UI binding.
-- Persisted as versioned TOML on STATE (`/state/mos/settings.toml` +
+- Persisted as versioned TOML on STATE (`/var/lib/mos/settings.toml` +
   `schema_version`); committed atomically (write-temp + rename).
+
+  > **Correction (2026-08-19).** This line read `/state/mos/settings.toml`,
+  > which is not a path that exists on any image. The real default is
+  > `/var/lib/mos/settings.toml` (`mosd-settings/src/store.rs`, `DEFAULT_PATH`),
+  > a bind from `/mnt/state/mos` (`ro-root.md` §4), and `mosd/src/main.rs`
+  > documents the same. The doc contradicted both the code and §5.1 below.
 - Migrations: Bottlerocket migrator pattern — forward AND backward migration
   units shipped with each release (PLAN-006 Part I requires the rollback
   direction to work).
@@ -62,14 +81,14 @@ The M2 contract above held: nothing in it needed revisiting to add the access,
 provisioning and connd features. This section records what is actually in the
 tree, so a reader does not have to reconstruct it from five task records.
 
-### 5.1 The settings tree at schema v3
+### 5.1 The settings tree at schema v4
 
 Persisted as TOML on STATE at `/var/lib/mos/settings.toml`, addressed by
 dot-path. `Settings::default()` serializes to exactly this, which is also what a
 fresh device writes before first-boot provisioning seeds it:
 
 ```toml
-schema_version = 3
+schema_version = 4
 hostname = "mos"
 
 [network]                        # keyed by interface name, individually addressable
@@ -80,6 +99,7 @@ port = 22
 permitRootLogin = true
 passwordAuthentication = true
 listenAddresses = []             # empty = listen on ALL
+authorizedKeys = []              # v4 — array of tables; see access.md §3.1
 
 [access.console]                 # M5 — schema only, no reconciler consumes it yet
 shellEnabled = false
@@ -139,6 +159,14 @@ forward again restores the v3 *defaults*, not the values that were there before.
 The rule that follows: **anything that must survive a rollback cannot live in a
 v3-only key.**
 
+**v4 adds `MigrateV3ToV4`**, which inserts an empty `access.ssh.authorizedKeys`
+array and stamps the version. Rolling back to v3 **discards the key list**,
+deliberately: v3 has no code that renders keys into an `authorized_keys` file,
+so carrying them would be a v3 device promising an access path it cannot serve
+— and v3's `deny_unknown_fields` would refuse to load the document at all. The
+same rule applies, with a sharper consequence: **a rolled-back device loses
+every authorized key, which is the only persistent way in.**
+
 ### 5.3 Reconcilers registered today
 
 `reconciler::all()` returns five, in this order:
@@ -147,9 +175,29 @@ v3-only key.**
 |---|---|---|
 | `HostnameReconciler` | `hostname` | systemd-hostnamed |
 | `NetworkReconciler` | `network` | networkd units in `/run/systemd/network` |
-| `SshdReconciler` | `access.ssh`, `access.device` | sshd drop-in + `/etc/shadow` + `ssh.service` |
+| `SshdReconciler` | `access.ssh` **only** | sshd drop-in + one authorized-keys file per managed account + `ssh.service` |
 | `WifiClientReconciler` | `wifi.client` | wpa_supplicant config + networkd + `wpa_supplicant@<if>.service` |
 | `WifiApReconciler` | `wifi.ap` (reads `wifi.client` for the conflict check) | hostapd config + networkd + `hostapd@<if>.service` |
+
+**The `SshdReconciler` row is corrected, and both cells were wrong.** It used to
+read subtree `access.ssh`, `access.device` and effects "sshd drop-in +
+`/etc/shadow` + `ssh.service`". `subtree()` returns `"access.ssh"` and has
+returned only that since the reconciler was written; the extra cell was stale by
+**supersession**, not by a typo. Under M5 the device credential flowed into
+`/etc/shadow` through this reconciler, so a write to `access.device` genuinely
+had to re-run it. Under the current access model it does not: nothing derives a
+login credential from `access.device` at all (`provisioning.md` §3.6), so
+watching it would schedule work with no effect to produce.
+
+**The final subtree contract, stated so the absence reads as a decision:**
+`SshdReconciler` watches **`access.ssh` and nothing else**. `access.device` is
+**deliberately not watched.** A reader who finds the credential subtree missing
+should not reconstruct it as an oversight and add it back.
+
+And the effects cell: this reconciler **no longer writes `/etc/shadow`**. It
+reads the marker beside it to decide whether password authentication may be
+offered (`access.md` §3.1), but the only writers of that file today are mosd's
+transient-password bus method and `mos-shadow-reconcile` at boot.
 
 The M2 contract's reconciler shape survived contact with four more subsystems
 unchanged, and the M5 reconcilers converged on a common discipline worth stating
