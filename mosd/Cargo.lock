@@ -1239,11 +1239,15 @@ name = "mosd"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "argon2",
  "async-trait",
+ "hex",
  "mosd-settings",
+ "ring",
  "serde_json",
  "tempfile",
  "tokio",
+ "toml",
  "tracing",
  "tracing-subscriber",
  "zbus",
