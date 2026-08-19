@@ -14,12 +14,12 @@ mos appliance 必须在零外部输入下达到完整可用。分三层：
 
 STATE 无配置时，machined（TypeAppliance）自行生成：
 
-- 默认配置：全以太网口 DHCP、webd 开、apid/SSH 关、hostname 为
+- 默认配置：全以太网口 DHCP、apid 开、Talos apid / SSH 关、hostname 为
   `mos-<序列号后缀>`；
 - **每设备独立 PKI**，首启在设备端生成——禁止把全线共享秘钥烤进镜像；
 - 结果持久化到 STATE；恢复出厂（清 STATE）自然回到此状态。
 
-归属：访问层 campaign（与 webd 首启设置、默认密码方案本是一体特性）。
+归属：访问层 campaign（与 apid 首启设置、默认密码方案本是一体特性）。
 
 ## 3. 第二层——本地配置通道
 
@@ -29,7 +29,7 @@ STATE 无配置时，machined（TypeAppliance）自行生成：
 1. BOOT 分区配置文件（产线/现场离线预置）；
 2. USB 签名配置投放（udev 触发，厂商公钥校验）；
 3. AP 强制门户（connd，PLAN-008）与 HDMI kiosk 向导（display.md）；
-4. 有任何网络后经局域网 webd；
+4. 有任何网络后经局域网 apid；
 5. tty2 串口向导兜底。
 
 ## 4. 第三层——bring-up 过渡（仅 dev 镜像）

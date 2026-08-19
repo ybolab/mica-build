@@ -25,7 +25,7 @@ systemd base: PID 1, mounts, networkd (incl. native WireGuard), journald,
 mosd (Rust): central state/settings tree + persistence + reconcilers
              (applies settings to networkd/systemd/RAUC) + remote bridge
       ^                                        ^
-webd + kiosk (one UI, local/remote paths)    RAUC (native) + tough (TUF signing)
+apid + kiosk (one UI, local/remote paths)    RAUC (native) + tough (TUF signing)
 ```
 
 ## Milestones
@@ -650,7 +650,9 @@ a device**, so all of the following are claimed by nobody:
   read-modify-write is not atomic, which is a property of `SetSettings` rather
   than of the pane.
 - **RFCT-048**: per-method allowlisting is deferred and should land in the
-  **same change** that adds a `<policy user="webd">` block, not before.
+  **same change** that adds a `<policy user="apid">` block, not before. (That
+  daemon was called `webd` when RFCT-048 wrote this; renamed by campaign `apid`,
+  RFCT-055/RFCT-056.)
 - **RFCT-048** also left one reopening path unasserted until RFCT-039 closed it:
   a second policy file for the same bus name.
 - **The device credential is now inert.** `access.device.passwordHash` and the
@@ -698,7 +700,7 @@ phase (openBalena delta service vs registry-native alternatives).
 - Debian base pulls in more userland than Talos's rootfs did — counter with a
   strict package allowlist and image-size budget in M1 acceptance.
 - mosd is new code on the critical path — mitigated by scope (reconciler over
-  systemd, not PID 1), pma-rust quality gates, and keeping webd/RAUC
+  systemd, not PID 1), pma-rust quality gates, and keeping apid/RAUC
   independent of mosd internals (narrow API only).
 - systemd version vs old kernels: pin a systemd version compatible with the
   oldest supported kernel tier (boards.md §6 revisit: floors relax under

@@ -7,15 +7,15 @@
 
 ## 1. 原则：一套 UI 代码
 
-本地屏幕渲染的就是远程浏览器所用的**同一个 webd UI**，以 kiosk 会话指向
-`https://127.0.0.1`。不维护第二套 UI 栈；webd 的每个功能（向导、状态、升级）
+本地屏幕渲染的就是远程浏览器所用的**同一个 apid UI**，以 kiosk 会话指向
+`https://127.0.0.1`。不维护第二套 UI 栈；apid 的每个功能（向导、状态、升级）
 自动出现在屏幕上。本地特有的行为（如未配网时自动进入设置向导）是 kiosk
-选择的 webd 路由，不是独立代码。
+选择的 apid 路由，不是独立代码。
 
 ## 2. 组件栈
 
 ```
-webd（现有 HTTPS UI）
+apid（现有 HTTPS UI）
   ▲ localhost
 kiosk 会话：cage（Wayland kiosk 合成器）+ WPE WebKit 浏览器
   ▲ DRM/KMS + GPU 驱动            ▲ libinput（触摸 / USB 键鼠）
@@ -37,7 +37,7 @@ apiVersion: v1alpha1
 kind: DisplayConfig
 kiosk:
   enabled: true
-  url: ""                  # 空 = webd 本地 UI；可指向定制应用 UI
+  url: ""                  # 空 = apid 本地 UI；可指向定制应用 UI
   rotation: 0              # 0|90|180|270
   blankAfter: 10m          # 屏幕休眠；0 = 永不
   showWizardWhenUnprovisioned: true
@@ -45,7 +45,7 @@ kiosk:
 
 `DisplayConfig` → controller → `DisplayStatus` 资源 → kiosk extension 服务
 起停/重启，无需重启系统。`url` 允许产品构建把屏幕指向应用容器提供的界面而
-非 webd。
+非 apid。
 
 ## 4. 启动体验与 tty 策略
 
@@ -72,10 +72,10 @@ kiosk:
 
 ## 6. 安全说明
 
-- kiosk 浏览器是较大攻击面，但默认只渲染 localhost；指向非 webd 的 `url`
+- kiosk 浏览器是较大攻击面，但默认只渲染 localhost；指向非 apid 的 `url`
   是显式配置决策并记入审计日志。
 - kiosk 会话非特权运行（容器内无 shell、无 VT 访问）；攻破浏览器所得地位
-  等同于一个未认证的 webd 局域网客户端。
+  等同于一个未认证的 apid 局域网客户端。
 - 能物理接触 HDMI/USB 本就落入威胁模型的物理接触层（access.md §2 的
   rescue/factory 行）；kiosk 不使其恶化。
 
@@ -83,9 +83,9 @@ kiosk:
 
 | 阶段 | 范围 |
 |---|---|
-| 1 | kiosk extension（cage+WPE）、DisplayConfig/controller、webd 本地向导路由、cx3576 上 splash→kiosk 交接 |
+| 1 | kiosk extension（cage+WPE）、DisplayConfig/controller、apid 本地向导路由、cx3576 上 splash→kiosk 交接 |
 | 2 | 触摸输入打磨、旋转、休眠、崩溃回落画面 |
 | 3 | 定制应用 `url` 模式 + 按应用 UI 容器（衔接 workload/secondary-ECU 设计） |
 
-Campaign 映射：阶段 1 并入访问层/webd campaign，排在 cx3576 显示启动之后
+Campaign 映射：阶段 1 并入访问层/apid campaign，排在 cx3576 显示启动之后
 （GPU 驱动选型在板级 campaign 内完成）。

@@ -9,7 +9,7 @@
 
 拥有设备状态的唯一 Rust 服务：中央设置/状态树、STATE 分区持久化、把设置
 应用到执行层（systemd unit、networkd、RAUC、balena-engine）的协调器，以及
-供 UI（webd/kiosk）与未来远程通道消费的桥接。一句话：Venus OS 的 D-Bus
+供 UI（apid/kiosk）与未来远程通道消费的桥接。一句话：Venus OS 的 D-Bus
 树 + Bottlerocket 的 apiserver，收敛为一个边界清晰的服务。
 
 ## 2. 待决点一 —— IPC 协议
@@ -19,7 +19,7 @@
 **推荐：D-Bus，经纯 Rust 的 `zbus` crate。**决定性事实：mosd 反正必须
 **消费** D-Bus——systemd（unit/hostname）、networkd、RAUC、wpa_supplicant、
 bluez 的 API 全是 D-Bus。一条总线双向使用（消费系统服务，同时像 Venus 的
-`com.victronenergy.*` 一样暴露 `com.mos.*`），避免养第二套 IPC 生态。webd
+`com.victronenergy.*` 一样暴露 `com.mos.*`），避免养第二套 IPC 生态。apid
 为浏览器做 HTTP/WebSocket ↔ D-Bus 桥；gRPC/MQTT 式远程桥后续挂在边缘而非
 核心（Venus gui-v2 模式：本地走总线、远程走桥）。varlink 优雅但生态太薄，
 背不动 D-Bus 免费解决的那些集成。

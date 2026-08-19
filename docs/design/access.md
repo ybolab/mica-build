@@ -27,6 +27,10 @@ Every section below that describes a **mechanism** carries one of:
 - **[implemented]** — code exists and is named, by path.
 - **[partial]** — some of it exists; what is missing is named.
 - **[not implemented]** — deliberately, no code at all. Prose only.
+- **[decided]** — a question that was open is now settled by the user, with the
+  campaign that settled it named. Added by RFCT-056 (campaign `apid`). It marks
+  a *decision*, not a state of the code: a section can be **[decided]** and
+  **[not implemented]** at the same time, and where it is, both markers appear.
 
 `PLAN-010 M4` applies this discipline at milestone level, and its six
 explicitly-not-claimed items are why that record is trustworthy. A design
@@ -150,7 +154,11 @@ no-op: when the drop-in changed and sshd is already running, the unit is
 is a configuration that silently did not take effect. Adding or removing a key
 needs neither: sshd re-reads the authorized-keys file on every attempt.
 
-`access.webAdmin` (webd's own credential) is not part of this subtree.
+`access.webAdmin` (apid's own credential) is not part of this subtree.
+
+> `apid` is the HTTPS management daemon, renamed from `webd` by campaign `apid`
+> (2026-08-19, RFCT-056): it is the API daemon, and the dashboard is one of the
+> things it serves.
 
 ### 3.2 `listenAddresses: []` means LISTEN ON ALL
 
@@ -207,14 +215,14 @@ lockdown: false                # one-way; see §5
 Implemented by `mosd/mosd/src/reconciler/sshd.rs` (keys),
 `mosd/mosd/src/transient.rs` and `mosd/mosd/src/bus.rs` (the transient
 password), `os/rootfs/overlay-v2/usr/lib/mos/mos-shadow-reconcile` (the boot
-clear) and `mosd/webd/src/routes.rs` (the operator-facing pane).
+clear) and `mosd/apid/src/routes.rs` (the operator-facing pane).
 
 **The default state of a device is: SSH off, root with no password, no keys.**
 Both image profiles. Neither profile seeds `access.ssh.enabled` true
 (`Profile::ssh_enabled_default` returns `false` for both), and neither image
 ships `ssh.service` enabled (`os/rootfs/Dockerfile.v2` removes the
 `multi-user.target.wants` symlink and asserts it is gone). Getting in requires
-an authenticated admin action through webd, over the network the appliance is
+an authenticated admin action through apid, over the network the appliance is
 already on.
 
 **Persistent access is by SSH public key.** Keys live in
@@ -226,13 +234,13 @@ only the ROOTFS and BOOT slots.
 managed account, so a key added expecting an unprivileged shell grants root.
 `mos` is a **persistent working directory and a non-root default shell, not a
 lesser privilege level** — it exists so an operator's files land on DATA and
-survive an update, not to contain what that operator can do. webd states this on
+survive an update, not to contain what that operator can do. apid states this on
 the SSH pane in as many words ("Every authorized key is a root key."), and a
 test asserts the sentence is present; this document must not be softer than the
 UI.
 
 **A transient root password covers the one case a key cannot: an operator in
-front of a device with no key installed yet.** It is set through webd, which
+front of a device with no key installed yet.** It is set through apid, which
 calls a mosd bus method, which:
 
 - bcrypt-hashes the password (cost 12) into the root entry of the STATE-backed
@@ -284,7 +292,7 @@ Why it was superseded:
 `/var/lib/mos/secrets/device-password` are still minted at first boot and still
 persisted — the campaign reserved them for future use rather than removing
 them. They are **inert**: no code path verifies either one — not SSH, not the
-serial console, not the webd admin UI, which has always used its own
+serial console, not the apid admin UI, which has always used its own
 `access.webAdmin` hash. The correction is carried in `provisioning.md` §3.2 as
 well. Recorded here so the next reader finds a decision rather than an
 oversight.
@@ -388,13 +396,13 @@ own logging to the journal is what exists, and the journal is
 ## 7. Provisioning paths (ordered by preference) — **[not implemented]**
 
 None of these five is built; they are the ordering a later campaign should
-follow. Today the only path in is webd over an existing network.
+follow. Today the only path in is apid over an existing network.
 
 1. BOOT-partition provisioning file (edit on SD/USB with any reader; physical
    possession of the boot medium already implies full control).
 2. Signed config drop via USB (udev-triggered import; vendor-key signature).
-3. AP-mode captive setup (connd + webd; PLAN-008 Part D).
-4. HDMI local setup: kiosk display renders the webd wizard with USB
+3. AP-mode captive setup (connd + apid; PLAN-008 Part D).
+4. HDMI local setup: kiosk display renders the apid wizard with USB
    keyboard/touch input (design/display.md).
 5. Console wizard (tty2) as the no-display, no-WiFi fallback.
 
@@ -415,7 +423,7 @@ follow. Today the only path in is webd over an existing network.
 An operator who loses the webAdmin password **and** every authorized key has
 **no software path back into the appliance**. Stated exhaustively:
 
-- **webd** is the only thing that can enable SSH, add a key or set a password,
+- **apid** is the only thing that can enable SSH, add a key or set a password,
   and it needs the webAdmin credential.
 - **SSH** is off, and even enabled it would accept only a key that is not there.
 - **The serial console is present and reachable, and offers no way in.** Be

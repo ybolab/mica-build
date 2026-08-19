@@ -26,7 +26,7 @@
 | 工厂（rockusb / SoC loader 模式） | 完整重刷 | 物理接触 + recovery 按键 | 硬件级 |
 
 SSH 服务端用 Go 实现（`x/crypto/ssh` + pty），编入 machined 多调用二进制，
-与 webd 同款监督方式，策略直接读 COSI——无 OpenSSH、无独立 C daemon、无配置
+与 apid 同款监督方式，策略直接读 COSI——无 OpenSSH、无独立 C daemon、无配置
 文件漂移。busybox 提供 `/bin/sh` 与基础工具（约 1MB），仅进 debug 变体。
 
 ## 3. 配置模型
@@ -49,7 +49,7 @@ lockdown: false                # 单向；见 §5
 ```
 
 链路：`DebugAccessConfig` → DebugAccessController → `DebugAccessStatus` 资源
-→ 服务起停，无需重启。webd 从同一资源渲染状态（"调试通道已开启，剩余
+→ 服务起停，无需重启。apid 从同一资源渲染状态（"调试通道已开启，剩余
 1h23m"）。
 
 ## 4. 认证阶段
@@ -75,7 +75,7 @@ lockdown: false                # 单向；见 §5
    **有意不清它**："忘记密码"可现场自助，"解锁 shell"不可以。
 3. **镜像变体**：三个构建 profile（2026-08-17 决策——prod 内置 SSH）：
    - `prod`（默认）：包含 sshd + busybox，**SSH 默认关闭**；开启需经认证的
-     管理操作（webd/apid 配置写入）。不包含 console shell。
+     管理操作（apid / Talos apid 配置写入）。不包含 console shell。
    - `debug`：增加 tty3 console shell 与面向开发的宽松默认值。
    - `sealed`（可选）：完全无 shell 的构建，供高安全部署——只有此 profile
      中"无 shell"仍是签名镜像身份的一部分。
@@ -97,8 +97,8 @@ lockdown: false                # 单向；见 §5
 1. BOOT 分区 provisioning 文件（任意读卡器可编辑；物理持有启动介质本就
    意味着完全控制）。
 2. USB 签名配置投放（udev 触发导入；厂商密钥签名校验）。
-3. AP 模式强制门户设置（connd + webd；PLAN-008 Part D）。
-4. HDMI 本地设置：kiosk 显示渲染 webd 向导，USB 键盘/触摸输入
+3. AP 模式强制门户设置（connd + apid；PLAN-008 Part D）。
+4. HDMI 本地设置：kiosk 显示渲染 apid 向导，USB 键盘/触摸输入
    （design/display.md）。
 5. Console 向导（tty2），无显示器、无 WiFi 时的兜底。
 

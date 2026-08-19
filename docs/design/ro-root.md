@@ -8,6 +8,12 @@ Companion documents: `docs/plan/PLAN-006.md` Parts C, D and J (the A/B update
 design this implements), `os/layout/cx3576-v2.env` (every layout constant),
 `os/rootfs/README.md` (how to build it).
 
+> **Daemon rename (campaign `apid`, 2026-08-19, RFCT-056).** The HTTPS management
+> daemon formerly called `webd` is now `apid` — it is the API daemon, and the
+> dashboard is one of the things it serves. Only the name changed here; the
+> mechanism this document describes is unaffected. See
+> `docs/design/dashboard.md` §7.4.
+
 ## 1. What the rootfs image is
 
 `os/rootfs/build-v2.sh` produces a single raw file, `_out/cx3576/rootfs-verity.img`:
@@ -248,7 +254,7 @@ partitions absorb everything:
 | `/mnt/meta` | META (p8) | ext4, `noatime` |
 | `/var` | EPHEMERAL (p10) | ext4, `noatime` — **no** growfs |
 | `/tmp` | tmpfs | `noatime,nosuid,nodev,mode=1777` |
-| `/var/lib/mos` | bind from `/mnt/state/mos` | mosd settings, webd credentials, **per-device secrets**, **the shadow file** and its **transient-password marker** |
+| `/var/lib/mos` | bind from `/mnt/state/mos` | mosd settings, apid credentials, **per-device secrets**, **the shadow file** and its **transient-password marker** |
 | `/var/lib/bluetooth` | bind from `/mnt/state/bluetooth` | pairing keys |
 | `/etc/ssh` | bind from `/mnt/state/ssh` | sshd config + host keys + mosd's `sshd_config.d/10-mos.conf` |
 | `/etc/hostname` | bind from `/mnt/state/hostname` | file bind, not a directory |
@@ -389,7 +395,7 @@ follow from the tier rather than the other way round.
 
 | Tier | Mount | Contents | Grows? | Lost when |
 |---|---|---|---|---|
-| **STATE** (p9) | `/mnt/state` | configuration and identity: mosd settings, the webd admin password hash and session key, **the per-device secrets and the shadow file**, sshd host keys, **the WiFi daemon configs**, hostname, Bluetooth pairings | no — small and fixed | factory reset only |
+| **STATE** (p9) | `/mnt/state` | configuration and identity: mosd settings, the apid admin password hash and session key, **the per-device secrets and the shadow file**, sshd host keys, **the WiFi daemon configs**, hostname, Bluetooth pairings | no — small and fixed | factory reset only |
 | **DATA** (p11) | `/srv` | application data, and the **operator's home directories**: `/home` and `/root` are binds from `/srv/home` and `/srv/root` | **yes** — fills the media | factory reset only |
 | **META** (p8) | `/mnt/meta` | update and appliance metadata | no | factory reset only |
 | **EPHEMERAL** (p10) | `/var` | disposable runtime residue: logs, caches, package bookkeeping | no — **fixed** size | factory reset **and** routine log cleanup |
@@ -496,7 +502,7 @@ What the audit of the built tree found:
 
 | Path | Shape | Disposition |
 |---|---|---|
-| `/var/lib/mos` | credentials — mosd settings, webd admin password hash and session key | **STATE**, via `var-lib-mos.mount`. webd's `StateDirectory=mos/webd` lands inside it, so it is covered too. |
+| `/var/lib/mos` | credentials — mosd settings, apid admin password hash and session key | **STATE**, via `var-lib-mos.mount`. apid's `StateDirectory=mos/apid` lands inside it, so it is covered too. |
 | `/var/lib/bluetooth` | pairings — bluez link keys | **STATE**, via `var-lib-bluetooth.mount`. Seeded 0700, which bluez requires. |
 | `/var/lib/dbus/machine-id` | identity | **Fixed.** It was a *regular file* holding a build-time id — the same D-Bus machine id on every device that flashes the release, sitting on a disposable filesystem. Now a symlink to `/etc/machine-id`, which is the Debian convention and makes it follow the real machine-id (§5). The build asserts it is a symlink. |
 | `/var/lib/systemd/random-seed` | entropy | **Left on `/var`**, deliberately. Persisting it is more fiddly than it looks: the unit path escapes to `var-lib-systemd-random\x2dseed.mount`, the file must pre-exist with mode 0600 for a file bind to work, and `systemd-random-seed` loads at early boot and saves at shutdown, either side of the local-fs mount phase. The payoff is small — a wiped `/var` leaves the device exactly where a freshly-flashed one starts, and the SoC has other entropy sources. Not worth the machinery. |

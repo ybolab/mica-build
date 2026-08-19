@@ -33,7 +33,7 @@
                           machined（PID 1，COSI 运行时）
      ______________________________________|________________________________
     |          |           |            |           |            |          |
-  webd       connd       sshd*      console*     updater      apid       containerd
+  apid       connd       sshd*      console*     updater   Talos apid   containerd
   本地       WiFi/AP     Go SSH     tty2 向导    Uptane +     上游       仅 workload：
   HTTPS     BT/CAN      + busybox   tty3 shell   RAUC CLI     管理 gRPC  extension 服务、
   UI/API   (PLAN-008)   （debug     （debug     (PLAN-006)   （默认     未来应用容器
@@ -42,16 +42,16 @@
 
 \* sshd 在 prod 与 debug 中均内置（默认关闭；仅 `sealed` profile 不含）；
 tty3 console shell 仅 debug。带显示的板卡另有 `kiosk` system extension
-（cage + WPE WebKit）在 HDMI 上渲染 webd（design/display.md）。
+（cage + WPE WebKit）在 HDMI 上渲染 apid（design/display.md）。
 
 - **machined** — Talos PID 1：服务监督、COSI controller、启动序列。appliance
   机型（`TypeAppliance`）门控关闭 k8s/etcd/trustd/CRI/dashboard（PLAN-007）。
-- **webd** — 终端用户管理面（HTTPS）：首启设置、状态、网络配置、升级 UI。
+- **apid** — 终端用户管理面（HTTPS）：首启设置、状态、网络配置、升级 UI。
   经 `/run/machined.sock` 与 machined 通信。
 - **connd** — 统一连接服务：WiFi STA/AP、蓝牙、CAN（design/PLAN-008）。
 - **updater** — machined 内建编排：Uptane 元数据验证、策略门、RAUC 调用、
   健康门确认（PLAN-006）。
-- **apid + talosctl** — 上游持续维护的机器 API，保留用于运维与未来机队管理
+- **Talos apid + talosctl** — 上游持续维护的机器 API，保留用于运维与未来机队管理
   （SideroLink）；默认关闭/仅绑管理网（design/remote-management.md）。
 - **containerd** — 仅作 workload 层；永不参与升级路径。
 
@@ -126,6 +126,6 @@ dtb、U-Boot 二进制），talos 镜像构建经 stage 替换消费；内核配
 | 已完成 | 上游基线切换 + 门控策略 | PLAN-007 |
 | 下一步 | 板级启动（cx3576 可刷 Talos 镜像） | 计划待立（campaign L2-B） |
 | 之后 | A/B 升级栈（RAUC+Uptane） | PLAN-006 |
-| 之后 | 访问层（webd 补齐、sshd/console、认证） | design/access.md → 计划待立 |
+| 之后 | 访问层（apid 补齐、sshd/console、认证） | design/access.md → 计划待立 |
 | 之后 | 连接服务（connd） | PLAN-008 |
 | 更远 | 应用 workload 作为 Uptane secondary ECU、机队管理（SideroLink）、BLE 配网 | design/remote-management.md、PLAN-008 P3 |

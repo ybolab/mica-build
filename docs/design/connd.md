@@ -5,6 +5,12 @@
 > PLAN-008 Parts B and D survives. Companion to mosd.md, access.md and
 > provisioning.md.
 >
+> **Daemon rename (campaign `apid`, 2026-08-19, RFCT-056).** The HTTPS management
+> daemon formerly called `webd` is now `apid` — it is the API daemon, and the
+> dashboard is one of the things it serves. Only the name changed here; the
+> mechanism this document describes is unaffected. See
+> `docs/design/dashboard.md` §7.4.
+>
 > No `.zh.md` translation exists for this document.
 
 ## 1. What changed from PLAN-008, and what did not
@@ -24,7 +30,7 @@ None of that mechanism survives the move to systemd. There is no separate
 | connd supervises the daemons as child processes | **systemd owns the unit lifecycles**; mosd only drives units over the system bus |
 | `connectivity` system extension | `wpasupplicant` and `hostapd` in the base rootfs package allowlist |
 | hostapd + a separate DHCP daemon | hostapd + **systemd-networkd's built-in `DHCPServer=yes`**; no dnsmasq |
-| COSI status resources | mosd's live-state tree, served over D-Bus to webd |
+| COSI status resources | mosd's live-state tree, served over D-Bus to apid |
 
 What survives unchanged is the part worth keeping: a declarative list of known
 networks with priorities, an AP with `off` / `provisioning` / `always` modes,
@@ -258,7 +264,7 @@ stated once in **`docs/design/provisioning.md` §3** and is not restated here.
 What matters for connd specifically:
 
 - the PSK reaches exactly one place, the 0600 configuration file. It is not in
-  the live-state tree (which is served over D-Bus to webd), not in any log line
+  the live-state tree (which is served over D-Bus to apid), not in any log line
   — the two reconciler modules contain no logging statement at all, checked
   mechanically — and not in any error message, including the one raised when a
   key cannot be rendered.
@@ -335,7 +341,7 @@ comparison against `""`.
 - **`EmitDNS` / `EmitRouter` are left at networkd's defaults** (both on), so a
   provisioning AP with no uplink advertises itself as a router and resolver it
   cannot be. Whether that helps a captive-portal flow or hurts it is a decision
-  for the webd setup-UI task.
+  for the apid setup-UI task.
 - **`ConfigureWithoutCarrier` is not set.** If a driver does not report carrier
   in AP mode, networkd will not configure the address and the DHCP server will
   not start. Per-driver, only hardware can settle it; the fix would be one line.

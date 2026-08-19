@@ -6,8 +6,8 @@
 - `design/` — subsystem design records
   - `access.md` — debug/maintenance access: channels, auth phases, lockdown layers
   - `boards.md` — BSP contract: artifacts, kernel assertions, new-board checklist
-  - `remote-management.md` — webd vs apid, SideroLink fleet path
-  - `display.md` — HDMI kiosk UI: cage+WPE rendering webd locally
+  - `remote-management.md` — `apid` (product) vs Talos `apid`, SideroLink fleet path
+  - `display.md` — HDMI kiosk UI: cage+WPE rendering `apid` locally
   - `provisioning.md` — configuration without a network: three-layer model
   - `mosd.md` — management plane design brief: D-Bus tree, settings schema, reconcilers
   - `connd.md` — unified connectivity service: WiFi STA/AP, Bluetooth, CAN
