@@ -599,6 +599,17 @@ answer different questions.
 | `GET /api/versions` | **none** | `{"versions":["v1"],"current":"v1"}` | "which major versions does this device serve?" |
 | `GET /api/v1/meta` | required | `{"api":"v1","settingsSchemaVersion":4,"daemon":"apid"}` | "what am I talking to, in detail?" |
 
+**`versions` is a set, and this document calls it the *served set*.** The field
+is an array rather than a string because the answer can legitimately have more
+than one member — see the dual-major recommendation at the end of this section —
+and `current` names the member a client with no preference should use.
+`current` is always a member of `versions`. **No other section of this document
+may treat "the version apid serves" as a single value:** §6.1's
+bundle-compatibility check tests **membership in the served set**, not equality
+with `current`, and both sections use the phrase *served set* to mean this
+array. A client that reads only `current` and ignores `versions` will conclude
+that a device it can still talk to is one it cannot.
+
 `settingsSchemaVersion` carries mosd's `SCHEMA_VERSION`
 (`mosd/mosd-settings/src/model.rs:11`, value **4** at `86cd669`). **It is not
 the API version and the two must never be conflated.** The schema version is the
@@ -650,7 +661,14 @@ promises, and they are not the same promise:
   execute rather than carry forever. Sequencing that is §8's, not this
   section's; what this section records is the consequence of *not* doing it — a
   single-version-at-a-time apid makes the §6 escape the only recovery from a
-  version bump, which is a much larger promise for §6 to keep.
+  version bump, which is a much larger promise for §6 to keep. **While both are
+  served, the served set has two members** — `GET /api/versions` answers
+  `{"versions":["v1","v2"],"current":"v2"}` — and a bundle built against `v1`
+  stays compatible for exactly that generation. That is the entire content of
+  the recommendation, and it is why §6.1's deactivation trigger is written
+  against the set and fires only on an empty intersection: a check written as
+  equality against `current` would deactivate precisely the bundles this
+  recommendation exists to protect.
 
 ### 2.2 Resource model — **[proposed]**
 
@@ -1150,7 +1168,10 @@ nicer. They are consequences of there being one credential.
 **One mechanism.** A long-lived, revocable bearer token, minted by an
 authenticated admin, stored hashed in the settings tree, sent in an
 `Authorization` header. It is the **only** accepted credential on `/api/v1/`
-routes: the session cookie authenticates the HTML pages and nothing else.
+routes: the session cookie authenticates the HTML pages and nothing else. **That
+sentence has no exception, including for the bootstrap** — an earlier draft of
+this section carved one out and contradicted §3.3 by doing so; see the bootstrap
+paragraph below and 10.3 item 2.
 
 **What a client sends on the wire.**
 
@@ -1246,23 +1267,54 @@ anyway, because deciding it site-by-site is how the one site where it mattered
 gets missed.
 
 **How a token is created.** `POST /api/v1/tokens`, body `{"name": "ci-deploy"}`,
-authenticated by an existing credential — response `201` with
+authenticated by an existing **bearer token** — a session cookie presented to
+this route is a `401`, per the rule above — response `201` with
 `{"id": "...", "name": "...", "token": "mos_..."}`. **The plaintext appears in
 that response and nowhere else, ever**: only the hash is stored, so a lost token
 is replaced, not recovered. That is the same posture `access.device` already
 takes (`mosd/mosd-settings/src/model.rs:147-152`).
 
-The bootstrap problem — the first token cannot be minted with a token — is
-answered by the browser session, not by a new channel. **An authenticated
-session cookie may mint a token**, through a new pane in the built-in UI; that
-is the one place the cookie reaches past the HTML pages. The alternatives were
-worse: minting over SSH needs SSH, which is off by default and stays off until
-an authenticated admin action through the web UI
-(`mosd/mosd-settings/src/model.rs:110-112`, `docs/design/access.md` §4.1), so it
-is circular; and minting at first-run setup means `POST /setup` returns a
-credential the operator did not ask for and may never rotate. `POST /api/v1/setup`
-(§2.3) does return one, because a caller who drove first-run setup over the API
-demonstrably wants API access — but the browser wizard does not.
+**The bootstrap, and the resolution is a path rather than an exception.** The
+first token cannot be minted with a token, and the answer is the browser
+session — but it does not reach `/api/v1/` to give it. The first token is minted
+at **`POST /builtin/tokens`**: an HTML form POST under §6.3's reserved built-in
+prefix, authenticated by the session cookie, served by the built-in UI's mint
+pane (§8.1's capability (iii)), answering with an HTML page that displays the
+plaintext once. It is not an `/api/v1/` route, it carries no JSON, and it is not
+part of the `v1` contract §2.1 versions — a change to it is a change to the HTML
+surface, which §8.1 already establishes carries no version promise. Its sibling
+`POST /builtin/tokens/revoke` gives the built-in UI §8.1's capability (iii) in
+full, so an operator holding only a browser can revoke a leaked token without
+first holding another one.
+
+Two properties of that route are load-bearing, and neither is optional:
+
+1. **It is POST-only, and no GET form of the mint may ever exist** — not as a
+   convenience, not as a redirect target, not as a debugging affordance.
+   `SameSite=Lax` (`mosd/webd/src/session.rs:91` at `86cd669`) withholds the
+   cookie from a cross-site form POST and **permits** it on a top-level
+   cross-site GET navigation, so a GET mint would be a permanent-credential
+   factory reachable from any link an operator clicks.
+2. **`SameSite=Lax` is the entire defence, and it is a cross-site defence
+   only.** It is the only CSRF-relevant mechanism the crate has:
+   `grep -ni csrf mosd/webd/src/*.rs` returns nothing at `86cd669` (§1.2), and
+   the per-action confirm tokens are compile-time constants rather than CSRF
+   tokens — §3.3 records why they must not be counted. **This document does not
+   propose adding a CSRF token**, and what that costs is a same-origin attacker,
+   which §3.3 names as attack 5 rather than leaving to inference.
+
+The alternatives to a form POST were worse: minting over SSH needs SSH, which is
+off by default and stays off until an authenticated admin action through the web
+UI (`mosd/mosd-settings/src/model.rs:110-112`, `docs/design/access.md` §4.1), so
+it is circular; and minting at first-run setup means `POST /setup` returns a
+credential the operator did not ask for and may never rotate.
+`POST /api/v1/setup` (§2.3) does return one, because a caller who drove
+first-run setup over the API demonstrably wants API access — but the browser
+wizard does not. The rejected shape was the obvious one: leave the mint at
+`POST /api/v1/tokens` and let it accept a cookie there. It is rejected because it
+puts a permanent-credential factory inside the one surface §3.3 can make its
+strongest statement about, and that statement is worth more than the saved
+route.
 
 What this costs, named: **no token can be created on a device whose built-in UI
 is broken.** That is precisely the situation §6 exists for, and it makes the
@@ -1376,7 +1428,7 @@ than the `HttpOnly` cookie (`mosd/webd/src/session.rs:91`) for that one
 property. The built-in UI is unaffected because it is no-JavaScript by decision
 (`docs/design/dashboard.md:1275-1276`).
 
-**What it does not protect against.** Four attacks, concretely.
+**What it does not protect against.** Five attacks, concretely.
 
 1. **An active on-path attacker on the LAN captures the token on first use.**
    Because the certificate is self-signed with SANs that do not match the
@@ -1413,6 +1465,32 @@ property. The built-in UI is unaffected because it is no-JavaScript by decision
    path. This is not a weakness the token introduces — it is the existing
    password's — but a design that adds a permanent credential mintable from that
    password must count it.
+5. **A same-origin page mints a permanent token with the operator's cookie.**
+   §3.2's bootstrap is a cookie-authenticated form POST at
+   `POST /builtin/tokens`, and its defence is `SameSite=Lax`
+   (`mosd/webd/src/session.rs:91`) and nothing else, because there is no CSRF
+   token in the crate at `86cd669` — `grep -ni csrf mosd/webd/src/*.rs` returns
+   nothing (§1.2). **`Lax` is a cross-site control and says nothing about a
+   request issued from the device's own origin.** After §4 and §5 land, the
+   device's own origin serves an operator-supplied bundle out of `/srv/ui`
+   (§5.2), whose installation §7.4 recommends **not** requiring a signature for.
+   So a hostile or XSS-compromised bundle, running at `https://<device>/` with
+   the operator's session cookie attached by the browser, can submit that form
+   and read the plaintext out of the response. **What is new here is not
+   privilege — it is persistence.** The same bundle can already drive every
+   other form pane the operator's cookie reaches: reboot, enable SSH, add a root
+   key (`mosd/webd/src/routes.rs:944`). But a minted token survives deactivating
+   the bundle (§6.3), survives the A/B update that replaces apid (§3.2 reason 1),
+   and is not revoked by an admin password change (§3.2 consequence 1). So
+   *"deactivate the bundle"* is not a containment action, exactly as
+   *"change your password"* is not — which is the mirror image of the sentence
+   10.3 item 7 already owes the operator runbook. **Nothing in this design stops
+   it, and a CSRF token would not either**: a same-origin script reads the form,
+   and the token in it, straight out of the page. The control that would is an
+   authorisation boundary between a served bundle and the built-in prefix; §4.1's
+   precedence rule protects that prefix from being **shadowed**, not from being
+   **called**. Naming it is what this section can do; §7.4's no-signing
+   recommendation is where the decision that produces it lives.
 
 **Anyone with SSH is already root, so none of this applies to them.** Every
 authorized key is a root key (`docs/design/access.md` §4.1, and the sentence the
@@ -1431,10 +1509,24 @@ anywhere in the crate — `grep -ni csrf mosd/webd/src/*.rs` returns nothing at
 
 - **The API path has no CSRF exposure**, because a bearer header is not something
   a browser attaches on a cross-site request. This is a property of the choice,
-  not an added control.
+  not an added control — **and it is now unconditional, because no `/api/v1/`
+  route accepts a cookie at all.** The mint that would have been the exception
+  is `POST /builtin/tokens`, an HTML form on the form path (§3.2); a cookie
+  presented to `/api/v1/tokens` is a `401`. An earlier draft of §3.2 let the
+  cookie mint over `/api/v1/`, which made this bullet false; 10.3 item 2 records
+  that contradiction and the resolution taken.
 - **The form path is covered for POST by `SameSite=Lax`**
   (`mosd/webd/src/session.rs:91`), which withholds the cookie from cross-site
   form submissions. That is a real control and it is the only one.
+- **One form-path route now mints a permanent credential, and that changes what
+  `SameSite=Lax` is being asked to hold.** Against a cross-site attacker it
+  holds `POST /builtin/tokens` exactly as it holds `/ssh/keys/add`, and §3.2
+  makes the POST-only rule explicit for that reason. Against a **same-origin**
+  attacker — a bundle apid itself serves — it holds nothing, and the credential
+  it fails to hold outlives both the bundle and the password. That is attack 5
+  above. It is named here rather than mitigated, because the mitigation is an
+  authorisation boundary this document does not have and §7.4 deliberately did
+  not buy.
 - **The per-action confirm tokens are not CSRF tokens and must not be counted as
   such.** `PowerAction::confirm_token` returns the constant strings `"reboot"`
   and `"poweroff"` (`mosd/webd/src/routes.rs:790-795`) and
@@ -2035,7 +2127,7 @@ and it is the one that decides the shape of the rest.
 | 2 | **A bundle with no `index.html`**, or whose index is a directory | Install-time validation (5.3 step 2), re-checked at activation | Before the bundle is ever reachable | Rejected at install. If it somehow reaches serving — the tree was mutated outside the install path — the SPA fallback has nothing to return and serves the **built-in UI**, not a 404 and not a 500 |
 | 3 | **A malformed or half-written bundle** | Digest recorded at activation, re-checked | apid start-up and activation — **not** per request | Deactivate and serve the built-in UI, logging the mismatch |
 | 4 | **A bundle whose files are unreadable** (`EACCES`, `EIO`) | The asset router, at `open` | Every request | **Asymmetric — see below** |
-| 5 | **A UI that renders perfectly and cannot talk to the API version it finds** | Nothing in the filesystem. See below | Activation, **and again at every apid start-up** | Refuse to activate, or deactivate, and say why |
+| 5 | **A UI that renders perfectly and cannot talk to any API version apid serves** | Nothing in the filesystem. See below | Activation, **and again at every apid start-up** | Refuse to activate, or deactivate, and say why — **only when the bundle's declared range and §2.1's served set have no member in common** |
 
 **Class 3 is not reachable through the install path, and the two ways it *is*
 reachable must be named.** Activation is a rename of a validated tree (5.3), so
@@ -2070,7 +2162,14 @@ works:
   never sufficient.
 - **apid, at activation, from the manifest.** The bundle declares the API
   version range it was built against (5.3), and apid refuses to activate a
-  bundle whose declared range does not include the version apid serves. **This
+  bundle whose declared range and apid's **served set** have **no member in
+  common**. The served set is the `versions` array of `GET /api/versions`
+  (§2.1); **the relation is set intersection, not equality**, and the trigger
+  is an *empty* intersection and nothing else. §2.1 recommends that apid serve
+  the outgoing major version alongside the new one for at least one image
+  generation, precisely so that a bundle built against the outgoing version
+  keeps working across the update; a check written as equality against the
+  served set's `current` member would reject exactly those bundles. **This
   is the one that works**, because it runs *before* the bundle is ever served
   and does not depend on the bundle executing. Its cost is honest and bounded:
   it depends on the manifest being present and truthful. A bundle with no
@@ -2086,9 +2185,24 @@ bundle was checked against the API version apid served **then**. An A/B update
 replaces the rootfs and therefore the API, the bundle survives on DATA (5.4),
 and nothing re-runs the check. **So the compatibility check must re-run at apid
 start-up, not only at install.** On the first boot into the new slot, apid
-re-evaluates every activated bundle against its own version and deactivates one
-that no longer fits, logging why. That is the mechanism that closes the gap
+re-evaluates every activated bundle's declared range against its **served set**
+and deactivates a bundle **only when that intersection is empty**, logging both
+the declared range and the served set it was compared against. A bundle whose
+range still contains any served member stays active — **including one that
+matches only the outgoing major**, which is §2.1's dual-major recommendation
+doing the work it exists for. That is the mechanism that closes the gap
 section 5.4's table opens.
+
+*Why the exact relation carries more weight here than anywhere else in this
+document.* This is the safety section, and class 5's response is the only one
+that removes a working interface without the operator asking for it. **An
+escape hatch that fires on the wrong condition is worse than one that does not
+exist, because the operator will trust it**: they are told the bundle was
+incompatible, they believe it, and the bundle that was in fact fine is gone
+along with the reason to look further. Equality against a single version is
+that wrong condition, and the deactivation it produces is indistinguishable —
+from the operator's side — from a correct one. Recording the served set in the
+log line is what makes the two distinguishable after the fact.
 
 *One constraint on where that evaluation may happen, and it is not negotiable.*
 apid's `main` propagates every startup step with `?` —
@@ -2106,8 +2220,9 @@ A bundle must not be able to stop apid from listening. That is the actual safety
 property, and it is stronger than any escape path.
 
 The concrete shape of the version token, the handshake header and the error body
-belongs to sections 2 and 3. This section states the **requirement** only, and
-routes it in 10.2.
+belongs to sections 2 and 3; the shape of the served set is fixed by §2.1's
+`GET /api/versions` and is not re-specified here. This section states the
+**requirement** only, and routes it in 10.2.
 
 ### 6.2 The built-in default UI, inside verity — **[proposed]**
 
@@ -3494,8 +3609,13 @@ changes
 Everything §7, §8 and §9 found that belongs to a file this campaign may not
 edit, to a sibling section this task does not own, or to a later phase. Items 1
 to 3 are **contradictions or underspecifications between sibling sections**,
-found by being the first task positioned to read §2 through §6 together; each
-names what must change and who owns it. All claims were measured at `86cd669`.
+found by being the first task positioned to read §2 through §6 together. **All
+three are now resolved, and each is kept here with its resolution recorded
+rather than deleted** — an item that vanishes leaves a reader who remembers it
+unable to tell whether it was handled or lost. Each names what was
+contradictory, which of the admissible resolutions was taken, where the resolved
+text now lives, and what remains owned elsewhere. All claims were measured at
+`86cd669`.
 
 1. **Contradiction — §2.1 and §4.1 disagree about whether today's paths are
    unchanged.** §2.1: *"The nineteen existing paths (section 1.2) keep their
@@ -3508,30 +3628,65 @@ names what must change and who owns it. All claims were measured at `86cd669`.
    unconditional rather than as scoped to the API, §8.1 is the section that must
    change, not §4.1.
 
-2. **Contradiction — §3.2 and §3.3 disagree about whether a cookie ever
-   authenticates an `/api/v1/` route.** §3.2 states the bearer token is *"the
+2. **Resolved — §3.2 and §3.3 disagreed about whether a cookie ever
+   authenticates an `/api/v1/` route.** §3.2 stated the bearer token was *"the
    **only** accepted credential on `/api/v1/` routes"* and then that *"An
    authenticated session cookie may mint a token"* via a built-in-UI pane; §3.3
-   states *"The API path has no CSRF exposure"* on the strength of the
-   bearer-only rule. Both cannot hold if the mint is an `/api/v1/` route reached
-   with a cookie. **Owner: whoever implements §3.2's bootstrap.** Resolution
-   needed before §8.2 phase 2 ships, and there are only two shapes: make the
-   mint a cookie-authenticated **form POST at a non-`/api/v1/` path** (leaving
-   §3.3's claim intact and leaving `SameSite=Lax` as the control, which requires
-   that no GET form of the mint ever exist), or narrow §3.3's CSRF claim to
-   exclude it. §9 item 8 records the cost either way.
+   claimed *"The API path has no CSRF exposure"* on the strength of the
+   bearer-only rule. Both could not hold while the mint was an `/api/v1/` route
+   reachable with a cookie. Two shapes were admissible, and **the first was
+   taken.**
 
-3. **Underspecification — §2.1's dual-major serving versus §6.1's start-up
+   **Resolution, now in §3.2 and §3.3: the mint is a cookie-authenticated form
+   POST at a non-`/api/v1/` path** — `POST /builtin/tokens`, under §6.3's
+   reserved built-in prefix, with `POST /builtin/tokens/revoke` beside it so the
+   built-in UI can deliver §8.1's capability (iii) in full.
+   `POST /api/v1/tokens` accepts a bearer token only and answers a cookie with a
+   `401`. §3.2's "only accepted credential" sentence therefore holds without
+   qualification, and §3.3's API-path claim is true rather than approximately
+   true. **The second shape — narrowing §3.3's CSRF claim to carve out a
+   cookie-authenticated `/api/v1/` mint — was rejected** because it places a
+   permanent-credential factory inside the one surface §3.3 can make its
+   strongest statement about, and that statement is worth more than the saved
+   route.
+
+   **What the resolution does not remove, and where it now lives.**
+   `SameSite=Lax` (`mosd/webd/src/session.rs:91` at `86cd669`) is a cross-site
+   control; the crate has no CSRF token; and after §4 and §5 land, apid's own
+   origin serves an operator-supplied bundle. A same-origin page can therefore
+   submit the mint form with the operator's cookie, and the token it obtains
+   outlives both the bundle and an admin password change. **That is now §3.3's
+   attack 5**, stated as an attack the design does not stop, with the reason a
+   CSRF token would not stop it either. **What remains owned by whoever
+   implements §3.2's bootstrap** is one mechanical obligation: **no GET form of
+   the mint may ever exist**, because `Lax` permits the cookie on a top-level
+   cross-site GET navigation. §9 item 8 was written before this resolution and
+   is now stale in one sentence; that is routed as item 14 below.
+
+3. **Resolved — §2.1's dual-major serving versus §6.1's start-up
    deactivation.** §2.1 recommends apid *"serve the outgoing major version
    alongside the new one for at least one image generation"*, explicitly because
    a bundle that a version bump breaks survived the update that broke it. §6.1
-   requires apid to deactivate, at start-up, a bundle whose declared range does
-   not include *"the version apid serves"* — singular. If apid serves a **set**,
-   §6.1's check must test set intersection; written as equality against one
-   version it deactivates precisely the bundles §2.1's recommendation exists to
-   protect. **Owner: whoever implements §6.1's compatibility check**, and the
-   `GET /api/versions` response shape §2.1 already specifies (`{"versions":[…],
-   "current":…}`) is the right input to it.
+   required apid to deactivate, at start-up, a bundle whose declared range did
+   not include *"the version apid serves"* — singular, which read as an equality
+   would have deactivated precisely the bundles §2.1's recommendation exists to
+   protect.
+
+   **Resolution, now in §2.1 and §6.1: the relation is a set relation, and it
+   has one name.** §2.1 defines the `versions` array of `GET /api/versions` as
+   the **served set**, states that `current` is always a member of it, and
+   forbids the rest of the document from treating "the version apid serves" as a
+   single value. §6.1's class-5 check is **membership in the served set**, and
+   the deactivation trigger fires **only on an empty intersection** between the
+   bundle's declared range and the served set — never on a mismatch against
+   `current`. Both sections use the phrase *served set*, so the two can be read
+   against each other without translation.
+
+   **What remains owned by whoever implements §6.1's check** is the log line:
+   it must record the bundle's declared range **and** the served set it was
+   compared against. §6.1 states why — a deactivation that fires on the wrong
+   condition is indistinguishable, from the operator's side, from a correct one,
+   and the logged pair is what makes the two separable afterwards.
 
 4. **`docs/design/dashboard.md` §8 phase 4e is placed at §8.2 phase 6 here.**
    That file is owned by campaign `l1-o7ee8v0o-20260819152009-apid` and is cited,
@@ -3563,6 +3718,115 @@ names what must change and who owns it. All claims were measured at `86cd669`.
    hook, a tolerant load path, or an explicit written acceptance that a schema
    bump forfeits rollback. §8.2 phase 2 is gated on that decision existing.
    Product code; this campaign changes none.
+
+   **The sharper statement of the same finding: the backward migrations are dead
+   code in production.** Not "rollback can fail" — the machinery that would carry
+   the rollback exists, is registered, and passes its tests, and no production
+   path can reach it. Each half was re-verified against the tree at `86cd669`
+   before being written here, by running it rather than by reading it.
+
+   - **The pattern is specified, in both directions.** `docs/design/mosd.md:63-65`
+     requires *"Migrations: Bottlerocket migrator pattern — forward AND backward
+     migration units shipped with each release"*, and §5.2 of that document
+     (heading at `docs/design/mosd.md:143`, *"Migration, and what a rollback
+     costs"*) costs the rollback direction in detail — *"Rolling back to v2 loses
+     three things, deliberately and irreversibly"* (`:152-157`). Both are written
+     as behaviour a device has.
+   - **The plan does require the direction to work — but not where mosd.md says
+     it does, and the discrepancy is recorded rather than repeated.**
+     `docs/design/mosd.md:64` attributes the requirement to *"PLAN-006 Part I"*.
+     PLAN-006 Part I is *"Update policy configuration"*
+     (`docs/plan/PLAN-006.md:228-231`) and says nothing about migrations. The
+     requirement is in **Part J, "Upgrade boundaries"**: *"machine config (STATE)
+     | Untouched; versioned migrations must support rollback direction"*
+     (`docs/plan/PLAN-006.md:241`), restating PLAN-005 Part I's *"Schema changes
+     go through versioned migrations that must also support the rollback
+     direction"* (`docs/plan/PLAN-005.md:260`). **The requirement is real; the
+     pointer to it is off by one part** — PLAN-006 renumbered the part PLAN-005
+     called I. Correcting that citation belongs to whoever owns
+     `docs/design/mosd.md`, which this campaign cites and does not edit.
+   - **The backward units exist and are registered.** `down` is a required method
+     on the `Migration` trait (`mosd/mosd-settings/src/migration.rs:23`); all
+     four shipped migrations implement it (`:115`, `:143`, `:186`, `:247`), all
+     four are in the default registry (`:74-81`), and
+     `MigrationRegistry::migrate` walks them descending whenever `from > to`
+     (`:46-56`).
+   - **They are tested, and the tests pass.** Executed at `86cd669`:
+     `cargo test --manifest-path mosd/Cargo.toml -p mosd-settings` reports
+     `test result: ok. 36 passed; 0 failed; 0 ignored` for
+     `tests/settings.rs`, including
+     `v0_document_migrates_up_and_back_down`,
+     `v2_document_migrates_down_to_v1_dropping_access`,
+     `v3_document_migrates_down_to_v2_dropping_only_v3_keys`,
+     `v3_document_round_trips_down_to_v2_and_back` and
+     `v4_document_migrates_down_to_v3_and_round_trips`. **Every `down` step has
+     coverage**, not only the v0→v1 and v3→v4 pair.
+   - **Nothing in production calls them.** Executed, and this is the load-bearing
+     one:
+
+     ```
+     $ grep -rn --include=*.rs 'migrate(' mosd/mosd/src mosd/webd/src mosd/mosd-settings/src \
+         | grep -v 'src/migration.rs'
+     mosd/mosd-settings/src/store.rs:68:        migrate(&mut doc, from, SCHEMA_VERSION)?;
+     ```
+
+     One production caller, and its `to` argument is the constant
+     `SCHEMA_VERSION`, so it can only ever walk **upward**. Every descending call
+     in the tree is a test:
+
+     ```
+     $ grep -rnoE 'migrate\(&mut doc, [0-9]+, [0-9]+\)' --include=*.rs mosd/ \
+         | awk -F'[,()]' '$3+0 > $4+0'
+     mosd/mosd-settings/tests/settings.rs:241:migrate(&mut doc, 1, 0)
+     mosd/mosd-settings/tests/settings.rs:277:migrate(&mut doc, 2, 1)
+     mosd/mosd-settings/tests/settings.rs:506:migrate(&mut doc, 3, 2)
+     mosd/mosd-settings/tests/settings.rs:536:migrate(&mut doc, 3, 2)
+     mosd/mosd-settings/tests/settings.rs:996:migrate(&mut doc, 4, 3)
+     mosd/mosd-settings/tests/settings.rs:1011:migrate(&mut doc, 4, 3)
+     mosd/mosd-settings/tests/settings.rs:1081:migrate(&mut doc, 4, 0)
+     ```
+
+     Seven call sites, all in `mosd/mosd-settings/tests/settings.rs`. And the one
+     situation a `down` step was written for — an older binary meeting a newer
+     tree — never reaches the migration machinery at all, because the guard at
+     `store.rs:63-67` returns before `migrate` at `:68` is called.
+
+   **So: written, registered, exercised by passing tests, unreachable from any
+   production path.** The shipped behaviour is one-directional migration with a
+   hard refusal in the rollback direction, and no `down` step this project has
+   ever written has run on an appliance.
+
+   **This is an instance of a defect class this project has already recorded
+   twice: a control that exists, is tested, and is never invoked.**
+   `docs/design/access.md:64` records `access.console.shellEnabled` as existing
+   *"in the schema with **no reconciler consuming it**"* and marks the row
+   **[not implemented]** on that ground alone;
+   `docs/design/provisioning.md:270-275` records
+   `mosd/mosd/src/identity.rs::verify_password` as *"now `#[cfg(test)]` precisely
+   because it had no caller outside its own tests"* (RFCT-037). **The migration
+   case is the sharper form of both**, because unlike either of them it has
+   *passing tests* — and a passing test is what a reader takes as evidence that a
+   mechanism works.
+
+   **Why the framing matters more than the defect.** `docs/design/access.md:33-36`
+   states the principle this document reuses in §0: *"dead code has a compiler, a
+   test run and a grep-for-callers that can surface it; a security control that
+   exists only as prose has no mechanism that will ever notice it is absent"*.
+   This case sits in the gap that sentence leaves open — the compiler and the
+   test run both report success, and the **grep-for-callers** is the only one of
+   the three that catches it. *"We have bidirectional migrations"* is a true
+   sentence about the source and a false sentence about the appliance, and it is
+   exactly the sentence someone would rely on when deciding that a schema bump is
+   safe to ship. In §0's vocabulary, the correct marker for the rollback
+   direction is **[not implemented]** — with the `down` code present in the
+   crate.
+
+   **No resolution is proposed, deliberately.** The three admissible ones are the
+   ones recorded above and nothing has been added to them. This item is owned by
+   whoever owns `mosd-settings` and the A/B story; specifying it away from a
+   document that does not own the code is how the wrong one gets chosen, and this
+   item's first draft already reached a wrong conclusion here once by inferring
+   rather than running.
 
 6. **`mosd/dist/webd.service` — raised in priority, not newly routed.** 10.2
    already routes `ProtectSystem=` and an explicit `ReadWritePaths=` to this
@@ -3621,3 +3885,17 @@ names what must change and who owns it. All claims were measured at `86cd669`.
     the API half anyway, because the HTML half is a user-visible change to a
     shipped page. Whoever owns the built-in UI's error pages owns the other
     half.
+
+14. **§9 item 8 was written against the unresolved contradiction and is now
+    stale in one sentence.** It records the CSRF cost as *"Not mitigated as
+    written; the design does not currently say enough to be checked"* and refers
+    the reader to *"10.3 with the resolution it needs before phase 2 ships"*.
+    Item 2 above now records the resolution taken, §3.2 states the mint path and
+    its POST-only rule, and §3.3 carries the residual as a named attack — so the
+    "does not say enough to be checked" verdict no longer describes the document,
+    while the cost §9 exists to list is still real. §9 belongs to a sibling task
+    and is cited here rather than edited. Whoever next edits §9 should restate
+    item 8 as **partly mitigated**: the `/api/v1/` half is closed by the mint
+    moving off the API path, and the same-origin half is accepted and named
+    (§3.3 attack 5). The two quoted sentences in §9 item 8 that attribute the
+    cookie mint to an `/api/v1/` path describe a draft §3.2 no longer contains.
