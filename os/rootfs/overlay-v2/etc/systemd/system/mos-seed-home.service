@@ -1,0 +1,23 @@
+[Unit]
+Description=Prepare the persistent home directory on DATA
+Documentation=file:/usr/lib/mos/mos-seed-home
+# Creates the bind source for home.mount. mount(8) never creates the SOURCE of
+# a bind, so this has to complete before that unit is attempted, which puts it
+# inside the local mount phase alongside mos-seed-var and mos-seed-state.
+#
+# There is deliberately no ConditionPathExists= guard and no stamp file: the
+# script is idempotent by construction and creates nothing it finds already
+# present, and a stamp would freeze the tree at whatever a first boot happened
+# to make -- so a later image adding a second account would find no home.
+DefaultDependencies=no
+RequiresMountsFor=/srv
+Before=home.mount local-fs.target shutdown.target
+Conflicts=shutdown.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/lib/mos/mos-seed-home
+
+[Install]
+WantedBy=local-fs.target

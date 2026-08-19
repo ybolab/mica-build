@@ -734,6 +734,36 @@ else
     fail "policy/unit bus-name mismatch: mosd.service declares BusName='${mosd_bus_name}' but the policy mentions '${mosd_policy_names}'. A policy naming anything else guards a name nothing owns while the real one is governed by system.conf alone"
 fi
 
+# ONE policy file, not two. dbus-daemon reads system-bus policy from BOTH
+# /usr/share/dbus-1/system.d/ and /etc/dbus-1/system.d/, concatenating every
+# .conf it finds and letting later rules override earlier ones. A second file
+# naming com.mos.mosd -- an operator drop-in, a stale copy left by a package, a
+# debugging file that shipped by accident -- would therefore not be a stricter
+# policy layered on top: it could hand back exactly the default-context allow
+# the checks above just proved absent, and every one of those checks would
+# still pass. RFCT-048 restricted the name to root and named this as the one
+# path back out that it left unasserted; this is that assertion.
+#
+# The bus name is READ from mosd.service, as above, so this cannot go stale
+# against a rename. The blessed path is excluded by name, not by directory: a
+# second file in /usr/share/dbus-1/system.d/ is exactly as dangerous as one in
+# /etc/dbus-1/system.d/.
+mosd_policy_dups=""
+for d in /etc/dbus-1/system.d /usr/share/dbus-1/system.d; do
+    for e in $(dbg "ls -p ${d}" | awk -F/ 'NF >= 7 && $6 != "." && $6 != ".." {print $6}'); do
+        [ "${d}/${e}" = "${MOSD_POLICY_PATH}" ] && continue
+        if [ -n "${mosd_bus_name}" ] &&
+            dbg "cat ${d}/${e}" | grep -Fq "${mosd_bus_name}"; then
+            mosd_policy_dups="${mosd_policy_dups} ${d}/${e}"
+        fi
+    done
+done
+if [ -z "${mosd_policy_dups}" ]; then
+    pass "${MOSD_POLICY_PATH} is the ONLY file under /etc/dbus-1/system.d or /usr/share/dbus-1/system.d that mentions ${mosd_bus_name:-the mosd bus name}; no second policy can override the root-only restriction"
+else
+    fail "a second D-Bus policy file mentions ${mosd_bus_name:-the mosd bus name}:${mosd_policy_dups}. dbus-daemon reads both system.d directories and applies later rules over earlier ones, so this file can reinstate the default-context allow that ${MOSD_POLICY_PATH} removes -- and every other policy check here would still pass"
+fi
+
 # --- webd daemon integration ---
 ext_regular /usr/bin/webd
 WEBD_BIN="${TMP}/webd-bin"
@@ -883,6 +913,119 @@ else
         fail "the packed rootfs carries a usable root password hash in /etc/shadow. Cause: the ROOT_PASSWORD build arg was set at build time; unset it — a per-device password is provisioned by mosd at runtime"
         ;;
     esac
+fi
+
+# --- EVERY account is locked, not just root (RFCT-024 generalised by RFCT-039)
+# RFCT-024 wrote the rule that an EMPTY password field is not a locked marker
+# but passwordless login, and scoped it to root because root was the only
+# account in the image. RFCT-039 adds `mos` as the second, so the rule is
+# widened here to every account the image ships: a check that stayed
+# root-shaped would quietly stop covering the case it was written for, and the
+# third account would arrive with nothing looking at it at all.
+#
+# v1 has no factory shadow and no reconciler — its root is a writable ext4 and
+# /etc/shadow is a real file — so the rule is asserted against /etc/shadow
+# itself. The property, and the way it breaks, are the same as in
+# os/verify-image-v2.sh.
+#
+# Two failure branches with two messages, because they are two different
+# defects. EMPTY means the account accepts any password on this device. A
+# USABLE HASH means a credential every device in the fleet shares, since the
+# rootfs is byte-identical across all of them. Reporting one as the other would
+# send the fix in the wrong direction.
+v1_passwd="$(dbg "cat /etc/passwd")"
+v1_shadow="$(dbg "cat /etc/shadow")"
+printf '%s\n' "${v1_shadow}" >"${TMP}/v1-shadow"
+sh_empty=""
+sh_hashed=""
+sh_missing=""
+sh_checked=0
+while IFS=: read -r u _; do
+    [ -n "${u}" ] || continue
+    line="$(grep "^${u}:" "${TMP}/v1-shadow" | head -n1 || true)"
+    if [ -z "${line}" ]; then
+        sh_missing="${sh_missing} ${u}"
+        continue
+    fi
+    sh_checked=$((sh_checked + 1))
+    h="$(printf '%s' "${line}" | cut -d: -f2)"
+    case "${h}" in
+    "") sh_empty="${sh_empty} ${u}" ;;
+    "!"* | "*"*) ;;
+    *) sh_hashed="${sh_hashed} ${u}" ;;
+    esac
+done <<<"${v1_passwd}"
+if [ "${sh_checked}" -eq 0 ]; then
+    fail "no account could be read from /etc/shadow, so nothing can be claimed about the passwords this image ships"
+elif [ -n "${sh_missing}" ]; then
+    fail "account(s) in /etc/passwd with no /etc/shadow entry:${sh_missing}. An account with no shadow entry has no password field at all for pam_unix to check"
+elif [ -n "${sh_empty}" ]; then
+    fail "account(s) in /etc/shadow with an EMPTY password field:${sh_empty}. An empty field means PASSWORDLESS login — pam_unix accepts any password, including none. Empty is not a locked marker; only '!' (including '!!' and '!'-prefixed forms that retain a hash) and '*' lock an account"
+elif [ -n "${sh_hashed}" ]; then
+    fail "account(s) in /etc/shadow carrying a usable password hash:${sh_hashed}. The rootfs is byte-identical on every device flashed from this image, so any hash baked into it is a shared secret by construction; passwords are provisioned per device at runtime, never in the image"
+else
+    pass "all ${sh_checked} accounts in /etc/shadow have a LOCKED password field — none empty, none a usable hash"
+fi
+
+# --- RFCT-039: the `mos` account ---------------------------------------------
+# The account ships in BOTH images so the two do not drift in their account
+# definitions. The persistent home does NOT: v1 has no verity root, no DATA
+# partition and no home.mount, so there is nothing here to bind /home from and
+# nothing that would survive a reflash. That silence is deliberate and is
+# recorded in docs/task/RFCT-039.md; only the account is asserted here.
+#
+# Asserted by NUMBER. On v2 the home sits on DATA and outlives the rootfs, so
+# its owner is part of the on-disk contract; the two images must agree on the
+# id or an operator moving between them would find their files owned by a
+# stranger. Asserting the name alone would pass straight through that.
+MOS_USER=mos
+MOS_ID=1000
+mos_pw="$(printf '%s\n' "${v1_passwd}" | awk -F: -v u="${MOS_USER}" '$1 == u { print; exit }')"
+mos_uid="$(printf '%s' "${mos_pw}" | cut -d: -f3)"
+mos_gid="$(printf '%s' "${mos_pw}" | cut -d: -f4)"
+mos_home="$(printf '%s' "${mos_pw}" | cut -d: -f6)"
+mos_shell="$(printf '%s' "${mos_pw}" | cut -d: -f7)"
+v1_group="$(dbg "cat /etc/group")"
+mos_grp_gid="$(printf '%s\n' "${v1_group}" | awk -F: -v g="${MOS_USER}" '$1 == g { print $3; exit }')"
+# /bin is a symlink to usr/bin on merged-usr Debian, so both spellings are
+# probed: the shell field says /bin/bash and what must exist is the file that
+# path resolves to.
+bash_type=absent
+for c in /bin/bash /usr/bin/bash; do
+    if dbg "stat ${c}" | grep -q "Type: regular"; then bash_type=regular; break; fi
+done
+if [ -z "${mos_pw}" ]; then
+    fail "no '${MOS_USER}' account in the packed /etc/passwd; the two images would drift, and an operator's uid would differ between them"
+elif [ "${mos_uid}" != "${MOS_ID}" ] || [ "${mos_gid}" != "${MOS_ID}" ]; then
+    fail "'${MOS_USER}' is uid ${mos_uid}, gid ${mos_gid} in the packed /etc/passwd, expected ${MOS_ID}:${MOS_ID}. On v2 the home directory sits on DATA and outlives the rootfs, so the id is part of the ON-DISK CONTRACT and both images must pin the same one"
+elif [ "${mos_grp_gid}" != "${MOS_ID}" ]; then
+    fail "the '${MOS_USER}' group is gid '${mos_grp_gid:-absent}' in the packed /etc/group, expected ${MOS_ID}"
+elif [ "${mos_shell}" != "/bin/bash" ] || [ "${bash_type}" != "regular" ]; then
+    fail "'${MOS_USER}' has shell '${mos_shell}' and the bash binary is ${bash_type} in the packed root; the login shell must be /bin/bash and that binary must actually ship, or every login dies at exec"
+elif [ "${mos_home}" != "/home/${MOS_USER}" ]; then
+    fail "'${MOS_USER}' has home '${mos_home}', expected /home/${MOS_USER}"
+else
+    pass "'${MOS_USER}' is uid ${MOS_ID}, gid ${MOS_ID} (group ${MOS_USER} = gid ${mos_grp_gid}), shell ${mos_shell} (present in the image), home ${mos_home}"
+fi
+
+# NO SUDO AND NO SUPPLEMENTARY GROUPS is a deliberate phase-1 deferral, not an
+# oversight: there is no privilege policy to express yet, the web UI is the
+# admin surface, and a guessed policy would outlive the release that guessed
+# it. A deferral nothing asserts is one `usermod -aG` away from being undone
+# silently, so it is asserted in both images.
+mos_extra_groups="$(printf '%s\n' "${v1_group}" |
+    awk -F: -v u="${MOS_USER}" '$1 != u && $4 ~ "(^|,)" u "(,|$)" { print $1 }' |
+    tr '\n' ' ' | sed 's/ $//')"
+sudo_path=""
+for c in /usr/bin/sudo /bin/sudo; do
+    if dbg "stat ${c}" | grep -q "Type: regular"; then sudo_path="${c}"; break; fi
+done
+if [ -n "${mos_extra_groups}" ]; then
+    fail "'${MOS_USER}' is a member of supplementary group(s): ${mos_extra_groups}. Phase 1 grants none — not adm, not shadow, nothing reaching the settings tree — and this is a recorded deferral (docs/task/RFCT-039.md), so a grant appearing here is an undocumented privilege decision"
+elif [ -n "${sudo_path}" ]; then
+    fail "sudo ships in the image (${sudo_path}); phase 1 deliberately gives '${MOS_USER}' no privilege-escalation path and the package is not in the allowlist"
+else
+    pass "'${MOS_USER}' has no supplementary groups and no sudo ships in the image (a deliberate phase-1 deferral, recorded in docs/task/RFCT-039.md)"
 fi
 
 # --- every external binary the /usr/lib/mos boot scripts invoke --------------
@@ -1333,7 +1476,10 @@ if [ -n "${LIBCRYPT_REAL}" ]; then
 fi
 if [ "${crypt_n}" != "1" ] || [ ! -s "${LIBCRYPT_BIN}" ]; then
     fail "cannot check the crypt(3) format against the image's libcrypt: prefix count ${crypt_n}, extracted library $([ -s "${LIBCRYPT_BIN}" ] && echo "$(stat -c %s "${LIBCRYPT_BIN}") bytes" || echo missing)"
-elif LC_ALL=C tr -c '[:print:]' '\n' <"${LIBCRYPT_BIN}" | grep -Fq -- "${CRYPT_PREFIX}"; then
+# `grep -F`, not `grep -Fq`: with -q grep exits the moment it matches, tr
+# takes SIGPIPE, and `set -o pipefail` turns that 141 into a FAILED check on
+# a library that does carry the format. It reproduces about one run in three.
+elif LC_ALL=C tr -c '[:print:]' '\n' <"${LIBCRYPT_BIN}" | grep -F -- "${CRYPT_PREFIX}" >/dev/null; then
     pass "the libcrypt packed in this image implements ${CRYPT_PREFIX}, the crypt(3) format mosd writes into the root shadow entry"
 else
     fail "the libcrypt packed in this image ($(basename "${LIBCRYPT_REAL}")) does NOT implement ${CRYPT_PREFIX}, the format mosd writes into /etc/shadow. pam_unix would reject every password while the shadow file, the reconciler and every other check look healthy. Formats it does carry: $(LC_ALL=C tr -c '[:print:]' '\n' <"${LIBCRYPT_BIN}" | grep -oE '^\$[0-9a-z]+\$$' | sort -u | tr '\n' ' ')"
