@@ -62,6 +62,14 @@ Each task is a single line linking to its detail file. All detailed information 
 - [x] [**RFCT-029 /etc/shadow on STATE (symlink, factory copy, boot reconcile, verifier proof)**](RFCT-029.md) `P1`
 - [x] [**RFCT-030 Power actions: mosd Reboot/PowerOff + webd POST routes**](RFCT-030.md) `P1`
 - [x] [**RFCT-031 The Rockchip loader area becomes a real GPT partition**](RFCT-031.md) `P1`
+- [x] [**RFCT-032 Settings schema v4: access.ssh.authorizedKeys and the key parser**](RFCT-032.md) `P1`
+- [x] [**RFCT-033 Transient root password: marker, bus method, shadow reconcile**](RFCT-033.md) `P1`
+- [x] [**RFCT-034 sshd reconciler: authorized keys, AuthorizedKeysFile, password gating**](RFCT-034.md) `P1`
+- [x] [**RFCT-035 webd SSH pane: keys, transient password, effective state**](RFCT-035.md) `P1`
+- [x] [**RFCT-036 Image and verifier integration: profile default flip, static-enable removal, seven assertions**](RFCT-036.md) `P1`
+- [x] [**RFCT-037 Access-model documentation, implementation-status markers, and the dead-control demotion**](RFCT-037.md) `P1`
+- [x] [**RFCT-038 mos-shadow-reconcile: newline-safe append**](RFCT-038.md) `P2`
+- [x] [**RFCT-039 A persistent /home on DATA, and the mos account that owns it**](RFCT-039.md) `P1`
 - [x] [**RFCT-040 Venus OS web UI and information architecture study**](RFCT-040.md) `P2`
 - [x] [**RFCT-041 Venus OS access and firmware-update UX study**](RFCT-041.md) `P2`
 - [x] [**RFCT-042 mos web/UI current-state inventory, measured**](RFCT-042.md) `P1`
@@ -69,3 +77,7 @@ Each task is a single line linking to its detail file. All detailed information 
 - [x] [**RFCT-044 Dashboard technology posture and live-value transport**](RFCT-044.md) `P1`
 - [x] [**RFCT-045 Consolidation, PMA records, and a build-enforced index check**](RFCT-045.md) `P1`
 - [x] [**RFCT-046 Dashboard process architecture, external contract, rename, and phasing**](RFCT-046.md) `P1`
+- [x] [**RFCT-047 sshd reconciler: reload on config change, not restart**](RFCT-047.md) `P1`
+- [x] [**RFCT-048 D-Bus policy: com.mos.mosd is root-only, and a live-bus test that proves it**](RFCT-048.md) `P1`
+- [x] [**RFCT-053 sshd reconciler: render authorized keys for every managed login account**](RFCT-053.md) `P1`
+- [x] [**RFCT-054 A persistent /root on DATA**](RFCT-054.md) `P1`

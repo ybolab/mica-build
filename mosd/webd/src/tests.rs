@@ -673,7 +673,14 @@ fn sshd_state(effective: bool, requested: bool, transient_active: bool) -> serde
         "passwordAuthentication": effective,
         "passwordAuthenticationRequested": requested,
         "transientPasswordActive": transient_active,
-        "authorizedKeysPath": "/etc/ssh/authorized_keys.d/root",
+        // Plural since RFCT-053: mosd renders one file per managed login
+        // account and publishes every path. webd reads none of them; the
+        // fixture carries the real key name so it keeps describing state that
+        // exists.
+        "authorizedKeysPaths": [
+            "/etc/ssh/authorized_keys.d/root",
+            "/etc/ssh/authorized_keys.d/mos",
+        ],
         "authorizedKeys": [],
     })
 }

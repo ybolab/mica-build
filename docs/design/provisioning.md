@@ -11,6 +11,12 @@
 > ships. The three-layer model and the security invariants are unchanged. §3 is
 > new and is the single authoritative statement of the credential model. The
 > `.zh.md` sibling has not been updated and is stale.
+>
+> **Model change (campaign `sshweb`, 2026-08-19).** SSH access no longer uses
+> the device password at all: see `docs/design/access.md` §4. The device
+> credential is still minted at first boot and still on STATE, and it now
+> authenticates **nothing** — §3.6 states this and every §3 subsection that
+> described it as a login credential is corrected in place.
 
 ## 1. The break from upstream
 
@@ -132,7 +138,7 @@ settings tree and asserts the document contains neither `psk` nor
 
 | Secret | Where it lands | What it authenticates |
 |---|---|---|
-| **device password** | hash in `access.device.passwordHash`; plaintext at `/var/lib/mos/secrets/device-password` (0600 in a 0700 dir) | the operator, on SSH, the local console and the webd admin UI |
+| **device password** | hash in `access.device.passwordHash`; plaintext at `/var/lib/mos/secrets/device-password` (0600 in a 0700 dir) | **nothing, since 2026-08-19** — not SSH, not the local console, not the webd admin UI. See §3.6 |
 | **AP PSK** | plaintext at `/var/lib/mos/secrets/ap-psk` (same modes) | WPA2 clients joining the provisioning access point |
 
 Both are independent draws from `ring::rand::SystemRandom`, as is `deviceId`.
@@ -154,9 +160,16 @@ string fails the build.
 non-zero generation means "a credential of record exists". It is the revision
 counter anything derived from the password must key off.
 
-### 3.3 The SAME password is stored under TWO hash formats, and this is required
+### 3.3 The SAME password is stored under TWO hash formats — SUPERSEDED
 
-This is the part a future reader will otherwise "simplify" back into one hash
+**Superseded 2026-08-19 (§3.6). Retained because the libcrypt measurement below
+still governs every hash mos writes into `/etc/shadow`, and because the defect
+it records is worth keeping.** What is no longer true is the arrangement itself:
+the device password is not written into `/etc/shadow` any more, by the sshd
+reconciler or by anything else, so only the Argon2id copy is written today — and
+nothing verifies it. The paragraphs below describe the M5 arrangement.
+
+This was the part a future reader would otherwise "simplify" back into one hash
 and silently break login.
 
 | Store | Format | Verified by |
@@ -193,11 +206,19 @@ it is why the image verifier now asserts that the libcrypt packed in the image
 implements the prefix `sshd.rs` pins on its own output, rather than either side
 asserting it alone.
 
-Idempotency needs care that Argon2id did not: bcrypt salts every hash, so a
+Idempotency needed care that Argon2id did not: bcrypt salts every hash, so a
 freshly computed value never compares equal to the stored one. "Already applied"
-therefore means `bcrypt::verify(plaintext, stored)` returns true. Without that
+therefore meant `bcrypt::verify(plaintext, stored)` returning true. Without that
 check, every reconcile would rewrite the shadow file with a new salt — a flash
 write per boot, and a live state that never settles.
+
+**What survives into the current model:** bcrypt is still the format mos writes
+into `/etc/shadow`, for exactly the libcrypt reason measured above — but the
+only thing written there now is the **transient** root password
+(`mosd/mosd/src/transient.rs`, cost 12), and the idempotency question does not
+arise because it is written once per operator action rather than on every
+reconcile. `mos-shadow-reconcile` recognises it by an exact hash match against
+its marker, not by `bcrypt::verify`.
 
 ### 3.4 Why a plaintext on STATE is acceptable
 
@@ -228,14 +249,41 @@ the plaintext file is gone, the hash is **not** regenerated: replacing it would
 invalidate a password the operator may already be holding, and regenerating a
 credential on a fielded device locks its operator out. The reconciler reports
 that state distinctly (`plaintext-missing`, never confused with `absent`) and
-logs a warning; the operator's password still authenticates against
-`access.device.passwordHash` on the web UI, only the shadow entry cannot be
-refreshed.
+logs a warning.
+
+**Correction (2026-08-19).** This section used to end "the operator's password
+still authenticates against `access.device.passwordHash` on the web UI". That
+was never quite true — webd authenticates against `access.webAdmin`, its own
+credential — and it is now false in every direction: `access.device.passwordHash`
+authenticates nothing at all (§3.6), so "the credential of record" above now
+means "the record that a credential was minted", not a credential anything
+checks.
 
 **There is no credential-rotation path.** Nothing in M5 can change a device
 password or an AP PSK after first boot — not the UI, not the bus, not a
 reconciler. This is a real gap, not a design position, and it is the first thing
 a later phase should close.
+
+### 3.6 What the device credential authenticates today: nothing
+
+**Nothing verifies the device credential under the current access model.** Not
+sshd, not `pam_unix`, not the serial console, not webd — which has always
+authenticated its admin against `access.webAdmin` rather than against this. No
+code path in the repository calls a verifier against
+`access.device.passwordHash`; `mosd/mosd/src/identity.rs::verify_password`, the
+function that was written to, is now `#[cfg(test)]` precisely because it had no
+caller outside its own tests (RFCT-037).
+
+Both halves — the Argon2id hash in `access.device.passwordHash` and the
+plaintext at `/var/lib/mos/secrets/device-password` — are still minted at first
+boot and still persisted. **They are inert, and deliberately kept:** the
+campaign reserved them for a later phase (a support-side credential, or the
+phase-2 PIN of `access.md` §4.3) rather than removing a first-boot behaviour and
+its migration alongside a change to how SSH authenticates.
+
+Recorded so the next reader finds a decision rather than an oversight, and so
+that "the device has a password" is not mistaken for "the device accepts a
+password".
 
 ## 4. Layer 2 — local configuration channels
 
