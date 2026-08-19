@@ -517,39 +517,941 @@ table was re-verified here; that table is cited, not carried forward.
 
 ## 2. The API surface — **[proposed]**
 
-> **Stub — written by RFCT-064.** Do not fill this in from another task.
+Nothing in this section exists. Section 1 measured the surface at `86cd669`
+and found nineteen method+path pairs of which **none** return or accept JSON
+(section 1.2); this section proposes the one that should. Every claim below
+about what apid or mosd does *today* is anchored to `86cd669` and cited;
+everything else is a proposal and is marked as one.
 
-### 2.1 Versioning and path shape
+### 2.1 Versioning and path shape — **[proposed]**
 
-> **Stub — written by RFCT-064.** Do not fill this in from another task.
+**Shape.** `/api/v1/<...>`. JSON in, JSON out, `Content-Type: application/json`
+in both directions. The nineteen existing paths (section 1.2) keep their method,
+their path and their behaviour unchanged; `/api/` is a prefix nothing currently
+serves — the HTTPS router declares no route under it and no fallback at all
+(`mosd/webd/src/routes.rs:44-68`), so today every `/api/...` request is handled
+by the gate, which redirects it to `/login` when unauthenticated
+(`mosd/webd/src/routes.rs:149`) and otherwise falls through to axum's default
+not-found. The API prefix is therefore free.
 
-### 2.2 Resource model
+**The version lives in the path segment immediately after `/api/`.**
+Recommended, for three reasons that are properties of this codebase rather than
+general taste:
 
-> **Stub — written by RFCT-064.** Do not fill this in from another task.
+1. The gate already dispatches on `request.uri().path()`
+   (`mosd/webd/src/routes.rs:127`). A version check is the same string operation
+   the one existing middleware already performs, so it needs no new extractor
+   and no new failure mode in the layer that guards everything
+   (`mosd/webd/src/routes.rs:66`).
+2. axum registers routes by path (`mosd/webd/src/routes.rs:44-68`). A second
+   major version is a second `Router` under `/api/v2`, served from the same
+   process and the same listener, with no per-handler branching and no shared
+   handler that has to ask which version called it.
+3. It survives `curl` and a browser address bar with no header plumbing. That
+   matters concretely here: SSH is off by default and stays off until an
+   authenticated admin action (`mosd/mosd-settings/src/model.rs:110-112`,
+   `docs/design/access.md` §4.1), so for most devices the only tool an operator
+   has against the appliance is whatever they can type on another machine.
 
-### 2.3 Operation inventory: today's form posts, tomorrow's API
+**What that forecloses.** Per-resource versioning: `/api/v1/settings/...` and
+`/api/v1/state/...` move together or not at all, so a breaking change to one
+resource bumps the version of every resource. A `v2` duplicates the whole route
+tree even for the routes that did not change. And the version string ends up
+embedded in every URL a client has stored — a CI job pins `v1` in its
+configuration rather than in a header it could strip — which is a migration cost
+paid by every caller, not by apid.
 
-> **Stub — written by RFCT-064.** Do not fill this in from another task.
+**Rejected: a media-type header** (`Accept: application/vnd.mos.v1+json`). It is
+invisible in a log line, invisible in an address bar, and it requires the client
+to set the header correctly before it can discover that it set it wrong.
+**Rejected: a query parameter** (`?v=1`). It would in fact survive the HTTP→HTTPS
+redirect, which preserves path *and* query
+(`mosd/webd/src/routes.rs:88`, `:89-93`) — that is not the objection. The
+objection is that an absent parameter must default to something, and the only
+safe default is to refuse, which turns a forgotten parameter into an error on a
+path that otherwise looks correct. An unknown path prefix is a 404 that names
+itself.
 
-### 2.4 Error shape
+**What a version bump means.** `v1` → `v2` happens only on a change that can
+break a *correct* v1 client, and the two lists are exhaustive:
 
-> **Stub — written by RFCT-064.** Do not fill this in from another task.
+- **Breaking, bumps the version:** removing a route; removing a response field;
+  narrowing a field's type or its accepted value set; adding a required request
+  field; changing the success status code of an existing outcome; changing which
+  `error.code` (§2.4) an existing failure emits.
+- **Additive, does not bump:** a new route; a new response field; a new
+  *optional* request field; a new `error.code` for a failure that previously had
+  no distinct code; a new value in an enum the client was told to treat as open.
+
+That last item is only safe if the obligation is stated as a rule the client
+must obey, not as an aspiration: **a v1 client must ignore response fields it
+does not recognise, and must treat an unrecognised `error.code` as its HTTP
+status class.** A client that hard-fails on an unknown field converts every
+additive change into a breaking one, and then the version number is no longer
+carrying the contract — apid is. This document states the rule here so that a
+later argument about whether some change was breaking has a written answer.
+
+**How a client discovers the version it is talking to.** Two endpoints, and they
+answer different questions.
+
+| Route | Auth | Response | Answers |
+|---|---|---|---|
+| `GET /api/versions` | **none** | `{"versions":["v1"],"current":"v1"}` | "which major versions does this device serve?" |
+| `GET /api/v1/meta` | required | `{"api":"v1","settingsSchemaVersion":4,"daemon":"apid"}` | "what am I talking to, in detail?" |
+
+`settingsSchemaVersion` carries mosd's `SCHEMA_VERSION`
+(`mosd/mosd-settings/src/model.rs:11`, value **4** at `86cd669`). **It is not
+the API version and the two must never be conflated.** The schema version is the
+shape of the tree on disk (`mosd/mosd-settings/src/store.rs:12`), moved by a
+registered migration chain (`mosd/mosd-settings/src/migration.rs:46-57`, entry
+point at `:89`) and read-only through the write path
+(`mosd/mosd-settings/src/model.rs:362-364`, `:372-374`). The API version is the
+shape of this HTTP contract. Either can move without the other, and a client
+that writes settings-shaped bodies (§2.2) needs both.
+
+**Why `/api/versions` is unauthenticated, and what that costs.** Section 6 of
+this document requires a UI to be able to detect that it cannot talk to the API
+version it found. That check has to run *before* the UI has a credential: a UI
+installed on DATA survives the A/B update that replaced apid
+(`docs/design/access.md:505`), and on a factory-fresh device there is no
+`access.webAdmin` at all (`mosd/mosd-settings/src/model.rs:52-53`), so the gate
+is in setup mode and redirects everything except `/setup`
+(`mosd/webd/src/routes.rs:135-140`). An authenticated probe cannot answer the
+question it exists to answer. The cost is an unauthenticated fingerprint:
+anyone who can reach port 443 (`mosd/webd/src/config.rs:34-37`) learns which API
+major versions this device speaks. The appliance already answers `/healthz` with
+the literal `ok` unauthenticated (`mosd/webd/src/routes.rs:128-130`, `:153-155`),
+so this is one more bit on a listener that already identifies itself — it is not
+zero, and it is exactly why the response carries a version list and nothing
+else: not the hostname, not `provisioning.deviceId`
+(`mosd/mosd-settings/src/model.rs:174-176`), not a build string.
+
+**What apid promises across a patch release versus an A/B image update.** The
+honest starting point is that **there is no apid patch release independent of an
+image update.** The binary is `/usr/bin/webd` (`mosd/dist/webd.service:8`), and
+`/` is a verity-protected squashfs (`docs/design/access.md:468-474`); RAUC
+writes only the ROOTFS and BOOT slots (`docs/design/access.md:504`). Every
+change to apid therefore arrives as an A/B image update, and "patch release"
+can only mean "an image in which apid changed additively". With that said, two
+promises, and they are not the same promise:
+
+- **Within a major version, across any image:** every route that existed keeps
+  its path, its method, its success status code and its response fields.
+  Additions per the list above are permitted. A client written against the first
+  `v1` image works against every later `v1` image.
+- **Across a major version bump:** nothing is promised except that
+  `GET /api/versions` still answers and still lists what is served. **apid should
+  serve the outgoing major version alongside the new one for at least one image
+  generation.** The reason is specific to this appliance: the UI that a version
+  bump breaks is installed on DATA and *survived* the update that broke it
+  (`docs/design/access.md:505`), and the operator's route to fixing it may be
+  that same UI. The cost is two route trees in one binary, two sets of handlers
+  that must both keep behaving, and a deprecation the project has to actually
+  execute rather than carry forever. Sequencing that is §8's, not this
+  section's; what this section records is the consequence of *not* doing it — a
+  single-version-at-a-time apid makes the §6 escape the only recovery from a
+  version bump, which is a much larger promise for §6 to keep.
+
+### 2.2 Resource model — **[proposed]**
+
+Derived from `mosd/mosd-settings/src/model.rs` and `mosd/mosd/src/bus.rs` as
+measured at `86cd669`. Nothing here invents a model alongside mosd's; where the
+settings tree and a sensible REST resource genuinely disagree, the disagreement
+is named and the choice is costed.
+
+**Three roots, because mosd has three things and not one.**
+
+| Root | Backed by | Methods | Why it is separate |
+|---|---|---|---|
+| `/api/v1/settings/<dot-path>` | `Settings` (`mosd/mosd-settings/src/model.rs:16-32`) via `GetSettings` / `SetSettings` (`mosd/mosd/src/bus.rs:182`, `:191`) | `GET`, `PUT` | typed, validated, persisted to `/var/lib/mos/settings.toml` (`mosd/mosd-settings/src/store.rs:12`), survives reboot and A/B update (`docs/design/access.md:504`) |
+| `/api/v1/state/<dot-path>` | the live-state tree via `GetState` (`mosd/mosd/src/bus.rs:219`) | `GET` only | untyped `serde_json::Value` (`mosd/mosd/src/bus.rs:46-49`), in memory, no writer that is not a reconciler or `ReportHealth` |
+| `/api/v1/actions/<verb>` | `Reboot`, `PowerOff`, `SetTransientRootPassword` (`mosd/mosd/src/bus.rs:257`, `:265`, `:283`) | `POST` only | not state at all — see §2.3 |
+
+The split is mosd's, not a stylistic preference. The two trees have different
+types (`settings: Settings` and `state: Value`, `mosd/mosd/src/bus.rs:47-48`),
+different mutability (`SetSettings` exists; there is no `SetState` anywhere in
+the proxy trait, `mosd/webd/src/bus_client.rs:14-21`, nor in mosd's interface
+impl, `mosd/mosd/src/bus.rs:179-298`), and different lifetimes (the settings tree
+is saved atomically on every write, `mosd/mosd/src/bus.rs:202`; the live-state
+tree is a field of `Inner` that starts empty or as `{"dry_run": true}`,
+`mosd/mosd/src/bus.rs:63-64`, `mosd/mosd/src/main.rs:90-93`). An API that merged
+them would have to decide on every request which half a path belonged to.
+
+**The dot-path is the resource identifier, verbatim.** `GET
+/api/v1/settings/access.ssh` returns exactly what `GetSettings("access.ssh")`
+returns (`mosd/mosd/src/bus.rs:182-186`). `PUT /api/v1/settings/hostname` with
+body `"router"` performs exactly `SetSettings("hostname", "\"router\"")`
+(`mosd/mosd/src/bus.rs:191-216`). This is the recommendation, and the
+alternative it rejects is the interesting part.
+
+**Rejected: hand-shaped REST nouns that do not map onto the tree** (`GET
+/api/v1/ssh`, `PATCH /api/v1/network/eth0`). What it costs is not extra code —
+it is a second model that has to be kept in sync with `model.rs` by hand. Every
+field added to `Settings` is invisible over the API until someone also adds it
+to the resource layer, and a field that is invisible over the API is, by this
+project's own rule, unsupported: *"An unmodelled setting is an unsupported
+setting"* (`docs/design/access.md:468-474`). Hand-shaped nouns reproduce exactly
+that failure one layer up, where nothing — no compiler, no
+`deny_unknown_fields` (`mosd/mosd-settings/src/model.rs:15`, `:49`, `:78`, and
+ten more) — will ever notice the omission. The passthrough cannot drift, because
+there is nothing to drift from.
+
+**What the passthrough costs, stated plainly.** The API becomes exactly as
+capable as the bus, including the bus's limits:
+
+- **No array indexing.** The dot-path syntax has none; the model says a list is
+  *"written as a whole JSON array through the dot-path API"*
+  (`mosd/mosd-settings/src/model.rs:213-214`). Every client that wants to add
+  one SSH key must read `access.ssh.authorizedKeys`, append, and write the whole
+  list back — which is precisely what the HTML pane does today
+  (`mosd/webd/src/routes.rs:1061-1080`). Two clients doing that concurrently
+  lose one of the two writes, with no mechanism that notices.
+- **Whole-subtree writes are all-or-nothing.** `Settings::set` deserializes the
+  entire root into `Settings` after the write and rejects the result if it does
+  not fit (`mosd/mosd-settings/src/model.rs:367-371`), and every struct carries
+  `#[serde(deny_unknown_fields)]`, so a `PUT` of a subtree with one extra key
+  fails the whole write. That is a good property — it is also a surprising one
+  for a client that expected a merge.
+- **A dot in a value collides with a dot in the path.** Verified at `86cd669`:
+  apid accepts an interface name containing `.`
+  (`mosd/webd/src/routes.rs:231-236` permits `.`, `_` and `-`), but `split_path`
+  splits on `.` unconditionally (`mosd/mosd-settings/src/path.rs:26-32`), so
+  `network.eth0.100` — a VLAN sub-interface — lands as a field named `100`
+  inside `IfaceSettings` and is rejected by `deny_unknown_fields`
+  (`mosd/mosd-settings/src/model.rs:308-315`). Running `Settings::set` against a
+  default tree with that path returns `Validation { path: "network.eth0.100",
+  message: "unknown field `100`, expected `dhcp` or `static`" }`. This is a
+  **pre-existing** limit of the dot-path model, not one the API introduces — the
+  HTML form has it too — but an API that adopts the dot-path adopts it, and a
+  client must be told rather than left to discover it as a 502 (§2.4). It is
+  routed onward in §10.1.
+
+**The exception: two collection resources, added deliberately.** The dot-path
+model fails outright for the two arrays in the tree, because a per-item delete
+cannot be expressed as a settings write at all. Both get a named collection:
+
+| Collection | Underlying dot-path | Item identity | Routes |
+|---|---|---|---|
+| SSH authorized keys | `access.ssh.authorizedKeys` (`mosd/mosd-settings/src/model.rs:105`, item at `:129-135`) | SSH fingerprint | `GET`/`POST /api/v1/ssh/authorized-keys`, `DELETE /api/v1/ssh/authorized-keys/{fingerprint}` |
+| WiFi client networks | `wifi.client.networks` (`mosd/mosd-settings/src/model.rs:215`, item at `:231-243`) | `ssid` | `GET`/`POST /api/v1/wifi/client/networks`, `DELETE /api/v1/wifi/client/networks/{ssid}` |
+
+**Identity is never a list index.** The reason is already recorded in the crate,
+and it is the reason here too: *"an index is only meaningful against the list the
+operator was looking at, so a key added or removed by another session between the
+render and the submit would slide it onto a different key and delete something
+nobody asked to delete"* (`mosd/webd/src/routes.rs:1306-1316`). A `DELETE` whose
+identifier matches nothing is an error, not a silent success, for the reason the
+same comment gives: *"'removed' when nothing was removed is how an operator ends
+up believing access was withdrawn while the key still grants root."*
+
+**What the exception costs.** There are now two ways to write the same state:
+`PUT /api/v1/settings/access.ssh.authorizedKeys` and `DELETE
+/api/v1/ssh/authorized-keys/{fingerprint}`. A client using the first can produce
+a list the second would have rejected. The floor is the same either way, because
+both end at `SetSettings` → `Settings::set` → `store.save`
+(`mosd/mosd/src/bus.rs:199-203`), and the collection route additionally runs
+`validate_authorized_keys` first — the same validator mosd runs before rendering
+the file (`mosd/webd/src/routes.rs:1066-1071`). So the difference is the quality
+of the error message, not whether a bad list can be written. That is an
+acceptable cost and it is named rather than hidden. The passthrough route must
+**not** be removed for these two paths: removing it would make the collection the
+only way in, and a client that needs to replace a whole list atomically would
+have to issue N deletes and M posts with no atomicity at all.
+
+**Redaction is a rule of this root, not of a handler.** As of `86cd669`,
+`GetSettings("access")` returns the subtree verbatim
+(`mosd/mosd/src/bus.rs:182-186`), and `access.webAdmin.password_hash`
+(`mosd/mosd-settings/src/model.rs:68-71`) is a field of it. A settings
+passthrough with no redaction therefore hands the admin password hash — and
+`access.device.passwordHash` (`:158-163`), `wifi.ap.psk` (`:260-261`) and every
+`wifi.client.networks[].psk` (`:235-236`) — to any authenticated API caller. The
+rule: **every `GET` under `/api/v1/settings/` passes the value through a
+structural redactor before serialising it**, replacing the value of any field
+named `password_hash`, `passwordHash`, `psk`, or `hash` — anywhere in the tree,
+at any depth — with the sentinel `"<redacted>"`. It must be structural rather
+than a list of dot-paths, because the two `psk` fields sit inside arrays and the
+dot-path syntax cannot name them (`mosd/mosd-settings/src/model.rs:213-214`).
+The residual risk is stated: this is a denylist, so a future secret-bearing field
+under a name not on it is exposed by default. That is a fail-open design and the
+mitigation is a test, not a hope — routed in §10.1. A redacted field is
+**read-only through the API**: a `PUT` whose body contains `"<redacted>"` is
+rejected at 422 rather than written, because writing the sentinel would silently
+destroy the credential.
+
+**The resource inventory.** Every subtree in section 1.5's table, mapped:
+
+| Concern | API resource | Backing | Notes |
+|---|---|---|---|
+| System / identity | `GET /api/v1/settings/provisioning` | `ProvisioningSettings` (`model.rs:171-180`) | `state`, `deviceId`, `seededGeneration`; written by first-boot provisioning, not by an operator |
+| Schema version | `GET /api/v1/meta` | `SCHEMA_VERSION` (`model.rs:11`) | read-only; a write to `schema_version` is rejected by mosd (`model.rs:362-364`) so the API does not expose one |
+| Hostname | `GET`/`PUT /api/v1/settings/hostname` | `String` (`model.rs:20`) | body is a bare JSON string; reconciled by `hostname` (`mosd/mosd/src/reconciler/hostname.rs:52-58`) |
+| Network | `GET`/`PUT /api/v1/settings/network`, `.../network.<iface>` | `BTreeMap<String, IfaceSettings>` (`model.rs:22`, `:309-315`) | see the VLAN dot collision above |
+| WiFi station | `GET`/`PUT /api/v1/settings/wifi.client` + the networks collection | `WifiClientSettings` (`model.rs:206-216`) | `psk` redacted on read |
+| WiFi AP | `GET`/`PUT /api/v1/settings/wifi.ap` | `WifiApSettings` (`model.rs:248-275`) | `psk` redacted on read; `mode` is `off`/`provisioning`/`always` (`:296-304`) |
+| SSH enable state and policy | `GET`/`PUT /api/v1/settings/access.ssh`, `.../access.ssh.enabled` | `SshSettings` (`model.rs:79-106`) | default `enabled: false` (`:110-112`) |
+| SSH keys | the authorized-keys collection above | `access.ssh.authorizedKeys` | **every key is a root key** (`docs/design/access.md` §4.1, `mosd/webd/src/routes.rs:944`); the API response must carry that sentence in a `notice` field for the same reason the pane must carry it |
+| Transient root password | `POST /api/v1/actions/transient-root-password` | `SetTransientRootPassword` (`mosd/mosd/src/bus.rs:283`) | an action, not a setting — see §2.3 |
+| Web admin credential | `GET /api/v1/settings/access.webAdmin` (redacted), `PUT` refused | `WebAdminSettings` (`model.rs:68-71`) | see §3.2 for why the API does not offer a password change in phase 1 |
+| Console | `GET`/`PUT /api/v1/settings/access.console` | `ConsoleSettings` (`model.rs:140-145`) | only the `debug` image ships the shell at all (`model.rs:141-142`) |
+| Power | `POST /api/v1/actions/reboot`, `.../poweroff` | `Reboot`/`PowerOff` (`mosd/mosd/src/bus.rs:257`, `:265`) | actions — see §2.3 |
+| Reconciler results | `GET /api/v1/state/<name>` for `hostname`, `network`, `sshd`, `wifiClient`, `wifiAp` | one key per reconciler (`mosd/mosd/src/bus.rs:125-132`, `:137-148`) | an entry is either the applied result or `{"error": "..."}`; the API passes both through unchanged |
+| Last power request | `GET /api/v1/state/power` | `{last_action, requested_by}` (`mosd/mosd/src/bus.rs:86-100`) | recorded *before* the action, so it survives the machine going down |
+| Health | `GET /api/v1/state/health` and `GET /api/v1/health` | `health.<component>` (`mosd/mosd/src/bus.rs:231-251`) | the two are different questions — see §2.4 |
+| Dry-run marker | `GET /api/v1/state/dry_run` | present only under `MOSD_DRY_RUN=1` (`mosd/mosd/src/main.rs:43`, `:90-93`) | in that mode no reconcilers are registered at all (`:71-75`), so every other state key is absent |
+
+**Where the settings tree and a sensible REST resource genuinely disagree, and
+what was chosen.** Three cases, all decided toward the tree:
+
+1. **SSH is one resource in the tree and two concerns to an operator** —
+   "is sshd running" (`access.ssh.enabled`) and "who may log in"
+   (`access.ssh.authorizedKeys`). REST wants two resources with different
+   lifecycles. Chosen: the tree, plus the keys collection as the single
+   exception. Cost: `PUT /api/v1/settings/access.ssh` can flip `enabled` and
+   replace the key list in one indivisible write, which is convenient and is
+   also a way to lock yourself out in one request.
+2. **`hostname` is a bare scalar at the root.** REST wants
+   `/api/v1/system` with `{"hostname": ...}`. Chosen: the tree, so the body of
+   `PUT /api/v1/settings/hostname` is the bare JSON string `"router"` — which is
+   valid JSON and which some HTTP clients make awkward to send. Cost: named,
+   accepted; the alternative would have been the first hand-shaped noun and
+   there would then be an argument about the second.
+3. **Uptime is not in either tree.** `GET /` reads `/proc/uptime` in apid
+   (`mosd/webd/src/routes.rs:581`) — one of only two disk paths apid touches
+   outside its own state directory (section 1.6). Exposing it over the API means
+   either apid keeps reading it, which contradicts the rule the crate states
+   about itself — *"mosd owns every system action: webd never spawns a process
+   and never talks to systemd itself"* (`mosd/webd/src/settings_api.rs:10-12`) —
+   or mosd publishes it into the live-state tree and the API reads it there.
+   **Chosen: mosd publishes it**, and until it does, uptime has no API
+   representation. Cost: the API is missing a field the HTML status pane shows,
+   until a mosd change lands. Routed in §10.1.
+
+### 2.3 Operation inventory: today's form posts, tomorrow's API — **[proposed]**
+
+Input is section 1.2's route table, measured at `86cd669`. One row per
+method+path that exists today.
+
+| Today (at `86cd669`) | Form POST? | API equivalent | Request → response |
+|---|---|---|---|
+| `GET /` (`routes.rs:45`) | — | **none, deliberately.** It is a rendering, not data. Its inputs are `GET /api/v1/settings/hostname`, `GET /api/v1/state/network`, and uptime (which has none — §2.2) | — |
+| `GET /setup` (`:46`) | — | **none** — a form. Its data is `GET /api/versions` plus the 409 condition below | — |
+| `POST /setup` (`:381`) | yes | `POST /api/v1/setup` | `{"password": "...", "hostname": "...", "network": {...}}` → `201` with `{"token": "..."}` (§3.2), `409` when already configured (`:386-395`), `422` on any validation failure. **Unauthenticated by necessity** — it is the only route the gate lets through in setup mode (`:135-140`) |
+| `GET /login` (`:47`) | — | **none** — a form | — |
+| `POST /login` (`:499`) | yes | **none for the API.** §3.2 authenticates with a bearer token, not a session; minting a token is `POST /api/v1/tokens`, which is a different operation with a different lifecycle | — |
+| `POST /logout` (`:535`) | yes | **none.** The API has no session to drop. The nearest operation is `DELETE /api/v1/tokens/{id}`, which is revocation, not logout — it is permanent and it affects every holder of that token, not one browser | — |
+| `GET /network` (`:698`) | — | `GET /api/v1/settings/network` | → `{"eth0": {"dhcp": true}, ...}` |
+| `POST /network` (`:708`) | yes | `PUT /api/v1/settings/network.<iface>` | `{"dhcp": true}` or `{"dhcp": false, "static": {"address": "...", "gateway": "...", "dns": [...]}}` → `204`; `422` on an invalid name or CIDR (apid's own validators, `:273-281`) |
+| `GET /hostname` (`:757`) | — | `GET /api/v1/settings/hostname` | → `"mos"` |
+| `POST /hostname` (`:908`) | yes | `PUT /api/v1/settings/hostname` | `"router"` → `204`; `422` from `valid_hostname` (`:262-270`) |
+| `GET /power` (`:853`) | — | **none** — a confirmation form. Its only content is two constant tokens (`:790-796`) | — |
+| `POST /power/reboot` (`:896`) | yes | `POST /api/v1/actions/reboot` | `{}` → **`202 Accepted`**, matching today (`:890`) |
+| `POST /power/poweroff` (`:900`) | yes | `POST /api/v1/actions/poweroff` | `{}` → **`202 Accepted`** |
+| `GET /ssh` (`:1200`) | — | `GET /api/v1/settings/access.ssh` + `GET /api/v1/state/sshd` | two calls, because the pane merges two trees (`:1034-1058`) |
+| `POST /ssh/enable` (`:1216`) | yes | `PUT /api/v1/settings/access.ssh.enabled` | `true` → `204` |
+| `POST /ssh/password` (`:1261`) | yes | `POST /api/v1/actions/transient-root-password` | `{"password": "..."}` → `204`; `422` from `validate_transient_password` (`:1240-1255`) |
+| `POST /ssh/keys/add` (`:1284`) | yes | `POST /api/v1/ssh/authorized-keys` | `{"key": "<type> <blob> [comment]"}` → `201` with the parsed entry and its fingerprint; `422` on a rejected key |
+| `POST /ssh/keys/remove` (`:1317`) | yes | `DELETE /api/v1/ssh/authorized-keys/{fingerprint}` | → `204`; `404` when nothing matches (`:1329-1335` is a 422 today; see below) |
+| `GET /healthz` (`:65`, `:153`) | — | **none, and it must not change.** See below | — |
+| every path on the HTTP listener (`:72-76`) | — | unchanged: 308 to the HTTPS origin (`:78-95`), API paths included | — |
+
+**Actions, not resources.** Three operations are verbs with no state to `GET`
+and no idempotency to promise: `reboot`, `poweroff` and
+`transient-root-password`. They live under `/api/v1/actions/<verb>`, `POST`
+only, and the namespace is named `actions` precisely so that no reader expects a
+`GET` to work there. This mirrors a decision already made in the HTML router and
+commented in the source: no `GET` handler exists for either power action
+(`mosd/webd/src/routes.rs:52-54`) or for any of the four SSH mutations
+(`:58-60`), *"so a browser prefetch, a crawler or a mis-clicked link cannot power
+the appliance off"*.
+
+The **confirmation token** that guards the three form posts today
+(`mosd/webd/src/routes.rs:870`, and `TRANSIENT_CONFIRM_TOKEN` at `:948`) does
+**not** carry over to the API. It is a constant string, not a secret and not
+per-session; it exists to stop a mis-click on a rendered page. There is no
+mis-click on a `POST` a script constructed, and requiring a client to send a
+constant it read out of this document is a ritual, not a control. What replaces
+it is nothing: the bearer token (§3.2) *is* the authorisation, and a caller who
+holds it and posts to `/api/v1/actions/poweroff` meant it. This is a real
+reduction in friction and it is stated as such — a script with a token can power
+the appliance off in one request with no second step.
+
+`POST /api/v1/actions/reboot` returns **202**, not 204, for the same reason the
+form path does: the D-Bus call is spawned on a detached task so the response
+goes out before the machine goes down (`mosd/webd/src/routes.rs:879-893`). 202
+is the honest code — the request was accepted, and whether it completed is not
+knowable over the connection that asked.
+
+**Operations with no API equivalent, and why.**
+
+- **The seven `GET` pages.** They are renderings. Their data is covered by
+  `settings` and `state` reads; the markup is not an API concern. §5 and §6 own
+  what replaces them.
+- **`POST /login` and `POST /logout`.** A session is a browser mechanism (§3.1).
+  Their nearest API operations — minting and revoking a token — differ in
+  lifetime, in count and in blast radius, so calling them equivalents would
+  mislead.
+- **`GET /healthz` (`mosd/webd/src/routes.rs:65`, `:153-155`).** It keeps its
+  path, its unauthenticated exemption (`:128-130`) and its literal `ok` body,
+  unchanged and unversioned, because it has a real consumer with a real failure
+  path: the boot health gate probes `https://127.0.0.1/healthz` with curl and
+  falls back to wget (`os/rootfs/overlay-v2/usr/lib/mos/mos-health:164-177`),
+  and the image verifier asserts that probe exists
+  (`os/verify-image-v2.sh:1350`). Moving it under `/api/v1/` would put a
+  version bump in the path of the boot gate whose failure is an A/B rollback
+  (`docs/design/dashboard.md:2433-2435`).
+  **But it answers a narrower question than its name suggests, and the API must
+  not repeat the mistake.** `/healthz` returns before any check
+  (`mosd/webd/src/routes.rs:128-130`), so it answers `ok` on an appliance whose
+  mosd is dead. `GET /api/v1/health` is the API's health endpoint and reports
+  both halves — see §2.4.
+- **A password change.** `access.webAdmin.password_hash` is written by exactly
+  one handler today, `setup_submit` (`mosd/webd/src/routes.rs:441-444`), and
+  there is no change-password route anywhere in the crate. The API does not
+  invent one: it would be the first operation the API offers that the UI does
+  not, and it needs a decision about whether changing the password revokes
+  tokens (§3.2 says it does not). Routed in §10.1.
+- **`ReportHealth`.** mosd exposes it (`mosd/mosd/src/bus.rs:231`) and apid does
+  not declare it on the proxy (`mosd/webd/src/bus_client.rs:14-21`). The API does
+  not expose it either: its caller is the boot health gate, a root-local process
+  that already has the bus, and turning it into an HTTP write would let any token
+  holder forge a component's health status.
+
+**One behaviour change the API should make, named because it is a change.**
+`ssh_key_remove` answers **422** when the identifier matches nothing
+(`mosd/webd/src/routes.rs:1329-1335`, via `ssh_error` at `:1082-1091`). For a
+`DELETE` on a collection resource that is a **404** — the identified item does
+not exist. The API uses 404. The HTML path is not changed by this document.
+
+### 2.4 Error shape — **[proposed]**
+
+**One shape, for every failure on every `/api/v1/` route.**
+
+```
+{
+  "error": {
+    "code":    string,   // stable machine token; an OPEN set (see 2.1)
+    "message": string,   // human-readable; not for matching on
+    "source":  "apid" | "mosd",
+    "path":    string    // OPTIONAL: the settings dot-path at fault
+  }
+}
+```
+
+Example, from a real rejection verified against `mosd-settings` at `86cd669`
+(the VLAN case of §2.2):
+
+```
+HTTP/1.1 422 Unprocessable Content
+Content-Type: application/json
+
+{
+  "error": {
+    "code": "settings_rejected",
+    "message": "invalid settings value at `network.eth0.100`: unknown field `100`, expected `dhcp` or `static`",
+    "source": "mosd",
+    "path": "network.eth0.100"
+  }
+}
+```
+
+| `code` | HTTP | `source` | Raised when |
+|---|---|---|---|
+| `not_authenticated` | 401 | apid | no bearer token, or one that does not verify (§3.2) |
+| `not_found` | 404 | apid | unknown route, or a collection item that does not exist |
+| `request_invalid` | 400 | apid | the body is not JSON, or not the shape the route takes |
+| `validation_failed` | 422 | apid | apid's own validators rejected it: `valid_hostname` (`routes.rs:262-270`), `validate_iface` (`:273-281`), `validate_transient_password` (`:1240-1255`), `parse_authorized_key` (`:1288`) |
+| `settings_rejected` | 422 | mosd | mosd answered `org.freedesktop.DBus.Error.InvalidArgs` (`mosd/mosd/src/bus.rs:158-160`, `:198`, `:222`) |
+| `settings_io` | 500 | mosd | mosd answered `IOError` (`mosd/mosd/src/bus.rs:161`) |
+| `mosd_failed` | 500 | mosd | mosd answered `Failed` (`mosd/mosd/src/bus.rs:163`, `:176`, `:111`, `:120`) |
+| `mosd_unreachable` | **503** | apid | the call could not be made at all |
+
+**The question that matters: does the API surface mosd's errors or translate
+them? Recommendation: translate the classification, pass the message through
+verbatim, and always say which side it came from.**
+
+The reason is what apid does today, which is neither. As of `86cd669`, apid
+**flattens**: `BusSettings` converts every `zbus::Error` straight to
+`anyhow::Error` with `err.into()` (`mosd/webd/src/bus_client.rs:70`, and the
+same line at `:80`, `:91`, `:103`, `:114`, `:128`), and every handler renders
+one page for the result — `bus_error`, HTTP **502**, body *"The management daemon
+is unavailable."* (`mosd/webd/src/routes.rs:106-116`). So a settings value mosd
+rejected as invalid is reported to the operator as the daemon being down:
+`network_submit` returns `bus_error` on a failed `SetSettings`
+(`mosd/webd/src/routes.rs:726-729`), and `write_key_list` does the same
+(`:1075-1077`). The VLAN example above is exactly this — a rejection that reads
+as an outage.
+
+The distinction is not lost by mosd and it is not lost by D-Bus; it is lost by
+apid. mosd classifies deliberately, mapping `SettingsError` onto three distinct
+fdo error names (`mosd/mosd/src/bus.rs:156-166`), and zbus carries the name back:
+the pinned `zbus` 5.19.0 (`mosd/Cargo.lock:2907-2908`) has
+`Error::MethodError(OwnedErrorName, Option<String>, Message)` as a distinct
+variant from its transport errors. Recovering the classification is therefore a
+matter of matching on the `zbus::Error` before converting it, at the six call
+sites named above — one change, in one file. Sequencing it is §8's.
+
+**Why translate rather than pass the fdo error through.** Passing it through
+means the client has to know D-Bus to use an HTTP API, and it means the wire
+format of the API is set by a dependency of a dependency. Worse, the messages
+are anyhow chains built by mosd with `{err:#}` (`mosd/mosd/src/bus.rs:176`).
+mosd carries a contract that one of them — the transient-password path — never
+echoes the password (`mosd/mosd/src/bus.rs:170-177`, restated in
+`mosd/webd/src/bus_client.rs:123-125` and `mosd/webd/src/settings_api.rs:26-30`),
+but that contract is stated for that one method. Making the HTTP body a verbatim
+copy of every chained message from every method extends a one-method promise
+across the whole interface, silently, and the extension is not written down
+anywhere. **Translating the classification while copying the message keeps the
+same exposure the HTML path already has** — the pane already shows mosd's message
+text in an error box (`mosd/webd/src/routes.rs:1048`, `:590`, `:610`) — without
+widening it.
+
+**And the failure mode of the choice this rejects.** If the API translated the
+message too — replacing mosd's text with apid's own phrasing per code — then
+every message mosd learns to produce is invisible until apid is taught it. The
+"unknown field `100`, expected `dhcp` or `static`" string in the example above
+comes from serde, through `SettingsError::Validation`
+(`mosd/mosd-settings/src/model.rs:367-371`, `mosd/mosd-settings/src/error.rs:14-21`),
+and no phrasing apid could have pre-written would have told the caller which
+field was wrong. A client debugging a rejected write would be reduced to
+guessing. That is the failure mode, and it is why `message` is passed through.
+
+**The three cases the task names.**
+
+1. **Validation failures.** Two `source` values, deliberately. `source: "apid"`
+   means apid's own validator rejected the request before any bus call — the
+   caller can fix it locally, and the write definitely did not happen.
+   `source: "mosd"` means mosd's typed tree rejected it; the write also did not
+   happen (`Settings::set` is documented as leaving settings unchanged on error,
+   `mosd/mosd-settings/src/model.rs:348-349`, and `store.save` runs only after
+   the candidate validates, `mosd/mosd/src/bus.rs:200-203`), but the rule that
+   rejected it is not one apid knows. Both are 422. Knowing which is which is
+   what tells a client whether re-reading this document will help.
+2. **Bus unavailable.** `mosd_unreachable`, **503**, with `Retry-After: 5`. 503
+   rather than today's 502 because apid itself is up and answering — 503 says
+   "this server, temporarily", which is exactly what the connection cache makes
+   true: the proxy is dropped after any failed call so the next request
+   reconnects (`mosd/webd/src/bus_client.rs:23-26`, `:56-59`). The cost is
+   named: the HTML path returns 502 for the same underlying failure
+   (`mosd/webd/src/routes.rs:106-116`), so until §8 changes both, one appliance
+   reports one outage two ways. Changing only the API is the wrong half of that
+   trade and this section says so.
+3. **mosd down entirely, distinguished from "everything is fine".** This is the
+   case that must not be got wrong, because apid surviving a dead mosd is an
+   existing design property, stated in the crate: *"mosd not being up yet
+   therefore surfaces as per-request errors (502 pages), never as a webd crash"*
+   (`mosd/webd/src/bus_client.rs:23-26`). The trap is already in the tree:
+   `/healthz` returns before any check (`mosd/webd/src/routes.rs:128-130`) and
+   answers the literal `ok` (`:153-155`), so **an appliance whose mosd is dead
+   answers `/healthz` with `ok`**. A monitor polling it sees a healthy device.
+   `/healthz` cannot be fixed, because the boot health gate depends on exactly
+   that behaviour (`os/rootfs/overlay-v2/usr/lib/mos/mos-health:164-177`) — its
+   comment says so in as many words: *"`/healthz` is webd's existing endpoint and
+   bypasses its auth gate"* (`:164`).
+
+   So the API adds a second, differently-scoped endpoint:
+
+   ```
+   GET /api/v1/health          (authenticated)
+
+   200 {"apid": "ok", "mosd": "ok",          "checkedAt": "<uptime seconds>"}
+   200 {"apid": "ok", "mosd": "unreachable", "detail": "<message>"}
+   ```
+
+   It returns **200 in both cases**, because the request succeeded and the answer
+   is the body — a 503 here would be indistinguishable from the endpoint itself
+   being unavailable, which is the confusion it exists to remove. `mosd` is
+   determined by making one real call (`GetSettings("")` is the cheapest that
+   proves the bus round trip), not by inspecting a cached flag. A client's rule
+   is therefore explicit: **`/healthz` answers "is apid's listener up"; only
+   `/api/v1/health` answers "is this appliance manageable".** Both sentences are
+   true and neither implies the other.
+
+   One consequence worth stating, because it is already true at `86cd669` and
+   the API inherits it: the gate calls `GetSettings("access")` on **every**
+   request (`mosd/webd/src/routes.rs:131`) and returns `bus_error` when it fails
+   (`:133`). So when mosd is down, every authenticated API route fails with
+   `mosd_unreachable` before its handler runs, including `GET /api/v1/health`
+   itself. The health route must therefore be exempt from the gate's settings
+   read in the same way `/healthz` is exempt from the gate entirely
+   (`:128-130`) — otherwise the one endpoint that exists to report a dead mosd is
+   the one endpoint a dead mosd prevents from answering.
 
 ## 3. Authentication for a programmatic client — **[proposed]**
 
-> **Stub — written by RFCT-064.** Do not fill this in from another task.
+§3.1 is a reading of the tree at `86cd669` and is marked **[implemented]**
+because it describes shipped mechanics. §3.2 and §3.3 are the proposal.
 
-### 3.1 Browser session versus programmatic client
+### 3.1 Browser session versus programmatic client — **[implemented]**
 
-> **Stub — written by RFCT-064.** Do not fill this in from another task.
+Section 1.4 measured the session mechanism as shipped. This section says what is
+wrong with it *for a script*, in mechanics rather than in principle. "It is for
+browsers" is not an argument; these seven are, and each is a property of the
+code at `86cd669`.
 
-### 3.2 The proposal
+1. **Authentication failure is a redirect, not a 401 — so the default client
+   sees success.** The gate answers an unauthenticated request with
+   `Redirect::to("/login")` (`mosd/webd/src/routes.rs:149`), a 303/307-class
+   response. A client that follows redirects — which is the default for `curl
+   -L`, for Python `requests`, and for most HTTP libraries — ends up at `GET
+   /login`, which the gate lets through (`:141-143`) and which returns
+   **200 OK** with an HTML form (`:486-497`). A script that checks the status
+   code and stops there concludes its request succeeded. This is the sharpest of
+   the seven: every other item makes the client's life harder, and this one makes
+   it *wrong*.
+2. **Obtaining the credential means emulating three browser behaviours.**
+   `POST /login` takes `Form<LoginForm>` — axum's URL-encoded extractor
+   (`mosd/webd/src/routes.rs:8`, `:499`), not JSON — answers **302 to `/`**
+   (`:520-524`), and delivers the credential in a `Set-Cookie` header
+   (`:521`, value built at `mosd/webd/src/session.rs:90-92`). A client must
+   therefore URL-encode rather than serialise JSON, *not* follow the redirect,
+   and parse a `Set-Cookie` header. None of those is hard; all three are the
+   client pretending to be something it is not.
+3. **The credential does not survive a restart of the daemon that issued it.**
+   Sessions live in a `HashMap` in memory (`mosd/webd/src/session.rs:26`) and the
+   module says so: *"a webd restart logs everyone out"*
+   (`mosd/webd/src/session.rs:5-6`). Since apid ships inside the verity rootfs
+   (`mosd/dist/webd.service:8`, `docs/design/access.md:468-474`), **every A/B
+   image update invalidates every session**. A cron job's credential expires
+   whenever the fleet is updated, and per item 1 the job's next run gets a 200
+   and an HTML page.
+4. **The TTL is fixed at 24 hours and is not renewed by use.** The expiry is
+   stamped once at creation (`mosd/webd/src/session.rs:53`, TTL at `:19`) and
+   `verify` only compares against it — it never extends it
+   (`mosd/webd/src/session.rs:66-79`). A long-running client is logged out
+   mid-operation exactly 24 hours in, with no warning in any response before
+   that point.
+5. **The expiry is monotonic, not absolute.** `Instant` (`session.rs:10`, `:53`)
+   is a monotonic clock. A client cannot compute when its session dies from
+   anything the server told it, because nothing on the wire carries the
+   server's notion of now.
+6. **There is exactly one credential, and it identifies a human.** The only
+   thing the crate authenticates against is
+   `access.webAdmin.password_hash` (`mosd/webd/src/routes.rs:98-103`); there is
+   no second credential, no user table, and no reference to `access.device` in
+   the route module (section 1.4). A script therefore holds the operator's
+   password. Revoking the script means changing that password, which logs the
+   operator out too — there is no smaller unit of revocation than "everyone".
+7. **A misconfigured script locks the operator out, repeatedly.** The login
+   backoff is a single global counter, not per-client, by explicit design:
+   *"the appliance has one admin password, so per-client tracking buys nothing
+   against an online guesser"* (`mosd/webd/src/auth.rs:28-31`). Five consecutive
+   failures arm a 30-second lockout that rejects **every** login attempt
+   (`mosd/webd/src/auth.rs:9-10`, `:52-58`; the 429 at
+   `mosd/webd/src/routes.rs:500-508`). A script retrying with a stale password
+   every ten seconds holds the human admin out of the web UI indefinitely. That
+   comment's reasoning is sound *for one password*; adding a second class of
+   credential is what makes it stop being sound, which §3.2 has to answer.
 
-> **Stub — written by RFCT-064.** Do not fill this in from another task.
+Items 6 and 7 are the ones that cannot be fixed by making the session mechanism
+nicer. They are consequences of there being one credential.
 
-### 3.3 Threat model, and what it does not protect against
+### 3.2 The proposal: a bearer API token — **[proposed]**
 
-> **Stub — written by RFCT-064.** Do not fill this in from another task.
+**One mechanism.** A long-lived, revocable bearer token, minted by an
+authenticated admin, stored hashed in the settings tree, sent in an
+`Authorization` header. It is the **only** accepted credential on `/api/v1/`
+routes: the session cookie authenticates the HTML pages and nothing else.
+
+**What a client sends on the wire.**
+
+```
+GET /api/v1/settings/access.ssh HTTP/1.1
+Host: mos
+Authorization: Bearer mos_3f2a9c41_9d4e...c7   (id . secret, see below)
+Accept: application/json
+```
+
+Nothing else. No cookie, no custom header, no signature, no timestamp. The token
+is opaque to the client.
+
+**The token's shape, and why it is not one opaque blob.** The token is
+`mos_<id>_<secret>`: an 8-byte hex `id` that is **not** secret, and a 32-byte
+hex `secret` from `OsRng`. The crate already has both halves of this idea —
+the session cookie is `<id>.<mac>` with a 16-byte `OsRng` id
+(`mosd/webd/src/session.rs:44-55`) — and the reason to keep the id visible is
+mechanical: with N tokens stored, an opaque blob forces apid to hash the
+presented secret and compare against all N entries on every request, while an
+embedded id is one lookup and one comparison. 32 bytes is 256 bits, double the
+session id's 128 (`mosd/webd/src/session.rs:46`), because unlike a session this
+credential is not going to expire on its own.
+
+**Where the credential is stored: the settings tree, on STATE, hashed.**
+The store is `access.apiTokens`, an array whose items are
+`{id, name, hash, created}` — the naming follows the tree's existing
+convention of camelCase renames for multi-word keys (`webAdmin`,
+`authorizedKeys`, `passwordHash`;
+`mosd/mosd-settings/src/model.rs:52`, `:104`, `:159`). Five reasons, and the
+tier is chosen rather than inherited:
+
+1. **It is the tier that matches the credential's required lifetime.** The
+   settings tree is `/var/lib/mos/settings.toml`
+   (`mosd/mosd-settings/src/store.rs:12`), mounted from `/mnt/state/mos` by
+   `var-lib-mos.mount` — **STATE** (`docs/design/access.md:489`). Per the
+   survives-what table it survives a reboot and an A/B update and does not
+   survive a whole-disk reflash (`docs/design/access.md:504`). That is exactly
+   right for an API token: a script must keep working across an image update
+   (item 3 of §3.1 is the bug being fixed), and a decommissioning reflash must
+   take the credential with it.
+2. **DATA would be the wrong tier, and specifically worse.** `/home`, `/root`
+   and `/srv` also survive a reboot and an A/B update
+   (`docs/design/access.md:505`), so on lifetime alone they would do. But the
+   same row records that on a reflash DATA is *"replaced by the image's fresh
+   DATA filesystem — but see §9.2: blocks beyond the flashed extent are
+   *unreachable*, not erased"*. A credential whose bytes may physically remain
+   after the operation an operator performs to decommission a device is the
+   wrong tier for a credential, and this is the reason to say so out loud rather
+   than default to STATE by habit.
+3. **Anything else is unmodelled state.** *"An unmodelled setting is an
+   unsupported setting"* (`docs/design/access.md:468-474`). apid's own state
+   directory `/var/lib/mos/webd` (`mosd/webd/src/config.rs:38-40`,
+   `mosd/dist/webd.service:10`) is on the same STATE bind and would satisfy
+   reason 1 — but a credential granting full management access that mosd does not
+   know about gets no row in the survives-what table, no validation, and no
+   backup story, and it sits outside the one place this project has decided
+   credentials live.
+4. **It costs zero extra bus round trips.** The gate already calls
+   `GetSettings("access")` on **every** request
+   (`mosd/webd/src/routes.rs:131`) and `apiTokens` is a child of `access`, so
+   the subtree the token check needs is already in hand at the moment the check
+   runs. A sibling root (`apiTokens` at the top level) would have added a second
+   `GetSettings` per request. This is why the path is under `access` and not
+   beside it.
+5. **It is symmetric with the two credentials already there.** `webAdmin` holds
+   an argon2id PHC hash (`mosd/mosd-settings/src/model.rs:68-71`) and
+   `access.device` holds a hash and a generation and *"never holds a plaintext
+   secret"* (`:147-152`). `apiTokens` holds hashes.
+
+The cost of reason 1 is stated in §2.2 and is not hypothetical: anything that
+can read the settings tree can read the token hashes. `GetSettings` returns the
+subtree verbatim (`mosd/mosd/src/bus.rs:182-186`), so the API's redaction rule
+(§2.2) must cover `hash` as well as `password_hash`, and the D-Bus policy —
+root-only in both directions (`mosd/dist/com.mos.mosd.conf:63-72`) — is what
+keeps everything else out. Since anyone who is root has already won (§3.3), this
+costs nothing new; it is recorded because "the hashes are readable" is the kind
+of sentence that should be written down before someone discovers it.
+
+**The hash: SHA-256, not argon2id, deliberately.** `access.webAdmin` uses
+argon2id (`mosd/webd/src/auth.rs:13-19`) because a human chose that password and
+an offline attacker with the hash can guess it. A token is 256 bits from `OsRng`
+and there is nothing to guess; a work factor would buy no security and would be
+paid on **every API request**, where the password's is paid once per login. The
+`sha2` crate is already a dependency (`mosd/webd/Cargo.toml:25`, used by
+`mosd/webd/src/session.rs:15`), so this adds nothing to the dependency list.
+The comparison must be constant-time — the crate already contains the right
+primitive, `Mac::verify_slice` (`mosd/webd/src/session.rs:61`), and a `String`
+`==` on hex digests is what must not be written. To be honest about the size of
+that requirement: a timing leak on a *stored digest* is not a practical attack,
+because learning the digest does not yield a preimage. Constant-time is required
+anyway, because deciding it site-by-site is how the one site where it mattered
+gets missed.
+
+**How a token is created.** `POST /api/v1/tokens`, body `{"name": "ci-deploy"}`,
+authenticated by an existing credential — response `201` with
+`{"id": "...", "name": "...", "token": "mos_..."}`. **The plaintext appears in
+that response and nowhere else, ever**: only the hash is stored, so a lost token
+is replaced, not recovered. That is the same posture `access.device` already
+takes (`mosd/mosd-settings/src/model.rs:147-152`).
+
+The bootstrap problem — the first token cannot be minted with a token — is
+answered by the browser session, not by a new channel. **An authenticated
+session cookie may mint a token**, through a new pane in the built-in UI; that
+is the one place the cookie reaches past the HTML pages. The alternatives were
+worse: minting over SSH needs SSH, which is off by default and stays off until
+an authenticated admin action through the web UI
+(`mosd/mosd-settings/src/model.rs:110-112`, `docs/design/access.md` §4.1), so it
+is circular; and minting at first-run setup means `POST /setup` returns a
+credential the operator did not ask for and may never rotate. `POST /api/v1/setup`
+(§2.3) does return one, because a caller who drove first-run setup over the API
+demonstrably wants API access — but the browser wizard does not.
+
+What this costs, named: **no token can be created on a device whose built-in UI
+is broken.** That is precisely the situation §6 exists for, and it makes the
+token lifecycle a dependent of §6's escape rather than an alternative to it.
+
+**More than one, and revocation.** `access.apiTokens` is a list. Revocation is
+`DELETE /api/v1/tokens/{id}`, and `GET /api/v1/tokens` lists `{id, name,
+created}` — never the hash, never the plaintext. Multiple tokens is not a
+convenience: it is the fix for §3.1 item 6, because with one credential there is
+no revocation smaller than "everyone". Revocation takes effect on the **next
+request**, since the token set is read per request from the `GetSettings`
+call the gate already makes.
+
+Two costs, both inherited from the tree rather than introduced here:
+
+- Mint and revoke are read-modify-write of the whole array, because the dot-path
+  syntax has no array indexing (`mosd/mosd-settings/src/model.rs:213-214`) —
+  the same pattern the SSH key pane uses (`mosd/webd/src/routes.rs:1061-1080`).
+  Two concurrent mints lose one token, silently.
+- Identity is the `id`, never a list position, for the reason recorded at
+  `mosd/webd/src/routes.rs:1306-1316`: an index is meaningful only against the
+  list the caller last read, and a concurrent change slides it onto a different
+  entry. A `DELETE` whose id matches nothing is a 404, not a silent success.
+
+**Expiry: none in phase 1, and that is a decision, not an omission.** An
+absolute expiry needs a wall clock, and nothing in the crate reads one —
+`SessionStore` uses `Instant` throughout (`mosd/webd/src/session.rs:10`, `:53`,
+`:72`), which is monotonic and cannot express a deadline that survives a reboot.
+Adding an `expiresAt` before there is a trusted wall clock would produce a field
+that is either unenforced or enforced against a clock that resets. So: tokens do
+not expire, and **revocation is the entire lifecycle**. The cost is blunt — a
+token that leaks and is forgotten works forever, and nothing in the system will
+ever remind anyone it exists beyond its appearance in `GET /api/v1/tokens`.
+Making expiry possible is routed in §10.1.
+
+**Relation to `access.webAdmin`: coexists. It does not replace it and does not
+derive from it.**
+
+- **Not derived.** A token computed from the password hash would make every
+  token equal, which makes revoking one impossible, and would tie the token's
+  fate to a password rotation. Both defeat the purpose.
+- **Not a replacement.** `POST /setup` and `POST /login` remain the only
+  bootstrap (see above), and the built-in UI is a server-rendered
+  no-JavaScript browser client by `docs/design/dashboard.md`'s own decision
+  (`docs/design/dashboard.md:1275-1276`), which has no use for a bearer token.
+- **Coexisting means two credentials at one privilege level** — and there is
+  only one privilege level, because apid runs as root (`mosd/dist/webd.service`
+  sets no `User=`, `:1-13`; `mosd/dist/com.mos.mosd.conf:12-14` records the same
+  from the other side) and every route it serves is behind the same gate
+  (`mosd/webd/src/routes.rs:66`). A token can do everything the operator can do
+  over the API. There are no scopes in phase 1, and inventing them would mean a
+  per-method allowlist that the D-Bus policy already contemplates and
+  deliberately deferred (`mosd/dist/com.mos.mosd.conf:48-61`) — this document
+  does not reopen that.
+
+Two consequences of coexistence that must be stated in the UI, not just here:
+
+1. **Changing the admin password does not revoke any token.** That is deliberate
+   — a human rotating their own password must not break every script — and it
+   means "I changed my password" is not a containment action. The UI's password
+   pane has to say so.
+2. **§3.1 item 7 changes meaning.** The `auth.rs:28-31` comment's reasoning —
+   per-client tracking buys nothing because there is one password — held because
+   there was one credential. With tokens there are N, and the global 30-second
+   lockout (`mosd/webd/src/auth.rs:9-10`) still gates only `POST /login`
+   (`mosd/webd/src/routes.rs:500-508`). Bearer verification is **not** rate
+   limited and should not be: 256 bits of `OsRng` is not guessable online, and a
+   shared counter on the token path would let anyone with a bad token lock out
+   every script. The comment is not wrong; it is now scoped to the password path
+   and this document records that scoping.
+
+### 3.3 Threat model, and what it does not protect against — **[proposed]**
+
+**What the transport actually is.** rustls with the `ring` provider
+(`mosd/Cargo.toml:38`, installed explicitly at `mosd/webd/src/main.rs:46-48`),
+carrying a **self-signed certificate apid generates on first start**: CN `mos`,
+SANs `DNS:mos`, `DNS:localhost`, `IP:127.0.0.1`
+(`mosd/webd/src/tls.rs:44-81`, SAN construction at `:59-67`), private key mode
+`0600` (`:78`, `:30-42`) in a state directory created mode `0700` (`:20-28`).
+There is no ACME client, no rotation and no way to install an operator-supplied
+certificate anywhere in that file. Three things follow immediately:
+
+- No client has a trust anchor for it. Verification is trust-on-first-use or
+  nothing.
+- The SAN list does not include the device's LAN address. An operator reaching
+  the appliance at `https://192.168.1.50/` fails hostname verification even
+  before the trust question, so the practical instruction to every client is
+  "disable verification" — which is the instruction that makes item 1 below
+  work.
+- Certificate pinning is possible but has no supported lifecycle: nothing
+  rotates the certificate, and nothing tells a client it changed.
+
+**What the design does protect against.** A passive observer who did not see
+the token being issued cannot read it later, because the channel is TLS. A
+network peer without the token gets a 401 on every `/api/v1/` route. A
+cross-site page in the operator's browser cannot call the API at all: browsers do
+not attach `Authorization` headers to cross-origin requests, and a `fetch` that
+sets one triggers a CORS preflight that apid answers with nothing — **apid sends
+no CORS headers, deliberately** — so the browser blocks it. Choosing bearer-only
+authentication for `/api/v1/` is what buys that, and it is the main reason §3.2
+says "one mechanism" rather than "token or cookie".
+
+That choice has a cost for whoever builds the replacement UI (§5): **a UI served
+from a different origin — a developer's dev server on a laptop — cannot call the
+API from the browser.** The workaround is a proxy in the dev server, not a CORS
+relaxation, and this document recommends against ever adding
+`Access-Control-Allow-Origin` because the moment it exists, the argument becomes
+about which origins rather than whether. A second cost: a browser UI that needs
+a token has to hold it in JavaScript, where an XSS can read it — strictly worse
+than the `HttpOnly` cookie (`mosd/webd/src/session.rs:91`) for that one
+property. The built-in UI is unaffected because it is no-JavaScript by decision
+(`docs/design/dashboard.md:1275-1276`).
+
+**What it does not protect against.** Four attacks, concretely.
+
+1. **An active on-path attacker on the LAN captures the token on first use.**
+   Because the certificate is self-signed with SANs that do not match the
+   address operators actually use (`mosd/webd/src/tls.rs:59-67`), every client
+   is configured to skip verification — the shipped boot health probe does
+   exactly that, `curl -k` with a `wget --no-check-certificate` fallback
+   (`os/rootfs/overlay-v2/usr/lib/mos/mos-health:168`, `:174`). An attacker who
+   can answer for the device's address terminates TLS with their own
+   certificate, and the client, told to accept anything, hands over the bearer
+   token in the first request. Nothing in this design stops that. The mitigation
+   that would — an operator-installed certificate, or a documented pin — does
+   not exist in `mosd/webd/src/tls.rs` at `86cd669`.
+2. **A stolen token is full management access, indefinitely.** There is no
+   expiry (§3.2), no binding to a client address, and no binding to a request.
+   A token exfiltrated from a CI secret store, a laptop backup or a shell
+   history reboots the appliance, enables SSH
+   (`PUT /api/v1/settings/access.ssh.enabled`), adds a root key
+   (`POST /api/v1/ssh/authorized-keys` — *"Every authorized key is a root key"*,
+   `mosd/webd/src/routes.rs:944`) and is then no longer needed. Detection is not
+   addressed either: nothing in the crate logs which credential served a
+   request, and mosd records only the D-Bus sender for power actions
+   (`mosd/mosd/src/bus.rs:91-100`), which is apid for every request apid makes.
+3. **Replay.** A bearer token *is* replay: every authenticated request carries
+   a byte-identical credential. There is no nonce, no request signing and no
+   TLS channel binding. An attacker who captured one request under item 1 can
+   repeat it forever. This is an accepted property of bearer authentication and
+   is named because "we use TLS" is not an answer when item 1 shows the TLS is
+   unverified.
+4. **Phishing the operator on a hostile LAN.** Nothing authenticates the name
+   `mos` to a client. Anything on the LAN that answers to it presents a
+   self-signed certificate an operator has been *trained* to click through,
+   because the real device presents one too. The captured password is then used
+   at `POST /login` on the real device to mint a token via §3.2's bootstrap
+   path. This is not a weakness the token introduces — it is the existing
+   password's — but a design that adds a permanent credential mintable from that
+   password must count it.
+
+**Anyone with SSH is already root, so none of this applies to them.** Every
+authorized key is a root key (`docs/design/access.md` §4.1, and the sentence the
+pane is tested to carry, `mosd/webd/src/routes.rs:937-944`); apid runs as root
+(`mosd/dist/webd.service:1-13`); the D-Bus policy allows root to own, send and
+receive (`mosd/dist/com.mos.mosd.conf:68-72`). A root shell reads
+`/var/lib/mos/settings.toml` directly, reads
+`/var/lib/mos/webd/session.key` (`mosd/webd/src/tls.rs:85-103`), and calls
+`com.mos.mosd1` without going through apid at all. **The API token's threat
+model is entirely about the network channel**; it adds nothing against local
+root and it is not intended to.
+
+**CSRF, now that form posts and an API coexist.** There is no CSRF token
+anywhere in the crate — `grep -ni csrf mosd/webd/src/*.rs` returns nothing at
+`86cd669` (section 1.2) — and the picture after this proposal is:
+
+- **The API path has no CSRF exposure**, because a bearer header is not something
+  a browser attaches on a cross-site request. This is a property of the choice,
+  not an added control.
+- **The form path is covered for POST by `SameSite=Lax`**
+  (`mosd/webd/src/session.rs:91`), which withholds the cookie from cross-site
+  form submissions. That is a real control and it is the only one.
+- **The per-action confirm tokens are not CSRF tokens and must not be counted as
+  such.** `PowerAction::confirm_token` returns the constant strings `"reboot"`
+  and `"poweroff"` (`mosd/webd/src/routes.rs:790-795`) and
+  `TRANSIENT_CONFIRM_TOKEN` is the literal `"set-transient-password"`
+  (`:948`). They are not secret, not per-session and not unpredictable; the
+  source describes their purpose accurately as stopping a submit without a
+  ticked checkbox (`:788-789`). They stop a mis-click and a prefetch. Against a
+  cross-site attacker they add nothing, and the form path holds because
+  `SameSite=Lax` holds.
+
+**One denial-of-service note, because it is already true and the API widens it.**
+The gate calls `GetSettings("access")` on **every** request before deciding
+anything (`mosd/webd/src/routes.rs:131`), including unauthenticated ones. So an
+unauthenticated flood already costs one D-Bus round trip per request against the
+single lock mosd holds over both trees (`mosd/mosd/src/bus.rs:44-49`, `:183`).
+Adding an API does not create this, but it adds routes that are attractive to
+automate against. It is routed in §10.1 rather than solved here.
 
 ## 4. Static hosting — **[proposed]**
 
@@ -632,7 +1534,91 @@ parallel campaigns for the duration, and are cited above rather than changed.
 
 ### 10.1 From the API surface
 
-> **Stub — written by RFCT-064.** Do not fill this in from another task.
+Everything §2 and §3 found that belongs to a file this campaign may not edit, or
+to a later phase. All twelve were measured at `86cd669`.
+
+1. **`mosd/mosd/src/bus.rs` — uptime has no home in either tree.** `GET /`
+   reads `/proc/uptime` inside apid (`mosd/webd/src/routes.rs:581`), which the
+   crate's own rule says system facts should not be
+   (`mosd/webd/src/settings_api.rs:10-12`). mosd should publish uptime into the
+   live-state tree so §2.2's `/api/v1/state/` root can serve it; until it does,
+   the API has no uptime and the HTML status pane has a field the API cannot
+   reproduce.
+2. **`mosd/mosd/src/bus.rs:156-166` — `to_fdo` collapses three distinct
+   failures into one.** `NotFound`, `ReadOnly` and `Validation`
+   (`mosd/mosd-settings/src/error.rs:7-31`) all become
+   `fdo::Error::InvalidArgs`, so no caller can distinguish "that path does not
+   exist" from "that value is invalid" from "that path is read-only" without
+   parsing message text. §2.4 emits one code, `settings_rejected`, for all
+   three as a result. Splitting them needs a mosd change; the API is the
+   consumer that makes it worth doing.
+3. **`mosd/webd/src/bus_client.rs:68-71` (and `:80`, `:91`, `:103`, `:114`,
+   `:128`) — the fdo error name is discarded.** Every `zbus::Error` becomes an
+   `anyhow::Error` before any handler sees it, and `zbus` 5.19.0
+   (`mosd/Cargo.lock:2907-2908`) carries the distinction in
+   `Error::MethodError(OwnedErrorName, ...)`. §2.4's whole error table depends
+   on recovering it. This is a crate change and belongs to §8's phasing.
+4. **Redaction has no test and the design is fail-open.** §2.2 requires a
+   structural redactor keyed on field *name*, because the two `psk` fields sit
+   inside arrays the dot-path cannot address
+   (`mosd/mosd-settings/src/model.rs:213-214`, `:235-236`, `:260-261`). A
+   secret-bearing field added later under a name not on the list is exposed by
+   default. The mitigation is a test that walks `Settings::default()` — plus a
+   fixture with every optional field populated — and asserts no known-secret
+   field survives serialisation. Belongs with whoever implements §2.2.
+5. **`GET /healthz` answers `ok` while mosd is dead.** It returns before any
+   check (`mosd/webd/src/routes.rs:128-130`, `:153-155`), and the boot health
+   gate depends on exactly that (`os/rootfs/overlay-v2/usr/lib/mos/mos-health:164-177`).
+   §2.3 keeps it unchanged and §2.4 adds `GET /api/v1/health` beside it. What is
+   routed onward is the documentation debt: anything that treats `/healthz` as
+   "the appliance is healthy" — `docs/plan/PLAN-005.md:149`,
+   `docs/design/boards.md:91` — is relying on a narrower guarantee than it reads
+   as. Those files belong to other owners; they are cited, not edited.
+6. **`mosd/webd/src/routes.rs:131` — every request costs a D-Bus round trip.**
+   The gate calls `GetSettings("access")` before deciding anything, including
+   for unauthenticated requests, against the single lock mosd holds over both
+   trees (`mosd/mosd/src/bus.rs:44-49`). §3.2 exploits this (the token set
+   arrives free) and §3.3 names it as a DoS surface. Whoever owns apid's
+   performance should decide whether the gate caches with an invalidation on
+   `SettingsChanged` — which requires item 10.
+7. **`docs/design/access.md` §10.4 gains a row if §3.2 lands.** The
+   survives-what table (`docs/design/access.md:500-508`) enumerates credentials
+   by tier; `access.apiTokens` would be a settings-tree row with the same
+   answers as `access.ssh.authorizedKeys`. That file is owned by a parallel
+   campaign and is cited here rather than changed.
+8. **`docs/design/dashboard.md` §5.8 — is the 15-second floor a UI decision or
+   an apid decision?** It adopts full-page refresh at a 15-second default as
+   *"the dashboard's only live-value mechanism"*
+   (`docs/design/dashboard.md:1275-1276`) and names what that forecloses at
+   `:1304-1315`. A token-authenticated client polling `GET /api/v1/state/...` is
+   not a dashboard and is not obviously bound by it. Whoever owns that document
+   should say which it is; §2 assumed the former and did not re-open it.
+9. **No wall clock, so no token expiry (§3.2).** apid reads `Instant` only
+   (`mosd/webd/src/session.rs:10`, `:53`, `:72`), which cannot express a
+   deadline surviving a reboot. `expiresAt` on an API token is deferred to
+   whichever phase establishes a trusted wall clock, and until then revocation
+   is the entire lifecycle.
+10. **`SettingsChanged` exists and apid does not subscribe.** mosd emits it
+    after every successful `SetSettings` (`mosd/mosd/src/bus.rs:212-214`,
+    declared at `:292-297`); the proxy declares no `#[zbus(signal)]` member
+    (`mosd/webd/src/bus_client.rs:14-21`). An API that wanted to offer a change
+    stream — or a gate that wanted to cache (item 6) — cannot today. This is a
+    later phase, and it touches the same ground
+    `docs/design/dashboard.md` §5.8 settled for the UI.
+11. **No change-password operation exists anywhere.**
+    `access.webAdmin.password_hash` is written by exactly one handler,
+    `setup_submit` (`mosd/webd/src/routes.rs:441-444`), and no route changes it
+    afterwards. §2.3 declined to invent one over the API because it would be the
+    first operation the API offers that the UI does not, and because it needs a
+    decision this document only half-makes (§3.2: a password change does not
+    revoke tokens). It belongs to whoever owns the built-in UI's account pane.
+12. **The dot-path cannot address a VLAN interface.** `valid_iface_name` permits
+    `.` (`mosd/webd/src/routes.rs:231-236`) while `split_path` splits on it
+    unconditionally (`mosd/mosd-settings/src/path.rs:26-32`), so
+    `network.eth0.100` is rejected by `deny_unknown_fields`
+    (`mosd/mosd-settings/src/model.rs:308-315`). This is a pre-existing limit of
+    the settings model, not one the API introduces; it belongs to whoever owns
+    the settings path syntax, and §2.2 records that the API inherits it.
 
 ### 10.2 From static hosting and the custom-UI lifecycle
 
