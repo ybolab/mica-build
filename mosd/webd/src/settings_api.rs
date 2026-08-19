@@ -5,7 +5,11 @@
 
 use serde_json::Value;
 
-/// The three mosd operations webd needs, JSON in and out.
+/// The mosd operations webd needs, JSON in and out.
+///
+/// The power actions are here rather than executed locally because mosd owns
+/// every system action: webd never spawns a process and never talks to
+/// systemd itself.
 #[async_trait::async_trait]
 pub trait SettingsApi: Send + Sync {
     /// Settings subtree at dot-path `path` (`""` = whole tree).
@@ -14,6 +18,10 @@ pub trait SettingsApi: Send + Sync {
     async fn set_settings(&self, path: &str, value: &Value) -> anyhow::Result<()>;
     /// Live-state subtree at dot-path `path` (`""` = whole tree).
     async fn get_state(&self, path: &str) -> anyhow::Result<Value>;
+    /// Ask mosd to reboot the appliance.
+    async fn reboot(&self) -> anyhow::Result<()>;
+    /// Ask mosd to power the appliance off.
+    async fn power_off(&self) -> anyhow::Result<()>;
 }
 
 /// In-memory [`SettingsApi`] used by the route tests.
@@ -22,6 +30,7 @@ pub struct FakeSettings {
     tree: std::sync::Mutex<Value>,
     state: std::sync::Mutex<Value>,
     set_log: std::sync::Mutex<Vec<String>>,
+    power_log: std::sync::Mutex<Vec<String>>,
 }
 
 #[cfg(test)]
@@ -31,6 +40,7 @@ impl FakeSettings {
             tree: std::sync::Mutex::new(tree),
             state: std::sync::Mutex::new(Value::Object(serde_json::Map::new())),
             set_log: std::sync::Mutex::new(Vec::new()),
+            power_log: std::sync::Mutex::new(Vec::new()),
         }
     }
 
@@ -47,6 +57,29 @@ impl FakeSettings {
     /// Dot-paths passed to `set_settings`, in call order.
     pub fn set_paths(&self) -> Vec<String> {
         self.set_log.lock().unwrap().clone()
+    }
+
+    /// Power actions requested, in call order.
+    pub fn power_calls(&self) -> Vec<String> {
+        self.power_log.lock().unwrap().clone()
+    }
+
+    /// Poll [`Self::power_calls`] until it holds at least `count` entries or a
+    /// short deadline passes, then return it.
+    ///
+    /// The routes fire power actions on a detached task so the HTTP response
+    /// can go out first, so a positive assertion has to wait for the task; a
+    /// negative assertion passes `count` one higher than it expects and gets
+    /// the full deadline as its quiet period.
+    pub async fn await_power_calls(&self, count: usize) -> Vec<String> {
+        for _ in 0..150 {
+            let calls = self.power_calls();
+            if calls.len() >= count {
+                return calls;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(2)).await;
+        }
+        self.power_calls()
     }
 }
 
@@ -89,5 +122,15 @@ impl SettingsApi for FakeSettings {
 
     async fn get_state(&self, path: &str) -> anyhow::Result<Value> {
         fake_get(&self.state.lock().unwrap(), path)
+    }
+
+    async fn reboot(&self) -> anyhow::Result<()> {
+        self.power_log.lock().unwrap().push("reboot".to_string());
+        Ok(())
+    }
+
+    async fn power_off(&self) -> anyhow::Result<()> {
+        self.power_log.lock().unwrap().push("power_off".to_string());
+        Ok(())
     }
 }

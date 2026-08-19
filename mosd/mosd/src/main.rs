@@ -9,15 +9,16 @@
 //! - `MOSD_SETTINGS_PATH` — settings file location (default
 //!   `/var/lib/mos/settings.toml`).
 //! - `MOSD_BUS` — `system` (default) or `session`.
-//! - `MOSD_DRY_RUN` — when `1`, first-boot provisioning is skipped and no
-//!   reconcilers are constructed, and the live-state root carries
-//!   `{"dry_run": true}`; used by tests so the daemon never touches the host
-//!   it runs on.
+//! - `MOSD_DRY_RUN` — when `1`, first-boot provisioning is skipped, no
+//!   reconcilers are constructed, power actions are routed to a no-op
+//!   control, and the live-state root carries `{"dry_run": true}`; used by
+//!   tests so the daemon never touches the host it runs on.
 
 #![forbid(unsafe_code)]
 
 mod bus;
 mod identity;
+mod power;
 mod provisioning;
 mod reconciler;
 
@@ -68,6 +69,13 @@ async fn main() -> anyhow::Result<()> {
     } else {
         reconciler::all()
     };
+    // Under dry-run the production control is never constructed, so a daemon
+    // started by a test cannot reach systemd's manager at all.
+    let power: Box<dyn power::PowerControl> = if dry_run {
+        Box::new(power::DryRunPower)
+    } else {
+        Box::new(power::Systemd::new())
+    };
     tracing::info!(
         settings_path,
         dry_run,
@@ -80,7 +88,7 @@ async fn main() -> anyhow::Result<()> {
         state.insert("dry_run".to_string(), Value::Bool(true));
     }
 
-    let service = bus::MosdService::new(store, settings, reconcilers, Value::Object(state));
+    let service = bus::MosdService::new(store, settings, reconcilers, power, Value::Object(state));
     service.apply_all().await;
 
     let builder = match bus_kind.as_str() {

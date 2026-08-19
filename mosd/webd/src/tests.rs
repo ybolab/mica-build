@@ -441,3 +441,151 @@ async fn tampered_cookie_is_rejected() {
     assert_eq!(response.status(), StatusCode::SEE_OTHER);
     assert_eq!(location(&response), "/login");
 }
+
+// ---------------------------------------------------------------------------
+// Power pane
+// ---------------------------------------------------------------------------
+
+/// One quiet period of the fake's polling deadline, used to give a detached
+/// power task every chance to run before asserting that none was started.
+async fn assert_no_power_call(fake: &FakeSettings, context: &str) {
+    let calls = fake.await_power_calls(1).await;
+    assert!(
+        calls.is_empty(),
+        "{context} must not reach mosd's power interface, got {calls:?}"
+    );
+}
+
+#[tokio::test]
+async fn power_pane_offers_both_confirmations() {
+    let (router, _) = test_app(configured_tree("hunter2secret"));
+    let cookie = login(&router, "hunter2secret").await;
+    let response = get(&router, "/power", Some(&cookie)).await;
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = body_string(response).await;
+    assert!(body.contains(r#"action="/power/reboot""#), "{body}");
+    assert!(body.contains(r#"action="/power/poweroff""#), "{body}");
+    // The confirmation control, not a bare button: a required checkbox whose
+    // value is the token the handler insists on.
+    assert!(
+        body.contains(r#"<input type="checkbox" name="confirm" value="reboot" required>"#),
+        "{body}"
+    );
+    assert!(
+        body.contains(r#"<input type="checkbox" name="confirm" value="poweroff" required>"#),
+        "{body}"
+    );
+}
+
+#[tokio::test]
+async fn confirmed_post_reaches_mosd_reboot() {
+    let (router, fake) = test_app(configured_tree("hunter2secret"));
+    let cookie = login(&router, "hunter2secret").await;
+    let response = post_form(&router, "/power/reboot", "confirm=reboot", Some(&cookie)).await;
+    assert_eq!(response.status(), StatusCode::ACCEPTED);
+    assert_eq!(fake.await_power_calls(1).await, vec!["reboot".to_string()]);
+    assert!(fake.set_paths().is_empty(), "power writes no settings");
+}
+
+#[tokio::test]
+async fn confirmed_post_reaches_mosd_power_off() {
+    let (router, fake) = test_app(configured_tree("hunter2secret"));
+    let cookie = login(&router, "hunter2secret").await;
+    let response = post_form(
+        &router,
+        "/power/poweroff",
+        "confirm=poweroff",
+        Some(&cookie),
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::ACCEPTED);
+    assert_eq!(
+        fake.await_power_calls(1).await,
+        vec!["power_off".to_string()]
+    );
+    assert!(fake.set_paths().is_empty(), "power writes no settings");
+}
+
+#[tokio::test]
+async fn unconfirmed_post_is_rejected_without_acting() {
+    for (path, body) in [
+        ("/power/reboot", ""),
+        ("/power/reboot", "confirm="),
+        // The other action's token must not unlock this one.
+        ("/power/reboot", "confirm=poweroff"),
+        ("/power/reboot", "confirm=on"),
+        ("/power/poweroff", ""),
+        ("/power/poweroff", "confirm=reboot"),
+        ("/power/poweroff", "confirm=yes"),
+    ] {
+        let (router, fake) = test_app(configured_tree("hunter2secret"));
+        let cookie = login(&router, "hunter2secret").await;
+        let response = post_form(&router, path, body, Some(&cookie)).await;
+        assert_eq!(
+            response.status(),
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "{path} {body}"
+        );
+        assert_no_power_call(&fake, &format!("`{path}` with `{body}`")).await;
+    }
+}
+
+#[tokio::test]
+async fn unauthenticated_power_post_is_rejected_without_acting() {
+    for (path, body) in [
+        ("/power/reboot", "confirm=reboot"),
+        ("/power/poweroff", "confirm=poweroff"),
+    ] {
+        // No cookie at all.
+        let (router, fake) = test_app(configured_tree("hunter2secret"));
+        let response = post_form(&router, path, body, None).await;
+        assert_eq!(response.status(), StatusCode::SEE_OTHER, "{path}");
+        assert_eq!(location(&response), "/login");
+        assert_no_power_call(&fake, &format!("anonymous POST `{path}`")).await;
+
+        // A forged cookie is no better than none.
+        let (router, fake) = test_app(configured_tree("hunter2secret"));
+        let response = post_form(&router, path, body, Some("deadbeef.deadbeef")).await;
+        assert_eq!(response.status(), StatusCode::SEE_OTHER, "{path}");
+        assert_eq!(location(&response), "/login");
+        assert_no_power_call(&fake, &format!("forged-cookie POST `{path}`")).await;
+
+        // In setup mode nobody is authenticated yet either.
+        let (router, fake) = test_app(unconfigured_tree());
+        let response = post_form(&router, path, body, None).await;
+        assert_eq!(response.status(), StatusCode::SEE_OTHER, "{path}");
+        assert_eq!(location(&response), "/setup");
+        assert_no_power_call(&fake, &format!("setup-mode POST `{path}`")).await;
+    }
+}
+
+#[tokio::test]
+async fn get_on_power_actions_is_not_routed_and_does_not_act() {
+    for path in ["/power/reboot", "/power/poweroff"] {
+        // Authenticated, so the gate lets the request reach the router: there
+        // is simply no GET handler, hence 405.
+        let (router, fake) = test_app(configured_tree("hunter2secret"));
+        let cookie = login(&router, "hunter2secret").await;
+        let response = get(&router, path, Some(&cookie)).await;
+        assert_eq!(
+            response.status(),
+            StatusCode::METHOD_NOT_ALLOWED,
+            "GET {path}"
+        );
+        assert_no_power_call(&fake, &format!("authenticated GET `{path}`")).await;
+
+        // And a query string cannot smuggle the confirmation in either.
+        let (router, fake) = test_app(configured_tree("hunter2secret"));
+        let cookie = login(&router, "hunter2secret").await;
+        let response = get(&router, &format!("{path}?confirm=reboot"), Some(&cookie)).await;
+        assert_eq!(response.status(), StatusCode::METHOD_NOT_ALLOWED, "{path}");
+        assert_no_power_call(&fake, &format!("authenticated GET `{path}` with query")).await;
+
+        // Anonymous GET never gets past the gate at all.
+        let (router, fake) = test_app(configured_tree("hunter2secret"));
+        let response = get(&router, path, None).await;
+        assert_eq!(response.status(), StatusCode::SEE_OTHER, "GET {path}");
+        assert_eq!(location(&response), "/login");
+        assert_no_power_call(&fake, &format!("anonymous GET `{path}`")).await;
+    }
+}
