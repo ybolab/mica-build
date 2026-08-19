@@ -1,13 +1,8 @@
-wireless: makefile: gate aic8800 by AIC_WLAN_SUPPORT
+wireless: build aic8800_sdio when AIC_WLAN_SUPPORT is enabled
 
-The aic8800_sdio directory is gated in drivers/net/wireless/Makefile by
-CONFIG_SPARD_WLAN_SUPPORT, but that symbol has no Kconfig definition
-anywhere (olddefconfig strips any hand-written entry), so the directory
-is never built even with AIC_WLAN_SUPPORT=y (which is why the vendor
-could only ship out-of-tree .ko files).
-Gate it by the really existing CONFIG_AIC_WLAN_SUPPORT instead; the
-sub-Makefile forces :=m, so all three drivers (aic8800_bsp/fdrv/btlpm)
-are built as loadable modules.
+CONFIG_SPARD_WLAN_SUPPORT has no Kconfig definition and is removed by
+olddefconfig. Gate the directory with CONFIG_AIC_WLAN_SUPPORT and build the
+AIC8800 components as modules.
 
 --- a/drivers/net/wireless/Makefile
 +++ b/drivers/net/wireless/Makefile

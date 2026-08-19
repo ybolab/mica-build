@@ -37,7 +37,7 @@ fi
 # os/mkimage.sh. They describe the cx3576 serial console and storage, not the
 # partition layout, so they are not layout-env constants; if a second board
 # ever needs a v2 image they move into a per-board file.
-BOARD_CMDLINE_ARGS="console=ttyFIQ0,1500000 earlycon=uart8250,mmio32,0x2ad40000 storagemedia=emmc net.ifnames=0"
+BOARD_CMDLINE_ARGS="console=ttyFIQ0,1500000 earlycon=uart8250,mmio32,0x2ad40000 net.ifnames=0"
 
 # The verity superblock carries a UUID that veritysetup randomises by default,
 # which would make the image differ on every build. Pin it to the rootfs-a

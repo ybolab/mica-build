@@ -114,7 +114,7 @@ setenv rootargs "root=/dev/dm-0 rootfstype=squashfs ro rootwait"
 # exhaustion — an update that reverts while the device looks healthy.
 setenv raucargs "rauc.slot=${bootslot}"
 
-setenv bootargs "${rootargs} ${verity_args} ${raucargs} ${consoleargs} storagemedia=emmc net.ifnames=0 ${machineid_arg}"
+setenv bootargs "${rootargs} ${verity_args} ${raucargs} ${consoleargs} net.ifnames=0 ${machineid_arg}"
 
 # --- load and go -----------------------------------------------------------
 load mmc 0:${bootpart} ${kernel_addr_r} Image

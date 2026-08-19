@@ -1,21 +1,6 @@
 # syntax=docker/dockerfile:1
-# =============================================================================
-# Alpine debug-disk assembler (top-level image composition)
-#
-# All inputs are prebuilt upstream artifacts; this stage does not build U-Boot,
-# the kernel, or the rootfs:
-#   out/uboot/u-boot-rockchip.bin
-#   out/kernel/Image
-#   out/kernel/rk3576-src.dtb
-#   out/rootfs/rootfs.img
-#
-# Fixed disk layout:
-#   sector 64        idbloader + U-Boot FIT
-#   p1 @ 16 MiB      boot, 64 MiB FAT32, holds extlinux, Image, DTB
-#   p2 @ 80 MiB      Alpine ext4 rootfs, grown to the end of eMMC on first boot
-#
-# Output: out/disk.img (make image)
-# =============================================================================
+# Assemble the U-Boot, kernel, DTB, and Alpine rootfs artifacts into disk.img.
+# Layout: U-Boot at LBA 64, boot at 16 MiB, and rootfs at 80 MiB.
 
 FROM --platform=$BUILDPLATFORM ubuntu:24.04 AS assemble
 
@@ -25,6 +10,7 @@ RUN apt-get update \
         dosfstools \
         gdisk \
         mtools \
+        ripgrep \
     && rm -rf /var/lib/apt/lists/*
 
 COPY out/uboot/u-boot-rockchip.bin /input/u-boot-rockchip.bin
@@ -32,7 +18,7 @@ COPY out/kernel/Image /input/Image
 COPY out/kernel/rk3576-src.dtb /input/rk3576-src.dtb
 COPY out/rootfs/rootfs.img /input/rootfs.img
 
-ARG CMDLINE="earlycon=uart8250,mmio32,0x2ad40000 console=ttyFIQ0,1500000 console=tty1 root=PARTLABEL=rootfs rw rootwait net.ifnames=0 storagemedia=emmc androidboot.storagemedia=emmc"
+ARG CMDLINE="earlycon=uart8250,mmio32,0x2ad40000 console=ttyFIQ0,1500000 console=tty1 root=PARTLABEL=rootfs rw rootwait net.ifnames=0"
 ARG BOOT_SIZE_MIB=64
 
 RUN set -eu; \
@@ -48,20 +34,31 @@ RUN set -eu; \
     cp /input/Image /input/rk3576-src.dtb /work/boot/; \
     printf '%s\n' \
         'default rk3576' \
-        'timeout 3' \
         'label rk3576' \
         '    kernel /Image' \
         '    fdt /rk3576-src.dtb' \
         "    append ${CMDLINE}" \
         > /work/boot/extlinux/extlinux.conf; \
+    (rg --hidden --no-messages -l -P \
+        '[\x{3400}-\x{4dbf}\x{4e00}-\x{9fff}\x{f900}-\x{faff}]' \
+        /work/boot > /tmp/boot-cjk-files || test "$?" -eq 1); \
+    test ! -s /tmp/boot-cjk-files || { \
+        echo 'CJK text found in generated boot filesystem:' >&2; \
+        cat /tmp/boot-cjk-files >&2; \
+        exit 1; \
+    }; \
     truncate -s "${BOOT_SIZE_MIB}M" /work/boot.img; \
     mkfs.vfat -F 32 -n BOOT /work/boot.img >/dev/null; \
     mcopy -s -i /work/boot.img /work/boot/* ::/; \
     truncate -s "${disk_size_mib}M" /output/disk.img; \
-    sgdisk --clear \
-        --new=1:32768:+${BOOT_SIZE_MIB}M --change-name=1:boot --attributes=1:set:2 \
-        --new=2:0:+${rootfs_size_mib}M --change-name=2:rootfs \
+    sgdisk --clear --set-alignment=1 \
+        --new=1:64:32767 --change-name=1:loader --typecode=1:8301 \
+        --new=2:32768:+${BOOT_SIZE_MIB}M --change-name=2:boot --attributes=2:set:2 \
+        --new=3:0:+${rootfs_size_mib}M --change-name=3:rootfs \
         /output/disk.img >/dev/null; \
+    test "$(sgdisk --info=1 /output/disk.img | awk '/^First sector:/ {print $3}')" = 64; \
+    test "$(sgdisk --info=2 /output/disk.img | awk '/^First sector:/ {print $3}')" = 32768; \
+    test "$(sgdisk --info=3 /output/disk.img | awk '/^First sector:/ {print $3}')" = 163840; \
     dd if=/input/u-boot-rockchip.bin of=/output/disk.img \
         bs=512 seek=64 conv=notrunc status=none; \
     dd if=/work/boot.img of=/output/disk.img \

@@ -1,28 +1,12 @@
 # syntax=docker/dockerfile:1
-# =============================================================================
-# uboot/ — mainline U-Boot for CX3576-Z (cross-compiled, any host arch)
+# Build U-Boot v2026.07 with RK3576 DDR v1.12 and BL31 v1.24.
+# Recovery enters RockUSB; failed boot falls back to RockUSB.
 #
-#   make uboot      (= docker buildx build -f uboot/Dockerfile -o out/uboot uboot)
-#   → out/uboot/u-boot-rockchip.bin   (idbloader+FIT combined; write to eMMC sector 64)
-#   make uboot-mos  (--target artifact-mos -o out/uboot-mos)
-#   → out/uboot-mos/u-boot-rockchip.bin  mos A/B variant: same tree plus the
-#     persistent redundant environment + boot.scr contract from
-#     docs/design/uboot-ab-handshake.md (uenv pair at 16/17 MiB, setexpr,
-#     bootmeth order pinned to script). The debug variant keeps ENV_IS_NOWHERE.
-#
-# Combination: U-Boot v2026.07 (tag, same as the armbian reference board) + rkbin
-#   DDR v1.12 / BL31 v1.24 (blobs pinned explicitly: armbian reports v1.09+ fails
-#   to boot on some rk3576 boards; v1.12 verified OK on this board)
-# Customizations:
-#   · adc-keys: hold the recovery key (saradc ch1, 17mV level) at power-on →
-#     preboot enters rockusb
-#   · saradc: add vdd-microvolts=1.8V (the mainline driver fails to probe without
-#     a vref — the root cause of the dead recovery key)
-#   · bootcmd fallback: automatically enter rockusb when boot fails
-#   · patches/*.patch: rockusb enumerates as Loader (bcdUSB=0x0201) and honors
-#     K_FW_RESET subcode 3/6 -> boot-mode-reg flag, so upgrade_tool uf /
-#     rkdeveloptool rd 3 can bounce the board into real maskrom
-# =============================================================================
+# Two targets:
+#   make uboot      (default artifact)      debug variant, ENV_IS_NOWHERE
+#   make uboot-mos  (--target artifact-mos) mos A/B variant: persistent redundant
+#     env + boot.scr contract (docs/design/uboot-ab-handshake.md); pairs with the
+#     v2 image only — its env offsets fall inside the v1 boot partition.
 FROM --platform=$BUILDPLATFORM ubuntu:24.04 AS build
 
 ARG DEBIAN_FRONTEND=noninteractive
@@ -33,14 +17,25 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         gcc-aarch64-linux-gnu libgnutls28-dev uuid-dev \
     && rm -rf /var/lib/apt/lists/*
 
-RUN git clone --depth=1 https://github.com/rockchip-linux/rkbin /rkbin
+ARG RKBIN_REPO=https://github.com/rockchip-linux/rkbin.git
+ARG RKBIN_COMMIT=ecb4fcbe954edf38b3ae037d5de6d9f5bccf81f4
+RUN git init -q /rkbin && \
+    git -C /rkbin remote add origin "${RKBIN_REPO}" && \
+    git -C /rkbin fetch --depth=1 origin "${RKBIN_COMMIT}" && \
+    git -C /rkbin checkout -q --detach FETCH_HEAD && \
+    test "$(git -C /rkbin rev-parse HEAD)" = "${RKBIN_COMMIT}"
 
-ARG UBOOT_REF=v2026.07
-RUN git clone --depth=1 -b "${UBOOT_REF}" https://github.com/u-boot/u-boot.git /uboot
+ARG UBOOT_REPO=https://github.com/u-boot/u-boot.git
+ARG UBOOT_COMMIT=ece349ade2973e220f524ce59e59711cc919263f
+RUN git init -q /uboot && \
+    git -C /uboot remote add origin "${UBOOT_REPO}" && \
+    git -C /uboot fetch --depth=1 origin "${UBOOT_COMMIT}" && \
+    git -C /uboot checkout -q --detach FETCH_HEAD && \
+    test "$(git -C /uboot rev-parse HEAD)" = "${UBOOT_COMMIT}"
 
 COPY patches/ /patches/
-RUN cd /uboot && for p in $(ls /patches/*.patch | sort); do \
-        echo ">> applying $(basename $p)" && git apply -v "$p"; \
+RUN cd /uboot && for patch in $(ls /patches/*.patch | sort); do \
+        echo ">> applying $(basename "$patch")" && git apply -v "$patch"; \
     done
 
 ARG DDR_BLOB=rk3576_ddr_lp4_2112MHz_lp5_2736MHz_v1.12.bin
@@ -72,8 +67,7 @@ RUN cd /uboot && \
       '' \
       '&saradc {' \
       '	status = "okay";' \
-      '	/* u-boot rockchip-saradc fails to probe without a vref (so the key can never be read).' \
-      '	 * The generic board has no PMIC config; vdd-microvolts is the fallback = on-board vcca_1v8_s0 (1.8V, always-on) */' \
+      '	/* Use the always-on 1.8 V rail when no regulator is described. */' \
       '	vdd-microvolts = <1800000>;' \
       '};' >> "$DTSFILE" && \
     scripts/config --enable CMD_ROCKUSB \
@@ -86,14 +80,18 @@ RUN cd /uboot && \
                    --enable CMD_BUTTON \
                    --enable CMD_ADC \
                    --enable FIT \
+                   --set-val BOOTDELAY 1 \
                    --set-val SYS_BOOTM_LEN 0x8000000 \
                    --enable USE_PREBOOT \
                    --set-str PREBOOT "if button recovery; then echo RECOVERY KEY - entering rockusb; rockusb 0 mmc 0; fi" \
                    --set-str BOOTCOMMAND "bootflow scan -lb; echo BOOT FAILED - entering rockusb; rockusb 0 mmc 0" && \
     make olddefconfig && \
     grep -E "^CONFIG_PREBOOT=|^CONFIG_BUTTON_ADC=|^CONFIG_CMD_ROCKUSB=" .config && \
-    { grep -q "^CONFIG_FIT=y" .config || { echo "ERROR: CONFIG_FIT=y missing from .config" >&2; exit 1; }; } && \
-    { grep -q "^CONFIG_SYS_BOOTM_LEN=0x8000000" .config || { echo "ERROR: CONFIG_SYS_BOOTM_LEN=0x8000000 missing from .config" >&2; exit 1; }; } && \
+    grep -q '^CONFIG_USB_FUNCTION_ROCKUSB=y' .config && \
+    grep -q '^CONFIG_FIT=y' .config && \
+    grep -q '^CONFIG_BOOTDELAY=1' .config && \
+    grep -q '^CONFIG_SYS_BOOTM_LEN=0x8000000' .config && \
+    grep -Eq '^CONFIG_ROCKCHIP_BOOT_MODE_REG=0x[1-9a-fA-F][0-9a-fA-F]*$' .config && \
     make -j"$(nproc)" \
         CROSS_COMPILE=aarch64-linux-gnu- \
         ROCKCHIP_TPL="$DDR" BL31="$BL31" && \
@@ -157,6 +155,5 @@ COPY --from=build-mos /uboot/u-boot.itb /
 
 FROM scratch AS artifact
 COPY --from=build /uboot/u-boot-rockchip.bin /
-# Split artifacts for the update.img path (boot_merger loader + uboot partition)
 COPY --from=build /uboot/spl/u-boot-spl.bin /
 COPY --from=build /uboot/u-boot.itb /

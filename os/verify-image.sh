@@ -51,7 +51,7 @@ BOOT_ALIGN_MIB=4
 UBOOT_OFFSET_BYTES=$((LOADER_START_SECTOR * SECTOR_SIZE))
 FREE_FLOOR_BYTES=$((32 * 1024 * 1024))
 KERNEL_VERSION="6.1.115"
-APPEND_LINE="append root=PARTLABEL=rootfs rw console=ttyFIQ0,1500000 earlycon=uart8250,mmio32,0x2ad40000 storagemedia=emmc net.ifnames=0 rootwait"
+APPEND_LINE="append root=PARTLABEL=rootfs rw console=ttyFIQ0,1500000 earlycon=uart8250,mmio32,0x2ad40000 net.ifnames=0 rootwait"
 
 UBOOT_SRC="${BOARD_DIR}/out/uboot/u-boot-rockchip.bin"
 KERNEL_SRC="${BOARD_DIR}/out/kernel/Image"
@@ -519,9 +519,12 @@ ext_regular() {
         fail "${path} missing or not a regular file"
     fi
 }
-ext_regular /usr/lib/firmware/fw_bcm43752a2_ag.bin
-ext_regular /usr/lib/firmware/nvram_ap6275s.txt
-ext_regular /usr/lib/firmware/clm_bcm43752a2_ag.blob
+# AIC8800D80 single SKU: the confirmed U02 runtime firmware set, nothing else.
+ext_regular /usr/lib/firmware/aic_userconfig_8800d80.txt
+ext_regular /usr/lib/firmware/fw_adid_8800d80_u02.bin
+ext_regular /usr/lib/firmware/fw_patch_8800d80_u02.bin
+ext_regular /usr/lib/firmware/fw_patch_table_8800d80_u02.bin
+ext_regular /usr/lib/firmware/fmacfw_8800d80_u02.bin
 ext_regular /usr/lib/systemd/systemd
 
 # Assert an ext4 path is a symlink pointing at the given target basename.
@@ -541,9 +544,6 @@ ext_symlink() {
         fail "${path} missing or not a symlink"
     fi
 }
-ext_symlink /usr/lib/firmware/fw_bcmdhd.bin fw_bcm43752a2_ag.bin
-ext_symlink /usr/lib/firmware/nvram.txt nvram_ap6275s.txt
-ext_symlink /usr/lib/firmware/clm_bcmdhd.blob clm_bcm43752a2_ag.blob
 
 # ssh.service enablement is NOT asserted here: it is a function of the image
 # profile, and both directions of that are checked in the M5 section below.
@@ -630,10 +630,17 @@ fi
 
 # --- board hardware init ---
 modules_conf="$(dbg "cat /etc/mos/modules.conf")"
-if echo "${modules_conf}" | grep -q "bcmdhd" && echo "${modules_conf}" | grep -q "aic8800_fdrv"; then
-    pass "/etc/mos/modules.conf lists bcmdhd and aic8800_fdrv"
+if echo "${modules_conf}" | grep -q "aic8800_fdrv" && echo "${modules_conf}" | grep -q "aic8800_btlpm"; then
+    pass "/etc/mos/modules.conf lists aic8800_fdrv and aic8800_btlpm"
 else
-    fail "/etc/mos/modules.conf missing or lacks bcmdhd/aic8800_fdrv"
+    fail "/etc/mos/modules.conf missing or lacks aic8800_fdrv/aic8800_btlpm"
+fi
+# Single SKU: the dropped bcmdhd must not creep back into the module list.
+# Comment lines are excluded — the file may legitimately EXPLAIN the drop.
+if echo "${modules_conf}" | grep -v '^[[:space:]]*#' | grep -q "bcmdhd"; then
+    fail "/etc/mos/modules.conf still loads bcmdhd (single-SKU AIC8800 board)"
+else
+    pass "/etc/mos/modules.conf loads no bcmdhd module"
 fi
 ext_regular /etc/mos/otg.conf
 ext_regular /etc/mos/can.conf
@@ -649,7 +656,6 @@ for u in mos-modules mos-otg mos-can mos-bt mos-mac mos-gadget; do
     fi
 done
 ext_regular /usr/bin/btattach
-ext_symlink /usr/lib/firmware/brcm/BCM4362A2.hcd SYN43756B0.hcd
 
 # CAN: classic CAN at 250 kbit/s with CAN FD off (board bring-up facts).
 can_conf="$(dbg "cat /etc/mos/can.conf")"

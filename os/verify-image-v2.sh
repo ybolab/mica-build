@@ -880,13 +880,13 @@ if [ "${modules_entries}" = "${KERNEL_VERSION}" ]; then
 else
     fail "/usr/lib/modules entries: '$(echo "${modules_entries}" | tr '\n' ' ')', expected exactly ${KERNEL_VERSION}"
 fi
-sq_regular /usr/lib/firmware/fw_bcm43752a2_ag.bin
-sq_regular /usr/lib/firmware/nvram_ap6275s.txt
-sq_regular /usr/lib/firmware/clm_bcm43752a2_ag.blob
+# AIC8800D80 single SKU: the confirmed U02 runtime firmware set, nothing else.
+sq_regular /usr/lib/firmware/aic_userconfig_8800d80.txt
+sq_regular /usr/lib/firmware/fw_adid_8800d80_u02.bin
+sq_regular /usr/lib/firmware/fw_patch_8800d80_u02.bin
+sq_regular /usr/lib/firmware/fw_patch_table_8800d80_u02.bin
+sq_regular /usr/lib/firmware/fmacfw_8800d80_u02.bin
 sq_regular /usr/lib/systemd/systemd
-sq_symlink /usr/lib/firmware/fw_bcmdhd.bin fw_bcm43752a2_ag.bin
-sq_symlink /usr/lib/firmware/nvram.txt nvram_ap6275s.txt
-sq_symlink /usr/lib/firmware/clm_bcmdhd.blob clm_bcm43752a2_ag.blob
 
 # --- base services (carried over from v1) ---
 # ssh.service enablement is NOT asserted here: it is a function of the image
@@ -929,7 +929,15 @@ sq_grep /usr/lib/systemd/system/webd.service 'StateDirectory=mos/webd' \
 sq_enabled webd.service
 
 # --- board hardware init (carried over from v1; the unit set is ENUMERATED) ---
-sq_grep /etc/mos/modules.conf 'bcmdhd' "/etc/mos/modules.conf lists bcmdhd"
+# Single SKU: bcmdhd was dropped with the AIC-only fleet decision and must not
+# creep back into the module list.
+# Comment lines are excluded — the file may legitimately EXPLAIN the drop.
+if [ -f "${ROOT}/etc/mos/modules.conf" ] && \
+    ! grep -v '^[[:space:]]*#' "${ROOT}/etc/mos/modules.conf" | grep -q 'bcmdhd'; then
+    pass "/etc/mos/modules.conf loads no bcmdhd module (single-SKU AIC8800)"
+else
+    fail "/etc/mos/modules.conf missing or still loads bcmdhd (single-SKU AIC8800 board)"
+fi
 sq_grep /etc/mos/modules.conf 'aic8800_fdrv' "/etc/mos/modules.conf lists aic8800_fdrv"
 sq_grep /etc/mos/modules.conf '^aic8800_btlpm$' "/etc/mos/modules.conf lists aic8800_btlpm (BT core of the combo chip)"
 for c in otg can bt mac gadget health; do
@@ -970,7 +978,6 @@ sq_regular /usr/lib/udev/rules.d/60-mos-gadget-getty.rules
 sq_grep /usr/lib/udev/rules.d/60-mos-gadget-getty.rules 'serial-getty@ttyGS0\.service' \
     "the udev rule pulls in serial-getty@ttyGS0 when the gadget enumerates"
 sq_regular /usr/bin/btattach
-sq_symlink /usr/lib/firmware/brcm/BCM4362A2.hcd SYN43756B0.hcd
 if [ -f "${ROOT}/etc/bluetooth/main.conf" ] && grep -qE "^[[:space:]]*Name[[:space:]]*=" "${ROOT}/etc/bluetooth/main.conf"; then
     fail "/etc/bluetooth/main.conf pins Name (blocks the hostname plugin)"
 else

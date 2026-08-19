@@ -1,21 +1,6 @@
 // SPDX-License-Identifier: (GPL-2.0+ OR MIT)
-/*
- * CX3576-Z — RK3576 board (Rockchip EVB1 V10 derivative, ODM: jawest),
- * fully open-source board dts
- *
- * Baseline = the include set of upstream rk3576-evb1-v10-linux.dts; board
- * deltas were established by decompiling the vendor dtb and comparing it
- * node-by-node and property-by-property against the upstream build. All
- * verified deltas live in this file.
- *
- * Build: the kernel project makes dtbs together with the kernel →
- * out/kernel/rk3576-src.dtb; the assembly stage uses it as the sole extlinux
- * boot entry.
- *
- * Trimmed (no connector on the board, nodes not brought in): DSI/touch,
- * HDMI-IN (tc35874x), cameras, eDP.
- */
 
+/* CX3576-Z board device tree. */
 /dts-v1/;
 
 #include "rk3576.dtsi"
@@ -29,42 +14,23 @@
 		     "rockchip,rk3576";
 };
 
-/* The board is an eMMC design with no device on the UFS controller — the BSP
- * ufshcd hangs boot on an empty UFS link. storagemedia=emmc on the cmdline
- * does not stop it; it must be disabled from the dtb.
- */
 &ufs {
 	status = "disabled";
 };
 
-/* The ODM respin moved the YT8531 reset pin from EVB1's gpio2_13 to gpio2_11.
- * With the upstream pin the PHY never comes out of reset and the link never
- * comes up.
- */
 &gmac0 {
 	snps,reset-gpio = <&gpio2 RK_PB3 GPIO_ACTIVE_LOW>;
 };
 
-/* gmac1 is unused; keep it disabled. The two RJ45s on this board are gmac0
- * (YT8531, eth0) + a PCIe NIC (Realtek 10ec:8168 → r8168, see pcie@2a200000
- * below) — the second port goes over PCIe, not gmac1. gmac1's RGMII would
- * occupy gpio2_C/D, conflicting with uart6/9/11, but since it is never
- * enabled this has no effect.
- */
 &gmac1 {
 	status = "disabled";
 };
 
-/* CAN0 has no external connector and is unusable on the real board; disable it
- * explicitly so userspace never sees a bogus can0. */
 &can0 {
 	status = "disabled";
 };
 
-/* CAN1 is the only usable external CAN interface on this board. The vendor
- * enables both CAN0/CAN1 controllers, but the hardware only brings out CAN1;
- * CAN1 keeps the vendor 200MHz clock, m3 pin group and RX DMA.
- */
+/* CAN1 is the only routed controller and appears as Linux can0. */
 &can1 {
 	status = "okay";
 	assigned-clocks = <&cru CLK_CAN1>;
@@ -75,11 +41,6 @@
 	dma-names = "rx";
 };
 
-/* RTC: the ODM disabled EVB1's hym8563 on i2c2 and put an AnalogTek AT8563 on
- * i2c7 instead. The AT8563 is an HYM8563 clone with no dedicated BSP driver
- * (the vendor uses a private .ko); the haoyu,hym8563 fallback compatible lets
- * the in-tree rtc-hym8563 driver take over (kernel needs RTC_DRV_HYM8563).
- */
 &i2c7 {
 	status = "okay";
 
@@ -90,20 +51,13 @@
 		clock-output-names = "AT8563";
 	};
 
-	/* On-board EEPROM (vendor at24@50, compatible copied verbatim) */
+
 	at24@50 {
 		compatible = "24c32";
 		reg = <0x50>;
 	};
 };
 
-/* USB: the OTG port on this board has no Type-C PD — the vendor removed EVB1's
- * whole Type-C stack (husb311 connector graph, the usbdp phy's
- * orientation-switch/sbu pins/endpoints) and switched to the classic extcon
- * scheme. Without the same removal the usbdp phy probe fails with EBUSY → the
- * USB link is crippled (verified on hardware). Everything below aligns item by
- * item with the vendor dtb.
- */
 &{/phy@2b010000} {
 	rockchip,dp-lane-mux = <2 3>;
 	/delete-property/ orientation-switch;
@@ -122,27 +76,14 @@
 &u2phy0_otg {
 	vbus-supply = <&vbus5v0_typec>;
 	/delete-property/ rockchip,typec-vbus-det;
-	/* Vendor tuning: disable U2 phy suspend on the OTG port to avoid dropping
-	 * the link by spuriously entering suspend in host mode. */
+
 	rockchip,dis-u2-susphy;
 };
 
-/* drd0 port VBUS switch: the ODM respin moved it to gpio2_B6 (EVB1 uses
- * gpio0_D1). Without this change host mode toggles the wrong pin and the USB
- * host port and its peripherals never get power.
- */
 &vbus5v0_typec {
 	gpio = <&gpio2 RK_PB6 GPIO_ACTIVE_HIGH>;
 };
 
-/* Stale pinctrl fix: the VBUS enable pin above and the es8388 hp-det pin below
- * were both moved to gpio2, but the matching pinmux groups still point at the
- * old EVB1 pins — GPIO properties right, pinctrl groups wrong, so the pull on
- * the target pins never takes effect and gpio0_D1/D3 are wasted. Aligned with
- * the vendor dtb group values:
- *   usb-otg0-pwren: gpio0_D1 → gpio2_B6 (pull-none)
- *   hp-det        : gpio0_D3 → gpio2_B7 (pull-up)
- */
 &{/pinctrl/usb/usb-otg0-pwren} {
 	rockchip,pins = <2 RK_PB6 0 &pcfg_pull_none>;
 };
@@ -151,20 +92,11 @@
 	rockchip,pins = <2 RK_PB7 0 &pcfg_pull_up>;
 };
 
-/* HDMI: the EVB1 baseline gives hdmi an enable-gpios (gpio2_8 = global pin72)
- * that the vendor does not have — on this board that pin belongs to uart1, and
- * keeping the property causes a pin conflict (WARNING storm on hardware:
- * "pin 72 already requested by 27310000.serial").
- */
 &{/hdmi@27da0000} {
 	/delete-property/ enable-gpios;
 };
 
-/* UARTs: the EVB1 baseline only enables uart4; the vendor enables 7 peripheral
- * UARTs. The two physical RS485 ports are confirmed as uart1=/dev/ttyS1 and
- * uart6=/dev/ttyS6, verified with bidirectional TX/RX back-to-back. The
- * remaining UARTs are each filled in with the vendor pinmux groups.
- */
+/* UART1 and UART6 are RS-485 ports; UART4 is Bluetooth HCI. */
 &uart1 {
 	status = "okay";
 	pinctrl-names = "default";
@@ -181,6 +113,10 @@
 	status = "okay";
 	pinctrl-names = "default";
 	pinctrl-0 = <&uart4m1_xfer &uart4m1_ctsn>;
+};
+
+&{/wireless-bluetooth} {
+	status = "okay";
 };
 
 &uart6 {
@@ -206,16 +142,8 @@
 	pinctrl-names = "default";
 	pinctrl-0 = <&uart11m1_xfer>;
 };
-/* Note: the uart6/9/11 pins also belong to the gmac1 RGMII bus, but the second
- * NIC on this board goes over PCIe and gmac1 is never enabled, so the three
- * uarts can hold the pins permanently without conflict. */
 
-/* WiFi (SDIO): the EVB1 baseline keeps the SDIO host and pwrseq off; the
- * vendor enables them and wires the pwrseq external clock to the AT8563 RTC's
- * 32kHz output (the clock output of the RTC node above). SDIO pins match on
- * both sides. (The wireless-wlan rfkill node is separately disabled below —
- * this board is AIC, not Broadcom.)
- */
+/* The FC900K/AIC8800D80 Wi-Fi function uses SDIO. */
 &{/mmc@2a320000} {
 	status = "okay";
 };
@@ -226,31 +154,14 @@
 	clock-names = "ext_clock";
 };
 
-/* PCIe: the second NIC is a PCIe card on pcie0 (@2a200000); the vendor dtb has
- * pcie0=okay. The reset pin differs from EVB1: EVB1=gpio2_B4 (pin12), this
- * board=gpio2_D4 (pin28) active-high (value from the vendor dtb).
- * pcie1 (@2a210000) stays disabled by the vendor; left untouched.
- * Note: NIC chip = Realtek RTL8168 (PCI 10ec:8168); CONFIG_R8168=y is already
- *       in the kernel config, so once the dts brings the link up it enumerates
- *       as eth1.
- */
 &{/pcie@2a200000} {
 	status = "okay";
 	reset-gpios = <&gpio2 RK_PD4 GPIO_ACTIVE_HIGH>;
-	/* The EVB1 base attaches pinmux groups to pcie0; they do not apply on this
-	 * board and would conflict, so delete them */
+
 	/delete-property/ pinctrl-names;
 	/delete-property/ pinctrl-0;
 };
 
-/* i2c devices EVB1 has but this board lacks:
- *   husb311  Type-C controller — the whole node must be deleted (its endpoints
- *            reference the usbdp/usb port labels deleted above; keeping the
- *            node fails the build with a dangling reference)
- *   hym8563  EVB1's RTC (this board uses the AT8563 on i2c7 instead), disabled
- *   imx415@1a EVB1's camera (not brought out on this board, whole group
- *            trimmed), disabled
- */
 &{/i2c@2ac50000} {
 	/delete-node/ husb311@4e;
 };
@@ -263,49 +174,15 @@
 	status = "disabled";
 };
 
-/* ===== status alignment between the vendor dtb and the evb1 baseline =====
- * Below are all remaining status deltas, aligned with the vendor.
- * The only deliberate exception: &ufs stays disabled — under mainline u-boot
- * the BSP ufshcd hangs boot on an empty UFS link; the vendor u-boot only dares
- * to enable it because of private handling.
- */
-
-/* Enabled by the vendor, disabled in the baseline. Three exceptions are not
- * followed:
- *   route-dp0 — our dp@27e40000 has no endpoint (fallout of the Type-C
- *   removal); enabling it only pollutes the DRM topology;
- *   csi2-dphy0/mipi1-csi2/rkcif-lvds1 — cameras are trimmed; an empty media
- *   chain only produces noise and power draw.
- */
 &{/pwm@2ade5000} { status = "okay"; };
 &{/watchdog@2ace0000} { status = "okay"; };
 
-/* HDMI-IN: no HDMI-in input on this board; sai4 (sai@2a640000, HDMI-in audio
- * capture) disabled — the vendor dtb also disables this capture port. */
 &{/sai@2a640000} { status = "disabled"; };
 
-/* SATA: no SATA connector on this board; the vendor dtb also disables
- * sata@2a240000. Enabling it only spams "SATA link down" on the console.
- */
 &{/sata@2a240000} { status = "disabled"; };
 
-/* The whole DSI chain is disabled: the EVB baseline's 1080x1920 portrait panel
- * parameters do not match the vendor's 1920x1080 panel at all — enabled, it
- * only drives the wrong panel. Supporting the on-board panel requires a full
- * port of the vendor panel timings/init sequence/GPIOs/power/mipi-backlight.
- */
 &{/dsi@27d80000} { status = "disabled"; };
 
-/* VOP2 plane assignment: the base dtsi gives vp0/1/2 no plane-mask, and the
- * VOP2 driver defaults to all zeros — on hardware: "vpN assign plane
- * mask:[0x0], primary plane INVALID[-1]", i.e. no video port gets a plane =
- * no display output. The vendor dtb assigns mask/primary per port; same SoC,
- * same rockchip,rk3576-vop driver, plane IDs are common, so the values are
- * copied verbatim from the vendor dtb.
- * Note: reset-names (dclk_vpN) is modeled by our kernel's base dtsi and absent
- *       in the vendor kernel version — keep it; GPU clock-names is likewise a
- *       cross-kernel-version binding difference and is not overridden.
- */
 &{/vop@27d00000} {
 	support-multi-area;
 };
@@ -325,14 +202,6 @@
 	rockchip,primary-plane = <0x08>;
 };
 
-/* es8388 sound card: all three EVB-baseline GPIOs are wrong — hp-det on
- * gpio0_27 (vendor: gpio2_B7 active-high), hp-con occupying gpio3_D6 (vendor
- * has no such property; that pin is the vendor's spk-con), spk-con on gpio2_9
- * (= pin73, conflicts with uart1, WARNING on hardware).
- * The speaker is wired to LOUT2/ROUT2 (LOUT1/ROUT1 is the headphone jack);
- * the vendor routes Speaker→LOUT2/ROUT2 — anything else leaves the speaker
- * silent. Aligned item by item with the vendor dtb.
- */
 &{/es8388-sound} {
 	hp-det-gpio = <&gpio2 RK_PB7 GPIO_ACTIVE_HIGH>;
 	spk-con-gpio = <&gpio3 RK_PD6 GPIO_ACTIVE_HIGH>;
@@ -352,14 +221,11 @@
 		"RINPUT2", "Headset Mic";
 };
 
-/* RK806: the vendor has no shutdown-sequence properties; EVB's must not be
- * inherited (they directly affect the PMIC power-down ordering) */
 &{/i2c@2ac40000/pmic@23} {
 	/delete-property/ shutdown-sequence;
 	/delete-property/ vb-shutdown-sequence;
 };
 
-/* Disabled by the vendor, enabled in the baseline */
 &{/backlight} { status = "disabled"; };
 &{/dp0-sound} { status = "disabled"; };
 &{/i2c@27300000} { status = "disabled"; };
@@ -371,18 +237,10 @@
 &{/i2c@2aca0000/icm_acc@68} { status = "disabled"; };
 &{/i2c@2aca0000/icm_gyro@68} { status = "disabled"; };
 
-/* ADC keys: no physical key circuit on this board; a floating SARADC channel 1
- * reports phantom key presses. The vendor dtb also disables this. */
 &{/adc-keys} { status = "disabled"; };
 
-/* DP (dp@27e40000): the Type-C endpoints are removed and route-dp0 disabled,
- * leaving the controller dangling with no output path. The vendor dtb also
- * disables it. */
 &{/dp@27e40000} { status = "disabled"; };
 
-/* SD card power: vendor-only nodes (the baseline SD slot has no supply wired;
- * required for SD rescue boot).
- * vcc_sd: gpio0_B6 active-low enable; vcc5v0_3v3: gpio4_B2 always-on supply. */
 / {
 	sdmmc_reg: sdmmc-regulator {
 		compatible = "regulator-fixed";
@@ -425,56 +283,19 @@
 
 &{/mmc@2a310000} {
 	vmmc-supply = <&sdmmc_reg>;
-	/* The evb1 baseline attaches an extra sdmmc0-pwren pinmux group that fights
-	 * the vcc_sd regulator for gpio0_B6 (on hardware: pin gpio0-14 already
-	 * requested). The vendor uses exactly these 4 groups. */
+
 	pinctrl-0 = <&sdmmc0_clk &sdmmc0_cmd &sdmmc0_det &sdmmc0_bus4>;
 };
 
-/* sai1 (es8388 sound card) pins aligned with the vendor: output on sdo2 (evb1
- * wrongly uses sdo0). (sai4 = HDMI-IN capture is disabled; its pin override is
- * removed along with it) */
 &{/sai@2a610000} {
 	pinctrl-0 = <&sai1m0_lrck &sai1m0_sclk &sai1m0_sdi0 &sai1m0_sdo2>;
 };
 
-/* In vendor firmware the power-enable pins below are driven high by the
- * closed-source jwsioc / jawest-ctrl-z driver. We do not port that driver;
- * gpio-hogs make the kernel pull them high automatically at boot. Without
- * this the USB host ports / 4G modem / WiFi get no power.
- *
- * Pin source: the jawest-z-ctrl node in the vendor dtb
- *   host-pwren = gpio0_23   host1-pwren = gpio2_6
- *   host3-pwren = gpio2_7   modem-power = gpio2_12
- * WiFi power gpio1_22 was found by on-device debugging.
- *
- * Note: jawest-z-ctrl also has modem-reset (gpio3_22); its polarity and timing
- * are unknown, and hogging it rashly could leave the 4G modem stuck in reset,
- * so it is left alone here.
- */
-/* Caution: gpio0_23 (host-pwren) is already modeled in the evb1 baseline as
- * the vcc5v0-host regulator enable pin (always-on) — no extra hog for it;
- * one pin, one owner.
- */
-
-/* WiFi = AIC8800D80 (SDIO, vid 0xC8A1), not the Broadcom AP6275P declared by
- * the EVB baseline. The whole wireless-wlan (rockchip rfkill_rk) node is
- * disabled — it performs the bcmdhd power-up/init ritual per
- * wifi_chip_type=ap6275p, which is bound to fail on the AIC chip ("failed to
- * power up DHD", ~2.6s wasted), and its rfkill power pin would fight
- * sdio-pwrseq for ownership. With it disabled, WiFi power is handled by
- * sdio-pwrseq (gpio1_C6 reset) and the AIC driver creates wlan0 through its
- * own SDIO probe. Cost: the rfkill OOB host-wake interrupt is lost, falling
- * back to SDIO in-band interrupts; functionality is intact.
- */
 &{/wireless-wlan} {
 	status = "disabled";
 };
 
-/* Caution: there is no WiFi power hog here — gpio1_C6 is owned by sdio-pwrseq
- * (reset-gpios). Adding a hog makes the pwrseq probe fail with -EBUSY and WiFi
- * never enumerates.
- */
+/* Keep board power rails enabled without the vendor control driver. */
 &gpio2 {
 	usb-host1-pwren-hog {
 		gpio-hog;

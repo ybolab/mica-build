@@ -10,7 +10,7 @@
 # =============================================================================
 
 ARG ALPINE_IMAGE=alpine:3.24.1@sha256:28bd5fe8b56d1bd048e5babf5b10710ebe0bae67db86916198a6eec434943f8b
-FROM --platform=linux/arm64 ${ALPINE_IMAGE} AS rootfs
+FROM ${ALPINE_IMAGE} AS rootfs
 
 RUN apk add --no-cache \
         openrc busybox-openrc busybox-mdev-openrc \
@@ -71,6 +71,7 @@ RUN test -x /sbin/dhcpcd && \
     test -x /etc/init.d/aic-bluetooth && \
     test -x /etc/init.d/bluetooth && \
     test -x /etc/init.d/resize-rootfs && \
+    grep -q '/dev/mmcblk0p3' /etc/init.d/resize-rootfs && \
     sh -n /usr/local/bin/rs485-pair-test && \
     sh -n /usr/local/bin/usb-gadget-serial && \
     sh -n /usr/local/bin/usb-serial-getty && \

@@ -154,17 +154,16 @@ RUN mkdir -p /tmp/mods /usr/lib/modules && \
     cp -a /tmp/mods/lib/modules/. /usr/lib/modules/ && \
     rm -rf /tmp/mods /tmp/modules.tar
 
-# WiFi/BT firmware (AP6275S / AIC8800D80 dual SKU). Driver loading is done by
-# the mos-modules unit (best-effort, silent on the absent SKU) instead of
-# modules-load.d. The brcm/ symlink serves the BT patchram: the btbcm driver
-# identifies the AP6275S BT core (BCM43752A2) as BCM4362A2 and requests
-# brcm/BCM4362A2.hcd, which resolves to the vendor SYN43756B0.hcd blob.
-COPY board/cx3576/rootfs/firmware/ /usr/lib/firmware/
-RUN ln -sf fw_bcm43752a2_ag.bin /usr/lib/firmware/fw_bcmdhd.bin && \
-    ln -sf nvram_ap6275s.txt /usr/lib/firmware/nvram.txt && \
-    ln -sf clm_bcm43752a2_ag.blob /usr/lib/firmware/clm_bcmdhd.blob && \
-    mkdir -p /usr/lib/firmware/brcm && \
-    ln -sf ../SYN43756B0.hcd /usr/lib/firmware/brcm/BCM4362A2.hcd
+# WiFi/BT firmware: AIC8800D80 combo (single SKU; the bcmdhd/AP6275S fallback
+# was dropped when the fleet was confirmed AIC-only and the kernel stopped
+# building bcmdhd). Only the confirmed U02 runtime set enters the image, per
+# the board BSP. Driver loading is done by the mos-modules unit.
+COPY board/cx3576/rootfs/firmware/aic_userconfig_8800d80.txt \
+     board/cx3576/rootfs/firmware/fw_adid_8800d80_u02.bin \
+     board/cx3576/rootfs/firmware/fw_patch_8800d80_u02.bin \
+     board/cx3576/rootfs/firmware/fw_patch_table_8800d80_u02.bin \
+     board/cx3576/rootfs/firmware/fmacfw_8800d80_u02.bin \
+     /usr/lib/firmware/
 
 # Networking: DHCP on all eth* (kernel cmdline has net.ifnames=0)
 #

@@ -241,7 +241,7 @@ Outputs to `_out/cx3576/`, all consumed by `os/mkimage-v2.sh`:
 Every layout constant is read from `os/layout/cx3576-v2.env`; none is duplicated
 in `build-v2.sh`, `Dockerfile.v2` or the overlay. The one thing that is *not* a
 layout constant is the board console/storage cmdline fragment
-(`console=ttyFIQ0,… earlycon=… storagemedia=emmc net.ifnames=0`), carried over
+(`console=ttyFIQ0,… earlycon=… net.ifnames=0`), carried over
 verbatim from v1's `APPEND` and kept in `build-v2.sh`.
 
 ### The cmdline files are a contract

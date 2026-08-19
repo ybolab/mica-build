@@ -55,7 +55,7 @@ LOADER_PARTNUM=1
 BOOT_PARTNUM=2
 ROOTFS_PARTNUM=3
 
-APPEND="root=PARTLABEL=rootfs rw console=ttyFIQ0,1500000 earlycon=uart8250,mmio32,0x2ad40000 storagemedia=emmc net.ifnames=0 rootwait"
+APPEND="root=PARTLABEL=rootfs rw console=ttyFIQ0,1500000 earlycon=uart8250,mmio32,0x2ad40000 net.ifnames=0 rootwait"
 
 # Determinism knobs: content must not vary between builds of the same inputs.
 FAT_VOLUME_ID="C3576002"
