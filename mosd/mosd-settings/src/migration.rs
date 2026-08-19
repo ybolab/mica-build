@@ -72,7 +72,11 @@ impl MigrationRegistry {
 impl Default for MigrationRegistry {
     /// Registry holding every migration shipped with this crate.
     fn default() -> Self {
-        Self::new(vec![Box::new(MigrateV0ToV1), Box::new(MigrateV1ToV2)])
+        Self::new(vec![
+            Box::new(MigrateV0ToV1),
+            Box::new(MigrateV1ToV2),
+            Box::new(MigrateV2ToV3),
+        ])
     }
 }
 
@@ -138,6 +142,55 @@ impl Migration for MigrateV1ToV2 {
     fn down(&self, doc: &mut toml::Table) -> Result<(), SettingsError> {
         doc.insert("schema_version".to_string(), toml::Value::Integer(1));
         doc.remove("access");
+        Ok(())
+    }
+}
+
+/// v2 -> v3: adds the `provisioning` and `wifi` subtrees and the v3-only keys
+/// inside `access` (`ssh`, `console`, `device`).
+///
+/// `up` stamps `schema_version = 3` and adds empty `provisioning` and `wifi`
+/// tables when absent. An existing `access` table is left untouched, so
+/// `access.webAdmin` survives verbatim; the v3-only keys inside it are supplied
+/// by the model's serde defaults on deserialization.
+///
+/// `down` stamps `schema_version = 2`, removes `provisioning` and `wifi`, and
+/// removes `ssh`, `console` and `device` from `access` while keeping
+/// `access.webAdmin`. Rolling back to v2 therefore LOSES three things, all of
+/// them deliberately: the SSH policy, the console shell policy, and the device
+/// credential hash and its generation counter. v2 software has no reconciler
+/// for any of them, so keeping the keys would leave a document v2 cannot
+/// deserialize (`deny_unknown_fields`) while dropping them costs nothing v2
+/// could have acted on. A device rolled back to v2 falls back to that release's
+/// behaviour — sshd untouched, no console shell, and web admin as the only
+/// credential — and rolling forward again restores the v3 defaults, not the
+/// values that were there before the rollback.
+pub struct MigrateV2ToV3;
+
+impl Migration for MigrateV2ToV3 {
+    fn target_version(&self) -> u32 {
+        3
+    }
+
+    fn up(&self, doc: &mut toml::Table) -> Result<(), SettingsError> {
+        doc.insert("schema_version".to_string(), toml::Value::Integer(3));
+        for key in ["provisioning", "wifi"] {
+            if !doc.contains_key(key) {
+                doc.insert(key.to_string(), toml::Value::Table(toml::Table::new()));
+            }
+        }
+        Ok(())
+    }
+
+    fn down(&self, doc: &mut toml::Table) -> Result<(), SettingsError> {
+        doc.insert("schema_version".to_string(), toml::Value::Integer(2));
+        doc.remove("provisioning");
+        doc.remove("wifi");
+        if let Some(toml::Value::Table(access)) = doc.get_mut("access") {
+            access.remove("ssh");
+            access.remove("console");
+            access.remove("device");
+        }
         Ok(())
     }
 }

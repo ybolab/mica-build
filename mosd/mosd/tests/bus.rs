@@ -99,7 +99,7 @@ async fn bus_roundtrip() -> anyhow::Result<()> {
     .await?;
     let defaults: serde_json::Value = serde_json::from_str(&defaults)?;
     assert_eq!(defaults["hostname"], "mos");
-    assert_eq!(defaults["schema_version"], 2);
+    assert_eq!(defaults["schema_version"], mosd_settings::SCHEMA_VERSION);
 
     let mut changed = proxy.receive_settings_changed().await?;
     proxy.set_settings("hostname", "\"unit-test-host\"").await?;
