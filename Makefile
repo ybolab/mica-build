@@ -5,7 +5,7 @@ BOARDS := cx3576 x64
 
 .PHONY: help os os-image-cx3576 os-verify-cx3576 os-rootfs-cx3576-v2 \
 	os-image-cx3576-v2 os-verify-cx3576-v2 os-bundle-cx3576 os-devkeys os-health-test \
-	os-repart-test \
+	os-repart-test docs-verify \
 	$(addsuffix -%,$(BOARDS))
 
 help:
@@ -21,6 +21,7 @@ help:
 	@echo "  os-devkeys          generate the gitignored development signing material"
 	@echo "  os-health-test      run the offline tests for the health gate and machine-id oneshots"
 	@echo "  os-repart-test      prove first-boot repart growth grows DATA and cannot wipe the loader (privileged docker)"
+	@echo "  docs-verify         assert both document indexes agree with the tree, in both directions"
 	@echo "  cx3576-<t>          delegate target <t> to board/cx3576 (uboot|kernel|rootfs|image|clean)"
 	@echo "  x64-image           x64 uses the upstream talos image pipeline (see board/x64/README.md)"
 
@@ -62,6 +63,16 @@ os-health-test:
 # os-verify; it fails loudly when it cannot run rather than skipping.
 os-repart-test:
 	bash os/repart-loader-test.sh
+
+# Structural check on the two document indexes. It exists because the indexes
+# are the one thing no other check can reach: a document that is never listed
+# in docs/README.md is not broken, does not fail a build, and is simply never
+# found again. That drift is measured, not hypothetical -- three design
+# documents had accumulated in the tree unlisted (docs/task/RFCT-045.md). Both
+# directions are asserted, because the forward half alone passes happily on an
+# index full of entries pointing at files a rename deleted.
+docs-verify:
+	bash docs/verify-index.sh
 
 cx3576-%:
 	$(MAKE) -C board/cx3576 $*
