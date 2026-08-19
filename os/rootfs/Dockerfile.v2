@@ -219,20 +219,25 @@ RUN rm -f /etc/ssh/ssh_host_*
 # Read-only root wiring: fstab (DATA /srv, STATE, META, EPHEMERAL /var, tmpfs
 # /tmp), the repart.d set that grows DATA, the six STATE bind mounts
 # (/var/lib/mos, /var/lib/bluetooth, /etc/ssh, /etc/hostname,
-# /etc/wpa_supplicant, /etc/hostapd), the one DATA bind mount (/home, which is
-# user data rather than configuration and so does not belong on the small,
-# precious STATE partition -- see home.mount), the first-boot
-# seed oneshots, the /var fill-up policies and the fw_env.config pointing at
+# /etc/wpa_supplicant, /etc/hostapd), the two DATA bind mounts (/home and
+# /root, which are user data rather than configuration and so do not belong on
+# the small, precious STATE partition -- see home.mount and root.mount), the
+# first-boot seed oneshots, the /var fill-up policies and the fw_env.config pointing at
 # the uenv pair.
 # The tree is rendered from os/layout/cx3576-v2.env by build-v2.sh; nothing
 # here duplicates a layout constant. Modes are set explicitly so the packed
 # image cannot inherit a host umask.
+# /root gets its own mkdir/chown/chmod rather than joining the 0755 mountpoint
+# list: Debian already ships it at 0700 root:root, but nothing GUARANTEED that,
+# and a root home that reached the image group- or world-readable would be a
+# different defect from the one root.mount fixes -- one that /srv, unlike the
+# verity root, is not protected against either.
 ARG OVERLAY_DIR
 COPY ${OVERLAY_DIR}/ /tmp/overlay/
 RUN cp -a /tmp/overlay/. / && \
     rm -rf /tmp/overlay && \
     chmod 0755 /usr/lib/mos/mos-seed-var /usr/lib/mos/mos-seed-state \
-               /usr/lib/mos/mos-seed-home \
+               /usr/lib/mos/mos-seed-home /usr/lib/mos/mos-seed-root \
                /usr/lib/mos/mos-shadow-reconcile && \
     chmod 0644 /etc/fstab /etc/fw_env.config /etc/repart.d/*.conf \
                /etc/tmpfiles.d/mos-var.conf \
@@ -245,15 +250,18 @@ RUN cp -a /tmp/overlay/. / && \
                /etc/systemd/system/etc-hostname.mount \
                /etc/systemd/system/etc-wpa_supplicant.mount \
                /etc/systemd/system/etc-hostapd.mount \
-               /etc/systemd/system/home.mount && \
+               /etc/systemd/system/home.mount \
+               /etc/systemd/system/root.mount && \
     mkdir -p /srv /mnt/state /mnt/meta /home \
              /etc/systemd/system/local-fs.target.wants \
              /etc/systemd/system/timers.target.wants \
              /etc/systemd/system/multi-user.target.wants && \
+    mkdir -p -m 0700 /root && chown 0:0 /root && chmod 0700 /root && \
     for u in mos-seed-var.service mos-seed-state.service mos-seed-home.service \
+             mos-seed-root.service \
              var-lib-mos.mount \
              var-lib-bluetooth.mount etc-ssh.mount etc-hostname.mount \
-             etc-wpa_supplicant.mount etc-hostapd.mount home.mount \
+             etc-wpa_supplicant.mount etc-hostapd.mount home.mount root.mount \
              mos-apply-hostname.service; do \
         ln -sf "/etc/systemd/system/$u" "/etc/systemd/system/local-fs.target.wants/$u" && \
         test -L "/etc/systemd/system/local-fs.target.wants/$u"; \
