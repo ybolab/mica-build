@@ -125,6 +125,15 @@ async fn web_flow_end_to_end() -> anyhow::Result<()> {
 
     let dir = tempfile::tempdir()?;
     let settings_path = dir.path().join("settings.toml");
+    // MOSD_SHADOW_PATH below is the second hard safety requirement, alongside
+    // MOSD_DRY_RUN: setting a transient root password rewrites the shadow file
+    // mosd was pointed at, and without the override that is the host's
+    // /etc/shadow. The SSH section asserts that THIS file is the one that
+    // changed and that the host's is untouched, so a spawn that lost the
+    // variable fails loudly here rather than quietly editing the machine.
+    let shadow_path = dir.path().join("shadow");
+    std::fs::write(&shadow_path, "root:!:20000:0:99999:7:::\n")?;
+    let marker_path = dir.path().join("transient-root-password");
     // MOSD_DRY_RUN=1 is a hard safety requirement: production reconcilers
     // must never be constructed in tests.
     let _mosd_guard = ChildGuard(
@@ -133,6 +142,7 @@ async fn web_flow_end_to_end() -> anyhow::Result<()> {
             .env("MOSD_BUS", "session")
             .env("MOSD_DRY_RUN", "1")
             .env("MOSD_SETTINGS_PATH", &settings_path)
+            .env("MOSD_SHADOW_PATH", &shadow_path)
             .spawn()?,
     );
 
@@ -344,6 +354,157 @@ async fn web_flow_end_to_end() -> anyhow::Result<()> {
     assert_eq!(
         after["last_action"], "power_off",
         "no anonymous request may reach mosd"
+    );
+
+    // ---- SSH pane -------------------------------------------------------
+    // Real `ssh-keygen` output; the same key the route tests use. Public keys
+    // are not secrets and this one corresponds to no device.
+    const KEY_LINE: &str = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIL99V7xPTOP3jZjnbVPM7xC+ckwzkOQPalUpsvtPzYo8 rfct-034-test-ed25519";
+    const KEY_BLOB: &str = "AAAAC3NzaC1lZDI1NTE5AAAAIL99V7xPTOP3jZjnbVPM7xC+ckwzkOQPalUpsvtPzYo8";
+    /// As `ssh-keygen -lf` prints it for the key above.
+    const KEY_FINGERPRINT: &str = "SHA256:HrgN3GLi6Mop2uSRjgOoxImM8zRkFmgqCKoeGD9QOaM";
+    const TRANSIENT_PASSWORD: &str = "e2e-transient-secret";
+
+    let response = admin.get(format!("{https_base}/ssh")).send().await?;
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = response.text().await?;
+    assert!(
+        body.contains("Every authorized key is a root key."),
+        "the SSH pane must say what a key grants:\n{body}"
+    );
+
+    // The toggle travels webd -> D-Bus -> mosd's typed settings tree.
+    let response = admin
+        .post(format!("{https_base}/ssh/enable"))
+        .form(&[("enabled", "on")])
+        .send()
+        .await?;
+    assert_eq!(response.status(), StatusCode::SEE_OTHER);
+    assert_eq!(proxy.get_settings("access.ssh.enabled").await?, "true");
+
+    // A key added through the pane is accepted by the same schema mosd
+    // validates against, and comes back with its comment split out.
+    let response = admin
+        .post(format!("{https_base}/ssh/keys/add"))
+        .form(&[("key", KEY_LINE)])
+        .send()
+        .await?;
+    assert_eq!(response.status(), StatusCode::SEE_OTHER);
+    let stored = proxy.get_settings("access.ssh.authorizedKeys").await?;
+    assert!(
+        stored.contains("rfct-034-test-ed25519"),
+        "the key should be in the settings tree: {stored}"
+    );
+
+    // The pane identifies it by fingerprint and never republishes the blob.
+    let body = admin
+        .get(format!("{https_base}/ssh"))
+        .send()
+        .await?
+        .text()
+        .await?;
+    assert!(body.contains(KEY_FINGERPRINT), "{body}");
+    assert!(!body.contains(KEY_BLOB), "key material reached the pane");
+
+    // An unparsable line is refused by webd and never reaches mosd.
+    let response = admin
+        .post(format!("{https_base}/ssh/keys/add"))
+        .form(&[("key", "ssh-ed25519  AAAA")])
+        .send()
+        .await?;
+    assert_eq!(response.status(), StatusCode::UNPROCESSABLE_ENTITY);
+    assert_eq!(
+        proxy.get_settings("access.ssh.authorizedKeys").await?,
+        stored,
+        "a rejected key must leave the list untouched"
+    );
+
+    // The transient password: it reaches mosd's shadow file and NOT the
+    // settings tree. The host's own shadow file is checked either side, which
+    // is what makes the MOSD_SHADOW_PATH override above provably in force.
+    let host_shadow_before = std::fs::metadata("/etc/shadow")
+        .and_then(|meta| meta.modified())
+        .ok();
+    let settings_before = proxy.get_settings("").await?;
+    let response = admin
+        .post(format!("{https_base}/ssh/password"))
+        .form(&[
+            ("confirm", "set-transient-password"),
+            ("password", TRANSIENT_PASSWORD),
+        ])
+        .send()
+        .await?;
+    assert_eq!(response.status(), StatusCode::SEE_OTHER);
+    let shadow = std::fs::read_to_string(&shadow_path)?;
+    assert!(
+        shadow.starts_with("root:$2"),
+        "the temporary shadow file should now carry a bcrypt hash: {shadow}"
+    );
+    assert!(
+        std::fs::metadata(&marker_path)?.len() > 0,
+        "the transient marker should have been written beside it"
+    );
+    assert_eq!(
+        std::fs::metadata("/etc/shadow")
+            .and_then(|meta| meta.modified())
+            .ok(),
+        host_shadow_before,
+        "the host's shadow file must not have been touched"
+    );
+    let settings_after = proxy.get_settings("").await?;
+    assert_eq!(
+        settings_after, settings_before,
+        "a transient password must change no setting"
+    );
+    assert!(
+        !settings_after.contains(TRANSIENT_PASSWORD),
+        "the password must not appear in the settings tree"
+    );
+
+    // Removal is addressed by the fingerprint the pane rendered.
+    let response = admin
+        .post(format!("{https_base}/ssh/keys/remove"))
+        .form(&[("identifier", KEY_FINGERPRINT)])
+        .send()
+        .await?;
+    assert_eq!(response.status(), StatusCode::SEE_OTHER);
+    assert_eq!(proxy.get_settings("access.ssh.authorizedKeys").await?, "[]");
+
+    // Removing it again is an error, not a silent success.
+    let response = admin
+        .post(format!("{https_base}/ssh/keys/remove"))
+        .form(&[("identifier", KEY_FINGERPRINT)])
+        .send()
+        .await?;
+    assert_eq!(response.status(), StatusCode::UNPROCESSABLE_ENTITY);
+
+    // No mutating SSH route is reachable by GET, and none is reachable
+    // without a session.
+    let settings_before = proxy.get_settings("access.ssh").await?;
+    for path in [
+        "/ssh/enable",
+        "/ssh/password",
+        "/ssh/keys/add",
+        "/ssh/keys/remove",
+    ] {
+        let response = admin.get(format!("{https_base}{path}")).send().await?;
+        assert_eq!(
+            response.status(),
+            StatusCode::METHOD_NOT_ALLOWED,
+            "GET {path}"
+        );
+        let response = http_client(false)?
+            .post(format!("{https_base}{path}"))
+            .form(&[("enabled", "on"), ("confirm", "set-transient-password")])
+            .send()
+            .await?;
+        assert_eq!(response.status(), StatusCode::SEE_OTHER, "anonymous {path}");
+        assert_eq!(location(&response), "/login");
+    }
+    assert_eq!(
+        proxy.get_settings("access.ssh").await?,
+        settings_before,
+        "no rejected SSH request may reach mosd"
     );
 
     // The HTTP listener only redirects to the HTTPS origin.
