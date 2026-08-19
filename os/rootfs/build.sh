@@ -10,8 +10,10 @@ OUT_DIR="$REPO_ROOT/_out/cx3576"
 SIZE_BUDGET_MB=400
 WITH_MOSD=${WITH_MOSD:-1}
 # Image profile baked into /usr/lib/mos/profile.conf. mosd reads it on first
-# boot to seed access.ssh.enabled and FAILS CLOSED to prod, so the value has to
-# be exactly "dev" or "prod" in lowercase; the Dockerfile rejects anything else.
+# boot and FAILS CLOSED to prod, so the value has to be exactly "dev" or "prod"
+# in lowercase; the Dockerfile rejects anything else. It no longer selects the
+# access.ssh.enabled seed: both profiles seed SSH OFF and neither image ships
+# ssh.service enabled, so the profile currently changes nothing that is seeded.
 MOS_PROFILE=${MOS_PROFILE:-dev}
 
 MODULES_TAR="$BOARD_DIR/out/kernel/modules.tar"

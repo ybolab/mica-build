@@ -57,21 +57,37 @@ const HOSTNAME_ID_CHARS: usize = 8;
 
 /// Which image this rootfs is.
 ///
-/// Selects the defaults that differ between a development image and a shipped
-/// one; today that is only the SSH default.
+/// The two profiles currently seed IDENTICAL values: SSH is off on both, and
+/// no other seeded value has ever been profile-dependent. So this enum selects
+/// nothing today. It is kept because [`read_profile`]'s fail-closed parsing is
+/// load-bearing on its own — an unreadable or unrecognised profile must resolve
+/// to the conservative variant rather than propagate as an error — and because
+/// a per-profile default is the kind of thing that gets re-introduced.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Profile {
-    /// Development image: convenience defaults, SSH on.
+    /// Development image.
     Dev,
-    /// Production image: `docs/design/access.md` section 5 defaults, SSH off.
+    /// Production image: `docs/design/access.md` section 5 defaults.
     Prod,
 }
 
 impl Profile {
     /// Whether `access.ssh.enabled` is seeded on for this profile.
+    ///
+    /// False for BOTH profiles. SSH is off on a fresh device regardless of the
+    /// image it booted; persistent access is granted by installing a public key
+    /// in `access.ssh.authorizedKeys`, and a transient root password can be set
+    /// through the web UI for the current boot only. A dev image that seeded
+    /// SSH on would be reachable before any of that was configured.
+    ///
+    /// Written as an exhaustive `match` rather than a bare `false` so that
+    /// re-introducing a per-profile default is a one-arm edit the compiler
+    /// checks, and so a new variant cannot silently inherit this answer.
     #[must_use]
     pub fn ssh_enabled_default(self) -> bool {
-        matches!(self, Self::Dev)
+        match self {
+            Self::Dev | Self::Prod => false,
+        }
     }
 }
 
@@ -93,7 +109,9 @@ pub enum Outcome {
 /// 2. `hostname` becomes `mos-<first eight hex chars of deviceId>`, but only
 ///    while it is still the built-in default — an operator who has already
 ///    named the device keeps that name;
-/// 3. `access.ssh.enabled` is taken from the image profile at `profile_path`;
+/// 3. `access.ssh.enabled` is taken from the image profile at `profile_path`,
+///    which today seeds it false for every profile (see
+///    [`Profile::ssh_enabled_default`]);
 /// 4. `network` is left empty on purpose. The image ships a static
 ///    `80-dhcp.network` matching `eth*`, so DHCP already works with no seeded
 ///    entry, whereas seeding one per interface name would render networkd units
@@ -161,10 +179,14 @@ pub fn ensure_provisioned(
 ///
 /// Fails closed: a file that is missing, unreadable, carries no `MOS_PROFILE`
 /// key or carries a value this build does not know resolves to
-/// [`Profile::Prod`] with a warning. Guessing [`Profile::Dev`] instead would
-/// open SSH on a production device, and of the two ways to be wrong that is the
-/// expensive one. The comparison is also case-sensitive for the same reason:
-/// accepting `DEV` would widen the set of inputs that open SSH.
+/// [`Profile::Prod`] with a warning, and the comparison is case-sensitive, so
+/// `DEV` is not `dev`.
+///
+/// No seeded value currently depends on the answer — both profiles seed the
+/// same tree — so today this rule decides nothing. It is kept exactly as it is
+/// because it is the safe direction to be wrong in, and because the moment any
+/// value becomes profile-dependent again, guessing [`Profile::Dev`] on a
+/// production device would be the expensive mistake.
 ///
 /// Blank lines and `#` comments are skipped, a value may be wrapped in single
 /// or double quotes, and a repeated key takes its last value, as a shell would.
@@ -509,9 +531,14 @@ mod tests {
     }
 
     // R3 — the profile really drives the seeded value, not just `read_profile`.
+    // Both profiles now seed SSH OFF, so this is the assertion that the dev
+    // image does not open SSH either: persistent access is a public key in
+    // `access.ssh.authorizedKeys`, and the transient root password is set at
+    // runtime. The prod side is unchanged and deliberately still asserted —
+    // dropping it would leave the fail-closed direction untested.
     #[test]
-    fn dev_profile_seeds_ssh_on_and_prod_seeds_it_off() {
-        for (body, expected) in [("MOS_PROFILE=dev\n", true), ("MOS_PROFILE=prod\n", false)] {
+    fn neither_profile_seeds_ssh_on() {
+        for (body, expected) in [("MOS_PROFILE=dev\n", false), ("MOS_PROFILE=prod\n", false)] {
             let dir = TempDir::new().expect("tempdir");
             let store = store_in(dir.path());
             let profile = write_profile(dir.path(), body);
@@ -520,7 +547,8 @@ mod tests {
             ensure_provisioned(&store, dir.path(), &profile, &mut settings).expect("seed");
             assert_eq!(
                 settings.access.ssh.enabled, expected,
-                "profile {body:?} must seed ssh.enabled = {expected}"
+                "profile {body:?} must seed ssh.enabled = {expected}; SSH is off on \
+                 a fresh device whatever image it booted"
             );
             assert_eq!(
                 store.load().expect("reload").access.ssh.enabled,

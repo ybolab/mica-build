@@ -751,6 +751,112 @@ else
     esac
 fi
 
+# --- every external binary the /usr/lib/mos boot scripts invoke --------------
+# These scripts run at boot, as root, outside any package's dependency graph, so
+# nothing in the image declares what they need. The dependency is real: the
+# newline-safety fix in mos-shadow-reconcile made it call `od`, and neither
+# Dockerfile installs coreutils explicitly — it arrives with the base image and
+# would disappear without a word if the base were ever slimmed.
+#
+# v1 ships only the hwinit-* scripts (mos-shadow-reconcile and the seed scripts
+# are v2-only), so this set is smaller here than in os/verify-image-v2.sh — but
+# the property being asserted, and the way it breaks, are identical.
+#
+# The extractor is deliberately conservative: it takes command names at COMMAND
+# POSITION only. Commands invoked through the scripts' own `run`/`have` wrappers
+# are NOT in this set, and must not be — mos-health uses `have X ||` precisely
+# to mark curl and wget optional.
+SH_BUILTINS=" : . [ alias bg break cd continue echo eval exec exit export false fg getopts hash jobs local printf pwd read readonly return set shift test times trap true type ulimit umask unalias unset wait command source "
+SH_KEYWORDS=" if then else elif fi for while until do done case esac in function ! "
+
+# Command names at command position in one shell script.
+mos_script_commands() {
+    local f="$1" funcs
+    funcs=" $(sed -n 's/^[[:space:]]*\([A-Za-z_][A-Za-z0-9_]*\)[[:space:]]*()[[:space:]]*{.*/\1/p' "${f}" | tr '\n' ' ') "
+    # Join line continuations, drop backslash escapes (so an escaped backtick in
+    # a message is not mistaken for a command substitution), strip comments,
+    # remove `case` patterns, split on command substitution and on ; | &, strip
+    # quoted spans, then take the first word of what is left.
+    sed -e :a -e '/\\$/N; s/\\\n/ /; ta' "${f}" |
+        sed -e 's/\\.//g' |
+        sed -E -e 's/(^|[[:space:]])#.*$/\1/' |
+        awk '
+            /(^|[[:space:]])case[[:space:]].*[[:space:]]in[[:space:]]*$/ { d++; print; next }
+            /(^|[[:space:]])esac([[:space:]]|$)/ { if (d > 0) d--; print; next }
+            d > 0 { sub(/^[[:space:]]*[^()]*\)/, "") } { print }' |
+        sed -e 's/\$(/\n/g' -e 's/`/\n/g' |
+        sed -e "s/'[^']*'//g" -e 's/"[^"]*"//g' |
+        sed -e 's/[;|&]/\n/g' -e 's/^[[:space:]]*//' |
+        sed -E ':a; s/^(if|then|else|elif|do|while|until|!|\{)[[:space:]]+//; ta' |
+        awk '{ print $1 }' |
+        while read -r w; do
+            [ -n "${w}" ] || continue
+            case " ${SH_BUILTINS} ${SH_KEYWORDS} ${funcs} " in *" ${w} "*) continue ;; esac
+            case "${w}" in
+            *=* | \$* | -* | [0-9]* | \** | \[*) continue ;;
+            *[!A-Za-z0-9_./+-]*) continue ;;
+            /* | [A-Za-z_]*) echo "${w}" ;;
+            esac
+        done
+}
+
+# Does this command name resolve to a real file inside the ext4 rootfs? Symlinks
+# are chased WITHIN the image (an absolute target resolves against the image
+# root, not the host), so a dangling /etc/alternatives entry fails.
+ext_resolves_cmd() {
+    local c="$1" p="" d st hops=0 t
+    case "${c}" in
+    /*) p="${c}" ;;
+    *)
+        for d in /usr/bin /bin /usr/sbin /sbin; do
+            if dbg "stat ${d}/${c}" | grep -q "Inode:"; then
+                p="${d}/${c}"
+                break
+            fi
+        done
+        ;;
+    esac
+    [ -n "${p}" ] || return 1
+    while [ "${hops}" -lt 8 ]; do
+        st="$(dbg "stat ${p}")"
+        echo "${st}" | grep -q "Inode:" || return 1
+        echo "${st}" | grep -q "Type: symlink" || break
+        t="$(echo "${st}" | sed -n 's/.*link dest: "\(.*\)".*/\1/p' | head -n1)"
+        [ -n "${t}" ] || return 1
+        case "${t}" in
+        /*) p="${t}" ;;
+        *) p="$(dirname "${p}")/${t}" ;;
+        esac
+        hops=$((hops + 1))
+    done
+    dbg "stat ${p}" | grep -q "Type: regular"
+}
+
+# Extract the scripts out of the ext4 so the same extractor can read them.
+mkdir -p "${TMP}/mos-scripts"
+for n in $(dbg "ls -p /usr/lib/mos" | awk -F/ 'NF >= 7 && $6 != "." && $6 != ".." { print $6 }'); do
+    dbg "cat /usr/lib/mos/${n}" >"${TMP}/mos-scripts/${n}" 2>/dev/null || true
+done
+mos_cmds="$(for f in "${TMP}/mos-scripts"/*; do
+    [ -f "${f}" ] || continue
+    case "$(head -c 2 "${f}" 2>/dev/null)" in '#!') ;; *) continue ;; esac
+    mos_script_commands "${f}"
+done | sort -u)"
+mos_cmd_n="$(printf '%s\n' "${mos_cmds}" | grep -c . || true)"
+mos_cmd_missing=""
+for c in ${mos_cmds}; do
+    ext_resolves_cmd "${c}" || mos_cmd_missing="${mos_cmd_missing} ${c}"
+done
+# A vacuity guard: if the extractor stops seeing commands, an empty set would
+# make the check below pass while proving nothing at all.
+if [ "${mos_cmd_n}" -lt 5 ]; then
+    fail "only ${mos_cmd_n} command names were extracted from the /usr/lib/mos boot scripts; the extractor is not reading them, so the binary-presence check would pass vacuously"
+elif [ -z "${mos_cmd_missing}" ]; then
+    pass "all ${mos_cmd_n} external commands invoked at command position by the /usr/lib/mos boot scripts resolve in the packed rootfs ($(printf '%s' "${mos_cmds}" | tr '\n' ' '))"
+else
+    fail "the /usr/lib/mos boot scripts invoke commands that are NOT in the packed rootfs:${mos_cmd_missing}. These scripts run at boot as root with no package dependency declaring them; a missing one fails at runtime"
+fi
+
 # ===========================================================================
 # M5: connd userland, image profile, and the crypt(3) format
 # ===========================================================================
@@ -966,25 +1072,29 @@ dev | prod)
     ;;
 esac
 
-# The end-to-end property, in both directions: dev implies ssh.service IS
-# enabled in the image, prod implies it is NOT. mosd seeds access.ssh.enabled
-# from this same file, so an image whose static enablement disagreed with its
-# profile would have sshd listening before mosd ever got to decide.
-ssh_enabled=0
-dbg "stat /etc/systemd/system/multi-user.target.wants/ssh.service" | grep -q "Inode:" && ssh_enabled=1
+# ssh.service must NOT be enabled in the image, on EITHER profile.
+#
+# This assertion used to be profile-dependent and pointed the other way: dev
+# shipped sshd enabled. It no longer does. mosd seeds access.ssh.enabled false
+# for dev and prod alike (Profile::ssh_enabled_default), so an image that
+# shipped ssh.service enabled would be listening from early boot until mosd's
+# first reconcile stopped it — precisely the window the setting exists to close.
+# Every *.wants directory is scanned, not just multi-user.target.wants, so an
+# enablement that came back through a different target is still caught.
+ssh_wants=""
+for wd in $(dbg "ls -p /etc/systemd/system" | awk -F/ 'NF >= 7 && $6 ~ /\.wants$/ { print $6 }'); do
+    for u in ssh.service sshd.service; do
+        if dbg "stat /etc/systemd/system/${wd}/${u}" | grep -q "Inode:"; then
+            ssh_wants="${ssh_wants} /etc/systemd/system/${wd}/${u}"
+        fi
+    done
+done
 case "${MOS_PROFILE_VALUE}" in
-dev)
-    if [ "${ssh_enabled}" -eq 1 ]; then
-        pass "profile is dev and ssh.service IS enabled in the image, which is what mosd will seed access.ssh.enabled to"
+dev | prod)
+    if [ -z "${ssh_wants}" ]; then
+        pass "profile is ${MOS_PROFILE_VALUE} and ssh.service is NOT enabled in the image, so sshd never listens before mosd has decided (both profiles seed access.ssh.enabled false)"
     else
-        fail "profile is dev but ssh.service is NOT enabled in the image; mosd will seed access.ssh.enabled true and the dev SSH path is still gone until its first reconcile"
-    fi
-    ;;
-prod)
-    if [ "${ssh_enabled}" -eq 0 ]; then
-        pass "profile is prod and ssh.service is NOT enabled in the image, so sshd never listens before mosd has decided"
-    else
-        fail "profile is prod but ssh.service IS enabled in the image; sshd would be listening from early boot until mosd's reconciler stops it"
+        fail "profile is ${MOS_PROFILE_VALUE} but ssh.service IS enabled in the image (${ssh_wants}); sshd would be listening from early boot until mosd's reconciler stopped it, and both profiles now seed access.ssh.enabled false"
     fi
     ;;
 *)
@@ -992,22 +1102,49 @@ prod)
     ;;
 esac
 
+# --- ssh.service must spare established sessions across a restart ------------
+# The sshd drop-in mosd renders changes whenever a transient root password is
+# set or cleared, and a changed drop-in restarts ssh.service. Under the systemd
+# default KillMode=control-group a restart kills every process in the unit's
+# cgroup, including the forked session CARRYING the operator's SSH connection —
+# so setting a password over SSH would disconnect the operator doing it.
+# Debian's openssh-server ships KillMode=process, which kills only the listener.
+# That is an inherited property of a packaged unit this image does not author,
+# so it is asserted rather than assumed.
+ssh_unit_text="$(dbg "cat /usr/lib/systemd/system/ssh.service")"
+if [ -z "${ssh_unit_text}" ]; then
+    fail "/usr/lib/systemd/system/ssh.service is not readable in the image, so no claim can be made about KillMode"
+elif printf '%s\n' "${ssh_unit_text}" | grep -qE '^KillMode=process[[:space:]]*$'; then
+    pass "ssh.service sets KillMode=process, so restarting it to pick up a re-rendered drop-in does not kill established SSH sessions"
+else
+    fail "ssh.service does NOT set KillMode=process (found '$(printf '%s\n' "${ssh_unit_text}" | sed -n 's/^KillMode=//p' | tail -n1)'; systemd defaults to control-group). Re-rendering the sshd drop-in restarts the unit, so an operator who sets a transient root password while logged in over SSH would disconnect themselves"
+fi
+
+# NOT asserted here, and v2-only by nature: the AuthorizedKeysFile drop-in, the
+# mos-shadow-reconcile unit and its MOS_SHADOW_* override ban. v1 ships none of
+# them. Its root is a writable ext4 with no A/B update and no STATE binds, so
+# there is no etc-ssh.mount for authorised keys to survive across and no
+# /etc/shadow redirection to reconcile. See os/verify-image-v2.sh for those.
+
 # --- the shadow hash format, against the libcrypt PACKED IN THIS IMAGE ------
 # No Rust test can make this assertion: the test host is x86 and the library is
 # an arm64 object inside the image. mosd writes a crypt(3) hash into the root
 # account's shadow entry and pam_unix verifies it through this exact libcrypt;
 # a format the library cannot parse rejects every password while the file, the
 # unit and the reconciler all look perfectly healthy.
-# The prefix is READ from the assertion sshd.rs pins on its own output, so the
-# two cannot drift; requiring exactly one keeps that source unambiguous.
-SSHD_SRC="${REPO_ROOT}/mosd/mosd/src/reconciler/sshd.rs"
-crypt_prefixes="$(grep -oE 'starts_with\("\$[0-9a-zA-Z]+\$' "${SSHD_SRC}" 2>/dev/null | grep -oE '\$[0-9a-zA-Z]+\$' | sort -u || true)"
+# The prefix is READ from the assertion transient.rs pins on its own output, so
+# the two cannot drift; requiring exactly one keeps that source unambiguous.
+# transient.rs and not sshd.rs: RFCT-033 moved the code that writes the root
+# hash out of the reconciler into the transient-password module, and the pin
+# moved with it.
+CRYPT_SRC="${REPO_ROOT}/mosd/mosd/src/transient.rs"
+crypt_prefixes="$(grep -oE 'starts_with\("\$[0-9a-zA-Z]+\$' "${CRYPT_SRC}" 2>/dev/null | grep -oE '\$[0-9a-zA-Z]+\$' | sort -u || true)"
 crypt_n="$(printf '%s\n' "${crypt_prefixes}" | grep -c . || true)"
 CRYPT_PREFIX="$(printf '%s\n' "${crypt_prefixes}" | head -n1)"
 if [ "${crypt_n}" = "1" ]; then
-    pass "sshd.rs pins exactly one crypt(3) prefix for the shadow field: ${CRYPT_PREFIX}"
+    pass "transient.rs pins exactly one crypt(3) prefix for the shadow field: ${CRYPT_PREFIX}"
 else
-    fail "sshd.rs pins ${crypt_n} distinct crypt(3) prefixes ($(printf '%s' "${crypt_prefixes}" | tr '\n' ' ')); the format the image must support is ambiguous, so the libcrypt check below cannot mean anything"
+    fail "transient.rs pins ${crypt_n} distinct crypt(3) prefixes ($(printf '%s' "${crypt_prefixes}" | tr '\n' ' ')); the format the image must support is ambiguous, so the libcrypt check below cannot mean anything"
 fi
 
 LIBCRYPT_LINK="/usr/lib/aarch64-linux-gnu/libcrypt.so.1"

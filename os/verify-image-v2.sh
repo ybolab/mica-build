@@ -1471,6 +1471,90 @@ sq_grep /usr/lib/mos/mos-seed-state \
     '^/usr/lib/mos/mos-shadow-reconcile /mnt/state/mos/shadow$' \
     "mos-seed-state seeds the STATE shadow directly at /mnt/state/mos/shadow (var-lib-mos.mount is not up yet on first boot)"
 
+# The unit being present and enabled is asserted above. That is not the same as
+# it DOING anything: what makes the root password transient is that this script
+# clears the marker on every boot. Assert the script the unit runs actually
+# carries that logic, so a reconciler stripped back to the account-sync path
+# would fail here rather than silently make a "transient" password permanent.
+REC_SCRIPT="${ROOT}/usr/lib/mos/mos-shadow-reconcile"
+rec_marker="$(sed -n 's/^MARKER=.*\/\([a-z-]*\)".*/\1/p' "${REC_SCRIPT}" 2>/dev/null | head -n1)"
+if [ ! -f "${REC_SCRIPT}" ]; then
+    fail "/usr/lib/mos/mos-shadow-reconcile is not in the image, so the transient-password clearing cannot be checked"
+elif [ -z "${rec_marker}" ]; then
+    fail "mos-shadow-reconcile names no transient-password marker file; nothing would ever clear a transient root password and it would survive every reboot"
+elif ! grep -qE '^[[:space:]]*rm -f "\$MARKER"' "${REC_SCRIPT}"; then
+    fail "mos-shadow-reconcile names the marker '${rec_marker}' but never removes it, so a transient root password would be re-applied on every boot instead of being cleared"
+else
+    pass "mos-shadow-reconcile clears the transient-password marker '${rec_marker}' on every boot, which is what makes the password transient"
+fi
+
+# The two environment overrides that let os/shadow-reconcile-test.sh drive the
+# REAL script against fixtures. They are safe only while nothing in the image
+# sets them: a stray drop-in pointing MOS_SHADOW_PASSWD or MOS_SHADOW_FACTORY
+# elsewhere would silently reconcile root's credentials against the wrong files,
+# and every other check here would still pass. Checked in the shipped unit AND
+# in both drop-in directories, since a drop-in overrides the unit invisibly.
+REC_OVERRIDES='MOS_SHADOW_PASSWD|MOS_SHADOW_FACTORY'
+rec_env_hits=""
+for envf in "${ROOT}/etc/systemd/system/mos-shadow-reconcile.service" \
+    "${ROOT}/etc/systemd/system/mos-shadow-reconcile.service.d/"*.conf \
+    "${ROOT}/usr/lib/systemd/system/mos-shadow-reconcile.service.d/"*.conf; do
+    [ -f "${envf}" ] || continue
+    if grep -qE "^[[:space:]]*Environment(File)?=.*(${REC_OVERRIDES})" "${envf}"; then
+        rec_env_hits="${rec_env_hits} ${envf#"${ROOT}"}"
+    fi
+done
+if [ -z "${rec_env_hits}" ]; then
+    pass "no Environment=/EnvironmentFile= in mos-shadow-reconcile.service or its drop-in dirs names MOS_SHADOW_PASSWD or MOS_SHADOW_FACTORY (the test-harness overrides stay inert in the image)"
+else
+    fail "mos-shadow-reconcile.service is given a MOS_SHADOW_PASSWD/MOS_SHADOW_FACTORY override by:${rec_env_hits}. Those exist so the offline test harness can run the real script; in the image they redirect where root's credentials are reconciled from and to"
+fi
+
+# --- the AuthorizedKeysFile drop-in (v2 only) --------------------------------
+# v2-only on purpose: v1 ships no sshd_config.d drop-in and no etc-ssh.mount.
+# Its root is a writable ext4 with no A/B update, so there is no STATE bind for
+# authorised keys to survive across and nothing here that could be asserted.
+SSHD_DROPIN=/etc/ssh/sshd_config.d/05-mos-authorized-keys.conf
+AK_EXPECT='/etc/ssh/authorized_keys.d/%u'
+sq_regular "${SSHD_DROPIN}"
+ak_value="$(sed -n 's/^[[:space:]]*AuthorizedKeysFile[[:space:]]\{1,\}\(.*[^[:space:]]\)[[:space:]]*$/\1/p' \
+    "${ROOT}${SSHD_DROPIN}" 2>/dev/null | tail -n1)"
+if [ "${ak_value}" = "${AK_EXPECT}" ]; then
+    pass "${SSHD_DROPIN} sets AuthorizedKeysFile ${AK_EXPECT}, the file mosd renders per user"
+else
+    fail "${SSHD_DROPIN} sets AuthorizedKeysFile to '${ak_value:-<nothing>}', expected '${AK_EXPECT}'; sshd would read keys from somewhere mosd does not write, so no installed key would ever grant access"
+fi
+
+# The path it names has to sit inside the directory etc-ssh.mount binds from
+# STATE, or the keys are written into the read-only squashfs view of /etc and
+# vanish on the next A/B update. Where=/What= are READ from the unit rather than
+# restated, so retargeting the mount cannot leave this passing for a stale path.
+ETC_SSH_UNIT="${ROOT}/etc/systemd/system/etc-ssh.mount"
+es_where="$(sed -n 's/^Where=//p' "${ETC_SSH_UNIT}" 2>/dev/null | tail -n1)"
+es_what="$(sed -n 's/^What=//p' "${ETC_SSH_UNIT}" 2>/dev/null | tail -n1)"
+if [ ! -f "${ETC_SSH_UNIT}" ]; then
+    fail "etc-ssh.mount is not in the image, so authorised keys have no STATE-backed home and would be lost by every update"
+elif [ -z "${es_where}" ] || [ "${ak_value#"${es_where}"/}" = "${ak_value}" ]; then
+    fail "the AuthorizedKeysFile path '${ak_value}' is not inside '${es_where:-<no Where=>}', the directory etc-ssh.mount binds; keys written there would land in the read-only image view of /etc and not survive an A/B update"
+elif [ "${es_what#/mnt/state/}" = "${es_what}" ]; then
+    fail "etc-ssh.mount binds ${es_where} from '${es_what}', which is not under /mnt/state; authorised keys would not be on the STATE partition and would not survive an A/B update"
+else
+    pass "the AuthorizedKeysFile path ${ak_value} is inside ${es_where}, which etc-ssh.mount binds from ${es_what} on STATE, so installed keys survive an A/B update"
+fi
+
+# Exactly one shipped drop-in may emit AuthorizedKeysFile. sshd keeps the FIRST
+# value it reads for this keyword and reads sshd_config.d in lexical order, so a
+# second file emitting it would make the winner depend on filename ordering.
+ak_emitters="$(grep -lE '^[[:space:]]*AuthorizedKeysFile[[:space:]]' \
+    "${ROOT}/etc/ssh/sshd_config" "${ROOT}/etc/ssh/sshd_config.d/"*.conf 2>/dev/null |
+    sed "s|^${ROOT}||" | sort || true)"
+ak_n="$(printf '%s\n' "${ak_emitters}" | grep -c . || true)"
+if [ "${ak_n}" = "1" ] && [ "${ak_emitters}" = "${SSHD_DROPIN}" ]; then
+    pass "${SSHD_DROPIN} is the ONLY shipped sshd config emitting AuthorizedKeysFile, so which value wins cannot depend on filename ordering"
+else
+    fail "${ak_n} shipped sshd config files emit AuthorizedKeysFile ($(printf '%s' "${ak_emitters}" | tr '\n' ' ')); sshd keeps the first value it reads in lexical order, so the effective authorised-keys path depends on filenames"
+fi
+
 # --- M5 (R5): no baked credential ---
 # What this proves: the shadow file that SHIPS carries no usable root password,
 # so a signed rootfs — byte-identical on every device in the fleet — cannot
@@ -1493,6 +1577,101 @@ else
         fail "the packed rootfs carries a usable root password hash in ${FACTORY_SHADOW}. A signed rootfs is byte-identical on every device, so this is a fleet-wide shared secret. Cause: the ROOT_PASSWORD build arg was set at build time; unset it — the per-device password is provisioned by mosd at runtime"
         ;;
     esac
+fi
+
+# --- every external binary the /usr/lib/mos boot scripts invoke --------------
+# These scripts run at boot, as root, outside any package's dependency graph, so
+# nothing in the image declares what they need. The dependency is real: the
+# newline-safety fix in mos-shadow-reconcile made it call `od`, and neither
+# Dockerfile installs coreutils explicitly — it arrives with the base image and
+# would disappear without a word if the base were ever slimmed. A missing binary
+# here is a boot-time failure in the code that reconciles root's credentials.
+#
+# The extractor is deliberately conservative: it takes command names at COMMAND
+# POSITION only. Commands the scripts invoke through their own `run`/`have`
+# wrappers (busctl, rauc, systemctl, curl, wget) are NOT in this set, and must
+# not be — mos-health uses `have X ||` precisely to mark curl and wget optional,
+# and asserting those exist would be asserting the wrong thing.
+SH_BUILTINS=" : . [ alias bg break cd continue echo eval exec exit export false fg getopts hash jobs local printf pwd read readonly return set shift test times trap true type ulimit umask unalias unset wait command source "
+SH_KEYWORDS=" if then else elif fi for while until do done case esac in function ! "
+
+# Command names at command position in one shell script.
+mos_script_commands() {
+    local f="$1" funcs
+    funcs=" $(sed -n 's/^[[:space:]]*\([A-Za-z_][A-Za-z0-9_]*\)[[:space:]]*()[[:space:]]*{.*/\1/p' "${f}" | tr '\n' ' ') "
+    # Join line continuations, drop backslash escapes (so an escaped backtick in
+    # a message is not mistaken for a command substitution), strip comments,
+    # remove `case` patterns, split on command substitution and on ; | &, strip
+    # quoted spans, then take the first word of what is left.
+    sed -e :a -e '/\\$/N; s/\\\n/ /; ta' "${f}" |
+        sed -e 's/\\.//g' |
+        sed -E -e 's/(^|[[:space:]])#.*$/\1/' |
+        awk '
+            /(^|[[:space:]])case[[:space:]].*[[:space:]]in[[:space:]]*$/ { d++; print; next }
+            /(^|[[:space:]])esac([[:space:]]|$)/ { if (d > 0) d--; print; next }
+            d > 0 { sub(/^[[:space:]]*[^()]*\)/, "") } { print }' |
+        sed -e 's/\$(/\n/g' -e 's/`/\n/g' |
+        sed -e "s/'[^']*'//g" -e 's/"[^"]*"//g' |
+        sed -e 's/[;|&]/\n/g' -e 's/^[[:space:]]*//' |
+        sed -E ':a; s/^(if|then|else|elif|do|while|until|!|\{)[[:space:]]+//; ta' |
+        awk '{ print $1 }' |
+        while read -r w; do
+            [ -n "${w}" ] || continue
+            case " ${SH_BUILTINS} ${SH_KEYWORDS} ${funcs} " in *" ${w} "*) continue ;; esac
+            case "${w}" in
+            *=* | \$* | -* | [0-9]* | \** | \[*) continue ;;
+            *[!A-Za-z0-9_./+-]*) continue ;;
+            /* | [A-Za-z_]*) echo "${w}" ;;
+            esac
+        done
+}
+
+# Does this command name resolve to a real file inside the packed root? Symlinks
+# are chased WITHIN the image (an absolute target resolves against ROOT, not the
+# host), so a dangling /etc/alternatives entry fails rather than passes.
+sq_resolves_cmd() {
+    local c="$1" p="" d t hops=0
+    case "${c}" in
+    /*) p="${ROOT}${c}" ;;
+    *)
+        for d in /usr/bin /bin /usr/sbin /sbin; do
+            if [ -e "${ROOT}${d}/${c}" ] || [ -L "${ROOT}${d}/${c}" ]; then
+                p="${ROOT}${d}/${c}"
+                break
+            fi
+        done
+        ;;
+    esac
+    [ -n "${p}" ] || return 1
+    while [ -L "${p}" ] && [ "${hops}" -lt 8 ]; do
+        t="$(readlink "${p}")"
+        case "${t}" in
+        /*) p="${ROOT}${t}" ;;
+        *) p="$(dirname "${p}")/${t}" ;;
+        esac
+        hops=$((hops + 1))
+    done
+    [ -f "${p}" ]
+}
+
+mos_cmds="$(for f in "${ROOT}"/usr/lib/mos/*; do
+    [ -f "${f}" ] || continue
+    case "$(head -c 2 "${f}" 2>/dev/null)" in '#!') ;; *) continue ;; esac
+    mos_script_commands "${f}"
+done | sort -u)"
+mos_cmd_n="$(printf '%s\n' "${mos_cmds}" | grep -c . || true)"
+mos_cmd_missing=""
+for c in ${mos_cmds}; do
+    sq_resolves_cmd "${c}" || mos_cmd_missing="${mos_cmd_missing} ${c}"
+done
+# A vacuity guard: if the extractor stops seeing commands, an empty set would
+# make the check below pass while proving nothing at all.
+if [ "${mos_cmd_n}" -lt 10 ]; then
+    fail "only ${mos_cmd_n} command names were extracted from the /usr/lib/mos boot scripts; the extractor is not reading them, so the binary-presence check would pass vacuously"
+elif [ -z "${mos_cmd_missing}" ]; then
+    pass "all ${mos_cmd_n} external commands invoked at command position by the /usr/lib/mos boot scripts resolve in the packed rootfs ($(printf '%s' "${mos_cmds}" | tr '\n' ' '))"
+else
+    fail "the /usr/lib/mos boot scripts invoke commands that are NOT in the packed rootfs:${mos_cmd_missing}. These scripts run at boot as root with no package dependency declaring them; a missing one fails at runtime, in the code that reconciles root's credentials"
 fi
 
 # --- M4: /var fill-up containment ---
@@ -1790,25 +1969,24 @@ dev | prod)
     ;;
 esac
 
-# The end-to-end property, in both directions: dev implies ssh.service IS
-# enabled in the image, prod implies it is NOT. mosd seeds access.ssh.enabled
-# from this same file, so an image whose static enablement disagreed with its
-# profile would have sshd listening before mosd ever got to decide.
-ssh_enabled=0
-[ -n "$(find "${ROOT}/etc/systemd/system" -name ssh.service -path '*.wants/*' 2>/dev/null || true)" ] && ssh_enabled=1
+# ssh.service must NOT be enabled in the image, on EITHER profile.
+#
+# This assertion used to be profile-dependent and pointed the other way: dev
+# shipped sshd enabled. It no longer does. mosd seeds access.ssh.enabled false
+# for dev and prod alike (Profile::ssh_enabled_default), so an image that
+# shipped ssh.service enabled would be listening from early boot until mosd's
+# first reconcile stopped it — precisely the window the setting exists to close.
+# The profile value is still read from the packed image, so this is checked for
+# whichever profile was actually built, and a returning enablement symlink under
+# any *.wants directory fails it.
+ssh_wants="$(find "${ROOT}/etc/systemd/system" "${ROOT}/usr/lib/systemd/system" \
+    \( -name ssh.service -o -name sshd.service \) -path '*.wants/*' 2>/dev/null || true)"
 case "${MOS_PROFILE_VALUE}" in
-dev)
-    if [ "${ssh_enabled}" -eq 1 ]; then
-        pass "profile is dev and ssh.service IS enabled in the image, which is what mosd will seed access.ssh.enabled to"
+dev | prod)
+    if [ -z "${ssh_wants}" ]; then
+        pass "profile is ${MOS_PROFILE_VALUE} and ssh.service is NOT enabled in the image, so sshd never listens before mosd has decided (both profiles seed access.ssh.enabled false)"
     else
-        fail "profile is dev but ssh.service is NOT enabled in the image; mosd will seed access.ssh.enabled true and the dev SSH path is still gone until its first reconcile"
-    fi
-    ;;
-prod)
-    if [ "${ssh_enabled}" -eq 0 ]; then
-        pass "profile is prod and ssh.service is NOT enabled in the image, so sshd never listens before mosd has decided"
-    else
-        fail "profile is prod but ssh.service IS enabled in the image; sshd would be listening from early boot until mosd's reconciler stops it"
+        fail "profile is ${MOS_PROFILE_VALUE} but ssh.service IS enabled in the image ($(printf '%s' "${ssh_wants}" | sed "s|${ROOT}||g" | tr '\n' ' ')); sshd would be listening from early boot until mosd's reconciler stopped it, and both profiles now seed access.ssh.enabled false"
     fi
     ;;
 *)
@@ -1816,22 +1994,43 @@ prod)
     ;;
 esac
 
+# --- ssh.service must spare established sessions across a restart ------------
+# The sshd drop-in mosd renders changes whenever a transient root password is
+# set or cleared, and a changed drop-in restarts ssh.service. Under the systemd
+# default KillMode=control-group a restart kills every process in the unit's
+# cgroup, including the forked session that is CARRYING the operator's SSH
+# connection — so setting a password over SSH would disconnect the operator
+# doing it. Debian's openssh-server ships KillMode=process, which kills only the
+# listener. That is an inherited property of a packaged unit this image does not
+# author, so it is asserted here rather than assumed.
+SSH_UNIT="${ROOT}/usr/lib/systemd/system/ssh.service"
+if [ ! -f "${SSH_UNIT}" ]; then
+    fail "/usr/lib/systemd/system/ssh.service is not in the image, so no claim can be made about KillMode"
+elif grep -qE '^KillMode=process[[:space:]]*$' "${SSH_UNIT}"; then
+    pass "ssh.service sets KillMode=process, so restarting it to pick up a re-rendered drop-in does not kill established SSH sessions"
+else
+    fail "ssh.service does NOT set KillMode=process (found '$(sed -n 's/^KillMode=//p' "${SSH_UNIT}" | tail -n1)'; systemd defaults to control-group). Re-rendering the sshd drop-in restarts the unit, so an operator who sets a transient root password while logged in over SSH would disconnect themselves"
+fi
+
 # --- the shadow hash format, against the libcrypt PACKED IN THIS IMAGE ------
 # No Rust test can make this assertion: the test host is x86 and the library is
 # an arm64 object inside the image. mosd writes a crypt(3) hash into the root
 # account's shadow entry and pam_unix verifies it through this exact libcrypt;
 # a format the library cannot parse rejects every password while the file, the
 # unit and the reconciler all look perfectly healthy.
-# The prefix is READ from the assertion sshd.rs pins on its own output, so the
-# two cannot drift; requiring exactly one keeps that source unambiguous.
-SSHD_SRC="${REPO_ROOT}/mosd/mosd/src/reconciler/sshd.rs"
-crypt_prefixes="$(grep -oE 'starts_with\("\$[0-9a-zA-Z]+\$' "${SSHD_SRC}" 2>/dev/null | grep -oE '\$[0-9a-zA-Z]+\$' | sort -u || true)"
+# The prefix is READ from the assertion transient.rs pins on its own output, so
+# the two cannot drift; requiring exactly one keeps that source unambiguous.
+# transient.rs and not sshd.rs: RFCT-033 moved the code that writes the root
+# hash out of the reconciler into the transient-password module, and the pin
+# moved with it.
+CRYPT_SRC="${REPO_ROOT}/mosd/mosd/src/transient.rs"
+crypt_prefixes="$(grep -oE 'starts_with\("\$[0-9a-zA-Z]+\$' "${CRYPT_SRC}" 2>/dev/null | grep -oE '\$[0-9a-zA-Z]+\$' | sort -u || true)"
 crypt_n="$(printf '%s\n' "${crypt_prefixes}" | grep -c . || true)"
 CRYPT_PREFIX="$(printf '%s\n' "${crypt_prefixes}" | head -n1)"
 if [ "${crypt_n}" = "1" ]; then
-    pass "sshd.rs pins exactly one crypt(3) prefix for the shadow field: ${CRYPT_PREFIX}"
+    pass "transient.rs pins exactly one crypt(3) prefix for the shadow field: ${CRYPT_PREFIX}"
 else
-    fail "sshd.rs pins ${crypt_n} distinct crypt(3) prefixes ($(printf '%s' "${crypt_prefixes}" | tr '\n' ' ')); the format the image must support is ambiguous, so the libcrypt check below cannot mean anything"
+    fail "transient.rs pins ${crypt_n} distinct crypt(3) prefixes ($(printf '%s' "${crypt_prefixes}" | tr '\n' ' ')); the format the image must support is ambiguous, so the libcrypt check below cannot mean anything"
 fi
 
 LIBCRYPT_LINK="/usr/lib/aarch64-linux-gnu/libcrypt.so.1"
