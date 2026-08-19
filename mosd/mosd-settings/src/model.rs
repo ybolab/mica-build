@@ -48,7 +48,7 @@ impl Default for Settings {
 #[derive(Debug, Clone, PartialEq, Default, serde::Serialize, serde::Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct AccessSettings {
-    /// Web admin credentials; absent until webd sets them.
+    /// Web admin credentials; absent until apid sets them.
     #[serde(rename = "webAdmin", default, skip_serializing_if = "Option::is_none")]
     pub web_admin: Option<WebAdminSettings>,
     /// SSH channel policy.
@@ -62,7 +62,7 @@ pub struct AccessSettings {
     pub device: DeviceCredentialSettings,
 }
 
-/// Web admin credentials, written by webd.
+/// Web admin credentials, written by apid.
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct WebAdminSettings {

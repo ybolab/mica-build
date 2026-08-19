@@ -119,12 +119,12 @@ impl Migration for MigrateV0ToV1 {
     }
 }
 
-/// v1 -> v2: adds the webd-owned `access` subtree.
+/// v1 -> v2: adds the apid-owned `access` subtree.
 ///
 /// `up` stamps `schema_version = 2` and adds an empty `access` table when
 /// absent; `down` removes the `access` key entirely. Rolling back to v1 drops
 /// the web admin password, which is acceptable because v1 software has no
-/// webd.
+/// apid.
 pub struct MigrateV1ToV2;
 
 impl Migration for MigrateV1ToV2 {

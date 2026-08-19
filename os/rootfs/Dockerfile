@@ -205,13 +205,13 @@ RUN if [ "$WITH_MOSD" = "1" ] && [ -f /tmp/mosd/mosd ]; then \
                /etc/systemd/system/multi-user.target.wants/mosd.service && \
         test -L /etc/systemd/system/multi-user.target.wants/mosd.service; \
     fi && \
-    if [ "$WITH_MOSD" = "1" ] && [ -f /tmp/mosd/webd ]; then \
-        install -m 0755 /tmp/mosd/webd /usr/bin/webd && \
-        install -m 0644 /tmp/mosd/webd.service /usr/lib/systemd/system/webd.service && \
+    if [ "$WITH_MOSD" = "1" ] && [ -f /tmp/mosd/apid ]; then \
+        install -m 0755 /tmp/mosd/apid /usr/bin/apid && \
+        install -m 0644 /tmp/mosd/apid.service /usr/lib/systemd/system/apid.service && \
         mkdir -p /etc/systemd/system/multi-user.target.wants && \
-        ln -sf /usr/lib/systemd/system/webd.service \
-               /etc/systemd/system/multi-user.target.wants/webd.service && \
-        test -L /etc/systemd/system/multi-user.target.wants/webd.service; \
+        ln -sf /usr/lib/systemd/system/apid.service \
+               /etc/systemd/system/multi-user.target.wants/apid.service && \
+        test -L /etc/systemd/system/multi-user.target.wants/apid.service; \
     fi && rm -rf /tmp/mosd
 
 # Board hardware init: generic best-effort oneshots (os/hwinit, board-agnostic
@@ -342,7 +342,7 @@ RUN set -e; \
              /rootfs/usr/lib/udev/rules.d/60-mos-*.rules \
              /rootfs/usr/lib/systemd/system/mos-*.service \
              /rootfs/usr/lib/systemd/system/mosd.service \
-             /rootfs/usr/lib/systemd/system/webd.service \
+             /rootfs/usr/lib/systemd/system/apid.service \
              /rootfs/usr/share/dbus-1/system.d/com.mos.mosd.conf \
              /rootfs/etc/systemd/network/*.network; do \
         if [ -e "$f" ]; then mos_paths="$mos_paths $f"; fi; \

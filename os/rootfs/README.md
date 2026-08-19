@@ -305,7 +305,7 @@ above and apply identically here) **plus**:
   slot good, and every update rolls back. 47 KB.
 - **`libubootenv-tool`** — provides `fw_printenv` / `fw_setenv`. RAUC's U-Boot
   backend needs it, and so does the first-boot machine-id oneshot (RFCT-015).
-- **`curl`** — the health gate's webd probe (`os/health/mos-health`) fetches
+- **`curl`** — the health gate's apid probe (`os/health/mos-health`) fetches
   `https://127.0.0.1/healthz`. It prefers `curl`, falls back to `wget`, and
   SKIPs when neither is present. `rauc` links libcurl but does not ship the
   binary, so without this package the gate reported green while covering two of
@@ -406,7 +406,7 @@ action.
 That contract is enforced, not just documented: the pack stage fails the build
 unless every precious path under `/var` is redirected onto STATE by an enabled
 bind mount whose mountpoint exists in the factory `/var`. Today that covers
-`/var/lib/mos` (mosd settings, webd credentials) and `/var/lib/bluetooth`
+`/var/lib/mos` (mosd settings, apid credentials) and `/var/lib/bluetooth`
 (pairing keys), plus an assertion that journald is `Storage=volatile` and that
 `/var/lib/dbus/machine-id` is a symlink rather than a baked per-image identity.
 The rule is: **identity, credentials, pairings and update state never live on

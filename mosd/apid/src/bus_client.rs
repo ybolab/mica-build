@@ -23,7 +23,7 @@ trait Mosd {
 /// Lazily-connected mosd client. The proxy is built on first use and cached;
 /// any call error drops the cache so the next request reconnects. mosd not
 /// being up yet therefore surfaces as per-request errors (502 pages), never
-/// as a webd crash.
+/// as an apid crash.
 pub struct BusSettings {
     bus: BusKind,
     proxy: Mutex<Option<MosdProxy<'static>>>,

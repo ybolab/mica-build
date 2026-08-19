@@ -348,7 +348,7 @@ fn json_path_get_navigates_a_live_state_tree() {
 // --- Schema v3: access / provisioning / wifi --------------------------------
 
 /// A realistic v2 document: non-default hostname, a static-addressed
-/// interface, and a webd-written admin hash.
+/// interface, and an apid-written admin hash.
 const V2_DOCUMENT: &str = concat!(
     "schema_version = 2\n",
     "hostname = \"edge-42\"\n\n",

@@ -5,10 +5,10 @@
 
 use serde_json::Value;
 
-/// The mosd operations webd needs, JSON in and out.
+/// The mosd operations apid needs, JSON in and out.
 ///
 /// The power actions are here rather than executed locally because mosd owns
-/// every system action: webd never spawns a process and never talks to
+/// every system action: apid never spawns a process and never talks to
 /// systemd itself.
 #[async_trait::async_trait]
 pub trait SettingsApi: Send + Sync {

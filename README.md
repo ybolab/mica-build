@@ -1,8 +1,10 @@
 # mos
 
 Embedded appliance operating system. Immutable Talos-derived OS core, per-board
-BSP artifacts, RAUC/Uptane A/B updates, local web management (webd), unified
+BSP artifacts, RAUC/Uptane A/B updates, local web management (apid), unified
 connectivity service (connd).
+
+`apid` is the API daemon; the web dashboard is what it serves.
 
 ## Layout
 
@@ -10,8 +12,8 @@ connectivity service (connd).
 mos/
 ├── docs/            project docs: PMA plans (docs/plan/), tasks (docs/task/), designs (docs/design/)
 ├── os/              systemd OS build: rootfs, image assembly, verification, boot, RAUC, layout
-├── mosd/            Rust workspace: mosd (management plane) + webd
-├── talos/           OS core (independent git repo): Talos fork — rootfs, machined, webd
+├── mosd/            Rust workspace: mosd (management plane) + apid
+├── talos/           OS core (independent git repo): Talos fork — rootfs, machined, apid
 ├── board/           one directory per supported board
 │   ├── cx3576/      CX3576-Z (Rockchip RK3576, arm64): U-Boot, kernel, firmware, Alpine demo
 │   └── x64/         generic x86_64 UEFI platform (QEMU/CI baseline, no BSP build)

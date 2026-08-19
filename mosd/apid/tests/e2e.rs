@@ -1,5 +1,5 @@
 //! End-to-end test: private `dbus-daemon --session` + real `mosd` + real
-//! `webd`, driven over HTTPS/HTTP with a real client.
+//! `apid`, driven over HTTPS/HTTP with a real client.
 //!
 //! Everything lives in tempdirs on ephemeral ports; `MOSD_DRY_RUN=1` keeps
 //! the host untouched. Skips gracefully when `dbus-daemon` is not installed.
@@ -146,17 +146,17 @@ async fn web_flow_end_to_end() -> anyhow::Result<()> {
             .spawn()?,
     );
 
-    let mut webd_child = Command::new(env!("CARGO_BIN_EXE_webd"))
+    let mut apid_child = Command::new(env!("CARGO_BIN_EXE_apid"))
         .env("DBUS_SESSION_BUS_ADDRESS", &address)
-        .env("WEBD_BUS", "session")
-        .env("WEBD_STATE_DIR", dir.path().join("webd"))
-        .env("WEBD_HTTPS_ADDR", "127.0.0.1:0")
-        .env("WEBD_HTTP_ADDR", "127.0.0.1:0")
+        .env("APID_BUS", "session")
+        .env("APID_STATE_DIR", dir.path().join("apid"))
+        .env("APID_HTTPS_ADDR", "127.0.0.1:0")
+        .env("APID_HTTP_ADDR", "127.0.0.1:0")
         .stdout(Stdio::piped())
         .spawn()?;
-    let webd_stdout = webd_child.stdout.take().expect("piped stdout");
-    let _webd_guard = ChildGuard(webd_child);
-    let marker = wait_for_line(webd_stdout, "WEBD_LISTENING ")?;
+    let apid_stdout = apid_child.stdout.take().expect("piped stdout");
+    let _apid_guard = ChildGuard(apid_child);
+    let marker = wait_for_line(apid_stdout, "APID_LISTENING ")?;
     let field = |name: &str| {
         marker
             .split_whitespace()
@@ -205,7 +205,7 @@ async fn web_flow_end_to_end() -> anyhow::Result<()> {
         .and_then(|value| value.to_str().ok())
         .expect("setup should set a session cookie");
     assert!(
-        cookie.starts_with("webd_session="),
+        cookie.starts_with("apid_session="),
         "unexpected cookie: {cookie}"
     );
 
@@ -256,7 +256,7 @@ async fn web_flow_end_to_end() -> anyhow::Result<()> {
     let response = anon.get(format!("{https_base}/network")).send().await?;
     assert_eq!(response.status(), StatusCode::OK);
 
-    // Power actions travel webd -> D-Bus -> mosd. Assert the safety
+    // Power actions travel apid -> D-Bus -> mosd. Assert the safety
     // precondition FIRST: mosd must be in dry-run, where its PowerControl is
     // the no-op one and the system-bus `Systemd` control is never constructed.
     // If someone drops MOSD_DRY_RUN from the spawn above, this fails before a
@@ -373,7 +373,7 @@ async fn web_flow_end_to_end() -> anyhow::Result<()> {
         "the SSH pane must say what a key grants:\n{body}"
     );
 
-    // The toggle travels webd -> D-Bus -> mosd's typed settings tree.
+    // The toggle travels apid -> D-Bus -> mosd's typed settings tree.
     let response = admin
         .post(format!("{https_base}/ssh/enable"))
         .form(&[("enabled", "on")])
@@ -406,7 +406,7 @@ async fn web_flow_end_to_end() -> anyhow::Result<()> {
     assert!(body.contains(KEY_FINGERPRINT), "{body}");
     assert!(!body.contains(KEY_BLOB), "key material reached the pane");
 
-    // An unparsable line is refused by webd and never reaches mosd.
+    // An unparsable line is refused by apid and never reaches mosd.
     let response = admin
         .post(format!("{https_base}/ssh/keys/add"))
         .form(&[("key", "ssh-ed25519  AAAA")])

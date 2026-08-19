@@ -5,7 +5,7 @@ set -euo pipefail
 # the eleven-partition A/B GPT, the uboot-mos blob inside its own loader
 # partition, both FAT32 boot slots,
 # the squashfs+dm-verity rootfs payload and the packed root filesystem's
-# contents (mosd/webd, hwinit, RAUC, health gate, storage tiers).
+# contents (mosd/apid, hwinit, RAUC, health gate, storage tiers).
 # Emits one PASS:/FAIL: line per check and a final
 # "RESULT: PASS|FAIL (n/m checks)" summary; exits non-zero if any check fails.
 # Totals are dynamic (PASS_N/total); nothing to hand-bump when checks change.
@@ -919,14 +919,14 @@ sq_grep /usr/lib/systemd/system/mosd.service 'BusName=com.mos.mosd' \
 sq_enabled mosd.service
 sq_regular /usr/share/dbus-1/system.d/com.mos.mosd.conf
 
-# --- webd (carried over from v1) ---
-sq_regular /usr/bin/webd
-elf_is_aarch64 /usr/bin/webd
-sq_grep /usr/lib/systemd/system/webd.service 'After=.*mosd\.service' \
-    "/usr/lib/systemd/system/webd.service orders After= mosd.service"
-sq_grep /usr/lib/systemd/system/webd.service 'StateDirectory=mos/webd' \
-    "/usr/lib/systemd/system/webd.service has StateDirectory=mos/webd"
-sq_enabled webd.service
+# --- apid (carried over from v1) ---
+sq_regular /usr/bin/apid
+elf_is_aarch64 /usr/bin/apid
+sq_grep /usr/lib/systemd/system/apid.service 'After=.*mosd\.service' \
+    "/usr/lib/systemd/system/apid.service orders After= mosd.service"
+sq_grep /usr/lib/systemd/system/apid.service 'StateDirectory=mos/apid' \
+    "/usr/lib/systemd/system/apid.service has StateDirectory=mos/apid"
+sq_enabled apid.service
 
 # --- board hardware init (carried over from v1; the unit set is ENUMERATED) ---
 # Single SKU: bcmdhd was dropped with the AIC-only fleet decision and must not
@@ -1346,12 +1346,12 @@ else
     pass "mos-health does not depend on the non-existent RAUC_SYSTEM_BOOTED_SLOT variable"
 fi
 
-# --- M4 integration: webd's health probe needs an HTTP client ---
+# --- M4 integration: apid's health probe needs an HTTP client ---
 # mos-health probe c calls curl (or wget) against https://127.0.0.1/healthz and
 # logs "SKIP (no curl or wget in the image)" when neither exists -- a silent
 # hole in the gate. curl was added to the rootfs allowlist deliberately (commit
-# 4c1180c, "ship curl in the v2 rootfs so the webd health probe stops
-# skipping"), so its absence is now a regression, not a neutral fact.
+# 4c1180c, which shipped curl in the v2 rootfs so the apid health probe stops
+# skipping), so its absence is now a regression, not a neutral fact.
 http_client=""
 for c in /usr/bin/curl /usr/bin/wget /bin/curl /bin/wget; do
     if [ -f "${ROOT}${c}" ]; then
@@ -1360,9 +1360,9 @@ for c in /usr/bin/curl /usr/bin/wget /bin/curl /bin/wget; do
     fi
 done
 if [ -n "${http_client}" ]; then
-    pass "webd health probe is LIVE: ${http_client} is in the image (mos-health probe c would SKIP without an HTTP client)"
+    pass "apid health probe is LIVE: ${http_client} is in the image (mos-health probe c would SKIP without an HTTP client)"
 else
-    fail "no curl or wget in the image, so mos-health probe c degrades to 'SKIP (no curl or wget in the image)' and webd is never actually probed by the health gate"
+    fail "no curl or wget in the image, so mos-health probe c degrades to 'SKIP (no curl or wget in the image)' and apid is never actually probed by the health gate"
 fi
 
 # --- M4: U-Boot environment access from Linux ---
