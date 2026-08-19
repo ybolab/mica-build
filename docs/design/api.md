@@ -2772,19 +2772,76 @@ entire: `access.apiTokens` in the settings model, `POST`/`GET`/
 pane in the built-in UI that §3.2's bootstrap depends on.
 
 **The one thing in this phase that touches an already-deployed device, named
-because it is the highest-consequence detail in the whole plan.**
-`access.apiTokens` is a new field in a tree whose every struct carries
-`#[serde(deny_unknown_fields)]` (§1.5, e.g.
-`mosd/mosd-settings/src/model.rs:15`, `:49`), so `SCHEMA_VERSION` moves 4 → 5
-(`mosd/mosd-settings/src/model.rs:11`) and a `MigrateV4ToV5` joins the registry
-beside `MigrateV3ToV4` (`mosd/mosd-settings/src/migration.rs:74-81`). **Its
-`down` step must drop `apiTokens`.** The registry walks descending steps for a
-downgrade (`mosd/mosd-settings/src/migration.rs:46-57`), and an A/B rollback
-into the previous slot **is** a downgrade — the settings tree is on STATE and
-survives the slot flip (`docs/design/access.md:504`). Without a working `down`,
-the older binary meets a tree it cannot deserialise, and the appliance's own
-recovery mechanism becomes the thing that breaks management. Every phase below
-that changes the model inherits this rule.
+because it is the highest-consequence detail in the whole plan — and measured by
+running it, not by reading.** `access.apiTokens` is a new field in a tree whose
+every struct carries `#[serde(deny_unknown_fields)]` (§1.5, e.g.
+`mosd/mosd-settings/src/model.rs:15`, `:49`), so `SCHEMA_VERSION` must move 4 → 5
+(`mosd/mosd-settings/src/model.rs:11`).
+
+**The obvious answer — "add a `MigrateV4ToV5` whose `down` drops the field" — does
+not work, and this document asserted it before checking.** Four cases were
+executed against `mosd-settings` at `86cd669`, through a throwaway integration
+test run under `cargo test -p mosd-settings` and deleted afterwards; the strings
+below are the run's actual output.
+
+1. **The A/B rollback itself.** Today's binary *is* the "old" (v4) binary, so
+   loading a tree stamped `schema_version = 5` carrying `access.apiTokens` is
+   exactly the rollback. `Store::load` answers:
+
+   ```
+   settings migration error: on-disk schema_version 5 is newer than supported 4
+   ```
+
+   That is the guard at `mosd/mosd-settings/src/store.rs:63-67`, and it returns
+   **before `migrate` is ever called** (`:68`). No migration of any direction
+   participates in the decision.
+2. **Adding the field without bumping the version** fails differently and just
+   as hard:
+
+   ```
+   settings parse error: TOML parse error at line 4, column 10
+     |
+   4 | [[access.apiTokens]]
+     |          ^^^^^^^^^
+   unknown field `apiTokens`, expected one of `webAdmin`, `ssh`, `console`, `device`
+   ```
+
+   So there is **no version-stamping trick that makes a new field additive** for
+   an older binary: `deny_unknown_fields` rejects it whether or not the version
+   moved.
+3. **Could the old binary run the v5 `down` step even if it tried?** No — the
+   step ships inside the v5 binary:
+
+   ```
+   settings migration error: no migration targeting schema version 5
+   ```
+4. **The `down` direction does work for a version that exists** — `migrate(4, 3)`
+   succeeds and rewrites `schema_version` to `3` — which is what made the wrong
+   answer plausible. It is reachable only from an explicit caller with
+   `from > to`, and **the only such callers in the tree are tests**
+   (`mosd/mosd-settings/tests/settings.rs:241`, `:277`, `:506`, `:536`, `:996`,
+   `:1011`, `:1081`). `mosd/mosd-settings/src/store.rs:68` is the sole
+   production caller of `migrate` and it can only ever walk **upward**.
+
+**What follows, corrected.** An A/B rollback into a phase-1 slot after a token
+has been minted does not degrade — it **fails the settings load**, and
+`mosd/mosd/src/main.rs:45-48` propagates that with `?`, so mosd exits. Under
+`Restart=on-failure` (`mosd/dist/mosd.service:9`) that is a crash loop, and
+because apid's gate calls `GetSettings("access")` on **every** request
+(`mosd/webd/src/routes.rs:131`) the whole appliance answers the 502 page *"The
+management daemon is unavailable."* (`mosd/webd/src/routes.rs:106-116`). **The
+appliance's own recovery mechanism becomes the thing that breaks management** —
+the conclusion this document originally reached for the wrong reason.
+
+**And it is pre-existing, not something this phase invents.** The same guard
+applies to the v3 → v4 bump that already shipped (RFCT-032): a device updated to
+schema v4 and then rolled back to a v3 binary hits `store.rs:63` identically.
+So this is a live property of the shipped A/B story that phase 2 would be the
+next thing to trigger, not a cost of the API. It is **larger than this document
+and is routed in 10.3** rather than solved here; what phase 2 owes is to not
+ship until it has an answer, because "mint a token, then roll back" is a
+plausible sequence and not an exotic one. Every later phase that changes the
+settings model inherits the same constraint.
 
 **What an operator can do that they could not before.** Read the entire device
 with one header and no browser emulation. §3.1's items 1 through 5 are fixed for
@@ -2806,9 +2863,13 @@ an A/B update, because it is on STATE rather than in a `HashMap`
    `200 {"apid":"ok","mosd":"unreachable", …}` while `GET /healthz` still
    answers the literal `ok` — the two endpoints disagreeing is the correct
    result (§2.4 case 3).
-4. A settings tree written by a phase-2 binary loads without error in a phase-1
-   binary after a `down` migration. This is the rollback check above and it
-   cannot be skipped.
+4. **The rollback check, and it is a gate on the phase rather than a test of
+   it.** A settings tree written by a phase-2 binary, with at least one token
+   minted, is loaded by a phase-1 binary. Measured at `86cd669` this fails with
+   `on-disk schema_version 5 is newer than supported 4`, and no migration
+   changes that. **Phase 2 does not ship until that load succeeds or until the
+   project has accepted, in writing, that minting a token forfeits rollback.**
+   Either resolution is legitimate; shipping without choosing one is not.
 
 **What is explicitly still missing.** No writes — a script can observe and not
 change. No static hosting, no bundles, no upload. No expiry on a token (§3.2,
@@ -3480,15 +3541,28 @@ names what must change and who owns it. All claims were measured at `86cd669`.
    method and the `rauc install` caller, neither of which exists
    (`grep -rci rauc mosd/mosd/src/` returns `0` in all six files at `86cd669`).
 
-5. **`mosd/mosd-settings/src/model.rs` and `migration.rs` — `access.apiTokens`
-   needs a schema bump *and a working `down` step*.** §3.2 specifies the storage
-   and no section specifies the migration. `SCHEMA_VERSION` moves 4 → 5
-   (`model.rs:11`) and `MigrateV4ToV5` joins the registry (`migration.rs:74-81`);
-   its `down` must **drop** the field, because the registry walks descending
-   steps for a downgrade (`migration.rs:46-57`), an A/B rollback is a downgrade,
-   and every struct carries `#[serde(deny_unknown_fields)]`. Without it, minting
-   a token makes a rollback unable to load the settings tree. Product code; this
-   campaign changes none.
+5. **`mosd/mosd-settings/src/store.rs` — there is no production down-migration
+   path at all, so an A/B rollback across any schema bump fails the settings
+   load. Executed, not inferred.** §3.2 needs `access.apiTokens`, which needs
+   `SCHEMA_VERSION` 4 → 5 (`model.rs:11`), and §8.2 phase 2 records the four
+   cases that were run and their verbatim output. The load path answers
+   `on-disk schema_version 5 is newer than supported 4` at
+   `store.rs:63-67`, **before** `migrate` is reached at `:68`; the older binary
+   has no `MigrateV4ToV5` to walk down with in any case
+   (`no migration targeting schema version 5`); and
+   `#[serde(deny_unknown_fields)]` rejects the field even without a version bump
+   (``unknown field `apiTokens`, expected one of `webAdmin`, `ssh`, `console`,
+   `device` ``). `store.rs:68` is the only production caller of
+   `migrate` and it walks upward only — every `from > to` call in the tree is a
+   test. Because `mosd/mosd/src/main.rs:45-48` propagates a failed load with `?`
+   under `Restart=on-failure` (`mosd/dist/mosd.service:9`), the consequence is a
+   mosd crash loop and an appliance serving only the 502 page.
+   **This is pre-existing** — the shipped v3 → v4 bump has the same property —
+   so it is not the API's cost and not this document's to fix. Whoever owns
+   `mosd-settings` and the A/B story owes a decision: a pre-rollback downgrade
+   hook, a tolerant load path, or an explicit written acceptance that a schema
+   bump forfeits rollback. §8.2 phase 2 is gated on that decision existing.
+   Product code; this campaign changes none.
 
 6. **`mosd/dist/webd.service` — raised in priority, not newly routed.** 10.2
    already routes `ProtectSystem=` and an explicit `ReadWritePaths=` to this
