@@ -85,7 +85,7 @@ verity = 5.1；< 6.7 已内置 overlay 旧语法回退）。板卡准入分档�
 3. U-Boot：§5 配置；verified boot 密钥烧录。
 4. 先走冒烟路径（Alpine 或原厂镜像）验证硬件——这正是 cx3576 的 Alpine
    演示扮演的角色——再上 Talos 镜像。
-5. 消费 BSP 产物的 Talos 镜像在真机启动到 apid healthz。
+5. 消费 BSP 产物的 Talos 镜像在真机启动到 webd healthz。
 6. 拔电压测台跑过，板卡才算 supported。
 
 ## 8. 现有板卡
