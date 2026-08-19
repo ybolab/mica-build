@@ -600,6 +600,140 @@ else
 fi
 ext_regular /usr/share/dbus-1/system.d/com.mos.mosd.conf
 
+# --- the mosd D-Bus policy is ROOT-ONLY (RFCT-048) ---------------------------
+# com.mos.mosd reboots and powers off the appliance, rewrites the persisted
+# settings tree, and -- since RFCT-033 -- writes a root credential straight
+# into /etc/shadow through SetTransientRootPassword. Who may reach that name is
+# decided by a FILE IN THIS IMAGE, so it is the image contract's business.
+#
+# The path matters as much as the contents. dbus-daemon reads system-bus policy
+# from /usr/share/dbus-1/system.d/ (and /etc/dbus-1/system.d/); a policy dropped
+# anywhere else is not a stricter policy, it is NO policy -- the daemon still
+# takes the name and the base system.conf alone decides who may talk to it.
+#
+# The bus name is READ from mosd.service's BusName= rather than restated here.
+# A policy for a name nothing owns is the existence-versus-function trap: it
+# would sail through a file-exists check while protecting nothing at all.
+MOSD_POLICY_PATH=/usr/share/dbus-1/system.d/com.mos.mosd.conf
+mosd_policy_text="$(dbg "cat ${MOSD_POLICY_PATH}")"
+mosd_bus_name="$(dbg "cat /usr/lib/systemd/system/mosd.service" |
+    sed -n 's/^BusName=[[:space:]]*//p' | tr -d '\r' | tail -n1)"
+if [ -n "${mosd_policy_text}" ]; then
+    pass "${MOSD_POLICY_PATH} ships and is readable, i.e. the mosd bus policy is where dbus-daemon actually looks for it"
+else
+    fail "${MOSD_POLICY_PATH} is missing or empty. dbus-daemon reads system-bus policy from this directory; with nothing here the base system.conf decides alone, and every local uid can call Reboot, SetSettings and SetTransientRootPassword"
+fi
+
+# Parse the policy the way dbus-daemon groups it: rules are collected per policy
+# BLOCK, and a rule's block decides who it applies to. XML comments are stripped
+# first -- this file documents its own extension point with example markup, and
+# a grep that could not tell an example from a rule would be worse than no check.
+printf '%s\n' "${mosd_policy_text}" >"${TMP}/mosd-policy.xml"
+mosd_policy_facts="$(awk -v bus="${mosd_bus_name}" '
+function attrval(s, key,   re, p, rest, q) {
+    re = key "=\""
+    p = index(s, re)
+    if (p == 0) return ""
+    rest = substr(s, p + length(re))
+    q = index(rest, "\"")
+    if (q == 0) return ""
+    return substr(rest, 1, q - 1)
+}
+{
+    line = $0
+    out = ""
+    while (length(line) > 0) {
+        if (incomment) {
+            p = index(line, "-->")
+            if (p == 0) { line = ""; break }
+            line = substr(line, p + 3)
+            incomment = 0
+        } else {
+            p = index(line, "<!--")
+            if (p == 0) { out = out line; line = ""; break }
+            out = out substr(line, 1, p - 1)
+            line = substr(line, p + 4)
+            incomment = 1
+        }
+    }
+    doc = doc " " out
+}
+END {
+    n = split(doc, seg, /<policy/)
+    for (i = 2; i <= n; i++) {
+        s = seg[i]
+        gt = index(s, ">")
+        attrs = (gt > 0) ? substr(s, 1, gt - 1) : s
+        body = (gt > 0) ? substr(s, gt + 1) : ""
+        e = index(body, "</policy>")
+        if (e > 0) body = substr(body, 1, e - 1)
+        isdefault = (attrs ~ /context="default"/)
+        isroot = (attrs ~ /user="root"/)
+        m = split(body, tok, "<")
+        for (j = 1; j <= m; j++) {
+            t = tok[j]
+            if (t ~ /^allow[ \t]/) kind = "allow"
+            else if (t ~ /^deny[ \t]/) kind = "deny"
+            else continue
+            q = index(t, ">")
+            if (q > 0) t = substr(t, 1, q - 1)
+            own = attrval(t, "own")
+            snd = attrval(t, "send_destination")
+            rcv = attrval(t, "receive_sender")
+            for (k = 1; k <= 3; k++) {
+                v = (k == 1) ? own : ((k == 2) ? snd : rcv)
+                if (v ~ /^com\.mos\./) names[v] = 1
+            }
+            if (kind == "allow" && isdefault && (snd == bus || rcv == bus)) defallow++
+            if (kind == "allow" && own == bus) {
+                if (isroot) ownroot++
+                else ownother++
+            }
+        }
+    }
+    namelist = ""
+    for (v in names) namelist = namelist " " v
+    printf "%d %d %d%s\n", defallow + 0, ownroot + 0, ownother + 0, namelist
+}
+' "${TMP}/mosd-policy.xml")"
+mosd_default_allows="$(echo "${mosd_policy_facts}" | awk '{print $1}')"
+mosd_own_root="$(echo "${mosd_policy_facts}" | awk '{print $2}')"
+mosd_own_other="$(echo "${mosd_policy_facts}" | awk '{print $3}')"
+# `|| true`: with no com.mos.* name in the policy at all, grep exits 1 and
+# set -e would kill the verifier here -- turning "the policy is missing" into a
+# crash with no RESULT line instead of the three explicit FAILs below.
+mosd_policy_names="$(echo "${mosd_policy_facts}" | cut -d' ' -f4- | tr ' ' '\n' |
+    grep -v '^$' | sort -u | tr '\n' ' ' | sed 's/ $//' || true)"
+
+# No default-context ALLOW, in either direction. send_destination is the obvious
+# half; receive_sender is the half that is easy to leave open, because
+# SettingsChanged broadcasts the settings VALUE -- a uid that may not call
+# anything can still subscribe and read access.webAdmin.password_hash the moment
+# an operator sets it. A caller who cannot ask can still listen.
+if [ "${mosd_default_allows}" = "0" ]; then
+    pass "no <policy context=\"default\"> allows send_destination= or receive_sender= for ${mosd_bus_name:-the mosd bus name}, so neither calling it nor listening to its signals is open to every local uid"
+else
+    fail "the mosd D-Bus policy has ${mosd_default_allows} default-context allow rule(s) for ${mosd_bus_name:-the mosd bus name}: any local uid can call Reboot/SetSettings/SetTransientRootPassword and/or subscribe to SettingsChanged, which carries settings values including access.webAdmin.password_hash"
+fi
+
+# own= is what lets mosd take the name at all, and granting it outside root
+# would let an unprivileged process take the name FIRST and impersonate mosd.
+if [ "${mosd_own_root}" != "0" ] && [ "${mosd_own_other}" = "0" ]; then
+    pass "allow own=\"${mosd_bus_name}\" appears only under <policy user=\"root\">"
+else
+    fail "allow own= for '${mosd_bus_name}' appears ${mosd_own_root} time(s) under <policy user=\"root\"> and ${mosd_own_other} time(s) elsewhere; it must appear at least once under root and nowhere else, or an unprivileged process could take the name before mosd does"
+fi
+
+# Every com.mos.* name the policy mentions must be the one mosd.service owns.
+# This catches the typo that is invisible by inspection: a deny naming
+# com.mos.mosdx denies nothing, and the default-context check above would still
+# report zero allows while the real name sat wide open.
+if [ -n "${mosd_bus_name}" ] && [ "${mosd_policy_names}" = "${mosd_bus_name}" ]; then
+    pass "the policy names exactly the bus mosd.service declares (BusName=${mosd_bus_name}); it is not a policy for a name nothing owns"
+else
+    fail "policy/unit bus-name mismatch: mosd.service declares BusName='${mosd_bus_name}' but the policy mentions '${mosd_policy_names}'. A policy naming anything else guards a name nothing owns while the real one is governed by system.conf alone"
+fi
+
 # --- webd daemon integration ---
 ext_regular /usr/bin/webd
 WEBD_BIN="${TMP}/webd-bin"
@@ -1126,6 +1260,27 @@ elif printf '%s\n' "${ssh_unit_text}" | grep -qE '^KillMode=process[[:space:]]*$
     pass "ssh.service sets KillMode=process, so a restart would spare established sessions — defence in depth only: what actually protects an operator's own session is that the reconciler RELOADS on a config-only change (RFCT-047), and this passing is not a reason to restart instead"
 else
     fail "ssh.service does NOT set KillMode=process (found '$(printf '%s\n' "${ssh_unit_text}" | sed -n 's/^KillMode=//p' | tail -n1)'; systemd defaults to control-group). The image has lost its second line of defence: anything that RESTARTS this unit now kills established SSH sessions with it. This does not by itself disconnect an operator setting a transient root password — the reconciler reloads rather than restarts (RFCT-047) — but that reload is now the ONLY thing preventing it, so do not treat this as cosmetic"
+fi
+
+# --- ssh.service ExecReload: what the reconciler's reload depends on ---------
+# RFCT-047 made SshdReconciler RELOAD ssh.service on a configuration-only
+# change instead of restarting it, so an operator who sets a transient root
+# password over their own SSH session keeps it. That correctness now rests on
+# the unit shipped by Debian's openssh-server carrying an ExecReload= -- a
+# property this image INHERITS rather than chooses, exactly like KillMode
+# above. RFCT-047 could not assert it, because the verifier is not its file.
+#
+# With no ExecReload=, `systemctl reload ssh.service` fails outright. The
+# reconciler renders its sshd configuration to disk and the running sshd never
+# re-reads it, so a change -- PasswordAuthentication among them -- SILENTLY
+# fails to apply: the file on disk says one thing and the listener keeps
+# enforcing another until something else restarts the unit.
+if [ -z "${ssh_unit_text}" ]; then
+    fail "/usr/lib/systemd/system/ssh.service is not readable in the image, so no claim can be made about ExecReload"
+elif printf '%s\n' "${ssh_unit_text}" | grep -qE '^ExecReload='; then
+    pass "ssh.service carries ExecReload=, so the config-only reload the sshd reconciler issues (RFCT-047) can actually reach the running sshd"
+else
+    fail "ssh.service has NO ExecReload=. The sshd reconciler RELOADS this unit on a configuration-only change (RFCT-047); without ExecReload that reload fails, and the rendered sshd configuration — PasswordAuthentication included — silently never applies to the running listener"
 fi
 
 # NOT asserted here, and v2-only by nature: the AuthorizedKeysFile drop-in, the

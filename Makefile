@@ -5,7 +5,7 @@ BOARDS := cx3576 x64
 
 .PHONY: help os os-image-cx3576 os-verify-cx3576 os-rootfs-cx3576-v2 \
 	os-image-cx3576-v2 os-verify-cx3576-v2 os-bundle-cx3576 os-devkeys os-health-test \
-	os-shadow-test os-repart-test \
+	os-shadow-test os-dbus-policy-test os-repart-test \
 	$(addsuffix -%,$(BOARDS))
 
 help:
@@ -21,6 +21,7 @@ help:
 	@echo "  os-devkeys          generate the gitignored development signing material"
 	@echo "  os-health-test      run the offline tests for the health gate and machine-id oneshots"
 	@echo "  os-shadow-test      run the offline tests for the STATE /etc/shadow reconciler"
+	@echo "  os-dbus-policy-test prove the shipped mosd D-Bus policy is root-only against a real dbus-daemon"
 	@echo "  os-repart-test      prove first-boot repart growth grows DATA and cannot wipe the loader (privileged docker)"
 	@echo "  cx3576-<t>          delegate target <t> to board/cx3576 (uboot|kernel|rootfs|image|clean)"
 	@echo "  x64-image           x64 uses the upstream talos image pipeline (see board/x64/README.md)"
@@ -60,6 +61,16 @@ os-health-test:
 # root and touches no host state.
 os-shadow-test:
 	bash os/shadow-reconcile-test.sh
+
+# Stands up a real dbus-daemon whose configuration <include>s the SHIPPED
+# mosd/dist/com.mos.mosd.conf, owns com.mos.mosd from a root connection, and
+# drives root and non-root clients at it. Reading the XML back would only prove
+# the file says the right thing; this proves dbus-daemon acts on it. Both
+# directions of every guard — a refusal-only suite passes just as well against a
+# policy that denies root too. Needs root (it drops to uid 65534 with setpriv)
+# and fails loudly when it cannot run rather than skipping.
+os-dbus-policy-test:
+	bash mosd/hack/dbus-policy-test.sh
 
 # Behavioural check on first-boot growth: a real systemd-repart, with discard
 # enabled, over a copy of each assembled image on a loop device. It proves two
