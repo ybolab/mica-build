@@ -56,7 +56,7 @@ async fn send(router: &Router, request: Request<Body>) -> Response<axum::body::B
 async fn get(router: &Router, path: &str, cookie: Option<&str>) -> Response<axum::body::Body> {
     let mut builder = Request::builder().uri(path);
     if let Some(cookie) = cookie {
-        builder = builder.header(COOKIE, format!("webd_session={cookie}"));
+        builder = builder.header(COOKIE, format!("apid_session={cookie}"));
     }
     send(router, builder.body(Body::empty()).unwrap()).await
 }
@@ -72,7 +72,7 @@ async fn post_form(
         .uri(path)
         .header(CONTENT_TYPE, "application/x-www-form-urlencoded");
     if let Some(cookie) = cookie {
-        builder = builder.header(COOKIE, format!("webd_session={cookie}"));
+        builder = builder.header(COOKIE, format!("apid_session={cookie}"));
     }
     send(router, builder.body(Body::from(body.to_string())).unwrap()).await
 }
@@ -81,7 +81,7 @@ fn location(response: &Response<axum::body::Body>) -> &str {
     response.headers().get(LOCATION).unwrap().to_str().unwrap()
 }
 
-/// The `webd_session=<value>` part of the `Set-Cookie` response header.
+/// The `apid_session=<value>` part of the `Set-Cookie` response header.
 fn session_cookie_value(response: &Response<axum::body::Body>) -> String {
     let header = response
         .headers()
@@ -93,7 +93,7 @@ fn session_cookie_value(response: &Response<axum::body::Body>) -> String {
     for attr in ["Secure", "HttpOnly", "SameSite=Lax", "Path=/"] {
         assert!(attrs.contains(attr), "cookie should carry {attr}: {header}");
     }
-    pair.strip_prefix("webd_session=").unwrap().to_string()
+    pair.strip_prefix("apid_session=").unwrap().to_string()
 }
 
 #[tokio::test]
@@ -603,7 +603,7 @@ const REAL_RSA_LINE: &str = "ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQDT2F3imgGgI+x
 const REAL_ED25519_SECOND_LINE: &str = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAILFM+HTH5h41h/zyK4CwjXx9E1l8Nwks1NaywRMiSsEP rfct-034-test-ed25519-second";
 
 /// Fingerprints as `ssh-keygen -lf` printed them for the three keys above.
-/// Comparing webd's fingerprint against values that came out of OpenSSH is the
+/// Comparing apid's fingerprint against values that came out of OpenSSH is the
 /// point: a fingerprint checked only against itself proves nothing, and this
 /// one is the handle a removal is addressed by.
 const REAL_ED25519_FINGERPRINT: &str = "SHA256:HrgN3GLi6Mop2uSRjgOoxImM8zRkFmgqCKoeGD9QOaM";
@@ -674,7 +674,7 @@ fn sshd_state(effective: bool, requested: bool, transient_active: bool) -> serde
         "passwordAuthenticationRequested": requested,
         "transientPasswordActive": transient_active,
         // Plural since RFCT-053: mosd renders one file per managed login
-        // account and publishes every path. webd reads none of them; the
+        // account and publishes every path. apid reads none of them; the
         // fixture carries the real key name so it keeps describing state that
         // exists.
         "authorizedKeysPaths": [
@@ -1216,7 +1216,7 @@ async fn key_remove_of_an_absent_key_is_an_error_not_a_silent_success() {
 #[tokio::test]
 async fn the_pane_and_a_removal_agree_on_the_fingerprint_openssh_prints() {
     // The pane renders a fingerprint and a removal is addressed by it, so the
-    // two only line up if webd's fingerprint is the one `ssh-keygen -lf`
+    // two only line up if apid's fingerprint is the one `ssh-keygen -lf`
     // prints. These constants came from that command.
     for (line, expected) in [
         (REAL_ED25519_LINE, REAL_ED25519_FINGERPRINT),

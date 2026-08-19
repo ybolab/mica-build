@@ -1,7 +1,7 @@
 #!/bin/sh
 # mos health gate — PLAN-006 Part E, the PENDING_CONFIRM -> CONFIRMED edge.
 #
-# Probes the system in order (systemd state, mosd, webd), reports /var
+# Probes the system in order (systemd state, mosd, apid), reports /var
 # pressure to mosd, and on success runs `rauc status mark-good` to confirm the
 # booted slot. On failure it does NOTHING: no mark-good, no reboot, no
 # remediation. Rollback is the U-Boot BOOT_x_LEFT counter's job and stealing it
@@ -159,25 +159,25 @@ else
     fail "mosd did not answer com.mos.mosd1.GetState on the system bus"
 fi
 
-# --- probe c: webd ---------------------------------------------------------
-# webd serves HTTPS with a self-signed certificate, so the probe skips
-# verification; /healthz is webd's existing endpoint and bypasses its auth gate.
-if ! unit_present webd.service; then
-    log "probe webd: SKIP (webd.service not installed)"
+# --- probe c: apid ---------------------------------------------------------
+# apid serves HTTPS with a self-signed certificate, so the probe skips
+# verification; /healthz is apid's existing endpoint and bypasses its auth gate.
+if ! unit_present apid.service; then
+    log "probe apid: SKIP (apid.service not installed)"
 elif have curl; then
     if run curl -sS -k -o /dev/null -f https://127.0.0.1/healthz; then
-        log "probe webd: OK"
+        log "probe apid: OK"
     else
-        fail "webd did not answer https://127.0.0.1/healthz"
+        fail "apid did not answer https://127.0.0.1/healthz"
     fi
 elif have wget; then
     if run wget -q --no-check-certificate -O /dev/null https://127.0.0.1/healthz; then
-        log "probe webd: OK"
+        log "probe apid: OK"
     else
-        fail "webd did not answer https://127.0.0.1/healthz"
+        fail "apid did not answer https://127.0.0.1/healthz"
     fi
 else
-    log "probe webd: SKIP (no curl or wget in the image)"
+    log "probe apid: SKIP (no curl or wget in the image)"
 fi
 
 # --- report: /var pressure (never fatal) -----------------------------------

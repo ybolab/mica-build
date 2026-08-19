@@ -1,13 +1,13 @@
 [Unit]
-Description=mos web UI daemon
+Description=mos API daemon (serves the web dashboard)
 After=network.target mosd.service
 Wants=mosd.service
 
 [Service]
 Type=simple
-ExecStart=/usr/bin/webd
+ExecStart=/usr/bin/apid
 Restart=on-failure
-StateDirectory=mos/webd
+StateDirectory=mos/apid
 
 [Install]
 WantedBy=multi-user.target

@@ -2,8 +2,8 @@
 //!
 //! A cookie value is `<id>.<mac>` where `id` is 16 random bytes hex-encoded
 //! (128 bits) and `mac` is the hex HMAC-SHA256 of `id` under the persistent
-//! signing key. Sessions live in memory only and expire after 24 hours, so a
-//! webd restart logs everyone out.
+//! signing key. Sessions live in memory only and expire after 24 hours, so an
+//! apid restart logs everyone out.
 
 use std::collections::HashMap;
 use std::sync::Mutex;
@@ -15,7 +15,7 @@ use rand::RngCore;
 use sha2::Sha256;
 
 /// Session cookie name.
-pub const COOKIE_NAME: &str = "webd_session";
+pub const COOKIE_NAME: &str = "apid_session";
 const SESSION_TTL: Duration = Duration::from_secs(24 * 60 * 60);
 
 type HmacSha256 = Hmac<Sha256>;

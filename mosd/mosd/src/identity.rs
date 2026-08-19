@@ -11,7 +11,7 @@
 //! Two independent secrets are generated:
 //!
 //! - the **device password**, which authenticates the operator on SSH, the
-//!   local console and the webd admin UI;
+//!   local console and the apid admin UI;
 //! - the **AP PSK**, the WPA2 pre-shared key for provisioning AP mode.
 //!
 //! [`ensure_identity`] is the entry point and is idempotent: on an already
@@ -183,7 +183,7 @@ pub fn read_ap_psk(state_dir: &Path) -> Result<Option<String>> {
 
 /// Hash `password` with Argon2id default parameters into a PHC string.
 ///
-/// The parameters match webd's own hasher, so a hash written here verifies
+/// The parameters match apid's own hasher, so a hash written here verifies
 /// there and vice versa. The salt comes from [`SystemRandom`] rather than
 /// `password_hash`'s `OsRng`, which is gated behind a `rand_core` feature this
 /// crate does not otherwise pull in; both are the operating system CSPRNG.
@@ -211,8 +211,8 @@ pub fn hash_password(password: &str) -> Result<String> {
 ///
 /// **Test-only.** Nothing outside this module's tests calls it: the access and
 /// connd reconcilers it was written for verify nothing against
-/// `access.device.passwordHash`, and webd's admin login uses its own
-/// `webd::auth::verify_password`. It is kept rather than deleted because two
+/// `access.device.passwordHash`, and apid's admin login uses its own
+/// `apid::auth::verify_password`. It is kept rather than deleted because two
 /// `ensure_identity` tests use it as their assertion mechanism — "the stored
 /// hash verifies against the stored plaintext" — and deleting it would either
 /// drop those assertions or re-inline Argon2 twice. `#[cfg(test)]` removes the
@@ -517,7 +517,7 @@ mod tests {
     #[test]
     fn two_hundred_devices_share_no_secret() {
         const DEVICES: usize = 200;
-        // Argon2id at webd's parameters is deliberately expensive, and an
+        // Argon2id at apid's parameters is deliberately expensive, and an
         // unoptimised test build pays that 200 times; spread it over the
         // machine so the check gate stays usable.
         let lanes = std::thread::available_parallelism().map_or(1, std::num::NonZero::get);

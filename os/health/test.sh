@@ -74,7 +74,7 @@ RAUC_SLOT_PARENT_4='rootfs.1'
 FIXTURE
 }
 
-# Defaults: a healthy A/B system with mosd and webd both answering.
+# Defaults: a healthy A/B system with mosd and apid both answering.
 healthy_fakes() {
     write_rauc_status A
     fake rauc '
@@ -90,7 +90,7 @@ exit 0'
 case "$1" in
   is-system-running) echo "${FAKE_SYS_STATE:-running}" ;;
   list-units) printf "%s" "${FAKE_FAILED_UNITS:-}" ;;
-  list-unit-files) case "${FAKE_UNITS:-mosd.service webd.service}" in *"$3"*) echo "$3 enabled" ;; esac ;;
+  list-unit-files) case "${FAKE_UNITS:-mosd.service apid.service}" in *"$3"*) echo "$3 enabled" ;; esac ;;
 esac
 exit 0'
     fake busctl 'exit ${FAKE_BUSCTL_RC:-0}'
@@ -206,7 +206,7 @@ out=$(run_health FAKE_SYS_STATE=maintenance 2>&1) && rc=0 || rc=$?
 check "maintenance -> exit 1" "1" "$rc"
 check "maintenance -> no mark-good" "no" "$(marked_good)"
 
-# --- health gate: mosd and webd --------------------------------------------
+# --- health gate: mosd and apid --------------------------------------------
 new_case mosd-down
 healthy_fakes
 out=$(run_health FAKE_BUSCTL_RC=1 2>&1) && rc=0 || rc=$?
@@ -215,23 +215,23 @@ check "mosd unreachable -> no mark-good" "no" "$(marked_good)"
 
 new_case mosd-absent
 healthy_fakes
-out=$(run_health FAKE_UNITS=webd.service 2>&1) && rc=0 || rc=$?
+out=$(run_health FAKE_UNITS=apid.service 2>&1) && rc=0 || rc=$?
 check "mosd.service absent -> exit 0" "0" "$rc"
 check "mosd.service absent -> skip logged" "yes" \
     "$(grep -q 'probe mosd: SKIP' <<<"$out" && echo yes || echo no)"
 
-new_case webd-down
+new_case apid-down
 healthy_fakes
 out=$(run_health FAKE_CURL_RC=22 2>&1) && rc=0 || rc=$?
-check "webd healthz fails -> exit 1" "1" "$rc"
-check "webd healthz fails -> no mark-good" "no" "$(marked_good)"
+check "apid healthz fails -> exit 1" "1" "$rc"
+check "apid healthz fails -> no mark-good" "no" "$(marked_good)"
 
-new_case webd-absent
+new_case apid-absent
 healthy_fakes
 out=$(run_health FAKE_UNITS=mosd.service 2>&1) && rc=0 || rc=$?
-check "webd.service absent -> exit 0" "0" "$rc"
-check "webd.service absent -> skip logged" "yes" \
-    "$(grep -q 'probe webd: SKIP' <<<"$out" && echo yes || echo no)"
+check "apid.service absent -> exit 0" "0" "$rc"
+check "apid.service absent -> skip logged" "yes" \
+    "$(grep -q 'probe apid: SKIP' <<<"$out" && echo yes || echo no)"
 
 # --- health gate: /var pressure is reported, never fatal --------------------
 new_case var-pressure

@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["mosd", "mosd-settings", "webd", "../update/sign"]
+members = ["mosd", "mosd-settings", "apid", "../update/sign"]
 
 [workspace.package]
 edition = "2024"

@@ -764,32 +764,32 @@ else
     fail "a second D-Bus policy file mentions ${mosd_bus_name:-the mosd bus name}:${mosd_policy_dups}. dbus-daemon reads both system.d directories and applies later rules over earlier ones, so this file can reinstate the default-context allow that ${MOSD_POLICY_PATH} removes -- and every other policy check here would still pass"
 fi
 
-# --- webd daemon integration ---
-ext_regular /usr/bin/webd
-WEBD_BIN="${TMP}/webd-bin"
-dbg "dump /usr/bin/webd ${WEBD_BIN}" >/dev/null
-elf_head="$(od -An -tx1 -N20 "${WEBD_BIN}" 2>/dev/null | tr -d ' \n')"
+# --- apid daemon integration ---
+ext_regular /usr/bin/apid
+APID_BIN="${TMP}/apid-bin"
+dbg "dump /usr/bin/apid ${APID_BIN}" >/dev/null
+elf_head="$(od -An -tx1 -N20 "${APID_BIN}" 2>/dev/null | tr -d ' \n')"
 # ELF magic 7f454c46; e_machine at offset 18 is 0xB7 (aarch64, little-endian).
 if [ "${elf_head:0:8}" = "7f454c46" ] && [ "${elf_head:36:4}" = "b700" ]; then
-    pass "/usr/bin/webd is an aarch64 ELF"
+    pass "/usr/bin/apid is an aarch64 ELF"
 else
-    fail "/usr/bin/webd is not an aarch64 ELF (header: '${elf_head:0:40}')"
+    fail "/usr/bin/apid is not an aarch64 ELF (header: '${elf_head:0:40}')"
 fi
-webd_unit="$(dbg "cat /usr/lib/systemd/system/webd.service")"
-if echo "${webd_unit}" | grep -q "After=.*mosd.service"; then
-    pass "/usr/lib/systemd/system/webd.service orders After= mosd.service"
+apid_unit="$(dbg "cat /usr/lib/systemd/system/apid.service")"
+if echo "${apid_unit}" | grep -q "After=.*mosd.service"; then
+    pass "/usr/lib/systemd/system/apid.service orders After= mosd.service"
 else
-    fail "/usr/lib/systemd/system/webd.service missing or lacks After=...mosd.service"
+    fail "/usr/lib/systemd/system/apid.service missing or lacks After=...mosd.service"
 fi
-if echo "${webd_unit}" | grep -q "StateDirectory=mos/webd"; then
-    pass "/usr/lib/systemd/system/webd.service has StateDirectory=mos/webd"
+if echo "${apid_unit}" | grep -q "StateDirectory=mos/apid"; then
+    pass "/usr/lib/systemd/system/apid.service has StateDirectory=mos/apid"
 else
-    fail "/usr/lib/systemd/system/webd.service missing or lacks StateDirectory=mos/webd"
+    fail "/usr/lib/systemd/system/apid.service missing or lacks StateDirectory=mos/apid"
 fi
-if dbg "stat /etc/systemd/system/multi-user.target.wants/webd.service" | grep -q "Inode:"; then
-    pass "webd.service is enabled (multi-user.target.wants)"
+if dbg "stat /etc/systemd/system/multi-user.target.wants/apid.service" | grep -q "Inode:"; then
+    pass "apid.service is enabled (multi-user.target.wants)"
 else
-    fail "webd.service enablement symlink missing"
+    fail "apid.service enablement symlink missing"
 fi
 
 # --- board hardware init ---

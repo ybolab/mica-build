@@ -27,7 +27,7 @@ FROM --platform=linux/arm64 debian:bookworm-slim AS rootfs
 # Strict package allowlist — add nothing here without documenting it in README.md.
 # v2 additions over v1: rauc + rauc-service (update client, RFCT-014),
 # libubootenv-tool (fw_printenv/fw_setenv — RAUC's U-Boot backend and the
-# machine-id oneshot of RFCT-015) and curl (the health gate's webd probe; rauc
+# machine-id oneshot of RFCT-015) and curl (the health gate's apid probe; rauc
 # links libcurl but does not provide the binary, so without this the probe
 # silently SKIPs and the gate covers two of three components while still
 # reporting green).
@@ -290,13 +290,13 @@ RUN if [ "$WITH_MOSD" = "1" ] && [ -f /tmp/mosd/mosd ]; then \
                /etc/systemd/system/multi-user.target.wants/mosd.service && \
         test -L /etc/systemd/system/multi-user.target.wants/mosd.service; \
     fi && \
-    if [ "$WITH_MOSD" = "1" ] && [ -f /tmp/mosd/webd ]; then \
-        install -m 0755 /tmp/mosd/webd /usr/bin/webd && \
-        install -m 0644 /tmp/mosd/webd.service /usr/lib/systemd/system/webd.service && \
+    if [ "$WITH_MOSD" = "1" ] && [ -f /tmp/mosd/apid ]; then \
+        install -m 0755 /tmp/mosd/apid /usr/bin/apid && \
+        install -m 0644 /tmp/mosd/apid.service /usr/lib/systemd/system/apid.service && \
         mkdir -p /etc/systemd/system/multi-user.target.wants && \
-        ln -sf /usr/lib/systemd/system/webd.service \
-               /etc/systemd/system/multi-user.target.wants/webd.service && \
-        test -L /etc/systemd/system/multi-user.target.wants/webd.service; \
+        ln -sf /usr/lib/systemd/system/apid.service \
+               /etc/systemd/system/multi-user.target.wants/apid.service && \
+        test -L /etc/systemd/system/multi-user.target.wants/apid.service; \
     fi && rm -rf /tmp/mosd
 
 # Board hardware init: generic best-effort oneshots (os/hwinit, board-agnostic
@@ -445,7 +445,7 @@ RUN set -e; \
              /rootfs/usr/lib/udev/rules.d/60-mos-*.rules \
              /rootfs/usr/lib/systemd/system/mos-*.service \
              /rootfs/usr/lib/systemd/system/mosd.service \
-             /rootfs/usr/lib/systemd/system/webd.service \
+             /rootfs/usr/lib/systemd/system/apid.service \
              /rootfs/usr/share/dbus-1/system.d/com.mos.mosd.conf \
              /rootfs/etc/systemd/network/*.network \
              /rootfs/etc/systemd/system/mos-*.service \
@@ -492,7 +492,7 @@ RUN mkdir -p /out && \
 # Assert it instead of trusting the design: every precious path under /var must
 # be redirected onto STATE by a bind mount that is actually ENABLED, and its
 # mountpoint must exist in the factory /var that gets restored on first boot.
-# A silently-missing bind here would mean losing the webd admin password hash
+# A silently-missing bind here would mean losing the apid admin password hash
 # or every Bluetooth pairing on a /var wipe.
 RUN set -eu; \
     for w in /var/lib/mos /var/lib/bluetooth; do \
