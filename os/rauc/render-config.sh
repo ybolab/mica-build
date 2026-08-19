@@ -17,8 +17,10 @@ REPO_ROOT="$(dirname "${SCRIPT_DIR}")"
 REPO_ROOT="$(dirname "${REPO_ROOT}")"
 LAYOUT_ENV="${REPO_ROOT}/os/layout/cx3576-v2.env"
 OVERLAY="${REPO_ROOT}/os/rootfs/overlay-v2"
-SYSTEM_CONF_IN="${SCRIPT_DIR}/system.conf.in"
-SYSTEM_CONF_OUT="${OVERLAY}/etc/rauc/system.conf"
+# Overridable only so os/mkimage-v2-selftest.sh can drive the renderer against a
+# deliberately-broken template; every real invocation uses the tree's own files.
+SYSTEM_CONF_IN="${SYSTEM_CONF_IN:-${SCRIPT_DIR}/system.conf.in}"
+SYSTEM_CONF_OUT="${SYSTEM_CONF_OUT:-${OVERLAY}/etc/rauc/system.conf}"
 FSTAB_IN="${OVERLAY}/etc/fstab.in"
 FW_ENV_IN="${OVERLAY}/etc/fw_env.config.in"
 
@@ -161,6 +163,28 @@ render "${SYSTEM_CONF_IN}" "${rendered}" \
     ROOTFS_B_PARTUUID "$(lower "${ROOTFS_B_GUID}")" \
     BOOT_A_PARTUUID "$(lower "${BOOT_A_GUID}")" \
     BOOT_B_PARTUUID "$(lower "${BOOT_B_GUID}")"
+
+# RENUMBERING SAFETY. Every slot device must be addressed by PARTUUID. A
+# /dev/mmcblk0pN path would encode a partition NUMBER, and the numbers shift
+# whenever a partition is inserted ahead of the slots — as the loader partition
+# just did. RAUC would then install an update over the running rootfs, with no
+# error anywhere. The GUIDs cannot drift this way, so the shape is enforced here
+# rather than left to review.
+bad_devs="$(grep '^device=' "${rendered}" | grep -v '^device=/dev/disk/by-partuuid/' || true)"
+if [ -n "${bad_devs}" ]; then
+    echo "error: ${SYSTEM_CONF_IN} addresses a slot by something other than a PARTUUID:" >&2
+    echo "${bad_devs}" >&2
+    echo "Slot devices must be /dev/disk/by-partuuid/<guid>. A /dev/mmcblk0pN path encodes a partition number, and inserting a partition ahead of the slots renumbers it silently — RAUC would install over the running slot." >&2
+    exit 1
+fi
+
+# The loader partition must abut uenv-a. If it did not, the region between them
+# would be covered by no partition entry, and systemd-repart discards exactly
+# those regions — which is the failure the loader entry exists to prevent.
+if [ $((LOADER_START_SECTOR + LOADER_SIZE_SECTORS)) -ne "${UENV_A_START_SECTOR}" ]; then
+    echo "error: the loader partition ends at sector $((LOADER_START_SECTOR + LOADER_SIZE_SECTORS)) but ${UENV_A_LABEL} starts at ${UENV_A_START_SECTOR}; the gap between them would be discarded on first boot" >&2
+    exit 1
+fi
 
 if [ "${MODE}" = "check" ]; then
     if ! diff -u "${SYSTEM_CONF_OUT}" "${rendered}"; then

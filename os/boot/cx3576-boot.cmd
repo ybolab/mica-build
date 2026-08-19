@@ -22,6 +22,13 @@
 #
 # hush notes: no arithmetic without setexpr; setexpr is HEXADECIMAL, which is
 # also the radix RAUC uses for BOOT_x_LEFT. Keep boot-attempts in 1..9.
+#
+# PARTITION NUMBERS. bootpart/rootpart below are literal GPT partition numbers,
+# because hush cannot read os/layout/cx3576-v2.env. They are BOOT_A_PARTNUM /
+# BOOT_B_PARTNUM / ROOTFS_A_PARTNUM / ROOTFS_B_PARTNUM from that file, and
+# os/mkimage-v2.sh refuses to compile this script if any of the four disagrees.
+# Do not edit one here without editing the layout: a stale number sends U-Boot
+# to the wrong partition after it has already persisted the attempt decrement.
 
 setenv verityaddr 0x40f00000
 
@@ -40,16 +47,16 @@ for slot in ${BOOT_ORDER}; do
             setexpr BOOT_A_LEFT ${BOOT_A_LEFT} - 1
             setenv bootslot A
             setenv slotsuffix a
-            setenv bootpart 3
-            setenv rootpart 5
+            setenv bootpart 4
+            setenv rootpart 6
         fi
     elif test "${slot}" = "B"; then
         if test ${BOOT_B_LEFT} -gt 0; then
             setexpr BOOT_B_LEFT ${BOOT_B_LEFT} - 1
             setenv bootslot B
             setenv slotsuffix b
-            setenv bootpart 4
-            setenv rootpart 6
+            setenv bootpart 5
+            setenv rootpart 7
         fi
     fi
 done

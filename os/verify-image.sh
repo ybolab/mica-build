@@ -2,8 +2,9 @@
 set -euo pipefail
 
 # Verifies a cx3576 mos disk image against the PLAN-010 M1 image contract:
-# GPT layout, raw u-boot, FAT boot partition contents and the Debian systemd
-# rootfs on p2, plus the mosd daemon integration (binary, unit, D-Bus policy).
+# GPT layout, the raw u-boot inside its own loader partition, FAT boot partition
+# contents and the Debian systemd rootfs on p3, plus the mosd daemon integration
+# (binary, unit, D-Bus policy).
 # Emits one PASS:/FAIL: line per check and a final
 # "RESULT: PASS|FAIL (n/m checks)" summary; exits non-zero if any check fails.
 # Totals are dynamic (PASS_N/total); nothing to hand-bump when checks change.
@@ -18,22 +19,36 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(dirname "${SCRIPT_DIR}")"
 BOARD_DIR="${BOARD_DIR:-${REPO_ROOT}/board/cx3576}"
 
-# Image contract constants. Both partition sizes are content-derived, so they
-# are read from the GPT instead of being fixed here — p1 only has to clear the
-# BOOT_MIN_SIZE_MIB floor and land on a BOOT_ALIGN_MIB boundary, and the p2
-# start plus the FAT/rootfs extraction offsets follow from the partition
-# entries. The total image size follows as 16 MiB pre-boot area + p1 + p2 +
-# 1 MiB backup-GPT slack.
+# The loader partition's geometry, label, typecode, GUID and idbloader magic are
+# the SAME facts v1 and v2 share, so they are sourced from the layout file rather
+# than restated here. Everything else below is v1's own contract.
+LAYOUT_ENV="${SCRIPT_DIR}/layout/cx3576-v2.env"
+if [ ! -f "${LAYOUT_ENV}" ]; then
+    echo "error: ${LAYOUT_ENV} not found" >&2
+    exit 1
+fi
+# shellcheck source=layout/cx3576-v2.env
+. "${LAYOUT_ENV}"
+
+# Image contract constants. Both filesystem partition sizes are content-derived,
+# so they are read from the GPT instead of being fixed here — p2 only has to
+# clear the BOOT_MIN_SIZE_MIB floor and land on a BOOT_ALIGN_MIB boundary, and
+# the p3 start plus the FAT/rootfs extraction offsets follow from the partition
+# entries. The total image size follows as 16 MiB pre-boot area + p2 + p3 +
+# 1 MiB backup-GPT slack; the loader partition lives inside that head area and
+# adds nothing to it.
 DISK_GUID="5AC35760-0001-4000-8000-000000000000"
 BOOT_GUID="5AC35760-0001-4000-8000-000000000001"
 ROOTFS_GUID="5AC35760-0001-4000-8000-000000000002"
-ESP_TYPE="C12A7328-F81F-11D2-BA4B-00A0C93EC93B"
-LINUX_FS_DATA="0FC63DAF-8483-4772-8E79-3D69D8477DE4"
+ESP_TYPE="${TYPECODE_ESP}"
+LINUX_FS_DATA="${TYPECODE_LINUX}"
 ROOTFS_UUID="5ac35760-0002-4000-8000-000000000002"
-BOOT_FIRST_SECTOR=32768
+BOOT_PARTNUM=2
+ROOTFS_PARTNUM=3
+BOOT_FIRST_SECTOR=$((LOADER_START_SECTOR + LOADER_SIZE_SECTORS))
 BOOT_MIN_SIZE_MIB=64
 BOOT_ALIGN_MIB=4
-UBOOT_OFFSET_BYTES=$((64 * 512))
+UBOOT_OFFSET_BYTES=$((LOADER_START_SECTOR * SECTOR_SIZE))
 FREE_FLOOR_BYTES=$((32 * 1024 * 1024))
 KERNEL_VERSION="6.1.115"
 APPEND_LINE="append root=PARTLABEL=rootfs rw console=ttyFIQ0,1500000 earlycon=uart8250,mmio32,0x2ad40000 storagemedia=emmc net.ifnames=0 rootwait"
@@ -155,10 +170,10 @@ else
     fail "disk GUID is '${disk_guid}', expected ${DISK_GUID}"
 fi
 part_count="$(echo "${ptable}" | grep -cE '^[[:space:]]+[0-9]+[[:space:]]' || true)"
-if [ "${part_count}" = "2" ]; then
-    pass "exactly 2 partitions"
+if [ "${part_count}" = "3" ]; then
+    pass "exactly 3 partitions"
 else
-    fail "found ${part_count} partitions, expected 2"
+    fail "found ${part_count} partitions, expected 3"
 fi
 
 # Extract one field from sgdisk -i output.
@@ -166,19 +181,80 @@ sg_field() {
     echo "$1" | sed -n "s/^$2: //p" | head -n1
 }
 
-# --- p1 (boot) ---
-p1="$(sgdisk -i 1 "${IMG}" 2>&1 || true)"
+# --- p1 (loader) ---
+# The Rockchip idbloader area is a real GPT partition, and that is what stops
+# systemd-repart from discarding it during first-boot growth. Every assertion
+# here is against the ASSEMBLED image, because sgdisk is free to relocate a
+# non-2048-aligned start and asserting the intent would hide exactly that.
+pL="$(sgdisk -i "${LOADER_PARTNUM}" "${IMG}" 2>&1 || true)"
+pL_name="$(sg_field "${pL}" "Partition name")"
+if [ "${pL_name}" = "'${LOADER_LABEL}'" ]; then
+    pass "p${LOADER_PARTNUM} name is '${LOADER_LABEL}'"
+else
+    fail "p${LOADER_PARTNUM} name is ${pL_name:-unreadable}, expected '${LOADER_LABEL}'"
+fi
+pL_first="$(sg_field "${pL}" "First sector" | awk '{print $1}')"
+if [ "${pL_first}" = "${LOADER_START_SECTOR}" ]; then
+    pass "p${LOADER_PARTNUM} first sector is ${LOADER_START_SECTOR} (where the RK3576 BootROM looks)"
+else
+    fail "p${LOADER_PARTNUM} first sector is '${pL_first}', expected ${LOADER_START_SECTOR}; sgdisk relocates a non-2048-aligned start unless -a ${GPT_ALIGN_SECTORS} is used, and a relocated loader partition leaves the bootloader in a discardable gap"
+fi
+pL_size="$(sg_field "${pL}" "Partition size" | awk '{print $1}')"
+if [ "${pL_size}" = "${LOADER_SIZE_SECTORS}" ]; then
+    pass "p${LOADER_PARTNUM} size is ${LOADER_SIZE_SECTORS} sectors"
+else
+    fail "p${LOADER_PARTNUM} size is '${pL_size}' sectors, expected ${LOADER_SIZE_SECTORS}"
+fi
+pL_type="$(sg_field "${pL}" "Partition GUID code" | awk '{print $1}')"
+if [ "${pL_type^^}" = "${LOADER_TYPECODE}" ]; then
+    pass "p${LOADER_PARTNUM} typecode is ${LOADER_TYPECODE} (Linux reserved)"
+else
+    fail "p${LOADER_PARTNUM} typecode is '${pL_type}', expected ${LOADER_TYPECODE}"
+fi
+# The distinct type is what keeps the loader out of systemd-repart's matching.
+# /etc/repart.d ships exactly one definition, Type=linux-generic, so it can only
+# ever pair with a linux-generic partition — demonstrated, not assumed, by
+# counting them in the assembled GPT.
+if [ "${pL_type^^}" != "${LINUX_FS_DATA}" ] && [ "${pL_type^^}" != "${ESP_TYPE}" ]; then
+    pass "p${LOADER_PARTNUM} type differs from linux-generic and from the ESP type, so no repart definition can match it"
+else
+    fail "p${LOADER_PARTNUM} type '${pL_type}' collides with a type repart definitions use; the grow definition would attach to the loader"
+fi
+pL_guid="$(sg_field "${pL}" "Partition unique GUID")"
+if [ "${pL_guid^^}" = "${LOADER_V1_GUID}" ]; then
+    pass "p${LOADER_PARTNUM} GUID is ${LOADER_V1_GUID}"
+else
+    fail "p${LOADER_PARTNUM} GUID is '${pL_guid}', expected ${LOADER_V1_GUID}"
+fi
+# The partition must abut the boot partition: a gap between them would be a
+# region no entry covers, which is the state repart discards.
+if [[ "${pL_first}" =~ ^[0-9]+$ ]] && [[ "${pL_size}" =~ ^[0-9]+$ ]] &&
+    [ $((pL_first + pL_size)) -eq "${BOOT_FIRST_SECTOR}" ]; then
+    pass "p${LOADER_PARTNUM} ends exactly where the boot partition begins (sector ${BOOT_FIRST_SECTOR}), leaving no untracked gap"
+else
+    fail "p${LOADER_PARTNUM} ends at sector $((${pL_first:-0} + ${pL_size:-0})) but the boot partition starts at ${BOOT_FIRST_SECTOR}"
+fi
+# The first byte of the partition must be the idbloader magic.
+loader_magic="$(dd if="${IMG}" bs="${SECTOR_SIZE}" skip="${LOADER_START_SECTOR}" count=1 status=none 2>/dev/null | od -An -tx1 -N4 | tr -d ' \n' || true)"
+if [ "${loader_magic}" = "${LOADER_MAGIC_HEX}" ]; then
+    pass "p${LOADER_PARTNUM} starts with the Rockchip idbloader magic ${LOADER_MAGIC_HEX} ('RKNS')"
+else
+    fail "p${LOADER_PARTNUM} starts with '${loader_magic}', expected the idbloader magic ${LOADER_MAGIC_HEX} ('RKNS')"
+fi
+
+# --- p2 (boot) ---
+p1="$(sgdisk -i "${BOOT_PARTNUM}" "${IMG}" 2>&1 || true)"
 p1_name="$(sg_field "${p1}" "Partition name")"
 if [ "${p1_name}" = "'boot'" ]; then
-    pass "p1 name is 'boot'"
+    pass "p${BOOT_PARTNUM} name is 'boot'"
 else
-    fail "p1 name is ${p1_name:-unreadable}, expected 'boot'"
+    fail "p${BOOT_PARTNUM} name is ${p1_name:-unreadable}, expected 'boot'"
 fi
 p1_first="$(sg_field "${p1}" "First sector" | awk '{print $1}')"
 if [ "${p1_first}" = "${BOOT_FIRST_SECTOR}" ]; then
-    pass "p1 first sector is ${BOOT_FIRST_SECTOR} (16 MiB)"
+    pass "p${BOOT_PARTNUM} first sector is ${BOOT_FIRST_SECTOR} (16 MiB)"
 else
-    fail "p1 first sector is '${p1_first}', expected ${BOOT_FIRST_SECTOR}"
+    fail "p${BOOT_PARTNUM} first sector is '${p1_first}', expected ${BOOT_FIRST_SECTOR}"
 fi
 if [[ "${p1_first}" =~ ^[0-9]+$ ]]; then
     FAT_OFFSET_BYTES=$((p1_first * 512))
@@ -189,80 +265,99 @@ p1_size="$(sg_field "${p1}" "Partition size" | awk '{print $1}')"
 if [[ "${p1_size}" =~ ^[0-9]+$ ]] && [ $((p1_size % 2048)) -eq 0 ] &&
     [ "${p1_size}" -ge $((BOOT_MIN_SIZE_MIB * 2048)) ]; then
     BOOT_SIZE_MIB=$((p1_size / 2048))
-    pass "p1 size is ${p1_size} sectors (${BOOT_SIZE_MIB} MiB, whole-MiB and >= ${BOOT_MIN_SIZE_MIB} MiB floor)"
+    pass "p${BOOT_PARTNUM} size is ${p1_size} sectors (${BOOT_SIZE_MIB} MiB, whole-MiB and >= ${BOOT_MIN_SIZE_MIB} MiB floor)"
 else
     BOOT_SIZE_MIB=0
-    fail "p1 size is '${p1_size}' sectors, expected a whole-MiB multiple of at least ${BOOT_MIN_SIZE_MIB} MiB"
+    fail "p${BOOT_PARTNUM} size is '${p1_size}' sectors, expected a whole-MiB multiple of at least ${BOOT_MIN_SIZE_MIB} MiB"
 fi
 if [ "${BOOT_SIZE_MIB}" -gt 0 ] && [ $((BOOT_SIZE_MIB % BOOT_ALIGN_MIB)) -eq 0 ]; then
-    pass "p1 size ${BOOT_SIZE_MIB} MiB is a multiple of ${BOOT_ALIGN_MIB} MiB"
+    pass "p${BOOT_PARTNUM} size ${BOOT_SIZE_MIB} MiB is a multiple of ${BOOT_ALIGN_MIB} MiB"
 else
-    fail "p1 size ${BOOT_SIZE_MIB} MiB is not a multiple of ${BOOT_ALIGN_MIB} MiB"
+    fail "p${BOOT_PARTNUM} size ${BOOT_SIZE_MIB} MiB is not a multiple of ${BOOT_ALIGN_MIB} MiB"
 fi
 p1_attrs="$(sg_field "${p1}" "Attribute flags")"
 if [[ "${p1_attrs}" =~ ^[0-9A-Fa-f]+$ ]] && [ $((16#${p1_attrs} & 4)) -ne 0 ]; then
-    pass "p1 attribute bit 2 is set (flags ${p1_attrs})"
+    pass "p${BOOT_PARTNUM} attribute bit 2 is set (flags ${p1_attrs})"
 else
-    fail "p1 attribute bit 2 not set (flags '${p1_attrs}')"
+    fail "p${BOOT_PARTNUM} attribute bit 2 not set (flags '${p1_attrs}')"
 fi
 p1_type="$(sg_field "${p1}" "Partition GUID code" | awk '{print $1}')"
 if [ "${p1_type^^}" = "${ESP_TYPE}" ]; then
-    pass "p1 typecode is ${ESP_TYPE} (ESP)"
+    pass "p${BOOT_PARTNUM} typecode is ${ESP_TYPE} (ESP)"
 else
-    fail "p1 typecode is '${p1_type}', expected ${ESP_TYPE} (ESP)"
+    fail "p${BOOT_PARTNUM} typecode is '${p1_type}', expected ${ESP_TYPE} (ESP)"
 fi
 p1_guid="$(sg_field "${p1}" "Partition unique GUID")"
 if [ "${p1_guid^^}" = "${BOOT_GUID}" ]; then
-    pass "p1 GUID is ${BOOT_GUID}"
+    pass "p${BOOT_PARTNUM} GUID is ${BOOT_GUID}"
 else
-    fail "p1 GUID is '${p1_guid}', expected ${BOOT_GUID}"
+    fail "p${BOOT_PARTNUM} GUID is '${p1_guid}', expected ${BOOT_GUID}"
 fi
 fat_sig="$(dd if="${IMG}" skip=$((FAT_OFFSET_BYTES + 82)) count=5 iflag=skip_bytes,count_bytes status=none 2>/dev/null || true)"
 if [ "${fat_sig}" = "FAT32" ]; then
-    pass "p1 has a FAT32 boot sector signature at $((FAT_OFFSET_BYTES / 1048576)) MiB"
+    pass "p${BOOT_PARTNUM} has a FAT32 boot sector signature at $((FAT_OFFSET_BYTES / 1048576)) MiB"
 else
-    fail "p1 FAT32 signature not found at offset $((FAT_OFFSET_BYTES / 1048576)) MiB + 82"
+    fail "p${BOOT_PARTNUM} FAT32 signature not found at offset $((FAT_OFFSET_BYTES / 1048576)) MiB + 82"
 fi
 
-# --- p2 (rootfs) ---
-p2="$(sgdisk -i 2 "${IMG}" 2>&1 || true)"
+# --- p3 (rootfs) ---
+p2="$(sgdisk -i "${ROOTFS_PARTNUM}" "${IMG}" 2>&1 || true)"
 p2_name="$(sg_field "${p2}" "Partition name")"
 if [ "${p2_name}" = "'rootfs'" ]; then
-    pass "p2 name is 'rootfs'"
+    pass "p${ROOTFS_PARTNUM} name is 'rootfs'"
 else
-    fail "p2 name is ${p2_name:-unreadable}, expected 'rootfs'"
+    fail "p${ROOTFS_PARTNUM} name is ${p2_name:-unreadable}, expected 'rootfs'"
 fi
 p2_first="$(sg_field "${p2}" "First sector" | awk '{print $1}')"
 ROOTFS_FIRST_SECTOR=$(((BOOT_FIRST_SECTOR / 2048 + BOOT_SIZE_MIB) * 2048))
 if [ "${BOOT_SIZE_MIB}" -gt 0 ] && [ "${p2_first}" = "${ROOTFS_FIRST_SECTOR}" ]; then
     ROOTFS_OFFSET_MIB=$((p2_first / 2048))
-    pass "p2 first sector is ${ROOTFS_FIRST_SECTOR} (${ROOTFS_OFFSET_MIB} MiB, right after p1)"
+    pass "p${ROOTFS_PARTNUM} first sector is ${ROOTFS_FIRST_SECTOR} (${ROOTFS_OFFSET_MIB} MiB, right after p${BOOT_PARTNUM})"
 else
     ROOTFS_OFFSET_MIB=0
-    fail "p2 first sector is '${p2_first}', expected ${ROOTFS_FIRST_SECTOR} (16 MiB pre-boot + ${BOOT_SIZE_MIB} MiB boot)"
+    fail "p${ROOTFS_PARTNUM} first sector is '${p2_first}', expected ${ROOTFS_FIRST_SECTOR} (16 MiB pre-boot + ${BOOT_SIZE_MIB} MiB boot)"
 fi
 p2_size="$(sg_field "${p2}" "Partition size" | awk '{print $1}')"
 if [[ "${p2_size}" =~ ^[0-9]+$ ]] && [ "${p2_size}" -gt 0 ] && [ $((p2_size % 2048)) -eq 0 ]; then
     ROOTFS_SIZE_MIB=$((p2_size / 2048))
-    pass "p2 size is ${p2_size} sectors (${ROOTFS_SIZE_MIB} MiB, a whole-MiB multiple)"
+    pass "p${ROOTFS_PARTNUM} size is ${p2_size} sectors (${ROOTFS_SIZE_MIB} MiB, a whole-MiB multiple)"
 else
     ROOTFS_SIZE_MIB=0
-    fail "p2 size is '${p2_size}' sectors, expected a positive whole-MiB multiple"
+    fail "p${ROOTFS_PARTNUM} size is '${p2_size}' sectors, expected a positive whole-MiB multiple"
 fi
 p2_type="$(sg_field "${p2}" "Partition GUID code" | awk '{print $1}')"
 if [ "${p2_type^^}" = "${LINUX_FS_DATA}" ]; then
-    pass "p2 typecode is ${LINUX_FS_DATA}"
+    pass "p${ROOTFS_PARTNUM} typecode is ${LINUX_FS_DATA}"
 else
-    fail "p2 typecode is '${p2_type}', expected ${LINUX_FS_DATA}"
+    fail "p${ROOTFS_PARTNUM} typecode is '${p2_type}', expected ${LINUX_FS_DATA}"
 fi
 p2_guid="$(sg_field "${p2}" "Partition unique GUID")"
 if [ "${p2_guid^^}" = "${ROOTFS_GUID}" ]; then
-    pass "p2 GUID is ${ROOTFS_GUID}"
+    pass "p${ROOTFS_PARTNUM} GUID is ${ROOTFS_GUID}"
 else
-    fail "p2 GUID is '${p2_guid}', expected ${ROOTFS_GUID}"
+    fail "p${ROOTFS_PARTNUM} GUID is '${p2_guid}', expected ${ROOTFS_GUID}"
 fi
 
-# --- image size: 16 MiB pre-boot + p1 + p2 + 1 MiB backup-GPT slack ---
+# repart matches definitions to partitions BY TYPE UUID in disk order, so the
+# claim "no definition can attach to the loader" reduces to a countable fact:
+# the image must carry exactly as many linux-generic partitions as the rootfs
+# ships definitions, and the loader must not be one of them. Counted from the
+# assembled GPT rather than assumed.
+linux_generic_n=0
+for n in $(seq 1 "${part_count:-0}"); do
+    t="$(sgdisk -i "${n}" "${IMG}" 2>/dev/null | sed -n 's/^Partition GUID code: //p' | awk '{print $1}')"
+    if [ "${t^^}" = "${LINUX_FS_DATA}" ]; then
+        linux_generic_n=$((linux_generic_n + 1))
+    fi
+done
+if [ "${linux_generic_n}" = "1" ]; then
+    pass "exactly 1 linux-generic partition on the disk (the rootfs), matching the single /etc/repart.d definition; the loader's ${LOADER_TYPECODE} type is unmatchable"
+else
+    fail "found ${linux_generic_n} linux-generic partitions, expected 1; /etc/repart.d ships one definition and repart pairs by type UUID in disk order, so any other count attaches growth to the wrong partition"
+fi
+
+# --- image size: 16 MiB pre-boot (which the loader partition covers) + p2 + p3
+#     + 1 MiB backup-GPT slack ---
 pre_boot_mib=$((BOOT_FIRST_SECTOR / 2048))
 expected_size=$(((pre_boot_mib + BOOT_SIZE_MIB + ROOTFS_SIZE_MIB + 1) * 1024 * 1024))
 size_terms="${pre_boot_mib} + ${BOOT_SIZE_MIB} + ${ROOTFS_SIZE_MIB} + 1 MiB"
@@ -273,16 +368,25 @@ else
     fail "image size is ${actual_size} bytes, expected ${expected_size} (${size_terms})"
 fi
 
-# --- raw u-boot at sector 64 ---
+# --- raw u-boot at sector 64, inside the loader partition ---
 if [ ! -f "${UBOOT_SRC}" ]; then
     fail "u-boot compare source not found: ${UBOOT_SRC}"
+    fail "u-boot containment check skipped (compare source missing)"
 else
     uboot_size="$(stat -c %s "${UBOOT_SRC}")"
     if dd if="${IMG}" skip="${UBOOT_OFFSET_BYTES}" count="${uboot_size}" iflag=skip_bytes,count_bytes status=none 2>/dev/null |
         cmp -s - "${UBOOT_SRC}"; then
-        pass "u-boot at sector 64 matches ${UBOOT_SRC}"
+        pass "u-boot at sector ${LOADER_START_SECTOR} matches ${UBOOT_SRC}"
     else
-        fail "u-boot at sector 64 differs from ${UBOOT_SRC}"
+        fail "u-boot at sector ${LOADER_START_SECTOR} differs from ${UBOOT_SRC}"
+    fi
+    # Containment with room to spare: the blob must end inside the partition,
+    # not merely start in it.
+    loader_bytes=$((LOADER_SIZE_SECTORS * SECTOR_SIZE))
+    if [ "${uboot_size}" -lt "${loader_bytes}" ]; then
+        pass "u-boot (${uboot_size} bytes) fits inside p${LOADER_PARTNUM} (${loader_bytes} bytes) with $((loader_bytes - uboot_size)) bytes to spare"
+    else
+        fail "u-boot is ${uboot_size} bytes but p${LOADER_PARTNUM} is only ${loader_bytes} bytes; the blob would run past the end of its own partition into ${UENV_A_LABEL}"
     fi
 fi
 
@@ -350,26 +454,26 @@ else
     fail "extlinux.conf initrd-line check skipped (file missing)"
 fi
 
-# --- p2 ext4 rootfs ---
-P2_IMG="${TMP}/p2.img"
+# --- p3 ext4 rootfs ---
+P2_IMG="${TMP}/p3.img"
 dd if="${IMG}" of="${P2_IMG}" bs=1M skip="${ROOTFS_OFFSET_MIB}" count="${ROOTFS_SIZE_MIB}" \
     conv=sparse status=none 2>/dev/null || true
 
 e2info="$(tune2fs -l "${P2_IMG}" 2>/dev/null || true)"
 e2label="$(echo "${e2info}" | sed -n 's/^Filesystem volume name:[[:space:]]*//p')"
 if [ "${e2label}" = "rootfs" ]; then
-    pass "p2 ext4 label is 'rootfs'"
+    pass "p${ROOTFS_PARTNUM} ext4 label is 'rootfs'"
 else
-    fail "p2 ext4 label is '${e2label}', expected 'rootfs'"
+    fail "p${ROOTFS_PARTNUM} ext4 label is '${e2label}', expected 'rootfs'"
 fi
 e2uuid="$(echo "${e2info}" | sed -n 's/^Filesystem UUID:[[:space:]]*//p')"
 if [ "${e2uuid,,}" = "${ROOTFS_UUID}" ]; then
-    pass "p2 ext4 UUID is ${ROOTFS_UUID}"
+    pass "p${ROOTFS_PARTNUM} ext4 UUID is ${ROOTFS_UUID}"
 else
-    fail "p2 ext4 UUID is '${e2uuid}', expected ${ROOTFS_UUID}"
+    fail "p${ROOTFS_PARTNUM} ext4 UUID is '${e2uuid}', expected ${ROOTFS_UUID}"
 fi
 
-# Filesystem geometry and health: the packed ext4 must exactly fill p2, pass
+# Filesystem geometry and health: the packed ext4 must exactly fill p3, pass
 # fsck, and keep the early-boot free-space margin (writes before repart/growfs).
 e2fs_header="$(dumpe2fs -h "${P2_IMG}" 2>/dev/null || true)"
 block_count="$(echo "${e2fs_header}" | sed -n 's/^Block count:[[:space:]]*//p')"
@@ -378,23 +482,23 @@ free_blocks="$(echo "${e2fs_header}" | sed -n 's/^Free blocks:[[:space:]]*//p')"
 p2_bytes=$((ROOTFS_SIZE_MIB * 1024 * 1024))
 fs_bytes=$((${block_count:-0} * ${block_size:-0}))
 if [ "${fs_bytes}" -gt 0 ] && [ "${fs_bytes}" -eq "${p2_bytes}" ]; then
-    pass "p2 ext4 size (${block_count} blocks x ${block_size} bytes) matches the partition size"
+    pass "p${ROOTFS_PARTNUM} ext4 size (${block_count} blocks x ${block_size} bytes) matches the partition size"
 else
-    fail "p2 ext4 size is ${fs_bytes} bytes, expected ${p2_bytes} (partition size)"
+    fail "p${ROOTFS_PARTNUM} ext4 size is ${fs_bytes} bytes, expected ${p2_bytes} (partition size)"
 fi
 free_bytes=$((${free_blocks:-0} * ${block_size:-0}))
 if [ "${free_bytes}" -ge "${FREE_FLOOR_BYTES}" ]; then
-    pass "p2 free space is $((free_bytes / 1048576)) MiB (>= 32 MiB early-boot floor)"
+    pass "p${ROOTFS_PARTNUM} free space is $((free_bytes / 1048576)) MiB (>= 32 MiB early-boot floor)"
 else
-    fail "p2 free space is ${free_bytes} bytes, below the 32 MiB early-boot floor"
+    fail "p${ROOTFS_PARTNUM} free space is ${free_bytes} bytes, below the 32 MiB early-boot floor"
 fi
 if e2fsck -fn "${P2_IMG}" >/dev/null 2>&1; then
-    pass "e2fsck -fn on p2 is clean"
+    pass "e2fsck -fn on p${ROOTFS_PARTNUM} is clean"
 else
-    fail "e2fsck -fn on p2 reported errors"
+    fail "e2fsck -fn on p${ROOTFS_PARTNUM} reported errors"
 fi
 
-# Run a single debugfs command against the extracted p2.
+# Run a single debugfs command against the extracted p3.
 dbg() {
     debugfs -R "$1" "${P2_IMG}" 2>/dev/null || true
 }

@@ -2,7 +2,8 @@
 set -euo pipefail
 
 # Verifies a cx3576 mos disk image against the layout-v2 image contract:
-# the ten-partition A/B GPT, the raw uboot-mos blob, both FAT32 boot slots,
+# the eleven-partition A/B GPT, the uboot-mos blob inside its own loader
+# partition, both FAT32 boot slots,
 # the squashfs+dm-verity rootfs payload and the packed root filesystem's
 # contents (mosd/webd, hwinit, RAUC, health gate, storage tiers).
 # Emits one PASS:/FAIL: line per check and a final
@@ -178,7 +179,7 @@ ptable="$(sgdisk -p "${IMG}" 2>/dev/null || true)"
 disk_guid="$(echo "${ptable}" | sed -n 's/^Disk identifier (GUID): //p')"
 eq_ci "disk GUID" "${disk_guid}" "${DISK_GUID}"
 
-EXPECT_PARTS=10
+EXPECT_PARTS=11
 part_count="$(echo "${ptable}" | grep -cE '^[[:space:]]+[0-9]+[[:space:]]' || true)"
 if [ "${part_count}" = "${EXPECT_PARTS}" ]; then
     pass "exactly ${EXPECT_PARTS} partitions"
@@ -221,6 +222,7 @@ total_size_mib=$((data_start_mib + DATA_SIZE_MIB + IMAGE_TAIL_SLACK_MIB))
 
 # num|label|typecode|guid|size-sectors|start-sector
 part_rows=(
+    "${LOADER_PARTNUM}|${LOADER_LABEL}|${LOADER_TYPECODE}|${LOADER_GUID}|${LOADER_SIZE_SECTORS}|${LOADER_START_SECTOR}"
     "${UENV_A_PARTNUM}|${UENV_A_LABEL}|${UENV_A_TYPECODE}|${UENV_A_GUID}|${UENV_SIZE_SECTORS}|${UENV_A_START_SECTOR}"
     "${UENV_B_PARTNUM}|${UENV_B_LABEL}|${UENV_B_TYPECODE}|${UENV_B_GUID}|${UENV_SIZE_SECTORS}|${UENV_B_START_SECTOR}"
     "${BOOT_A_PARTNUM}|${BOOT_A_LABEL}|${BOOT_A_TYPECODE}|${BOOT_A_GUID}|$((BOOT_SIZE_MIB * SECTORS_PER_MIB))|${BOOT_A_START_SECTOR}"
@@ -273,6 +275,67 @@ for row in "${part_rows[@]}"; do
         fail "p${n} (${label}) attribute flags are '${got_attrs}', expected all bits clear"
     fi
 done
+
+# --- LOADER: the reason first-boot growth no longer wipes the bootloader -----
+#
+# systemd-repart discards every region of the disk that no GPT entry covers, and
+# it does so on first boot while growing DATA. The Rockchip idbloader lives at
+# raw sector 64; before it had an entry, the growth run TRIMmed it and the device
+# reached maskrom on the next power-on. The protection is the ENTRY, so these
+# check the entry actually covers the bytes, not merely that it exists.
+loader_first="$(p_field "${LOADER_PARTNUM}" "First sector" | awk '{print $1}')"
+loader_size="$(p_field "${LOADER_PARTNUM}" "Partition size" | awk '{print $1}')"
+loader_type="$(p_field "${LOADER_PARTNUM}" "Partition GUID code" | awk '{print $1}')"
+
+# Abutment: a gap between the loader partition and uenv-a would itself be an
+# uncovered region, and repart would discard that.
+if [[ "${loader_first}" =~ ^[0-9]+$ ]] && [[ "${loader_size}" =~ ^[0-9]+$ ]] &&
+    [ $((loader_first + loader_size)) -eq "${UENV_A_START_SECTOR}" ]; then
+    pass "p${LOADER_PARTNUM} (${LOADER_LABEL}) ends exactly where ${UENV_A_LABEL} begins (sector ${UENV_A_START_SECTOR}); no untracked gap is left between them"
+else
+    fail "p${LOADER_PARTNUM} (${LOADER_LABEL}) covers sectors ${loader_first}..$((${loader_first:-0} + ${loader_size:-0} - 1)) but ${UENV_A_LABEL} starts at ${UENV_A_START_SECTOR}; anything not covered by a partition entry is discarded by systemd-repart"
+fi
+
+# The loader partition and the U-Boot fit check must describe the same bytes.
+if [ $((LOADER_SIZE_SECTORS * BYTES_PER_SECTOR)) -eq "${UBOOT_MAX_BYTES}" ]; then
+    pass "p${LOADER_PARTNUM} is ${UBOOT_MAX_BYTES} bytes, exactly the limit the U-Boot fit check enforces"
+else
+    fail "p${LOADER_PARTNUM} is $((LOADER_SIZE_SECTORS * BYTES_PER_SECTOR)) bytes but UBOOT_MAX_BYTES is ${UBOOT_MAX_BYTES}; a blob that passes the fit check could still overrun the partition"
+fi
+
+# The first byte of the partition must be the idbloader magic. An entry over
+# the wrong bytes protects nothing.
+loader_magic="$(dd if="${IMG}" bs="${BYTES_PER_SECTOR}" skip="${LOADER_START_SECTOR}" count=1 status=none 2>/dev/null | od -An -tx1 -N4 | tr -d ' \n' || true)"
+if [ "${loader_magic}" = "${LOADER_MAGIC_HEX}" ]; then
+    pass "p${LOADER_PARTNUM} starts with the Rockchip idbloader magic ${LOADER_MAGIC_HEX} ('RKNS')"
+else
+    fail "p${LOADER_PARTNUM} starts with '${loader_magic}', expected the idbloader magic ${LOADER_MAGIC_HEX} ('RKNS'); the partition does not cover a bootloader"
+fi
+
+# THE REPART-MATCHING PROOF. repart pairs definition files with existing
+# partitions BY TYPE UUID in disk order. The claim "no definition can ever match
+# the loader" is therefore a countable fact about the assembled GPT: the loader's
+# type must appear on exactly one partition and must not be a type any
+# definition uses. Counted here, and cross-checked against the shipped
+# definition count in section 8.
+LINUX_GENERIC_N=0
+LOADER_TYPE_N=0
+for n in $(seq 1 "${EXPECT_PARTS}"); do
+    t="$(lc "$(p_field "${n}" "Partition GUID code" | awk '{print $1}')")"
+    if [ "${t}" = "$(lc "${TYPECODE_LINUX}")" ]; then
+        LINUX_GENERIC_N=$((LINUX_GENERIC_N + 1))
+    elif [ "${t}" = "$(lc "${LOADER_TYPECODE}")" ]; then
+        LOADER_TYPE_N=$((LOADER_TYPE_N + 1))
+    fi
+done
+if [ "$(lc "${loader_type}")" = "$(lc "${LOADER_TYPECODE}")" ] &&
+    [ "$(lc "${LOADER_TYPECODE}")" != "$(lc "${TYPECODE_LINUX}")" ] &&
+    [ "$(lc "${LOADER_TYPECODE}")" != "$(lc "${TYPECODE_ESP}")" ] &&
+    [ "${LOADER_TYPE_N}" = "1" ]; then
+    pass "p${LOADER_PARTNUM} is the only ${LOADER_TYPECODE} partition, and that type is neither linux-generic nor the ESP type, so no /etc/repart.d definition can pair with it"
+else
+    fail "the loader type must be unique and distinct from linux-generic/ESP; p${LOADER_PARTNUM} type is '${loader_type}' and ${LOADER_TYPE_N} partition(s) carry ${LOADER_TYPECODE}"
+fi
 
 if [ "${SLOT_MIB}" -gt 0 ]; then
     pass "rootfs-a and rootfs-b are the same size (${SLOT_MIB} MiB each)"
@@ -355,6 +418,16 @@ if [ "${uboot_size}" -gt 0 ] && [ $((UBOOT_OFFSET_BYTES + uboot_size)) -le "${UE
     pass "u-boot ends at $((UBOOT_OFFSET_BYTES + uboot_size)) bytes, below ${UENV_A_LABEL} at ${UENV_A_START_MIB} MiB"
 else
     fail "u-boot (${uboot_size} bytes at offset ${UBOOT_OFFSET_BYTES}) reaches into ${UENV_A_LABEL} at ${UENV_A_OFFSET_BYTES} bytes / ${UENV_A_START_MIB} MiB"
+fi
+
+# Containment in the LOADER PARTITION, with room to spare. "Ends before uenv-a"
+# above is the byte-offset form of the same statement; this one is expressed
+# against the partition entry, which is what actually protects the bytes.
+loader_bytes=$((LOADER_SIZE_SECTORS * BYTES_PER_SECTOR))
+if [ "${uboot_size}" -gt 0 ] && [ "${uboot_size}" -lt "${loader_bytes}" ]; then
+    pass "u-boot (${uboot_size} bytes) is fully contained in p${LOADER_PARTNUM} (${loader_bytes} bytes) with $((loader_bytes - uboot_size)) bytes to spare"
+else
+    fail "u-boot is ${uboot_size} bytes and p${LOADER_PARTNUM} is ${loader_bytes} bytes; the blob must fit inside its own partition with room left"
 fi
 
 # ===========================================================================
@@ -470,6 +543,29 @@ if [ "${scr_magic}" = "27051956" ]; then
 else
     fail "${BOOT_SCRIPT_NAME} magic is '${scr_magic}', expected 27051956 (mkimage -T script output)"
 fi
+
+# THE RENUMBERING ASSERTION. boot.scr addresses its slot as `mmc 0:${bootpart}`
+# — a literal GPT partition NUMBER baked into the compiled script, because hush
+# cannot read the layout file. Inserting the loader partition shifted every
+# number by one. A stale value does not announce itself: U-Boot persists the
+# boot-attempt decrement, then fails to find Image in a partition that now holds
+# something else, and the board is bricked until it is re-flashed. This reads the
+# numbers back out of the COMPILED script in the assembled image, not out of
+# os/boot/cx3576-boot.cmd, so it also covers a boot.scr built from a stale source.
+scr_body="$(tr -d '\0' < "${TMP}/scr-A" 2>/dev/null || true)"
+for want in "bootpart:A:${BOOT_A_PARTNUM}" "bootpart:B:${BOOT_B_PARTNUM}" \
+    "rootpart:A:${ROOTFS_A_PARTNUM}" "rootpart:B:${ROOTFS_B_PARTNUM}"; do
+    IFS=':' read -r var slot num <<<"${want}"
+    got="$(printf '%s\n' "${scr_body}" | awk -v slot="${slot}" -v var="${var}" '
+        $1 == "setenv" && $2 == "bootslot" && $3 == slot { in_slot = 1; next }
+        $1 == "setenv" && $2 == var && in_slot { print $3; exit }
+    ')"
+    if [ "${got}" = "${num}" ]; then
+        pass "${BOOT_SCRIPT_NAME} sets ${var}=${num} for slot ${slot}, matching the layout"
+    else
+        fail "${BOOT_SCRIPT_NAME} sets ${var}='${got:-nothing}' for slot ${slot}, but the layout puts that partition at p${num}; U-Boot would load from the wrong partition after already persisting the attempt decrement"
+    fi
+done
 
 # Each slot's verity env must point dm-verity at its OWN rootfs partition;
 # swapping them would make an update verify the slot it just replaced.
@@ -910,6 +1006,18 @@ else
     fail "RAUC system.conf slot device mismatch: ${bad_slot}"
 fi
 
+# RENUMBERING SAFETY. Every slot device must be a by-partuuid path. A
+# /dev/mmcblk0pN path would encode a partition NUMBER, and inserting or removing
+# a partition ahead of it would silently point RAUC at the wrong slot — it would
+# install an update over the running rootfs. Asserted as a shape, so the config
+# cannot acquire such a path later.
+bad_devs="$(grep '^device=' "${RAUC_CONF}" 2>/dev/null | grep -v '^device=/dev/disk/by-partuuid/' || true)"
+if [ -z "${bad_devs}" ]; then
+    pass "every RAUC slot device is a /dev/disk/by-partuuid/ path; no slot is addressed by partition number, so renumbering cannot mis-target an install"
+else
+    fail "RAUC system.conf addresses a slot by something other than a PARTUUID: $(echo "${bad_devs}" | tr '\n' ' '); a partition-number path breaks silently when the table is renumbered"
+fi
+
 # WIPE-SAFETY CONTRACT. RAUC's status file is update state — which slot was
 # installed and whether it was marked good. /var is DISCARDABLE by design, so
 # putting it there would make "wipe /var" quietly destroy update bookkeeping.
@@ -1165,12 +1273,17 @@ sq_enabled fstrim.timer
 # count must match the number of linux-generic partitions exactly: one too few
 # and the grow flag attaches to the wrong partition, one too many and repart
 # CREATES a partition nobody asked for.
-WANT_DEFS=8
+# WANT_DEFS is not a literal: it is the number of linux-generic partitions
+# COUNTED in the assembled GPT above. That is what makes this an integration
+# check rather than two hardcoded numbers agreeing with each other — and it is
+# what proves the loader partition is invisible to repart, since its distinct
+# type keeps it out of the count.
+WANT_DEFS="${LINUX_GENERIC_N}"
 def_count="$(find "${ROOT}/etc/repart.d" -name '*.conf' 2>/dev/null | wc -l)"
-if [ "${def_count}" = "${WANT_DEFS}" ]; then
-    pass "/etc/repart.d has exactly ${WANT_DEFS} definitions, one per linux-generic partition in disk order"
+if [ "${def_count}" = "${WANT_DEFS}" ] && [ "${WANT_DEFS}" -gt 0 ]; then
+    pass "/etc/repart.d has exactly ${WANT_DEFS} definitions, one per linux-generic partition counted in the image's own GPT (the loader is not one of them)"
 else
-    fail "/etc/repart.d has ${def_count} definitions, expected ${WANT_DEFS}; repart matches definitions to partitions by type UUID in disk order, so a miscount silently attaches growth to the wrong partition"
+    fail "/etc/repart.d has ${def_count} definitions but the GPT carries ${WANT_DEFS} linux-generic partitions; repart matches definitions to partitions by type UUID in disk order, so a miscount silently attaches growth to the wrong partition"
 fi
 grow_defs="$(grep -l '^Weight=1000$' "${ROOT}/etc/repart.d/"*.conf 2>/dev/null || true)"
 grow_n="$(echo "${grow_defs}" | grep -c . || true)"
@@ -1178,6 +1291,18 @@ if [ "${grow_n}" = "1" ] && [ "$(basename "${grow_defs}")" = "80-data.conf" ]; t
     pass "exactly one repart definition grows, and it is 80-data.conf (DATA / p${DATA_PARTNUM}), not ephemeral"
 else
     fail "expected exactly one growing repart definition, 80-data.conf; found ${grow_n}: $(echo "${grow_defs}" | xargs -r -n1 basename | tr '\n' ' ')"
+fi
+
+# --- the loader is protected STRUCTURALLY, not by a flag ---
+# systemd-repart's discard is deliberately left ON: first-boot TRIM is worth
+# having, and the loader is safe because it has a partition entry. A
+# --discard=no drop-in would be the other approach, and having both would hide a
+# regression in the partition entry behind a flag nobody remembers is there.
+discard_hits="$(grep -rl -- '--discard=no' "${ROOT}/etc/systemd" "${ROOT}/usr/lib/systemd" 2>/dev/null || true)"
+if [ -z "${discard_hits}" ]; then
+    pass "no --discard=no override ships in the image; the loader is protected by its GPT entry and first-boot TRIM stays enabled"
+else
+    fail "a --discard=no override ships in the image ($(echo "${discard_hits}" | tr '\n' ' ')); loader protection must come from the partition entry, not from disabling discard"
 fi
 
 # --- M4: wipe-safety — nothing precious is reachable only from /var ---
