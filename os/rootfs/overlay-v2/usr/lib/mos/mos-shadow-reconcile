@@ -118,6 +118,34 @@ else
     : >"$tmp"
 fi
 
+# Every entry below is added with `>>`, so a copy whose final line is NOT
+# newline-terminated would take the first appended entry onto that same line
+# and weld two accounts into one malformed record -- in the file pam_unix
+# authenticates against. Worse, the welded account no longer matches the
+# `grep -q "^${user}:"` guard below, so the next boot appends it again and the
+# damage compounds. Repair the terminator once, here, before anything appends.
+#
+# The last byte is inspected through od rather than compared directly, because
+# command substitution strips trailing newlines: `$(tail -c 1 "$tmp")` is the
+# empty string BOTH for a file ending in a newline and for a file ending in no
+# byte at all, which is exactly the distinction that has to be made. Rendered
+# as hex, a terminator is 0a and nothing else is.
+#
+# The `-s` guard means an empty copy is left empty: there is no final line to
+# terminate, and a bare newline would become a blank first line.
+#
+# This writes to $tmp, never to $SHADOW. A file that is unterminated but needs
+# no new entry therefore still reaches the converged early exit below, which
+# discards $tmp and leaves $SHADOW untouched -- deliberately. With nothing to
+# append there is nothing that can be welded, so rewriting the file would buy
+# no safety and would turn a no-op boot into a write to a credential store.
+# Do not "fix" this into an unconditional rewrite.
+if [ -s "$tmp" ]; then
+    if [ "$(tail -c 1 "$tmp" | od -An -tx1 | tr -d ' \n')" != "0a" ]; then
+        printf '\n' >>"$tmp"
+    fi
+fi
+
 today=$(( $(date +%s) / 86400 ))
 added=0
 while IFS=: read -r user rest; do

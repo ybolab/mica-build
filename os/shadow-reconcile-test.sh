@@ -291,6 +291,251 @@ check "second run -> root still locked" "!" "$(root_field)"
 check "second run -> no marker resurrected" "no" "$(exists "$MARKER")"
 check "second run -> no temp files left" "yes" "$(no_temp_files)"
 
+# --- 9. shadow files whose final line is NOT newline-terminated (RFCT-038) ---
+# The reconcile path copies $SHADOW and then appends missing entries with `>>`.
+# If the copy's final line carries no terminator the first appended entry lands
+# on that line, welding two accounts into one malformed record -- and the
+# welded account then no longer matches the `grep -q "^${user}:"` guard, so the
+# next boot appends it again and the damage compounds.
+#
+# new_case above writes "exactly one trailing newline, whether the body arrived
+# through a command substitution or as a plain variable". That normalisation is
+# what kept this invisible: it guaranteed the one input shape the append path
+# could not mishandle. Everything below deliberately does not normalise.
+
+# Same sandbox as new_case, but the shadow body is written VERBATIM.
+new_case_raw() {
+    CASE=$WORK/case-$1
+    STATE=$CASE/state
+    SHADOW=$STATE/shadow
+    MARKER=$STATE/transient-root-password
+    rm -rf "$CASE"
+    mkdir -p "$STATE"
+    printf '%s' "$2" >"$SHADOW"
+    chmod 0640 "$SHADOW"
+    printf '%s' "${3:-$PASSWD_BOTH}" >"$CASE/passwd"
+    printf '%s' "$FACTORY_BODY" >"$CASE/factory"
+}
+
+# The whole file as a flat hex string. Every byte comparison in this section
+# goes through od: `$(cat file)` strips trailing newlines, so it reports a
+# terminated and an unterminated file as EQUAL, which is precisely the
+# difference under test here.
+file_hex() { od -An -tx1 "$1" | tr -d ' \n'; }
+
+# yes when the last byte is a newline. An empty file answers no: it has no
+# final line to terminate.
+ends_with_newline() {
+    [ "$(tail -c 1 "$1" | od -An -tx1 | tr -d ' \n')" = "0a" ] && echo yes || echo no
+}
+
+# awk counts an unterminated final line as a record; `wc -l` does not, and
+# would silently under-count exactly the fixtures below.
+line_count() { awk 'END { print NR }' "$1"; }
+blank_lines() { awk '/^$/ { n++ } END { print n + 0 }' "$1"; }
+
+# yes when every NON-EMPTY line has nine fields. Distinct from well_formed,
+# which also rejects blank lines: a blank line a fixture itself carried is not
+# something the script created, and preserving it is the correct behaviour.
+well_formed_nonblank() {
+    awk -F: 'NF == 0 { next } NF != 9 { bad = 1 } END { exit bad ? 1 : 0 }' "$1" \
+        && echo yes || echo no
+}
+
+# Run the case a second time and assert it is a fixed point. This is the half
+# that catches a fix which "repairs" a converged file into a fresh write.
+check_idempotent() {
+    local name=$1 after rc2
+    after=$(file_hex "$SHADOW")
+    run_reconcile >/dev/null 2>&1 && rc2=0 || rc2=$?
+    check "$name -> second run exits 0" "0" "$rc2"
+    check "$name -> second run byte-identical" "$after" "$(file_hex "$SHADOW")"
+    check "$name -> second run leaves no temp files" "yes" "$(no_temp_files)"
+}
+
+ROOT_DEV_LINE="root:${DEV_HASH}:19000:0:99999:7:::"
+ROOT_MOS_LINE="root:${MOS_HASH}:19000:0:99999:7:::"
+DAEMON_LINE='daemon:*:19000:0:99999:7:::'
+# Two lines, NO terminator on the second. Built with $'\n' rather than a
+# command substitution, which would strip the very bytes under test.
+UNTERMINATED="${ROOT_DEV_LINE}"$'\n'"${DAEMON_LINE}"
+UNTERM_MOS="${ROOT_MOS_LINE}"$'\n'"${DAEMON_LINE}"
+# The same two lines followed by TWO newlines, i.e. one trailing blank line.
+MULTI_NEWLINE="${ROOT_DEV_LINE}"$'\n'"${DAEMON_LINE}"$'\n\n'
+
+# 9.1 unterminated, and an account still needs an entry.
+new_case_raw unterminated-append "$UNTERMINATED" "$PASSWD_WITH_NEW"
+check "unterminated fixture -> really has no terminator" "no" "$(ends_with_newline "$SHADOW")"
+out=$(run_reconcile 2>&1) && rc=0 || rc=$?
+check "unterminated + append -> exit 0" "0" "$rc"
+check "unterminated + append -> every line has nine fields" "yes" "$(well_formed "$SHADOW")"
+check "unterminated + append -> three lines, nothing welded" "3" "$(line_count "$SHADOW")"
+check "unterminated + append -> root line byte-identical" "$ROOT_DEV_LINE" \
+    "$(sed -n '1p' "$SHADOW")"
+check "unterminated + append -> previously-final line byte-identical" "$DAEMON_LINE" \
+    "$(sed -n '2p' "$SHADOW")"
+check "unterminated + append -> new entry is line three" "newsvc" \
+    "$(awk -F: 'NR == 3 { print $1 }' "$SHADOW")"
+check "unterminated + append -> new entry is LOCKED" "newsvc:!" \
+    "$(awk -F: '$1 == "newsvc" { print $1 ":" $2 }' "$SHADOW")"
+check "unterminated + append -> exactly one newsvc line" "1" \
+    "$(grep -c '^newsvc:' "$SHADOW" || true)"
+check "unterminated + append -> daemon and newsvc never share a line" "0" \
+    "$(grep -c 'daemon.*newsvc' "$SHADOW" || true)"
+check "unterminated + append -> result is terminated" "yes" "$(ends_with_newline "$SHADOW")"
+check "unterminated + append -> no temp files left" "yes" "$(no_temp_files)"
+check_idempotent "unterminated + append"
+
+# 9.2 unterminated, but nothing to add: the file must NOT be rewritten. With no
+# append there is nothing that can be welded, so repairing the terminator here
+# would be a gratuitous write to a credential store.
+new_case_raw unterminated-converged "$UNTERMINATED"
+before=$(file_hex "$SHADOW")
+out=$(run_reconcile 2>&1) && rc=0 || rc=$?
+check "unterminated + converged -> exit 0" "0" "$rc"
+check "unterminated + converged -> byte-identical" "$before" "$(file_hex "$SHADOW")"
+check "unterminated + converged -> still unterminated" "no" "$(ends_with_newline "$SHADOW")"
+check "unterminated + converged -> converged message" "yes" \
+    "$(grep -q 'already converged' <<<"$out" && echo yes || echo no)"
+check "unterminated + converged -> nothing logged as added" "no" \
+    "$(grep -q 'added locked entry' <<<"$out" && echo yes || echo no)"
+check "unterminated + converged -> no temp files left" "yes" "$(no_temp_files)"
+check_idempotent "unterminated + converged"
+
+# 9.3 empty shadow file: entries land, and no blank first line is introduced.
+new_case_raw empty-shadow ""
+out=$(run_reconcile 2>&1) && rc=0 || rc=$?
+check "empty shadow -> exit 0" "0" "$rc"
+check "empty shadow -> two entries land" "2" "$(line_count "$SHADOW")"
+check "empty shadow -> no blank lines at all" "0" "$(blank_lines "$SHADOW")"
+check "empty shadow -> first line is root" "root" "$(awk -F: 'NR == 1 { print $1 }' "$SHADOW")"
+check "empty shadow -> root entry is locked" "!" "$(root_field)"
+check "empty shadow -> every line has nine fields" "yes" "$(well_formed "$SHADOW")"
+check "empty shadow -> result is terminated" "yes" "$(ends_with_newline "$SHADOW")"
+check_idempotent "empty shadow"
+
+# 9.4 a single unterminated line.
+new_case_raw single-unterminated "$ROOT_DEV_LINE"
+out=$(run_reconcile 2>&1) && rc=0 || rc=$?
+check "single unterminated line -> exit 0" "0" "$rc"
+check "single unterminated line -> two lines, nothing welded" "2" "$(line_count "$SHADOW")"
+check "single unterminated line -> original line byte-identical" "$ROOT_DEV_LINE" \
+    "$(sed -n '1p' "$SHADOW")"
+check "single unterminated line -> daemon on its own line" "daemon:*" \
+    "$(awk -F: 'NR == 2 { print $1 ":" $2 }' "$SHADOW")"
+check "single unterminated line -> every line has nine fields" "yes" "$(well_formed "$SHADOW")"
+check "single unterminated line -> root hash untouched" "$DEV_HASH" "$(root_field)"
+check "single unterminated line -> result is terminated" "yes" "$(ends_with_newline "$SHADOW")"
+check_idempotent "single unterminated line"
+
+# 9.5 a file ending in MULTIPLE newlines, both directions.
+new_case_raw multi-newline-append "$MULTI_NEWLINE" "$PASSWD_WITH_NEW"
+before_blanks=$(blank_lines "$SHADOW")
+before_lines=$(line_count "$SHADOW")
+out=$(run_reconcile 2>&1) && rc=0 || rc=$?
+check "multi-newline + append -> exit 0" "0" "$rc"
+check "multi-newline + append -> no blank line invented" "$before_blanks" \
+    "$(blank_lines "$SHADOW")"
+check "multi-newline + append -> exactly one line gained" "$((before_lines + 1))" \
+    "$(line_count "$SHADOW")"
+check "multi-newline + append -> every non-blank line has nine fields" "yes" \
+    "$(well_formed_nonblank "$SHADOW")"
+check "multi-newline + append -> new entry is LOCKED" "newsvc:!" \
+    "$(awk -F: '$1 == "newsvc" { print $1 ":" $2 }' "$SHADOW")"
+check "multi-newline + append -> exactly one newsvc line" "1" \
+    "$(grep -c '^newsvc:' "$SHADOW" || true)"
+check "multi-newline + append -> new entry is not glued to a blank line" "0" \
+    "$(grep -c '^:.*newsvc' "$SHADOW" || true)"
+check "multi-newline + append -> the two seeded accounts survive" "2" \
+    "$(grep -c -e '^root:' -e '^daemon:' "$SHADOW" || true)"
+check_idempotent "multi-newline + append"
+
+new_case_raw multi-newline-converged "$MULTI_NEWLINE"
+before=$(file_hex "$SHADOW")
+out=$(run_reconcile 2>&1) && rc=0 || rc=$?
+check "multi-newline + converged -> exit 0" "0" "$rc"
+check "multi-newline + converged -> byte-identical" "$before" "$(file_hex "$SHADOW")"
+check "multi-newline + converged -> converged message" "yes" \
+    "$(grep -q 'already converged' <<<"$out" && echo yes || echo no)"
+check_idempotent "multi-newline + converged"
+
+# 9.6 the transient-marker path against an unterminated file, both directions.
+# That path rewrites the whole file through awk rather than appending to it, and
+# awk's `print` supplies ORS, so its output is always terminated and it cannot
+# weld. These cases prove that rather than assuming it.
+new_case_raw unterminated-transient-match "$UNTERM_MOS"
+printf '%s\n' "$MOS_HASH" >"$MARKER"
+out=$(run_reconcile 2>&1) && rc=0 || rc=$?
+check "unterminated + matching marker -> exit 0" "0" "$rc"
+check "unterminated + matching marker -> root cleared to !" "!" "$(root_field)"
+check "unterminated + matching marker -> two lines, nothing welded" "2" \
+    "$(line_count "$SHADOW")"
+check "unterminated + matching marker -> daemon line byte-identical" "$DAEMON_LINE" \
+    "$(sed -n '2p' "$SHADOW")"
+check "unterminated + matching marker -> every line has nine fields" "yes" \
+    "$(well_formed "$SHADOW")"
+check "unterminated + matching marker -> marker gone" "no" "$(exists "$MARKER")"
+check "unterminated + matching marker -> logged as cleared" "yes" \
+    "$(grep -q 'transient root password cleared' <<<"$out" && echo yes || echo no)"
+check "unterminated + matching marker -> the rewrite terminated the file" "yes" \
+    "$(ends_with_newline "$SHADOW")"
+check "unterminated + matching marker -> no temp files left" "yes" "$(no_temp_files)"
+check_idempotent "unterminated + matching marker"
+
+new_case_raw unterminated-transient-mismatch "$UNTERMINATED"
+printf '%s\n' "$MOS_HASH" >"$MARKER"
+before=$(file_hex "$SHADOW")
+out=$(run_reconcile 2>&1) && rc=0 || rc=$?
+check "unterminated + mismatched marker -> exit 0" "0" "$rc"
+check "unterminated + mismatched marker -> byte-identical" "$before" "$(file_hex "$SHADOW")"
+check "unterminated + mismatched marker -> still unterminated" "no" \
+    "$(ends_with_newline "$SHADOW")"
+check "unterminated + mismatched marker -> dev hash survives" "$DEV_HASH" "$(root_field)"
+check "unterminated + mismatched marker -> marker gone" "no" "$(exists "$MARKER")"
+check "unterminated + mismatched marker -> logged as not matching" "yes" \
+    "$(grep -q 'does not match the current root hash' <<<"$out" && echo yes || echo no)"
+check "unterminated + mismatched marker -> not confused with a clear" "no" \
+    "$(grep -q 'transient root password cleared' <<<"$out" && echo yes || echo no)"
+check_idempotent "unterminated + mismatched marker"
+
+# The interaction: the marker does not match, so the transient path writes
+# nothing and leaves the file unterminated -- and the append path immediately
+# after it has to cope with exactly that.
+new_case_raw unterminated-transient-mismatch-append "$UNTERMINATED" "$PASSWD_WITH_NEW"
+printf '%s\n' "$MOS_HASH" >"$MARKER"
+out=$(run_reconcile 2>&1) && rc=0 || rc=$?
+check "unterminated + mismatch + append -> exit 0" "0" "$rc"
+check "unterminated + mismatch + append -> three lines, nothing welded" "3" \
+    "$(line_count "$SHADOW")"
+check "unterminated + mismatch + append -> previously-final line byte-identical" \
+    "$DAEMON_LINE" "$(sed -n '2p' "$SHADOW")"
+check "unterminated + mismatch + append -> new entry is LOCKED" "newsvc:!" \
+    "$(awk -F: '$1 == "newsvc" { print $1 ":" $2 }' "$SHADOW")"
+check "unterminated + mismatch + append -> every line has nine fields" "yes" \
+    "$(well_formed "$SHADOW")"
+check "unterminated + mismatch + append -> dev hash survives" "$DEV_HASH" "$(root_field)"
+check "unterminated + mismatch + append -> marker gone" "no" "$(exists "$MARKER")"
+check_idempotent "unterminated + mismatch + append"
+
+# 9.7 lock_entry fed from an UNTERMINATED factory template. lock_entry pipes
+# through `echo` and awk, and both supply a terminator, so the entry it appends
+# is exactly one terminated line however the factory file ends. The shadow file
+# here is unterminated too, so this exercises both write paths at once.
+new_case_raw unterminated-factory "$ROOT_DEV_LINE"
+printf '%s\n%s' 'root:!:19000:0:99999:7:::' "$DAEMON_LINE" >"$CASE/factory"
+check "unterminated factory fixture -> really has no terminator" "no" \
+    "$(ends_with_newline "$CASE/factory")"
+out=$(run_reconcile 2>&1) && rc=0 || rc=$?
+check "unterminated factory -> exit 0" "0" "$rc"
+check "unterminated factory -> two lines, nothing welded" "2" "$(line_count "$SHADOW")"
+check "unterminated factory -> appended entry on its own line" "daemon:*" \
+    "$(awk -F: 'NR == 2 { print $1 ":" $2 }' "$SHADOW")"
+check "unterminated factory -> the aging fields came from the template" \
+    "19000:0:99999:7:::" "$(awk -F: 'NR == 2 { print $3 ":" $4 ":" $5 ":" $6 ":" $7 ":" $8 ":" $9 }' "$SHADOW")"
+check "unterminated factory -> every line has nine fields" "yes" "$(well_formed "$SHADOW")"
+check "unterminated factory -> result is terminated" "yes" "$(ends_with_newline "$SHADOW")"
+check_idempotent "unterminated factory"
+
 echo
 echo "$PASS passed, $FAIL failed"
 echo "RESULT: $([ "$FAIL" -eq 0 ] && echo PASS || echo FAIL) ($PASS/$((PASS + FAIL)) checks)"
