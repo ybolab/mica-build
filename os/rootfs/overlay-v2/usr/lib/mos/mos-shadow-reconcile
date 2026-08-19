@@ -1,0 +1,95 @@
+#!/bin/sh
+# Reconcile the STATE-backed /etc/shadow with the accounts the image ships.
+#
+# On layout v2 the root filesystem is a dm-verity squashfs, so /etc/shadow
+# cannot be written where it sits. It is shipped as a symlink to
+# /var/lib/mos/shadow, which is the bind target of var-lib-mos.mount and
+# therefore lands on the STATE partition; the image's own copy is kept as the
+# factory template at /usr/share/factory/etc/shadow. That is what makes a
+# per-device password possible at all: PAM -> pam_unix -> /etc/shadow now
+# resolves to a writable file, and mosd rewrites the root: line by atomic
+# rename (which is also why this is a symlink and not a bind-mounted file --
+# a bind-mounted file cannot be replaced by rename).
+#
+# This runs on EVERY boot, not once. A seed-once design would freeze the file
+# at whatever accounts existed on the day the device was flashed, so a later
+# A/B update that adds a system account would leave that account with no shadow
+# entry at all. Reconciling instead means the file converges on each boot.
+#
+# Two rules, in this order:
+#   1. An entry that already exists in the STATE file is NEVER touched. The
+#      device's own credential always wins over the image's -- an update must
+#      not be able to reset or replace a password the operator set.
+#   2. An account in /etc/passwd with no STATE entry gets one appended, always
+#      LOCKED. A signed rootfs is byte-identical across the whole fleet, so any
+#      hash carried in the image would be a shared secret by construction; the
+#      factory entry is used only for its aging fields.
+#
+# Nothing else is written: if every account already has an entry the file is
+# not replaced at all, so a second run on a converged system is a no-op.
+#
+# Usage: mos-shadow-reconcile [shadow-path]
+# The path defaults to /var/lib/mos/shadow. mos-seed-state passes
+# /mnt/state/mos/shadow instead, because on first boot it runs inside the local
+# mount phase, before var-lib-mos.mount has bound that directory onto /var.
+set -eu
+
+SHADOW="${1:-/var/lib/mos/shadow}"
+PASSWD=/etc/passwd
+FACTORY=/usr/share/factory/etc/shadow
+
+[ -f "$PASSWD" ] || { echo "no $PASSWD to reconcile against" >&2; exit 1; }
+[ -f "$FACTORY" ] || { echo "no $FACTORY to seed from" >&2; exit 1; }
+
+dir="$(dirname "$SHADOW")"
+[ -d "$dir" ] || { echo "$dir does not exist; is var-lib-mos.mount up?" >&2; exit 1; }
+
+# Force the hash field of a shadow line to a locked marker. Anything that is
+# not already '!' or '*' is replaced, and that deliberately includes an EMPTY
+# field: empty does not mean locked, it means pam_unix accepts any password.
+lock_entry() {
+    echo "$1" | awk -F: -v OFS=: '{ if ($2 !~ /^[!*]/) $2 = "!"; print }'
+}
+
+tmp="${SHADOW}.reconcile.$$"
+trap 'rm -f "$tmp"' EXIT INT TERM
+
+if [ -f "$SHADOW" ]; then
+    cat "$SHADOW" >"$tmp"
+else
+    : >"$tmp"
+fi
+
+today=$(( $(date +%s) / 86400 ))
+added=0
+while IFS=: read -r user rest; do
+    [ -n "$user" ] || continue
+    case "$user" in \#*) continue ;; esac
+    if grep -q "^${user}:" "$tmp"; then continue; fi
+    line="$(grep "^${user}:" "$FACTORY" | head -n1)"
+    if [ -n "$line" ]; then
+        lock_entry "$line" >>"$tmp"
+    else
+        echo "${user}:!:${today}:0:99999:7:::" >>"$tmp"
+    fi
+    added=$((added + 1))
+    echo "shadow: added locked entry for '${user}'"
+done <"$PASSWD"
+
+# unix_chkpwd runs setgid shadow specifically so that a non-root PAM stack can
+# read this file; 0640 root:shadow is the mode that makes that work and the
+# mode Debian ships. Enforced on every run, not only when the file is rewritten.
+if [ "$added" -eq 0 ]; then
+    rm -f "$tmp"
+    chgrp shadow "$SHADOW"
+    chmod 0640 "$SHADOW"
+    echo "shadow: already converged, ${SHADOW} untouched"
+    exit 0
+fi
+
+chgrp shadow "$tmp"
+chmod 0640 "$tmp"
+mv -f "$tmp" "$SHADOW"
+trap - EXIT INT TERM
+sync
+echo "shadow: reconciled ${SHADOW} (${added} entry/entries added)"

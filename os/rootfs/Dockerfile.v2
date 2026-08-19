@@ -125,17 +125,20 @@ ARG OVERLAY_DIR
 COPY ${OVERLAY_DIR}/ /tmp/overlay/
 RUN cp -a /tmp/overlay/. / && \
     rm -rf /tmp/overlay && \
-    chmod 0755 /usr/lib/mos/mos-seed-var /usr/lib/mos/mos-seed-state && \
+    chmod 0755 /usr/lib/mos/mos-seed-var /usr/lib/mos/mos-seed-state \
+               /usr/lib/mos/mos-shadow-reconcile && \
     chmod 0644 /etc/fstab /etc/fw_env.config /etc/repart.d/*.conf \
                /etc/tmpfiles.d/mos-var.conf \
                /etc/systemd/system/mos-seed-*.service \
                /etc/systemd/system/mos-apply-hostname.service \
+               /etc/systemd/system/mos-shadow-reconcile.service \
                /etc/systemd/system/var-lib-mos.mount \
                /etc/systemd/system/var-lib-bluetooth.mount \
                /etc/systemd/system/etc-ssh.mount \
                /etc/systemd/system/etc-hostname.mount && \
     mkdir -p /srv /mnt/state /mnt/meta /etc/systemd/system/local-fs.target.wants \
-             /etc/systemd/system/timers.target.wants && \
+             /etc/systemd/system/timers.target.wants \
+             /etc/systemd/system/multi-user.target.wants && \
     for u in mos-seed-var.service mos-seed-state.service var-lib-mos.mount \
              var-lib-bluetooth.mount etc-ssh.mount etc-hostname.mount \
              mos-apply-hostname.service; do \
@@ -144,7 +147,10 @@ RUN cp -a /tmp/overlay/. / && \
     done && \
     ln -sf /lib/systemd/system/fstrim.timer \
            /etc/systemd/system/timers.target.wants/fstrim.timer && \
-    test -L /etc/systemd/system/timers.target.wants/fstrim.timer
+    test -L /etc/systemd/system/timers.target.wants/fstrim.timer && \
+    ln -sf /etc/systemd/system/mos-shadow-reconcile.service \
+           /etc/systemd/system/multi-user.target.wants/mos-shadow-reconcile.service && \
+    test -L /etc/systemd/system/multi-user.target.wants/mos-shadow-reconcile.service
 
 # mosd management daemon: binary + systemd unit (enabled) + D-Bus system policy.
 # build-v2.sh always stages MOSD_DIR (empty when WITH_MOSD=0), so the COPY works
@@ -327,6 +333,82 @@ RUN set -eu; \
     echo "precious: journald Storage=volatile (journal never lands on /var)"; \
     test -L /rootfs/usr/share/factory/var/lib/dbus/machine-id || \
         { echo "error: /var/lib/dbus/machine-id is not a symlink; a baked D-Bus id is per-image identity on a disposable filesystem" >&2; exit 1; }
+
+# /etc/shadow moves onto STATE. PLAN-010 M5 gives every device its own root
+# password, and pam_unix reads it from /etc/shadow -- which on v2 sits on the
+# dm-verity squashfs, where nothing can ever write it. The only writable paths
+# under /etc are the /etc/hostname and /etc/ssh binds, and a bind-mounted FILE
+# cannot be replaced by rename, which is how mosd writes a credential safely.
+# So the file ships as a SYMLINK into /var/lib/mos, the bind target of
+# var-lib-mos.mount, whose source is /mnt/state/mos. The image copy is retained
+# at /usr/share/factory/etc/shadow -- systemd's standard place for a factory
+# template, the same idea this stage already uses for /var -- and
+# mos-shadow-reconcile derives the STATE file from it on every boot.
+#
+# /etc/passwd and /etc/group deliberately stay in the image, read-only: only the
+# secret-bearing file moves, so account definitions remain part of the signed,
+# verity-covered root.
+#
+# Done here and not in the rootfs stage because the ROOT_PASSWORD step and every
+# package postinst still need a real file: chpasswd would follow a symlink laid
+# down earlier and write through it.
+RUN set -eu; \
+    test -f /rootfs/etc/shadow && test ! -L /rootfs/etc/shadow; \
+    mkdir -p /rootfs/usr/share/factory/etc; \
+    cp -a /rootfs/etc/shadow /rootfs/usr/share/factory/etc/shadow; \
+    chmod 0640 /rootfs/usr/share/factory/etc/shadow; \
+    ln -sfn /var/lib/mos/shadow /rootfs/etc/shadow; \
+    echo "shadow: /etc/shadow -> /var/lib/mos/shadow, factory copy retained"
+
+# Assert the whole chain, at build time, so it can only pass for the intended
+# artifact. Each of these is a defect that would otherwise be invisible: a
+# regular /etc/shadow shadowing the symlink, a factory copy the reconciler
+# cannot read, a unit installed but never enabled, an ordering directive naming
+# a unit that does not exist (systemd drops those silently), or a real password
+# hash baked into a rootfs that is byte-identical across the entire fleet.
+RUN set -eu; \
+    link="$(readlink /rootfs/etc/shadow || true)"; \
+    [ "${link}" = "/var/lib/mos/shadow" ] || \
+        { echo "error: /etc/shadow is '${link:-not a symlink}', expected a symlink to /var/lib/mos/shadow" >&2; exit 1; }; \
+    grep -qx 'Where=/var/lib/mos' /rootfs/etc/systemd/system/var-lib-mos.mount || \
+        { echo "error: the /etc/shadow symlink target is not the Where= of var-lib-mos.mount, so it is not STATE-backed" >&2; exit 1; }; \
+    fac=/rootfs/usr/share/factory/etc/shadow; \
+    test -f "${fac}"; \
+    mode="$(stat -c %a "${fac}")"; \
+    [ "${mode}" = "640" ] || { echo "error: factory shadow is mode ${mode}, expected 640" >&2; exit 1; }; \
+    sg="$(awk -F: '$1 == "shadow" { print $3 }' /rootfs/etc/group)"; \
+    test -n "${sg}"; \
+    own="$(stat -c '%u:%g' "${fac}")"; \
+    [ "${own}" = "0:${sg}" ] || \
+        { echo "error: factory shadow is owned ${own}, expected 0:${sg} (root:shadow); unix_chkpwd needs egid shadow to read it" >&2; exit 1; }; \
+    missing=""; \
+    while IFS=: read -r u _; do \
+        [ -n "${u}" ] || continue; \
+        grep -q "^${u}:" "${fac}" || missing="${missing} ${u}"; \
+    done < /rootfs/etc/passwd; \
+    [ -z "${missing}" ] || \
+        { echo "error: accounts in /etc/passwd with no factory shadow entry:${missing}" >&2; exit 1; }; \
+    grep -q '^root:' "${fac}" || { echo "error: factory shadow has no root: entry" >&2; exit 1; }; \
+    rh="$(awk -F: '$1 == "root" { print $2; exit }' "${fac}")"; \
+    case "${rh}" in \
+        "") echo "error: the root: entry in the factory shadow has an EMPTY hash field, which means PASSWORDLESS root login: pam_unix accepts any password, including none. Empty is not a locked marker; only '!' (including '!!' and '!'-prefixed forms that retain a hash) and '*' lock an account" >&2; exit 1 ;; \
+        '!'* | '*'*) ;; \
+        *) echo "error: the packed rootfs carries a usable root password hash. A signed rootfs is byte-identical on every device, so this is a fleet-wide shared secret. Cause: the ROOT_PASSWORD build arg was set; unset it (the per-device password is provisioned by mosd at runtime)" >&2; exit 1 ;; \
+    esac; \
+    unit=/rootfs/etc/systemd/system/mos-shadow-reconcile.service; \
+    test -f "${unit}"; \
+    test -x /rootfs/usr/lib/mos/mos-shadow-reconcile; \
+    test -L /rootfs/etc/systemd/system/multi-user.target.wants/mos-shadow-reconcile.service || \
+        { echo "error: mos-shadow-reconcile.service is installed but not enabled; /etc/shadow would never converge with the image accounts" >&2; exit 1; }; \
+    grep -qE '^After=.*\bvar-lib-mos\.mount\b' "${unit}" || \
+        { echo "error: mos-shadow-reconcile.service does not order After=var-lib-mos.mount" >&2; exit 1; }; \
+    for dep in mosd.service ssh.service; do \
+        grep -qE "^Before=.*\b${dep}\b" "${unit}" || \
+            { echo "error: mos-shadow-reconcile.service does not order Before=${dep}" >&2; exit 1; }; \
+    done; \
+    test -f /rootfs/usr/lib/systemd/system/ssh.service || \
+        { echo "error: mos-shadow-reconcile.service orders Before=ssh.service but that unit is not in the image; systemd drops such an ordering silently" >&2; exit 1; }; \
+    echo "shadow: symlink -> STATE, factory copy 0640 0:${sg}, root locked, reconcile unit enabled and ordered"
 
 # Privilege inventory of the SOURCE tree, captured before packing so the packed
 # image can be diffed against it. Numeric uid/gid deliberately: the tree is
