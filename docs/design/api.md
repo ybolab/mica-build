@@ -553,63 +553,896 @@ table was re-verified here; that table is cited, not carried forward.
 
 ## 4. Static hosting — **[proposed]**
 
-> **Stub — written by RFCT-065.** Do not fill this in from another task.
+Section 1.6 measured the starting point at `86cd669`: apid serves no static
+asset of any kind, from anywhere, and the only disk paths it reads at all are
+`/proc/uptime` (`mosd/webd/src/routes.rs:581`) and its own state directory
+(`mosd/webd/src/tls.rs:47-49`, `:86`). Everything in this section is therefore
+new code rather than a configuration change to something that exists, and it is
+marked **[proposed]** throughout for that reason.
 
-### 4.1 Routing between API and assets
+### 4.1 Routing between API and assets — **[proposed]**
 
-> **Stub — written by RFCT-065.** Do not fill this in from another task.
+**The precedence rule.** One request arrives; apid decides in this order, and
+the order is total — no request is ever ambiguous:
 
-### 4.2 SPA fallback
+1. **`/api/` — a reserved subtree.** The API router is mounted at `/api/v1` and
+   the whole `/api/` prefix is claimed, **including its own not-found
+   handler**. No request whose path begins `/api/` ever reaches the asset
+   router, whether or not it matches a declared operation.
+2. **Reserved non-API paths.** `/healthz`, and the built-in-UI prefix section
+   6.3 reserves. Declared routes.
+3. **Legacy server-rendered paths**, for as long as they are declared.
+4. **Everything else — the asset router**, as the router's fallback.
 
-> **Stub — written by RFCT-065.** Do not fill this in from another task.
+**Why this order rather than any other.** Rule 1 is not a convention that has
+to be policed; it is the shape axum's router already has. As of `86cd669` the
+HTTPS router matches its fifteen `.route()` declarations
+(`mosd/webd/src/routes.rs:45-65`) and declares **no fallback at all** — the only
+`.fallback` in the file belongs to the HTTP redirect router
+(`mosd/webd/src/routes.rs:74`), which is why an unmatched path today is answered
+by the gate's redirect to `/login` (`mosd/webd/src/routes.rs:149`) or by axum's
+default not-found (section 1.6). Adding the asset service as the *fallback*
+therefore means declared routes win **structurally**: a bundle that ships a file
+at `api/v1/settings` cannot capture API traffic, because the router never
+consults the fallback for a path it matched. A rule enforced by the dispatch
+mechanism is worth more than a rule enforced by a check somebody can forget to
+write.
 
-### 4.3 MIME and caching
+**Why the `/api/v1` prefix, and what the alternatives cost.**
 
-> **Stub — written by RFCT-065.** Do not fill this in from another task.
+| Option | Rejected because |
+|---|---|
+| **Content negotiation on the same paths** (`Accept: application/json` selects the API) | The reserved set becomes invisible in the URL: you cannot tell from a request line whether it is an API call or an asset fetch, which makes both logs and `curl` reproduction ambiguous. A `fetch()` that forgets its `Accept` header silently receives HTML. |
+| **A second listener on its own port** | Two TLS configurations, two firewall rules, and the self-signed certificate would have to be accepted twice by the browser — it is generated once into the state directory with SANs `DNS:mos`, `DNS:localhost`, `IP:127.0.0.1` (`mosd/webd/src/tls.rs:44-81`). The two listeners that exist today are 443 and a redirect-only 80 (`mosd/webd/src/config.rs:34-37`, `mosd/webd/src/routes.rs:72-76`); a third is a real operational cost for no isolation gain, since both would be served by the same root process. |
+| **A subdomain** (`api.mos`) | The certificate carries three SANs and no wildcard (`mosd/webd/src/tls.rs:44-81`), and the appliance provides no DNS. A new name means a new SAN, a new way for the name to fail to resolve, and a second certificate-trust prompt. |
+| **`/api/v1` prefix** | **Chosen.** One origin, one certificate, one listener, and the reserved set is legible in every URL. |
 
-### 4.4 Path traversal
+**What it costs, stated plainly.** The prefix `/api` is burned permanently: a
+custom UI can never serve a page or an asset at `/api/anything`, and it never
+gets that path back. That is the price of rule 1 being structural. It is
+cheap here only because the reserved set is small and is written down.
 
-> **Stub — written by RFCT-065.** Do not fill this in from another task.
+**What happens to today's server-rendered paths while they still exist.** They
+are declared routes, so rule 3 falls out of rule 1's mechanism with no special
+case: at `86cd669` the reserved page paths are `/`, `/setup`, `/login`,
+`/logout`, `/network`, `/hostname`, `/power`, `/power/reboot`,
+`/power/poweroff`, `/ssh`, `/ssh/enable`, `/ssh/password`, `/ssh/keys/add`,
+`/ssh/keys/remove` and `/healthz` (`mosd/webd/src/routes.rs:45-65`). A custom
+bundle cannot occupy any of them.
+
+**`/` is the one that matters, and it must not be waved past.** A replaceable UI
+whose index cannot be served at the site root is not replaceable in any useful
+sense — an SPA mounted at a subpath needs a base href and a rewrite of every
+absolute URL it emits, and the operator's bookmark still lands on the built-in
+status pane. So `/` is the single exception to rule 3:
+
+- `GET /` serves the **active bundle's `index.html` when a bundle is active**
+  and its index is readable (section 5.3's definition of active);
+- otherwise `GET /` serves the built-in UI.
+
+The built-in status pane that occupies `GET /` today (`home`, at
+`mosd/webd/src/routes.rs:45` and `:578`) moves under section 6.3's reserved
+prefix, where it is reachable unconditionally. `/` is therefore **conditional**
+and the reserved prefix is **not** — and section 6.3 requires exactly one
+unconditional path, not two, so this trade is the one that section makes.
+
+The other legacy pane paths stay reserved until the phasing in section 8 moves
+each pane onto the API and deletes its route. Until then a custom UI cannot use
+those thirteen paths. That shrinkage is section 8's to schedule; the requirement
+is routed in 10.2 rather than decided here.
+
+### 4.2 SPA fallback — **[proposed]**
+
+A single-page application needs a **200 with `index.html`** for a path its
+client-side router owns, because a 404 stops the application from booting. The
+danger is the mirror image: if that fallback is applied indiscriminately, every
+mistyped API call and every missing asset returns 200 with HTML. A `fetch()`
+then parses HTML as JSON and reports a parse error at the wrong layer; a missing
+script tag returns HTML and the browser reports `Uncaught SyntaxError:
+Unexpected token '<'`. Both symptoms point away from the actual cause, which is
+that the file is not there.
+
+**The rule.** `index.html` is served, with status **200**, only when **every**
+one of these holds:
+
+1. **The path is not reserved.** Guaranteed structurally by 4.1 — a request
+   under `/api/`, under the section 6.3 prefix, or matching a declared route,
+   never reaches the asset router at all. Nothing here has to re-check it.
+2. **The method is `GET` or `HEAD`.** A `POST`, `PUT`, `PATCH` or `DELETE` that
+   reaches the asset router is a client error and gets **405**, never HTML.
+3. **The client asked for HTML.** The request's `Accept` header must offer
+   `text/html`. A browser navigation does; a `fetch()` with
+   `Accept: application/json` does not, and gets **404**. This is the condition
+   that separates a navigation from a data call when both are `GET`.
+4. **The final path segment contains no `.`.** `/settings/network` falls back;
+   `/assets/app.a1b2c3.js` does not, and gets **404** with an empty body. A
+   client-side route is a name; an asset is a filename. This is a heuristic and
+   it is named as one — a UI with a route literally called `/v1.2/report` would
+   get a 404 where it wanted a fallback. The alternative heuristics are worse: a
+   list of known asset extensions goes stale the first time a customer ships a
+   format nobody predicted, and no heuristic at all is the failure this
+   subsection exists to prevent.
+5. **A bundle is active and its `index.html` is readable.** If it is not, this
+   is not a 404 and not a 500 — it is section 6.1 failure class 2 or 4, and the
+   response is the **built-in UI**, not an error page.
+
+**Why 404s inside `/api/` are the API's own.** Condition 1 means the `/api/`
+subtree answers its own misses. That 404 must carry the API error shape rather
+than an empty body, so a client that mistypes a path gets the same
+machine-readable envelope as every other API error. The shape belongs to section
+2.4 and is **not specified here**; the requirement is routed in 10.2.
+
+**The property to test.** After this rule, a request that a developer expected
+to be JSON never returns HTML with a 200. That is one integration test per
+condition, and it is the test that keeps 4.2 from silently regressing.
+
+### 4.3 MIME and caching — **[proposed]**
+
+**How a content type is decided.** From the filename extension, through a
+**fixed allowlist compiled into apid** — not through a general-purpose guesser
+and never by sniffing content.
+
+The alternative would be `mime_guess`, which is what `tower_http`'s `ServeDir`
+uses: it calls `mime_guess::from_path` and falls back to
+`application/octet-stream`
+(`tower-http-0.6.11/src/services/fs/serve_dir/open_file.rs:78-82`, in the
+registry copy of the version pinned at `mosd/Cargo.lock:2364-2366`). A fixed
+table is preferred because the appliance serves a handful of extensions and a
+generated MIME database is a large dependency for that, and because the table
+being *ours* means the unknown-extension behaviour is a decision rather than a
+default.
+
+**The unknown extension, which is the security-relevant half.** An unknown or
+absent extension is served as `application/octet-stream` **together with
+`X-Content-Type-Options: nosniff`**, and `nosniff` is sent on **every** asset
+response, not only the unknown ones. Without it a browser may sniff an uploaded
+file as HTML and execute it on the management origin — which turns "upload a UI
+bundle" into stored cross-site scripting against the same origin that holds the
+session cookie (`webd_session`, `Path=/; HttpOnly; Secure; SameSite=Lax`,
+`mosd/webd/src/session.rs:18`, `:91`). The cookie is `HttpOnly`, so script
+cannot read it, but same-origin script does not need to read it: it can issue
+authenticated requests directly.
+
+**What the allowlist costs.** A customer shipping a format the table does not
+know gets `application/octet-stream`, and for two formats that is not a cosmetic
+degradation:
+
+- **`.wasm`** — `WebAssembly.instantiateStreaming` requires
+  `application/wasm` and fails outright on `octet-stream`.
+- **`.webmanifest`** — an installable web app will not install.
+
+The table lives inside the verity-covered image (section 6.2), so a customer
+**cannot extend it on device**; growing it is an A/B update. That is a real
+constraint and it is the reason the fallback is `octet-stream` rather than a
+refusal: an unrecognised file is still downloadable, and the failure is legible
+rather than silent. The initial table should therefore carry `.wasm` and
+`.webmanifest` from the start, precisely because they are the two that break
+rather than degrade.
+
+**The caching posture.** Three classes, and the boundaries between them are
+mechanical:
+
+| Class | Header | Why |
+|---|---|---|
+| **Every HTML document**, including `index.html` and the SPA fallback | `Cache-Control: no-store` | The index is the only document that names the hashed asset filenames. A cached index means a new bundle is invisible no matter how correctly its assets are named. `no-store`, not `no-cache`: `no-cache` still permits a stored copy revalidated by a validator apid may not emit. |
+| **Every `/api/` response** | `Cache-Control: no-store` | Management responses reflect device state and must never be replayed from a browser's disk cache on an operator's laptop. |
+| **Files under a directory the bundle manifest declares immutable** | `Cache-Control: public, max-age=31536000, immutable` | Safe **only** because the filename changes when the content changes. |
+| **Everything else** | `Cache-Control: no-cache` | Revalidate before reuse. Not `no-store`, so a validator can still save the transfer. |
+
+**The immutable class is opt-in, and that is deliberate.** apid cannot verify
+that a customer content-hashed their filenames, and a year-long `immutable` on a
+file whose name is stable is unrecoverable from the server side — the browser
+will not even ask. So immutability is **declared by the bundle's manifest**
+(section 5.3) for a named directory, and the default for an undeclared bundle is
+`no-cache` for everything. A customer who does not hash their filenames gets a
+revalidation round trip per asset and a correct UI; a customer who does gets the
+fast path by saying so.
+
+**What `ServeDir` would give us if adopted, and why it is not enough.** At
+version 0.6.11 it sets `Last-Modified`
+(`tower-http-0.6.11/src/services/fs/serve_dir/future.rs:244`) and **nothing
+else**: `grep -n "CACHE_CONTROL\|ETAG"` over
+`tower-http-0.6.11/src/services/fs/serve_dir/` returns no match. So the entire
+caching posture above is a layer apid must add regardless of whether the
+file-serving itself is borrowed. Note also that `tower-http` is **not a
+dependency of the crate** (`mosd/webd/Cargo.toml:11-29`; section 1.6, evidence
+1) — see 4.4 for what adopting it actually involves.
+
+**What an operator sees after uploading a new bundle.** This is the acceptance
+criterion for the whole subsection, and it is worth stating as one:
+
+> An operator who uploads a bundle and reloads the page **must see the new UI
+> without clearing the browser cache, without a hard refresh, and without an
+> incognito window.** If that is not true, this subsection is wrong.
+
+The rule above satisfies it by construction: the reload fetches `index.html`
+fresh because it is `no-store`; that index names the new bundle's asset
+filenames; those are fetched because they are new names, or revalidated because
+the default is `no-cache`. Only the opt-in immutable class can be stale, and
+only for filenames the customer promised would change.
+
+The failure this prevents is not a caching bug — it is a **support** bug. An
+operator who uploads a fix, reloads, sees the old UI and concludes the upload
+failed will re-upload, then reboot, then open a ticket, and every one of those
+actions is aimed at the wrong layer. Section 5.3's "what is installed right now?"
+read is the other half of the same defence: it answers from the served tree, so
+it disagrees with the browser and tells the operator where to look.
+
+### 4.4 Path traversal — **[proposed]**
+
+**What a successful traversal reaches, first, because it sets the stakes.**
+apid runs as **root** — `mosd/dist/webd.service` sets no `User=` line, and its
+entire `[Service]` section is four directives (`mosd/dist/webd.service:6-10`):
+`Type=`, `ExecStart=`, `Restart=` and `StateDirectory=`. There is no
+`ProtectSystem=`, no `ReadOnlyPaths=`, no `RootDirectory=`, no `PrivateTmp=`.
+The D-Bus policy records the same fact from the other side — *"no shipped unit
+sets User=, mosd.service owns the name as root, webd.service and the boot health
+gate both run as root"* (`mosd/dist/com.mos.mosd.conf:12-14`). A traversal is
+therefore an arbitrary file read **as root, with no sandbox**, and the reachable
+set includes at least:
+
+- **`/var/lib/mos/settings.toml`** (`mosd/mosd-settings/src/store.rs:12`) — the
+  whole settings tree, including the argon2id webAdmin hash
+  (`mosd/webd/src/routes.rs:98-103`) and every authorized SSH key.
+- **`/var/lib/mos/shadow`**, which is what `/etc/shadow` is a symlink to
+  (`docs/design/ro-root.md:270-289`).
+- **`/etc/ssh/`** — the sshd host private keys, bound from STATE
+  (`docs/design/access.md:485`).
+- **apid's own state directory**, `/var/lib/mos/webd` by default
+  (`mosd/webd/src/config.rs:38-40`): the TLS private key, mode `0600`
+  (`mosd/webd/src/tls.rs:30-42`, `:78`), and **`session.key`**, the 32-byte HMAC
+  signing key (`mosd/webd/src/tls.rs:85-103`).
+
+That last one is the escalation nobody should have to discover during an
+incident. A session cookie is `<id>.<hmac>` where the MAC is HMAC-SHA256 of the
+id under `session.key` (`mosd/webd/src/session.rs:44-55`). **Reading
+`session.key` lets an attacker mint a valid session cookie**, which converts a
+file-read primitive into full administrative access without ever guessing the
+password.
+
+**And the read-only rootfs does not help.** This must be said explicitly,
+because it is the assumption a reader of `docs/design/ro-root.md` will carry in:
+**dm-verity protects integrity, not confidentiality.** The squashfs and its hash
+tree (`docs/design/ro-root.md:13-27`) guarantee that `/` cannot be *modified*.
+A traversal does not modify anything. The whole security story of the device is
+orthogonal to this attack, and every secret listed above lives on STATE, outside
+verity's coverage by design.
+
+**The rules, stated as rules rather than delegated to a framework.**
+
+1. **Reject before touching the filesystem.** Percent-decode the request path
+   **once**, parse the result into path components, and require every component
+   to be an ordinary name. A `..` component → reject. A root or prefix
+   component → reject. A `.` component → skip. Never build the path by string
+   concatenation onto the bundle root.
+2. **Decode exactly once, and validate the decoded form.** Both halves matter,
+   and in this order. A second decode pass after validation turns `%252e%252e`
+   back into `..`; validating the *raw* string for a literal `..` lets
+   `%2e%2e%2f` through, because `%2f` decodes to `/` and the segment only
+   becomes a `..` component after decoding. The component parse must therefore
+   run on the decoded bytes and the decode must not be repeated.
+3. **Absolute paths.** An HTTP request target always begins with `/`. Strip
+   **all** leading separators, then require every remaining component to be an
+   ordinary name — so a root component appearing anywhere, not only at the
+   front, is a rejection.
+4. **NUL.** `%00` decodes to a NUL byte. A NUL cannot truncate a Rust path the
+   way it truncates a C string, and the eventual syscall would return `EINVAL`.
+   Reject it **explicitly, at the same place as `..`**, rather than relying on
+   that: relying on the syscall makes the answer depend on the platform's errno
+   and on a library's mapping of it. For reference, `tower_http` does arrive at
+   the right answer by that route — it maps `ErrorKind::InvalidInput` to
+   `InvalidFilename`
+   (`tower-http-0.6.11/src/services/fs/serve_dir/open_file.rs:153-156`, comment:
+   *"Only applies to NULL bytes"*) and then to a 404
+   (`tower-http-0.6.11/src/services/fs/serve_dir/future.rs:108`) — but that is a
+   404 reached by accident, and an accident is not a rule.
+5. **Symlinks — the case rules 1-4 do not cover, and the one that matters most
+   here.** Lexical validation proves the *requested path* escapes nothing. It
+   proves nothing about what the kernel does when it resolves that path.
+   `tower_http` 0.6.11 performs **no canonicalisation at all**: `grep -rn
+   "canonicalize\|symlink_metadata\|read_link"` over
+   `tower-http-0.6.11/src/` returns no match, and `build_and_validate_path`
+   (`tower-http-0.6.11/src/services/fs/serve_dir/mod.rs:455-493`) is purely
+   lexical — it rejects `Component::ParentDir`, `RootDir` and `Prefix` at `:488`
+   and then simply pushes the remaining names onto the base path.
+
+   A bundle is **operator-supplied content**, and planting a symlink inside one
+   is trivial. `ui/leak -> /var/lib/mos/settings.toml` inside a bundle is
+   served, in full, by a purely lexical checker. Three mitigations, in order of
+   strength:
+
+   | Mitigation | Strength | Cost |
+   |---|---|---|
+   | **Reject symlinks at install time** — the unpacker refuses any entry that is not a regular file or a directory (section 5.3) | Removes the class from the tree entirely | None beyond the check; composes with a bundle that is immutable after activation |
+   | **`openat2(2)` with `RESOLVE_BENEATH \| RESOLVE_NO_SYMLINKS`** | Strongest — the kernel enforces it, per-open, with no race | Needs Linux ≥ 5.6, and a raw syscall. **The workspace forbids unsafe code** (`mosd/Cargo.toml:10-11`, repeated locally at `mosd/webd/src/main.rs:21`), so this means a new dependency carrying `unsafe`, inside the root-privileged daemon, subject to the audit `mosd/hack/check.sh:9` runs |
+   | **Canonicalise the opened path and assert it starts with the resolved bundle root** | Safe Rust, no new dependency | One extra syscall per request; TOCTOU-racy in principle, though the race requires mutating the bundle tree between the check and the open, which section 5.3's activate-by-rename makes unreachable for the install path |
+
+   **Chosen: install-time rejection as the primary defence, canonicalise-and-
+   assert at serve time as defence in depth.** Both are safe Rust and neither
+   adds a dependency. `openat2` is genuinely stronger, and it is refused here
+   for one reason worth writing down: buying it costs an `unsafe`-carrying
+   dependency in a daemon that runs as root, and that is a worse trade against
+   *this* threat than two cheap layers that each close it independently.
+
+   One consequence to carry into 5.3: the assertion is made against the
+   **resolved** bundle root, not against the `/srv/ui/current` symlink itself.
+   That pointer is appliance-managed and lives outside every bundle tree; the
+   "no symlinks" rule applies to bundle *contents*.
+
+**On depending on a library, and what happens if its behaviour changes.**
+`tower-http` is not a dependency of the crate today (`mosd/webd/Cargo.toml:11-29`
+— section 1.6, evidence 1). The copy at `mosd/Cargo.lock:2364-2366` is version
+**0.6.11**, pulled in by the **dev-dependency** `reqwest`
+(`mosd/webd/Cargo.toml:32`), and it is built **without the `fs` feature**: its
+dependency list in the lockfile (`mosd/Cargo.lock:2368-2379`) contains no
+`tokio`, `mime_guess`, `httpdate` or `http-range-header`, all of which `fs`
+requires
+(`tower-http-0.6.11/Cargo.toml:168-183`). **`ServeDir` is therefore not
+compiled today**, and adopting it is a manifest change and a new feature
+surface, not a flag flip.
+
+If it is adopted, two things follow:
+
+- **Pin it exactly**, the way `tough` is pinned for a comparable reason
+  (`mosd/Cargo.toml:33-35`).
+- **Own the traversal test in our crate, not in theirs.**
+  `build_and_validate_path` is a private function with no stability promise. A
+  refactor that moved the decode after the component parse would silently
+  reopen rule 2, and a version bump that changed the symlink posture would
+  silently change rule 5 — and in both cases nothing in this repository would
+  notice. The test is one integration test asserting a 404 for each of:
+  `/../../etc/passwd`, `/%2e%2e%2fetc%2fpasswd`, `/%252e%252e%2fetc%2fpasswd`,
+  a path containing `%00`, and a request that resolves through a symlink
+  planted in a temporary bundle root. The crate already has the machinery:
+  a `tests/` directory (section 1.6, evidence 4) and `tower` and `tempfile` as
+  dev-dependencies (`mosd/webd/Cargo.toml:33-34`).
 
 ## 5. Where a custom UI lives — **[proposed]**
 
-> **Stub — written by RFCT-065.** Do not fill this in from another task.
+### 5.1 Why it cannot live in the rootfs — **[implemented]**
 
-### 5.1 Why it cannot live in the rootfs
+`/` is a zstd-compressed squashfs covered by a dm-verity hash tree carried in
+the same file (`docs/design/ro-root.md:13-27`), mounted read-only by the kernel
+from `dm-mod.create=` with no fstab entry that could ever remount it — the
+fstab template says so in as many words: *"there is no remount to perform and no
+entry that could ever succeed in rewriting it"*
+(`os/rootfs/overlay-v2/etc/fstab.in:7-9`; `docs/design/ro-root.md:239`) — so a
+write there does not fail a permission check, it fails a cryptographic one. And
+the slot is replaced **wholesale** by an A/B update: RAUC installs the entire
+`rootfs.img` into the raw `rootfs-a`/`rootfs-b` slot
+(`os/rauc/system.conf.in:75-85`, `os/rauc/manifest.raucm.in:21-22`), so anything
+written into a rootfs would be gone at the next update even if writing it were
+possible.
 
-> **Stub — written by RFCT-065.** Do not fill this in from another task.
+### 5.2 The location, and the bind — **[proposed]**
 
-### 5.2 The location, and the bind
+**The path is `/srv/ui/`.**
 
-> **Stub — written by RFCT-065.** Do not fill this in from another task.
+**It needs no bind, and that is the point.** `/home` and `/root` needed mount
+units because those paths sit *inside* the verity squashfs and had to be
+redirected onto DATA — `home.mount` binds `/srv/home` onto `/home`
+(`os/rootfs/overlay-v2/etc/systemd/system/home.mount:20-21`) and `root.mount`
+binds `/srv/root` onto `/root`
+(`os/rootfs/overlay-v2/etc/systemd/system/root.mount:29-30`). `/srv` is not a
+redirect: it is the DATA partition's **own mountpoint**, mounted directly from
+`/etc/fstab` (`os/rootfs/overlay-v2/etc/fstab.in:12`, `:23`), and the verifier
+asserts that entry by GUID, mountpoint and options —
+`check_fstab "DATA is the growth target" "${DATA_GUID}" /srv
+"noatime,x-systemd.growfs"` (`os/verify-image-v2.sh:1425`).
 
-### 5.3 Install and removal
+So `docs/design/access.md` §10.2's mechanism — *"one mount unit plus one
+verifier assertion"* (`docs/design/access.md:476-479`) — applies here at **half
+strength: no mount unit is needed, and the verifier assertion that would have
+accompanied it already exists**. The image ships **eight** binds
+(`docs/design/access.md:481-492`); this proposal adds a ninth to **none** of
+them. That is the whole reason `/srv` was chosen over inventing a new bind
+target: it is the one persistent tier already reachable without a unit.
 
-> **Stub — written by RFCT-065.** Do not fill this in from another task.
+Two facts the image already guarantees and that this depends on:
 
-### 5.4 Survives-what
+- The `/srv` mountpoint exists in the read-only root
+  (`os/rootfs/Dockerfile.v2:255`), and the verifier asserts every fstab and bind
+  mountpoint exists (`os/verify-image-v2.sh:1277-1281`).
+- DATA is the only partition `systemd-repart` grows and the only one carrying
+  `x-systemd.growfs` (`os/rootfs/overlay-v2/etc/fstab.in:16`), so a bundle root
+  here has no ceiling short of the disk.
 
-> **Stub — written by RFCT-065.** Do not fill this in from another task.
+**It needs no seed unit either.** `mos-seed-home` exists for one reason:
+`mount(8)` does not create the source of a bind, so the source must exist before
+the mount runs (`os/rootfs/overlay-v2/etc/systemd/system/home.mount:12-14`;
+`os/rootfs/overlay-v2/usr/lib/mos/mos-seed-home:9-18`). There is no bind here,
+so nothing fails if `/srv/ui` is absent. **Absence is a defined state** — it is
+section 6.1's first failure class, and it is the shipped state of every device
+— and apid creating the directory lazily on first install is strictly simpler
+than a ninth unit that has to be ordered against a mount.
+
+**Ownership and permissions: `root:root`, mode `0755` on `/srv/ui` and on the
+directories beneath it, `0644` for files.**
+
+- apid runs as root today (`mosd/dist/webd.service:1-13`), so it can write
+  regardless of what the mode says.
+- **The mode is chosen for the daemon apid is meant to become, not the one it
+  is.** `docs/design/dashboard.md` §6.6 adopts two processes with a real
+  privilege boundary and its scorecard records *"`webd` can be non-root: yes"*
+  for that option (`docs/design/dashboard.md:2186`, `:2198-2199`; cited, not
+  edited — that file belongs to campaign
+  `l1-o7ee8v0o-20260819152009-apid`). A root-owned, world-readable bundle root
+  is the shape that survives that change without a migration: the serving path
+  needs only read, and the install path is privileged anyway.
+- **Not `0700`.** Content served to an authenticated browser is not a secret,
+  and `0700` would force a group or an ownership change the day apid stops
+  being root.
+- **The owner is not pinned to a numeric uid**, unlike `/srv/home/mos`
+  (`os/rootfs/overlay-v2/usr/lib/mos/mos-seed-home:24-30`, `:44-47`), because
+  root is `0` on every image that will ever exist. If a future `apid` account
+  owns this tree instead, that uid **must** be pinned by number for exactly the
+  reason `mos-seed-home` documents — the directory outlives the rootfs that
+  created it. That is routed in 10.2.
+- **Explicitly not under `/srv/home` or `/srv/root`.** Those are the bind
+  sources for operator-owned trees (`/srv/home/mos` is uid 1000, mode `0700` —
+  `os/rootfs/overlay-v2/usr/lib/mos/mos-seed-home:44-47`). A UI bundle is
+  appliance state, not a user's file, and mixing the two would make "delete my
+  files" and "remove the UI" the same gesture.
+
+### 5.3 Install and removal — **[proposed]**
+
+**What a bundle IS.** On disk, a **directory tree**. Its requirements:
+
+1. **Exactly one `index.html` at the root of the tree.** This is what section
+   6.1's second failure class checks and what 4.1's `/` exception and 4.2's
+   fallback both resolve to.
+2. **No entry that is not a regular file or a directory.** No symlinks, no
+   hardlinks, no device nodes, no FIFOs, no sockets. This is 4.4 rule 5's
+   primary mitigation and it is enforced at unpack, on the staged tree, before
+   anything is reachable.
+3. **Optionally `mos-ui.json` at the root**, declaring at least: a `name`, a
+   `version`, the directory whose contents may be cached `immutable` (4.3), and
+   **the API version range the bundle was built against** (section 6.1, class
+   5). A bundle **without** a manifest is valid — it is simply activated with
+   nothing cached immutably and with the compatibility check recorded as *not
+   run*. Degradation, not rejection.
+
+The **transport** form is an archive, because a browser upload is one request
+carrying one file; the **installed** form is the directory. The archive is a
+wire format and nothing on disk keeps it. Which archive format is a dependency
+question rather than a design question — `mosd/hack/check.sh:9` runs
+`cargo deny check licenses bans advisories` and `mosd/deny.toml` contains no ban
+on crates that build C, so the workspace's pure-Rust posture is upheld by
+**convention and review**, not by a gate: the only mechanical record of it is
+the `tough` pin comment (`mosd/Cargo.toml:33-35`). The choice is therefore
+between an uncompressed tar and a pure-Rust inflate, and it is routed in 10.2
+rather than settled here.
+
+**How the write is made atomic.** Five steps, and the ordering is the mechanism:
+
+1. **Unpack into `/srv/ui/.staging-<generation>/`** — a dot-prefixed name, on
+   the **same filesystem** as the target so that step 3's `rename(2)` is atomic
+   rather than a copy.
+2. **Validate the staged tree completely** — `index.html` present and readable,
+   no non-regular entries, manifest parses if present, declared API range
+   checked against the version apid serves. Validation runs on the **staged**
+   tree and never on the live one, so a rejected bundle has touched nothing an
+   operator can see.
+3. **`fsync` the staged tree and its parent directory, then
+   `rename("/srv/ui/.staging-N", "/srv/ui/bundles/N")`.** The `fsync` is not
+   ceremony: without it a power cut can leave a `current` pointer resolving to a
+   tree whose data never reached the disk, which is exactly failure class 3 and
+   exactly the failure mode the appliance's whole A/B story exists to avoid.
+4. **Flip the active pointer.** `/srv/ui/current` is a **symlink** to
+   `bundles/N`. It is replaced by creating the new symlink under a temporary
+   name and `rename`-ing it over the old one — `rename(2)` over an existing
+   symlink is atomic, so there is **no instant at which `current` is absent**.
+   A reader either sees the old bundle or the new one.
+5. **Prune.** Keep the current generation and the previous one; delete older
+   ones.
+
+**A half-uploaded bundle is never served** because nothing under
+`/srv/ui/bundles/` is ever the active tree until step 4, the staging directory
+is never under `bundles/`, and the asset router resolves `current` and refuses
+anything outside the tree it resolves to (4.4 rule 5). The three steps are
+independent: unpack can fail, validation can reject, and the rename can be
+interrupted, and in each case the previously active bundle is still the active
+bundle.
+
+**Keeping two generations** is what makes deactivate-and-reactivate cheap, and
+it costs two copies of a bundle on DATA. That is the cheapest place on the
+device to spend it: DATA grows to fill the disk
+(`os/rootfs/overlay-v2/etc/fstab.in:16`) and is already the tier chosen for
+unbounded operator data over a 64 MiB STATE, for exactly this kind of reason
+(`os/rootfs/overlay-v2/etc/systemd/system/home.mount:5-10`).
+
+**Removal is two operations, and conflating them is a mistake.**
+
+- **Deactivate** — remove the `current` symlink. The bundle stays on disk. The
+  device falls back to the built-in UI. This is fast, reversible, and it is
+  **the same operation as section 6.3's escape**, which is why it is specified
+  here rather than invented there.
+- **Delete** — `rename` the bundle directory to `/srv/ui/.trash-<generation>`,
+  then unlink recursively. **Never unlink the tree `current` points at**:
+  deactivate first, then delete, so a delete interrupted midway cannot leave
+  `current` resolving to a partially-removed tree.
+
+**"What is installed right now?"** must be answered **from the served tree, not
+from a record of what was uploaded** — otherwise the answer is a claim about the
+past rather than a fact about the present, and it will agree with the operator's
+expectation at exactly the moment it should disagree. The read resolves
+`/srv/ui/current` and reports:
+
+- the generation it resolves to, or **the literal statement that no custom
+  bundle is active and the built-in UI is being served** — that state must be a
+  named answer, never an empty field;
+- the manifest's `name` and `version` if a manifest is present, and *"no
+  manifest"* if not;
+- whether `index.html` exists and is readable **right now**;
+- the digest recorded at activation, and whether it still matches — which is
+  how failure class 3 becomes visible (section 6.1);
+- whether the compatibility check ran at activation, and its result.
+
+The endpoint's path and response shape belong to section 2 and are **not
+specified here**; the requirement is routed in 10.2.
+
+### 5.4 Survives-what — **[proposed]**
+
+Same framing, same columns and same honesty as `docs/design/access.md` §10.4
+(`docs/design/access.md:500-508`); this table extends that vocabulary rather
+than introducing a second one.
+
+| What | Reboot | A/B update | Factory reset |
+|---|---|---|---|
+| **Custom UI bundles and the `current` pointer** (`/srv/ui`, DATA) | **yes** | **yes** — RAUC writes only the raw `rootfs` slot and the vfat `boot` slot (`os/rauc/system.conf.in:75-95`) and never touches DATA | **no**. Not implemented today (`docs/design/access.md:318-335`); a whole-disk reflash is the closest real operation, and it replaces DATA with the image's fresh filesystem — with §9.2's precision applying unchanged: blocks beyond the flashed extent are **unreachable, not erased** (`docs/design/access.md:454-459`) |
+| **The built-in UI** (compiled into `/usr/bin/webd`, inside the verity squashfs) | **yes** | **replaced, which is the point** — the new slot carries the new image's built-in UI, and there is no state to migrate because there is no state | **yes** — a reflash writes an image that contains it. This is the one row a factory reset **restores** rather than destroys, and that asymmetry is the whole of section 6 |
+| **The active/inactive choice alone** (`current` removed, bundles kept on disk) | **yes** | **yes** | **no** — the pointer is on DATA with the bundles it points at |
+
+**The third row is load-bearing.** Section 6.3's escape is the removal of
+`current`; if that removal did not survive a reboot, an operator who escaped a
+broken UI would be back inside it after the next power cycle, and the escape
+would not be an escape.
+
+**One honesty the columns cannot express.** A bundle that survives an A/B
+update is a bundle that is now talking to a **newer API**. Every "yes" above is
+a statement about **bytes**, not about function: the bundle is intact and may
+nonetheless be broken, and no file-level property of it changed. That is section
+6.1's fifth failure class, and it is the reason section 6.1 requires the
+compatibility check to re-run at apid start-up rather than only at install —
+the first boot into the new slot is the only moment at which anything on the
+device is in a position to notice.
 
 ## 6. The safety requirement: the built-in UI and the escape — **[proposed]**
 
-> **Stub — written by RFCT-065.** Do not fill this in from another task.
+> **A device whose custom UI is broken, half-uploaded or incompatible must
+> remain manageable, and the path back must not depend on why it broke.**
 
-### 6.1 What "broken" covers
+This is a **constraint on sections 4 and 5**, not a recovery bolted onto them.
+Every mechanism above was chosen so that this section could be short: assets are
+the router's fallback rather than its front door (4.1), so no bundle can shadow
+a management path; activation is a rename of an already-validated tree (5.3), so
+a half-written bundle is never reachable; the active pointer is one symlink
+(5.3), so deactivation is one atomic operation. A UI mechanism that can brick
+management is worse than no customisation at all, and the way to avoid building
+one is to design the mechanism around this requirement rather than to design a
+mechanism and then ask what happens when it fails.
 
-> **Stub — written by RFCT-065.** Do not fill this in from another task.
+### 6.1 What "broken" covers — **[proposed]**
 
-### 6.2 The built-in default UI, inside verity
+Five classes. The first four are visible in the filesystem; the fifth is not,
+and it is the one that decides the shape of the rest.
 
-> **Stub — written by RFCT-065.** Do not fill this in from another task.
+| # | Class | Detected by | Detected when | Response |
+|---|---|---|---|---|
+| 1 | **No bundle installed.** `/srv/ui/current` absent | The asset router, `stat`/`readlink` returning `ENOENT` | Every request, cost of one syscall | Serve the built-in UI. **This is not an error** — it is the shipped state of every device, and it must not be logged as one |
+| 2 | **A bundle with no `index.html`**, or whose index is a directory | Install-time validation (5.3 step 2), re-checked at activation | Before the bundle is ever reachable | Rejected at install. If it somehow reaches serving — the tree was mutated outside the install path — the SPA fallback has nothing to return and serves the **built-in UI**, not a 404 and not a 500 |
+| 3 | **A malformed or half-written bundle** | Digest recorded at activation, re-checked | apid start-up and activation — **not** per request | Deactivate and serve the built-in UI, logging the mismatch |
+| 4 | **A bundle whose files are unreadable** (`EACCES`, `EIO`) | The asset router, at `open` | Every request | **Asymmetric — see below** |
+| 5 | **A UI that renders perfectly and cannot talk to the API version it finds** | Nothing in the filesystem. See below | Activation, **and again at every apid start-up** | Refuse to activate, or deactivate, and say why |
 
-### 6.3 The deterministic way to reach it
+**Class 3 is not reachable through the install path, and the two ways it *is*
+reachable must be named.** Activation is a rename of a validated tree (5.3), so
+the installer cannot produce it. It can arrive by a **power cut** — closed by
+the `fsync`-before-rename in 5.3 step 3 — or by an **operator writing into
+`/srv/ui` over a root shell**, which cannot be prevented on a device that offers
+one and must therefore be *detected*. The honest cost: re-hashing a whole tree
+on every request is not affordable, so the digest is checked at activation and
+at start-up only. **A corruption introduced mid-life is detected at the next
+restart, not immediately.** That is a real gap and it is stated rather than
+papered over; the alternative — a filesystem watch — trades a permanent cost
+for a case an operator caused with a root shell.
 
-> **Stub — written by RFCT-065.** Do not fill this in from another task.
+**Class 4 is asymmetric, and the asymmetry is deliberate.** An unreadable
+**`index.html`** falls back to the built-in UI. An unreadable **inner asset**
+returns 404 for that asset and nothing else changes. A UI missing one image is
+still a working UI, and swapping the whole interface out from under an operator
+mid-session because one file failed to open would be a worse outcome than the
+missing image. **The fallback trigger is the index, not any file.**
 
-### 6.4 Why this is the same reasoning that split mosd and apid
+**Class 5, the hard one.** Every file-level check passes. Every asset returns
+200. The operator sees a rendered, professional-looking page on which every
+button fails. No amount of inspecting the filesystem finds anything wrong,
+because nothing is wrong with the filesystem.
 
-> **Stub — written by RFCT-065.** Do not fill this in from another task.
+*Who detects it.* Three candidate detectors, and only one of them actually
+works:
+
+- **The bundle itself.** It knows what it was built for. But a bundle that
+  cannot talk to the API cannot be trusted to report that it cannot, and a
+  bundle broken badly enough not to execute reports nothing at all. Necessary,
+  never sufficient.
+- **apid, at activation, from the manifest.** The bundle declares the API
+  version range it was built against (5.3), and apid refuses to activate a
+  bundle whose declared range does not include the version apid serves. **This
+  is the one that works**, because it runs *before* the bundle is ever served
+  and does not depend on the bundle executing. Its cost is honest and bounded:
+  it depends on the manifest being present and truthful. A bundle with no
+  manifest cannot be checked, so the correct behaviour is to activate it and
+  **record that it was activated unchecked** (5.3's read reports exactly this).
+- **apid, at request time, from a version the client sends.** This prevents
+  nothing. It makes the failure **legible** — a client whose expected version
+  does not match gets a distinguishable error instead of a confusing one — and
+  legibility is what an operator staring at a broken page actually needs.
+
+*The case that escapes activation-time checking, and how it is closed.* The
+bundle was checked against the API version apid served **then**. An A/B update
+replaces the rootfs and therefore the API, the bundle survives on DATA (5.4),
+and nothing re-runs the check. **So the compatibility check must re-run at apid
+start-up, not only at install.** On the first boot into the new slot, apid
+re-evaluates every activated bundle against its own version and deactivates one
+that no longer fits, logging why. That is the mechanism that closes the gap
+section 5.4's table opens.
+
+*One constraint on where that evaluation may happen, and it is not negotiable.*
+apid's `main` propagates every startup step with `?` —
+`config::Config::from_env()?` (`mosd/webd/src/main.rs:50`),
+`tls::ensure_state_dir(...)` (`:51`),
+`tls::load_or_generate_certificate(...)?` (`:53`),
+`tls::load_or_generate_session_key(...)?` (`:54`) — all **before** the listeners
+bind at `:59` and `:63`, and the unit is `Restart=on-failure`
+(`mosd/dist/webd.service:9`). A startup error therefore becomes a **crash loop
+with no listener bound**, which is precisely the failure this section exists to
+prevent. **Bundle discovery and evaluation must happen after the listeners bind
+and after `WEBD_LISTENING` is printed (`mosd/webd/src/main.rs:69`), and every
+possible outcome must be a state the daemon holds, never an error it returns.**
+A bundle must not be able to stop apid from listening. That is the actual safety
+property, and it is stronger than any escape path.
+
+The concrete shape of the version token, the handshake header and the error body
+belongs to sections 2 and 3. This section states the **requirement** only, and
+routes it in 10.2.
+
+### 6.2 The built-in default UI, inside verity — **[proposed]**
+
+The section is marked **[proposed]** because the *role* proposed for the
+built-in UI — a fallback at a reserved path — does not exist. The artifact and
+the protection described below **do** exist at `86cd669`, and each is cited.
+
+**Where it lives in the image: it is not a directory of files.** At `86cd669`
+the built-in UI is **compiled into the `webd` binary**. The pages are `maud`
+`html!` macro expansions in `mosd/webd/src/routes.rs` (the macro is imported at
+`:14` and used by every page handler), and the only stylesheet is a `&str`
+constant emitted into each `<head>` (`mosd/webd/src/routes.rs:157-165`, `:176`),
+described in the source as *"Inline stylesheet shared by every page; no external
+assets"* (`mosd/webd/src/routes.rs:157`). Section 1.6 evidences the rest: no
+`include_str!`/`include_bytes!`, no `assets/`, `static/` or `public/` directory,
+and no non-Rust file in the crate other than its manifest.
+
+**How it gets there.** `os/rootfs/build-v2.sh:75-76` copies the cross-built
+`webd` binary and its unit into the build context; `os/rootfs/Dockerfile.v2:294`
+installs the binary as `/usr/bin/webd` mode `0755`, `:295` installs the unit,
+and `:297-299` enables it by symlink and **asserts the symlink exists**. The
+binary is then part of the tree that `os/rootfs/build-v2.sh` packs into the
+squashfs and covers with the dm-verity hash tree
+(`docs/design/ro-root.md:13-27`).
+
+**What guarantees an upload path can never write to it.** Three layers, and
+naming which one is load-bearing matters more than the count:
+
+1. **Load-bearing: dm-verity.** `/` is a squashfs assembled by the kernel from
+   `dm-mod.create=` and mounted read-only, with no fstab entry that could remount
+   it (`os/rootfs/overlay-v2/etc/fstab.in:7-9`, `docs/design/ro-root.md:239`). A
+   write to `/usr/bin/webd` fails at the block layer, not at a permission check.
+   **This holds even though apid runs as root** — the unit sets no `User=`
+   (`mosd/dist/webd.service:1-13`), so root is exactly what would be writing,
+   and it still cannot. Nothing an operator uploads can reach the built-in UI,
+   because nothing on the running system can.
+2. **Real but not load-bearing: the bundle root is on a different filesystem.**
+   `/srv/ui` is on DATA (5.2), every install-path write is confined to it, and
+   4.4's canonicalise-and-assert bounds the *read* path to the same resolved
+   tree.
+3. **Absent, and named as absent: there is no systemd sandboxing.**
+   `mosd/dist/webd.service:6-10` is the entire `[Service]` section — `Type=`,
+   `ExecStart=`, `Restart=`, `StateDirectory=`. No `ProtectSystem=`, no
+   `ReadWritePaths=`, no `ReadOnlyPaths=`. So layer 1 is not merely the
+   strongest layer, it is the **only** one protecting the binary, and off a
+   verity root there is nothing at all — which is not hypothetical, because
+   `WEBD_STATE_DIR` exists precisely so the daemon runs off-device
+   (`mosd/webd/src/config.rs:38-40`) and that is how the crate's tests run. This
+   is a real gap; it is routed in 10.2 rather than counted as covered here.
+
+**What we ship, and what we deliberately do not.** mos builds **no JavaScript
+toolchain**, and section 1.6 measured that at `86cd669` four independent ways.
+The built-in UI therefore stays **server-rendered `maud` with no build step**,
+and **this document does not choose a frontend framework for it** —
+`docs/design/dashboard.md` §5.8 already settled the live-value mechanism as
+full-page refresh with a no-JavaScript off switch
+(`docs/design/dashboard.md:1275-1276`; cited, not edited), which is the same
+constraint approached from the other side.
+
+**A customer's own UI is their toolchain, not ours.** This asymmetry is
+deliberate and should not be read as an oversight. A bundle is a directory of
+files that apid serves (5.3); whether the customer produced it with a bundler, a
+compiler, a Makefile or by hand is invisible to the device and must **stay**
+invisible. mos ships no bundler, pins no framework version, offers no build
+integration, and takes no position on what a customer's UI is written in. The
+reason is exactly section 6's requirement: **the artifact we guarantee will keep
+working forever is the one with no build chain**, and guaranteeing that for
+something we did not build and cannot rebuild would be a promise with no
+mechanism behind it.
+
+### 6.3 The deterministic way to reach it — **[proposed]**
+
+The requirement, restated as a test the mechanism must pass:
+
+> **There is one documented action whose outcome does not depend on why the
+> custom UI failed.** If the operator has to know the cause in order to choose
+> the action, the mechanism has already failed.
+
+Three candidates, evaluated.
+
+**(A) A reserved path the asset router can never shadow.** A prefix — call it
+`/builtin/` — served by the built-in handlers. 4.1's precedence rule makes it
+unshadowable **structurally**: axum matches declared routes before consulting
+the fallback, so no bundle content can occupy the prefix, and this is true
+because of how dispatch works rather than because of a check.
+
+- **Deterministic for classes 1-4: yes.** The built-in handlers do not read
+  `/srv/ui` at all, so no bundle state — absent, corrupt, unreadable, wrong
+  version — can affect them.
+- **Class 5: yes, by definition.** Class 5 means the UI *renders*, so the
+  listener is up and the prefix answers.
+- **Costs.** It burns a path prefix permanently, and it only helps an operator
+  who knows the URL. Mitigations: the built-in error pages already exist
+  (`mosd/webd/src/routes.rs:106-116`) and can name the path, and it is
+  documented. The cost that must not be glossed: **(A) is a way *in*, not a way
+  *out*.** It deactivates nothing, so the next navigation to `/` is broken
+  again.
+
+**(B) An override that disables the custom UI and survives a reboot.** Removing
+`/srv/ui/current` — 5.3's *deactivate*.
+
+- **Deterministic: yes, and it is the way *out*.** Afterwards `/` itself is the
+  built-in UI, by 4.1's `/` rule.
+- **Survives a reboot: yes.** The pointer is on DATA, and 5.4's third row
+  asserts exactly this.
+- **Cost, and it is decisive:** it requires an action the operator can only take
+  through the API or a shell — that is, it **presupposes the access that may be
+  broken**. It cannot be the only mechanism.
+
+**(C) A boot-time or hardware escape** — a kernel cmdline flag, a recovery
+button.
+
+- **Rejected.** The cmdline is generated into the verity target
+  (`docs/design/ro-root.md:135`) and is not operator-editable on a device, and
+  `docs/design/uboot-ab-handshake.md:232` records that this board ships no
+  `button recovery` and no `PREBOOT` rockusb entry. There is no shipped hardware
+  escape to hang this on; inventing one is a bootloader change, not a daemon
+  change, and it would be a large cost for a case (A) and (B) already cover.
+
+**Chosen: (A) and (B) together, and neither alone.** (A) is the way in and
+depends on nothing but the listener; (B) is the way out and becomes reachable
+once (A) is. Concretely: **the built-in UI at the reserved prefix carries a
+control that performs (B).** One documented action — *go to
+`https://<device>/builtin/`* — reaches a working UI regardless of which of the
+five classes occurred, and one click from there deactivates the bundle. **The
+operator never has to diagnose anything**, which is the test this subsection
+opened with.
+
+**What if the operator cannot reach the API either?** The unflattering version,
+because a comfortable one here would be worthless:
+
+- **Under this design, a bad bundle cannot take the listener down.** 6.1's
+  constraint puts bundle discovery and evaluation *after* the listeners bind
+  (`mosd/webd/src/main.rs:59-69`) and makes every bundle outcome a state rather
+  than an error return. So the realistic causes of an unreachable API — a crash
+  loop, a bind failure, a network misconfiguration — are **not caused by the UI
+  mechanism**. That is the actual safety claim, and it is stronger than any
+  escape path, because it means the escape path is rarely the thing standing
+  between the operator and the device.
+- **If the listener is down anyway, the escape is a shell, and
+  `docs/design/access.md` §9.1 is blunt about what that is worth.** SSH is off
+  by default (`mosd/mosd-settings/src/model.rs:108-112`, `enabled: false`), root
+  is passwordless-locked, and the serial console does spawn a getty that has *no
+  account which will accept a credential* (`docs/design/access.md:415-427`). An
+  operator who enabled SSH and installed a key **before** the failure can
+  `rm /srv/ui/current` and restart apid — that is a real path, and it is exactly
+  as available as SSH was, which is: only if it was arranged in advance. An
+  operator who did not is in §9.1's position, and the only remedy is a
+  whole-disk reflash (`docs/design/access.md:437-459`) — which also clears the
+  bundle, because DATA is replaced.
+- **The honest summary: this design does not add a new way to be locked out,
+  and it does not remove the existing one.** §9.1's lockout is unchanged by
+  everything in sections 4-6. That is the accurate claim and the strongest one
+  available; anything stronger would be a claim about SSH defaults or about
+  recovery hardware, and neither is this document's to make.
+
+**No hardware claim is made anywhere in this section.** Nothing described here
+has been run on a device; every statement is a reading of source, of a unit
+file, or of a design document, and each is cited as such.
+
+### 6.4 Why this is the same reasoning that split mosd and apid — **[implemented]**
+
+The marker refers to the split itself, which exists: two units
+(`mosd/dist/mosd.service:8` → `/usr/bin/mosd`, `mosd/dist/webd.service:8` →
+`/usr/bin/webd`), two binaries installed separately by the image
+(`os/rootfs/Dockerfile.v2:285` and `:294`), ordered `After=network.target
+mosd.service` (`mosd/dist/webd.service:3`). What this subsection adds is the
+argument, not a mechanism.
+
+**The reasoning is recorded in `docs/design/dashboard.md` §6 — cited here and
+not edited; that file belongs to campaign
+`l1-o7ee8v0o-20260819152009-apid`.** mosd treats first-boot provisioning as a
+hard failure on purpose, and the code says why in as many words: *"Hard failure
+on purpose: an unwritable STATE means no device identity and no device
+credential, so there is no usable device to serve. A loud exit is better than a
+daemon that quietly serves an unprovisioned tree the operator cannot log in
+to."* (`mosd/mosd/src/main.rs:57-60`, with the `?` at `:67`). dashboard.md
+quotes the same comment and draws the consequence that matters here: *"After a
+merge there is no process left to render it: **a provisioning failure becomes a
+device with no UI and no diagnostic surface at all**, reachable only by serial
+console."* (`docs/design/dashboard.md:1811-1813`). Its scorecard records the
+same fact as a row — *"A `mosd` startup failure still renders an error page"*:
+**no** for a merge, yes for the two-process option
+(`docs/design/dashboard.md:2191`) — and §6.6 concludes *"Adopt option 2 ... Do
+not merge."* (`docs/design/dashboard.md:2198-2199`).
+
+*(dashboard.md's own inline line numbers there — `main.rs:57-63`, `:53-56`,
+`routes.rs:95-105` — no longer resolve at `86cd669`; the current ones are
+`mosd/mosd/src/main.rs:57-60` and `:67`, and `mosd/webd/src/routes.rs:106-116`.
+Section 1.7 records the same kind of drift for the research inventory. The code
+is the fact.)*
+
+**The principle, stated once: the component that explains a failure must not be
+the component that failed.** dashboard.md applies it to processes — mosd may
+exit hard *because* apid is a different process and survives to render the 502
+page *"The management daemon is unavailable."* (`mosd/webd/src/routes.rs:106-116`,
+reachable because the bus client connects lazily and drops its cache on error,
+`mosd/webd/src/bus_client.rs:23-26`, `:42-59`).
+
+**Section 6 applies the same principle one layer up, to the UI.** The custom UI
+may fail *because* the built-in UI is a different artifact with a different
+lifecycle at every level:
+
+| | Custom UI | Built-in UI |
+|---|---|---|
+| Form | A directory tree unpacked at runtime (5.3) | Compiled into the binary (6.2) |
+| Filesystem | DATA, writable (5.2) | Verity squashfs, unwritable by anything (6.2 layer 1) |
+| Changed by | An operator's upload | An A/B update only |
+| Reached at | `/`, and only when active (4.1) | A reserved prefix the asset router structurally cannot serve (6.3 option A) |
+
+Four independent axes. A failure on any one of them leaves the other artifact
+untouched, which is the same shape as two processes with a privilege boundary
+between them — one layer up.
+
+**What it would mean to get this wrong.** Exactly the merge dashboard.md
+refused, in UI form: a device where the only way to see that the UI is broken is
+the broken UI. The concrete version is tempting and should be named so nobody
+proposes it later: *ship the built-in UI as a bundle at `/srv/ui/builtin` and
+serve both through one asset pipeline.* It looks cheaper — one code path instead
+of two rendering strategies, and the default UI becomes replaceable by the same
+mechanism as everything else. It is the same trade dashboard.md scored and
+rejected: a DATA-level fault — a bad unpack, a filesystem error, an
+`rm -rf /srv/ui` — would take **both** UIs at once, and the operator's
+diagnostic surface would then have precisely the single point of failure as the
+thing being diagnosed. It converts a recoverable failure into
+`docs/design/access.md` §9.1's unrecoverable one, for the sake of one fewer code
+path.
+
+**One asymmetry, because the analogy is not perfect and pretending otherwise
+would weaken it.** mosd's hard exit is a *choice its authors made*, in a failure
+mode they enumerated. A custom UI's failure is *imposed by an operator's upload*,
+in failure modes nobody enumerated. That makes section 6's requirement
+**stricter** than dashboard.md's, not looser: mosd's fallback may be conditioned
+on recognising the failure, because the set of failures is known. A bundle's
+cannot be. Which is exactly why 6.3 requires a mechanism whose outcome does not
+depend on the cause, and why 6.1's constraint forbids the daemon from ever
+turning a bundle problem into a startup error.
 
 ## 7. Trust: who may install a UI — **[proposed]**
 
@@ -636,7 +1469,81 @@ parallel campaigns for the duration, and are cited above rather than changed.
 
 ### 10.2 From static hosting and the custom-UI lifecycle
 
-> **Stub — written by RFCT-065.** Do not fill this in from another task.
+Each item names the file or the section that owns it, and one sentence saying
+what it owes. Nothing here is edited by this document.
+
+**To documents this campaign may not touch**
+
+- `docs/design/access.md` §10.2 and §10.4 — §5.2 adds a DATA-resident appliance
+  path (`/srv/ui`) that needs **no ninth bind**, and §5.4 adds three rows in
+  §10.4's vocabulary; both belong in access.md once its campaign fence lifts.
+- `docs/design/dashboard.md` §6 — §6.4 rests entirely on its two-process
+  recommendation (`:2198-2199`), so if that decision is ever reopened, §6 here
+  must be re-derived rather than assumed; the file belongs to campaign
+  `l1-o7ee8v0o-20260819152009-apid`.
+- `docs/design/dashboard.md` §6 line citations — its `main.rs:57-63`,
+  `:53-56` and `routes.rs:95-105` no longer resolve at `86cd669` (§6.4 records
+  the current numbers); a re-measure belongs to whoever next edits that file.
+- `docs/design/ro-root.md` §4 — the storage-tier table lists what lives on each
+  partition; `/srv/ui` is a new DATA resident and belongs in it.
+
+**To the API sections this task does not own (RFCT-064, §2 and §3)**
+
+- §2.4 — the **404 body for the `/api/` subtree fallback** that §4.1 rule 1
+  requires: a mistyped API path must return the API error envelope, not an
+  empty body and never HTML.
+- §2.1 — the **API version token** §6.1 class 5 needs, for both the manifest
+  range check at activation and the mandatory re-check at apid start-up.
+- §2.3 — the **version handshake a client sends**, which §6.1 names as the
+  detector that makes a class-5 failure legible rather than confusing.
+- §2.2/§2.3 — the **"what is installed right now?" read** §5.3 specifies the
+  semantics of but not the shape: it must answer from the served tree and must
+  have a named answer for "no bundle active".
+- §2.3/§3 — the **bundle upload operation** itself: §5.3 specifies the on-disk
+  mechanism and says nothing about the request that drives it.
+
+**To sections 7-9 (RFCT-066)**
+
+- §7 — **who may install a bundle.** §5.3 describes the mechanism and takes no
+  position on authorisation; today the only credential in the crate is the
+  single webAdmin password (§1.4).
+- §8 — the **phasing that releases `/` and the thirteen legacy pane paths** from
+  §4.1's reserved set, and that moves the built-in panes under §6.3's reserved
+  prefix. §4.1 depends on this happening; it does not schedule it.
+- §9 — **what this forecloses**: the `/api` prefix is burned permanently (§4.1),
+  and the MIME allowlist lives inside the verity image so a customer cannot
+  extend it on device (§4.3).
+
+**To the crate and the image** — product code, none of which this campaign
+changes
+
+- `mosd/webd/Cargo.toml` (`mosd/apid/Cargo.toml` after the rename) — the
+  **static-file dependency decision**: adopt `tower-http` with the `fs` feature,
+  or hand-roll. §4.4 requires that whichever is chosen, the version is pinned
+  exactly and the traversal behaviour is asserted by a test **in this
+  repository**, because `build_and_validate_path` is private and carries no
+  stability promise.
+- `mosd/webd/Cargo.toml` — the **archive-format dependency** for §5.3's upload
+  transport. `mosd/deny.toml` bans no C-building crate and `mosd/hack/check.sh:9`
+  checks only licenses, bans and advisories, so the pure-Rust posture here is
+  convention (`mosd/Cargo.toml:33-35` is its only written trace) and the choice
+  needs a deliberate decision rather than a default.
+- `mosd/dist/webd.service` — **no sandboxing directives exist** (`:6-10` is the
+  whole `[Service]` section). §6.2 layer 3: the built-in UI's protection rests
+  entirely on dm-verity, with nothing behind it off a verity root. Adding
+  `ProtectSystem=` and an explicit `ReadWritePaths=` would give it a second
+  layer, and would also bound §4.4's traversal blast radius.
+- `mosd/mosd-settings/src/model.rs` — **only if** §6.3's deactivate is
+  implemented as a settings flag rather than as the removal of the `current`
+  pointer. `docs/design/access.md:468-474` applies either way: *"An unmodelled
+  setting is an unsupported setting."*
+- `os/rootfs/overlay-v2/usr/lib/mos/` — **no seed unit is proposed** for
+  `/srv/ui` (§5.2 explains why). If one is ever added, its owner uid must be
+  pinned by number for the reason `mos-seed-home:24-30` documents.
+- `os/verify-image-v2.sh` — no new assertion is proposed: `/srv` as a mountpoint
+  (`:1277-1281`) and the DATA fstab entry (`:1425`) are already asserted, and
+  those are what §5.2 depends on. An assertion becomes owed only if the image
+  ever ships something under `/srv/ui`.
 
 ### 10.3 From trust and phasing
 
