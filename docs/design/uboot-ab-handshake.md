@@ -721,8 +721,11 @@ in U-Boot, which is already set [V].
 3. Not write `extlinux/extlinux.conf` into the v2 boot slots (§5.4).
 4. Apply the fixed mtime `@1577836800` to every file before `mcopy`, as
    `os/mkimage.sh:76` already does [V].
-5. Zero-fill p1/p2 (uenv-a/uenv-b) so a freshly flashed device starts from the
-   compiled-in default environment rather than stale bytes.
+5. Zero-fill uenv-a/uenv-b so a freshly flashed device starts from the
+   compiled-in default environment rather than stale bytes. (These were p1/p2
+   when this section was written; they are **p2/p3** since the loader partition
+   landed — see §8.0. Their start sectors and therefore U-Boot's `ENV_OFFSET`
+   are unchanged.)
 
 Inputs it needs that this design does not provide: the verity root hash, data
 block count and hash-tree start block for each slot — those come from the
@@ -974,6 +977,55 @@ rather than by picking one document; it is flagged in the completion report.
 ---
 
 ## 8. Acceptance / bring-up checklist
+
+### 8.0 Before anything: a board flashed with an older image needs a maskrom re-flash
+
+**Any board flashed with an image built before 2026-08-19 has already lost its
+bootloader.** It must be re-flashed **in maskrom**, which rewrites the idbloader
+at LBA 64. Writing a new image over eMMC from the running system does **not**
+recover it.
+
+The cause, because it generalises and is worth understanding before it is
+rediscovered on another SoC:
+
+> `systemd-repart` **discards every region of the disk that no GPT partition
+> entry covers**, and it does so on the first boot, while growing the last
+> partition. The Rockchip idbloader lives at raw LBA 64, which was outside every
+> partition in both image pipelines. The first-boot growth run therefore TRIMmed
+> it away: the device booted once and came up in maskrom on the next power-on.
+
+Reproduced on a real image on a loop device before the fix — LBA 64 went from
+`524b4e53` (`RKNS`) to `00000000`, with repart's own log line
+`Successfully discarded gap at beginning of disk.`
+
+**This is not Rockchip-specific.** It applies to any SoC that boots from a raw
+offset rather than from a partition. The general rule: *if the boot ROM reads
+from a fixed sector, that sector must be inside a GPT partition entry, or
+first-boot growth will eventually eat it.*
+
+**The fix is structural, not a flag.** A `--discard=no` drop-in on the repart
+unit would suppress the symptom; instead the loader area is now a real GPT
+partition (`loader`, p1, LBA 64, 32704 sectors, type
+`8DA63339-0007-60C0-C436-083AC8230908`). First-boot TRIM stays enabled and the
+final state carries **no `--discard=no` anywhere** — protection comes from the
+partition entry existing. `os/repart-loader-test.sh` proves both directions with
+a real `systemd-repart` on a real image: the image as built keeps LBA 64, and the
+same image with only that one GPT entry deleted loses it.
+
+**The geometry was revised BEFORE any fielded flash**, which is the only reason
+this was cheap. There is no fielded fleet and images are flashed whole-disk, so
+changing the layout cost nothing today and would have been expensive later.
+
+Every partition after the loader shifted up by one (uenv-a is p2, … DATA is p11).
+**Partition GUIDs did not move** — the identity digits are allocated in the order
+partitions were added and frozen once allocated, which is precisely why the
+dm-verity cmdline, `/etc/fstab`, `/etc/fw_env.config` and the RAUC slot devices
+are pinned to PARTUUIDs. `ENV_OFFSET` / `ENV_OFFSET_REDUND` (`0x1000000` /
+`0x1100000`) are unchanged, because uenv-a/uenv-b keep their start sectors.
+
+Boards flashed from 2026-08-19 onwards are unaffected.
+
+### 8.1 Checklist
 
 Run in order on the custom U-Boot. Each step is independently observable.
 

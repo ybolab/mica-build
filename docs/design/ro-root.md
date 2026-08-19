@@ -243,16 +243,116 @@ partitions absorb everything:
 | Path | Backing | Options |
 |---|---|---|
 | `/` | rootfs-a / rootfs-b (`/dev/dm-0`) | squashfs, `ro` |
-| `/srv` | DATA (p10) | ext4, `noatime,x-systemd.growfs` |
-| `/mnt/state` | STATE (p8) | ext4, `noatime` |
-| `/mnt/meta` | META (p7) | ext4, `noatime` |
-| `/var` | EPHEMERAL (p9) | ext4, `noatime` — **no** growfs |
+| `/srv` | DATA (p11) | ext4, `noatime,x-systemd.growfs` |
+| `/mnt/state` | STATE (p9) | ext4, `noatime` |
+| `/mnt/meta` | META (p8) | ext4, `noatime` |
+| `/var` | EPHEMERAL (p10) | ext4, `noatime` — **no** growfs |
 | `/tmp` | tmpfs | `noatime,nosuid,nodev,mode=1777` |
-| `/var/lib/mos` | bind from `/mnt/state/mos` | mosd settings, webd credentials |
+| `/var/lib/mos` | bind from `/mnt/state/mos` | mosd settings, webd credentials, **per-device secrets**, **the shadow file** |
 | `/var/lib/bluetooth` | bind from `/mnt/state/bluetooth` | pairing keys |
-| `/etc/ssh` | bind from `/mnt/state/ssh` | sshd config + host keys |
+| `/etc/ssh` | bind from `/mnt/state/ssh` | sshd config + host keys + mosd's `sshd_config.d/10-mos.conf` |
 | `/etc/hostname` | bind from `/mnt/state/hostname` | file bind, not a directory |
+| `/etc/wpa_supplicant` | bind from `/mnt/state/wpa_supplicant` | mosd's rendered supplicant config (M5) |
+| `/etc/hostapd` | bind from `/mnt/state/hostapd` | mosd's rendered hostapd config (M5) |
+| **`/etc/shadow`** | **symlink → `/var/lib/mos/shadow`** | **not read-only any more — see below (M5)** |
 | `/run`, `/run/lock`, `/dev/shm` | tmpfs | systemd API mounts, unchanged |
+
+> **Partition numbers shifted in M5.** The Rockchip loader area became a real
+> GPT partition at p1 (RFCT-031), so every partition after it moved up by one.
+> The numbers above are the current ones and match `os/layout/cx3576-v2.env`.
+> Partition **GUIDs did not move** — the identity digits in each GUID are
+> allocated in the order partitions were added and are frozen once allocated,
+> which is exactly why the dm-verity cmdline, `/etc/fstab`, `/etc/fw_env.config`
+> and the RAUC slot devices are pinned to PARTUUIDs and needed no change.
+
+### `/etc/shadow` is writable, and this document used to say it was not
+
+**This is a correction.** Earlier revisions listed `/etc/shadow` among the
+read-only paths on the verity squashfs. Since PLAN-010 M5 that is no longer
+true, and the change is load-bearing: **per-device password authentication works
+on v2 ONLY because of it.**
+
+`pam_unix` will read exactly one file for a password, and on v2 that path sat
+inside the dm-verity squashfs — so sshd password auth could not work and mosd
+could not apply a per-device password at all.
+
+The arrangement:
+
+| Path | What it is |
+|---|---|
+| `/etc/shadow` | symlink → `/var/lib/mos/shadow` (i.e. onto STATE) |
+| `/usr/share/factory/etc/shadow` | the image's own shadow, retained as the factory template |
+| `/etc/passwd`, `/etc/group` | **unchanged**, still in the image, still read-only |
+
+A **symlink, not a bind-mounted file**, because a bind-mounted file cannot be
+replaced by `rename(2)`, and atomic replace is how mosd writes a credential
+without a torn read. (`/etc/hostname` is a bind because systemd-hostnamed
+rewrites that file in place — a different case.)
+
+Only the secret-bearing file moves. Account *definitions* stay inside the
+signed, verity-covered root while account *credentials* become per-device.
+
+#### Reconcile on every boot, not seed-once
+
+`/usr/lib/mos/mos-shadow-reconcile` runs on **every** boot from
+`mos-shadow-reconcile.service`, ordered `After=`/`Requires=var-lib-mos.mount`
+and `Before=mosd.service ssh.service`. A seed-once design would freeze the file
+at first-boot content, so a later image that adds a system account would leave it
+with no shadow entry at all — which M6 will hit the moment balena-engine brings
+a service account.
+
+Two rules, in this order:
+
+1. **An entry that already exists in the STATE file is NEVER touched.** The
+   device's own credential always wins over the image's — an A/B update must not
+   be able to reset a password the operator set.
+2. **An account in `/etc/passwd` with no STATE entry gets one appended, always
+   LOCKED.** The factory copy supplies the aging fields and the hash field is
+   forced to a locked marker; if the factory copy has no entry for that account,
+   a locked placeholder is written.
+
+Appending is the only mutation the script makes, so it is **idempotent by
+construction**: when nothing is missing it does not rewrite the file at all, only
+re-enforcing `0640 root:shadow`.
+
+The group is not cosmetic. `unix_chkpwd` is setgid `shadow` precisely so a
+non-root PAM stack can read this file — the same reason the pack stage
+deliberately avoids `-all-root` (§3).
+
+**An EMPTY hash field is not a locked account.** `pam_unix` reads it as "no
+password required", so an empty root field is passwordless root login — the worst
+state in the threat model, not a benign one. Only genuine locked markers (`!`,
+including `!!` and `!`-prefixed forms that retain a hash, and `*`) are accepted;
+empty is rewritten to `!` by the reconciler and **fails** both verifiers and the
+build-time gate, with its own distinct message.
+
+#### Two known consequences, recorded rather than hidden
+
+- **`/etc/.pwd.lock` remains read-only.** The `shadow` suite's locking is
+  therefore unavailable on device. Nothing depends on it: both writers — the
+  reconciler and mosd — write by temp-file + atomic rename, which needs no lock
+  file. (§6 already recorded `.pwd.lock` writes as failing silently with nothing
+  depending on them; that is still true, and it is now true for a path that
+  matters.)
+- **`/etc/shadow` is a DANGLING symlink for part of early boot** — between
+  `mos-seed-var` restoring `/var` and `var-lib-mos.mount` binding STATE over
+  `/var/lib/mos`. **Nothing reads it in that window**: the reconciler is ordered
+  after the mount, and sshd and mosd after the reconciler. A unit that did read
+  shadow during the local mount phase would see a *missing* file rather than a
+  *wrong* one, which is the safe failure direction.
+
+The credential model this file carries — why the hash in it is bcrypt while
+`access.device.passwordHash` is Argon2id — is stated once in
+`docs/design/provisioning.md` §3.3 and is not repeated here.
+
+#### v1 does not get any of this
+
+v1 (single-slot writable ext4 root) gets **only** the no-baked-credential
+assertion: no symlink, no factory copy, no reconcile unit. Its `/etc/shadow` is
+already writable in place, so there is nothing to redirect and the machinery
+would be pure risk for zero gain. What the two images genuinely share is the rule
+that no usable root password may ship inside one, and that — and only that — is
+asserted in both verifiers.
 
 ### Storage tiers
 
@@ -262,10 +362,10 @@ follow from the tier rather than the other way round.
 
 | Tier | Mount | Contents | Grows? | Lost when |
 |---|---|---|---|---|
-| **STATE** (p8) | `/mnt/state` | configuration and identity: mosd settings, the webd admin password hash and session key, sshd host keys, hostname, Bluetooth pairings | no — small and fixed | factory reset only |
-| **DATA** (p10) | `/srv` | application data | **yes** — fills the media | factory reset only |
-| **META** (p7) | `/mnt/meta` | update and appliance metadata | no | factory reset only |
-| **EPHEMERAL** (p9) | `/var` | disposable runtime residue: logs, caches, package bookkeeping | no — **fixed** size | factory reset **and** routine log cleanup |
+| **STATE** (p9) | `/mnt/state` | configuration and identity: mosd settings, the webd admin password hash and session key, **the per-device secrets and the shadow file**, sshd host keys, **the WiFi daemon configs**, hostname, Bluetooth pairings | no — small and fixed | factory reset only |
+| **DATA** (p11) | `/srv` | application data | **yes** — fills the media | factory reset only |
+| **META** (p8) | `/mnt/meta` | update and appliance metadata | no | factory reset only |
+| **EPHEMERAL** (p10) | `/var` | disposable runtime residue: logs, caches, package bookkeeping | no — **fixed** size | factory reset **and** routine log cleanup |
 
 Two operations follow from that table:
 
@@ -454,9 +554,11 @@ of racing it.
 ### Seeding STATE
 
 `mos-seed-state.service` runs under the same rules against `/mnt/state`,
-creating `/mnt/state/mos` and `/mnt/state/ssh` — the sources of the two bind
-mounts, which must exist before those mounts are attempted, so a tmpfiles rule
-(which runs long after `local-fs.target`) would be too late.
+creating the sources of every STATE bind mount — `/mnt/state/mos`,
+`/mnt/state/ssh`, `/mnt/state/bluetooth`, `/mnt/state/hostname`, and since M5
+`/mnt/state/wpa_supplicant` and `/mnt/state/hostapd` (both 0700, because they
+hold WiFi keys). These must exist before those mounts are attempted, so a
+tmpfiles rule (which runs long after `local-fs.target`) would be too late.
 
 It also seeds `/mnt/state/ssh` from `/etc/ssh` while that path still shows the
 read-only image copy, and then generates the RSA / ECDSA / Ed25519 host keys
@@ -485,6 +587,38 @@ never reach a device that has already been seeded. This is the shape the M4
 spec calls for. Two follow-ups would fix it: bind only `ssh_host_*` files, or
 have a RAUC post-install hook refresh the non-key files from
 `/usr/share/factory/etc/ssh`.
+
+### The seeding contract, and the constraint it puts on every future image
+
+**`mos-seed-state` is gated by `ConditionPathExists=!/mnt/state/.mos-state-seeded`.
+On an already-seeded device the whole oneshot is SKIPPED** — not partially run,
+skipped. It creates the directories a fresh STATE needs and then never runs
+again.
+
+The consequence, spelled out because the next person to add a bind mount will
+otherwise discover it on a device rather than here:
+
+> **A STATE directory added after devices exist will not be seeded.** The
+> directory has no source, so its bind mount has nothing to bind, and the
+> feature that depends on it is silently absent on exactly the devices that
+> already shipped. **Any future image that adds a STATE directory needs a
+> seed-generation bump** — some mechanism that makes the oneshot re-run for the
+> new directories on an already-seeded device.
+
+This is the **pre-existing shape** of STATE seeding, not something M5
+introduced: `/etc/ssh` has had the same property since M4. M5 added
+`/mnt/state/wpa_supplicant` and `/mnt/state/hostapd` and deliberately followed
+the existing shape rather than redesigning a mechanism several tasks depend on.
+
+It is **harmless today** because nothing has been field-seeded — every device is
+flashed whole-disk from an image that carries the current seed script. It stops
+being harmless the moment the first device is in the field.
+
+The shadow file is the one case that is already covered, and only by accident of
+its design: `mos-shadow-reconcile` runs on **every** boot and creates the STATE
+shadow from the factory copy when it is missing, so a device seeded by an older
+image still gets one. That is a property of the reconciler, not of the seeding
+mechanism, and it does not generalise to any other directory.
 
 ## 5. `/etc/machine-id` — solved through the U-Boot environment
 
@@ -563,13 +697,16 @@ Every `/etc` write path in the v1 rootfs, and what happens to it under v2:
 |---|---|
 | sshd host key generation | **Redirected.** Keys are not baked; `mos-seed-state` generates them into `/mnt/state/ssh`, bound over `/etc/ssh`. |
 | `/etc/resolv.conf` | **Already fine.** v1 makes it a symlink to `../run/systemd/resolve/stub-resolv.conf`; the target is on tmpfs and stays writable. Carried into v2 unchanged. |
-| networkd unit rendering by mosd | **No writer exists.** mosd and webd write only `/var/lib/mos/settings.toml` and `/var/lib/mos/webd` (`mosd-settings/src/store.rs`, `webd/src/config.rs`); both land on STATE through `var-lib-mos.mount`. The static `/etc/systemd/network/80-dhcp.network` is baked at build time. If a later milestone adds runtime network rendering it must target `/run/systemd/network`, which networkd reads at higher precedence than `/etc`. |
+| networkd unit rendering by mosd | **Solved as this row predicted.** M5's WiFi reconcilers render into `/run/systemd/network`, which networkd reads at higher precedence than `/etc`, exactly as required here. The static `/etc/systemd/network/80-dhcp.network` is still baked at build time and is still never written. See `docs/design/connd.md` §6 for the naming constraint that goes with it. |
+| `/etc/shadow` | **Redirected to STATE** (M5). Symlink → `/var/lib/mos/shadow`, seeded from `/usr/share/factory/etc/shadow` and reconciled on every boot. See §4. This is the one row in this table that changed from read-only to writable. |
+| `/etc/ssh/sshd_config.d/10-mos.conf` | **Writable.** Rendered by mosd's sshd reconciler into the existing `/etc/ssh` STATE bind. No new mount was needed. |
+| `/etc/wpa_supplicant`, `/etc/hostapd` | **Writable** (M5). New STATE binds, mode 0700; mosd's WiFi reconcilers render 0600 config files into them. The paths are contracts with Debian's `wpa_supplicant@.service` / `hostapd@.service` templates, not preferences. |
 | hostname persistence | **Solved**, and it had a live consumer — see below. `/etc/hostname` is bound from `/mnt/state/hostname` and re-applied by `mos-apply-hostname.service`. |
 | `/etc/machine-id` | **Solved via the U-Boot env** (§5). The U-Boot half is live; transient per boot until RFCT-015's oneshot populates the `machine_id` variable. |
 | `/etc/mos/otg-mode` (hwinit-otg override) | **Read-only in v2.** The documented per-device USB OTG role override cannot be created on the device. Defaults from `otg.conf` are unaffected — see below. |
 | `/etc/adjtime` (hwclock) | Not written: no RTC sync unit is enabled. |
 | `/etc/mtab` | Symlink to `/proc/self/mounts` in Debian; never written. |
-| `/etc/.updated`, `/etc/.pwd.lock` | systemd/shadow best-effort writes; they fail silently on EROFS and nothing depends on them. |
+| `/etc/.updated`, `/etc/.pwd.lock` | systemd/shadow best-effort writes; they fail silently on EROFS and nothing depends on them. **`.pwd.lock` stays read-only even though `/etc/shadow` no longer is** — both writers of the shadow file use temp+rename, which needs no lock file. See §4. |
 
 ### Board hardware-init units under a read-only root
 
