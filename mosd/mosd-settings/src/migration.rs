@@ -76,6 +76,7 @@ impl Default for MigrationRegistry {
             Box::new(MigrateV0ToV1),
             Box::new(MigrateV1ToV2),
             Box::new(MigrateV2ToV3),
+            Box::new(MigrateV3ToV4),
         ])
     }
 }
@@ -192,5 +193,86 @@ impl Migration for MigrateV2ToV3 {
             access.remove("device");
         }
         Ok(())
+    }
+}
+
+/// v3 -> v4: adds `access.ssh.authorizedKeys`, the persistent SSH access list.
+///
+/// `up` stamps `schema_version = 4` and ensures `access.ssh.authorizedKeys`
+/// exists as an empty array, creating `access` and `access.ssh` when the
+/// document does not carry them yet. An existing array is left exactly as it
+/// is, so running `up` over an already-migrated document changes nothing.
+///
+/// `down` stamps `schema_version = 3` and removes the key.
+pub struct MigrateV3ToV4;
+
+impl Migration for MigrateV3ToV4 {
+    fn target_version(&self) -> u32 {
+        4
+    }
+
+    fn up(&self, doc: &mut toml::Table) -> Result<(), SettingsError> {
+        doc.insert("schema_version".to_string(), toml::Value::Integer(4));
+        let access = child_table(doc, "access")?;
+        let ssh = child_table(access, "ssh")?;
+        match ssh.get("authorizedKeys") {
+            None => {
+                ssh.insert("authorizedKeys".to_string(), toml::Value::Array(Vec::new()));
+            }
+            Some(toml::Value::Array(_)) => {}
+            Some(other) => {
+                return Err(SettingsError::Migration(format!(
+                    "access.ssh.authorizedKeys must be an array, found a {}",
+                    other.type_str()
+                )));
+            }
+        }
+        Ok(())
+    }
+
+    /// Remove `access.ssh.authorizedKeys`, discarding whatever it held.
+    ///
+    /// A non-empty list is discarded, not carried forward, and that is the
+    /// correct trade rather than a limitation. A v3 image has no code that
+    /// renders the list into an `authorized_keys` file, so a document that
+    /// kept the keys would be a v3 device promising an access path it cannot
+    /// actually serve: the operator would see the keys in the settings tree
+    /// and believe they work. Worse, v3 deserializes `access.ssh` with
+    /// `deny_unknown_fields`, so a leftover key makes the whole document
+    /// unloadable. Dropping the list makes the rollback honest — the operator
+    /// falls back to that release's access story, and rolling forward again
+    /// starts from an empty list rather than from keys nobody re-authorized.
+    ///
+    /// A document with no `access` or no `access.ssh` table is left untouched.
+    fn down(&self, doc: &mut toml::Table) -> Result<(), SettingsError> {
+        doc.insert("schema_version".to_string(), toml::Value::Integer(3));
+        if let Some(toml::Value::Table(access)) = doc.get_mut("access")
+            && let Some(toml::Value::Table(ssh)) = access.get_mut("ssh")
+        {
+            ssh.remove("authorizedKeys");
+        }
+        Ok(())
+    }
+}
+
+/// Borrow `doc[key]` as a table, creating an empty one when it is absent.
+///
+/// # Errors
+///
+/// Returns [`SettingsError::Migration`] when the key exists but is not a table,
+/// which is a hand-edited document rather than an old one.
+fn child_table<'doc>(
+    doc: &'doc mut toml::Table,
+    key: &str,
+) -> Result<&'doc mut toml::Table, SettingsError> {
+    let entry = doc
+        .entry(key.to_string())
+        .or_insert_with(|| toml::Value::Table(toml::Table::new()));
+    match entry {
+        toml::Value::Table(table) => Ok(table),
+        other => Err(SettingsError::Migration(format!(
+            "{key} must be a table, found a {}",
+            other.type_str()
+        ))),
     }
 }

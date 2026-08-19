@@ -5,10 +5,12 @@ use std::fs;
 use serde_json::json;
 
 use mosd_settings::{
-    AccessSettings, ApMode, ConsoleSettings, DEFAULT_PATH, DeviceCredentialSettings, IfaceSettings,
-    MigrateV0ToV1, Migration, MigrationRegistry, ProvisioningSettings, ProvisioningState,
-    SCHEMA_VERSION, Settings, SettingsError, SshSettings, StaticConfig, Store, WebAdminSettings,
-    WifiApSettings, WifiClientSettings, WifiNetwork, WifiSettings, json_path_get, migrate,
+    AccessSettings, ApMode, AuthorizedKey, ConsoleSettings, DEFAULT_PATH, DeviceCredentialSettings,
+    IfaceSettings, MigrateV0ToV1, MigrateV3ToV4, Migration, MigrationRegistry,
+    ProvisioningSettings, ProvisioningState, SCHEMA_VERSION, Settings, SettingsError, SshSettings,
+    StaticConfig, Store, WebAdminSettings, WifiApSettings, WifiClientSettings, WifiNetwork,
+    WifiSettings, encode_base64_nopad, json_path_get, migrate, parse_authorized_key,
+    validate_authorized_keys,
 };
 
 fn populated() -> Settings {
@@ -45,7 +47,7 @@ fn save_load_roundtrip_with_network() {
 
     let text = fs::read_to_string(dir.path().join("settings.toml")).unwrap();
     let doc: toml::Table = text.parse().unwrap();
-    assert_eq!(doc.get("schema_version"), Some(&toml::Value::Integer(3)));
+    assert_eq!(doc.get("schema_version"), Some(&toml::Value::Integer(4)));
 
     assert_eq!(store.load().unwrap(), settings);
 }
@@ -309,7 +311,7 @@ fn store_load_migrates_v0_file() {
 fn migrate_errors_on_missing_step() {
     let mut doc = toml::Table::new();
     assert!(matches!(
-        migrate(&mut doc, 0, 4),
+        migrate(&mut doc, 0, 5),
         Err(SettingsError::Migration(_))
     ));
 }
@@ -365,7 +367,9 @@ const V2_PASSWORD_HASH: &str = "$argon2id$v=19$m=19456,t=2,p=1$c29tZXNhbHQ$aGFza
 /// A v3 tree carrying a value in every subtree, used by the round-trip tests.
 fn v3_populated() -> Settings {
     Settings {
-        schema_version: SCHEMA_VERSION,
+        // A v3 tree, deliberately not SCHEMA_VERSION: this fixture is the
+        // input to the v3 rollback tests, not a current document.
+        schema_version: 3,
         hostname: "edge-42".to_string(),
         network: [(
             "eth0".to_string(),
@@ -390,6 +394,7 @@ fn v3_populated() -> Settings {
                 permit_root_login: false,
                 password_authentication: false,
                 listen_addresses: vec!["10.0.0.7".to_string()],
+                authorized_keys: Vec::new(),
             },
             console: ConsoleSettings {
                 shell_enabled: true,
@@ -441,8 +446,8 @@ fn real_v2_document_survives_the_upgrade_to_v3() {
     let settings = Store::new(&path).load().unwrap();
 
     // Everything v2 could express is byte-identical to what went in.
-    assert_eq!(settings.schema_version, 3);
-    assert_eq!(SCHEMA_VERSION, 3);
+    assert_eq!(settings.schema_version, 4);
+    assert_eq!(SCHEMA_VERSION, 4);
     assert_eq!(settings.hostname, "edge-42");
     assert_eq!(
         settings.network["eth0"],
@@ -470,6 +475,7 @@ fn real_v2_document_survives_the_upgrade_to_v3() {
     assert!(settings.access.ssh.permit_root_login);
     assert!(settings.access.ssh.password_authentication);
     assert!(settings.access.ssh.listen_addresses.is_empty());
+    assert!(settings.access.ssh.authorized_keys.is_empty());
     assert!(!settings.access.console.shell_enabled);
     assert_eq!(settings.access.device.password_hash, None);
     assert_eq!(settings.access.device.generation, 0);
@@ -723,7 +729,7 @@ fn v0_and_v1_documents_walk_all_the_way_to_v3() {
     let from_v1 = Store::new(&v1).load().unwrap();
 
     for settings in [&from_v0, &from_v1] {
-        assert_eq!(settings.schema_version, 3);
+        assert_eq!(settings.schema_version, 4);
         assert_eq!(settings.hostname, "legacy");
         assert!(settings.network.is_empty());
         assert_eq!(settings.access, AccessSettings::default());
@@ -737,4 +743,387 @@ fn v0_and_v1_documents_walk_all_the_way_to_v3() {
     let store = Store::new(&out);
     store.save(&from_v0).unwrap();
     assert_eq!(store.load().unwrap(), from_v0);
+}
+
+// --- Schema v4: access.ssh.authorizedKeys ----------------------------------
+
+/// Build a structurally valid blob for `key_type` out of the crate's own
+/// encoder: the four-byte algorithm-name length, the name, then filler.
+///
+/// No key is pasted in from anywhere; the bytes are constructed so the test
+/// depends on the format rather than on someone else's key material.
+fn blob_for(key_type: &str) -> String {
+    let mut bytes = Vec::new();
+    let name = key_type.as_bytes();
+    bytes.extend_from_slice(&u32::try_from(name.len()).unwrap().to_be_bytes());
+    bytes.extend_from_slice(name);
+    while bytes.len() < 64 {
+        let index = u8::try_from(bytes.len()).unwrap();
+        bytes.push(index.wrapping_mul(11).wrapping_add(5));
+    }
+    let mut encoded = encode_base64_nopad(&bytes);
+    while !encoded.len().is_multiple_of(4) {
+        encoded.push('=');
+    }
+    encoded
+}
+
+fn key_line(key_type: &str) -> String {
+    format!("{key_type} {}", blob_for(key_type))
+}
+
+/// A v3 document carrying an `access.ssh` table, which is the shape the
+/// upgrade actually meets on a device that has been through RFCT-021.
+const V3_DOCUMENT: &str = concat!(
+    "schema_version = 3\n",
+    "hostname = \"edge-42\"\n\n",
+    "[network]\n\n",
+    "[access.ssh]\n",
+    "enabled = true\n",
+    "port = 2222\n",
+    "permitRootLogin = false\n",
+    "passwordAuthentication = false\n",
+    "listenAddresses = [\"10.0.0.7\"]\n",
+);
+
+/// R1: a freshly built tree carries the key, and it is empty.
+#[test]
+fn default_settings_serialise_an_empty_authorized_key_list_at_schema_four() {
+    assert_eq!(SCHEMA_VERSION, 4);
+    let settings = Settings::default();
+    assert!(settings.access.ssh.authorized_keys.is_empty());
+
+    let text = toml::to_string(&settings).unwrap();
+    let doc: toml::Table = text.parse().unwrap();
+    assert_eq!(doc["schema_version"], toml::Value::Integer(4));
+    assert_eq!(
+        doc["access"]["ssh"]["authorizedKeys"],
+        toml::Value::Array(Vec::new()),
+        "the key must be present and empty, not absent"
+    );
+
+    // The rest of the SSH policy is untouched by this schema step: another
+    // task owns the default flip, and this one must not pre-empt it.
+    assert!(!settings.access.ssh.enabled);
+    assert_eq!(settings.access.ssh.port, 22);
+    assert!(settings.access.ssh.permit_root_login);
+    assert!(settings.access.ssh.password_authentication);
+    assert!(settings.access.ssh.listen_addresses.is_empty());
+}
+
+/// R1: a v4 document with real keys survives a save/load round trip, and the
+/// comment lives in its own field on disk.
+#[test]
+fn a_v4_document_round_trips_through_the_store() {
+    let dir = tempfile::tempdir().unwrap();
+    let store = Store::new(dir.path().join("settings.toml"));
+
+    let mut settings = Settings::default();
+    settings.access.ssh.authorized_keys = vec![
+        AuthorizedKey {
+            key: key_line("ssh-ed25519"),
+            comment: Some("alice@workstation".to_string()),
+        },
+        AuthorizedKey {
+            key: key_line("ssh-rsa"),
+            comment: None,
+        },
+    ];
+    validate_authorized_keys(&settings.access.ssh.authorized_keys).unwrap();
+    store.save(&settings).unwrap();
+
+    let text = fs::read_to_string(dir.path().join("settings.toml")).unwrap();
+    assert!(
+        text.contains("alice@workstation"),
+        "the comment is persisted: {text}"
+    );
+    assert!(
+        text.lines()
+            .all(|line| !(line.contains("ssh-ed25519") && line.contains("alice"))),
+        "the comment must live on its own key, not inside the key line: {text}"
+    );
+
+    let loaded = store.load().unwrap();
+    assert_eq!(loaded, settings);
+    assert_eq!(loaded.access.ssh.authorized_keys.len(), 2);
+    assert_eq!(
+        loaded.access.ssh.authorized_keys[0].comment.as_deref(),
+        Some("alice@workstation")
+    );
+    assert_eq!(loaded.access.ssh.authorized_keys[1].comment, None);
+}
+
+/// R1: the list is reachable and writable through the dot-path API, and an
+/// entry with an unknown field is refused like every other typed write.
+#[test]
+fn dot_path_reaches_the_authorized_key_list() {
+    let mut settings = Settings::default();
+    assert_eq!(
+        settings.get("access.ssh.authorizedKeys").unwrap(),
+        json!([])
+    );
+
+    let line = key_line("ssh-ed25519");
+    settings
+        .set(
+            "access.ssh.authorizedKeys",
+            json!([{"key": line, "comment": "alice@workstation"}]),
+        )
+        .unwrap();
+    assert_eq!(
+        settings.access.ssh.authorized_keys,
+        vec![AuthorizedKey {
+            key: line.clone(),
+            comment: Some("alice@workstation".to_string()),
+        }]
+    );
+
+    // An absent comment stays absent rather than becoming an empty string.
+    settings
+        .set("access.ssh.authorizedKeys", json!([{"key": line}]))
+        .unwrap();
+    assert_eq!(settings.access.ssh.authorized_keys[0].comment, None);
+    assert_eq!(
+        settings.get("access.ssh.authorizedKeys").unwrap(),
+        json!([{"key": line}])
+    );
+
+    let before = settings.clone();
+    assert!(matches!(
+        settings.set("access.ssh.authorizedKeys", json!([{"kye": line}])),
+        Err(SettingsError::Validation { .. })
+    ));
+    assert!(matches!(
+        settings.set("access.ssh.authorizedKeys", json!(["a string"])),
+        Err(SettingsError::Validation { .. })
+    ));
+    assert_eq!(settings, before);
+}
+
+/// R1: the typed tree is a container, not a validator. It will hold a key that
+/// `validate_authorized_keys` refuses, which is exactly why the callers must
+/// run the validator before rendering.
+#[test]
+fn the_typed_tree_holds_what_the_validator_would_refuse() {
+    let mut settings = Settings::default();
+    settings
+        .set(
+            "access.ssh.authorizedKeys",
+            json!([{"key": "ssh-ed25519 not-base64"}]),
+        )
+        .unwrap();
+    assert!(matches!(
+        validate_authorized_keys(&settings.access.ssh.authorized_keys),
+        Err(SettingsError::Validation { .. })
+    ));
+}
+
+/// R2: a v3 document without the key gains an empty array, and `up` is
+/// idempotent over the result.
+#[test]
+fn v3_document_gains_an_empty_authorized_key_list_and_up_is_idempotent() {
+    let mut doc: toml::Table = V3_DOCUMENT.parse().unwrap();
+    assert!(
+        !doc["access"]["ssh"]
+            .as_table()
+            .unwrap()
+            .contains_key("authorizedKeys")
+    );
+
+    migrate(&mut doc, 3, 4).unwrap();
+    assert_eq!(doc["schema_version"], toml::Value::Integer(4));
+    assert_eq!(
+        doc["access"]["ssh"]["authorizedKeys"],
+        toml::Value::Array(Vec::new())
+    );
+
+    // Re-running `up` over the migrated document changes nothing at all.
+    let once = doc.clone();
+    MigrateV3ToV4.up(&mut doc).unwrap();
+    assert_eq!(doc, once);
+
+    // And an existing non-empty list is left exactly as it was.
+    let key = toml::Value::Table(
+        [(
+            "key".to_string(),
+            toml::Value::String(key_line("ssh-ed25519")),
+        )]
+        .into_iter()
+        .collect(),
+    );
+    doc["access"]["ssh"]["authorizedKeys"] = toml::Value::Array(vec![key.clone()]);
+    let populated = doc.clone();
+    MigrateV3ToV4.up(&mut doc).unwrap();
+    assert_eq!(doc, populated);
+    assert_eq!(doc["access"]["ssh"]["authorizedKeys"][0], key);
+}
+
+/// R2: `up` over a non-array value is an error naming the path and the type,
+/// not a silent overwrite of whatever the operator hand-edited in.
+#[test]
+fn v3_to_v4_up_refuses_a_non_array_authorized_key_value() {
+    for (literal, type_name) in [
+        ("\"a string\"", "string"),
+        ("42", "integer"),
+        ("true", "boolean"),
+        ("{ a = 1 }", "table"),
+    ] {
+        let text = format!("{V3_DOCUMENT}authorizedKeys = {literal}\n");
+        let mut doc: toml::Table = text.parse().unwrap();
+        let err = migrate(&mut doc, 3, 4).unwrap_err();
+        let SettingsError::Migration(message) = &err else {
+            panic!("expected a migration error, got {err:?}");
+        };
+        assert!(
+            message.contains("access.ssh.authorizedKeys"),
+            "message must name the path: {message}"
+        );
+        assert!(
+            message.contains(type_name),
+            "message must name the type found ({type_name}): {message}"
+        );
+    }
+}
+
+/// R2: `down` removes the key, and a v3 -> v4 -> v3 round trip returns the
+/// document it started from.
+#[test]
+fn v4_document_migrates_down_to_v3_and_round_trips() {
+    let original: toml::Table = V3_DOCUMENT.parse().unwrap();
+    let mut doc = original.clone();
+
+    migrate(&mut doc, 3, 4).unwrap();
+    migrate(&mut doc, 4, 3).unwrap();
+    assert_eq!(doc, original, "v3 -> v4 -> v3 must be the identity");
+
+    // And a non-empty list is discarded, deliberately: a v3 image has no
+    // renderer for it, and `deny_unknown_fields` would refuse the document.
+    let mut doc: toml::Table = V3_DOCUMENT.parse().unwrap();
+    migrate(&mut doc, 3, 4).unwrap();
+    doc["access"]["ssh"]["authorizedKeys"] = toml::Value::Array(vec![toml::Value::Table(
+        [(
+            "key".to_string(),
+            toml::Value::String(key_line("ssh-ed25519")),
+        )]
+        .into_iter()
+        .collect(),
+    )]);
+    migrate(&mut doc, 4, 3).unwrap();
+    assert_eq!(doc["schema_version"], toml::Value::Integer(3));
+    assert!(
+        !doc["access"]["ssh"]
+            .as_table()
+            .unwrap()
+            .contains_key("authorizedKeys")
+    );
+    let text = toml::to_string(&doc).unwrap();
+    assert!(!text.contains("authorizedKeys"), "{text}");
+    assert!(!text.contains("ssh-ed25519"), "{text}");
+    assert_eq!(doc, original);
+}
+
+/// R2: both directions cope with `access` or `access.ssh` being absent.
+#[test]
+fn v3_to_v4_handles_a_document_with_no_access_table() {
+    // `up` creates the intermediate tables.
+    let mut doc: toml::Table = "schema_version = 3\nhostname = \"bare\"\n\n[network]\n"
+        .parse()
+        .unwrap();
+    migrate(&mut doc, 3, 4).unwrap();
+    assert_eq!(
+        doc["access"]["ssh"]["authorizedKeys"],
+        toml::Value::Array(Vec::new())
+    );
+
+    // `down` is a no-op when `access` is absent...
+    let mut doc: toml::Table = "schema_version = 4\nhostname = \"bare\"\n\n[network]\n"
+        .parse()
+        .unwrap();
+    MigrateV3ToV4.down(&mut doc).unwrap();
+    assert_eq!(doc["schema_version"], toml::Value::Integer(3));
+    assert!(!doc.contains_key("access"));
+
+    // ...and when `access` exists but `access.ssh` does not.
+    let mut doc: toml::Table = concat!(
+        "schema_version = 4\n",
+        "hostname = \"bare\"\n\n",
+        "[network]\n\n",
+        "[access.webAdmin]\n",
+        "password_hash = \"x\"\n",
+    )
+    .parse()
+    .unwrap();
+    let before = doc.clone();
+    MigrateV3ToV4.down(&mut doc).unwrap();
+    assert_eq!(doc["schema_version"], toml::Value::Integer(3));
+    assert_eq!(doc["access"], before["access"]);
+}
+
+/// R2: the whole chain still walks, in both directions, with the new step on
+/// the end.
+#[test]
+fn the_full_chain_walks_from_v0_to_v4_and_back_to_v0() {
+    let mut doc: toml::Table = "hostname = \"legacy\"".parse().unwrap();
+    let original = doc.clone();
+
+    migrate(&mut doc, 0, 4).unwrap();
+    assert_eq!(doc["schema_version"], toml::Value::Integer(4));
+    assert_eq!(
+        doc["access"]["ssh"]["authorizedKeys"],
+        toml::Value::Array(Vec::new())
+    );
+    // The walked document deserializes into a current tree.
+    let settings: Settings = toml::from_str(&toml::to_string(&doc).unwrap()).unwrap();
+    assert_eq!(settings.schema_version, 4);
+    assert_eq!(settings.hostname, "legacy");
+    assert_eq!(settings.access.ssh, SshSettings::default());
+
+    migrate(&mut doc, 4, 0).unwrap();
+    assert_eq!(doc, original, "the walk down must undo the walk up");
+}
+
+/// R2: `Store::load` migrates a real v3 file on disk all the way to v4.
+#[test]
+fn store_load_migrates_a_v3_file_to_v4() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("settings.toml");
+    fs::write(&path, V3_DOCUMENT).unwrap();
+
+    let settings = Store::new(&path).load().unwrap();
+    assert_eq!(settings.schema_version, 4);
+    assert!(settings.access.ssh.authorized_keys.is_empty());
+    // Every v3 value survives.
+    assert!(settings.access.ssh.enabled);
+    assert_eq!(settings.access.ssh.port, 2222);
+    assert!(!settings.access.ssh.permit_root_login);
+    assert!(!settings.access.ssh.password_authentication);
+    assert_eq!(settings.access.ssh.listen_addresses, vec!["10.0.0.7"]);
+}
+
+/// R3: the parser is reachable from the public API and enforces its rules
+/// there, so a consumer crate cannot get a weaker check by importing a
+/// different symbol.
+#[test]
+fn the_public_parser_accepts_a_real_key_and_refuses_an_options_line() {
+    let line = key_line("ssh-ed25519");
+    let parsed = parse_authorized_key(&format!("{line} alice@workstation")).unwrap();
+    assert_eq!(parsed.key, line);
+    assert_eq!(parsed.comment.as_deref(), Some("alice@workstation"));
+
+    for rejected in [
+        format!("command=\"/bin/sh\" {line}"),
+        format!("# {line}"),
+        format!("{line}\nssh-rsa {}", blob_for("ssh-rsa")),
+        String::new(),
+    ] {
+        assert!(
+            parse_authorized_key(&rejected).is_err(),
+            "must be rejected: {} bytes",
+            rejected.len()
+        );
+    }
+
+    validate_authorized_keys(std::slice::from_ref(&parsed)).unwrap();
+    // The same key twice is one grant, not two.
+    assert!(validate_authorized_keys(&[parsed.clone(), parsed]).is_err());
 }

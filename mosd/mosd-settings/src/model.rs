@@ -1,4 +1,4 @@
-//! Typed settings tree (schema v3) and its dot-path accessors.
+//! Typed settings tree (schema v4) and its dot-path accessors.
 
 use std::collections::BTreeMap;
 
@@ -8,9 +8,9 @@ use crate::error::SettingsError;
 use crate::path::{json_path_get, json_path_set, split_path};
 
 /// Current settings schema version written by this crate.
-pub const SCHEMA_VERSION: u32 = 3;
+pub const SCHEMA_VERSION: u32 = 4;
 
-/// Persistent mosd settings tree (schema v3).
+/// Persistent mosd settings tree (schema v4).
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Settings {
@@ -91,6 +91,18 @@ pub struct SshSettings {
     /// Addresses sshd binds to; empty means every address.
     #[serde(rename = "listenAddresses")]
     pub listen_addresses: Vec<String>,
+    /// Public keys rendered into the root account's `authorized_keys` file.
+    ///
+    /// Empty by default: a key baked into the signed rootfs would let whoever
+    /// holds its private half into every device built from that image. Keys
+    /// arrive one at a time through an authenticated admin action, and every
+    /// entry must satisfy [`crate::validate_authorized_keys`] before it is
+    /// rendered.
+    ///
+    /// Declared last so the TOML serializer emits this array of tables after
+    /// every scalar key of `access.ssh`.
+    #[serde(rename = "authorizedKeys")]
+    pub authorized_keys: Vec<AuthorizedKey>,
 }
 
 impl Default for SshSettings {
@@ -101,8 +113,25 @@ impl Default for SshSettings {
             permit_root_login: true,
             password_authentication: true,
             listen_addresses: Vec::new(),
+            authorized_keys: Vec::new(),
         }
     }
+}
+
+/// One SSH public key authorized to log in.
+///
+/// The comment lives in its own field rather than inside `key` so that the
+/// canonical key text is what duplicate detection runs on: two operators
+/// pasting the same key under different labels must not end up with two
+/// entries granting the same access.
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct AuthorizedKey {
+    /// Canonical single-line key text, `<type> <base64blob>`, with no comment.
+    pub key: String,
+    /// Operator-supplied label; absent when the key was pasted without one.
+    #[serde(rename = "comment", default, skip_serializing_if = "Option::is_none")]
+    pub comment: Option<String>,
 }
 
 /// Local console policy.
