@@ -6,6 +6,15 @@
 - **completedAt**: -
 - **relatedTask**: RFCT-008 (M1); further tasks created per-milestone on dispatch
 
+> **On the name `webd` in this file.** The product HTTPS daemon was renamed
+> `webd` -> `apid` by campaign `apid` (RFCT-055 code, RFCT-056 docs, RFCT-057
+> audit). Every `webd` still written below is a **deliberate retention**: it is
+> the name the daemon had while that milestone was executed, and the milestone
+> records are history, not current state. The one forward-looking statement in
+> this file — the architecture diagram in "Context" — was renamed to `apid`,
+> because it describes the target, not the past. Current-state documentation
+> lives in `docs/design/`; read `apid` wherever a milestone record says `webd`.
+
 ## Context
 
 Decision record: research/init-strategy.md "DECISION 2026-08-17". The Talos
