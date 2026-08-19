@@ -5,7 +5,7 @@ BOARDS := cx3576 x64
 
 .PHONY: help os os-image-cx3576 os-verify-cx3576 os-rootfs-cx3576-v2 \
 	os-image-cx3576-v2 os-verify-cx3576-v2 os-bundle-cx3576 os-devkeys os-health-test \
-	os-repart-test \
+	os-shadow-test os-repart-test \
 	$(addsuffix -%,$(BOARDS))
 
 help:
@@ -20,6 +20,7 @@ help:
 	@echo "  os-bundle-cx3576    build the RAUC update bundle"
 	@echo "  os-devkeys          generate the gitignored development signing material"
 	@echo "  os-health-test      run the offline tests for the health gate and machine-id oneshots"
+	@echo "  os-shadow-test      run the offline tests for the STATE /etc/shadow reconciler"
 	@echo "  os-repart-test      prove first-boot repart growth grows DATA and cannot wipe the loader (privileged docker)"
 	@echo "  cx3576-<t>          delegate target <t> to board/cx3576 (uboot|kernel|rootfs|image|clean)"
 	@echo "  x64-image           x64 uses the upstream talos image pipeline (see board/x64/README.md)"
@@ -52,6 +53,13 @@ os-devkeys:
 
 os-health-test:
 	bash os/health/test.sh
+
+# Drives the real mos-shadow-reconcile against fixtures in a temp dir: the
+# transient-root-password clearing, the mismatch branch that lets a dev image's
+# ROOT_PASSWORD survive a reboot, and the pre-existing append rule. Needs no
+# root and touches no host state.
+os-shadow-test:
+	bash os/shadow-reconcile-test.sh
 
 # Behavioural check on first-boot growth: a real systemd-repart, with discard
 # enabled, over a copy of each assembled image on a loop device. It proves two

@@ -16,33 +16,91 @@
 # A/B update that adds a system account would leave that account with no shadow
 # entry at all. Reconciling instead means the file converges on each boot.
 #
-# Two rules, in this order:
-#   1. An entry that already exists in the STATE file is NEVER touched. The
-#      device's own credential always wins over the image's -- an update must
+# Three rules, in this order:
+#   1. A TRANSIENT root password -- one mosd set through the web UI and recorded
+#      in a marker beside this file -- is cleared. That is what makes it
+#      transient, and it is the one deliberate exception to rule 2. See the
+#      block below for why it is a marker and not a flag.
+#   2. Any other entry that already exists in the STATE file is NEVER touched.
+#      The device's own credential always wins over the image's -- an update must
 #      not be able to reset or replace a password the operator set.
-#   2. An account in /etc/passwd with no STATE entry gets one appended, always
+#   3. An account in /etc/passwd with no STATE entry gets one appended, always
 #      LOCKED. A signed rootfs is byte-identical across the whole fleet, so any
 #      hash carried in the image would be a shared secret by construction; the
 #      factory entry is used only for its aging fields.
 #
-# Nothing else is written: if every account already has an entry the file is
-# not replaced at all, so a second run on a converged system is a no-op.
+# Nothing else is written: if every account already has an entry and no
+# transient password is pending, the file is not replaced at all, so a second
+# run on a converged system is a no-op.
 #
 # Usage: mos-shadow-reconcile [shadow-path]
 # The path defaults to /var/lib/mos/shadow. mos-seed-state passes
 # /mnt/state/mos/shadow instead, because on first boot it runs inside the local
 # mount phase, before var-lib-mos.mount has bound that directory onto /var.
+#
+# MOS_SHADOW_PASSWD and MOS_SHADOW_FACTORY redirect the two absolute inputs.
+# They exist so os/shadow-reconcile-test.sh can drive this exact script against
+# fixtures in a temp dir without root and without a /usr/share/factory; nothing
+# on the device sets them.
 set -eu
 
 SHADOW="${1:-/var/lib/mos/shadow}"
-PASSWD=/etc/passwd
-FACTORY=/usr/share/factory/etc/shadow
+PASSWD="${MOS_SHADOW_PASSWD:-/etc/passwd}"
+FACTORY="${MOS_SHADOW_FACTORY:-/usr/share/factory/etc/shadow}"
 
 [ -f "$PASSWD" ] || { echo "no $PASSWD to reconcile against" >&2; exit 1; }
 [ -f "$FACTORY" ] || { echo "no $FACTORY to seed from" >&2; exit 1; }
 
 dir="$(dirname "$SHADOW")"
 [ -d "$dir" ] || { echo "$dir does not exist; is var-lib-mos.mount up?" >&2; exit 1; }
+
+# --- transient root password -------------------------------------------------
+# mosd's com.mos.mosd1.SetTransientRootPassword writes a bcrypt hash into the
+# root: line AND records that same hash in a marker beside this file. Clearing
+# it again is this script's job, which is what makes the password transient: it
+# is set once, over the network, and it does not survive a reboot.
+#
+# This runs BEFORE the converged early exit further down, because a converged
+# system -- every account already has an entry -- is exactly the common case, and
+# a check placed after that exit would never run on a fielded device at all.
+#
+# The marker is compared against the hash the file actually carries; it is not a
+# "lock root on every boot" flag, and that difference is the entire reason it
+# exists. A dev image built with a ROOT_PASSWORD build-arg carries a hash mosd
+# did not write, so the comparison fails, the file is left alone, and that
+# password survives the reboot the way its developer expects. Only a hash this
+# system set is cleared.
+MARKER="${dir}/transient-root-password"
+if [ -s "$MARKER" ]; then
+    want=$(head -n1 "$MARKER")
+    cur=''
+    has_root=no
+    if [ -f "$SHADOW" ] && grep -q '^root:' "$SHADOW"; then
+        has_root=yes
+        cur=$(awk -F: '$1 == "root" { print $2; exit }' "$SHADOW")
+    fi
+    if [ -z "$want" ] || [ "$has_root" = no ]; then
+        # An empty first line names no hash, and a file with no root: line has
+        # no field to rewrite. Neither may be turned into a write: forcing the
+        # field to the empty string is specifically forbidden, because an EMPTY
+        # hash field is passwordless root rather than a locked account.
+        echo "shadow: transient marker names no usable hash; ${SHADOW} left alone"
+    elif [ "$cur" = "$want" ]; then
+        ttmp="${SHADOW}.transient.$$"
+        trap 'rm -f "$ttmp"' EXIT INT TERM
+        awk -F: -v OFS=: '$1 == "root" { $2 = "!" } { print }' "$SHADOW" >"$ttmp"
+        chgrp shadow "$ttmp"
+        chmod 0640 "$ttmp"
+        mv -f "$ttmp" "$SHADOW"
+        trap - EXIT INT TERM
+        echo "shadow: transient root password cleared"
+    else
+        echo "shadow: transient marker does not match the current root hash; leaving it alone"
+    fi
+fi
+# Stale in every branch: the hash it named has either just been cleared or was
+# never the one in the file, so it can only mislead the next boot.
+rm -f "$MARKER"
 
 # Force the hash field of a shadow line to a locked marker. Anything that is
 # not already '!' or '*' is replaced, and that deliberately includes an EMPTY
