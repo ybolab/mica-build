@@ -1,0 +1,37 @@
+usb: composite: keep the bind_fixup bcdUSB flag bit on GET_DESCRIPTOR
+
+g_dnl_bind_fixup() raises bcdUSB to 0x0201 so Rockchip host tools classify
+rockusb as a loader rather than a BootROM device (patch 0001). That value
+does not survive: composite_setup() rewrites bcdUSB to a plain 0x0200 on
+every GET_DESCRIPTOR(DEVICE), so the descriptor the host actually reads
+always says maskrom and tools speak the 0x471/0x472 protocol this gadget
+does not implement.
+
+Preserve bit 0 instead of clearing it. Stating the USB revision is the
+purpose of that assignment; discarding a flag the gadget deliberately set
+is a side effect of it. Gadgets that never touch the bit are unaffected.
+SuperSpeed keeps its unconditional 0x0310 — the loader convention is a
+USB 2.0 one.
+
+Upstream-Status: Pending (against v2026.07)
+---
+--- a/drivers/usb/gadget/composite.c
++++ b/drivers/usb/gadget/composite.c
+@@ -1051,7 +1051,16 @@
+ 				cdev->desc.bcdUSB = cpu_to_le16(0x0310);
+ 				cdev->desc.bMaxPacketSize0 = 9;
+ 			} else {
+-				cdev->desc.bcdUSB = cpu_to_le16(0x0200);
++				/*
++				 * Preserve bit 0, which a gadget may have set
++				 * in bind_fixup: Rockchip host tools read it as
++				 * loader-vs-maskrom (0x0201 vs 0x0200). Stating
++				 * the USB revision must not clear a flag the
++				 * gadget deliberately raised.
++				 */
++				u16 flag = le16_to_cpu(cdev->desc.bcdUSB) & 1;
++
++				cdev->desc.bcdUSB = cpu_to_le16(0x0200 | flag);
+ 			}
+ 			value = min(w_length, (u16) sizeof cdev->desc);
+ 			memcpy(req->buf, &cdev->desc, value);
