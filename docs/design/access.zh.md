@@ -26,7 +26,7 @@
 | 工厂（rockusb / SoC loader 模式） | 完整重刷 | 物理接触 + recovery 按键 | 硬件级 |
 
 SSH 服务端用 Go 实现（`x/crypto/ssh` + pty），编入 machined 多调用二进制，
-与 apid 同款监督方式，策略直接读 COSI——无 OpenSSH、无独立 C daemon、无配置
+与 webd 同款监督方式，策略直接读 COSI——无 OpenSSH、无独立 C daemon、无配置
 文件漂移。busybox 提供 `/bin/sh` 与基础工具（约 1MB），仅进 debug 变体。
 
 ## 3. 配置模型
@@ -49,7 +49,7 @@ lockdown: false                # 单向；见 §5
 ```
 
 链路：`DebugAccessConfig` → DebugAccessController → `DebugAccessStatus` 资源
-→ 服务起停，无需重启。apid 从同一资源渲染状态（"调试通道已开启，剩余
+→ 服务起停，无需重启。webd 从同一资源渲染状态（"调试通道已开启，剩余
 1h23m"）。
 
 ## 4. 认证阶段

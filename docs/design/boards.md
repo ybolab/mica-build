@@ -94,7 +94,7 @@ Board intake tiers:
 3. U-Boot: §5 config; verified boot keys enrolled.
 4. Smoke path first (Alpine or stock image) to validate hardware bring-up
    before the Talos image — this is the role cx3576's Alpine demo played.
-5. Talos image consuming the artifacts boots to apid healthz on hardware.
+5. Talos image consuming the artifacts boots to webd healthz on hardware.
 6. Power-cut rig run before the board is called supported.
 
 ## 8. Current boards
