@@ -81,3 +81,10 @@ Each task is a single line linking to its detail file. All detailed information 
 - [x] [**RFCT-048 D-Bus policy: com.mos.mosd is root-only, and a live-bus test that proves it**](RFCT-048.md) `P1`
 - [x] [**RFCT-053 sshd reconciler: render authorized keys for every managed login account**](RFCT-053.md) `P1`
 - [x] [**RFCT-054 A persistent /root on DATA**](RFCT-054.md) `P1`
+- [x] [**RFCT-063 Current API/UI surface inventory and the api.md skeleton**](RFCT-063.md) `P1`
+- [x] [**RFCT-064 The API surface and authentication for a programmatic client**](RFCT-064.md) `P1`
+- [x] [**RFCT-065 Static hosting, the custom-UI lifecycle, and the safety fallback**](RFCT-065.md) `P1`
+- [x] [**RFCT-066 Trust, migration and phasing, and what API-first forecloses**](RFCT-066.md) `P1`
+- [x] [**RFCT-067 PMA records, the task index, and the final consistency pass**](RFCT-067.md) `P1`
+- [x] [**RFCT-068 Anchor mos-ui-inventory.md as a measurement at a time**](RFCT-068.md) `P1`
+- [x] [**RFCT-069 Resolve the auth/CSRF and version-set contradictions**](RFCT-069.md) `P1`

@@ -529,7 +529,7 @@ everything else is a proposal and is marked as one.
 in both directions. The nineteen existing paths (section 1.2) keep their method,
 their path and their behaviour unchanged; `/api/` is a prefix nothing currently
 serves — the HTTPS router declares no route under it and no fallback at all
-(`mosd/webd/src/routes.rs:44-68`), so today every `/api/...` request is handled
+(`mosd/webd/src/routes.rs:44-68`), so at `86cd669` every `/api/...` request is handled
 by the gate, which redirects it to `/login` when unauthenticated
 (`mosd/webd/src/routes.rs:149`) and otherwise falls through to axum's default
 not-found. The API prefix is therefore free.
@@ -923,7 +923,7 @@ knowable over the connection that asked.
   mosd is dead. `GET /api/v1/health` is the API's health endpoint and reports
   both halves — see §2.4.
 - **A password change.** `access.webAdmin.password_hash` is written by exactly
-  one handler today, `setup_submit` (`mosd/webd/src/routes.rs:441-444`), and
+  one handler at `86cd669`, `setup_submit` (`mosd/webd/src/routes.rs:441-444`), and
   there is no change-password route anywhere in the crate. The API does not
   invent one: it would be the first operation the API offers that the UI does
   not, and it needs a decision about whether changing the password revokes
@@ -1587,7 +1587,7 @@ write.
 | Option | Rejected because |
 |---|---|
 | **Content negotiation on the same paths** (`Accept: application/json` selects the API) | The reserved set becomes invisible in the URL: you cannot tell from a request line whether it is an API call or an asset fetch, which makes both logs and `curl` reproduction ambiguous. A `fetch()` that forgets its `Accept` header silently receives HTML. |
-| **A second listener on its own port** | Two TLS configurations, two firewall rules, and the self-signed certificate would have to be accepted twice by the browser — it is generated once into the state directory with SANs `DNS:mos`, `DNS:localhost`, `IP:127.0.0.1` (`mosd/webd/src/tls.rs:44-81`). The two listeners that exist today are 443 and a redirect-only 80 (`mosd/webd/src/config.rs:34-37`, `mosd/webd/src/routes.rs:72-76`); a third is a real operational cost for no isolation gain, since both would be served by the same root process. |
+| **A second listener on its own port** | Two TLS configurations, two firewall rules, and the self-signed certificate would have to be accepted twice by the browser — it is generated once into the state directory with SANs `DNS:mos`, `DNS:localhost`, `IP:127.0.0.1` (`mosd/webd/src/tls.rs:44-81`). The two listeners that exist at `86cd669` are 443 and a redirect-only 80 (`mosd/webd/src/config.rs:34-37`, `mosd/webd/src/routes.rs:72-76`); a third is a real operational cost for no isolation gain, since both would be served by the same root process. |
 | **A subdomain** (`api.mos`) | The certificate carries three SANs and no wildcard (`mosd/webd/src/tls.rs:44-81`), and the appliance provides no DNS. A new name means a new SAN, a new way for the name to fail to resolve, and a second certificate-trust prompt. |
 | **`/api/v1` prefix** | **Chosen.** One origin, one certificate, one listener, and the reserved set is legible in every URL. |
 
@@ -1864,7 +1864,7 @@ verity's coverage by design.
    "no symlinks" rule applies to bundle *contents*.
 
 **On depending on a library, and what happens if its behaviour changes.**
-`tower-http` is not a dependency of the crate today (`mosd/webd/Cargo.toml:11-29`
+`tower-http` is not a dependency of the crate at `86cd669` (`mosd/webd/Cargo.toml:11-29`
 — section 1.6, evidence 1). The copy at `mosd/Cargo.lock:2364-2366` is version
 **0.6.11**, pulled in by the **dev-dependency** `reqwest`
 (`mosd/webd/Cargo.toml:32`), and it is built **without the `fs` feature**: its
@@ -1953,7 +1953,7 @@ than a ninth unit that has to be ordered against a mount.
 **Ownership and permissions: `root:root`, mode `0755` on `/srv/ui` and on the
 directories beneath it, `0644` for files.**
 
-- apid runs as root today (`mosd/dist/webd.service:1-13`), so it can write
+- apid runs as root at `86cd669` (`mosd/dist/webd.service:1-13`), so it can write
   regardless of what the mode says.
 - **The mode is chosen for the daemon apid is meant to become, not the one it
   is.** `docs/design/dashboard.md` §6.6 adopts two processes with a real
