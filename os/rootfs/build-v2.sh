@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Build the squashfs + dm-verity arm64 rootfs slot image for cx3576 (layout v2).
-# Usage: [BOARD_DIR=...] [ROOT_PASSWORD=...] [WITH_MOSD=0|1] bash os/rootfs/build-v2.sh
+# Usage: [BOARD_DIR=...] [ROOT_PASSWORD=...] [WITH_MOSD=0|1] [MOS_PROFILE=dev|prod] bash os/rootfs/build-v2.sh
 #
 # Outputs (all under _out/cx3576/, consumed by os/mkimage-v2.sh):
 #   rootfs-verity.img     squashfs-zstd with the verity hash tree appended,
@@ -21,6 +21,10 @@ BOARD_DIR=${BOARD_DIR:-"$REPO_ROOT/board/cx3576"}
 OUT_DIR="$REPO_ROOT/_out/cx3576"
 SIZE_BUDGET_MB=400
 WITH_MOSD=${WITH_MOSD:-1}
+# Image profile baked into /usr/lib/mos/profile.conf. mosd reads it on first
+# boot to seed access.ssh.enabled and FAILS CLOSED to prod, so the value has to
+# be exactly "dev" or "prod" in lowercase; the Dockerfile rejects anything else.
+MOS_PROFILE=${MOS_PROFILE:-dev}
 
 if [ ! -f "$LAYOUT_ENV" ]; then
     echo "error: $LAYOUT_ENV not found" >&2
@@ -210,6 +214,7 @@ if ! docker buildx build \
         --build-arg BOARD_INIT_DIR=_out/cx3576/init \
         --build-arg OVERLAY_DIR=_out/cx3576/overlay-v2 \
         --build-arg WITH_MOSD="$WITH_MOSD" \
+        --build-arg MOS_PROFILE="$MOS_PROFILE" \
         --build-arg VERITY_SALT="$VERITY_SALT" \
         --build-arg VERITY_UUID="$VERITY_UUID" \
         --build-arg SQUASHFS_TIME="$SQUASHFS_TIME" \

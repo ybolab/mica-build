@@ -545,11 +545,8 @@ ext_symlink /usr/lib/firmware/fw_bcmdhd.bin fw_bcm43752a2_ag.bin
 ext_symlink /usr/lib/firmware/nvram.txt nvram_ap6275s.txt
 ext_symlink /usr/lib/firmware/clm_bcmdhd.blob clm_bcm43752a2_ag.blob
 
-if dbg "stat /etc/systemd/system/multi-user.target.wants/ssh.service" | grep -q "Inode:"; then
-    pass "ssh.service is enabled (multi-user.target.wants)"
-else
-    fail "ssh.service enablement symlink missing"
-fi
+# ssh.service enablement is NOT asserted here: it is a function of the image
+# profile, and both directions of that are checked in the M5 section below.
 if dbg "stat /etc/systemd/system/multi-user.target.wants/systemd-networkd.service" | grep -q "Inode:" ||
     dbg "stat /etc/systemd/system/dbus-org.freedesktop.network1.service" | grep -q "Inode:"; then
     pass "systemd-networkd is enabled"
@@ -746,6 +743,294 @@ else
         fail "the packed rootfs carries a usable root password hash in /etc/shadow. Cause: the ROOT_PASSWORD build arg was set at build time; unset it — a per-device password is provisioned by mosd at runtime"
         ;;
     esac
+fi
+
+# ===========================================================================
+# M5: connd userland, image profile, and the crypt(3) format
+# ===========================================================================
+# Every path, prefix and unit name below is READ from the mosd source that owns
+# it rather than restated here. A constant restated in two places can drift, and
+# this drift is invisible from the code side: a reconciler that renders into a
+# directory the image does not provide, or drives a unit the image does not
+# install, fails on the device and nowhere else. Each extraction is checked for
+# emptiness, so a rename in mosd breaks this verifier loudly instead of turning
+# an assertion into a comparison against "".
+RECONCILER_DIR="${REPO_ROOT}/mosd/mosd/src/reconciler"
+
+# Value of a `const NAME: &str = "...";` in one of the reconcilers.
+mosd_const() {
+    sed -n "s/^const $2: \&str = \"\(.*\)\";\$/\1/p" "${RECONCILER_DIR}/$1" 2>/dev/null | head -n1
+}
+# The unit TEMPLATE name behind `format!("x@{interface}.service")`.
+mosd_unit_template() {
+    sed -n 's/^ *format!("\(.*\)@{interface}\.service")$/\1@.service/p' "${RECONCILER_DIR}/$1" 2>/dev/null | head -n1
+}
+# The rendered configuration file name, still carrying `{interface}`.
+mosd_config_name() {
+    sed -n 's/^ *format!("\([^"]*{interface}[^"]*\.conf\)")$/\1/p' "${RECONCILER_DIR}/$1" 2>/dev/null | head -n1
+}
+
+STA_DIR="$(mosd_const wifi_client.rs DEFAULT_CONFIG_DIR)"
+AP_DIR="$(mosd_const wifi_ap.rs DEFAULT_CONFIG_DIR)"
+STA_UNIT="$(mosd_unit_template wifi_client.rs)"
+AP_UNIT="$(mosd_unit_template wifi_ap.rs)"
+STA_CONF="$(mosd_config_name wifi_client.rs)"
+AP_CONF="$(mosd_config_name wifi_ap.rs)"
+STA_PREFIX="$(mosd_const wifi_client.rs NETWORKD_PREFIX)"
+AP_PREFIX="$(mosd_const wifi_ap.rs NETWORKD_PREFIX)"
+# The pattern network.rs sweeps: it DELETES every *<marker>*.network it did not
+# render, so an image file carrying the marker would be deleted on device.
+MOS_SWEEP="$(sed -n 's/.*file_name\.contains("\(.*\)").*/\1/p' "${RECONCILER_DIR}/network.rs" 2>/dev/null | head -n1)"
+
+if [ -n "${STA_DIR}" ] && [ -n "${AP_DIR}" ] && [ -n "${STA_UNIT}" ] && [ -n "${AP_UNIT}" ] &&
+    [ -n "${STA_CONF}" ] && [ -n "${AP_CONF}" ] && [ -n "${STA_PREFIX}" ] &&
+    [ -n "${AP_PREFIX}" ] && [ -n "${MOS_SWEEP}" ]; then
+    pass "read the connd contract out of mosd: ${STA_UNIT} <- ${STA_DIR}/${STA_CONF}, ${AP_UNIT} <- ${AP_DIR}/${AP_CONF}, networkd prefixes '${STA_PREFIX}'/'${AP_PREFIX}', sweep marker '${MOS_SWEEP}'"
+else
+    fail "could not read the connd contract out of ${RECONCILER_DIR}: dirs '${STA_DIR}'/'${AP_DIR}', units '${STA_UNIT}'/'${AP_UNIT}', configs '${STA_CONF}'/'${AP_CONF}', prefixes '${STA_PREFIX}'/'${AP_PREFIX}', sweep '${MOS_SWEEP}'. Every connd assertion below compares against these, so none of them mean anything until this passes"
+fi
+
+# --- the daemons and their unit templates ---
+ext_regular /usr/sbin/hostapd
+ext_regular /usr/sbin/wpa_supplicant
+ext_regular "/usr/lib/systemd/system/${STA_UNIT:-wpa_supplicant@.service}"
+ext_regular "/usr/lib/systemd/system/${AP_UNIT:-hostapd@.service}"
+
+# The unit's ExecStart and the reconciler's render path are ONE contract: the
+# template bakes the config file name into its command line, so a rename on
+# either side leaves a daemon starting against a file nothing writes. Both
+# systemd instance specifiers are accepted (%i escaped, %I unescaped); for a
+# plain interface name they are the same string, and which one the packager
+# chose is not this repo's business.
+# Args: description unit-path config-dir config-name-with-{interface}
+check_execstart() {
+    local what="$1" unit="$2" dir="$3" name="$4" text spec want found=0
+    text="$(dbg "cat ${unit}")"
+    if [ -z "${text}" ]; then
+        fail "${what}: ${unit} is not in the image, so mosd would drive a unit that does not exist"
+        return
+    fi
+    for spec in '%i' '%I'; do
+        want="${dir}/$(printf '%s' "${name}" | sed "s|{interface}|${spec}|")"
+        if printf '%s' "${text}" | grep -F -- "ExecStart=" | grep -Fq -- "${want}"; then
+            found=1
+            pass "${what}: $(basename "${unit}") reads ${want}, which is exactly what the reconciler renders"
+            break
+        fi
+    done
+    if [ "${found}" -eq 0 ]; then
+        fail "${what}: $(basename "${unit}")'s ExecStart does not name ${dir}/${name} (with %i or %I); it is '$(printf '%s' "${text}" | grep -F 'ExecStart=' | tr '\n' ' ')'. The unit and the reconciler disagree about the config path, so the daemon starts against a file nothing writes"
+    fi
+}
+check_execstart "station" "/usr/lib/systemd/system/${STA_UNIT:-wpa_supplicant@.service}" "${STA_DIR}" "${STA_CONF}"
+check_execstart "access point" "/usr/lib/systemd/system/${AP_UNIT:-hostapd@.service}" "${AP_DIR}" "${AP_CONF}"
+
+# mosd owns these lifecycles: it enables and starts exactly the instance the
+# settings tree asks for. A statically enabled template instance would race it.
+for u in "${STA_UNIT:-wpa_supplicant@.service}" "${AP_UNIT:-hostapd@.service}"; do
+    if dbg "ls -p /etc/systemd/system/multi-user.target.wants" |
+        awk -F/ 'NF >= 7 {print $6}' | grep -Fxq "${u}"; then
+        fail "${u} is statically enabled in the image; mosd owns that lifecycle and would race the image's own instance"
+    else
+        pass "${u} is installed but NOT statically enabled (mosd owns the lifecycle)"
+    fi
+done
+
+# Both packages ship a non-templated unit their postinst ENABLES. Masked, not
+# merely disabled: masking is the only form that also blocks the D-Bus
+# activation path wpasupplicant ships.
+for u in hostapd.service wpa_supplicant.service dbus-fi.w1.wpa_supplicant1.service; do
+    out="$(dbg "stat /etc/systemd/system/${u}")"
+    dest="$(echo "${out}" | sed -n 's/.*link dest: "\(.*\)".*/\1/p' | head -n1)"
+    if echo "${out}" | grep -q "Type: symlink" && [ "${dest}" = "/dev/null" ]; then
+        pass "${u} is masked (-> /dev/null); it cannot start and fight mosd for the radio"
+    else
+        fail "${u} is not masked (it is '${dest:-not a symlink to /dev/null}'). The package enables it, and it starts a second daemon on the same radio against a config mosd never writes while mosd's own instance still reports healthy"
+    fi
+    if dbg "stat /etc/systemd/system/multi-user.target.wants/${u}" | grep -q "Inode:"; then
+        fail "${u} still carries the package's multi-user.target.wants enablement symlink"
+    else
+        pass "${u} carries no enablement symlink from the package postinst"
+    fi
+done
+
+# The directories the reconcilers render into. v1's root is a writable ext4, so
+# they only have to exist with a mode that does not expose the pre-shared keys
+# they end up holding; v2 binds them onto STATE instead (asserted there).
+for d in "${STA_DIR}" "${AP_DIR}"; do
+    out="$(dbg "stat ${d}")"
+    mode="$(echo "${out}" | sed -n 's/.*Mode: *0*\([0-7]\{3\}\).*/\1/p' | head -n1)"
+    if ! echo "${out}" | grep -q "Type: directory"; then
+        fail "${d} is not a directory in the image; the reconciler's first render would have to create it, and on v2 it could not"
+    elif [ "${mode}" = "700" ]; then
+        pass "${d} is a directory, mode 0${mode} (it holds pre-shared keys in the clear once configured)"
+    else
+        fail "${d} is a directory but mode 0${mode:-unknown}, expected 0700: it holds pre-shared keys in the clear once a device is configured"
+    fi
+done
+
+# The AP's DHCP server is systemd-networkd's own DHCPServer=yes. dnsmasq would
+# be a second package and a second lifecycle for a job already done.
+if dbg "stat /usr/sbin/dnsmasq" | grep -q "Inode:"; then
+    fail "dnsmasq ships in the image; the provisioning AP hands out addresses through systemd-networkd's DHCPServer=yes and a second DHCP server on the same link is a conflict, not a fallback"
+else
+    pass "no dnsmasq in the image (the AP's DHCP server is systemd-networkd's own DHCPServer=yes)"
+fi
+
+# --- the image's networkd namespace must not collide with mosd's ---
+# network.rs DELETES every *${MOS_SWEEP}*.network it did not itself render, and
+# the two WiFi reconcilers deliberately sit outside that pattern. An image file
+# that landed in either namespace would be swept away, or would shadow a
+# reconciler's unit, on device and nowhere else.
+img_networks="$(dbg "ls -p /etc/systemd/network" | awk -F/ 'NF >= 7 && $6 != "." && $6 != ".." {print $6}' | grep '\.network$' || true)"
+collisions=""
+for n in ${img_networks}; do
+    case "${n}" in
+    *"${MOS_SWEEP}"*) collisions="${collisions} ${n}(swept-by-network.rs)" ;;
+    "${STA_PREFIX}"*) collisions="${collisions} ${n}(station-namespace)" ;;
+    "${AP_PREFIX}"*) collisions="${collisions} ${n}(ap-namespace)" ;;
+    esac
+done
+if [ -z "${img_networks}" ]; then
+    fail "the image ships no .network file at all, so this namespace check would pass vacuously"
+elif [ -z "${collisions}" ]; then
+    pass "none of the image's .network files ($(echo "${img_networks}" | tr '\n' ' ')) fall in a reconciler-owned namespace ('${MOS_SWEEP}', '${STA_PREFIX}', '${AP_PREFIX}')"
+else
+    fail "image .network files collide with a reconciler-owned namespace:${collisions}. network.rs deletes every *${MOS_SWEEP}*.network it did not render, and a file in a WiFi reconciler's prefix would shadow or be swept by it"
+fi
+
+# networkd applies the FIRST matching unit in lexical order across its
+# directories, so the image's fallback has to sort BEFORE the reconcilers' units
+# and therefore lose to them only where they match. Compared as strings, not
+# assumed from the numbers.
+# Each prefix is compared with the image's file INDEPENDENTLY: the two
+# reconciler prefixes have no ordering requirement between themselves (they
+# never match the same interface), so requiring the three to be sorted as one
+# list would be a check about the wrong property.
+dhcp_default="80-dhcp.network"
+sort_bad=""
+for prefix in "${STA_PREFIX}" "${AP_PREFIX}"; do
+    if [ -z "${prefix}" ]; then
+        sort_bad="${sort_bad} <unreadable>"
+    elif [ "$(printf '%s\n' "${dhcp_default}" "${prefix}" | LC_ALL=C sort | head -n1)" != "${dhcp_default}" ]; then
+        sort_bad="${sort_bad} ${prefix}"
+    fi
+done
+if [ -z "${sort_bad}" ]; then
+    pass "${dhcp_default} sorts before both '${STA_PREFIX}' and '${AP_PREFIX}', so a reconciler-rendered unit is never shadowed by the image's fallback"
+else
+    fail "${dhcp_default} does not sort before:${sort_bad}; networkd applies the first match in lexical order, so the image's fallback would win over the unit mosd rendered for that interface"
+fi
+
+# --- the image profile, and the SSH default it selects ---
+PROFILE_FILE="/usr/lib/mos/profile.conf"
+PROFILE_KEY="$(sed -n 's/^const PROFILE_KEY: \&str = "\(.*\)";$/\1/p' "${REPO_ROOT}/mosd/mosd/src/provisioning.rs" 2>/dev/null | head -n1)"
+PROFILE_DEFAULT_PATH="$(sed -n 's/^pub const DEFAULT_PROFILE_PATH: \&str = "\(.*\)";$/\1/p' "${REPO_ROOT}/mosd/mosd/src/provisioning.rs" 2>/dev/null | head -n1)"
+if [ "${PROFILE_DEFAULT_PATH}" = "${PROFILE_FILE}" ] && [ -n "${PROFILE_KEY}" ]; then
+    pass "mosd reads the image profile from ${PROFILE_DEFAULT_PATH} with key ${PROFILE_KEY}, which is the file this image ships"
+else
+    fail "mosd reads its profile from '${PROFILE_DEFAULT_PATH}' with key '${PROFILE_KEY}', but the image ships ${PROFILE_FILE}; mosd FAILS CLOSED on a missing file, so every image would self-provision to prod and disable its own sshd with every check still green"
+fi
+ext_regular "${PROFILE_FILE}"
+profile_stat="$(dbg "stat ${PROFILE_FILE}")"
+profile_mode="$(echo "${profile_stat}" | sed -n 's/.*Mode: *0*\([0-7]\{3\}\).*/\1/p' | head -n1)"
+if [ "${profile_mode}" = "444" ]; then
+    pass "${PROFILE_FILE} is mode 0${profile_mode} (it describes the image, not the device)"
+else
+    fail "${PROFILE_FILE} is mode 0${profile_mode:-unknown}, expected 0444"
+fi
+
+# The value is matched CASE-SENSITIVELY by mosd and anything it does not
+# recognise resolves to prod, so `DEV`, `Dev`, a comment or a typo in the key
+# are all the same silent failure: SSH off on an image built to have it on.
+profile_text="$(dbg "cat ${PROFILE_FILE}")"
+profile_values="$(printf '%s\n' "${profile_text}" | sed -n "s/^${PROFILE_KEY:-MOS_PROFILE}=\(.*\)\$/\1/p")"
+profile_n="$(printf '%s\n' "${profile_values}" | grep -c . || true)"
+MOS_PROFILE_VALUE="$(printf '%s\n' "${profile_values}" | tail -n1)"
+case "${MOS_PROFILE_VALUE}" in
+dev | prod)
+    if [ "${profile_n}" = "1" ]; then
+        pass "${PROFILE_FILE} carries exactly one ${PROFILE_KEY:-MOS_PROFILE}=${MOS_PROFILE_VALUE} line, an exact lowercase value mosd recognises"
+    else
+        fail "${PROFILE_FILE} carries ${profile_n} ${PROFILE_KEY:-MOS_PROFILE}= lines; mosd takes the LAST one, so the file's meaning depends on line order"
+    fi
+    ;;
+*)
+    fail "${PROFILE_FILE} resolves to '${MOS_PROFILE_VALUE}', which mosd does not recognise. Its match is case-sensitive and it FAILS CLOSED: this image would self-provision to prod and disable its own sshd, with every other check still green. Contents: $(printf '%s' "${profile_text}" | tr '\n' ' ')"
+    ;;
+esac
+
+# The end-to-end property, in both directions: dev implies ssh.service IS
+# enabled in the image, prod implies it is NOT. mosd seeds access.ssh.enabled
+# from this same file, so an image whose static enablement disagreed with its
+# profile would have sshd listening before mosd ever got to decide.
+ssh_enabled=0
+dbg "stat /etc/systemd/system/multi-user.target.wants/ssh.service" | grep -q "Inode:" && ssh_enabled=1
+case "${MOS_PROFILE_VALUE}" in
+dev)
+    if [ "${ssh_enabled}" -eq 1 ]; then
+        pass "profile is dev and ssh.service IS enabled in the image, which is what mosd will seed access.ssh.enabled to"
+    else
+        fail "profile is dev but ssh.service is NOT enabled in the image; mosd will seed access.ssh.enabled true and the dev SSH path is still gone until its first reconcile"
+    fi
+    ;;
+prod)
+    if [ "${ssh_enabled}" -eq 0 ]; then
+        pass "profile is prod and ssh.service is NOT enabled in the image, so sshd never listens before mosd has decided"
+    else
+        fail "profile is prod but ssh.service IS enabled in the image; sshd would be listening from early boot until mosd's reconciler stops it"
+    fi
+    ;;
+*)
+    fail "ssh.service enablement cannot be judged: the image profile did not resolve to dev or prod"
+    ;;
+esac
+
+# --- the shadow hash format, against the libcrypt PACKED IN THIS IMAGE ------
+# No Rust test can make this assertion: the test host is x86 and the library is
+# an arm64 object inside the image. mosd writes a crypt(3) hash into the root
+# account's shadow entry and pam_unix verifies it through this exact libcrypt;
+# a format the library cannot parse rejects every password while the file, the
+# unit and the reconciler all look perfectly healthy.
+# The prefix is READ from the assertion sshd.rs pins on its own output, so the
+# two cannot drift; requiring exactly one keeps that source unambiguous.
+SSHD_SRC="${REPO_ROOT}/mosd/mosd/src/reconciler/sshd.rs"
+crypt_prefixes="$(grep -oE 'starts_with\("\$[0-9a-zA-Z]+\$' "${SSHD_SRC}" 2>/dev/null | grep -oE '\$[0-9a-zA-Z]+\$' | sort -u || true)"
+crypt_n="$(printf '%s\n' "${crypt_prefixes}" | grep -c . || true)"
+CRYPT_PREFIX="$(printf '%s\n' "${crypt_prefixes}" | head -n1)"
+if [ "${crypt_n}" = "1" ]; then
+    pass "sshd.rs pins exactly one crypt(3) prefix for the shadow field: ${CRYPT_PREFIX}"
+else
+    fail "sshd.rs pins ${crypt_n} distinct crypt(3) prefixes ($(printf '%s' "${crypt_prefixes}" | tr '\n' ' ')); the format the image must support is ambiguous, so the libcrypt check below cannot mean anything"
+fi
+
+LIBCRYPT_LINK="/usr/lib/aarch64-linux-gnu/libcrypt.so.1"
+libcrypt_dest="$(dbg "stat ${LIBCRYPT_LINK}" | sed -n 's/.*link dest: "\(.*\)".*/\1/p' | head -n1)"
+LIBCRYPT_REAL=""
+if [ -n "${libcrypt_dest}" ]; then
+    case "${libcrypt_dest}" in
+    /*) LIBCRYPT_REAL="${libcrypt_dest}" ;;
+    *) LIBCRYPT_REAL="$(dirname "${LIBCRYPT_LINK}")/${libcrypt_dest}" ;;
+    esac
+elif dbg "stat ${LIBCRYPT_LINK}" | grep -q "Type: regular"; then
+    LIBCRYPT_REAL="${LIBCRYPT_LINK}"
+fi
+if [ -n "${LIBCRYPT_REAL}" ] && dbg "stat ${LIBCRYPT_REAL}" | grep -q "Type: regular"; then
+    pass "${LIBCRYPT_LINK} resolves to ${LIBCRYPT_REAL} in the image (the SONAME the login stack loads)"
+else
+    fail "${LIBCRYPT_LINK} does not resolve to a regular file in the image (got '${libcrypt_dest:-nothing}'); without it pam_unix cannot verify any password at all"
+fi
+
+LIBCRYPT_BIN="${TMP}/libcrypt.so"
+if [ -n "${LIBCRYPT_REAL}" ]; then
+    dbg "dump ${LIBCRYPT_REAL} ${LIBCRYPT_BIN}" >/dev/null
+fi
+if [ "${crypt_n}" != "1" ] || [ ! -s "${LIBCRYPT_BIN}" ]; then
+    fail "cannot check the crypt(3) format against the image's libcrypt: prefix count ${crypt_n}, extracted library $([ -s "${LIBCRYPT_BIN}" ] && echo "$(stat -c %s "${LIBCRYPT_BIN}") bytes" || echo missing)"
+elif LC_ALL=C tr -c '[:print:]' '\n' <"${LIBCRYPT_BIN}" | grep -Fq -- "${CRYPT_PREFIX}"; then
+    pass "the libcrypt packed in this image implements ${CRYPT_PREFIX}, the crypt(3) format mosd writes into the root shadow entry"
+else
+    fail "the libcrypt packed in this image ($(basename "${LIBCRYPT_REAL}")) does NOT implement ${CRYPT_PREFIX}, the format mosd writes into /etc/shadow. pam_unix would reject every password while the shadow file, the reconciler and every other check look healthy. Formats it does carry: $(LC_ALL=C tr -c '[:print:]' '\n' <"${LIBCRYPT_BIN}" | grep -oE '^\$[0-9a-z]+\$$' | sort -u | tr '\n' ' ')"
 fi
 
 # --- summary ---

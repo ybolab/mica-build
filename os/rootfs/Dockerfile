@@ -18,6 +18,12 @@
 FROM --platform=linux/arm64 debian:bookworm-slim AS rootfs
 
 # Strict package allowlist — add nothing here without documenting it in README.md
+#
+# wpasupplicant and hostapd are the connd userland: mosd's WiFi reconcilers
+# render configuration for them and drive their unit TEMPLATES. Neither daemon
+# is started by the image. dnsmasq is deliberately absent — the provisioning
+# AP's DHCP server is systemd-networkd's built-in DHCPServer=yes, which needs
+# no extra package and no second lifecycle.
 RUN apt-get update && apt-get install -y --no-install-recommends \
         systemd \
         systemd-sysv \
@@ -29,7 +35,86 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         iproute2 \
         bluez \
         rfkill \
+        wpasupplicant \
+        hostapd \
     && rm -rf /var/lib/apt/lists/*
+
+# Both packages ship a NON-templated unit that their postinst ENABLES, and both
+# are lifecycles mosd owns and must be the only one driving. Measured on
+# hostapd/wpasupplicant 2:2.10-12+deb12u3 arm64, not assumed:
+#
+#   hostapd.service         [Install] WantedBy=multi-user.target, linked into
+#                           /etc/systemd/system/multi-user.target.wants by the
+#                           postinst. It runs a SECOND hostapd on the same radio
+#                           from /etc/hostapd/hostapd.conf — a file mosd never
+#                           writes. Today it is condition-gated on that file
+#                           being non-empty, so it does not actually start; that
+#                           is one operator `cp` away from a second daemon
+#                           fighting the reconciler for the radio while
+#                           hostapd@wlan0.service still reports healthy.
+#   wpa_supplicant.service  D-Bus mode, no condition at all, so it DOES start.
+#                           It carries RuntimeDirectory=wpa_supplicant, which
+#                           means systemd DELETES /run/wpa_supplicant when it
+#                           stops — taking the control socket of the templated
+#                           instance mosd started with it.
+#
+# So both are masked rather than merely disabled: masking also blocks the D-Bus
+# activation path (wpasupplicant ships
+# /usr/share/dbus-1/system-services/fi.w1.wpa_supplicant1.service), which a
+# plain `systemctl disable` would leave open. The Alias= link the postinst
+# creates for that name is masked too, since it names the same unit by another
+# name.
+#
+# The TEMPLATES are left installed and NOT enabled: mosd enables and starts
+# exactly the instance the settings tree asks for.
+RUN set -eu; \
+    mkdir -p /etc/systemd/system; \
+    for u in hostapd.service wpa_supplicant.service \
+             dbus-fi.w1.wpa_supplicant1.service; do \
+        rm -f "/etc/systemd/system/${u}"; \
+        ln -s /dev/null "/etc/systemd/system/${u}"; \
+        [ "$(readlink "/etc/systemd/system/${u}")" = /dev/null ]; \
+    done; \
+    rm -f /etc/systemd/system/multi-user.target.wants/hostapd.service \
+          /etc/systemd/system/multi-user.target.wants/wpa_supplicant.service; \
+    for u in hostapd@.service wpa_supplicant@.service; do \
+        test -f "/usr/lib/systemd/system/${u}"; \
+        if find /etc/systemd/system /usr/lib/systemd/system -path '*.wants/*' \
+                -name "${u}" | grep -q .; then \
+            echo "error: ${u} is statically enabled; mosd owns that lifecycle" >&2; exit 1; \
+        fi; \
+    done; \
+    echo "connd: hostapd.service and wpa_supplicant.service masked, templates present and unenabled"
+
+# The two directories the WiFi reconcilers render into. Both end up holding a
+# pre-shared key in the clear, so 0700 rather than the packages' 0755.
+# v1's root is a writable ext4, so nothing further is needed here; v2 binds
+# these paths onto STATE (etc-wpa_supplicant.mount / etc-hostapd.mount) because
+# its root is a read-only verity squashfs.
+RUN mkdir -p /etc/wpa_supplicant /etc/hostapd && \
+    chmod 0700 /etc/wpa_supplicant /etc/hostapd
+
+# Image profile. mosd reads this file ONCE, on first boot, to seed
+# `access.ssh.enabled`, and it FAILS CLOSED: missing, unreadable or carrying a
+# value this build does not know all resolve to `prod`, which means SSH off.
+# The match is case-SENSITIVE, so `DEV` is not `dev`.
+#
+# That failure mode is silent by construction — a misspelt key or a missing file
+# yields an image where every check is green and the dev SSH path has simply
+# disappeared — so the value is validated here and asserted again by
+# os/verify-image.sh against the packed artifact.
+#
+# /usr/lib and not /etc: it describes the IMAGE, not the device.
+ARG MOS_PROFILE=dev
+RUN set -eu; \
+    case "${MOS_PROFILE}" in \
+    dev | prod) ;; \
+    *) echo "error: MOS_PROFILE is '${MOS_PROFILE}'; it must be exactly 'dev' or 'prod' in lowercase. mosd's comparison is case-sensitive and every other value resolves to prod, which silently disables SSH" >&2; exit 1 ;; \
+    esac; \
+    mkdir -p /usr/lib/mos; \
+    printf 'MOS_PROFILE=%s\n' "${MOS_PROFILE}" > /usr/lib/mos/profile.conf; \
+    chmod 0444 /usr/lib/mos/profile.conf; \
+    echo "profile: MOS_PROFILE=${MOS_PROFILE}"
 
 # Kernel modules. Debian is merged-usr (/lib -> usr/lib) and the tar's paths
 # start with lib/, so it cannot be ADDed to / directly — extract to a temp dir
@@ -54,6 +139,20 @@ RUN ln -sf fw_bcm43752a2_ag.bin /usr/lib/firmware/fw_bcmdhd.bin && \
     ln -sf ../SYN43756B0.hcd /usr/lib/firmware/brcm/BCM4362A2.hcd
 
 # Networking: DHCP on all eth* (kernel cmdline has net.ifnames=0)
+#
+# 80-dhcp.network is the image's own default and must keep LOSING to anything
+# mosd renders. mosd's network reconciler writes 50-mos-<iface>.network and the
+# two WiFi reconcilers write 90-wifi-client-<iface>.network and
+# 90-wifi-ap-<iface>.network into /run/systemd/network; networkd applies the
+# first match in lexical order across both directories, so 80- sits between
+# them deliberately. os/verify-image.sh asserts that ordering, and asserts that
+# no file the IMAGE ships could ever be mistaken for a reconciler-owned one.
+#
+# ssh.service enablement follows MOS_PROFILE. A prod image must not come up
+# with sshd running before mosd has read the profile and decided: mosd seeds
+# `access.ssh.enabled` false on prod and its reconciler would then stop a
+# service that had already been listening since early boot. dev keeps it
+# enabled, which is the whole point of the dev profile.
 RUN printf '%s\n' \
         '[Match]' \
         'Name=eth*' \
@@ -61,16 +160,26 @@ RUN printf '%s\n' \
         '[Network]' \
         'DHCP=yes' \
         > /etc/systemd/network/80-dhcp.network && \
-    { systemctl enable systemd-networkd systemd-resolved ssh || true; } && \
+    { systemctl enable systemd-networkd systemd-resolved || true; } && \
     mkdir -p /etc/systemd/system/multi-user.target.wants && \
-    for u in systemd-networkd systemd-resolved ssh; do \
+    for u in systemd-networkd systemd-resolved; do \
         [ -L "/etc/systemd/system/multi-user.target.wants/$u.service" ] || \
             ln -s "/lib/systemd/system/$u.service" \
                   "/etc/systemd/system/multi-user.target.wants/$u.service"; \
     done && \
     test -L /etc/systemd/system/multi-user.target.wants/systemd-networkd.service && \
     test -L /etc/systemd/system/multi-user.target.wants/systemd-resolved.service && \
-    test -L /etc/systemd/system/multi-user.target.wants/ssh.service
+    if [ "${MOS_PROFILE}" = "dev" ]; then \
+        { systemctl enable ssh || true; }; \
+        ln -sf /lib/systemd/system/ssh.service \
+               /etc/systemd/system/multi-user.target.wants/ssh.service; \
+        test -L /etc/systemd/system/multi-user.target.wants/ssh.service; \
+        echo "profile dev: ssh.service enabled in the image"; \
+    else \
+        rm -f /etc/systemd/system/multi-user.target.wants/ssh.service; \
+        test ! -e /etc/systemd/system/multi-user.target.wants/ssh.service; \
+        echo "profile prod: ssh.service left DISABLED in the image"; \
+    fi
 # /etc/resolv.conf cannot be replaced here (bind-mounted by buildkit during RUN);
 # the stub-resolv.conf symlink is created in the pack stage instead.
 

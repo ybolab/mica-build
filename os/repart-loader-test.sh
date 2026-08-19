@@ -20,6 +20,12 @@
 #             nothing — a repart run that quietly did nothing at all would pass
 #             it. A guard that has never been seen to fire is not a guard.
 #
+# A second section then runs the repart definitions the v2 image ACTUALLY
+# SHIPS, unpacked out of the packed root, and asserts that DATA is bigger
+# afterwards — the growth /srv depends on. Its negative direction removes
+# SizeMinBytes=0 from the uenv placeholders, reconstructing the state in which
+# repart refused the whole run and /srv silently never grew (RFCT-027).
+#
 #   bash os/repart-loader-test.sh [image]...
 #
 # With no argument both pipelines' latest images are tested, whichever exist.
@@ -89,17 +95,17 @@ loader_magic_of() {
 # count is exactly the number of linux-generic partitions -- and the loader,
 # carrying LOADER_TYPECODE, is not one of them.
 #
-# SizeMinBytes=0 is why this synthesises a set instead of copying
-# os/rootfs/overlay-v2/etc/repart.d/. systemd-repart will not claim an EXISTING
-# partition smaller than the definition's minimum size, and that minimum
-# defaults to 10 MiB. uenv-a and uenv-b are 64 KiB linux-generic partitions, so
-# the shipped definitions cannot claim them: repart decides it must CREATE two
-# new partitions instead and aborts with "Can't fit requested partitions into
-# available free space". That is a PRE-EXISTING defect in the v2 growth path,
-# independent of this task and reproducible on the layout before the loader
-# partition was added; it is recorded in docs/task/RFCT-031.md and is NOT fixed
-# here. Pinning the minimum to 0 makes repart do the real work this test needs
-# it to do, on the real GPT.
+# The set is SYNTHESISED rather than copied from the image so that this test
+# covers both pipelines from one code path: v1 and v2 ship different definition
+# sets, and what is under test here is the loader, not either set.
+# SizeMinBytes=0 is set for the same reason the shipped v2 definitions now set
+# it: systemd-repart will not claim an EXISTING partition smaller than the
+# definition's minimum size, and that minimum defaults to 10 MiB, while uenv-a
+# and uenv-b are 64 KiB. The shipped definitions used to omit it, which made
+# repart abort the whole run with "Can't fit requested partitions into available
+# free space" before touching anything -- so v2's /srv never grew. That defect
+# is FIXED (RFCT-027), and the growth check further down runs the SHIPPED
+# definitions to prove it rather than these synthesised ones.
 mkdefs() {
     local img="$1" dir="$2" n=0 i part_count type
     rm -rf "${dir}"
@@ -212,6 +218,148 @@ for IMAGE in "${IMAGES[@]}"; do
         fi
     fi
 done
+
+# ===========================================================================
+# v2: the SHIPPED repart definitions must actually GROW DATA
+# ===========================================================================
+# The loop above proves the loader survives, but it does so with a SYNTHESISED
+# definition set. That deliberately says nothing about the set the image
+# actually carries — and the set the image carried could not drive a successful
+# run at all: systemd-repart refuses to claim an EXISTING partition below the
+# definition's minimum size, which defaults to 10 MiB, while uenv-a and uenv-b
+# are 64 KiB. repart therefore concluded it had to CREATE two new partitions,
+# could not place them, and aborted with
+#     Can't fit requested partitions into available free space (6.7G), refusing.
+# before touching anything. /srv never grew on a real device, and a refusal
+# looks exactly like a clean exit.
+#
+# So this section runs the definitions THE IMAGE SHIPS, unpacked out of the
+# packed rootfs slot, and asserts the outcome that matters: DATA is bigger
+# afterwards. "repart did not error" is not enough — that is what the refusal
+# already looked like.
+#
+# The negative direction removes SizeMinBytes=0 from the two uenv definitions,
+# reconstructing the pre-fix state, and asserts the run REFUSES and DATA does
+# NOT grow. Without it the positive case would be a guard that has never been
+# seen to fire.
+V2_IMAGE=""
+for candidate in "${IMAGES[@]}"; do
+    case "$(basename "${candidate}")" in
+    "${IMAGE_NAME_PREFIX}"*) V2_IMAGE="${candidate}" ;;
+    esac
+done
+ROOTFS_SLOT="${REPO_ROOT}/_out/cx3576/rootfs-verity.img"
+
+# Size of a partition in the image's GPT, in sectors.
+part_sectors_of() {
+    sgdisk -i "$2" "$1" 2>/dev/null | sed -n 's/^Partition size: //p' | awk '{print $1}'
+}
+
+# Runs a real systemd-repart over a fresh copy grown to GROWN_SIZE, tolerating
+# failure. Echoes the exit status; the log lands in ${work}/<name>.log.
+run_repart_rc() {
+    local name="$1" defs="$2" src="$3" rc=0
+    cp "${src}" "${work}/${name}.img"
+    truncate -s "${GROWN_SIZE}" "${work}/${name}.img"
+    docker run --rm --privileged -v "${work}:/w" debian:bookworm-slim sh -c "
+        set -e
+        apt-get update -qq >/dev/null 2>&1
+        apt-get install -y -qq systemd util-linux >/dev/null 2>&1
+        for n in 0 1 2 3 4 5 6 7; do [ -e /dev/loop\$n ] || mknod /dev/loop\$n b 7 \$n; done
+        loop=\$(losetup --show -f /w/${name}.img)
+        SYSTEMD_LOG_LEVEL=debug systemd-repart --definitions=/w/${defs} --dry-run=no \"\$loop\"
+        losetup -d \"\$loop\"
+    " > "${work}/${name}.log" 2>&1 || rc=$?
+    echo "${rc}"
+}
+
+echo
+echo "=== v2 growth: the definitions the image ships ==="
+if [ -z "${V2_IMAGE}" ]; then
+    fail "no v2 image among the images under test, so the shipped-definition growth check cannot run; build one with 'make os-image-cx3576-v2'"
+elif [ ! -f "${ROOTFS_SLOT}" ]; then
+    fail "${ROOTFS_SLOT} not found, so /etc/repart.d cannot be read out of the SHIPPED root; build it with 'make os-image-cx3576-v2'"
+else
+    cp "${ROOTFS_SLOT}" "${work}/slot.squashfs"
+    rm -rf "${work}/defs-shipped" "${work}/defs-prefix"
+    docker run --rm -v "${work}:/w" debian:bookworm-slim sh -c '
+        set -e
+        apt-get update -qq >/dev/null 2>&1
+        apt-get install -y -qq squashfs-tools >/dev/null 2>&1
+        rm -rf /w/unsq
+        unsquashfs -n -d /w/unsq /w/slot.squashfs /etc/repart.d >/dev/null
+        mkdir -p /w/defs-shipped
+        cp /w/unsq/etc/repart.d/*.conf /w/defs-shipped/
+        rm -rf /w/unsq
+    ' >"${work}/unpack-defs.log" 2>&1 || true
+
+    # `find` on a directory the unpack failed to create exits non-zero, which
+    # would abort the script under `set -o pipefail` instead of reporting.
+    shipped_n="$({ find "${work}/defs-shipped" -name '*.conf' 2>/dev/null || true; } | wc -l | tr -d ' ')"
+    if [ "${shipped_n}" -gt 0 ]; then
+        pass "read ${shipped_n} repart definitions out of the PACKED root ($(basename "${ROOTFS_SLOT}")), so what follows tests the image's own set and not a synthesised one"
+    else
+        fail "could not unpack /etc/repart.d out of ${ROOTFS_SLOT}: $(tail -n 3 "${work}/unpack-defs.log" | tr '\n' ' ')"
+    fi
+
+    data_before="$(part_sectors_of "${V2_IMAGE}" "${DATA_PARTNUM}")"
+    if [ -n "${data_before}" ] && [ "${data_before}" -gt 0 ] 2>/dev/null; then
+        pass "v2 DATA (p${DATA_PARTNUM}) is ${data_before} sectors in the image as built"
+    else
+        fail "cannot read the size of v2 DATA (p${DATA_PARTNUM}) from ${V2_IMAGE}; nothing below can be attributed to repart"
+    fi
+
+    if [ "${shipped_n}" -gt 0 ]; then
+        # --- positive: the shipped set, on the real GPT, grown medium --------
+        rc="$(run_repart_rc "grow-shipped" defs-shipped "${V2_IMAGE}")"
+        data_after="$(part_sectors_of "${work}/grow-shipped.img" "${DATA_PARTNUM}")"
+        if [ "${rc}" = "0" ]; then
+            pass "the shipped v2 definitions drive systemd-repart to completion (exit 0) on an 8G medium"
+        else
+            fail "the shipped v2 definitions made systemd-repart exit ${rc}: $(grep -iE 'refus|error|cannot|fit' "${work}/grow-shipped.log" | head -n 3 | tr '\n' ' ')"
+        fi
+        if [ -n "${data_after}" ] && [ -n "${data_before}" ] &&
+            [ "${data_after}" -gt "${data_before}" ] 2>/dev/null; then
+            pass "DATA actually GREW: ${data_before} -> ${data_after} sectors ($((data_before / 2048)) MiB -> $((data_after / 2048)) MiB). /srv scales with the medium"
+        else
+            fail "DATA did NOT grow: ${data_before} -> ${data_after:-unreadable} sectors. A repart run that REFUSES looks exactly like a clean exit, so this is the assertion that distinguishes them"
+        fi
+        if [ "$(loader_magic_of "${work}/grow-shipped.img")" = "${LOADER_MAGIC_HEX}" ]; then
+            pass "the growing run left LBA ${LOADER_START_SECTOR} intact — growth and loader protection hold together, not one at the cost of the other"
+        else
+            fail "the growing run destroyed LBA ${LOADER_START_SECTOR}"
+        fi
+
+        # --- negative: the same set with the fix taken back out --------------
+        # One directive removed from two files, which is exactly the state this
+        # task changed. If DATA still grew, the fix above was protecting
+        # nothing and the positive case proves nothing.
+        mkdir -p "${work}/defs-prefix"
+        cp "${work}/defs-shipped/"*.conf "${work}/defs-prefix/"
+        stripped=0
+        for f in "${work}/defs-prefix/"*.conf; do
+            if grep -q '^SizeMinBytes=0$' "${f}"; then
+                { grep -v '^SizeMinBytes=0$' "${f}" || true; } >"${f}.new"
+                mv "${f}.new" "${f}"
+                stripped=$((stripped + 1))
+            fi
+        done
+        if [ "${stripped}" -gt 0 ]; then
+            pass "the negative case has something to remove: ${stripped} shipped definition(s) carry SizeMinBytes=0"
+        else
+            fail "no shipped definition carries SizeMinBytes=0, so the negative case cannot reconstruct the pre-fix state and the positive case is unattributed"
+        fi
+        rc_neg="$(run_repart_rc "grow-prefix" defs-prefix "${V2_IMAGE}")"
+        data_neg="$(part_sectors_of "${work}/grow-prefix.img" "${DATA_PARTNUM}")"
+        if [ "${stripped}" -eq 0 ]; then
+            fail "the pre-fix negative case did not run (nothing was stripped)"
+        elif [ "${rc_neg}" != "0" ] && [ "${data_neg}" = "${data_before}" ]; then
+            pass "with SizeMinBytes=0 removed the SAME run refuses (exit ${rc_neg}) and DATA stays at ${data_neg} sectors — the defect is real, the fix is what closes it, and this check can fire: $(grep -iE 'refusing' "${work}/grow-prefix.log" | head -n 1 | tr '\n' ' ')"
+        else
+            fail "with SizeMinBytes=0 removed the run exited ${rc_neg} and DATA went ${data_before} -> ${data_neg}; the pre-fix defect did not reproduce, so the positive case above proves nothing about SizeMinBytes"
+        fi
+    fi
+fi
 
 echo
 total=$((pass_count + fail_count))

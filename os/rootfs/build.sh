@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Build the Debian systemd arm64 rootfs image for cx3576.
-# Usage: [BOARD_DIR=...] [ROOT_PASSWORD=...] [WITH_MOSD=0|1] bash os/rootfs/build.sh
+# Usage: [BOARD_DIR=...] [ROOT_PASSWORD=...] [WITH_MOSD=0|1] [MOS_PROFILE=dev|prod] bash os/rootfs/build.sh
 set -euo pipefail
 
 SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
@@ -9,6 +9,10 @@ BOARD_DIR=${BOARD_DIR:-"$REPO_ROOT/board/cx3576"}
 OUT_DIR="$REPO_ROOT/_out/cx3576"
 SIZE_BUDGET_MB=400
 WITH_MOSD=${WITH_MOSD:-1}
+# Image profile baked into /usr/lib/mos/profile.conf. mosd reads it on first
+# boot to seed access.ssh.enabled and FAILS CLOSED to prod, so the value has to
+# be exactly "dev" or "prod" in lowercase; the Dockerfile rejects anything else.
+MOS_PROFILE=${MOS_PROFILE:-dev}
 
 MODULES_TAR="$BOARD_DIR/out/kernel/modules.tar"
 if [ ! -f "$MODULES_TAR" ]; then
@@ -73,6 +77,7 @@ if ! docker buildx build \
         --build-arg MOSD_DIR=_out/cx3576/mosd \
         --build-arg BOARD_INIT_DIR=_out/cx3576/init \
         --build-arg WITH_MOSD="$WITH_MOSD" \
+        --build-arg MOS_PROFILE="$MOS_PROFILE" \
         ${ROOT_PASSWORD:+--build-arg ROOT_PASSWORD="$ROOT_PASSWORD"} \
         --target artifact \
         --output "type=local,dest=$OUT_DIR" \
