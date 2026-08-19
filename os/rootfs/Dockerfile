@@ -147,11 +147,16 @@ COPY board/cx3576/rootfs/firmware/aic_userconfig_8800d80.txt \
 # them deliberately. os/verify-image.sh asserts that ordering, and asserts that
 # no file the IMAGE ships could ever be mistaken for a reconciler-owned one.
 #
-# ssh.service enablement follows MOS_PROFILE. A prod image must not come up
-# with sshd running before mosd has read the profile and decided: mosd seeds
-# `access.ssh.enabled` false on prod and its reconciler would then stop a
-# service that had already been listening since early boot. dev keeps it
-# enabled, which is the whole point of the dev profile.
+# ssh.service is left DISABLED in the image, on BOTH profiles. mosd seeds
+# `access.ssh.enabled` false for dev and prod alike (see
+# Profile::ssh_enabled_default), so an image that shipped sshd enabled would be
+# listening from early boot until mosd's first reconcile shut it down — exactly
+# the window this design exists to close. Turning SSH on is a runtime decision
+# made against the settings tree, never a property of the image.
+#
+# ROOT_PASSWORD (further down) is unaffected: it still bakes a debug credential
+# into a dev image, but that image no longer answers on port 22 until something
+# enables it.
 RUN printf '%s\n' \
         '[Match]' \
         'Name=eth*' \
@@ -168,17 +173,9 @@ RUN printf '%s\n' \
     done && \
     test -L /etc/systemd/system/multi-user.target.wants/systemd-networkd.service && \
     test -L /etc/systemd/system/multi-user.target.wants/systemd-resolved.service && \
-    if [ "${MOS_PROFILE}" = "dev" ]; then \
-        { systemctl enable ssh || true; }; \
-        ln -sf /lib/systemd/system/ssh.service \
-               /etc/systemd/system/multi-user.target.wants/ssh.service; \
-        test -L /etc/systemd/system/multi-user.target.wants/ssh.service; \
-        echo "profile dev: ssh.service enabled in the image"; \
-    else \
-        rm -f /etc/systemd/system/multi-user.target.wants/ssh.service; \
-        test ! -e /etc/systemd/system/multi-user.target.wants/ssh.service; \
-        echo "profile prod: ssh.service left DISABLED in the image"; \
-    fi
+    rm -f /etc/systemd/system/multi-user.target.wants/ssh.service && \
+    test ! -e /etc/systemd/system/multi-user.target.wants/ssh.service && \
+    echo "ssh.service left DISABLED in the image (both profiles; mosd owns the lifecycle)"
 # /etc/resolv.conf cannot be replaced here (bind-mounted by buildkit during RUN);
 # the stub-resolv.conf symlink is created in the pack stage instead.
 
