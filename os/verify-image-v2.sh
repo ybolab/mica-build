@@ -1274,11 +1274,11 @@ sq_regular /usr/lib/systemd/system/serial-getty@.service
 # fstab entries and the STATE binds need their mountpoints to exist in the
 # read-only root: nothing can create them at runtime.
 missing_mp=""
-for d in /mnt/state /mnt/meta /srv /var /home; do
+for d in /mnt/state /mnt/meta /srv /var /home /root; do
     [ -d "${ROOT}${d}" ] || missing_mp="${missing_mp} ${d}"
 done
 if [ -z "${missing_mp}" ]; then
-    pass "every fstab/bind mountpoint exists in the read-only root (/mnt/state /mnt/meta /srv /var /home)"
+    pass "every fstab/bind mountpoint exists in the read-only root (/mnt/state /mnt/meta /srv /var /home /root)"
 else
     fail "mountpoint(s) missing from the read-only root:${missing_mp}; a verity root cannot create them at runtime, so the mount fails"
 fi
@@ -1917,6 +1917,124 @@ elif [ "${mos_home}" = "${hm_where}" ] || [ "${mos_home#"${hm_where}"/}" != "${m
     pass "'${MOS_USER}' home ${mos_home} is inside ${hm_where}, the directory home.mount binds from ${hm_what} on DATA, so it persists across reboots and A/B updates"
 else
     fail "'${MOS_USER}' home is '${mos_home}', which is NOT inside '${hm_where}' — the only path home.mount makes persistent. Everything written there would sit in the read-only squashfs view and be gone on the next A/B update"
+fi
+
+# ===========================================================================
+# RFCT-054: a persistent /root on DATA
+#
+# The same problem RFCT-039 fixed for /home, applied to the OTHER home
+# directory on the device. On the read-only verity root an operator cannot keep
+# anything in /root: whatever they put there is lost on reboot and replaced
+# wholesale by the next A/B update. /srv/root is bind-mounted onto /root, on
+# DATA and not STATE for the same reason /home is — a root home accumulates
+# shell history, scratch scripts and downloaded bundles, which is USER DATA of
+# unbounded size, while STATE is 64 MiB of small precious identity.
+#
+# TWO THINGS A READER WILL OTHERWISE GET WRONG, both about SSH keys:
+#
+#   KEY LOGIN DOES NOT DEPEND ON THIS BIND. Keys render to
+#     /etc/ssh/authorized_keys.d/%u, not /root/.ssh/authorized_keys — RFCT-034
+#     chose that path precisely because /root was ephemeral. So a /root that
+#     fails to mount does not lock anyone out, and nothing below should be read
+#     as guarding login. The two are not coupled.
+#   A KEY IN /root/.ssh/authorized_keys NOW SURVIVES A REBOOT AND STILL GRANTS
+#     NOTHING. AuthorizedKeysFile REPLACES the default locations rather than
+#     adding to them, so that file is inert — but it now PERSISTS, so anyone
+#     auditing the device will find a plausible-looking authorized_keys that
+#     does nothing. It is exactly the kind of file someone later "fixes" into a
+#     real grant.
+# ===========================================================================
+
+# The bind, and specifically what BACKS it. As with home.mount, the DATA
+# mountpoint is read out of the fstab entry for DATA_GUID rather than spelled
+# `/srv` here, so a What= under /mnt/state — STATE, the wrong tier — fails on
+# the TIER and not on a string. Enablement is asserted separately: a unit that
+# is present but unenabled leaves /root inside the read-only squashfs forever,
+# and every check that only looks for the file would still pass.
+ROOT_UNIT="${ROOT}/etc/systemd/system/root.mount"
+rm_what="$(sed -n 's/^What=//p' "${ROOT_UNIT}" 2>/dev/null | tail -n1 || true)"
+rm_where="$(sed -n 's/^Where=//p' "${ROOT_UNIT}" 2>/dev/null | tail -n1 || true)"
+if [ ! -f "${ROOT_UNIT}" ]; then
+    fail "root.mount is not in the image, so /root stays inside the read-only verity squashfs and nothing an operator leaves there — shell history, a scratch script, a staged bundle — survives a reboot"
+elif [ "${rm_where}" != "/root" ]; then
+    fail "root.mount mounts '${rm_where:-<no Where=>}', not /root"
+elif [ -z "${DATA_MNT}" ]; then
+    fail "no /etc/fstab entry mounts DATA (PARTUUID=$(lc "${DATA_GUID}")), so root.mount's backing tier cannot be established"
+elif [ -z "${rm_what}" ] || [ "${rm_what#"${DATA_MNT}"/}" = "${rm_what}" ]; then
+    fail "root.mount binds /root from '${rm_what:-<no What=>}', which is not under ${DATA_MNT} (the DATA partition). A root home is user data of unbounded size — shell history, scratch scripts, a staged update bundle at ~72 MiB — and STATE is 64 MiB of precious identity: filling it would take the settings tree and the sshd host keys with it. DATA is also the only partition repart grows"
+elif [ -z "$(find "${ROOT}/etc/systemd/system" -name root.mount -path '*.wants/*' 2>/dev/null || true)" ]; then
+    fail "root.mount exists but is not enabled (no symlink in a .wants directory); /root would never be bound and everything written there would live in the read-only squashfs view"
+else
+    pass "root.mount binds /root from ${rm_what} on DATA (fstab mounts DATA at ${DATA_MNT}) and is enabled"
+fi
+
+# The MOUNTPOINT's own mode, in the packed root. /root is checked for existence
+# with the rest of the mountpoint set above; this asserts what that check
+# cannot — that it is 0700 root:root. Debian already ships it that way, but
+# nothing guaranteed it stayed that way through the pack stage, and DATA is not
+# verity-protected, so the mode is not implied by anything. A group- or
+# world-readable root home is a DIFFERENT failure from the one this fixes.
+root_mp_mode="$(stat -c %a "${ROOT}/root" 2>/dev/null || echo none)"
+root_mp_own="$(stat -c '%u:%g' "${ROOT}/root" 2>/dev/null || echo none)"
+if [ "${root_mp_mode}" = "700" ] && [ "${root_mp_own}" = "0:0" ]; then
+    pass "/root in the packed root is mode 0${root_mp_mode} owned ${root_mp_own} (root:root), the mode a root home must have"
+else
+    fail "/root in the packed root is mode ${root_mp_mode} owned ${root_mp_own}, expected 700 and 0:0. A root home readable by any other uid is a different defect from the one root.mount fixes, and nothing else in the image asserts it"
+fi
+
+# The bind SOURCE, which mount(8) does not create. mos-seed-root makes it, and
+# it must run BEFORE the mount rather than after: a seed ordered after the bind
+# could not have made that bind succeed in the first place, so it would never
+# run at all. tmpfiles.d cannot substitute either — systemd-tmpfiles-setup is
+# After=local-fs.target while root.mount is WantedBy=local-fs.target, so a
+# tmpfiles rule runs strictly after the bind. The ordering is declared from
+# both ends (Before= here, Requires=/After= in root.mount); this asserts the
+# Before=, which is the half systemd needs to sequence the mount job.
+SEED_ROOT_UNIT="${ROOT}/etc/systemd/system/mos-seed-root.service"
+SEED_ROOT="${ROOT}/usr/lib/mos/mos-seed-root"
+seed_root_mode="$(stat -c %a "${SEED_ROOT}" 2>/dev/null || echo none)"
+if [ ! -f "${SEED_ROOT_UNIT}" ]; then
+    fail "mos-seed-root.service is not in the image; nothing creates ${rm_what:-the root.mount source} on DATA and the bind fails, because mount(8) never creates the SOURCE of a bind"
+elif ! sed -n 's/^Before=//p' "${SEED_ROOT_UNIT}" | tr ' ' '\n' | grep -Fxq root.mount; then
+    fail "mos-seed-root.service has no Before= naming root.mount; the bind source would not be guaranteed to exist when the mount is attempted, and the mount fails"
+elif [ -z "$(find "${ROOT}/etc/systemd/system" -name mos-seed-root.service -path '*.wants/*' 2>/dev/null || true)" ]; then
+    fail "mos-seed-root.service exists but is not enabled, so the root.mount source is never created and the bind fails on every boot"
+elif [ ! -f "${SEED_ROOT}" ] || [ -L "${SEED_ROOT}" ]; then
+    fail "/usr/lib/mos/mos-seed-root is missing or not a regular file, so mos-seed-root.service cannot start and the bind source is never created"
+elif [ ! -x "${SEED_ROOT}" ]; then
+    fail "/usr/lib/mos/mos-seed-root is mode ${seed_root_mode}, not executable; ExecStart= would fail with 203/EXEC, the bind source would never be created and root.mount would fail on every boot"
+else
+    pass "mos-seed-root.service is enabled and ordered Before=root.mount, and /usr/lib/mos/mos-seed-root is executable (mode 0${seed_root_mode}), so the bind source exists on DATA before the mount is attempted"
+fi
+
+# WHAT THE SEED WRITES. It must create /srv/root — the DATA path — and must
+# never write under /root: /root in the unbound view is inside the read-only
+# verity squashfs, and this runs before the bind, so a write there fails. It
+# must chmod 0700 and chown 0:0 NUMERICALLY (the directory outlives every
+# rootfs flashed onto the device, so its owner is part of the on-disk
+# contract), and it must not overwrite the dotfiles on a directory that already
+# exists — an operator who edits .bashrc has to keep that edit across the next
+# reboot, which is the whole point of the feature.
+#
+# This is a STATIC check: it reads the script, it does not run it. There is no
+# offline harness for either seed script (see the follow-up in
+# docs/task/RFCT-054.md), so idempotence and non-clobbering are asserted by
+# reading eleven lines of shell, not by exercising them.
+SEED_WRITE_CMDS='mkdir|touch|cp|mv|ln|rm|chmod|chown|install|tee|dd'
+seed_root_writes_root="$(grep -nE "^[[:space:]]*(${SEED_WRITE_CMDS})[[:space:]]+([^#]*[[:space:]]+)?\"?/root(/|\"|[[:space:]]|$)" \
+    "${SEED_ROOT}" 2>/dev/null | head -n1 || true)"
+if [ ! -f "${SEED_ROOT}" ]; then
+    fail "/usr/lib/mos/mos-seed-root is not in the image, so what it creates cannot be checked"
+elif ! grep -Eq '^[[:space:]]*mkdir /srv/root$' "${SEED_ROOT}"; then
+    fail "mos-seed-root does not create /srv/root. It must create the bind source under the DATA path, never under /root: /root in the unbound view is inside the read-only verity squashfs, and a seed writing there before the bind fails"
+elif ! grep -Eq '^[[:space:]]*chmod 0700 /srv/root$' "${SEED_ROOT}"; then
+    fail "mos-seed-root does not chmod 0700 /srv/root; DATA is not verity-protected, so a root home group- or world-readable on disk is not caught by anything else"
+elif ! grep -Eq '^[[:space:]]*chown 0:0 /srv/root$' "${SEED_ROOT}"; then
+    fail "mos-seed-root does not chown 0:0 /srv/root numerically; the directory outlives every rootfs flashed onto this device, so its owner is part of the on-disk contract and must not be resolved out of the running image's /etc/passwd"
+elif [ -n "${seed_root_writes_root}" ]; then
+    fail "mos-seed-root writes under /root: ${seed_root_writes_root}. It runs BEFORE root.mount, so /root there is still the read-only verity squashfs and the write fails; everything it creates belongs under ${DATA_MNT:-/srv}"
+else
+    pass "mos-seed-root creates /srv/root on DATA (never under /root, which is read-only before the bind), mode 0700 owned 0:0 — a static read of the script, not a run of it"
 fi
 
 # --- every external binary the /usr/lib/mos boot scripts invoke --------------
