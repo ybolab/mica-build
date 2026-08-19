@@ -5,6 +5,13 @@
 > update/rollback experience. Companion to the Venus OS web-UI study; the two
 > are intended to be merged. Sections are self-contained and renumberable.
 
+**Companion document:** `docs/research/venus-os-ui.md` covers the other half of
+the same Venus study — what gui-v2 is as an artefact, how it is served on the
+LAN and reached remotely, and the information architecture of its landing
+screen, navigation and settings tree. The merge the note above anticipates was
+measured and dropped; the decision and its evidence are in
+`docs/task/RFCT-045.md`.
+
 ## 1. Scope and method
 
 Research date: **2026-08-19**. Venus OS is the closest shipping analogue to mos:
