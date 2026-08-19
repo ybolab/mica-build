@@ -2,6 +2,8 @@
 
 mod hostname;
 mod network;
+mod sshd;
+mod systemd;
 
 use mosd_settings::Settings;
 
@@ -25,5 +27,6 @@ pub fn all() -> Vec<Box<dyn Reconciler>> {
     vec![
         Box::new(hostname::HostnameReconciler::new(hostname::Hostnamed)),
         Box::new(network::NetworkReconciler::production()),
+        Box::new(sshd::SshdReconciler::production()),
     ]
 }
