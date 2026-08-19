@@ -142,8 +142,14 @@ run_repart() {
         set -e
         apt-get update -qq >/dev/null 2>&1
         apt-get install -y -qq systemd util-linux >/dev/null 2>&1
-        for n in 0 1 2 3 4 5 6 7; do [ -e /dev/loop\$n ] || mknod /dev/loop\$n b 7 \$n; done
-        loop=\$(losetup --show -f /w/${name}.img)
+        # The kernel hands out the first loop number free SYSTEM-wide, which on a
+        # busy host is well past any range we could pre-create; creating 0..7 and
+        # hoping fails with ENOENT on a perfectly good image. Ask which number it
+        # will give us, then make that node.
+        n=\$(losetup -f | sed 's|/dev/loop||')
+        [ -e /dev/loop\$n ] || mknod /dev/loop\$n b 7 \$n
+        loop=/dev/loop\$n
+        losetup \$loop /w/${name}.img
         SYSTEMD_LOG_LEVEL=debug systemd-repart --definitions=/w/${defs} --dry-run=no \"\$loop\"
         losetup -d \"\$loop\"
     " > "${work}/${name}.log" 2>&1
@@ -265,8 +271,14 @@ run_repart_rc() {
         set -e
         apt-get update -qq >/dev/null 2>&1
         apt-get install -y -qq systemd util-linux >/dev/null 2>&1
-        for n in 0 1 2 3 4 5 6 7; do [ -e /dev/loop\$n ] || mknod /dev/loop\$n b 7 \$n; done
-        loop=\$(losetup --show -f /w/${name}.img)
+        # The kernel hands out the first loop number free SYSTEM-wide, which on a
+        # busy host is well past any range we could pre-create; creating 0..7 and
+        # hoping fails with ENOENT on a perfectly good image. Ask which number it
+        # will give us, then make that node.
+        n=\$(losetup -f | sed 's|/dev/loop||')
+        [ -e /dev/loop\$n ] || mknod /dev/loop\$n b 7 \$n
+        loop=/dev/loop\$n
+        losetup \$loop /w/${name}.img
         SYSTEMD_LOG_LEVEL=debug systemd-repart --definitions=/w/${defs} --dry-run=no \"\$loop\"
         losetup -d \"\$loop\"
     " > "${work}/${name}.log" 2>&1 || rc=$?
