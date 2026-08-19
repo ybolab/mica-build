@@ -51,19 +51,57 @@ $ grep -n 'Stub — written by' docs/design/api.md
 No other placeholder either — a grep for `TODO|TBD|FIXME|XXX|placeholder`
 returns nothing.
 
-**The settled inventory is byte-identical, proved at both ends.** §0 and §1
-(lines 1-517) were merged by RFCT-063 at `074a7d8` and no later task was
-permitted to edit them:
+### The settled inventory, proved by hash rather than asserted
+
+**Claim: lines 1-517 of `docs/design/api.md` — §0 and §1, the measured surface —
+were byte-identical across every merge of this campaign, so no later task
+altered the surface that §2-§9 reason from.**
+
+The proof is a hash a reader can recompute, years from now, without this
+campaign's logs:
+
+```
+sha256(lines 1-517 of docs/design/api.md)
+  = d59478d90d7a244e37783686828e9c4ccd98daa1d52336d63af91731e989b70d
+```
+
+at **both ends of the campaign**:
+
+| commit | what it is | hash |
+| --- | --- | --- |
+| `074a7d8` | RFCT-063's merge — where §1 was written | `d59478d9…e989b70d` |
+| `8f1a957` | campaign head, after six merges by six tasks | `d59478d9…e989b70d` |
+
+Recomputed on this branch rather than copied from the package, and it agrees:
 
 ```
 $ git show 074a7d8:docs/design/api.md | sed -n '1,517p' | sha256sum
 d59478d90d7a244e37783686828e9c4ccd98daa1d52336d63af91731e989b70d  -
-$ sed -n '1,517p' docs/design/api.md | sha256sum
+$ git show 8f1a957:docs/design/api.md | sed -n '1,517p' | sha256sum
 d59478d90d7a244e37783686828e9c4ccd98daa1d52336d63af91731e989b70d  -
 ```
 
-Six merges into one file with the measured half unchanged, verified by hash
-rather than asserted.
+The four intermediate merges were checked too, so the claim is "unchanged at
+every step" rather than "unchanged at the endpoints" — `f7fffbd` (RFCT-068),
+`811a31d` (RFCT-064), `c5e8261` (RFCT-065) and `0af77e1` (RFCT-066) all produce
+the same digest. RFCT-069's content edits arrive in `8f1a957` above.
+
+**Why this belongs in the record and not only in a report.** *"The inventory was
+not modified"* is an assurance, and a future reader deciding whether §1 can still
+be trusted has no way to test it. A hash at both ends is a check they can run
+themselves. The reason it matters here in particular: §0 declares that §1 *"is
+not a proposal at all — it is the measured surface those sections must be derived
+from"* (`docs/design/api.md:8-10`), and every argument in §2-§9 inherits its
+authority from that fence holding. This is the evidence that it held.
+
+To re-verify at any later commit:
+
+```
+git show <commit>:docs/design/api.md | sed -n '1,517p' | sha256sum
+```
+
+A different digest is a real finding — §1 was edited by something that was not
+supposed to — and not a stale number to smooth over.
 
 **Status markers: eleven top-level headings, nine marked, two exempt by
 declaration.** §0 and §10 carry none, which is the exemption the document itself
