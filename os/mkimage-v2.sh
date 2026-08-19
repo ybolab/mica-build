@@ -2,10 +2,10 @@
 set -euo pipefail
 
 # Assembles the flashable cx3576 (Rockchip RK3576, eMMC /dev/mmcblk0) A/B GPT
-# disk image — layout v2, ten partitions: a redundant U-Boot env pair, two
-# FAT32 boot slots, two raw squashfs+dm-verity rootfs slots and the
-# meta/state/ephemeral/data ext4 partitions. Every layout constant comes from
-# os/layout/cx3576-v2.env; nothing is duplicated here.
+# disk image — layout v2, eleven partitions: the raw Rockchip loader area, a
+# redundant U-Boot env pair, two FAT32 boot slots, two raw squashfs+dm-verity
+# rootfs slots and the meta/state/ephemeral/data ext4 partitions. Every layout
+# constant comes from os/layout/cx3576-v2.env; nothing is duplicated here.
 #
 # Each boot slot holds Image, rk3576-src.dtb, the shared boot.scr compiled from
 # os/boot/cx3576-boot.cmd, and a per-slot mos-verity.env. It holds NO
@@ -61,7 +61,9 @@ export E2FSPROGS_FAKE_TIME
 # The four rootfs-side inputs all come from the same producer; name it in every
 # error message so a missing input is actionable.
 ROOTFS_PRODUCER="os/rootfs/build-v2.sh"
-BOOT_CMD="${SCRIPT_DIR}/boot/cx3576-boot.cmd"
+# Overridable only so os/mkimage-v2-selftest.sh can point the numbering guard
+# below at a deliberately-stale copy; every real build uses the tree's own file.
+BOOT_CMD="${BOOT_CMD:-${SCRIPT_DIR}/boot/cx3576-boot.cmd}"
 
 # Set by assemble() from rootfs-verity.env, read by mkverityenv().
 root_hash=""
@@ -136,6 +138,31 @@ mkbootscr() {
         echo "error: ${BOOT_CMD} does not load the per-slot verity env '${verity_base}-\${slotsuffix}.env'; a RAUC-installed slot carries only the slot-suffixed files, so an unsuffixed load would roll every update back" >&2
         exit 1
     fi
+
+    # THE RENUMBERING GUARD. boot.cmd addresses its slot as `mmc 0:${bootpart}`,
+    # a literal GPT partition NUMBER, and hush cannot read this layout file. So
+    # the numbers are written out in boot.cmd and checked here against the
+    # layout instead: inserting or removing any partition ahead of the boot
+    # slots shifts them, and a stale number does not announce itself — U-Boot
+    # just fails to find Image in a partition that now holds something else,
+    # after the environment has already been written. That is a brick discovered
+    # on hardware, so it is a build failure here.
+    local want got var slot num
+    for want in "bootpart:A:${BOOT_A_PARTNUM}" "bootpart:B:${BOOT_B_PARTNUM}" \
+        "rootpart:A:${ROOTFS_A_PARTNUM}" "rootpart:B:${ROOTFS_B_PARTNUM}"; do
+        IFS=':' read -r var slot num <<<"${want}"
+        # The slot's assignments are the block that also sets `setenv bootslot
+        # <slot>`, so pick the ${var} line that follows it.
+        got="$(awk -v slot="${slot}" -v var="${var}" '
+            $1 == "setenv" && $2 == "bootslot" && $3 == slot { in_slot = 1; next }
+            $1 == "setenv" && $2 == var && in_slot { print $3; exit }
+        ' "${BOOT_CMD}")"
+        if [ "${got}" != "${num}" ]; then
+            echo "error: ${BOOT_CMD} sets '${var}' to '${got:-nothing}' for slot ${slot}, but the layout puts that partition at p${num}." >&2
+            echo "boot.scr addresses partitions by number (mmc 0:\${bootpart}); a stale number means U-Boot loads the kernel from the wrong partition, or from none, AFTER it has already persisted the boot-attempt decrement. Update ${BOOT_CMD} to match os/layout/cx3576-v2.env." >&2
+            exit 1
+        fi
+    done
 
     SOURCE_DATE_EPOCH="${FILE_MTIME#@}" \
         mkimage -T script -C none -n "mos boot" -d "${BOOT_CMD}" "$1" >/dev/null
@@ -244,8 +271,38 @@ assemble() {
         fi
     done
 
-    if [ "$(stat -c %s "${UBOOT}")" -gt "${UBOOT_MAX_BYTES}" ]; then
+    # LOADER geometry. os/layout/cx3576-v2.env cannot compute, so the identities
+    # it documents are asserted here: the partition must start exactly where the
+    # BootROM looks, must end exactly where uenv-a begins, and its size must be
+    # the same number of bytes the U-Boot fit check uses. If these drift the
+    # loader ends up partly outside its own partition, which is precisely the
+    # state systemd-repart trims away.
+    if [ "${LOADER_START_SECTOR}" -ne "${UBOOT_SEEK_SECTOR}" ]; then
+        echo "error: LOADER_START_SECTOR=${LOADER_START_SECTOR} but the U-Boot blob is written at sector ${UBOOT_SEEK_SECTOR}; the loader partition must start where the bootloader does" >&2
+        exit 1
+    fi
+    if [ $((LOADER_SIZE_SECTORS * SECTOR_SIZE)) -ne "${UBOOT_MAX_BYTES}" ]; then
+        echo "error: the loader partition is $((LOADER_SIZE_SECTORS * SECTOR_SIZE)) bytes but UBOOT_MAX_BYTES is ${UBOOT_MAX_BYTES}; a blob that passes the fit check must fit the partition" >&2
+        exit 1
+    fi
+    if [ $((LOADER_START_SECTOR + LOADER_SIZE_SECTORS)) -ne "${UENV_A_START_SECTOR}" ]; then
+        echo "error: the loader partition ends at sector $((LOADER_START_SECTOR + LOADER_SIZE_SECTORS)) but ${UENV_A_LABEL} starts at ${UENV_A_START_SECTOR}; the two must abut or the GPT overlaps / leaves an untracked gap" >&2
+        exit 1
+    fi
+
+    local uboot_bytes uboot_magic
+    uboot_bytes="$(stat -c %s "${UBOOT}")"
+    if [ "${uboot_bytes}" -gt "${UBOOT_MAX_BYTES}" ]; then
         echo "error: ${UBOOT} does not fit between sector ${UBOOT_SEEK_SECTOR} and ${UENV_A_LABEL} at ${UENV_A_START_MIB} MiB" >&2
+        exit 1
+    fi
+    # The loader partition is only worth having if it actually contains a
+    # loader. 'RKNS' is the first field of a Rockchip idbloader; a blob without
+    # it is not something the BootROM will load, and shipping it would produce
+    # an image that passes every structural check and does not boot.
+    uboot_magic="$(od -An -tx1 -N4 "${UBOOT}" | tr -d ' \n')"
+    if [ "${uboot_magic}" != "${LOADER_MAGIC_HEX}" ]; then
+        echo "error: ${UBOOT} starts with '${uboot_magic}', not the Rockchip idbloader magic '${LOADER_MAGIC_HEX}' ('RKNS'); the RK3576 BootROM would not recognise it at sector ${UBOOT_SEEK_SECTOR}" >&2
         exit 1
     fi
 
@@ -326,8 +383,16 @@ assemble() {
 
     # Every start is given explicitly in sectors: the layout is pinned, not
     # negotiated with sgdisk's allocator.
-    sgdisk --clear \
+    # -a ${GPT_ALIGN_SECTORS}: the loader starts at sector 64, which is NOT
+    # 2048-aligned. Without this sgdisk silently relocates it to sector 2048 and
+    # the bootloader ends up outside its own partition again. Every other start
+    # here is MiB-aligned, so relaxing the multiple changes nothing else.
+    sgdisk --clear -a "${GPT_ALIGN_SECTORS}" \
         --disk-guid="${DISK_GUID}" \
+        --new="${LOADER_PARTNUM}:${LOADER_START_SECTOR}:+${LOADER_SIZE_SECTORS}S" \
+        --change-name="${LOADER_PARTNUM}:${LOADER_LABEL}" \
+        --typecode="${LOADER_PARTNUM}:${LOADER_TYPECODE}" \
+        --partition-guid="${LOADER_PARTNUM}:${LOADER_GUID}" \
         --new="${UENV_A_PARTNUM}:${UENV_A_START_SECTOR}:+${UENV_SIZE_SECTORS}S" \
         --change-name="${UENV_A_PARTNUM}:${UENV_A_LABEL}" \
         --typecode="${UENV_A_PARTNUM}:${UENV_A_TYPECODE}" \
@@ -391,6 +456,24 @@ assemble() {
         echo "error: sgdisk --verify reported problems" >&2
         exit 1
     fi
+
+    # Read the loader back OUT OF THE ASSEMBLED IMAGE. sgdisk is free to move a
+    # requested start sector, so asserting what we asked for proves nothing;
+    # this asserts what is actually there. The first byte of the partition must
+    # be the idbloader magic, and the blob must fit inside it with room left.
+    local got_start got_size got_magic
+    got_start="$(sgdisk -i "${LOADER_PARTNUM}" "${img_tmp}" | sed -n 's/^First sector: //p' | awk '{print $1}')"
+    got_size="$(sgdisk -i "${LOADER_PARTNUM}" "${img_tmp}" | sed -n 's/^Partition size: //p' | awk '{print $1}')"
+    if [ "${got_start}" != "${LOADER_START_SECTOR}" ] || [ "${got_size}" != "${LOADER_SIZE_SECTORS}" ]; then
+        echo "error: the assembled ${LOADER_LABEL} partition is ${got_size} sectors at ${got_start}, expected ${LOADER_SIZE_SECTORS} at ${LOADER_START_SECTOR}. sgdisk relocates a non-2048-aligned start unless -a ${GPT_ALIGN_SECTORS} is passed, and a relocated loader partition no longer covers the bootloader." >&2
+        exit 1
+    fi
+    got_magic="$(dd if="${img_tmp}" bs="${SECTOR_SIZE}" skip="${got_start}" count=1 status=none | od -An -tx1 -N4 | tr -d ' \n')"
+    if [ "${got_magic}" != "${LOADER_MAGIC_HEX}" ]; then
+        echo "error: the first bytes of the ${LOADER_LABEL} partition are '${got_magic}', not the idbloader magic '${LOADER_MAGIC_HEX}'" >&2
+        exit 1
+    fi
+    echo "${LOADER_LABEL} p${LOADER_PARTNUM}: sectors ${got_start}..$((got_start + got_size - 1)), ${uboot_bytes} of $((got_size * SECTOR_SIZE)) bytes used ($((got_size * SECTOR_SIZE - uboot_bytes)) spare); first bytes ${got_magic} ('RKNS')"
 
     mv "${img_tmp}" "${IMG_OUT}"
 }

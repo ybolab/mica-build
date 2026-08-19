@@ -4,8 +4,9 @@ set -euo pipefail
 # Drives os/mkimage-v2.sh --assemble with synthetic inputs so the v2 assembler
 # can be exercised without the BSP and without os/rootfs/build-v2.sh. Asserts
 # that two consecutive assemblies are byte-identical and that the resulting GPT
-# carries all nine partitions with the labels, GUIDs and typecodes pinned in
-# os/layout/cx3576-v2.env.
+# carries all eleven partitions with the labels, GUIDs and typecodes pinned in
+# os/layout/cx3576-v2.env, plus the guards that refuse a stale partition number
+# or a loader area that does not contain a loader.
 #
 # Everything is created under a private $TMPDIR workspace; nothing outside it
 # is written and no host system state is touched.
@@ -43,8 +44,18 @@ fill "${WORK}/bsp/rk3576-src.dtb" $((64 * 1024)) D
 # Two distinct U-Boot blobs, mirroring the board's two variants. The v2 image
 # may only carry uboot-mos; the debug one exists here so the pairing guard has
 # something to compare against.
-fill "${WORK}/bsp/u-boot-mos.bin" $((1024 * 1024)) M
-fill "${WORK}/bsp/u-boot-debug.bin" $((1024 * 1024)) U
+# Both must start with the Rockchip idbloader magic, because the assembler
+# refuses a blob that does not: the loader PARTITION is only worth having if it
+# covers something the BootROM will load. The filler after the magic is what
+# makes the two variants differ, which is what the pairing guard needs.
+mkloader() { # out-file total-size fill-char
+    printf "$(echo "${LOADER_MAGIC_HEX}" | sed 's/../\\x&/g')" > "$1"
+    head -c "$(($2 - 4))" /dev/zero | tr '\0' "$3" >> "$1"
+}
+mkloader "${WORK}/bsp/u-boot-mos.bin" $((1024 * 1024)) M
+mkloader "${WORK}/bsp/u-boot-debug.bin" $((1024 * 1024)) U
+# Same size, no magic: the negative case for the idbloader-magic guard.
+fill "${WORK}/bsp/u-boot-nomagic.bin" $((1024 * 1024)) M
 UBOOT_FIXTURE="${WORK}/bsp/u-boot-mos.bin"
 UBOOT_DEBUG_FIXTURE="${WORK}/bsp/u-boot-debug.bin"
 
@@ -108,6 +119,10 @@ require_visible_workspace() {
     exit 1
 }
 
+# Name of a doctored boot.cmd inside ${WORK}, or empty to use the tree's own.
+# Set by the renumbering tests below.
+BOOT_CMD_FIXTURE=""
+
 # run_assemble <out-name> <verity-img-name> [slot-pin]
 # The pin is forwarded only when non-empty, so the unpinned run really is
 # unpinned (that is what selects the floor mode inside the assembler).
@@ -117,6 +132,9 @@ run_assemble() {
         local pin_env=()
         if [ -n "${pin}" ]; then
             pin_env=("MOS_ROOTFS_SLOT_MIB=${pin}")
+        fi
+        if [ -n "${BOOT_CMD_FIXTURE}" ]; then
+            pin_env+=("BOOT_CMD=${WORK}/${BOOT_CMD_FIXTURE}")
         fi
         env KERNEL_IMAGE="${WORK}/bsp/Image" \
             DTB="${WORK}/bsp/rk3576-src.dtb" \
@@ -132,6 +150,9 @@ run_assemble() {
         local pin_args=()
         if [ -n "${pin}" ]; then
             pin_args=(-e "MOS_ROOTFS_SLOT_MIB=${pin}")
+        fi
+        if [ -n "${BOOT_CMD_FIXTURE}" ]; then
+            pin_args+=(-e "BOOT_CMD=/t/${BOOT_CMD_FIXTURE}")
         fi
         docker run --rm \
             -v "${REPO_ROOT}:/work:ro" \
@@ -202,7 +223,7 @@ SLOT_MIB="${MOS_ROOTFS_SLOT_MIB}"
 EXPECT_TOTAL_MIB=$((ROOTFS_A_START_MIB + 2 * SLOT_MIB + META_SIZE_MIB + STATE_SIZE_MIB + MOS_VAR_MIB + DATA_SIZE_MIB + IMAGE_TAIL_SLACK_MIB))
 check "image size is ${EXPECT_TOTAL_MIB} MiB" \
     "$(stat -c %s "${IMG}")" "$((EXPECT_TOTAL_MIB * MIB_BYTES))"
-check "partition count" "$(sgdisk --print "${IMG}" | awk '$1 ~ /^[0-9]+$/ {n++} END {print n+0}')" 10
+check "partition count" "$(sgdisk --print "${IMG}" | awk '$1 ~ /^[0-9]+$/ {n++} END {print n+0}')" 11
 check "disk GUID" "$(sgdisk --print "${IMG}" | sed -n 's/^Disk identifier (GUID): //p')" "${DISK_GUID}"
 
 part_field() { sgdisk -i "$1" "${IMG}" | sed -n "s/^$2: //p"; }
@@ -227,6 +248,24 @@ check "p${UENV_A_PARTNUM} offset is ${UENV_A_OFFSET_BYTES} bytes" \
 check "p${UENV_B_PARTNUM} offset is ${UENV_B_OFFSET_BYTES} bytes" \
     "$(($(part_field "${UENV_B_PARTNUM}" 'First sector' | cut -d' ' -f1) * SECTOR_SIZE))" \
     "${UENV_B_OFFSET_BYTES}"
+
+assert_part "${LOADER_PARTNUM}" "${LOADER_LABEL}" "${LOADER_GUID}" "${LOADER_TYPECODE}" \
+    "${LOADER_START_SECTOR}" "${LOADER_SIZE_SECTORS}"
+# sgdisk relocates a non-2048-aligned start unless -a is relaxed, so the start
+# sector above is the load-bearing assertion, not a formality. These two add the
+# properties that make the entry actually protect the bootloader: it abuts
+# uenv-a (no uncovered gap between them) and its first bytes are an idbloader.
+check "loader ends exactly where ${UENV_A_LABEL} begins" \
+    "$((LOADER_START_SECTOR + LOADER_SIZE_SECTORS))" "${UENV_A_START_SECTOR}"
+check "loader partition starts with the idbloader magic" \
+    "$(dd if="${IMG}" bs="${SECTOR_SIZE}" skip="${LOADER_START_SECTOR}" count=1 status=none | od -An -tx1 -N4 | tr -d ' \n')" \
+    "${LOADER_MAGIC_HEX}"
+# repart pairs definitions with partitions BY TYPE UUID, so the loader is
+# invisible to it only while its type is neither of the two the layout uses.
+check "loader type is not linux-generic" \
+    "$([ "${LOADER_TYPECODE}" = "${TYPECODE_LINUX}" ] && echo collides || echo distinct)" distinct
+check "loader type is not the ESP type" \
+    "$([ "${LOADER_TYPECODE}" = "${TYPECODE_ESP}" ] && echo collides || echo distinct)" distinct
 
 assert_part "${UENV_A_PARTNUM}" "${UENV_A_LABEL}" "${UENV_A_GUID}" "${UENV_A_TYPECODE}" \
     "${UENV_A_START_SECTOR}" "${UENV_SIZE_SECTORS}"
@@ -494,6 +533,99 @@ IMG="${WORK}/grown.img"
 check "unpinned build grows the slot past the floor" \
     "$(part_field "${ROOTFS_A_PARTNUM}" 'Partition size' | cut -d' ' -f1)" \
     "$((GROWN_SLOT_MIB * MIB_BYTES / SECTOR_SIZE))"
+
+# --- the loader area must contain a loader ---------------------------------
+# An entry over the wrong bytes protects nothing: the image would pass every
+# structural check and the board would still not boot.
+echo "--- loader blob without the idbloader magic ---"
+UBOOT_FIXTURE="${WORK}/bsp/u-boot-nomagic.bin"
+expect_failure "u-boot blob without the 'RKNS' magic" rootfs-verity.img "" \
+    "not the Rockchip idbloader magic" "${LOADER_MAGIC_HEX}"
+UBOOT_FIXTURE="${WORK}/bsp/u-boot-mos.bin"
+
+# --- THE RENUMBERING GUARD ---------------------------------------------------
+# Inserting the loader partition shifted every partition number by one, and
+# boot.cmd carries four of them as literals because hush cannot read the layout
+# file. A stale number is the worst kind of defect this task can produce: U-Boot
+# persists the boot-attempt decrement, then cannot find Image in a partition that
+# now holds something else, and the board needs re-flashing. Nothing about it is
+# visible at build time unless the build refuses — so these prove the build
+# refuses, in both directions: the unmodified file assembles (every case above
+# used it), a doctored one does not.
+echo "--- stale partition numbers in boot.cmd ---"
+for spec in "bootpart:A:${BOOT_A_PARTNUM}" "bootpart:B:${BOOT_B_PARTNUM}" \
+    "rootpart:A:${ROOTFS_A_PARTNUM}" "rootpart:B:${ROOTFS_B_PARTNUM}"; do
+    IFS=':' read -r var slot num <<<"${spec}"
+    stale=$((num - 1)) # exactly the value the pre-loader layout used
+    fixture="boot-stale-${var}-${slot}.cmd"
+    # Rewrite only this slot's assignment: the awk mirrors how the assembler
+    # locates it, from the `setenv bootslot <slot>` line that precedes it.
+    awk -v slot="${slot}" -v var="${var}" -v stale="${stale}" '
+        $1 == "setenv" && $2 == "bootslot" && $3 == slot { in_slot = 1 }
+        $1 == "setenv" && $2 == var && in_slot && !done {
+            sub(/[0-9]+$/, stale); done = 1
+        }
+        { print }
+    ' "${BOOT_CMD_FILE}" > "${WORK}/${fixture}"
+    if cmp -s "${WORK}/${fixture}" "${BOOT_CMD_FILE}"; then
+        echo "FAIL: the ${var}/${slot} fixture is identical to ${BOOT_CMD_FILE}; the negative test would pass vacuously"
+        FAILED=1
+        continue
+    fi
+    BOOT_CMD_FIXTURE="${fixture}"
+    expect_failure "boot.cmd with a stale ${var} (${stale}) for slot ${slot}" rootfs-verity.img "" \
+        "sets '${var}' to '${stale}' for slot ${slot}" "the layout puts that partition at p${num}"
+    BOOT_CMD_FIXTURE=""
+done
+
+# --- RAUC slot devices must never carry a partition number -------------------
+# system.conf addresses slots by PARTUUID, so renumbering cannot reach it. That
+# is a property worth enforcing rather than observing: a /dev/mmcblk0pN path
+# would make RAUC install an update over the RUNNING slot after a renumbering,
+# silently. Positive direction first (the real template renders), then negative.
+echo "--- RAUC slot device shape ---"
+RENDER="${REPO_ROOT}/os/rauc/render-config.sh"
+if SYSTEM_CONF_OUT="${WORK}/system.conf.real" bash "${RENDER}" >/dev/null 2>&1; then
+    echo "PASS: the shipped system.conf.in renders"
+else
+    echo "FAIL: the shipped system.conf.in no longer renders"
+    FAILED=1
+fi
+if grep -q '^device=/dev/disk/by-partuuid/' "${WORK}/system.conf.real" 2>/dev/null &&
+    ! grep '^device=' "${WORK}/system.conf.real" | grep -qv '^device=/dev/disk/by-partuuid/'; then
+    echo "PASS: every rendered RAUC slot device is a by-partuuid path (renumbering cannot mis-target an install)"
+else
+    echo "FAIL: a rendered RAUC slot device is not a by-partuuid path: $(grep '^device=' "${WORK}/system.conf.real" | tr '\n' ' ')"
+    FAILED=1
+fi
+sed 's|^device=/dev/disk/by-partuuid/@ROOTFS_A_PARTUUID@|device=/dev/mmcblk0p6|' \
+    "${REPO_ROOT}/os/rauc/system.conf.in" > "${WORK}/system.conf.in.stale"
+if cmp -s "${WORK}/system.conf.in.stale" "${REPO_ROOT}/os/rauc/system.conf.in"; then
+    echo "FAIL: the doctored system.conf.in is identical to the real one; the negative test would pass vacuously"
+    FAILED=1
+elif SYSTEM_CONF_IN="${WORK}/system.conf.in.stale" SYSTEM_CONF_OUT="${WORK}/system.conf.stale" \
+    bash "${RENDER}" > "${WORK}/render-stale.log" 2>&1; then
+    echo "FAIL: the renderer accepted a slot addressed as /dev/mmcblk0p6"
+    FAILED=1
+elif grep -qF "addresses a slot by something other than a PARTUUID" "${WORK}/render-stale.log"; then
+    echo "PASS: the renderer refuses a slot addressed by partition number, and says why"
+else
+    echo "FAIL: the renderer refused the doctored template for the wrong reason: $(tr '\n' ' ' < "${WORK}/render-stale.log")"
+    FAILED=1
+fi
+
+# --- what must NOT have moved ------------------------------------------------
+# U-Boot's ENV_OFFSET / ENV_OFFSET_REDUND (board/cx3576, CONFIG_ENV_OFFSET
+# 0x1000000 / 0x1100000) are ABSOLUTE byte offsets compiled into the bootloader.
+# Renumbering the partition table must not shift them by a single byte: a
+# shifted env offset strands the A/B boot-order handshake on every device
+# already flashed, and it fails silently. The literals below are deliberately
+# restated from the U-Boot config rather than derived, because deriving both
+# sides from the same file would assert nothing.
+check "UENV_A_OFFSET_BYTES is still U-Boot's ENV_OFFSET 0x1000000" \
+    "${UENV_A_OFFSET_BYTES}" "$((0x1000000))"
+check "UENV_B_OFFSET_BYTES is still U-Boot's ENV_OFFSET_REDUND 0x1100000" \
+    "${UENV_B_OFFSET_BYTES}" "$((0x1100000))"
 
 if [ "${FAILED}" -eq 0 ]; then
     echo "RESULT: PASS"
