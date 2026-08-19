@@ -617,6 +617,30 @@ else
     pass "/etc/modules-load.d/wifi.conf is gone (superseded by mos-modules)"
 fi
 
+# --- M5 (R5): no baked credential ---
+# v1's root is a writable ext4, so /etc/shadow needs no redirection here and
+# gets none: the symlink-onto-STATE machinery is v2-only (see RFCT-029). What
+# both images share is the rule that no usable root password may ship inside
+# one. Asserted rather than trusted, because ROOT_PASSWORD is a build arg and a
+# DEV image that leaked into a release would otherwise be indistinguishable.
+#
+# What this proves: the shadow file that SHIPS carries no working root login.
+# What it does NOT prove: anything about the password the device ends up with.
+root_entry="$(dbg "cat /etc/shadow" | awk -F: '$1 == "root" { print; exit }' || true)"
+root_hash="$(printf '%s' "${root_entry}" | cut -d: -f2)"
+if [ -z "${root_entry}" ]; then
+    fail "/etc/shadow has no root: entry, so no claim can be made about the baked root password"
+else
+    case "${root_hash}" in
+    "" | "!"* | "*"*)
+        pass "the packed rootfs carries NO usable root password (root: hash field is '${root_hash:-<empty>}', a locked marker)"
+        ;;
+    *)
+        fail "the packed rootfs carries a usable root password hash in /etc/shadow. Cause: the ROOT_PASSWORD build arg was set at build time; unset it — a per-device password is provisioned by mosd at runtime"
+        ;;
+    esac
+fi
+
 # --- summary ---
 total=$((PASS_N + FAIL_N))
 if [ "${FAIL_N}" -eq 0 ]; then

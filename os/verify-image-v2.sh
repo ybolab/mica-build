@@ -1199,6 +1199,166 @@ for pair in "var-lib-mos.mount:/var/lib/mos" "var-lib-bluetooth.mount:/var/lib/b
     fi
 done
 
+# --- M5: /etc/shadow lives on STATE (per-device password) ---
+# access.md phase 1 gives every device its own root password, and the only file
+# pam_unix will read for it is /etc/shadow. On v2 that path is inside the
+# dm-verity squashfs, so the file has to be a SYMLINK onto the STATE-backed
+# tree; a bind-mounted file would not do, because a bind cannot be replaced by
+# rename and rename is how a credential is written without a torn read.
+SHADOW_LINK_TARGET=/var/lib/mos/shadow
+FACTORY_SHADOW=/usr/share/factory/etc/shadow
+
+# Half one of the end-to-end property: the path PAM reads IS the symlink, and it
+# names the STATE-backed directory exactly. Asserting "a symlink exists" would
+# pass for a symlink pointing anywhere at all.
+shadow_type="$(stat -c %F "${ROOT}/etc/shadow" 2>/dev/null || echo absent)"
+shadow_dest="$(readlink "${ROOT}/etc/shadow" 2>/dev/null || true)"
+if [ "${shadow_type}" = "symbolic link" ] && [ "${shadow_dest}" = "${SHADOW_LINK_TARGET}" ]; then
+    pass "/etc/shadow is a symlink to ${SHADOW_LINK_TARGET} (the path pam_unix opens is writable at runtime)"
+else
+    fail "/etc/shadow is '${shadow_type}'${shadow_dest:+ -> ${shadow_dest}}, expected a symlink to ${SHADOW_LINK_TARGET}; on the read-only verity root a regular file there can never be written, so no per-device password is possible"
+fi
+
+# Half two: nothing inside the squashfs can satisfy that path. Both the source
+# (/etc/shadow itself) and the destination (/var/lib/mos/shadow) must be absent
+# as regular files in the packed image, or PAM would read an image-wide file
+# that is byte-identical on every device. This is the pair that makes the claim
+# "PAM reads the STATE copy" provable from the artifact rather than asserted.
+if [ "${shadow_type}" = "regular file" ]; then
+    fail "/etc/shadow is a REGULAR FILE inside the squashfs; it shadows the STATE-backed copy and is identical on every device in the fleet"
+else
+    pass "no regular /etc/shadow inside the squashfs (nothing shadows the STATE-backed copy)"
+fi
+if [ -e "${ROOT}${SHADOW_LINK_TARGET}" ] || [ -L "${ROOT}${SHADOW_LINK_TARGET}" ]; then
+    fail "${SHADOW_LINK_TARGET} exists inside the squashfs, so /etc/shadow would resolve to an image file rather than to the STATE bind"
+else
+    pass "${SHADOW_LINK_TARGET} does not exist inside the squashfs, so the symlink can only ever resolve through var-lib-mos.mount onto STATE"
+fi
+
+# And the link target must be exactly what var-lib-mos.mount puts on STATE.
+# A symlink into a directory nothing mounts is a dangling file, not a credential.
+VLM_UNIT="${ROOT}/etc/systemd/system/var-lib-mos.mount"
+vlm_where="$(sed -n 's/^Where=//p' "${VLM_UNIT}" 2>/dev/null | tail -n1)"
+vlm_what="$(sed -n 's/^What=//p' "${VLM_UNIT}" 2>/dev/null | tail -n1)"
+# Derived from the ACTUAL link destination, not from the constant above: a
+# check against the constant would keep passing for a symlink retargeted
+# anywhere else, which is the whole thing being guarded against.
+link_dir="$([ -n "${shadow_dest}" ] && dirname "${shadow_dest}" || echo "<not a symlink>")"
+if [ -n "${shadow_dest}" ] && [ "${vlm_where}" = "${link_dir}" ] &&
+    [ "${vlm_what#/mnt/state/}" != "${vlm_what}" ]; then
+    pass "the /etc/shadow symlink lands in ${vlm_where}, which var-lib-mos.mount binds from ${vlm_what} on STATE"
+else
+    fail "the /etc/shadow symlink target dir '${link_dir}' is not bound from STATE by var-lib-mos.mount (Where='${vlm_where}', What='${vlm_what}')"
+fi
+
+# /etc/passwd and /etc/group stay in the image, read-only: only the
+# secret-bearing file moves, so account definitions remain verity-covered.
+sq_regular /etc/passwd
+sq_regular /etc/group
+
+# The factory template the reconciler derives from.
+sq_regular "${FACTORY_SHADOW}"
+FAC="${ROOT}${FACTORY_SHADOW}"
+
+# It has to carry the accounts the image ships, or an account added by a later
+# update would get a bare placeholder instead of its proper aging fields — and
+# an empty factory copy would make every check above pass for the wrong reason.
+if [ ! -f "${FAC}" ] || [ ! -f "${ROOT}/etc/passwd" ]; then
+    fail "cannot compare /etc/passwd against ${FACTORY_SHADOW}: one of them is missing"
+else
+    fac_missing=""
+    while IFS=: read -r u _; do
+        [ -n "${u}" ] || continue
+        grep -q "^${u}:" "${FAC}" || fac_missing="${fac_missing} ${u}"
+    done <"${ROOT}/etc/passwd"
+    fac_n="$(grep -c . "${FAC}" || true)"
+    if [ -z "${fac_missing}" ] && [ "${fac_n}" -gt 0 ]; then
+        pass "${FACTORY_SHADOW} carries all ${fac_n} accounts listed in /etc/passwd (root included)"
+    else
+        fail "${FACTORY_SHADOW} has ${fac_n} entries and is missing:${fac_missing:- (nothing, but it is empty)}"
+    fi
+fi
+
+# 0640 root:shadow, and it must survive packing. unix_chkpwd is setgid shadow
+# precisely so a non-root PAM stack can read this file; any other group and
+# password verification stops working for every non-root caller.
+shadow_gid="$(awk -F: '$1 == "shadow" { print $3 }' "${ROOT}/etc/group" 2>/dev/null || true)"
+fac_mode="$(stat -c %a "${FAC}" 2>/dev/null || echo none)"
+fac_own="$(stat -c '%u:%g' "${FAC}" 2>/dev/null || echo none)"
+if [ -n "${shadow_gid}" ]; then
+    pass "the image defines the 'shadow' group (gid ${shadow_gid}), which unix_chkpwd runs setgid to"
+else
+    fail "the image has no 'shadow' group, so unix_chkpwd cannot read /etc/shadow at all"
+fi
+if [ "${fac_mode}" = "640" ] && [ "${fac_own}" = "0:${shadow_gid}" ]; then
+    pass "${FACTORY_SHADOW} is 0640 root:shadow (0:${shadow_gid}) in the packed image"
+else
+    fail "${FACTORY_SHADOW} is mode ${fac_mode} owner ${fac_own}, expected 640 and 0:${shadow_gid} (root:shadow)"
+fi
+
+# The reconcile unit: present, ENABLED, and its ordering naming units that
+# actually exist. M4 shipped units that were installed but never enabled and
+# Before= lines naming units that were absent; systemd drops both silently.
+sq_regular /usr/lib/mos/mos-shadow-reconcile
+sq_regular /etc/systemd/system/mos-shadow-reconcile.service
+sq_enabled mos-shadow-reconcile.service
+REC_UNIT="${ROOT}/etc/systemd/system/mos-shadow-reconcile.service"
+sq_grep /etc/systemd/system/mos-shadow-reconcile.service \
+    '^ExecStart=/usr/lib/mos/mos-shadow-reconcile$' \
+    "mos-shadow-reconcile.service runs /usr/lib/mos/mos-shadow-reconcile"
+# after= / before= must name the real unit names, and each named unit must be
+# in the image: an ordering against a unit that does not exist is inert.
+# unit-file-path pairs, so "named" and "present" are asserted together.
+for pair in "After:var-lib-mos.mount:/etc/systemd/system/var-lib-mos.mount" \
+    "Before:mosd.service:/usr/lib/systemd/system/mosd.service" \
+    "Before:ssh.service:/usr/lib/systemd/system/ssh.service"; do
+    IFS=':' read -r keyw dep depfile <<<"${pair}"
+    # Whitespace-separated unit list, matched as a whole token: a substring
+    # match would accept "Before=xmosd.serviceX" and a bare grep for the name
+    # would accept it appearing in a comment.
+    named=0
+    if [ -f "${REC_UNIT}" ]; then
+        sed -n "s/^${keyw}=//p" "${REC_UNIT}" | tr ' ' '\n' | grep -Fxq "${dep}" && named=1
+    fi
+    if [ ! -f "${REC_UNIT}" ]; then
+        fail "mos-shadow-reconcile.service is missing, so its ${keyw}=${dep} ordering cannot be checked"
+    elif [ "${named}" -eq 0 ]; then
+        fail "mos-shadow-reconcile.service has no ${keyw}= naming ${dep}; /etc/shadow would be read or written before it converges"
+    elif [ ! -f "${ROOT}${depfile}" ]; then
+        fail "mos-shadow-reconcile.service orders ${keyw}=${dep} but ${depfile} is not in the image; systemd drops an ordering against a non-existent unit SILENTLY"
+    else
+        pass "mos-shadow-reconcile.service orders ${keyw}=${dep}, and ${depfile} is present in the image"
+    fi
+done
+
+# mos-seed-state must hand the reconciler the /mnt/state path: on first boot it
+# runs inside the local mount phase, before var-lib-mos.mount exists, so the
+# default /var/lib/mos would not yet be the STATE directory.
+sq_grep /usr/lib/mos/mos-seed-state \
+    '^/usr/lib/mos/mos-shadow-reconcile /mnt/state/mos/shadow$' \
+    "mos-seed-state seeds the STATE shadow directly at /mnt/state/mos/shadow (var-lib-mos.mount is not up yet on first boot)"
+
+# --- M5 (R5): no baked credential ---
+# What this proves: the shadow file that SHIPS carries no usable root password,
+# so a signed rootfs — byte-identical on every device in the fleet — cannot
+# hand anyone a working login. What it does NOT prove: that the device ends up
+# with a good password. That is mosd's job at runtime and is only observable on
+# a real boot.
+root_entry="$(awk -F: '$1 == "root" { print; exit }' "${FAC}" 2>/dev/null || true)"
+root_hash="$(printf '%s' "${root_entry}" | cut -d: -f2)"
+if [ -z "${root_entry}" ]; then
+    fail "${FACTORY_SHADOW} has no root: entry, so no claim can be made about the baked root password"
+else
+    case "${root_hash}" in
+    "" | "!"* | "*"*)
+        pass "the packed rootfs carries NO usable root password (root: hash field is '${root_hash:-<empty>}', a locked marker)"
+        ;;
+    *)
+        fail "the packed rootfs carries a usable root password hash in ${FACTORY_SHADOW}. A signed rootfs is byte-identical on every device, so this is a fleet-wide shared secret. Cause: the ROOT_PASSWORD build arg was set at build time; unset it — the per-device password is provisioned by mosd at runtime"
+        ;;
+    esac
+fi
+
 # --- M4: /var fill-up containment ---
 sq_grep /etc/tmpfiles.d/mos-var.conf '^[qQ] /var/tmp ' "tmpfiles.d ages /var/tmp (fixed-size /var cannot grow)"
 sq_grep /etc/tmpfiles.d/mos-var.conf '^e /var/cache ' "tmpfiles.d ages /var/cache (regenerable by definition, nothing else reclaims it)"
