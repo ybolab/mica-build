@@ -12,6 +12,12 @@
 > and §3's settings path). The `.zh.md` sibling has not been updated and is
 > stale.
 >
+> **Daemon rename (campaign `apid`, 2026-08-19, RFCT-056).** The HTTPS management
+> daemon formerly called `webd` is now `apid` — it is the API daemon, and the
+> dashboard is one of the things it serves. Only the name changed here; the
+> mechanism this document describes is unaffected. See
+> `docs/design/dashboard.md` §7.4.
+>
 > **Updated for campaign `sshweb` (2026-08-19):** the tree is at **schema v4**
 > (`access.ssh.authorizedKeys`), and the `SshdReconciler` row in §5.3 is
 > corrected — it watches `access.ssh` alone and no longer drives `/etc/shadow`.
@@ -21,7 +27,7 @@
 The single Rust service that owns appliance state: a central settings/state
 tree, persistence on STATE, reconcilers that apply settings to the execution
 layer (systemd units, networkd, RAUC, balena-engine), and the bridge that
-UIs (webd/kiosk) and future remote channels consume. Venus OS's D-Bus tree +
+UIs (apid/kiosk) and future remote channels consume. Venus OS's D-Bus tree +
 Bottlerocket's apiserver, in one scoped service.
 
 ## 2. Decision 1 — IPC protocol
@@ -32,14 +38,14 @@ Options: D-Bus (zbus) / varlink / gRPC.
 mosd must CONSUME D-Bus regardless — systemd (units/hostname), networkd,
 RAUC, wpa_supplicant, bluez all expose D-Bus APIs. Speaking one bus in both
 directions (consume system services, expose `com.mos.*` like Venus's
-`com.victronenergy.*`) avoids running a second IPC ecosystem. webd bridges
+`com.victronenergy.*`) avoids running a second IPC ecosystem. apid bridges
 HTTP/WebSocket ↔ D-Bus for browsers; gRPC/MQTT-style remote bridges attach
 later at the edge, not in the core (Venus gui-v2 pattern: local bus, remote
 bridge). varlink is elegant but its ecosystem is too thin to carry the
 integration burden D-Bus removes for free.
 
-> **Correction (2026-08-19): webd is not a WebSocket bridge.** The sentence
-> above is the M2 sketch and no longer describes the code. webd renders
+> **Correction (2026-08-19): apid is not a WebSocket bridge.** The sentence
+> above is the M2 sketch and no longer describes the code. apid renders
 > server-side HTML (maud) over plain HTTP and calls mosd's D-Bus methods per
 > request; there is no WebSocket, no long-lived subscription and no generic
 > HTTP↔D-Bus passthrough. The live-value transport question is open and is
@@ -127,7 +133,7 @@ graceSeconds = 60                # deliberately unconsumed — connd.md §5
 ```
 
 `access.webAdmin` is unchanged from v2 — same serialized path, same
-`password_hash` key — because webd already reads and writes it through the bus
+`password_hash` key — because apid already reads and writes it through the bus
 by that exact dot-path. It is absent above only because a fresh tree has no web
 admin yet.
 
@@ -226,7 +232,7 @@ as the contract for the next one:
   (which is served over D-Bus), not a log line, not an error message.
 
 The settings/live-state split the M2 contract called for is what carries all of
-this: each reconciler publishes its status onto the live-state tree, which webd
+this: each reconciler publishes its status onto the live-state tree, which apid
 reads over the bus.
 
 ### 5.4 Bus surface
@@ -254,9 +260,9 @@ Each method resolves the caller's unique bus name and **logs the action and its
 source and records it in live state BEFORE invoking the power control**, because
 after the call there may be no system left to log on.
 
-The layering the M2 contract set is preserved: webd is the UI and mosd owns
-system actions. webd does not spawn processes, does not talk to systemd, and does
-not touch `/sbin/reboot`; its only route to a power action is this bus. webd
+The layering the M2 contract set is preserved: apid is the UI and mosd owns
+system actions. apid does not spawn processes, does not talk to systemd, and does
+not touch `/sbin/reboot`; its only route to a power action is this bus. apid
 exposes them as POST-only routes behind the existing session gate and an explicit
 confirmation token, answering 202 with a rendered page and handing the D-Bus call
 to a detached task — so the operator gets a page rather than a dropped connection

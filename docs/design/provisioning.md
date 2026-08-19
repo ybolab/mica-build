@@ -12,6 +12,12 @@
 > new and is the single authoritative statement of the credential model. The
 > `.zh.md` sibling has not been updated and is stale.
 >
+> **Daemon rename (campaign `apid`, 2026-08-19, RFCT-056).** The HTTPS management
+> daemon formerly called `webd` is now `apid` — it is the API daemon, and the
+> dashboard is one of the things it serves. Only the name changed here; the
+> mechanism this document describes is unaffected. See
+> `docs/design/dashboard.md` §7.4.
+>
 > **Model change (campaign `sshweb`, 2026-08-19).** SSH access no longer uses
 > the device password at all: see `docs/design/access.md` §4. The device
 > credential is still minted at first boot and still on STATE, and it now
@@ -138,7 +144,7 @@ settings tree and asserts the document contains neither `psk` nor
 
 | Secret | Where it lands | What it authenticates |
 |---|---|---|
-| **device password** | hash in `access.device.passwordHash`; plaintext at `/var/lib/mos/secrets/device-password` (0600 in a 0700 dir) | **nothing, since 2026-08-19** — not SSH, not the local console, not the webd admin UI. See §3.6 |
+| **device password** | hash in `access.device.passwordHash`; plaintext at `/var/lib/mos/secrets/device-password` (0600 in a 0700 dir) | **nothing, since 2026-08-19** — not SSH, not the local console, not the apid admin UI. See §3.6 |
 | **AP PSK** | plaintext at `/var/lib/mos/secrets/ap-psk` (same modes) | WPA2 clients joining the provisioning access point |
 
 Both are independent draws from `ring::rand::SystemRandom`, as is `deviceId`.
@@ -174,7 +180,7 @@ and silently break login.
 
 | Store | Format | Verified by |
 |---|---|---|
-| `access.device.passwordHash` (settings tree, on STATE) | **Argon2id** PHC string | mosd and webd, in Rust, against themselves |
+| `access.device.passwordHash` (settings tree, on STATE) | **Argon2id** PHC string | mosd and apid, in Rust, against themselves |
 | `/etc/shadow`, root entry | **bcrypt**, cost 12 | `pam_unix` → `crypt(3)` → libcrypt, for SSH and console login |
 
 **Why not Argon2id in both: Debian's libxcrypt has no Argon2 support.** This was
@@ -191,7 +197,7 @@ entirely. `crypt(3)` cannot parse `$argon2id$…`, so it rejects every password
 offered against it.
 
 **Why not one hash in the shadow format only:** Argon2id is the right choice
-where mosd and webd verify against themselves, and libcrypt is not involved
+where mosd and apid verify against themselves, and libcrypt is not involved
 there at all.
 
 A hash cannot be converted into another hash, so the plaintext on STATE is
@@ -223,7 +229,7 @@ its marker, not by `bcrypt::verify`.
 ### 3.4 Why a plaintext on STATE is acceptable
 
 Neither secret can be hash-only: the operator has to be able to *learn* the
-initial device password (read it over the console, print it, have webd show it
+initial device password (read it over the console, print it, have apid show it
 once), and the AP PSK has to be re-rendered into `hostapd.conf` verbatim on
 every boot.
 
@@ -253,7 +259,7 @@ logs a warning.
 
 **Correction (2026-08-19).** This section used to end "the operator's password
 still authenticates against `access.device.passwordHash` on the web UI". That
-was never quite true — webd authenticates against `access.webAdmin`, its own
+was never quite true — apid authenticates against `access.webAdmin`, its own
 credential — and it is now false in every direction: `access.device.passwordHash`
 authenticates nothing at all (§3.6), so "the credential of record" above now
 means "the record that a credential was minted", not a credential anything
@@ -267,7 +273,7 @@ a later phase should close.
 ### 3.6 What the device credential authenticates today: nothing
 
 **Nothing verifies the device credential under the current access model.** Not
-sshd, not `pam_unix`, not the serial console, not webd — which has always
+sshd, not `pam_unix`, not the serial console, not apid — which has always
 authenticated its admin against `access.webAdmin` rather than against this. No
 code path in the repository calls a verifier against
 `access.device.passwordHash`; `mosd/mosd/src/identity.rs::verify_password`, the
@@ -293,11 +299,11 @@ path, ordered by preference (details in access.md §7):
 1. BOOT-partition provisioning file (offline pre-seed at factory or field);
 2. USB signed config drop (udev-triggered, vendor-key verified);
 3. AP captive portal (connd.md) and HDMI kiosk wizard (display.md);
-4. webd over LAN once any network exists;
+4. apid over LAN once any network exists;
 5. tty2 serial wizard as the last resort.
 
 **Status: none of these is implemented.** Layer 1 gives a device a working,
-credentialled configuration; changing that configuration today is webd over the
+credentialled configuration; changing that configuration today is apid over the
 LAN (channel 4), which M3 delivered, or the AP captive portal's *transport*
 (connd.md §4) without the portal itself. Channels 1, 2 and 5 do not exist.
 
