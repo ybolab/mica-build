@@ -246,6 +246,106 @@ async fn web_flow_end_to_end() -> anyhow::Result<()> {
     let response = anon.get(format!("{https_base}/network")).send().await?;
     assert_eq!(response.status(), StatusCode::OK);
 
+    // Power actions travel webd -> D-Bus -> mosd. Assert the safety
+    // precondition FIRST: mosd must be in dry-run, where its PowerControl is
+    // the no-op one and the system-bus `Systemd` control is never constructed.
+    // If someone drops MOSD_DRY_RUN from the spawn above, this fails before a
+    // single power request is sent rather than after.
+    assert_eq!(
+        proxy.get_state("dry_run").await?,
+        "true",
+        "refusing to POST power actions against a daemon that is not in dry-run"
+    );
+
+    // What is proven below is that the POST reaches mosd, which mosd records
+    // in its live-state tree before acting.
+    let response = admin
+        .post(format!("{https_base}/power/reboot"))
+        .form(&[("confirm", "reboot")])
+        .send()
+        .await?;
+    assert_eq!(response.status(), StatusCode::ACCEPTED);
+    // The response is sent before the D-Bus call completes, so poll for the
+    // record rather than expecting it to be there already.
+    let recorded = tokio::time::timeout(Duration::from_secs(10), async {
+        loop {
+            if let Ok(json) = proxy.get_state("power").await
+                && let Ok(value) = serde_json::from_str::<serde_json::Value>(&json)
+                && value["last_action"] == "reboot"
+            {
+                break value;
+            }
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+    })
+    .await
+    .context("reboot request never reached mosd")?;
+    assert_eq!(recorded["last_action"], "reboot");
+
+    let response = admin
+        .post(format!("{https_base}/power/poweroff"))
+        .form(&[("confirm", "poweroff")])
+        .send()
+        .await?;
+    assert_eq!(response.status(), StatusCode::ACCEPTED);
+    let recorded = tokio::time::timeout(Duration::from_secs(10), async {
+        loop {
+            if let Ok(json) = proxy.get_state("power").await
+                && let Ok(value) = serde_json::from_str::<serde_json::Value>(&json)
+                && value["last_action"] == "power_off"
+            {
+                break value;
+            }
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+    })
+    .await
+    .context("power-off request never reached mosd")?;
+    assert_eq!(recorded["last_action"], "power_off");
+
+    // GET is not routed for either action, and an unconfirmed POST is
+    // rejected; neither leaves a new record behind.
+    for path in ["/power/reboot", "/power/poweroff"] {
+        let response = admin.get(format!("{https_base}{path}")).send().await?;
+        assert_eq!(
+            response.status(),
+            StatusCode::METHOD_NOT_ALLOWED,
+            "GET {path}"
+        );
+        let response = admin
+            .post(format!("{https_base}{path}"))
+            .form(&[("confirm", "")])
+            .send()
+            .await?;
+        assert_eq!(
+            response.status(),
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "unconfirmed POST {path}"
+        );
+    }
+    let after: serde_json::Value = serde_json::from_str(&proxy.get_state("power").await?)?;
+    assert_eq!(
+        after["last_action"], "power_off",
+        "no rejected request may reach mosd"
+    );
+
+    // Anonymous power requests never get past the auth gate, correct
+    // confirmation token or not.
+    for (path, token) in [("/power/reboot", "reboot"), ("/power/poweroff", "poweroff")] {
+        let response = http_client(false)?
+            .post(format!("{https_base}{path}"))
+            .form(&[("confirm", token)])
+            .send()
+            .await?;
+        assert_eq!(response.status(), StatusCode::SEE_OTHER, "anonymous {path}");
+        assert_eq!(location(&response), "/login");
+    }
+    let after: serde_json::Value = serde_json::from_str(&proxy.get_state("power").await?)?;
+    assert_eq!(
+        after["last_action"], "power_off",
+        "no anonymous request may reach mosd"
+    );
+
     // The HTTP listener only redirects to the HTTPS origin.
     let response = anon.get(format!("http://{http_addr}/")).send().await?;
     assert_eq!(response.status(), StatusCode::PERMANENT_REDIRECT);

@@ -1,5 +1,5 @@
 //! HTTP routes: auth gate middleware, the first-run setup wizard, login and
-//! logout flows, and the status/network/hostname panes.
+//! logout flows, the status/network/hostname panes, and the power pane.
 
 use std::sync::{Arc, Mutex};
 
@@ -45,6 +45,12 @@ pub fn app(state: AppState) -> Router {
         .route("/logout", post(logout))
         .route("/network", get(network_form).post(network_submit))
         .route("/hostname", get(hostname_form).post(hostname_submit))
+        .route("/power", get(power_form))
+        // POST only, deliberately: no GET handler exists for either action, so
+        // a browser prefetch, a crawler or a mis-clicked link cannot power the
+        // appliance off.
+        .route("/power/reboot", post(power_reboot))
+        .route("/power/poweroff", post(power_poweroff))
         .route("/healthz", get(healthz))
         .layer(middleware::from_fn_with_state(state.clone(), gate))
         .with_state(state)
@@ -164,6 +170,7 @@ fn shell(title: &str, nav: bool, body: Markup) -> Html<String> {
                         a href="/" { "Status" }
                         a href="/network" { "Network" }
                         a href="/hostname" { "Hostname" }
+                        a href="/power" { "Power" }
                         form method="post" action="/logout" {
                             button type="submit" { "Logout" }
                         }
@@ -745,6 +752,146 @@ async fn hostname_form(State(state): State<AppState>, Query(query): Query<SavedQ
         Err(err) => bus_error(&err),
     }
 }
+
+// ---------------------------------------------------------------------------
+// Power pane
+// ---------------------------------------------------------------------------
+
+/// A power action the pane can request of mosd.
+#[derive(Clone, Copy)]
+enum PowerAction {
+    Reboot,
+    PowerOff,
+}
+
+impl PowerAction {
+    /// Path of the POST route performing this action.
+    fn path(self) -> &'static str {
+        match self {
+            Self::Reboot => "/power/reboot",
+            Self::PowerOff => "/power/poweroff",
+        }
+    }
+
+    /// Exact value the confirmation control must submit. The submit button
+    /// alone is not enough: the checkbox has to be ticked as well.
+    fn confirm_token(self) -> &'static str {
+        match self {
+            Self::Reboot => "reboot",
+            Self::PowerOff => "poweroff",
+        }
+    }
+
+    fn label(self) -> &'static str {
+        match self {
+            Self::Reboot => "Reboot",
+            Self::PowerOff => "Power off",
+        }
+    }
+
+    /// Sentence shown next to the confirmation checkbox.
+    fn confirmation(self) -> &'static str {
+        match self {
+            Self::Reboot => "Yes, reboot this appliance now.",
+            Self::PowerOff => "Yes, power this appliance off now.",
+        }
+    }
+
+    /// Sentence shown on the acknowledgement page.
+    fn acknowledgement(self) -> &'static str {
+        match self {
+            Self::Reboot => {
+                "Reboot requested. The appliance is going down; this page will stop responding shortly."
+            }
+            Self::PowerOff => {
+                "Power-off requested. The appliance is shutting down and will need to be switched on by hand."
+            }
+        }
+    }
+}
+
+/// The confirmation form for one action.
+fn power_form_markup(action: PowerAction) -> Markup {
+    html! {
+        form method="post" action=(action.path()) {
+            fieldset {
+                legend { (action.label()) }
+                p { label {
+                    input type="checkbox" name="confirm" value=(action.confirm_token()) required;
+                    " " (action.confirmation())
+                } }
+                p { button type="submit" { (action.label()) } }
+            }
+        }
+    }
+}
+
+fn power_page(banner: Option<Markup>) -> Html<String> {
+    pane(
+        "Power",
+        html! {
+            @if let Some(banner) = banner { (banner) }
+            p { "Rebooting is what activates a newly installed system slot. Both actions interrupt every service on this appliance." }
+            (power_form_markup(PowerAction::Reboot))
+            (power_form_markup(PowerAction::PowerOff))
+        },
+    )
+}
+
+async fn power_form() -> Html<String> {
+    power_page(None)
+}
+
+/// Confirmation checkbox, absent when unticked.
+#[derive(serde::Deserialize)]
+struct ConfirmForm {
+    #[serde(default)]
+    confirm: String,
+}
+
+/// Validate the confirmation, then hand the action to mosd on a detached task.
+///
+/// The response is built and returned without awaiting the D-Bus call: on a
+/// real appliance the machine may go down mid-call, and the operator should
+/// get a page rather than a dropped connection.
+fn power_submit(state: &AppState, action: PowerAction, confirm: &str) -> Response {
+    if confirm != action.confirm_token() {
+        return (
+            StatusCode::UNPROCESSABLE_ENTITY,
+            power_page(Some(error_box(
+                "Tick the confirmation box before requesting a power action.",
+            ))),
+        )
+            .into_response();
+    }
+    let api = state.api.clone();
+    tokio::spawn(async move {
+        let result = match action {
+            PowerAction::Reboot => api.reboot().await,
+            PowerAction::PowerOff => api.power_off().await,
+        };
+        if let Err(err) = result {
+            tracing::error!(action = action.confirm_token(), error = %err, "power action failed");
+        }
+    });
+    (
+        StatusCode::ACCEPTED,
+        page(action.label(), html! { p { (action.acknowledgement()) } }),
+    )
+        .into_response()
+}
+
+async fn power_reboot(State(state): State<AppState>, Form(form): Form<ConfirmForm>) -> Response {
+    power_submit(&state, PowerAction::Reboot, &form.confirm)
+}
+
+async fn power_poweroff(State(state): State<AppState>, Form(form): Form<ConfirmForm>) -> Response {
+    power_submit(&state, PowerAction::PowerOff, &form.confirm)
+}
+
+// ---------------------------------------------------------------------------
+// Hostname submit
+// ---------------------------------------------------------------------------
 
 async fn hostname_submit(
     State(state): State<AppState>,
