@@ -391,7 +391,8 @@ RUN set -eu; \
     grep -q '^root:' "${fac}" || { echo "error: factory shadow has no root: entry" >&2; exit 1; }; \
     rh="$(awk -F: '$1 == "root" { print $2; exit }' "${fac}")"; \
     case "${rh}" in \
-        "" | '!'* | '*'*) ;; \
+        "") echo "error: the root: entry in the factory shadow has an EMPTY hash field, which means PASSWORDLESS root login: pam_unix accepts any password, including none. Empty is not a locked marker; only '!' (including '!!' and '!'-prefixed forms that retain a hash) and '*' lock an account" >&2; exit 1 ;; \
+        '!'* | '*'*) ;; \
         *) echo "error: the packed rootfs carries a usable root password hash. A signed rootfs is byte-identical on every device, so this is a fleet-wide shared secret. Cause: the ROOT_PASSWORD build arg was set; unset it (the per-device password is provisioned by mosd at runtime)" >&2; exit 1 ;; \
     esac; \
     unit=/rootfs/etc/systemd/system/mos-shadow-reconcile.service; \

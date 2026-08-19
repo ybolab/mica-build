@@ -632,8 +632,11 @@ if [ -z "${root_entry}" ]; then
     fail "/etc/shadow has no root: entry, so no claim can be made about the baked root password"
 else
     case "${root_hash}" in
-    "" | "!"* | "*"*)
-        pass "the packed rootfs carries NO usable root password (root: hash field is '${root_hash:-<empty>}', a locked marker)"
+    "")
+        fail "the root: entry in /etc/shadow has an EMPTY hash field, which means PASSWORDLESS root login: pam_unix accepts any password, including none. Empty is not a locked marker — only '!' (including '!!' and '!'-prefixed forms that retain a hash) and '*' lock an account"
+        ;;
+    "!"* | "*"*)
+        pass "the packed rootfs carries NO usable root password (root: hash field is '${root_hash}', a locked marker)"
         ;;
     *)
         fail "the packed rootfs carries a usable root password hash in /etc/shadow. Cause: the ROOT_PASSWORD build arg was set at build time; unset it — a per-device password is provisioned by mosd at runtime"

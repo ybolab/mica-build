@@ -134,11 +134,30 @@ silently shipping a fleet-wide shared secret.
 mosd's job at runtime and is only observable on a real boot. It also does not
 prove that PAM succeeds — only that it cannot succeed using something baked in.
 
-One deliberate asymmetry: the verifiers accept an empty hash field as "not a
-hash", per the M5 spec's marker list, whereas `mos-shadow-reconcile` rewrites an
-empty field to `!`. An empty field is not locked — `pam_unix` treats it as "no
-password required" — so the script is stricter than the check. Debian's default
-`root:*:...` means neither path is exercised today.
+**An EMPTY hash field FAILS**, and has its own message. The M5 spec's original
+marker list was `!`/`*`/empty; that was wrong and was corrected on L2 review.
+Empty does not mean locked — `pam_unix` reads it as "no password required", so
+an empty root field is passwordless root login, which is the worst state in the
+threat model, not a benign one. A guard that passes on it would be worse than no
+guard. Only genuine locked markers are accepted: `!` (including `!!` and
+`!`-prefixed forms such as `!$6$...`, which are locked accounts that retain a
+hash) and `*`. The empty case gets a distinct message so it is not mistaken for
+the baked-hash finding.
+
+The same rule now holds in all three places — both verifiers and the pack-stage
+build gate — and matches what `mos-shadow-reconcile` already did: its
+`lock_entry` rewrites anything not matching `^[!*]` to `!`, empty included.
+
+Audited for the same shape elsewhere in this change; nothing else admits a
+permissive value. Every other comparison added here is exact equality
+(`shadow_dest` vs the target, mode `640`, owner `0:<gid>`), an anchored regex
+(`^ExecStart=...$`, the `mos-seed-state` call line), a whole-token match
+(`grep -Fxq` for the ordering unit names), or a non-empty requirement (the
+`shadow` gid, the factory account count). The one remaining prefix test is
+`What=/mnt/state/*` on `var-lib-mos.mount`, which is deliberate and follows the
+existing precious-state check: it asserts the STATE *partition* backs the bind,
+and every value it admits is STATE-backed. It cannot let through an insecure
+state, so it is not the same failure shape.
 
 ## Verifier changes
 
