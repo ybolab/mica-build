@@ -9,6 +9,9 @@
 //! - `MOSD_SETTINGS_PATH` — settings file location (default
 //!   `/var/lib/mos/settings.toml`).
 //! - `MOSD_BUS` — `system` (default) or `session`.
+//! - `MOSD_SHADOW_PATH` — shadow file a transient root password is written
+//!   into (default `/etc/shadow`, which is a symlink onto STATE on the v2
+//!   image). The sshd reconciler honours the same variable.
 //! - `MOSD_DRY_RUN` — when `1`, first-boot provisioning is skipped, no
 //!   reconcilers are constructed, power actions are routed to a no-op
 //!   control, and the live-state root carries `{"dry_run": true}`; used by
@@ -21,6 +24,7 @@ mod identity;
 mod power;
 mod provisioning;
 mod reconciler;
+mod transient;
 
 use std::path::{Path, PathBuf};
 
@@ -88,7 +92,14 @@ async fn main() -> anyhow::Result<()> {
         state.insert("dry_run".to_string(), Value::Bool(true));
     }
 
-    let service = bus::MosdService::new(store, settings, reconcilers, power, Value::Object(state));
+    let service = bus::MosdService::new(
+        store,
+        settings,
+        reconcilers,
+        power,
+        transient::production_shadow_path(),
+        Value::Object(state),
+    );
     service.apply_all().await;
 
     let builder = match bus_kind.as_str() {
