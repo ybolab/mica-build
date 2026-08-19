@@ -277,9 +277,39 @@ impl<C: UnitControl> SshdReconciler<C> {
     /// Bring `ssh.service` to the state `ssh.enabled` asks for.
     ///
     /// Reads before it writes, so a system already in the target state gets no
-    /// calls at all. `config_changed` forces a restart of an already-running
-    /// sshd, because a rewritten drop-in that nothing re-reads is a
-    /// configuration that silently did not take effect.
+    /// calls at all.
+    ///
+    /// **A configuration-only change reloads; it never restarts.** A rewritten
+    /// drop-in that nothing re-reads is a configuration that silently did not
+    /// take effect, so an already-running sshd has to be told — but a restart
+    /// tears the daemon down, and the moment that matters most is exactly the
+    /// one where an operator is setting a transient root password over their
+    /// existing SSH session in order to gain access. sshd re-reads its
+    /// configuration on `SIGHUP`, so a reload applies the change while every
+    /// established session keeps running.
+    ///
+    /// **`KillMode` is not what keeps those sessions alive.** Debian's
+    /// `openssh-server` happens to ship `KillMode=process`, which would spare
+    /// established sessions across a restart — but nothing in this image chose
+    /// that value, nothing here asserts it, and a future package revision could
+    /// change it with no signal on our side. Reload survives by construction
+    /// rather than by that grace, which is why a restart here would *not* be
+    /// equally fine.
+    ///
+    /// **This depends on `ssh.service` carrying `ExecReload`.** That comes from
+    /// the Debian `openssh-server` package; this repo ships no `ssh.service`, so
+    /// the property is inherited rather than chosen — the same shape of problem
+    /// as `KillMode`, in a new place. A unit file without `ExecReload` makes
+    /// systemd refuse the job, and that refusal is surfaced with an error naming
+    /// `ExecReload` and saying the configuration change has not been applied.
+    /// There is deliberately **no fallback to `restart`**: falling back would
+    /// silently reintroduce the disconnect this reload exists to prevent, and
+    /// would hide the missing `ExecReload` from the next person to look.
+    ///
+    /// Enable/disable and start/stop are unit **state** changes, not
+    /// configuration changes, and stay as they are. A unit that is not running
+    /// but should be is started, never reloaded: reloading a stopped daemon
+    /// applies a configuration to nothing.
     async fn apply_unit(&self, ssh: &SshSettings, config_changed: bool) -> Result<()> {
         if ssh.enabled {
             if !is_enabled(&self.control.unit_file_state(SSH_UNIT).await?) {
@@ -287,7 +317,13 @@ impl<C: UnitControl> SshdReconciler<C> {
             }
             if is_active(&self.control.active_state(SSH_UNIT).await?) {
                 if config_changed {
-                    self.control.restart(SSH_UNIT).await?;
+                    self.control.reload(SSH_UNIT).await.with_context(|| {
+                        format!(
+                            "reload {SSH_UNIT} after a configuration change: the unit may lack \
+                             ExecReload, in which case sshd is still running the previous \
+                             configuration and the rendered change has not been applied"
+                        )
+                    })?;
                 }
             } else {
                 self.control.start(SSH_UNIT).await?;
@@ -337,11 +373,9 @@ impl<C: UnitControl> Reconciler for SshdReconciler<C> {
         let password_authentication = ssh.password_authentication && transient_active;
 
         // The returned "did it change" is deliberately discarded: only the
-        // drop-in forces sshd to be restarted. sshd re-reads the
+        // drop-in forces sshd to re-read anything. sshd re-reads the
         // authorized-keys file on every authentication attempt, so a key added
-        // or removed takes effect without touching the unit — and restarting on
-        // a key change would drop the live session of the operator who just
-        // added one.
+        // or removed takes effect without touching the unit at all.
         self.apply_authorized_keys(&ssh.authorized_keys)?;
         let config_changed = self.apply_drop_in(ssh, password_authentication)?;
         self.apply_unit(ssh, config_changed).await?;
@@ -434,6 +468,15 @@ mod tests {
         active: &str,
         file_state: &str,
     ) -> (SshdReconciler<MockUnitControl>, Paths) {
+        fixture_with(dir, MockUnitControl::new(active, file_state))
+    }
+
+    /// Same fixture, driving `control` — so a test can supply a mock that
+    /// models a unit file without `ExecReload`.
+    fn fixture_with(
+        dir: &Path,
+        control: MockUnitControl,
+    ) -> (SshdReconciler<MockUnitControl>, Paths) {
         let paths = Paths {
             drop_in: dir.join("sshd_config.d").join("10-mos.conf"),
             keys: dir.join("authorized_keys.d").join("root"),
@@ -446,7 +489,7 @@ mod tests {
             paths.drop_in.clone(),
             paths.keys.clone(),
             paths.shadow.clone(),
-            MockUnitControl::new(active, file_state),
+            control,
         );
         (reconciler, paths)
     }
@@ -565,6 +608,15 @@ mod tests {
                 "start ssh.service".to_string()
             ]
         );
+        // Enablement is a unit STATE change, not a configuration change: it is
+        // correctly not a reload, and a stopped unit could not be reloaded
+        // anyway.
+        assert!(
+            !reconciler
+                .control
+                .calls()
+                .contains(&"reload ssh.service".to_string())
+        );
         assert_eq!(state["enabled"], json!(true));
         assert_eq!(state["activeState"], json!("active"));
         assert_eq!(state["unitFileState"], json!("enabled-runtime"));
@@ -589,6 +641,14 @@ mod tests {
                 "stop ssh.service".to_string(),
                 "disable ssh.service".to_string()
             ]
+        );
+        // Likewise a unit STATE change. Reloading a daemon on the way out is
+        // meaningless.
+        assert!(
+            !reconciler
+                .control
+                .calls()
+                .contains(&"reload ssh.service".to_string())
         );
         assert_eq!(state["enabled"], json!(false));
         assert_eq!(state["activeState"], json!("inactive"));
@@ -657,8 +717,11 @@ mod tests {
         );
     }
 
+    /// The central guard: a configuration-only change reloads a running sshd
+    /// and must never restart it, so the operator's established session
+    /// survives by construction rather than by `KillMode`'s grace.
     #[tokio::test]
-    async fn changing_the_config_of_a_running_sshd_restarts_it() {
+    async fn changing_the_config_of_a_running_sshd_reloads_it_and_never_restarts_it() {
         let dir = tempfile::tempdir().unwrap();
         let (reconciler, paths) = fixture(dir.path(), "active", "enabled");
         std::fs::create_dir_all(paths.drop_in.parent().unwrap()).unwrap();
@@ -675,7 +738,15 @@ mod tests {
 
         assert_eq!(
             reconciler.control.calls(),
-            vec!["restart ssh.service".to_string()]
+            vec!["reload ssh.service".to_string()]
+        );
+        assert!(
+            !reconciler
+                .control
+                .calls()
+                .contains(&"restart ssh.service".to_string()),
+            "a restart would drop the operator's live session: {:?}",
+            reconciler.control.calls()
         );
         assert!(
             std::fs::read_to_string(&paths.drop_in)
@@ -683,6 +754,80 @@ mod tests {
                 .contains("Port 2222\n")
         );
         assert_eq!(state["port"], json!(2222));
+    }
+
+    #[tokio::test]
+    async fn changing_the_config_of_a_stopped_sshd_starts_it_without_reloading() {
+        let dir = tempfile::tempdir().unwrap();
+        let (reconciler, paths) = fixture(dir.path(), "inactive", "enabled");
+        std::fs::create_dir_all(paths.drop_in.parent().unwrap()).unwrap();
+        std::fs::write(&paths.drop_in, GOLDEN_DEFAULTS_GATED).unwrap();
+
+        reconciler
+            .apply(&settings_with(SshSettings {
+                enabled: true,
+                port: 2222,
+                ..SshSettings::default()
+            }))
+            .await
+            .unwrap();
+
+        // A start reads the drop-in on the way up, so the change is applied
+        // without a reload — and reloading a stopped daemon would apply the
+        // configuration to nothing.
+        assert_eq!(
+            reconciler.control.calls(),
+            vec!["start ssh.service".to_string()]
+        );
+        assert!(
+            std::fs::read_to_string(&paths.drop_in)
+                .unwrap()
+                .contains("Port 2222\n")
+        );
+    }
+
+    #[tokio::test]
+    async fn a_unit_without_exec_reload_fails_loudly_and_is_never_restarted_instead() {
+        let dir = tempfile::tempdir().unwrap();
+        let (reconciler, paths) = fixture_with(
+            dir.path(),
+            MockUnitControl::with_failing_reload("active", "enabled"),
+        );
+        std::fs::create_dir_all(paths.drop_in.parent().unwrap()).unwrap();
+        std::fs::write(&paths.drop_in, GOLDEN_DEFAULTS_GATED).unwrap();
+
+        let error = reconciler
+            .apply(&settings_with(SshSettings {
+                enabled: true,
+                port: 2222,
+                ..SshSettings::default()
+            }))
+            .await
+            .unwrap_err();
+
+        let rendered = format!("{error:#}");
+        assert!(
+            rendered.contains("ExecReload"),
+            "the error must send the next reader at the unit file: {rendered}"
+        );
+        assert!(
+            rendered.contains("has not been applied"),
+            "the error must say the change did not take effect: {rendered}"
+        );
+        assert!(
+            !reconciler
+                .control
+                .calls()
+                .contains(&"restart ssh.service".to_string()),
+            "a silent restart fallback reintroduces the disconnect and hides the \
+             missing ExecReload: {:?}",
+            reconciler.control.calls()
+        );
+        assert_eq!(
+            reconciler.control.calls(),
+            vec!["reload ssh.service".to_string()],
+            "the reload is attempted once and nothing follows it"
+        );
     }
 
     // ---- the device password no longer reaches the shadow file ------------
@@ -1188,7 +1333,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn a_marker_appearing_between_two_applies_turns_passwords_on_and_restarts_sshd() {
+    async fn a_marker_appearing_between_two_applies_turns_passwords_on_and_reloads_sshd() {
         let dir = tempfile::tempdir().unwrap();
         let (reconciler, paths) = fixture(dir.path(), "active", "enabled");
         let settings = settings_with(SshSettings {
@@ -1221,8 +1366,17 @@ mod tests {
             reconciler
                 .control
                 .calls()
-                .contains(&"restart ssh.service".to_string()),
+                .contains(&"reload ssh.service".to_string()),
             "sshd must re-read the flipped drop-in: {:?}",
+            reconciler.control.calls()
+        );
+        assert!(
+            !reconciler
+                .control
+                .calls()
+                .contains(&"restart ssh.service".to_string()),
+            "this is the path where the operator is setting a password over the \
+             very session a restart would drop: {:?}",
             reconciler.control.calls()
         );
     }
