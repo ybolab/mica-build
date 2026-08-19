@@ -26,6 +26,19 @@ mkdir -p /mnt/state/bluetooth
 chmod 0700 /mnt/state/bluetooth
 cp -a /etc/ssh/. /mnt/state/ssh/
 
+# The two connd config directories, on the same reasoning as /etc/ssh: mosd's
+# WiFi reconcilers render into them at runtime, and on v2 /etc is a read-only
+# squashfs. The image copy is carried across first (both packages ship helper
+# scripts there) so the bind does not hide anything the image provided.
+# 0700 because both hold a pre-shared key in the clear once a device is
+# configured -- the supplicant config carries every network's PSK and the
+# hostapd config carries the AP key.
+for d in wpa_supplicant hostapd; do
+    mkdir -p "/mnt/state/$d"
+    if [ -d "/etc/$d" ]; then cp -a "/etc/$d/." "/mnt/state/$d/"; fi
+    chmod 0700 "/mnt/state/$d"
+done
+
 # The hostname has to be writable: mosd's reconciler sets it through
 # systemd-hostnamed, which writes /etc/hostname. Seed it from the value baked
 # into the image while /etc/hostname still shows the squashfs copy;

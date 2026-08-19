@@ -43,13 +43,87 @@ named `mos-arm64`, whose buildkit image bundles its own QEMU emulators.
 ## Package allowlist
 
 Only: systemd systemd-sysv systemd-resolved udev dbus kmod openssh-server
-iproute2 bluez rfkill (plus their hard dependencies). Do not add packages
-without updating this list.
+iproute2 bluez rfkill wpasupplicant hostapd (plus their hard dependencies). Do
+not add packages without updating this list.
 
 bluez and rfkill exist for the board hardware-init layer (btattach + rfkill
 unblock in `mos-bt`); with their new dependencies (libglib2.0-0, libdw1,
 libelf1) they add about 11 MB of installed size (TOTAL_MB 204, budget 400) —
 see `rootfs-report.txt`.
+
+- **`wpasupplicant`** — the WiFi station role. mosd's `wifi_client` reconciler
+  renders `/etc/wpa_supplicant/wpa_supplicant-<iface>.conf` and drives
+  `wpa_supplicant@<iface>.service`. Both are the package's own contract, not a
+  preference: the template's `ExecStart` has
+  `-c/etc/wpa_supplicant/wpa_supplicant-%I.conf` baked in, so the file name and
+  the unit name have to agree with mosd's or the supplicant starts against a
+  configuration that is not there. Without this package `wifi.client` renders a
+  file nothing reads and enables a unit that does not exist — which systemd
+  reports on the device and nowhere else.
+- **`hostapd`** — the provisioning access point. mosd's `wifi_ap` reconciler
+  renders `/etc/hostapd/<iface>.conf` and drives `hostapd@<iface>.service`,
+  whose `ExecStart` is `/usr/sbin/hostapd -B -P /run/hostapd.%i.pid $DAEMON_OPTS
+  /etc/hostapd/%i.conf`. This is the path a device with no uplink is configured
+  through, so "present but not wired" is the expensive failure here.
+
+Deliberately **not** added: `dnsmasq`. The AP hands out addresses through
+systemd-networkd's own `DHCPServer=yes`, which is already in the image and
+whose lifecycle is the networkd reload the AP address needs anyway.
+
+### Both connd packages ship an enabled unit that has to be masked
+
+Measured on `hostapd` / `wpasupplicant` 2:2.10-12+deb12u3 arm64 (`dpkg -L`, and
+the postinst's links under `/etc/systemd/system/multi-user.target.wants/`), not
+assumed:
+
+| Unit | Ships | Enabled by the package | What the image does |
+|---|---|---|---|
+| `wpa_supplicant@.service` | yes, `-c/etc/wpa_supplicant/wpa_supplicant-%I.conf` | no | left installed and unenabled — mosd owns it |
+| `hostapd@.service` | yes, `… /etc/hostapd/%i.conf`, `ConditionFileNotEmpty=/etc/hostapd/%i.conf` | no | left installed and unenabled — mosd owns it |
+| `hostapd.service` | yes, non-templated, reads `/etc/hostapd/hostapd.conf` | **yes** | **masked** |
+| `wpa_supplicant.service` | yes, D-Bus mode, no condition | **yes** | **masked** |
+| `dbus-fi.w1.wpa_supplicant1.service` | `Alias=` link created by the postinst | — | **masked** (same unit under another name) |
+
+`hostapd.service` is condition-gated on `/etc/hostapd/hostapd.conf` being
+non-empty, so today it does not actually start — but that is one operator `cp`
+away from a second hostapd fighting the reconciler for the radio while
+`hostapd@wlan0.service` still reports healthy. `wpa_supplicant.service` has no
+condition and does start; it also carries `RuntimeDirectory=wpa_supplicant`, so
+systemd deletes `/run/wpa_supplicant` when it stops — taking the control socket
+of the templated instance mosd started with it.
+
+Masked rather than disabled because `wpasupplicant` ships
+`/usr/share/dbus-1/system-services/fi.w1.wpa_supplicant1.service`: a plain
+`systemctl disable` leaves the D-Bus activation path open, and masking does not.
+
+### Config directories
+
+`/etc/wpa_supplicant` and `/etc/hostapd` are both mode **0700** — once a device
+is configured they hold pre-shared keys in the clear. On v1 the root is a
+writable ext4, so the directories are simply there. On v2 the root is a
+read-only dm-verity squashfs, so each is a STATE-backed bind
+(`etc-wpa_supplicant.mount`, `etc-hostapd.mount`) exactly as `/etc/ssh` is; a
+reconciler rendering into a read-only path fails on device and nowhere else.
+
+## Image profile (`/usr/lib/mos/profile.conf`)
+
+`MOS_PROFILE=dev` by default; `MOS_PROFILE=prod bash os/rootfs/build.sh` (or
+`build-v2.sh`) builds the production image from the same tree. The build rejects
+anything that is not exactly `dev` or `prod` in lowercase.
+
+mosd reads this file once, on first boot, to seed `access.ssh.enabled`, and it
+**fails closed**: a file that is missing, unreadable, misspelt or carrying an
+unrecognised value all resolve to `prod`, which means SSH off. The comparison is
+case-sensitive, so `DEV` resolves to prod too. Every one of those mistakes
+produces an image where all the checks are green and the dev SSH path has simply
+disappeared, which is why the value is validated at build time and asserted
+again by `os/verify-image.sh` / `os/verify-image-v2.sh` against the packed
+artifact — including that `dev` implies `ssh.service` is enabled in the image
+and `prod` implies it is not.
+
+The file lives in `/usr/lib` and not `/etc` because it describes the *image*,
+not the device; on v2 that also puts it inside the read-only verity root, where
+a production device cannot be edited into a development one.
 
 ## mosd
 
@@ -213,7 +287,9 @@ is a build error rather than a review finding. The verified inventory is in
 ## v2 package allowlist
 
 v1's list (systemd systemd-sysv systemd-resolved udev dbus kmod openssh-server
-iproute2 bluez rfkill) **plus**:
+iproute2 bluez rfkill wpasupplicant hostapd — the two connd packages, their
+masking and their config directories are documented under "Package allowlist"
+above and apply identically here) **plus**:
 
 - **`rauc`** — the update client itself. Required by RFCT-014 (slot definitions,
   `system.conf`) and RFCT-015 (install flow). Installed here so no other task
@@ -257,7 +333,7 @@ from the layout env so the shipped image carries no placeholder:
 |---|---|
 | `etc/fstab.in` | `/srv` from DATA (`noatime,x-systemd.growfs`), `/mnt/state` from STATE, `/mnt/meta` from META, `/var` from EPHEMERAL (`noatime`, **no** growfs), tmpfs `/tmp` — all keyed on lowercased `PARTUUID=` |
 | `etc/fw_env.config.in` | the redundant U-Boot env pair, addressed by partition GUID. The single `fw_env.config` source in the tree; RFCT-014's `render-config.sh` asserts its structure rather than shipping a competing file |
-| `etc/repart.d/*.conf` | eight definitions in disk order; only `80-data.conf` grows. v1's root-growing definition is gone |
+| `etc/repart.d/*.conf` | eight definitions in disk order; only `80-data.conf` grows. v1's root-growing definition is gone. The two `uenv` placeholders carry `SizeMinBytes=0`: repart will not claim an EXISTING partition below the definition's minimum, which defaults to 10 MiB, and the uenv pair is 64 KiB — without it the whole run aborts with *"Can't fit requested partitions into available free space"* and `/srv` never grows (RFCT-027) |
 | `etc/tmpfiles.d/mos-var.conf` | age policies for `/var/tmp` and `/var/cache` — `/var` is now a fixed-size partition |
 | `etc/systemd/system/mos-seed-var.service` | first-boot restore of `/var` from `/usr/share/factory/var` |
 | `etc/systemd/system/mos-seed-state.service` | first-boot STATE directories + per-device sshd host keys |
@@ -265,6 +341,8 @@ from the layout env so the shipped image carries no placeholder:
 | `etc/systemd/system/var-lib-bluetooth.mount` | binds `/mnt/state/bluetooth` onto `/var/lib/bluetooth` so pairings survive a `/var` wipe |
 | `etc/systemd/system/etc-ssh.mount` | binds `/mnt/state/ssh` onto `/etc/ssh` |
 | `etc/systemd/system/etc-hostname.mount` | binds `/mnt/state/hostname` onto `/etc/hostname`, so mosd's hostname reconciler can persist a change |
+| `etc/systemd/system/etc-wpa_supplicant.mount` | binds `/mnt/state/wpa_supplicant` onto `/etc/wpa_supplicant`, the path `wpa_supplicant@.service` reads and the station reconciler writes |
+| `etc/systemd/system/etc-hostapd.mount` | binds `/mnt/state/hostapd` onto `/etc/hostapd`, the path `hostapd@.service` reads and the AP reconciler writes |
 | `etc/systemd/system/mos-apply-hostname.service` | re-applies the persisted hostname after the bind — PID 1 read the squashfs copy long before mount units ran |
 
 Six hwinit units (`mos-modules`, `mos-otg`, `mos-can`, `mos-bt`, `mos-mac`,
