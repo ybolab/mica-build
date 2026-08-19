@@ -1,0 +1,23 @@
+[Unit]
+Description=Reconcile /etc/shadow on STATE with the accounts the image ships
+Documentation=file:/usr/lib/mos/mos-shadow-reconcile
+# /etc/shadow is a symlink to /var/lib/mos/shadow, so the file only becomes the
+# device's own once var-lib-mos.mount has bound /mnt/state/mos over it; before
+# that the symlink points into the factory-restored /var. Hence Requires= and
+# After= that mount rather than a plain ordering.
+Requires=var-lib-mos.mount
+After=var-lib-mos.mount
+# Both of the units that touch the file must see it already converged: sshd's
+# PAM stack READS it through pam_unix, and mosd WRITES the root: line when it
+# applies the per-device password. Running after either of them would mean a
+# boot where an account added by an update has no shadow entry, or a race with
+# mosd's atomic replace.
+Before=mosd.service ssh.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/lib/mos/mos-shadow-reconcile
+
+[Install]
+WantedBy=multi-user.target

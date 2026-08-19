@@ -1,6 +1,6 @@
 # NAS Appliance Refactor - Task List
 
-> Updated: 2026-08-17
+> Updated: 2026-08-19
 
 ## Usage
 
@@ -51,3 +51,14 @@ Each task is a single line linking to its detail file. All detailed information 
 - [x] [**RFCT-018 U-Boot A/B handshake contract for a custom mainline U-Boot**](RFCT-018.md) `P0`
 - [x] [**RFCT-019 PMA documentation finalize for PLAN-010 M4**](RFCT-019.md) `P1`
 - [-] [**RFCT-020 Partition layout v2 constants + mkimage v2 mode (cx3576)**](RFCT-020.md) `P1`
+- [x] [**RFCT-021 Settings schema v3 - access, provisioning and wifi subtrees**](RFCT-021.md) `P1`
+- [x] [**RFCT-022 On-device identity and per-device credential generation**](RFCT-022.md) `P1`
+- [x] [**RFCT-023 sshd gating reconciler - drop-in render, unit state and root password**](RFCT-023.md) `P1`
+- [x] [**RFCT-024 First-boot self-provisioning in mosd (provisioning Layer 1)**](RFCT-024.md) `P1`
+- [x] [**RFCT-025 WiFi station reconciler in mosd (wpa_supplicant, uplink only)**](RFCT-025.md) `P1`
+- [x] [**RFCT-026 WiFi access-point reconciler in mosd (hostapd, provisioning AP)**](RFCT-026.md) `P1`
+- [x] [**RFCT-027 Image + verifier integration for the M5 access, provisioning and connd features**](RFCT-027.md) `P1`
+- [x] [**RFCT-028 PMA documentation finalize for PLAN-010 M5**](RFCT-028.md) `P1`
+- [x] [**RFCT-029 /etc/shadow on STATE (symlink, factory copy, boot reconcile, verifier proof)**](RFCT-029.md) `P1`
+- [x] [**RFCT-030 Power actions: mosd Reboot/PowerOff + webd POST routes**](RFCT-030.md) `P1`
+- [x] [**RFCT-031 The Rockchip loader area becomes a real GPT partition**](RFCT-031.md) `P1`

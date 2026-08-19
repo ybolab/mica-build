@@ -46,6 +46,8 @@ trait Mosd {
     fn set_settings(&self, path: &str, value_json: &str) -> zbus::Result<()>;
     fn get_state(&self, path: &str) -> zbus::Result<String>;
     fn report_health(&self, component: &str, status: &str, detail: &str) -> zbus::Result<()>;
+    fn reboot(&self) -> zbus::Result<()>;
+    fn power_off(&self) -> zbus::Result<()>;
     #[zbus(signal)]
     fn settings_changed(&self, path: &str, value_json: &str) -> zbus::Result<()>;
 }
@@ -99,7 +101,7 @@ async fn bus_roundtrip() -> anyhow::Result<()> {
     .await?;
     let defaults: serde_json::Value = serde_json::from_str(&defaults)?;
     assert_eq!(defaults["hostname"], "mos");
-    assert_eq!(defaults["schema_version"], 2);
+    assert_eq!(defaults["schema_version"], mosd_settings::SCHEMA_VERSION);
 
     let mut changed = proxy.receive_settings_changed().await?;
     proxy.set_settings("hostname", "\"unit-test-host\"").await?;
@@ -137,6 +139,40 @@ async fn bus_roundtrip() -> anyhow::Result<()> {
     assert_eq!(health["status"], "degraded");
     assert_eq!(health["detail"], "/var at 91% of capacity (threshold 85%)");
     assert!(proxy.report_health("", "ok", "").await.is_err());
+
+    // Power actions. Assert the safety precondition FIRST: the daemon under
+    // test must be in dry-run, where its PowerControl is the no-op one and
+    // `Systemd` — the only thing that can reach the host system bus — is never
+    // constructed. If someone drops MOSD_DRY_RUN from the spawn above, this
+    // fails before a single power method is invoked rather than after.
+    let dry_run = proxy.get_state("dry_run").await?;
+    assert_eq!(
+        dry_run, "true",
+        "refusing to invoke power methods against a daemon that is not in dry-run"
+    );
+
+    // What is asserted below is the wiring — that D-Bus member `Reboot` runs
+    // the reboot handler and `PowerOff` runs the power-off handler, each
+    // recording itself in the live-state tree before acting.
+    proxy.reboot().await?;
+    let power = proxy.get_state("power").await?;
+    let power: serde_json::Value = serde_json::from_str(&power)?;
+    assert_eq!(power["last_action"], "reboot");
+    assert!(
+        power["requested_by"]
+            .as_str()
+            .is_some_and(|sender| sender.starts_with(':')),
+        "requested_by should be the caller's unique bus name, got {power}"
+    );
+
+    proxy.power_off().await?;
+    let power = proxy.get_state("power").await?;
+    let power: serde_json::Value = serde_json::from_str(&power)?;
+    assert_eq!(power["last_action"], "power_off");
+
+    // Settings are untouched by power actions: they are actions, not state.
+    let after = proxy.get_settings("hostname").await?;
+    assert_eq!(after, "\"unit-test-host\"");
 
     assert!(proxy.get_settings("no.such.path").await.is_err());
     assert!(proxy.set_settings("hostname", "not json").await.is_err());

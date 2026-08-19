@@ -269,9 +269,258 @@ assumption stops holding.
 
 ### M5 - access + provisioning + connd on the new base
 
+- **Status**: implementation complete — RFCT-021 (settings schema v3), RFCT-022
+  (on-device identity and per-device secrets), RFCT-023 (sshd reconciler),
+  RFCT-024 (first-boot self-provisioning), RFCT-025 (WiFi station reconciler),
+  RFCT-026 (WiFi access-point reconciler), RFCT-027 (image + verifier
+  integration), RFCT-029 (`/etc/shadow` on STATE), RFCT-030 (power actions),
+  RFCT-031 (the loader partition) and RFCT-028 (these docs). Done criteria met
+  locally 2026-08-19. **Every on-device behaviour — an SSH login, an
+  association, an AP a client can join, a first boot on real flash — remains
+  the user's hardware acceptance and is not claimed here.**
 - access.md phase 1 (per-device password, gated sshd), provisioning.md Layer 1
   (first-boot self-provisioning in mosd), connd reconcilers over
   wpa_supplicant/hostapd (much thinner: systemd owns lifecycles).
+
+#### What was delivered
+
+- **Settings schema v3** — `access.ssh` / `access.console` / `access.device`,
+  `provisioning`, `wifi.client` and `wifi.ap`, with `MigrateV2ToV3` in both
+  directions. `access.webAdmin` is byte-identical through the upgrade. See
+  `docs/design/mosd.md` §5.1–5.2.
+- **On-device identity and per-device secrets** — `deviceId`, the device
+  password and the AP PSK, all independent CSPRNG draws, minted on the device at
+  first boot and persisted to STATE at 0600 inside a 0700 directory. Nothing
+  secret enters the signed rootfs. See `docs/design/provisioning.md` §3.
+- **First-boot self-provisioning** — provisioning.md Layer 1, running with no
+  network of any kind: hostname derived from the device identity, SSH default
+  taken from the image profile, `network` seeded empty, one atomic settings save
+  as the commit point.
+- **The sshd reconciler** — renders `/etc/ssh/sshd_config.d/10-mos.conf`, writes
+  the device password into the root shadow entry, and drives `ssh.service`, in
+  that order.
+- **`/etc/shadow` on STATE** — a symlink into the STATE-backed tree, seeded from
+  a factory copy and reconciled on every boot. This is what makes per-device
+  password auth possible at all on the read-only root. See
+  `docs/design/ro-root.md` §4.
+- **connd, as two mosd reconcilers** — `wifi.client` over wpa_supplicant and
+  `wifi.ap` over hostapd, with systemd owning the unit lifecycles and networkd's
+  built-in `DHCPServer=yes` serving the AP (no dnsmasq). The single-radio
+  conflict is **reported, not arbitrated**. See `docs/design/connd.md`, which is
+  new and supersedes PLAN-008's Talos/COSI mechanism.
+- **Image integration** — `wpasupplicant` and `hostapd` in both pipelines'
+  allowlists, STATE-backed `/etc/wpa_supplicant` and `/etc/hostapd`, a
+  `dev`/`prod` image profile at `/usr/lib/mos/profile.conf`, and the verifier
+  assertions that prove the image and mosd agree.
+- **Power actions** — `Reboot` and `PowerOff` on `com.mos.mosd1`, forwarded to
+  systemd, exposed by webd as authenticated POST-only routes behind an explicit
+  confirmation. Until this, nothing in mos could get from "update installed" to
+  "update running" other than a shell.
+- **The loader partition** — the Rockchip idbloader area became a real GPT
+  partition, fixing a defect that wiped the bootloader on first boot. See below.
+- **The v2 repart definitions actually grow now.** `uenv-a`/`uenv-b` are 64 KiB
+  and repart will not claim an existing partition smaller than a definition's
+  minimum size (default 10 MiB), so it concluded it had to create two new
+  partitions, could not place them, and **aborted the whole run before touching
+  anything**. v2's `/srv` therefore never grew on a real device, and the refusal
+  looked exactly like a clean exit. Fixed with `SizeMinBytes=0` in both
+  placeholder definitions.
+
+#### Verification (2026-08-19, done criteria met locally)
+
+Every number below was measured by running the command on the merged tree, not
+copied from a task record:
+
+- `make os-image-cx3576` + `bash os/verify-image.sh` — `RESULT: PASS (126/126 checks)`.
+- `make os-image-cx3576-v2` + `bash os/verify-image-v2.sh` — `RESULT: PASS (293/293 checks)`.
+- `make os-health-test` — `RESULT: PASS (54/54 checks)`.
+- `make os-repart-test` — `RESULT: PASS (18/18 checks)`.
+- `bash mosd/hack/check.sh` — `ALL CHECKS PASSED`, `203 tests run: 203 passed, 0 skipped`.
+- v1 image 381 MiB apparent / 374 MiB on disk; v2 image 1315 MiB apparent /
+  165 MiB on disk (sparse).
+
+The verifier counts grew from M4's 88/88 and 228/228 through three independent
+task branches: the shadow work added +1 / +19, the loader partition +10 / +17,
+and the image integration +28 / +30 with 1 removed in each (the unconditional
+"ssh.service is enabled" check, replaced by the profile-conditional pair that
+covers both directions). 88+1+10+28−1 = 126 and 228+19+17+30−1 = 293, which is
+what the two runs above report.
+
+**Every number above is a local build/verify result. None of them is a hardware
+result.** No agent in this campaign has booted anything.
+
+The checks can actually fail, which was demonstrated rather than assumed.
+Negative testing used three mechanisms chosen per guard: **source-of-truth
+drift** (mutate one mosd constant, run both verifiers against the *unchanged*
+images — the failure mode the extraction exists to catch, and it fires on both
+pipelines at once); **image mutation** (a copy of the assembled image, mutated
+with `debugfs -w` and written back); and **a deliberately broken build** from a
+mutated Dockerfile, on which fourteen distinct guards fired, one per broken
+property, and nothing else. A `prod` build of *both* pipelines was also verified
+end to end at 126/126 and 293/293 — a guard that fails on a healthy image is as
+bad as one that never fires.
+
+#### Three places where an approved design doc contradicted the shipped code
+
+This is the documentation form of the defect class the campaign exists to
+prevent. A design document that says the opposite of the code makes a reader
+confident about something false, exactly as a passing test that proves nothing
+does. All three are now corrected in the documents themselves:
+
+| Document | Said | Ships | Resolution |
+|---|---|---|---|
+| `access.md` §3 | `listenAddresses: []` — "empty = none" | empty = **listen on ALL**; no `ListenAddress` directive is emitted | **Doc amended to match the code.** The "none" reading would give an operator who enables SSH without naming an address a running-but-unreachable sshd, and closure is already expressed by `enabled: false` |
+| `ro-root.md` §4 | `/etc/shadow` is read-only, on the verity squashfs | symlink into STATE, seeded from a factory copy, reconciled every boot | **Doc amended.** The contract genuinely changed; per-device password auth on v2 works *only* because of it |
+| `provisioning.md` §2 | Layer 1 in machined under COSI, generating per-device **PKI** | Layer 1 in mosd on systemd; no PKI is generated, because nothing consumes one | **Doc rewritten** to what ships, with the dropped PKI claim called out |
+
+A fourth, found while editing: `ro-root.md`'s partition numbers (META p7, STATE
+p8, EPHEMERAL p9, DATA p10) predate the loader partition and were off by one
+throughout. Corrected against `os/layout/cx3576-v2.env`.
+
+And one **deliberate deviation from an approved plan**, recorded rather than
+quietly taken: PLAN-008 Part D says the AP PSK "defaults to the per-device
+provisioning PIN". It does not — it is a second, independent CSPRNG draw.
+Reusing one string couples two very differently exposed credentials: the WPA2
+PSK is broadcast-adjacent and offline-crackable from a captured handshake, and if
+it is also the device password then recovering the WiFi key hands over the root
+shell. A test asserts the two differ, so a future "simplification" fails the
+build. See `docs/design/provisioning.md` §3.2.
+
+#### What could NOT be proven, stated as plainly as M4's `CONFIG_SQUASHFS_XATTR`
+
+M4's section here recorded an assertion that could not be made. M5 has four.
+
+- **That the device's PAM stack accepts the hash mosd writes.** The image
+  verifier proves the libcrypt packed in the image implements `$2b$` — measured
+  on the arm64 object itself, zero `argon2` strings against
+  `$1$ $2a$ $2b$ $2x$ $2y$ $3$ $5$ $6$ $7$ $gy$ $sha1$ $y$` — and the Rust tests
+  prove the value written is well-formed bcrypt at the shipped cost that the
+  device password round-trips through `bcrypt::verify`. **Neither proves a login
+  succeeds.** No test here can: the test host is x86 and the library is an arm64
+  object inside an image. This is the one property whose failure is most
+  expensive, because it looks green from every angle — and it already went wrong
+  once, when the first version wrote Argon2id into a field libcrypt cannot parse.
+- **That first boot actually seeds `access.ssh.enabled` from the profile file.**
+  The verifiers prove the image and mosd agree about the path, the key, the value
+  and the matching static enablement. The seeding itself is `provisioning.rs`'s
+  unit tests plus a real boot.
+- **That `/etc/wpa_supplicant` and `/etc/hostapd` are writable at runtime** —
+  only that each is a STATE-backed bind that is enabled and whose source the seed
+  script creates. Whether the mount comes up is a boot-time fact. (v1 cannot
+  assert STATE backing at all; it has no STATE partition, so it asserts what is
+  true there instead.)
+- **That `provisioning.rs` issues no network syscall.** The claim rests on the
+  module's import list and a mechanical grep over its non-comment lines. A unit
+  test cannot establish it, and claiming otherwise would be the M4 mistake.
+
+One guard was **not** negative-tested: the build-time gate that rejects a
+statically enabled unit template. The broken v2 build removed that gate along
+with the masking block it lives in, so the run demonstrated the *verifier*
+catching the problem rather than the build. The verifier is the guard that
+ships.
+
+#### Debian's packaging actively fights the reconcilers
+
+Recorded here because it is the kind of interaction that looks like nothing in
+review and costs a day on hardware, and because the fix is **masking, not
+disabling**:
+
+- `wpasupplicant` ships an **enabled** `wpa_supplicant.service` with **no
+  condition gating it**, so it *does* start. Worse, its
+  `RuntimeDirectory=wpa_supplicant` makes systemd **delete `/run/wpa_supplicant`
+  when it stops**, taking the control socket of the templated instance mosd
+  started with it.
+- `hostapd` likewise ships an enabled `hostapd.service`, inert today *only*
+  because its `ConditionFileNotEmpty` is unsatisfied — one operator `cp` away
+  from a second hostapd on the same radio while mosd's instance reports healthy.
+- All three units, plus the D-Bus alias `dbus-fi.w1.wpa_supplicant1.service`, are
+  **masked rather than disabled**, because `wpasupplicant` ships a D-Bus
+  activation file that a plain `disable` leaves open.
+
+The reconciler-facing detail — `network.rs` deletes every `*-mos-*.network` it
+did not render, so reconciler-rendered units must use prefixes outside that
+pattern — is in `docs/design/connd.md` §6. It bit an L3 during this campaign.
+
+#### The loader partition, and its consequence for already-flashed boards
+
+`systemd-repart` discards every region no GPT partition entry covers, on the
+first boot, while growing the last partition. The Rockchip idbloader at raw
+LBA 64 was outside every partition, so the first-boot growth run TRIMmed it away:
+the device booted once and came up in maskrom on the next power-on. Reproduced on
+a real image on a loop device — LBA 64 went from `524b4e53` (`RKNS`) to
+`00000000`.
+
+**This generalises to any SoC that boots from a raw offset**, not just Rockchip.
+The fix is structural rather than a `--discard=no` flag: the loader area is now a
+real GPT partition, first-boot TRIM stays enabled, and protection comes from the
+entry existing. The geometry was revised **before any fielded flash**, which is
+the only reason it was cheap.
+
+Two defects interacted and must not be separated: while the repart definitions
+were broken they *masked* the loader-wipe hazard on v2, because repart aborted
+before reaching the discard. **Fixing the definitions on a layout without the
+loader partition would have un-masked a bootloader wipe.** The two changes travel
+together or not at all; a note to that effect is in both `.conf` files.
+
+**Consequence: a board already flashed with an earlier image has had its loader
+discarded and must be re-flashed in maskrom.** Writing a new image over eMMC from
+the running system does not recover it. This is recorded next to the bring-up
+steps in `docs/design/uboot-ab-handshake.md` §8.0.
+
+#### What remains the user's hardware acceptance
+
+Not claimed, not testable in this repository. Nothing in M5 has been near a
+radio, a real boot or a real flash:
+
+- **SSH gating on real hardware** — that `access.ssh.enabled` opens and closes a
+  reachable sshd, and that the per-device password actually logs in through PAM.
+- **AP mode on a real radio** — that hostapd beacons, that a client associates,
+  and that networkd's DHCP server hands out a usable address. Whether the AP6275S
+  vendor driver supports AP mode at all is the known hardware risk (PLAN-008
+  Risks) and only a radio can settle it.
+- **Station mode on a real radio** — association and a DHCP lease.
+- **First-boot behaviour on a device** — that an unboxed board with no network
+  seeds itself, mints its secrets on real flash, and comes up named and
+  credentialled.
+- **The A/B switch and rollback**, carried forward unchanged from M4.
+- **That `Reboot`/`PowerOff` actually power the appliance.**
+- **That first-boot growth grows `/srv` on real eMMC**, and that the loader
+  survives it there. Both are proven on a loop device with a real
+  `systemd-repart`; neither is proven on the board.
+
+#### Recorded follow-ups (not implemented)
+
+- **No credential-rotation path.** Nothing can change a device password or an AP
+  PSK after first boot. A STATE wipe is the only way to get new ones. This is a
+  gap, not a design position, and is the first thing a later phase should close.
+- **A STATE directory added after devices exist will not be seeded.**
+  `mos-seed-state` is gated by `ConditionPathExists=!/mnt/state/.mos-state-seeded`,
+  so on an already-seeded device the whole oneshot is skipped and a newly added
+  bind mount has no source. Pre-existing shape, harmless today because nothing is
+  field-seeded — but **any future image that adds a STATE directory needs a
+  seed-generation bump**. See `docs/design/ro-root.md` §4.
+- **Rebooting a PENDING_CONFIRM slot burns a boot attempt**, and the power pane
+  has no update-state awareness and does not warn.
+- **No auto-reboot after `rauc install`** — a decision, not a gap. The user
+  decides when the appliance goes down.
+- **Automatic STA/AP arbitration is not implemented.** `holdDownSeconds` and
+  `graceSeconds` are in the schema and deliberately consumed by nothing;
+  `mode: provisioning` currently behaves exactly like `always`.
+- **WPA3-SAE is not expressible** in the settings schema, on either the station
+  or the AP side. A schema change, not a renderer change.
+- **Station passphrase length is unvalidated.** wpa_supplicant requires 8–63
+  characters and rejects the *entire file* on a shorter one, taking every network
+  down. Validation belongs in `mosd-settings`.
+- **`write_atomically` is duplicated across three reconcilers** (`sshd.rs`,
+  `wifi_client.rs`, `wifi_ap.rs`); each task was forbidden to edit the others'
+  files. Now that they have all landed, lifting it into a shared helper is worth
+  doing.
+- **`access.console.shellEnabled` has no consumer**, and neither META lockdown
+  nor the brute-force counters nor the audit trail of access.md §5.2/§6 exist.
+- **The `.zh.md` translations are stale.** `access.zh.md`, `provisioning.zh.md`
+  and `mosd.zh.md` still describe the Talos/COSI mechanism and the pre-M5
+  contracts. They were deliberately not touched; whoever owns translations owns
+  refreshing them.
 
 ### M6 - workload layer: balena-engine
 

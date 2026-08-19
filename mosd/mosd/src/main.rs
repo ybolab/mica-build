@@ -9,14 +9,20 @@
 //! - `MOSD_SETTINGS_PATH` — settings file location (default
 //!   `/var/lib/mos/settings.toml`).
 //! - `MOSD_BUS` — `system` (default) or `session`.
-//! - `MOSD_DRY_RUN` — when `1`, no reconcilers are constructed and the
-//!   live-state root carries `{"dry_run": true}`; used by tests so the
-//!   daemon never touches the host it runs on.
+//! - `MOSD_DRY_RUN` — when `1`, first-boot provisioning is skipped, no
+//!   reconcilers are constructed, power actions are routed to a no-op
+//!   control, and the live-state root carries `{"dry_run": true}`; used by
+//!   tests so the daemon never touches the host it runs on.
 
 #![forbid(unsafe_code)]
 
 mod bus;
+mod identity;
+mod power;
+mod provisioning;
 mod reconciler;
+
+use std::path::{Path, PathBuf};
 
 use anyhow::Context;
 use mosd_settings::Store;
@@ -33,14 +39,42 @@ async fn main() -> anyhow::Result<()> {
     let dry_run = std::env::var("MOSD_DRY_RUN").is_ok_and(|value| value == "1");
 
     let store = Store::new(&settings_path);
-    let settings = store
+    let mut settings = store
         .load()
         .with_context(|| format!("load settings from {settings_path}"))?;
+
+    // Before the reconcilers exist, so the very first reconcile already sees a
+    // seeded tree rather than the built-in defaults. Skipped under dry-run,
+    // which must not write to STATE at all.
+    if dry_run {
+        tracing::info!("dry run: first-boot provisioning skipped");
+    } else {
+        let state_dir = state_dir_for(&settings_path);
+        // Hard failure on purpose: an unwritable STATE means no device identity
+        // and no device credential, so there is no usable device to serve. A
+        // loud exit is better than a daemon that quietly serves an
+        // unprovisioned tree the operator cannot log in to.
+        let outcome = provisioning::ensure_provisioned(
+            &store,
+            &state_dir,
+            Path::new(provisioning::DEFAULT_PROFILE_PATH),
+            &mut settings,
+        )
+        .context("first-boot provisioning")?;
+        tracing::info!(?outcome, state_dir = %state_dir.display(), "provisioning checked");
+    }
 
     let reconcilers = if dry_run {
         Vec::new()
     } else {
         reconciler::all()
+    };
+    // Under dry-run the production control is never constructed, so a daemon
+    // started by a test cannot reach systemd's manager at all.
+    let power: Box<dyn power::PowerControl> = if dry_run {
+        Box::new(power::DryRunPower)
+    } else {
+        Box::new(power::Systemd::new())
     };
     tracing::info!(
         settings_path,
@@ -54,7 +88,7 @@ async fn main() -> anyhow::Result<()> {
         state.insert("dry_run".to_string(), Value::Bool(true));
     }
 
-    let service = bus::MosdService::new(store, settings, reconcilers, Value::Object(state));
+    let service = bus::MosdService::new(store, settings, reconcilers, power, Value::Object(state));
     service.apply_all().await;
 
     let builder = match bus_kind.as_str() {
@@ -76,4 +110,19 @@ async fn main() -> anyhow::Result<()> {
         _ = tokio::signal::ctrl_c() => tracing::info!("SIGINT received, exiting"),
     }
     Ok(())
+}
+
+/// Directory holding STATE-backed data for a settings file at `settings_path`.
+///
+/// The secrets live beside the settings file, so tests that redirect
+/// `MOSD_SETTINGS_PATH` into a temporary directory redirect the secrets with
+/// it and never touch the host's `/var/lib/mos`.
+fn state_dir_for(settings_path: &str) -> PathBuf {
+    Path::new(settings_path)
+        .parent()
+        .filter(|parent| !parent.as_os_str().is_empty())
+        .map_or_else(
+            || PathBuf::from(identity::DEFAULT_STATE_DIR),
+            Path::to_path_buf,
+        )
 }

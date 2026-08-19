@@ -1,6 +1,6 @@
 //! Settings library for mosd.
 //!
-//! Provides the typed settings tree (schema v2), a Venus-style dot-path
+//! Provides the typed settings tree (schema v3), a Venus-style dot-path
 //! get/set API, atomic TOML persistence on STATE, and a Bottlerocket-style
 //! bidirectional migration framework.
 
@@ -13,9 +13,13 @@ mod path;
 mod store;
 
 pub use error::SettingsError;
-pub use migration::{MigrateV0ToV1, MigrateV1ToV2, Migration, MigrationRegistry, migrate};
+pub use migration::{
+    MigrateV0ToV1, MigrateV1ToV2, MigrateV2ToV3, Migration, MigrationRegistry, migrate,
+};
 pub use model::{
-    AccessSettings, IfaceSettings, SCHEMA_VERSION, Settings, StaticConfig, WebAdminSettings,
+    AccessSettings, ApMode, ConsoleSettings, DeviceCredentialSettings, IfaceSettings,
+    ProvisioningSettings, ProvisioningState, SCHEMA_VERSION, Settings, SshSettings, StaticConfig,
+    WebAdminSettings, WifiApSettings, WifiClientSettings, WifiNetwork, WifiSettings,
 };
 pub use path::json_path_get;
 pub use store::{DEFAULT_PATH, Store};

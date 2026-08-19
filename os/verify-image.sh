@@ -2,8 +2,9 @@
 set -euo pipefail
 
 # Verifies a cx3576 mos disk image against the PLAN-010 M1 image contract:
-# GPT layout, raw u-boot, FAT boot partition contents and the Debian systemd
-# rootfs on p2, plus the mosd daemon integration (binary, unit, D-Bus policy).
+# GPT layout, the raw u-boot inside its own loader partition, FAT boot partition
+# contents and the Debian systemd rootfs on p3, plus the mosd daemon integration
+# (binary, unit, D-Bus policy).
 # Emits one PASS:/FAIL: line per check and a final
 # "RESULT: PASS|FAIL (n/m checks)" summary; exits non-zero if any check fails.
 # Totals are dynamic (PASS_N/total); nothing to hand-bump when checks change.
@@ -18,22 +19,36 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(dirname "${SCRIPT_DIR}")"
 BOARD_DIR="${BOARD_DIR:-${REPO_ROOT}/board/cx3576}"
 
-# Image contract constants. Both partition sizes are content-derived, so they
-# are read from the GPT instead of being fixed here — p1 only has to clear the
-# BOOT_MIN_SIZE_MIB floor and land on a BOOT_ALIGN_MIB boundary, and the p2
-# start plus the FAT/rootfs extraction offsets follow from the partition
-# entries. The total image size follows as 16 MiB pre-boot area + p1 + p2 +
-# 1 MiB backup-GPT slack.
+# The loader partition's geometry, label, typecode, GUID and idbloader magic are
+# the SAME facts v1 and v2 share, so they are sourced from the layout file rather
+# than restated here. Everything else below is v1's own contract.
+LAYOUT_ENV="${SCRIPT_DIR}/layout/cx3576-v2.env"
+if [ ! -f "${LAYOUT_ENV}" ]; then
+    echo "error: ${LAYOUT_ENV} not found" >&2
+    exit 1
+fi
+# shellcheck source=layout/cx3576-v2.env
+. "${LAYOUT_ENV}"
+
+# Image contract constants. Both filesystem partition sizes are content-derived,
+# so they are read from the GPT instead of being fixed here — p2 only has to
+# clear the BOOT_MIN_SIZE_MIB floor and land on a BOOT_ALIGN_MIB boundary, and
+# the p3 start plus the FAT/rootfs extraction offsets follow from the partition
+# entries. The total image size follows as 16 MiB pre-boot area + p2 + p3 +
+# 1 MiB backup-GPT slack; the loader partition lives inside that head area and
+# adds nothing to it.
 DISK_GUID="5AC35760-0001-4000-8000-000000000000"
 BOOT_GUID="5AC35760-0001-4000-8000-000000000001"
 ROOTFS_GUID="5AC35760-0001-4000-8000-000000000002"
-ESP_TYPE="C12A7328-F81F-11D2-BA4B-00A0C93EC93B"
-LINUX_FS_DATA="0FC63DAF-8483-4772-8E79-3D69D8477DE4"
+ESP_TYPE="${TYPECODE_ESP}"
+LINUX_FS_DATA="${TYPECODE_LINUX}"
 ROOTFS_UUID="5ac35760-0002-4000-8000-000000000002"
-BOOT_FIRST_SECTOR=32768
+BOOT_PARTNUM=2
+ROOTFS_PARTNUM=3
+BOOT_FIRST_SECTOR=$((LOADER_START_SECTOR + LOADER_SIZE_SECTORS))
 BOOT_MIN_SIZE_MIB=64
 BOOT_ALIGN_MIB=4
-UBOOT_OFFSET_BYTES=$((64 * 512))
+UBOOT_OFFSET_BYTES=$((LOADER_START_SECTOR * SECTOR_SIZE))
 FREE_FLOOR_BYTES=$((32 * 1024 * 1024))
 KERNEL_VERSION="6.1.115"
 APPEND_LINE="append root=PARTLABEL=rootfs rw console=ttyFIQ0,1500000 earlycon=uart8250,mmio32,0x2ad40000 storagemedia=emmc net.ifnames=0 rootwait"
@@ -155,10 +170,10 @@ else
     fail "disk GUID is '${disk_guid}', expected ${DISK_GUID}"
 fi
 part_count="$(echo "${ptable}" | grep -cE '^[[:space:]]+[0-9]+[[:space:]]' || true)"
-if [ "${part_count}" = "2" ]; then
-    pass "exactly 2 partitions"
+if [ "${part_count}" = "3" ]; then
+    pass "exactly 3 partitions"
 else
-    fail "found ${part_count} partitions, expected 2"
+    fail "found ${part_count} partitions, expected 3"
 fi
 
 # Extract one field from sgdisk -i output.
@@ -166,19 +181,80 @@ sg_field() {
     echo "$1" | sed -n "s/^$2: //p" | head -n1
 }
 
-# --- p1 (boot) ---
-p1="$(sgdisk -i 1 "${IMG}" 2>&1 || true)"
+# --- p1 (loader) ---
+# The Rockchip idbloader area is a real GPT partition, and that is what stops
+# systemd-repart from discarding it during first-boot growth. Every assertion
+# here is against the ASSEMBLED image, because sgdisk is free to relocate a
+# non-2048-aligned start and asserting the intent would hide exactly that.
+pL="$(sgdisk -i "${LOADER_PARTNUM}" "${IMG}" 2>&1 || true)"
+pL_name="$(sg_field "${pL}" "Partition name")"
+if [ "${pL_name}" = "'${LOADER_LABEL}'" ]; then
+    pass "p${LOADER_PARTNUM} name is '${LOADER_LABEL}'"
+else
+    fail "p${LOADER_PARTNUM} name is ${pL_name:-unreadable}, expected '${LOADER_LABEL}'"
+fi
+pL_first="$(sg_field "${pL}" "First sector" | awk '{print $1}')"
+if [ "${pL_first}" = "${LOADER_START_SECTOR}" ]; then
+    pass "p${LOADER_PARTNUM} first sector is ${LOADER_START_SECTOR} (where the RK3576 BootROM looks)"
+else
+    fail "p${LOADER_PARTNUM} first sector is '${pL_first}', expected ${LOADER_START_SECTOR}; sgdisk relocates a non-2048-aligned start unless -a ${GPT_ALIGN_SECTORS} is used, and a relocated loader partition leaves the bootloader in a discardable gap"
+fi
+pL_size="$(sg_field "${pL}" "Partition size" | awk '{print $1}')"
+if [ "${pL_size}" = "${LOADER_SIZE_SECTORS}" ]; then
+    pass "p${LOADER_PARTNUM} size is ${LOADER_SIZE_SECTORS} sectors"
+else
+    fail "p${LOADER_PARTNUM} size is '${pL_size}' sectors, expected ${LOADER_SIZE_SECTORS}"
+fi
+pL_type="$(sg_field "${pL}" "Partition GUID code" | awk '{print $1}')"
+if [ "${pL_type^^}" = "${LOADER_TYPECODE}" ]; then
+    pass "p${LOADER_PARTNUM} typecode is ${LOADER_TYPECODE} (Linux reserved)"
+else
+    fail "p${LOADER_PARTNUM} typecode is '${pL_type}', expected ${LOADER_TYPECODE}"
+fi
+# The distinct type is what keeps the loader out of systemd-repart's matching.
+# /etc/repart.d ships exactly one definition, Type=linux-generic, so it can only
+# ever pair with a linux-generic partition — demonstrated, not assumed, by
+# counting them in the assembled GPT.
+if [ "${pL_type^^}" != "${LINUX_FS_DATA}" ] && [ "${pL_type^^}" != "${ESP_TYPE}" ]; then
+    pass "p${LOADER_PARTNUM} type differs from linux-generic and from the ESP type, so no repart definition can match it"
+else
+    fail "p${LOADER_PARTNUM} type '${pL_type}' collides with a type repart definitions use; the grow definition would attach to the loader"
+fi
+pL_guid="$(sg_field "${pL}" "Partition unique GUID")"
+if [ "${pL_guid^^}" = "${LOADER_V1_GUID}" ]; then
+    pass "p${LOADER_PARTNUM} GUID is ${LOADER_V1_GUID}"
+else
+    fail "p${LOADER_PARTNUM} GUID is '${pL_guid}', expected ${LOADER_V1_GUID}"
+fi
+# The partition must abut the boot partition: a gap between them would be a
+# region no entry covers, which is the state repart discards.
+if [[ "${pL_first}" =~ ^[0-9]+$ ]] && [[ "${pL_size}" =~ ^[0-9]+$ ]] &&
+    [ $((pL_first + pL_size)) -eq "${BOOT_FIRST_SECTOR}" ]; then
+    pass "p${LOADER_PARTNUM} ends exactly where the boot partition begins (sector ${BOOT_FIRST_SECTOR}), leaving no untracked gap"
+else
+    fail "p${LOADER_PARTNUM} ends at sector $((${pL_first:-0} + ${pL_size:-0})) but the boot partition starts at ${BOOT_FIRST_SECTOR}"
+fi
+# The first byte of the partition must be the idbloader magic.
+loader_magic="$(dd if="${IMG}" bs="${SECTOR_SIZE}" skip="${LOADER_START_SECTOR}" count=1 status=none 2>/dev/null | od -An -tx1 -N4 | tr -d ' \n' || true)"
+if [ "${loader_magic}" = "${LOADER_MAGIC_HEX}" ]; then
+    pass "p${LOADER_PARTNUM} starts with the Rockchip idbloader magic ${LOADER_MAGIC_HEX} ('RKNS')"
+else
+    fail "p${LOADER_PARTNUM} starts with '${loader_magic}', expected the idbloader magic ${LOADER_MAGIC_HEX} ('RKNS')"
+fi
+
+# --- p2 (boot) ---
+p1="$(sgdisk -i "${BOOT_PARTNUM}" "${IMG}" 2>&1 || true)"
 p1_name="$(sg_field "${p1}" "Partition name")"
 if [ "${p1_name}" = "'boot'" ]; then
-    pass "p1 name is 'boot'"
+    pass "p${BOOT_PARTNUM} name is 'boot'"
 else
-    fail "p1 name is ${p1_name:-unreadable}, expected 'boot'"
+    fail "p${BOOT_PARTNUM} name is ${p1_name:-unreadable}, expected 'boot'"
 fi
 p1_first="$(sg_field "${p1}" "First sector" | awk '{print $1}')"
 if [ "${p1_first}" = "${BOOT_FIRST_SECTOR}" ]; then
-    pass "p1 first sector is ${BOOT_FIRST_SECTOR} (16 MiB)"
+    pass "p${BOOT_PARTNUM} first sector is ${BOOT_FIRST_SECTOR} (16 MiB)"
 else
-    fail "p1 first sector is '${p1_first}', expected ${BOOT_FIRST_SECTOR}"
+    fail "p${BOOT_PARTNUM} first sector is '${p1_first}', expected ${BOOT_FIRST_SECTOR}"
 fi
 if [[ "${p1_first}" =~ ^[0-9]+$ ]]; then
     FAT_OFFSET_BYTES=$((p1_first * 512))
@@ -189,80 +265,99 @@ p1_size="$(sg_field "${p1}" "Partition size" | awk '{print $1}')"
 if [[ "${p1_size}" =~ ^[0-9]+$ ]] && [ $((p1_size % 2048)) -eq 0 ] &&
     [ "${p1_size}" -ge $((BOOT_MIN_SIZE_MIB * 2048)) ]; then
     BOOT_SIZE_MIB=$((p1_size / 2048))
-    pass "p1 size is ${p1_size} sectors (${BOOT_SIZE_MIB} MiB, whole-MiB and >= ${BOOT_MIN_SIZE_MIB} MiB floor)"
+    pass "p${BOOT_PARTNUM} size is ${p1_size} sectors (${BOOT_SIZE_MIB} MiB, whole-MiB and >= ${BOOT_MIN_SIZE_MIB} MiB floor)"
 else
     BOOT_SIZE_MIB=0
-    fail "p1 size is '${p1_size}' sectors, expected a whole-MiB multiple of at least ${BOOT_MIN_SIZE_MIB} MiB"
+    fail "p${BOOT_PARTNUM} size is '${p1_size}' sectors, expected a whole-MiB multiple of at least ${BOOT_MIN_SIZE_MIB} MiB"
 fi
 if [ "${BOOT_SIZE_MIB}" -gt 0 ] && [ $((BOOT_SIZE_MIB % BOOT_ALIGN_MIB)) -eq 0 ]; then
-    pass "p1 size ${BOOT_SIZE_MIB} MiB is a multiple of ${BOOT_ALIGN_MIB} MiB"
+    pass "p${BOOT_PARTNUM} size ${BOOT_SIZE_MIB} MiB is a multiple of ${BOOT_ALIGN_MIB} MiB"
 else
-    fail "p1 size ${BOOT_SIZE_MIB} MiB is not a multiple of ${BOOT_ALIGN_MIB} MiB"
+    fail "p${BOOT_PARTNUM} size ${BOOT_SIZE_MIB} MiB is not a multiple of ${BOOT_ALIGN_MIB} MiB"
 fi
 p1_attrs="$(sg_field "${p1}" "Attribute flags")"
 if [[ "${p1_attrs}" =~ ^[0-9A-Fa-f]+$ ]] && [ $((16#${p1_attrs} & 4)) -ne 0 ]; then
-    pass "p1 attribute bit 2 is set (flags ${p1_attrs})"
+    pass "p${BOOT_PARTNUM} attribute bit 2 is set (flags ${p1_attrs})"
 else
-    fail "p1 attribute bit 2 not set (flags '${p1_attrs}')"
+    fail "p${BOOT_PARTNUM} attribute bit 2 not set (flags '${p1_attrs}')"
 fi
 p1_type="$(sg_field "${p1}" "Partition GUID code" | awk '{print $1}')"
 if [ "${p1_type^^}" = "${ESP_TYPE}" ]; then
-    pass "p1 typecode is ${ESP_TYPE} (ESP)"
+    pass "p${BOOT_PARTNUM} typecode is ${ESP_TYPE} (ESP)"
 else
-    fail "p1 typecode is '${p1_type}', expected ${ESP_TYPE} (ESP)"
+    fail "p${BOOT_PARTNUM} typecode is '${p1_type}', expected ${ESP_TYPE} (ESP)"
 fi
 p1_guid="$(sg_field "${p1}" "Partition unique GUID")"
 if [ "${p1_guid^^}" = "${BOOT_GUID}" ]; then
-    pass "p1 GUID is ${BOOT_GUID}"
+    pass "p${BOOT_PARTNUM} GUID is ${BOOT_GUID}"
 else
-    fail "p1 GUID is '${p1_guid}', expected ${BOOT_GUID}"
+    fail "p${BOOT_PARTNUM} GUID is '${p1_guid}', expected ${BOOT_GUID}"
 fi
 fat_sig="$(dd if="${IMG}" skip=$((FAT_OFFSET_BYTES + 82)) count=5 iflag=skip_bytes,count_bytes status=none 2>/dev/null || true)"
 if [ "${fat_sig}" = "FAT32" ]; then
-    pass "p1 has a FAT32 boot sector signature at $((FAT_OFFSET_BYTES / 1048576)) MiB"
+    pass "p${BOOT_PARTNUM} has a FAT32 boot sector signature at $((FAT_OFFSET_BYTES / 1048576)) MiB"
 else
-    fail "p1 FAT32 signature not found at offset $((FAT_OFFSET_BYTES / 1048576)) MiB + 82"
+    fail "p${BOOT_PARTNUM} FAT32 signature not found at offset $((FAT_OFFSET_BYTES / 1048576)) MiB + 82"
 fi
 
-# --- p2 (rootfs) ---
-p2="$(sgdisk -i 2 "${IMG}" 2>&1 || true)"
+# --- p3 (rootfs) ---
+p2="$(sgdisk -i "${ROOTFS_PARTNUM}" "${IMG}" 2>&1 || true)"
 p2_name="$(sg_field "${p2}" "Partition name")"
 if [ "${p2_name}" = "'rootfs'" ]; then
-    pass "p2 name is 'rootfs'"
+    pass "p${ROOTFS_PARTNUM} name is 'rootfs'"
 else
-    fail "p2 name is ${p2_name:-unreadable}, expected 'rootfs'"
+    fail "p${ROOTFS_PARTNUM} name is ${p2_name:-unreadable}, expected 'rootfs'"
 fi
 p2_first="$(sg_field "${p2}" "First sector" | awk '{print $1}')"
 ROOTFS_FIRST_SECTOR=$(((BOOT_FIRST_SECTOR / 2048 + BOOT_SIZE_MIB) * 2048))
 if [ "${BOOT_SIZE_MIB}" -gt 0 ] && [ "${p2_first}" = "${ROOTFS_FIRST_SECTOR}" ]; then
     ROOTFS_OFFSET_MIB=$((p2_first / 2048))
-    pass "p2 first sector is ${ROOTFS_FIRST_SECTOR} (${ROOTFS_OFFSET_MIB} MiB, right after p1)"
+    pass "p${ROOTFS_PARTNUM} first sector is ${ROOTFS_FIRST_SECTOR} (${ROOTFS_OFFSET_MIB} MiB, right after p${BOOT_PARTNUM})"
 else
     ROOTFS_OFFSET_MIB=0
-    fail "p2 first sector is '${p2_first}', expected ${ROOTFS_FIRST_SECTOR} (16 MiB pre-boot + ${BOOT_SIZE_MIB} MiB boot)"
+    fail "p${ROOTFS_PARTNUM} first sector is '${p2_first}', expected ${ROOTFS_FIRST_SECTOR} (16 MiB pre-boot + ${BOOT_SIZE_MIB} MiB boot)"
 fi
 p2_size="$(sg_field "${p2}" "Partition size" | awk '{print $1}')"
 if [[ "${p2_size}" =~ ^[0-9]+$ ]] && [ "${p2_size}" -gt 0 ] && [ $((p2_size % 2048)) -eq 0 ]; then
     ROOTFS_SIZE_MIB=$((p2_size / 2048))
-    pass "p2 size is ${p2_size} sectors (${ROOTFS_SIZE_MIB} MiB, a whole-MiB multiple)"
+    pass "p${ROOTFS_PARTNUM} size is ${p2_size} sectors (${ROOTFS_SIZE_MIB} MiB, a whole-MiB multiple)"
 else
     ROOTFS_SIZE_MIB=0
-    fail "p2 size is '${p2_size}' sectors, expected a positive whole-MiB multiple"
+    fail "p${ROOTFS_PARTNUM} size is '${p2_size}' sectors, expected a positive whole-MiB multiple"
 fi
 p2_type="$(sg_field "${p2}" "Partition GUID code" | awk '{print $1}')"
 if [ "${p2_type^^}" = "${LINUX_FS_DATA}" ]; then
-    pass "p2 typecode is ${LINUX_FS_DATA}"
+    pass "p${ROOTFS_PARTNUM} typecode is ${LINUX_FS_DATA}"
 else
-    fail "p2 typecode is '${p2_type}', expected ${LINUX_FS_DATA}"
+    fail "p${ROOTFS_PARTNUM} typecode is '${p2_type}', expected ${LINUX_FS_DATA}"
 fi
 p2_guid="$(sg_field "${p2}" "Partition unique GUID")"
 if [ "${p2_guid^^}" = "${ROOTFS_GUID}" ]; then
-    pass "p2 GUID is ${ROOTFS_GUID}"
+    pass "p${ROOTFS_PARTNUM} GUID is ${ROOTFS_GUID}"
 else
-    fail "p2 GUID is '${p2_guid}', expected ${ROOTFS_GUID}"
+    fail "p${ROOTFS_PARTNUM} GUID is '${p2_guid}', expected ${ROOTFS_GUID}"
 fi
 
-# --- image size: 16 MiB pre-boot + p1 + p2 + 1 MiB backup-GPT slack ---
+# repart matches definitions to partitions BY TYPE UUID in disk order, so the
+# claim "no definition can attach to the loader" reduces to a countable fact:
+# the image must carry exactly as many linux-generic partitions as the rootfs
+# ships definitions, and the loader must not be one of them. Counted from the
+# assembled GPT rather than assumed.
+linux_generic_n=0
+for n in $(seq 1 "${part_count:-0}"); do
+    t="$(sgdisk -i "${n}" "${IMG}" 2>/dev/null | sed -n 's/^Partition GUID code: //p' | awk '{print $1}')"
+    if [ "${t^^}" = "${LINUX_FS_DATA}" ]; then
+        linux_generic_n=$((linux_generic_n + 1))
+    fi
+done
+if [ "${linux_generic_n}" = "1" ]; then
+    pass "exactly 1 linux-generic partition on the disk (the rootfs), matching the single /etc/repart.d definition; the loader's ${LOADER_TYPECODE} type is unmatchable"
+else
+    fail "found ${linux_generic_n} linux-generic partitions, expected 1; /etc/repart.d ships one definition and repart pairs by type UUID in disk order, so any other count attaches growth to the wrong partition"
+fi
+
+# --- image size: 16 MiB pre-boot (which the loader partition covers) + p2 + p3
+#     + 1 MiB backup-GPT slack ---
 pre_boot_mib=$((BOOT_FIRST_SECTOR / 2048))
 expected_size=$(((pre_boot_mib + BOOT_SIZE_MIB + ROOTFS_SIZE_MIB + 1) * 1024 * 1024))
 size_terms="${pre_boot_mib} + ${BOOT_SIZE_MIB} + ${ROOTFS_SIZE_MIB} + 1 MiB"
@@ -273,16 +368,25 @@ else
     fail "image size is ${actual_size} bytes, expected ${expected_size} (${size_terms})"
 fi
 
-# --- raw u-boot at sector 64 ---
+# --- raw u-boot at sector 64, inside the loader partition ---
 if [ ! -f "${UBOOT_SRC}" ]; then
     fail "u-boot compare source not found: ${UBOOT_SRC}"
+    fail "u-boot containment check skipped (compare source missing)"
 else
     uboot_size="$(stat -c %s "${UBOOT_SRC}")"
     if dd if="${IMG}" skip="${UBOOT_OFFSET_BYTES}" count="${uboot_size}" iflag=skip_bytes,count_bytes status=none 2>/dev/null |
         cmp -s - "${UBOOT_SRC}"; then
-        pass "u-boot at sector 64 matches ${UBOOT_SRC}"
+        pass "u-boot at sector ${LOADER_START_SECTOR} matches ${UBOOT_SRC}"
     else
-        fail "u-boot at sector 64 differs from ${UBOOT_SRC}"
+        fail "u-boot at sector ${LOADER_START_SECTOR} differs from ${UBOOT_SRC}"
+    fi
+    # Containment with room to spare: the blob must end inside the partition,
+    # not merely start in it.
+    loader_bytes=$((LOADER_SIZE_SECTORS * SECTOR_SIZE))
+    if [ "${uboot_size}" -lt "${loader_bytes}" ]; then
+        pass "u-boot (${uboot_size} bytes) fits inside p${LOADER_PARTNUM} (${loader_bytes} bytes) with $((loader_bytes - uboot_size)) bytes to spare"
+    else
+        fail "u-boot is ${uboot_size} bytes but p${LOADER_PARTNUM} is only ${loader_bytes} bytes; the blob would run past the end of its own partition into ${UENV_A_LABEL}"
     fi
 fi
 
@@ -350,26 +454,26 @@ else
     fail "extlinux.conf initrd-line check skipped (file missing)"
 fi
 
-# --- p2 ext4 rootfs ---
-P2_IMG="${TMP}/p2.img"
+# --- p3 ext4 rootfs ---
+P2_IMG="${TMP}/p3.img"
 dd if="${IMG}" of="${P2_IMG}" bs=1M skip="${ROOTFS_OFFSET_MIB}" count="${ROOTFS_SIZE_MIB}" \
     conv=sparse status=none 2>/dev/null || true
 
 e2info="$(tune2fs -l "${P2_IMG}" 2>/dev/null || true)"
 e2label="$(echo "${e2info}" | sed -n 's/^Filesystem volume name:[[:space:]]*//p')"
 if [ "${e2label}" = "rootfs" ]; then
-    pass "p2 ext4 label is 'rootfs'"
+    pass "p${ROOTFS_PARTNUM} ext4 label is 'rootfs'"
 else
-    fail "p2 ext4 label is '${e2label}', expected 'rootfs'"
+    fail "p${ROOTFS_PARTNUM} ext4 label is '${e2label}', expected 'rootfs'"
 fi
 e2uuid="$(echo "${e2info}" | sed -n 's/^Filesystem UUID:[[:space:]]*//p')"
 if [ "${e2uuid,,}" = "${ROOTFS_UUID}" ]; then
-    pass "p2 ext4 UUID is ${ROOTFS_UUID}"
+    pass "p${ROOTFS_PARTNUM} ext4 UUID is ${ROOTFS_UUID}"
 else
-    fail "p2 ext4 UUID is '${e2uuid}', expected ${ROOTFS_UUID}"
+    fail "p${ROOTFS_PARTNUM} ext4 UUID is '${e2uuid}', expected ${ROOTFS_UUID}"
 fi
 
-# Filesystem geometry and health: the packed ext4 must exactly fill p2, pass
+# Filesystem geometry and health: the packed ext4 must exactly fill p3, pass
 # fsck, and keep the early-boot free-space margin (writes before repart/growfs).
 e2fs_header="$(dumpe2fs -h "${P2_IMG}" 2>/dev/null || true)"
 block_count="$(echo "${e2fs_header}" | sed -n 's/^Block count:[[:space:]]*//p')"
@@ -378,23 +482,23 @@ free_blocks="$(echo "${e2fs_header}" | sed -n 's/^Free blocks:[[:space:]]*//p')"
 p2_bytes=$((ROOTFS_SIZE_MIB * 1024 * 1024))
 fs_bytes=$((${block_count:-0} * ${block_size:-0}))
 if [ "${fs_bytes}" -gt 0 ] && [ "${fs_bytes}" -eq "${p2_bytes}" ]; then
-    pass "p2 ext4 size (${block_count} blocks x ${block_size} bytes) matches the partition size"
+    pass "p${ROOTFS_PARTNUM} ext4 size (${block_count} blocks x ${block_size} bytes) matches the partition size"
 else
-    fail "p2 ext4 size is ${fs_bytes} bytes, expected ${p2_bytes} (partition size)"
+    fail "p${ROOTFS_PARTNUM} ext4 size is ${fs_bytes} bytes, expected ${p2_bytes} (partition size)"
 fi
 free_bytes=$((${free_blocks:-0} * ${block_size:-0}))
 if [ "${free_bytes}" -ge "${FREE_FLOOR_BYTES}" ]; then
-    pass "p2 free space is $((free_bytes / 1048576)) MiB (>= 32 MiB early-boot floor)"
+    pass "p${ROOTFS_PARTNUM} free space is $((free_bytes / 1048576)) MiB (>= 32 MiB early-boot floor)"
 else
-    fail "p2 free space is ${free_bytes} bytes, below the 32 MiB early-boot floor"
+    fail "p${ROOTFS_PARTNUM} free space is ${free_bytes} bytes, below the 32 MiB early-boot floor"
 fi
 if e2fsck -fn "${P2_IMG}" >/dev/null 2>&1; then
-    pass "e2fsck -fn on p2 is clean"
+    pass "e2fsck -fn on p${ROOTFS_PARTNUM} is clean"
 else
-    fail "e2fsck -fn on p2 reported errors"
+    fail "e2fsck -fn on p${ROOTFS_PARTNUM} reported errors"
 fi
 
-# Run a single debugfs command against the extracted p2.
+# Run a single debugfs command against the extracted p3.
 dbg() {
     debugfs -R "$1" "${P2_IMG}" 2>/dev/null || true
 }
@@ -441,11 +545,8 @@ ext_symlink /usr/lib/firmware/fw_bcmdhd.bin fw_bcm43752a2_ag.bin
 ext_symlink /usr/lib/firmware/nvram.txt nvram_ap6275s.txt
 ext_symlink /usr/lib/firmware/clm_bcmdhd.blob clm_bcm43752a2_ag.blob
 
-if dbg "stat /etc/systemd/system/multi-user.target.wants/ssh.service" | grep -q "Inode:"; then
-    pass "ssh.service is enabled (multi-user.target.wants)"
-else
-    fail "ssh.service enablement symlink missing"
-fi
+# ssh.service enablement is NOT asserted here: it is a function of the image
+# profile, and both directions of that are checked in the M5 section below.
 if dbg "stat /etc/systemd/system/multi-user.target.wants/systemd-networkd.service" | grep -q "Inode:" ||
     dbg "stat /etc/systemd/system/dbus-org.freedesktop.network1.service" | grep -q "Inode:"; then
     pass "systemd-networkd is enabled"
@@ -615,6 +716,321 @@ if dbg "stat /etc/modules-load.d/wifi.conf" | grep -q "Inode:"; then
     fail "/etc/modules-load.d/wifi.conf still present (superseded by mos-modules)"
 else
     pass "/etc/modules-load.d/wifi.conf is gone (superseded by mos-modules)"
+fi
+
+# --- M5 (R5): no baked credential ---
+# v1's root is a writable ext4, so /etc/shadow needs no redirection here and
+# gets none: the symlink-onto-STATE machinery is v2-only (see RFCT-029). What
+# both images share is the rule that no usable root password may ship inside
+# one. Asserted rather than trusted, because ROOT_PASSWORD is a build arg and a
+# DEV image that leaked into a release would otherwise be indistinguishable.
+#
+# What this proves: the shadow file that SHIPS carries no working root login.
+# What it does NOT prove: anything about the password the device ends up with.
+root_entry="$(dbg "cat /etc/shadow" | awk -F: '$1 == "root" { print; exit }' || true)"
+root_hash="$(printf '%s' "${root_entry}" | cut -d: -f2)"
+if [ -z "${root_entry}" ]; then
+    fail "/etc/shadow has no root: entry, so no claim can be made about the baked root password"
+else
+    case "${root_hash}" in
+    "")
+        fail "the root: entry in /etc/shadow has an EMPTY hash field, which means PASSWORDLESS root login: pam_unix accepts any password, including none. Empty is not a locked marker — only '!' (including '!!' and '!'-prefixed forms that retain a hash) and '*' lock an account"
+        ;;
+    "!"* | "*"*)
+        pass "the packed rootfs carries NO usable root password (root: hash field is '${root_hash}', a locked marker)"
+        ;;
+    *)
+        fail "the packed rootfs carries a usable root password hash in /etc/shadow. Cause: the ROOT_PASSWORD build arg was set at build time; unset it — a per-device password is provisioned by mosd at runtime"
+        ;;
+    esac
+fi
+
+# ===========================================================================
+# M5: connd userland, image profile, and the crypt(3) format
+# ===========================================================================
+# Every path, prefix and unit name below is READ from the mosd source that owns
+# it rather than restated here. A constant restated in two places can drift, and
+# this drift is invisible from the code side: a reconciler that renders into a
+# directory the image does not provide, or drives a unit the image does not
+# install, fails on the device and nowhere else. Each extraction is checked for
+# emptiness, so a rename in mosd breaks this verifier loudly instead of turning
+# an assertion into a comparison against "".
+RECONCILER_DIR="${REPO_ROOT}/mosd/mosd/src/reconciler"
+
+# Value of a `const NAME: &str = "...";` in one of the reconcilers.
+mosd_const() {
+    sed -n "s/^const $2: \&str = \"\(.*\)\";\$/\1/p" "${RECONCILER_DIR}/$1" 2>/dev/null | head -n1
+}
+# The unit TEMPLATE name behind `format!("x@{interface}.service")`.
+mosd_unit_template() {
+    sed -n 's/^ *format!("\(.*\)@{interface}\.service")$/\1@.service/p' "${RECONCILER_DIR}/$1" 2>/dev/null | head -n1
+}
+# The rendered configuration file name, still carrying `{interface}`.
+mosd_config_name() {
+    sed -n 's/^ *format!("\([^"]*{interface}[^"]*\.conf\)")$/\1/p' "${RECONCILER_DIR}/$1" 2>/dev/null | head -n1
+}
+
+STA_DIR="$(mosd_const wifi_client.rs DEFAULT_CONFIG_DIR)"
+AP_DIR="$(mosd_const wifi_ap.rs DEFAULT_CONFIG_DIR)"
+STA_UNIT="$(mosd_unit_template wifi_client.rs)"
+AP_UNIT="$(mosd_unit_template wifi_ap.rs)"
+STA_CONF="$(mosd_config_name wifi_client.rs)"
+AP_CONF="$(mosd_config_name wifi_ap.rs)"
+STA_PREFIX="$(mosd_const wifi_client.rs NETWORKD_PREFIX)"
+AP_PREFIX="$(mosd_const wifi_ap.rs NETWORKD_PREFIX)"
+# The pattern network.rs sweeps: it DELETES every *<marker>*.network it did not
+# render, so an image file carrying the marker would be deleted on device.
+MOS_SWEEP="$(sed -n 's/.*file_name\.contains("\(.*\)").*/\1/p' "${RECONCILER_DIR}/network.rs" 2>/dev/null | head -n1)"
+
+if [ -n "${STA_DIR}" ] && [ -n "${AP_DIR}" ] && [ -n "${STA_UNIT}" ] && [ -n "${AP_UNIT}" ] &&
+    [ -n "${STA_CONF}" ] && [ -n "${AP_CONF}" ] && [ -n "${STA_PREFIX}" ] &&
+    [ -n "${AP_PREFIX}" ] && [ -n "${MOS_SWEEP}" ]; then
+    pass "read the connd contract out of mosd: ${STA_UNIT} <- ${STA_DIR}/${STA_CONF}, ${AP_UNIT} <- ${AP_DIR}/${AP_CONF}, networkd prefixes '${STA_PREFIX}'/'${AP_PREFIX}', sweep marker '${MOS_SWEEP}'"
+else
+    fail "could not read the connd contract out of ${RECONCILER_DIR}: dirs '${STA_DIR}'/'${AP_DIR}', units '${STA_UNIT}'/'${AP_UNIT}', configs '${STA_CONF}'/'${AP_CONF}', prefixes '${STA_PREFIX}'/'${AP_PREFIX}', sweep '${MOS_SWEEP}'. Every connd assertion below compares against these, so none of them mean anything until this passes"
+fi
+
+# --- the daemons and their unit templates ---
+ext_regular /usr/sbin/hostapd
+ext_regular /usr/sbin/wpa_supplicant
+ext_regular "/usr/lib/systemd/system/${STA_UNIT:-wpa_supplicant@.service}"
+ext_regular "/usr/lib/systemd/system/${AP_UNIT:-hostapd@.service}"
+
+# The unit's ExecStart and the reconciler's render path are ONE contract: the
+# template bakes the config file name into its command line, so a rename on
+# either side leaves a daemon starting against a file nothing writes. Both
+# systemd instance specifiers are accepted (%i escaped, %I unescaped); for a
+# plain interface name they are the same string, and which one the packager
+# chose is not this repo's business.
+# Args: description unit-path config-dir config-name-with-{interface}
+check_execstart() {
+    local what="$1" unit="$2" dir="$3" name="$4" text spec want found=0
+    text="$(dbg "cat ${unit}")"
+    if [ -z "${text}" ]; then
+        fail "${what}: ${unit} is not in the image, so mosd would drive a unit that does not exist"
+        return
+    fi
+    for spec in '%i' '%I'; do
+        want="${dir}/$(printf '%s' "${name}" | sed "s|{interface}|${spec}|")"
+        if printf '%s' "${text}" | grep -F -- "ExecStart=" | grep -Fq -- "${want}"; then
+            found=1
+            pass "${what}: $(basename "${unit}") reads ${want}, which is exactly what the reconciler renders"
+            break
+        fi
+    done
+    if [ "${found}" -eq 0 ]; then
+        fail "${what}: $(basename "${unit}")'s ExecStart does not name ${dir}/${name} (with %i or %I); it is '$(printf '%s' "${text}" | grep -F 'ExecStart=' | tr '\n' ' ')'. The unit and the reconciler disagree about the config path, so the daemon starts against a file nothing writes"
+    fi
+}
+check_execstart "station" "/usr/lib/systemd/system/${STA_UNIT:-wpa_supplicant@.service}" "${STA_DIR}" "${STA_CONF}"
+check_execstart "access point" "/usr/lib/systemd/system/${AP_UNIT:-hostapd@.service}" "${AP_DIR}" "${AP_CONF}"
+
+# mosd owns these lifecycles: it enables and starts exactly the instance the
+# settings tree asks for. A statically enabled template instance would race it.
+for u in "${STA_UNIT:-wpa_supplicant@.service}" "${AP_UNIT:-hostapd@.service}"; do
+    if dbg "ls -p /etc/systemd/system/multi-user.target.wants" |
+        awk -F/ 'NF >= 7 {print $6}' | grep -Fxq "${u}"; then
+        fail "${u} is statically enabled in the image; mosd owns that lifecycle and would race the image's own instance"
+    else
+        pass "${u} is installed but NOT statically enabled (mosd owns the lifecycle)"
+    fi
+done
+
+# Both packages ship a non-templated unit their postinst ENABLES. Masked, not
+# merely disabled: masking is the only form that also blocks the D-Bus
+# activation path wpasupplicant ships.
+for u in hostapd.service wpa_supplicant.service dbus-fi.w1.wpa_supplicant1.service; do
+    out="$(dbg "stat /etc/systemd/system/${u}")"
+    dest="$(echo "${out}" | sed -n 's/.*link dest: "\(.*\)".*/\1/p' | head -n1)"
+    if echo "${out}" | grep -q "Type: symlink" && [ "${dest}" = "/dev/null" ]; then
+        pass "${u} is masked (-> /dev/null); it cannot start and fight mosd for the radio"
+    else
+        fail "${u} is not masked (it is '${dest:-not a symlink to /dev/null}'). The package enables it, and it starts a second daemon on the same radio against a config mosd never writes while mosd's own instance still reports healthy"
+    fi
+    if dbg "stat /etc/systemd/system/multi-user.target.wants/${u}" | grep -q "Inode:"; then
+        fail "${u} still carries the package's multi-user.target.wants enablement symlink"
+    else
+        pass "${u} carries no enablement symlink from the package postinst"
+    fi
+done
+
+# The directories the reconcilers render into. v1's root is a writable ext4, so
+# they only have to exist with a mode that does not expose the pre-shared keys
+# they end up holding; v2 binds them onto STATE instead (asserted there).
+for d in "${STA_DIR}" "${AP_DIR}"; do
+    out="$(dbg "stat ${d}")"
+    mode="$(echo "${out}" | sed -n 's/.*Mode: *0*\([0-7]\{3\}\).*/\1/p' | head -n1)"
+    if ! echo "${out}" | grep -q "Type: directory"; then
+        fail "${d} is not a directory in the image; the reconciler's first render would have to create it, and on v2 it could not"
+    elif [ "${mode}" = "700" ]; then
+        pass "${d} is a directory, mode 0${mode} (it holds pre-shared keys in the clear once configured)"
+    else
+        fail "${d} is a directory but mode 0${mode:-unknown}, expected 0700: it holds pre-shared keys in the clear once a device is configured"
+    fi
+done
+
+# The AP's DHCP server is systemd-networkd's own DHCPServer=yes. dnsmasq would
+# be a second package and a second lifecycle for a job already done.
+if dbg "stat /usr/sbin/dnsmasq" | grep -q "Inode:"; then
+    fail "dnsmasq ships in the image; the provisioning AP hands out addresses through systemd-networkd's DHCPServer=yes and a second DHCP server on the same link is a conflict, not a fallback"
+else
+    pass "no dnsmasq in the image (the AP's DHCP server is systemd-networkd's own DHCPServer=yes)"
+fi
+
+# --- the image's networkd namespace must not collide with mosd's ---
+# network.rs DELETES every *${MOS_SWEEP}*.network it did not itself render, and
+# the two WiFi reconcilers deliberately sit outside that pattern. An image file
+# that landed in either namespace would be swept away, or would shadow a
+# reconciler's unit, on device and nowhere else.
+img_networks="$(dbg "ls -p /etc/systemd/network" | awk -F/ 'NF >= 7 && $6 != "." && $6 != ".." {print $6}' | grep '\.network$' || true)"
+collisions=""
+for n in ${img_networks}; do
+    case "${n}" in
+    *"${MOS_SWEEP}"*) collisions="${collisions} ${n}(swept-by-network.rs)" ;;
+    "${STA_PREFIX}"*) collisions="${collisions} ${n}(station-namespace)" ;;
+    "${AP_PREFIX}"*) collisions="${collisions} ${n}(ap-namespace)" ;;
+    esac
+done
+if [ -z "${img_networks}" ]; then
+    fail "the image ships no .network file at all, so this namespace check would pass vacuously"
+elif [ -z "${collisions}" ]; then
+    pass "none of the image's .network files ($(echo "${img_networks}" | tr '\n' ' ')) fall in a reconciler-owned namespace ('${MOS_SWEEP}', '${STA_PREFIX}', '${AP_PREFIX}')"
+else
+    fail "image .network files collide with a reconciler-owned namespace:${collisions}. network.rs deletes every *${MOS_SWEEP}*.network it did not render, and a file in a WiFi reconciler's prefix would shadow or be swept by it"
+fi
+
+# networkd applies the FIRST matching unit in lexical order across its
+# directories, so the image's fallback has to sort BEFORE the reconcilers' units
+# and therefore lose to them only where they match. Compared as strings, not
+# assumed from the numbers.
+# Each prefix is compared with the image's file INDEPENDENTLY: the two
+# reconciler prefixes have no ordering requirement between themselves (they
+# never match the same interface), so requiring the three to be sorted as one
+# list would be a check about the wrong property.
+dhcp_default="80-dhcp.network"
+sort_bad=""
+for prefix in "${STA_PREFIX}" "${AP_PREFIX}"; do
+    if [ -z "${prefix}" ]; then
+        sort_bad="${sort_bad} <unreadable>"
+    elif [ "$(printf '%s\n' "${dhcp_default}" "${prefix}" | LC_ALL=C sort | head -n1)" != "${dhcp_default}" ]; then
+        sort_bad="${sort_bad} ${prefix}"
+    fi
+done
+if [ -z "${sort_bad}" ]; then
+    pass "${dhcp_default} sorts before both '${STA_PREFIX}' and '${AP_PREFIX}', so a reconciler-rendered unit is never shadowed by the image's fallback"
+else
+    fail "${dhcp_default} does not sort before:${sort_bad}; networkd applies the first match in lexical order, so the image's fallback would win over the unit mosd rendered for that interface"
+fi
+
+# --- the image profile, and the SSH default it selects ---
+PROFILE_FILE="/usr/lib/mos/profile.conf"
+PROFILE_KEY="$(sed -n 's/^const PROFILE_KEY: \&str = "\(.*\)";$/\1/p' "${REPO_ROOT}/mosd/mosd/src/provisioning.rs" 2>/dev/null | head -n1)"
+PROFILE_DEFAULT_PATH="$(sed -n 's/^pub const DEFAULT_PROFILE_PATH: \&str = "\(.*\)";$/\1/p' "${REPO_ROOT}/mosd/mosd/src/provisioning.rs" 2>/dev/null | head -n1)"
+if [ "${PROFILE_DEFAULT_PATH}" = "${PROFILE_FILE}" ] && [ -n "${PROFILE_KEY}" ]; then
+    pass "mosd reads the image profile from ${PROFILE_DEFAULT_PATH} with key ${PROFILE_KEY}, which is the file this image ships"
+else
+    fail "mosd reads its profile from '${PROFILE_DEFAULT_PATH}' with key '${PROFILE_KEY}', but the image ships ${PROFILE_FILE}; mosd FAILS CLOSED on a missing file, so every image would self-provision to prod and disable its own sshd with every check still green"
+fi
+ext_regular "${PROFILE_FILE}"
+profile_stat="$(dbg "stat ${PROFILE_FILE}")"
+profile_mode="$(echo "${profile_stat}" | sed -n 's/.*Mode: *0*\([0-7]\{3\}\).*/\1/p' | head -n1)"
+if [ "${profile_mode}" = "444" ]; then
+    pass "${PROFILE_FILE} is mode 0${profile_mode} (it describes the image, not the device)"
+else
+    fail "${PROFILE_FILE} is mode 0${profile_mode:-unknown}, expected 0444"
+fi
+
+# The value is matched CASE-SENSITIVELY by mosd and anything it does not
+# recognise resolves to prod, so `DEV`, `Dev`, a comment or a typo in the key
+# are all the same silent failure: SSH off on an image built to have it on.
+profile_text="$(dbg "cat ${PROFILE_FILE}")"
+profile_values="$(printf '%s\n' "${profile_text}" | sed -n "s/^${PROFILE_KEY:-MOS_PROFILE}=\(.*\)\$/\1/p")"
+profile_n="$(printf '%s\n' "${profile_values}" | grep -c . || true)"
+MOS_PROFILE_VALUE="$(printf '%s\n' "${profile_values}" | tail -n1)"
+case "${MOS_PROFILE_VALUE}" in
+dev | prod)
+    if [ "${profile_n}" = "1" ]; then
+        pass "${PROFILE_FILE} carries exactly one ${PROFILE_KEY:-MOS_PROFILE}=${MOS_PROFILE_VALUE} line, an exact lowercase value mosd recognises"
+    else
+        fail "${PROFILE_FILE} carries ${profile_n} ${PROFILE_KEY:-MOS_PROFILE}= lines; mosd takes the LAST one, so the file's meaning depends on line order"
+    fi
+    ;;
+*)
+    fail "${PROFILE_FILE} resolves to '${MOS_PROFILE_VALUE}', which mosd does not recognise. Its match is case-sensitive and it FAILS CLOSED: this image would self-provision to prod and disable its own sshd, with every other check still green. Contents: $(printf '%s' "${profile_text}" | tr '\n' ' ')"
+    ;;
+esac
+
+# The end-to-end property, in both directions: dev implies ssh.service IS
+# enabled in the image, prod implies it is NOT. mosd seeds access.ssh.enabled
+# from this same file, so an image whose static enablement disagreed with its
+# profile would have sshd listening before mosd ever got to decide.
+ssh_enabled=0
+dbg "stat /etc/systemd/system/multi-user.target.wants/ssh.service" | grep -q "Inode:" && ssh_enabled=1
+case "${MOS_PROFILE_VALUE}" in
+dev)
+    if [ "${ssh_enabled}" -eq 1 ]; then
+        pass "profile is dev and ssh.service IS enabled in the image, which is what mosd will seed access.ssh.enabled to"
+    else
+        fail "profile is dev but ssh.service is NOT enabled in the image; mosd will seed access.ssh.enabled true and the dev SSH path is still gone until its first reconcile"
+    fi
+    ;;
+prod)
+    if [ "${ssh_enabled}" -eq 0 ]; then
+        pass "profile is prod and ssh.service is NOT enabled in the image, so sshd never listens before mosd has decided"
+    else
+        fail "profile is prod but ssh.service IS enabled in the image; sshd would be listening from early boot until mosd's reconciler stops it"
+    fi
+    ;;
+*)
+    fail "ssh.service enablement cannot be judged: the image profile did not resolve to dev or prod"
+    ;;
+esac
+
+# --- the shadow hash format, against the libcrypt PACKED IN THIS IMAGE ------
+# No Rust test can make this assertion: the test host is x86 and the library is
+# an arm64 object inside the image. mosd writes a crypt(3) hash into the root
+# account's shadow entry and pam_unix verifies it through this exact libcrypt;
+# a format the library cannot parse rejects every password while the file, the
+# unit and the reconciler all look perfectly healthy.
+# The prefix is READ from the assertion sshd.rs pins on its own output, so the
+# two cannot drift; requiring exactly one keeps that source unambiguous.
+SSHD_SRC="${REPO_ROOT}/mosd/mosd/src/reconciler/sshd.rs"
+crypt_prefixes="$(grep -oE 'starts_with\("\$[0-9a-zA-Z]+\$' "${SSHD_SRC}" 2>/dev/null | grep -oE '\$[0-9a-zA-Z]+\$' | sort -u || true)"
+crypt_n="$(printf '%s\n' "${crypt_prefixes}" | grep -c . || true)"
+CRYPT_PREFIX="$(printf '%s\n' "${crypt_prefixes}" | head -n1)"
+if [ "${crypt_n}" = "1" ]; then
+    pass "sshd.rs pins exactly one crypt(3) prefix for the shadow field: ${CRYPT_PREFIX}"
+else
+    fail "sshd.rs pins ${crypt_n} distinct crypt(3) prefixes ($(printf '%s' "${crypt_prefixes}" | tr '\n' ' ')); the format the image must support is ambiguous, so the libcrypt check below cannot mean anything"
+fi
+
+LIBCRYPT_LINK="/usr/lib/aarch64-linux-gnu/libcrypt.so.1"
+libcrypt_dest="$(dbg "stat ${LIBCRYPT_LINK}" | sed -n 's/.*link dest: "\(.*\)".*/\1/p' | head -n1)"
+LIBCRYPT_REAL=""
+if [ -n "${libcrypt_dest}" ]; then
+    case "${libcrypt_dest}" in
+    /*) LIBCRYPT_REAL="${libcrypt_dest}" ;;
+    *) LIBCRYPT_REAL="$(dirname "${LIBCRYPT_LINK}")/${libcrypt_dest}" ;;
+    esac
+elif dbg "stat ${LIBCRYPT_LINK}" | grep -q "Type: regular"; then
+    LIBCRYPT_REAL="${LIBCRYPT_LINK}"
+fi
+if [ -n "${LIBCRYPT_REAL}" ] && dbg "stat ${LIBCRYPT_REAL}" | grep -q "Type: regular"; then
+    pass "${LIBCRYPT_LINK} resolves to ${LIBCRYPT_REAL} in the image (the SONAME the login stack loads)"
+else
+    fail "${LIBCRYPT_LINK} does not resolve to a regular file in the image (got '${libcrypt_dest:-nothing}'); without it pam_unix cannot verify any password at all"
+fi
+
+LIBCRYPT_BIN="${TMP}/libcrypt.so"
+if [ -n "${LIBCRYPT_REAL}" ]; then
+    dbg "dump ${LIBCRYPT_REAL} ${LIBCRYPT_BIN}" >/dev/null
+fi
+if [ "${crypt_n}" != "1" ] || [ ! -s "${LIBCRYPT_BIN}" ]; then
+    fail "cannot check the crypt(3) format against the image's libcrypt: prefix count ${crypt_n}, extracted library $([ -s "${LIBCRYPT_BIN}" ] && echo "$(stat -c %s "${LIBCRYPT_BIN}") bytes" || echo missing)"
+elif LC_ALL=C tr -c '[:print:]' '\n' <"${LIBCRYPT_BIN}" | grep -Fq -- "${CRYPT_PREFIX}"; then
+    pass "the libcrypt packed in this image implements ${CRYPT_PREFIX}, the crypt(3) format mosd writes into the root shadow entry"
+else
+    fail "the libcrypt packed in this image ($(basename "${LIBCRYPT_REAL}")) does NOT implement ${CRYPT_PREFIX}, the format mosd writes into /etc/shadow. pam_unix would reject every password while the shadow file, the reconciler and every other check look healthy. Formats it does carry: $(LC_ALL=C tr -c '[:print:]' '\n' <"${LIBCRYPT_BIN}" | grep -oE '^\$[0-9a-z]+\$$' | sort -u | tr '\n' ' ')"
 fi
 
 # --- summary ---

@@ -2,7 +2,8 @@
 set -euo pipefail
 
 # Verifies a cx3576 mos disk image against the layout-v2 image contract:
-# the ten-partition A/B GPT, the raw uboot-mos blob, both FAT32 boot slots,
+# the eleven-partition A/B GPT, the uboot-mos blob inside its own loader
+# partition, both FAT32 boot slots,
 # the squashfs+dm-verity rootfs payload and the packed root filesystem's
 # contents (mosd/webd, hwinit, RAUC, health gate, storage tiers).
 # Emits one PASS:/FAIL: line per check and a final
@@ -178,7 +179,7 @@ ptable="$(sgdisk -p "${IMG}" 2>/dev/null || true)"
 disk_guid="$(echo "${ptable}" | sed -n 's/^Disk identifier (GUID): //p')"
 eq_ci "disk GUID" "${disk_guid}" "${DISK_GUID}"
 
-EXPECT_PARTS=10
+EXPECT_PARTS=11
 part_count="$(echo "${ptable}" | grep -cE '^[[:space:]]+[0-9]+[[:space:]]' || true)"
 if [ "${part_count}" = "${EXPECT_PARTS}" ]; then
     pass "exactly ${EXPECT_PARTS} partitions"
@@ -221,6 +222,7 @@ total_size_mib=$((data_start_mib + DATA_SIZE_MIB + IMAGE_TAIL_SLACK_MIB))
 
 # num|label|typecode|guid|size-sectors|start-sector
 part_rows=(
+    "${LOADER_PARTNUM}|${LOADER_LABEL}|${LOADER_TYPECODE}|${LOADER_GUID}|${LOADER_SIZE_SECTORS}|${LOADER_START_SECTOR}"
     "${UENV_A_PARTNUM}|${UENV_A_LABEL}|${UENV_A_TYPECODE}|${UENV_A_GUID}|${UENV_SIZE_SECTORS}|${UENV_A_START_SECTOR}"
     "${UENV_B_PARTNUM}|${UENV_B_LABEL}|${UENV_B_TYPECODE}|${UENV_B_GUID}|${UENV_SIZE_SECTORS}|${UENV_B_START_SECTOR}"
     "${BOOT_A_PARTNUM}|${BOOT_A_LABEL}|${BOOT_A_TYPECODE}|${BOOT_A_GUID}|$((BOOT_SIZE_MIB * SECTORS_PER_MIB))|${BOOT_A_START_SECTOR}"
@@ -273,6 +275,67 @@ for row in "${part_rows[@]}"; do
         fail "p${n} (${label}) attribute flags are '${got_attrs}', expected all bits clear"
     fi
 done
+
+# --- LOADER: the reason first-boot growth no longer wipes the bootloader -----
+#
+# systemd-repart discards every region of the disk that no GPT entry covers, and
+# it does so on first boot while growing DATA. The Rockchip idbloader lives at
+# raw sector 64; before it had an entry, the growth run TRIMmed it and the device
+# reached maskrom on the next power-on. The protection is the ENTRY, so these
+# check the entry actually covers the bytes, not merely that it exists.
+loader_first="$(p_field "${LOADER_PARTNUM}" "First sector" | awk '{print $1}')"
+loader_size="$(p_field "${LOADER_PARTNUM}" "Partition size" | awk '{print $1}')"
+loader_type="$(p_field "${LOADER_PARTNUM}" "Partition GUID code" | awk '{print $1}')"
+
+# Abutment: a gap between the loader partition and uenv-a would itself be an
+# uncovered region, and repart would discard that.
+if [[ "${loader_first}" =~ ^[0-9]+$ ]] && [[ "${loader_size}" =~ ^[0-9]+$ ]] &&
+    [ $((loader_first + loader_size)) -eq "${UENV_A_START_SECTOR}" ]; then
+    pass "p${LOADER_PARTNUM} (${LOADER_LABEL}) ends exactly where ${UENV_A_LABEL} begins (sector ${UENV_A_START_SECTOR}); no untracked gap is left between them"
+else
+    fail "p${LOADER_PARTNUM} (${LOADER_LABEL}) covers sectors ${loader_first}..$((${loader_first:-0} + ${loader_size:-0} - 1)) but ${UENV_A_LABEL} starts at ${UENV_A_START_SECTOR}; anything not covered by a partition entry is discarded by systemd-repart"
+fi
+
+# The loader partition and the U-Boot fit check must describe the same bytes.
+if [ $((LOADER_SIZE_SECTORS * BYTES_PER_SECTOR)) -eq "${UBOOT_MAX_BYTES}" ]; then
+    pass "p${LOADER_PARTNUM} is ${UBOOT_MAX_BYTES} bytes, exactly the limit the U-Boot fit check enforces"
+else
+    fail "p${LOADER_PARTNUM} is $((LOADER_SIZE_SECTORS * BYTES_PER_SECTOR)) bytes but UBOOT_MAX_BYTES is ${UBOOT_MAX_BYTES}; a blob that passes the fit check could still overrun the partition"
+fi
+
+# The first byte of the partition must be the idbloader magic. An entry over
+# the wrong bytes protects nothing.
+loader_magic="$(dd if="${IMG}" bs="${BYTES_PER_SECTOR}" skip="${LOADER_START_SECTOR}" count=1 status=none 2>/dev/null | od -An -tx1 -N4 | tr -d ' \n' || true)"
+if [ "${loader_magic}" = "${LOADER_MAGIC_HEX}" ]; then
+    pass "p${LOADER_PARTNUM} starts with the Rockchip idbloader magic ${LOADER_MAGIC_HEX} ('RKNS')"
+else
+    fail "p${LOADER_PARTNUM} starts with '${loader_magic}', expected the idbloader magic ${LOADER_MAGIC_HEX} ('RKNS'); the partition does not cover a bootloader"
+fi
+
+# THE REPART-MATCHING PROOF. repart pairs definition files with existing
+# partitions BY TYPE UUID in disk order. The claim "no definition can ever match
+# the loader" is therefore a countable fact about the assembled GPT: the loader's
+# type must appear on exactly one partition and must not be a type any
+# definition uses. Counted here, and cross-checked against the shipped
+# definition count in section 8.
+LINUX_GENERIC_N=0
+LOADER_TYPE_N=0
+for n in $(seq 1 "${EXPECT_PARTS}"); do
+    t="$(lc "$(p_field "${n}" "Partition GUID code" | awk '{print $1}')")"
+    if [ "${t}" = "$(lc "${TYPECODE_LINUX}")" ]; then
+        LINUX_GENERIC_N=$((LINUX_GENERIC_N + 1))
+    elif [ "${t}" = "$(lc "${LOADER_TYPECODE}")" ]; then
+        LOADER_TYPE_N=$((LOADER_TYPE_N + 1))
+    fi
+done
+if [ "$(lc "${loader_type}")" = "$(lc "${LOADER_TYPECODE}")" ] &&
+    [ "$(lc "${LOADER_TYPECODE}")" != "$(lc "${TYPECODE_LINUX}")" ] &&
+    [ "$(lc "${LOADER_TYPECODE}")" != "$(lc "${TYPECODE_ESP}")" ] &&
+    [ "${LOADER_TYPE_N}" = "1" ]; then
+    pass "p${LOADER_PARTNUM} is the only ${LOADER_TYPECODE} partition, and that type is neither linux-generic nor the ESP type, so no /etc/repart.d definition can pair with it"
+else
+    fail "the loader type must be unique and distinct from linux-generic/ESP; p${LOADER_PARTNUM} type is '${loader_type}' and ${LOADER_TYPE_N} partition(s) carry ${LOADER_TYPECODE}"
+fi
 
 if [ "${SLOT_MIB}" -gt 0 ]; then
     pass "rootfs-a and rootfs-b are the same size (${SLOT_MIB} MiB each)"
@@ -355,6 +418,16 @@ if [ "${uboot_size}" -gt 0 ] && [ $((UBOOT_OFFSET_BYTES + uboot_size)) -le "${UE
     pass "u-boot ends at $((UBOOT_OFFSET_BYTES + uboot_size)) bytes, below ${UENV_A_LABEL} at ${UENV_A_START_MIB} MiB"
 else
     fail "u-boot (${uboot_size} bytes at offset ${UBOOT_OFFSET_BYTES}) reaches into ${UENV_A_LABEL} at ${UENV_A_OFFSET_BYTES} bytes / ${UENV_A_START_MIB} MiB"
+fi
+
+# Containment in the LOADER PARTITION, with room to spare. "Ends before uenv-a"
+# above is the byte-offset form of the same statement; this one is expressed
+# against the partition entry, which is what actually protects the bytes.
+loader_bytes=$((LOADER_SIZE_SECTORS * BYTES_PER_SECTOR))
+if [ "${uboot_size}" -gt 0 ] && [ "${uboot_size}" -lt "${loader_bytes}" ]; then
+    pass "u-boot (${uboot_size} bytes) is fully contained in p${LOADER_PARTNUM} (${loader_bytes} bytes) with $((loader_bytes - uboot_size)) bytes to spare"
+else
+    fail "u-boot is ${uboot_size} bytes and p${LOADER_PARTNUM} is ${loader_bytes} bytes; the blob must fit inside its own partition with room left"
 fi
 
 # ===========================================================================
@@ -470,6 +543,29 @@ if [ "${scr_magic}" = "27051956" ]; then
 else
     fail "${BOOT_SCRIPT_NAME} magic is '${scr_magic}', expected 27051956 (mkimage -T script output)"
 fi
+
+# THE RENUMBERING ASSERTION. boot.scr addresses its slot as `mmc 0:${bootpart}`
+# — a literal GPT partition NUMBER baked into the compiled script, because hush
+# cannot read the layout file. Inserting the loader partition shifted every
+# number by one. A stale value does not announce itself: U-Boot persists the
+# boot-attempt decrement, then fails to find Image in a partition that now holds
+# something else, and the board is bricked until it is re-flashed. This reads the
+# numbers back out of the COMPILED script in the assembled image, not out of
+# os/boot/cx3576-boot.cmd, so it also covers a boot.scr built from a stale source.
+scr_body="$(tr -d '\0' < "${TMP}/scr-A" 2>/dev/null || true)"
+for want in "bootpart:A:${BOOT_A_PARTNUM}" "bootpart:B:${BOOT_B_PARTNUM}" \
+    "rootpart:A:${ROOTFS_A_PARTNUM}" "rootpart:B:${ROOTFS_B_PARTNUM}"; do
+    IFS=':' read -r var slot num <<<"${want}"
+    got="$(printf '%s\n' "${scr_body}" | awk -v slot="${slot}" -v var="${var}" '
+        $1 == "setenv" && $2 == "bootslot" && $3 == slot { in_slot = 1; next }
+        $1 == "setenv" && $2 == var && in_slot { print $3; exit }
+    ')"
+    if [ "${got}" = "${num}" ]; then
+        pass "${BOOT_SCRIPT_NAME} sets ${var}=${num} for slot ${slot}, matching the layout"
+    else
+        fail "${BOOT_SCRIPT_NAME} sets ${var}='${got:-nothing}' for slot ${slot}, but the layout puts that partition at p${num}; U-Boot would load from the wrong partition after already persisting the attempt decrement"
+    fi
+done
 
 # Each slot's verity env must point dm-verity at its OWN rootfs partition;
 # swapping them would make an update verify the slot it just replaced.
@@ -793,7 +889,8 @@ sq_symlink /usr/lib/firmware/nvram.txt nvram_ap6275s.txt
 sq_symlink /usr/lib/firmware/clm_bcmdhd.blob clm_bcm43752a2_ag.blob
 
 # --- base services (carried over from v1) ---
-sq_enabled ssh.service
+# ssh.service enablement is NOT asserted here: it is a function of the image
+# profile, and both directions of that are checked in the M5 section below.
 if [ -n "$(find "${ROOT}/etc/systemd/system" -name 'systemd-networkd.service' -path '*.wants/*' 2>/dev/null || true)" ] ||
     [ -e "${ROOT}/etc/systemd/system/dbus-org.freedesktop.network1.service" ]; then
     pass "systemd-networkd is enabled"
@@ -908,6 +1005,18 @@ if [ "${rauc_slots_ok}" -eq 1 ]; then
     pass "RAUC system.conf addresses all four slots by the layout's partition GUIDs"
 else
     fail "RAUC system.conf slot device mismatch: ${bad_slot}"
+fi
+
+# RENUMBERING SAFETY. Every slot device must be a by-partuuid path. A
+# /dev/mmcblk0pN path would encode a partition NUMBER, and inserting or removing
+# a partition ahead of it would silently point RAUC at the wrong slot — it would
+# install an update over the running rootfs. Asserted as a shape, so the config
+# cannot acquire such a path later.
+bad_devs="$(grep '^device=' "${RAUC_CONF}" 2>/dev/null | grep -v '^device=/dev/disk/by-partuuid/' || true)"
+if [ -z "${bad_devs}" ]; then
+    pass "every RAUC slot device is a /dev/disk/by-partuuid/ path; no slot is addressed by partition number, so renumbering cannot mis-target an install"
+else
+    fail "RAUC system.conf addresses a slot by something other than a PARTUUID: $(echo "${bad_devs}" | tr '\n' ' '); a partition-number path breaks silently when the table is renumbered"
 fi
 
 # WIPE-SAFETY CONTRACT. RAUC's status file is update state — which slot was
@@ -1165,12 +1274,17 @@ sq_enabled fstrim.timer
 # count must match the number of linux-generic partitions exactly: one too few
 # and the grow flag attaches to the wrong partition, one too many and repart
 # CREATES a partition nobody asked for.
-WANT_DEFS=8
+# WANT_DEFS is not a literal: it is the number of linux-generic partitions
+# COUNTED in the assembled GPT above. That is what makes this an integration
+# check rather than two hardcoded numbers agreeing with each other — and it is
+# what proves the loader partition is invisible to repart, since its distinct
+# type keeps it out of the count.
+WANT_DEFS="${LINUX_GENERIC_N}"
 def_count="$(find "${ROOT}/etc/repart.d" -name '*.conf' 2>/dev/null | wc -l)"
-if [ "${def_count}" = "${WANT_DEFS}" ]; then
-    pass "/etc/repart.d has exactly ${WANT_DEFS} definitions, one per linux-generic partition in disk order"
+if [ "${def_count}" = "${WANT_DEFS}" ] && [ "${WANT_DEFS}" -gt 0 ]; then
+    pass "/etc/repart.d has exactly ${WANT_DEFS} definitions, one per linux-generic partition counted in the image's own GPT (the loader is not one of them)"
 else
-    fail "/etc/repart.d has ${def_count} definitions, expected ${WANT_DEFS}; repart matches definitions to partitions by type UUID in disk order, so a miscount silently attaches growth to the wrong partition"
+    fail "/etc/repart.d has ${def_count} definitions but the GPT carries ${WANT_DEFS} linux-generic partitions; repart matches definitions to partitions by type UUID in disk order, so a miscount silently attaches growth to the wrong partition"
 fi
 grow_defs="$(grep -l '^Weight=1000$' "${ROOT}/etc/repart.d/"*.conf 2>/dev/null || true)"
 grow_n="$(echo "${grow_defs}" | grep -c . || true)"
@@ -1178,6 +1292,18 @@ if [ "${grow_n}" = "1" ] && [ "$(basename "${grow_defs}")" = "80-data.conf" ]; t
     pass "exactly one repart definition grows, and it is 80-data.conf (DATA / p${DATA_PARTNUM}), not ephemeral"
 else
     fail "expected exactly one growing repart definition, 80-data.conf; found ${grow_n}: $(echo "${grow_defs}" | xargs -r -n1 basename | tr '\n' ' ')"
+fi
+
+# --- the loader is protected STRUCTURALLY, not by a flag ---
+# systemd-repart's discard is deliberately left ON: first-boot TRIM is worth
+# having, and the loader is safe because it has a partition entry. A
+# --discard=no drop-in would be the other approach, and having both would hide a
+# regression in the partition entry behind a flag nobody remembers is there.
+discard_hits="$(grep -rl -- '--discard=no' "${ROOT}/etc/systemd" "${ROOT}/usr/lib/systemd" 2>/dev/null || true)"
+if [ -z "${discard_hits}" ]; then
+    pass "no --discard=no override ships in the image; the loader is protected by its GPT entry and first-boot TRIM stays enabled"
+else
+    fail "a --discard=no override ships in the image ($(echo "${discard_hits}" | tr '\n' ' ')); loader protection must come from the partition entry, not from disabling discard"
 fi
 
 # --- M4: wipe-safety — nothing precious is reachable only from /var ---
@@ -1198,6 +1324,169 @@ for pair in "var-lib-mos.mount:/var/lib/mos" "var-lib-bluetooth.mount:/var/lib/b
         pass "${where} is a STATE-backed bind via ${unit} (survives a /var wipe)"
     fi
 done
+
+# --- M5: /etc/shadow lives on STATE (per-device password) ---
+# access.md phase 1 gives every device its own root password, and the only file
+# pam_unix will read for it is /etc/shadow. On v2 that path is inside the
+# dm-verity squashfs, so the file has to be a SYMLINK onto the STATE-backed
+# tree; a bind-mounted file would not do, because a bind cannot be replaced by
+# rename and rename is how a credential is written without a torn read.
+SHADOW_LINK_TARGET=/var/lib/mos/shadow
+FACTORY_SHADOW=/usr/share/factory/etc/shadow
+
+# Half one of the end-to-end property: the path PAM reads IS the symlink, and it
+# names the STATE-backed directory exactly. Asserting "a symlink exists" would
+# pass for a symlink pointing anywhere at all.
+shadow_type="$(stat -c %F "${ROOT}/etc/shadow" 2>/dev/null || echo absent)"
+shadow_dest="$(readlink "${ROOT}/etc/shadow" 2>/dev/null || true)"
+if [ "${shadow_type}" = "symbolic link" ] && [ "${shadow_dest}" = "${SHADOW_LINK_TARGET}" ]; then
+    pass "/etc/shadow is a symlink to ${SHADOW_LINK_TARGET} (the path pam_unix opens is writable at runtime)"
+else
+    fail "/etc/shadow is '${shadow_type}'${shadow_dest:+ -> ${shadow_dest}}, expected a symlink to ${SHADOW_LINK_TARGET}; on the read-only verity root a regular file there can never be written, so no per-device password is possible"
+fi
+
+# Half two: nothing inside the squashfs can satisfy that path. Both the source
+# (/etc/shadow itself) and the destination (/var/lib/mos/shadow) must be absent
+# as regular files in the packed image, or PAM would read an image-wide file
+# that is byte-identical on every device. This is the pair that makes the claim
+# "PAM reads the STATE copy" provable from the artifact rather than asserted.
+if [ "${shadow_type}" = "regular file" ]; then
+    fail "/etc/shadow is a REGULAR FILE inside the squashfs; it shadows the STATE-backed copy and is identical on every device in the fleet"
+else
+    pass "no regular /etc/shadow inside the squashfs (nothing shadows the STATE-backed copy)"
+fi
+if [ -e "${ROOT}${SHADOW_LINK_TARGET}" ] || [ -L "${ROOT}${SHADOW_LINK_TARGET}" ]; then
+    fail "${SHADOW_LINK_TARGET} exists inside the squashfs, so /etc/shadow would resolve to an image file rather than to the STATE bind"
+else
+    pass "${SHADOW_LINK_TARGET} does not exist inside the squashfs, so the symlink can only ever resolve through var-lib-mos.mount onto STATE"
+fi
+
+# And the link target must be exactly what var-lib-mos.mount puts on STATE.
+# A symlink into a directory nothing mounts is a dangling file, not a credential.
+VLM_UNIT="${ROOT}/etc/systemd/system/var-lib-mos.mount"
+vlm_where="$(sed -n 's/^Where=//p' "${VLM_UNIT}" 2>/dev/null | tail -n1)"
+vlm_what="$(sed -n 's/^What=//p' "${VLM_UNIT}" 2>/dev/null | tail -n1)"
+# Derived from the ACTUAL link destination, not from the constant above: a
+# check against the constant would keep passing for a symlink retargeted
+# anywhere else, which is the whole thing being guarded against.
+link_dir="$([ -n "${shadow_dest}" ] && dirname "${shadow_dest}" || echo "<not a symlink>")"
+if [ -n "${shadow_dest}" ] && [ "${vlm_where}" = "${link_dir}" ] &&
+    [ "${vlm_what#/mnt/state/}" != "${vlm_what}" ]; then
+    pass "the /etc/shadow symlink lands in ${vlm_where}, which var-lib-mos.mount binds from ${vlm_what} on STATE"
+else
+    fail "the /etc/shadow symlink target dir '${link_dir}' is not bound from STATE by var-lib-mos.mount (Where='${vlm_where}', What='${vlm_what}')"
+fi
+
+# /etc/passwd and /etc/group stay in the image, read-only: only the
+# secret-bearing file moves, so account definitions remain verity-covered.
+sq_regular /etc/passwd
+sq_regular /etc/group
+
+# The factory template the reconciler derives from.
+sq_regular "${FACTORY_SHADOW}"
+FAC="${ROOT}${FACTORY_SHADOW}"
+
+# It has to carry the accounts the image ships, or an account added by a later
+# update would get a bare placeholder instead of its proper aging fields — and
+# an empty factory copy would make every check above pass for the wrong reason.
+if [ ! -f "${FAC}" ] || [ ! -f "${ROOT}/etc/passwd" ]; then
+    fail "cannot compare /etc/passwd against ${FACTORY_SHADOW}: one of them is missing"
+else
+    fac_missing=""
+    while IFS=: read -r u _; do
+        [ -n "${u}" ] || continue
+        grep -q "^${u}:" "${FAC}" || fac_missing="${fac_missing} ${u}"
+    done <"${ROOT}/etc/passwd"
+    fac_n="$(grep -c . "${FAC}" || true)"
+    if [ -z "${fac_missing}" ] && [ "${fac_n}" -gt 0 ]; then
+        pass "${FACTORY_SHADOW} carries all ${fac_n} accounts listed in /etc/passwd (root included)"
+    else
+        fail "${FACTORY_SHADOW} has ${fac_n} entries and is missing:${fac_missing:- (nothing, but it is empty)}"
+    fi
+fi
+
+# 0640 root:shadow, and it must survive packing. unix_chkpwd is setgid shadow
+# precisely so a non-root PAM stack can read this file; any other group and
+# password verification stops working for every non-root caller.
+shadow_gid="$(awk -F: '$1 == "shadow" { print $3 }' "${ROOT}/etc/group" 2>/dev/null || true)"
+fac_mode="$(stat -c %a "${FAC}" 2>/dev/null || echo none)"
+fac_own="$(stat -c '%u:%g' "${FAC}" 2>/dev/null || echo none)"
+if [ -n "${shadow_gid}" ]; then
+    pass "the image defines the 'shadow' group (gid ${shadow_gid}), which unix_chkpwd runs setgid to"
+else
+    fail "the image has no 'shadow' group, so unix_chkpwd cannot read /etc/shadow at all"
+fi
+if [ "${fac_mode}" = "640" ] && [ "${fac_own}" = "0:${shadow_gid}" ]; then
+    pass "${FACTORY_SHADOW} is 0640 root:shadow (0:${shadow_gid}) in the packed image"
+else
+    fail "${FACTORY_SHADOW} is mode ${fac_mode} owner ${fac_own}, expected 640 and 0:${shadow_gid} (root:shadow)"
+fi
+
+# The reconcile unit: present, ENABLED, and its ordering naming units that
+# actually exist. M4 shipped units that were installed but never enabled and
+# Before= lines naming units that were absent; systemd drops both silently.
+sq_regular /usr/lib/mos/mos-shadow-reconcile
+sq_regular /etc/systemd/system/mos-shadow-reconcile.service
+sq_enabled mos-shadow-reconcile.service
+REC_UNIT="${ROOT}/etc/systemd/system/mos-shadow-reconcile.service"
+sq_grep /etc/systemd/system/mos-shadow-reconcile.service \
+    '^ExecStart=/usr/lib/mos/mos-shadow-reconcile$' \
+    "mos-shadow-reconcile.service runs /usr/lib/mos/mos-shadow-reconcile"
+# after= / before= must name the real unit names, and each named unit must be
+# in the image: an ordering against a unit that does not exist is inert.
+# unit-file-path pairs, so "named" and "present" are asserted together.
+for pair in "After:var-lib-mos.mount:/etc/systemd/system/var-lib-mos.mount" \
+    "Before:mosd.service:/usr/lib/systemd/system/mosd.service" \
+    "Before:ssh.service:/usr/lib/systemd/system/ssh.service"; do
+    IFS=':' read -r keyw dep depfile <<<"${pair}"
+    # Whitespace-separated unit list, matched as a whole token: a substring
+    # match would accept "Before=xmosd.serviceX" and a bare grep for the name
+    # would accept it appearing in a comment.
+    named=0
+    if [ -f "${REC_UNIT}" ]; then
+        sed -n "s/^${keyw}=//p" "${REC_UNIT}" | tr ' ' '\n' | grep -Fxq "${dep}" && named=1
+    fi
+    if [ ! -f "${REC_UNIT}" ]; then
+        fail "mos-shadow-reconcile.service is missing, so its ${keyw}=${dep} ordering cannot be checked"
+    elif [ "${named}" -eq 0 ]; then
+        fail "mos-shadow-reconcile.service has no ${keyw}= naming ${dep}; /etc/shadow would be read or written before it converges"
+    elif [ ! -f "${ROOT}${depfile}" ]; then
+        fail "mos-shadow-reconcile.service orders ${keyw}=${dep} but ${depfile} is not in the image; systemd drops an ordering against a non-existent unit SILENTLY"
+    else
+        pass "mos-shadow-reconcile.service orders ${keyw}=${dep}, and ${depfile} is present in the image"
+    fi
+done
+
+# mos-seed-state must hand the reconciler the /mnt/state path: on first boot it
+# runs inside the local mount phase, before var-lib-mos.mount exists, so the
+# default /var/lib/mos would not yet be the STATE directory.
+sq_grep /usr/lib/mos/mos-seed-state \
+    '^/usr/lib/mos/mos-shadow-reconcile /mnt/state/mos/shadow$' \
+    "mos-seed-state seeds the STATE shadow directly at /mnt/state/mos/shadow (var-lib-mos.mount is not up yet on first boot)"
+
+# --- M5 (R5): no baked credential ---
+# What this proves: the shadow file that SHIPS carries no usable root password,
+# so a signed rootfs — byte-identical on every device in the fleet — cannot
+# hand anyone a working login. What it does NOT prove: that the device ends up
+# with a good password. That is mosd's job at runtime and is only observable on
+# a real boot.
+root_entry="$(awk -F: '$1 == "root" { print; exit }' "${FAC}" 2>/dev/null || true)"
+root_hash="$(printf '%s' "${root_entry}" | cut -d: -f2)"
+if [ -z "${root_entry}" ]; then
+    fail "${FACTORY_SHADOW} has no root: entry, so no claim can be made about the baked root password"
+else
+    case "${root_hash}" in
+    "")
+        fail "the root: entry in ${FACTORY_SHADOW} has an EMPTY hash field, which means PASSWORDLESS root login: pam_unix accepts any password, including none. Empty is not a locked marker — only '!' (including '!!' and '!'-prefixed forms that retain a hash) and '*' lock an account"
+        ;;
+    "!"* | "*"*)
+        pass "the packed rootfs carries NO usable root password (root: hash field is '${root_hash}', a locked marker)"
+        ;;
+    *)
+        fail "the packed rootfs carries a usable root password hash in ${FACTORY_SHADOW}. A signed rootfs is byte-identical on every device, so this is a fleet-wide shared secret. Cause: the ROOT_PASSWORD build arg was set at build time; unset it — the per-device password is provisioned by mosd at runtime"
+        ;;
+    esac
+fi
 
 # --- M4: /var fill-up containment ---
 sq_grep /etc/tmpfiles.d/mos-var.conf '^[qQ] /var/tmp ' "tmpfiles.d ages /var/tmp (fixed-size /var cannot grow)"
@@ -1247,6 +1536,313 @@ else
     else
         fail "file capabilities changed during packing; the squashfs must preserve security.capability: $(diff "${TMP}/caps-src.txt" "${TMP}/caps-pkg.txt" | tr '\n' ' ')"
     fi
+fi
+
+# ===========================================================================
+# M5: connd userland, image profile, and the crypt(3) format
+# ===========================================================================
+# Every path, prefix and unit name below is READ from the mosd source that owns
+# it rather than restated here. A constant restated in two places can drift, and
+# this drift is invisible from the code side: a reconciler that renders into a
+# directory the image does not provide, or drives a unit the image does not
+# install, fails on the device and nowhere else. Each extraction is checked for
+# emptiness, so a rename in mosd breaks this verifier loudly instead of turning
+# an assertion into a comparison against "".
+RECONCILER_DIR="${REPO_ROOT}/mosd/mosd/src/reconciler"
+
+# Value of a `const NAME: &str = "...";` in one of the reconcilers.
+mosd_const() {
+    sed -n "s/^const $2: \&str = \"\(.*\)\";\$/\1/p" "${RECONCILER_DIR}/$1" 2>/dev/null | head -n1
+}
+# The unit TEMPLATE name behind `format!("x@{interface}.service")`.
+mosd_unit_template() {
+    sed -n 's/^ *format!("\(.*\)@{interface}\.service")$/\1@.service/p' "${RECONCILER_DIR}/$1" 2>/dev/null | head -n1
+}
+# The rendered configuration file name, still carrying `{interface}`.
+mosd_config_name() {
+    sed -n 's/^ *format!("\([^"]*{interface}[^"]*\.conf\)")$/\1/p' "${RECONCILER_DIR}/$1" 2>/dev/null | head -n1
+}
+
+STA_DIR="$(mosd_const wifi_client.rs DEFAULT_CONFIG_DIR)"
+AP_DIR="$(mosd_const wifi_ap.rs DEFAULT_CONFIG_DIR)"
+STA_UNIT="$(mosd_unit_template wifi_client.rs)"
+AP_UNIT="$(mosd_unit_template wifi_ap.rs)"
+STA_CONF="$(mosd_config_name wifi_client.rs)"
+AP_CONF="$(mosd_config_name wifi_ap.rs)"
+STA_PREFIX="$(mosd_const wifi_client.rs NETWORKD_PREFIX)"
+AP_PREFIX="$(mosd_const wifi_ap.rs NETWORKD_PREFIX)"
+# The pattern network.rs sweeps: it DELETES every *<marker>*.network it did not
+# render, so an image file carrying the marker would be deleted on device.
+MOS_SWEEP="$(sed -n 's/.*file_name\.contains("\(.*\)").*/\1/p' "${RECONCILER_DIR}/network.rs" 2>/dev/null | head -n1)"
+
+if [ -n "${STA_DIR}" ] && [ -n "${AP_DIR}" ] && [ -n "${STA_UNIT}" ] && [ -n "${AP_UNIT}" ] &&
+    [ -n "${STA_CONF}" ] && [ -n "${AP_CONF}" ] && [ -n "${STA_PREFIX}" ] &&
+    [ -n "${AP_PREFIX}" ] && [ -n "${MOS_SWEEP}" ]; then
+    pass "read the connd contract out of mosd: ${STA_UNIT} <- ${STA_DIR}/${STA_CONF}, ${AP_UNIT} <- ${AP_DIR}/${AP_CONF}, networkd prefixes '${STA_PREFIX}'/'${AP_PREFIX}', sweep marker '${MOS_SWEEP}'"
+else
+    fail "could not read the connd contract out of ${RECONCILER_DIR}: dirs '${STA_DIR}'/'${AP_DIR}', units '${STA_UNIT}'/'${AP_UNIT}', configs '${STA_CONF}'/'${AP_CONF}', prefixes '${STA_PREFIX}'/'${AP_PREFIX}', sweep '${MOS_SWEEP}'. Every connd assertion below compares against these, so none of them mean anything until this passes"
+fi
+
+# --- the daemons and their unit templates ---
+sq_regular /usr/sbin/hostapd
+sq_regular /usr/sbin/wpa_supplicant
+sq_regular "/usr/lib/systemd/system/${STA_UNIT:-wpa_supplicant@.service}"
+sq_regular "/usr/lib/systemd/system/${AP_UNIT:-hostapd@.service}"
+
+# The unit's ExecStart and the reconciler's render path are ONE contract: the
+# template bakes the config file name into its command line, so a rename on
+# either side leaves a daemon starting against a file nothing writes. Both
+# systemd instance specifiers are accepted (%i escaped, %I unescaped); for a
+# plain interface name they are the same string, and which one the packager
+# chose is not this repo's business.
+# Args: description unit-path config-dir config-name-with-{interface}
+check_execstart() {
+    local what="$1" unit="$2" dir="$3" name="$4" spec want found=0
+    if [ ! -f "${ROOT}${unit}" ]; then
+        fail "${what}: ${unit} is not in the image, so mosd would drive a unit that does not exist"
+        return
+    fi
+    for spec in '%i' '%I'; do
+        want="${dir}/$(printf '%s' "${name}" | sed "s|{interface}|${spec}|")"
+        if grep -F -- "ExecStart=" "${ROOT}${unit}" | grep -Fq -- "${want}"; then
+            found=1
+            pass "${what}: $(basename "${unit}") reads ${want}, which is exactly what the reconciler renders"
+            break
+        fi
+    done
+    if [ "${found}" -eq 0 ]; then
+        fail "${what}: $(basename "${unit}")'s ExecStart does not name ${dir}/${name} (with %i or %I); it is '$(grep -F 'ExecStart=' "${ROOT}${unit}" | tr '\n' ' ')'. The unit and the reconciler disagree about the config path, so the daemon starts against a file nothing writes"
+    fi
+}
+check_execstart "station" "/usr/lib/systemd/system/${STA_UNIT:-wpa_supplicant@.service}" "${STA_DIR}" "${STA_CONF}"
+check_execstart "access point" "/usr/lib/systemd/system/${AP_UNIT:-hostapd@.service}" "${AP_DIR}" "${AP_CONF}"
+
+# mosd owns these lifecycles: it enables and starts exactly the instance the
+# settings tree asks for. A statically enabled template instance would race it.
+for u in "${STA_UNIT:-wpa_supplicant@.service}" "${AP_UNIT:-hostapd@.service}"; do
+    if [ -n "$(find "${ROOT}/etc/systemd/system" "${ROOT}/usr/lib/systemd/system" \
+        -name "${u}" -path '*.wants/*' 2>/dev/null || true)" ]; then
+        fail "${u} is statically enabled in the image; mosd owns that lifecycle and would race the image's own instance"
+    else
+        pass "${u} is installed but NOT statically enabled (mosd owns the lifecycle)"
+    fi
+done
+
+# Both packages ship a non-templated unit their postinst ENABLES. Masked, not
+# merely disabled: masking is the only form that also blocks the D-Bus
+# activation path wpasupplicant ships
+# (/usr/share/dbus-1/system-services/fi.w1.wpa_supplicant1.service). On v2 the
+# mask lives inside the signed read-only root, so it cannot be undone on device.
+for u in hostapd.service wpa_supplicant.service dbus-fi.w1.wpa_supplicant1.service; do
+    dest="$(readlink "${ROOT}/etc/systemd/system/${u}" 2>/dev/null || true)"
+    if [ "${dest}" = "/dev/null" ]; then
+        pass "${u} is masked (-> /dev/null); it cannot start and fight mosd for the radio"
+    else
+        fail "${u} is not masked (it is '${dest:-not a symlink to /dev/null}'). The package enables it, and it starts a second daemon on the same radio against a config mosd never writes while mosd's own instance still reports healthy"
+    fi
+    if [ -n "$(find "${ROOT}/etc/systemd/system" "${ROOT}/usr/lib/systemd/system" \
+        -name "${u}" -path '*.wants/*' 2>/dev/null || true)" ]; then
+        fail "${u} still carries the package's *.wants enablement symlink"
+    else
+        pass "${u} carries no enablement symlink from the package postinst"
+    fi
+done
+
+# --- the config directories must be WRITABLE at runtime, backed by STATE -----
+# The v2 root is a read-only dm-verity squashfs. A reconciler rendering into a
+# read-only path fails on device and nowhere else, so the BACKING is asserted,
+# not just that the directory exists: the bind must name the directory, its
+# source must be on STATE, and the unit must actually be ENABLED — M4 shipped
+# units that were installed and never enabled.
+for where in "${STA_DIR}" "${AP_DIR}"; do
+    [ -n "${where}" ] || continue
+    unit="$(echo "${where#/}" | tr / -).mount"
+    f="${ROOT}/etc/systemd/system/${unit}"
+    if [ ! -f "${f}" ]; then
+        fail "${where} is a reconciler render target but ${unit} does not exist; on the read-only verity root the render would fail on device and nowhere else"
+    elif ! grep -qx "Where=${where}" "${f}"; then
+        fail "${unit} does not mount ${where} (its Where= is '$(sed -n 's/^Where=//p' "${f}" | tail -n1)')"
+    elif ! grep -qE '^What=/mnt/state/' "${f}"; then
+        fail "${unit} is not backed by STATE (What= must be under /mnt/state); a tmpfs or nothing at all would lose every configured network on reboot"
+    elif [ -z "$(find "${ROOT}/etc/systemd/system" -name "${unit}" -path '*.wants/*' 2>/dev/null || true)" ]; then
+        fail "${unit} exists but is not enabled; ${where} would stay on the read-only squashfs"
+    else
+        pass "${where} is a STATE-backed bind via ${unit} ($(sed -n 's/^What=//p' "${f}" | tail -n1)), so the reconciler can write there and the result survives an A/B update"
+    fi
+    # The bind source has to be created before the mount is attempted, and with
+    # a mode that does not expose the pre-shared keys the directory ends up
+    # holding. mos-seed-state is the only thing that runs early enough.
+    src="$(sed -n 's/^What=//p' "${f}" 2>/dev/null | tail -n1)"
+    base="$(basename "${src:-none}")"
+    seed="${ROOT}/usr/lib/mos/mos-seed-state"
+    # The seed script creates both directories from one loop, so the assertion
+    # is in two halves: the loop does mkdir + chmod 0700 under /mnt/state, and
+    # THIS directory's name is one of the loop's items. Either half alone would
+    # pass for a script that creates the other directory twice.
+    if [ -n "${src}" ] && [ -f "${seed}" ] &&
+        grep -q 'mkdir -p "/mnt/state/\$d"' "${seed}" &&
+        grep -q 'chmod 0700 "/mnt/state/\$d"' "${seed}" &&
+        sed -n 's/^for d in \(.*\); do$/\1/p' "${seed}" | tr ' ' '\n' | grep -Fxq "${base}"; then
+        pass "mos-seed-state creates ${src} at 0700 before ${unit} is attempted"
+    else
+        fail "mos-seed-state does not create ${src} (0700); the bind would have no source on first boot and ${where} would stay read-only"
+    fi
+done
+
+# The AP's DHCP server is systemd-networkd's own DHCPServer=yes. dnsmasq would
+# be a second package and a second lifecycle for a job already done.
+if [ -e "${ROOT}/usr/sbin/dnsmasq" ]; then
+    fail "dnsmasq ships in the image; the provisioning AP hands out addresses through systemd-networkd's DHCPServer=yes and a second DHCP server on the same link is a conflict, not a fallback"
+else
+    pass "no dnsmasq in the image (the AP's DHCP server is systemd-networkd's own DHCPServer=yes)"
+fi
+
+# --- the image's networkd namespace must not collide with mosd's ---
+# network.rs DELETES every *${MOS_SWEEP}*.network it did not itself render, and
+# the two WiFi reconcilers deliberately sit outside that pattern. An image file
+# that landed in either namespace would be swept away, or would shadow a
+# reconciler's unit, on device and nowhere else.
+# No -printf: this script also runs under busybox find inside the container.
+img_networks="$(for d in "${ROOT}/etc/systemd/network" "${ROOT}/usr/lib/systemd/network" \
+    "${ROOT}/run/systemd/network"; do
+    [ -d "${d}" ] || continue
+    find "${d}" -name '*.network' 2>/dev/null || true
+done | sed 's|.*/||' | sort -u)"
+collisions=""
+for n in ${img_networks}; do
+    case "${n}" in
+    *"${MOS_SWEEP}"*) collisions="${collisions} ${n}(swept-by-network.rs)" ;;
+    "${STA_PREFIX}"*) collisions="${collisions} ${n}(station-namespace)" ;;
+    "${AP_PREFIX}"*) collisions="${collisions} ${n}(ap-namespace)" ;;
+    esac
+done
+if [ -z "${img_networks}" ]; then
+    fail "the image ships no .network file at all, so this namespace check would pass vacuously"
+elif [ -z "${collisions}" ]; then
+    pass "none of the image's .network files ($(echo "${img_networks}" | tr '\n' ' ')) fall in a reconciler-owned namespace ('${MOS_SWEEP}', '${STA_PREFIX}', '${AP_PREFIX}')"
+else
+    fail "image .network files collide with a reconciler-owned namespace:${collisions}. network.rs deletes every *${MOS_SWEEP}*.network it did not render, and a file in a WiFi reconciler's prefix would shadow or be swept by it"
+fi
+
+# networkd applies the FIRST matching unit in lexical order across its
+# directories, so the image's fallback has to sort BEFORE the reconcilers'
+# units. Compared as strings, not assumed from the numbers.
+# Each prefix is compared with the image's file INDEPENDENTLY: the two
+# reconciler prefixes have no ordering requirement between themselves (they
+# never match the same interface), so requiring the three to be sorted as one
+# list would be a check about the wrong property.
+dhcp_default="80-dhcp.network"
+sort_bad=""
+for prefix in "${STA_PREFIX}" "${AP_PREFIX}"; do
+    if [ -z "${prefix}" ]; then
+        sort_bad="${sort_bad} <unreadable>"
+    elif [ "$(printf '%s\n' "${dhcp_default}" "${prefix}" | LC_ALL=C sort | head -n1)" != "${dhcp_default}" ]; then
+        sort_bad="${sort_bad} ${prefix}"
+    fi
+done
+if [ -z "${sort_bad}" ]; then
+    pass "${dhcp_default} sorts before both '${STA_PREFIX}' and '${AP_PREFIX}', so a reconciler-rendered unit is never shadowed by the image's fallback"
+else
+    fail "${dhcp_default} does not sort before:${sort_bad}; networkd applies the first match in lexical order, so the image's fallback would win over the unit mosd rendered for that interface"
+fi
+
+# --- the image profile, and the SSH default it selects ---
+PROFILE_FILE="/usr/lib/mos/profile.conf"
+PROVISIONING_SRC="${REPO_ROOT}/mosd/mosd/src/provisioning.rs"
+PROFILE_KEY="$(sed -n 's/^const PROFILE_KEY: \&str = "\(.*\)";$/\1/p' "${PROVISIONING_SRC}" 2>/dev/null | head -n1)"
+PROFILE_DEFAULT_PATH="$(sed -n 's/^pub const DEFAULT_PROFILE_PATH: \&str = "\(.*\)";$/\1/p' "${PROVISIONING_SRC}" 2>/dev/null | head -n1)"
+if [ "${PROFILE_DEFAULT_PATH}" = "${PROFILE_FILE}" ] && [ -n "${PROFILE_KEY}" ]; then
+    pass "mosd reads the image profile from ${PROFILE_DEFAULT_PATH} with key ${PROFILE_KEY}, which is the file this image ships"
+else
+    fail "mosd reads its profile from '${PROFILE_DEFAULT_PATH}' with key '${PROFILE_KEY}', but the image ships ${PROFILE_FILE}; mosd FAILS CLOSED on a missing file, so every image would self-provision to prod and disable its own sshd with every check still green"
+fi
+sq_regular "${PROFILE_FILE}"
+profile_mode="$(stat -c %a "${ROOT}${PROFILE_FILE}" 2>/dev/null || echo none)"
+if [ "${profile_mode}" = "444" ]; then
+    pass "${PROFILE_FILE} is mode 0${profile_mode} (it describes the image, not the device, and lives inside the read-only verity root)"
+else
+    fail "${PROFILE_FILE} is mode ${profile_mode}, expected 444"
+fi
+
+# The value is matched CASE-SENSITIVELY by mosd and anything it does not
+# recognise resolves to prod, so `DEV`, `Dev`, a comment or a typo in the key
+# are all the same silent failure: SSH off on an image built to have it on.
+profile_values="$(sed -n "s/^${PROFILE_KEY:-MOS_PROFILE}=\(.*\)\$/\1/p" "${ROOT}${PROFILE_FILE}" 2>/dev/null || true)"
+profile_n="$(printf '%s\n' "${profile_values}" | grep -c . || true)"
+MOS_PROFILE_VALUE="$(printf '%s\n' "${profile_values}" | tail -n1)"
+case "${MOS_PROFILE_VALUE}" in
+dev | prod)
+    if [ "${profile_n}" = "1" ]; then
+        pass "${PROFILE_FILE} carries exactly one ${PROFILE_KEY:-MOS_PROFILE}=${MOS_PROFILE_VALUE} line, an exact lowercase value mosd recognises"
+    else
+        fail "${PROFILE_FILE} carries ${profile_n} ${PROFILE_KEY:-MOS_PROFILE}= lines; mosd takes the LAST one, so the file's meaning depends on line order"
+    fi
+    ;;
+*)
+    fail "${PROFILE_FILE} resolves to '${MOS_PROFILE_VALUE}', which mosd does not recognise. Its match is case-sensitive and it FAILS CLOSED: this image would self-provision to prod and disable its own sshd, with every other check still green. Contents: $(tr '\n' ' ' <"${ROOT}${PROFILE_FILE}" 2>/dev/null)"
+    ;;
+esac
+
+# The end-to-end property, in both directions: dev implies ssh.service IS
+# enabled in the image, prod implies it is NOT. mosd seeds access.ssh.enabled
+# from this same file, so an image whose static enablement disagreed with its
+# profile would have sshd listening before mosd ever got to decide.
+ssh_enabled=0
+[ -n "$(find "${ROOT}/etc/systemd/system" -name ssh.service -path '*.wants/*' 2>/dev/null || true)" ] && ssh_enabled=1
+case "${MOS_PROFILE_VALUE}" in
+dev)
+    if [ "${ssh_enabled}" -eq 1 ]; then
+        pass "profile is dev and ssh.service IS enabled in the image, which is what mosd will seed access.ssh.enabled to"
+    else
+        fail "profile is dev but ssh.service is NOT enabled in the image; mosd will seed access.ssh.enabled true and the dev SSH path is still gone until its first reconcile"
+    fi
+    ;;
+prod)
+    if [ "${ssh_enabled}" -eq 0 ]; then
+        pass "profile is prod and ssh.service is NOT enabled in the image, so sshd never listens before mosd has decided"
+    else
+        fail "profile is prod but ssh.service IS enabled in the image; sshd would be listening from early boot until mosd's reconciler stops it"
+    fi
+    ;;
+*)
+    fail "ssh.service enablement cannot be judged: the image profile did not resolve to dev or prod"
+    ;;
+esac
+
+# --- the shadow hash format, against the libcrypt PACKED IN THIS IMAGE ------
+# No Rust test can make this assertion: the test host is x86 and the library is
+# an arm64 object inside the image. mosd writes a crypt(3) hash into the root
+# account's shadow entry and pam_unix verifies it through this exact libcrypt;
+# a format the library cannot parse rejects every password while the file, the
+# unit and the reconciler all look perfectly healthy.
+# The prefix is READ from the assertion sshd.rs pins on its own output, so the
+# two cannot drift; requiring exactly one keeps that source unambiguous.
+SSHD_SRC="${REPO_ROOT}/mosd/mosd/src/reconciler/sshd.rs"
+crypt_prefixes="$(grep -oE 'starts_with\("\$[0-9a-zA-Z]+\$' "${SSHD_SRC}" 2>/dev/null | grep -oE '\$[0-9a-zA-Z]+\$' | sort -u || true)"
+crypt_n="$(printf '%s\n' "${crypt_prefixes}" | grep -c . || true)"
+CRYPT_PREFIX="$(printf '%s\n' "${crypt_prefixes}" | head -n1)"
+if [ "${crypt_n}" = "1" ]; then
+    pass "sshd.rs pins exactly one crypt(3) prefix for the shadow field: ${CRYPT_PREFIX}"
+else
+    fail "sshd.rs pins ${crypt_n} distinct crypt(3) prefixes ($(printf '%s' "${crypt_prefixes}" | tr '\n' ' ')); the format the image must support is ambiguous, so the libcrypt check below cannot mean anything"
+fi
+
+LIBCRYPT_LINK="/usr/lib/aarch64-linux-gnu/libcrypt.so.1"
+LIBCRYPT_REAL=""
+if [ -e "${ROOT}${LIBCRYPT_LINK}" ]; then
+    LIBCRYPT_REAL="$(readlink -f "${ROOT}${LIBCRYPT_LINK}" 2>/dev/null || true)"
+fi
+if [ -n "${LIBCRYPT_REAL}" ] && [ -f "${LIBCRYPT_REAL}" ]; then
+    pass "${LIBCRYPT_LINK} resolves to ${LIBCRYPT_REAL#"${ROOT}"} in the image (the SONAME the login stack loads)"
+else
+    fail "${LIBCRYPT_LINK} does not resolve to a regular file in the image; without it pam_unix cannot verify any password at all"
+fi
+if [ "${crypt_n}" != "1" ] || [ ! -s "${LIBCRYPT_REAL:-/nonexistent}" ]; then
+    fail "cannot check the crypt(3) format against the image's libcrypt: prefix count ${crypt_n}, library '${LIBCRYPT_REAL:-missing}'"
+elif LC_ALL=C tr -c '[:print:]' '\n' <"${LIBCRYPT_REAL}" | grep -Fq -- "${CRYPT_PREFIX}"; then
+    pass "the libcrypt packed in this image implements ${CRYPT_PREFIX}, the crypt(3) format mosd writes into the root shadow entry"
+else
+    fail "the libcrypt packed in this image ($(basename "${LIBCRYPT_REAL}")) does NOT implement ${CRYPT_PREFIX}, the format mosd writes into /etc/shadow. pam_unix would reject every password while the shadow file, the reconciler and every other check look healthy. Formats it does carry: $(LC_ALL=C tr -c '[:print:]' '\n' <"${LIBCRYPT_REAL}" | grep -oE '^\$[0-9a-z]+\$$' | sort -u | tr '\n' ' ')"
 fi
 
 # ===========================================================================

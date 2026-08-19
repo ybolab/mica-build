@@ -15,6 +15,8 @@ trait Mosd {
     fn get_settings(&self, path: &str) -> zbus::Result<String>;
     fn set_settings(&self, path: &str, value_json: &str) -> zbus::Result<()>;
     fn get_state(&self, path: &str) -> zbus::Result<String>;
+    fn reboot(&self) -> zbus::Result<()>;
+    fn power_off(&self) -> zbus::Result<()>;
 }
 
 /// Lazily-connected mosd client. The proxy is built on first use and cached;
@@ -84,6 +86,28 @@ impl SettingsApi for BusSettings {
         let proxy = self.proxy().await?;
         match proxy.get_state(path).await {
             Ok(json) => Ok(serde_json::from_str(&json)?),
+            Err(err) => {
+                self.reset().await;
+                Err(err.into())
+            }
+        }
+    }
+
+    async fn reboot(&self) -> anyhow::Result<()> {
+        let proxy = self.proxy().await?;
+        match proxy.reboot().await {
+            Ok(()) => Ok(()),
+            Err(err) => {
+                self.reset().await;
+                Err(err.into())
+            }
+        }
+    }
+
+    async fn power_off(&self) -> anyhow::Result<()> {
+        let proxy = self.proxy().await?;
+        match proxy.power_off().await {
+            Ok(()) => Ok(()),
             Err(err) => {
                 self.reset().await;
                 Err(err.into())

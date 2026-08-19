@@ -38,6 +38,7 @@ axum-server = { version = "0.7", default-features = false, features = ["tls-rust
 rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12"] }
 rcgen = { version = "0.14", default-features = false, features = ["crypto", "pem", "ring"] }
 argon2 = "0.5"
+bcrypt = "0.19"
 rand = "0.8"
 maud = "0.27"
 hmac = "0.12"

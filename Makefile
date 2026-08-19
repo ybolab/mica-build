@@ -5,6 +5,7 @@ BOARDS := cx3576 x64
 
 .PHONY: help os os-image-cx3576 os-verify-cx3576 os-rootfs-cx3576-v2 \
 	os-image-cx3576-v2 os-verify-cx3576-v2 os-bundle-cx3576 os-devkeys os-health-test \
+	os-repart-test \
 	$(addsuffix -%,$(BOARDS))
 
 help:
@@ -19,6 +20,7 @@ help:
 	@echo "  os-bundle-cx3576    build the RAUC update bundle"
 	@echo "  os-devkeys          generate the gitignored development signing material"
 	@echo "  os-health-test      run the offline tests for the health gate and machine-id oneshots"
+	@echo "  os-repart-test      prove first-boot repart growth grows DATA and cannot wipe the loader (privileged docker)"
 	@echo "  cx3576-<t>          delegate target <t> to board/cx3576 (uboot|kernel|rootfs|image|clean)"
 	@echo "  x64-image           x64 uses the upstream talos image pipeline (see board/x64/README.md)"
 
@@ -50,6 +52,16 @@ os-devkeys:
 
 os-health-test:
 	bash os/health/test.sh
+
+# Behavioural check on first-boot growth: a real systemd-repart, with discard
+# enabled, over a copy of each assembled image on a loop device. It proves two
+# things the image contract cannot — that growth does not wipe the Rockchip
+# idbloader at LBA 64, and that the definitions the v2 image ships actually GROW
+# DATA rather than refusing the run (a refusal looks exactly like a clean exit).
+# Needs privileged docker, so it is a dedicated target rather than part of
+# os-verify; it fails loudly when it cannot run rather than skipping.
+os-repart-test:
+	bash os/repart-loader-test.sh
 
 cx3576-%:
 	$(MAKE) -C board/cx3576 $*
