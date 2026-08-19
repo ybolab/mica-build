@@ -1219,6 +1219,37 @@ if [ -n "${mosd_bus_name}" ] && [ "${mosd_policy_names}" = "${mosd_bus_name}" ];
 else
     fail "policy/unit bus-name mismatch: mosd.service declares BusName='${mosd_bus_name}' but the policy mentions '${mosd_policy_names}'. A policy naming anything else guards a name nothing owns while the real one is governed by system.conf alone"
 fi
+# ONE policy file, not two. dbus-daemon reads system-bus policy from BOTH
+# /usr/share/dbus-1/system.d/ and /etc/dbus-1/system.d/, concatenating every
+# .conf it finds and letting later rules override earlier ones. A second file
+# naming com.mos.mosd -- an operator drop-in, a stale copy left by a package,
+# a debugging file that shipped by accident -- would therefore not be a
+# stricter policy layered on top: it could hand back exactly the
+# default-context allow the checks above just proved absent, and every one of
+# those checks would still pass. RFCT-048 restricted the name to root and named
+# this as the one path back out that it left unasserted; this is that assertion.
+#
+# The bus name is READ from mosd.service, as above, so this cannot go stale
+# against a rename. The blessed path is excluded by name, not by directory: a
+# second file in /usr/share/dbus-1/system.d/ is exactly as dangerous as one in
+# /etc/dbus-1/system.d/.
+mosd_policy_dups=""
+for d in /etc/dbus-1/system.d /usr/share/dbus-1/system.d; do
+    [ -d "${ROOT}${d}" ] || continue
+    for f in "${ROOT}${d}"/*; do
+        [ -f "${f}" ] || continue
+        [ "${f#"${ROOT}"}" = "${MOSD_POLICY_PATH}" ] && continue
+        if [ -n "${mosd_bus_name}" ] && grep -Fq "${mosd_bus_name}" "${f}"; then
+            mosd_policy_dups="${mosd_policy_dups} ${f#"${ROOT}"}"
+        fi
+    done
+done
+if [ -z "${mosd_policy_dups}" ]; then
+    pass "${MOSD_POLICY_PATH} is the ONLY file under /etc/dbus-1/system.d or /usr/share/dbus-1/system.d that mentions ${mosd_bus_name:-the mosd bus name}; no second policy can override the root-only restriction"
+else
+    fail "a second D-Bus policy file mentions ${mosd_bus_name:-the mosd bus name}:${mosd_policy_dups}. dbus-daemon reads both system.d directories and applies later rules over earlier ones, so this file can reinstate the default-context allow that ${MOSD_POLICY_PATH} removes -- and every other policy check here would still pass"
+fi
+
 sq_regular /etc/dbus-1/system.d/bluetooth.conf
 
 # DNS: systemd-resolved is only reachable through the stub resolver symlink.
@@ -1243,11 +1274,11 @@ sq_regular /usr/lib/systemd/system/serial-getty@.service
 # fstab entries and the STATE binds need their mountpoints to exist in the
 # read-only root: nothing can create them at runtime.
 missing_mp=""
-for d in /mnt/state /mnt/meta /srv /var; do
+for d in /mnt/state /mnt/meta /srv /var /home; do
     [ -d "${ROOT}${d}" ] || missing_mp="${missing_mp} ${d}"
 done
 if [ -z "${missing_mp}" ]; then
-    pass "every fstab/bind mountpoint exists in the read-only root (/mnt/state /mnt/meta /srv /var)"
+    pass "every fstab/bind mountpoint exists in the read-only root (/mnt/state /mnt/meta /srv /var /home)"
 else
     fail "mountpoint(s) missing from the read-only root:${missing_mp}; a verity root cannot create them at runtime, so the mount fails"
 fi
@@ -1711,6 +1742,181 @@ else
         fail "the packed rootfs carries a usable root password hash in ${FACTORY_SHADOW}. A signed rootfs is byte-identical on every device, so this is a fleet-wide shared secret. Cause: the ROOT_PASSWORD build arg was set at build time; unset it — the per-device password is provisioned by mosd at runtime"
         ;;
     esac
+fi
+
+# --- EVERY account is locked, not just root (RFCT-024 generalised by RFCT-039)
+# RFCT-024 wrote the rule that an EMPTY password field is not a locked marker
+# but passwordless login, and scoped it to root because root was the only
+# account in the image. RFCT-039 adds `mos` as the second, so the rule is
+# widened here to every account the image ships: a check that stayed
+# root-shaped would quietly stop covering the case it was written for, and the
+# third account would arrive with nothing looking at it at all.
+#
+# Two failure branches with two messages, because they are two different
+# defects. EMPTY means the account accepts any password on this device. A
+# USABLE HASH means a credential that every device in the fleet shares, since a
+# signed rootfs is byte-identical across all of them. Reporting one as the
+# other would send the fix in the wrong direction.
+fac_empty=""
+fac_hashed=""
+fac_checked=0
+if [ -f "${FAC}" ] && [ -f "${ROOT}/etc/passwd" ]; then
+    while IFS=: read -r u _; do
+        [ -n "${u}" ] || continue
+        line="$(grep "^${u}:" "${FAC}" | head -n1 || true)"
+        [ -n "${line}" ] || continue
+        fac_checked=$((fac_checked + 1))
+        h="$(printf '%s' "${line}" | cut -d: -f2)"
+        case "${h}" in
+        "") fac_empty="${fac_empty} ${u}" ;;
+        "!"* | "*"*) ;;
+        *) fac_hashed="${fac_hashed} ${u}" ;;
+        esac
+    done <"${ROOT}/etc/passwd"
+fi
+if [ "${fac_checked}" -eq 0 ]; then
+    fail "no account could be read from ${FACTORY_SHADOW}, so nothing can be claimed about the passwords this image ships"
+elif [ -n "${fac_empty}" ]; then
+    fail "account(s) in ${FACTORY_SHADOW} with an EMPTY password field:${fac_empty}. An empty field means PASSWORDLESS login — pam_unix accepts any password, including none. Empty is not a locked marker; only '!' (including '!!' and '!'-prefixed forms that retain a hash) and '*' lock an account"
+elif [ -n "${fac_hashed}" ]; then
+    fail "account(s) in ${FACTORY_SHADOW} carrying a usable password hash:${fac_hashed}. A signed rootfs is byte-identical on every device in the fleet, so any hash baked into one is a shared secret by construction; passwords are provisioned per device at runtime, never in the image"
+else
+    pass "all ${fac_checked} accounts in ${FACTORY_SHADOW} have a LOCKED password field — none empty, none a usable hash"
+fi
+
+# ===========================================================================
+# RFCT-039: a persistent /home on DATA, owned by the `mos` account
+#
+# Venus OS keeps an operator's home across reboots and firmware updates; mos
+# now does the same. The decisions this section makes checkable:
+#
+#   DATA, NOT STATE.  /home accumulates USER DATA of unbounded size — a staged
+#     update bundle alone is ~72 MiB against a 64 MiB STATE partition. STATE is
+#     small, precious configuration and identity, and filling it would take the
+#     settings tree and the sshd host keys down with it. DATA is the only
+#     partition carrying x-systemd.growfs and the only one repart extends.
+#   PINNED uid/gid 1000.  The home outlives the rootfs that created it, so its
+#     owner is part of the on-disk contract, not an allocation detail. If a
+#     later image resolved `mos` to a different id, every file already in
+#     /home/mos would belong to a uid that no longer exists — and nothing would
+#     fail at build time or on the update. Asserted NUMERICALLY here for that
+#     reason; asserting the name alone would pass through the whole failure.
+#   NOT A PRIVILEGE TIER.  AuthorizedKeysFile is %u over one shared key list,
+#     so every authorised key is a root key. `mos` buys a persistent working
+#     directory and a non-root default shell, nothing weaker.
+# ===========================================================================
+
+MOS_USER=mos
+MOS_ID=1000
+
+# The bind, and specifically what BACKS it. The DATA mountpoint is read out of
+# the fstab entry for DATA_GUID rather than spelled `/srv` here, so a What=
+# under /mnt/state — STATE, the wrong tier — fails on the tier and not on a
+# string. Enablement is checked the way the STATE binds are: a unit that is
+# present but unenabled leaves /home inside the read-only squashfs forever.
+HOME_UNIT="${ROOT}/etc/systemd/system/home.mount"
+DATA_MNT="$(awk -v d="PARTUUID=$(lc "${DATA_GUID}")" '$1 == d {print $2; exit}' "${FSTAB}" 2>/dev/null || true)"
+hm_what="$(sed -n 's/^What=//p' "${HOME_UNIT}" 2>/dev/null | tail -n1 || true)"
+hm_where="$(sed -n 's/^Where=//p' "${HOME_UNIT}" 2>/dev/null | tail -n1 || true)"
+if [ ! -f "${HOME_UNIT}" ]; then
+    fail "home.mount is not in the image, so /home stays inside the read-only verity squashfs and nothing an operator puts there survives a reboot"
+elif [ "${hm_where}" != "/home" ]; then
+    fail "home.mount mounts '${hm_where:-<no Where=>}', not /home"
+elif [ -z "${DATA_MNT}" ]; then
+    fail "no /etc/fstab entry mounts DATA (PARTUUID=$(lc "${DATA_GUID}")), so home.mount's backing tier cannot be established"
+elif [ -z "${hm_what}" ] || [ "${hm_what#"${DATA_MNT}"/}" = "${hm_what}" ]; then
+    fail "home.mount binds /home from '${hm_what:-<no What=>}', which is not under ${DATA_MNT} (the DATA partition). A home directory is user data of unbounded size — an update bundle alone is ~72 MiB — and STATE is 64 MiB of precious identity: filling it would take the settings tree and the sshd host keys with it. DATA is also the only partition repart grows"
+elif [ -z "$(find "${ROOT}/etc/systemd/system" -name home.mount -path '*.wants/*' 2>/dev/null || true)" ]; then
+    fail "home.mount exists but is not enabled (no symlink in a .wants directory); /home would never be bound and every file written there would live in the read-only squashfs view"
+else
+    pass "home.mount binds /home from ${hm_what} on DATA (fstab mounts DATA at ${DATA_MNT}) and is enabled"
+fi
+
+# The bind SOURCE, which mount(8) does not create. mos-seed-home makes it, and
+# it must run before the mount rather than after: a seed ordered after the bind
+# could not have made that bind succeed in the first place, so it would never
+# run at all. It writes only under DATA, which is why the usual "a seed on a
+# verity root must run after the bind" hazard does not apply to it.
+SEED_HOME_UNIT="${ROOT}/etc/systemd/system/mos-seed-home.service"
+sq_regular /usr/lib/mos/mos-seed-home
+if [ ! -f "${SEED_HOME_UNIT}" ]; then
+    fail "mos-seed-home.service is not in the image; nothing creates ${hm_what:-the home.mount source} on DATA and the bind fails, because mount(8) never creates the SOURCE of a bind"
+elif ! sed -n 's/^Before=//p' "${SEED_HOME_UNIT}" | tr ' ' '\n' | grep -Fxq home.mount; then
+    fail "mos-seed-home.service has no Before= naming home.mount; the bind source would not be guaranteed to exist when the mount is attempted, and the mount fails"
+elif [ -z "$(find "${ROOT}/etc/systemd/system" -name mos-seed-home.service -path '*.wants/*' 2>/dev/null || true)" ]; then
+    fail "mos-seed-home.service exists but is not enabled, so the home.mount source is never created and the bind fails on every boot"
+else
+    pass "mos-seed-home.service is enabled and ordered Before=home.mount, so the bind source exists on DATA before the mount is attempted"
+fi
+# It must write to the DATA path and never to /home: /home in the unbound view
+# is inside the read-only verity squashfs, so a seed touching it would fail.
+SEED_HOME="${ROOT}/usr/lib/mos/mos-seed-home"
+seed_uid="$(sed -n 's/^MOS_UID=//p' "${SEED_HOME}" 2>/dev/null | tail -n1 || true)"
+seed_gid="$(sed -n 's/^MOS_GID=//p' "${SEED_HOME}" 2>/dev/null | tail -n1 || true)"
+if [ ! -f "${SEED_HOME}" ]; then
+    fail "/usr/lib/mos/mos-seed-home is not in the image, so what it creates cannot be checked"
+elif [ "${seed_uid}" != "${MOS_ID}" ] || [ "${seed_gid}" != "${MOS_ID}" ]; then
+    fail "mos-seed-home pins uid '${seed_uid:-<none>}' gid '${seed_gid:-<none>}', not ${MOS_ID}:${MOS_ID}. The seed and /etc/passwd must agree by NUMBER: the home on DATA outlives this rootfs, so a mismatch leaves the directory owned by an id the image does not define"
+elif ! grep -Eq '^[[:space:]]*mkdir /srv/home/mos$' "${SEED_HOME}"; then
+    fail "mos-seed-home does not create /srv/home/mos. It must create the home under the DATA path, never under /home: /home in the unbound view is inside the read-only verity squashfs, and a seed writing there fails"
+elif ! grep -Eq '^[[:space:]]*chmod 0700 /srv/home/mos$' "${SEED_HOME}"; then
+    fail "mos-seed-home does not chmod 0700 /srv/home/mos; a home directory readable by every local uid is not a private home"
+elif ! grep -Eq '^[[:space:]]*chown "\$\{MOS_UID\}:\$\{MOS_GID\}" /srv/home/mos$' "${SEED_HOME}"; then
+    fail "mos-seed-home does not chown /srv/home/mos to its pinned MOS_UID:MOS_GID pair; resolving the name at runtime would make the owner whatever the running image says today"
+else
+    pass "mos-seed-home creates /srv/home/mos on DATA, mode 0700, owned by the pinned pair ${seed_uid}:${seed_gid} — the same numbers /etc/passwd gives ${MOS_USER}"
+fi
+
+# The account, asserted by NUMBER. `mos` resolving to some other uid is the
+# failure that costs a device its whole home directory, and it is invisible:
+# the account is there, the shell is right, and every file already on DATA
+# belongs to nobody.
+mos_pw="$(awk -F: -v u="${MOS_USER}" '$1 == u { print; exit }' "${ROOT}/etc/passwd" 2>/dev/null || true)"
+mos_uid="$(printf '%s' "${mos_pw}" | cut -d: -f3)"
+mos_gid="$(printf '%s' "${mos_pw}" | cut -d: -f4)"
+mos_home="$(printf '%s' "${mos_pw}" | cut -d: -f6)"
+mos_shell="$(printf '%s' "${mos_pw}" | cut -d: -f7)"
+mos_grp_gid="$(awk -F: -v g="${MOS_USER}" '$1 == g { print $3; exit }' "${ROOT}/etc/group" 2>/dev/null || true)"
+if [ -z "${mos_pw}" ]; then
+    fail "no '${MOS_USER}' account in the packed /etc/passwd; the persistent home would have no owner"
+elif [ "${mos_uid}" != "${MOS_ID}" ] || [ "${mos_gid}" != "${MOS_ID}" ]; then
+    fail "'${MOS_USER}' is uid ${mos_uid}, gid ${mos_gid} in the packed /etc/passwd, expected ${MOS_ID}:${MOS_ID}. The home directory sits on DATA and outlives this rootfs, so its owner is part of the ON-DISK CONTRACT: an image that resolves ${MOS_USER} to a different id leaves every file already in ${mos_home:-the home} owned by a uid that no longer exists, and nothing reports an error"
+elif [ "${mos_grp_gid}" != "${MOS_ID}" ]; then
+    fail "the '${MOS_USER}' group is gid '${mos_grp_gid:-absent}' in the packed /etc/group, expected ${MOS_ID}; the primary group of the home's owner is part of the same on-disk contract as the uid"
+elif [ "${mos_shell}" != "/bin/bash" ] || [ ! -f "${ROOT}/bin/bash" ]; then
+    fail "'${MOS_USER}' has shell '${mos_shell}' and /bin/bash is $([ -f "${ROOT}/bin/bash" ] && echo present || echo ABSENT) in the packed root; the login shell must be /bin/bash and that binary must actually ship, or every login dies at exec"
+elif [ "${mos_home}" != "/home/${MOS_USER}" ]; then
+    fail "'${MOS_USER}' has home '${mos_home}', expected /home/${MOS_USER}"
+else
+    pass "'${MOS_USER}' is uid ${MOS_ID}, gid ${MOS_ID} (group ${MOS_USER} = gid ${mos_grp_gid}), shell ${mos_shell} (present in the image), home ${mos_home}"
+fi
+
+# NO SUDO AND NO SUPPLEMENTARY GROUPS is a deliberate phase-1 deferral, not an
+# oversight: there is no privilege policy to express yet, the web UI is the
+# admin surface, and a guessed policy would outlive the release that guessed
+# it. A deferral nothing asserts is one `usermod -aG` away from being undone
+# silently, so it is asserted. sudo not being installed is checked too — a
+# group grant needs a binary to mean anything, and vice versa.
+mos_extra_groups="$(awk -F: -v u="${MOS_USER}" '$1 != u && $4 ~ "(^|,)" u "(,|$)" { print $1 }' \
+    "${ROOT}/etc/group" 2>/dev/null | tr '\n' ' ' | sed 's/ $//' || true)"
+if [ -n "${mos_extra_groups}" ]; then
+    fail "'${MOS_USER}' is a member of supplementary group(s): ${mos_extra_groups}. Phase 1 grants none — not adm, not shadow, nothing reaching the settings tree — and this is a recorded deferral (docs/task/RFCT-039.md), so a grant appearing here is an undocumented privilege decision"
+elif [ -f "${ROOT}/usr/bin/sudo" ] || [ -f "${ROOT}/bin/sudo" ]; then
+    fail "sudo ships in the image; phase 1 deliberately gives '${MOS_USER}' no privilege-escalation path and the package is not in the allowlist"
+else
+    pass "'${MOS_USER}' has no supplementary groups and no sudo ships in the image (a deliberate phase-1 deferral, recorded in docs/task/RFCT-039.md)"
+fi
+
+# The account's home must be INSIDE what home.mount binds. An account pointed
+# at a directory the bind does not cover would look completely healthy and
+# would lose everything on the next update — which is the entire problem this
+# task exists to solve.
+if [ -z "${mos_home}" ] || [ -z "${hm_where}" ]; then
+    fail "cannot compare '${MOS_USER}' home '${mos_home:-<none>}' against home.mount Where='${hm_where:-<none>}'; one of them is missing"
+elif [ "${mos_home}" = "${hm_where}" ] || [ "${mos_home#"${hm_where}"/}" != "${mos_home}" ]; then
+    pass "'${MOS_USER}' home ${mos_home} is inside ${hm_where}, the directory home.mount binds from ${hm_what} on DATA, so it persists across reboots and A/B updates"
+else
+    fail "'${MOS_USER}' home is '${mos_home}', which is NOT inside '${hm_where}' — the only path home.mount makes persistent. Everything written there would sit in the read-only squashfs view and be gone on the next A/B update"
 fi
 
 # --- every external binary the /usr/lib/mos boot scripts invoke --------------
@@ -2208,7 +2414,10 @@ else
 fi
 if [ "${crypt_n}" != "1" ] || [ ! -s "${LIBCRYPT_REAL:-/nonexistent}" ]; then
     fail "cannot check the crypt(3) format against the image's libcrypt: prefix count ${crypt_n}, library '${LIBCRYPT_REAL:-missing}'"
-elif LC_ALL=C tr -c '[:print:]' '\n' <"${LIBCRYPT_REAL}" | grep -Fq -- "${CRYPT_PREFIX}"; then
+# `grep -F`, not `grep -Fq`: with -q grep exits the moment it matches, tr
+# takes SIGPIPE, and `set -o pipefail` turns that 141 into a FAILED check on
+# a library that does carry the format. It reproduces about one run in three.
+elif LC_ALL=C tr -c '[:print:]' '\n' <"${LIBCRYPT_REAL}" | grep -F -- "${CRYPT_PREFIX}" >/dev/null; then
     pass "the libcrypt packed in this image implements ${CRYPT_PREFIX}, the crypt(3) format mosd writes into the root shadow entry"
 else
     fail "the libcrypt packed in this image ($(basename "${LIBCRYPT_REAL}")) does NOT implement ${CRYPT_PREFIX}, the format mosd writes into /etc/shadow. pam_unix would reject every password while the shadow file, the reconciler and every other check look healthy. Formats it does carry: $(LC_ALL=C tr -c '[:print:]' '\n' <"${LIBCRYPT_REAL}" | grep -oE '^\$[0-9a-z]+\$$' | sort -u | tr '\n' ' ')"

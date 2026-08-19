@@ -245,6 +245,65 @@ RUN mkdir -p /etc/systemd/journald.conf.d && \
 # Serial console getty: intentionally none — systemd's getty-generator spawns
 # serial-getty@ttyFIQ0 automatically from the kernel console= parameter.
 
+# The `mos` operator account (RFCT-039). A persistent /home with no owner
+# serves nothing, so the account and the home directory arrive together.
+#
+# uid AND gid are PINNED to 1000 explicitly rather than left to useradd's
+# allocator. The home directory OUTLIVES the rootfs that created it: it sits on
+# the DATA partition and survives every A/B update, so its owner is part of the
+# on-disk contract, not a build-time allocation detail. Had useradd chosen the
+# id and a later image resolved it differently, every file already in
+# /home/mos would be owned by a uid that no longer exists -- and nothing would
+# fail at build time, during the update, or on the next boot. It is precisely
+# because that failure is silent that the number is written out here, in
+# /usr/lib/mos/mos-seed-home, and in both verifiers.
+#
+# NO SUDO AND NO SUPPLEMENTARY GROUPS, deliberately. Not `adm`, not `shadow`,
+# nothing reaching the settings tree. Phase 1 has no privilege policy to
+# express -- the web UI is the admin surface -- and a guessed policy would
+# outlive the release that guessed it. See docs/task/RFCT-039.md: this is a
+# recorded deferral, not an oversight, and the assertion below keeps it true.
+#
+# `mos` is NOT a lesser privilege level. On v2, where the key list is rendered
+# per user over one shared set, EVERY AUTHORISED KEY IS A ROOT KEY; v1 ships no
+# AuthorizedKeysFile drop-in at all, so it makes no narrower grant either. The
+# account buys a non-root default shell, not a weaker level of access.
+#
+# `chage -d` pins the shadow LAST-CHANGE field. useradd stamps TODAY into it,
+# which would make the packed rootfs -- and therefore its dm-verity root hash --
+# differ on every build day for no content reason at all. The pinned value is
+# the same 2020-01-01 the layout's FILE_MTIME uses (day 18262), keeping the
+# build deterministic in the way os/mkimage-v2.sh documents.
+#
+# --no-create-home: v1 has no DATA partition and no home.mount, so nothing would
+# bind a persistent directory over /home here. The account is created anyway so
+# the two images do not drift in their account definitions; see RFCT-039 for
+# why v1 is silent on persistence.
+RUN set -eu; \
+    test -x /bin/bash || \
+        { echo "error: /bin/bash is not in the image, so it cannot be the mos login shell" >&2; exit 1; }; \
+    groupadd --gid 1000 mos; \
+    useradd --uid 1000 --gid 1000 --no-create-home --home-dir /home/mos \
+            --shell /bin/bash --comment "mos operator" mos; \
+    chage -d 2020-01-01 mos; \
+    ent="$(awk -F: '$1 == "mos"' /etc/passwd)"; \
+    [ "$(echo "${ent}" | cut -d: -f3,4,6,7)" = "1000:1000:/home/mos:/bin/bash" ] || \
+        { echo "error: the mos entry in /etc/passwd is '${ent}', expected uid 1000, gid 1000, home /home/mos, shell /bin/bash" >&2; exit 1; }; \
+    [ "$(awk -F: '$1 == "mos" { print $3; exit }' /etc/group)" = "1000" ] || \
+        { echo "error: the mos group is not gid 1000" >&2; exit 1; }; \
+    extra="$(awk -F: '$1 != "mos" && $4 ~ /(^|,)mos(,|$)/ { print $1 }' /etc/group | tr '\n' ' ')"; \
+    [ -z "${extra}" ] || \
+        { echo "error: mos is a member of supplementary group(s): ${extra}; phase 1 grants none, and no sudo" >&2; exit 1; }; \
+    mh="$(awk -F: '$1 == "mos" { print $2; exit }' /etc/shadow)"; \
+    case "${mh}" in \
+        "") echo "error: the mos entry in /etc/shadow has an EMPTY password field, which means PASSWORDLESS login: pam_unix accepts any password, including none. Empty is not a locked marker" >&2; exit 1 ;; \
+        '!'* | '*'*) ;; \
+        *) echo "error: the mos entry in /etc/shadow carries a usable password hash. A signed rootfs is byte-identical on every device, so any hash inside one is a fleet-wide shared secret" >&2; exit 1 ;; \
+    esac; \
+    [ "$(awk -F: '$1 == "mos" { print $3; exit }' /etc/shadow)" = "18262" ] || \
+        { echo "error: the mos shadow last-change field is not the pinned day 18262 (2020-01-01)" >&2; exit 1; }; \
+    echo "account: mos uid=1000 gid=1000 shell=/bin/bash home=/home/mos, no supplementary groups, shadow field '${mh}'"
+
 # DEV profile only — never set ROOT_PASSWORD for production images.
 # Default (empty): root stays locked and PermitRootLogin is untouched.
 ARG ROOT_PASSWORD=""
