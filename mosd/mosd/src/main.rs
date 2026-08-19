@@ -16,6 +16,7 @@
 #![forbid(unsafe_code)]
 
 mod bus;
+mod identity;
 mod reconciler;
 
 use anyhow::Context;
