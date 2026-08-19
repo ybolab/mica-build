@@ -98,7 +98,7 @@ silently.
 | 4 | `mos-shadow-reconcile.service` present AND enabled AND its script clears the marker | — | yes | "transient" actually being transient |
 | 5 | no `MOS_SHADOW_PASSWD` / `MOS_SHADOW_FACTORY` override in the unit or its drop-in dirs | — | yes | root credentials reconciled against the wrong files |
 | 6 | every external binary the `/usr/lib/mos` boot scripts invoke exists | yes | yes | a silently slimmed base image |
-| 7 | `ssh.service` sets `KillMode=process` | yes | yes | an operator disconnecting themselves |
+| 7 | `ssh.service` sets `KillMode=process` | yes | yes | a base-image change silently removing the backstop behind the reload |
 
 ### 1 — profile flip, both directions
 
@@ -168,21 +168,37 @@ The extractor is deliberately conservative — command position only. It finds 3
 commands on v2 and 12 on v1. See "What is NOT proven" for what it misses and why
 that is the right call.
 
-### 7 — `KillMode`, and how it turned out
+### 7 — `KillMode`: defence in depth, not the mitigation
 
 **The finding is positive: Debian's `openssh-server` does ship
-`KillMode=process`, and both images carry it.** It is asserted now rather than
-assumed.
+`KillMode=process`, and both images carry it.** That is worth stating plainly
+rather than passing over: nothing in this image chose it, nothing declares it,
+and nothing had asserted it until now. It is an inherited property of upstream
+packaging that happened to be right.
 
-It matters because this campaign made the sshd drop-in re-render when a
-transient password appears, and a changed drop-in restarts `ssh.service`. Under
-the systemd default `KillMode=control-group` a restart kills every process in
-the unit's cgroup — including the forked session carrying the operator's own SSH
-connection — so an operator setting a transient root password while logged in
-over SSH would disconnect themselves. `KillMode=process` kills only the listener.
+**It is not the mitigation, and the assertion must not be read as one.** L1 has
+ruled on the restart-vs-reload question, and RFCT-041 is changing
+`SshdReconciler` to RELOAD `ssh.service` on a configuration-only change instead
+of restarting it. sshd re-reads its configuration on SIGHUP, so established
+sessions survive a reload **by construction** — not by grace, and not because of
+anything asserted here. That reload is what protects an operator who sets a
+transient root password while logged in over SSH.
 
-This is an inherited property of a packaged unit the image does not author, and
-it had never been asserted. Now it is, in both verifiers, in both directions.
+What `KillMode=process` does is bound the damage if something restarts the unit
+anyway: under the systemd default `KillMode=control-group` a restart kills every
+process in the unit's cgroup, including the forked session carrying the
+operator's own connection. So this check is a second line of defence and a
+tripwire for the day a base-image change moves it.
+
+Both the comment and both outcome messages are written so a later reader cannot
+conclude that this assertion covers the problem and drop the reload on the
+strength of it. The PASS message says so explicitly ("defence in depth only …
+this passing is not a reason to restart instead"); the FAIL message says the
+image has lost its second line of defence and that the reload is now the ONLY
+thing preventing the disconnect. That inversion — a guard being mistaken for the
+fix it merely backstops — is exactly how this kind of check rots.
+
+`mosd/mosd/src/reconciler/**` is NOT touched by this task; RFCT-041 owns it.
 
 ## Verifier check counts
 
@@ -299,6 +315,11 @@ there authenticates; that `KillMode=process` is set is not proof that an
 established session survives a restart on real hardware. All of that is only
 observable on a real boot and none of it was performed.
 
+**Nothing here verifies the reload.** RFCT-041's change — reloading
+`ssh.service` on a configuration-only change so sessions survive by
+construction — is the actual mitigation, and this task asserts nothing about it.
+Assertion 7 checks only that the backstop behind it is still in place.
+
 **The binary inventory is conservative by construction.** It takes command names
 at command position only, so commands the scripts invoke through their own
 `run`/`have` wrappers — `busctl`, `rauc`, `systemctl`, `curl`, `wget` — are NOT
@@ -338,3 +359,6 @@ fail when its property is broken.
 - RFCT-034 (sshd reconciler, `AuthorizedKeysFile` drop-in) — merged
 - RFCT-038 (newline-safe shadow append; introduced the `od` dependency) — merged
 - RFCT-039 (`/home` mountpoint) — sibling, owns its own assertion
+- RFCT-041 (reload rather than restart on a config-only change) — sibling, owns
+  `mosd/mosd/src/reconciler/**`; assertion 7 here is the backstop behind it, not
+  a substitute for it

@@ -1102,22 +1102,30 @@ dev | prod)
     ;;
 esac
 
-# --- ssh.service must spare established sessions across a restart ------------
-# The sshd drop-in mosd renders changes whenever a transient root password is
-# set or cleared, and a changed drop-in restarts ssh.service. Under the systemd
-# default KillMode=control-group a restart kills every process in the unit's
-# cgroup, including the forked session CARRYING the operator's SSH connection —
-# so setting a password over SSH would disconnect the operator doing it.
-# Debian's openssh-server ships KillMode=process, which kills only the listener.
-# That is an inherited property of a packaged unit this image does not author,
-# so it is asserted rather than assumed.
+# --- ssh.service KillMode: defence in depth, NOT the mitigation --------------
+# The mitigation for "an operator sets a transient root password over SSH and
+# disconnects themselves" is that the sshd reconciler RELOADS ssh.service on a
+# configuration-only change instead of restarting it (RFCT-041). sshd re-reads
+# its configuration on SIGHUP, so established sessions survive a reload BY
+# CONSTRUCTION — not by grace, and not because of anything asserted here.
+#
+# What this check is for: KillMode=process is an inherited property of Debian's
+# openssh-server packaging that this image does not author and had never
+# asserted. It bounds the damage if something restarts the unit anyway — under
+# the systemd default KillMode=control-group a restart kills every process in
+# the unit's cgroup, including the forked session carrying the operator's own
+# connection. So it is a second line of defence and a tripwire for the day a
+# base-image change moves it.
+#
+# It is NOT a substitute for the reload, and this check passing is NOT a reason
+# to go back to restarting.
 ssh_unit_text="$(dbg "cat /usr/lib/systemd/system/ssh.service")"
 if [ -z "${ssh_unit_text}" ]; then
     fail "/usr/lib/systemd/system/ssh.service is not readable in the image, so no claim can be made about KillMode"
 elif printf '%s\n' "${ssh_unit_text}" | grep -qE '^KillMode=process[[:space:]]*$'; then
-    pass "ssh.service sets KillMode=process, so restarting it to pick up a re-rendered drop-in does not kill established SSH sessions"
+    pass "ssh.service sets KillMode=process, so a restart would spare established sessions — defence in depth only: what actually protects an operator's own session is that the reconciler RELOADS on a config-only change (RFCT-041), and this passing is not a reason to restart instead"
 else
-    fail "ssh.service does NOT set KillMode=process (found '$(printf '%s\n' "${ssh_unit_text}" | sed -n 's/^KillMode=//p' | tail -n1)'; systemd defaults to control-group). Re-rendering the sshd drop-in restarts the unit, so an operator who sets a transient root password while logged in over SSH would disconnect themselves"
+    fail "ssh.service does NOT set KillMode=process (found '$(printf '%s\n' "${ssh_unit_text}" | sed -n 's/^KillMode=//p' | tail -n1)'; systemd defaults to control-group). The image has lost its second line of defence: anything that RESTARTS this unit now kills established SSH sessions with it. This does not by itself disconnect an operator setting a transient root password — the reconciler reloads rather than restarts (RFCT-041) — but that reload is now the ONLY thing preventing it, so do not treat this as cosmetic"
 fi
 
 # NOT asserted here, and v2-only by nature: the AuthorizedKeysFile drop-in, the
