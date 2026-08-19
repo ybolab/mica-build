@@ -84,3 +84,4 @@ Each task is a single line linking to its detail file. All detailed information 
 - [x] [**RFCT-055 Rename webd to apid: crate, binary, unit, StateDirectory, image, verifiers, health gate**](RFCT-055.md) `P1`
 - [x] [**RFCT-056 Documentation for the apid rename and the keep-two-processes decision**](RFCT-056.md) `P1`
 - [x] [**RFCT-057 Closing audit of the apid rename: repo-wide completeness, consistency chain, assertion accounting**](RFCT-057.md) `P1`
+- [x] [**RFCT-058 Re-anchor dashboard.md D-Bus policy claims to RFCT-048, state the citation rule, correct the README talos entry**](RFCT-058.md) `P1`

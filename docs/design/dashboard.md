@@ -42,6 +42,43 @@ load-bearing. A borrowed or rejected Venus idea cites `venus-os-ui.md` or
 `venus-os-access.md` by section. A claim marked **[proposal]** is mine and is
 not sourced from anything, because it does not exist yet.
 
+**Cite by commit plus quoted content, not by bare line range, for any file still
+under change.** A line range is acceptable only when it is anchored to a commit
+that pins what those lines were — `path:LINE` *as of* `<sha>` — or when the
+quoted words travel with the citation, so a reader can tell a line that merely
+moved from a claim that actually changed. An unanchored range does not simply go
+stale. As a file grows, the range comes to point at whatever text now occupies
+those bytes, and that text can *refute* the claim citing it — at which point the
+reader who does the responsible thing and follows the citation is misled more
+thoroughly than the reader who does not. This is the same discipline as
+anchoring a present-tense claim, applied to the pointer instead of the sentence.
+
+`mosd/dist/com.mos.mosd.conf` is the worked example, and it is why this
+paragraph exists rather than a footnote. The file grew from **12 lines to 73**
+at `637295e` (RFCT-048). Every `:4-11` and `:8-11` citation below had been
+written against the 12-line file, where those ranges *were* the policy stanzas;
+in the 73-line file the same ranges are explanatory comment prose — including
+the sentence *"The previous policy was a development skeleton that let any local
+uid send to all of it."* A reader following the unanchored citation therefore
+landed on text that appeared to **confirm** a claim which had become false.
+Worse, `:4` once read *"Dev skeleton posture: root owns the name, everyone may
+talk to it."* and today reads *"com.mos.mosd is a ROOT-ONLY bus name
+(RFCT-048)"* — the exact negation of the claim it was cited to support. Every
+such citation below now carries `as of 637295e^`, the last commit at which the
+range meant what the sentence says.
+
+**[re-anchored]** — a status marker added by RFCT-058 (campaign `apid`),
+following the marker discipline of `docs/design/access.md` §0. It marks a claim
+that was **true when written and has since been overtaken by a named commit**.
+The claim is not deleted and the analysis built on it is not rewritten: the
+marker dates the claim, names the commit that moved it, and states what that
+does to the surrounding argument. It is the fact-level counterpart of
+**[decided]** — where **[decided]** records that an open question was settled,
+**[re-anchored]** records that a *fact* moved beneath an analysis that remains
+otherwise valid. A **[re-anchored]** claim is still load-bearing history: it is
+what the comparison was reasoning about at the time it reasoned, and deleting it
+would make the reasoning unreadable rather than correct.
+
 **Licence fence, load-bearing.** gui-v2 ships under "Victron Energy OS license
 v1", which states *"USE OF THE SOFTWARE AND ITS MODIFICATIONS WITH SYSTEMS
 WHOSE CORE IS NOT VICTRON ENERGY PRODUCTS IS EXPRESSLY NOT AUTHORIZED"* —
@@ -1262,13 +1299,24 @@ that **there is no CSRF token anywhere in `apid`**; the only cross-site
 mitigation is `SameSite=Lax` (`mosd/apid/src/session.rs:91`) plus POST-only
 destructive routes with a confirmation field (`routes.rs:49-53`, `:820`).
 `SameSite` cookie semantics do not cover the WebSocket handshake, so a
-writable WebSocket endpoint on a box whose D-Bus policy already lets *any local
-process* call `Reboot` (`mosd/dist/com.mos.mosd.conf:4-11`, quoted in
-`mos-ui-inventory.md` section 3.6) would want explicit `Origin` checking before
-it shipped. **[my inference, from the absence of CSRF machinery plus the
-handshake's cookie semantics; not verified against an exploit and not something
-this campaign tested.]** Opening a bidirectional channel to buy a direction the
-design does not use, on an application with no CSRF defence, is the wrong trade.
+writable WebSocket endpoint on a box whose D-Bus policy then let *any local
+process* call `Reboot` (`mosd/dist/com.mos.mosd.conf:4-11` as of `637295e^`,
+quoted in `mos-ui-inventory.md` section 3.6) would want explicit `Origin`
+checking before it shipped. **[my inference, from the absence of CSRF machinery
+plus the handshake's cookie semantics; not verified against an exploit and not
+something this campaign tested.]** Opening a bidirectional channel to buy a
+direction the design does not use, on an application with no CSRF defence, is
+the wrong trade.
+
+> **[re-anchored]** — RFCT-058. The bus clause above was true when written and
+> is not now: `637295e` (RFCT-048) made `com.mos.mosd` root-only, so an
+> unprivileged local process cannot call `Reboot` over the bus at all.
+> **The conclusion is unchanged, because it never rested on the bus.** The CSRF
+> gap is in `apid`'s own HTTP surface, and a WebSocket hijacked through the
+> operator's authenticated browser acts *as* `apid` — which is still root and
+> still permitted to call every member. Closing the bus to unprivileged callers
+> does not close a cross-site path that arrives holding a valid session cookie.
+> The open policy was corroborating colour here, never the load-bearing step.
 
 ### 5.7 Side by side
 
@@ -1331,9 +1379,13 @@ blocking anything.
 - **Immediate reaction to a change made by another actor.** `SettingsChanged`
   stays unsubscribed at the browser boundary, so a config change made from a
   second session or by a local bus caller (which
-  `mosd/dist/com.mos.mosd.conf:4-11` permits any local process to do) appears
-  within one refresh interval rather than at once. For an appliance with one
-  admin credential (`mos-ui-inventory.md` section 3.4) this is the right trade.
+  `mosd/dist/com.mos.mosd.conf:4-11` as of `637295e^` permitted any local
+  process to do; **since `637295e` / RFCT-048 that caller must be root**)
+  appears within one refresh interval rather than at once. For an appliance with
+  one admin credential (`mos-ui-inventory.md` section 3.4) this is the right
+  trade. **[re-anchored]** — RFCT-058: the root-only policy *narrows* the set of
+  second actors but does not empty it (root scripts and `busctl` still qualify,
+  and the health gate is one), so the refresh-interval trade is unchanged.
   Note the two are separable: **`apid` could subscribe to `SettingsChanged`
   server-side** — no new crate, per 5.1.4 item 1 — for cache invalidation or a
   render stamp, entirely independently of any browser transport. Gap row 16 is
@@ -1502,8 +1554,13 @@ option A exactly as well as under SSE. The evidence, read on this branch:
 
 - **A narrow race.** Between `SetSettings` returning and the follow-up
   `GetState`, another writer could re-run the same reconciler and replace the
-  entry. `mosd`'s D-Bus policy permits any local process to call `SetSettings`
-  (`mosd/dist/com.mos.mosd.conf:4-11`). On a single-admin appliance this is
+  entry. `mosd`'s D-Bus policy permitted any local process to call `SetSettings`
+  (`mosd/dist/com.mos.mosd.conf:4-11` as of `637295e^`); **since `637295e`
+  (RFCT-048) only root may call it**. **[re-anchored]** — RFCT-058: this makes
+  the race rarer, not impossible, since every caller in the tree is already
+  root — so the caveat stands as written and is if anything more clearly a
+  `mosd` concurrency question than an access-control one. On a single-admin
+  appliance this is
   vanishingly unlikely, and the honest closure is a `mosd` change — returning the
   outcome from `SetSettings`, or stamping `record` entries — not a `apid` one.
   **`record` writes no timestamp and no generation** (`bus.rs:126-137`), so
@@ -1680,13 +1737,61 @@ sibling document.
    `mos-ui-inventory.md` section 3.5 records it.]** *The privilege separation
    that a two-process split could buy is therefore not realised today.*
 2. **There is no D-Bus method allowlisting.** `mosd/dist/com.mos.mosd.conf:8-11`
-   grants `<policy context="default">` a bare `<allow
+   (as of `637295e^`) granted `<policy context="default">` a bare `<allow
    send_destination="com.mos.mosd"/>` with no `send_member` and no
-   `send_interface`. **Any local uid may call `Reboot`, `PowerOff` or
-   `SetSettings`.** The file's own comment at `:4` calls this a *"Dev skeleton
-   posture: root owns the name, everyone may talk to it."* It is the shipped
+   `send_interface`. **Any local uid could call `Reboot`, `PowerOff` or
+   `SetSettings`.** The file's own comment at `:4` called this a *"Dev skeleton
+   posture: root owns the name, everyone may talk to it."* It was the shipped
    file — `os/rootfs/build.sh:38` copies it into the image staging directory
    (carried from `mos-ui-inventory.md` section 3.6).
+
+   > **[re-anchored]** — RFCT-058, campaign `apid`. **This is fact 2, and it is
+   > the fact the rest of §6 reasons from, so it is dated here once and
+   > referred back to everywhere else.**
+   >
+   > **It was true when written.** RFCT-046 measured it correctly against the
+   > 12-line policy file that shipped at the time. Nothing in the analysis below
+   > was mistaken; it was current.
+   >
+   > **It stopped being true at `637295e`** — *"os(RFCT-048): restrict
+   > com.mos.mosd to root, on the bus and in both verifiers"*. The shipped
+   > 73-line file now carries an explicit default-deny in **both** directions
+   > and allows only root:
+   >
+   > ```xml
+   > <policy context="default">
+   >   <deny send_destination="com.mos.mosd"/>
+   >   <deny receive_sender="com.mos.mosd"/>
+   > </policy>
+   > <policy user="root">
+   >   <allow own="com.mos.mosd"/>
+   >   <allow send_destination="com.mos.mosd"/>
+   >   <allow receive_sender="com.mos.mosd"/>
+   > </policy>
+   > ```
+   >
+   > `receive_sender` is denied too, which is not mere symmetry: the interface
+   > broadcasts `SettingsChanged(path, value_json)`, so a uid that could not
+   > send could otherwise still subscribe and read
+   > `access.webAdmin.password_hash` the moment an operator set it.
+   >
+   > **What it does to the argument, stated rather than left to the reader.**
+   > Fact 2 was one of two legs under the claim that *the two-process split buys
+   > no access control today*. That claim was accurate when made and is now half
+   > retired: **the bus leg is closed; the process leg (fact 1 — `apid` runs as
+   > root, unsandboxed) is untouched.** So the boundary is still unbuilt, but it
+   > is unbuilt for one reason instead of two. Every "any local uid" sentence
+   > below is to be read as *"any local uid, until `637295e`"*, and each carries
+   > its own note where the conclusion depends on it.
+   >
+   > **RFCT-048 also delivered part of option 2 in advance.** §6.3.2 proposed a
+   > default-deny policy plus a named-identity allow. The default-deny half is
+   > **shipped**. What remains of option 2's D-Bus work is the `user="apid"`
+   > block — which the shipped file already documents at its `EXTENSION POINT`
+   > comment, together with a warning not to reopen the default context to get
+   > there.
+   >
+   > **This does not reopen §6's decision.** See the note at the end of §6.6.
 3. **`apid` reaches `mosd` only over the bus, proxying exactly five methods.**
    `mosd/apid/src/bus_client.rs:9-20` declares `get_settings`, `set_settings`,
    `get_state`, `reboot`, `power_off` and **no signal member**. `apid` does
@@ -1819,10 +1924,15 @@ permanent property of the merge, not a transitional one.
 
 **Stated honestly in the other direction, because it is the strongest thing that
 can be said for option 1:** *today that boundary buys almost nothing.* Per fact
-2, any local uid can already call `Reboot`, `PowerOff` and `SetSettings`, and
-per fact 1 `apid` is root anyway, so a `apid` compromise today already reaches
-everything `mosd` can do. **Option 1 therefore forecloses a boundary that has
-not been built rather than destroying one that exists.** Whether that matters
+2 **as measured before `637295e`**, any local uid could already call `Reboot`,
+`PowerOff` and `SetSettings`, and per fact 1 `apid` is root anyway, so a `apid`
+compromise already reached everything `mosd` can do. **Option 1 therefore
+forecloses a boundary that has not been built rather than destroying one that
+exists.** **[re-anchored]** — RFCT-058: RFCT-048 removed the fact-2 half of
+that, but **the sentence survives on fact 1 alone** — `apid` is still root, so a
+compromised `apid` still reaches everything `mosd` can do, by process privilege
+rather than by bus policy. The strongest-thing-for-option-1 remains true, and
+its remaining support is now exactly one fact instead of two. Whether that matters
 depends entirely on whether the boundary would otherwise be built — which is
 option 2, and which is why the two options must be compared and not merely
 listed.
@@ -1891,10 +2001,25 @@ standard systemd sandboxing set.
 
 **State this before anything else: per fact 2 and fact 1, this is not hardening
 an existing boundary. It is building one that was never built.** The policy file
-calls itself a dev skeleton (`com.mos.mosd.conf:4`) and the unit has no
-hardening directive at all (`apid.service`, 13 lines). So every item below is
-**new cost, not a delta**, and option 2 should be costed as a project rather
-than as a cleanup.
+called itself a dev skeleton (`com.mos.mosd.conf:4` as of `637295e^`, then
+reading *"Dev skeleton posture: root owns the name, everyone may talk to it."*)
+and the unit has no hardening directive at all (`apid.service`, 13 lines). So
+every item below is **new cost, not a delta**, and option 2 should be costed as
+a project rather than as a cleanup.
+
+> **[re-anchored]** — RFCT-058. The dev-skeleton citation is the sharpest case
+> of the stale-pointer failure this document's citation convention now warns
+> about: `com.mos.mosd.conf:4` as of `637295e` reads *"com.mos.mosd is a
+> ROOT-ONLY bus name (RFCT-048)"*, so the unanchored citation had come to assert
+> the **exact opposite** of the claim it was offered as evidence for.
+>
+> **What it does to the argument.** Option 2 is now **partly a delta and not
+> wholly a project**: `637295e` built the policy half, so the D-Bus item below
+> is no longer new cost. The unit half is untouched — no `User=`, no
+> `DynamicUser=`, no sandboxing directive — so **the costing above still holds
+> for everything except §6.3.2**, which should now be read as "add one
+> `user="apid"` block to a policy that is already default-deny" rather than
+> "replace a dev skeleton".
 
 #### 6.3.1 What must change for `apid` to run without root
 
@@ -1988,7 +2113,9 @@ price, because a merged daemon must be able to write those files.
 #### 6.3.2 D-Bus method allowlisting, and the limit it runs into
 
 Replacing the bare `<allow send_destination="com.mos.mosd"/>`
-(`com.mos.mosd.conf:8-11`) with per-member rules is mechanically simple —
+(`com.mos.mosd.conf:8-11` as of `637295e^` — **already replaced by a
+default-deny at `637295e`, RFCT-048**) with per-member rules is mechanically
+simple —
 `dbus-daemon(1)`'s busconfig policy accepts `send_interface`, `send_member`,
 `send_path`, `send_destination`, `user` and `group` on `<allow>`/`<deny>`
 (<https://dbus.freedesktop.org/doc/dbus-daemon.1.html>, fetched and read). A
@@ -2249,11 +2376,20 @@ Five reasons, each traceable above:
    second consumer today — `mos-health` calls `ReportHealth`
    (`os/health/mos-health:47-48`) and `GetState`
    (`:155-156`). So the interface must keep existing and keep being served, and
-   a merge does not delete the bus: **it deletes one consumer.** The remaining
-   consumer keeps the open-policy problem (fact 2) alive in full. Option 1's
+   a merge does not delete the bus: **it deletes one consumer.** ~~The remaining
+   consumer keeps the open-policy problem (fact 2) alive in full.~~ Option 1's
    simplification then shrinks to one fewer unit and one fewer state directory,
    which is not worth what 6.2.3 charges for it. This is re-scored formally in
    7.3.
+
+   > **[re-anchored]** — RFCT-058. The struck clause was true when written and
+   > **no longer bites: `637295e` (RFCT-048) solved the open-policy problem
+   > outright**, so a surviving consumer no longer keeps it alive — there is
+   > nothing left alive to keep. **Reason 1 itself is unaffected**, because its
+   > load-bearing step is that `mos-health` is a second consumer and the
+   > interface must therefore keep being served. That step is about the health
+   > gate, not about the policy, and RFCT-048 does not touch it. Reason 1 stands
+   > with one supporting clause retired.
 2. **The one technical prize is available more cheaply.** Section 5.8 left the
    mutex line open for this section; the answer (6.2.2) is that a merge does not
    shorten the lock hold at all, and the lock-acquisition improvement it *does*
@@ -2261,9 +2397,23 @@ Five reasons, each traceable above:
    into the process that writes `/etc/shadow`.
 3. **The status quo is not a neutral baseline.** A root web server on
    `0.0.0.0:443` and `0.0.0.0:80` (facts 1 and 4) behind a D-Bus policy that
-   lets any local uid call `Reboot` (fact 2) is the least defensible of the four
+   ~~lets any local uid call `Reboot` (fact 2)~~ let any local uid call `Reboot`
+   until `637295e` was the least defensible of the four
    states available, and it is the one mos is in. Doing nothing is a choice with
    a cost, and it should be scored as one.
+
+   > **[re-anchored]** — RFCT-058. **This is the reason RFCT-048 costs the
+   > most.** The status quo is no longer "a root web server on `0.0.0.0`
+   > *behind a policy any uid can call*" — the second half is gone as of
+   > `637295e`, and with it most of this reason's force.
+   >
+   > **What survives, and it is not nothing.** Facts 1 and 4 are **unchanged**:
+   > `apid` still runs as root and unsandboxed, and still binds `0.0.0.0:443`
+   > and `0.0.0.0:80`. A root web server on every interface is still not a
+   > neutral baseline, and doing nothing is still a choice with a cost. So
+   > **reason 3 is reduced, not retired** — it now rests on the process and its
+   > listener rather than on the bus, and the "least defensible of the four
+   > states" framing should be read as materially overstated today.
 4. **Option 2 buys something no other option can.** A non-root `apid` cannot
    open `/var/lib/mos/secrets/*` (mode `0600` in a `0700` directory,
    `identity.rs:43`, `:51-56`), so section 2.10's *"No secrets, ever"* becomes a
@@ -2312,6 +2462,52 @@ and C4 (`mosd` has no live-state push) grounds. Neither is touched by anything
 here. Option 3(a) makes each refresh **cheaper**, which strengthens 5.8 rather
 than reopening it. Had this section recommended a merge, section 5.8's open line
 about a shorter interval would have become live; it does not.
+
+#### 6.6.1 What RFCT-048 changes here, and what it explicitly does not
+
+> **[re-anchored]** — RFCT-058, campaign `apid`. Added because five reasons
+> above cite fact 2, and a reader who discovers on their own that fact 2 has
+> moved needs to be told immediately how far the damage travels. It does not
+> travel to the outcome.
+
+**The decision recorded in §6 is NOT reopened. It stands unchanged.**
+
+The user's decision to keep two processes rested on exactly two findings, both
+recorded in §6's marker:
+
+1. a merged process makes a provisioning failure **fatal to the UI**, leaving a
+   headless appliance with a serial console and nothing else; and
+2. `com.mos.mosd1` is **load-bearing for the update health gate** — `mos-health`
+   probes `GetState` and never reaches `rauc status mark-good` without it.
+
+**`637295e` touches neither.** It changes who may call the interface, not
+whether the interface must exist, and not what happens to the UI when
+provisioning fails. Both findings are exactly as true after RFCT-048 as before.
+
+What changed is **the strength of two supporting arguments inside the option
+comparison, not the outcome of it**:
+
+| §6.6 reason | Status after `637295e` |
+|---|---|
+| **1** — section 7 removes option 1's premise | **Stands.** One supporting clause (the open-policy problem surviving a merge) is retired; the load-bearing `mos-health` step is untouched |
+| **2** — the one technical prize is cheaper elsewhere | **Untouched.** It is a lock-hold argument (6.2.2), unrelated to bus policy |
+| **3** — the status quo is not a neutral baseline | **Reduced.** Carried now by facts 1 and 4 alone (root web server on `0.0.0.0:443` and `:80`), which are unchanged |
+| **4** — option 2 buys what no other option can | **Untouched, and now the strongest surviving argument for option 2.** A non-root `apid` cannot open `/var/lib/mos/secrets/*`, making §2.10's *"No secrets, ever"* a **filesystem property** rather than a code discipline. No policy change can deliver this; only a `User=` can |
+| **5** — the availability regression is the wrong one | **Untouched.** It is the same finding as the first leg of §6's decision |
+
+**Therefore: the options are not re-scored, no new recommendation is made, and
+§6's [decided] marker is not reopened.** Three of five reasons are untouched,
+one stands with a retired clause, and one is reduced but not retired. The
+recommendation those reasons supported — *adopt option 2, do not merge* — is
+where it was.
+
+**One item of option 2 is now partly built.** RFCT-048 delivered the
+default-deny policy that §6.3.2 proposed. Option 2's remaining D-Bus work is the
+`user="apid"` block, and `mosd/dist/com.mos.mosd.conf` already carries it as a
+written-out `EXTENSION POINT` with the instruction to **add** a named-user block
+rather than reopen the default context. **The unit hardening — `User=`,
+`AmbientCapabilities=`, the sandboxing set — remains entirely unbuilt**, and it
+is the half that reason 4 depends on.
 
 ### 6.7 One correctness risk that must be recorded rather than lost
 
@@ -2462,16 +2658,29 @@ contract, on port 443 specifically.
   It is, though, exactly the case discussed in 6.4.3: if a remote bridge ever
   forwards `com.mos.mosd1` *values*, option 3's action shape stops being
   optional.
-- **Operator and third-party tooling — enabled today, by accident.** Fact 2 is
-  not only a security posture; it is also a de-facto contract. `<policy
-  context="default"><allow send_destination="com.mos.mosd"/></policy>`
-  (`mosd/dist/com.mos.mosd.conf:8-11`) means **any local process, of any uid,
-  can call any member today**, and `busctl` is in the image (the health gate
-  uses it). Anyone who has written a script against `com.mos.mosd1` on a shipped
-  device is a consumer, whether or not mos intended one. **Option 2's allowlist
-  would break exactly those callers** — which is a cost of option 2 that should
-  be stated rather than discovered, and an argument for doing the allowlist
-  *early*, before the informal consumer set grows.
+- **Operator and third-party tooling — was enabled by accident, and has since
+  been withdrawn.** Fact 2 was not only a security posture; it was also a
+  de-facto contract. `<policy context="default"><allow
+  send_destination="com.mos.mosd"/></policy>`
+  (`mosd/dist/com.mos.mosd.conf:8-11` as of `637295e^`) meant **any local
+  process, of any uid, could call any member**, and `busctl` is in the image
+  (the health gate uses it). Anyone who had written a script against
+  `com.mos.mosd1` on a shipped device was a consumer, whether or not mos
+  intended one. **Option 2's allowlist would break exactly those callers** —
+  which is a cost that should be stated rather than discovered, and an argument
+  for doing the allowlist *early*, before the informal consumer set grows.
+
+  > **[re-anchored]** — RFCT-058. **The argument for acting early was correct,
+  > and `637295e` (RFCT-048) is what acting early looked like.** The de-facto
+  > contract is already withdrawn: any non-root local script calling
+  > `com.mos.mosd1` stopped working at that commit, not at some future option-2
+  > allowlist. So this is no longer a *pending* cost of option 2 — **it is a
+  > cost already paid**, and the paragraph should be read as the record of a
+  > break that has happened rather than a warning about one that might.
+  > Root-owned scripts are unaffected, which is why the health gate did not
+  > notice. What option 2 would still add is per-member narrowing *within* root
+  > and a separate `apid` identity; the "any uid" consumer set no longer exists
+  > to be broken a second time.
 - **The `sshweb` campaign** adds a sixth member (`SetTransientRootPassword`,
   announced only, not in this tree). A campaign actively adding members to the
   interface is itself evidence that it is being treated as a live contract.
@@ -2491,11 +2700,21 @@ Re-scoring 6.2 against that, plainly:
   answer `GetState` and `ReportHealth`, and still ship
   `mosd/dist/com.mos.mosd.conf`. The zbus dependency, the interface definition,
   the object path and the policy file all stay.
-- **The open-policy problem (fact 2) survives the merge entirely.** With one
+- ~~**The open-policy problem (fact 2) survives the merge entirely.** With one
   process instead of two, `<allow send_destination="com.mos.mosd"/>` still lets
   any local uid call `Reboot`. Option 1 does not make that better and does not
-  make it worse; it simply leaves it, while removing the *option* of ever fixing
-  it by uid separation between the UI and the daemon.
+  make it worse; it simply leaves it,~~ while removing the *option* of ever
+  fixing it by uid separation between the UI and the daemon.
+
+  > **[re-anchored]** — RFCT-058. True when written; retired by `637295e`
+  > (RFCT-048), which fixed the open-policy problem outright, so there is no
+  > longer a fact-2 problem for a merge to survive. **The trailing clause is the
+  > part that survives, and it survives intact**: a merge would still remove the
+  > *option* of separating the UI from the daemon by uid, because a merged
+  > daemon must hold every privilege either process needs. That is a statement
+  > about process identity, not bus policy, and RFCT-048 does not reach it.
+  > **The re-score's conclusion is unchanged** — option 1 removes one consumer,
+  > not the bus.
 - The saving therefore reduces to what 6.2.1 measured minus the bus surface
   itself: **one systemd unit, one state directory, one binary, and the
   per-request round trips of one caller.** Against 6.2.3's foreclosure list —
@@ -2562,13 +2781,42 @@ it. Under options 2 and 3 it is live, so it is costed here.
 |---|---|---|
 | **Crate and binary name** | `mosd/webd/Cargo.toml:2` (`name = "webd"`); workspace member list `mosd/Cargo.toml:3`; the directory `mosd/webd/`; cross-build script `mosd/hack/build-aarch64.sh:9` (`-p mosd -p webd`) and `:11` | Mechanical |
 | **systemd unit** | `mosd/dist/webd.service` (13 lines, the file itself); ordering reference in `os/rootfs/overlay-v2/etc/systemd/system/var-lib-mos.mount:10` (`Before=mosd.service webd.service`) and its comment at `:3` | The unit is also what option 2 rewrites — see 7.4.2 |
-| **D-Bus policy** | **zero cost today** — `mosd/dist/com.mos.mosd.conf` does not contain the string `webd` (verified: `grep -c webd` returns 0). It is a 12-line file whose only identity is `root` | **But under option 2 the policy gains a `user="<webd user>"` rule (6.3.2), at which point this becomes a rename surface.** Ordering matters |
+| **D-Bus policy** | **zero cost today** — `mosd/dist/com.mos.mosd.conf` does not contain the string `webd` (verified: `grep -c webd` returns 0). It is a ~~12-line~~ **73-line** file whose only identity is `root` — see the staleness note below | **But under option 2 the policy gains a `user="<webd user>"` rule (6.3.2), at which point this becomes a rename surface.** Ordering matters |
 | **Image verifier assertions** | v2: `os/verify-image-v2.sh:922-929` — four assertions plus `sq_enabled webd.service`; and `:1184-1200`, the health-probe block that names `webd` in both its `pass` and `fail` strings. v1: `os/verify-image.sh:603-628` — seven assertions on the binary, the ELF architecture, two unit lines and the enablement symlink | Two verifiers, not one |
 | **`StateDirectory` and deployed data** | `mosd/dist/webd.service:10` (`StateDirectory=mos/webd`); default `WEBD_STATE_DIR=/var/lib/mos/webd` at `mosd/webd/src/config.rs:38-40`; documented at `mosd/webd/src/main.rs:12-13` | See 7.4.2 — this is the only item with a cost on **already-deployed** devices |
 | **Image / build wiring** | `os/rootfs/build-v2.sh:73-74` and `os/rootfs/build.sh:39-40` (stage the binary and the unit); `os/rootfs/Dockerfile.v2:282-288` (install binary, unit and enablement symlink) and `:377`; `os/rootfs/Dockerfile:211-217` and `:289` | **The `Makefile` is not affected**: `grep -c webd Makefile` returns 0. Its 70 lines only route to the scripts above. Recorded because it is commonly assumed otherwise |
 | **Health gate** | `os/health/mos-health:162-181` (probe c: `unit_present webd.service`, `https://127.0.0.1/healthz`), plus the byte-identical overlay copy `os/rootfs/overlay-v2/usr/lib/mos/mos-health` and its stager `os/health/sync-overlay.sh:13`; and `os/health/test.sh` | Two copies that `os/health/test.sh` exists to keep in sync |
 | **Settings schema** | **No persisted key changes.** The only `webd` strings under `mosd/mosd-settings/` are doc comments — `src/model.rs:51`, `:65` and `src/migration.rs:121`, `:126` (*"v1 -> v2: adds the webd-owned `access` subtree"*). No serde rename, no key, no TOML field. **So a rename needs no settings migration** | The single most reassuring finding here |
 | **Docs** | 54 files, **of which 10 are `*.zh.md`**: `docs/architecture.zh.md`, `docs/README.zh.md`, `docs/design/{access,boards,display,mosd,provisioning,remote-management}.zh.md`, `docs/research/{init-strategy,os-comparison}.zh.md` | The Chinese copies are translations that will silently contradict the English after a rename. They are outside this campaign's scope and were not edited |
+
+> **[re-anchored]** — RFCT-058, campaign `apid`. **Two different staleness axes
+> cross in the table above, and only one of them is frozen.**
+>
+> **The correction just made is on the RFCT-048 axis, not the rename axis.** The
+> line count "12" was never a statement about `webd` or about the rename. It was
+> a measurement of the policy file's size, and it went stale at `637295e`
+> (RFCT-048) when the file grew from 12 lines to 73 — **before this campaign
+> began.** Proof that it is the earlier axis and not the rename: the file was
+> already 73 lines at `86cd669`, the pre-rename base this section is frozen
+> against. The freeze could not have protected the figure, because the figure
+> was already wrong when the freeze was taken.
+>
+> **The pre-rename freeze is unchanged and still in force.** Every path and
+> string in §7.4 remains deliberately `webd` — `mosd/webd/`, `webd.service`,
+> `WEBD_STATE_DIR`, `mosd/webd/src/config.rs` and the rest are **not** rewritten
+> to `apid`, exactly as RFCT-056 left them, because this section measures what
+> the rename cost *from* its starting point. Nothing about that preservation is
+> abandoned here.
+>
+> **The rule this draws, worth keeping.** *"It is a preserved measurement"* is a
+> defence against being updated on the axis it was preserved for. It is not a
+> defence against every later fact. A frozen section can still carry a number
+> that was never about the freeze, and that number gets no protection from it —
+> so a preserved section must say **which axis** it is frozen on, or it will be
+> read as frozen on all of them. The two remaining `webd`-vs-`apid` figures in
+> this table stay put; the policy line count does not.
+>
+> Neither the per-surface findings nor the file counts above are re-derived.
 
 #### 7.4.2 The one cost that lands on deployed devices
 
@@ -2647,7 +2895,10 @@ The reason is ordering, not aesthetics. Option 2 already rewrites
 sandboxing set), already adds a `user="..."` rule to
 `mosd/dist/com.mos.mosd.conf` — a file that has **no** rename cost today and
 would acquire one at that moment (7.4.1) — and already forces new assertions in
-both verifiers. Doing the rename separately means editing the unit twice, both
+both verifiers. **[re-anchored]** — RFCT-058: `637295e` (RFCT-048) made that
+policy default-deny, so the `user="..."` rule is now the *only* D-Bus item
+option 2 has left; the ordering argument is unchanged, since it turns on the
+unit and the verifiers being edited twice, not on the policy's contents. Doing the rename separately means editing the unit twice, both
 verifiers twice, the two `mos-health` copies twice, and answering the deployed
 `StateDirectory` question twice. **Bundling is roughly half the work of
 sequencing.**
@@ -2764,9 +3015,14 @@ the end of 6.6.
    rewritten `mosd/dist/apid.service` carrying `User=`,
    `AmbientCapabilities=CAP_NET_BIND_SERVICE`, a matching
    `CapabilityBoundingSet=`, and the sandboxing set of 6.3.1c.
-2. `mosd/dist/com.mos.mosd.conf` replaced with a default-deny plus per-member
+2. ~~`mosd/dist/com.mos.mosd.conf` replaced with a default-deny~~ **done at
+   `637295e` (RFCT-048)** — plus per-member
    allows: the five members of fact 3 for the `apid` user, `ReportHealth` and
-   `GetState` for root (the health gate's two calls).
+   `GetState` for root (the health gate's two calls). **[re-anchored]** —
+   RFCT-058: the default-deny half of this item is **shipped**; what remains is
+   the `user="apid"` block, which the shipped file already sketches at its
+   `EXTENSION POINT` comment, and the optional per-member narrowing that the
+   same comment defers with reasons.
 3. ~~Optionally the rename (7.4.3), bundled here if it happens at all.~~
    **Done already, not bundled** — see the marker above.
 
@@ -2790,7 +3046,11 @@ changes.
   in 6.8 item 3 as unverified for a reason.
 - Confirm the known breakage of 7.2: any local script calling `com.mos.mosd1`
   outside the allowlist stops working. That is the intent, and it belongs in the
-  release note.
+  release note. **[re-anchored]** — RFCT-058: for **non-root** callers this
+  already happened at `637295e` (RFCT-048) and belongs in *that* release note,
+  not this phase's. What is left for this phase to break is narrower — root
+  callers outside a per-member allowlist, and anything assuming `apid` may still
+  call every member once it has its own uid.
 
 #### Phase 3 — the read primitive and the outcome-carrying write
 
