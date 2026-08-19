@@ -4,6 +4,7 @@ mod hostname;
 mod network;
 mod sshd;
 mod systemd;
+mod wifi_client;
 
 use mosd_settings::Settings;
 
@@ -28,5 +29,6 @@ pub fn all() -> Vec<Box<dyn Reconciler>> {
         Box::new(hostname::HostnameReconciler::new(hostname::Hostnamed)),
         Box::new(network::NetworkReconciler::production()),
         Box::new(sshd::SshdReconciler::production()),
+        Box::new(wifi_client::WifiClientReconciler::production()),
     ]
 }
