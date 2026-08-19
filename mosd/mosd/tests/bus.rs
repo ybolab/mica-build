@@ -14,6 +14,11 @@ use std::time::Duration;
 
 use zbus::export::futures_core::Stream;
 
+/// Two accounts, nine fields each — the shape of a Debian `/etc/shadow`, with
+/// `root` locked the way `mos-shadow-reconcile` leaves it.
+const SHADOW: &str = "root:!:19000:0:99999:7:::\n\
+    daemon:*:19000:0:99999:7:::\n";
+
 /// Kills the wrapped child on drop, including on panic.
 struct ChildGuard(Child);
 
@@ -48,6 +53,7 @@ trait Mosd {
     fn report_health(&self, component: &str, status: &str, detail: &str) -> zbus::Result<()>;
     fn reboot(&self) -> zbus::Result<()>;
     fn power_off(&self) -> zbus::Result<()>;
+    fn set_transient_root_password(&self, password: &str) -> zbus::Result<()>;
     #[zbus(signal)]
     fn settings_changed(&self, path: &str, value_json: &str) -> zbus::Result<()>;
 }
@@ -73,6 +79,11 @@ async fn bus_roundtrip() -> anyhow::Result<()> {
 
     let dir = tempfile::tempdir()?;
     let settings_path = dir.path().join("settings.toml");
+    // The daemon must never be pointed at the host's /etc/shadow, so the
+    // transient-password method gets a throwaway file of its own.
+    let shadow_path = dir.path().join("shadow");
+    let marker_path = dir.path().join("transient-root-password");
+    std::fs::write(&shadow_path, SHADOW)?;
     // MOSD_DRY_RUN=1 is a hard safety requirement: production reconcilers
     // must never be constructed in tests.
     let _mosd_guard = ChildGuard(
@@ -81,6 +92,7 @@ async fn bus_roundtrip() -> anyhow::Result<()> {
             .env("MOSD_BUS", "session")
             .env("MOSD_DRY_RUN", "1")
             .env("MOSD_SETTINGS_PATH", &settings_path)
+            .env("MOSD_SHADOW_PATH", &shadow_path)
             .spawn()?,
     );
 
@@ -173,6 +185,85 @@ async fn bus_roundtrip() -> anyhow::Result<()> {
     // Settings are untouched by power actions: they are actions, not state.
     let after = proxy.get_settings("hostname").await?;
     assert_eq!(after, "\"unit-test-host\"");
+
+    // SetTransientRootPassword. What is asserted first is the MEMBER NAME on
+    // the real interface: zbus renames a snake_case method to PascalCase, and
+    // a client that guesses wrong gets UnknownMethod, not a compile error. So
+    // read the interface back out of the daemon instead of trusting the rename.
+    let introspectable = zbus::fdo::IntrospectableProxy::builder(&connection)
+        .destination("com.mos.mosd")?
+        .path("/com/mos/mosd")?
+        .build()
+        .await?;
+    let xml = introspectable.introspect().await?;
+    let opening = "<method name=\"SetTransientRootPassword\">";
+    let start = xml
+        .find(opening)
+        .unwrap_or_else(|| panic!("no SetTransientRootPassword on com.mos.mosd1:\n{xml}"));
+    let body = &xml[start + opening.len()..];
+    let body = &body[..body
+        .find("</method>")
+        .expect("the method element must close")];
+    assert_eq!(
+        body.matches("<arg").count(),
+        1,
+        "SetTransientRootPassword takes exactly one argument, got:\n{body}"
+    );
+    assert!(
+        body.contains("type=\"s\"") && body.contains("direction=\"in\""),
+        "its one argument must be an `in` string, got:\n{body}"
+    );
+    assert!(
+        !xml.contains("set_transient_root_password"),
+        "the snake_case name must NOT be what a client sees:\n{xml}"
+    );
+
+    // Then the behaviour, over the bus, against the daemon's own shadow file.
+    proxy
+        .set_transient_root_password("correct horse battery")
+        .await?;
+    let after = std::fs::read_to_string(&shadow_path)?;
+    let root_hash = after
+        .lines()
+        .find(|line| line.starts_with("root:"))
+        .and_then(|line| line.split(':').nth(1))
+        .expect("root entry");
+    assert!(
+        bcrypt::verify("correct horse battery", root_hash)?,
+        "the shadow root hash must verify against the password that was set"
+    );
+    assert_eq!(
+        std::fs::read_to_string(&marker_path)?,
+        format!("{root_hash}\n"),
+        "the marker beside the shadow file must repeat the stored hash exactly"
+    );
+    assert_eq!(
+        after.lines().skip(1).collect::<Vec<_>>(),
+        SHADOW.lines().skip(1).collect::<Vec<_>>(),
+        "every other account must survive byte-for-byte"
+    );
+
+    // A rejected password is an error, changes nothing, and does not echo the
+    // password back to the caller.
+    let err = proxy
+        .set_transient_root_password("short12")
+        .await
+        .expect_err("seven bytes is below the floor");
+    assert!(!err.to_string().contains("short12"), "leaked: {err}");
+    assert_eq!(
+        std::fs::read_to_string(&shadow_path)?,
+        after,
+        "a rejected password must leave the shadow file exactly as it was"
+    );
+
+    // A password is never a setting: the tree is untouched and nothing about it
+    // reached the persisted file.
+    assert_eq!(proxy.get_settings("hostname").await?, "\"unit-test-host\"");
+    let persisted = std::fs::read_to_string(&settings_path)?;
+    assert!(
+        !persisted.contains("correct horse"),
+        "the password reached settings.toml:\n{persisted}"
+    );
 
     assert!(proxy.get_settings("no.such.path").await.is_err());
     assert!(proxy.set_settings("hostname", "not json").await.is_err());

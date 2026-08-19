@@ -1,138 +1,160 @@
-//! SSH access reconciler: renders the sshd drop-in from `access.ssh`, drives
-//! `ssh.service`, and applies the device password hash to the root account.
+//! SSH access reconciler: renders the sshd drop-in from `access.ssh` and
+//! drives `ssh.service`.
 //!
 //! Three system effects, in this order:
 //!
-//! 1. `/etc/ssh/sshd_config.d/10-mos.conf` is rendered from `access.ssh`. That
+//! 1. `/etc/ssh/authorized_keys.d/<account>` is rendered from
+//!    `access.ssh.authorizedKeys`, at 0600, after the list has been
+//!    re-validated — one file per managed login account, every one of them
+//!    holding the same key list.
+//! 2. `/etc/ssh/sshd_config.d/10-mos.conf` is rendered from `access.ssh`. That
 //!    directory is the one writable part of `/etc` on the v2 read-only root —
 //!    it is a STATE-backed bind mount (`etc-ssh.mount`).
-//! 2. the device password is hashed with bcrypt and written into the root
-//!    account's shadow entry, so the password the device generated for itself
-//!    is the password SSH and the console accept.
 //! 3. `ssh.service` is brought to the state `access.ssh.enabled` asks for.
 //!
-//! Credential before service start, deliberately: a running sshd whose root
-//! account still carries the image's (locked, or worse, shared) hash is the
-//! failure this ordering rules out.
+//! Configuration before service start, deliberately: an sshd started against a
+//! stale drop-in is listening on the wrong port, or accepting an
+//! authentication method the operator has already turned off.
+//!
+//! **The device password no longer reaches PAM.** This reconciler used to hash
+//! `secrets/device-password` with bcrypt and write it into the root account's
+//! shadow entry, which made a fielded device carry a password that never
+//! expired. The secret file stays on STATE and `identity::read_device_password`
+//! still reads it, but the credential of record for shell access is now an SSH
+//! public key, or a transient password the operator sets explicitly through
+//! `crate::transient` and which the next boot clears.
+//!
+//! **`PasswordAuthentication` is gated on that transient password.** The
+//! rendered value is the setting AND `transient::transient_password_active`:
+//! root ships locked and stays locked unless a transient password is active, so
+//! offering password authentication at any other time advertises an
+//! authentication method that cannot succeed.
+//!
+//! **`AuthorizedKeysFile` is not rendered here.** It is a static image file,
+//! `05-mos-authorized-keys.conf`, which sorts ahead of this reconciler's
+//! `10-mos.conf`; sshd keeps the first value it obtains for a non-repeatable
+//! keyword, so emitting the keyword here would be dead text at best.
 
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
-use anyhow::{Context, Result, anyhow};
-use mosd_settings::{Settings, SshSettings};
+use anyhow::{Context, Result};
+use mosd_settings::{AuthorizedKey, Settings, SshSettings};
 use serde_json::json;
 
 use super::Reconciler;
 use super::systemd::{Systemd, UnitControl, is_active, is_enabled};
+use crate::transient;
+use crate::transient::write_atomically;
 
 /// Unit implementing the SSH server.
 const SSH_UNIT: &str = "ssh.service";
 /// Drop-in rendered from `access.ssh`; `sshd_config` includes this directory.
 const DEFAULT_DROP_IN: &str = "/etc/ssh/sshd_config.d/10-mos.conf";
-/// Shadow file holding the root account's password hash.
-const DEFAULT_SHADOW: &str = "/etc/shadow";
+/// Directory the per-account authorized-keys files are rendered into.
+///
+/// Under `/etc/ssh` rather than `/root/.ssh` because `/etc/ssh` is a
+/// STATE-backed bind mount (`etc-ssh.mount` binds `/mnt/state/ssh` over it), so
+/// the files survive an A/B update. `/root` is on the ephemeral filesystem: a
+/// key written there would be gone on the next boot, which is precisely what
+/// "persistent access" must not mean.
+///
+/// The static `05-mos-authorized-keys.conf` points sshd at
+/// `/etc/ssh/authorized_keys.d/%u`, which sshd expands **per login user**, so
+/// the file name inside this directory is the account name and nothing else.
+const DEFAULT_AUTHORIZED_KEYS_DIR: &str = "/etc/ssh/authorized_keys.d";
+/// Accounts this reconciler renders authorized keys for, in render order.
+///
+/// **One key set, rendered for every managed login account.** Keys are not
+/// per-user in the settings tree — that would be a schema change for a device
+/// with a single operator. Every entry of `access.ssh.authorizedKeys` is
+/// therefore a root key as much as it is a `mos` key, and the web UI says so.
+///
+/// **A constant list, deliberately not a scan of `/etc/passwd`.** Scanning
+/// would silently start granting key access to any account a future package
+/// happens to add, which is a privilege decision inherited from a dependency
+/// rather than made in code review. Adding an account here is a diff somebody
+/// has to approve; that is the entire point of the constant.
+const MANAGED_LOGIN_ACCOUNTS: [&str; 2] = ["root", "mos"];
 /// Environment variable overriding the drop-in path.
 const DROP_IN_ENV: &str = "MOSD_SSHD_DROP_IN";
-/// Environment variable overriding the shadow file path.
-const SHADOW_ENV: &str = "MOSD_SHADOW_PATH";
-/// Environment variable overriding the STATE directory holding the secrets.
-const STATE_DIR_ENV: &str = "MOSD_STATE_DIR";
+/// Environment variable overriding the authorized-keys directory.
+///
+/// Renamed from `MOSD_AUTHORIZED_KEYS`, which named a single **file**. A stale
+/// value carried over would now be treated as a directory and render
+/// `<that file>/root`, so the rename makes the changed meaning visible instead
+/// of quietly writing somewhere surprising. Nothing in the image sets either
+/// name; the override exists for tests.
+const AUTHORIZED_KEYS_DIR_ENV: &str = "MOSD_AUTHORIZED_KEYS_DIR";
 /// Mode of the rendered drop-in: world-readable configuration, owner-writable.
 const DROP_IN_MODE: u32 = 0o644;
-/// Account whose password hash mosd owns.
-const ROOT_ACCOUNT: &str = "root";
-/// Prefix identifying that account's shadow entry.
-const ROOT_PREFIX: &str = "root:";
-/// bcrypt cost for the shadow hash. 12 is the current defensible default: a
-/// few hundred milliseconds per verification on the target class of hardware,
-/// which is tolerable for an interactive login and expensive for an attacker
-/// working through a stolen shadow file.
-const BCRYPT_COST: u32 = 12;
-/// Field index of the password hash in a shadow entry.
-const SHADOW_HASH_FIELD: usize = 1;
-
-/// What the reconciler did to the root account's shadow entry.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum RootPassword {
-    /// The hash was written; the account's password changed.
-    Applied,
-    /// The stored hash already matched; the file was left alone.
-    Unchanged,
-    /// `access.device.password_hash` is unset, so there is nothing to apply
-    /// yet. Distinct from an error: a device whose first boot has not
-    /// provisioned itself has no credential, which is expected, whereas a
-    /// missing shadow file or a shadow file without a root entry means the
-    /// image wiring is broken and is reported as an error.
-    Absent,
-    /// The credential exists but its plaintext does not, so no crypt(3) hash
-    /// can be derived from it.
-    ///
-    /// A real state rather than a defect: `identity::ensure_identity`
-    /// deliberately never regenerates a credential whose hash is already
-    /// present, so a STATE that lost only the plaintext file keeps the hash.
-    /// The operator's password still authenticates against
-    /// `access.device.password_hash` on the web UI; only the shadow entry
-    /// cannot be refreshed. Kept distinct from [`Self::Absent`] so "not
-    /// provisioned yet" and "provisioned, plaintext gone" are never read as
-    /// the same condition.
-    PlaintextMissing,
-}
-
-impl RootPassword {
-    /// Live-state spelling of this outcome.
-    fn as_str(self) -> &'static str {
-        match self {
-            Self::Applied => "applied",
-            Self::Unchanged => "unchanged",
-            Self::Absent => "absent",
-            Self::PlaintextMissing => "plaintext-missing",
-        }
-    }
-}
+/// Mode of the rendered authorized-keys file: owner-only. sshd reads it as
+/// root, and nothing else has any business enumerating which keys open the
+/// device.
+const AUTHORIZED_KEYS_MODE: u32 = 0o600;
+/// Mode of the authorized-keys directory when this reconciler creates it.
+/// Traversable, because sshd checks the path, but writable only by root.
+const AUTHORIZED_KEYS_DIR_MODE: u32 = 0o755;
 
 /// Reconciler for the `access.ssh` settings subtree.
 pub struct SshdReconciler<C: UnitControl> {
     drop_in_path: PathBuf,
+    /// Directory the key files are rendered into: one file per
+    /// [`MANAGED_LOGIN_ACCOUNTS`] entry, named for the account.
+    authorized_keys_dir: PathBuf,
+    /// Shadow file this reconciler's device operates on.
+    ///
+    /// Nothing here writes it. It is read — through
+    /// [`transient::transient_password_active`], which looks for the marker
+    /// beside it — because whether password authentication may be offered at
+    /// all is a question about this exact path.
     shadow_path: PathBuf,
-    state_dir: PathBuf,
     control: C,
 }
 
 impl<C: UnitControl> SshdReconciler<C> {
-    /// Create an sshd reconciler writing `drop_in_path` and `shadow_path`,
-    /// reading the device password from `state_dir`, and driving
-    /// `ssh.service` through `control`.
+    /// Create an sshd reconciler writing `drop_in_path` and one key file per
+    /// managed account under `authorized_keys_dir`, tracking the shadow file at
+    /// `shadow_path`, and driving `ssh.service` through `control`.
     ///
     /// Every path is a parameter so tests run entirely inside a temporary
     /// directory and never touch the host's sshd.
     pub fn new(
         drop_in_path: PathBuf,
+        authorized_keys_dir: PathBuf,
         shadow_path: PathBuf,
-        state_dir: PathBuf,
         control: C,
     ) -> Self {
         Self {
             drop_in_path,
+            authorized_keys_dir,
             shadow_path,
-            state_dir,
             control,
         }
     }
 }
 
 impl SshdReconciler<Systemd> {
-    /// Production reconciler: paths from [`DROP_IN_ENV`], [`SHADOW_ENV`] and
-    /// [`STATE_DIR_ENV`] if set, else the system locations.
+    /// Production reconciler: paths from [`DROP_IN_ENV`],
+    /// [`AUTHORIZED_KEYS_DIR_ENV`] and [`transient::SHADOW_ENV`] if set, else
+    /// the system locations.
+    ///
+    /// The shadow path is resolved by [`transient::production_shadow_path`]
+    /// rather than by a second copy of the same constant and env var: two
+    /// constants naming one file drift, and this reconciler and the transient
+    /// module have to agree about which file the marker sits beside.
     pub fn production() -> Self {
         let drop_in = std::env::var(DROP_IN_ENV)
             .map(PathBuf::from)
             .unwrap_or_else(|_| PathBuf::from(DEFAULT_DROP_IN));
-        let shadow = std::env::var(SHADOW_ENV)
+        let authorized_keys_dir = std::env::var(AUTHORIZED_KEYS_DIR_ENV)
             .map(PathBuf::from)
-            .unwrap_or_else(|_| PathBuf::from(DEFAULT_SHADOW));
-        let state_dir = std::env::var(STATE_DIR_ENV)
-            .map(PathBuf::from)
-            .unwrap_or_else(|_| PathBuf::from(crate::identity::DEFAULT_STATE_DIR));
-        Self::new(drop_in, shadow, state_dir, Systemd)
+            .unwrap_or_else(|_| PathBuf::from(DEFAULT_AUTHORIZED_KEYS_DIR));
+        Self::new(
+            drop_in,
+            authorized_keys_dir,
+            transient::production_shadow_path(),
+            Systemd,
+        )
     }
 }
 
@@ -147,7 +169,17 @@ impl SshdReconciler<Systemd> {
 /// empty list would make an operator who enables SSH without naming an address
 /// end up with a running but unreachable server; closure is already expressed
 /// by `enabled: false`.
-fn render_drop_in(ssh: &SshSettings) -> String {
+///
+/// `password_authentication` is the **effective** value, not
+/// `ssh.password_authentication`: the caller has already ANDed the setting with
+/// whether a transient root password is active. It is a parameter rather than a
+/// second read of the settings so that this function stays pure — the gating
+/// input is state outside the settings tree, and a renderer that reached for it
+/// itself could not be compared byte-for-byte in a test.
+///
+/// No `AuthorizedKeysFile` directive is emitted: the static
+/// `05-mos-authorized-keys.conf` owns that keyword and sorts first.
+fn render_drop_in(ssh: &SshSettings, password_authentication: bool) -> String {
     let yes_no = |value: bool| if value { "yes" } else { "no" };
     let mut out = String::from("# Managed by mosd from access.ssh. Do not edit.\n");
     out.push_str(&format!("Port {}\n", ssh.port));
@@ -157,7 +189,7 @@ fn render_drop_in(ssh: &SshSettings) -> String {
     ));
     out.push_str(&format!(
         "PasswordAuthentication {}\n",
-        yes_no(ssh.password_authentication)
+        yes_no(password_authentication)
     ));
     for address in &ssh.listen_addresses {
         out.push_str(&format!("ListenAddress {address}\n"));
@@ -165,99 +197,45 @@ fn render_drop_in(ssh: &SshSettings) -> String {
     out
 }
 
-/// The hash field of the `root:` line in `shadow`.
+/// Render the authorized-keys file for `keys`.
 ///
-/// # Errors
+/// One entry per line in settings order — the operator's order, which is stable
+/// across a load/store round-trip, so the render is deterministic and can be
+/// compared against what is on disk. Each line is `<key>` or `<key> <comment>`.
 ///
-/// Returns an error when there is no `root:` line — mosd owns that account's
-/// credential, so a shadow file without it is a broken image, not an empty
-/// job.
-fn root_hash(shadow: &str) -> Result<&str> {
-    shadow
-        .lines()
-        .find(|line| line.starts_with(ROOT_PREFIX))
-        .and_then(|line| line.split(':').nth(SHADOW_HASH_FIELD))
-        .ok_or_else(|| anyhow!("no `{ROOT_ACCOUNT}:` entry in shadow file"))
-}
-
-/// Replace the hash field of the `root:` line in `shadow` with `hash`.
+/// An empty list renders an **empty file**, not an absent one. A removed key
+/// has to stop working immediately, and "no file" versus "empty file" is a
+/// distinction sshd does not need to make.
 ///
-/// Read-modify-write on the exact bytes: every other account's line, the field
-/// count and ordering of the root line, and the presence or absence of a
-/// trailing newline all survive untouched.
-///
-/// # Errors
-///
-/// Returns an error when there is no `root:` line.
-fn rewrite_root_hash(shadow: &str, hash: &str) -> Result<String> {
-    let mut lines: Vec<String> = shadow.split('\n').map(str::to_string).collect();
-    let root = lines
-        .iter_mut()
-        .find(|line| line.starts_with(ROOT_PREFIX))
-        .ok_or_else(|| anyhow!("no `{ROOT_ACCOUNT}:` entry in shadow file"))?;
-
-    // The line matched `root:`, so splitting on `:` yields at least the name
-    // and the hash field; every further field is carried over untouched.
-    let mut fields: Vec<&str> = root.split(':').collect();
-    fields[SHADOW_HASH_FIELD] = hash;
-    *root = fields.join(":");
-
-    Ok(lines.join("\n"))
-}
-
-/// Write `contents` to `path` atomically: a temporary file in the same
-/// directory, flushed, then renamed over the target.
-///
-/// Same directory because `rename` is only atomic within one filesystem, and
-/// `/etc/ssh/sshd_config.d` is a separate mount from `/etc`.
-///
-/// `mode` is applied explicitly rather than left to the umask so the result is
-/// deterministic, and `owner` (uid, gid) is restored when given — a shadow
-/// file that comes back owned by `root:root` instead of `root:shadow` locks
-/// out every setgid tool that reads it.
-fn write_atomically(
-    path: &Path,
-    contents: &str,
-    mode: u32,
-    owner: Option<(u32, u32)>,
-) -> Result<()> {
-    use std::io::Write;
-    use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
-
-    let directory = path
-        .parent()
-        .ok_or_else(|| anyhow!("{} has no parent directory", path.display()))?;
-    let file_name = path
-        .file_name()
-        .and_then(std::ffi::OsStr::to_str)
-        .ok_or_else(|| anyhow!("{} has no file name", path.display()))?;
-    let temp = directory.join(format!(".{file_name}.mosd-tmp"));
-
-    let mut file = std::fs::OpenOptions::new()
-        .write(true)
-        .create(true)
-        .truncate(true)
-        .mode(mode)
-        .open(&temp)
-        .with_context(|| format!("create {}", temp.display()))?;
-    file.write_all(contents.as_bytes())
-        .with_context(|| format!("write {}", temp.display()))?;
-    file.sync_all()
-        .with_context(|| format!("flush {}", temp.display()))?;
-    drop(file);
-
-    // The mode above only takes effect when the temporary file is created; a
-    // leftover from an interrupted run would keep its old mode.
-    std::fs::set_permissions(&temp, std::fs::Permissions::from_mode(mode))
-        .with_context(|| format!("set mode on {}", temp.display()))?;
-    if let Some((uid, gid)) = owner {
-        std::os::unix::fs::chown(&temp, Some(uid), Some(gid))
-            .with_context(|| format!("set owner on {}", temp.display()))?;
+/// Pure: every value written here has already been through
+/// [`mosd_settings::validate_authorized_keys`] at the call site.
+fn render_authorized_keys(keys: &[AuthorizedKey]) -> String {
+    let mut out = String::new();
+    for entry in keys {
+        match &entry.comment {
+            Some(comment) => out.push_str(&format!("{} {}\n", entry.key, comment)),
+            None => out.push_str(&format!("{}\n", entry.key)),
+        }
     }
+    out
+}
 
-    std::fs::rename(&temp, path)
-        .with_context(|| format!("rename {} to {}", temp.display(), path.display()))?;
-    Ok(())
+/// OpenSSH fingerprint of a canonical `<type> <blob>` key line.
+///
+/// The standard form: `SHA256:` followed by the unpadded base64 of the SHA-256
+/// digest of the **decoded** blob — the same string `ssh-keygen -lf` prints.
+///
+/// Returns `None` when the line has no blob or the blob does not decode.
+/// Publishing state must not fail a reconcile that already succeeded, so the
+/// caller renders that as `null` rather than propagating an error.
+fn fingerprint(key: &str) -> Option<String> {
+    let blob = key.split(' ').nth(1)?;
+    let decoded = mosd_settings::decode_base64(blob)?;
+    let digest = ring::digest::digest(&ring::digest::SHA256, &decoded);
+    Some(format!(
+        "SHA256:{}",
+        mosd_settings::encode_base64_nopad(digest.as_ref())
+    ))
 }
 
 impl<C: UnitControl> SshdReconciler<C> {
@@ -266,8 +244,8 @@ impl<C: UnitControl> SshdReconciler<C> {
     /// An unchanged render is not rewritten: the drop-in lives on STATE, and
     /// a rewrite that changes nothing still costs a flash write on every
     /// reconcile.
-    fn apply_drop_in(&self, ssh: &SshSettings) -> Result<bool> {
-        let rendered = render_drop_in(ssh);
+    fn apply_drop_in(&self, ssh: &SshSettings, password_authentication: bool) -> Result<bool> {
+        let rendered = render_drop_in(ssh, password_authentication);
         if let Ok(current) = std::fs::read_to_string(&self.drop_in_path)
             && current == rendered
         {
@@ -282,73 +260,98 @@ impl<C: UnitControl> SshdReconciler<C> {
         Ok(true)
     }
 
-    /// Apply the device password to the root account's shadow entry.
+    /// Render the same key list into one file per entry of `accounts`.
     ///
-    /// The shadow field carries a **bcrypt** hash, not the Argon2id PHC string
-    /// in `access.device.password_hash`. The two are not interchangeable and
-    /// one cannot be derived from the other: the login stack verifies the
-    /// shadow field through crypt(3), and the image's libcrypt implements
-    /// bcrypt, yescrypt and the sha2crypt family but not Argon2 — a hash it
-    /// cannot parse rejects every password while looking perfectly healthy on
-    /// disk. So the plaintext is read from STATE and hashed a second time, in
-    /// the format the device can actually verify. `access.device.password_hash`
-    /// is untouched and stays the credential mosd and webd verify against
-    /// themselves, where Argon2id is the right choice and libcrypt is not
-    /// involved.
-    fn apply_root_password(&self, settings: &Settings) -> Result<RootPassword> {
-        use std::os::unix::fs::MetadataExt;
-        use std::os::unix::fs::PermissionsExt;
-
-        if settings.access.device.password_hash.is_none() {
-            return Ok(RootPassword::Absent);
-        }
-        let Some(password) = crate::identity::read_device_password(&self.state_dir)? else {
-            tracing::warn!(
-                state_dir = %self.state_dir.display(),
-                "device credential present but its plaintext is gone; the root shadow entry \
-                 cannot be refreshed"
-            );
-            return Ok(RootPassword::PlaintextMissing);
-        };
-
-        let current = std::fs::read_to_string(&self.shadow_path).with_context(|| {
-            format!(
-                "read {} — the root credential cannot be applied without it",
-                self.shadow_path.display()
+    /// The caller has already re-validated the list, so anything reaching this
+    /// point is renderable — and it is rendered **once**, before the first file
+    /// is opened, so no account can be written from a different key list than
+    /// another. An unchanged file is not rewritten: these live on STATE, and a
+    /// rewrite that changes nothing still costs a flash write on every
+    /// reconcile.
+    ///
+    /// **No account is checked for existence.** `mos` may not exist yet on a
+    /// given image, and asking `/etc/passwd` would couple this reconciler to
+    /// account state it does not own — failing exactly in the window where the
+    /// account and this render land out of order. A key file for an account
+    /// that cannot log in is inert: `AuthorizedKeysFile
+    /// /etc/ssh/authorized_keys.d/%u` is expanded from the user sshd is
+    /// authenticating, so a file no login ever names is never read.
+    ///
+    /// `accounts` is a parameter rather than a direct read of
+    /// [`MANAGED_LOGIN_ACCOUNTS`] so a test can prove that last paragraph
+    /// against an account name no system could have.
+    fn apply_authorized_keys(&self, keys: &[AuthorizedKey], accounts: &[&str]) -> Result<()> {
+        let rendered = render_authorized_keys(keys);
+        if !self.authorized_keys_dir.exists() {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::create_dir_all(&self.authorized_keys_dir)
+                .with_context(|| format!("create {}", self.authorized_keys_dir.display()))?;
+            // Explicitly, rather than letting the umask decide: sshd refuses a
+            // key file it reaches through a group- or world-writable directory.
+            std::fs::set_permissions(
+                &self.authorized_keys_dir,
+                std::fs::Permissions::from_mode(AUTHORIZED_KEYS_DIR_MODE),
             )
-        })?;
-        // bcrypt salts every hash, so the stored value and a fresh one never
-        // compare equal. Verification is what "already applied" means here;
-        // without it every reconcile would rewrite the shadow file with a new
-        // salt.
-        let stored = root_hash(&current)
-            .with_context(|| format!("update {}", self.shadow_path.display()))?;
-        if bcrypt::verify(&password, stored).unwrap_or(false) {
-            return Ok(RootPassword::Unchanged);
+            .with_context(|| format!("set mode on {}", self.authorized_keys_dir.display()))?;
         }
+        for account in accounts {
+            let path = self.authorized_keys_dir.join(account);
+            if let Ok(current) = std::fs::read_to_string(&path)
+                && current == rendered
+            {
+                continue;
+            }
+            write_atomically(&path, &rendered, AUTHORIZED_KEYS_MODE, None)
+                .with_context(|| format!("render {}", path.display()))?;
+        }
+        Ok(())
+    }
 
-        let crypt_hash = bcrypt::hash(&password, BCRYPT_COST)
-            .map_err(|err| anyhow!("hash the device password for the shadow file: {err}"))?;
-        let updated = rewrite_root_hash(&current, &crypt_hash)
-            .with_context(|| format!("update {}", self.shadow_path.display()))?;
-
-        let metadata = std::fs::metadata(&self.shadow_path)
-            .with_context(|| format!("stat {}", self.shadow_path.display()))?;
-        write_atomically(
-            &self.shadow_path,
-            &updated,
-            metadata.permissions().mode() & 0o7777,
-            Some((metadata.uid(), metadata.gid())),
-        )?;
-        Ok(RootPassword::Applied)
+    /// Every path this reconciler renders keys to, in
+    /// [`MANAGED_LOGIN_ACCOUNTS`] order.
+    fn authorized_keys_paths(&self) -> Vec<String> {
+        MANAGED_LOGIN_ACCOUNTS
+            .iter()
+            .map(|account| self.authorized_keys_dir.join(account).display().to_string())
+            .collect()
     }
 
     /// Bring `ssh.service` to the state `ssh.enabled` asks for.
     ///
     /// Reads before it writes, so a system already in the target state gets no
-    /// calls at all. `config_changed` forces a restart of an already-running
-    /// sshd, because a rewritten drop-in that nothing re-reads is a
-    /// configuration that silently did not take effect.
+    /// calls at all.
+    ///
+    /// **A configuration-only change reloads; it never restarts.** A rewritten
+    /// drop-in that nothing re-reads is a configuration that silently did not
+    /// take effect, so an already-running sshd has to be told — but a restart
+    /// tears the daemon down, and the moment that matters most is exactly the
+    /// one where an operator is setting a transient root password over their
+    /// existing SSH session in order to gain access. sshd re-reads its
+    /// configuration on `SIGHUP`, so a reload applies the change while every
+    /// established session keeps running.
+    ///
+    /// **`KillMode` is not what keeps those sessions alive.** Debian's
+    /// `openssh-server` happens to ship `KillMode=process`, which would spare
+    /// established sessions across a restart — but nothing in this image chose
+    /// that value, nothing here asserts it, and a future package revision could
+    /// change it with no signal on our side. Reload survives by construction
+    /// rather than by that grace, which is why a restart here would *not* be
+    /// equally fine.
+    ///
+    /// **This depends on `ssh.service` carrying `ExecReload`.** That comes from
+    /// the Debian `openssh-server` package; this repo ships no `ssh.service`, so
+    /// the property is inherited rather than chosen — the same shape of problem
+    /// as `KillMode`, in a new place. A unit file without `ExecReload` makes
+    /// systemd refuse the job, and that refusal is surfaced with an error naming
+    /// `ExecReload` and saying the configuration change has not been applied.
+    /// There is deliberately **no fallback to `restart`**: falling back would
+    /// silently reintroduce the disconnect this reload exists to prevent, and
+    /// would hide the missing `ExecReload` from the next person to look.
+    ///
+    /// Enable/disable and start/stop are unit **state** changes, not
+    /// configuration changes, and stay as they are. A unit that is not running
+    /// but should be is started, never reloaded: reloading a stopped daemon
+    /// applies a configuration to nothing.
     async fn apply_unit(&self, ssh: &SshSettings, config_changed: bool) -> Result<()> {
         if ssh.enabled {
             if !is_enabled(&self.control.unit_file_state(SSH_UNIT).await?) {
@@ -356,7 +359,13 @@ impl<C: UnitControl> SshdReconciler<C> {
             }
             if is_active(&self.control.active_state(SSH_UNIT).await?) {
                 if config_changed {
-                    self.control.restart(SSH_UNIT).await?;
+                    self.control.reload(SSH_UNIT).await.with_context(|| {
+                        format!(
+                            "reload {SSH_UNIT} after a configuration change: the unit may lack \
+                             ExecReload, in which case sshd is still running the previous \
+                             configuration and the rendered change has not been applied"
+                        )
+                    })?;
                 }
             } else {
                 self.control.start(SSH_UNIT).await?;
@@ -385,21 +394,65 @@ impl<C: UnitControl> Reconciler for SshdReconciler<C> {
 
     async fn apply(&self, settings: &Settings) -> Result<serde_json::Value> {
         let ssh = &settings.access.ssh;
-        let config_changed = self.apply_drop_in(ssh)?;
-        let root_password = self.apply_root_password(settings)?;
+
+        // Before anything is written. The settings file lives on STATE and is
+        // editable by anything that can write STATE, so the parser is the
+        // security boundary and this is the second place it has to hold. A
+        // failure here aborts the whole apply with every rendered file exactly
+        // as it was: silently dropping the offending entry and rendering the
+        // rest would leave the operator looking at a key in the UI that grants
+        // nothing.
+        mosd_settings::validate_authorized_keys(&ssh.authorized_keys)?;
+
+        // Outside the settings tree, so it has to be read on every apply: the
+        // operator setting a transient password changes no setting at all, and
+        // the bus method that sets one calls back through `apply_all`.
+        let transient_active = transient::transient_password_active(&self.shadow_path);
+        // `password_authentication` below is the EFFECTIVE value — what sshd is
+        // actually told. `passwordAuthenticationRequested` in the published
+        // state is the raw setting. Two similarly-named keys, so: effective =
+        // requested AND a transient password is really active.
+        let password_authentication = ssh.password_authentication && transient_active;
+
+        // No "did it change" comes back, and none is wanted: only the drop-in
+        // forces sshd to re-read anything. sshd re-reads the authorized-keys
+        // file on every authentication attempt, so a key added or removed takes
+        // effect without touching the unit at all.
+        self.apply_authorized_keys(&ssh.authorized_keys, &MANAGED_LOGIN_ACCOUNTS)?;
+        let config_changed = self.apply_drop_in(ssh, password_authentication)?;
         self.apply_unit(ssh, config_changed).await?;
+
+        let authorized_keys: Vec<serde_json::Value> = ssh
+            .authorized_keys
+            .iter()
+            .map(|entry| {
+                json!({
+                    // Never the key material itself: this tree is served over
+                    // D-Bus and read by webd, and a fingerprint is what an
+                    // operator needs in order to recognise a key.
+                    "fingerprint": fingerprint(&entry.key),
+                    "comment": entry.comment,
+                })
+            })
+            .collect();
 
         Ok(json!({
             "enabled": ssh.enabled,
             "port": ssh.port,
             "permitRootLogin": ssh.permit_root_login,
-            "passwordAuthentication": ssh.password_authentication,
+            "passwordAuthentication": password_authentication,
+            "passwordAuthenticationRequested": ssh.password_authentication,
+            "transientPasswordActive": transient_active,
             "listenAddresses": ssh.listen_addresses,
             "dropIn": self.drop_in_path.display().to_string(),
+            // Plural, and renamed from `authorizedKeysPath`: one key set is
+            // now rendered to one file per managed account, so a single path
+            // could only ever name one of them.
+            "authorizedKeysPaths": self.authorized_keys_paths(),
+            "authorizedKeys": authorized_keys,
             "unit": SSH_UNIT,
             "activeState": self.control.active_state(SSH_UNIT).await?,
             "unitFileState": self.control.unit_file_state(SSH_UNIT).await?,
-            "rootPassword": root_password.as_str(),
         }))
     }
 }
@@ -409,13 +462,15 @@ mod tests {
     use std::os::unix::fs::PermissionsExt;
     use std::path::Path;
 
-    use mosd_settings::DeviceCredentialSettings;
-
     use super::super::systemd::mock::MockUnitControl;
     use super::*;
 
     const GOLDEN_DEFAULTS: &str = "# Managed by mosd from access.ssh. Do not edit.\n\
         Port 22\nPermitRootLogin yes\nPasswordAuthentication yes\n";
+    /// What `apply` writes for default settings with **no** transient password
+    /// active: the same drop-in with password authentication gated off.
+    const GOLDEN_DEFAULTS_GATED: &str = "# Managed by mosd from access.ssh. Do not edit.\n\
+        Port 22\nPermitRootLogin yes\nPasswordAuthentication no\n";
     const GOLDEN_LISTEN: &str = "# Managed by mosd from access.ssh. Do not edit.\n\
         Port 2222\nPermitRootLogin no\nPasswordAuthentication no\n\
         ListenAddress 10.0.0.5\nListenAddress fd00::1\n";
@@ -425,16 +480,6 @@ mod tests {
     const SHADOW: &str = "root:!:19000:0:99999:7:::\n\
         daemon:*:19000:0:99999:7:::\n\
         operator:$6$rounds=5000$abcd$efgh:19100:0:99999:7:::\n";
-    /// The two accounts the reconciler must never touch.
-    const OTHER_ACCOUNTS: &str = "daemon:*:19000:0:99999:7:::\n\
-        operator:$6$rounds=5000$abcd$efgh:19100:0:99999:7:::\n";
-    /// Plaintext device password on STATE, in the shape `identity` generates.
-    const PASSWORD: &str = "8XKD3Q7NRTV2MJH4";
-    /// Argon2id PHC string in `access.device.password_hash`; the credential of
-    /// record, and never what lands in the shadow file.
-    const ARGON_HASH: &str = "$argon2id$v=19$m=19456,t=2,p=1$c2FsdHNhbHQ$aGFzaGhhc2g";
-    /// Opaque replacement hash for the pure-function rewrite tests.
-    const CRYPT_HASH: &str = "$2b$12$abcdefghijklmnopqrstuvOJqM0iZ5wKzXwZ2G8bqZ0aVjPQnDGa";
     const SHADOW_MODE: u32 = 0o640;
 
     fn ssh_settings(enabled: bool) -> SshSettings {
@@ -444,14 +489,10 @@ mod tests {
         }
     }
 
-    fn settings_with(ssh: SshSettings, password_hash: Option<&str>) -> Settings {
+    fn settings_with(ssh: SshSettings) -> Settings {
         Settings {
             access: mosd_settings::AccessSettings {
                 ssh,
-                device: DeviceCredentialSettings {
-                    password_hash: password_hash.map(str::to_string),
-                    generation: u32::from(password_hash.is_some()),
-                },
                 ..mosd_settings::AccessSettings::default()
             },
             ..Settings::default()
@@ -461,66 +502,61 @@ mod tests {
     /// Paths of a fixture, all of them under the tempdir.
     struct Paths {
         drop_in: PathBuf,
+        /// Directory the per-account key files land in.
+        keys_dir: PathBuf,
+        /// The `root` account's key file — the path the RFCT-034 goldens are
+        /// written against, unchanged.
+        keys: PathBuf,
+        /// The `mos` account's key file, holding the same bytes as `keys`.
+        mos_keys: PathBuf,
         shadow: PathBuf,
-        state: PathBuf,
     }
 
     /// Fixture rooted entirely inside `dir`: a drop-in path that does not
-    /// exist yet, a shadow file at [`SHADOW_MODE`], and a STATE directory
-    /// holding `plaintext` when given.
-    fn fixture_with(
-        dir: &Path,
-        active: &str,
-        file_state: &str,
-        plaintext: Option<&str>,
-    ) -> (SshdReconciler<MockUnitControl>, Paths) {
-        let paths = Paths {
-            drop_in: dir.join("sshd_config.d").join("10-mos.conf"),
-            shadow: dir.join("shadow"),
-            state: dir.join("state"),
-        };
-        std::fs::write(&paths.shadow, SHADOW).unwrap();
-        std::fs::set_permissions(&paths.shadow, std::fs::Permissions::from_mode(SHADOW_MODE))
-            .unwrap();
-        if let Some(plaintext) = plaintext {
-            let secrets = paths.state.join("secrets");
-            std::fs::create_dir_all(&secrets).unwrap();
-            std::fs::write(secrets.join("device-password"), plaintext).unwrap();
-        }
-        let reconciler = SshdReconciler::new(
-            paths.drop_in.clone(),
-            paths.shadow.clone(),
-            paths.state.clone(),
-            MockUnitControl::new(active, file_state),
-        );
-        (reconciler, paths)
-    }
-
-    /// The common case: a provisioned device whose plaintext is on STATE.
+    /// exist yet and a shadow file at [`SHADOW_MODE`].
     fn fixture(
         dir: &Path,
         active: &str,
         file_state: &str,
     ) -> (SshdReconciler<MockUnitControl>, Paths) {
-        fixture_with(dir, active, file_state, Some(PASSWORD))
+        fixture_with(dir, MockUnitControl::new(active, file_state))
+    }
+
+    /// Same fixture, driving `control` — so a test can supply a mock that
+    /// models a unit file without `ExecReload`.
+    fn fixture_with(
+        dir: &Path,
+        control: MockUnitControl,
+    ) -> (SshdReconciler<MockUnitControl>, Paths) {
+        let keys_dir = dir.join("authorized_keys.d");
+        let paths = Paths {
+            drop_in: dir.join("sshd_config.d").join("10-mos.conf"),
+            keys: keys_dir.join("root"),
+            mos_keys: keys_dir.join("mos"),
+            keys_dir,
+            shadow: dir.join("shadow"),
+        };
+        std::fs::write(&paths.shadow, SHADOW).unwrap();
+        std::fs::set_permissions(&paths.shadow, std::fs::Permissions::from_mode(SHADOW_MODE))
+            .unwrap();
+        let reconciler = SshdReconciler::new(
+            paths.drop_in.clone(),
+            paths.keys_dir.clone(),
+            paths.shadow.clone(),
+            control,
+        );
+        (reconciler, paths)
     }
 
     fn mode_of(path: &Path) -> u32 {
         std::fs::metadata(path).unwrap().permissions().mode() & 0o7777
     }
 
-    /// The hash field of the root entry in the shadow file at `path`.
-    fn stored_root_hash(path: &Path) -> String {
-        root_hash(&std::fs::read_to_string(path).unwrap())
-            .unwrap()
-            .to_string()
-    }
-
     // ---- R2: rendering ----------------------------------------------------
 
     #[test]
     fn empty_listen_addresses_emit_no_listen_address_directive() {
-        let rendered = render_drop_in(&SshSettings::default());
+        let rendered = render_drop_in(&SshSettings::default(), true);
 
         assert_eq!(rendered, GOLDEN_DEFAULTS);
         assert!(
@@ -531,13 +567,17 @@ mod tests {
 
     #[test]
     fn each_listen_address_becomes_one_directive() {
-        let rendered = render_drop_in(&SshSettings {
-            enabled: true,
-            port: 2222,
-            permit_root_login: false,
-            password_authentication: false,
-            listen_addresses: vec!["10.0.0.5".to_string(), "fd00::1".to_string()],
-        });
+        let rendered = render_drop_in(
+            &SshSettings {
+                enabled: true,
+                port: 2222,
+                permit_root_login: false,
+                password_authentication: false,
+                listen_addresses: vec!["10.0.0.5".to_string(), "fd00::1".to_string()],
+                authorized_keys: Vec::new(),
+            },
+            false,
+        );
 
         assert_eq!(rendered, GOLDEN_LISTEN);
         assert_eq!(rendered.matches("ListenAddress ").count(), 2);
@@ -551,9 +591,13 @@ mod tests {
             permit_root_login: false,
             password_authentication: true,
             listen_addresses: vec!["10.0.0.5".to_string()],
+            authorized_keys: Vec::new(),
         };
 
-        assert_eq!(render_drop_in(&ssh), render_drop_in(&ssh.clone()));
+        assert_eq!(
+            render_drop_in(&ssh, true),
+            render_drop_in(&ssh.clone(), true)
+        );
     }
 
     #[tokio::test]
@@ -562,13 +606,15 @@ mod tests {
         let (reconciler, paths) = fixture(dir.path(), "inactive", "disabled");
 
         reconciler
-            .apply(&settings_with(ssh_settings(true), Some(ARGON_HASH)))
+            .apply(&settings_with(ssh_settings(true)))
             .await
             .unwrap();
 
+        // GOLDEN_DEFAULTS_GATED, not GOLDEN_DEFAULTS: the fixture writes no
+        // transient marker, so password authentication is gated off.
         assert_eq!(
             std::fs::read_to_string(&paths.drop_in).unwrap(),
-            GOLDEN_DEFAULTS
+            GOLDEN_DEFAULTS_GATED
         );
         assert_eq!(mode_of(&paths.drop_in), 0o644);
     }
@@ -579,11 +625,15 @@ mod tests {
         let (reconciler, paths) = fixture(dir.path(), "inactive", "disabled");
 
         reconciler
-            .apply(&settings_with(ssh_settings(true), Some(ARGON_HASH)))
+            .apply(&settings_with(ssh_settings(true)))
             .await
             .unwrap();
 
-        for directory in [paths.drop_in.parent().unwrap(), dir.path()] {
+        for directory in [
+            paths.drop_in.parent().unwrap(),
+            paths.keys.parent().unwrap(),
+            dir.path(),
+        ] {
             let leftovers: Vec<_> = std::fs::read_dir(directory)
                 .unwrap()
                 .map(|entry| entry.unwrap().file_name())
@@ -601,7 +651,7 @@ mod tests {
         let (reconciler, _paths) = fixture(dir.path(), "inactive", "disabled");
 
         let state = reconciler
-            .apply(&settings_with(ssh_settings(true), Some(ARGON_HASH)))
+            .apply(&settings_with(ssh_settings(true)))
             .await
             .unwrap();
 
@@ -611,6 +661,15 @@ mod tests {
                 "enable ssh.service".to_string(),
                 "start ssh.service".to_string()
             ]
+        );
+        // Enablement is a unit STATE change, not a configuration change: it is
+        // correctly not a reload, and a stopped unit could not be reloaded
+        // anyway.
+        assert!(
+            !reconciler
+                .control
+                .calls()
+                .contains(&"reload ssh.service".to_string())
         );
         assert_eq!(state["enabled"], json!(true));
         assert_eq!(state["activeState"], json!("active"));
@@ -626,7 +685,7 @@ mod tests {
         let (reconciler, _paths) = fixture(dir.path(), "active", "enabled");
 
         let state = reconciler
-            .apply(&settings_with(ssh_settings(false), Some(ARGON_HASH)))
+            .apply(&settings_with(ssh_settings(false)))
             .await
             .unwrap();
 
@@ -636,6 +695,14 @@ mod tests {
                 "stop ssh.service".to_string(),
                 "disable ssh.service".to_string()
             ]
+        );
+        // Likewise a unit STATE change. Reloading a daemon on the way out is
+        // meaningless.
+        assert!(
+            !reconciler
+                .control
+                .calls()
+                .contains(&"reload ssh.service".to_string())
         );
         assert_eq!(state["enabled"], json!(false));
         assert_eq!(state["activeState"], json!("inactive"));
@@ -647,10 +714,10 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let (reconciler, paths) = fixture(dir.path(), "active", "enabled");
         std::fs::create_dir_all(paths.drop_in.parent().unwrap()).unwrap();
-        std::fs::write(&paths.drop_in, GOLDEN_DEFAULTS).unwrap();
+        std::fs::write(&paths.drop_in, GOLDEN_DEFAULTS_GATED).unwrap();
 
         reconciler
-            .apply(&settings_with(ssh_settings(true), Some(ARGON_HASH)))
+            .apply(&settings_with(ssh_settings(true)))
             .await
             .unwrap();
 
@@ -667,7 +734,7 @@ mod tests {
         let (reconciler, _paths) = fixture(dir.path(), "inactive", "disabled");
 
         reconciler
-            .apply(&settings_with(ssh_settings(false), Some(ARGON_HASH)))
+            .apply(&settings_with(ssh_settings(false)))
             .await
             .unwrap();
 
@@ -682,16 +749,15 @@ mod tests {
     async fn reapplying_the_same_settings_changes_nothing() {
         let dir = tempfile::tempdir().unwrap();
         let (reconciler, paths) = fixture(dir.path(), "inactive", "disabled");
-        let settings = settings_with(ssh_settings(true), Some(ARGON_HASH));
+        let settings = settings_with(ssh_settings(true));
 
-        let first = reconciler.apply(&settings).await.unwrap();
+        reconciler.apply(&settings).await.unwrap();
         let after_first = reconciler.control.calls();
-        let shadow_after_first = std::fs::read_to_string(&paths.shadow).unwrap();
         // A marker the reconciler would clobber if it rewrote the file: the
         // renderer always produces mode 0644.
         std::fs::set_permissions(&paths.drop_in, std::fs::Permissions::from_mode(0o600)).unwrap();
 
-        let second = reconciler.apply(&settings).await.unwrap();
+        reconciler.apply(&settings).await.unwrap();
 
         assert_eq!(reconciler.control.calls(), after_first);
         assert_eq!(
@@ -701,39 +767,40 @@ mod tests {
         );
         assert_eq!(
             std::fs::read_to_string(&paths.drop_in).unwrap(),
-            GOLDEN_DEFAULTS
-        );
-        assert_eq!(first["rootPassword"], json!("applied"));
-        assert_eq!(second["rootPassword"], json!("unchanged"));
-        assert_eq!(
-            std::fs::read_to_string(&paths.shadow).unwrap(),
-            shadow_after_first,
-            "bcrypt re-salts on every hash, so a re-hash would show up here"
+            GOLDEN_DEFAULTS_GATED
         );
     }
 
+    /// The central guard: a configuration-only change reloads a running sshd
+    /// and must never restart it, so the operator's established session
+    /// survives by construction rather than by `KillMode`'s grace.
     #[tokio::test]
-    async fn changing_the_config_of_a_running_sshd_restarts_it() {
+    async fn changing_the_config_of_a_running_sshd_reloads_it_and_never_restarts_it() {
         let dir = tempfile::tempdir().unwrap();
         let (reconciler, paths) = fixture(dir.path(), "active", "enabled");
         std::fs::create_dir_all(paths.drop_in.parent().unwrap()).unwrap();
-        std::fs::write(&paths.drop_in, GOLDEN_DEFAULTS).unwrap();
+        std::fs::write(&paths.drop_in, GOLDEN_DEFAULTS_GATED).unwrap();
 
         let state = reconciler
-            .apply(&settings_with(
-                SshSettings {
-                    enabled: true,
-                    port: 2222,
-                    ..SshSettings::default()
-                },
-                Some(ARGON_HASH),
-            ))
+            .apply(&settings_with(SshSettings {
+                enabled: true,
+                port: 2222,
+                ..SshSettings::default()
+            }))
             .await
             .unwrap();
 
         assert_eq!(
             reconciler.control.calls(),
-            vec!["restart ssh.service".to_string()]
+            vec!["reload ssh.service".to_string()]
+        );
+        assert!(
+            !reconciler
+                .control
+                .calls()
+                .contains(&"restart ssh.service".to_string()),
+            "a restart would drop the operator's live session: {:?}",
+            reconciler.control.calls()
         );
         assert!(
             std::fs::read_to_string(&paths.drop_in)
@@ -743,183 +810,118 @@ mod tests {
         assert_eq!(state["port"], json!(2222));
     }
 
-    // ---- R4: root password ------------------------------------------------
-
     #[tokio::test]
-    async fn shadow_gets_a_bcrypt_hash_that_verifies_against_the_plaintext() {
+    async fn changing_the_config_of_a_stopped_sshd_starts_it_without_reloading() {
         let dir = tempfile::tempdir().unwrap();
-        let (reconciler, paths) = fixture(dir.path(), "inactive", "disabled");
-
-        let state = reconciler
-            .apply(&settings_with(ssh_settings(true), Some(ARGON_HASH)))
-            .await
-            .unwrap();
-
-        let written = stored_root_hash(&paths.shadow);
-        assert_eq!(state["rootPassword"], json!("applied"));
-        assert!(
-            written.starts_with("$2b$12$"),
-            "shadow must carry a crypt(3) format the image's libcrypt implements, got {written}"
-        );
-        assert!(
-            bcrypt::verify(PASSWORD, &written).unwrap(),
-            "the device password must verify against what was written"
-        );
-        assert!(
-            !bcrypt::verify("WRONGPASSWORD123", &written).unwrap(),
-            "a different password must not verify"
-        );
-        assert!(
-            !written.contains("argon2"),
-            "the Argon2id credential must not reach the shadow file: {written}"
-        );
-    }
-
-    #[tokio::test]
-    async fn shadow_rewrite_touches_nothing_but_the_root_hash() {
-        let dir = tempfile::tempdir().unwrap();
-        let (reconciler, paths) = fixture(dir.path(), "inactive", "disabled");
+        let (reconciler, paths) = fixture(dir.path(), "inactive", "enabled");
+        std::fs::create_dir_all(paths.drop_in.parent().unwrap()).unwrap();
+        std::fs::write(&paths.drop_in, GOLDEN_DEFAULTS_GATED).unwrap();
 
         reconciler
-            .apply(&settings_with(ssh_settings(true), Some(ARGON_HASH)))
+            .apply(&settings_with(SshSettings {
+                enabled: true,
+                port: 2222,
+                ..SshSettings::default()
+            }))
             .await
             .unwrap();
 
-        let written = stored_root_hash(&paths.shadow);
+        // A start reads the drop-in on the way up, so the change is applied
+        // without a reload — and reloading a stopped daemon would apply the
+        // configuration to nothing.
         assert_eq!(
-            std::fs::read_to_string(&paths.shadow).unwrap(),
-            format!("root:{written}:19000:0:99999:7:::\n{OTHER_ACCOUNTS}"),
-            "every other account and every other field must survive byte-for-byte"
+            reconciler.control.calls(),
+            vec!["start ssh.service".to_string()]
+        );
+        assert!(
+            std::fs::read_to_string(&paths.drop_in)
+                .unwrap()
+                .contains("Port 2222\n")
         );
     }
 
     #[tokio::test]
-    async fn the_settings_credential_is_left_alone() {
+    async fn a_unit_without_exec_reload_fails_loudly_and_is_never_restarted_instead() {
         let dir = tempfile::tempdir().unwrap();
-        let (reconciler, _paths) = fixture(dir.path(), "inactive", "disabled");
-        let settings = settings_with(ssh_settings(true), Some(ARGON_HASH));
-
-        reconciler.apply(&settings).await.unwrap();
-
-        assert_eq!(
-            settings.access.device.password_hash.as_deref(),
-            Some(ARGON_HASH),
-            "access.device.passwordHash stays the Argon2id credential of record"
+        let (reconciler, paths) = fixture_with(
+            dir.path(),
+            MockUnitControl::with_failing_reload("active", "enabled"),
         );
-    }
+        std::fs::create_dir_all(paths.drop_in.parent().unwrap()).unwrap();
+        std::fs::write(&paths.drop_in, GOLDEN_DEFAULTS_GATED).unwrap();
 
-    #[test]
-    fn rewrite_preserves_field_count_ordering_and_a_missing_trailing_newline() {
-        let without_newline = SHADOW.trim_end_matches('\n');
-
-        let updated = rewrite_root_hash(without_newline, CRYPT_HASH).unwrap();
-
-        assert_eq!(
-            updated,
-            format!("root:{CRYPT_HASH}:19000:0:99999:7:::\n{OTHER_ACCOUNTS}")
-                .trim_end_matches('\n')
-        );
-        assert!(!updated.ends_with('\n'));
-        for line in updated.lines() {
-            assert_eq!(line.split(':').count(), 9, "field count changed: {line}");
-        }
-    }
-
-    #[test]
-    fn rewrite_does_not_match_an_account_merely_containing_root() {
-        let shadow = "chroot:!:19000:0:99999:7:::\nroot:!:19000:0:99999:7:::\n";
-
-        let updated = rewrite_root_hash(shadow, CRYPT_HASH).unwrap();
-
-        assert_eq!(
-            updated,
-            format!("chroot:!:19000:0:99999:7:::\nroot:{CRYPT_HASH}:19000:0:99999:7:::\n")
-        );
-    }
-
-    #[test]
-    fn root_hash_reads_the_root_entry_not_a_lookalike() {
-        assert_eq!(root_hash(SHADOW).unwrap(), "!");
-        assert_eq!(
-            root_hash("chroot:LOOKALIKE:1::::::\nroot:REAL:1::::::\n").unwrap(),
-            "REAL"
-        );
-        assert!(root_hash("daemon:*:1::::::\n").is_err());
-    }
-
-    #[tokio::test]
-    async fn shadow_rewrite_preserves_mode_and_ownership() {
-        use std::os::unix::fs::MetadataExt;
-
-        let dir = tempfile::tempdir().unwrap();
-        let (reconciler, paths) = fixture(dir.path(), "inactive", "disabled");
-        let before = std::fs::metadata(&paths.shadow).unwrap();
-        let (uid, gid) = (before.uid(), before.gid());
-        // Only root may hand a file to another group; where that is possible,
-        // assert against a gid the process would not produce by accident.
-        let foreign_gid = std::os::unix::fs::chown(&paths.shadow, None, Some(12))
-            .is_ok()
-            .then_some(12);
-
-        reconciler
-            .apply(&settings_with(ssh_settings(true), Some(ARGON_HASH)))
+        let error = reconciler
+            .apply(&settings_with(SshSettings {
+                enabled: true,
+                port: 2222,
+                ..SshSettings::default()
+            }))
             .await
-            .unwrap();
+            .unwrap_err();
 
-        let after = std::fs::metadata(&paths.shadow).unwrap();
-        assert_eq!(after.permissions().mode() & 0o7777, 0o640);
-        assert_eq!(after.uid(), uid);
-        assert_eq!(after.gid(), foreign_gid.unwrap_or(gid));
-    }
-
-    #[tokio::test]
-    async fn absent_password_hash_skips_the_write_cleanly() {
-        let dir = tempfile::tempdir().unwrap();
-        // The plaintext is present; only the credential of record is missing,
-        // so this asserts the not-provisioned case keys on the settings tree.
-        let (reconciler, paths) = fixture(dir.path(), "inactive", "disabled");
-
-        let state = reconciler
-            .apply(&settings_with(ssh_settings(true), None))
-            .await
-            .unwrap();
-
-        assert_eq!(state["rootPassword"], json!("absent"));
-        assert_eq!(
-            std::fs::read_to_string(&paths.shadow).unwrap(),
-            SHADOW,
-            "an unprovisioned device must leave the root entry alone"
+        let rendered = format!("{error:#}");
+        assert!(
+            rendered.contains("ExecReload"),
+            "the error must send the next reader at the unit file: {rendered}"
+        );
+        assert!(
+            rendered.contains("has not been applied"),
+            "the error must say the change did not take effect: {rendered}"
+        );
+        assert!(
+            !reconciler
+                .control
+                .calls()
+                .contains(&"restart ssh.service".to_string()),
+            "a silent restart fallback reintroduces the disconnect and hides the \
+             missing ExecReload: {:?}",
+            reconciler.control.calls()
         );
         assert_eq!(
             reconciler.control.calls(),
-            vec![
-                "enable ssh.service".to_string(),
-                "start ssh.service".to_string()
-            ],
-            "an absent credential is not a failure, so the rest still converges"
+            vec!["reload ssh.service".to_string()],
+            "the reload is attempted once and nothing follows it"
+        );
+    }
+
+    // ---- the device password no longer reaches the shadow file ------------
+
+    #[tokio::test]
+    async fn no_reconcile_writes_anything_into_the_shadow_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let (reconciler, paths) = fixture(dir.path(), "inactive", "disabled");
+
+        let state = reconciler
+            .apply(&settings_with(ssh_settings(true)))
+            .await
+            .unwrap();
+
+        assert_eq!(
+            std::fs::read_to_string(&paths.shadow).unwrap(),
+            SHADOW,
+            "the root entry is not this reconciler's to write any more"
+        );
+        assert_eq!(mode_of(&paths.shadow), SHADOW_MODE);
+        assert!(
+            state.get("rootPassword").is_none(),
+            "the removed device-password write must not still be advertised: {state}"
         );
     }
 
     #[tokio::test]
-    async fn a_credential_whose_plaintext_is_gone_skips_with_its_own_outcome() {
+    async fn a_shadow_file_that_is_missing_or_broken_does_not_stop_the_reconcile() {
         let dir = tempfile::tempdir().unwrap();
-        let (reconciler, paths) = fixture_with(dir.path(), "inactive", "disabled", None);
+        let (reconciler, paths) = fixture(dir.path(), "inactive", "disabled");
+        std::fs::remove_file(&paths.shadow).unwrap();
 
-        let state = reconciler
-            .apply(&settings_with(ssh_settings(true), Some(ARGON_HASH)))
+        reconciler
+            .apply(&settings_with(ssh_settings(true)))
             .await
-            .unwrap();
+            .expect("the shadow file is no longer an input to this reconciler");
 
-        assert_eq!(state["rootPassword"], json!("plaintext-missing"));
-        assert_ne!(
-            state["rootPassword"],
-            json!("absent"),
-            "provisioned-but-plaintext-gone must not read as not-provisioned"
-        );
-        assert_eq!(
-            std::fs::read_to_string(&paths.shadow).unwrap(),
-            SHADOW,
-            "no plaintext means no derivable crypt hash, so the entry is left alone"
+        assert!(
+            !paths.shadow.exists(),
+            "a missing shadow file must not be created"
         );
         assert_eq!(
             reconciler.control.calls(),
@@ -930,87 +932,6 @@ mod tests {
         );
     }
 
-    #[tokio::test]
-    async fn an_already_applied_password_reports_unchanged() {
-        let dir = tempfile::tempdir().unwrap();
-        let (reconciler, paths) = fixture(dir.path(), "inactive", "disabled");
-        let existing = bcrypt::hash(PASSWORD, BCRYPT_COST).unwrap();
-        let seeded = format!("root:{existing}:19000:0:99999:7:::\n{OTHER_ACCOUNTS}");
-        std::fs::write(&paths.shadow, &seeded).unwrap();
-
-        let state = reconciler
-            .apply(&settings_with(ssh_settings(true), Some(ARGON_HASH)))
-            .await
-            .unwrap();
-
-        assert_eq!(state["rootPassword"], json!("unchanged"));
-        assert_eq!(std::fs::read_to_string(&paths.shadow).unwrap(), seeded);
-    }
-
-    #[tokio::test]
-    async fn a_stale_hash_of_a_different_password_is_replaced() {
-        let dir = tempfile::tempdir().unwrap();
-        let (reconciler, paths) = fixture(dir.path(), "inactive", "disabled");
-        let stale = bcrypt::hash("OLDPASSWORD12345", BCRYPT_COST).unwrap();
-        std::fs::write(
-            &paths.shadow,
-            format!("root:{stale}:19000:0:99999:7:::\n{OTHER_ACCOUNTS}"),
-        )
-        .unwrap();
-
-        let state = reconciler
-            .apply(&settings_with(ssh_settings(true), Some(ARGON_HASH)))
-            .await
-            .unwrap();
-
-        let written = stored_root_hash(&paths.shadow);
-        assert_eq!(state["rootPassword"], json!("applied"));
-        assert_ne!(written, stale);
-        assert!(bcrypt::verify(PASSWORD, &written).unwrap());
-    }
-
-    #[tokio::test]
-    async fn a_shadow_file_without_a_root_entry_is_an_error() {
-        let dir = tempfile::tempdir().unwrap();
-        let (reconciler, paths) = fixture(dir.path(), "inactive", "disabled");
-        std::fs::write(&paths.shadow, "daemon:*:19000:0:99999:7:::\n").unwrap();
-
-        let err = reconciler
-            .apply(&settings_with(ssh_settings(true), Some(ARGON_HASH)))
-            .await
-            .unwrap_err();
-
-        let chain = format!("{err:#}");
-        assert!(chain.contains("no `root:` entry"), "{chain}");
-        assert!(
-            reconciler.control.calls().is_empty(),
-            "a broken shadow file must stop the reconcile before sshd starts"
-        );
-    }
-
-    #[tokio::test]
-    async fn a_missing_shadow_file_is_an_error() {
-        let dir = tempfile::tempdir().unwrap();
-        let (reconciler, paths) = fixture(dir.path(), "inactive", "disabled");
-        std::fs::remove_file(&paths.shadow).unwrap();
-
-        let err = reconciler
-            .apply(&settings_with(ssh_settings(true), Some(ARGON_HASH)))
-            .await
-            .unwrap_err();
-
-        let chain = format!("{err:#}");
-        assert!(
-            chain.contains("the root credential cannot be applied"),
-            "{chain}"
-        );
-        assert!(
-            !paths.shadow.exists(),
-            "a missing shadow file must not be created"
-        );
-        assert!(reconciler.control.calls().is_empty());
-    }
-
     // ---- containment ------------------------------------------------------
 
     #[tokio::test]
@@ -1019,11 +940,11 @@ mod tests {
         let (reconciler, paths) = fixture(dir.path(), "inactive", "disabled");
 
         let state = reconciler
-            .apply(&settings_with(ssh_settings(true), Some(ARGON_HASH)))
+            .apply(&settings_with(ssh_settings(true)))
             .await
             .unwrap();
 
-        for path in [&paths.drop_in, &paths.shadow, &paths.state] {
+        for path in [&paths.drop_in, &paths.keys, &paths.mos_keys, &paths.shadow] {
             assert!(
                 path.starts_with(dir.path()),
                 "{} escapes the tempdir",
@@ -1032,5 +953,886 @@ mod tests {
         }
         assert_eq!(state["dropIn"], json!(paths.drop_in.display().to_string()));
         assert_ne!(state["dropIn"], json!(DEFAULT_DROP_IN));
+        assert_eq!(
+            state["authorizedKeysPaths"],
+            json!([
+                paths.keys.display().to_string(),
+                paths.mos_keys.display().to_string(),
+            ])
+        );
+        assert!(
+            !state["authorizedKeysPaths"]
+                .to_string()
+                .contains(DEFAULT_AUTHORIZED_KEYS_DIR),
+            "a test must never render into the real /etc/ssh"
+        );
+    }
+
+    // ---- R1: real keys, committed as test constants -----------------------
+    //
+    // Generated with `ssh-keygen` purely for this test. Public keys are not
+    // secrets, and these correspond to no device: the private halves were
+    // discarded at generation time and exist nowhere.
+
+    /// `ssh-keygen -t ed25519 -C rfct-034-test-ed25519`, verbatim.
+    const REAL_ED25519_LINE: &str = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIL99V7xPTOP3jZjnbVPM7xC+ckwzkOQPalUpsvtPzYo8 rfct-034-test-ed25519";
+    /// `ssh-keygen -t rsa -b 2048 -C rfct-034-test-rsa`, verbatim.
+    const REAL_RSA_LINE: &str = "ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQDT2F3imgGgI+xGNSQI+0alU1qRwyU3gCc8wU6msXSzZsVc8OYlg4VIqxsV/GLpBmgRz5lGoxjTT2TU0t1VwaMs845NqRIWzpG88ohD1LMn7RnUrNTxf4syFuvmELmYstqMfc6Q6rApqFoA6023Rl2orgd8N3SQ2wPAw8Rk9OLwim9/R7tX8C8FTbnMtepzTvOUNGTDAaKYhTZZnZpsGCwKa9f2aWyaS2XqLwn9uWpmHRUAkV10l45W2rLhnceejwwHotlZUIAFt8rlmS1ojRaLWqECVAuO5CDTt64KLLRniw8yHIYsWkeVsHZXCxq+J7oUVI3ogOSYs1M4I2eFCccD rfct-034-test-rsa";
+    /// A second Ed25519 key, so the multi-key golden holds three distinct keys.
+    const REAL_ED25519_SECOND_LINE: &str = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAILFM+HTH5h41h/zyK4CwjXx9E1l8Nwks1NaywRMiSsEP rfct-034-test-ed25519-second";
+
+    /// Fingerprints as reported by `ssh-keygen -lf <file>` for the three keys
+    /// above, copied from that command's output. Comparing this module's
+    /// fingerprint against a constant that came from OpenSSH is the point: a
+    /// fingerprint function checked only against itself proves nothing.
+    const REAL_ED25519_FINGERPRINT: &str = "SHA256:HrgN3GLi6Mop2uSRjgOoxImM8zRkFmgqCKoeGD9QOaM";
+    const REAL_RSA_FINGERPRINT: &str = "SHA256:zv0xTYuVTo5pFpcl/svzzz/vJFvoguWxKlghlXQS1bE";
+    const REAL_ED25519_SECOND_FINGERPRINT: &str =
+        "SHA256:d7yiR/zCsNFh8WmU6CGLWEG5vE06icIelqVoNc8TT2E";
+
+    /// The canonical `<type> <blob>` half of a full `ssh-keygen` line.
+    fn canonical(line: &str) -> String {
+        let mut fields = line.splitn(3, ' ');
+        let key_type = fields.next().unwrap();
+        let blob = fields.next().unwrap();
+        format!("{key_type} {blob}")
+    }
+
+    /// An [`AuthorizedKey`] built directly, bypassing the parser — the shape a
+    /// corrupted settings file on STATE would present.
+    fn raw_key(key: &str, comment: Option<&str>) -> AuthorizedKey {
+        AuthorizedKey {
+            key: key.to_string(),
+            comment: comment.map(str::to_string),
+        }
+    }
+
+    fn settings_with_keys(keys: Vec<AuthorizedKey>) -> Settings {
+        settings_with(SshSettings {
+            enabled: true,
+            authorized_keys: keys,
+            ..SshSettings::default()
+        })
+    }
+
+    /// Set a transient password marker beside `shadow`, the way
+    /// `transient::set_transient_root_password` does.
+    fn set_marker(shadow: &Path) {
+        std::fs::write(
+            crate::transient::transient_marker_path(shadow),
+            "$2b$12$notarealhashjustnonempty\n",
+        )
+        .unwrap();
+    }
+
+    // ---- R7.1: golden renders --------------------------------------------
+
+    #[test]
+    fn an_empty_list_renders_an_empty_file() {
+        assert_eq!(render_authorized_keys(&[]), "");
+    }
+
+    #[test]
+    fn one_key_without_a_comment_renders_one_bare_line() {
+        let rendered = render_authorized_keys(&[raw_key(&canonical(REAL_ED25519_LINE), None)]);
+
+        assert_eq!(rendered, format!("{}\n", canonical(REAL_ED25519_LINE)));
+    }
+
+    #[test]
+    fn one_key_with_a_comment_renders_key_space_comment() {
+        let rendered = render_authorized_keys(&[raw_key(
+            &canonical(REAL_ED25519_LINE),
+            Some("laptop@example"),
+        )]);
+
+        assert_eq!(
+            rendered,
+            format!("{} laptop@example\n", canonical(REAL_ED25519_LINE))
+        );
+    }
+
+    #[test]
+    fn three_keys_render_in_settings_order_mixing_commented_and_bare() {
+        let rendered = render_authorized_keys(&[
+            raw_key(&canonical(REAL_ED25519_LINE), Some("first")),
+            raw_key(&canonical(REAL_RSA_LINE), None),
+            raw_key(&canonical(REAL_ED25519_SECOND_LINE), Some("third")),
+        ]);
+
+        assert_eq!(
+            rendered,
+            format!(
+                "{} first\n{}\n{} third\n",
+                canonical(REAL_ED25519_LINE),
+                canonical(REAL_RSA_LINE),
+                canonical(REAL_ED25519_SECOND_LINE)
+            )
+        );
+        assert_eq!(rendered.lines().count(), 3);
+    }
+
+    #[test]
+    fn rendering_the_same_keys_twice_gives_identical_bytes() {
+        let keys = vec![
+            raw_key(&canonical(REAL_ED25519_LINE), Some("first")),
+            raw_key(&canonical(REAL_RSA_LINE), None),
+        ];
+
+        assert_eq!(
+            render_authorized_keys(&keys),
+            render_authorized_keys(&keys.clone())
+        );
+    }
+
+    // ---- R7.2: a real ssh-keygen key round-trips --------------------------
+
+    /// Closes the gap RFCT-032 recorded: its spec forbade pasting key material,
+    /// so it could not prove that genuine `ssh-keygen` output survives the
+    /// parser and comes back out byte-identical. There is a rendered file to
+    /// compare against here, so it is proved here.
+    #[test]
+    fn a_real_ssh_keygen_line_parses_canonicalises_and_renders_back_identically() {
+        for line in [REAL_ED25519_LINE, REAL_RSA_LINE, REAL_ED25519_SECOND_LINE] {
+            let parsed = mosd_settings::parse_authorized_key(line)
+                .unwrap_or_else(|err| panic!("real ssh-keygen line rejected: {line}: {err}"));
+
+            assert_eq!(parsed.key, canonical(line), "comment leaked into `key`");
+            assert_eq!(
+                parsed.comment.as_deref(),
+                Some(line.splitn(3, ' ').nth(2).unwrap())
+            );
+            assert_eq!(
+                render_authorized_keys(std::slice::from_ref(&parsed)),
+                format!("{line}\n"),
+                "rendered line differs from the ssh-keygen line it came from"
+            );
+            mosd_settings::validate_authorized_keys(std::slice::from_ref(&parsed)).unwrap();
+        }
+    }
+
+    /// The same round-trip on a key generated at test time, so the committed
+    /// constants above cannot quietly drift away from what OpenSSH emits.
+    ///
+    /// Skipped when `ssh-keygen` is absent, which is why the committed-constant
+    /// test above exists as well: this file never becomes a silent no-op.
+    #[test]
+    fn a_freshly_generated_key_round_trips_when_ssh_keygen_is_available() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("fresh");
+        let generated = std::process::Command::new("ssh-keygen")
+            .args([
+                "-q",
+                "-t",
+                "ed25519",
+                "-N",
+                "",
+                "-C",
+                "fresh@rfct-034",
+                "-f",
+            ])
+            .arg(&path)
+            .status();
+        let Ok(status) = generated else {
+            eprintln!("ssh-keygen not on this host; committed-constant round-trip still ran");
+            return;
+        };
+        assert!(status.success(), "ssh-keygen failed");
+
+        let line = std::fs::read_to_string(path.with_extension("pub")).unwrap();
+        let line = line.trim_end_matches('\n');
+        let parsed = mosd_settings::parse_authorized_key(line).unwrap();
+
+        assert_eq!(parsed.key, canonical(line));
+        assert_eq!(parsed.comment.as_deref(), Some("fresh@rfct-034"));
+        assert_eq!(
+            render_authorized_keys(std::slice::from_ref(&parsed)),
+            format!("{line}\n")
+        );
+    }
+
+    // ---- R7.3: fingerprints agree with ssh-keygen -lf ---------------------
+
+    #[test]
+    fn fingerprints_match_what_ssh_keygen_reports() {
+        for (line, expected) in [
+            (REAL_ED25519_LINE, REAL_ED25519_FINGERPRINT),
+            (REAL_RSA_LINE, REAL_RSA_FINGERPRINT),
+            (REAL_ED25519_SECOND_LINE, REAL_ED25519_SECOND_FINGERPRINT),
+        ] {
+            assert_eq!(fingerprint(&canonical(line)).as_deref(), Some(expected));
+        }
+    }
+
+    #[test]
+    fn a_key_with_no_decodable_blob_has_no_fingerprint() {
+        assert_eq!(fingerprint("ssh-ed25519"), None);
+        assert_eq!(fingerprint("ssh-ed25519 not!base64"), None);
+    }
+
+    // ---- R7.4: validation failures leave the file untouched ---------------
+
+    /// Apply once with a good key so there is a rendered file to protect, then
+    /// apply `bad` and assert the failure changed nothing.
+    async fn assert_bad_keys_leave_the_file_untouched(bad: Vec<AuthorizedKey>, what: &str) {
+        let dir = tempfile::tempdir().unwrap();
+        let (reconciler, paths) = fixture(dir.path(), "inactive", "disabled");
+        let good = vec![raw_key(&canonical(REAL_ED25519_LINE), Some("keep-me"))];
+        reconciler
+            .apply(&settings_with_keys(good))
+            .await
+            .expect("the good apply must succeed");
+        let before = std::fs::read(&paths.keys).unwrap();
+        assert!(!before.is_empty(), "nothing was rendered to protect");
+        assert_eq!(
+            std::fs::read(&paths.mos_keys).unwrap(),
+            before,
+            "the good apply must have rendered both accounts alike"
+        );
+
+        let error = reconciler
+            .apply(&settings_with_keys(bad))
+            .await
+            .expect_err(&format!("{what} must fail the apply"));
+
+        for path in [&paths.keys, &paths.mos_keys] {
+            assert_eq!(
+                std::fs::read(path).unwrap(),
+                before,
+                "{what}: {} must be byte-identical after a failed apply",
+                path.display()
+            );
+        }
+        let message = format!("{error:#}");
+        assert!(
+            message.contains("access.ssh.authorizedKeys"),
+            "{what}: error should name the setting: {message}"
+        );
+    }
+
+    #[tokio::test]
+    async fn a_newline_embedded_in_the_key_field_fails_and_changes_nothing() {
+        let injected = format!(
+            "{}\nssh-ed25519 AAAAsomethingelse",
+            canonical(REAL_ED25519_LINE)
+        );
+        assert_bad_keys_leave_the_file_untouched(
+            vec![raw_key(&injected, None)],
+            "a newline in the key field",
+        )
+        .await;
+    }
+
+    #[tokio::test]
+    async fn a_comment_smuggled_into_the_key_field_fails_and_changes_nothing() {
+        assert_bad_keys_leave_the_file_untouched(
+            vec![raw_key(REAL_ED25519_LINE, None)],
+            "a comment inside the key field",
+        )
+        .await;
+    }
+
+    #[tokio::test]
+    async fn a_duplicate_key_pair_fails_and_changes_nothing() {
+        assert_bad_keys_leave_the_file_untouched(
+            vec![
+                raw_key(&canonical(REAL_ED25519_LINE), Some("one")),
+                raw_key(&canonical(REAL_ED25519_LINE), Some("two")),
+            ],
+            "a duplicated key",
+        )
+        .await;
+    }
+
+    #[tokio::test]
+    async fn the_error_from_an_invalid_list_names_the_offending_index() {
+        let dir = tempfile::tempdir().unwrap();
+        let (reconciler, _paths) = fixture(dir.path(), "inactive", "disabled");
+
+        let error = reconciler
+            .apply(&settings_with_keys(vec![
+                raw_key(&canonical(REAL_ED25519_LINE), None),
+                raw_key("ssh-ed25519 !!!!", None),
+            ]))
+            .await
+            .expect_err("an unparseable entry must fail the apply");
+
+        let message = format!("{error:#}");
+        assert!(
+            message.contains("entry 1"),
+            "error should name the offending index: {message}"
+        );
+    }
+
+    /// The positive direction of the same guard: a valid list renders, and it
+    /// overwrites whatever was there before rather than appending to it.
+    #[tokio::test]
+    async fn a_valid_list_renders_and_overwrites_the_previous_content() {
+        let dir = tempfile::tempdir().unwrap();
+        let (reconciler, paths) = fixture(dir.path(), "inactive", "disabled");
+
+        reconciler
+            .apply(&settings_with_keys(vec![
+                raw_key(&canonical(REAL_ED25519_LINE), Some("first")),
+                raw_key(&canonical(REAL_RSA_LINE), None),
+            ]))
+            .await
+            .unwrap();
+        assert_eq!(
+            std::fs::read_to_string(&paths.keys).unwrap(),
+            format!(
+                "{} first\n{}\n",
+                canonical(REAL_ED25519_LINE),
+                canonical(REAL_RSA_LINE)
+            )
+        );
+
+        reconciler
+            .apply(&settings_with_keys(vec![raw_key(
+                &canonical(REAL_ED25519_SECOND_LINE),
+                None,
+            )]))
+            .await
+            .unwrap();
+
+        assert_eq!(
+            std::fs::read_to_string(&paths.keys).unwrap(),
+            format!("{}\n", canonical(REAL_ED25519_SECOND_LINE)),
+            "the removed keys must be gone, not appended to"
+        );
+    }
+
+    /// Removing every key empties the file rather than deleting it: an absent
+    /// file and an empty file mean the same thing to sshd, and a key removed
+    /// has to stop working immediately either way.
+    #[tokio::test]
+    async fn removing_every_key_empties_the_file_without_deleting_it() {
+        let dir = tempfile::tempdir().unwrap();
+        let (reconciler, paths) = fixture(dir.path(), "inactive", "disabled");
+        reconciler
+            .apply(&settings_with_keys(vec![raw_key(
+                &canonical(REAL_ED25519_LINE),
+                None,
+            )]))
+            .await
+            .unwrap();
+
+        reconciler
+            .apply(&settings_with_keys(Vec::new()))
+            .await
+            .unwrap();
+
+        assert!(paths.keys.exists(), "the file must not be deleted");
+        assert_eq!(std::fs::read_to_string(&paths.keys).unwrap(), "");
+    }
+
+    // ---- R7.5: per-character hostile input in the comment -----------------
+
+    #[tokio::test]
+    async fn each_control_character_in_a_comment_fails_and_changes_nothing() {
+        for (ch, name) in [
+            ('\0', "NUL"),
+            ('\n', "line feed"),
+            ('\r', "carriage return"),
+            ('\t', "tab"),
+            ('\u{7f}', "delete"),
+        ] {
+            assert_bad_keys_leave_the_file_untouched(
+                vec![raw_key(
+                    &canonical(REAL_ED25519_LINE),
+                    Some(&format!("host{ch}name")),
+                )],
+                &format!("a {name} in the comment"),
+            )
+            .await;
+        }
+    }
+
+    /// The other direction: shell metacharacters are ordinary comment text.
+    /// The rendered file is read by sshd, not by a shell, and a guard that
+    /// rejected these would refuse comments operators really write.
+    #[tokio::test]
+    async fn shell_metacharacters_in_a_comment_render_verbatim() {
+        let dir = tempfile::tempdir().unwrap();
+        let (reconciler, paths) = fixture(dir.path(), "inactive", "disabled");
+        let comment = "a$b`c\\d\"e;f";
+
+        reconciler
+            .apply(&settings_with_keys(vec![raw_key(
+                &canonical(REAL_ED25519_LINE),
+                Some(comment),
+            )]))
+            .await
+            .expect("shell metacharacters are legitimate comment text");
+
+        assert_eq!(
+            std::fs::read_to_string(&paths.keys).unwrap(),
+            format!("{} {comment}\n", canonical(REAL_ED25519_LINE))
+        );
+    }
+
+    // ---- R7.6: PasswordAuthentication gating ------------------------------
+
+    #[tokio::test]
+    async fn without_a_transient_password_password_authentication_is_off() {
+        let dir = tempfile::tempdir().unwrap();
+        let (reconciler, paths) = fixture(dir.path(), "inactive", "disabled");
+
+        let state = reconciler
+            .apply(&settings_with(SshSettings {
+                enabled: true,
+                password_authentication: true,
+                ..SshSettings::default()
+            }))
+            .await
+            .unwrap();
+
+        assert!(
+            std::fs::read_to_string(&paths.drop_in)
+                .unwrap()
+                .contains("PasswordAuthentication no\n"),
+            "root is locked, so the method cannot succeed and must not be offered"
+        );
+        assert_eq!(state["passwordAuthentication"], json!(false));
+        assert_eq!(state["passwordAuthenticationRequested"], json!(true));
+        assert_eq!(state["transientPasswordActive"], json!(false));
+    }
+
+    #[tokio::test]
+    async fn a_marker_appearing_between_two_applies_turns_passwords_on_and_reloads_sshd() {
+        let dir = tempfile::tempdir().unwrap();
+        let (reconciler, paths) = fixture(dir.path(), "active", "enabled");
+        let settings = settings_with(SshSettings {
+            enabled: true,
+            password_authentication: true,
+            ..SshSettings::default()
+        });
+
+        let before = reconciler.apply(&settings).await.unwrap();
+        assert_eq!(before["passwordAuthentication"], json!(false));
+        assert!(
+            std::fs::read_to_string(&paths.drop_in)
+                .unwrap()
+                .contains("PasswordAuthentication no\n")
+        );
+
+        // Nothing in the settings tree changes here — this is exactly what
+        // `SetTransientRootPassword` does before it calls `apply_all`.
+        set_marker(&paths.shadow);
+        let after = reconciler.apply(&settings).await.unwrap();
+
+        assert_eq!(after["passwordAuthentication"], json!(true));
+        assert_eq!(after["transientPasswordActive"], json!(true));
+        assert!(
+            std::fs::read_to_string(&paths.drop_in)
+                .unwrap()
+                .contains("PasswordAuthentication yes\n")
+        );
+        assert!(
+            reconciler
+                .control
+                .calls()
+                .contains(&"reload ssh.service".to_string()),
+            "sshd must re-read the flipped drop-in: {:?}",
+            reconciler.control.calls()
+        );
+        assert!(
+            !reconciler
+                .control
+                .calls()
+                .contains(&"restart ssh.service".to_string()),
+            "this is the path where the operator is setting a password over the \
+             very session a restart would drop: {:?}",
+            reconciler.control.calls()
+        );
+    }
+
+    #[tokio::test]
+    async fn a_marker_does_not_turn_passwords_on_when_the_setting_says_no() {
+        let dir = tempfile::tempdir().unwrap();
+        let (reconciler, paths) = fixture(dir.path(), "inactive", "disabled");
+        set_marker(&paths.shadow);
+
+        let state = reconciler
+            .apply(&settings_with(SshSettings {
+                enabled: true,
+                password_authentication: false,
+                ..SshSettings::default()
+            }))
+            .await
+            .unwrap();
+
+        assert_eq!(
+            state["passwordAuthentication"],
+            json!(false),
+            "the gate is an AND of setting and marker, not an OR"
+        );
+        assert_eq!(state["transientPasswordActive"], json!(true));
+        assert_eq!(state["passwordAuthenticationRequested"], json!(false));
+        assert!(
+            std::fs::read_to_string(&paths.drop_in)
+                .unwrap()
+                .contains("PasswordAuthentication no\n")
+        );
+    }
+
+    #[tokio::test]
+    async fn an_empty_marker_does_not_count_as_a_transient_password() {
+        let dir = tempfile::tempdir().unwrap();
+        let (reconciler, paths) = fixture(dir.path(), "inactive", "disabled");
+        std::fs::write(crate::transient::transient_marker_path(&paths.shadow), "").unwrap();
+
+        let state = reconciler
+            .apply(&settings_with(SshSettings {
+                enabled: true,
+                password_authentication: true,
+                ..SshSettings::default()
+            }))
+            .await
+            .unwrap();
+
+        assert_eq!(state["transientPasswordActive"], json!(false));
+        assert_eq!(state["passwordAuthentication"], json!(false));
+    }
+
+    #[test]
+    fn the_rendered_drop_in_never_carries_an_authorized_keys_file_directive() {
+        // The static 05-mos-authorized-keys.conf owns that keyword and sorts
+        // first; sshd keeps the first value it sees, so emitting it here would
+        // be dead text that a later reader would try to "fix".
+        for effective in [true, false] {
+            assert!(
+                !render_drop_in(&SshSettings::default(), effective).contains("AuthorizedKeysFile")
+            );
+        }
+    }
+
+    // ---- R7.7: published state --------------------------------------------
+
+    #[tokio::test]
+    async fn published_state_carries_fingerprints_and_never_key_material() {
+        let dir = tempfile::tempdir().unwrap();
+        let (reconciler, paths) = fixture(dir.path(), "inactive", "disabled");
+
+        let state = reconciler
+            .apply(&settings_with_keys(vec![
+                raw_key(&canonical(REAL_ED25519_LINE), Some("laptop")),
+                raw_key(&canonical(REAL_RSA_LINE), None),
+            ]))
+            .await
+            .unwrap();
+
+        assert_eq!(
+            state["authorizedKeysPaths"],
+            json!([
+                paths.keys.display().to_string(),
+                paths.mos_keys.display().to_string(),
+            ]),
+            "every rendered path is named, in managed-account order"
+        );
+        assert_eq!(
+            state["authorizedKeys"],
+            json!([
+                {"fingerprint": REAL_ED25519_FINGERPRINT, "comment": "laptop"},
+                {"fingerprint": REAL_RSA_FINGERPRINT, "comment": null},
+            ]),
+            "fingerprints in render order, comment null when the key has none"
+        );
+
+        let serialised = state.to_string();
+        for line in [REAL_ED25519_LINE, REAL_RSA_LINE] {
+            let blob = line.split(' ').nth(1).unwrap();
+            assert!(
+                !serialised.contains(blob),
+                "key material must never reach the published state tree"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn published_state_reports_an_empty_key_list_as_an_empty_array() {
+        let dir = tempfile::tempdir().unwrap();
+        let (reconciler, _paths) = fixture(dir.path(), "inactive", "disabled");
+
+        let state = reconciler
+            .apply(&settings_with_keys(Vec::new()))
+            .await
+            .unwrap();
+
+        assert_eq!(state["authorizedKeys"], json!([]));
+    }
+
+    // ---- R7.8: permissions -------------------------------------------------
+
+    #[tokio::test]
+    async fn every_rendered_key_file_is_0600_in_a_0755_directory() {
+        let dir = tempfile::tempdir().unwrap();
+        let (reconciler, paths) = fixture(dir.path(), "inactive", "disabled");
+
+        reconciler
+            .apply(&settings_with_keys(vec![raw_key(
+                &canonical(REAL_ED25519_LINE),
+                None,
+            )]))
+            .await
+            .unwrap();
+
+        assert_eq!(mode_of(&paths.keys), 0o600);
+        assert_eq!(mode_of(&paths.mos_keys), 0o600);
+        assert_eq!(mode_of(&paths.keys_dir), 0o755);
+    }
+
+    #[tokio::test]
+    async fn an_unchanged_key_list_is_not_rewritten() {
+        let dir = tempfile::tempdir().unwrap();
+        let (reconciler, paths) = fixture(dir.path(), "inactive", "disabled");
+        let settings = settings_with_keys(vec![raw_key(&canonical(REAL_ED25519_LINE), None)]);
+        reconciler.apply(&settings).await.unwrap();
+        // A marker the reconciler would clobber if it rewrote the file: the
+        // renderer always produces mode 0600.
+        std::fs::set_permissions(&paths.keys, std::fs::Permissions::from_mode(0o640)).unwrap();
+
+        reconciler.apply(&settings).await.unwrap();
+
+        assert_eq!(
+            mode_of(&paths.keys),
+            0o640,
+            "an unchanged key file must not be rewritten"
+        );
+    }
+
+    // ---- RFCT-053: one key set, rendered for every managed login account ---
+    //
+    // `AuthorizedKeysFile /etc/ssh/authorized_keys.d/%u` is expanded per login
+    // user, so a file exists for each account mosd manages and all of them
+    // carry the same list. These tests hold the plural property; the RFCT-034
+    // goldens above still hold the `root` file byte-for-byte.
+
+    /// The central guard. One validated list, two files, identical bytes.
+    #[tokio::test]
+    async fn one_key_list_renders_byte_identical_files_for_every_managed_account() {
+        let dir = tempfile::tempdir().unwrap();
+        let (reconciler, paths) = fixture(dir.path(), "inactive", "disabled");
+
+        reconciler
+            .apply(&settings_with_keys(vec![
+                raw_key(&canonical(REAL_ED25519_LINE), Some("laptop")),
+                raw_key(&canonical(REAL_RSA_LINE), None),
+            ]))
+            .await
+            .unwrap();
+
+        let expected = format!(
+            "{} laptop\n{}\n",
+            canonical(REAL_ED25519_LINE),
+            canonical(REAL_RSA_LINE)
+        );
+        for path in [&paths.keys, &paths.mos_keys] {
+            assert!(path.exists(), "{} was not rendered", path.display());
+            assert_eq!(
+                std::fs::read_to_string(path).unwrap(),
+                expected,
+                "{} does not carry the operator's key list",
+                path.display()
+            );
+        }
+        assert_eq!(
+            std::fs::read(&paths.keys).unwrap(),
+            std::fs::read(&paths.mos_keys).unwrap(),
+            "one key set means byte-identical files"
+        );
+    }
+
+    /// The file set is exactly the constant list — no more, no fewer. A scan of
+    /// `/etc/passwd` would render for whatever accounts the host happens to
+    /// have, which is the thing the constant exists to prevent.
+    #[tokio::test]
+    async fn only_the_managed_accounts_get_a_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let (reconciler, paths) = fixture(dir.path(), "inactive", "disabled");
+
+        reconciler
+            .apply(&settings_with_keys(vec![raw_key(
+                &canonical(REAL_ED25519_LINE),
+                None,
+            )]))
+            .await
+            .unwrap();
+
+        let mut rendered: Vec<String> = std::fs::read_dir(&paths.keys_dir)
+            .unwrap()
+            .map(|entry| entry.unwrap().file_name().to_string_lossy().into_owned())
+            .collect();
+        rendered.sort();
+        let mut expected: Vec<String> = MANAGED_LOGIN_ACCOUNTS
+            .iter()
+            .map(|a| a.to_string())
+            .collect();
+        expected.sort();
+        assert_eq!(rendered, expected);
+        assert_eq!(MANAGED_LOGIN_ACCOUNTS, ["root", "mos"]);
+    }
+
+    /// `mos` may not exist as an account when this ships: a sibling task adds
+    /// it, and the two can merge in either order. Rendering a key file for an
+    /// account that does not exist must therefore be an ordinary success —
+    /// sshd only ever opens the file named by the user it is authenticating, so
+    /// a file no login can name is inert rather than wrong.
+    ///
+    /// The account name here is one no system could plausibly carry, so this
+    /// proves the render is unconditional rather than merely lucky about what
+    /// the build host happens to have in `/etc/passwd`.
+    #[test]
+    fn a_key_file_renders_for_an_account_that_does_not_exist() {
+        const ABSENT: &str = "no-such-account-rfct053";
+        let passwd = std::fs::read_to_string("/etc/passwd").unwrap_or_default();
+        assert!(
+            !passwd.contains(ABSENT),
+            "the fixture account must genuinely not exist for this test to mean anything"
+        );
+        let dir = tempfile::tempdir().unwrap();
+        let (reconciler, paths) = fixture(dir.path(), "inactive", "disabled");
+
+        reconciler
+            .apply_authorized_keys(&[raw_key(&canonical(REAL_ED25519_LINE), None)], &[ABSENT])
+            .expect("a render for a missing account must not fail the reconcile");
+
+        assert_eq!(
+            std::fs::read_to_string(paths.keys_dir.join(ABSENT)).unwrap(),
+            format!("{}\n", canonical(REAL_ED25519_LINE)),
+            "the render is the same whether or not the account exists"
+        );
+    }
+
+    /// An empty list empties EVERY account file. Two empty files, not two
+    /// deletions and not one of each: the RFCT-034 rule, applied per account.
+    #[tokio::test]
+    async fn an_empty_list_empties_every_account_file_without_deleting_any() {
+        let dir = tempfile::tempdir().unwrap();
+        let (reconciler, paths) = fixture(dir.path(), "inactive", "disabled");
+        reconciler
+            .apply(&settings_with_keys(vec![raw_key(
+                &canonical(REAL_ED25519_LINE),
+                None,
+            )]))
+            .await
+            .unwrap();
+
+        reconciler
+            .apply(&settings_with_keys(Vec::new()))
+            .await
+            .unwrap();
+
+        for path in [&paths.keys, &paths.mos_keys] {
+            assert!(path.exists(), "{} must not be deleted", path.display());
+            assert_eq!(
+                std::fs::read_to_string(path).unwrap(),
+                "",
+                "{} must be empty",
+                path.display()
+            );
+        }
+    }
+
+    /// A key the operator removes stops granting access to every account in the
+    /// same reconcile. A rewrite that reached only `root` would leave the key
+    /// live for `mos`, which is the removal silently not happening.
+    #[tokio::test]
+    async fn removing_one_key_of_three_rewrites_every_account_file_without_it() {
+        let dir = tempfile::tempdir().unwrap();
+        let (reconciler, paths) = fixture(dir.path(), "inactive", "disabled");
+        reconciler
+            .apply(&settings_with_keys(vec![
+                raw_key(&canonical(REAL_ED25519_LINE), Some("laptop")),
+                raw_key(&canonical(REAL_RSA_LINE), None),
+                raw_key(&canonical(REAL_ED25519_SECOND_LINE), Some("phone")),
+            ]))
+            .await
+            .unwrap();
+
+        reconciler
+            .apply(&settings_with_keys(vec![
+                raw_key(&canonical(REAL_ED25519_LINE), Some("laptop")),
+                raw_key(&canonical(REAL_ED25519_SECOND_LINE), Some("phone")),
+            ]))
+            .await
+            .unwrap();
+
+        let expected = format!(
+            "{} laptop\n{} phone\n",
+            canonical(REAL_ED25519_LINE),
+            canonical(REAL_ED25519_SECOND_LINE)
+        );
+        let removed_blob = canonical(REAL_RSA_LINE);
+        for path in [&paths.keys, &paths.mos_keys] {
+            let content = std::fs::read_to_string(path).unwrap();
+            assert_eq!(content, expected, "{} was not rewritten", path.display());
+            assert!(
+                !content.contains(&removed_blob),
+                "the removed key still grants access through {}",
+                path.display()
+            );
+        }
+    }
+
+    /// Fail-loud, per account, with no partial application. Validation runs
+    /// before the first file is opened, so a rejected list cannot update one
+    /// account while another keeps the previous keys — the ordering hazard this
+    /// task introduced by writing more than one file.
+    #[tokio::test]
+    async fn a_validation_failure_updates_neither_account() {
+        let dir = tempfile::tempdir().unwrap();
+        let (reconciler, paths) = fixture(dir.path(), "inactive", "disabled");
+        reconciler
+            .apply(&settings_with_keys(vec![raw_key(
+                &canonical(REAL_ED25519_LINE),
+                Some("keep-me"),
+            )]))
+            .await
+            .unwrap();
+        let before = std::fs::read(&paths.keys).unwrap();
+        assert_eq!(std::fs::read(&paths.mos_keys).unwrap(), before);
+
+        // Valid first entry, rejected second: a renderer that wrote as it went
+        // would have put the good prefix somewhere before failing.
+        reconciler
+            .apply(&settings_with_keys(vec![
+                raw_key(&canonical(REAL_RSA_LINE), Some("new")),
+                raw_key("ssh-ed25519 not-base64!!", None),
+            ]))
+            .await
+            .expect_err("an invalid list must fail the apply");
+
+        for path in [&paths.keys, &paths.mos_keys] {
+            assert_eq!(
+                std::fs::read(path).unwrap(),
+                before,
+                "{} changed during a failed apply",
+                path.display()
+            );
+        }
+    }
+
+    /// No temporary file survives either write. Both files share one directory,
+    /// so a leftover from the second write would be visible here too.
+    #[tokio::test]
+    async fn rendering_every_account_leaves_no_temporary_file_behind() {
+        let dir = tempfile::tempdir().unwrap();
+        let (reconciler, paths) = fixture(dir.path(), "inactive", "disabled");
+
+        reconciler
+            .apply(&settings_with_keys(vec![raw_key(
+                &canonical(REAL_ED25519_LINE),
+                None,
+            )]))
+            .await
+            .unwrap();
+
+        let leftovers: Vec<_> = std::fs::read_dir(&paths.keys_dir)
+            .unwrap()
+            .map(|entry| entry.unwrap().file_name())
+            .filter(|name| name.to_string_lossy().contains("mosd-tmp"))
+            .collect();
+        assert!(leftovers.is_empty(), "temp files left: {leftovers:?}");
     }
 }

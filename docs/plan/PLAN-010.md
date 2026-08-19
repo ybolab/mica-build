@@ -522,6 +522,146 @@ radio, a real boot or a real flash:
   contracts. They were deliberately not touched; whoever owns translations owns
   refreshing them.
 
+### M5 addendum - key-based SSH access (campaign `sshweb`, 2026-08-19)
+
+- **Status**: implementation complete — RFCT-032 (settings schema v4 and the key
+  parser), RFCT-033 (transient root password), RFCT-034 (sshd reconciler: keys,
+  `AuthorizedKeysFile`, password gating), RFCT-035 (webd SSH pane), RFCT-036
+  (image and verifier integration), RFCT-038 (`mos-shadow-reconcile`
+  newline-safe append), RFCT-039 (`/home` on DATA and the `mos` account),
+  RFCT-047 (reload, not restart), RFCT-048 (D-Bus policy), RFCT-053 (a key file
+  per managed account), RFCT-054 (`/root` on DATA) and RFCT-037 (these docs).
+  Done criteria met locally 2026-08-19. **Nothing in this campaign booted a
+  device; every on-device behaviour below is the user's hardware acceptance and
+  is not claimed here.**
+- This supersedes M5's phase-1 credential model. M5 shipped a per-device
+  password in `/etc/shadow`; this addendum replaces it with keys, and records
+  the old model as superseded rather than deleting it (`access.md` §4.2).
+
+#### What was delivered
+
+- **Settings schema v4** — `access.ssh.authorizedKeys`, an array of tables with
+  a canonical key text and an optional comment, validated by
+  `mosd-settings::validate_authorized_keys` before anything is rendered.
+  `MigrateV3ToV4` inserts the empty array; `down` discards the list, because a
+  v3 device has no code that renders keys and would promise an access path it
+  cannot serve.
+- **SSH off, root passwordless, on BOTH profiles.** Neither profile seeds
+  `access.ssh.enabled` true (`Profile::ssh_enabled_default` returns `false` for
+  both), and neither image ships `ssh.service` statically enabled. Getting in
+  requires an authenticated admin action through webd.
+- **Persistent access by public key.** The sshd reconciler renders one
+  authorized-keys file **per managed login account** — `root` and `mos` — into
+  `/etc/ssh/authorized_keys.d/<account>`, 0600, and a static image drop-in
+  (`05-mos-authorized-keys.conf`) points sshd at
+  `AuthorizedKeysFile /etc/ssh/authorized_keys.d/%u`. Numbered 05 so it sorts
+  before mosd's `10-mos.conf`, which sshd's first-value-wins rule then makes
+  unoverridable.
+- **Every authorized key is a root key**, and both webd and `access.md` say so.
+  One shared list per account means a key added for a colleague grants root.
+- **A transient root password**, set through webd, hashed with bcrypt into the
+  STATE-backed shadow file together with a marker recording that hash.
+  `mos-shadow-reconcile` compares on every boot and, when root's hash still
+  equals the marker, rewrites the field to a locked marker and deletes the
+  record. A dev image's `ROOT_PASSWORD` hash never matches a marker and
+  therefore survives — which is why the design uses a marker rather than
+  "lock root on every boot".
+- **Password authentication is gated on the transient password actually being
+  active**, so a device that has never had one set never offers a prompt that
+  cannot be satisfied.
+- **`/home` and `/root` on DATA** — two bind mounts from `/srv/home` and
+  `/srv/root`, sourced by `mos-seed-home` and `mos-seed-root` and ordered
+  `Before=` their mounts, plus the `mos` account that owns `/home/mos`. Eight
+  binds now ship in total.
+- **`com.mos.mosd` is root-only on the system bus**, with a live-bus test that
+  proves it, and the default context carries an explicit **deny** rather than a
+  removed allow — the standard `system.conf` stanza allows
+  `receive_type="signal"`, so removing the allow alone would have left
+  `SettingsChanged`, which carries settings values, deliverable to every uid.
+- **Documentation caught up with the code** (RFCT-037): `access.md` rewritten to
+  the shipped model with per-section implementation-status markers, a recovery
+  section, the model-A persistence rules with a survives-what table, and two
+  Venus OS divergences; `mosd.md`, `provisioning.md` and `ro-root.md` corrected
+  where they contradicted the code.
+
+#### Two design sections that describe controls which do not exist
+
+Recorded here as plainly as M4 recorded `CONFIG_SQUASHFS_XATTR`:
+
+- **The META lockdown** (`access.md` §5.2). `grep -i lockdown` across every
+  `.rs`, `.sh` and `.conf` returns nothing outside `docs/`. No one-way bit, no
+  daemon that reads one, no reset that preserves one.
+- **Factory reset.** Nothing performs one. The only mention in code is a doc
+  comment in `mosd/mosd/src/provisioning.rs`. So the reset that "deliberately
+  does not clear" the lockdown is a reset nobody can invoke, preserving a bit
+  nobody can set.
+
+Neither was implemented in this campaign. Whether the lockdown is built at all
+is a product decision for the user. The class matters: **dead code has a
+compiler, a test run and a grep-for-callers that can surface it; a security
+control that exists only as prose has no mechanism that will ever notice it is
+absent.**
+
+#### Verification (2026-08-19, done criteria met locally)
+
+- `bash mosd/hack/check.sh` — `ALL CHECKS PASSED`, `305 tests run: 305 passed,
+  0 skipped`.
+- `bash docs/verify-index.sh` — `130/130 PASS`.
+- `make os-shadow-test`, `make os-dbus-policy-test`, `make os-health-test`,
+  `make os-repart-test` and both image builds with both profiles and both
+  verifiers were run green by the tasks that changed image content
+  (RFCT-036, RFCT-039, RFCT-048, RFCT-054); RFCT-037 changed no image content
+  and did not re-run them.
+
+#### What remains the user's hardware acceptance
+
+Not claimed, not testable in this repository. **Nothing in this campaign booted
+a device**, so all of the following are claimed by nobody:
+
+- **SSH reachable with a webd-set password** — that enabling SSH and setting a
+  transient password actually produces a login through PAM.
+- **A key login surviving a reboot** — that a key added through webd still logs
+  in after a power cycle.
+- **A password NOT surviving a reboot** — that `mos-shadow-reconcile` really
+  clears the transient password on real hardware, and that a dev image's
+  `ROOT_PASSWORD` really survives it.
+- **`/home` and `/root` persisting** across both a reboot and an A/B update.
+- **The D-Bus policy being enforced by a real system bus** — the policy test
+  runs against a bus this repository starts, not against the appliance's.
+- Everything M5 already listed: AP and station mode on a real radio, first boot
+  on real flash, the A/B switch and rollback, `Reboot`/`PowerOff`, and DATA
+  growth on real eMMC.
+
+#### Recorded follow-ups (not implemented)
+
+- **`mos-seed-home` and `mos-seed-root` have no test.** They are the two
+  executables in the image nothing drives, unlike `mos-shadow-reconcile`
+  (`os/shadow-reconcile-test.sh`). One `os/seed-test.sh` closes both.
+- **Only `access.md` carries implementation-status markers.** Every other design
+  document still lacks them: `provisioning.md`, `ro-root.md`, `mosd.md`,
+  `connd.md`, `boards.md`, `display.md`, `remote-management.md`, `dashboard.md`,
+  `uboot-ab-handshake.md`.
+- **RFCT-038**: a shadow file containing CRLF, a NUL byte or an incomplete UTF-8
+  sequence is untested; CRLF would leave a stray `\r` at the end of a field,
+  which that fix neither creates nor repairs.
+- **RFCT-035**: the 72-byte transient-password cap is documented reasoning, not
+  a measurement (no test shows bcrypt ignoring the 73rd byte); "never logged" is
+  asserted by construction rather than by capturing tracing output; the key-list
+  read-modify-write is not atomic, which is a property of `SetSettings` rather
+  than of the pane.
+- **RFCT-048**: per-method allowlisting is deferred and should land in the
+  **same change** that adds a `<policy user="webd">` block, not before.
+- **RFCT-048** also left one reopening path unasserted until RFCT-039 closed it:
+  a second policy file for the same bus name.
+- **The device credential is now inert.** `access.device.passwordHash` and the
+  plaintext on STATE are still minted at first boot and verified by nothing
+  (`provisioning.md` §3.6). Either wire them to a purpose or remove them and
+  their migration.
+- **The `.zh.md` translations are further behind than they were.**
+  `access.zh.md`, `provisioning.zh.md` and `mosd.zh.md` now describe two
+  superseded models rather than one. Untouched deliberately; whoever owns
+  translations owns refreshing them.
+
 ### M6 - workload layer: balena-engine
 
 **Decision (2026-08-17, user): the container engine is balena-engine**

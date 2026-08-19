@@ -1,0 +1,26 @@
+[Unit]
+Description=Persistent home directory from the DATA partition
+# /home is where an operator's own files accumulate: an update bundle staged
+# for `rauc install`, a capture, a scratch copy of a config. That is USER DATA,
+# not configuration, and the two tiers are sized for exactly that difference.
+# STATE is 64 MiB of small, precious identity; a single update bundle is ~72 MiB
+# and would not fit, and filling STATE would take the settings tree and the
+# sshd host keys down with it. DATA is the only partition that carries
+# x-systemd.growfs and the only one systemd-repart extends to the end of the
+# disk, so it is the only tier a home directory can live on without a ceiling.
+#
+# The bind source is created by mos-seed-home, which must run BEFORE this unit:
+# mount(8) does not create the source of a bind, and /home cannot be populated
+# after the fact because the root filesystem is a read-only verity squashfs.
+Requires=mos-seed-home.service
+After=mos-seed-home.service
+RequiresMountsFor=/srv
+
+[Mount]
+What=/srv/home
+Where=/home
+Type=none
+Options=bind
+
+[Install]
+WantedBy=local-fs.target

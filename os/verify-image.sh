@@ -600,6 +600,170 @@ else
 fi
 ext_regular /usr/share/dbus-1/system.d/com.mos.mosd.conf
 
+# --- the mosd D-Bus policy is ROOT-ONLY (RFCT-048) ---------------------------
+# com.mos.mosd reboots and powers off the appliance, rewrites the persisted
+# settings tree, and -- since RFCT-033 -- writes a root credential straight
+# into /etc/shadow through SetTransientRootPassword. Who may reach that name is
+# decided by a FILE IN THIS IMAGE, so it is the image contract's business.
+#
+# The path matters as much as the contents. dbus-daemon reads system-bus policy
+# from /usr/share/dbus-1/system.d/ (and /etc/dbus-1/system.d/); a policy dropped
+# anywhere else is not a stricter policy, it is NO policy -- the daemon still
+# takes the name and the base system.conf alone decides who may talk to it.
+#
+# The bus name is READ from mosd.service's BusName= rather than restated here.
+# A policy for a name nothing owns is the existence-versus-function trap: it
+# would sail through a file-exists check while protecting nothing at all.
+MOSD_POLICY_PATH=/usr/share/dbus-1/system.d/com.mos.mosd.conf
+mosd_policy_text="$(dbg "cat ${MOSD_POLICY_PATH}")"
+mosd_bus_name="$(dbg "cat /usr/lib/systemd/system/mosd.service" |
+    sed -n 's/^BusName=[[:space:]]*//p' | tr -d '\r' | tail -n1)"
+if [ -n "${mosd_policy_text}" ]; then
+    pass "${MOSD_POLICY_PATH} ships and is readable, i.e. the mosd bus policy is where dbus-daemon actually looks for it"
+else
+    fail "${MOSD_POLICY_PATH} is missing or empty. dbus-daemon reads system-bus policy from this directory; with nothing here the base system.conf decides alone, and every local uid can call Reboot, SetSettings and SetTransientRootPassword"
+fi
+
+# Parse the policy the way dbus-daemon groups it: rules are collected per policy
+# BLOCK, and a rule's block decides who it applies to. XML comments are stripped
+# first -- this file documents its own extension point with example markup, and
+# a grep that could not tell an example from a rule would be worse than no check.
+printf '%s\n' "${mosd_policy_text}" >"${TMP}/mosd-policy.xml"
+mosd_policy_facts="$(awk -v bus="${mosd_bus_name}" '
+function attrval(s, key,   re, p, rest, q) {
+    re = key "=\""
+    p = index(s, re)
+    if (p == 0) return ""
+    rest = substr(s, p + length(re))
+    q = index(rest, "\"")
+    if (q == 0) return ""
+    return substr(rest, 1, q - 1)
+}
+{
+    line = $0
+    out = ""
+    while (length(line) > 0) {
+        if (incomment) {
+            p = index(line, "-->")
+            if (p == 0) { line = ""; break }
+            line = substr(line, p + 3)
+            incomment = 0
+        } else {
+            p = index(line, "<!--")
+            if (p == 0) { out = out line; line = ""; break }
+            out = out substr(line, 1, p - 1)
+            line = substr(line, p + 4)
+            incomment = 1
+        }
+    }
+    doc = doc " " out
+}
+END {
+    n = split(doc, seg, /<policy/)
+    for (i = 2; i <= n; i++) {
+        s = seg[i]
+        gt = index(s, ">")
+        attrs = (gt > 0) ? substr(s, 1, gt - 1) : s
+        body = (gt > 0) ? substr(s, gt + 1) : ""
+        e = index(body, "</policy>")
+        if (e > 0) body = substr(body, 1, e - 1)
+        isdefault = (attrs ~ /context="default"/)
+        isroot = (attrs ~ /user="root"/)
+        m = split(body, tok, "<")
+        for (j = 1; j <= m; j++) {
+            t = tok[j]
+            if (t ~ /^allow[ \t]/) kind = "allow"
+            else if (t ~ /^deny[ \t]/) kind = "deny"
+            else continue
+            q = index(t, ">")
+            if (q > 0) t = substr(t, 1, q - 1)
+            own = attrval(t, "own")
+            snd = attrval(t, "send_destination")
+            rcv = attrval(t, "receive_sender")
+            for (k = 1; k <= 3; k++) {
+                v = (k == 1) ? own : ((k == 2) ? snd : rcv)
+                if (v ~ /^com\.mos\./) names[v] = 1
+            }
+            if (kind == "allow" && isdefault && (snd == bus || rcv == bus)) defallow++
+            if (kind == "allow" && own == bus) {
+                if (isroot) ownroot++
+                else ownother++
+            }
+        }
+    }
+    namelist = ""
+    for (v in names) namelist = namelist " " v
+    printf "%d %d %d%s\n", defallow + 0, ownroot + 0, ownother + 0, namelist
+}
+' "${TMP}/mosd-policy.xml")"
+mosd_default_allows="$(echo "${mosd_policy_facts}" | awk '{print $1}')"
+mosd_own_root="$(echo "${mosd_policy_facts}" | awk '{print $2}')"
+mosd_own_other="$(echo "${mosd_policy_facts}" | awk '{print $3}')"
+# `|| true`: with no com.mos.* name in the policy at all, grep exits 1 and
+# set -e would kill the verifier here -- turning "the policy is missing" into a
+# crash with no RESULT line instead of the three explicit FAILs below.
+mosd_policy_names="$(echo "${mosd_policy_facts}" | cut -d' ' -f4- | tr ' ' '\n' |
+    grep -v '^$' | sort -u | tr '\n' ' ' | sed 's/ $//' || true)"
+
+# No default-context ALLOW, in either direction. send_destination is the obvious
+# half; receive_sender is the half that is easy to leave open, because
+# SettingsChanged broadcasts the settings VALUE -- a uid that may not call
+# anything can still subscribe and read access.webAdmin.password_hash the moment
+# an operator sets it. A caller who cannot ask can still listen.
+if [ "${mosd_default_allows}" = "0" ]; then
+    pass "no <policy context=\"default\"> allows send_destination= or receive_sender= for ${mosd_bus_name:-the mosd bus name}, so neither calling it nor listening to its signals is open to every local uid"
+else
+    fail "the mosd D-Bus policy has ${mosd_default_allows} default-context allow rule(s) for ${mosd_bus_name:-the mosd bus name}: any local uid can call Reboot/SetSettings/SetTransientRootPassword and/or subscribe to SettingsChanged, which carries settings values including access.webAdmin.password_hash"
+fi
+
+# own= is what lets mosd take the name at all, and granting it outside root
+# would let an unprivileged process take the name FIRST and impersonate mosd.
+if [ "${mosd_own_root}" != "0" ] && [ "${mosd_own_other}" = "0" ]; then
+    pass "allow own=\"${mosd_bus_name}\" appears only under <policy user=\"root\">"
+else
+    fail "allow own= for '${mosd_bus_name}' appears ${mosd_own_root} time(s) under <policy user=\"root\"> and ${mosd_own_other} time(s) elsewhere; it must appear at least once under root and nowhere else, or an unprivileged process could take the name before mosd does"
+fi
+
+# Every com.mos.* name the policy mentions must be the one mosd.service owns.
+# This catches the typo that is invisible by inspection: a deny naming
+# com.mos.mosdx denies nothing, and the default-context check above would still
+# report zero allows while the real name sat wide open.
+if [ -n "${mosd_bus_name}" ] && [ "${mosd_policy_names}" = "${mosd_bus_name}" ]; then
+    pass "the policy names exactly the bus mosd.service declares (BusName=${mosd_bus_name}); it is not a policy for a name nothing owns"
+else
+    fail "policy/unit bus-name mismatch: mosd.service declares BusName='${mosd_bus_name}' but the policy mentions '${mosd_policy_names}'. A policy naming anything else guards a name nothing owns while the real one is governed by system.conf alone"
+fi
+
+# ONE policy file, not two. dbus-daemon reads system-bus policy from BOTH
+# /usr/share/dbus-1/system.d/ and /etc/dbus-1/system.d/, concatenating every
+# .conf it finds and letting later rules override earlier ones. A second file
+# naming com.mos.mosd -- an operator drop-in, a stale copy left by a package, a
+# debugging file that shipped by accident -- would therefore not be a stricter
+# policy layered on top: it could hand back exactly the default-context allow
+# the checks above just proved absent, and every one of those checks would
+# still pass. RFCT-048 restricted the name to root and named this as the one
+# path back out that it left unasserted; this is that assertion.
+#
+# The bus name is READ from mosd.service, as above, so this cannot go stale
+# against a rename. The blessed path is excluded by name, not by directory: a
+# second file in /usr/share/dbus-1/system.d/ is exactly as dangerous as one in
+# /etc/dbus-1/system.d/.
+mosd_policy_dups=""
+for d in /etc/dbus-1/system.d /usr/share/dbus-1/system.d; do
+    for e in $(dbg "ls -p ${d}" | awk -F/ 'NF >= 7 && $6 != "." && $6 != ".." {print $6}'); do
+        [ "${d}/${e}" = "${MOSD_POLICY_PATH}" ] && continue
+        if [ -n "${mosd_bus_name}" ] &&
+            dbg "cat ${d}/${e}" | grep -Fq "${mosd_bus_name}"; then
+            mosd_policy_dups="${mosd_policy_dups} ${d}/${e}"
+        fi
+    done
+done
+if [ -z "${mosd_policy_dups}" ]; then
+    pass "${MOSD_POLICY_PATH} is the ONLY file under /etc/dbus-1/system.d or /usr/share/dbus-1/system.d that mentions ${mosd_bus_name:-the mosd bus name}; no second policy can override the root-only restriction"
+else
+    fail "a second D-Bus policy file mentions ${mosd_bus_name:-the mosd bus name}:${mosd_policy_dups}. dbus-daemon reads both system.d directories and applies later rules over earlier ones, so this file can reinstate the default-context allow that ${MOSD_POLICY_PATH} removes -- and every other policy check here would still pass"
+fi
+
 # --- webd daemon integration ---
 ext_regular /usr/bin/webd
 WEBD_BIN="${TMP}/webd-bin"
@@ -749,6 +913,225 @@ else
         fail "the packed rootfs carries a usable root password hash in /etc/shadow. Cause: the ROOT_PASSWORD build arg was set at build time; unset it — a per-device password is provisioned by mosd at runtime"
         ;;
     esac
+fi
+
+# --- EVERY account is locked, not just root (RFCT-024 generalised by RFCT-039)
+# RFCT-024 wrote the rule that an EMPTY password field is not a locked marker
+# but passwordless login, and scoped it to root because root was the only
+# account in the image. RFCT-039 adds `mos` as the second, so the rule is
+# widened here to every account the image ships: a check that stayed
+# root-shaped would quietly stop covering the case it was written for, and the
+# third account would arrive with nothing looking at it at all.
+#
+# v1 has no factory shadow and no reconciler — its root is a writable ext4 and
+# /etc/shadow is a real file — so the rule is asserted against /etc/shadow
+# itself. The property, and the way it breaks, are the same as in
+# os/verify-image-v2.sh.
+#
+# Two failure branches with two messages, because they are two different
+# defects. EMPTY means the account accepts any password on this device. A
+# USABLE HASH means a credential every device in the fleet shares, since the
+# rootfs is byte-identical across all of them. Reporting one as the other would
+# send the fix in the wrong direction.
+v1_passwd="$(dbg "cat /etc/passwd")"
+v1_shadow="$(dbg "cat /etc/shadow")"
+printf '%s\n' "${v1_shadow}" >"${TMP}/v1-shadow"
+sh_empty=""
+sh_hashed=""
+sh_missing=""
+sh_checked=0
+while IFS=: read -r u _; do
+    [ -n "${u}" ] || continue
+    line="$(grep "^${u}:" "${TMP}/v1-shadow" | head -n1 || true)"
+    if [ -z "${line}" ]; then
+        sh_missing="${sh_missing} ${u}"
+        continue
+    fi
+    sh_checked=$((sh_checked + 1))
+    h="$(printf '%s' "${line}" | cut -d: -f2)"
+    case "${h}" in
+    "") sh_empty="${sh_empty} ${u}" ;;
+    "!"* | "*"*) ;;
+    *) sh_hashed="${sh_hashed} ${u}" ;;
+    esac
+done <<<"${v1_passwd}"
+if [ "${sh_checked}" -eq 0 ]; then
+    fail "no account could be read from /etc/shadow, so nothing can be claimed about the passwords this image ships"
+elif [ -n "${sh_missing}" ]; then
+    fail "account(s) in /etc/passwd with no /etc/shadow entry:${sh_missing}. An account with no shadow entry has no password field at all for pam_unix to check"
+elif [ -n "${sh_empty}" ]; then
+    fail "account(s) in /etc/shadow with an EMPTY password field:${sh_empty}. An empty field means PASSWORDLESS login — pam_unix accepts any password, including none. Empty is not a locked marker; only '!' (including '!!' and '!'-prefixed forms that retain a hash) and '*' lock an account"
+elif [ -n "${sh_hashed}" ]; then
+    fail "account(s) in /etc/shadow carrying a usable password hash:${sh_hashed}. The rootfs is byte-identical on every device flashed from this image, so any hash baked into it is a shared secret by construction; passwords are provisioned per device at runtime, never in the image"
+else
+    pass "all ${sh_checked} accounts in /etc/shadow have a LOCKED password field — none empty, none a usable hash"
+fi
+
+# --- RFCT-039: the `mos` account ---------------------------------------------
+# The account ships in BOTH images so the two do not drift in their account
+# definitions. The persistent home does NOT: v1 has no verity root, no DATA
+# partition and no home.mount, so there is nothing here to bind /home from and
+# nothing that would survive a reflash. That silence is deliberate and is
+# recorded in docs/task/RFCT-039.md; only the account is asserted here.
+#
+# Asserted by NUMBER. On v2 the home sits on DATA and outlives the rootfs, so
+# its owner is part of the on-disk contract; the two images must agree on the
+# id or an operator moving between them would find their files owned by a
+# stranger. Asserting the name alone would pass straight through that.
+MOS_USER=mos
+MOS_ID=1000
+mos_pw="$(printf '%s\n' "${v1_passwd}" | awk -F: -v u="${MOS_USER}" '$1 == u { print; exit }')"
+mos_uid="$(printf '%s' "${mos_pw}" | cut -d: -f3)"
+mos_gid="$(printf '%s' "${mos_pw}" | cut -d: -f4)"
+mos_home="$(printf '%s' "${mos_pw}" | cut -d: -f6)"
+mos_shell="$(printf '%s' "${mos_pw}" | cut -d: -f7)"
+v1_group="$(dbg "cat /etc/group")"
+mos_grp_gid="$(printf '%s\n' "${v1_group}" | awk -F: -v g="${MOS_USER}" '$1 == g { print $3; exit }')"
+# /bin is a symlink to usr/bin on merged-usr Debian, so both spellings are
+# probed: the shell field says /bin/bash and what must exist is the file that
+# path resolves to.
+bash_type=absent
+for c in /bin/bash /usr/bin/bash; do
+    if dbg "stat ${c}" | grep -q "Type: regular"; then bash_type=regular; break; fi
+done
+if [ -z "${mos_pw}" ]; then
+    fail "no '${MOS_USER}' account in the packed /etc/passwd; the two images would drift, and an operator's uid would differ between them"
+elif [ "${mos_uid}" != "${MOS_ID}" ] || [ "${mos_gid}" != "${MOS_ID}" ]; then
+    fail "'${MOS_USER}' is uid ${mos_uid}, gid ${mos_gid} in the packed /etc/passwd, expected ${MOS_ID}:${MOS_ID}. On v2 the home directory sits on DATA and outlives the rootfs, so the id is part of the ON-DISK CONTRACT and both images must pin the same one"
+elif [ "${mos_grp_gid}" != "${MOS_ID}" ]; then
+    fail "the '${MOS_USER}' group is gid '${mos_grp_gid:-absent}' in the packed /etc/group, expected ${MOS_ID}"
+elif [ "${mos_shell}" != "/bin/bash" ] || [ "${bash_type}" != "regular" ]; then
+    fail "'${MOS_USER}' has shell '${mos_shell}' and the bash binary is ${bash_type} in the packed root; the login shell must be /bin/bash and that binary must actually ship, or every login dies at exec"
+elif [ "${mos_home}" != "/home/${MOS_USER}" ]; then
+    fail "'${MOS_USER}' has home '${mos_home}', expected /home/${MOS_USER}"
+else
+    pass "'${MOS_USER}' is uid ${MOS_ID}, gid ${MOS_ID} (group ${MOS_USER} = gid ${mos_grp_gid}), shell ${mos_shell} (present in the image), home ${mos_home}"
+fi
+
+# NO SUDO AND NO SUPPLEMENTARY GROUPS is a deliberate phase-1 deferral, not an
+# oversight: there is no privilege policy to express yet, the web UI is the
+# admin surface, and a guessed policy would outlive the release that guessed
+# it. A deferral nothing asserts is one `usermod -aG` away from being undone
+# silently, so it is asserted in both images.
+mos_extra_groups="$(printf '%s\n' "${v1_group}" |
+    awk -F: -v u="${MOS_USER}" '$1 != u && $4 ~ "(^|,)" u "(,|$)" { print $1 }' |
+    tr '\n' ' ' | sed 's/ $//')"
+sudo_path=""
+for c in /usr/bin/sudo /bin/sudo; do
+    if dbg "stat ${c}" | grep -q "Type: regular"; then sudo_path="${c}"; break; fi
+done
+if [ -n "${mos_extra_groups}" ]; then
+    fail "'${MOS_USER}' is a member of supplementary group(s): ${mos_extra_groups}. Phase 1 grants none — not adm, not shadow, nothing reaching the settings tree — and this is a recorded deferral (docs/task/RFCT-039.md), so a grant appearing here is an undocumented privilege decision"
+elif [ -n "${sudo_path}" ]; then
+    fail "sudo ships in the image (${sudo_path}); phase 1 deliberately gives '${MOS_USER}' no privilege-escalation path and the package is not in the allowlist"
+else
+    pass "'${MOS_USER}' has no supplementary groups and no sudo ships in the image (a deliberate phase-1 deferral, recorded in docs/task/RFCT-039.md)"
+fi
+
+# --- every external binary the /usr/lib/mos boot scripts invoke --------------
+# These scripts run at boot, as root, outside any package's dependency graph, so
+# nothing in the image declares what they need. The dependency is real: the
+# newline-safety fix in mos-shadow-reconcile made it call `od`, and neither
+# Dockerfile installs coreutils explicitly — it arrives with the base image and
+# would disappear without a word if the base were ever slimmed.
+#
+# v1 ships only the hwinit-* scripts (mos-shadow-reconcile and the seed scripts
+# are v2-only), so this set is smaller here than in os/verify-image-v2.sh — but
+# the property being asserted, and the way it breaks, are identical.
+#
+# The extractor is deliberately conservative: it takes command names at COMMAND
+# POSITION only. Commands invoked through the scripts' own `run`/`have` wrappers
+# are NOT in this set, and must not be — mos-health uses `have X ||` precisely
+# to mark curl and wget optional.
+SH_BUILTINS=" : . [ alias bg break cd continue echo eval exec exit export false fg getopts hash jobs local printf pwd read readonly return set shift test times trap true type ulimit umask unalias unset wait command source "
+SH_KEYWORDS=" if then else elif fi for while until do done case esac in function ! "
+
+# Command names at command position in one shell script.
+mos_script_commands() {
+    local f="$1" funcs
+    funcs=" $(sed -n 's/^[[:space:]]*\([A-Za-z_][A-Za-z0-9_]*\)[[:space:]]*()[[:space:]]*{.*/\1/p' "${f}" | tr '\n' ' ') "
+    # Join line continuations, drop backslash escapes (so an escaped backtick in
+    # a message is not mistaken for a command substitution), strip comments,
+    # remove `case` patterns, split on command substitution and on ; | &, strip
+    # quoted spans, then take the first word of what is left.
+    sed -e :a -e '/\\$/N; s/\\\n/ /; ta' "${f}" |
+        sed -e 's/\\.//g' |
+        sed -E -e 's/(^|[[:space:]])#.*$/\1/' |
+        awk '
+            /(^|[[:space:]])case[[:space:]].*[[:space:]]in[[:space:]]*$/ { d++; print; next }
+            /(^|[[:space:]])esac([[:space:]]|$)/ { if (d > 0) d--; print; next }
+            d > 0 { sub(/^[[:space:]]*[^()]*\)/, "") } { print }' |
+        sed -e 's/\$(/\n/g' -e 's/`/\n/g' |
+        sed -e "s/'[^']*'//g" -e 's/"[^"]*"//g' |
+        sed -e 's/[;|&]/\n/g' -e 's/^[[:space:]]*//' |
+        sed -E ':a; s/^(if|then|else|elif|do|while|until|!|\{)[[:space:]]+//; ta' |
+        awk '{ print $1 }' |
+        while read -r w; do
+            [ -n "${w}" ] || continue
+            case " ${SH_BUILTINS} ${SH_KEYWORDS} ${funcs} " in *" ${w} "*) continue ;; esac
+            case "${w}" in
+            *=* | \$* | -* | [0-9]* | \** | \[*) continue ;;
+            *[!A-Za-z0-9_./+-]*) continue ;;
+            /* | [A-Za-z_]*) echo "${w}" ;;
+            esac
+        done
+}
+
+# Does this command name resolve to a real file inside the ext4 rootfs? Symlinks
+# are chased WITHIN the image (an absolute target resolves against the image
+# root, not the host), so a dangling /etc/alternatives entry fails.
+ext_resolves_cmd() {
+    local c="$1" p="" d st hops=0 t
+    case "${c}" in
+    /*) p="${c}" ;;
+    *)
+        for d in /usr/bin /bin /usr/sbin /sbin; do
+            if dbg "stat ${d}/${c}" | grep -q "Inode:"; then
+                p="${d}/${c}"
+                break
+            fi
+        done
+        ;;
+    esac
+    [ -n "${p}" ] || return 1
+    while [ "${hops}" -lt 8 ]; do
+        st="$(dbg "stat ${p}")"
+        echo "${st}" | grep -q "Inode:" || return 1
+        echo "${st}" | grep -q "Type: symlink" || break
+        t="$(echo "${st}" | sed -n 's/.*link dest: "\(.*\)".*/\1/p' | head -n1)"
+        [ -n "${t}" ] || return 1
+        case "${t}" in
+        /*) p="${t}" ;;
+        *) p="$(dirname "${p}")/${t}" ;;
+        esac
+        hops=$((hops + 1))
+    done
+    dbg "stat ${p}" | grep -q "Type: regular"
+}
+
+# Extract the scripts out of the ext4 so the same extractor can read them.
+mkdir -p "${TMP}/mos-scripts"
+for n in $(dbg "ls -p /usr/lib/mos" | awk -F/ 'NF >= 7 && $6 != "." && $6 != ".." { print $6 }'); do
+    dbg "cat /usr/lib/mos/${n}" >"${TMP}/mos-scripts/${n}" 2>/dev/null || true
+done
+mos_cmds="$(for f in "${TMP}/mos-scripts"/*; do
+    [ -f "${f}" ] || continue
+    case "$(head -c 2 "${f}" 2>/dev/null)" in '#!') ;; *) continue ;; esac
+    mos_script_commands "${f}"
+done | sort -u)"
+mos_cmd_n="$(printf '%s\n' "${mos_cmds}" | grep -c . || true)"
+mos_cmd_missing=""
+for c in ${mos_cmds}; do
+    ext_resolves_cmd "${c}" || mos_cmd_missing="${mos_cmd_missing} ${c}"
+done
+# A vacuity guard: if the extractor stops seeing commands, an empty set would
+# make the check below pass while proving nothing at all.
+if [ "${mos_cmd_n}" -lt 5 ]; then
+    fail "only ${mos_cmd_n} command names were extracted from the /usr/lib/mos boot scripts; the extractor is not reading them, so the binary-presence check would pass vacuously"
+elif [ -z "${mos_cmd_missing}" ]; then
+    pass "all ${mos_cmd_n} external commands invoked at command position by the /usr/lib/mos boot scripts resolve in the packed rootfs ($(printf '%s' "${mos_cmds}" | tr '\n' ' '))"
+else
+    fail "the /usr/lib/mos boot scripts invoke commands that are NOT in the packed rootfs:${mos_cmd_missing}. These scripts run at boot as root with no package dependency declaring them; a missing one fails at runtime"
 fi
 
 # ===========================================================================
@@ -966,25 +1349,29 @@ dev | prod)
     ;;
 esac
 
-# The end-to-end property, in both directions: dev implies ssh.service IS
-# enabled in the image, prod implies it is NOT. mosd seeds access.ssh.enabled
-# from this same file, so an image whose static enablement disagreed with its
-# profile would have sshd listening before mosd ever got to decide.
-ssh_enabled=0
-dbg "stat /etc/systemd/system/multi-user.target.wants/ssh.service" | grep -q "Inode:" && ssh_enabled=1
+# ssh.service must NOT be enabled in the image, on EITHER profile.
+#
+# This assertion used to be profile-dependent and pointed the other way: dev
+# shipped sshd enabled. It no longer does. mosd seeds access.ssh.enabled false
+# for dev and prod alike (Profile::ssh_enabled_default), so an image that
+# shipped ssh.service enabled would be listening from early boot until mosd's
+# first reconcile stopped it — precisely the window the setting exists to close.
+# Every *.wants directory is scanned, not just multi-user.target.wants, so an
+# enablement that came back through a different target is still caught.
+ssh_wants=""
+for wd in $(dbg "ls -p /etc/systemd/system" | awk -F/ 'NF >= 7 && $6 ~ /\.wants$/ { print $6 }'); do
+    for u in ssh.service sshd.service; do
+        if dbg "stat /etc/systemd/system/${wd}/${u}" | grep -q "Inode:"; then
+            ssh_wants="${ssh_wants} /etc/systemd/system/${wd}/${u}"
+        fi
+    done
+done
 case "${MOS_PROFILE_VALUE}" in
-dev)
-    if [ "${ssh_enabled}" -eq 1 ]; then
-        pass "profile is dev and ssh.service IS enabled in the image, which is what mosd will seed access.ssh.enabled to"
+dev | prod)
+    if [ -z "${ssh_wants}" ]; then
+        pass "profile is ${MOS_PROFILE_VALUE} and ssh.service is NOT enabled in the image, so sshd never listens before mosd has decided (both profiles seed access.ssh.enabled false)"
     else
-        fail "profile is dev but ssh.service is NOT enabled in the image; mosd will seed access.ssh.enabled true and the dev SSH path is still gone until its first reconcile"
-    fi
-    ;;
-prod)
-    if [ "${ssh_enabled}" -eq 0 ]; then
-        pass "profile is prod and ssh.service is NOT enabled in the image, so sshd never listens before mosd has decided"
-    else
-        fail "profile is prod but ssh.service IS enabled in the image; sshd would be listening from early boot until mosd's reconciler stops it"
+        fail "profile is ${MOS_PROFILE_VALUE} but ssh.service IS enabled in the image (${ssh_wants}); sshd would be listening from early boot until mosd's reconciler stopped it, and both profiles now seed access.ssh.enabled false"
     fi
     ;;
 *)
@@ -992,22 +1379,78 @@ prod)
     ;;
 esac
 
+# --- ssh.service KillMode: defence in depth, NOT the mitigation --------------
+# The mitigation for "an operator sets a transient root password over SSH and
+# disconnects themselves" is that the sshd reconciler RELOADS ssh.service on a
+# configuration-only change instead of restarting it (RFCT-047). sshd re-reads
+# its configuration on SIGHUP, so established sessions survive a reload BY
+# CONSTRUCTION — not by grace, and not because of anything asserted here.
+#
+# What this check is for: KillMode=process is an inherited property of Debian's
+# openssh-server packaging that this image does not author and had never
+# asserted. It bounds the damage if something restarts the unit anyway — under
+# the systemd default KillMode=control-group a restart kills every process in
+# the unit's cgroup, including the forked session carrying the operator's own
+# connection. So it is a second line of defence and a tripwire for the day a
+# base-image change moves it.
+#
+# It is NOT a substitute for the reload, and this check passing is NOT a reason
+# to go back to restarting.
+ssh_unit_text="$(dbg "cat /usr/lib/systemd/system/ssh.service")"
+if [ -z "${ssh_unit_text}" ]; then
+    fail "/usr/lib/systemd/system/ssh.service is not readable in the image, so no claim can be made about KillMode"
+elif printf '%s\n' "${ssh_unit_text}" | grep -qE '^KillMode=process[[:space:]]*$'; then
+    pass "ssh.service sets KillMode=process, so a restart would spare established sessions — defence in depth only: what actually protects an operator's own session is that the reconciler RELOADS on a config-only change (RFCT-047), and this passing is not a reason to restart instead"
+else
+    fail "ssh.service does NOT set KillMode=process (found '$(printf '%s\n' "${ssh_unit_text}" | sed -n 's/^KillMode=//p' | tail -n1)'; systemd defaults to control-group). The image has lost its second line of defence: anything that RESTARTS this unit now kills established SSH sessions with it. This does not by itself disconnect an operator setting a transient root password — the reconciler reloads rather than restarts (RFCT-047) — but that reload is now the ONLY thing preventing it, so do not treat this as cosmetic"
+fi
+
+# --- ssh.service ExecReload: what the reconciler's reload depends on ---------
+# RFCT-047 made SshdReconciler RELOAD ssh.service on a configuration-only
+# change instead of restarting it, so an operator who sets a transient root
+# password over their own SSH session keeps it. That correctness now rests on
+# the unit shipped by Debian's openssh-server carrying an ExecReload= -- a
+# property this image INHERITS rather than chooses, exactly like KillMode
+# above. RFCT-047 could not assert it, because the verifier is not its file.
+#
+# With no ExecReload=, `systemctl reload ssh.service` fails outright. The
+# reconciler renders its sshd configuration to disk and the running sshd never
+# re-reads it, so a change -- PasswordAuthentication among them -- SILENTLY
+# fails to apply: the file on disk says one thing and the listener keeps
+# enforcing another until something else restarts the unit.
+if [ -z "${ssh_unit_text}" ]; then
+    fail "/usr/lib/systemd/system/ssh.service is not readable in the image, so no claim can be made about ExecReload"
+elif printf '%s\n' "${ssh_unit_text}" | grep -qE '^ExecReload='; then
+    pass "ssh.service carries ExecReload=, so the config-only reload the sshd reconciler issues (RFCT-047) can actually reach the running sshd"
+else
+    fail "ssh.service has NO ExecReload=. The sshd reconciler RELOADS this unit on a configuration-only change (RFCT-047); without ExecReload that reload fails, and the rendered sshd configuration — PasswordAuthentication included — silently never applies to the running listener"
+fi
+
+# NOT asserted here, and v2-only by nature: the AuthorizedKeysFile drop-in, the
+# mos-shadow-reconcile unit and its MOS_SHADOW_* override ban. v1 ships none of
+# them. Its root is a writable ext4 with no A/B update and no STATE binds, so
+# there is no etc-ssh.mount for authorised keys to survive across and no
+# /etc/shadow redirection to reconcile. See os/verify-image-v2.sh for those.
+
 # --- the shadow hash format, against the libcrypt PACKED IN THIS IMAGE ------
 # No Rust test can make this assertion: the test host is x86 and the library is
 # an arm64 object inside the image. mosd writes a crypt(3) hash into the root
 # account's shadow entry and pam_unix verifies it through this exact libcrypt;
 # a format the library cannot parse rejects every password while the file, the
 # unit and the reconciler all look perfectly healthy.
-# The prefix is READ from the assertion sshd.rs pins on its own output, so the
-# two cannot drift; requiring exactly one keeps that source unambiguous.
-SSHD_SRC="${REPO_ROOT}/mosd/mosd/src/reconciler/sshd.rs"
-crypt_prefixes="$(grep -oE 'starts_with\("\$[0-9a-zA-Z]+\$' "${SSHD_SRC}" 2>/dev/null | grep -oE '\$[0-9a-zA-Z]+\$' | sort -u || true)"
+# The prefix is READ from the assertion transient.rs pins on its own output, so
+# the two cannot drift; requiring exactly one keeps that source unambiguous.
+# transient.rs and not sshd.rs: RFCT-033 moved the code that writes the root
+# hash out of the reconciler into the transient-password module, and the pin
+# moved with it.
+CRYPT_SRC="${REPO_ROOT}/mosd/mosd/src/transient.rs"
+crypt_prefixes="$(grep -oE 'starts_with\("\$[0-9a-zA-Z]+\$' "${CRYPT_SRC}" 2>/dev/null | grep -oE '\$[0-9a-zA-Z]+\$' | sort -u || true)"
 crypt_n="$(printf '%s\n' "${crypt_prefixes}" | grep -c . || true)"
 CRYPT_PREFIX="$(printf '%s\n' "${crypt_prefixes}" | head -n1)"
 if [ "${crypt_n}" = "1" ]; then
-    pass "sshd.rs pins exactly one crypt(3) prefix for the shadow field: ${CRYPT_PREFIX}"
+    pass "transient.rs pins exactly one crypt(3) prefix for the shadow field: ${CRYPT_PREFIX}"
 else
-    fail "sshd.rs pins ${crypt_n} distinct crypt(3) prefixes ($(printf '%s' "${crypt_prefixes}" | tr '\n' ' ')); the format the image must support is ambiguous, so the libcrypt check below cannot mean anything"
+    fail "transient.rs pins ${crypt_n} distinct crypt(3) prefixes ($(printf '%s' "${crypt_prefixes}" | tr '\n' ' ')); the format the image must support is ambiguous, so the libcrypt check below cannot mean anything"
 fi
 
 LIBCRYPT_LINK="/usr/lib/aarch64-linux-gnu/libcrypt.so.1"
@@ -1033,7 +1476,10 @@ if [ -n "${LIBCRYPT_REAL}" ]; then
 fi
 if [ "${crypt_n}" != "1" ] || [ ! -s "${LIBCRYPT_BIN}" ]; then
     fail "cannot check the crypt(3) format against the image's libcrypt: prefix count ${crypt_n}, extracted library $([ -s "${LIBCRYPT_BIN}" ] && echo "$(stat -c %s "${LIBCRYPT_BIN}") bytes" || echo missing)"
-elif LC_ALL=C tr -c '[:print:]' '\n' <"${LIBCRYPT_BIN}" | grep -Fq -- "${CRYPT_PREFIX}"; then
+# `grep -F`, not `grep -Fq`: with -q grep exits the moment it matches, tr
+# takes SIGPIPE, and `set -o pipefail` turns that 141 into a FAILED check on
+# a library that does carry the format. It reproduces about one run in three.
+elif LC_ALL=C tr -c '[:print:]' '\n' <"${LIBCRYPT_BIN}" | grep -F -- "${CRYPT_PREFIX}" >/dev/null; then
     pass "the libcrypt packed in this image implements ${CRYPT_PREFIX}, the crypt(3) format mosd writes into the root shadow entry"
 else
     fail "the libcrypt packed in this image ($(basename "${LIBCRYPT_REAL}")) does NOT implement ${CRYPT_PREFIX}, the format mosd writes into /etc/shadow. pam_unix would reject every password while the shadow file, the reconciler and every other check look healthy. Formats it does carry: $(LC_ALL=C tr -c '[:print:]' '\n' <"${LIBCRYPT_BIN}" | grep -oE '^\$[0-9a-z]+\$$' | sort -u | tr '\n' ' ')"

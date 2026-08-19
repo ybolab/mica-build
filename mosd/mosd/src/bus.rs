@@ -3,6 +3,8 @@
 //! Exposes the settings tree and the live-state tree on the bus as the
 //! `com.mos.mosd1` interface at [`OBJECT_PATH`], owned under [`BUS_NAME`].
 
+use std::path::PathBuf;
+
 use mosd_settings::{Settings, SettingsError, Store, json_path_get};
 use serde_json::Value;
 use tokio::sync::Mutex;
@@ -12,6 +14,7 @@ use zbus::object_server::SignalEmitter;
 
 use crate::power::PowerControl;
 use crate::reconciler::Reconciler;
+use crate::transient;
 
 /// Well-known bus name owned by the daemon.
 pub const BUS_NAME: &str = "com.mos.mosd";
@@ -46,28 +49,36 @@ struct Inner {
 }
 
 /// The `com.mos.mosd1` service: settings tree, live-state tree, store,
-/// reconcilers and the power control.
+/// reconcilers, the power control and the shadow file a transient root
+/// password is written into.
 pub struct MosdService {
     store: Store,
     reconcilers: Vec<Box<dyn Reconciler>>,
     power: Box<dyn PowerControl>,
+    shadow_path: PathBuf,
     inner: Mutex<Inner>,
 }
 
 impl MosdService {
     /// Build the service around loaded `settings` and an initial live-state
     /// root (an empty object, or `{"dry_run": true}` in dry-run mode).
+    ///
+    /// `shadow_path` is a parameter for the same reason every reconciler path
+    /// is: a test points it at a temporary file and can then drive the real
+    /// transient-password method without touching the host's `/etc/shadow`.
     pub fn new(
         store: Store,
         settings: Settings,
         reconcilers: Vec<Box<dyn Reconciler>>,
         power: Box<dyn PowerControl>,
+        shadow_path: PathBuf,
         state: Value,
     ) -> Self {
         Self {
             store,
             reconcilers,
             power,
+            shadow_path,
             inner: Mutex::new(Inner { settings, state }),
         }
     }
@@ -152,6 +163,17 @@ fn to_fdo(err: SettingsError) -> fdo::Error {
             fdo::Error::Failed(err.to_string())
         }
     }
+}
+
+/// Map a transient-password failure onto a D-Bus error.
+///
+/// Always `Failed`: the caller cannot distinguish a rejected password from an
+/// unwritable shadow file, and neither is worth leaking more detail over. The
+/// message is the anyhow chain, which by construction carries lengths and rule
+/// names but never the password itself — `transient::validate` never echoes its
+/// input.
+fn transient_to_fdo(err: anyhow::Error) -> fdo::Error {
+    fdo::Error::Failed(format!("set transient root password: {err:#}"))
 }
 
 #[zbus::interface(name = "com.mos.mosd1")]
@@ -244,6 +266,27 @@ impl MosdService {
         self.request_power_off(sender_of(&header)).await
     }
 
+    /// Set a TRANSIENT root password, then re-apply every reconciler.
+    ///
+    /// Exported as `SetTransientRootPassword`. The password lives until the
+    /// next boot, when `mos-shadow-reconcile` clears the root hash it wrote;
+    /// persistent access is by SSH public key.
+    ///
+    /// Deliberately not a setting. Nothing is written into the settings tree
+    /// and no [`SettingsChanged`](Self::settings_changed) is emitted, because a
+    /// password that reached the settings tree would be persisted, re-applied
+    /// on the next boot and readable by anything that can call `GetSettings` —
+    /// which is the opposite of transient in all three respects.
+    ///
+    /// The reconcilers are re-run afterwards so the sshd drop-in re-renders
+    /// against a device that now has a password to offer, and sshd picks it up.
+    async fn set_transient_root_password(&self, password: &str) -> fdo::Result<()> {
+        transient::set_transient_root_password(&self.shadow_path, password)
+            .map_err(transient_to_fdo)?;
+        self.apply_all().await;
+        Ok(())
+    }
+
     /// Emitted after a successful `SetSettings` with the changed dot-path and
     /// its new JSON-encoded value.
     #[zbus(signal)]
@@ -261,11 +304,17 @@ mod tests {
     use super::{MosdService, paths_overlap};
     use crate::power::MockPower;
 
-    /// Service backed by a throwaway settings file and a recording power mock;
-    /// the shared call log is returned alongside.
+    /// Three accounts, nine fields each — the shape of a Debian `/etc/shadow`.
+    const SHADOW: &str = "root:!:19000:0:99999:7:::\n\
+        daemon:*:19000:0:99999:7:::\n";
+
+    /// Service backed by a throwaway settings file, a throwaway shadow file and
+    /// a recording power mock; the shared call log is returned alongside.
     fn service_with_mock() -> (MosdService, Arc<Mutex<Vec<String>>>, tempfile::TempDir) {
         let dir = tempfile::tempdir().expect("tempdir");
         let store = mosd_settings::Store::new(dir.path().join("settings.toml"));
+        let shadow_path = dir.path().join("shadow");
+        std::fs::write(&shadow_path, SHADOW).expect("seed shadow");
         let calls = Arc::new(Mutex::new(Vec::new()));
         let service = MosdService::new(
             store,
@@ -274,6 +323,7 @@ mod tests {
             Box::new(MockPower {
                 calls: Arc::clone(&calls),
             }),
+            shadow_path,
             serde_json::json!({}),
         );
         (service, calls, dir)
@@ -314,6 +364,54 @@ mod tests {
         service.request_power_off(":1.1").await.expect("power off");
 
         assert_eq!(service.get_settings("").await.expect("settings"), before);
+    }
+
+    #[tokio::test]
+    async fn a_transient_password_does_not_touch_the_settings_tree() {
+        let (service, _calls, dir) = service_with_mock();
+        let before = service.get_settings("").await.expect("settings");
+
+        service
+            .set_transient_root_password("correct horse battery")
+            .await
+            .expect("set transient root password");
+
+        assert_eq!(
+            service.get_settings("").await.expect("settings"),
+            before,
+            "a password must never enter the settings tree"
+        );
+        assert!(
+            !before.contains("correct horse"),
+            "the fixture itself must not carry the password"
+        );
+        assert!(
+            !dir.path().join("settings.toml").exists(),
+            "nothing was persisted, so no settings file was written at all"
+        );
+        assert!(
+            crate::transient::transient_password_active(&dir.path().join("shadow")),
+            "the call must still have done its actual job"
+        );
+    }
+
+    #[tokio::test]
+    async fn a_rejected_transient_password_is_an_error_that_does_not_echo_it() {
+        let (service, _calls, dir) = service_with_mock();
+
+        let err = service
+            .set_transient_root_password("short12")
+            .await
+            .expect_err("seven bytes is below the floor");
+
+        assert!(
+            !err.to_string().contains("short12"),
+            "the password leaked into the D-Bus error: {err}"
+        );
+        assert!(
+            !crate::transient::transient_password_active(&dir.path().join("shadow")),
+            "a rejected password must leave no marker behind"
+        );
     }
 
     #[test]

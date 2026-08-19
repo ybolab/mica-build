@@ -248,12 +248,14 @@ partitions absorb everything:
 | `/mnt/meta` | META (p8) | ext4, `noatime` |
 | `/var` | EPHEMERAL (p10) | ext4, `noatime` — **no** growfs |
 | `/tmp` | tmpfs | `noatime,nosuid,nodev,mode=1777` |
-| `/var/lib/mos` | bind from `/mnt/state/mos` | mosd settings, webd credentials, **per-device secrets**, **the shadow file** |
+| `/var/lib/mos` | bind from `/mnt/state/mos` | mosd settings, webd credentials, **per-device secrets**, **the shadow file** and its **transient-password marker** |
 | `/var/lib/bluetooth` | bind from `/mnt/state/bluetooth` | pairing keys |
 | `/etc/ssh` | bind from `/mnt/state/ssh` | sshd config + host keys + mosd's `sshd_config.d/10-mos.conf` |
 | `/etc/hostname` | bind from `/mnt/state/hostname` | file bind, not a directory |
 | `/etc/wpa_supplicant` | bind from `/mnt/state/wpa_supplicant` | mosd's rendered supplicant config (M5) |
 | `/etc/hostapd` | bind from `/mnt/state/hostapd` | mosd's rendered hostapd config (M5) |
+| `/home` | bind from `/srv/home` | operator home directories, on **DATA** (RFCT-039); source created by `mos-seed-home` |
+| `/root` | bind from `/srv/root` | root's home directory, on **DATA** (RFCT-054); source created by `mos-seed-root` |
 | **`/etc/shadow`** | **symlink → `/var/lib/mos/shadow`** | **not read-only any more — see below (M5)** |
 | `/run`, `/run/lock`, `/dev/shm` | tmpfs | systemd API mounts, unchanged |
 
@@ -315,6 +317,23 @@ Appending is the only mutation the script makes, so it is **idempotent by
 construction**: when nothing is missing it does not rewrite the file at all, only
 re-enforcing `0640 root:shadow`.
 
+**Rule 1 has one bounded exception, and it is the transient root password.**
+When mosd sets one, it writes a bcrypt hash into root's entry **and records
+exactly that hash in a marker file beside the shadow file**,
+`/var/lib/mos/transient-root-password`, 0600. On the next boot the reconciler
+compares root's current hash against the marker: **equal → the field is rewritten
+to a locked marker and the marker file is deleted**, so the password vanishes;
+**not equal → the shadow file is left alone.** So rule 1 still holds for every
+credential the reconciler did not write — including a dev image's build-time
+`ROOT_PASSWORD`, whose hash never matches a marker and therefore survives. That
+distinction is the whole reason a marker exists instead of "lock root on every
+boot". See `docs/design/access.md` §4.1 and `mosd/mosd/src/transient.rs`.
+
+The marker is resolved **beside** the shadow file rather than at a fixed path,
+because that file is `/mnt/state/mos/shadow` before `var-lib-mos.mount` is up
+and `/var/lib/mos/shadow` after it, and both must name the same STATE-backed
+marker.
+
 The group is not cosmetic. `unix_chkpwd` is setgid `shadow` precisely so a
 non-root PAM stack can read this file — the same reason the pack stage
 deliberately avoids `-all-root` (§3).
@@ -341,9 +360,17 @@ build-time gate, with its own distinct message.
   shadow during the local mount phase would see a *missing* file rather than a
   *wrong* one, which is the safe failure direction.
 
-The credential model this file carries — why the hash in it is bcrypt while
-`access.device.passwordHash` is Argon2id — is stated once in
-`docs/design/provisioning.md` §3.3 and is not repeated here.
+**What writes this file has changed since M5.** The sshd reconciler used to
+write a per-device password into root's entry on every reconcile; it does not
+any more, and the device credential authenticates nothing at all
+(`docs/design/provisioning.md` §3.6). Today the file has exactly two writers:
+`mos-shadow-reconcile` at boot, and mosd's transient-password bus method. Every
+account in it is locked except while a transient password is live.
+
+The credential model this file carries — why a hash written into it is bcrypt
+while `access.device.passwordHash` is Argon2id — is stated once in
+`docs/design/provisioning.md` §3.3, which is retained there as the superseded
+M5 record with the libcrypt measurement that still governs the bcrypt choice.
 
 #### v1 does not get any of this
 
@@ -363,14 +390,21 @@ follow from the tier rather than the other way round.
 | Tier | Mount | Contents | Grows? | Lost when |
 |---|---|---|---|---|
 | **STATE** (p9) | `/mnt/state` | configuration and identity: mosd settings, the webd admin password hash and session key, **the per-device secrets and the shadow file**, sshd host keys, **the WiFi daemon configs**, hostname, Bluetooth pairings | no — small and fixed | factory reset only |
-| **DATA** (p11) | `/srv` | application data | **yes** — fills the media | factory reset only |
+| **DATA** (p11) | `/srv` | application data, and the **operator's home directories**: `/home` and `/root` are binds from `/srv/home` and `/srv/root` | **yes** — fills the media | factory reset only |
 | **META** (p8) | `/mnt/meta` | update and appliance metadata | no | factory reset only |
 | **EPHEMERAL** (p10) | `/var` | disposable runtime residue: logs, caches, package bookkeeping | no — **fixed** size | factory reset **and** routine log cleanup |
 
 Two operations follow from that table:
 
-- **Factory reset** wipes DATA + STATE + `/var`. The device comes back as if
-  freshly flashed: new host keys, new machine-id, default hostname.
+- **Factory reset** would wipe DATA + STATE + `/var`, bringing the device back
+  as if freshly flashed: new host keys, new machine-id, default hostname.
+  **Nothing implements it.** No unit, script or bus method performs a factory
+  reset; the only mention in code is a doc comment in
+  `mosd/mosd/src/provisioning.rs` explaining why wiping STATE *would* return the
+  device to first boot. The nearest real operation is a whole-disk reflash,
+  which replaces META, STATE and DATA with the image's fresh filesystems — see
+  `docs/design/access.md` §9.2, including why "cleared" there means unreachable
+  rather than erased.
 - **Log cleanup** wipes `/var` alone, and by contract costs nothing that
   matters. It is a recovery action that can be taken on a wedged device
   without asking the user whether they mind losing anything.
