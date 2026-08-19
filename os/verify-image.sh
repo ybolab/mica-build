@@ -1105,7 +1105,7 @@ esac
 # --- ssh.service KillMode: defence in depth, NOT the mitigation --------------
 # The mitigation for "an operator sets a transient root password over SSH and
 # disconnects themselves" is that the sshd reconciler RELOADS ssh.service on a
-# configuration-only change instead of restarting it (RFCT-041). sshd re-reads
+# configuration-only change instead of restarting it (RFCT-047). sshd re-reads
 # its configuration on SIGHUP, so established sessions survive a reload BY
 # CONSTRUCTION — not by grace, and not because of anything asserted here.
 #
@@ -1123,9 +1123,9 @@ ssh_unit_text="$(dbg "cat /usr/lib/systemd/system/ssh.service")"
 if [ -z "${ssh_unit_text}" ]; then
     fail "/usr/lib/systemd/system/ssh.service is not readable in the image, so no claim can be made about KillMode"
 elif printf '%s\n' "${ssh_unit_text}" | grep -qE '^KillMode=process[[:space:]]*$'; then
-    pass "ssh.service sets KillMode=process, so a restart would spare established sessions — defence in depth only: what actually protects an operator's own session is that the reconciler RELOADS on a config-only change (RFCT-041), and this passing is not a reason to restart instead"
+    pass "ssh.service sets KillMode=process, so a restart would spare established sessions — defence in depth only: what actually protects an operator's own session is that the reconciler RELOADS on a config-only change (RFCT-047), and this passing is not a reason to restart instead"
 else
-    fail "ssh.service does NOT set KillMode=process (found '$(printf '%s\n' "${ssh_unit_text}" | sed -n 's/^KillMode=//p' | tail -n1)'; systemd defaults to control-group). The image has lost its second line of defence: anything that RESTARTS this unit now kills established SSH sessions with it. This does not by itself disconnect an operator setting a transient root password — the reconciler reloads rather than restarts (RFCT-041) — but that reload is now the ONLY thing preventing it, so do not treat this as cosmetic"
+    fail "ssh.service does NOT set KillMode=process (found '$(printf '%s\n' "${ssh_unit_text}" | sed -n 's/^KillMode=//p' | tail -n1)'; systemd defaults to control-group). The image has lost its second line of defence: anything that RESTARTS this unit now kills established SSH sessions with it. This does not by itself disconnect an operator setting a transient root password — the reconciler reloads rather than restarts (RFCT-047) — but that reload is now the ONLY thing preventing it, so do not treat this as cosmetic"
 fi
 
 # NOT asserted here, and v2-only by nature: the AuthorizedKeysFile drop-in, the

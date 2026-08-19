@@ -177,7 +177,7 @@ and nothing had asserted it until now. It is an inherited property of upstream
 packaging that happened to be right.
 
 **It is not the mitigation, and the assertion must not be read as one.** L1 has
-ruled on the restart-vs-reload question, and RFCT-041 is changing
+ruled on the restart-vs-reload question, and RFCT-047 is changing
 `SshdReconciler` to RELOAD `ssh.service` on a configuration-only change instead
 of restarting it. sshd re-reads its configuration on SIGHUP, so established
 sessions survive a reload **by construction** — not by grace, and not because of
@@ -198,7 +198,7 @@ image has lost its second line of defence and that the reload is now the ONLY
 thing preventing the disconnect. That inversion — a guard being mistaken for the
 fix it merely backstops — is exactly how this kind of check rots.
 
-`mosd/mosd/src/reconciler/**` is NOT touched by this task; RFCT-041 owns it.
+`mosd/mosd/src/reconciler/**` is NOT touched by this task; RFCT-047 owns it.
 
 ## Verifier check counts
 
@@ -315,7 +315,7 @@ there authenticates; that `KillMode=process` is set is not proof that an
 established session survives a restart on real hardware. All of that is only
 observable on a real boot and none of it was performed.
 
-**Nothing here verifies the reload.** RFCT-041's change — reloading
+**Nothing here verifies the reload.** RFCT-047's change — reloading
 `ssh.service` on a configuration-only change so sessions survive by
 construction — is the actual mitigation, and this task asserts nothing about it.
 Assertion 7 checks only that the backstop behind it is still in place.
@@ -359,6 +359,6 @@ fail when its property is broken.
 - RFCT-034 (sshd reconciler, `AuthorizedKeysFile` drop-in) — merged
 - RFCT-038 (newline-safe shadow append; introduced the `od` dependency) — merged
 - RFCT-039 (`/home` mountpoint) — sibling, owns its own assertion
-- RFCT-041 (reload rather than restart on a config-only change) — sibling, owns
+- RFCT-047 (reload rather than restart on a config-only change) — sibling, owns
   `mosd/mosd/src/reconciler/**`; assertion 7 here is the backstop behind it, not
   a substitute for it
