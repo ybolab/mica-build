@@ -10,9 +10,16 @@
   - `display.md` — HDMI kiosk UI: cage+WPE rendering webd locally
   - `provisioning.md` — configuration without a network: three-layer model
   - `mosd.md` — management plane design brief: D-Bus tree, settings schema, reconcilers
+  - `connd.md` — unified connectivity service: WiFi STA/AP, Bluetooth, CAN
+  - `ro-root.md` — read-only root: squashfs + dm-verity rootfs pack and boot wiring
+  - `uboot-ab-handshake.md` — A/B boot-order contract between U-Boot, RAUC and the health gate
+  - `dashboard.md` — dashboard proposal: landing screen, IA, technology posture, process architecture
 - `research/` — decision-basis studies
   - `os-comparison.md` — balena/Torizon/Talos/Yocto evaluation and rejected alternatives
   - `init-strategy.md` — init core strategy: Plan A Talos / Plan B systemd+Rust / Plan C Rust PID1, with triggers
+  - `venus-os-ui.md` — Venus OS gui-v2 reference study: what it is, how it is served, its information architecture
+  - `venus-os-access.md` — Venus OS reference study: SSH/root access, remote support, firmware-update and rollback UX
+  - `mos-ui-inventory.md` — what the mos management UI ships today, measured from the tree
 - `plan/` — PMA plans (numbered, with status index)
 - `task/` — PMA task tracking
 
@@ -21,3 +28,11 @@ Chinese counterpart; English is authoritative on conflict, update both
 together); `plan/` and `task/` are PMA process docs, English only, following
 the PMA lifecycle (investigate → proposal → implement) with status markers in
 `plan/index.md`.
+
+Exception, deliberate and recorded: the documents added by the dashboard
+campaign (`design/dashboard.md`, `research/venus-os-ui.md`,
+`research/venus-os-access.md`, `research/mos-ui-inventory.md`) ship
+**English-only**, because whether the existing `*.zh.md` files are kept current
+is a decision parked with the user and unresolved; if bilingual coverage is
+revived these get translated then, as a deliberate act rather than a half-kept
+convention (`task/RFCT-045.md`).

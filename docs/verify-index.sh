@@ -1,0 +1,109 @@
+#!/usr/bin/env bash
+# Asserts that the two document indexes agree with the tree, in BOTH
+# directions. Read-only: it opens files and prints, and changes nothing.
+#
+#   bash docs/verify-index.sh          (or: make docs-verify)
+#
+# Three sections, each checked forward and backward:
+#
+#   1. docs/design/*.md      <-> docs/README.md
+#   2. docs/research/*.md    <-> docs/README.md
+#   3. docs/task/RFCT-*.md   <-> docs/task/index.md
+#
+# The reverse direction is the half that is easy to omit and the half that
+# catches a rename: a forward-only check passes happily on an index full of
+# entries pointing at files that no longer exist.
+#
+# `*.zh.md` is excluded DELIBERATELY, and this is not an oversight to be
+# "fixed" later. Whether the existing Chinese translations are kept current is
+# a decision parked with the user and unresolved (see the rules paragraph in
+# docs/README.md). Until that is resolved a translated sibling is not required
+# to be indexed, and must not fail this check.
+set -euo pipefail
+
+cd "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+
+README=docs/README.md
+TASK_INDEX=docs/task/index.md
+FAIL=0
+CHECKS=0
+
+fail() { echo "  FAIL $*" >&2; FAIL=$((FAIL + 1)); }
+ok()   { CHECKS=$((CHECKS + 1)); }
+
+# The document names the README lists under one directory bullet, one per
+# line. The README's shape is a top-level `- \`design/\` -- ...` bullet
+# followed by two-space-indented `  - \`name.md\` -- ...` entries, so an entry
+# is attributed to the directory bullet above it and prose elsewhere in the
+# file is never mistaken for an index entry.
+readme_entries_under() {
+    awk -v dir="$1/" '
+        /^- `[^`]+\/` /       { inblock = ($0 ~ "^- `" dir "` "); next }
+        /^- /                 { inblock = 0; next }
+        inblock && /^  - `/   { if (match($0, /`[^`]+`/)) {
+                                    e = substr($0, RSTART + 1, RLENGTH - 2)
+                                    print e
+                                } }
+    ' "$README"
+}
+
+# --- sections 1 and 2: docs/<dir>/*.md <-> docs/README.md ------------------
+check_readme_dir() {
+    local dir=$1 f base entry
+
+    # forward: every document in the tree is indexed
+    for f in "docs/$dir"/*.md; do
+        base=$(basename "$f")
+        case "$base" in *.zh.md) continue ;; esac
+        if readme_entries_under "$dir" | grep -qxF -- "$base"; then
+            ok
+        else
+            fail "docs/$dir/$base exists but is not indexed in $README"
+        fi
+    done
+
+    # reverse: every indexed document exists
+    for entry in $(readme_entries_under "$dir"); do
+        case "$entry" in *.zh.md) continue ;; esac
+        if [ -e "docs/$dir/$entry" ]; then
+            ok
+        else
+            fail "$README indexes '$entry' under $dir/, but docs/$dir/$entry does not exist"
+        fi
+    done
+}
+
+echo "docs/verify-index.sh: design/ <-> $README"
+check_readme_dir design
+echo "docs/verify-index.sh: research/ <-> $README"
+check_readme_dir research
+
+# --- section 3: docs/task/RFCT-*.md <-> docs/task/index.md -----------------
+echo "docs/verify-index.sh: task/RFCT-*.md <-> $TASK_INDEX"
+
+# forward: every record has a row
+for f in docs/task/RFCT-*.md; do
+    base=$(basename "$f")
+    case "$base" in *.zh.md) continue ;; esac
+    if grep -qF -- "($base)" "$TASK_INDEX"; then
+        ok
+    else
+        fail "docs/task/$base exists but has no row in $TASK_INDEX"
+    fi
+done
+
+# reverse: every row resolves to a record
+for entry in $(grep -oE '\(RFCT-[^)]+\.md\)' "$TASK_INDEX" | tr -d '()' | sort -u); do
+    if [ -e "docs/task/$entry" ]; then
+        ok
+    else
+        fail "$TASK_INDEX has a row for '$entry', but docs/task/$entry does not exist"
+    fi
+done
+
+# --- verdict ---------------------------------------------------------------
+if [ "$FAIL" -ne 0 ]; then
+    echo "docs/verify-index.sh: $FAIL FAILED, $CHECKS passed" >&2
+    exit 1
+fi
+echo "docs/verify-index.sh: $CHECKS/$CHECKS PASS"
