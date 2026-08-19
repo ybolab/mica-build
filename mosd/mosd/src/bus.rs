@@ -154,6 +154,33 @@ impl MosdService {
         Ok(value.to_string())
     }
 
+    /// Record a component health report in the live-state tree under
+    /// `health.<component>` as `{"status": ..., "detail": ...}`.
+    ///
+    /// Used by the boot health gate (`mos-health`) to surface non-fatal
+    /// pressure — a full `/var`, for example — without failing the gate.
+    async fn report_health(&self, component: &str, status: &str, detail: &str) -> fdo::Result<()> {
+        if component.is_empty() {
+            return Err(fdo::Error::InvalidArgs(
+                "component must not be empty".into(),
+            ));
+        }
+        let mut inner = self.inner.lock().await;
+        if let Some(root) = inner.state.as_object_mut() {
+            let health = root
+                .entry("health")
+                .or_insert_with(|| Value::Object(serde_json::Map::new()));
+            if let Some(health) = health.as_object_mut() {
+                health.insert(
+                    component.to_string(),
+                    serde_json::json!({ "status": status, "detail": detail }),
+                );
+            }
+        }
+        tracing::info!(component, status, detail, "health report recorded");
+        Ok(())
+    }
+
     /// Emitted after a successful `SetSettings` with the changed dot-path and
     /// its new JSON-encoded value.
     #[zbus(signal)]

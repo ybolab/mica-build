@@ -1,0 +1,44 @@
+#!/bin/sh
+# Seed the STATE partition on first boot.
+#
+# STATE is created empty by the image assembler and holds everything that must
+# survive an A/B update: mosd's settings and the sshd host keys. Both are
+# exposed to the rest of the system as bind mounts (var-lib-mos.mount and
+# etc-ssh.mount), so their source directories have to exist before those mounts
+# are attempted — hence a oneshot ordered before them rather than a tmpfiles
+# rule, which would run far too late.
+#
+# The sshd configuration is copied out of the read-only squashfs while /etc/ssh
+# still shows the image copy. Host keys are NOT baked into the image: a signed
+# rootfs is shared byte-for-byte by every device, so a baked host key would be a
+# shared secret and would also make the verity root hash depend on a random
+# keygen. They are generated here instead, once per device.
+set -eu
+
+STAMP=/mnt/state/.mos-state-seeded
+[ -e "$STAMP" ] && exit 0
+
+mkdir -p /mnt/state/mos /mnt/state/ssh
+
+# Bluetooth link keys are credentials and must outlive a /var wipe.
+# bluez expects 0700 on this directory and refuses to use a laxer one.
+mkdir -p /mnt/state/bluetooth
+chmod 0700 /mnt/state/bluetooth
+cp -a /etc/ssh/. /mnt/state/ssh/
+
+# The hostname has to be writable: mosd's reconciler sets it through
+# systemd-hostnamed, which writes /etc/hostname. Seed it from the value baked
+# into the image while /etc/hostname still shows the squashfs copy;
+# etc-hostname.mount binds this file over it immediately afterwards.
+[ -f /mnt/state/hostname ] || cp -a /etc/hostname /mnt/state/hostname
+
+for t in rsa ecdsa ed25519; do
+    key="/mnt/state/ssh/ssh_host_${t}_key"
+    [ -f "$key" ] || ssh-keygen -q -t "$t" -f "$key" -N '' -C ''
+done
+chmod 0755 /mnt/state/ssh
+chmod 0600 /mnt/state/ssh/ssh_host_*_key
+chmod 0644 /mnt/state/ssh/ssh_host_*_key.pub
+
+sync
+: > "$STAMP"

@@ -75,10 +75,197 @@ webd + kiosk (one UI, local/remote paths)    RAUC (native) + tough (TUF signing)
 
 ### M4 - A/B updates (PLAN-006 executed on systemd)
 
-- Partition layout and trust chain per PLAN-006 (unchanged); RAUC with native
-  systemd integration; U-Boot BOOT_ORDER handshake; tough-based signing in
-  update/sign; health gate = systemd unit states + mosd checks -> rauc
-  mark-good.
+- **Status**: implementation complete — RFCT-020 (layout v2 constants +
+  `os/mkimage-v2.sh`), RFCT-013 (squashfs+dm-verity pack + read-only root
+  wiring), RFCT-014 (RAUC `system.conf`, bundle build, dev signing keys),
+  RFCT-015 (health gate + machine-id oneshot), RFCT-016 (`update/sign` TUF
+  skeleton), RFCT-017 (`os/verify-image-v2.sh`), RFCT-018 (U-Boot A/B handshake
+  contract) and RFCT-019 (these docs). The on-device A/B switch and rollback
+  remain the user's hardware acceptance and are **not** claimed here.
+- Partition layout and trust chain per PLAN-006 (refined — see PLAN-006
+  "Implementation notes (PLAN-010 M4)"); RAUC with native systemd integration;
+  U-Boot BOOT_ORDER handshake; tough-based signing in update/sign; health gate
+  = systemd unit states + mosd checks -> rauc mark-good.
+- v2 is a sibling of v1 throughout: new files, new Makefile targets, a new
+  `...-0002-...` GUID namespace. `os/mkimage.sh` and `os/verify-image.sh` are
+  untouched, so a v1 image is still buildable and verifiable.
+
+#### What was delivered
+
+- **Layout v2**, ten partitions, one source of truth in
+  `os/layout/cx3576-v2.env`; every consumer (assembler, verifier, RAUC
+  `system.conf` renderer, `fw_env.config` renderer, `boot.cmd` compile) sources
+  it rather than restating a constant.
+- **Read-only root**: squashfs + appended dm-verity hash tree, assembled from
+  the kernel command line alone (`dm-mod.create=` / `dm-mod.waitfor=`), no
+  initramfs in the normal boot path. Writable state is split across STATE
+  (configuration + identity), DATA (`/srv`, application data, the only growth
+  target) and EPHEMERAL (`/var`, disposable). See `docs/design/ro-root.md`.
+- **RAUC**: `rauc` + `libubootenv-tool` in the image, a rendered
+  `/etc/rauc/system.conf` with two raw rootfs slots and the FAT boot slots as
+  children, `statusfile=/mnt/meta/rauc.status`, and `os/bundle.sh` producing a
+  CMS-signed verity bundle from gitignored development keys.
+- **Boot contract**: `boot.scr` compiled from `os/boot/cx3576-boot.cmd` and
+  written byte-identically into both boot slots, with the per-slot
+  `mos-verity-<slot>.env` as the only file that differs. No
+  `extlinux/extlinux.conf` in a v2 boot slot — see the lesson below.
+- **Health gate**: `mos-health` confirms the booted slot with
+  `rauc status mark-good` only on a clean probe result, and never performs
+  remediation — rollback stays with U-Boot's `BOOT_x_LEFT` counter, which is
+  what keeps the power-loss guarantee intact.
+- **Signing**: `update/sign` (`mos-sign`) with a TUF repository layout and a
+  sign/verify roundtrip, covering PLAN-006 Parts A and L phase 1.
+
+#### Verification (2026-08-18, done criteria met locally)
+
+- `make os-image-cx3576` + `make os-verify-cx3576` (v1 regression) —
+  `RESULT: PASS (88/88 checks)`.
+- `make os-image-cx3576-v2` — ten-partition image, 1315 MiB apparent / ~161 MiB
+  on disk (sparse).
+- `make os-verify-cx3576-v2` — `RESULT: PASS (228/228 checks)`.
+- `bash os/mkimage-v2-selftest.sh` — `RESULT: PASS`, 137 checks.
+- `make os-health-test` — `RESULT: PASS (54/54 checks)`.
+- `make os-devkeys` + `make os-bundle-cx3576` — signed verity bundle;
+  `rauc info` validates it against the shipped `system.conf`;
+  `compatible=mos-cx3576`.
+- `bash mosd/hack/check.sh` — `ALL CHECKS PASSED`.
+
+Every number above is a local build/verify result. None of them is a hardware
+result.
+
+The 228 checks can actually fail, which was demonstrated rather than assumed.
+RFCT-017 ran three negative tests, each against a copy of the image: a single
+byte flipped 1 MiB into the ROOTFS-A payload fails dm-verity at exactly that
+position; an `extlinux/extlinux.conf` injected into BOOT-A is caught; and the
+debug U-Boot blob written over sector 64 trips *both* halves of the pairing
+guard (differs-from-`uboot-mos` and identical-to-debug). A corrupted image runs
+to completion and ends in `RESULT: FAIL` rather than aborting part-way.
+
+#### One assertion that could not be made: `CONFIG_SQUASHFS_XATTR`
+
+The user applied `CONFIG_SQUASHFS_XATTR` to `board/common/mos-required.fragment`
+specifically for M4, so it should be clear that **nothing in this tree proves it
+end-to-end.** The rootfs package set installs zero files carrying file
+capabilities — `getcap -r` over the packed tree is empty — so there is no
+cap-carrying file whose survival through the squashfs could be demonstrated.
+
+RFCT-017 reported that as a gap instead of manufacturing a weaker check, and
+rejected two candidates for good reasons worth keeping: asserting the squashfs
+`NO_XATTR` superblock flag is clear passes here **only** because this build host
+runs SELinux, so it would fail on a non-SELinux builder for a reason unrelated
+to correctness, and a host-dependent assertion is worse than none; packing a
+throwaway squashfs with a cap-carrying file tests mksquashfs on the verifier's
+host, not the shipped artifact. What the verifier does instead is prove the
+verification environment can round-trip a `security.capability` xattr — without
+which an empty result is indistinguishable from an environment that silently
+drops `security.*` — and then assert the packed capability set equals the source
+inventory, with the PASS line stating that both are empty rather than claiming
+preservation was shown.
+
+It becomes a real tripwire the day a cap-carrying package is added. The proposed
+follow-up is on the producer side (`os/rootfs/**`, RFCT-013 scope, **not done**):
+give the image one cap-carrying file so the existing check has something to trip
+on. A verifier must not edit what it verifies, which is why RFCT-017 recorded it
+rather than implementing it.
+
+#### What remains the user's hardware acceptance
+
+Not claimed, not testable in this repository:
+
+- A/B switch on device: install a bundle, reboot, land on the other slot.
+- Rollback on device: a slot that fails to boot or fails the health gate
+  exhausts `BOOT_x_LEFT` and U-Boot falls back to the previous slot.
+- `rauc status` / `rauc install` against a provisioned keyring on real hardware.
+- The dm-verity root actually mounting from `/dev/dm-0` at boot.
+- The `mos-machine-id` oneshot writing a `machine_id` that the next boot picks
+  up (inert until the custom U-Boot is flashed).
+- The `docs/design/uboot-ab-handshake.md` §8 bring-up checklist.
+
+#### `board/` dependency — resolved, with one gap
+
+The v2 image must be paired with the **`uboot-mos`** U-Boot variant
+(`make -C board/cx3576 uboot-mos`, `board/cx3576/out/uboot-mos/`), which the
+user landed as commit `8b24f9d`. Escalation items 1-3 of
+`docs/design/uboot-ab-handshake.md` §10 — the three marked as blocking M4
+entirely — are resolved by that commit. The earlier framing that "the v2 image
+cannot boot until the user applies a U-Boot change" is obsolete.
+
+The two variants are not interchangeable and neither mistake announces itself:
+`uboot-mos` in a v1 image corrupts the boot FAT partition on the first
+`saveenv` (v1's boot partition starts at 16 MiB, exactly the mos env copy A
+offset), and the debug variant in a v2 image has no persistent environment, so
+it boots, looks healthy, and silently never runs the A/B handshake. The v2
+assembler asserts both directions: the raw blob at sector 64 must equal
+`out/uboot-mos/u-boot-rockchip.bin` and must differ from
+`out/uboot/u-boot-rockchip.bin`.
+
+Still escalated, unchanged: `board/**` is user-owned, so any further
+defconfig or kernel-fragment change proposed by
+`docs/design/uboot-ab-handshake.md` is applied by the user, never by this
+repository's OS-side tasks.
+
+#### The three integration defects, and why they are one class
+
+Three defects were found **after** the branch had passed seven green gates.
+They are recorded together because they are the same defect, and because each
+one alone was enough to break every update:
+
+| Defect | Shape |
+|---|---|
+| `rauc.slot=` missing from the kernel command line | config present, value inert |
+| `mos-health` parsed `RAUC_SYSTEM_BOOTED_SLOT`, which rauc 1.8 never emits (it emits `RAUC_SYSTEM_BOOTED_BOOTNAME`) | script present, parse never matches |
+| `rauc-service` absent from the image | binary present, daemon absent |
+
+- **`rauc.slot=`.** The v2 root is `/dev/dm-0`, a device-mapper node. rauc can
+  never match that against a slot's `bootname`, its slot name, or
+  `realpath(device)` — the identification simply has no input, so it must be
+  told the slot explicitly on the command line. Fixed in
+  `os/boot/cx3576-boot.cmd` (RFCT-020); the reasoning and the rauc 1.8 evidence
+  are in RFCT-017.
+- **`RAUC_SYSTEM_BOOTED_SLOT`.** The gate parsed a variable name that does not
+  exist in rauc's output under any configuration. Fixed in `os/health/`
+  (RFCT-015).
+- **`rauc-service`.** Debian splits `rauc` (CLI) from `rauc-service` (D-Bus
+  daemon), and builds the CLI *with* service support, so it proxies every call
+  over D-Bus and cannot work alone. Fixed in the v2 package allowlist
+  (RFCT-013); PLAN-006 Part E is amended accordingly.
+
+Together they meant **every update would silently roll back**: the health gate
+read an empty slot, exited 0, never ran `mark-good`, and U-Boot reverted when
+the credits ran out. The device boots, looks healthy, and stays on the old
+version — no error anywhere.
+
+**One wrong lesson to refuse.** `--no-install-recommends` was *not* the cause of
+the missing `rauc-service`, and "drop `--no-install-recommends`" must not be
+recorded as the fix. `rauc` 1.8-2 has **no `Recommends` line at all**, and the
+dependency runs the other way — `rauc-service` `Depends: rauc` — so a
+recommends-enabled build would not have installed it either (RFCT-013). The
+actual lesson is the one below.
+
+#### Lesson carried out of M4
+
+The same failure class occurred eight times: extlinux silently winning over
+`boot.scr`; hwinit units installed but not enabled; the debug U-Boot blob in a
+v2 image; the unsuffixed `mos-verity.env` making every update roll back; a
+missing `DATA_GUID` silently producing a nine-partition layout; and the three
+RAUC integration defects above. In every case the full gate was green and the
+gate was right — the checks were consistent with the artifact, they simply were
+not checking the thing that was wrong. Each was found by reading or by an
+explicit cross-check, never by a failing test.
+
+The sharper form the last three give it: **asserting that a thing exists is not
+asserting that it works.** A config file with an inert value, a script whose
+parse never matches, and a binary whose daemon is missing all pass an
+existence check and all fail in production. The check has to follow the value
+through to whatever consumes it — which is why `os/verify-image-v2.sh` now
+asserts the runtime machinery behind each component rather than its presence.
+
+That is also why M4 ends with assertions at build time rather than verification
+alone: the setuid/setgid inventory diff, the precious-data bind checks, the
+U-Boot variant pairing guard, the required-layout-constants check, and the
+`boot.cmd` / bundle-filename drift guards. A verifier can only check what it
+was told to look for; a build-time assertion fails at the moment the
+assumption stops holding.
 
 ### M5 - access + provisioning + connd on the new base
 
@@ -100,9 +287,13 @@ Rationale — it is engineered for exactly our field constraints:
 - Docker-API compatible: compose-based app delivery works unchanged, and mosd
   drives it from Rust via the mature `bollard` client crate.
 
-Scope: balena-engine as a systemd unit (data-root on EPHEMERAL); app
-delivery = compose bundle managed by mosd, versioned as the Uptane secondary
-ECU per PLAN-006 Part I. Integration notes: engine tracks Moby with version
+Scope: balena-engine as a systemd unit with its data-root pinned to exactly
+**`/srv/balena-engine`** (user decision); app delivery = compose bundle managed
+by mosd, versioned as the Uptane secondary ECU per PLAN-006 Part I. The
+data-root is on DATA, not on EPHEMERAL: under the layout-v2 storage tiers
+`/var` is a fixed-size, disposable partition and container layers are
+application data that must survive a log cleanup and grow with the disk. No
+engine bits are implemented in M4. Integration notes: engine tracks Moby with version
 lag (acceptable for an appliance); balena's delta *generation* is server-side
 infra — phase 1 uses plain pulls, delta serving evaluated with the fleet
 phase (openBalena delta service vs registry-native alternatives).
