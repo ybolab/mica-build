@@ -302,3 +302,75 @@ index entry for this record is deliberately not added: a later audit L3 owns
   ever materialises in this repo, the name `apid` becomes ambiguous between our
   API daemon and Talos's. This is out of scope for a rename task and is recorded
   for whoever owns that integration.
+
+## Addendum — the session cookie rename, confirmed as an accepted exception
+
+> Added by **RFCT-058** (campaign `l1-o7ee8v0o-20260819152009-apid`) after L1
+> review. **Append-only: nothing this record originally claimed is altered.**
+> Everything above stands as RFCT-055 wrote it; this section finishes the record
+> by attaching the confirmation that was outstanding when it was written.
+
+**Confirmed by L1 on review: the `webd_session` -> `apid_session` cookie rename
+is an accepted exception to the campaign's "no behaviour change" line.**
+
+### Why it needed a ruling rather than a judgement call
+
+Two campaign instructions genuinely conflicted, and neither could be satisfied
+without breaking the other:
+
+- **"No behaviour change of any kind; this task does not touch sessions."**
+- **"Zero `webd` anywhere outside `docs/`."**
+
+`COOKIE_NAME` is a `webd` string that is not in `docs/`. Honouring the second
+instruction required editing a session file; honouring the first required
+leaving it alone. This was a real conflict in the instructions, not an
+ambiguity in how to read them.
+
+### Why it was surfaced rather than absorbed into the sed
+
+**A cookie name is wire-visible even when nothing about the session mechanism
+moves.** It travels in `Set-Cookie` and `Cookie` headers, so it is observable
+from outside the process by anything holding a session — which makes it
+categorically unlike the internal identifiers renamed elsewhere in this task. A
+rename that is invisible in the source tree but visible on the wire is exactly
+the class of change that should be named in the record rather than buried in a
+bulk substitution, whatever its practical cost turns out to be.
+
+### The verified diff
+
+Re-verified against the commit for this addendum
+(`diff <(git show 4c3afc0^:mosd/webd/src/session.rs) <(git show 4c3afc0:mosd/apid/src/session.rs)`):
+**three changed lines at two sites**, and nothing else in the file.
+
+| Site | Change |
+|---|---|
+| `session.rs:18` | `pub const COOKIE_NAME: &str = "webd_session";` -> `"apid_session"` |
+| `session.rs:5-6` | doc comment *"so a webd restart logs everyone out"* -> *"so an apid restart logs everyone out"* — two lines only because the article `a` -> `an` falls on the preceding wrapped line |
+
+> **Measurement note.** The review that authorised this addendum described it as
+> *two* changed lines. The precise figure is **three lines across two sites**;
+> the extra line is the `a` -> `an` grammar fix forced by the wrap, and it
+> carries no meaning. The substance of the review's description is exact: the
+> only things that changed are **one constant and one doc comment**.
+
+**Untouched, and confirmed untouched by reading the diff rather than by
+assertion:** the HMAC-SHA256 construction, the 128-bit random session id, the
+24-hour TTL, the in-memory session table, `verify`/`create`/`remove`, the
+`Set-Cookie` attribute set (`Path=/; HttpOnly; Secure; SameSite=Lax`), and both
+unit tests. No logic changed in this file.
+
+### Why the cost is zero *additional*
+
+The session-invalidation cost was **already accepted and already documented** by
+this record's StateDirectory decision: `/var/lib/mos/webd` is orphaned and
+`apid` generates a fresh session signing key into `/var/lib/mos/apid`. Every
+pre-existing cookie therefore **fails its MAC regardless of what it is called**.
+The rename adds no invalidation that was not already happening.
+
+**The distinction that makes this an acceptable exception rather than a
+precedent.** A cookie rename that invalidated live sessions *on its own* would
+have been a different decision, and should have been escalated as one. This one
+rides on an invalidation that was independently decided, independently
+justified, and recorded above before the cookie question arose. The exception is
+granted to the *ordering*, not to the principle: wire-visible renames still
+require a ruling, and this one got it.

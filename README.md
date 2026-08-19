@@ -13,7 +13,7 @@ mos/
 ├── docs/            project docs: PMA plans (docs/plan/), tasks (docs/task/), designs (docs/design/)
 ├── os/              systemd OS build: rootfs, image assembly, verification, boot, RAUC, layout
 ├── mosd/            Rust workspace: mosd (management plane) + apid
-├── talos/           OS core (independent git repo): Talos fork — rootfs, machined, apid
+├── talos/           abandoned Talos base, reference-only archive superseded by os/ and mosd/ (PLAN-010, 2026-08-17)
 ├── board/           one directory per supported board
 │   ├── cx3576/      CX3576-Z (Rockchip RK3576, arm64): U-Boot, kernel, firmware, Alpine demo
 │   └── x64/         generic x86_64 UEFI platform (QEMU/CI baseline, no BSP build)
@@ -31,8 +31,9 @@ two U-Boot variants are not interchangeable — v1 pairs with
 `make -C board/cx3576 uboot`, v2 with `make -C board/cx3576 uboot-mos`. See
 `docs/plan/PLAN-010.md` M4 and `docs/design/uboot-ab-handshake.md`.
 
-`talos/` is a standalone git repository (large upstream fork history); everything
-else is versioned by this root repo. Each board directory carries a `board.yaml`
+`talos/` is an untracked standalone git repository (large upstream fork history),
+archived at its final commit and kept for reference only; everything else is
+versioned by this root repo. Each board directory carries a `board.yaml`
 metadata file consumed by image assembly.
 
 ## Architecture references
