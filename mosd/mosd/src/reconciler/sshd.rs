@@ -3,9 +3,10 @@
 //!
 //! Three system effects, in this order:
 //!
-//! 1. `/etc/ssh/authorized_keys.d/root` is rendered from
+//! 1. `/etc/ssh/authorized_keys.d/<account>` is rendered from
 //!    `access.ssh.authorizedKeys`, at 0600, after the list has been
-//!    re-validated.
+//!    re-validated — one file per managed login account, every one of them
+//!    holding the same key list.
 //! 2. `/etc/ssh/sshd_config.d/10-mos.conf` is rendered from `access.ssh`. That
 //!    directory is the one writable part of `/etc` on the v2 read-only root —
 //!    it is a STATE-backed bind mount (`etc-ssh.mount`).
@@ -49,22 +50,41 @@ use crate::transient::write_atomically;
 const SSH_UNIT: &str = "ssh.service";
 /// Drop-in rendered from `access.ssh`; `sshd_config` includes this directory.
 const DEFAULT_DROP_IN: &str = "/etc/ssh/sshd_config.d/10-mos.conf";
-/// Authorized-keys file rendered from `access.ssh.authorizedKeys`.
+/// Directory the per-account authorized-keys files are rendered into.
 ///
 /// Under `/etc/ssh` rather than `/root/.ssh` because `/etc/ssh` is a
 /// STATE-backed bind mount (`etc-ssh.mount` binds `/mnt/state/ssh` over it), so
-/// the file survives an A/B update. `/root` is on the ephemeral filesystem: a
+/// the files survive an A/B update. `/root` is on the ephemeral filesystem: a
 /// key written there would be gone on the next boot, which is precisely what
 /// "persistent access" must not mean.
 ///
 /// The static `05-mos-authorized-keys.conf` points sshd at
-/// `/etc/ssh/authorized_keys.d/%u`, and phase 1 has only the root account, so
-/// the two agree by construction.
-const DEFAULT_AUTHORIZED_KEYS: &str = "/etc/ssh/authorized_keys.d/root";
+/// `/etc/ssh/authorized_keys.d/%u`, which sshd expands **per login user**, so
+/// the file name inside this directory is the account name and nothing else.
+const DEFAULT_AUTHORIZED_KEYS_DIR: &str = "/etc/ssh/authorized_keys.d";
+/// Accounts this reconciler renders authorized keys for, in render order.
+///
+/// **One key set, rendered for every managed login account.** Keys are not
+/// per-user in the settings tree — that would be a schema change for a device
+/// with a single operator. Every entry of `access.ssh.authorizedKeys` is
+/// therefore a root key as much as it is a `mos` key, and the web UI says so.
+///
+/// **A constant list, deliberately not a scan of `/etc/passwd`.** Scanning
+/// would silently start granting key access to any account a future package
+/// happens to add, which is a privilege decision inherited from a dependency
+/// rather than made in code review. Adding an account here is a diff somebody
+/// has to approve; that is the entire point of the constant.
+const MANAGED_LOGIN_ACCOUNTS: [&str; 2] = ["root", "mos"];
 /// Environment variable overriding the drop-in path.
 const DROP_IN_ENV: &str = "MOSD_SSHD_DROP_IN";
-/// Environment variable overriding the authorized-keys path.
-const AUTHORIZED_KEYS_ENV: &str = "MOSD_AUTHORIZED_KEYS";
+/// Environment variable overriding the authorized-keys directory.
+///
+/// Renamed from `MOSD_AUTHORIZED_KEYS`, which named a single **file**. A stale
+/// value carried over would now be treated as a directory and render
+/// `<that file>/root`, so the rename makes the changed meaning visible instead
+/// of quietly writing somewhere surprising. Nothing in the image sets either
+/// name; the override exists for tests.
+const AUTHORIZED_KEYS_DIR_ENV: &str = "MOSD_AUTHORIZED_KEYS_DIR";
 /// Mode of the rendered drop-in: world-readable configuration, owner-writable.
 const DROP_IN_MODE: u32 = 0o644;
 /// Mode of the rendered authorized-keys file: owner-only. sshd reads it as
@@ -78,7 +98,9 @@ const AUTHORIZED_KEYS_DIR_MODE: u32 = 0o755;
 /// Reconciler for the `access.ssh` settings subtree.
 pub struct SshdReconciler<C: UnitControl> {
     drop_in_path: PathBuf,
-    authorized_keys_path: PathBuf,
+    /// Directory the key files are rendered into: one file per
+    /// [`MANAGED_LOGIN_ACCOUNTS`] entry, named for the account.
+    authorized_keys_dir: PathBuf,
     /// Shadow file this reconciler's device operates on.
     ///
     /// Nothing here writes it. It is read — through
@@ -90,21 +112,21 @@ pub struct SshdReconciler<C: UnitControl> {
 }
 
 impl<C: UnitControl> SshdReconciler<C> {
-    /// Create an sshd reconciler writing `drop_in_path` and
-    /// `authorized_keys_path`, tracking the shadow file at `shadow_path`, and
-    /// driving `ssh.service` through `control`.
+    /// Create an sshd reconciler writing `drop_in_path` and one key file per
+    /// managed account under `authorized_keys_dir`, tracking the shadow file at
+    /// `shadow_path`, and driving `ssh.service` through `control`.
     ///
     /// Every path is a parameter so tests run entirely inside a temporary
     /// directory and never touch the host's sshd.
     pub fn new(
         drop_in_path: PathBuf,
-        authorized_keys_path: PathBuf,
+        authorized_keys_dir: PathBuf,
         shadow_path: PathBuf,
         control: C,
     ) -> Self {
         Self {
             drop_in_path,
-            authorized_keys_path,
+            authorized_keys_dir,
             shadow_path,
             control,
         }
@@ -112,8 +134,9 @@ impl<C: UnitControl> SshdReconciler<C> {
 }
 
 impl SshdReconciler<Systemd> {
-    /// Production reconciler: paths from [`DROP_IN_ENV`], [`AUTHORIZED_KEYS_ENV`]
-    /// and [`transient::SHADOW_ENV`] if set, else the system locations.
+    /// Production reconciler: paths from [`DROP_IN_ENV`],
+    /// [`AUTHORIZED_KEYS_DIR_ENV`] and [`transient::SHADOW_ENV`] if set, else
+    /// the system locations.
     ///
     /// The shadow path is resolved by [`transient::production_shadow_path`]
     /// rather than by a second copy of the same constant and env var: two
@@ -123,12 +146,12 @@ impl SshdReconciler<Systemd> {
         let drop_in = std::env::var(DROP_IN_ENV)
             .map(PathBuf::from)
             .unwrap_or_else(|_| PathBuf::from(DEFAULT_DROP_IN));
-        let authorized_keys = std::env::var(AUTHORIZED_KEYS_ENV)
+        let authorized_keys_dir = std::env::var(AUTHORIZED_KEYS_DIR_ENV)
             .map(PathBuf::from)
-            .unwrap_or_else(|_| PathBuf::from(DEFAULT_AUTHORIZED_KEYS));
+            .unwrap_or_else(|_| PathBuf::from(DEFAULT_AUTHORIZED_KEYS_DIR));
         Self::new(
             drop_in,
-            authorized_keys,
+            authorized_keys_dir,
             transient::production_shadow_path(),
             Systemd,
         )
@@ -237,41 +260,60 @@ impl<C: UnitControl> SshdReconciler<C> {
         Ok(true)
     }
 
-    /// Render the authorized-keys file and report whether its bytes changed.
+    /// Render the same key list into one file per entry of `accounts`.
     ///
     /// The caller has already re-validated the list, so anything reaching this
-    /// point is renderable. An unchanged render is not rewritten: the file
-    /// lives on STATE, and a rewrite that changes nothing still costs a flash
-    /// write on every reconcile.
-    fn apply_authorized_keys(&self, keys: &[AuthorizedKey]) -> Result<bool> {
+    /// point is renderable — and it is rendered **once**, before the first file
+    /// is opened, so no account can be written from a different key list than
+    /// another. An unchanged file is not rewritten: these live on STATE, and a
+    /// rewrite that changes nothing still costs a flash write on every
+    /// reconcile.
+    ///
+    /// **No account is checked for existence.** `mos` may not exist yet on a
+    /// given image, and asking `/etc/passwd` would couple this reconciler to
+    /// account state it does not own — failing exactly in the window where the
+    /// account and this render land out of order. A key file for an account
+    /// that cannot log in is inert: `AuthorizedKeysFile
+    /// /etc/ssh/authorized_keys.d/%u` is expanded from the user sshd is
+    /// authenticating, so a file no login ever names is never read.
+    ///
+    /// `accounts` is a parameter rather than a direct read of
+    /// [`MANAGED_LOGIN_ACCOUNTS`] so a test can prove that last paragraph
+    /// against an account name no system could have.
+    fn apply_authorized_keys(&self, keys: &[AuthorizedKey], accounts: &[&str]) -> Result<()> {
         let rendered = render_authorized_keys(keys);
-        if let Ok(current) = std::fs::read_to_string(&self.authorized_keys_path)
-            && current == rendered
-        {
-            return Ok(false);
-        }
-        if let Some(directory) = self.authorized_keys_path.parent()
-            && !directory.exists()
-        {
+        if !self.authorized_keys_dir.exists() {
             use std::os::unix::fs::PermissionsExt;
-            std::fs::create_dir_all(directory)
-                .with_context(|| format!("create {}", directory.display()))?;
+            std::fs::create_dir_all(&self.authorized_keys_dir)
+                .with_context(|| format!("create {}", self.authorized_keys_dir.display()))?;
             // Explicitly, rather than letting the umask decide: sshd refuses a
             // key file it reaches through a group- or world-writable directory.
             std::fs::set_permissions(
-                directory,
+                &self.authorized_keys_dir,
                 std::fs::Permissions::from_mode(AUTHORIZED_KEYS_DIR_MODE),
             )
-            .with_context(|| format!("set mode on {}", directory.display()))?;
+            .with_context(|| format!("set mode on {}", self.authorized_keys_dir.display()))?;
         }
-        write_atomically(
-            &self.authorized_keys_path,
-            &rendered,
-            AUTHORIZED_KEYS_MODE,
-            None,
-        )
-        .with_context(|| format!("render {}", self.authorized_keys_path.display()))?;
-        Ok(true)
+        for account in accounts {
+            let path = self.authorized_keys_dir.join(account);
+            if let Ok(current) = std::fs::read_to_string(&path)
+                && current == rendered
+            {
+                continue;
+            }
+            write_atomically(&path, &rendered, AUTHORIZED_KEYS_MODE, None)
+                .with_context(|| format!("render {}", path.display()))?;
+        }
+        Ok(())
+    }
+
+    /// Every path this reconciler renders keys to, in
+    /// [`MANAGED_LOGIN_ACCOUNTS`] order.
+    fn authorized_keys_paths(&self) -> Vec<String> {
+        MANAGED_LOGIN_ACCOUNTS
+            .iter()
+            .map(|account| self.authorized_keys_dir.join(account).display().to_string())
+            .collect()
     }
 
     /// Bring `ssh.service` to the state `ssh.enabled` asks for.
@@ -372,11 +414,11 @@ impl<C: UnitControl> Reconciler for SshdReconciler<C> {
         // requested AND a transient password is really active.
         let password_authentication = ssh.password_authentication && transient_active;
 
-        // The returned "did it change" is deliberately discarded: only the
-        // drop-in forces sshd to re-read anything. sshd re-reads the
-        // authorized-keys file on every authentication attempt, so a key added
-        // or removed takes effect without touching the unit at all.
-        self.apply_authorized_keys(&ssh.authorized_keys)?;
+        // No "did it change" comes back, and none is wanted: only the drop-in
+        // forces sshd to re-read anything. sshd re-reads the authorized-keys
+        // file on every authentication attempt, so a key added or removed takes
+        // effect without touching the unit at all.
+        self.apply_authorized_keys(&ssh.authorized_keys, &MANAGED_LOGIN_ACCOUNTS)?;
         let config_changed = self.apply_drop_in(ssh, password_authentication)?;
         self.apply_unit(ssh, config_changed).await?;
 
@@ -403,7 +445,10 @@ impl<C: UnitControl> Reconciler for SshdReconciler<C> {
             "transientPasswordActive": transient_active,
             "listenAddresses": ssh.listen_addresses,
             "dropIn": self.drop_in_path.display().to_string(),
-            "authorizedKeysPath": self.authorized_keys_path.display().to_string(),
+            // Plural, and renamed from `authorizedKeysPath`: one key set is
+            // now rendered to one file per managed account, so a single path
+            // could only ever name one of them.
+            "authorizedKeysPaths": self.authorized_keys_paths(),
             "authorizedKeys": authorized_keys,
             "unit": SSH_UNIT,
             "activeState": self.control.active_state(SSH_UNIT).await?,
@@ -457,7 +502,13 @@ mod tests {
     /// Paths of a fixture, all of them under the tempdir.
     struct Paths {
         drop_in: PathBuf,
+        /// Directory the per-account key files land in.
+        keys_dir: PathBuf,
+        /// The `root` account's key file — the path the RFCT-034 goldens are
+        /// written against, unchanged.
         keys: PathBuf,
+        /// The `mos` account's key file, holding the same bytes as `keys`.
+        mos_keys: PathBuf,
         shadow: PathBuf,
     }
 
@@ -477,9 +528,12 @@ mod tests {
         dir: &Path,
         control: MockUnitControl,
     ) -> (SshdReconciler<MockUnitControl>, Paths) {
+        let keys_dir = dir.join("authorized_keys.d");
         let paths = Paths {
             drop_in: dir.join("sshd_config.d").join("10-mos.conf"),
-            keys: dir.join("authorized_keys.d").join("root"),
+            keys: keys_dir.join("root"),
+            mos_keys: keys_dir.join("mos"),
+            keys_dir,
             shadow: dir.join("shadow"),
         };
         std::fs::write(&paths.shadow, SHADOW).unwrap();
@@ -487,7 +541,7 @@ mod tests {
             .unwrap();
         let reconciler = SshdReconciler::new(
             paths.drop_in.clone(),
-            paths.keys.clone(),
+            paths.keys_dir.clone(),
             paths.shadow.clone(),
             control,
         );
@@ -890,7 +944,7 @@ mod tests {
             .await
             .unwrap();
 
-        for path in [&paths.drop_in, &paths.keys, &paths.shadow] {
+        for path in [&paths.drop_in, &paths.keys, &paths.mos_keys, &paths.shadow] {
             assert!(
                 path.starts_with(dir.path()),
                 "{} escapes the tempdir",
@@ -900,12 +954,16 @@ mod tests {
         assert_eq!(state["dropIn"], json!(paths.drop_in.display().to_string()));
         assert_ne!(state["dropIn"], json!(DEFAULT_DROP_IN));
         assert_eq!(
-            state["authorizedKeysPath"],
-            json!(paths.keys.display().to_string())
+            state["authorizedKeysPaths"],
+            json!([
+                paths.keys.display().to_string(),
+                paths.mos_keys.display().to_string(),
+            ])
         );
-        assert_ne!(
-            state["authorizedKeysPath"],
-            json!(DEFAULT_AUTHORIZED_KEYS),
+        assert!(
+            !state["authorizedKeysPaths"]
+                .to_string()
+                .contains(DEFAULT_AUTHORIZED_KEYS_DIR),
             "a test must never render into the real /etc/ssh"
         );
     }
@@ -1126,17 +1184,25 @@ mod tests {
             .expect("the good apply must succeed");
         let before = std::fs::read(&paths.keys).unwrap();
         assert!(!before.is_empty(), "nothing was rendered to protect");
+        assert_eq!(
+            std::fs::read(&paths.mos_keys).unwrap(),
+            before,
+            "the good apply must have rendered both accounts alike"
+        );
 
         let error = reconciler
             .apply(&settings_with_keys(bad))
             .await
             .expect_err(&format!("{what} must fail the apply"));
 
-        assert_eq!(
-            std::fs::read(&paths.keys).unwrap(),
-            before,
-            "{what}: the rendered file must be byte-identical after a failed apply"
-        );
+        for path in [&paths.keys, &paths.mos_keys] {
+            assert_eq!(
+                std::fs::read(path).unwrap(),
+                before,
+                "{what}: {} must be byte-identical after a failed apply",
+                path.display()
+            );
+        }
         let message = format!("{error:#}");
         assert!(
             message.contains("access.ssh.authorizedKeys"),
@@ -1457,8 +1523,12 @@ mod tests {
             .unwrap();
 
         assert_eq!(
-            state["authorizedKeysPath"],
-            json!(paths.keys.display().to_string())
+            state["authorizedKeysPaths"],
+            json!([
+                paths.keys.display().to_string(),
+                paths.mos_keys.display().to_string(),
+            ]),
+            "every rendered path is named, in managed-account order"
         );
         assert_eq!(
             state["authorizedKeys"],
@@ -1495,7 +1565,7 @@ mod tests {
     // ---- R7.8: permissions -------------------------------------------------
 
     #[tokio::test]
-    async fn the_rendered_key_file_is_0600_in_a_0755_directory() {
+    async fn every_rendered_key_file_is_0600_in_a_0755_directory() {
         let dir = tempfile::tempdir().unwrap();
         let (reconciler, paths) = fixture(dir.path(), "inactive", "disabled");
 
@@ -1508,7 +1578,8 @@ mod tests {
             .unwrap();
 
         assert_eq!(mode_of(&paths.keys), 0o600);
-        assert_eq!(mode_of(paths.keys.parent().unwrap()), 0o755);
+        assert_eq!(mode_of(&paths.mos_keys), 0o600);
+        assert_eq!(mode_of(&paths.keys_dir), 0o755);
     }
 
     #[tokio::test]
@@ -1528,5 +1599,240 @@ mod tests {
             0o640,
             "an unchanged key file must not be rewritten"
         );
+    }
+
+    // ---- RFCT-053: one key set, rendered for every managed login account ---
+    //
+    // `AuthorizedKeysFile /etc/ssh/authorized_keys.d/%u` is expanded per login
+    // user, so a file exists for each account mosd manages and all of them
+    // carry the same list. These tests hold the plural property; the RFCT-034
+    // goldens above still hold the `root` file byte-for-byte.
+
+    /// The central guard. One validated list, two files, identical bytes.
+    #[tokio::test]
+    async fn one_key_list_renders_byte_identical_files_for_every_managed_account() {
+        let dir = tempfile::tempdir().unwrap();
+        let (reconciler, paths) = fixture(dir.path(), "inactive", "disabled");
+
+        reconciler
+            .apply(&settings_with_keys(vec![
+                raw_key(&canonical(REAL_ED25519_LINE), Some("laptop")),
+                raw_key(&canonical(REAL_RSA_LINE), None),
+            ]))
+            .await
+            .unwrap();
+
+        let expected = format!(
+            "{} laptop\n{}\n",
+            canonical(REAL_ED25519_LINE),
+            canonical(REAL_RSA_LINE)
+        );
+        for path in [&paths.keys, &paths.mos_keys] {
+            assert!(path.exists(), "{} was not rendered", path.display());
+            assert_eq!(
+                std::fs::read_to_string(path).unwrap(),
+                expected,
+                "{} does not carry the operator's key list",
+                path.display()
+            );
+        }
+        assert_eq!(
+            std::fs::read(&paths.keys).unwrap(),
+            std::fs::read(&paths.mos_keys).unwrap(),
+            "one key set means byte-identical files"
+        );
+    }
+
+    /// The file set is exactly the constant list — no more, no fewer. A scan of
+    /// `/etc/passwd` would render for whatever accounts the host happens to
+    /// have, which is the thing the constant exists to prevent.
+    #[tokio::test]
+    async fn only_the_managed_accounts_get_a_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let (reconciler, paths) = fixture(dir.path(), "inactive", "disabled");
+
+        reconciler
+            .apply(&settings_with_keys(vec![raw_key(
+                &canonical(REAL_ED25519_LINE),
+                None,
+            )]))
+            .await
+            .unwrap();
+
+        let mut rendered: Vec<String> = std::fs::read_dir(&paths.keys_dir)
+            .unwrap()
+            .map(|entry| entry.unwrap().file_name().to_string_lossy().into_owned())
+            .collect();
+        rendered.sort();
+        let mut expected: Vec<String> = MANAGED_LOGIN_ACCOUNTS
+            .iter()
+            .map(|a| a.to_string())
+            .collect();
+        expected.sort();
+        assert_eq!(rendered, expected);
+        assert_eq!(MANAGED_LOGIN_ACCOUNTS, ["root", "mos"]);
+    }
+
+    /// `mos` may not exist as an account when this ships: a sibling task adds
+    /// it, and the two can merge in either order. Rendering a key file for an
+    /// account that does not exist must therefore be an ordinary success —
+    /// sshd only ever opens the file named by the user it is authenticating, so
+    /// a file no login can name is inert rather than wrong.
+    ///
+    /// The account name here is one no system could plausibly carry, so this
+    /// proves the render is unconditional rather than merely lucky about what
+    /// the build host happens to have in `/etc/passwd`.
+    #[test]
+    fn a_key_file_renders_for_an_account_that_does_not_exist() {
+        const ABSENT: &str = "no-such-account-rfct053";
+        let passwd = std::fs::read_to_string("/etc/passwd").unwrap_or_default();
+        assert!(
+            !passwd.contains(ABSENT),
+            "the fixture account must genuinely not exist for this test to mean anything"
+        );
+        let dir = tempfile::tempdir().unwrap();
+        let (reconciler, paths) = fixture(dir.path(), "inactive", "disabled");
+
+        reconciler
+            .apply_authorized_keys(&[raw_key(&canonical(REAL_ED25519_LINE), None)], &[ABSENT])
+            .expect("a render for a missing account must not fail the reconcile");
+
+        assert_eq!(
+            std::fs::read_to_string(paths.keys_dir.join(ABSENT)).unwrap(),
+            format!("{}\n", canonical(REAL_ED25519_LINE)),
+            "the render is the same whether or not the account exists"
+        );
+    }
+
+    /// An empty list empties EVERY account file. Two empty files, not two
+    /// deletions and not one of each: the RFCT-034 rule, applied per account.
+    #[tokio::test]
+    async fn an_empty_list_empties_every_account_file_without_deleting_any() {
+        let dir = tempfile::tempdir().unwrap();
+        let (reconciler, paths) = fixture(dir.path(), "inactive", "disabled");
+        reconciler
+            .apply(&settings_with_keys(vec![raw_key(
+                &canonical(REAL_ED25519_LINE),
+                None,
+            )]))
+            .await
+            .unwrap();
+
+        reconciler
+            .apply(&settings_with_keys(Vec::new()))
+            .await
+            .unwrap();
+
+        for path in [&paths.keys, &paths.mos_keys] {
+            assert!(path.exists(), "{} must not be deleted", path.display());
+            assert_eq!(
+                std::fs::read_to_string(path).unwrap(),
+                "",
+                "{} must be empty",
+                path.display()
+            );
+        }
+    }
+
+    /// A key the operator removes stops granting access to every account in the
+    /// same reconcile. A rewrite that reached only `root` would leave the key
+    /// live for `mos`, which is the removal silently not happening.
+    #[tokio::test]
+    async fn removing_one_key_of_three_rewrites_every_account_file_without_it() {
+        let dir = tempfile::tempdir().unwrap();
+        let (reconciler, paths) = fixture(dir.path(), "inactive", "disabled");
+        reconciler
+            .apply(&settings_with_keys(vec![
+                raw_key(&canonical(REAL_ED25519_LINE), Some("laptop")),
+                raw_key(&canonical(REAL_RSA_LINE), None),
+                raw_key(&canonical(REAL_ED25519_SECOND_LINE), Some("phone")),
+            ]))
+            .await
+            .unwrap();
+
+        reconciler
+            .apply(&settings_with_keys(vec![
+                raw_key(&canonical(REAL_ED25519_LINE), Some("laptop")),
+                raw_key(&canonical(REAL_ED25519_SECOND_LINE), Some("phone")),
+            ]))
+            .await
+            .unwrap();
+
+        let expected = format!(
+            "{} laptop\n{} phone\n",
+            canonical(REAL_ED25519_LINE),
+            canonical(REAL_ED25519_SECOND_LINE)
+        );
+        let removed_blob = canonical(REAL_RSA_LINE);
+        for path in [&paths.keys, &paths.mos_keys] {
+            let content = std::fs::read_to_string(path).unwrap();
+            assert_eq!(content, expected, "{} was not rewritten", path.display());
+            assert!(
+                !content.contains(&removed_blob),
+                "the removed key still grants access through {}",
+                path.display()
+            );
+        }
+    }
+
+    /// Fail-loud, per account, with no partial application. Validation runs
+    /// before the first file is opened, so a rejected list cannot update one
+    /// account while another keeps the previous keys — the ordering hazard this
+    /// task introduced by writing more than one file.
+    #[tokio::test]
+    async fn a_validation_failure_updates_neither_account() {
+        let dir = tempfile::tempdir().unwrap();
+        let (reconciler, paths) = fixture(dir.path(), "inactive", "disabled");
+        reconciler
+            .apply(&settings_with_keys(vec![raw_key(
+                &canonical(REAL_ED25519_LINE),
+                Some("keep-me"),
+            )]))
+            .await
+            .unwrap();
+        let before = std::fs::read(&paths.keys).unwrap();
+        assert_eq!(std::fs::read(&paths.mos_keys).unwrap(), before);
+
+        // Valid first entry, rejected second: a renderer that wrote as it went
+        // would have put the good prefix somewhere before failing.
+        reconciler
+            .apply(&settings_with_keys(vec![
+                raw_key(&canonical(REAL_RSA_LINE), Some("new")),
+                raw_key("ssh-ed25519 not-base64!!", None),
+            ]))
+            .await
+            .expect_err("an invalid list must fail the apply");
+
+        for path in [&paths.keys, &paths.mos_keys] {
+            assert_eq!(
+                std::fs::read(path).unwrap(),
+                before,
+                "{} changed during a failed apply",
+                path.display()
+            );
+        }
+    }
+
+    /// No temporary file survives either write. Both files share one directory,
+    /// so a leftover from the second write would be visible here too.
+    #[tokio::test]
+    async fn rendering_every_account_leaves_no_temporary_file_behind() {
+        let dir = tempfile::tempdir().unwrap();
+        let (reconciler, paths) = fixture(dir.path(), "inactive", "disabled");
+
+        reconciler
+            .apply(&settings_with_keys(vec![raw_key(
+                &canonical(REAL_ED25519_LINE),
+                None,
+            )]))
+            .await
+            .unwrap();
+
+        let leftovers: Vec<_> = std::fs::read_dir(&paths.keys_dir)
+            .unwrap()
+            .map(|entry| entry.unwrap().file_name())
+            .filter(|name| name.to_string_lossy().contains("mosd-tmp"))
+            .collect();
+        assert!(leftovers.is_empty(), "temp files left: {leftovers:?}");
     }
 }
