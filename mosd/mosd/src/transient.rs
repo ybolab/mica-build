@@ -93,10 +93,6 @@ pub fn transient_marker_path(shadow_path: &Path) -> PathBuf {
 /// "The marker exists and is not empty" — the same condition
 /// `mos-shadow-reconcile` tests on the next boot, so the two agree about what
 /// counts as set.
-// dead_code: the sshd reconciler asks this before it offers password
-// authentication at all; that call lands with the authorized-keys work. Drop
-// the allow then.
-#[allow(dead_code)]
 pub fn transient_password_active(shadow_path: &Path) -> bool {
     std::fs::metadata(transient_marker_path(shadow_path)).is_ok_and(|meta| meta.len() > 0)
 }
