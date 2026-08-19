@@ -138,6 +138,35 @@ action verified it. And instruct the L3 to report `blocked` rather than
 improvise: an L3 that recreates a missing file from scratch destroys merged work
 through an add/add conflict, so `blocked` is the correct outcome, not a failure.
 
+## A second dispatch-process defect: the CJK gate cannot pass on `docs/README.md`
+
+Recorded next to the branch-base defect because it has the same shape — a check
+that is correct in intent and wrong in scope.
+
+The campaign's docs gate rejects any **changed file** containing a CJK
+codepoint. Applied to `docs/README.md` it always fails, and not because of
+anything this campaign wrote: `docs/README.md:3` is the bilingual switcher line
+-- an "English" label, a pipe, and a two-character Chinese label linking to
+`README.zh.md` -- present since commit `0718a8b` (2026-08-17). That link is what
+makes `docs/README.zh.md` reachable at all, so deleting it to satisfy the gate
+would break the bilingual navigation the gate exists to protect. (The line is
+described rather than quoted here, because quoting it would put a CJK codepoint
+into this record and trip the same gate.)
+
+So **no task that touches `docs/README.md` can pass that gate as written**,
+which is a problem given that keeping `docs/README.md` current is the entire
+subject of this record.
+
+The correct rule is over **added lines**, not over changed files:
+
+```
+git diff main...HEAD -- docs/ Makefile | grep '^+' | grep -P '[CJK ranges]'
+```
+
+Scoped that way the gate passes, and it still catches exactly what it was
+written to catch — new Chinese prose in a repository document. Verified: no line
+added by this branch contains a CJK codepoint.
+
 ## The check: `docs/verify-index.sh` + `make docs-verify`
 
 **House style, and it is explicit.** The Makefile says of itself *"Heavy lifting
