@@ -101,3 +101,4 @@ Each task is a single line linking to its detail file. All detailed information 
 - [x] [**RFCT-080 Close the duplicate-row hole in the index verifier, and sweep the `sort -u` shape**](RFCT-080.md) `P1`
 - [x] [**RFCT-076 Start-up bundle discovery and the compatibility re-check**](RFCT-076.md) `P1`
 - [x] [**RFCT-077 Verifier assertions for the built-in prefix, fixture-mode widening, and the SIGPIPE sweep**](RFCT-077.md) `P1`
+- [x] [**RFCT-078 The five broken-classes behavioural suite, with coverage asserted**](RFCT-078.md) `P1`

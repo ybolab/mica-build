@@ -1,6 +1,8 @@
 //! Route-level tests driving the router directly with the fake settings
 //! backend; no network or D-Bus involved.
 
+mod broken_classes;
+
 use std::path::Path;
 use std::sync::Arc;
 
