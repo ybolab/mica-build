@@ -1,22 +1,38 @@
 //! HTTP routes: auth gate middleware, the first-run setup wizard, login and
-//! logout flows, the status/network/hostname panes, the power pane and the
-//! SSH pane.
+//! logout flows, the status/network/hostname panes, the power pane, the SSH
+//! pane and §6.3's escape at the reserved `/builtin/` prefix.
+//!
+//! [`app`] is also where `docs/design/api.md` §4.1's precedence lives, as the
+//! *shape* of the router rather than as a check: declared routes, then the
+//! reserved `/api/` and `/builtin/` subtrees, then the asset router as the
+//! fallback.
+//!
+//! Every page below is a `maud` `html!` expansion over one `&str` stylesheet
+//! constant, which is §6.2's *"the built-in UI is compiled into the binary"*
+//! stated as a property of this file: no `include_str!`, no `include_bytes!`,
+//! no asset directory. §6.2 names dm-verity as the **only** protection on
+//! `/usr/bin/apid` — `apid.service` has no `ProtectSystem=` — so an artifact
+//! that is bytes in the binary is behind that protection and an artifact that
+//! is files on disk would not be.
 
 use std::sync::{Arc, Mutex};
 
 use axum::Router;
-use axum::extract::{Form, Query, Request, State};
-use axum::http::header::{HOST, LOCATION, SET_COOKIE};
+use axum::extract::{Form, OriginalUri, Query, Request, State};
+use axum::http::header::{CACHE_CONTROL, CONTENT_TYPE, HOST, LOCATION, SET_COOKIE};
 use axum::http::{HeaderMap, StatusCode};
 use axum::middleware::{self, Next};
 use axum::response::{Html, IntoResponse, Redirect, Response};
-use axum::routing::{get, post};
+use axum::routing::{any, get, post};
 use maud::{DOCTYPE, Markup, PreEscaped, html};
 use mosd_settings::{AuthorizedKey, SettingsError, parse_authorized_key, validate_authorized_keys};
-use serde_json::Value;
+use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 
+use crate::assets::mime::CacheClass;
+use crate::assets::serve;
 use crate::auth::{self, LoginGuard};
+use crate::bundle::Store;
 use crate::session::{self, SessionStore};
 use crate::settings_api::SettingsApi;
 
@@ -26,23 +42,87 @@ pub struct AppState {
     api: Arc<dyn SettingsApi>,
     sessions: Arc<SessionStore>,
     guard: Arc<Mutex<LoginGuard>>,
+    bundles: Arc<Store>,
 }
 
 impl AppState {
     /// State around a settings backend and the cookie signing key.
+    ///
+    /// The bundle store is constructed here and reads nothing: §6.1 forbids
+    /// bundle discovery before the listeners bind, and `Store::at_default` is
+    /// a path and no syscall. Discovery and the start-up compatibility
+    /// re-check are separate work.
     pub fn new(api: Arc<dyn SettingsApi>, signing_key: [u8; 32]) -> Self {
         Self {
             api,
             sessions: Arc::new(SessionStore::new(signing_key)),
             guard: Arc::new(Mutex::new(LoginGuard::default())),
+            bundles: Arc::new(Store::at_default()),
         }
+    }
+
+    /// The `/srv/ui` bundle store the asset router reads (§5.2).
+    pub(crate) fn bundles(&self) -> &Store {
+        &self.bundles
+    }
+
+    /// Root the bundle store somewhere else, for tests that install one.
+    ///
+    /// Test-only on purpose: §5.2 fixes the shipped location and nothing
+    /// configures it.
+    #[cfg(test)]
+    pub fn with_bundle_root(mut self, root: impl Into<std::path::PathBuf>) -> Self {
+        self.bundles = Arc::new(Store::new(root));
+        self
     }
 }
 
 /// The HTTPS application router.
+///
+/// §4.1's precedence rule is this function's declaration order, and it is
+/// total. Rules 1-3 are `.route`/`.nest` declarations and rule 4 is the
+/// `.fallback`; axum matches declared routes before it consults a fallback, so
+/// a bundle that ships a file at `api/v1/settings`, at `healthz` or at `login`
+/// cannot capture any of them. No handler re-checks a prefix to make that
+/// true.
 pub fn app(state: AppState) -> Router {
     Router::new()
-        .route("/", get(home))
+        // §4.1's single exception to rule 3: `/` is conditional — the active
+        // bundle's index when one is active and readable, the built-in UI
+        // otherwise. It stays conditional: §6.3 asks for exactly *one*
+        // unconditional path to the built-in UI, and the reserved prefix
+        // below is it.
+        .route("/", get(serve::root))
+        // §6.3 candidate (A), the way *in*: a reserved prefix the asset router
+        // can never shadow. It is unshadowable for the same structural reason
+        // `/api/` is — axum matches declared routes before it consults a
+        // fallback — and for no other. Nothing under `assets/` checks for this
+        // prefix, and nothing may: §4.1 asks for a rule the dispatch mechanism
+        // enforces rather than one somebody can forget to write.
+        //
+        // The nest claims the **whole** subtree — `/builtin/index.html` and
+        // `/builtin/assets/app.js` included — which is what §6.3 means by
+        // burning a path prefix permanently. A prefix reserved for only some
+        // of its paths is not reserved.
+        //
+        // The two spellings split across the nest boundary, and the split is
+        // the same asymmetry RFCT-074 measured under `/api`: the nest claims
+        // `/builtin` (the nested router sees `/`) and **not** `/builtin/`, so
+        // the trailing-slash spelling is declared outside it. Both must reach
+        // the pane; an operator recovering a device should not have to get the
+        // slash right, and the spelling the design document writes is the one
+        // with it.
+        .nest(
+            BUILTIN,
+            Router::new()
+                .route("/", get(builtin_home))
+                // POST only, matching the power and SSH mutations above: no GET
+                // handler exists, so no prefetch, crawler or mis-clicked link
+                // can deactivate a working custom UI.
+                .route(BUILTIN_DEACTIVATE_LEAF, post(builtin_deactivate))
+                .fallback(builtin_not_found),
+        )
+        .route(BUILTIN_PATH, get(builtin_home))
         .route("/setup", get(setup_form).post(setup_submit))
         .route("/login", get(login_form).post(login_submit))
         .route("/logout", post(logout))
@@ -63,8 +143,48 @@ pub fn app(state: AppState) -> Router {
         .route("/ssh/keys/add", post(ssh_key_add))
         .route("/ssh/keys/remove", post(ssh_key_remove))
         .route("/healthz", get(healthz))
+        // §4.1 rule 1: the whole `/api/` prefix, its own not-found handler
+        // included. It 404s everything, `/api/versions` among them — §2's
+        // routes are a later phase and this reservation is what guarantees no
+        // bundle can occupy the prefix before they land.
+        //
+        // The explicit `/api/` route is not redundant. `nest` claims `/api`,
+        // `/api/x` and `/api/x/y`, and **not** `/api/` — measured, and the
+        // difference is a request that begins `/api/` reaching the asset
+        // router, which is exactly what rule 1 forbids.
+        .nest("/api", Router::new().fallback(api_not_found))
+        .route("/api/", any(api_not_found))
+        // §4.1 rule 4.
+        .fallback(serve::fallback)
         .layer(middleware::from_fn_with_state(state.clone(), gate))
         .with_state(state)
+}
+
+/// The reserved subtree's own not-found handler (§4.1 rule 1, §4.2's "why
+/// 404s inside `/api/` are the API's own").
+///
+/// §2.4's envelope, which is what makes a mistyped path a machine-readable
+/// answer rather than an empty body. `path` is omitted: §2.4 defines it as the
+/// **settings dot-path** at fault and a request that matched no route has
+/// none. `Cache-Control: no-store` is §4.3's second row, which is every
+/// `/api/` response and not only the successful ones.
+async fn api_not_found(OriginalUri(uri): OriginalUri) -> Response {
+    (
+        StatusCode::NOT_FOUND,
+        [
+            (CONTENT_TYPE, "application/json"),
+            (CACHE_CONTROL, CacheClass::NoStore.header_value()),
+        ],
+        json!({
+            "error": {
+                "code": "not_found",
+                "message": format!("no API route at {}", uri.path()),
+                "source": "apid",
+            }
+        })
+        .to_string(),
+    )
+        .into_response()
 }
 
 /// Redirect-only router served on the HTTP listener: 308 every request to
@@ -183,6 +303,12 @@ fn shell(title: &str, nav: bool, body: Markup) -> Html<String> {
                         a href="/hostname" { "Hostname" }
                         a href="/power" { "Power" }
                         a href="/ssh" { "SSH" }
+                        // §6.3's discoverability cost, closed where it is
+                        // actually paid: *"(A) only helps an operator who knows
+                        // the URL"*. A logged-in operator whose custom UI is
+                        // broken still reaches every declared pane, so the
+                        // prefix is one click from all of them.
+                        a href=(BUILTIN_PATH) { "Built-in UI" }
                         form method="post" action="/logout" {
                             button type="submit" { "Logout" }
                         }
@@ -483,6 +609,13 @@ struct LoginForm {
     password: String,
 }
 
+/// The sign-in page.
+///
+/// It names §6.3's prefix, because it is the first built-in page an operator
+/// with a broken custom UI reaches: the gate bounces every unauthenticated
+/// request here, whatever the bundle is doing. The nav on every authenticated
+/// pane covers the other half. See F2 in `docs/task/RFCT-075.md` for why the
+/// 502 page §6.3 actually cites is the wrong surface for this.
 async fn login_form() -> Html<String> {
     page(
         "Sign in",
@@ -491,6 +624,12 @@ async fn login_form() -> Html<String> {
                 p { label { "Admin password" } " "
                     input type="password" name="password" required; }
                 p { button type="submit" { "Sign in" } }
+            }
+            p {
+                "If this appliance is showing a custom interface that does not work, "
+                "sign in and go to " a href=(BUILTIN_PATH) { (BUILTIN_PATH) }
+                " — the built-in interface is served there whatever state the custom \
+                 one is in, and it can switch back to it."
             }
         },
     )
@@ -575,42 +714,213 @@ fn pretty(value: &Value) -> String {
     serde_json::to_string_pretty(value).unwrap_or_else(|_| value.to_string())
 }
 
-async fn home(State(state): State<AppState>) -> Html<String> {
+/// The status pane's body, shared by `/`'s built-in branch and §6.3's escape.
+///
+/// It reads mosd and `/proc/uptime` and **nothing under `/srv/ui`**. That is
+/// the property §6.3 rests candidate (A) on — *"the built-in handlers do not
+/// read `/srv/ui` at all, so no bundle state — absent, corrupt, unreadable,
+/// wrong version — can affect them"* — and it is why §6.1's five classes do not
+/// need enumerating here: a handler that never consults the bundle store cannot
+/// branch on which class occurred.
+async fn status_body(state: &AppState) -> Markup {
     let hostname = state.api.get_settings("hostname").await;
     let network = state.api.get_state("network").await;
     let uptime = std::fs::read_to_string("/proc/uptime")
         .ok()
         .and_then(|contents| parse_uptime(&contents));
-    pane(
-        "Status",
-        html! {
-            h2 { "System" }
-            @match &hostname {
-                Ok(value) => { p { "Hostname: " b { (value.as_str().unwrap_or("(unknown)")) } } }
-                Err(err) => { (error_box(&format!("Hostname unavailable: {err}"))) }
-            }
-            @match uptime {
-                Some(secs) => { p { "Uptime: " (humanize_uptime(secs)) } }
-                None => { (error_box("Uptime unavailable.")) }
-            }
-            h2 { "Network state" }
-            @match &network {
-                Ok(Value::Object(map)) if map.is_empty() => { p { "No network state reported." } }
-                Ok(Value::Object(map)) => {
-                    ul {
-                        @for (iface, details) in map {
-                            li {
-                                b { (iface) }
-                                pre { (pretty(details)) }
-                            }
+    html! {
+        h2 { "System" }
+        @match &hostname {
+            Ok(value) => { p { "Hostname: " b { (value.as_str().unwrap_or("(unknown)")) } } }
+            Err(err) => { (error_box(&format!("Hostname unavailable: {err}"))) }
+        }
+        @match uptime {
+            Some(secs) => { p { "Uptime: " (humanize_uptime(secs)) } }
+            None => { (error_box("Uptime unavailable.")) }
+        }
+        h2 { "Network state" }
+        @match &network {
+            Ok(Value::Object(map)) if map.is_empty() => { p { "No network state reported." } }
+            Ok(Value::Object(map)) => {
+                ul {
+                    @for (iface, details) in map {
+                        li {
+                            b { (iface) }
+                            pre { (pretty(details)) }
                         }
                     }
                 }
-                Ok(other) => { pre { (pretty(other)) } }
-                Err(err) => { (error_box(&format!("Network state unavailable: {err}"))) }
             }
+            Ok(other) => { pre { (pretty(other)) } }
+            Err(err) => { (error_box(&format!("Network state unavailable: {err}"))) }
+        }
+    }
+}
+
+/// `GET /` fell through to the built-in UI (§4.2 condition 5, §6.1 classes
+/// 1-4), and this is the pane it renders.
+///
+/// Unchanged by §6.3's prefix, deliberately. `/` is conditional and stays
+/// conditional; the escape control belongs on the pane that is reachable
+/// *unconditionally*, which is [`builtin_home`] and not this one.
+pub(crate) async fn home(State(state): State<AppState>) -> Html<String> {
+    pane("Status", status_body(&state).await)
+}
+
+// ---------------------------------------------------------------------------
+// §6.3's escape: the built-in UI at a reserved prefix, and the control that
+// deactivates a custom UI
+// ---------------------------------------------------------------------------
+
+/// §6.3 candidate (A)'s prefix, without its trailing slash.
+///
+/// §6.3 calls it `/builtin/` illustratively; this is the spelling fixed for the
+/// implementation, and it is the one the design document already uses, so the
+/// documented action — *go to `https://<device>/builtin/`* — needs no
+/// translation. It costs the prefix permanently: no bundle can serve anything
+/// at or under it, which §6.3 names as (A)'s price and accepts.
+const BUILTIN: &str = "/builtin";
+
+/// The prefix as it is written to an operator, and as it is linked.
+const BUILTIN_PATH: &str = "/builtin/";
+
+/// The deactivate route, as declared *inside* the nest.
+const BUILTIN_DEACTIVATE_LEAF: &str = "/deactivate";
+
+/// The deactivate route as a client sees it.
+const BUILTIN_DEACTIVATE: &str = "/builtin/deactivate";
+
+/// `GET /builtin` and `GET /builtin/` — the one unconditional path to the
+/// built-in UI.
+///
+/// This is today's status pane plus §6.3 candidate (B)'s control, and (A) and
+/// (B) together are what §6.3 chooses: (A) alone is *"a way in, not a way
+/// out"*, and (B) alone *"presupposes the access that may be broken"*. One
+/// documented action reaches this page whatever went wrong, and one click on it
+/// deactivates the bundle — so **the operator never has to diagnose anything**,
+/// which is the test §6.3 opens with.
+async fn builtin_home(State(state): State<AppState>) -> Html<String> {
+    let status = status_body(&state).await;
+    pane(
+        "Status",
+        html! {
+            (status)
+            (escape_section())
         },
     )
+}
+
+/// Candidate (B), rendered unconditionally.
+///
+/// The control is **not** shown only when a bundle looks active. Deciding that
+/// would mean reading `/srv/ui` from the one handler whose value is that it
+/// never does, and an operator who found the button missing would be back to
+/// diagnosing why — which is exactly the failure §6.3's opening test names.
+/// A deactivate with nothing active is a no-op that says so.
+fn escape_section() -> Markup {
+    html! {
+        h2 { "Custom UI" }
+        p {
+            "This page is the appliance's built-in interface, compiled into "
+            code { "/usr/bin/apid" } " itself. It is served here whatever state a \
+             custom UI is in — none installed, half-written, unreadable, or \
+             rendering but unable to talk to this appliance."
+        }
+        form method="post" action=(BUILTIN_DEACTIVATE) {
+            fieldset {
+                legend { "Deactivate the custom UI" }
+                p {
+                    "This removes " code { "/srv/ui/current" } ", the pointer to the \
+                     active bundle. Afterwards " code { "/" } " serves this built-in \
+                     interface, and it keeps doing so across a reboot. The bundle's \
+                     files are left on disk, so it can be made active again later."
+                }
+                p { button type="submit" { "Deactivate the custom UI" } }
+            }
+        }
+    }
+}
+
+/// `POST /builtin/deactivate` — §5.3's *deactivate*, which §5.3 already calls
+/// *"the same operation as §6.3's escape, which is why it is specified here
+/// rather than invented there."*
+///
+/// [`Store::deactivate`] is called and nothing is reimplemented. Its `bool` is
+/// whether a pointer was there to remove; both values are the same success,
+/// because §6.3 requires an outcome that does not depend on what was wrong.
+async fn builtin_deactivate(State(state): State<AppState>) -> Response {
+    match state.bundles().deactivate() {
+        Ok(removed) => {
+            tracing::info!(removed, "custom UI deactivated from the built-in escape");
+            pane(
+                "Custom UI",
+                html! {
+                    div.saved {
+                        @if removed {
+                            "The custom UI has been deactivated."
+                        } @else {
+                            "No custom UI was active. Nothing changed."
+                        }
+                    }
+                    p {
+                        "The appliance now serves this built-in interface at "
+                        code { "/" } ", and will keep doing so after a reboot."
+                    }
+                    p { a href="/" { "Go to the site root" } }
+                },
+            )
+            .into_response()
+        }
+        // The pointer is on DATA and this is a root process, so a failure here
+        // is a filesystem the daemon cannot write. The page names the shell
+        // equivalent rather than leaving the operator with nothing: §6.3 is
+        // explicit that a shell is the escape of last resort, and equally
+        // explicit that it is only available if it was arranged in advance.
+        Err(err) => {
+            tracing::error!(error = %err, "deactivating the custom UI failed");
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                pane(
+                    "Custom UI",
+                    html! {
+                        (error_box("The pointer to the active custom UI could not be removed."))
+                        p {
+                            "Over a shell the same operation is "
+                            code { "rm /srv/ui/current" } "."
+                        }
+                    },
+                ),
+            )
+                .into_response()
+        }
+    }
+}
+
+/// The reserved prefix's own not-found handler.
+///
+/// The nest claims the whole subtree, so this is what answers
+/// `/builtin/index.html` and `/builtin/assets/app.js` — paths a bundle may
+/// really contain. Answering them from the binary rather than letting them fall
+/// through is the reservation: a prefix that is reserved for some of its paths
+/// is not reserved. It is HTML rather than §2.4's JSON envelope because this
+/// subtree is a user interface and not an API, and it names the escape, which
+/// is the whole reason the operator is here.
+async fn builtin_not_found(OriginalUri(uri): OriginalUri) -> Response {
+    (
+        StatusCode::NOT_FOUND,
+        page(
+            "Not found",
+            html! {
+                p { "There is no built-in page at " code { (uri.path()) } "." }
+                p {
+                    "The built-in interface is at " a href=(BUILTIN_PATH) { (BUILTIN_PATH) }
+                    ". It is served by the appliance itself and is reachable whatever \
+                     state a custom UI is in."
+                }
+            },
+        ),
+    )
+        .into_response()
 }
 
 // ---------------------------------------------------------------------------

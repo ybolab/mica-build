@@ -5,7 +5,8 @@ BOARDS := cx3576 x64
 
 .PHONY: help os os-image-cx3576 os-verify-cx3576 os-rootfs-cx3576-v2 \
 	os-image-cx3576-v2 os-verify-cx3576-v2 os-bundle-cx3576 os-devkeys os-health-test \
-	os-shadow-test os-dbus-policy-test os-repart-test docs-verify \
+	os-shadow-test os-dbus-policy-test os-repart-test os-ui-location-test docs-verify \
+	docs-verify-test \
 	$(addsuffix -%,$(BOARDS))
 
 help:
@@ -23,7 +24,9 @@ help:
 	@echo "  os-shadow-test      run the offline tests for the STATE /etc/shadow reconciler"
 	@echo "  os-dbus-policy-test prove the shipped mosd D-Bus policy is root-only against a real dbus-daemon"
 	@echo "  os-repart-test      prove first-boot repart growth grows DATA and cannot wipe the loader (privileged docker)"
+	@echo "  os-ui-location-test prove the custom-UI location assertions in the v2 verifier actually fail when the location moves"
 	@echo "  docs-verify         assert both document indexes agree with the tree, in both directions"
+	@echo "  docs-verify-test    prove the index assertions actually fail on a duplicated row or entry"
 	@echo "  cx3576-<t>          delegate target <t> to board/cx3576 (uboot|kernel|rootfs|image|clean)"
 
 os-image-cx3576:
@@ -79,6 +82,38 @@ os-dbus-policy-test:
 os-repart-test:
 	bash os/repart-loader-test.sh
 
+# Drives the real os/verify-image-v2.sh against mutated fixtures -- an fstab
+# with /srv moved onto EPHEMERAL or STATE, one stripped of x-systemd.growfs, one
+# with a deeper /srv/ui entry, a root tree with a UI bundle BAKED under /srv/ui,
+# an asset tree shipped at the reserved /builtin prefix, an apid binary that no
+# longer carries the built-in escape page -- and requires each assertion to
+# fail, with its own message rather than merely a non-zero exit.
+#
+# It proves what the image contract cannot: that those assertions can fail at
+# all. os-verify-cx3576-v2 runs them against the assembled image and they pass,
+# which is one direction, and one direction is not evidence -- the checks
+# docs/design/api.md section 5.2 leans on are about /srv AS A PARTITION and
+# would go on passing after somebody moved the UI root to /var/lib, taking every
+# custom UI on every device with it.
+#
+# Fixture mode also runs the packed-root mountpoint check the custom-UI
+# assertions CHAIN to, and the /srv-absent case requires that check to go red
+# with its own message. Six UI passes alone prove only that they do not
+# RE-DERIVE mountpoint existence; they do not prove anything still catches a
+# missing /srv, and from outside the two look the same. That check had only
+# ever been observed passing, because it runs against real images where /srv is
+# always there.
+#
+# Every case names the assertions it expects BY IDENTITY and the harness diffs
+# that against what ran. It does not count PASS lines: a count breaks whenever
+# fixture mode is widened, and the obvious repair -- exit 0 with no FAIL lines
+# -- is invariant under a run in which nothing executed, which would silently
+# turn the /srv-absent case from a proof of chaining into a proof of nothing.
+# Needs no root, no image and no docker, and it fails loudly when it cannot run
+# rather than skipping.
+os-ui-location-test:
+	bash os/ui-location-test.sh
+
 # Structural check on the two document indexes. It exists because the indexes
 # are the one thing no other check can reach: a document that is never listed
 # in docs/README.md is not broken, does not fail a build, and is simply never
@@ -88,6 +123,20 @@ os-repart-test:
 # index full of entries pointing at files a rename deleted.
 docs-verify:
 	bash docs/verify-index.sh
+
+# Negative tests for the target above, added because it had a hole exactly the
+# shape of the merges this repository performs: with a second (RFCT-073.md) row
+# injected into docs/task/index.md it reported 162/162 PASS and exit 0 -- the
+# count did not even move, so the before/after count comparison could not see it
+# either. Forward was a `grep -q`, satisfied by one occurrence or by five, and
+# reverse deduplicated with `sort -u` before the loop that would have noticed. A
+# duplicated row is the likeliest wrong resolution of the two-row append
+# conflict every task record produces, so it is the one failure mode that most
+# needed to be reachable. Each assertion is driven against an index where its
+# fact is false and required to fail with ITS OWN message. Needs no root and no
+# network, and it fails loudly when it cannot run rather than skipping.
+docs-verify-test:
+	bash docs/verify-index-test.sh
 
 cx3576-%:
 	$(MAKE) -C board/cx3576 $*

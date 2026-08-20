@@ -20,12 +20,15 @@
 
 #![forbid(unsafe_code)]
 
+mod assets;
 mod auth;
+mod bundle;
 mod bus_client;
 mod config;
 mod routes;
 mod session;
 mod settings_api;
+mod startup;
 #[cfg(test)]
 mod tests;
 mod tls;
@@ -68,6 +71,17 @@ async fn main() -> anyhow::Result<()> {
     // The one machine-readable startup marker; everything else goes to stderr.
     println!("APID_LISTENING https={https_addr} http={http_addr}");
     tracing::info!(%https_addr, %http_addr, "apid serving");
+
+    // §6.1, and the ordering is the requirement rather than a detail: bundle
+    // discovery and the compatibility re-check happen **after** the listeners
+    // bind and after `APID_LISTENING` is printed, and the outcome is a state
+    // this function holds rather than an error it returns. Note the absence of
+    // `?`: every step above this line propagates, and under
+    // `Restart=on-failure` (`mosd/dist/apid.service:9`) a propagated error is
+    // a crash loop with no listener bound. A bundle must not be able to stop
+    // apid from listening, so `discover` has no error variant to propagate.
+    let bundle_state = startup::discover(state.bundles().clone()).await;
+    tracing::info!(bundle = %bundle_state, "custom UI state at start-up");
 
     let rustls_config = RustlsConfig::from_pem(
         certificate.cert_pem.into_bytes(),

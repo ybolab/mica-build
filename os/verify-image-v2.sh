@@ -51,21 +51,39 @@ while [ $# -gt 0 ]; do
     esac
     shift
 done
-if [ -z "${IMG}" ]; then
-    IMG="${REPO_ROOT}/_out/cx3576/${IMAGE_LATEST_NAME}"
-    EXPECT_SYMLINK=1
-fi
 
-if [ ! -e "${IMG}" ]; then
-    echo "error: image not found: ${IMG}" >&2
-    exit 1
+# MOS_VERIFY_FIXTURE_ROOT redirects the ONE input a small set of assertions
+# read -- a directory standing in for the unpacked read-only root, holding an
+# etc/fstab, the mountpoints and /usr/bin/apid -- and runs that set and nothing
+# else. It exists so os/ui-location-test.sh can drive THIS EXACT SCRIPT against
+# mutated fixtures and watch the assertions fail, without building an image;
+# nothing in the build or in make os-verify-cx3576-v2 sets it. A verifier
+# assertion that has only ever been observed passing is not evidence, and a
+# reimplementation of it inside a test would be exactly that.
+#
+# The set is check_ui_location, check_builtin_ui and check_packed_mountpoints,
+# and it is expected to GROW. os/ui-location-test.sh names the members it
+# expects and diffs that against what actually ran, so widening this hook makes
+# that test say which name it did not expect rather than silently changing a
+# count -- which is why the count it used to assert had to go.
+FIXTURE_ROOT="${MOS_VERIFY_FIXTURE_ROOT:-}"
+
+if [ -z "${FIXTURE_ROOT}" ]; then
+    if [ -z "${IMG}" ]; then
+        IMG="${REPO_ROOT}/_out/cx3576/${IMAGE_LATEST_NAME}"
+        EXPECT_SYMLINK=1
+    fi
+    if [ ! -e "${IMG}" ]; then
+        echo "error: image not found: ${IMG}" >&2
+        exit 1
+    fi
 fi
 
 # Re-exec in a container when the host lacks any required tool. unsquashfs,
 # veritysetup and setcap/getcap are the v2 additions over v1's set.
 REQUIRED_TOOLS=(sgdisk mdir mcopy mlabel debugfs tune2fs dumpe2fs e2fsck cmp
     unsquashfs veritysetup getcap setcap)
-if [ "${INNER}" -eq 0 ]; then
+if [ "${INNER}" -eq 0 ] && [ -z "${FIXTURE_ROOT}" ]; then
     missing=0
     for tool in "${REQUIRED_TOOLS[@]}"; do
         command -v "${tool}" >/dev/null 2>&1 || missing=1
@@ -132,6 +150,24 @@ lc() {
     printf '%s' "$1" | tr '[:upper:]' '[:lower:]'
 }
 
+# Takes the first line of a stream WITHOUT an early exit.
+#
+# `| head -n1` closes the pipe the moment it has its line; the producer's next
+# write raises SIGPIPE, `set -euo pipefail` at :2 turns that 141 into the exit
+# status of the whole pipeline, and the run dies mid-check with NO FAIL: line
+# and NO RESULT: line -- a signature that looks like a crash rather than a
+# failed check, and one this campaign has already observed once. awk reads to
+# EOF and prints only the first record, so there is no early exit left for the
+# producer to be signalled by. Same reasoning as the `grep -F ... >/dev/null`
+# at the libcrypt check below, which carries the same note.
+#
+# Whether any individual site is large enough to fill a 64 KiB pipe buffer is
+# not the question: the fix costs one token and measuring a site costs a
+# multi-thousand-run experiment that still would not settle it.
+first_line() {
+    awk 'NR == 1'
+}
+
 # Reads one KEY=value out of a plain env-style file without executing it.
 env_file_get() {
     sed -n "s/^$2=//p" "$1" | tail -n1
@@ -146,6 +182,246 @@ eq_ci() {
         fail "${what} is '${got}', expected ${want}"
     fi
 }
+
+# ---------------------------------------------------------------------------
+# The custom UI's location, as an asserted on-image fact.
+#
+# docs/design/api.md section 5.2 puts a customer's UI bundles at /srv/ui and
+# argues that this needs no ninth bind and no seed unit, because /srv is the
+# DATA partition's OWN mountpoint rather than a redirect. Everything that
+# argument rests on was already asserted here -- but asserted about /srv AS A
+# PARTITION. Neither the DATA fstab check nor the mountpoint-exists loop says
+# where a custom UI lives, so the day the UI root is moved to /var/lib, or onto
+# STATE for tidiness, both go on passing while every custom UI on every device
+# either disappears at the next wipe or fills a 64 MiB partition. An assertion
+# that holds whether or not the thing it protects is true is not an assertion.
+#
+# These checks CHAIN to those two rather than restating them. DATA_MOUNT is the
+# mountpoint the DATA fstab check validates, and PACKED_MOUNTPOINTS is the set
+# whose existence in the read-only root the mountpoint loop proves; both are
+# consumed here and by the checks themselves, from one definition. What is new
+# here is only the fact those two cannot express: which of them governs the
+# path apid actually reads. Re-deriving either would add a line and no
+# coverage.
+#
+# They are defined next to the other helpers, not at their call site below,
+# because the fixture hook that negative-tests them dispatches before any image
+# is opened.
+UI_ROOT="/srv/ui"
+
+# Section 6.3's escape, as an on-image fact. RFCT-075 fixed the reserved prefix
+# in mosd/apid/src/routes.rs (BUILTIN / BUILTIN_PATH / BUILTIN_DEACTIVATE), and
+# that a bundle cannot SHADOW it is a fact about dispatch order, asserted by the
+# crate's own tests. Neither half is restated here. What no test in the crate
+# can see is the IMAGE: section 6.2 says the built-in UI is maud expansions
+# compiled into /usr/bin/apid, with no include_str!, no include_bytes! and no
+# asset directory, and the reason that matters is section 6's requirement --
+# "the artifact we guarantee will keep working forever is the one with no build
+# chain". A crate test proves the sources say so. Only the image can say what
+# was actually shipped.
+BUILTIN_PREFIX="/builtin"
+APID_BIN="/usr/bin/apid"
+# A fragment of the escape page AS RENDERED: HTML syntax wrapped around the
+# reserved prefix. maud expands the page into string literals inside the
+# binary, so this byte sequence is in ${APID_BIN} if and only if the page is
+# compiled into it. It is deliberately markup rather than a bare route
+# constant: "/builtin/deactivate" on its own would still be in the binary after
+# the pages moved out to an on-disk asset tree, which is the one change this is
+# here to catch.
+BUILTIN_MARKUP='<form method="post" action="/builtin/deactivate">'
+DATA_MOUNT="/srv"
+PACKED_MOUNTPOINTS="/mnt/state /mnt/meta /srv /var /home /root"
+
+# Prints the /etc/fstab line whose mountpoint is the LONGEST prefix of $1: the
+# entry that actually governs the filesystem that path lands on. Derived rather
+# than looked up, so moving UI_ROOT moves the checks with it and mounting
+# something else over the path it sits under is noticed rather than ignored.
+# A deeper mountpoint wins over a shallower one, which is what the kernel does.
+fstab_covering_line() {
+    awk -v p="$1" '
+        /^[[:space:]]*#/ { next }
+        NF >= 4 {
+            m = $2
+            if (m == p || m == "/" || index(p, m "/") == 1) {
+                if (length(m) > best) { best = length(m); line = $0 }
+            }
+        }
+        END { print line }
+    ' "${FSTAB}" 2>/dev/null || true
+}
+
+# Six assertions about UI_ROOT, each named below by WHAT IT CATCHES.
+check_ui_location() {
+    local line mnt dev opts dev_lc data_dev state_dev eph_dev shipped
+    data_dev="partuuid=$(lc "${DATA_GUID}")"
+    state_dev="partuuid=$(lc "${STATE_GUID}")"
+    eph_dev="partuuid=$(lc "${EPHEMERAL_GUID}")"
+
+    line="$(fstab_covering_line "${UI_ROOT}")"
+    if [ -z "${line}" ]; then
+        fail "catches a custom UI root with NO filesystem under it: no /etc/fstab entry covers ${UI_ROOT}, so it lands on the read-only verity squashfs. apid cannot create it on first install, no bundle can ever be installed, and the root is deliberately absent from fstab so no entry could ever come to cover it"
+        return
+    fi
+    mnt="$(echo "${line}" | awk '{print $2}')"
+    dev="$(echo "${line}" | awk '{print $1}')"
+    opts="$(echo "${line}" | awk '{print $4}')"
+    dev_lc="$(lc "${dev}")"
+
+    # 1. Catches a UI root that has drifted off the DATA mount -- the one the
+    #    growth, the survives-an-update story and section 5.2's whole "no bind
+    #    needed" argument all belong to. Chained: DATA_MOUNT is the mountpoint
+    #    the DATA fstab check validates, so a pass here means the entry that
+    #    governs UI_ROOT is the entry that check already proved out.
+    if [ "${mnt}" = "${DATA_MOUNT}" ] && [ "${dev_lc}" = "${data_dev}" ]; then
+        pass "catches a custom UI root moved off DATA: ${UI_ROOT} resolves under ${DATA_MOUNT}, the DATA mount asserted above (${data_dev})"
+    else
+        fail "catches a custom UI root moved off DATA: ${UI_ROOT} resolves under mountpoint ${mnt} mounted from '${dev}', not under ${DATA_MOUNT} from ${data_dev}. DATA is the only partition systemd-repart grows, the only tier RAUC never touches on an update, and the only one section 5.2's no-bind argument holds for"
+    fi
+
+    # 2. Catches the tidy-looking move onto STATE, where the settings tree and
+    #    the sshd host keys live in 64 MiB.
+    if [ "${dev_lc}" != "${state_dev}" ]; then
+        pass "catches a custom UI root moved onto STATE: ${UI_ROOT} is not governed by ${state_dev}"
+    else
+        fail "catches a custom UI root moved onto STATE: ${UI_ROOT} is governed by ${mnt}, mounted from ${state_dev}. STATE is 64 MiB, section 5.3 keeps TWO bundle generations, and the first large bundle fills it -- taking the settings tree and the sshd host keys down with it while nothing about the UI reports the cause"
+    fi
+
+    # 3. Catches the move onto /var, which is wiped by design.
+    if [ "${dev_lc}" != "${eph_dev}" ]; then
+        pass "catches a custom UI root moved onto the wipeable /var partition: ${UI_ROOT} is not governed by ${eph_dev}"
+    else
+        fail "catches a custom UI root moved onto the wipeable /var partition: ${UI_ROOT} is governed by ${mnt}, mounted from ${eph_dev}. /var is fixed-size disposable residue with no x-systemd.growfs, so every installed custom UI silently disappears the first time it is cleared and no bundle can outgrow the fixed partition"
+    fi
+
+    # 4. Catches a UI root under a mountpoint NOTHING has checked exists in the
+    #    packed root. Chained: membership in PACKED_MOUNTPOINTS means the
+    #    mountpoint loop already proves the directory is there, so its
+    #    existence is not re-derived here -- only its relevance to UI_ROOT.
+    local covered=0 known
+    for known in ${PACKED_MOUNTPOINTS}; do
+        [ "${known}" = "${mnt}" ] && covered=1
+    done
+    if [ "${covered}" -eq 1 ]; then
+        pass "catches a custom UI root under an unasserted mountpoint: ${mnt} is in the set the packed-root mountpoint check proves exists (${PACKED_MOUNTPOINTS})"
+    else
+        fail "catches a custom UI root under an unasserted mountpoint: ${UI_ROOT} is governed by ${mnt}, which is NOT in the set the packed-root mountpoint check covers (${PACKED_MOUNTPOINTS}). Nothing asserts that directory exists in the read-only root, a verity root cannot create it at runtime, and the mount therefore fails silently into the squashfs"
+    fi
+
+    # 5. Catches a UI root with a ceiling. This is not the DATA entry's growfs
+    #    restated: it is read off whichever entry governs UI_ROOT, so it keeps
+    #    holding in exactly the case the DATA check cannot see -- the covering
+    #    entry being some other partition.
+    if [[ ",${opts}," == *",x-systemd.growfs,"* ]]; then
+        pass "catches a custom UI root with a fixed ceiling: the entry governing ${UI_ROOT} (${mnt}) carries x-systemd.growfs"
+    else
+        fail "catches a custom UI root with a fixed ceiling: the entry governing ${UI_ROOT} (${mnt}) lacks x-systemd.growfs; options are '${opts}'. The bundle root is then capped at the size the image was built with however large the disk is, and section 5.3 spends two copies of every bundle on it"
+    fi
+
+    # 6. Catches ANY content baked under the UI root -- not merely the
+    #    directory. Both failure modes are silent: a baked file on the
+    #    read-only squashfs either WINS over the writable copy an operator
+    #    installed, or NEVER UPDATES when the bundle beneath it changes, and
+    #    neither produces an error anywhere.
+    shipped=""
+    if [ -e "${ROOT}${UI_ROOT}" ] || [ -L "${ROOT}${UI_ROOT}" ]; then
+        shipped="$(find "${ROOT}${UI_ROOT}" 2>/dev/null |
+            sed "s|^${ROOT}||" | sort |
+            awk 'NR <= 5 { printf "%s ", $0 } END { if (NR > 5) printf "(+%d more) ", NR - 5 }')"
+        [ -n "${shipped}" ] || shipped="${UI_ROOT} "
+        shipped="${shipped% }"
+    fi
+    if [ -z "${shipped}" ]; then
+        pass "catches content baked under the custom UI root: the packed read-only root ships nothing at or under ${UI_ROOT}, which is the defined shipped state -- apid creates it on first install and no seed unit is owed"
+    else
+        fail "catches content baked under the custom UI root: the packed read-only root ships ${shipped}. Anything baked there sits on the read-only squashfs, where it either silently WINS over the bundle an operator installed or silently NEVER UPDATES when that bundle changes -- neither raises an error anywhere. Absence is the defined shipped state: there is no seed unit and none is needed"
+    fi
+}
+
+# Two assertions about the built-in UI, each named by WHAT IT CATCHES.
+check_builtin_ui() {
+    local shipped
+
+    # 1. Catches the built-in escape growing an on-disk half. The reserved
+    #    prefix is a URL namespace served out of the binary; the packed root
+    #    has no namesake for it and must not acquire one. The day it does, the
+    #    escape has stopped being the one artifact with no build chain and has
+    #    become two artifacts that must be shipped in step -- and a stale or
+    #    missing second half fails exactly when the escape is being used,
+    #    which is when everything else is already broken.
+    shipped=""
+    if [ -e "${ROOT}${BUILTIN_PREFIX}" ] || [ -L "${ROOT}${BUILTIN_PREFIX}" ]; then
+        shipped="$(find "${ROOT}${BUILTIN_PREFIX}" 2>/dev/null |
+            sed "s|^${ROOT}||" | sort |
+            awk 'NR <= 5 { printf "%s ", $0 } END { if (NR > 5) printf "(+%d more) ", NR - 5 }')"
+        [ -n "${shipped}" ] || shipped="${BUILTIN_PREFIX} "
+        shipped="${shipped% }"
+    fi
+    if [ -z "${shipped}" ]; then
+        pass "catches a built-in escape that has grown an on-disk half: the packed read-only root ships nothing at or under ${BUILTIN_PREFIX}, so section 6.2's compiled-in page is the whole of it"
+    else
+        fail "catches a built-in escape that has grown an on-disk half: the packed read-only root ships ${shipped}. Section 6.2 guarantees the built-in UI is maud expansions inside ${APID_BIN} and nothing else, because section 6 requires the fallback to be the artifact with NO build chain. A file tree under the reserved prefix is a second artifact that has to be built, shipped and kept in step with the binary, and when it is stale or missing the escape fails in precisely the situation it exists for"
+    fi
+
+    # 2. Catches the built-in UI leaving the binary. If the pages become an
+    #    on-disk asset tree -- at any path, by include_str!, by an assets/
+    #    directory, by anything -- the rendered markup stops being in the
+    #    binary and this goes red. That is the image-side reading of section
+    #    6.2's "no include_str!, no include_bytes!, no asset directory":
+    #    it asserts the OUTCOME rather than enumerating the mechanisms.
+    #
+    #    tr-then-grep rather than `grep -a`: the same spelling the libcrypt
+    #    check below uses, and it needs no busybox-vs-GNU grep flag.
+    if [ ! -f "${ROOT}${APID_BIN}" ]; then
+        fail "catches a built-in escape that is no longer inside the binary: ${APID_BIN} is not a regular file in the packed root, so there is nothing that could serve ${BUILTIN_PREFIX}/ at all"
+    elif LC_ALL=C tr -c '[:print:]' '\n' <"${ROOT}${APID_BIN}" |
+        grep -F -- "${BUILTIN_MARKUP}" >/dev/null; then
+        pass "catches a built-in escape that is no longer inside the binary: the ${APID_BIN} packed in this image carries the escape page's own rendered markup (${BUILTIN_MARKUP}), so section 6.3's one documented action needs nothing off the disk"
+    else
+        fail "catches a built-in escape that is no longer inside the binary: the ${APID_BIN} packed in this image does NOT carry the escape page's rendered markup (${BUILTIN_MARKUP}). Either the pages have moved out to files -- and section 6.2's whole guarantee, that the fallback has no build chain and cannot be replaced, is gone -- or the form's spelling changed and BUILTIN_MARKUP above needs updating. Both are worth a red line: nothing else in this contract can tell the difference between a compiled-in escape and one that needs a directory to exist"
+    fi
+}
+
+# fstab entries and the STATE binds need their mountpoints to exist in the
+# read-only root: nothing can create them at runtime. PACKED_MOUNTPOINTS is the
+# list, hoisted to a constant because check_ui_location chains to THIS check
+# rather than re-deriving it -- see its comment.
+#
+# It lives up here beside check_ui_location, not down at its call site, for the
+# same reason PACKED_MOUNTPOINTS does: the fixture hook runs it too, and that
+# dispatches before any image is opened. Fixture mode running it is the point.
+# RFCT-073's "/srv absent from the tree" case proves the six UI assertions do
+# not RE-DERIVE mountpoint existence; it does not prove anything still catches
+# a missing /srv, and those two are indistinguishable from outside unless the
+# check this one delegates to is in the same run. It had only ever been
+# observed passing, against real images, where /srv is always there.
+check_packed_mountpoints() {
+    local missing_mp="" d
+    for d in ${PACKED_MOUNTPOINTS}; do
+        [ -d "${ROOT}${d}" ] || missing_mp="${missing_mp} ${d}"
+    done
+    if [ -z "${missing_mp}" ]; then
+        pass "every fstab/bind mountpoint exists in the read-only root (${PACKED_MOUNTPOINTS})"
+    else
+        fail "mountpoint(s) missing from the read-only root:${missing_mp}; a verity root cannot create them at runtime, so the mount fails"
+    fi
+}
+
+# The fixture hook: run only the assertions above, against the fixture, and
+# summarise. os/ui-location-test.sh is the only caller.
+if [ -n "${FIXTURE_ROOT}" ]; then
+    ROOT="${FIXTURE_ROOT}"
+    FSTAB="${ROOT}/etc/fstab"
+    check_ui_location
+    check_builtin_ui
+    check_packed_mountpoints
+    fixture_total=$((PASS_N + FAIL_N))
+    if [ "${FAIL_N}" -eq 0 ]; then
+        echo "RESULT: PASS (${PASS_N}/${fixture_total} checks)"
+        exit 0
+    fi
+    echo "RESULT: FAIL (${PASS_N}/${fixture_total} checks)"
+    exit 1
+fi
 
 BYTES_PER_SECTOR="${SECTOR_SIZE}"
 SECTORS_PER_MIB=$((MIB_BYTES / SECTOR_SIZE))
@@ -167,8 +443,8 @@ fi
 
 verify_out="$(sgdisk --verify "${IMG}" 2>&1 || true)"
 complaints="$(echo "${verify_out}" | grep -E "Caution|Warning" | grep -Ev "doesn't (begin|end) on a|degraded performance" || true)"
-if echo "${verify_out}" | grep -q "No problems found" &&
-    ! echo "${verify_out}" | grep -Eq "problems!|Problem:|Creating new GPT entries|invalid GPT|damaged GPT" &&
+if grep -q "No problems found" <<<"${verify_out}" &&
+    ! grep -Eq "problems!|Problem:|Creating new GPT entries|invalid GPT|damaged GPT" <<<"${verify_out}" &&
     [ -z "${complaints}" ]; then
     pass "sgdisk --verify reports no problems"
 else
@@ -189,7 +465,7 @@ fi
 
 # Extract one field from sgdisk -i output.
 sg_field() {
-    echo "$1" | sed -n "s/^$2: //p" | head -n1
+    sed -n "s/^$2: //p" <<<"$1" | first_line
 }
 
 # Cache each partition's sgdisk -i output once; every check below reads it.
@@ -481,7 +757,7 @@ check_boot_slot() {
     fi
     local f
     for f in Image rk3576-src.dtb "${BOOT_SCRIPT_NAME}" "${verity_env}"; do
-        if echo "${listing}" | grep -qxF "::/${f}"; then
+        if grep -qxF "::/${f}" <<<"${listing}"; then
             pass "BOOT-${slot} contains ${f}"
         else
             fail "BOOT-${slot} is missing ${f}"
@@ -494,13 +770,13 @@ check_boot_slot() {
     # consulted, the attempt counters are never decremented and rollback never
     # happens. There is no error on the console — just a device that boots one
     # slot forever and cannot roll back.
-    if echo "${listing}" | grep -qi "extlinux"; then
+    if grep -qi "extlinux" <<<"${listing}"; then
         fail "BOOT-${slot} contains extlinux ($(echo "${listing}" | grep -i extlinux | tr '\n' ' ')). Both U-Boot boot frameworks try extlinux BEFORE boot.scr, so this silently bypasses the whole RAUC A/B handshake: BOOT_ORDER is never honoured, boot attempts are never counted and rollback never happens, with no error anywhere. Remove it."
     else
         pass "BOOT-${slot} contains no extlinux/ directory and no extlinux.conf (a v2 slot must boot via ${BOOT_SCRIPT_NAME})"
     fi
 
-    if echo "${listing}" | grep -qi "initr"; then
+    if grep -qi "initr" <<<"${listing}"; then
         fail "BOOT-${slot} contains an initramfs/initrd file: $(echo "${listing}" | grep -i initr | tr '\n' ' ')"
     else
         pass "BOOT-${slot} contains no initramfs file"
@@ -556,10 +832,10 @@ scr_body="$(tr -d '\0' < "${TMP}/scr-A" 2>/dev/null || true)"
 for want in "bootpart:A:${BOOT_A_PARTNUM}" "bootpart:B:${BOOT_B_PARTNUM}" \
     "rootpart:A:${ROOTFS_A_PARTNUM}" "rootpart:B:${ROOTFS_B_PARTNUM}"; do
     IFS=':' read -r var slot num <<<"${want}"
-    got="$(printf '%s\n' "${scr_body}" | awk -v slot="${slot}" -v var="${var}" '
+    got="$(awk -v slot="${slot}" -v var="${var}" '
         $1 == "setenv" && $2 == "bootslot" && $3 == slot { in_slot = 1; next }
         $1 == "setenv" && $2 == var && in_slot { print $3; exit }
-    ')"
+    ' <<<"${scr_body}")"
     if [ "${got}" = "${num}" ]; then
         pass "${BOOT_SCRIPT_NAME} sets ${var}=${num} for slot ${slot}, matching the layout"
     else
@@ -693,7 +969,7 @@ fi
 
 # Read-only by design, asserted in two independent places: the dm table's own
 # read-only flag, and the root arguments boot.scr builds around it.
-if [ -n "${CREATE}" ] && echo "${CREATE}" | grep -q '^rootfs,,,ro,'; then
+if [ -n "${CREATE}" ] && grep -q '^rootfs,,,ro,' <<<"${CREATE}"; then
     pass "the dm-verity table is created read-only (rootfs,,,ro,...), so the root cannot be written by design"
 else
     fail "the dm-verity table is not marked read-only; expected a table beginning 'rootfs,,,ro,' (got '${CREATE}')"
@@ -754,7 +1030,7 @@ check_ext4() {
 
     # orphan_file cannot be mounted by kernel 6.1, so its presence would make
     # the partition unusable on the device this image is built for.
-    if echo "${info}" | sed -n 's/^Filesystem features:[[:space:]]*//p' | grep -qw "orphan_file"; then
+    if sed -n 's/^Filesystem features:[[:space:]]*//p' <<<"${info}" | grep -w "orphan_file" >/dev/null; then
         fail "${name} ext4 has the orphan_file feature; kernel ${KERNEL_VERSION} cannot mount it"
     else
         pass "${name} ext4 has no orphan_file feature"
@@ -920,8 +1196,11 @@ sq_enabled mosd.service
 sq_regular /usr/share/dbus-1/system.d/com.mos.mosd.conf
 
 # --- apid (carried over from v1) ---
-sq_regular /usr/bin/apid
-elf_is_aarch64 /usr/bin/apid
+sq_regular "${APID_BIN}"
+elf_is_aarch64 "${APID_BIN}"
+# Section 6.3's escape, asserted against the image rather than against the
+# crate; the helper and its reasoning are up beside the other helpers.
+check_builtin_ui
 sq_grep /usr/lib/systemd/system/apid.service 'After=.*mosd\.service' \
     "/usr/lib/systemd/system/apid.service orders After= mosd.service"
 sq_grep /usr/lib/systemd/system/apid.service 'StateDirectory=mos/apid' \
@@ -933,7 +1212,7 @@ sq_enabled apid.service
 # creep back into the module list.
 # Comment lines are excluded — the file may legitimately EXPLAIN the drop.
 if [ -f "${ROOT}/etc/mos/modules.conf" ] && \
-    ! grep -v '^[[:space:]]*#' "${ROOT}/etc/mos/modules.conf" | grep -q 'bcmdhd'; then
+    ! grep -v '^[[:space:]]*#' "${ROOT}/etc/mos/modules.conf" | grep 'bcmdhd' >/dev/null; then
     pass "/etc/mos/modules.conf loads no bcmdhd module (single-SKU AIC8800)"
 else
     fail "/etc/mos/modules.conf missing or still loads bcmdhd (single-SKU AIC8800 board)"
@@ -1271,17 +1550,9 @@ sq_enabled_any systemd-tmpfiles-clean.timer
 # The gadget udev rule pulls in this template unit by name.
 sq_regular /usr/lib/systemd/system/serial-getty@.service
 
-# fstab entries and the STATE binds need their mountpoints to exist in the
-# read-only root: nothing can create them at runtime.
-missing_mp=""
-for d in /mnt/state /mnt/meta /srv /var /home /root; do
-    [ -d "${ROOT}${d}" ] || missing_mp="${missing_mp} ${d}"
-done
-if [ -z "${missing_mp}" ]; then
-    pass "every fstab/bind mountpoint exists in the read-only root (/mnt/state /mnt/meta /srv /var /home /root)"
-else
-    fail "mountpoint(s) missing from the read-only root:${missing_mp}; a verity root cannot create them at runtime, so the mount fails"
-fi
+# The mountpoints every fstab entry and every STATE bind needs to already exist
+# in the read-only root. Defined beside check_ui_location, which chains to it.
+check_packed_mountpoints
 
 # --- M4 integration: RAUC must be able to identify the BOOTED slot ---
 #
@@ -1316,8 +1587,8 @@ fi
 for pair in "A:${ROOTFS_A_GUID}" "B:${ROOTFS_B_GUID}"; do
     IFS=':' read -r slot guid <<<"${pair}"
     cmdline_src="$(cat "${TMP}/scr-A" "${TMP}/verity-${slot}.env" 2>/dev/null | tr -d '\0' || true)"
-    root_arg="$(printf '%s' "${cmdline_src}" | grep -ao 'root=[^ "]*' | head -n1 || true)"
-    if printf '%s' "${cmdline_src}" | grep -aqE "rauc\.slot=(\\\$\{bootslot\}|${slot})"; then
+    root_arg="$(grep -ao 'root=[^ "]*' <<<"${cmdline_src}" | first_line || true)"
+    if grep -aqE "rauc\.slot=(\\\$\{bootslot\}|${slot})" <<<"${cmdline_src}"; then
         pass "slot ${slot}: the boot path sets rauc.slot=, so rauc can identify the booted slot"
     elif [ "$(lc "${root_arg}")" = "root=partuuid=$(lc "${guid}")" ]; then
         pass "slot ${slot}: root= names the slot's own PARTUUID, so rauc's root= fallback identifies the booted slot"
@@ -1422,12 +1693,16 @@ check_fstab() {
     fi
     pass "/etc/fstab mounts ${mnt} from PARTUUID=$(lc "${guid}") with ${opts} (${what})"
 }
-check_fstab "DATA is the growth target" "${DATA_GUID}" /srv "noatime,x-systemd.growfs"
+check_fstab "DATA is the growth target" "${DATA_GUID}" "${DATA_MOUNT}" "noatime,x-systemd.growfs"
 check_fstab "STATE: configuration + identity, precious" "${STATE_GUID}" /mnt/state "noatime"
 check_fstab "META: update metadata, precious" "${META_GUID}" /mnt/meta "noatime"
 check_fstab "/var is fixed-size disposable residue, NOT a growth target" \
     "${EPHEMERAL_GUID}" /var "noatime" "x-systemd.growfs"
-if awk '$1 == "tmpfs" && $2 == "/tmp" && $3 == "tmpfs"' "${FSTAB}" 2>/dev/null | grep -q .; then
+# The four checks above are about the PARTITIONS. None of them would notice the
+# custom UI root moving off DATA, so that fact is asserted separately; the
+# helper and its reasoning are up beside the other helpers.
+check_ui_location
+if awk '$1 == "tmpfs" && $2 == "/tmp" && $3 == "tmpfs"' "${FSTAB}" 2>/dev/null | grep . >/dev/null; then
     pass "/etc/fstab mounts /tmp as tmpfs"
 else
     fail "/etc/fstab has no tmpfs /tmp entry"
@@ -1616,7 +1891,7 @@ for pair in "After:var-lib-mos.mount:/etc/systemd/system/var-lib-mos.mount" \
     # would accept it appearing in a comment.
     named=0
     if [ -f "${REC_UNIT}" ]; then
-        sed -n "s/^${keyw}=//p" "${REC_UNIT}" | tr ' ' '\n' | grep -Fxq "${dep}" && named=1
+        sed -n "s/^${keyw}=//p" "${REC_UNIT}" | tr ' ' '\n' | grep -Fx "${dep}" >/dev/null && named=1
     fi
     if [ ! -f "${REC_UNIT}" ]; then
         fail "mos-shadow-reconcile.service is missing, so its ${keyw}=${dep} ordering cannot be checked"
@@ -1642,7 +1917,7 @@ sq_grep /usr/lib/mos/mos-seed-state \
 # carries that logic, so a reconciler stripped back to the account-sync path
 # would fail here rather than silently make a "transient" password permanent.
 REC_SCRIPT="${ROOT}/usr/lib/mos/mos-shadow-reconcile"
-rec_marker="$(sed -n 's/^MARKER=.*\/\([a-z-]*\)".*/\1/p' "${REC_SCRIPT}" 2>/dev/null | head -n1)"
+rec_marker="$(sed -n 's/^MARKER=.*\/\([a-z-]*\)".*/\1/p' "${REC_SCRIPT}" 2>/dev/null | first_line)"
 if [ ! -f "${REC_SCRIPT}" ]; then
     fail "/usr/lib/mos/mos-shadow-reconcile is not in the image, so the transient-password clearing cannot be checked"
 elif [ -z "${rec_marker}" ]; then
@@ -1763,7 +2038,7 @@ fac_checked=0
 if [ -f "${FAC}" ] && [ -f "${ROOT}/etc/passwd" ]; then
     while IFS=: read -r u _; do
         [ -n "${u}" ] || continue
-        line="$(grep "^${u}:" "${FAC}" | head -n1 || true)"
+        line="$(grep "^${u}:" "${FAC}" | first_line || true)"
         [ -n "${line}" ] || continue
         fac_checked=$((fac_checked + 1))
         h="$(printf '%s' "${line}" | cut -d: -f2)"
@@ -1841,7 +2116,7 @@ SEED_HOME_UNIT="${ROOT}/etc/systemd/system/mos-seed-home.service"
 sq_regular /usr/lib/mos/mos-seed-home
 if [ ! -f "${SEED_HOME_UNIT}" ]; then
     fail "mos-seed-home.service is not in the image; nothing creates ${hm_what:-the home.mount source} on DATA and the bind fails, because mount(8) never creates the SOURCE of a bind"
-elif ! sed -n 's/^Before=//p' "${SEED_HOME_UNIT}" | tr ' ' '\n' | grep -Fxq home.mount; then
+elif ! sed -n 's/^Before=//p' "${SEED_HOME_UNIT}" | tr ' ' '\n' | grep -Fx home.mount >/dev/null; then
     fail "mos-seed-home.service has no Before= naming home.mount; the bind source would not be guaranteed to exist when the mount is attempted, and the mount fails"
 elif [ -z "$(find "${ROOT}/etc/systemd/system" -name mos-seed-home.service -path '*.wants/*' 2>/dev/null || true)" ]; then
     fail "mos-seed-home.service exists but is not enabled, so the home.mount source is never created and the bind fails on every boot"
@@ -1995,7 +2270,7 @@ SEED_ROOT="${ROOT}/usr/lib/mos/mos-seed-root"
 seed_root_mode="$(stat -c %a "${SEED_ROOT}" 2>/dev/null || echo none)"
 if [ ! -f "${SEED_ROOT_UNIT}" ]; then
     fail "mos-seed-root.service is not in the image; nothing creates ${rm_what:-the root.mount source} on DATA and the bind fails, because mount(8) never creates the SOURCE of a bind"
-elif ! sed -n 's/^Before=//p' "${SEED_ROOT_UNIT}" | tr ' ' '\n' | grep -Fxq root.mount; then
+elif ! sed -n 's/^Before=//p' "${SEED_ROOT_UNIT}" | tr ' ' '\n' | grep -Fx root.mount >/dev/null; then
     fail "mos-seed-root.service has no Before= naming root.mount; the bind source would not be guaranteed to exist when the mount is attempted, and the mount fails"
 elif [ -z "$(find "${ROOT}/etc/systemd/system" -name mos-seed-root.service -path '*.wants/*' 2>/dev/null || true)" ]; then
     fail "mos-seed-root.service exists but is not enabled, so the root.mount source is never created and the bind fails on every boot"
@@ -2022,7 +2297,7 @@ fi
 # reading eleven lines of shell, not by exercising them.
 SEED_WRITE_CMDS='mkdir|touch|cp|mv|ln|rm|chmod|chown|install|tee|dd'
 seed_root_writes_root="$(grep -nE "^[[:space:]]*(${SEED_WRITE_CMDS})[[:space:]]+([^#]*[[:space:]]+)?\"?/root(/|\"|[[:space:]]|$)" \
-    "${SEED_ROOT}" 2>/dev/null | head -n1 || true)"
+    "${SEED_ROOT}" 2>/dev/null | first_line || true)"
 if [ ! -f "${SEED_ROOT}" ]; then
     fail "/usr/lib/mos/mos-seed-root is not in the image, so what it creates cannot be checked"
 elif ! grep -Eq '^[[:space:]]*mkdir /srv/root$' "${SEED_ROOT}"; then
@@ -2145,7 +2420,7 @@ sq_grep /etc/tmpfiles.d/mos-var.conf '^e /var/cache ' "tmpfiles.d ages /var/cach
 # and the check would pass for the wrong reason.
 : >"${TMP}/cap-probe"
 if setcap cap_net_raw+ep "${TMP}/cap-probe" 2>/dev/null &&
-    getcap "${TMP}/cap-probe" 2>/dev/null | grep -q cap_net_raw; then
+    getcap "${TMP}/cap-probe" 2>/dev/null | grep cap_net_raw >/dev/null; then
     cap_observable=1
     pass "the verification environment can set and read security.capability, so a capability inventory taken here is trustworthy"
 else
@@ -2196,15 +2471,15 @@ RECONCILER_DIR="${REPO_ROOT}/mosd/mosd/src/reconciler"
 
 # Value of a `const NAME: &str = "...";` in one of the reconcilers.
 mosd_const() {
-    sed -n "s/^const $2: \&str = \"\(.*\)\";\$/\1/p" "${RECONCILER_DIR}/$1" 2>/dev/null | head -n1
+    sed -n "s/^const $2: \&str = \"\(.*\)\";\$/\1/p" "${RECONCILER_DIR}/$1" 2>/dev/null | first_line
 }
 # The unit TEMPLATE name behind `format!("x@{interface}.service")`.
 mosd_unit_template() {
-    sed -n 's/^ *format!("\(.*\)@{interface}\.service")$/\1@.service/p' "${RECONCILER_DIR}/$1" 2>/dev/null | head -n1
+    sed -n 's/^ *format!("\(.*\)@{interface}\.service")$/\1@.service/p' "${RECONCILER_DIR}/$1" 2>/dev/null | first_line
 }
 # The rendered configuration file name, still carrying `{interface}`.
 mosd_config_name() {
-    sed -n 's/^ *format!("\([^"]*{interface}[^"]*\.conf\)")$/\1/p' "${RECONCILER_DIR}/$1" 2>/dev/null | head -n1
+    sed -n 's/^ *format!("\([^"]*{interface}[^"]*\.conf\)")$/\1/p' "${RECONCILER_DIR}/$1" 2>/dev/null | first_line
 }
 
 STA_DIR="$(mosd_const wifi_client.rs DEFAULT_CONFIG_DIR)"
@@ -2217,7 +2492,7 @@ STA_PREFIX="$(mosd_const wifi_client.rs NETWORKD_PREFIX)"
 AP_PREFIX="$(mosd_const wifi_ap.rs NETWORKD_PREFIX)"
 # The pattern network.rs sweeps: it DELETES every *<marker>*.network it did not
 # render, so an image file carrying the marker would be deleted on device.
-MOS_SWEEP="$(sed -n 's/.*file_name\.contains("\(.*\)").*/\1/p' "${RECONCILER_DIR}/network.rs" 2>/dev/null | head -n1)"
+MOS_SWEEP="$(sed -n 's/.*file_name\.contains("\(.*\)").*/\1/p' "${RECONCILER_DIR}/network.rs" 2>/dev/null | first_line)"
 
 if [ -n "${STA_DIR}" ] && [ -n "${AP_DIR}" ] && [ -n "${STA_UNIT}" ] && [ -n "${AP_UNIT}" ] &&
     [ -n "${STA_CONF}" ] && [ -n "${AP_CONF}" ] && [ -n "${STA_PREFIX}" ] &&
@@ -2248,7 +2523,7 @@ check_execstart() {
     fi
     for spec in '%i' '%I'; do
         want="${dir}/$(printf '%s' "${name}" | sed "s|{interface}|${spec}|")"
-        if grep -F -- "ExecStart=" "${ROOT}${unit}" | grep -Fq -- "${want}"; then
+        if grep -F -- "ExecStart=" "${ROOT}${unit}" | grep -F -- "${want}" >/dev/null; then
             found=1
             pass "${what}: $(basename "${unit}") reads ${want}, which is exactly what the reconciler renders"
             break
@@ -2326,7 +2601,7 @@ for where in "${STA_DIR}" "${AP_DIR}"; do
     if [ -n "${src}" ] && [ -f "${seed}" ] &&
         grep -q 'mkdir -p "/mnt/state/\$d"' "${seed}" &&
         grep -q 'chmod 0700 "/mnt/state/\$d"' "${seed}" &&
-        sed -n 's/^for d in \(.*\); do$/\1/p' "${seed}" | tr ' ' '\n' | grep -Fxq "${base}"; then
+        sed -n 's/^for d in \(.*\); do$/\1/p' "${seed}" | tr ' ' '\n' | grep -Fx "${base}" >/dev/null; then
         pass "mos-seed-state creates ${src} at 0700 before ${unit} is attempted"
     else
         fail "mos-seed-state does not create ${src} (0700); the bind would have no source on first boot and ${where} would stay read-only"
@@ -2380,7 +2655,7 @@ sort_bad=""
 for prefix in "${STA_PREFIX}" "${AP_PREFIX}"; do
     if [ -z "${prefix}" ]; then
         sort_bad="${sort_bad} <unreadable>"
-    elif [ "$(printf '%s\n' "${dhcp_default}" "${prefix}" | LC_ALL=C sort | head -n1)" != "${dhcp_default}" ]; then
+    elif [ "$(printf '%s\n' "${dhcp_default}" "${prefix}" | LC_ALL=C sort | first_line)" != "${dhcp_default}" ]; then
         sort_bad="${sort_bad} ${prefix}"
     fi
 done
@@ -2393,8 +2668,8 @@ fi
 # --- the image profile, and the SSH default it selects ---
 PROFILE_FILE="/usr/lib/mos/profile.conf"
 PROVISIONING_SRC="${REPO_ROOT}/mosd/mosd/src/provisioning.rs"
-PROFILE_KEY="$(sed -n 's/^const PROFILE_KEY: \&str = "\(.*\)";$/\1/p' "${PROVISIONING_SRC}" 2>/dev/null | head -n1)"
-PROFILE_DEFAULT_PATH="$(sed -n 's/^pub const DEFAULT_PROFILE_PATH: \&str = "\(.*\)";$/\1/p' "${PROVISIONING_SRC}" 2>/dev/null | head -n1)"
+PROFILE_KEY="$(sed -n 's/^const PROFILE_KEY: \&str = "\(.*\)";$/\1/p' "${PROVISIONING_SRC}" 2>/dev/null | first_line)"
+PROFILE_DEFAULT_PATH="$(sed -n 's/^pub const DEFAULT_PROFILE_PATH: \&str = "\(.*\)";$/\1/p' "${PROVISIONING_SRC}" 2>/dev/null | first_line)"
 if [ "${PROFILE_DEFAULT_PATH}" = "${PROFILE_FILE}" ] && [ -n "${PROFILE_KEY}" ]; then
     pass "mosd reads the image profile from ${PROFILE_DEFAULT_PATH} with key ${PROFILE_KEY}, which is the file this image ships"
 else
@@ -2513,7 +2788,7 @@ fi
 CRYPT_SRC="${REPO_ROOT}/mosd/mosd/src/transient.rs"
 crypt_prefixes="$(grep -oE 'starts_with\("\$[0-9a-zA-Z]+\$' "${CRYPT_SRC}" 2>/dev/null | grep -oE '\$[0-9a-zA-Z]+\$' | sort -u || true)"
 crypt_n="$(printf '%s\n' "${crypt_prefixes}" | grep -c . || true)"
-CRYPT_PREFIX="$(printf '%s\n' "${crypt_prefixes}" | head -n1)"
+CRYPT_PREFIX="$(first_line <<<"${crypt_prefixes}")"
 if [ "${crypt_n}" = "1" ]; then
     pass "transient.rs pins exactly one crypt(3) prefix for the shadow field: ${CRYPT_PREFIX}"
 else
