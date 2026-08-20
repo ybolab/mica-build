@@ -102,3 +102,4 @@ Each task is a single line linking to its detail file. All detailed information 
 - [x] [**RFCT-076 Start-up bundle discovery and the compatibility re-check**](RFCT-076.md) `P1`
 - [x] [**RFCT-077 Verifier assertions for the built-in prefix, fixture-mode widening, and the SIGPIPE sweep**](RFCT-077.md) `P1`
 - [x] [**RFCT-078 The five broken-classes behavioural suite, with coverage asserted**](RFCT-078.md) `P1`
+- [x] [**RFCT-079 Status markers per subsection, the §10.3 register entry, and the final consistency pass**](RFCT-079.md) `P1`
