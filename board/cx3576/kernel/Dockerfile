@@ -6,7 +6,7 @@ ARG DEBIAN_FRONTEND=noninteractive
 RUN apt-get update && apt-get install -y --no-install-recommends \
         git ca-certificates build-essential bc bison flex \
         libssl-dev libelf-dev python3 kmod patch \
-        gcc-aarch64-linux-gnu \
+        gcc-aarch64-linux-gnu device-tree-compiler \
     && rm -rf /var/lib/apt/lists/*
 
 ARG KERNEL_REPO=https://github.com/armbian/linux-rockchip.git
@@ -36,6 +36,8 @@ RUN cd /ksrc && \
                    --disable BCMDHD_SDIO --disable BCMDHD_PCIE \
                    --enable RFKILL_RK \
                    --enable RTC_DRV_HYM8563 \
+                   --enable LEDS_TRIGGERS \
+                   --enable LEDS_TRIGGER_HEARTBEAT \
                    --set-str AIC_FW_PATH "/lib/firmware" && \
     ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- \
         scripts/kconfig/merge_config.sh -m .config /mos-required.fragment && \
@@ -48,6 +50,7 @@ RUN cd /ksrc && \
     grep -q "^CONFIG_AIC_WLAN_SUPPORT=y" .config && \
     grep -q '^CONFIG_AIC_FW_PATH="/lib/firmware"' .config && \
     grep -q '^CONFIG_RFKILL_RK=y' .config && \
+    grep -q '^CONFIG_LEDS_TRIGGER_HEARTBEAT=y' .config && \
     grep -q '^# CONFIG_WL_ROCKCHIP is not set' .config && \
     ! grep -q '^CONFIG_AP6XXX=' .config && \
     ! grep -q '^CONFIG_BCMDHD=' .config && \
@@ -80,6 +83,7 @@ RUN cd /ksrc && \
 
 RUN cd /ksrc && \
     make ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- -j"$(nproc)" Image modules && \
+    grep -q '^CONFIG_LEDS_TRIGGER_HEARTBEAT=y' include/config/auto.conf && \
     echo "kernel release: $(cat include/config/kernel.release)" && \
     [ "$(cat include/config/kernel.release)" = "${KERNEL_EXPECT}" ] && \
     make ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- \
@@ -93,7 +97,13 @@ RUN cd /ksrc && \
     echo 'dtb-$(CONFIG_ARCH_ROCKCHIP) += rk3576-cx3576z.dtb' \
         >> arch/arm64/boot/dts/rockchip/Makefile && \
     make ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- rockchip/rk3576-cx3576z.dtb && \
-    cp arch/arm64/boot/dts/rockchip/rk3576-cx3576z.dtb /rk3576-src.dtb
+    cp arch/arm64/boot/dts/rockchip/rk3576-cx3576z.dtb /rk3576-src.dtb && \
+    test "$(fdtget /rk3576-src.dtb /leds/status-red label)" = "status-red" && \
+    test "$(fdtget /rk3576-src.dtb /leds/status-red default-state)" = "on" && \
+    test "$(fdtget -t x /rk3576-src.dtb /leds/status-red gpios | awk '{print $3}')" = "1" && \
+    test "$(fdtget /rk3576-src.dtb /leds/status-blue label)" = "status-blue" && \
+    test "$(fdtget /rk3576-src.dtb /leds/status-blue default-state)" = "off" && \
+    test "$(fdtget -t x /rk3576-src.dtb /leds/status-blue gpios | awk '{print $3}')" = "0"
 
 FROM scratch AS artifact
 COPY --from=build /ksrc/arch/arm64/boot/Image /

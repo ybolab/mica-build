@@ -237,6 +237,33 @@
 &{/i2c@2aca0000/icm_acc@68} { status = "disabled"; };
 &{/i2c@2aca0000/icm_gyro@68} { status = "disabled"; };
 
+/*
+ * The stock board support uses a private jawest,jwsled driver for these two
+ * indicators.  Model them with gpio-leds instead: red means Linux is still
+ * starting (or shutting down), and userspace switches to blue when the
+ * default OpenRC runlevel has been reached.
+ */
+&{/leds} {
+	pinctrl-names = "default";
+	pinctrl-0 = <&status_red_pin &status_blue_pin>;
+
+	status_red: status-red {
+		label = "status-red";
+		/* Stock jwsled drives red on with 0 and off with 1. */
+		gpios = <&gpio4 RK_PC7 GPIO_ACTIVE_LOW>;
+		default-state = "on";
+	};
+
+	status_blue: status-blue {
+		label = "status-blue";
+		gpios = <&gpio4 RK_PB0 GPIO_ACTIVE_HIGH>;
+		default-state = "off";
+	};
+};
+
+/* EVB1 assigns GPIO4_B0 to an unused camera rail; it is the blue LED here. */
+&{/vcc-mipicsi0-regulator} { status = "disabled"; };
+
 &{/adc-keys} { status = "disabled"; };
 
 &{/dp@27e40000} { status = "disabled"; };
@@ -268,6 +295,16 @@
 };
 
 &pinctrl {
+	status-leds {
+		status_red_pin: status-red-pin {
+			rockchip,pins = <4 RK_PC7 0 &pcfg_pull_up>;
+		};
+
+		status_blue_pin: status-blue-pin {
+			rockchip,pins = <4 RK_PB0 0 &pcfg_pull_up>;
+		};
+	};
+
 	sdmmc-pwr-en {
 		sdmmc_pwr: sdmmc-pwr {
 			rockchip,pins = <0 RK_PB6 0 &pcfg_pull_none>;
