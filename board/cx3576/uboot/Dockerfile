@@ -83,7 +83,7 @@ RUN cd /uboot && \
                    --set-val BOOTDELAY 1 \
                    --set-val SYS_BOOTM_LEN 0x8000000 \
                    --enable USE_PREBOOT \
-                   --set-str PREBOOT "if button recovery; then echo RECOVERY KEY - entering rockusb; rockusb 0 mmc 0; fi" \
+                   --set-str PREBOOT "led status-blue off; led status-red on; led work on; if button recovery; then echo RECOVERY KEY - entering rockusb; rockusb 0 mmc 0; fi" \
                    --set-str BOOTCOMMAND "bootflow scan -lb; echo BOOT FAILED - entering rockusb; rockusb 0 mmc 0" && \
     make olddefconfig && \
     grep -E "^CONFIG_PREBOOT=|^CONFIG_BUTTON_ADC=|^CONFIG_CMD_ROCKUSB=" .config && \
@@ -91,10 +91,31 @@ RUN cd /uboot && \
     grep -q '^CONFIG_FIT=y' .config && \
     grep -q '^CONFIG_BOOTDELAY=1' .config && \
     grep -q '^CONFIG_SYS_BOOTM_LEN=0x8000000' .config && \
+    grep -q '^CONFIG_SPL_GPIO=y' .config && \
+    grep -q '^CONFIG_SPL_DM_GPIO=y' .config && \
+    grep -q '^CONFIG_SPL_DM_REGULATOR=y' .config && \
+    grep -q '^CONFIG_SPL_DM_REGULATOR_FIXED=y' .config && \
     grep -Eq '^CONFIG_ROCKCHIP_BOOT_MODE_REG=0x[1-9a-fA-F][0-9a-fA-F]*$' .config && \
+    grep -q '^CONFIG_CMD_USB=y' .config && \
+    grep -q '^CONFIG_USB_STORAGE=y' .config && \
+    grep -q '^CONFIG_USB_XHCI_HCD=y' .config && \
+    grep -q '^CONFIG_GPIO_HOG=y' .config && \
+    grep -q '^CONFIG_CMD_LED=y' .config && \
+    grep -q '^CONFIG_LED_GPIO=y' .config && \
     make -j"$(nproc)" \
         CROSS_COMPILE=aarch64-linux-gnu- \
         ROCKCHIP_TPL="$DDR" BL31="$BL31" && \
+    test "$(fdtget spl/u-boot-spl.dtb /sdmmc-regulator regulator-name)" = "vcc_sd" && \
+    fdtget spl/u-boot-spl.dtb /soc/mmc@2a310000 vmmc-supply >/dev/null && \
+    test "$(fdtget u-boot.dtb /bootstd bootdev-order)" = "mmc0 mmc1 usb" && \
+    test "$(fdtget u-boot.dtb /soc/usb@23400000 dr_mode)" = "host" && \
+    test "$(fdtget u-boot.dtb /leds/led-work label)" = "work" && \
+    test "$(fdtget u-boot.dtb /leds/led-status-red label)" = "status-red" && \
+    test "$(fdtget u-boot.dtb /leds/led-status-red default-state)" = "on" && \
+    test "$(fdtget -t x u-boot.dtb /leds/led-status-red gpios | awk '{print $3}')" = "1" && \
+    test "$(fdtget u-boot.dtb /leds/led-status-blue label)" = "status-blue" && \
+    test "$(fdtget u-boot.dtb /leds/led-status-blue default-state)" = "off" && \
+    test "$(fdtget -t x u-boot.dtb /leds/led-status-blue gpios | awk '{print $3}')" = "0" && \
     ls -la u-boot-rockchip.bin spl/u-boot-spl.bin u-boot.itb
 
 # mos A/B variant — reconfigures the already-built tree with the env/boot
@@ -106,6 +127,11 @@ RUN cd /uboot && \
 #   or env/mmc.c relocates the env to a partition END instead of the offsets
 # · boot.scr is the only auto-discoverable entry: bootmeth order pinned to
 #   script; the rockusb rescue tail and PREBOOT recovery key are preserved
+# This stage rebuilds u-boot.dtb, so it re-asserts bootdev-order — the one
+# property we deliberately diverge from upstream on (eMMC first, SD as
+# fallback) and the one that ships in the v2 A/B image. The LED and SD-power
+# assertions of the build stage are deliberately not repeated: this stage
+# edits no DTS and the nodes they cover are unchanged by scripts/config.
 FROM build AS build-mos
 ARG DDR_BLOB=rk3576_ddr_lp4_2112MHz_lp5_2736MHz_v1.12.bin
 ARG BL31_BLOB=rk3576_bl31_v1.24.elf
@@ -146,6 +172,7 @@ RUN cd /uboot && \
     make -j"$(nproc)" \
         CROSS_COMPILE=aarch64-linux-gnu- \
         ROCKCHIP_TPL=/rkbin/bin/rk35/${DDR_BLOB} BL31=/rkbin/bin/rk35/${BL31_BLOB} && \
+    test "$(fdtget u-boot.dtb /bootstd bootdev-order)" = "mmc0 mmc1 usb" && \
     ls -la u-boot-rockchip.bin spl/u-boot-spl.bin u-boot.itb
 
 FROM scratch AS artifact-mos
