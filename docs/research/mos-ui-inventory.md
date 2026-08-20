@@ -2,6 +2,85 @@
 
 > English only. Inventory, not proposal — see "Scope" below.
 
+## 0. Status of this document — a snapshot at `d0bcae9`, not maintained
+
+**Measured at** `d0bcae92656257021bb67bf7db72b8ac5bfb4651`, branch
+`bkd/2o0djkty`, worktree clean at the time (§1, "Method"). That commit is the
+whole of what this document describes, and the only commit it describes.
+
+**This is a measurement at a time, not a living document.** It is a snapshot and
+it is **not maintained**: it will not be re-measured as the tree moves. That is
+a decision, not neglect — re-measuring on every merge is unbounded work with no
+completion condition, since the tree moves again the following week and the same
+drifts reappear. Read every present-tense sentence below as present tense *at
+`d0bcae9`*.
+
+**Where the current surface lives.** `docs/design/api.md` §1 inventories the same
+surface measured at `86cd669` ("Merge webd SSH management: default-off SSH,
+transient password, persistent keys, /home and /root on DATA"), and carries
+**[implemented]** / **[proposed]** / **[not implemented]** status markers in its
+headings, defined at `docs/design/api.md:18-20` on the convention set out in
+`docs/design/access.md:23-29`. A reader who needs the routes, the bus surface or
+the settings model *as they now are* goes there, not here.
+
+**An anchor is not a retraction.** The measurement was correct when it was taken
+and its findings remain valid as history. Its value was never only the inventory:
+§9 recorded six doc-versus-code contradictions, they were routed onward, and the
+design documents now carry dated corrections that trace back to them —
+`docs/design/mosd.md:41-46` for §9 row 5 (webd is not a WebSocket bridge),
+`docs/design/mosd.md:58-62` for row 6 (the settings path),
+`docs/design/mosd.md:183-195` for row 1 (the `SshdReconciler` subtree), and
+`docs/design/provisioning.md:141` for rows 2 and 3 (the device password
+authenticates nothing). A reader who needs to know *why* those documents changed
+comes here. Those citations are the current text of those documents, not a
+re-verification of the code beneath them —
+`docs/design/api.md` §1.7 closes by recording that the §9 table was not
+re-verified at `86cd669` (`docs/design/api.md:515-516`). §10's list of what this
+measurement never verified is likewise still true of this measurement.
+
+**How it has gone stale — six drifts.** These are carried across from
+`docs/design/api.md` §1.7 (`docs/design/api.md:488-510` on the branch this header
+was written on), where each is stated with the fact at `86cd669` beside it. They
+are named individually because a header that says "may be stale" is worth much
+less than one that says exactly how. **None of them is corrected in the body
+below**, deliberately: the body stays as measured.
+
+1. **Line numbers throughout §2.1 no longer resolve.** It cites `GET /` at route
+   `:42` and handler `:566`; at `86cd669` those are `mosd/webd/src/routes.rs:45`
+   and `:578`.
+2. **Its route table is missing five routes.** `GET /ssh`, `POST /ssh/enable`,
+   `POST /ssh/password`, `POST /ssh/keys/add` and `POST /ssh/keys/remove` all
+   exist at `mosd/webd/src/routes.rs:57-64`.
+3. **"Six methods and one signal" (§4) is now seven methods.**
+   `SetTransientRootPassword` exists at `mosd/mosd/src/bus.rs:283` and the daemon
+   calls it (`mosd/webd/src/bus_client.rs:20`, `mosd/webd/src/routes.rs:1272`).
+4. **"the sole call site is `GetState("network")`" (§4) is now two call sites.**
+   `GetState("sshd")` is at `mosd/webd/src/routes.rs:1045`.
+5. **Schema version "3" (§5.1) is now 4.** `mosd/mosd-settings/src/model.rs:11`.
+6. **§3.6 quotes a D-Bus policy that permits any local process.** The shipped
+   policy at `86cd669` denies the default context in both directions and allows
+   root only (`mosd/dist/com.mos.mosd.conf:63-72`).
+
+§1.7 records one further item outside those six: the navigation-bar count in §2.2
+— *"exactly four links plus a logout button"* — is off by one, because `shell()`
+now renders five plus the logout form (`mosd/webd/src/routes.rs:180-189`).
+
+**§8's re-measure request is answered in §8 itself**, by this anchor rather than
+by a re-measure. §8 asks for nothing beyond a re-measure, so nothing in it is
+left dangling.
+
+**On the daemon's name.** The daemon this document calls `webd` is **apid** going
+forward; the rename is campaign `l1-o7ee8v0o-20260819152009-apid`. The `webd`
+occurrences in the body are left exactly as measured — the name at `d0bcae9` is
+part of what was measured, and rewriting it would falsify the snapshot. The same
+holds for the `mosd/webd/…` paths cited in this header: they are the paths on the
+branch it was written on. The check that settles it is `test -d mosd/apid` — if
+that succeeds, the rename has landed and every `mosd/webd/…` path in this
+document reads `mosd/apid/…`; if it fails, the rename has not landed and those
+paths open as written.
+
+---
+
 ## Scope
 
 This document records **what mos ships today** in its management UI and the
@@ -553,8 +632,22 @@ from this tree.**
   Rows 1–5, 9, 11, 13 and 14 of the gap table are untouched by it, as is the
   `access.device` credential surface.
 
-Anyone building on this document after the `sshweb` merge should re-run the
-route inventory in section 2 against the merged tree before trusting it.
+**This request was answered by anchoring, not by re-measuring.** The `sshweb`
+merge happened: it is `86cd669`, whose commit message names the branch this
+section names, `bkd/hiu25adw`. The two re-measures asked for above — the route
+inventory in section 2, and section
+5.2's "no" for `access.ssh` together with gap-table row 15 — were **not** carried
+out on this document, deliberately. A snapshot is not maintained (§0), and
+re-measuring it on each merge would never finish. The measured surface at
+`86cd669` lives in `docs/design/api.md` §1 instead — the route table as shipped
+in its §1.2, and the six drifts this document has accumulated enumerated in its
+§1.7. Both re-measures are answered there. The request was not ignored and it was
+not silently dropped — it was redirected, and §0 is where that redirect is
+recorded.
+
+Nothing else in this section asks to be re-measured. "What remains open even if
+that lands", above, is an observation carried forward as history, not a request;
+it was true of the pre-merge tree and this document does not re-check it.
 
 ---
 

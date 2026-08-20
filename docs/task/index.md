@@ -86,3 +86,10 @@ Each task is a single line linking to its detail file. All detailed information 
 - [x] [**RFCT-057 Closing audit of the apid rename: repo-wide completeness, consistency chain, assertion accounting**](RFCT-057.md) `P1`
 - [x] [**RFCT-058 Re-anchor dashboard.md D-Bus policy claims to RFCT-048, state the citation rule, correct the README talos entry**](RFCT-058.md) `P1`
 - [x] [**RFCT-059 Direction-2 audit of the apid rename: every new apid occurrence is a place that should have been renamed**](RFCT-059.md) `P1`
+- [x] [**RFCT-063 Current API/UI surface inventory and the api.md skeleton**](RFCT-063.md) `P1`
+- [x] [**RFCT-064 The API surface and authentication for a programmatic client**](RFCT-064.md) `P1`
+- [x] [**RFCT-065 Static hosting, the custom-UI lifecycle, and the safety fallback**](RFCT-065.md) `P1`
+- [x] [**RFCT-066 Trust, migration and phasing, and what API-first forecloses**](RFCT-066.md) `P1`
+- [x] [**RFCT-067 PMA records, the task index, and the final consistency pass**](RFCT-067.md) `P1`
+- [x] [**RFCT-068 Anchor mos-ui-inventory.md as a measurement at a time**](RFCT-068.md) `P1`
+- [x] [**RFCT-069 Resolve the auth/CSRF and version-set contradictions**](RFCT-069.md) `P1`
