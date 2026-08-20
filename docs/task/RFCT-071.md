@@ -186,9 +186,14 @@ image build or verifier run is owed.
   degenerate empty served set would refuse every manifest-bearing bundle; that
   is the literal reading of "empty intersection", and the caller that owns the
   real set owns not passing an empty one.
-- **Nothing here has run on hardware.** Every claim above is from
-  `cargo nextest` on a development host against temporary directories. No
-  device, no `/srv/ui`, no A/B update was exercised.
+- **This work is not exercised on hardware.** Every claim above rests on one
+  thing: a host-side `cargo nextest run --workspace --locked` against temporary
+  directories. No real `/srv/ui`, no verity root, no A/B update and no
+  `rauc install` was involved. That is a statement about the v2 stack this
+  module lands in — which has not been exercised on a board — and not a claim
+  that the project has never booted hardware: a v1 image has reached the
+  `mos login:` prompt on a real CX3576-Z. Neither "never booted" nor "verified
+  on device" would be an accurate description of the evidence here.
 
 ## Scope fence
 
