@@ -1,22 +1,29 @@
 //! HTTP routes: auth gate middleware, the first-run setup wizard, login and
 //! logout flows, the status/network/hostname panes, the power pane and the
 //! SSH pane.
+//!
+//! [`app`] is also where `docs/design/api.md` §4.1's precedence lives, as the
+//! *shape* of the router rather than as a check: declared routes, then the
+//! reserved `/api/` subtree, then the asset router as the fallback.
 
 use std::sync::{Arc, Mutex};
 
 use axum::Router;
-use axum::extract::{Form, Query, Request, State};
-use axum::http::header::{HOST, LOCATION, SET_COOKIE};
+use axum::extract::{Form, OriginalUri, Query, Request, State};
+use axum::http::header::{CACHE_CONTROL, CONTENT_TYPE, HOST, LOCATION, SET_COOKIE};
 use axum::http::{HeaderMap, StatusCode};
 use axum::middleware::{self, Next};
 use axum::response::{Html, IntoResponse, Redirect, Response};
-use axum::routing::{get, post};
+use axum::routing::{any, get, post};
 use maud::{DOCTYPE, Markup, PreEscaped, html};
 use mosd_settings::{AuthorizedKey, SettingsError, parse_authorized_key, validate_authorized_keys};
-use serde_json::Value;
+use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 
+use crate::assets::mime::CacheClass;
+use crate::assets::serve;
 use crate::auth::{self, LoginGuard};
+use crate::bundle::Store;
 use crate::session::{self, SessionStore};
 use crate::settings_api::SettingsApi;
 
@@ -26,23 +33,57 @@ pub struct AppState {
     api: Arc<dyn SettingsApi>,
     sessions: Arc<SessionStore>,
     guard: Arc<Mutex<LoginGuard>>,
+    bundles: Arc<Store>,
 }
 
 impl AppState {
     /// State around a settings backend and the cookie signing key.
+    ///
+    /// The bundle store is constructed here and reads nothing: §6.1 forbids
+    /// bundle discovery before the listeners bind, and `Store::at_default` is
+    /// a path and no syscall. Discovery and the start-up compatibility
+    /// re-check are separate work.
     pub fn new(api: Arc<dyn SettingsApi>, signing_key: [u8; 32]) -> Self {
         Self {
             api,
             sessions: Arc::new(SessionStore::new(signing_key)),
             guard: Arc::new(Mutex::new(LoginGuard::default())),
+            bundles: Arc::new(Store::at_default()),
         }
+    }
+
+    /// The `/srv/ui` bundle store the asset router reads (§5.2).
+    pub(crate) fn bundles(&self) -> &Store {
+        &self.bundles
+    }
+
+    /// Root the bundle store somewhere else, for tests that install one.
+    ///
+    /// Test-only on purpose: §5.2 fixes the shipped location and nothing
+    /// configures it.
+    #[cfg(test)]
+    pub fn with_bundle_root(mut self, root: impl Into<std::path::PathBuf>) -> Self {
+        self.bundles = Arc::new(Store::new(root));
+        self
     }
 }
 
 /// The HTTPS application router.
+///
+/// §4.1's precedence rule is this function's declaration order, and it is
+/// total. Rules 1-3 are `.route`/`.nest` declarations and rule 4 is the
+/// `.fallback`; axum matches declared routes before it consults a fallback, so
+/// a bundle that ships a file at `api/v1/settings`, at `healthz` or at `login`
+/// cannot capture any of them. No handler re-checks a prefix to make that
+/// true.
 pub fn app(state: AppState) -> Router {
     Router::new()
-        .route("/", get(home))
+        // §4.1's single exception to rule 3: `/` is conditional — the active
+        // bundle's index when one is active and readable, the built-in UI
+        // otherwise. §6.3's reserved prefix, which is what makes the built-in
+        // UI reachable *unconditionally*, is separate work and does not exist
+        // yet; until it does, this is the only path that reaches `home`.
+        .route("/", get(serve::root))
         .route("/setup", get(setup_form).post(setup_submit))
         .route("/login", get(login_form).post(login_submit))
         .route("/logout", post(logout))
@@ -63,8 +104,48 @@ pub fn app(state: AppState) -> Router {
         .route("/ssh/keys/add", post(ssh_key_add))
         .route("/ssh/keys/remove", post(ssh_key_remove))
         .route("/healthz", get(healthz))
+        // §4.1 rule 1: the whole `/api/` prefix, its own not-found handler
+        // included. It 404s everything, `/api/versions` among them — §2's
+        // routes are a later phase and this reservation is what guarantees no
+        // bundle can occupy the prefix before they land.
+        //
+        // The explicit `/api/` route is not redundant. `nest` claims `/api`,
+        // `/api/x` and `/api/x/y`, and **not** `/api/` — measured, and the
+        // difference is a request that begins `/api/` reaching the asset
+        // router, which is exactly what rule 1 forbids.
+        .nest("/api", Router::new().fallback(api_not_found))
+        .route("/api/", any(api_not_found))
+        // §4.1 rule 4.
+        .fallback(serve::fallback)
         .layer(middleware::from_fn_with_state(state.clone(), gate))
         .with_state(state)
+}
+
+/// The reserved subtree's own not-found handler (§4.1 rule 1, §4.2's "why
+/// 404s inside `/api/` are the API's own").
+///
+/// §2.4's envelope, which is what makes a mistyped path a machine-readable
+/// answer rather than an empty body. `path` is omitted: §2.4 defines it as the
+/// **settings dot-path** at fault and a request that matched no route has
+/// none. `Cache-Control: no-store` is §4.3's second row, which is every
+/// `/api/` response and not only the successful ones.
+async fn api_not_found(OriginalUri(uri): OriginalUri) -> Response {
+    (
+        StatusCode::NOT_FOUND,
+        [
+            (CONTENT_TYPE, "application/json"),
+            (CACHE_CONTROL, CacheClass::NoStore.header_value()),
+        ],
+        json!({
+            "error": {
+                "code": "not_found",
+                "message": format!("no API route at {}", uri.path()),
+                "source": "apid",
+            }
+        })
+        .to_string(),
+    )
+        .into_response()
 }
 
 /// Redirect-only router served on the HTTP listener: 308 every request to
@@ -575,7 +656,7 @@ fn pretty(value: &Value) -> String {
     serde_json::to_string_pretty(value).unwrap_or_else(|_| value.to_string())
 }
 
-async fn home(State(state): State<AppState>) -> Html<String> {
+pub(crate) async fn home(State(state): State<AppState>) -> Html<String> {
     let hostname = state.api.get_settings("hostname").await;
     let network = state.api.get_state("network").await;
     let uptime = std::fs::read_to_string("/proc/uptime")
