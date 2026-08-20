@@ -82,7 +82,7 @@ fi
 # Re-exec in a container when the host lacks any required tool. unsquashfs,
 # veritysetup and setcap/getcap are the v2 additions over v1's set.
 REQUIRED_TOOLS=(sgdisk mdir mcopy mlabel debugfs tune2fs dumpe2fs e2fsck cmp
-    unsquashfs veritysetup getcap setcap)
+    unsquashfs veritysetup getcap setcap fdtget)
 if [ "${INNER}" -eq 0 ] && [ -z "${FIXTURE_ROOT}" ]; then
     missing=0
     for tool in "${REQUIRED_TOOLS[@]}"; do
@@ -118,7 +118,7 @@ if [ "${INNER}" -eq 0 ] && [ -z "${FIXTURE_ROOT}" ]; then
         inner_args+=("${img_in}")
         rc=0
         docker run --rm "${mounts[@]}" -e BOARD_DIR=/board alpine:3.21 \
-            sh -c 'apk add --no-cache -q bash coreutils diffutils gptfdisk sgdisk dosfstools mtools e2fsprogs e2fsprogs-extra squashfs-tools cryptsetup libcap libcap-setcap && exec bash /work/os/verify-image-v2.sh "$@"' \
+            sh -c 'apk add --no-cache -q bash coreutils diffutils gptfdisk sgdisk dosfstools mtools e2fsprogs e2fsprogs-extra squashfs-tools cryptsetup libcap libcap-setcap dtc && exec bash /work/os/verify-image-v2.sh "$@"' \
             _ "${inner_args[@]}" || rc=$?
         if [ -n "${tmp_board}" ]; then
             rmdir "${tmp_board}" 2>/dev/null || true
@@ -795,6 +795,45 @@ check_boot_slot() {
             pass "factory: BOOT-${slot} ${f} matches the local BSP artifact ${src}"
         else
             fail "factory: BOOT-${slot} ${f} differs from the local BSP artifact ${src}"
+        fi
+    done
+
+    # THE LED ASSERTION, and it is made against the copy EXTRACTED FROM THE
+    # IMAGE, not against ${DTB_SRC}. The byte-compare above only says the slot
+    # agrees with whatever the local BSP tree happens to hold; on its own it
+    # would pass just as happily for an image assembled from a kernel built
+    # without the status LEDs at all. What the board reads at boot is this copy,
+    # so this is what gets asserted.
+    #
+    # The GPIO flags cell is the cell that matters. `default-state` alone reads
+    # green while a red LED behaves backwards: status-red hangs off an
+    # active-low line (flags 1) and status-blue off an active-high one (flags 0),
+    # so a single inverted cell turns "lit at boot" into "dark at boot" with
+    # every label and every default-state still spelling exactly right.
+    local dtb="${TMP}/boot-${slot}-rk3576-src.dtb"
+    local led name want_state want_flags want_pol got
+    for led in "status-red:on:1:active-low" "status-blue:off:0:active-high"; do
+        IFS=':' read -r name want_state want_flags want_pol <<<"${led}"
+
+        got="$(fdtget "${dtb}" "/leds/${name}" label 2>/dev/null || true)"
+        if [ "${got}" = "${name}" ]; then
+            pass "BOOT-${slot} rk3576-src.dtb: /leds/${name} label is '${name}'"
+        else
+            fail "BOOT-${slot} rk3576-src.dtb: /leds/${name} label is '${got:-missing}', expected '${name}'"
+        fi
+
+        got="$(fdtget "${dtb}" "/leds/${name}" default-state 2>/dev/null || true)"
+        if [ "${got}" = "${want_state}" ]; then
+            pass "BOOT-${slot} rk3576-src.dtb: /leds/${name} default-state is '${want_state}'"
+        else
+            fail "BOOT-${slot} rk3576-src.dtb: /leds/${name} default-state is '${got:-missing}', expected '${want_state}'"
+        fi
+
+        got="$(fdtget -t x "${dtb}" "/leds/${name}" gpios 2>/dev/null | awk '{print $3}' || true)"
+        if [ "${got}" = "${want_flags}" ]; then
+            pass "BOOT-${slot} rk3576-src.dtb: /leds/${name} GPIO flags cell is ${want_flags} (${want_pol})"
+        else
+            fail "BOOT-${slot} rk3576-src.dtb: /leds/${name} GPIO flags cell is '${got:-missing}', expected ${want_flags} (${want_pol}); the wrong polarity drives this LED backwards while its label and default-state still read correctly"
         fi
     done
 
