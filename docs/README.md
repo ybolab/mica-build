@@ -15,6 +15,7 @@
   - `uboot-ab-handshake.md` — A/B boot-order contract between U-Boot, RAUC and the health gate
   - `dashboard.md` — dashboard proposal: landing screen, IA, technology posture, process architecture
   - `api.md` — API-first apid: current HTTP/bus surface, proposed API, static hosting, replaceable UI
+  - `bsp-cx3576-sync.md` — cx3576 upstream BSP: source repo, synced commit, deviation register
 - `research/` — decision-basis studies
   - `os-comparison.md` — balena/Torizon/Talos/Yocto evaluation and rejected alternatives
   - `init-strategy.md` — init core strategy: Plan A Talos / Plan B systemd+Rust / Plan C Rust PID1, with triggers
