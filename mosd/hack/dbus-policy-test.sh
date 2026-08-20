@@ -426,7 +426,11 @@ as_nobody() {
         python3 "${CLIENT}" "$@" 2>&1 | tail -n1
 }
 
-echo "bus: ${SOCK} (dbus-daemon $(dbus-daemon --version | head -n1 | awk '{print $NF}'))"
+# `awk 'NR == 1'`, not `| head -n1`: head closes the pipe after its line,
+# dbus-daemon takes SIGPIPE, and the `set -euo pipefail` at :19 turns that 141
+# into a failed run of the whole suite at its very first banner line. awk reads
+# to EOF, so there is no early exit for dbus-daemon to be signalled by.
+echo "bus: ${SOCK} (dbus-daemon $(dbus-daemon --version | awk 'NR == 1 {print $NF}'))"
 echo "policy under test: ${POLICY}"
 echo
 

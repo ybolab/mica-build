@@ -153,8 +153,8 @@ fi
 # --- GPT: sgdisk --verify ---
 verify_out="$(sgdisk --verify "${IMG}" 2>&1 || true)"
 complaints="$(echo "${verify_out}" | grep -E "Caution|Warning" | grep -Ev "doesn't (begin|end) on a|degraded performance" || true)"
-if echo "${verify_out}" | grep -q "No problems found" &&
-    ! echo "${verify_out}" | grep -Eq "problems!|Problem:|Creating new GPT entries|invalid GPT|damaged GPT" &&
+if grep -q "No problems found" <<<"${verify_out}" &&
+    ! grep -Eq "problems!|Problem:|Creating new GPT entries|invalid GPT|damaged GPT" <<<"${verify_out}" &&
     [ -z "${complaints}" ]; then
     pass "sgdisk --verify reports no problems"
 else
@@ -176,9 +176,22 @@ else
     fail "found ${part_count} partitions, expected 3"
 fi
 
+# Takes the first line of a stream WITHOUT an early exit.
+#
+# `| head -n1` closes the pipe the moment it has its line; the producer's next
+# write raises SIGPIPE, `set -euo pipefail` at :2 turns that 141 into the exit
+# status of the whole pipeline, and the run dies mid-check with NO FAIL: line
+# and NO RESULT: line -- a signature that reads as a crash rather than as a
+# failed check. awk reads to EOF and prints only the first record, so there is
+# no early exit left for the producer to be signalled by. Same reasoning as the
+# `grep -F ... >/dev/null` at the libcrypt check at the end of this file.
+first_line() {
+    awk 'NR == 1'
+}
+
 # Extract one field from sgdisk -i output.
 sg_field() {
-    echo "$1" | sed -n "s/^$2: //p" | head -n1
+    sed -n "s/^$2: //p" <<<"$1" | first_line
 }
 
 # --- p1 (loader) ---
@@ -417,7 +430,7 @@ fat_cmp /rk3576-src.dtb "${DTB_SRC}"
 fat_listing="$(mdir -/ -b -i "${FAT_IMG}" ::/ 2>/dev/null || true)"
 if [ -z "${fat_listing}" ]; then
     fail "FAT filesystem unreadable (cannot list files)"
-elif echo "${fat_listing}" | grep -qi "initr"; then
+elif grep -qi "initr" <<<"${fat_listing}"; then
     fail "FAT contains an initramfs/initrd file: $(echo "${fat_listing}" | grep -i initr | tr '\n' ' ')"
 else
     pass "FAT contains no initramfs file"
@@ -436,7 +449,7 @@ if mcopy -n -i "${FAT_IMG}" ::/extlinux/extlinux.conf "${EXTLINUX}" 2>/dev/null;
     else
         fail "extlinux.conf lacks 'fdt /rk3576-src.dtb'"
     fi
-    if sed 's/^[[:space:]]*//' "${EXTLINUX}" | grep -qFx "${APPEND_LINE}"; then
+    if sed 's/^[[:space:]]*//' "${EXTLINUX}" | grep -Fx "${APPEND_LINE}" >/dev/null; then
         pass "extlinux.conf append line matches the contract exactly"
     else
         fail "extlinux.conf append line does not match: expected '${APPEND_LINE}'"
@@ -513,7 +526,7 @@ fi
 # Assert an ext4 path is a regular file.
 ext_regular() {
     local path="$1"
-    if dbg "stat ${path}" | grep -q "Type: regular"; then
+    if dbg "stat ${path}" | grep "Type: regular" >/dev/null; then
         pass "${path} is a regular file"
     else
         fail "${path} missing or not a regular file"
@@ -531,8 +544,8 @@ ext_regular /usr/lib/systemd/systemd
 ext_symlink() {
     local path="$1" target="$2" out dest
     out="$(dbg "stat ${path}")"
-    dest="$(echo "${out}" | sed -n 's/.*link dest: "\(.*\)".*/\1/p' | head -n1)"
-    if echo "${out}" | grep -q "Type: symlink"; then
+    dest="$(sed -n 's/.*link dest: "\(.*\)".*/\1/p' <<<"${out}" | first_line)"
+    if grep -q "Type: symlink" <<<"${out}"; then
         case "${dest}" in
         "${target}" | */"${target}")
             pass "${path} is a symlink to ${dest}"
@@ -547,20 +560,20 @@ ext_symlink() {
 
 # ssh.service enablement is NOT asserted here: it is a function of the image
 # profile, and both directions of that are checked in the M5 section below.
-if dbg "stat /etc/systemd/system/multi-user.target.wants/systemd-networkd.service" | grep -q "Inode:" ||
-    dbg "stat /etc/systemd/system/dbus-org.freedesktop.network1.service" | grep -q "Inode:"; then
+if dbg "stat /etc/systemd/system/multi-user.target.wants/systemd-networkd.service" | grep "Inode:" >/dev/null ||
+    dbg "stat /etc/systemd/system/dbus-org.freedesktop.network1.service" | grep "Inode:" >/dev/null; then
     pass "systemd-networkd is enabled"
 else
     fail "systemd-networkd enablement symlink missing"
 fi
-if dbg "cat /etc/systemd/network/80-dhcp.network" | grep -q "DHCP=yes"; then
+if dbg "cat /etc/systemd/network/80-dhcp.network" | grep "DHCP=yes" >/dev/null; then
     pass "/etc/systemd/network/80-dhcp.network has DHCP=yes"
 else
     fail "/etc/systemd/network/80-dhcp.network missing or lacks DHCP=yes"
 fi
 repart_conf="$(dbg "cat /etc/repart.d/50-rootfs.conf")"
-if echo "${repart_conf}" | grep -qF "[Partition]" &&
-    echo "${repart_conf}" | grep -q "Type=linux-generic"; then
+if grep -qF "[Partition]" <<<"${repart_conf}" &&
+    grep -q "Type=linux-generic" <<<"${repart_conf}"; then
     pass "/etc/repart.d/50-rootfs.conf has [Partition] and Type=linux-generic"
 else
     fail "/etc/repart.d/50-rootfs.conf missing or lacks [Partition]/Type=linux-generic"
@@ -571,7 +584,7 @@ if dbg "cat /etc/fstab" |
 else
     fail "/etc/fstab lacks a PARTLABEL=rootfs / ext4 entry with x-systemd.growfs"
 fi
-if dbg "cat /etc/systemd/journald.conf.d/00-volatile.conf" | grep -q "Storage=volatile"; then
+if dbg "cat /etc/systemd/journald.conf.d/00-volatile.conf" | grep "Storage=volatile" >/dev/null; then
     pass "/etc/systemd/journald.conf.d/00-volatile.conf has Storage=volatile"
 else
     fail "/etc/systemd/journald.conf.d/00-volatile.conf missing or lacks Storage=volatile"
@@ -588,12 +601,12 @@ if [ "${elf_head:0:8}" = "7f454c46" ] && [ "${elf_head:36:4}" = "b700" ]; then
 else
     fail "/usr/bin/mosd is not an aarch64 ELF (header: '${elf_head:0:40}')"
 fi
-if dbg "cat /usr/lib/systemd/system/mosd.service" | grep -q "BusName=com.mos.mosd"; then
+if dbg "cat /usr/lib/systemd/system/mosd.service" | grep "BusName=com.mos.mosd" >/dev/null; then
     pass "/usr/lib/systemd/system/mosd.service present with BusName=com.mos.mosd"
 else
     fail "/usr/lib/systemd/system/mosd.service missing or lacks BusName=com.mos.mosd"
 fi
-if dbg "stat /etc/systemd/system/multi-user.target.wants/mosd.service" | grep -q "Inode:"; then
+if dbg "stat /etc/systemd/system/multi-user.target.wants/mosd.service" | grep "Inode:" >/dev/null; then
     pass "mosd.service is enabled (multi-user.target.wants)"
 else
     fail "mosd.service enablement symlink missing"
@@ -753,7 +766,7 @@ for d in /etc/dbus-1/system.d /usr/share/dbus-1/system.d; do
     for e in $(dbg "ls -p ${d}" | awk -F/ 'NF >= 7 && $6 != "." && $6 != ".." {print $6}'); do
         [ "${d}/${e}" = "${MOSD_POLICY_PATH}" ] && continue
         if [ -n "${mosd_bus_name}" ] &&
-            dbg "cat ${d}/${e}" | grep -Fq "${mosd_bus_name}"; then
+            dbg "cat ${d}/${e}" | grep -F "${mosd_bus_name}" >/dev/null; then
             mosd_policy_dups="${mosd_policy_dups} ${d}/${e}"
         fi
     done
@@ -776,17 +789,17 @@ else
     fail "/usr/bin/apid is not an aarch64 ELF (header: '${elf_head:0:40}')"
 fi
 apid_unit="$(dbg "cat /usr/lib/systemd/system/apid.service")"
-if echo "${apid_unit}" | grep -q "After=.*mosd.service"; then
+if grep -q "After=.*mosd.service" <<<"${apid_unit}"; then
     pass "/usr/lib/systemd/system/apid.service orders After= mosd.service"
 else
     fail "/usr/lib/systemd/system/apid.service missing or lacks After=...mosd.service"
 fi
-if echo "${apid_unit}" | grep -q "StateDirectory=mos/apid"; then
+if grep -q "StateDirectory=mos/apid" <<<"${apid_unit}"; then
     pass "/usr/lib/systemd/system/apid.service has StateDirectory=mos/apid"
 else
     fail "/usr/lib/systemd/system/apid.service missing or lacks StateDirectory=mos/apid"
 fi
-if dbg "stat /etc/systemd/system/multi-user.target.wants/apid.service" | grep -q "Inode:"; then
+if dbg "stat /etc/systemd/system/multi-user.target.wants/apid.service" | grep "Inode:" >/dev/null; then
     pass "apid.service is enabled (multi-user.target.wants)"
 else
     fail "apid.service enablement symlink missing"
@@ -794,14 +807,14 @@ fi
 
 # --- board hardware init ---
 modules_conf="$(dbg "cat /etc/mos/modules.conf")"
-if echo "${modules_conf}" | grep -q "aic8800_fdrv" && echo "${modules_conf}" | grep -q "aic8800_btlpm"; then
+if grep -q "aic8800_fdrv" <<<"${modules_conf}" && grep -q "aic8800_btlpm" <<<"${modules_conf}"; then
     pass "/etc/mos/modules.conf lists aic8800_fdrv and aic8800_btlpm"
 else
     fail "/etc/mos/modules.conf missing or lacks aic8800_fdrv/aic8800_btlpm"
 fi
 # Single SKU: the dropped bcmdhd must not creep back into the module list.
 # Comment lines are excluded — the file may legitimately EXPLAIN the drop.
-if echo "${modules_conf}" | grep -v '^[[:space:]]*#' | grep -q "bcmdhd"; then
+if grep -v '^[[:space:]]*#' <<<"${modules_conf}" | grep "bcmdhd" >/dev/null; then
     fail "/etc/mos/modules.conf still loads bcmdhd (single-SKU AIC8800 board)"
 else
     pass "/etc/mos/modules.conf loads no bcmdhd module"
@@ -813,7 +826,7 @@ ext_regular /etc/mos/mac.conf
 ext_regular /etc/mos/gadget.conf
 for u in mos-modules mos-otg mos-can mos-bt mos-mac mos-gadget; do
     ext_regular "/usr/lib/systemd/system/${u}.service"
-    if dbg "stat /etc/systemd/system/multi-user.target.wants/${u}.service" | grep -q "Inode:"; then
+    if dbg "stat /etc/systemd/system/multi-user.target.wants/${u}.service" | grep "Inode:" >/dev/null; then
         pass "${u}.service is enabled (multi-user.target.wants)"
     else
         fail "${u}.service enablement symlink missing"
@@ -823,8 +836,8 @@ ext_regular /usr/bin/btattach
 
 # CAN: classic CAN at 250 kbit/s with CAN FD off (board bring-up facts).
 can_conf="$(dbg "cat /etc/mos/can.conf")"
-if echo "${can_conf}" | grep -qx "bitrate=250000" && \
-   echo "${can_conf}" | grep -qx "fd=off"; then
+if grep -qx "bitrate=250000" <<<"${can_conf}" && \
+   grep -qx "fd=off" <<<"${can_conf}"; then
     pass "/etc/mos/can.conf sets bitrate 250000 and fd off"
 else
     fail "/etc/mos/can.conf must set bitrate=250000 and fd=off"
@@ -832,28 +845,28 @@ fi
 
 # BT: verified AIC8800D80 combination (H:4 at 1.5 Mbit/s on UART4).
 bt_conf="$(dbg "cat /etc/mos/bt.conf")"
-if echo "${bt_conf}" | grep -qx "uart=/dev/ttyS4" && \
-   echo "${bt_conf}" | grep -qx "proto=h4" && \
-   echo "${bt_conf}" | grep -qx "speed=1500000"; then
+if grep -qx "uart=/dev/ttyS4" <<<"${bt_conf}" && \
+   grep -qx "proto=h4" <<<"${bt_conf}" && \
+   grep -qx "speed=1500000" <<<"${bt_conf}"; then
     pass "/etc/mos/bt.conf sets the verified AIC8800D80 attach parameters"
 else
     fail "/etc/mos/bt.conf must set uart=/dev/ttyS4, proto=h4, speed=1500000"
 fi
-if echo "${modules_conf}" | grep -qx "aic8800_btlpm"; then
+if grep -qx "aic8800_btlpm" <<<"${modules_conf}"; then
     pass "/etc/mos/modules.conf lists aic8800_btlpm (BT core of the combo chip)"
 else
     fail "/etc/mos/modules.conf lacks aic8800_btlpm"
 fi
 
 # USB OTG: role must stay "otg" so attaching a host PC brings up the gadget.
-if dbg "cat /etc/mos/otg.conf" | grep -qx "mode=otg"; then
+if dbg "cat /etc/mos/otg.conf" | grep -x "mode=otg" >/dev/null; then
     pass "/etc/mos/otg.conf sets mode=otg (gadget enumerates on host attach)"
 else
     fail "/etc/mos/otg.conf must set mode=otg"
 fi
 
 # Stable MAC derivation from the eMMC CID.
-if dbg "cat /etc/mos/mac.conf" | grep -qx "seed=/sys/block/mmcblk0/device/cid"; then
+if dbg "cat /etc/mos/mac.conf" | grep -x "seed=/sys/block/mmcblk0/device/cid" >/dev/null; then
     pass "/etc/mos/mac.conf derives MACs from the eMMC CID"
 else
     fail "/etc/mos/mac.conf must set seed=/sys/block/mmcblk0/device/cid"
@@ -863,7 +876,7 @@ for h in hwinit-mac hwinit-gadget; do
 done
 ext_regular /usr/lib/udev/rules.d/60-mos-gadget-getty.rules
 if dbg "cat /usr/lib/udev/rules.d/60-mos-gadget-getty.rules" | \
-        grep -q "serial-getty@ttyGS0.service"; then
+        grep "serial-getty@ttyGS0.service" >/dev/null; then
     pass "udev rule pulls in serial-getty@ttyGS0 when the gadget enumerates"
 else
     fail "udev rule missing the serial-getty@ttyGS0 SYSTEMD_WANTS"
@@ -871,18 +884,18 @@ fi
 
 # Bluetooth adapter name: bluez's hostname plugin overrides Name and falls back
 # to the system hostname, so main.conf must not pin a Name of its own.
-if dbg "cat /etc/bluetooth/main.conf" | grep -qE "^[[:space:]]*Name[[:space:]]*="; then
+if dbg "cat /etc/bluetooth/main.conf" | grep -E "^[[:space:]]*Name[[:space:]]*=" >/dev/null; then
     fail "/etc/bluetooth/main.conf pins Name (blocks the hostname plugin)"
 else
     pass "/etc/bluetooth/main.conf leaves Name to the hostname plugin"
 fi
 if dbg "stat /etc/systemd/system/bluetooth.target.wants/bluetooth.service" | \
-        grep -q "Inode:"; then
+        grep "Inode:" >/dev/null; then
     pass "bluetooth.service is enabled"
 else
     fail "bluetooth.service enablement symlink missing"
 fi
-if dbg "stat /etc/modules-load.d/wifi.conf" | grep -q "Inode:"; then
+if dbg "stat /etc/modules-load.d/wifi.conf" | grep "Inode:" >/dev/null; then
     fail "/etc/modules-load.d/wifi.conf still present (superseded by mos-modules)"
 else
     pass "/etc/modules-load.d/wifi.conf is gone (superseded by mos-modules)"
@@ -897,7 +910,7 @@ fi
 #
 # What this proves: the shadow file that SHIPS carries no working root login.
 # What it does NOT prove: anything about the password the device ends up with.
-root_entry="$(dbg "cat /etc/shadow" | awk -F: '$1 == "root" { print; exit }' || true)"
+root_entry="$(dbg "cat /etc/shadow" | awk -F: '$1 == "root" && !seen { print; seen = 1 }' || true)"
 root_hash="$(printf '%s' "${root_entry}" | cut -d: -f2)"
 if [ -z "${root_entry}" ]; then
     fail "/etc/shadow has no root: entry, so no claim can be made about the baked root password"
@@ -942,7 +955,7 @@ sh_missing=""
 sh_checked=0
 while IFS=: read -r u _; do
     [ -n "${u}" ] || continue
-    line="$(grep "^${u}:" "${TMP}/v1-shadow" | head -n1 || true)"
+    line="$(grep "^${u}:" "${TMP}/v1-shadow" | first_line || true)"
     if [ -z "${line}" ]; then
         sh_missing="${sh_missing} ${u}"
         continue
@@ -980,19 +993,19 @@ fi
 # stranger. Asserting the name alone would pass straight through that.
 MOS_USER=mos
 MOS_ID=1000
-mos_pw="$(printf '%s\n' "${v1_passwd}" | awk -F: -v u="${MOS_USER}" '$1 == u { print; exit }')"
+mos_pw="$(awk -F: -v u="${MOS_USER}" '$1 == u { print; exit }' <<<"${v1_passwd}")"
 mos_uid="$(printf '%s' "${mos_pw}" | cut -d: -f3)"
 mos_gid="$(printf '%s' "${mos_pw}" | cut -d: -f4)"
 mos_home="$(printf '%s' "${mos_pw}" | cut -d: -f6)"
 mos_shell="$(printf '%s' "${mos_pw}" | cut -d: -f7)"
 v1_group="$(dbg "cat /etc/group")"
-mos_grp_gid="$(printf '%s\n' "${v1_group}" | awk -F: -v g="${MOS_USER}" '$1 == g { print $3; exit }')"
+mos_grp_gid="$(awk -F: -v g="${MOS_USER}" '$1 == g { print $3; exit }' <<<"${v1_group}")"
 # /bin is a symlink to usr/bin on merged-usr Debian, so both spellings are
 # probed: the shell field says /bin/bash and what must exist is the file that
 # path resolves to.
 bash_type=absent
 for c in /bin/bash /usr/bin/bash; do
-    if dbg "stat ${c}" | grep -q "Type: regular"; then bash_type=regular; break; fi
+    if dbg "stat ${c}" | grep "Type: regular" >/dev/null; then bash_type=regular; break; fi
 done
 if [ -z "${mos_pw}" ]; then
     fail "no '${MOS_USER}' account in the packed /etc/passwd; the two images would drift, and an operator's uid would differ between them"
@@ -1018,7 +1031,7 @@ mos_extra_groups="$(printf '%s\n' "${v1_group}" |
     tr '\n' ' ' | sed 's/ $//')"
 sudo_path=""
 for c in /usr/bin/sudo /bin/sudo; do
-    if dbg "stat ${c}" | grep -q "Type: regular"; then sudo_path="${c}"; break; fi
+    if dbg "stat ${c}" | grep "Type: regular" >/dev/null; then sudo_path="${c}"; break; fi
 done
 if [ -n "${mos_extra_groups}" ]; then
     fail "'${MOS_USER}' is a member of supplementary group(s): ${mos_extra_groups}. Phase 1 grants none — not adm, not shadow, nothing reaching the settings tree — and this is a recorded deferral (docs/task/RFCT-039.md), so a grant appearing here is an undocumented privilege decision"
@@ -1086,7 +1099,7 @@ ext_resolves_cmd() {
     /*) p="${c}" ;;
     *)
         for d in /usr/bin /bin /usr/sbin /sbin; do
-            if dbg "stat ${d}/${c}" | grep -q "Inode:"; then
+            if dbg "stat ${d}/${c}" | grep "Inode:" >/dev/null; then
                 p="${d}/${c}"
                 break
             fi
@@ -1096,9 +1109,9 @@ ext_resolves_cmd() {
     [ -n "${p}" ] || return 1
     while [ "${hops}" -lt 8 ]; do
         st="$(dbg "stat ${p}")"
-        echo "${st}" | grep -q "Inode:" || return 1
-        echo "${st}" | grep -q "Type: symlink" || break
-        t="$(echo "${st}" | sed -n 's/.*link dest: "\(.*\)".*/\1/p' | head -n1)"
+        grep -q "Inode:" <<<"${st}" || return 1
+        grep -q "Type: symlink" <<<"${st}" || break
+        t="$(sed -n 's/.*link dest: "\(.*\)".*/\1/p' <<<"${st}" | first_line)"
         [ -n "${t}" ] || return 1
         case "${t}" in
         /*) p="${t}" ;;
@@ -1106,7 +1119,7 @@ ext_resolves_cmd() {
         esac
         hops=$((hops + 1))
     done
-    dbg "stat ${p}" | grep -q "Type: regular"
+    dbg "stat ${p}" | grep "Type: regular" >/dev/null
 }
 
 # Extract the scripts out of the ext4 so the same extractor can read them.
@@ -1148,15 +1161,15 @@ RECONCILER_DIR="${REPO_ROOT}/mosd/mosd/src/reconciler"
 
 # Value of a `const NAME: &str = "...";` in one of the reconcilers.
 mosd_const() {
-    sed -n "s/^const $2: \&str = \"\(.*\)\";\$/\1/p" "${RECONCILER_DIR}/$1" 2>/dev/null | head -n1
+    sed -n "s/^const $2: \&str = \"\(.*\)\";\$/\1/p" "${RECONCILER_DIR}/$1" 2>/dev/null | first_line
 }
 # The unit TEMPLATE name behind `format!("x@{interface}.service")`.
 mosd_unit_template() {
-    sed -n 's/^ *format!("\(.*\)@{interface}\.service")$/\1@.service/p' "${RECONCILER_DIR}/$1" 2>/dev/null | head -n1
+    sed -n 's/^ *format!("\(.*\)@{interface}\.service")$/\1@.service/p' "${RECONCILER_DIR}/$1" 2>/dev/null | first_line
 }
 # The rendered configuration file name, still carrying `{interface}`.
 mosd_config_name() {
-    sed -n 's/^ *format!("\([^"]*{interface}[^"]*\.conf\)")$/\1/p' "${RECONCILER_DIR}/$1" 2>/dev/null | head -n1
+    sed -n 's/^ *format!("\([^"]*{interface}[^"]*\.conf\)")$/\1/p' "${RECONCILER_DIR}/$1" 2>/dev/null | first_line
 }
 
 STA_DIR="$(mosd_const wifi_client.rs DEFAULT_CONFIG_DIR)"
@@ -1169,7 +1182,7 @@ STA_PREFIX="$(mosd_const wifi_client.rs NETWORKD_PREFIX)"
 AP_PREFIX="$(mosd_const wifi_ap.rs NETWORKD_PREFIX)"
 # The pattern network.rs sweeps: it DELETES every *<marker>*.network it did not
 # render, so an image file carrying the marker would be deleted on device.
-MOS_SWEEP="$(sed -n 's/.*file_name\.contains("\(.*\)").*/\1/p' "${RECONCILER_DIR}/network.rs" 2>/dev/null | head -n1)"
+MOS_SWEEP="$(sed -n 's/.*file_name\.contains("\(.*\)").*/\1/p' "${RECONCILER_DIR}/network.rs" 2>/dev/null | first_line)"
 
 if [ -n "${STA_DIR}" ] && [ -n "${AP_DIR}" ] && [ -n "${STA_UNIT}" ] && [ -n "${AP_UNIT}" ] &&
     [ -n "${STA_CONF}" ] && [ -n "${AP_CONF}" ] && [ -n "${STA_PREFIX}" ] &&
@@ -1201,7 +1214,7 @@ check_execstart() {
     fi
     for spec in '%i' '%I'; do
         want="${dir}/$(printf '%s' "${name}" | sed "s|{interface}|${spec}|")"
-        if printf '%s' "${text}" | grep -F -- "ExecStart=" | grep -Fq -- "${want}"; then
+        if grep -F -- "ExecStart=" <<<"${text}" | grep -F -- "${want}" >/dev/null; then
             found=1
             pass "${what}: $(basename "${unit}") reads ${want}, which is exactly what the reconciler renders"
             break
@@ -1218,7 +1231,7 @@ check_execstart "access point" "/usr/lib/systemd/system/${AP_UNIT:-hostapd@.serv
 # settings tree asks for. A statically enabled template instance would race it.
 for u in "${STA_UNIT:-wpa_supplicant@.service}" "${AP_UNIT:-hostapd@.service}"; do
     if dbg "ls -p /etc/systemd/system/multi-user.target.wants" |
-        awk -F/ 'NF >= 7 {print $6}' | grep -Fxq "${u}"; then
+        awk -F/ 'NF >= 7 {print $6}' | grep -Fx "${u}" >/dev/null; then
         fail "${u} is statically enabled in the image; mosd owns that lifecycle and would race the image's own instance"
     else
         pass "${u} is installed but NOT statically enabled (mosd owns the lifecycle)"
@@ -1230,13 +1243,13 @@ done
 # activation path wpasupplicant ships.
 for u in hostapd.service wpa_supplicant.service dbus-fi.w1.wpa_supplicant1.service; do
     out="$(dbg "stat /etc/systemd/system/${u}")"
-    dest="$(echo "${out}" | sed -n 's/.*link dest: "\(.*\)".*/\1/p' | head -n1)"
-    if echo "${out}" | grep -q "Type: symlink" && [ "${dest}" = "/dev/null" ]; then
+    dest="$(sed -n 's/.*link dest: "\(.*\)".*/\1/p' <<<"${out}" | first_line)"
+    if grep -q "Type: symlink" <<<"${out}" && [ "${dest}" = "/dev/null" ]; then
         pass "${u} is masked (-> /dev/null); it cannot start and fight mosd for the radio"
     else
         fail "${u} is not masked (it is '${dest:-not a symlink to /dev/null}'). The package enables it, and it starts a second daemon on the same radio against a config mosd never writes while mosd's own instance still reports healthy"
     fi
-    if dbg "stat /etc/systemd/system/multi-user.target.wants/${u}" | grep -q "Inode:"; then
+    if dbg "stat /etc/systemd/system/multi-user.target.wants/${u}" | grep "Inode:" >/dev/null; then
         fail "${u} still carries the package's multi-user.target.wants enablement symlink"
     else
         pass "${u} carries no enablement symlink from the package postinst"
@@ -1248,8 +1261,8 @@ done
 # they end up holding; v2 binds them onto STATE instead (asserted there).
 for d in "${STA_DIR}" "${AP_DIR}"; do
     out="$(dbg "stat ${d}")"
-    mode="$(echo "${out}" | sed -n 's/.*Mode: *0*\([0-7]\{3\}\).*/\1/p' | head -n1)"
-    if ! echo "${out}" | grep -q "Type: directory"; then
+    mode="$(sed -n 's/.*Mode: *0*\([0-7]\{3\}\).*/\1/p' <<<"${out}" | first_line)"
+    if ! grep -q "Type: directory" <<<"${out}"; then
         fail "${d} is not a directory in the image; the reconciler's first render would have to create it, and on v2 it could not"
     elif [ "${mode}" = "700" ]; then
         pass "${d} is a directory, mode 0${mode} (it holds pre-shared keys in the clear once configured)"
@@ -1260,7 +1273,7 @@ done
 
 # The AP's DHCP server is systemd-networkd's own DHCPServer=yes. dnsmasq would
 # be a second package and a second lifecycle for a job already done.
-if dbg "stat /usr/sbin/dnsmasq" | grep -q "Inode:"; then
+if dbg "stat /usr/sbin/dnsmasq" | grep "Inode:" >/dev/null; then
     fail "dnsmasq ships in the image; the provisioning AP hands out addresses through systemd-networkd's DHCPServer=yes and a second DHCP server on the same link is a conflict, not a fallback"
 else
     pass "no dnsmasq in the image (the AP's DHCP server is systemd-networkd's own DHCPServer=yes)"
@@ -1301,7 +1314,7 @@ sort_bad=""
 for prefix in "${STA_PREFIX}" "${AP_PREFIX}"; do
     if [ -z "${prefix}" ]; then
         sort_bad="${sort_bad} <unreadable>"
-    elif [ "$(printf '%s\n' "${dhcp_default}" "${prefix}" | LC_ALL=C sort | head -n1)" != "${dhcp_default}" ]; then
+    elif [ "$(printf '%s\n' "${dhcp_default}" "${prefix}" | LC_ALL=C sort | first_line)" != "${dhcp_default}" ]; then
         sort_bad="${sort_bad} ${prefix}"
     fi
 done
@@ -1313,8 +1326,8 @@ fi
 
 # --- the image profile, and the SSH default it selects ---
 PROFILE_FILE="/usr/lib/mos/profile.conf"
-PROFILE_KEY="$(sed -n 's/^const PROFILE_KEY: \&str = "\(.*\)";$/\1/p' "${REPO_ROOT}/mosd/mosd/src/provisioning.rs" 2>/dev/null | head -n1)"
-PROFILE_DEFAULT_PATH="$(sed -n 's/^pub const DEFAULT_PROFILE_PATH: \&str = "\(.*\)";$/\1/p' "${REPO_ROOT}/mosd/mosd/src/provisioning.rs" 2>/dev/null | head -n1)"
+PROFILE_KEY="$(sed -n 's/^const PROFILE_KEY: \&str = "\(.*\)";$/\1/p' "${REPO_ROOT}/mosd/mosd/src/provisioning.rs" 2>/dev/null | first_line)"
+PROFILE_DEFAULT_PATH="$(sed -n 's/^pub const DEFAULT_PROFILE_PATH: \&str = "\(.*\)";$/\1/p' "${REPO_ROOT}/mosd/mosd/src/provisioning.rs" 2>/dev/null | first_line)"
 if [ "${PROFILE_DEFAULT_PATH}" = "${PROFILE_FILE}" ] && [ -n "${PROFILE_KEY}" ]; then
     pass "mosd reads the image profile from ${PROFILE_DEFAULT_PATH} with key ${PROFILE_KEY}, which is the file this image ships"
 else
@@ -1322,7 +1335,7 @@ else
 fi
 ext_regular "${PROFILE_FILE}"
 profile_stat="$(dbg "stat ${PROFILE_FILE}")"
-profile_mode="$(echo "${profile_stat}" | sed -n 's/.*Mode: *0*\([0-7]\{3\}\).*/\1/p' | head -n1)"
+profile_mode="$(sed -n 's/.*Mode: *0*\([0-7]\{3\}\).*/\1/p' <<<"${profile_stat}" | first_line)"
 if [ "${profile_mode}" = "444" ]; then
     pass "${PROFILE_FILE} is mode 0${profile_mode} (it describes the image, not the device)"
 else
@@ -1361,7 +1374,7 @@ esac
 ssh_wants=""
 for wd in $(dbg "ls -p /etc/systemd/system" | awk -F/ 'NF >= 7 && $6 ~ /\.wants$/ { print $6 }'); do
     for u in ssh.service sshd.service; do
-        if dbg "stat /etc/systemd/system/${wd}/${u}" | grep -q "Inode:"; then
+        if dbg "stat /etc/systemd/system/${wd}/${u}" | grep "Inode:" >/dev/null; then
             ssh_wants="${ssh_wants} /etc/systemd/system/${wd}/${u}"
         fi
     done
@@ -1399,7 +1412,7 @@ esac
 ssh_unit_text="$(dbg "cat /usr/lib/systemd/system/ssh.service")"
 if [ -z "${ssh_unit_text}" ]; then
     fail "/usr/lib/systemd/system/ssh.service is not readable in the image, so no claim can be made about KillMode"
-elif printf '%s\n' "${ssh_unit_text}" | grep -qE '^KillMode=process[[:space:]]*$'; then
+elif grep -qE '^KillMode=process[[:space:]]*$' <<<"${ssh_unit_text}"; then
     pass "ssh.service sets KillMode=process, so a restart would spare established sessions — defence in depth only: what actually protects an operator's own session is that the reconciler RELOADS on a config-only change (RFCT-047), and this passing is not a reason to restart instead"
 else
     fail "ssh.service does NOT set KillMode=process (found '$(printf '%s\n' "${ssh_unit_text}" | sed -n 's/^KillMode=//p' | tail -n1)'; systemd defaults to control-group). The image has lost its second line of defence: anything that RESTARTS this unit now kills established SSH sessions with it. This does not by itself disconnect an operator setting a transient root password — the reconciler reloads rather than restarts (RFCT-047) — but that reload is now the ONLY thing preventing it, so do not treat this as cosmetic"
@@ -1420,7 +1433,7 @@ fi
 # enforcing another until something else restarts the unit.
 if [ -z "${ssh_unit_text}" ]; then
     fail "/usr/lib/systemd/system/ssh.service is not readable in the image, so no claim can be made about ExecReload"
-elif printf '%s\n' "${ssh_unit_text}" | grep -qE '^ExecReload='; then
+elif grep -qE '^ExecReload=' <<<"${ssh_unit_text}"; then
     pass "ssh.service carries ExecReload=, so the config-only reload the sshd reconciler issues (RFCT-047) can actually reach the running sshd"
 else
     fail "ssh.service has NO ExecReload=. The sshd reconciler RELOADS this unit on a configuration-only change (RFCT-047); without ExecReload that reload fails, and the rendered sshd configuration — PasswordAuthentication included — silently never applies to the running listener"
@@ -1446,7 +1459,7 @@ fi
 CRYPT_SRC="${REPO_ROOT}/mosd/mosd/src/transient.rs"
 crypt_prefixes="$(grep -oE 'starts_with\("\$[0-9a-zA-Z]+\$' "${CRYPT_SRC}" 2>/dev/null | grep -oE '\$[0-9a-zA-Z]+\$' | sort -u || true)"
 crypt_n="$(printf '%s\n' "${crypt_prefixes}" | grep -c . || true)"
-CRYPT_PREFIX="$(printf '%s\n' "${crypt_prefixes}" | head -n1)"
+CRYPT_PREFIX="$(first_line <<<"${crypt_prefixes}")"
 if [ "${crypt_n}" = "1" ]; then
     pass "transient.rs pins exactly one crypt(3) prefix for the shadow field: ${CRYPT_PREFIX}"
 else
@@ -1454,17 +1467,17 @@ else
 fi
 
 LIBCRYPT_LINK="/usr/lib/aarch64-linux-gnu/libcrypt.so.1"
-libcrypt_dest="$(dbg "stat ${LIBCRYPT_LINK}" | sed -n 's/.*link dest: "\(.*\)".*/\1/p' | head -n1)"
+libcrypt_dest="$(dbg "stat ${LIBCRYPT_LINK}" | sed -n 's/.*link dest: "\(.*\)".*/\1/p' | first_line)"
 LIBCRYPT_REAL=""
 if [ -n "${libcrypt_dest}" ]; then
     case "${libcrypt_dest}" in
     /*) LIBCRYPT_REAL="${libcrypt_dest}" ;;
     *) LIBCRYPT_REAL="$(dirname "${LIBCRYPT_LINK}")/${libcrypt_dest}" ;;
     esac
-elif dbg "stat ${LIBCRYPT_LINK}" | grep -q "Type: regular"; then
+elif dbg "stat ${LIBCRYPT_LINK}" | grep "Type: regular" >/dev/null; then
     LIBCRYPT_REAL="${LIBCRYPT_LINK}"
 fi
-if [ -n "${LIBCRYPT_REAL}" ] && dbg "stat ${LIBCRYPT_REAL}" | grep -q "Type: regular"; then
+if [ -n "${LIBCRYPT_REAL}" ] && dbg "stat ${LIBCRYPT_REAL}" | grep "Type: regular" >/dev/null; then
     pass "${LIBCRYPT_LINK} resolves to ${LIBCRYPT_REAL} in the image (the SONAME the login stack loads)"
 else
     fail "${LIBCRYPT_LINK} does not resolve to a regular file in the image (got '${libcrypt_dest:-nothing}'); without it pam_unix cannot verify any password at all"
