@@ -55,7 +55,7 @@ RUN for service in devfs dmesg mdev hwdrivers; do rc-update add "$service" sysin
         rc-update add "$service" boot; \
     done && \
     for service in dbus usb-gadget-serial aic-bluetooth bluetooth chronyd crond \
-                   sshd docker local; do \
+                   sshd docker local status-led; do \
         rc-update add "$service" default; \
     done && \
     for service in killprocs mount-ro savecache; do rc-update add "$service" shutdown; done
@@ -71,6 +71,7 @@ RUN test -x /sbin/dhcpcd && \
     test -x /etc/init.d/aic-bluetooth && \
     test -x /etc/init.d/bluetooth && \
     test -x /etc/init.d/resize-rootfs && \
+    test -x /etc/init.d/status-led && \
     grep -q '/dev/mmcblk0p3' /etc/init.d/resize-rootfs && \
     sh -n /usr/local/bin/rs485-pair-test && \
     sh -n /usr/local/bin/usb-gadget-serial && \
@@ -81,6 +82,7 @@ RUN test -x /sbin/dhcpcd && \
     sh -n /etc/init.d/aic-bluetooth && \
     sh -n /etc/init.d/bluetooth && \
     sh -n /etc/init.d/resize-rootfs && \
+    sh -n /etc/init.d/status-led && \
     test -e /etc/runlevels/boot/networking && \
     test -e /etc/runlevels/boot/wpa_supplicant && \
     test ! -e /etc/runlevels/boot/dhcpcd && \
@@ -88,6 +90,7 @@ RUN test -x /sbin/dhcpcd && \
     test -e /etc/runlevels/default/usb-gadget-serial && \
     test -e /etc/runlevels/default/aic-bluetooth && \
     test -e /etc/runlevels/default/bluetooth && \
+    test -e /etc/runlevels/default/status-led && \
     ifquery -i /etc/network/interfaces --list -a | grep -qx lo && \
     ifquery -i /etc/network/interfaces --list -a | grep -qx eth0 && \
     ifquery -i /etc/network/interfaces --list -a | grep -qx eth1 && \
