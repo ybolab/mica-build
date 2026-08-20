@@ -58,10 +58,21 @@ source-check:
 		rc=$$?; test "$$rc" -eq 1 || exit "$$rc"; \
 	fi
 
+# Read back the raw boot area (GPT + idblock + u-boot.itb, first 16 MiB) and
+# compare it against the source image; a partial or corrupt write here is the
+# one failure that bricks the board past the recovery key.
+define verify-boot-area
+	$(RKDEVELOPTOOL) rl 0 32768 out/.verify-boot.img
+	head -c 16777216 out/disk.img | cmp - out/.verify-boot.img
+	rm -f out/.verify-boot.img
+	@echo "Boot area (loader + u-boot.itb) verified against out/disk.img."
+endef
+
 # Flash the complete image while the board is in Loader mode.
 flash:
 	@echo "WARNING: Keep board power and USB connected until rkdeveloptool rd completes."
 	$(RKDEVELOPTOOL) wl 0 out/disk.img
+	$(verify-boot-area)
 	$(RKDEVELOPTOOL) rd
 
 # Recover from Maskrom with the pinned vendor Loader, then flash the full image.
@@ -70,6 +81,7 @@ flash-maskrom:
 	shasum -a 256 -c uboot/MiniLoaderAll.bin.sha256
 	$(RKDEVELOPTOOL) db $(VENDOR_MINILOADER)
 	$(RKDEVELOPTOOL) wl 0 out/disk.img
+	$(verify-boot-area)
 	$(RKDEVELOPTOOL) rd
 
 # Flash only rootfs when the kernel and partition layout are unchanged.
