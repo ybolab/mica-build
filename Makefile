@@ -6,6 +6,7 @@ BOARDS := cx3576 x64
 .PHONY: help os os-image-cx3576 os-verify-cx3576 os-rootfs-cx3576-v2 \
 	os-image-cx3576-v2 os-verify-cx3576-v2 os-bundle-cx3576 os-devkeys os-health-test \
 	os-shadow-test os-dbus-policy-test os-repart-test os-ui-location-test docs-verify \
+	docs-verify-test \
 	$(addsuffix -%,$(BOARDS))
 
 help:
@@ -25,6 +26,7 @@ help:
 	@echo "  os-repart-test      prove first-boot repart growth grows DATA and cannot wipe the loader (privileged docker)"
 	@echo "  os-ui-location-test prove the custom-UI location assertions in the v2 verifier actually fail when the location moves"
 	@echo "  docs-verify         assert both document indexes agree with the tree, in both directions"
+	@echo "  docs-verify-test    prove the index assertions actually fail on a duplicated row or entry"
 	@echo "  cx3576-<t>          delegate target <t> to board/cx3576 (uboot|kernel|rootfs|image|clean)"
 
 os-image-cx3576:
@@ -111,6 +113,20 @@ os-ui-location-test:
 # index full of entries pointing at files a rename deleted.
 docs-verify:
 	bash docs/verify-index.sh
+
+# Negative tests for the target above, added because it had a hole exactly the
+# shape of the merges this repository performs: with a second (RFCT-073.md) row
+# injected into docs/task/index.md it reported 162/162 PASS and exit 0 -- the
+# count did not even move, so the before/after count comparison could not see it
+# either. Forward was a `grep -q`, satisfied by one occurrence or by five, and
+# reverse deduplicated with `sort -u` before the loop that would have noticed. A
+# duplicated row is the likeliest wrong resolution of the two-row append
+# conflict every task record produces, so it is the one failure mode that most
+# needed to be reachable. Each assertion is driven against an index where its
+# fact is false and required to fail with ITS OWN message. Needs no root and no
+# network, and it fails loudly when it cannot run rather than skipping.
+docs-verify-test:
+	bash docs/verify-index-test.sh
 
 cx3576-%:
 	$(MAKE) -C board/cx3576 $*
