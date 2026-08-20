@@ -1,6 +1,6 @@
 # mos
 
-Embedded appliance operating system. Immutable Talos-derived OS core, per-board
+Embedded appliance operating system. Immutable verity-protected OS core, per-board
 BSP artifacts, RAUC/Uptane A/B updates, local web management (apid), unified
 connectivity service (connd).
 

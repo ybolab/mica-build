@@ -25,10 +25,6 @@ help:
 	@echo "  os-repart-test      prove first-boot repart growth grows DATA and cannot wipe the loader (privileged docker)"
 	@echo "  docs-verify         assert both document indexes agree with the tree, in both directions"
 	@echo "  cx3576-<t>          delegate target <t> to board/cx3576 (uboot|kernel|rootfs|image|clean)"
-	@echo "  x64-image           x64 uses the upstream talos image pipeline (see board/x64/README.md)"
-
-os:
-	$(MAKE) -C talos
 
 os-image-cx3576:
 	bash os/rootfs/build.sh

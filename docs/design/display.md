@@ -99,5 +99,5 @@ Boards advertising `display` in `board.yaml features` must provide:
 | 2 | touch input polish, rotation, blanking, crash-splash |
 | 3 | custom app `url` mode + per-app UI containers (ties into workload/secondary-ECU design) |
 
-Campaign mapping: phase 1 joins the access-layer/apid campaign after cx3576
+Campaign mapping: phase 1 joins the access-layer campaign after cx3576
 display bring-up (GPU driver decision happens in the board campaign).

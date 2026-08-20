@@ -103,6 +103,22 @@ git show <commit>:docs/design/api.md | sed -n '1,517p' | sha256sum
 A different digest is a real finding — §1 was edited by something that was not
 supposed to — and not a stale number to smooth over.
 
+**Chain of custody: this digest ENDS at `3e4c903`.** RFCT-070 re-measured §1
+against the post-rename tree on 2026-08-20, which changed it legitimately and by
+design — that task is the one sanctioned exception to the paragraph above. The
+original digest is NOT updated here, because replacing it would destroy the very
+evidence this record exists to preserve: what §1 contained while seven tasks
+wrote around it.
+
+| period | commits | sha256 of lines 1-517 |
+| --- | --- | --- |
+| campaign, §1 sealed | `074a7d8` … `3e4c903` | `d59478d9…e989b70d` |
+| after RFCT-070's re-measure | `2a354c0` onward | `f4acdaac…6da74933` |
+
+So a reader who recomputes and gets `f4acdaac…` at a commit after the rename has
+NOT found a defect. A reader who gets anything other than these two, at a commit
+inside the period each covers, has.
+
 **Status markers: eleven top-level headings, nine marked, two exempt by
 declaration.** §0 and §10 carry none, which is the exemption the document itself
 states (`docs/design/api.md:26-29`) on the convention at

@@ -67,7 +67,7 @@ integration burden D-Bus removes for free.
   > a bind from `/mnt/state/mos` (`ro-root.md` §4), and `mosd/src/main.rs`
   > documents the same. The doc contradicted both the code and §5.1 below.
 - Migrations: Bottlerocket migrator pattern — forward AND backward migration
-  units shipped with each release (PLAN-006 Part I requires the rollback
+  units shipped with each release (PLAN-006 Part J requires the rollback
   direction to work).
 - Reconciler contract: each subsystem reconciler watches a subtree and owns
   rendering to its executor (networkd units, sshd drop-ins, RAUC calls);

@@ -38,25 +38,30 @@ commit's. A reader on a later tree should re-measure before trusting a line
 number; the claims are written so that `git show 86cd669:<path>` settles any
 disagreement.
 
-**The `apid` / `webd` path note, and the check that settles it.** Prose in this
-document says **apid**: it is the API daemon, and the dashboard is one thing it
-serves. The crate directory on the tree measured here is **`mosd/webd/`**, and
-the crate is named `webd` (`mosd/webd/Cargo.toml:2`). Campaign
-`l1-o7ee8v0o-20260819152009-apid` is renaming the crate, the systemd unit, the
-`StateDirectory`, both image verifiers, the Dockerfiles and the design docs.
-The check that tells a reader which world they are in is:
+**The `apid` / `webd` path note — RESOLVED, kept as dated history.** Prose in
+this document says **apid**: it is the API daemon, and the dashboard is one
+thing it serves. When section 1 was measured at `86cd669` the crate directory
+was still `mosd/webd/`, so this note carried the check `test -d mosd/apid` and
+told a reader which of two worlds they were in.
 
-```
-test -d mosd/apid
-```
+The rename landed on 2026-08-20 (campaign
+`l1-o7ee8v0o-20260819152009-apid`, merged as `b1e23b2`). Section 1's path
+citations were re-pointed to `mosd/apid/...` and `mosd/dist/apid.service`, each
+verified to open, and every cited line number was re-measured against the
+post-rename tree — 83 line citations across 10 files, all in range, with the
+load-bearing ones checked against their content rather than only their bounds.
+Renamed VALUES were re-measured too, not only paths. Re-pointing a citation
+while leaving the value it quotes untouched produces the worst failure a
+citation has: the reference resolves, and the line it lands on contradicts the
+sentence citing it. Eleven such values moved — the crate name, the binary path,
+`StateDirectory`, the session cookie, the state-directory default and its
+environment override, two quoted source comments, and the `find` examples — and
+each was checked against the file it cites rather than substituted by pattern.
 
-- **Exit 0** — the rename has landed. Every `mosd/webd/...` path cited below is
-  now `mosd/apid/...`, and the line numbers in section 1 are no longer reliable
-  because the rename touched those files. Re-measure section 1 against the
-  merged tree.
-- **Exit 1** — the rename has not landed. The `mosd/webd/...` paths cited below
-  open as written at `86cd669`, and the prose name `apid` is forward-looking
-  only.
+Claims were not touched. A re-measure corrects citations and renamed
+identifiers; a section-1 claim that had become false in substance would have
+been reported as a finding rather than quietly corrected. None had: every
+change here is the rename doing what it was designed to do.
 
 **What this document settles.** Section 1 settles what exists, so that no later
 section invents a surface mos does not have. Sections 2-9 propose the API, the
@@ -80,35 +85,35 @@ named.
 
 ### 1.1 What apid is, and the two constraints that bound every option
 
-As of `86cd669`, apid is a Rust crate named `webd` (`mosd/webd/Cargo.toml:2`),
-built into a binary started by a systemd unit as `/usr/bin/webd`
-(`mosd/dist/webd.service:8`) after `mosd.service`
-(`mosd/dist/webd.service:3-4`), with its state directory declared as
-`StateDirectory=mos/webd` (`mosd/dist/webd.service:10`). The unit sets no
-`User=` line (`mosd/dist/webd.service:1-13`), so the daemon runs as root; the
+As of `2a354c0` (re-measured after the rename; originally `86cd669`), apid is a Rust crate named `apid` (`mosd/apid/Cargo.toml:2`),
+built into a binary started by a systemd unit as `/usr/bin/apid`
+(`mosd/dist/apid.service:8`) after `mosd.service`
+(`mosd/dist/apid.service:3-4`), with its state directory declared as
+`StateDirectory=mos/apid` (`mosd/dist/apid.service:10`). The unit sets no
+`User=` line (`mosd/dist/apid.service:1-13`), so the daemon runs as root; the
 D-Bus policy file records the same fact from the other side — *"no shipped unit
-sets User=, mosd.service owns the name as root, webd.service and the boot health
+sets User=, mosd.service owns the name as root, apid.service and the boot health
 gate both run as root"* (`mosd/dist/com.mos.mosd.conf:12-14`).
 
 It binds two listeners, defaulting to `0.0.0.0:443` for HTTPS and `0.0.0.0:80`
-for the redirect-only HTTP listener (`mosd/webd/src/config.rs:34-37`), and
+for the redirect-only HTTP listener (`mosd/apid/src/config.rs:34-37`), and
 prints exactly one machine-readable startup line,
-`WEBD_LISTENING https=<addr> http=<addr>` (`mosd/webd/src/main.rs:69`), routing
-everything else to stderr (`mosd/webd/src/main.rs:43-45`).
+`WEBD_LISTENING https=<addr> http=<addr>` (`mosd/apid/src/main.rs:69`), routing
+everything else to stderr (`mosd/apid/src/main.rs:43-45`).
 
 **Constraint 1 — the pages are server-rendered maud, with no JavaScript build
-chain.** The template engine is `maud` (`mosd/webd/Cargo.toml:18`, resolved to
+chain.** The template engine is `maud` (`mosd/apid/Cargo.toml:18`, resolved to
 `maud = "0.27"` at `mosd/Cargo.toml:43`), used directly in the handlers via the
-`html!` macro (`mosd/webd/src/routes.rs:14`). The HTTP stack is `axum`
-(`mosd/webd/Cargo.toml:15` → `axum = "0.8"` at `mosd/Cargo.toml:36`) served by
-`axum-server` (`mosd/webd/Cargo.toml:16` → `mosd/Cargo.toml:37`). There is no
+`html!` macro (`mosd/apid/src/routes.rs:14`). The HTTP stack is `axum`
+(`mosd/apid/Cargo.toml:15` → `axum = "0.8"` at `mosd/Cargo.toml:36`) served by
+`axum-server` (`mosd/apid/Cargo.toml:16` → `mosd/Cargo.toml:37`). There is no
 JavaScript: `routes.rs` contains no occurrence of the string `script` in any
-case (`grep -ci script mosd/webd/src/routes.rs` returns `0` at `86cd669`), and
-the only stylesheet is an inline constant (`mosd/webd/src/routes.rs:158-165`)
+case (`grep -ci script mosd/apid/src/routes.rs` returns `0` at `86cd669`), and
+the only stylesheet is an inline constant (`mosd/apid/src/routes.rs:158-165`)
 injected into the page head as `style { (PreEscaped(STYLE)) }`
-(`mosd/webd/src/routes.rs:176`). The crate contains no non-Rust file other than
-its manifest (`find mosd/webd -type f ! -name '*.rs'` returns
-`mosd/webd/Cargo.toml` alone), so there is no bundler input, no `package.json`,
+(`mosd/apid/src/routes.rs:176`). The crate contains no non-Rust file other than
+its manifest (`find mosd/apid -type f ! -name '*.rs'` returns
+`mosd/apid/Cargo.toml` alone), so there is no bundler input, no `package.json`,
 and nothing for a build chain to consume.
 
 **Constraint 2 — TLS is rustls only.** `rustls` is pinned with
@@ -117,10 +122,10 @@ and nothing for a build chain to consume.
 feature (`mosd/Cargo.toml:37`), certificate generation uses `rcgen` with the
 `ring` backend (`mosd/Cargo.toml:39`), and the daemon installs the ring provider
 explicitly before anything else runs
-(`mosd/webd/src/main.rs:46-48`). No OpenSSL, and no C TLS stack, appears in the
-crate's dependency list (`mosd/webd/Cargo.toml:11-29`). The workspace also
+(`mosd/apid/src/main.rs:46-48`). No OpenSSL, and no C TLS stack, appears in the
+crate's dependency list (`mosd/apid/Cargo.toml:11-29`). The workspace also
 forbids unsafe code (`mosd/Cargo.toml:10-11`) and the crate repeats the forbid
-locally (`mosd/webd/src/main.rs:21`).
+locally (`mosd/apid/src/main.rs:21`).
 
 These two constraints bound every option in sections 2-6: an API that requires a
 JavaScript toolchain to be usable from the shipped UI, or a TLS feature rustls
@@ -128,11 +133,11 @@ does not offer, is not free — it is a change to the posture recorded here.
 
 ### 1.2 The route table as shipped
 
-There are **two** routers in `mosd/webd/src/routes.rs`.
+There are **two** routers in `mosd/apid/src/routes.rs`.
 
-The **HTTPS application router** is `app()` at `mosd/webd/src/routes.rs:43-68`.
+The **HTTPS application router** is `app()` at `mosd/apid/src/routes.rs:43-68`.
 Every route it declares is listed below; the `gate` middleware is layered over
-all of them at `mosd/webd/src/routes.rs:66`.
+all of them at `mosd/apid/src/routes.rs:66`.
 
 | Method + path | Route line | Handler | Kind | What it does | mosd calls |
 |---|---|---|---|---|---|
@@ -157,54 +162,54 @@ all of them at `mosd/webd/src/routes.rs:66`.
 | `GET /healthz` | `:65` | `healthz` (`:153`) | neither — plain text | Returns the literal `ok` | none |
 
 **Kinds, counted.** Of the nineteen method+path pairs above — declared by
-fifteen `.route()` calls (`mosd/webd/src/routes.rs:45-65`) — seven are GET
+fifteen `.route()` calls (`mosd/apid/src/routes.rs:45-65`) — seven are GET
 pages, eleven are HTML form POSTs, and one (`/healthz`) is neither: it returns a
-bare string (`mosd/webd/src/routes.rs:153-155`). **There is no route in this router that
+bare string (`mosd/apid/src/routes.rs:153-155`). **There is no route in this router that
 returns JSON, and none that accepts a JSON request body** — every mutating
 handler takes `Form<...>`, axum's URL-encoded form extractor
-(`mosd/webd/src/routes.rs:8`, and each handler signature, e.g. `:381`, `:708`,
+(`mosd/apid/src/routes.rs:8`, and each handler signature, e.g. `:381`, `:708`,
 `:1284`). That absence is the whole reason sections 2 and 3 exist.
 
 **Two deliberate absences, both commented in the source.** No `GET` handler
-exists for either power action (`mosd/webd/src/routes.rs:52-54`) or for any of
-the four SSH mutations (`mosd/webd/src/routes.rs:58-60`), so a browser prefetch,
+exists for either power action (`mosd/apid/src/routes.rs:52-54`) or for any of
+the four SSH mutations (`mosd/apid/src/routes.rs:58-60`), so a browser prefetch,
 a crawler or a mis-clicked link cannot power the appliance off or enable SSH.
 And there is no CSRF token anywhere in the crate (`grep -ni csrf
-mosd/webd/src/*.rs` returns nothing at `86cd669`); the mitigations that exist
+mosd/apid/src/*.rs` returns nothing at `86cd669`); the mitigations that exist
 are the `SameSite=Lax` cookie attribute (section 1.4) and the per-action confirm
-token on power (`mosd/webd/src/routes.rs:870`) and on the transient password
-(`mosd/webd/src/routes.rs:948`).
+token on power (`mosd/apid/src/routes.rs:870`) and on the transient password
+(`mosd/apid/src/routes.rs:948`).
 
-**The second router.** `redirect_app()` at `mosd/webd/src/routes.rs:72-76` is
+**The second router.** `redirect_app()` at `mosd/apid/src/routes.rs:72-76` is
 the router served on the **HTTP** listener. It declares no routes at all — only
 a fallback (`:74`) — and answers every request with a 308 Permanent Redirect to
 the HTTPS origin, deriving the host from the `Host` header with any port
 stripped and re-attaching the actual HTTPS port unless it is 443
-(`mosd/webd/src/routes.rs:78-95`). It carries no state beyond that port
+(`mosd/apid/src/routes.rs:78-95`). It carries no state beyond that port
 (`:75`), no auth gate, and no access to mosd. Both routers are wired in
 `main` — `routes::app(state)` on the rustls listener and
 `routes::redirect_app(https_addr.port())` on the plain one
-(`mosd/webd/src/main.rs:78-83`).
+(`mosd/apid/src/main.rs:78-83`).
 
 ### 1.3 How apid reaches mosd
 
 apid never spawns a process and never talks to systemd itself; every system
 action goes through mosd. The trait doc states it as a rule: *"The power actions
 are here rather than executed locally because mosd owns every system action:
-webd never spawns a process and never talks to systemd itself"*
-(`mosd/webd/src/settings_api.rs:10-12`).
+apid never spawns a process and never talks to systemd itself"*
+(`mosd/apid/src/settings_api.rs:10-12`).
 
 **The bus and the interface.** The transport is **D-Bus**, via `zbus`
-(`mosd/webd/Cargo.toml:29` → `mosd/Cargo.toml:24`). The proxy declares the
+(`mosd/apid/Cargo.toml:29` → `mosd/Cargo.toml:24`). The proxy declares the
 interface `com.mos.mosd1`, the well-known service name `com.mos.mosd`, and the
-object path `/com/mos/mosd` (`mosd/webd/src/bus_client.rs:9-13`). mosd's side
+object path `/com/mos/mosd` (`mosd/apid/src/bus_client.rs:9-13`). mosd's side
 declares the same three: `BUS_NAME` (`mosd/mosd/src/bus.rs:20`), `OBJECT_PATH`
 (`mosd/mosd/src/bus.rs:22`) and the interface attribute
 (`mosd/mosd/src/bus.rs:179`). Which bus is chosen is configuration: `WEBD_BUS`
-selects system (the default) or session (`mosd/webd/src/config.rs:41-45`).
+selects system (the default) or session (`mosd/apid/src/config.rs:41-45`).
 
 **Every method apid calls today — six.** The proxy trait
-(`mosd/webd/src/bus_client.rs:14-21`) declares exactly:
+(`mosd/apid/src/bus_client.rs:14-21`) declares exactly:
 
 | Proxy method | Line | mosd's implementation | Called from |
 |---|---|---|---|
@@ -217,22 +222,22 @@ selects system (the default) or session (`mosd/webd/src/config.rs:41-45`).
 
 **What apid does not call, and cannot receive.** mosd exposes a seventh method,
 `ReportHealth` (`mosd/mosd/src/bus.rs:231`), which the proxy does not declare
-(`mosd/webd/src/bus_client.rs:14-21`); its caller in the tree is the boot health
+(`mosd/apid/src/bus_client.rs:14-21`); its caller in the tree is the boot health
 gate, not apid. mosd also emits one signal, `SettingsChanged(path, value_json)`,
 after every successful `SetSettings` (`mosd/mosd/src/bus.rs:212-214`, declared
 at `:292-297`). The proxy declares **no** `#[zbus(signal)]` member
-(`mosd/webd/src/bus_client.rs:14-21`), so apid has no push notification of a
+(`mosd/apid/src/bus_client.rs:14-21`), so apid has no push notification of a
 settings change from any source, including itself.
 
 **Shape of the client.** All handler code depends on the `SettingsApi` trait
-(`mosd/webd/src/settings_api.rs:13-31`), not on zbus, which is what lets the
-route tests substitute an in-memory fake (`mosd/webd/src/settings_api.rs:3-4`,
+(`mosd/apid/src/settings_api.rs:13-31`), not on zbus, which is what lets the
+route tests substitute an in-memory fake (`mosd/apid/src/settings_api.rs:3-4`,
 `:35-47`). The real implementation connects lazily and caches the proxy, and
 drops the cache on any call error so the next request reconnects; the documented
 consequence is that mosd being down surfaces as per-request errors rather than a
-crash (`mosd/webd/src/bus_client.rs:23-26`, `:42-59`). A failed call renders a
+crash (`mosd/apid/src/bus_client.rs:23-26`, `:42-59`). A failed call renders a
 502 page reading *"The management daemon is unavailable."*
-(`mosd/webd/src/routes.rs:106-116`).
+(`mosd/apid/src/routes.rs:106-116`).
 
 **Who else may call.** The shipped D-Bus policy restricts `com.mos.mosd` to
 root in both directions — the default context denies both `send_destination` and
@@ -248,67 +253,67 @@ longer true — the code wins, and the policy is root-only.
 
 **Where the credential lives.** One password, stored as an argon2id PHC string
 at the settings dot-path `access.webAdmin.password_hash`
-(`mosd/webd/src/routes.rs:98-103`; the typed field is
+(`mosd/apid/src/routes.rs:98-103`; the typed field is
 `mosd/mosd-settings/src/model.rs:52-53` and `:66-71`). Hashing is argon2id with
-default parameters (`mosd/webd/src/auth.rs:13-19`) and verification parses the
-PHC string (`mosd/webd/src/auth.rs:22-26`). Nothing else in the crate
+default parameters (`mosd/apid/src/auth.rs:13-19`) and verification parses the
+PHC string (`mosd/apid/src/auth.rs:22-26`). Nothing else in the crate
 authenticates: there is no second credential, no user table, and no reference to
-`access.device` in `mosd/webd/src/routes.rs`.
+`access.device` in `mosd/apid/src/routes.rs`.
 
 **How a session is established.** `POST /login` verifies the password and, on
 success, calls `SessionStore::create` and sets the cookie
-(`mosd/webd/src/routes.rs:499-534`). `POST /setup` does the same at the end of
-the first-run wizard without a login step (`mosd/webd/src/routes.rs:469-474`).
+(`mosd/apid/src/routes.rs:499-534`). `POST /setup` does the same at the end of
+the first-run wizard without a login step (`mosd/apid/src/routes.rs:469-474`).
 The store generates 16 random bytes from `OsRng`, hex-encodes them as the id,
 computes an HMAC-SHA256 of that id under the persistent signing key, records the
 id with an expiry, and returns `<id>.<mac>` as the cookie value
-(`mosd/webd/src/session.rs:44-55`).
+(`mosd/apid/src/session.rs:44-55`).
 
-**Cookie attributes and expiry.** The cookie is named `webd_session`
-(`mosd/webd/src/session.rs:18`) and is set as
+**Cookie attributes and expiry.** The cookie is named `apid_session`
+(`mosd/apid/src/session.rs:18`) and is set as
 `Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=86400`
-(`mosd/webd/src/session.rs:91`); logout re-sets the same attributes with
-`Max-Age=0` (`mosd/webd/src/session.rs:96`). Server-side the TTL is 24 hours
-(`mosd/webd/src/session.rs:19`), enforced on every verification, with an expired
-entry removed as it is found (`mosd/webd/src/session.rs:66-79`). **Sessions live
-in memory only** — a `HashMap` in the store (`mosd/webd/src/session.rs:26`) —
-so, as the module doc states, *"a webd restart logs everyone out"*
-(`mosd/webd/src/session.rs:5-6`). The HMAC signing key, by contrast, is
+(`mosd/apid/src/session.rs:91`); logout re-sets the same attributes with
+`Max-Age=0` (`mosd/apid/src/session.rs:96`). Server-side the TTL is 24 hours
+(`mosd/apid/src/session.rs:19`), enforced on every verification, with an expired
+entry removed as it is found (`mosd/apid/src/session.rs:66-79`). **Sessions live
+in memory only** — a `HashMap` in the store (`mosd/apid/src/session.rs:26`) —
+so, as the module doc states, *"an apid restart logs everyone out"*
+(`mosd/apid/src/session.rs:5-6`). The HMAC signing key, by contrast, is
 persisted: 32 bytes at `session.key` in the state directory, generated on first
-start with mode `0600` (`mosd/webd/src/tls.rs:85-103`).
+start with mode `0600` (`mosd/apid/src/tls.rs:85-103`).
 
 **What a request carries.** Only the cookie. The gate extracts it from the
-`Cookie` header by prefix match (`mosd/webd/src/session.rs:99-111`) and verifies
-signature-then-liveness (`mosd/webd/src/session.rs:57-79`). There is no
+`Cookie` header by prefix match (`mosd/apid/src/session.rs:99-111`) and verifies
+signature-then-liveness (`mosd/apid/src/session.rs:57-79`). There is no
 `Authorization` header path, no API key, and no token of any kind in the crate.
 
 **The gate.** One middleware, layered over the whole HTTPS router
-(`mosd/webd/src/routes.rs:66`), implements three modes
-(`mosd/webd/src/routes.rs:126-151`): `/healthz` always passes (`:128-130`);
+(`mosd/apid/src/routes.rs:66`), implements three modes
+(`mosd/apid/src/routes.rs:126-151`): `/healthz` always passes (`:128-130`);
 in **setup mode** — no admin password hash present — only `/setup` passes and
 everything else redirects there (`:135-140`); in **normal mode** `/login` and
 `/setup` pass and everything else requires a valid session cookie or redirects
 to `/login` (`:141-150`). Note the gate calls `GetSettings("access")` on
-**every** request (`mosd/webd/src/routes.rs:131`), so every request costs at
+**every** request (`mosd/apid/src/routes.rs:131`), so every request costs at
 least one D-Bus round trip.
 
 **Brute-force accounting.** A single global counter, not per-client: five
 consecutive failures arm a 30-second lockout that rejects every login attempt
-(`mosd/webd/src/auth.rs:9-10`, `:38-64`). The comment states why per-client
+(`mosd/apid/src/auth.rs:9-10`, `:38-64`). The comment states why per-client
 tracking was rejected — *"the appliance has one admin password, so per-client
 tracking buys nothing against an online guesser"*
-(`mosd/webd/src/auth.rs:28-31`).
+(`mosd/apid/src/auth.rs:28-31`).
 
 **TLS material.** The certificate is self-signed and generated on first start
 into the state directory: CN `mos`, SANs `DNS:mos`, `DNS:localhost`,
-`IP:127.0.0.1` (`mosd/webd/src/tls.rs:44-81`), with the private key written mode
-`0600` (`mosd/webd/src/tls.rs:30-42`, `:78`) inside a state directory created
-mode `0700` (`mosd/webd/src/tls.rs:20-28`). That directory defaults to
-`/var/lib/mos/webd` and is overridable by `WEBD_STATE_DIR`
-(`mosd/webd/src/config.rs:38-40`), and is provided by systemd as
-`StateDirectory=mos/webd` (`mosd/dist/webd.service:10`). There is no ACME
+`IP:127.0.0.1` (`mosd/apid/src/tls.rs:44-81`), with the private key written mode
+`0600` (`mosd/apid/src/tls.rs:30-42`, `:78`) inside a state directory created
+mode `0700` (`mosd/apid/src/tls.rs:20-28`). That directory defaults to
+`/var/lib/mos/apid` and is overridable by `APID_STATE_DIR`
+(`mosd/apid/src/config.rs:38-40`), and is provided by systemd as
+`StateDirectory=mos/apid` (`mosd/dist/apid.service:10`). There is no ACME
 client, no certificate rotation, and no way to install an operator-supplied
-certificate in `mosd/webd/src/tls.rs`.
+certificate in `mosd/apid/src/tls.rs`.
 
 ### 1.5 The model the API must be derived from: mosd's settings and state
 
@@ -359,7 +364,7 @@ mutates nothing. Second, **the dot-path syntax has no array indexing**: the
 model comment says a list is *"written as a whole JSON array through the
 dot-path API"* (`mosd/mosd-settings/src/model.rs:213-214`), which is exactly why
 the SSH pane reads the whole key list, edits it in memory, and writes the whole
-list back (`mosd/webd/src/routes.rs:1061-1080`).
+list back (`mosd/apid/src/routes.rs:1061-1080`).
 
 **Which reconcilers a write re-runs.** `SetSettings` re-applies every reconciler
 whose subtree overlaps the written path (`mosd/mosd/src/bus.rs:205-210`), where
@@ -414,37 +419,37 @@ is an unsupported setting."*
 so it is evidenced four ways, all measured at `86cd669`:
 
 1. **No static-file middleware is a dependency.** The crate's dependency list is
-   `mosd/webd/Cargo.toml:11-29` and contains no `tower-http`; `tower` itself
-   appears only under `[dev-dependencies]` (`mosd/webd/Cargo.toml:31-34`). The
+   `mosd/apid/Cargo.toml:11-29` and contains no `tower-http`; `tower` itself
+   appears only under `[dev-dependencies]` (`mosd/apid/Cargo.toml:31-34`). The
    workspace pins `tower` with only the `util` feature (`mosd/Cargo.toml:46`),
    which carries no file-serving service.
 2. **No file-serving service is constructed.** `grep -n "ServeDir\|ServeFile"
-   mosd/webd/src/*.rs` returns nothing, and the HTTPS router
-   (`mosd/webd/src/routes.rs:44-68`) declares no `nest_service`, no
+   mosd/apid/src/*.rs` returns nothing, and the HTTPS router
+   (`mosd/apid/src/routes.rs:44-68`) declares no `nest_service`, no
    `fallback_service` and no `fallback` at all — the only `fallback` in the file
-   is the HTTP redirect router's (`mosd/webd/src/routes.rs:74`).
+   is the HTTP redirect router's (`mosd/apid/src/routes.rs:74`).
 3. **Nothing is embedded in the binary.** `grep -n "include_str!\|include_bytes!"
-   mosd/webd/src/*.rs` returns nothing.
+   mosd/apid/src/*.rs` returns nothing.
 4. **There is no asset to serve.** The crate contains no non-Rust file other
-   than its manifest (`find mosd/webd -type f ! -name '*.rs'` returns
-   `mosd/webd/Cargo.toml`), and the crate has no `assets/`, `static/` or
-   `public/` directory (`find mosd/webd -type d` returns `mosd/webd`,
-   `mosd/webd/src` and `mosd/webd/tests`).
+   than its manifest (`find mosd/apid -type f ! -name '*.rs'` returns
+   `mosd/apid/Cargo.toml`), and the crate has no `assets/`, `static/` or
+   `public/` directory (`find mosd/apid -type d` returns `mosd/apid`,
+   `mosd/apid/src` and `mosd/apid/tests`).
 
 What the pages need instead is inlined: the single stylesheet is a `&str`
-constant emitted into each `<head>` (`mosd/webd/src/routes.rs:158-165`, `:176`),
+constant emitted into each `<head>` (`mosd/apid/src/routes.rs:158-165`, `:176`),
 described in the source as *"Inline stylesheet shared by every page; no external
-assets"* (`mosd/webd/src/routes.rs:157`). There is no favicon route, no font,
+assets"* (`mosd/apid/src/routes.rs:157`). There is no favicon route, no font,
 and no image: a request for `/favicon.ico` matches nothing in
-`mosd/webd/src/routes.rs:44-68`, so it is answered by the gate — a redirect to
-`/login` when unauthenticated (`mosd/webd/src/routes.rs:149`), and otherwise
+`mosd/apid/src/routes.rs:44-68`, so it is answered by the gate — a redirect to
+`/login` when unauthenticated (`mosd/apid/src/routes.rs:149`), and otherwise
 axum's default not-found.
 
 The consequence for section 4 is concrete rather than stylistic: static hosting
 is not a matter of pointing an existing middleware at a directory. Nothing in
 the crate reads a file off disk to serve it today, and the only disk paths it
-touches at all are `/proc/uptime` (`mosd/webd/src/routes.rs:581`) and its own
-state directory (`mosd/webd/src/tls.rs:47-49`, `:86`).
+touches at all are `/proc/uptime` (`mosd/apid/src/routes.rs:581`) and its own
+state directory (`mosd/apid/src/tls.rs:47-49`, `:86`).
 
 ### 1.7 What the dashboard proposal already settled
 
@@ -469,7 +474,7 @@ and it must remain served regardless of which process option is chosen"*
 second consumer whose failure path is an A/B rollback
 (`docs/design/dashboard.md:2433-2435`). **The rename:** section 7.4 costs it and
 enumerates the surfaces, including the only item with a cost on already-deployed
-devices, the `StateDirectory` and `/var/lib/mos/webd`
+devices, the `StateDirectory` and `/var/lib/mos/apid`
 (`docs/design/dashboard.md:2482-2499`). This document therefore assumes a
 server-rendered no-JavaScript built-in UI, two processes, a bus that keeps
 existing, and the name `apid`; a section below that needs any of those to change
@@ -487,20 +492,20 @@ each case the tree at `86cd669` is the fact:
 
 1. **Line numbers throughout its section 2.1 no longer resolve.** It cites
    `GET /` at route `:42` and handler `:566`; at `86cd669` those are
-   `mosd/webd/src/routes.rs:45` and `:578`.
+   `mosd/apid/src/routes.rs:45` and `:578`.
 2. **Its route table is missing five routes.** `GET /ssh`, `POST /ssh/enable`,
    `POST /ssh/password`, `POST /ssh/keys/add` and `POST /ssh/keys/remove` all
-   exist at `mosd/webd/src/routes.rs:57-64`. Its own section 8 predicted exactly
+   exist at `mosd/apid/src/routes.rs:57-64`. Its own section 8 predicted exactly
    this and instructed a re-measure after the `sshweb` merge
    (`docs/research/mos-ui-inventory.md:536-560`) — which is the merge this
    document's base commit is.
 3. **"Six methods and one signal"** (`docs/research/mos-ui-inventory.md:287`) is
    now seven methods: `SetTransientRootPassword` exists at
    `mosd/mosd/src/bus.rs:283` and apid calls it
-   (`mosd/webd/src/bus_client.rs:20`, `mosd/webd/src/routes.rs:1272`).
+   (`mosd/apid/src/bus_client.rs:20`, `mosd/apid/src/routes.rs:1272`).
 4. **"the sole call site is `GetState("network")`"**
    (`docs/research/mos-ui-inventory.md:293`) is now two call sites; `GetState("sshd")`
-   is at `mosd/webd/src/routes.rs:1045`.
+   is at `mosd/apid/src/routes.rs:1045`.
 5. **Schema version "3"** (`docs/research/mos-ui-inventory.md:317`) is now
    **4** (`mosd/mosd-settings/src/model.rs:11`).
 6. **Its section 3.6 quotes a D-Bus policy that permits any local process**
@@ -512,7 +517,7 @@ each case the tree at `86cd669` is the fact:
 Its navigation-bar count is likewise off by one — it records *"exactly four
 links plus a logout button"* (`docs/research/mos-ui-inventory.md:93-97`), and
 `shell()` now renders five plus the logout form
-(`mosd/webd/src/routes.rs:180-189`). Nothing in its section 9 contradiction
+(`mosd/apid/src/routes.rs:180-189`). Nothing in its section 9 contradiction
 table was re-verified here; that table is cited, not carried forward.
 
 ## 2. The API surface — **[proposed]**
