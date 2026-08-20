@@ -274,8 +274,14 @@ says it is.
 
 ## What could not be established from the tree
 
-- **Nothing was run on hardware.** No claim in this record is an on-device claim.
-  Every result above comes from `cargo nextest` on the build host.
+- **Not exercised on hardware.** Every result above comes from one
+  `cargo nextest` run on the build host, and that proves what it proves and
+  nothing further. No claim in this record is an on-device claim. The accurate
+  statement of the surrounding position: hardware **has** booted — a v1 image
+  reached the `mos login:` prompt on a real CX3576-Z — but the v2 stack this
+  work lands in (verity root, A/B, `rauc install`, apid itself) has not been
+  exercised on hardware. Neither *"never booted"* nor *"verified on device"* is
+  a correct thing to say here.
 - **The symlink cases are proved against a temporary bundle root**, not against
   `/srv/ui`. That directory does not exist on this base — §5.2's layout is a
   sibling task's deliverable — so `resolve`'s behaviour against a real
