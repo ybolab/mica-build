@@ -51,21 +51,33 @@ while [ $# -gt 0 ]; do
     esac
     shift
 done
-if [ -z "${IMG}" ]; then
-    IMG="${REPO_ROOT}/_out/cx3576/${IMAGE_LATEST_NAME}"
-    EXPECT_SYMLINK=1
-fi
 
-if [ ! -e "${IMG}" ]; then
-    echo "error: image not found: ${IMG}" >&2
-    exit 1
+# MOS_VERIFY_FIXTURE_ROOT redirects the ONE input the custom-UI assertions read
+# -- a directory standing in for the unpacked read-only root, holding an
+# etc/fstab and the mountpoints -- and runs those assertions and nothing else.
+# It exists so os/ui-location-test.sh can drive THIS EXACT SCRIPT against
+# mutated fixtures and watch the assertions fail, without building an image;
+# nothing in the build or in make os-verify-cx3576-v2 sets it. A verifier
+# assertion that has only ever been observed passing is not evidence, and a
+# reimplementation of it inside a test would be exactly that.
+FIXTURE_ROOT="${MOS_VERIFY_FIXTURE_ROOT:-}"
+
+if [ -z "${FIXTURE_ROOT}" ]; then
+    if [ -z "${IMG}" ]; then
+        IMG="${REPO_ROOT}/_out/cx3576/${IMAGE_LATEST_NAME}"
+        EXPECT_SYMLINK=1
+    fi
+    if [ ! -e "${IMG}" ]; then
+        echo "error: image not found: ${IMG}" >&2
+        exit 1
+    fi
 fi
 
 # Re-exec in a container when the host lacks any required tool. unsquashfs,
 # veritysetup and setcap/getcap are the v2 additions over v1's set.
 REQUIRED_TOOLS=(sgdisk mdir mcopy mlabel debugfs tune2fs dumpe2fs e2fsck cmp
     unsquashfs veritysetup getcap setcap)
-if [ "${INNER}" -eq 0 ]; then
+if [ "${INNER}" -eq 0 ] && [ -z "${FIXTURE_ROOT}" ]; then
     missing=0
     for tool in "${REQUIRED_TOOLS[@]}"; do
         command -v "${tool}" >/dev/null 2>&1 || missing=1
@@ -146,6 +158,154 @@ eq_ci() {
         fail "${what} is '${got}', expected ${want}"
     fi
 }
+
+# ---------------------------------------------------------------------------
+# The custom UI's location, as an asserted on-image fact.
+#
+# docs/design/api.md section 5.2 puts a customer's UI bundles at /srv/ui and
+# argues that this needs no ninth bind and no seed unit, because /srv is the
+# DATA partition's OWN mountpoint rather than a redirect. Everything that
+# argument rests on was already asserted here -- but asserted about /srv AS A
+# PARTITION. Neither the DATA fstab check nor the mountpoint-exists loop says
+# where a custom UI lives, so the day the UI root is moved to /var/lib, or onto
+# STATE for tidiness, both go on passing while every custom UI on every device
+# either disappears at the next wipe or fills a 64 MiB partition. An assertion
+# that holds whether or not the thing it protects is true is not an assertion.
+#
+# These checks CHAIN to those two rather than restating them. DATA_MOUNT is the
+# mountpoint the DATA fstab check validates, and PACKED_MOUNTPOINTS is the set
+# whose existence in the read-only root the mountpoint loop proves; both are
+# consumed here and by the checks themselves, from one definition. What is new
+# here is only the fact those two cannot express: which of them governs the
+# path apid actually reads. Re-deriving either would add a line and no
+# coverage.
+#
+# They are defined next to the other helpers, not at their call site below,
+# because the fixture hook that negative-tests them dispatches before any image
+# is opened.
+UI_ROOT="/srv/ui"
+DATA_MOUNT="/srv"
+PACKED_MOUNTPOINTS="/mnt/state /mnt/meta /srv /var /home /root"
+
+# Prints the /etc/fstab line whose mountpoint is the LONGEST prefix of $1: the
+# entry that actually governs the filesystem that path lands on. Derived rather
+# than looked up, so moving UI_ROOT moves the checks with it and mounting
+# something else over the path it sits under is noticed rather than ignored.
+# A deeper mountpoint wins over a shallower one, which is what the kernel does.
+fstab_covering_line() {
+    awk -v p="$1" '
+        /^[[:space:]]*#/ { next }
+        NF >= 4 {
+            m = $2
+            if (m == p || m == "/" || index(p, m "/") == 1) {
+                if (length(m) > best) { best = length(m); line = $0 }
+            }
+        }
+        END { print line }
+    ' "${FSTAB}" 2>/dev/null || true
+}
+
+# Six assertions about UI_ROOT, each named below by WHAT IT CATCHES.
+check_ui_location() {
+    local line mnt dev opts dev_lc data_dev state_dev eph_dev shipped
+    data_dev="partuuid=$(lc "${DATA_GUID}")"
+    state_dev="partuuid=$(lc "${STATE_GUID}")"
+    eph_dev="partuuid=$(lc "${EPHEMERAL_GUID}")"
+
+    line="$(fstab_covering_line "${UI_ROOT}")"
+    if [ -z "${line}" ]; then
+        fail "catches a custom UI root with NO filesystem under it: no /etc/fstab entry covers ${UI_ROOT}, so it lands on the read-only verity squashfs. apid cannot create it on first install, no bundle can ever be installed, and the root is deliberately absent from fstab so no entry could ever come to cover it"
+        return
+    fi
+    mnt="$(echo "${line}" | awk '{print $2}')"
+    dev="$(echo "${line}" | awk '{print $1}')"
+    opts="$(echo "${line}" | awk '{print $4}')"
+    dev_lc="$(lc "${dev}")"
+
+    # 1. Catches a UI root that has drifted off the DATA mount -- the one the
+    #    growth, the survives-an-update story and section 5.2's whole "no bind
+    #    needed" argument all belong to. Chained: DATA_MOUNT is the mountpoint
+    #    the DATA fstab check validates, so a pass here means the entry that
+    #    governs UI_ROOT is the entry that check already proved out.
+    if [ "${mnt}" = "${DATA_MOUNT}" ] && [ "${dev_lc}" = "${data_dev}" ]; then
+        pass "catches a custom UI root moved off DATA: ${UI_ROOT} resolves under ${DATA_MOUNT}, the DATA mount asserted above (${data_dev})"
+    else
+        fail "catches a custom UI root moved off DATA: ${UI_ROOT} resolves under mountpoint ${mnt} mounted from '${dev}', not under ${DATA_MOUNT} from ${data_dev}. DATA is the only partition systemd-repart grows, the only tier RAUC never touches on an update, and the only one section 5.2's no-bind argument holds for"
+    fi
+
+    # 2. Catches the tidy-looking move onto STATE, where the settings tree and
+    #    the sshd host keys live in 64 MiB.
+    if [ "${dev_lc}" != "${state_dev}" ]; then
+        pass "catches a custom UI root moved onto STATE: ${UI_ROOT} is not governed by ${state_dev}"
+    else
+        fail "catches a custom UI root moved onto STATE: ${UI_ROOT} is governed by ${mnt}, mounted from ${state_dev}. STATE is 64 MiB, section 5.3 keeps TWO bundle generations, and the first large bundle fills it -- taking the settings tree and the sshd host keys down with it while nothing about the UI reports the cause"
+    fi
+
+    # 3. Catches the move onto /var, which is wiped by design.
+    if [ "${dev_lc}" != "${eph_dev}" ]; then
+        pass "catches a custom UI root moved onto the wipeable /var partition: ${UI_ROOT} is not governed by ${eph_dev}"
+    else
+        fail "catches a custom UI root moved onto the wipeable /var partition: ${UI_ROOT} is governed by ${mnt}, mounted from ${eph_dev}. /var is fixed-size disposable residue with no x-systemd.growfs, so every installed custom UI silently disappears the first time it is cleared and no bundle can outgrow the fixed partition"
+    fi
+
+    # 4. Catches a UI root under a mountpoint NOTHING has checked exists in the
+    #    packed root. Chained: membership in PACKED_MOUNTPOINTS means the
+    #    mountpoint loop already proves the directory is there, so its
+    #    existence is not re-derived here -- only its relevance to UI_ROOT.
+    local covered=0 known
+    for known in ${PACKED_MOUNTPOINTS}; do
+        [ "${known}" = "${mnt}" ] && covered=1
+    done
+    if [ "${covered}" -eq 1 ]; then
+        pass "catches a custom UI root under an unasserted mountpoint: ${mnt} is in the set the packed-root mountpoint check proves exists (${PACKED_MOUNTPOINTS})"
+    else
+        fail "catches a custom UI root under an unasserted mountpoint: ${UI_ROOT} is governed by ${mnt}, which is NOT in the set the packed-root mountpoint check covers (${PACKED_MOUNTPOINTS}). Nothing asserts that directory exists in the read-only root, a verity root cannot create it at runtime, and the mount therefore fails silently into the squashfs"
+    fi
+
+    # 5. Catches a UI root with a ceiling. This is not the DATA entry's growfs
+    #    restated: it is read off whichever entry governs UI_ROOT, so it keeps
+    #    holding in exactly the case the DATA check cannot see -- the covering
+    #    entry being some other partition.
+    if [[ ",${opts}," == *",x-systemd.growfs,"* ]]; then
+        pass "catches a custom UI root with a fixed ceiling: the entry governing ${UI_ROOT} (${mnt}) carries x-systemd.growfs"
+    else
+        fail "catches a custom UI root with a fixed ceiling: the entry governing ${UI_ROOT} (${mnt}) lacks x-systemd.growfs; options are '${opts}'. The bundle root is then capped at the size the image was built with however large the disk is, and section 5.3 spends two copies of every bundle on it"
+    fi
+
+    # 6. Catches ANY content baked under the UI root -- not merely the
+    #    directory. Both failure modes are silent: a baked file on the
+    #    read-only squashfs either WINS over the writable copy an operator
+    #    installed, or NEVER UPDATES when the bundle beneath it changes, and
+    #    neither produces an error anywhere.
+    shipped=""
+    if [ -e "${ROOT}${UI_ROOT}" ] || [ -L "${ROOT}${UI_ROOT}" ]; then
+        shipped="$(find "${ROOT}${UI_ROOT}" 2>/dev/null |
+            sed "s|^${ROOT}||" | sort |
+            awk 'NR <= 5 { printf "%s ", $0 } END { if (NR > 5) printf "(+%d more) ", NR - 5 }')"
+        [ -n "${shipped}" ] || shipped="${UI_ROOT} "
+        shipped="${shipped% }"
+    fi
+    if [ -z "${shipped}" ]; then
+        pass "catches content baked under the custom UI root: the packed read-only root ships nothing at or under ${UI_ROOT}, which is the defined shipped state -- apid creates it on first install and no seed unit is owed"
+    else
+        fail "catches content baked under the custom UI root: the packed read-only root ships ${shipped}. Anything baked there sits on the read-only squashfs, where it either silently WINS over the bundle an operator installed or silently NEVER UPDATES when that bundle changes -- neither raises an error anywhere. Absence is the defined shipped state: there is no seed unit and none is needed"
+    fi
+}
+
+# The fixture hook: run only the assertions above, against the fixture, and
+# summarise. os/ui-location-test.sh is the only caller.
+if [ -n "${FIXTURE_ROOT}" ]; then
+    ROOT="${FIXTURE_ROOT}"
+    FSTAB="${ROOT}/etc/fstab"
+    check_ui_location
+    fixture_total=$((PASS_N + FAIL_N))
+    if [ "${FAIL_N}" -eq 0 ]; then
+        echo "RESULT: PASS (${PASS_N}/${fixture_total} checks)"
+        exit 0
+    fi
+    echo "RESULT: FAIL (${PASS_N}/${fixture_total} checks)"
+    exit 1
+fi
 
 BYTES_PER_SECTOR="${SECTOR_SIZE}"
 SECTORS_PER_MIB=$((MIB_BYTES / SECTOR_SIZE))
@@ -1272,13 +1432,15 @@ sq_enabled_any systemd-tmpfiles-clean.timer
 sq_regular /usr/lib/systemd/system/serial-getty@.service
 
 # fstab entries and the STATE binds need their mountpoints to exist in the
-# read-only root: nothing can create them at runtime.
+# read-only root: nothing can create them at runtime. PACKED_MOUNTPOINTS is the
+# list, hoisted to a constant because check_ui_location chains to THIS check
+# rather than re-deriving it -- see its comment.
 missing_mp=""
-for d in /mnt/state /mnt/meta /srv /var /home /root; do
+for d in ${PACKED_MOUNTPOINTS}; do
     [ -d "${ROOT}${d}" ] || missing_mp="${missing_mp} ${d}"
 done
 if [ -z "${missing_mp}" ]; then
-    pass "every fstab/bind mountpoint exists in the read-only root (/mnt/state /mnt/meta /srv /var /home /root)"
+    pass "every fstab/bind mountpoint exists in the read-only root (${PACKED_MOUNTPOINTS})"
 else
     fail "mountpoint(s) missing from the read-only root:${missing_mp}; a verity root cannot create them at runtime, so the mount fails"
 fi
@@ -1422,11 +1584,15 @@ check_fstab() {
     fi
     pass "/etc/fstab mounts ${mnt} from PARTUUID=$(lc "${guid}") with ${opts} (${what})"
 }
-check_fstab "DATA is the growth target" "${DATA_GUID}" /srv "noatime,x-systemd.growfs"
+check_fstab "DATA is the growth target" "${DATA_GUID}" "${DATA_MOUNT}" "noatime,x-systemd.growfs"
 check_fstab "STATE: configuration + identity, precious" "${STATE_GUID}" /mnt/state "noatime"
 check_fstab "META: update metadata, precious" "${META_GUID}" /mnt/meta "noatime"
 check_fstab "/var is fixed-size disposable residue, NOT a growth target" \
     "${EPHEMERAL_GUID}" /var "noatime" "x-systemd.growfs"
+# The four checks above are about the PARTITIONS. None of them would notice the
+# custom UI root moving off DATA, so that fact is asserted separately; the
+# helper and its reasoning are up beside the other helpers.
+check_ui_location
 if awk '$1 == "tmpfs" && $2 == "/tmp" && $3 == "tmpfs"' "${FSTAB}" 2>/dev/null | grep -q .; then
     pass "/etc/fstab mounts /tmp as tmpfs"
 else

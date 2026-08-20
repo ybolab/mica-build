@@ -93,3 +93,4 @@ Each task is a single line linking to its detail file. All detailed information 
 - [x] [**RFCT-067 PMA records, the task index, and the final consistency pass**](RFCT-067.md) `P1`
 - [x] [**RFCT-068 Anchor mos-ui-inventory.md as a measurement at a time**](RFCT-068.md) `P1`
 - [x] [**RFCT-069 Resolve the auth/CSRF and version-set contradictions**](RFCT-069.md) `P1`
+- [x] [**RFCT-073 Assert the custom-UI location as an on-image fact, and negative-test every assertion**](RFCT-073.md) `P1`
