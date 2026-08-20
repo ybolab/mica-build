@@ -4,6 +4,12 @@
 >
 > How a board joins mos: what it must produce, what the OS build consumes, and
 > the hard assertions between them. Reference implementation: `board/cx3576`.
+>
+> **Daemon rename (campaign `apid`, 2026-08-19, RFCT-056).** The HTTPS management
+> daemon formerly called `webd` is now `apid` — it is the API daemon, and the
+> dashboard is one of the things it serves. Only the name changed here; the
+> mechanism this document describes is unaffected. See
+> `docs/design/dashboard.md` §7.4.
 
 ## 1. Separation rule
 

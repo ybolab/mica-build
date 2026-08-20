@@ -81,3 +81,8 @@ Each task is a single line linking to its detail file. All detailed information 
 - [x] [**RFCT-048 D-Bus policy: com.mos.mosd is root-only, and a live-bus test that proves it**](RFCT-048.md) `P1`
 - [x] [**RFCT-053 sshd reconciler: render authorized keys for every managed login account**](RFCT-053.md) `P1`
 - [x] [**RFCT-054 A persistent /root on DATA**](RFCT-054.md) `P1`
+- [x] [**RFCT-055 Rename webd to apid: crate, binary, unit, StateDirectory, image, verifiers, health gate**](RFCT-055.md) `P1`
+- [x] [**RFCT-056 Documentation for the apid rename and the keep-two-processes decision**](RFCT-056.md) `P1`
+- [x] [**RFCT-057 Closing audit of the apid rename: repo-wide completeness, consistency chain, assertion accounting**](RFCT-057.md) `P1`
+- [x] [**RFCT-058 Re-anchor dashboard.md D-Bus policy claims to RFCT-048, state the citation rule, correct the README talos entry**](RFCT-058.md) `P1`
+- [x] [**RFCT-059 Direction-2 audit of the apid rename: every new apid occurrence is a place that should have been renamed**](RFCT-059.md) `P1`

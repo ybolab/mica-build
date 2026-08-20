@@ -6,8 +6,8 @@
 - `design/` — 子系统设计记录（中英双份，`*.zh.md` 为中文版）
   - `access.md` — 调试/维护访问：通道、认证阶段、分层禁用
   - `boards.md` — BSP 契约：产物接口、内核断言、新板接入 checklist
-  - `remote-management.md` — webd 与 apid 分工、SideroLink 机队路径
-  - `display.md` — HDMI kiosk UI：cage+WPE 本地渲染 webd
+  - `remote-management.md` — apid（产品）与 Talos apid 分工、SideroLink 机队路径
+  - `display.md` — HDMI kiosk UI：cage+WPE 本地渲染 apid
   - `provisioning.md` — 无网配置：三层供给模型
   - `mosd.md` — 管理平面设计简报：D-Bus 树、设置 schema、协调器
 - `research/` — 决策依据研究

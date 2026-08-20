@@ -428,7 +428,7 @@ impl<C: UnitControl> Reconciler for SshdReconciler<C> {
             .map(|entry| {
                 json!({
                     // Never the key material itself: this tree is served over
-                    // D-Bus and read by webd, and a fingerprint is what an
+                    // D-Bus and read by apid, and a fingerprint is what an
                     // operator needs in order to recognise a key.
                     "fingerprint": fingerprint(&entry.key),
                     "comment": entry.comment,

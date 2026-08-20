@@ -1,10 +1,25 @@
 # The mos dashboard: landing screen and information architecture
 
-> **Status:** proposal. This file contains **sections 1-8**. Section 5
-> (technology posture) was added by RFCT-044; sections 6-8 (process
-> architecture, the `webd` rename, and phasing) were added by RFCT-046.
-> Sections 6 and 7 present options and a recommendation; **the process
-> decision and the rename decision are the user's**, not this document's.
+> **Status:** proposal, with two decisions now settled. This file contains
+> **sections 1-8**. Section 5 (technology posture) was added by RFCT-044;
+> sections 6-8 (process architecture, the daemon rename, and phasing) were added
+> by RFCT-046.
+>
+> **Both decisions sections 6 and 7 left to the user have been made** (campaign
+> `apid`, 2026-08-19, recorded by RFCT-056):
+>
+> - **The process decision — keep two processes.** `apid` is **not** merged into
+>   `mosd`. Recorded in §6.
+> - **The rename decision — `webd` is renamed `apid`.** Not `dashboard`, not
+>   `webui`. Recorded in §7.4, and applied throughout this document.
+>
+> Sections 6 and 7 are **retained unrewritten as the reasoning behind those
+> decisions**, including the costs of the rejected options and the one
+> recommendation (§7.4.3) the user overrode. The decisions are stated on top of
+> that reasoning, never in place of it.
+>
+> **Status markers** below follow `docs/design/access.md` §0 — `[implemented]`,
+> `[partial]`, `[not implemented]`, and `[decided]` for a settled question.
 
 This document proposes turning the mos management UI from a set of forms into a
 dashboard. It proposes no code, no route handlers, no markup, and no rendering
@@ -26,6 +41,43 @@ by section, and carries the inventory's own `path:LINE` where the line is
 load-bearing. A borrowed or rejected Venus idea cites `venus-os-ui.md` or
 `venus-os-access.md` by section. A claim marked **[proposal]** is mine and is
 not sourced from anything, because it does not exist yet.
+
+**Cite by commit plus quoted content, not by bare line range, for any file still
+under change.** A line range is acceptable only when it is anchored to a commit
+that pins what those lines were — `path:LINE` *as of* `<sha>` — or when the
+quoted words travel with the citation, so a reader can tell a line that merely
+moved from a claim that actually changed. An unanchored range does not simply go
+stale. As a file grows, the range comes to point at whatever text now occupies
+those bytes, and that text can *refute* the claim citing it — at which point the
+reader who does the responsible thing and follows the citation is misled more
+thoroughly than the reader who does not. This is the same discipline as
+anchoring a present-tense claim, applied to the pointer instead of the sentence.
+
+`mosd/dist/com.mos.mosd.conf` is the worked example, and it is why this
+paragraph exists rather than a footnote. The file grew from **12 lines to 73**
+at `637295e` (RFCT-048). Every `:4-11` and `:8-11` citation below had been
+written against the 12-line file, where those ranges *were* the policy stanzas;
+in the 73-line file the same ranges are explanatory comment prose — including
+the sentence *"The previous policy was a development skeleton that let any local
+uid send to all of it."* A reader following the unanchored citation therefore
+landed on text that appeared to **confirm** a claim which had become false.
+Worse, `:4` once read *"Dev skeleton posture: root owns the name, everyone may
+talk to it."* and today reads *"com.mos.mosd is a ROOT-ONLY bus name
+(RFCT-048)"* — the exact negation of the claim it was cited to support. Every
+such citation below now carries `as of 637295e^`, the last commit at which the
+range meant what the sentence says.
+
+**[re-anchored]** — a status marker added by RFCT-058 (campaign `apid`),
+following the marker discipline of `docs/design/access.md` §0. It marks a claim
+that was **true when written and has since been overtaken by a named commit**.
+The claim is not deleted and the analysis built on it is not rewritten: the
+marker dates the claim, names the commit that moved it, and states what that
+does to the surrounding argument. It is the fact-level counterpart of
+**[decided]** — where **[decided]** records that an open question was settled,
+**[re-anchored]** records that a *fact* moved beneath an analysis that remains
+otherwise valid. A **[re-anchored]** claim is still load-bearing history: it is
+what the comparison was reasoning about at the time it reasoned, and deleting it
+would make the reasoning unreadable rather than correct.
 
 **Licence fence, load-bearing.** gui-v2 ships under "Victron Energy OS license
 v1", which states *"USE OF THE SOFTWARE AND ITS MODIFICATIONS WITH SYSTEMS
@@ -49,15 +101,15 @@ are quoted and cited here and not edited, including where
 Summarised from `mos-ui-inventory.md` sections 2 and 3, with its citations
 carried through.
 
-`webd` is one Rust crate serving **ten routes on the HTTPS listener**, built in
-a single function (`mosd/webd/src/routes.rs:40-57`), plus a catch-all 308
+`apid` is one Rust crate serving **ten routes on the HTTPS listener**, built in
+a single function (`mosd/apid/src/routes.rs:40-57`), plus a catch-all 308
 redirect router on the HTTP listener (`routes.rs:61-65`). That is the entire
 HTTP surface: no nested router, no fallback, no static-asset route
 (`mos-ui-inventory.md` section 2).
 
 The operator's whole menu is **four links plus a logout button** —
 `Status` (`/`), `Network` (`/network`), `Hostname` (`/hostname`),
-`Power` (`/power`) — rendered by `shell()` at `mosd/webd/src/routes.rs:168-178`
+`Power` (`/power`) — rendered by `shell()` at `mosd/apid/src/routes.rs:168-178`
 (`mos-ui-inventory.md` section 2.2).
 
 Of those, three are editors and one is a status page. The status page, `/`,
@@ -75,15 +127,15 @@ one 7-line inline stylesheet at `routes.rs:147-154` whose own doc comment says
 `mosd` offers a **six-method, one-signal** bus surface on `com.mos.mosd1`
 (`mosd/mosd/src/bus.rs:157`): `GetSettings`, `SetSettings`, `GetState`,
 `ReportHealth`, `Reboot`, `PowerOff`, and the `SettingsChanged` signal
-(`mos-ui-inventory.md` section 4). `webd` calls five of the six methods and
+(`mos-ui-inventory.md` section 4). `apid` calls five of the six methods and
 subscribes to the signal not at all — its zbus proxy declares no signal member
-(`mosd/webd/src/bus_client.rs:9-20`).
+(`mosd/apid/src/bus_client.rs:9-20`).
 
 ### 1.2 The shape of the problem, in one paragraph
 
 Ten routes, four nav links, every state change a form POST followed by a 302
 and a full page re-render, and **one single `GetState` call in the entire UI** —
-`GetState("network")` at `mosd/webd/src/routes.rs:568`, whose result is rendered
+`GetState("network")` at `mosd/apid/src/routes.rs:568`, whose result is rendered
 as an opaque JSON dump (`mos-ui-inventory.md` sections 2, 3.2, 4). The `?saved=1`
 query marker at `routes.rs:206-209` exists precisely because a redirect is the
 only way the application has to say "that worked". The consequence, stated as
@@ -167,11 +219,11 @@ call returning the data — or **(b) needs new mosd work**, with the
 - **Shows:** the configured hostname; the device identity (`deviceId`); the
   provisioning state (`pending` / `complete`).
 - **Feed:** `GetSettings("hostname")` — already called at
-  `mosd/webd/src/routes.rs:567`; `GetSettings("provisioning")`, which returns
+  `mosd/apid/src/routes.rs:567`; `GetSettings("provisioning")`, which returns
   `state`, `deviceId` and `seededGeneration`
   (`mosd/mosd-settings/src/model.rs:142-162`).
 - **Availability: (a) available today.** `GetSettings("provisioning")` works
-  today and `mosd/webd/src/` contains zero references to it — gap-table
+  today and `mosd/apid/src/` contains zero references to it — gap-table
   **row 8**, classified UI-work-only. Identity is a *setting*, not live state,
   and is therefore reachable (`mos-ui-inventory.md` section 6.3).
 - **Why it earns the first screen:** an operator with more than one appliance,
@@ -198,7 +250,7 @@ call returning the data — or **(b) needs new mosd work**, with the
   `GetState("health")`, written by `ReportHealth`
   (`mosd/mosd/src/bus.rs:209-229`). (iii) does not exist.
 - **Availability: mixed, and the split is the point.**
-  - (i) is **(a) available today** — gap-table **row 18**, UI-work-only. `webd`
+  - (i) is **(a) available today** — gap-table **row 18**, UI-work-only. `apid`
     calls `GetState` for exactly one path and treats any object as opaque JSON
     (`routes.rs:568`, `:587-596`), so an `error` key is today dumped as raw JSON
     in a `<pre>` rather than surfaced as a failure. This is the single cheapest
@@ -210,7 +262,7 @@ call returning the data — or **(b) needs new mosd work**, with the
     ever refreshes it** (`mos-ui-inventory.md` section 6.2). The tile must
     therefore timestamp it as a boot-time reading, not present it as current.
   - (iii) is **(b) needs new mosd work** — gap-table **row 5**. A 208-line gate
-    probes systemd, mosd and webd and then runs `rauc status mark-good`
+    probes systemd, mosd and apid and then runs `rauc status mark-good`
     (`os/rootfs/overlay-v2/usr/lib/mos/mos-health:111-207`), and its verdict —
     did it pass, was the slot confirmed, which probe failed — goes to the journal
     and nowhere a UI can read.
@@ -292,9 +344,9 @@ better mechanism and then hid it.**
   - **row 1** — which slot is running. The two-slot model is fully specified
     (`os/rauc/system.conf.in:75-95`, partition GUIDs at
     `os/layout/cx3576-v2.env:209-219`), but there is no bus mechanism: a UI would
-    have to subprocess `rauc status --output-format=shell`, and `webd` cannot,
-    because it never spawns a process (`mosd/webd/src/settings_api.rs:10-12`,
-    which states *"mosd owns every system action: webd never spawns a process and
+    have to subprocess `rauc status --output-format=shell`, and `apid` cannot,
+    because it never spawns a process (`mosd/apid/src/settings_api.rs:10-12`,
+    which states *"mosd owns every system action: apid never spawns a process and
     never talks to systemd itself"*).
   - **row 2** — boot attempt credits. `BOOT_A_LEFT` / `BOOT_B_LEFT` in the
     redundant U-Boot environment (`os/rootfs/overlay-v2/etc/fw_env.config.in:27-29`),
@@ -378,13 +430,13 @@ better mechanism and then hid it.**
 
 - **Shows:** time since boot, and — once section 2.5's feed exists — whether
   that boot was the first on the current slot version.
-- **Feed:** `/proc/uptime`, read by `webd` itself at
-  `mosd/webd/src/routes.rs:569-571`, parsed at `:539-546`, formatted at
+- **Feed:** `/proc/uptime`, read by `apid` itself at
+  `mosd/apid/src/routes.rs:569-571`, parsed at `:539-546`, formatted at
   `:549-560`, rendered on `/` at `:580-583`.
 - **Availability: (a) available today** — gap-table **row 12**, answered via a
-  side channel. Recorded honestly: this is **the one place `webd` touches the
+  side channel. Recorded honestly: this is **the one place `apid` touches the
   filesystem for data rather than going through the bus**, a documented
-  exception to the layering asserted at `mosd/webd/src/settings_api.rs:10-12`.
+  exception to the layering asserted at `mosd/apid/src/settings_api.rs:10-12`.
   Uptime is not in the live-state tree at all (`mos-ui-inventory.md` section 6.3).
   This proposal does not resolve that exception; it notes that a dashboard adding
   more `/proc` reads would widen it, and that the correct place to decide is
@@ -412,7 +464,7 @@ better mechanism and then hid it.**
   PSK).
 - **Availability: (a) available today** — gap-table **rows 15, 7 and 6**
   respectively, all three classified by `mos-ui-inventory.md` section 7.1 as
-  needing only UI work. `mosd/webd/src/` contains **zero** references to any of
+  needing only UI work. `mosd/apid/src/` contains **zero** references to any of
   these paths. Note that row 15 (SSH) is **in flight on the `sshweb` branch**
   (`mos-ui-inventory.md` section 8); anyone building this tile after that merge
   must re-measure section 2's route inventory first, as that section instructs.
@@ -469,7 +521,7 @@ names the reason, and where it belongs instead. **[proposal]**
   consequence is the wrong order of operations. The existing safety properties
   stay as they are: POST-only with no `GET` handler, so a browser prefetch or a
   mis-clicked link cannot power the appliance off (`routes.rs:49-51`, pinned by a
-  test at `mosd/webd/src/tests.rs:563`), plus a required confirmation token.
+  test at `mosd/apid/src/tests.rs:563`), plus a required confirmation token.
 - **No raw JSON.** The current `/` renders the network subtree as
   pretty-printed JSON inside a `<pre>` (`routes.rs:587-596`). That is the
   artefact this proposal exists to remove, not a component to reuse. A full-tree
@@ -691,7 +743,7 @@ sourced from connman; a mos row imitating it would be showing intent in the same
 visual slot.
 
 One further note on cost, since "one extra bus read per row" is Venus's number
-and not necessarily mos's. `webd`'s gate already calls `GetSettings("access")`
+and not necessarily mos's. `apid`'s gate already calls `GetSettings("access")`
 on **every single request**, including static-looking ones (`routes.rs:120`), so
 per-request bus reads are the established shape of this application rather than
 a new burden. Whether that shape scales is RFCT-044's question, not this
@@ -760,10 +812,10 @@ RFCT-046's.
 
 | # | Proposed in | What is missing | Gap row | `mosd` work required |
 |---|---|---|---|---|
-| 1 | 2.5, 3.2 Update page | Which slot is running, and the version in each | **row 1** | A bus method returning RAUC slot status. `grep -rci rauc mosd/mosd/src/` returns **0 across all 12 files**; `webd` cannot subprocess (`mosd/webd/src/settings_api.rs:10-12`), so this must live in `mosd`. The parse already exists in shell at `os/rootfs/overlay-v2/usr/lib/mos/mos-health:72-104` |
+| 1 | 2.5, 3.2 Update page | Which slot is running, and the version in each | **row 1** | A bus method returning RAUC slot status. `grep -rci rauc mosd/mosd/src/` returns **0 across all 12 files**; `apid` cannot subprocess (`mosd/apid/src/settings_api.rs:10-12`), so this must live in `mosd`. The parse already exists in shell at `os/rootfs/overlay-v2/usr/lib/mos/mos-health:72-104` |
 | 2 | 2.5, 2.7 | Boot attempt credits remaining | **row 2** | Read `BOOT_A_LEFT`/`BOOT_B_LEFT` from the redundant U-Boot environment (`os/rootfs/overlay-v2/etc/fw_env.config.in:27-29`). Carries a real hazard the file itself records at `:23-25`: **no cross-process locking** between the two existing writers |
 | 3 | 2.5, 3.2 Update page | RAUC status and last install result | **row 3** | Same bus surface as item 1; the status file is on META by design (`os/rauc/system.conf.in:14-34`) |
-| 4 | 2.5, 3.2 Update page | Installing a bundle at all | **row 4** | The largest single item. Signed verity-format bundles are already **built** and signature-verified against `/etc/rauc/keyring.pem` with `plain` format refused (`os/bundle.sh:1-22`, `os/rauc/system.conf.in:50-62`), but there is **no upload route, no file-receiving handler** (`Multipart` appears nowhere in `mosd/webd/`) and **no `rauc install` caller anywhere in `mosd/`**. Needs a bus method, a place to put the bundle, and a progress surface |
+| 4 | 2.5, 3.2 Update page | Installing a bundle at all | **row 4** | The largest single item. Signed verity-format bundles are already **built** and signature-verified against `/etc/rauc/keyring.pem` with `plain` format refused (`os/bundle.sh:1-22`, `os/rauc/system.conf.in:50-62`), but there is **no upload route, no file-receiving handler** (`Multipart` appears nowhere in `mosd/apid/`) and **no `rauc install` caller anywhere in `mosd/`**. Needs a bus method, a place to put the bundle, and a progress surface |
 | 5 | 2.3, 2.5 | The boot health gate's verdict; whether the running slot is confirmed | **row 5** | The gate exists and runs `rauc status mark-good` (`os/rootfs/overlay-v2/usr/lib/mos/mos-health:111-207`); its verdict goes to the journal (`:17-18`). Needs the gate to report through `ReportHealth` (or a richer equivalent) instead of only journalling. **This is the item where mos is furthest ahead of Venus and least able to show it** — see 4.2 |
 | 6 | 2.4, 3.4.1 | Observed IP address, lease, gateway, DNS in use, carrier state | **row 14** | `mosd` must **query** networkd. It already talks to `org.freedesktop.network1` for exactly one thing, `Manager.Reload` (`mosd/mosd/src/reconciler/network.rs:36-43`); it issues no `Get`, no property read and no link enumeration. This is the highest-value item on the list by operator demand |
 | 7 | 2.6 | Filesystem usage per tier | **row 11** | A `statvfs` read plus a bus surface for it. The read is trivial; the surface does not exist. `/srv`, the only tier that grows (`docs/design/ro-root.md:363-368`), has **no reporting of any kind** today |
@@ -781,8 +833,8 @@ that already return the data.
 One further item is out of this document's scope but should not be lost.
 `SettingsChanged` is emitted after every successful write
 (`mosd/mosd/src/bus.rs:249-254`, emitted at `:190-192`) and nothing subscribes:
-`webd`'s proxy declares five methods and no signal member
-(`mosd/webd/src/bus_client.rs:9-20`), and with zero JavaScript there is no
+`apid`'s proxy declares five methods and no signal member
+(`mosd/apid/src/bus_client.rs:9-20`), and with zero JavaScript there is no
 transport to push it over either (gap row 16). Whether a dashboard should
 consume it is a live-update-technology question and therefore RFCT-044's, not
 this document's.
@@ -842,7 +894,7 @@ than dashboard-layout questions, and both are left to RFCT-044 and RFCT-046.
 ## 5. Technology posture
 
 One question is answered here: **can the dashboard designed in sections 2 and 3
-be delivered inside `webd`'s existing constraints — server-rendered `maud`, no
+be delivered inside `apid`'s existing constraints — server-rendered `maud`, no
 JavaScript build chain, rustls-only — and if so, how do live-ish values reach
 the screen?** Four transports are costed against one set of criteria, one is
 recommended, and the three things sections 2 and 3 explicitly deferred here are
@@ -859,8 +911,8 @@ PRODUCTS IS EXPRESSLY NOT AUTHORIZED"* (`gui-v2/LICENSE.txt:18-23` as verified b
 code, markup, asset name or verbatim string is borrowed from it — only ideas and
 interaction patterns, each attributed where used.
 
-**What this section deliberately does not decide.** Whether `webd` should be
-renamed, whether `webd` should be merged into `mosd`, and in what order any of
+**What this section deliberately does not decide.** Whether `apid` should be
+renamed, whether `apid` should be merged into `mosd`, and in what order any of
 this is delivered are all **RFCT-046's**, not this section's. Where a
 recommendation below would be changed by the process-architecture decision, that
 is flagged in one line and left open.
@@ -882,18 +934,18 @@ section reads something the inventory did not, it says so.
 
 #### 5.1.1 Rendering and assets
 
-`webd`'s complete dependency list is 16 crates
-(`mosd/webd/Cargo.toml:11-28`): `anyhow`, `argon2`, `async-trait`, `axum`,
+`apid`'s complete dependency list is 16 crates
+(`mosd/apid/Cargo.toml:11-28`): `anyhow`, `argon2`, `async-trait`, `axum`,
 `axum-server`, `hmac`, `maud`, `rand`, `rcgen`, `rustls`, `serde`, `serde_json`,
 `sha2`, `tokio`, `tracing`, `tracing-subscriber`, `zbus`. Dev-dependencies are
 `reqwest`, `tempfile`, `tower` (`Cargo.toml:30-33`). **`tower-http` is absent**,
 which is the mechanical reason there is no static-file route — and also, read out
-of that same absence, the reason **`webd` emits no HTTP compression at all**:
+of that same absence, the reason **`apid` emits no HTTP compression at all**:
 compression in this stack comes from `tower_http::compression`, and the crate is
 not present. Every byte counted in section 5.3 is therefore an uncompressed byte
 on the wire.
 
-The single stylesheet is a `const STYLE` at `mosd/webd/src/routes.rs:147-154`,
+The single stylesheet is a `const STYLE` at `mosd/apid/src/routes.rs:147-154`,
 emitted into a `<style>` element at `routes.rs:165` through `PreEscaped`.
 Measured on this branch: **484 bytes** of CSS after line continuations are
 resolved. This matters below only because it is the existing, working precedent
@@ -908,7 +960,7 @@ today.
 
 - `rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12"] }`
   (`mosd/Cargo.toml:38`), provider installed explicitly at
-  `mosd/webd/src/main.rs:46-48`; `axum-server` takes
+  `mosd/apid/src/main.rs:46-48`; `axum-server` takes
   `tls-rustls-no-provider` (`mosd/Cargo.toml:37`), which is why that install is
   mandatory rather than decorative. `rcgen` is likewise pinned to the `ring`
   backend (`mosd/Cargo.toml:39`).
@@ -944,7 +996,7 @@ local registry copy of the published crate:
   (`axum-server-0.7.3/src/server.rs:10`) and declares `hyper` with features
   `["http1", "http2", "server"]` (`axum-server-0.7.3/Cargo.toml:158-164`).
 
-**Consequence: `webd`'s HTTPS listener already advertises and can serve HTTP/2,
+**Consequence: `apid`'s HTTPS listener already advertises and can serve HTTP/2,
 even though `axum` itself is on default features and its own `http2` feature is
 off** (`axum = "0.8"` at `mosd/Cargo.toml:36`; axum 0.8.9's default feature set
 is `form, http1, json, matched-path, original-uri, query, tokio, tower-log,
@@ -959,8 +1011,8 @@ observed on a running appliance (see 5.13).
 Two properties read directly from `mosd/mosd/src/bus.rs` on this branch bound
 every option below:
 
-1. **`webd` does not subscribe to `SettingsChanged`.** Its zbus proxy declares
-   five methods and no signal member (`mosd/webd/src/bus_client.rs:9-20`).
+1. **`apid` does not subscribe to `SettingsChanged`.** Its zbus proxy declares
+   five methods and no signal member (`mosd/apid/src/bus_client.rs:9-20`).
    Adding a `#[zbus(signal)]` member needs **no new crate**: `zbus` 5.19.0 is
    already in the tree and already pulls `futures-core` (`mosd/Cargo.lock`, zbus
    entry at `:2906-2931`), and signal streams are part of the proxy macro. The
@@ -986,7 +1038,7 @@ every option below:
    section against high-frequency polling of any kind.
 
    One further load fact, already noted in section 3.4.1: the auth gate calls
-   `GetSettings("access")` on **every** request (`mosd/webd/src/routes.rs:120`),
+   `GetSettings("access")` on **every** request (`mosd/apid/src/routes.rs:120`),
    so every browser request costs at least one bus round trip before a tile is
    read.
 
@@ -1005,12 +1057,12 @@ sections 1-4.
 
 - The post-submit redirect is **303 See Other**, not 302. `Redirect::to` uses
   `StatusCode::SEE_OTHER` (`axum-0.8.9/src/response/redirect.rs:26-38`), and
-  `mosd/webd/src/tests.rs` asserts `StatusCode::SEE_OTHER` at 20 call sites
+  `mosd/apid/src/tests.rs` asserts `StatusCode::SEE_OTHER` at 20 call sites
   (for example `:41`, `:174`, `:394`, `:587`). `mos-ui-inventory.md` section 3.2
   and section 1.2 of this document describe the pattern as "302"; the pattern —
   POST/Redirect/GET — is the same either way, and 303 is the more correct of the
   two for a form submit. Sections 1-4 are left as written.
-- The HTTP-listener redirect is 308 (`mosd/webd/src/routes.rs:61-65` and its doc
+- The HTTP-listener redirect is 308 (`mosd/apid/src/routes.rs:61-65` and its doc
   comment at `:59-60`); that one is stated correctly throughout.
 
 ### 5.2 The criteria
@@ -1024,7 +1076,7 @@ order, so the four are comparable rather than merely described.
 | **C2** | **New crates** | Named, and checked against `mosd/Cargo.toml`, `mosd/Cargo.lock` and `mosd/deny.toml` by the three tests in 5.1.2 |
 | **C3** | **JavaScript disabled** | What an operator with scripting off, or a text browser, or a hardened kiosk profile, still gets |
 | **C4** | **`mosd`-side work** | New bus method? New signal? Does it need `SettingsChanged` (`bus.rs:249-254`), which exists and is unsubscribed (`bus_client.rs:9-20`)? |
-| **C5** | **`mosd` down** | Today: lazy connect, cache dropped on error, per-request 502 pages, never a `webd` crash (`mosd/webd/src/bus_client.rs:22-25`, `:41-58`; `bus_error` at `routes.rs:95-105`). What does the option do to that? |
+| **C5** | **`mosd` down** | Today: lazy connect, cache dropped on error, per-request 502 pages, never a `apid` crash (`mosd/apid/src/bus_client.rs:22-25`, `:41-58`; `bus_error` at `routes.rs:95-105`). What does the option do to that? |
 | **C6** | **Operator-visible latency** | Worst-case delay between a value changing on the box and the operator seeing it |
 
 A seventh consideration — interaction with the existing form-POST + 303 +
@@ -1034,7 +1086,7 @@ answer for all four; it is 5.10.
 ### 5.3 Option A — full-page refresh
 
 `<meta http-equiv="refresh" content="15">` emitted into the `<head>` by
-`shell()` (`mosd/webd/src/routes.rs:157-185`) on pages that opt in.
+`shell()` (`mosd/apid/src/routes.rs:157-185`) on pages that opt in.
 
 - **C1 — bytes.** ~45 bytes of markup, once. Per update: the **entire page,
   uncompressed**. Estimate for the seven-tile dashboard of section 2, based on
@@ -1088,7 +1140,7 @@ answer for all four; it is 5.10.
    comfortable; a 1-second interval is not. The interval is a real budget, not a
    cosmetic setting.
 5. **It does not extend the session, which is correct.** `SessionStore::verify`
-   reads the expiry and never rewrites it (`mosd/webd/src/session.rs:66-79`);
+   reads the expiry and never rewrites it (`mosd/apid/src/session.rs:66-79`);
    `SESSION_TTL` is an absolute 24 hours from creation (`session.rs:19`). So a
    tab left refreshing overnight lands on `/login` when the session expires,
    exactly as a manually reloaded tab would. Options C and D do **not** have this
@@ -1118,7 +1170,7 @@ them into the DOM. No framework, no npm, no bundler; the script ships as a Rust
   snapshot rather than as a live view. Without that stamp this option ships the
   exact failure mode section 2.4 exists to prevent, in the time dimension instead
   of the configured/observed dimension.
-- **C4 — `mosd` work. None**, but it needs **new `webd` routes**: one per
+- **C4 — `mosd` work. None**, but it needs **new `apid` routes**: one per
   refreshable tile, each behind the same auth gate (`routes.rs:54`), each
   returning a fragment rather than a page. That is real surface area — section
   1.1 counts ten routes today; seven tile routes would nearly double it.
@@ -1157,12 +1209,12 @@ A long-lived `text/event-stream` response, consumed by the browser's built-in
   (`axum-0.8.9/src/response/mod.rs:7`), and `sse.rs` imports only `bytes`,
   `futures-util`, `http-body`, `pin-project-lite` and `sync_wrapper`
   (`axum-0.8.9/src/response/sse.rs:36-48`) — all already non-optional `axum`
-  dependencies. To construct a stream, `webd` would add **`futures-util`** as a
+  dependencies. To construct a stream, `apid` would add **`futures-util`** as a
   direct dependency; it is already resolved in the tree at **0.3.34**
   (`mosd/Cargo.lock`), licence `MIT OR Apache-2.0` (read from the local registry
   copy of `futures-util-0.3.34/Cargo.toml`), which is on the `deny.toml`
   allow-list (`deny.toml:6-14`). Pure Rust, no C. **So option C adds one line to
-  `mosd/webd/Cargo.toml` and zero crates to the compiled graph.** (`tokio-stream`
+  `mosd/apid/Cargo.toml` and zero crates to the compiled graph.** (`tokio-stream`
   would be the more ergonomic choice and **is not** in `mosd/Cargo.lock` — that
   one is a genuine new crate and is not needed.)
 - **C3 — JavaScript disabled.** Nothing updates. `EventSource` is a scripting
@@ -1177,7 +1229,7 @@ A long-lived `text/event-stream` response, consumed by the browser's built-in
   signal of any kind**. `record` mutates the live-state tree in place
   (`bus.rs:126-137`) and announces nothing.
 
-  So an SSE dashboard would be `webd` polling `mosd` on a timer internally and
+  So an SSE dashboard would be `apid` polling `mosd` on a timer internally and
   forwarding to the browser: **the same bus load as option A, through the same
   mutex, plus a persistent connection per tab.** The push is a fiction one hop
   from the browser. Making it real means a new `mosd` signal — a `StateChanged`,
@@ -1191,7 +1243,7 @@ A long-lived `text/event-stream` response, consumed by the browser's built-in
   or close it and rely on `EventSource`'s automatic retry. Either is fine; both
   are code that does not exist and that option A does not need.
 - **C6 — latency.** Sub-second *if* there were a real push source. Given C4,
-  actual latency equals `webd`'s internal poll interval, which is governed by the
+  actual latency equals `apid`'s internal poll interval, which is governed by the
   same mutex budget as A and B. **The latency advantage is theoretical until
   `mosd` grows a state-change signal.**
 
@@ -1204,9 +1256,9 @@ A long-lived `text/event-stream` response, consumed by the browser's built-in
   maximum number of simultaneous HTTP streams is negotiated between the server
   and the client (defaults to 100)"* under HTTP/2
   (<https://developer.mozilla.org/en-US/docs/Web/API/Server-sent_events/Using_server-sent_events>).
-  Per 5.1.3, `webd`'s HTTPS listener **does** advertise `h2` via ALPN, so this
+  Per 5.1.3, `apid`'s HTTPS listener **does** advertise `h2` via ALPN, so this
   limit probably does not bind — but that is read out of `axum-server`'s source
-  and was not confirmed against a browser negotiating h2 to `webd`'s self-signed
+  and was not confirmed against a browser negotiating h2 to `apid`'s self-signed
   certificate after a security exception (5.13). Under HTTP/1.1 fallback, one
   open dashboard tab consumes one of six connections for the whole origin.
 - **The session outlives the gate.** The auth gate is per-request middleware
@@ -1243,17 +1295,28 @@ A long-lived `text/event-stream` response, consumed by the browser's built-in
 - **C6 — latency.** Same as C, and theoretical for the same reason.
 
 **The security cost that decides it.** `mos-ui-inventory.md` section 3.4 records
-that **there is no CSRF token anywhere in `webd`**; the only cross-site
-mitigation is `SameSite=Lax` (`mosd/webd/src/session.rs:91`) plus POST-only
+that **there is no CSRF token anywhere in `apid`**; the only cross-site
+mitigation is `SameSite=Lax` (`mosd/apid/src/session.rs:91`) plus POST-only
 destructive routes with a confirmation field (`routes.rs:49-53`, `:820`).
 `SameSite` cookie semantics do not cover the WebSocket handshake, so a
-writable WebSocket endpoint on a box whose D-Bus policy already lets *any local
-process* call `Reboot` (`mosd/dist/com.mos.mosd.conf:4-11`, quoted in
-`mos-ui-inventory.md` section 3.6) would want explicit `Origin` checking before
-it shipped. **[my inference, from the absence of CSRF machinery plus the
-handshake's cookie semantics; not verified against an exploit and not something
-this campaign tested.]** Opening a bidirectional channel to buy a direction the
-design does not use, on an application with no CSRF defence, is the wrong trade.
+writable WebSocket endpoint on a box whose D-Bus policy then let *any local
+process* call `Reboot` (`mosd/dist/com.mos.mosd.conf:4-11` as of `637295e^`,
+quoted in `mos-ui-inventory.md` section 3.6) would want explicit `Origin`
+checking before it shipped. **[my inference, from the absence of CSRF machinery
+plus the handshake's cookie semantics; not verified against an exploit and not
+something this campaign tested.]** Opening a bidirectional channel to buy a
+direction the design does not use, on an application with no CSRF defence, is
+the wrong trade.
+
+> **[re-anchored]** — RFCT-058. The bus clause above was true when written and
+> is not now: `637295e` (RFCT-048) made `com.mos.mosd` root-only, so an
+> unprivileged local process cannot call `Reboot` over the bus at all.
+> **The conclusion is unchanged, because it never rested on the bus.** The CSRF
+> gap is in `apid`'s own HTTP surface, and a WebSocket hijacked through the
+> operator's authenticated browser acts *as* `apid` — which is still root and
+> still permitted to call every member. Closing the bus to unprivileged callers
+> does not close a cross-site path that arrives holding a valid session cookie.
+> The open policy was corroborating colour here, never the load-bearing step.
 
 ### 5.7 Side by side
 
@@ -1263,7 +1326,7 @@ design does not use, on an application with no CSRF defence, is the wrong trade.
 | **C1** bytes, per update | 4-6 KB, whole page, uncompressed *(est.)* | ~200-600 B/tile *(est.)* | payload + framing | payload + framing |
 | **C2** new crates | **0** | **0** | **0** (`futures-util` 0.3.34 already in `Cargo.lock`) | **3** — `tokio-tungstenite`, `tungstenite`, `sha1`, all absent from `Cargo.lock` |
 | **C3** JS disabled | **fully works** | initial render only | initial render only | initial render only |
-| **C4** `mosd` work | **none** | none (+7 `webd` routes) | none *to build it* — but the push is a fiction without a new state-change signal | same as C |
+| **C4** `mosd` work | **none** | none (+7 `apid` routes) | none *to build it* — but the push is a fiction without a new state-change signal | same as C |
 | **C5** `mosd` down | already correct, self-healing, zero new code | fragment routes return the 502 body into a tile slot | stream needs explicit error/retry handling | same as C, plus hand-written reconnect |
 | **C6** latency | interval-bound (15 s proposed) | interval-bound — **no better than A** | sub-second *in theory*; interval-bound *in fact* | same as C |
 | **Preserves scroll / focus / expansion** | **no** | yes | yes | yes |
@@ -1279,7 +1342,7 @@ The reasoning is four facts from above, not a preference:
 
 1. **C4 kills the push options.** `mosd` has one signal and it is about
    *settings* (`bus.rs:249-254`). There is no live-state change notification of
-   any kind. C and D therefore do not deliver push; they deliver `webd` polling
+   any kind. C and D therefore do not deliver push; they deliver `apid` polling
    `mosd` with a persistent browser connection stapled on. Their headline
    advantage does not exist yet, and buying the transport before the signal is
    paying for a pipe with nothing at the far end.
@@ -1316,19 +1379,23 @@ blocking anything.
 - **Immediate reaction to a change made by another actor.** `SettingsChanged`
   stays unsubscribed at the browser boundary, so a config change made from a
   second session or by a local bus caller (which
-  `mosd/dist/com.mos.mosd.conf:4-11` permits any local process to do) appears
-  within one refresh interval rather than at once. For an appliance with one
-  admin credential (`mos-ui-inventory.md` section 3.4) this is the right trade.
-  Note the two are separable: **`webd` could subscribe to `SettingsChanged`
+  `mosd/dist/com.mos.mosd.conf:4-11` as of `637295e^` permitted any local
+  process to do; **since `637295e` / RFCT-048 that caller must be root**)
+  appears within one refresh interval rather than at once. For an appliance with
+  one admin credential (`mos-ui-inventory.md` section 3.4) this is the right
+  trade. **[re-anchored]** — RFCT-058: the root-only policy *narrows* the set of
+  second actors but does not empty it (root scripts and `busctl` still qualify,
+  and the health gate is one), so the refresh-interval trade is unchanged.
+  Note the two are separable: **`apid` could subscribe to `SettingsChanged`
   server-side** — no new crate, per 5.1.4 item 1 — for cache invalidation or a
   render stamp, entirely independently of any browser transport. Gap row 16 is
   therefore *partly* closable under this recommendation. Whether to do so is a
-  `webd` process-architecture question and belongs to RFCT-046.
+  `apid` process-architecture question and belongs to RFCT-046.
 - **It does not foreclose option B.** A is not a one-way door: the fragment
   routes of option B are additive to a server-rendered page, and 5.9 names the
   single circumstance under which they should be built.
 
-**One line left open for RFCT-046:** if `webd` were merged into `mosd`, the
+**One line left open for RFCT-046:** if `apid` were merged into `mosd`, the
 mutex analysis of 5.1.4 changes shape — the bus round trip per tile disappears
 and the lock becomes an in-process one. That would lower the cost of every
 option, most of all the polling ones, and could make a shorter interval or
@@ -1436,7 +1503,7 @@ Two mechanical points, verified:
   `axum-0.8.9/src/response/redirect.rs:26-38`), so a refreshing dashboard reached
   after a submit re-renders normally with no resubmission prompt.
 - The power routes are POST-only with no GET handler (`routes.rs:49-53`, pinned
-  by `mosd/webd/src/tests.rs:563`). A `meta refresh` issues a GET and therefore
+  by `mosd/apid/src/tests.rs:563`). A `meta refresh` issues a GET and therefore
   **cannot** trigger a power action even if one were somehow placed on a
   refreshing page. Section 2.10's exclusion of power buttons from the landing
   screen stands on its own reasoning; this is an independent second layer, and it
@@ -1460,7 +1527,7 @@ option A exactly as well as under SSE. The evidence, read on this branch:
    (`mosd/mosd/src/bus.rs:183-188`); `record` writes `Ok(value)` or
    `{"error": "<message>"}` into the live-state tree and **logs the failure
    rather than propagating it** (`bus.rs:126-137`). `set_settings` then returns
-   `Ok(())` (`bus.rs:193`). So today, `webd`'s `Ok(())` from
+   `Ok(())` (`bus.rs:193`). So today, `apid`'s `Ok(())` from
    `bus_client.rs:74-83` means *"persisted, and every overlapping reconciler
    ran"* — **not** *"applied successfully"*. This refines section 3.3, which is
    right that the resolution happens before the call returns; it happens into the
@@ -1487,12 +1554,17 @@ option A exactly as well as under SSE. The evidence, read on this branch:
 
 - **A narrow race.** Between `SetSettings` returning and the follow-up
   `GetState`, another writer could re-run the same reconciler and replace the
-  entry. `mosd`'s D-Bus policy permits any local process to call `SetSettings`
-  (`mosd/dist/com.mos.mosd.conf:4-11`). On a single-admin appliance this is
+  entry. `mosd`'s D-Bus policy permitted any local process to call `SetSettings`
+  (`mosd/dist/com.mos.mosd.conf:4-11` as of `637295e^`); **since `637295e`
+  (RFCT-048) only root may call it**. **[re-anchored]** — RFCT-058: this makes
+  the race rarer, not impossible, since every caller in the tree is already
+  root — so the caveat stands as written and is if anything more clearly a
+  `mosd` concurrency question than an access-control one. On a single-admin
+  appliance this is
   vanishingly unlikely, and the honest closure is a `mosd` change — returning the
-  outcome from `SetSettings`, or stamping `record` entries — not a `webd` one.
+  outcome from `SetSettings`, or stamping `record` entries — not a `apid` one.
   **`record` writes no timestamp and no generation** (`bus.rs:126-137`), so
-  `webd` cannot detect the race locally. Noted, not designed around.
+  `apid` cannot detect the race locally. Noted, not designed around.
 - **Cost.** One extra bus round trip on the redirect target only — on a form
   submit, which is already the most expensive operation in the UI (a
   `SetSettings` that runs reconcilers under the global mutex, 5.1.4). It is
@@ -1521,7 +1593,7 @@ holding that capability is the sharpest small example of section 1.2's thesis:
 | Live install progress (section 2.5) | Update page only, 2 s refresh during an install, `<progress>` plus text; degraded forms specified in 5.9; **blocked on gap row 4 regardless of transport** |
 | Coexistence with POST + 303 | **Yes** — refresh on read-only pages, forbidden on editors; one rendering model, two triggers |
 | `?saved=1` | **Replace it** with the reconciler's recorded outcome via one extra `GetState` on the redirect target; not a transport question |
-| `SettingsChanged` (gap row 16) | Browser-side push: **not adopted**. Server-side subscription in `webd`: **possible with no new crate**, decision deferred to RFCT-046 |
+| `SettingsChanged` (gap row 16) | Browser-side push: **not adopted**. Server-side subscription in `apid`: **possible with no new crate**, decision deferred to RFCT-046 |
 | Escalation path | Option B, hand-written, ~800 B as a `PreEscaped` string constant, for the install-progress route only, only on a measurement |
 | Options C and D | **Rejected**; C for delivering no real push until `mosd` has a state-change signal, D for that plus three new crates and a bidirectional channel the read-only design does not use |
 
@@ -1530,16 +1602,16 @@ holding that capability is the sharpest small example of section 1.2's thesis:
 Listed because an unmarked wrong claim in a reference document is worse than an
 admitted gap.
 
-1. **Nothing in this section was observed on a running appliance.** No `webd`
+1. **Nothing in this section was observed on a running appliance.** No `apid`
    binary was built or started, no browser connected, no protocol trace taken.
    This is a documents-only campaign and `cargo` was deliberately not run. Every
    claim above is read from source or from published documentation.
 2. **HTTP/2 in practice (5.1.3).** I verified that `axum-server` 0.7.3 sets
    `alpn_protocols = ["h2", "http/1.1"]` and serves through `hyper-util`'s auto
    builder with `hyper` features `http1`+`http2`, and that `main.rs:72-79` uses
-   that path. I did **not** verify that a browser negotiates `h2` to `webd`
+   that path. I did **not** verify that a browser negotiates `h2` to `apid`
    *after the operator accepts the self-signed-certificate exception*
-   (`mosd/webd/src/tls.rs:47-81`). If it falls back to HTTP/1.1, MDN's
+   (`mosd/apid/src/tls.rs:47-81`). If it falls back to HTTP/1.1, MDN's
    six-connection limit
    applies to option C. This does not change the recommendation, which rejects C
    on C4 grounds regardless.
@@ -1558,7 +1630,7 @@ admitted gap.
    if it turned out to be an unactivated optional entry, option C would cost one
    pure-Rust crate rather than zero, and the recommendation would be unchanged.
 5. **The CSRF/WebSocket-handshake argument in 5.6 is my inference**, drawn from
-   the absence of any CSRF token in `webd` (`mos-ui-inventory.md` section 3.4)
+   the absence of any CSRF token in `apid` (`mos-ui-inventory.md` section 3.4)
    plus the cookie semantics of the WebSocket handshake. It was not tested and no
    exploit was attempted. It is a reason to prefer not opening the channel, not a
    report of a vulnerability.
@@ -1585,6 +1657,35 @@ admitted gap.
 ---
 
 ## 6. The process question: one daemon, two hardened daemons, or a generic bus
+
+> **[decided]** — campaign `apid`, 2026-08-19, RFCT-056. **The user decided to
+> keep two processes: `apid` is not merged into `mosd`.**
+>
+> Two findings carried the decision, and both are load-bearing:
+>
+> 1. **A merged process makes a provisioning failure fatal to the UI.** `mosd`
+>    exits hard on purpose when provisioning fails (`mosd/mosd/src/main.rs`).
+>    Today `apid` survives that and still renders an error page telling the
+>    operator the management daemon is unavailable. Merged, a provisioning
+>    failure leaves a serial console and nothing else — the worst failure mode
+>    for a headless appliance whose operator may be on a phone attached to a
+>    setup access point.
+> 2. **`com.mos.mosd1` is load-bearing for updates.** `mos-health` probes
+>    `GetState` on that interface and never reaches `rauc status mark-good` if
+>    it does not answer. So the bus interface must keep existing and keep being
+>    served regardless; a merge does not delete the bus, it deletes one
+>    consumer — which removes the main premise for merging in the first place.
+>
+> **On the merge question this matches §6.6's recommendation** ("adopt option 2
+> … do not merge"). **It does not settle the rest of option 2.** Whether the
+> non-root `apid` user, the rewritten unit, the `user="…"` D-Bus rule and the
+> filesystem-mode secret boundary (§6.3, §6.3.1, §6.3.2) are actually built is a
+> **separate question, still open**. The decision made is *do not merge*; it is
+> not *build the option-2 hardening now*.
+>
+> §§6.1-6.8 below are **retained as written**. The costs of options 1 and 3, and
+> §6.6's honest counter-argument for option 1, are the reason this decision is
+> trustworthy and are not rewritten.
 
 Sections 1-5 designed a dashboard and chose how its values reach the screen.
 This section answers the question underneath all of it: **should the management
@@ -1623,9 +1724,9 @@ Every option below is scored against these eight facts. Each was re-opened and
 re-read at the head of `bkd/z2pjo6lc`; none is carried from memory or from a
 sibling document.
 
-1. **`webd` runs as root, unsandboxed.** `mosd/dist/webd.service` is 13 lines
-   and they are all of it: `Type=simple`, `ExecStart=/usr/bin/webd`,
-   `Restart=on-failure` (`:9`), `StateDirectory=mos/webd` (`:10`),
+1. **`apid` runs as root, unsandboxed.** `mosd/dist/apid.service` is 13 lines
+   and they are all of it: `Type=simple`, `ExecStart=/usr/bin/apid`,
+   `Restart=on-failure` (`:9`), `StateDirectory=mos/apid` (`:10`),
    `After=network.target mosd.service` / `Wants=mosd.service` (`:3-4`). There is
    **no `User=`, no `DynamicUser=`, no `ProtectSystem=`, no `NoNewPrivileges=`,
    no `PrivateTmp=`, no `CapabilityBoundingSet=`, no `RestrictAddressFamilies=`
@@ -1636,25 +1737,73 @@ sibling document.
    `mos-ui-inventory.md` section 3.5 records it.]** *The privilege separation
    that a two-process split could buy is therefore not realised today.*
 2. **There is no D-Bus method allowlisting.** `mosd/dist/com.mos.mosd.conf:8-11`
-   grants `<policy context="default">` a bare `<allow
+   (as of `637295e^`) granted `<policy context="default">` a bare `<allow
    send_destination="com.mos.mosd"/>` with no `send_member` and no
-   `send_interface`. **Any local uid may call `Reboot`, `PowerOff` or
-   `SetSettings`.** The file's own comment at `:4` calls this a *"Dev skeleton
-   posture: root owns the name, everyone may talk to it."* It is the shipped
+   `send_interface`. **Any local uid could call `Reboot`, `PowerOff` or
+   `SetSettings`.** The file's own comment at `:4` called this a *"Dev skeleton
+   posture: root owns the name, everyone may talk to it."* It was the shipped
    file — `os/rootfs/build.sh:38` copies it into the image staging directory
    (carried from `mos-ui-inventory.md` section 3.6).
-3. **`webd` reaches `mosd` only over the bus, proxying exactly five methods.**
-   `mosd/webd/src/bus_client.rs:9-20` declares `get_settings`, `set_settings`,
-   `get_state`, `reboot`, `power_off` and **no signal member**. `webd` does
+
+   > **[re-anchored]** — RFCT-058, campaign `apid`. **This is fact 2, and it is
+   > the fact the rest of §6 reasons from, so it is dated here once and
+   > referred back to everywhere else.**
+   >
+   > **It was true when written.** RFCT-046 measured it correctly against the
+   > 12-line policy file that shipped at the time. Nothing in the analysis below
+   > was mistaken; it was current.
+   >
+   > **It stopped being true at `637295e`** — *"os(RFCT-048): restrict
+   > com.mos.mosd to root, on the bus and in both verifiers"*. The shipped
+   > 73-line file now carries an explicit default-deny in **both** directions
+   > and allows only root:
+   >
+   > ```xml
+   > <policy context="default">
+   >   <deny send_destination="com.mos.mosd"/>
+   >   <deny receive_sender="com.mos.mosd"/>
+   > </policy>
+   > <policy user="root">
+   >   <allow own="com.mos.mosd"/>
+   >   <allow send_destination="com.mos.mosd"/>
+   >   <allow receive_sender="com.mos.mosd"/>
+   > </policy>
+   > ```
+   >
+   > `receive_sender` is denied too, which is not mere symmetry: the interface
+   > broadcasts `SettingsChanged(path, value_json)`, so a uid that could not
+   > send could otherwise still subscribe and read
+   > `access.webAdmin.password_hash` the moment an operator set it.
+   >
+   > **What it does to the argument, stated rather than left to the reader.**
+   > Fact 2 was one of two legs under the claim that *the two-process split buys
+   > no access control today*. That claim was accurate when made and is now half
+   > retired: **the bus leg is closed; the process leg (fact 1 — `apid` runs as
+   > root, unsandboxed) is untouched.** So the boundary is still unbuilt, but it
+   > is unbuilt for one reason instead of two. Every "any local uid" sentence
+   > below is to be read as *"any local uid, until `637295e`"*, and each carries
+   > its own note where the conclusion depends on it.
+   >
+   > **RFCT-048 also delivered part of option 2 in advance.** §6.3.2 proposed a
+   > default-deny policy plus a named-identity allow. The default-deny half is
+   > **shipped**. What remains of option 2's D-Bus work is the `user="apid"`
+   > block — which the shipped file already documents at its `EXTENSION POINT`
+   > comment, together with a warning not to reopen the default context to get
+   > there.
+   >
+   > **This does not reopen §6's decision.** See the note at the end of §6.6.
+3. **`apid` reaches `mosd` only over the bus, proxying exactly five methods.**
+   `mosd/apid/src/bus_client.rs:9-20` declares `get_settings`, `set_settings`,
+   `get_state`, `reboot`, `power_off` and **no signal member**. `apid` does
    **not** call `ReportHealth` — that is the boot health gate's
    (`os/health/mos-health:45-50`). The `sshweb` campaign adds a sixth call; it
    is not in this tree.
-4. **`webd` binds `0.0.0.0:443` and `0.0.0.0:80` by default**, both
-   env-overridable (`mosd/webd/src/config.rs:34-37`). The HTTP listener exists
-   only to 308 every request to HTTPS (`mosd/webd/src/routes.rs:61-65`).
+4. **`apid` binds `0.0.0.0:443` and `0.0.0.0:80` by default**, both
+   env-overridable (`mosd/apid/src/config.rs:34-37`). The HTTP listener exists
+   only to 308 every request to HTTPS (`mosd/apid/src/routes.rs:61-65`).
 5. **TLS material is self-generated into the StateDirectory.**
    `ensure_state_dir` creates the directory at mode `0700`
-   (`mosd/webd/src/tls.rs:20-28`); `write_secret` writes `key.pem` and
+   (`mosd/apid/src/tls.rs:20-28`); `write_secret` writes `key.pem` and
    `session.key` at mode `0600` (`tls.rs:31-42`, called at `:78` and `:100`);
    `cert.pem`/`key.pem` are generated self-signed on first start only when
    absent (`tls.rs:47-81`).
@@ -1676,9 +1825,9 @@ sibling document.
    method returns `Ok(())` at `:193`. Carried from section 5.11 item 1,
    re-verified.
 
-### 6.2 Option 1 — merge `webd` into `mosd` as a module
+### 6.2 Option 1 — merge `apid` into `mosd` as a module
 
-The proposal: delete the `webd` binary, move its routes, auth, session store and
+The proposal: delete the `apid` binary, move its routes, auth, session store and
 TLS listener into `mosd` as a module, and let the HTTP handlers call the
 settings and state trees directly instead of over D-Bus.
 
@@ -1686,14 +1835,14 @@ settings and state trees directly instead of over D-Bus.
 
 | Saving | Size, measured where possible |
 |---|---|
-| **One bus round trip per read** | Every request already pays one before any tile is rendered — the auth gate calls `GetSettings("access")` at `mosd/webd/src/routes.rs:120`. The seven-tile dashboard of section 2.9 adds roughly 8-10 more per render (section 5.3, cost 4). A merge removes all of them. **Cost per round trip: not measured.** No benchmark was run and this is a documents-only campaign; the *shape* is known (a unix-socket request/reply through `dbus-daemon`, serialising and deserialising a JSON string each way), the *number* is not. Anyone who wants this saving quantified must measure it — do not substitute an adjective |
-| **One systemd unit** | `mosd/dist/webd.service`, 13 lines, plus its enablement symlink and the four verifier assertions that pin it (`os/verify-image-v2.sh:922-929`) |
-| **One StateDirectory** | `/var/lib/mos/webd` (`webd.service:10`, default at `config.rs:38-40`), holding `cert.pem`, `key.pem`, `session.key` (`tls.rs:48-49`, `:85-86`). Note it does not disappear — it moves, and on already-deployed devices it has to be migrated or orphaned (7.4) |
-| **One settings parse** | **This saving does not exist.** `webd` never reads `settings.toml`: grepping `mosd/webd/src/` for `settings.toml`, `DEFAULT_PATH` and `mosd-settings` returns nothing, and `mosd/webd/Cargo.toml:11-28` does not depend on `mosd-settings`. `webd`'s entire configuration is four environment variables (`config.rs:33-45`). Recorded because it was offered as a saving and is not one |
-| **One crate and one binary in the image** | `mosd/webd/src/` is **2301 lines across 9 files**, of which `tests.rs` is 591 and `routes.rs` is 916, plus 359 lines of `tests/e2e.rs`. `mosd/mosd/src/` is **7401 lines**. The image drops one ELF at `/usr/bin/webd` (installed by `os/rootfs/Dockerfile.v2:282-288`); **binary size not measured** — no `cargo` was run |
+| **One bus round trip per read** | Every request already pays one before any tile is rendered — the auth gate calls `GetSettings("access")` at `mosd/apid/src/routes.rs:120`. The seven-tile dashboard of section 2.9 adds roughly 8-10 more per render (section 5.3, cost 4). A merge removes all of them. **Cost per round trip: not measured.** No benchmark was run and this is a documents-only campaign; the *shape* is known (a unix-socket request/reply through `dbus-daemon`, serialising and deserialising a JSON string each way), the *number* is not. Anyone who wants this saving quantified must measure it — do not substitute an adjective |
+| **One systemd unit** | `mosd/dist/apid.service`, 13 lines, plus its enablement symlink and the four verifier assertions that pin it (`os/verify-image-v2.sh:922-929`) |
+| **One StateDirectory** | `/var/lib/mos/apid` (`apid.service:10`, default at `config.rs:38-40`), holding `cert.pem`, `key.pem`, `session.key` (`tls.rs:48-49`, `:85-86`). Note it does not disappear — it moves, and on already-deployed devices it has to be migrated or orphaned (7.4) |
+| **One settings parse** | **This saving does not exist.** `apid` never reads `settings.toml`: grepping `mosd/apid/src/` for `settings.toml`, `DEFAULT_PATH` and `mosd-settings` returns nothing, and `mosd/apid/Cargo.toml:11-28` does not depend on `mosd-settings`. `apid`'s entire configuration is four environment variables (`config.rs:33-45`). Recorded because it was offered as a saving and is not one |
+| **One crate and one binary in the image** | `mosd/apid/src/` is **2301 lines across 9 files**, of which `tests.rs` is 591 and `routes.rs` is 916, plus 359 lines of `tests/e2e.rs`. `mosd/mosd/src/` is **7401 lines**. The image drops one ELF at `/usr/bin/apid` (installed by `os/rootfs/Dockerfile.v2:282-288`); **binary size not measured** — no `cargo` was run |
 
 **The dependency graph moves rather than shrinks.** `mosd/mosd/Cargo.toml:11-23`
-declares 12 dependencies; `mosd/webd/Cargo.toml:11-28` declares 16. The
+declares 12 dependencies; `mosd/apid/Cargo.toml:11-28` declares 16. The
 intersection is `anyhow`, `argon2`, `async-trait`, `serde_json`, `tokio`,
 `tracing`, `tracing-subscriber`, `zbus`. So a merged `mosd` **acquires eight new
 direct dependencies** — `axum`, `axum-server`, `maud`, `rustls`, `rcgen`,
@@ -1705,7 +1854,7 @@ workspace and cannot answer "what would `mosd` alone pull".
 
 #### 6.2.2 The mutex: the one thing section 5 hoped a merge would fix, and the finding
 
-Section 5.8 left exactly one line open for this section: *"if `webd` were merged
+Section 5.8 left exactly one line open for this section: *"if `apid` were merged
 into `mosd`, the mutex analysis of 5.1.4 changes shape — the bus round trip per
 tile disappears and the lock becomes an in-process one."* Picking it up:
 
@@ -1775,18 +1924,23 @@ permanent property of the merge, not a transitional one.
 
 **Stated honestly in the other direction, because it is the strongest thing that
 can be said for option 1:** *today that boundary buys almost nothing.* Per fact
-2, any local uid can already call `Reboot`, `PowerOff` and `SetSettings`, and
-per fact 1 `webd` is root anyway, so a `webd` compromise today already reaches
-everything `mosd` can do. **Option 1 therefore forecloses a boundary that has
-not been built rather than destroying one that exists.** Whether that matters
+2 **as measured before `637295e`**, any local uid could already call `Reboot`,
+`PowerOff` and `SetSettings`, and per fact 1 `apid` is root anyway, so a `apid`
+compromise already reached everything `mosd` can do. **Option 1 therefore
+forecloses a boundary that has not been built rather than destroying one that
+exists.** **[re-anchored]** — RFCT-058: RFCT-048 removed the fact-2 half of
+that, but **the sentence survives on fact 1 alone** — `apid` is still root, so a
+compromised `apid` still reaches everything `mosd` can do, by process privilege
+rather than by bus policy. The strongest-thing-for-option-1 remains true, and
+its remaining support is now exactly one fact instead of two. Whether that matters
 depends entirely on whether the boundary would otherwise be built — which is
 option 2, and which is why the two options must be compared and not merely
 listed.
 
 **(b) Fault isolation is lost, and the loss has a specific, cited shape.** Both
-units carry `Restart=on-failure` today (`webd.service:9`, `mosd.service:9`), and
-`webd` is only `Wants=mosd.service`, not `Requires=` (`webd.service:4`), so
-`webd` starts and stays up even when `mosd` does not. Three consequences of
+units carry `Restart=on-failure` today (`apid.service:9`, `mosd.service:9`), and
+`apid` is only `Wants=mosd.service`, not `Requires=` (`apid.service:4`), so
+`apid` starts and stays up even when `mosd` does not. Three consequences of
 merging:
 
 - A panic or OOM in request handling takes the management plane down with it.
@@ -1799,13 +1953,13 @@ merging:
   `Restart=no` ordered `After=multi-user.target`
   (`os/health/mos-health.service:9`, `:16-23`). **So after a mid-life restart,
   `health.var` is gone until the next boot** — and section 2.3's health tile is
-  built on it. Today a `webd` crash cannot cause that; after a merge it can.
+  built on it. Today a `apid` crash cannot cause that; after a merge it can.
 - **A `mosd` startup failure would leave nothing to serve the error page.**
   `mosd` treats first-boot provisioning as a hard failure on purpose —
   `main.rs:57-63` propagates with `.context("first-boot provisioning")?` and the
   comment at `:53-56` says so explicitly: *"a loud exit is better than a daemon
   that quietly serves an unprovisioned tree the operator cannot log in to."*
-  Today, if that happens, `webd` is still up and every request renders the 502
+  Today, if that happens, `apid` is still up and every request renders the 502
   page *"The management daemon is unavailable."* (`routes.rs:95-105`, via
   `bus_client`'s lazy-connect design at `bus_client.rs:22-25`). After a merge
   there is no process left to render it: **a provisioning failure becomes a
@@ -1819,7 +1973,7 @@ is `Type=dbus` with `BusName=com.mos.mosd`, so systemd considers the unit
 started when the bus name is acquired. Merged, the HTTPS listener binds inside
 that unit, so UI availability becomes downstream of bus-name acquisition and of
 the provisioning step above. Today the listeners bind first and print
-`WEBD_LISTENING` before anything else (`mosd/webd/src/main.rs:59-69`), and the
+`APID_LISTENING` before anything else (`mosd/apid/src/main.rs:59-69`), and the
 UI is reachable whether or not the management plane is healthy. **[inference
 from the two unit files and the two `main.rs` startup sequences; not observed on
 a device.]**
@@ -1835,26 +1989,41 @@ a future forced backend migration would have one blast radius instead of two.
 
 #### 6.2.4 The constraint option 1 cannot decide on its own
 
-Option 1's premise is that removing `webd` removes the bus hop. **It only does
+Option 1's premise is that removing `apid` removes the bus hop. **It only does
 so if `com.mos.mosd1` has no other consumer.** It has one today. That question
 is section 7, and option 1 is re-scored against the answer in 7.3.
 
 ### 6.3 Option 2 — keep two processes and build the boundary
 
-The proposal: `webd` runs as a dedicated non-root system user, the D-Bus policy
-allowlists exactly the members `webd` may call, and the unit acquires the
+The proposal: `apid` runs as a dedicated non-root system user, the D-Bus policy
+allowlists exactly the members `apid` may call, and the unit acquires the
 standard systemd sandboxing set.
 
 **State this before anything else: per fact 2 and fact 1, this is not hardening
 an existing boundary. It is building one that was never built.** The policy file
-calls itself a dev skeleton (`com.mos.mosd.conf:4`) and the unit has no
-hardening directive at all (`webd.service`, 13 lines). So every item below is
-**new cost, not a delta**, and option 2 should be costed as a project rather
-than as a cleanup.
+called itself a dev skeleton (`com.mos.mosd.conf:4` as of `637295e^`, then
+reading *"Dev skeleton posture: root owns the name, everyone may talk to it."*)
+and the unit has no hardening directive at all (`apid.service`, 13 lines). So
+every item below is **new cost, not a delta**, and option 2 should be costed as
+a project rather than as a cleanup.
 
-#### 6.3.1 What must change for `webd` to run without root
+> **[re-anchored]** — RFCT-058. The dev-skeleton citation is the sharpest case
+> of the stale-pointer failure this document's citation convention now warns
+> about: `com.mos.mosd.conf:4` as of `637295e` reads *"com.mos.mosd is a
+> ROOT-ONLY bus name (RFCT-048)"*, so the unanchored citation had come to assert
+> the **exact opposite** of the claim it was offered as evidence for.
+>
+> **What it does to the argument.** Option 2 is now **partly a delta and not
+> wholly a project**: `637295e` built the policy half, so the D-Bus item below
+> is no longer new cost. The unit half is untouched — no `User=`, no
+> `DynamicUser=`, no sandboxing directive — so **the costing above still holds
+> for everything except §6.3.2**, which should now be read as "add one
+> `user="apid"` block to a policy that is already default-deny" rather than
+> "replace a dev skeleton".
 
-**(a) The two privileged ports (fact 4).** `webd` binds `0.0.0.0:443` and
+#### 6.3.1 What must change for `apid` to run without root
+
+**(a) The two privileged ports (fact 4).** `apid` binds `0.0.0.0:443` and
 `0.0.0.0:80` (`config.rs:34-37`). Three ways out, with honest costs:
 
 - **`AmbientCapabilities=CAP_NET_BIND_SERVICE` — recommended.**
@@ -1870,9 +2039,9 @@ than as a cleanup.
   where they are. Pair it with a `CapabilityBoundingSet=` holding the same
   single capability so nothing else is retained.
 - **Socket activation.** systemd binds as root and passes the descriptors.
-  Cheaper in capability terms, more expensive here: `webd` binds its own
-  listeners at `mosd/webd/src/main.rs:59-66` and prints the single
-  machine-readable marker `WEBD_LISTENING https=<addr> http=<addr>` *after*
+  Cheaper in capability terms, more expensive here: `apid` binds its own
+  listeners at `mosd/apid/src/main.rs:59-66` and prints the single
+  machine-readable marker `APID_LISTENING https=<addr> http=<addr>` *after*
   binding (`:69`, contract documented at `:17-19`). Adopting socket activation
   changes that startup contract, and the contract has consumers. **Not proposed
   here**; recorded as the option with the best capability story and the worst
@@ -1885,7 +2054,7 @@ than as a cleanup.
     redirect reachable. Two rules to ship, order and verify, in an image that
     today ships no packet-filter configuration at all.
   - The 308's `Location` is built from the **bound** HTTPS port —
-    `redirect_app(https_addr.port())` at `mosd/webd/src/main.rs:80-83`, consumed
+    `redirect_app(https_addr.port())` at `mosd/apid/src/main.rs:80-83`, consumed
     by `redirect_to_https` (`routes.rs:67-...`). On a high port the redirect
     would send the browser to `https://<host>:8443`, i.e. past the redirect
     rule, exposing the internal port in the URL bar. Fixing that is a code
@@ -1893,7 +2062,7 @@ than as a cleanup.
   - **It breaks the boot health gate unless loopback is also covered.**
     `os/health/mos-health:168` probes `https://127.0.0.1/healthz` — port 443,
     hardcoded. Redirecting loopback traffic needs an `OUTPUT`-chain rule, not
-    just `PREROUTING`. A silent break here is a gate that stops probing `webd`
+    just `PREROUTING`. A silent break here is a gate that stops probing `apid`
     while still reporting OK, which `os/verify-image-v2.sh:1184-1200` already
     treats as a failure condition worth asserting on.
 
@@ -1904,39 +2073,39 @@ than as a cleanup.
 **(b) TLS key ownership — cheap, and it should not be inflated.**
 `systemd.exec(5)` states of `StateDirectory=`: *"The innermost specified
 directories will be owned by the user and group specified in User= and Group="*
-(<https://man7.org/linux/man-pages/man5/systemd.exec.5.html>). `webd.service:10`
-already carries `StateDirectory=mos/webd`, and `webd` creates the directory at
+(<https://man7.org/linux/man-pages/man5/systemd.exec.5.html>). `apid.service:10`
+already carries `StateDirectory=mos/apid`, and `apid` creates the directory at
 `0700` and its secrets at `0600` itself (`tls.rs:20-28`, `:31-42`). So adding
 `User=` gives the certificate, key and session key the right owner with **no
 code change and no extra directive**. One wrinkle, flagged rather than asserted:
-on an **already-deployed** device `/var/lib/mos/webd` exists owned by root, and
+on an **already-deployed** device `/var/lib/mos/apid` exists owned by root, and
 whether systemd re-chowns an existing state directory when `User=` changes was
 **not verified** (6.7 item 3). Assume a one-time ownership fix may be needed on
 upgrade and check it before shipping.
 
-**(c) The sandboxing directives, and which ones survive what `webd` actually
-does.** `webd` does two unusual things: it reads `/proc/uptime`
+**(c) The sandboxing directives, and which ones survive what `apid` actually
+does.** `apid` does two unusual things: it reads `/proc/uptime`
 (`routes.rs:569`, the documented exception to the layering asserted at
-`mosd/webd/src/settings_api.rs:10-12`), and it needs the system bus.
+`mosd/apid/src/settings_api.rs:10-12`), and it needs the system bus.
 
 | Directive | Survives? | Why, cited |
 |---|---|---|
-| `ProtectSystem=strict` | **yes** | *"the entire file system hierarchy is mounted read-only, except for the API file system subtrees /dev/, /proc/ and /sys/"* (`systemd.exec(5)`). `webd`'s only writes are into its StateDirectory (`tls.rs:76-78`, `:100`), which systemd makes writable; and `/proc` stays readable, so the uptime read is unaffected |
+| `ProtectSystem=strict` | **yes** | *"the entire file system hierarchy is mounted read-only, except for the API file system subtrees /dev/, /proc/ and /sys/"* (`systemd.exec(5)`). `apid`'s only writes are into its StateDirectory (`tls.rs:76-78`, `:100`), which systemd makes writable; and `/proc` stays readable, so the uptime read is unaffected |
 | `ProtectProc=` | **expected yes** | *"this controls the 'hidepid=' mount option ... which controls which directories with process metainformation (/proc/PID) are visible and accessible"* (`systemd.exec(5)`). `/proc/uptime` is not a PID directory. **[inference from the documented scope; not tested]** |
-| `PrivateTmp=yes` | **yes** | `tempfile` is a dev-dependency only (`mosd/webd/Cargo.toml:30-33`) |
-| `NoNewPrivileges=yes` | **yes** | `webd` never spawns a process — `settings_api.rs:10-12` states *"mosd owns every system action: webd never spawns a process and never talks to systemd itself"* |
-| `PrivateNetwork=` | **must stay off** | `webd` is the listener. The system bus is a unix socket and is unaffected either way |
+| `PrivateTmp=yes` | **yes** | `tempfile` is a dev-dependency only (`mosd/apid/Cargo.toml:30-33`) |
+| `NoNewPrivileges=yes` | **yes** | `apid` never spawns a process — `settings_api.rs:10-12` states *"mosd owns every system action: apid never spawns a process and never talks to systemd itself"* |
+| `PrivateNetwork=` | **must stay off** | `apid` is the listener. The system bus is a unix socket and is unaffected either way |
 | `RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6` | **yes** | `AF_UNIX` for `/run/dbus/system_bus_socket`, the two INET families for the listeners |
-| `ProtectHome=`, `ProtectKernelTunables=`, `ProtectKernelModules=`, `ProtectControlGroups=`, `RestrictSUIDSGID=`, `SystemCallFilter=@system-service` | **expected yes** | Nothing in `mosd/webd/src/` touches any of these surfaces; **not tested** |
+| `ProtectHome=`, `ProtectKernelTunables=`, `ProtectKernelModules=`, `ProtectControlGroups=`, `RestrictSUIDSGID=`, `SystemCallFilter=@system-service` | **expected yes** | Nothing in `mosd/apid/src/` touches any of these surfaces; **not tested** |
 | `MemoryDenyWriteExecute=yes` | **expected yes, verify** | `rustls`/`ring` are ahead-of-time compiled with no JIT, but this is the directive most likely to break something subtly. **[inference; not tested]** |
 | `DynamicUser=yes` | **not recommended** | It gives the StateDirectory a private path and an unstable uid, and `/var/lib/mos` is a bind mount from the STATE partition that must survive A/B updates (`os/rootfs/overlay-v2/etc/systemd/system/var-lib-mos.mount:3`, `:10`). A static system user created in the rootfs is the right shape; creating it is rootfs work (`os/rootfs/Dockerfile.v2`), outside the crate |
 
-**(d) The concrete security gain nothing else provides.** Today root-`webd` can
+**(d) The concrete security gain nothing else provides.** Today root-`apid` can
 open `/var/lib/mos/secrets/device-password` and `.../ap-psk` — mode `0600` in a
 `0700` directory (`identity.rs:43`, `:51-56`). Section 2.10 makes *"No secrets,
 ever"* a rule of the dashboard, and today that rule is enforced **only by
-`webd`'s own code** — nothing stops a future route, or an exploited one, from
-reading those files. Under a non-root `webd` the rule becomes a **filesystem
+`apid`'s own code** — nothing stops a future route, or an exploited one, from
+reading those files. Under a non-root `apid` the rule becomes a **filesystem
 property**: the process cannot open them at all. That is the single most
 valuable thing option 2 buys, and it is not available under option 1 at any
 price, because a merged daemon must be able to write those files.
@@ -1944,17 +2113,19 @@ price, because a merged daemon must be able to write those files.
 #### 6.3.2 D-Bus method allowlisting, and the limit it runs into
 
 Replacing the bare `<allow send_destination="com.mos.mosd"/>`
-(`com.mos.mosd.conf:8-11`) with per-member rules is mechanically simple —
+(`com.mos.mosd.conf:8-11` as of `637295e^` — **already replaced by a
+default-deny at `637295e`, RFCT-048**) with per-member rules is mechanically
+simple —
 `dbus-daemon(1)`'s busconfig policy accepts `send_interface`, `send_member`,
 `send_path`, `send_destination`, `user` and `group` on `<allow>`/`<deny>`
 (<https://dbus.freedesktop.org/doc/dbus-daemon.1.html>, fetched and read). A
-default-deny plus a `user="<webd user>"` allow for exactly the five members of
+default-deny plus a `user="<apid user>"` allow for exactly the five members of
 fact 3, plus a root allow for `ReportHealth` and `GetState` (the health gate's
 two calls — `os/health/mos-health:47-48` and `:155-156`), is expressible today.
 
 **Two limits that must be stated, because they bound how much this buys:**
 
-1. **A policy keyed on uid is meaningless while `webd` is root.** Allowlisting
+1. **A policy keyed on uid is meaningless while `apid` is root.** Allowlisting
    and the non-root user are one change, not two; shipping the policy alone
    would be theatre.
 2. **D-Bus policy cannot see method arguments, so it cannot express
@@ -1964,8 +2135,8 @@ two calls — `os/health/mos-health:47-48` and `:155-156`), is expressible today
    same page recommends that services *"normally accept method call messages
    from all callers, then apply a sysadmin-controllable policy"* — pointing at
    polkit for argument-level decisions. `SetSettings` is **one** method covering
-   the **entire** settings tree (`bus.rs:169-194`). So "webd may call
-   SetSettings" grants `webd` the ability to write `access.*` as well as
+   the **entire** settings tree (`bus.rs:169-194`). So "apid may call
+   SetSettings" grants `apid` the ability to write `access.*` as well as
    `network.*`, and the bus cannot narrow it. **Per-subtree authorization has to
    live inside `mosd`, or not at all.** This is the same limit that decides part
    of option 3 (6.4.5), and the two interlock.
@@ -1976,11 +2147,11 @@ two calls — `os/health/mos-health:47-48` and `:155-156`), is expressible today
   permanent.
 - **Two units, two state directories, two restart domains stay.** The
   operational surface does not shrink.
-- **`webd` can never again read anything privileged directly.** Today's one
+- **`apid` can never again read anything privileged directly.** Today's one
   exception — `/proc/uptime` at `routes.rs:569` — survives, but a future tile
   needing `fw_printenv` (gap row 2, which reads raw partitions via
   `os/rootfs/overlay-v2/etc/fw_env.config.in:27-29`) or `rauc status` (gap
-  row 1) becomes *structurally* impossible in `webd` rather than merely
+  row 1) becomes *structurally* impossible in `apid` rather than merely
   discouraged. That is a foreclosure and also the point: it converts the
   documented invariant *"mosd owns every system action"*
   (`settings_api.rs:10-12`) into an enforced one, and it means **every future
@@ -2046,7 +2217,7 @@ everything around it.
    `SetState`. Every action is consequently a method, which is precisely the
    growth being complained about.
 5. **No change subscription usable by a UI.** `SettingsChanged` exists and is
-   settings-only (fact 6); `webd` does not subscribe (fact 3). Section 5.1.4
+   settings-only (fact 6); `apid` does not subscribe (fact 3). Section 5.1.4
    item 1 established that adding a `#[zbus(signal)]` member needs **no new
    crate** — `zbus` 5 is already in the tree and signal streams are part of the
    proxy macro — so server-side subscription is cheap and independent of any
@@ -2089,16 +2260,17 @@ side, calling it *"a fork in the road rather than a feature to add"*
 coincidence — it is a shared consequence of a constraint mos has not yet
 adopted.** Precisely:
 
-- **Not evidence today.** `webd` is a native bus client in the same trust domain
+- **Not evidence today.** `apid` is a native bus client in the same trust domain
   as `mosd`, speaking zbus directly (`bus_client.rs:9-20`). It gets *no*
   transport benefit from turning methods into values. Adopting Venus's shape for
   Venus's reason would be cargo cult.
 - **Evidence conditionally.** The one case where mos would face Venus's
   constraint is a value-forwarding remote bridge. `docs/design/remote-management.md`
   does plan device-dialled remote reach (SideroLink, `:23-39`) — **but its
-  remote plane is `apid` over gRPC against `/run/machined.sock` (`:10-21`), not
-  `com.mos.mosd1` at all.** So mos's *current written plan* does not create the
-  constraint. If that plan changes such that a remote bridge forwards
+  remote plane is Talos `apid` (the upstream machine API daemon, unrelated to
+  the mos daemon renamed here) over gRPC against `/run/machined.sock`
+  (`:10-21`), not `com.mos.mosd1` at all.** So mos's *current written plan* does
+  not create the constraint. If that plan changes such that a remote bridge forwards
   `com.mos.mosd1` values, the convergence becomes real evidence and option 3
   becomes materially more attractive. Recording the condition is more useful
   than picking a side.
@@ -2131,7 +2303,7 @@ what each is for. Each is checked against section 4.1's table.
   and thrown away from the reply (`bus.rs:126-137`, `:183-193`). Section 5.11
   works around this with one extra `GetState` on the redirect target and
   documents the narrow race that remains — *"`record` writes no timestamp and no
-  generation, so `webd` cannot detect the race locally"*. **(b) closes that race
+  generation, so `apid` cannot detect the race locally"*. **(b) closes that race
   properly, and it must land before (c), not after.**
 - **(c) One action verb with a named-action namespace.** A single method taking
   an action name and a JSON parameter document and returning a JSON **result
@@ -2170,7 +2342,7 @@ of a consumer is what produced the 18-row gap table in the first place.
   nothing enforces and no tool can enumerate. That is a genuine loss for a
   reference-quality management plane and it should be paid for with a written
   action registry, not with nothing.
-- **It does not touch the process boundary at all.** `webd` stays root and the
+- **It does not touch the process boundary at all.** `apid` stays root and the
   policy stays open unless option 2 is also done. **Option 3 is orthogonal to
   options 1 and 2, not an alternative to them** — a fact obscured by presenting
   all three as one list, and worth stating plainly.
@@ -2183,7 +2355,7 @@ of a consumer is what produced the 18-row gap table in the first place.
 | Fixes the render's lock-acquisition count | yes | no | **yes, via (a)** |
 | Fixes fact 8 (swallowed failures) | no | no | **yes, via (b)** |
 | Bounds method-per-feature growth | no | no | **yes, via (c)** |
-| `webd` can be non-root | **never** | **yes** | unchanged |
+| `apid` can be non-root | **never** | **yes** | unchanged |
 | Secrets unreadable by the UI process | **no — impossible** | **yes, by filesystem mode** | unchanged |
 | D-Bus policy can be meaningfully allowlisted | n/a (no second process) | **yes** | **weakened by (c)** |
 | A UI crash takes the management plane down | **yes** | no | no |
@@ -2204,11 +2376,20 @@ Five reasons, each traceable above:
    second consumer today — `mos-health` calls `ReportHealth`
    (`os/health/mos-health:47-48`) and `GetState`
    (`:155-156`). So the interface must keep existing and keep being served, and
-   a merge does not delete the bus: **it deletes one consumer.** The remaining
-   consumer keeps the open-policy problem (fact 2) alive in full. Option 1's
+   a merge does not delete the bus: **it deletes one consumer.** ~~The remaining
+   consumer keeps the open-policy problem (fact 2) alive in full.~~ Option 1's
    simplification then shrinks to one fewer unit and one fewer state directory,
    which is not worth what 6.2.3 charges for it. This is re-scored formally in
    7.3.
+
+   > **[re-anchored]** — RFCT-058. The struck clause was true when written and
+   > **no longer bites: `637295e` (RFCT-048) solved the open-policy problem
+   > outright**, so a surviving consumer no longer keeps it alive — there is
+   > nothing left alive to keep. **Reason 1 itself is unaffected**, because its
+   > load-bearing step is that `mos-health` is a second consumer and the
+   > interface must therefore keep being served. That step is about the health
+   > gate, not about the policy, and RFCT-048 does not touch it. Reason 1 stands
+   > with one supporting clause retired.
 2. **The one technical prize is available more cheaply.** Section 5.8 left the
    mutex line open for this section; the answer (6.2.2) is that a merge does not
    shorten the lock hold at all, and the lock-acquisition improvement it *does*
@@ -2216,10 +2397,24 @@ Five reasons, each traceable above:
    into the process that writes `/etc/shadow`.
 3. **The status quo is not a neutral baseline.** A root web server on
    `0.0.0.0:443` and `0.0.0.0:80` (facts 1 and 4) behind a D-Bus policy that
-   lets any local uid call `Reboot` (fact 2) is the least defensible of the four
+   ~~lets any local uid call `Reboot` (fact 2)~~ let any local uid call `Reboot`
+   until `637295e` was the least defensible of the four
    states available, and it is the one mos is in. Doing nothing is a choice with
    a cost, and it should be scored as one.
-4. **Option 2 buys something no other option can.** A non-root `webd` cannot
+
+   > **[re-anchored]** — RFCT-058. **This is the reason RFCT-048 costs the
+   > most.** The status quo is no longer "a root web server on `0.0.0.0`
+   > *behind a policy any uid can call*" — the second half is gone as of
+   > `637295e`, and with it most of this reason's force.
+   >
+   > **What survives, and it is not nothing.** Facts 1 and 4 are **unchanged**:
+   > `apid` still runs as root and unsandboxed, and still binds `0.0.0.0:443`
+   > and `0.0.0.0:80`. A root web server on every interface is still not a
+   > neutral baseline, and doing nothing is still a choice with a cost. So
+   > **reason 3 is reduced, not retired** — it now rests on the process and its
+   > listener rather than on the bus, and the "least defensible of the four
+   > states" framing should be read as materially overstated today.
+4. **Option 2 buys something no other option can.** A non-root `apid` cannot
    open `/var/lib/mos/secrets/*` (mode `0600` in a `0700` directory,
    `identity.rs:43`, `:51-56`), so section 2.10's *"No secrets, ever"* becomes a
    filesystem property instead of a code discipline. A merged daemon must be
@@ -2247,6 +2442,10 @@ ability to change its mind cheaply later.*
 **If the user chooses option 1 anyway, four conditions follow from the analysis
 above and should be treated as part of the option, not as follow-ups:**
 
+> **[decided] — moot.** Option 1 was not chosen (§6 marker), so none of the four
+> conditions below is live. They are kept because they are what option 1 would
+> have cost, not deleted.
+
 - Keep serving `com.mos.mosd1`. `mos-health` depends on it (7.1), and dropping
   it silently breaks the boot health gate — which would then stop confirming
   A/B slots.
@@ -2263,6 +2462,52 @@ and C4 (`mosd` has no live-state push) grounds. Neither is touched by anything
 here. Option 3(a) makes each refresh **cheaper**, which strengthens 5.8 rather
 than reopening it. Had this section recommended a merge, section 5.8's open line
 about a shorter interval would have become live; it does not.
+
+#### 6.6.1 What RFCT-048 changes here, and what it explicitly does not
+
+> **[re-anchored]** — RFCT-058, campaign `apid`. Added because five reasons
+> above cite fact 2, and a reader who discovers on their own that fact 2 has
+> moved needs to be told immediately how far the damage travels. It does not
+> travel to the outcome.
+
+**The decision recorded in §6 is NOT reopened. It stands unchanged.**
+
+The user's decision to keep two processes rested on exactly two findings, both
+recorded in §6's marker:
+
+1. a merged process makes a provisioning failure **fatal to the UI**, leaving a
+   headless appliance with a serial console and nothing else; and
+2. `com.mos.mosd1` is **load-bearing for the update health gate** — `mos-health`
+   probes `GetState` and never reaches `rauc status mark-good` without it.
+
+**`637295e` touches neither.** It changes who may call the interface, not
+whether the interface must exist, and not what happens to the UI when
+provisioning fails. Both findings are exactly as true after RFCT-048 as before.
+
+What changed is **the strength of two supporting arguments inside the option
+comparison, not the outcome of it**:
+
+| §6.6 reason | Status after `637295e` |
+|---|---|
+| **1** — section 7 removes option 1's premise | **Stands.** One supporting clause (the open-policy problem surviving a merge) is retired; the load-bearing `mos-health` step is untouched |
+| **2** — the one technical prize is cheaper elsewhere | **Untouched.** It is a lock-hold argument (6.2.2), unrelated to bus policy |
+| **3** — the status quo is not a neutral baseline | **Reduced.** Carried now by facts 1 and 4 alone (root web server on `0.0.0.0:443` and `:80`), which are unchanged |
+| **4** — option 2 buys what no other option can | **Untouched, and now the strongest surviving argument for option 2.** A non-root `apid` cannot open `/var/lib/mos/secrets/*`, making §2.10's *"No secrets, ever"* a **filesystem property** rather than a code discipline. No policy change can deliver this; only a `User=` can |
+| **5** — the availability regression is the wrong one | **Untouched.** It is the same finding as the first leg of §6's decision |
+
+**Therefore: the options are not re-scored, no new recommendation is made, and
+§6's [decided] marker is not reopened.** Three of five reasons are untouched,
+one stands with a retired clause, and one is reduced but not retired. The
+recommendation those reasons supported — *adopt option 2, do not merge* — is
+where it was.
+
+**One item of option 2 is now partly built.** RFCT-048 delivered the
+default-deny policy that §6.3.2 proposed. Option 2's remaining D-Bus work is the
+`user="apid"` block, and `mosd/dist/com.mos.mosd.conf` already carries it as a
+written-out `EXTENSION POINT` with the instruction to **add** a named-user block
+rather than reopen the default context. **The unit hardening — `User=`,
+`AmbientCapabilities=`, the sandboxing set — remains entirely unbuilt**, and it
+is the half that reason 4 depends on.
 
 ### 6.7 One correctness risk that must be recorded rather than lost
 
@@ -2324,18 +2569,18 @@ lost or closed as invalid.
    an adjective here as a number.
 3. **`StateDirectory=` ownership on an already-populated directory** (6.3.1b) is
    documented for the directories systemd creates; whether systemd re-chowns an
-   existing `/var/lib/mos/webd` when `User=` is added later was **not verified**
+   existing `/var/lib/mos/apid` when `User=` is added later was **not verified**
    and is the one item in option 2 that could surprise an upgrade.
 4. **The sandboxing table (6.3.1c) is derived from documentation and from
-   reading `mosd/webd/src/`, not from running a hardened unit.**
+   reading `mosd/apid/src/`, not from running a hardened unit.**
    `MemoryDenyWriteExecute=` and `ProtectProc=` are the two most likely to
    behave differently in practice.
 5. **The high-port-plus-redirect costs (6.3.1a)** — the `Location` port bug and
    the loopback `OUTPUT`-chain requirement — are read out of
-   `mosd/webd/src/main.rs:80-83` and `os/health/mos-health:168` plus standard
+   `mosd/apid/src/main.rs:80-83` and `os/health/mos-health:168` plus standard
    netfilter behaviour. Neither was tested.
 6. **`mosd` "runs as root" is an inference from the absence of `User=`** in
-   `mosd/dist/mosd.service`, exactly as it is for `webd` (fact 1). The set of
+   `mosd/dist/mosd.service`, exactly as it is for `apid` (fact 1). The set of
    privileged operations listed in 6.2.3a is verified by direct citation; the
    uid it runs under is not stated anywhere in the tree.
 7. **The `sshweb` branch was not read**, per the campaign fence. Its announced
@@ -2349,8 +2594,8 @@ lost or closed as invalid.
 
 ## 7. Is `com.mos.mosd1` a supported external contract?
 
-Option 1's whole case rests on an unstated premise: that removing `webd` removes
-the bus. It only does if `webd` is the interface's sole consumer. **It is not**,
+Option 1's whole case rests on an unstated premise: that removing `apid` removes
+the bus. It only does if `apid` is the interface's sole consumer. **It is not**,
 so the question is answered here rather than assumed, and option 1 is re-scored
 against the answer in 7.3.
 
@@ -2358,7 +2603,7 @@ against the answer in 7.3.
 
 | Consumer | Calls | Cited | Status |
 |---|---|---|---|
-| **`webd`** | `GetSettings`, `SetSettings`, `GetState`, `Reboot`, `PowerOff` | `mosd/webd/src/bus_client.rs:9-20` | in tree |
+| **`apid`** | `GetSettings`, `SetSettings`, `GetState`, `Reboot`, `PowerOff` | `mosd/apid/src/bus_client.rs:9-20` | in tree |
 | **`mos-health`, the boot health gate** | **`ReportHealth`** and **`GetState`** | `os/health/mos-health:45-50` (the `report_health` helper, calling `busctl ... com.mos.mosd1 ReportHealth sss`), invoked at `:194` and `:197`; and `:151-160`, which calls `busctl ... com.mos.mosd1 GetState s ""` as probe b and **fails the gate** if `mosd` does not answer | in tree, shipped, and load-bearing |
 
 `mos-health` is a **real second consumer today**, and it is not incidental:
@@ -2379,32 +2624,33 @@ against the answer in 7.3.
   staged by `os/health/sync-overlay.sh:13`), and `os/health/test.sh` exists to
   fail if they drift (`sync-overlay.sh:4-5`).
 
-`webd` also has a second, non-bus relationship to the gate that matters for
+`apid` also has a second, non-bus relationship to the gate that matters for
 section 8: probe c fetches `https://127.0.0.1/healthz`
 (`os/health/mos-health:162-181`), and `os/verify-image-v2.sh:1184-1200` asserts
 that an HTTP client is present in the image so that probe cannot silently
-degrade to `SKIP`. So `webd`'s HTTPS listener is *also* part of the boot gate's
+degrade to `SKIP`. So `apid`'s HTTPS listener is *also* part of the boot gate's
 contract, on port 443 specifically.
 
 ### 7.2 Who might consume it, and the honest status of each
 
 - **A kiosk / local display client — no, and the design says so.**
   `docs/design/display.md:9-14` states the principle plainly: the local display
-  *"renders the same webd UI that remote browsers use, in a kiosk session
+  *"renders the same apid UI that remote browsers use, in a kiosk session
   pointed at `https://127.0.0.1`. No second UI stack to maintain"*, and local
-  affordances are *"webd routes selected by the kiosk, not separate code"*. The
-  component stack diagram at `:16-24` puts cage + WPE WebKit above `webd` over
-  localhost. **The kiosk is a consumer of `webd`'s HTTP surface, not of
+  affordances are *"apid routes selected by the kiosk, not separate code"*. The
+  component stack diagram at `:16-24` puts cage + WPE WebKit above `apid` over
+  localhost. **The kiosk is a consumer of `apid`'s HTTP surface, not of
   `com.mos.mosd1`.** Recorded because it is the most natural thing to assume the
   other way round, and assuming it would inflate the case for keeping the bus.
-  It does, however, mean the kiosk is a **second consumer of `webd`** — which
+  It does, however, mean the kiosk is a **second consumer of `apid`** — which
   strengthens rather than weakens the two-process picture, and which makes the
   port-443 question in 6.3.1a a kiosk question as well as a health-gate one
   (`display.md:81-83` notes the kiosk browser renders only localhost by default).
 - **A future remote-management bridge — planned, but against a different
   interface.** `docs/design/remote-management.md:23-39` plans SideroLink, a
   device-dialled WireGuard tunnel with *"no inbound port on the device"* (`:68`).
-  But its remote plane is **`apid` over gRPC :50000 with mutual TLS**, and both
+  But its remote plane is **Talos `apid` (the upstream machine API daemon, not
+  the mos daemon renamed here) over gRPC :50000 with mutual TLS**, and both
   frontends in that document are described as *"thin frontends over
   `/run/machined.sock`"* (`:10-21`). **Nothing in that design makes a remote
   bridge a `com.mos.mosd1` consumer.** So this is a *possible* future consumer
@@ -2412,16 +2658,29 @@ contract, on port 443 specifically.
   It is, though, exactly the case discussed in 6.4.3: if a remote bridge ever
   forwards `com.mos.mosd1` *values*, option 3's action shape stops being
   optional.
-- **Operator and third-party tooling — enabled today, by accident.** Fact 2 is
-  not only a security posture; it is also a de-facto contract. `<policy
-  context="default"><allow send_destination="com.mos.mosd"/></policy>`
-  (`mosd/dist/com.mos.mosd.conf:8-11`) means **any local process, of any uid,
-  can call any member today**, and `busctl` is in the image (the health gate
-  uses it). Anyone who has written a script against `com.mos.mosd1` on a shipped
-  device is a consumer, whether or not mos intended one. **Option 2's allowlist
-  would break exactly those callers** — which is a cost of option 2 that should
-  be stated rather than discovered, and an argument for doing the allowlist
-  *early*, before the informal consumer set grows.
+- **Operator and third-party tooling — was enabled by accident, and has since
+  been withdrawn.** Fact 2 was not only a security posture; it was also a
+  de-facto contract. `<policy context="default"><allow
+  send_destination="com.mos.mosd"/></policy>`
+  (`mosd/dist/com.mos.mosd.conf:8-11` as of `637295e^`) meant **any local
+  process, of any uid, could call any member**, and `busctl` is in the image
+  (the health gate uses it). Anyone who had written a script against
+  `com.mos.mosd1` on a shipped device was a consumer, whether or not mos
+  intended one. **Option 2's allowlist would break exactly those callers** —
+  which is a cost that should be stated rather than discovered, and an argument
+  for doing the allowlist *early*, before the informal consumer set grows.
+
+  > **[re-anchored]** — RFCT-058. **The argument for acting early was correct,
+  > and `637295e` (RFCT-048) is what acting early looked like.** The de-facto
+  > contract is already withdrawn: any non-root local script calling
+  > `com.mos.mosd1` stopped working at that commit, not at some future option-2
+  > allowlist. So this is no longer a *pending* cost of option 2 — **it is a
+  > cost already paid**, and the paragraph should be read as the record of a
+  > break that has happened rather than a warning about one that might.
+  > Root-owned scripts are unaffected, which is why the health gate did not
+  > notice. What option 2 would still add is per-member narrowing *within* root
+  > and a separate `apid` identity; the "any uid" consumer set no longer exists
+  > to be broken a second time.
 - **The `sshweb` campaign** adds a sixth member (`SetTransientRootPassword`,
   announced only, not in this tree). A campaign actively adding members to the
   interface is itself evidence that it is being treated as a live contract.
@@ -2441,11 +2700,21 @@ Re-scoring 6.2 against that, plainly:
   answer `GetState` and `ReportHealth`, and still ship
   `mosd/dist/com.mos.mosd.conf`. The zbus dependency, the interface definition,
   the object path and the policy file all stay.
-- **The open-policy problem (fact 2) survives the merge entirely.** With one
+- ~~**The open-policy problem (fact 2) survives the merge entirely.** With one
   process instead of two, `<allow send_destination="com.mos.mosd"/>` still lets
   any local uid call `Reboot`. Option 1 does not make that better and does not
-  make it worse; it simply leaves it, while removing the *option* of ever fixing
-  it by uid separation between the UI and the daemon.
+  make it worse; it simply leaves it,~~ while removing the *option* of ever
+  fixing it by uid separation between the UI and the daemon.
+
+  > **[re-anchored]** — RFCT-058. True when written; retired by `637295e`
+  > (RFCT-048), which fixed the open-policy problem outright, so there is no
+  > longer a fact-2 problem for a merge to survive. **The trailing clause is the
+  > part that survives, and it survives intact**: a merge would still remove the
+  > *option* of separating the UI from the daemon by uid, because a merged
+  > daemon must hold every privilege either process needs. That is a statement
+  > about process identity, not bus policy, and RFCT-048 does not reach it.
+  > **The re-score's conclusion is unchanged** — option 1 removes one consumer,
+  > not the bus.
 - The saving therefore reduces to what 6.2.1 measured minus the bus surface
   itself: **one systemd unit, one state directory, one binary, and the
   per-request round trips of one caller.** Against 6.2.3's foreclosure list —
@@ -2457,8 +2726,8 @@ Re-scoring 6.2 against that, plainly:
 **If the interface did *not* need to remain supported, what would mos give
 up?** Worth stating, because it is the strongest form of the option-1 argument:
 `mos-health` would have to learn a different channel for `ReportHealth` and for
-its liveness probe — plausibly HTTP against `webd`'s existing `/healthz`
-(`mosd/webd/src/routes.rs:54`, `:142-144`, already exempt from the auth gate at
+its liveness probe — plausibly HTTP against `apid`'s existing `/healthz`
+(`mosd/apid/src/routes.rs:54`, `:142-144`, already exempt from the auth gate at
 `:117`), which the gate *already* speaks (`mos-health:162-181`). That is a real,
 small, plausible migration. What mos would give up is: the ability for any
 future non-HTTP consumer to reach the management plane; introspectable, typed
@@ -2474,12 +2743,24 @@ all, so it reaches the bus through FlashMQ and the `dbus-flashmq` plugin
 (`venus-os-ui.md` section 3.1), and *that* is why its action surface is data
 rather than methods (`venus-os-ui.md` section 7 item 2). Venus therefore never
 had the option of merging its UI into its daemons — the bus **is** the UI's only
-API. mos does have that option precisely because `webd` is a native local
+API. mos does have that option precisely because `apid` is a native local
 process. So the Venus contrast does not argue against merging; **it argues that
 Venus's action-as-data shape is a consequence of a constraint, which is exactly
 the reading 6.4.3 reaches.**
 
 ### 7.4 The rename sub-question
+
+> **[decided]** — campaign `apid`, 2026-08-19, RFCT-056. **The name chosen is
+> `apid`.** Not `dashboard`, and not `webui`.
+>
+> **Reason, in one line:** it is the API daemon; the dashboard is what it
+> serves — which is precisely the objection 7.4.3 raises against `dashboard`
+> (the process serves ten routes, of which the dashboard is one).
+>
+> **Reading note for all of §7.4.** This section measures and costs the rename,
+> so every path and string it cites is a **pre-rename** path, deliberately left
+> as `webd`. RFCT-055 executed the code-side rename on its own branch; the paths
+> below are what it started from, not what the tree looks like after it.
 
 The campaign began with "should `webd` be renamed to `dashboard`". **Under
 option 1 the question is moot** — the process disappears and the name goes with
@@ -2487,14 +2768,20 @@ it. Under options 2 and 3 it is live, so it is costed here.
 
 #### 7.4.1 The migration cost, enumerated with cited paths
 
-`webd` appears in **83 files** in this tree (`grep -rln webd`, excluding
-`.git`): **54 under `docs/`** and **29 elsewhere**.
+`webd` appears in **95 files** in this tree (`grep -rln webd`, excluding
+`.git`): **65 under `docs/`** and **30 elsewhere**.
+
+> **Re-measured on this branch** (base `86cd669`, campaign `apid`, RFCT-056).
+> The original figure was **83 files** (54 docs / 29 elsewhere), measured before
+> the `sshweb` campaign landed; that campaign added docs and task records naming
+> the daemon. Only the count is corrected — **the table below is not
+> re-derived**, and its per-surface findings stand as measured.
 
 | Surface | Files and lines | Note |
 |---|---|---|
 | **Crate and binary name** | `mosd/webd/Cargo.toml:2` (`name = "webd"`); workspace member list `mosd/Cargo.toml:3`; the directory `mosd/webd/`; cross-build script `mosd/hack/build-aarch64.sh:9` (`-p mosd -p webd`) and `:11` | Mechanical |
 | **systemd unit** | `mosd/dist/webd.service` (13 lines, the file itself); ordering reference in `os/rootfs/overlay-v2/etc/systemd/system/var-lib-mos.mount:10` (`Before=mosd.service webd.service`) and its comment at `:3` | The unit is also what option 2 rewrites — see 7.4.2 |
-| **D-Bus policy** | **zero cost today** — `mosd/dist/com.mos.mosd.conf` does not contain the string `webd` (verified: `grep -c webd` returns 0). It is a 12-line file whose only identity is `root` | **But under option 2 the policy gains a `user="<webd user>"` rule (6.3.2), at which point this becomes a rename surface.** Ordering matters |
+| **D-Bus policy** | **zero cost today** — `mosd/dist/com.mos.mosd.conf` does not contain the string `webd` (verified: `grep -c webd` returns 0). It is a ~~12-line~~ **73-line** file whose only identity is `root` — see the staleness note below | **But under option 2 the policy gains a `user="<webd user>"` rule (6.3.2), at which point this becomes a rename surface.** Ordering matters |
 | **Image verifier assertions** | v2: `os/verify-image-v2.sh:922-929` — four assertions plus `sq_enabled webd.service`; and `:1184-1200`, the health-probe block that names `webd` in both its `pass` and `fail` strings. v1: `os/verify-image.sh:603-628` — seven assertions on the binary, the ELF architecture, two unit lines and the enablement symlink | Two verifiers, not one |
 | **`StateDirectory` and deployed data** | `mosd/dist/webd.service:10` (`StateDirectory=mos/webd`); default `WEBD_STATE_DIR=/var/lib/mos/webd` at `mosd/webd/src/config.rs:38-40`; documented at `mosd/webd/src/main.rs:12-13` | See 7.4.2 — this is the only item with a cost on **already-deployed** devices |
 | **Image / build wiring** | `os/rootfs/build-v2.sh:73-74` and `os/rootfs/build.sh:39-40` (stage the binary and the unit); `os/rootfs/Dockerfile.v2:282-288` (install binary, unit and enablement symlink) and `:377`; `os/rootfs/Dockerfile:211-217` and `:289` | **The `Makefile` is not affected**: `grep -c webd Makefile` returns 0. Its 70 lines only route to the scripts above. Recorded because it is commonly assumed otherwise |
@@ -2502,7 +2789,53 @@ it. Under options 2 and 3 it is live, so it is costed here.
 | **Settings schema** | **No persisted key changes.** The only `webd` strings under `mosd/mosd-settings/` are doc comments — `src/model.rs:51`, `:65` and `src/migration.rs:121`, `:126` (*"v1 -> v2: adds the webd-owned `access` subtree"*). No serde rename, no key, no TOML field. **So a rename needs no settings migration** | The single most reassuring finding here |
 | **Docs** | 54 files, **of which 10 are `*.zh.md`**: `docs/architecture.zh.md`, `docs/README.zh.md`, `docs/design/{access,boards,display,mosd,provisioning,remote-management}.zh.md`, `docs/research/{init-strategy,os-comparison}.zh.md` | The Chinese copies are translations that will silently contradict the English after a rename. They are outside this campaign's scope and were not edited |
 
+> **[re-anchored]** — RFCT-058, campaign `apid`. **Two different staleness axes
+> cross in the table above, and only one of them is frozen.**
+>
+> **The correction just made is on the RFCT-048 axis, not the rename axis.** The
+> line count "12" was never a statement about `webd` or about the rename. It was
+> a measurement of the policy file's size, and it went stale at `637295e`
+> (RFCT-048) when the file grew from 12 lines to 73 — **before this campaign
+> began.** Proof that it is the earlier axis and not the rename: the file was
+> already 73 lines at `86cd669`, the pre-rename base this section is frozen
+> against. The freeze could not have protected the figure, because the figure
+> was already wrong when the freeze was taken.
+>
+> **The pre-rename freeze is unchanged and still in force.** Every path and
+> string in §7.4 remains deliberately `webd` — `mosd/webd/`, `webd.service`,
+> `WEBD_STATE_DIR`, `mosd/webd/src/config.rs` and the rest are **not** rewritten
+> to `apid`, exactly as RFCT-056 left them, because this section measures what
+> the rename cost *from* its starting point. Nothing about that preservation is
+> abandoned here.
+>
+> **The rule this draws, worth keeping.** *"It is a preserved measurement"* is a
+> defence against being updated on the axis it was preserved for. It is not a
+> defence against every later fact. A frozen section can still carry a number
+> that was never about the freeze, and that number gets no protection from it —
+> so a preserved section must say **which axis** it is frozen on, or it will be
+> read as frozen on all of them. The two remaining `webd`-vs-`apid` figures in
+> this table stay put; the policy line count does not.
+>
+> Neither the per-surface findings nor the file counts above are re-derived.
+
 #### 7.4.2 The one cost that lands on deployed devices
+
+> **[decided]: orphan** — campaign `apid`, 2026-08-19, RFCT-056. This matches
+> this section's own **[proposal]** below. **No migration code was written.**
+>
+> **What a fielded device loses.** `/var/lib/mos/webd` is orphaned on STATE; the
+> new daemon uses `/var/lib/mos/apid` and never looks at the old directory. The
+> self-signed certificate therefore regenerates, so **every operator's stored
+> browser exception breaks once**. The session signing key is new, so existing
+> sessions are invalidated — indistinguishable from the restart that already
+> logs everyone out.
+>
+> **What is NOT lost.** The admin password hash is **not** in that directory: it
+> lives in the settings tree, at `access.webAdmin.password_hash`. A device keeps
+> its admin credential across the rename.
+>
+> **Why.** Every device today is a dev unit, and a migration path is code that
+> exists only to serve a window that closes.
 
 `/var/lib/mos/webd` is on the **STATE** partition — `/var/lib/mos` is a bind
 mount established by
@@ -2540,6 +2873,20 @@ only part of the rename that a fielded device notices.**
 
 #### 7.4.3 Recommendation on the rename — the user decides
 
+> **[decided] — the user overrode this recommendation.** Campaign `apid`,
+> 2026-08-19, RFCT-056. **The rename was done now, standalone, without the
+> option-2 hardening.** The §6 decision settled *do not merge*; it did not
+> commission the option-2 non-root user, so the unit rewrite this section wanted
+> to bundle with has not happened and has no date.
+>
+> **The cost this section named is accepted, not disputed.** The argument below
+> is correct as written and is not softened: because the rename went first, the
+> unit (`mosd/dist/apid.service`, the renamed file), **both** image verifiers
+> (`os/verify-image-v2.sh`, `os/verify-image.sh`) and the **two** `mos-health`
+> copies (`os/health/mos-health` and the overlay copy) **will be edited a second
+> time** if and when option 2 is built. Bundling would have been roughly half
+> the work; sequencing was chosen anyway, and this is what it costs.
+
 **Recommendation: do not rename as a standalone change. Rename only if and when
 the option-2 unit rewrite happens, in the same change.**
 
@@ -2548,7 +2895,10 @@ The reason is ordering, not aesthetics. Option 2 already rewrites
 sandboxing set), already adds a `user="..."` rule to
 `mosd/dist/com.mos.mosd.conf` — a file that has **no** rename cost today and
 would acquire one at that moment (7.4.1) — and already forces new assertions in
-both verifiers. Doing the rename separately means editing the unit twice, both
+both verifiers. **[re-anchored]** — RFCT-058: `637295e` (RFCT-048) made that
+policy default-deny, so the `user="..."` rule is now the *only* D-Bus item
+option 2 has left; the ordering argument is unchanged, since it turns on the
+unit and the verifiers being edited twice, not on the policy's contents. Doing the rename separately means editing the unit twice, both
 verifiers twice, the two `mos-health` copies twice, and answering the deployed
 `StateDirectory` question twice. **Bundling is roughly half the work of
 sequencing.**
@@ -2597,7 +2947,7 @@ a process boundary, a uid, or `mosd`:
   in a template.
 
 **Why they are independent:** all of them are HTTP handlers calling
-`SettingsApi` (`mosd/webd/src/settings_api.rs:13-20`), a trait whose entire
+`SettingsApi` (`mosd/apid/src/settings_api.rs:13-20`), a trait whose entire
 purpose is that the transport underneath it is substitutable — its doc comment
 says handlers depend on it *"so tests can substitute an in-memory fake for the
 D-Bus client"* (`settings_api.rs:1-4`). Under option 1 the implementation behind
@@ -2630,7 +2980,7 @@ re-measured against the route inventory after that merge, as
 
 **Verification.**
 - Handler tests against the in-memory `SettingsApi` fake, following the existing
-  pattern — `mosd/webd/src/tests.rs` is 591 lines of exactly this shape.
+  pattern — `mosd/apid/src/tests.rs` is 591 lines of exactly this shape.
 - Three specific behaviours are worth pinning as tests because they are the ones
   a refactor silently loses: a reconciler whose live-state entry is
   `{"error": ...}` renders in the error register and **not** as raw JSON
@@ -2646,6 +2996,15 @@ re-measured against the route inventory after that merge, as
 
 #### Phase 2 — the section 6 decision, executed
 
+> **[decided], partly.** Campaign `apid`, 2026-08-19, RFCT-056. The merge branch
+> is closed — option 1 was not chosen (§6), so the "if the user chooses option 1
+> instead" alternative below is moot. **The rest of this phase is still open:**
+> the option-2 non-root user, the rewritten unit and the default-deny D-Bus
+> policy were *not* commissioned by that decision and remain unscheduled. Item 3
+> below is **already done and unbundled** — the rename shipped standalone
+> (§7.4.3), against this document's recommendation and at the cost recorded
+> there.
+
 This is the only phase gated on the user's answer. Written for the 6.6
 recommendation (option 2 + option 3's (a) and (b)); if the user chooses option 1
 instead, this phase is replaced by the merge plus the four conditions listed at
@@ -2653,13 +3012,19 @@ the end of 6.6.
 
 **Scope.**
 1. A static system user created in the rootfs (`os/rootfs/Dockerfile.v2`), a
-   rewritten `mosd/dist/webd.service` carrying `User=`,
+   rewritten `mosd/dist/apid.service` carrying `User=`,
    `AmbientCapabilities=CAP_NET_BIND_SERVICE`, a matching
    `CapabilityBoundingSet=`, and the sandboxing set of 6.3.1c.
-2. `mosd/dist/com.mos.mosd.conf` replaced with a default-deny plus per-member
-   allows: the five members of fact 3 for the `webd` user, `ReportHealth` and
-   `GetState` for root (the health gate's two calls).
-3. Optionally the rename (7.4.3), bundled here if it happens at all.
+2. ~~`mosd/dist/com.mos.mosd.conf` replaced with a default-deny~~ **done at
+   `637295e` (RFCT-048)** — plus per-member
+   allows: the five members of fact 3 for the `apid` user, `ReportHealth` and
+   `GetState` for root (the health gate's two calls). **[re-anchored]** —
+   RFCT-058: the default-deny half of this item is **shipped**; what remains is
+   the `user="apid"` block, which the shipped file already sketches at its
+   `EXTENSION POINT` comment, and the optional per-member narrowing that the
+   same comment defers with reasons.
+3. ~~Optionally the rename (7.4.3), bundled here if it happens at all.~~
+   **Done already, not bundled** — see the marker above.
 
 **`mosd` prerequisites: none — this phase closes no gap-table row.** It is
 posture, not capability, and it is worth saying so: nothing an operator can see
@@ -2677,17 +3042,21 @@ changes.
   allowlist was written wrong, probe b fails. Both fail the gate loudly. That is
   a better test than any assertion about file contents, and it already exists.
 - Verify the deployed-device ownership question of 6.3.1b (does systemd re-chown
-  an existing `/var/lib/mos/webd`?) **before** shipping, not after. It is listed
+  an existing `/var/lib/mos/apid`?) **before** shipping, not after. It is listed
   in 6.8 item 3 as unverified for a reason.
 - Confirm the known breakage of 7.2: any local script calling `com.mos.mosd1`
   outside the allowlist stops working. That is the intent, and it belongs in the
-  release note.
+  release note. **[re-anchored]** — RFCT-058: for **non-root** callers this
+  already happened at `637295e` (RFCT-048) and belongs in *that* release note,
+  not this phase's. What is left for this phase to break is narrower — root
+  callers outside a per-member allowlist, and anything assuming `apid` may still
+  call every member once it has its own uid.
 
 #### Phase 3 — the read primitive and the outcome-carrying write
 
 **Scope.** Option 3's (a) and (b) from 6.4.4: a multi-path read with per-path
 errors, and an outcome-carrying settings write. Plus the cheap, independent
-piece section 5.8 left open: **`webd` subscribing to `SettingsChanged`
+piece section 5.8 left open: **`apid` subscribing to `SettingsChanged`
 server-side**, which needs no new crate (`zbus` is already in the tree; section
 5.1.4 item 1) and which partly closes gap **row 16**.
 
@@ -2699,13 +3068,13 @@ one lock acquisition per render instead of 8-10 (fact 7).
 **`mosd` prerequisites.** This *is* `mosd` work. Gap rows: **16** (partly
 closed by the subscription), and it removes the workaround section 5.11 built
 around fact 8 — including the narrow race that section documents as unclosable
-from `webd`'s side (*"`record` writes no timestamp and no generation"*).
+from `apid`'s side (*"`record` writes no timestamp and no generation"*).
 
 **Verification.** `mosd` unit tests in the existing `bus.rs` test module
 (`mosd/mosd/src/bus.rs:257-...`): a multi-path read returning a per-path error
 for one absent path while succeeding on the rest; a `SetSettings` against a
 failing reconciler returning the failure in its reply rather than `Ok(())`. On
-the `webd` side, a handler test that a failed apply renders in the error
+the `apid` side, a handler test that a failed apply renders in the error
 register.
 
 #### Phase 4 — the `mosd` mechanism work, in dependency order
@@ -2736,7 +3105,7 @@ ship in the same change as 4c rather than waiting for the full update page.
 ### 8.3 Unverified / gaps for sections 7 and 8
 
 1. **The consumer set in 7.1 is what is in *this tree*.** It was established by
-   `grep -rln webd` and by reading `os/health/mos-health`; a consumer that
+   `grep -rln apid` and by reading `os/health/mos-health`; a consumer that
    exists only on a deployed device, in an operator's script, or on the
    unread `sshweb` branch would not appear. 7.2 records that fact 2 makes such
    consumers possible without mos knowing.
@@ -2755,7 +3124,7 @@ ship in the same change as 4c rather than waiting for the full update page.
    test and is also the test that cannot run without hardware or a full image
    build. Nothing in this campaign built an image.
 6. **The claim that phase 1 is architecture-independent rests on
-   `SettingsApi`** (`mosd/webd/src/settings_api.rs:13-20`) remaining the seam.
+   `SettingsApi`** (`mosd/apid/src/settings_api.rs:13-20`) remaining the seam.
    It is the seam today, including for the tests. A merge that dissolved the
    trait rather than re-implementing behind it would break the property — which
    is a reason to keep the trait under option 1, and is recorded here rather

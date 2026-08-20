@@ -9,6 +9,13 @@
 > contract, update design (PLAN-006), trust chain, access/provisioning/display
 > models remain valid. This file is rewritten as PLAN-010 milestones land.
 >
+> **Daemon rename (campaign `apid`, 2026-08-19, RFCT-056).** The product HTTPS
+> daemon formerly called `webd` is now **`apid`** — it is the API daemon, and the
+> dashboard is one of the things it serves. **The name now collides** with
+> Talos's upstream machine API daemon, which also appears below as part of the
+> outgoing architecture; that one is written **Talos `apid`** wherever it is
+> named. See `docs/design/dashboard.md` §7.4.
+>
 > Status: living document. Detailed designs live in `design/` and `plan/`;
 > this file is the top-level map. Last updated: 2026-08-17.
 
@@ -35,7 +42,7 @@ rather than inventing them:
                           machined (PID 1, COSI runtime)
      ______________________________________|________________________________
     |          |           |            |           |            |          |
-  webd       connd       sshd*      console*     updater      apid       containerd
+  apid       connd       sshd*      console*     updater    Talos apid   containerd
   local      WiFi/AP     Go SSH     tty2 wizard  Uptane +     upstream   workload ONLY:
   HTTPS      BT/CAN      + busybox  tty3 shell   RAUC CLI     mgmt gRPC  extension svcs,
   UI/API     (PLAN-008)  (debug     (debug       (PLAN-006)   (off by    future app
@@ -44,20 +51,21 @@ rather than inventing them:
 
 \* sshd ships in prod and debug (default off; absent only in the `sealed`
 profile); the tty3 console shell is debug-only. A `kiosk` system extension
-(cage + WPE WebKit) renders webd on the HDMI output for boards with a display
-(design/display.md).
+(cage + WPE WebKit) renders `apid`'s UI on the HDMI output for boards with a
+display (design/display.md).
 
 - **machined** — Talos PID 1: service supervision, COSI controllers, sequencer.
   Appliance machine type (`TypeAppliance`) gates off k8s/etcd/trustd/CRI/dashboard
   (PLAN-007).
-- **webd** — the end-user management plane (HTTPS): first-run setup, status,
-  network config, update UI. Talks to machined over `/run/machined.sock`.
+- **`apid`** (the product daemon, renamed from `webd`) — the end-user management
+  plane (HTTPS): first-run setup, status, network config, update UI. Talks to
+  machined over `/run/machined.sock`.
 - **connd** — unified connectivity: WiFi STA/AP, Bluetooth, CAN (design/PLAN-008).
 - **updater** — in-machined orchestration: Uptane metadata verification, policy
   gates, RAUC invocation, health-gated commit (PLAN-006).
-- **apid + talosctl** — upstream-maintained machine API, kept for operations and
-  future fleet management (SideroLink); disabled/bound by default
-  (design/remote-management.md).
+- **Talos `apid` + talosctl** — upstream-maintained machine API, kept for
+  operations and future fleet management (SideroLink); disabled/bound by
+  default (design/remote-management.md).
 - **containerd** — workload layer only; never part of the update path.
 
 ## 3. Storage & boot (per PLAN-006)
@@ -134,6 +142,6 @@ containerd prerequisites).
 | done | rebase onto upstream + gating strategy | PLAN-007 |
 | next | board bring-up (cx3576 flashable Talos image) | plan TBD (campaign L2-B) |
 | then | A/B update stack (RAUC+Uptane) | PLAN-006 |
-| then | access layer (webd completion, sshd/console, auth) | design/access.md → plan TBD |
+| then | access layer (`apid` completion, sshd/console, auth) | design/access.md → plan TBD |
 | then | connectivity (connd) | PLAN-008 |
 | later | app workload as Uptane secondary ECU, fleet mgmt (SideroLink), BLE provisioning | design/remote-management.md, PLAN-008 P3 |

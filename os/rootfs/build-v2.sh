@@ -72,8 +72,8 @@ if [ "$WITH_MOSD" = "1" ]; then
     cp "$REPO_ROOT/mosd/target/aarch64-unknown-linux-gnu/release/mosd" "$MOSD_STAGE/mosd"
     cp "$REPO_ROOT/mosd/dist/mosd.service" "$MOSD_STAGE/mosd.service"
     cp "$REPO_ROOT/mosd/dist/com.mos.mosd.conf" "$MOSD_STAGE/com.mos.mosd.conf"
-    cp "$REPO_ROOT/mosd/target/aarch64-unknown-linux-gnu/release/webd" "$MOSD_STAGE/webd"
-    cp "$REPO_ROOT/mosd/dist/webd.service" "$MOSD_STAGE/webd.service"
+    cp "$REPO_ROOT/mosd/target/aarch64-unknown-linux-gnu/release/apid" "$MOSD_STAGE/apid"
+    cp "$REPO_ROOT/mosd/dist/apid.service" "$MOSD_STAGE/apid.service"
 else
     echo "note: WITH_MOSD=0; building rootfs without mosd"
 fi

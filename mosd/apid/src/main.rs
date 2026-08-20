@@ -1,4 +1,4 @@
-//! webd — appliance web UI daemon.
+//! apid — appliance API daemon; the web dashboard is what it serves.
 //!
 //! Serves the management web interface over HTTPS with a self-signed
 //! certificate and talks to `mosd` exclusively over D-Bus
@@ -6,16 +6,16 @@
 //!
 //! Configuration is taken from the environment:
 //!
-//! - `WEBD_HTTPS_ADDR` — HTTPS listen address (default `0.0.0.0:443`).
-//! - `WEBD_HTTP_ADDR` — HTTP listen address, redirect-only (default
+//! - `APID_HTTPS_ADDR` — HTTPS listen address (default `0.0.0.0:443`).
+//! - `APID_HTTP_ADDR` — HTTP listen address, redirect-only (default
 //!   `0.0.0.0:80`).
-//! - `WEBD_STATE_DIR` — certificate and key storage (default
-//!   `/var/lib/mos/webd`).
-//! - `WEBD_BUS` — `system` (default) or `session`; same semantics as
+//! - `APID_STATE_DIR` — certificate and key storage (default
+//!   `/var/lib/mos/apid`).
+//! - `APID_BUS` — `system` (default) or `session`; same semantics as
 //!   `MOSD_BUS`.
 //!
 //! After both listeners are bound the daemon prints exactly one line to
-//! stdout — `WEBD_LISTENING https=<addr> http=<addr>` — and routes all
+//! stdout — `APID_LISTENING https=<addr> http=<addr>` — and routes all
 //! tracing output to stderr.
 
 #![forbid(unsafe_code)]
@@ -66,8 +66,8 @@ async fn main() -> anyhow::Result<()> {
     let http_addr = http_listener.local_addr()?;
 
     // The one machine-readable startup marker; everything else goes to stderr.
-    println!("WEBD_LISTENING https={https_addr} http={http_addr}");
-    tracing::info!(%https_addr, %http_addr, "webd serving");
+    println!("APID_LISTENING https={https_addr} http={http_addr}");
+    tracing::info!(%https_addr, %http_addr, "apid serving");
 
     let rustls_config = RustlsConfig::from_pem(
         certificate.cert_pem.into_bytes(),

@@ -29,6 +29,8 @@ Each plan is a single line linking to its detail file. All detailed information 
 
 ## Plans
 
+> **Name collision, deliberate.** The `apid` in PLAN-003's title is the **Talos** machine API daemon, retired by that plan. It is not mos's `apid`, the product HTTPS daemon that was named `webd` until campaign `apid` (RFCT-055/056/057). Plan titles are history and are never rewritten.
+
 - [x] [**PLAN-001 Stage 1.0 - Introduce TypeAppliance and gate K8s in sequencer**](PLAN-001.md) `2026-05-09`
 - [x] [**PLAN-002 Stage 1.1 - Delete K8s/etcd/cluster/provision/integration code**](PLAN-002.md) `2026-05-09`
 - [x] [**PLAN-003 Stage 1.2 - Retire apid/trustd/talosctl/dashboard, bring up webd skeleton and rescue shell**](PLAN-003.md) `2026-05-09`
