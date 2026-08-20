@@ -813,6 +813,7 @@ check_boot_slot() {
     # every label and every default-state still spelling exactly right.
     local dtb="${TMP}/boot-${slot}-rk3576-src.dtb"
     local led name want_state want_flags want_pol got
+    local -a gpio_cells
     for led in "status-red:on:1:active-low" "status-blue:off:0:active-high"; do
         IFS=':' read -r name want_state want_flags want_pol <<<"${led}"
 
@@ -830,7 +831,12 @@ check_boot_slot() {
             fail "BOOT-${slot} rk3576-src.dtb: /leds/${name} default-state is '${got:-missing}', expected '${want_state}'"
         fi
 
-        got="$(fdtget -t x "${dtb}" "/leds/${name}" gpios 2>/dev/null | awk '{print $3}' || true)"
+        # No pipe here on purpose: an early-exiting consumer on the read side
+        # is the SIGPIPE class this file now avoids structurally. awk would
+        # read to EOF and be safe, but not piping at all costs nothing and
+        # removes the question rather than requiring the reader to re-derive it.
+        read -r -a gpio_cells <<<"$(fdtget -t x "${dtb}" "/leds/${name}" gpios 2>/dev/null || true)"
+        got="${gpio_cells[2]-}"
         if [ "${got}" = "${want_flags}" ]; then
             pass "BOOT-${slot} rk3576-src.dtb: /leds/${name} GPIO flags cell is ${want_flags} (${want_pol})"
         else
