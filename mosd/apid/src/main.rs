@@ -20,6 +20,7 @@
 
 #![forbid(unsafe_code)]
 
+mod assets;
 mod auth;
 mod bundle;
 mod bus_client;
