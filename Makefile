@@ -5,7 +5,7 @@ BOARDS := cx3576 x64
 
 .PHONY: help os os-image-cx3576 os-verify-cx3576 os-rootfs-cx3576-v2 \
 	os-image-cx3576-v2 os-verify-cx3576-v2 os-bundle-cx3576 os-devkeys os-health-test \
-	os-shadow-test os-dbus-policy-test os-repart-test docs-verify \
+	os-shadow-test os-dbus-policy-test os-repart-test os-ui-location-test docs-verify \
 	$(addsuffix -%,$(BOARDS))
 
 help:
@@ -23,6 +23,7 @@ help:
 	@echo "  os-shadow-test      run the offline tests for the STATE /etc/shadow reconciler"
 	@echo "  os-dbus-policy-test prove the shipped mosd D-Bus policy is root-only against a real dbus-daemon"
 	@echo "  os-repart-test      prove first-boot repart growth grows DATA and cannot wipe the loader (privileged docker)"
+	@echo "  os-ui-location-test prove the custom-UI location assertions in the v2 verifier actually fail when the location moves"
 	@echo "  docs-verify         assert both document indexes agree with the tree, in both directions"
 	@echo "  cx3576-<t>          delegate target <t> to board/cx3576 (uboot|kernel|rootfs|image|clean)"
 
@@ -78,6 +79,28 @@ os-dbus-policy-test:
 # os-verify; it fails loudly when it cannot run rather than skipping.
 os-repart-test:
 	bash os/repart-loader-test.sh
+
+# Drives the real os/verify-image-v2.sh against mutated fixtures -- an fstab
+# with /srv moved onto EPHEMERAL or STATE, one stripped of x-systemd.growfs, one
+# with a deeper /srv/ui entry, a root tree with a UI bundle BAKED under /srv/ui
+# -- and requires each custom-UI assertion to fail, with its own message rather
+# than merely a non-zero exit.
+#
+# It proves what the image contract cannot: that those assertions can fail at
+# all. os-verify-cx3576-v2 runs them against the assembled image and they pass,
+# which is one direction, and one direction is not evidence -- the checks
+# docs/design/api.md section 5.2 leans on are about /srv AS A PARTITION and
+# would go on passing after somebody moved the UI root to /var/lib, taking every
+# custom UI on every device with it.
+#
+# Two cases deliberately expect ALL SIX to pass: the unmutated baseline, and a
+# tree with /srv removed. The second is the proof that mountpoint existence is
+# CHAINED to the mountpoint-exists check rather than re-derived -- a UI
+# assertion that also fired there would be a parallel copy adding a line and no
+# coverage. Needs no root, no image and no docker, and it fails loudly when it
+# cannot run rather than skipping.
+os-ui-location-test:
+	bash os/ui-location-test.sh
 
 # Structural check on the two document indexes. It exists because the indexes
 # are the one thing no other check can reach: a document that is never listed

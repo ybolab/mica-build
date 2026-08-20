@@ -95,3 +95,4 @@ Each task is a single line linking to its detail file. All detailed information 
 - [x] [**RFCT-069 Resolve the auth/CSRF and version-set contradictions**](RFCT-069.md) `P1`
 - [x] [**RFCT-071 The /srv/ui bundle store: layout, validation, atomic activation, deactivate, status read**](RFCT-071.md) `P1`
 - [x] [**RFCT-072 Asset path resolution and content classification: traversal, MIME allowlist, caching posture**](RFCT-072.md) `P1`
+- [x] [**RFCT-073 Assert the custom-UI location as an on-image fact, and negative-test every assertion**](RFCT-073.md) `P1`
