@@ -1,16 +1,22 @@
 //! Route-level tests driving the router directly with the fake settings
 //! backend; no network or D-Bus involved.
 
+use std::path::Path;
 use std::sync::Arc;
 
 use axum::Router;
 use axum::body::Body;
-use axum::http::header::{CONTENT_TYPE, COOKIE, LOCATION, SET_COOKIE};
-use axum::http::{Request, Response, StatusCode};
+use axum::http::header::{
+    ACCEPT, ALLOW, CACHE_CONTROL, CONTENT_TYPE, COOKIE, LOCATION, SET_COOKIE,
+};
+use axum::http::{HeaderName, Request, Response, StatusCode};
 use serde_json::json;
+use tempfile::TempDir;
 use tower::ServiceExt;
 
+use crate::assets::serve;
 use crate::auth;
+use crate::bundle::Store;
 use crate::routes::{AppState, app};
 use crate::settings_api::{FakeSettings, SettingsApi};
 
@@ -1238,4 +1244,614 @@ async fn the_pane_and_a_removal_agree_on_the_fingerprint_openssh_prints() {
         assert_eq!(response.status(), StatusCode::SEE_OTHER, "{expected}");
         assert_eq!(stored_key_list(&fake).await, json!([]));
     }
+}
+
+// ---------------------------------------------------------------------------
+// The asset router: §4.1 precedence, the reserved `/api/` subtree, §4.2's SPA
+// fallback and §4.3's headers as applied.
+// ---------------------------------------------------------------------------
+
+/// What a browser sends on a navigation.
+const BROWSER_ACCEPT: &str =
+    "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8";
+
+/// The served set §2.1 owns. Passed in because this phase does not define one
+/// and must not invent it; a bundle declaring `v1` intersects it.
+const SERVED: &[&str] = &["v1"];
+
+/// Stage `files` as generation 1 and activate it, returning the store's root.
+///
+/// Installation goes through `bundle::Store::activate` rather than writing
+/// `bundles/1` and `current` by hand, so the tree these tests serve is a tree
+/// §5.3 accepted: validated, mode-normalised, digested and pointed at by a
+/// renamed symlink.
+fn install_bundle(files: &[(&str, &str)]) -> TempDir {
+    let dir = TempDir::new().expect("temp bundle store");
+    let store = Store::new(dir.path());
+    let staging = store.staging_dir(1);
+    for (relative, contents) in files {
+        let path = staging.join(relative);
+        std::fs::create_dir_all(path.parent().unwrap()).expect("create staged parent");
+        std::fs::write(path, contents).expect("write staged file");
+    }
+    store.activate(1, SERVED).expect("activate the staged tree");
+    dir
+}
+
+/// Every regular file in the installed tree, relative to the bundle root,
+/// sorted.
+fn installed_files(root: &Path) -> Vec<String> {
+    let store = Store::new(root);
+    let generation = store
+        .active_generation()
+        .expect("read current")
+        .expect("a bundle is active");
+    let bundle = store.bundle_dir(generation);
+    let mut found = Vec::new();
+    let mut stack = vec![bundle.clone()];
+    while let Some(dir) = stack.pop() {
+        for entry in std::fs::read_dir(&dir).expect("read installed dir") {
+            let entry = entry.expect("installed dir entry");
+            if entry.file_type().expect("entry type").is_dir() {
+                stack.push(entry.path());
+            } else {
+                found.push(
+                    entry
+                        .path()
+                        .strip_prefix(&bundle)
+                        .expect("inside the bundle")
+                        .display()
+                        .to_string(),
+                );
+            }
+        }
+    }
+    found.sort();
+    found
+}
+
+/// The router as shipped, with the bundle store rooted at `bundle_root`.
+fn test_app_serving(tree: serde_json::Value, bundle_root: &Path) -> Router {
+    let fake = Arc::new(FakeSettings::new(tree));
+    app(AppState::new(fake, SIGNING_KEY).with_bundle_root(bundle_root))
+}
+
+/// The asset router with **§4.1 rule 1 deleted**, and nothing else.
+///
+/// This is the control that makes the reservation's test bidirectional in the
+/// sense §4.1 means. A test that asks for `/api/foo` and asserts 404 proves
+/// nothing when no file was ever placed there — the 404 is indistinguishable
+/// from an unhandled path. Here the same bundle, reached through the same
+/// asset handler with the reservation removed, serves the file's bytes.
+fn asset_router_without_the_api_reservation(bundle_root: &Path) -> Router {
+    let fake = Arc::new(FakeSettings::new(configured_tree("hunter2secret")));
+    let state = AppState::new(fake, SIGNING_KEY).with_bundle_root(bundle_root);
+    Router::new().fallback(serve::fallback).with_state(state)
+}
+
+async fn request(
+    router: &Router,
+    method: &str,
+    path: &str,
+    cookie: Option<&str>,
+    accept: Option<&str>,
+) -> Response<axum::body::Body> {
+    let mut builder = Request::builder().method(method).uri(path);
+    if let Some(cookie) = cookie {
+        builder = builder.header(COOKIE, format!("apid_session={cookie}"));
+    }
+    if let Some(accept) = accept {
+        builder = builder.header(ACCEPT, accept);
+    }
+    send(router, builder.body(Body::empty()).unwrap()).await
+}
+
+fn header_value(response: &Response<axum::body::Body>, name: HeaderName) -> String {
+    response
+        .headers()
+        .get(&name)
+        .unwrap_or_else(|| panic!("response carries {name}"))
+        .to_str()
+        .unwrap()
+        .to_string()
+}
+
+/// §4.1 rule 1, stated the way §4.2 condition 1 needs it: a bundle that
+/// **actually contains** files under `api/` cannot serve one.
+///
+/// The bundle really has them — `installed_files` lists them out of the
+/// installed tree — and the same router serves `/decoy.txt` from the same
+/// bundle, so the 404s below are the reservation and not an empty directory.
+/// `each_guard_is_exercised_by_exactly_one_hostile_feature` in `assets::path`
+/// is the discipline this follows: the assertion has to distinguish the guard
+/// from its absence.
+#[tokio::test]
+async fn a_bundle_cannot_shadow_the_reserved_api_subtree() {
+    const VERSIONS_BYTES: &str = "BUNDLE-SHADOWS-API-VERSIONS";
+    const SETTINGS_BYTES: &str = "BUNDLE-SHADOWS-API-V1-SETTINGS";
+
+    let bundle = install_bundle(&[
+        ("index.html", "<!doctype html><title>custom</title>"),
+        ("decoy.txt", "the bundle is reachable"),
+        ("api/versions", VERSIONS_BYTES),
+        ("api/v1/settings", SETTINGS_BYTES),
+    ]);
+
+    // The files are in the installed tree, not merely in the staged one.
+    let listed = installed_files(bundle.path());
+    assert!(
+        listed.contains(&"api/versions".to_string())
+            && listed.contains(&"api/v1/settings".to_string()),
+        "the installed bundle must actually contain the shadowing files: {listed:?}"
+    );
+
+    let router = test_app_serving(configured_tree("hunter2secret"), bundle.path());
+    let cookie = login(&router, "hunter2secret").await;
+
+    // The bundle is reachable through this very router, so a 404 under `/api/`
+    // cannot be explained by the bundle not being served.
+    let response = request(&router, "GET", "/decoy.txt", Some(&cookie), None).await;
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(body_string(response).await, "the bundle is reachable");
+
+    for (path, bytes) in [
+        ("/api/versions", VERSIONS_BYTES),
+        ("/api/v1/settings", SETTINGS_BYTES),
+    ] {
+        let response = request(&router, "GET", path, Some(&cookie), Some(BROWSER_ACCEPT)).await;
+        let status = response.status();
+        let content_type = header_value(&response, CONTENT_TYPE);
+        let cache_control = header_value(&response, CACHE_CONTROL);
+        let body = body_string(response).await;
+
+        // Asserted first, and on the body rather than on the status, so that
+        // deleting the reservation fails this test **with the bundle's own
+        // bytes printed** rather than with a bare `200 != 404`. The guard is
+        // then distinguishable from its absence by reading the failure.
+        assert!(
+            !body.contains(bytes),
+            "{path}: the reserved subtree answered with the bundle's own bytes: {body}"
+        );
+        assert_eq!(status, StatusCode::NOT_FOUND, "{path}");
+        assert_eq!(content_type, "application/json", "{path}");
+        assert_eq!(cache_control, "no-store", "{path}");
+        let envelope: serde_json::Value = serde_json::from_str(&body).expect("§2.4 envelope");
+        assert_eq!(envelope["error"]["code"], "not_found", "{path}");
+        assert_eq!(envelope["error"]["source"], "apid", "{path}");
+        assert!(
+            envelope["error"]["message"].is_string(),
+            "{path}: §2.4 requires a message"
+        );
+    }
+}
+
+/// The other direction of the same guard: with §4.1 rule 1 removed, the very
+/// same bundle serves its own file at `/api/versions`.
+///
+/// Without this the test above would pass against a router that had no
+/// reservation and simply no bundle.
+#[tokio::test]
+async fn without_the_reservation_the_bundle_does_shadow_the_api() {
+    const VERSIONS_BYTES: &str = "BUNDLE-SHADOWS-API-VERSIONS";
+
+    let bundle = install_bundle(&[
+        ("index.html", "<!doctype html><title>custom</title>"),
+        ("api/versions", VERSIONS_BYTES),
+    ]);
+    let unreserved = asset_router_without_the_api_reservation(bundle.path());
+
+    let response = request(&unreserved, "GET", "/api/versions", None, None).await;
+    assert_eq!(
+        response.status(),
+        StatusCode::OK,
+        "without the reservation the asset router answers under /api/"
+    );
+    assert_eq!(
+        body_string(response).await,
+        VERSIONS_BYTES,
+        "and it answers with the bundle's own bytes, which is the failure the \
+         reservation prevents"
+    );
+}
+
+/// The reservation covers the subtree, every method, and `/api/versions` in
+/// particular — which is deliberately *not* implemented in this phase.
+#[tokio::test]
+async fn the_api_reservation_answers_every_shape_with_the_envelope() {
+    let bundle = install_bundle(&[("index.html", "<!doctype html><title>custom</title>")]);
+    let router = test_app_serving(configured_tree("hunter2secret"), bundle.path());
+    let cookie = login(&router, "hunter2secret").await;
+
+    for (method, path) in [
+        ("GET", "/api"),
+        ("GET", "/api/"),
+        ("GET", "/api/versions"),
+        ("GET", "/api/v1/settings"),
+        ("GET", "/api/v1/settings/network.eth0"),
+        ("POST", "/api/v1/settings"),
+        ("DELETE", "/api/v1/tokens/1"),
+    ] {
+        let response = request(&router, method, path, Some(&cookie), Some(BROWSER_ACCEPT)).await;
+        assert_eq!(
+            response.status(),
+            StatusCode::NOT_FOUND,
+            "{method} {path} must be the reserved subtree's own 404"
+        );
+        assert_eq!(
+            header_value(&response, CONTENT_TYPE),
+            "application/json",
+            "{method} {path}"
+        );
+        let envelope: serde_json::Value =
+            serde_json::from_str(&body_string(response).await).expect("§2.4 envelope");
+        assert_eq!(envelope["error"]["code"], "not_found", "{method} {path}");
+    }
+}
+
+/// §4.1 rules 2 and 3: a declared route wins structurally, and the bundle
+/// files of the same name are never consulted.
+#[tokio::test]
+async fn declared_routes_win_over_bundle_files_of_the_same_name() {
+    let bundle = install_bundle(&[
+        ("index.html", "<!doctype html><title>custom</title>"),
+        ("healthz", "BUNDLE-SHADOWS-HEALTHZ"),
+        ("login", "BUNDLE-SHADOWS-LOGIN"),
+        ("network", "BUNDLE-SHADOWS-NETWORK"),
+    ]);
+    let listed = installed_files(bundle.path());
+    for name in ["healthz", "login", "network"] {
+        assert!(listed.contains(&name.to_string()), "{name} in {listed:?}");
+    }
+
+    let router = test_app_serving(configured_tree("hunter2secret"), bundle.path());
+    let cookie = login(&router, "hunter2secret").await;
+
+    let response = request(&router, "GET", "/healthz", None, None).await;
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(body_string(response).await, "ok");
+
+    for (path, shadow) in [
+        ("/network", "BUNDLE-SHADOWS-NETWORK"),
+        ("/login", "BUNDLE-SHADOWS-LOGIN"),
+    ] {
+        let response = request(&router, "GET", path, Some(&cookie), Some(BROWSER_ACCEPT)).await;
+        assert_eq!(response.status(), StatusCode::OK, "{path}");
+        let body = body_string(response).await;
+        assert!(!body.contains(shadow), "{path} was answered by the bundle");
+        assert!(
+            body.contains("<!DOCTYPE html>"),
+            "{path} is a built-in pane"
+        );
+    }
+}
+
+/// §4.2 condition 2. Anything that is not `GET` or `HEAD` and reaches the
+/// asset router is a client error, and it is never HTML.
+#[tokio::test]
+async fn a_write_method_reaching_the_asset_router_is_405_and_never_html() {
+    let bundle = install_bundle(&[("index.html", "<!doctype html><title>custom</title>")]);
+    let router = test_app_serving(configured_tree("hunter2secret"), bundle.path());
+    let cookie = login(&router, "hunter2secret").await;
+
+    for method in ["POST", "PUT", "PATCH", "DELETE"] {
+        let response = request(
+            &router,
+            method,
+            "/settings/network",
+            Some(&cookie),
+            Some(BROWSER_ACCEPT),
+        )
+        .await;
+        assert_eq!(
+            response.status(),
+            StatusCode::METHOD_NOT_ALLOWED,
+            "{method} /settings/network"
+        );
+        assert_eq!(header_value(&response, ALLOW), "GET, HEAD", "{method}");
+        assert!(response.headers().get(CONTENT_TYPE).is_none(), "{method}");
+        assert_eq!(body_string(response).await, "", "{method}");
+    }
+}
+
+/// §4.2 condition 3. This is the condition that separates a navigation from a
+/// data call when both are `GET`, and it is the whole of §4.2's stated
+/// property: a request a developer expected to be JSON never comes back as
+/// HTML with a 200.
+#[tokio::test]
+async fn a_json_client_never_gets_the_spa_fallback() {
+    let bundle = install_bundle(&[("index.html", "<!doctype html><title>custom</title>")]);
+    let router = test_app_serving(configured_tree("hunter2secret"), bundle.path());
+    let cookie = login(&router, "hunter2secret").await;
+
+    // Three shapes of data call, and none of them may come back as HTML: the
+    // explicit one §4.2 names, the `*/*` a `fetch()` sends when it sets no
+    // `Accept`, and no header at all.
+    for accept in [Some("application/json"), Some("*/*"), None] {
+        let response = request(&router, "GET", "/settings/network", Some(&cookie), accept).await;
+        assert_eq!(response.status(), StatusCode::NOT_FOUND, "{accept:?}");
+        assert_eq!(body_string(response).await, "", "{accept:?}");
+    }
+
+    // The same path, asked for as a navigation.
+    for accept in [BROWSER_ACCEPT, "text/html"] {
+        let response = request(
+            &router,
+            "GET",
+            "/settings/network",
+            Some(&cookie),
+            Some(accept),
+        )
+        .await;
+        assert_eq!(response.status(), StatusCode::OK, "{accept}");
+        assert_eq!(
+            body_string(response).await,
+            "<!doctype html><title>custom</title>",
+            "{accept}"
+        );
+    }
+}
+
+/// §4.2 condition 4, implemented as the heuristic §4.2 names: a final segment
+/// with a `.` is a filename, and a miss on a filename is a 404 with an empty
+/// body even for a browser navigation.
+#[tokio::test]
+async fn a_dotted_final_segment_misses_with_an_empty_body() {
+    let bundle = install_bundle(&[
+        ("index.html", "<!doctype html><title>custom</title>"),
+        ("assets/app.a1b2c3.js", "//real"),
+    ]);
+    let router = test_app_serving(configured_tree("hunter2secret"), bundle.path());
+    let cookie = login(&router, "hunter2secret").await;
+
+    let response = request(
+        &router,
+        "GET",
+        "/assets/app.deadbeef.js",
+        Some(&cookie),
+        Some(BROWSER_ACCEPT),
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::NOT_FOUND);
+    assert_eq!(body_string(response).await, "");
+
+    // A path with no dot in its final segment is a client-side route.
+    let response = request(
+        &router,
+        "GET",
+        "/settings/network",
+        Some(&cookie),
+        Some(BROWSER_ACCEPT),
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::OK);
+
+    // And the file that does exist is served, so the 404 above is a miss and
+    // not the extension being refused.
+    let response = request(
+        &router,
+        "GET",
+        "/assets/app.a1b2c3.js",
+        Some(&cookie),
+        Some(BROWSER_ACCEPT),
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(body_string(response).await, "//real");
+}
+
+/// §4.2 condition 5, and §6.1 classes 1 and 2: with no readable index the
+/// answer is the **built-in UI**, not a 404 and not a 500.
+#[tokio::test]
+async fn without_a_readable_index_the_fallback_is_the_built_in_ui() {
+    // Class 1: no bundle installed at all, which is the shipped state of every
+    // device.
+    let empty = TempDir::new().unwrap();
+    let router = test_app_serving(configured_tree("hunter2secret"), empty.path());
+    let cookie = login(&router, "hunter2secret").await;
+    for path in ["/", "/settings/network"] {
+        let response = request(&router, "GET", path, Some(&cookie), Some(BROWSER_ACCEPT)).await;
+        assert_eq!(response.status(), StatusCode::OK, "{path}");
+        assert_eq!(header_value(&response, CACHE_CONTROL), "no-store", "{path}");
+        assert!(
+            body_string(response).await.contains("Network state"),
+            "{path} must be the built-in status pane"
+        );
+    }
+
+    // Class 2, reached the only way it can be — the tree was mutated outside
+    // the install path, because §5.3 refuses to activate a bundle without a
+    // regular `index.html`.
+    let bundle = install_bundle(&[
+        ("index.html", "<!doctype html><title>custom</title>"),
+        ("assets/app.a1b2c3.js", "//real"),
+    ]);
+    let store = Store::new(bundle.path());
+    let installed = store.bundle_dir(1);
+    std::fs::remove_file(installed.join("index.html")).unwrap();
+    std::os::unix::fs::symlink("assets/app.a1b2c3.js", installed.join("index.html")).unwrap();
+
+    let router = test_app_serving(configured_tree("hunter2secret"), bundle.path());
+    let cookie = login(&router, "hunter2secret").await;
+    for path in ["/", "/settings/network"] {
+        let response = request(&router, "GET", path, Some(&cookie), Some(BROWSER_ACCEPT)).await;
+        assert_eq!(response.status(), StatusCode::OK, "{path}");
+        let body = body_string(response).await;
+        assert!(body.contains("Network state"), "{path}: built-in UI");
+        assert!(!body.contains("//real"), "{path}: the symlink was followed");
+    }
+}
+
+/// §4.1's `/` exception, both branches.
+#[tokio::test]
+async fn the_site_root_is_the_bundle_index_when_one_is_active() {
+    let bundle = install_bundle(&[("index.html", "<!doctype html><title>custom</title>")]);
+    let router = test_app_serving(configured_tree("hunter2secret"), bundle.path());
+    let cookie = login(&router, "hunter2secret").await;
+
+    let response = request(&router, "GET", "/", Some(&cookie), Some(BROWSER_ACCEPT)).await;
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(
+        body_string(response).await,
+        "<!doctype html><title>custom</title>"
+    );
+
+    // §4.1's `/` rule has no `Accept` condition: it is a declared route with
+    // two branches and no more.
+    let response = request(&router, "GET", "/", Some(&cookie), Some("application/json")).await;
+    assert_eq!(response.status(), StatusCode::OK);
+    assert!(body_string(response).await.contains("<title>custom"));
+
+    // Deactivate — §5.3's operation and §6.3's escape — and `/` is the
+    // built-in UI again, with no restart.
+    assert!(Store::new(bundle.path()).deactivate().unwrap());
+    let response = request(&router, "GET", "/", Some(&cookie), Some(BROWSER_ACCEPT)).await;
+    assert_eq!(response.status(), StatusCode::OK);
+    assert!(body_string(response).await.contains("Network state"));
+}
+
+/// §4.3 as applied: `nosniff` on every asset response, the content type from
+/// the allowlist, and the cache class per §4.3's table — including the
+/// manifest's opt-in immutable directory.
+#[tokio::test]
+async fn every_asset_response_carries_nosniff_and_its_cache_class() {
+    let manifest = r#"{"name":"custom","version":"1.0",
+        "immutableDir":"assets","apiVersions":["v1"]}"#;
+    let bundle = install_bundle(&[
+        ("index.html", "<!doctype html><title>custom</title>"),
+        ("mos-ui.json", manifest),
+        ("assets/app.a1b2c3.js", "//real"),
+        ("assets/logo.svg", "<svg/>"),
+        ("robots.txt", "User-agent: *"),
+        ("data.bin", "\u{0}\u{1}"),
+    ]);
+    let router = test_app_serving(configured_tree("hunter2secret"), bundle.path());
+    let cookie = login(&router, "hunter2secret").await;
+
+    for (path, content_type, cache_control) in [
+        ("/index.html", "text/html; charset=utf-8", "no-store"),
+        (
+            "/assets/app.a1b2c3.js",
+            "text/javascript; charset=utf-8",
+            "public, max-age=31536000, immutable",
+        ),
+        (
+            "/assets/logo.svg",
+            "image/svg+xml",
+            "public, max-age=31536000, immutable",
+        ),
+        ("/robots.txt", "text/plain; charset=utf-8", "no-cache"),
+        ("/data.bin", "application/octet-stream", "no-cache"),
+    ] {
+        let response = request(&router, "GET", path, Some(&cookie), Some(BROWSER_ACCEPT)).await;
+        assert_eq!(response.status(), StatusCode::OK, "{path}");
+        assert_eq!(
+            header_value(&response, CONTENT_TYPE),
+            content_type,
+            "{path}"
+        );
+        assert_eq!(
+            header_value(&response, CACHE_CONTROL),
+            cache_control,
+            "{path}"
+        );
+        assert_eq!(
+            header_value(&response, HeaderName::from_static("x-content-type-options")),
+            "nosniff",
+            "{path}"
+        );
+    }
+
+    // The SPA fallback is an HTML document and is `no-store` with it — §4.3's
+    // first row names it explicitly, because a cached index makes a new bundle
+    // invisible however correctly its assets are named.
+    let response = request(
+        &router,
+        "GET",
+        "/settings/network",
+        Some(&cookie),
+        Some(BROWSER_ACCEPT),
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(header_value(&response, CACHE_CONTROL), "no-store");
+    assert_eq!(
+        header_value(&response, HeaderName::from_static("x-content-type-options")),
+        "nosniff"
+    );
+
+    // A refusal is an asset response too.
+    let response = request(
+        &router,
+        "GET",
+        "/assets/missing.js",
+        Some(&cookie),
+        Some(BROWSER_ACCEPT),
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::NOT_FOUND);
+    assert_eq!(
+        header_value(&response, HeaderName::from_static("x-content-type-options")),
+        "nosniff"
+    );
+}
+
+/// §4.4's suite, at the router rather than at `assets::path`: a hostile request
+/// is a 404 and is never answered by §4.2's fallback, even though every one of
+/// these satisfies §4.2's own five conditions.
+#[tokio::test]
+async fn a_hostile_path_is_404_and_never_the_spa_fallback() {
+    let bundle = install_bundle(&[
+        ("index.html", "<!doctype html><title>custom</title>"),
+        ("etc/passwd", "decoy"),
+    ]);
+    let store = Store::new(bundle.path());
+    std::os::unix::fs::symlink("/etc/passwd", store.bundle_dir(1).join("leak")).unwrap();
+
+    let router = test_app_serving(configured_tree("hunter2secret"), bundle.path());
+    let cookie = login(&router, "hunter2secret").await;
+
+    for path in [
+        "/../../etc/passwd",
+        "/%2e%2e%2fetc%2fpasswd",
+        "/%252e%252e%2fetc%2fpasswd",
+        "/index%00",
+        "/leak",
+    ] {
+        let response = request(&router, "GET", path, Some(&cookie), Some(BROWSER_ACCEPT)).await;
+        assert_eq!(response.status(), StatusCode::NOT_FOUND, "{path}");
+        let body = body_string(response).await;
+        assert_eq!(body, "", "{path} must have an empty body");
+        assert!(!body.contains("root:"), "{path} read the real /etc/passwd");
+    }
+}
+
+/// `HEAD` is §4.2 condition 2's other admitted method, and it answers with the
+/// headers its `GET` would carry.
+#[tokio::test]
+async fn head_is_admitted_and_carries_the_same_headers_as_get() {
+    let bundle = install_bundle(&[
+        ("index.html", "<!doctype html><title>custom</title>"),
+        ("assets/app.a1b2c3.js", "//real"),
+    ]);
+    let router = test_app_serving(configured_tree("hunter2secret"), bundle.path());
+    let cookie = login(&router, "hunter2secret").await;
+
+    let head = request(
+        &router,
+        "HEAD",
+        "/assets/app.a1b2c3.js",
+        Some(&cookie),
+        None,
+    )
+    .await;
+    assert_eq!(head.status(), StatusCode::OK);
+    assert_eq!(
+        header_value(&head, CONTENT_TYPE),
+        "text/javascript; charset=utf-8"
+    );
+    assert_eq!(header_value(&head, CACHE_CONTROL), "no-cache");
+    assert_eq!(
+        header_value(&head, HeaderName::from_static("x-content-type-options")),
+        "nosniff"
+    );
 }
