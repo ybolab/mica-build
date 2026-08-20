@@ -80,7 +80,8 @@ if [ -z "${FIXTURE_ROOT}" ]; then
 fi
 
 # Re-exec in a container when the host lacks any required tool. unsquashfs,
-# veritysetup and setcap/getcap are the v2 additions over v1's set.
+# veritysetup and setcap/getcap are the v2 additions over v1's set; fdtget came
+# with the boot-slot device-tree assertions and is provided by Alpine's dtc.
 REQUIRED_TOOLS=(sgdisk mdir mcopy mlabel debugfs tune2fs dumpe2fs e2fsck cmp
     unsquashfs veritysetup getcap setcap fdtget)
 if [ "${INNER}" -eq 0 ] && [ -z "${FIXTURE_ROOT}" ]; then
