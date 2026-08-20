@@ -71,6 +71,19 @@ check_readme_dir() {
             fail "$README indexes '$entry' under $dir/, but docs/$dir/$entry does not exist"
         fi
     done
+
+    # once each: neither direction above can see a document listed twice --
+    # forward stops at the first hit, and reverse checks each copy separately
+    # and passes on both. The `sort -u` here is only the list of names to
+    # examine; the count is taken from the undeduplicated list below it.
+    for entry in $(readme_entries_under "$dir" | sort -u); do
+        n=$(readme_entries_under "$dir" | grep -cxF -- "$entry")
+        if [ "$n" -eq 1 ]; then
+            ok
+        else
+            fail "$README lists '$entry' $n times under $dir/; a reader who edits one description will not see the other, and the two will drift apart unnoticed"
+        fi
+    done
 }
 
 echo "docs/verify-index.sh: design/ <-> $README"
@@ -98,6 +111,21 @@ for entry in $(grep -oE '\(RFCT-[^)]+\.md\)' "$TASK_INDEX" | tr -d '()' | sort -
         ok
     else
         fail "$TASK_INDEX has a row for '$entry', but docs/task/$entry does not exist"
+    fi
+done
+
+# once each: every L3 appends its row at the same point, so a merge conflict
+# here is a two-row conflict and keeping both sides is the likeliest way to
+# resolve it wrongly. Neither direction above can see that -- forward's
+# `grep -q` is satisfied by one occurrence or by five, and reverse dedupes
+# before it looks. The `sort -u` here is only the list of names to examine;
+# the count is taken from the undeduplicated file below it.
+for entry in $(grep -oE '\(RFCT-[^)]+\.md\)' "$TASK_INDEX" | tr -d '()' | sort -u); do
+    n=$(grep -cF -- "($entry)" "$TASK_INDEX")
+    if [ "$n" -eq 1 ]; then
+        ok
+    else
+        fail "$TASK_INDEX carries $n rows for '$entry'; that record's status now lives in two places that can disagree, and a merge that kept both sides of an append is how it got there"
     fi
 done
 
