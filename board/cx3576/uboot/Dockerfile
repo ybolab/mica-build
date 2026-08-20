@@ -34,7 +34,7 @@ RUN git init -q /uboot && \
     test "$(git -C /uboot rev-parse HEAD)" = "${UBOOT_COMMIT}"
 
 COPY patches/ /patches/
-RUN cd /uboot && for patch in $(ls /patches/*.patch | sort); do \
+RUN set -e; cd /uboot && for patch in $(ls /patches/*.patch | sort); do \
         echo ">> applying $(basename "$patch")" && git apply -v "$patch"; \
     done
 
@@ -84,13 +84,19 @@ RUN cd /uboot && \
                    --set-val SYS_BOOTM_LEN 0x8000000 \
                    --enable USE_PREBOOT \
                    --set-str PREBOOT "led status-blue off; led status-red on; led work on; if button recovery; then echo RECOVERY KEY - entering rockusb; rockusb 0 mmc 0; fi" \
-                   --set-str BOOTCOMMAND "bootflow scan -lb; echo BOOT FAILED - entering rockusb; rockusb 0 mmc 0" && \
+                   --set-str BOOTCOMMAND "setenv boot_targets; bootflow scan -lb; echo BOOT FAILED - entering rockusb; rockusb 0 mmc 0" && \
     make olddefconfig && \
     grep -E "^CONFIG_PREBOOT=|^CONFIG_BUTTON_ADC=|^CONFIG_CMD_ROCKUSB=" .config && \
+    grep -q '^CONFIG_ADC=y' .config && \
+    grep -q '^CONFIG_BUTTON_ADC=y' .config && \
+    grep -q '^CONFIG_CMD_ROCKUSB=y' .config && \
     grep -q '^CONFIG_USB_FUNCTION_ROCKUSB=y' .config && \
     grep -q '^CONFIG_FIT=y' .config && \
     grep -q '^CONFIG_BOOTDELAY=1' .config && \
     grep -q '^CONFIG_SYS_BOOTM_LEN=0x8000000' .config && \
+    grep -q '^CONFIG_USE_PREBOOT=y' .config && \
+    grep -q '^CONFIG_PREBOOT="led status-blue off; led status-red on; led work on; if button recovery; then echo RECOVERY KEY - entering rockusb; rockusb 0 mmc 0; fi"' .config && \
+    grep -q '^CONFIG_BOOTCOMMAND="setenv boot_targets; bootflow scan -lb; echo BOOT FAILED - entering rockusb; rockusb 0 mmc 0"' .config && \
     grep -q '^CONFIG_SPL_GPIO=y' .config && \
     grep -q '^CONFIG_SPL_DM_GPIO=y' .config && \
     grep -q '^CONFIG_SPL_DM_REGULATOR=y' .config && \
@@ -105,8 +111,13 @@ RUN cd /uboot && \
     make -j"$(nproc)" \
         CROSS_COMPILE=aarch64-linux-gnu- \
         ROCKCHIP_TPL="$DDR" BL31="$BL31" && \
+    grep -q 'case BOOT_LOADER:' arch/arm/mach-rockchip/boot_mode.c && \
+    grep -A4 'status = usb_add_function' drivers/usb/gadget/f_rockusb.c | \
+        grep -q 'free(f_rkusb->write_cache)' && \
     test "$(fdtget spl/u-boot-spl.dtb /sdmmc-regulator regulator-name)" = "vcc_sd" && \
     fdtget spl/u-boot-spl.dtb /soc/mmc@2a310000 vmmc-supply >/dev/null && \
+    test "$(fdtget spl/u-boot-spl.dtb /chosen u-boot,spl-boot-order)" = \
+         "same-as-spl /soc/mmc@2a310000 /soc/mmc@2a330000 /soc/ufshc@2a2d0000" && \
     test "$(fdtget u-boot.dtb /bootstd bootdev-order)" = "mmc0 mmc1 usb" && \
     test "$(fdtget u-boot.dtb /soc/usb@23400000 dr_mode)" = "host" && \
     test "$(fdtget u-boot.dtb /leds/led-work label)" = "work" && \
@@ -127,6 +138,11 @@ RUN cd /uboot && \
 #   or env/mmc.c relocates the env to a partition END instead of the offsets
 # · boot.scr is the only auto-discoverable entry: bootmeth order pinned to
 #   script; the rockusb rescue tail and PREBOOT recovery key are preserved
+# · BOOTCOMMAND clears boot_targets first. A non-empty boot_targets overrides
+#   the device-tree bootdev-order, and unlike the ENV_IS_NOWHERE variant above
+#   this stage's env persists in eMMC, so a value left behind by a saveenv or
+#   by hand at the U-Boot prompt would outlive the reboot and silently undo
+#   the eMMC-first order. The assertion below pins this stage's own string.
 # This stage rebuilds u-boot.dtb, so it re-asserts bootdev-order — the one
 # property we deliberately diverge from upstream on (eMMC first, SD as
 # fallback) and the one that ships in the v2 A/B image. The LED and SD-power
@@ -150,7 +166,7 @@ RUN cd /uboot && \
                    --enable LEGACY_IMAGE_FORMAT --enable HUSH_PARSER \
                    --disable ENV_MMC_USE_DT --disable ENV_MMC_USE_SW_PARTITION \
                    --disable PARTITION_TYPE_GUID \
-                   --set-str BOOTCOMMAND "bootmeth order script; bootflow scan -lb; echo BOOT FAILED - entering rockusb; rockusb 0 mmc 0" && \
+                   --set-str BOOTCOMMAND "setenv boot_targets; bootmeth order script; bootflow scan -lb; echo BOOT FAILED - entering rockusb; rockusb 0 mmc 0" && \
     make olddefconfig && \
     for line in \
         CONFIG_ENV_IS_IN_MMC=y \
@@ -163,6 +179,7 @@ RUN cd /uboot && \
         CONFIG_HUSH_PARSER=y; do \
         grep -q "^${line}$" .config || { echo "ERROR: ${line} missing from mos .config" >&2; exit 1; }; \
     done && \
+    grep -q '^CONFIG_BOOTCOMMAND="setenv boot_targets; bootmeth order script; bootflow scan -lb; echo BOOT FAILED - entering rockusb; rockusb 0 mmc 0"' .config && \
     for sym in CONFIG_ENV_IS_NOWHERE CONFIG_ENV_MMC_USE_DT \
                CONFIG_ENV_MMC_USE_SW_PARTITION CONFIG_PARTITION_TYPE_GUID; do \
         if grep -q "^${sym}=y" .config; then \

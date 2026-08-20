@@ -15,7 +15,9 @@ Also implement the rkusb_set_reboot_flag() weak hook: tools send K_FW_RESET
 with subcode 0x03 (reboot to BootROM download / maskrom) or 0x06 (reboot to
 loader). Writing the matching flag to the boot mode register lets
 'upgrade_tool uf' and 'rkdeveloptool rd 3' bounce the board from our rockusb
-into real maskrom, mirroring stock loader behavior.
+into real maskrom, mirroring stock loader behavior. Handle BOOT_LOADER on the
+next boot by replacing preboot with a one-shot rockusb command; mainline's
+setup_boot_mode() otherwise clears that flag and continues a normal boot.
 
 Upstream-Status: Pending (against v2026.07)
 ---
@@ -57,6 +59,20 @@ Upstream-Status: Pending (against v2026.07)
  #endif /* CONFIG_USB_GADGET_DOWNLOAD */
  
  #if IS_ENABLED(CONFIG_USB_GADGET_DWC2_OTG) && !IS_ENABLED(CONFIG_DM_USB_GADGET)
+diff --git a/arch/arm/mach-rockchip/boot_mode.c b/arch/arm/mach-rockchip/boot_mode.c
+--- a/arch/arm/mach-rockchip/boot_mode.c
++++ b/arch/arm/mach-rockchip/boot_mode.c
+@@ -99,6 +99,10 @@ int setup_boot_mode(void)
+ 	writel(BOOT_NORMAL, reg);
+ 
+ 	switch (boot_mode) {
++	case BOOT_LOADER:
++		debug("%s: enter rockusb loader!\n", __func__);
++		env_set("preboot", "setenv preboot; rockusb 0 mmc 0");
++		break;
+ 	case BOOT_FASTBOOT:
+ 		debug("%s: enter fastboot!\n", __func__);
+ 		env_set("preboot", "setenv preboot; fastboot usb 0");
 diff --git a/drivers/usb/gadget/composite.c b/drivers/usb/gadget/composite.c
 --- a/drivers/usb/gadget/composite.c
 +++ b/drivers/usb/gadget/composite.c
