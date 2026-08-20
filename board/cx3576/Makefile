@@ -50,7 +50,7 @@ rkdeveloptool-macos:
 
 # Reject CJK text in source and configuration files; Markdown is documentation.
 source-check:
-	@if git grep --untracked -I -n -P '[\x{3400}-\x{4dbf}\x{4e00}-\x{9fff}\x{f900}-\x{faff}]' \
+	@if git grep --untracked -I -n -P '(*UTF)[\x{3400}-\x{4dbf}\x{4e00}-\x{9fff}\x{f900}-\x{faff}]' \
 		-- . ':(exclude)*.md' ':(exclude)*.ppm'; then \
 		echo 'error: CJK text is not allowed in source files' >&2; \
 		exit 1; \
