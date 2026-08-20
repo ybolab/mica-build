@@ -1855,3 +1855,546 @@ async fn head_is_admitted_and_carries_the_same_headers_as_get() {
         "nosniff"
     );
 }
+
+// ---------------------------------------------------------------------------
+// §6.3's escape: the built-in UI at the reserved `/builtin/` prefix, and the
+// control that deactivates a custom UI.
+// ---------------------------------------------------------------------------
+
+/// The prefix, spelled out here rather than imported, so that changing the
+/// spelling in `routes.rs` fails these tests instead of silently moving with
+/// them.
+const ESCAPE: &str = "/builtin/";
+const ESCAPE_BARE: &str = "/builtin";
+const ESCAPE_DEACTIVATE: &str = "/builtin/deactivate";
+
+/// A marker that only the built-in `pane()` shell emits: the navigation entry
+/// added for §6.3's discoverability. A bundle cannot produce it by accident,
+/// and none of the bundles below contains it.
+const BUILT_IN_PANE: &str = ">Built-in UI<";
+
+/// A marker that only §6.3's escape control emits.
+const ESCAPE_CONTROL: &str = "action=\"/builtin/deactivate\"";
+
+/// A **link** to the escape. Deliberately not the bare path: the subtree's own
+/// 404 echoes the path that was asked for, so `contains("/builtin/")` would be
+/// satisfied by the request rather than by the page naming the way back.
+const ESCAPE_LINK: &str = "href=\"/builtin/\"";
+
+/// The asset router with **§6.3's reserved prefix deleted**, and nothing else.
+///
+/// This is the guard fired, and it is kept as a standing test the way
+/// `asset_router_without_the_api_reservation` is. axum consults a fallback
+/// exactly when no declared route matched, so removing the declaration is what
+/// puts the asset service in front of `/builtin/...`: "the asset service
+/// mounted ahead of the declared routes" and "the declaration removed" are the
+/// same observable in this router, and the second is the one it can express.
+fn asset_router_without_the_builtin_reservation(bundle_root: &Path) -> Router {
+    let fake = Arc::new(FakeSettings::new(configured_tree("hunter2secret")));
+    let state = AppState::new(fake, SIGNING_KEY).with_bundle_root(bundle_root);
+    Router::new().fallback(serve::fallback).with_state(state)
+}
+
+/// A bundle whose files would occupy §6.3's prefix if anything let them.
+fn bundle_shadowing_the_prefix() -> TempDir {
+    install_bundle(&[
+        ("index.html", "<!doctype html><title>custom</title>"),
+        ("decoy.txt", "the bundle is reachable"),
+        ("builtin/index.html", PREFIX_PANE_BYTES),
+        ("builtin/assets/app.js", PREFIX_ASSET_BYTES),
+    ])
+}
+
+const PREFIX_PANE_BYTES: &str = "BUNDLE-SHADOWS-BUILTIN-PANE";
+const PREFIX_ASSET_BYTES: &str = "BUNDLE-SHADOWS-BUILTIN-ASSET";
+
+/// §6.3 candidate (A): a bundle that **actually contains** files at and under
+/// the reserved prefix cannot serve one of them.
+///
+/// Built the way `a_bundle_cannot_shadow_the_reserved_api_subtree` is, and for
+/// the same reason: a test that asks for `/builtin/` and asserts "built-in"
+/// proves nothing unless the bundle really shipped something there and the
+/// bundle is really being served. `installed_files` establishes the first and
+/// `/decoy.txt` establishes the second.
+#[tokio::test]
+async fn a_bundle_cannot_shadow_the_reserved_builtin_prefix() {
+    let bundle = bundle_shadowing_the_prefix();
+
+    // The files are in the installed tree, not merely in the staged one.
+    let listed = installed_files(bundle.path());
+    for name in ["builtin/index.html", "builtin/assets/app.js"] {
+        assert!(
+            listed.contains(&name.to_string()),
+            "the installed bundle must actually contain {name}: {listed:?}"
+        );
+    }
+
+    let router = test_app_serving(configured_tree("hunter2secret"), bundle.path());
+    let cookie = login(&router, "hunter2secret").await;
+
+    // The bundle is reachable through this very router, so nothing below can
+    // be explained by the bundle not being served at all.
+    let response = request(&router, "GET", "/decoy.txt", Some(&cookie), None).await;
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(body_string(response).await, "the bundle is reachable");
+
+    for (path, expected) in [
+        (ESCAPE_BARE, StatusCode::OK),
+        (ESCAPE, StatusCode::OK),
+        ("/builtin/index.html", StatusCode::NOT_FOUND),
+        ("/builtin/assets/app.js", StatusCode::NOT_FOUND),
+    ] {
+        let response = request(&router, "GET", path, Some(&cookie), Some(BROWSER_ACCEPT)).await;
+        let status = response.status();
+        let body = body_string(response).await;
+
+        // Asserted first, and on the body rather than on the status, so that
+        // deleting the reservation fails this test **with the bundle's own
+        // bytes printed** rather than with a bare `200 != 404`.
+        for shadow in [PREFIX_PANE_BYTES, PREFIX_ASSET_BYTES] {
+            assert!(
+                !body.contains(shadow),
+                "{path}: the reserved prefix answered with the bundle's own bytes: {body}"
+            );
+        }
+        assert!(
+            !body.contains("<title>custom"),
+            "{path}: the reserved prefix answered with the bundle's index: {body}"
+        );
+        // The binary's own copy answered: this markup exists only in
+        // `routes.rs`.
+        assert!(
+            body.contains(BUILT_IN_PANE) || body.contains(ESCAPE_LINK),
+            "{path}: the answer is not the binary's own page: {body}"
+        );
+        assert_eq!(status, expected, "{path}");
+    }
+
+    // And the pane the operator is sent to carries the control that performs
+    // §6.3 candidate (B).
+    for path in [ESCAPE_BARE, ESCAPE] {
+        let response = request(&router, "GET", path, Some(&cookie), Some(BROWSER_ACCEPT)).await;
+        let body = body_string(response).await;
+        assert!(
+            body.contains(ESCAPE_CONTROL),
+            "{path}: (A) without (B) is a way in and not a way out: {body}"
+        );
+        assert!(
+            body.contains("Network state"),
+            "{path}: the status pane moved here, unconditionally: {body}"
+        );
+    }
+}
+
+/// The other direction of the same guard, kept standing: with §6.3's
+/// declaration removed the very same bundle answers at the escape's own paths.
+///
+/// Without this the test above would pass against a router that reserved
+/// nothing and simply had no bundle.
+#[tokio::test]
+async fn without_the_reservation_the_bundle_does_shadow_the_builtin_prefix() {
+    let bundle = bundle_shadowing_the_prefix();
+    let unreserved = asset_router_without_the_builtin_reservation(bundle.path());
+
+    for (path, bytes) in [
+        ("/builtin/index.html", PREFIX_PANE_BYTES),
+        ("/builtin/assets/app.js", PREFIX_ASSET_BYTES),
+    ] {
+        let response = request(&unreserved, "GET", path, None, None).await;
+        assert_eq!(
+            response.status(),
+            StatusCode::OK,
+            "{path}: without the reservation the asset router answers under the prefix"
+        );
+        assert_eq!(
+            body_string(response).await,
+            bytes,
+            "{path}: and it answers with the bundle's own bytes, which is the \
+             failure the reservation prevents"
+        );
+    }
+
+    // The escape's own URL, answered by the bundle through §4.2's SPA
+    // fallback: an operator following the one documented action would land on
+    // the very UI that is broken, with no control to escape it.
+    let response = request(&unreserved, "GET", ESCAPE, None, Some(BROWSER_ACCEPT)).await;
+    assert_eq!(response.status(), StatusCode::OK, "{ESCAPE}");
+    let body = body_string(response).await;
+    assert!(
+        body.contains("<title>custom"),
+        "{ESCAPE}: without the reservation this is the bundle's index: {body}"
+    );
+    assert!(
+        !body.contains(ESCAPE_CONTROL),
+        "{ESCAPE}: and it carries no escape control: {body}"
+    );
+}
+
+/// The status pane's one wall-clock-dependent line, elided so two renderings
+/// taken a second apart compare byte for byte.
+///
+/// The elision is asserted to have fired, so it cannot quietly mask a pane
+/// that failed to render the line at all.
+fn without_the_uptime_line(body: &str, context: &str) -> String {
+    let start = body
+        .find("<p>Uptime: ")
+        .unwrap_or_else(|| panic!("{context}: the status pane must render an uptime line: {body}"));
+    let end = body[start..]
+        .find("</p>")
+        .map(|offset| start + offset + "</p>".len())
+        .unwrap_or_else(|| panic!("{context}: unterminated uptime line: {body}"));
+    format!("{}<p>UPTIME</p>{}", &body[..start], &body[end..])
+}
+
+/// One bundle-store state, carried by the name the diff will report.
+struct StoreState {
+    name: &'static str,
+    /// Held for the lifetime of the test; the root may point inside it or not
+    /// exist at all.
+    _dir: TempDir,
+    root: std::path::PathBuf,
+}
+
+/// Bundle-store states that differ in every way §6.1 distinguishes, named by
+/// identity.
+///
+/// This is deliberately **not** an enumeration of §6.1's five classes as
+/// behaviours — that suite is RFCT-078's. It is the input set for the property
+/// §6.3 actually argues from: *"the built-in handlers do not read `/srv/ui` at
+/// all, so no bundle state ... can affect them."*
+fn bundle_store_states() -> Vec<StoreState> {
+    let mut states = Vec::new();
+
+    let dir = TempDir::new().unwrap();
+    let root = dir.path().join("no-store-here");
+    states.push(StoreState {
+        name: "no store directory at all",
+        _dir: dir,
+        root,
+    });
+
+    let dir = TempDir::new().unwrap();
+    std::fs::write(dir.path().join("blocker"), b"not a directory").unwrap();
+    let root = dir.path().join("blocker").join("ui");
+    states.push(StoreState {
+        name: "store root unreachable: its parent is a regular file",
+        _dir: dir,
+        root,
+    });
+
+    let dir = install_bundle(&[
+        ("index.html", "<!doctype html><title>custom</title>"),
+        ("assets/app.a1b2c3.js", "//real"),
+    ]);
+    let root = dir.path().to_path_buf();
+    states.push(StoreState {
+        name: "a healthy bundle active",
+        _dir: dir,
+        root,
+    });
+
+    let dir = install_bundle(&[
+        ("index.html", "<!doctype html><title>custom</title>"),
+        ("assets/app.a1b2c3.js", "//real"),
+    ]);
+    let installed = Store::new(dir.path()).bundle_dir(1);
+    std::fs::remove_file(installed.join("index.html")).unwrap();
+    std::os::unix::fs::symlink("assets/app.a1b2c3.js", installed.join("index.html")).unwrap();
+    let root = dir.path().to_path_buf();
+    states.push(StoreState {
+        name: "active bundle whose index is a symlink, not a regular file",
+        _dir: dir,
+        root,
+    });
+
+    let dir = install_bundle(&[
+        ("index.html", "<!doctype html><title>custom</title>"),
+        (
+            "mos-ui.json",
+            r#"{"name":"ui","version":"1","immutableDir":"assets","apiVersions":["v1"]}"#,
+        ),
+    ]);
+    std::fs::write(
+        Store::new(dir.path()).bundle_dir(1).join("mos-ui.json"),
+        b"{ this is not json",
+    )
+    .unwrap();
+    let root = dir.path().to_path_buf();
+    states.push(StoreState {
+        name: "active bundle whose manifest was corrupted after install",
+        _dir: dir,
+        root,
+    });
+
+    let dir = install_bundle(&[("index.html", "<!doctype html><title>custom</title>")]);
+    let store = Store::new(dir.path());
+    std::fs::remove_file(store.current_link()).unwrap();
+    std::os::unix::fs::symlink("/nonexistent/elsewhere", store.current_link()).unwrap();
+    let root = dir.path().to_path_buf();
+    states.push(StoreState {
+        name: "current repointed outside the store",
+        _dir: dir,
+        root,
+    });
+
+    states
+}
+
+/// §6.3's property, asserted directly: the escape's answer does not depend on
+/// bundle state, because the handlers behind it never read the bundle store.
+///
+/// Every state in `bundle_store_states` produces the **same page** at the
+/// reserved prefix. The control that makes that meaningful is the second half:
+/// `/` — the one handler that *does* read the store — is asserted to disagree
+/// across the very same states, so the equality above is a property of the
+/// escape and not of the states being indistinguishable.
+#[tokio::test]
+async fn the_escape_answers_identically_whatever_the_bundle_store_holds() {
+    let states = bundle_store_states();
+    let mut escape_pages: Vec<(&'static str, String)> = Vec::new();
+    let mut roots: Vec<(&'static str, String)> = Vec::new();
+
+    for state in &states {
+        let router = test_app_serving(configured_tree("hunter2secret"), &state.root);
+        let cookie = login(&router, "hunter2secret").await;
+
+        let response = request(&router, "GET", ESCAPE, Some(&cookie), Some(BROWSER_ACCEPT)).await;
+        assert_eq!(response.status(), StatusCode::OK, "{}", state.name);
+        let body = body_string(response).await;
+        assert!(
+            body.contains(ESCAPE_CONTROL),
+            "{}: the escape must carry its control: {body}",
+            state.name
+        );
+        escape_pages.push((state.name, without_the_uptime_line(&body, state.name)));
+
+        let response = request(&router, "GET", "/", Some(&cookie), Some(BROWSER_ACCEPT)).await;
+        roots.push((state.name, body_string(response).await));
+    }
+
+    // Every escape page equals the first, named by identity when one does not.
+    let (first_name, first) = &escape_pages[0];
+    let differing: Vec<&str> = escape_pages
+        .iter()
+        .skip(1)
+        .filter(|(_, page)| page != first)
+        .map(|(name, _)| *name)
+        .collect();
+    assert!(
+        differing.is_empty(),
+        "the escape must not depend on bundle state, but these differ from \
+         '{first_name}': {differing:?}"
+    );
+
+    // The control: `/` reads the store, so it must **not** be identical across
+    // the same states. Otherwise the states are not actually different and the
+    // assertion above is vacuous.
+    let serving_the_bundle: Vec<&str> = roots
+        .iter()
+        .filter(|(_, body)| body.contains("<title>custom"))
+        .map(|(name, _)| *name)
+        .collect();
+    // Named by identity, not counted. A corrupted `mos-ui.json` is in this set
+    // on purpose: §4.3's immutable cache class is opt-in, so an unparseable
+    // manifest costs the bundle that class and nothing else — the index is
+    // still a readable regular file and `/` still serves it.
+    assert_eq!(
+        serving_the_bundle,
+        vec![
+            "a healthy bundle active",
+            "active bundle whose manifest was corrupted after install",
+        ],
+        "exactly the states whose index is a readable regular file may reach \
+         the bundle at `/`; if this set were empty the states above would be \
+         indistinguishable and the equality assertion would prove nothing"
+    );
+}
+
+/// §6.3 candidate (B), performed from the pane (A) makes reachable: one POST
+/// deactivates, `/` reverts, and a second POST is the same success.
+#[tokio::test]
+async fn the_escape_control_deactivates_the_custom_ui_and_the_root_reverts() {
+    let bundle = install_bundle(&[("index.html", "<!doctype html><title>custom</title>")]);
+    let store = Store::new(bundle.path());
+    let router = test_app_serving(configured_tree("hunter2secret"), bundle.path());
+    let cookie = login(&router, "hunter2secret").await;
+
+    assert_eq!(store.active_generation().unwrap(), Some(1));
+    let response = request(&router, "GET", "/", Some(&cookie), Some(BROWSER_ACCEPT)).await;
+    assert!(body_string(response).await.contains("<title>custom"));
+
+    let response = post_form(&router, ESCAPE_DEACTIVATE, "", Some(&cookie)).await;
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = body_string(response).await;
+    assert!(
+        body.contains("has been deactivated"),
+        "the pane must say what happened: {body}"
+    );
+
+    // §5.3's operation really ran: the pointer is gone, which is what survives
+    // a reboot.
+    assert_eq!(
+        store.active_generation().unwrap(),
+        None,
+        "`current` must be gone"
+    );
+    assert!(
+        store.bundle_dir(1).is_dir(),
+        "the bundle's files stay on disk; deactivate is not delete"
+    );
+
+    // And `/` is the built-in UI again, with no restart.
+    let response = request(&router, "GET", "/", Some(&cookie), Some(BROWSER_ACCEPT)).await;
+    assert_eq!(response.status(), StatusCode::OK);
+    assert!(body_string(response).await.contains("Network state"));
+
+    // A second click is the same success and says so: §6.3's outcome must not
+    // depend on what was wrong, and "nothing was active" is not an error.
+    let response = post_form(&router, ESCAPE_DEACTIVATE, "", Some(&cookie)).await;
+    assert_eq!(response.status(), StatusCode::OK);
+    assert!(
+        body_string(response)
+            .await
+            .contains("No custom UI was active"),
+        "an idempotent second deactivate must not read as a failure"
+    );
+}
+
+/// The escape is a state change, so it is POST-only — the same decision the
+/// power and SSH mutations in this crate already made.
+#[tokio::test]
+async fn get_on_the_escape_control_is_not_routed_and_leaves_the_bundle_active() {
+    let bundle = install_bundle(&[("index.html", "<!doctype html><title>custom</title>")]);
+    let store = Store::new(bundle.path());
+    let router = test_app_serving(configured_tree("hunter2secret"), bundle.path());
+    let cookie = login(&router, "hunter2secret").await;
+
+    let response = get(&router, ESCAPE_DEACTIVATE, Some(&cookie)).await;
+    assert_eq!(response.status(), StatusCode::METHOD_NOT_ALLOWED);
+    assert_eq!(
+        store.active_generation().unwrap(),
+        Some(1),
+        "an authenticated GET must not deactivate"
+    );
+
+    // Anonymous never gets past the gate at all.
+    let response = get(&router, ESCAPE_DEACTIVATE, None).await;
+    assert_eq!(response.status(), StatusCode::SEE_OTHER);
+    assert_eq!(location(&response), "/login");
+
+    let response = post_form(&router, ESCAPE_DEACTIVATE, "", None).await;
+    assert_eq!(response.status(), StatusCode::SEE_OTHER);
+    assert_eq!(location(&response), "/login");
+    assert_eq!(
+        store.active_generation().unwrap(),
+        Some(1),
+        "an anonymous POST must not deactivate"
+    );
+}
+
+/// Which built-in panes an operator reaches while a bundle that ships a file
+/// at every one of their names is active — **by identity**, both directions.
+#[tokio::test]
+async fn the_built_in_panes_reachable_beside_an_active_bundle_are_named() {
+    // Declared by identity. `/builtin/` is the Status pane, moved there by
+    // §6.3; the other four were already declared routes and so were already
+    // unshadowable — §6.3 asks for exactly one *unconditional* path to the
+    // built-in UI and this is the set it produces.
+    let expected = ["/builtin/", "/hostname", "/network", "/power", "/ssh"];
+
+    // Probed: the expected set plus paths that must **not** answer from the
+    // binary, so an over-wide reservation shows up as an unexpected member.
+    let probed = [
+        "/builtin/",
+        "/hostname",
+        "/network",
+        "/power",
+        "/ssh",
+        "/",
+        "/builtin/index.html",
+        "/decoy.txt",
+    ];
+
+    let bundle = install_bundle(&[
+        ("index.html", "<!doctype html><title>custom</title>"),
+        ("decoy.txt", "the bundle is reachable"),
+        ("builtin/index.html", PREFIX_PANE_BYTES),
+        ("hostname", "BUNDLE-SHADOWS-HOSTNAME"),
+        ("network", "BUNDLE-SHADOWS-NETWORK"),
+        ("power", "BUNDLE-SHADOWS-POWER"),
+        ("ssh", "BUNDLE-SHADOWS-SSH"),
+    ]);
+    let listed = installed_files(bundle.path());
+    for name in ["hostname", "network", "power", "ssh", "builtin/index.html"] {
+        assert!(
+            listed.contains(&name.to_string()),
+            "the installed bundle must actually contain {name}: {listed:?}"
+        );
+    }
+
+    // The full settings tree and the published `sshd` state, so that every
+    // pane in the expected set really renders: a pane that 502s for want of a
+    // fixture would drop out of the observed set and read as a routing result.
+    let fake = Arc::new(FakeSettings::new(ssh_tree(json!([]))));
+    fake.set_state_entry("sshd", sshd_state(false, false, false));
+    let router = app(AppState::new(fake, SIGNING_KEY).with_bundle_root(bundle.path()));
+    let cookie = login(&router, "hunter2secret").await;
+
+    let mut observed = Vec::new();
+    for path in probed {
+        let response = request(&router, "GET", path, Some(&cookie), Some(BROWSER_ACCEPT)).await;
+        if body_string(response).await.contains(BUILT_IN_PANE) {
+            observed.push(path);
+        }
+    }
+    observed.sort_unstable();
+
+    let missing: Vec<&str> = expected
+        .iter()
+        .filter(|path| !observed.contains(path))
+        .copied()
+        .collect();
+    let unexpected: Vec<&str> = observed
+        .iter()
+        .filter(|path| !expected.contains(path))
+        .copied()
+        .collect();
+    assert!(
+        missing.is_empty() && unexpected.is_empty(),
+        "built-in panes reachable beside an active bundle: missing {missing:?}, \
+         unexpected {unexpected:?}"
+    );
+}
+
+/// §6.3's stated cost — *"(A) only helps an operator who knows the URL"* —
+/// closed on the built-in surfaces that lead to it, named by identity.
+///
+/// The 502 page §6.3 actually cites is **not** among them, and F2 in
+/// `docs/task/RFCT-075.md` records why.
+#[tokio::test]
+async fn the_escape_path_is_named_on_the_surfaces_that_lead_to_it() {
+    let bundle = bundle_shadowing_the_prefix();
+    let router = test_app_serving(configured_tree("hunter2secret"), bundle.path());
+    let cookie = login(&router, "hunter2secret").await;
+
+    let surfaces: [(&str, Option<&str>); 3] = [
+        // What an operator with a broken custom UI sees first when logged out.
+        ("/login", None),
+        // The navigation on every built-in pane, for one already logged in.
+        ("/network", Some(&cookie)),
+        // The reserved subtree's own 404 — a mistyped path under the prefix.
+        ("/builtin/index.html", Some(&cookie)),
+    ];
+
+    let mut silent = Vec::new();
+    for (path, cookie) in surfaces {
+        let response = request(&router, "GET", path, cookie, Some(BROWSER_ACCEPT)).await;
+        if !body_string(response).await.contains(ESCAPE_LINK) {
+            silent.push(path);
+        }
+    }
+    assert!(
+        silent.is_empty(),
+        "these built-in surfaces must link {ESCAPE}, and do not: {silent:?}"
+    );
+}

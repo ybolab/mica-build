@@ -97,4 +97,5 @@ Each task is a single line linking to its detail file. All detailed information 
 - [x] [**RFCT-072 Asset path resolution and content classification: traversal, MIME allowlist, caching posture**](RFCT-072.md) `P1`
 - [x] [**RFCT-073 Assert the custom-UI location as an on-image fact, and negative-test every assertion**](RFCT-073.md) `P1`
 - [x] [**RFCT-074 The asset router: routing precedence, the reserved /api/ subtree, SPA fallback**](RFCT-074.md) `P1`
+- [x] [**RFCT-075 The built-in UI at a reserved prefix, and the escape**](RFCT-075.md) `P1`
 - [x] [**RFCT-080 Close the duplicate-row hole in the index verifier, and sweep the `sort -u` shape**](RFCT-080.md) `P1`
