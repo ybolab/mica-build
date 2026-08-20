@@ -1550,16 +1550,75 @@ single lock mosd holds over both trees (`mosd/mosd/src/bus.rs:44-49`, `:183`).
 Adding an API does not create this, but it adds routes that are attractive to
 automate against. It is routed in §10.1 rather than solved here.
 
-## 4. Static hosting — **[proposed]**
+## 4. Static hosting
 
-Section 1.6 measured the starting point at `86cd669`: apid serves no static
-asset of any kind, from anywhere, and the only disk paths it reads at all are
-`/proc/uptime` (`mosd/webd/src/routes.rs:581`) and its own state directory
-(`mosd/webd/src/tls.rs:47-49`, `:86`). Everything in this section is therefore
-new code rather than a configuration change to something that exists, and it is
-marked **[proposed]** throughout for that reason.
+Section 1.6 measured the starting point at `86cd669`: apid served no static
+asset of any kind, from anywhere, and the only disk paths it read at all were
+`/proc/uptime` (`mosd/apid/src/routes.rs:728`) and its own state directory
+(`mosd/apid/src/tls.rs:47-49`, `:86`). Everything in this section was therefore
+new code rather than a configuration change to something that existed, and it
+was marked **[proposed]** throughout for that reason. §8.2 phase 4 has since
+landed; the paragraphs below say where.
 
-### 4.1 Routing between API and assets — **[proposed]**
+**The markers in §§4, 5 and 6 are carried per subsection, and the section
+headings carry none.** A section-level mark is a claim about every subsection
+under it, and §0's `[implemented]` obliges each marked subsection to name its
+own code **by path**, so the mark can only be checked where the path is. §0
+already exempts sections that describe no mechanism from carrying a marker; the
+mechanisms here are the subsections', and each of them carries its own. A
+reader who wants the section's status reads four marks rather than one, and
+none of the four can be true on another's evidence.
+
+**§§4-6's citations are re-measured at `0d4f3c6`; the rest of the document
+remains measured at `86cd669` per §0.** The reason for the asymmetry is the
+markers: a subsection claiming `[implemented]` names code a reader is expected
+to open **today**, so a citation in it that only resolves under
+`git show 86cd669:<path>` is not evidence. Sections that remain `[proposed]`
+carry no such obligation and were left on §0's anchor. Where a sentence below
+states a fact about `86cd669` that phase 4 has since changed, the sentence is
+bound to its period and what landed is stated beside it, rather than restated.
+
+**A path is evidence of code. Evidence of code is not evidence of a booted
+device.** Every mechanism in §§4, 5 and 6 is **host- and container-tested and
+none of it is exercised on hardware**: the Rust is one `cargo nextest` run on
+the build host against temporary directories, and the image assertions run
+against an assembled image and a fixture root, not against a board. The
+accurate statement of the surrounding position, because both overstatements are
+wrong: hardware **has** booted — a **v1** image reached the `mos login:` prompt
+on a real CX3576-Z, and the repart/maskrom and SPL-hash investigations ran
+against a real board — while the **v2** stack these sections land in (verity
+root, A/B, `rauc install`, and apid itself) has **never** run on hardware.
+*"Never booted"* and *"verified on device"* are both false. `[implemented]`
+here means what §0 says it means and nothing more, and §6.3's *"No hardware
+claim is made anywhere in this section"* stays true.
+
+### 4.1 Routing between API and assets — **[implemented]**
+
+**Implemented at `mosd/apid/src/routes.rs`** — `app` (`:88-161`), whose
+*declaration order* is this subsection's precedence rule: `/` (`:95`), the
+reserved `/builtin` subtree (`:115-125`), the fifteen legacy declarations
+(`:126-145`), the reserved `/api` subtree (`:155-156`), and rule 4's
+`.fallback(serve::fallback)` (`:158`). The asset side is
+`mosd/apid/src/assets/serve.rs` (`root` and `fallback`). Nothing re-checks a
+prefix: no handler under `assets/` reads one, which is the property this
+subsection asked for rather than a coincidence of the implementation.
+
+**Two things the implementation settled that the text above did not, both
+reported by RFCT-074 rather than designed around.** First, `nest("/api", …)`
+claims `/api`, `/api/x` and `/api/x/y` but **not** `/api/` — measured against
+axum 0.8.9 — so `/api/` alone fell through to the asset router and, with a
+bundle installed, was answered by §4.2's fallback with 200 and HTML. Rule 1
+forbids that in as many words, and it is closed by the explicit second
+declaration at `mosd/apid/src/routes.rs:156`, which is why that line is not
+redundant. Second, and **not closed**: rule 1 is written about paths that
+*begin* `/api/`, and `//api/versions` does not — it reaches the fallback, where
+§4.4 rule 3 strips all leading separators and resolves it to the bundle's
+`api/versions`. No API path is shadowed and phase 2's routes answer at
+`/api/v1/...` regardless, so this is not the failure rule 1 exists to prevent;
+what it is, is the reserved subtree's *names* remaining reachable from a bundle
+by adding one slash. Closing it needs either the in-handler prefix check §4.1
+rejects or a path-normalising middleware, and §4 chooses neither, so it is left
+open and named here rather than in a comment.
 
 **The precedence rule.** One request arrives; apid decides in this order, and
 the order is total — no request is ever ambiguous:
@@ -1575,13 +1634,15 @@ the order is total — no request is ever ambiguous:
 
 **Why this order rather than any other.** Rule 1 is not a convention that has
 to be policed; it is the shape axum's router already has. As of `86cd669` the
-HTTPS router matches its fifteen `.route()` declarations
-(`mosd/webd/src/routes.rs:45-65`) and declares **no fallback at all** — the only
-`.fallback` in the file belongs to the HTTP redirect router
-(`mosd/webd/src/routes.rs:74`), which is why an unmatched path today is answered
-by the gate's redirect to `/login` (`mosd/webd/src/routes.rs:149`) or by axum's
-default not-found (section 1.6). Adding the asset service as the *fallback*
-therefore means declared routes win **structurally**: a bundle that ships a file
+HTTPS router matched its fifteen `.route()` declarations and declared **no
+fallback at all** — the only `.fallback` in the file belonged to the HTTP
+redirect router, which is why an unmatched path was then answered by the gate's
+redirect to `/login` or by axum's default not-found (section 1.6). As of
+`0d4f3c6` the fifteen declarations are at `mosd/apid/src/routes.rs:126-145`,
+the redirect router's fallback is at `:194`, the gate's `/login` redirect is at
+`:269`, and the HTTPS router's fallback is declared: `.fallback(serve::fallback)`
+at `:158`. Adding the asset service as the *fallback* therefore means declared
+routes win **structurally**: a bundle that ships a file
 at `api/v1/settings` cannot capture API traffic, because the router never
 consults the fallback for a path it matched. A rule enforced by the dispatch
 mechanism is worth more than a rule enforced by a check somebody can forget to
@@ -1592,8 +1653,8 @@ write.
 | Option | Rejected because |
 |---|---|
 | **Content negotiation on the same paths** (`Accept: application/json` selects the API) | The reserved set becomes invisible in the URL: you cannot tell from a request line whether it is an API call or an asset fetch, which makes both logs and `curl` reproduction ambiguous. A `fetch()` that forgets its `Accept` header silently receives HTML. |
-| **A second listener on its own port** | Two TLS configurations, two firewall rules, and the self-signed certificate would have to be accepted twice by the browser — it is generated once into the state directory with SANs `DNS:mos`, `DNS:localhost`, `IP:127.0.0.1` (`mosd/webd/src/tls.rs:44-81`). The two listeners that exist at `86cd669` are 443 and a redirect-only 80 (`mosd/webd/src/config.rs:34-37`, `mosd/webd/src/routes.rs:72-76`); a third is a real operational cost for no isolation gain, since both would be served by the same root process. |
-| **A subdomain** (`api.mos`) | The certificate carries three SANs and no wildcard (`mosd/webd/src/tls.rs:44-81`), and the appliance provides no DNS. A new name means a new SAN, a new way for the name to fail to resolve, and a second certificate-trust prompt. |
+| **A second listener on its own port** | Two TLS configurations, two firewall rules, and the self-signed certificate would have to be accepted twice by the browser — it is generated once into the state directory with SANs `DNS:mos`, `DNS:localhost`, `IP:127.0.0.1` (`mosd/apid/src/tls.rs:44-81`). The two listeners that exist at `86cd669` are 443 and a redirect-only 80 (`mosd/apid/src/config.rs:34-37`, `mosd/apid/src/routes.rs:72-76`); a third is a real operational cost for no isolation gain, since both would be served by the same root process. |
+| **A subdomain** (`api.mos`) | The certificate carries three SANs and no wildcard (`mosd/apid/src/tls.rs:44-81`), and the appliance provides no DNS. A new name means a new SAN, a new way for the name to fail to resolve, and a second certificate-trust prompt. |
 | **`/api/v1` prefix** | **Chosen.** One origin, one certificate, one listener, and the reserved set is legible in every URL. |
 
 **What it costs, stated plainly.** The prefix `/api` is burned permanently: a
@@ -1606,7 +1667,7 @@ are declared routes, so rule 3 falls out of rule 1's mechanism with no special
 case: at `86cd669` the reserved page paths are `/`, `/setup`, `/login`,
 `/logout`, `/network`, `/hostname`, `/power`, `/power/reboot`,
 `/power/poweroff`, `/ssh`, `/ssh/enable`, `/ssh/password`, `/ssh/keys/add`,
-`/ssh/keys/remove` and `/healthz` (`mosd/webd/src/routes.rs:45-65`). A custom
+`/ssh/keys/remove` and `/healthz` (`mosd/apid/src/routes.rs:45-65`). A custom
 bundle cannot occupy any of them.
 
 **`/` is the one that matters, and it must not be waved past.** A replaceable UI
@@ -1620,7 +1681,7 @@ status pane. So `/` is the single exception to rule 3:
 - otherwise `GET /` serves the built-in UI.
 
 The built-in status pane that occupies `GET /` today (`home`, at
-`mosd/webd/src/routes.rs:45` and `:578`) moves under section 6.3's reserved
+`mosd/apid/src/routes.rs:45` and `:578`) moves under section 6.3's reserved
 prefix, where it is reachable unconditionally. `/` is therefore **conditional**
 and the reserved prefix is **not** — and section 6.3 requires exactly one
 unconditional path, not two, so this trade is the one that section makes.
@@ -1630,7 +1691,29 @@ each pane onto the API and deletes its route. Until then a custom UI cannot use
 those thirteen paths. That shrinkage is section 8's to schedule; the requirement
 is routed in 10.2 rather than decided here.
 
-### 4.2 SPA fallback — **[proposed]**
+### 4.2 SPA fallback — **[implemented]**
+
+**Implemented at `mosd/apid/src/assets/serve.rs`** — `fallback` and `respond`,
+with condition 1 costing no code (it is 4.1's mounting), condition 2 the method
+check, conditions 3 and 4 the `offers_html` and `ends_in_a_route_segment`
+predicates, and condition 5 whether `serve_index` produced anything. Each
+condition has its own test in `mosd/apid/src/tests.rs`.
+
+**Condition 3 is implemented strictly, and the cost is stated rather than
+hidden.** *"The request's `Accept` header must offer `text/html`"* is read as
+`text/html` or `text/*` **explicitly**; `*/*` is not an offer and neither is an
+absent header. Read permissively, a `fetch()` that sets no `Accept` at all —
+whose default is `*/*` — would receive 200 and HTML, which is precisely the
+failure this subsection's acceptance property names. The cost:
+`curl https://<device>/settings/network` gets a 404 where a browser at the same
+URL gets the application. No browser navigation is affected, and `GET /` is a
+declared route with no `Accept` condition, so a bare `curl` of the device root
+still gets the bundle's index.
+
+**Condition 4 also rejects a `%` in the final segment**, because a `%` that
+survives §4.4's single decode is a hard rejection there and never reaches this
+predicate; reading a residual `%` as an asset can only produce a 404, never HTML
+for something that was a filename.
 
 A single-page application needs a **200 with `index.html`** for a path its
 client-side router owns, because a 404 stops the application from booting. The
@@ -1675,7 +1758,19 @@ machine-readable envelope as every other API error. The shape belongs to section
 to be JSON never returns HTML with a 200. That is one integration test per
 condition, and it is the test that keeps 4.2 from silently regressing.
 
-### 4.3 MIME and caching — **[proposed]**
+### 4.3 MIME and caching — **[implemented]**
+
+**Implemented at `mosd/apid/src/assets/mime.rs`** — the fixed extension
+allowlist (`.wasm` and `.webmanifest` in it from the start, `:58-59`), the
+`octet-stream` fallback, `nosniff`, and the three cache classes with their
+header values (`:83-132`). The headers are attached to every response the asset
+router builds by `asset_response` in `mosd/apid/src/assets/serve.rs`, and the
+`/api/` subtree's own 404 carries `no-store` from the same enum
+(`mosd/apid/src/routes.rs:176`). The immutable class is read per request from
+the served tree's `mos-ui.json` (`serve.rs`, `immutable_dir`), because the
+store validates the manifest at install time but exposes only its name and
+version afterwards — a public accessor for `immutableDir` is the clean fix and
+belongs to whoever next owns §5.3.
 
 **How a content type is decided.** From the filename extension, through a
 **fixed allowlist compiled into apid** — not through a general-purpose guesser
@@ -1685,7 +1780,7 @@ The alternative would be `mime_guess`, which is what `tower_http`'s `ServeDir`
 uses: it calls `mime_guess::from_path` and falls back to
 `application/octet-stream`
 (`tower-http-0.6.11/src/services/fs/serve_dir/open_file.rs:78-82`, in the
-registry copy of the version pinned at `mosd/Cargo.lock:2364-2366`). A fixed
+registry copy of the version pinned at `mosd/Cargo.lock:2391-2394`). A fixed
 table is preferred because the appliance serves a handful of extensions and a
 generated MIME database is a large dependency for that, and because the table
 being *ours* means the unknown-extension behaviour is a decision rather than a
@@ -1697,8 +1792,8 @@ absent extension is served as `application/octet-stream` **together with
 response, not only the unknown ones. Without it a browser may sniff an uploaded
 file as HTML and execute it on the management origin — which turns "upload a UI
 bundle" into stored cross-site scripting against the same origin that holds the
-session cookie (`webd_session`, `Path=/; HttpOnly; Secure; SameSite=Lax`,
-`mosd/webd/src/session.rs:18`, `:91`). The cookie is `HttpOnly`, so script
+session cookie (`apid_session`, `Path=/; HttpOnly; Secure; SameSite=Lax`,
+`mosd/apid/src/session.rs:18`, `:91`). The cookie is `HttpOnly`, so script
 cannot read it, but same-origin script does not need to read it: it can issue
 authenticated requests directly.
 
@@ -1744,7 +1839,7 @@ else**: `grep -n "CACHE_CONTROL\|ETAG"` over
 `tower-http-0.6.11/src/services/fs/serve_dir/` returns no match. So the entire
 caching posture above is a layer apid must add regardless of whether the
 file-serving itself is borrowed. Note also that `tower-http` is **not a
-dependency of the crate** (`mosd/webd/Cargo.toml:11-29`; section 1.6, evidence
+dependency of the crate** (`mosd/apid/Cargo.toml:11-29`; section 1.6, evidence
 1) — see 4.4 for what adopting it actually involves.
 
 **What an operator sees after uploading a new bundle.** This is the acceptance
@@ -1767,34 +1862,65 @@ actions is aimed at the wrong layer. Section 5.3's "what is installed right now?
 read is the other half of the same defence: it answers from the served tree, so
 it disagrees with the browser and tells the operator where to look.
 
-### 4.4 Path traversal — **[proposed]**
+### 4.4 Path traversal — **[implemented]**
+
+**Implemented at `mosd/apid/src/assets/path.rs`** — `resolve`, a pure function
+from a request target and an already-resolved bundle root, performing rules 1-5
+in order, with one test per guard and the five requests §8.2 phase 4 acceptance
+2 names among them. The **primary** defence rule 5 chooses — install-time
+rejection of any entry that is not a regular file or a directory — is
+`validate_tree` in `mosd/apid/src/bundle.rs` (§5.3 requirement 2). No `unsafe`
+was added and no dependency was added; `#![forbid(unsafe_code)]` is still at
+`mosd/apid/src/main.rs:21`.
+
+**Two rejections beyond the five rules, both flagged rather than folded in.**
+Neither loses behaviour the rules require, and both were reported by RFCT-072:
+
+- **A `%` that survives the single decode is rejected outright**
+  (`Rejection::ResidualEscape`). Rule 2 forbids a second decode pass, so
+  `/%252e%252e%2fetc%2fpasswd` decodes once to `%2e%2e/etc/passwd`, whose
+  components are all ordinary names — rules 1 and 3 do **not** fire and the
+  honest lexical answer is a plain miss, which §4.2's five conditions then all
+  admit. A literal reading of §4.2 and §4.4 together therefore returns
+  `200 text/html` for a string §8.2 phase 4 acceptance 2 requires to be a 404.
+  Rejecting the residual escape makes that acceptance hold structurally. The
+  cost: a bundle cannot ship a filename containing a literal `%`.
+- **A backslash is rejected**, on rule 4's own reasoning. On Linux `\` is an
+  ordinary filename character and on Windows it is a separator; rule 4 rejects
+  NUL explicitly rather than relying on a platform's errno, on the ground that
+  *"an accident is not a rule"*, and the same argument covers a byte whose
+  meaning is platform-dependent. No asset in a bundle needs one.
+
+Only a plain miss is eligible for §4.2's fallback
+(`Rejection::eligible_for_fallback`); every guard that fires answers 404, so a
+request the rules rejected can never come back as `200 text/html`.
 
 **What a successful traversal reaches, first, because it sets the stakes.**
-apid runs as **root** — `mosd/dist/webd.service` sets no `User=` line, and its
-entire `[Service]` section is four directives (`mosd/dist/webd.service:6-10`):
+apid runs as **root** — `mosd/dist/apid.service` sets no `User=` line, and its
+entire `[Service]` section is four directives (`mosd/dist/apid.service:6-10`):
 `Type=`, `ExecStart=`, `Restart=` and `StateDirectory=`. There is no
 `ProtectSystem=`, no `ReadOnlyPaths=`, no `RootDirectory=`, no `PrivateTmp=`.
 The D-Bus policy records the same fact from the other side — *"no shipped unit
-sets User=, mosd.service owns the name as root, webd.service and the boot health
-gate both run as root"* (`mosd/dist/com.mos.mosd.conf:12-14`). A traversal is
+sets User=, mosd.service owns the name as root, apid.service and the boot
+health gate both run as root"* (`mosd/dist/com.mos.mosd.conf:12-14`). A traversal is
 therefore an arbitrary file read **as root, with no sandbox**, and the reachable
 set includes at least:
 
 - **`/var/lib/mos/settings.toml`** (`mosd/mosd-settings/src/store.rs:12`) — the
   whole settings tree, including the argon2id webAdmin hash
-  (`mosd/webd/src/routes.rs:98-103`) and every authorized SSH key.
+  (`mosd/apid/src/routes.rs:218-223`) and every authorized SSH key.
 - **`/var/lib/mos/shadow`**, which is what `/etc/shadow` is a symlink to
   (`docs/design/ro-root.md:270-289`).
 - **`/etc/ssh/`** — the sshd host private keys, bound from STATE
   (`docs/design/access.md:485`).
-- **apid's own state directory**, `/var/lib/mos/webd` by default
-  (`mosd/webd/src/config.rs:38-40`): the TLS private key, mode `0600`
-  (`mosd/webd/src/tls.rs:30-42`, `:78`), and **`session.key`**, the 32-byte HMAC
-  signing key (`mosd/webd/src/tls.rs:85-103`).
+- **apid's own state directory**, `/var/lib/mos/apid` by default
+  (`mosd/apid/src/config.rs:38-40`): the TLS private key, mode `0600`
+  (`mosd/apid/src/tls.rs:30-42`, `:78`), and **`session.key`**, the 32-byte HMAC
+  signing key (`mosd/apid/src/tls.rs:85-103`).
 
 That last one is the escalation nobody should have to discover during an
 incident. A session cookie is `<id>.<hmac>` where the MAC is HMAC-SHA256 of the
-id under `session.key` (`mosd/webd/src/session.rs:44-55`). **Reading
+id under `session.key` (`mosd/apid/src/session.rs:44-55`). **Reading
 `session.key` lets an attacker mint a valid session cookie**, which converts a
 file-read primitive into full administrative access without ever guessing the
 password.
@@ -1853,7 +1979,7 @@ verity's coverage by design.
    | Mitigation | Strength | Cost |
    |---|---|---|
    | **Reject symlinks at install time** — the unpacker refuses any entry that is not a regular file or a directory (section 5.3) | Removes the class from the tree entirely | None beyond the check; composes with a bundle that is immutable after activation |
-   | **`openat2(2)` with `RESOLVE_BENEATH \| RESOLVE_NO_SYMLINKS`** | Strongest — the kernel enforces it, per-open, with no race | Needs Linux ≥ 5.6, and a raw syscall. **The workspace forbids unsafe code** (`mosd/Cargo.toml:10-11`, repeated locally at `mosd/webd/src/main.rs:21`), so this means a new dependency carrying `unsafe`, inside the root-privileged daemon, subject to the audit `mosd/hack/check.sh:9` runs |
+   | **`openat2(2)` with `RESOLVE_BENEATH \| RESOLVE_NO_SYMLINKS`** | Strongest — the kernel enforces it, per-open, with no race | Needs Linux ≥ 5.6, and a raw syscall. **The workspace forbids unsafe code** (`mosd/Cargo.toml:10-11`, repeated locally at `mosd/apid/src/main.rs:21`), so this means a new dependency carrying `unsafe`, inside the root-privileged daemon, subject to the audit `mosd/hack/check.sh:9` runs |
    | **Canonicalise the opened path and assert it starts with the resolved bundle root** | Safe Rust, no new dependency | One extra syscall per request; TOCTOU-racy in principle, though the race requires mutating the bundle tree between the check and the open, which section 5.3's activate-by-rename makes unreachable for the install path |
 
    **Chosen: install-time rejection as the primary defence, canonicalise-and-
@@ -1869,11 +1995,11 @@ verity's coverage by design.
    "no symlinks" rule applies to bundle *contents*.
 
 **On depending on a library, and what happens if its behaviour changes.**
-`tower-http` is not a dependency of the crate at `86cd669` (`mosd/webd/Cargo.toml:11-29`
+`tower-http` is not a dependency of the crate at `86cd669` (`mosd/apid/Cargo.toml:11-29`
 — section 1.6, evidence 1). The copy at `mosd/Cargo.lock:2364-2366` is version
 **0.6.11**, pulled in by the **dev-dependency** `reqwest`
-(`mosd/webd/Cargo.toml:32`), and it is built **without the `fs` feature**: its
-dependency list in the lockfile (`mosd/Cargo.lock:2368-2379`) contains no
+(`mosd/apid/Cargo.toml:32`), and it is built **without the `fs` feature**: its
+dependency list in the lockfile (`mosd/Cargo.lock:2395-2406`) contains no
 `tokio`, `mime_guess`, `httpdate` or `http-range-header`, all of which `fs`
 requires
 (`tower-http-0.6.11/Cargo.toml:168-183`). **`ServeDir` is therefore not
@@ -1894,9 +2020,13 @@ If it is adopted, two things follow:
   a path containing `%00`, and a request that resolves through a symlink
   planted in a temporary bundle root. The crate already has the machinery:
   a `tests/` directory (section 1.6, evidence 4) and `tower` and `tempfile` as
-  dev-dependencies (`mosd/webd/Cargo.toml:33-34`).
+  dev-dependencies (`mosd/apid/Cargo.toml:33-34`).
 
-## 5. Where a custom UI lives — **[proposed]**
+## 5. Where a custom UI lives
+
+Markers are per subsection here too, for the reason §4 states; §4's note on
+what `[implemented]` means in §§4-6, and on the hardware position it must not
+be read as, governs this section unchanged.
 
 ### 5.1 Why it cannot live in the rootfs — **[implemented]**
 
@@ -1913,7 +2043,20 @@ the slot is replaced **wholesale** by an A/B update: RAUC installs the entire
 written into a rootfs would be gone at the next update even if writing it were
 possible.
 
-### 5.2 The location, and the bind — **[proposed]**
+### 5.2 The location, and the bind — **[implemented]**
+
+**Implemented at `mosd/apid/src/bundle.rs`** — `DEFAULT_ROOT` is `/srv/ui`
+(`:42`), the layout beneath it is `bundles/<generation>/`, `current`,
+`records/`, `.staging-<generation>/` and `.trash-<generation>/`, and the modes
+are `DIR_MODE` `0755` and `FILE_MODE` `0644` (`:53`, `:55`), applied to the root and
+to everything under it. The root is created lazily on first activation and
+never at start-up, which is this subsection's *"absence is a defined state"*
+written as code. No mount unit and no seed unit was added, and the eight binds
+are still eight. The image side is asserted rather than assumed:
+`os/verify-image-v2.sh`'s `check_ui_location` (`:254`) fixes `/srv/ui` as the root
+(`:210`) and chains to the packed-mountpoint check, and every one of those
+assertions is driven against an input in which its fact is false by
+`os/ui-location-test.sh`.
 
 **The path is `/srv/ui/`.**
 
@@ -1958,7 +2101,7 @@ than a ninth unit that has to be ordered against a mount.
 **Ownership and permissions: `root:root`, mode `0755` on `/srv/ui` and on the
 directories beneath it, `0644` for files.**
 
-- apid runs as root at `86cd669` (`mosd/dist/webd.service:1-13`), so it can write
+- apid runs as root at `86cd669` (`mosd/dist/apid.service:1-13`), so it can write
   regardless of what the mode says.
 - **The mode is chosen for the daemon apid is meant to become, not the one it
   is.** `docs/design/dashboard.md` §6.6 adopts two processes with a real
@@ -1983,7 +2126,41 @@ directories beneath it, `0644` for files.**
   appliance state, not a user's file, and mixing the two would make "delete my
   files" and "remove the UI" the same gesture.
 
-### 5.3 Install and removal — **[proposed]**
+### 5.3 Install and removal — **[implemented]**
+
+**Implemented at `mosd/apid/src/bundle.rs`** — `Store::activate` performs the
+five steps in this subsection's order (`:475`), `validate_tree` enforces the
+three requirements a bundle has, `deactivate` (`:531`) and `delete` (`:552`)
+are the two operations this subsection refuses to conflate, `prune` (`:582`)
+keeps the current generation and the previous one, and `Store::status` (`:605`)
+is the *"what is installed right now?"* read, answering from the served tree
+with `NO_CUSTOM_BUNDLE` as the named answer for "no bundle active". The module
+contains no HTTP.
+
+**The one step with no code, named precisely.** Step 1's *unpack* is not in the
+tree: `activate` takes an already-staged `.staging-<generation>/` and the
+comment at the head of it says so — *"Step 1 is the operator's or the upload
+path's"*. That is not a shortfall against this subsection, which routes the
+archive-format choice to 10.2 rather than settling it, and against §8.2, which
+gives phase 4 the whole mechanism **except** the request that delivers the
+archive and gives that request to phase 5. The two install paths that exist
+today are both local: an operator stages a tree and an activate operation runs,
+or `startup::discover` picks up a staged directory at start-up. The endpoint
+that exposes the status read likewise belongs to §2 and is still routed in 10.2.
+
+**Two behaviours worth reading back, because both look like something they are
+not.** A `mos-ui.json` that does not parse costs the bundle §4.3's opt-in
+immutable cache class and nothing else — it is not §6.1 class 3, which is the
+recorded **digest** mismatching. And a tree an operator drops into
+`bundles/<n>` by hand and points `current` at has no activation record, so it
+reads as *"active, unchecked"* rather than as corrupt; this subsection writes
+class 3 as the digest *recorded at activation*, so that is in scope by
+construction, and such a tree is still subject to §6.1 classes 1, 2 and 4 at the
+asset router on every request. A **corrupted** record is currently
+indistinguishable from an absent one (`read_record` ends in `.ok()`), which
+lets an operator with a root shell who corrupts both the tree and its record
+escape the start-up check; that is reported, not closed, and belongs to whoever
+next owns this subsection.
 
 **What a bundle IS.** On disk, a **directory tree**. Its requirements:
 
@@ -2080,7 +2257,17 @@ expectation at exactly the moment it should disagree. The read resolves
 The endpoint's path and response shape belong to section 2 and are **not
 specified here**; the requirement is routed in 10.2.
 
-### 5.4 Survives-what — **[proposed]**
+### 5.4 Survives-what — **[implemented]**
+
+**Implemented at `mosd/apid/src/bundle.rs` and `mosd/apid/src/startup.rs`** for
+the row that is load-bearing. The third row's mechanism is the `current`
+symlink under `/srv/ui` on DATA — created by `Store::point_current_at`, removed
+by `Store::deactivate` — and it survives a restart because nothing re-creates
+it: `startup::discover` re-reads the pointer on every start and answers "no
+bundle" when it is absent. Rows 1 and 2 rest on configuration this campaign did
+not change and which is cited in the table itself. **No row's persistence is
+exercised on hardware**, and the A/B and factory-reset columns rest on reading
+`os/rauc/system.conf.in` rather than on a test — §4's note governs.
 
 Same framing, same columns and same honesty as `docs/design/access.md` §10.4
 (`docs/design/access.md:500-508`); this table extends that vocabulary rather
@@ -2089,7 +2276,7 @@ than introducing a second one.
 | What | Reboot | A/B update | Factory reset |
 |---|---|---|---|
 | **Custom UI bundles and the `current` pointer** (`/srv/ui`, DATA) | **yes** | **yes** — RAUC writes only the raw `rootfs` slot and the vfat `boot` slot (`os/rauc/system.conf.in:75-95`) and never touches DATA | **no**. Not implemented today (`docs/design/access.md:318-335`); a whole-disk reflash is the closest real operation, and it replaces DATA with the image's fresh filesystem — with §9.2's precision applying unchanged: blocks beyond the flashed extent are **unreachable, not erased** (`docs/design/access.md:454-459`) |
-| **The built-in UI** (compiled into `/usr/bin/webd`, inside the verity squashfs) | **yes** | **replaced, which is the point** — the new slot carries the new image's built-in UI, and there is no state to migrate because there is no state | **yes** — a reflash writes an image that contains it. This is the one row a factory reset **restores** rather than destroys, and that asymmetry is the whole of section 6 |
+| **The built-in UI** (compiled into `/usr/bin/apid`, inside the verity squashfs) | **yes** | **replaced, which is the point** — the new slot carries the new image's built-in UI, and there is no state to migrate because there is no state | **yes** — a reflash writes an image that contains it. This is the one row a factory reset **restores** rather than destroys, and that asymmetry is the whole of section 6 |
 | **The active/inactive choice alone** (`current` removed, bundles kept on disk) | **yes** | **yes** | **no** — the pointer is on DATA with the bundles it points at |
 
 **The third row is load-bearing.** Section 6.3's escape is the removal of
@@ -2106,7 +2293,12 @@ compatibility check to re-run at apid start-up rather than only at install —
 the first boot into the new slot is the only moment at which anything on the
 device is in a position to notice.
 
-## 6. The safety requirement: the built-in UI and the escape — **[proposed]**
+## 6. The safety requirement: the built-in UI and the escape
+
+Markers are per subsection here too; §4's note on what `[implemented]` means in
+§§4-6, and on the hardware position it must not be read as, governs this
+section unchanged. §6.3's own *"No hardware claim is made anywhere in this
+section"* is unaffected by it and stays true.
 
 > **A device whose custom UI is broken, half-uploaded or incompatible must
 > remain manageable, and the path back must not depend on why it broke.**
@@ -2121,7 +2313,45 @@ management is worse than no customisation at all, and the way to avoid building
 one is to design the mechanism around this requirement rather than to design a
 mechanism and then ask what happens when it fails.
 
-### 6.1 What "broken" covers — **[proposed]**
+### 6.1 What "broken" covers — **[implemented]**
+
+**Implemented across two layers, which is this subsection's own "detected
+when" column.** Classes 1, 2 and 4 are the asset router's, per request, in
+`mosd/apid/src/assets/serve.rs` — `active_root` answers class 1, `serve_index`
+answers class 2 and class 4's index half with the built-in UI, and class 4's
+inner-asset half is a 404 for that file and nothing else. Classes 3 and 5 are
+start-up's, in `mosd/apid/src/startup.rs` — `recheck` re-checks the digest
+recorded at activation and evaluates the declared range against
+`SERVED_API_VERSIONS` as a **set intersection**, deactivating only on an empty
+one and logging the declared range and the served set together. All five
+classes are constructed end to end in `mosd/apid/src/tests/broken_classes.rs`,
+each asserting a distinct state the mechanism reported so that no class can
+pass for another's reason, with the set of classes that ran diffed against the
+set declared.
+
+**The constraint is implemented as a constraint, not as care.**
+`startup::discover` is called from `mosd/apid/src/main.rs:83`, after both
+listeners bind (`:62`, `:66`) and after `APID_LISTENING` is printed (`:72`). It
+has **no error variant**: every outcome — an unreadable disk, a garbage
+manifest, an absent `/srv/ui` — is a `BundleState`, and the work runs on the
+blocking pool so that a panic raised below it arrives as a `JoinError` and
+becomes a state rather than an unwind through `main`.
+
+**The five classes are disjoint as detectors, not as fixtures.** Classes 2 and
+4 are reachable only by a mutation outside the install path, and any such
+mutation also moves the tree off its recorded digest — so a class-2 or class-4
+tree read at the next start-up is class 3, and the device self-heals to the
+built-in UI. That is this subsection's own *"a corruption introduced mid-life is
+detected at the next restart"* doing its job; it is recorded because a suite
+that drove every fixture through start-up would demonstrate class 3 twice and
+report five.
+
+**Class 4's `EACCES` half is not exercised by a root test runner**, which is
+what this repository's checks run as: a mode of `0o000` reads straight through
+`CAP_DAC_OVERRIDE`. The suite verifies its own construction with the same call
+the mechanism makes and substitutes a UNIX socket when the mode did not take,
+and the failed-`open` arm proper was run under `setpriv`. Named rather than
+claimed.
 
 Five classes. The first four are visible in the filesystem; the fifth is not,
 and it is the one that decides the shape of the rest.
@@ -2211,15 +2441,15 @@ log line is what makes the two distinguishable after the fact.
 
 *One constraint on where that evaluation may happen, and it is not negotiable.*
 apid's `main` propagates every startup step with `?` —
-`config::Config::from_env()?` (`mosd/webd/src/main.rs:50`),
-`tls::ensure_state_dir(...)` (`:51`),
-`tls::load_or_generate_certificate(...)?` (`:53`),
-`tls::load_or_generate_session_key(...)?` (`:54`) — all **before** the listeners
-bind at `:59` and `:63`, and the unit is `Restart=on-failure`
-(`mosd/dist/webd.service:9`). A startup error therefore becomes a **crash loop
+`config::Config::from_env()?` (`mosd/apid/src/main.rs:53`),
+`tls::ensure_state_dir(...)` (`:54`),
+`tls::load_or_generate_certificate(...)?` (`:56`),
+`tls::load_or_generate_session_key(...)?` (`:57`) — all **before** the listeners
+bind at `:62` and `:66`, and the unit is `Restart=on-failure`
+(`mosd/dist/apid.service:9`). A startup error therefore becomes a **crash loop
 with no listener bound**, which is precisely the failure this section exists to
 prevent. **Bundle discovery and evaluation must happen after the listeners bind
-and after `WEBD_LISTENING` is printed (`mosd/webd/src/main.rs:69`), and every
+and after `APID_LISTENING` is printed (`mosd/apid/src/main.rs:72`), and every
 possible outcome must be a state the daemon holds, never an error it returns.**
 A bundle must not be able to stop apid from listening. That is the actual safety
 property, and it is stronger than any escape path.
@@ -2229,25 +2459,38 @@ belongs to sections 2 and 3; the shape of the served set is fixed by §2.1's
 `GET /api/versions` and is not re-specified here. This section states the
 **requirement** only, and routes it in 10.2.
 
-### 6.2 The built-in default UI, inside verity — **[proposed]**
+### 6.2 The built-in default UI, inside verity — **[implemented]**
 
-The section is marked **[proposed]** because the *role* proposed for the
-built-in UI — a fallback at a reserved path — does not exist. The artifact and
-the protection described below **do** exist at `86cd669`, and each is cited.
+This subsection was marked **[proposed]** because the *role* proposed for the
+built-in UI — a fallback at a reserved path — did not exist; the artifact and
+the protection described below already did at `86cd669`, and each is cited.
+**The role now exists.** The built-in UI is what the asset router answers with
+whenever a bundle cannot be served — `built_in` in
+`mosd/apid/src/assets/serve.rs`, reached from `root`, from §4.2's condition 5
+and from §6.1 classes 1, 2 and 4 — and it is reachable unconditionally at
+§6.3's reserved prefix, `builtin_home` in `mosd/apid/src/routes.rs:802`. Its
+form is unchanged and is asserted on the image rather than assumed:
+`os/verify-image-v2.sh`'s `check_builtin_ui` (`:341`) requires the deactivate
+form's rendered markup (`:231`) to be present in `/usr/bin/apid`, which is the
+compiled-into-the-binary property checked as an on-image fact rather than as a
+crate test, and `os/ui-location-test.sh` drives that assertion against an input
+in which it is false.
 
 **Where it lives in the image: it is not a directory of files.** At `86cd669`
-the built-in UI is **compiled into the `webd` binary**. The pages are `maud`
-`html!` macro expansions in `mosd/webd/src/routes.rs` (the macro is imported at
-`:14` and used by every page handler), and the only stylesheet is a `&str`
-constant emitted into each `<head>` (`mosd/webd/src/routes.rs:157-165`, `:176`),
-described in the source as *"Inline stylesheet shared by every page; no external
-assets"* (`mosd/webd/src/routes.rs:157`). Section 1.6 evidences the rest: no
+the built-in UI was **compiled into the `webd` binary**; at `0d4f3c6` it is
+compiled into `apid`, because the rename moved the artifact and not its shape.
+The pages are `maud` `html!` macro expansions in `mosd/apid/src/routes.rs` (the
+macro is imported at `:27` and used by every page handler), and the only
+stylesheet is a `&str` constant emitted into each `<head>`
+(`mosd/apid/src/routes.rs:278-285`, `:296`), described in the source as
+*"Inline stylesheet shared by every page; no external assets"*
+(`mosd/apid/src/routes.rs:277`). Section 1.6 evidences the rest: no
 `include_str!`/`include_bytes!`, no `assets/`, `static/` or `public/` directory,
 and no non-Rust file in the crate other than its manifest.
 
 **How it gets there.** `os/rootfs/build-v2.sh:75-76` copies the cross-built
-`webd` binary and its unit into the build context; `os/rootfs/Dockerfile.v2:294`
-installs the binary as `/usr/bin/webd` mode `0755`, `:295` installs the unit,
+`apid` binary and its unit into the build context; `os/rootfs/Dockerfile.v2:294`
+installs the binary as `/usr/bin/apid` mode `0755`, `:295` installs the unit,
 and `:297-299` enables it by symlink and **asserts the symlink exists**. The
 binary is then part of the tree that `os/rootfs/build-v2.sh` packs into the
 squashfs and covers with the dm-verity hash tree
@@ -2259,9 +2502,9 @@ naming which one is load-bearing matters more than the count:
 1. **Load-bearing: dm-verity.** `/` is a squashfs assembled by the kernel from
    `dm-mod.create=` and mounted read-only, with no fstab entry that could remount
    it (`os/rootfs/overlay-v2/etc/fstab.in:7-9`, `docs/design/ro-root.md:239`). A
-   write to `/usr/bin/webd` fails at the block layer, not at a permission check.
+   write to `/usr/bin/apid` fails at the block layer, not at a permission check.
    **This holds even though apid runs as root** — the unit sets no `User=`
-   (`mosd/dist/webd.service:1-13`), so root is exactly what would be writing,
+   (`mosd/dist/apid.service:1-13`), so root is exactly what would be writing,
    and it still cannot. Nothing an operator uploads can reach the built-in UI,
    because nothing on the running system can.
 2. **Real but not load-bearing: the bundle root is on a different filesystem.**
@@ -2269,13 +2512,13 @@ naming which one is load-bearing matters more than the count:
    4.4's canonicalise-and-assert bounds the *read* path to the same resolved
    tree.
 3. **Absent, and named as absent: there is no systemd sandboxing.**
-   `mosd/dist/webd.service:6-10` is the entire `[Service]` section — `Type=`,
+   `mosd/dist/apid.service:6-10` is the entire `[Service]` section — `Type=`,
    `ExecStart=`, `Restart=`, `StateDirectory=`. No `ProtectSystem=`, no
    `ReadWritePaths=`, no `ReadOnlyPaths=`. So layer 1 is not merely the
    strongest layer, it is the **only** one protecting the binary, and off a
    verity root there is nothing at all — which is not hypothetical, because
-   `WEBD_STATE_DIR` exists precisely so the daemon runs off-device
-   (`mosd/webd/src/config.rs:38-40`) and that is how the crate's tests run. This
+   `APID_STATE_DIR` exists precisely so the daemon runs off-device
+   (`mosd/apid/src/config.rs:38-40`) and that is how the crate's tests run. This
    is a real gap; it is routed in 10.2 rather than counted as covered here.
 
 **What we ship, and what we deliberately do not.** mos builds **no JavaScript
@@ -2298,7 +2541,30 @@ working forever is the one with no build chain**, and guaranteeing that for
 something we did not build and cannot rebuild would be a promise with no
 mechanism behind it.
 
-### 6.3 The deterministic way to reach it — **[proposed]**
+### 6.3 The deterministic way to reach it — **[implemented]**
+
+**Implemented at `mosd/apid/src/routes.rs`** — candidate (A) is
+`.nest(BUILTIN, …)` at `:115-125`, which claims the **whole** `/builtin`
+subtree, its own not-found handler included, and is unshadowable for exactly
+the structural reason `/api/` is; candidate (B) is the deactivate control the
+pane carries, `builtin_deactivate` behind `POST /builtin/deactivate`
+(`:122`, `:851`), which performs §5.3's deactivate. The two together are the
+chosen mechanism, and both spellings answer: `nest` claims the bare `/builtin`
+and **not** `/builtin/`, so the trailing-slash spelling — the one this document
+writes — is declared outside the nest at `:125`. An operator recovering a
+device should not have to get the slash right. The escape is driven from every
+one of §6.1's five classes, identically and without diagnosis, by
+`mosd/apid/src/tests/broken_classes.rs`, and the shadowing guard is fired in
+both directions as a standing test. On the image, `os/verify-image-v2.sh`'s
+`check_builtin_ui` (`:341`) asserts two facts the escape depends on: the packed
+read-only root ships **nothing** at or under `/builtin`, so the prefix has not
+grown a second, separately-built on-disk half; and the deactivate form's
+rendered markup (`:231`) is present in `/usr/bin/apid`, which is true if and
+only if the pane is compiled into the binary. Both are guard-fired against a
+mutated input by `os/ui-location-test.sh`.
+
+The deactivate control is **POST only** — no `GET` handler exists — so no
+prefetch, crawler or mis-clicked link can deactivate a working custom UI.
 
 The requirement, restated as a test the mechanism must pass:
 
@@ -2320,9 +2586,17 @@ because of how dispatch works rather than because of a check.
 - **Class 5: yes, by definition.** Class 5 means the UI *renders*, so the
   listener is up and the prefix answers.
 - **Costs.** It burns a path prefix permanently, and it only helps an operator
-  who knows the URL. Mitigations: the built-in error pages already exist
-  (`mosd/webd/src/routes.rs:106-116`) and can name the path, and it is
-  documented. The cost that must not be glossed: **(A) is a way *in*, not a way
+  who knows the URL. The mitigation proposed here — that the built-in error
+  pages *"already exist and can name the path"* — **is the one surface that
+  cannot carry it**, and RFCT-075 measured why: the crate's only error page is
+  `bus_error` (`mosd/apid/src/routes.rs:226-236`), reached when a mosd call
+  fails, and `gate` calls `get_settings("access")` on every path but `/healthz`
+  *before* dispatch — so at the moment that page is on screen, `/builtin/` is
+  answering 502 for the same reason, and naming the prefix there would advertise
+  a path that is down. The prefix is instead named on the three built-in
+  surfaces an operator with a broken custom UI actually reaches: the sign-in
+  page (`mosd/apid/src/routes.rs:630`), the navigation on every built-in pane
+  (`:311`), and the reserved subtree's own 404 (`:916`). The cost that must not be glossed: **(A) is a way *in*, not a way
   *out*.** It deactivates nothing, so the next navigation to `/` is broken
   again.
 
@@ -2361,7 +2635,7 @@ because a comfortable one here would be worthless:
 
 - **Under this design, a bad bundle cannot take the listener down.** 6.1's
   constraint puts bundle discovery and evaluation *after* the listeners bind
-  (`mosd/webd/src/main.rs:59-69`) and makes every bundle outcome a state rather
+  (`mosd/apid/src/main.rs:62-72`, `:83`) and makes every bundle outcome a state rather
   than an error return. So the realistic causes of an unreachable API — a crash
   loop, a bind failure, a network misconfiguration — are **not caused by the UI
   mechanism**. That is the actual safety claim, and it is stronger than any
@@ -2391,10 +2665,10 @@ file, or of a design document, and each is cited as such.
 ### 6.4 Why this is the same reasoning that split mosd and apid — **[implemented]**
 
 The marker refers to the split itself, which exists: two units
-(`mosd/dist/mosd.service:8` → `/usr/bin/mosd`, `mosd/dist/webd.service:8` →
-`/usr/bin/webd`), two binaries installed separately by the image
+(`mosd/dist/mosd.service:8` → `/usr/bin/mosd`, `mosd/dist/apid.service:8` →
+`/usr/bin/apid`), two binaries installed separately by the image
 (`os/rootfs/Dockerfile.v2:285` and `:294`), ordered `After=network.target
-mosd.service` (`mosd/dist/webd.service:3`). What this subsection adds is the
+mosd.service` (`mosd/dist/apid.service:3`). What this subsection adds is the
 argument, not a mechanism.
 
 **The reasoning is recorded in `docs/design/dashboard.md` §6 — cited here and
@@ -2416,16 +2690,17 @@ not merge."* (`docs/design/dashboard.md:2198-2199`).
 
 *(dashboard.md's own inline line numbers there — `main.rs:57-63`, `:53-56`,
 `routes.rs:95-105` — no longer resolve at `86cd669`; the current ones are
-`mosd/mosd/src/main.rs:57-60` and `:67`, and `mosd/webd/src/routes.rs:106-116`.
+`mosd/mosd/src/main.rs:57-60` and `:67`, and `mosd/apid/src/routes.rs:226-236`
+as of `0d4f3c6`.
 Section 1.7 records the same kind of drift for the research inventory. The code
 is the fact.)*
 
 **The principle, stated once: the component that explains a failure must not be
 the component that failed.** dashboard.md applies it to processes — mosd may
 exit hard *because* apid is a different process and survives to render the 502
-page *"The management daemon is unavailable."* (`mosd/webd/src/routes.rs:106-116`,
+page *"The management daemon is unavailable."* (`mosd/apid/src/routes.rs:106-116`,
 reachable because the bus client connects lazily and drops its cache on error,
-`mosd/webd/src/bus_client.rs:23-26`, `:42-59`).
+`mosd/apid/src/bus_client.rs:23-26`, `:42-59`).
 
 **Section 6 applies the same principle one layer up, to the UI.** The custom UI
 may fail *because* the built-in UI is a different artifact with a different
@@ -3045,6 +3320,14 @@ phase at which every cost in §9 starts being paid rather than contemplated.
 
 #### Phase 4 — static hosting and the custom-UI lifecycle, with no upload route
 
+**This phase has landed.** It was executed as campaign
+`l1-o7ee8v0o-20260820142702-ui` and merged at `0d4f3c6`. §§4, 5 and 6 carry
+per-subsection `[implemented]` markers naming the code, and §4's note there
+states what those markers do and do not claim — in particular that none of this
+is exercised on hardware. The paragraphs below are kept as written, with what
+the implementation settled differently recorded beside each claim rather than
+substituted for it.
+
 **What ships.** §4, §5 and §6 in their entirety, **except** the request that
 delivers the archive. Concretely: the asset router mounted as the HTTPS
 router's fallback so that declared routes win structurally (§4.1 rule 1); the
@@ -3063,12 +3346,15 @@ multipart handler, no archive dependency, no new network-reachable write.
 
 **§6.1's constraint is part of the scope and not an implementation detail.**
 Bundle discovery and evaluation must happen **after** the listeners bind and
-after `WEBD_LISTENING` is printed (`mosd/webd/src/main.rs:59`, `:63`, `:69`),
-and every bundle outcome must be a state the daemon holds rather than an error
-it returns — because `main` propagates startup steps with `?`
-(`mosd/webd/src/main.rs:50-54`) under `Restart=on-failure`
-(`mosd/dist/webd.service:9`), so a bundle that could fail startup would produce a
-crash loop with no listener bound.
+after the startup marker is printed, and every bundle outcome must be a state
+the daemon holds rather than an error it returns — because `main` propagates
+startup steps with `?` (`mosd/apid/src/main.rs:53-57`) under
+`Restart=on-failure` (`mosd/dist/apid.service:9`), so a bundle that could fail
+startup would produce a crash loop with no listener bound. **The marker is
+`APID_LISTENING`, not `WEBD_LISTENING` as this phase and §6.1 were written**;
+the rename moved the string as well as the paths. As landed, the two binds are
+`mosd/apid/src/main.rs:62` and `:66`, the marker is printed at `:72`, and
+`startup::discover` is called at `:83` with no error variant to propagate.
 
 **What an operator can do that they could not before.** Ship their own UI. For
 the population that has SSH — which per §7.2 is root — this is the whole
@@ -3091,6 +3377,32 @@ feature, delivered without a single new network-reachable write path.
    only `v2`, deactivates itself on first boot into the new slot and says why —
    §6.1 class 5, which §5.4 records is the one failure no file-level property
    can see.
+
+**How the four acceptances were met, and by what.** Recorded because an
+acceptance is worth what its evidence is worth:
+
+1. Met by `mosd/apid/src/tests/broken_classes.rs`: each of §6.1's five classes
+   is constructed end to end, the one navigation to `/builtin/` reaches a
+   working UI from every one of them, the control there deactivates the bundle,
+   each class asserts a **distinct** state the mechanism reported so none can
+   pass for another's reason, and the set of classes that ran is diffed against
+   the set declared. Class 4's `EACCES` arm needs a non-root runner and was run
+   under `setpriv`; the repository's own checks run as root.
+2. Met by `mosd/apid/src/assets/path.rs`'s per-guard suite, in this repository
+   and not in a dependency's. `/%252e%252e%2fetc%2fpasswd` is a 404 by an
+   explicit rejection rather than by a miss — see §4.4's two rejections beyond
+   the five rules.
+3. Met at the **header** level only: the three cache classes and `nosniff` are
+   asserted on every asset response
+   (`mosd/apid/src/assets/mime.rs`, `mosd/apid/src/tests.rs`). No browser was
+   driven, so what is proved is that the headers the criterion rests on are the
+   ones sent.
+4. Met by re-evaluating an activated bundle against a **different** served set —
+   `evaluate` takes the set as a parameter for exactly this case — so the
+   deactivation and the log line carrying both sets are proved. **No A/B update
+   was performed**: no image was built for a second served set and no
+   `rauc install` ran. The mechanism is proved; the update that would exercise
+   it is not.
 
 **What is explicitly still missing.** Installing a UI **without** a shell —
 which means without SSH, which is off by default
@@ -3553,16 +3865,36 @@ what it owes. Nothing here is edited by this document.
 
 **To the API sections this task does not own (RFCT-064, §2 and §3)**
 
+Three of the five below were owed to §8.2 phase 4 and are discharged; each says
+so rather than sitting as an open debt, because an item that is done and still
+reads as owed costs its next reader the work of finding that out.
+
 - §2.4 — the **404 body for the `/api/` subtree fallback** that §4.1 rule 1
   requires: a mistyped API path must return the API error envelope, not an
-  empty body and never HTML.
+  empty body and never HTML. **Discharged at `0d4f3c6`** —
+  `mosd/apid/src/routes.rs:171-188` answers the whole reserved subtree with
+  §2.4's envelope and `Cache-Control: no-store`. §2.4's optional `path` field is
+  omitted deliberately: it is the settings dot-path at fault and a request that
+  matched no route has none, so the requested path is carried in `message`.
 - §2.1 — the **API version token** §6.1 class 5 needs, for both the manifest
   range check at activation and the mandatory re-check at apid start-up.
+  **Discharged as a value, not as a route**: the served set is
+  `SERVED_API_VERSIONS` in `mosd/apid/src/startup.rs`, with `CURRENT_API_VERSION`
+  asserted to be a member of it, and both the activation check and the start-up
+  re-check take it. `GET /api/versions` itself is still not declared — it is an
+  unauthenticated endpoint and therefore an authentication decision phase 2
+  reviews as a set — and the reservation 404s it meanwhile. Whoever lands that
+  route serves this constant rather than a second copy of it.
 - §2.3 — the **version handshake a client sends**, which §6.1 names as the
   detector that makes a class-5 failure legible rather than confusing.
 - §2.2/§2.3 — the **"what is installed right now?" read** §5.3 specifies the
   semantics of but not the shape: it must answer from the served tree and must
-  have a named answer for "no bundle active".
+  have a named answer for "no bundle active". **The semantics have landed and
+  the shape has not** — `Store::status` in `mosd/apid/src/bundle.rs:605` answers
+  from the served tree and `NO_CUSTOM_BUNDLE` is the named answer; no endpoint
+  exposes it. Note for whoever writes that endpoint: `status()` hashes the whole
+  tree and must not be called per request, which is why the asset router uses
+  `active_generation()` instead.
 - §2.3/§3 — the **bundle upload operation** itself: §5.3 specifies the on-disk
   mechanism and says nothing about the request that drives it.
 
@@ -3581,12 +3913,15 @@ what it owes. Nothing here is edited by this document.
 **To the crate and the image** — product code, none of which this campaign
 changes
 
-- `mosd/webd/Cargo.toml` (`mosd/apid/Cargo.toml` after the rename) — the
-  **static-file dependency decision**: adopt `tower-http` with the `fs` feature,
-  or hand-roll. §4.4 requires that whichever is chosen, the version is pinned
-  exactly and the traversal behaviour is asserted by a test **in this
-  repository**, because `build_and_validate_path` is private and carries no
-  stability promise.
+- `mosd/apid/Cargo.toml` — the **static-file dependency decision**: adopt
+  `tower-http` with the `fs` feature, or hand-roll. §4.4 requires that whichever
+  is chosen, the version is pinned exactly and the traversal behaviour is
+  asserted by a test **in this repository**, because `build_and_validate_path`
+  is private and carries no stability promise. **Decided at `0d4f3c6`:
+  hand-rolled.** No dependency was added, `tower-http` is still not a dependency
+  of the crate, and the traversal suite is in this repository
+  (`mosd/apid/src/assets/path.rs`). The pinning half of the requirement is
+  therefore moot rather than met.
 - `mosd/webd/Cargo.toml` — the **archive-format dependency** for §5.3's upload
   transport. `mosd/deny.toml` bans no C-building crate and `mosd/hack/check.sh:9`
   checks only licenses, bans and advisories, so the pure-Rust posture here is
@@ -3600,14 +3935,29 @@ changes
 - `mosd/mosd-settings/src/model.rs` — **only if** §6.3's deactivate is
   implemented as a settings flag rather than as the removal of the `current`
   pointer. `docs/design/access.md:468-474` applies either way: *"An unmodelled
-  setting is an unsupported setting."*
+  setting is an unsupported setting."* **Discharged as not owed**: deactivate
+  landed as the removal of the pointer (`Store::deactivate`), so no setting was
+  added and none is owed.
 - `os/rootfs/overlay-v2/usr/lib/mos/` — **no seed unit is proposed** for
   `/srv/ui` (§5.2 explains why). If one is ever added, its owner uid must be
-  pinned by number for the reason `mos-seed-home:24-30` documents.
-- `os/verify-image-v2.sh` — no new assertion is proposed: `/srv` as a mountpoint
-  (`:1277-1281`) and the DATA fstab entry (`:1425`) are already asserted, and
-  those are what §5.2 depends on. An assertion becomes owed only if the image
-  ever ships something under `/srv/ui`.
+  pinned by number for the reason `mos-seed-home:24-30` documents. **Discharged
+  as confirmed**: phase 4 added no seed unit and no ninth bind, and the store
+  creates its root lazily on first activation. The conditional stands for
+  whoever ever adds one.
+- `os/verify-image-v2.sh` — no new assertion was proposed here: `/srv` as a
+  mountpoint (`:1277-1281`) and the DATA fstab entry (`:1425`) are already
+  asserted, and those are what §5.2 depends on. **Superseded at `0d4f3c6`, and
+  the reasoning it was superseded by is worth keeping.** Those three facts are
+  about `/srv` **as a partition** and would go on passing after somebody moved
+  the UI root to `/var/lib`, so they do not assert §5.2's location at all.
+  `check_ui_location` (`:254`) and `check_builtin_ui` (`:341`) were added for
+  that, pinning `/srv/ui` as the root and §6.3's prefix and deactivate form as
+  facts about `/usr/bin/apid`; every one of them is driven against an input in
+  which its fact is false by `os/ui-location-test.sh`, because an assertion
+  nobody has seen fail is consistent with an assertion that cannot fail. The
+  original conditional — an assertion becomes owed if the image ever ships
+  something under `/srv/ui` — is still open, and the image still ships
+  nothing there.
 
 ### 10.3 From trust and phasing
 
@@ -3621,6 +3971,19 @@ unable to tell whether it was handled or lost. Each names what was
 contradictory, which of the admissible resolutions was taken, where the resolved
 text now lives, and what remains owned elsewhere. All claims were measured at
 `86cd669`.
+
+**Both sentences above are bound to the period they were written in, and an
+entry appended after that period carries its own descriptors rather than
+inheriting them.** So: **an entry added after this section was written names its
+own source section and its own measurement commit, inline.** The scope sentence
+above describes items 1 to 14 and the measurement at `86cd669` is theirs; a
+later campaign that finds something §7, §8 and §9 did not, and measures it on a
+tree §10.3's author never saw, is not covered by either and does not need them
+restated. This is the same shape §1.1 uses for a re-measured claim — the
+original preserved as a true statement about when it was made, with a second
+period beside it. It also settles where such an entry sits: appended at the end
+is the region a reader scans as routed work, and it does not need to move,
+because it says what it is measured at where it is read.
 
 1. **Contradiction — §2.1 and §4.1 disagree about whether today's paths are
    unchanged.** §2.1: *"The nineteen existing paths (section 1.2) keep their
@@ -3904,3 +4267,47 @@ text now lives, and what remains owned elsewhere. All claims were measured at
     moving off the API path, and the same-origin half is accepted and named
     (§3.3 attack 5). The two quoted sentences in §9 item 8 that attribute the
     cookie mint to an `/api/v1/` path describe a draft §3.2 no longer contains.
+
+15. **§0 claims this document reuses access.md's marker convention "in the same
+    form", and it does not. Measured at `0d4f3c6` by this entry, which is
+    §10.3's first appended after the boundary above; its source section is §0
+    and not §7, §8 or §9.** `api.md:14-15` states the convention is
+    `docs/design/access.md` section 0 *"reused here in the same form"*.
+    `docs/design/access.md:27-33` lists **four** markers — `[implemented]`,
+    `[partial]`, `[not implemented]`, `[decided]`. `api.md:18-20` lists
+    **three** — `[implemented]`, `[proposed]`, `[not implemented]`. **Two of
+    the four overlap.** api.md **dropped** `[partial]` and `[decided]`, and
+    **added** `[proposed]`. A sentence asserting sameness is therefore false,
+    in a document whose entire discipline is that a claim must be checkable
+    against something.
+
+    **The divergence is not cosmetic, and the missing marker is the reason this
+    entry exists rather than a footnote.** `[partial]` is the marker a
+    subsection that landed only in part would carry, and §§4, 5 and 6 have
+    none: under this campaign's merge gates a task that lands short is returned
+    to working rather than merged, so a partial subsection would mean something
+    merged that should not have — a defect to raise, not a label to apply. A
+    pass that met one and reached for `[partial]` would let a gate failure be
+    recorded as a documentation state, and a pass that invented a fourth marker
+    would be amending §0 while applying it. The absence is load-bearing; the
+    claim of sameness is what hides that it was a choice.
+
+    **The action owed, and it is one of exactly two.** *Either* the two forms
+    are reconciled — api.md adopts `[partial]` and `[decided]`, or §0 states
+    that it takes a named subset of access.md's set — *or* §0 stops claiming
+    sameness and states the divergence as **deliberate**, saying why
+    `[proposed]` exists here (most of this document proposes rather than
+    records) and why `[partial]` deliberately does not. Whoever next edits §0
+    owns the choice; it is not made here.
+
+    **Why it is not made here, stated so the omission is not read as an
+    oversight.** This pass applies the convention across §§4-6, and a pass that
+    also rewrote the section governing its own work would have written §0 with
+    nobody left to review it. That is the failure RFCT-067 refused for §9 item
+    8, and it is refused here for the same reason.
+
+    **One smaller thing for the same editor.** `api.md:15`'s citation of the
+    convention is `docs/design/access.md:23-30`, which spans the heading, the
+    lead-in sentence and the first three list items; the four-item list is
+    `:27-33`. Whichever resolution is taken, that citation wants re-pointing
+    with it.
