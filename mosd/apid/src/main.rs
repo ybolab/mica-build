@@ -21,6 +21,7 @@
 #![forbid(unsafe_code)]
 
 mod auth;
+mod bundle;
 mod bus_client;
 mod config;
 mod routes;
