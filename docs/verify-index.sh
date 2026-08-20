@@ -55,7 +55,13 @@ check_readme_dir() {
     for f in "docs/$dir"/*.md; do
         base=$(basename "$f")
         case "$base" in *.zh.md) continue ;; esac
-        if readme_entries_under "$dir" | grep -qxF -- "$base"; then
+        # `grep -xF ... >/dev/null`, not `grep -qxF`: with -q grep exits the
+        # moment it matches, readme_entries_under's awk takes SIGPIPE, and the
+        # `set -euo pipefail` at :22 turns that 141 into a dead run -- no
+        # verdict line, no FAIL line, just a non-zero exit that reads as a
+        # crash. Without -q grep reads to EOF, so there is no early exit for
+        # the producer to be signalled by, and the exit status is the same.
+        if readme_entries_under "$dir" | grep -xF -- "$base" >/dev/null; then
             ok
         else
             fail "docs/$dir/$base exists but is not indexed in $README"

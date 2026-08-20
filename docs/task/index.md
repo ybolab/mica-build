@@ -100,3 +100,4 @@ Each task is a single line linking to its detail file. All detailed information 
 - [x] [**RFCT-075 The built-in UI at a reserved prefix, and the escape**](RFCT-075.md) `P1`
 - [x] [**RFCT-080 Close the duplicate-row hole in the index verifier, and sweep the `sort -u` shape**](RFCT-080.md) `P1`
 - [x] [**RFCT-076 Start-up bundle discovery and the compatibility re-check**](RFCT-076.md) `P1`
+- [x] [**RFCT-077 Verifier assertions for the built-in prefix, fixture-mode widening, and the SIGPIPE sweep**](RFCT-077.md) `P1`

@@ -84,9 +84,10 @@ os-repart-test:
 
 # Drives the real os/verify-image-v2.sh against mutated fixtures -- an fstab
 # with /srv moved onto EPHEMERAL or STATE, one stripped of x-systemd.growfs, one
-# with a deeper /srv/ui entry, a root tree with a UI bundle BAKED under /srv/ui
-# -- and requires each custom-UI assertion to fail, with its own message rather
-# than merely a non-zero exit.
+# with a deeper /srv/ui entry, a root tree with a UI bundle BAKED under /srv/ui,
+# an asset tree shipped at the reserved /builtin prefix, an apid binary that no
+# longer carries the built-in escape page -- and requires each assertion to
+# fail, with its own message rather than merely a non-zero exit.
 #
 # It proves what the image contract cannot: that those assertions can fail at
 # all. os-verify-cx3576-v2 runs them against the assembled image and they pass,
@@ -95,12 +96,21 @@ os-repart-test:
 # would go on passing after somebody moved the UI root to /var/lib, taking every
 # custom UI on every device with it.
 #
-# Two cases deliberately expect ALL SIX to pass: the unmutated baseline, and a
-# tree with /srv removed. The second is the proof that mountpoint existence is
-# CHAINED to the mountpoint-exists check rather than re-derived -- a UI
-# assertion that also fired there would be a parallel copy adding a line and no
-# coverage. Needs no root, no image and no docker, and it fails loudly when it
-# cannot run rather than skipping.
+# Fixture mode also runs the packed-root mountpoint check the custom-UI
+# assertions CHAIN to, and the /srv-absent case requires that check to go red
+# with its own message. Six UI passes alone prove only that they do not
+# RE-DERIVE mountpoint existence; they do not prove anything still catches a
+# missing /srv, and from outside the two look the same. That check had only
+# ever been observed passing, because it runs against real images where /srv is
+# always there.
+#
+# Every case names the assertions it expects BY IDENTITY and the harness diffs
+# that against what ran. It does not count PASS lines: a count breaks whenever
+# fixture mode is widened, and the obvious repair -- exit 0 with no FAIL lines
+# -- is invariant under a run in which nothing executed, which would silently
+# turn the /srv-absent case from a proof of chaining into a proof of nothing.
+# Needs no root, no image and no docker, and it fails loudly when it cannot run
+# rather than skipping.
 os-ui-location-test:
 	bash os/ui-location-test.sh
 

@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
-# Negative tests for the custom-UI location assertions in os/verify-image-v2.sh
-# (docs/design/api.md section 5.2: a customer's UI bundles live at /srv/ui, on
-# DATA, with no bind and no seed unit).
+# Negative tests for the assertions os/verify-image-v2.sh runs in fixture mode:
+# the custom-UI location (docs/design/api.md section 5.2 -- a customer's UI
+# bundles live at /srv/ui, on DATA, with no bind and no seed unit), section
+# 6.2's built-in escape as an on-image fact, and the packed-root mountpoint
+# check that the first of those CHAINS to.
 #
 #   bash os/ui-location-test.sh
 #
@@ -23,10 +25,23 @@
 #
 # The baseline fixture is not hand-written either: it is the SHIPPED
 # os/rootfs/overlay-v2/etc/fstab.in rendered with the SHIPPED
-# os/layout/cx3576-v2.env, exactly as os/rootfs/build-v2.sh renders it, with one
-# directory per mountpoint the rendered file names. Every case then MUTATES that
-# baseline. Mutating an fstab this script had authored would prove only that the
-# script can spell.
+# os/layout/cx3576-v2.env, exactly as os/rootfs/build-v2.sh renders it, plus the
+# directories and the binary stand-in new_fixture documents below -- every one
+# of them derived from the verifier's own constants. Every case then MUTATES
+# that baseline. Mutating an fstab this script had authored would prove only
+# that the script can spell.
+#
+# WHAT EACH CASE ASSERTS, AND WHY IT IS NOT A COUNT. Every case names the
+# assertions it expects to have run, BY IDENTITY, and the harness diffs that set
+# against the set that actually ran. It does not count PASS lines and it does
+# not settle for absence-of-failure. Both of those are invariant under a run in
+# which the assertions never executed at all -- and this file has a case,
+# "/srv absent from the tree", whose entire content is that six assertions still
+# PASSED. Under a count that case survives the count being wrong; under
+# absence-of-failure it survives the assertions not running. Under an identity
+# diff it survives neither, and the next task to widen fixture mode adds a name
+# to ASSERTIONS below instead of editing a number that was always going to
+# break.
 #
 # No root, no image, no docker, nothing outside a temp dir. It fails loudly when
 # it cannot run rather than skipping.
@@ -47,6 +62,24 @@ for key in DATA_GUID STATE_GUID EPHEMERAL_GUID META_GUID; do
     [ -n "${value}" ] || { echo "error: ${LAYOUT_ENV} is missing ${key}" >&2; exit 1; }
 done
 
+# Read out of the verifier rather than restated here. A fixture built from this
+# file's own idea of the reserved prefix, the binary path or the mountpoint set
+# would test that idea and not the verifier's; the same reason the fstab below
+# is rendered from the SHIPPED template rather than hand-written.
+verifier_const() {
+    local name="$1" quote="$2" value
+    value="$(sed -n "s/^${name}=${quote}\(.*\)${quote}\$/\1/p" "${VERIFIER}")"
+    [ -n "${value}" ] || {
+        echo "error: ${VERIFIER} no longer defines ${name}; this test cannot build a fixture without it" >&2
+        exit 1
+    }
+    printf '%s' "${value}"
+}
+BUILTIN_PREFIX="$(verifier_const BUILTIN_PREFIX '"')"
+BUILTIN_MARKUP="$(verifier_const BUILTIN_MARKUP "'")"
+APID_BIN="$(verifier_const APID_BIN '"')"
+PACKED_MOUNTPOINTS="$(verifier_const PACKED_MOUNTPOINTS '"')"
+
 WORK="$(mktemp -d)"
 trap 'rm -rf "${WORK}"' EXIT
 
@@ -61,9 +94,16 @@ lower() { printf '%s' "$1" | tr '[:upper:]' '[:lower:]'; }
 # they are there.
 SRV_LINE="PARTUUID=$(lower "${DATA_GUID}")	/srv	ext4	noatime,x-systemd.growfs	0	2"
 
-# Renders the shipped template into ${1}/etc/fstab and creates one directory per
-# mountpoint it names -- the packed read-only root's own contract, since nothing
-# can create a mountpoint at runtime on a verity root.
+# Renders the shipped template into ${1}/etc/fstab and builds the rest of the
+# packed read-only root's own contract, since nothing can create any of it at
+# runtime on a verity root:
+#
+#   * one directory per mountpoint the rendered fstab names;
+#   * one directory per name in the verifier's PACKED_MOUNTPOINTS -- a superset,
+#     because /home and /root are STATE binds owned by mount units and fstab
+#     never names them;
+#   * ${APID_BIN}, carrying the escape page's rendered markup, which is what
+#     section 6.2 says the shipped binary is.
 new_fixture() {
     local dir="$1"
     rm -rf "${dir}"
@@ -82,6 +122,11 @@ new_fixture() {
     while read -r mnt; do
         mkdir -p "${dir}${mnt}"
     done < <(awk '$0 !~ /^[[:space:]]*#/ && NF >= 4 && $2 ~ /^\// {print $2}' "${dir}/etc/fstab")
+    for mnt in ${PACKED_MOUNTPOINTS}; do
+        mkdir -p "${dir}${mnt}"
+    done
+    mkdir -p "${dir}$(dirname "${APID_BIN}")"
+    printf 'ELF-stand-in%sELF-stand-in' "${BUILTIN_MARKUP}" >"${dir}${APID_BIN}"
 }
 
 # Rewrites the fstab line whose mountpoint is $2 in fixture $1, replacing the
@@ -104,45 +149,164 @@ run_verifier() {
     MOS_VERIFY_FIXTURE_ROOT="$1" bash "${VERIFIER}" >"${WORK}/out" 2>&1 || RC=$?
 }
 
-# The positive control. Six assertions, all passing, exit 0.
-expect_all_pass() {
-    local name="$1" got_pass got_fail
-    run_verifier "${FIX}"
-    got_pass="$(grep -c '^PASS:' "${WORK}/out" || true)"
-    got_fail="$(grep -c '^FAIL:' "${WORK}/out" || true)"
-    if [ "${RC}" -eq 0 ] && [ "${got_fail}" -eq 0 ] && [ "${got_pass}" -eq 6 ]; then
-        pass "${name}: 6 assertions, all pass, exit 0"
-    else
-        fail "${name}: expected 6 PASS / 0 FAIL / exit 0, got ${got_pass} PASS / ${got_fail} FAIL / exit ${RC}"
-        sed 's/^/    | /' "${WORK}/out"
-    fi
-}
+# ---------------------------------------------------------------------------
+# The expected set, by identity.
+#
+# One row per assertion fixture mode runs, as
+#
+#     key | substring identifying its PASS line | its FAIL line | baseline state
+#
+# An empty third field means the two directions share one substring, which is
+# true of every assertion written in RFCT-073's "catches ..." register: the name
+# is the same whichever way it went, and only the explanation after the colon
+# differs. The packed-root mountpoint check predates that register and says two
+# different things, so it spells both out -- and the FAIL substring is the one
+# that gives it its first failing observation.
+#
+# The baseline state is what the UNMUTATED fixture must produce. It is PASS for
+# everything except the no-covering-entry assertion, which only exists on
+# check_ui_location's early-return path and can therefore never PASS: on that
+# path the six that follow it do not run at all, and asserting them ABSENT is
+# how this file states that the early return is real.
+ASSERTIONS='
+ui-off-data|catches a custom UI root moved off DATA||PASS
+ui-on-state|catches a custom UI root moved onto STATE||PASS
+ui-on-ephemeral|catches a custom UI root moved onto the wipeable /var partition||PASS
+ui-unasserted-mountpoint|catches a custom UI root under an unasserted mountpoint||PASS
+ui-fixed-ceiling|catches a custom UI root with a fixed ceiling||PASS
+ui-content-baked|catches content baked under the custom UI root||PASS
+ui-no-filesystem|catches a custom UI root with NO filesystem under it||ABSENT
+builtin-on-disk|catches a built-in escape that has grown an on-disk half||PASS
+builtin-in-binary|catches a built-in escape that is no longer inside the binary||PASS
+mountpoints-exist|every fstab/bind mountpoint exists in the read-only root|mountpoint(s) missing from the read-only root|PASS
+'
 
-# The negative direction. $2 is how many assertions must fire -- stated rather
-# than inferred, since two substrings can legitimately belong to one message --
-# and every remaining argument is a substring that must appear in a FAIL line.
-# An EXTRA assertion firing is a failure of this test, not a bonus. Matching the
-# message rather than only the exit status is the whole point: an assertion that
-# fired for an unrelated reason is not the assertion under test.
-expect_fail() {
-    local name="$1" want="$2"
+# Drives the verifier over ${FIX} and asserts the set of assertions that ran,
+# by name and by direction.
+#
+#   expect_set "<case name>" "<overrides>" [<substring> ...]
+#
+# $2 is a space-separated list of key=PASS|FAIL|ABSENT deltas from the baseline
+# states above; "" means the baseline unchanged. Every remaining argument is a
+# substring that must appear in some FAIL line -- kept from the old harness,
+# because identity says WHICH assertion fired and these say the message carried
+# the right particulars.
+#
+# The exit status is DERIVED rather than stated: a case expecting any FAIL
+# requires a non-zero exit and a case expecting none requires zero. That keeps
+# the old control without a second thing to hand-maintain.
+expect_set() {
+    local name="$1" overrides="$2"
     shift 2
-    local got_fail pat unmatched=0
-    run_verifier "${FIX}"
-    got_fail="$(grep -c '^FAIL:' "${WORK}/out" || true)"
-    for pat in "$@"; do
-        grep -F -- "${pat}" "${WORK}/out" | grep -q '^FAIL:' || {
-            unmatched=1
-            echo "    | no FAIL line contains: ${pat}"
+
+    local -A want=() got=() ppat=() fpat=()
+    local key p f base row
+    while IFS='|' read -r key p f base; do
+        [ -n "${key}" ] || continue
+        ppat["${key}"]="${p}"
+        fpat["${key}"]="${f:-${p}}"
+        want["${key}"]="${base}"
+        got["${key}"]=ABSENT
+    done <<<"${ASSERTIONS}"
+
+    local over state
+    for over in ${overrides}; do
+        key="${over%%=*}"
+        state="${over#*=}"
+        [ -n "${ppat[${key}]:-}" ] || {
+            echo "error: case '${name}' overrides unknown assertion '${key}'" >&2
+            exit 1
         }
+        want["${key}"]="${state}"
     done
-    if [ "${RC}" -ne 0 ] && [ "${got_fail}" -eq "${want}" ] && [ "${unmatched}" -eq 0 ]; then
-        pass "${name}: ${want} assertion(s) fail, each with its own message, exit ${RC}"
-        grep '^FAIL:' "${WORK}/out" | sed 's/^/    | /'
-    else
-        fail "${name}: expected ${want} FAIL line(s) and a non-zero exit, got ${got_fail} FAIL / exit ${RC}"
-        sed 's/^/    | /' "${WORK}/out"
+
+    run_verifier "${FIX}"
+
+    # Observe. Every PASS:/FAIL: line must resolve to exactly one key: zero
+    # means fixture mode grew an assertion nobody named here, and more than one
+    # means two names are not distinguishable and the diff below would be
+    # meaningless either way.
+    local line dir body hit n unknown=""
+    while IFS= read -r line; do
+        case "${line}" in
+        "PASS: "*) dir=PASS; body="${line#PASS: }" ;;
+        "FAIL: "*) dir=FAIL; body="${line#FAIL: }" ;;
+        *) continue ;;
+        esac
+        hit=""
+        n=0
+        for key in "${!ppat[@]}"; do
+            if [ "${dir}" = PASS ]; then p="${ppat[${key}]}"; else p="${fpat[${key}]}"; fi
+            case "${body}" in *"${p}"*) hit="${key}"; n=$((n + 1)) ;; esac
+        done
+        if [ "${n}" -eq 1 ]; then
+            got["${hit}"]="${dir}"
+        elif [ "${n}" -eq 0 ]; then
+            unknown="${unknown}
+    | unnamed assertion ran: ${line}"
+        else
+            echo "error: '${line}' matches ${n} names in ASSERTIONS; the names are not distinguishable" >&2
+            exit 1
+        fi
+    done <"${WORK}/out"
+
+    # Diff.
+    local missing="" unexpected="" wrong=""
+    for key in "${!want[@]}"; do
+        [ "${want[${key}]}" = "${got[${key}]}" ] && continue
+        if [ "${got[${key}]}" = ABSENT ]; then
+            missing="${missing} ${key}(expected ${want[${key}]})"
+        elif [ "${want[${key}]}" = ABSENT ]; then
+            unexpected="${unexpected} ${key}(${got[${key}]})"
+        else
+            wrong="${wrong} ${key}(expected ${want[${key}]}, got ${got[${key}]})"
+        fi
+    done
+
+    local pat unmatched=""
+    for pat in "$@"; do
+        grep -F -- "${pat}" "${WORK}/out" | grep '^FAIL:' >/dev/null || unmatched="${unmatched}
+    | no FAIL line contains: ${pat}"
+    done
+
+    # Derived exit status.
+    local want_rc=0 rc_note=""
+    for key in "${!want[@]}"; do
+        [ "${want[${key}]}" = FAIL ] && want_rc=1
+    done
+    if [ "${want_rc}" -eq 0 ] && [ "${RC}" -ne 0 ]; then
+        rc_note=" exit ${RC}, expected 0"
+    elif [ "${want_rc}" -eq 1 ] && [ "${RC}" -eq 0 ]; then
+        rc_note=" exit 0, expected non-zero"
     fi
+
+    local failed="" fired=""
+    for key in "${!want[@]}"; do
+        [ "${want[${key}]}" = FAIL ] && fired="${fired} ${key}"
+    done
+    fired="$(printf '%s' "${fired# }" | tr ' ' '\n' | sort | tr '\n' ' ')"
+    fired="${fired% }"
+
+    if [ -n "${missing}${unexpected}${wrong}${unmatched}${unknown}${rc_note}" ]; then
+        failed=1
+    fi
+    if [ -z "${failed}" ]; then
+        if [ -z "${fired}" ]; then
+            pass "${name}: every assertion ran in its baseline state, exit 0"
+        else
+            pass "${name}: exactly ${fired} failed, each with its own message, exit ${RC}"
+            grep '^FAIL:' "${WORK}/out" | sed 's/^/    | /'
+        fi
+        return
+    fi
+    fail "${name}: the assertions that ran are not the ones expected"
+    [ -z "${missing}" ] || echo "    | did not run:${missing}"
+    [ -z "${unexpected}" ] || echo "    | ran but was not expected to:${unexpected}"
+    [ -z "${wrong}" ] || echo "    | ran the wrong way:${wrong}"
+    [ -z "${rc_note}" ] || echo "    |${rc_note}"
+    [ -n "${unmatched}" ] && printf '%s\n' "${unmatched# }"
+    [ -n "${unknown}" ] && printf '%s\n' "${unknown# }"
+    sed 's/^/    | /' "${WORK}/out"
 }
 
 echo "verifier under test: ${VERIFIER}"
@@ -154,7 +318,7 @@ echo
 # malformed in some way that has nothing to do with the mutation.
 FIX="${WORK}/baseline"
 new_fixture "${FIX}"
-expect_all_pass "baseline: shipped fstab, shipped mountpoints, no /srv/ui"
+expect_set "baseline: shipped fstab, shipped mountpoints, no /srv/ui, apid carrying the escape page" ""
 
 # --- 1. the UI root moved onto EPHEMERAL ------------------------------------
 # The tidy-looking mistake: /var is writable, it is small, and nothing about a
@@ -162,7 +326,7 @@ expect_all_pass "baseline: shipped fstab, shipped mountpoints, no /srv/ui"
 FIX="${WORK}/on-ephemeral"
 new_fixture "${FIX}"
 replace_mount_line "${FIX}" /srv "PARTUUID=$(lower "${EPHEMERAL_GUID}")	/srv	ext4	noatime,x-systemd.growfs	0	2"
-expect_fail "/srv mounted from the EPHEMERAL GUID" 2 \
+expect_set "/srv mounted from the EPHEMERAL GUID" "ui-off-data=FAIL ui-on-ephemeral=FAIL" \
     "moved off DATA: /srv/ui resolves under mountpoint /srv" \
     "moved onto the wipeable /var partition: /srv/ui is governed by /srv"
 
@@ -170,7 +334,7 @@ expect_fail "/srv mounted from the EPHEMERAL GUID" 2 \
 FIX="${WORK}/on-state"
 new_fixture "${FIX}"
 replace_mount_line "${FIX}" /srv "PARTUUID=$(lower "${STATE_GUID}")	/srv	ext4	noatime	0	2"
-expect_fail "/srv mounted from the STATE GUID" 3 \
+expect_set "/srv mounted from the STATE GUID" "ui-off-data=FAIL ui-on-state=FAIL ui-fixed-ceiling=FAIL" \
     "moved off DATA: /srv/ui resolves under mountpoint /srv" \
     "moved onto STATE: /srv/ui is governed by /srv" \
     "fixed ceiling: the entry governing /srv/ui (/srv) lacks x-systemd.growfs"
@@ -181,26 +345,35 @@ expect_fail "/srv mounted from the STATE GUID" 3 \
 FIX="${WORK}/no-growfs"
 new_fixture "${FIX}"
 replace_mount_line "${FIX}" /srv "PARTUUID=$(lower "${DATA_GUID}")	/srv	ext4	noatime	0	2"
-expect_fail "the /srv entry stripped of x-systemd.growfs" 1 \
+expect_set "the /srv entry stripped of x-systemd.growfs" "ui-fixed-ceiling=FAIL" \
     "fixed ceiling: the entry governing /srv/ui (/srv) lacks x-systemd.growfs"
 
-# --- 4. the mountpoint missing, which must NOT fire a UI assertion ----------
-# Assertion 4 is CHAINED: it asserts the covering mountpoint is one the
-# packed-root mountpoint check already covers, and lets that check own whether
-# the directory is there. So removing /srv from the fixture tree must leave all
-# six passing -- os/verify-image-v2.sh's own mountpoint loop is what fails on a
-# real image, and a UI assertion that also failed here would be the parallel
-# copy this design exists to avoid. This case is the proof of the chain.
+# --- 4. the mountpoint missing: the chain, and the far end of it ------------
+# ui-unasserted-mountpoint is CHAINED: it asserts the covering mountpoint is one
+# the packed-root mountpoint check already covers, and lets that check own
+# whether the directory is there. So removing /srv from the fixture tree must
+# leave all six UI assertions passing -- a UI assertion that also failed here
+# would be the parallel copy this design exists to avoid.
+#
+# But six passes only prove the UI assertions do not RE-DERIVE existence. They
+# do not prove anything still CATCHES a missing /srv, and from outside those two
+# are the same picture. So fixture mode runs the check being delegated to as
+# well, and this case requires it to go red with ITS OWN message. Before this,
+# that loop had only ever been observed passing: it runs against real images,
+# where /srv is always present. This is its first failing observation, and the
+# proof of the chain is now the two halves together rather than an absence.
 FIX="${WORK}/no-mountpoint"
 new_fixture "${FIX}"
 rmdir "${FIX}/srv"
-expect_all_pass "/srv absent from the tree: existence is chained, not re-derived"
+expect_set "/srv absent from the tree: existence is chained, and the far end of the chain fires" \
+    "mountpoints-exist=FAIL" \
+    "mountpoint(s) missing from the read-only root: /srv"
 
 # --- 5a. the bare /srv/ui directory SHIPPED in the packed root --------------
 FIX="${WORK}/ships-dir"
 new_fixture "${FIX}"
 mkdir -p "${FIX}/srv/ui"
-expect_fail "the bare /srv/ui directory shipped inside the read-only root" 1 \
+expect_set "the bare /srv/ui directory shipped inside the read-only root" "ui-content-baked=FAIL" \
     "the packed read-only root ships /srv/ui"
 
 # --- 5b. CONTENT baked under /srv/ui ----------------------------------------
@@ -212,7 +385,7 @@ FIX="${WORK}/ships-content"
 new_fixture "${FIX}"
 mkdir -p "${FIX}/srv/ui/bundles/1"
 : >"${FIX}/srv/ui/bundles/1/index.html"
-expect_fail "a UI bundle baked under /srv/ui in the read-only root" 1 \
+expect_set "a UI bundle baked under /srv/ui in the read-only root" "ui-content-baked=FAIL" \
     "/srv/ui/bundles/1/index.html" \
     "silently WINS over the bundle an operator installed or silently NEVER UPDATES"
 
@@ -225,21 +398,55 @@ FIX="${WORK}/deeper-mount"
 new_fixture "${FIX}"
 printf 'PARTUUID=%s\t/srv/ui\text4\tnoatime,x-systemd.growfs\t0\t2\n' \
     "$(lower "${EPHEMERAL_GUID}")" >>"${FIX}/etc/fstab"
-expect_fail "/srv correct but a deeper /srv/ui entry on EPHEMERAL" 3 \
+expect_set "/srv correct but a deeper /srv/ui entry on EPHEMERAL" \
+    "ui-off-data=FAIL ui-on-ephemeral=FAIL ui-unasserted-mountpoint=FAIL" \
     "resolves under mountpoint /srv/ui" \
     "moved onto the wipeable /var partition: /srv/ui is governed by /srv/ui" \
     "under an unasserted mountpoint: /srv/ui is governed by /srv/ui, which is NOT in the set"
 
 # --- 7. nothing covers the UI root at all -----------------------------------
 # The root is deliberately absent from fstab, so removing /srv leaves /srv/ui
-# on the verity squashfs with no entry that could ever cover it.
+# on the verity squashfs with no entry that could ever cover it. The six that
+# follow it are named ABSENT rather than left unstated: check_ui_location
+# RETURNS on this path, and "did not run" is a different fact from "ran and
+# passed" that only an identity diff can tell apart. /srv is removed from the
+# tree here too, so the mountpoint check fires alongside.
 FIX="${WORK}/uncovered"
 new_fixture "${FIX}"
 awk '$0 ~ /^[[:space:]]*#/ || $2 != "/srv" { print }' "${FIX}/etc/fstab" >"${FIX}/etc/fstab.new"
 mv "${FIX}/etc/fstab.new" "${FIX}/etc/fstab"
 rmdir "${FIX}/srv"
-expect_fail "no fstab entry covering /srv/ui" 1 \
-    "NO filesystem under it: no /etc/fstab entry covers /srv/ui"
+expect_set "no fstab entry covering /srv/ui" \
+    "ui-no-filesystem=FAIL mountpoints-exist=FAIL ui-off-data=ABSENT ui-on-state=ABSENT \
+     ui-on-ephemeral=ABSENT ui-unasserted-mountpoint=ABSENT ui-fixed-ceiling=ABSENT \
+     ui-content-baked=ABSENT" \
+    "NO filesystem under it: no /etc/fstab entry covers /srv/ui" \
+    "mountpoint(s) missing from the read-only root: /srv"
+
+# --- 8. something shipped at the reserved prefix ----------------------------
+# Section 6.2's built-in UI is maud expansions inside /usr/bin/apid and nothing
+# else, because section 6 requires the fallback to be the artifact with NO build
+# chain. A file tree under the reserved prefix is a second artifact that has to
+# be shipped in step with the binary, and the day it is stale the escape fails
+# in exactly the situation it exists for.
+FIX="${WORK}/builtin-on-disk"
+new_fixture "${FIX}"
+mkdir -p "${FIX}${BUILTIN_PREFIX}/assets"
+: >"${FIX}${BUILTIN_PREFIX}/assets/app.js"
+expect_set "an asset tree shipped at the reserved ${BUILTIN_PREFIX} prefix" "builtin-on-disk=FAIL" \
+    "${BUILTIN_PREFIX}/assets/app.js"
+
+# --- 9. the escape page no longer inside the binary -------------------------
+# The image-side reading of section 6.2's "no include_str!, no include_bytes!,
+# no asset directory": whatever mechanism moved the pages out to files, the
+# rendered markup stops being in the shipped binary. Asserting the OUTCOME
+# covers mechanisms nobody has thought of yet; enumerating the three named in
+# 6.2 would not.
+FIX="${WORK}/builtin-not-in-binary"
+new_fixture "${FIX}"
+printf 'ELF-stand-in-with-no-escape-page' >"${FIX}${APID_BIN}"
+expect_set "an apid binary that no longer carries the escape page" "builtin-in-binary=FAIL" \
+    "does NOT carry the escape page's rendered markup"
 
 echo
 total=$((PASS_N + FAIL_N))
