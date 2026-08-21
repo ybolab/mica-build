@@ -7,7 +7,7 @@ use std::path::PathBuf;
 
 use mosd_settings::{Settings, SettingsError, Store, json_path_get};
 use serde_json::Value;
-use tokio::sync::Mutex;
+use tokio::sync::{Mutex, watch};
 use zbus::fdo;
 use zbus::message::Header;
 use zbus::object_server::SignalEmitter;
@@ -57,6 +57,9 @@ pub struct MosdService {
     power: Box<dyn PowerControl>,
     shadow_path: PathBuf,
     inner: Mutex<Inner>,
+    /// Bumped after every mutation of either tree; the `com.mos.Item1` façade
+    /// (`crate::tree`) watches it to project changes onto the bus.
+    changed: watch::Sender<u64>,
 }
 
 impl MosdService {
@@ -80,7 +83,28 @@ impl MosdService {
             power,
             shadow_path,
             inner: Mutex::new(Inner { settings, state }),
+            changed: watch::channel(0).0,
         }
+    }
+
+    /// Subscribe to tree-change notifications for the item façade. The
+    /// receiver coalesces: marks arriving while unread collapse into one wake.
+    pub fn subscribe_changes(&self) -> watch::Receiver<u64> {
+        self.changed.subscribe()
+    }
+
+    /// Clones of the two trees the item façade projects: the settings tree
+    /// rendered to JSON, and the live-state tree.
+    pub async fn trees(&self) -> (Value, Value) {
+        let inner = self.inner.lock().await;
+        let settings = inner.settings.get("").unwrap_or(Value::Null);
+        (settings, inner.state.clone())
+    }
+
+    /// Record that a tree mutation completed; called after the mutation so an
+    /// observer that snapshots on the mark always sees the finished write.
+    fn mark_changed(&self) {
+        self.changed.send_modify(|generation| *generation += 1);
     }
 
     /// Log a power request from `sender` and record it in the live-state tree
@@ -97,6 +121,8 @@ impl MosdService {
                 serde_json::json!({ "last_action": action, "requested_by": sender }),
             );
         }
+        drop(inner);
+        self.mark_changed();
     }
 
     /// Reboot the machine on behalf of `sender`.
@@ -129,6 +155,8 @@ impl MosdService {
             let result = reconciler.apply(&settings).await;
             record(&mut inner.state, reconciler.name(), result);
         }
+        drop(inner);
+        self.mark_changed();
     }
 }
 
@@ -209,6 +237,7 @@ impl MosdService {
             }
         }
         drop(inner);
+        self.mark_changed();
         Self::settings_changed(&emitter, path, value_json)
             .await
             .map_err(|err| fdo::Error::Failed(format!("emit SettingsChanged: {err}")))?;
@@ -271,6 +300,8 @@ impl MosdService {
                 );
             }
         }
+        drop(inner);
+        self.mark_changed();
         tracing::info!(component, status, detail, "health report recorded");
         Ok(())
     }
