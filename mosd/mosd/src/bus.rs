@@ -146,6 +146,38 @@ impl MosdService {
             .map_err(|err| fdo::Error::Failed(format!("power off: {err}")))
     }
 
+    /// Write `value` at settings dot-path `path`: validate it against the
+    /// typed tree, persist it atomically, then re-apply every reconciler whose
+    /// subtree overlaps `path` and record each result in the live-state tree.
+    ///
+    /// The ONE settings-write path inside the daemon. `SetSettings` below and
+    /// the `com.mos.Item1` façade's `SetValue` ([`crate::tree`]) both come
+    /// through here, so the two write paths cannot diverge
+    /// (`docs/design/bus.md` §1.2). On any error nothing is stored, nothing is
+    /// persisted and no reconciler runs.
+    ///
+    /// # Errors
+    ///
+    /// Whatever [`Settings::set`](mosd_settings::Settings::set) or
+    /// [`Store::save`] rejected the write with.
+    pub async fn write_setting(&self, path: &str, value: Value) -> Result<(), SettingsError> {
+        let mut inner = self.inner.lock().await;
+        let mut candidate = inner.settings.clone();
+        candidate.set(path, value)?;
+        self.store.save(&candidate)?;
+        inner.settings = candidate;
+        let settings = inner.settings.clone();
+        for reconciler in &self.reconcilers {
+            if paths_overlap(path, reconciler.subtree()) {
+                let result = reconciler.apply(&settings).await;
+                record(&mut inner.state, reconciler.name(), result);
+            }
+        }
+        drop(inner);
+        self.mark_changed();
+        Ok(())
+    }
+
     /// Run every reconciler against the current settings, recording each
     /// result in the live-state tree. Errors are recorded, never propagated.
     pub async fn apply_all(&self) {
@@ -224,20 +256,7 @@ impl MosdService {
     ) -> fdo::Result<()> {
         let value: Value = serde_json::from_str(value_json)
             .map_err(|err| fdo::Error::InvalidArgs(format!("invalid JSON value: {err}")))?;
-        let mut inner = self.inner.lock().await;
-        let mut candidate = inner.settings.clone();
-        candidate.set(path, value).map_err(to_fdo)?;
-        self.store.save(&candidate).map_err(to_fdo)?;
-        inner.settings = candidate;
-        let settings = inner.settings.clone();
-        for reconciler in &self.reconcilers {
-            if paths_overlap(path, reconciler.subtree()) {
-                let result = reconciler.apply(&settings).await;
-                record(&mut inner.state, reconciler.name(), result);
-            }
-        }
-        drop(inner);
-        self.mark_changed();
+        self.write_setting(path, value).await.map_err(to_fdo)?;
         Self::settings_changed(&emitter, path, value_json)
             .await
             .map_err(|err| fdo::Error::Failed(format!("emit SettingsChanged: {err}")))?;

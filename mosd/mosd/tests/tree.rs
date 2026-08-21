@@ -1,5 +1,5 @@
-//! Integration tests: the read-only `com.mos.Item1` item-tree façade over a
-//! private session bus (PLAN-011 M1, `docs/design/bus.md`).
+//! Integration tests: the `com.mos.Item1` item-tree façade over a private
+//! session bus (PLAN-011 M1 and M2, `docs/design/bus.md`).
 //!
 //! Same harness as `tests/bus.rs`: a private `dbus-daemon --session` plus the
 //! `mosd` binary in dry-run mode (no reconcilers, so the host is never
@@ -14,7 +14,7 @@ use std::process::{Child, Command, Stdio};
 use std::time::Duration;
 
 use zbus::export::futures_core::Stream;
-use zbus::zvariant::OwnedValue;
+use zbus::zvariant::{OwnedValue, Value};
 
 /// Secret values seeded into the settings file; none may ever cross the bus.
 const WEB_HASH: &str = "$argon2id$fake-web-admin-hash";
@@ -67,9 +67,20 @@ trait Item {
     fn items_changed(&self, items: Items) -> zbus::Result<()>;
 }
 
+/// The per-item members, which live on the item object paths rather than on
+/// the service root (`docs/design/bus.md` §1.1).
+#[zbus::proxy(interface = "com.mos.Item1", default_service = "com.mos.mosd")]
+trait ItemValue {
+    fn get_value(&self) -> zbus::Result<OwnedValue>;
+    fn set_value(&self, value: &Value<'_>) -> zbus::Result<i32>;
+}
+
 /// A private bus, a dry-run mosd on it, and a client connection.
 struct Harness {
     connection: zbus::Connection,
+    /// The daemon's settings file, so a test can read back what was persisted
+    /// rather than only what the daemon reports.
+    settings_path: PathBuf,
     _mosd: ChildGuard,
     _bus: ChildGuard,
     _dir: tempfile::TempDir,
@@ -136,10 +147,22 @@ async fn start() -> anyhow::Result<Option<Harness>> {
         .await?;
     Ok(Some(Harness {
         connection,
+        settings_path,
         _mosd: mosd_guard,
         _bus: bus_guard,
         _dir: dir,
     }))
+}
+
+/// A proxy for the item object at `path`.
+async fn item_at(
+    connection: &zbus::Connection,
+    path: &'static str,
+) -> anyhow::Result<ItemValueProxy<'static>> {
+    Ok(ItemValueProxy::builder(connection)
+        .path(path)?
+        .build()
+        .await?)
 }
 
 /// Next `ItemsChanged` payload off `stream`, within a timeout.
@@ -190,9 +213,34 @@ async fn get_items_projects_both_trees_as_slash_paths() -> anyhow::Result<()> {
     for (path, attrs) in &items {
         assert!(path.starts_with('/'), "not an absolute slash path: {path}");
         assert!(attrs.contains_key("value"), "no value attr on {path}");
+        assert!(attrs.contains_key("writable"), "no writable attr on {path}");
+    }
+
+    // Writability is the platform-config surface: what a reconciler owns is
+    // writable, and everything else — schema bookkeeping, the credential
+    // metadata, provisioning, and the whole live-state tree — is not.
+    for path in [
+        "/hostname",
+        "/wifi/ap/channel",
+        "/wifi/ap/ssid",
+        "/wifi/client/networks",
+        "/access/ssh/enabled",
+    ] {
         assert!(
-            !bool::try_from(attrs["writable"].clone())?,
-            "every item is read-only in M1, but {path} says writable"
+            bool::try_from(items[path]["writable"].clone())?,
+            "{path} must be writable"
+        );
+    }
+    for path in [
+        "/schema_version",
+        "/access/device/generation",
+        "/access/console/shellEnabled",
+        "/provisioning/state",
+        "/dry_run",
+    ] {
+        assert!(
+            !bool::try_from(items[path]["writable"].clone())?,
+            "{path} must be read-only"
         );
     }
 
@@ -223,8 +271,7 @@ async fn get_items_projects_both_trees_as_slash_paths() -> anyhow::Result<()> {
     assert!(items.contains_key("/wifi/client/networks"));
     assert!(!items.contains_key("/wifi/client/networks/0"));
 
-    // The a{sa{sv}} signature on the wire, read back from the daemon, and the
-    // M2 members absent: this façade is GetItems/ItemsChanged only.
+    // The a{sa{sv}} signature on the wire, read back from the daemon.
     let introspectable = zbus::fdo::IntrospectableProxy::builder(&harness.connection)
         .destination("com.mos.mosd")?
         .path("/")?
@@ -240,10 +287,29 @@ async fn get_items_projects_both_trees_as_slash_paths() -> anyhow::Result<()> {
         2,
         "GetItems out-arg and ItemsChanged arg must both be a{{sa{{sv}}}}:\n{xml}"
     );
+    // GetItems and ItemsChanged are the root's ONLY members; GetValue and
+    // SetValue live one per item object below it (docs/design/bus.md §1.1).
+    // zbus introspects the whole subtree from `/`, and a node's own interfaces
+    // are written before its children, so the root's members are the slice up
+    // to the first child node.
+    let root_members = &xml[..xml.find("<node name=").unwrap_or(xml.len())];
     assert!(
-        !xml.contains("GetValue") && !xml.contains("SetValue"),
-        "per-item GetValue/SetValue are M2 scope:\n{xml}"
+        !root_members.contains("GetValue") && !root_members.contains("SetValue"),
+        "the per-item members must not be on the service root:\n{root_members}"
     );
+    let item_xml = zbus::fdo::IntrospectableProxy::builder(&harness.connection)
+        .destination("com.mos.mosd")?
+        .path("/hostname")?
+        .build()
+        .await?
+        .introspect()
+        .await?;
+    for member in ["GetValue", "SetValue"] {
+        assert!(
+            item_xml.contains(&format!("<method name=\"{member}\">")),
+            "no {member} on the /hostname item object:\n{item_xml}"
+        );
+    }
     Ok(())
 }
 
@@ -342,5 +408,84 @@ async fn secret_values_appear_in_no_get_items_and_no_signal() -> anyhow::Result<
         "psk crossed the bus in ItemsChanged: {dump}"
     );
     assert!(dump.contains("cafe"), "the redacted network lost its ssid");
+    Ok(())
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn set_value_writes_a_settings_item_through_the_same_single_writer() -> anyhow::Result<()> {
+    let Some(harness) = start().await? else {
+        return Ok(());
+    };
+    let item_proxy = ItemProxy::new(&harness.connection).await?;
+    wait_items(&item_proxy).await?;
+
+    let hostname = item_at(&harness.connection, "/hostname").await?;
+    let mut changed = item_proxy.receive_items_changed().await?;
+    assert_eq!(
+        hostname.set_value(&Value::from("bus-set-host")).await?,
+        0,
+        "a successful SetValue returns 0 (docs/design/bus.md §1.1)"
+    );
+
+    // The write is announced through the coalescing signal ...
+    let payload = next_items(&mut changed).await;
+    assert_eq!(
+        payload.keys().collect::<Vec<_>>(),
+        ["/hostname"],
+        "the settings change must arrive as one ItemsChanged entry: {payload:?}"
+    );
+    assert_eq!(
+        String::try_from(payload["/hostname"]["value"].clone())?,
+        "bus-set-host"
+    );
+    assert!(bool::try_from(payload["/hostname"]["writable"].clone())?);
+
+    // ... reads back through the item object itself ...
+    assert_eq!(
+        String::try_from(hostname.get_value().await?)?,
+        "bus-set-host"
+    );
+    // ... and reached the store, not just the daemon's memory.
+    let persisted = std::fs::read_to_string(&harness.settings_path)?;
+    assert!(
+        persisted.contains("bus-set-host"),
+        "SetValue must persist through the store, got:\n{persisted}"
+    );
+
+    // A read-only item: a settings leaf outside every writable subtree, and a
+    // live-state leaf. Both answer with a negative code and change nothing.
+    let schema_version = item_at(&harness.connection, "/schema_version").await?;
+    assert!(schema_version.set_value(&Value::from(9i64)).await? < 0);
+    let dry_run = item_at(&harness.connection, "/dry_run").await?;
+    assert!(dry_run.set_value(&Value::from(false)).await? < 0);
+
+    // A value the typed schema cannot hold at a writable path is refused the
+    // same way: by code, with the tree untouched.
+    assert!(hostname.set_value(&Value::from(7i64)).await? < 0);
+
+    let items = item_proxy.get_items().await?;
+    assert_eq!(
+        i64::try_from(items["/schema_version"]["value"].clone())?,
+        i64::from(mosd_settings::SCHEMA_VERSION)
+    );
+    assert!(bool::try_from(items["/dry_run"]["value"].clone())?);
+    assert_eq!(
+        String::try_from(items["/hostname"]["value"].clone())?,
+        "bus-set-host",
+        "a rejected SetValue must leave the item exactly as it was"
+    );
+
+    // A path the tree does not carry has no item object at all — including a
+    // redacted one, which is why `psk` cannot be written back either.
+    for path in ["/no/such/path", "/wifi/ap/psk"] {
+        let unknown = item_at(&harness.connection, path).await?;
+        assert!(
+            unknown.set_value(&Value::from(1i64)).await.is_err(),
+            "{path} is not an item, so it must not answer SetValue at all"
+        );
+    }
+
+    // Nothing above put a secret on the bus.
+    assert_no_secret(&items, "GetItems after SetValue");
     Ok(())
 }
