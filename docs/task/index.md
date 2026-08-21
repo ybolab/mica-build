@@ -114,3 +114,4 @@ Each task is a single line linking to its detail file. All detailed information 
 - [-] [**RFCT-089 PLAN-011 M1: bus contract design doc and the read-only com.mos.Item1 tree facade**](RFCT-089.md) `P1`
 - [-] [**RFCT-090 PLAN-011 M2: writable items and /Actions/*, apid power pane on action items**](RFCT-090.md) `P1`
 - [-] [**RFCT-091 PLAN-011 M3: mos-mqttd, the MQTT data-publishing bridge**](RFCT-091.md) `P1`
+- [ ] [**RFCT-092 A mechanism that checks docs citations, because five of them rotted in two merges**](RFCT-092.md) `P2`
