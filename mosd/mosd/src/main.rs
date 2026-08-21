@@ -19,12 +19,14 @@
 
 #![forbid(unsafe_code)]
 
+mod actions;
 mod bus;
 mod identity;
 mod power;
 mod provisioning;
 mod reconciler;
 mod transient;
+mod tree;
 
 use std::path::{Path, PathBuf};
 
@@ -122,18 +124,47 @@ async fn main() -> anyhow::Result<()> {
         Value::Object(state),
     );
     service.apply_all().await;
+    let changes = service.subscribe_changes();
 
     let builder = match bus_kind.as_str() {
         "system" => zbus::connection::Builder::system()?,
         "session" => zbus::connection::Builder::session()?,
         other => anyhow::bail!("MOSD_BUS must be `system` or `session`, got `{other}`"),
     };
-    let _connection = builder
-        .name(bus::BUS_NAME)?
+    let connection = builder
         .serve_at(bus::OBJECT_PATH, service)?
         .build()
         .await
         .with_context(|| format!("connect to {bus_kind} bus"))?;
+    // The com.mos.Item1 façade at the root object path, registered — and its
+    // change watcher started — before the well-known name is claimed, so a
+    // client never resolves the name without the item tree behind it.
+    let object_server = connection.object_server();
+    let service_ref = object_server
+        .interface::<_, bus::MosdService>(bus::OBJECT_PATH)
+        .await
+        .context("look up served MosdService")?;
+    object_server
+        .at(tree::ROOT_PATH, tree::ItemTree::new(service_ref))
+        .await
+        .context("serve com.mos.Item1")?;
+    let service_ref = object_server
+        .interface::<_, bus::MosdService>(bus::OBJECT_PATH)
+        .await
+        .context("look up served MosdService")?;
+    let tree_ref = object_server
+        .interface::<_, tree::ItemTree>(tree::ROOT_PATH)
+        .await
+        .context("look up served ItemTree")?;
+    // The per-item objects that carry GetValue/SetValue, registered here for
+    // the same reason: the name is claimed below, never before an item a
+    // client can see is one it can also write.
+    let snapshot = tree::install(&tree_ref, &service_ref).await;
+    tokio::spawn(tree::run(service_ref, tree_ref, changes, snapshot));
+    connection
+        .request_name(bus::BUS_NAME)
+        .await
+        .with_context(|| format!("request name {}", bus::BUS_NAME))?;
     tracing::info!(bus = bus_kind, name = bus::BUS_NAME, "serving");
 
     let mut sigterm = signal(SignalKind::terminate()).context("install SIGTERM handler")?;

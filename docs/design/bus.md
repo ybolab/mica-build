@@ -1,0 +1,552 @@
+# Device bus v2 — the `com.mos.*` item-tree contract
+
+> **Status:** partly implemented. This document is the M1 deliverable of
+> `docs/plan/PLAN-011.md` and records decisions D1 (one item interface), D2
+> (service naming, mandatory paths, class registry) and D3's item semantics as
+> a bus-level contract, plus the D6 Sparkplug B evaluation. PLAN-011 M1 landed
+> the **read-only** half — `GetItems`, the coalesced `ItemsChanged`, the
+> invalid-value convention and structural redaction, all in
+> `mosd/mosd/src/tree.rs` — and those statements now read **[implemented]**.
+> **M2 landed the write half**: `GetValue`/`SetValue` on per-item object
+> paths, the five platform-config subtrees writable, and `/Actions/reboot`
+> and `/Actions/poweroff` as action items (`mosd/mosd/src/tree.rs`,
+> `mosd/mosd/src/actions.rs`), consumed by apid's power pane
+> (`mosd/apid/src/bus_client.rs`) — so the statements that needed it now read
+> **[implemented]** too: §1.1's interface, §3's SetValue-failure rule, §4's
+> object paths and all four of D3's (§7). §11 records what the shipped tree is
+> known **not** to do. **M3 landed the bridge** this tree was shaped for:
+> `mos-mqttd` (`mosd/mqttd/`) publishes it over MQTT in the mos-native grammar
+> §10 chose, so §10.1's grammar, payload, liveness and mode statements now read
+> **[implemented]** with paths into `mosd/mqttd/src/`. What is still
+> **[proposed]** is what needs services that do not exist yet — D2's class
+> registry and mandatory paths (§5, §6), and D5's lifecycle with the registry
+> that is what will make the bridge publish for more than the one service it
+> publishes for today. Later tasks keep flipping markers section by section,
+> with paths.
+
+## 0. How to read this document
+
+**Status markers.** The discipline is `docs/design/api.md` §0's, which is in
+turn `docs/design/access.md` §0's: every statement that describes a
+**mechanism** carries a marker, so a reader can tell what can be checked
+against the tree from what is only being asked for.
+
+- **[implemented]** — code exists and is named, by path.
+- **[proposed]** — no code; this document is asking for it.
+
+access.md's reason applies unchanged: a contract that exists only as prose has
+no mechanism that will ever notice it is absent. What PLAN-011 M1 and M2
+shipped is **[implemented]** and named by path; the rest of this document is
+**[proposed]** today, and marking the split rather than the intent is the
+point. Sections 0 and 10 carry no marker where they record evaluation and
+history rather than mechanism — the same exemption api.md and access.md
+state. §10.1 is the one part of §10 that outgrew that exemption: since M3 the
+grammar it describes is shipped code, not a candidate, so it carries markers
+and paths like every other mechanism here.
+
+**Authority.** Where this document and `docs/plan/PLAN-011.md` disagree, the
+plan's decision record wins and the disagreement is a defect in this document.
+Venus OS citations reuse the source study anchors recorded in the plan and in
+`docs/research/venus-os-ui.md`.
+
+## 1. D1 — One item interface: `com.mos.Item1` [proposed]
+
+Every `com.mos.*` service — mosd first, extension services later — speaks a
+single D-Bus interface for addressable values. There is no other data-plane
+interface: a consumer that can read, write and subscribe to items can consume
+every service on the bus, which is the property that makes the M3 MQTT bridge
+a pure edge component.
+
+### 1.1 Interface definition [implemented]
+
+```xml
+<node>
+  <interface name="com.mos.Item1">
+    <!-- On every item object path -->
+    <method name="GetValue">
+      <arg direction="out" name="value" type="v"/>
+    </method>
+    <method name="SetValue">
+      <arg direction="in" name="value" type="v"/>
+      <arg direction="out" name="result" type="i"/>
+    </method>
+    <!-- On the service root object path ("/") only -->
+    <method name="GetItems">
+      <arg direction="out" name="items" type="a{sa{sv}}"/>
+    </method>
+    <signal name="ItemsChanged">
+      <arg name="items" type="a{sa{sv}}"/>
+    </signal>
+  </interface>
+</node>
+```
+
+- **[implemented]** `GetValue() -> v` and `SetValue(v) -> i` exist on **every
+  item object path** — one D-Bus object per item, registered before the
+  well-known name is claimed and kept in step with the tree by the same change
+  watcher that drives `ItemsChanged` (`mosd/mosd/src/tree.rs`), so the members
+  exist exactly where an item does. `SetValue` returns `0` on success and a
+  **negative error code** on failure; positive return values are reserved and
+  must not be produced. A path with **no** item behind it is not a return code
+  at all — it answers with the D-Bus `UnknownObject` error, which is decided
+  rather than incidental and is recorded as §11's first known limit.
+- **[implemented]** The **result-code vocabulary**, one code per outcome
+  (`mosd/mosd/src/tree.rs`):
+
+  | Code | Meaning |
+  |---|---|
+  | `0` | the settings write was applied, or the action dispatched |
+  | `-1` | no item at that path — including one redacted out of the tree (§8) |
+  | `-2` | the item exists but is not writable |
+  | `-3` | the value does not fit the item's type |
+  | `-4` | a settings write that **validated and would not persist** |
+  | `-5` | an action that was **accepted and would not dispatch** |
+
+  `-4` and `-5` are deliberately distinct and a consumer must not collapse
+  them, because they differ in **whether the request already exists**. A
+  settings write that did not persist took effect nowhere, so retrying it is
+  safe. An action that did not dispatch was already logged and recorded in
+  live state *before* the dispatch (§7), so the request exists either way — a
+  client that cannot tell the two apart cannot choose a safe retry policy for
+  a reboot. Merging named outcomes is precisely the failure mode
+  `docs/design/mosd.md` §5.3 names for the reconciler vocabulary; the wire
+  vocabulary is the same class of contract, so it gets the same treatment.
+- **[implemented]** `GetItems() -> a{sa{sv}}` and the signal
+  `ItemsChanged(a{sa{sv}})` exist on the **service root only**
+  (`mosd/mosd/src/tree.rs`, served at `ROOT_PATH`, projecting the settings
+  tree and the live-state tree as one flat map). The outer key is the item's
+  **absolute slash path** (`/network/eth0/dhcp`); the inner dict carries
+  `value` (`v`), `writable` (`b`), and optionally `min` (`v`), `max` (`v`),
+  `unit` (`s`). `value` and `writable` are emitted; the optional three are
+  omitted, neither tree carrying them today. **M2 gave `writable` its
+  meaning**: `true` on the five platform-config subtrees (`hostname`,
+  `network`, `wifi.client`, `wifi.ap`, `access.ssh`) and on the `/Actions/*`
+  items, `false` on everything else including all of live state.
+- **[implemented]** `ItemsChanged` is **coalesced per event-loop turn**:
+  changes accumulate during a turn and flush as one signal at its end (the
+  veutil pattern, `ve_qitem_exported_dbus_service.cpp:241`). A burst of N item
+  changes in one turn produces exactly one signal carrying N entries, never N
+  signals. `tree::run` (`mosd/mosd/src/tree.rs`) diffs successive projections
+  behind a watch channel that collapses marks arriving mid-projection into one
+  wake; the live-bus test
+  `mosd/mosd/tests/tree.rs::a_burst_of_changes_coalesces_into_one_items_changed`
+  asserts it. It is the designed mitigation for signal fan-out cost on a busy
+  tree.
+
+### 1.2 Relationship to the existing `com.mos.mosd1` methods [proposed]
+
+The item tree is a **façade over the same store** (single writer inside
+mosd). The existing methods
+(`GetSettings`/`SetSettings`/`GetState`/`Reboot`/`PowerOff`/…,
+`docs/design/mosd.md` §5.4) are not removed by this contract; they become
+thin wrappers over the same code paths. Their deprecation is a later
+decision, taken only once apid consumes the tree. Divergence between the two
+write paths is a bug class the live-bus test must cover.
+
+**[implemented]** The façade half of that is in place: `mosd/mosd/src/tree.rs`
+only *observes* — `MosdService` remains the single writer, and the tree learns
+about mutations through its change marker rather than by writing anything
+itself.
+
+**[implemented]** M2 added the write path without adding a second one.
+`SetValue` hands the value to the same `MosdService::write_setting`
+(`mosd/mosd/src/bus.rs`) that `SetSettings` calls — validate against the typed
+tree, persist through the store, re-apply the reconcilers whose subtree
+overlaps the path — so the divergence this section names as a bug class is not
+merely tested against, it is **unrepresentable**: there is one write path with
+two spellings. Reconcilers are unchanged. The same holds for the action items,
+which dispatch through the existing `request_reboot`/`request_power_off`
+rather than restating them (§7). What remains open is only the *deprecation*
+decision: `Reboot` and `PowerOff` are still served, and apid no longer calls
+them (`mosd/apid/src/bus_client.rs`), which is the condition this section
+names for taking that decision — it is not taken here.
+
+## 2. No `GetText` — a deliberate deviation [implemented]
+
+**[implemented]** `com.mos.Item1` has **no `GetText` member** — the shipped
+interface (`mosd/mosd/src/tree.rs`) declares `GetItems` and `ItemsChanged` and
+nothing else — and no service may add one. Venus's
+`com.victronenergy.BusItem` carries `GetText` (a server-formatted display
+string per item); Venus's own gui-v2 declines to use it and formats
+client-side. Formatting is a client concern — locale, unit
+preference and precision belong to the consumer — and the metadata a
+formatter needs (`unit`, `min`, `max`) already travels in `GetItems`.
+Shipping a server-side display string would bake one client's formatting into
+every service and every bridge payload. Rationale recorded in PLAN-011 D1;
+this closes the corresponding entry in the deviation register (§9).
+
+## 3. The invalid-value convention [implemented]
+
+Stated once, here, for the whole contract — every service and every consumer
+follows it, and no other document restates it normatively:
+
+- **[implemented]** An item whose value is currently **invalid** (unknown,
+  not-yet-read, hardware absent) is an **absent key in `GetItems`** and in
+  `ItemsChanged` payloads. Absence of the key *is* the invalid marker; there
+  is no null sentinel value. In mosd (`tree::flatten`,
+  `mosd/mosd/src/tree.rs`) a JSON `null` leaf projects as no key at all.
+- **[implemented]** On the wire, an item that must transition **to** invalid
+  in an `ItemsChanged` payload, or answer `GetValue` while invalid, carries
+  the **empty-array sentinel** `[]` (D-Bus type `av`, zero elements) as its
+  value. A consumer must treat that sentinel exactly as it treats an absent
+  key. `tree::invalid_sentinel` (`mosd/mosd/src/tree.rs`) is what a vanished
+  path carries in an `ItemsChanged` batch, and — since M2 — what `GetValue`
+  answers on an item object whose leaf has gone invalid under it.
+- **[implemented]** `SetValue` failures are reported **only** through the
+  negative integer return code (§1.1); a failed write never changes the
+  item's value, and error *text* is not part of the contract
+  (`mosd/mosd/src/tree.rs` — the reason a write was refused is logged on the
+  device and does not travel).
+
+This is Venus's convention stated explicitly instead of implied — one of the
+things the plan's source study found documented nowhere in Venus itself.
+
+## 4. Path mapping: dot-paths and slash paths [implemented]
+
+- **[implemented]** The **internal dot-path** (`network.eth0.dhcp`) remains
+  the **canonical address** of a setting or state item, exactly as
+  `docs/design/mosd.md` §5.1 and `docs/design/api.md` §2 use it. apid and the
+  `/api/v1` surface need no renaming: the façade (`mosd/mosd/src/tree.rs`)
+  converts at the bus edge and nothing upstream of it moved.
+- **[implemented]** The bus object path is the **slash form** of the dot-path
+  with a leading slash: `network.eth0.dhcp` ↔ `/network/eth0/dhcp`, and
+  `mosd/mosd/src/tree.rs` serves one object at exactly that path per item. The
+  mapping is mechanical in both directions and total over dot-paths whose
+  segments are also valid **D-Bus object-path elements**; a segment that is
+  not gets no object, which is §11's second known limit.
+- **[implemented]** `GetItems` keys and `ItemsChanged` keys use the absolute
+  slash form (`tree::flatten`, `mosd/mosd/src/tree.rs`; asserted by
+  `mosd/mosd/tests/tree.rs::get_items_projects_both_trees_as_slash_paths`). A
+  consumer converting back to dot-paths strips the leading slash and replaces
+  `/` with `.`.
+- **[implemented]** The dot-path model's known limit — a segment containing a
+  literal dot cannot be addressed (`docs/design/api.md` §2's VLAN case) — is
+  inherited by the slash form unchanged; the bus does not add an escape
+  syntax. The object layer adds a second, narrower limit of the same family
+  (D-Bus restricts what characters a path element may contain), recorded in
+  §11 rather than here because it costs an item its object without costing it
+  its addressability.
+
+## 5. D2 — Service naming and the class registry [proposed]
+
+- **[proposed]** Bus names follow `com.mos.<class>[.<suffix>]`, one service
+  per functional device instance. The `<suffix>` distinguishes instances of
+  a class (typically the driver or transport, e.g. `com.mos.sensor.abc123`).
+- **[proposed]** mosd keeps **`com.mos.mosd`** — the management core is a
+  class of its own.
+- **[proposed]** The **class registry** is this list, in this document.
+  Growing it is a **doc change, not a code change** — no consumer may
+  hard-code the closed set:
+
+  | Class | Meaning |
+  |---|---|
+  | `io` | digital / analog I/O |
+  | `serial` | serial-attached device services |
+  | `can` | CAN-attached device services |
+  | `sensor` | measurement producers (temperature, pressure, …) |
+  | `meter` | accumulating / billing-grade measurement |
+  | `gps` | position sources |
+
+- **[proposed]** **Energy-domain classes are explicitly out of scope**
+  (battery, solarcharger, inverter, vebus, …) until a product need exists.
+  The registry starting small and industrial is the fence against Venus's
+  breadth (PLAN-011 "Risks": scope creep).
+
+## 6. Mandatory paths and the alarm convention [proposed]
+
+- **[proposed]** Every `com.mos.*` service publishes, from the moment it
+  claims its name:
+
+  | Path | Meaning |
+  |---|---|
+  | `/Mgmt/ProcessName` | executable name of the publishing process |
+  | `/Mgmt/ProcessVersion` | version of the publishing process |
+  | `/Mgmt/Connection` | human-readable transport description (e.g. `ttyUSB0`, `can0`) |
+  | `/DeviceInstance` | integer instance number, unique within the class (allocated per PLAN-011 D5's `RegisterInstance` once it lands) |
+  | `/ProductId` | numeric product identifier |
+  | `/ProductName` | human-readable product name |
+  | `/Connected` | `1` when the backing device is reachable, `0` when not |
+
+  A service missing any of these is malformed; consumers may ignore it and
+  the registry (PLAN-011 D5) will surface it as such.
+- **[proposed]** **Alarms** are items under `/Alarms/<name>`, integer-valued:
+  `0` = ok, `1` = warning, `2` = alarm. No other alarm encoding is permitted
+  on the bus.
+
+## 7. D3 — Actions are writable items [implemented]
+
+- **[implemented]** An action is an item under `/Actions/<verb>`. Its value
+  **always reads `0`** — a constant, not a stored value. `/Actions/reboot` and
+  `/Actions/poweroff` are served as one object per path exactly like a
+  settings item (`mosd/mosd/src/actions.rs` owns the verbs;
+  `mosd/mosd/src/tree.rs` projects and dispatches them). Writability is an
+  explicit three-way `Access` on each projected leaf — read-only, setting,
+  action — so an action is a case of its own rather than an entry bolted onto
+  the writable-subtree list. **[proposed]** RFCT-084's update verbs arrive
+  under this same rule as they land.
+- **[implemented]** `SetValue` on an action item **triggers the action**, and
+  **any** written value triggers it: the write *is* the trigger, so the value
+  is accepted and ignored. The service forces the value back to `0` after the
+  write and **emits a change signal even on the `0 -> 0` edge** — the forced
+  re-zero is observable, so a subscriber sees the consumption edge of every
+  trigger (the `VeQItemAction` semantics,
+  `veutil ve_qitem_utils.hpp:146-162`). Because the value is constant, no diff
+  of two projections can ever carry that edge; `mosd/mosd/src/tree.rs` injects
+  it into the **same coalesced `ItemsChanged` batch** as the live-state record
+  of the request, so the edge costs no second signal and §1.1's coalescing
+  guarantee is not spent on it.
+- **[implemented]** The `SetValue` **return code is the dispatch result**: `0`
+  means the action was accepted and dispatched, a negative code means it was
+  not — §1.1's table says *which* negative code, and `-5` exists precisely so
+  that "accepted and would not dispatch" is not confused with a settings write
+  that did not persist. Completion and progress, where they exist, are
+  ordinary items elsewhere in the tree — the action item itself carries no
+  state.
+- **[implemented]** Existing safety properties are preserved unchanged, and
+  preserved by **reuse** rather than by restatement: dispatch calls the
+  existing `MosdService::request_reboot` / `request_power_off`
+  (`mosd/mosd/src/bus.rs`), so `note_power_request` still writes the tracing
+  line and the live-state power record **before** the power call — the current
+  `Reboot` contract, which a second implementation of it could have drifted
+  from. The trigger is attributed to its caller through the message header
+  (`bus::sender_of`), so a reboot through the item is logged exactly as one
+  through the method. apid's confirm-token gate stays in apid. The bus remains
+  root-only by policy until PLAN-011 D5 lands, so the bus-side gate *is* the
+  policy. What this ordering cannot promise on a real reboot is §11's fourth
+  known limit.
+
+This is what makes a value-only remote bridge sufficient: Venus's MQTT bridge
+carries only `SetValue` (`dbus-flashmq/src/state.cpp:317-354`) and that is
+enough to reboot, update and reconfigure a remote device. It resolves the
+actions-as-items-vs-methods fork recorded in `docs/research/venus-os-ui.md`
+§7 item 2 and left open in `docs/design/api.md`'s research appendix — in
+favor of items. `POST /api/v1/actions/<verb>` becomes a thin mapping onto
+these items with no HTTP-visible change.
+
+**[implemented]** apid's power pane is that mapping today: `reboot()` and
+`power_off()` write `/Actions/reboot` and `/Actions/poweroff` through
+`com.mos.Item1` (`mosd/apid/src/bus_client.rs`), and only the code `0` is read
+as success — apid names no failure code, so mosd's failure vocabulary can grow
+without it. The switch sits **below** the `SettingsApi` trait and
+`mosd/apid/src/routes.rs` was not modified, so the routes, the confirm-token
+gate and the `202 Accepted` are byte-for-byte what they were. The
+`com.mos.mosd1` `Reboot` and `PowerOff` methods are **still served** and are
+neither deprecated nor removed (§1.2); apid simply no longer calls them.
+`docs/design/api.md` §10.3 records the same resolution from the API side.
+
+## 8. Structural redaction is a bus-level contract [implemented]
+
+**[implemented]** The rule `docs/design/api.md` states for `/api/v1/settings/`
+(around `docs/design/api.md:789`) applies to the bus itself: **the value of
+any key named `password_hash`, `passwordHash`, `psk`, or `hash` — anywhere in
+the tree, at any depth — never appears on the bus.** Not in `GetItems`, not
+in `ItemsChanged`, not through `GetValue`. The redaction is **structural** (a
+match on the key name at any depth), not a list of dot-paths, because the
+`psk` fields sit inside arrays that the dot-path syntax cannot name. In mosd
+this is `tree::redact` (`mosd/mosd/src/tree.rs`), one function that every
+projection passes through — including inside arrays.
+
+Consequences, stated once:
+
+- **[implemented]** Redaction happens in the publishing service, **before**
+  serialization — a bus consumer, including the M3 MQTT bridge, never holds
+  the secret and needs no masking logic of its own. The bridge's
+  publish-side masking (PLAN-011 D6) is defense in depth, not the primary
+  control; it shipped in `mosd/mqttd/src/payload.rs`, applies this same
+  structural rule to every payload leaving that process, and should find
+  nothing to mask.
+- **[implemented]** The residual risk is api.md's, inherited: this is a
+  denylist, so a future secret-bearing field under a name not on the list is
+  exposed by default. The mitigation is a test asserting the redacted tree,
+  not a hope — `mosd/mosd/tests/tree.rs::secret_values_appear_in_no_get_items_and_no_signal`
+  seeds secrets into both trees and requires them in neither `GetItems` nor
+  any `ItemsChanged` payload.
+
+## 9. Recorded deviations from Venus OS
+
+This contract copies Venus's *shape* — one tiny interface, one value tree,
+actions as items, mandatory paths — and deliberately not its permissiveness.
+Per PLAN-011 "What we deliberately do not copy" (each confirmed in Venus
+source during the 2026-08-21 study), the following are **rejected**, not
+deferred:
+
+1. **The fleet-wide `"ZZZ"` client-side access password.** mos access
+   control is real authentication (`docs/design/access.md`), never a shared
+   constant in the client.
+2. **`GetText`** — see §2. gui-v2 itself declines the server-formatted
+   string.
+3. **Root-password-change via a bus item** shelling to `chpasswd` on a
+   remounted rootfs. mos root stays read-only; credential changes go through
+   the typed settings tree and its reconcilers.
+4. **daemontools supervision.** mos services are systemd units with the
+   hardening defaults PLAN-011 D5 specifies.
+5. **Dynamic settings registration into the core schema.** localsettings has
+   no schema, no migration, and factory-resets on a corrupt file
+   (`localsettings.py:890-894`). mos keeps the typed core schema with priced
+   migrations; extension settings are namespaced and separately stored
+   (PLAN-011 D4), so a corrupt extension file resets only that extension.
+
+Additionally, conventions Venus leaves implicit are stated here explicitly:
+the invalid-value convention (§3) and the coalescing guarantee (§1.1) are
+normative in mos, not folklore.
+
+## 10. D6 — The Sparkplug B evaluation
+
+Recorded during M1 so the M3 bridge milestone starts unblocked. This section
+is an evaluation and a decision record; the **OUTCOME** at its end is what
+the M3 bridge implements from, and what M3 implemented.
+
+### 10.1 The mos-native grammar, as shipped in `mos-mqttd` [implemented]
+
+The M3 bridge (`mos-mqttd`, the `mosd/mqttd/` workspace crate) speaks the
+dbus-flashmq-shaped protocol, field-proven for a decade against exactly this
+tree shape. It was a candidate when this section was written and it is code
+now, so each statement names where it lives:
+
+- **[implemented]** Topic grammar:
+  `N|R|W/<deviceId>/<class>/<instance>/<path>` — `N` (notification,
+  device→broker), `R` (read request, broker→device), `W` (write request,
+  broker→device). Building and parsing are one module,
+  `mosd/mqttd/src/topic.rs`, so the two cannot drift apart.
+- **[implemented]** Payloads: `{"value": ...}` JSON, optional `min`/`max`
+  alongside; an invalid item publishes `{"value": null}` (the §3 convention
+  crossing to JSON, where `null` is expressible) —
+  `mosd/mqttd/src/payload.rs`. The **zero-length** payload is a different
+  thing and deliberately so: it is the *retained* clear published per known
+  topic when the device vanishes, which deletes the retained message, where
+  `{"value": null}` says the item is present and currently invalid.
+- **[implemented]** Liveness: a keepalive request arms a **60 s** window and
+  triggers a **rate-limited full republish** of the tree, terminated by
+  exactly one `full_publish_completed` carrying the item count; the device
+  emits a **3 s** heartbeat carrying its monotonic uptime —
+  `mosd/mqttd/src/bridge.rs`, timings in `mosd/mqttd/src/config.rs`. The
+  keepalive itself is never throttled — it always renews the window — but the
+  republish it asks for is, behind a **5 s** floor that collapses a keepalive
+  storm into at most one immediate plus one deferred republish. The republish
+  is served from the bridge's own mirror of the tree (seeded by `GetItems`,
+  maintained by `ItemsChanged`), so a keepalive storm cannot become a
+  `GetItems` storm against mosd. Publication uses QoS 0 throughout, because
+  the protocol's recovery mechanism *is* the keepalive-triggered republish.
+- **[implemented]** The window is a **publishing** gate, not a control gate:
+  an `N`, an answer to an `R`, the heartbeat, a republish and a vanished
+  device's clears are all silent outside it, while a `W` is carried through
+  whether or not anyone is listening. Clears owed while the bridge is silent
+  survive until it is alive again (`mosd/mqttd/src/bridge.rs`).
+- **[implemented]** Modes: **read-only** — the default, so a bridge nobody
+  configured cannot become a control path — versus **full**
+  (`mosd/mqttd/src/config.rs`). Read-only publishes `N` and answers `R`, and
+  refuses `W`: it does not subscribe to the `W` filter and refuses a `W` that
+  arrives anyway. Full carries `W` through to `SetValue`, which is sufficient
+  for all control, by §7. (While the mode was a proposal this document said
+  *"N only; R/W ignored"*; the shipped rule is the narrower one stated here,
+  because an `R` is a read and the gate that governs it is the alive window,
+  not the mode.)
+- **[implemented]** No acknowledgement: the grammar has no result topic and
+  the bridge invents none. A `W` becomes a `SetValue` and stops there, so a
+  subscriber observes success as the `N` that the resulting `ItemsChanged`
+  produces — for an action, the forced re-zero of §7 — and a refusal is
+  precisely the absence of it. The distinction a remote client actually needs,
+  a settings write that did not persist being safe to retry where a dispatched
+  action is not (§1.1's `-4`/`-5`), is drawn from the **path** rather than the
+  code, in `mosd/mqttd/src/source.rs`, so it stays correct however the
+  negative vocabulary grows.
+
+### 10.2 Sparkplug B, compared
+
+Sparkplug B (Eclipse Tahu, ISO/IEC 20237) is the industrial-IoT MQTT
+convention: `spBv1.0/<group>/<message_type>/<edge_node>/[device]` topics,
+Protobuf-encoded payloads, birth/death certificates (`NBIRTH`/`NDEATH` via
+MQTT last-will), metric aliases, sequence numbers, and a primary-host
+"rebirth" request mechanism.
+
+| Aspect | mos-native (dbus-flashmq shape) | Sparkplug B |
+|---|---|---|
+| Envelope | JSON `{"value": ...}`, topic carries the path | Protobuf metric batch, metrics carry names/aliases |
+| Data model | mirrors the item tree 1:1 — zero impedance | flat metric namespace; the tree must be flattened into metric names |
+| State/liveness | 3 s heartbeat + keepalive→full republish + `full_publish_completed` | NBIRTH/NDEATH + seq numbers + rebirth — richer, host-arbitrated |
+| Writes | `W/` topic → `SetValue`, return code is the result | NCMD/DCMD metrics — equivalent power |
+| Interop | mos tooling and anything Venus-shaped | SCADA/IIoT platforms (Ignition, etc.) consume it natively |
+| Cost to mos | none beyond M3 as planned | Protobuf dep, birth-certificate lifecycle, metric-alias state, a second full protocol surface to test |
+
+The two differ **mainly in envelope**, as PLAN-011 D6 observed: both are
+value-oriented, both carry writes as value publishes, and the item tree
+(D1–D3) supports either. Nothing in this contract forecloses Sparkplug.
+
+### 10.3 Decision
+
+Native-only now. The arguments:
+
+- The product need on record (PLAN-011, user annotation 2026-08-21) is MQTT
+  **data publishing**, which the native grammar satisfies with the least
+  code, the least dependency surface, and 1:1 fidelity to the tree.
+- No consumer requiring Sparkplug exists in the product today; building it
+  now would be speculative interop, and speculative surfaces rot untested.
+- Because Sparkplug differs in envelope, a later `spBv1.0` mapper is an
+  additive edge component over the same item tree — adopting it later costs
+  no migration of the native grammar, the bus contract, or any service.
+
+**Revisit trigger:** a concrete customer or product integration that
+requires Sparkplug B (e.g. an Ignition/SCADA deployment consuming
+`spBv1.0`). When it fires, the outcome is *Sparkplug-also* — a second
+publisher beside the native grammar, never a replacement for it — designed
+as its own task against this contract.
+
+**OUTCOME: the M3 bridge implements the mos-native grammar only
+(`N|R|W/<deviceId>/<class>/<instance>/<path>` with `{"value": ...}`
+payloads, keepalive-triggered rate-limited full republish with
+`full_publish_completed`, 3 s heartbeat, read-only and full modes); Sparkplug
+B is not implemented now and is adopted, if ever, only as an additional
+mapper when a named integration requires it.**
+
+## 11. Known limits of the shipped item tree
+
+Four properties of what M1 and M2 shipped that a reader would otherwise
+discover by hitting them. Each is a **decision with a reason**, recorded here
+so it is a documented decision rather than tribal knowledge, and each names
+what would change it. They are limits of the implementation, not exceptions to
+the contract above.
+
+1. **[implemented]** **An unknown object path answers with the D-Bus
+   `UnknownObject` error, not `-1`** (`mosd/mosd/src/tree.rs`). This is not a
+   gap in §1.1's vocabulary; it is where the vocabulary stops being reachable.
+   zbus dispatches by **exact** object path with no subtree or fallback
+   handler, so answering a return code at an arbitrary path would mean
+   registering an object at every path a client might guess — an unbounded
+   set. And because the `SetValue` contract *is* a method return code, there
+   is no method to return one from when no object exists. The error is also
+   the more informative answer: every D-Bus client library surfaces
+   `UnknownObject` distinctly, while `-1` is an integer a caller must know to
+   interpret. The façade's internal `-1` branch **stays** — it is the answer
+   to the real race, a path that existed when the client read the tree and did
+   not when it wrote — and is asserted in both directions.
+
+2. **[implemented]** **A settings key that is not a valid D-Bus object-path
+   element gets no item object.** The realistic case is `network.br-lan`: a
+   D-Bus path element admits `[A-Za-z0-9_]` only, so the hyphen has no
+   spelling. Such a key is **not lost** — it still reads through `GetItems`,
+   it still changes through `ItemsChanged`, and it is still writable through
+   `SetSettings` — it is only unaddressable as an object, so `GetValue` and
+   `SetValue` cannot reach it. mosd logs a `WARN` when it happens, so the
+   condition is visible on the device rather than inferred from a missing
+   object. This is §4's dot-path limit's sibling one layer down, and the bus
+   adds no escape syntax for either.
+
+3. **[implemented]** **A reconciler's live-state key can shadow a settings
+   top-level key, and the projection is ambiguous at that path.** The two
+   trees flatten into one map (§1.1), so a live-state key that collides with a
+   settings key produces one path whose origin a reader cannot tell. It is not
+   reachable in dry-run, and the collision cannot *widen* anything: live state
+   is never writable, so a shadowed path is read-only whichever side wins and
+   no shadow can make a read-only item writable by accident. A future
+   reconciler naming a top-level key after a settings subtree is what would
+   make this real.
+
+4. **[implemented]** **On a real reboot there is no guarantee the forced
+   re-zero signal reaches a subscriber before the process is torn down.** The
+   `0 -> 0` consumption edge (§7) is emitted, but systemd stops mosd on the
+   way down and a subscriber may never be scheduled to read it. This is
+   inherent to rebooting rather than a defect in the signal path, and it is
+   the reason the request is logged and recorded in live state **before**
+   dispatch: the durable record of a trigger is the live-state record, which
+   survives the reboot, and the signal is best-effort on top of it. Ordering
+   the record first is what makes the signal as likely to arrive as it can be.
