@@ -1,12 +1,15 @@
 # Device bus v2 — the `com.mos.*` item-tree contract
 
-> **Status:** proposal. This document is the M1 deliverable of
+> **Status:** partly implemented. This document is the M1 deliverable of
 > `docs/plan/PLAN-011.md` and records decisions D1 (one item interface), D2
 > (service naming, mandatory paths, class registry) and D3's item semantics as
-> a bus-level contract, plus the D6 Sparkplug B evaluation. At the time of
-> writing **no code implements any of it** — every normative statement below
-> is **[proposed]**. A later task flips markers to **[implemented]** as code
-> lands, section by section, with paths.
+> a bus-level contract, plus the D6 Sparkplug B evaluation. PLAN-011 M1 landed
+> the **read-only** half — `GetItems`, the coalesced `ItemsChanged`, the
+> invalid-value convention and structural redaction, all in
+> `mosd/mosd/src/tree.rs` — and those statements now read **[implemented]**.
+> Everything the write path, the action items and extension services need is
+> still **[proposed]**; later tasks keep flipping markers section by section,
+> with paths.
 
 ## 0. How to read this document
 
@@ -19,10 +22,12 @@ against the tree from what is only being asked for.
 - **[proposed]** — no code; this document is asking for it.
 
 access.md's reason applies unchanged: a contract that exists only as prose has
-no mechanism that will ever notice it is absent. This document is entirely
-**[proposed]** today, and marking it so is the point. Sections 0 and 10 carry
-no marker where they record evaluation and history rather than mechanism —
-the same exemption api.md and access.md state.
+no mechanism that will ever notice it is absent. What PLAN-011 M1 shipped is
+**[implemented]** and named by path; the rest of this document is
+**[proposed]** today, and marking the split rather than the intent is the
+point. Sections 0 and 10 carry no marker where they record evaluation and
+history rather than mechanism — the same exemption api.md and access.md
+state.
 
 **Authority.** Where this document and `docs/plan/PLAN-011.md` disagree, the
 plan's decision record wins and the disagreement is a defect in this document.
@@ -65,17 +70,25 @@ a pure edge component.
   item object path**. `SetValue` returns `0` on success and a **negative
   error code** on failure; positive return values are reserved and must not
   be produced.
-- **[proposed]** `GetItems() -> a{sa{sv}}` and the signal
-  `ItemsChanged(a{sa{sv}})` exist on the **service root only**. The outer key
-  is the item's **absolute slash path** (`/network/eth0/dhcp`); the inner
-  dict carries `value` (`v`), `writable` (`b`), and optionally `min` (`v`),
-  `max` (`v`), `unit` (`s`).
-- **[proposed]** `ItemsChanged` is **coalesced per event-loop turn**: changes
-  accumulate during a turn and flush as one signal at its end (the veutil
-  pattern, `ve_qitem_exported_dbus_service.cpp:241`). A burst of N item
+- **[implemented]** `GetItems() -> a{sa{sv}}` and the signal
+  `ItemsChanged(a{sa{sv}})` exist on the **service root only**
+  (`mosd/mosd/src/tree.rs`, served at `ROOT_PATH`, projecting the settings
+  tree and the live-state tree as one flat map). The outer key is the item's
+  **absolute slash path** (`/network/eth0/dhcp`); the inner dict carries
+  `value` (`v`), `writable` (`b`), and optionally `min` (`v`), `max` (`v`),
+  `unit` (`s`). M1 emits `value` and `writable` — the latter `false` on every
+  item until the write path lands — and omits the optional three, which
+  neither tree carries today.
+- **[implemented]** `ItemsChanged` is **coalesced per event-loop turn**:
+  changes accumulate during a turn and flush as one signal at its end (the
+  veutil pattern, `ve_qitem_exported_dbus_service.cpp:241`). A burst of N item
   changes in one turn produces exactly one signal carrying N entries, never N
-  signals. The M1 live-bus test asserts this; it is the designed mitigation
-  for signal fan-out cost on a busy tree.
+  signals. `tree::run` (`mosd/mosd/src/tree.rs`) diffs successive projections
+  behind a watch channel that collapses marks arriving mid-projection into one
+  wake; the live-bus test
+  `mosd/mosd/tests/tree.rs::a_burst_of_changes_coalesces_into_one_items_changed`
+  asserts it. It is the designed mitigation for signal fan-out cost on a busy
+  tree.
 
 ### 1.2 Relationship to the existing `com.mos.mosd1` methods [proposed]
 
@@ -87,12 +100,20 @@ thin wrappers over the same code paths. Their deprecation is a later
 decision, taken only once apid consumes the tree. Divergence between the two
 write paths is a bug class the live-bus test must cover.
 
-## 2. No `GetText` — a deliberate deviation [proposed]
+**[implemented]** The façade half of that is in place: `mosd/mosd/src/tree.rs`
+only *observes* — `MosdService` remains the single writer, and the tree learns
+about mutations through its change marker rather than by writing anything
+itself. The wrapper half waits on M1's successor: there is no second write
+path to diverge yet.
 
-**[proposed]** `com.mos.Item1` has **no `GetText` member**, and no service
-may add one. Venus's `com.victronenergy.BusItem` carries `GetText` (a
-server-formatted display string per item); Venus's own gui-v2 declines to use
-it and formats client-side. Formatting is a client concern — locale, unit
+## 2. No `GetText` — a deliberate deviation [implemented]
+
+**[implemented]** `com.mos.Item1` has **no `GetText` member** — the shipped
+interface (`mosd/mosd/src/tree.rs`) declares `GetItems` and `ItemsChanged` and
+nothing else — and no service may add one. Venus's
+`com.victronenergy.BusItem` carries `GetText` (a server-formatted display
+string per item); Venus's own gui-v2 declines to use it and formats
+client-side. Formatting is a client concern — locale, unit
 preference and precision belong to the consumer — and the metadata a
 formatter needs (`unit`, `min`, `max`) already travels in `GetItems`.
 Shipping a server-side display string would bake one client's formatting into
@@ -104,15 +125,18 @@ this closes the corresponding entry in the deviation register (§9).
 Stated once, here, for the whole contract — every service and every consumer
 follows it, and no other document restates it normatively:
 
-- **[proposed]** An item whose value is currently **invalid** (unknown,
+- **[implemented]** An item whose value is currently **invalid** (unknown,
   not-yet-read, hardware absent) is an **absent key in `GetItems`** and in
   `ItemsChanged` payloads. Absence of the key *is* the invalid marker; there
-  is no null sentinel value.
-- **[proposed]** On the wire, an item that must transition **to** invalid in
-  an `ItemsChanged` payload, or answer `GetValue` while invalid, carries the
-  **empty-array sentinel** `[]` (D-Bus type `av`, zero elements) as its
+  is no null sentinel value. In mosd (`tree::flatten`,
+  `mosd/mosd/src/tree.rs`) a JSON `null` leaf projects as no key at all.
+- **[implemented]** On the wire, an item that must transition **to** invalid
+  in an `ItemsChanged` payload, or answer `GetValue` while invalid, carries
+  the **empty-array sentinel** `[]` (D-Bus type `av`, zero elements) as its
   value. A consumer must treat that sentinel exactly as it treats an absent
-  key.
+  key. `tree::invalid_sentinel` (`mosd/mosd/src/tree.rs`) is what a vanished
+  path carries in an `ItemsChanged` batch; the `GetValue` half arrives with
+  the write path.
 - **[proposed]** `SetValue` failures are reported **only** through the
   negative integer return code (§1.1); a failed write never changes the
   item's value, and error *text* is not part of the contract.
@@ -122,16 +146,19 @@ things the plan's source study found documented nowhere in Venus itself.
 
 ## 4. Path mapping: dot-paths and slash paths [proposed]
 
-- **[proposed]** The **internal dot-path** (`network.eth0.dhcp`) remains the
-  **canonical address** of a setting or state item, exactly as
+- **[implemented]** The **internal dot-path** (`network.eth0.dhcp`) remains
+  the **canonical address** of a setting or state item, exactly as
   `docs/design/mosd.md` §5.1 and `docs/design/api.md` §2 use it. apid and the
-  `/api/v1` surface need no renaming.
+  `/api/v1` surface need no renaming: the façade (`mosd/mosd/src/tree.rs`)
+  converts at the bus edge and nothing upstream of it moved.
 - **[proposed]** The bus object path is the **slash form** of the dot-path
   with a leading slash: `network.eth0.dhcp` ↔ `/network/eth0/dhcp`. The
   mapping is mechanical in both directions and total over valid dot-paths.
-- **[proposed]** `GetItems` keys and `ItemsChanged` keys use the absolute
-  slash form. A consumer converting back to dot-paths strips the leading
-  slash and replaces `/` with `.`.
+- **[implemented]** `GetItems` keys and `ItemsChanged` keys use the absolute
+  slash form (`tree::flatten`, `mosd/mosd/src/tree.rs`; asserted by
+  `mosd/mosd/tests/tree.rs::get_items_projects_both_trees_as_slash_paths`). A
+  consumer converting back to dot-paths strips the leading slash and replaces
+  `/` with `.`.
 - **[proposed]** The dot-path model's known limit — a segment containing a
   literal dot cannot be addressed (`docs/design/api.md` §2's VLAN case) — is
   inherited by the slash form unchanged; the bus does not add an escape
@@ -211,27 +238,31 @@ actions-as-items-vs-methods fork recorded in `docs/research/venus-os-ui.md`
 favor of items. `POST /api/v1/actions/<verb>` becomes a thin mapping onto
 these items with no HTTP-visible change.
 
-## 8. Structural redaction is a bus-level contract [proposed]
+## 8. Structural redaction is a bus-level contract [implemented]
 
-**[proposed]** The rule `docs/design/api.md` states for `/api/v1/settings/`
+**[implemented]** The rule `docs/design/api.md` states for `/api/v1/settings/`
 (around `docs/design/api.md:789`) applies to the bus itself: **the value of
 any key named `password_hash`, `passwordHash`, `psk`, or `hash` — anywhere in
 the tree, at any depth — never appears on the bus.** Not in `GetItems`, not
 in `ItemsChanged`, not through `GetValue`. The redaction is **structural** (a
 match on the key name at any depth), not a list of dot-paths, because the
-`psk` fields sit inside arrays that the dot-path syntax cannot name.
+`psk` fields sit inside arrays that the dot-path syntax cannot name. In mosd
+this is `tree::redact` (`mosd/mosd/src/tree.rs`), one function that every
+projection passes through — including inside arrays.
 
 Consequences, stated once:
 
-- **[proposed]** Redaction happens in the publishing service, **before**
+- **[implemented]** Redaction happens in the publishing service, **before**
   serialization — a bus consumer, including the M3 MQTT bridge, never holds
   the secret and needs no masking logic of its own. The bridge's
   publish-side masking (PLAN-011 D6) is defense in depth, not the primary
   control.
-- **[proposed]** The residual risk is api.md's, inherited: this is a
+- **[implemented]** The residual risk is api.md's, inherited: this is a
   denylist, so a future secret-bearing field under a name not on the list is
   exposed by default. The mitigation is a test asserting the redacted tree,
-  not a hope — the M1 live-bus test covers it.
+  not a hope — `mosd/mosd/tests/tree.rs::secret_values_appear_in_no_get_items_and_no_signal`
+  seeds secrets into both trees and requires them in neither `GetItems` nor
+  any `ItemsChanged` payload.
 
 ## 9. Recorded deviations from Venus OS
 

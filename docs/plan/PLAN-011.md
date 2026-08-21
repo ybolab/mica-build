@@ -4,7 +4,8 @@
 - **createdAt**: 2026-08-21 14:25
 - **approvedAt**: 2026-08-21 14:58 (user directive: dispatch via BKD L1)
 - **completedAt**: -
-- **relatedTask**: RFCT-089 (M1), RFCT-090 (M2), RFCT-091 (M3) — campaign 1; M4–M6 tasks created on their dispatch
+- **relatedTask**: RFCT-089 (M1, complete 2026-08-21), RFCT-090 (M2), RFCT-091 (M3) — campaign 1; M4–M6 tasks created on their dispatch
+- **milestones**: M1 **complete 2026-08-21** — `docs/design/bus.md` records the D1/D2/D3 contract and the D6 Sparkplug B evaluation (native grammar only), and the read-only `com.mos.Item1` façade (`GetItems`, coalesced `ItemsChanged`, redaction) ships in `mosd/mosd/src/tree.rs`; M2–M6 outstanding
 
 ## Context
 
