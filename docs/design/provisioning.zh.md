@@ -2,6 +2,11 @@
 
 > [English](provisioning.md) | 中文
 >
+> **过期警告（2026-08-21，RFCT-082）**：本译文已落后于英文版，且未逐条对齐；
+> 冲突时以英文版为准（docs/README.md 的双语规则）。是否恢复中文文档的同步维护
+> 仍是搁置中的用户决定（docs/task/RFCT-045.md）；在该决定作出前，请以
+> provisioning.md 为准。
+>
 > 在不能假设有网络的前提下，设备如何获得并修改 machine 配置。2026-08-17
 > 批准。配套 access.md §7 与 connd（PLAN-008 Part D）。
 

@@ -104,3 +104,4 @@ Each task is a single line linking to its detail file. All detailed information 
 - [x] [**RFCT-079 Status markers per subsection, the §10.3 register entry, and the final consistency pass**](RFCT-079.md) `P1`
 - [x] [**RFCT-080 Close the duplicate-row hole in the index verifier, and sweep the `sort -u` shape**](RFCT-080.md) `P1`
 - [x] [**RFCT-081 Close the repository audit: a CI gate, a no-op build target, an unreferenced 12 MB asset, two stale suppressions, and the apid login curve**](RFCT-081.md) `P1`
+- [x] [**RFCT-082 Reach the unreachable rollback path, and stop the stale documentation lying quietly**](RFCT-082.md) `P0`

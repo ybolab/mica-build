@@ -27,4 +27,4 @@ pub use model::{
     StaticConfig, WebAdminSettings, WifiApSettings, WifiClientSettings, WifiNetwork, WifiSettings,
 };
 pub use path::json_path_get;
-pub use store::{DEFAULT_PATH, Store};
+pub use store::{DEFAULT_PATH, RollbackReport, Store};

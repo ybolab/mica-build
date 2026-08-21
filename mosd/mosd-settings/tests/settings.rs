@@ -1127,3 +1127,152 @@ fn the_public_parser_accepts_a_real_key_and_refuses_an_options_line() {
     // The same key twice is one grant, not two.
     assert!(validate_authorized_keys(&[parsed.clone(), parsed]).is_err());
 }
+
+// --- Tolerant load of a NEWER schema (the A/B rollback path) ---------------
+//
+// docs/design/api.md §10.3 item 5: the down-migrations were dead code in
+// production because Store::load refused any schema_version above its own
+// BEFORE migrate() was reached, and the older binary cannot carry the future
+// down-step in any case. The accepted resolution is a tolerant load whose
+// semantics are the ones docs/design/mosd.md §5.2 already prices: keys the
+// newer schema added are dropped; a reshaped document costs every setting.
+
+/// A plausible v5 document: today's v4 tree plus a key v4 does not know
+/// (§3.2's proposed `access.apiTokens`) and the bumped version stamp.
+fn v5_additive_document() -> String {
+    r#"schema_version = 5
+hostname = "rolled-back"
+
+[network.eth0]
+dhcp = true
+
+[access.webAdmin]
+password_hash = "$argon2id$fake"
+
+[[access.apiTokens]]
+name = "ci"
+hash = "sha256:beef"
+"#
+    .to_string()
+}
+
+#[test]
+fn newer_additive_document_loads_with_unknown_keys_dropped() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("settings.toml");
+    fs::write(&path, v5_additive_document()).unwrap();
+
+    let (settings, report) = Store::new(&path).load_with_report().unwrap();
+
+    // Everything v4 understands survives — the admin credential above all,
+    // because losing it is what puts the device back in setup mode.
+    assert_eq!(settings.schema_version, SCHEMA_VERSION);
+    assert_eq!(settings.hostname, "rolled-back");
+    assert!(settings.network["eth0"].dhcp);
+    assert_eq!(
+        settings.access.web_admin.as_ref().unwrap().password_hash,
+        "$argon2id$fake"
+    );
+
+    // The report names what rollback cost, for mosd to log.
+    let report = report.expect("a newer document must produce a report");
+    assert_eq!(report.from, 5);
+    assert_eq!(report.dropped_keys, vec!["apiTokens".to_string()]);
+    assert!(!report.defaulted);
+}
+
+#[test]
+fn newer_reshaped_document_falls_back_to_defaults_not_an_error() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("settings.toml");
+    // A future schema that RESHAPED an existing key: hostname became a table.
+    // No amount of unknown-key stripping can make v4 parse this.
+    fs::write(
+        &path,
+        "schema_version = 9\n\n[hostname]\nname = \"x\"\n\n[network]\n",
+    )
+    .unwrap();
+
+    let (settings, report) = Store::new(&path).load_with_report().unwrap();
+
+    // The written acceptance: everything is abandoned, the daemon still runs.
+    assert_eq!(settings, Settings::default());
+    let report = report.expect("a newer document must produce a report");
+    assert_eq!(report.from, 9);
+    assert!(report.defaulted);
+}
+
+#[test]
+fn newer_document_never_errors_but_current_and_older_semantics_are_unchanged() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("settings.toml");
+
+    // Newer: tolerated (proved above). Current-version documents keep the
+    // strict contract: an unknown key is still a load error, because on the
+    // non-rollback path silently dropping a key would hide corruption.
+    fs::write(
+        &path,
+        format!("schema_version = {SCHEMA_VERSION}\nhostname = \"h\"\nbogus = 1\n\n[network]\n"),
+    )
+    .unwrap();
+    assert!(matches!(
+        Store::new(&path).load(),
+        Err(SettingsError::Parse(_))
+    ));
+
+    // And a malformed version stamp is still an error, newer-looking or not.
+    fs::write(&path, "schema_version = \"5\"\n").unwrap();
+    assert!(matches!(
+        Store::new(&path).load(),
+        Err(SettingsError::Parse(_))
+    ));
+}
+
+#[test]
+fn tolerated_document_saves_back_at_this_schema_version() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("settings.toml");
+    fs::write(&path, v5_additive_document()).unwrap();
+
+    let store = Store::new(&path);
+    let (settings, report) = store.load_with_report().unwrap();
+    assert!(report.is_some());
+    store.save(&settings).unwrap();
+
+    // The persisted file is now a clean v4 document: reloading is the normal
+    // path (no report), and the v5-only key is gone from disk — mosd.md
+    // §5.2's "rolling forward again restores the defaults, not the values".
+    let text = fs::read_to_string(&path).unwrap();
+    assert!(text.contains(&format!("schema_version = {SCHEMA_VERSION}")));
+    assert!(!text.contains("apiTokens"));
+    let (reloaded, report) = store.load_with_report().unwrap();
+    assert_eq!(reloaded, settings);
+    assert!(report.is_none());
+}
+
+#[test]
+fn stripping_is_recursive_and_drops_same_named_keys_everywhere() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("settings.toml");
+    // The same unknown key at two depths. The strip is by name, everywhere:
+    // both go, and the report records the name once per strip pass.
+    fs::write(
+        &path,
+        r#"schema_version = 5
+hostname = "h"
+extra = "top"
+
+[network.eth0]
+dhcp = true
+extra = "nested"
+"#,
+    )
+    .unwrap();
+
+    let (settings, report) = Store::new(&path).load_with_report().unwrap();
+    assert_eq!(settings.hostname, "h");
+    assert!(settings.network["eth0"].dhcp);
+    let report = report.expect("report");
+    assert_eq!(report.dropped_keys, vec!["extra".to_string()]);
+    assert!(!report.defaulted);
+}

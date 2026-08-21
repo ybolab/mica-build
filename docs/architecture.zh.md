@@ -2,6 +2,11 @@
 
 > [English](architecture.md) | 中文
 >
+> **过期警告（2026-08-21，RFCT-082）**：本译文已落后于英文版，且未逐条对齐；
+> 冲突时以英文版为准（docs/README.md 的双语规则）。是否恢复中文文档的同步维护
+> 仍是搁置中的用户决定（docs/task/RFCT-045.md）；在该决定作出前，请以
+> architecture.md 为准。
+>
 > **迁移通告（2026-08-17）：已采纳 Plan B** —— OS 核心由 Talos/machined 迁往
 > **systemd + mosd（Rust 管理平面）**；见 research/init-strategy.md（决策）与
 > plan/PLAN-010.md（迁移计划）。文中涉及 machined/COSI 的部分为退出中的旧

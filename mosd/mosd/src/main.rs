@@ -43,9 +43,30 @@ async fn main() -> anyhow::Result<()> {
     let dry_run = std::env::var("MOSD_DRY_RUN").is_ok_and(|value| value == "1");
 
     let store = Store::new(&settings_path);
-    let mut settings = store
-        .load()
+    let (mut settings, rollback) = store
+        .load_with_report()
         .with_context(|| format!("load settings from {settings_path}"))?;
+    // The A/B rollback path: the settings file was written by a NEWER schema
+    // and was loaded tolerantly instead of crash-looping the daemon
+    // (docs/design/api.md §10.3 item 5). Loud on purpose — this is the one
+    // place the loss `mosd.md` §5.2 prices is actually paid.
+    if let Some(report) = rollback {
+        if report.defaulted {
+            tracing::error!(
+                from_schema = report.from,
+                dropped = ?report.dropped_keys,
+                "settings file is from a newer, reshaped schema; ALL settings \
+                 abandoned and defaults loaded — the device is back in setup mode"
+            );
+        } else {
+            tracing::warn!(
+                from_schema = report.from,
+                dropped = ?report.dropped_keys,
+                "settings file is from a newer schema; unknown keys dropped \
+                 (the documented cost of an A/B rollback across a schema bump)"
+            );
+        }
+    }
 
     // Before the reconcilers exist, so the very first reconcile already sees a
     // seeded tree rather than the built-in defaults. Skipped under dry-run,

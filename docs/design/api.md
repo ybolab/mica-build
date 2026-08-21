@@ -11,13 +11,25 @@
 
 ## 0. How to read this document
 
-**Status markers.** The convention is `docs/design/access.md` section 0
-(`docs/design/access.md:23-30`), reused here in the same form. Every section
-below that describes a **mechanism** carries one of:
+**Status markers.** The discipline is `docs/design/access.md` section 0's;
+the marker set is deliberately **not** the same, and §10.3 item 15 is the
+audit trail for this paragraph. access.md carries four markers; this document
+takes two of them, drops two, and adds one of its own. Every section below
+that describes a **mechanism** carries one of:
 
-- **[implemented]** — code exists and is named, by path.
-- **[proposed]** — no code; this document is asking for it.
-- **[not implemented]** — deliberately, no code at all. Prose only.
+- **[implemented]** — code exists and is named, by path. (Taken from access.md.)
+- **[proposed]** — no code; this document is asking for it. (This document's
+  own: access.md records a system that exists, so it never needed a marker for
+  "asked for"; this document is mostly asking, so it does.)
+- **[not implemented]** — deliberately, no code at all. Prose only. (Taken
+  from access.md.)
+
+access.md's `[partial]` is deliberately absent: under this campaign's merge
+gates a task that lands short of its section is returned to working rather
+than merged, so a subsection that would honestly carry `[partial]` is a
+defect to raise, not a state to label. Its `[decided]` is absent because the
+decisions this document waits on are routed through §10.3 items, which carry
+their resolutions inline.
 
 access.md's reason for the discipline applies here unchanged: *"dead code has a
 compiler, a test run and a grep-for-callers that can surface it; a security
@@ -3100,14 +3112,18 @@ phase and has been folded into its successor.
 | 1 | Recover the error classification apid discards: `bus_client.rs` stops flattening `zbus::Error`; optionally split mosd's `to_fdo` | — | **not started** |
 | 2 | `/api/v1` read-only, plus §3.2's bearer token, `access.apiTokens`, and the schema move to v5 | — | **not started** |
 | 3 | `/api/v1` writes, collections and actions; `POST /api/v1/setup` | — | **not started** |
-| 4 | Static hosting and the whole custom-UI lifecycle (§4, §5, §6) — with **no** upload route | — | **not started** |
+| 4 | Static hosting and the whole custom-UI lifecycle (§4, §5, §6) — with **no** upload route | `l1-o7ee8v0o-20260820142702-ui` (RFCT-071..079) | **landed** — §§4-6 carry per-subsection `[implemented]` markers; §4's preamble records the landing |
 | 5 | The upload path: the request that delivers a bundle archive over HTTPS | — | **not started** |
 | 6 | The update-upload UI — `docs/design/dashboard.md` §8 phase **4e** | — | **not started** |
 
-Nothing in this table has an owning campaign: this campaign
-(`l1-o7ee8v0o-20260819152142-api`) produced a design document and no product
-code, and the "Campaign" column is left honest rather than filled with a name
-that does not exist.
+At the time this table was written nothing in it had an owning campaign: the
+campaign that produced it (`l1-o7ee8v0o-20260819152142-api`) produced a design
+document and no product code, and the "Campaign" column was left honest rather
+than filled with a name that did not exist. Phase 4's row has since been
+updated in place with the campaign that landed it; the remaining rows are
+still unowned, and phase 2's row stays **not started** because it is gated on
+§10.3 item 5's rollback decision — which is now taken (see that item), so the
+gate is open.
 
 ---
 
@@ -4196,6 +4212,32 @@ because it says what it is measured at where it is read.
    item's first draft already reached a wrong conclusion here once by inferring
    rather than running.
 
+   **Resolved (2026-08-21, user decision, RFCT-082): the tolerant load path,
+   with the loss accepted in writing.** Of the three admissible resolutions,
+   the second was taken and the third's written acceptance was folded into it;
+   the pre-rollback downgrade hook was not, because the older binary cannot
+   carry a future schema's down-step by construction, so a hook could never be
+   more than best-effort where tolerance is total. `Store::load` no longer
+   refuses a newer `schema_version`: `load_with_report`
+   (`mosd/mosd-settings/src/store.rs`) strips the keys this schema does not
+   know — the same semantics `mosd.md` §5.2 already prices for a down
+   migration — and parses what remains; a document a future schema *reshaped*
+   rather than extended falls back to `Settings::default()`, reported, never
+   an error. mosd logs the report loudly at start-up
+   (`mosd/mosd/src/main.rs`), `error!`-level for the defaulted case, because
+   that case abandons the admin credential and returns the device to setup
+   mode — the accepted cost, priced against the alternative this item
+   documented: a crash loop on the rolled-back-to slot that fails its health
+   gate too, leaving no confirmable slot at all. The rule this creates for
+   schema authors is stated at the load path: **prefer additive bumps; a
+   reshaping bump forfeits settings on rollback and must say so in its
+   migration.** Five tests exercise the path, including the reshaped fall-back
+   and the save-after-rollback that persists the stripped document at this
+   schema version. The down-migrations remain registered and tested for the
+   staged-downgrade tooling a future release process may add; what this
+   resolution removes is their status as the only — and unreachable — rollback
+   story. **§8.2 phase 2's gate is therefore open.**
+
 6. **`mosd/dist/webd.service` — raised in priority, not newly routed.** 10.2
    already routes `ProtectSystem=` and an explicit `ReadWritePaths=` to this
    file. §7.4 endorses it as the **concrete substitute** for a bundle-signing
@@ -4299,6 +4341,16 @@ because it says what it is measured at where it is read.
     `[proposed]` exists here (most of this document proposes rather than
     records) and why `[partial]` deliberately does not. Whoever next edits §0
     owns the choice; it is not made here.
+
+    **Resolved (2026-08-21, RFCT-082): the second option.** §0 no longer
+    claims sameness; it now names which two markers are taken from access.md,
+    why `[proposed]` exists here and not there, why `[partial]` is
+    deliberately absent (a subsection that would carry it is a merge-gate
+    defect, not a documentation state), and why `[decided]` is not needed
+    (decisions are routed through §10.3 items, which record their resolutions
+    inline — as this paragraph itself demonstrates). Reconciliation was
+    rejected because importing `[partial]` would create the labelled state
+    this campaign's gates exist to make unrepresentable.
 
     **Why it is not made here, stated so the omission is not read as an
     oversight.** This pass applies the convention across §§4-6, and a pass that

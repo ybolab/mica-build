@@ -1,6 +1,11 @@
 # mos 文档
 
 > [English](README.md) | 中文
+>
+> **过期警告（2026-08-21，RFCT-082）**：本译文已落后于英文版，且未逐条对齐；
+> 冲突时以英文版为准（docs/README.md 的双语规则）。是否恢复中文文档的同步维护
+> 仍是搁置中的用户决定（docs/task/RFCT-045.md）；在该决定作出前，请以
+> README.md 为准。
 
 - `architecture.md` / `architecture.zh.md` — 顶层系统架构与组件地图（从这里读起）
 - `design/` — 子系统设计记录（中英双份，`*.zh.md` 为中文版）

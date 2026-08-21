@@ -173,6 +173,25 @@ so carrying them would be a v3 device promising an access path it cannot serve
 same rule applies, with a sharper consequence: **a rolled-back device loses
 every authorized key, which is the only persistent way in.**
 
+**How the rollback is actually carried (2026-08-21, RFCT-082).** The costs
+above were written as if the down-migrations run on the device. They do not
+and cannot: a rolled-back-to binary cannot carry the down-step a future schema
+needs, and until RFCT-082 `Store::load` refused any newer `schema_version`
+outright — so the priced, deliberate losses above were in practice a mosd
+crash loop (`docs/design/api.md` §10.3 item 5). What runs instead is the
+tolerant load: on a newer document, `Store::load_with_report` strips the keys
+this schema does not know — mechanically the same loss this section already
+prices — and parses the rest; the next save persists the stripped document at
+this schema version. A future schema that **reshapes** an existing key
+defeats stripping, and the load then falls back to `Settings::default()` with
+an `error!`-level report: every setting including the admin credential is
+abandoned and the device re-enters setup mode. **That loss is accepted in
+writing here**, priced against the crash-loop alternative, and it binds
+schema authors: prefer additive bumps; a reshaping bump forfeits settings on
+rollback and its migration must say so. The registered down-migrations remain
+for staged-downgrade tooling; they are no longer the (unreachable) rollback
+story.
+
 ### 5.3 Reconcilers registered today
 
 `reconciler::all()` returns five, in this order:
