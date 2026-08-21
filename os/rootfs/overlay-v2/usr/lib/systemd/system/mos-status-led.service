@@ -1,0 +1,35 @@
+[Unit]
+Description=mos status indicator (boot red -> ready blue)
+Documentation=file:/usr/lib/mos/mos-status-led
+# multi-user.target is the settle point: every boot service has been started by
+# the time it is reached, which is the same condition upstream's OpenRC service
+# expresses as "the default runlevel". The unit is pulled in BY the target and
+# ordered AFTER it -- the pattern mos-health.service already documents here --
+# so the target is reached without waiting for the LED and nothing in boot can
+# ever block on it.
+After=multi-user.target
+# Deliberately NOT ordered after mos-health.service. That is the tempting
+# choice: it is the last thing in boot and it is what confirms the A/B slot.
+# But it carries TimeoutStartSec=180 around a 60s settle poll plus 10s probes,
+# so the board would sit red for MINUTES after it was usable. Slot confirmation
+# is also different semantics from "the default target has been reached", which
+# is all this indicator claims. Considered and rejected; do not add it.
+
+[Service]
+Type=oneshot
+# Not cosmetic. Without RemainAfterExit a Type=oneshot unit counts as inactive
+# the moment ExecStart returns, so systemd runs ExecStop immediately: the board
+# would turn blue and snap straight back to red. It is also what makes ExecStop
+# run at shutdown at all.
+RemainAfterExit=yes
+ExecStart=/usr/lib/mos/mos-status-led start
+# Shutdown restores red, so a powered-down-but-still-energised board does not
+# read as ready.
+ExecStop=/usr/lib/mos/mos-status-led stop
+# The indicator is a diagnostic, not a service to retry: a failure means the LED
+# devices are absent or unwritable, which restarting cannot change. What matters
+# is that it is VISIBLE, so the unit is left to fail into `systemctl --failed`.
+Restart=no
+
+[Install]
+WantedBy=multi-user.target
