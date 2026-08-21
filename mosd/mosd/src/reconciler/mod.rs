@@ -9,8 +9,6 @@ mod wifi_client;
 
 use mosd_settings::Settings;
 
-// dead_code: name/subtree/apply are unused until the daemon loop lands; drop this then.
-#[allow(dead_code)]
 #[async_trait::async_trait]
 pub trait Reconciler: Send + Sync {
     /// Stable name; also this reconciler's key in the live-state tree (e.g. "hostname", "network").

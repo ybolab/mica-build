@@ -58,9 +58,15 @@ the screen at an application UI (served by an app container) instead of apid.
 
 ## 4. Boot experience & tty policy
 
-- Boot splash: U-Boot shows the board splash (assets exist in board dirs),
-  kernel keeps `quiet` fbcon off the HDMI in prod; kiosk takes DRM master when
-  the service starts. Target: no text ever flashes on a customer screen.
+- Boot splash: U-Boot shows the board splash (cx3576's master is
+  `board/cx3576/rootfs/assets/splash.png`), kernel keeps `quiet` fbcon off the
+  HDMI in prod; kiosk takes DRM master when the service starts. Target: no text
+  ever flashes on a customer screen.
+  - The master is a **source asset with no consumer yet**: no build step reads
+    it, and U-Boot's splash path wants BMP, so the conversion belongs to phase 1
+    below. It is 1920x1080 16-bit RGB, and it is a PNG rather than the 12 MB
+    uncompressed P6 PPM it used to be — same pixels, verified byte for byte, at
+    76 KB instead of two thirds of the repository.
 - Upstream Talos dashboard stays disabled (`talos.dashboard.disabled`,
   PLAN-007 decision) — kiosk replaces it as the local presence.
 - Console channels (access.md): wizard tty2 / debug shell tty3 live on

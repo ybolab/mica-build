@@ -182,10 +182,9 @@ async fn login_logout_flow() {
     assert_eq!(response.status(), StatusCode::SEE_OTHER);
     assert_eq!(location(&response), "/login");
 
-    let wrong = post_form(&router, "/login", "password=wrongpass", None).await;
-    assert_eq!(wrong.status(), StatusCode::UNAUTHORIZED);
-    assert!(wrong.headers().get(SET_COOKIE).is_none());
-
+    // A wrong password here would arm the backoff window and reject the
+    // correct one that follows; the refusal is asserted on its own router in
+    // `the_first_failure_arms_the_backoff_window`.
     let right = post_form(&router, "/login", "password=hunter2secret", None).await;
     assert_eq!(right.status(), StatusCode::SEE_OTHER);
     assert_eq!(location(&right), "/");
@@ -206,15 +205,27 @@ async fn login_logout_flow() {
 }
 
 #[tokio::test]
-async fn five_failures_lock_out_logins() {
+async fn the_first_failure_arms_the_backoff_window() {
     let (router, _) = test_app(configured_tree("hunter2secret"));
-    for _ in 0..5 {
-        let response = post_form(&router, "/login", "password=wrongpass", None).await;
-        assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
-    }
-    // Even the correct password is rejected while locked out.
-    let locked = post_form(&router, "/login", "password=hunter2secret", None).await;
-    assert_eq!(locked.status(), StatusCode::TOO_MANY_REQUESTS);
+
+    // The first wrong password is answered, and costs a window.
+    let first = post_form(&router, "/login", "password=wrongpass", None).await;
+    assert_eq!(first.status(), StatusCode::UNAUTHORIZED);
+    assert!(first.headers().get(SET_COOKIE).is_none());
+
+    // Every attempt inside that window is refused without being checked --
+    // including the correct password, which is the point: the daemon cannot
+    // tell the guesser apart from the administrator, so it answers neither.
+    // The old rule granted four free guesses before the first refusal.
+    let second = post_form(&router, "/login", "password=wrongpass", None).await;
+    assert_eq!(second.status(), StatusCode::TOO_MANY_REQUESTS);
+
+    let correct = post_form(&router, "/login", "password=hunter2secret", None).await;
+    assert_eq!(correct.status(), StatusCode::TOO_MANY_REQUESTS);
+    assert!(
+        correct.headers().get(SET_COOKIE).is_none(),
+        "a refused attempt must not mint a session"
+    );
 }
 
 #[tokio::test]

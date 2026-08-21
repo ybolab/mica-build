@@ -20,10 +20,17 @@
 //! shipped state of every device and §6.1's first failure class. The root is
 //! created lazily on first activation and never at start-up.
 
-// The store has no in-tree caller yet: the asset router and the start-up
-// re-check that consume it are separate phase-4 work. Without this the
-// non-test build reports every entry point here as dead code.
-#![allow(dead_code)]
+// Phase-4 landed the two consumers this module was written ahead of: the asset
+// router (`assets::serve`) and the start-up re-check (`startup::discover`). The
+// blanket module-level `allow(dead_code)` they needed is therefore gone, so any
+// NEW unreachable entry point here is a warning again.
+//
+// What the blanket allow was hiding when it was removed is §5.3's status read —
+// `Store::status` and the `Installed` tree it returns. That surface is complete
+// and tested, and it has no caller because no route exposes "what is installed
+// right now?" to an operator; §8.2's API phase is where it gets one. The allows
+// are therefore per-item and carry that reason, so the gap is visible in the
+// source instead of being absorbed by a file-wide suppression.
 
 use std::collections::BTreeSet;
 use std::fmt;
@@ -233,6 +240,8 @@ impl fmt::Display for Rejection {
 impl std::error::Error for Rejection {}
 
 /// A bundle name/version pair, for the status read.
+// §5.3 status read: complete and tested, no route exposes it yet (§8.2).
+#[allow(dead_code)]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ManifestSummary {
     /// `name` from the manifest.
@@ -242,6 +251,8 @@ pub struct ManifestSummary {
 }
 
 /// What activation recorded, re-evaluated against the tree as it is now.
+// §5.3 status read: complete and tested, no route exposes it yet (§8.2).
+#[allow(dead_code)]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RecordedState {
     /// The digest recorded at activation.
@@ -255,6 +266,8 @@ pub struct RecordedState {
 }
 
 /// The active bundle, read from the served tree.
+// §5.3 status read: complete and tested, no route exposes it yet (§8.2).
+#[allow(dead_code)]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CustomUi {
     /// The generation `current` resolves to.
@@ -269,6 +282,8 @@ pub struct CustomUi {
 }
 
 /// The answer to "what is installed right now?" (§5.3).
+// §5.3 status read: complete and tested, no route exposes it yet (§8.2).
+#[allow(dead_code)]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Installed {
     /// No custom bundle is active; the built-in UI is being served. This is a
@@ -281,6 +296,8 @@ pub enum Installed {
 impl Installed {
     /// The one-line statement of the state, so no caller has to invent the
     /// wording for the no-bundle case.
+    // §5.3 status read: complete and tested, no route exposes it yet (§8.2).
+    #[allow(dead_code)]
     #[must_use]
     pub fn describe(&self) -> String {
         match self {
@@ -315,6 +332,10 @@ impl Recheck {
     /// True only when the declared range and the served set have an empty
     /// intersection — §6.1's sole deactivation trigger. A bundle with no
     /// manifest is never incompatible, because nothing was checked.
+    // No caller: `startup::discover` reaches the same verdict by matching
+    // `CompatCheck` directly. Kept as the named predicate beside `corrupt`,
+    // which IS called, so §6.1's two triggers stay readable as a pair.
+    #[allow(dead_code)]
     #[must_use]
     pub fn incompatible(&self) -> bool {
         matches!(
@@ -602,6 +623,8 @@ impl Store {
     /// An absent root, an absent `current` and an unresolvable `current` are
     /// all [`Installed::BuiltIn`] — a named answer, never an error and never
     /// an empty field.
+    // §5.3 status read: complete and tested, no route exposes it yet (§8.2).
+    #[allow(dead_code)]
     pub fn status(&self) -> anyhow::Result<Installed> {
         let Some(generation) = self.active_generation()? else {
             return Ok(Installed::BuiltIn);

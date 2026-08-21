@@ -11,7 +11,7 @@ BOARDS := cx3576 x64
 
 help:
 	@echo "mos build targets:"
-	@echo "  os                  build the Talos-based OS artifacts (see talos/)"
+	@echo "  os                  RETIRED by PLAN-010; use the os-*-cx3576-v2 targets"
 	@echo "  os-image-cx3576     build the cx3576 mos disk image (rootfs + BSP artifacts; BOARD_DIR=...)"
 	@echo "  os-verify-cx3576    verify the assembled cx3576 mos disk image against the image contract"
 	@echo "v2 (A/B layout, squashfs+dm-verity rootfs, RAUC updates):"
@@ -28,6 +28,18 @@ help:
 	@echo "  docs-verify         assert both document indexes agree with the tree, in both directions"
 	@echo "  docs-verify-test    prove the index assertions actually fail on a duplicated row or entry"
 	@echo "  cx3576-<t>          delegate target <t> to board/cx3576 (uboot|kernel|rootfs|image|clean)"
+
+# PLAN-010 moved the OS core off Talos onto systemd + mosd, which retired the
+# Talos artifact build this target used to route to. It keeps a recipe rather
+# than being deleted for the reason x64-% has one: with neither a recipe nor a
+# rule, `make os` prints "Nothing to be done for 'os'" and exits 0 -- a
+# retired build path that reports success is the failure mode every check in
+# this repository exists to prevent.
+os:
+	@echo "os: retired by PLAN-010 (Talos base -> systemd + mosd)." >&2
+	@echo "    v1 image: make os-image-cx3576 / os-verify-cx3576" >&2
+	@echo "    v2 (A/B): make os-image-cx3576-v2 / os-verify-cx3576-v2 / os-bundle-cx3576" >&2
+	@false
 
 os-image-cx3576:
 	bash os/rootfs/build.sh

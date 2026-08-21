@@ -1,0 +1,90 @@
+# The gates this repository already defines, executed on every push.
+#
+# It runs `mosd/hack/check.sh` and the `make` targets rather than restating
+# what they do. That is deliberate and it is the whole design: a workflow that
+# spelled out `cargo clippy -- -D warnings` here would be a second copy of the
+# gate definition, free to drift from the one a developer runs locally, and the
+# drift would be invisible until the two disagreed about a commit. There is one
+# definition of "checked", in the tree, and this file only decides when it runs.
+#
+# Scope, stated rather than implied: the three targets that need root or
+# privileged docker -- os-dbus-policy-test, os-repart-test and the image
+# assembly/verification pair -- are NOT run here. They need a runner with those
+# privileges, and a runner that silently lacked them would turn a skipped proof
+# into a green tick. They stay manual until such a runner exists; see the job
+# summary each run prints.
+
+name: check
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  # cargo fmt --check, clippy -D warnings, nextest, and cargo-deny -- all four
+  # via the script, in the order it fixes.
+  rust:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # Pinned to the workspace manifest rather than to a literal: the MSRV
+      # lives in mosd/Cargo.toml, and a second copy here could disagree with it.
+      # Reading it back is also the only thing that makes `rust-version` an
+      # enforced claim rather than documentation.
+      - name: Resolve the toolchain from the workspace MSRV
+        id: msrv
+        run: |
+          set -euo pipefail
+          version=$(sed -n 's/^rust-version *= *"\([^"]*\)".*/\1/p' mosd/Cargo.toml | head -1)
+          [ -n "$version" ] || { echo "no rust-version in mosd/Cargo.toml" >&2; exit 1; }
+          echo "version=$version" >>"$GITHUB_OUTPUT"
+          echo "workspace MSRV: $version"
+
+      - name: Install Rust ${{ steps.msrv.outputs.version }}
+        run: |
+          set -euo pipefail
+          curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs \
+            | sh -s -- -y --profile minimal \
+                --default-toolchain "${{ steps.msrv.outputs.version }}" \
+                --component rustfmt clippy
+          echo "$HOME/.cargo/bin" >>"$GITHUB_PATH"
+
+      - name: Install cargo-nextest and cargo-deny
+        run: |
+          set -euo pipefail
+          curl -LsSf https://get.nexte.st/latest/linux | tar zxf - -C "$HOME/.cargo/bin"
+          cargo install --locked cargo-deny
+
+      # The gate itself. Nothing above this line asserts anything about the
+      # code; nothing below it is a check this file invented.
+      - name: mosd/hack/check.sh
+        run: bash mosd/hack/check.sh
+
+  # The suites that need neither root nor docker. Each one fails loudly when it
+  # cannot run rather than skipping, so a missing dependency here surfaces as a
+  # red job and not as a quiet pass.
+  offline-suites:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Both document indexes agree with the tree, in both directions
+        run: make docs-verify docs-verify-test
+
+      - name: Health gate, machine-id oneshot, and their overlay copies
+        run: make os-health-test
+
+      - name: The STATE /etc/shadow reconciler
+        run: make os-shadow-test
+
+      - name: The custom-UI location assertions, and that they can fail
+        run: make os-ui-location-test
+
+      - name: What this workflow does not cover
+        if: always()
+        run: |
+          echo "Not run here (needs root or privileged docker):" >&2
+          echo "  make os-dbus-policy-test   real dbus-daemon, drops to uid 65534" >&2
+          echo "  make os-repart-test        privileged docker, loop devices" >&2
+          echo "  make os-image-cx3576-v2 / os-verify-cx3576-v2" >&2

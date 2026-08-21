@@ -248,6 +248,33 @@ async fn gate(State(state): State<AppState>, request: Request, next: Next) -> Re
     if path == "/healthz" {
         return next.run(request).await;
     }
+
+    // The session check comes BEFORE the bus call, and the ordering is the
+    // point rather than a detail.
+    //
+    // It is sound because a live session already implies the device is out of
+    // setup mode. A session is minted in exactly two places: `login_submit`,
+    // which mints one only after `password_hash` returned `Some` and verified
+    // against it, and `setup_submit`, which mints one only after the
+    // `access.webAdmin` write that CREATES the hash has succeeded. There is no
+    // route that removes a hash, so "session verifies" cannot coexist with
+    // "no admin password is configured". If an unset-password operation is
+    // ever added, it has to clear the session table in the same step, and this
+    // short-circuit is what it would be invalidating.
+    //
+    // It buys two things. The gate is layered onto every route, so an
+    // authenticated page load used to cost one system-bus round trip per
+    // request -- fine for one server-rendered pane, not fine once a custom UI
+    // bundle (§4) serves dozens of static assets per page, none of which need
+    // mosd at all. And it means a static asset still serves while mosd is
+    // down, which is the same reasoning §6.1 applies to a broken bundle: a
+    // failure in one part must not take the surface that reports it with it.
+    if session::cookie_from_headers(request.headers())
+        .is_some_and(|value| state.sessions.verify(&value))
+    {
+        return next.run(request).await;
+    }
+
     let access = match state.api.get_settings("access").await {
         Ok(value) => value,
         Err(err) => return bus_error(&err),
@@ -261,13 +288,9 @@ async fn gate(State(state): State<AppState>, request: Request, next: Next) -> Re
     if path == "/login" || path == "/setup" {
         return next.run(request).await;
     }
-    let authed = session::cookie_from_headers(request.headers())
-        .is_some_and(|value| state.sessions.verify(&value));
-    if authed {
-        next.run(request).await
-    } else {
-        Redirect::to("/login").into_response()
-    }
+    // The session was already checked above, so reaching here means there
+    // isn't a valid one.
+    Redirect::to("/login").into_response()
 }
 
 async fn healthz() -> &'static str {

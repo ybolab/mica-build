@@ -49,9 +49,14 @@ kiosk:
 
 ## 4. 启动体验与 tty 策略
 
-- 开机画面：U-Boot 显示板卡 splash（板卡目录已有素材），prod 内核 `quiet`
+- 开机画面：U-Boot 显示板卡 splash（cx3576 的母版是
+  `board/cx3576/rootfs/assets/splash.png`），prod 内核 `quiet`
   且 fbcon 不上 HDMI；kiosk 服务启动时接管 DRM master。目标：客户屏幕上
   永远不闪过文本。
+  - 该母版**目前没有消费方**：没有任何构建步骤读它，而 U-Boot 的 splash 通路要
+    的是 BMP，格式转换归下面的阶段 1。它是 1920x1080 的 16-bit RGB，且已从原先
+    12MB 的未压缩 P6 PPM 换成 PNG——像素逐字节比对一致，体积从占仓库三分之二
+    降到 76KB。
 - 上游 Talos dashboard 保持关闭（`talos.dashboard.disabled`，PLAN-007
   决策）——kiosk 取代它成为本地存在。
 - Console 通道（access.md）：向导 tty2 / 调试 shell tty3 走**串口**；prod
