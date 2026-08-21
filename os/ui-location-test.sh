@@ -51,8 +51,12 @@ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 VERIFIER="${HERE}/verify-image-v2.sh"
 FSTAB_IN="${HERE}/rootfs/overlay-v2/etc/fstab.in"
 LAYOUT_ENV="${HERE}/layout/cx3576-v2.env"
+# The SHIPPED unit, not one this script authors: the ordering assertions exist
+# to catch the shipped file losing its ordering, and a fixture built from a
+# local copy would go on passing after the real unit changed.
+LED_UNIT_SRC="${HERE}/rootfs/overlay-v2/usr/lib/systemd/system/mos-status-led.service"
 
-for required in "${VERIFIER}" "${FSTAB_IN}" "${LAYOUT_ENV}"; do
+for required in "${VERIFIER}" "${FSTAB_IN}" "${LAYOUT_ENV}" "${LED_UNIT_SRC}"; do
     [ -f "${required}" ] || { echo "error: ${required} not found" >&2; exit 1; }
 done
 # shellcheck source=layout/cx3576-v2.env
@@ -127,6 +131,23 @@ new_fixture() {
     done
     mkdir -p "${dir}$(dirname "${APID_BIN}")"
     printf 'ELF-stand-in%sELF-stand-in' "${BUILTIN_MARKUP}" >"${dir}${APID_BIN}"
+    mkdir -p "${dir}/usr/lib/systemd/system" "${dir}/usr/lib/mos" \
+        "${dir}/etc/systemd/system/multi-user.target.wants"
+    cp "${LED_UNIT_SRC}" "${dir}/usr/lib/systemd/system/mos-status-led.service"
+    printf '#!/bin/sh\n' >"${dir}/usr/lib/mos/mos-status-led"
+    ln -sf /usr/lib/systemd/system/mos-status-led.service \
+        "${dir}/etc/systemd/system/multi-user.target.wants/mos-status-led.service"
+}
+
+# Drops the whole `Key=value` line from the fixture's status-LED unit. Fails
+# loudly when the key is not there: a mutation that changed nothing would make
+# its case pass for free, which is the failure this harness exists to prevent.
+drop_led_directive() {
+    local dir="$1" key="$2" unit="$1/usr/lib/systemd/system/mos-status-led.service"
+    grep -Eq "^${key}=" "${unit}" ||
+        { echo "error: fixture unit has no ${key}= line to drop" >&2; exit 1; }
+    grep -Ev "^${key}=mos-health\.service$" "${unit}" >"${unit}.new"
+    mv "${unit}.new" "${unit}"
 }
 
 # Rewrites the fstab line whose mountpoint is $2 in fixture $1, replacing the
@@ -179,6 +200,8 @@ ui-no-filesystem|catches a custom UI root with NO filesystem under it||ABSENT
 builtin-on-disk|catches a built-in escape that has grown an on-disk half||PASS
 builtin-in-binary|catches a built-in escape that is no longer inside the binary||PASS
 mountpoints-exist|every fstab/bind mountpoint exists in the read-only root|mountpoint(s) missing from the read-only root|PASS
+led-after-health|catches an indicator that reports ready before the slot is confirmed||PASS
+led-requires-health|catches an indicator that turns blue on a slot whose health gate failed||PASS
 '
 
 # Drives the verifier over ${FIX} and asserts the set of assertions that ran,
@@ -447,6 +470,38 @@ new_fixture "${FIX}"
 printf 'ELF-stand-in-with-no-escape-page' >"${FIX}${APID_BIN}"
 expect_set "an apid binary that no longer carries the escape page" "builtin-in-binary=FAIL" \
     "does NOT carry the escape page's rendered markup"
+
+# --- 10. the indicator reordered off the health gate ------------------------
+# The wrong-signal case, and the reason these two assertions exist at all. The
+# indicator still ships, is still enabled and still works; it just turns blue
+# at multi-user.target. Every other check here passes on that image, and the
+# board reports ready while its slot is unconfirmed.
+FIX="${WORK}/led-not-after-health"
+new_fixture "${FIX}"
+drop_led_directive "${FIX}" After
+expect_set "a status indicator no longer ordered after the health gate" "led-after-health=FAIL" \
+    "runs 'rauc status mark-good'"
+
+# --- 11. ordered after the gate but not requiring it ------------------------
+# The subtler half, and the one After= alone does not cover: with ordering but
+# no requirement, systemd starts the unit once mos-health has FINISHED --
+# including when it finished by failing. The board turns blue on precisely the
+# slot U-Boot is about to roll back.
+FIX="${WORK}/led-not-requiring-health"
+new_fixture "${FIX}"
+drop_led_directive "${FIX}" Requires
+expect_set "a status indicator ordered after the health gate but not requiring it" "led-requires-health=FAIL" \
+    "BOOT_x_LEFT counter is about to roll it back"
+
+# --- 12. the unit dropped from the image ------------------------------------
+# Both assertions read the unit, so removing the file fails them together and
+# the case names both rather than trimming to the one it was written for.
+FIX="${WORK}/led-unit-absent"
+new_fixture "${FIX}"
+rm -f "${FIX}/usr/lib/systemd/system/mos-status-led.service"
+expect_set "the status-LED unit dropped from the image" \
+    "led-after-health=FAIL led-requires-health=FAIL" \
+    "runs 'rauc status mark-good'"
 
 echo
 total=$((PASS_N + FAIL_N))

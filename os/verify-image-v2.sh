@@ -407,6 +407,31 @@ check_packed_mountpoints() {
     fi
 }
 
+# The status indicator's presence, mode, enablement and Exec lines are already
+# asserted further down with the rest of the overlay payload. These two are
+# separate because they defend a different thing: not that the indicator EXISTS
+# but that its blue means the booted A/B slot was CONFIRMED. An indicator that
+# is present, enabled and working, but fires at multi-user.target, turns the
+# board blue during the window in which the slot is still unconfirmed -- and if
+# the gate then fails, blue is showing on a board U-Boot will roll back on the
+# next boot. That is a WRONG signal rather than a missing one, and no presence
+# check can see it. They live here rather than beside the presence block so
+# fixture mode can drive them without an image.
+STATUS_LED_UNIT="/usr/lib/systemd/system/mos-status-led.service"
+check_status_led() {
+    local unit="${ROOT}${STATUS_LED_UNIT}"
+    if [ -f "${unit}" ] && grep -Eq '^After=mos-health\.service$' "${unit}"; then
+        pass "catches an indicator that reports ready before the slot is confirmed: mos-status-led.service is ordered after mos-health.service"
+    else
+        fail "catches an indicator that reports ready before the slot is confirmed: mos-status-led.service has no 'After=mos-health.service'. mos-health is what runs 'rauc status mark-good', so without this the board turns blue while the booted slot is still unconfirmed"
+    fi
+    if [ -f "${unit}" ] && grep -Eq '^Requires=mos-health\.service$' "${unit}"; then
+        pass "catches an indicator that turns blue on a slot whose health gate failed: mos-status-led.service requires mos-health.service"
+    else
+        fail "catches an indicator that turns blue on a slot whose health gate failed: mos-status-led.service has no 'Requires=mos-health.service'. Ordering alone still starts the unit after a FAILED gate, so the board would read ready while U-Boot's BOOT_x_LEFT counter is about to roll it back"
+    fi
+}
+
 # The fixture hook: run only the assertions above, against the fixture, and
 # summarise. os/ui-location-test.sh is the only caller.
 if [ -n "${FIXTURE_ROOT}" ]; then
@@ -415,6 +440,7 @@ if [ -n "${FIXTURE_ROOT}" ]; then
     check_ui_location
     check_builtin_ui
     check_packed_mountpoints
+    check_status_led
     fixture_total=$((PASS_N + FAIL_N))
     if [ "${FAIL_N}" -eq 0 ]; then
         echo "RESULT: PASS (${PASS_N}/${fixture_total} checks)"
@@ -1777,6 +1803,7 @@ sq_regular /usr/lib/systemd/system/mos-machine-id.service
 sq_enabled mos-health.service
 sq_enabled mos-machine-id.service
 
+check_status_led
 # --- M4: storage tiers in /etc/fstab ---
 FSTAB="${ROOT}/etc/fstab"
 # Args: description partuuid mountpoint required-opts forbidden-opt
