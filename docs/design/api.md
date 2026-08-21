@@ -4370,3 +4370,70 @@ because it says what it is measured at where it is read.
     lead-in sentence and the first three list items; the four-item list is
     `:27-33`. Whichever resolution is taken, that citation wants re-pointing
     with it.
+
+16. **Resolved — the actions-as-items-versus-methods fork is closed in favour
+    of writable action items, and `/api/v1/actions/<verb>` survives it with no
+    HTTP-visible change. Measured at `3b2ab65` by this entry, which carries
+    its own descriptors per the boundary above; its source is
+    `docs/research/venus-os-ui.md` §7 item 2 and this document's §1.3, §2.2
+    and §2.3, not §7, §8 or §9.** The research recorded it as a fork rather
+    than a gap: Venus reboots by `setValue(true)` on
+    `platform/Device/Reboot`, while *"mosd exposes `Reboot` and `PowerOff` as
+    D-Bus **methods** (`docs/design/mosd.md:194-195`), which a
+    value-forwarding remote bridge cannot carry, so this is a fork in the road
+    rather than a feature to add"*. Both branches were live while nothing
+    decided between them, and this document was written along the method
+    branch.
+
+    **The decision, and where it is now normative.** `docs/plan/PLAN-011.md`
+    D3 takes **items**, on the stated rationale that it is the property which
+    makes the planned value-only MQTT bridge sufficient — a bridge that
+    carries `SetValue` and nothing else can still reboot, update and
+    reconfigure a device. `docs/design/bus.md` §7 states it as contract: an
+    action is an item at `/Actions/<verb>` whose value always reads `0`, a
+    write triggers it, the service forces the value back to `0` and emits that
+    `0 -> 0` edge so every trigger's consumption is observable, and the
+    `SetValue` return code is the dispatch result. PLAN-011 M2 landed the two
+    verbs this document names — `/Actions/reboot` and `/Actions/poweroff`
+    (`mosd/mosd/src/actions.rs`, projected and dispatched through
+    `mosd/mosd/src/tree.rs`) — so those bus.md statements read
+    **[implemented]** rather than **[proposed]**.
+
+    **What it costs this document: nothing at the HTTP surface, and that is
+    the load-bearing half.** `POST /api/v1/actions/<verb>` (§2.2, §2.3)
+    remains exactly as specified — the same paths, the same `POST`-only
+    namespace named so that no reader expects a `GET`, the same
+    `202 Accepted` — and becomes a **thin mapping** onto the items. This is
+    not a promise made about future work: apid's power pane already consumes
+    them (`mosd/apid/src/bus_client.rs` writes `/Actions/reboot` and
+    `/Actions/poweroff` through `com.mos.Item1`), and the switch sits *below*
+    the `SettingsApi` trait — `mosd/apid/src/routes.rs` was not modified, so
+    the routes, the confirm-token gate §2.3 discusses and the `202` all come
+    out of unchanged code, and the route tests pass with their expectations
+    unmodified. §2.3's reasoning for `202` over `204` is untouched: a
+    `SetValue` on the action item is still a D-Bus call spawned so the
+    response goes out before the machine does.
+
+    **What is *not* claimed.** The `com.mos.mosd1` `Reboot` and `PowerOff`
+    methods are **still served by mosd** and are neither deprecated nor
+    removed — apid has simply stopped calling them, and `docs/design/bus.md`
+    §1.2 keeps their deprecation as a later decision, to be taken now that its
+    stated condition (apid consuming the tree) holds. A reader of this section
+    should not infer a removal from the switch.
+
+    **One accuracy fix is owed, and it is owed to sections this entry does not
+    edit.** §1.3's proxy table is headed *"Every method apid calls today —
+    six"* and gives `reboot()` and `power_off()` their own rows against
+    `mosd/mosd/src/bus.rs:257` and `:265` (`api.md:231-232`). At `3b2ab65` the
+    `com.mos.mosd1` proxy declares **four** methods and the two power calls
+    are `SetValue` writes on a second interface, so the count and those two
+    rows are stale — the sharpest instance, because §1.3 sits under §1, *"The
+    surface as it exists today"*, marked **[implemented]**, and is therefore
+    read as a description of the tree rather than of a plan. §2.2's
+    resource-model row for `/api/v1/actions/<verb>` (`:710`) and its Power row
+    (`:838`) both name `Reboot`/`PowerOff` as what backs the verbs; those are
+    now the backing of last resort rather than the path apid takes.
+    Each is a one-line fix owned by the section's editor. Making them from
+    here would put the correction where no reader of those tables looks, and
+    would edit §1.3 and §2.2 from an entry whose whole purpose is to route
+    work out of §10.3 — so it is recorded, not done.
