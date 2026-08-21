@@ -454,15 +454,17 @@ async fn set_value_writes_a_settings_item_through_the_same_single_writer() -> an
     );
 
     // A read-only item: a settings leaf outside every writable subtree, and a
-    // live-state leaf. Both answer with a negative code and change nothing.
+    // live-state leaf. Both answer with their own code and change nothing —
+    // asserted exactly, because the vocabulary is the contract and each code
+    // names one outcome (docs/design/bus.md §1.1).
     let schema_version = item_at(&harness.connection, "/schema_version").await?;
-    assert!(schema_version.set_value(&Value::from(9i64)).await? < 0);
+    assert_eq!(schema_version.set_value(&Value::from(9i64)).await?, -2);
     let dry_run = item_at(&harness.connection, "/dry_run").await?;
-    assert!(dry_run.set_value(&Value::from(false)).await? < 0);
+    assert_eq!(dry_run.set_value(&Value::from(false)).await?, -2);
 
     // A value the typed schema cannot hold at a writable path is refused the
     // same way: by code, with the tree untouched.
-    assert!(hostname.set_value(&Value::from(7i64)).await? < 0);
+    assert_eq!(hostname.set_value(&Value::from(7i64)).await?, -3);
 
     let items = item_proxy.get_items().await?;
     assert_eq!(
@@ -532,6 +534,11 @@ async fn an_action_item_triggers_and_forces_itself_back_to_zero() -> anyhow::Res
         0,
         "the return code is the dispatch result, and this one dispatched (§7)"
     );
+    // The other half of that contract — a dispatch that FAILS answers `-5`,
+    // never the `-4` of a settings write that would not persist — cannot be
+    // reached from here: this daemon is in dry-run precisely so its power
+    // control always succeeds. It is asserted against a refusing control in
+    // `src/tree.rs`'s `a_dispatch_failure_and_a_persist_failure_report_different_codes`.
 
     // The consumption edge. The item's value never moved, so nothing but the
     // forced re-zero can put it in a payload at all — and it arrives in the

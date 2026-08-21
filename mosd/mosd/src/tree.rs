@@ -68,9 +68,17 @@ const SET_UNKNOWN_PATH: i32 = -1;
 const SET_READ_ONLY: i32 = -2;
 /// The value does not fit the typed settings tree at that path.
 const SET_INVALID_VALUE: i32 = -3;
-/// The request was accepted but could not be carried out: a settings write
-/// that validated and would not persist, or an action that would not dispatch.
-const SET_FAILED: i32 = -4;
+/// A settings write that validated and then would not persist. The write did
+/// not take effect anywhere, so retrying it is safe.
+const SET_NOT_PERSISTED: i32 = -4;
+/// An action that was accepted and then would not dispatch. NOT the same
+/// failure as [`SET_NOT_PERSISTED`], and the difference is the caller's retry
+/// policy: the request path logs the request and records it in live state
+/// BEFORE the power call, so a request that failed to dispatch still exists in
+/// live state. A caller that cannot tell the two apart cannot decide whether
+/// re-sending a reboot is safe (`docs/design/mosd.md` §5.3: outcomes are
+/// named, never merged).
+const SET_NOT_DISPATCHED: i32 = -5;
 
 /// Attribute dict of one item (`a{sv}`): `value`, `writable`, and optionally
 /// `min`/`max`/`unit` — none of which the two trees carry cheaply today.
@@ -347,7 +355,9 @@ fn code_for(err: &SettingsError) -> i32 {
     match err {
         SettingsError::ReadOnly(_) => SET_READ_ONLY,
         SettingsError::NotFound(_) | SettingsError::Validation { .. } => SET_INVALID_VALUE,
-        SettingsError::Io(_) | SettingsError::Parse(_) | SettingsError::Migration(_) => SET_FAILED,
+        SettingsError::Io(_) | SettingsError::Parse(_) | SettingsError::Migration(_) => {
+            SET_NOT_PERSISTED
+        }
     }
 }
 
@@ -368,7 +378,10 @@ fn code_for(err: &SettingsError) -> i32 {
 ///
 /// Nothing here reconciles, persists or logs the request on its own. A failed
 /// write changes nothing (§3) and reports only its code; the reason is logged
-/// locally and never travels back to the caller.
+/// locally and never travels back to the caller. The two failure codes stay
+/// apart: [`SET_NOT_PERSISTED`] for the settings write that did not take
+/// effect, [`SET_NOT_DISPATCHED`] for the action whose request was already
+/// recorded before the dispatch failed.
 async fn set_item(
     service: &MosdService,
     actions: &Actions,
@@ -393,7 +406,7 @@ async fn set_item(
             Ok(()) => SET_OK,
             Err(err) => {
                 tracing::error!(path, error = %err, "SetValue could not dispatch the action");
-                SET_FAILED
+                SET_NOT_DISPATCHED
             }
         },
         Access::Setting => match service.write_setting(&dot, value).await {
@@ -612,7 +625,7 @@ pub async fn run(
 
 #[cfg(test)]
 mod tests {
-    use std::path::PathBuf;
+    use std::path::{Path, PathBuf};
     use std::sync::{Arc, Mutex, Weak};
 
     use mosd_settings::{Settings, Store};
@@ -679,6 +692,18 @@ mod tests {
     ) {
         let dir = tempfile::tempdir().expect("tempdir");
         let settings_path = dir.path().join("settings.toml");
+        let (service, runs) = service_storing_at(power, state, &settings_path, dir.path());
+        (service, runs, settings_path, dir)
+    }
+
+    /// [`service_with`] with the store's path chosen by the caller, because
+    /// whether a write can persist at all is a property of that path.
+    fn service_storing_at(
+        power: Box<dyn PowerControl>,
+        state: Json,
+        settings_path: &Path,
+        dir: &Path,
+    ) -> (MosdService, Arc<Mutex<Vec<String>>>) {
         let runs = Arc::new(Mutex::new(Vec::new()));
         let reconcilers: Vec<Box<dyn Reconciler>> = [
             ("hostname", "hostname"),
@@ -697,14 +722,14 @@ mod tests {
         })
         .collect();
         let service = MosdService::new(
-            Store::new(&settings_path),
+            Store::new(settings_path),
             Settings::default(),
             reconcilers,
             power,
-            dir.path().join("shadow"),
+            dir.join("shadow"),
             state,
         );
-        (service, runs, settings_path, dir)
+        (service, runs)
     }
 
     /// [`service_with`] over a power control that only records the call.
@@ -1016,6 +1041,21 @@ mod tests {
         }
     }
 
+    /// Power control that refuses every request, so a test can reach the
+    /// dispatch-failure branch without a host that will not reboot.
+    struct RefusingPower;
+
+    #[async_trait::async_trait]
+    impl PowerControl for RefusingPower {
+        async fn reboot(&self) -> anyhow::Result<()> {
+            anyhow::bail!("mock: reboot refused")
+        }
+
+        async fn power_off(&self) -> anyhow::Result<()> {
+            anyhow::bail!("mock: power_off refused")
+        }
+    }
+
     /// A service whose power control observes the live-state tree at call
     /// time, plus everything the test needs to read back afterwards.
     struct Ordering {
@@ -1163,5 +1203,87 @@ mod tests {
             vec!["power_off".to_string(), "reboot".to_string()]
         );
         assert_eq!(actions.take_triggered(), vec![Action::Reboot]);
+    }
+
+    #[tokio::test]
+    async fn a_dispatch_failure_and_a_persist_failure_report_different_codes() {
+        // The vocabulary itself, asserted where it is defined: these two codes
+        // are the wire contract (`docs/design/bus.md` §1.1) and the point of
+        // the pair is that they are not each other.
+        assert_eq!(SET_NOT_PERSISTED, -4);
+        assert_eq!(SET_NOT_DISPATCHED, -5);
+        assert_ne!(SET_NOT_PERSISTED, SET_NOT_DISPATCHED);
+
+        // (1) An action that would not dispatch. Everything about the write is
+        // fine — the path is an action item, the value is ignored — and only
+        // the power call fails.
+        let dir = tempfile::tempdir().expect("tempdir");
+        let settings_path = dir.path().join("settings.toml");
+        let (service, runs) = service_storing_at(
+            Box::new(RefusingPower),
+            json!({}),
+            &settings_path,
+            dir.path(),
+        );
+        let actions = Actions::new();
+        assert_eq!(
+            set_item(&service, &actions, ":1.6", "/Actions/reboot", json!(1)).await,
+            SET_NOT_DISPATCHED,
+            "an action that would not dispatch must not report the persist code"
+        );
+        // Which is exactly why it needs its own code: the request path logged
+        // and recorded the request BEFORE the power call, so the reboot request
+        // exists in live state even though nothing dispatched. A caller cannot
+        // treat this like a settings write that simply did not happen.
+        assert_eq!(
+            service.trees().await.1["power"]["last_action"],
+            "reboot",
+            "the request is recorded before dispatch, so it survives the failure"
+        );
+        assert_eq!(
+            actions.take_triggered(),
+            vec![Action::Reboot],
+            "the consumption edge is the write's, not the dispatch's"
+        );
+        assert!(runs.lock().expect("lock").is_empty());
+        assert!(
+            !settings_path.exists(),
+            "an action persists nothing either way"
+        );
+
+        // (2) A settings write that validates and then cannot persist: a
+        // DIRECTORY sits where the settings file belongs, so the write fails
+        // at the filesystem, below the schema. -4 keeps its original,
+        // persist-only meaning.
+        let dir = tempfile::tempdir().expect("tempdir");
+        let settings_path = dir.path().join("settings.toml");
+        std::fs::create_dir(&settings_path).expect("blocking directory");
+        let (service, runs) = service_storing_at(
+            Box::new(RefusingPower),
+            json!({}),
+            &settings_path,
+            dir.path(),
+        );
+        let before = service.trees().await;
+        assert_eq!(
+            set_item(&service, &actions, ":1.6", "/hostname", json!("edge-02")).await,
+            SET_NOT_PERSISTED,
+            "a validated settings write that would not persist still reports -4"
+        );
+        assert_eq!(
+            service.trees().await,
+            before,
+            "a write that did not persist must leave the tree as it was, which \
+             is what makes retrying it safe"
+        );
+        assert!(
+            settings_path.is_dir(),
+            "the blocking directory is still there: nothing was persisted over it"
+        );
+        assert!(
+            actions.take_triggered().is_empty(),
+            "a settings write is no action, so no consumption edge may be pending"
+        );
+        let _ = runs;
     }
 }
