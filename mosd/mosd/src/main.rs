@@ -155,7 +155,11 @@ async fn main() -> anyhow::Result<()> {
         .interface::<_, tree::ItemTree>(tree::ROOT_PATH)
         .await
         .context("look up served ItemTree")?;
-    tokio::spawn(tree::run(service_ref, tree_ref, changes));
+    // The per-item objects that carry GetValue/SetValue, registered here for
+    // the same reason: the name is claimed below, never before an item a
+    // client can see is one it can also write.
+    let snapshot = tree::install(&tree_ref, &service_ref).await;
+    tokio::spawn(tree::run(service_ref, tree_ref, changes, snapshot));
     connection
         .request_name(bus::BUS_NAME)
         .await
