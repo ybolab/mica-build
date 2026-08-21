@@ -45,10 +45,18 @@ mechanism, which is the same exemption access.md states at
 was read out of the tree at commit
 `86cd669fa71889577f7e1ab1fab0e0e09a463dcf` — *"Merge webd SSH management:
 default-off SSH, transient password, persistent keys, /home and /root on
-DATA"* — which is this branch's merge base with `main`. Line numbers are that
-commit's. A reader on a later tree should re-measure before trusting a line
-number; the claims are written so that `git show 86cd669:<path>` settles any
-disagreement.
+DATA"* — which is this branch's merge base with `main`, with one exception this
+paragraph has to name rather than leave a table below it to contradict:
+**§1.3's proxy table is no longer `86cd669`'s.** Two of its rows cite
+`mosd/mosd/src/tree.rs` and `mosd/mosd/src/actions.rs`, files that did not
+exist at that commit — `git ls-tree -r --name-only 86cd669 -- mosd/mosd/src/`
+lists neither — and its mosd-side citations have been re-measured against
+**HEAD**. Its `mosd/apid/src/routes.rs` column has not, and has drifted.
+Everything else in section 1 is still `86cd669`'s, and a number of its line
+numbers have drifted too; catching all of it is `docs/task/RFCT-092.md`'s job,
+not this paragraph's to hand-patch. A reader on a later tree should re-measure
+before trusting a line number; for anything still pinned here, `git show
+86cd669:<path>` settles a disagreement.
 
 **The `apid` / `webd` path note — RESOLVED, kept as dated history.** Prose in
 this document says **apid**: it is the API daemon, and the dashboard is one
@@ -706,9 +714,10 @@ Derived from `mosd/mosd-settings/src/model.rs` and `mosd/mosd/src/bus.rs` as
 measured at `86cd669`, with one exception this preamble has to name rather
 than leave its own rows to contradict it: the two rows describing
 `/api/v1/actions/<verb>` cite `mosd/mosd/src/actions.rs`, a file that did not
-exist at `86cd669`, and they — together with the `SetTransientRootPassword`
-cell beside them — are measured at `d599cad` instead. Every other line citation
-in this section is still `86cd669`'s and a number of them have since drifted;
+exist at `86cd669`, and they — together with this section's two
+`SetTransientRootPassword` citations — are measured at `d599cad` instead.
+Every other line citation in this section is still `86cd669`'s and a number of
+them have since drifted;
 catching those is `docs/task/RFCT-092.md`'s job, not this section's to
 hand-patch. Nothing here invents a model alongside mosd's; where the settings
 tree and a sensible REST resource genuinely disagree, the disagreement is named
@@ -845,7 +854,7 @@ destroy the credential.
 | WiFi AP | `GET`/`PUT /api/v1/settings/wifi.ap` | `WifiApSettings` (`model.rs:248-275`) | `psk` redacted on read; `mode` is `off`/`provisioning`/`always` (`:296-304`) |
 | SSH enable state and policy | `GET`/`PUT /api/v1/settings/access.ssh`, `.../access.ssh.enabled` | `SshSettings` (`model.rs:79-106`) | default `enabled: false` (`:110-112`) |
 | SSH keys | the authorized-keys collection above | `access.ssh.authorizedKeys` | **every key is a root key** (`docs/design/access.md` §4.1, `mosd/webd/src/routes.rs:944`); the API response must carry that sentence in a `notice` field for the same reason the pane must carry it |
-| Transient root password | `POST /api/v1/actions/transient-root-password` | `SetTransientRootPassword` (`mosd/mosd/src/bus.rs:283`) | an action, not a setting — see §2.3 |
+| Transient root password | `POST /api/v1/actions/transient-root-password` | `SetTransientRootPassword` (`mosd/mosd/src/bus.rs:365`) | an action, not a setting — see §2.3 |
 | Web admin credential | `GET /api/v1/settings/access.webAdmin` (redacted), `PUT` refused | `WebAdminSettings` (`model.rs:68-71`) | see §3.2 for why the API does not offer a password change in phase 1 |
 | Console | `GET`/`PUT /api/v1/settings/access.console` | `ConsoleSettings` (`model.rs:140-145`) | only the `debug` image ships the shell at all (`model.rs:141-142`) |
 | Power | `POST /api/v1/actions/reboot`, `.../poweroff` | the `/Actions/reboot`/`/Actions/poweroff` items (`mosd/mosd/src/actions.rs:46`, `:47`) | actions — see §2.3 |
