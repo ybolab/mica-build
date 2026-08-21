@@ -1315,6 +1315,70 @@ else
     pass "/etc/modules-load.d/wifi.conf is gone (superseded by mos-modules)"
 fi
 
+# --- the status indicator: red until multi-user.target, then blue ------------
+# The device tree gives status-red `default-state = "on"`, so the kernel lights
+# red at init and only a consumer in the rootfs ever turns it off. Upstream has
+# one for the Alpine v1 demo; the v2 systemd rootfs had none, which shipped a
+# booted board on a permanent "still booting" red.
+#
+# Modelled on the mos-shadow-reconcile block below: M4 shipped units that were
+# installed but never enabled, and Before= lines naming units that were absent.
+# systemd drops both SILENTLY, so presence alone proves nothing.
+sq_regular /usr/lib/mos/mos-status-led
+LED_SCRIPT="${ROOT}/usr/lib/mos/mos-status-led"
+led_script_mode="$(stat -c %a "${LED_SCRIPT}" 2>/dev/null || echo none)"
+if [ -x "${LED_SCRIPT}" ] && [ ! -L "${LED_SCRIPT}" ]; then
+    pass "/usr/lib/mos/mos-status-led is executable (mode 0${led_script_mode})"
+else
+    fail "/usr/lib/mos/mos-status-led is mode ${led_script_mode}, not executable; ExecStart= would fail with 203/EXEC and the board would stay on the kernel's boot red for the whole session"
+fi
+sq_regular /usr/lib/systemd/system/mos-status-led.service
+# ENABLED, not merely installed: an installed-but-unenabled unit is exactly the
+# M4 failure, and it is invisible -- nothing logs it and nothing fails.
+sq_enabled mos-status-led.service
+sq_grep /usr/lib/systemd/system/mos-status-led.service \
+    '^ExecStart=/usr/lib/mos/mos-status-led start$' \
+    "mos-status-led.service runs /usr/lib/mos/mos-status-led start"
+# Without ExecStop= the shutdown half simply does not exist, and a board that is
+# powered down but still energised keeps reading as ready.
+sq_grep /usr/lib/systemd/system/mos-status-led.service \
+    '^ExecStop=/usr/lib/mos/mos-status-led stop$' \
+    "mos-status-led.service restores red on stop (ExecStop=)"
+# Not a style point: a Type=oneshot unit without RemainAfterExit counts as
+# inactive the moment ExecStart returns, so systemd runs ExecStop immediately
+# and the board snaps back to red the instant it went blue.
+sq_grep /usr/lib/systemd/system/mos-status-led.service \
+    '^RemainAfterExit=yes$' \
+    "mos-status-led.service sets RemainAfterExit=yes, so ExecStop runs at shutdown and not straight after ExecStart"
+# After=, never Before=: the unit is pulled in BY multi-user.target and ordered
+# AFTER it, so the target is reached without waiting for the LED. Ordered the
+# other way round, an unwritable brightness attribute would hold up boot.
+sq_grep /usr/lib/systemd/system/mos-status-led.service \
+    '^After=multi-user\.target$' \
+    "mos-status-led.service is ordered After=multi-user.target, so nothing in boot blocks on the indicator"
+
+# The no-dark ordering, asserted IN THE SHIPPED SCRIPT and per branch. Turning
+# the destination colour on before extinguishing the source is the whole reason
+# the transition is safe: with the two writes swapped there is an instant where
+# both LEDs are off and the board reads as dead. Nothing else can catch that --
+# either order is valid shell and passes every syntax check.
+for spec in "start:led_on.*BLUE:led_off.*RED:blue is switched ON before red is switched off, so the boot->ready transition never goes dark" \
+    "stop:led_on.*RED:led_off.*BLUE:red is switched ON before blue is switched off, so the ready->shutdown transition never goes dark"; do
+    IFS=':' read -r branch first second what <<<"${spec}"
+    # Region-scoped by line number: the branch label opens it, the next `;;`
+    # closes it, so a write in the other branch cannot satisfy this one.
+    if [ -f "${LED_SCRIPT}" ] && awk -v label="${branch})" -v a="${first}" -v z="${second}" '
+        $0 == label { inb = 1; next }
+        inb && $0 ~ /^[[:space:]]*;;[[:space:]]*$/ { inb = 0; next }
+        inb && !na && $0 ~ a { na = NR }
+        inb && !nz && $0 ~ z { nz = NR }
+        END { exit !(na > 0 && nz > 0 && na < nz) }' "${LED_SCRIPT}"; then
+        pass "mos-status-led ${branch}: ${what}"
+    else
+        fail "mos-status-led ${branch}: ${what} — /usr/lib/mos/mos-status-led is missing, or its ${branch}) branch does not write /${first}/ before /${second}/"
+    fi
+done
+
 # --- M4: RAUC ---
 sq_regular /usr/bin/rauc
 sq_regular /usr/bin/fw_setenv
