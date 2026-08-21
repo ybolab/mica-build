@@ -228,21 +228,24 @@ so listed once per verb below:
 
 | Proxy method | Line | mosd's implementation | Called from |
 |---|---|---|---|
-| `get_settings(path) -> String` | `bus_client.rs:15` | `mosd/mosd/src/bus.rs:182` | the gate (`routes.rs:131`) and the `/`, `/setup`, `/login`, `/network`, `/hostname`, `/ssh` handlers |
-| `set_settings(path, value_json)` | `bus_client.rs:16` | `mosd/mosd/src/bus.rs:191` | `/setup`, `/network`, `/hostname`, `/ssh/enable`, `/ssh/keys/*` |
-| `get_state(path) -> String` | `bus_client.rs:17` | `mosd/mosd/src/bus.rs:219` | two paths only: `GetState("network")` (`routes.rs:580`) and `GetState("sshd")` (`routes.rs:1045`) |
+| `get_settings(path) -> String` | `bus_client.rs:21` | `mosd/mosd/src/bus.rs:249` | the gate (`routes.rs:131`) and the `/`, `/setup`, `/login`, `/network`, `/hostname`, `/ssh` handlers |
+| `set_settings(path, value_json)` | `bus_client.rs:22` | `mosd/mosd/src/bus.rs:258` | `/setup`, `/network`, `/hostname`, `/ssh/enable`, `/ssh/keys/*` |
+| `get_state(path) -> String` | `bus_client.rs:23` | `mosd/mosd/src/bus.rs:274` | two paths only: `GetState("network")` (`routes.rs:580`) and `GetState("sshd")` (`routes.rs:1045`) |
 | `set_value` on `/Actions/reboot` | `bus_client.rs:35`, path at `:40` | `mosd/mosd/src/tree.rs:500` → `mosd/mosd/src/actions.rs:101` | `POST /power/reboot` (`routes.rs:1259`) |
 | `set_value` on `/Actions/poweroff` | `bus_client.rs:35`, path at `:41` | `mosd/mosd/src/tree.rs:500` → `mosd/mosd/src/actions.rs:102` | `POST /power/poweroff` (`routes.rs:1260`) |
-| `set_transient_root_password(password)` | `bus_client.rs:20` | `mosd/mosd/src/bus.rs:283` | `POST /ssh/password` (`routes.rs:1272`) |
+| `set_transient_root_password(password)` | `bus_client.rs:24` | `mosd/mosd/src/bus.rs:365` | `POST /ssh/password` (`routes.rs:1272`) |
 
 **What apid does not call, and cannot receive.** mosd exposes a seventh method,
 `ReportHealth` (`mosd/mosd/src/bus.rs:231`), which the proxy does not declare
 (`mosd/apid/src/bus_client.rs:14-21`); its caller in the tree is the boot health
-gate, not apid. mosd also emits one signal, `SettingsChanged(path, value_json)`,
-after every successful `SetSettings` (`mosd/mosd/src/bus.rs:212-214`, declared
-at `:292-297`). The proxy declares **no** `#[zbus(signal)]` member
-(`mosd/apid/src/bus_client.rs:14-21`), so apid has no push notification of a
-settings change from any source, including itself.
+gate, not apid. mosd also emits two signals, and apid subscribes to neither.
+`SettingsChanged(path, value_json)` fires after every successful `SetSettings`
+(`mosd/mosd/src/bus.rs:212-214`, declared at `:292-297`); `ItemsChanged` fires
+once per accumulated batch of item-tree changes, declared on `com.mos.Item1`
+(`mosd/mosd/src/tree.rs:450-451`), served at the service root (`:35-38`) and
+emitted at `:618-619`. The proxy declares **no** `#[zbus(signal)]` member for
+either (`mosd/apid/src/bus_client.rs:14-21`), so apid has no push notification
+of a settings change from any source, including itself.
 
 **Shape of the client.** All handler code depends on the `SettingsApi` trait
 (`mosd/apid/src/settings_api.rs:13-31`), not on zbus, which is what lets the
@@ -700,16 +703,23 @@ promises, and they are not the same promise:
 ### 2.2 Resource model — **[proposed]**
 
 Derived from `mosd/mosd-settings/src/model.rs` and `mosd/mosd/src/bus.rs` as
-measured at `86cd669`. Nothing here invents a model alongside mosd's; where the
-settings tree and a sensible REST resource genuinely disagree, the disagreement
-is named and the choice is costed.
+measured at `86cd669`, with one exception this preamble has to name rather
+than leave its own rows to contradict it: the two rows describing
+`/api/v1/actions/<verb>` cite `mosd/mosd/src/actions.rs`, a file that did not
+exist at `86cd669`, and they — together with the `SetTransientRootPassword`
+cell beside them — are measured at `d599cad` instead. Every other line citation
+in this section is still `86cd669`'s and a number of them have since drifted;
+catching those is `docs/task/RFCT-092.md`'s job, not this section's to
+hand-patch. Nothing here invents a model alongside mosd's; where the settings
+tree and a sensible REST resource genuinely disagree, the disagreement is named
+and the choice is costed.
 
 **Three roots, because mosd has three things and not one.**
 
 | Root | Backed by | Methods | Why it is separate |
 |---|---|---|---|
 | `/api/v1/settings/<dot-path>` | `Settings` (`mosd/mosd-settings/src/model.rs:16-32`) via `GetSettings` / `SetSettings` (`mosd/mosd/src/bus.rs:182`, `:191`) | `GET`, `PUT` | typed, validated, persisted to `/var/lib/mos/settings.toml` (`mosd/mosd-settings/src/store.rs:12`), survives reboot and A/B update (`docs/design/access.md:504`) |
-| `/api/v1/state/<dot-path>` | the live-state tree via `GetState` (`mosd/mosd/src/bus.rs:219`) | `GET` only | untyped `serde_json::Value` (`mosd/mosd/src/bus.rs:46-49`), in memory, no writer that is not a reconciler or `ReportHealth` |
+| `/api/v1/state/<dot-path>` | the live-state tree via `GetState` (`mosd/mosd/src/bus.rs:219`) | `GET` only | untyped `serde_json::Value` (`mosd/mosd/src/bus.rs:46-49`), in memory, written only from inside mosd by the four writers section 1.5 names |
 | `/api/v1/actions/<verb>` | the `/Actions/reboot` and `/Actions/poweroff` items (`mosd/mosd/src/actions.rs:46`, `:47`), and `SetTransientRootPassword` (`mosd/mosd/src/bus.rs:365`) | `POST` only | not state at all — see §2.3 |
 
 The split is mosd's, not a stylistic preference. The two trees have different
