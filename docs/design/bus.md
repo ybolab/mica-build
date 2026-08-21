@@ -14,10 +14,15 @@
 > (`mosd/apid/src/bus_client.rs`) — so the statements that needed it now read
 > **[implemented]** too: §1.1's interface, §3's SetValue-failure rule, §4's
 > object paths and all four of D3's (§7). §11 records what the shipped tree is
-> known **not** to do. What is still **[proposed]** is what needs services
-> that do not exist yet — D2's class registry and mandatory paths (§5, §6),
-> D5's lifecycle — and the M3 bridge; later tasks keep flipping markers
-> section by section, with paths.
+> known **not** to do. **M3 landed the bridge** this tree was shaped for:
+> `mos-mqttd` (`mosd/mqttd/`) publishes it over MQTT in the mos-native grammar
+> §10 chose, so §10.1's grammar, payload, liveness and mode statements now read
+> **[implemented]** with paths into `mosd/mqttd/src/`. What is still
+> **[proposed]** is what needs services that do not exist yet — D2's class
+> registry and mandatory paths (§5, §6), and D5's lifecycle with the registry
+> that is what will make the bridge publish for more than the one service it
+> publishes for today. Later tasks keep flipping markers section by section,
+> with paths.
 
 ## 0. How to read this document
 
@@ -35,7 +40,9 @@ shipped is **[implemented]** and named by path; the rest of this document is
 **[proposed]** today, and marking the split rather than the intent is the
 point. Sections 0 and 10 carry no marker where they record evaluation and
 history rather than mechanism — the same exemption api.md and access.md
-state.
+state. §10.1 is the one part of §10 that outgrew that exemption: since M3 the
+grammar it describes is shipped code, not a candidate, so it carries markers
+and paths like every other mechanism here.
 
 **Authority.** Where this document and `docs/plan/PLAN-011.md` disagree, the
 plan's decision record wins and the disagreement is a defect in this document.
@@ -345,7 +352,9 @@ Consequences, stated once:
   serialization — a bus consumer, including the M3 MQTT bridge, never holds
   the secret and needs no masking logic of its own. The bridge's
   publish-side masking (PLAN-011 D6) is defense in depth, not the primary
-  control.
+  control; it shipped in `mosd/mqttd/src/payload.rs`, applies this same
+  structural rule to every payload leaving that process, and should find
+  nothing to mask.
 - **[implemented]** The residual risk is api.md's, inherited: this is a
   denylist, so a future secret-bearing field under a name not on the list is
   exposed by default. The mitigation is a test asserting the redacted tree,
@@ -385,24 +394,62 @@ normative in mos, not folklore.
 
 Recorded during M1 so the M3 bridge milestone starts unblocked. This section
 is an evaluation and a decision record; the **OUTCOME** at its end is what
-the M3 bridge implements from.
+the M3 bridge implements from, and what M3 implemented.
 
-### 10.1 The mos-native grammar under evaluation
+### 10.1 The mos-native grammar, as shipped in `mos-mqttd` [implemented]
 
-The M3 bridge (`mos-mqttd`) as planned speaks the dbus-flashmq-shaped
-protocol, field-proven for a decade against exactly this tree shape:
+The M3 bridge (`mos-mqttd`, the `mosd/mqttd/` workspace crate) speaks the
+dbus-flashmq-shaped protocol, field-proven for a decade against exactly this
+tree shape. It was a candidate when this section was written and it is code
+now, so each statement names where it lives:
 
-- Topic grammar: `N|R|W/<deviceId>/<class>/<instance>/<path>` —
-  `N` (notification, device→broker), `R` (read request, broker→device),
-  `W` (write request, broker→device).
-- Payloads: `{"value": ...}` JSON; an invalid item publishes
-  `{"value": null}` (the §3 convention crossing to JSON, where `null` is
-  expressible).
-- Liveness: a 60 s keepalive request triggers a **rate-limited full
-  republish** of the tree, terminated by a `full_publish_completed` marker;
-  the device emits a 3 s heartbeat.
-- Modes: **read-only** (N only; R/W ignored) vs **full** (W carried through
-  to `SetValue` — sufficient for all control, by §7).
+- **[implemented]** Topic grammar:
+  `N|R|W/<deviceId>/<class>/<instance>/<path>` — `N` (notification,
+  device→broker), `R` (read request, broker→device), `W` (write request,
+  broker→device). Building and parsing are one module,
+  `mosd/mqttd/src/topic.rs`, so the two cannot drift apart.
+- **[implemented]** Payloads: `{"value": ...}` JSON, optional `min`/`max`
+  alongside; an invalid item publishes `{"value": null}` (the §3 convention
+  crossing to JSON, where `null` is expressible) —
+  `mosd/mqttd/src/payload.rs`. The **zero-length** payload is a different
+  thing and deliberately so: it is the *retained* clear published per known
+  topic when the device vanishes, which deletes the retained message, where
+  `{"value": null}` says the item is present and currently invalid.
+- **[implemented]** Liveness: a keepalive request arms a **60 s** window and
+  triggers a **rate-limited full republish** of the tree, terminated by
+  exactly one `full_publish_completed` carrying the item count; the device
+  emits a **3 s** heartbeat carrying its monotonic uptime —
+  `mosd/mqttd/src/bridge.rs`, timings in `mosd/mqttd/src/config.rs`. The
+  keepalive itself is never throttled — it always renews the window — but the
+  republish it asks for is, behind a **5 s** floor that collapses a keepalive
+  storm into at most one immediate plus one deferred republish. The republish
+  is served from the bridge's own mirror of the tree (seeded by `GetItems`,
+  maintained by `ItemsChanged`), so a keepalive storm cannot become a
+  `GetItems` storm against mosd. Publication uses QoS 0 throughout, because
+  the protocol's recovery mechanism *is* the keepalive-triggered republish.
+- **[implemented]** The window is a **publishing** gate, not a control gate:
+  an `N`, an answer to an `R`, the heartbeat, a republish and a vanished
+  device's clears are all silent outside it, while a `W` is carried through
+  whether or not anyone is listening. Clears owed while the bridge is silent
+  survive until it is alive again (`mosd/mqttd/src/bridge.rs`).
+- **[implemented]** Modes: **read-only** — the default, so a bridge nobody
+  configured cannot become a control path — versus **full**
+  (`mosd/mqttd/src/config.rs`). Read-only publishes `N` and answers `R`, and
+  refuses `W`: it does not subscribe to the `W` filter and refuses a `W` that
+  arrives anyway. Full carries `W` through to `SetValue`, which is sufficient
+  for all control, by §7. (While the mode was a proposal this document said
+  *"N only; R/W ignored"*; the shipped rule is the narrower one stated here,
+  because an `R` is a read and the gate that governs it is the alive window,
+  not the mode.)
+- **[implemented]** No acknowledgement: the grammar has no result topic and
+  the bridge invents none. A `W` becomes a `SetValue` and stops there, so a
+  subscriber observes success as the `N` that the resulting `ItemsChanged`
+  produces — for an action, the forced re-zero of §7 — and a refusal is
+  precisely the absence of it. The distinction a remote client actually needs,
+  a settings write that did not persist being safe to retry where a dispatched
+  action is not (§1.1's `-4`/`-5`), is drawn from the **path** rather than the
+  code, in `mosd/mqttd/src/source.rs`, so it stays correct however the
+  negative vocabulary grows.
 
 ### 10.2 Sparkplug B, compared
 
