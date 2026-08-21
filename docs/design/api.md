@@ -220,16 +220,19 @@ declares the same three: `BUS_NAME` (`mosd/mosd/src/bus.rs:20`), `OBJECT_PATH`
 (`mosd/mosd/src/bus.rs:179`). Which bus is chosen is configuration: `WEBD_BUS`
 selects system (the default) or session (`mosd/apid/src/config.rs:41-45`).
 
-**Every method apid calls today — six.** The proxy trait
-(`mosd/apid/src/bus_client.rs:14-21`) declares exactly:
+**Every method apid calls today — five, across two proxy traits.** The
+`com.mos.mosd1` trait (`mosd/apid/src/bus_client.rs:20-25`) declares four; the
+power actions are the fifth, `SetValue` on the `com.mos.Item1` trait
+(`mosd/apid/src/bus_client.rs:33-36`), written to one action item per verb and
+so listed once per verb below:
 
 | Proxy method | Line | mosd's implementation | Called from |
 |---|---|---|---|
 | `get_settings(path) -> String` | `bus_client.rs:15` | `mosd/mosd/src/bus.rs:182` | the gate (`routes.rs:131`) and the `/`, `/setup`, `/login`, `/network`, `/hostname`, `/ssh` handlers |
 | `set_settings(path, value_json)` | `bus_client.rs:16` | `mosd/mosd/src/bus.rs:191` | `/setup`, `/network`, `/hostname`, `/ssh/enable`, `/ssh/keys/*` |
 | `get_state(path) -> String` | `bus_client.rs:17` | `mosd/mosd/src/bus.rs:219` | two paths only: `GetState("network")` (`routes.rs:580`) and `GetState("sshd")` (`routes.rs:1045`) |
-| `reboot()` | `bus_client.rs:18` | `mosd/mosd/src/bus.rs:257` | `POST /power/reboot` (`routes.rs:882`) |
-| `power_off()` | `bus_client.rs:19` | `mosd/mosd/src/bus.rs:265` | `POST /power/poweroff` (`routes.rs:883`) |
+| `set_value` on `/Actions/reboot` | `bus_client.rs:35`, path at `:40` | `mosd/mosd/src/tree.rs:500` → `mosd/mosd/src/actions.rs:101` | `POST /power/reboot` (`routes.rs:1259`) |
+| `set_value` on `/Actions/poweroff` | `bus_client.rs:35`, path at `:41` | `mosd/mosd/src/tree.rs:500` → `mosd/mosd/src/actions.rs:102` | `POST /power/poweroff` (`routes.rs:1260`) |
 | `set_transient_root_password(password)` | `bus_client.rs:20` | `mosd/mosd/src/bus.rs:283` | `POST /ssh/password` (`routes.rs:1272`) |
 
 **What apid does not call, and cannot receive.** mosd exposes a seventh method,
@@ -707,7 +710,7 @@ is named and the choice is costed.
 |---|---|---|---|
 | `/api/v1/settings/<dot-path>` | `Settings` (`mosd/mosd-settings/src/model.rs:16-32`) via `GetSettings` / `SetSettings` (`mosd/mosd/src/bus.rs:182`, `:191`) | `GET`, `PUT` | typed, validated, persisted to `/var/lib/mos/settings.toml` (`mosd/mosd-settings/src/store.rs:12`), survives reboot and A/B update (`docs/design/access.md:504`) |
 | `/api/v1/state/<dot-path>` | the live-state tree via `GetState` (`mosd/mosd/src/bus.rs:219`) | `GET` only | untyped `serde_json::Value` (`mosd/mosd/src/bus.rs:46-49`), in memory, no writer that is not a reconciler or `ReportHealth` |
-| `/api/v1/actions/<verb>` | `Reboot`, `PowerOff`, `SetTransientRootPassword` (`mosd/mosd/src/bus.rs:257`, `:265`, `:283`) | `POST` only | not state at all — see §2.3 |
+| `/api/v1/actions/<verb>` | the `/Actions/reboot` and `/Actions/poweroff` items (`mosd/mosd/src/actions.rs:46`, `:47`), and `SetTransientRootPassword` (`mosd/mosd/src/bus.rs:365`) | `POST` only | not state at all — see §2.3 |
 
 The split is mosd's, not a stylistic preference. The two trees have different
 types (`settings: Settings` and `state: Value`, `mosd/mosd/src/bus.rs:47-48`),
@@ -835,7 +838,7 @@ destroy the credential.
 | Transient root password | `POST /api/v1/actions/transient-root-password` | `SetTransientRootPassword` (`mosd/mosd/src/bus.rs:283`) | an action, not a setting — see §2.3 |
 | Web admin credential | `GET /api/v1/settings/access.webAdmin` (redacted), `PUT` refused | `WebAdminSettings` (`model.rs:68-71`) | see §3.2 for why the API does not offer a password change in phase 1 |
 | Console | `GET`/`PUT /api/v1/settings/access.console` | `ConsoleSettings` (`model.rs:140-145`) | only the `debug` image ships the shell at all (`model.rs:141-142`) |
-| Power | `POST /api/v1/actions/reboot`, `.../poweroff` | `Reboot`/`PowerOff` (`mosd/mosd/src/bus.rs:257`, `:265`) | actions — see §2.3 |
+| Power | `POST /api/v1/actions/reboot`, `.../poweroff` | the `/Actions/reboot`/`/Actions/poweroff` items (`mosd/mosd/src/actions.rs:46`, `:47`) | actions — see §2.3 |
 | Reconciler results | `GET /api/v1/state/<name>` for `hostname`, `network`, `sshd`, `wifiClient`, `wifiAp` | one key per reconciler (`mosd/mosd/src/bus.rs:125-132`, `:137-148`) | an entry is either the applied result or `{"error": "..."}`; the API passes both through unchanged |
 | Last power request | `GET /api/v1/state/power` | `{last_action, requested_by}` (`mosd/mosd/src/bus.rs:86-100`) | recorded *before* the action, so it survives the machine going down |
 | Health | `GET /api/v1/state/health` and `GET /api/v1/health` | `health.<component>` (`mosd/mosd/src/bus.rs:231-251`) | the two are different questions — see §2.4 |
