@@ -7,9 +7,17 @@
 > the **read-only** half — `GetItems`, the coalesced `ItemsChanged`, the
 > invalid-value convention and structural redaction, all in
 > `mosd/mosd/src/tree.rs` — and those statements now read **[implemented]**.
-> Everything the write path, the action items and extension services need is
-> still **[proposed]**; later tasks keep flipping markers section by section,
-> with paths.
+> **M2 landed the write half**: `GetValue`/`SetValue` on per-item object
+> paths, the five platform-config subtrees writable, and `/Actions/reboot`
+> and `/Actions/poweroff` as action items (`mosd/mosd/src/tree.rs`,
+> `mosd/mosd/src/actions.rs`), consumed by apid's power pane
+> (`mosd/apid/src/bus_client.rs`) — so the statements that needed it now read
+> **[implemented]** too: §1.1's interface, §3's SetValue-failure rule, §4's
+> object paths and all four of D3's (§7). §11 records what the shipped tree is
+> known **not** to do. What is still **[proposed]** is what needs services
+> that do not exist yet — D2's class registry and mandatory paths (§5, §6),
+> D5's lifecycle — and the M3 bridge; later tasks keep flipping markers
+> section by section, with paths.
 
 ## 0. How to read this document
 
@@ -22,8 +30,8 @@ against the tree from what is only being asked for.
 - **[proposed]** — no code; this document is asking for it.
 
 access.md's reason applies unchanged: a contract that exists only as prose has
-no mechanism that will ever notice it is absent. What PLAN-011 M1 shipped is
-**[implemented]** and named by path; the rest of this document is
+no mechanism that will ever notice it is absent. What PLAN-011 M1 and M2
+shipped is **[implemented]** and named by path; the rest of this document is
 **[proposed]** today, and marking the split rather than the intent is the
 point. Sections 0 and 10 carry no marker where they record evaluation and
 history rather than mechanism — the same exemption api.md and access.md
@@ -42,7 +50,7 @@ interface: a consumer that can read, write and subscribe to items can consume
 every service on the bus, which is the property that makes the M3 MQTT bridge
 a pure edge component.
 
-### 1.1 Interface definition [proposed]
+### 1.1 Interface definition [implemented]
 
 ```xml
 <node>
@@ -66,10 +74,15 @@ a pure edge component.
 </node>
 ```
 
-- **[proposed]** `GetValue() -> v` and `SetValue(v) -> i` exist on **every
-  item object path**. `SetValue` returns `0` on success and a **negative
-  error code** on failure; positive return values are reserved and must not
-  be produced.
+- **[implemented]** `GetValue() -> v` and `SetValue(v) -> i` exist on **every
+  item object path** — one D-Bus object per item, registered before the
+  well-known name is claimed and kept in step with the tree by the same change
+  watcher that drives `ItemsChanged` (`mosd/mosd/src/tree.rs`), so the members
+  exist exactly where an item does. `SetValue` returns `0` on success and a
+  **negative error code** on failure; positive return values are reserved and
+  must not be produced. A path with **no** item behind it is not a return code
+  at all — it answers with the D-Bus `UnknownObject` error, which is decided
+  rather than incidental and is recorded as §11's first known limit.
 - **[implemented]** The **result-code vocabulary**, one code per outcome
   (`mosd/mosd/src/tree.rs`):
 
@@ -97,9 +110,11 @@ a pure edge component.
   tree and the live-state tree as one flat map). The outer key is the item's
   **absolute slash path** (`/network/eth0/dhcp`); the inner dict carries
   `value` (`v`), `writable` (`b`), and optionally `min` (`v`), `max` (`v`),
-  `unit` (`s`). M1 emits `value` and `writable` — the latter `false` on every
-  item until the write path lands — and omits the optional three, which
-  neither tree carries today.
+  `unit` (`s`). `value` and `writable` are emitted; the optional three are
+  omitted, neither tree carrying them today. **M2 gave `writable` its
+  meaning**: `true` on the five platform-config subtrees (`hostname`,
+  `network`, `wifi.client`, `wifi.ap`, `access.ssh`) and on the `/Actions/*`
+  items, `false` on everything else including all of live state.
 - **[implemented]** `ItemsChanged` is **coalesced per event-loop turn**:
   changes accumulate during a turn and flush as one signal at its end (the
   veutil pattern, `ve_qitem_exported_dbus_service.cpp:241`). A burst of N item
@@ -124,8 +139,20 @@ write paths is a bug class the live-bus test must cover.
 **[implemented]** The façade half of that is in place: `mosd/mosd/src/tree.rs`
 only *observes* — `MosdService` remains the single writer, and the tree learns
 about mutations through its change marker rather than by writing anything
-itself. The wrapper half waits on M1's successor: there is no second write
-path to diverge yet.
+itself.
+
+**[implemented]** M2 added the write path without adding a second one.
+`SetValue` hands the value to the same `MosdService::write_setting`
+(`mosd/mosd/src/bus.rs`) that `SetSettings` calls — validate against the typed
+tree, persist through the store, re-apply the reconcilers whose subtree
+overlaps the path — so the divergence this section names as a bug class is not
+merely tested against, it is **unrepresentable**: there is one write path with
+two spellings. Reconcilers are unchanged. The same holds for the action items,
+which dispatch through the existing `request_reboot`/`request_power_off`
+rather than restating them (§7). What remains open is only the *deprecation*
+decision: `Reboot` and `PowerOff` are still served, and apid no longer calls
+them (`mosd/apid/src/bus_client.rs`), which is the condition this section
+names for taking that decision — it is not taken here.
 
 ## 2. No `GetText` — a deliberate deviation [implemented]
 
@@ -141,7 +168,7 @@ Shipping a server-side display string would bake one client's formatting into
 every service and every bridge payload. Rationale recorded in PLAN-011 D1;
 this closes the corresponding entry in the deviation register (§9).
 
-## 3. The invalid-value convention [proposed]
+## 3. The invalid-value convention [implemented]
 
 Stated once, here, for the whole contract — every service and every consumer
 follows it, and no other document restates it normatively:
@@ -156,34 +183,42 @@ follows it, and no other document restates it normatively:
   the **empty-array sentinel** `[]` (D-Bus type `av`, zero elements) as its
   value. A consumer must treat that sentinel exactly as it treats an absent
   key. `tree::invalid_sentinel` (`mosd/mosd/src/tree.rs`) is what a vanished
-  path carries in an `ItemsChanged` batch; the `GetValue` half arrives with
-  the write path.
-- **[proposed]** `SetValue` failures are reported **only** through the
+  path carries in an `ItemsChanged` batch, and — since M2 — what `GetValue`
+  answers on an item object whose leaf has gone invalid under it.
+- **[implemented]** `SetValue` failures are reported **only** through the
   negative integer return code (§1.1); a failed write never changes the
-  item's value, and error *text* is not part of the contract.
+  item's value, and error *text* is not part of the contract
+  (`mosd/mosd/src/tree.rs` — the reason a write was refused is logged on the
+  device and does not travel).
 
 This is Venus's convention stated explicitly instead of implied — one of the
 things the plan's source study found documented nowhere in Venus itself.
 
-## 4. Path mapping: dot-paths and slash paths [proposed]
+## 4. Path mapping: dot-paths and slash paths [implemented]
 
 - **[implemented]** The **internal dot-path** (`network.eth0.dhcp`) remains
   the **canonical address** of a setting or state item, exactly as
   `docs/design/mosd.md` §5.1 and `docs/design/api.md` §2 use it. apid and the
   `/api/v1` surface need no renaming: the façade (`mosd/mosd/src/tree.rs`)
   converts at the bus edge and nothing upstream of it moved.
-- **[proposed]** The bus object path is the **slash form** of the dot-path
-  with a leading slash: `network.eth0.dhcp` ↔ `/network/eth0/dhcp`. The
-  mapping is mechanical in both directions and total over valid dot-paths.
+- **[implemented]** The bus object path is the **slash form** of the dot-path
+  with a leading slash: `network.eth0.dhcp` ↔ `/network/eth0/dhcp`, and
+  `mosd/mosd/src/tree.rs` serves one object at exactly that path per item. The
+  mapping is mechanical in both directions and total over dot-paths whose
+  segments are also valid **D-Bus object-path elements**; a segment that is
+  not gets no object, which is §11's second known limit.
 - **[implemented]** `GetItems` keys and `ItemsChanged` keys use the absolute
   slash form (`tree::flatten`, `mosd/mosd/src/tree.rs`; asserted by
   `mosd/mosd/tests/tree.rs::get_items_projects_both_trees_as_slash_paths`). A
   consumer converting back to dot-paths strips the leading slash and replaces
   `/` with `.`.
-- **[proposed]** The dot-path model's known limit — a segment containing a
+- **[implemented]** The dot-path model's known limit — a segment containing a
   literal dot cannot be addressed (`docs/design/api.md` §2's VLAN case) — is
   inherited by the slash form unchanged; the bus does not add an escape
-  syntax.
+  syntax. The object layer adds a second, narrower limit of the same family
+  (D-Bus restricts what characters a path element may contain), recorded in
+  §11 rather than here because it costs an item its object without costing it
+  its addressability.
 
 ## 5. D2 — Service naming and the class registry [proposed]
 
@@ -231,25 +266,47 @@ things the plan's source study found documented nowhere in Venus itself.
   `0` = ok, `1` = warning, `2` = alarm. No other alarm encoding is permitted
   on the bus.
 
-## 7. D3 — Actions are writable items [proposed]
+## 7. D3 — Actions are writable items [implemented]
 
-- **[proposed]** An action is an item under `/Actions/<verb>`
-  (`/Actions/reboot`, `/Actions/poweroff`, and RFCT-084's update verbs as
-  they land). Its value **always reads `0`**.
-- **[proposed]** `SetValue` on an action item **triggers the action**. The
-  service forces the value back to `0` after the write and **emits a change
-  signal even on the `0 -> 0` edge** — the forced re-zero is observable, so
-  a subscriber sees the consumption edge of every trigger (the
-  `VeQItemAction` semantics, `veutil ve_qitem_utils.hpp:146-162`).
-- **[proposed]** The `SetValue` **return code is the dispatch result**: `0`
+- **[implemented]** An action is an item under `/Actions/<verb>`. Its value
+  **always reads `0`** — a constant, not a stored value. `/Actions/reboot` and
+  `/Actions/poweroff` are served as one object per path exactly like a
+  settings item (`mosd/mosd/src/actions.rs` owns the verbs;
+  `mosd/mosd/src/tree.rs` projects and dispatches them). Writability is an
+  explicit three-way `Access` on each projected leaf — read-only, setting,
+  action — so an action is a case of its own rather than an entry bolted onto
+  the writable-subtree list. **[proposed]** RFCT-084's update verbs arrive
+  under this same rule as they land.
+- **[implemented]** `SetValue` on an action item **triggers the action**, and
+  **any** written value triggers it: the write *is* the trigger, so the value
+  is accepted and ignored. The service forces the value back to `0` after the
+  write and **emits a change signal even on the `0 -> 0` edge** — the forced
+  re-zero is observable, so a subscriber sees the consumption edge of every
+  trigger (the `VeQItemAction` semantics,
+  `veutil ve_qitem_utils.hpp:146-162`). Because the value is constant, no diff
+  of two projections can ever carry that edge; `mosd/mosd/src/tree.rs` injects
+  it into the **same coalesced `ItemsChanged` batch** as the live-state record
+  of the request, so the edge costs no second signal and §1.1's coalescing
+  guarantee is not spent on it.
+- **[implemented]** The `SetValue` **return code is the dispatch result**: `0`
   means the action was accepted and dispatched, a negative code means it was
-  not. Completion and progress, where they exist, are ordinary items
-  elsewhere in the tree — the action item itself carries no state.
-- **[proposed]** Existing safety properties are preserved unchanged: the
-  action is logged and recorded in live-state *before* the power call (the
-  current `Reboot` contract), and apid's confirm-token gate stays in apid.
-  The bus remains root-only by policy until PLAN-011 D5 lands, so the
-  bus-side gate *is* the policy.
+  not — §1.1's table says *which* negative code, and `-5` exists precisely so
+  that "accepted and would not dispatch" is not confused with a settings write
+  that did not persist. Completion and progress, where they exist, are
+  ordinary items elsewhere in the tree — the action item itself carries no
+  state.
+- **[implemented]** Existing safety properties are preserved unchanged, and
+  preserved by **reuse** rather than by restatement: dispatch calls the
+  existing `MosdService::request_reboot` / `request_power_off`
+  (`mosd/mosd/src/bus.rs`), so `note_power_request` still writes the tracing
+  line and the live-state power record **before** the power call — the current
+  `Reboot` contract, which a second implementation of it could have drifted
+  from. The trigger is attributed to its caller through the message header
+  (`bus::sender_of`), so a reboot through the item is logged exactly as one
+  through the method. apid's confirm-token gate stays in apid. The bus remains
+  root-only by policy until PLAN-011 D5 lands, so the bus-side gate *is* the
+  policy. What this ordering cannot promise on a real reboot is §11's fourth
+  known limit.
 
 This is what makes a value-only remote bridge sufficient: Venus's MQTT bridge
 carries only `SetValue` (`dbus-flashmq/src/state.cpp:317-354`) and that is
@@ -258,6 +315,17 @@ actions-as-items-vs-methods fork recorded in `docs/research/venus-os-ui.md`
 §7 item 2 and left open in `docs/design/api.md`'s research appendix — in
 favor of items. `POST /api/v1/actions/<verb>` becomes a thin mapping onto
 these items with no HTTP-visible change.
+
+**[implemented]** apid's power pane is that mapping today: `reboot()` and
+`power_off()` write `/Actions/reboot` and `/Actions/poweroff` through
+`com.mos.Item1` (`mosd/apid/src/bus_client.rs`), and only the code `0` is read
+as success — apid names no failure code, so mosd's failure vocabulary can grow
+without it. The switch sits **below** the `SettingsApi` trait and
+`mosd/apid/src/routes.rs` was not modified, so the routes, the confirm-token
+gate and the `202 Accepted` are byte-for-byte what they were. The
+`com.mos.mosd1` `Reboot` and `PowerOff` methods are **still served** and are
+neither deprecated nor removed (§1.2); apid simply no longer calls them.
+`docs/design/api.md` §10.3 records the same resolution from the API side.
 
 ## 8. Structural redaction is a bus-level contract [implemented]
 
@@ -382,3 +450,56 @@ payloads, keepalive-triggered rate-limited full republish with
 `full_publish_completed`, 3 s heartbeat, read-only and full modes); Sparkplug
 B is not implemented now and is adopted, if ever, only as an additional
 mapper when a named integration requires it.**
+
+## 11. Known limits of the shipped item tree
+
+Four properties of what M1 and M2 shipped that a reader would otherwise
+discover by hitting them. Each is a **decision with a reason**, recorded here
+so it is a documented decision rather than tribal knowledge, and each names
+what would change it. They are limits of the implementation, not exceptions to
+the contract above.
+
+1. **[implemented]** **An unknown object path answers with the D-Bus
+   `UnknownObject` error, not `-1`** (`mosd/mosd/src/tree.rs`). This is not a
+   gap in §1.1's vocabulary; it is where the vocabulary stops being reachable.
+   zbus dispatches by **exact** object path with no subtree or fallback
+   handler, so answering a return code at an arbitrary path would mean
+   registering an object at every path a client might guess — an unbounded
+   set. And because the `SetValue` contract *is* a method return code, there
+   is no method to return one from when no object exists. The error is also
+   the more informative answer: every D-Bus client library surfaces
+   `UnknownObject` distinctly, while `-1` is an integer a caller must know to
+   interpret. The façade's internal `-1` branch **stays** — it is the answer
+   to the real race, a path that existed when the client read the tree and did
+   not when it wrote — and is asserted in both directions.
+
+2. **[implemented]** **A settings key that is not a valid D-Bus object-path
+   element gets no item object.** The realistic case is `network.br-lan`: a
+   D-Bus path element admits `[A-Za-z0-9_]` only, so the hyphen has no
+   spelling. Such a key is **not lost** — it still reads through `GetItems`,
+   it still changes through `ItemsChanged`, and it is still writable through
+   `SetSettings` — it is only unaddressable as an object, so `GetValue` and
+   `SetValue` cannot reach it. mosd logs a `WARN` when it happens, so the
+   condition is visible on the device rather than inferred from a missing
+   object. This is §4's dot-path limit's sibling one layer down, and the bus
+   adds no escape syntax for either.
+
+3. **[implemented]** **A reconciler's live-state key can shadow a settings
+   top-level key, and the projection is ambiguous at that path.** The two
+   trees flatten into one map (§1.1), so a live-state key that collides with a
+   settings key produces one path whose origin a reader cannot tell. It is not
+   reachable in dry-run, and the collision cannot *widen* anything: live state
+   is never writable, so a shadowed path is read-only whichever side wins and
+   no shadow can make a read-only item writable by accident. A future
+   reconciler naming a top-level key after a settings subtree is what would
+   make this real.
+
+4. **[implemented]** **On a real reboot there is no guarantee the forced
+   re-zero signal reaches a subscriber before the process is torn down.** The
+   `0 -> 0` consumption edge (§7) is emitted, but systemd stops mosd on the
+   way down and a subscriber may never be scheduled to read it. This is
+   inherent to rebooting rather than a defect in the signal path, and it is
+   the reason the request is logged and recorded in live state **before**
+   dispatch: the durable record of a trigger is the live-state record, which
+   survives the reboot, and the signal is best-effort on top of it. Ordering
+   the record first is what makes the signal as likely to arrive as it can be.

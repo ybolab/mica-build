@@ -4,8 +4,8 @@
 - **createdAt**: 2026-08-21 14:25
 - **approvedAt**: 2026-08-21 14:58 (user directive: dispatch via BKD L1)
 - **completedAt**: -
-- **relatedTask**: RFCT-089 (M1, complete 2026-08-21), RFCT-090 (M2), RFCT-091 (M3) — campaign 1; M4–M6 tasks created on their dispatch
-- **milestones**: M1 **complete 2026-08-21** — `docs/design/bus.md` records the D1/D2/D3 contract and the D6 Sparkplug B evaluation (native grammar only), and the read-only `com.mos.Item1` façade (`GetItems`, coalesced `ItemsChanged`, redaction) ships in `mosd/mosd/src/tree.rs`; M2–M6 outstanding
+- **relatedTask**: RFCT-089 (M1, complete 2026-08-21), RFCT-090 (M2, complete 2026-08-21), RFCT-091 (M3) — campaign 1; M4–M6 tasks created on their dispatch
+- **milestones**: M1 **complete 2026-08-21** — `docs/design/bus.md` records the D1/D2/D3 contract and the D6 Sparkplug B evaluation (native grammar only), and the read-only `com.mos.Item1` façade (`GetItems`, coalesced `ItemsChanged`, redaction) ships in `mosd/mosd/src/tree.rs`; M2 **complete 2026-08-21** — the write half ships: `GetValue`/`SetValue` on per-item object paths with the five platform-config subtrees writable and `/Actions/reboot` + `/Actions/poweroff` as action items (`mosd/mosd/src/tree.rs`, `mosd/mosd/src/actions.rs`), apid's power pane driving them with HTTP byte-for-byte unchanged (`mosd/apid/src/bus_client.rs`), and D3's actions-as-items fork resolved in `docs/design/api.md` §10.3; M3–M6 outstanding
 
 ## Context
 
