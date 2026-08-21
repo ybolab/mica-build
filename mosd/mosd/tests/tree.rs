@@ -54,6 +54,7 @@ fn find_dbus_daemon() -> Option<PathBuf> {
 )]
 trait Mosd {
     fn set_settings(&self, path: &str, value_json: &str) -> zbus::Result<()>;
+    fn get_state(&self, path: &str) -> zbus::Result<String>;
 }
 
 #[zbus::proxy(
@@ -487,5 +488,111 @@ async fn set_value_writes_a_settings_item_through_the_same_single_writer() -> an
 
     // Nothing above put a secret on the bus.
     assert_no_secret(&items, "GetItems after SetValue");
+    Ok(())
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn an_action_item_triggers_and_forces_itself_back_to_zero() -> anyhow::Result<()> {
+    let Some(harness) = start().await? else {
+        return Ok(());
+    };
+    let item_proxy = ItemProxy::new(&harness.connection).await?;
+    let mosd_proxy = MosdProxy::new(&harness.connection).await?;
+    let items = wait_items(&item_proxy).await?;
+
+    // The safety precondition FIRST, as `tests/bus.rs` states it: the daemon
+    // under test must be in dry-run, where its PowerControl is the no-op one
+    // and the production `Systemd` control was never constructed. Should that
+    // ever regress, this fails before a single action is triggered rather than
+    // after the build host has been asked to reboot.
+    assert!(
+        bool::try_from(items["/dry_run"]["value"].clone())?,
+        "refusing to trigger power actions against a daemon that is not in dry-run"
+    );
+
+    // Both verbs are items, both read 0, and both are writable — even though
+    // no writable settings subtree covers them (docs/design/bus.md §7).
+    for path in ["/Actions/reboot", "/Actions/poweroff"] {
+        assert_eq!(
+            i64::try_from(items[path]["value"].clone())?,
+            0,
+            "{path} must read 0 in GetItems"
+        );
+        assert!(
+            bool::try_from(items[path]["writable"].clone())?,
+            "{path} must be writable"
+        );
+    }
+    let reboot = item_at(&harness.connection, "/Actions/reboot").await?;
+    assert_eq!(i64::try_from(reboot.get_value().await?)?, 0);
+
+    let mut changed = item_proxy.receive_items_changed().await?;
+    assert_eq!(
+        reboot.set_value(&Value::from(1i64)).await?,
+        0,
+        "the return code is the dispatch result, and this one dispatched (§7)"
+    );
+
+    // The consumption edge. The item's value never moved, so nothing but the
+    // forced re-zero can put it in a payload at all — and it arrives in the
+    // SAME coalesced signal as the live-state power record the request path
+    // wrote before the (no-op) power call.
+    let payload = next_items(&mut changed).await;
+    assert!(
+        payload.contains_key("/Actions/reboot"),
+        "the forced 0 -> 0 edge must be observable in ItemsChanged: {payload:?}"
+    );
+    assert_eq!(
+        i64::try_from(payload["/Actions/reboot"]["value"].clone())?,
+        0,
+        "the forced re-zero carries 0, which is the only value an action has"
+    );
+    assert_eq!(
+        String::try_from(payload["/power/last_action"]["value"].clone())?,
+        "reboot",
+        "the request record must ride the same coalesced payload: {payload:?}"
+    );
+
+    // The trigger went through the daemon's existing power path, which logged
+    // it and recorded it BEFORE calling the control — the `Reboot` contract,
+    // preserved because the action item calls that very method.
+    let power: serde_json::Value = serde_json::from_str(&mosd_proxy.get_state("power").await?)?;
+    assert_eq!(power["last_action"], "reboot");
+    assert!(
+        power["requested_by"]
+            .as_str()
+            .is_some_and(|sender| sender.starts_with(':')),
+        "the bus caller must be attributed, got {power}"
+    );
+
+    // ... and afterwards the item reads 0 again, through both read paths.
+    assert_eq!(i64::try_from(reboot.get_value().await?)?, 0);
+    let items = item_proxy.get_items().await?;
+    assert_eq!(i64::try_from(items["/Actions/reboot"]["value"].clone())?, 0);
+
+    // The other verb is its own action, not an alias of the first.
+    let poweroff = item_at(&harness.connection, "/Actions/poweroff").await?;
+    assert_eq!(poweroff.set_value(&Value::from(1i64)).await?, 0);
+    let payload = next_items(&mut changed).await;
+    assert!(
+        payload.contains_key("/Actions/poweroff"),
+        "the second verb needs its own edge: {payload:?}"
+    );
+    let power: serde_json::Value = serde_json::from_str(&mosd_proxy.get_state("power").await?)?;
+    assert_eq!(power["last_action"], "power_off");
+
+    // The actions prefix is not a wildcard: only the verbs are objects.
+    let unknown = item_at(&harness.connection, "/Actions/selfdestruct").await?;
+    assert!(
+        unknown.set_value(&Value::from(1i64)).await.is_err(),
+        "an unknown verb is not an item, so it must not answer SetValue at all"
+    );
+
+    // An action is not a settings write, so nothing reached the store.
+    let persisted = std::fs::read_to_string(&harness.settings_path)?;
+    assert!(
+        !persisted.contains("Actions") && !persisted.contains("reboot"),
+        "an action must persist nothing, got:\n{persisted}"
+    );
     Ok(())
 }

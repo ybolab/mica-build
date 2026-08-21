@@ -19,6 +19,7 @@
 
 #![forbid(unsafe_code)]
 
+mod actions;
 mod bus;
 mod identity;
 mod power;
