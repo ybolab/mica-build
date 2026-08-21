@@ -182,10 +182,6 @@ COPY board/cx3576/rootfs/firmware/aic_userconfig_8800d80.txt \
 # listening from early boot until mosd's first reconcile shut it down — exactly
 # the window this design exists to close. Turning SSH on is a runtime decision
 # made against the settings tree, never a property of the image.
-#
-# ROOT_PASSWORD (further down) is unaffected: it still bakes a debug credential
-# into a dev image, but that image no longer answers on port 22 until something
-# enables it.
 RUN printf '%s\n' \
         '[Match]' \
         'Name=eth*' \
@@ -222,7 +218,8 @@ RUN rm -f /etc/ssh/ssh_host_*
 # /etc/wpa_supplicant, /etc/hostapd), the two DATA bind mounts (/home and
 # /root, which are user data rather than configuration and so do not belong on
 # the small, precious STATE partition -- see home.mount and root.mount), the
-# first-boot seed oneshots, the /var fill-up policies and the fw_env.config pointing at
+# seed oneshots (mos-seed-state converges on every boot; the others act on
+# first boot), the /var fill-up policies and the fw_env.config pointing at
 # the uenv pair.
 # The tree is rendered from os/layout/cx3576-v2.env by build-v2.sh; nothing
 # here duplicates a layout constant. Modes are set explicitly so the packed
@@ -408,14 +405,16 @@ RUN set -eu; \
         { echo "error: the mos shadow last-change field is not the pinned day 18262 (2020-01-01)" >&2; exit 1; }; \
     echo "account: mos uid=1000 gid=1000 shell=/bin/bash home=/home/mos, no supplementary groups, shadow field '${mh}'"
 
-# DEV profile only — never set ROOT_PASSWORD for production images.
-# Default (empty): root stays locked and PermitRootLogin is untouched.
-ARG ROOT_PASSWORD=""
-RUN if [ -n "$ROOT_PASSWORD" ]; then \
-        echo "root:${ROOT_PASSWORD}" | chpasswd && \
-        mkdir -p /etc/ssh/sshd_config.d && \
-        printf 'PermitRootLogin yes\n' > /etc/ssh/sshd_config.d/10-dev.conf; \
-    fi
+# There is deliberately NO ROOT_PASSWORD build arg on the v2 path (v1's
+# Dockerfile keeps it: that root is a writable per-build ext4). A v2 rootfs is
+# a signed squashfs, byte-identical on every device, so any usable hash baked
+# into it is a fleet-wide shared secret — and the pack stage's factory-shadow
+# assertion below fails the build on exactly that, for every account and with
+# no profile exception. Plumbing an arg into an unbuildable state would only
+# invite someone to "fix" the assertion. Dev root access on v2 is the runtime
+# transient password (mosd's SetTransientRootPassword, cleared on the next boot
+# by mos-shadow-reconcile) plus the serial console, whose root stays locked
+# until that password is set. See docs/design/access.md section 4.1.
 
 # Build report (moved out of the tree by the pack stage; never ships in the
 # image). Must run before the pack stage relocates /var, since dpkg-query
@@ -532,9 +531,9 @@ RUN set -eu; \
 # secret-bearing file moves, so account definitions remain part of the signed,
 # verity-covered root.
 #
-# Done here and not in the rootfs stage because the ROOT_PASSWORD step and every
-# package postinst still need a real file: chpasswd would follow a symlink laid
-# down earlier and write through it.
+# Done here and not in the rootfs stage because every package postinst still
+# needs a real file: a tool like chpasswd would follow a symlink laid down
+# earlier and write through it.
 RUN set -eu; \
     test -f /rootfs/etc/shadow && test ! -L /rootfs/etc/shadow; \
     mkdir -p /rootfs/usr/share/factory/etc; \
@@ -556,8 +555,10 @@ RUN set -eu; \
 # RFCT-039 adds `mos` as the second, so scoping the test to root would have let
 # the rule quietly stop covering the case it exists for, and would leave the
 # third account exposed all over again. root keeps its own dedicated case
-# above it because its cause is specific and actionable (the ROOT_PASSWORD
-# build arg); the loop below is the class, not the instance.
+# above it because a baked root credential is the single most likely way a
+# hash reaches this file (v1 still has a ROOT_PASSWORD build arg; v2 does not,
+# and this assertion is what keeps it that way); the loop below is the class,
+# not the instance.
 #
 # The two failure modes get two messages on purpose. They are different
 # defects: an EMPTY field means the account accepts any password, while a
@@ -583,7 +584,7 @@ RUN set -eu; \
     case "${rh}" in \
         "") echo "error: the root: entry in the factory shadow has an EMPTY hash field, which means PASSWORDLESS root login: pam_unix accepts any password, including none. Empty is not a locked marker; only '!' (including '!!' and '!'-prefixed forms that retain a hash) and '*' lock an account" >&2; exit 1 ;; \
         '!'* | '*'*) ;; \
-        *) echo "error: the packed rootfs carries a usable root password hash. A signed rootfs is byte-identical on every device, so this is a fleet-wide shared secret. Cause: the ROOT_PASSWORD build arg was set; unset it (the per-device password is provisioned by mosd at runtime)" >&2; exit 1 ;; \
+        *) echo "error: the packed rootfs carries a usable root password hash. A signed rootfs is byte-identical on every device, so this is a fleet-wide shared secret. Something in the build wrote a root credential; v2 has no ROOT_PASSWORD build arg on purpose, and root access is provisioned at runtime (mosd's transient password)" >&2; exit 1 ;; \
     esac; \
     missing=""; empty=""; hashed=""; \
     while IFS=: read -r u _; do \

@@ -594,7 +594,13 @@ if test -z "${bootslot}"; then
 fi
 
 # --- persist the decrement BEFORE booting: this is what makes it a watchdog -
-saveenv
+# An unpersisted decrement quietly degrades the whole scheme to boot-forever:
+# every reset would start from the old counter, so a slot that can never reach
+# mark-good would be retried without end instead of rolling back. saveenv's
+# result cannot change what happens next (the kernel either boots or it does
+# not), but a failing env write must not be silent -- it is the watchdog
+# disarming itself, and the console line is the only witness.
+saveenv || echo "mos: WARNING: saveenv FAILED, boot-attempt decrement NOT persisted; the A/B watchdog cannot count this attempt and a bad slot will be retried forever"
 
 echo "mos: booting slot ${bootslot} (A=${BOOT_A_LEFT} B=${BOOT_B_LEFT} left)"
 

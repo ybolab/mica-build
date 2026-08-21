@@ -61,11 +61,12 @@ done
 # assertion that has only ever been observed passing is not evidence, and a
 # reimplementation of it inside a test would be exactly that.
 #
-# The set is check_ui_location, check_builtin_ui and check_packed_mountpoints,
-# and it is expected to GROW. os/ui-location-test.sh names the members it
-# expects and diffs that against what actually ran, so widening this hook makes
-# that test say which name it did not expect rather than silently changing a
-# count -- which is why the count it used to assert had to go.
+# The set is check_ui_location, check_builtin_ui, check_packed_mountpoints,
+# check_status_led and check_dev_keyring, and it is expected to GROW.
+# os/ui-location-test.sh names the members it expects and diffs that against
+# what actually ran, so widening this hook makes that test say which name it
+# did not expect rather than silently changing a count -- which is why the
+# count it used to assert had to go.
 FIXTURE_ROOT="${MOS_VERIFY_FIXTURE_ROOT:-}"
 
 if [ -z "${FIXTURE_ROOT}" ]; then
@@ -118,7 +119,11 @@ if [ "${INNER}" -eq 0 ] && [ -z "${FIXTURE_ROOT}" ]; then
         fi
         inner_args+=("${img_in}")
         rc=0
-        docker run --rm "${mounts[@]}" -e BOARD_DIR=/board alpine:3.21 \
+        # -e MOS_EXPECT_DEV_KEYRING: the dev-keyring escape must survive the
+        # container re-exec, or a sanctioned dev image would verify green on a
+        # tool-ful host and red on a tool-less one. docker only propagates the
+        # variable when it is set on this side; it never invents a value.
+        docker run --rm "${mounts[@]}" -e BOARD_DIR=/board -e MOS_EXPECT_DEV_KEYRING alpine:3.21 \
             sh -c 'apk add --no-cache -q bash coreutils diffutils gptfdisk sgdisk dosfstools mtools e2fsprogs e2fsprogs-extra squashfs-tools cryptsetup libcap libcap-setcap dtc && exec bash /work/os/verify-image-v2.sh "$@"' \
             _ "${inner_args[@]}" || rc=$?
         if [ -n "${tmp_board}" ]; then
@@ -432,6 +437,28 @@ check_status_led() {
     fi
 }
 
+# A RAUC keyring baked into the signed read-only root makes every flashed
+# device trust every bundle that CA signs — for the dev CA of
+# os/rauc/gen-dev-keys.sh, that is anyone holding a gitignored directory. The
+# overlay path is gitignored precisely so a developer CAN drop one in for
+# local bundle testing, which is why absence cannot be assumed and has to be
+# asserted; os/rootfs/build-v2.sh refuses to stage one under the same toggle.
+# MOS_EXPECT_DEV_KEYRING=1 is the explicit dev escape (same shape as the
+# MOS_VERIFY_FIXTURE_ROOT hook): the check then PASSES, but never quietly —
+# the WARNING line below is the price of admission. Nothing in the build or in
+# make os-verify-cx3576-v2 sets it.
+DEV_KEYRING_PATH="/etc/rauc/keyring.pem"
+check_dev_keyring() {
+    if [ ! -e "${ROOT}${DEV_KEYRING_PATH}" ] && [ ! -L "${ROOT}${DEV_KEYRING_PATH}" ]; then
+        pass "catches a baked-in RAUC keyring: the packed root ships no ${DEV_KEYRING_PATH} (absence is the shipped state; rauc install fails closed until a keyring is provisioned)"
+    elif [ "${MOS_EXPECT_DEV_KEYRING:-0}" = "1" ]; then
+        echo "WARNING: DEVELOPMENT KEYRING SHIPPED — ${DEV_KEYRING_PATH} is baked into this image and MOS_EXPECT_DEV_KEYRING=1 waves it through. Every device flashed with this image trusts every bundle that CA signs. Never flash it onto anything that leaves your desk."
+        pass "catches a baked-in RAUC keyring: ${DEV_KEYRING_PATH} is present but explicitly expected (MOS_EXPECT_DEV_KEYRING=1, development image — see the WARNING above)"
+    else
+        fail "catches a baked-in RAUC keyring: the packed root ships ${DEV_KEYRING_PATH}. A keyring inside the signed read-only root is a trusted signer on every device flashed with this image. If this is a local dev image meant to install locally signed bundles, re-run with MOS_EXPECT_DEV_KEYRING=1 and accept the warning; otherwise delete os/rootfs/overlay-v2${DEV_KEYRING_PATH} and rebuild"
+    fi
+}
+
 # The fixture hook: run only the assertions above, against the fixture, and
 # summarise. os/ui-location-test.sh is the only caller.
 if [ -n "${FIXTURE_ROOT}" ]; then
@@ -441,6 +468,7 @@ if [ -n "${FIXTURE_ROOT}" ]; then
     check_builtin_ui
     check_packed_mountpoints
     check_status_led
+    check_dev_keyring
     fixture_total=$((PASS_N + FAIL_N))
     if [ "${FAIL_N}" -eq 0 ]; then
         echo "RESULT: PASS (${PASS_N}/${fixture_total} checks)"
@@ -1455,11 +1483,14 @@ if [ -n "${status_mount}" ]; then
 else
     fail "RAUC statusfile is '${statusfile}'; update state must live on META or STATE, never on the discardable /var"
 fi
-# The keyring is deliberately NOT shipped and NOT committed: a development
-# keyring would be a trusted signer on every device. Only the path is asserted;
-# its absence is correct, and `rauc install` fails closed until one is added.
+# The config must point at the canonical keyring path; whether a keyring
+# actually SHIPS there is a separate, stricter question. It used to be answered
+# here by assertion-free prose ("deliberately not shipped") while the overlay
+# path was gitignored so a dev CA COULD be dropped in and staged silently —
+# check_dev_keyring is what closes that gap.
 sq_grep /etc/rauc/system.conf '^path=/etc/rauc/keyring\.pem$' \
-    "RAUC keyring path is /etc/rauc/keyring.pem (the keyring itself is deliberately not shipped)"
+    "RAUC keyring path is /etc/rauc/keyring.pem (whether a keyring ships there is asserted separately by the baked-in-keyring check)"
+check_dev_keyring
 
 # ===========================================================================
 # INTEGRATION MACHINERY
@@ -1692,7 +1723,7 @@ check_packed_mountpoints
 
 # --- M4 integration: RAUC must be able to identify the BOOTED slot ---
 #
-# os/health/mos-health reads RAUC_SYSTEM_BOOTED_SLOT out of
+# os/health/mos-health reads RAUC_SYSTEM_BOOTED_BOOTNAME out of
 # `rauc status --output-format=shell` and exits 0 early when it is empty. If
 # rauc can never identify the booted slot the gate silently no-ops forever:
 # `rauc status mark-good` is never reached, the installed slot is never
@@ -1729,7 +1760,7 @@ for pair in "A:${ROOTFS_A_GUID}" "B:${ROOTFS_B_GUID}"; do
     elif [ "$(lc "${root_arg}")" = "root=partuuid=$(lc "${guid}")" ]; then
         pass "slot ${slot}: root= names the slot's own PARTUUID, so rauc's root= fallback identifies the booted slot"
     else
-        fail "slot ${slot}: the boot path sets neither rauc.slot= nor a root= naming the slot device (found '${root_arg:-none}'). rauc 1.8 derives the booted slot from rauc.slot= or root= and matches it against bootname / slot name / realpath(device); '${root_arg:-none}' matches none of those, so \`rauc status\` fails with \"Did not find booted slot\", RAUC_SYSTEM_BOOTED_SLOT is never emitted, mos-health exits 0 without ever running \`rauc status mark-good\`, and every update rolls back when the boot credits run out. Fix belongs in the boot path (os/boot/cx3576-boot.cmd), NOT here"
+        fail "slot ${slot}: the boot path sets neither rauc.slot= nor a root= naming the slot device (found '${root_arg:-none}'). rauc 1.8 derives the booted slot from rauc.slot= or root= and matches it against bootname / slot name / realpath(device); '${root_arg:-none}' matches none of those, so \`rauc status\` fails with \"Did not find booted slot\", RAUC_SYSTEM_BOOTED_BOOTNAME is never emitted, mos-health exits 0 without ever running \`rauc status mark-good\`, and every update rolls back when the boot credits run out. Fix belongs in the boot path (os/boot/cx3576-boot.cmd), NOT here"
     fi
 done
 
@@ -2151,7 +2182,7 @@ else
         pass "the packed rootfs carries NO usable root password (root: hash field is '${root_hash}', a locked marker)"
         ;;
     *)
-        fail "the packed rootfs carries a usable root password hash in ${FACTORY_SHADOW}. A signed rootfs is byte-identical on every device, so this is a fleet-wide shared secret. Cause: the ROOT_PASSWORD build arg was set at build time; unset it — the per-device password is provisioned by mosd at runtime"
+        fail "the packed rootfs carries a usable root password hash in ${FACTORY_SHADOW}. A signed rootfs is byte-identical on every device, so this is a fleet-wide shared secret. Something in the build wrote a root credential (v2 has no ROOT_PASSWORD build arg on purpose); root access is provisioned at runtime — mosd's transient password"
         ;;
     esac
 fi

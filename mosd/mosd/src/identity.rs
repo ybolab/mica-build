@@ -160,10 +160,13 @@ pub fn ensure_identity(state_dir: &Path, settings: &mut Settings) -> Result<Outc
 /// # Errors
 ///
 /// Returns an error when the file exists but cannot be read.
-// dead_code: read back by the access and connd reconcilers, which do not exist
-// yet; `mosd` is a binary crate, so until they land the compiler sees these as
-// unreachable.
-#[allow(dead_code)]
+// Compiled only for tests: production code has no reader — the credential of
+// record for shell access is an SSH key or a transient password, and nothing
+// else consumes the file yet. The provisioning tests still need to assert the
+// secret landed where a future reader will look, which is what this is for. A
+// future access reconciler that wants it lifts the cfg rather than
+// reintroducing an allow(dead_code) that outlives its truth.
+#[cfg(test)]
 pub fn read_device_password(state_dir: &Path) -> Result<Option<String>> {
     read_secret(state_dir, DEVICE_PASSWORD_FILE)
 }
@@ -173,10 +176,6 @@ pub fn read_device_password(state_dir: &Path) -> Result<Option<String>> {
 /// # Errors
 ///
 /// Returns an error when the file exists but cannot be read.
-// dead_code: read back by the access and connd reconcilers, which do not exist
-// yet; `mosd` is a binary crate, so until they land the compiler sees these as
-// unreachable.
-#[allow(dead_code)]
 pub fn read_ap_psk(state_dir: &Path) -> Result<Option<String>> {
     read_secret(state_dir, AP_PSK_FILE)
 }

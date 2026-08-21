@@ -255,12 +255,13 @@ compares root's current hash against the marker. **If they are equal it rewrites
 the field to a locked marker and deletes the marker file, so the password
 vanishes.** If they disagree it leaves the shadow file alone.
 
-**Why a marker rather than "lock root on every boot".** A dev image built with
-the `ROOT_PASSWORD` build arg carries a hash this code did not set, and its hash
-never equals a marker. Locking unconditionally would be this code overwriting a
-credential it does not own, and would make the dev image's debug credential
-useless one boot after flashing. The marker makes the reconciler clear only what
-it wrote.
+**Why a marker rather than "lock root on every boot".** Any root hash mosd did
+not write — one set by hand over the serial console, or by a future
+provisioning path — never equals a marker. Locking unconditionally would be
+this code overwriting a credential it does not own. The marker makes the
+reconciler clear only what it wrote. (A baked `ROOT_PASSWORD` is *not* such a
+case on v2: the pack stage fails any build whose factory shadow carries a
+usable hash, so no buildable v2 image ships one — see §5.3.)
 
 Password authentication is offered to sshd **only while a transient password is
 really active** (§3.2). So a device whose password has expired at boot does not
@@ -362,10 +363,14 @@ value all resolve to `prod`, and the comparison is **case-sensitive**, so `DEV`
 resolves to `prod` too. The build rejects any `MOS_PROFILE` value that is not
 exactly `dev` or `prod` in lowercase.
 
-What the profile still selects is the `ROOT_PASSWORD` build arg — a dev image
-may bake a debug root credential, and §4.1's marker rule is what stops mosd from
-clearing it. Production images must never set it, and both verifiers fail a
-packed rootfs that carries a usable root password hash.
+The `ROOT_PASSWORD` build arg is **v1-only** and is not selected by the profile
+on v2: `os/rootfs/build-v2.sh` and `Dockerfile.v2` carry no such plumbing,
+because the v2 pack stage unconditionally fails any build whose factory shadow
+holds a usable hash — for every account and on both profiles — and both
+verifiers assert the same about the packed artifact. A baked v2 root credential
+is therefore unbuildable, dev profile included. Dev root access on v2 is §4.1's
+transient password set at runtime through mosd, plus the serial console, whose
+root account stays locked until that password is set.
 
 **Missing (hence *partial*):** `sealed` — the fully shell-free build where "no
 shell" is part of the signed image identity — is **not implemented**. It remains

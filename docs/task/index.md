@@ -105,3 +105,4 @@ Each task is a single line linking to its detail file. All detailed information 
 - [x] [**RFCT-080 Close the duplicate-row hole in the index verifier, and sweep the `sort -u` shape**](RFCT-080.md) `P1`
 - [x] [**RFCT-081 Close the repository audit: a CI gate, a no-op build target, an unreferenced 12 MB asset, two stale suppressions, and the apid login curve**](RFCT-081.md) `P1`
 - [x] [**RFCT-082 Reach the unreachable rollback path, and stop the stale documentation lying quietly**](RFCT-082.md) `P0`
+- [x] [**RFCT-083 Close the second repository audit: trust-chain gaps, inverted crash-safety ordering, and the half-fixed patch-loop bug**](RFCT-083.md) `P1`

@@ -580,7 +580,13 @@ async fn setup_submit(State(state): State<AppState>, Form(form): Form<SetupForm>
         )
             .into_response();
     }
-    let hash = match auth::hash_password(&form.password) {
+    // Off the async workers for the same reason login verification is:
+    // argon2id costs real CPU per call, by design.
+    let password = form.password.clone();
+    let hash = match tokio::task::spawn_blocking(move || auth::hash_password(&password))
+        .await
+        .unwrap_or_else(|err| Err(anyhow::anyhow!("password hashing task: {err}")))
+    {
         Ok(hash) => hash,
         Err(err) => {
             tracing::error!(error = %err, "password hashing failed");
@@ -659,7 +665,23 @@ async fn login_form() -> Html<String> {
 }
 
 async fn login_submit(State(state): State<AppState>, Form(form): Form<LoginForm>) -> Response {
-    if !state.guard.lock().expect("guard lock").check() {
+    // Admission charges the attempt (see `LoginGuard::begin_attempt`): check
+    // and charge happen under one lock acquisition, so concurrent submissions
+    // cannot share one backoff window. An attempt that reaches neither branch
+    // below — a bus error, a device still in setup mode — stays charged,
+    // which errs closed and costs a legitimate operator one step on the curve
+    // at worst.
+    //
+    // The locks recover from poisoning rather than propagating it: a panic
+    // while holding this counter must not convert every later login into a
+    // panic of its own, which would be a permanent denial of management the
+    // backoff curve itself refuses to arm.
+    if !state
+        .guard
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .begin_attempt()
+    {
         return (
             StatusCode::TOO_MANY_REQUESTS,
             page(
@@ -676,8 +698,24 @@ async fn login_submit(State(state): State<AppState>, Form(form): Form<LoginForm>
     let Some(hash) = password_hash(&access) else {
         return Redirect::to("/setup").into_response();
     };
-    if auth::verify_password(hash, &form.password) {
-        state.guard.lock().expect("guard lock").record_success();
+    // argon2id is CPU-bound by design; run inline it would pin one async
+    // worker thread per attempt, and a burst of submissions could stall every
+    // other request the daemon is serving. A panic in the closure surfaces as
+    // a failed verification: closed, never open.
+    let hash = hash.to_string();
+    let password = form.password;
+    let verified = tokio::task::spawn_blocking(move || auth::verify_password(&hash, &password))
+        .await
+        .unwrap_or_else(|err| {
+            tracing::error!(error = %err, "password verification task failed");
+            false
+        });
+    if verified {
+        state
+            .guard
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .record_success();
         let cookie = state.sessions.create();
         (
             [(SET_COOKIE, session::session_cookie(&cookie))],
@@ -685,7 +723,13 @@ async fn login_submit(State(state): State<AppState>, Form(form): Form<LoginForm>
         )
             .into_response()
     } else {
-        state.guard.lock().expect("guard lock").record_failure();
+        // Counted at admission; this only restarts the earned window from the
+        // outcome, so the verification's duration does not eat into the wait.
+        state
+            .guard
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .confirm_failure();
         (
             StatusCode::UNAUTHORIZED,
             page("Sign in", html! { p { "Wrong password." } }),

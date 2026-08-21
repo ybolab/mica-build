@@ -129,17 +129,14 @@ pub fn set_transient_root_password(shadow_path: &Path, password: &str) -> Result
 
     let metadata = std::fs::metadata(shadow_path)
         .with_context(|| format!("stat {}", shadow_path.display()))?;
-    // Shadow file FIRST, marker second, and the order is load-bearing. A marker
-    // with no matching shadow entry is harmless: the next boot finds a mismatch
-    // and leaves the file alone. A changed shadow entry with no marker is a
-    // password that never expires, which is the failure this whole design
-    // exists to prevent.
-    write_atomically(
-        shadow_path,
-        &updated,
-        metadata.permissions().mode() & 0o7777,
-        Some((metadata.uid(), metadata.gid())),
-    )?;
+    // Marker FIRST, shadow file second, and the order is load-bearing. A crash
+    // between the two writes leaves a marker naming a hash the shadow file
+    // does not carry; the next boot's reconciler sees the mismatch, leaves the
+    // file alone and removes the marker — harmless. The other order leaves a
+    // changed shadow entry with no marker, which the reconciler must preserve
+    // (that branch is what lets a hash mosd did not write survive): a password
+    // that never expires, the exact failure this whole design exists to
+    // prevent.
     write_atomically(
         &transient_marker_path(shadow_path),
         &format!("{stored}\n"),
@@ -147,6 +144,12 @@ pub fn set_transient_root_password(shadow_path: &Path, password: &str) -> Result
         None,
     )
     .with_context(|| "record the transient marker".to_string())?;
+    write_atomically(
+        shadow_path,
+        &updated,
+        metadata.permissions().mode() & 0o7777,
+        Some((metadata.uid(), metadata.gid())),
+    )?;
 
     tracing::warn!(
         shadow = %shadow_path.display(),
@@ -274,6 +277,13 @@ pub(crate) fn write_atomically(
 
     std::fs::rename(&temp, path)
         .with_context(|| format!("rename {} to {}", temp.display(), path.display()))?;
+    // The rename is durable only once its directory entry is. Without this a
+    // power cut can persist one of the marker/shadow pair's renames and drop
+    // the other, undoing the marker-first ordering
+    // `set_transient_root_password` depends on.
+    std::fs::File::open(directory)
+        .and_then(|dir| dir.sync_all())
+        .with_context(|| format!("flush {}", directory.display()))?;
     Ok(())
 }
 

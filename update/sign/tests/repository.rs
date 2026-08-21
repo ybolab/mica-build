@@ -41,6 +41,11 @@ struct Fixture {
     repo: PathBuf,
     keys_dir: PathBuf,
     bundle: PathBuf,
+    /// Copy of `root.json` taken at init, held OUTSIDE the repository. Verify
+    /// requires an out-of-band root -- checking a repository against its own
+    /// metadata/root.json proves only internal consistency -- so the tests
+    /// model that distribution channel instead of reaching into the repo.
+    trusted_root: PathBuf,
 }
 
 impl Fixture {
@@ -60,6 +65,9 @@ impl Fixture {
         repo::init(&repo, &keys_dir, 1, root_expiry(), valid_expirations())
             .await
             .expect("init");
+        let trusted_root = dir.path().join("trusted-root.json");
+        fs::copy(repo::metadata_dir(&repo).join("root.json"), &trusted_root)
+            .expect("copy trusted root out of the repository");
         repo::add(
             &repo,
             &keys_dir,
@@ -77,15 +85,12 @@ impl Fixture {
             repo,
             keys_dir,
             bundle,
+            trusted_root,
         }
     }
 
-    fn trusted_root(&self) -> PathBuf {
-        repo::metadata_dir(&self.repo).join("root.json")
-    }
-
     async fn verify(&self) -> anyhow::Result<repo::VerifyReport> {
-        repo::verify(&self.repo, &self.trusted_root(), None).await
+        repo::verify(&self.repo, &self.trusted_root, None).await
     }
 }
 
@@ -133,9 +138,16 @@ async fn roundtrip_init_add_sign_verify() {
     assert_eq!(report.targets, vec!["update-1.0.0.raucb".to_string()]);
 
     // Re-signing bumps timestamp and snapshot but leaves the repository valid.
-    repo::resign(&fx.repo, &fx.keys_dir, None, None, valid_expirations())
-        .await
-        .expect("resign");
+    repo::resign(
+        &fx.repo,
+        &fx.keys_dir,
+        None,
+        None,
+        false,
+        valid_expirations(),
+    )
+    .await
+    .expect("resign");
     let report = fx.verify().await.expect("verify after resign");
     assert_eq!(report.timestamp_version, 3);
 }
@@ -195,24 +207,97 @@ async fn rolled_back_timestamp_is_rejected() {
     let fx = Fixture::new().await;
     let datastore = fx.repo.parent().expect("parent").join("datastore");
 
-    repo::resign(&fx.repo, &fx.keys_dir, None, Some(5), valid_expirations())
-        .await
-        .expect("resign to timestamp v5");
-    let report = repo::verify(&fx.repo, &fx.trusted_root(), Some(&datastore))
+    repo::resign(
+        &fx.repo,
+        &fx.keys_dir,
+        None,
+        Some(5),
+        false,
+        valid_expirations(),
+    )
+    .await
+    .expect("resign to timestamp v5");
+    let report = repo::verify(&fx.repo, &fx.trusted_root, Some(&datastore))
         .await
         .expect("verify v5");
     assert_eq!(report.timestamp_version, 5);
 
-    // Publish an older, still validly signed timestamp.
-    repo::resign(&fx.repo, &fx.keys_dir, None, Some(2), valid_expirations())
-        .await
-        .expect("resign to timestamp v2");
-    let err = repo::verify(&fx.repo, &fx.trusted_root(), Some(&datastore))
+    // Publish an older, still validly signed timestamp. The signer refuses a
+    // rollback unless told it is deliberate; this test's whole point is to
+    // publish one so the CLIENT side can be shown to reject it, hence the flag.
+    repo::resign(
+        &fx.repo,
+        &fx.keys_dir,
+        None,
+        Some(2),
+        true,
+        valid_expirations(),
+    )
+    .await
+    .expect("resign to timestamp v2");
+    let err = repo::verify(&fx.repo, &fx.trusted_root, Some(&datastore))
         .await
         .expect_err("rollback must be rejected");
     assert!(
         format!("{err:#}").contains("previously fetched version 5"),
         "error should report the rollback: {err:#}"
+    );
+}
+
+/// The signer side of the rollback story: without `--allow-rollback`, an
+/// explicit version below the published one is refused BEFORE anything is
+/// written, so a fat-fingered `--timestamp-version` cannot quietly publish
+/// metadata every client will reject.
+#[tokio::test]
+async fn explicit_version_rollback_requires_flag() {
+    let fx = Fixture::new().await;
+
+    repo::resign(
+        &fx.repo,
+        &fx.keys_dir,
+        None,
+        Some(5),
+        false,
+        valid_expirations(),
+    )
+    .await
+    .expect("resign to timestamp v5");
+
+    let err = repo::resign(
+        &fx.repo,
+        &fx.keys_dir,
+        None,
+        Some(2),
+        false,
+        valid_expirations(),
+    )
+    .await
+    .expect_err("explicit rollback without the flag must be refused");
+    assert!(
+        format!("{err:#}").contains("--allow-rollback"),
+        "error should name the escape hatch: {err:#}"
+    );
+
+    // The refusal must not have touched the repository.
+    let report = fx.verify().await.expect("repo still valid after refusal");
+    assert_eq!(report.timestamp_version, 5);
+}
+
+/// A threshold above the per-role key count would sign metadata no set of
+/// signatures can satisfy; `init` must refuse it rather than report success.
+#[tokio::test]
+async fn unsatisfiable_threshold_is_rejected() {
+    let dir = TempDir::new().expect("tempdir");
+    let repo = dir.path().join("repo");
+    let keys_dir = dir.path().join("keys");
+    keys::generate(&keys_dir).expect("generate keys");
+
+    let err = repo::init(&repo, &keys_dir, 2, root_expiry(), valid_expirations())
+        .await
+        .expect_err("threshold 2 over 1 key per role must be refused");
+    assert!(
+        format!("{err:#}").contains("could never be satisfied"),
+        "error should explain unsatisfiability: {err:#}"
     );
 }
 
@@ -225,7 +310,7 @@ async fn expired_timestamp_is_rejected() {
         timestamp: at("2020-01-01T00:00:00Z"),
         ..valid_expirations()
     };
-    repo::resign(&fx.repo, &fx.keys_dir, None, None, expired)
+    repo::resign(&fx.repo, &fx.keys_dir, None, None, false, expired)
         .await
         .expect("resign with expired timestamp");
 

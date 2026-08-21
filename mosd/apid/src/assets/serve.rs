@@ -144,6 +144,22 @@ fn serve_index(root: &Path) -> Option<Response> {
 /// A file from the bundle, with §4.3's headers, or `None` when it will not
 /// open.
 fn serve_file(root: &Path, file: &Path) -> Option<Response> {
+    // Assets are read whole into memory per request — simple, and right for
+    // dashboard-sized files — which makes the file's size the request's
+    // memory bill. Bundle installation validates entry types but not sizes,
+    // so without a ceiling one oversized file in a bundle would let every
+    // concurrent GET of it allocate that much heap. Refusal reads as "will
+    // not open", the same answer an unreadable file gives.
+    const MAX_ASSET_BYTES: u64 = 32 * 1024 * 1024;
+    let len = fs::metadata(file).ok()?.len();
+    if len > MAX_ASSET_BYTES {
+        tracing::warn!(
+            file = %file.display(),
+            len,
+            "asset exceeds the {MAX_ASSET_BYTES}-byte serving ceiling; treated as unservable"
+        );
+        return None;
+    }
     let body = fs::read(file).ok()?;
     let relative = file.strip_prefix(root).ok()?;
     let class = mime::cache_class(relative, immutable_dir(root).as_deref());

@@ -66,10 +66,12 @@ dir="$(dirname "$SHADOW")"
 #
 # The marker is compared against the hash the file actually carries; it is not a
 # "lock root on every boot" flag, and that difference is the entire reason it
-# exists. A dev image built with a ROOT_PASSWORD build-arg carries a hash mosd
-# did not write, so the comparison fails, the file is left alone, and that
-# password survives the reboot the way its developer expects. Only a hash this
-# system set is cleared.
+# exists. Any hash mosd did not write — set by hand over the serial console, or
+# by some future provisioning path — fails the comparison, so the file is left
+# alone and that credential survives the reboot its owner expects it to. Only a
+# hash this system set is cleared. (A baked ROOT_PASSWORD is NOT such a case on
+# v2: the pack stage fails any build whose factory shadow carries a usable
+# hash, so no buildable v2 image reaches this branch that way.)
 MARKER="${dir}/transient-root-password"
 if [ -s "$MARKER" ]; then
     want=$(head -n1 "$MARKER")

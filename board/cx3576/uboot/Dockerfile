@@ -34,7 +34,14 @@ RUN git init -q /uboot && \
     test "$(git -C /uboot rev-parse HEAD)" = "${UBOOT_COMMIT}"
 
 COPY patches/ /patches/
-RUN set -e; cd /uboot && for patch in $(ls /patches/*.patch | sort); do \
+# set -e catches a failing git apply, but `$(ls ...)` runs in a command
+# substitution, so an empty glob (a lost COPY, a renamed directory) escapes it
+# and applies zero patches green. The count pins the expected series length
+# and must move with patches/ whenever a patch is added or removed.
+RUN set -e; \
+    count=$(ls /patches/*.patch | wc -l); \
+    [ "$count" -eq 6 ] || { echo "ERROR: expected 6 U-Boot patches, found $count" >&2; exit 1; }; \
+    cd /uboot && for patch in $(ls /patches/*.patch | sort); do \
         echo ">> applying $(basename "$patch")" && git apply -v "$patch"; \
     done
 
@@ -92,8 +99,8 @@ RUN cd /uboot && \
     grep -q '^CONFIG_CMD_ROCKUSB=y' .config && \
     grep -q '^CONFIG_USB_FUNCTION_ROCKUSB=y' .config && \
     grep -q '^CONFIG_FIT=y' .config && \
-    grep -q '^CONFIG_BOOTDELAY=1' .config && \
-    grep -q '^CONFIG_SYS_BOOTM_LEN=0x8000000' .config && \
+    grep -q '^CONFIG_BOOTDELAY=1$' .config && \
+    grep -q '^CONFIG_SYS_BOOTM_LEN=0x8000000$' .config && \
     grep -q '^CONFIG_USE_PREBOOT=y' .config && \
     grep -q '^CONFIG_PREBOOT="led status-blue off; led status-red on; led work on; if button recovery; then echo RECOVERY KEY - entering rockusb; rockusb 0 mmc 0; fi"' .config && \
     grep -q '^CONFIG_BOOTCOMMAND="setenv boot_targets; bootflow scan -lb; echo BOOT FAILED - entering rockusb; rockusb 0 mmc 0"' .config && \
@@ -118,6 +125,9 @@ RUN cd /uboot && \
     fdtget spl/u-boot-spl.dtb /soc/mmc@2a310000 vmmc-supply >/dev/null && \
     test "$(fdtget spl/u-boot-spl.dtb /chosen u-boot,spl-boot-order)" = \
          "same-as-spl /soc/mmc@2a310000 /soc/mmc@2a330000 /soc/ufshc@2a2d0000" && \
+    # Textual check only: it pins the DT property, not that the mmc0 alias
+    # resolves to the eMMC controller. Binding alias to controller needs a
+    # semantic check on hardware — recorded no-action.
     test "$(fdtget u-boot.dtb /bootstd bootdev-order)" = "mmc0 mmc1 usb" && \
     test "$(fdtget u-boot.dtb /soc/usb@23400000 dr_mode)" = "host" && \
     test "$(fdtget u-boot.dtb /leds/led-work label)" = "work" && \
@@ -168,12 +178,18 @@ RUN cd /uboot && \
                    --disable PARTITION_TYPE_GUID \
                    --set-str BOOTCOMMAND "setenv boot_targets; bootmeth order script; bootflow scan -lb; echo BOOT FAILED - entering rockusb; rockusb 0 mmc 0" && \
     make olddefconfig && \
+    # The two ENV_MMC_* values place the redundant env on eMMC user area; if
+    # olddefconfig ever drops them (v2026.07 spellings per
+    # docs/design/uboot-ab-handshake.md §1.2, env/Kconfig:738,748) the env
+    # silently lands on the default MMC device — so their absence must be red.
     for line in \
         CONFIG_ENV_IS_IN_MMC=y \
         CONFIG_ENV_OFFSET=0x1000000 \
         CONFIG_ENV_SIZE=0x10000 \
         CONFIG_ENV_REDUNDANT=y \
         CONFIG_ENV_OFFSET_REDUND=0x1100000 \
+        CONFIG_ENV_MMC_DEVICE_INDEX=0 \
+        CONFIG_ENV_MMC_EMMC_HW_PARTITION=0 \
         CONFIG_CMD_SETEXPR=y \
         CONFIG_CMD_SAVEENV=y \
         CONFIG_HUSH_PARSER=y; do \
@@ -189,6 +205,8 @@ RUN cd /uboot && \
     make -j"$(nproc)" \
         CROSS_COMPILE=aarch64-linux-gnu- \
         ROCKCHIP_TPL=/rkbin/bin/rk35/${DDR_BLOB} BL31=/rkbin/bin/rk35/${BL31_BLOB} && \
+    # Textual check only, as in the build stage above: it does not bind the
+    # mmc0 alias to the eMMC controller (needs hardware; recorded no-action).
     test "$(fdtget u-boot.dtb /bootstd bootdev-order)" = "mmc0 mmc1 usb" && \
     ls -la u-boot-rockchip.bin spl/u-boot-spl.bin u-boot.itb
 

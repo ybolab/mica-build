@@ -18,7 +18,16 @@ name: check
 
 on:
   push:
+    # A PR head that is also pushed would otherwise run every gate twice per
+    # commit; push covers main, pull_request covers everything aimed at it.
+    branches: [main]
   pull_request:
+
+# A superseded run proves nothing about the commit that replaced it; cancel it
+# rather than spend the runner finishing an answer nobody will read.
+concurrency:
+  group: check-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   # cargo fmt --check, clippy -D warnings, nextest, and cargo-deny -- all four
@@ -27,6 +36,19 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+
+      # The runner label promises an OS, not a toolchain: `ring` in Cargo.lock
+      # compiles C, so a missing cc would fail deep inside a cargo build with a
+      # far worse message than this step's. No `|| true`: a runner that cannot
+      # install its own build deps must go red here, not green later.
+      - name: Install build dependencies
+        run: |
+          set -euo pipefail
+          SUDO=""
+          [ "$(id -u)" -eq 0 ] || SUDO="sudo"
+          $SUDO apt-get update
+          $SUDO apt-get install -y --no-install-recommends \
+            build-essential ca-certificates curl git make bash
 
       # Pinned to the workspace manifest rather than to a literal: the MSRV
       # lives in mosd/Cargo.toml, and a second copy here could disagree with it.
@@ -41,20 +63,53 @@ jobs:
           echo "version=$version" >>"$GITHUB_OUTPUT"
           echo "workspace MSRV: $version"
 
+      # `--component` is repeated once per component: rustup-init treats one
+      # flag with two space-separated words as a component literally named
+      # "rustfmt clippy", which it resolves to nothing without failing loudly.
       - name: Install Rust ${{ steps.msrv.outputs.version }}
         run: |
           set -euo pipefail
           curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs \
             | sh -s -- -y --profile minimal \
                 --default-toolchain "${{ steps.msrv.outputs.version }}" \
-                --component rustfmt clippy
+                --component rustfmt --component clippy
           echo "$HOME/.cargo/bin" >>"$GITHUB_PATH"
 
-      - name: Install cargo-nextest and cargo-deny
+      # Prebuilt release binaries, not `cargo install`: compiling cargo-deny
+      # from source under the workspace MSRV toolchain took minutes per run and
+      # broke whenever a transitive dependency out-raced that MSRV. Versions
+      # and sha256 sums are pinned to the exact artifacts proven against this
+      # repository on the maintainer's machine (cargo-deny 0.19.5,
+      # cargo-nextest 0.9.133); the sums were computed from the official
+      # release downloads, and both binaries were executed to confirm they
+      # report those versions. cargo-deny publishes its Linux binary only for
+      # the musl triple -- it is static, so it runs on the gnu runner as-is.
+      - name: Install cargo-nextest and cargo-deny (pinned prebuilt binaries)
         run: |
           set -euo pipefail
-          curl -LsSf https://get.nexte.st/latest/linux | tar zxf - -C "$HOME/.cargo/bin"
-          cargo install --locked cargo-deny
+          mkdir -p "$HOME/.cargo/bin"
+          tmp=$(mktemp -d)
+          trap 'rm -rf "$tmp"' EXIT
+
+          deny_ver=0.19.5
+          deny_sha=5ea64ae09959b5fe1072d898f95caaa89b374678ba6728d5e9ed1366745479b0
+          curl -sSfL -o "$tmp/cargo-deny.tar.gz" \
+            "https://github.com/EmbarkStudios/cargo-deny/releases/download/${deny_ver}/cargo-deny-${deny_ver}-x86_64-unknown-linux-musl.tar.gz"
+          echo "${deny_sha}  $tmp/cargo-deny.tar.gz" | sha256sum -c -
+          tar xzf "$tmp/cargo-deny.tar.gz" -C "$tmp"
+          install -m 0755 "$tmp/cargo-deny-${deny_ver}-x86_64-unknown-linux-musl/cargo-deny" \
+            "$HOME/.cargo/bin/cargo-deny"
+
+          nextest_ver=0.9.133
+          nextest_sha=a9f992321e8759818400d93abb9477b4b11422d18d216e8d208505bd73454103
+          curl -sSfL -o "$tmp/cargo-nextest.tar.gz" \
+            "https://github.com/nextest-rs/nextest/releases/download/cargo-nextest-${nextest_ver}/cargo-nextest-${nextest_ver}-x86_64-unknown-linux-gnu.tar.gz"
+          echo "${nextest_sha}  $tmp/cargo-nextest.tar.gz" | sha256sum -c -
+          tar xzf "$tmp/cargo-nextest.tar.gz" -C "$tmp"
+          install -m 0755 "$tmp/cargo-nextest" "$HOME/.cargo/bin/cargo-nextest"
+
+          cargo deny --version
+          cargo nextest --version
 
       # The gate itself. Nothing above this line asserts anything about the
       # code; nothing below it is a check this file invented.
@@ -68,6 +123,16 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+
+      # Same reasoning as the rust job: the suites are bash + make, and the
+      # runner label guarantees neither. Fail-loud, no `|| true`.
+      - name: Install suite dependencies
+        run: |
+          set -euo pipefail
+          SUDO=""
+          [ "$(id -u)" -eq 0 ] || SUDO="sudo"
+          $SUDO apt-get update
+          $SUDO apt-get install -y --no-install-recommends bash make ca-certificates git
 
       - name: Both document indexes agree with the tree, in both directions
         run: make docs-verify docs-verify-test
@@ -87,4 +152,6 @@ jobs:
           echo "Not run here (needs root or privileged docker):" >&2
           echo "  make os-dbus-policy-test   real dbus-daemon, drops to uid 65534" >&2
           echo "  make os-repart-test        privileged docker, loop devices" >&2
-          echo "  make os-image-cx3576-v2 / os-verify-cx3576-v2" >&2
+          echo "  make os-image-cx3576-v2 / os-verify-cx3576-v2   image assembly and verification" >&2
+          echo "Not run here (board artifact builds; cross toolchains and BSP trees):" >&2
+          echo "  make cx3576-uboot / cx3576-kernel / cx3576-image" >&2

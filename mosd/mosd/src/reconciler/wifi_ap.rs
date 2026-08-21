@@ -720,7 +720,15 @@ impl<C: UnitControl, R: NetworkReload> Reconciler for WifiApReconciler<C, R> {
     }
 
     fn subtree(&self) -> &'static str {
-        "wifi.ap"
+        // The whole `wifi` tree, not just `wifi.ap`: the conflict check below
+        // reads `wifi.client`, so a write there must re-run this reconciler
+        // too. Declaring only the narrower subtree left the cross-subtree
+        // dependency invisible to the bus's overlap test — enabling the
+        // station reported no conflict until the next full `apply_all`, and
+        // disabling it left an access point parked in `conflict` until
+        // something happened to touch `wifi.ap`. The station reconciler keeps
+        // its narrow subtree: it reads nothing outside `wifi.client`.
+        "wifi"
     }
 
     async fn apply(&self, settings: &Settings) -> Result<serde_json::Value> {
@@ -1439,7 +1447,7 @@ mod tests {
         assert_eq!(state["config"], json!(paths.config.display().to_string()));
         assert_eq!(state["unit"], json!("hostapd@wlan0.service"));
         assert_eq!(reconciler.name(), "wifiAp");
-        assert_eq!(reconciler.subtree(), "wifi.ap");
+        assert_eq!(reconciler.subtree(), "wifi");
     }
 
     #[tokio::test]

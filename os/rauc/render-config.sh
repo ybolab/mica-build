@@ -3,13 +3,16 @@
 # asserts that the U-Boot environment access file agrees with the GPT.
 #
 #   bash os/rauc/render-config.sh            render (writes the overlay file)
-#   bash os/rauc/render-config.sh --check    verify the committed file is current
+#   bash os/rauc/render-config.sh --check    verify the rendered file is current
 #
 # Output: os/rootfs/overlay-v2/etc/rauc/system.conf, which RFCT-013's overlay
-# mechanism copies into the image at /etc/rauc/system.conf. The rendered file is
-# committed so the image build needs no extra step; --check (run by
-# os/bundle.sh) is what stops it from drifting away from the template or from
-# os/layout/cx3576-v2.env.
+# mechanism copies into the image at /etc/rauc/system.conf. The rendered file
+# is GITIGNORED, never committed: the template plus os/layout/cx3576-v2.env are
+# the single source of truth, and a committed rendering could drift from them
+# with nothing to notice until after the fact. os/rootfs/build-v2.sh runs this
+# renderer before staging the overlay; --check (run by os/bundle.sh) now only
+# guards the narrower case of the rendered file being edited by hand after the
+# last build.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -110,9 +113,18 @@ render "${FW_ENV_IN}" "${fw_env_rendered}" \
     UENV_B_GUID "$(lower "${UENV_B_GUID}")" \
     UENV_SIZE_HEX "${UENV_SIZE_HEX}"
 
-fw_env_lines="$(grep -v -e '^[[:space:]]*#' -e '^[[:space:]]*$' "${fw_env_rendered}")"
-if [ "$(echo "${fw_env_lines}" | wc -l)" -ne 2 ]; then
-    echo "error: ${FW_ENV_IN} renders to $(echo "${fw_env_lines}" | wc -l) device lines; the redundant U-Boot environment needs exactly 2" >&2
+# `|| true` because a template rendering to NO device line at all must reach
+# the diagnostic below: a bare grep -v with zero surviving lines exits 1, and
+# under set -e that killed the run before the "needs exactly 2" message could
+# say what was wrong. The count is derived separately so an empty result reads
+# as 0 device lines rather than the 1 that `echo "" | wc -l` reports.
+fw_env_lines="$(grep -v -e '^[[:space:]]*#' -e '^[[:space:]]*$' "${fw_env_rendered}" || true)"
+fw_env_count=0
+if [ -n "${fw_env_lines}" ]; then
+    fw_env_count="$(echo "${fw_env_lines}" | wc -l)"
+fi
+if [ "${fw_env_count}" -ne 2 ]; then
+    echo "error: ${FW_ENV_IN} renders to ${fw_env_count} device lines; the redundant U-Boot environment needs exactly 2" >&2
     exit 1
 fi
 assert_fw_env_line() {
@@ -187,6 +199,15 @@ if [ $((LOADER_START_SECTOR + LOADER_SIZE_SECTORS)) -ne "${UENV_A_START_SECTOR}"
 fi
 
 if [ "${MODE}" = "check" ]; then
+    # A fresh clone has no rendered file at all — the file is gitignored, not
+    # committed. Diffing against a nonexistent path would report "stale", which
+    # sends the reader hunting for drift that does not exist instead of at the
+    # render step they have not run yet.
+    if [ ! -f "${SYSTEM_CONF_OUT}" ]; then
+        echo "error: ${SYSTEM_CONF_OUT} has not been rendered yet (it is generated, not committed)." >&2
+        echo "Run 'bash os/rauc/render-config.sh' — os/rootfs/build-v2.sh does this automatically before staging the overlay." >&2
+        exit 1
+    fi
     if ! diff -u "${SYSTEM_CONF_OUT}" "${rendered}"; then
         echo "error: ${SYSTEM_CONF_OUT} is stale; re-run 'bash os/rauc/render-config.sh'" >&2
         exit 1

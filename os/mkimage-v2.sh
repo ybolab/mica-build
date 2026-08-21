@@ -449,11 +449,15 @@ assemble() {
     dd if="${workdir}/ephemeral.img" of="${img_tmp}" bs=1M seek="${ephemeral_start_mib}" conv=notrunc,sparse status=none
     dd if="${workdir}/data.img" of="${img_tmp}" bs=1M seek="${data_start_mib}" conv=notrunc,sparse status=none
 
-    local verify
-    verify="$(sgdisk --verify "${img_tmp}")"
+    # rc is captured explicitly: a nonzero sgdisk exit would otherwise kill the
+    # run via set -e before the diagnostic below could print what sgdisk said.
+    # Both failure shapes — nonzero exit AND problem text with exit 0 — must
+    # reach the same friendly error.
+    local verify verify_rc=0
+    verify="$(sgdisk --verify "${img_tmp}")" || verify_rc=$?
     echo "${verify}"
-    if ! echo "${verify}" | grep -q "No problems found"; then
-        echo "error: sgdisk --verify reported problems" >&2
+    if [ "${verify_rc}" -ne 0 ] || ! echo "${verify}" | grep -q "No problems found"; then
+        echo "error: sgdisk --verify reported problems (exit ${verify_rc})" >&2
         exit 1
     fi
 

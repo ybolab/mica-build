@@ -93,7 +93,9 @@ mkcmdline "${WORK}/boot-cmdline-b.txt" "${ROOTFS_B_GUID}"
 
 # --- assemble twice ----------------------------------------------------------
 # mke2fs must be able to switch orphan_file off (e2fsprogs >= 1.47); when the
-# host cannot, run the assembler in the same Alpine image mkimage-v2.sh uses.
+# host cannot, run the assembler in TOOL_IMAGE — the prebuilt equivalent of
+# the Alpine-plus-packages container mkimage-v2.sh's own fallback uses (built
+# further down, before any assembly runs).
 host_can_assemble() {
     command -v sgdisk >/dev/null && command -v mkfs.vfat >/dev/null &&
         command -v mcopy >/dev/null && command -v mke2fs >/dev/null &&
@@ -166,8 +168,8 @@ run_assemble() {
             -e BOOT_CMDLINE_A=/t/boot-cmdline-a.txt \
             -e BOOT_CMDLINE_B=/t/boot-cmdline-b.txt \
             -e IMG_OUT="/t/${out}" "${pin_args[@]}" \
-            alpine:3.21 \
-            sh -c 'apk add --no-cache -q bash coreutils sgdisk dosfstools mtools e2fsprogs u-boot-tools && exec bash /work/os/mkimage-v2.sh --assemble'
+            "${TOOL_IMAGE}" \
+            bash /work/os/mkimage-v2.sh --assemble
     fi
 }
 
@@ -196,7 +198,49 @@ expect_failure() {
     rm -f "${WORK}/expectfail.img"
 }
 
-host_can_assemble || require_visible_workspace
+# --- container tooling, for assembly AND assertions --------------------------
+# run_assemble falls back to a container when the host cannot assemble, but the
+# assertion phase below calls sgdisk/mdir/mcopy/dumpe2fs/debugfs directly. On a
+# host with docker and no sgdisk/mtools the assembly SUCCEEDS in the container
+# and every assertion then emits a FAIL that indicts the image, when the only
+# thing missing was a host tool. So every tool the assertion phase needs is
+# resolved here: the host binary when present, otherwise a shell function of
+# the same name running it in the container image below, with ${WORK} mounted
+# at its own path — so every file argument resolves identically and the output
+# is byte-identical on both routes, which the expected-value comparisons
+# depend on.
+#
+# The image carries exactly the package line os/mkimage-v2.sh's own container
+# fallback installs, and is BUILT ONCE (docker caches it) rather than `apk
+# add`ed per container: the assertion phase makes dozens of tool calls, and
+# this selftest makes ~15 assembly runs — one network fetch instead of one per
+# run is also what keeps a single flaky mirror from failing an unrelated case.
+ASSERT_TOOLS=(sgdisk mdir mcopy dumpe2fs debugfs)
+TOOL_IMAGE=""
+tool_in_container() {
+    docker run --rm -v "${WORK}:${WORK}" "${TOOL_IMAGE}" "$@"
+}
+missing_tools=0
+for t in "${ASSERT_TOOLS[@]}"; do
+    command -v "${t}" >/dev/null 2>&1 || missing_tools=1
+done
+if ! host_can_assemble || [ "${missing_tools}" -eq 1 ]; then
+    require_visible_workspace
+    TOOL_IMAGE="$(docker build -q - <<'EOF'
+FROM alpine:3.21
+RUN apk add --no-cache -q bash coreutils sgdisk dosfstools mtools e2fsprogs u-boot-tools
+EOF
+    )"
+    [ -n "${TOOL_IMAGE}" ] || { echo "error: could not build the container tool image" >&2; exit 1; }
+    for t in "${ASSERT_TOOLS[@]}"; do
+        if ! command -v "${t}" >/dev/null 2>&1; then
+            # Same name as the tool, so no call site changes and no site can
+            # forget to use the wrapper.
+            eval "${t}() { tool_in_container ${t} \"\$@\"; }"
+        fi
+    done
+    echo "host tools incomplete; using container image ${TOOL_IMAGE} for assembly and/or assertions"
+fi
 
 echo "--- assembly 1 (unpinned, floor mode) ---"
 run_assemble one.img rootfs-verity.img | tee "${WORK}/one.log"

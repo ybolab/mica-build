@@ -1,6 +1,15 @@
 #!/usr/bin/env bash
 # Build the squashfs + dm-verity arm64 rootfs slot image for cx3576 (layout v2).
-# Usage: [BOARD_DIR=...] [ROOT_PASSWORD=...] [WITH_MOSD=0|1] [MOS_PROFILE=dev|prod] bash os/rootfs/build-v2.sh
+# Usage: [BOARD_DIR=...] [WITH_MOSD=0|1] [MOS_PROFILE=dev|prod] bash os/rootfs/build-v2.sh
+#
+# There is deliberately NO ROOT_PASSWORD here (v1's build.sh keeps it). A v2
+# rootfs is a signed, byte-identical squashfs, and the pack stage FAILS any
+# build whose factory shadow carries a usable hash — so a baked v2 root
+# password is unbuildable by design, not merely discouraged. Dev root access on
+# v2 is the transient password set at runtime through mosd
+# (SetTransientRootPassword; cleared on the next boot by mos-shadow-reconcile)
+# plus the serial console, whose root account stays locked until that password
+# is set. See docs/design/access.md section 4.1.
 #
 # Outputs (all under _out/cx3576/, consumed by os/mkimage-v2.sh):
 #   rootfs-verity.img     squashfs-zstd with the verity hash tree appended,
@@ -116,6 +125,30 @@ if [ ! -s "$OVERLAY_STAGE/etc/rauc/system.conf" ]; then
     exit 1
 fi
 
+# A RAUC keyring inside the overlay ships in the signed read-only root, where
+# it makes every device flashed with this image trust whatever that CA signs —
+# and os/rauc/gen-dev-keys.sh documents dropping the DEV CA exactly here for
+# local bundle testing. That workflow stays possible, but only when named:
+# MOS_EXPECT_DEV_KEYRING=1 is the same explicit-toggle shape as the verifier's
+# fixture hook (MOS_VERIFY_FIXTURE_ROOT, RFCT-077) — nothing in the build or CI
+# sets it, so a keyring cannot reach a release image by being forgotten in the
+# overlay. os/verify-image-v2.sh enforces the same contract on the packed root.
+if [ -e "$OVERLAY_STAGE/etc/rauc/keyring.pem" ]; then
+    if [ "${MOS_EXPECT_DEV_KEYRING:-0}" = "1" ]; then
+        echo "############################################################"
+        echo "# WARNING: baking a DEVELOPMENT RAUC keyring into this     #"
+        echo "# image (etc/rauc/keyring.pem, MOS_EXPECT_DEV_KEYRING=1).  #"
+        echo "# Every device flashed with it trusts every bundle that    #"
+        echo "# CA signs. Never flash this image onto anything that      #"
+        echo "# leaves your desk.                                        #"
+        echo "############################################################"
+    else
+        echo "error: $OVERLAY_SRC/etc/rauc/keyring.pem exists; refusing to stage it into the image." >&2
+        echo "A keyring baked into the signed root makes every flashed device trust that CA's bundles. For a local dev image that installs locally signed bundles, set MOS_EXPECT_DEV_KEYRING=1 (and expect the loud warning); otherwise delete the file." >&2
+        exit 1
+    fi
+fi
+
 lower() { echo "$1" | tr 'A-Z' 'a-z'; }
 render() {
     local src="$1" dst="$2"
@@ -174,7 +207,10 @@ if [ "$have_defs" -ne "$want_defs" ]; then
     echo "error: $have_defs repart definitions staged, expected $want_defs" >&2
     exit 1
 fi
-grow_defs=$(grep -l '^Weight=1000$' "$OVERLAY_STAGE"/etc/repart.d/*.conf | wc -l)
+# `|| true` because zero matches must reach the diagnostic below: grep -l
+# exits 1 when nothing matches, and under set -e/pipefail that killed the run
+# before the "expected exactly 1" message could say what was missing.
+grow_defs=$({ grep -l '^Weight=1000$' "$OVERLAY_STAGE"/etc/repart.d/*.conf || true; } | wc -l)
 if [ "$grow_defs" -ne 1 ]; then
     echo "error: $grow_defs repart definitions carry Weight=1000, expected exactly 1" >&2
     exit 1
@@ -220,7 +256,6 @@ if ! docker buildx build \
         --build-arg VERITY_SALT="$VERITY_SALT" \
         --build-arg VERITY_UUID="$VERITY_UUID" \
         --build-arg SQUASHFS_TIME="$SQUASHFS_TIME" \
-        ${ROOT_PASSWORD:+--build-arg ROOT_PASSWORD="$ROOT_PASSWORD"} \
         --target artifact \
         --output "type=local,dest=$OUT_DIR" \
         "$REPO_ROOT" 2>&1 | tee "$log"; then

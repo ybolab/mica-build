@@ -8,6 +8,9 @@ THIRD_DIR ?= third
 RKDEVELOPTOOL_LOCAL := $(TOOLS_DIR)/rkdeveloptool
 RKDEVELOPTOOL ?= $(if $(wildcard $(RKDEVELOPTOOL_LOCAL)),$(RKDEVELOPTOOL_LOCAL),rkdeveloptool)
 VENDOR_MINILOADER := uboot/MiniLoaderAll.bin
+# Prefer coreutils sha256sum (Linux hosts and CI, no Perl needed); fall back
+# to Perl/macOS shasum. Both accept the same `-c` checkfile format.
+SHA256 := $(shell command -v sha256sum >/dev/null 2>&1 && echo sha256sum || echo "shasum -a 256")
 
 all: image
 
@@ -40,7 +43,7 @@ rootfs: kernel
 
 image: uboot rootfs
 	docker buildx build -f Dockerfile.alpine --target artifact -o out .
-	@cd out && shasum -a 256 disk.img > disk.img.sha256
+	@cd out && $(SHA256) disk.img > disk.img.sha256
 	@ls -la out/disk.img
 	@cat out/disk.img.sha256
 
@@ -51,7 +54,7 @@ rkdeveloptool-macos:
 # Reject CJK text in source and configuration files; Markdown is documentation.
 source-check:
 	@if git grep --untracked -I -n -P '(*UTF)[\x{3400}-\x{4dbf}\x{4e00}-\x{9fff}\x{f900}-\x{faff}]' \
-		-- . ':(exclude)*.md' ':(exclude)*.ppm'; then \
+		-- . ':(exclude)*.md'; then \
 		echo 'error: CJK text is not allowed in source files' >&2; \
 		exit 1; \
 	else \
@@ -78,7 +81,7 @@ flash:
 # Recover from Maskrom with the pinned vendor Loader, then flash the full image.
 flash-maskrom:
 	@echo "WARNING: Keep board power and USB connected until rkdeveloptool rd completes."
-	shasum -a 256 -c uboot/MiniLoaderAll.bin.sha256
+	$(SHA256) -c uboot/MiniLoaderAll.bin.sha256
 	$(RKDEVELOPTOOL) db $(VENDOR_MINILOADER)
 	$(RKDEVELOPTOOL) wl 0 out/disk.img
 	$(verify-boot-area)

@@ -79,6 +79,43 @@ pub struct LoginGuard {
 }
 
 impl LoginGuard {
+    /// Gate one attempt: refuse while a window is armed, otherwise charge the
+    /// attempt up front and admit it.
+    ///
+    /// Check and charge are one operation under one lock acquisition,
+    /// deliberately. A handler that consulted the guard, verified the
+    /// password, and only then recorded the outcome would hold the lock for
+    /// none of the middle — N concurrent submissions would all pass the bare
+    /// check before any of them recorded a failure, multiplying every window
+    /// on the curve by the attacker's concurrency. Charging at admission arms
+    /// the window before the lock is released, so a burst timed to a window's
+    /// expiry buys one guess, not N.
+    ///
+    /// The charge is the pessimistic one: [`Self::record_success`] repays it
+    /// by ending the run, and a failed attempt calls [`Self::confirm_failure`]
+    /// to move the window's start to the outcome. An attempt that ends in
+    /// neither — an infrastructure error mid-attempt — stays charged with the
+    /// admission-time window, which errs closed.
+    pub fn begin_attempt(&mut self) -> bool {
+        if !self.check() {
+            return false;
+        }
+        self.record_failure();
+        true
+    }
+
+    /// Re-arm the window the run has earned, after a failed attempt reports
+    /// its outcome.
+    ///
+    /// The attempt was already counted at admission; this only moves the
+    /// window's start from admission time to outcome time. Without it the
+    /// verification's own duration would eat into the wait — argon2 costs a
+    /// meaningful fraction of the one-second base window by design — and the
+    /// curve's early steps would be shorter than they claim.
+    pub fn confirm_failure(&mut self) {
+        self.locked_until = Some(Instant::now() + backoff_for(self.failures));
+    }
+
     /// True when a login attempt may proceed; an elapsed window is cleared,
     /// but the failure run behind it is deliberately kept.
     pub fn check(&mut self) -> bool {
@@ -171,6 +208,25 @@ mod tests {
         // A fresh run starts back at the base, not where the last one stopped.
         guard.record_failure();
         assert_eq!(guard.failures, 1);
+    }
+
+    #[test]
+    fn begin_attempt_charges_at_admission_not_at_outcome() {
+        let mut guard = LoginGuard::default();
+        assert!(guard.begin_attempt());
+        // The window armed when the first attempt was admitted, so a second
+        // attempt racing it is refused before the first reports any outcome —
+        // the property a separate check-then-record pair did not have.
+        assert!(!guard.begin_attempt());
+
+        // Success repays the admission charge entirely.
+        guard.record_success();
+        assert_eq!(guard.failures, 0);
+        assert!(guard.begin_attempt());
+        assert_eq!(
+            guard.failures, 1,
+            "an admitted attempt is a charged attempt"
+        );
     }
 
     #[test]

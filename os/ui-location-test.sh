@@ -202,6 +202,7 @@ builtin-in-binary|catches a built-in escape that is no longer inside the binary|
 mountpoints-exist|every fstab/bind mountpoint exists in the read-only root|mountpoint(s) missing from the read-only root|PASS
 led-after-health|catches an indicator that reports ready before the slot is confirmed||PASS
 led-requires-health|catches an indicator that turns blue on a slot whose health gate failed||PASS
+dev-keyring|catches a baked-in RAUC keyring||PASS
 '
 
 # Drives the verifier over ${FIX} and asserts the set of assertions that ran,
@@ -502,6 +503,36 @@ rm -f "${FIX}/usr/lib/systemd/system/mos-status-led.service"
 expect_set "the status-LED unit dropped from the image" \
     "led-after-health=FAIL led-requires-health=FAIL" \
     "runs 'rauc status mark-good'"
+
+# --- 13. a RAUC keyring baked into the read-only root ------------------------
+# The overlay path is gitignored so a developer CAN drop the dev CA in for
+# local bundle testing — which is exactly why the packed root has to be
+# asserted keyring-free: a forgotten file would ship a trusted signer to every
+# device with no error anywhere. This is the state gen-dev-keys.sh's own
+# instructions produce, one build later.
+FIX="${WORK}/keyring-baked"
+new_fixture "${FIX}"
+mkdir -p "${FIX}/etc/rauc"
+printf -- '-----BEGIN CERTIFICATE-----\nstand-in\n-----END CERTIFICATE-----\n' \
+    >"${FIX}/etc/rauc/keyring.pem"
+expect_set "a keyring baked at /etc/rauc/keyring.pem, not expected" "dev-keyring=FAIL" \
+    "the packed root ships /etc/rauc/keyring.pem" \
+    "MOS_EXPECT_DEV_KEYRING=1"
+
+# --- 14. the same keyring, explicitly expected -------------------------------
+# MOS_EXPECT_DEV_KEYRING=1 is the sanctioned dev escape, and it must be loud:
+# the assertion flips to PASS but the run has to carry the unmissable WARNING
+# line, or the escape would make a dev image indistinguishable from a clean
+# one in the log. Both halves are asserted — the flip and the noise.
+export MOS_EXPECT_DEV_KEYRING=1
+expect_set "the same baked keyring, waved through by MOS_EXPECT_DEV_KEYRING=1" \
+    "dev-keyring=PASS"
+unset MOS_EXPECT_DEV_KEYRING
+if grep -q '^WARNING: DEVELOPMENT KEYRING SHIPPED' "${WORK}/out"; then
+    pass "the waved-through run still shouts: the WARNING line is present"
+else
+    fail "the waved-through run is silent: no 'WARNING: DEVELOPMENT KEYRING SHIPPED' line, so a dev image with a baked keyring would look exactly like a clean one"
+fi
 
 echo
 total=$((PASS_N + FAIL_N))

@@ -73,6 +73,96 @@ impl NetworkReconciler<Networkd> {
     }
 }
 
+/// Linux `IFNAMSIZ` minus the terminator: the longest name an interface can
+/// actually have.
+const MAX_IFACE_LEN: usize = 15;
+
+/// Refuse an interface name the kernel could not have and the renderer must
+/// not see.
+///
+/// The settings file is editable by anything that can write STATE, so the
+/// reconciler is the security boundary (the same argument `sshd.rs` makes for
+/// its parser). The name is used twice, and both uses need this: it becomes
+/// part of a file name under the networkd directory (a `/` or `..` would
+/// escape it), and it is interpolated into `Name=` (an embedded newline would
+/// smuggle in arbitrary networkd directives).
+///
+/// # Errors
+///
+/// Returns an error when the name is empty, longer than [`MAX_IFACE_LEN`],
+/// a directory self-reference, or contains anything but ASCII alphanumerics
+/// and `.`, `-`, `_`, `:`.
+fn validate_iface_name(iface: &str) -> anyhow::Result<()> {
+    if iface.is_empty() {
+        return Err(anyhow::anyhow!("network interface name is empty"));
+    }
+    if iface.len() > MAX_IFACE_LEN {
+        return Err(anyhow::anyhow!(
+            "network interface {iface:?} is longer than {MAX_IFACE_LEN} characters"
+        ));
+    }
+    if iface == "." || iface == ".." {
+        return Err(anyhow::anyhow!("network interface {iface:?} is not a name"));
+    }
+    if !iface
+        .bytes()
+        .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'-' | b'_' | b':'))
+    {
+        return Err(anyhow::anyhow!(
+            "network interface {iface:?} contains a character an interface name cannot have"
+        ));
+    }
+    Ok(())
+}
+
+/// True when `value` parses as an IP address with an optional `/prefix`.
+fn is_ip_or_cidr(value: &str) -> bool {
+    let (addr, prefix) = match value.split_once('/') {
+        Some((addr, prefix)) => (addr, Some(prefix)),
+        None => (value, None),
+    };
+    let Ok(addr) = addr.parse::<std::net::IpAddr>() else {
+        return false;
+    };
+    match prefix {
+        None => true,
+        Some(prefix) => prefix
+            .parse::<u8>()
+            .is_ok_and(|p| p <= if addr.is_ipv4() { 32 } else { 128 }),
+    }
+}
+
+/// Refuse a static configuration whose values could not be addresses.
+///
+/// `render_unit` interpolates these verbatim onto networkd directive lines,
+/// where a newline is a new directive; requiring each value to parse as an
+/// address makes injection structurally impossible rather than filtering for
+/// it. apid validates the address on its write path, but the settings file is
+/// writable without apid, so the boundary must hold here.
+fn validate_static(iface: &str, cfg: &mosd_settings::StaticConfig) -> anyhow::Result<()> {
+    if !is_ip_or_cidr(&cfg.address) {
+        return Err(anyhow::anyhow!(
+            "network.{iface} static address {:?} is not an IP address or CIDR",
+            cfg.address
+        ));
+    }
+    if let Some(gateway) = &cfg.gateway
+        && gateway.parse::<std::net::IpAddr>().is_err()
+    {
+        return Err(anyhow::anyhow!(
+            "network.{iface} gateway {gateway:?} is not an IP address"
+        ));
+    }
+    for dns in &cfg.dns {
+        if dns.parse::<std::net::IpAddr>().is_err() {
+            return Err(anyhow::anyhow!(
+                "network.{iface} DNS server {dns:?} is not an IP address"
+            ));
+        }
+    }
+    Ok(())
+}
+
 /// Render one networkd unit for `iface`.
 fn render_unit(iface: &str, cfg: &IfaceSettings) -> String {
     let mut out = format!("[Match]\nName={iface}\n\n[Network]\n");
@@ -90,9 +180,15 @@ fn render_unit(iface: &str, cfg: &IfaceSettings) -> String {
     out
 }
 
-/// Whether `file_name` matches the mos-managed pattern `*-mos-*.network`.
+/// Whether `file_name` is one this reconciler wrote: `50-mos-<iface>.network`.
+///
+/// Anchored to the exact prefix, not `contains("-mos-")`: the wifi reconcilers
+/// embed the interface name in their unit names, and an interface like
+/// `a-mos-b` (legal — `-` is a valid name character) would otherwise make this
+/// sweep delete a sibling reconciler's unit on every pass, in a permanent
+/// delete/re-render flap.
 fn is_mos_managed(file_name: &str) -> bool {
-    file_name.ends_with(".network") && file_name.contains("-mos-")
+    file_name.starts_with("50-mos-") && file_name.ends_with(".network")
 }
 
 #[async_trait::async_trait]
@@ -110,6 +206,10 @@ impl<R: NetworkReload> Reconciler for NetworkReconciler<R> {
         let mut rendered = BTreeSet::new();
         let mut state = serde_json::Map::new();
         for (iface, cfg) in &settings.network {
+            validate_iface_name(iface)?;
+            if let Some(static_cfg) = &cfg.static_ {
+                validate_static(iface, static_cfg)?;
+            }
             let file_name = format!("50-mos-{iface}.network");
             std::fs::write(self.target_dir.join(&file_name), render_unit(iface, cfg))?;
             state.insert(
@@ -279,5 +379,51 @@ mod tests {
         assert!(dir.path().join("80-dhcp.network").exists());
         assert!(dir.path().join("50-mos-eth0.network").exists());
         assert_eq!(calls.lock().unwrap().len(), 1);
+    }
+
+    #[tokio::test]
+    async fn rejects_an_iface_name_that_would_escape_the_directory() {
+        let dir = tempfile::tempdir().unwrap();
+        let (reconciler, calls) = reconciler_in(dir.path());
+        let settings = settings_with(&[("../evil", dhcp_iface())]);
+
+        let err = reconciler.apply(&settings).await.unwrap_err();
+
+        assert!(err.to_string().contains("interface"), "{err}");
+        // Nothing was rendered and networkd was never told to reload: the
+        // reconcile aborted before any I/O it would have to undo.
+        assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 0);
+        assert!(calls.lock().unwrap().is_empty());
+    }
+
+    #[tokio::test]
+    async fn rejects_a_gateway_that_is_not_an_address() {
+        let dir = tempfile::tempdir().unwrap();
+        let (reconciler, _calls) = reconciler_in(dir.path());
+        let mut cfg = static_iface();
+        // A newline here would land verbatim on the Gateway= line, where it
+        // starts a new networkd directive.
+        cfg.static_.as_mut().unwrap().gateway = Some("192.168.1.1\nDNS=6.6.6.6".to_string());
+        let settings = settings_with(&[("eth1", cfg)]);
+
+        let err = reconciler.apply(&settings).await.unwrap_err();
+
+        assert!(err.to_string().contains("gateway"), "{err}");
+        assert!(!dir.path().join("50-mos-eth1.network").exists());
+    }
+
+    #[tokio::test]
+    async fn sweep_spares_a_wifi_unit_whose_iface_embeds_mos() {
+        let dir = tempfile::tempdir().unwrap();
+        let (reconciler, _calls) = reconciler_in(dir.path());
+        // The wifi reconcilers embed the interface in their unit names, and
+        // `a-mos-b` is a legal interface name; the sweep must only ever eat
+        // its own `50-mos-*` namespace.
+        std::fs::write(dir.path().join("90-wifi-client-a-mos-b.network"), "wifi").unwrap();
+        let settings = settings_with(&[("eth0", dhcp_iface())]);
+
+        reconciler.apply(&settings).await.unwrap();
+
+        assert!(dir.path().join("90-wifi-client-a-mos-b.network").exists());
     }
 }

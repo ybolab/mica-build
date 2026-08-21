@@ -62,6 +62,10 @@ const MAX_INTERFACE_LEN: usize = 15;
 const CONFIG_HEADER: &str = "# Managed by mosd from wifi.client. Do not edit.\n";
 /// Length of a pre-shared key given as a raw 256-bit PMK in hex.
 const RAW_PMK_LEN: usize = 64;
+/// Shortest WPA2 passphrase IEEE 802.11i allows.
+const MIN_PASSPHRASE_LEN: usize = 8;
+/// Longest WPA2 passphrase IEEE 802.11i allows.
+const MAX_PASSPHRASE_LEN: usize = 63;
 
 /// What the reconciler did to the station role.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -239,6 +243,18 @@ fn encode_ssid(ssid: &str) -> String {
 fn encode_psk(psk: &str) -> Result<String> {
     if psk.len() == RAW_PMK_LEN && psk.bytes().all(|byte| byte.is_ascii_hexdigit()) {
         return Ok(psk.to_string());
+    }
+    // IEEE 802.11i's passphrase bounds, checked here for the same reason the
+    // access point checks them: wpa_supplicant rejects an out-of-range
+    // passphrase by refusing the WHOLE configuration file, which silently
+    // takes every other configured network down with it while the reconcile
+    // still reports `applied`. The error deliberately does not name the
+    // length observed — a length is a fact about the secret.
+    if psk.len() < MIN_PASSPHRASE_LEN || psk.len() > MAX_PASSPHRASE_LEN {
+        return Err(anyhow!(
+            "a WPA2 passphrase is {MIN_PASSPHRASE_LEN} to {MAX_PASSPHRASE_LEN} characters \
+             (or a {RAW_PMK_LEN}-digit hex PMK)"
+        ));
     }
     if !is_quotable(psk) {
         return Err(anyhow!(
@@ -754,6 +770,21 @@ mod tests {
     }
 
     #[test]
+    fn a_passphrase_outside_wpa2_bounds_is_rejected() {
+        // Seven characters: one short of IEEE 802.11i's minimum. Rendering it
+        // would make wpa_supplicant refuse the whole configuration file.
+        let err = encode_psk("short07").unwrap_err();
+        assert!(err.to_string().contains("8 to 63"), "{err}");
+        // Sixty-four non-hex characters: too long for a passphrase and not a
+        // PMK either.
+        assert!(encode_psk(&"x".repeat(64)).is_err());
+        // Sixty-four hex digits ARE a raw PMK; the passphrase bounds must not
+        // apply to it.
+        assert!(encode_psk(&"a".repeat(64)).is_ok());
+        assert!(encode_psk("exactly8").is_ok());
+    }
+
+    #[test]
     fn an_open_network_emits_key_mgmt_none_and_no_psk() {
         let rendered = render_config(&client(true, vec![network("cafe", None, false, 0)])).unwrap();
 
@@ -771,11 +802,11 @@ mod tests {
     fn a_psk_network_emits_a_key_and_never_key_mgmt_none() {
         let rendered = render_config(&client(
             true,
-            vec![network("office", Some("s3cret"), false, 0)],
+            vec![network("office", Some("s3cretpass"), false, 0)],
         ))
         .unwrap();
 
-        assert!(rendered.contains("\tpsk=\"s3cret\"\n"), "{rendered}");
+        assert!(rendered.contains("\tpsk=\"s3cretpass\"\n"), "{rendered}");
         assert!(rendered.contains("\tkey_mgmt=WPA-PSK\n"), "{rendered}");
         assert!(
             !rendered.contains("key_mgmt=NONE"),

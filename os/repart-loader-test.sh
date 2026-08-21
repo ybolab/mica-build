@@ -150,6 +150,13 @@ run_repart() {
         [ -e /dev/loop\$n ] || mknod /dev/loop\$n b 7 \$n
         loop=/dev/loop\$n
         losetup \$loop /w/${name}.img
+        # Loop devices are HOST-GLOBAL (this container is --privileged): if
+        # repart fails between the attach and the detach, set -e would exit
+        # this shell with the device still attached, leaking it on the host
+        # until someone notices losetup -a filling up. Detach on EXIT instead
+        # of only on the success path; the '|| true' covers the normal case
+        # where the explicit detach below already ran.
+        trap 'losetup -d \"\$loop\" 2>/dev/null || true' EXIT
         SYSTEMD_LOG_LEVEL=debug systemd-repart --definitions=/w/${defs} --dry-run=no \"\$loop\"
         losetup -d \"\$loop\"
     " > "${work}/${name}.log" 2>&1
@@ -279,6 +286,10 @@ run_repart_rc() {
         [ -e /dev/loop\$n ] || mknod /dev/loop\$n b 7 \$n
         loop=/dev/loop\$n
         losetup \$loop /w/${name}.img
+        # Same host-global loop hazard as run_repart above — and this variant
+        # EXPECTS failing repart runs (the negative direction), so without the
+        # trap every negative case would leak one loop device per run.
+        trap 'losetup -d \"\$loop\" 2>/dev/null || true' EXIT
         SYSTEMD_LOG_LEVEL=debug systemd-repart --definitions=/w/${defs} --dry-run=no \"\$loop\"
         losetup -d \"\$loop\"
     " > "${work}/${name}.log" 2>&1 || rc=$?

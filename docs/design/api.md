@@ -309,12 +309,19 @@ to `/login` (`:141-150`). Note the gate calls `GetSettings("access")` on
 **every** request (`mosd/apid/src/routes.rs:131`), so every request costs at
 least one D-Bus round trip.
 
-**Brute-force accounting.** A single global counter, not per-client: five
-consecutive failures arm a 30-second lockout that rejects every login attempt
-(`mosd/apid/src/auth.rs:9-10`, `:38-64`). The comment states why per-client
-tracking was rejected — *"the appliance has one admin password, so per-client
-tracking buys nothing against an online guesser"*
-(`mosd/apid/src/auth.rs:28-31`).
+**Brute-force accounting.** A single global counter, not per-client, on
+access.md §3.3's exponential curve (RFCT-081 replaced the original flat
+five-failures/30-seconds rule): the first failure already arms a one-second
+window, every consecutive failure doubles it, and the curve caps at 300
+seconds and never becomes permanent (`mosd/apid/src/auth.rs`, `backoff_for`
+and `LoginGuard`). Riding out a window does not reset the run — only a
+successful login does. Admission and accounting are one locked operation
+(`LoginGuard::begin_attempt`): each attempt is charged when it is admitted,
+so concurrent submissions cannot share one window. The comments state why
+per-client tracking was rejected — *"the appliance has one admin password, so
+per-client tracking buys nothing against an online guesser"* — and why no
+permanent lockout threshold is armed (apid has no physical-presence release
+to clear one with).
 
 **TLS material.** The certificate is self-signed and generated on first start
 into the state directory: CN `mos`, SANs `DNS:mos`, `DNS:localhost`,

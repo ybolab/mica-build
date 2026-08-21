@@ -228,22 +228,30 @@ pub async fn add(
 ///
 /// The targets list is unchanged, so its version is preserved. The offline root
 /// key is not required by this path; only the online role keys are.
+///
+/// Explicit versions lower than the currently published ones are refused unless
+/// `allow_rollback` is set: a signer that publishes a lower version has produced
+/// a rollback that every correct client will reject, and doing so silently is
+/// exactly the kind of quiet failure this tool exists to prevent. The escape
+/// hatch exists for tests that need to publish a rollback in order to prove
+/// clients reject it.
 pub async fn resign(
     repo: &Path,
     keys_dir: &Path,
     snapshot_version: Option<u64>,
     timestamp_version: Option<u64>,
+    allow_rollback: bool,
     expires: Expirations,
 ) -> Result<()> {
     let meta_dir = metadata_dir(repo);
     let (mut editor, versions) = open_editor(repo).await?;
 
     let snapshot = match snapshot_version {
-        Some(v) => nonzero(v)?,
+        Some(v) => explicit_version("snapshot", v, versions.snapshot, allow_rollback)?,
         None => bump(versions.snapshot)?,
     };
     let timestamp = match timestamp_version {
-        Some(v) => nonzero(v)?,
+        Some(v) => explicit_version("timestamp", v, versions.timestamp, allow_rollback)?,
         None => bump(versions.timestamp)?,
     };
     editor
@@ -331,10 +339,21 @@ fn build_root(keys_dir: &Path, threshold: u64, expires: DateTime<Utc>) -> Result
         let key = keypair.tuf_key();
         let key_id = key.key_id().context("compute key id")?;
         let role_type: RoleType = role.parse().map_err(|_| anyhow!("unknown role {role}"))?;
+        let keyids = vec![key_id.clone()];
+        // A threshold above the key count signs metadata no set of signatures
+        // can ever satisfy; every client would reject the repository while this
+        // tool reported success. Checked per role so the message can name the
+        // role once roles carry differing key counts.
+        ensure!(
+            threshold.get() <= keyids.len() as u64,
+            "threshold {threshold} for role {role} exceeds its {} key(s); \
+             the resulting metadata could never be satisfied",
+            keyids.len()
+        );
         roles.insert(
             role_type,
             RoleKeys {
-                keyids: vec![key_id.clone()],
+                keyids,
                 threshold,
                 _extra: HashMap::new(),
             },
@@ -399,6 +418,28 @@ fn dir_url(dir: &Path) -> Result<Url> {
         .with_context(|| format!("resolve {}", dir.display()))?;
     Url::from_directory_path(&dir)
         .map_err(|()| anyhow!("{} is not a valid base URL", dir.display()))
+}
+
+/// Validates an explicitly requested metadata version against the published one.
+///
+/// A version below the current one is a rollback: still validly signed, so
+/// nothing downstream of the signer would flag it, and every correct client
+/// would then refuse the repository. That combination -- succeeds here, fails
+/// everywhere else -- is why it is an error rather than a warning.
+fn explicit_version(
+    role: &str,
+    requested: u64,
+    current: NonZeroU64,
+    allow_rollback: bool,
+) -> Result<NonZeroU64> {
+    let requested = nonzero(requested)?;
+    ensure!(
+        allow_rollback || requested >= current,
+        "{role} version {requested} is below the published version {current}: \
+         this publishes a rollback that clients will reject; \
+         pass --allow-rollback if that is deliberate"
+    );
+    Ok(requested)
 }
 
 fn nonzero(value: u64) -> Result<NonZeroU64> {

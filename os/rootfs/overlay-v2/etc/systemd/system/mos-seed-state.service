@@ -4,11 +4,16 @@ Documentation=file:/usr/lib/mos/mos-seed-state
 # Creates the bind sources for var-lib-mos.mount and etc-ssh.mount and, on a
 # fresh device, generates the sshd host keys. Both mounts order themselves
 # after this unit, so it has to complete inside the local mount phase.
+#
+# Deliberately NO ConditionPathExists stamp gate: the seed script converges on
+# every boot (create what is missing, never touch what exists). A run-once
+# stamp on STATE would outlive this rootfs and stop a LATER image from seeding
+# a STATE-backed directory it introduces — the same reason mos-seed-home never
+# had one. See the script's own header.
 DefaultDependencies=no
 RequiresMountsFor=/mnt/state
 Before=local-fs.target shutdown.target
 Conflicts=shutdown.target
-ConditionPathExists=!/mnt/state/.mos-state-seeded
 
 [Service]
 Type=oneshot

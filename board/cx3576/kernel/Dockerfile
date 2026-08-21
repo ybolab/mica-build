@@ -18,8 +18,18 @@ RUN git init -q /ksrc && \
     test "$(git -C /ksrc rev-parse HEAD)" = "${KERNEL_COMMIT}"
 
 COPY kernel/patches/ /patches/
-RUN cd /ksrc && for p in $(ls /patches/*.patch 2>/dev/null | sort); do \
-        echo ">> applying $(basename $p)" && patch -p1 --no-backup-if-mismatch < "$p"; \
+# A for loop's status is that of its last iteration and the old `ls
+# 2>/dev/null` glob made an empty or missing /patches a green zero-patch run —
+# so a reject in any patch but the last (or a lost COPY) still produced an
+# artifact built from a partially patched or unpatched tree. set -e aborts on
+# the first failing patch; the count pins the expected series length and must
+# move with kernel/patches/ whenever a patch is added or removed. Each patch's
+# effect is additionally asserted in the compiled tree after `make` below.
+RUN set -e; \
+    count=$(ls /patches/*.patch | wc -l); \
+    [ "$count" -eq 2 ] || { echo "ERROR: expected 2 kernel patches, found $count" >&2; exit 1; }; \
+    cd /ksrc && for p in $(ls /patches/*.patch | sort); do \
+        echo ">> applying $(basename "$p")" && patch -p1 --no-backup-if-mismatch < "$p"; \
     done
 
 COPY kernel/config/kernel-cx3576z.config /ksrc/.config
@@ -83,6 +93,13 @@ RUN cd /ksrc && \
 
 RUN cd /ksrc && \
     make ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- -j"$(nproc)" Image modules && \
+    # The patch loop proves the series applied without rejects; these prove the
+    # tree that was just compiled carries each patch's effect (one distinctive
+    # added line per patch, same shape as the uboot Dockerfile's post-build
+    # BOOT_LOADER/write_cache greps): 0001's yt8531_stock_init module param and
+    # 0002's AIC_WLAN_SUPPORT gate on the aic8800_sdio directory.
+    grep -qF 'module_param(yt8531_stock_init, bool, 0444);' drivers/net/phy/motorcomm.c && \
+    grep -qF 'obj-$(CONFIG_AIC_WLAN_SUPPORT) += aic8800_sdio/' drivers/net/wireless/Makefile && \
     grep -q '^CONFIG_LEDS_TRIGGER_HEARTBEAT=y' include/config/auto.conf && \
     echo "kernel release: $(cat include/config/kernel.release)" && \
     [ "$(cat include/config/kernel.release)" = "${KERNEL_EXPECT}" ] && \

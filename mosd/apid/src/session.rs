@@ -21,6 +21,12 @@ const SESSION_TTL: Duration = Duration::from_secs(24 * 60 * 60);
 type HmacSha256 = Hmac<Sha256>;
 
 /// Signed-cookie session table.
+///
+/// Lock acquisitions recover from poisoning rather than propagating it: the
+/// table is a plain map with no invariant a mid-update panic could half
+/// establish, and treating poison as fatal would convert one panic while
+/// holding the lock into a panic on every later login and session check — a
+/// permanent denial of management out of a transient bug.
 pub struct SessionStore {
     key: [u8; 32],
     sessions: Mutex<HashMap<String, Instant>>,
@@ -49,7 +55,7 @@ impl SessionStore {
         let mac = hex_encode(&self.mac(&id).finalize().into_bytes());
         self.sessions
             .lock()
-            .expect("session lock")
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
             .insert(id.clone(), Instant::now() + SESSION_TTL);
         format!("{id}.{mac}")
     }
@@ -67,7 +73,10 @@ impl SessionStore {
         let Some(id) = self.verify_signature(value) else {
             return false;
         };
-        let mut sessions = self.sessions.lock().expect("session lock");
+        let mut sessions = self
+            .sessions
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         match sessions.get(&id) {
             Some(expiry) if *expiry > Instant::now() => true,
             Some(_) => {
@@ -81,7 +90,10 @@ impl SessionStore {
     /// Drop the session named by `value`, if any.
     pub fn remove(&self, value: &str) {
         if let Some(id) = self.verify_signature(value) {
-            self.sessions.lock().expect("session lock").remove(&id);
+            self.sessions
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .remove(&id);
         }
     }
 }

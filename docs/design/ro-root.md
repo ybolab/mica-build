@@ -330,10 +330,12 @@ exactly that hash in a marker file beside the shadow file**,
 compares root's current hash against the marker: **equal → the field is rewritten
 to a locked marker and the marker file is deleted**, so the password vanishes;
 **not equal → the shadow file is left alone.** So rule 1 still holds for every
-credential the reconciler did not write — including a dev image's build-time
-`ROOT_PASSWORD`, whose hash never matches a marker and therefore survives. That
+credential the reconciler did not write — a hash set by hand on STATE, or by
+any tool other than mosd, never matches a marker and therefore survives. That
 distinction is the whole reason a marker exists instead of "lock root on every
-boot". See `docs/design/access.md` §4.1 and `mosd/mosd/src/transient.rs`.
+boot". (RFCT-083 removed the v2 `ROOT_PASSWORD` build argument this paragraph
+used as its example: the pack-stage assertion had always rejected the hash it
+would bake, so the flow was advertised but unbuildable.) See `docs/design/access.md` §4.1 and `mosd/mosd/src/transient.rs`.
 
 The marker is resolved **beside** the shadow file rather than at a fixed path,
 because that file is `/mnt/state/mos/shadow` before `var-lib-mos.mount` is up
@@ -628,37 +630,31 @@ spec calls for. Two follow-ups would fix it: bind only `ssh_host_*` files, or
 have a RAUC post-install hook refresh the non-key files from
 `/usr/share/factory/etc/ssh`.
 
-### The seeding contract, and the constraint it puts on every future image
+### The seeding contract: convergent, on every boot
 
-**`mos-seed-state` is gated by `ConditionPathExists=!/mnt/state/.mos-state-seeded`.
-On an already-seeded device the whole oneshot is SKIPPED** — not partially run,
-skipped. It creates the directories a fresh STATE needs and then never runs
-again.
+**`mos-seed-state` runs on every boot and creates only what is missing** —
+`cp -an` for seeded content, `mkdir -p` for bare directories, never touching
+anything that already exists. RFCT-083 removed the original
+`ConditionPathExists=!/mnt/state/.mos-state-seeded` run-once stamp, because the
+stamp had exactly the failure mode `mos-seed-home.service`'s own comment
+rejects a stamp for:
 
-The consequence, spelled out because the next person to add a bind mount will
-otherwise discover it on a device rather than here:
+> A STATE directory added after devices exist would never be seeded on them.
+> The oneshot had already run, its stamp stood, and the feature depending on
+> the new directory was silently absent on exactly the devices that already
+> shipped — an A/B update could grow the seed list, but no fielded device
+> would act on it.
 
-> **A STATE directory added after devices exist will not be seeded.** The
-> directory has no source, so its bind mount has nothing to bind, and the
-> feature that depends on it is silently absent on exactly the devices that
-> already shipped. **Any future image that adds a STATE directory needs a
-> seed-generation bump** — some mechanism that makes the oneshot re-run for the
-> new directories on an already-seeded device.
+With the convergent shape, a later image that adds a STATE directory (as M5
+added `/mnt/state/wpa_supplicant` and `/mnt/state/hostapd`) seeds it on the
+first boot of that image, and a device seeded by an older release converges
+instead of freezing at its first seed. A leftover stamp from an image that
+predates the change is deleted and ignored.
 
-This is the **pre-existing shape** of STATE seeding, not something M5
-introduced: `/etc/ssh` has had the same property since M4. M5 added
-`/mnt/state/wpa_supplicant` and `/mnt/state/hostapd` and deliberately followed
-the existing shape rather than redesigning a mechanism several tasks depend on.
-
-It is **harmless today** because nothing has been field-seeded — every device is
-flashed whole-disk from an image that carries the current seed script. It stops
-being harmless the moment the first device is in the field.
-
-The shadow file is the one case that is already covered, and only by accident of
-its design: `mos-shadow-reconcile` runs on **every** boot and creates the STATE
-shadow from the factory copy when it is missing, so a device seeded by an older
-image still gets one. That is a property of the reconciler, not of the seeding
-mechanism, and it does not generalise to any other directory.
+The shadow file never depended on the stamp either way: `mos-shadow-reconcile`
+runs on every boot and creates the STATE shadow from the factory copy when it
+is missing. That reconciler property and this seeding contract now agree
+instead of diverging.
 
 ## 5. `/etc/machine-id` — solved through the U-Boot environment
 

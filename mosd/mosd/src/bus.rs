@@ -229,10 +229,29 @@ impl MosdService {
     /// Used by the boot health gate (`mos-health`) to surface non-fatal
     /// pressure — a full `/var`, for example — without failing the gate.
     async fn report_health(&self, component: &str, status: &str, detail: &str) -> fdo::Result<()> {
+        // The live-state tree lives in RAM for the life of the daemon, and
+        // this is its only write surface that accepts arbitrary keys and
+        // strings with no pruning. Callers are root-only, so the caps guard
+        // against a wedged or looping reporter, not an attacker — but a root
+        // daemon that can be grown without bound by a misbehaving oneshot is
+        // still a daemon that eventually takes the device down with it.
+        const MAX_COMPONENT_LEN: usize = 64;
+        const MAX_STATUS_LEN: usize = 64;
+        const MAX_DETAIL_LEN: usize = 1024;
+        const MAX_COMPONENTS: usize = 128;
         if component.is_empty() {
             return Err(fdo::Error::InvalidArgs(
                 "component must not be empty".into(),
             ));
+        }
+        if component.len() > MAX_COMPONENT_LEN
+            || status.len() > MAX_STATUS_LEN
+            || detail.len() > MAX_DETAIL_LEN
+        {
+            return Err(fdo::Error::InvalidArgs(format!(
+                "health report too large: component <= {MAX_COMPONENT_LEN}, \
+                 status <= {MAX_STATUS_LEN}, detail <= {MAX_DETAIL_LEN} bytes"
+            )));
         }
         let mut inner = self.inner.lock().await;
         if let Some(root) = inner.state.as_object_mut() {
@@ -240,6 +259,12 @@ impl MosdService {
                 .entry("health")
                 .or_insert_with(|| Value::Object(serde_json::Map::new()));
             if let Some(health) = health.as_object_mut() {
+                if !health.contains_key(component) && health.len() >= MAX_COMPONENTS {
+                    return Err(fdo::Error::InvalidArgs(format!(
+                        "health table already holds {MAX_COMPONENTS} components; \
+                         refusing a new one"
+                    )));
+                }
                 health.insert(
                     component.to_string(),
                     serde_json::json!({ "status": status, "detail": detail }),
@@ -281,8 +306,23 @@ impl MosdService {
     /// The reconcilers are re-run afterwards so the sshd drop-in re-renders
     /// against a device that now has a password to offer, and sshd picks it up.
     async fn set_transient_root_password(&self, password: &str) -> fdo::Result<()> {
-        transient::set_transient_root_password(&self.shadow_path, password)
-            .map_err(transient_to_fdo)?;
+        // Two concerns share this shape. Serialization: zbus dispatches `&self`
+        // methods concurrently, and two unserialized writers would interleave
+        // read-modify-write cycles on one shadow file through one fixed temp
+        // name — so the write happens under the same lock every other mutating
+        // method takes. Blocking: the bcrypt hash inside costs hundreds of
+        // milliseconds of CPU, which must not stall the bus dispatcher, so the
+        // whole write runs off the async scheduler while the guard is held.
+        let shadow_path = self.shadow_path.clone();
+        let password = password.to_string();
+        let inner = self.inner.lock().await;
+        tokio::task::spawn_blocking(move || {
+            transient::set_transient_root_password(&shadow_path, &password)
+        })
+        .await
+        .map_err(|err| fdo::Error::Failed(format!("transient password task: {err}")))?
+        .map_err(transient_to_fdo)?;
+        drop(inner);
         self.apply_all().await;
         Ok(())
     }

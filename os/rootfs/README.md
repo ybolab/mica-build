@@ -180,11 +180,16 @@ The Bluetooth adapter name needs no unit of its own: bluez's hostname plugin
 is loaded by default and overrides `Name`, so the adapter follows the system
 hostname as long as `/etc/bluetooth/main.conf` does not pin one.
 
-## Dev profile — root login
+## Dev profile — root login (v1 only)
 
 `ROOT_PASSWORD=... bash os/rootfs/build.sh` sets the root password and writes
 `PermitRootLogin yes`. **Dev only — never use for production images.** By
 default (unset), root stays locked and SSH root login is not enabled.
+
+This build arg exists **only on the v1 path**. `build-v2.sh` deliberately has
+no `ROOT_PASSWORD`: a v2 rootfs is a signed squashfs, byte-identical on every
+device, and its pack stage fails any build whose factory shadow carries a
+usable hash. See "Dev root access on v2" below.
 
 ## First-boot growth
 
@@ -336,7 +341,7 @@ from the layout env so the shipped image carries no placeholder:
 | `etc/repart.d/*.conf` | eight definitions in disk order; only `80-data.conf` grows. v1's root-growing definition is gone. The two `uenv` placeholders carry `SizeMinBytes=0`: repart will not claim an EXISTING partition below the definition's minimum, which defaults to 10 MiB, and the uenv pair is 64 KiB — without it the whole run aborts with *"Can't fit requested partitions into available free space"* and `/srv` never grows (RFCT-027) |
 | `etc/tmpfiles.d/mos-var.conf` | age policies for `/var/tmp` and `/var/cache` — `/var` is now a fixed-size partition |
 | `etc/systemd/system/mos-seed-var.service` | first-boot restore of `/var` from `/usr/share/factory/var` |
-| `etc/systemd/system/mos-seed-state.service` | first-boot STATE directories + per-device sshd host keys |
+| `etc/systemd/system/mos-seed-state.service` | STATE directories + per-device sshd host keys; convergent, runs every boot (no run-once stamp — a stamp would stop a later image from seeding a STATE directory it introduces) |
 | `etc/systemd/system/var-lib-mos.mount` | binds `/mnt/state/mos` onto `/var/lib/mos` so mosd's paths are unchanged |
 | `etc/systemd/system/var-lib-bluetooth.mount` | binds `/mnt/state/bluetooth` onto `/var/lib/bluetooth` so pairings survive a `/var` wipe |
 | `etc/systemd/system/etc-ssh.mount` | binds `/mnt/state/ssh` onto `/etc/ssh` |
@@ -426,6 +431,26 @@ character ranges, extended with the v2-only mos-owned paths (the overlay's
 mount units, seed scripts, `repart.d` definitions, `fstab` and
 `fw_env.config`). Vendor packages ship translations and are deliberately not
 scanned.
+
+## Dev root access on v2
+
+There is **no baked root credential on v2, ever** — not for the dev profile
+either. A v2 rootfs is byte-identical on every device that flashes it, so any
+usable hash in the image is a fleet-wide shared secret; the pack stage asserts
+the factory shadow carries only locked markers and **fails the build**
+otherwise, which is why `build-v2.sh` has no `ROOT_PASSWORD` plumbing at all.
+
+What a developer actually gets on v2:
+
+- **A transient root password**, set at runtime through mosd
+  (`SetTransientRootPassword`, driven from apid's admin UI). It lands in the
+  STATE-backed `/etc/shadow` and works for SSH (while enabled) and the serial
+  console alike; `mos-shadow-reconcile` clears it on the next boot, which is
+  what makes it transient. See `docs/design/access.md` §4.1.
+- **The serial console**, whose getty is always there but whose root account
+  stays locked until such a password is set.
+- **Persistent access by SSH public key**, via the settings tree — the
+  supported long-term path; every authorized key is a root key.
 
 ## Determinism, and what still deviates
 

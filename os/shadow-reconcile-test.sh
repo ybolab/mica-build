@@ -22,8 +22,10 @@ FAIL=0
 
 [ -f "$SCRIPT" ] || { echo "no $SCRIPT to test" >&2; exit 1; }
 
-# A bcrypt hash of the shape mosd writes, and a second one standing in for the
-# hash a dev image's ROOT_PASSWORD build-arg bakes in. Opaque on purpose: the
+# A bcrypt hash of the shape mosd writes, and a second one standing in for a
+# hash mosd did NOT write (set by hand over the serial console, or by a future
+# provisioning path -- on v2 no buildable image can BAKE one, since the pack
+# stage fails a factory shadow with a usable hash). Opaque on purpose: the
 # script compares them as strings and never parses them.
 MOS_HASH='$2b$12$abcdefghijklmnopqrstuvOJqM0iZ5wKzXwZ2G8bqZ0aVjPQnDGa'
 DEV_HASH='$2b$12$ZZZZZZZZZZZZZZZZZZZZZuOJqM0iZ5wKzXwZ2G8bqZ0aVjPQnDGa'
@@ -147,9 +149,9 @@ if [ "$GROUP_MODE" = real ]; then
 fi
 
 # --- 2. a marker that does NOT match is left strictly alone ------------------
-# This is the branch that lets a dev image's ROOT_PASSWORD build-arg hash
-# survive a reboot, which is the whole reason this is a marker rather than
-# "lock root on every boot".
+# This is the branch that lets a root hash mosd did not write survive a
+# reboot, which is the whole reason this is a marker rather than "lock root on
+# every boot": the reconciler may only clear a credential it owns.
 new_case mismatch "$(shadow_with "$DEV_HASH")"
 printf '%s\n' "$MOS_HASH" >"$MARKER"
 before=$(cat "$SHADOW")

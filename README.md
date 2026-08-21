@@ -34,7 +34,8 @@ two U-Boot variants are not interchangeable — v1 pairs with
 `talos/` is an untracked standalone git repository (large upstream fork history),
 archived at its final commit and kept for reference only; everything else is
 versioned by this root repo. Each board directory carries a `board.yaml`
-metadata file consumed by image assembly.
+metadata file describing the board; no build step consumes it yet (the image
+scripts hardcode their artifact paths).
 
 ## Architecture references
 

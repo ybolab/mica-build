@@ -72,6 +72,10 @@ enum Command {
         /// Explicit timestamp version; defaults to the current version plus one.
         #[arg(long)]
         timestamp_version: Option<u64>,
+        /// Permit an explicit version below the published one. Without this,
+        /// publishing a rollback is an error rather than a silent success.
+        #[arg(long)]
+        allow_rollback: bool,
         #[command(flatten)]
         expires: ExpiryArgs,
     },
@@ -80,9 +84,12 @@ enum Command {
         /// Repository directory.
         #[arg(long)]
         repo: PathBuf,
-        /// Trusted root metadata; defaults to `<repo>/metadata/root.json`.
+        /// Trusted root metadata, obtained out of band. Required: verifying a
+        /// repository against its own metadata/root.json proves only that it
+        /// is internally consistent, which an attacker-authored repository is
+        /// too.
         #[arg(long)]
-        root: Option<PathBuf>,
+        root: PathBuf,
         /// Directory holding previously trusted metadata, enabling rollback checks.
         #[arg(long)]
         datastore: Option<PathBuf>,
@@ -180,6 +187,7 @@ async fn main() -> Result<()> {
             common,
             snapshot_version,
             timestamp_version,
+            allow_rollback,
             expires,
         } => {
             repo::resign(
@@ -187,6 +195,7 @@ async fn main() -> Result<()> {
                 &common.keys_dir,
                 snapshot_version,
                 timestamp_version,
+                allow_rollback,
                 (&expires).into(),
             )
             .await?;
@@ -197,8 +206,7 @@ async fn main() -> Result<()> {
             root,
             datastore,
         } => {
-            let trusted = root.unwrap_or_else(|| repo::metadata_dir(&repo_dir).join("root.json"));
-            let report = repo::verify(&repo_dir, &trusted, datastore.as_deref())
+            let report = repo::verify(&repo_dir, &root, datastore.as_deref())
                 .await
                 .context("repository verification failed")?;
             println!(

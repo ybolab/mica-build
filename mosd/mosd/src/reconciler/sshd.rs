@@ -19,9 +19,9 @@
 //! **The device password no longer reaches PAM.** This reconciler used to hash
 //! `secrets/device-password` with bcrypt and write it into the root account's
 //! shadow entry, which made a fielded device carry a password that never
-//! expired. The secret file stays on STATE and `identity::read_device_password`
-//! still reads it, but the credential of record for shell access is now an SSH
-//! public key, or a transient password the operator sets explicitly through
+//! expired. The secret file stays on STATE (no production code reads it back
+//! today), but the credential of record for shell access is now an SSH public
+//! key, or a transient password the operator sets explicitly through
 //! `crate::transient` and which the next boot clears.
 //!
 //! **`PasswordAuthentication` is gated on that transient password.** The
@@ -37,7 +37,7 @@
 
 use std::path::PathBuf;
 
-use anyhow::{Context, Result};
+use anyhow::{Context, Result, anyhow};
 use mosd_settings::{AuthorizedKey, Settings, SshSettings};
 use serde_json::json;
 
@@ -156,6 +156,32 @@ impl SshdReconciler<Systemd> {
             Systemd,
         )
     }
+}
+
+/// Refuse a listen address that could not be one.
+///
+/// sshd's `ListenAddress` grammar also admits `host:port` and hostname forms,
+/// but this appliance's settings model only ever offers IP addresses, so the
+/// strictest parse that fits is the right boundary: an `IpAddr`, or an IPv6
+/// literal in the brackets sshd requires when a port follows. Anything else —
+/// in particular anything carrying whitespace or a newline — is rejected
+/// before the renderer sees it.
+///
+/// # Errors
+///
+/// Returns an error naming the first entry that does not parse. The value is
+/// an address, not a secret, so naming it is diagnostic rather than a leak.
+fn validate_listen_addresses(addresses: &[String]) -> Result<()> {
+    for address in addresses {
+        let ok = address.parse::<std::net::IpAddr>().is_ok()
+            || address.parse::<std::net::SocketAddr>().is_ok();
+        if !ok {
+            return Err(anyhow!(
+                "access.ssh.listenAddresses entry {address:?} is not an IP address"
+            ));
+        }
+    }
+    Ok(())
 }
 
 /// Render the sshd drop-in for `ssh`.
@@ -403,6 +429,11 @@ impl<C: UnitControl> Reconciler for SshdReconciler<C> {
         // rest would leave the operator looking at a key in the UI that grants
         // nothing.
         mosd_settings::validate_authorized_keys(&ssh.authorized_keys)?;
+        // Same boundary, same reasoning: each listen address is interpolated
+        // verbatim onto a `ListenAddress` line in the drop-in, where a newline
+        // is a new sshd directive. Requiring an actual address makes injection
+        // structurally impossible rather than filtering for it.
+        validate_listen_addresses(&ssh.listen_addresses)?;
 
         // Outside the settings tree, so it has to be read on every apply: the
         // operator setting a transient password changes no setting at all, and
@@ -581,6 +612,24 @@ mod tests {
 
         assert_eq!(rendered, GOLDEN_LISTEN);
         assert_eq!(rendered.matches("ListenAddress ").count(), 2);
+    }
+
+    #[tokio::test]
+    async fn apply_rejects_a_listen_address_that_is_not_one() {
+        let dir = tempfile::tempdir().unwrap();
+        let (reconciler, paths) = fixture(dir.path(), "inactive", "disabled");
+        let mut ssh = ssh_settings(true);
+        // A newline here would land verbatim on the ListenAddress line, where
+        // it starts a new sshd directive.
+        ssh.listen_addresses = vec!["10.0.0.5\nPermitRootLogin yes".to_string()];
+
+        let err = reconciler.apply(&settings_with(ssh)).await.unwrap_err();
+
+        assert!(err.to_string().contains("listenAddresses"), "{err}");
+        assert!(
+            !paths.drop_in.exists(),
+            "the reconcile must abort before anything is rendered"
+        );
     }
 
     #[test]

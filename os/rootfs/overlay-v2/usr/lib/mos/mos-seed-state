@@ -1,5 +1,16 @@
 #!/bin/sh
-# Seed the STATE partition on first boot.
+# Seed the STATE partition. Runs on EVERY boot, converging rather than
+# stamping: missing directories and files are created, existing content is
+# NEVER touched.
+#
+# There is deliberately no run-once stamp. The sibling mos-seed-home already
+# rejects one, and the reasoning is the same A/B forward-compatibility fact:
+# STATE outlives every rootfs that will ever be flashed, so a stamp written by
+# the first image would stop a LATER image from seeding a STATE-backed
+# directory it introduces — updated devices would mount a bind with no source
+# and fail, while fresh devices worked, which is the worst kind of fleet skew.
+# Convergent re-runs cost a few mkdir -p on a converged system and buy every
+# future release its seeding for free.
 #
 # STATE is created empty by the image assembler and holds everything that must
 # survive an A/B update: mosd's settings and the sshd host keys. Both are
@@ -9,14 +20,18 @@
 # rule, which would run far too late.
 #
 # The sshd configuration is copied out of the read-only squashfs while /etc/ssh
-# still shows the image copy. Host keys are NOT baked into the image: a signed
-# rootfs is shared byte-for-byte by every device, so a baked host key would be a
-# shared secret and would also make the verity root hash depend on a random
-# keygen. They are generated here instead, once per device.
+# still shows the image copy (this runs before the binds, on every boot). Host
+# keys are NOT baked into the image: a signed rootfs is shared byte-for-byte by
+# every device, so a baked host key would be a shared secret and would also
+# make the verity root hash depend on a random keygen. They are generated here
+# instead, once per device.
 set -eu
 
-STAMP=/mnt/state/.mos-state-seeded
-[ -e "$STAMP" ] && exit 0
+# Earlier images stamped /mnt/state/.mos-state-seeded and gated this unit on
+# it. The stamp is exactly the forward-compat bug described above, so a
+# leftover one is removed: nothing reads it any more, and leaving it would
+# invite a future "optimisation" to start honouring it again.
+rm -f /mnt/state/.mos-state-seeded
 
 mkdir -p /mnt/state/mos /mnt/state/ssh
 
@@ -24,7 +39,13 @@ mkdir -p /mnt/state/mos /mnt/state/ssh
 # bluez expects 0700 on this directory and refuses to use a laxer one.
 mkdir -p /mnt/state/bluetooth
 chmod 0700 /mnt/state/bluetooth
-cp -a /etc/ssh/. /mnt/state/ssh/
+# -n (no-clobber): files the image ships that STATE does not yet have are
+# carried across — including ones a NEWER image adds — while a per-device or
+# operator-edited copy on STATE always wins over the image's. On bookworm's
+# coreutils (9.1) a skipped file is silent and exit 0; the 9.2/9.3 releases
+# changed and re-changed `cp -n` exit semantics, so a base-image bump must
+# re-verify this line or every boot after the first fails the unit.
+cp -an /etc/ssh/. /mnt/state/ssh/
 
 # The two connd config directories, on the same reasoning as /etc/ssh: mosd's
 # WiFi reconcilers render into them at runtime, and on v2 /etc is a read-only
@@ -35,7 +56,7 @@ cp -a /etc/ssh/. /mnt/state/ssh/
 # hostapd config carries the AP key.
 for d in wpa_supplicant hostapd; do
     mkdir -p "/mnt/state/$d"
-    if [ -d "/etc/$d" ]; then cp -a "/etc/$d/." "/mnt/state/$d/"; fi
+    if [ -d "/etc/$d" ]; then cp -an "/etc/$d/." "/mnt/state/$d/"; fi
     chmod 0700 "/mnt/state/$d"
 done
 
@@ -64,4 +85,3 @@ chmod 0600 /mnt/state/ssh/ssh_host_*_key
 chmod 0644 /mnt/state/ssh/ssh_host_*_key.pub
 
 sync
-: > "$STAMP"

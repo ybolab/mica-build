@@ -3,11 +3,17 @@
 
 BOARDS := cx3576 x64
 
+# The <board>-% delegation rules are NOT listed here: .PHONY does not accept
+# patterns, so an entry like `cx3576-%` matches nothing and silently declares
+# nothing -- the delegated targets stayed shadowable by a file of the same
+# name the whole time it was listed. They stay pattern rules (unlisted) because
+# the delegated names are open-ended; a stray file named e.g. `cx3576-kernel`
+# in this directory would shadow the delegation, which is a visible "Nothing to
+# be done" rather than a wrong build.
 .PHONY: help os os-image-cx3576 os-verify-cx3576 os-rootfs-cx3576-v2 \
 	os-image-cx3576-v2 os-verify-cx3576-v2 os-bundle-cx3576 os-devkeys os-health-test \
 	os-shadow-test os-dbus-policy-test os-repart-test os-ui-location-test docs-verify \
-	docs-verify-test \
-	$(addsuffix -%,$(BOARDS))
+	docs-verify-test
 
 help:
 	@echo "mos build targets:"

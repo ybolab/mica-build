@@ -1,8 +1,9 @@
 # Source for the boot.scr written into BOOT-A and BOOT-B. Compiled by
 # os/mkimage-v2.sh with SOURCE_DATE_EPOCH pinned to the layout-v2 FILE_MTIME.
 # Body follows docs/design/uboot-ab-handshake.md section 5.3 (RFCT-018), with
-# TWO deliberate divergences that section 5.3 predates. Both were defects that
-# made updates silently revert; section 5.3 should be synced to match.
+# TWO deliberate divergences from the version first published there. Both were
+# defects that made updates silently revert, and section 5.3 documents both
+# and is synced to this file.
 #
 # 1. The verity parameters are loaded from the slot-suffixed
 #    mos-verity-<slot>.env, falling back to the unsuffixed name. A RAUC bundle
@@ -71,7 +72,13 @@ if test -z "${bootslot}"; then
 fi
 
 # --- persist the decrement BEFORE booting: this is what makes it a watchdog -
-saveenv
+# An unpersisted decrement quietly degrades the whole scheme to boot-forever:
+# every reset would start from the old counter, so a slot that can never reach
+# mark-good would be retried without end instead of rolling back. saveenv's
+# result cannot change what happens next (the kernel either boots or it does
+# not), but a failing env write must not be silent -- it is the watchdog
+# disarming itself, and the console line is the only witness.
+saveenv || echo "mos: WARNING: saveenv FAILED, boot-attempt decrement NOT persisted; the A/B watchdog cannot count this attempt and a bad slot will be retried forever"
 
 echo "mos: booting slot ${bootslot} (A=${BOOT_A_LEFT} B=${BOOT_B_LEFT} left)"
 
