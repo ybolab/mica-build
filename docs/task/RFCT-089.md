@@ -60,10 +60,13 @@ that arrive mid-projection into one wake. `writable` is `false` on every
 item: per-item `GetValue`/`SetValue` objects are M2 and deliberately absent.
 
 **The façade only observes.** `MosdService` stays the single writer and
-gained only a change marker, a `trees()` snapshot accessor, and
-`mark_changed()` at the end of its mutating methods — the smallest `bus.rs`
-diff that works, chosen for the RFCT-084 collision recorded at dispatch. The
-contract that falls out of it is in the cross-workstream note below.
+gained only a watch-channel change marker, two accessors, and `mark_changed()`
+at the end of its four mutating methods (`mosd/mosd/src/bus.rs`) — the
+smallest `bus.rs` diff that works, chosen for the RFCT-084 collision recorded
+at dispatch. `main.rs` claims the well-known name only after **both** objects
+are served, so there is no window in which a client can find `com.mos.mosd`
+without the item tree behind it. The contract that falls out of the change
+marker is in the cross-workstream note below.
 
 **Contract markers.** `bus.md` was written entirely `[proposed]`; this task
 flips to `[implemented]`, by path, only what M1 shipped: the root-only
