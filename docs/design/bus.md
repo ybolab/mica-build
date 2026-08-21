@@ -500,7 +500,7 @@ mapper when a named integration requires it.**
 
 ## 11. Known limits of the shipped item tree
 
-Four properties of what M1 and M2 shipped that a reader would otherwise
+Five properties of what M1 and M2 shipped that a reader would otherwise
 discover by hitting them. Each is a **decision with a reason**, recorded here
 so it is a documented decision rather than tribal knowledge, and each names
 what would change it. They are limits of the implementation, not exceptions to
@@ -550,3 +550,29 @@ the contract above.
    dispatch: the durable record of a trigger is the live-state record, which
    survives the reboot, and the signal is best-effort on top of it. Ordering
    the record first is what makes the signal as likely to arrive as it can be.
+
+5. **[implemented]** **The item façade redacts secrets and `GetSettings` does
+   not. This divergence is deliberate, and harmonising the two in either
+   direction breaks something.** `tree::redact` strips every key named
+   `password_hash`, `passwordHash`, `psk` or `hash` at any depth
+   (`mosd/mosd/src/tree.rs:43`) and every projection passes through it
+   (`mosd/mosd/src/tree.rs:217`), so no `GetValue` reply and no `ItemsChanged`
+   payload can carry a secret (§8). `GetSettings` applies no redaction at all —
+   it returns the requested subtree verbatim (`mosd/mosd/src/bus.rs:249-253`).
+   The façade redacts because it is the surface that leaves the device: the M3
+   MQTT bridge publishes from the item tree (§8), so a secret that reached an
+   item would reach a broker. `GetSettings` **cannot** redact, because apid
+   authenticates against a value it reads through it — `login_submit` calls
+   `get_settings("access")` (`mosd/apid/src/routes.rs:694`) and lifts
+   `webAdmin.password_hash` out of the reply (`mosd/apid/src/routes.rs:698`,
+   helper at `:218-223`) to verify the submitted password against the stored
+   argon2id hash. Redacting that key from `GetSettings` would harden nothing
+   reachable from the bus — the façade already covers that surface — and would
+   lock every operator out of the dashboard. What keeps a verbatim
+   `GetSettings` from being a disclosure is that `com.mos.mosd` is root-only in
+   both directions (`docs/design/api.md` §1.3), not that its callers are
+   trusted to be careful. What would change this is a verification method on
+   mosd — a `VerifyAdminPassword(password) -> bool` that moves the comparison
+   behind the bus — after which `GetSettings` could redact like the façade
+   does. Until that exists the asymmetry is the design, and a change that
+   "harmonises" it is a change that breaks login.
