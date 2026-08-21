@@ -51,9 +51,15 @@ checker passes on a quotation that no longer matches its source. Only
 to compare the quoted text against the cited lines, not merely confirm the
 path resolves.
 
-A second class this task will NOT catch, recorded so nobody assumes otherwise:
-a **provenance claim** ("this section was measured at `<commit>`") is validated
-against no file at all. All three candidate designs — resolution-only,
-content-matching, symbol anchors — pass it, because a checker validates
-citations against HEAD and nothing validates a claim about a commit. Those stay
-a human responsibility; PLAN-011 fixed two of them by hand for that reason.
+A second class this task will NOT catch, and which whatever gets built **must
+state as its own documented limit** rather than leave implicit: a **provenance
+claim** ("this section was measured at `<commit>`") is validated against no file
+at all. All three candidate designs — resolution-only, content-matching, symbol
+anchors — pass it, because a checker validates citations against HEAD and
+nothing validates a claim about a commit. Those stay a human responsibility
+permanently; PLAN-011 fixed two of them by hand for that reason.
+
+This is an acceptance requirement, not a footnote. A checker that ships without
+naming this gap is worse than no checker, because a green run would then be read
+as "the citations are handled" when a whole class of them was never examined —
+the same false-assurance failure this repo's own discipline exists to prevent.
