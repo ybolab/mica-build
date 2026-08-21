@@ -70,6 +70,27 @@ a pure edge component.
   item object path**. `SetValue` returns `0` on success and a **negative
   error code** on failure; positive return values are reserved and must not
   be produced.
+- **[implemented]** The **result-code vocabulary**, one code per outcome
+  (`mosd/mosd/src/tree.rs`):
+
+  | Code | Meaning |
+  |---|---|
+  | `0` | the settings write was applied, or the action dispatched |
+  | `-1` | no item at that path — including one redacted out of the tree (§8) |
+  | `-2` | the item exists but is not writable |
+  | `-3` | the value does not fit the item's type |
+  | `-4` | a settings write that **validated and would not persist** |
+  | `-5` | an action that was **accepted and would not dispatch** |
+
+  `-4` and `-5` are deliberately distinct and a consumer must not collapse
+  them, because they differ in **whether the request already exists**. A
+  settings write that did not persist took effect nowhere, so retrying it is
+  safe. An action that did not dispatch was already logged and recorded in
+  live state *before* the dispatch (§7), so the request exists either way — a
+  client that cannot tell the two apart cannot choose a safe retry policy for
+  a reboot. Merging named outcomes is precisely the failure mode
+  `docs/design/mosd.md` §5.3 names for the reconciler vocabulary; the wire
+  vocabulary is the same class of contract, so it gets the same treatment.
 - **[implemented]** `GetItems() -> a{sa{sv}}` and the signal
   `ItemsChanged(a{sa{sv}})` exist on the **service root only**
   (`mosd/mosd/src/tree.rs`, served at `ROOT_PATH`, projecting the settings
