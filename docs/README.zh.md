@@ -15,6 +15,7 @@
   - `display.md` — HDMI kiosk UI：cage+WPE 本地渲染 apid
   - `provisioning.md` — 无网配置：三层供给模型
   - `mosd.md` — 管理平面设计简报：D-Bus 树、设置 schema、协调器
+  - `bus.md` — 设备总线 v2：`com.mos.Item1` 契约、类注册表、动作即条目、Sparkplug B 评估（暂无中文版）
 - `research/` — 决策依据研究
   - `os-comparison.md` — balena/Torizon/Talos/Yocto 评估与被否决方案
   - `init-strategy.md` — init 核心战略：Plan A Talos / Plan B systemd+Rust / Plan C Rust PID1 与触发器

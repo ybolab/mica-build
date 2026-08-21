@@ -220,16 +220,19 @@ declares the same three: `BUS_NAME` (`mosd/mosd/src/bus.rs:20`), `OBJECT_PATH`
 (`mosd/mosd/src/bus.rs:179`). Which bus is chosen is configuration: `WEBD_BUS`
 selects system (the default) or session (`mosd/apid/src/config.rs:41-45`).
 
-**Every method apid calls today — six.** The proxy trait
-(`mosd/apid/src/bus_client.rs:14-21`) declares exactly:
+**Every method apid calls today — five, across two proxy traits.** The
+`com.mos.mosd1` trait (`mosd/apid/src/bus_client.rs:20-25`) declares four; the
+power actions are the fifth, `SetValue` on the `com.mos.Item1` trait
+(`mosd/apid/src/bus_client.rs:33-36`), written to one action item per verb and
+so listed once per verb below:
 
 | Proxy method | Line | mosd's implementation | Called from |
 |---|---|---|---|
 | `get_settings(path) -> String` | `bus_client.rs:15` | `mosd/mosd/src/bus.rs:182` | the gate (`routes.rs:131`) and the `/`, `/setup`, `/login`, `/network`, `/hostname`, `/ssh` handlers |
 | `set_settings(path, value_json)` | `bus_client.rs:16` | `mosd/mosd/src/bus.rs:191` | `/setup`, `/network`, `/hostname`, `/ssh/enable`, `/ssh/keys/*` |
 | `get_state(path) -> String` | `bus_client.rs:17` | `mosd/mosd/src/bus.rs:219` | two paths only: `GetState("network")` (`routes.rs:580`) and `GetState("sshd")` (`routes.rs:1045`) |
-| `reboot()` | `bus_client.rs:18` | `mosd/mosd/src/bus.rs:257` | `POST /power/reboot` (`routes.rs:882`) |
-| `power_off()` | `bus_client.rs:19` | `mosd/mosd/src/bus.rs:265` | `POST /power/poweroff` (`routes.rs:883`) |
+| `set_value` on `/Actions/reboot` | `bus_client.rs:35`, path at `:40` | `mosd/mosd/src/tree.rs:500` → `mosd/mosd/src/actions.rs:101` | `POST /power/reboot` (`routes.rs:1259`) |
+| `set_value` on `/Actions/poweroff` | `bus_client.rs:35`, path at `:41` | `mosd/mosd/src/tree.rs:500` → `mosd/mosd/src/actions.rs:102` | `POST /power/poweroff` (`routes.rs:1260`) |
 | `set_transient_root_password(password)` | `bus_client.rs:20` | `mosd/mosd/src/bus.rs:283` | `POST /ssh/password` (`routes.rs:1272`) |
 
 **What apid does not call, and cannot receive.** mosd exposes a seventh method,
@@ -707,7 +710,7 @@ is named and the choice is costed.
 |---|---|---|---|
 | `/api/v1/settings/<dot-path>` | `Settings` (`mosd/mosd-settings/src/model.rs:16-32`) via `GetSettings` / `SetSettings` (`mosd/mosd/src/bus.rs:182`, `:191`) | `GET`, `PUT` | typed, validated, persisted to `/var/lib/mos/settings.toml` (`mosd/mosd-settings/src/store.rs:12`), survives reboot and A/B update (`docs/design/access.md:504`) |
 | `/api/v1/state/<dot-path>` | the live-state tree via `GetState` (`mosd/mosd/src/bus.rs:219`) | `GET` only | untyped `serde_json::Value` (`mosd/mosd/src/bus.rs:46-49`), in memory, no writer that is not a reconciler or `ReportHealth` |
-| `/api/v1/actions/<verb>` | `Reboot`, `PowerOff`, `SetTransientRootPassword` (`mosd/mosd/src/bus.rs:257`, `:265`, `:283`) | `POST` only | not state at all — see §2.3 |
+| `/api/v1/actions/<verb>` | the `/Actions/reboot` and `/Actions/poweroff` items (`mosd/mosd/src/actions.rs:46`, `:47`), and `SetTransientRootPassword` (`mosd/mosd/src/bus.rs:365`) | `POST` only | not state at all — see §2.3 |
 
 The split is mosd's, not a stylistic preference. The two trees have different
 types (`settings: Settings` and `state: Value`, `mosd/mosd/src/bus.rs:47-48`),
@@ -835,7 +838,7 @@ destroy the credential.
 | Transient root password | `POST /api/v1/actions/transient-root-password` | `SetTransientRootPassword` (`mosd/mosd/src/bus.rs:283`) | an action, not a setting — see §2.3 |
 | Web admin credential | `GET /api/v1/settings/access.webAdmin` (redacted), `PUT` refused | `WebAdminSettings` (`model.rs:68-71`) | see §3.2 for why the API does not offer a password change in phase 1 |
 | Console | `GET`/`PUT /api/v1/settings/access.console` | `ConsoleSettings` (`model.rs:140-145`) | only the `debug` image ships the shell at all (`model.rs:141-142`) |
-| Power | `POST /api/v1/actions/reboot`, `.../poweroff` | `Reboot`/`PowerOff` (`mosd/mosd/src/bus.rs:257`, `:265`) | actions — see §2.3 |
+| Power | `POST /api/v1/actions/reboot`, `.../poweroff` | the `/Actions/reboot`/`/Actions/poweroff` items (`mosd/mosd/src/actions.rs:46`, `:47`) | actions — see §2.3 |
 | Reconciler results | `GET /api/v1/state/<name>` for `hostname`, `network`, `sshd`, `wifiClient`, `wifiAp` | one key per reconciler (`mosd/mosd/src/bus.rs:125-132`, `:137-148`) | an entry is either the applied result or `{"error": "..."}`; the API passes both through unchanged |
 | Last power request | `GET /api/v1/state/power` | `{last_action, requested_by}` (`mosd/mosd/src/bus.rs:86-100`) | recorded *before* the action, so it survives the machine going down |
 | Health | `GET /api/v1/state/health` and `GET /api/v1/health` | `health.<component>` (`mosd/mosd/src/bus.rs:231-251`) | the two are different questions — see §2.4 |
@@ -4370,3 +4373,70 @@ because it says what it is measured at where it is read.
     lead-in sentence and the first three list items; the four-item list is
     `:27-33`. Whichever resolution is taken, that citation wants re-pointing
     with it.
+
+16. **Resolved — the actions-as-items-versus-methods fork is closed in favour
+    of writable action items, and `/api/v1/actions/<verb>` survives it with no
+    HTTP-visible change. Measured at `3b2ab65` by this entry, which carries
+    its own descriptors per the boundary above; its source is
+    `docs/research/venus-os-ui.md` §7 item 2 and this document's §1.3, §2.2
+    and §2.3, not §7, §8 or §9.** The research recorded it as a fork rather
+    than a gap: Venus reboots by `setValue(true)` on
+    `platform/Device/Reboot`, while *"mosd exposes `Reboot` and `PowerOff` as
+    D-Bus **methods** (`docs/design/mosd.md:194-195`), which a
+    value-forwarding remote bridge cannot carry, so this is a fork in the road
+    rather than a feature to add"*. Both branches were live while nothing
+    decided between them, and this document was written along the method
+    branch.
+
+    **The decision, and where it is now normative.** `docs/plan/PLAN-011.md`
+    D3 takes **items**, on the stated rationale that it is the property which
+    makes the planned value-only MQTT bridge sufficient — a bridge that
+    carries `SetValue` and nothing else can still reboot, update and
+    reconfigure a device. `docs/design/bus.md` §7 states it as contract: an
+    action is an item at `/Actions/<verb>` whose value always reads `0`, a
+    write triggers it, the service forces the value back to `0` and emits that
+    `0 -> 0` edge so every trigger's consumption is observable, and the
+    `SetValue` return code is the dispatch result. PLAN-011 M2 landed the two
+    verbs this document names — `/Actions/reboot` and `/Actions/poweroff`
+    (`mosd/mosd/src/actions.rs`, projected and dispatched through
+    `mosd/mosd/src/tree.rs`) — so those bus.md statements read
+    **[implemented]** rather than **[proposed]**.
+
+    **What it costs this document: nothing at the HTTP surface, and that is
+    the load-bearing half.** `POST /api/v1/actions/<verb>` (§2.2, §2.3)
+    remains exactly as specified — the same paths, the same `POST`-only
+    namespace named so that no reader expects a `GET`, the same
+    `202 Accepted` — and becomes a **thin mapping** onto the items. This is
+    not a promise made about future work: apid's power pane already consumes
+    them (`mosd/apid/src/bus_client.rs` writes `/Actions/reboot` and
+    `/Actions/poweroff` through `com.mos.Item1`), and the switch sits *below*
+    the `SettingsApi` trait — `mosd/apid/src/routes.rs` was not modified, so
+    the routes, the confirm-token gate §2.3 discusses and the `202` all come
+    out of unchanged code, and the route tests pass with their expectations
+    unmodified. §2.3's reasoning for `202` over `204` is untouched: a
+    `SetValue` on the action item is still a D-Bus call spawned so the
+    response goes out before the machine does.
+
+    **What is *not* claimed.** The `com.mos.mosd1` `Reboot` and `PowerOff`
+    methods are **still served by mosd** and are neither deprecated nor
+    removed — apid has simply stopped calling them, and `docs/design/bus.md`
+    §1.2 keeps their deprecation as a later decision, to be taken now that its
+    stated condition (apid consuming the tree) holds. A reader of this section
+    should not infer a removal from the switch.
+
+    **One accuracy fix is owed, and it is owed to sections this entry does not
+    edit.** §1.3's proxy table is headed *"Every method apid calls today —
+    six"* and gives `reboot()` and `power_off()` their own rows against
+    `mosd/mosd/src/bus.rs:257` and `:265` (`api.md:231-232`). At `3b2ab65` the
+    `com.mos.mosd1` proxy declares **four** methods and the two power calls
+    are `SetValue` writes on a second interface, so the count and those two
+    rows are stale — the sharpest instance, because §1.3 sits under §1, *"The
+    surface as it exists today"*, marked **[implemented]**, and is therefore
+    read as a description of the tree rather than of a plan. §2.2's
+    resource-model row for `/api/v1/actions/<verb>` (`:710`) and its Power row
+    (`:838`) both name `Reboot`/`PowerOff` as what backs the verbs; those are
+    now the backing of last resort rather than the path apid takes.
+    Each is a one-line fix owned by the section's editor. Making them from
+    here would put the correction where no reader of those tables looks, and
+    would edit §1.3 and §2.2 from an entry whose whole purpose is to route
+    work out of §10.3 — so it is recorded, not done.
