@@ -35,3 +35,25 @@ to symbol anchors rather than line numbers; whether the check gates CI or runs
 advisory. PLAN-011 fixed only the self-contradicting seam it created and
 classified the rest as mechanical drift — see RFCT-089/090 and this campaign's
 records.
+
+## Evidence for the resolution-vs-content question (found 2026-08-21)
+
+A concrete case that settles part of the open design question, found by a
+PLAN-011 subtask while classifying drift. `docs/design/api.md` §2.2 item 3
+quotes `mosd/apid/src/settings_api.rs` as saying *"mosd owns every system
+action: **webd** never spawns a process..."*, while §1.3 quotes the same
+comment as *"...**apid** never spawns a process..."*. The source comment was
+renamed under the quotation by the webd -> apid rename (RFCT-055).
+
+The file still exists and the citation still resolves, so a **resolution-only**
+checker passes on a quotation that no longer matches its source. Only
+**content-matching** catches it. Whatever design this task settles on, it needs
+to compare the quoted text against the cited lines, not merely confirm the
+path resolves.
+
+A second class this task will NOT catch, recorded so nobody assumes otherwise:
+a **provenance claim** ("this section was measured at `<commit>`") is validated
+against no file at all. All three candidate designs — resolution-only,
+content-matching, symbol anchors — pass it, because a checker validates
+citations against HEAD and nothing validates a claim about a commit. Those stay
+a human responsibility; PLAN-011 fixed two of them by hand for that reason.
