@@ -103,6 +103,20 @@ fn location(response: &reqwest::Response) -> &str {
         .unwrap_or("(no Location header)")
 }
 
+/// POST `/login` with `password` on `client`'s own cookie jar.
+async fn post_login(
+    client: &reqwest::Client,
+    https_base: &str,
+    password: &str,
+) -> anyhow::Result<reqwest::Response> {
+    client
+        .post(format!("{https_base}/login"))
+        .form(&[("password", password)])
+        .send()
+        .await
+        .with_context(|| format!("POST {https_base}/login"))
+}
+
 #[tokio::test(flavor = "multi_thread")]
 async fn web_flow_end_to_end() -> anyhow::Result<()> {
     let Some(dbus_daemon) = find_dbus_daemon() else {
@@ -239,18 +253,50 @@ async fn web_flow_end_to_end() -> anyhow::Result<()> {
     assert_eq!(response.status(), StatusCode::OK);
     assert_eq!(response.text().await?, "ok");
 
-    // Wrong password fails; the right one yields a usable session.
-    let response = anon
-        .post(format!("{https_base}/login"))
-        .form(&[("password", "wrong-password")])
-        .send()
-        .await?;
+    // The login curve, RFCT-081 §5, over the real listener. A wrong password
+    // is answered 401 and costs a backoff window (`access.md` §3.3's
+    // `backoffBase`, one second, doubling per consecutive failure); every
+    // attempt inside that window is refused 429 without being checked -- the
+    // CORRECT password included, which is the point of the rule. The guard is
+    // one global counter rather than one per client, so a second connection
+    // does not step around it either. `apid::tests::
+    // the_first_failure_arms_the_backoff_window` pins the same curve as a
+    // unit test: if that 429 ever turns back into a 303 here, the guard has
+    // regressed, so do not "fix" this sequence by dropping the wait.
+    let response = post_login(&anon, &https_base, "wrong-password").await?;
     assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
-    let response = anon
-        .post(format!("{https_base}/login"))
-        .form(&[("password", "e2e-password")])
-        .send()
-        .await?;
+    assert!(
+        response.headers().get(SET_COOKIE).is_none(),
+        "a wrong password must not mint a session"
+    );
+
+    let response = post_login(&anon, &https_base, "e2e-password").await?;
+    assert_eq!(
+        response.status(),
+        StatusCode::TOO_MANY_REQUESTS,
+        "the correct password inside an armed window is refused unchecked"
+    );
+    assert!(
+        response.headers().get(SET_COOKIE).is_none(),
+        "a refused attempt must not mint a session"
+    );
+
+    // Ride the window out. A refused attempt is turned away before it is
+    // charged, so retrying does not push the window back and the first
+    // attempt after it lapses is admitted -- which makes polling for the
+    // window's end deterministic where a fixed sleep would be a guess about
+    // both the window and the argon2 verification in front of it.
+    let response = tokio::time::timeout(Duration::from_secs(30), async {
+        loop {
+            let response = post_login(&anon, &https_base, "e2e-password").await?;
+            if response.status() != StatusCode::TOO_MANY_REQUESTS {
+                break anyhow::Ok(response);
+            }
+            tokio::time::sleep(Duration::from_millis(50)).await;
+        }
+    })
+    .await
+    .context("the login backoff window never lapsed")??;
     assert_eq!(response.status(), StatusCode::SEE_OTHER);
     assert_eq!(location(&response), "/");
     let response = anon.get(format!("{https_base}/network")).send().await?;
