@@ -103,7 +103,10 @@ impl MosdService {
 
     /// Record that a tree mutation completed; called after the mutation so an
     /// observer that snapshots on the mark always sees the finished write.
-    fn mark_changed(&self) {
+    ///
+    /// Reachable from [`crate::actions`] as well, whose forced re-zero
+    /// (`docs/design/bus.md` §7) is a change no tree write marks.
+    pub(crate) fn mark_changed(&self) {
         self.changed.send_modify(|generation| *generation += 1);
     }
 
@@ -208,7 +211,11 @@ fn record(state: &mut Value, name: &str, result: anyhow::Result<Value>) {
 }
 
 /// Unique bus name of the caller, or `"(unknown)"` on an unnamed message.
-fn sender_of<'a>(header: &'a Header<'a>) -> &'a str {
+///
+/// Shared with the item façade ([`crate::tree`]), so a power action triggered
+/// through `/Actions/<verb>` is attributed exactly as one called through
+/// `Reboot`/`PowerOff` is.
+pub(crate) fn sender_of<'a>(header: &'a Header<'a>) -> &'a str {
     header.sender().map_or("(unknown)", |name| name.as_str())
 }
 

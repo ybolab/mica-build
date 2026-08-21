@@ -11,17 +11,26 @@
 //! learns about changes through the service's change marker
 //! ([`MosdService::subscribe_changes`]), re-projects both trees, and emits one
 //! signal per accumulated batch of differences.
+//!
+//! The one thing the façade projects that neither tree carries is the
+//! `/Actions/<verb>` items (§7): constant-`0` items whose write triggers
+//! something instead of storing anything. They are [`crate::actions`]' verbs,
+//! dispatched through the very `MosdService` request paths the `Reboot` and
+//! `PowerOff` methods use.
 
 use std::collections::{BTreeMap, HashMap};
+use std::sync::Arc;
 
 use mosd_settings::SettingsError;
 use serde_json::Value as Json;
 use tokio::sync::watch;
 use zbus::fdo;
+use zbus::message::Header;
 use zbus::object_server::{InterfaceRef, ObjectServer, SignalEmitter};
 use zbus::zvariant::Value;
 
-use crate::bus::MosdService;
+use crate::actions::{Action, Actions};
+use crate::bus::{MosdService, sender_of};
 
 /// Object path `GetItems` and `ItemsChanged` are served at: the service root
 /// (`docs/design/bus.md` §1.1). Item object paths are absolute slash paths
@@ -59,7 +68,8 @@ const SET_UNKNOWN_PATH: i32 = -1;
 const SET_READ_ONLY: i32 = -2;
 /// The value does not fit the typed settings tree at that path.
 const SET_INVALID_VALUE: i32 = -3;
-/// The write validated but could not be persisted.
+/// The request was accepted but could not be carried out: a settings write
+/// that validated and would not persist, or an action that would not dispatch.
 const SET_FAILED: i32 = -4;
 
 /// Attribute dict of one item (`a{sv}`): `value`, `writable`, and optionally
@@ -69,20 +79,51 @@ type ItemAttrs = HashMap<String, Value<'static>>;
 /// path -> attribute dict.
 type Items = HashMap<String, ItemAttrs>;
 
-/// One projected item: its (already redacted) value and whether a bus client
-/// may write it.
+/// What a bus client may do with an item — and, when it may write, through
+/// which path the write goes.
+///
+/// Actions are their own case on purpose (`docs/design/bus.md` §7): they are
+/// writable, but writing one dispatches something rather than storing a value,
+/// so an action is deliberately NOT an entry in [`WRITABLE_SUBTREES`] and the
+/// two never have to agree.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Access {
+    /// The whole live-state tree, and every settings leaf outside
+    /// [`WRITABLE_SUBTREES`].
+    ReadOnly,
+    /// A settings leaf, written through [`MosdService::write_setting`].
+    Setting,
+    /// An action item, dispatched through [`Actions::trigger`].
+    Action(Action),
+}
+
+impl Access {
+    /// The `writable` attribute this access reports in `GetItems`: an action
+    /// is writable even though nothing it is written is ever stored.
+    const fn writable(self) -> bool {
+        !matches!(self, Self::ReadOnly)
+    }
+}
+
+/// One projected item: its (already redacted) value and what a bus client may
+/// do with it.
 #[derive(Debug, Clone, PartialEq)]
 struct Leaf {
     value: Json,
-    writable: bool,
+    access: Access,
 }
 
 /// The projected item map: absolute slash path -> leaf.
 type Projection = BTreeMap<String, Leaf>;
 
-/// The projection [`install`] registered item objects for, handed to [`run`]
-/// as its starting point so no change between the two is missed.
-pub struct Snapshot(Projection);
+/// What [`install`] set up, handed to [`run`] so it continues from exactly
+/// that state and no change between the two is missed: the projection the
+/// item objects were registered for, and the action registry those objects
+/// dispatch into.
+pub struct Snapshot {
+    items: Projection,
+    actions: Arc<Actions>,
+}
 
 /// Strip every secret-named key, at any depth, including inside arrays.
 ///
@@ -142,10 +183,25 @@ fn is_writable(dot: &str) -> bool {
     })
 }
 
-/// Project both trees into one redacted flat item map. The settings tree is
-/// projected first, the live-state tree second; they share no top-level key
-/// today, and if they ever do the live-state leaf wins — and with it its
-/// `writable = false`, so an aliased path is never writable by accident.
+/// The leaf an action item always projects as: the constant `0`, writable,
+/// and not a setting (`docs/design/bus.md` §7).
+fn action_leaf(action: Action) -> Leaf {
+    Leaf {
+        value: Json::from(crate::actions::IDLE),
+        access: Access::Action(action),
+    }
+}
+
+/// Project both trees into one redacted flat item map, then the action items
+/// over the top.
+///
+/// The settings tree is projected first, the live-state tree second; they
+/// share no top-level key today, and if they ever do the live-state leaf wins
+/// — and with it its [`Access::ReadOnly`], so an aliased path is never
+/// writable by accident. The action items go last for the same reason in
+/// reverse: `/Actions/<verb>` is this daemon's to define, so a settings or
+/// state key that collided with one would be shadowed rather than turn an
+/// action into something else.
 fn project(settings: &Json, state: &Json) -> Projection {
     let mut items = Projection::new();
     for (tree, from_settings) in [(settings, true), (state, false)] {
@@ -154,9 +210,16 @@ fn project(settings: &Json, state: &Json) -> Projection {
         let mut leaves = BTreeMap::new();
         flatten("", &tree, &mut leaves);
         for (path, value) in leaves {
-            let writable = from_settings && dot_path(&path).as_deref().is_some_and(is_writable);
-            items.insert(path, Leaf { value, writable });
+            let access = if from_settings && dot_path(&path).as_deref().is_some_and(is_writable) {
+                Access::Setting
+            } else {
+                Access::ReadOnly
+            };
+            items.insert(path, Leaf { value, access });
         }
+    }
+    for action in Action::ALL {
+        items.insert(action.path().to_string(), action_leaf(action));
     }
     items
 }
@@ -258,7 +321,8 @@ fn items_from(projection: &Projection) -> Items {
     projection
         .iter()
         .filter_map(|(path, leaf)| {
-            to_variant(&leaf.value).map(|value| (path.clone(), attrs(value, leaf.writable)))
+            to_variant(&leaf.value)
+                .map(|value| (path.clone(), attrs(value, leaf.access.writable())))
         })
         .collect()
 }
@@ -269,7 +333,9 @@ fn items_from(projection: &Projection) -> Items {
 fn items_from_diff(diff: BTreeMap<String, Option<Leaf>>) -> Items {
     diff.into_iter()
         .filter_map(|(path, leaf)| match leaf {
-            Some(leaf) => to_variant(&leaf.value).map(|value| (path, attrs(value, leaf.writable))),
+            Some(leaf) => {
+                to_variant(&leaf.value).map(|value| (path, attrs(value, leaf.access.writable())))
+            }
             None => Some((path, attrs(invalid_sentinel(), false))),
         })
         .collect()
@@ -285,33 +351,52 @@ fn code_for(err: &SettingsError) -> i32 {
     }
 }
 
-/// `SetValue` on the item at absolute slash `path`.
+/// `SetValue` on the item at absolute slash `path`, on behalf of `sender`.
 ///
-/// The façade's one write entry point. It decides writability against the
-/// projection the reader sees — so an item that `GetItems` reports as
-/// `writable` is exactly an item this accepts — and then hands the value to
-/// [`MosdService::write_setting`], the same call `SetSettings` makes: the
-/// value is validated against the typed schema, persisted through the store,
-/// and the reconcilers owning the path are re-applied. Nothing here reconciles
-/// or persists on its own.
+/// The façade's one write entry point, and the one place the two kinds of
+/// writable item part ways — decided against the projection the reader sees,
+/// so an item `GetItems` reports as `writable` is exactly an item this
+/// accepts:
 ///
-/// A failed write changes nothing (`docs/design/bus.md` §3) and reports only
-/// its code; the reason is logged locally and never travels back to the caller.
-async fn set_item(service: &MosdService, path: &str, value: Json) -> i32 {
+/// - a **setting** goes to [`MosdService::write_setting`], the same call
+///   `SetSettings` makes: validated against the typed schema, persisted
+///   through the store, and the reconcilers owning the path re-applied;
+/// - an **action** goes to [`Actions::trigger`], which dispatches it through
+///   the `MosdService` request path that logs it and records it in live state
+///   BEFORE the power call, and stores nothing at all. `value` is ignored
+///   there: the write itself is the trigger (`docs/design/bus.md` §7).
+///
+/// Nothing here reconciles, persists or logs the request on its own. A failed
+/// write changes nothing (§3) and reports only its code; the reason is logged
+/// locally and never travels back to the caller.
+async fn set_item(
+    service: &MosdService,
+    actions: &Actions,
+    sender: &str,
+    path: &str,
+    value: Json,
+) -> i32 {
     let Some(dot) = dot_path(path) else {
         return SET_UNKNOWN_PATH;
     };
     let (settings, state) = service.trees().await;
-    match project(&settings, &state).get(path) {
-        None => {
-            tracing::debug!(path, "SetValue on a path the item tree does not carry");
-            SET_UNKNOWN_PATH
-        }
-        Some(leaf) if !leaf.writable => {
+    let Some(leaf) = project(&settings, &state).get(path).cloned() else {
+        tracing::debug!(path, "SetValue on a path the item tree does not carry");
+        return SET_UNKNOWN_PATH;
+    };
+    match leaf.access {
+        Access::ReadOnly => {
             tracing::debug!(path, "SetValue on a read-only item");
             SET_READ_ONLY
         }
-        Some(_) => match service.write_setting(&dot, value).await {
+        Access::Action(action) => match actions.trigger(service, action, sender).await {
+            Ok(()) => SET_OK,
+            Err(err) => {
+                tracing::error!(path, error = %err, "SetValue could not dispatch the action");
+                SET_FAILED
+            }
+        },
+        Access::Setting => match service.write_setting(&dot, value).await {
             Ok(()) => SET_OK,
             Err(err) => {
                 tracing::warn!(path, error = %err, "SetValue rejected");
@@ -362,14 +447,21 @@ impl ItemTree {
 /// exactly as an absent item must.
 pub struct Item {
     service: InterfaceRef<MosdService>,
+    /// Shared with [`run`], which drains the consumption edges a trigger
+    /// through this object leaves pending.
+    actions: Arc<Actions>,
     /// This item's absolute slash path, which is also the object path it is
     /// served at.
     path: String,
 }
 
 impl Item {
-    fn new(service: InterfaceRef<MosdService>, path: String) -> Self {
-        Self { service, path }
+    fn new(service: InterfaceRef<MosdService>, actions: Arc<Actions>, path: String) -> Self {
+        Self {
+            service,
+            actions,
+            path,
+        }
     }
 }
 
@@ -387,7 +479,12 @@ impl Item {
     }
 
     /// Write `value` to this item; `0` on success, a negative code on failure.
-    async fn set_value(&self, value: Value<'_>) -> i32 {
+    ///
+    /// On an action item the code is the dispatch result rather than a write
+    /// result (`docs/design/bus.md` §7), and the header is what attributes the
+    /// request: a power action triggered here is logged and recorded under the
+    /// same caller name as one called through `Reboot`/`PowerOff`.
+    async fn set_value(&self, #[zbus(header)] header: Header<'_>, value: Value<'_>) -> i32 {
         let Some(json) = from_variant(&value) else {
             tracing::debug!(
                 path = self.path,
@@ -396,7 +493,14 @@ impl Item {
             return SET_INVALID_VALUE;
         };
         let service = self.service.get().await;
-        set_item(&service, &self.path, json).await
+        set_item(
+            &service,
+            &self.actions,
+            sender_of(&header),
+            &self.path,
+            json,
+        )
+        .await
     }
 }
 
@@ -406,6 +510,7 @@ impl Item {
 async fn sync_objects(
     server: &ObjectServer,
     service: &InterfaceRef<MosdService>,
+    actions: &Arc<Actions>,
     batch: &BTreeMap<String, Option<Leaf>>,
 ) {
     for (path, leaf) in batch {
@@ -415,7 +520,10 @@ async fn sync_objects(
             // case). Such an item still reads through `GetItems`; it just has
             // no object of its own, which is loud here and nowhere else.
             if let Err(err) = server
-                .at(path.as_str(), Item::new(service.clone(), path.clone()))
+                .at(
+                    path.as_str(),
+                    Item::new(service.clone(), Arc::clone(actions), path.clone()),
+                )
                 .await
             {
                 tracing::warn!(path, error = %err, "no item object for this path");
@@ -436,6 +544,7 @@ pub async fn install(
     service: &InterfaceRef<MosdService>,
 ) -> Snapshot {
     let items = projection(service).await;
+    let actions = Arc::new(Actions::new());
     let batch = items
         .iter()
         .map(|(path, leaf)| (path.clone(), Some(leaf.clone())))
@@ -443,10 +552,11 @@ pub async fn install(
     sync_objects(
         tree.signal_emitter().connection().object_server(),
         service,
+        &actions,
         &batch,
     )
     .await;
-    Snapshot(items)
+    Snapshot { items, actions }
 }
 
 /// Watch the service's change marker, keep the item objects in step with the
@@ -461,7 +571,10 @@ pub async fn run(
     mut changes: watch::Receiver<u64>,
     snapshot: Snapshot,
 ) {
-    let mut prev = snapshot.0;
+    let Snapshot {
+        items: mut prev,
+        actions,
+    } = snapshot;
     while changes.changed().await.is_ok() {
         // Let every mutation of the turn that woke us land, then clear the
         // marks it left: whatever the snapshot below captures is thereby
@@ -469,14 +582,23 @@ pub async fn run(
         tokio::task::yield_now().await;
         changes.mark_unchanged();
         let cur = projection(&service).await;
-        let batch = diff(&prev, &cur);
+        let mut batch = diff(&prev, &cur);
         prev = cur;
+        // The forced re-zero (`docs/design/bus.md` §7). An action item's value
+        // is the constant `0`, so no diff of two projections can ever carry
+        // one; the `0 -> 0` edge that makes a trigger's consumption
+        // observable is therefore injected here, into the same coalesced
+        // payload as whatever else the turn changed.
+        for action in actions.take_triggered() {
+            batch.insert(action.path().to_string(), Some(action_leaf(action)));
+        }
         if batch.is_empty() {
             continue;
         }
         sync_objects(
             tree.signal_emitter().connection().object_server(),
             &service,
+            &actions,
             &batch,
         )
         .await;
@@ -491,20 +613,20 @@ pub async fn run(
 #[cfg(test)]
 mod tests {
     use std::path::PathBuf;
-    use std::sync::{Arc, Mutex};
+    use std::sync::{Arc, Mutex, Weak};
 
     use mosd_settings::{Settings, Store};
     use serde_json::json;
 
     use super::*;
-    use crate::power::MockPower;
+    use crate::power::{MockPower, PowerControl};
     use crate::reconciler::Reconciler;
 
-    /// A [`Leaf`] as the settings tree projects one.
+    /// A [`Leaf`] as a writable settings item projects one.
     fn writable(value: Json) -> Leaf {
         Leaf {
             value,
-            writable: true,
+            access: Access::Setting,
         }
     }
 
@@ -512,7 +634,7 @@ mod tests {
     fn read_only(value: Json) -> Leaf {
         Leaf {
             value,
-            writable: false,
+            access: Access::ReadOnly,
         }
     }
 
@@ -543,7 +665,11 @@ mod tests {
     /// A service over a throwaway store, the five real reconciler subtrees
     /// behind mocks, and the shared run log; the settings file does not exist
     /// until something persists to it.
-    fn service_with_mocks(
+    ///
+    /// `power` is a parameter so an action test can substitute a control that
+    /// observes what had already happened when it was called.
+    fn service_with(
+        power: Box<dyn PowerControl>,
         state: Json,
     ) -> (
         MosdService,
@@ -574,13 +700,28 @@ mod tests {
             Store::new(&settings_path),
             Settings::default(),
             reconcilers,
-            Box::new(MockPower {
-                calls: Arc::new(Mutex::new(Vec::new())),
-            }),
+            power,
             dir.path().join("shadow"),
             state,
         );
         (service, runs, settings_path, dir)
+    }
+
+    /// [`service_with`] over a power control that only records the call.
+    fn service_with_mocks(
+        state: Json,
+    ) -> (
+        MosdService,
+        Arc<Mutex<Vec<String>>>,
+        PathBuf,
+        tempfile::TempDir,
+    ) {
+        service_with(
+            Box::new(MockPower {
+                calls: Arc::new(Mutex::new(Vec::new())),
+            }),
+            state,
+        )
     }
 
     #[test]
@@ -696,10 +837,10 @@ mod tests {
         });
         let state = json!({ "dry_run": true });
         let items = project(&settings, &state);
-        assert!(items["/hostname"].writable);
-        assert!(items["/wifi/ap/channel"].writable);
-        assert!(!items["/schema_version"].writable);
-        assert!(!items["/dry_run"].writable);
+        assert_eq!(items["/hostname"].access, Access::Setting);
+        assert_eq!(items["/wifi/ap/channel"].access, Access::Setting);
+        assert_eq!(items["/schema_version"].access, Access::ReadOnly);
+        assert_eq!(items["/dry_run"].access, Access::ReadOnly);
     }
 
     #[test]
@@ -725,8 +866,9 @@ mod tests {
     async fn a_set_value_persists_and_schedules_only_the_owning_reconciler() {
         let (service, runs, settings_path, _dir) = service_with_mocks(json!({}));
 
+        let actions = Actions::new();
         assert_eq!(
-            set_item(&service, "/hostname", json!("edge-01")).await,
+            set_item(&service, &actions, ":1.2", "/hostname", json!("edge-01")).await,
             SET_OK
         );
 
@@ -740,7 +882,7 @@ mod tests {
         // and no others — the same rule `SetSettings` applies.
         runs.lock().expect("lock").clear();
         assert_eq!(
-            set_item(&service, "/wifi/ap/channel", json!(11)).await,
+            set_item(&service, &actions, ":1.2", "/wifi/ap/channel", json!(11)).await,
             SET_OK
         );
         assert_eq!(
@@ -765,30 +907,47 @@ mod tests {
         let before = service.trees().await;
 
         // A live-state item: it is in the tree, and it is not a setting.
+        let actions = Actions::new();
         assert_eq!(
-            set_item(&service, "/dry_run", json!(false)).await,
+            set_item(&service, &actions, ":1.3", "/dry_run", json!(false)).await,
             SET_READ_ONLY
         );
         // A settings item outside every writable subtree.
         assert_eq!(
-            set_item(&service, "/schema_version", json!(9)).await,
+            set_item(&service, &actions, ":1.3", "/schema_version", json!(9)).await,
             SET_READ_ONLY
         );
-        // Paths the tree does not carry: absent, redacted, and the root.
+        // Paths the tree does not carry: absent, redacted, an unknown verb
+        // under the actions prefix, and the root.
         assert_eq!(
-            set_item(&service, "/no/such/path", json!(1)).await,
+            set_item(&service, &actions, ":1.3", "/no/such/path", json!(1)).await,
             SET_UNKNOWN_PATH
         );
         assert_eq!(
-            set_item(&service, "/wifi/ap/psk", json!("hunter2")).await,
+            set_item(&service, &actions, ":1.3", "/wifi/ap/psk", json!("hunter2")).await,
             SET_UNKNOWN_PATH,
             "a redacted key is not an item, so it cannot be written either"
         );
-        assert_eq!(set_item(&service, "/", json!(1)).await, SET_UNKNOWN_PATH);
+        assert_eq!(
+            set_item(
+                &service,
+                &actions,
+                ":1.3",
+                "/Actions/selfdestruct",
+                json!(1)
+            )
+            .await,
+            SET_UNKNOWN_PATH,
+            "the actions prefix is not a wildcard: only the verbs exist"
+        );
+        assert_eq!(
+            set_item(&service, &actions, ":1.3", "/", json!(1)).await,
+            SET_UNKNOWN_PATH
+        );
 
         // A writable path whose value does not fit the typed schema.
         assert_eq!(
-            set_item(&service, "/hostname", json!(7)).await,
+            set_item(&service, &actions, ":1.3", "/hostname", json!(7)).await,
             SET_INVALID_VALUE
         );
 
@@ -805,5 +964,204 @@ mod tests {
             !settings_path.exists(),
             "a rejected SetValue must persist nothing at all"
         );
+        assert!(
+            actions.take_triggered().is_empty(),
+            "nothing above was an action, so no consumption edge may be pending"
+        );
+    }
+
+    /// Power control that snapshots the daemon's live-state tree at the moment
+    /// it is called, so a test can assert what had ALREADY happened by then.
+    ///
+    /// The handle back to the service is weak and filled in after the fact:
+    /// the control is constructed first (the service takes it by value), and a
+    /// strong handle here would be a reference cycle.
+    struct OrderingPower {
+        calls: Arc<Mutex<Vec<String>>>,
+        service: Arc<Mutex<Option<Weak<MosdService>>>>,
+        /// The live-state tree as each call found it, one entry per call.
+        seen: Arc<Mutex<Vec<Json>>>,
+    }
+
+    impl OrderingPower {
+        async fn record(&self, member: &str) {
+            let service = self
+                .service
+                .lock()
+                .expect("ordering lock")
+                .clone()
+                .and_then(|service| service.upgrade());
+            let state = match service {
+                Some(service) => service.trees().await.1,
+                None => Json::Null,
+            };
+            self.seen.lock().expect("ordering lock").push(state);
+            self.calls
+                .lock()
+                .expect("ordering lock")
+                .push(member.to_string());
+        }
+    }
+
+    #[async_trait::async_trait]
+    impl PowerControl for OrderingPower {
+        async fn reboot(&self) -> anyhow::Result<()> {
+            self.record("reboot").await;
+            Ok(())
+        }
+
+        async fn power_off(&self) -> anyhow::Result<()> {
+            self.record("power_off").await;
+            Ok(())
+        }
+    }
+
+    /// A service whose power control observes the live-state tree at call
+    /// time, plus everything the test needs to read back afterwards.
+    struct Ordering {
+        service: Arc<MosdService>,
+        calls: Arc<Mutex<Vec<String>>>,
+        seen: Arc<Mutex<Vec<Json>>>,
+        runs: Arc<Mutex<Vec<String>>>,
+        settings_path: PathBuf,
+        _dir: tempfile::TempDir,
+    }
+
+    impl Ordering {
+        fn new() -> Self {
+            let calls = Arc::new(Mutex::new(Vec::new()));
+            let seen = Arc::new(Mutex::new(Vec::new()));
+            let slot = Arc::new(Mutex::new(None));
+            let (service, runs, settings_path, dir) = service_with(
+                Box::new(OrderingPower {
+                    calls: Arc::clone(&calls),
+                    service: Arc::clone(&slot),
+                    seen: Arc::clone(&seen),
+                }),
+                json!({}),
+            );
+            let service = Arc::new(service);
+            *slot.lock().expect("ordering lock") = Some(Arc::downgrade(&service));
+            Self {
+                service,
+                calls,
+                seen,
+                runs,
+                settings_path,
+                _dir: dir,
+            }
+        }
+
+        /// The power members called so far, in order. Cloned rather than
+        /// borrowed, so no lock is held across the awaits that follow.
+        fn calls(&self) -> Vec<String> {
+            self.calls.lock().expect("ordering lock").clone()
+        }
+
+        /// The live-state tree as each of those calls found it.
+        fn seen(&self) -> Vec<Json> {
+            self.seen.lock().expect("ordering lock").clone()
+        }
+    }
+
+    #[test]
+    fn the_action_items_are_writable_constant_zeroes_that_are_not_settings() {
+        let items = project(&json!({ "hostname": "mos" }), &json!({ "dry_run": true }));
+        for action in Action::ALL {
+            let leaf = &items[action.path()];
+            assert_eq!(leaf.value, json!(0), "{} must read 0", action.path());
+            assert_eq!(leaf.access, Access::Action(action));
+            assert!(leaf.access.writable(), "{} must be writable", action.path());
+        }
+        // The writability of an action owes nothing to the settings list: no
+        // action path is, or lies under, a writable settings subtree.
+        for action in Action::ALL {
+            let dot = dot_path(action.path()).expect("an action path is a slash path");
+            assert!(!is_writable(&dot), "{dot} must not be a writable SETTING");
+        }
+    }
+
+    #[tokio::test]
+    async fn an_action_dispatches_once_after_the_request_was_already_recorded() {
+        let fixture = Ordering::new();
+        let service = &fixture.service;
+        let actions = Actions::new();
+
+        let (settings, state) = service.trees().await;
+        assert_eq!(
+            project(&settings, &state)["/Actions/reboot"].value,
+            json!(0)
+        );
+
+        assert_eq!(
+            set_item(service, &actions, ":1.4", "/Actions/reboot", json!(1)).await,
+            SET_OK,
+            "an accepted action reports the dispatch result, which is 0 (§7)"
+        );
+
+        // (a) The power control was reached EXACTLY once.
+        assert_eq!(fixture.calls(), vec!["reboot".to_string()]);
+        // (c) ... and by the time it was, the request had already been logged
+        // and recorded: `note_power_request` writes this record immediately
+        // after the log line and before the power call, so the record being
+        // visible here is that ordering.
+        let seen = fixture.seen();
+        assert_eq!(seen.len(), 1);
+        assert_eq!(seen[0]["power"]["last_action"], "reboot");
+        assert_eq!(
+            seen[0]["power"]["requested_by"], ":1.4",
+            "the bus caller must be attributed, exactly as `Reboot` attributes it"
+        );
+
+        // (b) The item still reads 0: an action never holds a value.
+        let (settings, state) = service.trees().await;
+        assert_eq!(
+            project(&settings, &state)["/Actions/reboot"].value,
+            json!(0)
+        );
+
+        // (d) The forced re-zero is pending for the next coalesced payload —
+        // the only way a constant item can appear in one at all — and exactly
+        // once.
+        assert_eq!(actions.take_triggered(), vec![Action::Reboot]);
+        assert!(
+            actions.take_triggered().is_empty(),
+            "the consumption edge is emitted once, not on every turn after"
+        );
+
+        // An action is not a settings write: nothing persisted, nothing
+        // reconciled.
+        assert!(fixture.runs.lock().expect("lock").is_empty());
+        assert!(!fixture.settings_path.exists());
+    }
+
+    #[tokio::test]
+    async fn each_verb_dispatches_its_own_power_request() {
+        let fixture = Ordering::new();
+        let service = &fixture.service;
+        let actions = Actions::new();
+
+        assert_eq!(
+            set_item(service, &actions, ":1.5", "/Actions/poweroff", json!(0)).await,
+            SET_OK,
+            "the value written to an action is ignored: the write is the trigger"
+        );
+        assert_eq!(
+            fixture.calls(),
+            vec!["power_off".to_string()],
+            "/Actions/poweroff must not reach the reboot path"
+        );
+        assert_eq!(fixture.seen()[0]["power"]["last_action"], "power_off");
+        assert_eq!(actions.take_triggered(), vec![Action::PowerOff]);
+
+        assert_eq!(
+            set_item(service, &actions, ":1.5", "/Actions/reboot", json!(true)).await,
+            SET_OK
+        );
+        assert_eq!(
+            fixture.calls(),
+            vec!["power_off".to_string(), "reboot".to_string()]
+        );
+        assert_eq!(actions.take_triggered(), vec![Action::Reboot]);
     }
 }
