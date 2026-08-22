@@ -239,29 +239,68 @@ uses". That was wrong, and the rejected option is the useful half of this record
   not seed-once") already refuses this failure class for `/etc/shadow`; freezing the
   mount topology is a worse instance of it.
 
-`/usr/local/lib/systemd/system` is **expected** to sit in systemd's system-manager
-unit load path below `/etc/systemd/system` and `/run/systemd/system`, and to be
-empty in the base image — so the bind would shadow nothing, need no `cp -an` seed
-at all, and leave the boot chain entirely inside the verity root.
+`/usr/local/lib/systemd/system` **sits** in systemd's system-manager unit load
+path below `/etc/systemd/system` and `/run/systemd/system`, and **is** absent
+from the base image — so the bind shadows nothing, needs no `cp -an` seed at
+all, and leaves the boot chain entirely inside the verity root.
 
-> **[pending measurement]** — the two claims in the sentence above are the
-> *reason* for choosing this target and they were **not verified** when this
-> correction was written (no `systemd.unit(5)` on the authoring host). They are
-> M5's to measure, not to assume; RFCT-093 deliverable 2 carries the escalation
-> gate. This marker is here because recording a load-bearing claim ahead of its
-> evidence is the specific gap that has already bitten this campaign twice — D5's
-> `own_prefix` line, and M5's own `com.mos.ext` classification — and a paragraph
-> that reads as settled is how it bites. Replace this marker with a dated
-> "measured YYYY-MM-DD, systemd \<version\>" note once M5 reports, exactly as
-> RFCT-093's Investigation section did for `own_prefix`. That an extension therefore **cannot
-override a shipped mos unit is an intended property**, not a limitation: a third
-party silently replacing `var-lib-mos.mount` is not a capability this appliance
-offers.
+> **[measured 2026-08-22 (M5), systemd 252 (`252.39-1~deb12u2`)]** — the two
+> claims in the sentence above are the *reason* for choosing this target, and
+> they were recorded as belief before they were evidence. They are now
+> measured. `systemd-analyze unit-paths`, run on `debian:bookworm-slim` with
+> that systemd — the version the image ships — returns 13 directories, in
+> order:
+>
+> ```
+>  1 /etc/systemd/system.control      8 /run/systemd/generator
+>  2 /run/systemd/system.control      9 /run/systemd/transient
+>  3 /etc/systemd/system.attached    10 /usr/local/lib/systemd/system   <-- here
+>  4 /run/systemd/system.attached    11 /lib/systemd/system
+>  5 /etc/systemd/system             12 /usr/lib/systemd/system
+>  6 /run/systemd/generator.early    13 /run/systemd/generator.late
+>  7 /run/systemd/system
+> ```
+>
+> `/usr/local/lib/systemd/system` is **present, at position 10 of 13**, below
+> both `/etc/systemd/system` (5) and `/run/systemd/system` (7) — so the
+> cannot-override property holds by measurement rather than by assumption. Two
+> facts measured alongside it: the directory is **absent** from the base image
+> (`/usr/local/lib` exists, `/usr/local/lib/systemd` does not), confirming
+> there is nothing to seed and nothing to shadow; and `systemd-escape -p
+> --suffix=mount /usr/local/lib/systemd/system` yields exactly
+> `usr-local-lib-systemd-system.mount`, the unit filename shipped.
+>
+> **The arm64 side is a declaration read, not a run.** The measurement above
+> executed on the host's own architecture. That the same directory is compiled
+> into the arm64 build was confirmed by **reading** the arm64 package's own
+> compiled `systemd.pc` declaration and the corresponding string in the arm64
+> `systemctl` ELF — **no arm64 binary was executed anywhere in this campaign**,
+> and none of the numbers above is claimed to have come from one. What is
+> claimed is what was read.
 
-Two things this costs, both owned by M5: the unit load path must be **measured** on
-the image's systemd (`systemd-analyze unit-paths`) rather than assumed, and the
-mountpoint must be **created by the pack stage** — it does not exist in the image
-today — with `os/verify-image-v2.sh` asserting both its existence and the bind.
+That an extension therefore **cannot override a shipped mos unit is an intended
+property**, not a limitation: a third party silently replacing
+`var-lib-mos.mount` is not a capability this appliance offers.
+
+Two things this cost, both **done in M5**: the unit load path is measured above
+rather than assumed, and the mountpoint is **created by the pack stage**
+(`os/rootfs/Dockerfile.v2`, 0755 root:root) because a verity root cannot create
+a directory at runtime — a missing mountpoint is a mount unit that fails at
+boot, not a feature that quietly does nothing. `os/verify-image-v2.sh` asserts
+its existence (as a member of `PACKED_MOUNTPOINTS`), asserts the bind is
+enabled and STATE-backed, and carries a **negative** assertion that no unit in
+the image mounts over `/etc/systemd/system` — the guard against someone later
+"restoring" this paragraph's superseded sentence. The bind assertions and that
+negative guard live in `check_ext_unit_dir`; the fixture hook
+(`os/ui-location-test.sh`) drives it and the mountpoint check both, so all of
+it can fail offline. RFCT-093's Outcome records why that function is a function
+rather than the inline block it was.
+
+The STATE source is `/mnt/state/systemd-units`, named for what it holds rather
+than mirroring the target path, and created by `mos-seed-state` with a
+`mkdir -p` and **no `cp -an`** — the script carries a comment saying why, so a
+later change does not "helpfully" add one to match the `/etc/ssh` and
+`/etc/hostapd` loops above it.
 
 **(b) Names are self-assigned; mos reserves and observes.** An integrator may own
 any `com.mos.*` bus name that does not collide with a system name. Two mechanisms,
@@ -399,7 +438,7 @@ façade: noted as feasible (dbus_modbustcp pattern), out of this plan.
 | M2 | Writable items + `/Actions/*` (D3): every platform-config subtree (`hostname`, `network`, `wifi.client`, `wifi.ap`, `access.ssh`) writable through `com.mos.Item1`; apid power pane consumes action items; api.md §10.3 fork entry resolved with citation | route tests unchanged in behavior; live-bus test: a `SetValue` on a settings item persists and schedules the owning reconciler (mock executors); action write triggers exactly once (mock power), value reads 0, log-before-call preserved |
 | M3 | `mos-mqttd` (D6) — the MQTT data-publishing bridge over the M1/M2 tree | protocol tests covering N/R/W, keepalive republish, masking and read-only mode — **against an in-memory transport double, not a local broker**: M3 changed this cell deliberately, because a broker-backed test skips (and so reports green while asserting nothing) wherever no broker exists, and what it would add below the double is rumqttc's TCP client, which upstream tests. Rationale and the resulting gap — `runtime::run`'s wiring, which wants an on-device smoke test — recorded in RFCT-091 |
 | M4 | **WITHDRAWN** (D4 dropped, 2026-08-22) — milestone numbers are not reused, so M5/M6 keep their identifiers | — |
-| M5 | Extension enablement (D5 revised): the STATE bind for the systemd unit directory, the `own_prefix` policy grant with the namespace split, and mosd's `NameOwnerChanged` scan publishing the service registry into live state | **first task is to measure `own_prefix` semantics in `mosd/hack/dbus-policy-test.sh`, not to infer them**; policy test asserts a user identity CAN own an extension name and CANNOT own a system name; image verifier asserts the new bind mount; scan tested against a fake service appearing and vanishing |
+| M5 | **LANDED 2026-08-22** (RFCT-093). Extension enablement (D5 revised): `own_prefix` semantics measured first (`mosd/hack/dbus-policy-test.sh` §4, dbus-daemon 1.12.20) and the policy written against the measurement (`mosd/dist/com.mos.ext.conf`); the STATE bind at `/usr/local/lib/systemd/system` (`os/rootfs/overlay-v2/etc/systemd/system/usr-local-lib-systemd-system.mount`, seeded with no `cp -an`); the one class rule (`mosd/busname/src/lib.rs`) consumed by the bridge (`mosd/mqttd/src/topic.rs`) and the registry; mosd's `NameOwnerChanged` scan publishing the registry with its `conformance` field into live state under `services` (`mosd/mosd/src/scan.rs`); `bus.md` §5/§6 flipped per statement | Done: the policy test asserts all seven names with expected values, including that an unprivileged uid CAN own `com.mos.ext.foo` and CANNOT own `com.mos.mosd`; the scan is tested against a fake service appearing and vanishing (`mosd/mosd/tests/scan.rs`); the image verifier's D5 assertions are in `check_ext_unit_dir`, driven offline by `os/ui-location-test.sh`. **Not done, and stated as such in RFCT-093's Outcome**: the image build and the assembled-image verifier have not been run against this work, so no against-a-real-image claim is made; T2's four `com.mos.ext.conf` policy assertions remain offline-unobservable |
 | M6 | Device attach: udev rule → systemd template instance for serial/CAN-attached extensions (the serial-starter analog) | offline: udev rule + unit rendering asserted by verifier; hardware claims explicitly **not** made (repo discipline) |
 
 Each milestone dispatches its own RFCT tasks on approval (PLAN-010
