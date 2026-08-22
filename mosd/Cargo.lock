@@ -1389,6 +1389,7 @@ dependencies = [
  "async-trait",
  "bcrypt",
  "hex",
+ "mos-busname",
  "mosd-settings",
  "ring",
  "serde_json",

@@ -4,6 +4,7 @@
 //! `com.mos.mosd1` interface at [`OBJECT_PATH`], owned under [`BUS_NAME`].
 
 use std::path::PathBuf;
+use std::sync::Arc;
 
 use mosd_settings::{Settings, SettingsError, Store, json_path_get};
 use serde_json::Value;
@@ -14,6 +15,7 @@ use zbus::object_server::SignalEmitter;
 
 use crate::power::PowerControl;
 use crate::reconciler::Reconciler;
+use crate::scan::Registry;
 use crate::transient;
 
 /// Well-known bus name owned by the daemon.
@@ -60,6 +62,14 @@ pub struct MosdService {
     /// Bumped after every mutation of either tree; the `com.mos.Item1` façade
     /// (`crate::tree`) watches it to project changes onto the bus.
     changed: watch::Sender<u64>,
+    /// The service registry the scan task fills ([`crate::scan`]), shared so
+    /// that `ForgetService` drops an entry from the same table the scan
+    /// publishes from — one table, so the bus surface and the live-state tree
+    /// cannot disagree about which services exist.
+    ///
+    /// `None` when no scan was constructed (dry run), which is the one state
+    /// in which `ForgetService` has nothing to act on.
+    registry: Option<Arc<Registry>>,
 }
 
 impl MosdService {
@@ -84,7 +94,35 @@ impl MosdService {
             shadow_path,
             inner: Mutex::new(Inner { settings, state }),
             changed: watch::channel(0).0,
+            registry: None,
         }
+    }
+
+    /// Attach the service registry this daemon's scan task fills.
+    ///
+    /// A separate step rather than a [`Self::new`] parameter because the
+    /// registry only exists when a scan does: the daemon is built the same way
+    /// either way, and a dry-run daemon — which constructs no scan at all —
+    /// does not have to name a registry it will never have.
+    #[must_use]
+    pub fn with_service_registry(mut self, registry: Arc<Registry>) -> Self {
+        self.registry = Some(registry);
+        self
+    }
+
+    /// Write the service registry into the live-state tree under
+    /// [`crate::scan::STATE_KEY`], replacing it wholesale.
+    ///
+    /// The registry is rendered as one value rather than patched key by key so
+    /// that `instance_collision`, which is a property of the whole table
+    /// rather than of one entry, is never observable half-applied.
+    pub async fn publish_services(&self, services: Value) {
+        let mut inner = self.inner.lock().await;
+        if let Some(root) = inner.state.as_object_mut() {
+            root.insert(crate::scan::STATE_KEY.to_string(), services);
+        }
+        drop(inner);
+        self.mark_changed();
     }
 
     /// Subscribe to tree-change notifications for the item façade. The
@@ -329,6 +367,38 @@ impl MosdService {
         drop(inner);
         self.mark_changed();
         tracing::info!(component, status, detail, "health report recorded");
+        Ok(())
+    }
+
+    /// Drop a DISCONNECTED service from the registry (`crate::scan`).
+    ///
+    /// Exported as `ForgetService`. Refuses a service that is still connected,
+    /// and a name the registry does not carry, with
+    /// [`InvalidArgs`](fdo::Error::InvalidArgs).
+    ///
+    /// # Why retention plus an explicit removal, rather than auto-eviction
+    ///
+    /// A service that vanishes is kept with `connected: false` instead of
+    /// being deleted, because the two states an operator most needs to tell
+    /// apart look identical once an entry is gone: a service that was never
+    /// installed, and a service that was installed and has stopped appearing.
+    /// Auto-eviction turns the second into the first — the registry would look
+    /// tidy and correct while quietly withholding the one fact that explains
+    /// why a device stopped reporting. So the entry stays, saying exactly what
+    /// is true (this service is known and is not here), and it leaves only
+    /// when someone who knows it is not coming back says so.
+    ///
+    /// Refusing to forget a CONNECTED service is the other half of that: the
+    /// scan would re-add it on its next event, so accepting the call would be
+    /// a removal that silently undoes itself, which is worse than a refusal
+    /// that says what happened.
+    async fn forget_service(&self, bus_name: &str) -> fdo::Result<()> {
+        let registry = self.registry.as_ref().ok_or_else(|| {
+            fdo::Error::Failed("no service registry: this daemon runs no scan".to_string())
+        })?;
+        let snapshot = registry.forget(bus_name)?;
+        self.publish_services(snapshot).await;
+        tracing::info!(service = bus_name, "service forgotten by request");
         Ok(())
     }
 
