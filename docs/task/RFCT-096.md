@@ -8,10 +8,16 @@
 Measured by PLAN-011 M5's T11, and it undermines the acceptance criterion this
 repository has been reading as proof.
 
-**`cargo nextest`'s "0 skipped" counter cannot detect an in-test
-`return Ok(())`.** A test that decides at runtime it cannot do its work — a
-missing `dbus-daemon`, an absent fixture — and returns early is counted as
-**passed**, not skipped. So every "green, 0 skipped" claim in this repository is
+**`cargo nextest`'s "0 skipped" counter cannot detect a test that returns early
+of its own accord.** A test that decides at runtime it cannot do its work — a
+missing `dbus-daemon`, an absent fixture — and returns without asserting is
+counted as **passed**, not skipped.
+
+Note the defect has **more than one spelling**, so grepping for any single form
+will undercount it: an explicit `return Ok(())`, and `?`-propagation of a
+`None`/`Err` out of a tool-lookup helper (`find_dbus_daemon()?`). Describe the
+family by behaviour — *a test that returns without asserting because a
+precondition is absent* — not by syntax. So every "green, 0 skipped" claim in this repository is
 compatible with a suite in which several tests asserted nothing at all.
 
 That is not hypothetical. `docs/task/RFCT-083.md:20-23` records `check.sh` green
@@ -25,13 +31,17 @@ M5 fixed `mosd/mosd/tests/bus.rs` (RFCT-093's T11: it now panics, and CI
 provisions `dbus-daemon`). Three sites remain, deliberately left because M5's
 scope was closed:
 
-- `mosd/mosd/tests/tree.rs` — a shared helper feeding **five** `return Ok(())`
-  sites, so one absent tool silently empties five tests.
+- `mosd/mosd/tests/tree.rs` — a shared `start()` helper (`tree.rs:111`,
+  returning `Result<Option<Harness>>`) feeding **five** early-return sites, so
+  one absent tool silently empties five tests at once.
 - `mosd/apid/tests/e2e.rs` — the original case named in RFCT-089's
   cross-workstream notes. Campaign 1 corrected its login-flow expectations
   against RFCT-081's backoff curve; it did **not** remove the skip path, which
   is still there.
-- `mosd/apid/src/tests/power_bus.rs`.
+- `mosd/apid/src/tests/power_bus.rs` — skips by `?`-propagating `None` out of
+  `find_dbus_daemon()` (`power_bus.rs:229`), not by `return Ok(())`; the same
+  defect in a different spelling, which is why the family is described by
+  behaviour above.
 
 ## Why this is P1 rather than tidy-up
 
