@@ -239,10 +239,21 @@ uses". That was wrong, and the rejected option is the useful half of this record
   not seed-once") already refuses this failure class for `/etc/shadow`; freezing the
   mount topology is a worse instance of it.
 
-`/usr/local/lib/systemd/system` sits in systemd's system-manager unit load path
-below `/etc/systemd/system` and `/run/systemd/system`, and is empty in the base
-image — so the bind shadows nothing, needs no `cp -an` seed at all, and leaves the
-boot chain entirely inside the verity root. That an extension therefore **cannot
+`/usr/local/lib/systemd/system` is **expected** to sit in systemd's system-manager
+unit load path below `/etc/systemd/system` and `/run/systemd/system`, and to be
+empty in the base image — so the bind would shadow nothing, need no `cp -an` seed
+at all, and leave the boot chain entirely inside the verity root.
+
+> **[pending measurement]** — the two claims in the sentence above are the
+> *reason* for choosing this target and they were **not verified** when this
+> correction was written (no `systemd.unit(5)` on the authoring host). They are
+> M5's to measure, not to assume; RFCT-093 deliverable 2 carries the escalation
+> gate. This marker is here because recording a load-bearing claim ahead of its
+> evidence is the specific gap that has already bitten this campaign twice — D5's
+> `own_prefix` line, and M5's own `com.mos.ext` classification — and a paragraph
+> that reads as settled is how it bites. Replace this marker with a dated
+> "measured YYYY-MM-DD, systemd \<version\>" note once M5 reports, exactly as
+> RFCT-093's Investigation section did for `own_prefix`. That an extension therefore **cannot
 override a shipped mos unit is an intended property**, not a limitation: a third
 party silently replacing `var-lib-mos.mount` is not a capability this appliance
 offers.
@@ -292,6 +303,19 @@ exists to buy — and no shipped bus name is renamed, so the 44 files that refer
 **Service-name grammar for extensions:** `com.mos.ext.<class>[.<suffix>]`, where
 `<class>` comes from D2's registry and `<suffix>` disambiguates instances of one
 class, mirroring Venus's `com.victronenergy.<type>.<tty>`.
+
+**The bare prefix `com.mos.ext` is ownable, and the grammar must say what it is
+(measured 2026-08-22, RFCT-093).** `own_prefix` matches the prefix itself, so an
+unprivileged identity can own `com.mos.ext` with no fourth component at all — a
+shape this grammar did not contemplate. It must **never** classify as
+system-origin: only the extension grant makes it ownable, so calling it system
+would let a third party be published to operators, the dashboard and the bridge as
+a system service, which is origin spoofing and strictly worse than the wrong-class
+defect D5 already names. It is classified as **extension-origin with no class**:
+that says both true things at once — the namespace it is in, and the absence of a
+class — where a bare "unclassifiable" would discard the first. The bridge cannot
+build a topic without a class and therefore does not publish it; the registry
+records it with the conformance gap that says why.
 
 **Non-conforming services: warn and publish best-effort — DECIDED 2026-08-22
 (user).** A service that owns a `com.mos.ext.*` name but does not answer the full
