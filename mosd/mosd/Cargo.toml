@@ -10,6 +10,9 @@ workspace = true
 
 [dependencies]
 mosd-settings = { path = "../mosd-settings" }
+# The one `com.mos.*` bus-name rule (PLAN-011 D5): the service registry takes
+# it rather than restating it.
+mos-busname = { workspace = true }
 serde_json = { workspace = true }
 async-trait = { workspace = true }
 anyhow = { workspace = true }
@@ -17,7 +20,7 @@ argon2 = { workspace = true }
 bcrypt = { workspace = true }
 ring = { workspace = true }
 hex = { workspace = true }
-tokio = { workspace = true, features = ["signal"] }
+tokio = { workspace = true, features = ["signal", "time"] }
 zbus = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
