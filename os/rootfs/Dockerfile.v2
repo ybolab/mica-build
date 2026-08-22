@@ -286,6 +286,7 @@ RUN if [ "$WITH_MOSD" = "1" ] && [ -f /tmp/mosd/mosd ]; then \
         install -m 0755 /tmp/mosd/mosd /usr/bin/mosd && \
         install -m 0644 /tmp/mosd/mosd.service /usr/lib/systemd/system/mosd.service && \
         install -m 0644 /tmp/mosd/com.mos.mosd.conf /usr/share/dbus-1/system.d/com.mos.mosd.conf && \
+        install -m 0644 /tmp/mosd/com.mos.ext.conf /usr/share/dbus-1/system.d/com.mos.ext.conf && \
         mkdir -p /var/lib/mos /etc/systemd/system/multi-user.target.wants && \
         ln -sf /usr/lib/systemd/system/mosd.service \
                /etc/systemd/system/multi-user.target.wants/mosd.service && \
@@ -450,6 +451,7 @@ RUN set -e; \
              /rootfs/usr/lib/systemd/system/mosd.service \
              /rootfs/usr/lib/systemd/system/apid.service \
              /rootfs/usr/share/dbus-1/system.d/com.mos.mosd.conf \
+             /rootfs/usr/share/dbus-1/system.d/com.mos.ext.conf \
              /rootfs/etc/systemd/network/*.network \
              /rootfs/etc/systemd/system/mos-*.service \
              /rootfs/etc/systemd/system/etc-ssh.mount \

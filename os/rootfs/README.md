@@ -135,6 +135,10 @@ with `aarch64-linux-gnu-gcc`) and installed into the rootfs:
 - `/usr/lib/systemd/system/mosd.service` — enabled via the
   `multi-user.target.wants` symlink
 - `/usr/share/dbus-1/system.d/com.mos.mosd.conf` — D-Bus system bus policy
+  (com.mos.mosd is root-only)
+- `/usr/share/dbus-1/system.d/com.mos.ext.conf` — D-Bus system bus policy
+  granting `own_prefix="com.mos.ext"` (v2 only), so integrator-installed
+  extension units can own `com.mos.ext.*` names; system names stay closed
 - `/var/lib/mos` — daemon state directory
 
 No new apt packages: mosd only needs `dbus` and `systemd`, both already in the
