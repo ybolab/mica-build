@@ -17,10 +17,11 @@
 //! would be two rules that can drift. Hence one crate, depended on rather
 //! than restated.
 //!
-//! The bare namespace `com.mos.ext` matches neither grammar and is `None`:
-//! it carries no class, and the D-Bus grant lets an unprivileged uid own it,
-//! so classifying it as system-origin would be origin spoofing. [`parse`] has
-//! the measurement.
+//! The bare namespace `com.mos.ext` is a case of its own: extension origin
+//! with **no class**. It is measurably ownable by an unprivileged uid, so
+//! calling it system-origin would be origin spoofing, and it has no fourth
+//! component, so there is no class to invent. [`parse`] has the measurement
+//! and the reasoning.
 //!
 //! The rule is string parsing and this crate has **zero dependencies** on
 //! purpose, so that depending on it commits a consumer to nothing else.
@@ -42,12 +43,12 @@ pub const PREFIX: &str = "com.mos.";
 /// one rule, which is the point.
 pub const EXTENSION_PREFIX: &str = "com.mos.ext.";
 
-/// The extension namespace itself, without a service under it.
+/// The extension namespace itself, with no service name under it.
 ///
-/// Not a bus name this crate can classify — see [`parse`] — but named here
-/// because a consumer that must recognise it (mosd's service registry, which
-/// records it as a conformance gap) should match this rather than a literal
-/// of its own.
+/// The one name that parses to an [`Origin::Extension`] with no class — see
+/// [`parse`]. Named here so a consumer that must recognise it matches a
+/// constant rather than a literal of its own, though a consumer should
+/// normally match on `class: None` instead and let the type carry it.
 pub const EXTENSION_NAMESPACE: &str = "com.mos.ext";
 
 /// Which half of the `com.mos.*` namespace a name comes from.
@@ -56,8 +57,11 @@ pub enum Origin {
     /// `com.mos.<class>[.<suffix>]` — a service that is part of the system
     /// image, governed by the D-Bus policy's default `<deny own="*"/>`.
     System,
-    /// `com.mos.ext.<class>[.<suffix>]` — an extension service, which owns
-    /// its name under the `com.mos.ext` grant (PLAN-011 D5).
+    /// `com.mos.ext[.<class>[.<suffix>]]` — a name the `com.mos.ext` grant
+    /// makes ownable (PLAN-011 D5), which is a **measured** property of the
+    /// name and not an inference: the default `<deny own="*"/>` refuses
+    /// `com.mos.other`, and only the grant lets anything here be owned at
+    /// all. Says nothing about who owns it or whether they are trusted.
     Extension,
 }
 
@@ -73,7 +77,13 @@ pub struct BusName<'a> {
     pub origin: Origin,
     /// The class: `docs/design/bus.md` §5's registry entry, and the
     /// `<class>` segment of an MQTT topic. Never `ext` for an extension.
-    pub class: &'a str,
+    ///
+    /// `None` for the bare [`EXTENSION_NAMESPACE`] and only for it: a name in
+    /// the extension namespace with nothing under it. A `None` here cannot
+    /// form a topic address, and a consumer must refuse rather than
+    /// substitute — the type is what stops `ext` or an empty segment being
+    /// published as though it were a class.
+    pub class: Option<&'a str>,
     /// Everything after the class, dots included and the separating dot
     /// dropped: `a.b` for `com.mos.ext.sensor.a.b`. `None` when the name
     /// ends at the class, which is one service of that class rather than one
@@ -84,56 +94,74 @@ pub struct BusName<'a> {
 /// Parse `bus_name` under both grammars, or `None` when this grammar yields
 /// no class for it.
 ///
-/// `None` covers four things, and they are all "no class to publish under"
-/// rather than errors: a name outside `com.mos.` entirely, a name with
-/// nothing after `com.mos.`, a name with an empty dotted component
-/// (`com.mos.sensor.`) — a D-Bus bus name has no empty components, so that is
-/// malformed rather than a `sensor` carrying an empty suffix — and the bare
-/// [`EXTENSION_NAMESPACE`], below.
+/// A `None` return is "not one of ours", and covers three things: a name
+/// outside `com.mos.` entirely, a name with nothing after `com.mos.`, and a
+/// name with an empty dotted component (`com.mos.sensor.`) — a D-Bus bus name
+/// has no empty components, so that is malformed rather than a `sensor`
+/// carrying an empty suffix, and a caller should not have to tell those apart
+/// for itself. Whenever this returns `Some`, `class` and `suffix` are
+/// non-empty wherever they are present.
 ///
-/// # `com.mos.ext` is **neither** system nor extension
+/// # `com.mos.ext` is extension origin with no class
 ///
-/// The bare namespace has no component after it, so there is no class to
-/// classify it by. A parser whose whole job is to yield a class has nothing
-/// to yield, and `None` says exactly that. Both alternatives are worse:
+/// The bare namespace parses to `Origin::Extension` with `class: None` — not
+/// to `Origin::System`, and not to a `None` return.
 ///
 /// - **Not `Origin::System`.** An unprivileged uid can own this name:
 ///   `own_prefix="com.mos.ext"` matches the bare prefix itself, so the
 ///   extension grant governs it and the default `<deny own="*"/>` does not.
 ///   That is measured, not reasoned — `docs/task/RFCT-093.md` §"Investigation
 ///   — `own_prefix` semantics (measured 2026-08-22)" against dbus-daemon
-///   1.12.20, asserted by `mosd/hack/dbus-policy-test.sh` section 4. Calling
-///   it system-origin would let any unprivileged third party present itself
-///   to operators, to the dashboard and to the MQTT bridge **as the system**.
-/// - **Not `Origin::Extension`** with an empty or invented class either:
-///   there is no fourth component, and manufacturing one would put a service
-///   on the bridge under a class nobody chose.
+///   1.12.20, asserted by `mosd/hack/dbus-policy-test.sh` section 4, where an
+///   unprivileged uid (65534) requesting the bare name is OWNED. Calling it
+///   system-origin would let any unprivileged third party present itself to
+///   operators, to the dashboard and to the MQTT bridge **as the system**.
+///   That is origin spoofing, and it is worse than the wrong-class defect
+///   PLAN-011 D5 names as the thing to test for.
+/// - **Not a bare `None` either**, because there are two true things to say
+///   about this name and a `None` discards one of them. That it is *in the
+///   extension namespace* is the measured fact above — the same measurement
+///   shows the default deny refusing `com.mos.other`, so only the grant makes
+///   anything here ownable. That it has *no class* is the second. The type
+///   says both.
+/// - **And no invented class.** There is no fourth component; manufacturing
+///   one — `ext`, or an empty segment — would put a service on the bridge
+///   under a class nobody chose.
 ///
-/// `None` here means "a `com.mos.` name this grammar cannot classify", which
-/// is a different fact from "not a mos name at all" (`com.example.foo`). This
-/// parser signals both the same way, deliberately: telling them apart is
-/// mosd's service registry's job, because only the registry has somewhere to
-/// put the answer — the first is a conformance gap to record against a
-/// service that is on the bus, the second is simply not addressed to us.
+/// Two callers read this rule, the MQTT bridge and mosd's service registry.
+/// Under a bare `None` each would have to answer "is this a `com.mos.` name I
+/// should care about?" for itself, and two independent answers to one
+/// question is how they drift. `class: None` decides it once, here: the
+/// bridge refuses to address a service it cannot name a class for, and the
+/// registry's conformance gap falls out of the type instead of being
+/// re-derived from the prefix by hand. Recording that gap is the registry's
+/// job and not this crate's.
 ///
 /// ```
 /// use mos_busname::{Origin, parse};
 ///
 /// let system = parse("com.mos.sensor.abc123").expect("a mos name");
-/// assert_eq!((system.origin, system.class, system.suffix), (Origin::System, "sensor", Some("abc123")));
+/// assert_eq!((system.origin, system.class, system.suffix), (Origin::System, Some("sensor"), Some("abc123")));
 ///
 /// let extension = parse("com.mos.ext.sensor.abc123").expect("a mos name");
-/// assert_eq!((extension.origin, extension.class, extension.suffix), (Origin::Extension, "sensor", Some("abc123")));
+/// assert_eq!((extension.origin, extension.class, extension.suffix), (Origin::Extension, Some("sensor"), Some("abc123")));
+///
+/// // The bare namespace: in the extension half, with no class to publish under.
+/// let bare = parse("com.mos.ext").expect("a mos name");
+/// assert_eq!((bare.origin, bare.class, bare.suffix), (Origin::Extension, None, None));
 ///
 /// assert_eq!(parse("com.example.foo"), None);
-/// assert_eq!(parse("com.mos.ext"), None);
 /// ```
 pub fn parse(bus_name: &str) -> Option<BusName<'_>> {
     if let Some(rest) = bus_name.strip_prefix(EXTENSION_PREFIX) {
         return split(Origin::Extension, rest);
     }
     if bus_name == EXTENSION_NAMESPACE {
-        return None;
+        return Some(BusName {
+            origin: Origin::Extension,
+            class: None,
+            suffix: None,
+        });
     }
     split(Origin::System, bus_name.strip_prefix(PREFIX)?)
 }
@@ -149,19 +177,19 @@ fn split(origin: Origin, rest: &str) -> Option<BusName<'_>> {
     };
     Some(BusName {
         origin,
-        class,
+        class: Some(class),
         suffix,
     })
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{BusName, Origin, parse};
+    use super::{BusName, EXTENSION_NAMESPACE, Origin, parse};
 
     fn system<'a>(class: &'a str, suffix: Option<&'a str>) -> Option<BusName<'a>> {
         Some(BusName {
             origin: Origin::System,
-            class,
+            class: Some(class),
             suffix,
         })
     }
@@ -169,7 +197,7 @@ mod tests {
     fn extension<'a>(class: &'a str, suffix: Option<&'a str>) -> Option<BusName<'a>> {
         Some(BusName {
             origin: Origin::Extension,
-            class,
+            class: Some(class),
             suffix,
         })
     }
@@ -209,20 +237,43 @@ mod tests {
         assert_eq!(parse("com.mos.extension"), system("extension", None));
     }
 
-    /// The bare namespace carries no class, so this grammar cannot classify
-    /// it, and neither answer it could invent is safe.
-    ///
-    /// Not system: `own_prefix="com.mos.ext"` matches the bare prefix itself,
-    /// so an unprivileged uid (65534) can own this name — measured against
-    /// dbus-daemon 1.12.20 in `docs/task/RFCT-093.md` §"Investigation —
-    /// `own_prefix` semantics (measured 2026-08-22)" and asserted by
-    /// `mosd/hack/dbus-policy-test.sh` section 4. Classifying it as system
-    /// would publish a third party to operators as the system itself. Not an
-    /// extension either: there is no fourth component to take a class from.
+    /// The bare namespace is in the extension half of the namespace — a
+    /// measured fact, not an inference — and carries no class.
     #[test]
-    fn the_bare_extension_namespace_has_no_class_and_so_is_none() {
-        assert_eq!(parse("com.mos.ext"), None);
-        assert_eq!(parse(super::EXTENSION_NAMESPACE), None);
+    fn the_bare_extension_namespace_is_an_extension_with_no_class() {
+        let expected = Some(BusName {
+            origin: Origin::Extension,
+            class: None,
+            suffix: None,
+        });
+        assert_eq!(parse("com.mos.ext"), expected);
+        assert_eq!(parse(EXTENSION_NAMESPACE), expected);
+    }
+
+    /// The risk this classification exists to close, asserted by name so that
+    /// a refactor which "simplifies" [`Origin`] fails loudly instead of
+    /// quietly reopening it.
+    ///
+    /// `own_prefix="com.mos.ext"` matches the bare prefix itself, so an
+    /// unprivileged uid (65534) requesting `com.mos.ext` is OWNED — measured
+    /// against dbus-daemon 1.12.20, `docs/task/RFCT-093.md` §"Investigation —
+    /// `own_prefix` semantics (measured 2026-08-22)", asserted by
+    /// `mosd/hack/dbus-policy-test.sh` section 4.
+    #[test]
+    fn the_bare_extension_namespace_is_never_system_origin() {
+        let parsed = parse(EXTENSION_NAMESPACE).expect("com.mos.ext is a mos name");
+        assert_ne!(
+            parsed.origin,
+            Origin::System,
+            "com.mos.ext must never be system-origin: an unprivileged uid can own it \
+             (measured, RFCT-093 Investigation), so classifying it as system lets a third \
+             party present itself as the system"
+        );
+        assert_eq!(
+            parsed.class, None,
+            "com.mos.ext has no fourth component, so any class here is invented and would \
+             put a service on the bridge under a class nobody chose"
+        );
     }
 
     #[test]
@@ -234,7 +285,9 @@ mod tests {
     }
 
     /// A bus name has no empty components, so these are malformed rather than
-    /// a class with an empty suffix.
+    /// a class with an empty suffix. `com.mos.ext.` is in this group and not
+    /// with the bare namespace: the trailing dot promises a component that is
+    /// not there, which D-Bus rejects as a name outright.
     #[test]
     fn a_name_with_an_empty_component_is_none() {
         assert_eq!(parse("com.mos.sensor."), None);
@@ -255,7 +308,7 @@ mod tests {
         ] {
             let parsed = parse(name).unwrap_or_else(|| panic!("{name} is a mos name"));
             assert_eq!(parsed.origin, Origin::Extension, "{name}");
-            assert_ne!(parsed.class, "ext", "{name}");
+            assert_ne!(parsed.class, Some("ext"), "{name}");
         }
     }
 }

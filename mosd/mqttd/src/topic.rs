@@ -128,8 +128,17 @@ pub fn parse(topic: &str, address: &Address) -> Option<Request> {
 /// registry derives the same class from the same names, and a second copy
 /// here would be a second rule — one that can drift into publishing an
 /// extension under `ext`.
+///
+/// The two ways of having no class are one answer here, deliberately: a name
+/// that is not ours at all and the bare `com.mos.ext` namespace, which is in
+/// the extension half but names no service under it, both yield `None`. The
+/// bridge's only question is which class to address a service by, and neither
+/// answers it — so [`runtime::run`](crate::runtime::run) refuses to start
+/// rather than invent one. Telling the two apart matters to mosd's service
+/// registry, which records the second as a conformance gap; it reads
+/// `mos_busname` directly and gets the distinction from the type.
 pub fn class_of(bus_name: &str) -> Option<&str> {
-    mos_busname::parse(bus_name).map(|name| name.class)
+    mos_busname::parse(bus_name).and_then(|name| name.class)
 }
 
 /// The `/DeviceInstance` an item map declares, or `0` when it declares none.

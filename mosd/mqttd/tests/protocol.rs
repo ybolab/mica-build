@@ -31,6 +31,9 @@ const CLASS: &str = "mosd";
 const EXTENSION_SERVICE: &str = "com.mos.ext.sensor.abc123";
 /// The class [`EXTENSION_SERVICE`] must publish under.
 const EXTENSION_CLASS: &str = "sensor";
+/// The extension namespace with no service under it — in the extension half
+/// of the namespace, but naming no class (PLAN-011 D5, RFCT-093).
+const EXTENSION_NAMESPACE: &str = "com.mos.ext";
 
 fn secs(seconds: u64) -> Duration {
     Duration::from_secs(seconds)
@@ -697,5 +700,37 @@ fn an_extension_topic_round_trips_and_ext_is_not_ours() {
         topic::parse(&under_ext, &address),
         None,
         "a topic addressed to the namespace rather than the class was accepted as ours"
+    );
+}
+
+/// A bus name that yields no class cannot be addressed, and no class is
+/// invented for it.
+///
+/// `com.mos.ext` is in the extension namespace but names no service under it,
+/// so there is no `<class>` segment to build `N/<deviceId>/<class>/...` from.
+/// The bridge's gate is [`topic::class_of`] returning `None`: `runtime::run`
+/// takes the class from it and fails startup on `None` before it opens either
+/// connection. That call passes a `const SERVICE`, so the refusal cannot be
+/// driven from a test without editing the constant — what is asserted here is
+/// the value the refusal keys on, and that neither wrong answer is produced
+/// in its place.
+#[test]
+fn a_bus_name_with_no_class_yields_no_address_and_no_invented_class() {
+    let class = topic::class_of(EXTENSION_NAMESPACE);
+    assert_eq!(
+        class, None,
+        "{EXTENSION_NAMESPACE} names no service, so the bridge must refuse it rather than \
+         publish under a class it chose itself"
+    );
+    assert_ne!(
+        class,
+        Some("ext"),
+        "the namespace was substituted for a class, which is the wrong-class defect \
+         PLAN-011 D5 names, reached by the other route"
+    );
+    assert_ne!(
+        class,
+        Some(""),
+        "an empty class segment would publish on N/<deviceId>//<instance>/<path>"
     );
 }
