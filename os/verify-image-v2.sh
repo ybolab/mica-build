@@ -236,7 +236,14 @@ APID_BIN="/usr/bin/apid"
 # here to catch.
 BUILTIN_MARKUP='<form method="post" action="/builtin/deactivate">'
 DATA_MOUNT="/srv"
-PACKED_MOUNTPOINTS="/mnt/state /mnt/meta /srv /var /home /root"
+# The mountpoints the packed root has to SHIP, because nothing can create a
+# directory on a verity root at runtime. Not the same set as "every mountpoint":
+# /etc/ssh and /etc/hostapd are bind targets too, but Debian already ships them,
+# so only the ones the pack stage creates are listed. The last member is
+# PLAN-011 D5's writable unit directory, and it is the only one outside /mnt,
+# /srv, /var and the two home binds -- it is here for exactly the same reason as
+# the rest and not because it is a partition or a tier.
+PACKED_MOUNTPOINTS="/mnt/state /mnt/meta /srv /var /home /root /usr/local/lib/systemd/system"
 
 # Prints the /etc/fstab line whose mountpoint is the LONGEST prefix of $1: the
 # entry that actually governs the filesystem that path lands on. Derived rather
@@ -1939,6 +1946,54 @@ for pair in "var-lib-mos.mount:/var/lib/mos" "var-lib-bluetooth.mount:/var/lib/b
         pass "${where} is a STATE-backed bind via ${unit} (survives a /var wipe)"
     fi
 done
+
+# --- PLAN-011 D5: the writable, persistent system unit directory -------------
+# What this proves: an integrator can install a systemd unit on the device and
+# it is still there after a reboot and after an A/B update. Every unit directory
+# the image ships is inside the dm-verity squashfs, so that property exists only
+# if this bind exists, is enabled, and is backed by STATE. Where= and What= are
+# READ from the unit rather than restated, on the same reasoning as the
+# etc-ssh.mount block further down: retargeting the mount must not leave this
+# passing for a path nothing mounts any more.
+#
+# The mountpoint's EXISTENCE is not asserted here. It is a member of
+# PACKED_MOUNTPOINTS, so check_packed_mountpoints owns it -- and owning it there
+# rather than here is what puts it inside the fixture hook, where
+# os/ui-location-test.sh can watch it fail without an image.
+EXT_UNIT_DIR="/usr/local/lib/systemd/system"
+EXT_MOUNT_UNIT="usr-local-lib-systemd-system.mount"
+ext_f="${ROOT}/etc/systemd/system/${EXT_MOUNT_UNIT}"
+ext_where="$(sed -n 's/^Where=//p' "${ext_f}" 2>/dev/null | tail -n1)"
+ext_what="$(sed -n 's/^What=//p' "${ext_f}" 2>/dev/null | tail -n1)"
+if [ ! -f "${ext_f}" ]; then
+    fail "${EXT_MOUNT_UNIT} is not in the image, so ${EXT_UNIT_DIR} stays on the read-only squashfs; a third-party unit written there is silently discarded at the next reboot and PLAN-011 D5's whole extension model does not work on the device"
+elif [ "${ext_where}" != "${EXT_UNIT_DIR}" ]; then
+    fail "${EXT_MOUNT_UNIT} mounts '${ext_where:-<no Where=>}', not ${EXT_UNIT_DIR}; ${EXT_UNIT_DIR} is the directory in systemd's unit load path that the pack stage creates, so a bind anywhere else leaves it read-only and puts a writable directory somewhere systemd does not read"
+elif [ "${ext_what#/mnt/state/}" = "${ext_what}" ]; then
+    fail "${EXT_MOUNT_UNIT} binds ${ext_where} from '${ext_what:-<no What=>}', which is not under /mnt/state; installed units would not be on the STATE partition and would be lost by the next A/B update or factory reset"
+elif [ -z "$(find "${ROOT}/etc/systemd/system" -name "${EXT_MOUNT_UNIT}" -path '*.wants/*' 2>/dev/null || true)" ]; then
+    fail "${EXT_MOUNT_UNIT} exists but is not enabled (no *.wants symlink under /etc/systemd/system); the bind never runs, so installing a unit appears to work and stops working at the next boot"
+else
+    pass "${EXT_UNIT_DIR} is a STATE-backed bind via ${EXT_MOUNT_UNIT} (What=${ext_what}), enabled, so a third-party unit installed there survives a reboot and an A/B update"
+fi
+
+# The negative half, and it is not symmetry for its own sake. PLAN-011 D5
+# ORIGINALLY named /etc/systemd/system as this bind's target and was corrected on
+# 2026-08-22. Anyone reading the superseded sentence would repair the "deviation"
+# by pointing the bind back at /etc/systemd/system, and that diff reads like
+# restoring the plan while actually reintroducing the hazard: the image ships
+# this boot chain's own mount units and their local-fs.target.wants symlinks in
+# that directory, so a bind over it is performed by a unit inside the directory
+# it hides and takes the enablement of every other STATE mount down with it.
+# Nothing else in this file can tell that change apart from a legitimate one.
+etc_units_binds="$(grep -rlE '^Where=/etc/systemd/system(/|$)' \
+    "${ROOT}/etc/systemd/system" "${ROOT}/usr/lib/systemd/system" \
+    "${ROOT}/usr/local/lib/systemd/system" 2>/dev/null | sed "s|^${ROOT}||" | sort || true)"
+if [ -z "${etc_units_binds}" ]; then
+    pass "no unit in the image mounts anything over /etc/systemd/system; the boot chain's own units and their local-fs.target.wants enablement stay inside the verity root"
+else
+    fail "a unit in the image mounts over /etc/systemd/system ($(printf '%s' "${etc_units_binds}" | tr '\n' ' ')). That directory holds this boot chain's own mount units AND the local-fs.target.wants symlinks enabling them, so the bind is performed by a unit living in the directory it hides and shadows the enablement of every other STATE mount. PLAN-011 D5 named this target originally and it was rejected on 2026-08-22; the writable unit directory is ${EXT_UNIT_DIR}, and re-pointing it here looks like restoring the plan while reintroducing the defect"
+fi
 
 # --- M5: /etc/shadow lives on STATE (per-device password) ---
 # access.md phase 1 gives every device its own root password, and the only file
