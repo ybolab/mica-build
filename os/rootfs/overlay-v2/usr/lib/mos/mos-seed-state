@@ -60,6 +60,23 @@ for d in wpa_supplicant hostapd; do
     chmod 0700 "/mnt/state/$d"
 done
 
+# The writable system unit directory of PLAN-011 D5, bound onto
+# /usr/local/lib/systemd/system by usr-local-lib-systemd-system.mount. 0755
+# root:root: unlike the two directories above this one holds no secret, and
+# systemd -- which reads it as PID 1, i.e. as root -- must be able to traverse
+# it. Root-writable-only is the bound the whole decision rests on; it grants no
+# privilege that SSH-as-root did not already grant.
+#
+# There is deliberately NO `cp -an` here, and this comment is why. The bind
+# target is EMPTY in the image, so there is nothing to carry across -- and
+# copying image content into a STATE-shadowed unit directory is exactly the
+# seed-freeze hazard that made /etc/systemd/system the wrong target: the
+# first-boot copy would permanently shadow the version a later A/B update
+# ships, turning a routine update into a silent no-op. Do not "fix" the
+# asymmetry with the two loops above by adding one.
+mkdir -p /mnt/state/systemd-units
+chmod 0755 /mnt/state/systemd-units
+
 # The hostname has to be writable: mosd's reconciler sets it through
 # systemd-hostnamed, which writes /etc/hostname. Seed it from the value baked
 # into the image while /etc/hostname still shows the squashfs copy;

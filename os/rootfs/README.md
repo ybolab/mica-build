@@ -135,6 +135,10 @@ with `aarch64-linux-gnu-gcc`) and installed into the rootfs:
 - `/usr/lib/systemd/system/mosd.service` — enabled via the
   `multi-user.target.wants` symlink
 - `/usr/share/dbus-1/system.d/com.mos.mosd.conf` — D-Bus system bus policy
+  (com.mos.mosd is root-only)
+- `/usr/share/dbus-1/system.d/com.mos.ext.conf` — D-Bus system bus policy
+  granting `own_prefix="com.mos.ext"` (v2 only), so integrator-installed
+  extension units can own `com.mos.ext.*` names; system names stay closed
 - `/var/lib/mos` — daemon state directory
 
 No new apt packages: mosd only needs `dbus` and `systemd`, both already in the
@@ -348,6 +352,7 @@ from the layout env so the shipped image carries no placeholder:
 | `etc/systemd/system/etc-hostname.mount` | binds `/mnt/state/hostname` onto `/etc/hostname`, so mosd's hostname reconciler can persist a change |
 | `etc/systemd/system/etc-wpa_supplicant.mount` | binds `/mnt/state/wpa_supplicant` onto `/etc/wpa_supplicant`, the path `wpa_supplicant@.service` reads and the station reconciler writes |
 | `etc/systemd/system/etc-hostapd.mount` | binds `/mnt/state/hostapd` onto `/etc/hostapd`, the path `hostapd@.service` reads and the AP reconciler writes |
+| `etc/systemd/system/usr-local-lib-systemd-system.mount` | binds `/mnt/state/systemd-units` onto `/usr/local/lib/systemd/system`, the writable unit directory PLAN-011 D5 gives integrators. Empty in the Debian base, so nothing is seeded into it; `/etc/systemd/system` was rejected as the target because a bind there hides the boot chain's own units and their `local-fs.target.wants` enablement. The mountpoint is created by the pack stage — a verity root cannot make it at runtime |
 | `etc/systemd/system/mos-apply-hostname.service` | re-applies the persisted hostname after the bind — PID 1 read the squashfs copy long before mount units ran |
 
 Six hwinit units (`mos-modules`, `mos-otg`, `mos-can`, `mos-bt`, `mos-mac`,
