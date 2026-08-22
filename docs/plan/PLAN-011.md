@@ -293,6 +293,19 @@ exists to buy — and no shipped bus name is renamed, so the 44 files that refer
 `<class>` comes from D2's registry and `<suffix>` disambiguates instances of one
 class, mirroring Venus's `com.victronenergy.<type>.<tty>`.
 
+**The bare prefix `com.mos.ext` is ownable, and the grammar must say what it is
+(measured 2026-08-22, RFCT-093).** `own_prefix` matches the prefix itself, so an
+unprivileged identity can own `com.mos.ext` with no fourth component at all — a
+shape this grammar did not contemplate. It must **never** classify as
+system-origin: only the extension grant makes it ownable, so calling it system
+would let a third party be published to operators, the dashboard and the bridge as
+a system service, which is origin spoofing and strictly worse than the wrong-class
+defect D5 already names. It is classified as **extension-origin with no class**:
+that says both true things at once — the namespace it is in, and the absence of a
+class — where a bare "unclassifiable" would discard the first. The bridge cannot
+build a topic without a class and therefore does not publish it; the registry
+records it with the conformance gap that says why.
+
 **Non-conforming services: warn and publish best-effort — DECIDED 2026-08-22
 (user).** A service that owns a `com.mos.ext.*` name but does not answer the full
 D1/D2 contract is **not refused**. It is published with whatever it does provide,
