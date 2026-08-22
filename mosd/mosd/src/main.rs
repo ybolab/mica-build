@@ -13,9 +13,21 @@
 //!   into (default `/etc/shadow`, which is a symlink onto STATE on the v2
 //!   image). The sshd reconciler honours the same variable.
 //! - `MOSD_DRY_RUN` — when `1`, first-boot provisioning is skipped, no
-//!   reconcilers are constructed, power actions are routed to a no-op
-//!   control, and the live-state root carries `{"dry_run": true}`; used by
-//!   tests so the daemon never touches the host it runs on.
+//!   reconcilers are constructed, no service scan is constructed, power
+//!   actions are routed to a no-op control, and the live-state root carries
+//!   `{"dry_run": true}`; used by tests so the daemon never touches the host
+//!   it runs on.
+//! - `MOSD_SCAN` — when set, decides whether the service scan ([`scan`]) is
+//!   constructed: `1` constructs it, any other value does not. Unset — the
+//!   production case — means on unless `MOSD_DRY_RUN=1`.
+//!
+//!   The override exists because dry-run switches off the one thing
+//!   `tests/scan.rs` has to exercise, and a registry that is only ever run
+//!   unobserved is a registry nobody has measured. It widens nothing that
+//!   dry-run protects: the scan is passive, it adds a match rule and read-only
+//!   calls on whichever bus `MOSD_BUS` already named and the daemon is already
+//!   connected to, and it writes only to the in-RAM live-state tree. It
+//!   touches no file, no unit and no host state at all.
 
 #![forbid(unsafe_code)]
 
@@ -25,10 +37,12 @@ mod identity;
 mod power;
 mod provisioning;
 mod reconciler;
+mod scan;
 mod transient;
 mod tree;
 
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 use anyhow::Context;
 use mosd_settings::Store;
@@ -103,10 +117,16 @@ async fn main() -> anyhow::Result<()> {
     } else {
         Box::new(power::Systemd::new())
     };
+    // The service registry exists only when a scan does, so that a daemon
+    // running no scan answers `ForgetService` with "there is no registry"
+    // rather than with an empty one it would never fill.
+    let scan_enabled = std::env::var("MOSD_SCAN").map_or(!dry_run, |value| value == "1");
+    let registry = scan_enabled.then(|| Arc::new(scan::Registry::new()));
     tracing::info!(
         settings_path,
         dry_run,
         reconcilers = reconcilers.len(),
+        service_scan = scan_enabled,
         "mosd starting"
     );
 
@@ -115,7 +135,7 @@ async fn main() -> anyhow::Result<()> {
         state.insert("dry_run".to_string(), Value::Bool(true));
     }
 
-    let service = bus::MosdService::new(
+    let mut service = bus::MosdService::new(
         store,
         settings,
         reconcilers,
@@ -123,6 +143,9 @@ async fn main() -> anyhow::Result<()> {
         transient::production_shadow_path(),
         Value::Object(state),
     );
+    if let Some(registry) = &registry {
+        service = service.with_service_registry(Arc::clone(registry));
+    }
     service.apply_all().await;
     let changes = service.subscribe_changes();
 
@@ -161,6 +184,18 @@ async fn main() -> anyhow::Result<()> {
     // client can see is one it can also write.
     let snapshot = tree::install(&tree_ref, &service_ref).await;
     tokio::spawn(tree::run(service_ref, tree_ref, changes, snapshot));
+    // The service scan, started before the well-known name is claimed so that
+    // its NameOwnerChanged subscription is in place before anything can react
+    // to mosd appearing — a service that claims its name in that window is
+    // seen by the signal rather than missed between the sweep and the
+    // subscription.
+    if let Some(registry) = registry {
+        let service_ref = object_server
+            .interface::<_, bus::MosdService>(bus::OBJECT_PATH)
+            .await
+            .context("look up served MosdService")?;
+        tokio::spawn(scan::run(connection.clone(), registry, service_ref));
+    }
     connection
         .request_name(bus::BUS_NAME)
         .await

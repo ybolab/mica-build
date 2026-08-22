@@ -80,8 +80,12 @@ enum Incoming {
 /// Connect to the bus and the broker and run until the process is asked to
 /// stop.
 pub async fn run(settings: Settings) -> anyhow::Result<()> {
+    // No class, no address: a name that yields none — not ours at all, or the
+    // bare `com.mos.ext` namespace, which names no service under it — cannot
+    // form `N/<deviceId>/<class>/...`, and the bridge refuses to start rather
+    // than substitute `ext` or an empty segment for one.
     let class = topic::class_of(SERVICE)
-        .ok_or_else(|| anyhow::anyhow!("{SERVICE} is not a com.mos.<class> bus name"))?;
+        .ok_or_else(|| anyhow::anyhow!("{SERVICE} names no class to publish under"))?;
     let connection = if settings.session_bus {
         zbus::Connection::session().await?
     } else {
