@@ -83,6 +83,14 @@ BUILTIN_PREFIX="$(verifier_const BUILTIN_PREFIX '"')"
 BUILTIN_MARKUP="$(verifier_const BUILTIN_MARKUP "'")"
 APID_BIN="$(verifier_const APID_BIN '"')"
 PACKED_MOUNTPOINTS="$(verifier_const PACKED_MOUNTPOINTS '"')"
+# PLAN-011 D5's writable unit directory, read out of the verifier for the same
+# reason as the rest -- and here it doubles as a cross-check. new_fixture builds
+# the tree from PACKED_MOUNTPOINTS; the case below removes the directory this
+# names. While D5's constant and the packed set agree, that is the same
+# directory. The day they drift apart the rmdir finds nothing to remove and dies
+# under set -e, which is the loud failure -- a case whose mutation silently
+# changed nothing would otherwise pass for free.
+EXT_UNIT_DIR="$(verifier_const EXT_UNIT_DIR '"')"
 
 WORK="$(mktemp -d)"
 trap 'rm -rf "${WORK}"' EXIT
@@ -392,6 +400,32 @@ rmdir "${FIX}/srv"
 expect_set "/srv absent from the tree: existence is chained, and the far end of the chain fires" \
     "mountpoints-exist=FAIL" \
     "mountpoint(s) missing from the read-only root: /srv"
+
+# --- 4b. PLAN-011 D5's writable unit directory absent from the tree ----------
+# The one M5 assertion this harness can reach, and it is reachable BY DESIGN:
+# the D5 block declines to assert its own mountpoint's existence and delegates
+# it to PACKED_MOUNTPOINTS instead, saying that "owning it there rather than
+# here is what puts it inside the fixture hook, where os/ui-location-test.sh can
+# watch it fail without an image". That sentence is a claim about this file, and
+# until this case existed it was not true of it.
+#
+# Case 4 above already drives the mountpoint loop -- but only ever for /srv. A
+# name ADDED to that set and never removed from a fixture is indistinguishable
+# from a name the loop does not visit at all: both look like a green run. So
+# this removes the D5 directory and nothing else, and the assertion is required
+# to fail naming THAT path. The path in the message is the whole point; the
+# shared "mountpoint(s) missing" wording alone would be satisfied by /srv.
+#
+# What it protects on the device: the pack stage creates this directory inside
+# the verity squashfs, and a verity root cannot create one at runtime. Without
+# it the bind has nowhere to land, so the writable unit directory silently is
+# not writable and every unit an integrator installs is gone at the next boot.
+FIX="${WORK}/no-ext-unit-dir"
+new_fixture "${FIX}"
+rmdir "${FIX}${EXT_UNIT_DIR}"
+expect_set "PLAN-011 D5's ${EXT_UNIT_DIR} absent from the tree" \
+    "mountpoints-exist=FAIL" \
+    "mountpoint(s) missing from the read-only root: ${EXT_UNIT_DIR}"
 
 # --- 5a. the bare /srv/ui directory SHIPPED in the packed root --------------
 FIX="${WORK}/ships-dir"
