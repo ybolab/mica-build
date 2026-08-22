@@ -236,11 +236,42 @@ and they are not substitutes for each other:
   (`docs/research/venus-os-access.md` §6 item 6, recorded there as "plausible and
   arguably easier on mos").
 
-**Reserved-namespace rule (needs a decision, see Annotations).** Enumerating system
-names one at a time in the policy is fragile: every future system service needs a
-policy edit, and a forgotten one is a squattable name. The recommendation is a
-reserved sub-namespace — system services under a fixed prefix, everything else
-free — so one mandatory rule covers every future name.
+**Reserved-namespace rule — DECIDED 2026-08-22 (user): option C.** Extensions own
+`com.mos.ext.*`; **everything else under `com.mos.*` is the system's**, including
+the shipped `com.mos.mosd`. The whole policy grant is one rule:
+
+```xml
+<policy context="default">
+  <allow own_prefix="com.mos.ext"/>
+</policy>
+```
+
+No `deny` list, and none needed: system names are not matched by that prefix, so
+D-Bus's standard `<deny own="*"/>` default keeps them closed. Adding a future
+system service therefore costs **zero** policy edits — the property this decision
+exists to buy — and no shipped bus name is renamed, so the 44 files that reference
+`com.mos.mosd` are untouched.
+
+**Service-name grammar for extensions:** `com.mos.ext.<class>[.<suffix>]`, where
+`<class>` comes from D2's registry and `<suffix>` disambiguates instances of one
+class, mirroring Venus's `com.victronenergy.<type>.<tty>`.
+
+**Consequence that must be settled in the same milestone, not left to each side:**
+the M3 bridge derives the topic `<class>` from the bus name and today reads the
+third dotted component (`mosd/mqttd/src/topic.rs:32`, "`class` is the
+`com.mos.<class>` of the publishing service"). Under this grammar an extension's
+class is the **fourth** component. The bridge and the policy must agree on one
+rule; M5 owns making them agree, and a bridge that publishes an extension under
+the wrong class is the defect to test for.
+
+**`own_prefix` semantics are load-bearing and MUST be measured, not assumed.** The
+whole decision rests on `own_prefix="com.mos.ext"` matching `com.mos.ext.foo` while
+NOT matching `com.mos.mosd`. That is believed to hold because D-Bus requires the
+character after the prefix to be `.`, but it was **not verified** when this was
+written — no dbus man page was available on the authoring host. `mosd/hack/
+dbus-policy-test.sh` (RFCT-048) is a live-bus policy harness and can settle it
+empirically. **M5's first task is that measurement**; the policy is written after
+it, not before.
 
 **The cost, stated rather than discovered later.** A writable unit directory means
 **the set of things that start at boot is no longer determined by the image hash**.
@@ -374,9 +405,12 @@ already-running bridge for free.
   exist on the critical path — see the open question below.
 
   **Open, needs the user's decision before M4 is scoped:**
-  1. **Reserved namespace.** Enumerate system names in the policy one by one,
-     or reserve a prefix (recommended) so one mandatory rule covers every
-     future system service?
+  1. ~~**Reserved namespace.**~~ **ANSWERED 2026-08-22 (user): option C** —
+     "用 C 比较好，也不会冲突". Extensions take `com.mos.ext.*`, the system
+     keeps the rest of `com.mos.*`. One `allow own_prefix` rule, no deny list,
+     no rename, and future system services cost no policy edit. Recorded in D5
+     above together with the extension name grammar and the bridge's
+     class-derivation consequence.
   2. ~~**D4's fate.**~~ **ANSWERED 2026-08-22 (user): dropped.** "D4 不要了,
      不用 com.mos.Settings1 了". D4 is withdrawn above. Consequence worth
      stating: with D5's `extensions.*` subtree also gone, PLAN-011 now
