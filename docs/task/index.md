@@ -116,3 +116,5 @@ Each task is a single line linking to its detail file. All detailed information 
 - [x] [**RFCT-091 PLAN-011 M3: mos-mqttd, the MQTT data-publishing bridge**](RFCT-091.md) `P1`
 - [ ] [**RFCT-092 A mechanism that checks docs citations, because five of them rotted in two merges**](RFCT-092.md) `P2`
 - [-] [**RFCT-093 PLAN-011 M5: extension enablement — writable unit directory, the com.mos.ext namespace, and the bus scan**](RFCT-093.md) `P1`
+- [ ] [**RFCT-094 Dotted keys have no item object, and M5 makes that certain rather than theoretical**](RFCT-094.md) `P2`
+- [ ] [**RFCT-095 The com.mos.ext policy assertions cannot fail, and hoisting them needs a different shape**](RFCT-095.md) `P2`
