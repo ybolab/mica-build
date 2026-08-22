@@ -1,10 +1,11 @@
 # RFCT-093 PLAN-011 M5: extension enablement — writable unit directory, the com.mos.ext namespace, and the bus scan
 
-- **status**: in progress
+- **status**: done
 - **priority**: P1
 - **owner**: ai-agent (BKD campaign 2, dispatched by L1 0yncfnol)
 - **createdAt**: 2026-08-22 09:40
 - **claimedAt**: 2026-08-22 09:40
+- **completedAt**: 2026-08-22
 
 PLAN-011 milestone M5, per the revised D5 (PLAN-011 §Proposal D5, revised
 2026-08-22). Third-party services run as plain systemd units the integrator
@@ -97,4 +98,244 @@ reason it claims to test, not because the bus broke.
 
 ## Outcome
 
-Filled in at completion.
+**Done 2026-08-22.** M5 landed as eleven tasks on campaign branch
+`bkd/fcgv4ehp`. Everything below is stated against the merged tree at
+`a5dd7a9`, and every path named here was checked to exist before it was written
+down. Where a statement is about a moment rather than a mechanism it carries the
+commit it was measured at, so that a later change can date it rather than
+falsify it.
+
+### What landed
+
+- **The `own_prefix` measurement, first, as deliverable 1 required.** Seven bus
+  names asserted with explicit expected values in
+  `mosd/hack/dbus-policy-test.sh` §4, against dbus-daemon 1.12.20, each
+  requested by an unprivileged identity (uid 65534). The Investigation section
+  above is the record; the stage is mutation-checked, so a widened grant fails
+  the section for the reason it claims to test.
+- **The shipped policy, written after the measurement.**
+  `mosd/dist/com.mos.ext.conf` grants exactly one thing —
+  `<allow own_prefix="com.mos.ext"/>` in the default context, own only, no
+  `send_destination`, no `receive_sender`, and **no deny list**, because
+  `own_prefix` requires the next character to be a `.` and every system name
+  therefore falls outside the grant, closed by D-Bus's own `<deny own="*"/>`.
+  Tested on a live bus (`mosd/hack/dbus-policy-test.sh` §5) and asserted in the
+  image by four checks in `os/verify-image-v2.sh`.
+- **The writable, persistent unit directory.**
+  `os/rootfs/overlay-v2/etc/systemd/system/usr-local-lib-systemd-system.mount`
+  binds `/mnt/state/systemd-units` onto `/usr/local/lib/systemd/system`, enabled
+  into `local-fs.target.wants`. The source directory is created by
+  `os/rootfs/overlay-v2/usr/lib/mos/mos-seed-state` with `mkdir -p` and **no
+  `cp -an`** — deliberately, with a comment saying why, because a no-clobber
+  seed here would freeze the mount topology against A/B updates. The load-path
+  measurement that chose this target over `/etc/systemd/system` is recorded in
+  `docs/plan/PLAN-011.md` D5.
+- **One class rule, in one place.** `mosd/busname/src/lib.rs` — a
+  zero-dependency crate whose `parse` is the only implementation of "an
+  extension's class is the fourth dotted component, a system service's the
+  third", plus the bare `com.mos.ext` case (extension origin, no class). Its two
+  consumers depend on it rather than restating it: `mosd/mqttd/src/topic.rs` and
+  `mosd/mosd/src/scan.rs`.
+- **The scan and the registry.** `mosd/mosd/src/scan.rs` watches
+  `NameOwnerChanged` (arg0namespace `com.mos`) and publishes into live state
+  under `services`: bus name, `connected`, the `conformance` object naming what
+  a service is missing, `instance_collision`, and a `/DeviceInstance` that falls
+  back to `0`. Disconnected services are retained; `ForgetService`
+  (`mosd/mosd/src/bus.rs`) is the only way an entry leaves, and it refuses a
+  service that is still connected. Tested against a fake service appearing and
+  vanishing (`mosd/mosd/tests/scan.rs`).
+- **The image verifier's D5 assertions, driven offline.** Both sets —
+  the mount unit and its negative guard (`check_ext_unit_dir`) and the
+  `com.mos.ext.conf` policy set (`check_ext_policy`) — are functions named in
+  `os/verify-image-v2.sh`'s fixture-hook dispatch list, with matching rows in
+  `os/ui-location-test.sh`'s expected set, so each can be observed failing
+  without an image. Both sat below the hook and could not fail at all for most
+  of this campaign; see items (d) and (i).
+- **The doctest gate.** `mosd/hack/check.sh` now runs
+  `cargo test --doc --workspace --locked`. `cargo nextest` does not execute
+  doctests, so without this line a broken doctest passed the gate silently — and
+  `mosd/busname`'s reasoning lives partly in a doctest.
+- **`docs/design/bus.md` §5 and §6 flipped per statement**, on what is in the
+  tree and nothing else, each `[implemented]` naming its path.
+
+### Boundaries, and what has since moved past them
+
+Stated as boundaries of what was done, because a boundary a reader has to infer
+is one they will infer wrongly. Several of these were written as open gaps and
+have since been closed — by a real image run, and by two follow-up tasks that
+landed on the campaign branch before this record did. Where that happened, both
+halves are kept and dated rather than the earlier half deleted: a boundary that
+was true at the moment it was written is not made wrong by later work, and a
+record that quietly rewrites its own history is one nobody can date.
+
+**a. The image chain HAS now been run, and M5's assertions pass against a real
+assembled image.** This item was written twice and both halves are kept, because
+each is true of its own moment.
+
+*What T4 could honestly claim when it wrote this, and what stood until
+2026-08-22:* the image build and the assembled-image verifier had not been run
+against this work, and — T4's words, kept verbatim as the record of that
+moment — **"I am NOT claiming the against-a-real-image run happened."** The
+offline-fixture work closed one half of the question and not the other: it
+closed *whether the D5 assertions can fail at all*, and did **not** close
+*whether a built image satisfies them*.
+
+*What is now measured.* The full chain was run — rootfs build and image
+assembly both clean, verity root hash matching the signed cmdline — and
+`verify-image` was run twice, once on the campaign branch and once on `main` as
+a baseline:
+
+```
+main            RESULT: FAIL (347/350)
+bkd/fcgv4ehp    RESULT: FAIL (354/357)
+```
+
+The delta is **+7 assertions, all of them passing** — the campaign's own,
+including T2's `com.mos.ext.conf` policy set and T4's mount unit and its
+negative guard, which until this run had only ever been driven against fixture
+stand-in roots. That is the single largest gap in M5's verification story
+closing, and it is stronger than anything the offline work could establish.
+
+The three failures are **identical, character for character, on both sides**, so
+they are pre-existing and the campaign introduced **no regression**. That is
+attribution by baseline comparison rather than by argument, which is the only
+form of it worth recording. They are: the U-Boot debug-variant artifact absent
+from the running host; the connd contract failing to parse out of
+`mosd/mosd/src/reconciler/`; and eight stock systemd `.network` files colliding
+with a reconciler-owned prefix.
+
+*The boundary that survives all of this.* That run happened on a **different
+commit** — an unmerged `4282921` — so the tree measured throughout this Outcome
+(`a5dd7a9`) is **not byte-identical** to the tree that was built. Both facts are
+true and neither replaces the other: the assertions pass against a real image,
+and this record is anchored to a tree that particular image was not built from.
+
+**Two pre-existing failures handed on, not fixed and not investigated here.** The
+connd contract failure is load-bearing in exactly the family this campaign spent
+its length on: its own `fail` message says every connd assertion below it
+"compares against these, so none of them mean anything until this passes"
+(`os/verify-image-v2.sh`). An entire group of assertions is therefore currently
+inert — reporting neither pass nor a failure of its own. The `.network` prefix
+collision is the second. Both belong to someone else and are named here only so
+they are not lost.
+
+**b. arm64 is a declaration read, not a run.** The `systemd-analyze unit-paths`
+measurement behind the unit-directory choice ran on the host's own architecture.
+That the same directory is compiled into the arm64 build was established by
+**reading** the arm64 package's compiled `systemd.pc` declaration and the
+corresponding string in the arm64 `systemctl` ELF. **No arm64 binary was
+executed anywhere in this campaign.**
+
+**c. `runtime::run`'s refusal branch is not reachable from a test.** The bridge
+refuses to start when `topic::class_of` yields no class — the bare `com.mos.ext`
+case. That call passes a `const SERVICE` (`mosd/mqttd/src/config.rs`), so no
+test can drive the branch by choosing a name. The test asserts **the value the
+refusal keys on** — that `class_of` on the bare namespace is `None` — not the
+refusal firing.
+
+**d. T2's four `com.mos.ext.conf` policy assertions were offline-unobservable
+for this campaign's span, and are not any more.** T9 measured the gap — an
+unconditional failure planted in the policy block left the offline suite green —
+and **RFCT-095** carries that measurement in full; it is not restated here. The
+deferral recorded there was a decision rather than an omission: making the
+assertions reachable meant relocating two helpers that unrelated checks share,
+which is a materially larger edit with a regression surface outside this
+campaign and should not ride in on a milestone closing out.
+
+As of `a5dd7a9` the tree has moved past that. T9's second pass took the larger
+edit deliberately: `sq_grep`, `dbus_policy_rules_only` and `MOSD_POLICY_PATH`
+are relocated above the fixture hook (single definitions, bodies unchanged), the
+four assertions are wrapped in `check_ext_policy`, the hook dispatches it, and
+`os/ui-location-test.sh` carries four matching register rows. The
+widened-`own_prefix` guard — the one whose own failure text describes an
+impostor taking `com.mos.mosd` — can now be observed failing. RFCT-095's record
+still reads `pending`; closing it is that record's own to do, not this one's.
+
+**e. The fixture register covers what was added to it.**
+`os/ui-location-test.sh` drives the assertions **named in its expected set**, and
+reports a member that went missing, or that ran when it was not expected to,
+**by name**. That is a strong property and a bounded one: an assertion **never
+added to the set** is invisible to the register, exactly as an assertion never
+written is. A green run should not be read as "the verifier is fully driven";
+the correct reading is "every assertion this file knows about behaved as
+recorded". As of `a5dd7a9` the file's own boundary comment says this too, and
+says it in the durable form: the inventory of unreachable assertions it used to
+carry is now empty — both sets are hoisted and registered — and the warning is
+kept anyway, because the list was never the durable part.
+
+**f. A pre-existing silent skip is still live.** As of `a5dd7a9`,
+`mosd/mosd/tests/bus.rs`'s `bus_roundtrip` does `eprintln!("skipping ...")` and
+`return Ok(())` when `dbus-daemon` is not found — it reports green while
+asserting nothing. It has never been caught because every CI host has
+`dbus-daemon`; this host has one too, which is why the gate reports 0 skipped
+and the skip stays invisible. M5 neither touched nor introduced it, and it is
+recorded here rather than fixed because it is the same false-signal family this
+campaign spent its length removing. A follow-up task, **T11 (`z3hubnnz`)**, is
+addressing it; its outcome is not described here.
+
+**g. M5 turns bus.md §11 item 2's dotted-key limit from POSSIBLE into
+CERTAIN.** Before M5 the limit needed an operator to name an interface with a
+dot, so it was a thing that could happen. The registry is keyed by **bus name**,
+and a bus name always contains dots, so now it does happen: `mosd/mosd/src/tree.rs`
+can build no item object for such a key and logs a WARN per field per service
+(`no item object for this path`), on every device with an extension, at every
+startup. Nothing is lost — the entries still read through `GetItems`/`GetState`.
+The cost is not log volume. It is that a WARN which fires during correct
+operation teaches an operator to ignore WARNs, which is the same false-signal
+family this campaign spent its length removing: an assertion that cannot fail
+proves nothing, and a warning that always fires warns nobody. Tracked as
+**RFCT-094**, which owns the open questions; deliberately not fixed here.
+
+**h. `MOSD_SCAN` is what makes the scan testable, and it is one-way.**
+`MOSD_DRY_RUN=1` alone constructs no scan, and `mosd` has no lib target, so the
+registry can only be exercised through the binary against a real bus. As of
+`a5dd7a9` the gate is `service_scan_enabled` (`mosd/mosd/src/main.rs`):
+production is unconditionally on and `MOSD_SCAN` is **inert** there whatever it
+holds, while `MOSD_SCAN=1` lifts dry-run's suppression for `tests/scan.rs`. The
+asymmetry is the point — a symmetric gate reads tidier but would also let one
+stray or mistyped value (`MOSD_SCAN=0`, `MOSD_SCAN=true`) switch the service
+registry off on a real device, with nothing left running to report that it had.
+It widens nothing dry-run protects: the scan adds a match rule and read-only
+calls on the bus the daemon is already connected to, and writes only to the
+in-RAM live-state tree. The narrowing landed as a follow-up task, **T10
+(`bmovafe9`)**; the earlier form of this gate could disable the scan in
+production.
+
+### Two properties observed, recorded as evidence
+
+**i. For this campaign's whole span the `/etc/systemd/system` negative guard was
+offline-unobservable.** Forcing it to always pass left the offline suite at
+**18/18 PASS with zero FAIL lines** — the assertion carrying D5's rejection of
+`/etc/systemd/system` could not fail, which is worse than its absence, because
+its presence tells the next reader the hazard is watched. T9 closed it, and
+**that is the reason `check_ext_unit_dir` is a function** rather than the inline
+block it was: the fixture hook dispatches functions by name, so being a function
+is what makes it driveable. Inlining it back at its one call site — a diff that
+reads like a simplification — reopens the hole. Recorded here so the reason
+survives the change that made it true.
+
+**j. Two independent authors wrote assertions into a region the offline register
+structurally cannot see, and neither extended the hook.** T2 (the policy set)
+and T4 (the unit-directory set) each added assertions below the fixture hook and
+each left the hook's dispatch list unchanged. Neither had reason to look: the
+file gives no signal at the point of writing that "below this line" and "above
+this line" differ. That is a property of the file, not of either author, and
+stating it that way is the point — two independent authors hitting it is what
+makes it worth stating at all. Whether it deserves a mechanism belongs to
+RFCT-092's neighbourhood and is not proposed here.
+
+### Two notes for whoever reads this next
+
+- **The `EXT_` grep-prefix collision in `os/verify-image-v2.sh`.** T4's
+  `EXT_UNIT_DIR` / `EXT_MOUNT_UNIT` (the extension *unit directory*) and T2's
+  `EXT_POLICY_PATH` / `EXT_POLICY` (the extension *D-Bus policy*) are unrelated
+  things sharing a prefix. A `grep EXT_` returns both sets and reads as one
+  subsystem. Nothing is wrong in the file; the trap is in the search.
+- **Every L3 worktree is cut from `main`, not from the campaign branch.** Each
+  task's base is therefore a **snapshot** of `bkd/fcgv4ehp` taken at its own
+  dispatch, and different tasks saw different bases. Line numbers, and any claim
+  of the form "X is not in the tree", are true of the base the task that wrote
+  them was standing on and not necessarily of the merged result. Several of this
+  campaign's corrections trace to that — including one task's plan edit that was
+  reverted at merge as already-recorded, whose measurement then had to be
+  re-landed here.
