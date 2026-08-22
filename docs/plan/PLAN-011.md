@@ -215,6 +215,43 @@ chain; it extends a mount set the image verifier already asserts. STATE rather t
 DATA because a unit is configuration, and because factory reset should take
 third-party units with it.
 
+**The bind target is `/usr/local/lib/systemd/system`, NOT `/etc/systemd/system`
+— corrected 2026-08-22 after M5 measured the image.** This paragraph originally
+named `/etc/systemd/system` "the seventh bind, following the pattern `/etc/ssh`
+uses". That was wrong, and the rejected option is the useful half of this record:
+
+- `os/rootfs/overlay-v2/etc/systemd/system/` ships **15 entries**, including every
+  existing STATE mount unit (`etc-ssh.mount`, `var-lib-mos.mount`, `home.mount`,
+  …), `mos-seed-state.service`, `mos-shadow-reconcile.service` and a
+  `multi-user.target.wants/` enablement directory. A bind over it **shadows all of
+  them — including the mount unit performing the bind**. PID 1 would read its own
+  enablement out of a directory about to disappear underneath it, and a later
+  `daemon-reload` would re-read a directory where those units no longer exist.
+  `/etc/ssh` has no such property: sshd reads config from it, but nothing in the
+  boot chain is *loaded* from it. The original reasoning generalised from the wrong
+  attribute of the pattern — "a writable `/etc` subdirectory on STATE" — and missed
+  "a directory PID 1 loads units from".
+- The seed step would compound it. `mos-seed-state` copies with `cp -an`
+  (no-clobber, lines 48 and 59) — correct where a per-device edit must win. Applied
+  here, an A/B update shipping a **changed** `etc-ssh.mount` would be permanently
+  shadowed by the first-boot STATE copy, turning a routine update into a silent
+  no-op on the boot chain. `docs/design/ro-root.md:303` ("Reconcile on every boot,
+  not seed-once") already refuses this failure class for `/etc/shadow`; freezing the
+  mount topology is a worse instance of it.
+
+`/usr/local/lib/systemd/system` sits in systemd's system-manager unit load path
+below `/etc/systemd/system` and `/run/systemd/system`, and is empty in the base
+image — so the bind shadows nothing, needs no `cp -an` seed at all, and leaves the
+boot chain entirely inside the verity root. That an extension therefore **cannot
+override a shipped mos unit is an intended property**, not a limitation: a third
+party silently replacing `var-lib-mos.mount` is not a capability this appliance
+offers.
+
+Two things this costs, both owned by M5: the unit load path must be **measured** on
+the image's systemd (`systemd-analyze unit-paths`) rather than assumed, and the
+mountpoint must be **created by the pack stage** — it does not exist in the image
+today — with `os/verify-image-v2.sh` asserting both its existence and the bind.
+
 **(b) Names are self-assigned; mos reserves and observes.** An integrator may own
 any `com.mos.*` bus name that does not collide with a system name. Two mechanisms,
 and they are not substitutes for each other:
