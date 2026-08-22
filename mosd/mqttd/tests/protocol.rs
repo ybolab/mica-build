@@ -19,12 +19,21 @@ use mos_mqttd::config::{Mode, Timings};
 use mos_mqttd::item::Item;
 use mos_mqttd::runtime::apply;
 use mos_mqttd::source::{ItemSource, WriteOutcome};
+use mos_mqttd::topic::{self, Address, Request};
 use mos_mqttd::transport::Transport;
 
 /// The device id the fixture tree carries at `/provisioning/deviceId`.
 const DEVICE: &str = "abc123";
 /// `com.mos.mosd`'s class (`docs/design/bus.md` §5).
 const CLASS: &str = "mosd";
+/// The bus name of an extension service under PLAN-011 D5's grammar, whose
+/// class is its **fourth** dotted component.
+const EXTENSION_SERVICE: &str = "com.mos.ext.sensor.abc123";
+/// The class [`EXTENSION_SERVICE`] must publish under.
+const EXTENSION_CLASS: &str = "sensor";
+/// The extension namespace with no service under it — in the extension half
+/// of the namespace, but naming no class (PLAN-011 D5, RFCT-093).
+const EXTENSION_NAMESPACE: &str = "com.mos.ext";
 
 fn secs(seconds: u64) -> Duration {
     Duration::from_secs(seconds)
@@ -182,8 +191,15 @@ struct Harness {
 
 impl Harness {
     fn new(mode: Mode) -> Self {
+        Self::with_class(CLASS, mode)
+    }
+
+    /// The same wiring for a bridge publishing under some other class — an
+    /// extension's, which is not the one its bus name's third component
+    /// carries.
+    fn with_class(class: &str, mode: Mode) -> Self {
         Self {
-            bridge: Bridge::new(CLASS, mode, Timings::default()),
+            bridge: Bridge::new(class, mode, Timings::default()),
             transport: Recorder::default(),
             source: Fake::new(),
         }
@@ -607,5 +623,114 @@ async fn clears_owed_while_silent_are_paid_at_the_next_keepalive() {
             .payload(&format!("N/{DEVICE}/full_publish_completed")),
         json!({"value": 0}),
         "the republish of a vanished device carries no items"
+    );
+}
+
+/// An extension publishes under its class, not under `ext`.
+///
+/// PLAN-011 D5 gives an extension the name `com.mos.ext.<class>[.<suffix>]`,
+/// so the class is the fourth component where a system service's is the
+/// third. Reading the third unconditionally — which is what this bridge did
+/// before `mos-busname` — puts every extension's items under the class `ext`,
+/// and M5 names that as the defect to test for. The negative assertion is
+/// half the test: the equality alone would not say which wrong answer was
+/// ruled out.
+#[tokio::test]
+async fn an_extension_publishes_under_its_class_and_never_under_ext() {
+    let class = topic::class_of(EXTENSION_SERVICE).expect("a com.mos.* bus name");
+    let mut harness = Harness::with_class(class, Mode::Full);
+    harness.start(secs(0)).await;
+
+    let published = harness.transport.topics();
+    assert!(
+        published.contains(&format!("N/{DEVICE}/{EXTENSION_CLASS}/0/hostname")),
+        "{EXTENSION_SERVICE} did not publish under its class {EXTENSION_CLASS}; saw {published:?}"
+    );
+    assert!(
+        !published
+            .iter()
+            .any(|topic| topic.starts_with(&format!("N/{DEVICE}/ext/"))),
+        "{EXTENSION_SERVICE} published under the namespace `ext` instead of its class; saw {published:?}"
+    );
+}
+
+/// And the system half does not move: `com.mos.mosd` still publishes under
+/// `mosd`, the third component, exactly as it did before the rule learnt
+/// about extensions.
+#[tokio::test]
+async fn a_system_service_still_publishes_under_its_third_component() {
+    let class = topic::class_of("com.mos.mosd").expect("a com.mos.* bus name");
+    let mut harness = Harness::with_class(class, Mode::Full);
+    harness.start(secs(0)).await;
+
+    let published = harness.transport.topics();
+    assert!(
+        published.contains(&format!("N/{DEVICE}/mosd/0/hostname")),
+        "com.mos.mosd stopped publishing under mosd; saw {published:?}"
+    );
+}
+
+/// Building and parsing agree for an extension too: a topic built for an
+/// extension's address parses back to the request that built it, and a topic
+/// addressed under `ext` is not one of ours.
+#[test]
+fn an_extension_topic_round_trips_and_ext_is_not_ours() {
+    let address = Address {
+        device_id: DEVICE.to_string(),
+        class: topic::class_of(EXTENSION_SERVICE)
+            .expect("a com.mos.* bus name")
+            .to_string(),
+        instance: 0,
+    };
+
+    let read = address.item_topic(topic::READ, "/system/uptime");
+    assert_eq!(
+        read,
+        format!("R/{DEVICE}/{EXTENSION_CLASS}/0/system/uptime")
+    );
+    assert_eq!(
+        topic::parse(&read, &address),
+        Some(Request::Read {
+            path: "/system/uptime".to_string()
+        })
+    );
+
+    let under_ext = format!("R/{DEVICE}/ext/0/system/uptime");
+    assert_eq!(
+        topic::parse(&under_ext, &address),
+        None,
+        "a topic addressed to the namespace rather than the class was accepted as ours"
+    );
+}
+
+/// A bus name that yields no class cannot be addressed, and no class is
+/// invented for it.
+///
+/// `com.mos.ext` is in the extension namespace but names no service under it,
+/// so there is no `<class>` segment to build `N/<deviceId>/<class>/...` from.
+/// The bridge's gate is [`topic::class_of`] returning `None`: `runtime::run`
+/// takes the class from it and fails startup on `None` before it opens either
+/// connection. That call passes a `const SERVICE`, so the refusal cannot be
+/// driven from a test without editing the constant — what is asserted here is
+/// the value the refusal keys on, and that neither wrong answer is produced
+/// in its place.
+#[test]
+fn a_bus_name_with_no_class_yields_no_address_and_no_invented_class() {
+    let class = topic::class_of(EXTENSION_NAMESPACE);
+    assert_eq!(
+        class, None,
+        "{EXTENSION_NAMESPACE} names no service, so the bridge must refuse it rather than \
+         publish under a class it chose itself"
+    );
+    assert_ne!(
+        class,
+        Some("ext"),
+        "the namespace was substituted for a class, which is the wrong-class defect \
+         PLAN-011 D5 names, reached by the other route"
+    );
+    assert_ne!(
+        class,
+        Some(""),
+        "an empty class segment would publish on N/<deviceId>//<instance>/<path>"
     );
 }

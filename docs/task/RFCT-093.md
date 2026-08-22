@@ -49,6 +49,52 @@ Out of scope: M6 (udev device attach), `os/` image wiring for
 schema change is required anywhere — D4 and D5's `extensions.*` subtree are both
 withdrawn.
 
+## Investigation — `own_prefix` semantics (measured 2026-08-22)
+
+Deliverable 1 is done. The measurement ran against **dbus-daemon 1.12.20** on a
+bus stood up for the purpose, whose base configuration is the stock system.conf
+`<policy context="default">` stanza — `<deny own="*"/>` included — plus exactly
+one scaffolding rule, `<allow own_prefix="com.mos.ext"/>`. That grant is the only
+thing on the bus that can hand out any name, so every result below is attributable
+to `own_prefix` and to nothing else. The scaffolding fragment is written into a
+temporary directory at run time; `mosd/dist/com.mos.ext.conf` does not exist yet
+and was deliberately not created, because the sequencing — measure first, write
+the policy against the measurement — is the point of the task. Each name was
+requested by an unprivileged identity (uid 65534) via `RequestName`.
+
+| Bus name | Observed |
+| --- | --- |
+| `com.mos.ext.foo` | `OWNED` |
+| `com.mos.ext.sensor.abc123` | `OWNED` |
+| `com.mos.mosd` | `ERROR org.freedesktop.DBus.Error.AccessDenied` |
+| `com.mos.extra` | `ERROR org.freedesktop.DBus.Error.AccessDenied` |
+| `com.mos.ext` | `OWNED` |
+| `com.mos.other` | `ERROR org.freedesktop.DBus.Error.AccessDenied` |
+| `org.example.thing` (control) | `ERROR org.freedesktop.DBus.Error.AccessDenied` |
+
+**PLAN-011 D5's assumption holds:** `own_prefix="com.mos.ext"` grants
+`com.mos.ext.foo` and does not reach `com.mos.mosd`, so the namespace decision
+stands as written and the grant needs no accompanying deny list.
+
+Two details the plan did not state. `com.mos.extra` is refused, which confirms the
+mechanism the `com.mos.mosd` result rests on: `own_prefix` is not a string-prefix
+match, it requires the next character after the prefix to be `.`. And the bare
+prefix `com.mos.ext` is itself `OWNED` — `own_prefix` matches the prefix with no
+suffix at all. That name is inside the namespace extensions were given, so it
+gives away nothing the decision did not intend to, but it is a name the
+`com.mos.ext.<class>[.<suffix>]` grammar never contemplated: it has no fourth
+dotted component for deliverable 4's class derivation to read. Deliverable 4 has
+to decide what the bridge does with it rather than assume it cannot occur.
+
+All seven names are now asserted with explicit expected values in
+`mosd/hack/dbus-policy-test.sh` (section 4), so a dbus-daemon upgrade that changed
+any of these semantics would fail the suite rather than silently invalidate D5.
+The stage was mutation-checked: widening the scaffolding grant to
+`own_prefix="com.mos"` turns the `com.mos.mosd` case into
+`FAIL ... expected [ERROR org.freedesktop.DBus.Error.AccessDenied], got [OWNED]`,
+while the `org.example.thing` control stays refused — the section fails for the
+reason it claims to test, not because the bus broke.
+
 ## Outcome
 
 Filled in at completion.
