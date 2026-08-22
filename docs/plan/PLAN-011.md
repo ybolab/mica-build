@@ -256,6 +256,28 @@ exists to buy — and no shipped bus name is renamed, so the 44 files that refer
 `<class>` comes from D2's registry and `<suffix>` disambiguates instances of one
 class, mirroring Venus's `com.victronenergy.<type>.<tty>`.
 
+**Non-conforming services: warn and publish best-effort — DECIDED 2026-08-22
+(user).** A service that owns a `com.mos.ext.*` name but does not answer the full
+D1/D2 contract is **not refused**. It is published with whatever it does provide,
+and what it is missing is recorded where an operator can see it. Consistent with
+D5's whole posture: mos does not own the lifecycle, so it does not act as an
+admission gate either.
+
+Concretely:
+
+- `<class>` always resolves — it comes from the bus name, not from the service.
+- `/DeviceInstance` absent falls back to `0`, exactly as Venus's bridge does
+  (`/DeviceInstance`, else `/Identifier`, else `0`). A fallback makes collisions
+  between two instance-less services of one class **likely**, which is why the
+  registry must name them rather than let one silently shadow the other.
+- The registry entry carries a **conformance field** listing what is missing
+  (mandatory paths, `/DeviceInstance`, no `com.mos.Item1` at the root), plus a
+  log line at WARN. That field is the whole difference between "best-effort" and
+  "silently degraded" — an operator who cannot see WHY their service publishes
+  oddly will conclude the bridge is broken.
+- Nothing is published for a service that answers no `Item1` at all; there is
+  nothing to publish, and that fact is itself a registry entry.
+
 **Consequence that must be settled in the same milestone, not left to each side:**
 the M3 bridge derives the topic `<class>` from the bus name and today reads the
 third dotted component (`mosd/mqttd/src/topic.rs:32`, "`class` is the
@@ -417,10 +439,13 @@ already-running bridge for free.
      introduces **no settings schema change at all**, so the rollback-cost
      item is off the risk list and the typed-tree discipline of
      `docs/design/mosd.md` §5.1-5.2 is preserved unchanged.
-  3. **What the scan does on a non-conforming service.** Report only, or also
-     gate: a service that owns a name but publishes no `/Mgmt/*` or
-     `/DeviceInstance` cannot be projected usefully by the M3 bridge. Warn and
-     publish what it can, or refuse to publish it at all?
+  3. ~~**What the scan does on a non-conforming service.**~~ **ANSWERED
+     2026-08-22 (user): warn and publish best-effort** — "警告并尽力". Recorded
+     in D5 above, including the `/DeviceInstance` → `0` fallback, the resulting
+     collision visibility requirement, and the registry conformance field that
+     keeps "best-effort" from degrading into "silently wrong".
+
+  **All three open questions are now answered; M5 is ready to scope.**
 
 - **2026-08-21 (user)**: "我们需要用mqtt之类的做数据发布、因此采用类似venuos类似比较好"
   — MQTT-style data publishing is a product need, so the Venus-like approach
