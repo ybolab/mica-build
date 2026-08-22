@@ -117,4 +117,5 @@ Each task is a single line linking to its detail file. All detailed information 
 - [ ] [**RFCT-092 A mechanism that checks docs citations, because five of them rotted in two merges**](RFCT-092.md) `P2`
 - [x] [**RFCT-093 PLAN-011 M5: extension enablement — writable unit directory, the com.mos.ext namespace, and the bus scan**](RFCT-093.md) `P1`
 - [ ] [**RFCT-094 Dotted keys have no item object, and M5 makes that certain rather than theoretical**](RFCT-094.md) `P2`
-- [ ] [**RFCT-095 The com.mos.ext policy assertions cannot fail, and hoisting them needs a different shape**](RFCT-095.md) `P2`
+- [x] [**RFCT-095 The com.mos.ext policy assertions cannot fail, and hoisting them needs a different shape**](RFCT-095.md) `P2`
+- [ ] [**RFCT-096 "0 skipped" does not mean nothing was skipped, and three test files still exploit that**](RFCT-096.md) `P1`
