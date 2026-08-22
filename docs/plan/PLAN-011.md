@@ -215,6 +215,80 @@ chain; it extends a mount set the image verifier already asserts. STATE rather t
 DATA because a unit is configuration, and because factory reset should take
 third-party units with it.
 
+**The bind target is `/usr/local/lib/systemd/system`, NOT `/etc/systemd/system`
+— corrected 2026-08-22 after M5 measured the image.** This paragraph originally
+named `/etc/systemd/system` "the seventh bind, following the pattern `/etc/ssh`
+uses". That was wrong, and the rejected option is the useful half of this record:
+
+- `os/rootfs/overlay-v2/etc/systemd/system/` ships **15 entries**, including every
+  existing STATE mount unit (`etc-ssh.mount`, `var-lib-mos.mount`, `home.mount`,
+  …), `mos-seed-state.service`, `mos-shadow-reconcile.service` and a
+  `multi-user.target.wants/` enablement directory. A bind over it **shadows all of
+  them — including the mount unit performing the bind**. PID 1 would read its own
+  enablement out of a directory about to disappear underneath it, and a later
+  `daemon-reload` would re-read a directory where those units no longer exist.
+  `/etc/ssh` has no such property: sshd reads config from it, but nothing in the
+  boot chain is *loaded* from it. The original reasoning generalised from the wrong
+  attribute of the pattern — "a writable `/etc` subdirectory on STATE" — and missed
+  "a directory PID 1 loads units from".
+- The seed step would compound it. `mos-seed-state` copies with `cp -an`
+  (no-clobber, lines 48 and 59) — correct where a per-device edit must win. Applied
+  here, an A/B update shipping a **changed** `etc-ssh.mount` would be permanently
+  shadowed by the first-boot STATE copy, turning a routine update into a silent
+  no-op on the boot chain. `docs/design/ro-root.md:303` ("Reconcile on every boot,
+  not seed-once") already refuses this failure class for `/etc/shadow`; freezing the
+  mount topology is a worse instance of it.
+
+`/usr/local/lib/systemd/system` sits in systemd's system-manager unit load path
+below `/etc/systemd/system` and `/run/systemd/system`, and is empty in the base
+image — so the bind shadows nothing, needs no `cp -an` seed at all, and leaves the
+boot chain entirely inside the verity root. That an extension therefore **cannot
+override a shipped mos unit is an intended property**, not a limitation: a third
+party silently replacing `var-lib-mos.mount` is not a capability this appliance
+offers.
+
+**MEASURED 2026-08-22 (M5), on the image's own base.** The paragraph above was
+written as a belief and is now a measurement: `systemd-analyze unit-paths` on
+`debian:bookworm-slim` + `systemd` — **systemd 252 (252.39-1~deb12u2)**, the
+version the image ships — returns, in order:
+
+```
+/etc/systemd/system.control        /run/systemd/system.attached
+/run/systemd/system.control        /run/systemd/generator
+/run/systemd/transient             /usr/local/lib/systemd/system   <-- 10th
+/run/systemd/generator.early       /lib/systemd/system
+/etc/systemd/system                /usr/lib/systemd/system
+/etc/systemd/system.attached       /run/systemd/generator.late
+/run/systemd/system
+```
+
+`/usr/local/lib/systemd/system` is present, and is **below** both
+`/etc/systemd/system` (5th) and `/run/systemd/system` (7th) — so the
+cannot-override property holds by measurement rather than by assumption. Two
+further facts measured at the same time: the directory is **absent** from the base
+image (`/usr/local/lib` exists, `/usr/local/lib/systemd` does not), confirming
+there is nothing to seed and nothing to shadow; and `systemd-escape -p
+--suffix=mount /usr/local/lib/systemd/system` yields exactly
+`usr-local-lib-systemd-system.mount`, the unit filename shipped.
+
+Two things this costs, both **done in M5**: the load path is measured above rather
+than assumed, and the mountpoint is **created by the pack stage**
+(`os/rootfs/Dockerfile.v2`, 0755 root:root) because a verity root cannot create a
+directory at runtime — a missing mountpoint is a mount unit that fails at boot,
+not a feature that quietly does nothing. `os/verify-image-v2.sh` asserts its
+existence (via `PACKED_MOUNTPOINTS`, which puts it inside the fixture hook
+`os/ui-location-test.sh` drives), asserts the bind is enabled and STATE-backed,
+and carries a **negative** assertion that no unit in the image mounts over
+`/etc/systemd/system` — the guard against someone later "restoring" this
+paragraph's superseded sentence, a diff that would read like fixing a deviation
+while reintroducing the hazard.
+
+The STATE source is `/mnt/state/systemd-units`, named for what it holds rather
+than mirroring the target path, and created by `mos-seed-state` with a `mkdir -p`
+and **no `cp -an`** — the script carries a comment saying why, so that a later
+change does not "helpfully" add one to match the `/etc/ssh` and
+`/etc/hostapd` loops above it.
+
 **(b) Names are self-assigned; mos reserves and observes.** An integrator may own
 any `com.mos.*` bus name that does not collide with a system name. Two mechanisms,
 and they are not substitutes for each other:

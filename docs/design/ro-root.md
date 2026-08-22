@@ -260,6 +260,7 @@ partitions absorb everything:
 | `/etc/hostname` | bind from `/mnt/state/hostname` | file bind, not a directory |
 | `/etc/wpa_supplicant` | bind from `/mnt/state/wpa_supplicant` | mosd's rendered supplicant config (M5) |
 | `/etc/hostapd` | bind from `/mnt/state/hostapd` | mosd's rendered hostapd config (M5) |
+| `/usr/local/lib/systemd/system` | bind from `/mnt/state/systemd-units` | third-party systemd units an integrator installs (PLAN-011 D5). The only bind target **inside `/usr`** — see below |
 | `/home` | bind from `/srv/home` | operator home directories, on **DATA** (RFCT-039); source created by `mos-seed-home` |
 | `/root` | bind from `/srv/root` | root's home directory, on **DATA** (RFCT-054); source created by `mos-seed-root` |
 | **`/etc/shadow`** | **symlink → `/var/lib/mos/shadow`** | **not read-only any more — see below (M5)** |
@@ -272,6 +273,56 @@ partitions absorb everything:
 > allocated in the order partitions were added and are frozen once allocated,
 > which is exactly why the dm-verity cmdline, `/etc/fstab`, `/etc/fw_env.config`
 > and the RAUC slot devices are pinned to PARTUUIDs and needed no change.
+
+### `/usr/local/lib/systemd/system` — a writable unit directory, and what it costs
+
+**Added 2026-08-22 (PLAN-011 D5 / M5).** Every other *bind* row above redirects a
+path under `/etc`, `/var/lib` or a home directory; the remaining rows are the
+partitions and tmpfs themselves. This one lands in `/usr`, which is otherwise
+entirely inside the signed, verity-covered tree, and that is the point: it is the
+only place a **unit** can be written on a running device.
+
+`usr-local-lib-systemd-system.mount` binds `/mnt/state/systemd-units` there,
+ordered after `mos-seed-state.service` like every other STATE bind.
+`mos-seed-state` creates the source `mkdir -p`, 0755 root:root, and — unlike
+`/etc/ssh`, `/etc/hostapd` and `/etc/wpa_supplicant` — copies **nothing** into
+it. The target is empty in the image, so there is nothing to carry across, and a
+`cp -an` seed of a unit directory is precisely the failure that
+[Reconcile on every boot, not seed-once](#reconcile-on-every-boot-not-seed-once)
+below refuses for `/etc/shadow`: the first-boot copy would permanently shadow
+whatever a later A/B update ships.
+
+**`/etc/systemd/system` was the originally planned target and was rejected on
+2026-08-22.** The image ships this boot chain's own units there — `etc-ssh.mount`,
+`var-lib-mos.mount`, `mos-seed-state.service` and the rest — together with the
+`local-fs.target.wants` symlinks that enable them. A bind over that directory
+would be performed by a unit living in the directory it hides, and would take the
+enablement of every other STATE mount with it. `/etc/ssh` has no such property:
+sshd reads configuration from it, but nothing in the boot chain is *loaded* from
+it. "A writable `/etc` subdirectory on STATE" was the wrong attribute to
+generalise from; "a directory PID 1 loads units from" is the one that matters.
+
+**An extension cannot override a shipped mos unit, and that is intended.**
+Measured on the image's systemd (252, `systemd-analyze unit-paths`),
+`/usr/local/lib/systemd/system` sits *below* both `/etc/systemd/system` and
+`/run/systemd/system` in the unit load path, so a file dropped there never wins
+against a unit the image ships. A third party silently replacing
+`var-lib-mos.mount` is not a capability this appliance offers.
+
+**The cost, stated rather than discovered later.** A writable unit directory
+means **the set of things that start at boot is no longer determined by the image
+hash**. That is a real departure from `docs/architecture.md` §4, where a prod
+image's contents are part of what is signed. Two things bound it: the directory
+is **root-writable only**, so it grants no privilege that SSH-as-root did not
+already grant; and mosd's `com.mos.ext.*` bus scan (PLAN-011 D5(b)) turns "this
+device has been modified" from invisible into an observable fact. It is the same
+trade Venus makes with `/data/rc.local`, and mos is better placed to observe it
+because the rest of the root stays verity-protected.
+
+`os/verify-image-v2.sh` asserts the mountpoint exists in the packed root (a
+verity root cannot create it at runtime, so a missing directory is a mount unit
+that fails at boot), that the bind is enabled and STATE-backed, and — negatively
+— that **no** unit in the image mounts over `/etc/systemd/system`.
 
 ### `/etc/shadow` is writable, and this document used to say it was not
 
