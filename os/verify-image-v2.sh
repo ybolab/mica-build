@@ -62,8 +62,8 @@ done
 # reimplementation of it inside a test would be exactly that.
 #
 # The set is check_ui_location, check_builtin_ui, check_packed_mountpoints,
-# check_status_led, check_dev_keyring and check_ext_unit_dir, and it is expected
-# to GROW.
+# check_status_led, check_dev_keyring, check_ext_unit_dir and check_ext_policy,
+# and it is expected to GROW.
 # os/ui-location-test.sh names the members it expects and diffs that against
 # what actually ran, so widening this hook makes that test say which name it
 # did not expect rather than silently changing a count -- which is why the
@@ -527,6 +527,113 @@ check_ext_unit_dir() {
     fi
 }
 
+# The three below are MOVED here from their original places further down, and
+# the move is the whole point rather than tidying: check_ext_policy runs inside
+# the fixture hook, which dispatches and exits ~1300 lines ABOVE where they used
+# to be defined, so a policy check that referenced them from up here would call
+# functions that did not exist yet (and read an unset MOSD_POLICY_PATH, which
+# under set -u is a hard error, not an empty string). Their bodies are unchanged.
+
+# Assert a file in the packed root matches an extended regex.
+sq_grep() {
+    local path="$1" pattern="$2" what="$3"
+    if [ -f "${ROOT}${path}" ] && grep -Eq "${pattern}" "${ROOT}${path}"; then
+        pass "${what}"
+    else
+        fail "${what} — ${path} missing or does not match /${pattern}/"
+    fi
+}
+
+dbus_policy_rules_only() {
+    awk '{
+        line = $0
+        out = ""
+        while (length(line) > 0) {
+            if (incomment) {
+                p = index(line, "-->")
+                if (p == 0) { line = ""; break }
+                line = substr(line, p + 3)
+                incomment = 0
+            } else {
+                p = index(line, "<!--")
+                if (p == 0) { out = out line; line = ""; break }
+                out = out substr(line, 1, p - 1)
+                line = substr(line, p + 4)
+                incomment = 1
+            }
+        }
+        print out
+    }' "$1"
+}
+
+MOSD_POLICY_PATH=/usr/share/dbus-1/system.d/com.mos.mosd.conf
+
+# --- the extension D-Bus policy grants com.mos.ext.* and NOTHING ELSE --------
+# PLAN-011 D5: third-party services are plain systemd units an integrator
+# installs, and com.mos.ext.conf is the only thing that lets them take a bus
+# name. It is one <allow own_prefix> rule, and both of the ways it can be wrong
+# are silent on the device.
+#
+# Too narrow (a typo in the prefix) and every extension fails RequestName; that
+# is annoying but loud. Too WIDE is the dangerous one, and it is a one-character
+# edit: own_prefix="com.mos" reads in a diff like a simplification and actually
+# grants ownership of com.mos.mosd to every local uid on the device. A unit with
+# DefaultDependencies=no could then take the name before mosd does, and apid
+# would spend the boot talking to an impostor -- with the root-only rules in
+# com.mos.mosd.conf fully intact and every mosd policy check above still passing,
+# because none of them can see a grant that lives in another file.
+#
+# The negative assertions below are therefore the ones that earn their keep, and
+# they run against the file with XML COMMENTS STRIPPED. com.mos.ext.conf
+# documents this exact hazard in prose, so a raw grep would fire on the warning
+# and force somebody to choose between the check and the explanation.
+EXT_POLICY_PATH=/usr/share/dbus-1/system.d/com.mos.ext.conf
+
+# check_ext_policy is a function ONLY so the fixture hook below can dispatch it;
+# inlining it back at its one call site reopens the hole it closed. These four
+# assertions sat inline BELOW that hook for this campaign's whole span, so the
+# widened-prefix guard could not fail: T8 forced it never to fire and the suite
+# still reported PASS with zero FAIL lines. This is the SECOND author to write
+# assertions past that boundary -- see the warning at the hook exit.
+check_ext_policy() {
+    ext_policy_rules="${TMP}/ext-policy-rules.xml"
+    : >"${ext_policy_rules}"
+    if [ -f "${ROOT}${EXT_POLICY_PATH}" ]; then
+        dbus_policy_rules_only "${ROOT}${EXT_POLICY_PATH}" >"${ext_policy_rules}"
+    fi
+
+    # Positive: the grant is actually there. A policy file that grants nothing is
+    # not a safe policy file, it is a broken one -- no extension can own its name.
+    sq_grep "${EXT_POLICY_PATH}" 'allow own_prefix="com\.mos\.ext"' \
+        "the extension D-Bus policy grants own_prefix=com.mos.ext, so extension services can take their bus names at all"
+    # ...and it survives comment-stripping, i.e. it is a RULE and not the example
+    # markup in the file's own commentary.
+    if grep -Eq 'allow own_prefix="com\.mos\.ext"' "${ext_policy_rules}"; then
+        pass "the own_prefix=com.mos.ext grant is a live rule, not text inside an XML comment"
+    else
+        fail "${EXT_POLICY_PATH} mentions own_prefix=com.mos.ext only inside an XML comment. dbus-daemon ignores comments, so no extension can own a com.mos.ext.* name and every extension unit dies at RequestName with AccessDenied"
+    fi
+
+    # Negative 1: the granted prefix is never com.mos. This is the widening mistake.
+    if grep -Eq 'own_prefix="com\.mos"' "${ext_policy_rules}"; then
+        fail "${EXT_POLICY_PATH} grants own_prefix=\"com.mos\", not \"com.mos.ext\". That hands ownership of com.mos.mosd to every local uid: a unit with DefaultDependencies=no can claim the name before mosd does and apid then talks to an impostor for the rest of the boot. The root-only rules in ${MOSD_POLICY_PATH} do not stop this -- own= is granted here"
+    else
+        pass "${EXT_POLICY_PATH} does not grant the widened own_prefix=\"com.mos\"; com.mos.mosd and every future system name stay outside the extension grant"
+    fi
+
+    # Negative 2: no rule grants a system name outright. own_prefix="com.mos.ext" is
+    # the ONLY ownership this file is allowed to hand out; an own= rule here would
+    # name a specific bus name, and the only names worth naming are the system ones.
+    ext_own_grants="$(grep -Eo '<allow[^>]*own="[^"]*"' "${ext_policy_rules}" || true)"
+    ext_bad_prefix="$(grep -Eo 'own_prefix="[^"]*"' "${ext_policy_rules}" |
+        grep -Fxv 'own_prefix="com.mos.ext"' || true)"
+    if [ -z "${ext_own_grants}" ] && [ -z "${ext_bad_prefix}" ]; then
+        pass "${EXT_POLICY_PATH} grants exactly one thing -- own_prefix=com.mos.ext -- and no <allow own=> for any system name such as com.mos.mosd"
+    else
+        fail "${EXT_POLICY_PATH} grants ownership beyond the extension namespace:${ext_own_grants:+ own rules [${ext_own_grants}]}${ext_bad_prefix:+ unexpected prefixes [${ext_bad_prefix}]}. Every name outside com.mos.ext.* is a system name; granting one here opens it to every local uid on the device while com.mos.mosd.conf's root-only rules keep passing, because they cannot see a grant made in another file"
+    fi
+}
+
 # The fixture hook: run only the assertions above, against the fixture, and
 # summarise. os/ui-location-test.sh is the only caller.
 if [ -n "${FIXTURE_ROOT}" ]; then
@@ -538,6 +645,7 @@ if [ -n "${FIXTURE_ROOT}" ]; then
     check_status_led
     check_dev_keyring
     check_ext_unit_dir
+    check_ext_policy
     fixture_total=$((PASS_N + FAIL_N))
     if [ "${FAIL_N}" -eq 0 ]; then
         echo "RESULT: PASS (${PASS_N}/${fixture_total} checks)"
@@ -546,6 +654,15 @@ if [ -n "${FIXTURE_ROOT}" ]; then
     echo "RESULT: FAIL (${PASS_N}/${fixture_total} checks)"
     exit 1
 fi
+# BOUNDARY. Fixture mode has just exited. Every assertion written inline BELOW
+# this point is structurally invisible to os/ui-location-test.sh -- it cannot be
+# driven against a fixture, so it can never be observed failing, and nothing
+# says so at the point of temptation. Two authors have already written past this
+# line (PLAN-011 D5's mount-unit set and its com.mos.ext.conf policy set) and
+# both had to be hoisted afterwards. If a new assertion reads only ${ROOT} and
+# could be driven offline, put it in a function ABOVE and name it in the list
+# above; if it needs the real image, inline here is correct. This is a note, not
+# a rule: most assertions below genuinely need the image and must stay there.
 
 BYTES_PER_SECTOR="${SECTOR_SIZE}"
 SECTORS_PER_MIB=$((MIB_BYTES / SECTOR_SIZE))
@@ -1308,15 +1425,6 @@ sq_enabled_any() {
     fi
 }
 
-# Assert a file in the packed root matches an extended regex.
-sq_grep() {
-    local path="$1" pattern="$2" what="$3"
-    if [ -f "${ROOT}${path}" ] && grep -Eq "${pattern}" "${ROOT}${path}"; then
-        pass "${what}"
-    else
-        fail "${what} — ${path} missing or does not match /${pattern}/"
-    fi
-}
 
 # --- kernel modules and firmware (carried over from v1) ---
 modules_entries="$(ls "${ROOT}/usr/lib/modules" 2>/dev/null || true)"
@@ -1616,7 +1724,6 @@ sq_grep /usr/share/dbus-1/system.d/com.mos.mosd.conf 'allow own="com\.mos\.mosd"
 # The bus name is READ from mosd.service's BusName= rather than restated here.
 # A policy for a name nothing owns is the existence-versus-function trap: it
 # would sail through a file-exists check while protecting nothing at all.
-MOSD_POLICY_PATH=/usr/share/dbus-1/system.d/com.mos.mosd.conf
 mosd_policy_text="$(cat "${ROOT}${MOSD_POLICY_PATH}" 2>/dev/null || true)"
 mosd_bus_name="$(sed -n 's/^BusName=[[:space:]]*//p' \
     "${ROOT}/usr/lib/systemd/system/mosd.service" 2>/dev/null | tr -d '\r' | tail -n1)"
@@ -1758,27 +1865,6 @@ fi
 # documenting the hazard into a reported instance of it, and the obvious repair
 # (delete the warning) is strictly worse than the check. A real <allow> or
 # <deny> naming com.mos.mosd in a second file still trips it.
-dbus_policy_rules_only() {
-    awk '{
-        line = $0
-        out = ""
-        while (length(line) > 0) {
-            if (incomment) {
-                p = index(line, "-->")
-                if (p == 0) { line = ""; break }
-                line = substr(line, p + 3)
-                incomment = 0
-            } else {
-                p = index(line, "<!--")
-                if (p == 0) { out = out line; line = ""; break }
-                out = out substr(line, 1, p - 1)
-                line = substr(line, p + 4)
-                incomment = 1
-            }
-        }
-        print out
-    }' "$1"
-}
 mosd_policy_dups=""
 for d in /etc/dbus-1/system.d /usr/share/dbus-1/system.d; do
     [ -d "${ROOT}${d}" ] || continue
@@ -1798,61 +1884,10 @@ else
 fi
 
 # --- the extension D-Bus policy grants com.mos.ext.* and NOTHING ELSE --------
-# PLAN-011 D5: third-party services are plain systemd units an integrator
-# installs, and com.mos.ext.conf is the only thing that lets them take a bus
-# name. It is one <allow own_prefix> rule, and both of the ways it can be wrong
-# are silent on the device.
-#
-# Too narrow (a typo in the prefix) and every extension fails RequestName; that
-# is annoying but loud. Too WIDE is the dangerous one, and it is a one-character
-# edit: own_prefix="com.mos" reads in a diff like a simplification and actually
-# grants ownership of com.mos.mosd to every local uid on the device. A unit with
-# DefaultDependencies=no could then take the name before mosd does, and apid
-# would spend the boot talking to an impostor -- with the root-only rules in
-# com.mos.mosd.conf fully intact and every mosd policy check above still passing,
-# because none of them can see a grant that lives in another file.
-#
-# The negative assertions below are therefore the ones that earn their keep, and
-# they run against the file with XML COMMENTS STRIPPED. com.mos.ext.conf
-# documents this exact hazard in prose, so a raw grep would fire on the warning
-# and force somebody to choose between the check and the explanation.
-EXT_POLICY_PATH=/usr/share/dbus-1/system.d/com.mos.ext.conf
-ext_policy_rules="${TMP}/ext-policy-rules.xml"
-: >"${ext_policy_rules}"
-if [ -f "${ROOT}${EXT_POLICY_PATH}" ]; then
-    dbus_policy_rules_only "${ROOT}${EXT_POLICY_PATH}" >"${ext_policy_rules}"
-fi
-
-# Positive: the grant is actually there. A policy file that grants nothing is
-# not a safe policy file, it is a broken one -- no extension can own its name.
-sq_grep "${EXT_POLICY_PATH}" 'allow own_prefix="com\.mos\.ext"' \
-    "the extension D-Bus policy grants own_prefix=com.mos.ext, so extension services can take their bus names at all"
-# ...and it survives comment-stripping, i.e. it is a RULE and not the example
-# markup in the file's own commentary.
-if grep -Eq 'allow own_prefix="com\.mos\.ext"' "${ext_policy_rules}"; then
-    pass "the own_prefix=com.mos.ext grant is a live rule, not text inside an XML comment"
-else
-    fail "${EXT_POLICY_PATH} mentions own_prefix=com.mos.ext only inside an XML comment. dbus-daemon ignores comments, so no extension can own a com.mos.ext.* name and every extension unit dies at RequestName with AccessDenied"
-fi
-
-# Negative 1: the granted prefix is never com.mos. This is the widening mistake.
-if grep -Eq 'own_prefix="com\.mos"' "${ext_policy_rules}"; then
-    fail "${EXT_POLICY_PATH} grants own_prefix=\"com.mos\", not \"com.mos.ext\". That hands ownership of com.mos.mosd to every local uid: a unit with DefaultDependencies=no can claim the name before mosd does and apid then talks to an impostor for the rest of the boot. The root-only rules in ${MOSD_POLICY_PATH} do not stop this -- own= is granted here"
-else
-    pass "${EXT_POLICY_PATH} does not grant the widened own_prefix=\"com.mos\"; com.mos.mosd and every future system name stay outside the extension grant"
-fi
-
-# Negative 2: no rule grants a system name outright. own_prefix="com.mos.ext" is
-# the ONLY ownership this file is allowed to hand out; an own= rule here would
-# name a specific bus name, and the only names worth naming are the system ones.
-ext_own_grants="$(grep -Eo '<allow[^>]*own="[^"]*"' "${ext_policy_rules}" || true)"
-ext_bad_prefix="$(grep -Eo 'own_prefix="[^"]*"' "${ext_policy_rules}" |
-    grep -Fxv 'own_prefix="com.mos.ext"' || true)"
-if [ -z "${ext_own_grants}" ] && [ -z "${ext_bad_prefix}" ]; then
-    pass "${EXT_POLICY_PATH} grants exactly one thing -- own_prefix=com.mos.ext -- and no <allow own=> for any system name such as com.mos.mosd"
-else
-    fail "${EXT_POLICY_PATH} grants ownership beyond the extension namespace:${ext_own_grants:+ own rules [${ext_own_grants}]}${ext_bad_prefix:+ unexpected prefixes [${ext_bad_prefix}]}. Every name outside com.mos.ext.* is a system name; granting one here opens it to every local uid on the device while com.mos.mosd.conf's root-only rules keep passing, because they cannot see a grant made in another file"
-fi
+# Defined beside check_ui_location and the rest of the fixture-hook set, because
+# the hook has to be able to dispatch it; called here so the non-fixture path
+# still runs it in exactly this position. The rationale is on the function.
+check_ext_policy
 
 sq_regular /etc/dbus-1/system.d/bluetooth.conf
 
