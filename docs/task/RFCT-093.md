@@ -98,12 +98,15 @@ reason it claims to test, not because the bus broke.
 
 ## Outcome
 
-**Done 2026-08-22.** M5 landed as eleven tasks on campaign branch
+**Done 2026-08-22.** M5 landed as twelve tasks on campaign branch
 `bkd/fcgv4ehp`. Everything below is stated against the merged tree at
-`a5dd7a9`, and every path named here was checked to exist before it was written
+`cca6c30`, and every path named here was checked to exist before it was written
 down. Where a statement is about a moment rather than a mechanism it carries the
 commit it was measured at, so that a later change can date it rather than
-falsify it.
+falsify it. Three of the boundaries below were open when they were first written
+and were closed by tasks that landed while this record was being written; each
+keeps both halves and dates them, because a record that quietly rewrites its own
+history is one nobody can date.
 
 ### What landed
 
@@ -161,12 +164,14 @@ falsify it.
 ### Boundaries, and what has since moved past them
 
 Stated as boundaries of what was done, because a boundary a reader has to infer
-is one they will infer wrongly. Several of these were written as open gaps and
-have since been closed — by a real image run, and by two follow-up tasks that
+is one they will infer wrongly. Four of these were written as open gaps and have
+since been closed — by a real image run, and by three follow-up tasks that
 landed on the campaign branch before this record did. Where that happened, both
 halves are kept and dated rather than the earlier half deleted: a boundary that
 was true at the moment it was written is not made wrong by later work, and a
-record that quietly rewrites its own history is one nobody can date.
+record that quietly rewrites its own history is one nobody can date. What
+remains open is item (b), item (c), item (e)'s standing boundary, item (g), and
+item (k) — which qualifies the evidence behind everything above it.
 
 **a. The image chain HAS now been run, and M5's assertions pass against a real
 assembled image.** This item was written twice and both halves are kept, because
@@ -206,7 +211,7 @@ with a reconciler-owned prefix.
 
 *The boundary that survives all of this.* That run happened on a **different
 commit** — an unmerged `4282921` — so the tree measured throughout this Outcome
-(`a5dd7a9`) is **not byte-identical** to the tree that was built. Both facts are
+(`cca6c30`) is **not byte-identical** to the tree that was built. Both facts are
 true and neither replaces the other: the assertions pass against a real image,
 and this record is anchored to a tree that particular image was not built from.
 
@@ -233,23 +238,45 @@ test can drive the branch by choosing a name. The test asserts **the value the
 refusal keys on** — that `class_of` on the bare namespace is `None` — not the
 refusal firing.
 
-**d. T2's four `com.mos.ext.conf` policy assertions were offline-unobservable
-for this campaign's span, and are not any more.** T9 measured the gap — an
-unconditional failure planted in the policy block left the offline suite green —
-and **RFCT-095** carries that measurement in full; it is not restated here. The
-deferral recorded there was a decision rather than an omission: making the
-assertions reachable meant relocating two helpers that unrelated checks share,
-which is a materially larger edit with a regression surface outside this
-campaign and should not ride in on a milestone closing out.
+**d. Both of D5's assertion sets are now reachable offline; the policy set was
+provably inert before it was.** This is a limit that existed and was closed, and
+the measurement matters more than the fix.
 
-As of `a5dd7a9` the tree has moved past that. T9's second pass took the larger
-edit deliberately: `sq_grep`, `dbus_policy_rules_only` and `MOSD_POLICY_PATH`
-are relocated above the fixture hook (single definitions, bodies unchanged), the
-four assertions are wrapped in `check_ext_policy`, the hook dispatches it, and
-`os/ui-location-test.sh` carries four matching register rows. The
-widened-`own_prefix` guard — the one whose own failure text describes an
-impostor taking `com.mos.mosd` — can now be observed failing. RFCT-095's record
-still reads `pending`; closing it is that record's own to do, not this one's.
+*The measurement.* An unconditional `fail` planted in the `com.mos.ext.conf`
+policy block produced **zero FAIL lines and a fully green suite**. The guard it
+defeated is the widened-`own_prefix` one — whose own failure text describes a
+unit with `DefaultDependencies=no` taking `com.mos.mosd` before mosd does, and
+apid spending the boot talking to an impostor. A guard against a one-character
+edit, measured to be incapable of firing. That measurement is why
+`check_ext_policy` exists **as a function** rather than as the inline block it
+was, and it is the reason this paragraph is in the record instead of being
+dropped as "fixed": inlining it back reopens the hole, and only the measurement
+explains why the shape is not tidiness.
+
+*What is in the tree as of `cca6c30`.* Both sets are functions named in
+`os/verify-image-v2.sh`'s fixture-hook dispatch list — `check_ext_unit_dir` for
+the mount unit and its negative guard, `check_ext_policy` for the four policy
+assertions — with matching rows in `os/ui-location-test.sh`'s expected set. The
+widened-prefix guard now goes **RED when broken**. `bash os/ui-location-test.sh`
+reports **RESULT: PASS (27/27 cases)**, up from 23, and the verifier's assertion
+count is **378 before and after**: the work moved assertions into reach and wrote
+none. **RFCT-095** holds the measurement and its history; its status now reads
+*closed by PLAN-011 M5 (RFCT-093)* and it was kept rather than deleted, so the
+reason the function is shaped this way outlives the diff.
+
+*One detail that had to move with it.* `MOSD_POLICY_PATH` was relocated above
+the hook along with `sq_grep` and `dbus_policy_rules_only`, not for tidiness:
+under `set -u` an unset variable is a hard error, so a `fail` message naming it
+would have **killed the script instead of printing** — the same class of defect
+as an assertion that cannot report its own failure.
+
+*One thing left deliberately untouched, for whoever owns the verifier.* The
+policy block's header still says "every mosd policy check above still passing".
+After the hoist that block sits **above** those checks in file order while still
+**executing** after them — true of execution, misleading on the page. It was not
+reworded on purpose: rewording moved prose is what a move-not-change edit
+forbids, and it would have cost the byte-identity proof that the assertions
+themselves were unchanged by the move.
 
 **e. The fixture register covers what was added to it.**
 `os/ui-location-test.sh` drives the assertions **named in its expected set**, and
@@ -258,20 +285,30 @@ reports a member that went missing, or that ran when it was not expected to,
 added to the set** is invisible to the register, exactly as an assertion never
 written is. A green run should not be read as "the verifier is fully driven";
 the correct reading is "every assertion this file knows about behaved as
-recorded". As of `a5dd7a9` the file's own boundary comment says this too, and
-says it in the durable form: the inventory of unreachable assertions it used to
-carry is now empty — both sets are hoisted and registered — and the warning is
-kept anyway, because the list was never the durable part.
+recorded". As of `cca6c30` the tree says this itself, in the durable form and in
+**two** places: beside the register in `os/ui-location-test.sh`, whose inventory
+of unreachable assertions is now **empty** because both sets are hoisted and
+registered — and the warning is kept anyway, since the list was never the
+durable part; and at the fixture hook's exit in `os/verify-image-v2.sh`, which
+is where somebody is actually standing when they are about to write past it. Two
+authors already did (item **j**); the warning exists for the third.
 
-**f. A pre-existing silent skip is still live.** As of `a5dd7a9`,
-`mosd/mosd/tests/bus.rs`'s `bus_roundtrip` does `eprintln!("skipping ...")` and
-`return Ok(())` when `dbus-daemon` is not found — it reports green while
-asserting nothing. It has never been caught because every CI host has
-`dbus-daemon`; this host has one too, which is why the gate reports 0 skipped
-and the skip stays invisible. M5 neither touched nor introduced it, and it is
-recorded here rather than fixed because it is the same false-signal family this
-campaign spent its length removing. A follow-up task, **T11 (`z3hubnnz`)**, is
-addressing it; its outcome is not described here.
+**f. The silent skip in `mosd/mosd/tests/bus.rs` is closed; three more like it
+are not.** For most of this campaign `bus_roundtrip` did
+`eprintln!("skipping ...")` and `return Ok(())` when `dbus-daemon` was absent —
+green while asserting nothing, never caught because CI hosts have the daemon. M5
+recorded it rather than fixing it. As of `cca6c30` it is fixed (T11,
+`z3hubnnz`): the locator **panics by name**, saying what to install and why the
+test must not skip, and CI provisions the `dbus-daemon` package explicitly and
+proves a session bus can start before running anything. The only honest outcome
+for a test that cannot do its work is a red one.
+
+Three instances of the same shape remain live and out of that task's scope, each
+still reporting green while asserting nothing when `dbus-daemon` is absent:
+`mosd/mosd/tests/tree.rs` (a shared start helper feeding five early-return
+sites), `mosd/apid/tests/e2e.rs` (the original RFCT-089 case), and
+`mosd/apid/src/tests/power_bus.rs`. Tracked as **RFCT-096** — see item (k),
+which is why they are worth naming here at all.
 
 **g. M5 turns bus.md §11 item 2's dotted-key limit from POSSIBLE into
 CERTAIN.** Before M5 the limit needed an operator to name an interface with a
@@ -289,7 +326,7 @@ proves nothing, and a warning that always fires warns nobody. Tracked as
 **h. `MOSD_SCAN` is what makes the scan testable, and it is one-way.**
 `MOSD_DRY_RUN=1` alone constructs no scan, and `mosd` has no lib target, so the
 registry can only be exercised through the binary against a real bus. As of
-`a5dd7a9` the gate is `service_scan_enabled` (`mosd/mosd/src/main.rs`):
+`cca6c30` the gate is `service_scan_enabled` (`mosd/mosd/src/main.rs`):
 production is unconditionally on and `MOSD_SCAN` is **inert** there whatever it
 holds, while `MOSD_SCAN=1` lifts dry-run's suppression for `tests/scan.rs`. The
 asymmetry is the point — a symmetric gate reads tidier but would also let one
@@ -300,6 +337,17 @@ calls on the bus the daemon is already connected to, and writes only to the
 in-RAM live-state tree. The narrowing landed as a follow-up task, **T10
 (`bmovafe9`)**; the earlier form of this gate could disable the scan in
 production.
+
+**k. "0 skipped" is weaker evidence than it reads, including in this record.**
+`cargo nextest`'s skipped counter cannot see an in-test `return Ok(())`: a test
+that decides at runtime it cannot do its work and returns early is counted
+**passed**, not skipped. So this task's own acceptance criterion — "`check.sh`
+green with 0 skipped" — is satisfiable by a test that asserted nothing, and every
+"0 skipped" claim in this Outcome should be read as "no test was excluded by the
+runner", not as "every test did its work". That is a limit on the evidence
+behind this record, not a defect to fix here. Measured by T11 and tracked as
+**RFCT-096**, which owns the receipt, the packaging trap behind it and the open
+questions; item (f) names the three sites that still exploit it.
 
 ### Two properties observed, recorded as evidence
 
