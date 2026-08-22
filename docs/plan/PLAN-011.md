@@ -185,50 +185,76 @@ Venus's `AddSettings` is the right *API* and the wrong *storage*. Split them:
   the same redaction rule api.md mandates (`psk`/`password_hash`/etc.
   structurally masked).
 
-### D5 — Extension service lifecycle: startup and registration (the svectl / serial-starter analog, systemd-native)
+### D5 — Extension services: no registration, a writable unit directory, and a bus scan (REVISED 2026-08-22 on user direction)
 
-The user-facing capability: an integrator drops a service bundle on DATA and
-the platform runs it, supervises it, and lets it publish on the bus — no
-image rebuild, no forking mosd.
+**Superseded design.** The original D5 (bundle store at `/srv/ext`, `manifest.toml`,
+an `ExtensionReconciler` rendering units, an `extensions.*` settings subtree with a
+schema bump, and per-extension D-Bus policy grants derived from a manifest) is
+**withdrawn**. It made mos the lifecycle owner of third-party code, which is
+machinery mos does not need to own. Kept here as the rejected alternative because
+the reasoning against it is the design record.
 
-- **Bundle**: `/srv/ext/<name>/` with `manifest.toml` — `name`, `version`,
-  `class` (from D2's registry), `exec`, optional `device` match rules
-  (M6), optional description of the bus names it will claim
-  (`com.mos.<class>.<name>`). Same DATA-mountpoint reasoning as the `/srv/ui`
-  bundle store; absence of `/srv/ext` is a defined state.
-- **Lifecycle owner**: a new `ExtensionReconciler` in mosd watching a new
-  `extensions` settings subtree (`extensions.<name>.enabled`, schema bump
-  with priced rollback: rolling back to v4 forgets which extensions were
-  enabled — they stop; data and settings files remain). It renders a
-  hardened systemd unit `mos-ext-<name>.service` into `/run/systemd/system`
-  (runtime-scoped enable, pure render → compare → write, restart on change,
-  named outcomes — the existing five-reconciler contract, stated as binding).
-  Unit hardening defaults: dedicated per-extension user, `ProtectSystem=strict`,
-  writable only its own `/srv/ext/<name>/data`, no new privileges.
-- **Bus admission**: one shipped D-Bus policy file granting extension users
-  `own`-rights to their declared `com.mos.<class>.<name>` names, following
-  the recipe already written in `com.mos.mosd.conf` (never reopen the default
-  context). The dbus-policy live test grows assertions for both grant and
-  denial.
-- **Registry**: mosd watches `NameOwnerChanged` (arg0namespace `com.mos`) and
-  publishes live-state `services/<class>/<instance>` → bus name, `Connected`
-  state, and last-seen identity. Disconnected services are retained with
-  their cached name plus an explicit remove action (the Venus device-list
-  behavior `venus-os-ui.md` §7 item 9 — a vanished driver is a diagnosis, not
-  an absence).
-- **Instance allocation**: `com.mos.Settings1.RegisterInstance(class,
-  uniqueKey) -> u` — persisted map, server-side next-free-instance on
-  collision (ClassAndVrmInstance semantics), so two CAN sensors never fight
-  over instance 0.
-- **Trust, phase 1**: installing a bundle requires root (SSH or the update
-  channel) — the same honest baseline api.md §7 records for UI bundles.
-  Bundle signing (reusing the CMS infrastructure) is designed in M5's doc as
-  an upgrade path, not built in this plan.
-- **Relationship to PLAN-010 M6**: container workloads are a second
-  *execution backend* for the same registry — when balena lands, a
-  containerized service registers on the bus identically. This plan
-  implements only the native systemd backend and keeps the registry
-  backend-agnostic.
+**The revised model, in two halves.**
+
+**(a) Lifecycle is systemd's, not ours.** There is no registration step and no mos
+manifest. An integrator drops their service somewhere on a writable partition and
+symlinks or installs a unit into the systemd unit directory; systemd starts,
+supervises and orders it. mos's contribution is exactly one thing: **making that
+directory writable and persistent**, which today it is not — the v2 root is
+squashfs + dm-verity and `/etc/systemd/system` is inside it, which is why every
+mosd reconciler enables units with `runtime = true` into `/run/systemd/system`
+(`docs/design/mosd.md` §5.3).
+
+Mechanism: **a STATE bind mount, the pattern the image already ships and verifies**
+— `/etc/ssh`, `/etc/hostname`, `/etc/wpa_supplicant` and `/etc/hostapd` are already
+bind-mounted from `/mnt/state/*` (`docs/design/ro-root.md` §4). A seventh bind for
+the unit directory needs no new mechanism, no overlayfs, and no change to the boot
+chain; it extends a mount set the image verifier already asserts. STATE rather than
+DATA because a unit is configuration, and because factory reset should take
+third-party units with it.
+
+**(b) Names are self-assigned; mos reserves and observes.** An integrator may own
+any `com.mos.*` bus name that does not collide with a system name. Two mechanisms,
+and they are not substitutes for each other:
+
+- **Prevention — D-Bus policy.** The reserved set is denied in a
+  `context="mandatory"` block, which D-Bus applies last and which a later `<allow>`
+  cannot override. Without this, `own_prefix="com.mos"` would also permit owning
+  `com.mos.mosd` itself, and a unit with `DefaultDependencies=no` could claim it
+  before mosd does — apid would then be talking to an impostor. Name-squatting is
+  the threat this closes, and only policy can close it: a scan runs after the fact.
+- **Observation — the scan.** mosd watches `NameOwnerChanged` (arg0namespace
+  `com.mos`) and publishes what it finds into live state: bus name, `Connected`,
+  whether the service answers the D1 contract, whether its mandatory paths (§D2)
+  are present, and `/DeviceInstance` collisions between services of one class.
+  Disconnected services are retained under their cached name with an explicit
+  remove action. This is what makes a third-party service visible to the operator,
+  to the dashboard and to the M3 bridge without any registration step — and it is
+  the same capability Venus ships as its modifications/support-status page
+  (`docs/research/venus-os-access.md` §6 item 6, recorded there as "plausible and
+  arguably easier on mos").
+
+**Reserved-namespace rule (needs a decision, see Annotations).** Enumerating system
+names one at a time in the policy is fragile: every future system service needs a
+policy edit, and a forgotten one is a squattable name. The recommendation is a
+reserved sub-namespace — system services under a fixed prefix, everything else
+free — so one mandatory rule covers every future name.
+
+**The cost, stated rather than discovered later.** A writable unit directory means
+**the set of things that start at boot is no longer determined by the image hash**.
+That is a real departure from the posture in `docs/architecture.md` §4, where a prod
+image's contents — down to whether a shell exists — are part of what is signed.
+Two things bound it: the directory is root-writable only, so it grants no privilege
+that SSH-as-root did not already grant; and (b)'s scan is what turns "this device
+has been modified" from invisible into an observable fact. It is the same trade
+Venus makes with `/data/rc.local`, and mos is better placed to observe it because
+the rest of the root stays verity-protected.
+
+**What is NOT withdrawn.** The D1/D2 contract still governs what a third-party
+service should speak — `com.mos.Item1`, the mandatory paths, the class registry —
+but as a **convention a service opts into to be understood**, not as something a
+manifest declares or mos enforces at install time. A service that ignores it still
+runs; it is simply not projected usefully.
 
 ### D6 — The MQTT data-publishing bridge (a primary deliverable)
 
@@ -326,6 +352,37 @@ already-running bridge for free.
   first because it is field-proven against this exact tree shape.
 
 ## Annotations
+
+- **2026-08-22 (user)**: "扩展并不需要显式注册，用户可以选择 ln systemd 到 unit
+  单元去启动，这样就不需要我们处理了，我们可以把 systemd 的单元目录作为
+  overlay 层可以写就可以了" / "用户可以随意使用 com.mos.xxx 只要不和我们系统的
+  冲突即可，我们添加一个扫描功能来确认用户的合法".
+  **Response**: adopted; D5 rewritten above and the manifest/reconciler/
+  settings-subtree design withdrawn. Two implementation notes where the
+  response differs from the literal wording, both to reuse what the image
+  already proves: (1) the writable unit directory is a **STATE bind mount**,
+  not an overlayfs — `/etc/ssh`, `/etc/hostname`, `/etc/wpa_supplicant` and
+  `/etc/hostapd` are already bind-mounted from `/mnt/state/*`
+  (`docs/design/ro-root.md` §4), so a seventh bind adds no new mechanism and
+  inherits the verifier assertions that mount set already carries; (2) the
+  scan is kept but **paired with a `context="mandatory"` D-Bus deny** on the
+  reserved names, because a scan detects after the fact while only policy
+  prevents a unit with `DefaultDependencies=no` from claiming `com.mos.mosd`
+  before mosd does. Withdrawing the manifest also removes D4's reason to
+  exist on the critical path — see the open question below.
+
+  **Open, needs the user's decision before M4 is scoped:**
+  1. **Reserved namespace.** Enumerate system names in the policy one by one,
+     or reserve a prefix (recommended) so one mandatory rule covers every
+     future system service?
+  2. **D4's fate.** With no manifest and no mos-owned lifecycle, an extension
+     can keep its own config file wherever it likes. Is `com.mos.Settings1`
+     (dynamic settings registration into mosd, namespaced under `ext/`) still
+     wanted as an optional convenience, or dropped?
+  3. **What the scan does on a non-conforming service.** Report only, or also
+     gate: a service that owns a name but publishes no `/Mgmt/*` or
+     `/DeviceInstance` cannot be projected usefully by the M3 bridge. Warn and
+     publish what it can, or refuse to publish it at all?
 
 - **2026-08-21 (user)**: "我们需要用mqtt之类的做数据发布、因此采用类似venuos类似比较好"
   — MQTT-style data publishing is a product need, so the Venus-like approach
