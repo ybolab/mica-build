@@ -163,27 +163,29 @@ that subtree exists it surfaces through this tree and the M3 bridge with
 zero bus-side work. PLAN-011 deliberately does not duplicate that work; it
 provides the surface PLAN-008 plugs into.
 
-### D4 — Extension settings: dynamic registration outside the core schema
+### D4 — WITHDRAWN 2026-08-22 (user direction): no `com.mos.Settings1`
 
-Venus's `AddSettings` is the right *API* and the wrong *storage*. Split them:
+Dynamic settings registration into mosd is **dropped**. The original design —
+`RegisterSettings`, per-extension TOML under `/var/lib/mos/ext/<name>/`, and an
+`/ext/` projection into the item tree — is withdrawn along with D5's manifest,
+for the same reason: with lifecycle owned by systemd and no install-time step,
+an extension can keep its configuration wherever it likes, and mos storing it
+buys nothing it does not already get for free.
 
-- New interface on mosd, `com.mos.Settings1`:
-  `RegisterSettings(aa{sv}) -> aa{sv}` (per entry: `path`, `default`, type
-  inferred, optional `min`/`max`; idempotent; re-registration updates
-  attributes but **preserves the current value** — localsettings'
-  load-bearing behavior, `localsettings.py:504-509`).
-- Registration is namespaced: only `ext/<service-name>/...` paths are
-  accepted, where `<service-name>` is the caller's registered extension
-  identity. The **core schema is untouched** — no dynamic keys, migrations
-  and rollback pricing unchanged.
-- Storage: one TOML per extension at `/var/lib/mos/ext/<name>/settings.toml`,
-  atomic write, short debounce (flash discipline), loaded lazily. A rollback
-  of the OS never migrates these files; an absent consumer simply leaves its
-  file unread. Corrupt file = that extension's settings reset, never the
-  core's (the blast-radius fix for localsettings' factory-reset-on-corrupt).
-- Extension settings appear in the item tree under `/ext/<name>/...`, with
-  the same redaction rule api.md mandates (`psk`/`password_hash`/etc.
-  structurally masked).
+**What this preserves, which is the point.** The settings tree stays exactly
+what `docs/design/mosd.md` §5.1-5.2 made it: a **typed** Rust tree with
+`deny_unknown_fields`, versioned migrations and a written price for every
+rollback. No `ext/` namespace, no dynamically-shaped keys, and — with D5's
+`extensions.*` subtree also withdrawn — **no settings schema change anywhere in
+PLAN-011**. Schema stays at v4 and the tolerant-load contract from RFCT-082 is
+untouched.
+
+**Where extension configuration and state live instead.** Configuration: the
+extension's own files, its own business. Live values: its own `com.mos.*`
+service speaking `com.mos.Item1`, which the D5 scan discovers and the M3 bridge
+publishes with no mos-side storage in the path. The split is cleaner than the
+withdrawn design — platform configuration is mosd's typed tree, extension state
+is the extension's own service — and neither has to know about the other.
 
 ### D5 — Extension services: no registration, a writable unit directory, and a bus scan (REVISED 2026-08-22 on user direction)
 
@@ -282,9 +284,9 @@ façade: noted as feasible (dbus_modbustcp pattern), out of this plan.
 | M1 | `docs/design/bus.md`: the D1/D2 contract (interface XML, class registry, mandatory paths, alarm + invalid-value conventions, deviations from Venus recorded) **including the recorded Sparkplug B evaluation for D6**; mosd publishes the **read-only** item tree façade (`GetItems`/`ItemsChanged` over settings+state, redaction applied) | live-bus test: `GetItems` shape, signal coalescing, redaction; `mosd/hack/check.sh` green; coordinate with RFCT-084 so update state is in the tree from day one |
 | M2 | Writable items + `/Actions/*` (D3): every platform-config subtree (`hostname`, `network`, `wifi.client`, `wifi.ap`, `access.ssh`) writable through `com.mos.Item1`; apid power pane consumes action items; api.md §10.3 fork entry resolved with citation | route tests unchanged in behavior; live-bus test: a `SetValue` on a settings item persists and schedules the owning reconciler (mock executors); action write triggers exactly once (mock power), value reads 0, log-before-call preserved |
 | M3 | `mos-mqttd` (D6) — the MQTT data-publishing bridge over the M1/M2 tree | protocol tests covering N/R/W, keepalive republish, masking and read-only mode — **against an in-memory transport double, not a local broker**: M3 changed this cell deliberately, because a broker-backed test skips (and so reports green while asserting nothing) wherever no broker exists, and what it would add below the double is rumqttc's TCP client, which upstream tests. Rationale and the resulting gap — `runtime::run`'s wiring, which wants an on-device smoke test — recorded in RFCT-091 |
-| M4 | `com.mos.Settings1`: `RegisterSettings` + per-extension persistence + `/ext/` tree projection (D4) | unit tests: idempotent re-register preserves value; corrupt ext file resets only that extension; rollback leaves core schema untouched |
-| M5 | Extension lifecycle (D5): manifest, `ExtensionReconciler`, per-extension users + D-Bus policy, registry live-state, `RegisterInstance`; bundle-signing design recorded | reconciler tests (mock `UnitControl`); negative manifest tests; dbus-policy test asserts grant *and* denial; image verifier asserts policy file + unit template; **bridge test: a registered extension service's items appear on MQTT with no bridge change** |
-| M6 | Device attach: udev rule → `mos-ext@<dev>` template instance from manifest `device` rules (serial-starter analog); `serial`/`can` classes exercised | offline: udev rule + unit rendering asserted by verifier; hardware claims explicitly **not** made (repo discipline) |
+| M4 | **WITHDRAWN** (D4 dropped, 2026-08-22) — milestone numbers are not reused, so M5/M6 keep their identifiers | — |
+| M5 | Extension enablement (D5 revised): the STATE bind for the systemd unit directory, the `own_prefix` policy grant with the namespace split, and mosd's `NameOwnerChanged` scan publishing the service registry into live state | **first task is to measure `own_prefix` semantics in `mosd/hack/dbus-policy-test.sh`, not to infer them**; policy test asserts a user identity CAN own an extension name and CANNOT own a system name; image verifier asserts the new bind mount; scan tested against a fake service appearing and vanishing |
+| M6 | Device attach: udev rule → systemd template instance for serial/CAN-attached extensions (the serial-starter analog) | offline: udev rule + unit rendering asserted by verifier; hardware claims explicitly **not** made (repo discipline) |
 
 Each milestone dispatches its own RFCT tasks on approval (PLAN-010
 convention). M1+M2 are the decision-critical pair and should land before the
@@ -309,9 +311,9 @@ already-running bridge for free.
   reconciler write-if-changed discipline applies to `/var/lib/mos/ext` too.
 - **Signal fan-out cost** on a busy tree (zbus): coalescing per turn is the
   designed mitigation; M1's test asserts it.
-- **Schema bump** (`extensions` subtree) prices a new rollback loss
-  (enabled-set forgotten); must follow the additive-bump rule from
-  RFCT-082's tolerant-load contract.
+- ~~**Schema bump** (`extensions` subtree)~~ — **no longer applies.** With D4
+  withdrawn and D5 revised, PLAN-011 introduces **no settings schema change at
+  all**; schema stays at v4 and RFCT-082's tolerant-load contract is untouched.
 - **Scope creep** toward Venus's breadth (30 systemcalc delegates, energy
   classes): the class registry and the "no energy classes without a product
   need" line are the fence.
@@ -375,10 +377,12 @@ already-running bridge for free.
   1. **Reserved namespace.** Enumerate system names in the policy one by one,
      or reserve a prefix (recommended) so one mandatory rule covers every
      future system service?
-  2. **D4's fate.** With no manifest and no mos-owned lifecycle, an extension
-     can keep its own config file wherever it likes. Is `com.mos.Settings1`
-     (dynamic settings registration into mosd, namespaced under `ext/`) still
-     wanted as an optional convenience, or dropped?
+  2. ~~**D4's fate.**~~ **ANSWERED 2026-08-22 (user): dropped.** "D4 不要了,
+     不用 com.mos.Settings1 了". D4 is withdrawn above. Consequence worth
+     stating: with D5's `extensions.*` subtree also gone, PLAN-011 now
+     introduces **no settings schema change at all**, so the rollback-cost
+     item is off the risk list and the typed-tree discipline of
+     `docs/design/mosd.md` §5.1-5.2 is preserved unchanged.
   3. **What the scan does on a non-conforming service.** Report only, or also
      gate: a service that owns a name but publishes no `/Mgmt/*` or
      `/DeviceInstance` cannot be projected usefully by the M3 bridge. Warn and
