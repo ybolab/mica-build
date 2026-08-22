@@ -81,7 +81,7 @@ enum Incoming {
 /// stop.
 pub async fn run(settings: Settings) -> anyhow::Result<()> {
     let class = topic::class_of(SERVICE)
-        .ok_or_else(|| anyhow::anyhow!("{SERVICE} is not a com.mos.<class> bus name"))?;
+        .ok_or_else(|| anyhow::anyhow!("{SERVICE} is not a com.mos.* bus name"))?;
     let connection = if settings.session_bus {
         zbus::Connection::session().await?
     } else {
