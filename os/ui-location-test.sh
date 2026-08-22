@@ -213,6 +213,35 @@ led-requires-health|catches an indicator that turns blue on a slot whose health 
 dev-keyring|catches a baked-in RAUC keyring||PASS
 '
 
+# WHAT THIS REGISTER DOES NOT COVER, AND WHY IT IS A BOUNDARY RATHER THAN A GAP
+# IN IT. PLAN-011 D5 added assertions to os/verify-image-v2.sh in two places
+# that this file cannot reach:
+#
+#   * the extension mount unit -- its existence, its Where=, its What= being
+#     under /mnt/state, and its enablement -- plus the negative guard that no
+#     unit binds over /etc/systemd/system;
+#   * the com.mos.ext.conf policy set -- the file's presence, the own_prefix
+#     grant surviving comment-stripping, the widened own_prefix="com.mos", and
+#     the unexpected-prefixes/own= check.
+#
+# All of them are written INLINE in the verifier's main body, and the fixture
+# hook dispatches a fixed list of FUNCTIONS and then exits well above them.
+# MOS_VERIFY_FIXTURE_ROOT therefore never reaches them: a fixture that violates
+# every one at once still comes back RESULT: PASS, and forcing any of them to
+# pass unconditionally leaves this file green. They cannot be driven from here
+# no matter what a case does to a fixture, so no case pretends to.
+#
+# This is deliberately recorded rather than left to be rediscovered, because the
+# absence looks identical to coverage from outside -- which is the same
+# confusion the mountpoint case below exists to remove. Note that none of them
+# needs an image: every read is ${ROOT}-relative and TMP is created before the
+# hook, so the whole set is offline-CAPABLE and merely offline-UNREACHABLE.
+# Hoisting each into a function named in the hook's dispatch list is all that is
+# missing, and the hook's own comment already says that list "is expected to
+# GROW". When it does, this file says which name it did not expect rather than
+# silently changing a count -- so the rows go here at the same time, and this
+# comment shrinks by exactly what they cover.
+
 # Drives the verifier over ${FIX} and asserts the set of assertions that ran,
 # by name and by direction.
 #
