@@ -41,6 +41,17 @@ jobs:
       # compiles C, so a missing cc would fail deep inside a cargo build with a
       # far worse message than this step's. No `|| true`: a runner that cannot
       # install its own build deps must go red here, not green later.
+      #
+      # `dbus-daemon` is a TEST dependency, listed here for the same reason as
+      # the compiler. Three suites in the nextest run below -- mosd/tests/bus.rs,
+      # mosd/tests/scan.rs and mosd/tests/tree.rs -- stand up a private
+      # `dbus-daemon --session`, and scan.rs and bus.rs panic by name rather
+      # than skip when it is absent. Provisioning it is what makes those suites
+      # actually run here; without it they would either go red (scan.rs, bus.rs)
+      # or report green while asserting nothing (tree.rs). The package name is
+      # `dbus-daemon`: on Ubuntu 24.04+ `dbus-bin` ships dbus-send and
+      # dbus-monitor but NOT /usr/bin/dbus-daemon, which was verified against
+      # the ubuntu 22.04, 24.04 and 26.04 images before this line was written.
       - name: Install build dependencies
         run: |
           set -euo pipefail
@@ -48,7 +59,20 @@ jobs:
           [ "$(id -u)" -eq 0 ] || SUDO="sudo"
           $SUDO apt-get update
           $SUDO apt-get install -y --no-install-recommends \
-            build-essential ca-certificates curl git make bash
+            build-essential ca-certificates curl git make bash dbus-daemon
+
+      # The install above is a claim; this is the proof. A runner whose image
+      # already carried a different dbus, or whose package silently shipped no
+      # daemon, would otherwise surface as a confusing failure inside a Rust
+      # test rather than here.
+      - name: Prove dbus-daemon can start a session bus
+        run: |
+          set -euo pipefail
+          command -v dbus-daemon
+          dbus-daemon --version | head -1
+          address=$(dbus-daemon --session --print-address=1 --fork | head -1)
+          [ -n "$address" ] || { echo "dbus-daemon printed no session address" >&2; exit 1; }
+          echo "session bus address: $address"
 
       # Pinned to the workspace manifest rather than to a literal: the MSRV
       # lives in mosd/Cargo.toml, and a second copy here could disagree with it.

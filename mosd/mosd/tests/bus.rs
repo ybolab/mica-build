@@ -2,8 +2,27 @@
 //!
 //! Spawns a private `dbus-daemon --session` plus the `mosd` binary in
 //! dry-run mode (no reconcilers, so the host is never touched), then drives
-//! the interface with a zbus client. Skips gracefully when `dbus-daemon` is
-//! not installed.
+//! the interface with a zbus client.
+//!
+//! # This test does not skip
+//!
+//! `dbus-daemon` is a hard requirement, not an optional extra: without it
+//! not one assertion below can be made. Until this commit the test printed
+//! `skipping bus_roundtrip` and returned `Ok(())` when the binary was
+//! missing, i.e. it reported green while asserting nothing. That is the same
+//! defect a previous campaign found in `mosd/apid/tests/e2e.rs`, where a
+//! genuinely broken assertion sat undetected because every host that had run
+//! it happened to have `dbus-daemon` installed
+//! (`docs/task/RFCT-089.md:107`). [`dbus_daemon`] panics instead, naming the
+//! tool it could not find, the same way `tests/scan.rs` does.
+//!
+//! CI provisions the dependency rather than opting out of the suite. The
+//! `rust` job in `.gitea/workflows/check.yml` runs `mosd/hack/check.sh`,
+//! whose `cargo nextest run --workspace` includes this file, and that job
+//! installs the `dbus-daemon` package alongside the other build
+//! dependencies. A runner that cannot supply it therefore goes red at the
+//! install step, with a message that says which package is missing, rather
+//! than quietly running one assertion fewer.
 
 use std::future::poll_fn;
 use std::io::{BufRead, BufReader};
@@ -29,16 +48,31 @@ impl Drop for ChildGuard {
     }
 }
 
-/// Locate `dbus-daemon`: `/usr/bin/dbus-daemon` first, then `$PATH`.
-fn find_dbus_daemon() -> Option<PathBuf> {
+/// Locate `dbus-daemon` (`/usr/bin/dbus-daemon` first, then `$PATH`), or
+/// FAIL — never skip.
+///
+/// A missing bus daemon means this test cannot assert what it exists to
+/// assert, and the only honest outcome for a test that cannot run is a red
+/// one. See the module docs.
+fn dbus_daemon() -> PathBuf {
     let fixed = PathBuf::from("/usr/bin/dbus-daemon");
     if fixed.exists() {
-        return Some(fixed);
+        return fixed;
     }
-    let path = std::env::var_os("PATH")?;
-    std::env::split_paths(&path)
-        .map(|dir| dir.join("dbus-daemon"))
-        .find(|candidate| candidate.exists())
+    let found = std::env::var_os("PATH").and_then(|path| {
+        std::env::split_paths(&path)
+            .map(|dir| dir.join("dbus-daemon"))
+            .find(|candidate| candidate.exists())
+    });
+    found.unwrap_or_else(|| {
+        panic!(
+            "dbus-daemon was not found at /usr/bin/dbus-daemon or on PATH. This test asserts \
+             real bus behaviour over a private session bus and MUST NOT skip: install it \
+             (Debian/Ubuntu: the `dbus-daemon` package -- note that `dbus-bin` ships \
+             dbus-send and dbus-monitor but NOT the daemon itself; Fedora: `dbus-daemon`) \
+             and run it again."
+        )
+    })
 }
 
 #[zbus::proxy(
@@ -60,13 +94,8 @@ trait Mosd {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn bus_roundtrip() -> anyhow::Result<()> {
-    let Some(dbus_daemon) = find_dbus_daemon() else {
-        eprintln!("skipping bus_roundtrip: dbus-daemon not found");
-        return Ok(());
-    };
-
     // Private session bus; never the host system bus.
-    let mut bus_child = Command::new(dbus_daemon)
+    let mut bus_child = Command::new(dbus_daemon())
         .args(["--session", "--print-address=1", "--nofork"])
         .stdout(Stdio::piped())
         .spawn()?;
