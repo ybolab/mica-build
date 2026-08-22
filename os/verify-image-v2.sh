@@ -236,7 +236,14 @@ APID_BIN="/usr/bin/apid"
 # here to catch.
 BUILTIN_MARKUP='<form method="post" action="/builtin/deactivate">'
 DATA_MOUNT="/srv"
-PACKED_MOUNTPOINTS="/mnt/state /mnt/meta /srv /var /home /root"
+# The mountpoints the packed root has to SHIP, because nothing can create a
+# directory on a verity root at runtime. Not the same set as "every mountpoint":
+# /etc/ssh and /etc/hostapd are bind targets too, but Debian already ships them,
+# so only the ones the pack stage creates are listed. The last member is
+# PLAN-011 D5's writable unit directory, and it is the only one outside /mnt,
+# /srv, /var and the two home binds -- it is here for exactly the same reason as
+# the rest and not because it is a partition or a tier.
+PACKED_MOUNTPOINTS="/mnt/state /mnt/meta /srv /var /home /root /usr/local/lib/systemd/system"
 
 # Prints the /etc/fstab line whose mountpoint is the LONGEST prefix of $1: the
 # entry that actually governs the filesystem that path lands on. Derived rather
@@ -1294,6 +1301,7 @@ sq_grep /usr/lib/systemd/system/mosd.service 'BusName=com.mos.mosd' \
     "/usr/lib/systemd/system/mosd.service has BusName=com.mos.mosd"
 sq_enabled mosd.service
 sq_regular /usr/share/dbus-1/system.d/com.mos.mosd.conf
+sq_regular /usr/share/dbus-1/system.d/com.mos.ext.conf
 
 # --- apid (carried over from v1) ---
 sq_regular "${APID_BIN}"
@@ -1679,13 +1687,44 @@ fi
 # against a rename. The blessed path is excluded by name, not by directory: a
 # second file in /usr/share/dbus-1/system.d/ is exactly as dangerous as one in
 # /etc/dbus-1/system.d/.
+#
+# The search is over RULES, not raw bytes: XML comments are stripped first, the
+# same way the parse above strips them and for the same reason. com.mos.ext.conf
+# ships in this very directory and its comment NAMES com.mos.mosd -- that is the
+# whole point of its extension-point warning, which explains that widening its
+# own_prefix would re-grant the mosd name. Matching that prose would turn a file
+# documenting the hazard into a reported instance of it, and the obvious repair
+# (delete the warning) is strictly worse than the check. A real <allow> or
+# <deny> naming com.mos.mosd in a second file still trips it.
+dbus_policy_rules_only() {
+    awk '{
+        line = $0
+        out = ""
+        while (length(line) > 0) {
+            if (incomment) {
+                p = index(line, "-->")
+                if (p == 0) { line = ""; break }
+                line = substr(line, p + 3)
+                incomment = 0
+            } else {
+                p = index(line, "<!--")
+                if (p == 0) { out = out line; line = ""; break }
+                out = out substr(line, 1, p - 1)
+                line = substr(line, p + 4)
+                incomment = 1
+            }
+        }
+        print out
+    }' "$1"
+}
 mosd_policy_dups=""
 for d in /etc/dbus-1/system.d /usr/share/dbus-1/system.d; do
     [ -d "${ROOT}${d}" ] || continue
     for f in "${ROOT}${d}"/*; do
         [ -f "${f}" ] || continue
         [ "${f#"${ROOT}"}" = "${MOSD_POLICY_PATH}" ] && continue
-        if [ -n "${mosd_bus_name}" ] && grep -Fq "${mosd_bus_name}" "${f}"; then
+        if [ -n "${mosd_bus_name}" ] &&
+            dbus_policy_rules_only "${f}" | grep -Fq "${mosd_bus_name}"; then
             mosd_policy_dups="${mosd_policy_dups} ${f#"${ROOT}"}"
         fi
     done
@@ -1694,6 +1733,63 @@ if [ -z "${mosd_policy_dups}" ]; then
     pass "${MOSD_POLICY_PATH} is the ONLY file under /etc/dbus-1/system.d or /usr/share/dbus-1/system.d that mentions ${mosd_bus_name:-the mosd bus name}; no second policy can override the root-only restriction"
 else
     fail "a second D-Bus policy file mentions ${mosd_bus_name:-the mosd bus name}:${mosd_policy_dups}. dbus-daemon reads both system.d directories and applies later rules over earlier ones, so this file can reinstate the default-context allow that ${MOSD_POLICY_PATH} removes -- and every other policy check here would still pass"
+fi
+
+# --- the extension D-Bus policy grants com.mos.ext.* and NOTHING ELSE --------
+# PLAN-011 D5: third-party services are plain systemd units an integrator
+# installs, and com.mos.ext.conf is the only thing that lets them take a bus
+# name. It is one <allow own_prefix> rule, and both of the ways it can be wrong
+# are silent on the device.
+#
+# Too narrow (a typo in the prefix) and every extension fails RequestName; that
+# is annoying but loud. Too WIDE is the dangerous one, and it is a one-character
+# edit: own_prefix="com.mos" reads in a diff like a simplification and actually
+# grants ownership of com.mos.mosd to every local uid on the device. A unit with
+# DefaultDependencies=no could then take the name before mosd does, and apid
+# would spend the boot talking to an impostor -- with the root-only rules in
+# com.mos.mosd.conf fully intact and every mosd policy check above still passing,
+# because none of them can see a grant that lives in another file.
+#
+# The negative assertions below are therefore the ones that earn their keep, and
+# they run against the file with XML COMMENTS STRIPPED. com.mos.ext.conf
+# documents this exact hazard in prose, so a raw grep would fire on the warning
+# and force somebody to choose between the check and the explanation.
+EXT_POLICY_PATH=/usr/share/dbus-1/system.d/com.mos.ext.conf
+ext_policy_rules="${TMP}/ext-policy-rules.xml"
+: >"${ext_policy_rules}"
+if [ -f "${ROOT}${EXT_POLICY_PATH}" ]; then
+    dbus_policy_rules_only "${ROOT}${EXT_POLICY_PATH}" >"${ext_policy_rules}"
+fi
+
+# Positive: the grant is actually there. A policy file that grants nothing is
+# not a safe policy file, it is a broken one -- no extension can own its name.
+sq_grep "${EXT_POLICY_PATH}" 'allow own_prefix="com\.mos\.ext"' \
+    "the extension D-Bus policy grants own_prefix=com.mos.ext, so extension services can take their bus names at all"
+# ...and it survives comment-stripping, i.e. it is a RULE and not the example
+# markup in the file's own commentary.
+if grep -Eq 'allow own_prefix="com\.mos\.ext"' "${ext_policy_rules}"; then
+    pass "the own_prefix=com.mos.ext grant is a live rule, not text inside an XML comment"
+else
+    fail "${EXT_POLICY_PATH} mentions own_prefix=com.mos.ext only inside an XML comment. dbus-daemon ignores comments, so no extension can own a com.mos.ext.* name and every extension unit dies at RequestName with AccessDenied"
+fi
+
+# Negative 1: the granted prefix is never com.mos. This is the widening mistake.
+if grep -Eq 'own_prefix="com\.mos"' "${ext_policy_rules}"; then
+    fail "${EXT_POLICY_PATH} grants own_prefix=\"com.mos\", not \"com.mos.ext\". That hands ownership of com.mos.mosd to every local uid: a unit with DefaultDependencies=no can claim the name before mosd does and apid then talks to an impostor for the rest of the boot. The root-only rules in ${MOSD_POLICY_PATH} do not stop this -- own= is granted here"
+else
+    pass "${EXT_POLICY_PATH} does not grant the widened own_prefix=\"com.mos\"; com.mos.mosd and every future system name stay outside the extension grant"
+fi
+
+# Negative 2: no rule grants a system name outright. own_prefix="com.mos.ext" is
+# the ONLY ownership this file is allowed to hand out; an own= rule here would
+# name a specific bus name, and the only names worth naming are the system ones.
+ext_own_grants="$(grep -Eo '<allow[^>]*own="[^"]*"' "${ext_policy_rules}" || true)"
+ext_bad_prefix="$(grep -Eo 'own_prefix="[^"]*"' "${ext_policy_rules}" |
+    grep -Fxv 'own_prefix="com.mos.ext"' || true)"
+if [ -z "${ext_own_grants}" ] && [ -z "${ext_bad_prefix}" ]; then
+    pass "${EXT_POLICY_PATH} grants exactly one thing -- own_prefix=com.mos.ext -- and no <allow own=> for any system name such as com.mos.mosd"
+else
+    fail "${EXT_POLICY_PATH} grants ownership beyond the extension namespace:${ext_own_grants:+ own rules [${ext_own_grants}]}${ext_bad_prefix:+ unexpected prefixes [${ext_bad_prefix}]}. Every name outside com.mos.ext.* is a system name; granting one here opens it to every local uid on the device while com.mos.mosd.conf's root-only rules keep passing, because they cannot see a grant made in another file"
 fi
 
 sq_regular /etc/dbus-1/system.d/bluetooth.conf
@@ -1939,6 +2035,54 @@ for pair in "var-lib-mos.mount:/var/lib/mos" "var-lib-bluetooth.mount:/var/lib/b
         pass "${where} is a STATE-backed bind via ${unit} (survives a /var wipe)"
     fi
 done
+
+# --- PLAN-011 D5: the writable, persistent system unit directory -------------
+# What this proves: an integrator can install a systemd unit on the device and
+# it is still there after a reboot and after an A/B update. Every unit directory
+# the image ships is inside the dm-verity squashfs, so that property exists only
+# if this bind exists, is enabled, and is backed by STATE. Where= and What= are
+# READ from the unit rather than restated, on the same reasoning as the
+# etc-ssh.mount block further down: retargeting the mount must not leave this
+# passing for a path nothing mounts any more.
+#
+# The mountpoint's EXISTENCE is not asserted here. It is a member of
+# PACKED_MOUNTPOINTS, so check_packed_mountpoints owns it -- and owning it there
+# rather than here is what puts it inside the fixture hook, where
+# os/ui-location-test.sh can watch it fail without an image.
+EXT_UNIT_DIR="/usr/local/lib/systemd/system"
+EXT_MOUNT_UNIT="usr-local-lib-systemd-system.mount"
+ext_f="${ROOT}/etc/systemd/system/${EXT_MOUNT_UNIT}"
+ext_where="$(sed -n 's/^Where=//p' "${ext_f}" 2>/dev/null | tail -n1)"
+ext_what="$(sed -n 's/^What=//p' "${ext_f}" 2>/dev/null | tail -n1)"
+if [ ! -f "${ext_f}" ]; then
+    fail "${EXT_MOUNT_UNIT} is not in the image, so ${EXT_UNIT_DIR} stays on the read-only squashfs; a third-party unit written there is silently discarded at the next reboot and PLAN-011 D5's whole extension model does not work on the device"
+elif [ "${ext_where}" != "${EXT_UNIT_DIR}" ]; then
+    fail "${EXT_MOUNT_UNIT} mounts '${ext_where:-<no Where=>}', not ${EXT_UNIT_DIR}; ${EXT_UNIT_DIR} is the directory in systemd's unit load path that the pack stage creates, so a bind anywhere else leaves it read-only and puts a writable directory somewhere systemd does not read"
+elif [ "${ext_what#/mnt/state/}" = "${ext_what}" ]; then
+    fail "${EXT_MOUNT_UNIT} binds ${ext_where} from '${ext_what:-<no What=>}', which is not under /mnt/state; installed units would not be on the STATE partition and would be lost by the next A/B update or factory reset"
+elif [ -z "$(find "${ROOT}/etc/systemd/system" -name "${EXT_MOUNT_UNIT}" -path '*.wants/*' 2>/dev/null || true)" ]; then
+    fail "${EXT_MOUNT_UNIT} exists but is not enabled (no *.wants symlink under /etc/systemd/system); the bind never runs, so installing a unit appears to work and stops working at the next boot"
+else
+    pass "${EXT_UNIT_DIR} is a STATE-backed bind via ${EXT_MOUNT_UNIT} (What=${ext_what}), enabled, so a third-party unit installed there survives a reboot and an A/B update"
+fi
+
+# The negative half, and it is not symmetry for its own sake. PLAN-011 D5
+# ORIGINALLY named /etc/systemd/system as this bind's target and was corrected on
+# 2026-08-22. Anyone reading the superseded sentence would repair the "deviation"
+# by pointing the bind back at /etc/systemd/system, and that diff reads like
+# restoring the plan while actually reintroducing the hazard: the image ships
+# this boot chain's own mount units and their local-fs.target.wants symlinks in
+# that directory, so a bind over it is performed by a unit inside the directory
+# it hides and takes the enablement of every other STATE mount down with it.
+# Nothing else in this file can tell that change apart from a legitimate one.
+etc_units_binds="$(grep -rlE '^Where=/etc/systemd/system(/|$)' \
+    "${ROOT}/etc/systemd/system" "${ROOT}/usr/lib/systemd/system" \
+    "${ROOT}/usr/local/lib/systemd/system" 2>/dev/null | sed "s|^${ROOT}||" | sort || true)"
+if [ -z "${etc_units_binds}" ]; then
+    pass "no unit in the image mounts anything over /etc/systemd/system; the boot chain's own units and their local-fs.target.wants enablement stay inside the verity root"
+else
+    fail "a unit in the image mounts over /etc/systemd/system ($(printf '%s' "${etc_units_binds}" | tr '\n' ' ')). That directory holds this boot chain's own mount units AND the local-fs.target.wants symlinks enabling them, so the bind is performed by a unit living in the directory it hides and shadows the enablement of every other STATE mount. PLAN-011 D5 named this target originally and it was rejected on 2026-08-22; the writable unit directory is ${EXT_UNIT_DIR}, and re-pointing it here looks like restoring the plan while reintroducing the defect"
+fi
 
 # --- M5: /etc/shadow lives on STATE (per-device password) ---
 # access.md phase 1 gives every device its own root password, and the only file

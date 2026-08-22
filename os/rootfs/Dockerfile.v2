@@ -247,6 +247,7 @@ RUN cp -a /tmp/overlay/. / && \
                /etc/systemd/system/etc-hostname.mount \
                /etc/systemd/system/etc-wpa_supplicant.mount \
                /etc/systemd/system/etc-hostapd.mount \
+               /etc/systemd/system/usr-local-lib-systemd-system.mount \
                /etc/systemd/system/home.mount \
                /etc/systemd/system/root.mount && \
     mkdir -p /srv /mnt/state /mnt/meta /home \
@@ -254,11 +255,14 @@ RUN cp -a /tmp/overlay/. / && \
              /etc/systemd/system/timers.target.wants \
              /etc/systemd/system/multi-user.target.wants && \
     mkdir -p -m 0700 /root && chown 0:0 /root && chmod 0700 /root && \
+    mkdir -p -m 0755 /usr/local/lib/systemd /usr/local/lib/systemd/system && \
+    chown 0:0 /usr/local/lib/systemd /usr/local/lib/systemd/system && \
     for u in mos-seed-var.service mos-seed-state.service mos-seed-home.service \
              mos-seed-root.service \
              var-lib-mos.mount \
              var-lib-bluetooth.mount etc-ssh.mount etc-hostname.mount \
              etc-wpa_supplicant.mount etc-hostapd.mount home.mount root.mount \
+             usr-local-lib-systemd-system.mount \
              mos-apply-hostname.service; do \
         ln -sf "/etc/systemd/system/$u" "/etc/systemd/system/local-fs.target.wants/$u" && \
         test -L "/etc/systemd/system/local-fs.target.wants/$u"; \
@@ -282,6 +286,7 @@ RUN if [ "$WITH_MOSD" = "1" ] && [ -f /tmp/mosd/mosd ]; then \
         install -m 0755 /tmp/mosd/mosd /usr/bin/mosd && \
         install -m 0644 /tmp/mosd/mosd.service /usr/lib/systemd/system/mosd.service && \
         install -m 0644 /tmp/mosd/com.mos.mosd.conf /usr/share/dbus-1/system.d/com.mos.mosd.conf && \
+        install -m 0644 /tmp/mosd/com.mos.ext.conf /usr/share/dbus-1/system.d/com.mos.ext.conf && \
         mkdir -p /var/lib/mos /etc/systemd/system/multi-user.target.wants && \
         ln -sf /usr/lib/systemd/system/mosd.service \
                /etc/systemd/system/multi-user.target.wants/mosd.service && \
@@ -446,6 +451,7 @@ RUN set -e; \
              /rootfs/usr/lib/systemd/system/mosd.service \
              /rootfs/usr/lib/systemd/system/apid.service \
              /rootfs/usr/share/dbus-1/system.d/com.mos.mosd.conf \
+             /rootfs/usr/share/dbus-1/system.d/com.mos.ext.conf \
              /rootfs/etc/systemd/network/*.network \
              /rootfs/etc/systemd/system/mos-*.service \
              /rootfs/etc/systemd/system/etc-ssh.mount \
@@ -515,6 +521,34 @@ RUN set -eu; \
     echo "precious: journald Storage=volatile (journal never lands on /var)"; \
     test -L /rootfs/usr/share/factory/var/lib/dbus/machine-id || \
         { echo "error: /var/lib/dbus/machine-id is not a symlink; a baked D-Bus id is per-image identity on a disposable filesystem" >&2; exit 1; }
+
+# PLAN-011 D5's writable unit directory. Deliberately NOT folded into the loop
+# above: that loop is about /var being disposable and ends by requiring a
+# /usr/share/factory template, which is right for /var/lib/mos and wrong here --
+# there is no factory content for this directory and, by design, no seed copy at
+# all. Bending the loop to skip its last step for one member would make the loop
+# say less about the members it was written for.
+#
+# What this defends is different too. The bind is what makes a third-party unit
+# survive a reboot; its mountpoint cannot be created at runtime on a verity root,
+# so a missing directory here is a mount unit that FAILS AT BOOT rather than a
+# feature that quietly does nothing.
+RUN set -eu; \
+    ext_dir=/usr/local/lib/systemd/system; \
+    ext_unit=usr-local-lib-systemd-system.mount; \
+    f="/rootfs/etc/systemd/system/${ext_unit}"; \
+    if [ ! -d "/rootfs${ext_dir}" ]; then \
+        echo "error: ${ext_dir} is not in the packed root; a verity root cannot create it at runtime, so ${ext_unit} fails at boot and no extension unit can ever be installed" >&2; exit 1; \
+    fi; \
+    if [ ! -f "$f" ]; then \
+        echo "error: ${ext_unit} does not exist; ${ext_dir} would stay on the read-only squashfs and a unit written there would vanish at reboot" >&2; exit 1; \
+    fi; \
+    if [ ! -L "/rootfs/etc/systemd/system/local-fs.target.wants/${ext_unit}" ]; then \
+        echo "error: ${ext_unit} exists but is not enabled; the directory would never be bound and installing a unit would appear to work until the next boot" >&2; exit 1; \
+    fi; \
+    grep -q "^Where=${ext_dir}\$" "$f" || { echo "error: ${ext_unit} does not mount ${ext_dir}" >&2; exit 1; }; \
+    grep -qE "^What=/mnt/state/" "$f" || { echo "error: ${ext_unit} is not backed by STATE, so installed units would not survive an A/B update" >&2; exit 1; }; \
+    echo "extensions: ${ext_dir} -> STATE via ${ext_unit}"
 
 # /etc/shadow moves onto STATE. PLAN-010 M5 gives every device its own root
 # password, and pam_unix reads it from /etc/shadow -- which on v2 sits on the
