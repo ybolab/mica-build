@@ -100,7 +100,7 @@ reason it claims to test, not because the bus broke.
 
 **Done 2026-08-22.** M5 landed as twelve tasks on campaign branch
 `bkd/fcgv4ehp`. Everything below is stated against the merged tree at
-`cca6c30`, and every path named here was checked to exist before it was written
+`eb97eab`, and every path named here was checked to exist before it was written
 down. Where a statement is about a moment rather than a mechanism it carries the
 commit it was measured at, so that a later change can date it rather than
 falsify it. Three of the boundaries below were open when they were first written
@@ -211,7 +211,7 @@ with a reconciler-owned prefix.
 
 *The boundary that survives all of this.* That run happened on a **different
 commit** — an unmerged `4282921` — so the tree measured throughout this Outcome
-(`cca6c30`) is **not byte-identical** to the tree that was built. Both facts are
+(`eb97eab`) is **not byte-identical** to the tree that was built. Both facts are
 true and neither replaces the other: the assertions pass against a real image,
 and this record is anchored to a tree that particular image was not built from.
 
@@ -253,7 +253,7 @@ was, and it is the reason this paragraph is in the record instead of being
 dropped as "fixed": inlining it back reopens the hole, and only the measurement
 explains why the shape is not tidiness.
 
-*What is in the tree as of `cca6c30`.* Both sets are functions named in
+*What is in the tree as of `eb97eab`.* Both sets are functions named in
 `os/verify-image-v2.sh`'s fixture-hook dispatch list — `check_ext_unit_dir` for
 the mount unit and its negative guard, `check_ext_policy` for the four policy
 assertions — with matching rows in `os/ui-location-test.sh`'s expected set. The
@@ -285,7 +285,7 @@ reports a member that went missing, or that ran when it was not expected to,
 added to the set** is invisible to the register, exactly as an assertion never
 written is. A green run should not be read as "the verifier is fully driven";
 the correct reading is "every assertion this file knows about behaved as
-recorded". As of `cca6c30` the tree says this itself, in the durable form and in
+recorded". As of `eb97eab` the tree says this itself, in the durable form and in
 **two** places: beside the register in `os/ui-location-test.sh`, whose inventory
 of unreachable assertions is now **empty** because both sets are hoisted and
 registered — and the warning is kept anyway, since the list was never the
@@ -296,19 +296,37 @@ authors already did (item **j**); the warning exists for the third.
 **f. The silent skip in `mosd/mosd/tests/bus.rs` is closed; three more like it
 are not.** For most of this campaign `bus_roundtrip` did
 `eprintln!("skipping ...")` and `return Ok(())` when `dbus-daemon` was absent —
-green while asserting nothing, never caught because CI hosts have the daemon. M5
-recorded it rather than fixing it. As of `cca6c30` it is fixed (T11,
-`z3hubnnz`): the locator **panics by name**, saying what to install and why the
-test must not skip, and CI provisions the `dbus-daemon` package explicitly and
-proves a session bus can start before running anything. The only honest outcome
-for a test that cannot do its work is a red one.
+green while asserting nothing.
 
-Three instances of the same shape remain live and out of that task's scope, each
-still reporting green while asserting nothing when `dbus-daemon` is absent:
-`mosd/mosd/tests/tree.rs` (a shared start helper feeding five early-return
-sites), `mosd/apid/tests/e2e.rs` (the original RFCT-089 case), and
-`mosd/apid/src/tests/power_bus.rs`. Tracked as **RFCT-096** — see item (k),
-which is why they are worth naming here at all.
+**Why it was never caught is the part worth writing down, and the obvious answer
+is wrong.** It is tempting to say the environment was lucky — that every CI host
+happened to have `dbus-daemon`. That is measured false: a bare `ubuntu:latest`
+carries no `/usr/bin/dbus-daemon`, and `docs/task/RFCT-083.md:20-23` records
+`check.sh` reporting green on a host that lacked it. The skip had already fired,
+invisibly. The real reason is that **nothing this repository runs could have
+reported it either way**: an in-test `return Ok(())` is counted by `nextest` as
+*passed*, never as *skipped*, so no gate we had was capable of saying the test
+did not run. Blaming the environment would quietly exonerate the gate, which in
+a document about false signals would make the sentence a fourth member of the
+family it is cataloguing. The general defect is item (k) and **RFCT-096**; this
+was one instance of it.
+
+As of `eb97eab` the instance is closed (T11, `z3hubnnz`): the locator **panics
+by name**, saying what to install and why the test must not skip, and CI
+provisions the `dbus-daemon` package explicitly and proves a session bus can
+start before running anything. `bus_roundtrip` now genuinely runs — measured
+here at `PASS [1.571s]`, where the skip path returned in milliseconds, so the
+difference is observable rather than asserted. The only honest outcome for a
+test that cannot do its work is a red one.
+
+Three instances of the same shape remain live and out of M5's scope, each still
+reporting green while asserting nothing when `dbus-daemon` is absent:
+`mosd/mosd/tests/tree.rs` (one shared start helper feeding five early-return
+sites), `mosd/apid/tests/e2e.rs` (the case the previous campaign named and did
+not remove), and `mosd/apid/src/tests/power_bus.rs` (which reaches the same
+early return by propagating a `None` out of its locator rather than by an
+explicit `return Ok(())` — the same defect, spelled differently). Tracked as
+**RFCT-096**.
 
 **g. M5 turns bus.md §11 item 2's dotted-key limit from POSSIBLE into
 CERTAIN.** Before M5 the limit needed an operator to name an interface with a
@@ -326,7 +344,7 @@ proves nothing, and a warning that always fires warns nobody. Tracked as
 **h. `MOSD_SCAN` is what makes the scan testable, and it is one-way.**
 `MOSD_DRY_RUN=1` alone constructs no scan, and `mosd` has no lib target, so the
 registry can only be exercised through the binary against a real bus. As of
-`cca6c30` the gate is `service_scan_enabled` (`mosd/mosd/src/main.rs`):
+`eb97eab` the gate is `service_scan_enabled` (`mosd/mosd/src/main.rs`):
 production is unconditionally on and `MOSD_SCAN` is **inert** there whatever it
 holds, while `MOSD_SCAN=1` lifts dry-run's suppression for `tests/scan.rs`. The
 asymmetry is the point — a symmetric gate reads tidier but would also let one
@@ -346,8 +364,9 @@ green with 0 skipped" — is satisfiable by a test that asserted nothing, and ev
 "0 skipped" claim in this Outcome should be read as "no test was excluded by the
 runner", not as "every test did its work". That is a limit on the evidence
 behind this record, not a defect to fix here. Measured by T11 and tracked as
-**RFCT-096**, which owns the receipt, the packaging trap behind it and the open
-questions; item (f) names the three sites that still exploit it.
+**RFCT-096**, which owns the packaging trap behind it and the open questions;
+item (f) carries the one receipt this record needs and names the three sites that
+still exploit it.
 
 ### Two properties observed, recorded as evidence
 
