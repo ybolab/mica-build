@@ -1344,6 +1344,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "mos-busname"
+version = "0.1.0"
+
+[[package]]
 name = "mos-mqttd"
 version = "0.1.0"
 dependencies = [
@@ -1351,6 +1355,7 @@ dependencies = [
  "async-trait",
  "clap",
  "futures-util",
+ "mos-busname",
  "rumqttc",
  "serde_json",
  "tokio",
