@@ -115,3 +115,4 @@ Each task is a single line linking to its detail file. All detailed information 
 - [x] [**RFCT-090 PLAN-011 M2: writable items and /Actions/*, apid power pane on action items**](RFCT-090.md) `P1`
 - [x] [**RFCT-091 PLAN-011 M3: mos-mqttd, the MQTT data-publishing bridge**](RFCT-091.md) `P1`
 - [ ] [**RFCT-092 A mechanism that checks docs citations, because five of them rotted in two merges**](RFCT-092.md) `P2`
+- [-] [**RFCT-093 PLAN-011 M5: extension enablement — writable unit directory, the com.mos.ext namespace, and the bus scan**](RFCT-093.md) `P1`
