@@ -13,6 +13,10 @@
 # just as well against a policy that denied everything, including root, which is
 # the one failure a "non-root is refused" test cannot see.
 #
+# Section 4 is not about the shipped file at all. It MEASURES what dbus-daemon
+# means by own_prefix=, on a second bus of its own, because PLAN-011 D5 bets the
+# whole com.mos.ext namespace on semantics it recorded as unverified.
+#
 # Needs root (to drop to uid 65534 with setpriv) plus dbus-daemon and python3.
 # It fails loudly when it cannot run rather than skipping: a skipped case that
 # prints nothing reads exactly like a passing one.
@@ -37,12 +41,14 @@ done
 
 WORK=$(mktemp -d)
 BUS_PID=""
+MEASURE_BUS_PID=""
 SERVER_PIDS=()
 cleanup() {
     for pid in ${SERVER_PIDS[@]+"${SERVER_PIDS[@]}"}; do
         kill "${pid}" 2>/dev/null || true
     done
     [ -n "${BUS_PID}" ] && kill "${BUS_PID}" 2>/dev/null || true
+    [ -n "${MEASURE_BUS_PID}" ] && kill "${MEASURE_BUS_PID}" 2>/dev/null || true
     rm -rf "${WORK}"
 }
 trap cleanup EXIT
@@ -470,6 +476,142 @@ check "non-root OWN of ${NAME} is refused" \
     "ERROR org.freedesktop.DBus.Error.AccessDenied" \
     "$(as_nobody own "${SOCK}" "${NAME}")"
 
+
+# --- 4. own_prefix semantics, MEASURED rather than assumed --------------------
+# PLAN-011 D5 hands third-party extensions the com.mos.ext.* namespace and grants
+# the whole of it with one rule, <allow own_prefix="com.mos.ext"/>. No deny list
+# accompanies it, because system names such as com.mos.mosd are believed to fall
+# outside the prefix and so to stay closed under the stock <deny own="*"/>. The
+# plan records that belief as NOT verified -- no dbus man page was available on
+# the authoring host -- and it is the load-bearing one: if the prefix reached
+# com.mos.mosd, a unit with DefaultDependencies=no could claim the daemon's own
+# name before mosd does and apid would be talking to an impostor.
+#
+# This section settles it against a real dbus-daemon, and it deliberately runs
+# BEFORE any such policy file exists. The grant under test is a scaffolding
+# fragment written into ${WORK}; mosd/dist/com.mos.ext.conf is NOT read here and
+# is not created by this measurement. Measuring first and writing the policy
+# against the measurement is the point.
+#
+# It gets its OWN dbus-daemon rather than a second <include> on the bus above,
+# for two reasons that both bear on whether the result means anything. On that
+# bus com.mos.mosd is already owned by a root connection and the shipped policy
+# carries com.mos.mosd rules of its own, so a refusal there could be the shipped
+# policy talking rather than own_prefix -- and the mutation that proves this
+# section can fail (widening the prefix to com.mos) would then be measuring the
+# wrong file. Here the base configuration is the same stock default stanza,
+# <deny own="*"/> included, and the scaffolding fragment is the only other rule
+# in play, so the own_prefix grant is the only thing on the bus that can hand out
+# any name at all.
+MEASURE_SOCK="${WORK}/measure.sock"
+MEASURE_CONF="${WORK}/measure-bus.conf"
+EXT_FRAGMENT="${WORK}/own-prefix-scaffold.conf"
+
+# The single stanza under test. Scaffolding, written into ${WORK}: nothing under
+# mosd/dist/ is involved and none is created.
+cat >"${EXT_FRAGMENT}" <<XML
+<!DOCTYPE busconfig PUBLIC "-//freedesktop//DTD D-BUS Bus Configuration 1.0//EN"
+ "http://www.freedesktop.org/standards/dbus/1.0/busconfig.dtd">
+<busconfig>
+  <policy context="default">
+    <allow own_prefix="com.mos.ext"/>
+  </policy>
+</busconfig>
+XML
+
+cat >"${MEASURE_CONF}" <<XML
+<!DOCTYPE busconfig PUBLIC "-//freedesktop//DTD D-BUS Bus Configuration 1.0//EN"
+ "http://www.freedesktop.org/standards/dbus/1.0/busconfig.dtd">
+<busconfig>
+  <type>system</type>
+  <listen>unix:path=${MEASURE_SOCK}</listen>
+  <auth>EXTERNAL</auth>
+
+  <policy context="default">
+    <allow user="*"/>
+    <deny own="*"/>
+    <deny send_type="method_call"/>
+    <allow send_type="signal"/>
+    <allow send_requested_reply="true" send_type="method_return"/>
+    <allow send_requested_reply="true" send_type="error"/>
+    <allow receive_type="method_call"/>
+    <allow receive_type="method_return"/>
+    <allow receive_type="error"/>
+    <allow receive_type="signal"/>
+    <allow send_destination="org.freedesktop.DBus"
+           send_interface="org.freedesktop.DBus"/>
+  </policy>
+
+  <include>${EXT_FRAGMENT}</include>
+</busconfig>
+XML
+
+dbus-daemon --config-file="${MEASURE_CONF}" --nofork &
+MEASURE_BUS_PID=$!
+for _ in $(seq 1 50); do
+    [ -S "${MEASURE_SOCK}" ] && break
+    sleep 0.1
+done
+# Fail loudly. A measurement bus that never came up would otherwise refuse every
+# name and read as six tidy AccessDenied results.
+[ -S "${MEASURE_SOCK}" ] || {
+    echo "measurement dbus-daemon did not create ${MEASURE_SOCK}" >&2
+    exit 1
+}
+chmod 0777 "${MEASURE_SOCK}"
+
+# Unprivileged only. uid 65534 is the identity a third-party extension would run
+# as if it were not root, and it is the only identity the single default-context
+# grant is supposed to serve; root would be indistinguishable from it here.
+measure_own() { as_nobody own "${MEASURE_SOCK}" "$1"; }
+
+DENIED="ERROR org.freedesktop.DBus.Error.AccessDenied"
+DBUS_VERSION=$(dbus-daemon --version | awk 'NR == 1 {print $NF}')
+
+echo
+echo "measurement bus: ${MEASURE_SOCK} (dbus-daemon ${DBUS_VERSION})"
+echo "grant under test: <allow own_prefix=\"com.mos.ext\"/> (scaffolding, ${EXT_FRAGMENT})"
+echo
+
+# The positive control. It is what tells "the prefix refused everything else"
+# apart from "the unprivileged connection never reached this bus", the same
+# reasoning section 0 states for the controls on the shipped-policy bus.
+check "own_prefix grants com.mos.ext.foo to an unprivileged uid" "OWNED" \
+    "$(measure_own com.mos.ext.foo)"
+check "own_prefix grants a deeper suffix, com.mos.ext.sensor.abc123" "OWNED" \
+    "$(measure_own com.mos.ext.sensor.abc123)"
+
+# THE load-bearing case. If this is ever OWNED, PLAN-011 D5's namespace decision
+# does not hold and the com.mos.ext grant needs an explicit deny list after all.
+check "own_prefix does NOT reach the system name com.mos.mosd" "${DENIED}" \
+    "$(measure_own com.mos.mosd)"
+check "own_prefix does NOT reach a second system-shaped name, com.mos.other" \
+    "${DENIED}" "$(measure_own com.mos.other)"
+
+# MEASURED on dbus-daemon 1.12.20, not inferred: own_prefix requires the very
+# next character after the prefix to be '.', so com.mos.extra is refused despite
+# being a literal string-prefix match. This is the mechanism the com.mos.mosd
+# case above rests on -- string-prefix matching would have granted com.mos.mosd
+# too -- which is why it is asserted separately rather than assumed.
+check "own_prefix requires a '.' separator: com.mos.extra is refused" \
+    "${DENIED}" "$(measure_own com.mos.extra)"
+
+# MEASURED on dbus-daemon 1.12.20, not inferred. PLAN-011 states no expectation
+# for the bare prefix, and the answer is not the conservative one: own_prefix
+# matches the prefix ITSELF, so an unprivileged uid may own com.mos.ext with no
+# suffix at all. It is inside the namespace extensions were given, so it grants
+# nothing the decision did not intend to give away, but it is a name the D5
+# grammar com.mos.ext.<class>[.<suffix>] never contemplated -- anything that
+# derives a class from the fourth dotted component has no fourth component here.
+check "own_prefix matches the bare prefix itself: com.mos.ext is OWNED" "OWNED" \
+    "$(measure_own com.mos.ext)"
+
+# The negative control: a name the grant plainly cannot reach and that the base
+# configuration does not open either. Without it, a bus that had somehow lost its
+# <deny own="*"/> would still let every refusal case above look like a refusal
+# case -- there would be nothing left asserting the default is closed.
+check "a name outside the prefix is still refused (org.example.thing)" \
+    "${DENIED}" "$(measure_own org.example.thing)"
 echo
 echo "$PASS passed, $FAIL failed"
 echo "RESULT: $([ "$FAIL" -eq 0 ] && echo PASS || echo FAIL) ($PASS/$((PASS + FAIL)) checks)"
