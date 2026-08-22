@@ -7,7 +7,7 @@ use std::path::PathBuf;
 
 use mosd_settings::{Settings, SettingsError, Store, json_path_get};
 use serde_json::Value;
-use tokio::sync::Mutex;
+use tokio::sync::{Mutex, watch};
 use zbus::fdo;
 use zbus::message::Header;
 use zbus::object_server::SignalEmitter;
@@ -57,6 +57,9 @@ pub struct MosdService {
     power: Box<dyn PowerControl>,
     shadow_path: PathBuf,
     inner: Mutex<Inner>,
+    /// Bumped after every mutation of either tree; the `com.mos.Item1` façade
+    /// (`crate::tree`) watches it to project changes onto the bus.
+    changed: watch::Sender<u64>,
 }
 
 impl MosdService {
@@ -80,7 +83,31 @@ impl MosdService {
             power,
             shadow_path,
             inner: Mutex::new(Inner { settings, state }),
+            changed: watch::channel(0).0,
         }
+    }
+
+    /// Subscribe to tree-change notifications for the item façade. The
+    /// receiver coalesces: marks arriving while unread collapse into one wake.
+    pub fn subscribe_changes(&self) -> watch::Receiver<u64> {
+        self.changed.subscribe()
+    }
+
+    /// Clones of the two trees the item façade projects: the settings tree
+    /// rendered to JSON, and the live-state tree.
+    pub async fn trees(&self) -> (Value, Value) {
+        let inner = self.inner.lock().await;
+        let settings = inner.settings.get("").unwrap_or(Value::Null);
+        (settings, inner.state.clone())
+    }
+
+    /// Record that a tree mutation completed; called after the mutation so an
+    /// observer that snapshots on the mark always sees the finished write.
+    ///
+    /// Reachable from [`crate::actions`] as well, whose forced re-zero
+    /// (`docs/design/bus.md` §7) is a change no tree write marks.
+    pub(crate) fn mark_changed(&self) {
+        self.changed.send_modify(|generation| *generation += 1);
     }
 
     /// Log a power request from `sender` and record it in the live-state tree
@@ -97,6 +124,8 @@ impl MosdService {
                 serde_json::json!({ "last_action": action, "requested_by": sender }),
             );
         }
+        drop(inner);
+        self.mark_changed();
     }
 
     /// Reboot the machine on behalf of `sender`.
@@ -120,6 +149,38 @@ impl MosdService {
             .map_err(|err| fdo::Error::Failed(format!("power off: {err}")))
     }
 
+    /// Write `value` at settings dot-path `path`: validate it against the
+    /// typed tree, persist it atomically, then re-apply every reconciler whose
+    /// subtree overlaps `path` and record each result in the live-state tree.
+    ///
+    /// The ONE settings-write path inside the daemon. `SetSettings` below and
+    /// the `com.mos.Item1` façade's `SetValue` ([`crate::tree`]) both come
+    /// through here, so the two write paths cannot diverge
+    /// (`docs/design/bus.md` §1.2). On any error nothing is stored, nothing is
+    /// persisted and no reconciler runs.
+    ///
+    /// # Errors
+    ///
+    /// Whatever [`Settings::set`](mosd_settings::Settings::set) or
+    /// [`Store::save`] rejected the write with.
+    pub async fn write_setting(&self, path: &str, value: Value) -> Result<(), SettingsError> {
+        let mut inner = self.inner.lock().await;
+        let mut candidate = inner.settings.clone();
+        candidate.set(path, value)?;
+        self.store.save(&candidate)?;
+        inner.settings = candidate;
+        let settings = inner.settings.clone();
+        for reconciler in &self.reconcilers {
+            if paths_overlap(path, reconciler.subtree()) {
+                let result = reconciler.apply(&settings).await;
+                record(&mut inner.state, reconciler.name(), result);
+            }
+        }
+        drop(inner);
+        self.mark_changed();
+        Ok(())
+    }
+
     /// Run every reconciler against the current settings, recording each
     /// result in the live-state tree. Errors are recorded, never propagated.
     pub async fn apply_all(&self) {
@@ -129,6 +190,8 @@ impl MosdService {
             let result = reconciler.apply(&settings).await;
             record(&mut inner.state, reconciler.name(), result);
         }
+        drop(inner);
+        self.mark_changed();
     }
 }
 
@@ -148,7 +211,11 @@ fn record(state: &mut Value, name: &str, result: anyhow::Result<Value>) {
 }
 
 /// Unique bus name of the caller, or `"(unknown)"` on an unnamed message.
-fn sender_of<'a>(header: &'a Header<'a>) -> &'a str {
+///
+/// Shared with the item façade ([`crate::tree`]), so a power action triggered
+/// through `/Actions/<verb>` is attributed exactly as one called through
+/// `Reboot`/`PowerOff` is.
+pub(crate) fn sender_of<'a>(header: &'a Header<'a>) -> &'a str {
     header.sender().map_or("(unknown)", |name| name.as_str())
 }
 
@@ -196,19 +263,7 @@ impl MosdService {
     ) -> fdo::Result<()> {
         let value: Value = serde_json::from_str(value_json)
             .map_err(|err| fdo::Error::InvalidArgs(format!("invalid JSON value: {err}")))?;
-        let mut inner = self.inner.lock().await;
-        let mut candidate = inner.settings.clone();
-        candidate.set(path, value).map_err(to_fdo)?;
-        self.store.save(&candidate).map_err(to_fdo)?;
-        inner.settings = candidate;
-        let settings = inner.settings.clone();
-        for reconciler in &self.reconcilers {
-            if paths_overlap(path, reconciler.subtree()) {
-                let result = reconciler.apply(&settings).await;
-                record(&mut inner.state, reconciler.name(), result);
-            }
-        }
-        drop(inner);
+        self.write_setting(path, value).await.map_err(to_fdo)?;
         Self::settings_changed(&emitter, path, value_json)
             .await
             .map_err(|err| fdo::Error::Failed(format!("emit SettingsChanged: {err}")))?;
@@ -271,6 +326,8 @@ impl MosdService {
                 );
             }
         }
+        drop(inner);
+        self.mark_changed();
         tracing::info!(component, status, detail, "health report recorded");
         Ok(())
     }

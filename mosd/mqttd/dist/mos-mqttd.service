@@ -1,0 +1,36 @@
+[Unit]
+Description=mos MQTT bridge (publishes the com.mos.Item1 item tree)
+After=network.target mosd.service
+Wants=mosd.service
+
+[Service]
+Type=simple
+# Read-only by default: the bridge is a data publisher unless someone
+# deliberately makes it a control path (--mode full carries W topics through
+# to SetValue). Point --broker-host at the broker this device publishes to.
+ExecStart=/usr/bin/mos-mqttd --mode read-only --broker-host localhost
+Restart=on-failure
+
+# Sandboxing. The bridge is a pure bus client with one outbound TCP
+# connection: it owns no state, writes no files, execs nothing, and needs
+# neither root nor any capability. It is the most confinable daemon in the
+# image, and is confined accordingly.
+DynamicUser=yes
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+SystemCallArchitectures=native
+CapabilityBoundingSet=
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+
+[Install]
+WantedBy=multi-user.target
