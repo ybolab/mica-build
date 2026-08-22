@@ -91,6 +91,19 @@ PACKED_MOUNTPOINTS="$(verifier_const PACKED_MOUNTPOINTS '"')"
 # under set -e, which is the loud failure -- a case whose mutation silently
 # changed nothing would otherwise pass for free.
 EXT_UNIT_DIR="$(verifier_const EXT_UNIT_DIR '"')"
+# The bind unit's NAME out of the verifier too, and then the SHIPPED unit it
+# names -- not a transcription. Same reason as LED_UNIT_SRC: the Where=, What=
+# and enablement assertions exist to catch the SHIPPED unit losing those
+# properties, and a fixture built from a local copy would go on passing after
+# the real unit changed. Reading the name from the verifier also makes the two
+# agree by construction: the day they drift, the path below does not exist and
+# this dies loudly instead of testing a unit nothing ships.
+EXT_MOUNT_UNIT="$(verifier_const EXT_MOUNT_UNIT '"')"
+EXT_MOUNT_UNIT_SRC="${HERE}/rootfs/overlay-v2/etc/systemd/system/${EXT_MOUNT_UNIT}"
+[ -f "${EXT_MOUNT_UNIT_SRC}" ] || {
+    echo "error: ${EXT_MOUNT_UNIT_SRC} not found; ${VERIFIER} names ${EXT_MOUNT_UNIT} as PLAN-011 D5's bind unit but the overlay ships no such file" >&2
+    exit 1
+}
 
 WORK="$(mktemp -d)"
 trap 'rm -rf "${WORK}"' EXIT
@@ -145,6 +158,15 @@ new_fixture() {
     printf '#!/bin/sh\n' >"${dir}/usr/lib/mos/mos-status-led"
     ln -sf /usr/lib/systemd/system/mos-status-led.service \
         "${dir}/etc/systemd/system/multi-user.target.wants/mos-status-led.service"
+    # PLAN-011 D5's bind unit, as SHIPPED, plus the local-fs.target.wants
+    # symlink os/rootfs/Dockerfile.v2 enables it with. The symlink is absolute
+    # and therefore dangles inside the fixture, exactly as the LED one above
+    # does: what the verifier asserts is that the symlink NAME is present under
+    # a *.wants directory, because that is what enablement IS on the device.
+    mkdir -p "${dir}/etc/systemd/system/local-fs.target.wants"
+    cp "${EXT_MOUNT_UNIT_SRC}" "${dir}/etc/systemd/system/${EXT_MOUNT_UNIT}"
+    ln -sf "/etc/systemd/system/${EXT_MOUNT_UNIT}" \
+        "${dir}/etc/systemd/system/local-fs.target.wants/${EXT_MOUNT_UNIT}"
 }
 
 # Drops the whole `Key=value` line from the fixture's status-LED unit. Fails
@@ -155,6 +177,18 @@ drop_led_directive() {
     grep -Eq "^${key}=" "${unit}" ||
         { echo "error: fixture unit has no ${key}= line to drop" >&2; exit 1; }
     grep -Ev "^${key}=mos-health\.service$" "${unit}" >"${unit}.new"
+    mv "${unit}.new" "${unit}"
+}
+
+# Rewrites the whole `Key=value` line in the fixture's D5 bind unit. Fails
+# loudly when there is no such key, on the same reasoning as drop_led_directive:
+# a mutation that silently changed nothing would make its case pass for free.
+set_ext_unit_directive() {
+    local dir="$1" key="$2" value="$3" unit="$1/etc/systemd/system/${EXT_MOUNT_UNIT}"
+    grep -Eq "^${key}=" "${unit}" ||
+        { echo "error: fixture unit ${EXT_MOUNT_UNIT} has no ${key}= line to rewrite" >&2; exit 1; }
+    awk -v k="${key}" -v v="${value}" '$0 ~ "^" k "=" { print k "=" v; next } { print }' \
+        "${unit}" >"${unit}.new"
     mv "${unit}.new" "${unit}"
 }
 
@@ -192,6 +226,19 @@ run_verifier() {
 # different things, so it spells both out -- and the FAIL substring is the one
 # that gives it its first failing observation.
 #
+# PLAN-011 D5's bind assertion is an if/elif CHAIN with four distinct failure
+# messages and one PASS, so it is five rows rather than one. ext-unit-ok owns
+# the PASS direction; the four negative rows can only ever be observed FAILING
+# and are ABSENT at baseline, the same shape as ui-no-filesystem above. Folding
+# them into one row would need a substring common to all five messages, and the
+# only one is the unit's own name -- which also appears inside ext-no-etc-bind's
+# failure text, so the harness could no longer tell the two assertions apart.
+# Five rows is what makes "the RIGHT branch fired" a thing this file can state.
+# ASSERTIONS is single-quoted, so a substring chosen here cannot contain an
+# apostrophe -- "systemd's unit load path" ends the string and the rows after
+# it become commands. Pick a clause without one; several of these messages
+# have an apostrophe somewhere and the failure does not point back here.
+#
 # The baseline state is what the UNMUTATED fixture must produce. It is PASS for
 # everything except the no-covering-entry assertion, which only exists on
 # check_ui_location's early-return path and can therefore never PASS: on that
@@ -211,6 +258,12 @@ mountpoints-exist|every fstab/bind mountpoint exists in the read-only root|mount
 led-after-health|catches an indicator that reports ready before the slot is confirmed||PASS
 led-requires-health|catches an indicator that turns blue on a slot whose health gate failed||PASS
 dev-keyring|catches a baked-in RAUC keyring||PASS
+ext-unit-absent|is not in the image, so||ABSENT
+ext-unit-where|puts a writable directory somewhere systemd does not read||ABSENT
+ext-unit-what|which is not under /mnt/state||ABSENT
+ext-unit-enabled|exists but is not enabled||ABSENT
+ext-unit-ok|is a STATE-backed bind via||PASS
+ext-no-etc-bind|no unit in the image mounts anything over /etc/systemd/system|a unit in the image mounts over /etc/systemd/system|PASS
 '
 
 # Drives the verifier over ${FIX} and asserts the set of assertions that ran,
@@ -426,6 +479,97 @@ rmdir "${FIX}${EXT_UNIT_DIR}"
 expect_set "PLAN-011 D5's ${EXT_UNIT_DIR} absent from the tree" \
     "mountpoints-exist=FAIL" \
     "mountpoint(s) missing from the read-only root: ${EXT_UNIT_DIR}"
+
+# --- 4c-4g. PLAN-011 D5's bind unit, driven one broken fact at a time -------
+# WHY THESE ARE NEW AND WHAT THEY REPLACE. Until this task these five
+# assertions were INLINE in the verifier's main body, far below the fixture
+# hook -- and that hook dispatches a named set and exits, so
+# MOS_VERIFY_FIXTURE_ROOT never reached them. They could not be driven at all.
+# A sibling task measured the consequence on the negative guard specifically:
+# it forced etc_units_binds="" so the guard ALWAYS passed, and this suite still
+# reported RESULT: PASS (18/18 cases) with no FAIL line anywhere. An assertion
+# that cannot fail is worse than no assertion, because its presence tells the
+# next reader the hazard is watched. The verifier now wraps the block in
+# check_ext_unit_dir and the hook dispatches it; these cases are what turn that
+# reachability into an observation.
+
+# --- 4c. the bind unit not shipped at all -----------------------------------
+# The whole of D5 on the device: without this unit /usr/local/lib/systemd/system
+# is just another directory inside the read-only squashfs, so a unit the
+# integrator installs there is discarded at the next reboot with no error.
+# The enablement symlink is deliberately LEFT in place, so the case also proves
+# the absence is caught by the branch that owns it rather than by the *.wants
+# check downstream of it.
+FIX="${WORK}/ext-unit-absent"
+new_fixture "${FIX}"
+rm -f "${FIX}/etc/systemd/system/${EXT_MOUNT_UNIT}"
+expect_set "PLAN-011 D5's ${EXT_MOUNT_UNIT} absent from the image" \
+    "ext-unit-absent=FAIL ext-unit-ok=ABSENT" \
+    "stays on the read-only squashfs" \
+    "PLAN-011 D5's whole extension model does not work on the device"
+
+# --- 4d. the bind pointed at a writable directory that does not survive ------
+# /run/systemd/system is the tempting wrong answer, and it is what every mosd
+# reconciler uses TODAY via runtime=true: it is genuinely writable and systemd
+# genuinely reads it, so an integrator's unit appears to install correctly. It
+# is a tmpfs. Everything installed there is gone at the next boot, which is the
+# exact defect D5 exists to remove, and only Where= being READ from the unit
+# rather than restated can catch it.
+FIX="${WORK}/ext-unit-where"
+new_fixture "${FIX}"
+set_ext_unit_directive "${FIX}" Where /run/systemd/system
+expect_set "the D5 bind re-pointed at the tmpfs /run/systemd/system" \
+    "ext-unit-where=FAIL ext-unit-ok=ABSENT" \
+    "mounts '/run/systemd/system', not ${EXT_UNIT_DIR}"
+
+# --- 4e. the bind backed by something other than STATE ----------------------
+# Where= stays correct, the unit stays enabled, and the directory really is
+# writable on the device -- so nothing about the running system looks wrong.
+# /var is the EPHEMERAL partition: the installed units survive a reboot and
+# vanish at the first A/B update or factory reset, which is the failure that
+# only shows up long after whoever made the change has stopped looking.
+FIX="${WORK}/ext-unit-what"
+new_fixture "${FIX}"
+set_ext_unit_directive "${FIX}" What /var/lib/systemd-units
+expect_set "the D5 bind backed by /var instead of STATE" \
+    "ext-unit-what=FAIL ext-unit-ok=ABSENT" \
+    "which is not under /mnt/state" \
+    "lost by the next A/B update or factory reset"
+
+# --- 4f. the unit shipped but never enabled ---------------------------------
+# The quietest of the five. The unit is present and every line in it is
+# correct, so a reviewer reading the unit finds nothing wrong; it simply never
+# runs. Installing a unit then works exactly once -- until the next boot.
+FIX="${WORK}/ext-unit-not-enabled"
+new_fixture "${FIX}"
+rm -f "${FIX}/etc/systemd/system/local-fs.target.wants/${EXT_MOUNT_UNIT}"
+expect_set "the D5 bind unit shipped but not enabled" \
+    "ext-unit-enabled=FAIL ext-unit-ok=ABSENT" \
+    "no *.wants symlink under /etc/systemd/system" \
+    "installing a unit appears to work and stops working at the next boot"
+
+# --- 4g. the rejected /etc/systemd/system target, reintroduced --------------
+# THE case this whole hoist was done for. PLAN-011 D5 originally named
+# /etc/systemd/system and it was rejected on 2026-08-22; anyone reading the
+# superseded sentence repairs the "deviation" by pointing the bind back, and
+# that diff reads like restoring the plan while reintroducing the defect. The
+# image ships this boot chain's own mount units in that directory TOGETHER with
+# the local-fs.target.wants symlinks enabling them, so the bind would be
+# performed by a unit living in the directory it hides and would take the
+# enablement of every other STATE mount with it.
+#
+# Both assertions are required to fire and the case names both: Where= is no
+# longer ${EXT_UNIT_DIR}, and a unit in the image now mounts over
+# /etc/systemd/system. The second is the one that was structurally unobservable
+# until now -- forcing it to pass left this suite green at 18/18.
+FIX="${WORK}/ext-unit-over-etc"
+new_fixture "${FIX}"
+set_ext_unit_directive "${FIX}" Where /etc/systemd/system
+expect_set "the D5 bind re-pointed at the rejected /etc/systemd/system" \
+    "ext-unit-where=FAIL ext-no-etc-bind=FAIL ext-unit-ok=ABSENT" \
+    "mounts '/etc/systemd/system', not ${EXT_UNIT_DIR}" \
+    "a unit in the image mounts over /etc/systemd/system (/etc/systemd/system/${EXT_MOUNT_UNIT})" \
+    "re-pointing it here looks like restoring the plan while reintroducing the defect"
 
 # --- 5a. the bare /srv/ui directory SHIPPED in the packed root --------------
 FIX="${WORK}/ships-dir"
