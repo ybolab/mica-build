@@ -1,6 +1,6 @@
 # os/rootfs — Debian systemd arm64 rootfs (cx3576, PLAN-010 M1)
 
-Builds a minimal Debian bookworm + systemd root filesystem for the cx3576
+Builds a minimal Debian trixie + systemd root filesystem for the cx3576
 board as a minimally-sized, content-derived ext4 image, ready to be dd'd into
 the disk image by the assembly step.
 
@@ -203,14 +203,22 @@ boot:
 
 - `/etc/repart.d/50-rootfs.conf` (`Type=linux-generic`) makes systemd-repart
   grow partition 2 and relocate the backup GPT. The service is statically
-  enabled in bookworm's systemd and only activates when `/etc/repart.d` is
-  non-empty; unmatched partitions are never touched.
+  enabled by the `systemd-repart` package and only activates when
+  `/etc/repart.d` is non-empty; unmatched partitions are never touched.
 - `/etc/fstab` mounts the rootfs with `x-systemd.growfs`, which emits a unit
   running `systemd-growfs` (online ext4 grow).
 
-Both steps are systemd-native (zero extra packages), idempotent (no-op when
-there is no free space), and cannot wedge boot. A growpart/cloud-guest-utils
-fallback was rejected as unnecessary since repart ships in bookworm's systemd.
+Both steps are systemd-native, idempotent (no-op when there is no free space),
+and cannot wedge boot. A growpart/cloud-guest-utils fallback was rejected as
+unnecessary since repart is part of systemd upstream.
+
+**"Zero extra packages" was true on bookworm and is not on trixie**, which is
+a fact worth stating rather than quietly editing: bookworm shipped
+`systemd-repart` inside the `systemd` package, trixie splits it into a package
+of its own. `os/rootfs/Dockerfile.v2` names it in the install list because of
+that, and `os/verify-image-v2.sh` asserts the enablement symlink. The failure
+if it were missing announces nothing — the device boots and DATA simply never
+grows past the 64 MiB the assembler creates.
 
 ## Determinism deviation
 

@@ -20,9 +20,9 @@
 # =============================================================================
 
 # ---------------------------------------------------------------------------
-# Root filesystem: Debian bookworm + systemd
+# Root filesystem: Debian trixie + systemd
 # ---------------------------------------------------------------------------
-FROM --platform=linux/arm64 debian:bookworm-slim AS rootfs
+FROM --platform=linux/arm64 debian:trixie-slim AS rootfs
 
 # Strict package allowlist — add nothing here without documenting it in README.md.
 # v2 additions over v1: rauc + rauc-service (update client, RFCT-014),
@@ -56,6 +56,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         systemd \
         systemd-sysv \
         systemd-resolved \
+        systemd-repart \
         udev \
         dbus \
         kmod \
@@ -70,6 +71,16 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         wpasupplicant \
         hostapd \
     && rm -rf /var/lib/apt/lists/*
+
+# systemd-repart is a SEPARATE PACKAGE on trixie and was inside `systemd` on
+# bookworm. RFCT-008 recorded the bookworm fact as verified ("systemd-repart
+# ships inside bookworm's systemd 252 package; verified") and the base upgrade
+# invalidated it: without the package the unit is simply absent, the
+# sysinit.target.wants symlink with it, and DATA never grows past the 64 MiB
+# the image assembler creates. Nothing about that failure announces itself —
+# the device boots, and the partition is just small. It is named in the install
+# list above rather than left to a recommends, and os/verify-image-v2.sh
+# asserts the enablement symlink.
 
 # Both connd packages ship a NON-templated unit that their postinst ENABLES, and
 # both are lifecycles mosd owns and must be the only one driving. Measured on
@@ -328,26 +339,33 @@ RUN if [ "$WITH_MOSD" = "1" ] && [ -f /tmp/mosd/mosd ]; then \
 # would make the number a build-time detail, and a build that resolved it
 # differently would leave the shipped policy granting a uid the unit does not
 # run as -- a live rule matching nobody, which is the failure this whole
-# arrangement exists to avoid. 990 is inside the system range and below the
-# 999 Debian's useradd allocates downward from, so it does not race the base
-# image's own accounts; the assertion below is what keeps that true.
+# arrangement exists to avoid.
+#
+# THE NUMBER IS 970 BECAUSE 990 COLLIDED, and the collision is why the check
+# below exists. 990 was free on bookworm and is taken by `sshd` on trixie, so
+# the base-image upgrade failed here rather than silently producing an account
+# at some other uid -- which would have left mos-mqttd.conf granting a uid the
+# unit does not run as, and the bridge publishing nothing with no error at the
+# point of cause. 970 is free on both, and sits well below the 999 that
+# Debian's `useradd --system` allocates downward from, so it does not race the
+# base image's own accounts as that allocation walks down.
 #
 # --system: no home, no login shell, no aging. `chage -d` pins the shadow
 # LAST-CHANGE field for the same determinism reason as the mos account: useradd
 # stamps today's date, which would change the packed rootfs -- and its
 # dm-verity root hash -- on every build day for no content reason.
 RUN set -eu; \
-    if awk -F: '$3 == 990 || $1 == "mos-mqttd"' /etc/passwd | grep -q .; then \
-        echo "error: uid 990 or the name mos-mqttd is already taken in the base image: $(awk -F: '$3 == 990 || $1 == "mos-mqttd"' /etc/passwd)" >&2; exit 1; \
+    if awk -F: '$3 == 970 || $1 == "mos-mqttd"' /etc/passwd | grep -q .; then \
+        echo "error: uid 970 or the name mos-mqttd is already taken in the base image: $(awk -F: '$3 == 970 || $1 == "mos-mqttd"' /etc/passwd)" >&2; exit 1; \
     fi; \
-    groupadd --system --gid 990 mos-mqttd; \
-    useradd --system --uid 990 --gid 990 --no-create-home \
+    groupadd --system --gid 970 mos-mqttd; \
+    useradd --system --uid 970 --gid 970 --no-create-home \
             --home-dir /nonexistent --shell /usr/sbin/nologin \
             --comment "mos MQTT bridge" mos-mqttd; \
     chage -d 2020-01-01 mos-mqttd; \
     ent="$(awk -F: '$1 == "mos-mqttd"' /etc/passwd)"; \
     case "${ent}" in \
-    mos-mqttd:x:990:990:*:/nonexistent:/usr/sbin/nologin) ;; \
+    mos-mqttd:x:970:970:*:/nonexistent:/usr/sbin/nologin) ;; \
     *) echo "error: mos-mqttd passwd entry is not the pinned one: ${ent}" >&2; exit 1 ;; \
     esac; \
     echo "mos-mqttd system account created: ${ent}"
@@ -497,6 +515,13 @@ RUN dpkg-query -W -f='${Package}\t${Installed-Size}\n' > /rootfs-report.pkgs
 #     They are removed here too — a script whose interpreter is gone is a trap,
 #     not a leftover.
 #
+#     TWO OF THESE CHECKS WERE KEYED TO BOOKWORM AND THE TRIXIE UPGRADE FOUND
+#     IT: the licence assertion named `gcc-12-base/copyright` (trixie ships
+#     gcc-14) and the purge list named `perl5.36.0` (trixie ships 5.40). Both
+#     now test the PROPERTY -- a copyright count, a version glob -- rather than
+#     a package that happened to be in one release. A check pinned to a version
+#     of the thing it is checking fails on the upgrade it exists to survive.
+#
 #     THE /usr/sbin SET WAS FOUND BY THE CHECK BELOW, NOT BY THE SURVEY. The
 #     survey that preceded this step listed the /usr/bin ones and was truncated
 #     before it reached /usr/sbin; the list was read as complete. The build then
@@ -537,7 +562,7 @@ RUN set -eu; \
            /usr/sbin/dpkg-preconfigure /usr/sbin/dpkg-reconfigure \
            /usr/bin/apt /usr/bin/apt-cache /usr/bin/apt-cdrom /usr/bin/apt-config \
            /usr/bin/apt-get /usr/bin/apt-key /usr/bin/apt-mark /usr/bin/apt-sortpkgs \
-           /usr/bin/gpgv /usr/bin/perl /usr/bin/perl5.36.0 \
+           /usr/bin/gpgv /usr/bin/perl /usr/bin/perl5.* \
            /usr/lib/*-linux-gnu/perl-base /usr/lib/*-linux-gnu/libapt-pkg.so.* \
            /usr/lib/*-linux-gnu/libapt-private.so.* ; \
     rm -f /usr/bin/debconf /usr/bin/debconf-apt-progress /usr/bin/debconf-communicate \
@@ -559,9 +584,10 @@ RUN set -eu; \
     dangling="$(grep -rlI '^#!.*perl' /usr/bin /usr/sbin /usr/lib/systemd /etc 2>/dev/null || true)"; \
     [ -z "${dangling}" ] || \
         { echo "error: perl is gone but these scripts still name it as their interpreter: ${dangling}" >&2; exit 1; }; \
-    test -f /usr/share/doc/gcc-12-base/copyright || \
-        { echo "error: the licence texts under /usr/share/doc were removed; Debian ships them to satisfy redistribution terms" >&2; exit 1; }; \
-    echo "package management removed; $(find /usr/share/doc -name copyright -type f | wc -l) copyright files kept"
+    kept_copyrights="$(find /usr/share/doc -name copyright -type f 2>/dev/null | wc -l)"; \
+    [ "${kept_copyrights}" -ge 100 ] || \
+        { echo "error: only ${kept_copyrights} copyright files are left under /usr/share/doc; Debian ships them to satisfy redistribution terms" >&2; exit 1; }; \
+    echo "package management removed; ${kept_copyrights} copyright files kept"
 
 # Build report (moved out of the tree by the pack stage; never ships in the
 # image). TOTAL_MB is measured HERE, after the purge, so the budget gate in

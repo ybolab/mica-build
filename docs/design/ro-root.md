@@ -624,7 +624,10 @@ in systemd's `src/partition/repart.c` calls `block_get_originating()` — commen
 "From dm-crypt to backing partition", and its debug message names dm-verity
 explicitly — before `block_get_whole_disk()`. So repart walks
 `dm-0 → mmcblk0p5 → mmcblk0` correctly and does not need `--dry-run=no <node>`
-to be spelled out. (Checked against systemd v252, the version in bookworm.)
+to be spelled out. (Checked against systemd v252 on bookworm; the image moved to trixie's
+systemd v257 on 2026-08-23 and this path is unchanged upstream — but the
+re-check is on the repart behaviour, not just the version string, and it is
+recorded as owed rather than done.)
 
 ### Seeding EPHEMERAL
 

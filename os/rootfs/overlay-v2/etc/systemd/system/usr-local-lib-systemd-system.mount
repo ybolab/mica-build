@@ -16,10 +16,15 @@ Description=Third-party systemd units from the STATE partition
 # is empty in the Debian base, so it shadows nothing and needs no seed at all.
 #
 # systemd reads it BELOW /etc/systemd/system and /run/systemd/system in the unit
-# load path (measured on systemd 252, the image's version: systemd-analyze
-# unit-paths). An extension therefore cannot override a shipped mos unit. That
+# load path. An extension therefore cannot override a shipped mos unit. That
 # is the intended property, not a shortfall: a third party silently replacing
 # var-lib-mos.mount is not a capability this appliance offers.
+#
+# Measured twice, and it survived the base upgrade: `systemd-analyze
+# unit-paths` on systemd 252 (bookworm, 2026-08-22) and again on systemd 257
+# (trixie, 2026-08-23), where the order is still /etc (5th) then /run (7th)
+# then /usr/local/lib (10th) then /usr/lib (11th). Re-measured rather than
+# assumed to carry, because the whole extension model rests on this ordering.
 #
 # The source is named for what it holds rather than mirroring the target path,
 # because /mnt/state/usr/local/lib/systemd/system would put four empty

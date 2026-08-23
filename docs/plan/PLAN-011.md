@@ -244,7 +244,7 @@ path below `/etc/systemd/system` and `/run/systemd/system`, and **is** absent
 from the base image — so the bind shadows nothing, needs no `cp -an` seed at
 all, and leaves the boot chain entirely inside the verity root.
 
-> **[measured 2026-08-22 (M5), systemd 252 (`252.39-1~deb12u2`)]** — the two
+> **[measured 2026-08-22 (M5), systemd 252 (`252.39-1~deb12u2`); re-measured 2026-08-23 on systemd 257 (`257.13-1~deb13u1`) after the base moved to trixie — the ordering is unchanged: /etc 5th, /run 7th, /usr/local/lib 10th, /usr/lib 11th]** — the two
 > claims in the sentence above are the *reason* for choosing this target, and
 > they were recorded as belief before they were evidence. They are now
 > measured. `systemd-analyze unit-paths`, run on `debian:bookworm-slim` with

@@ -44,12 +44,53 @@
 
 | 方案 | 否决理由 |
 |---|---|
-| 整套 Yocto（自建 mini-Torizon） | 运行时控制面为空：没有 COSI 等价物，配置漂移卷土重来；构建时长与专职技能成本 |
+| 整套 Yocto（自建 mini-Torizon） | 运行时控制面为空：没有 COSI 等价物，配置漂移卷土重来；构建时长与专职技能成本。**2026-08-23 以"包选择/脱离发行版"这一不同论点被重提，实测后再次否决，见 §3.1** |
+| 用 `debootstrap --variant=minbase` 取代 `debian:*-slim` | **2026-08-23 实测：包集合完全相同，磁盘占用严格更差**，见 §3.1 |
+| 以 Photon OS 为基座 | 它本身就是一个发行版，不是脱离发行版的途径：VMware 在 `vmware/photon/SPECS` 里自维护约 1000 个 RPM spec，最后一个正式版 5.0 停在 2023-04。采用它等于把对 Debian 的依赖换成一个更小、节奏更慢、且已归 Broadcom 的依赖 |
 | 以 balenaOS 为基座 | supervisor/云耦合；无声明式 machine config；管理面含 AGPL/闭源件 |
 | 以 Torizon 为基座 | Toradex SoM 引力；OSTree 与我们的 verity/squashfs 身份模型冲突；云闭源 |
 | PLAN-005（FIT 驻 RAM 单文件 + 自研 Go updater） | ~130MB RAM 常驻；重造 RAUC 已锤炼的领域；需要按版本对的差分服务端。被 PLAN-006 取代 |
 | OCI/registry 作为升级传输 | 静态 HTTP + lockbox 无论如何都要存在；registry 徒增一个有状态服务、零收益 |
 | 维持删除式派生 | 401 commit 的漂移已证明不可合并；上游 k8s-less 门控（9ffa772ba）使其失去存在意义 |
+
+### 3.1 附录：「自建用户空间」的重新审视（2026-08-23 实测）
+
+上面对 Yocto 的否决讲的是**管理面**——从零构建的 OS 没有 COSI 等价物。它没有
+回答重提时依据的两个论点：自建可以精确挑选需要的包，以及可以不绑定发行版。
+这里用数字回答，免得这个问题第三次出现。
+
+**发行版税是真实的，而且量过了。** `debian:trixie-slim` 一上来就带 **78 个包
+/ 117 MB，全都不是我们选的**；mos 只报了 15 个包名，最终装成 161 个包 /
+199 MB。所以前提成立：镜像的大部分不是 mos 的决定。
+
+**但其中几乎没有可回收的部分，而可回收的那部分已经回收了。** RFCT-099 删掉了
+包管理器——apt、dpkg、perl-base、debconf、gpgv——省下 24 MB。78 个包里剩下的
+是 glibc 用户空间的地板：`coreutils` 17.6 MB、`libc6` 12.7 MB、`bash` 7.0 MB、
+`util-linux` 4.9 MB、`libssl3` 5.9 MB。留着它们不是 Debian 的决定；替换它们
+意味着改用 musl + busybox，那是换基座而不是精简基座。依赖闭包也不是被 systemd
+主导的——实测 systemd + udev + dbus 拉入 25 个包，而功能集（openssh、bluez、
+wpasupplicant、hostapd、curl、rauc）拉入 88 个。
+
+乐观估计，从零构建用户空间能省 **40–60 MB**。rootfs 现为 210 MB，预算 400 MB。
+**这些空间买不到任何东西。**
+
+**`debootstrap --variant=minbase` 被直接实测，结论是严格更差。** 它产出的是
+*同样的 78 个包*——两份包清单做 `comm`，minbase 没有任何 slim 缺少的条目——
+因为官方 `-slim` 镜像由 debuerreotype 生成，而它*就是* minbase 加上剥离文档
+与 locale 的步骤。差别在磁盘上：minbase 带着 33 MB 的 `/usr/share/locale`、
+8 MB 的 `/usr/share/doc`、5 MB 的 `/usr/share/man`，而 slim 分别是 1 + 2 + 1。
+换过去等于先接收 42 MB 额外内容，再写代码把它删掉，回到原点。
+
+**Photon OS 究竟是什么（既然它被当作范本提出）。** 它的架构是在仓库内自维护
+约 1000 个 RPM spec 文件（`vmware/photon`，分支 `5.0`，`SPECS/`），包管理器是
+`tdnf`。这就是认真做「自建用户空间」的样子，而维护成本体现在发布节奏上：
+5.0-GA 的日期是 2023-04-28。Bottlerocket（§4）是同一模式更好的实现，且已评估过。
+
+**成立的结论，以及它背后的原则。** 独立性是**按组件**买的，不是按发行版买的，
+而 mos 已经在要紧的地方买到了：内核与 U-Boot 在 `board/cx3576/` 下从钉死的源码
+构建，管理面是我们自己的 Rust，PLAN-012 的容器引擎静态链接因而在构造上就与基座
+无关。留在 Debian 上的那些——glibc、coreutils、systemd、bluez、wpa_supplicant、
+openssh——恰恰是差异化价值最低、而最需要别人来做安全响应的一组。
 
 ## 4. 附录：Bottlerocket（2026-08-17 评估）
 

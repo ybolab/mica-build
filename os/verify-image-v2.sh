@@ -1927,8 +1927,22 @@ done
 
 # --- M4: RAUC ---
 sq_regular /usr/bin/rauc
-sq_regular /usr/bin/fw_setenv
 sq_regular /usr/bin/fw_printenv
+# fw_setenv is a SYMLINK to fw_printenv on trixie and was a second regular file
+# on bookworm: libubootenv now ships one multi-call binary. What RAUC needs is
+# a working fw_setenv, so the assertion is that the path RESOLVES to a regular
+# file, whichever way the packager spelled it. Asserting "regular file" here
+# would fail on a correct image, and asserting "symlink" would fail on the
+# previous one.
+if [ -f "${ROOT}/usr/bin/fw_setenv" ]; then
+    if [ -L "${ROOT}/usr/bin/fw_setenv" ]; then
+        pass "/usr/bin/fw_setenv resolves to a regular file (symlink -> $(readlink "${ROOT}/usr/bin/fw_setenv"))"
+    else
+        pass "/usr/bin/fw_setenv is a regular file"
+    fi
+else
+    fail "/usr/bin/fw_setenv is missing or does not resolve to a regular file; RAUC writes the boot slot through it and the A/B handover fails on the device"
+fi
 sq_regular /etc/rauc/system.conf
 
 RAUC_CONF="${ROOT}/etc/rauc/system.conf"
@@ -2203,7 +2217,19 @@ fi
 # still runs it in exactly this position. The rationale is on the function.
 check_ext_policy
 
-sq_regular /etc/dbus-1/system.d/bluetooth.conf
+# bluez's D-Bus policy moved from /etc/dbus-1/system.d to
+# /usr/share/dbus-1/system.d between bookworm and trixie — the general dbus
+# relocation of VENDOR policy out of /etc, which is reserved for the admin's
+# overrides. mos's own policies (com.mos.mosd.conf, com.mos.ext.conf,
+# mos-mqttd.conf) already install to the /usr/share path; bluez caught up.
+# Both are accepted because dbus-daemon reads both, and asserting only the new
+# one would make this verifier refuse a correct bookworm image.
+if [ -f "${ROOT}/usr/share/dbus-1/system.d/bluetooth.conf" ] ||
+    [ -f "${ROOT}/etc/dbus-1/system.d/bluetooth.conf" ]; then
+    pass "bluez ships a D-Bus policy (in /usr/share/dbus-1/system.d or /etc/dbus-1/system.d); without it bluetoothd cannot own org.bluez"
+else
+    fail "no bluetooth.conf in either dbus policy directory; bluetoothd cannot take org.bluez and every Bluetooth feature fails at runtime"
+fi
 
 # DNS: systemd-resolved is only reachable through the stub resolver symlink.
 sq_enabled systemd-resolved.service

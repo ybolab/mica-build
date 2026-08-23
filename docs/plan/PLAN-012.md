@@ -182,21 +182,24 @@ lifecycle, Quadlet is the interface, and the operator owns their units. That
 is the smaller and more defensible scope, and it is consistent with how mos
 treats every other unit on the device.
 
-### D5 — Root mode first, rootless recorded as the harder, better answer
+### D5 — Root mode. Rootless is NOT built.
 
-Podman's engine runs as the invoking user; in root mode the containers it
-starts are root-capable, and that is a real widening of the device's attack
-surface the moment `container.enabled` becomes true.
+**User directive, 2026-08-23: rootless is not wanted.** Recorded as a decision
+rather than a deferral, so the next reader does not re-open it as unfinished
+work.
 
-Rootless would remove it and is Podman's genuine advantage over balenaEngine's
-root socket. It is not taken in M1–M4 because it needs a subuid/subgid range
-for a service account, `fuse-overlayfs` or kernel-side idmapped mounts,
-`pasta`, and 4.9 MB of support binaries — and because it should be designed
-against `docs/design/access.md`'s account model rather than bolted on.
+The engine therefore runs as root and the containers it starts are
+root-capable. That is a real widening of the device's attack surface the
+moment `container.enabled` becomes true, and it is the switch's whole point:
+**turning the container engine on grants root-equivalent capability to
+whatever can reach it.** The apid pane must say so in those terms — not as a
+generic warning, but as the specific consequence — and the switch defaults to
+off for exactly this reason.
 
-**Recorded as the intended end state, with the risk of not being there stated
-in the apid pane**: turning the engine on grants root-equivalent capability to
-whoever can reach it.
+Not built, and each is skipped because rootless is not built rather than by
+oversight: `rootlessport` (2.95 MB), `pasta` (1.11 MB), `fuse-overlayfs`
+(0.66 MB), `fusermount3` (0.13 MB). With `runc` (10.77 MB, displaced by crun)
+that is 15.6 MB the artifact set does not carry.
 
 ### D6 — The update-state shape is shared, not duplicated
 
@@ -268,7 +271,7 @@ transport for the OS itself (*"registry adds a stateful service for zero
 gain"*), and nothing here revisits that. Container images are pulled by the
 operator's own configuration, over their own network.
 
-**No rootless in M1–M4.** D5.
+**No rootless, ever, unless the directive changes.** D5 — and the root-equivalence that follows is a stated property of the switch, not an unresolved risk.
 
 **No claim about hardware.** Every number in this plan is from an artifact on
 a build host. Whether the engine runs on the cx3576 is the first flash.
