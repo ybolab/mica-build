@@ -1,101 +1,20 @@
-//! End-to-end tests for the phase-1 TUF repository tool.
+//! End-to-end tests for the phase-1 TUF repository tool (the signer side).
 //!
-//! Everything happens inside a `TempDir`: keys are generated per test and thrown
-//! away, no fixture holds key material, no host state is touched and no network
-//! access occurs (tough's default transport is filesystem-only here).
+//! The fixture and its isolation guarantees live in `common/mod.rs`, shared
+//! with the phase-2 client suite in `client.rs`.
+
+mod common;
 
 use std::fs;
-use std::path::{Path, PathBuf};
 
-use chrono::{DateTime, Utc};
+use common::{Fixture, VERITY_ROOT_HASH, at, read_json, root_expiry, valid_expirations};
 use mos_sign::keys;
-use mos_sign::repo::{self, Expirations};
+use mos_sign::repo;
 use tempfile::TempDir;
 
-/// A verity root hash shaped like the real thing; the tool records it verbatim.
-const VERITY_ROOT_HASH: &str = "5ac357600002400080000000000000055ac35760000240008000000000000005";
-
-fn at(rfc3339: &str) -> DateTime<Utc> {
-    DateTime::parse_from_rfc3339(rfc3339)
-        .expect("fixed test timestamp")
-        .with_timezone(&Utc)
-}
-
-/// A `root.json` expiration far enough out that no test trips over it.
-fn root_expiry() -> DateTime<Utc> {
-    at("2099-01-01T00:00:00Z")
-}
-
-/// Every expiration far in the future, so only what a test deliberately expires
-/// is expired.
-fn valid_expirations() -> Expirations {
-    Expirations {
-        targets: at("2099-01-01T00:00:00Z"),
-        snapshot: at("2099-01-01T00:00:00Z"),
-        timestamp: at("2099-01-01T00:00:00Z"),
-    }
-}
-
-struct Fixture {
-    _dir: TempDir,
-    repo: PathBuf,
-    keys_dir: PathBuf,
-    bundle: PathBuf,
-    /// Copy of `root.json` taken at init, held OUTSIDE the repository. Verify
-    /// requires an out-of-band root -- checking a repository against its own
-    /// metadata/root.json proves only internal consistency -- so the tests
-    /// model that distribution channel instead of reaching into the repo.
-    trusted_root: PathBuf,
-}
-
-impl Fixture {
-    /// Initializes a repository with a single fake `.raucb` target already added.
-    async fn new() -> Self {
-        let dir = TempDir::new().expect("tempdir");
-        let repo = dir.path().join("repo");
-        let keys_dir = dir.path().join("keys");
-        let bundle = dir.path().join("update-1.0.0.raucb");
-        fs::write(
-            &bundle,
-            b"not a real RAUC bundle, but it hashes just fine\n",
-        )
-        .expect("bundle");
-
-        keys::generate(&keys_dir).expect("generate keys");
-        repo::init(&repo, &keys_dir, 1, root_expiry(), valid_expirations())
-            .await
-            .expect("init");
-        let trusted_root = dir.path().join("trusted-root.json");
-        fs::copy(repo::metadata_dir(&repo).join("root.json"), &trusted_root)
-            .expect("copy trusted root out of the repository");
-        repo::add(
-            &repo,
-            &keys_dir,
-            &bundle,
-            None,
-            VERITY_ROOT_HASH,
-            Some("1.0.0"),
-            valid_expirations(),
-        )
-        .await
-        .expect("add");
-
-        Self {
-            _dir: dir,
-            repo,
-            keys_dir,
-            bundle,
-            trusted_root,
-        }
-    }
-
-    async fn verify(&self) -> anyhow::Result<repo::VerifyReport> {
-        repo::verify(&self.repo, &self.trusted_root, None).await
-    }
-}
-
-fn read_json(path: &Path) -> serde_json::Value {
-    serde_json::from_slice(&fs::read(path).expect("read metadata")).expect("parse metadata")
+/// Release-side offline verification of the fixture repository.
+async fn verify(fx: &Fixture) -> anyhow::Result<repo::VerifyReport> {
+    repo::verify(&fx.repo, &fx.trusted_root, None).await
 }
 
 #[tokio::test]
@@ -132,7 +51,7 @@ async fn roundtrip_init_add_sign_verify() {
         Some(fs::metadata(&fx.bundle).expect("bundle stat").len())
     );
 
-    let report = fx.verify().await.expect("verify");
+    let report = verify(&fx).await.expect("verify");
     assert_eq!(report.root_version, 1);
     assert_eq!(report.timestamp_version, 2);
     assert_eq!(report.targets, vec!["update-1.0.0.raucb".to_string()]);
@@ -148,7 +67,7 @@ async fn roundtrip_init_add_sign_verify() {
     )
     .await
     .expect("resign");
-    let report = fx.verify().await.expect("verify after resign");
+    let report = verify(&fx).await.expect("verify after resign");
     assert_eq!(report.timestamp_version, 3);
 }
 
@@ -166,7 +85,7 @@ async fn tampered_target_file_is_rejected() {
     bytes[0] ^= 0xff;
     fs::write(&path, &bytes).expect("write tampered target");
 
-    let err = fx.verify().await.expect_err("tampered target must fail");
+    let err = verify(&fx).await.expect_err("tampered target must fail");
     assert!(
         format!("{err:#}").contains("update-1.0.0.raucb"),
         "error should name the target: {err:#}"
@@ -188,8 +107,7 @@ async fn tampered_targets_metadata_is_rejected() {
     // The consistent-snapshot copy is what the client actually fetches.
     fs::write(metadata.join("2.targets.json"), &edited).expect("write versioned");
 
-    let err = fx
-        .verify()
+    let err = verify(&fx)
         .await
         .expect_err("unsigned metadata edit must fail");
     // snapshot.json pins the sha256 of targets.json, so the edit is caught there
@@ -205,7 +123,7 @@ async fn tampered_targets_metadata_is_rejected() {
 #[tokio::test]
 async fn rolled_back_timestamp_is_rejected() {
     let fx = Fixture::new().await;
-    let datastore = fx.repo.parent().expect("parent").join("datastore");
+    let datastore = fx.scratch("datastore");
 
     repo::resign(
         &fx.repo,
@@ -279,7 +197,7 @@ async fn explicit_version_rollback_requires_flag() {
     );
 
     // The refusal must not have touched the repository.
-    let report = fx.verify().await.expect("repo still valid after refusal");
+    let report = verify(&fx).await.expect("repo still valid after refusal");
     assert_eq!(report.timestamp_version, 5);
 }
 
@@ -306,7 +224,7 @@ async fn expired_timestamp_is_rejected() {
     let fx = Fixture::new().await;
 
     // Injected expiration in the past; nothing here reads the wall clock.
-    let expired = Expirations {
+    let expired = repo::Expirations {
         timestamp: at("2020-01-01T00:00:00Z"),
         ..valid_expirations()
     };
@@ -314,7 +232,7 @@ async fn expired_timestamp_is_rejected() {
         .await
         .expect("resign with expired timestamp");
 
-    let err = fx.verify().await.expect_err("expired timestamp must fail");
+    let err = verify(&fx).await.expect_err("expired timestamp must fail");
     assert!(
         format!("{err:#}").contains("expired"),
         "error should report expiry: {err:#}"

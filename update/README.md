@@ -1,35 +1,118 @@
 # update
 
-Server-side update tooling (PLAN-006 Part L). Everything here runs on a release
-build host, never on a device, and its output is static content: a directory that
-any HTTP server or object store can serve unchanged.
+Update trust tooling (PLAN-006 Part A/L). One crate, `sign/`, carries both
+halves of the TUF trust model because they share one metadata format:
+
+- the **release side** (`mos-sign`, phase 1): runs on a build host, never on a
+  device, and its output is static content — a directory that any HTTP server
+  or object store can serve unchanged;
+- the **device side** (`mos-update-verify`, phase 2, first half): verifies a
+  LOCAL copy of that directory from a pinned trusted root, with persistent
+  rollback protection. It exists and is exercised offline by the test suite;
+  nothing ships it to a device yet (see the provisioning section below).
 
 ## Contents
 
-- `sign/` — `mos-sign`, the TUF signing tool (phase 1, RFCT-016). Creates and
-  maintains the static TUF repository that pins RAUC bundles.
-- `lockbox/` — planned: offline update bundle builder (USB/SD "lockbox" carrying
-  the same bundle plus full metadata).
+- `sign/` — the `mos-sign` crate, two binaries:
+  - `mos-sign` — the TUF signing tool (phase 1, RFCT-016). Creates and
+    maintains the static TUF repository that pins RAUC bundles.
+  - `mos-update-verify` — the device-side metadata and target verifier
+    (phase 2 first half, RFCT-088). Walks the metadata from a pinned root and
+    prints a verified local target path for an installer to consume.
+- `lockbox/` — planned: offline update bundle builder (USB/SD "lockbox"
+  carrying the same bundle plus full metadata).
 - delta needs no tooling: RAUC adaptive updates work against the plain bundle
   over HTTP range requests.
 
-## Phase-1 scope of `sign/`
+## Phase-1 scope of `mos-sign`
 
-`mos-sign` implements the repository half of the trust model in PLAN-006 Part A:
-the four TUF top-level roles (`root`, `targets`, `snapshot`, `timestamp`), a
-sign/verify roundtrip, and target metadata that pins each RAUC bundle's sha256,
-length and dm-verity root hash.
+`mos-sign` implements the repository half of the trust model in PLAN-006 Part
+A: the four TUF top-level roles (`root`, `targets`, `snapshot`, `timestamp`),
+a sign/verify roundtrip, and target metadata that pins each RAUC bundle's
+sha256, length and dm-verity root hash.
 
-Explicitly **not** phase 1, and not implemented here:
+Explicitly out of scope for the whole crate, still:
 
-- the on-device Uptane client (metadata fetch, ECU manifest, install gating);
-- the Uptane director/image repository split — this is a single image repository;
-- delegated targets roles, root key rotation, and hardware-backed key stores;
-- RAUC's own CMS bundle signature, which is a separate key hierarchy applied by
-  `rauc bundle` at build time.
+- the Uptane director/image repository split — this is a single image
+  repository;
+- delegated targets roles, root key rotation, and hardware-backed key stores
+  (the client inherits tough's root-chain walk, but the signer cannot yet
+  produce a rotation, so the chain is depth one in practice);
+- transport: nothing here fetches metadata over a network, on either side;
+- mosd's install orchestration (RAUC install/confirm) — named as roadmap by
+  RFCT-083;
+- RAUC's own CMS bundle signature, which is a separate key hierarchy applied
+  by `rauc bundle` at build time.
 
 The verity root hash is passed to `mos-sign add` as an argument. The tool never
 shells out to `rauc`, so it has no dependency on the image pipeline.
+
+## Phase 2, first half: the device-side verifier
+
+`mos-update-verify` is the client the phase-1 attacker tests were modelled
+against. It performs the TUF client walk over a local repository directory —
+root chain from the pinned trusted root, then timestamp → snapshot → targets —
+enforcing per-role signature thresholds, expiries, version pins, and metadata
+hash/length pins, and refusing shapes the signer never produces (a root
+missing one of the four roles, targets metadata with delegated roles).
+
+On top of the walk it keeps the device's memory: a JSON state file recording
+the highest verified version per role, written atomically (temp file, fsync,
+rename, directory fsync). A validly signed but **older** repository is
+rejected against that state, so rollback protection survives restarts. The
+state file must live on persistent writable storage; a rejection never
+advances it, and a corrupt state file is an error rather than a silent reset.
+
+The interface is deliberately boring and scriptable — exit 0 means verified,
+any other exit means not verified with a one-line reason on stderr:
+
+```sh
+# verify the metadata walk; records/enforces per-role versions in the state file
+mos-update-verify --repo <dir> --root <pinned root.json> --state <state.json>
+# OK root v1 targets v2 snapshot v2 timestamp v2
+
+# additionally verify one target's bytes (sha256 + length) and print its
+# verified local path, ready to hand to an installer
+mos-update-verify --repo <dir> --root <pinned root.json> --state <state.json> \
+  --target update-1.0.0.raucb
+# <dir>/targets/<sha256>.update-1.0.0.raucb
+```
+
+What the second half of phase 2 still owes: transport (fetching the repository
+onto the device), the mosd orchestration that calls this verifier and RAUC,
+and the provisioning below.
+
+## Trust anchor provisioning
+
+The honest state: **the verifier exists and is exercised offline; no shipped
+mechanism delivers the pinned `root.json` to a device.** Verification is only
+as trustworthy as the channel that delivered the root, so this is a decision
+to be made deliberately, not defaulted. Candidate paths, none implemented:
+
+- **Image-baked** `/usr/share/mos/uptane/root.json` **[not implemented]** —
+  the root ships inside the (dm-verity protected, RAUC-signed) OS image.
+  Simplest and the strongest binding: the root is exactly as trustworthy as
+  the image that carries it, and a root rotation rides an ordinary OS update.
+  Tradeoff: rotating the TUF root *requires* shipping an image through the
+  RAUC channel, so the TUF hierarchy cannot outlive a compromise of the image
+  signing path — the two hierarchies stand or fall together.
+- **Provisioning file** on STATE/META, written at factory or first-boot
+  provisioning **[not implemented]** — decouples the trust anchor from the
+  image, allowing per-fleet or per-customer roots. Tradeoff: the provisioning
+  flow becomes security-critical, the anchor lives on mutable storage (so it
+  needs its own integrity story, e.g. only ever replaced via a root chain the
+  verifier already walks), and a device that loses STATE loses its anchor.
+- **Signed USB import** **[not implemented]** — an operator carries
+  `root.json` (or a full lockbox) on removable media; the device accepts a new
+  root only if it chains from the currently pinned one (the TUF root rotation
+  rule), or on explicit physical-presence action for first provisioning.
+  Fits the offline "lockbox" story; tradeoff: first-time trust still has to
+  come from somewhere (factory default or physical ceremony), and the import
+  path is an attack surface that must enforce the chain rule strictly.
+
+Until one of these is chosen and built, `mos-update-verify` is a tool a test
+(or a person with a shell) points at a directory — that is the whole truth of
+its deployment status.
 
 ## Repository layout produced
 
@@ -55,7 +138,8 @@ Four ed25519 keys, one per role, stored as raw PKCS#8 documents named
 
 `root` is an **offline** key. It signs `root.json` at `init` time and is not
 needed afterwards: `add` and `sign` only load the `targets`, `snapshot` and
-`timestamp` keys.
+`timestamp` keys. The device side handles public material only: it reads
+metadata and a pinned root, never a `.pk8`.
 
 Generate throwaway development keys:
 
@@ -90,21 +174,32 @@ cargo run -p mos-sign -- add \
 cargo run -p mos-sign -- sign --repo _out/tuf \
   --targets-expires ... --snapshot-expires ... --timestamp-expires ... [--timestamp-version N]
 
-# offline verification against a trusted root
+# release-side offline verification against a trusted root
 cargo run -p mos-sign -- verify --repo _out/tuf --root <trusted root.json> [--datastore _out/tuf-trusted]
+
+# device-side verification (pinned root + persistent version state)
+cargo run -p mos-sign --bin mos-update-verify -- \
+  --repo _out/tuf --root <pinned root.json> --state _out/uptane-state.json \
+  [--target update-1.0.0.raucb]
 ```
 
 All expiration instants are explicit RFC 3339 arguments. Nothing derives an
 expiration from the wall clock, so a release is reproducible and tests are
 deterministic. `--root-expires` exists only on `init`, because `root.json` is the
-one role the online path never re-signs. `--datastore` persists the last trusted
-metadata, which is what makes rollback detection work across invocations.
+one role the online path never re-signs. `mos-sign verify --datastore` persists
+the last trusted metadata for the release side; the device side's equivalent is
+the mandatory `--state` file.
 
 ## Checks
 
-`mos-sign` is a member of the `mosd/` cargo workspace, so it is covered by the
-single project gate:
+The `mos-sign` crate is a member of the `mosd/` cargo workspace, so it is
+covered by the single project gate:
 
 ```sh
 bash mosd/hack/check.sh
 ```
+
+The device-side client is tested against the same in-repo fixture the signer
+tests use (`update/sign/tests/`): the honest publish sequence verifies, and a
+published rollback, a tampered target, a tampered-metadata edit, expired
+metadata, and an unmet root threshold are each rejected.

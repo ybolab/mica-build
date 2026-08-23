@@ -412,7 +412,7 @@ fn publish_alias(meta_dir: &Path, version: u64, role: &str) -> Result<()> {
 }
 
 /// A `file://` URL for a directory, which is what tough's filesystem transport wants.
-fn dir_url(dir: &Path) -> Result<Url> {
+pub(crate) fn dir_url(dir: &Path) -> Result<Url> {
     let dir = dir
         .canonicalize()
         .with_context(|| format!("resolve {}", dir.display()))?;

@@ -110,7 +110,7 @@ Each task is a single line linking to its detail file. All detailed information 
 - [x] [**RFCT-085 access.md §6 made real in apid: persistent backoff counters and a bounded audit trail**](RFCT-085.md) `P1`
 - [x] [**RFCT-086 The privileged CI lane, and the production key ceremony runbook**](RFCT-086.md) `P1`
 - [-] [**RFCT-087 An offline U-Boot A/B handshake harness on the sandbox build (spike)**](RFCT-087.md) `P1`
-- [-] [**RFCT-088 Uptane phase 2, first half: the device-side metadata verifier and the trust anchor provisioning story**](RFCT-088.md) `P1`
+- [x] [**RFCT-088 Uptane phase 2, first half: the device-side metadata verifier and the trust anchor provisioning story**](RFCT-088.md) `P1`
 - [x] [**RFCT-089 PLAN-011 M1: bus contract design doc and the read-only com.mos.Item1 tree facade**](RFCT-089.md) `P1`
 - [x] [**RFCT-090 PLAN-011 M2: writable items and /Actions/*, apid power pane on action items**](RFCT-090.md) `P1`
 - [x] [**RFCT-091 PLAN-011 M3: mos-mqttd, the MQTT data-publishing bridge**](RFCT-091.md) `P1`
