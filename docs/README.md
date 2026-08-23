@@ -11,6 +11,7 @@
   - `provisioning.md` — configuration without a network: three-layer model
   - `mosd.md` — management plane design brief: D-Bus tree, settings schema, reconcilers
   - `connd.md` — unified connectivity service: WiFi STA/AP, Bluetooth, CAN
+  - `containers.md` — integrator's guide: Quadlet units, container interconnection, dependency ordering, persistence
   - `ro-root.md` — read-only root: squashfs + dm-verity rootfs pack and boot wiring
   - `uboot-ab-handshake.md` — A/B boot-order contract between U-Boot, RAUC and the health gate
   - `dashboard.md` — dashboard proposal: landing screen, IA, technology posture, process architecture

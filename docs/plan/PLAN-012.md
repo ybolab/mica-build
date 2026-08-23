@@ -68,19 +68,25 @@ invites the opposite conclusion.
 
 Three reasons, in order of weight.
 
-1. **The distribution's version decides our architecture.** Debian 12 ships
-   Podman 4.3.1, which predates Quadlet (4.4). Quadlet turns a container
-   definition into a systemd unit — and PLAN-011 D5 has just made
-   `/usr/local/lib/systemd/system` a STATE-backed writable unit directory, so
-   with Quadlet "install a container application" and "install a mos
-   extension" become the same act. Being one distribution release away from
-   that capability, with no way to reach it, is the wrong dependency.
-2. **A static build decouples the engine from the base entirely.** Measured:
-   `podman`, `crun`, `conmon`, `netavark` and `quadlet` all link statically.
-   They carry no dependency on the image's libseccomp, libgpgme or
-   libdevmapper, so the engine and the base distribution can move
-   independently. The Debian 12→13 upgrade (a separate change) stops being a
-   container decision.
+1. ~~**The distribution's version decides our architecture.**~~ **Retired.**
+   As written: Debian 12 ships Podman 4.3.1, which predates Quadlet (4.4), so
+   being one distribution release away from a capability the architecture
+   depends on is the wrong dependency. The base then moved to trixie, whose
+   podman 5.4.2 has Quadlet — and this reason was simply gone, while the plan
+   went on citing it. It is struck rather than deleted because **nothing in the
+   build or the gate set would have reported it false**: a motivation is not a
+   claim anything checks. What replaces it is item 3, which was always the
+   durable one.
+2. ~~**A static build decouples the engine from the base entirely.**~~
+   **Retired.** The measurement quoted here was of upstream's *release*
+   binaries, not of what this build produces, and it was used to justify
+   linking statically against musl. The image ships glibc either way, so the
+   independence bought was from a library that is present regardless; twelve
+   build iterations were spent on musl-only obstacles (`close_range` absent
+   from the `libc` crate's musl side, crun's autotools path) before that was
+   noticed. The build is dynamic now, against the image's own glibc, with one
+   exception that has its own reason: `catatonit` is copied *into* containers
+   as their init and must not depend on this image's libc.
 3. **The version becomes ours to pin, with a hash.** The same discipline
    `update/sign` applies to release artifacts: a version and a `sha256` in one
    file, and an upgrade is a one-line change plus a full image-chain run.
@@ -264,10 +270,10 @@ bus surface is designed.
 
 | # | Deliverable | Verification |
 |---|---|---|
-| M1 | `podman/` builds the seven binaries for arm64, statically, from pinned sources; `make podman`; `versions.env`; README | every binary is an aarch64 static ELF and matches its pinned hash — asserted in the build, not by eye; `make podman` from a clean tree |
+| M1 | `os/podman/` builds the seven binaries for arm64 from pinned sources; `make podman`; `versions.env`; README | three separate assertions in the build, not by eye: seven aarch64 ELFs; `catatonit` statically linked; every other binary's `NEEDED` soname present in `image-libs.txt`, which is **generated from the packed rootfs** so it cannot pass against a list that stopped describing the image. Sources match their pinned hash. `make podman` from a clean tree |
 | M2 | Image wiring: staged by `build-v2.sh`, installed by `Dockerfile.v2`, unit installed and **not** enabled, storage root on DATA | verifier assertions above the fixture boundary + negative controls in `os/ui-location-test.sh`: binaries present, unit **not** enabled, storage root on a growable partition, no engine socket without the switch |
 | M3 | `container.enabled` in the settings schema, `ContainerReconciler`, apid pane | reconciler unit tests against a mock unit driver; apid route tests; live-bus test that the item is writable |
-| M4 | Quadlet wired to `/usr/local/lib/systemd/system`; **`docs/design/containers.md`** — the integrator's guide to interconnection, dependency and persistence (D4) | an offline test that a `.container` file in the STATE-backed directory produces a service; every example in the document is a file the test actually feeds to the generator, so a doc that drifted from the shipped Quadlet fails the suite |
+| M4 | Quadlet wired to `/etc/containers/systemd` (D4 — measured from `quadlet --dryrun`, not the path this row first named); **`docs/design/containers.md`** — the integrator's guide to interconnection, dependency and persistence (D4) | an offline test that a `.container` file in the STATE-backed directory produces a service; every example in the document is a file the test actually feeds to the generator, so a doc that drifted from the shipped Quadlet fails the suite |
 | M5 | `versions.env` + a scheduled upstream-tag check in the privileged CI lane | the check fails loudly when an upstream tag moves ahead of the pin |
 
 ## Risks

@@ -125,3 +125,4 @@ Each task is a single line linking to its detail file. All detailed information 
 - [x] [**RFCT-100 Move the packed root from Debian 12 to Debian 13, and unpin the checks that were pinned to 12**](RFCT-100.md) `P1`
 - [x] [**RFCT-101 PLAN-012 M2: the container engine in the image, installed and inert**](RFCT-101.md) `P1`
 - [x] [**RFCT-102 Make the container engine actually usable: storage off the wipeable partition, a board switch, and a build that runs it**](RFCT-102.md) `P1`
+- [x] [**RFCT-103 PLAN-012 M1–M4: build the engine from source, replace the distribution's configuration, and give the switch something to switch**](RFCT-103.md) `P1`
