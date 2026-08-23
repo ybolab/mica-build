@@ -21,6 +21,12 @@
 > **Updated for campaign `sshweb` (2026-08-19):** the tree is at **schema v4**
 > (`access.ssh.authorizedKeys`), and the `SshdReconciler` row in §5.3 is
 > corrected — it watches `access.ssh` alone and no longer drives `/etc/shadow`.
+>
+> **Updated for RFCT-084 (2026-08-23):** §5.4 records the update-orchestration
+> members (`InstallUpdate`, `GetUpdateState`, `MarkUpdate`), the `update`
+> live-state entry, and the resolution of the recorded burns-a-boot-attempt
+> follow-up (`Reboot` is now slot-aware). §5.5's measurement is restated for
+> the same date.
 
 ## 1. What mosd is
 
@@ -256,7 +262,7 @@ reads over the bus.
 
 ### 5.4 Bus surface
 
-`com.mos.mosd1` carries, as of M5:
+`com.mos.mosd1` carries, as of RFCT-084:
 
 | Member | Kind | Added |
 |---|---|---|
@@ -264,8 +270,16 @@ reads over the bus.
 | `GetState` | method | M2 |
 | `ReportHealth` | method | M4 |
 | `SettingsChanged` | signal | M2 |
-| **`Reboot`** | method | **M5** |
-| **`PowerOff`** | method | **M5** |
+| `Reboot` | method | M5 |
+| `PowerOff` | method | M5 |
+| `SetTransientRootPassword` | method | RFCT-033 |
+| `ForgetService` | method | RFCT-093 (PLAN-011 M5) |
+| **`InstallUpdate`** | method | **RFCT-084** |
+| **`GetUpdateState`** | method | **RFCT-084** |
+| **`MarkUpdate`** | method | **RFCT-084** |
+
+(The `com.mos.Item1` façade at `/` is a separate interface with its own
+contract; see `docs/design/bus.md`.)
 
 `Reboot` and `PowerOff` forward to `Reboot` / `PowerOff` on
 `org.freedesktop.systemd1.Manager`. They are **not reconcilers** and do not live
@@ -287,15 +301,68 @@ confirmation token, answering 202 with a rendered page and handing the D-Bus cal
 to a detached task — so the operator gets a page rather than a dropped connection
 when the machine goes down mid-call.
 
-**Recorded follow-up:** rebooting a slot RAUC has installed but that has not been
-marked good **burns a boot attempt**, and the power pane has no update-state
-awareness and does not warn about it. Making it warn means giving the power pane
-a dependency on update state, which was deliberately not built in M5.
+**Update orchestration (RFCT-084).** The three update members speak to RAUC
+(`de.pengutronix.rauc.Installer`) through a `RaucClient` trait
+(`mosd/mosd/src/rauc.rs`) with the same shape as the power control: lazy
+per-call bus connection in production, a dry-run client that never touches the
+host (constructed under `MOSD_DRY_RUN=1`, so no test can install a bundle on
+the build host), and a recording mock for the bus-layer unit tests. Like the
+power actions, updates are **actions, not settings** — nothing lands in the
+settings tree, nothing is reconciled on boot, and everything observable is
+recorded in the **live-state** tree under `update`: `operation`, `last_error`,
+`progress`, a curated per-slot `slots` map, `booted_slot`, `primary`, a
+`pending_not_confirmed` flag, plus `install` (`running`/`done`/`failed`, the
+bundle path, the requesting bus name, the error text on failure) and
+`last_mark`. The entry projects into the `com.mos.Item1` tree read-only, like
+all live state.
+
+- `InstallUpdate(bundle_path)` validates the path (absolute, existing regular
+  file), refuses a second install while one runs, records
+  `update.install = running`, and hands the install to a **background task** —
+  the service lock and the bus dispatcher are never held across an install,
+  which RAUC completes in minutes, not milliseconds. Completion (RAUC's
+  `Completed` signal, subscribed before `InstallBundle` is called so a fast
+  failure cannot be missed) is recorded together with a fresh status query.
+- `GetUpdateState()` runs the status queries **without the service lock**,
+  merges the result into `update` field-by-field (so `install`/`last_mark`
+  survive a refresh), and answers the recorded entry as JSON.
+- `MarkUpdate(state, slot)` is the operator's **manual** escape hatch,
+  validated down to `good`/`bad` on `booted`/`other` before RAUC is asked —
+  `active` and concrete slot names are deliberately not offered.
+
+**What mosd deliberately does NOT do: confirm the booted slot.** The boot
+health gate (`os/rootfs/overlay-v2/usr/lib/mos/mos-health`) owns the automatic
+`rauc status mark-good` — it probes systemd, mosd and apid first, and an
+automatic mark in mosd would duplicate that gate and could confirm a slot the
+gate would have failed. `MarkUpdate` exists for the case the gate cannot
+decide (e.g. a failed unit the operator has judged acceptable).
+
+**Resolved follow-up (recorded at M5, closed by RFCT-084):** rebooting a slot
+RAUC has installed but that has not completed a confirmed boot **burns a boot
+attempt**, and nothing warned about it. `Reboot` (and therefore
+`/Actions/reboot`, which dispatches through the same request path) now reads
+the slot status first and, when the bootloader's first pick is not the booted
+slot, logs the warning and records it as `power.update_warning` beside
+`last_action` — before the power call, like the rest of the power record. A
+warning, not a refusal: booting the new slot is what an updating operator
+wants. The slot query is bounded (2 s) and non-fatal, so a reboot still goes
+through when RAUC is absent (v1 image, container) or wedged. Honest limit: the
+*other* unconfirmed window — already booted into the new slot, health gate not
+yet run — is not visible in RAUC's `boot-status` (the U-Boot backend reads the
+attempt counter only as exhausted-or-not), so it is not warned about; closing
+it needs the gate to report its confirmation into mosd, which is an `os/`
+change recorded as deferred in `docs/task/RFCT-084.md`. The apid power pane
+does not yet display `power.update_warning`; that is apid's half and is
+likewise recorded there as deferred.
 
 ### 5.5 Verification status
 
 Everything above is verified locally: `bash mosd/hack/check.sh` is green
-(203 tests, measured 2026-08-19), and both image verifiers assert that the paths,
+(203 tests, measured 2026-08-19; the RFCT-084 additions were measured
+crate-scoped on 2026-08-23 — `cargo nextest run -p mosd` green, including a
+private-bus test that drives the production RAUC call path against a fake
+`de.pengutronix.rauc` — because a concurrent workstream held the rest of the
+workspace), and both image verifiers assert that the paths,
 prefixes and unit names mosd renders are the ones the image actually ships —
 reading them **out of the mosd source that owns them** rather than restating
 them, because a constant restated in two places drifts and the drift is invisible

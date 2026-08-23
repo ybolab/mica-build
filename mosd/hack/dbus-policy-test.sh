@@ -908,6 +908,19 @@ check "mqttd: the bridge's uid CANNOT call SetTransientRootPassword" \
 check "mqttd: the bridge's uid CANNOT call com.mos.mosd1.SetSettings" \
     "ERROR org.freedesktop.DBus.Error.AccessDenied" \
     "$(as_mqttd call "${MQTTD_SOCK}" "${NAME}" com.mos.mosd1 SetSettings)"
+# RFCT-084's update members ride the same root-only interface and inherit the
+# same refusal; asserted by name anyway, because these are the members whose
+# accidental grant would be worst — a uid that can install a bundle or mark a
+# slot bad owns the device's next boot, network socket and all.
+check "mqttd: the bridge's uid CANNOT call com.mos.mosd1.InstallUpdate" \
+    "ERROR org.freedesktop.DBus.Error.AccessDenied" \
+    "$(as_mqttd call "${MQTTD_SOCK}" "${NAME}" com.mos.mosd1 InstallUpdate)"
+check "mqttd: the bridge's uid CANNOT call com.mos.mosd1.MarkUpdate" \
+    "ERROR org.freedesktop.DBus.Error.AccessDenied" \
+    "$(as_mqttd call "${MQTTD_SOCK}" "${NAME}" com.mos.mosd1 MarkUpdate)"
+check "mqttd: the bridge's uid CANNOT call com.mos.mosd1.GetUpdateState" \
+    "ERROR org.freedesktop.DBus.Error.AccessDenied" \
+    "$(as_mqttd call "${MQTTD_SOCK}" "${NAME}" com.mos.mosd1 GetUpdateState)"
 # The same interface the grant names, a member it does not: proves the rule
 # discriminates on send_member= and not merely on send_interface=.
 check "mqttd: the bridge's uid CANNOT call com.mos.Item1.GetValue (ungranted member)" \

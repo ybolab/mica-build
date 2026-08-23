@@ -88,6 +88,9 @@ trait Mosd {
     fn reboot(&self) -> zbus::Result<()>;
     fn power_off(&self) -> zbus::Result<()>;
     fn set_transient_root_password(&self, password: &str) -> zbus::Result<()>;
+    fn install_update(&self, bundle_path: &str) -> zbus::Result<()>;
+    fn get_update_state(&self) -> zbus::Result<String>;
+    fn mark_update(&self, state: &str, slot: &str) -> zbus::Result<(String, String)>;
     #[zbus(signal)]
     fn settings_changed(&self, path: &str, value_json: &str) -> zbus::Result<()>;
 }
@@ -297,6 +300,96 @@ async fn bus_roundtrip() -> anyhow::Result<()> {
     assert!(proxy.get_settings("no.such.path").await.is_err());
     assert!(proxy.set_settings("hostname", "not json").await.is_err());
     assert!(proxy.set_settings("schema_version", "2").await.is_err());
+
+    // Update orchestration (RFCT-084), against the dry-run RAUC client — the
+    // same guarantee as the power methods above: MOSD_DRY_RUN=1 means the
+    // production client was never constructed, so nothing here can install a
+    // bundle on, or mark a slot of, the build host.
+    //
+    // The MEMBER NAMES first, read back out of the daemon for the same reason
+    // SetTransientRootPassword's was: zbus renames snake_case to PascalCase,
+    // and a client that guesses wrong gets UnknownMethod at runtime, not a
+    // compile error.
+    let xml = introspectable.introspect().await?;
+    for member in ["InstallUpdate", "GetUpdateState", "MarkUpdate"] {
+        assert!(
+            xml.contains(&format!("<method name=\"{member}\">")),
+            "no {member} on com.mos.mosd1:\n{xml}"
+        );
+    }
+    for leaked in ["install_update", "get_update_state", "mark_update"] {
+        assert!(
+            !xml.contains(leaked),
+            "the snake_case name must NOT be what a client sees:\n{xml}"
+        );
+    }
+
+    // GetUpdateState queries and records: the dry-run client reports an idle
+    // installer with no slots, and the same entry lands in the state tree.
+    let update = proxy.get_update_state().await?;
+    let update: serde_json::Value = serde_json::from_str(&update)?;
+    assert_eq!(update["operation"], "idle");
+    assert_eq!(update["pending_not_confirmed"], false);
+    assert_eq!(update["slots"], serde_json::json!({}));
+    let recorded = proxy.get_state("update").await?;
+    let recorded: serde_json::Value = serde_json::from_str(&recorded)?;
+    assert_eq!(recorded, update);
+
+    // InstallUpdate validates the path over the bus...
+    assert!(
+        proxy.install_update("relative.raucb").await.is_err(),
+        "a relative bundle path must be refused"
+    );
+    assert!(
+        proxy
+            .install_update(dir.path().join("gone.raucb").to_str().expect("utf-8"))
+            .await
+            .is_err(),
+        "a missing bundle must be refused"
+    );
+    // ...and a valid request is admitted, runs in the background, and records
+    // its outcome where GetState can see it.
+    let bundle_path = dir.path().join("ok.raucb");
+    std::fs::write(&bundle_path, b"bundle bytes")?;
+    proxy
+        .install_update(bundle_path.to_str().expect("utf-8"))
+        .await?;
+    let install = tokio::time::timeout(Duration::from_secs(10), async {
+        loop {
+            if let Ok(install) = proxy.get_state("update.install").await {
+                let install: serde_json::Value =
+                    serde_json::from_str(&install).expect("install entry is JSON");
+                if install["status"] == "done" {
+                    break install;
+                }
+            }
+            tokio::time::sleep(Duration::from_millis(50)).await;
+        }
+    })
+    .await?;
+    assert_eq!(install["bundle"], bundle_path.to_str().expect("utf-8"));
+    assert!(
+        install["requested_by"]
+            .as_str()
+            .is_some_and(|sender| sender.starts_with(':')),
+        "requested_by should be the caller's unique bus name, got {install}"
+    );
+
+    // MarkUpdate: the offered vocabulary only, validated before RAUC.
+    assert!(
+        proxy.mark_update("active", "other").await.is_err(),
+        "activation is not offered on this surface"
+    );
+    assert!(
+        proxy.mark_update("good", "rootfs.0").await.is_err(),
+        "slots are addressed as booted/other only"
+    );
+    let (_slot_name, message) = proxy.mark_update("good", "booted").await?;
+    assert!(message.contains("good"), "message: {message}");
+    let last_mark = proxy.get_state("update.last_mark").await?;
+    let last_mark: serde_json::Value = serde_json::from_str(&last_mark)?;
+    assert_eq!(last_mark["state"], "good");
+    assert_eq!(last_mark["slot"], "booted");
 
     Ok(())
 }

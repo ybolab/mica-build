@@ -38,6 +38,7 @@ mod bus;
 mod identity;
 mod power;
 mod provisioning;
+mod rauc;
 mod reconciler;
 mod scan;
 mod transient;
@@ -152,6 +153,15 @@ async fn main() -> anyhow::Result<()> {
         transient::production_shadow_path(),
         Value::Object(state),
     );
+    // Same shape as the power control: under dry-run the production RAUC
+    // client is never constructed, so a daemon started by a test cannot
+    // install a bundle on — or mark a slot of — the host it runs on. The
+    // service's built-in default is already the dry-run client; the
+    // production client must be attached HERE, because main.rs is the only
+    // place that knows this daemon runs on a real device.
+    if !dry_run {
+        service = service.with_rauc(Arc::new(rauc::Rauc::new()));
+    }
     if let Some(registry) = &registry {
         service = service.with_service_registry(Arc::clone(registry));
     }

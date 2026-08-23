@@ -106,7 +106,7 @@ Each task is a single line linking to its detail file. All detailed information 
 - [x] [**RFCT-081 Close the repository audit: a CI gate, a no-op build target, an unreferenced 12 MB asset, two stale suppressions, and the apid login curve**](RFCT-081.md) `P1`
 - [x] [**RFCT-082 Reach the unreachable rollback path, and stop the stale documentation lying quietly**](RFCT-082.md) `P0`
 - [x] [**RFCT-083 Close the second repository audit: trust-chain gaps, inverted crash-safety ordering, and the half-fixed patch-loop bug**](RFCT-083.md) `P1`
-- [-] [**RFCT-084 mosd update orchestration: RAUC install and confirm over the bus, update state, and a Reboot that knows about an unconfirmed slot**](RFCT-084.md) `P1`
+- [x] [**RFCT-084 mosd update orchestration: RAUC install and confirm over the bus, update state, and a Reboot that knows about an unconfirmed slot**](RFCT-084.md) `P1`
 - [x] [**RFCT-085 access.md §6 made real in apid: persistent backoff counters and a bounded audit trail**](RFCT-085.md) `P1`
 - [x] [**RFCT-086 The privileged CI lane, and the production key ceremony runbook**](RFCT-086.md) `P1`
 - [-] [**RFCT-087 An offline U-Boot A/B handshake harness on the sandbox build (spike)**](RFCT-087.md) `P1`
