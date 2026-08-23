@@ -1,0 +1,202 @@
+# The suites check.yml names as out of scope, on a runner that can actually
+# run them. check.yml's closing summary lists what it does not cover; this
+# workflow is that list, minus nothing invented: the two suites that need root
+# or a docker daemon run on every push and PR, and the full image pipeline --
+# the only way os-repart-test gets an image to test -- runs on demand and on a
+# weekly schedule.
+#
+# What the `privileged` runner label must provide. The label is a promise, and
+# this is the whole promise; a runner registered with this label but missing
+# any line below goes red in the preflight steps, not green:
+#
+#   - Linux x86_64 with apt (the dependency steps use apt-get, like check.yml).
+#   - root, either directly or via passwordless sudo. os-dbus-policy-test
+#     refuses to run otherwise -- its whole point is dropping to uid 65534.
+#   - a docker daemon reachable by the job user, with `--privileged`
+#     containers permitted (os-repart-test attaches loop devices) and
+#     `docker buildx` available (the BSP builds are buildx builds; linux/arm64
+#     emulation is NOT required on the host -- os/rootfs/build-v2.sh creates a
+#     docker-container builder with bundled QEMU when the host builder lacks
+#     the platform).
+#   - the daemon must be able to bind-mount paths the job writes (the
+#     mkimage-v2 selftest points TMPDIR into the workspace for exactly this;
+#     a rootless daemon in a different mount namespace fails its visible-
+#     workspace preflight, loudly).
+#   - disk: ~10 GiB free for the fast lane; budget >= 50 GiB for the deep lane
+#     (kernel + U-Boot source trees and build layers, the assembled image, and
+#     the repart test's working copies of it).
+#
+# Until a runner with this label is registered, Gitea never schedules these
+# jobs: the run sits visibly waiting and no green checkmark appears. That is
+# Gitea's behavior for an unmatched runs-on label, not a pass -- a reader who
+# sees this workflow green has seen it RUN. Nothing here converts "no runner"
+# into success.
+#
+# On docker layer caching: the board Dockerfiles are structured to cache well
+# (toolchain and source-clone layers before the build layers), so the deep
+# lane's later runs are only as slow as what changed -- IF the runner's docker
+# daemon retains its layer cache between runs. Whether it does is a property
+# of the runner deployment, not of this file, so this file configures no
+# cache; there is no runner-agnostic cache stanza that would be true here
+# without having been verified against a real runner.
+
+name: privileged
+
+on:
+  push:
+    # Same shape as check.yml: push covers main, pull_request covers
+    # everything aimed at it, and nothing runs twice per commit.
+    branches: [main]
+  pull_request:
+  # The deep lane's triggers. schedule needs a branch to check out and Gitea
+  # runs scheduled workflows against the default branch, which is main.
+  workflow_dispatch:
+  schedule:
+    - cron: '0 3 * * 1'
+
+# The event name is part of the group deliberately: with only the ref, a push
+# to main would land in the same group as the weekly deep run and cancel five
+# hours of image build to re-answer a question the fast lane answers in
+# minutes. Superseded runs of the SAME kind still cancel each other, exactly
+# as in check.yml.
+concurrency:
+  group: privileged-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # The two excluded suites that need no BSP artifacts: the dbus policy test
+  # stands up its own bus, and the mkimage-v2 selftest fabricates synthetic
+  # fixtures for every input the real pipeline would build. Every push and PR.
+  #
+  # Not a duplicate of check.yml's dbus-daemon step: the standard lane
+  # provisions dbus-daemon so the mosd Rust suites can run PRIVATE SESSION
+  # buses as an ordinary user. This suite proves the SHIPPED system-bus
+  # policy files, and hard-refuses to run without real root because its whole
+  # point is what uid 65534 can and cannot do -- which is why it still cannot
+  # move to the standard lane.
+  root-and-docker-suites:
+    runs-on: privileged
+    steps:
+      - uses: actions/checkout@v4
+
+      # The label promises root and docker; promises are checked before they
+      # are leaned on, so a mis-registered runner fails HERE with a message
+      # naming the missing capability, not twenty minutes into a suite.
+      - name: Preflight the runner label's promises
+        run: |
+          set -euo pipefail
+          SUDO=""
+          [ "$(id -u)" -eq 0 ] || SUDO="sudo"
+          $SUDO true || { echo "runner is neither root nor passwordless-sudo" >&2; exit 1; }
+          docker info >/dev/null || { echo "no reachable docker daemon" >&2; exit 1; }
+
+      # dbus-daemon for the bus under test, util-linux for setpriv, python3
+      # for the wire-protocol client the test carries. Fail-loud, no `|| true`:
+      # a runner that cannot install its own suite deps must go red here.
+      - name: Install suite dependencies
+        run: |
+          set -euo pipefail
+          SUDO=""
+          [ "$(id -u)" -eq 0 ] || SUDO="sudo"
+          $SUDO apt-get update
+          $SUDO apt-get install -y --no-install-recommends \
+            bash make git ca-certificates dbus util-linux python3
+
+      # Proves the SHIPPED com.mos.mosd policy against a real dbus-daemon,
+      # both directions of every guard. Needs root: it drops to uid 65534.
+      - name: make os-dbus-policy-test
+        run: |
+          set -euo pipefail
+          SUDO=""
+          [ "$(id -u)" -eq 0 ] || SUDO="sudo"
+          $SUDO make os-dbus-policy-test
+
+      # The v2 assembler against synthetic fixtures: byte-identical
+      # reassembly, the full GPT contract, and the guards' negative
+      # directions. Needs docker (the tool container) and a workspace the
+      # daemon can bind-mount, which is why TMPDIR points into the checkout
+      # instead of a possibly-private /tmp -- the script's own preflight
+      # rejects an invisible workspace and prints this exact remedy.
+      - name: os/mkimage-v2-selftest.sh
+        run: |
+          set -euo pipefail
+          mkdir -p _out/tmp
+          TMPDIR="$PWD/_out/tmp" bash os/mkimage-v2-selftest.sh
+
+  # The full pipeline: BSP kernel and U-Boot, the v2 image, its verification,
+  # a signed (dev-key) bundle, and os-repart-test against the image just
+  # built -- the one suite that cannot run without one. On demand and weekly,
+  # not per push: the kernel and U-Boot builds are the long pole and RFCT-083
+  # recorded them honestly as "hours". Expect the first cold run to take on
+  # the order of 3-6 hours on a capable runner; nobody has measured a real
+  # runner yet, and this comment should be corrected to the measured figure
+  # when one exists. Warm runs are bounded by what the docker layer cache
+  # retained (see the header).
+  image-pipeline:
+    if: github.event_name == 'workflow_dispatch' || github.event_name == 'schedule'
+    runs-on: privileged
+    # Above the 6h default because the cold kernel build alone may consume
+    # most of it; a timeout kill halfway through proves nothing.
+    timeout-minutes: 720
+    steps:
+      - uses: actions/checkout@v4
+
+      # Same promise check as the fast lane, plus the two this lane leans on:
+      # buildx for the BSP builds and a --privileged container for the loop
+      # devices os-repart-test needs. The probe attaches nothing; it asks the
+      # daemon to run a privileged container and touch /dev/loop-control,
+      # which is exactly the capability the suite will demand later.
+      - name: Preflight the runner label's promises
+        run: |
+          set -euo pipefail
+          SUDO=""
+          [ "$(id -u)" -eq 0 ] || SUDO="sudo"
+          $SUDO true || { echo "runner is neither root nor passwordless-sudo" >&2; exit 1; }
+          docker info >/dev/null || { echo "no reachable docker daemon" >&2; exit 1; }
+          docker buildx version >/dev/null || { echo "docker buildx is not available" >&2; exit 1; }
+          docker run --rm --privileged alpine:3.21 sh -c 'test -e /dev/loop-control && losetup -f >/dev/null' \
+            || { echo "the daemon refuses --privileged containers or has no loop devices" >&2; exit 1; }
+
+      - name: Install suite dependencies
+        run: |
+          set -euo pipefail
+          SUDO=""
+          [ "$(id -u)" -eq 0 ] || SUDO="sudo"
+          $SUDO apt-get update
+          $SUDO apt-get install -y --no-install-recommends \
+            bash make git ca-certificates
+
+      # The BSP artifacts the image needs: the kernel (Image + dtb) and the
+      # mos A/B U-Boot variant. Both are docker builds; the host needs no
+      # cross toolchain. This is the slow half of the lane.
+      - name: make cx3576-kernel
+        run: make cx3576-kernel
+
+      - name: make cx3576-uboot-mos
+        run: make cx3576-uboot-mos
+
+      # rootfs (squashfs + dm-verity, built for linux/arm64 -- build-v2.sh
+      # provisions its own emulating builder when the host lacks the
+      # platform) and the eleven-partition A/B image around it.
+      - name: make os-image-cx3576-v2
+        run: make os-image-cx3576-v2
+
+      - name: make os-verify-cx3576-v2
+        run: make os-verify-cx3576-v2
+
+      # Development signing material for the bundle build. Dev keys,
+      # deliberately: this lane proves the pipeline, and production signing is
+      # an offline ceremony (docs/design/release-signing.md), never a CI step.
+      # gen-dev-keys.sh is a no-op when keys exist, so a runner that retains
+      # its workspace does not regenerate.
+      - name: make os-devkeys
+        run: make os-devkeys
+
+      - name: make os-bundle-cx3576
+        run: make os-bundle-cx3576
+
+      # Against the image built above: real systemd-repart, discard enabled,
+      # loop devices in a --privileged container; positive and negative
+      # directions per image, then the shipped repart.d growth.
+      - name: make os-repart-test
+        run: make os-repart-test

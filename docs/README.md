@@ -17,6 +17,7 @@
   - `api.md` — API-first apid: current HTTP/bus surface, proposed API, static hosting, replaceable UI
   - `bsp-cx3576-sync.md` — cx3576 upstream BSP: source repo, synced commit, deviation register
   - `bus.md` — device bus v2: `com.mos.Item1` contract, class registry, actions as items, Sparkplug B evaluation
+  - `release-signing.md` — production key ceremonies: TUF root, RAUC CA, bundle signing runbook
 - `research/` — decision-basis studies
   - `os-comparison.md` — balena/Torizon/Talos/Yocto evaluation and rejected alternatives
   - `init-strategy.md` — init core strategy: Plan A Talos / Plan B systemd+Rust / Plan C Rust PID1, with triggers

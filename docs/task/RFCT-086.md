@@ -1,6 +1,6 @@
 # RFCT-086 The privileged CI lane, and the production key ceremony runbook
 
-- **status**: in progress
+- **status**: implementation complete — both deliverables shipped; the CI lane is inert until a `privileged`-labelled runner is registered, which the file itself discloses
 - **priority**: P1
 - **owner**: ai-agent
 - **createdAt**: 2026-08-21 10:25
@@ -33,6 +33,16 @@ BSP/rootfs input synthetically but needs docker with a **daemon-visible**
 TMPDIR (its own preflight prints the `TMPDIR=_out/tmp` remedy);
 `os/repart-loader-test.sh` needs privileged docker (loop devices) **and a
 built image**, which no cheap job can supply.
+
+Re-measured against check.yml as it stands after d66241a, which made the
+standard lane provision dbus-daemon and prove it can fork a session bus:
+that provisioning serves the mosd Rust suites (`bus.rs`, `scan.rs`,
+`tree.rs`), which stand up **private session buses as an ordinary user**.
+`os-dbus-policy-test` proves the **shipped system-bus policies** and
+hard-refuses to run without real root (`id -u` check; dropping to uid 65534
+with setpriv is its whole point), so it could not move to the standard lane
+and stays here — the two lanes' dbus coverage does not overlap, and the
+privileged workflow's job comment says so where a reader would wonder.
 
 That split dictates the two jobs:
 
@@ -82,6 +92,15 @@ same recorded no-EKU reasoning; the release bundle procedure through
 production bundle buildable at all) into `mos-sign add`/`verify`; and a
 "what never happens" list.
 
+Every `mos-sign` claim was re-confirmed against `update/sign/src` **at HEAD**
+(`5cf74d1`) rather than the working tree — that crate is being extended
+concurrently by another workstream, and the runbook deliberately references
+only committed behaviour. One overstatement was caught and corrected in the
+process: `verify --root` is *required* and the tool never anchors to the
+repository's own `root.json`, but it does not *detect* an operator pointing
+`--root` back into the repository — the runbook now forbids that by
+procedure instead of crediting the tool with a refusal it does not perform.
+
 Gaps stated as `[not implemented]` rather than papered over: `mos-sign` has
 no root-rotation command, so online-key revocation currently means a fresh
 lineage and re-anchoring, and even the annual same-key root refresh is
@@ -123,3 +142,34 @@ cannot install any bundle until the RFCT-088 trust-anchor provisioning work
 - `check-purpose=` in `system.conf` (tightening the signer EKU) is flagged
   in the runbook as a decision to take with the CA ceremony, not decided
   here.
+
+- **completedAt**: 2026-08-23 (committed by a later session)
+
+## Close-out
+
+Both deliverables were written on 2026-08-21 and never committed; they sat
+untracked for two days while four sibling workstreams stopped at the same
+minute. Nothing was missing from either — this close-out adds no content, it
+adds the commit.
+
+**Checked before committing rather than assumed:**
+
+- `.gitea/workflows/privileged.yml` parses as YAML and declares the two jobs
+  the scope names (`root-and-docker-suites`, `image-pipeline`).
+- Every `make` target and every script it invokes resolves. The two BSP
+  targets, `cx3576-kernel` and `cx3576-uboot-mos`, are **not** literal rules
+  in the top-level Makefile — they are served by the `cx3576-%:` pattern rule
+  that delegates to `board/cx3576`, which the Makefile's own header says are
+  deliberately not listed. A first pass grepping for literal `^target:` lines
+  reported both as missing; `make -n` reports both as present. The grep was
+  wrong, not the workflow, and it is recorded here because the wrong answer
+  was the confident-looking one.
+- `docs/design/release-signing.md` carries its five sections and its index row
+  in `docs/README.md`; `make docs-verify` is green with it in place (327/327).
+
+**Standing limitation, disclosed in the file and repeated here.** No runner
+carries the `privileged` label today, so Gitea never schedules either job.
+That is an unmatched-label no-op, not a pass — a green board with these
+suites absent looks identical to a green board with them passing. Registering
+the runner is the operational act that makes this lane real, and it is not a
+code change.
