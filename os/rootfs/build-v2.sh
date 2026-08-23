@@ -96,6 +96,37 @@ fi
 mkdir -p "$OUT_DIR"
 cp "$MODULES_TAR" "$OUT_DIR/modules.tar"
 
+# The container engine, built from source by os/podman (PLAN-012 M1/M2).
+# Staged like modules.tar and mosd; the directory always exists (empty when
+# WITH_CONTAINERS=0) so the Dockerfile COPY works on both paths.
+#
+# NOT built on demand here. `make podman` compiles four Go/Rust/C trees and
+# takes tens of minutes; running it implicitly from a rootfs build would make
+# an image build occasionally take an hour with no indication why. It is a
+# separate target, and the absence of its output is an error with the command
+# to run in it.
+PODMAN_STAGE="$OUT_DIR/podman"
+rm -rf "$PODMAN_STAGE"
+mkdir -p "$PODMAN_STAGE"
+if [ "$WITH_CONTAINERS" = "1" ]; then
+    PODMAN_OUT="$REPO_ROOT/os/podman/out"
+    for b in podman quadlet crun conmon netavark aardvark-dns catatonit; do
+        if [ ! -f "$PODMAN_OUT/$b" ]; then
+            echo "error: $PODMAN_OUT/$b not found." >&2
+            echo "WITH_CONTAINERS=1 asks for a container engine and none has been built." >&2
+            echo "Build it with 'make podman', or set WITH_CONTAINERS=0 for a board that declines the engine." >&2
+            exit 1
+        fi
+        cp "$PODMAN_OUT/$b" "$PODMAN_STAGE/$b"
+    done
+    # `[ -f x ] && cp` would be the last command of the if-branch, and under
+    # `set -e` a false test there exits the whole script with 0 -- a rootfs
+    # build that stops silently after staging seven binaries.
+    if [ -f "$PODMAN_OUT/SHA256SUMS" ]; then
+        cp "$PODMAN_OUT/SHA256SUMS" "$PODMAN_STAGE/SHA256SUMS"
+    fi
+fi
+
 # mosd: cross-build and stage into the context like modules.tar. The staged
 # directory always exists (empty when WITH_MOSD=0) so the Dockerfile COPY works
 # on both paths.
@@ -283,6 +314,7 @@ if ! docker buildx build \
         -f "$SCRIPT_DIR/Dockerfile.v2" \
         --build-arg MODULES_TAR=_out/cx3576/modules.tar \
         --build-arg MOSD_DIR=_out/cx3576/mosd \
+        --build-arg PODMAN_DIR=_out/cx3576/podman \
         --build-arg BOARD_INIT_DIR=_out/cx3576/init \
         --build-arg OVERLAY_DIR=_out/cx3576/overlay-v2 \
         --build-arg WITH_MOSD="$WITH_MOSD" \

@@ -79,6 +79,30 @@ if [ -z "${FIXTURE_ROOT}" ]; then
         echo "error: image not found: ${IMG}" >&2
         exit 1
     fi
+
+    # STALENESS. Nothing above ties this run to the tree it is checking, and a
+    # verifier pointed at an old image reports PASS in the present tense about
+    # work that is not in it. That is not hypothetical: during PLAN-012 M2 this
+    # script was one command away from verifying a six-hour-old image built
+    # from the distribution's podman and reading the result as a description of
+    # the self-built one.
+    #
+    # mtime, not a hash: the inputs are a squashfs and a directory of binaries,
+    # and what is being caught is "you forgot to re-run the build", which mtime
+    # answers exactly. MOS_VERIFY_ALLOW_STALE=1 exists for verifying a
+    # downloaded release image, where the local tree is not its source at all.
+    if [ "${MOS_VERIFY_ALLOW_STALE:-0}" != "1" ]; then
+        stale=""
+        for input in "${REPO_ROOT}/_out/cx3576/rootfs-verity.img" \
+                     "${REPO_ROOT}/os/podman/out/podman"; do
+            [ -e "${input}" ] || continue
+            [ "${input}" -nt "${IMG}" ] && stale="${stale} ${input##*/}"
+        done
+        if [ -n "${stale}" ]; then
+            echo "error: ${IMG##*/} is OLDER than${stale}. Verifying it would report on an image the current tree did not produce — re-run 'make os-image-cx3576-v2', or set MOS_VERIFY_ALLOW_STALE=1 when checking a downloaded release image whose source is not this tree" >&2
+            exit 1
+        fi
+    fi
 fi
 
 # Re-exec in a container when the host lacks any required tool. unsquashfs,
@@ -958,7 +982,19 @@ check_no_package_manager() {
 # Of those three, /run is tmpfs and the other two are inside the read-only
 # squashfs, so without a bind there is nowhere on the device to install one.
 CONTAINER_STORAGE_CONF="/etc/containers/storage.conf"
-CONTAINER_BINARIES="/usr/bin/podman /usr/bin/crun /usr/bin/conmon /usr/lib/podman/netavark /usr/lib/podman/aardvark-dns /usr/libexec/podman/quadlet"
+# Where each binary must be, derived from podman v5.8.6's own search lists
+# rather than from where Debian's package put them:
+#   crun     default.go:391    /usr/bin/crun is first
+#   conmon   default.go:474    /usr/libexec/podman/conmon is first
+#   helpers  config_linux.go:24  helper_binaries_dir, of which /usr/libexec/
+#                               podman is the first entry not under /usr/local
+# containers.conf pins all of them absolutely; these assertions are that the
+# files are where that file says.
+CONTAINER_BINARIES="/usr/bin/podman /usr/bin/crun /usr/libexec/podman/conmon /usr/libexec/podman/netavark /usr/libexec/podman/aardvark-dns /usr/libexec/podman/catatonit /usr/libexec/podman/quadlet"
+CONTAINER_POLICY="/etc/containers/policy.json"
+CONTAINER_CONF="/etc/containers/containers.conf"
+CONTAINER_REGISTRIES="/etc/containers/registries.conf"
+CONTAINER_NFT="/usr/sbin/nft"
 QUADLET_GENERATOR="/usr/lib/systemd/system-generators/podman-system-generator"
 QUADLET_DIR="/etc/containers/systemd"
 QUADLET_MOUNT_UNIT="etc-containers-systemd.mount"
@@ -982,21 +1018,82 @@ check_container_engine() {
         fail "the container engine is incomplete:${ce_missing} missing. PLAN-012 ships the engine installed and inert; a partial install is a switch that turns on nothing"
     fi
 
-    # Every unit podman brings must be masked. Masked, not disabled:
-    # podman.socket is socket-activated, so a disabled service still starts
-    # the moment anything connects.
-    ce_units="$(find "${ROOT}/usr/lib/systemd/system" -maxdepth 1 -name 'podman*' 2>/dev/null | sed "s|^${ROOT}/usr/lib/systemd/system/||" | sort || true)"
-    ce_unmasked=""
-    for u in ${ce_units}; do
-        [ "$(readlink "${ROOT}/etc/systemd/system/${u}" 2>/dev/null)" = "/dev/null" ] ||
-            ce_unmasked="${ce_unmasked} ${u}"
-    done
+    # No podman units, at all. The engine is inert because nothing can start
+    # it, not because seven symlinks point at /dev/null.
+    #
+    # This replaced a check that every unit podman shipped was masked. That
+    # check could only fail if podman's unit set CHANGED; it could not notice a
+    # unit podman ADDED, and it required the units to exist -- so it also had a
+    # branch that failed when they were absent, which is now the correct state.
+    # Building the engine from source means upstream's contrib/ units are never
+    # installed: podman.socket, the socket-activated root REST API, is not
+    # masked here, it does not exist.
+    # -path '*.wants/*' is excluded on purpose, not overlooked: an enablement
+    # symlink is the NEXT check's subject, and a dangling one can exist with no
+    # unit file behind it. Two checks that both fire on one mutation say less
+    # than two that each name a distinct way the engine could start.
+    ce_units="$(find "${ROOT}/etc/systemd" "${ROOT}/usr/lib/systemd" "${ROOT}/usr/local/lib/systemd" \
+        -name 'podman*' -not -name 'podman-system-generator' -not -path '*.wants/*' \
+        2>/dev/null | sed "s|^${ROOT}||" | sort | tr '\n' ' ' || true)"
     if [ -z "${ce_units}" ]; then
-        fail "podman ships no units at all in this image, so the check that they are masked to /dev/null has nothing to check and would pass vacuously"
-    elif [ -z "${ce_unmasked}" ]; then
-        pass "all $(printf '%s\n' ${ce_units} | grep -c .) podman units are masked to /dev/null; the engine cannot start until mosd enables it"
+        pass "the image contains no podman systemd unit of any name; the engine is inert by construction rather than by masking, so there is no mask list to keep in step with upstream"
     else
-        fail "these podman units are not masked to /dev/null:${ce_unmasked}. podman.socket in particular is SOCKET-ACTIVATED — disabling it is not enough, anything that connects starts the root-run engine behind it"
+        fail "the image contains podman systemd units:${ce_units}. os/podman does not run 'make install.systemd', so anything named podman* under a unit directory arrived by a path nobody intended -- and podman.socket in particular is SOCKET-ACTIVATED, so being disabled is not enough"
+    fi
+
+    # nft. Reached by exec, so no NEEDED-soname check can see it, and it was
+    # missing from the image RFCT-101/102 shipped -- which passed every
+    # assertion this file then had.
+    if [ -f "${ROOT}${CONTAINER_NFT}" ] || [ -f "${ROOT}/usr/bin/nft" ]; then
+        pass "nft is in the image; netavark 2.x has no iptables driver (its FirewallImpl enum is Firewalld/Nftables/Fwnone) and execs nft by name off PATH, so without this binary every container network setup fails"
+    else
+        fail "nft is not in the image. netavark execs it by name (nftables crate, NFT_EXECUTABLE = \"nft\") to build every container network, and there is no fallback: the iptables driver was REMOVED in netavark 2.x. The device boots, the engine reports healthy, and the first 'podman run' fails with 'unable to execute nft'"
+    fi
+
+    # libsystemd, reached by DLOPEN. A third invisible category, after the
+    # exec'd nft: podman opens "libsystemd.so.0" by name at runtime for
+    # journald logging (go-systemd sdjournal/functions.go:37), so it appears in
+    # no NEEDED list and ldd cannot see it. containers.conf sets
+    # log_driver = "journald", so losing it does not fail -- it loses logs.
+    if find "${ROOT}/usr/lib" -name 'libsystemd.so.0' -print -quit 2>/dev/null | grep -q .; then
+        pass "libsystemd.so.0 is in the image; podman dlopens it by name for journald logging, which is a dependency neither a NEEDED list nor ldd can report"
+    else
+        fail "libsystemd.so.0 is not in the image. podman DLOPENS it for journald logging, so nothing in the link-time or loader checks above can see this missing -- and with log_driver=journald the symptom is container logs quietly going nowhere, not an error"
+    fi
+
+    # mos's own configuration, in place of containers-common's.
+    #
+    # storage.conf is NOT in this list, though it is equally mos's own. It has
+    # its own assertion below, which reports where the graphroot points rather
+    # than merely that a file exists. Checking it in both places would mean one
+    # missing file produced two failures, and the offline harness reads a case
+    # by WHICH assertions changed -- a mutation that trips two checks says less
+    # than one that trips the right one.
+    ce_cfg_missing=""
+    for f in "${CONTAINER_POLICY}" "${CONTAINER_CONF}" "${CONTAINER_REGISTRIES}"; do
+        [ -f "${ROOT}${f}" ] || ce_cfg_missing="${ce_cfg_missing} ${f}"
+    done
+    if [ -z "${ce_cfg_missing}" ]; then
+        pass "mos ships its own policy.json, containers.conf, registries.conf and storage.conf; the distribution's containers-common is not installed, so these four files are the whole of the engine's configuration"
+    else
+        fail "container configuration is incomplete:${ce_cfg_missing} missing. containers-common is not installed to supply a fallback, and podman does not fail on an absent config file -- it uses a built-in default nobody chose"
+    fi
+
+    # A second config layer under /usr/share would supply settings that reading
+    # /etc does not reveal.
+    if [ -e "${ROOT}/usr/share/containers/containers.conf" ]; then
+        fail "/usr/share/containers/containers.conf exists. podman reads it BEFORE /etc/containers/containers.conf and merges, so an operator reading /etc sees only half the configuration"
+    else
+        pass "there is no /usr/share/containers/containers.conf; /etc is the only layer, so what mos configured is what reading one file shows"
+    fi
+
+    # containers.conf must pin the paths, not leave podman to search: the
+    # default helper_binaries_dir begins with two directories under /usr/local,
+    # a prefix this image makes partially writable (PLAN-011 D5).
+    if grep -q '^helper_binaries_dir *= *\["/usr/libexec/podman"\]' "${ROOT}${CONTAINER_CONF}" 2>/dev/null; then
+        pass "containers.conf pins helper_binaries_dir to /usr/libexec/podman; podman's built-in default searches /usr/local/libexec/podman and /usr/local/lib/podman FIRST, and /usr/local on this image is a prefix with a STATE-backed writable subtree"
+    else
+        fail "containers.conf does not pin helper_binaries_dir. The default (config_linux.go:24) searches /usr/local/libexec/podman and /usr/local/lib/podman before the image's own /usr/libexec/podman, and mos deliberately makes part of /usr/local writable from STATE"
     fi
 
     # ...and none is enabled by a wants symlink either, which is the other way
@@ -1044,10 +1141,10 @@ check_container_engine() {
         fail "${QUADLET_MOUNT_UNIT} mounts '${ce_where}', not ${QUADLET_DIR} — which is the only one of Quadlet's three search directories an operator can be given"
     elif ! printf '%s' "${ce_what}" | grep -q '^/mnt/state/'; then
         fail "${QUADLET_MOUNT_UNIT} is backed by '${ce_what}', not STATE. Installed containers would not survive an A/B update"
-    elif [ ! -L "${ROOT}/etc/systemd/system/local-fs.target.wants/${QUADLET_MOUNT_UNIT}" ]; then
-        fail "${QUADLET_MOUNT_UNIT} exists but is not enabled; ${QUADLET_DIR} would never be bound and installing a container would appear to work until the next boot"
+    elif [ -L "${ROOT}/etc/systemd/system/local-fs.target.wants/${QUADLET_MOUNT_UNIT}" ]; then
+        fail "${QUADLET_MOUNT_UNIT} is STATICALLY ENABLED. The bind then comes up at every boot whatever container.enabled says, Quadlet generates units from STATE, and they start — so anything able to write /mnt/state/quadlet gets a root-capable container at the next reboot with no operator decision anywhere in the path, and PLAN-012's switch gates nothing. mosd's ContainerReconciler enables it at runtime when the setting is true"
     else
-        pass "${QUADLET_DIR} is a STATE-backed bind via ${QUADLET_MOUNT_UNIT} (What=${ce_what}), enabled, so a Quadlet unit installed there survives a reboot and an A/B update"
+        pass "${QUADLET_DIR} is a STATE-backed bind via ${QUADLET_MOUNT_UNIT} (What=${ce_what}), installed and NOT statically enabled — mosd brings it up only when container.enabled is true, which is what makes the switch mean anything at boot"
     fi
 }
 

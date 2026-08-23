@@ -157,12 +157,15 @@ CONTAINER_STORAGE_SRC="${HERE}/rootfs/overlay-v2${CONTAINER_STORAGE_CONF}"
     echo "error: ${QUADLET_MOUNT_SRC} not found; ${VERIFIER} names ${QUADLET_MOUNT_UNIT} as the Quadlet directory's bind but the overlay ships no such file" >&2
     exit 1
 }
-# The unit set podman brings. Restated here rather than read from the image,
-# deliberately: the fixture has no podman, and what these cases exercise is the
-# verifier's masking logic, not podman's packaging. The IMAGE run is what holds
-# the real set honest, and the Dockerfile fails the build if podman grows a
-# unit the masking list does not name.
-PODMAN_UNITS="podman.socket podman.service podman-auto-update.timer podman-auto-update.service podman-restart.service podman-clean-transient.service podman-kube@.service"
+CONTAINER_POLICY="$(verifier_const CONTAINER_POLICY '"')"
+CONTAINER_CONF="$(verifier_const CONTAINER_CONF '"')"
+CONTAINER_REGISTRIES="$(verifier_const CONTAINER_REGISTRIES '"')"
+CONTAINER_NFT="$(verifier_const CONTAINER_NFT '"')"
+CONTAINER_CONF_SRC="${HERE}/rootfs/overlay-v2${CONTAINER_CONF}"
+[ -f "${CONTAINER_CONF_SRC}" ] || {
+    echo "error: ${CONTAINER_CONF_SRC} not found; ${VERIFIER} asserts mos ships its own ${CONTAINER_CONF} in place of containers-common's but the overlay has no such file" >&2
+    exit 1
+}
 
 MQTTD_ENV_MOUNT_SRC="$(grep -rl "^Where=${MQTTD_ENV_DIR}\$" \
     "${HERE}/rootfs/overlay-v2/etc/systemd/system" 2>/dev/null | head -n1)"
@@ -279,24 +282,36 @@ new_fixture() {
     done
 
     # PLAN-012's container engine, as os/rootfs/Dockerfile.v2 installs it:
-    # binaries present (stand-ins -- nothing reads their contents), every
-    # podman unit masked to /dev/null, and the Quadlet directory bound from
-    # STATE and enabled.
-    local b u
-    for b in ${CONTAINER_BINARIES} "${QUADLET_GENERATOR}"; do
+    # seven self-built binaries (stand-ins -- nothing reads their contents) at
+    # the paths podman's own source searches first, NO podman systemd unit of
+    # any name, mos's own four config files, nft, and the Quadlet directory
+    # bound from STATE and enabled.
+    #
+    # The absent units are the point. The fixture used to create seven and mask
+    # each to /dev/null, because the engine came from apt; os/podman does not
+    # run `make install.systemd`, so there is nothing to mask. A fixture that
+    # still created them would have made the new assertion fail for the correct
+    # image and pass for the old one.
+    local b f
+    for b in ${CONTAINER_BINARIES} "${QUADLET_GENERATOR}" "${CONTAINER_NFT}"; do
         mkdir -p "${dir}$(dirname "${b}")"
         printf '#!/bin/sh\n' >"${dir}${b}"
     done
     mkdir -p "${dir}/usr/lib/systemd/system"
-    for u in ${PODMAN_UNITS}; do
-        printf '[Unit]\nDescription=%s\n' "${u}" >"${dir}/usr/lib/systemd/system/${u}"
-        ln -sf /dev/null "${dir}/etc/systemd/system/${u}"
+    mkdir -p "${dir}/usr/lib/aarch64-linux-gnu"
+    printf '\177ELF\n' >"${dir}/usr/lib/aarch64-linux-gnu/libsystemd.so.0"
+    mkdir -p "${dir}/etc/containers"
+    for f in "${CONTAINER_POLICY}" "${CONTAINER_REGISTRIES}"; do
+        printf '{}\n' >"${dir}${f}"
     done
+    cp "${CONTAINER_CONF_SRC}" "${dir}${CONTAINER_CONF}"
     cp "${QUADLET_MOUNT_SRC}" "${dir}/etc/systemd/system/${QUADLET_MOUNT_UNIT}"
     mkdir -p "${dir}$(dirname "${CONTAINER_STORAGE_CONF}")"
     cp "${CONTAINER_STORAGE_SRC}" "${dir}${CONTAINER_STORAGE_CONF}"
-    ln -sf "/etc/systemd/system/${QUADLET_MOUNT_UNIT}" \
-        "${dir}/etc/systemd/system/local-fs.target.wants/${QUADLET_MOUNT_UNIT}"
+    # No local-fs.target.wants symlink for the Quadlet bind, deliberately: the
+    # baseline fixture is the CORRECT image, and PLAN-012 M3 made "installed,
+    # not statically enabled" correct. The case below creates the symlink to
+    # prove the assertion can fail.
 
     # The image's networkd namespace, for check_networkd_namespace. Two files,
     # both outside every reconciler-owned prefix: the image's DHCP fallback and
@@ -437,8 +452,13 @@ pkgmgr-dangling|names perl as its interpreter, so removing perl left nothing bro
 container-absent|carries no container engine at all||ABSENT
 container-storage|container image storage is at|container image storage|PASS
 container-present|the container engine is in the image|the container engine is incomplete|PASS
-container-masked|podman units are masked to /dev/null|masked to /dev/null|PASS
+container-no-units|contains no podman systemd unit of any name|the image contains podman systemd units|PASS
 container-not-enabled|no podman unit carries an enablement symlink|enablement symlink in the image|PASS
+container-nft|nft is in the image|nft is not in the image|PASS
+container-dlopen|libsystemd.so.0 is in the image|libsystemd.so.0 is not in the image|PASS
+container-config|mos ships its own policy.json|container configuration is incomplete|PASS
+container-one-layer|there is no /usr/share/containers/containers.conf|podman reads it BEFORE|PASS
+container-helper-pinned|pins helper_binaries_dir to|does not pin helper_binaries_dir|PASS
 quadlet-dir|is a STATE-backed bind via etc-containers-systemd.mount|etc-containers-systemd.mount|PASS
 connd-contract|read the connd contract out of mosd|could not read the connd contract|PASS
 networkd-namespace|networkd namespace is clear|networkd namespace|PASS
@@ -1224,16 +1244,77 @@ expect_set "the Quadlet systemd generator missing" \
     "container-present=FAIL" \
     "the container engine is incomplete"
 
-# --- 8c. podman.socket unmasked ---------------------------------------------
-# THE ONE THAT MATTERS MOST. podman.socket is socket-activated: leaving it
-# merely disabled means anything that connects starts the root-run engine.
-FIX="${WORK}/container-socket-unmasked"
+# --- 8c. a podman unit present at all ---------------------------------------
+# THE ONE THAT MATTERS MOST, restated. The old case removed one of seven masks;
+# the assertion now is that none of the seven is in the image, so the fixture
+# has to CREATE one. podman.socket is the worst of them: socket-activated, so
+# it does not need to be enabled -- anything that connects starts the root-run
+# engine behind it.
+FIX="${WORK}/container-unit-present"
 new_fixture "${FIX}"
-rm -f "${FIX}/etc/systemd/system/podman.socket"
-expect_set "podman.socket left unmasked" \
-    "container-masked=FAIL" \
-    "masked to /dev/null" \
+mkdir -p "${FIX}/usr/lib/systemd/system"
+printf '[Socket]\nListenStream=%%t/podman/podman.sock\n' \
+    >"${FIX}/usr/lib/systemd/system/podman.socket"
+expect_set "a podman unit present in the image" \
+    "container-no-units=FAIL" \
+    "the image contains podman systemd units" \
     "SOCKET-ACTIVATED"
+
+# --- 8c2. nft missing -------------------------------------------------------
+# THE DEFECT THE SHIPPED IMAGE ACTUALLY HAD. netavark execs nft by name; no
+# NEEDED-soname check can see an exec, so this passed every assertion the
+# verifier had while the first `podman run` on the device would have failed.
+FIX="${WORK}/container-no-nft"
+new_fixture "${FIX}"
+rm -f "${FIX}${CONTAINER_NFT}" "${FIX}/usr/bin/nft"
+expect_set "nft missing from the image" \
+    "container-nft=FAIL" \
+    "nft is not in the image" \
+    "unable to execute nft"
+
+# --- 8c2b. libsystemd missing -----------------------------------------------
+# The dlopen category. Neither the NEEDED list os/podman emits nor the ldd run
+# in Dockerfile.v2 can see this one, and with log_driver=journald its absence
+# does not fail anything -- container logs simply go nowhere.
+FIX="${WORK}/container-no-libsystemd"
+new_fixture "${FIX}"
+find "${FIX}/usr/lib" -name 'libsystemd.so.0' -delete
+expect_set "libsystemd.so.0 missing, which podman dlopens" \
+    "container-dlopen=FAIL" \
+    "libsystemd.so.0 is not in the image" \
+    "DLOPENS"
+
+# --- 8c3. mos config missing ------------------------------------------------
+# containers-common is not installed, so nothing supplies a fallback -- and
+# podman does not fail on an absent config file, it uses a built-in default.
+FIX="${WORK}/container-no-policy"
+new_fixture "${FIX}"
+rm -f "${FIX}${CONTAINER_POLICY}"
+expect_set "policy.json missing with no containers-common to supply one" \
+    "container-config=FAIL" \
+    "container configuration is incomplete"
+
+# --- 8c4. a second config layer under /usr/share ----------------------------
+# podman merges /usr/share/containers/containers.conf UNDER /etc's copy, so an
+# operator reading /etc sees only half of what the engine was configured with.
+FIX="${WORK}/container-two-layers"
+new_fixture "${FIX}"
+mkdir -p "${FIX}/usr/share/containers"
+printf '[engine]\nruntime = "runc"\n' >"${FIX}/usr/share/containers/containers.conf"
+expect_set "a second containers.conf layer under /usr/share" \
+    "container-one-layer=FAIL" \
+    "podman reads it BEFORE"
+
+# --- 8c5. helper_binaries_dir left to podman's default ----------------------
+# The default list starts with two directories under /usr/local, and PLAN-011
+# D5 makes part of /usr/local a STATE-backed writable bind.
+FIX="${WORK}/container-helper-unpinned"
+new_fixture "${FIX}"
+grep -v '^helper_binaries_dir' "${FIX}${CONTAINER_CONF}" >"${FIX}${CONTAINER_CONF}.new"
+mv "${FIX}${CONTAINER_CONF}.new" "${FIX}${CONTAINER_CONF}"
+expect_set "helper_binaries_dir left to podman's default search" \
+    "container-helper-pinned=FAIL" \
+    "does not pin helper_binaries_dir"
 
 # --- 8d. a podman unit enabled ----------------------------------------------
 FIX="${WORK}/container-unit-enabled"
@@ -1245,16 +1326,30 @@ expect_set "a podman unit enabled in the image" \
     "container-not-enabled=FAIL" \
     "enablement symlink in the image"
 
-# --- 8e. the Quadlet bind shipped but NOT ENABLED ---------------------------
-# THE DEFECT THIS TASK ACTUALLY HAD. The mount unit was installed and its
-# local-fs.target.wants symlink was not, so /etc/containers/systemd would have
-# stayed on the read-only squashfs. Caught by the assertion on its first run.
-FIX="${WORK}/quadlet-not-enabled"
+# --- 8e. the Quadlet bind STATICALLY ENABLED --------------------------------
+# THIS CASE WAS INVERTED BY PLAN-012 M3, and the inversion is the point.
+#
+# RFCT-102 asserted the opposite: the mount unit shipped without its
+# local-fs.target.wants symlink, /etc/containers/systemd stayed on the
+# read-only squashfs, and nothing an operator installed survived a reboot. That
+# was a real defect and the symlink was the right fix for an image that had no
+# container switch.
+#
+# It pre-empted the switch. Statically enabled, the bind comes up at every boot
+# whatever container.enabled says: Quadlet parses STATE and starts what it
+# finds, so writing /mnt/state/quadlet is by itself enough to run root-capable
+# code at the next reboot. mosd now brings the mount up, which is the same
+# runtime-scoped enablement every other mos-driven unit uses -- so "installed
+# and not enabled" is the correct shipped state and the symlink is the defect.
+FIX="${WORK}/quadlet-statically-enabled"
 new_fixture "${FIX}"
-rm -f "${FIX}/etc/systemd/system/local-fs.target.wants/${QUADLET_MOUNT_UNIT}"
-expect_set "the Quadlet bind installed but not enabled" \
+mkdir -p "${FIX}/etc/systemd/system/local-fs.target.wants"
+ln -sf "/etc/systemd/system/${QUADLET_MOUNT_UNIT}" \
+    "${FIX}/etc/systemd/system/local-fs.target.wants/${QUADLET_MOUNT_UNIT}"
+expect_set "the Quadlet bind statically enabled, bypassing container.enabled" \
     "quadlet-dir=FAIL" \
-    "exists but is not enabled"
+    "is STATICALLY ENABLED" \
+    "gates nothing"
 
 # --- 8f. no Quadlet bind at all ---------------------------------------------
 # The state the image was in before this task: podman installed, and nowhere
@@ -1320,7 +1415,7 @@ FIX="${WORK}/container-absent-board"
 new_fixture "${FIX}"
 rm -f "${FIX}/usr/bin/podman" "${FIX}${CONTAINER_STORAGE_CONF}"
 expect_set "a board built with WITH_CONTAINERS=0" \
-    "container-absent=PASS container-present=ABSENT container-masked=ABSENT container-not-enabled=ABSENT quadlet-dir=ABSENT container-storage=ABSENT"
+    "container-absent=PASS container-present=ABSENT container-no-units=ABSENT container-not-enabled=ABSENT container-nft=ABSENT container-dlopen=ABSENT container-config=ABSENT container-one-layer=ABSENT container-helper-pinned=ABSENT quadlet-dir=ABSENT container-storage=ABSENT"
 
 echo
 total=$((PASS_N + FAIL_N))
