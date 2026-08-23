@@ -11,7 +11,8 @@ BOARDS := cx3576 x64
 # in this directory would shadow the delegation, which is a visible "Nothing to
 # be done" rather than a wrong build.
 .PHONY: help os os-image-cx3576 os-verify-cx3576 os-rootfs-cx3576-v2 \
-	os-image-cx3576-v2 os-verify-cx3576-v2 os-bundle-cx3576 os-devkeys os-health-test \
+	os-quadlet-doc-test \
+	os-image-cx3576-v2 os-verify-cx3576-v2 os-bundle-cx3576 os-devkeys os-health-test podman \
 	os-shadow-test os-dbus-policy-test os-repart-test os-ui-location-test \
 	os-uboot-handshake-test docs-verify docs-verify-test
 
@@ -33,6 +34,8 @@ help:
 	@echo "  os-ui-location-test prove the custom-UI location assertions in the v2 verifier actually fail when the location moves"
 	@echo "  docs-verify         assert both document indexes agree with the tree, in both directions"
 	@echo "  docs-verify-test    prove the index assertions actually fail on a duplicated row or entry"
+	@echo "  podman              build the container engine from source (aarch64) into os/podman/out"
+	@echo "  os-quadlet-doc-test run docs/design/containers.md's examples through Quadlet"
 	@echo "  cx3576-<t>          delegate target <t> to board/cx3576 (uboot|kernel|rootfs|image|clean)"
 
 # PLAN-010 moved the OS core off Talos onto systemd + mosd, which retired the
@@ -169,6 +172,21 @@ docs-verify:
 # network, and it fails loudly when it cannot run rather than skipping.
 docs-verify-test:
 	bash docs/verify-index-test.sh
+
+# PLAN-012 M4: every example in docs/design/containers.md, fed to the aarch64
+# Quadlet generator the image ships. A configuration example nothing executes
+# is a claim that cannot fail; this makes the document part of the suite.
+os-quadlet-doc-test:
+	bash os/quadlet-doc-test.sh
+
+# PLAN-012 M1: the container engine, built from upstream source into seven
+# aarch64 binaries. Same arrangement as the board artifact builds -- a
+# Dockerfile whose last stage is FROM scratch, exported with -o. Dynamically
+# linked against the image's glibc except catatonit, which is copied into
+# containers and must not depend on this image's libc; os/podman/README.md
+# has the reasoning.
+podman:
+	bash os/podman/build.sh
 
 cx3576-%:
 	$(MAKE) -C board/cx3576 $*
