@@ -472,13 +472,104 @@ RUN set -eu; \
 # by mos-shadow-reconcile) plus the serial console, whose root stays locked
 # until that password is set. See docs/design/access.md section 4.1.
 
+# Package inventory. Split from the size measurement below because the package
+# manager is removed in between: dpkg-query needs /var/lib/dpkg, and TOTAL_MB
+# has to weigh the root that actually ships.
+RUN dpkg-query -W -f='${Package}\t${Installed-Size}\n' > /rootfs-report.pkgs
+
+# ---------------------------------------------------------------------------
+# Remove package management from the packed root
+# ---------------------------------------------------------------------------
+# Nothing can install a package on this device. The root is a read-only
+# dm-verity squashfs and updates arrive as whole RAUC slots, so apt, dpkg and
+# the perl-base dpkg pre-depends on are BUILD-time tools. Shipping them costs
+# ~21 MB of dead weight and hands a working package manager to anyone who
+# reaches a shell on a device whose whole security model is that its root
+# cannot change.
+#
+# MEASURED BEFORE REMOVING, not assumed:
+#   - Nothing in overlay-v2, in mosd or in apid invokes dpkg or apt at runtime.
+#     The only two mentions in the overlay are comments.
+#   - Every perl script in the image is maintainer-script tooling that runs
+#     during installation and never after: deb-systemd-helper,
+#     deb-systemd-invoke, debconf-*, ucf*, and the /usr/sbin set — adduser,
+#     deluser, update-rc.d, pam-auth-update, pam_getenv, dpkg-fsys-usrunmess.
+#     They are removed here too — a script whose interpreter is gone is a trap,
+#     not a leftover.
+#
+#     THE /usr/sbin SET WAS FOUND BY THE CHECK BELOW, NOT BY THE SURVEY. The
+#     survey that preceded this step listed the /usr/bin ones and was truncated
+#     before it reached /usr/sbin; the list was read as complete. The build then
+#     failed here and named all six. Recorded because the surveying mistake is
+#     the likely one to repeat, and because it is the reason the check is a
+#     build failure rather than a warning.
+#
+#     adduser and deluser are safe to remove for a second, independent reason:
+#     /etc/passwd is inside the read-only verity root (only /etc/shadow is
+#     symlinked onto STATE), so no account can be created on a running device
+#     whether or not the tool is present.
+#   - dash, grep and gzip declare `Pre-Depends: dpkg`. That is a packaging-time
+#     relation, not a runtime one; their binaries never call it.
+#   - gpgv is reachable only from apt-key.
+#
+# /usr/share/doc IS KEPT, deliberately, and this is where the usual "slim
+# image" recipe goes wrong. It is 2.75 MB, of which 2.06 MB is 159 `copyright`
+# files — the licence texts Debian ships to satisfy the redistribution terms of
+# the GPL and friends. Deleting the directory would save 0.69 MB of changelogs
+# and breach those terms to do it.
+#
+# coreutils and openssh-client are also kept, by decision rather than by
+# oversight: coreutils is 17.6 MB and busybox would save most of it, but every
+# script in the image and in the verifier would then be running against
+# different tool semantics; openssh-client is 5.7 MB and outbound ssh/scp is a
+# field-support capability, not packaging residue.
+#
+# The self-checks below are what make this step able to FAIL. A purge that
+# silently removed too much would otherwise surface as a device that does not
+# boot, on hardware, days later.
+RUN set -eu; \
+    rm -rf /var/lib/dpkg /var/lib/apt /var/cache/apt /var/cache/debconf \
+           /etc/apt /etc/dpkg /usr/lib/apt /usr/lib/dpkg /usr/share/debconf \
+           /usr/share/perl /usr/share/perl5 \
+           /usr/bin/dpkg /usr/bin/dpkg-deb /usr/bin/dpkg-divert \
+           /usr/bin/dpkg-maintscript-helper /usr/bin/dpkg-query \
+           /usr/bin/dpkg-split /usr/bin/dpkg-statoverride /usr/bin/dpkg-trigger \
+           /usr/sbin/dpkg-preconfigure /usr/sbin/dpkg-reconfigure \
+           /usr/bin/apt /usr/bin/apt-cache /usr/bin/apt-cdrom /usr/bin/apt-config \
+           /usr/bin/apt-get /usr/bin/apt-key /usr/bin/apt-mark /usr/bin/apt-sortpkgs \
+           /usr/bin/gpgv /usr/bin/perl /usr/bin/perl5.36.0 \
+           /usr/lib/*-linux-gnu/perl-base /usr/lib/*-linux-gnu/libapt-pkg.so.* \
+           /usr/lib/*-linux-gnu/libapt-private.so.* ; \
+    rm -f /usr/bin/debconf /usr/bin/debconf-apt-progress /usr/bin/debconf-communicate \
+          /usr/bin/debconf-copydb /usr/bin/debconf-escape /usr/bin/debconf-set-selections \
+          /usr/bin/debconf-show /usr/bin/deb-systemd-helper /usr/bin/deb-systemd-invoke \
+          /usr/bin/ucf /usr/bin/ucfq /usr/bin/ucfr \
+          /usr/sbin/adduser /usr/sbin/deluser /usr/sbin/addgroup /usr/sbin/delgroup \
+          /usr/sbin/update-rc.d /usr/sbin/dpkg-fsys-usrunmess \
+          /usr/sbin/pam-auth-update /usr/sbin/pam_getenv ; \
+    for gone in dpkg dpkg-query apt apt-get perl; do \
+        if command -v "${gone}" >/dev/null 2>&1; then \
+            echo "error: ${gone} survived the package-manager purge; the packed root still carries a way to install software" >&2; exit 1; \
+        fi; \
+    done; \
+    for kept in bash sh ls cp mv rm sed awk grep find systemctl sshd ssh scp curl ip; do \
+        command -v "${kept}" >/dev/null 2>&1 || \
+            { echo "error: the purge removed ${kept}, which the image needs at runtime" >&2; exit 1; }; \
+    done; \
+    dangling="$(grep -rlI '^#!.*perl' /usr/bin /usr/sbin /usr/lib/systemd /etc 2>/dev/null || true)"; \
+    [ -z "${dangling}" ] || \
+        { echo "error: perl is gone but these scripts still name it as their interpreter: ${dangling}" >&2; exit 1; }; \
+    test -f /usr/share/doc/gcc-12-base/copyright || \
+        { echo "error: the licence texts under /usr/share/doc were removed; Debian ships them to satisfy redistribution terms" >&2; exit 1; }; \
+    echo "package management removed; $(find /usr/share/doc -name copyright -type f | wc -l) copyright files kept"
+
 # Build report (moved out of the tree by the pack stage; never ships in the
-# image). Must run before the pack stage relocates /var, since dpkg-query
-# reads /var/lib/dpkg.
-RUN { dpkg-query -W -f='${Package}\t${Installed-Size}\n'; \
+# image). TOTAL_MB is measured HERE, after the purge, so the budget gate in
+# build-v2.sh weighs the root that ships rather than the one that was built.
+RUN { cat /rootfs-report.pkgs; \
       echo; \
       echo "TOTAL_MB $(du -sxm --exclude=/proc --exclude=/sys --exclude=/dev / 2>/dev/null | cut -f1)"; \
-    } > /rootfs-report.txt
+    } > /rootfs-report.txt && rm -f /rootfs-report.pkgs
 
 # ---------------------------------------------------------------------------
 # Pack: squashfs-zstd + appended dm-verity hash tree

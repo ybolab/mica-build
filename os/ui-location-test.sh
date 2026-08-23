@@ -240,6 +240,18 @@ new_fixture() {
     printf 'root:x:0:0:root:/root:/bin/bash\n%s:x:990:990:mos MQTT bridge:/nonexistent:/usr/sbin/nologin\n' \
         "${mqttd_user}" >"${dir}/etc/passwd"
 
+    # RFCT-099's purged root: the licence texts Debian ships, and NO package
+    # manager. 120 copyright files rather than a token one, because the
+    # assertion is a threshold and a fixture with three would pass a check that
+    # had lost its comparison.
+    mkdir -p "${dir}/usr/share/doc/gcc-12-base" "${dir}/usr/bin" "${dir}/usr/sbin"
+    local i
+    for i in $(seq 1 120); do
+        mkdir -p "${dir}/usr/share/doc/pkg${i}"
+        printf 'Format: https://www.debian.org/doc/packaging-manuals/copyright-format/1.0/\n' \
+            >"${dir}/usr/share/doc/pkg${i}/copyright"
+    done
+
     # The image's networkd namespace, for check_networkd_namespace. Two files,
     # both outside every reconciler-owned prefix: the image's DHCP fallback and
     # one stock systemd unit standing in for the eight the Debian base carries.
@@ -373,6 +385,9 @@ mqttd-per-member|mqttd: every grant on com.mos.mosd names a member|grant on com.
 mqttd-no-danger|include none of|A compromise of the network-facing daemon becomes device control|PASS
 mqttd-broker-configurable|mqttd: ExecStart takes the broker from the environment|does not reference|PASS
 mqttd-env-on-state|mqttd: EnvironmentFile=|EnvironmentFile|PASS
+pkgmgr-absent|carries no package manager|still carries package management|PASS
+pkgmgr-copyrights|licence texts survived the purge|copyright files are left under|PASS
+pkgmgr-dangling|names perl as its interpreter, so removing perl left nothing broken|still name it as their interpreter|PASS
 connd-contract|read the connd contract out of mosd|could not read the connd contract|PASS
 networkd-namespace|networkd namespace is clear|networkd namespace|PASS
 '
@@ -1090,6 +1105,48 @@ printf '[Match]\nName=wlan0\n[Network]\nDHCP=yes\n' \
 expect_set "an image .network file inside the station reconciler's prefix" \
     "networkd-namespace=FAIL" \
     "station-namespace"
+
+
+# ===========================================================================
+# RFCT-099: the packed root ships no package manager
+# ===========================================================================
+
+# --- 7a. apt survived the purge ---------------------------------------------
+# The state every Debian-derived image is in until something removes it.
+FIX="${WORK}/pkgmgr-apt-left"
+new_fixture "${FIX}"
+printf '#!/bin/sh\n' >"${FIX}/usr/bin/apt-get"
+expect_set "apt-get left in the packed root" \
+    "pkgmgr-absent=FAIL" \
+    "still carries package management"
+
+# --- 7b. the dpkg database restored from the factory tree -------------------
+# The one a check that only looked at /var would miss: the pack stage relocates
+# /var to /usr/share/factory/var, and mos-seed-var copies it back on first boot.
+# A root that looks clean would repopulate itself.
+FIX="${WORK}/pkgmgr-factory-db"
+new_fixture "${FIX}"
+mkdir -p "${FIX}/usr/share/factory/var/lib/dpkg"
+expect_set "the dpkg database still under the factory tree" \
+    "pkgmgr-absent=FAIL" \
+    "/usr/share/factory/var/lib/dpkg"
+
+# --- 7c. the licence texts taken with the purge -----------------------------
+# The half a size-driven cleanup gets wrong, and the one that fails silently.
+FIX="${WORK}/pkgmgr-copyright-gone"
+new_fixture "${FIX}"
+rm -rf "${FIX}/usr/share/doc"
+expect_set "the copyright files removed along with the package manager" \
+    "pkgmgr-copyrights=FAIL" \
+    "breaches those terms"
+
+# --- 7d. perl gone but a script still names it ------------------------------
+FIX="${WORK}/pkgmgr-dangling-perl"
+new_fixture "${FIX}"
+printf '#!/usr/bin/perl\nprint "hi";\n' >"${FIX}/usr/bin/deb-systemd-helper"
+expect_set "a perl script left behind after perl was removed" \
+    "pkgmgr-dangling=FAIL" \
+    "still name it as their interpreter"
 
 echo
 total=$((PASS_N + FAIL_N))

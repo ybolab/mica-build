@@ -893,6 +893,57 @@ check_networkd_namespace() {
     fi
 }
 
+# --- RFCT-099: no package manager in the packed root ------------------------
+# What this proves: the shipped root carries no way to install software, and
+# still carries the licence texts Debian ships to satisfy redistribution terms.
+#
+# Both halves matter and they pull in opposite directions. A purge that removed
+# too little leaves apt on a device whose entire security model is that its
+# root cannot change; a purge that removed too much takes 159 `copyright` files
+# with it, which is a licence breach for 0.69 MB of changelogs.
+#
+# /var is relocated to /usr/share/factory/var by the pack stage, so the dpkg
+# database is looked for in BOTH places: an image that kept it under the
+# factory tree would restore it onto /var on the first boot, and a check that
+# only looked at /var would report a clean root that repopulates itself.
+PKGMGR_BINARIES="/usr/bin/dpkg /usr/bin/dpkg-query /usr/bin/dpkg-deb /usr/bin/apt /usr/bin/apt-get /usr/bin/apt-cache /usr/bin/apt-key /usr/bin/perl"
+PKGMGR_TREES="/var/lib/dpkg /var/lib/apt /etc/apt /usr/lib/apt /usr/share/factory/var/lib/dpkg /usr/share/factory/var/lib/apt"
+
+check_no_package_manager() {
+    pm_found=""
+    for b in ${PKGMGR_BINARIES}; do
+        [ -e "${ROOT}${b}" ] && pm_found="${pm_found} ${b}"
+    done
+    for d in ${PKGMGR_TREES}; do
+        [ -d "${ROOT}${d}" ] && pm_found="${pm_found} ${d}/"
+    done
+    if [ -z "${pm_found}" ]; then
+        pass "the packed root carries no package manager: none of ${PKGMGR_BINARIES} and no dpkg/apt state, in /var or under the factory tree"
+    else
+        fail "the packed root still carries package management:${pm_found}. The root is a read-only dm-verity squashfs and updates arrive as whole RAUC slots, so nothing here can install a package — but anyone who reaches a shell now has the tool to try, and it is ~21 MB of weight that cannot be used"
+    fi
+
+    # ...and the purge stopped where the licences begin. This is the half a
+    # size-driven cleanup gets wrong, and it fails silently: nobody notices a
+    # missing copyright file until a redistribution question is asked.
+    pm_copyrights="$(find "${ROOT}/usr/share/doc" -name copyright -type f 2>/dev/null | grep -c . || true)"
+    if [ "${pm_copyrights}" -ge 100 ]; then
+        pass "the licence texts survived the purge: ${pm_copyrights} copyright files under /usr/share/doc"
+    else
+        fail "only ${pm_copyrights} copyright files are left under /usr/share/doc (expected the full package set, ~159). Debian ships these to satisfy the redistribution terms of the GPL and the other licences in the image; removing them saves under a megabyte and breaches those terms"
+    fi
+
+    # A script whose interpreter was removed is a trap: it fails at the moment
+    # it is needed, with an error about the shebang rather than about the purge.
+    pm_dangling="$(grep -rlI '^#!.*perl' "${ROOT}/usr/bin" "${ROOT}/usr/sbin" \
+        "${ROOT}/usr/lib/systemd" "${ROOT}/etc" 2>/dev/null | sed "s|^${ROOT}||" | tr '\n' ' ' || true)"
+    if [ -z "${pm_dangling}" ]; then
+        pass "no script in the packed root names perl as its interpreter, so removing perl left nothing broken behind"
+    else
+        fail "perl was removed but these scripts still name it as their interpreter: ${pm_dangling}. Each one fails at the moment it is invoked, reporting a missing shebang rather than the purge that caused it"
+    fi
+}
+
 # The fixture hook: run only the assertions above, against the fixture, and
 # summarise. os/ui-location-test.sh is the only caller.
 if [ -n "${FIXTURE_ROOT}" ]; then
@@ -908,6 +959,7 @@ if [ -n "${FIXTURE_ROOT}" ]; then
     check_mqttd
     read_connd_contract
     check_networkd_namespace
+    check_no_package_manager
     fixture_total=$((PASS_N + FAIL_N))
     if [ "${FAIL_N}" -eq 0 ]; then
         echo "RESULT: PASS (${PASS_N}/${fixture_total} checks)"
@@ -2400,6 +2452,11 @@ done
 # the hook has to be able to dispatch it; called here so the non-fixture path
 # still runs it in exactly this position. The rationale is on the function.
 check_ext_unit_dir
+
+# --- RFCT-099: the packed root ships no package manager ----------------------
+# Fixture-hook set, called here for the non-fixture path. Rationale on the
+# function.
+check_no_package_manager
 
 # --- PLAN-011 D6: the MQTT bridge as installed -------------------------------
 # Same arrangement, same reason. The function is up with the fixture set so

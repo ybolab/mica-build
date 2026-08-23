@@ -121,3 +121,4 @@ Each task is a single line linking to its detail file. All detailed information 
 - [ ] [**RFCT-096 "0 skipped" does not mean nothing was skipped, and three test files still exploit that**](RFCT-096.md) `P1`
 - [x] [**RFCT-097 Wire mos-mqttd into the image, which is where three of its defects were**](RFCT-097.md) `P1`
 - [x] [**RFCT-098 The connd contract read rotted, and nineteen assertions went green on the fallback**](RFCT-098.md) `P1`
+- [x] [**RFCT-099 Remove package management from the packed root, and keep the licence texts**](RFCT-099.md) `P2`
