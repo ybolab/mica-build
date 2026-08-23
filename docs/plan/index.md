@@ -42,3 +42,4 @@ Each plan is a single line linking to its detail file. All detailed information 
 - [ ] [**PLAN-008 Unified connectivity service (connd) - WiFi STA/AP, Bluetooth, CAN**](PLAN-008.md) `2026-08-17`
 - [x] [**PLAN-009 cx3576 board bring-up (B1: BSP readiness)**](PLAN-009.md) `2026-08-17`
 - [-] [**PLAN-011 Device bus v2 - com.mos.* item tree, actions as items, and extension service lifecycle**](PLAN-011.md) `2026-08-21`
+- [ ] [**PLAN-012 Container engine - a self-built static Podman, off by default, switched from apid**](PLAN-012.md) `2026-08-23`
