@@ -1,5 +1,6 @@
 //! Reconciler contract shared by all mosd reconcilers.
 
+mod container;
 mod hostname;
 mod network;
 mod sshd;
@@ -30,5 +31,6 @@ pub fn all() -> Vec<Box<dyn Reconciler>> {
         Box::new(sshd::SshdReconciler::production()),
         Box::new(wifi_client::WifiClientReconciler::production()),
         Box::new(wifi_ap::WifiApReconciler::production()),
+        Box::new(container::ContainerReconciler::production()),
     ]
 }

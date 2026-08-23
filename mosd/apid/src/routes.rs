@@ -166,6 +166,8 @@ pub fn app(state: AppState) -> Router {
         .route("/ssh/password", post(ssh_password))
         .route("/ssh/keys/add", post(ssh_key_add))
         .route("/ssh/keys/remove", post(ssh_key_remove))
+        .route("/containers", get(containers_form))
+        .route("/containers/enable", post(containers_enable))
         .route("/healthz", get(healthz))
         // §4.1 rule 1: the whole `/api/` prefix, its own not-found handler
         // included. It 404s everything, `/api/versions` among them — §2's
@@ -350,6 +352,7 @@ fn shell(title: &str, nav: bool, body: Markup) -> Html<String> {
                         a href="/hostname" { "Hostname" }
                         a href="/power" { "Power" }
                         a href="/ssh" { "SSH" }
+                        a href="/containers" { "Containers" }
                         // §6.3's discoverability cost, closed where it is
                         // actually paid: *"(A) only helps an operator who knows
                         // the URL"*. A logged-in operator whose custom UI is
@@ -1656,6 +1659,163 @@ async fn ssh_enable(State(app): State<AppState>, Form(form): Form<SshEnableForm>
         return bus_error(&err);
     }
     Redirect::to("/ssh?saved=1").into_response()
+}
+
+/// Everything the container pane renders, gathered before any markup is built.
+struct ContainerView {
+    /// `container.enabled` -- what the operator asked for.
+    enabled: bool,
+    /// Live state published by mosd's container reconciler, absent when mosd
+    /// has published none yet.
+    state: Option<Value>,
+    /// Why the settings or the live state could not be read, if either failed.
+    problems: Vec<String>,
+}
+
+impl ContainerView {
+    /// A string field of the published live state.
+    fn text(&self, key: &str) -> Option<&str> {
+        self.state.as_ref()?.get(key)?.as_str()
+    }
+
+    /// A list field of the published live state, as displayable strings.
+    fn list(&self, key: &str) -> Vec<String> {
+        self.state
+            .as_ref()
+            .and_then(|state| state.get(key))
+            .and_then(Value::as_array)
+            .map(|items| {
+                items
+                    .iter()
+                    .filter_map(|item| item.as_str().map(str::to_string))
+                    .collect()
+            })
+            .unwrap_or_default()
+    }
+}
+
+async fn load_container_view(app: &AppState) -> anyhow::Result<ContainerView> {
+    let container = app.api.get_settings("container").await?;
+    let enabled = container
+        .get("enabled")
+        .and_then(Value::as_bool)
+        .unwrap_or(false);
+    let mut problems = Vec::new();
+    let state = match app.api.get_state("container").await {
+        Ok(value) => Some(value),
+        Err(err) => {
+            problems.push(format!("Live container state unavailable: {err}"));
+            None
+        }
+    };
+    Ok(ContainerView {
+        enabled,
+        state,
+        problems,
+    })
+}
+
+/// The consequence of switching this on, in the terms PLAN-012 D5 requires.
+///
+/// D5: *"the apid pane must say so in those terms -- not as a generic warning,
+/// but as the specific consequence"*. mos does not build rootless, so there is
+/// no user-namespace boundary between a container and the device: a container
+/// runs with root's capabilities. Saying "containers may be a security risk"
+/// would be true, useless, and would let an operator agree with it without
+/// learning anything.
+const CONTAINER_ROOT_NOTICE: &str = "Containers on this device run as root. Rootless mode is not built, so a container is not confined to an unprivileged user: anything that can write a .container file into the Quadlet directory can run code with root's capabilities on this appliance.";
+
+fn containers_page(view: &ContainerView, banner: Option<Markup>) -> Html<String> {
+    let files = view.list("quadletFiles");
+    let units = view.list("generatedUnits");
+    let stopped = view.list("stoppedUnits");
+    pane(
+        "Containers",
+        html! {
+            @if let Some(banner) = banner { (banner) }
+            @for problem in &view.problems { (error_box(problem)) }
+            p { b { (CONTAINER_ROOT_NOTICE) } }
+
+            h2 { "Engine" }
+            p { "Containers: " b { (if view.enabled { "enabled" } else { "disabled" }) } }
+            @if let Some(state) = view.text("quadletMountState") {
+                p { "Quadlet directory: " b { (state) } " (" code { "/etc/containers/systemd" } ")" }
+            }
+            p {
+                "mos does not orchestrate containers. It provides the engine and turns "
+                code { ".container" } " files into systemd units; what runs, in what order, and how "
+                "containers reach each other is described in " code { "docs/design/containers.md" } "."
+            }
+
+            form method="post" action="/containers/enable" {
+                fieldset {
+                    legend { "Engine" }
+                    p { label { input type="checkbox" name="enabled" checked[view.enabled]; " Enable containers" } }
+                    p { button type="submit" { "Save" } }
+                }
+            }
+
+            h2 { "Quadlet files" }
+            @if !view.enabled {
+                p {
+                    "Not listed while containers are disabled: the directory is not mounted, so what is "
+                    "on persistent storage is not what the generator would read. Enable the engine to see it."
+                }
+            } @else if files.is_empty() {
+                p { "No " code { ".container" } " files. Nothing to run." }
+            } @else {
+                ul { @for f in &files { li { code { (f) } } } }
+                @if units.is_empty() {
+                    p {
+                        b { "Files are present but no unit was generated." }
+                        " Quadlet parsed the directory and produced nothing, which usually means a "
+                        "syntax error in one of the files above. " code { "journalctl -u systemd-generator" }
+                        " on the device carries the parse error."
+                    }
+                }
+            }
+
+            @if !units.is_empty() {
+                h2 { "Generated units" }
+                ul { @for u in &units { li { code { (u) } } } }
+            }
+            @if !stopped.is_empty() {
+                h2 { "Stopped by the last change" }
+                ul { @for u in &stopped { li { code { (u) } } } }
+            }
+        },
+    )
+}
+
+async fn containers_form(State(app): State<AppState>, Query(query): Query<SavedQuery>) -> Response {
+    match load_container_view(&app).await {
+        Ok(view) => {
+            let banner = query.saved.is_some().then(saved_banner);
+            containers_page(&view, banner).into_response()
+        }
+        Err(err) => bus_error(&err),
+    }
+}
+
+/// The enable toggle; absent when unticked.
+#[derive(serde::Deserialize)]
+struct ContainerEnableForm {
+    enabled: Option<String>,
+}
+
+async fn containers_enable(
+    State(app): State<AppState>,
+    Form(form): Form<ContainerEnableForm>,
+) -> Response {
+    let enabled = form.enabled.is_some();
+    if let Err(err) = app
+        .api
+        .set_settings("container.enabled", &Value::Bool(enabled))
+        .await
+    {
+        return bus_error(&err);
+    }
+    Redirect::to("/containers?saved=1").into_response()
 }
 
 #[derive(serde::Deserialize)]

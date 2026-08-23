@@ -106,6 +106,20 @@ pub trait UnitControl: Send + Sync {
     ///
     /// Returns an error when the bus call fails.
     async fn disable(&self, unit: &str) -> Result<()>;
+
+    /// Re-run every systemd generator and reload the unit tree.
+    ///
+    /// The equivalent of `systemctl daemon-reload`, and unlike the methods
+    /// above it names no unit because it acts on all of them. It exists for
+    /// GENERATORS: Quadlet is one, so a `.container` file only becomes a
+    /// service when systemd re-runs it, and a reconciler that mounted the
+    /// directory holding those files without reloading would leave the mount
+    /// correct and the units nonexistent -- with nothing reporting a problem.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when the bus call fails.
+    async fn daemon_reload(&self) -> Result<()>;
 }
 
 /// True when `state` is an [`UnitControl::active_state`] value that means the
@@ -219,6 +233,11 @@ impl UnitControl for Systemd {
             .await?;
         Ok(())
     }
+
+    async fn daemon_reload(&self) -> Result<()> {
+        self.manager_call("Reload", &()).await?;
+        Ok(())
+    }
 }
 
 /// Recording [`UnitControl`] mock for reconciler tests.
@@ -236,6 +255,16 @@ pub mod mock {
         active: String,
         file: String,
         calls: Vec<String>,
+        /// Per-unit overrides of `active`/`file`.
+        ///
+        /// A single pair was enough while every reconciler drove exactly one
+        /// unit. `ContainerReconciler` drives a mount AND the units Quadlet
+        /// generated behind it, and the ORDER it touches them in is the thing
+        /// worth asserting -- which a mock that answers identically for every
+        /// unit cannot express. `new` keeps its meaning: the pair it takes is
+        /// the answer for any unit not named here.
+        active_by_unit: std::collections::BTreeMap<String, String>,
+        file_by_unit: std::collections::BTreeMap<String, String>,
     }
 
     /// [`super::UnitControl`] that records mutating calls and models the state
@@ -257,6 +286,8 @@ pub mod mock {
                     active: active.to_string(),
                     file: file.to_string(),
                     calls: Vec::new(),
+                    active_by_unit: std::collections::BTreeMap::new(),
+                    file_by_unit: std::collections::BTreeMap::new(),
                 }),
                 reload_fails: false,
             }
@@ -272,6 +303,29 @@ pub mod mock {
                 reload_fails: true,
                 ..Self::new(active, file)
             }
+        }
+
+        /// Answer `state` for `unit`'s [`super::UnitControl::active_state`],
+        /// overriding the constructor's default for that unit only.
+        pub fn set_active_state(&self, unit: &str, state: &str) {
+            let mut guard = match self.state.lock() {
+                Ok(guard) => guard,
+                Err(poisoned) => poisoned.into_inner(),
+            };
+            guard
+                .active_by_unit
+                .insert(unit.to_string(), state.to_string());
+        }
+
+        /// Answer `state` for `unit`'s [`super::UnitControl::unit_file_state`].
+        pub fn set_unit_file_state(&self, unit: &str, state: &str) {
+            let mut guard = match self.state.lock() {
+                Ok(guard) => guard,
+                Err(poisoned) => poisoned.into_inner(),
+            };
+            guard
+                .file_by_unit
+                .insert(unit.to_string(), state.to_string());
         }
 
         /// Mutating calls seen so far, in order, as `"<verb> <unit>"`.
@@ -293,11 +347,34 @@ pub mod mock {
                 Err(poisoned) => poisoned.into_inner(),
             };
             state.calls.push(format!("{verb} {unit}"));
+            // The transition lands on the per-unit entry as well, so a second
+            // apply sees what the first left behind for THAT unit rather than
+            // for whichever unit was touched last.
             match verb {
-                "start" | "restart" => state.active = "active".to_string(),
-                "stop" => state.active = "inactive".to_string(),
-                "enable" => state.file = "enabled-runtime".to_string(),
-                "disable" => state.file = "disabled".to_string(),
+                "start" | "restart" => {
+                    state.active = "active".to_string();
+                    state
+                        .active_by_unit
+                        .insert(unit.to_string(), "active".to_string());
+                }
+                "stop" => {
+                    state.active = "inactive".to_string();
+                    state
+                        .active_by_unit
+                        .insert(unit.to_string(), "inactive".to_string());
+                }
+                "enable" => {
+                    state.file = "enabled-runtime".to_string();
+                    state
+                        .file_by_unit
+                        .insert(unit.to_string(), "enabled-runtime".to_string());
+                }
+                "disable" => {
+                    state.file = "disabled".to_string();
+                    state
+                        .file_by_unit
+                        .insert(unit.to_string(), "disabled".to_string());
+                }
                 // "reload" among them: a reload leaves the unit exactly as
                 // active as it already was, which is the whole point of it.
                 _ => {}
@@ -307,18 +384,28 @@ pub mod mock {
 
     #[async_trait::async_trait]
     impl super::UnitControl for MockUnitControl {
-        async fn active_state(&self, _unit: &str) -> Result<String> {
-            Ok(match self.state.lock() {
-                Ok(state) => state.active.clone(),
-                Err(poisoned) => poisoned.into_inner().active.clone(),
-            })
+        async fn active_state(&self, unit: &str) -> Result<String> {
+            let state = match self.state.lock() {
+                Ok(state) => state,
+                Err(poisoned) => poisoned.into_inner(),
+            };
+            Ok(state
+                .active_by_unit
+                .get(unit)
+                .cloned()
+                .unwrap_or_else(|| state.active.clone()))
         }
 
-        async fn unit_file_state(&self, _unit: &str) -> Result<String> {
-            Ok(match self.state.lock() {
-                Ok(state) => state.file.clone(),
-                Err(poisoned) => poisoned.into_inner().file.clone(),
-            })
+        async fn unit_file_state(&self, unit: &str) -> Result<String> {
+            let state = match self.state.lock() {
+                Ok(state) => state,
+                Err(poisoned) => poisoned.into_inner(),
+            };
+            Ok(state
+                .file_by_unit
+                .get(unit)
+                .cloned()
+                .unwrap_or_else(|| state.file.clone()))
         }
 
         async fn start(&self, unit: &str) -> Result<()> {
@@ -351,6 +438,15 @@ pub mod mock {
 
         async fn disable(&self, unit: &str) -> Result<()> {
             self.record("disable", unit);
+            Ok(())
+        }
+
+        async fn daemon_reload(&self) -> Result<()> {
+            // Recorded with a unit name of "-" rather than "": a test asserting
+            // on the call log reads `daemon-reload -`, and an empty second
+            // field would render as a trailing space that is easy to miss in a
+            // diff of expected calls.
+            self.record("daemon-reload", "-");
             Ok(())
         }
     }

@@ -18,13 +18,14 @@ pub use authorized_key::{
 };
 pub use error::SettingsError;
 pub use migration::{
-    MigrateV0ToV1, MigrateV1ToV2, MigrateV2ToV3, MigrateV3ToV4, Migration, MigrationRegistry,
-    migrate,
+    MigrateV0ToV1, MigrateV1ToV2, MigrateV2ToV3, MigrateV3ToV4, MigrateV4ToV5, Migration,
+    MigrationRegistry, migrate,
 };
 pub use model::{
-    AccessSettings, ApMode, AuthorizedKey, ConsoleSettings, DeviceCredentialSettings,
-    IfaceSettings, ProvisioningSettings, ProvisioningState, SCHEMA_VERSION, Settings, SshSettings,
-    StaticConfig, WebAdminSettings, WifiApSettings, WifiClientSettings, WifiNetwork, WifiSettings,
+    AccessSettings, ApMode, AuthorizedKey, ConsoleSettings, ContainerSettings,
+    DeviceCredentialSettings, IfaceSettings, ProvisioningSettings, ProvisioningState,
+    SCHEMA_VERSION, Settings, SshSettings, StaticConfig, WebAdminSettings, WifiApSettings,
+    WifiClientSettings, WifiNetwork, WifiSettings,
 };
 pub use path::json_path_get;
 pub use store::{DEFAULT_PATH, RollbackReport, Store};

@@ -1,4 +1,4 @@
-//! Typed settings tree (schema v4) and its dot-path accessors.
+//! Typed settings tree (schema v5) and its dot-path accessors.
 
 use std::collections::BTreeMap;
 
@@ -8,9 +8,9 @@ use crate::error::SettingsError;
 use crate::path::{json_path_get, json_path_set, split_path};
 
 /// Current settings schema version written by this crate.
-pub const SCHEMA_VERSION: u32 = 4;
+pub const SCHEMA_VERSION: u32 = 5;
 
-/// Persistent mosd settings tree (schema v4).
+/// Persistent mosd settings tree (schema v5).
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Settings {
@@ -29,6 +29,9 @@ pub struct Settings {
     /// WiFi station and access-point settings.
     #[serde(default)]
     pub wifi: WifiSettings,
+    /// Container engine policy.
+    #[serde(default)]
+    pub container: ContainerSettings,
 }
 
 impl Default for Settings {
@@ -40,8 +43,35 @@ impl Default for Settings {
             access: AccessSettings::default(),
             provisioning: ProvisioningSettings::default(),
             wifi: WifiSettings::default(),
+            container: ContainerSettings::default(),
         }
     }
+}
+
+/// Container engine policy, reconciled by `ContainerReconciler`.
+///
+/// Named for the CAPABILITY, not the implementation (PLAN-012 D3): if the
+/// engine is ever replaced, this key, its bus item and its apid pane are
+/// unchanged and only the binaries move.
+///
+/// **Disabled by default, and false means nothing runs.** The engine is
+/// daemonless -- there is no socket and no service to leave stopped -- so what
+/// this switch actually gates is whether `/etc/containers/systemd` is bound
+/// from STATE. Unbound, that path is the empty directory inside the read-only
+/// verity root, Quadlet finds nothing to parse, and no container unit exists
+/// to be started.
+///
+/// The default is false because of what true costs, stated as PLAN-012 D5
+/// states it: mos does not build rootless, so containers run root-capable, and
+/// **turning this on grants root-equivalent capability to whatever can write a
+/// `.container` file into STATE.** That is the switch's whole purpose, not a
+/// side effect of it.
+#[derive(Debug, Clone, PartialEq, Default, serde::Serialize, serde::Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct ContainerSettings {
+    /// Whether the Quadlet directory is bound from STATE and container units
+    /// may run.
+    pub enabled: bool,
 }
 
 /// Access control settings.

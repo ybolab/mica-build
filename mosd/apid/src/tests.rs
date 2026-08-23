@@ -718,6 +718,33 @@ async fn stored_key_list(fake: &FakeSettings) -> serde_json::Value {
 
 /// Every mutating SSH route, with a body that would be acted on if the request
 /// were let through.
+/// Every mutating route in the whole application, SSH's included.
+///
+/// Hand-written, and the test below is what keeps it honest: it reads
+/// `routes.rs` for every path registered with `post(...)` and fails naming any
+/// that is missing here. Without that, adding a route and forgetting this list
+/// leaves exactly one unauthenticated write path and every existing test still
+/// green -- the list would describe the routes someone remembered.
+const ALL_MUTATIONS: [(&str, &str); 9] = [
+    ("/ssh/enable", "enabled=on"),
+    (
+        "/ssh/password",
+        "confirm=set-transient-password&password=hunter2secret",
+    ),
+    ("/ssh/keys/add", "key=ssh-ed25519%20AAAA"),
+    ("/ssh/keys/remove", "identifier=SHA256%3Aanything"),
+    ("/containers/enable", "enabled=on"),
+    ("/hostname", "hostname=renamed"),
+    // POST /network was reachable with no test asserting it rejects an
+    // anonymous request. `unauthenticated_panes_redirect_to_login` covers the
+    // GET and reads as if it covered the pane; the POST -- which rewrites an
+    // interface's addressing -- was covered by nothing. Found by the coverage
+    // test at the bottom of this file, on the day it was written.
+    ("/network", "iface=eth0&dhcp=on"),
+    ("/power/reboot", "confirm=reboot"),
+    ("/power/poweroff", "confirm=poweroff"),
+];
+
 const SSH_MUTATIONS: [(&str, &str); 4] = [
     ("/ssh/enable", "enabled=on"),
     (
@@ -739,6 +766,14 @@ fn assert_nothing_written(fake: &FakeSettings, context: &str) {
         fake.transient_password_calls(),
         0,
         "{context} must not set a transient password"
+    );
+    // Power is a third way to act that writes no setting. Checking only
+    // set_paths would let a rejected /power/reboot look identical to a
+    // successful one.
+    assert!(
+        fake.power_calls().is_empty(),
+        "{context} must request no power action, got {:?}",
+        fake.power_calls()
     );
 }
 
@@ -877,15 +912,13 @@ async fn ssh_enable_writes_the_flag_in_both_directions() {
 }
 
 #[tokio::test]
-async fn unauthenticated_ssh_routes_are_rejected_one_by_one() {
-    // Each of the five paths on its own, rather than "the gate exists".
-    for (path, body) in [
-        ("/ssh", ""),
-        SSH_MUTATIONS[0],
-        SSH_MUTATIONS[1],
-        SSH_MUTATIONS[2],
-        SSH_MUTATIONS[3],
-    ] {
+async fn unauthenticated_mutating_routes_are_rejected_one_by_one() {
+    // Each path on its own, rather than "the gate exists" -- and from
+    // ALL_MUTATIONS rather than a hand-listed four, so a route added to the
+    // application is covered here by being added to one list that a test
+    // verifies against the router's own source.
+    let paths: Vec<(&str, &str)> = std::iter::once(("/ssh", "")).chain(ALL_MUTATIONS).collect();
+    for (path, body) in paths {
         let send_one = async |router: &Router, cookie: Option<&str>| {
             if path == "/ssh" {
                 get(router, path, cookie).await
@@ -2610,5 +2643,133 @@ async fn the_backoff_window_survives_a_restart_at_the_http_surface() {
     assert_eq!(
         audit_events(&audit_lines(dir.path())).last().unwrap(),
         &("login".to_string(), "throttled".to_string())
+    );
+}
+
+// ---------------------------------------------------------------------------
+// PLAN-012 M3: the container pane
+// ---------------------------------------------------------------------------
+
+/// A settings tree with the container subtree, authenticated as `ssh_tree`.
+fn container_tree(enabled: bool) -> serde_json::Value {
+    let hash = auth::hash_password("hunter2secret").unwrap();
+    json!({
+        "hostname": "mos",
+        "network": {},
+        "access": { "webAdmin": { "password_hash": hash } },
+        "container": { "enabled": enabled },
+    })
+}
+
+#[tokio::test]
+async fn the_container_pane_states_the_root_consequence_not_a_generic_warning() {
+    let (router, _fake) = test_app(container_tree(false));
+    let cookie = login(&router, "hunter2secret").await;
+    let body = body_string(get(&router, "/containers", Some(&cookie)).await).await;
+
+    // PLAN-012 D5 asks for the specific consequence. Each clause is asserted
+    // separately: a page that said only "runs as root" would pass a check for
+    // the word "root" while leaving out what an operator needs to act on --
+    // that writing a file into the Quadlet directory is what exercises it.
+    assert!(
+        body.contains("run as root"),
+        "the pane must say containers run as root: {body}"
+    );
+    assert!(
+        body.contains("Rootless mode is not built"),
+        "the pane must say WHY there is no confinement, or an operator may assume a user namespace: {body}"
+    );
+    assert!(
+        body.contains(".container file"),
+        "the pane must name the act that grants the capability: {body}"
+    );
+}
+
+#[tokio::test]
+async fn enabling_containers_writes_the_switch() {
+    let (router, fake) = test_app(container_tree(false));
+    let cookie = login(&router, "hunter2secret").await;
+
+    let response = post_form(&router, "/containers/enable", "enabled=on", Some(&cookie)).await;
+    assert_eq!(response.status(), StatusCode::SEE_OTHER);
+    assert_eq!(location(&response), "/containers?saved=1");
+    assert_eq!(fake.set_paths(), vec!["container.enabled"]);
+}
+
+#[tokio::test]
+async fn an_unticked_box_disables_rather_than_doing_nothing() {
+    // A checkbox absent from the form body is how HTML says "off". Reading it
+    // as "no change" would make the switch impossible to turn back off through
+    // the pane, and the failure is silent: the page redirects and reports
+    // "Settings saved."
+    let (router, fake) = test_app(container_tree(true));
+    let cookie = login(&router, "hunter2secret").await;
+
+    post_form(&router, "/containers/enable", "", Some(&cookie)).await;
+    assert_eq!(fake.set_paths(), vec!["container.enabled"]);
+    // The VALUE, not just that a write happened: a handler that wrote `true`
+    // unconditionally would record the same path and pass a path-only check.
+    assert_eq!(
+        fake.get_settings("container.enabled").await.unwrap(),
+        json!(false),
+        "an unticked checkbox must write false, not leave the setting alone"
+    );
+}
+
+#[tokio::test]
+async fn the_pane_does_not_list_quadlet_files_while_containers_are_off() {
+    // With the bind down, `/etc/containers/systemd` is the image's empty
+    // directory. Listing what is on persistent storage would show the operator
+    // files the generator cannot see, which reads as "these are running".
+    let (router, _fake) = test_app(container_tree(false));
+    let cookie = login(&router, "hunter2secret").await;
+    let body = body_string(get(&router, "/containers", Some(&cookie)).await).await;
+    assert!(
+        body.contains("Not listed while containers are disabled"),
+        "the pane must explain the empty list rather than showing one: {body}"
+    );
+}
+
+/// Every `post(...)` route registered in `routes.rs` appears in
+/// [`ALL_MUTATIONS`], which is what the authentication tests iterate.
+///
+/// This is a test about the test list. The auth coverage above enumerates
+/// paths by hand, so a new mutating route is authenticated by the middleware
+/// but never *asserted* to be -- and the day the middleware is refactored,
+/// nothing fails. Reading the router's own source closes that gap.
+#[test]
+fn every_mutating_route_is_covered_by_the_authentication_tests() {
+    let source = include_str!("routes.rs");
+    let mut registered: Vec<String> = Vec::new();
+    for line in source.lines() {
+        let line = line.trim();
+        let Some(rest) = line.strip_prefix(".route(\"") else {
+            continue;
+        };
+        let Some((path, tail)) = rest.split_once('"') else {
+            continue;
+        };
+        if tail.contains("post(") {
+            registered.push(path.to_string());
+        }
+    }
+    assert!(
+        !registered.is_empty(),
+        "no post routes were found in routes.rs, so this test cannot fail and proves nothing -- the .route() spelling it parses must have changed"
+    );
+
+    let covered: Vec<&str> = ALL_MUTATIONS.iter().map(|(path, _)| *path).collect();
+    // Routes reachable before authentication, by design: these are how an
+    // operator authenticates. Named individually so adding one is a decision.
+    let public = ["/setup", "/login", "/logout"];
+    // /ssh is a GET pane, not a mutation, and is exercised as the first entry
+    // of the loop above rather than as a member of ALL_MUTATIONS.
+    let missing: Vec<&String> = registered
+        .iter()
+        .filter(|path| !covered.contains(&path.as_str()) && !public.contains(&path.as_str()))
+        .collect();
+    assert!(
+        missing.is_empty(),
+        "these mutating routes are not in ALL_MUTATIONS, so no test asserts they reject an unauthenticated request: {missing:?}"
     );
 }

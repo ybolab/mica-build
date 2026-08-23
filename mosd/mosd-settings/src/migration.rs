@@ -77,6 +77,7 @@ impl Default for MigrationRegistry {
             Box::new(MigrateV1ToV2),
             Box::new(MigrateV2ToV3),
             Box::new(MigrateV3ToV4),
+            Box::new(MigrateV4ToV5),
         ])
     }
 }
@@ -274,5 +275,60 @@ fn child_table<'doc>(
             "{key} must be a table, found a {}",
             other.type_str()
         ))),
+    }
+}
+
+/// v4 -> v5: adds the `container` subtree carrying PLAN-012's engine switch.
+///
+/// `up` stamps `schema_version = 5` and adds `container.enabled = false` when
+/// absent. False, not true, and not "whatever the device was doing": a
+/// document arriving from v4 was written by software with no container switch,
+/// so there is no operator decision to preserve, and the safe reading of an
+/// absent decision is the one that runs nothing.
+pub struct MigrateV4ToV5;
+
+impl Migration for MigrateV4ToV5 {
+    fn target_version(&self) -> u32 {
+        5
+    }
+
+    fn up(&self, doc: &mut toml::Table) -> Result<(), SettingsError> {
+        doc.insert("schema_version".to_string(), toml::Value::Integer(5));
+        let container = child_table(doc, "container")?;
+        match container.get("enabled") {
+            None => {
+                container.insert("enabled".to_string(), toml::Value::Boolean(false));
+            }
+            Some(toml::Value::Boolean(_)) => {}
+            Some(other) => {
+                return Err(SettingsError::Migration(format!(
+                    "container.enabled must be a boolean, found a {}",
+                    other.type_str()
+                )));
+            }
+        }
+        Ok(())
+    }
+
+    /// Remove the `container` subtree, discarding an `enabled = true`.
+    ///
+    /// Discarding it is the correct trade and not a limitation, for the same
+    /// reason [`MigrateV3ToV4::down`] discards authorized keys and for one
+    /// more. v4 software has no `ContainerReconciler`, so a preserved `true`
+    /// would be a device whose settings tree claims containers are on while
+    /// nothing binds the Quadlet directory or starts a unit -- an operator
+    /// reading the tree would believe a capability is live that is not.
+    ///
+    /// The second reason is specific to this key: v4's `Settings` carries
+    /// `deny_unknown_fields`, so a leftover `container` table does not merely
+    /// mislead, it makes the whole document unloadable. A rollback that
+    /// bricked settings parsing would be a far worse outcome than a switch the
+    /// operator has to set again.
+    ///
+    /// A document with no `container` table is left untouched.
+    fn down(&self, doc: &mut toml::Table) -> Result<(), SettingsError> {
+        doc.insert("schema_version".to_string(), toml::Value::Integer(4));
+        doc.remove("container");
+        Ok(())
     }
 }
