@@ -65,6 +65,27 @@ command -v docker >/dev/null || { echo "error: docker is required" >&2; exit 1; 
 work="$(mktemp -d "${REPO_ROOT}/_out/repart-test.XXXXXX")"
 trap 'rm -rf "${work}"' EXIT
 
+# sgdisk runs on the host at several sites below (partition-table reads, and
+# one entry delete on a scratch copy), but the host is not required to carry
+# it: this test already cannot run without docker, so a missing sgdisk
+# resolves to a same-named function running in a one-time alpine tool image.
+# Every path this script hands sgdisk lives under ${REPO_ROOT}/_out — the
+# shipped images and ${work} both — so mounting _out at itself makes every
+# argument resolve identically and keeps the output byte-identical to a host
+# run. Same shape as os/mkimage-v2-selftest.sh's assertion tooling, for the
+# same reason: a missing host tool must not read as a FAIL that indicts the
+# image.
+if ! command -v sgdisk >/dev/null 2>&1; then
+    TOOL_IMAGE="$(docker build -q - <<'EOF'
+FROM alpine:3.21
+RUN apk add --no-cache -q sgdisk
+EOF
+    )"
+    [ -n "${TOOL_IMAGE}" ] || { echo "error: could not build the sgdisk tool image" >&2; exit 1; }
+    sgdisk() { docker run --rm -v "${REPO_ROOT}/_out:${REPO_ROOT}/_out" "${TOOL_IMAGE}" sgdisk "$@"; }
+    echo "host has no sgdisk; using container image ${TOOL_IMAGE} for it"
+fi
+
 # --- the stopgap must not exist ---------------------------------------------
 # Protection comes from the partition entry. A --discard=no drop-in is the OTHER
 # approach, and carrying both would hide a regression in the partition entry
