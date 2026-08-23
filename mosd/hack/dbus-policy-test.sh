@@ -308,9 +308,12 @@ def mode_own(sock, name):
     print(outcome(reply, 'OWNED'))
 
 
-def mode_call(sock, dest):
+def mode_call(sock, dest, iface=IFACE, member='GetSettings', path=PATH):
+    # iface/member/path are parameters because send_interface= and
+    # send_member= policy rules discriminate on them: a suite that could only
+    # ever call one member cannot tell a per-member grant from a blanket one.
     conn = Conn(sock)
-    reply = conn.call(dest, PATH, IFACE, 'GetSettings', 's', [''])
+    reply = conn.call(dest, path, iface, member, 's', [''])
     print(outcome(reply, 'OK'))
 
 
@@ -334,7 +337,12 @@ def mode_recv(sock, sender, member, seconds):
     print('NONE')
 
 
-def mode_serve(sock, name, member):
+def mode_serve(sock, name, member, iface=IFACE, path=PATH, also=''):
+    # `also` is a comma-separated list of extra "iface/member" signals to emit
+    # in the same loop. One owner per bus name means a receive_member= grant
+    # and its negative control cannot be driven by two servers, so one server
+    # broadcasts both.
+    extra = [spec.split('/', 1) for spec in also.split(',') if spec]
     conn = Conn(sock)
     reply = conn.request_name(name)
     if reply is None or reply['type'] == ERROR:
@@ -351,8 +359,12 @@ def mode_serve(sock, name, member):
         if now - last >= 0.2:
             last = now
             # Same shape as the real SettingsChanged(path, value_json).
-            conn.send(SIGNAL, {1: PATH, 2: IFACE, 3: member}, 'ss',
+            conn.send(SIGNAL, {1: path, 2: iface, 3: member}, 'ss',
                       ['access.webAdmin.password_hash', '"$2b$12$secret"'])
+            for extra_iface, extra_member in extra:
+                conn.send(SIGNAL, {1: path, 2: extra_iface, 3: extra_member},
+                          'ss', ['access.webAdmin.password_hash',
+                                 '"$2b$12$secret"'])
 
 
 MODES = {'own': mode_own, 'call': mode_call, 'recv': mode_recv,
@@ -740,6 +752,205 @@ check "ext: nobody CANNOT own com.mos.other (a future system name, unenumerated)
 check "ext: nobody CANNOT own com.mos.extra (own_prefix needs a '.' separator)" \
     "ERROR org.freedesktop.DBus.Error.AccessDenied" \
     "$(as_nobody own "${EXT_SOCK}" com.mos.extra)"
+
+
+# --- 6. the MQTT bridge's grant, mosd/dist/mos-mqttd.conf --------------------
+# The bridge is a NON-ROOT client of a ROOT-ONLY name. Sections 1-2 established
+# that com.mos.mosd.conf refuses every non-root uid outright; this section is
+# about the file that punches three members through that refusal and must punch
+# through nothing else.
+#
+# BOTH FILES ON ONE BUS, unlike section 5. Section 5 kept the files apart
+# because its question was "what does com.mos.ext.conf grant on its own". The
+# question here is the opposite: does the grant survive the deny it is layered
+# over, in the combination the device actually loads. Split across two buses,
+# the interesting result -- an allow overriding a deny in the same context --
+# could not occur at all.
+#
+# THE USERNAME IS SUBSTITUTED, AND THAT LIMIT IS EXPLICIT. <policy user="X">
+# resolves X when dbus-daemon starts. mos-mqttd is created by the image, not by
+# this host, so a verbatim copy of the shipped file would load a rule that
+# matches no uid -- and a rule that matches nothing PASSES a refusal suite for
+# the wrong reason, which is the whole failure mode this file exists to avoid.
+# So the copy under test substitutes exactly one token, the substitution is
+# asserted to have changed exactly one line, and the shipped file's own
+# username is asserted separately. That the IMAGE creates mos-mqttd, and that
+# the unit runs as it, is os/verify-image-v2.sh's half of the pair -- neither
+# half is a claim about the other.
+MQTTD_POLICY="${REPO_ROOT}/mosd/dist/mos-mqttd.conf"
+[ -f "${MQTTD_POLICY}" ] || { echo "no ${MQTTD_POLICY} to test" >&2; exit 1; }
+
+MQTTD_USER=mos-mqttd
+MQTTD_UID=65534
+# The ungranted control uid. Distinct from MQTTD_UID because "an unprivileged
+# uid is refused" and "the granted uid is allowed" have to be two different
+# uids or one of them is unobservable.
+#
+# It must be a uid that EXISTS. 65533 was the obvious pick and was wrong:
+# dbus-daemon answers EXTERNAL auth from an unresolvable uid with
+# "REJECTED EXTERNAL", so the client never reaches the policy at all — and the
+# case still "failed to call GetItems", which is indistinguishable from a
+# policy refusal in every way except the error string. The connectivity check
+# below is what keeps that confusion from recurring silently.
+OTHER_UID=33
+
+MQTTD_SOCK="${WORK}/mqttd-bus.sock"
+MQTTD_CONF="${WORK}/mqttd-bus.conf"
+MQTTD_POLICY_COPY="${WORK}/mos-mqttd.subst.conf"
+sed "s/user=\"${MQTTD_USER}\"/user=\"${MQTTD_UID}\"/" \
+    "${MQTTD_POLICY}" >"${MQTTD_POLICY_COPY}"
+
+echo
+echo "mqttd bus: ${MQTTD_SOCK}"
+echo "policies under test: ${POLICY} + ${MQTTD_POLICY}"
+echo
+
+# The substitution itself, before anything leans on it.
+check "mqttd: the shipped policy names exactly one user, and it is ${MQTTD_USER}" \
+    "1 ${MQTTD_USER}" \
+    "$(grep -Eo '<policy user="[^"]*"' "${MQTTD_POLICY}" |
+        sed 's/.*user="\(.*\)"/\1/' | sort -u |
+        awk '{u=$0; n++} END {print n" "u}')"
+check "mqttd: substituting the username changed exactly one line" "1" \
+    "$(diff "${MQTTD_POLICY}" "${MQTTD_POLICY_COPY}" | grep -c '^> ' || true)"
+
+cat >"${MQTTD_CONF}" <<XML
+<!DOCTYPE busconfig PUBLIC "-//freedesktop//DTD D-BUS Bus Configuration 1.0//EN"
+ "http://www.freedesktop.org/standards/dbus/1.0/busconfig.dtd">
+<busconfig>
+  <type>system</type>
+  <listen>unix:path=${MQTTD_SOCK}</listen>
+  <auth>EXTERNAL</auth>
+
+  <policy context="default">
+    <allow user="*"/>
+    <deny own="*"/>
+    <deny send_type="method_call"/>
+    <allow send_type="signal"/>
+    <allow send_requested_reply="true" send_type="method_return"/>
+    <allow send_requested_reply="true" send_type="error"/>
+    <allow receive_type="method_call"/>
+    <allow receive_type="method_return"/>
+    <allow receive_type="error"/>
+    <allow receive_type="signal"/>
+    <allow send_destination="org.freedesktop.DBus"
+           send_interface="org.freedesktop.DBus"/>
+  </policy>
+
+  <include>${POLICY}</include>
+  <include>${MQTTD_POLICY_COPY}</include>
+</busconfig>
+XML
+
+dbus-daemon --config-file="${MQTTD_CONF}" --nofork --print-address \
+    >"${WORK}/mqttd-bus.addr" 2>"${WORK}/mqttd-bus.err" &
+MQTTD_BUS_PID=$!
+SERVER_PIDS+=("${MQTTD_BUS_PID}")
+for _ in $(seq 1 50); do
+    [ -S "${MQTTD_SOCK}" ] && break
+    sleep 0.1
+done
+[ -S "${MQTTD_SOCK}" ] || {
+    echo "mqttd bus did not start: $(cat "${WORK}/mqttd-bus.err")" >&2
+    exit 1
+}
+chmod 0777 "${MQTTD_SOCK}"
+
+# One root server owns com.mos.mosd and broadcasts BOTH signals: ItemsChanged
+# on com.mos.Item1 (granted) and SettingsChanged on com.mos.mosd1 (not).
+setsid python3 "${CLIENT}" serve "${MQTTD_SOCK}" "${NAME}" ItemsChanged \
+    com.mos.Item1 /com/mos/mosd com.mos.mosd1/SettingsChanged \
+    >"${WORK}/mqttd-server.log" 2>&1 &
+SERVER_PIDS+=($!)
+for _ in $(seq 1 50); do
+    [ -s "${WORK}/mqttd-server.log" ] && break
+    sleep 0.1
+done
+
+as_mqttd() {
+    setpriv --reuid="${MQTTD_UID}" --regid="${MQTTD_UID}" --clear-groups \
+        python3 "${CLIENT}" "$@" 2>&1 | tail -n1
+}
+as_other() {
+    setpriv --reuid="${OTHER_UID}" --regid="${OTHER_UID}" --clear-groups \
+        python3 "${CLIENT}" "$@" 2>&1 | tail -n1
+}
+
+# The harness first. Every claim below is about a bus with a live owner on it.
+check "mqttd: root owns ${NAME} on the combined bus" "OWNED" \
+    "$(head -n1 "${WORK}/mqttd-server.log")"
+check "mqttd: root can still reach ${NAME} (the grant did not break root)" "OK" \
+    "$(as_root call "${MQTTD_SOCK}" "${NAME}")"
+
+echo
+# GRANTED. This is the half the feature depends on: without it the bridge
+# publishes nothing, silently, and the unit still reports active.
+check "mqttd: the bridge's uid CAN call com.mos.Item1.GetItems" "OK" \
+    "$(as_mqttd call "${MQTTD_SOCK}" "${NAME}" com.mos.Item1 GetItems /)"
+check "mqttd: the bridge's uid CAN call com.mos.Item1.SetValue" "OK" \
+    "$(as_mqttd call "${MQTTD_SOCK}" "${NAME}" com.mos.Item1 SetValue /hostname)"
+check "mqttd: the bridge's uid CAN receive com.mos.Item1.ItemsChanged" "GOT" \
+    "$(as_mqttd recv "${MQTTD_SOCK}" "${NAME}" ItemsChanged 3)"
+
+echo
+# REFUSED. The reason the grant is per-member: mos-mqttd is the only daemon in
+# the image holding a network socket, and these are the members that would turn
+# a bridge compromise into device control.
+check "mqttd: the bridge's uid CANNOT call com.mos.mosd1.Reboot" \
+    "ERROR org.freedesktop.DBus.Error.AccessDenied" \
+    "$(as_mqttd call "${MQTTD_SOCK}" "${NAME}" com.mos.mosd1 Reboot)"
+check "mqttd: the bridge's uid CANNOT call com.mos.mosd1.PowerOff" \
+    "ERROR org.freedesktop.DBus.Error.AccessDenied" \
+    "$(as_mqttd call "${MQTTD_SOCK}" "${NAME}" com.mos.mosd1 PowerOff)"
+check "mqttd: the bridge's uid CANNOT call SetTransientRootPassword" \
+    "ERROR org.freedesktop.DBus.Error.AccessDenied" \
+    "$(as_mqttd call "${MQTTD_SOCK}" "${NAME}" com.mos.mosd1 SetTransientRootPassword)"
+check "mqttd: the bridge's uid CANNOT call com.mos.mosd1.SetSettings" \
+    "ERROR org.freedesktop.DBus.Error.AccessDenied" \
+    "$(as_mqttd call "${MQTTD_SOCK}" "${NAME}" com.mos.mosd1 SetSettings)"
+# The same interface the grant names, a member it does not: proves the rule
+# discriminates on send_member= and not merely on send_interface=.
+check "mqttd: the bridge's uid CANNOT call com.mos.Item1.GetValue (ungranted member)" \
+    "ERROR org.freedesktop.DBus.Error.AccessDenied" \
+    "$(as_mqttd call "${MQTTD_SOCK}" "${NAME}" com.mos.Item1 GetValue /hostname)"
+# SettingsChanged carries the settings VALUE, including the web admin password
+# hash. The bridge is granted ItemsChanged and must not inherit this one.
+check "mqttd: the bridge's uid CANNOT receive com.mos.mosd1.SettingsChanged" "NONE" \
+    "$(as_mqttd recv "${MQTTD_SOCK}" "${NAME}" SettingsChanged 3)"
+
+echo
+# USER-SCOPED. Without this, every check above is equally consistent with the
+# grant having reopened the name to all local uids.
+#
+# CONNECTIVITY FIRST, for both uids. A client that cannot authenticate fails
+# every call below, and fails them in a way that reads as a policy refusal
+# unless something checks — which is not hypothetical: the control uid was
+# 65533 until this suite reported it "refused" for having no passwd entry.
+#
+# The three outcomes are distinguishable, so the check classifies rather than
+# matching one string. Calling GetId on the bus daemon with a body it does not
+# take answers InvalidArgs, and an InvalidArgs is a STRONGER connectivity
+# proof than a success would be: the daemon accepted the connection, accepted
+# the message, and parsed its body far enough to object to it.
+connectivity() {
+    case "$1" in
+    RuntimeError*) echo "AUTH-REFUSED" ;;
+    "ERROR org.freedesktop.DBus.Error.AccessDenied") echo "POLICY-REFUSED" ;;
+    TIMEOUT) echo "NO-ANSWER" ;;
+    *) echo "CONNECTED" ;;
+    esac
+}
+check "mqttd: the bridge's uid is connected (so its refusals are policy, not auth)" \
+    "CONNECTED" \
+    "$(connectivity "$(as_mqttd call "${MQTTD_SOCK}" org.freedesktop.DBus org.freedesktop.DBus GetId /org/freedesktop/DBus)")"
+check "mqttd: the control uid is connected (so its refusals are policy, not auth)" \
+    "CONNECTED" \
+    "$(connectivity "$(as_other call "${MQTTD_SOCK}" org.freedesktop.DBus org.freedesktop.DBus GetId /org/freedesktop/DBus)")"
+check "mqttd: another unprivileged uid CANNOT call GetItems (the grant is user-scoped)" \
+    "ERROR org.freedesktop.DBus.Error.AccessDenied" \
+    "$(as_other call "${MQTTD_SOCK}" "${NAME}" com.mos.Item1 GetItems /)"
+check "mqttd: another unprivileged uid CANNOT receive ItemsChanged" "NONE" \
+    "$(as_other recv "${MQTTD_SOCK}" "${NAME}" ItemsChanged 3)"
 
 echo
 echo "$PASS passed, $FAIL failed"

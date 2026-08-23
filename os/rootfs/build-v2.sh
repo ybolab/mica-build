@@ -84,6 +84,13 @@ if [ "$WITH_MOSD" = "1" ]; then
     cp "$REPO_ROOT/mosd/dist/com.mos.ext.conf" "$MOSD_STAGE/com.mos.ext.conf"
     cp "$REPO_ROOT/mosd/target/aarch64-unknown-linux-gnu/release/apid" "$MOSD_STAGE/apid"
     cp "$REPO_ROOT/mosd/dist/apid.service" "$MOSD_STAGE/apid.service"
+    # The MQTT bridge (PLAN-011 M3/D6). Its unit lives in the crate rather than
+    # mosd/dist because the crate is where it is maintained; its D-Bus grant
+    # lives in mosd/dist beside the policy it is layered over.
+    cp "$REPO_ROOT/mosd/target/aarch64-unknown-linux-gnu/release/mos-mqttd" \
+        "$MOSD_STAGE/mos-mqttd"
+    cp "$REPO_ROOT/mosd/mqttd/dist/mos-mqttd.service" "$MOSD_STAGE/mos-mqttd.service"
+    cp "$REPO_ROOT/mosd/dist/mos-mqttd.conf" "$MOSD_STAGE/mos-mqttd.conf"
 else
     echo "note: WITH_MOSD=0; building rootfs without mosd"
 fi

@@ -115,6 +115,36 @@ EXT_MOUNT_UNIT_SRC="${HERE}/rootfs/overlay-v2/etc/systemd/system/${EXT_MOUNT_UNI
     exit 1
 }
 
+# PLAN-011 D6's MQTT bridge. Paths out of the verifier, files out of the tree:
+# the unit and the policy the fixture installs are the ones the image installs,
+# for the same reason the extension policy is copied rather than written. A
+# hand-authored stand-in would keep this suite green after the shipped unit
+# went back to DynamicUser or the shipped grant lost its send_member=, which
+# are the two edits that break the bridge silently.
+MQTTD_BIN="$(verifier_const MQTTD_BIN '"')"
+MQTTD_UNIT="$(verifier_const MQTTD_UNIT '"')"
+MQTTD_POLICY_PATH="$(verifier_const MQTTD_POLICY_PATH '"')"
+MQTTD_WANTS="$(verifier_const MQTTD_WANTS '"')"
+MQTTD_UNIT_SRC="${HERE}/../mosd/mqttd/dist/$(basename "${MQTTD_UNIT}")"
+MQTTD_POLICY_SRC="${HERE}/../mosd/dist/$(basename "${MQTTD_POLICY_PATH}")"
+for required in "${MQTTD_UNIT_SRC}" "${MQTTD_POLICY_SRC}"; do
+    [ -f "${required}" ] || {
+        echo "error: ${required} not found; ${VERIFIER} asserts the MQTT bridge into the image but the tree ships no such file" >&2
+        exit 1
+    }
+done
+# The mount unit that makes the bridge's EnvironmentFile writable. Named by the
+# unit itself rather than restated, so retargeting EnvironmentFile= to a path
+# no mount backs is caught here instead of leaving the fixture agreeing with a
+# verifier that agrees with nothing.
+MQTTD_ENV_DIR="$(dirname "$(sed -n 's/^EnvironmentFile=-\{0,1\}//p' "${MQTTD_UNIT_SRC}" | tail -n1)")"
+MQTTD_ENV_MOUNT_SRC="$(grep -rl "^Where=${MQTTD_ENV_DIR}\$" \
+    "${HERE}/rootfs/overlay-v2/etc/systemd/system" 2>/dev/null | head -n1)"
+[ -n "${MQTTD_ENV_MOUNT_SRC}" ] || {
+    echo "error: no overlay .mount unit has Where=${MQTTD_ENV_DIR}, which ${MQTTD_UNIT_SRC} reads its EnvironmentFile from; the shipped unit and the shipped mounts disagree and no fixture can paper over that" >&2
+    exit 1
+}
+
 WORK="$(mktemp -d)"
 trap 'rm -rf "${WORK}"' EXIT
 
@@ -182,6 +212,43 @@ new_fixture() {
     # below are about what mosd/dist/com.mos.ext.conf actually grants.
     mkdir -p "${dir}$(dirname "${EXT_POLICY_PATH}")"
     cp "${EXT_POLICY_SRC}" "${dir}${EXT_POLICY_PATH}"
+
+    # PLAN-011 D6's MQTT bridge, as os/rootfs/Dockerfile.v2 installs it: the
+    # binary (a stand-in, like apid's -- nothing here reads its contents), the
+    # SHIPPED unit, the SHIPPED grant, and the enablement symlink.
+    mkdir -p "${dir}$(dirname "${MQTTD_BIN}")" \
+        "${dir}$(dirname "${MQTTD_UNIT}")" \
+        "${dir}$(dirname "${MQTTD_POLICY_PATH}")" \
+        "${dir}$(dirname "${MQTTD_WANTS}")"
+    printf '#!/bin/sh\n' >"${dir}${MQTTD_BIN}"
+    cp "${MQTTD_UNIT_SRC}" "${dir}${MQTTD_UNIT}"
+    cp "${MQTTD_POLICY_SRC}" "${dir}${MQTTD_POLICY_PATH}"
+    ln -sf "${MQTTD_UNIT}" "${dir}${MQTTD_WANTS}"
+    # ...the mount unit its EnvironmentFile depends on...
+    cp "${MQTTD_ENV_MOUNT_SRC}" \
+        "${dir}/etc/systemd/system/$(basename "${MQTTD_ENV_MOUNT_SRC}")"
+    # ...and the account it runs as. The NAME is taken from the shipped unit,
+    # never written here: a fixture that spelled the account itself would keep
+    # passing after the unit changed User=, which is the exact drift the
+    # assertion exists to catch.
+    local mqttd_user
+    mqttd_user="$(sed -n 's/^User=//p' "${MQTTD_UNIT_SRC}" | tail -n1)"
+    [ -n "${mqttd_user}" ] || {
+        echo "error: ${MQTTD_UNIT_SRC} sets no User=; the fixture cannot create an account the unit does not name" >&2
+        exit 1
+    }
+    printf 'root:x:0:0:root:/root:/bin/bash\n%s:x:990:990:mos MQTT bridge:/nonexistent:/usr/sbin/nologin\n' \
+        "${mqttd_user}" >"${dir}/etc/passwd"
+
+    # The image's networkd namespace, for check_networkd_namespace. Two files,
+    # both outside every reconciler-owned prefix: the image's DHCP fallback and
+    # one stock systemd unit standing in for the eight the Debian base carries.
+    # Neither may collide, and the case below makes one that does.
+    mkdir -p "${dir}/etc/systemd/network" "${dir}/usr/lib/systemd/network"
+    printf '[Match]\nName=*\n[Network]\nDHCP=yes\n' \
+        >"${dir}/etc/systemd/network/80-dhcp.network"
+    printf '[Match]\nName=vb-*\n[Network]\nDHCP=no\n' \
+        >"${dir}/usr/lib/systemd/network/80-container-vb.network"
 }
 
 # Drops the whole `Key=value` line from the fixture's status-LED unit. Fails
@@ -295,6 +362,19 @@ ext-policy-grant|extension services can take their bus names at all||PASS
 ext-policy-live-rule|grant is a live rule, not text inside an XML comment|only inside an XML comment|PASS
 ext-policy-widened|does not grant the widened own_prefix|hands ownership of com.mos.mosd to every local uid|PASS
 ext-policy-namespace|grants exactly one thing|grants ownership beyond the extension namespace|PASS
+mqttd-bin|mqttd: /usr/bin/mos-mqttd is a regular file|mqttd: /usr/bin/mos-mqttd is missing|PASS
+mqttd-unit-file|mqttd: /usr/lib/systemd/system/mos-mqttd.service is a regular file|mqttd: /usr/lib/systemd/system/mos-mqttd.service is missing|PASS
+mqttd-policy-file|mqttd: /usr/share/dbus-1/system.d/mos-mqttd.conf is a regular file|mqttd: /usr/share/dbus-1/system.d/mos-mqttd.conf is missing|PASS
+mqttd-enabled|mqttd: the bridge is enabled|is not a symlink, so mos-mqttd never starts|PASS
+mqttd-static-user|mqttd: the unit runs as the static user|dbus-daemon resolves <policy user=> when it reads the file at startup|PASS
+mqttd-grant-user|mqttd: the D-Bus grant names the same user the unit runs as|A grant naming the wrong identity|PASS
+mqttd-account-exists|exists in the image'"'"'s /etc/passwd|and no such account is in|PASS
+mqttd-per-member|mqttd: every grant on com.mos.mosd names a member|grant on com.mos.mosd|PASS
+mqttd-no-danger|include none of|A compromise of the network-facing daemon becomes device control|PASS
+mqttd-broker-configurable|mqttd: ExecStart takes the broker from the environment|does not reference|PASS
+mqttd-env-on-state|mqttd: EnvironmentFile=|EnvironmentFile|PASS
+connd-contract|read the connd contract out of mosd|could not read the connd contract|PASS
+networkd-namespace|networkd namespace is clear|networkd namespace|PASS
 '
 
 # WHAT THIS REGISTER CANNOT SEE, AND WHY IT IS STRUCTURAL RATHER THAN AN
@@ -832,6 +912,184 @@ if grep -q '^WARNING: DEVELOPMENT KEYRING SHIPPED' "${WORK}/out"; then
 else
     fail "the waved-through run is silent: no 'WARNING: DEVELOPMENT KEYRING SHIPPED' line, so a dev image with a baked keyring would look exactly like a clean one"
 fi
+
+
+# ===========================================================================
+# PLAN-011 D6: the MQTT bridge, as the image installs it
+# ===========================================================================
+# Every case here is a defect the wiring ACTUALLY HAD before these assertions
+# existed. The crate, the unit and fourteen protocol tests were green the whole
+# time; none of them can see an image.
+
+mutate_mqttd_unit() {
+    local dir="$1" expr="$2" f="$1${MQTTD_UNIT}" before
+    before="$(cat "${f}")"
+    sed -i "${expr}" "${f}"
+    [ "${before}" != "$(cat "${f}")" ] ||
+        { echo "error: sed '${expr}' changed nothing in ${MQTTD_UNIT}; the shipped unit no longer contains what this case mutates" >&2; exit 1; }
+}
+mutate_mqttd_policy() {
+    local dir="$1" expr="$2" f="$1${MQTTD_POLICY_PATH}" before
+    before="$(cat "${f}")"
+    sed -i "${expr}" "${f}"
+    [ "${before}" != "$(cat "${f}")" ] ||
+        { echo "error: sed '${expr}' changed nothing in ${MQTTD_POLICY_PATH}; the shipped grant no longer contains what this case mutates" >&2; exit 1; }
+}
+
+# --- 5a. the bridge is simply not in the image ------------------------------
+# THE STATE MAIN WAS IN until this task: mos-mqttd built, tested and shipped
+# nowhere. Nothing in the image, and nothing anywhere said so.
+FIX="${WORK}/mqttd-absent"
+new_fixture "${FIX}"
+rm -f "${FIX}${MQTTD_BIN}" "${FIX}${MQTTD_UNIT}" "${FIX}${MQTTD_POLICY_PATH}" \
+    "${FIX}${MQTTD_WANTS}"
+expect_set "the MQTT bridge absent from the image" \
+    "mqttd-bin=FAIL mqttd-unit-file=FAIL mqttd-policy-file=FAIL mqttd-enabled=FAIL mqttd-static-user=FAIL mqttd-grant-user=FAIL mqttd-account-exists=FAIL mqttd-per-member=FAIL mqttd-no-danger=PASS mqttd-broker-configurable=FAIL mqttd-env-on-state=FAIL" \
+    "is not in this image at all" \
+    "there is no grant on com.mos.mosd at all" \
+    "no EnvironmentFile= line at all"
+
+# --- 5b. installed but never enabled ----------------------------------------
+# The root is a read-only verity squashfs, so systemctl enable has nowhere to
+# write: a unit that ships disabled ships permanently disabled.
+FIX="${WORK}/mqttd-disabled"
+new_fixture "${FIX}"
+rm -f "${FIX}${MQTTD_WANTS}"
+expect_set "the bridge installed but not enabled" \
+    "mqttd-enabled=FAIL" \
+    "cannot be fixed with systemctl enable on the device"
+
+# --- 5c. back to DynamicUser ------------------------------------------------
+# The unit's ORIGINAL state, and the one that makes the grant a rule matching
+# nobody. Two assertions fire: the identity is not static, and the policy's
+# user no longer matches the unit's.
+FIX="${WORK}/mqttd-dynamic-user"
+new_fixture "${FIX}"
+mutate_mqttd_unit "${FIX}" 's/^User=mos-mqttd$/DynamicUser=yes/'
+expect_set "the bridge back on DynamicUser=yes" \
+    "mqttd-static-user=FAIL mqttd-grant-user=FAIL mqttd-account-exists=FAIL" \
+    "before any dynamic user for the unit exists" \
+    "A grant naming the wrong identity"
+
+# --- 5d. the account the unit names is not in the image ---------------------
+# systemd refuses to start the unit and dbus-daemon drops the rule. Both
+# failures are at boot, on the device.
+FIX="${WORK}/mqttd-no-account"
+new_fixture "${FIX}"
+printf 'root:x:0:0:root:/root:/bin/bash\n' >"${FIX}/etc/passwd"
+expect_set "the bridge's account missing from /etc/passwd" \
+    "mqttd-account-exists=FAIL" \
+    "no such account is in"
+
+# --- 5e. the unit and the grant name different identities -------------------
+# Neither file is wrong on its own, which is what makes this the drift that
+# survives review: two correct-looking files and a grant nobody holds.
+FIX="${WORK}/mqttd-user-drift"
+new_fixture "${FIX}"
+mutate_mqttd_policy "${FIX}" 's/user="mos-mqttd"/user="mos-mqtt"/'
+expect_set "the grant naming a different user than the unit runs as" \
+    "mqttd-grant-user=FAIL" \
+    "A grant naming the wrong identity"
+
+# --- 5f. the grant widened to the whole interface ---------------------------
+# The escalation. com.mos.mosd.conf keeps passing throughout, because it cannot
+# see a grant made in another file -- the same blind spot 4j and 4k exercise
+# for ownership, reached here through send_destination.
+FIX="${WORK}/mqttd-blanket-grant"
+new_fixture "${FIX}"
+mutate_mqttd_policy "${FIX}" \
+    's|<allow send_destination="com.mos.mosd"$|<allow send_destination="com.mos.mosd"/><allow x="y"|'
+mutate_mqttd_policy "${FIX}" '0,/<allow x="y"/s|<allow x="y"|<!-- |'
+expect_set "a blanket send_destination grant on com.mos.mosd" \
+    "mqttd-per-member=FAIL" \
+    "names no member"
+
+# --- 5g. a dangerous member granted -----------------------------------------
+# The bridge is the only daemon in the image holding a network socket, and
+# SetTransientRootPassword writes a root credential into /etc/shadow.
+FIX="${WORK}/mqttd-danger-member"
+new_fixture "${FIX}"
+mutate_mqttd_policy "${FIX}" 's/send_member="GetItems"/send_member="Reboot"/'
+expect_set "the bridge granted com.mos.mosd1.Reboot" \
+    "mqttd-no-danger=FAIL" \
+    "becomes device control"
+
+# --- 5h. the broker baked into the read-only root ---------------------------
+# The unit's ORIGINAL ExecStart. On an immutable squashfs a literal host is the
+# same host on every device the image is written to, unchangeable.
+FIX="${WORK}/mqttd-baked-broker"
+new_fixture "${FIX}"
+mutate_mqttd_unit "${FIX}" 's/--broker-host ${MOS_MQTT_BROKER_HOST}/--broker-host localhost/'
+expect_set "a broker address baked into ExecStart" \
+    "mqttd-broker-configurable=FAIL" \
+    "the same address on every device flashed with this image"
+
+# --- 5i. the environment file on a path nothing mounts ----------------------
+# A configurable broker whose configuration file lives inside the verity root
+# is not configurable. This is the half that makes 5h's fix real.
+FIX="${WORK}/mqttd-env-unwritable"
+new_fixture "${FIX}"
+mutate_mqttd_unit "${FIX}" 's|^EnvironmentFile=-.*|EnvironmentFile=-/etc/mos/mqttd.env|'
+expect_set "the bridge's EnvironmentFile on a path no mount unit backs" \
+    "mqttd-env-on-state=FAIL" \
+    "no .mount unit in the image mounts"
+
+# ===========================================================================
+# The connd contract, and the namespace check that depends on it
+# ===========================================================================
+
+# --- 6a. the sweep marker the extractor cannot find -------------------------
+# THE DEFECT THIS TASK FIXED, driven. network.rs was refactored from
+# `file_name.contains("-mos-")` to an anchored is_mos_managed(), the verifier's
+# regex stopped matching, and MOS_SWEEP silently became "". The contract read
+# failed and nineteen assertions below it went green anyway.
+#
+# MOS_VERIFY_RECONCILER_DIR is what makes this drivable at all: without it the
+# rot could only be waited for. The copy is of the REAL reconcilers, so the
+# case is about one removed line and not about a directory this test authored.
+RECONCILER_SRC="${HERE}/../mosd/mosd/src/reconciler"
+[ -d "${RECONCILER_SRC}" ] || {
+    echo "error: ${RECONCILER_SRC} not found; the verifier reads the connd contract out of it" >&2
+    exit 1
+}
+FIX="${WORK}/connd-marker-gone"
+new_fixture "${FIX}"
+ROTTED="${WORK}/reconciler-rotted"
+rm -rf "${ROTTED}"
+cp -r "${RECONCILER_SRC}" "${ROTTED}"
+before="$(cat "${ROTTED}/network.rs")"
+sed -i 's/file_name\.starts_with("[^"]*")/is_mos_prefixed(file_name)/' "${ROTTED}/network.rs"
+[ "${before}" != "$(cat "${ROTTED}/network.rs")" ] ||
+    { echo "error: network.rs no longer contains a file_name.starts_with(...) for this case to remove" >&2; exit 1; }
+MOS_VERIFY_RECONCILER_DIR="${ROTTED}" \
+    expect_set "the sweep marker moved behind a helper the extractor cannot read" \
+    "connd-contract=FAIL networkd-namespace=FAIL" \
+    "could not read the connd contract" \
+    "networkd namespace check did not run"
+
+# --- 6b. an image .network file inside the sweep namespace ------------------
+# The TRUE positive, which the unanchored `*${MOS_SWEEP}*` glob could not
+# distinguish from the eight false ones it reported: a file that really does
+# start with the prefix network.rs sweeps, and really would be deleted on the
+# device on the reconciler's first pass.
+FIX="${WORK}/networkd-collision"
+new_fixture "${FIX}"
+printf '[Match]\nName=eth0\n[Network]\nDHCP=yes\n' \
+    >"${FIX}/usr/lib/systemd/network/50-mos-eth0.network"
+expect_set "an image .network file inside network.rs's sweep namespace" \
+    "networkd-namespace=FAIL" \
+    "swept-by-network.rs"
+
+# --- 6c. an image .network file inside a WiFi reconciler's prefix -----------
+# The other namespace, and the other direction: not swept but SHADOWING, since
+# networkd applies the first match in lexical order.
+FIX="${WORK}/networkd-sta-collision"
+new_fixture "${FIX}"
+printf '[Match]\nName=wlan0\n[Network]\nDHCP=yes\n' \
+    >"${FIX}/usr/lib/systemd/network/90-wifi-client-wlan0.network"
+expect_set "an image .network file inside the station reconciler's prefix" \
+    "networkd-namespace=FAIL" \
+    "station-namespace"
 
 echo
 total=$((PASS_N + FAIL_N))

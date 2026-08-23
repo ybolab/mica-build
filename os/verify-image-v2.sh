@@ -634,6 +634,265 @@ check_ext_policy() {
     fi
 }
 
+# --- PLAN-011 D6: the MQTT bridge, as the image actually installs it ---------
+# What this proves: mos-mqttd is present, runs as an identity its D-Bus grant
+# can name, is granted exactly the members it needs and none of the ones that
+# would turn a compromise of the only network-facing daemon into device
+# control, and can be pointed at a broker without reflashing.
+#
+# EVERY ONE OF THESE IS A DEFECT THE WIRING ACTUALLY HAD. The crate, the unit
+# and the protocol tests were all green while the bridge was absent from the
+# image entirely; when it was added, the unit's DynamicUser=yes could not be
+# named by any <policy user=>, and its ExecStart hardcoded a broker host into
+# a read-only squashfs. None of that is visible from the code side.
+MQTTD_BIN="/usr/bin/mos-mqttd"
+MQTTD_UNIT="/usr/lib/systemd/system/mos-mqttd.service"
+MQTTD_POLICY_PATH="/usr/share/dbus-1/system.d/mos-mqttd.conf"
+MQTTD_WANTS="/etc/systemd/system/multi-user.target.wants/mos-mqttd.service"
+# Members of com.mos.mosd that the bridge must never be granted. Reboot and
+# PowerOff are the appliance; SetSettings rewrites the persisted tree;
+# SetTransientRootPassword writes a root credential into /etc/shadow.
+MQTTD_FORBIDDEN_MEMBERS="Reboot PowerOff SetSettings SetTransientRootPassword"
+
+check_mqttd() {
+    for f in "${MQTTD_BIN}" "${MQTTD_UNIT}" "${MQTTD_POLICY_PATH}"; do
+        if [ -f "${ROOT}${f}" ] && [ ! -L "${ROOT}${f}" ]; then
+            pass "mqttd: ${f} is a regular file"
+        else
+            fail "mqttd: ${f} is missing or not a regular file, so the MQTT bridge PLAN-011 D6 specifies is not in this image at all — the crate builds and its protocol tests pass either way"
+        fi
+    done
+
+    # "|| true" throughout: under set -euo pipefail a sed over a missing file
+    # kills the script before the branch that exists to report the absence.
+    mqttd_user="$(sed -n 's/^User=//p' "${ROOT}${MQTTD_UNIT}" 2>/dev/null | tail -n1 || true)"
+    mqttd_dynamic="$(sed -n 's/^DynamicUser=//p' "${ROOT}${MQTTD_UNIT}" 2>/dev/null | tail -n1 || true)"
+    mqttd_exec="$(sed -n '/^ExecStart=/,/[^\\]$/p' "${ROOT}${MQTTD_UNIT}" 2>/dev/null | tr -d '\\\n' || true)"
+    mqttd_envfile="$(sed -n 's/^EnvironmentFile=//p' "${ROOT}${MQTTD_UNIT}" 2>/dev/null | tail -n1 || true)"
+
+    # Enabled. An installed-but-disabled bridge is indistinguishable from an
+    # absent one on the device, and the root is read-only so nobody can enable
+    # it there.
+    if [ -L "${ROOT}${MQTTD_WANTS}" ]; then
+        pass "mqttd: the bridge is enabled (${MQTTD_WANTS} -> $(readlink "${ROOT}${MQTTD_WANTS}"))"
+    else
+        fail "mqttd: ${MQTTD_WANTS} is not a symlink, so mos-mqttd never starts. The root filesystem is a read-only verity squashfs, so this cannot be fixed with systemctl enable on the device"
+    fi
+
+    # A STATIC identity. This is the one that silently breaks the grant.
+    if [ -n "${mqttd_user}" ] && [ "${mqttd_dynamic:-no}" != "yes" ]; then
+        pass "mqttd: the unit runs as the static user '${mqttd_user}', an identity a <policy user=> can resolve"
+    else
+        fail "mqttd: the unit sets User='${mqttd_user}' DynamicUser='${mqttd_dynamic}'. dbus-daemon resolves <policy user=> when it reads the file at startup, before any dynamic user for the unit exists, so the grant in ${MQTTD_POLICY_PATH} would load and match nothing. The bridge then connects to the broker and publishes nothing, with no error at the point of cause"
+    fi
+
+    # ...and the policy names THAT user. Two files, one number; either alone
+    # is consistent with a grant nobody holds.
+    # Comment-stripped AND tag-normalised: one XML tag per line. The shipped
+    # rules wrap their attributes across three lines, so a line-oriented grep
+    # for send_member= on a rule whose send_destination= is on the line above
+    # finds nothing and reports a blanket grant that is not there. Measured on
+    # the first run of this check against the real file.
+    mqttd_rules="${TMP}/mqttd-policy-rules.xml"
+    : >"${mqttd_rules}"
+    if [ -f "${ROOT}${MQTTD_POLICY_PATH}" ]; then
+        dbus_policy_rules_only "${ROOT}${MQTTD_POLICY_PATH}" |
+            tr '\n' ' ' | sed 's/</\n</g' >"${mqttd_rules}"
+    fi
+    mqttd_policy_user="$(grep -Eo '<policy user="[^"]*"' "${mqttd_rules}" |
+        sed 's/.*user="\(.*\)"/\1/' | sort -u | first_line || true)"
+    if [ -n "${mqttd_user}" ] && [ "${mqttd_policy_user}" = "${mqttd_user}" ]; then
+        pass "mqttd: the D-Bus grant names the same user the unit runs as ('${mqttd_user}'), as a live rule and not commentary"
+    else
+        fail "mqttd: the unit runs as '${mqttd_user}' but ${MQTTD_POLICY_PATH} grants '${mqttd_policy_user}' (after comment stripping). A grant naming the wrong identity is a rule that loads, matches nothing, and reads in review exactly like a working one"
+    fi
+
+    # The identity has to EXIST in the image, or systemd cannot start the unit
+    # and dbus-daemon cannot resolve the rule.
+    if [ -n "${mqttd_user}" ] &&
+        awk -F: -v u="${mqttd_user}" '$1 == u {found = 1} END {exit !found}' \
+            "${ROOT}/etc/passwd" 2>/dev/null; then
+        pass "mqttd: '${mqttd_user}' exists in the image's /etc/passwd ($(awk -F: -v u="${mqttd_user}" '$1 == u {print "uid " $3 ", gid " $4 ", shell " $7}' "${ROOT}/etc/passwd"))"
+    else
+        fail "mqttd: the unit runs as '${mqttd_user}' and no such account is in ${ROOT}/etc/passwd. systemd refuses to start the unit and dbus-daemon drops the policy rule; both failures are at boot, on the device"
+    fi
+
+    # The grant is PER-MEMBER. A blanket send_destination would hand the
+    # network-facing daemon everything on com.mos.mosd.
+    mqttd_sends="$(grep -Eo '<allow[^>]*send_destination="com\.mos\.mosd"[^>]*' "${mqttd_rules}" || true)"
+    mqttd_blanket=""
+    while IFS= read -r rule; do
+        [ -n "${rule}" ] || continue
+        case "${rule}" in
+        *send_member=*) ;;
+        *) mqttd_blanket="${mqttd_blanket} [${rule}]" ;;
+        esac
+    done <<EOF
+${mqttd_sends}
+EOF
+    if [ -n "${mqttd_sends}" ] && [ -z "${mqttd_blanket}" ]; then
+        pass "mqttd: every grant on com.mos.mosd names a member; the bridge cannot reach the interface at large"
+    elif [ -z "${mqttd_sends}" ]; then
+        fail "mqttd: there is no grant on com.mos.mosd at all in ${MQTTD_POLICY_PATH}. com.mos.mosd is root-only, so the bridge reaches nothing: it connects to the broker, subscribes, and publishes an empty tree forever"
+    else
+        fail "mqttd: a grant on com.mos.mosd in ${MQTTD_POLICY_PATH} names no member:${mqttd_blanket}. That is the whole interface — Reboot, PowerOff, SetSettings and SetTransientRootPassword included — handed to the only daemon in the image with a network socket"
+    fi
+
+    # ...and none of the members it does name is one of the dangerous ones.
+    mqttd_members="$(grep -Eo 'send_member="[^"]*"' "${mqttd_rules}" |
+        sed 's/.*send_member="\(.*\)"/\1/' | sort -u || true)"
+    mqttd_danger=""
+    for m in ${MQTTD_FORBIDDEN_MEMBERS}; do
+        if printf '%s\n' "${mqttd_members}" | grep -Fxq "${m}"; then
+            mqttd_danger="${mqttd_danger} ${m}"
+        fi
+    done
+    if [ -z "${mqttd_danger}" ]; then
+        pass "mqttd: the granted members ($(printf '%s' "${mqttd_members}" | tr '\n' ' ')) include none of ${MQTTD_FORBIDDEN_MEMBERS// /, }"
+    else
+        fail "mqttd: ${MQTTD_POLICY_PATH} grants the bridge${mqttd_danger}. A compromise of the network-facing daemon becomes device control, and mosd's own root-only policy keeps passing because it cannot see a grant made in another file"
+    fi
+
+    # The broker must be configurable WITHOUT reflashing. The root is an
+    # immutable squashfs: a hardcoded host is a host fixed at build time,
+    # identical on every device the image is written to.
+    case "${mqttd_exec}" in
+    *'${MOS_MQTT_BROKER_HOST}'*)
+        pass "mqttd: ExecStart takes the broker from the environment, so the address is not baked into the verity root"
+        ;;
+    *)
+        fail "mqttd: ExecStart does not reference \${MOS_MQTT_BROKER_HOST}: [${mqttd_exec}]. The root filesystem is read-only and systemctl edit has nowhere to write, so a literal broker address here is the same address on every device flashed with this image, unchangeable"
+        ;;
+    esac
+
+    # ...and the file it reads that from has to be on writable, persistent
+    # storage, which on this appliance means a STATE-backed bind. Optional
+    # (leading '-'), or an unconfigured device fails to start.
+    mqttd_envpath="${mqttd_envfile#-}"
+    mqttd_envdir="$(dirname "${mqttd_envpath:-/}")"
+    mqttd_envmount="$(grep -rl "^Where=${mqttd_envdir}\$" \
+        "${ROOT}/etc/systemd/system" 2>/dev/null | first_line || true)"
+    if [ -z "${mqttd_envfile}" ]; then
+        fail "mqttd: the unit has no EnvironmentFile= line at all, so ${MQTTD_UNIT}'s Environment= defaults are the only configuration and the broker cannot be changed on the device at all"
+    elif [ "${mqttd_envfile}" = "${mqttd_envpath}" ]; then
+        fail "mqttd: EnvironmentFile=${mqttd_envfile} is not optional (no leading '-'). A device whose operator has not written that file fails to start the unit, which is a worse default than running unconfigured"
+    elif [ -n "${mqttd_envmount}" ]; then
+        pass "mqttd: EnvironmentFile=${mqttd_envfile} sits under ${mqttd_envdir}, a bind mounted by $(basename "${mqttd_envmount}") (What=$(sed -n 's/^What=//p' "${mqttd_envmount}" | tail -n1)), so a broker configured on the device survives a reboot and an A/B update"
+    else
+        fail "mqttd: EnvironmentFile=${mqttd_envfile} sits under ${mqttd_envdir}, which no .mount unit in the image mounts. That path is inside the read-only verity squashfs, so the operator cannot write it and the broker stays whatever the image was built with"
+    fi
+}
+
+# --- the connd contract, READ from the reconcilers that own it ---------------
+# Every path, prefix and unit name the connd assertions compare against is read
+# from the mosd source rather than restated here. A constant restated in two
+# places can drift, and this drift is invisible from the code side: a
+# reconciler that renders into a directory the image does not provide, or
+# drives a unit the image does not install, fails on the device and nowhere
+# else.
+#
+# THE EXTRACTOR ITSELF ROTTED, WHICH IS WHY THIS IS A FUNCTION NOW.
+# The sweep marker was read with a regex over `file_name.contains("...")`.
+# network.rs was later refactored to an anchored `is_mos_managed()` using
+# starts_with/ends_with, the regex stopped matching, and MOS_SWEEP became "".
+# Two things followed and BOTH looked like results:
+#   - the collision test is `case "${n}" in *"${MOS_SWEEP}"*)`, and with an
+#     empty marker that glob is `**`, which matches every filename. The
+#     verifier reported eight image .network files as colliding with a sweep
+#     that would never have touched them.
+#   - the nineteen assertions below the contract read fell back to hardcoded
+#     defaults through `${STA_UNIT:-wpa_supplicant@.service}` and PASSED,
+#     comparing the image against the verifier's own restatement of a contract
+#     it had just failed to read. The FAIL line said "none of them mean
+#     anything until this passes"; they went green anyway.
+# Both fallbacks are gone. The marker is a PREFIX now, matching the code, and
+# an unread contract makes the group fail rather than substitute.
+#
+# MOS_VERIFY_RECONCILER_DIR exists so os/ui-location-test.sh can point this at
+# a mutated copy of the reconcilers and watch the read fail. Without it the
+# rot above could not be driven, only waited for.
+RECONCILER_DIR="${MOS_VERIFY_RECONCILER_DIR:-${REPO_ROOT}/mosd/mosd/src/reconciler}"
+
+# Value of a `const NAME: &str = "...";` in one of the reconcilers.
+mosd_const() {
+    sed -n "s/^const $2: \&str = \"\(.*\)\";\$/\1/p" "${RECONCILER_DIR}/$1" 2>/dev/null | first_line
+}
+# The unit TEMPLATE name behind `format!("x@{interface}.service")`.
+mosd_unit_template() {
+    sed -n 's/^ *format!("\(.*\)@{interface}\.service")$/\1@.service/p' "${RECONCILER_DIR}/$1" 2>/dev/null | first_line
+}
+# The rendered configuration file name, still carrying `{interface}`.
+mosd_config_name() {
+    sed -n 's/^ *format!("\([^"]*{interface}[^"]*\.conf\)")$/\1/p' "${RECONCILER_DIR}/$1" 2>/dev/null | first_line
+}
+
+CONND_CONTRACT_READ=0
+read_connd_contract() {
+    STA_DIR="$(mosd_const wifi_client.rs DEFAULT_CONFIG_DIR)"
+    AP_DIR="$(mosd_const wifi_ap.rs DEFAULT_CONFIG_DIR)"
+    STA_UNIT="$(mosd_unit_template wifi_client.rs)"
+    AP_UNIT="$(mosd_unit_template wifi_ap.rs)"
+    STA_CONF="$(mosd_config_name wifi_client.rs)"
+    AP_CONF="$(mosd_config_name wifi_ap.rs)"
+    STA_PREFIX="$(mosd_const wifi_client.rs NETWORKD_PREFIX)"
+    AP_PREFIX="$(mosd_const wifi_ap.rs NETWORKD_PREFIX)"
+    # The namespace network.rs owns. is_mos_managed() is
+    # `starts_with(P) && ends_with(".network")`, so this is a PREFIX and the
+    # collision test below anchors on it. Read from the same line the code
+    # tests with, and the `.network` half is asserted rather than assumed:
+    # a marker read out of a starts_with that had lost its ends_with would
+    # describe a wider sweep than the code performs.
+    MOS_SWEEP="$(sed -n 's/.*file_name\.starts_with("\([^"]*\)").*/\1/p' \
+        "${RECONCILER_DIR}/network.rs" 2>/dev/null | first_line || true)"
+    MOS_SWEEP_SUFFIX="$(sed -n 's/.*file_name\.ends_with("\([^"]*\)").*/\1/p' \
+        "${RECONCILER_DIR}/network.rs" 2>/dev/null | first_line || true)"
+
+    if [ -n "${STA_DIR}" ] && [ -n "${AP_DIR}" ] && [ -n "${STA_UNIT}" ] && [ -n "${AP_UNIT}" ] &&
+        [ -n "${STA_CONF}" ] && [ -n "${AP_CONF}" ] && [ -n "${STA_PREFIX}" ] &&
+        [ -n "${AP_PREFIX}" ] && [ -n "${MOS_SWEEP}" ] && [ "${MOS_SWEEP_SUFFIX}" = ".network" ]; then
+        CONND_CONTRACT_READ=1
+        pass "read the connd contract out of mosd: ${STA_UNIT} <- ${STA_DIR}/${STA_CONF}, ${AP_UNIT} <- ${AP_DIR}/${AP_CONF}, networkd prefixes '${STA_PREFIX}'/'${AP_PREFIX}', sweep '${MOS_SWEEP}'*'${MOS_SWEEP_SUFFIX}'"
+    else
+        CONND_CONTRACT_READ=0
+        fail "could not read the connd contract out of ${RECONCILER_DIR}: dirs '${STA_DIR}'/'${AP_DIR}', units '${STA_UNIT}'/'${AP_UNIT}', configs '${STA_CONF}'/'${AP_CONF}', prefixes '${STA_PREFIX}'/'${AP_PREFIX}', sweep '${MOS_SWEEP}'+'${MOS_SWEEP_SUFFIX}'. Every connd assertion below compares against these. They no longer fall back to hardcoded defaults, so they FAIL from here on rather than passing against the verifier's own restatement of a contract it could not read — see the empty-marker rot recorded above the extractor"
+    fi
+}
+
+# --- the image's networkd namespace must not collide with mosd's -------------
+# network.rs DELETES every file matching its own prefix that it did not itself
+# render, and the two WiFi reconcilers deliberately sit outside that pattern.
+# An image file that landed in either namespace would be swept away, or would
+# shadow a reconciler's unit, on device and nowhere else.
+check_networkd_namespace() {
+    if [ "${CONND_CONTRACT_READ}" -ne 1 ]; then
+        fail "the image's networkd namespace check did not run: the connd contract is unread, so there is no namespace to compare against. It previously ran anyway with an empty marker, which made its glob match every filename and reported eight collisions that could not happen"
+        return
+    fi
+    # No -printf: this script also runs under busybox find inside the container.
+    img_networks="$(for d in "${ROOT}/etc/systemd/network" "${ROOT}/usr/lib/systemd/network" \
+        "${ROOT}/run/systemd/network"; do
+        [ -d "${d}" ] || continue
+        find "${d}" -name '*.network' 2>/dev/null || true
+    done | sed 's|.*/||' | sort -u)"
+    collisions=""
+    for n in ${img_networks}; do
+        case "${n}" in
+        # ANCHORED, matching is_mos_managed(). The unanchored `*marker*` this
+        # replaced is what turned an empty marker into eight false positives.
+        "${MOS_SWEEP}"*"${MOS_SWEEP_SUFFIX}") collisions="${collisions} ${n}(swept-by-network.rs)" ;;
+        "${STA_PREFIX}"*) collisions="${collisions} ${n}(station-namespace)" ;;
+        "${AP_PREFIX}"*) collisions="${collisions} ${n}(ap-namespace)" ;;
+        esac
+    done
+    if [ -z "${img_networks}" ]; then
+        fail "the image's networkd namespace is empty: it ships no .network file at all, so this check would pass vacuously"
+    elif [ -z "${collisions}" ]; then
+        pass "the image's networkd namespace is clear of mosd's: none of ($(echo "${img_networks}" | tr '\n' ' ')) falls in a reconciler-owned namespace ('${MOS_SWEEP}'*'${MOS_SWEEP_SUFFIX}', '${STA_PREFIX}', '${AP_PREFIX}')"
+    else
+        fail "the image's networkd namespace collides with a reconciler-owned one:${collisions}. A (swept-by-network.rs) file is DELETED on the reconciler's first pass — it renders ${MOS_SWEEP}*${MOS_SWEEP_SUFFIX} and removes every other file matching that shape. A (station-namespace) or (ap-namespace) file instead SHADOWS the unit a WiFi reconciler renders for that interface, since networkd applies the first match in lexical order"
+    fi
+}
+
 # The fixture hook: run only the assertions above, against the fixture, and
 # summarise. os/ui-location-test.sh is the only caller.
 if [ -n "${FIXTURE_ROOT}" ]; then
@@ -646,6 +905,9 @@ if [ -n "${FIXTURE_ROOT}" ]; then
     check_dev_keyring
     check_ext_unit_dir
     check_ext_policy
+    check_mqttd
+    read_connd_contract
+    check_networkd_namespace
     fixture_total=$((PASS_N + FAIL_N))
     if [ "${FAIL_N}" -eq 0 ]; then
         echo "RESULT: PASS (${PASS_N}/${fixture_total} checks)"
@@ -2139,6 +2401,12 @@ done
 # still runs it in exactly this position. The rationale is on the function.
 check_ext_unit_dir
 
+# --- PLAN-011 D6: the MQTT bridge as installed -------------------------------
+# Same arrangement, same reason. The function is up with the fixture set so
+# os/ui-location-test.sh can watch each of its assertions fail without an
+# image; this is the call that runs them against the real one.
+check_mqttd
+
 # --- M5: /etc/shadow lives on STATE (per-device password) ---
 # access.md phase 1 gives every device its own root password, and the only file
 # pam_unix will read for it is /etc/shadow. On v2 that path is inside the
@@ -2827,53 +3095,18 @@ fi
 # ===========================================================================
 # M5: connd userland, image profile, and the crypt(3) format
 # ===========================================================================
-# Every path, prefix and unit name below is READ from the mosd source that owns
-# it rather than restated here. A constant restated in two places can drift, and
-# this drift is invisible from the code side: a reconciler that renders into a
-# directory the image does not provide, or drives a unit the image does not
-# install, fails on the device and nowhere else. Each extraction is checked for
-# emptiness, so a rename in mosd breaks this verifier loudly instead of turning
-# an assertion into a comparison against "".
-RECONCILER_DIR="${REPO_ROOT}/mosd/mosd/src/reconciler"
-
-# Value of a `const NAME: &str = "...";` in one of the reconcilers.
-mosd_const() {
-    sed -n "s/^const $2: \&str = \"\(.*\)\";\$/\1/p" "${RECONCILER_DIR}/$1" 2>/dev/null | first_line
-}
-# The unit TEMPLATE name behind `format!("x@{interface}.service")`.
-mosd_unit_template() {
-    sed -n 's/^ *format!("\(.*\)@{interface}\.service")$/\1@.service/p' "${RECONCILER_DIR}/$1" 2>/dev/null | first_line
-}
-# The rendered configuration file name, still carrying `{interface}`.
-mosd_config_name() {
-    sed -n 's/^ *format!("\([^"]*{interface}[^"]*\.conf\)")$/\1/p' "${RECONCILER_DIR}/$1" 2>/dev/null | first_line
-}
-
-STA_DIR="$(mosd_const wifi_client.rs DEFAULT_CONFIG_DIR)"
-AP_DIR="$(mosd_const wifi_ap.rs DEFAULT_CONFIG_DIR)"
-STA_UNIT="$(mosd_unit_template wifi_client.rs)"
-AP_UNIT="$(mosd_unit_template wifi_ap.rs)"
-STA_CONF="$(mosd_config_name wifi_client.rs)"
-AP_CONF="$(mosd_config_name wifi_ap.rs)"
-STA_PREFIX="$(mosd_const wifi_client.rs NETWORKD_PREFIX)"
-AP_PREFIX="$(mosd_const wifi_ap.rs NETWORKD_PREFIX)"
-# The pattern network.rs sweeps: it DELETES every *<marker>*.network it did not
-# render, so an image file carrying the marker would be deleted on device.
-MOS_SWEEP="$(sed -n 's/.*file_name\.contains("\(.*\)").*/\1/p' "${RECONCILER_DIR}/network.rs" 2>/dev/null | first_line)"
-
-if [ -n "${STA_DIR}" ] && [ -n "${AP_DIR}" ] && [ -n "${STA_UNIT}" ] && [ -n "${AP_UNIT}" ] &&
-    [ -n "${STA_CONF}" ] && [ -n "${AP_CONF}" ] && [ -n "${STA_PREFIX}" ] &&
-    [ -n "${AP_PREFIX}" ] && [ -n "${MOS_SWEEP}" ]; then
-    pass "read the connd contract out of mosd: ${STA_UNIT} <- ${STA_DIR}/${STA_CONF}, ${AP_UNIT} <- ${AP_DIR}/${AP_CONF}, networkd prefixes '${STA_PREFIX}'/'${AP_PREFIX}', sweep marker '${MOS_SWEEP}'"
-else
-    fail "could not read the connd contract out of ${RECONCILER_DIR}: dirs '${STA_DIR}'/'${AP_DIR}', units '${STA_UNIT}'/'${AP_UNIT}', configs '${STA_CONF}'/'${AP_CONF}', prefixes '${STA_PREFIX}'/'${AP_PREFIX}', sweep '${MOS_SWEEP}'. Every connd assertion below compares against these, so none of them mean anything until this passes"
-fi
+# The contract read, and the namespace check that depends on it, are defined
+# up with the fixture-hook set so os/ui-location-test.sh can drive them; they
+# are CALLED here so the non-fixture path runs them in exactly this position.
+# The rationale, including the empty-marker rot that made this a function, is
+# on read_connd_contract.
+read_connd_contract
 
 # --- the daemons and their unit templates ---
 sq_regular /usr/sbin/hostapd
 sq_regular /usr/sbin/wpa_supplicant
-sq_regular "/usr/lib/systemd/system/${STA_UNIT:-wpa_supplicant@.service}"
-sq_regular "/usr/lib/systemd/system/${AP_UNIT:-hostapd@.service}"
+sq_regular "/usr/lib/systemd/system/${STA_UNIT}"
+sq_regular "/usr/lib/systemd/system/${AP_UNIT}"
 
 # The unit's ExecStart and the reconciler's render path are ONE contract: the
 # template bakes the config file name into its command line, so a rename on
@@ -2900,12 +3133,12 @@ check_execstart() {
         fail "${what}: $(basename "${unit}")'s ExecStart does not name ${dir}/${name} (with %i or %I); it is '$(grep -F 'ExecStart=' "${ROOT}${unit}" | tr '\n' ' ')'. The unit and the reconciler disagree about the config path, so the daemon starts against a file nothing writes"
     fi
 }
-check_execstart "station" "/usr/lib/systemd/system/${STA_UNIT:-wpa_supplicant@.service}" "${STA_DIR}" "${STA_CONF}"
-check_execstart "access point" "/usr/lib/systemd/system/${AP_UNIT:-hostapd@.service}" "${AP_DIR}" "${AP_CONF}"
+check_execstart "station" "/usr/lib/systemd/system/${STA_UNIT}" "${STA_DIR}" "${STA_CONF}"
+check_execstart "access point" "/usr/lib/systemd/system/${AP_UNIT}" "${AP_DIR}" "${AP_CONF}"
 
 # mosd owns these lifecycles: it enables and starts exactly the instance the
 # settings tree asks for. A statically enabled template instance would race it.
-for u in "${STA_UNIT:-wpa_supplicant@.service}" "${AP_UNIT:-hostapd@.service}"; do
+for u in "${STA_UNIT}" "${AP_UNIT}"; do
     if [ -n "$(find "${ROOT}/etc/systemd/system" "${ROOT}/usr/lib/systemd/system" \
         -name "${u}" -path '*.wants/*' 2>/dev/null || true)" ]; then
         fail "${u} is statically enabled in the image; mosd owns that lifecycle and would race the image's own instance"
@@ -2984,31 +3217,11 @@ else
 fi
 
 # --- the image's networkd namespace must not collide with mosd's ---
-# network.rs DELETES every *${MOS_SWEEP}*.network it did not itself render, and
-# the two WiFi reconcilers deliberately sit outside that pattern. An image file
-# that landed in either namespace would be swept away, or would shadow a
-# reconciler's unit, on device and nowhere else.
-# No -printf: this script also runs under busybox find inside the container.
-img_networks="$(for d in "${ROOT}/etc/systemd/network" "${ROOT}/usr/lib/systemd/network" \
-    "${ROOT}/run/systemd/network"; do
-    [ -d "${d}" ] || continue
-    find "${d}" -name '*.network' 2>/dev/null || true
-done | sed 's|.*/||' | sort -u)"
-collisions=""
-for n in ${img_networks}; do
-    case "${n}" in
-    *"${MOS_SWEEP}"*) collisions="${collisions} ${n}(swept-by-network.rs)" ;;
-    "${STA_PREFIX}"*) collisions="${collisions} ${n}(station-namespace)" ;;
-    "${AP_PREFIX}"*) collisions="${collisions} ${n}(ap-namespace)" ;;
-    esac
-done
-if [ -z "${img_networks}" ]; then
-    fail "the image ships no .network file at all, so this namespace check would pass vacuously"
-elif [ -z "${collisions}" ]; then
-    pass "none of the image's .network files ($(echo "${img_networks}" | tr '\n' ' ')) fall in a reconciler-owned namespace ('${MOS_SWEEP}', '${STA_PREFIX}', '${AP_PREFIX}')"
-else
-    fail "image .network files collide with a reconciler-owned namespace:${collisions}. network.rs deletes every *${MOS_SWEEP}*.network it did not render, and a file in a WiFi reconciler's prefix would shadow or be swept by it"
-fi
+# Hoisted into the fixture-hook set with read_connd_contract, for the reason
+# recorded there: with an empty sweep marker this check's own glob matched
+# every filename in the image and reported eight collisions that could not
+# happen. It is anchored now, and refuses to run at all on an unread contract.
+check_networkd_namespace
 
 # networkd applies the FIRST matching unit in lexical order across its
 # directories, so the image's fallback has to sort BEFORE the reconcilers'

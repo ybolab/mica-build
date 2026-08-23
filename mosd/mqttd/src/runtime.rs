@@ -68,6 +68,60 @@ pub struct Settings {
 /// Capacity of the channel between the caller and rumqttc's event loop.
 const REQUEST_CAPACITY: usize = 64;
 
+/// Backoff between reconnect attempts, applied by THIS crate because rumqttc
+/// does not apply one of its own.
+///
+/// `EventLoop::poll` reconnects the moment its network handle is gone: the
+/// first thing it does is `if self.network.is_none() { connect(...) }`, with
+/// no delay before it (`rumqttc-0.25.1/src/eventloop.rs:150`). Its
+/// `connection_timeout` bounds a connect that HANGS and does nothing for one
+/// that is REFUSED, which returns immediately — and refused is the default
+/// case on this appliance, because the shipped unit points at
+/// `localhost:1883` until an operator configures a broker on STATE. Polling
+/// in a bare loop therefore spins as fast as the kernel can return
+/// ECONNREFUSED: a pegged core and a warning per iteration into a journal
+/// that lives on the STATE partition.
+///
+/// `mosd/mqttd/tests/protocol.rs::rumqttc_reconnects_with_no_delay_of_its_own`
+/// holds that premise. If rumqttc grows its own backoff the test fails, and
+/// this can go.
+const RECONNECT_BACKOFF_MIN: Duration = Duration::from_secs(1);
+/// The ceiling. A device whose broker is down for a day must not have stopped
+/// trying, so the backoff caps rather than gives up.
+const RECONNECT_BACKOFF_MAX: Duration = Duration::from_secs(30);
+
+/// Doubling backoff with a floor and a ceiling, reset by any successful poll.
+///
+/// Separated from the loop so the schedule is testable without a broker, a
+/// socket or a clock.
+#[derive(Debug, Clone, Copy)]
+pub struct ReconnectBackoff {
+    next: Duration,
+}
+
+impl Default for ReconnectBackoff {
+    fn default() -> Self {
+        Self {
+            next: RECONNECT_BACKOFF_MIN,
+        }
+    }
+}
+
+impl ReconnectBackoff {
+    /// The delay to wait before the next reconnect attempt, and advance.
+    pub fn next_delay(&mut self) -> Duration {
+        let delay = self.next;
+        self.next = (self.next * 2).min(RECONNECT_BACKOFF_MAX);
+        delay
+    }
+
+    /// Back to the floor. Called on every successful poll: a connection that
+    /// worked once must not inherit the penalty of the outage before it.
+    pub fn reset(&mut self) {
+        self.next = RECONNECT_BACKOFF_MIN;
+    }
+}
+
 /// What the event loop feeds the bridge.
 enum Incoming {
     /// A message on a subscribed topic.
@@ -106,11 +160,21 @@ pub async fn run(settings: Settings) -> anyhow::Result<()> {
     // select below: it owns a task and reports through a channel.
     let (incoming_tx, mut incoming) = mpsc::channel(REQUEST_CAPACITY);
     tokio::spawn(async move {
+        let mut backoff = ReconnectBackoff::default();
         loop {
             let event = match eventloop.poll().await {
-                Ok(event) => event,
+                Ok(event) => {
+                    backoff.reset();
+                    event
+                }
                 Err(err) => {
-                    tracing::warn!(error = %err, "broker connection lost; rumqttc will retry");
+                    let delay = backoff.next_delay();
+                    tracing::warn!(
+                        error = %err,
+                        retry_in_s = delay.as_secs(),
+                        "broker connection lost; retrying after backoff"
+                    );
+                    tokio::time::sleep(delay).await;
                     continue;
                 }
             };

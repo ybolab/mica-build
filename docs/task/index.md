@@ -119,3 +119,5 @@ Each task is a single line linking to its detail file. All detailed information 
 - [ ] [**RFCT-094 Dotted keys have no item object, and M5 makes that certain rather than theoretical**](RFCT-094.md) `P2`
 - [x] [**RFCT-095 The com.mos.ext policy assertions cannot fail, and hoisting them needs a different shape**](RFCT-095.md) `P2`
 - [ ] [**RFCT-096 "0 skipped" does not mean nothing was skipped, and three test files still exploit that**](RFCT-096.md) `P1`
+- [x] [**RFCT-097 Wire mos-mqttd into the image, which is where three of its defects were**](RFCT-097.md) `P1`
+- [x] [**RFCT-098 The connd contract read rotted, and nineteen assertions went green on the fallback**](RFCT-098.md) `P1`

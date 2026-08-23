@@ -12,12 +12,13 @@ use std::sync::Mutex;
 use std::time::Duration;
 
 use async_trait::async_trait;
+use rumqttc::{AsyncClient, MqttOptions};
 use serde_json::{Value as Json, json};
 
 use mos_mqttd::bridge::{Bridge, Effects, Publication};
 use mos_mqttd::config::{Mode, Timings};
 use mos_mqttd::item::Item;
-use mos_mqttd::runtime::apply;
+use mos_mqttd::runtime::{ReconnectBackoff, apply};
 use mos_mqttd::source::{ItemSource, WriteOutcome};
 use mos_mqttd::topic::{self, Address, Request};
 use mos_mqttd::transport::Transport;
@@ -732,5 +733,83 @@ fn a_bus_name_with_no_class_yields_no_address_and_no_invented_class() {
         class,
         Some(""),
         "an empty class segment would publish on N/<deviceId>//<instance>/<path>"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Reconnect backoff
+// ---------------------------------------------------------------------------
+
+/// The schedule itself: doubling from the floor, capped, and reset by any
+/// successful poll.
+#[test]
+fn reconnect_backoff_doubles_to_a_ceiling_and_resets() {
+    let mut backoff = ReconnectBackoff::default();
+    let climb: Vec<u64> = (0..8).map(|_| backoff.next_delay().as_secs()).collect();
+    assert_eq!(
+        climb,
+        vec![1, 2, 4, 8, 16, 30, 30, 30],
+        "the delay must double from 1s and then hold at the 30s ceiling; a backoff that \
+         keeps doubling eventually stops retrying a broker that is merely slow to come back"
+    );
+
+    backoff.reset();
+    assert_eq!(
+        backoff.next_delay(),
+        Duration::from_secs(1),
+        "a connection that worked must not inherit the penalty of the outage before it"
+    );
+}
+
+/// The FIRST delay is what stops the spin, so it is asserted on its own: a
+/// backoff whose floor drifted to zero is a backoff that does nothing, and
+/// every other assertion in the test above still passes.
+#[test]
+fn the_first_reconnect_delay_is_not_zero() {
+    let first = ReconnectBackoff::default().next_delay();
+    assert!(
+        first >= Duration::from_millis(500),
+        "the first retry delay is {first:?}; a refused connection returns in microseconds, so \
+         anything near zero is still a spin loop"
+    );
+}
+
+/// The PREMISE the backoff exists for, held as a test against the real
+/// upstream event loop.
+///
+/// `rumqttc::EventLoop::poll` reconnects with no delay of its own. This is
+/// asserted rather than trusted, because the whole justification for the
+/// backoff in `runtime.rs` is that upstream lacks one: if a future rumqttc
+/// grows a reconnect delay, this test fails and says so at the exact place
+/// the workaround is described, instead of leaving a second backoff stacked
+/// silently on top of theirs.
+///
+/// Port 1 on loopback with nothing listening: `connect` returns ECONNREFUSED
+/// immediately. No broker, no network, no skip.
+#[tokio::test]
+async fn rumqttc_reconnects_with_no_delay_of_its_own() {
+    let mut options = MqttOptions::new("mos-mqttd-backoff-premise", "127.0.0.1", 1);
+    options.set_keep_alive(Duration::from_secs(30));
+    let (_client, mut eventloop) = AsyncClient::new(options, 8);
+
+    let started = std::time::Instant::now();
+    let mut refusals = 0;
+    for _ in 0..5 {
+        if eventloop.poll().await.is_err() {
+            refusals += 1;
+        }
+    }
+    let elapsed = started.elapsed();
+
+    assert_eq!(
+        refusals, 5,
+        "nothing listens on 127.0.0.1:1, so every poll must fail; if they succeeded this \
+         test is measuring something other than a refused connection"
+    );
+    assert!(
+        elapsed < Duration::from_secs(1),
+        "five refused reconnects took {elapsed:?}. rumqttc now delays between attempts, so \
+         runtime.rs's ReconnectBackoff is stacked on top of an upstream backoff and should \
+         be reconsidered -- see the RECONNECT_BACKOFF_MIN docs"
     );
 }
