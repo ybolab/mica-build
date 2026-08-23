@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Build the squashfs + dm-verity arm64 rootfs slot image for cx3576 (layout v2).
-# Usage: [BOARD_DIR=...] [WITH_MOSD=0|1] [MOS_PROFILE=dev|prod] bash os/rootfs/build-v2.sh
+# Usage: [BOARD_DIR=...] [WITH_MOSD=0|1] [WITH_CONTAINERS=0|1] [MOS_PROFILE=dev|prod] bash os/rootfs/build-v2.sh
 #
 # There is deliberately NO ROOT_PASSWORD here (v1's build.sh keeps it). A v2
 # rootfs is a signed, byte-identical squashfs, and the pack stage FAILS any
@@ -30,6 +30,32 @@ BOARD_DIR=${BOARD_DIR:-"$REPO_ROOT/board/cx3576"}
 OUT_DIR="$REPO_ROOT/_out/cx3576"
 SIZE_BUDGET_MB=400
 WITH_MOSD=${WITH_MOSD:-1}
+
+# PLAN-012: whether the container engine is in the image at all.
+#
+# BOARD-LEVEL, because it is a board decision: the engine costs ~107 MB
+# installed and a board with a tighter rootfs slot, or no use for containers,
+# should not carry it. The board opts OUT by shipping a containers.env saying
+# so; absent means ON, which is the cx3576 default the user asked for.
+#
+# An explicit WITH_CONTAINERS in the environment beats the board file, so a
+# one-off build can go either way without editing the board.
+#
+# This is the BUILD-time switch: is the engine present. The RUN-time switch —
+# `container.enabled` in the settings tree, driven from apid — is PLAN-012 M3
+# and is a different question: whether an engine that IS present may be used.
+if [ -z "${WITH_CONTAINERS:-}" ] && [ -f "$BOARD_DIR/containers.env" ]; then
+    # shellcheck disable=SC1091
+    . "$BOARD_DIR/containers.env"
+fi
+WITH_CONTAINERS=${WITH_CONTAINERS:-1}
+case "$WITH_CONTAINERS" in
+0 | 1) ;;
+*)
+    echo "error: WITH_CONTAINERS is '$WITH_CONTAINERS'; it must be exactly 0 or 1. Any other value would be read as 0 by the Dockerfile's comparison and the engine would silently not ship" >&2
+    exit 1
+    ;;
+esac
 # Image profile baked into /usr/lib/mos/profile.conf. mosd reads it on first
 # boot and FAILS CLOSED to prod, so the value has to be exactly "dev" or "prod"
 # in lowercase; the Dockerfile rejects anything else. It no longer selects the
@@ -260,6 +286,7 @@ if ! docker buildx build \
         --build-arg BOARD_INIT_DIR=_out/cx3576/init \
         --build-arg OVERLAY_DIR=_out/cx3576/overlay-v2 \
         --build-arg WITH_MOSD="$WITH_MOSD" \
+        --build-arg WITH_CONTAINERS="$WITH_CONTAINERS" \
         --build-arg MOS_PROFILE="$MOS_PROFILE" \
         --build-arg VERITY_SALT="$VERITY_SALT" \
         --build-arg VERITY_UUID="$VERITY_UUID" \

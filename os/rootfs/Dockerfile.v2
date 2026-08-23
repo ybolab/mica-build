@@ -70,12 +70,24 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         curl \
         wpasupplicant \
         hostapd \
-        podman \
-        crun \
-        netavark \
-        aardvark-dns \
-        catatonit \
     && rm -rf /var/lib/apt/lists/*
+
+# PLAN-012: the container engine, on the board's say-so.
+#
+# A separate RUN from the list above because it is conditional: WITH_CONTAINERS
+# comes from the board (board/<name>/containers.env, absent means on) and a
+# board that cannot afford ~107 MB installed ships a 0. Everything downstream —
+# the unit masking, the Quadlet bind, the runtime probe, the verifier's
+# assertions — keys off the same arg, so a board without the engine is not a
+# board with half of one.
+ARG WITH_CONTAINERS=1
+RUN if [ "$WITH_CONTAINERS" = "1" ]; then \
+        apt-get update && apt-get install -y --no-install-recommends \
+            podman crun netavark aardvark-dns catatonit \
+        && rm -rf /var/lib/apt/lists/*; \
+    else \
+        echo "note: WITH_CONTAINERS=0; building rootfs without the container engine"; \
+    fi
 
 # systemd-repart is a SEPARATE PACKAGE on trixie and was inside `systemd` on
 # bookworm. RFCT-008 recorded the bookworm fact as verified ("systemd-repart
@@ -169,7 +181,8 @@ RUN set -eu; \
 #
 # The masks are symlinks inside the signed read-only root, so they cannot be
 # removed on a running device. os/verify-image-v2.sh asserts every one.
-RUN set -eu; \
+RUN if [ "$WITH_CONTAINERS" != "1" ]; then exit 0; fi; \
+    set -eu; \
     for u in podman.socket podman.service podman-auto-update.timer \
              podman-auto-update.service podman-restart.service \
              podman-clean-transient.service podman-kube@.service; do \
@@ -184,6 +197,34 @@ RUN set -eu; \
         fi; \
     done; \
     echo "podman: 7 units installed and masked; the engine is inert until container.enabled"
+
+# The engine is EXERCISED here, not merely installed.
+#
+# This RUN executes arm64 binaries under the builder's emulation, which is the
+# only place before a real flash where the shipped podman and the shipped
+# Quadlet generator can be made to do their jobs. Everything above this line is
+# a claim about files.
+#
+# What is proven: podman runs and reports its version; Quadlet parses a real
+# .container file and generates a unit whose ExecStart actually invokes podman;
+# and the generated unit names the image the file asked for. What is NOT proven
+# is a container starting — that needs cgroups and namespaces the build sandbox
+# does not have, and it stays the first flash's job.
+RUN if [ "$WITH_CONTAINERS" != "1" ]; then exit 0; fi; \
+    set -eu; \
+    podman --version; \
+    crun --version | head -n1; \
+    probe=/etc/containers/systemd/mos-build-probe.container; \
+    printf '[Container]\nImage=docker.io/library/busybox\nExec=sleep 1\n[Install]\nWantedBy=multi-user.target\n' >"${probe}"; \
+    out="$(/usr/libexec/podman/quadlet --dryrun 2>&1)"; \
+    rm -f "${probe}"; \
+    printf '%s\n' "${out}" | grep -q 'mos-build-probe.service' || \
+        { echo "error: Quadlet did not generate a unit for a valid .container file. The generator is installed but not doing its job, and on the device that failure is silent: the operator's file is simply ignored. Output was: ${out}" >&2; exit 1; }; \
+    printf '%s\n' "${out}" | grep -qE 'ExecStart=.*podman' || \
+        { echo "error: Quadlet generated a unit whose ExecStart does not invoke podman: ${out}" >&2; exit 1; }; \
+    printf '%s\n' "${out}" | grep -q 'busybox' || \
+        { echo "error: the generated unit does not name the image the .container file asked for; Quadlet parsed the file but dropped its content: ${out}" >&2; exit 1; }; \
+    echo "podman: engine and Quadlet generator exercised on arm64 — a .container file generates a podman ExecStart"
 
 # Image profile. mosd reads this file ONCE, on first boot, to seed
 # `access.ssh.enabled`, and it FAILS CLOSED: missing, unreadable or carrying a

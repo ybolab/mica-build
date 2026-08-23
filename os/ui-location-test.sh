@@ -147,6 +147,12 @@ QUADLET_GENERATOR="$(verifier_const QUADLET_GENERATOR '"')"
 QUADLET_DIR="$(verifier_const QUADLET_DIR '"')"
 QUADLET_MOUNT_UNIT="$(verifier_const QUADLET_MOUNT_UNIT '"')"
 QUADLET_MOUNT_SRC="${HERE}/rootfs/overlay-v2/etc/systemd/system/${QUADLET_MOUNT_UNIT}"
+CONTAINER_STORAGE_CONF="$(verifier_const CONTAINER_STORAGE_CONF '"')"
+CONTAINER_STORAGE_SRC="${HERE}/rootfs/overlay-v2${CONTAINER_STORAGE_CONF}"
+[ -f "${CONTAINER_STORAGE_SRC}" ] || {
+    echo "error: ${CONTAINER_STORAGE_SRC} not found; ${VERIFIER} asserts container image storage off the wipeable /var but the overlay ships no ${CONTAINER_STORAGE_CONF}" >&2
+    exit 1
+}
 [ -f "${QUADLET_MOUNT_SRC}" ] || {
     echo "error: ${QUADLET_MOUNT_SRC} not found; ${VERIFIER} names ${QUADLET_MOUNT_UNIT} as the Quadlet directory's bind but the overlay ships no such file" >&2
     exit 1
@@ -287,6 +293,8 @@ new_fixture() {
         ln -sf /dev/null "${dir}/etc/systemd/system/${u}"
     done
     cp "${QUADLET_MOUNT_SRC}" "${dir}/etc/systemd/system/${QUADLET_MOUNT_UNIT}"
+    mkdir -p "${dir}$(dirname "${CONTAINER_STORAGE_CONF}")"
+    cp "${CONTAINER_STORAGE_SRC}" "${dir}${CONTAINER_STORAGE_CONF}"
     ln -sf "/etc/systemd/system/${QUADLET_MOUNT_UNIT}" \
         "${dir}/etc/systemd/system/local-fs.target.wants/${QUADLET_MOUNT_UNIT}"
 
@@ -426,6 +434,8 @@ mqttd-env-on-state|mqttd: EnvironmentFile=|EnvironmentFile|PASS
 pkgmgr-absent|carries no package manager|still carries package management|PASS
 pkgmgr-copyrights|licence texts survived the purge|copyright files are left under|PASS
 pkgmgr-dangling|names perl as its interpreter, so removing perl left nothing broken|still name it as their interpreter|PASS
+container-absent|carries no container engine at all||ABSENT
+container-storage|container image storage is at|container image storage|PASS
 container-present|the container engine is in the image|the container engine is incomplete|PASS
 container-masked|podman units are masked to /dev/null|masked to /dev/null|PASS
 container-not-enabled|no podman unit carries an enablement symlink|enablement symlink in the image|PASS
@@ -1278,6 +1288,39 @@ sed -i 's|^What=.*|What=/var/lib/quadlet|' \
 expect_set "the Quadlet bind backed by /var instead of STATE" \
     "quadlet-dir=FAIL" \
     "not survive an A/B update"
+
+
+# --- 8i. no storage.conf: images land on the wipeable /var ------------------
+# podman ships no storage.conf of its own and defaults to
+# /var/lib/containers/storage. /var here is EPHEMERAL — 512 MiB and wiped by
+# design — so containers work, and then one day every pulled image is gone
+# with no error ever reported.
+FIX="${WORK}/container-no-storage-conf"
+new_fixture "${FIX}"
+rm -f "${FIX}${CONTAINER_STORAGE_CONF}"
+expect_set "no container storage.conf in the image" \
+    "container-storage=FAIL" \
+    "storage is unconfigured"
+
+# --- 8j. storage pointed at the wipeable partition --------------------------
+FIX="${WORK}/container-storage-on-var"
+new_fixture "${FIX}"
+sed -i 's|^graphroot = .*|graphroot = "/var/lib/containers/storage"|' \
+    "${FIX}${CONTAINER_STORAGE_CONF}"
+expect_set "container image storage on the EPHEMERAL partition" \
+    "container-storage=FAIL" \
+    "wiped by design"
+
+# --- 8k. a board built without the engine -----------------------------------
+# WITH_CONTAINERS=0. Absence is CORRECT here, and the check has to say so by
+# identity rather than let the engine assertions pass vacuously: an image with
+# no engine and an image whose engine failed to install look identical to
+# every one of them.
+FIX="${WORK}/container-absent-board"
+new_fixture "${FIX}"
+rm -f "${FIX}/usr/bin/podman" "${FIX}${CONTAINER_STORAGE_CONF}"
+expect_set "a board built with WITH_CONTAINERS=0" \
+    "container-absent=PASS container-present=ABSENT container-masked=ABSENT container-not-enabled=ABSENT quadlet-dir=ABSENT container-storage=ABSENT"
 
 echo
 total=$((PASS_N + FAIL_N))

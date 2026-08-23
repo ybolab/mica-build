@@ -957,12 +957,21 @@ check_no_package_manager() {
 #                         /usr/share/containers/systemd]
 # Of those three, /run is tmpfs and the other two are inside the read-only
 # squashfs, so without a bind there is nowhere on the device to install one.
+CONTAINER_STORAGE_CONF="/etc/containers/storage.conf"
 CONTAINER_BINARIES="/usr/bin/podman /usr/bin/crun /usr/bin/conmon /usr/lib/podman/netavark /usr/lib/podman/aardvark-dns /usr/libexec/podman/quadlet"
 QUADLET_GENERATOR="/usr/lib/systemd/system-generators/podman-system-generator"
 QUADLET_DIR="/etc/containers/systemd"
 QUADLET_MOUNT_UNIT="etc-containers-systemd.mount"
 
 check_container_engine() {
+    # A board can ship without the engine (WITH_CONTAINERS=0). Absence is then
+    # correct, and reported rather than passed over in silence -- an image with
+    # no engine and an image whose engine failed to install look identical to
+    # every assertion below.
+    if [ ! -e "${ROOT}/usr/bin/podman" ] && [ ! -e "${ROOT}${CONTAINER_STORAGE_CONF}" ]; then
+        pass "this image carries no container engine at all (no podman, no storage.conf): a WITH_CONTAINERS=0 board, and the assertions that follow are skipped BY IDENTITY rather than passing vacuously"
+        return
+    fi
     ce_missing=""
     for b in ${CONTAINER_BINARIES} "${QUADLET_GENERATOR}"; do
         [ -f "${ROOT}${b}" ] || ce_missing="${ce_missing} ${b}"
@@ -998,6 +1007,30 @@ check_container_engine() {
         pass "no podman unit carries an enablement symlink; the engine is inert in the shipped image"
     else
         fail "podman units carry an enablement symlink in the image:${ce_enabled}. The device would run containers before anyone asked, which is the opposite of PLAN-012's default-off switch"
+    fi
+
+    # Image storage must NOT be on /var. podman ships no storage.conf and
+    # defaults to /var/lib/containers/storage; /var here is the EPHEMERAL
+    # partition, 512 MiB and wiped by design. The failure is not an error
+    # message -- containers work, and then one day the partition resets and
+    # every pulled image is gone.
+    ce_graph="$(sed -n 's/^ *graphroot *= *"\(.*\)"/\1/p' "${ROOT}${CONTAINER_STORAGE_CONF}" 2>/dev/null | tail -n1 || true)"
+    if [ ! -f "${ROOT}${CONTAINER_STORAGE_CONF}" ]; then
+        fail "container image storage is unconfigured: no ${CONTAINER_STORAGE_CONF} in the image, so podman falls back to its built-in default of /var/lib/containers/storage. /var is the EPHEMERAL partition: 512 MiB and wiped by design, so every pulled image is both size-capped and destined to vanish without any error being reported"
+    elif [ -z "${ce_graph}" ]; then
+        fail "container image storage is unconfigured: ${CONTAINER_STORAGE_CONF} sets no graphroot, so podman uses its built-in /var/lib/containers/storage on the wipeable EPHEMERAL partition"
+    else
+        case "${ce_graph}" in
+        /srv/*)
+            pass "container image storage is at ${ce_graph}, on DATA -- the only growable partition, and the one that survives an A/B update"
+            ;;
+        /var/*)
+            fail "container image storage is at ${ce_graph}, on the EPHEMERAL partition. /var is 512 MiB and wiped by design; images would be capped and then silently destroyed"
+            ;;
+        *)
+            fail "container image storage is at ${ce_graph}, which is neither DATA (/srv) nor a path this check knows. Image storage grows without bound and belongs on the partition systemd-repart extends"
+            ;;
+        esac
     fi
 
     # The Quadlet directory has to be writable and persistent, or the operator
