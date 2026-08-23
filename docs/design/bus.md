@@ -17,12 +17,20 @@
 > known **not** to do. **M3 landed the bridge** this tree was shaped for:
 > `mos-mqttd` (`mosd/mqttd/`) publishes it over MQTT in the mos-native grammar
 > §10 chose, so §10.1's grammar, payload, liveness and mode statements now read
-> **[implemented]** with paths into `mosd/mqttd/src/`. What is still
+> **[implemented]** with paths into `mosd/mqttd/src/`. **M5 landed extension
+> enablement** (D5, revised): one `com.mos.*` naming rule, in which an
+> extension's class is the fourth dotted component and a system service's the
+> third (`mosd/busname/src/lib.rs`, consumed by `mosd/mqttd/src/topic.rs` and
+> `mosd/mosd/src/scan.rs`); the `com.mos.ext` policy grant
+> (`mosd/dist/com.mos.ext.conf`); and the `NameOwnerChanged` scan that
+> publishes a service registry carrying a `conformance` field
+> (`mosd/mosd/src/scan.rs`). So §5's grammar and class derivation, and §6's
+> handling of non-conformance, now read **[implemented]**. What is still
 > **[proposed]** is what needs services that do not exist yet — D2's class
-> registry and mandatory paths (§5, §6), and D5's lifecycle with the registry
-> that is what will make the bridge publish for more than the one service it
-> publishes for today. Later tasks keep flipping markers section by section,
-> with paths.
+> registry, which nothing in the tree enumerates, and §6's mandatory paths,
+> which no shipped service publishes: the registry checks for them and names
+> their absence, and checking a contract is not the same as meeting it. Later
+> tasks keep flipping markers section by section, with paths.
 
 ## 0. How to read this document
 
@@ -227,16 +235,54 @@ things the plan's source study found documented nowhere in Venus itself.
   §11 rather than here because it costs an item its object without costing it
   its addressability.
 
-## 5. D2 — Service naming and the class registry [proposed]
+## 5. D2 — Service naming and the class registry [implemented]
 
-- **[proposed]** Bus names follow `com.mos.<class>[.<suffix>]`, one service
-  per functional device instance. The `<suffix>` distinguishes instances of
-  a class (typically the driver or transport, e.g. `com.mos.sensor.abc123`).
-- **[proposed]** mosd keeps **`com.mos.mosd`** — the management core is a
-  class of its own.
+- **[implemented]** Bus names follow `com.mos.<class>[.<suffix>]` for a system
+  service and **`com.mos.ext.<class>[.<suffix>]`** for an extension, one
+  service per functional device instance. The `<suffix>` distinguishes
+  instances of a class (typically the driver or transport, e.g.
+  `com.mos.sensor.abc123`, `com.mos.ext.sensor.abc123`). Both grammars are
+  parsed by `mos_busname::parse` (`mosd/busname/src/lib.rs`) and consumed by
+  the MQTT bridge (`mosd/mqttd/src/topic.rs`). The extension half is the half
+  PLAN-011 D5's `own_prefix="com.mos.ext"` grant makes ownable
+  (`mosd/dist/com.mos.ext.conf`); every other name under `com.mos.` is the
+  system's and stays closed by D-Bus's default `<deny own="*"/>`.
+- **[implemented]** **A service's class is the FOURTH dotted component of an
+  extension name and the THIRD of a system name** — `com.mos.ext.sensor.abc123`
+  publishes under `sensor`, `com.mos.sensor.abc123` under `sensor`, and no
+  extension ever publishes under `ext` (`mosd/busname/src/lib.rs`,
+  `mosd/mqttd/src/topic.rs`). The rule is one function with two callers — the
+  bridge's `topic::class_of` and mosd's service registry
+  (`mosd/mosd/src/scan.rs`) — rather than two copies that can drift; an
+  extension published under the class `ext` is the defect the single copy
+  exists to prevent.
+- **[implemented]** `ext` is a namespace **only as a whole dotted component**:
+  `com.mos.extra` is an ordinary system name whose class is `extra`, not an
+  extension (`mosd/busname/src/lib.rs`). The D-Bus policy draws the boundary in
+  the same place — `own_prefix` requires the next character to be a `.`, so it
+  refuses `com.mos.extra` (measured, `docs/task/RFCT-093.md` §"Investigation —
+  `own_prefix` semantics (measured 2026-08-22)"). Parser and policy agree on
+  one rule, which is what makes the agreement checkable.
+- **[implemented]** **`com.mos.ext` — the bare namespace, with nothing under
+  it — classifies as extension-origin with NO class, and never as
+  system-origin** (`mosd/busname/src/lib.rs`, consumed by
+  `mosd/mqttd/src/topic.rs`). The reason is measured, not reasoned: an
+  unprivileged uid can own that exact name, because `own_prefix` matches the
+  bare prefix itself (uid 65534, `OWNED`, dbus-daemon 1.12.20 —
+  `docs/task/RFCT-093.md` §"Investigation — `own_prefix` semantics (measured
+  2026-08-22)"), so classifying it as system-origin would let any third party
+  present itself to operators, to the dashboard and to the bridge **as the
+  system**. It has no fourth component, so there is no class to read and none
+  is invented — `ext` or an empty segment would put a service on the bridge
+  under a class nobody chose. A consumer that needs a class to address a
+  service refuses instead of substituting one; the registry records the same
+  condition as its `no_class` conformance gap (`mosd/mosd/src/scan.rs`).
+- **[implemented]** mosd keeps **`com.mos.mosd`** — the management core is a
+  class of its own, owned at `mosd/mosd/src/bus.rs` and read as the class
+  `mosd` by the same one rule (`mosd/busname/src/lib.rs`).
 - **[proposed]** The **class registry** is this list, in this document.
   Growing it is a **doc change, not a code change** — no consumer may
-  hard-code the closed set:
+  hard-code the closed set, and nothing in the tree enumerates it:
 
   | Class | Meaning |
   |---|---|
@@ -262,13 +308,34 @@ things the plan's source study found documented nowhere in Venus itself.
   | `/Mgmt/ProcessName` | executable name of the publishing process |
   | `/Mgmt/ProcessVersion` | version of the publishing process |
   | `/Mgmt/Connection` | human-readable transport description (e.g. `ttyUSB0`, `can0`) |
-  | `/DeviceInstance` | integer instance number, unique within the class (allocated per PLAN-011 D5's `RegisterInstance` once it lands) |
+  | `/DeviceInstance` | integer instance number, unique within the class. **The service publishes its own** — there is no allocator, no registration call and nothing to ask; a service that publishes none is recorded under `0` |
   | `/ProductId` | numeric product identifier |
   | `/ProductName` | human-readable product name |
   | `/Connected` | `1` when the backing device is reachable, `0` when not |
 
-  A service missing any of these is malformed; consumers may ignore it and
-  the registry (PLAN-011 D5) will surface it as such.
+  A service missing any of these is **non-conforming**. That is not licence for
+  a consumer to ignore it: the registry (PLAN-011 D5) publishes it anyway,
+  best-effort, and **names the gap** in a `conformance` field, so what a
+  consumer sees is the service *and* what it is missing.
+- **[implemented]** **The registry publishes non-conformance rather than
+  refusing it** (`mosd/mosd/src/scan.rs`, published into live state under
+  `services`). Four properties, each asserted there:
+  - A service that is missing mandatory paths, or answers no `com.mos.Item1`
+    at all, is still published, with a `conformance` object naming exactly
+    what is missing and exactly one `WARN`. An empty `conformance` object is a
+    fully conforming service, so a reader needs no vocabulary to read one.
+  - **`/DeviceInstance` absent falls back to `0`** — a real value rather than
+    `null`, because consumers key on the instance and a service with none
+    still has to be addressable. The gap is recorded in `conformance`, not
+    hidden by the fallback.
+  - **A `/DeviceInstance` collision within a class marks BOTH sides.** Two
+    connected services of one class on one instance each carry
+    `instance_collision`, because neither is the one at fault and reporting
+    only the second would depend on scan order.
+  - **A service that leaves the bus is retained** with `connected: false`
+    under its cached name, and is removed only by an explicit `ForgetService`
+    (`mosd/mosd/src/bus.rs`) — which refuses a service that is still
+    connected. A device that unplugs is a fact worth keeping, not an absence.
 - **[proposed]** **Alarms** are items under `/Alarms/<name>`, integer-valued:
   `0` = ok, `1` = warning, `2` = alarm. No other alarm encoding is permitted
   on the bus.

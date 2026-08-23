@@ -83,6 +83,37 @@ BUILTIN_PREFIX="$(verifier_const BUILTIN_PREFIX '"')"
 BUILTIN_MARKUP="$(verifier_const BUILTIN_MARKUP "'")"
 APID_BIN="$(verifier_const APID_BIN '"')"
 PACKED_MOUNTPOINTS="$(verifier_const PACKED_MOUNTPOINTS '"')"
+# PLAN-011 D5's writable unit directory, read out of the verifier for the same
+# reason as the rest -- and here it doubles as a cross-check. new_fixture builds
+# the tree from PACKED_MOUNTPOINTS; the case below removes the directory this
+# names. While D5's constant and the packed set agree, that is the same
+# directory. The day they drift apart the rmdir finds nothing to remove and dies
+# under set -e, which is the loud failure -- a case whose mutation silently
+# changed nothing would otherwise pass for free.
+EXT_UNIT_DIR="$(verifier_const EXT_UNIT_DIR '"')"
+# The bind unit's NAME out of the verifier too, and then the SHIPPED unit it
+# names -- not a transcription. Same reason as LED_UNIT_SRC: the Where=, What=
+# and enablement assertions exist to catch the SHIPPED unit losing those
+# properties, and a fixture built from a local copy would go on passing after
+# the real unit changed. Reading the name from the verifier also makes the two
+# agree by construction: the day they drift, the path below does not exist and
+# this dies loudly instead of testing a unit nothing ships.
+EXT_MOUNT_UNIT="$(verifier_const EXT_MOUNT_UNIT '"')"
+# PLAN-011 D5's extension D-Bus policy, on the same principle: the path is read
+# out of the verifier, and the file the fixture installs is the one mosd SHIPS.
+# A hand-written stand-in would keep this suite green after the real policy
+# widened its own_prefix, which is the single most dangerous edit the file has.
+EXT_POLICY_PATH="$(verifier_const EXT_POLICY_PATH '')"
+EXT_POLICY_SRC="${HERE}/../mosd/dist/$(basename "${EXT_POLICY_PATH}")"
+[ -f "${EXT_POLICY_SRC}" ] || {
+    echo "error: ${EXT_POLICY_SRC} not found; ${VERIFIER} asserts ${EXT_POLICY_PATH} but mosd ships no such policy" >&2
+    exit 1
+}
+EXT_MOUNT_UNIT_SRC="${HERE}/rootfs/overlay-v2/etc/systemd/system/${EXT_MOUNT_UNIT}"
+[ -f "${EXT_MOUNT_UNIT_SRC}" ] || {
+    echo "error: ${EXT_MOUNT_UNIT_SRC} not found; ${VERIFIER} names ${EXT_MOUNT_UNIT} as PLAN-011 D5's bind unit but the overlay ships no such file" >&2
+    exit 1
+}
 
 WORK="$(mktemp -d)"
 trap 'rm -rf "${WORK}"' EXIT
@@ -137,6 +168,20 @@ new_fixture() {
     printf '#!/bin/sh\n' >"${dir}/usr/lib/mos/mos-status-led"
     ln -sf /usr/lib/systemd/system/mos-status-led.service \
         "${dir}/etc/systemd/system/multi-user.target.wants/mos-status-led.service"
+    # PLAN-011 D5's bind unit, as SHIPPED, plus the local-fs.target.wants
+    # symlink os/rootfs/Dockerfile.v2 enables it with. The symlink is absolute
+    # and therefore dangles inside the fixture, exactly as the LED one above
+    # does: what the verifier asserts is that the symlink NAME is present under
+    # a *.wants directory, because that is what enablement IS on the device.
+    mkdir -p "${dir}/etc/systemd/system/local-fs.target.wants"
+    cp "${EXT_MOUNT_UNIT_SRC}" "${dir}/etc/systemd/system/${EXT_MOUNT_UNIT}"
+    ln -sf "/etc/systemd/system/${EXT_MOUNT_UNIT}" \
+        "${dir}/etc/systemd/system/local-fs.target.wants/${EXT_MOUNT_UNIT}"
+    # The SHIPPED extension policy, at the path the verifier asserts and the
+    # Dockerfile installs to. Copied, never authored: the negative assertions
+    # below are about what mosd/dist/com.mos.ext.conf actually grants.
+    mkdir -p "${dir}$(dirname "${EXT_POLICY_PATH}")"
+    cp "${EXT_POLICY_SRC}" "${dir}${EXT_POLICY_PATH}"
 }
 
 # Drops the whole `Key=value` line from the fixture's status-LED unit. Fails
@@ -148,6 +193,30 @@ drop_led_directive() {
         { echo "error: fixture unit has no ${key}= line to drop" >&2; exit 1; }
     grep -Ev "^${key}=mos-health\.service$" "${unit}" >"${unit}.new"
     mv "${unit}.new" "${unit}"
+}
+
+# Rewrites the whole `Key=value` line in the fixture's D5 bind unit. Fails
+# loudly when there is no such key, on the same reasoning as drop_led_directive:
+# a mutation that silently changed nothing would make its case pass for free.
+set_ext_unit_directive() {
+    local dir="$1" key="$2" value="$3" unit="$1/etc/systemd/system/${EXT_MOUNT_UNIT}"
+    grep -Eq "^${key}=" "${unit}" ||
+        { echo "error: fixture unit ${EXT_MOUNT_UNIT} has no ${key}= line to rewrite" >&2; exit 1; }
+    awk -v k="${key}" -v v="${value}" '$0 ~ "^" k "=" { print k "=" v; next } { print }' \
+        "${unit}" >"${unit}.new"
+    mv "${unit}.new" "${unit}"
+}
+
+# Applies sed expression $2 to the fixture's extension D-Bus policy, and fails
+# loudly if the file came out unchanged. Same discipline as drop_led_directive:
+# a mutation that silently matched nothing would make its case pass for free,
+# and these four cases are the only thing driving those assertions at all.
+mutate_ext_policy() {
+    local dir="$1" expr="$2" f="$1${EXT_POLICY_PATH}" before
+    before="$(cat "${f}")"
+    sed -i "${expr}" "${f}"
+    [ "${before}" != "$(cat "${f}")" ] ||
+        { echo "error: sed '${expr}' changed nothing in ${EXT_POLICY_PATH}; the shipped policy no longer contains what this case mutates" >&2; exit 1; }
 }
 
 # Rewrites the fstab line whose mountpoint is $2 in fixture $1, replacing the
@@ -184,6 +253,19 @@ run_verifier() {
 # different things, so it spells both out -- and the FAIL substring is the one
 # that gives it its first failing observation.
 #
+# PLAN-011 D5's bind assertion is an if/elif CHAIN with four distinct failure
+# messages and one PASS, so it is five rows rather than one. ext-unit-ok owns
+# the PASS direction; the four negative rows can only ever be observed FAILING
+# and are ABSENT at baseline, the same shape as ui-no-filesystem above. Folding
+# them into one row would need a substring common to all five messages, and the
+# only one is the unit's own name -- which also appears inside ext-no-etc-bind's
+# failure text, so the harness could no longer tell the two assertions apart.
+# Five rows is what makes "the RIGHT branch fired" a thing this file can state.
+# ASSERTIONS is single-quoted, so a substring chosen here cannot contain an
+# apostrophe -- "systemd's unit load path" ends the string and the rows after
+# it become commands. Pick a clause without one; several of these messages
+# have an apostrophe somewhere and the failure does not point back here.
+#
 # The baseline state is what the UNMUTATED fixture must produce. It is PASS for
 # everything except the no-covering-entry assertion, which only exists on
 # check_ui_location's early-return path and can therefore never PASS: on that
@@ -203,7 +285,38 @@ mountpoints-exist|every fstab/bind mountpoint exists in the read-only root|mount
 led-after-health|catches an indicator that reports ready before the slot is confirmed||PASS
 led-requires-health|catches an indicator that turns blue on a slot whose health gate failed||PASS
 dev-keyring|catches a baked-in RAUC keyring||PASS
+ext-unit-absent|is not in the image, so||ABSENT
+ext-unit-where|puts a writable directory somewhere systemd does not read||ABSENT
+ext-unit-what|which is not under /mnt/state||ABSENT
+ext-unit-enabled|exists but is not enabled||ABSENT
+ext-unit-ok|is a STATE-backed bind via||PASS
+ext-no-etc-bind|no unit in the image mounts anything over /etc/systemd/system|a unit in the image mounts over /etc/systemd/system|PASS
+ext-policy-grant|extension services can take their bus names at all||PASS
+ext-policy-live-rule|grant is a live rule, not text inside an XML comment|only inside an XML comment|PASS
+ext-policy-widened|does not grant the widened own_prefix|hands ownership of com.mos.mosd to every local uid|PASS
+ext-policy-namespace|grants exactly one thing|grants ownership beyond the extension namespace|PASS
 '
+
+# WHAT THIS REGISTER CANNOT SEE, AND WHY IT IS STRUCTURAL RATHER THAN AN
+# OVERSIGHT. The fixture hook in os/verify-image-v2.sh dispatches a fixed list
+# of FUNCTIONS and then exits. An assertion written INLINE below that exit is
+# unreachable from here no matter what a case does to a fixture: it cannot be
+# driven, it can never be observed failing, and its absence from this register
+# looks identical to coverage from outside.
+#
+# THE INVENTORY THAT USED TO SIT HERE IS EMPTY. Both sets it named -- PLAN-011
+# D5's mount-unit assertions and its com.mos.ext.conf policy assertions -- are
+# now hoisted into check_ext_unit_dir and check_ext_policy and registered above.
+# The warning stays even though the list is empty, because the list is not the
+# durable part: TWO separate authors wrote assertions past that boundary without
+# noticing, which makes it a property of the file rather than a lapse by either.
+# A third will do it again unless something says so.
+#
+# So: if you add an assertion to the verifier and want it driven from here, wrap
+# it in a function, add the name to the hook dispatch list, and add its rows
+# below IN THE SAME CHANGE -- otherwise this file reports an unnamed assertion.
+# The same warning sits at the hook exit in os/verify-image-v2.sh, which is
+# where you will actually be standing when you are about to do it.
 
 # Drives the verifier over ${FIX} and asserts the set of assertions that ran,
 # by name and by direction.
@@ -392,6 +505,192 @@ rmdir "${FIX}/srv"
 expect_set "/srv absent from the tree: existence is chained, and the far end of the chain fires" \
     "mountpoints-exist=FAIL" \
     "mountpoint(s) missing from the read-only root: /srv"
+
+# --- 4b. PLAN-011 D5's writable unit directory absent from the tree ----------
+# The one M5 assertion this harness can reach, and it is reachable BY DESIGN:
+# the D5 block declines to assert its own mountpoint's existence and delegates
+# it to PACKED_MOUNTPOINTS instead, saying that "owning it there rather than
+# here is what puts it inside the fixture hook, where os/ui-location-test.sh can
+# watch it fail without an image". That sentence is a claim about this file, and
+# until this case existed it was not true of it.
+#
+# Case 4 above already drives the mountpoint loop -- but only ever for /srv. A
+# name ADDED to that set and never removed from a fixture is indistinguishable
+# from a name the loop does not visit at all: both look like a green run. So
+# this removes the D5 directory and nothing else, and the assertion is required
+# to fail naming THAT path. The path in the message is the whole point; the
+# shared "mountpoint(s) missing" wording alone would be satisfied by /srv.
+#
+# What it protects on the device: the pack stage creates this directory inside
+# the verity squashfs, and a verity root cannot create one at runtime. Without
+# it the bind has nowhere to land, so the writable unit directory silently is
+# not writable and every unit an integrator installs is gone at the next boot.
+FIX="${WORK}/no-ext-unit-dir"
+new_fixture "${FIX}"
+rmdir "${FIX}${EXT_UNIT_DIR}"
+expect_set "PLAN-011 D5's ${EXT_UNIT_DIR} absent from the tree" \
+    "mountpoints-exist=FAIL" \
+    "mountpoint(s) missing from the read-only root: ${EXT_UNIT_DIR}"
+
+# --- 4c-4g. PLAN-011 D5's bind unit, driven one broken fact at a time -------
+# WHY THESE ARE NEW AND WHAT THEY REPLACE. Until this task these five
+# assertions were INLINE in the verifier's main body, far below the fixture
+# hook -- and that hook dispatches a named set and exits, so
+# MOS_VERIFY_FIXTURE_ROOT never reached them. They could not be driven at all.
+# A sibling task measured the consequence on the negative guard specifically:
+# it forced etc_units_binds="" so the guard ALWAYS passed, and this suite still
+# reported RESULT: PASS (18/18 cases) with no FAIL line anywhere. An assertion
+# that cannot fail is worse than no assertion, because its presence tells the
+# next reader the hazard is watched. The verifier now wraps the block in
+# check_ext_unit_dir and the hook dispatches it; these cases are what turn that
+# reachability into an observation.
+
+# --- 4c. the bind unit not shipped at all -----------------------------------
+# The whole of D5 on the device: without this unit /usr/local/lib/systemd/system
+# is just another directory inside the read-only squashfs, so a unit the
+# integrator installs there is discarded at the next reboot with no error.
+# The enablement symlink is deliberately LEFT in place, so the case also proves
+# the absence is caught by the branch that owns it rather than by the *.wants
+# check downstream of it.
+FIX="${WORK}/ext-unit-absent"
+new_fixture "${FIX}"
+rm -f "${FIX}/etc/systemd/system/${EXT_MOUNT_UNIT}"
+expect_set "PLAN-011 D5's ${EXT_MOUNT_UNIT} absent from the image" \
+    "ext-unit-absent=FAIL ext-unit-ok=ABSENT" \
+    "stays on the read-only squashfs" \
+    "PLAN-011 D5's whole extension model does not work on the device"
+
+# --- 4d. the bind pointed at a writable directory that does not survive ------
+# /run/systemd/system is the tempting wrong answer, and it is what every mosd
+# reconciler uses TODAY via runtime=true: it is genuinely writable and systemd
+# genuinely reads it, so an integrator's unit appears to install correctly. It
+# is a tmpfs. Everything installed there is gone at the next boot, which is the
+# exact defect D5 exists to remove, and only Where= being READ from the unit
+# rather than restated can catch it.
+FIX="${WORK}/ext-unit-where"
+new_fixture "${FIX}"
+set_ext_unit_directive "${FIX}" Where /run/systemd/system
+expect_set "the D5 bind re-pointed at the tmpfs /run/systemd/system" \
+    "ext-unit-where=FAIL ext-unit-ok=ABSENT" \
+    "mounts '/run/systemd/system', not ${EXT_UNIT_DIR}"
+
+# --- 4e. the bind backed by something other than STATE ----------------------
+# Where= stays correct, the unit stays enabled, and the directory really is
+# writable on the device -- so nothing about the running system looks wrong.
+# /var is the EPHEMERAL partition: the installed units survive a reboot and
+# vanish at the first A/B update or factory reset, which is the failure that
+# only shows up long after whoever made the change has stopped looking.
+FIX="${WORK}/ext-unit-what"
+new_fixture "${FIX}"
+set_ext_unit_directive "${FIX}" What /var/lib/systemd-units
+expect_set "the D5 bind backed by /var instead of STATE" \
+    "ext-unit-what=FAIL ext-unit-ok=ABSENT" \
+    "which is not under /mnt/state" \
+    "lost by the next A/B update or factory reset"
+
+# --- 4f. the unit shipped but never enabled ---------------------------------
+# The quietest of the five. The unit is present and every line in it is
+# correct, so a reviewer reading the unit finds nothing wrong; it simply never
+# runs. Installing a unit then works exactly once -- until the next boot.
+FIX="${WORK}/ext-unit-not-enabled"
+new_fixture "${FIX}"
+rm -f "${FIX}/etc/systemd/system/local-fs.target.wants/${EXT_MOUNT_UNIT}"
+expect_set "the D5 bind unit shipped but not enabled" \
+    "ext-unit-enabled=FAIL ext-unit-ok=ABSENT" \
+    "no *.wants symlink under /etc/systemd/system" \
+    "installing a unit appears to work and stops working at the next boot"
+
+# --- 4g. the rejected /etc/systemd/system target, reintroduced --------------
+# THE case this whole hoist was done for. PLAN-011 D5 originally named
+# /etc/systemd/system and it was rejected on 2026-08-22; anyone reading the
+# superseded sentence repairs the "deviation" by pointing the bind back, and
+# that diff reads like restoring the plan while reintroducing the defect. The
+# image ships this boot chain's own mount units in that directory TOGETHER with
+# the local-fs.target.wants symlinks enabling them, so the bind would be
+# performed by a unit living in the directory it hides and would take the
+# enablement of every other STATE mount with it.
+#
+# Both assertions are required to fire and the case names both: Where= is no
+# longer ${EXT_UNIT_DIR}, and a unit in the image now mounts over
+# /etc/systemd/system. The second is the one that was structurally unobservable
+# until now -- forcing it to pass left this suite green at 18/18.
+FIX="${WORK}/ext-unit-over-etc"
+new_fixture "${FIX}"
+set_ext_unit_directive "${FIX}" Where /etc/systemd/system
+expect_set "the D5 bind re-pointed at the rejected /etc/systemd/system" \
+    "ext-unit-where=FAIL ext-no-etc-bind=FAIL ext-unit-ok=ABSENT" \
+    "mounts '/etc/systemd/system', not ${EXT_UNIT_DIR}" \
+    "a unit in the image mounts over /etc/systemd/system (/etc/systemd/system/${EXT_MOUNT_UNIT})" \
+    "re-pointing it here looks like restoring the plan while reintroducing the defect"
+
+# --- 4h-4k. the com.mos.ext.conf policy, driven one broken fact at a time ---
+# These four were unreachable for exactly the same structural reason as the
+# mount-unit set above, and a sibling task measured it the same way: a fixture
+# violating all four at once still returned RESULT: PASS, and breaking the
+# widened-prefix guard outright left this suite green with zero FAIL lines.
+# Reaching them needed three helpers moved above the fixture hook as well as the
+# block itself -- sq_grep, dbus_policy_rules_only and MOSD_POLICY_PATH were all
+# defined BELOW it, so a policy check dispatched from the hook would have called
+# functions that did not exist yet.
+
+# --- 4h. no policy file at all ----------------------------------------------
+# dbus-daemon default-denies ownership, so with this file gone NO extension can
+# take a com.mos.ext.* name: every one of them dies at RequestName with
+# AccessDenied, which reads like a bug in the extension rather than a missing
+# policy. Both the raw presence check and the live-rule check fire; the two
+# negative assertions correctly stay quiet, because a file that grants nothing
+# grants nothing too widely.
+FIX="${WORK}/ext-policy-absent"
+new_fixture "${FIX}"
+rm -f "${FIX}${EXT_POLICY_PATH}"
+expect_set "the extension D-Bus policy absent from the image" \
+    "ext-policy-grant=FAIL ext-policy-live-rule=FAIL" \
+    "missing or does not match" \
+    "every extension unit dies at RequestName with AccessDenied"
+
+# --- 4i. the grant present, but only inside an XML comment ------------------
+# THE case that justifies stripping comments before matching. The raw text still
+# contains the grant, so a naive grep -- and ext-policy-grant, which is exactly
+# that -- goes on PASSING. dbus-daemon ignores comments, so on the device no
+# extension can own its name. Only the comment-stripped assertion can tell the
+# difference, and this is the case that proves it does.
+FIX="${WORK}/ext-policy-commented"
+new_fixture "${FIX}"
+mutate_ext_policy "${FIX}" 's|<allow own_prefix="com.mos.ext"/>|<!-- <allow own_prefix="com.mos.ext"/> -->|'
+expect_set "the own_prefix grant commented out, so only the raw text still has it" \
+    "ext-policy-live-rule=FAIL" \
+    "only inside an XML comment" \
+    "every extension unit dies at RequestName with AccessDenied"
+
+# --- 4j. the prefix widened to com.mos --------------------------------------
+# The one-character edit com.mos.ext.conf warns about in its own EXTENSION POINT
+# section: one shorter string, one fewer dot, and it reads in a diff like a
+# simplification. What it does is re-grant ownership of com.mos.mosd to every
+# local uid -- a unit with DefaultDependencies=no can claim the name before mosd
+# does and apid talks to an impostor for the rest of the boot. com.mos.mosd.conf
+# root-only rules keep passing throughout, because they cannot see a grant made
+# in another file. All four fire: the ext grant is gone AND a wider one is here.
+FIX="${WORK}/ext-policy-widened"
+new_fixture "${FIX}"
+mutate_ext_policy "${FIX}" 's|own_prefix="com.mos.ext"/>|own_prefix="com.mos"/>|'
+expect_set "the extension grant widened to own_prefix=com.mos" \
+    "ext-policy-grant=FAIL ext-policy-live-rule=FAIL ext-policy-widened=FAIL ext-policy-namespace=FAIL" \
+    "hands ownership of com.mos.mosd to every local uid" \
+    "grants ownership beyond the extension namespace" \
+    "unexpected prefixes"
+
+# --- 4k. ownership granted outside the extension namespace ------------------
+# The other direction, and the one a deny-list would never catch: the prefix
+# grant stays exactly right and a SECOND rule names a system bus outright. Every
+# name outside com.mos.ext.* is a system name, so one own= rule here opens it to
+# every local uid while com.mos.mosd.conf keeps passing.
+FIX="${WORK}/ext-policy-own-system"
+new_fixture "${FIX}"
+mutate_ext_policy "${FIX}" 's|<allow own_prefix="com.mos.ext"/>|<allow own_prefix="com.mos.ext"/>\n    <allow own="com.mos.mosd"/>|'
+expect_set "an outright <allow own=> for a system name in the extension policy" \
+    "ext-policy-namespace=FAIL" \
+    "grants ownership beyond the extension namespace" \
+    "own rules [<allow own=\"com.mos.mosd\"]"
 
 # --- 5a. the bare /srv/ui directory SHIPPED in the packed root --------------
 FIX="${WORK}/ships-dir"

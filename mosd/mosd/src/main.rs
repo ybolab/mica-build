@@ -13,9 +13,23 @@
 //!   into (default `/etc/shadow`, which is a symlink onto STATE on the v2
 //!   image). The sshd reconciler honours the same variable.
 //! - `MOSD_DRY_RUN` — when `1`, first-boot provisioning is skipped, no
-//!   reconcilers are constructed, power actions are routed to a no-op
-//!   control, and the live-state root carries `{"dry_run": true}`; used by
-//!   tests so the daemon never touches the host it runs on.
+//!   reconcilers are constructed, no service scan is constructed, power
+//!   actions are routed to a no-op control, and the live-state root carries
+//!   `{"dry_run": true}`; used by tests so the daemon never touches the host
+//!   it runs on.
+//! - `MOSD_SCAN` — a one-way test hook over the service scan ([`scan`]).
+//!   Setting it to `1` constructs the scan under `MOSD_DRY_RUN=1`, which on
+//!   its own constructs none. It can only ever turn the scan ON: in
+//!   production the scan is constructed unconditionally and the variable is
+//!   ignored, whatever it holds. No value of it disables anything.
+//!
+//!   The hook exists because dry-run switches off the one thing
+//!   `tests/scan.rs` has to exercise, and a registry that is only ever run
+//!   unobserved is a registry nobody has measured. It widens nothing that
+//!   dry-run protects: the scan is passive, it adds a match rule and read-only
+//!   calls on whichever bus `MOSD_BUS` already named and the daemon is already
+//!   connected to, and it writes only to the in-RAM live-state tree. It
+//!   touches no file, no unit and no host state at all.
 
 #![forbid(unsafe_code)]
 
@@ -25,10 +39,12 @@ mod identity;
 mod power;
 mod provisioning;
 mod reconciler;
+mod scan;
 mod transient;
 mod tree;
 
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 use anyhow::Context;
 use mosd_settings::Store;
@@ -103,10 +119,23 @@ async fn main() -> anyhow::Result<()> {
     } else {
         Box::new(power::Systemd::new())
     };
+    // The service registry exists only when a scan does, so that a daemon
+    // running no scan answers `ForgetService` with "there is no registry"
+    // rather than with an empty one it would never fill.
+    //
+    // Asymmetric on purpose: `MOSD_SCAN` can only ever turn the scan ON, for
+    // `tests/scan.rs`, which must run under dry-run and so cannot otherwise
+    // reach it. A symmetric form reads tidier but would also let it switch the
+    // scan OFF, so one stray or mistyped variable (`MOSD_SCAN=0`,
+    // `MOSD_SCAN=true`) would silently disable the service registry on a real
+    // device, with nothing left running to report that it had.
+    let scan_enabled = service_scan_enabled(dry_run, std::env::var("MOSD_SCAN").ok().as_deref());
+    let registry = scan_enabled.then(|| Arc::new(scan::Registry::new()));
     tracing::info!(
         settings_path,
         dry_run,
         reconcilers = reconcilers.len(),
+        service_scan = scan_enabled,
         "mosd starting"
     );
 
@@ -115,7 +144,7 @@ async fn main() -> anyhow::Result<()> {
         state.insert("dry_run".to_string(), Value::Bool(true));
     }
 
-    let service = bus::MosdService::new(
+    let mut service = bus::MosdService::new(
         store,
         settings,
         reconcilers,
@@ -123,6 +152,9 @@ async fn main() -> anyhow::Result<()> {
         transient::production_shadow_path(),
         Value::Object(state),
     );
+    if let Some(registry) = &registry {
+        service = service.with_service_registry(Arc::clone(registry));
+    }
     service.apply_all().await;
     let changes = service.subscribe_changes();
 
@@ -161,6 +193,18 @@ async fn main() -> anyhow::Result<()> {
     // client can see is one it can also write.
     let snapshot = tree::install(&tree_ref, &service_ref).await;
     tokio::spawn(tree::run(service_ref, tree_ref, changes, snapshot));
+    // The service scan, started before the well-known name is claimed so that
+    // its NameOwnerChanged subscription is in place before anything can react
+    // to mosd appearing — a service that claims its name in that window is
+    // seen by the signal rather than missed between the sweep and the
+    // subscription.
+    if let Some(registry) = registry {
+        let service_ref = object_server
+            .interface::<_, bus::MosdService>(bus::OBJECT_PATH)
+            .await
+            .context("look up served MosdService")?;
+        tokio::spawn(scan::run(connection.clone(), registry, service_ref));
+    }
     connection
         .request_name(bus::BUS_NAME)
         .await
@@ -188,4 +232,59 @@ fn state_dir_for(settings_path: &str) -> PathBuf {
             || PathBuf::from(identity::DEFAULT_STATE_DIR),
             Path::to_path_buf,
         )
+}
+
+/// Whether the service scan ([`scan`]) is constructed, from `dry_run` and the
+/// raw value of `MOSD_SCAN` (`None` when it is unset).
+///
+/// One-way by construction. Production is unconditionally on; `MOSD_SCAN` is
+/// read only to lift dry-run's suppression, so no value of it can take the
+/// service registry away from a device that would otherwise have one.
+fn service_scan_enabled(dry_run: bool, scan_override: Option<&str>) -> bool {
+    !dry_run || scan_override == Some("1")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::service_scan_enabled;
+
+    /// The pin on the asymmetry: in production `MOSD_SCAN` is inert. Before
+    /// this gate was narrowed, `MOSD_SCAN=0` — or any typo — switched the
+    /// service registry off on a real device.
+    #[test]
+    fn production_ignores_mosd_scan_entirely() {
+        for value in [
+            None,
+            Some("1"),
+            Some("0"),
+            Some(""),
+            Some("true"),
+            Some("no"),
+        ] {
+            assert!(
+                service_scan_enabled(false, value),
+                "production must scan whatever MOSD_SCAN holds; \
+                 got service_scan=false for MOSD_SCAN={value:?}"
+            );
+        }
+    }
+
+    /// Requirement 5, as `tests/scan.rs::dry_run_constructs_no_scan` pins it
+    /// end to end: dry-run on its own constructs no scan.
+    #[test]
+    fn dry_run_alone_constructs_no_scan() {
+        for value in [None, Some("0"), Some(""), Some("true"), Some("yes")] {
+            assert!(
+                !service_scan_enabled(true, value),
+                "dry-run must construct no scan unless MOSD_SCAN is exactly `1`; \
+                 got service_scan=true for MOSD_SCAN={value:?}"
+            );
+        }
+    }
+
+    /// Requirement 7's hook: the one combination that turns the scan back on.
+    #[test]
+    fn dry_run_plus_mosd_scan_one_constructs_the_scan() {
+        assert!(service_scan_enabled(true, Some("1")));
+    }
 }
