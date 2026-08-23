@@ -12,8 +12,8 @@ BOARDS := cx3576 x64
 # be done" rather than a wrong build.
 .PHONY: help os os-image-cx3576 os-verify-cx3576 os-rootfs-cx3576-v2 \
 	os-image-cx3576-v2 os-verify-cx3576-v2 os-bundle-cx3576 os-devkeys os-health-test \
-	os-shadow-test os-dbus-policy-test os-repart-test os-ui-location-test docs-verify \
-	docs-verify-test
+	os-shadow-test os-dbus-policy-test os-repart-test os-ui-location-test \
+	os-uboot-handshake-test docs-verify docs-verify-test
 
 help:
 	@echo "mos build targets:"
@@ -131,6 +131,20 @@ os-repart-test:
 # rather than skipping.
 os-ui-location-test:
 	bash os/ui-location-test.sh
+
+# SPIKE RFCT-087: executes the SHIPPED os/boot/cx3576-boot.cmd — compiled by
+# the same mkimage invocation the assembler uses, byte-unmodified — under a
+# U-Boot v2026.07 sandbox binary (same source pin as the board build) that
+# carries the board's persistent-env contract, against a layout-v2 GPT disk
+# backed by a host file. Proves the A/B handshake state machine across real
+# process invocations: the boot-attempt decrement persists 3->2->1->0, the
+# other slot is chosen at zero, exhaustion refills to 3, a slot missing its
+# mos-verity-<slot>.env is burned, and a returning booti burns the slot it
+# tried. Needs docker; network only on the first (uncached) build, offline
+# afterwards. See os/boot/handshake-test/harness.sh for the execution model,
+# including the one emulated transition (kernel handoff) and why.
+os-uboot-handshake-test:
+	bash os/boot/handshake-test/run.sh
 
 # Structural check on the two document indexes. It exists because the indexes
 # are the one thing no other check can reach: a document that is never listed
