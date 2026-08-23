@@ -138,6 +138,26 @@ done
 # no mount backs is caught here instead of leaving the fixture agreeing with a
 # verifier that agrees with nothing.
 MQTTD_ENV_DIR="$(dirname "$(sed -n 's/^EnvironmentFile=-\{0,1\}//p' "${MQTTD_UNIT_SRC}" | tail -n1)")"
+# PLAN-012's container engine. Paths from the verifier, the mount unit from
+# the overlay: the assertion is about the unit mos SHIPS, and a fixture that
+# authored its own would keep passing after the real one lost its enablement
+# or its STATE backing -- which is exactly the defect case 8e reproduces.
+CONTAINER_BINARIES="$(verifier_const CONTAINER_BINARIES '"')"
+QUADLET_GENERATOR="$(verifier_const QUADLET_GENERATOR '"')"
+QUADLET_DIR="$(verifier_const QUADLET_DIR '"')"
+QUADLET_MOUNT_UNIT="$(verifier_const QUADLET_MOUNT_UNIT '"')"
+QUADLET_MOUNT_SRC="${HERE}/rootfs/overlay-v2/etc/systemd/system/${QUADLET_MOUNT_UNIT}"
+[ -f "${QUADLET_MOUNT_SRC}" ] || {
+    echo "error: ${QUADLET_MOUNT_SRC} not found; ${VERIFIER} names ${QUADLET_MOUNT_UNIT} as the Quadlet directory's bind but the overlay ships no such file" >&2
+    exit 1
+}
+# The unit set podman brings. Restated here rather than read from the image,
+# deliberately: the fixture has no podman, and what these cases exercise is the
+# verifier's masking logic, not podman's packaging. The IMAGE run is what holds
+# the real set honest, and the Dockerfile fails the build if podman grows a
+# unit the masking list does not name.
+PODMAN_UNITS="podman.socket podman.service podman-auto-update.timer podman-auto-update.service podman-restart.service podman-clean-transient.service podman-kube@.service"
+
 MQTTD_ENV_MOUNT_SRC="$(grep -rl "^Where=${MQTTD_ENV_DIR}\$" \
     "${HERE}/rootfs/overlay-v2/etc/systemd/system" 2>/dev/null | head -n1)"
 [ -n "${MQTTD_ENV_MOUNT_SRC}" ] || {
@@ -252,6 +272,24 @@ new_fixture() {
             >"${dir}/usr/share/doc/pkg${i}/copyright"
     done
 
+    # PLAN-012's container engine, as os/rootfs/Dockerfile.v2 installs it:
+    # binaries present (stand-ins -- nothing reads their contents), every
+    # podman unit masked to /dev/null, and the Quadlet directory bound from
+    # STATE and enabled.
+    local b u
+    for b in ${CONTAINER_BINARIES} "${QUADLET_GENERATOR}"; do
+        mkdir -p "${dir}$(dirname "${b}")"
+        printf '#!/bin/sh\n' >"${dir}${b}"
+    done
+    mkdir -p "${dir}/usr/lib/systemd/system"
+    for u in ${PODMAN_UNITS}; do
+        printf '[Unit]\nDescription=%s\n' "${u}" >"${dir}/usr/lib/systemd/system/${u}"
+        ln -sf /dev/null "${dir}/etc/systemd/system/${u}"
+    done
+    cp "${QUADLET_MOUNT_SRC}" "${dir}/etc/systemd/system/${QUADLET_MOUNT_UNIT}"
+    ln -sf "/etc/systemd/system/${QUADLET_MOUNT_UNIT}" \
+        "${dir}/etc/systemd/system/local-fs.target.wants/${QUADLET_MOUNT_UNIT}"
+
     # The image's networkd namespace, for check_networkd_namespace. Two files,
     # both outside every reconciler-owned prefix: the image's DHCP fallback and
     # one stock systemd unit standing in for the eight the Debian base carries.
@@ -364,11 +402,11 @@ mountpoints-exist|every fstab/bind mountpoint exists in the read-only root|mount
 led-after-health|catches an indicator that reports ready before the slot is confirmed||PASS
 led-requires-health|catches an indicator that turns blue on a slot whose health gate failed||PASS
 dev-keyring|catches a baked-in RAUC keyring||PASS
-ext-unit-absent|is not in the image, so||ABSENT
+ext-unit-absent|usr-local-lib-systemd-system.mount is not in the image, so||ABSENT
 ext-unit-where|puts a writable directory somewhere systemd does not read||ABSENT
 ext-unit-what|which is not under /mnt/state||ABSENT
-ext-unit-enabled|exists but is not enabled||ABSENT
-ext-unit-ok|is a STATE-backed bind via||PASS
+ext-unit-enabled|usr-local-lib-systemd-system.mount exists but is not enabled||ABSENT
+ext-unit-ok|is a STATE-backed bind via usr-local-lib-systemd-system.mount||PASS
 ext-no-etc-bind|no unit in the image mounts anything over /etc/systemd/system|a unit in the image mounts over /etc/systemd/system|PASS
 ext-policy-grant|extension services can take their bus names at all||PASS
 ext-policy-live-rule|grant is a live rule, not text inside an XML comment|only inside an XML comment|PASS
@@ -388,6 +426,10 @@ mqttd-env-on-state|mqttd: EnvironmentFile=|EnvironmentFile|PASS
 pkgmgr-absent|carries no package manager|still carries package management|PASS
 pkgmgr-copyrights|licence texts survived the purge|copyright files are left under|PASS
 pkgmgr-dangling|names perl as its interpreter, so removing perl left nothing broken|still name it as their interpreter|PASS
+container-present|the container engine is in the image|the container engine is incomplete|PASS
+container-masked|podman units are masked to /dev/null|masked to /dev/null|PASS
+container-not-enabled|no podman unit carries an enablement symlink|enablement symlink in the image|PASS
+quadlet-dir|is a STATE-backed bind via etc-containers-systemd.mount|etc-containers-systemd.mount|PASS
 connd-contract|read the connd contract out of mosd|could not read the connd contract|PASS
 networkd-namespace|networkd namespace is clear|networkd namespace|PASS
 '
@@ -1147,6 +1189,95 @@ printf '#!/usr/bin/perl\nprint "hi";\n' >"${FIX}/usr/bin/deb-systemd-helper"
 expect_set "a perl script left behind after perl was removed" \
     "pkgmgr-dangling=FAIL" \
     "still name it as their interpreter"
+
+
+# ===========================================================================
+# PLAN-012: the container engine, installed and inert
+# ===========================================================================
+
+# --- 8a. a piece of the engine missing --------------------------------------
+FIX="${WORK}/container-incomplete"
+new_fixture "${FIX}"
+rm -f "${FIX}/usr/libexec/podman/quadlet"
+expect_set "the Quadlet binary missing from the engine" \
+    "container-present=FAIL" \
+    "the container engine is incomplete"
+
+# --- 8b. the Quadlet GENERATOR missing --------------------------------------
+# Separate from 8a because it is the piece whose absence is invisible: podman
+# works, `podman run` works, and .container files are simply never turned into
+# services. Nothing errors.
+FIX="${WORK}/container-no-generator"
+new_fixture "${FIX}"
+rm -f "${FIX}/usr/lib/systemd/system-generators/podman-system-generator"
+expect_set "the Quadlet systemd generator missing" \
+    "container-present=FAIL" \
+    "the container engine is incomplete"
+
+# --- 8c. podman.socket unmasked ---------------------------------------------
+# THE ONE THAT MATTERS MOST. podman.socket is socket-activated: leaving it
+# merely disabled means anything that connects starts the root-run engine.
+FIX="${WORK}/container-socket-unmasked"
+new_fixture "${FIX}"
+rm -f "${FIX}/etc/systemd/system/podman.socket"
+expect_set "podman.socket left unmasked" \
+    "container-masked=FAIL" \
+    "masked to /dev/null" \
+    "SOCKET-ACTIVATED"
+
+# --- 8d. a podman unit enabled ----------------------------------------------
+FIX="${WORK}/container-unit-enabled"
+new_fixture "${FIX}"
+mkdir -p "${FIX}/etc/systemd/system/multi-user.target.wants"
+ln -sf /usr/lib/systemd/system/podman.service \
+    "${FIX}/etc/systemd/system/multi-user.target.wants/podman.service"
+expect_set "a podman unit enabled in the image" \
+    "container-not-enabled=FAIL" \
+    "enablement symlink in the image"
+
+# --- 8e. the Quadlet bind shipped but NOT ENABLED ---------------------------
+# THE DEFECT THIS TASK ACTUALLY HAD. The mount unit was installed and its
+# local-fs.target.wants symlink was not, so /etc/containers/systemd would have
+# stayed on the read-only squashfs. Caught by the assertion on its first run.
+FIX="${WORK}/quadlet-not-enabled"
+new_fixture "${FIX}"
+rm -f "${FIX}/etc/systemd/system/local-fs.target.wants/${QUADLET_MOUNT_UNIT}"
+expect_set "the Quadlet bind installed but not enabled" \
+    "quadlet-dir=FAIL" \
+    "exists but is not enabled"
+
+# --- 8f. no Quadlet bind at all ---------------------------------------------
+# The state the image was in before this task: podman installed, and nowhere
+# on the device to put a .container file that survives a reboot.
+FIX="${WORK}/quadlet-absent"
+new_fixture "${FIX}"
+rm -f "${FIX}/etc/systemd/system/${QUADLET_MOUNT_UNIT}" \
+      "${FIX}/etc/systemd/system/local-fs.target.wants/${QUADLET_MOUNT_UNIT}"
+expect_set "no Quadlet directory bind in the image" \
+    "quadlet-dir=FAIL" \
+    "NOWHERE to install a container"
+
+# --- 8g. the bind pointed somewhere Quadlet does not read -------------------
+# The plan's original, wrong assumption: /usr/local/lib/systemd/system, the
+# extension unit directory. Quadlet never looks there.
+FIX="${WORK}/quadlet-wrong-where"
+new_fixture "${FIX}"
+sed -i 's|^Where=.*|Where=/usr/local/lib/systemd/system|' \
+    "${FIX}/etc/systemd/system/${QUADLET_MOUNT_UNIT}"
+expect_set "the Quadlet bind pointed at the extension unit directory" \
+    "quadlet-dir=FAIL" \
+    "the only one of Quadlet's three search directories"
+
+# --- 8h. the bind backed by /var instead of STATE ---------------------------
+# /var is the wipeable EPHEMERAL partition. Containers would install, work,
+# and vanish on the next A/B update.
+FIX="${WORK}/quadlet-not-state"
+new_fixture "${FIX}"
+sed -i 's|^What=.*|What=/var/lib/quadlet|' \
+    "${FIX}/etc/systemd/system/${QUADLET_MOUNT_UNIT}"
+expect_set "the Quadlet bind backed by /var instead of STATE" \
+    "quadlet-dir=FAIL" \
+    "not survive an A/B update"
 
 echo
 total=$((PASS_N + FAIL_N))

@@ -123,3 +123,4 @@ Each task is a single line linking to its detail file. All detailed information 
 - [x] [**RFCT-098 The connd contract read rotted, and nineteen assertions went green on the fallback**](RFCT-098.md) `P1`
 - [x] [**RFCT-099 Remove package management from the packed root, and keep the licence texts**](RFCT-099.md) `P2`
 - [x] [**RFCT-100 Move the packed root from Debian 12 to Debian 13, and unpin the checks that were pinned to 12**](RFCT-100.md) `P1`
+- [x] [**RFCT-101 PLAN-012 M2: the container engine in the image, installed and inert**](RFCT-101.md) `P1`

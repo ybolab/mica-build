@@ -70,6 +70,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         curl \
         wpasupplicant \
         hostapd \
+        podman \
+        crun \
+        netavark \
+        aardvark-dns \
+        catatonit \
     && rm -rf /var/lib/apt/lists/*
 
 # systemd-repart is a SEPARATE PACKAGE on trixie and was inside `systemd` on
@@ -130,6 +135,55 @@ RUN set -eu; \
         fi; \
     done; \
     echo "connd: hostapd.service and wpa_supplicant.service masked, templates present and unenabled"
+
+# PLAN-012: the container engine ships INSTALLED AND INERT.
+#
+# podman brings seven units of its own and NONE of them may be enabled here.
+# The switch is `container.enabled` in the settings tree and mosd owns the
+# transition; an image that enabled any of these would be a device running
+# containers before anyone asked, which is the opposite of the decision.
+#
+# Each is masked rather than merely left disabled, and the reason differs per
+# unit -- which is why they are listed rather than globbed:
+#
+#   podman.socket / podman.service   the REST API. SOCKET-ACTIVATED, so
+#                                    `disable` is not enough: anything that
+#                                    connects to the socket starts the service.
+#                                    This is the API that grants full engine
+#                                    control, and the engine runs as root
+#                                    (PLAN-012 D5), so it is the single most
+#                                    consequential unit in the set.
+#   podman-auto-update.timer/.service  pulls new images on a schedule. D4 says
+#                                    mos does not manage container updates; a
+#                                    timer that did it anyway would contradict
+#                                    the document we ship telling operators
+#                                    they own that.
+#   podman-restart.service           restarts containers with restart policies
+#                                    at boot. systemd already owns lifecycle
+#                                    here through Quadlet-generated units.
+#   podman-clean-transient.service    cleans transient container state at boot.
+#   podman-kube@.service             the Kubernetes YAML path. PLAN-002 removed
+#                                    Kubernetes from this project as a one-way
+#                                    commitment; this reintroduces a corner of
+#                                    it by the back door.
+#
+# The masks are symlinks inside the signed read-only root, so they cannot be
+# removed on a running device. os/verify-image-v2.sh asserts every one.
+RUN set -eu; \
+    for u in podman.socket podman.service podman-auto-update.timer \
+             podman-auto-update.service podman-restart.service \
+             podman-clean-transient.service podman-kube@.service; do \
+        if [ ! -e "/usr/lib/systemd/system/${u}" ]; then \
+            echo "error: ${u} is not in the image; podman's unit set changed and this masking list no longer describes it" >&2; exit 1; \
+        fi; \
+        ln -sf /dev/null "/etc/systemd/system/${u}"; \
+    done; \
+    for u in $(ls /usr/lib/systemd/system/podman* 2>/dev/null | xargs -n1 basename); do \
+        if [ ! -L "/etc/systemd/system/${u}" ]; then \
+            echo "error: podman ships ${u} and nothing masks it; every unit podman brings must be an explicit decision" >&2; exit 1; \
+        fi; \
+    done; \
+    echo "podman: 7 units installed and masked; the engine is inert until container.enabled"
 
 # Image profile. mosd reads this file ONCE, on first boot, to seed
 # `access.ssh.enabled`, and it FAILS CLOSED: missing, unreadable or carrying a
@@ -268,12 +322,14 @@ RUN cp -a /tmp/overlay/. / && \
     mkdir -p -m 0700 /root && chown 0:0 /root && chmod 0700 /root && \
     mkdir -p -m 0755 /usr/local/lib/systemd /usr/local/lib/systemd/system && \
     chown 0:0 /usr/local/lib/systemd /usr/local/lib/systemd/system && \
+    mkdir -p /etc/containers/systemd && chmod 0755 /etc/containers/systemd && \
     for u in mos-seed-var.service mos-seed-state.service mos-seed-home.service \
              mos-seed-root.service \
              var-lib-mos.mount \
              var-lib-bluetooth.mount etc-ssh.mount etc-hostname.mount \
              etc-wpa_supplicant.mount etc-hostapd.mount home.mount root.mount \
              usr-local-lib-systemd-system.mount \
+             etc-containers-systemd.mount \
              mos-apply-hostname.service; do \
         ln -sf "/etc/systemd/system/$u" "/etc/systemd/system/local-fs.target.wants/$u" && \
         test -L "/etc/systemd/system/local-fs.target.wants/$u"; \

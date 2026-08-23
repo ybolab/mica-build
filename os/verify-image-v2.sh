@@ -244,7 +244,7 @@ DATA_MOUNT="/srv"
 # PLAN-011 D5's writable unit directory, and it is the only one outside /mnt,
 # /srv, /var and the two home binds -- it is here for exactly the same reason as
 # the rest and not because it is a partition or a tier.
-PACKED_MOUNTPOINTS="/mnt/state /mnt/meta /srv /var /home /root /usr/local/lib/systemd/system"
+PACKED_MOUNTPOINTS="/mnt/state /mnt/meta /srv /var /home /root /usr/local/lib/systemd/system /etc/containers/systemd"
 
 # Prints the /etc/fstab line whose mountpoint is the LONGEST prefix of $1: the
 # entry that actually governs the filesystem that path lands on. Derived rather
@@ -944,6 +944,80 @@ check_no_package_manager() {
     fi
 }
 
+# --- PLAN-012: the container engine, installed and INERT --------------------
+# What this proves: podman is in the image, every unit it brings is masked, and
+# an operator has somewhere to put a Quadlet file that survives a reboot.
+#
+# THE QUADLET PATH IS THE ONE THAT WOULD HAVE SHIPPED BROKEN. The plan's first
+# draft assumed a .container file goes into /usr/local/lib/systemd/system, the
+# STATE-backed unit directory PLAN-011 D5 shipped, because that would make
+# installing a container the same act as installing an extension. `quadlet
+# --dryrun` on the shipped binary says otherwise, verbatim:
+#   No files parsed from [/run/containers/systemd /etc/containers/systemd
+#                         /usr/share/containers/systemd]
+# Of those three, /run is tmpfs and the other two are inside the read-only
+# squashfs, so without a bind there is nowhere on the device to install one.
+CONTAINER_BINARIES="/usr/bin/podman /usr/bin/crun /usr/bin/conmon /usr/lib/podman/netavark /usr/lib/podman/aardvark-dns /usr/libexec/podman/quadlet"
+QUADLET_GENERATOR="/usr/lib/systemd/system-generators/podman-system-generator"
+QUADLET_DIR="/etc/containers/systemd"
+QUADLET_MOUNT_UNIT="etc-containers-systemd.mount"
+
+check_container_engine() {
+    ce_missing=""
+    for b in ${CONTAINER_BINARIES} "${QUADLET_GENERATOR}"; do
+        [ -f "${ROOT}${b}" ] || ce_missing="${ce_missing} ${b}"
+    done
+    if [ -z "${ce_missing}" ]; then
+        pass "the container engine is in the image: podman, crun, conmon, netavark, aardvark-dns, quadlet and its systemd generator"
+    else
+        fail "the container engine is incomplete:${ce_missing} missing. PLAN-012 ships the engine installed and inert; a partial install is a switch that turns on nothing"
+    fi
+
+    # Every unit podman brings must be masked. Masked, not disabled:
+    # podman.socket is socket-activated, so a disabled service still starts
+    # the moment anything connects.
+    ce_units="$(find "${ROOT}/usr/lib/systemd/system" -maxdepth 1 -name 'podman*' 2>/dev/null | sed "s|^${ROOT}/usr/lib/systemd/system/||" | sort || true)"
+    ce_unmasked=""
+    for u in ${ce_units}; do
+        [ "$(readlink "${ROOT}/etc/systemd/system/${u}" 2>/dev/null)" = "/dev/null" ] ||
+            ce_unmasked="${ce_unmasked} ${u}"
+    done
+    if [ -z "${ce_units}" ]; then
+        fail "podman ships no units at all in this image, so the check that they are masked to /dev/null has nothing to check and would pass vacuously"
+    elif [ -z "${ce_unmasked}" ]; then
+        pass "all $(printf '%s\n' ${ce_units} | grep -c .) podman units are masked to /dev/null; the engine cannot start until mosd enables it"
+    else
+        fail "these podman units are not masked to /dev/null:${ce_unmasked}. podman.socket in particular is SOCKET-ACTIVATED — disabling it is not enough, anything that connects starts the root-run engine behind it"
+    fi
+
+    # ...and none is enabled by a wants symlink either, which is the other way
+    # a unit starts.
+    ce_enabled="$(find "${ROOT}/etc/systemd/system" "${ROOT}/usr/lib/systemd/system" \
+        -path '*.wants/podman*' 2>/dev/null | sed "s|^${ROOT}||" | tr '\n' ' ' || true)"
+    if [ -z "${ce_enabled}" ]; then
+        pass "no podman unit carries an enablement symlink; the engine is inert in the shipped image"
+    else
+        fail "podman units carry an enablement symlink in the image:${ce_enabled}. The device would run containers before anyone asked, which is the opposite of PLAN-012's default-off switch"
+    fi
+
+    # The Quadlet directory has to be writable and persistent, or the operator
+    # cannot install a container at all.
+    ce_f="${ROOT}/etc/systemd/system/${QUADLET_MOUNT_UNIT}"
+    ce_where="$(sed -n 's/^Where=//p' "${ce_f}" 2>/dev/null | tail -n1 || true)"
+    ce_what="$(sed -n 's/^What=//p' "${ce_f}" 2>/dev/null | tail -n1 || true)"
+    if [ ! -f "${ce_f}" ]; then
+        fail "${QUADLET_MOUNT_UNIT} is not in the image, so ${QUADLET_DIR} stays on the read-only squashfs. Quadlet reads /run, /etc and /usr/share under containers/systemd and nothing else: /run is tmpfs and the other two are in the verity root, so an operator has NOWHERE to install a container that survives a reboot"
+    elif [ "${ce_where}" != "${QUADLET_DIR}" ]; then
+        fail "${QUADLET_MOUNT_UNIT} mounts '${ce_where}', not ${QUADLET_DIR} — which is the only one of Quadlet's three search directories an operator can be given"
+    elif ! printf '%s' "${ce_what}" | grep -q '^/mnt/state/'; then
+        fail "${QUADLET_MOUNT_UNIT} is backed by '${ce_what}', not STATE. Installed containers would not survive an A/B update"
+    elif [ ! -L "${ROOT}/etc/systemd/system/local-fs.target.wants/${QUADLET_MOUNT_UNIT}" ]; then
+        fail "${QUADLET_MOUNT_UNIT} exists but is not enabled; ${QUADLET_DIR} would never be bound and installing a container would appear to work until the next boot"
+    else
+        pass "${QUADLET_DIR} is a STATE-backed bind via ${QUADLET_MOUNT_UNIT} (What=${ce_what}), enabled, so a Quadlet unit installed there survives a reboot and an A/B update"
+    fi
+}
+
 # The fixture hook: run only the assertions above, against the fixture, and
 # summarise. os/ui-location-test.sh is the only caller.
 if [ -n "${FIXTURE_ROOT}" ]; then
@@ -960,6 +1034,7 @@ if [ -n "${FIXTURE_ROOT}" ]; then
     read_connd_contract
     check_networkd_namespace
     check_no_package_manager
+    check_container_engine
     fixture_total=$((PASS_N + FAIL_N))
     if [ "${FAIL_N}" -eq 0 ]; then
         echo "RESULT: PASS (${PASS_N}/${fixture_total} checks)"
@@ -2483,6 +2558,10 @@ check_ext_unit_dir
 # Fixture-hook set, called here for the non-fixture path. Rationale on the
 # function.
 check_no_package_manager
+
+# --- PLAN-012: the container engine, installed and inert ---------------------
+# Fixture-hook set, called here for the non-fixture path.
+check_container_engine
 
 # --- PLAN-011 D6: the MQTT bridge as installed -------------------------------
 # Same arrangement, same reason. The function is up with the fixture set so

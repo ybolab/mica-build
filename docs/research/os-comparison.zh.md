@@ -86,6 +86,56 @@ wpasupplicant、hostapd、curl、rauc）拉入 88 个。
 `tdnf`。这就是认真做「自建用户空间」的样子，而维护成本体现在发布节奏上：
 5.0-GA 的日期是 2023-04-28。Bottlerocket（§4）是同一模式更好的实现，且已评估过。
 
+### `apt-get source` + `dpkg-buildpackage` —— 保留，并附触发条件
+
+单独重建某个 Debian 包是**保留的能力**，不是被否决的方案，而且它正是 podman
+这类包可以走的路径。2026-08-23 端到端跑通，比预期顺畅：
+
+```
+sed -i 's/^Types: deb$/Types: deb deb-src/' /etc/apt/sources.list.d/debian.sources
+dpkg --add-architecture arm64 && apt-get update
+apt-get source <pkg>
+apt-get install crossbuild-essential-arm64
+apt-get build-dep --host-architecture arm64 <pkg>
+dpkg-buildpackage --host-arch arm64 -B -us -uc
+```
+
+以 `libubootenv` 实测：交叉编译 **4 秒**，产出五个 arm64 `.deb`，ELF 均为
+`aarch64`。Debian 的交叉编译是一等公民——不需要 qemu，`debian/rules` 的
+debhelper 自动处理——而 `debian/rules` 就是改构建选项的地方（`CMAKE_FLAGS`、
+`--disable-*`），源码改动放 `debian/patches/`。这恰恰是当初想用整套 Yocto 换来
+的能力，而且不必更换构建系统。
+
+代价在**构建环境，不在构建本身**：`libubootenv` 的构建依赖闭包是 186 个包 /
+816 MB，为了一个 60 KB 的 C 库。这落在构建主机上，由可复用的构建镜像摊薄——
+所有走这条路的项目都这么做（Yocto 的 sstate、Photon 的 builder 容器、
+Bottlerocket 的 buildsys）。
+
+**`pkgs/` 是为此保留的位置**——我们选择自建的每个包一个目录，补丁和构建标志
+就放在旁边，产出 `.deb` 由 rootfs 阶段覆盖安装到归档版本之上。每个包独立决策、
+独立论证、独立回退。这是一种模式而非迁移：为一个包采用它，并不承诺其余 104 个。
+
+**触发条件——满足其一才在此自建，不要提前：** 需要关掉某个编译期功能（体积或
+攻击面）；需要把更新的上游 backport 进 Debian 的打包与 systemd 集成；或某个 CVE
+在 Debian 中开放的时间超过产品能等待的时限。
+
+**systemd 试探，以及它没有证明什么。** systemd 是镜像里最大的功能包，所以先量
+它。关掉 mos 用不到的子系统——homed、userdbd、oomd、portabled、importd、
+machined、coredump、nspawn——只能省 **0.54 MB**，因为 trixie 早已把它们每一个
+都拆成了镜像根本不装的独立包，而它们共享的代码在 `libsystemd-shared`（6.7 MB，
+被 92 个组件链接）里，前端消失并不会让它变小。
+
+这是一个**关于 systemd 的**发现，不是对这条路的判决：Debian 的细粒度拆包，已经
+把"改构建配置"的大部分收益提前兑现成了"选择不装"。这也解释了为什么 RFCT-099
+删掉"装了但不需要"的东西能省 24 MB，而这里禁用"本来就没装"的东西只有 0.5 MB。
+下一个候选按它自己的测量结果判断。
+
+**不保留的是：自建全部 105 个源码包。** 镜像的 161 个二进制包来自 105 个源码包，
+含 `glibc`、`gcc-14`、`systemd`、`openssl`、`perl`、`coreutils`；仅前 40 个源码包
+的构建依赖并集就是 850 个包 / 4143 MB，而 glibc 与 gcc 互为构建依赖，全量自建
+意味着要自己负责 bootstrap 顺序。那就是在成为一个发行版，§3 的 Photon 行就是
+它的价目表。
+
 **成立的结论，以及它背后的原则。** 独立性是**按组件**买的，不是按发行版买的，
 而 mos 已经在要紧的地方买到了：内核与 U-Boot 在 `board/cx3576/` 下从钉死的源码
 构建，管理面是我们自己的 Rust，PLAN-012 的容器引擎静态链接因而在构造上就与基座

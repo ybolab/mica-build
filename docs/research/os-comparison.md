@@ -100,6 +100,68 @@ of "build your own userland" done seriously, and the maintenance cost shows in
 the release cadence: 5.0-GA is dated 2023-04-28. Bottlerocket (§4) is the same
 pattern executed better, and was already evaluated.
 
+### `apt-get source` + `dpkg-buildpackage` — RETAINED, with a trigger
+
+Rebuilding individual Debian packages from source is a **kept capability**,
+not a rejected one, and it is the path a package like podman can take. It was
+run end to end on 2026-08-23 and works better than expected:
+
+```
+sed -i 's/^Types: deb$/Types: deb deb-src/' /etc/apt/sources.list.d/debian.sources
+dpkg --add-architecture arm64 && apt-get update
+apt-get source <pkg>
+apt-get install crossbuild-essential-arm64
+apt-get build-dep --host-architecture arm64 <pkg>
+dpkg-buildpackage --host-arch arm64 -B -us -uc
+```
+
+Measured on `libubootenv`: **4 seconds** to cross-compile, producing five
+arm64 `.deb`s with correct `aarch64` ELFs. Debian's cross-build is a
+first-class path — no qemu, `debian/rules`' debhelper handles it — and
+`debian/rules` is where build flags are changed (`CMAKE_FLAGS`,
+`--disable-*`), with `debian/patches/` for source changes. That is precisely
+the capability whole-OS Yocto was wanted for, available without changing the
+build system.
+
+The cost is the **build environment, not the build**: `libubootenv`'s
+build-dependency closure is 186 packages / 816 MB for a 60 KB C library. That
+lands on the build host and is amortised by a reusable builder image, which is
+what every project on this path does (Yocto's sstate, Photon's builder
+container, Bottlerocket's buildsys).
+
+**`pkgs/` is the reserved home for this** — one directory per package we
+choose to build ourselves, its patches and its flags beside it, producing
+`.deb`s the rootfs stage installs over the archive's. Independent per package,
+independently justified, independently revertable. It is a pattern, not a
+migration: adopting it for one package does not commit the other 104.
+
+**Trigger — build a package here when, and not before:** a compile-time
+feature has to be turned off (size or attack surface); a newer upstream has to
+be backported into Debian's packaging and systemd integration; or a CVE is
+open in Debian longer than the product can wait.
+
+**The systemd probe, and what it did NOT prove.** systemd was measured first,
+being the largest functional package in the image. Turning off the subsystems
+mos does not use — homed, userdbd, oomd, portabled, importd, machined,
+coredump, nspawn — would save **0.54 MB**, because trixie has already split
+every one of them into a separate package that the image never installs, and
+because the code they share lives in `libsystemd-shared` (6.7 MB, linked by 92
+components) which does not shrink when a front-end goes.
+
+That is a finding **about systemd**, not a verdict on the path: Debian's
+fine-grained splitting has already banked most of the "change the build
+config" benefit as "choose not to install". It is also why RFCT-099 saved
+24 MB by deleting what was installed and unwanted, while this saves 0.5 MB by
+disabling what was never installed at all. The next candidate is judged on its
+own measurement.
+
+**What is NOT retained: building all 105 source packages.** The image's 161
+binary packages come from 105 source packages including `glibc`, `gcc-14`,
+`systemd`, `openssl`, `perl` and `coreutils`; the build-dependency union of
+just the first 40 is 850 packages / 4143 MB, and glibc/gcc are mutually
+build-dependent, so a full self-build means owning a bootstrap order. That is
+becoming a distribution, and §3's Photon row is what that costs.
+
 **The conclusion that holds, and the principle behind it.** Independence is
 bought per-component, not per-distribution, and mos has already bought it
 where it matters: the kernel and U-Boot are built from pinned sources in

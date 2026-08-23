@@ -77,6 +77,14 @@ done
 mkdir -p /mnt/state/systemd-units
 chmod 0755 /mnt/state/systemd-units
 
+# PLAN-012 D4: the Quadlet unit directory, bound onto /etc/containers/systemd.
+# Quadlet's own search path is /run, /etc and /usr/share under
+# containers/systemd -- measured, not assumed -- and the only one of the three
+# an operator can be given is /etc. Without this the container feature ships
+# with nowhere to install a container into.
+mkdir -p /mnt/state/quadlet
+chmod 0755 /mnt/state/quadlet
+
 # The hostname has to be writable: mosd's reconciler sets it through
 # systemd-hostnamed, which writes /etc/hostname. Seed it from the value baked
 # into the image while /etc/hostname still shows the squashfs copy;

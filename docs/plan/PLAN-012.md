@@ -166,21 +166,72 @@ bus item and an MQTT-addressable path for free.
 the `SshdReconciler` model: enable+start on true, stop+disable on false,
 report into live state.
 
-### D4 — Quadlet is the container-application interface
+### D4 — Quadlet is the interface, and mos does NOT orchestrate
+
+**User directive, 2026-08-23: mos does not manage container orchestration.
+What it ships instead is documentation.** This closes the question the first
+draft of this plan left open.
 
 An operator installs a container application by dropping a `.container` file
-into `/usr/local/lib/systemd/system` — the STATE-backed writable unit
-directory PLAN-011 D5 shipped — and Quadlet's generator turns it into a
-service. **This is the same act as installing a mos extension**, which is why
-it is a decision rather than a detail: it means mos does not need a container
-manifest format, an orchestrator, or an app lifecycle of its own.
+into **`/etc/containers/systemd`**, and Quadlet's generator turns it into a
+service. No container manifest format, orchestrator or application lifecycle
+is needed: systemd already owns lifecycle on this device, and `Wants=`,
+`After=`, `Requires=`, `BindsTo=` and `ConditionPathExists=` are already a
+dependency language the operator can use.
 
-**Open, and it needs the user's answer before M4 is scoped:** does mos manage
-container applications beyond providing the engine — compose files, automatic
-restart policy, image update? Everything above assumes **no**: systemd owns
-lifecycle, Quadlet is the interface, and the operator owns their units. That
-is the smaller and more defensible scope, and it is consistent with how mos
-treats every other unit on the device.
+**CORRECTED 2026-08-23, and the correction is the interesting part.** This
+decision first said the file goes into `/usr/local/lib/systemd/system` — the
+STATE-backed unit directory PLAN-011 D5 shipped — on the reasoning that
+installing a container and installing an extension *should* be the same act.
+That reasoning was appealing and wrong. `quadlet --dryrun`, run against the
+shipped binary, prints its search path verbatim:
+
+```
+No files parsed from [/run/containers/systemd /etc/containers/systemd
+                      /usr/share/containers/systemd]
+```
+
+Quadlet does not read the systemd unit path at all. Of its three directories
+`/run` is tmpfs and the other two are inside the read-only dm-verity
+squashfs — so as originally planned, **there would have been nowhere on the
+device to install a container**, and the failure would have been silent: the
+write fails on a read-only path, or lands in `/run` and disappears at the next
+boot.
+
+`/etc/containers/systemd` is therefore a STATE-backed bind of its own
+(`etc-containers-systemd.mount`, `What=/mnt/state/quadlet`), built on exactly
+the pattern D5 established. `/usr/share/containers/systemd` stays inside the
+verity root, which is the intended asymmetry: units **we** ship are immutable,
+units the operator installs are theirs.
+
+Explicitly NOT shipped, so nobody looks for them: no compose support, no
+application manifest, no auto-update of images, no restart supervisor beyond
+systemd's own `Restart=`, no health-check orchestration beyond
+`ExecStartPre`/`systemd-notify`.
+
+**The deliverable is a document** (`docs/design/containers.md`, M4), written
+for the integrator rather than for us, covering at minimum:
+
+- one container as a Quadlet unit, and where the file goes so it survives a
+  reboot and an A/B update;
+- **multi-container interconnection** — a `.network` Quadlet unit, what
+  netavark gives on it, and how aardvark-dns makes containers resolve each
+  other by name;
+- **collaboration and dependency** — expressing "B needs A" with `After=` plus
+  `Requires=`, why `After=` alone is an ordering and not a dependency, and how
+  to make a dependent container wait for a real readiness signal rather than
+  for the previous unit's `ExecStart` returning;
+- ports and host networking, and which of the two the appliance's firewall
+  posture expects;
+- persistent data: a `.volume` unit versus a host bind, and why anything
+  precious belongs on DATA rather than the wipeable `/var`;
+- the security consequence the switch carries, in the operator's terms: the
+  engine runs as root (D5), so a container it starts is root-capable on this
+  device.
+
+Written against the shipped Quadlet, with every example a file the reader can
+copy — the repository's own standard for a design document that an outsider
+has to act on.
 
 ### D5 — Root mode. Rootless is NOT built.
 
@@ -216,7 +267,7 @@ bus surface is designed.
 | M1 | `podman/` builds the seven binaries for arm64, statically, from pinned sources; `make podman`; `versions.env`; README | every binary is an aarch64 static ELF and matches its pinned hash — asserted in the build, not by eye; `make podman` from a clean tree |
 | M2 | Image wiring: staged by `build-v2.sh`, installed by `Dockerfile.v2`, unit installed and **not** enabled, storage root on DATA | verifier assertions above the fixture boundary + negative controls in `os/ui-location-test.sh`: binaries present, unit **not** enabled, storage root on a growable partition, no engine socket without the switch |
 | M3 | `container.enabled` in the settings schema, `ContainerReconciler`, apid pane | reconciler unit tests against a mock unit driver; apid route tests; live-bus test that the item is writable |
-| M4 | Quadlet wired to `/usr/local/lib/systemd/system`; documented operator path | an offline test that a `.container` file in the STATE-backed directory produces a service |
+| M4 | Quadlet wired to `/usr/local/lib/systemd/system`; **`docs/design/containers.md`** — the integrator's guide to interconnection, dependency and persistence (D4) | an offline test that a `.container` file in the STATE-backed directory produces a service; every example in the document is a file the test actually feeds to the generator, so a doc that drifted from the shipped Quadlet fails the suite |
 | M5 | `versions.env` + a scheduled upstream-tag check in the privileged CI lane | the check fails loudly when an upstream tag moves ahead of the pin |
 
 ## Risks
@@ -263,8 +314,7 @@ re-measure it.
 ## What this plan does not do
 
 **No orchestration.** No compose, no application manifest, no update
-supervisor. D4 says why, and the question is open for the user rather than
-decided here.
+supervisor. D4 decides this and names the document that replaces it.
 
 **No registry.** `docs/research/os-comparison.md` rejected OCI-as-update-
 transport for the OS itself (*"registry adds a stateful service for zero
