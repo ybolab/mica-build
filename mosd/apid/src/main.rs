@@ -9,8 +9,8 @@
 //! - `APID_HTTPS_ADDR` — HTTPS listen address (default `0.0.0.0:443`).
 //! - `APID_HTTP_ADDR` — HTTP listen address, redirect-only (default
 //!   `0.0.0.0:80`).
-//! - `APID_STATE_DIR` — certificate and key storage (default
-//!   `/var/lib/mos/apid`).
+//! - `APID_STATE_DIR` — certificate and key storage, the persisted
+//!   login-backoff counters and the audit ring (default `/var/lib/mos/apid`).
 //! - `APID_BUS` — `system` (default) or `session`; same semantics as
 //!   `MOSD_BUS`.
 //!
@@ -21,10 +21,12 @@
 #![forbid(unsafe_code)]
 
 mod assets;
+mod audit;
 mod auth;
 mod bundle;
 mod bus_client;
 mod config;
+mod persist;
 mod routes;
 mod session;
 mod settings_api;
@@ -57,7 +59,10 @@ async fn main() -> anyhow::Result<()> {
     let signing_key = tls::load_or_generate_session_key(&config.state_dir)?;
 
     let api: Arc<dyn SettingsApi> = Arc::new(bus_client::BusSettings::new(config.bus));
-    let state = routes::AppState::new(api, signing_key);
+    // The state dir already exists (ensure_state_dir above) and already holds
+    // the TLS material, so the backoff counter and the audit ring go there
+    // too: one STATE-backed directory, one set of permissions to reason about.
+    let state = routes::AppState::new(api, signing_key).with_persistence(&config.state_dir);
 
     let https_listener = std::net::TcpListener::bind(&config.https_addr)
         .with_context(|| format!("bind https listener on {}", config.https_addr))?;
@@ -80,7 +85,7 @@ async fn main() -> anyhow::Result<()> {
     // `Restart=on-failure` (`mosd/dist/apid.service:9`) a propagated error is
     // a crash loop with no listener bound. A bundle must not be able to stop
     // apid from listening, so `discover` has no error variant to propagate.
-    let bundle_state = startup::discover(state.bundles().clone()).await;
+    let bundle_state = startup::discover(state.bundles().clone(), state.audit().clone()).await;
     tracing::info!(bundle = %bundle_state, "custom UI state at start-up");
 
     let rustls_config = RustlsConfig::from_pem(
@@ -89,8 +94,10 @@ async fn main() -> anyhow::Result<()> {
     )
     .await
     .context("build rustls server config")?;
+    // `with_connect_info` installs the peer address the audit trail reads
+    // (`audit::Source`); without it every audit line would say `unknown`.
     let https = axum_server::from_tcp_rustls(https_listener, rustls_config)
-        .serve(routes::app(state).into_make_service());
+        .serve(routes::app(state).into_make_service_with_connect_info::<std::net::SocketAddr>());
     let http = axum::serve(
         http_listener,
         routes::redirect_app(https_addr.port()).into_make_service(),

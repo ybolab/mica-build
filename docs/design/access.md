@@ -381,22 +381,63 @@ no longer protects SSH; the effective defenses are default-off config, key-only
 persistent auth (§4.1), and — when they exist — META lockdown (§5.2) and audit
 (§6).
 
-## 6. Brute force & audit — **[not implemented]**
+## 6. Brute force & audit — **[partly implemented]** (RFCT-085)
 
-Design intent, with no code behind any of it:
+Four intents were stated here. Two now have code and tests; two do not, and
+saying which is which is the point of this section.
 
-- Failure counters and backoff state persist in **META**, not RAM — a power
-  cycle must not reset the clock (the classic embedded bypass).
-- Exponential backoff to a hard lockout (`lockoutThreshold`), releasable only
-  with physical presence.
-- Every attempt/session (open, close, source, duration, presence check) →
-  syslogd + bounded persistent ring buffer; uploaded when connectivity exists.
-  No audit trail ⇒ no shell — this is what makes the channel defensible in
-  security review.
+**[implemented] Failure counters and backoff state persist across a restart.**
+`GuardStore` (`mosd/apid/src/auth.rs`) wraps the in-RAM `LoginGuard` and
+writes the consecutive-failure run and the window deadline to
+`login_guard.json` on every mutation, atomically and 0600. A refused attempt
+mutates nothing and therefore writes nothing — without that check an
+unauthenticated caller hammering a throttled endpoint would convert every
+refusal into an fsync.
 
-Nothing here has a schema representation, a counter, a unit or a test. sshd's
-own logging to the journal is what exists, and the journal is
-`Storage=volatile`.
+*Deviation, deliberate: the state lives on **STATE**, not META as this section
+originally said.* apid already creates and owns one state directory there
+(`APID_STATE_DIR`, default `/var/lib/mos/apid`) holding its TLS material, and
+a second persistence root on a second partition would double the surface —
+two directories to create, two sets of permissions to hold, two failure modes
+on a device whose META partition no daemon currently writes at runtime. What
+§6 actually asks for is that a power cycle not reset the clock, and STATE
+satisfies that: it survives reboot and A/B update alike.
+
+The persisted form is an absolute deadline, so it is capped at `BACKOFF_MAX`
+**on load** — a clock that stepped backwards, or a bit-flipped file that still
+parses, must not arm a window the curve itself refuses to. Corruption and
+unreadability both degrade to a clean in-RAM guard with a loud log, never to a
+lockout: the failure direction here has to be open, because the alternative is
+an appliance no operator can reach.
+
+**[implemented] A bounded persistent audit trail.** `Audit`
+(`mosd/apid/src/audit.rs`) appends one JSONL line per audited event — RFC 3339
+UTC timestamp, event, outcome, source address — into a two-file ring capped at
+~512 KiB total, mirrored to the journal so the volatile log tells the same
+story. Lines are fsynced individually, because the two most consequential
+events are immediately followed by the machine going down. A line never
+carries a password, a hash or any other credential material; callers pass
+fixed strings and a peer address.
+
+Audited today: login (`success`, `wrong-password`, `rate-limited`) and the two
+power actions (`requested`, `unconfirmed`), the latter recorded **before**
+dispatch for the same reason the sync exists.
+
+**[not implemented] A hard lockout (`lockoutThreshold`) releasable only with
+physical presence.** Not shipped, and not merely unfinished: the curve is
+deliberately *never permanent* (`the_lockout_is_never_permanent`), because
+there is no physical-presence mechanism to release one with — §9 records that
+an operator locked out of apid has no software path back in. A permanent
+lockout without a release path is a brick, so the threshold waits on the
+presence work in §7.
+
+**[not implemented] Session lifecycle events, and upload.** The trail records
+attempts and power actions, not session open/close/duration/presence-check,
+and nothing uploads it when connectivity exists. The stronger claim this
+section made — *no audit trail ⇒ no shell* — is **not** taken: a failed audit
+write is logged and swallowed rather than refusing to serve management.
+Refusing management when the disk fails is a lockdown decision with the same
+brick risk as the paragraph above, and it is not this campaign's to take.
 
 ## 7. Provisioning paths (ordered by preference) — **[not implemented]**
 
@@ -417,7 +458,8 @@ follow. Today the only path in is apid over an existing network.
 |---|---|---|---|
 | 1 | `access.ssh` / `access.console` / `access.device` subtrees + `SshdReconciler`; OpenSSH driven by mosd; `dev`/`prod` image profile | PLAN-010 M5 | **shipped 2026-08-19**, with the credential model **superseded** the same day (§4.2) |
 | 1 | key-based access (schema v4 `authorizedKeys`), transient root password, SSH off and root passwordless on both profiles, `/home` and `/root` on DATA | PLAN-010 addendum, campaign `sshweb` | **shipped 2026-08-19** (locally verified; every on-device behaviour is the user's hardware acceptance) |
-| 1 | tty3 console shell; META lockdown; brute-force counters; audit wiring; factory reset | — | **not implemented** (§5.2, §6) |
+| 1 | brute-force counters (persistent) + bounded audit trail | RFCT-085 | **shipped 2026-08-23** — on STATE, not META (§6 records the deviation) |
+| 1 | tty3 console shell; META lockdown; hard lockout + physical presence; session/upload audit; factory reset | — | **not implemented** (§5.2, §6) |
 | 2 | wizard TUI + derived PIN + provisioning file/USB import | with connd P2 | not started |
 | 3 | challenge-response, physical presence, variant split enforcement in CI | hardening campaign | not started |
 

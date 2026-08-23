@@ -15,7 +15,7 @@
 //! that is bytes in the binary is behind that protection and an artifact that
 //! is files on disk would not be.
 
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
 use axum::Router;
 use axum::extract::{Form, OriginalUri, Query, Request, State};
@@ -31,7 +31,8 @@ use sha2::{Digest, Sha256};
 
 use crate::assets::mime::CacheClass;
 use crate::assets::serve;
-use crate::auth::{self, LoginGuard};
+use crate::audit::{Audit, Source};
+use crate::auth::{self, GuardStore};
 use crate::bundle::Store;
 use crate::session::{self, SessionStore};
 use crate::settings_api::SettingsApi;
@@ -41,7 +42,8 @@ use crate::settings_api::SettingsApi;
 pub struct AppState {
     api: Arc<dyn SettingsApi>,
     sessions: Arc<SessionStore>,
-    guard: Arc<Mutex<LoginGuard>>,
+    guard: Arc<GuardStore>,
+    audit: Arc<Audit>,
     bundles: Arc<Store>,
 }
 
@@ -52,18 +54,40 @@ impl AppState {
     /// bundle discovery before the listeners bind, and `Store::at_default` is
     /// a path and no syscall. Discovery and the start-up compatibility
     /// re-check are separate work.
+    /// The backoff counter and the audit trail default to their
+    /// non-persistent forms so that constructing state needs no filesystem;
+    /// `with_persistence` is what production calls, and access.md §6's "a
+    /// power cycle must not reset the clock" is that call, not this one.
     pub fn new(api: Arc<dyn SettingsApi>, signing_key: [u8; 32]) -> Self {
         Self {
             api,
             sessions: Arc::new(SessionStore::new(signing_key)),
-            guard: Arc::new(Mutex::new(LoginGuard::default())),
+            guard: Arc::new(GuardStore::ephemeral()),
+            audit: Arc::new(Audit::journal_only()),
             bundles: Arc::new(Store::at_default()),
         }
+    }
+
+    /// Root the backoff counter and the audit ring in `state_dir`
+    /// (`docs/design/access.md` §6).
+    ///
+    /// The directory must already exist — `main.rs` creates it before this is
+    /// called, on the same path that holds the TLS material.
+    pub fn with_persistence(mut self, state_dir: &std::path::Path) -> Self {
+        self.guard = Arc::new(GuardStore::load(state_dir.join("login_guard.json")));
+        self.audit = Arc::new(Audit::at(state_dir.to_path_buf()));
+        self
     }
 
     /// The `/srv/ui` bundle store the asset router reads (§5.2).
     pub(crate) fn bundles(&self) -> &Store {
         &self.bundles
+    }
+
+    /// The audit sink, for the start-up path (`main.rs` hands it to bundle
+    /// discovery so a staged custom UI's activation is recorded too).
+    pub(crate) fn audit(&self) -> &Arc<Audit> {
+        &self.audit
     }
 
     /// Root the bundle store somewhere else, for tests that install one.
@@ -527,7 +551,11 @@ async fn setup_form(State(state): State<AppState>) -> Response {
     .into_response()
 }
 
-async fn setup_submit(State(state): State<AppState>, Form(form): Form<SetupForm>) -> Response {
+async fn setup_submit(
+    State(state): State<AppState>,
+    Source(source): Source,
+    Form(form): Form<SetupForm>,
+) -> Response {
     let access = match state.api.get_settings("access").await {
         Ok(value) => value,
         Err(err) => return bus_error(&err),
@@ -597,6 +625,10 @@ async fn setup_submit(State(state): State<AppState>, Form(form): Form<SetupForm>
     if let Err(err) = state.api.set_settings("access.webAdmin", &value).await {
         return bus_error(&err);
     }
+    // Recorded once the admin password exists, which is the moment the device
+    // leaves setup mode; the optional hostname/network writes below are
+    // ordinary settings edits, not access-control events.
+    state.audit.record("setup", "completed", &source);
     if !hostname.is_empty() {
         let current = match state.api.get_settings("hostname").await {
             Ok(value) => value.as_str().unwrap_or_default().to_string(),
@@ -664,7 +696,11 @@ async fn login_form() -> Html<String> {
     )
 }
 
-async fn login_submit(State(state): State<AppState>, Form(form): Form<LoginForm>) -> Response {
+async fn login_submit(
+    State(state): State<AppState>,
+    Source(source): Source,
+    Form(form): Form<LoginForm>,
+) -> Response {
     // Admission charges the attempt (see `LoginGuard::begin_attempt`): check
     // and charge happen under one lock acquisition, so concurrent submissions
     // cannot share one backoff window. An attempt that reaches neither branch
@@ -676,12 +712,8 @@ async fn login_submit(State(state): State<AppState>, Form(form): Form<LoginForm>
     // while holding this counter must not convert every later login into a
     // panic of its own, which would be a permanent denial of management the
     // backoff curve itself refuses to arm.
-    if !state
-        .guard
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner)
-        .begin_attempt()
-    {
+    if !state.guard.begin_attempt() {
+        state.audit.record("login", "throttled", &source);
         return (
             StatusCode::TOO_MANY_REQUESTS,
             page(
@@ -711,11 +743,8 @@ async fn login_submit(State(state): State<AppState>, Form(form): Form<LoginForm>
             false
         });
     if verified {
-        state
-            .guard
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .record_success();
+        state.guard.record_success();
+        state.audit.record("login", "success", &source);
         let cookie = state.sessions.create();
         (
             [(SET_COOKIE, session::session_cookie(&cookie))],
@@ -725,11 +754,8 @@ async fn login_submit(State(state): State<AppState>, Form(form): Form<LoginForm>
     } else {
         // Counted at admission; this only restarts the earned window from the
         // outcome, so the verification's duration does not eat into the wait.
-        state
-            .guard
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .confirm_failure();
+        state.guard.confirm_failure();
+        state.audit.record("login", "wrong-password", &source);
         (
             StatusCode::UNAUTHORIZED,
             page("Sign in", html! { p { "Wrong password." } }),
@@ -738,9 +764,14 @@ async fn login_submit(State(state): State<AppState>, Form(form): Form<LoginForm>
     }
 }
 
-async fn logout(State(state): State<AppState>, headers: HeaderMap) -> Response {
+async fn logout(
+    State(state): State<AppState>,
+    Source(source): Source,
+    headers: HeaderMap,
+) -> Response {
     if let Some(value) = session::cookie_from_headers(&headers) {
         state.sessions.remove(&value);
+        state.audit.record("logout", "ok", &source);
     }
     (
         [(SET_COOKIE, session::clear_cookie())],
@@ -915,10 +946,17 @@ fn escape_section() -> Markup {
 /// [`Store::deactivate`] is called and nothing is reimplemented. Its `bool` is
 /// whether a pointer was there to remove; both values are the same success,
 /// because §6.3 requires an outcome that does not depend on what was wrong.
-async fn builtin_deactivate(State(state): State<AppState>) -> Response {
+async fn builtin_deactivate(State(state): State<AppState>, Source(source): Source) -> Response {
     match state.bundles().deactivate() {
         Ok(removed) => {
             tracing::info!(removed, "custom UI deactivated from the built-in escape");
+            // "no-op" and "deactivated" are distinct on purpose: the trail
+            // should say whether a custom UI actually stopped being served.
+            state.audit.record(
+                "custom-ui",
+                if removed { "deactivated" } else { "no-op" },
+                &source,
+            );
             pane(
                 "Custom UI",
                 html! {
@@ -1243,8 +1281,11 @@ struct ConfirmForm {
 /// The response is built and returned without awaiting the D-Bus call: on a
 /// real appliance the machine may go down mid-call, and the operator should
 /// get a page rather than a dropped connection.
-fn power_submit(state: &AppState, action: PowerAction, confirm: &str) -> Response {
+fn power_submit(state: &AppState, action: PowerAction, confirm: &str, source: &str) -> Response {
     if confirm != action.confirm_token() {
+        state
+            .audit
+            .record(action.confirm_token(), "unconfirmed", source);
         return (
             StatusCode::UNPROCESSABLE_ENTITY,
             power_page(Some(error_box(
@@ -1253,6 +1294,13 @@ fn power_submit(state: &AppState, action: PowerAction, confirm: &str) -> Respons
         )
             .into_response();
     }
+    // Recorded BEFORE the request is dispatched, and the sink fsyncs each
+    // line: the two audited actions here are the ones immediately followed by
+    // the machine going down, so a line written after the call could be the
+    // line that never reaches the disk.
+    state
+        .audit
+        .record(action.confirm_token(), "requested", source);
     let api = state.api.clone();
     tokio::spawn(async move {
         let result = match action {
@@ -1270,12 +1318,20 @@ fn power_submit(state: &AppState, action: PowerAction, confirm: &str) -> Respons
         .into_response()
 }
 
-async fn power_reboot(State(state): State<AppState>, Form(form): Form<ConfirmForm>) -> Response {
-    power_submit(&state, PowerAction::Reboot, &form.confirm)
+async fn power_reboot(
+    State(state): State<AppState>,
+    Source(source): Source,
+    Form(form): Form<ConfirmForm>,
+) -> Response {
+    power_submit(&state, PowerAction::Reboot, &form.confirm, &source)
 }
 
-async fn power_poweroff(State(state): State<AppState>, Form(form): Form<ConfirmForm>) -> Response {
-    power_submit(&state, PowerAction::PowerOff, &form.confirm)
+async fn power_poweroff(
+    State(state): State<AppState>,
+    Source(source): Source,
+    Form(form): Form<ConfirmForm>,
+) -> Response {
+    power_submit(&state, PowerAction::PowerOff, &form.confirm, &source)
 }
 
 // ---------------------------------------------------------------------------
@@ -1635,7 +1691,11 @@ fn validate_transient_password(password: &str) -> Result<(), String> {
 ///
 /// The password is never written into the settings tree and never logged: it
 /// is read out of the form, checked, handed to mosd, and dropped.
-async fn ssh_password(State(app): State<AppState>, Form(form): Form<SshPasswordForm>) -> Response {
+async fn ssh_password(
+    State(app): State<AppState>,
+    Source(source): Source,
+    Form(form): Form<SshPasswordForm>,
+) -> Response {
     if form.confirm != TRANSIENT_CONFIRM_TOKEN {
         return ssh_error(
             &app,
@@ -1649,6 +1709,9 @@ async fn ssh_password(State(app): State<AppState>, Form(form): Form<SshPasswordF
     if let Err(err) = app.api.set_transient_root_password(&form.password).await {
         return bus_error(&err);
     }
+    // The event carries WHO opened a password channel and from where — and
+    // deliberately nothing about the password itself.
+    app.audit.record("transient-password", "set", &source);
     Redirect::to("/ssh?saved=1").into_response()
 }
 
