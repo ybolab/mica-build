@@ -299,7 +299,58 @@ RUN if [ "$WITH_MOSD" = "1" ] && [ -f /tmp/mosd/mosd ]; then \
         ln -sf /usr/lib/systemd/system/apid.service \
                /etc/systemd/system/multi-user.target.wants/apid.service && \
         test -L /etc/systemd/system/multi-user.target.wants/apid.service; \
+    fi && \
+    if [ "$WITH_MOSD" = "1" ] && [ -f /tmp/mosd/mos-mqttd ]; then \
+        install -m 0755 /tmp/mosd/mos-mqttd /usr/bin/mos-mqttd && \
+        install -m 0644 /tmp/mosd/mos-mqttd.service \
+                /usr/lib/systemd/system/mos-mqttd.service && \
+        install -m 0644 /tmp/mosd/mos-mqttd.conf \
+                /usr/share/dbus-1/system.d/mos-mqttd.conf && \
+        mkdir -p /etc/systemd/system/multi-user.target.wants && \
+        ln -sf /usr/lib/systemd/system/mos-mqttd.service \
+               /etc/systemd/system/multi-user.target.wants/mos-mqttd.service && \
+        test -L /etc/systemd/system/multi-user.target.wants/mos-mqttd.service; \
     fi && rm -rf /tmp/mosd
+
+# The mos-mqttd service account.
+#
+# WHY A STATIC ACCOUNT AND NOT DynamicUser. mos-mqttd.service ran under
+# DynamicUser=yes until the bridge was wired into an image. com.mos.mosd is a
+# root-only bus name, so the bridge needs an explicit D-Bus grant, and
+# <policy user="..."> resolves its user when dbus-daemon reads the file at
+# startup -- before any dynamic user exists. The rule would load and match
+# nothing, and the bridge would publish nothing with no error anywhere. The
+# grant is mos-mqttd.conf; this account is the identity it names.
+#
+# uid AND gid are PINNED for the same reason the mos account's are, arrived at
+# by a different route: the D-Bus policy names the account BY NAME, and
+# dbus-daemon resolves that name to a number at startup. An unpinned allocator
+# would make the number a build-time detail, and a build that resolved it
+# differently would leave the shipped policy granting a uid the unit does not
+# run as -- a live rule matching nobody, which is the failure this whole
+# arrangement exists to avoid. 990 is inside the system range and below the
+# 999 Debian's useradd allocates downward from, so it does not race the base
+# image's own accounts; the assertion below is what keeps that true.
+#
+# --system: no home, no login shell, no aging. `chage -d` pins the shadow
+# LAST-CHANGE field for the same determinism reason as the mos account: useradd
+# stamps today's date, which would change the packed rootfs -- and its
+# dm-verity root hash -- on every build day for no content reason.
+RUN set -eu; \
+    if awk -F: '$3 == 990 || $1 == "mos-mqttd"' /etc/passwd | grep -q .; then \
+        echo "error: uid 990 or the name mos-mqttd is already taken in the base image: $(awk -F: '$3 == 990 || $1 == "mos-mqttd"' /etc/passwd)" >&2; exit 1; \
+    fi; \
+    groupadd --system --gid 990 mos-mqttd; \
+    useradd --system --uid 990 --gid 990 --no-create-home \
+            --home-dir /nonexistent --shell /usr/sbin/nologin \
+            --comment "mos MQTT bridge" mos-mqttd; \
+    chage -d 2020-01-01 mos-mqttd; \
+    ent="$(awk -F: '$1 == "mos-mqttd"' /etc/passwd)"; \
+    case "${ent}" in \
+    mos-mqttd:x:990:990:*:/nonexistent:/usr/sbin/nologin) ;; \
+    *) echo "error: mos-mqttd passwd entry is not the pinned one: ${ent}" >&2; exit 1 ;; \
+    esac; \
+    echo "mos-mqttd system account created: ${ent}"
 
 # Board hardware init: generic best-effort oneshots (os/hwinit, board-agnostic
 # mechanism) + per-board facts staged from BOARD_DIR/init into /etc/mos.

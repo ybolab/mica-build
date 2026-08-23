@@ -518,6 +518,56 @@ now, so each statement names where it lives:
   code, in `mosd/mqttd/src/source.rs`, so it stays correct however the
   negative vocabulary grows.
 
+### 10.1a How the bridge is installed, and what that cost [implemented]
+
+M3 shipped the crate, the unit file and fourteen protocol tests, and shipped
+them nowhere: nothing installed `mos-mqttd` into the image. The wiring is
+`os/rootfs/build-v2.sh` (staging), `os/rootfs/Dockerfile.v2` (install and
+enable) and `mosd/hack/build-aarch64.sh` (cross-build), and it is asserted by
+`check_mqttd` in `os/verify-image-v2.sh`, driven offline by
+`os/ui-location-test.sh`. Three properties are worth stating here rather than
+leaving in the unit, because each was a defect the wiring exposed and none of
+them is visible from the code side.
+
+- **[implemented]** The bridge runs as the **static system account
+  `mos-mqttd`** (uid/gid pinned to 990 in `os/rootfs/Dockerfile.v2`), not
+  under `DynamicUser=yes` as M3's unit did. `com.mos.mosd` is a root-only bus
+  name, so a non-root bridge needs an explicit grant, and `<policy user=>`
+  resolves its user when dbus-daemon reads the file at startup — before any
+  dynamic user for the unit exists. The rule would have loaded and matched
+  nothing, and the bridge would have connected to the broker and published
+  nothing, with no error at the point of cause.
+- **[implemented]** That grant is `mosd/dist/mos-mqttd.conf`, and it is
+  **per-member**: `GetItems` and `SetValue` sent, `ItemsChanged` received, and
+  nothing else. This is the split `com.mos.mosd.conf` recorded as deferred
+  until "a non-root client needs GetSettings and GetState and must NOT reach
+  Reboot or SetTransientRootPassword". The bridge is the only daemon in the
+  image holding a network socket, so a blanket `send_destination` would have
+  made a compromise of it into `Reboot`, `PowerOff`, `SetSettings` and
+  `SetTransientRootPassword`. `mosd/hack/dbus-policy-test.sh` §6 drives the
+  grant on a real dbus-daemon loading both shipped files, in both directions
+  and against a second unprivileged uid.
+- **[implemented]** The broker address is **not in the image**. The root is an
+  immutable dm-verity squashfs, so a literal `--broker-host` would be the same
+  host on every device flashed with it, and `systemctl edit` has nowhere to
+  write. `ExecStart` takes `${MOS_MQTT_BROKER_HOST}`, `${MOS_MQTT_BROKER_PORT}`,
+  `${MOS_MQTT_CLIENT_ID}` and `${MOS_MQTT_MODE}` from an optional
+  `EnvironmentFile=-/var/lib/mos/mqttd.env`, which sits on a STATE-backed bind
+  (`var-lib-mos.mount`) and therefore survives a reboot and an A/B update. An
+  unconfigured device runs on the unit's `Environment=` defaults rather than
+  failing to start.
+
+**Reconnect backoff, and why it belongs to this crate.** `rumqttc` 0.25's
+`EventLoop::poll` reconnects with no delay of its own, and its
+`connection_timeout` bounds a connect that hangs, not one that is *refused* —
+which returns immediately, and is the default case on a device whose operator
+has not configured a broker yet. The bridge therefore backs off itself, 1s
+doubling to a 30s ceiling and reset by any successful poll
+(`mosd/mqttd/src/runtime.rs`). Without it the event loop spins as fast as the
+kernel returns ECONNREFUSED, pegging a core and writing a warning per
+iteration into a journal on the STATE partition. The upstream premise is held
+by a test that fails if rumqttc ever grows a backoff of its own.
+
 ### 10.2 Sparkplug B, compared
 
 Sparkplug B (Eclipse Tahu, ISO/IEC 20237) is the industrial-IoT MQTT
