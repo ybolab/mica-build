@@ -253,7 +253,11 @@ async fn class_1_no_bundle_installed() -> Fact {
     assert!(!root.exists(), "{FACT_1}: the fixture must start absent");
     let store = Store::new(&root);
 
-    let state = startup::discover(store.clone()).await;
+    let state = startup::discover(
+        store.clone(),
+        std::sync::Arc::new(crate::audit::Audit::journal_only()),
+    )
+    .await;
     assert_eq!(state, BundleState::BuiltIn, "{FACT_1}");
     assert_eq!(
         store.status().expect("read the store"),
@@ -373,7 +377,11 @@ async fn class_3_digest_mismatch() -> Fact {
     fs::write(store.bundle_dir(1).join("planted.js"), b"root shell").expect("plant a file");
     assert_eq!(active(&store), Some(1));
 
-    let state = startup::discover(store.clone()).await;
+    let state = startup::discover(
+        store.clone(),
+        std::sync::Arc::new(crate::audit::Audit::journal_only()),
+    )
+    .await;
     let BundleState::Deactivated {
         generation,
         reasons,
@@ -585,7 +593,11 @@ async fn class_5_no_common_api_version() -> Fact {
         "{FACT_5}: every file-level check passes"
     );
 
-    let state = startup::discover(store.clone()).await;
+    let state = startup::discover(
+        store.clone(),
+        std::sync::Arc::new(crate::audit::Audit::journal_only()),
+    )
+    .await;
     let BundleState::Deactivated {
         generation,
         reasons,
@@ -730,7 +742,11 @@ async fn a_bundle_that_intersects_the_served_set_is_not_deactivated() {
     );
     let store = Store::new(bundle.path());
 
-    let state = startup::discover(store.clone()).await;
+    let state = startup::discover(
+        store.clone(),
+        std::sync::Arc::new(crate::audit::Audit::journal_only()),
+    )
+    .await;
     assert!(
         matches!(state, BundleState::Active { generation: 1, .. }),
         "a non-empty intersection is not a deactivation trigger, however \

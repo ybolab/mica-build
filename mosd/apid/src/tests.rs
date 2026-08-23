@@ -2416,3 +2416,199 @@ async fn the_escape_path_is_named_on_the_surfaces_that_lead_to_it() {
         "these built-in surfaces must link {ESCAPE}, and do not: {silent:?}"
     );
 }
+
+// ---------------------------------------------------------------------------
+// access.md §6: the audit trail and the persisted backoff counter, observed
+// through the router — the same surface an attacker and an operator use
+// ---------------------------------------------------------------------------
+
+/// The router with the guard counters and the audit ring persisted under
+/// `dir`, which is what production gets from `main.rs`.
+fn persistent_app(tree: serde_json::Value, dir: &Path) -> Router {
+    let fake = Arc::new(FakeSettings::new(tree));
+    app(AppState::new(fake, SIGNING_KEY).with_persistence(dir))
+}
+
+/// Every line of the audit log under `dir`, parsed, oldest first.
+fn audit_lines(dir: &Path) -> Vec<serde_json::Value> {
+    std::fs::read_to_string(dir.join("audit.log"))
+        .expect("the audit log exists")
+        .lines()
+        .map(|line| serde_json::from_str(line).expect("every audit line parses as JSON"))
+        .collect()
+}
+
+/// The `(event, outcome)` pairs of `lines`, for order-sensitive assertions.
+fn audit_events(lines: &[serde_json::Value]) -> Vec<(String, String)> {
+    lines
+        .iter()
+        .map(|line| {
+            (
+                line["event"].as_str().expect("event").to_string(),
+                line["outcome"].as_str().expect("outcome").to_string(),
+            )
+        })
+        .collect()
+}
+
+/// §6's login trail: success, logout, wrong password and the throttle all
+/// leave lines — and none of those lines carries password material, which is
+/// asserted against the raw bytes rather than the parsed fields so a secret
+/// hiding in an unexpected field would still fail the test.
+#[tokio::test]
+async fn the_audit_trail_records_the_login_lifecycle_and_never_the_password() {
+    let dir = TempDir::new().unwrap();
+    let router = persistent_app(configured_tree("hunter2secret"), dir.path());
+
+    let cookie = login(&router, "hunter2secret").await;
+    assert_eq!(
+        post_form(&router, "/logout", "", Some(&cookie))
+            .await
+            .status(),
+        StatusCode::SEE_OTHER
+    );
+    let wrong = post_form(&router, "/login", "password=not-the-password", None).await;
+    assert_eq!(wrong.status(), StatusCode::UNAUTHORIZED);
+    // The failure armed a one-second window; this attempt lands inside it.
+    let throttled = post_form(&router, "/login", "password=not-the-password", None).await;
+    assert_eq!(throttled.status(), StatusCode::TOO_MANY_REQUESTS);
+
+    let lines = audit_lines(dir.path());
+    assert_eq!(
+        audit_events(&lines),
+        [
+            ("login".to_string(), "success".to_string()),
+            ("logout".to_string(), "ok".to_string()),
+            ("login".to_string(), "wrong-password".to_string()),
+            ("login".to_string(), "throttled".to_string()),
+        ]
+    );
+    // `oneshot` drives the router with no connection, so the ConnectInfo
+    // extension is absent — and that must degrade to a marker, never to a
+    // rejected login (audit wiring must not be what makes a login fail).
+    for line in &lines {
+        assert_eq!(line["source"], "unknown");
+    }
+    let raw = std::fs::read_to_string(dir.path().join("audit.log")).unwrap();
+    for secret in [
+        "hunter2secret",
+        "not-the-password",
+        "password_hash",
+        "argon2",
+    ] {
+        assert!(
+            !raw.contains(secret),
+            "the audit log contains credential material: {secret}"
+        );
+    }
+}
+
+/// The other §6 events: setup completion, a transient root password, a power
+/// action, and the custom-UI escape. One session drives all four, and the
+/// transient password never reaches the file.
+#[tokio::test]
+async fn the_audit_trail_records_setup_transient_password_power_and_the_escape() {
+    let dir = TempDir::new().unwrap();
+    let bundles = TempDir::new().unwrap();
+    let fake = Arc::new(FakeSettings::new(unconfigured_tree()));
+    let router = app(AppState::new(fake, SIGNING_KEY)
+        .with_persistence(dir.path())
+        .with_bundle_root(bundles.path()));
+
+    let setup = post_form(
+        &router,
+        "/setup",
+        "password=first-boot-pw&confirm=first-boot-pw",
+        None,
+    )
+    .await;
+    assert_eq!(setup.status(), StatusCode::SEE_OTHER);
+    let cookie = session_cookie_value(&setup);
+
+    let transient = post_form(
+        &router,
+        "/ssh/password",
+        "password=one-session-pw&confirm=set-transient-password",
+        Some(&cookie),
+    )
+    .await;
+    assert_eq!(transient.status(), StatusCode::SEE_OTHER);
+    let reboot = post_form(&router, "/power/reboot", "confirm=reboot", Some(&cookie)).await;
+    assert_eq!(reboot.status(), StatusCode::ACCEPTED);
+    let escape = post_form(&router, "/builtin/deactivate", "", Some(&cookie)).await;
+    assert_eq!(escape.status(), StatusCode::OK);
+
+    let lines = audit_lines(dir.path());
+    assert_eq!(
+        audit_events(&lines),
+        [
+            ("setup".to_string(), "completed".to_string()),
+            ("transient-password".to_string(), "set".to_string()),
+            // Recorded BEFORE the D-Bus dispatch: for a power action the line
+            // written after the call is the line that may never hit the disk.
+            ("reboot".to_string(), "requested".to_string()),
+            // Nothing was active, and the trail says so rather than claiming
+            // a custom UI stopped being served.
+            ("custom-ui".to_string(), "no-op".to_string()),
+        ]
+    );
+    let raw = std::fs::read_to_string(dir.path().join("audit.log")).unwrap();
+    for secret in ["first-boot-pw", "one-session-pw"] {
+        assert!(
+            !raw.contains(secret),
+            "the audit log contains a password: {secret}"
+        );
+    }
+}
+
+/// §6's actual requirement, end to end: the armed window survives a daemon
+/// restart. A wrong password through the first router persists the counter;
+/// a second router built over the same STATE directory refuses the CORRECT
+/// password inside the armed window — the classic pull-the-power bypass,
+/// closed at the HTTP surface.
+///
+/// The deadline is widened in the file between the two halves, deliberately:
+/// a first failure arms only a one-second window, and a debug-build argon2
+/// verification alone can outlast that, so a test racing the real deadline
+/// is a test of the machine's load. Widening stands in for the longer window
+/// a longer failure run would have earned, and it keeps both halves honest —
+/// the write path is proven by reading back what the 401 persisted, the read
+/// path by the second router honouring what the file says.
+#[tokio::test]
+async fn the_backoff_window_survives_a_restart_at_the_http_surface() {
+    let dir = TempDir::new().unwrap();
+    // Hash once, share: each `configured_tree` call costs a full argon2 hash.
+    let tree = configured_tree("hunter2secret");
+
+    let before = persistent_app(tree.clone(), dir.path());
+    let wrong = post_form(&before, "/login", "password=not-the-password", None).await;
+    assert_eq!(wrong.status(), StatusCode::UNAUTHORIZED);
+    drop(before);
+
+    // The failure was persisted by the request itself, not by any shutdown
+    // hook — there is none to rely on when the power is pulled.
+    let path = dir.path().join("login_guard.json");
+    let mut persisted: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+    assert!(persisted["failures"].as_u64().unwrap() >= 1);
+    assert!(persisted["locked_until_unix"].as_u64().unwrap() > 0);
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_secs();
+    persisted["locked_until_unix"] = serde_json::json!(now + 60);
+    std::fs::write(&path, persisted.to_string()).unwrap();
+
+    let after = persistent_app(tree, dir.path());
+    let refused = post_form(&after, "/login", "password=hunter2secret", None).await;
+    assert_eq!(
+        refused.status(),
+        StatusCode::TOO_MANY_REQUESTS,
+        "a restart admitted an attempt the armed window had refused"
+    );
+    // And the refusal itself is on the trail.
+    assert_eq!(
+        audit_events(&audit_lines(dir.path())).last().unwrap(),
+        &("login".to_string(), "throttled".to_string())
+    );
+}

@@ -180,8 +180,8 @@ impl fmt::Display for BundleState {
 /// panic raised anywhere beneath it is delivered as a `JoinError` rather than
 /// unwinding `main`, so the "a bundle cannot stop apid from listening"
 /// property survives a bug in code this module only calls.
-pub async fn discover(store: Store) -> BundleState {
-    join(tokio::task::spawn_blocking(move || run(&store)).await)
+pub async fn discover(store: Store, audit: std::sync::Arc<crate::audit::Audit>) -> BundleState {
+    join(tokio::task::spawn_blocking(move || run(&store, &audit)).await)
 }
 
 /// Turn the blocking task's join result into a state. A `JoinError` here means
@@ -199,8 +199,8 @@ fn join(joined: Result<BundleState, tokio::task::JoinError>) -> BundleState {
 }
 
 /// The synchronous body, against the served set this binary actually serves.
-fn run(store: &Store) -> BundleState {
-    evaluate(store, SERVED_API_VERSIONS)
+fn run(store: &Store, audit: &crate::audit::Audit) -> BundleState {
+    evaluate(store, audit, SERVED_API_VERSIONS)
 }
 
 /// The body against an arbitrary served set.
@@ -209,23 +209,32 @@ fn run(store: &Store) -> BundleState {
 /// activated against one image's API and re-checked against the next image's —
 /// is reachable in a test. `run` is the only caller that chooses it, and it
 /// chooses [`SERVED_API_VERSIONS`].
-fn evaluate(store: &Store, served: &[&str]) -> BundleState {
-    pick_up_staged(store, served);
+fn evaluate(store: &Store, audit: &crate::audit::Audit, served: &[&str]) -> BundleState {
+    pick_up_staged(store, audit, served);
     recheck(store, served)
 }
 
 /// §8.2 phase 4's second local install path. Failure is logged and start-up
 /// continues: a staged tree that cannot be activated must not prevent the
 /// already-active one from being evaluated.
-fn pick_up_staged(store: &Store, served: &[&str]) {
+///
+/// A successful pick-up goes to the audit trail as well as the journal: it is
+/// the one path that changes which UI the appliance serves without any HTTP
+/// request, so access.md §6's "custom-UI activate" event is recorded here.
+/// The source is `local` — the trigger is a directory staged on the disk, not
+/// a network peer.
+fn pick_up_staged(store: &Store, audit: &crate::audit::Audit, served: &[&str]) {
     match store.pick_up_staged(served) {
         Ok(None) => {}
-        Ok(Some(activation)) => tracing::info!(
-            generation = activation.generation,
-            digest = %activation.digest,
-            compat = %describe(&activation.compat),
-            "picked up a staged UI bundle at start-up"
-        ),
+        Ok(Some(activation)) => {
+            tracing::info!(
+                generation = activation.generation,
+                digest = %activation.digest,
+                compat = %describe(&activation.compat),
+                "picked up a staged UI bundle at start-up"
+            );
+            audit.record("custom-ui", "activated", "local");
+        }
         Err(err) => tracing::warn!(
             error = %format!("{err:#}"),
             "a staged UI bundle could not be activated at start-up; nothing else changed"
@@ -372,6 +381,11 @@ mod tests {
         fresh()
     }
 
+    /// A journal-only audit sink, for the tests that drive `discover` itself.
+    fn journal_audit() -> Arc<crate::audit::Audit> {
+        Arc::new(crate::audit::Audit::journal_only())
+    }
+
     /// The same fixture under a second name, for the tests that need a second
     /// store while the first is still bound to `store`.
     fn fresh() -> (tempfile::TempDir, Store) {
@@ -505,7 +519,7 @@ mod tests {
         activate(&store, 1, &["v0"], &["v0"]);
         assert_eq!(active(&store), Some(1));
 
-        let (state, log) = capture(|| run(&store));
+        let (state, log) = capture(|| run(&store, &crate::audit::Audit::journal_only()));
         assert!(
             matches!(state, BundleState::Deactivated { generation: 1, .. }),
             "expected a deactivation, got {state}"
@@ -522,7 +536,10 @@ mod tests {
         let (_dir2, keeper) = fresh();
         activate(&keeper, 1, &["v1"], SERVED_API_VERSIONS);
         assert!(
-            matches!(run(&keeper), BundleState::Active { generation: 1, .. }),
+            matches!(
+                run(&keeper, &crate::audit::Audit::journal_only()),
+                BundleState::Active { generation: 1, .. }
+            ),
             "a bundle declaring the served member must stay active"
         );
         assert_eq!(active(&keeper), Some(1));
@@ -535,7 +552,8 @@ mod tests {
     fn an_intersecting_range_stays_active() {
         let (_dir, store) = store();
         activate(&store, 1, &["v1", "v2", "v3"], &DUAL);
-        let (state, log) = capture(|| evaluate(&store, &DUAL));
+        let (state, log) =
+            capture(|| evaluate(&store, &crate::audit::Audit::journal_only(), &DUAL));
 
         let BundleState::Active { generation, compat } = state else {
             panic!("expected the bundle to stay active, got {state}");
@@ -579,7 +597,7 @@ mod tests {
         let (_dir, store) = store();
         activate(&store, 1, &["v1"], &DUAL);
 
-        let state = evaluate(&store, &DUAL);
+        let state = evaluate(&store, &crate::audit::Audit::journal_only(), &DUAL);
         let BundleState::Active { generation, compat } = state else {
             panic!("a bundle matching the outgoing major must stay active, got {state}");
         };
@@ -621,7 +639,8 @@ mod tests {
         assert_eq!(active(&store), Some(1));
 
         // The A/B update: this slot serves v2 only.
-        let (state, log) = capture(|| evaluate(&store, &["v2"]));
+        let (state, log) =
+            capture(|| evaluate(&store, &crate::audit::Audit::journal_only(), &["v2"]));
 
         let BundleState::Deactivated {
             generation,
@@ -661,7 +680,7 @@ mod tests {
         stage(&store, 1);
         store.activate(1, SERVED_API_VERSIONS).expect("activate");
 
-        let (state, log) = capture(|| run(&store));
+        let (state, log) = capture(|| run(&store, &crate::audit::Audit::journal_only()));
         assert_eq!(
             state,
             BundleState::Active {
@@ -693,7 +712,7 @@ mod tests {
         activate(&store, 1, &["v1"], SERVED_API_VERSIONS);
         fs::write(store.bundle_dir(1).join("planted.js"), b"root shell").expect("plant a file");
 
-        let (state, log) = capture(|| run(&store));
+        let (state, log) = capture(|| run(&store, &crate::audit::Audit::journal_only()));
         let BundleState::Deactivated {
             generation,
             reasons,
@@ -724,7 +743,7 @@ mod tests {
         let (_dir, store) = store();
         assert!(!store.root().exists());
 
-        let (state, log) = capture(|| run(&store));
+        let (state, log) = capture(|| run(&store, &crate::audit::Audit::journal_only()));
         assert_eq!(state, BundleState::BuiltIn);
         names(
             &log,
@@ -752,7 +771,7 @@ mod tests {
         write_manifest(&staging, &["v1"]);
         assert_eq!(active(&store), None);
 
-        let (state, log) = capture(|| run(&store));
+        let (state, log) = capture(|| run(&store, &crate::audit::Audit::journal_only()));
         assert!(
             matches!(state, BundleState::Active { generation: 7, .. }),
             "the staged tree must become the active bundle, got {state}"
@@ -775,7 +794,7 @@ mod tests {
         // Staged generation 9 has no index.html -- §6.1 class 2, refused.
         fs::create_dir_all(store.staging_dir(9)).expect("create staging");
 
-        let (state, log) = capture(|| run(&store));
+        let (state, log) = capture(|| run(&store, &crate::audit::Audit::journal_only()));
         assert!(
             matches!(state, BundleState::Active { generation: 1, .. }),
             "the active bundle must be unaffected, got {state}"
@@ -913,7 +932,9 @@ mod tests {
         for (name, store) in &cases {
             // The panic hook is left in place on purpose: a failure here must
             // print where it panicked, not only that it did.
-            if let Ok(state) = std::panic::catch_unwind(AssertUnwindSafe(|| run(store))) {
+            if let Ok(state) = std::panic::catch_unwind(AssertUnwindSafe(|| {
+                run(store, &crate::audit::Audit::journal_only())
+            })) {
                 returned.insert(*name);
                 states.push((*name, state));
             }
@@ -966,7 +987,7 @@ mod tests {
     async fn discover_holds_the_state_for_a_real_store() {
         let (_dir, store) = store();
         activate(&store, 1, &["v1"], SERVED_API_VERSIONS);
-        let state = discover(store.clone()).await;
+        let state = discover(store.clone(), journal_audit()).await;
         assert!(
             matches!(state, BundleState::Active { generation: 1, .. }),
             "got {state}"
@@ -974,6 +995,6 @@ mod tests {
         assert!(!state.to_string().is_empty());
 
         let (_dir2, empty) = fresh();
-        assert_eq!(discover(empty).await, BundleState::BuiltIn);
+        assert_eq!(discover(empty, journal_audit()).await, BundleState::BuiltIn);
     }
 }

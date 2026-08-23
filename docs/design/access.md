@@ -38,8 +38,9 @@ document needs it for the same reason, and for one worse case: **dead code has a
 compiler, a test run and a grep-for-callers that can surface it; a security
 control that exists only as prose has no mechanism that will ever notice it is
 absent.** An undated design paragraph describing a control is not evidence the
-control exists. Two sections below — §5.2 and §6 — are exactly that, and are
-marked accordingly.
+control exists. One section below — §5.2 — is exactly that, and is marked
+accordingly; §6 was the other until RFCT-085 moved two of its four intents
+into code, and it now names which two per intent.
 
 Sections without a marker (§1, §7, §9's reasoning, §11) state principles,
 preferences or history rather than a mechanism.
@@ -381,7 +382,7 @@ no longer protects SSH; the effective defenses are default-off config, key-only
 persistent auth (§4.1), and — when they exist — META lockdown (§5.2) and audit
 (§6).
 
-## 6. Brute force & audit — **[partly implemented]** (RFCT-085)
+## 6. Brute force & audit — **[partial]** (RFCT-085)
 
 Four intents were stated here. Two now have code and tests; two do not, and
 saying which is which is the point of this section.
@@ -403,6 +404,13 @@ on a device whose META partition no daemon currently writes at runtime. What
 §6 actually asks for is that a power cycle not reset the clock, and STATE
 satisfies that: it survives reboot and A/B update alike.
 
+The directory is 0700 (`StateDirectoryMode=0700` in `mosd/dist/apid.service`;
+apid's own `ensure_state_dir` uses the same mode when it creates the path
+itself), every file in it is 0600, and the unit orders itself after the STATE
+mount with `RequiresMountsFor=/var/lib/mos` — counters written to a tmpfs
+standing in for an unmounted STATE would reset on the next power cycle, which
+is the exact bypass the persistence exists to close.
+
 The persisted form is an absolute deadline, so it is capped at `BACKOFF_MAX`
 **on load** — a clock that stepped backwards, or a bit-flipped file that still
 parses, must not arm a window the curve itself refuses to. Corruption and
@@ -419,9 +427,17 @@ events are immediately followed by the machine going down. A line never
 carries a password, a hash or any other credential material; callers pass
 fixed strings and a peer address.
 
-Audited today: login (`success`, `wrong-password`, `rate-limited`) and the two
-power actions (`requested`, `unconfirmed`), the latter recorded **before**
-dispatch for the same reason the sync exists.
+Audited today: login (`success`, `wrong-password`, `throttled`), logout,
+setup completion (the moment the device leaves setup mode), a transient root
+password being set (the event, never the password), the two power actions
+(`requested`, `unconfirmed` — recorded **before** dispatch for the same
+reason the sync exists), and the custom UI changing hands: `activated` when
+start-up picks up a staged bundle (source `local` — the trigger is a
+directory on disk, not a network peer) and `deactivated`/`no-op` from the
+§6.3 escape. The source address on request-driven events comes from axum's
+`ConnectInfo` (installed in `main.rs`); a missing connection degrades to
+`unknown` rather than to a failed request, so audit wiring can never be what
+makes a login fail.
 
 **[not implemented] A hard lockout (`lockoutThreshold`) releasable only with
 physical presence.** Not shipped, and not merely unfinished: the curve is

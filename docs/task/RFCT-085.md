@@ -1,6 +1,7 @@
 # RFCT-085 access.md §6 made real in apid: persistent backoff counters and a bounded audit trail
 
-- **status**: implementation complete — `cargo test -p apid` green (146 tests incl. 8 new persistence tests, mutation-checked); `docs/design/access.md` §6 rewritten per-intent
+- **status**: complete — finished across two sessions (56f2848 base + this finishing pass); apid 150/150
+- **completedAt**: 2026-08-23 05:22 — implementation done and gates green (`cargo fmt`, `clippy -p apid -D warnings`, `nextest -p apid` 150/150, `docs-verify`); on-device acceptance and campaign close outstanding
 - **priority**: P1
 - **owner**: ai-agent
 - **createdAt**: 2026-08-21 10:25
@@ -8,8 +9,6 @@
 
 Base `db57f2c` (RFCT-083 commit). One of the five roadmap workstreams the
 RFCT-083 audit named and deferred; scope and outcome recorded at completion.
-
-- **completedAt**: 2026-08-23 (finished by a later session; see below)
 
 ## How this was finished, and what was found
 
@@ -63,6 +62,55 @@ whose failure mode is a bricked appliance, and §9 records that there is no
 software path back in. The `no audit trail ⇒ no shell` claim is explicitly
 NOT taken. The META → STATE deviation is recorded where the original text
 said META.
+
+## The finishing pass (same day): the full event inventory, the source-address transport, and the trail proved through the router
+
+The wiring above audited logins and power actions. §6's inventory is longer,
+and three transport-level gaps meant the trail as first wired could never
+carry a real source address or a custom-UI event. All closed:
+
+**Every §6 event now has a recording site.** `logout` (only when a session was
+actually removed), `setup completed` (recorded the moment the
+`access.webAdmin` write succeeds — the instant the device leaves setup mode;
+the wizard's optional hostname/network writes are settings edits, not
+access-control events), `transient-password set` (the event, never the
+password), and the custom UI changing hands: `deactivated`/`no-op` from the
+§6.3 escape (distinct on purpose — the trail must say whether a custom UI
+actually stopped being served) and `activated` from start-up pick-up. That
+last one forced the audit sink through `startup::discover` →
+`pick_up_staged`, because a staged directory is the one path that changes
+which UI the appliance serves with no HTTP request at all; its source is
+`local`. The login-throttle outcome was renamed `rate-limited` → `throttled`
+in the same pass so code, tests and access.md all use one word.
+
+**`ConnectInfo` is installed.** The `Source` extractor existed but `main.rs`
+served with plain `into_make_service()`, so every production audit line would
+have read `unknown`. The HTTPS listener now serves
+`into_make_service_with_connect_info::<SocketAddr>()`; the `unknown` fallback
+remains for router-level tests driven by `oneshot`, and a test pins that the
+fallback degrades to a marker rather than a failed login.
+
+**The unit matches the chosen directory.** `mosd/dist/apid.service` gains
+`StateDirectoryMode=0700` (systemd's default is 0755, and apid's own
+`ensure_state_dir` only sets 0700 when it creates the path first), and the
+`RequiresMountsFor=/var/lib/mos` comment now names the counters and the
+ring: counters written to a tmpfs standing in for an unmounted STATE would
+reset on the next power cycle, the exact bypass §6 names.
+
+**Three router-level tests, because the unit tests prove the store and the
+ring but not that the handlers feed them.** (1) The login lifecycle —
+success, logout, wrong password, throttle — leaves exactly those four lines
+in order, every `source` is the documented fallback, and the raw file
+contains neither password, nor guess, nor hash material (asserted against
+bytes, not parsed fields). (2) Setup completion, a transient password, a
+reboot request and the §6.3 escape leave their four lines, and neither
+password reaches the file. (3) The armed window survives a "restart" at the
+HTTP surface: a second router over the same STATE directory answers 429 to
+the CORRECT password inside the window a failure earned before the restart —
+and the refusal itself is on the trail.
+
+Suite after the pass: `nextest -p apid` 150/150 (135 before this task; +8
+store, +3 audit-module, +1 persist, +3 router-level).
 
 ## Not claimed
 

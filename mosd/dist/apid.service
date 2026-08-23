@@ -2,8 +2,11 @@
 Description=mos API daemon (serves the web dashboard)
 After=network.target mosd.service
 Wants=mosd.service
-# StateDirectory below lives under /var/lib; apid persists its TLS material
-# there and must not start against an unmounted STATE.
+# StateDirectory below lives under /var/lib; apid persists its TLS material,
+# its login-backoff counters and its audit ring there (access.md §6) and must
+# not start against an unmounted STATE — counters written to a tmpfs standing
+# in for an unmounted STATE would reset on the next power cycle, which is the
+# exact bypass the persistence exists to close.
 RequiresMountsFor=/var/lib/mos
 
 [Service]
@@ -11,6 +14,12 @@ Type=simple
 ExecStart=/usr/bin/apid
 Restart=on-failure
 StateDirectory=mos/apid
+# 0700, not the systemd default 0755: the directory holds the TLS private
+# key, the session-cookie signing key, the login-backoff counters and the
+# audit trail. Every file inside is 0600; the directory matches. apid's own
+# ensure_state_dir creates it 0700 when it creates it at all — this makes the
+# systemd-created case agree.
+StateDirectoryMode=0700
 
 # Sandboxing for the network-facing daemon. apid stays root to bind 80/443
 # and to read its StateDirectory, but it execs nothing, needs no home, no
