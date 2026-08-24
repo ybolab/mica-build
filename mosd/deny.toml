@@ -11,6 +11,17 @@ allow = [
     "ISC",
     "Unicode-3.0",
     "Zlib",
+    # tiny-keccak 2.0.2, and only tiny-keccak. CC0-1.0 is a public-domain
+    # dedication rather than a licence with obligations, and it is reached
+    # here through a proc macro's build-time dependency, not through anything
+    # linked into a shipped binary:
+    #
+    #   rumqttd -> config -> rust-ini -> ordered-multimap -> dlv-list
+    #           -> const-random -> const-random-macro -> tiny-keccak
+    #
+    # `config` is a mandatory dependency of rumqttd, so no feature flag drops
+    # the chain; the alternative to allowing this is not using the broker.
+    "CC0-1.0",
 ]
 
 [bans]

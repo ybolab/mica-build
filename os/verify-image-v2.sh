@@ -705,13 +705,19 @@ check_mqttd() {
     mqttd_exec="$(sed -n '/^ExecStart=/,/[^\\]$/p' "${ROOT}${MQTTD_UNIT}" 2>/dev/null | tr -d '\\\n' || true)"
     mqttd_envfile="$(sed -n 's/^EnvironmentFile=//p' "${ROOT}${MQTTD_UNIT}" 2>/dev/null | tail -n1 || true)"
 
-    # Enabled. An installed-but-disabled bridge is indistinguishable from an
-    # absent one on the device, and the root is read-only so nobody can enable
-    # it there.
-    if [ -L "${ROOT}${MQTTD_WANTS}" ]; then
-        pass "mqttd: the bridge is enabled (${MQTTD_WANTS} -> $(readlink "${ROOT}${MQTTD_WANTS}"))"
+    # NOT enabled. mqtt.enabled is a master switch that seeds false for every
+    # profile, and mosd starts the bridge from it; an enablement symlink baked
+    # into the image is the one thing that switch cannot override.
+    #
+    # -L as well as -e, and not either alone: a wants symlink points at an
+    # ABSOLUTE path under /usr/lib, which resolves to nothing whenever ROOT is
+    # an unpacked tree rather than /. -e follows the link and would call a
+    # present-but-dangling symlink absent, passing this check on exactly the
+    # image that failed it.
+    if [ ! -e "${ROOT}${MQTTD_WANTS}" ] && [ ! -L "${ROOT}${MQTTD_WANTS}" ]; then
+        pass "mqttd: the bridge is NOT enabled in the image (${MQTTD_WANTS} absent); mosd starts it when mqtt.enabled becomes true and not before"
     else
-        fail "mqttd: ${MQTTD_WANTS} is not a symlink, so mos-mqttd never starts. The root filesystem is a read-only verity squashfs, so this cannot be fixed with systemctl enable on the device"
+        fail "mqttd: ${MQTTD_WANTS} exists, so the bridge starts at boot regardless of mqtt.enabled — publishing against a broker the same switch has not started, which is the 30s retry loop this work exists to end. The root filesystem is a read-only verity squashfs, so nobody can disable it on the device"
     fi
 
     # A STATIC identity. This is the one that silently breaks the grant.
@@ -815,6 +821,63 @@ EOF
         pass "mqttd: EnvironmentFile=${mqttd_envfile} sits under ${mqttd_envdir}, a bind mounted by $(basename "${mqttd_envmount}") (What=$(sed -n 's/^What=//p' "${mqttd_envmount}" | tail -n1)), so a broker configured on the device survives a reboot and an A/B update"
     else
         fail "mqttd: EnvironmentFile=${mqttd_envfile} sits under ${mqttd_envdir}, which no .mount unit in the image mounts. That path is inside the read-only verity squashfs, so the operator cannot write it and the broker stays whatever the image was built with"
+    fi
+}
+
+# --- RFCT-104: the MQTT broker, installed and INERT -------------------------
+# What this proves: mos-mqtt-broker is in the image, is startable at all (the
+# unit names a static account and that account exists), and is NOT enabled.
+# The last one is the point of the whole arrangement. mqtt.enabled is a master
+# switch that seeds false, and mosd starts BOTH this unit and the bridge from
+# it; a broker enabled in the image would be listening from early boot, before
+# anything had consulted the switch.
+#
+# THERE IS NO POLICY FILE IN THIS SET AND THAT IS NOT AN OMISSION. The broker
+# speaks no D-Bus at all: it reads one file mosd renders into /run and listens
+# on a TCP socket, so it has nothing to be granted and nothing to be denied.
+# The bridge is the half of the pair that talks to com.mos.mosd, and the
+# assertions above are where its grant is checked.
+BROKER_BIN="/usr/bin/mos-mqtt-broker"
+BROKER_UNIT="/usr/lib/systemd/system/mos-mqtt-broker.service"
+BROKER_WANTS="/etc/systemd/system/multi-user.target.wants/mos-mqtt-broker.service"
+
+check_mqtt_broker() {
+    for f in "${BROKER_BIN}" "${BROKER_UNIT}"; do
+        if [ -f "${ROOT}${f}" ] && [ ! -L "${ROOT}${f}" ]; then
+            pass "mqtt-broker: ${f} is a regular file"
+        else
+            fail "mqtt-broker: ${f} is missing or not a regular file, so mqtt.enabled has nothing to start. The bridge then publishes at a broker that is not in the image and retries forever, which is the noise this work exists to end"
+        fi
+    done
+
+    # "|| true": under set -euo pipefail a sed over a missing unit kills the
+    # script before the branch that exists to report the absence.
+    broker_user="$(sed -n 's/^User=//p' "${ROOT}${BROKER_UNIT}" 2>/dev/null | tail -n1 || true)"
+    broker_dynamic="$(sed -n 's/^DynamicUser=//p' "${ROOT}${BROKER_UNIT}" 2>/dev/null | tail -n1 || true)"
+
+    # NOT enabled. The unit carries [Install] information deliberately, and the
+    # image deliberately does not act on it.
+    if [ ! -e "${ROOT}${BROKER_WANTS}" ] && [ ! -L "${ROOT}${BROKER_WANTS}" ]; then
+        pass "mqtt-broker: the broker is NOT enabled in the image (${BROKER_WANTS} absent); mosd owns the lifecycle and starts it from mqtt.enabled"
+    else
+        fail "mqtt-broker: ${BROKER_WANTS} exists, so the broker listens from early boot on every device flashed with this image, before anything consulted mqtt.enabled — and mosd owns the lifecycle, so the switch it is meant to obey is the one thing that cannot turn it off. The root filesystem is a read-only verity squashfs, so systemctl disable has nowhere to write on the device"
+    fi
+
+    # A STATIC identity, for a different reason than the bridge's.
+    if [ -n "${broker_user}" ] && [ "${broker_dynamic:-no}" != "yes" ]; then
+        pass "mqtt-broker: the unit runs as the static user '${broker_user}', an identity a credentials file on STATE can be owned by"
+    else
+        fail "mqtt-broker: the unit sets User='${broker_user}' DynamicUser='${broker_dynamic}'. A dynamic uid is allocated at start and gone at stop, so /var/lib/mos/mqtt-broker-users.toml would be left owned by a number that names nobody on the next boot, and the only way to keep the credentials readable would be to make them readable by everyone"
+    fi
+
+    # ...and that identity has to EXIST in the image, or systemd refuses the
+    # unit and mqtt.enabled turns on a broker that never comes up.
+    if [ -n "${broker_user}" ] &&
+        awk -F: -v u="${broker_user}" '$1 == u {found = 1} END {exit !found}' \
+            "${ROOT}/etc/passwd" 2>/dev/null; then
+        pass "mqtt-broker: the account '${broker_user}' is present in the image ($(awk -F: -v u="${broker_user}" '$1 == u {print "uid " $3 ", gid " $4 ", shell " $7}' "${ROOT}/etc/passwd"))"
+    else
+        fail "mqtt-broker: the unit runs as '${broker_user}' and no account of that name is in ${ROOT}/etc/passwd. systemd refuses to start the unit, so turning mqtt.enabled on brings up a bridge and no broker, and the failure is at boot on the device"
     fi
 }
 
@@ -1185,6 +1248,7 @@ if [ -n "${FIXTURE_ROOT}" ]; then
     check_ext_unit_dir
     check_ext_policy
     check_mqttd
+    check_mqtt_broker
     read_connd_contract
     check_networkd_namespace
     check_no_package_manager
@@ -2754,6 +2818,10 @@ check_container_engine
 # os/ui-location-test.sh can watch each of its assertions fail without an
 # image; this is the call that runs them against the real one.
 check_mqttd
+
+# --- RFCT-104: the MQTT broker, installed and inert --------------------------
+# Same arrangement, same reason.
+check_mqtt_broker
 
 # --- M5: /etc/shadow lives on STATE (per-device password) ---
 # access.md phase 1 gives every device its own root password, and the only file

@@ -1,4 +1,4 @@
-//! Typed settings tree (schema v5) and its dot-path accessors.
+//! Typed settings tree (schema v6) and its dot-path accessors.
 
 use std::collections::BTreeMap;
 
@@ -8,9 +8,9 @@ use crate::error::SettingsError;
 use crate::path::{json_path_get, json_path_set, split_path};
 
 /// Current settings schema version written by this crate.
-pub const SCHEMA_VERSION: u32 = 5;
+pub const SCHEMA_VERSION: u32 = 6;
 
-/// Persistent mosd settings tree (schema v5).
+/// Persistent mosd settings tree (schema v6).
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Settings {
@@ -32,6 +32,9 @@ pub struct Settings {
     /// Container engine policy.
     #[serde(default)]
     pub container: ContainerSettings,
+    /// MQTT broker and bridge policy.
+    #[serde(default)]
+    pub mqtt: MqttSettings,
 }
 
 impl Default for Settings {
@@ -44,6 +47,7 @@ impl Default for Settings {
             provisioning: ProvisioningSettings::default(),
             wifi: WifiSettings::default(),
             container: ContainerSettings::default(),
+            mqtt: MqttSettings::default(),
         }
     }
 }
@@ -71,6 +75,79 @@ impl Default for Settings {
 pub struct ContainerSettings {
     /// Whether the Quadlet directory is bound from STATE and container units
     /// may run.
+    pub enabled: bool,
+}
+
+/// MQTT policy: the master switch for the broker and the bridge, and the
+/// listener and credential policy the broker is rendered from.
+///
+/// **`enabled` is a master switch and nothing else.** False means neither the
+/// broker nor the bridge runs: no `mos-mqtt-broker.service`, no
+/// `mos-mqttd.service`. It validates nothing, and it depends on nothing below
+/// it -- there is no combination of `listen` and `auth` that makes the switch
+/// mean something other than "run both" or "run neither".
+///
+/// **`listen` and `auth` are a separate configuration, deliberately NOT
+/// coupled to the switch.** No code may refuse to start on a listen/auth
+/// combination. A broker bound off-host with `auth.enabled = false` is worth a
+/// loud WARN in the journal and is not worth a gate: an operator who widened
+/// the bind made a decision, and a daemon that answers it by quietly not
+/// starting is a daemon whose reason for being down cannot be read anywhere.
+///
+/// The default is false because of what the fleet actually looks like: no
+/// shipped device has a broker, so the bridge has never once connected -- it
+/// has only ever retried. Defaulting to true would ship that retry loop under
+/// a new name. Defaulting to false makes turning MQTT on the operator action
+/// it has always been in practice, at the cost -- accepted deliberately -- of
+/// fielded devices dropping the bridge until the switch is set.
+#[derive(Debug, Clone, PartialEq, Default, serde::Serialize, serde::Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct MqttSettings {
+    /// Whether the broker and the bridge run at all.
+    pub enabled: bool,
+    /// Where the broker listens.
+    pub listen: MqttListenSettings,
+    /// Whether the broker demands credentials.
+    pub auth: MqttAuthSettings,
+}
+
+/// Where the broker listens.
+///
+/// Loopback and the MQTT default port: the bridge is an on-device client, so
+/// the reachable-by-default listener a wider bind would create is one nobody
+/// asked for. Widening it is a deliberate operator edit, and -- see
+/// [`MqttSettings`] -- nothing refuses to start because of what is here.
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct MqttListenSettings {
+    /// Address the broker binds.
+    pub address: String,
+    /// TCP port the broker listens on.
+    pub port: u16,
+}
+
+impl Default for MqttListenSettings {
+    fn default() -> Self {
+        Self {
+            address: "127.0.0.1".to_string(),
+            port: 1883,
+        }
+    }
+}
+
+/// Whether the broker demands credentials from a connecting client.
+///
+/// **There is no username and no password here, and that absence is the
+/// point.** mosd publishes the settings tree over `com.mos.Item1`, so a
+/// credential in this struct would be a credential published to every client
+/// that can call `GetItems`. The broker reads its accounts from
+/// `/var/lib/mos/mqtt-broker-users.toml` on STATE instead, which is how the
+/// device password is already handled: the tree carries the policy, the STATE
+/// file carries the secret.
+#[derive(Debug, Clone, PartialEq, Default, serde::Serialize, serde::Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct MqttAuthSettings {
+    /// Whether a client must authenticate to connect.
     pub enabled: bool,
 }
 
@@ -430,6 +507,26 @@ mod tests {
         assert_eq!(parsed.access.device, DeviceCredentialSettings::default());
         assert_eq!(parsed.provisioning, ProvisioningSettings::default());
         assert_eq!(parsed.wifi, WifiSettings::default());
+        assert_eq!(parsed.container, ContainerSettings::default());
+        assert_eq!(parsed.mqtt, MqttSettings::default());
+    }
+
+    /// The MQTT defaults, spelled out: off, loopback, and no auth. The switch
+    /// is what an operator turns on; the listener is what the broker is
+    /// rendered from, and neither constrains the other.
+    #[test]
+    fn mqtt_defaults_are_off_and_loopback() {
+        let settings = Settings::default();
+        assert!(!settings.mqtt.enabled);
+        assert_eq!(settings.mqtt.listen.address, "127.0.0.1");
+        assert_eq!(settings.mqtt.listen.port, 1883);
+        assert!(!settings.mqtt.auth.enabled);
+
+        // No credential field exists in the subtree to be published over
+        // `com.mos.Item1`; the broker's accounts live in a STATE file instead.
+        let mqtt = toml::to_string(&settings.mqtt).unwrap();
+        assert!(!mqtt.contains("password"), "{mqtt}");
+        assert!(!mqtt.contains("username"), "{mqtt}");
     }
 
     #[test]

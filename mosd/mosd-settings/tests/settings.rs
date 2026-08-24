@@ -7,10 +7,10 @@ use serde_json::json;
 use mosd_settings::{
     AccessSettings, ApMode, AuthorizedKey, ConsoleSettings, ContainerSettings, DEFAULT_PATH,
     DeviceCredentialSettings, IfaceSettings, MigrateV0ToV1, MigrateV3ToV4, Migration,
-    MigrationRegistry, ProvisioningSettings, ProvisioningState, SCHEMA_VERSION, Settings,
-    SettingsError, SshSettings, StaticConfig, Store, WebAdminSettings, WifiApSettings,
-    WifiClientSettings, WifiNetwork, WifiSettings, encode_base64_nopad, json_path_get, migrate,
-    parse_authorized_key, validate_authorized_keys,
+    MigrationRegistry, MqttAuthSettings, MqttListenSettings, MqttSettings, ProvisioningSettings,
+    ProvisioningState, SCHEMA_VERSION, Settings, SettingsError, SshSettings, StaticConfig, Store,
+    WebAdminSettings, WifiApSettings, WifiClientSettings, WifiNetwork, WifiSettings,
+    encode_base64_nopad, json_path_get, migrate, parse_authorized_key, validate_authorized_keys,
 };
 
 fn populated() -> Settings {
@@ -47,7 +47,10 @@ fn save_load_roundtrip_with_network() {
 
     let text = fs::read_to_string(dir.path().join("settings.toml")).unwrap();
     let doc: toml::Table = text.parse().unwrap();
-    assert_eq!(doc.get("schema_version"), Some(&toml::Value::Integer(5)));
+    assert_eq!(
+        doc.get("schema_version"),
+        Some(&toml::Value::Integer(i64::from(SCHEMA_VERSION)))
+    );
 
     assert_eq!(store.load().unwrap(), settings);
 }
@@ -442,6 +445,17 @@ fn v3_populated() -> Settings {
         // `container` table; a fixture carrying `false` would round-trip
         // identically whether or not the migration dropped anything.
         container: ContainerSettings { enabled: true },
+        // Non-default for the same reason `container` is: MigrateV5ToV6::down
+        // discards the whole `mqtt` table, and a fixture holding the defaults
+        // would round-trip identically whether or not it was dropped.
+        mqtt: MqttSettings {
+            enabled: true,
+            listen: MqttListenSettings {
+                address: "0.0.0.0".to_string(),
+                port: 8883,
+            },
+            auth: MqttAuthSettings { enabled: true },
+        },
     }
 }
 
@@ -456,8 +470,7 @@ fn real_v2_document_survives_the_upgrade_to_v3() {
     let settings = Store::new(&path).load().unwrap();
 
     // Everything v2 could express is byte-identical to what went in.
-    assert_eq!(settings.schema_version, 5);
-    assert_eq!(SCHEMA_VERSION, 5);
+    assert_eq!(settings.schema_version, SCHEMA_VERSION);
     assert_eq!(settings.hostname, "edge-42");
     assert_eq!(
         settings.network["eth0"],
@@ -739,7 +752,7 @@ fn v0_and_v1_documents_walk_all_the_way_to_v3() {
     let from_v1 = Store::new(&v1).load().unwrap();
 
     for settings in [&from_v0, &from_v1] {
-        assert_eq!(settings.schema_version, 5);
+        assert_eq!(settings.schema_version, SCHEMA_VERSION);
         assert_eq!(settings.hostname, "legacy");
         assert!(settings.network.is_empty());
         assert_eq!(settings.access, AccessSettings::default());
@@ -798,14 +811,16 @@ const V3_DOCUMENT: &str = concat!(
 
 /// R1: a freshly built tree carries the key, and it is empty.
 #[test]
-fn default_settings_serialise_an_empty_authorized_key_list_at_schema_five() {
-    assert_eq!(SCHEMA_VERSION, 5);
+fn default_settings_serialise_an_empty_authorized_key_list_at_the_current_schema() {
     let settings = Settings::default();
     assert!(settings.access.ssh.authorized_keys.is_empty());
 
     let text = toml::to_string(&settings).unwrap();
     let doc: toml::Table = text.parse().unwrap();
-    assert_eq!(doc["schema_version"], toml::Value::Integer(5));
+    assert_eq!(
+        doc["schema_version"],
+        toml::Value::Integer(i64::from(SCHEMA_VERSION))
+    );
     assert_eq!(
         doc["access"]["ssh"]["authorizedKeys"],
         toml::Value::Array(Vec::new()),
@@ -1072,23 +1087,26 @@ fn v3_to_v4_handles_a_document_with_no_access_table() {
 /// R2: the whole chain still walks, in both directions, with the new step on
 /// the end.
 #[test]
-fn the_full_chain_walks_from_v0_to_v5_and_back_to_v0() {
+fn the_full_chain_walks_from_v0_to_the_current_schema_and_back_to_v0() {
     let mut doc: toml::Table = "hostname = \"legacy\"".parse().unwrap();
     let original = doc.clone();
 
-    migrate(&mut doc, 0, 5).unwrap();
-    assert_eq!(doc["schema_version"], toml::Value::Integer(5));
+    migrate(&mut doc, 0, SCHEMA_VERSION).unwrap();
+    assert_eq!(
+        doc["schema_version"],
+        toml::Value::Integer(i64::from(SCHEMA_VERSION))
+    );
     assert_eq!(
         doc["access"]["ssh"]["authorizedKeys"],
         toml::Value::Array(Vec::new())
     );
     // The walked document deserializes into a current tree.
     let settings: Settings = toml::from_str(&toml::to_string(&doc).unwrap()).unwrap();
-    assert_eq!(settings.schema_version, 5);
+    assert_eq!(settings.schema_version, SCHEMA_VERSION);
     assert_eq!(settings.hostname, "legacy");
     assert_eq!(settings.access.ssh, SshSettings::default());
 
-    migrate(&mut doc, 5, 0).unwrap();
+    migrate(&mut doc, SCHEMA_VERSION, 0).unwrap();
     assert_eq!(doc, original, "the walk down must undo the walk up");
 }
 
@@ -1100,7 +1118,7 @@ fn store_load_migrates_a_v3_file_to_v4() {
     fs::write(&path, V3_DOCUMENT).unwrap();
 
     let settings = Store::new(&path).load().unwrap();
-    assert_eq!(settings.schema_version, 5);
+    assert_eq!(settings.schema_version, SCHEMA_VERSION);
     assert!(settings.access.ssh.authorized_keys.is_empty());
     // Every v3 value survives.
     assert!(settings.access.ssh.enabled);
@@ -1147,15 +1165,18 @@ fn the_public_parser_accepts_a_real_key_and_refuses_an_options_line() {
 // semantics are the ones docs/design/mosd.md §5.2 already prices: keys the
 // newer schema added are dropped; a reshaped document costs every setting.
 
-/// A plausible v5 document: today's v4 tree plus a key v4 does not know
-/// (§3.2's proposed `access.apiTokens`) and the bumped version stamp.
+/// Today's tree plus a key this schema does not know (§3.2's proposed
+/// `access.apiTokens`) and a version stamp one ahead of ours.
+///
 /// A document from a build one schema AHEAD of this one -- the A/B rollback
-/// path. Its version tracks SCHEMA_VERSION + 1 and had to move from 5 to 6
-/// when the container switch landed: at 5 it stopped being "newer", the strip
-/// path stopped running, and the test would have gone on passing while
-/// asserting nothing about rollback.
-fn v6_additive_document() -> String {
-    r#"schema_version = 6
+/// path. Its version tracks SCHEMA_VERSION + 1 and has had to move twice, to 6
+/// when the container switch landed and to 7 for the mqtt switch: left behind,
+/// it stops being "newer", the strip path stops running, and the test goes on
+/// passing while asserting nothing about rollback. Hence the assertion below
+/// that the stamp really is ahead of us.
+fn newer_additive_document() -> String {
+    assert_eq!(SCHEMA_VERSION + 1, 7, "the fixture stamp must stay ahead");
+    r#"schema_version = 7
 hostname = "rolled-back"
 
 [network.eth0]
@@ -1175,7 +1196,7 @@ hash = "sha256:beef"
 fn newer_additive_document_loads_with_unknown_keys_dropped() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("settings.toml");
-    fs::write(&path, v6_additive_document()).unwrap();
+    fs::write(&path, newer_additive_document()).unwrap();
 
     let (settings, report) = Store::new(&path).load_with_report().unwrap();
 
@@ -1247,7 +1268,7 @@ fn newer_document_never_errors_but_current_and_older_semantics_are_unchanged() {
 fn tolerated_document_saves_back_at_this_schema_version() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("settings.toml");
-    fs::write(&path, v6_additive_document()).unwrap();
+    fs::write(&path, newer_additive_document()).unwrap();
 
     let store = Store::new(&path);
     let (settings, report) = store.load_with_report().unwrap();
@@ -1273,7 +1294,7 @@ fn stripping_is_recursive_and_drops_same_named_keys_everywhere() {
     // both go, and the report records the name once per strip pass.
     fs::write(
         &path,
-        r#"schema_version = 6
+        r#"schema_version = 7
 hostname = "h"
 extra = "top"
 
