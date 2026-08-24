@@ -146,18 +146,54 @@ impl<C: UnitControl> ContainerReconciler<C> {
     }
 
     /// Bring the bind up and re-run generators so Quadlet sees STATE.
-    async fn turn_on(&self) -> Result<()> {
+    // Each step logs before it runs, not after. A reconciler that blocks leaves
+    // no evidence otherwise: mosd is Type=dbus and runs apply_all BEFORE it
+    // acquires its bus name, so a hang here shows up as a unit stuck in
+    // "activating" with nothing in the journal naming the step it stopped at.
+    async fn turn_on(&self) -> Result<Vec<String>> {
+        tracing::info!("container: turn_on begin");
+        tracing::info!("container: reading unit_file_state");
         if !is_enabled(&self.control.unit_file_state(QUADLET_MOUNT_UNIT).await?) {
             self.control.enable(QUADLET_MOUNT_UNIT).await?;
         }
+        tracing::info!("container: reading active_state");
         if !is_active(&self.control.active_state(QUADLET_MOUNT_UNIT).await?) {
+            tracing::info!("container: starting the bind");
             self.control.start(QUADLET_MOUNT_UNIT).await?;
         }
         // After the mount, never before: a generator run with the directory
         // still unmounted parses the image's empty one and produces nothing,
         // and every step would have succeeded.
+        tracing::info!("container: requesting daemon-reload");
         self.control.daemon_reload().await?;
-        Ok(())
+        tracing::info!("container: daemon-reload returned");
+
+        // AND THEN START THEM, which is the step whose absence made the switch
+        // do nothing at all.
+        //
+        // A daemon-reload re-runs Quadlet, which writes the unit AND -- when
+        // the .container file has an [Install] section -- the .wants symlink
+        // that says it should be running. systemd does not act on a symlink
+        // that appeared during a reload: it starts wanted units when the
+        // target is started, and multi-user.target was reached long before
+        // mosd ran. So the units existed, were marked as wanted, and sat
+        // inactive. Measured in QEMU: the bind mounted, the reconciler
+        // reported success, and no container ever ran.
+        //
+        // This is not orchestration (PLAN-012 D4). The integrator wrote
+        // `WantedBy=`, Quadlet already acted on it; mos is making an
+        // instruction that was given take effect, not deciding anything about
+        // what should run or in what order.
+        let mut started = Vec::new();
+        let generated = self.generated_units();
+        tracing::info!(count = generated.len(), units = ?generated, "container: units Quadlet generated");
+        for unit in generated {
+            if !is_active(&self.control.active_state(&unit).await?) {
+                self.control.start(&unit).await?;
+                started.push(unit);
+            }
+        }
+        Ok(started)
     }
 
     /// Stop what is running, then take the bind down.
@@ -213,11 +249,10 @@ impl<C: UnitControl> Reconciler for ContainerReconciler<C> {
 
     async fn apply(&self, settings: &Settings) -> Result<serde_json::Value> {
         let enabled = settings.container.enabled;
-        let stopped = if enabled {
-            self.turn_on().await?;
-            Vec::new()
+        let (started, stopped) = if enabled {
+            (self.turn_on().await?, Vec::new())
         } else {
-            self.turn_off().await?
+            (Vec::new(), self.turn_off().await?)
         };
 
         // Read AFTER the transition, so what is published is what the system
@@ -239,6 +274,10 @@ impl<C: UnitControl> Reconciler for ContainerReconciler<C> {
             // reported only when the bind is up.
             "quadletFiles": if enabled { files } else { Vec::new() },
             "generatedUnits": units,
+            // Distinguishes "the switch is on and units exist" from "the switch
+            // is on and something is actually running". They were the same
+            // value while nothing was ever started.
+            "startedUnits": started,
             "stoppedUnits": stopped,
         }))
     }

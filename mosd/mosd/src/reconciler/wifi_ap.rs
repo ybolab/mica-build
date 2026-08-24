@@ -533,40 +533,11 @@ fn derived_ssid(device_id: &str) -> String {
 /// must never exist at the target path with a umask-derived mode, not even for
 /// an instant.
 fn write_atomically(path: &Path, contents: &str, mode: u32) -> Result<()> {
-    use std::io::Write;
-    use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
-
-    let directory = path
-        .parent()
-        .ok_or_else(|| anyhow!("{} has no parent directory", path.display()))?;
-    let file_name = path
-        .file_name()
-        .and_then(std::ffi::OsStr::to_str)
-        .ok_or_else(|| anyhow!("{} has no file name", path.display()))?;
-    let temp = directory.join(format!(".{file_name}.mosd-tmp"));
-
-    let mut file = std::fs::OpenOptions::new()
-        .write(true)
-        .create(true)
-        .truncate(true)
-        .mode(mode)
-        .open(&temp)
-        .with_context(|| format!("create {}", temp.display()))?;
-    file.write_all(contents.as_bytes())
-        .with_context(|| format!("write {}", temp.display()))?;
-    file.sync_all()
-        .with_context(|| format!("flush {}", temp.display()))?;
-    drop(file);
-
-    // The mode above only takes effect when the temporary file is created, and
-    // is masked by the umask even then; a leftover from an interrupted run
-    // would keep its old mode. Both are fixed here, still before the rename.
-    std::fs::set_permissions(&temp, std::fs::Permissions::from_mode(mode))
-        .with_context(|| format!("set mode on {}", temp.display()))?;
-
-    std::fs::rename(&temp, path)
-        .with_context(|| format!("rename {} to {}", temp.display(), path.display()))?;
-    Ok(())
+    // One implementation, in crate::fswrite. This was a second copy of the
+    // temp-and-rename dance; transient.rs had a third. They agreed, which is
+    // the reason the duplication survived -- and the hostname reconciler then
+    // needed a FOURTH variant, for a path where rename cannot work at all.
+    crate::fswrite::write_config(path, contents, mode)
 }
 
 impl<C: UnitControl, R: NetworkReload> WifiApReconciler<C, R> {

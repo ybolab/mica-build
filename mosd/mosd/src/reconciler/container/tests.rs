@@ -169,3 +169,56 @@ async fn enabling_twice_does_not_re_enable_an_already_enabled_mount() {
         "the reload is NOT conditional on the mount having changed: mosd reconciles on every start, and a .container file added while the bind was already up becomes a unit only when generators re-run: {calls:?}"
     );
 }
+
+#[tokio::test]
+async fn enabling_starts_the_units_quadlet_generated() {
+    // THE GAP THIS TEST EXISTS FOR. A daemon-reload makes Quadlet write the
+    // unit and its .wants symlink; systemd does not start units that become
+    // wanted during a reload, because the target that wants them was reached
+    // long before. Without an explicit start the switch turns on an engine
+    // that runs nothing, and every unit-level observation says it worked.
+    let (_tmp, quadlet, generator) = dirs();
+    write_generated(&generator, "probe.service");
+    let control = MockUnitControl::new("inactive", "disabled");
+    let r = ContainerReconciler::new(quadlet, generator, control);
+
+    let state = r.apply(&settings(true)).await.expect("apply");
+
+    let calls = r.control.calls();
+    let reload_at = calls
+        .iter()
+        .position(|c| c == "daemon-reload -")
+        .expect("generators are re-run");
+    let start_at = calls
+        .iter()
+        .position(|c| c == "start probe.service")
+        .expect("the generated unit is started");
+    assert!(
+        reload_at < start_at,
+        "the unit was started before the reload that generates it: {calls:?}"
+    );
+    assert_eq!(
+        state["startedUnits"],
+        serde_json::json!(["probe.service"]),
+        "what was started has to be reportable, or 'the switch is on' and 'something is running' are indistinguishable"
+    );
+}
+
+#[tokio::test]
+async fn an_already_running_container_is_not_restarted() {
+    let (_tmp, quadlet, generator) = dirs();
+    write_generated(&generator, "probe.service");
+    let control = MockUnitControl::new("inactive", "disabled");
+    control.set_active_state("probe.service", "active");
+    control.set_active_state(QUADLET_MOUNT_UNIT, "active");
+    control.set_unit_file_state(QUADLET_MOUNT_UNIT, "enabled-runtime");
+    let r = ContainerReconciler::new(quadlet, generator, control);
+
+    r.apply(&settings(true)).await.expect("apply");
+
+    let calls = r.control.calls();
+    assert!(
+        !calls.iter().any(|c| c == "start probe.service"),
+        "a running container was started again, which for a Restart=always unit is a needless outage: {calls:?}"
+    );
+}

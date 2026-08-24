@@ -241,50 +241,12 @@ pub(crate) fn write_atomically(
     mode: u32,
     owner: Option<(u32, u32)>,
 ) -> Result<()> {
-    use std::io::Write;
-    use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
-
-    let directory = path
-        .parent()
-        .ok_or_else(|| anyhow!("{} has no parent directory", path.display()))?;
-    let file_name = path
-        .file_name()
-        .and_then(std::ffi::OsStr::to_str)
-        .ok_or_else(|| anyhow!("{} has no file name", path.display()))?;
-    let temp = directory.join(format!(".{file_name}.mosd-tmp"));
-
-    let mut file = std::fs::OpenOptions::new()
-        .write(true)
-        .create(true)
-        .truncate(true)
-        .mode(mode)
-        .open(&temp)
-        .with_context(|| format!("create {}", temp.display()))?;
-    file.write_all(contents.as_bytes())
-        .with_context(|| format!("write {}", temp.display()))?;
-    file.sync_all()
-        .with_context(|| format!("flush {}", temp.display()))?;
-    drop(file);
-
-    // The mode above only takes effect when the temporary file is created; a
-    // leftover from an interrupted run would keep its old mode.
-    std::fs::set_permissions(&temp, std::fs::Permissions::from_mode(mode))
-        .with_context(|| format!("set mode on {}", temp.display()))?;
-    if let Some((uid, gid)) = owner {
-        std::os::unix::fs::chown(&temp, Some(uid), Some(gid))
-            .with_context(|| format!("set owner on {}", temp.display()))?;
-    }
-
-    std::fs::rename(&temp, path)
-        .with_context(|| format!("rename {} to {}", temp.display(), path.display()))?;
-    // The rename is durable only once its directory entry is. Without this a
-    // power cut can persist one of the marker/shadow pair's renames and drop
-    // the other, undoing the marker-first ordering
-    // `set_transient_root_password` depends on.
-    std::fs::File::open(directory)
-        .and_then(|dir| dir.sync_all())
-        .with_context(|| format!("flush {}", directory.display()))?;
-    Ok(())
+    // One implementation, in crate::fswrite. This was the third copy of the
+    // temp-and-rename dance in mosd; the AP reconciler had another and the
+    // hostname reconciler needed a variant where rename cannot work at all.
+    // They differed only in this one taking an owner -- which is exactly why
+    // three copies were easy to keep: they looked the same.
+    crate::fswrite::write_config_owned(path, contents, mode, owner)
 }
 
 #[cfg(test)]

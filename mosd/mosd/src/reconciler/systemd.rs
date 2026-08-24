@@ -350,27 +350,29 @@ pub mod mock {
             // The transition lands on the per-unit entry as well, so a second
             // apply sees what the first left behind for THAT unit rather than
             // for whichever unit was touched last.
+            // PER-UNIT ONLY. An earlier version also moved the shared
+            // `active`/`file` defaults, so starting ONE unit made every unit
+            // the test had not named read back as active -- and a reconciler
+            // that then skipped starting a container looked correct. The
+            // constructor's pair stays what it is: the answer for units
+            // nothing has touched.
             match verb {
                 "start" | "restart" => {
-                    state.active = "active".to_string();
                     state
                         .active_by_unit
                         .insert(unit.to_string(), "active".to_string());
                 }
                 "stop" => {
-                    state.active = "inactive".to_string();
                     state
                         .active_by_unit
                         .insert(unit.to_string(), "inactive".to_string());
                 }
                 "enable" => {
-                    state.file = "enabled-runtime".to_string();
                     state
                         .file_by_unit
                         .insert(unit.to_string(), "enabled-runtime".to_string());
                 }
                 "disable" => {
-                    state.file = "disabled".to_string();
                     state
                         .file_by_unit
                         .insert(unit.to_string(), "disabled".to_string());

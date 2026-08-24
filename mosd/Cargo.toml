@@ -27,7 +27,12 @@ async-trait = "0.1"
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "process"] }
 zbus = { version = "5", default-features = false, features = ["tokio"] }
 tracing = "0.1"
-tracing-subscriber = "0.3"
+# env-filter, so RUST_LOG still works. It pulls in regex (~1 MB in the
+# binary), and that is the right trade on a device with no shell and no
+# package manager: the journal is the only way to see what mosd did, and a
+# fixed compile-time level means a field problem cannot be looked at more
+# closely without a new image.
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 tempfile = "3"
 chrono = { version = "0.4", default-features = false, features = ["clock", "serde", "std"] }
 clap = { version = "4", features = ["derive"] }

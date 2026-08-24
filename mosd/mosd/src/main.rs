@@ -39,6 +39,7 @@ mod identity;
 mod power;
 mod provisioning;
 mod rauc;
+mod fswrite;
 mod reconciler;
 mod scan;
 mod transient;
@@ -54,7 +55,21 @@ use tokio::signal::unix::{SignalKind, signal};
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    tracing_subscriber::fmt::init();
+    // INFO by default, not ERROR.
+    //
+    // `tracing_subscriber::fmt::init()` reads RUST_LOG and falls back to ERROR
+    // when it is unset, which on a device means mosd records what FAILED and
+    // never what it did. Every reconciler apply, every settings write and every
+    // unit it drives were invisible; a QEMU boot investigating why a container
+    // never started had a daemon that had been silent for the whole run.
+    //
+    // RUST_LOG still wins, so a noisy debug session is one variable away.
+    tracing_subscriber::fmt()
+        .with_env_filter(
+            tracing_subscriber::EnvFilter::try_from_default_env()
+                .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("info")),
+        )
+        .init();
 
     let settings_path = std::env::var("MOSD_SETTINGS_PATH")
         .unwrap_or_else(|_| mosd_settings::DEFAULT_PATH.to_string());
