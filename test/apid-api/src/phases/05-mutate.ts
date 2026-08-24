@@ -628,55 +628,77 @@ async function networkNoOp(ctx: PhaseContext, log: ConsoleLog): Promise<void> {
     return;
   }
 
-  const iface = readIface(pane.body);
-  const dhcp = checkboxChecked(pane.body, "dhcp");
+  // Read ONE form, not the pane. The /network pane renders a form PER
+  // CONFIGURED INTERFACE and then an "Add interface" fieldset, all carrying
+  // fields with the same names. Reading `iface` pane-wide and `dhcp` pane-wide
+  // would take the two from different forms and post a body no browser would
+  // ever have submitted -- which, on this route, means posting one interface's
+  // name with another one's addressing.
+  const forms = interfaceForms(pane.body);
   report.check(
-    iface !== undefined,
+    forms.length > 0,
     "GET /network names the interface it is currently configuring",
     [
-      `expected: a select or input named "iface" carrying the current interface`,
-      `actual:   none found`,
+      `expected: a form carrying an iface value and a dhcp checkbox`,
+      `actual:   ${forms.length} such form(s) found in a ${pane.body.length}-byte pane`,
       describePane(pane.body, "iface"),
     ].join("\n"),
   );
-  if (iface === undefined) {
+  if (forms.length === 0) {
     // Guessing an interface name here would post a configuration for an
     // interface the device may not have -- or worse, for one it does. Not
     // guessing is the whole point of the prohibition above.
     report.skip(
       "the /network round trip leaves the link up",
-      "the pane did not name the current interface, and this suite does not guess an " +
-        "interface name to post: a wrong guess reconfigures the link every other assertion " +
-        "travels over",
+      "the pane named no configured interface, and this suite does not guess an interface " +
+        "name to post: a wrong guess reconfigures the link every other assertion travels over",
     );
     return;
   }
-  if (dhcp !== true) {
-    // The pane says the device is NOT on DHCP. Posting dhcp=on would then be a
-    // CHANGE, not a no-op, and posting the static address back is forbidden --
-    // so there is no honest post to make and this is a skip.
+  if (forms.length > 1) {
+    // More than one configured interface, and nothing in the HTML says which
+    // one carries the connection this suite is talking over. Posting to the
+    // wrong one could flip a static interface onto DHCP. Refusing is cheap;
+    // guessing costs the run and looks like apid crashing.
     report.skip(
       "the /network round trip leaves the link up",
-      `the pane renders the dhcp checkbox as ${dhcp === undefined ? "absent" : "unchecked"}, so ` +
-        `the device is not on DHCP. Posting dhcp checked would be a CHANGE rather than the ` +
-        `no-op this check requires, and posting a static address from this suite is forbidden ` +
-        `-- it would reconfigure the interface the suite is talking over.`,
+      `the pane renders ${forms.length} configured interfaces (${forms
+        .map((form) => form.iface)
+        .join(", ")}) and nothing in the markup says which one carries the link this suite ` +
+        `is talking over. Posting to the wrong one would reconfigure an interface this ` +
+        `phase was not asked to touch. A harness that knows the guest's interface could ` +
+        `pass it in and turn this back into a real check.`,
     );
     return;
   }
 
-  // Every field is taken from the pane, so the body is what a browser would
-  // submit if a user opened the page and pressed save without touching it.
-  const address = inputValue(pane.body, "address") ?? "";
-  const gateway = inputValue(pane.body, "gateway") ?? "";
-  const dns = inputValue(pane.body, "dns") ?? "";
+  const form = forms[0];
+  if (form === undefined) return;
+  if (!form.dhcp) {
+    // The form says this interface is NOT on DHCP. Posting dhcp=on would then
+    // be a CHANGE, not a no-op, and posting the static address back is
+    // forbidden -- so there is no honest post to make, and this is a skip.
+    report.skip(
+      "the /network round trip leaves the link up",
+      `the form for ${form.iface} renders its dhcp checkbox unchecked, so the interface is ` +
+        `not on DHCP. Posting dhcp checked would be a CHANGE rather than the no-op this ` +
+        `check requires, and posting a static address from this suite is forbidden -- it ` +
+        `would reconfigure the interface the suite is talking over.`,
+    );
+    return;
+  }
+
+  // Every field comes from that ONE form, so the body is exactly what a browser
+  // would submit if a user opened the page and pressed save without touching
+  // anything.
+  const iface = form.iface;
   const marker = log.mark(`POST /network (no-op: iface=${iface}, dhcp on)`);
   const posted = await client.post("/network", {
     iface,
     dhcp: checkbox(true),
-    address,
-    gateway,
-    dns,
+    address: form.address,
+    gateway: form.gateway,
+    dns: form.dns,
   });
   report.expectStatus(
     posted,
@@ -875,6 +897,44 @@ function checkboxChecked(html: string, name: string): boolean | undefined {
     named.find((attributes) => (attributes.get("type") ?? "").toLowerCase() === "checkbox") ??
     named[0];
   return box === undefined ? undefined : box.has("checked");
+}
+
+/** One interface form on the /network pane, read as a unit. */
+interface InterfaceForm {
+  readonly iface: string;
+  readonly dhcp: boolean;
+  readonly address: string;
+  readonly gateway: string;
+  readonly dns: string;
+}
+
+/**
+ * Every form on the /network pane that configures an interface that EXISTS.
+ *
+ * The pane renders one form per configured interface plus an "Add interface"
+ * fieldset, and all of them carry fields named iface/dhcp/address/gateway/dns.
+ * A form is taken to describe a configured interface only when it names a
+ * non-empty one; the add fieldset, whose iface is empty or unselected, drops
+ * out on that test. If the pane renders no <form> at all, the whole pane is
+ * read as one block rather than silently returning nothing.
+ */
+function interfaceForms(html: string): InterfaceForm[] {
+  const blocks = [...html.matchAll(/<form\b[^>]*>([\s\S]*?)<\/form>/gi)]
+    .map((match) => match[1] ?? "")
+    .filter((block) => block !== "");
+  const found: InterfaceForm[] = [];
+  for (const block of blocks.length > 0 ? blocks : [html]) {
+    const iface = readIface(block);
+    if (iface === undefined || iface === "") continue;
+    found.push({
+      iface,
+      dhcp: checkboxChecked(block, "dhcp") === true,
+      address: inputValue(block, "address") ?? "",
+      gateway: inputValue(block, "gateway") ?? "",
+      dns: inputValue(block, "dns") ?? "",
+    });
+  }
+  return found;
 }
 
 /**
