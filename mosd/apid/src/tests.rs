@@ -2750,11 +2750,63 @@ fn mqtt_tree(enabled: bool) -> serde_json::Value {
     })
 }
 
-/// The live-state subtree mosd's mqtt reconciler publishes, with the broker
-/// unit in the state a working switch produces.
+/// The live-state subtree mosd's mqtt reconciler publishes, copied **verbatim**
+/// from the reconciler's own expectation of it.
+///
+/// Source: `mosd/mosd/src/reconciler/mqtt.rs`, test
+/// `live_state_names_both_units_and_the_config_path` -- its assertions on
+/// `configPath`, `listen.address`, `listen.port`, `auth.enabled` and `units`,
+/// for `settings(true, "127.0.0.1", 1883, false)`. The exact key set is pinned
+/// separately there by `the_published_shape_is_the_contract_with_the_apid_pane`,
+/// which names this file as the consumer.
+///
+/// Copy it; do not adjust it. The fixture this replaced was invented here to
+/// match what the pane had chosen to read, which is a test of the pane against
+/// itself: it was flat, the reconciler has always been nested, and both crates
+/// stayed green while the pane rendered "unknown" for every value and the
+/// open-listener warning could not fire at all. A hand-written fixture cannot
+/// detect that it disagrees with the producer. This is still a second copy in
+/// a second crate -- apid and mosd talk over a bus and share no type -- but a
+/// named source makes the copy auditable, which the invented one was not.
+///
+/// One field is necessarily not verbatim: `configPath` is the reconciler's own
+/// `config_path`, which is a `tempfile` directory in that test, so the
+/// production default (`DEFAULT_CONFIG_PATH`, same file) stands in for it.
+const MQTT_PUBLISHED_STATE: &str = r#"{
+    "enabled": true,
+    "listen": { "address": "127.0.0.1", "port": 1883 },
+    "auth": { "enabled": false },
+    "configPath": "/run/mos/mqtt-broker.toml",
+    "units": [
+        {
+            "unit": "mos-mqtt-broker.service",
+            "activeState": "active",
+            "unitFileState": "enabled-runtime"
+        },
+        {
+            "unit": "mos-mqttd.service",
+            "activeState": "active",
+            "unitFileState": "enabled-runtime"
+        }
+    ]
+}"#;
+
+/// The published state with both units in the state a working switch produces.
+///
+/// The *structure* always comes from [`MQTT_PUBLISHED_STATE`]; only values are
+/// substituted, so no test here can quietly reintroduce a shape the reconciler
+/// does not publish. Both units follow the switch, because one switch drives
+/// both halves.
 fn mqtt_state(enabled: bool, address: &str, port: u64, auth_enabled: bool) -> serde_json::Value {
     let active_state = if enabled { "active" } else { "inactive" };
-    mqtt_state_with_unit(enabled, address, port, auth_enabled, active_state)
+    mqtt_state_with_units(
+        enabled,
+        address,
+        port,
+        auth_enabled,
+        active_state,
+        active_state,
+    )
 }
 
 /// The same, with the broker unit's `activeState` chosen explicitly -- which
@@ -2767,13 +2819,44 @@ fn mqtt_state_with_unit(
     auth_enabled: bool,
     active_state: &str,
 ) -> serde_json::Value {
-    json!({
-        "enabled": enabled,
-        "listenAddress": address,
-        "listenPort": port,
-        "authEnabled": auth_enabled,
-        "activeState": active_state,
-    })
+    let bridge = if enabled { "active" } else { "inactive" };
+    mqtt_state_with_units(enabled, address, port, auth_enabled, active_state, bridge)
+}
+
+/// The same with both units' `activeState` chosen, each written into the entry
+/// that carries its own name.
+///
+/// Selecting the entry rather than indexing it is the point: the pane does the
+/// same, so a fixture that reordered `units` would still describe the units it
+/// means to describe.
+fn mqtt_state_with_units(
+    enabled: bool,
+    address: &str,
+    port: u64,
+    auth_enabled: bool,
+    broker_state: &str,
+    bridge_state: &str,
+) -> serde_json::Value {
+    let mut state: serde_json::Value =
+        serde_json::from_str(MQTT_PUBLISHED_STATE).expect("the golden published state parses");
+    state["enabled"] = json!(enabled);
+    state["listen"]["address"] = json!(address);
+    state["listen"]["port"] = json!(port);
+    state["auth"]["enabled"] = json!(auth_enabled);
+    set_unit_state(&mut state, "mos-mqtt-broker.service", broker_state);
+    set_unit_state(&mut state, "mos-mqttd.service", bridge_state);
+    state
+}
+
+/// Write one `units` entry's `activeState`, found by its `unit` field.
+fn set_unit_state(state: &mut serde_json::Value, unit: &str, active_state: &str) {
+    let entry = state["units"]
+        .as_array_mut()
+        .expect("the golden `units` is an array")
+        .iter_mut()
+        .find(|entry| entry["unit"] == json!(unit))
+        .unwrap_or_else(|| panic!("the golden state publishes no unit named {unit}"));
+    entry["activeState"] = json!(active_state);
 }
 
 #[tokio::test]
@@ -2873,6 +2956,16 @@ async fn the_mqtt_pane_renders_before_mosd_has_published_any_state() {
             body.contains("Authentication: <b>unknown</b>"),
             "unpublished auth must read as unknown, not as disabled: {body}"
         );
+        // Same rule for the units: no published `units` array means no claim
+        // about whether either half is running.
+        assert!(
+            body.contains("Broker unit: <b>unknown</b>"),
+            "an unpublished broker unit must read as unknown, not as active: {body}"
+        );
+        assert!(
+            body.contains("Bridge unit: <b>unknown</b>"),
+            "an unpublished bridge unit must read as unknown: {body}"
+        );
         // And the form is still there to submit.
         assert!(body.contains(r#"action="/mqtt/enable""#), "{body}");
     }
@@ -2880,6 +2973,10 @@ async fn the_mqtt_pane_renders_before_mosd_has_published_any_state() {
 
 #[tokio::test]
 async fn the_mqtt_pane_shows_the_published_listener_read_only() {
+    // The reconciler's real published JSON, not a shape invented here -- see
+    // [`MQTT_PUBLISHED_STATE`]. Every value below has to come out of the
+    // nested tree it actually publishes; "unknown" anywhere means the pane is
+    // reading a key nobody writes.
     let (router, fake) = test_app(mqtt_tree(true));
     fake.set_state_entry("mqtt", mqtt_state(true, "127.0.0.1", 1883, true));
     let cookie = login(&router, "hunter2secret").await;
@@ -2888,12 +2985,90 @@ async fn the_mqtt_pane_shows_the_published_listener_read_only() {
     assert!(body.contains("Listen address: <b>127.0.0.1</b>"), "{body}");
     assert!(body.contains("Listen port: <b>1883</b>"), "{body}");
     assert!(body.contains("Authentication: <b>enabled</b>"), "{body}");
+    assert!(
+        !body.contains("unknown"),
+        "nothing may read as unknown when the reconciler has published all of it: {body}"
+    );
+    // Both halves of the switch, from the `units` array.
+    assert!(body.contains("Broker unit: <b>active</b>"), "{body}");
+    assert!(body.contains("Bridge unit: <b>active</b>"), "{body}");
+    assert!(
+        body.contains("unit file enabled-runtime"),
+        "the published `unitFileState` must reach the page too: {body}"
+    );
     // Read-only: the only writable control on the pane is the switch.
     assert_eq!(
         body.matches("<form").count(),
         2,
         "the pane must carry the switch form and the nav logout form and nothing else -- \
          the listener is displayed, not edited: {body}"
+    );
+}
+
+#[tokio::test]
+async fn a_failed_bridge_is_named_on_the_pane_with_its_own_journal() {
+    // The other half of the switch, which fails for its own reasons -- the
+    // cloud endpoint it dials, not the listener. The published `units` array
+    // carries a separate entry for it, so the pane can report it separately;
+    // a page that only ever spoke about the broker would leave an operator
+    // with MQTT "on", a healthy broker, and nothing carried anywhere.
+    let (router, fake) = test_app(mqtt_tree(true));
+    fake.set_state_entry(
+        "mqtt",
+        mqtt_state_with_units(true, "127.0.0.1", 1883, false, "active", "failed"),
+    );
+    let cookie = login(&router, "hunter2secret").await;
+    let body = body_string(get(&router, "/mqtt", Some(&cookie)).await).await;
+
+    assert!(
+        body.contains("Bridge unit: <b>failed</b>"),
+        "the bridge's own state must be on the page: {body}"
+    );
+    assert!(
+        body.contains("The bridge unit has failed"),
+        "a failed bridge must be stated plainly: {body}"
+    );
+    assert!(
+        body.contains("journalctl -u mos-mqttd"),
+        "the pane must point at the bridge's journal, not the broker's: {body}"
+    );
+    // And it must not be reported as a broker failure: they are different
+    // units with different journals, and sending an operator to the wrong one
+    // is worse than sending them nowhere.
+    assert!(
+        body.contains("Broker unit: <b>active</b>"),
+        "the healthy half must still read as healthy: {body}"
+    );
+    assert!(
+        !body.contains("The broker unit has failed"),
+        "a failed bridge must not be reported as a failed broker: {body}"
+    );
+}
+
+#[tokio::test]
+async fn a_unit_is_read_by_name_and_not_by_its_position() {
+    // `units` is published broker-first today and nothing promises it stays
+    // that way. Read by index, this reversal would still render two units,
+    // both states would still be real states, and the page would report the
+    // bridge under the broker's name with nothing failing anywhere.
+    let mut state = mqtt_state_with_units(true, "127.0.0.1", 1883, false, "active", "failed");
+    state["units"]
+        .as_array_mut()
+        .expect("`units` is an array")
+        .reverse();
+
+    let (router, fake) = test_app(mqtt_tree(true));
+    fake.set_state_entry("mqtt", state);
+    let cookie = login(&router, "hunter2secret").await;
+    let body = body_string(get(&router, "/mqtt", Some(&cookie)).await).await;
+
+    assert!(
+        body.contains("Broker unit: <b>active</b>"),
+        "the broker is whichever entry is NAMED mos-mqtt-broker.service: {body}"
+    );
+    assert!(
+        body.contains("Bridge unit: <b>failed</b>"),
+        "the failed bridge must stay attached to its own name: {body}"
     );
 }
 

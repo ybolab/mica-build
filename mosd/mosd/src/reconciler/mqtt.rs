@@ -329,6 +329,15 @@ impl<C: UnitControl> Reconciler for MqttReconciler<C> {
             self.turn_unit_off(BROKER_UNIT).await?;
         }
 
+        // The shape below is a contract with a consumer in another crate:
+        // `mosd/apid/src/routes.rs` renders the MQTT pane by reading these
+        // keys by name out of the bus item this becomes. Nothing in the type
+        // system connects the two -- apid talks to mosd over the bus -- so
+        // `the_published_shape_is_the_contract_with_the_apid_pane` below
+        // asserts the exact key set, and changing a key here means changing
+        // the pane. Skipping that does not break loudly: the pane renders
+        // "unknown", keeps its 200, and the warning it exists to raise
+        // silently never fires again.
         Ok(json!({
             "enabled": mqtt.enabled,
             "listen": {
@@ -601,6 +610,87 @@ mod tests {
             "listen_address = \"localhost\"\nlisten_port = 1883\nauth_enabled = true\n"
         );
         assert_eq!(state["listen"]["address"], json!("localhost"));
+    }
+
+    /// The keys of a JSON object, sorted, for an exact-set assertion.
+    fn key_set(value: &serde_json::Value) -> Vec<&str> {
+        let mut keys: Vec<&str> = value
+            .as_object()
+            .expect("published live state is an object")
+            .keys()
+            .map(String::as_str)
+            .collect();
+        keys.sort_unstable();
+        keys
+    }
+
+    /// The exact published shape, asserted key by key, because the consumer
+    /// is in another crate and cannot be seen from this file.
+    ///
+    /// That consumer is `mosd/apid/src/routes.rs` -- the MQTT pane, which
+    /// reads `listen.address`, `listen.port`, `auth.enabled` and the `units`
+    /// entry named `mos-mqtt-broker.service` out of the bus item `apply`
+    /// returns. **Changing this shape requires changing the pane.**
+    ///
+    /// Asserting values alone would not have caught what actually happened:
+    /// the pane was written against a flat shape this reconciler has never
+    /// published, both sides passed their own tests, and the
+    /// off-host-without-authentication warning could not fire at all because
+    /// `auth.enabled` never arrived where the pane looked for it. An exact key
+    /// set is what makes a rename here fail in a place that names who else
+    /// cares.
+    ///
+    /// `mosd/apid/src/tests.rs` carries a verbatim copy of
+    /// `live_state_names_both_units_and_the_config_path`'s expectation as its
+    /// fixture. Still two copies in two crates, but a named source makes the
+    /// copy auditable; the invented one was not.
+    #[tokio::test]
+    async fn the_published_shape_is_the_contract_with_the_apid_pane() {
+        let dir = tempfile::tempdir().unwrap();
+        let (reconciler, _config) = fixture(dir.path(), "inactive", "disabled");
+
+        let state = reconciler
+            .apply(&settings(true, "10.0.0.5", 8883, true))
+            .await
+            .unwrap();
+
+        assert_eq!(
+            key_set(&state),
+            ["auth", "configPath", "enabled", "listen", "units"],
+            "the pane reads these top-level keys by name"
+        );
+        assert_eq!(
+            key_set(&state["listen"]),
+            ["address", "port"],
+            "the pane reads `listen.address` and `listen.port`"
+        );
+        assert_eq!(
+            key_set(&state["auth"]),
+            ["enabled"],
+            "the pane reads `auth.enabled`; it is what the open-listener warning is gated on"
+        );
+
+        let units = state["units"]
+            .as_array()
+            .expect("`units` is an array -- the pane iterates it");
+        assert_eq!(units.len(), 2);
+        for unit in units {
+            assert_eq!(
+                key_set(unit),
+                ["activeState", "unit", "unitFileState"],
+                "the pane selects a unit by its `unit` field and shows its `activeState`"
+            );
+        }
+        // Both names must be here. The pane selects by name and not by index,
+        // so the ORDER is deliberately not part of this assertion -- but the
+        // names are, and dropping one would leave that half of the switch
+        // reading "unknown" on the page forever.
+        let names: Vec<&str> = units
+            .iter()
+            .map(|unit| unit["unit"].as_str().expect("`unit` is a string"))
+            .collect();
+        assert!(names.contains(&BROKER_UNIT), "{names:?}");
+        assert!(names.contains(&BRIDGE_UNIT), "{names:?}");
     }
 
     #[tokio::test]
