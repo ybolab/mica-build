@@ -287,6 +287,39 @@ export interface CertificateInfo {
 }
 
 // ---------------------------------------------------------------------------
+// SNI
+// ---------------------------------------------------------------------------
+
+/**
+ * The SNI server name to send for `host`, or undefined when there is none.
+ *
+ * SNI carries a `host_name` and never an IP literal -- RFC 6066 section 3 says
+ * so in as many words -- and bun ENFORCES it by THROWING at `tls.connect()`,
+ * synchronously, before a socket is opened: measured 2026-08-24 under bun
+ * 1.4.0 in `oven/bun:1`, `TypeError [ERR_INVALID_ARG_VALUE]: The property
+ * 'options.servername' Setting the TLS ServerName to an IP address is not
+ * permitted.` for both `127.0.0.1` and `::1`. A hostname, or the property
+ * omitted, does not throw. Node behaves the same way; this is not a bun quirk.
+ *
+ * `config.host` in this campaign is ALWAYS an IP literal -- it is the QEMU
+ * container's address on the shared docker network, and `config.ts` refuses to
+ * default it precisely so nobody aims the suite at loopback. So passing it as
+ * `servername` made `inspectCertificate()` and every raw HTTPS write throw at
+ * call time, and the suite could not make a single TLS assertion against a
+ * real device.
+ *
+ * Dropping SNI costs nothing here: certificate verification is already relaxed
+ * for `config.host` (see `#tlsOptionsFor`), apid serves exactly one self-signed
+ * certificate, and it does no name-based virtual hosting -- there is nothing
+ * for a server name to select between.
+ *
+ * `net.isIP` returns 0 for anything that is not an IP literal, 4 or 6 otherwise.
+ */
+export function sniServerName(host: string): string | undefined {
+  return net.isIP(host) === 0 ? host : undefined;
+}
+
+// ---------------------------------------------------------------------------
 // the client
 // ---------------------------------------------------------------------------
 
@@ -418,12 +451,15 @@ export class Client {
   async inspectCertificate(timeoutMs = DEFAULT_TIMEOUT_MS): Promise<CertificateInfo> {
     const host = this.#config.host;
     const port = this.#config.httpsPort;
+    // Spread, not `servername: undefined`: the property must be ABSENT. See
+    // sniServerName -- an IP literal here throws before a socket is opened.
+    const servername = sniServerName(host);
     return new Promise<CertificateInfo>((resolve, reject) => {
       let settled = false;
       const socket = tls.connect({
         host,
         port,
-        servername: host,
+        ...(servername === undefined ? {} : { servername }),
         // The connection must COMPLETE so the certificate can be read, hence
         // rejectUnauthorized: false. `authorized`/`authorizationError` are
         // still populated by the handshake, which is the whole point.
@@ -626,7 +662,8 @@ export async function socketRequest(init: SocketRequestInit): Promise<SocketResp
       ? tls.connect({
           host: init.host,
           port: init.port,
-          servername: init.host,
+          // Absent, not undefined, when the host is an IP -- see sniServerName.
+          ...(sniServerName(init.host) === undefined ? {} : { servername: init.host }),
           ...init.tlsOptions,
         })
       : net.connect({ host: init.host, port: init.port });
