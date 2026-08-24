@@ -125,13 +125,37 @@ reached only through a **proc macro's build-time dependency**, not through
 anything linked into a shipped binary. That is a statement about this chain, and
 it is why the allowance is written as one crate and not one licence.
 
-**Status: escalated to the user as a policy decision that is theirs to make, and
-unresolved at time of writing.** T2 landed the line so the tree is green and the
-DAG could move; it is one line and trivially revertible. If the user declines, the
-fallback is to attack the dependency chain instead — most likely by asking whether
-rumqttd can be driven without its `config`-based loader. That fallback is recorded
-here so the next reader knows the allowance was a considered position with an
-exit, and not a shrug.
+"CC0 is permissive" is the sentence that would let the next person skip the
+question entirely, which is precisely how an eighth entry becomes a ninth.
+
+### Status: in the tree, without a decision
+
+Two facts, and only one of them is a decision. They are kept apart deliberately,
+because collapsing them is how a record ends up reading as approval.
+
+**Fact 1: the allowance is in the allow list and no decision has been made about
+it.** Not approved. Not accepted. The question is open.
+
+L1 put it to the user **four times** across the campaign, and the user has never
+answered it. They **answered every other question in the same messages** — so
+this is silence on one item, not an unread thread, and that distinction is the
+whole reason it is recorded as a fact rather than as a shrug. On the fourth ask
+L1 said plainly that T2 was landing the line and that not answering would let it
+ship, explicitly because L1 **did not want it to pass by silence**. It takes the
+allow list from seven entries to eight, and that is policy, not a build fix.
+
+**Fact 2: it shipped on L1's call.** That is a real decision and belongs here as
+one, distinct from the approval that was never given. The reasoning: blocking the
+DAG on it would have cost more than the line is worth, and it is one revertible
+line.
+
+**The fallback is planned, so reversing this is a task and not a
+re-investigation.** Attack the chain — `config -> rust-ini -> ordered-multimap ->
+dlv-list -> const-random -> const-random-macro -> tiny-keccak` — most likely by
+asking whether rumqttd can be driven without its `config`-based loader. `config`
+is a mandatory (non-optional) dependency of rumqttd, so no feature flag drops it,
+**which is why the alternative is upstream work rather than a manifest edit**.
+That is the shape of the work if the answer, when it comes, is no.
 
 The `deny.toml` comment carries the chain and the patent carve-out too, because
 `deny.toml` is where the next engineer actually lands when they hit the allow
@@ -510,6 +534,20 @@ was reported as
 `68a6e250… (bkd/uph7rqhm tip) .. a7d4c088… (bkd/jcpfyf7m tip) at 2026-08-24T12:32:01Z`,
 and that is the form.
 
+And the half that is easiest to skip, aimed at exactly the claim that started the
+T7 exchange:
+
+> **State the refs even when the answer is "no delta". A verified absence is a
+> claim too.**
+
+What caused the dispute was an *unverified absence* — "it never touched the unit
+file". A claim that something is **not** present needs its inputs named just as
+much as a claim that something is, and it is the harder case to remember, because
+an empty diff feels like it has nothing to cite. It has two refs and a time, same
+as any other. **An absence reported without refs is the easiest kind of false
+confidence to publish**: there is no output for a reader to check, so the claim
+rests entirely on a command nobody can see.
+
 ## Known limitation: MQTT 5.0
 
 Nothing in the image speaks MQTT 5.0, and that is a deferral with a route out
@@ -568,9 +606,11 @@ booted in this campaign.** Therefore:
 That is the outstanding verification, and it is the first flash's job — as it was
 for RFCT-097, unchanged and not widened.
 
-**Also outstanding.** The `CC0-1.0` allowance in `mosd/deny.toml` is escalated to
-the user and unresolved at time of writing; the fallback if declined is recorded
-above. `origin` is ten commits behind local `main` and pushing is with the user.
+**Also outstanding.** The `CC0-1.0` allowance is **in `mosd/deny.toml` without a
+decision having been made** — asked four times, never answered, shipped on L1's
+call so the DAG could move. It is not approved and the question is open; the
+history and the planned fallback are above. `origin` is ten commits behind local
+`main` and pushing is with the user.
 
 **Closed during the campaign, for accuracy:** both apid test flakes are **fixed**,
 not outstanding — `0ed5cc7` (`mosd/apid/src/auth.rs`,
