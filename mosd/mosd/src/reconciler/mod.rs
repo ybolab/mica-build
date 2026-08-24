@@ -26,7 +26,9 @@ pub trait Reconciler: Send + Sync {
 /// nothing touches the host until a reconciler's `apply` runs.
 pub fn all() -> Vec<Box<dyn Reconciler>> {
     vec![
-        Box::new(hostname::HostnameReconciler::new(hostname::Hostnamed::production())),
+        Box::new(hostname::HostnameReconciler::new(
+            hostname::Hostnamed::production(),
+        )),
         Box::new(network::NetworkReconciler::production()),
         Box::new(sshd::SshdReconciler::production()),
         Box::new(wifi_client::WifiClientReconciler::production()),
