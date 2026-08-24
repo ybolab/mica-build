@@ -26,6 +26,29 @@
 # --platform the caller passed, so an amd64 build (os/qemu, PLAN-012 M6) would
 # have silently produced an arm64 root and failed at first exec. build-v2.sh
 # passes the platform it means.
+# The TLS trust anchors, built here and COPIED, so the packed root gets the
+# certificates without the tool that generates them.
+#
+# `ca-certificates` Depends on `openssl`, and openssl is 2506 KB of CLI the
+# device has no use for: apid's TLS is pure Rust (rustls + rcgen + ring,
+# reqwest on rustls-tls), no /usr/lib/mos script invokes openssl, and the
+# packed root carried none before this. Installing the package into the rootfs
+# stage would have dragged it in -- and with it /usr/bin/c_rehash, a Perl
+# script that the package-manager purge's dangling-interpreter check correctly
+# rejected on the first attempt.
+#
+# BUILDPLATFORM, not TARGETPLATFORM: ca-certificates is `Architecture: all`.
+# The bundle is data, identical for arm64 and amd64, so generating it under
+# emulation would buy nothing and cost the emulation.
+FROM --platform=$BUILDPLATFORM debian:trixie-slim AS certs
+RUN set -eu; \
+    apt-get update; \
+    DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends ca-certificates; \
+    test -s /etc/ssl/certs/ca-certificates.crt || \
+        { echo "error: ca-certificates installed but generated no bundle" >&2; exit 1; }; \
+    grep -c 'BEGIN CERTIFICATE' /etc/ssl/certs/ca-certificates.crt > /etc/ssl/certs/.mos-cert-count; \
+    echo "trust: generated $(cat /etc/ssl/certs/.mos-cert-count) CA certificates"
+
 FROM --platform=$TARGETPLATFORM debian:trixie-slim AS rootfs
 
 # Strict package allowlist — add nothing here without documenting it in README.md.
@@ -86,6 +109,53 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         wpasupplicant \
         hostapd \
     && rm -rf /var/lib/apt/lists/*
+
+# The TRUST ANCHORS, copied in from the `certs` stage.
+#
+# libssl3t64 is 8 MB of TLS library and it was in this image long before any
+# trust store was: the packed root had the code to speak TLS and nothing to
+# decide who to believe. Every outbound HTTPS connection therefore failed the
+# same way -- `podman pull` on the container engine, and `curl`, which the
+# package list above installs and the package-manager purge explicitly keeps.
+#
+# FOUND BY BOOTING x64 AND STARTING A CONTAINER. The seeded probe unit reached
+# the registry and stopped at
+#   x509: certificate signed by unknown authority
+# after mosd's switch, the STATE bind, Quadlet's generation, systemd's start
+# and podman's storage had all worked. Nothing on the device side was wrong;
+# there was simply no CA bundle to verify against.
+#
+# THE WHOLE DEBIAN SET, deliberately. A curated bundle holding only the roots
+# this fleet talks to today would be a smaller trust surface and a worse
+# failure mode: a root rotation at the other end is nobody's notification, the
+# root here is read-only, and the symptom would be an outage that looks like a
+# certificate error. Breadth is chosen over minimality so that reaching a
+# registry or an update server does not depend on a list this image guessed.
+#
+# Both paths are needed. The bundle is what OpenSSL, GnuTLS and Go read by
+# default; /usr/share/ca-certificates holds the individual certificates the
+# hash symlinks under /etc/ssl/certs point AT, so copying the directory
+# without them would leave a farm of dangling links.
+COPY --from=certs /usr/share/ca-certificates /usr/share/ca-certificates
+COPY --from=certs /etc/ssl/certs /etc/ssl/certs
+COPY --from=certs /etc/ca-certificates.conf /etc/ca-certificates.conf
+RUN set -eu; \
+    test -s /etc/ssl/certs/ca-certificates.crt || \
+        { echo "error: /etc/ssl/certs/ca-certificates.crt is missing or empty. The image can speak TLS and cannot verify anyone: container pulls, curl and any HTTPS update fetch all fail with 'certificate signed by unknown authority'" >&2; exit 1; }; \
+    certs="$(grep -c 'BEGIN CERTIFICATE' /etc/ssl/certs/ca-certificates.crt)"; \
+    want="$(cat /etc/ssl/certs/.mos-cert-count)"; \
+    rm -f /etc/ssl/certs/.mos-cert-count; \
+    [ "${certs}" = "${want}" ] || \
+        { echo "error: the certs stage generated ${want} certificates and ${certs} arrived here. A COPY that drops or truncates the bundle leaves TLS working for whatever happens to still verify, which is the hardest version of this failure to notice" >&2; exit 1; }; \
+    [ "${certs}" -ge 100 ] || \
+        { echo "error: the CA bundle holds only ${certs} certificates" >&2; exit 1; }; \
+    dangling="$(find /etc/ssl/certs -xtype l | head -n3 | tr '\n' ' ')"; \
+    [ -z "${dangling}" ] || \
+        { echo "error: /etc/ssl/certs has dangling symlinks (${dangling}...); the hash farm points at /usr/share/ca-certificates and that copy did not arrive" >&2; exit 1; }; \
+    if command -v openssl >/dev/null 2>&1; then \
+        echo "error: the openssl CLI is in the packed root. The certificates are copied in precisely so it is not: it is 2.5 MB, nothing here uses it (apid's TLS is rustls/rcgen/ring), and it brings /usr/bin/c_rehash, which is Perl. Something else has started depending on it" >&2; exit 1; \
+    fi; \
+    echo "trust: ${certs} CA certificates in place, no openssl CLI"
 
 # PLAN-012: the container engine, on the board's say-so.
 #
@@ -432,6 +502,55 @@ RUN set -eu; \
 # and its modules in one package. build-v2.sh stages an EMPTY-but-valid tar on
 # that path rather than making this COPY conditional -- a COPY cannot be gated,
 # and a missing context file is a build error a hundred lines from its cause.
+# grub-editenv, for the boards RAUC drives through the grub backend.
+#
+# RAUC's grub backend does not write grubenv itself -- it EXECS grub-editenv,
+# the way the uboot backend execs fw_setenv. Without it rauc.service starts and
+# then cannot answer anything:
+#   Failed getting primary slot: grub backend: Failed to start grub-editenv:
+#   Failed to execute child process "grub-editenv" (No such file or directory)
+# which is a device with an A/B layout, a boot order in grubenv, and no way to
+# read or write it. Found by booting x64 after the boot-attempts fix let RAUC
+# start at all.
+#
+# THE FILE, NOT THE PACKAGE. `grub-common` is a 20 MB installed increment here
+# -- it drags in libfreetype6, libpng16, libfuse3, libefivar and gettext-base,
+# none of which a device that only rewrites a grubenv has any use for. The
+# binary itself is 403 KB and links only against libraries this root already
+# carries. apt-get download + dpkg-deb extracts exactly one path and installs
+# nothing, so no dependency resolution happens and nothing has to be purged
+# again afterwards.
+#
+# Gated on the BOOTLOADER, not on the architecture: an arm64 UEFI board would
+# need this and does not exist yet, and keying it to amd64 would make that
+# board's first symptom the message above rather than a build error.
+ARG RAUC_BOOTLOADER=uboot
+RUN set -eu; \
+    if [ "$RAUC_BOOTLOADER" = "grub" ]; then \
+        apt-get update; \
+        # libdevmapper is grub-editenv's one dependency this root does not \
+        # already carry at THIS point in the build. It arrives later anyway, \
+        # with cryptsetup-bin in the amd64 block below -- but depending on \
+        # that ordering would make this step pass or fail according to where \
+        # someone moves it, so it is named here and the step stands alone. \
+        apt-get install -y --no-install-recommends libdevmapper1.02.1; \
+        cd /tmp; \
+        apt-get download grub-common; \
+        dpkg-deb --fsys-tarfile grub-common_*.deb \
+            | tar -xO ./usr/bin/grub-editenv > /usr/bin/grub-editenv; \
+        chmod 0755 /usr/bin/grub-editenv; \
+        rm -f /tmp/grub-common_*.deb; \
+        cd /; \
+        [ -s /usr/bin/grub-editenv ] || \
+            { echo "error: extracting grub-editenv produced an empty file; RAUC's grub backend would fail at runtime with 'No such file or directory'" >&2; exit 1; }; \
+        missing="$(ldd /usr/bin/grub-editenv | awk '/not found/{print $1}' | tr '\n' ' ')"; \
+        [ -z "${missing}" ] || \
+            { echo "error: grub-editenv was taken out of its package but this root does not carry:${missing}. Extracting one file skips dependency resolution, so a missing library shows up as a dynamic-link failure at runtime, inside a child process RAUC reports only as 'Failed to start grub-editenv'" >&2; exit 1; }; \
+        grub-editenv --help >/dev/null 2>&1 || \
+            { echo "error: grub-editenv is installed and will not run" >&2; exit 1; }; \
+        echo "rauc: grub-editenv installed ($(stat -c%s /usr/bin/grub-editenv) bytes), which the grub backend execs to read and write grubenv"; \
+    fi
+
 ARG MOS_ARCH=arm64
 COPY os/rootfs/initramfs/ /tmp/initramfs/
 ARG MODULES_TAR
@@ -988,6 +1107,8 @@ RUN set -eu; \
         command -v "${kept}" >/dev/null 2>&1 || \
             { echo "error: the purge removed ${kept}, which the image needs at runtime" >&2; exit 1; }; \
     done; \
+    test -s /etc/ssl/certs/ca-certificates.crt || \
+        { echo "error: the purge removed the CA bundle. It is a GENERATED file, not a shipped one -- update-ca-certificates writes it from /usr/share/ca-certificates -- so anything that sweeps package-manager output can take it, and the loss is silent until the first HTTPS connection" >&2; exit 1; }; \
     dangling="$(grep -rlI '^#!.*perl' /usr/bin /usr/sbin /usr/lib/systemd /etc 2>/dev/null || true)"; \
     [ -z "${dangling}" ] || \
         { echo "error: perl is gone but these scripts still name it as their interpreter: ${dangling}" >&2; exit 1; }; \

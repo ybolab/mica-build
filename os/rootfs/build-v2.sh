@@ -399,6 +399,7 @@ if ! docker buildx build \
         --platform "$DOCKER_PLATFORM" \
         -f "$SCRIPT_DIR/Dockerfile.v2" \
         --build-arg MOS_ARCH="$MOS_ARCH" \
+        --build-arg RAUC_BOOTLOADER="$RAUC_BOOTLOADER" \
         --build-arg MODULES_TAR="_out/$MOS_BOARD/modules.tar" \
         --build-arg MOSD_DIR="_out/$MOS_BOARD/mosd" \
         --build-arg PODMAN_DIR="_out/$MOS_BOARD/podman" \

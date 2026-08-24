@@ -2569,6 +2569,23 @@ else
     fail "no curl or wget in the image, so mos-health probe c degrades to 'SKIP (no curl or wget in the image)' and apid is never actually probed by the health gate"
 fi
 
+# --- the bootloader's environment access from Linux --------------------------
+#
+# Each backend rewrites its own A/B state through a HELPER BINARY, and RAUC
+# execs it: fw_setenv for uboot, grub-editenv for grub. A missing helper does
+# not stop rauc.service -- it starts and then cannot answer anything, reporting
+# only "Failed to start grub-editenv", which reads as a RAUC problem rather
+# than a missing 403 KB file. That is how it was found on x64.
+if [ "${RAUC_BOOTLOADER}" = "grub" ]; then
+    sq_regular /usr/bin/grub-editenv
+    pass_or_fail_note="RAUC's grub backend execs it to read and write ${RAUC_GRUBENV:-the grubenv}"
+    if [ -f "${ROOT}/usr/bin/grub-editenv" ]; then
+        pass "grub-editenv is in the packed root; ${pass_or_fail_note}"
+    else
+        fail "grub-editenv is absent; ${pass_or_fail_note}, so the A/B boot order can be neither read nor written and rauc.service is up but useless"
+    fi
+fi
+
 # --- M4: U-Boot environment access from Linux ---
 sq_regular /etc/fw_env.config
 fwenv="${ROOT}/etc/fw_env.config"
@@ -2716,6 +2733,17 @@ check_ext_unit_dir
 # Fixture-hook set, called here for the non-fixture path. Rationale on the
 # function.
 check_no_package_manager
+
+# --- the TLS trust anchors -------------------------------------------------
+#
+# Asserted separately from every other file check because the bundle is
+# GENERATED at build time by update-ca-certificates, not shipped by a package,
+# so it is exactly the kind of artefact a purge or a layer rebuild can drop
+# without anything else changing. The image carried libssl3t64 and no trust
+# store for its whole life before this: TLS code with nobody to believe, which
+# fails only on the first outbound connection and reports it as the remote's
+# fault ("certificate signed by unknown authority").
+check_ca_bundle
 
 # --- PLAN-012: the container engine, installed and inert ---------------------
 # Fixture-hook set, called here for the non-fixture path.
