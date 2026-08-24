@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["mosd", "mosd-settings", "busname", "apid", "mqttd", "../update/sign"]
+members = ["mosd", "mosd-settings", "busname", "apid", "mqttd", "broker", "../update/sign"]
 
 [workspace.package]
 edition = "2024"
@@ -59,3 +59,11 @@ futures-util = { version = "0.3", default-features = false, features = ["std"] }
 # dependency is pure Rust. The `use-rustls` default would pull tokio-rustls in;
 # TLS to the broker is a later decision (docs/task/RFCT-091.md).
 rumqttc = { version = "0.25", default-features = false }
+# The broker, used as a library rather than as its own daemon. Defaults off
+# buys three things: TCP only, so no `use-rustls` and therefore no rustls 0.22
+# with its live advisory; no websockets; and every remaining dependency pure
+# Rust. That last one is the reason this is here at all instead of Debian's
+# mosquitto, which would drag libcjson1, libmosquitto1, libdlt2 and
+# libwebsockets19t64 into a root filesystem that has no package manager to
+# maintain them.
+rumqttd = { version = "0.20", default-features = false }

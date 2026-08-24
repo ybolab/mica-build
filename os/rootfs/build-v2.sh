@@ -190,6 +190,15 @@ if [ "$WITH_MOSD" = "1" ]; then
         "$MOSD_STAGE/mos-mqttd"
     cp "$REPO_ROOT/mosd/mqttd/dist/mos-mqttd.service" "$MOSD_STAGE/mos-mqttd.service"
     cp "$REPO_ROOT/mosd/dist/mos-mqttd.conf" "$MOSD_STAGE/mos-mqttd.conf"
+    # The broker the bridge above connects to (RFCT-104). No D-Bus grant to
+    # stage beside it: it is not a bus client, it only listens on TCP. Its
+    # config is not staged either -- mosd renders /run/mos/mqtt-broker.toml at
+    # runtime, because a file baked into an immutable root would be the same
+    # listen address on every device flashed with this image.
+    cp "$REPO_ROOT/mosd/target/$RUST_TARGET/release/mos-mqtt-broker" \
+        "$MOSD_STAGE/mos-mqtt-broker"
+    cp "$REPO_ROOT/mosd/broker/dist/mos-mqtt-broker.service" \
+        "$MOSD_STAGE/mos-mqtt-broker.service"
 else
     echo "note: WITH_MOSD=0; building rootfs without mosd"
 fi
