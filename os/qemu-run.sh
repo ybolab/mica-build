@@ -130,6 +130,9 @@ set -eu
 # and per-run: UEFI stores its boot order there, and a shared one would carry a
 # previous run's decisions into this one.
 RUN_SECONDS="${RUN_SECONDS:-}"
+# Empty unless MOS_QEMU_FORWARD asked for it; `set -u` would kill the run
+# otherwise, after the image had already been copied and grown.
+HOSTFWD="${HOSTFWD:-}"
 cp /usr/share/OVMF/OVMF_CODE_4M.fd /run/code.fd
 cp /usr/share/OVMF/OVMF_VARS_4M.fd /run/vars.fd
 
@@ -166,7 +169,7 @@ exec qemu-system-x86_64 \
     -drive if=pflash,format=raw,unit=1,format=raw,file=/run/vars.fd \
     -drive if=none,id=disk0,format=raw,file=/w/disk.img \
     -device virtio-blk-pci,drive=disk0,bootindex=0 \
-    -netdev user,id=net0 \
+    -netdev user,id=net0${HOSTFWD} \
     -device virtio-net-pci,netdev=net0 \
     -serial mon:stdio
 INNER
@@ -174,6 +177,52 @@ INNER
 RUN_SECONDS="${MOS_QEMU_RUN_SECONDS:-}"
 DOCKER_ARGS=(--rm -v "${RUN_DIR}:/w" -e MEM="${MEM}" -e RUN_SECONDS="${RUN_SECONDS}")
 [ -e /dev/kvm ] && DOCKER_ARGS+=(--device /dev/kvm)
+
+# MOS_QEMU_FORWARD opens a path from the host to apid inside the guest, for the
+# API suite. OFF BY DEFAULT, and the default is the point: a management daemon
+# is otherwise unreachable from outside the machine, which is what makes an
+# unattended run a closed box.
+#
+# TWO DOORS, not one. QEMU's user-mode `hostfwd` binds inside the CONTAINER,
+# so a forward alone reaches nothing; the container must publish the port too.
+# Getting one of the two right produces a connection refused with nothing to
+# say which half is missing, so both are set here or neither is.
+#
+# Bound to 127.0.0.1 on the host. The guest has no password until the suite
+# sets one, and until then anything that can reach the port can complete
+# first-boot setup and own the device -- so the forward does not leave
+# loopback, and it does not exist unless someone asked for it.
+HOSTFWD=""
+if [ -n "${MOS_QEMU_FORWARD:-}" ]; then
+    https_port="${MOS_QEMU_HTTPS_PORT:-18443}"
+    http_port="${MOS_QEMU_HTTP_PORT:-18080}"
+    HOSTFWD=",hostfwd=tcp::${https_port}-:443,hostfwd=tcp::${http_port}-:80"
+    DOCKER_ARGS+=(-p "127.0.0.1:${https_port}:${https_port}"
+        -p "127.0.0.1:${http_port}:${http_port}")
+
+    # THE THIRD DOOR, and the one that is invisible until it bites.
+    #
+    # `-p 127.0.0.1:...` publishes on the DOCKER HOST's loopback. A caller
+    # that is itself a container has its own loopback and its own network, so
+    # it connects to itself and gets a refusal that says nothing about why.
+    # Measured here: this repository's own session runs inside a container on
+    # `traefik`/172.18.0.0/16 while a plain `docker run` lands on the default
+    # bridge at 172.17.0.0/16, with no route between them. The publish was
+    # correct, the hostfwd was correct, and the port was unreachable anyway.
+    #
+    # MOS_QEMU_NETWORK attaches the QEMU container to a named docker network so
+    # a sibling container can reach it directly. The address to use is then the
+    # CONTAINER's, not loopback, so it is printed rather than left to be
+    # discovered.
+    if [ -n "${MOS_QEMU_NETWORK:-}" ]; then
+        DOCKER_ARGS+=(--network "${MOS_QEMU_NETWORK}")
+        echo "note: QEMU joins the '${MOS_QEMU_NETWORK}' network; a sibling container reaches it at <container-ip>:${https_port}, NOT at 127.0.0.1"
+    fi
+    echo "note: forwarding :${https_port} -> guest :443 and :${http_port} -> guest :80"
+    echo "note: on the docker host that is https://127.0.0.1:${https_port}; from another container it is the QEMU container's own address on a shared network (see MOS_QEMU_NETWORK)"
+    echo "note: the guest ships no admin password until something completes /setup, which is why the host publish is loopback-only"
+fi
+DOCKER_ARGS+=(-e HOSTFWD="${HOSTFWD}")
 
 echo "note: booting ${IMG##*/} through OVMF; no /dev/kvm on this host means TCG, which is slow but complete"
 

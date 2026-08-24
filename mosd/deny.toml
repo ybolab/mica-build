@@ -14,7 +14,11 @@ allow = [
     # tiny-keccak 2.0.2, and only tiny-keccak. CC0-1.0 is a public-domain
     # dedication rather than a licence with obligations, and it is reached
     # here through a proc macro's build-time dependency, not through anything
-    # linked into a shipped binary:
+    # linked into a shipped binary. It is also a dedication that explicitly
+    # does NOT grant patent rights, which is the consideration that actually
+    # applies to a device shipped to customers and the reason this entry names
+    # one crate on one chain rather than opening the list to a licence
+    # (RFCT-104):
     #
     #   rumqttd -> config -> rust-ini -> ordered-multimap -> dlv-list
     #           -> const-random -> const-random-macro -> tiny-keccak

@@ -547,15 +547,23 @@ them is visible from the code side.
   `SetTransientRootPassword`. `mosd/hack/dbus-policy-test.sh` §6 drives the
   grant on a real dbus-daemon loading both shipped files, in both directions
   and against a second unprivileged uid.
-- **[implemented]** The broker address is **not in the image**. The root is an
-  immutable dm-verity squashfs, so a literal `--broker-host` would be the same
-  host on every device flashed with it, and `systemctl edit` has nowhere to
-  write. `ExecStart` takes `${MOS_MQTT_BROKER_HOST}`, `${MOS_MQTT_BROKER_PORT}`,
-  `${MOS_MQTT_CLIENT_ID}` and `${MOS_MQTT_MODE}` from an optional
-  `EnvironmentFile=-/var/lib/mos/mqttd.env`, which sits on a STATE-backed bind
-  (`var-lib-mos.mount`) and therefore survives a reboot and an A/B update. An
-  unconfigured device runs on the unit's `Environment=` defaults rather than
-  failing to start.
+- **[implemented]** The bridge's broker **address** is not in the image. The
+  root is an immutable dm-verity squashfs, so a literal `--broker-host` would be
+  the same host on every device flashed with it, and `systemctl edit` has
+  nowhere to write. `ExecStart` takes `${MOS_MQTT_BROKER_HOST}`,
+  `${MOS_MQTT_BROKER_PORT}`, `${MOS_MQTT_CLIENT_ID}` and `${MOS_MQTT_MODE}` from
+  an optional `EnvironmentFile=-/var/lib/mos/mqttd.env`, which sits on a
+  STATE-backed bind (`var-lib-mos.mount`) and therefore survives a reboot and an
+  A/B update. An unconfigured device runs on the unit's `Environment=` defaults
+  rather than failing to start. (Until RFCT-104 this bullet read *"The broker
+  address is **not in the image**"* without qualification, and that sentence was
+  doing two jobs at once. The address is still not in the image, for exactly the
+  reasons above, and none of that reasoning has changed. **A broker now is** —
+  §10.1b — so the default those variables fall back to, `localhost:1883`,
+  resolves to something real for the first time. The unqualified statement was
+  written on an image where it did not, and read as though the absence of a
+  configured address also settled the absence of a broker. It did not; those are
+  two decisions, and only one of them was ever made here.)
 
 **Reconnect backoff, and why it belongs to this crate.** `rumqttc` 0.25's
 `EventLoop::poll` reconnects with no delay of its own, and its
@@ -567,6 +575,64 @@ doubling to a 30s ceiling and reset by any successful poll
 kernel returns ECONNREFUSED, pegging a core and writing a warning per
 iteration into a journal on the STATE partition. The upstream premise is held
 by a test that fails if rumqttc ever grows a backoff of its own.
+
+### 10.1b The broker the bridge connects to [implemented]
+
+§10.1a's bridge was installed, enabled and pointed at `localhost:1883` by
+default, and no shipped image carried anything listening there. The bridge had
+therefore never once connected — it had only ever retried, warning every 30s
+against a broker that was not in the image. RFCT-104 put one there and gave the
+pair a switch.
+
+- **[implemented]** A broker **is** in the image: `/usr/bin/mos-mqtt-broker`,
+  installed by `os/rootfs/Dockerfile.v2` from `mosd/broker/`, which is rumqttd
+  0.20 used as a **library** with `default-features = false`. It runs as the
+  static system account `mos-mqtt-broker` (uid = gid = 969, created in the same
+  Dockerfile), for the reason the bridge's account is static but not the same
+  one: the broker reads a credentials file on STATE, and a uid allocated at
+  start names nobody on the next boot.
+- **[implemented]** It ships **inert**. `os/rootfs/Dockerfile.v2` installs
+  `mos-mqtt-broker.service` and deliberately does not create the
+  `multi-user.target.wants` symlink, so nothing starts it at boot;
+  `mosd/broker/dist/mos-mqtt-broker.service` keeps its `[Install]` section
+  anyway, so `systemctl enable` stays meaningful to anyone debugging. The image
+  assertion is `check_mqtt_broker` in `os/verify-image-v2.sh`, driven offline
+  from fixtures by `os/ui-location-test.sh` — including the fixture that creates
+  the symlink and requires the check to fail.
+- **[implemented]** `mqtt.enabled` starts it. `MqttReconciler`
+  (`mosd/mosd/src/reconciler/mqtt.rs`, `name()` and `subtree()` both `"mqtt"`)
+  enables and starts `mos-mqtt-broker.service` and then `mos-mqttd.service` on
+  true, and stops the bridge before the broker on false — the client before the
+  server it talks to, so a deliberate shutdown does not read as a connection
+  failure in the bridge's journal.
+- **[implemented]** The broker's **own** listen address, port and auth flag are
+  not in the image either, and for the same dm-verity reason as the bridge's
+  broker address. mosd renders all three into `/run/mos/mqtt-broker.toml` from
+  the `mqtt` settings subtree before it starts the unit; the unit's `ExecStart`
+  is `/usr/bin/mos-mqtt-broker --config /run/mos/mqtt-broker.toml` and it
+  carries `ConditionPathExists` on that file, so "mosd has not configured me" is
+  a skipped start rather than a failed one.
+- **[implemented]** No credential is in the settings tree. `MqttAuthSettings`
+  carries `enabled` and nothing else. mosd publishes the settings tree over
+  `com.mos.Item1` (§1), so a password under `mqtt.auth` would be a published
+  password and would need a new entry in §8's structural redaction
+  (`mosd/mosd/src/tree.rs`) — this contract's territory, and an escalation
+  rather than something a settings key may assume. The broker reads its accounts
+  from
+  `/var/lib/mos/mqtt-broker-users.toml` on STATE instead, which is how the
+  device password is already handled: the tree carries the policy, the STATE
+  file carries the secret.
+- **[implemented]** `mqtt` is **not** in `WRITABLE_SUBTREES`, matching
+  `container`. The switch is reachable from apid's `/mqtt` pane
+  (`mosd/apid/src/routes.rs`) and not over the item tree; bus writability is
+  unchanged by this work.
+
+The switch is a **master switch and nothing else**: `mqtt.listen` and
+`mqtt.auth` are deliberately not coupled to it, and nothing refuses to start on
+any combination of them. A broker bound off-host with authentication disabled
+earns a WARN from the reconciler and an `error_box` notice on the pane; it does
+not earn a gate. The full reasoning, the measured cost of rumqttd against mosquitto, and
+the supply-chain decision that came with it are in RFCT-104 and PLAN-011 D7.
 
 ### 10.2 Sparkplug B, compared
 
