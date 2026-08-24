@@ -1670,6 +1670,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "clap",
+ "rumqttc",
  "rumqttd",
  "serde",
  "toml 0.9.12+spec-1.1.0",
