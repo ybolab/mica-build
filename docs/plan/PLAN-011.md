@@ -4,8 +4,8 @@
 - **createdAt**: 2026-08-21 14:25
 - **approvedAt**: 2026-08-21 14:58 (user directive: dispatch via BKD L1)
 - **completedAt**: -
-- **relatedTask**: RFCT-089 (M1, complete 2026-08-21), RFCT-090 (M2, complete 2026-08-21), RFCT-091 (M3, complete 2026-08-21) — campaign 1; RFCT-093 (M5, done 2026-08-22) — campaign 2; RFCT-097 (M3's deferred image wiring, complete 2026-08-23); RFCT-098 (the connd contract read, complete 2026-08-23); M6 outstanding
-- **milestones**: M1 **complete 2026-08-21** — `docs/design/bus.md` records the D1/D2/D3 contract and the D6 Sparkplug B evaluation (native grammar only), and the read-only `com.mos.Item1` façade (`GetItems`, coalesced `ItemsChanged`, redaction) ships in `mosd/mosd/src/tree.rs`; M2 **complete 2026-08-21** — the write half ships: `GetValue`/`SetValue` on per-item object paths with the five platform-config subtrees writable and `/Actions/reboot` + `/Actions/poweroff` as action items (`mosd/mosd/src/tree.rs`, `mosd/mosd/src/actions.rs`), apid's power pane driving them with HTTP byte-for-byte unchanged (`mosd/apid/src/bus_client.rs`), and D3's actions-as-items fork resolved in `docs/design/api.md` §10.3; M3 **complete 2026-08-21** — the bridge ships: `mos-mqttd` (`mosd/mqttd/`, a new workspace crate plus `dist/mos-mqttd.service`) publishes the item tree in the mos-native grammar D6 chose, with the protocol as a pure state machine (`mosd/mqttd/src/bridge.rs`) tested against an in-memory transport double rather than a broker in CI, and `docs/design/bus.md` §10.1 flipped to `[implemented]` with paths; image wiring, multi-service publication (D5's registry) and TLS were recorded as deferred in RFCT-091; M4 **WITHDRAWN 2026-08-22** (D4 dropped; the number is not reused); M5 **complete 2026-08-22** (RFCT-093) — extension enablement: the `com.mos.ext` policy measured against a live bus, the STATE bind at `/usr/local/lib/systemd/system`, the one class rule, and mosd's `NameOwnerChanged` scan with its conformance field; M3's deferred image wiring **complete 2026-08-23** (RFCT-097) — `mos-mqttd` is installed, enabled, runs as the static `mos-mqttd` account under a per-member D-Bus grant, and takes its broker from a STATE-backed `EnvironmentFile` rather than one baked into the verity root; M6 outstanding
+- **relatedTask**: RFCT-089 (M1, complete 2026-08-21), RFCT-090 (M2, complete 2026-08-21), RFCT-091 (M3, complete 2026-08-21) — campaign 1; RFCT-093 (M5, done 2026-08-22) — campaign 2; RFCT-097 (M3's deferred image wiring, complete 2026-08-23); RFCT-098 (the connd contract read, complete 2026-08-23); RFCT-104 (M7, complete 2026-08-24) — campaign 3, the MQTT master switch and the in-image broker (D7, added 2026-08-24 on user direction); M6 outstanding
+- **milestones**: M1 **complete 2026-08-21** — `docs/design/bus.md` records the D1/D2/D3 contract and the D6 Sparkplug B evaluation (native grammar only), and the read-only `com.mos.Item1` façade (`GetItems`, coalesced `ItemsChanged`, redaction) ships in `mosd/mosd/src/tree.rs`; M2 **complete 2026-08-21** — the write half ships: `GetValue`/`SetValue` on per-item object paths with the five platform-config subtrees writable and `/Actions/reboot` + `/Actions/poweroff` as action items (`mosd/mosd/src/tree.rs`, `mosd/mosd/src/actions.rs`), apid's power pane driving them with HTTP byte-for-byte unchanged (`mosd/apid/src/bus_client.rs`), and D3's actions-as-items fork resolved in `docs/design/api.md` §10.3; M3 **complete 2026-08-21** — the bridge ships: `mos-mqttd` (`mosd/mqttd/`, a new workspace crate plus `dist/mos-mqttd.service`) publishes the item tree in the mos-native grammar D6 chose, with the protocol as a pure state machine (`mosd/mqttd/src/bridge.rs`) tested against an in-memory transport double rather than a broker in CI, and `docs/design/bus.md` §10.1 flipped to `[implemented]` with paths; image wiring, multi-service publication (D5's registry) and TLS were recorded as deferred in RFCT-091; M4 **WITHDRAWN 2026-08-22** (D4 dropped; the number is not reused); M5 **complete 2026-08-22** (RFCT-093) — extension enablement: the `com.mos.ext` policy measured against a live bus, the STATE bind at `/usr/local/lib/systemd/system`, the one class rule, and mosd's `NameOwnerChanged` scan with its conformance field; M3's deferred image wiring **complete 2026-08-23** (RFCT-097) — `mos-mqttd` is installed, enabled, runs as the static `mos-mqttd` account under a per-member D-Bus grant, and takes its broker from a STATE-backed `EnvironmentFile` rather than one baked into the verity root; M7 **complete 2026-08-24** (RFCT-104) — D7's master switch and the broker D6's bridge connects to: `mqtt.enabled` at schema v6 seeding `false` on migration (`mosd/mosd-settings/`), `mos-mqtt-broker` (rumqttd 0.20 as a library, `mosd/broker/`) installed **inert** with no `multi-user.target.wants` symlink, `MqttReconciler` driving both units and rendering `/run/mos/mqtt-broker.toml` (`mosd/mosd/src/reconciler/mqtt.rs`), apid's `/mqtt` pane, and `bus.md` §10.1b — verified against mocks, fixtures and the offline image verifier, with **no assembled image built or booted**, which RFCT-104 carries as the outstanding verification; M6 outstanding
 
 ## Context
 
@@ -87,8 +87,10 @@ surfaces later.
 
 ## Proposal
 
-Six decisions (D1–D6), then six milestones (M1–M6). The core rule carried
-throughout: **mosd's discipline is not negotiable** — typed core schema with
+Six decisions (D1–D6), then six milestones (M1–M6). (D7 and M7 were added on
+2026-08-24 on user direction, after approval; the original set is left as
+written.) The core rule carried throughout: **mosd's discipline is not
+negotiable** — typed core schema with
 priced migrations, read-only root, runtime-scoped units, named outcomes,
 secrets never on the bus. Venus contributes the *shape* of the contract, not
 its permissiveness.
@@ -430,6 +432,61 @@ and the item tree supports either. The evaluation happens during M1 (contract
 design) so the bridge milestone starts unblocked. Modbus TCP register
 façade: noted as feasible (dbus_modbustcp pattern), out of this plan.
 
+### D7 — A master switch for MQTT, and a broker in the image for D6's bridge (ADDED 2026-08-24 on user direction)
+
+**This section amends an already-approved plan, on user direction, on
+2026-08-24** — the same way D5 records its own `REVISED 2026-08-22 on user
+direction`. Nothing in D1–D6 is withdrawn or altered; D7 governs the switch and
+the broker that D6's bridge connects to.
+
+D6 specified the bridge and M3 shipped it; RFCT-097 installed it and enabled it
+unconditionally. What no milestone specified is what it connects **to**. The
+default is `localhost:1883` and no image has ever carried a broker, so the bridge
+has never once connected — it has only ever retried, warning every 30 seconds into
+a journal on STATE. D7 adds the missing half and a way to turn the pair off.
+
+**(a) `mqtt.enabled` is a master switch and nothing else.** False means neither
+the broker nor the bridge runs. It validates nothing and depends on nothing below
+it. There is no combination of `listen` and `auth` that makes it mean something
+other than "run both" or "run neither".
+
+**(b) `mqtt.listen` and `mqtt.auth` are deliberately NOT coupled to it.** No code
+may refuse to start on any listen/auth combination. A broker bound off-host with
+authentication disabled is worth a loud WARN and is **not** worth a gate: an
+operator who widened the bind made a decision, and a daemon that answers a
+decision by quietly not starting is a daemon whose reason for being down cannot be
+read anywhere. Coupling the two was proposed once and **rejected**. The rejection
+has a second-order form that is easy to reintroduce: an `Err` raised over `listen`
+inside the reconciler would fail the reconcile of the whole `mqtt` subtree,
+`mqtt.enabled` included, which is the same coupling one layer down.
+
+**(c) rumqttd over mosquitto.** Debian's `mosquitto` is a 1.7 MB measured
+increment — which is not the objection. The objection is that it drags four C
+shared libraries (`libcjson1`, `libmosquitto1`, `libdlt2`,
+`libwebsockets19t64`) into a root with **no package manager**, two of which a
+local broker never uses. rumqttd is the same project family as the `rumqttc 0.25`
+D6's bridge already depends on, is pure Rust, and is used as a **library** with
+`default-features = false`. `use-rustls` stays off: it pulls `rustls 0.22`, which
+the workspace advisories check rejects. Measured cost is in RFCT-104.
+
+**(d) `mqtt` is deliberately absent from `WRITABLE_SUBTREES`, matching
+`container`.** D2's bus writability is unchanged by this work: the switch is
+reachable from apid's `/mqtt` pane and not over `com.mos.Item1`. Related and
+load-bearing: **no credential lives in the settings tree.** mosd publishes that
+tree over `com.mos.Item1` (D1), so a password under `mqtt.auth` would be a
+published password and would need new redaction in `mosd/mosd/src/tree.rs` — the
+bus contract, and an escalation trigger rather than something to amend in passing.
+The broker's accounts live on STATE at `/var/lib/mos/mqtt-broker-users.toml`, the
+way the device password already does: the tree carries the policy, the STATE file
+carries the secret.
+
+**(e) The default is `false` and the v5 → v6 migration seeds `false`.** The user
+has **explicitly accepted this as a behaviour change** for fielded cx3576 devices:
+they stop running the bridge until the switch is turned on. It is acceptable
+because of (the fact this section opens with) no shipped device having a broker —
+nothing that worked has stopped working, and defaulting to true would ship the
+existing retry loop under a new name.
+
 ### Milestones
 
 | M | Deliverable | Verify |
@@ -440,6 +497,7 @@ façade: noted as feasible (dbus_modbustcp pattern), out of this plan.
 | M4 | **WITHDRAWN** (D4 dropped, 2026-08-22) — milestone numbers are not reused, so M5/M6 keep their identifiers | — |
 | M5 | **LANDED 2026-08-22** (RFCT-093). Extension enablement (D5 revised): `own_prefix` semantics measured first (`mosd/hack/dbus-policy-test.sh` §4, dbus-daemon 1.12.20) and the policy written against the measurement (`mosd/dist/com.mos.ext.conf`); the STATE bind at `/usr/local/lib/systemd/system` (`os/rootfs/overlay-v2/etc/systemd/system/usr-local-lib-systemd-system.mount`, seeded with no `cp -an`); the one class rule (`mosd/busname/src/lib.rs`) consumed by the bridge (`mosd/mqttd/src/topic.rs`) and the registry; mosd's `NameOwnerChanged` scan publishing the registry with its `conformance` field into live state under `services` (`mosd/mosd/src/scan.rs`); `bus.md` §5/§6 flipped per statement | Done: the policy test asserts all seven names with expected values, including that an unprivileged uid CAN own `com.mos.ext.foo` and CANNOT own `com.mos.mosd`; the scan is tested against a fake service appearing and vanishing (`mosd/mosd/tests/scan.rs`); the image verifier's D5 assertions are in `check_ext_unit_dir`, driven offline by `os/ui-location-test.sh`. **Verified against a real assembled image** (baseline-attributed): `main` `RESULT: FAIL (347/350)` vs `bkd/fcgv4ehp` `RESULT: FAIL (354/357)` — the campaign's seven additional assertions all PASS, and the three failures are identical on both sides and therefore pre-existing. That run was at a different, unmerged commit; RFCT-093's Outcome item (a) carries the boundary and the two pre-existing failures handed on |
 | M6 | Device attach: udev rule → systemd template instance for serial/CAN-attached extensions (the serial-starter analog) | offline: udev rule + unit rendering asserted by verifier; hardware claims explicitly **not** made (repo discipline) |
+| M7 | **LANDED 2026-08-24** (RFCT-104). D7's master switch and the broker D6's bridge connects to: the `mqtt` settings subtree at schema v6 with a v5→v6 migration seeding `enabled = false` (`mosd/mosd-settings/`); `mos-mqtt-broker`, a new workspace crate wrapping rumqttd 0.20 as a library with default features off (`mosd/broker/`, `dist/mos-mqtt-broker.service`); `MqttReconciler` driving both units from the switch and rendering `/run/mos/mqtt-broker.toml` (`mosd/mosd/src/reconciler/mqtt.rs`); apid's `/mqtt` pane (`mosd/apid/src/routes.rs`); the broker installed **inert** — binary, unit and uid/gid 969, and no `multi-user.target.wants` symlink (`os/rootfs/Dockerfile.v2`, `os/rootfs/build-v2.sh`); `bus.md` §10.1b added and §10.1a's broker-address bullet corrected | Done, and the boundary is named rather than implied. **Verified:** reconciler unit tests against the existing `MockUnitControl` (both transitions and their orderings, the config-changed restart, off-host-without-auth starting anyway, the failed-broker `reset_failed`, a refused start on either unit not failing `apply`, and a switch-off still propagating a failure); the published-key-set contract test naming `mosd/apid/src/routes.rs` as its consumer; apid route tests for the pane, the `POST /mqtt/enable` write and authentication; the v5→v6 migration in both directions; `check_mqtt_broker` in `os/verify-image-v2.sh` driven offline by the fixtures in `os/ui-location-test.sh` (cases 5j–5m), each of its five assertions observed failing on a fixture built to break it; `mosd/hack/check.sh` and `docs/verify-index.sh` green. **NOT done: no assembled image was built or booted.** The broker has never been started on a real system and `MqttReconciler` has never driven real systemd — every unit-control assertion is against the mock, and the image assertions prove the verifier can fail, not that the Dockerfile produces a root that passes it. A boot on an assembled image is the outstanding verification, as it was for RFCT-097 |
 
 Each milestone dispatches its own RFCT tasks on approval (PLAN-010
 convention). M1+M2 are the decision-critical pair and should land before the
