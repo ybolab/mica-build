@@ -596,7 +596,7 @@ const phase: Phase = {
     const consoleLog = openConsole(config);
 
     // -- 2. mark, so everything asserted below is AFTER this point ----------
-    if (consoleLog !== undefined) consoleLog.mark();
+    if (consoleLog !== undefined) consoleLog.mark("reading /power and posting the UNCONFIRMED reboots");
 
     // -- 3. read the confirm token off the page, as a browser would ---------
     const powerPage = await client.get("/power");
@@ -672,7 +672,7 @@ const phase: Phase = {
     }
 
     // -- 5. the real one ----------------------------------------------------
-    if (consoleLog !== undefined) consoleLog.mark();
+    if (consoleLog !== undefined) consoleLog.mark("the CONFIRMED POST /power/reboot");
     const rebootPostedAtMs = Date.now();
     const posted = await client.post(REBOOT_ACTION, {
       confirm: checkbox(true, rebootToken ?? "the-token-was-not-found-on-the-page"),

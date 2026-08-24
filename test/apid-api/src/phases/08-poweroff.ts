@@ -43,7 +43,7 @@ const phase: Phase = {
     const consoleLog = openConsole(config);
 
     // -- 1. mark -------------------------------------------------------------
-    if (consoleLog !== undefined) consoleLog.mark();
+    if (consoleLog !== undefined) consoleLog.mark("reading /power and posting the UNCONFIRMED poweroff");
 
     // -- 2. the token, read off the page, and the confirm gate ---------------
     const powerPage = await client.get("/power");
@@ -81,7 +81,7 @@ const phase: Phase = {
     );
 
     // -- 3. the real one, and the console proof ------------------------------
-    if (consoleLog !== undefined) consoleLog.mark();
+    if (consoleLog !== undefined) consoleLog.mark("the CONFIRMED POST /power/poweroff");
     const posted = await client.post(POWEROFF_ACTION, {
       confirm: checkbox(true, token ?? "the-token-was-not-found-on-the-page"),
     });

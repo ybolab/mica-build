@@ -319,6 +319,12 @@ if [ "${DRY_RUN}" -eq 1 ]; then
     note "               https://<guest>:${HTTPS_PORT}/healthz to answer 200 from inside ${BUN_IMAGE}"
     note "would run      docker run --network ${NET} -v ${REPO_ROOT}:/w -v ${OUT_REAL}:/w/_out -w /w/test/apid-api ${BUN_IMAGE} bun run src/main.ts"
     note "               APID_HOST=<guest> APID_HTTPS_PORT=${HTTPS_PORT} APID_HTTP_PORT=${HTTP_PORT}"
+    if [ -n "${APID_NEGATIVE:-}" ]; then
+        note "               APID_NEGATIVE=${APID_NEGATIVE} -- this run is EXPECTED TO BE RED"
+    fi
+    if [ -n "${APID_HANDOFF:-}" ]; then
+        note "               APID_HANDOFF=${APID_HANDOFF}"
+    fi
     note "               APID_CONSOLE=${ART_IN_CONTAINER}/console-boot1.log APID_PHASES=${PHASES:-<all>}"
     if [ "${BOOT2}" = "1" ]; then
         note "would then    boot a second time on the same disk for ${BOOT2_PHASES}"
@@ -519,9 +525,30 @@ wait_for_apid() {
 # -- it is a sibling-container arrangement, so our /tmp is ours and the
 # daemon's is the daemon's. The container then sees an EMPTY directory and says
 # `Module not found`, which reads like a bug in the suite and is not.
+#
+# APID_NEGATIVE and APID_HANDOFF are FORWARDED when the caller set them, and
+# omitted entirely when it did not, so an unset knob keeps the suite's own
+# default rather than being overridden with an empty string.
+#
+# APID_NEGATIVE is the reason this matters: it is how a live run is made to go
+# RED on demand, which is the other half of proving the suite works -- the
+# selftest proves the machinery can fail offline, and this proves it can fail
+# against the actual guest. Without the forward, `APID_NEGATIVE=... make
+# os-apid-api-test` would run green and look like the inversion had been
+# applied, which is precisely the false negative the knob exists to rule out.
 SUITE_RC=0
+suite_passthrough() {
+    local -n out="$1"
+    out=()
+    [ -n "${APID_NEGATIVE:-}" ] && out+=(-e "APID_NEGATIVE=${APID_NEGATIVE}")
+    [ -n "${APID_HANDOFF:-}" ] && out+=(-e "APID_HANDOFF=${APID_HANDOFF}")
+    return 0
+}
+
 run_suite() {
     local label="$1" ip="$2" console_name="$3" phases="$4" log rc p f
+    local -a passthrough
+    suite_passthrough passthrough
     log="${ART_DIR}/suite-${label}.log"
     if [ ! -f "${SCRIPT_DIR}/src/main.ts" ]; then
         fail "[${label}] the suite entry point test/apid-api/src/main.ts does not exist, so nothing was asserted about apid"
@@ -538,6 +565,7 @@ run_suite() {
         -e APID_CONSOLE="${ART_IN_CONTAINER}/${console_name}" \
         -e APID_RESULT_JSON="${ART_IN_CONTAINER}/result-${label}.json" \
         -e APID_PHASES="${phases}" \
+        ${passthrough[@]+"${passthrough[@]}"} \
         "${BUN_IMAGE}" bun run src/main.ts 2>&1 | tee "${log}"
     rc="${PIPESTATUS[0]}"
     set -e

@@ -113,6 +113,14 @@ timeout it prints the last 40 console lines *before* tearing anything down.
 | `MOS_APID_KEEP_DISK` | `0` | keep the 4 GiB `disk.img` after the run |
 | `MOS_QEMU_HTTPS_PORT` / `MOS_QEMU_HTTP_PORT` | `18443` / `18080` | forwarded ports |
 | `MOS_QEMU_RUN_SECONDS` / `MOS_QEMU_TIMEOUT` | `2400` / `2700` | QEMU-side backstops |
+| `APID_NEGATIVE` | — | forwarded to the suite: invert the first matching check, to prove a live run can go RED |
+| `APID_HANDOFF` | `<result dir>/handoff-07-reboot.json` | forwarded to the suite: where 07 leaves what 07b reads |
+
+`APID_NEGATIVE` and `APID_HANDOFF` are passed through only when set, so an unset
+knob keeps the suite's own default instead of being overridden with an empty
+string. `APID_NEGATIVE` names a substring of `"<phase-id>: <check text>"`; the
+first check it matches has its verdict inverted, and a value matching *nothing*
+fails the run rather than passing quietly — so a typo cannot read as evidence.
 
 ## Artefacts
 
