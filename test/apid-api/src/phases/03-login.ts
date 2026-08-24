@@ -139,18 +139,34 @@ const phase: Phase = {
     // real run of this suite was red: the window must be timed from HERE, when
     // the 401 came back, and NOT from `attemptedAt` above.
     //
-    // auth.rs arms the guard while it is handling the request, so the window
-    // opens at some instant BEFORE this response was written -- but the request
-    // itself is not instant. apid hashes the submitted password with argon2,
-    // deliberately slowly, and on a TCG guest that one POST took OVER A SECOND
-    // end to end. Timing the 1s window from before the request therefore had it
-    // already "expired" by the time the response arrived, the phase waited only
-    // its margin, and the correct password was refused 429 by a guard that was
-    // still armed.
+    // THIS IS THE MIRROR IMAGE OF 821a63a ("the e2e backoff assertion was racing
+    // argon2, not the clock"). That commit fixed a Rust e2e test that expected a
+    // 429 and got a 303 because the round trip OUTRAN the window. This expected
+    // a 303 and got a 429 because the round trip outran the window the other
+    // way: the phase gave itself a 1s budget for work whose cost nothing in the
+    // phase bounds, and on a TCG guest that one POST took over a second end to
+    // end -- so `attemptedAt + BACKOFF_BASE` had already passed by the time the
+    // 401 arrived, the wait collapsed to its bare margin, and the correct
+    // password met a guard that was still armed.
     //
-    // Timing from the response is safe in the direction that matters: the guard
-    // armed at or before this instant, so waiting BACKOFF_BASE from here always
-    // covers the real window rather than a fraction of it.
+    // The anchor below is correct BY THE DAEMON'S OWN CONTRACT, not by luck.
+    // mosd/apid/src/auth.rs:118 `confirm_failure` re-arms the window AFTER
+    // verification returns, and says why in its own doc comment: "this only
+    // moves the window's start from admission time to outcome time. Without it
+    // the verification's own duration would eat into the wait -- argon2 costs a
+    // meaningful fraction of the one-second base window by design." So
+    // `locked_until` is set immediately before the 401 is serialised, which is
+    // at or before the instant this client receives it. Anchoring here puts the
+    // whole argon2 cost on the correct side of the measurement, and the margin
+    // then only has to cover response transit and timer scheduling -- not a
+    // password hash whose cost is deliberately unbounded.
+    //
+    // 821a63a's own remedy was to DRIVE THE RUN UP (four failures, an eight
+    // second window) so the window dwarfs any round trip. That works here too,
+    // and is deliberately NOT done: with the anchor corrected, the argon2 race
+    // it defends against cannot occur in this phase, and the eight seconds
+    // would be spent on every boot. 06-backoff already measures the driven-up
+    // curve, so nothing is lost by keeping this one at a single failure.
     const failedAt = Date.now();
     const wrongTookMs = failedAt - attemptedAt;
     report.expectStatus(wrong, 401, "POST /login with the wrong password is answered 401");
