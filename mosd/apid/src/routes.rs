@@ -1826,15 +1826,54 @@ async fn containers_enable(
 // RFCT-104: the MQTT pane
 // ---------------------------------------------------------------------------
 
+/// The two units mosd's mqtt reconciler drives, named here because the pane
+/// selects their published state out of the `units` array by name.
+///
+/// These must match `BROKER_UNIT` and `BRIDGE_UNIT` in
+/// `mosd/mosd/src/reconciler/mqtt.rs`; the reconciler's
+/// `the_published_shape_is_the_contract_with_the_apid_pane` asserts both names
+/// appear in what it publishes.
+const MQTT_BROKER_UNIT: &str = "mos-mqtt-broker.service";
+const MQTT_BRIDGE_UNIT: &str = "mos-mqttd.service";
+
 /// Everything the MQTT pane renders, gathered before any markup is built.
 ///
-/// The live-state keys this reads are the pane's half of a contract with
-/// mosd's mqtt reconciler: `enabled`, `listenAddress`, `listenPort`,
-/// `authEnabled` and `activeState` (the broker unit's) -- camelCase and flat,
-/// as the container reconciler publishes its own. Every one of them is
-/// optional here: a key the reconciler has not published renders as "unknown"
-/// and never as a default, because a listen address on this page is a claim
-/// about what the broker is actually bound to.
+/// The live state this reads is published by mosd's mqtt reconciler
+/// (`mosd/mosd/src/reconciler/mqtt.rs`) and is **nested**, not flat:
+/// `listen.address`, `listen.port`, `auth.enabled`, and a `units` array of one
+/// object per unit the reconciler drives. The pane adapts to that shape rather
+/// than the reconciler flattening itself for the pane, because:
+///
+/// * the live state mirrors the settings subtree it applied -- `mqtt.listen.address`
+///   in settings, `listen.address` in state -- which is a rule a reader can
+///   predict without opening either file;
+/// * it is published as bus items, where `/mqtt/listen/address` is the
+///   idiomatic path shape;
+/// * `units` has to be an array: the reconciler drives two units and there is
+///   no flat encoding of that. The pane reads a nested array either way, and
+///   flat scalars sitting beside it would be the worst of both.
+///
+/// That last point is not a preference. A flat `activeState` cannot say whose
+/// state it is, and the question "the broker's or the bridge's?" has no answer
+/// in the key -- only in whatever the reconciler happened to mean, which the
+/// pane cannot check. Reporting both halves flat would take a second key, then
+/// a third and a fourth for their unit-file states, invented anew each time
+/// the reconciler grows a unit. Every entry of `units` carries its own `unit`,
+/// `activeState` and `unitFileState`, so the broker is the entry named
+/// `mos-mqtt-broker.service` and the bridge is the one named
+/// `mos-mqttd.service`, and neither needs a key of its own.
+///
+/// Every field is optional here: a key the reconciler has not published
+/// renders as "unknown" and never as a default, because a listen address on
+/// this page is a claim about what the broker is actually bound to.
+///
+/// apid and mosd are separate crates talking over a bus, so no shared type
+/// holds the two ends of this together. What does is a pair of tests: the
+/// reconciler asserts its exact published key set and names this file as the
+/// consumer, and this crate's fixture is a verbatim copy of the reconciler's
+/// own expectation. The two ends disagreed once -- flat here, nested there --
+/// and stayed green for exactly as long as each side only tested itself
+/// against a shape it had invented.
 struct MqttView {
     /// `mqtt.enabled` -- what the operator asked for.
     enabled: bool,
@@ -1846,19 +1885,48 @@ struct MqttView {
 }
 
 impl MqttView {
+    /// A value from the published live state, addressed by its path down the
+    /// nested tree: `["listen", "address"]` reads `listen.address`.
+    fn at(&self, path: &[&str]) -> Option<&Value> {
+        path.iter()
+            .try_fold(self.state.as_ref()?, |value, key| value.get(key))
+    }
+
     /// A string field of the published live state.
-    fn text(&self, key: &str) -> Option<&str> {
-        self.state.as_ref()?.get(key)?.as_str()
+    fn text(&self, path: &[&str]) -> Option<&str> {
+        self.at(path)?.as_str()
     }
 
     /// A boolean field of the published live state.
-    fn flag(&self, key: &str) -> Option<bool> {
-        self.state.as_ref()?.get(key)?.as_bool()
+    fn flag(&self, path: &[&str]) -> Option<bool> {
+        self.at(path)?.as_bool()
     }
 
     /// The published listen port.
     fn port(&self) -> Option<u64> {
-        self.state.as_ref()?.get("listenPort")?.as_u64()
+        self.at(&["listen", "port"])?.as_u64()
+    }
+
+    /// One entry of the published `units` array, selected by its `unit` field.
+    ///
+    /// By name, never by index. The array is ordered broker-then-bridge today
+    /// and nothing promises it stays that way; an index would still return a
+    /// unit on the day that order changed, and the page would report the
+    /// bridge's state under the broker's name with no test anywhere failing.
+    fn unit(&self, name: &str) -> Option<&Value> {
+        self.at(&["units"])?
+            .as_array()?
+            .iter()
+            .find(|unit| unit.get("unit").and_then(Value::as_str) == Some(name))
+    }
+
+    /// A field of one published unit; "unknown" when the reconciler has
+    /// published no such unit, or no such field on it.
+    fn unit_field(&self, name: &str, field: &str) -> &str {
+        self.unit(name)
+            .and_then(|unit| unit.get(field))
+            .and_then(Value::as_str)
+            .unwrap_or("unknown")
     }
 
     /// Whether the broker unit is in systemd's `failed` state.
@@ -1872,7 +1940,13 @@ impl MqttView {
     /// there would be reporting the operator's request back to them as though
     /// it were an outcome.
     fn broker_failed(&self) -> bool {
-        self.text("activeState") == Some("failed")
+        self.unit_field(MQTT_BROKER_UNIT, "activeState") == "failed"
+    }
+
+    /// The same for the bridge, which fails for its own reasons and has its
+    /// own journal.
+    fn bridge_failed(&self) -> bool {
+        self.unit_field(MQTT_BRIDGE_UNIT, "activeState") == "failed"
     }
 
     /// Whether the published listener would accept a connection from off this
@@ -1888,12 +1962,12 @@ impl MqttView {
     /// coupling RFCT-104 rejected; see [`MQTT_SEPARATE_CONFIG_NOTICE`].
     fn off_host_unauthenticated(&self) -> bool {
         let Some(address) = self
-            .text("listenAddress")
+            .text(&["listen", "address"])
             .and_then(|address| address.parse::<IpAddr>().ok())
         else {
             return false;
         };
-        !address.is_loopback() && self.flag("authEnabled") == Some(false)
+        !address.is_loopback() && self.flag(&["auth", "enabled"]) == Some(false)
     }
 }
 
@@ -1948,11 +2022,23 @@ const MQTT_OPEN_LISTENER_WARNING: &str = "This broker accepts unauthenticated co
 /// the cause here would be a diagnosis the pane has not made.
 const MQTT_BROKER_FAILED_NOTICE: &str = "The broker unit has failed: MQTT is switched on, but mos-mqtt-broker.service is not running and the bridge has nothing to connect to. Run journalctl -u mos-mqtt-broker on the device for the reason it exited.";
 
+/// The same for the other half of the switch, with its own journal.
+///
+/// The switch drives both units, so both can fail, and they fail for
+/// unrelated reasons -- the bridge's are about the cloud endpoint it dials and
+/// not about the listener. Folding the two into one notice would send an
+/// operator to the wrong journal half the time.
+const MQTT_BRIDGE_FAILED_NOTICE: &str = "The bridge unit has failed: MQTT is switched on, but mos-mqttd.service is not running, so nothing is being carried between this device and the cloud. Run journalctl -u mos-mqttd on the device for the reason it exited.";
+
 fn mqtt_page(view: &MqttView, banner: Option<Markup>) -> Html<String> {
-    let address = view.text("listenAddress").unwrap_or("unknown");
+    let address = view.text(&["listen", "address"]).unwrap_or("unknown");
     let port = view
         .port()
         .map_or_else(|| "unknown".to_string(), |port| port.to_string());
+    // Each unit's own state, pulled out of the `units` array by name -- see
+    // `MqttView::unit`.
+    let broker = view.unit_field(MQTT_BROKER_UNIT, "activeState");
+    let bridge = view.unit_field(MQTT_BRIDGE_UNIT, "activeState");
     pane(
         "MQTT",
         html! {
@@ -1962,14 +2048,27 @@ fn mqtt_page(view: &MqttView, banner: Option<Markup>) -> Html<String> {
 
             h2 { "Switch" }
             p { "MQTT: " b { (if view.enabled { "enabled" } else { "disabled" }) } }
-            p { "Broker unit: " b { (view.text("activeState").unwrap_or("unknown")) } " (" code { "mos-mqtt-broker.service" } ")" }
             // What the switch was asked to do, and what came of it, are two
             // different facts and the pane reports both: "enabled" above is
-            // the request, the unit state is the outcome.
-            @if view.broker_failed() { (error_box(MQTT_BROKER_FAILED_NOTICE)) }
+            // the request, the unit states are the outcome. Both units,
+            // because the switch drives both -- a page carrying only the
+            // broker would leave an operator with MQTT "on", a healthy broker
+            // and no way to see that the bridge had died.
             p {
-                "One switch drives both halves: the broker (" code { "mos-mqtt-broker.service" }
-                ") and the bridge (" code { "mos-mqttd.service" } "). Turning it off stops both, "
+                "Broker unit: " b { (broker) }
+                " (" code { (MQTT_BROKER_UNIT) } ", unit file "
+                (view.unit_field(MQTT_BROKER_UNIT, "unitFileState")) ")"
+            }
+            p {
+                "Bridge unit: " b { (bridge) }
+                " (" code { (MQTT_BRIDGE_UNIT) } ", unit file "
+                (view.unit_field(MQTT_BRIDGE_UNIT, "unitFileState")) ")"
+            }
+            @if view.broker_failed() { (error_box(MQTT_BROKER_FAILED_NOTICE)) }
+            @if view.bridge_failed() { (error_box(MQTT_BRIDGE_FAILED_NOTICE)) }
+            p {
+                "One switch drives both halves: the broker (" code { (MQTT_BROKER_UNIT) }
+                ") and the bridge (" code { (MQTT_BRIDGE_UNIT) } "). Turning it off stops both, "
                 "and there is no setting that runs one without the other."
             }
 
@@ -1984,7 +2083,7 @@ fn mqtt_page(view: &MqttView, banner: Option<Markup>) -> Html<String> {
             h2 { "Listener" }
             p { "Listen address: " b { (address) } }
             p { "Listen port: " b { (port) } }
-            p { "Authentication: " b { (state_flag(view.flag("authEnabled"), "enabled", "disabled")) } }
+            p { "Authentication: " b { (state_flag(view.flag(&["auth", "enabled"]), "enabled", "disabled")) } }
             @if view.enabled && view.off_host_unauthenticated() {
                 (error_box(MQTT_OPEN_LISTENER_WARNING))
             }
