@@ -38,9 +38,11 @@
 # WHY FOUR BUILDER STAGES AND NOT ONE SHARED IMAGE. The obvious economy is to
 # merge the C, Rust and Go toolchains into a single builder so the apt work
 # happens once. It makes the cache WORSE, and this build measured it: adding
-# libsystemd-dev — which only the Go stage needs, for <systemd/sd-journal.h> —
+# libsystemd-dev — needed then by the Go stage, for <systemd/sd-journal.h> —
 # invalidated go-build and nothing else, so crun, conmon, catatonit, netavark
-# and aardvark-dns all came from cache. Merged behind one apt list, that same
+# and aardvark-dns all came from cache. (The C stage needs it too now: conmon
+# compiles its journald path out without it, which cost a device boot to find.
+# The measurement above still stands — that is the point of separate lists.) Merged behind one apt list, that same
 # one-package edit would have recompiled every component, about 42 minutes
 # under emulation. One dependency list means one cache key for five unrelated
 # compilers. Separate stages also let BuildKit run C, Rust and Go concurrently.
@@ -139,7 +141,8 @@ RUN --mount=type=cache,target=/var/cache/apt,id=apt-cache-c,sharing=locked \
         autoconf automake libtool ccache \
         libseccomp-dev libcap-dev \
         libjson-c-dev libyajl-dev \
-        libglib2.0-dev
+        libglib2.0-dev \
+        libsystemd-dev
 # ccache in front of the real compilers. The C components had NO compiled-object
 # cache while the Go stage had two (/root/.cache/go-build and /go/pkg/mod), so
 # any change upstream of this stage paid a full crun recompile -- ~10 minutes
@@ -157,10 +160,28 @@ RUN --mount=type=cache,target=/ccache,id=ccache-c \
     make -j"$(nproc)"; \
     install -m0755 crun /out/crun
 
+# libsystemd-dev above is what gives conmon JOURNALD SUPPORT, and its absence
+# is not a build error -- conmon's Makefile probes for libsystemd with
+# pkg-config and simply compiles the journald path out when it is missing. The
+# binary builds, installs and runs; it refuses only at the moment a container
+# actually starts:
+#   [conmon:e]: Include journald in compilation path to log to systemd journal
+#   Error: conmon failed: exit status 1
+# and /etc/containers/containers.conf sets log_driver = "journald", so that is
+# EVERY container on the device. Found by booting x64 and starting one, after
+# the CA bundle let the image pull succeed.
+#
+# os/rootfs/Dockerfile.v2 already asserts libsystemd.so.0 is in the image
+# because podman DLOPENS it for journald logging. That check is about podman
+# and could not see this: conmon's dependency is decided at COMPILE time, in a
+# different build, by whether a header was present.
 RUN --mount=type=cache,target=/ccache,id=ccache-c \
     set -eu; cd /src/conmon; \
     make -j"$(nproc)" bin/conmon; \
-    install -m0755 bin/conmon /out/conmon
+    install -m0755 bin/conmon /out/conmon; \
+    ldd /out/conmon | grep -q libsystemd || \
+        { echo "error: conmon was built WITHOUT journald support. Its Makefile compiles the journald path out when libsystemd is not found, silently -- and containers.conf sets log_driver=journald, so every container start fails with 'Include journald in compilation path'" >&2; exit 1; }; \
+    echo "conmon: linked against libsystemd, so log_driver=journald works"
 
 # catatonit is STATIC, alone among these, and for a reason that is not about
 # this image: it is copied INTO containers as their init, where the libc is
