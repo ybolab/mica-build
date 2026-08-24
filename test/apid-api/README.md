@@ -11,9 +11,21 @@ never fixed from inside the test tree**.
 
 ## One boot, phased, ordered
 
-A TCG boot of the image takes roughly **ten minutes**. A boot per test is not
-viable, so the suite runs against **one** boot and the phases hand state to each
-other in a fixed order:
+A TCG boot of the image reaches apid's `APID_LISTENING` line in **60–66 s** and
+both readiness signals in **65–72 s** — measured on this host on 2026-08-24,
+across this campaign's eight runs, under TCG with no `/dev/kvm` and on a quiet
+machine. That is a measurement of one host on one day, not a property of the
+image: a contended host is materially slower, which is why the harness's
+readiness deadline stays at 900 s and is not trimmed to fit these numbers.
+
+**A boot per test is still not viable on that figure**, and the reason was never
+the boot alone. A full lifecycle run is **two** boots, nine phases,
+`06-backoff`'s deliberately doubling login windows and an argon2 hash behind
+every login — about **four minutes** end to end, measured the same way. Against
+that, per-test isolation would multiply the boot across dozens of checks until
+it dominated everything the suite actually measures, and under load TCG varies
+by multiples rather than by seconds. So the suite runs against **one** boot per
+invocation and the phases hand state to each other in a fixed order:
 
 | id | what it covers |
 |----|----------------|
@@ -23,7 +35,8 @@ other in a fixed order:
 | `04-readonly` | every GET route, `/healthz`, the `/api` 404 envelope |
 | `05-mutate` | hostname, network, ssh, containers |
 | `06-backoff` | the login guard: global, doubling, persistent |
-| `07-reboot` | `POST`-only, the confirm token, the device coming back |
+| `07-reboot` | `POST`-only, the confirm token, taking the machine down |
+| `07b-postreboot` | what survived the power cycle, and what correctly did not |
 | `08-poweroff` | `POST`-only, the confirm token, the guest going down |
 
 State coupling between phases is **accepted**, and then made structural. Every
@@ -84,7 +97,10 @@ The whole thing, image and all:
 make os-apid-api-test
 ```
 
-The self-test — **no network, no docker, no QEMU, no image**, a few seconds:
+The self-test — **no network, no docker, no QEMU, no image**. Measured under
+`oven/bun:1` (bun 1.4.0) on 2026-08-24: `selftest` itself takes **~0.17 s** and
+`typecheck` **~2 s**, so the whole block below is a couple of seconds after the
+first `bun install`:
 
 ```sh
 bun install

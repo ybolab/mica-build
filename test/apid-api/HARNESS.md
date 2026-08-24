@@ -117,10 +117,21 @@ not evidence that the daemon is serving. Redirects are never followed: apid's
 through a port forward, and a client that follows it hangs in a way that reads
 as apid being down.
 
-A TCG boot on this host reaches a login prompt in ~200–260s when the machine is
-quiet and four to five times that when it is not, so the wait prints a progress
-line every 15s carrying the elapsed time and the last console line — and on
-timeout it prints the last 40 console lines *before* tearing anything down.
+A TCG boot on this host reaches `APID_LISTENING` in **60–66 s** and both
+readiness signals in **65–72 s** — measured 2026-08-24 across this campaign's
+eight runs, under TCG with no `/dev/kvm`, on a quiet machine. (One earlier boot
+with `/dev/kvm` present reached `APID_LISTENING` in 65 s as well — a single run,
+recorded here because it bounds nothing but is what was seen.) Note what these
+numbers are a measurement *of*: the daemon answering, not a login prompt. The
+harness never waits for a login prompt.
+
+`MOS_APID_READY_TIMEOUT` stays at **900 s** regardless, because the deadline
+exists for the bad case rather than the measured one. A contended host is
+materially slower, by an amount nothing here has measured, and under contention
+the guest goes long stretches without printing a line — indistinguishable from a
+stall unless the waiting loop says what it is doing. So the wait prints a
+progress line every 15s carrying the elapsed time and the last console line, and
+on timeout it prints the last 40 console lines *before* tearing anything down.
 
 ## Knobs
 
