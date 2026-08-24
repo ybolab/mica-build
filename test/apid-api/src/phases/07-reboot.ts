@@ -48,6 +48,7 @@ import type { Config } from "../config.ts";
 import type { Reporter } from "../report.ts";
 import type { Phase, PhaseContext } from "../runner.ts";
 import { BACKOFF_STATE_KEY, type BackoffState } from "./06-backoff.ts";
+import { HOSTNAME_TARGET_STATE_KEY } from "./05-mutate.ts";
 
 const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -386,8 +387,17 @@ export interface Handoff {
   readonly writtenAtMs: number;
   /** The `apid_session` VALUE held before the reboot, for 07b to replay. */
   readonly sessionCookieValue: string | undefined;
-  /** What 05 renamed the device to, and what 07b expects to find after boot 2. */
-  readonly hostnameTarget: string;
+  /**
+   * What 05 ACTUALLY renamed the device to, or undefined when 05 did not run.
+   *
+   * Read from `ctx.state`, which only 05 writes -- deliberately not from
+   * `config.hostnameTarget`. The configured value is what 05 would rename TO;
+   * it says nothing about whether the rename happened. Recording the config
+   * here made 07b assert that "the hostname 05 set survived the restart" on a
+   * phase-restricted run where 05 never ran, which is a claim about an event
+   * that did not occur. Undefined makes 07b SKIP instead, with that reason.
+   */
+  readonly hostnameTarget: string | undefined;
   /** What 06 left the login guard at. Undefined if 06 did not run. */
   readonly backoff: BackoffState | undefined;
   readonly rebootPostedAtMs: number;
@@ -733,7 +743,11 @@ const phase: Phase = {
       writtenAtIso: new Date(rebootPostedAtMs).toISOString(),
       writtenAtMs: rebootPostedAtMs,
       sessionCookieValue: sessionCookie?.value,
-      hostnameTarget: config.hostnameTarget,
+      // From 05's own state, never from config: see the field's doc comment.
+      hostnameTarget: (() => {
+        const applied = ctx.state.get(HOSTNAME_TARGET_STATE_KEY);
+        return typeof applied === "string" ? applied : undefined;
+      })(),
       backoff,
       rebootPostedAtMs,
     };

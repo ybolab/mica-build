@@ -140,7 +140,7 @@ const phase: Phase = {
     }
     const handoff = read.handoff;
     report.note(`    handoff read from ${read.path}, written ${handoff.writtenAtIso}`);
-    if (handoff.hostnameTarget !== config.hostnameTarget) {
+    if (handoff.hostnameTarget !== undefined && handoff.hostnameTarget !== config.hostnameTarget) {
       report.note(
         `    NOTE: 07 recorded hostnameTarget ${JSON.stringify(handoff.hostnameTarget)} but this ` +
           `process's APID_HOSTNAME_TARGET is ${JSON.stringify(config.hostnameTarget)}. The ` +
@@ -351,6 +351,25 @@ const phase: Phase = {
     // behind the gate and an unauthenticated read would assert a redirect.
     const hostnamePage = await client.get("/hostname");
     report.expectStatus(hostnamePage, 200, "GET /hostname answers the re-established session");
+    if (hostname === undefined) {
+      // 05 did not run in the first boot, so the device was never renamed.
+      // "the hostname 05 set survived the restart" is then a claim about an
+      // event that did not happen, and the only honest verdict is SKIP -- a red
+      // here would be this phase reporting the SHAPE OF THE RUN as a defect in
+      // the device. This is reachable whenever APID_PHASES leaves 05 out.
+      report.skip(
+        ASSERTIONS[4],
+        "07's handoff records no hostname target, which means 05-mutate did not run in the " +
+          "first boot and the device was never renamed. There is no rename to prove persisted. " +
+          "Run the full phase list, or set APID_PHASES to include 05-mutate, to make this a " +
+          "real check again.",
+      );
+      report.skip(
+        "the boot-2 CONSOLE shows the new hostname, the device reporting its own identity",
+        "same reason: 05-mutate did not run, so there is no new hostname to look for.",
+      );
+      return;
+    }
     report.check(
       hostnamePage.body.includes(hostname),
       ASSERTIONS[4],
