@@ -413,9 +413,18 @@ about **four minutes** wall clock end to end.
 **The one-boot decision is unaffected and should not be revisited on this
 number.** A full run is two boots plus nine phases plus 06-backoff's own
 doubling windows, and TCG under load varies by multiples. But the ten-minute
-figure is not a measurement of this host, and it is repeated in two files. Both
-are outside this record's scope and **still carry it**; correcting them is
-open work, and it is the same class of defect RFCT-092 was opened about.
+figure is not a measurement of this host, and the sweep that chased it found it
+had propagated from **one brief** into four places that rest a decision on it --
+`README.md`, `HARNESS.md`, `src/runner.ts` and `run.sh` -- which is the part
+worth recording, because one unsourced number copied until it justifies a design
+is the same class of defect RFCT-092 was opened about. **Those four are now
+corrected**: README.md and HARNESS.md at `1c0b428`, `src/runner.ts` and `run.sh`
+after it. The sweep also counted **nine further occurrences** in the suite's
+source (`config.ts`, `client.ts`, `console.ts`, `report.ts`, `selftest.ts:701`,
+`runner.ts:80`, `05-mutate.ts`, `07-reboot.ts`, `07b-postreboot.ts`) where the
+figure is an incidental cost aside -- *"costs a ten-minute TCG boot to
+diagnose"* -- rather than a premise. Those are **open**; one of them is a
+selftest check's text, so correcting it edits an assertion string.
 
 ## The defects this campaign found in the suite itself
 

@@ -80,12 +80,19 @@ OUT_REAL="$(readlink -f "${REPO_ROOT}/_out")"
 HTTPS_PORT="${MOS_QEMU_HTTPS_PORT:-18443}"
 HTTP_PORT="${MOS_QEMU_HTTP_PORT:-18080}"
 
-# A TCG boot on this host reaches a login prompt in ~200-260s when the machine
-# is quiet and four to five times that when it is not -- measured, repeatedly.
-# Under contention the guest goes two minutes without printing a line, which is
-# indistinguishable from a stall unless the waiting loop says what it is doing.
-# So: a generous deadline, an override, and progress lines carrying the elapsed
-# time and the last thing the console said.
+# A TCG boot on this host reaches APID_LISTENING in 60-66s and both readiness
+# signals in 65-72s -- measured 2026-08-24 across this campaign's eight runs,
+# under TCG with no /dev/kvm, on a quiet machine. Note what that is a
+# measurement _of_: the daemon answering, not a login prompt. This harness
+# never waits for a login prompt.
+#
+# READY_TIMEOUT stays at 900s regardless, because the deadline exists for the
+# bad case rather than the measured one. A contended host is materially slower,
+# by an amount nothing here has measured, and under contention the guest goes
+# long stretches without printing a line -- indistinguishable from a stall
+# unless the waiting loop says what it is doing. So: a generous deadline, an
+# override, and progress lines carrying the elapsed time and the last thing the
+# console said.
 READY_TIMEOUT="${MOS_APID_READY_TIMEOUT:-900}"
 CONTAINER_TIMEOUT="${MOS_APID_CONTAINER_TIMEOUT:-240}"
 POLL_INTERVAL="${MOS_APID_POLL_INTERVAL:-5}"
