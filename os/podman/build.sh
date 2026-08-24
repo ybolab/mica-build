@@ -13,7 +13,19 @@
 set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-OUT="${HERE}/out"
+
+# MOS_ARCH selects the target. The output directory follows it, so an arm64 and
+# an amd64 set can coexist: one shared out/ would mean every board switch is a
+# full recompile of four language toolchains, and -- worse -- a stale out/ from
+# the other architecture looks exactly like a fresh one to anything that only
+# checks the files are present.
+MOS_ARCH="${MOS_ARCH:-arm64}"
+case "${MOS_ARCH}" in
+arm64) ELF_ARCH=aarch64 ;;
+amd64) ELF_ARCH=x86-64 ;;
+*) echo "error: MOS_ARCH is '${MOS_ARCH}'; it must be arm64 or amd64" >&2; exit 1 ;;
+esac
+OUT="${HERE}/out-${MOS_ARCH}"
 
 for tool in docker; do
     command -v "${tool}" >/dev/null 2>&1 || {
@@ -28,11 +40,11 @@ done
 # name and same condition as os/rootfs/build-v2.sh, deliberately: two ways to
 # get an arm64 builder would be two things to keep working.
 BUILDER_ARGS=()
-if [ -z "${BUILDX_BUILDER:-}" ] && ! docker buildx inspect 2>/dev/null | grep -q 'linux/arm64'; then
-    echo "note: current builder lacks linux/arm64; using docker-container builder 'mos-arm64'"
-    docker buildx inspect mos-arm64 >/dev/null 2>&1 ||
-        docker buildx create --name mos-arm64 --driver docker-container >/dev/null
-    BUILDER_ARGS=(--builder mos-arm64)
+if [ -z "${BUILDX_BUILDER:-}" ] && ! docker buildx inspect 2>/dev/null | grep -q "linux/${MOS_ARCH}"; then
+    echo "note: current builder lacks linux/${MOS_ARCH}; using docker-container builder 'mos-${MOS_ARCH}'"
+    docker buildx inspect "mos-${MOS_ARCH}" >/dev/null 2>&1 ||
+        docker buildx create --name "mos-${MOS_ARCH}" --driver docker-container >/dev/null
+    BUILDER_ARGS=(--builder "mos-${MOS_ARCH}")
 fi
 
 # NO image-libs.txt, and no rootfs prerequisite. An earlier revision generated
@@ -64,8 +76,9 @@ rm -rf "${OUT}"
 mkdir -p "${OUT}"
 
 docker buildx build "${BUILDER_ARGS[@]}" \
-    --platform linux/arm64 \
+    --platform "linux/${MOS_ARCH}" \
     --build-arg "MOS_PODMAN_STRICT=${MOS_PODMAN_STRICT:-0}" \
+    --build-arg "ELF_ARCH=${ELF_ARCH}" \
     -f "${HERE}/Dockerfile" \
     -o "${OUT}" \
     "${HERE}"

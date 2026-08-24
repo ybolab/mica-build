@@ -9,7 +9,8 @@
 
 [system]
 compatible=@COMPATIBLE@
-bootloader=uboot
+bootloader=@BOOTLOADER@
+@BOOTLOADER_EXTRA@
 
 # Slot status lives on the META partition, and explicitly NOT on /var.
 #

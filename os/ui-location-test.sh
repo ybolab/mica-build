@@ -447,6 +447,7 @@ mqttd-no-danger|include none of|A compromise of the network-facing daemon become
 mqttd-broker-configurable|mqttd: ExecStart takes the broker from the environment|does not reference|PASS
 mqttd-env-on-state|mqttd: EnvironmentFile=|EnvironmentFile|PASS
 pkgmgr-absent|carries no package manager|still carries package management|PASS
+pkgmgr-timers|no apt or dpkg systemd timer is in the image|package-management timers are in the image|PASS
 pkgmgr-copyrights|licence texts survived the purge|copyright files are left under|PASS
 pkgmgr-dangling|names perl as its interpreter, so removing perl left nothing broken|still name it as their interpreter|PASS
 container-absent|carries no container engine at all||ABSENT
@@ -1226,6 +1227,19 @@ expect_set "a perl script left behind after perl was removed" \
 # ===========================================================================
 
 # --- 8a. a piece of the engine missing --------------------------------------
+# --- 7d. the package manager's TIMERS left behind ---------------------------
+# Removing /usr/bin/apt does not remove apt-daily.timer. Found by booting x64,
+# in an arm64 image that had already shipped.
+FIX="${WORK}/pkgmgr-timers-left"
+new_fixture "${FIX}"
+mkdir -p "${FIX}/usr/lib/systemd/system" "${FIX}/etc/systemd/system/timers.target.wants"
+printf '[Timer]\nOnCalendar=daily\n' >"${FIX}/usr/lib/systemd/system/apt-daily.timer"
+ln -sf /usr/lib/systemd/system/apt-daily.timer \
+    "${FIX}/etc/systemd/system/timers.target.wants/apt-daily.timer"
+expect_set "an apt timer left behind by the purge" \
+    "pkgmgr-timers=FAIL" \
+    "package-management timers are in the image"
+
 FIX="${WORK}/container-incomplete"
 new_fixture "${FIX}"
 rm -f "${FIX}/usr/libexec/podman/quadlet"

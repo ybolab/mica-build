@@ -8,7 +8,7 @@
 # rots silently: Quadlet gains a key, drops one, renames a section, and the
 # examples go on looking correct to every reader. Nothing in a markdown file
 # can fail. So the examples are EXTRACTED from the document and run through the
-# real generator -- the aarch64 binary in os/podman/out, under emulation, the
+# real generator -- the arm64 binary in os/podman/out-arm64, under emulation,
 # same one the device runs.
 #
 # The marker is an HTML comment, `<!-- quadlet: NAME -->`, immediately before
@@ -21,7 +21,7 @@ set -euo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${HERE}/.." && pwd)"
 DOC="${REPO_ROOT}/docs/design/containers.md"
-QUADLET="${MOS_QUADLET_BIN:-${REPO_ROOT}/os/podman/out/quadlet}"
+QUADLET="${MOS_QUADLET_BIN:-${REPO_ROOT}/os/podman/out-arm64/quadlet}"
 
 [ -f "${DOC}" ] || { echo "error: ${DOC} not found" >&2; exit 1; }
 [ -f "${QUADLET}" ] || {

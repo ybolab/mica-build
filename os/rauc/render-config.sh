@@ -18,7 +18,8 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(dirname "${SCRIPT_DIR}")"
 REPO_ROOT="$(dirname "${REPO_ROOT}")"
-LAYOUT_ENV="${REPO_ROOT}/os/layout/cx3576-v2.env"
+MOS_BOARD="${MOS_BOARD:-cx3576}"
+LAYOUT_ENV="${REPO_ROOT}/os/layout/${MOS_BOARD}-v2.env"
 OVERLAY="${REPO_ROOT}/os/rootfs/overlay-v2"
 # Overridable only so os/mkimage-v2-selftest.sh can drive the renderer against a
 # deliberately-broken template; every real invocation uses the tree's own files.
@@ -34,14 +35,33 @@ case "${1:-}" in
     *) echo "usage: $0 [--check]" >&2; exit 2 ;;
 esac
 
-for input in "${LAYOUT_ENV}" "${SYSTEM_CONF_IN}" "${FSTAB_IN}" "${FW_ENV_IN}"; do
+if [ ! -f "${LAYOUT_ENV}" ]; then
+    echo "error: ${LAYOUT_ENV} not found (MOS_BOARD=${MOS_BOARD})" >&2
+    exit 1
+fi
+# shellcheck source=../layout/cx3576-v2.env
+# Sourced BEFORE the input list is decided, because what is required depends on
+# RAUC_BOOTLOADER, which the layout defines. Reading it first would have taken
+# the `:-uboot` default on every board and demanded fw_env.config from a grub
+# one -- silently, since a defaulted variable looks exactly like a set one.
+. "${LAYOUT_ENV}"
+
+if [ -z "${RAUC_BOOTLOADER:-}" ]; then
+    echo "error: ${LAYOUT_ENV} sets no RAUC_BOOTLOADER. RAUC would be configured for a bootloader nobody chose, and the A/B handshake it drives is the mechanism that makes a bad update recoverable" >&2
+    exit 1
+fi
+
+REQUIRED_INPUTS=("${SYSTEM_CONF_IN}" "${FSTAB_IN}")
+# fw_env.config is U-Boot's environment access file. A grub board has none.
+if [ "${RAUC_BOOTLOADER}" = "uboot" ]; then
+    REQUIRED_INPUTS+=("${FW_ENV_IN}")
+fi
+for input in "${REQUIRED_INPUTS[@]}"; do
     if [ ! -f "${input}" ]; then
         echo "error: ${input} not found" >&2
         exit 1
     fi
 done
-# shellcheck source=../layout/cx3576-v2.env
-. "${LAYOUT_ENV}"
 
 lower() { echo "$1" | tr 'A-Z' 'a-z'; }
 
@@ -105,67 +125,88 @@ done
 # is what marks the environment redundant to libubootenv — configure only one
 # side and every read from the other fails its CRC check), addressed by
 # partition GUID at offset 0, each UENV_SIZE_BYTES long.
-UENV_SIZE_HEX="$(printf '0x%x' "${UENV_SIZE_BYTES}")"
-fw_env_rendered="$(mktemp)"
-trap 'rm -f "${fw_env_rendered}"' EXIT
-render "${FW_ENV_IN}" "${fw_env_rendered}" \
-    UENV_A_GUID "$(lower "${UENV_A_GUID}")" \
-    UENV_B_GUID "$(lower "${UENV_B_GUID}")" \
-    UENV_SIZE_HEX "${UENV_SIZE_HEX}"
+if [ "${RAUC_BOOTLOADER}" = "uboot" ]; then
+    UENV_SIZE_HEX="$(printf '0x%x' "${UENV_SIZE_BYTES}")"
+    fw_env_rendered="$(mktemp)"
+    trap 'rm -f "${fw_env_rendered}"' EXIT
+    render "${FW_ENV_IN}" "${fw_env_rendered}" \
+        UENV_A_GUID "$(lower "${UENV_A_GUID}")" \
+        UENV_B_GUID "$(lower "${UENV_B_GUID}")" \
+        UENV_SIZE_HEX "${UENV_SIZE_HEX}"
 
-# `|| true` because a template rendering to NO device line at all must reach
-# the diagnostic below: a bare grep -v with zero surviving lines exits 1, and
-# under set -e that killed the run before the "needs exactly 2" message could
-# say what was wrong. The count is derived separately so an empty result reads
-# as 0 device lines rather than the 1 that `echo "" | wc -l` reports.
-fw_env_lines="$(grep -v -e '^[[:space:]]*#' -e '^[[:space:]]*$' "${fw_env_rendered}" || true)"
-fw_env_count=0
-if [ -n "${fw_env_lines}" ]; then
-    fw_env_count="$(echo "${fw_env_lines}" | wc -l)"
-fi
-if [ "${fw_env_count}" -ne 2 ]; then
-    echo "error: ${FW_ENV_IN} renders to ${fw_env_count} device lines; the redundant U-Boot environment needs exactly 2" >&2
-    exit 1
-fi
-assert_fw_env_line() {
-    local want_dev="$1" line="$2"
-    # shellcheck disable=SC2086 # deliberate word splitting into the three fields
-    set -- ${line}
-    if [ "$(lower "$1")" != "$(lower "${want_dev}")" ]; then
-        echo "error: ${FW_ENV_IN} addresses '$1', expected '${want_dev}'" >&2
+    # `|| true` because a template rendering to NO device line at all must reach
+    # the diagnostic below: a bare grep -v with zero surviving lines exits 1, and
+    # under set -e that killed the run before the "needs exactly 2" message could
+    # say what was wrong. The count is derived separately so an empty result reads
+    # as 0 device lines rather than the 1 that `echo "" | wc -l` reports.
+    fw_env_lines="$(grep -v -e '^[[:space:]]*#' -e '^[[:space:]]*$' "${fw_env_rendered}" || true)"
+    fw_env_count=0
+    if [ -n "${fw_env_lines}" ]; then
+        fw_env_count="$(echo "${fw_env_lines}" | wc -l)"
+    fi
+    if [ "${fw_env_count}" -ne 2 ]; then
+        echo "error: ${FW_ENV_IN} renders to ${fw_env_count} device lines; the redundant U-Boot environment needs exactly 2" >&2
         exit 1
     fi
-    if [ "$((${2}))" -ne 0 ]; then
-        echo "error: ${FW_ENV_IN} uses offset '$2' for ${want_dev}; the pair is addressed per partition, so the offset must be 0" >&2
-        exit 1
-    fi
-    if [ "$((${3}))" -ne "${UENV_SIZE_BYTES}" ]; then
-        echo "error: ${FW_ENV_IN} declares env size '$3' for ${want_dev}, expected ${UENV_SIZE_HEX}" >&2
-        exit 1
-    fi
-}
-assert_fw_env_line "/dev/disk/by-partuuid/$(lower "${UENV_A_GUID}")" "$(echo "${fw_env_lines}" | sed -n 1p)"
-assert_fw_env_line "/dev/disk/by-partuuid/$(lower "${UENV_B_GUID}")" "$(echo "${fw_env_lines}" | sed -n 2p)"
+    assert_fw_env_line() {
+        local want_dev="$1" line="$2"
+        # shellcheck disable=SC2086 # deliberate word splitting into the three fields
+        set -- ${line}
+        if [ "$(lower "$1")" != "$(lower "${want_dev}")" ]; then
+            echo "error: ${FW_ENV_IN} addresses '$1', expected '${want_dev}'" >&2
+            exit 1
+        fi
+        if [ "$((${2}))" -ne 0 ]; then
+            echo "error: ${FW_ENV_IN} uses offset '$2' for ${want_dev}; the pair is addressed per partition, so the offset must be 0" >&2
+            exit 1
+        fi
+        if [ "$((${3}))" -ne "${UENV_SIZE_BYTES}" ]; then
+            echo "error: ${FW_ENV_IN} declares env size '$3' for ${want_dev}, expected ${UENV_SIZE_HEX}" >&2
+            exit 1
+        fi
+    }
+    assert_fw_env_line "/dev/disk/by-partuuid/$(lower "${UENV_A_GUID}")" "$(echo "${fw_env_lines}" | sed -n 1p)"
+    assert_fw_env_line "/dev/disk/by-partuuid/$(lower "${UENV_B_GUID}")" "$(echo "${fw_env_lines}" | sed -n 2p)"
 
-# Offset-0-per-partition is only the same bytes as U-Boot's absolute
-# ENV_OFFSET/ENV_OFFSET_REDUND while the GPT starts p1/p2 exactly there. That
-# is the drift this cross-check exists to catch.
-for side in A B; do
-    eval "start_sector=\${UENV_${side}_START_SECTOR}"
-    eval "start_mib=\${UENV_${side}_START_MIB}"
-    eval "offset=\${UENV_${side}_OFFSET_BYTES}"
-    if [ "$((start_sector * SECTOR_SIZE))" -ne "${offset}" ] ||
-        [ "$((start_mib * MIB_BYTES))" -ne "${offset}" ]; then
-        echo "error: uenv-${side} starts at sector ${start_sector} (${start_mib} MiB) but UENV_${side}_OFFSET_BYTES is ${offset}; U-Boot's ENV_OFFSET would not point at the partition" >&2
-        exit 1
-    fi
-done
+    # Offset-0-per-partition is only the same bytes as U-Boot's absolute
+    # ENV_OFFSET/ENV_OFFSET_REDUND while the GPT starts p1/p2 exactly there. That
+    # is the drift this cross-check exists to catch.
+    for side in A B; do
+        eval "start_sector=\${UENV_${side}_START_SECTOR}"
+        eval "start_mib=\${UENV_${side}_START_MIB}"
+        eval "offset=\${UENV_${side}_OFFSET_BYTES}"
+        if [ "$((start_sector * SECTOR_SIZE))" -ne "${offset}" ] ||
+            [ "$((start_mib * MIB_BYTES))" -ne "${offset}" ]; then
+            echo "error: uenv-${side} starts at sector ${start_sector} (${start_mib} MiB) but UENV_${side}_OFFSET_BYTES is ${offset}; U-Boot's ENV_OFFSET would not point at the partition" >&2
+            exit 1
+        fi
+    done
+fi
 
 # --- system.conf -----------------------------------------------------------
 rendered="$(mktemp)"
-trap 'rm -f "${fw_env_rendered}" "${rendered}"' EXIT
+# ${fw_env_rendered:-} because the grub path never creates it, and an unset
+# variable in a trap fails under `set -u` at exit -- after the render has
+# already succeeded, so the script would report an error about a temp file
+# while its actual output was correct.
+trap 'rm -f "${fw_env_rendered:-}" "${rendered}"' EXIT
+# grub keeps its A/B state in a grubenv file that RAUC rewrites with
+# grub-editenv, the way the U-Boot backend rewrites the redundant environment.
+# The path is where the ESP is mounted on the running system, not where it sits
+# in the image: RAUC runs on the device.
+case "${RAUC_BOOTLOADER}" in
+uboot) BOOTLOADER_EXTRA="" ;;
+grub)  BOOTLOADER_EXTRA="grubenv=${RAUC_GRUBENV:?RAUC_GRUBENV must be set for a grub board}" ;;
+*)
+    echo "error: RAUC_BOOTLOADER is '${RAUC_BOOTLOADER}'; this renderer knows uboot and grub. An unknown value would reach RAUC as a backend it does not implement, and the A/B handshake would not run at all" >&2
+    exit 1
+    ;;
+esac
+
 render "${SYSTEM_CONF_IN}" "${rendered}" \
     COMPATIBLE "${COMPATIBLE}" \
+    BOOTLOADER "${RAUC_BOOTLOADER}" \
+    BOOTLOADER_EXTRA "${BOOTLOADER_EXTRA}" \
     STATUSFILE "${STATUSFILE}" \
     BOOT_ATTEMPTS "${BOOT_ATTEMPTS_DEFAULT}" \
     BOOT_ATTEMPTS_PRIMARY "${BOOT_ATTEMPTS_DEFAULT}" \
@@ -193,7 +234,11 @@ fi
 # The loader partition must abut uenv-a. If it did not, the region between them
 # would be covered by no partition entry, and systemd-repart discards exactly
 # those regions — which is the failure the loader entry exists to prevent.
-if [ $((LOADER_START_SECTOR + LOADER_SIZE_SECTORS)) -ne "${UENV_A_START_SECTOR}" ]; then
+#
+# U-Boot boards only: there is no loader partition on a UEFI board, because the
+# firmware is in flash rather than at a fixed sector of the disk.
+if [ "${RAUC_BOOTLOADER}" = "uboot" ] && \
+   [ $((LOADER_START_SECTOR + LOADER_SIZE_SECTORS)) -ne "${UENV_A_START_SECTOR}" ]; then
     echo "error: the loader partition ends at sector $((LOADER_START_SECTOR + LOADER_SIZE_SECTORS)) but ${UENV_A_LABEL} starts at ${UENV_A_START_SECTOR}; the gap between them would be discarded on first boot" >&2
     exit 1
 fi

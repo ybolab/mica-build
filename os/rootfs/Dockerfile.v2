@@ -22,7 +22,11 @@
 # ---------------------------------------------------------------------------
 # Root filesystem: Debian trixie + systemd
 # ---------------------------------------------------------------------------
-FROM --platform=linux/arm64 debian:trixie-slim AS rootfs
+# $TARGETPLATFORM, not a pinned linux/arm64. The pin overrode whatever
+# --platform the caller passed, so an amd64 build (os/qemu, PLAN-012 M6) would
+# have silently produced an arm64 root and failed at first exec. build-v2.sh
+# passes the platform it means.
+FROM --platform=$TARGETPLATFORM debian:trixie-slim AS rootfs
 
 # Strict package allowlist — add nothing here without documenting it in README.md.
 # v2 additions over v1: rauc + rauc-service (update client, RFCT-014),
@@ -45,6 +49,17 @@ FROM --platform=linux/arm64 debian:trixie-slim AS rootfs
 # squashfs-tools and cryptsetup-bin are deliberately absent: packing the root is
 # a build-stage job, and the kernel opens the verity device from the cmdline
 # without any userspace tool.
+#
+# THAT SECOND CLAUSE IS TRUE OF cx3576 AND FALSE OF x64, which is the sharpest
+# difference between the two boards. Debian's generic amd64 kernel has
+# CONFIG_DM_INIT unset -- measured, it is absent from /boot/config entirely --
+# so `dm-mod.create=` is a parameter it does not implement, and an unknown
+# dm-mod parameter is ignored rather than rejected: the boot would simply wait
+# forever for a /dev/dm-0 nothing creates. x64 therefore assembles the device
+# with veritysetup from an initramfs script. cryptsetup-bin is installed on
+# that path only long enough for the initramfs hook to copy the binary IN, and
+# is purged from the root afterwards -- so the sentence above stays true of the
+# running system on both boards, which is what it was actually about.
 #
 # M5 additions: wpasupplicant and hostapd, the connd userland. mosd's WiFi
 # reconcilers render configuration for them and drive their unit TEMPLATES
@@ -411,23 +426,76 @@ RUN set -eu; \
 # Kernel modules. Debian is merged-usr (/lib -> usr/lib) and the tar's paths
 # start with lib/, so it cannot be ADDed to / directly — extract to a temp dir
 # and copy into /usr/lib/modules. dep files are inside the tar; no depmod needed.
+#
+# On amd64 there is no vendor tree and no modules.tar: the QEMU image (os/qemu)
+# takes Debian's own linux-image-amd64, which brings its kernel, its initramfs
+# and its modules in one package. build-v2.sh stages an EMPTY-but-valid tar on
+# that path rather than making this COPY conditional -- a COPY cannot be gated,
+# and a missing context file is a build error a hundred lines from its cause.
+ARG MOS_ARCH=arm64
+COPY os/rootfs/initramfs/ /tmp/initramfs/
 ARG MODULES_TAR
 COPY ${MODULES_TAR} /tmp/modules.tar
-RUN mkdir -p /tmp/mods /usr/lib/modules && \
-    tar -xf /tmp/modules.tar -C /tmp/mods && \
-    cp -a /tmp/mods/lib/modules/. /usr/lib/modules/ && \
-    rm -rf /tmp/mods /tmp/modules.tar
+RUN set -eu; \
+    if [ "$MOS_ARCH" = "amd64" ]; then \
+        apt-get update; \
+        apt-get install -y --no-install-recommends linux-image-amd64 cryptsetup-bin; \
+        ls /boot/vmlinuz-* >/dev/null 2>&1 || \
+            { echo "error: linux-image-amd64 installed no kernel under /boot; the x64 image has nothing to boot" >&2; exit 1; }; \
+        install -m0755 /tmp/initramfs/hooks/mos-verity /etc/initramfs-tools/hooks/mos-verity; \
+        install -m0755 /tmp/initramfs/scripts/mos-verity /etc/initramfs-tools/scripts/local-top/mos-verity; \
+        update-initramfs -u -k all; \
+        lsinitramfs /boot/initrd.img-* | grep -q 'sbin/veritysetup' || \
+            { echo "error: the rebuilt initramfs does not contain veritysetup. Without it nothing assembles /dev/dm-0 and the boot hangs waiting for a device that is never created" >&2; exit 1; }; \
+        lsinitramfs /boot/initrd.img-* | grep -q 'scripts/local-top/mos-verity' || \
+            { echo "error: the rebuilt initramfs does not contain the mos-verity local-top script" >&2; exit 1; }; \
+        for cmd in tr sed awk grep cut head tail sort uniq expr basename dirname xargs find; do \
+            if grep -qE "(^|[ \t;|(&])${cmd}[ \t]" /etc/initramfs-tools/scripts/local-top/mos-verity; then \
+                echo "error: the mos-verity script calls '${cmd}', which a klibc initramfs does not have. Its whole command set is blkid cat chroot cpio dd dmesg false fstype gunzip halt insmod ipconfig kill kmod ln losetup ls minips mkdir mkfifo mknod modprobe mount mv nfsmount nuke pivot_root poweroff readlink reboot resume rmmod run-init sh sleep sync true udevadm umount uname, plus what a hook copies in. A missing command here fails AFTER the kernel has handed over, which on a headless machine is indistinguishable from a hang" >&2; exit 1; \
+            fi; \
+        done; \
+        # NOTHING IS PURGED WITH dpkg AFTER THIS POINT, and that is the whole \
+        # reason cryptsetup-bin survives to the package-manager purge stage \
+        # instead of being removed here. An `apt-get purge` fires the kernel \
+        # package'"'"'s triggers, update-initramfs runs a SECOND time with the \
+        # hook already gone, and the initrd that ships has no veritysetup in it \
+        # -- while the two assertions above, which ran before that, both passed. \
+        # A check whose subject is rebuilt after it runs is not a check. \
+        # The purge stage below removes the binary with rm, which fires nothing. \
+        rm -rf /var/lib/apt/lists/*; \
+        rm -f /tmp/modules.tar; \
+    else \
+        mkdir -p /tmp/mods /usr/lib/modules; \
+        tar -xf /tmp/modules.tar -C /tmp/mods; \
+        cp -a /tmp/mods/lib/modules/. /usr/lib/modules/; \
+        rm -rf /tmp/mods /tmp/modules.tar; \
+    fi; \
+    rm -rf /tmp/initramfs; \
+    ls /usr/lib/modules >/dev/null
 
 # WiFi/BT firmware: AIC8800D80 combo (single SKU; the bcmdhd/AP6275S fallback
 # was dropped when the fleet was confirmed AIC-only and the kernel stopped
 # building bcmdhd). Only the confirmed U02 runtime set enters the image, per
 # the board BSP. Driver loading is done by the mos-modules unit.
+#
+# Staged to /tmp and installed only on arm64: a QEMU image has no AIC radio, and
+# 2 MB of firmware for hardware that is not there would be a file an operator
+# reading the image cannot account for.
 COPY board/cx3576/rootfs/firmware/aic_userconfig_8800d80.txt \
      board/cx3576/rootfs/firmware/fw_adid_8800d80_u02.bin \
      board/cx3576/rootfs/firmware/fw_patch_8800d80_u02.bin \
      board/cx3576/rootfs/firmware/fw_patch_table_8800d80_u02.bin \
      board/cx3576/rootfs/firmware/fmacfw_8800d80_u02.bin \
-     /usr/lib/firmware/
+     /tmp/fw/
+RUN set -eu; \
+    if [ "$MOS_ARCH" = "amd64" ]; then \
+        rm -rf /tmp/fw; \
+    else \
+        mkdir -p /usr/lib/firmware; \
+        mv /tmp/fw/* /usr/lib/firmware/; \
+        rmdir /tmp/fw; \
+        test -f /usr/lib/firmware/fmacfw_8800d80_u02.bin; \
+    fi
 
 # Networking: DHCP on all eth* (kernel cmdline has net.ifnames=0)
 #
@@ -497,10 +565,11 @@ ARG OVERLAY_DIR
 COPY ${OVERLAY_DIR}/ /tmp/overlay/
 RUN cp -a /tmp/overlay/. / && \
     rm -rf /tmp/overlay && \
+    { [ ! -e /etc/fw_env.config ] || chmod 0644 /etc/fw_env.config; } && \
     chmod 0755 /usr/lib/mos/mos-seed-var /usr/lib/mos/mos-seed-state \
                /usr/lib/mos/mos-seed-home /usr/lib/mos/mos-seed-root \
                /usr/lib/mos/mos-shadow-reconcile && \
-    chmod 0644 /etc/fstab /etc/fw_env.config /etc/repart.d/*.conf \
+    chmod 0644 /etc/fstab /etc/repart.d/*.conf \
                /etc/tmpfiles.d/mos-var.conf \
                /etc/systemd/system/mos-seed-*.service \
                /etc/systemd/system/mos-apply-hostname.service \
@@ -522,6 +591,12 @@ RUN cp -a /tmp/overlay/. / && \
     mkdir -p -m 0755 /usr/local/lib/systemd /usr/local/lib/systemd/system && \
     chown 0:0 /usr/local/lib/systemd /usr/local/lib/systemd/system && \
     mkdir -p /etc/containers/systemd && chmod 0755 /etc/containers/systemd && \
+    { [ ! -e /etc/systemd/system/boot.mount ] || { \
+        mkdir -p -m 0755 /boot && \
+        chmod 0644 /etc/systemd/system/boot.mount && \
+        ln -sf /etc/systemd/system/boot.mount \
+            /etc/systemd/system/local-fs.target.wants/boot.mount && \
+        test -L /etc/systemd/system/local-fs.target.wants/boot.mount; }; } && \
     : "etc-containers-systemd.mount is INSTALLED and deliberately NOT linked into" \
       "local-fs.target.wants below. It was, until PLAN-012 M3: RFCT-102 added the" \
       "symlink because without it the Quadlet directory was the image's empty one" \
@@ -808,6 +883,35 @@ RUN dpkg-query -W -f='${Package}\t${Installed-Size}\n' > /rootfs-report.pkgs
 #     a package that happened to be in one release. A check pinned to a version
 #     of the thing it is checking fails on the upgrade it exists to survive.
 #
+#     THE apt AND dpkg TIMERS WERE FOUND BY BOOTING x64, and they were in the
+#     SHIPPED arm64 image too. Removing /usr/bin/apt does not remove
+#     apt-daily.timer, apt-daily-upgrade.timer or dpkg-db-backup.timer, and all
+#     three are enabled by their packages into
+#     /etc/systemd/system/timers.target.wants. On a device with no package
+#     manager they fire daily and fail daily. Nothing in the image was wrong
+#     enough to notice -- it took a console log from a board that had never
+#     been booted before.
+#
+#     linux-base's FOUR HELPERS WERE FOUND THE SAME WAY, ON A DIFFERENT
+#     ARCHITECTURE. They arrive with linux-base, which x64 pulls in through
+#     linux-image-amd64 and cx3576 never installs, so the first amd64 build
+#     failed here. The whole set was enumerated at once rather than one build
+#     at a time -- the mistake this comment already records is surveying
+#     partially and reading the result as complete.
+#
+#     Callers measured, not assumed, and they are NOT all the same:
+#       linux-check-removal, linux-run-hooks, linux-update-symlinks
+#           called only from the kernel package's preinst/postinst/prerm/postrm
+#       linux-version
+#           called by /usr/sbin/update-initramfs, which is a RUNTIME tool
+#
+#     update-initramfs goes too, and that is the decision worth stating: on a
+#     read-only dm-verity root it cannot write an initramfs anywhere that would
+#     be used. The initrd this image boots sits on the ESP, outside the verity
+#     tree, and is replaced by RAUC as part of the same signed bundle as the
+#     rootfs. A tool that appears to regenerate it would produce a file nothing
+#     reads.
+#
 #     THE /usr/sbin SET WAS FOUND BY THE CHECK BELOW, NOT BY THE SURVEY. The
 #     survey that preceded this step listed the /usr/bin ones and was truncated
 #     before it reached /usr/sbin; the list was read as complete. The build then
@@ -857,7 +961,24 @@ RUN set -eu; \
           /usr/bin/ucf /usr/bin/ucfq /usr/bin/ucfr \
           /usr/sbin/adduser /usr/sbin/deluser /usr/sbin/addgroup /usr/sbin/delgroup \
           /usr/sbin/update-rc.d /usr/sbin/dpkg-fsys-usrunmess \
-          /usr/sbin/pam-auth-update /usr/sbin/pam_getenv ; \
+          /usr/sbin/pam-auth-update /usr/sbin/pam_getenv \
+          /usr/bin/linux-check-removal /usr/bin/linux-run-hooks \
+          /usr/bin/linux-update-symlinks /usr/bin/linux-version \
+          /usr/sbin/update-initramfs \
+          /usr/sbin/veritysetup /usr/sbin/cryptsetup /usr/sbin/integritysetup \
+          /etc/initramfs-tools/hooks/mos-verity \
+          /usr/lib/systemd/system/apt-daily.timer \
+          /usr/lib/systemd/system/apt-daily.service \
+          /usr/lib/systemd/system/apt-daily-upgrade.timer \
+          /usr/lib/systemd/system/apt-daily-upgrade.service \
+          /usr/lib/systemd/system/dpkg-db-backup.timer \
+          /usr/lib/systemd/system/dpkg-db-backup.service \
+          /etc/systemd/system/timers.target.wants/apt-daily.timer \
+          /etc/systemd/system/timers.target.wants/apt-daily-upgrade.timer \
+          /etc/systemd/system/timers.target.wants/dpkg-db-backup.timer ; \
+    left="$(find /etc/systemd /usr/lib/systemd -name 'apt-daily*' -o -name 'dpkg-db-backup*' 2>/dev/null | tr '\n' ' ')"; \
+    [ -z "${left}" ] || \
+        { echo "error: package-management timers survived the purge: ${left}. They are enabled, they fire daily, and every one of them fails on an image with no apt and no dpkg -- which is noise in the journal shaped exactly like a real fault" >&2; exit 1; }; \
     for gone in dpkg dpkg-query apt apt-get perl; do \
         if command -v "${gone}" >/dev/null 2>&1; then \
             echo "error: ${gone} survived the package-manager purge; the packed root still carries a way to install software" >&2; exit 1; \
@@ -889,6 +1010,7 @@ RUN { cat /rootfs-report.pkgs; \
 FROM --platform=$BUILDPLATFORM debian:bookworm-slim AS pack
 RUN apt-get update && apt-get install -y --no-install-recommends \
         squashfs-tools cryptsetup-bin libcap2-bin \
+        initramfs-tools-core \
     && rm -rf /var/lib/apt/lists/*
 COPY --from=rootfs / /rootfs/
 
@@ -934,6 +1056,26 @@ RUN set -e; \
 #    over it. RFCT-018's U-Boot passes systemd.machine_id= to make it stable.
 #  - /var becomes an empty mountpoint for EPHEMERAL; the built tree moves to
 #    /usr/share/factory/var, from where mos-seed-var restores it on first boot.
+#  - EXCEPT /var/tmp, which is created in that mountpoint on purpose.
+#
+#    "Empty mountpoint" is right for everything a running system uses, and
+#    wrong for the window BEFORE the mount. systemd-resolved.service is ordered
+#    `Before=sysinit.target`, so it starts ahead of local-fs.target and sees
+#    the image's own /var. Its PrivateTmp= mounts a tmpfs on both /tmp and
+#    /var/tmp, and a mount point that does not exist cannot be created on a
+#    read-only root -- the service dies with 226/NAMESPACE on every boot and
+#    every restart.
+#
+#    Nothing about that failure names /var/tmp. The console says "[FAILED]
+#    Failed to start systemd-resolved.service" and the child's own message
+#    never reaches the journal, because it dies during namespace setup. What it
+#    costs is ALL DNS: /etc/resolv.conf is a symlink to resolved's stub, so the
+#    device cannot resolve an update server, an MQTT broker or a container
+#    registry.
+#
+#    Created HERE and not with the other mountpoints above: this mkdir replaces
+#    /var wholesale, so anything an earlier stage put there is gone. The first
+#    attempt at this fix did exactly that and changed nothing.
 RUN mkdir -p /out && \
     mv /rootfs/rootfs-report.txt /out/rootfs-report-v2.txt && \
     ln -sf ../run/systemd/resolve/stub-resolv.conf /rootfs/etc/resolv.conf && \
@@ -943,6 +1085,7 @@ RUN mkdir -p /out && \
     mkdir -p /rootfs/usr/share/factory && \
     mv /rootfs/var /rootfs/usr/share/factory/var && \
     mkdir -m 0755 /rootfs/var && \
+    mkdir -m 1777 /rootfs/var/tmp && \
     ln -sf ../../../etc/machine-id \
         /rootfs/usr/share/factory/var/lib/dbus/machine-id
 
@@ -1228,7 +1371,40 @@ RUN set -eu; \
     echo "pack: root hash ${root_hash}"
 
 
+# The kernel and initramfs, extracted OUT of the root for boards whose
+# bootloader cannot read it.
+#
+# GRUB has no squashfs driver, so on x64 it cannot load a kernel from the
+# verity-protected root -- the kernel has to sit on the ESP as a plain file.
+# That is the same arrangement cx3576 already has (Image on the FAT boot
+# partition, not inside the squashfs) and it carries the same property, worth
+# stating rather than discovering: THE KERNEL IS NOT COVERED BY dm-verity on
+# either board. What protects it is that RAUC updates the boot slot as part of
+# the same signed bundle as the rootfs slot.
+#
+# Copied for every architecture and simply absent on arm64, where the board
+# supplies its own Image: `cp` of a glob that matches nothing would fail the
+# build, so the miss is explicit.
+RUN set -eu; mkdir -p /out/boot; \
+    if ls /rootfs/boot/vmlinuz-* >/dev/null 2>&1; then \
+        cp /rootfs/boot/vmlinuz-* /out/boot/vmlinuz; \
+        cp /rootfs/boot/initrd.img-* /out/boot/initrd.img; \
+        contents="$(lsinitramfs /out/boot/initrd.img 2>/dev/null)"; \
+        [ -n "${contents}" ] || \
+            { echo "error: could not read the exported initramfs at all. A Debian initrd is a CONCATENATION -- an uncompressed early cpio for microcode, then the compressed main archive -- so zcat reads the first and stops, and any check built on it reports every file as missing whatever the archive holds" >&2; exit 1; }; \
+        for want in usr/sbin/veritysetup scripts/local-top/mos-verity; do \
+            printf '%s\n' "${contents}" | grep -qx "${want}" || \
+                { echo "error: the EXPORTED initramfs does not contain ${want}. The rootfs stage asserted it was there; if that passed and this did not, something rebuilt the initramfs afterwards -- a dpkg trigger is the usual cause. Without veritysetup the boot stops at 'ALERT! /dev/dm-0 does not exist'" >&2; exit 1; }; \
+        done; \
+        echo "boot: the exported initramfs carries veritysetup and the mos-verity script"; \
+        echo "boot: staged $(ls /rootfs/boot/vmlinuz-* | wc -l) kernel(s) for a bootloader that cannot read squashfs"; \
+    else \
+        echo "boot: no /boot/vmlinuz-* in the root; this board's bootloader is given its kernel by the BSP build"; \
+        : > /out/boot/.no-kernel-in-root; \
+    fi
+
 FROM scratch AS artifact
 COPY --from=pack /out/rootfs-verity.img /
 COPY --from=pack /out/rootfs-verity.env /
 COPY --from=pack /out/rootfs-report-v2.txt /
+COPY --from=pack /out/boot/ /boot/

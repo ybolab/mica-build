@@ -280,6 +280,10 @@ RUN --mount=type=cache,target=/root/.cache/go-build \
 # Collect, and prove every artifact is what it claims to be
 # ---------------------------------------------------------------------------
 FROM ${BUILDER_IMAGE} AS verify
+# The architecture this build is FOR, so the assertion below cannot pass by
+# naming the one it was first written against. Defaulted rather than required
+# so a bare `docker buildx build` on this Dockerfile still checks something.
+ARG ELF_ARCH=aarch64
 RUN --mount=type=cache,target=/var/cache/apt,id=apt-cache-verify,sharing=locked \
     --mount=type=cache,target=/var/lib/apt/lists,id=apt-lists-verify,sharing=locked \
     rm -f /etc/apt/apt.conf.d/docker-clean && \
@@ -295,8 +299,8 @@ COPY --from=go-build /out/ /out/
 RUN set -eu; cd /out; \
     for b in podman quadlet crun conmon catatonit netavark aardvark-dns; do \
         test -f "$b" || { echo "error: $b was not produced by the build" >&2; exit 1; }; \
-        file -b "$b" | grep -q 'ELF 64-bit.*aarch64' || \
-            { echo "error: $b is not an aarch64 ELF: $(file -b "$b")" >&2; exit 1; }; \
+        file -b "$b" | grep -q "ELF 64-bit.*${ELF_ARCH}" || \
+            { echo "error: $b is not an ${ELF_ARCH} ELF: $(file -b "$b")" >&2; exit 1; }; \
     done; \
     file -b catatonit | grep -q 'statically linked' || \
         { echo "error: catatonit is dynamically linked. It is copied INTO containers as their init and must not depend on this image's libc" >&2; exit 1; }; \

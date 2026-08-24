@@ -1,0 +1,35 @@
+[Unit]
+# The ESP, mounted so RAUC can reach grubenv.
+#
+# WHY THIS EXISTS ON x64 AND NOT ON cx3576. RAUC's A/B state -- boot order and
+# attempt counters -- lives wherever the bootloader keeps its environment. The
+# U-Boot backend writes the raw uenv partitions with fw_setenv and needs no
+# mount at all, which is why the shared fstab has no /boot line. The grub
+# backend runs `grub-editenv <path>` on a FILE, so the partition holding it has
+# to be mounted or the path simply does not exist.
+#
+# The failure that would cause is not an error message. RAUC would be unable to
+# mark a slot good, the health gate would never succeed, and EVERY UPDATE WOULD
+# ROLL BACK -- the same shape as the missing rauc-service D-Bus files that
+# os/rootfs/Dockerfile.v2 records at the top of its package list.
+#
+# boot-a specifically, and that is a decision with a stated limit. The firmware
+# picks which ESP to boot and UEFI BootOrder is firmware state, not disk state,
+# so mos cannot make a second ESP authoritative without firmware cooperation.
+# What A/B protects here is a bad UPDATE -- the rootfs pair plus the order in
+# grubenv -- and that is complete. What it does not protect is a corrupt ESP.
+Description=EFI System Partition (RAUC grubenv lives here)
+DefaultDependencies=no
+Before=local-fs.target
+After=blockdev@dev-disk-by\x2dpartuuid-@BOOT_A_GUID@.target
+
+[Mount]
+What=/dev/disk/by-partuuid/@BOOT_A_GUID@
+Where=/boot
+Type=vfat
+# umask=0077: the ESP holds the boot chain. Anything that can read it can read
+# the kernel and grubenv; anything that can write it can replace both.
+Options=rw,noatime,umask=0077,nofail
+
+[Install]
+WantedBy=local-fs.target

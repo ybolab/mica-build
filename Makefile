@@ -34,7 +34,7 @@ help:
 	@echo "  os-ui-location-test prove the custom-UI location assertions in the v2 verifier actually fail when the location moves"
 	@echo "  docs-verify         assert both document indexes agree with the tree, in both directions"
 	@echo "  docs-verify-test    prove the index assertions actually fail on a duplicated row or entry"
-	@echo "  podman              build the container engine from source (aarch64) into os/podman/out"
+	@echo "  podman              build the container engine from source into os/podman/out-\$$MOS_ARCH"
 	@echo "  os-quadlet-doc-test run docs/design/containers.md's examples through Quadlet"
 	@echo "  cx3576-<t>          delegate target <t> to board/cx3576 (uboot|kernel|rootfs|image|clean)"
 

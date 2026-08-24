@@ -29,7 +29,12 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(dirname "${SCRIPT_DIR}")"
 BOARD_DIR="${BOARD_DIR:-${REPO_ROOT}/board/cx3576}"
-LAYOUT_ENV="${SCRIPT_DIR}/layout/cx3576-v2.env"
+# MOS_BOARD selects the layout this verifier checks against. Defaulted to
+# cx3576 so every existing invocation is unchanged; the x64/QEMU image is
+# verified by the same assertions, which is the point of having them read the
+# layout rather than name partitions and a bootloader directly.
+MOS_BOARD="${MOS_BOARD:-cx3576}"
+LAYOUT_ENV="${SCRIPT_DIR}/layout/${MOS_BOARD}-v2.env"
 
 if [ ! -f "${LAYOUT_ENV}" ]; then
     echo "error: ${LAYOUT_ENV} not found" >&2
@@ -94,7 +99,7 @@ if [ -z "${FIXTURE_ROOT}" ]; then
     if [ "${MOS_VERIFY_ALLOW_STALE:-0}" != "1" ]; then
         stale=""
         for input in "${REPO_ROOT}/_out/cx3576/rootfs-verity.img" \
-                     "${REPO_ROOT}/os/podman/out/podman"; do
+                     "${REPO_ROOT}/os/podman/out-arm64/podman"; do
             [ -e "${input}" ] || continue
             [ "${input}" -nt "${IMG}" ] && stale="${stale} ${input##*/}"
         done
@@ -148,7 +153,13 @@ if [ "${INNER}" -eq 0 ] && [ -z "${FIXTURE_ROOT}" ]; then
         # container re-exec, or a sanctioned dev image would verify green on a
         # tool-ful host and red on a tool-less one. docker only propagates the
         # variable when it is set on this side; it never invents a value.
-        docker run --rm "${mounts[@]}" -e BOARD_DIR=/board -e MOS_EXPECT_DEV_KEYRING alpine:3.21 \
+        # -e MOS_BOARD: same reasoning, and it bites harder. Without it the
+        # container re-exec falls back to the cx3576 layout, so `MOS_BOARD=x64
+        # verify-image-v2.sh` on a tool-less host checks the x64 image against
+        # cx3576's eleven-partition GPT and reports 191 failures that are all
+        # the harness's. Observed exactly that way.
+        docker run --rm "${mounts[@]}" -e BOARD_DIR=/board -e MOS_EXPECT_DEV_KEYRING \
+            -e MOS_BOARD="${MOS_BOARD}" alpine:3.21 \
             sh -c 'apk add --no-cache -q bash coreutils diffutils gptfdisk sgdisk dosfstools mtools e2fsprogs e2fsprogs-extra squashfs-tools cryptsetup libcap libcap-setcap dtc && exec bash /work/os/verify-image-v2.sh "$@"' \
             _ "${inner_args[@]}" || rc=$?
         if [ -n "${tmp_board}" ]; then
@@ -934,6 +945,19 @@ PKGMGR_BINARIES="/usr/bin/dpkg /usr/bin/dpkg-query /usr/bin/dpkg-deb /usr/bin/ap
 PKGMGR_TREES="/var/lib/dpkg /var/lib/apt /etc/apt /usr/lib/apt /usr/share/factory/var/lib/dpkg /usr/share/factory/var/lib/apt"
 
 check_no_package_manager() {
+    # The TIMERS, not just the binaries. apt-daily.timer,
+    # apt-daily-upgrade.timer and dpkg-db-backup.timer are enabled by their
+    # packages and survive a purge that only removes /usr/bin/apt -- they then
+    # fire daily on a device with no package manager and fail daily. Found by
+    # booting the x64 image, in an arm64 image that had already shipped.
+    pm_timers="$(find "${ROOT}/etc/systemd" "${ROOT}/usr/lib/systemd" \
+        -name 'apt-daily*' -o -name 'dpkg-db-backup*' 2>/dev/null | sed "s|^${ROOT}||" | sort | tr '\n' ' ' || true)"
+    if [ -z "${pm_timers}" ]; then
+        pass "no apt or dpkg systemd timer is in the image; removing the package manager's binaries does not remove its timers, and those fire daily whether or not anything is left for them to run"
+    else
+        fail "package-management timers are in the image:${pm_timers}. Each is enabled by its package, fires daily, and fails daily on a root with no apt and no dpkg — journal noise shaped exactly like a real fault"
+    fi
+
     pm_found=""
     for b in ${PKGMGR_BINARIES}; do
         [ -e "${ROOT}${b}" ] && pm_found="${pm_found} ${b}"
@@ -2479,8 +2503,12 @@ check_packed_mountpoints
 # ("A"/"B"), not a slot name ("rootfs.0"/"rootfs.1"), and not the realpath of
 # any slot device (/dev/mmcblk0pN), so the root= fallback CANNOT work here and
 # `rauc.slot=` is required. This is a property of the boot path, not of RAUC.
-sq_grep /etc/rauc/system.conf '^bootloader=uboot$' \
-    "RAUC system.conf selects the uboot bootloader backend"
+# The backend follows the LAYOUT, not a literal. cx3576 is uboot and x64 is
+# grub, and pinning the assertion to one of them would make it fail on the
+# correct configuration of the other -- reported as a defect in the image
+# rather than as a check that was written for a single board.
+sq_grep /etc/rauc/system.conf "^bootloader=${RAUC_BOOTLOADER}\$" \
+    "RAUC system.conf selects the ${RAUC_BOOTLOADER} bootloader backend, which is what os/layout/${LAYOUT_BOARD}-v2.env specifies"
 if [ "$(grep -c '^bootname=[AB]$' "${RAUC_CONF}" 2>/dev/null || true)" = "2" ]; then
     pass "RAUC system.conf gives both rootfs slots a bootname (A and B), so a booted slot can be named at all"
 else

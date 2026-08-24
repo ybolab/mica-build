@@ -1,0 +1,27 @@
+#!/bin/sh
+# initramfs-tools hook: put veritysetup and the dm/squashfs modules in the
+# initrd, so the local-top script can assemble the verity root.
+#
+# WHY THIS EXISTS AT ALL. cx3576's kernel has dm-verity and dm-init built in,
+# so `dm-mod.create=` on the cmdline is enough and there is no initrd. Debian's
+# generic amd64 kernel does not: measured on 6.12.101+deb13-amd64,
+#
+#     CONFIG_BLK_DEV_DM=m   CONFIG_DM_VERITY=m   CONFIG_SQUASHFS=m
+#     CONFIG_DM_INIT        -- absent from the config entirely
+#
+# so `dm-mod.create=` is not a parameter that kernel understands. It is not
+# rejected either: an unknown dm-mod parameter is simply ignored, and the boot
+# then hangs waiting for a /dev/dm-0 that nothing will ever create.
+set -e
+PREREQ=""
+prereqs() { echo "$PREREQ"; }
+case "${1:-}" in
+prereqs) prereqs; exit 0 ;;
+esac
+
+. /usr/share/initramfs-tools/hook-functions
+
+copy_exec /usr/sbin/veritysetup /sbin
+manual_add_modules dm_mod
+manual_add_modules dm_verity
+manual_add_modules squashfs
