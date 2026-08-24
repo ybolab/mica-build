@@ -40,7 +40,6 @@ import {
   expectConsoleLine,
   observeConsoleLine,
   openConsole,
-  type ConsoleCandidate,
   type ConsoleLog,
 } from "../console.ts";
 import type { Phase, PhaseContext } from "../runner.ts";
@@ -167,34 +166,28 @@ async function mutateHostname(ctx: PhaseContext, log: ConsoleLog): Promise<void>
   // line, so a match is evidence about this rename and not about hostname
   // machinery in general.
   //
-  // Absence here is a SKIP, not a FAIL: hostnamed's exact phrasing differs
-  // between systemd versions and was NOT measured from this side. The skip
-  // detail pastes what the guest actually wrote in the window, which is what a
-  // human needs in order to turn this into a real assertion. Inventing a
-  // pattern that matches nothing and calling it a PASS is the one thing this
-  // check must never do.
+  // PROMOTED FROM A SKIP. This was `observeConsoleLine` -- absence reported as
+  // SKIP -- because systemd-hostnamed's phrasing varies between versions and
+  // had not been measured from outside the guest. The live run of 2026-08-24
+  // measured it: on this image systemd writes
+  //
+  //     systemd[1]: Hostname set to <mos-e2e-renamed>
+  //
+  // (the same shape it uses at boot, `Hostname set to <mos>.`), so absence is
+  // now a real FAILURE rather than an unobserved effect. The name is required
+  // inside the line, so a match is evidence about THIS rename and not about
+  // hostname machinery in general.
   const name = escapeForPattern(target);
-  const runningHostname: readonly ConsoleCandidate[] = [
-    {
-      name: "systemd-hostnamed, modern phrasing",
-      pattern: new RegExp(`Hostname set to [<"']?${name}`, "i"),
-    },
-    {
-      name: "systemd-hostnamed, older phrasing",
-      pattern: new RegExp(`Changed host ?name to [<"']?${name}`, "i"),
-    },
-    {
-      name: "any hostname-machinery line naming the new hostname",
-      pattern: new RegExp(`hostname[^\\n]{0,120}${name}`, "i"),
-    },
-  ];
-  await observeConsoleLine(
+  await expectConsoleLine(
     ctx.report,
     log,
     marker,
-    runningHostname,
+    new RegExp(`Hostname set to [<"']?${name}`, "i"),
     `(b) device effect: the console carries the running hostname changing to ${target}`,
-    { timeoutMs: HOSTNAME_CONSOLE_TIMEOUT_MS },
+    {
+      timeoutMs: HOSTNAME_CONSOLE_TIMEOUT_MS,
+      describePattern: `systemd's \`Hostname set to <${target}>\``,
+    },
   );
 
   // (c) IT PERSISTS -- and this is the STRONGEST of the three, because it is
@@ -324,30 +317,30 @@ async function mutateContainers(ctx: PhaseContext, log: ConsoleLog): Promise<voi
     "/containers",
     (html) => switchVerdict(html, "enabled", false),
   );
-  // The turn_off wording was NOT measured (only the turn_on lines were quoted
-  // to this task), so absence is reported as a SKIP with the window pasted --
-  // never as a red, and never as a pass.
-  await observeConsoleLine(
+  // PROMOTED FROM A SKIP, and the measurement corrected an assumption on the
+  // way. This was three candidate wordings reported as SKIP on absence; the
+  // live run of 2026-08-24 showed which one is real and that the other two are
+  // not:
+  //
+  //   - mosd emits NO `container: turn_off` line. The reconciler logs
+  //     `container: turn_on begin` on the way up and nothing symmetrical on the
+  //     way down, so a pattern waiting for one would wait forever.
+  //   - systemd names the unit FIRST, not the verb:
+  //         etc-containers-systemd.mount: Deactivated successfully.
+  //     The old candidate expected `Deactivating ... etc-containers-...`, i.e.
+  //     verb before unit, and would never have matched.
+  //
+  // What actually appears is the line below, and it is now required.
+  await expectConsoleLine(
     report,
     log,
     offMark,
-    [
-      {
-        name: "mosd's container reconciler turning the bind off",
-        pattern: /container:\s*turn_off/i,
-      },
-      {
-        name: "systemd taking the bind mount down",
-        pattern:
-          /(?:Unmounting|Unmounted|Stopping|Stopped|Deactivat)[^\n]{0,120}etc-containers-systemd\.mount/i,
-      },
-      {
-        name: "any line acting on the mount unit after the switch went off",
-        pattern: /etc-containers-systemd\.mount/,
-      },
-    ],
+    /etc-containers-systemd\.mount:\s*Deactivated successfully/i,
     "device effect: the console carries the bind mount coming back down",
-    { timeoutMs: CONTAINER_CONSOLE_TIMEOUT_MS },
+    {
+      timeoutMs: CONTAINER_CONSOLE_TIMEOUT_MS,
+      describePattern: "systemd's `etc-containers-systemd.mount: Deactivated successfully`",
+    },
   );
 }
 
@@ -504,20 +497,26 @@ async function mutateSsh(ctx: PhaseContext, log: ConsoleLog): Promise<void> {
     "/ssh",
     (html) => switchVerdict(html, "enabled", false),
   );
-  await observeConsoleLine(
+  // PROMOTED FROM A SKIP. Measured on the live run of 2026-08-24: turning the
+  // switch off produces all three of
+  //
+  //     Stopping ssh.service - OpenBSD Secure Shell server...
+  //     ssh.service: Deactivated successfully
+  //     Stopped ssh.service - OpenBSD Secure Shell server.
+  //
+  // so the wording is known and absence is now a real failure. The pattern
+  // stays an alternation because which of the three lands first depends on
+  // timing, not on whether the device acted.
+  await expectConsoleLine(
     report,
     log,
     disableMark,
-    [
-      {
-        name: "systemd stopping ssh.service",
-        pattern:
-          /(?:Stopping|Stopped|Deactivat)[^\n]{0,120}(?:ssh\.service|OpenBSD Secure Shell)/i,
-      },
-      { name: "sshd logging its own shutdown", pattern: /sshd[^\n]{0,120}(?:Received signal|exiting)/i },
-    ],
+    /(?:Stopping|Stopped|Deactivat)[^\n]{0,120}(?:ssh\.service|OpenBSD Secure Shell)|ssh\.service:\s*Deactivated successfully/i,
     "device effect: the console carries ssh.service stopping again",
-    { timeoutMs: SSH_CONSOLE_TIMEOUT_MS },
+    {
+      timeoutMs: SSH_CONSOLE_TIMEOUT_MS,
+      describePattern: "systemd stopping ssh.service (any of its three wordings)",
+    },
   );
 }
 
@@ -548,9 +547,24 @@ async function sshTransientPassword(ctx: PhaseContext, log: ConsoleLog): Promise
     "POST /ssh/password (password + confirm=set-transient-password) is accepted with 303",
   );
 
-  // Absence is a SKIP: mosd's audit wording was not measured from this side, so
-  // a red here would be an assertion about a pattern this suite guessed. The
-  // skip pastes the window, which is what turns this into a real check later.
+  // STILL A SKIP, and this is the one of the four that could NOT be promoted on
+  // the live run of 2026-08-24 -- because the operation it observes never
+  // happened. POST /ssh/password answered 502 on that run:
+  //
+  //   apid: mosd call failed error=org.freedesktop.DBus.Error.Failed:
+  //     set transient root password: record the transient marker:
+  //     create /etc/.transient-root-password.mosd-tmp: Read-only file system
+  //
+  // mosd writes its marker's temp file straight into /etc, which is read-only
+  // on this image, so the transient password is never set and there is no audit
+  // event to word a pattern from. That is a defect in the daemon, reported and
+  // deliberately NOT worked around here. Until it is fixed, absence stays a
+  // SKIP with the window pasted -- inventing a pattern for an event the device
+  // does not emit would be guessing, and asserting one that never matches would
+  // turn a daemon defect into a permanent red in the wrong place.
+  //
+  // The check ABOVE (the 502) is where that defect is reported. This one is
+  // downstream of it.
   await observeConsoleLine(
     report,
     log,
@@ -635,26 +649,45 @@ async function networkNoOp(ctx: PhaseContext, log: ConsoleLog): Promise<void> {
   // ever have submitted -- which, on this route, means posting one interface's
   // name with another one's addressing.
   const forms = interfaceForms(pane.body);
-  report.check(
-    forms.length > 0,
-    "GET /network names the interface it is currently configuring",
-    [
-      `expected: a form carrying an iface value and a dhcp checkbox`,
-      `actual:   ${forms.length} such form(s) found in a ${pane.body.length}-byte pane`,
-      describePane(pane.body, "iface"),
-    ].join("\n"),
-  );
   if (forms.length === 0) {
-    // Guessing an interface name here would post a configuration for an
-    // interface the device may not have -- or worse, for one it does. Not
-    // guessing is the whole point of the prohibition above.
+    // MEASURED 2026-08-24, and it corrects an assumption this phase shipped
+    // with: a freshly provisioned mos device has NO mosd-managed interface at
+    // all. /network renders the "Add interface" fieldset and nothing above it,
+    // because the link the suite is talking over is brought up by
+    // systemd-networkd's own defaults rather than by anything in mosd's
+    // settings. The pane is right; the expectation was wrong.
+    //
+    // This used to FAIL here ("GET /network names the interface it is currently
+    // configuring") before skipping the round trip -- a red line about the
+    // device being in its ordinary shipped state. There is genuinely no no-op
+    // to make: with nothing configured, posting `dhcp=on` would CREATE
+    // configuration rather than post existing configuration back unchanged, and
+    // posting a static address from this suite is forbidden outright. So the
+    // honest report is a skip that says what the pane actually contained.
+    //
+    // What IS still asserted is that the pane renders at all, which is the part
+    // that does not depend on how the device is configured.
+    report.check(
+      pane.body.includes("Add interface"),
+      "GET /network renders the interface pane (the 'Add interface' fieldset)",
+      [
+        `expected: the Network pane's "Add interface" legend`,
+        `actual:   a ${pane.body.length}-byte pane without it`,
+        describePane(pane.body, "iface"),
+      ].join("\n"),
+    );
     report.skip(
       "the /network round trip leaves the link up",
-      "the pane named no configured interface, and this suite does not guess an interface " +
-        "name to post: a wrong guess reconfigures the link every other assertion travels over",
+      "the pane renders NO configured interface -- only the \"Add interface\" fieldset -- which " +
+        "is the ordinary state of a freshly provisioned device: the link this suite is talking " +
+        "over is configured by systemd-networkd's defaults, not by mosd. There is no existing " +
+        "configuration to post back unchanged, and this suite does not guess an interface name: " +
+        "a wrong guess reconfigures the link every other assertion travels over. Posting `dhcp=on` " +
+        "would CREATE configuration rather than round-trip it, which is a change, not a no-op.",
     );
     return;
   }
+  report.pass("GET /network names the interface it is currently configuring");
   if (forms.length > 1) {
     // More than one configured interface, and nothing in the HTML says which
     // one carries the connection this suite is talking over. Posting to the
