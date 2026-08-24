@@ -263,12 +263,52 @@ async fn web_flow_end_to_end() -> anyhow::Result<()> {
     // the_first_failure_arms_the_backoff_window` pins the same curve as a
     // unit test: if that 429 ever turns back into a 303 here, the guard has
     // regressed, so do not "fix" this sequence by dropping the wait.
-    let response = post_login(&anon, &https_base, "wrong-password").await?;
-    assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
-    assert!(
-        response.headers().get(SET_COOKIE).is_none(),
-        "a wrong password must not mint a session"
-    );
+    // THE RUN IS DRIVEN UP FIRST, so the window under test is eight seconds
+    // rather than `backoffBase`'s one.
+    //
+    // The assertion below needs the window still to be armed when the NEXT
+    // request arrives, and between the two there is a full HTTPS round trip
+    // with an argon2 verification inside it — argon2 is expensive on purpose.
+    // At the base step that is a one-second budget for work whose cost is not
+    // bounded by anything this test controls, and under parallel-suite load it
+    // is not enough: observed 1.49 s between the arming request and the next
+    // one, so the window had lapsed and the expected 429 arrived as a 303.
+    //
+    // The property is unchanged — an attempt inside an armed window is refused
+    // unchecked — and it does not depend on WHICH step of the curve is armed.
+    // Four consecutive failures arm eight seconds, which is five times the
+    // worst round trip seen. Do not "fix" this by dropping the loop and going
+    // back to one failure; the sequence below is what makes the 429 assertion
+    // deterministic rather than a race against argon2.
+    //
+    // A refused attempt is turned away BEFORE it is charged, so a 429 does not
+    // advance the run — only an admitted-and-failed attempt (401) does. That
+    // is why this polls for 401 rather than sleeping: it is the same reasoning
+    // as the ride-it-out loop further down, and it means the loop measures the
+    // curve instead of guessing at it.
+    const RUN_BEFORE_ASSERT: u32 = 4;
+    let mut failures = 0u32;
+    tokio::time::timeout(Duration::from_secs(60), async {
+        while failures < RUN_BEFORE_ASSERT {
+            let response = post_login(&anon, &https_base, "wrong-password").await?;
+            match response.status() {
+                StatusCode::UNAUTHORIZED => {
+                    assert!(
+                        response.headers().get(SET_COOKIE).is_none(),
+                        "a wrong password must not mint a session"
+                    );
+                    failures += 1;
+                }
+                StatusCode::TOO_MANY_REQUESTS => {
+                    tokio::time::sleep(Duration::from_millis(50)).await;
+                }
+                other => anyhow::bail!("a wrong password answered {other}, expected 401 or 429"),
+            }
+        }
+        anyhow::Ok(())
+    })
+    .await
+    .context("the login curve never admitted enough attempts to arm a long window")??;
 
     let response = post_login(&anon, &https_base, "e2e-password").await?;
     assert_eq!(
