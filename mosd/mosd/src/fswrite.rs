@@ -136,12 +136,7 @@ fn write_via_rename(
 /// because the alternative is not a worse-atomicity write, it is NO WRITE AT
 /// ALL -- and because the one file in this class, /etc/hostname, is read by
 /// mos-apply-hostname.service at boot, which is not running when mosd applies.
-fn write_in_place(
-    path: &Path,
-    contents: &str,
-    mode: u32,
-    owner: Option<(u32, u32)>,
-) -> Result<()> {
+fn write_in_place(path: &Path, contents: &str, mode: u32, owner: Option<(u32, u32)>) -> Result<()> {
     use std::io::Write;
     use std::os::unix::fs::PermissionsExt;
 

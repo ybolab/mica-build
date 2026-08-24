@@ -35,11 +35,11 @@
 
 mod actions;
 mod bus;
+mod fswrite;
 mod identity;
 mod power;
 mod provisioning;
 mod rauc;
-mod fswrite;
 mod reconciler;
 mod scan;
 mod transient;
