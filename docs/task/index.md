@@ -127,4 +127,4 @@ Each task is a single line linking to its detail file. All detailed information 
 - [x] [**RFCT-102 Make the container engine actually usable: storage off the wipeable partition, a board switch, and a build that runs it**](RFCT-102.md) `P1`
 - [x] [**RFCT-103 PLAN-012 M1–M4: build the engine from source, replace the distribution's configuration, and give the switch something to switch**](RFCT-103.md) `P1`
 - [x] [**RFCT-104 A master switch for MQTT, and a broker for the bridge that has only ever retried**](RFCT-104.md) `P1`
-- [ ] [**RFCT-105 An over-the-wire suite for apid: nine phases against one boot, and effects observed on the device**](RFCT-105.md) `P1`
+- [x] [**RFCT-105 An over-the-wire suite for apid: nine phases against one boot, and effects observed on the device**](RFCT-105.md) `P1`
