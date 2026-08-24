@@ -23,6 +23,7 @@ import readOnly from "./phases/04-readonly.ts";
 import mutate from "./phases/05-mutate.ts";
 import backoff from "./phases/06-backoff.ts";
 import reboot from "./phases/07-reboot.ts";
+import postReboot from "./phases/07b-postreboot.ts";
 import poweroff from "./phases/08-poweroff.ts";
 
 export const PHASES: readonly Phase[] = [
@@ -33,6 +34,7 @@ export const PHASES: readonly Phase[] = [
   mutate,
   backoff,
   reboot,
+  postReboot,
   poweroff,
 ];
 
