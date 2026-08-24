@@ -4460,9 +4460,9 @@ because it says what it is measured at where it is read.
     would edit §1.3 and §2.2 from an entry whose whole purpose is to route
     work out of §10.3 — so it is recorded, not done.
 
-### 10.4 The surface now has an over-the-wire test suite
+### 10.4 The surface now has an over-the-wire test suite, and it found a defect
 
-*Measured at `2a6003f`; source section: §4.2, §4.4, §5.2. This entry carries its
+*Measured at `9ef15c6`; source section: §4.2, §4.4, §5.2. This entry carries its
 own descriptors, per §10.3's rule above.*
 
 `test/apid-api/` is a bun + TypeScript suite that talks to apid **over the
@@ -4487,7 +4487,7 @@ apid → system bus → mosd → a reconciler → the device, observed on the fa
 through the bus read-back and through systemd's and mosd's own lines on the
 captured console, never by its status code alone.
 
-**Three limits, and they are load-bearing for any reader of §4:**
+**Four limits, and they are load-bearing for any reader of §4:**
 
 1. **§4.4's traversal guards are not covered.** `serve::respond` calls
    `asset_path::resolve` — the function holding every §4.4 guard — only when a
@@ -4500,15 +4500,46 @@ captured console, never by its status code alone.
 2. **The reboot is two boots off one disk.** `os/qemu-run.sh` passes
    `-no-reboot`, so a guest-initiated reboot makes QEMU exit rather than reset.
    The second boot still comes up through firmware, GRUB and the grubenv the
-   reboot wrote; what is not exercised is QEMU's own reset. It is also opt-in
-   and has not yet been run.
-3. **Image/code skew.** The image under test predates `/mqtt` and
-   `POST /mqtt/enable`, so those routes are uncovered, and the suite carries no
-   guard that goes red when the image is rebuilt.
+   reboot wrote; what is not exercised is QEMU's own reset. The second boot has
+   now run: the reboot, the firmware/GRUB boot behind it and the power-off are
+   all read off the console rather than off a status code.
+3. **Image/code skew, now guarded.** The image under test predates `/mqtt` and
+   `POST /mqtt/enable`, so those routes are still uncovered — but the suite now
+   asserts `GET /mqtt` with `Accept: */*` → **404** and `POST /mqtt/enable` →
+   **405**, the two answers §4.2's fallback gives and a real route cannot, so a
+   rebuilt image turns both red instead of gaining two silently untested
+   routes. The guard buys notification, not coverage.
+4. **`/network`'s no-op round trip is not exercised.** A freshly provisioned
+   device renders no configured interface at all — the link the suite talks
+   over is brought up by systemd-networkd's defaults, not by mosd — so there is
+   no existing configuration to post back unchanged, and posting a static
+   address from this suite would reconfigure the interface every other
+   assertion travels over. The phase asserts the pane renders and skips the
+   round trip with that reason.
 
-**Status, stated so nobody reads more into this than is there:** the suite is
-merged and its offline selftest is green (37/37, every assertion helper driven
-against deliberately wrong input), but **no live phase run has completed** —
-the one recorded live run is the harness's own, which correctly went red on the
-then-missing suite entry point. Nothing in this document should yet be read as
-verified on a device by it.
+**What it found, on its first full live run.** `POST /ssh/password` answers
+**502 Bad Gateway** on the shipped x64 image: mosd writes the transient
+password's marker with `Path::with_file_name` on `/etc/shadow`, which is
+*lexical*, so the shadow write follows the symlink onto STATE and succeeds
+while the marker lands in the literal read-only `/etc` (`create
+/etc/.transient-root-password.mosd-tmp: Read-only file system (os error 30)`).
+The transient SSH root password is therefore non-functional on this image.
+mosd's own unit test for that path asserts only already-resolved paths, and
+`mosd/apid/tests/e2e.rs` runs `MOSD_DRY_RUN=1` precisely so no reconciler
+executes — so a real read-only rootfs behind a real system bus, which is the
+narrow claim above, is what it took to see it. Reported, not fixed;
+`docs/task/RFCT-105.md` carries the reproduction and the root cause.
+
+**Status, stated so nobody reads more into this than is there:** the offline
+selftest is green (37/37, every assertion helper driven against deliberately
+wrong input) and the live run has happened — `make os-apid-api-test` →
+`RESULT: FAIL (231/232 checks)`, the single failure being the 502 above, with
+01-transport, 02-setup, 03-login and 04-readonly green (196 checks). Because
+that failure lands in 05, the runner contains it and phases 06, 07, 07b and 08
+**skip** in a continuous run; their evidence comes from a separate grouped run
+(`RESULT: PASS (128/128 checks)` across two real boots), which is weaker
+evidence than one continuous nine-phase run and is labelled as such in the
+record. What this document may now be read as verified on: §4.2's fallback
+contract, §3.3's reliance on `SameSite=Lax` with no CSRF token beside it, the
+gate's setup/login redirects, and the cookie's attributes from both handlers.
+Not §4.4.
