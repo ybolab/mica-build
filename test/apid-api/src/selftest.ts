@@ -698,7 +698,7 @@ try {
   }
   outer.check(
     badPort instanceof ConfigError && badPort.message.includes("APID_HTTPS_PORT"),
-    "a malformed port is refused before a ten-minute boot is spent on it",
+    "a malformed port is refused before a boot is spent on it",
     [
       `expected: ConfigError naming APID_HTTPS_PORT`,
       `actual:   ${badPort === undefined ? "it was accepted" : String(badPort)}`,

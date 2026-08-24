@@ -76,8 +76,8 @@ const ASSUMES_PREFIX = "  assumes: ";
  * Run `phases` in registry order, honouring `selection` if given.
  *
  * Throws `EmptyAssumesError` or `UnknownPhaseError` BEFORE running anything: a
- * malformed registry is a programming error, and discovering it after a
- * ten-minute boot has been spent is the wrong time.
+ * malformed registry is a programming error, and discovering it after a boot
+ * has been spent is the wrong time.
  */
 export async function runPhases(
   phases: readonly Phase[],

@@ -146,8 +146,8 @@ export class ConsoleLog {
   /**
    * Poll the console until one of `patterns` matches a line, or the deadline
    * passes. Prints a progress line while it waits and hands back the tail when
-   * it gives up: a wait that expires and says only "timed out" costs a
-   * ten-minute boot to diagnose.
+   * it gives up: a wait that expires and says only "timed out" costs a boot to
+   * diagnose.
    */
   async waitFor(
     patterns: readonly RegExp[],

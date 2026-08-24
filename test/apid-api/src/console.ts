@@ -19,9 +19,9 @@
  * Two rules are what make it evidence rather than decoration:
  *
  *   - MARK FIRST. `mark()` captures the current end-of-file offset and every
- *     observation is made against bytes written after it. A ten-minute TCG
- *     boot writes thousands of lines, and `Started ssh.service` is among them;
- *     a whole-file grep would let the BOOT satisfy an assertion about a POST
+ *     observation is made against bytes written after it. A TCG boot writes
+ *     thousands of lines, and `Started ssh.service` is among them; a
+ *     whole-file grep would let the BOOT satisfy an assertion about a POST
  *     made thirty seconds ago. That is why every function here takes a Marker,
  *     and why this module contains no whole-file search at all.
  *   - A MISSING LOG IS A SKIP, NEVER A PASS. If `APID_CONSOLE` is unset, or the

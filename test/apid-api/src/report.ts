@@ -154,7 +154,7 @@ export class Reporter {
   // Each helper owns its failure message and names the expected AND the actual
   // value in the terms of the thing it checked. A shared generic message makes
   // a red run unreadable: "assertion failed" tells a reader to go and reproduce
-  // the whole ten-minute boot by hand.
+  // the whole run by hand.
 
   expectStatus(
     response: HttpResponse,
