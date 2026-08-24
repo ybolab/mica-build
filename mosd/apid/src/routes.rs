@@ -15,6 +15,7 @@
 //! that is bytes in the binary is behind that protection and an artifact that
 //! is files on disk would not be.
 
+use std::net::IpAddr;
 use std::sync::Arc;
 
 use axum::Router;
@@ -168,6 +169,8 @@ pub fn app(state: AppState) -> Router {
         .route("/ssh/keys/remove", post(ssh_key_remove))
         .route("/containers", get(containers_form))
         .route("/containers/enable", post(containers_enable))
+        .route("/mqtt", get(mqtt_form))
+        .route("/mqtt/enable", post(mqtt_enable))
         .route("/healthz", get(healthz))
         // §4.1 rule 1: the whole `/api/` prefix, its own not-found handler
         // included. It 404s everything, `/api/versions` among them — §2's
@@ -353,6 +356,7 @@ fn shell(title: &str, nav: bool, body: Markup) -> Html<String> {
                         a href="/power" { "Power" }
                         a href="/ssh" { "SSH" }
                         a href="/containers" { "Containers" }
+                        a href="/mqtt" { "MQTT" }
                         // §6.3's discoverability cost, closed where it is
                         // actually paid: *"(A) only helps an operator who knows
                         // the URL"*. A logged-in operator whose custom UI is
@@ -1816,6 +1820,179 @@ async fn containers_enable(
         return bus_error(&err);
     }
     Redirect::to("/containers?saved=1").into_response()
+}
+
+// ---------------------------------------------------------------------------
+// RFCT-104: the MQTT pane
+// ---------------------------------------------------------------------------
+
+/// Everything the MQTT pane renders, gathered before any markup is built.
+///
+/// The live-state keys this reads are the pane's half of a contract with
+/// mosd's mqtt reconciler: `enabled`, `listenAddress`, `listenPort` and
+/// `authEnabled` -- camelCase and flat, as the container reconciler publishes
+/// its own. Every one of them is optional here: a key the reconciler has not
+/// published renders as "unknown" and never as a default, because a listen
+/// address on this page is a claim about what the broker is actually bound to.
+struct MqttView {
+    /// `mqtt.enabled` -- what the operator asked for.
+    enabled: bool,
+    /// Live state published by mosd's mqtt reconciler, absent when mosd has
+    /// published none yet.
+    state: Option<Value>,
+    /// Why the settings or the live state could not be read, if either failed.
+    problems: Vec<String>,
+}
+
+impl MqttView {
+    /// A string field of the published live state.
+    fn text(&self, key: &str) -> Option<&str> {
+        self.state.as_ref()?.get(key)?.as_str()
+    }
+
+    /// A boolean field of the published live state.
+    fn flag(&self, key: &str) -> Option<bool> {
+        self.state.as_ref()?.get(key)?.as_bool()
+    }
+
+    /// The published listen port.
+    fn port(&self) -> Option<u64> {
+        self.state.as_ref()?.get("listenPort")?.as_u64()
+    }
+
+    /// Whether the published listener would accept a connection from off this
+    /// device without asking for a password.
+    ///
+    /// The same rule the broker itself applies -- not loopback, and auth off
+    /// -- so the pane and the journal describe the same configuration the same
+    /// way. An address the pane cannot parse is not reported as off-host: the
+    /// broker fails to start on one it cannot parse, and guessing would put a
+    /// security claim on the page that nothing measured.
+    ///
+    /// This drives a warning and nothing else. Refusing to save on it is the
+    /// coupling RFCT-104 rejected; see [`MQTT_SEPARATE_CONFIG_NOTICE`].
+    fn off_host_unauthenticated(&self) -> bool {
+        let Some(address) = self
+            .text("listenAddress")
+            .and_then(|address| address.parse::<IpAddr>().ok())
+        else {
+            return false;
+        };
+        !address.is_loopback() && self.flag("authEnabled") == Some(false)
+    }
+}
+
+async fn load_mqtt_view(app: &AppState) -> anyhow::Result<MqttView> {
+    let mqtt = app.api.get_settings("mqtt").await?;
+    let enabled = mqtt
+        .get("enabled")
+        .and_then(Value::as_bool)
+        .unwrap_or(false);
+    let mut problems = Vec::new();
+    let state = match app.api.get_state("mqtt").await {
+        Ok(value) => Some(value),
+        Err(err) => {
+            problems.push(format!("Live MQTT state unavailable: {err}"));
+            None
+        }
+    };
+    Ok(MqttView {
+        enabled,
+        state,
+        problems,
+    })
+}
+
+/// The consequence of this switch existing, in the terms the container pane
+/// set: the specific behaviour change, not a generic caution.
+///
+/// The switch defaults to false, so updating a fielded device to this image
+/// stops a unit that was running before the update. That is the fact an
+/// operator needs on the page. "MQTT is disabled by default" would be true and
+/// would let them read straight past it; what they have to know is that
+/// something they had is now off, and why nothing that worked has broken.
+const MQTT_UPDATE_NOTICE: &str = "Updating to this image stops the MQTT bridge until this switch is turned on. mos-mqttd ran on every earlier image and does not run here while MQTT is off. Nothing that worked has stopped working: no shipped image ever carried a broker for the bridge to reach, so the bridge has never once connected and has only ever retried.";
+
+/// Why nothing on this page refuses to save.
+///
+/// Coupling the listener to the switch -- refuse to enable MQTT unless the
+/// bind is loopback or authentication is on -- was proposed once and rejected.
+/// The pane is where an operator would otherwise assume the switch checks
+/// them, so the pane is where it says that it does not.
+const MQTT_SEPARATE_CONFIG_NOTICE: &str = "The listen address, the port and authentication are configured separately from this switch, and this switch does not validate them. No combination of them makes it refuse to save, and none of them makes the broker refuse to start: a broker open to a trusted segment is a configuration an operator is allowed to choose, so mos warns about it rather than preventing it.";
+
+/// The exposure, stated as what it lets a stranger do.
+const MQTT_OPEN_LISTENER_WARNING: &str = "This broker accepts unauthenticated connections from the network. It is bound off loopback with authentication disabled, so any host that can reach that address can publish and subscribe on this device without a password.";
+
+fn mqtt_page(view: &MqttView, banner: Option<Markup>) -> Html<String> {
+    let address = view.text("listenAddress").unwrap_or("unknown");
+    let port = view
+        .port()
+        .map_or_else(|| "unknown".to_string(), |port| port.to_string());
+    pane(
+        "MQTT",
+        html! {
+            @if let Some(banner) = banner { (banner) }
+            @for problem in &view.problems { (error_box(problem)) }
+            p { b { (MQTT_UPDATE_NOTICE) } }
+
+            h2 { "Switch" }
+            p { "MQTT: " b { (if view.enabled { "enabled" } else { "disabled" }) } }
+            p {
+                "One switch drives both halves: the broker (" code { "mos-mqtt-broker.service" }
+                ") and the bridge (" code { "mos-mqttd.service" } "). Turning it off stops both, "
+                "and there is no setting that runs one without the other."
+            }
+
+            form method="post" action="/mqtt/enable" {
+                fieldset {
+                    legend { "Switch" }
+                    p { label { input type="checkbox" name="enabled" checked[view.enabled]; " Enable MQTT" } }
+                    p { button type="submit" { "Save" } }
+                }
+            }
+
+            h2 { "Listener" }
+            p { "Listen address: " b { (address) } }
+            p { "Listen port: " b { (port) } }
+            p { "Authentication: " b { (state_flag(view.flag("authEnabled"), "enabled", "disabled")) } }
+            @if view.enabled && view.off_host_unauthenticated() {
+                (error_box(MQTT_OPEN_LISTENER_WARNING))
+            }
+            p { (MQTT_SEPARATE_CONFIG_NOTICE) }
+        },
+    )
+}
+
+async fn mqtt_form(State(app): State<AppState>, Query(query): Query<SavedQuery>) -> Response {
+    match load_mqtt_view(&app).await {
+        Ok(view) => {
+            let banner = query.saved.is_some().then(saved_banner);
+            mqtt_page(&view, banner).into_response()
+        }
+        Err(err) => bus_error(&err),
+    }
+}
+
+/// The enable toggle; absent when unticked.
+#[derive(serde::Deserialize)]
+struct MqttEnableForm {
+    enabled: Option<String>,
+}
+
+async fn mqtt_enable(State(app): State<AppState>, Form(form): Form<MqttEnableForm>) -> Response {
+    let enabled = form.enabled.is_some();
+    // One path, and deliberately only one: the switch writes nothing about the
+    // listener or about authentication, so saving it can never rewrite a
+    // decision the operator made elsewhere.
+    if let Err(err) = app
+        .api
+        .set_settings("mqtt.enabled", &Value::Bool(enabled))
+        .await
+    {
+        return bus_error(&err);
+    }
+    Redirect::to("/mqtt?saved=1").into_response()
 }
 
 #[derive(serde::Deserialize)]
