@@ -2,6 +2,7 @@
 
 mod container;
 mod hostname;
+mod mqtt;
 mod network;
 mod sshd;
 mod systemd;
@@ -34,5 +35,6 @@ pub fn all() -> Vec<Box<dyn Reconciler>> {
         Box::new(wifi_client::WifiClientReconciler::production()),
         Box::new(wifi_ap::WifiApReconciler::production()),
         Box::new(container::ContainerReconciler::production()),
+        Box::new(mqtt::MqttReconciler::production()),
     ]
 }

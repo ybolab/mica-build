@@ -78,6 +78,7 @@ impl Default for MigrationRegistry {
             Box::new(MigrateV2ToV3),
             Box::new(MigrateV3ToV4),
             Box::new(MigrateV4ToV5),
+            Box::new(MigrateV5ToV6),
         ])
     }
 }
@@ -330,5 +331,201 @@ impl Migration for MigrateV4ToV5 {
         doc.insert("schema_version".to_string(), toml::Value::Integer(4));
         doc.remove("container");
         Ok(())
+    }
+}
+/// v5 -> v6: adds the `mqtt` subtree carrying the broker/bridge master switch.
+///
+/// `up` stamps `schema_version = 6` and adds `mqtt.enabled = false` when
+/// absent. False is not a cautious guess, it is what the device was already
+/// doing: no shipped image ever carried a broker, so the bridge has never once
+/// connected and every device arriving from v5 has been retrying into nothing.
+/// An existing boolean is left exactly as it is, so `up` over an
+/// already-migrated document changes nothing.
+///
+/// `listen` and `auth` are deliberately NOT seeded. Both are
+/// `#[serde(default)]`, so an absent table deserializes to the documented
+/// defaults; writing them here would put a copy of those defaults into every
+/// device's settings file, where they would be indistinguishable from an
+/// operator's choice the day a default changes.
+pub struct MigrateV5ToV6;
+
+impl Migration for MigrateV5ToV6 {
+    fn target_version(&self) -> u32 {
+        6
+    }
+
+    fn up(&self, doc: &mut toml::Table) -> Result<(), SettingsError> {
+        doc.insert("schema_version".to_string(), toml::Value::Integer(6));
+        let mqtt = child_table(doc, "mqtt")?;
+        match mqtt.get("enabled") {
+            None => {
+                mqtt.insert("enabled".to_string(), toml::Value::Boolean(false));
+            }
+            Some(toml::Value::Boolean(_)) => {}
+            Some(other) => {
+                return Err(SettingsError::Migration(format!(
+                    "mqtt.enabled must be a boolean, found a {}",
+                    other.type_str()
+                )));
+            }
+        }
+        Ok(())
+    }
+
+    /// Remove the `mqtt` subtree, discarding an `enabled = true`.
+    ///
+    /// Discarding it is the correct trade, for the two reasons
+    /// [`MigrateV4ToV5::down`] gives for the container switch. v5 software has
+    /// no `MqttReconciler`: a preserved `true` would be a settings tree
+    /// announcing that MQTT is on while nothing on the device starts a broker
+    /// or a bridge unit, so the one place an operator would look to find out
+    /// would be the one place telling them the wrong thing.
+    ///
+    /// The second reason is the harder one. v5's `Settings` carries
+    /// `deny_unknown_fields`, so a leftover `mqtt` table does not merely
+    /// mislead -- it makes the whole document fail to deserialize, taking the
+    /// hostname, the network configuration and the admin credential down with
+    /// it. A rollback that bricked settings parsing would be far worse than a
+    /// switch the operator sets again after rolling forward.
+    ///
+    /// A document with no `mqtt` table is left untouched.
+    fn down(&self, doc: &mut toml::Table) -> Result<(), SettingsError> {
+        doc.insert("schema_version".to_string(), toml::Value::Integer(5));
+        doc.remove("mqtt");
+        Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A v5 document as a fielded device carries it: a real hostname, the
+    /// container switch v5 introduced, and no `mqtt` key of any kind.
+    fn v5_document() -> toml::Table {
+        toml::from_str(
+            r#"
+schema_version = 5
+hostname = "cx3576"
+
+[network]
+
+[container]
+enabled = true
+"#,
+        )
+        .unwrap()
+    }
+
+    /// `up` stamps the version and seeds the switch at false -- and seeds
+    /// nothing else. `listen` and `auth` are absent on purpose: they are
+    /// `#[serde(default)]`, so writing them here would put dead copies of the
+    /// defaults into every device's settings file.
+    #[test]
+    fn v5_document_gains_the_mqtt_switch_at_false_and_nothing_else() {
+        let mut doc = v5_document();
+        MigrateV5ToV6.up(&mut doc).unwrap();
+
+        assert_eq!(doc["schema_version"], toml::Value::Integer(6));
+        let mqtt = doc["mqtt"].as_table().unwrap();
+        assert_eq!(mqtt["enabled"], toml::Value::Boolean(false));
+        assert!(
+            !mqtt.contains_key("listen"),
+            "seeded a dead table: {mqtt:?}"
+        );
+        assert!(!mqtt.contains_key("auth"), "seeded a dead table: {mqtt:?}");
+        assert_eq!(mqtt.len(), 1);
+
+        // Every v5 value survives untouched.
+        assert_eq!(doc["hostname"], toml::Value::String("cx3576".to_string()));
+        assert_eq!(doc["container"]["enabled"], toml::Value::Boolean(true));
+
+        // And `up` over its own output changes nothing.
+        let once = doc.clone();
+        MigrateV5ToV6.up(&mut doc).unwrap();
+        assert_eq!(doc, once);
+    }
+
+    /// An operator's `true` is a decision, not a default to be re-applied:
+    /// `up` leaves an existing boolean exactly as it found it.
+    #[test]
+    fn v5_to_v6_up_preserves_an_existing_switch() {
+        let mut doc = v5_document();
+        doc.insert(
+            "mqtt".to_string(),
+            toml::Value::Table(toml::toml! { enabled = true }),
+        );
+
+        MigrateV5ToV6.up(&mut doc).unwrap();
+
+        assert_eq!(doc["schema_version"], toml::Value::Integer(6));
+        assert_eq!(doc["mqtt"]["enabled"], toml::Value::Boolean(true));
+    }
+
+    /// A hand-edited `mqtt.enabled` that is not a boolean is an error naming
+    /// the key and the type it found, not a silent overwrite of what the
+    /// operator typed.
+    #[test]
+    fn v5_to_v6_up_refuses_a_non_boolean_switch() {
+        let mut doc = v5_document();
+        doc.insert(
+            "mqtt".to_string(),
+            toml::Value::Table(toml::toml! { enabled = "yes" }),
+        );
+
+        let err = MigrateV5ToV6.up(&mut doc).unwrap_err();
+
+        let SettingsError::Migration(message) = err else {
+            panic!("expected a migration error, got {err:?}");
+        };
+        assert!(message.contains("mqtt.enabled"), "{message}");
+        assert!(message.contains("string"), "{message}");
+    }
+
+    /// `down` discards the whole subtree, `enabled = true` included: v5 has no
+    /// `MqttReconciler` to honour it, and v5's `deny_unknown_fields` would
+    /// refuse the entire document if the table were left behind.
+    #[test]
+    fn v6_document_migrates_down_discarding_an_enabled_switch() {
+        let mut doc = v5_document();
+        MigrateV5ToV6.up(&mut doc).unwrap();
+        doc["mqtt"]["enabled"] = toml::Value::Boolean(true);
+
+        MigrateV5ToV6.down(&mut doc).unwrap();
+
+        assert_eq!(doc["schema_version"], toml::Value::Integer(5));
+        assert!(!doc.contains_key("mqtt"), "{doc:?}");
+        assert_eq!(doc["container"]["enabled"], toml::Value::Boolean(true));
+    }
+
+    /// `down` over a document that never carried an `mqtt` table stamps the
+    /// version and touches nothing else.
+    #[test]
+    fn v5_to_v6_down_handles_a_document_with_no_mqtt_table() {
+        let mut doc = v5_document();
+        doc.insert("schema_version".to_string(), toml::Value::Integer(6));
+        let before = doc.clone();
+
+        MigrateV5ToV6.down(&mut doc).unwrap();
+
+        assert_eq!(doc["schema_version"], toml::Value::Integer(5));
+        assert!(!doc.contains_key("mqtt"));
+        for key in ["hostname", "network", "container"] {
+            assert_eq!(doc[key], before[key]);
+        }
+    }
+
+    /// v5 -> v6 -> v5 returns the document it started from: the seeded switch
+    /// is exactly what `down` removes.
+    #[test]
+    fn a_v5_document_round_trips_up_to_v6_and_back() {
+        let original = v5_document();
+        let mut doc = original.clone();
+
+        migrate(&mut doc, 5, 6).unwrap();
+        assert_eq!(doc["schema_version"], toml::Value::Integer(6));
+
+        migrate(&mut doc, 6, 5).unwrap();
+        assert_eq!(doc, original);
     }
 }

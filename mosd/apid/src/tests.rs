@@ -725,7 +725,7 @@ async fn stored_key_list(fake: &FakeSettings) -> serde_json::Value {
 /// that is missing here. Without that, adding a route and forgetting this list
 /// leaves exactly one unauthenticated write path and every existing test still
 /// green -- the list would describe the routes someone remembered.
-const ALL_MUTATIONS: [(&str, &str); 9] = [
+const ALL_MUTATIONS: [(&str, &str); 10] = [
     ("/ssh/enable", "enabled=on"),
     (
         "/ssh/password",
@@ -734,6 +734,7 @@ const ALL_MUTATIONS: [(&str, &str); 9] = [
     ("/ssh/keys/add", "key=ssh-ed25519%20AAAA"),
     ("/ssh/keys/remove", "identifier=SHA256%3Aanything"),
     ("/containers/enable", "enabled=on"),
+    ("/mqtt/enable", "enabled=on"),
     ("/hostname", "hostname=renamed"),
     // POST /network was reachable with no test asserting it rejects an
     // anonymous request. `unauthenticated_panes_redirect_to_login` covers the
@@ -2728,6 +2729,566 @@ async fn the_pane_does_not_list_quadlet_files_while_containers_are_off() {
         body.contains("Not listed while containers are disabled"),
         "the pane must explain the empty list rather than showing one: {body}"
     );
+}
+
+// ---------------------------------------------------------------------------
+// RFCT-104: the MQTT pane
+// ---------------------------------------------------------------------------
+
+/// A settings tree with the mqtt subtree, authenticated as `ssh_tree`.
+fn mqtt_tree(enabled: bool) -> serde_json::Value {
+    let hash = auth::hash_password("hunter2secret").unwrap();
+    json!({
+        "hostname": "mos",
+        "network": {},
+        "access": { "webAdmin": { "password_hash": hash } },
+        "mqtt": {
+            "enabled": enabled,
+            "listen": { "address": "127.0.0.1", "port": 1883 },
+            "auth": { "enabled": false },
+        },
+    })
+}
+
+/// The live-state subtree mosd's mqtt reconciler publishes, copied **verbatim**
+/// from the reconciler's own expectation of it.
+///
+/// Source: `mosd/mosd/src/reconciler/mqtt.rs`, test
+/// `live_state_names_both_units_and_the_config_path` -- its assertions on
+/// `configPath`, `listen.address`, `listen.port`, `auth.enabled` and `units`,
+/// for `settings(true, "127.0.0.1", 1883, false)`. The exact key set is pinned
+/// separately there by `the_published_shape_is_the_contract_with_the_apid_pane`,
+/// which names this file as the consumer.
+///
+/// Copy it; do not adjust it. The fixture this replaced was invented here to
+/// match what the pane had chosen to read, which is a test of the pane against
+/// itself: it was flat, the reconciler has always been nested, and both crates
+/// stayed green while the pane rendered "unknown" for every value and the
+/// open-listener warning could not fire at all. A hand-written fixture cannot
+/// detect that it disagrees with the producer. This is still a second copy in
+/// a second crate -- apid and mosd talk over a bus and share no type -- but a
+/// named source makes the copy auditable, which the invented one was not.
+///
+/// One field is necessarily not verbatim: `configPath` is the reconciler's own
+/// `config_path`, which is a `tempfile` directory in that test, so the
+/// production default (`DEFAULT_CONFIG_PATH`, same file) stands in for it.
+const MQTT_PUBLISHED_STATE: &str = r#"{
+    "enabled": true,
+    "listen": { "address": "127.0.0.1", "port": 1883 },
+    "auth": { "enabled": false },
+    "configPath": "/run/mos/mqtt-broker.toml",
+    "units": [
+        {
+            "unit": "mos-mqtt-broker.service",
+            "activeState": "active",
+            "unitFileState": "enabled-runtime"
+        },
+        {
+            "unit": "mos-mqttd.service",
+            "activeState": "active",
+            "unitFileState": "enabled-runtime"
+        }
+    ]
+}"#;
+
+/// The published state with both units in the state a working switch produces.
+///
+/// The *structure* always comes from [`MQTT_PUBLISHED_STATE`]; only values are
+/// substituted, so no test here can quietly reintroduce a shape the reconciler
+/// does not publish. Both units follow the switch, because one switch drives
+/// both halves.
+fn mqtt_state(enabled: bool, address: &str, port: u64, auth_enabled: bool) -> serde_json::Value {
+    let active_state = if enabled { "active" } else { "inactive" };
+    mqtt_state_with_units(
+        enabled,
+        address,
+        port,
+        auth_enabled,
+        active_state,
+        active_state,
+    )
+}
+
+/// The same, with the broker unit's `activeState` chosen explicitly -- which
+/// is the only way to describe a broker that took the settings and then
+/// exited.
+fn mqtt_state_with_unit(
+    enabled: bool,
+    address: &str,
+    port: u64,
+    auth_enabled: bool,
+    active_state: &str,
+) -> serde_json::Value {
+    let bridge = if enabled { "active" } else { "inactive" };
+    mqtt_state_with_units(enabled, address, port, auth_enabled, active_state, bridge)
+}
+
+/// The same with both units' `activeState` chosen, each written into the entry
+/// that carries its own name.
+///
+/// Selecting the entry rather than indexing it is the point: the pane does the
+/// same, so a fixture that reordered `units` would still describe the units it
+/// means to describe.
+fn mqtt_state_with_units(
+    enabled: bool,
+    address: &str,
+    port: u64,
+    auth_enabled: bool,
+    broker_state: &str,
+    bridge_state: &str,
+) -> serde_json::Value {
+    let mut state: serde_json::Value =
+        serde_json::from_str(MQTT_PUBLISHED_STATE).expect("the golden published state parses");
+    state["enabled"] = json!(enabled);
+    state["listen"]["address"] = json!(address);
+    state["listen"]["port"] = json!(port);
+    state["auth"]["enabled"] = json!(auth_enabled);
+    set_unit_state(&mut state, "mos-mqtt-broker.service", broker_state);
+    set_unit_state(&mut state, "mos-mqttd.service", bridge_state);
+    state
+}
+
+/// Write one `units` entry's `activeState`, found by its `unit` field.
+fn set_unit_state(state: &mut serde_json::Value, unit: &str, active_state: &str) {
+    let entry = state["units"]
+        .as_array_mut()
+        .expect("the golden `units` is an array")
+        .iter_mut()
+        .find(|entry| entry["unit"] == json!(unit))
+        .unwrap_or_else(|| panic!("the golden state publishes no unit named {unit}"));
+    entry["activeState"] = json!(active_state);
+}
+
+#[tokio::test]
+async fn the_mqtt_pane_states_the_behaviour_change_not_a_generic_warning() {
+    let (router, _fake) = test_app(mqtt_tree(false));
+    let cookie = login(&router, "hunter2secret").await;
+    let body = body_string(get(&router, "/mqtt", Some(&cookie)).await).await;
+
+    // The container pane's rule, applied here: state the consequence, not a
+    // caution. Each clause separately, because a page that said only "MQTT is
+    // disabled by default" would pass a check for the switch's name while
+    // leaving out the thing an operator has to act on -- that a unit which was
+    // running before the update is not running now.
+    assert!(
+        body.contains("stops the MQTT bridge"),
+        "the pane must say the update stops a unit that was running: {body}"
+    );
+    assert!(
+        body.contains("mos-mqttd"),
+        "the pane must name the unit that stops, or the operator cannot look for it: {body}"
+    );
+    assert!(
+        body.contains("only ever retried"),
+        "the pane must say why nothing that worked has broken: {body}"
+    );
+}
+
+#[tokio::test]
+async fn the_mqtt_pane_says_the_switch_drives_both_halves() {
+    // The switch is not "enable the broker". A pane that named only one of the
+    // two would leave an operator turning MQTT off and expecting the bridge to
+    // carry on reaching some other broker.
+    let (router, _fake) = test_app(mqtt_tree(true));
+    let cookie = login(&router, "hunter2secret").await;
+    let body = body_string(get(&router, "/mqtt", Some(&cookie)).await).await;
+
+    assert!(body.contains("MQTT: <b>enabled</b>"), "{body}");
+    assert!(body.contains("mos-mqtt-broker.service"), "{body}");
+    assert!(body.contains("mos-mqttd.service"), "{body}");
+    assert!(
+        body.contains("Turning it off stops both"),
+        "the pane must say the switch stops both halves: {body}"
+    );
+}
+
+#[tokio::test]
+async fn the_mqtt_pane_says_listen_and_auth_are_not_validated_by_the_switch() {
+    // D2: `listen` and `auth` are a separate configuration and the switch
+    // validates neither. That was a decision, and the pane is the only place
+    // an operator meets the switch -- so it is where the decision is stated,
+    // or they will assume the switch checked something for them.
+    let (router, _fake) = test_app(mqtt_tree(true));
+    let cookie = login(&router, "hunter2secret").await;
+    let body = body_string(get(&router, "/mqtt", Some(&cookie)).await).await;
+
+    assert!(
+        body.contains("configured separately from this switch"),
+        "the pane must say the listener is configured elsewhere: {body}"
+    );
+    assert!(
+        body.contains("this switch does not validate them"),
+        "the pane must say the switch validates nothing: {body}"
+    );
+    assert!(
+        body.contains("refuse to start"),
+        "the pane must say nothing refuses to start on a listen/auth combination: {body}"
+    );
+}
+
+#[tokio::test]
+async fn the_mqtt_pane_renders_before_mosd_has_published_any_state() {
+    // No `set_state_entry`, so `get_state("mqtt")` fails -- which is the state
+    // of a device that has just booted. The pane has to render anyway: a 502
+    // here would mean the switch cannot be turned on until something else has
+    // already turned it on.
+    for enabled in [false, true] {
+        let (router, _fake) = test_app(mqtt_tree(enabled));
+        let cookie = login(&router, "hunter2secret").await;
+        let response = get(&router, "/mqtt", Some(&cookie)).await;
+        assert_eq!(response.status(), StatusCode::OK, "enabled={enabled}");
+        let body = body_string(response).await;
+        assert!(
+            body.contains("Live MQTT state unavailable"),
+            "the missing state must be reported, not silently rendered as a listener: {body}"
+        );
+        // Unknown, not a made-up default: `127.0.0.1` on the page would be a
+        // claim about a listener nobody has measured.
+        assert!(
+            body.contains("Listen address: <b>unknown</b>"),
+            "an unpublished address must read as unknown: {body}"
+        );
+        assert!(
+            body.contains("Listen port: <b>unknown</b>"),
+            "an unpublished port must read as unknown: {body}"
+        );
+        assert!(
+            body.contains("Authentication: <b>unknown</b>"),
+            "unpublished auth must read as unknown, not as disabled: {body}"
+        );
+        // Same rule for the units: no published `units` array means no claim
+        // about whether either half is running.
+        assert!(
+            body.contains("Broker unit: <b>unknown</b>"),
+            "an unpublished broker unit must read as unknown, not as active: {body}"
+        );
+        assert!(
+            body.contains("Bridge unit: <b>unknown</b>"),
+            "an unpublished bridge unit must read as unknown: {body}"
+        );
+        // And the form is still there to submit.
+        assert!(body.contains(r#"action="/mqtt/enable""#), "{body}");
+    }
+}
+
+#[tokio::test]
+async fn the_mqtt_pane_shows_the_published_listener_read_only() {
+    // The reconciler's real published JSON, not a shape invented here -- see
+    // [`MQTT_PUBLISHED_STATE`]. Every value below has to come out of the
+    // nested tree it actually publishes; "unknown" anywhere means the pane is
+    // reading a key nobody writes.
+    let (router, fake) = test_app(mqtt_tree(true));
+    fake.set_state_entry("mqtt", mqtt_state(true, "127.0.0.1", 1883, true));
+    let cookie = login(&router, "hunter2secret").await;
+    let body = body_string(get(&router, "/mqtt", Some(&cookie)).await).await;
+
+    assert!(body.contains("Listen address: <b>127.0.0.1</b>"), "{body}");
+    assert!(body.contains("Listen port: <b>1883</b>"), "{body}");
+    assert!(body.contains("Authentication: <b>enabled</b>"), "{body}");
+    assert!(
+        !body.contains("unknown"),
+        "nothing may read as unknown when the reconciler has published all of it: {body}"
+    );
+    // Both halves of the switch, from the `units` array.
+    assert!(body.contains("Broker unit: <b>active</b>"), "{body}");
+    assert!(body.contains("Bridge unit: <b>active</b>"), "{body}");
+    assert!(
+        body.contains("unit file enabled-runtime"),
+        "the published `unitFileState` must reach the page too: {body}"
+    );
+    // Read-only: the only writable control on the pane is the switch.
+    assert_eq!(
+        body.matches("<form").count(),
+        2,
+        "the pane must carry the switch form and the nav logout form and nothing else -- \
+         the listener is displayed, not edited: {body}"
+    );
+}
+
+#[tokio::test]
+async fn a_failed_bridge_is_named_on_the_pane_with_its_own_journal() {
+    // The other half of the switch, which fails for its own reasons -- the
+    // cloud endpoint it dials, not the listener. The published `units` array
+    // carries a separate entry for it, so the pane can report it separately;
+    // a page that only ever spoke about the broker would leave an operator
+    // with MQTT "on", a healthy broker, and nothing carried anywhere.
+    let (router, fake) = test_app(mqtt_tree(true));
+    fake.set_state_entry(
+        "mqtt",
+        mqtt_state_with_units(true, "127.0.0.1", 1883, false, "active", "failed"),
+    );
+    let cookie = login(&router, "hunter2secret").await;
+    let body = body_string(get(&router, "/mqtt", Some(&cookie)).await).await;
+
+    assert!(
+        body.contains("Bridge unit: <b>failed</b>"),
+        "the bridge's own state must be on the page: {body}"
+    );
+    assert!(
+        body.contains("The bridge unit has failed"),
+        "a failed bridge must be stated plainly: {body}"
+    );
+    assert!(
+        body.contains("journalctl -u mos-mqttd"),
+        "the pane must point at the bridge's journal, not the broker's: {body}"
+    );
+    // And it must not be reported as a broker failure: they are different
+    // units with different journals, and sending an operator to the wrong one
+    // is worse than sending them nowhere.
+    assert!(
+        body.contains("Broker unit: <b>active</b>"),
+        "the healthy half must still read as healthy: {body}"
+    );
+    assert!(
+        !body.contains("The broker unit has failed"),
+        "a failed bridge must not be reported as a failed broker: {body}"
+    );
+}
+
+#[tokio::test]
+async fn a_unit_is_read_by_name_and_not_by_its_position() {
+    // `units` is published broker-first today and nothing promises it stays
+    // that way. Read by index, this reversal would still render two units,
+    // both states would still be real states, and the page would report the
+    // bridge under the broker's name with nothing failing anywhere.
+    let mut state = mqtt_state_with_units(true, "127.0.0.1", 1883, false, "active", "failed");
+    state["units"]
+        .as_array_mut()
+        .expect("`units` is an array")
+        .reverse();
+
+    let (router, fake) = test_app(mqtt_tree(true));
+    fake.set_state_entry("mqtt", state);
+    let cookie = login(&router, "hunter2secret").await;
+    let body = body_string(get(&router, "/mqtt", Some(&cookie)).await).await;
+
+    assert!(
+        body.contains("Broker unit: <b>active</b>"),
+        "the broker is whichever entry is NAMED mos-mqtt-broker.service: {body}"
+    );
+    assert!(
+        body.contains("Bridge unit: <b>failed</b>"),
+        "the failed bridge must stay attached to its own name: {body}"
+    );
+}
+
+#[tokio::test]
+async fn enabling_mqtt_writes_the_master_switch_and_nothing_else() {
+    let (router, fake) = test_app(mqtt_tree(false));
+    let cookie = login(&router, "hunter2secret").await;
+
+    let response = post_form(&router, "/mqtt/enable", "enabled=on", Some(&cookie)).await;
+    assert_eq!(response.status(), StatusCode::SEE_OTHER);
+    assert_eq!(location(&response), "/mqtt?saved=1");
+    // D1: the switch is a master switch and nothing else. A handler that also
+    // wrote `mqtt.listen` or `mqtt.auth` -- to "make it safe" -- would be the
+    // coupling D2 forbids, arriving through the save path instead of a gate.
+    assert_eq!(fake.set_paths(), vec!["mqtt.enabled"]);
+    assert_eq!(
+        fake.get_settings("mqtt.enabled").await.unwrap(),
+        json!(true)
+    );
+}
+
+#[tokio::test]
+async fn an_unticked_mqtt_box_disables_rather_than_doing_nothing() {
+    // A checkbox absent from the form body is how HTML says "off". Reading it
+    // as "no change" would make MQTT impossible to turn back off through the
+    // pane, and the failure is silent: the page redirects and says "Settings
+    // saved."
+    let (router, fake) = test_app(mqtt_tree(true));
+    let cookie = login(&router, "hunter2secret").await;
+
+    post_form(&router, "/mqtt/enable", "", Some(&cookie)).await;
+    assert_eq!(fake.set_paths(), vec!["mqtt.enabled"]);
+    assert_eq!(
+        fake.get_settings("mqtt.enabled").await.unwrap(),
+        json!(false),
+        "an unticked checkbox must write false, not leave the setting alone"
+    );
+}
+
+#[tokio::test]
+async fn an_open_mqtt_listener_is_warned_about_and_still_saves() {
+    // The guard on D2. A broker bound off-host with authentication off is
+    // worth saying out loud and is NOT worth refusing: an operator who widened
+    // the bind made a decision, and a pane that answered it by declining to
+    // save would be a pane whose reason for not saving cannot be read
+    // anywhere. Both halves are asserted here, in one test, because it is the
+    // combination that is the requirement -- a warning alone would pass a
+    // check for the text while the save path had quietly grown a gate.
+    let (router, fake) = test_app(mqtt_tree(true));
+    fake.set_state_entry("mqtt", mqtt_state(true, "0.0.0.0", 1883, false));
+    let cookie = login(&router, "hunter2secret").await;
+
+    let body = body_string(get(&router, "/mqtt", Some(&cookie)).await).await;
+    assert!(
+        body.contains("accepts unauthenticated connections from the network"),
+        "an off-host bind with auth off must be stated as what it lets a stranger do: {body}"
+    );
+
+    // ...and the form still submits, in exactly that state.
+    let response = post_form(&router, "/mqtt/enable", "enabled=on", Some(&cookie)).await;
+    assert_eq!(
+        response.status(),
+        StatusCode::SEE_OTHER,
+        "the switch must save while the listener is open: {body}"
+    );
+    assert_eq!(location(&response), "/mqtt?saved=1");
+    assert_eq!(fake.set_paths(), vec!["mqtt.enabled"]);
+    assert_eq!(
+        fake.get_settings("mqtt.enabled").await.unwrap(),
+        json!(true),
+        "an open listener must not turn the save into a no-op"
+    );
+}
+
+#[tokio::test]
+async fn the_mqtt_open_listener_warning_tracks_the_configuration_not_the_page() {
+    // Three configurations that must NOT warn, so the warning means something
+    // when it does appear. A pane that warned on everything would train an
+    // operator to ignore it.
+    let quiet = [
+        // Loopback with auth off: the default, and unreachable from off-host.
+        (true, "127.0.0.1", false),
+        // Loopback v6, same reasoning -- the broker treats both as loopback.
+        (true, "::1", false),
+        // Off-host WITH auth: a deliberate, defended configuration.
+        (true, "0.0.0.0", true),
+    ];
+    for (enabled, address, auth_enabled) in quiet {
+        let (router, fake) = test_app(mqtt_tree(enabled));
+        fake.set_state_entry("mqtt", mqtt_state(enabled, address, 1883, auth_enabled));
+        let cookie = login(&router, "hunter2secret").await;
+        let body = body_string(get(&router, "/mqtt", Some(&cookie)).await).await;
+        assert!(
+            !body.contains("accepts unauthenticated connections"),
+            "{address} with auth={auth_enabled} must not warn: {body}"
+        );
+    }
+
+    // And with the switch off there is no listener to warn about: the broker
+    // is not running, so an open bind in the last published state describes
+    // something that has already stopped.
+    let (router, fake) = test_app(mqtt_tree(false));
+    fake.set_state_entry("mqtt", mqtt_state(false, "0.0.0.0", 1883, false));
+    let cookie = login(&router, "hunter2secret").await;
+    let body = body_string(get(&router, "/mqtt", Some(&cookie)).await).await;
+    assert!(
+        !body.contains("accepts unauthenticated connections"),
+        "a stopped broker must not be reported as accepting connections: {body}"
+    );
+}
+
+#[tokio::test]
+async fn a_failed_broker_is_named_on_the_pane_with_somewhere_to_look() {
+    // The switch is on, so the pane would otherwise say "enabled" and stop.
+    // That is the request, not the outcome: the broker took the settings, hit
+    // a listen address it could not parse and exited. Nothing rejected the
+    // value -- rejecting it is the coupling RFCT-104 forbids -- so the unit
+    // state is the only evidence there is, and the pane is where an operator
+    // meets it.
+    let (router, fake) = test_app(mqtt_tree(true));
+    fake.set_state_entry(
+        "mqtt",
+        mqtt_state_with_unit(true, "localhost", 1883, false, "failed"),
+    );
+    let cookie = login(&router, "hunter2secret").await;
+    let body = body_string(get(&router, "/mqtt", Some(&cookie)).await).await;
+
+    assert!(
+        body.contains("Broker unit: <b>failed</b>"),
+        "the unit state must be on the page, not just the switch position: {body}"
+    );
+    assert!(
+        body.contains("The broker unit has failed"),
+        "a failed broker must be stated plainly: {body}"
+    );
+    assert!(
+        body.contains("journalctl -u mos-mqtt-broker"),
+        "the pane must say where the reason is, since it does not have the reason: {body}"
+    );
+    // And it must not claim to know why. The pane has a unit state, not the
+    // journal; naming the listen address as the cause would be a diagnosis it
+    // has not made, and would be wrong for every other way a broker can fail.
+    assert!(
+        !body.contains("is not an IP address"),
+        "the pane must not guess at the cause of the failure: {body}"
+    );
+}
+
+#[tokio::test]
+async fn a_broker_that_is_running_is_not_reported_as_failed() {
+    // So the failure notice means something when it appears.
+    for (enabled, active_state) in [(true, "active"), (false, "inactive"), (true, "activating")] {
+        let (router, fake) = test_app(mqtt_tree(enabled));
+        fake.set_state_entry(
+            "mqtt",
+            mqtt_state_with_unit(enabled, "127.0.0.1", 1883, false, active_state),
+        );
+        let cookie = login(&router, "hunter2secret").await;
+        let body = body_string(get(&router, "/mqtt", Some(&cookie)).await).await;
+        assert!(
+            !body.contains("The broker unit has failed"),
+            "a unit in {active_state} must not be reported as failed: {body}"
+        );
+        assert!(
+            body.contains(&format!("Broker unit: <b>{active_state}</b>")),
+            "the unit state must be reported as published: {body}"
+        );
+    }
+}
+
+#[tokio::test]
+async fn a_listen_address_the_broker_cannot_use_does_not_stop_the_switch_saving() {
+    // The other half of the amendment, and the same rule as the open-listener
+    // guard: apid does not validate the listen address. `localhost` is exactly
+    // the value that kills the broker -- it binds an interface and does not
+    // resolve names -- and it must still be possible to save the switch while
+    // it is set, in both directions. A pane that refused here, or greyed the
+    // button out, would have made the master switch depend on `listen` being
+    // valid through the UI instead of through a gate.
+    let (router, fake) = test_app(mqtt_tree(false));
+    fake.set_state_entry(
+        "mqtt",
+        mqtt_state_with_unit(false, "localhost", 1883, false, "failed"),
+    );
+    let cookie = login(&router, "hunter2secret").await;
+
+    let body = body_string(get(&router, "/mqtt", Some(&cookie)).await).await;
+    assert!(
+        body.contains(r#"<button type="submit">Save</button>"#),
+        "the Save button must be present and not disabled on any listen value: {body}"
+    );
+
+    let response = post_form(&router, "/mqtt/enable", "enabled=on", Some(&cookie)).await;
+    assert_eq!(
+        response.status(),
+        StatusCode::SEE_OTHER,
+        "the switch must save while the listen address is one the broker cannot use"
+    );
+    assert_eq!(location(&response), "/mqtt?saved=1");
+    assert_eq!(fake.set_paths(), vec!["mqtt.enabled"]);
+    assert_eq!(
+        fake.get_settings("mqtt.enabled").await.unwrap(),
+        json!(true)
+    );
+    // And nothing rewrote the address to something the broker would accept:
+    // repairing it here would be the same coupling arriving as a courtesy.
+    assert_eq!(
+        fake.get_settings("mqtt.listen.address").await.unwrap(),
+        json!("127.0.0.1"),
+        "saving the switch must not touch the listener at all"
+    );
+
+    // Off again, with the same broken address.
+    let response = post_form(&router, "/mqtt/enable", "", Some(&cookie)).await;
+    assert_eq!(response.status(), StatusCode::SEE_OTHER);
+    assert_eq!(
+        fake.get_settings("mqtt.enabled").await.unwrap(),
+        json!(false)
+    );
+    assert_eq!(fake.set_paths(), vec!["mqtt.enabled"; 2]);
 }
 
 /// Every `post(...)` route registered in `routes.rs` appears in

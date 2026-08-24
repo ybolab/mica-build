@@ -770,6 +770,19 @@ RUN if [ "$WITH_CONTAINERS" != "1" ]; then exit 0; fi; \
 # on both paths and the RUN installs only when the binary was staged.
 # /var/lib/mos is the bind target of var-lib-mos.mount; mosd's own paths are
 # unchanged from v1.
+#
+# THE TWO MQTT UNITS ARE INSTALLED AND LEFT DISABLED. mqtt.enabled now seeds
+# false for every profile, so an image that shipped the bridge enabled would run
+# it from early boot until mosd's first reconcile stopped it — and against a
+# broker the same switch has not started, which is exactly the retry noise this
+# work exists to end. Turning MQTT on is a runtime decision made against the
+# settings tree, never a property of the image. mosd owns the lifecycle of both
+# units, and each absent symlink is ASSERTED below rather than left to happen.
+#
+# The broker ships NO D-Bus policy file, and that absence is deliberate rather
+# than an omission: it never speaks D-Bus. It reads one file mosd renders into
+# /run and listens on a TCP socket. The bridge is the half of this pair that
+# talks to com.mos.mosd, and mos-mqttd.conf is its grant.
 ARG MOSD_DIR
 ARG WITH_MOSD=1
 COPY ${MOSD_DIR}/ /tmp/mosd/
@@ -798,9 +811,18 @@ RUN if [ "$WITH_MOSD" = "1" ] && [ -f /tmp/mosd/mosd ]; then \
         install -m 0644 /tmp/mosd/mos-mqttd.conf \
                 /usr/share/dbus-1/system.d/mos-mqttd.conf && \
         mkdir -p /etc/systemd/system/multi-user.target.wants && \
-        ln -sf /usr/lib/systemd/system/mos-mqttd.service \
-               /etc/systemd/system/multi-user.target.wants/mos-mqttd.service && \
-        test -L /etc/systemd/system/multi-user.target.wants/mos-mqttd.service; \
+        rm -f /etc/systemd/system/multi-user.target.wants/mos-mqttd.service && \
+        test ! -e /etc/systemd/system/multi-user.target.wants/mos-mqttd.service && \
+        echo "mos-mqttd.service left DISABLED in the image (mosd owns the lifecycle; mqtt.enabled starts it)"; \
+    fi && \
+    if [ "$WITH_MOSD" = "1" ] && [ -f /tmp/mosd/mos-mqtt-broker ]; then \
+        install -m 0755 /tmp/mosd/mos-mqtt-broker /usr/bin/mos-mqtt-broker && \
+        install -m 0644 /tmp/mosd/mos-mqtt-broker.service \
+                /usr/lib/systemd/system/mos-mqtt-broker.service && \
+        mkdir -p /etc/systemd/system/multi-user.target.wants && \
+        rm -f /etc/systemd/system/multi-user.target.wants/mos-mqtt-broker.service && \
+        test ! -e /etc/systemd/system/multi-user.target.wants/mos-mqtt-broker.service && \
+        echo "mos-mqtt-broker.service left DISABLED in the image (mosd owns the lifecycle; no D-Bus policy, it speaks none)"; \
     fi && rm -rf /tmp/mosd
 
 # The mos-mqttd service account.
@@ -849,6 +871,52 @@ RUN set -eu; \
     *) echo "error: mos-mqttd passwd entry is not the pinned one: ${ent}" >&2; exit 1 ;; \
     esac; \
     echo "mos-mqttd system account created: ${ent}"
+
+# The mos-mqtt-broker service account.
+#
+# WHY A STATIC ACCOUNT AND NOT DynamicUser, arrived at by a different route
+# than mos-mqttd's. The broker reads /var/lib/mos/mqtt-broker-users.toml, a
+# credentials file on STATE that outlives every start of the unit and survives
+# an A/B update. A dynamic uid is allocated at start and gone at stop, so there
+# is no identity to own that file: the ownership written on one boot names
+# nobody on the next, and the only way to keep it readable would be to make the
+# credentials world-readable.
+#
+# uid AND gid are PINNED, and NOT for the reason recorded above this. The broker
+# has no D-Bus policy at all -- it never speaks D-Bus -- so there is no
+# <policy user=> resolving a name to a number at dbus-daemon startup. They are
+# pinned because that credentials file sits on persistent storage that outlives
+# any single image: a uid that moved between builds would leave a file on STATE
+# owned by a number the new image hands to somebody else, so the broker would
+# lose its own credentials or another service would silently inherit them.
+#
+# THE NUMBER IS 969 because it is the next free number below the 970 mos-mqttd
+# holds, and it is well below the 999 that Debian's `useradd --system` allocates
+# downward from, so it does not race the base image's own accounts as that
+# allocation walks down. The collision check below is the one the 970 block
+# carries, kept for the reason recorded there: 990 was free on bookworm and is
+# taken by `sshd` on trixie, so a base-image upgrade must fail HERE rather than
+# silently produce the account at some other uid.
+#
+# --system: no home, no login shell, no aging. `chage -d` pins the shadow
+# LAST-CHANGE field for the same determinism reason as the accounts above:
+# useradd stamps today's date, which would change the packed rootfs -- and its
+# dm-verity root hash -- on every build day for no content reason.
+RUN set -eu; \
+    if awk -F: '$3 == 969 || $1 == "mos-mqtt-broker"' /etc/passwd | grep -q .; then \
+        echo "error: uid 969 or the name mos-mqtt-broker is already taken in the base image: $(awk -F: '$3 == 969 || $1 == "mos-mqtt-broker"' /etc/passwd)" >&2; exit 1; \
+    fi; \
+    groupadd --system --gid 969 mos-mqtt-broker; \
+    useradd --system --uid 969 --gid 969 --no-create-home \
+            --home-dir /nonexistent --shell /usr/sbin/nologin \
+            --comment "mos MQTT broker" mos-mqtt-broker; \
+    chage -d 2020-01-01 mos-mqtt-broker; \
+    ent="$(awk -F: '$1 == "mos-mqtt-broker"' /etc/passwd)"; \
+    case "${ent}" in \
+    mos-mqtt-broker:x:969:969:*:/nonexistent:/usr/sbin/nologin) ;; \
+    *) echo "error: mos-mqtt-broker passwd entry is not the pinned one: ${ent}" >&2; exit 1 ;; \
+    esac; \
+    echo "mos-mqtt-broker system account created: ${ent}"
 
 # Board hardware init: generic best-effort oneshots (os/hwinit, board-agnostic
 # mechanism) + per-board facts staged from BOARD_DIR/init into /etc/mos.

@@ -92,6 +92,31 @@ pub trait UnitControl: Send + Sync {
     /// notably when the unit file has no `ExecReload`.
     async fn reload(&self, unit: &str) -> Result<()>;
 
+    /// Clear `unit`'s failed state, and with it the start rate limit that a
+    /// repeatedly-failing unit accumulates.
+    ///
+    /// The equivalent of `systemctl reset-failed <unit>`. It exists for the
+    /// START LIMIT and not for cosmetics. Once a unit exceeds its
+    /// `StartLimitBurst` within `StartLimitIntervalSec`, systemd does not
+    /// merely stop restarting it -- it REFUSES every further start job, from
+    /// any caller, until the window elapses or the failure is reset. A
+    /// reconciler that converges by reading [`UnitControl::active_state`] and
+    /// starting whatever is not active sees `failed`, issues the start, and
+    /// has it refused; the operator's fix then takes effect neither now nor
+    /// when they next save, but only once the window has expired AND
+    /// something happens to trigger another apply. Resetting first is what
+    /// makes "I fixed the setting and saved" mean the unit comes back up on
+    /// that apply.
+    ///
+    /// A no-op on a unit that is not failed, exactly as `systemctl
+    /// reset-failed` is. Callers still read the state first, so the call log
+    /// says which unit was actually in trouble.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when the bus call fails.
+    async fn reset_failed(&self, unit: &str) -> Result<()>;
+
     /// Enable `unit` for this boot.
     ///
     /// # Errors
@@ -219,6 +244,15 @@ impl UnitControl for Systemd {
         Ok(())
     }
 
+    async fn reset_failed(&self, unit: &str) -> Result<()> {
+        // ResetFailedUnit and NOT ResetFailed: the latter takes no argument
+        // and clears the failed state of EVERY unit on the system, which is
+        // not a caller reconciling one service's to erase. It also takes no
+        // job mode -- it queues no job, it edits the unit's bookkeeping.
+        self.manager_call("ResetFailedUnit", &(unit,)).await?;
+        Ok(())
+    }
+
     async fn enable(&self, unit: &str) -> Result<()> {
         // (files, runtime, force): runtime = true keeps the symlinks in /run,
         // see the module docs. force = true replaces a stale symlink rather
@@ -265,6 +299,13 @@ pub mod mock {
         /// the answer for any unit not named here.
         active_by_unit: std::collections::BTreeMap<String, String>,
         file_by_unit: std::collections::BTreeMap<String, String>,
+        /// Units whose [`super::UnitControl::start`] is refused.
+        ///
+        /// Per-unit for the same reason the two maps above are: the callers
+        /// that meet a refused start drive more than one unit, and what is
+        /// worth asserting is that the OTHERS are still driven afterwards. A
+        /// flag on the mock as a whole could not express that.
+        start_refused: std::collections::BTreeSet<String>,
     }
 
     /// [`super::UnitControl`] that records mutating calls and models the state
@@ -288,6 +329,7 @@ pub mod mock {
                     calls: Vec::new(),
                     active_by_unit: std::collections::BTreeMap::new(),
                     file_by_unit: std::collections::BTreeMap::new(),
+                    start_refused: std::collections::BTreeSet::new(),
                 }),
                 reload_fails: false,
             }
@@ -328,6 +370,24 @@ pub mod mock {
                 .insert(unit.to_string(), state.to_string());
         }
 
+        /// Refuse `unit`'s [`super::UnitControl::start`], the shape of a unit
+        /// systemd will not start -- in practice one that has exhausted its
+        /// `StartLimitBurst` and is in cool-off for the rest of its
+        /// `StartLimitIntervalSec`.
+        ///
+        /// Same shape as [`MockUnitControl::with_failing_reload`]: the attempt
+        /// is still recorded, so a test can assert both that the start was
+        /// tried and what the caller did after it was refused. Per-unit rather
+        /// than a constructor, because the assertion worth making is about the
+        /// units that were NOT refused.
+        pub fn refuse_start(&self, unit: &str) {
+            let mut guard = match self.state.lock() {
+                Ok(guard) => guard,
+                Err(poisoned) => poisoned.into_inner(),
+            };
+            guard.start_refused.insert(unit.to_string());
+        }
+
         /// Mutating calls seen so far, in order, as `"<verb> <unit>"`.
         ///
         /// State reads are deliberately not recorded: a reconciler is expected
@@ -338,6 +398,20 @@ pub mod mock {
                 Ok(state) => state.calls.clone(),
                 Err(poisoned) => poisoned.into_inner().calls.clone(),
             }
+        }
+
+        /// Record `verb` against `unit` WITHOUT applying its transition.
+        ///
+        /// For a call that was made and then refused: systemd rejecting a
+        /// start job leaves the unit exactly where it was, and a mock that
+        /// moved it to `active` anyway would make the caller's next read lie
+        /// about a unit that never ran.
+        fn record_refused(&self, verb: &str, unit: &str) {
+            let mut state = match self.state.lock() {
+                Ok(state) => state,
+                Err(poisoned) => poisoned.into_inner(),
+            };
+            state.calls.push(format!("{verb} {unit}"));
         }
 
         /// Record `verb` against `unit` and apply its state transition.
@@ -377,6 +451,23 @@ pub mod mock {
                         .file_by_unit
                         .insert(unit.to_string(), "disabled".to_string());
                 }
+                // What `systemctl reset-failed` does: a FAILED unit becomes
+                // inactive, and a unit in any other state is untouched. The
+                // effective state is what decides, not just the per-unit
+                // override, so a mock constructed with a shared default of
+                // "failed" models it too.
+                "reset-failed" => {
+                    let effective = state
+                        .active_by_unit
+                        .get(unit)
+                        .unwrap_or(&state.active)
+                        .clone();
+                    if effective == "failed" {
+                        state
+                            .active_by_unit
+                            .insert(unit.to_string(), "inactive".to_string());
+                    }
+                }
                 // "reload" among them: a reload leaves the unit exactly as
                 // active as it already was, which is the whole point of it.
                 _ => {}
@@ -411,6 +502,19 @@ pub mod mock {
         }
 
         async fn start(&self, unit: &str) -> Result<()> {
+            let refused = {
+                let state = match self.state.lock() {
+                    Ok(state) => state,
+                    Err(poisoned) => poisoned.into_inner(),
+                };
+                state.start_refused.contains(unit)
+            };
+            if refused {
+                self.record_refused("start", unit);
+                return Err(anyhow::anyhow!(
+                    "Job for {unit} failed: start request repeated too quickly"
+                ));
+            }
             self.record("start", unit);
             Ok(())
         }
@@ -430,6 +534,11 @@ pub mod mock {
             if self.reload_fails {
                 return Err(anyhow::anyhow!("Unit {unit} does not support reload"));
             }
+            Ok(())
+        }
+
+        async fn reset_failed(&self, unit: &str) -> Result<()> {
+            self.record("reset-failed", unit);
             Ok(())
         }
 
@@ -520,6 +629,70 @@ mod tests {
 
         assert_eq!(control.calls(), vec!["reload u.service".to_string()]);
         assert_eq!(control.active_state("u.service").await.unwrap(), "active");
+    }
+
+    #[tokio::test]
+    async fn mock_reset_failed_clears_a_failed_unit_and_leaves_others_alone() {
+        use mock::MockUnitControl;
+
+        let control = MockUnitControl::new("active", "enabled");
+        control.set_active_state("broken.service", "failed");
+
+        control.reset_failed("broken.service").await.unwrap();
+        control.reset_failed("healthy.service").await.unwrap();
+
+        assert_eq!(
+            control.active_state("broken.service").await.unwrap(),
+            "inactive",
+            "reset-failed clears the failure, which is what unblocks the start after it"
+        );
+        assert_eq!(
+            control.active_state("healthy.service").await.unwrap(),
+            "active",
+            "reset-failed on a unit that is not failed does nothing to it"
+        );
+        assert_eq!(
+            control.calls(),
+            vec![
+                "reset-failed broken.service".to_string(),
+                "reset-failed healthy.service".to_string(),
+            ]
+        );
+    }
+
+    #[tokio::test]
+    async fn mock_can_refuse_one_units_start_without_touching_another() {
+        use mock::MockUnitControl;
+
+        let control = MockUnitControl::new("inactive", "enabled");
+        control.refuse_start("limited.service");
+
+        let error = control.start("limited.service").await.unwrap_err();
+        control.start("other.service").await.unwrap();
+
+        assert!(
+            error.to_string().contains("repeated too quickly"),
+            "unexpected error: {error}"
+        );
+        // Refused, so the unit did NOT run: a mock that marked it active here
+        // would let a caller's next read claim a broker that never started.
+        assert_eq!(
+            control.active_state("limited.service").await.unwrap(),
+            "inactive"
+        );
+        assert_eq!(
+            control.active_state("other.service").await.unwrap(),
+            "active"
+        );
+        // The attempt is recorded either way, so a test can assert both that
+        // the start was tried and what happened after it was refused.
+        assert_eq!(
+            control.calls(),
+            vec![
+                "start limited.service".to_string(),
+                "start other.service".to_string(),
+            ]
+        );
     }
 
     #[tokio::test]

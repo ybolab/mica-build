@@ -15,6 +15,7 @@
 //! that is bytes in the binary is behind that protection and an artifact that
 //! is files on disk would not be.
 
+use std::net::IpAddr;
 use std::sync::Arc;
 
 use axum::Router;
@@ -168,6 +169,8 @@ pub fn app(state: AppState) -> Router {
         .route("/ssh/keys/remove", post(ssh_key_remove))
         .route("/containers", get(containers_form))
         .route("/containers/enable", post(containers_enable))
+        .route("/mqtt", get(mqtt_form))
+        .route("/mqtt/enable", post(mqtt_enable))
         .route("/healthz", get(healthz))
         // §4.1 rule 1: the whole `/api/` prefix, its own not-found handler
         // included. It 404s everything, `/api/versions` among them — §2's
@@ -353,6 +356,7 @@ fn shell(title: &str, nav: bool, body: Markup) -> Html<String> {
                         a href="/power" { "Power" }
                         a href="/ssh" { "SSH" }
                         a href="/containers" { "Containers" }
+                        a href="/mqtt" { "MQTT" }
                         // §6.3's discoverability cost, closed where it is
                         // actually paid: *"(A) only helps an operator who knows
                         // the URL"*. A logged-in operator whose custom UI is
@@ -1816,6 +1820,307 @@ async fn containers_enable(
         return bus_error(&err);
     }
     Redirect::to("/containers?saved=1").into_response()
+}
+
+// ---------------------------------------------------------------------------
+// RFCT-104: the MQTT pane
+// ---------------------------------------------------------------------------
+
+/// The two units mosd's mqtt reconciler drives, named here because the pane
+/// selects their published state out of the `units` array by name.
+///
+/// These must match `BROKER_UNIT` and `BRIDGE_UNIT` in
+/// `mosd/mosd/src/reconciler/mqtt.rs`; the reconciler's
+/// `the_published_shape_is_the_contract_with_the_apid_pane` asserts both names
+/// appear in what it publishes.
+const MQTT_BROKER_UNIT: &str = "mos-mqtt-broker.service";
+const MQTT_BRIDGE_UNIT: &str = "mos-mqttd.service";
+
+/// Everything the MQTT pane renders, gathered before any markup is built.
+///
+/// The live state this reads is published by mosd's mqtt reconciler
+/// (`mosd/mosd/src/reconciler/mqtt.rs`) and is **nested**, not flat:
+/// `listen.address`, `listen.port`, `auth.enabled`, and a `units` array of one
+/// object per unit the reconciler drives. The pane adapts to that shape rather
+/// than the reconciler flattening itself for the pane, because:
+///
+/// * the live state mirrors the settings subtree it applied -- `mqtt.listen.address`
+///   in settings, `listen.address` in state -- which is a rule a reader can
+///   predict without opening either file;
+/// * it is published as bus items, where `/mqtt/listen/address` is the
+///   idiomatic path shape;
+/// * `units` has to be an array: the reconciler drives two units and there is
+///   no flat encoding of that. The pane reads a nested array either way, and
+///   flat scalars sitting beside it would be the worst of both.
+///
+/// That last point is not a preference. A flat `activeState` cannot say whose
+/// state it is, and the question "the broker's or the bridge's?" has no answer
+/// in the key -- only in whatever the reconciler happened to mean, which the
+/// pane cannot check. Reporting both halves flat would take a second key, then
+/// a third and a fourth for their unit-file states, invented anew each time
+/// the reconciler grows a unit. Every entry of `units` carries its own `unit`,
+/// `activeState` and `unitFileState`, so the broker is the entry named
+/// `mos-mqtt-broker.service` and the bridge is the one named
+/// `mos-mqttd.service`, and neither needs a key of its own.
+///
+/// Every field is optional here: a key the reconciler has not published
+/// renders as "unknown" and never as a default, because a listen address on
+/// this page is a claim about what the broker is actually bound to.
+///
+/// apid and mosd are separate crates talking over a bus, so no shared type
+/// holds the two ends of this together. What does is a pair of tests: the
+/// reconciler asserts its exact published key set and names this file as the
+/// consumer, and this crate's fixture is a verbatim copy of the reconciler's
+/// own expectation. The two ends disagreed once -- flat here, nested there --
+/// and stayed green for exactly as long as each side only tested itself
+/// against a shape it had invented.
+struct MqttView {
+    /// `mqtt.enabled` -- what the operator asked for.
+    enabled: bool,
+    /// Live state published by mosd's mqtt reconciler, absent when mosd has
+    /// published none yet.
+    state: Option<Value>,
+    /// Why the settings or the live state could not be read, if either failed.
+    problems: Vec<String>,
+}
+
+impl MqttView {
+    /// A value from the published live state, addressed by its path down the
+    /// nested tree: `["listen", "address"]` reads `listen.address`.
+    fn at(&self, path: &[&str]) -> Option<&Value> {
+        path.iter()
+            .try_fold(self.state.as_ref()?, |value, key| value.get(key))
+    }
+
+    /// A string field of the published live state.
+    fn text(&self, path: &[&str]) -> Option<&str> {
+        self.at(path)?.as_str()
+    }
+
+    /// A boolean field of the published live state.
+    fn flag(&self, path: &[&str]) -> Option<bool> {
+        self.at(path)?.as_bool()
+    }
+
+    /// The published listen port.
+    fn port(&self) -> Option<u64> {
+        self.at(&["listen", "port"])?.as_u64()
+    }
+
+    /// One entry of the published `units` array, selected by its `unit` field.
+    ///
+    /// By name, never by index. The array is ordered broker-then-bridge today
+    /// and nothing promises it stays that way; an index would still return a
+    /// unit on the day that order changed, and the page would report the
+    /// bridge's state under the broker's name with no test anywhere failing.
+    fn unit(&self, name: &str) -> Option<&Value> {
+        self.at(&["units"])?
+            .as_array()?
+            .iter()
+            .find(|unit| unit.get("unit").and_then(Value::as_str) == Some(name))
+    }
+
+    /// A field of one published unit; "unknown" when the reconciler has
+    /// published no such unit, or no such field on it.
+    fn unit_field(&self, name: &str, field: &str) -> &str {
+        self.unit(name)
+            .and_then(|unit| unit.get(field))
+            .and_then(Value::as_str)
+            .unwrap_or("unknown")
+    }
+
+    /// Whether the broker unit is in systemd's `failed` state.
+    ///
+    /// This is how a listen address the broker cannot use reaches the
+    /// operator. Nothing rejects such a value -- not the reconciler, not this
+    /// pane -- because rejecting it would make the master switch depend on
+    /// `listen` being valid, which is the conflation RFCT-104 rejected. The
+    /// broker takes the value, fails to parse it and exits, and the only
+    /// evidence is the unit state. A pane that showed "enabled" and stopped
+    /// there would be reporting the operator's request back to them as though
+    /// it were an outcome.
+    fn broker_failed(&self) -> bool {
+        self.unit_field(MQTT_BROKER_UNIT, "activeState") == "failed"
+    }
+
+    /// The same for the bridge, which fails for its own reasons and has its
+    /// own journal.
+    fn bridge_failed(&self) -> bool {
+        self.unit_field(MQTT_BRIDGE_UNIT, "activeState") == "failed"
+    }
+
+    /// Whether the published listener would accept a connection from off this
+    /// device without asking for a password.
+    ///
+    /// The same rule the broker itself applies -- not loopback, and auth off
+    /// -- so the pane and the journal describe the same configuration the same
+    /// way. An address the pane cannot parse is not reported as off-host: the
+    /// broker fails to start on one it cannot parse, and guessing would put a
+    /// security claim on the page that nothing measured.
+    ///
+    /// This drives a warning and nothing else. Refusing to save on it is the
+    /// coupling RFCT-104 rejected; see [`MQTT_SEPARATE_CONFIG_NOTICE`].
+    fn off_host_unauthenticated(&self) -> bool {
+        let Some(address) = self
+            .text(&["listen", "address"])
+            .and_then(|address| address.parse::<IpAddr>().ok())
+        else {
+            return false;
+        };
+        !address.is_loopback() && self.flag(&["auth", "enabled"]) == Some(false)
+    }
+}
+
+async fn load_mqtt_view(app: &AppState) -> anyhow::Result<MqttView> {
+    let mqtt = app.api.get_settings("mqtt").await?;
+    let enabled = mqtt
+        .get("enabled")
+        .and_then(Value::as_bool)
+        .unwrap_or(false);
+    let mut problems = Vec::new();
+    let state = match app.api.get_state("mqtt").await {
+        Ok(value) => Some(value),
+        Err(err) => {
+            problems.push(format!("Live MQTT state unavailable: {err}"));
+            None
+        }
+    };
+    Ok(MqttView {
+        enabled,
+        state,
+        problems,
+    })
+}
+
+/// The consequence of this switch existing, in the terms the container pane
+/// set: the specific behaviour change, not a generic caution.
+///
+/// The switch defaults to false, so updating a fielded device to this image
+/// stops a unit that was running before the update. That is the fact an
+/// operator needs on the page. "MQTT is disabled by default" would be true and
+/// would let them read straight past it; what they have to know is that
+/// something they had is now off, and why nothing that worked has broken.
+const MQTT_UPDATE_NOTICE: &str = "Updating to this image stops the MQTT bridge until this switch is turned on. mos-mqttd ran on every earlier image and does not run here while MQTT is off. Nothing that worked has stopped working: no shipped image ever carried a broker for the bridge to reach, so the bridge has never once connected and has only ever retried.";
+
+/// Why nothing on this page refuses to save.
+///
+/// Coupling the listener to the switch -- refuse to enable MQTT unless the
+/// bind is loopback or authentication is on -- was proposed once and rejected.
+/// The pane is where an operator would otherwise assume the switch checks
+/// them, so the pane is where it says that it does not.
+const MQTT_SEPARATE_CONFIG_NOTICE: &str = "The listen address, the port and authentication are configured separately from this switch, and this switch does not validate them. No combination of them makes it refuse to save, and none of them makes the broker refuse to start: a broker open to a trusted segment is a configuration an operator is allowed to choose, so mos warns about it rather than preventing it.";
+
+/// The exposure, stated as what it lets a stranger do.
+const MQTT_OPEN_LISTENER_WARNING: &str = "This broker accepts unauthenticated connections from the network. It is bound off loopback with authentication disabled, so any host that can reach that address can publish and subscribe on this device without a password.";
+
+/// A failed broker, and where the reason is.
+///
+/// The pane cannot say WHY it failed -- it has a unit state and not the
+/// journal -- so it says where the reason is instead of guessing at one. The
+/// commonest cause is a listen address that is not an IP address, because the
+/// broker binds an interface and does not resolve names, but naming that as
+/// the cause here would be a diagnosis the pane has not made.
+const MQTT_BROKER_FAILED_NOTICE: &str = "The broker unit has failed: MQTT is switched on, but mos-mqtt-broker.service is not running and the bridge has nothing to connect to. Run journalctl -u mos-mqtt-broker on the device for the reason it exited.";
+
+/// The same for the other half of the switch, with its own journal.
+///
+/// The switch drives both units, so both can fail, and they fail for
+/// unrelated reasons -- the bridge's are about the cloud endpoint it dials and
+/// not about the listener. Folding the two into one notice would send an
+/// operator to the wrong journal half the time.
+const MQTT_BRIDGE_FAILED_NOTICE: &str = "The bridge unit has failed: MQTT is switched on, but mos-mqttd.service is not running, so nothing is being carried between this device and the cloud. Run journalctl -u mos-mqttd on the device for the reason it exited.";
+
+fn mqtt_page(view: &MqttView, banner: Option<Markup>) -> Html<String> {
+    let address = view.text(&["listen", "address"]).unwrap_or("unknown");
+    let port = view
+        .port()
+        .map_or_else(|| "unknown".to_string(), |port| port.to_string());
+    // Each unit's own state, pulled out of the `units` array by name -- see
+    // `MqttView::unit`.
+    let broker = view.unit_field(MQTT_BROKER_UNIT, "activeState");
+    let bridge = view.unit_field(MQTT_BRIDGE_UNIT, "activeState");
+    pane(
+        "MQTT",
+        html! {
+            @if let Some(banner) = banner { (banner) }
+            @for problem in &view.problems { (error_box(problem)) }
+            p { b { (MQTT_UPDATE_NOTICE) } }
+
+            h2 { "Switch" }
+            p { "MQTT: " b { (if view.enabled { "enabled" } else { "disabled" }) } }
+            // What the switch was asked to do, and what came of it, are two
+            // different facts and the pane reports both: "enabled" above is
+            // the request, the unit states are the outcome. Both units,
+            // because the switch drives both -- a page carrying only the
+            // broker would leave an operator with MQTT "on", a healthy broker
+            // and no way to see that the bridge had died.
+            p {
+                "Broker unit: " b { (broker) }
+                " (" code { (MQTT_BROKER_UNIT) } ", unit file "
+                (view.unit_field(MQTT_BROKER_UNIT, "unitFileState")) ")"
+            }
+            p {
+                "Bridge unit: " b { (bridge) }
+                " (" code { (MQTT_BRIDGE_UNIT) } ", unit file "
+                (view.unit_field(MQTT_BRIDGE_UNIT, "unitFileState")) ")"
+            }
+            @if view.broker_failed() { (error_box(MQTT_BROKER_FAILED_NOTICE)) }
+            @if view.bridge_failed() { (error_box(MQTT_BRIDGE_FAILED_NOTICE)) }
+            p {
+                "One switch drives both halves: the broker (" code { (MQTT_BROKER_UNIT) }
+                ") and the bridge (" code { (MQTT_BRIDGE_UNIT) } "). Turning it off stops both, "
+                "and there is no setting that runs one without the other."
+            }
+
+            form method="post" action="/mqtt/enable" {
+                fieldset {
+                    legend { "Switch" }
+                    p { label { input type="checkbox" name="enabled" checked[view.enabled]; " Enable MQTT" } }
+                    p { button type="submit" { "Save" } }
+                }
+            }
+
+            h2 { "Listener" }
+            p { "Listen address: " b { (address) } }
+            p { "Listen port: " b { (port) } }
+            p { "Authentication: " b { (state_flag(view.flag(&["auth", "enabled"]), "enabled", "disabled")) } }
+            @if view.enabled && view.off_host_unauthenticated() {
+                (error_box(MQTT_OPEN_LISTENER_WARNING))
+            }
+            p { (MQTT_SEPARATE_CONFIG_NOTICE) }
+        },
+    )
+}
+
+async fn mqtt_form(State(app): State<AppState>, Query(query): Query<SavedQuery>) -> Response {
+    match load_mqtt_view(&app).await {
+        Ok(view) => {
+            let banner = query.saved.is_some().then(saved_banner);
+            mqtt_page(&view, banner).into_response()
+        }
+        Err(err) => bus_error(&err),
+    }
+}
+
+/// The enable toggle; absent when unticked.
+#[derive(serde::Deserialize)]
+struct MqttEnableForm {
+    enabled: Option<String>,
+}
+
+async fn mqtt_enable(State(app): State<AppState>, Form(form): Form<MqttEnableForm>) -> Response {
+    let enabled = form.enabled.is_some();
+    // One path, and deliberately only one: the switch writes nothing about the
+    // listener or about authentication, so saving it can never rewrite a
+    // decision the operator made elsewhere.
+    if let Err(err) = app
+        .api
+        .set_settings("mqtt.enabled", &Value::Bool(enabled))
+        .await
+    {
+        return bus_error(&err);
+    }
+    Redirect::to("/mqtt?saved=1").into_response()
 }
 
 #[derive(serde::Deserialize)]
