@@ -99,15 +99,39 @@ impl MqttReconciler<Systemd> {
     }
 }
 
-/// True when `address` is something other than a loopback address.
+/// How `mqtt.listen.address` reads to the broker.
 ///
-/// An address that does not parse at all counts as off-host: the broker will
-/// either fail to bind it or bind something unintended, and both are worth the
-/// same warning. Nothing here refuses anything — see [`MqttReconciler::apply`].
-fn listens_off_host(address: &str) -> bool {
-    !address
-        .parse::<std::net::IpAddr>()
-        .is_ok_and(|ip| ip.is_loopback())
+/// Three states rather than a single "is it loopback" predicate, because the
+/// two things worth warning about are different things and their messages
+/// contradict each other. An address that does not parse is not a wide bind —
+/// it is not a bind at all, and telling the operator it "accepts connections
+/// from the network" would be false. Matching on this makes the two warnings
+/// in [`MqttReconciler::apply`] mutually exclusive by construction rather than
+/// by the order two `if`s happen to be written in.
+#[derive(Debug, PartialEq, Eq)]
+enum ListenAddress {
+    /// Parses as an `IpAddr` and is loopback: reachable only from the device.
+    Loopback,
+    /// Parses as an `IpAddr` and is not loopback: reachable from the network.
+    OffHost,
+    /// Does not parse as an `IpAddr`.
+    ///
+    /// `mos-mqtt-broker` parses `listen_address` as an `IpAddr` and does not
+    /// resolve names, so a value like `"localhost"` is a startup error and the
+    /// process exits. Nothing here refuses anything for it — see
+    /// [`MqttReconciler::apply`].
+    Unparseable,
+}
+
+/// Classify `address` for the warnings in [`MqttReconciler::apply`].
+///
+/// Pure: it decides what to say, never whether to act.
+fn classify_listen_address(address: &str) -> ListenAddress {
+    match address.parse::<std::net::IpAddr>() {
+        Ok(ip) if ip.is_loopback() => ListenAddress::Loopback,
+        Ok(_) => ListenAddress::OffHost,
+        Err(_) => ListenAddress::Unparseable,
+    }
 }
 
 /// Render the broker config for `mqtt`.
@@ -117,9 +141,19 @@ fn listens_off_host(address: &str) -> bool {
 /// anything actually changed — which is what tells [`MqttReconciler::apply`]
 /// whether a running broker has to be restarted.
 ///
-/// Three keys and no more. `mqtt.enabled` is deliberately absent: it decides
-/// whether the broker RUNS, which is a question about the unit and not one the
-/// broker process could act on after it has already been started.
+/// Three keys and no more, and all three always present: the broker's parser
+/// requires exactly `listen_address`, `listen_port` and `auth_enabled`.
+/// `mqtt.enabled` is deliberately absent -- it decides whether the broker RUNS,
+/// which is a question about the unit and not one the broker process could act
+/// on after it has already been started.
+///
+/// **The address is written verbatim, whatever it says.** No default is
+/// substituted and no value is "corrected", not even one that cannot parse as
+/// an `IpAddr`: a config file that disagrees with the settings tree is worse
+/// than one the broker rejects loudly, because the operator then cannot tell
+/// why the device is listening somewhere they did not ask for. An address the
+/// broker cannot parse gets a WARN from [`MqttReconciler::apply`] and a failed
+/// unit, both of which name it.
 fn render_config(mqtt: &MqttSettings) -> String {
     let mut out = String::new();
     out.push_str(&format!("listen_address = \"{}\"\n", mqtt.listen.address));
@@ -238,22 +272,51 @@ impl<C: UnitControl> Reconciler for MqttReconciler<C> {
         // describes what the switch would start even while it is off, and a
         // broker is never started against a config older than the settings
         // that were just applied.
+        //
+        // The ordering is load-bearing in a way that fails SILENTLY if it is
+        // ever reversed. The broker unit carries
+        // `ConditionPathExists=/run/mos/mqtt-broker.toml`, so with the file
+        // absent systemd does not fail the start -- it skips it, and the unit
+        // reads as perfectly healthy having never run. Do not move this below
+        // the unit calls.
         let config_changed = self.apply_config(mqtt)?;
 
         if mqtt.enabled {
-            // A WARN, and deliberately NOT a gate. An operator who widened the
+            // WARNs, and deliberately NOT gates. Neither of these may become a
+            // refusal, and neither may skip a unit. An operator who widened the
             // bind made a decision; a daemon that answers it by quietly not
             // starting is a daemon whose reason for being down cannot be read
             // anywhere. Coupling `listen`/`auth` to the master switch was
             // proposed once and rejected -- see the doc comment on
-            // `mosd_settings::MqttSettings`. Do not turn this into a refusal.
-            if listens_off_host(&mqtt.listen.address) && !mqtt.auth.enabled {
-                tracing::warn!(
+            // `mosd_settings::MqttSettings`.
+            //
+            // Returning `Err` here would be that same rejected coupling wearing
+            // a different hat: `apply` covers the WHOLE `mqtt` subtree, so an
+            // error raised over `listen` fails the reconcile of `mqtt.enabled`
+            // itself and makes the master switch depend on `listen` being
+            // valid. This is deliberately a different rule from
+            // `SshdReconciler`, which does reject an unparseable
+            // `ListenAddress` -- sshd has one key, `access.ssh.enabled`, and no
+            // separate switch to protect.
+            match classify_listen_address(&mqtt.listen.address) {
+                // Not a wide bind -- not a bind at all. The config is rendered
+                // verbatim anyway (see `apply_config`), the unit is started
+                // anyway, and the broker exits with a parse error naming the
+                // file and the value. That lands the unit in `failed`, which
+                // the `units` array below reports, so the operator reads the
+                // real cause in one place instead of two half-causes.
+                ListenAddress::Unparseable => tracing::warn!(
+                    address = %mqtt.listen.address,
+                    "mqtt: listen address is not an IP address; the broker does not resolve names \
+                     and will refuse to start against it"
+                ),
+                ListenAddress::OffHost if !mqtt.auth.enabled => tracing::warn!(
                     address = %mqtt.listen.address,
                     port = mqtt.listen.port,
                     "mqtt: the broker is bound off-host with authentication disabled; it accepts \
                      unauthenticated connections from the network"
-                );
+                ),
+                ListenAddress::Loopback | ListenAddress::OffHost => {}
             }
             // Broker first: the bridge is its client.
             self.turn_broker_on(config_changed).await?;
@@ -488,16 +551,56 @@ mod tests {
     }
 
     #[test]
-    fn only_a_loopback_address_is_on_host() {
-        assert!(!listens_off_host("127.0.0.1"));
-        assert!(!listens_off_host("127.0.0.2"));
-        assert!(!listens_off_host("::1"));
-        assert!(listens_off_host("0.0.0.0"));
-        assert!(listens_off_host("10.0.0.5"));
-        assert!(listens_off_host("::"));
-        // Not an address at all: the broker cannot bind it, and that is worth
-        // the same warning rather than a different silence.
-        assert!(listens_off_host("localhost"));
+    fn a_listen_address_is_loopback_off_host_or_not_an_address() {
+        use ListenAddress::{Loopback, OffHost, Unparseable};
+
+        assert_eq!(classify_listen_address("127.0.0.1"), Loopback);
+        assert_eq!(classify_listen_address("127.0.0.2"), Loopback);
+        assert_eq!(classify_listen_address("::1"), Loopback);
+        assert_eq!(classify_listen_address("0.0.0.0"), OffHost);
+        assert_eq!(classify_listen_address("10.0.0.5"), OffHost);
+        assert_eq!(classify_listen_address("::"), OffHost);
+        // A name, not an address. The broker does not resolve names, so this
+        // is NOT an off-host bind -- it is not a bind at all, and it gets its
+        // own warning rather than one claiming the network can reach it.
+        assert_eq!(classify_listen_address("localhost"), Unparseable);
+        assert_eq!(classify_listen_address(""), Unparseable);
+        assert_eq!(classify_listen_address("127.0.0.1:1883"), Unparseable);
+    }
+
+    /// An unparseable address must NOT fail the reconcile. `apply` covers the
+    /// whole `mqtt` subtree, so an `Err` raised over `listen` would fail the
+    /// reconcile of `mqtt.enabled` itself -- making the master switch depend on
+    /// `listen` being valid, which is exactly the coupling that was proposed
+    /// and rejected. The broker is started, exits with its own parse error
+    /// naming the file and the value, and lands in `failed` where live state
+    /// reports it. Do not "fix" this into an `Err`; that re-introduces the
+    /// rejected coupling.
+    #[tokio::test]
+    async fn an_address_that_cannot_parse_still_starts_both_units() {
+        let dir = tempfile::tempdir().unwrap();
+        let (reconciler, config) = fixture(dir.path(), "inactive", "disabled");
+
+        let state = reconciler
+            .apply(&settings(true, "localhost", 1883, true))
+            .await
+            .expect("an unparseable listen address warns; it must never fail the reconcile");
+
+        assert_eq!(
+            reconciler.control.calls(),
+            vec![
+                "enable mos-mqtt-broker.service".to_string(),
+                "start mos-mqtt-broker.service".to_string(),
+                "enable mos-mqttd.service".to_string(),
+                "start mos-mqttd.service".to_string(),
+            ]
+        );
+        // Rendered verbatim: no default substituted, no value corrected.
+        assert_eq!(
+            std::fs::read_to_string(&config).unwrap(),
+            "listen_address = \"localhost\"\nlisten_port = 1883\nauth_enabled = true\n"
+        );
+        assert_eq!(state["listen"]["address"], json!("localhost"));
     }
 
     #[tokio::test]
