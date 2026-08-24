@@ -14,7 +14,8 @@ BOARDS := cx3576 x64
 	os-quadlet-doc-test \
 	os-image-cx3576-v2 os-verify-cx3576-v2 os-bundle-cx3576 os-devkeys os-health-test podman \
 	os-shadow-test os-dbus-policy-test os-repart-test os-ui-location-test \
-	os-uboot-handshake-test docs-verify docs-verify-test
+	os-uboot-handshake-test os-layout-lint os-layout-lint-test \
+	docs-verify docs-verify-test
 
 help:
 	@echo "mos build targets:"
@@ -32,6 +33,8 @@ help:
 	@echo "  os-dbus-policy-test prove the shipped mosd D-Bus policy is root-only against a real dbus-daemon"
 	@echo "  os-repart-test      prove first-boot repart growth grows DATA and cannot wipe the loader (privileged docker)"
 	@echo "  os-ui-location-test prove the custom-UI location assertions in the v2 verifier actually fail when the location moves"
+	@echo "  os-layout-lint      check every board layout against the board-definition schema"
+	@echo "  os-layout-lint-test prove the layout linter rejects a broken board definition"
 	@echo "  docs-verify         assert both document indexes agree with the tree, in both directions"
 	@echo "  docs-verify-test    prove the index assertions actually fail on a duplicated row or entry"
 	@echo "  podman              build the container engine from source into os/podman/out-\$$MOS_ARCH"
@@ -156,6 +159,17 @@ os-uboot-handshake-test:
 # documents had accumulated in the tree unlisted (docs/task/RFCT-045.md). Both
 # directions are asserted, because the forward half alone passes happily on an
 # index full of entries pointing at files a rename deleted.
+# A board is defined by its layout file and the shared scripts read that
+# definition rather than knowing any board's shape. This checks the definition
+# is complete AND that no board declares a key its role cannot honour -- the
+# second direction is what would have caught BOOT_ATTEMPTS_DEFAULT sitting in
+# the grub board's layout before RAUC refused it on the device.
+os-layout-lint:
+	bash os/layout/lint.sh
+
+os-layout-lint-test:
+	bash os/layout/lint-test.sh
+
 docs-verify:
 	bash docs/verify-index.sh
 
