@@ -176,7 +176,7 @@ function isDeletion(cookie: ParsedCookie): boolean {
  * Location names the GUEST's port 443 (measured 2026-08-24). Through a port
  * forward that authority is not reachable from here, so a client that follows
  * it hangs until timeout and the failure reads as "apid is down". Refusing
- * loudly turns a ten-minute mystery into one line.
+ * loudly turns a hung run into one line.
  */
 export class CrossAuthorityRedirectError extends Error {
   constructor(

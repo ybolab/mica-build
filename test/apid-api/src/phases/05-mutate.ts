@@ -1034,7 +1034,7 @@ function decodeEntities(value: string): string {
 /**
  * A window of the pane around the first mention of `needle`.
  *
- * A failure that says only "the value was wrong" costs a ten-minute TCG boot to
+ * A failure that says only "the value was wrong" costs a TCG boot to
  * investigate; one that pastes the markup it was reading usually costs nothing.
  */
 function describePane(html: string, needle: string): string {

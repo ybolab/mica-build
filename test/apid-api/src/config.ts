@@ -4,7 +4,7 @@
  * Everything the suite needs to find the device comes through here, is
  * validated once, and is then frozen. Validation is loud and early on
  * purpose: a suite that starts, boots nothing, and fails on assertion 40
- * because a port was a typo costs a ten-minute TCG boot to diagnose.
+ * because a port was a typo costs a TCG boot to diagnose.
  */
 
 /** A malformed or missing environment. Carries a message meant for a human. */

@@ -215,8 +215,7 @@ const phase: Phase = {
     // power cycle must not reset the clock. Which of the two possible
     // assertions is made depends on what is MEASURED, not on which one is
     // likelier to pass -- the window 07 left open may or may not have outlived
-    // a ten-minute boot, and asserting both and hoping would be asserting
-    // neither.
+    // the reboot, and asserting both and hoping would be asserting neither.
     if (handoff.backoff === undefined) {
       report.skip(
         ASSERTIONS[2],
