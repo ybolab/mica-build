@@ -157,10 +157,16 @@ is a mandatory (non-optional) dependency of rumqttd, so no feature flag drops it
 **which is why the alternative is upstream work rather than a manifest edit**.
 That is the shape of the work if the answer, when it comes, is no.
 
-The `deny.toml` comment carries the chain and the patent carve-out too, because
-`deny.toml` is where the next engineer actually lands when they hit the allow
-list. A comment reading "public-domain, no obligations" without the carve-out
-invites the next person to wave through a second CC0 crate on a worse chain.
+The `deny.toml` comment carries all three — the chain, the patent carve-out, and
+the upstream-first fallback — because `deny.toml` is where the next engineer
+actually lands when they hit the allow list, and a reader stops at the first
+place that answers their question. A comment reading "public-domain, no
+obligations" without the carve-out invites the next person to wave through a
+second CC0 crate on a worse chain. A comment whose only stated alternative was
+"give up the broker" did something quieter and just as bad: nothing in it was
+false, but someone judging that price too high would never have learned there is
+a cheaper question to ask first. **A record that is merely coarser than the truth
+still misleads.**
 
 ## No credential in the settings tree, and the rule behind it
 

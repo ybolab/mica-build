@@ -24,7 +24,10 @@ allow = [
     #           -> const-random -> const-random-macro -> tiny-keccak
     #
     # `config` is a mandatory dependency of rumqttd, so no feature flag drops
-    # the chain; the alternative to allowing this is not using the broker.
+    # the chain. Reversing this allowance therefore starts upstream, not here:
+    # ask first whether rumqttd can be driven without its `config`-based
+    # loader, and only if that answer is no does the alternative become not
+    # using the broker.
     "CC0-1.0",
 ]
 
