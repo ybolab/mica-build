@@ -1,14 +1,50 @@
 [Unit]
-Description=mos MQTT broker (rumqttd, TCP only, v3.1.1 and v5)
+Description=mos MQTT broker (rumqttd, TCP only, MQTT 3.1.1)
 After=network.target mosd.service
 Wants=mosd.service
 
 # mosd renders the configuration and then starts this unit. Without the file
 # there is nothing to bind and no way to learn what to bind, so a broker
-# started here could only exit -- and systemd would restart it every five
-# seconds forever. The condition makes "mosd has not configured me" a skipped
-# start instead of a restart loop.
+# started here could only exit. The condition makes "mosd has not configured
+# me" a skipped start rather than a start that fails -- a skipped start is not
+# a failure, so it does not even reach the rate limit below.
 ConditionPathExists=/run/mos/mqtt-broker.toml
+
+# BOUND THE RESTART LOOP, because `Restart=on-failure` alone does not.
+#
+# systemd's defaults are DefaultStartLimitIntervalSec=10s with
+# DefaultStartLimitBurst=5. At RestartSec=5 only about two starts ever land
+# inside a 10-second window, so the burst is never reached and the limiter
+# never trips: a broker that fails for a persistent reason restarts every five
+# seconds forever, writing its error into the journal on STATE each time.
+#
+# That is reachable today. The reconciler renders mqtt.listen.address verbatim
+# and deliberately does not reject a value it cannot parse, because an error
+# there would fail the reconcile of mqtt.enabled itself. So an operator who
+# hand-edits the settings file on STATE to listen_address = "localhost" earns
+# a permanent five-second loop. This campaign exists because mos-mqttd warned
+# every THIRTY seconds against an absent broker and that was judged too noisy;
+# shipping a five-second loop in the fix would be worse than the defect.
+#
+# 5 starts in 60 seconds. The burst is what a transient failure gets: five
+# attempts spaced by RestartSec=5 span about 25 seconds, which covers the
+# transient this unit is actually likely to meet -- an address configured but
+# not yet assigned to an interface, since After=network.target does not
+# promise a lease has arrived. The interval has to be comfortably longer than
+# those 25 seconds or the limit is unreachable, which is precisely the bug in
+# the 10-second default; 60 gives that margin without keeping a fixed broker
+# waiting long.
+#
+# GIVING UP LOCALLY IS CORRECT, because something above retries. mosd's
+# MqttReconciler reads active_state and starts this unit whenever it is not
+# active, and `failed` is not active -- so the reconciler re-arms the broker on
+# its next apply, at boot and on any settings change. The unit's job is to stop
+# hammering; the reconciler's job is to try again once something has actually
+# changed. A unit that retried forever would defeat that, and would also make
+# `systemctl status` useless as a report of whether the broker works: a broker
+# that is permanently broken should say `failed`, not `activating`, forever.
+StartLimitIntervalSec=60
+StartLimitBurst=5
 
 [Service]
 Type=simple
