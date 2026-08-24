@@ -710,7 +710,7 @@ async function networkNoOp(ctx: PhaseContext, log: ConsoleLog): Promise<void> {
   // afterwards. /healthz is the only route the auth gate lets through
   // unauthenticated, so this is a pure liveness probe -- cookies withheld
   // deliberately, so a session problem cannot be mistaken for a link problem.
-  await report.expectEventually(
+  const linkUp = await report.expectEventually(
     `the network round trip did not drop the link: /healthz answers 200 within ${LINK_TIMEOUT_MS}ms`,
     async () => {
       const health = await client.get("/healthz", { sendCookies: false });
@@ -719,6 +719,15 @@ async function networkNoOp(ctx: PhaseContext, log: ConsoleLog): Promise<void> {
     },
     { timeoutMs: LINK_TIMEOUT_MS, intervalMs: 1_000 },
   );
+  if (!linkUp) {
+    // A dropped link is the one failure this phase could plausibly have caused
+    // itself, and over HTTP it is indistinguishable from apid crashing -- the
+    // symptom is the same silence. What the guest said while it happened is on
+    // the console, so paste it rather than making someone re-boot the image to
+    // find out. This is a note, not a check: it adds evidence, not a verdict.
+    report.note(`    what the guest wrote to the console during the round trip:`);
+    for (const line of log.describeWindow(marker)) report.note(`    ${line}`);
+  }
 
   // And the session survived it: an authenticated route still renders instead
   // of redirecting to /login. This also re-proves, at the end of the phase,
@@ -737,10 +746,9 @@ async function networkNoOp(ctx: PhaseContext, log: ConsoleLog): Promise<void> {
     },
   );
 
-  // Not asserted, only noted: a no-op reconcile may legitimately log nothing at
-  // all, so there is no console line whose absence would mean anything here.
-  void marker;
-  void log;
+  // There is deliberately no console ASSERTION here: a no-op reconcile may
+  // legitimately log nothing at all, so no line's absence would mean anything.
+  // The console is used above only to explain a failure, never to produce one.
 }
 
 // ---------------------------------------------------------------------------
