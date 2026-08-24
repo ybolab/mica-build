@@ -68,6 +68,13 @@ here looks exactly like apid being down.
 | `APID_PHASES` | no | all | comma-separated phase ids; a partial run says so, loudly |
 | `APID_RESULT_JSON` | no | — | path for the machine-readable result |
 | `APID_NEGATIVE` | no | — | invert the first matching check, to prove a run can go red |
+| `APID_HANDOFF` | no | `<result dir>/handoff-07-reboot.json` | where `07-reboot` leaves what `07b-postreboot` reads |
+
+`APID_HANDOFF` matters only across the two boots: they are two separate `bun`
+processes, so 07 writes what 07b needs as JSON and 07b reads it. The default
+sits beside `APID_RESULT_JSON`, which outlives both boots and is mounted at the
+same path in both invocations. A missing handoff makes 07b **skip** with that
+reason rather than invent one.
 
 ## Running
 
