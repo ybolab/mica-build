@@ -40,6 +40,10 @@ impl Hostnamed {
     }
 
     /// Executor writing `path`, for tests.
+    ///
+    /// `cfg(test)` rather than `allow(dead_code)`: it exists only for tests,
+    /// and an allow would also silence the day it stops being used at all.
+    #[cfg(test)]
     #[must_use]
     pub fn with_path(path: std::path::PathBuf) -> Self {
         Self { path }
