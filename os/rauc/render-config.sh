@@ -106,16 +106,43 @@ case "${META_MOUNT}" in
 esac
 STATUSFILE="${META_MOUNT}/rauc.status"
 
-# The radix trap (docs/design/uboot-ab-handshake.md section 4.1): assert rather
-# than trust, because an out-of-range value breaks rollback silently.
-for attempts in "${BOOT_ATTEMPTS_DEFAULT}"; do
+# Boot credits are a U-BOOT/BAREBOX concept, and RAUC enforces that: a
+# configuration carrying boot-attempts with bootloader=grub is REJECTED, the
+# daemon exits 1, and on the x64 image that took mos-health.service and
+# mos-status-led.service down with it. grub's equivalent is a one-shot try
+# (ORDER/<slot>_OK/<slot>_TRY in grubenv), which has no count to configure.
+#
+# So the two keys are rendered only for the backends that accept them, and a
+# board that cannot honour a count must not declare one -- a layout constant
+# nobody reads is how the wrong claim got in here in the first place.
+case "${RAUC_BOOTLOADER}" in
+uboot | barebox)
+    if [ -z "${BOOT_ATTEMPTS_DEFAULT:-}" ]; then
+        echo "error: ${LAYOUT_ENV} sets no BOOT_ATTEMPTS_DEFAULT, but bootloader=${RAUC_BOOTLOADER} counts boot attempts. Without it a slot would be handed control with no credit to lose and rollback would never fire" >&2
+        exit 1
+    fi
+    # The radix trap (docs/design/uboot-ab-handshake.md section 4.1): assert
+    # rather than trust, because an out-of-range value breaks rollback
+    # silently.
+    attempts="${BOOT_ATTEMPTS_DEFAULT}"
     if ! [[ "${attempts}" =~ ^[0-9]+$ ]] ||
         [ "${attempts}" -lt "${BOOT_ATTEMPTS_MIN}" ] ||
         [ "${attempts}" -gt "${BOOT_ATTEMPTS_MAX}" ]; then
         echo "error: boot-attempts value '${attempts}' is outside ${BOOT_ATTEMPTS_MIN}..${BOOT_ATTEMPTS_MAX}; RAUC writes this counter in hex and U-Boot compares it in decimal, so only single digits are safe" >&2
         exit 1
     fi
-done
+    BOOT_ATTEMPTS_LINE="boot-attempts=${attempts}"
+    BOOT_ATTEMPTS_PRIMARY_LINE="boot-attempts-primary=${attempts}"
+    ;;
+*)
+    if [ -n "${BOOT_ATTEMPTS_DEFAULT:-}" ]; then
+        echo "error: ${LAYOUT_ENV} sets BOOT_ATTEMPTS_DEFAULT=${BOOT_ATTEMPTS_DEFAULT}, but bootloader=${RAUC_BOOTLOADER} does not count boot attempts. RAUC would refuse the rendered configuration outright ('Configuring boot attempts is valid for uboot or barebox only'), so remove the key rather than leave a number that reads as a policy nobody honours" >&2
+        exit 1
+    fi
+    BOOT_ATTEMPTS_LINE=""
+    BOOT_ATTEMPTS_PRIMARY_LINE=""
+    ;;
+esac
 
 # --- /etc/fw_env.config assertions -----------------------------------------
 #
@@ -208,10 +235,8 @@ render "${SYSTEM_CONF_IN}" "${rendered}" \
     BOOTLOADER "${RAUC_BOOTLOADER}" \
     BOOTLOADER_EXTRA "${BOOTLOADER_EXTRA}" \
     STATUSFILE "${STATUSFILE}" \
-    BOOT_ATTEMPTS "${BOOT_ATTEMPTS_DEFAULT}" \
-    BOOT_ATTEMPTS_PRIMARY "${BOOT_ATTEMPTS_DEFAULT}" \
-    BOOT_ATTEMPTS_MIN "${BOOT_ATTEMPTS_MIN}" \
-    BOOT_ATTEMPTS_MAX "${BOOT_ATTEMPTS_MAX}" \
+    BOOT_ATTEMPTS_LINE "${BOOT_ATTEMPTS_LINE}" \
+    BOOT_ATTEMPTS_PRIMARY_LINE "${BOOT_ATTEMPTS_PRIMARY_LINE}" \
     ROOTFS_A_PARTUUID "$(lower "${ROOTFS_A_GUID}")" \
     ROOTFS_B_PARTUUID "$(lower "${ROOTFS_B_GUID}")" \
     BOOT_A_PARTUUID "$(lower "${BOOT_A_GUID}")" \
@@ -264,4 +289,4 @@ fi
 mkdir -p "$(dirname "${SYSTEM_CONF_OUT}")"
 cp "${rendered}" "${SYSTEM_CONF_OUT}"
 chmod 0644 "${SYSTEM_CONF_OUT}"
-echo "rendered ${SYSTEM_CONF_OUT} (compatible=${COMPATIBLE}, statusfile=${STATUSFILE}, boot-attempts=${BOOT_ATTEMPTS_DEFAULT})"
+echo "rendered ${SYSTEM_CONF_OUT} (compatible=${COMPATIBLE}, bootloader=${RAUC_BOOTLOADER}, statusfile=${STATUSFILE}, ${BOOT_ATTEMPTS_LINE:-boot-attempts: not applicable to ${RAUC_BOOTLOADER}})"
