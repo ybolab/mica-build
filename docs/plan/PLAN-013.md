@@ -336,4 +336,60 @@ twice. Keeping the directive's order.
 
 ## Annotations
 
-(none yet)
+**2026-08-24, the user, three rulings that change the plan's shape.**
+
+1. *"需要统一板卡定义"* — the board-level definition is adopted as a design
+   principle, not left as an M1 implementation detail. §Proposal M1.1 said
+   "derive EXPECT_PARTS from the layout"; that is now the small end of a
+   larger requirement: **a board is defined by its layout file, and the shared
+   scripts read that definition rather than knowing any board's shape.**
+
+   Concretely: each layout declares `LAYOUT_PARTITIONS` (ordered) and a
+   `<NAME>_ROLE` per partition, and a new `os/layout/lint.sh` enforces the
+   schema — every declared partition carries its role's required keys, and
+   **no partition carries keys its role does not use**. That reverse check is
+   the one that matters: `BOOT_ATTEMPTS_DEFAULT=3` sat in the x64 layout under
+   a comment asserting the U-Boot contract "is identical", and nothing
+   objected until RAUC refused to start on the device.
+
+   The linter needs its own conformance test — mutated layouts that it must
+   reject — for the reason `os/verify-image-v2.sh` states about itself: an
+   assertion only ever observed passing is not evidence.
+
+2. *"需要修复为成功，x64 也是一等公民和 cx3576 一样"* — a failing unit on x64
+   is not to be allowlisted into silence. `mos-status-led.service` fails on
+   QEMU because there is no `/sys/class/leds/status-blue/brightness`; the fix
+   is that a board with no status LED does not ship the unit, which is a board
+   fact and therefore belongs in the definition above. Adding it to
+   `tolerate-failed` was the alternative and is rejected: it would make the
+   health gate's allowlist the place where board differences accumulate.
+
+3. *"我们当前需要基于 x64 跑完所有验证交付，因为有 qemu 很容易测试"* — x64
+   becomes the primary verification vehicle, and the milestone order changes
+   with it. M1 was scoped as "the x64 image verified statically and at
+   runtime"; it is now the campaign's critical path, because **nothing in
+   `os/verify-image-v2.sh` has ever run against an x64 image.** Everything
+   this plan claims about x64 today rests on booting it. A boot proves runtime
+   behaviour; it says nothing about the GPT layout, verity, file capabilities,
+   the D-Bus policy, `/etc/shadow` placement or the ssh configuration, which
+   are what those ~2500 assertions cover.
+
+   M3 (the cx3576 back-port) is not dropped, and the ordering argument in
+   §Alternatives still holds — but it now follows a verifier that has been
+   proven on both boards rather than one.
+
+**Status of the original three defects in §Context, as of 2026-08-24 11:30.**
+All three are fixed and verified by booting, and the plan's Context is left as
+written because it records what was measured at the time:
+
+- `MOS_BOARD` container re-exec — fixed, in this plan's first working session.
+- `os/qemu-journal.sh` — still broken, still committed, decision still open
+  (§Alternatives M1.3).
+- `/var/log` package-manager residue — still present, not yet addressed.
+
+Four further defects were found the same way and fixed on main since:
+`boot-attempts` rejected by RAUC's grub backend (7d3c705), no CA bundle in the
+image and no `grub-editenv` (95e1ad2), the health gate waiting on a state that
+required its own completion (9949bf8), and conmon compiled without journald so
+every container start failed (c6b104a). Each was behind the one before it, and
+none is visible without a running device.
