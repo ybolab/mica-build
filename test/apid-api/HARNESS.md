@@ -73,6 +73,14 @@ apid on a container that had exited seconds later. Still running after
 `MOS_APID_QEMU_EXIT_GRACE` seconds is the reset-in-place shape; exiting during
 it is the `-no-reboot` shape.
 
+The second boot is also **conditional on a reboot having been posted at all**.
+Phase 07 writes its handoff immediately after the confirmed `POST
+/power/reboot`, so that file being present and newer than this run's `disk.img`
+is the signal. When an earlier phase fails, the runner skips 07, nothing
+reboots — and without this check the harness would wait out its full readiness
+deadline on a guest that never restarted, then run every post-reboot assertion
+against the first boot. Measured on this campaign's first full run.
+
 The readiness wait is **anchored to a console offset** for the same reason. A
 guest that resets in place appends to the *same* capture file, under the first
 boot's `APID_LISTENING` line, so a whole-file grep answers "apid is listening"

@@ -658,6 +658,38 @@ qemu_still_running_after_grace() {
     return 0
 }
 
+#
+# AND FIRST: DID PHASE 07 ACTUALLY POST A REBOOT? A second boot only means
+# something if the first one ended in one. 07 writes its handoff immediately
+# after the confirmed POST, so that file existing AND being newer than this run
+# is the signal -- and its absence is exactly what a run where 07 was SKIPPED
+# looks like, which happens whenever an earlier phase fails.
+#
+# Without this check such a run waits out the full readiness deadline on a
+# guest that never rebooted: the console has no NEW apid line to find, because
+# apid never restarted. Measured on this campaign's first full run, where a
+# genuine daemon defect in 05 skipped 06 and 07 and the harness went on to
+# treat the still-running first boot as a second one -- and every post-reboot
+# assertion then ran against a machine that had not rebooted.
+HANDOFF_FILE="${ART_DIR}/handoff-07-reboot.json"
+
+reboot_was_posted() {
+    [ -f "${HANDOFF_FILE}" ] || return 1
+    # Newer than the disk we prepared for THIS run, so a handoff left behind by
+    # an earlier run cannot vouch for this one.
+    [ "${HANDOFF_FILE}" -nt "${RUN_DIR}/disk.img" ] || return 1
+    return 0
+}
+
+if [ "${BOOT2}" = "1" ] && ! reboot_was_posted; then
+    note "no reboot was posted in the first boot: ${HANDOFF_FILE##*/} is $([ -f "${HANDOFF_FILE}" ] && echo "older than this run's disk" || echo "absent")."
+    note "  07-reboot writes it right after the confirmed POST /power/reboot, so this means 07"
+    note "  did not run -- an earlier phase failed and the runner skipped it. There is no second"
+    note "  boot to make, and the post-reboot phases are NOT attempted: running them against the"
+    note "  first boot would assert that a machine which never restarted had restarted."
+    BOOT2=0
+fi
+
 if [ "${BOOT2}" = "1" ]; then
     # Anchored here, BEFORE anything waits: the second boot appends to the same
     # console file when the guest resets in place, and boot 1's APID_LISTENING
