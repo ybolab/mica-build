@@ -138,6 +138,20 @@ done
 # no mount backs is caught here instead of leaving the fixture agreeing with a
 # verifier that agrees with nothing.
 MQTTD_ENV_DIR="$(dirname "$(sed -n 's/^EnvironmentFile=-\{0,1\}//p' "${MQTTD_UNIT_SRC}" | tail -n1)")"
+# RFCT-104's MQTT broker. Paths out of the verifier, the unit out of the tree,
+# on the same principle as the bridge: a hand-authored stand-in would keep this
+# suite green after the shipped unit went back to DynamicUser, or grew an
+# enablement the image acted on. There is NO policy file to copy, and that is
+# not an oversight here any more than it is in the verifier -- the broker
+# speaks no D-Bus.
+BROKER_BIN="$(verifier_const BROKER_BIN '"')"
+BROKER_UNIT="$(verifier_const BROKER_UNIT '"')"
+BROKER_WANTS="$(verifier_const BROKER_WANTS '"')"
+BROKER_UNIT_SRC="${HERE}/../mosd/broker/dist/$(basename "${BROKER_UNIT}")"
+[ -f "${BROKER_UNIT_SRC}" ] || {
+    echo "error: ${BROKER_UNIT_SRC} not found; ${VERIFIER} asserts the MQTT broker into the image but the tree ships no such unit" >&2
+    exit 1
+}
 # PLAN-012's container engine. Paths from the verifier, the mount unit from
 # the overlay: the assertion is about the unit mos SHIPS, and a fixture that
 # authored its own would keep passing after the real one lost its enablement
@@ -244,7 +258,11 @@ new_fixture() {
 
     # PLAN-011 D6's MQTT bridge, as os/rootfs/Dockerfile.v2 installs it: the
     # binary (a stand-in, like apid's -- nothing here reads its contents), the
-    # SHIPPED unit, the SHIPPED grant, and the enablement symlink.
+    # SHIPPED unit and the SHIPPED grant -- and NO enablement symlink. RFCT-104
+    # made mqtt.enabled a master switch that seeds false and gave mosd the
+    # lifecycle of both MQTT units, so the image installs the bridge inert; the
+    # baseline fixture is the image, and the case that adds the symlink back is
+    # the one that has to fail.
     mkdir -p "${dir}$(dirname "${MQTTD_BIN}")" \
         "${dir}$(dirname "${MQTTD_UNIT}")" \
         "${dir}$(dirname "${MQTTD_POLICY_PATH}")" \
@@ -252,7 +270,6 @@ new_fixture() {
     printf '#!/bin/sh\n' >"${dir}${MQTTD_BIN}"
     cp "${MQTTD_UNIT_SRC}" "${dir}${MQTTD_UNIT}"
     cp "${MQTTD_POLICY_SRC}" "${dir}${MQTTD_POLICY_PATH}"
-    ln -sf "${MQTTD_UNIT}" "${dir}${MQTTD_WANTS}"
     # ...the mount unit its EnvironmentFile depends on...
     cp "${MQTTD_ENV_MOUNT_SRC}" \
         "${dir}/etc/systemd/system/$(basename "${MQTTD_ENV_MOUNT_SRC}")"
@@ -266,8 +283,22 @@ new_fixture() {
         echo "error: ${MQTTD_UNIT_SRC} sets no User=; the fixture cannot create an account the unit does not name" >&2
         exit 1
     }
-    printf 'root:x:0:0:root:/root:/bin/bash\n%s:x:990:990:mos MQTT bridge:/nonexistent:/usr/sbin/nologin\n' \
-        "${mqttd_user}" >"${dir}/etc/passwd"
+    # RFCT-104's MQTT broker, as the Dockerfile installs it: the binary (a
+    # stand-in again), the SHIPPED unit, no policy file because it speaks no
+    # D-Bus, and -- the point of the whole task -- no enablement symlink.
+    mkdir -p "${dir}$(dirname "${BROKER_BIN}")" \
+        "${dir}$(dirname "${BROKER_UNIT}")" \
+        "${dir}$(dirname "${BROKER_WANTS}")"
+    printf '#!/bin/sh\n' >"${dir}${BROKER_BIN}"
+    cp "${BROKER_UNIT_SRC}" "${dir}${BROKER_UNIT}"
+    local broker_user
+    broker_user="$(sed -n 's/^User=//p' "${BROKER_UNIT_SRC}" | tail -n1)"
+    [ -n "${broker_user}" ] || {
+        echo "error: ${BROKER_UNIT_SRC} sets no User=; the fixture cannot create an account the unit does not name" >&2
+        exit 1
+    }
+    printf 'root:x:0:0:root:/root:/bin/bash\n%s:x:990:990:mos MQTT bridge:/nonexistent:/usr/sbin/nologin\n%s:x:969:969:mos MQTT broker:/nonexistent:/usr/sbin/nologin\n' \
+        "${mqttd_user}" "${broker_user}" >"${dir}/etc/passwd"
 
     # RFCT-099's purged root: the licence texts Debian ships, and NO package
     # manager. 120 copyright files rather than a token one, because the
@@ -438,7 +469,7 @@ ext-policy-namespace|grants exactly one thing|grants ownership beyond the extens
 mqttd-bin|mqttd: /usr/bin/mos-mqttd is a regular file|mqttd: /usr/bin/mos-mqttd is missing|PASS
 mqttd-unit-file|mqttd: /usr/lib/systemd/system/mos-mqttd.service is a regular file|mqttd: /usr/lib/systemd/system/mos-mqttd.service is missing|PASS
 mqttd-policy-file|mqttd: /usr/share/dbus-1/system.d/mos-mqttd.conf is a regular file|mqttd: /usr/share/dbus-1/system.d/mos-mqttd.conf is missing|PASS
-mqttd-enabled|mqttd: the bridge is enabled|is not a symlink, so mos-mqttd never starts|PASS
+mqttd-not-enabled|mqttd: the bridge is NOT enabled in the image|the bridge starts at boot regardless of mqtt.enabled|PASS
 mqttd-static-user|mqttd: the unit runs as the static user|dbus-daemon resolves <policy user=> when it reads the file at startup|PASS
 mqttd-grant-user|mqttd: the D-Bus grant names the same user the unit runs as|A grant naming the wrong identity|PASS
 mqttd-account-exists|exists in the image'"'"'s /etc/passwd|and no such account is in|PASS
@@ -446,6 +477,11 @@ mqttd-per-member|mqttd: every grant on com.mos.mosd names a member|grant on com.
 mqttd-no-danger|include none of|A compromise of the network-facing daemon becomes device control|PASS
 mqttd-broker-configurable|mqttd: ExecStart takes the broker from the environment|does not reference|PASS
 mqttd-env-on-state|mqttd: EnvironmentFile=|EnvironmentFile|PASS
+broker-bin|mqtt-broker: /usr/bin/mos-mqtt-broker is a regular file|mqtt-broker: /usr/bin/mos-mqtt-broker is missing|PASS
+broker-unit-file|mqtt-broker: /usr/lib/systemd/system/mos-mqtt-broker.service is a regular file|mqtt-broker: /usr/lib/systemd/system/mos-mqtt-broker.service is missing|PASS
+broker-not-enabled|mqtt-broker: the broker is NOT enabled in the image|so the broker listens from early boot|PASS
+broker-static-user|mqtt-broker: the unit runs as the static user|A dynamic uid is allocated at start and gone at stop|PASS
+broker-account-exists|mqtt-broker: the account|no account of that name is in|PASS
 pkgmgr-absent|carries no package manager|still carries package management|PASS
 pkgmgr-timers|no apt or dpkg systemd timer is in the image|package-management timers are in the image|PASS
 pkgmgr-copyrights|licence texts survived the purge|copyright files are left under|PASS
@@ -1024,28 +1060,45 @@ mutate_mqttd_policy() {
         { echo "error: sed '${expr}' changed nothing in ${MQTTD_POLICY_PATH}; the shipped grant no longer contains what this case mutates" >&2; exit 1; }
 }
 
+# Removes ONE account from a fixture's /etc/passwd, named by the unit that runs
+# as it rather than spelled here: a case that wrote the name itself would go on
+# "removing" an account after the unit changed User=, and stop testing anything.
+drop_account() {
+    local dir="$1" unit_src="$2" user before
+    user="$(sed -n 's/^User=//p' "${unit_src}" | tail -n1)"
+    [ -n "${user}" ] ||
+        { echo "error: ${unit_src} sets no User=; there is no account for this case to remove" >&2; exit 1; }
+    before="$(cat "${dir}/etc/passwd")"
+    grep -v "^${user}:" "${dir}/etc/passwd" >"${dir}/etc/passwd.new"
+    mv "${dir}/etc/passwd.new" "${dir}/etc/passwd"
+    [ "${before}" != "$(cat "${dir}/etc/passwd")" ] ||
+        { echo "error: the fixture's /etc/passwd has no ${user} entry to remove" >&2; exit 1; }
+}
+
 # --- 5a. the bridge is simply not in the image ------------------------------
 # THE STATE MAIN WAS IN until this task: mos-mqttd built, tested and shipped
 # nowhere. Nothing in the image, and nothing anywhere said so.
 FIX="${WORK}/mqttd-absent"
 new_fixture "${FIX}"
-rm -f "${FIX}${MQTTD_BIN}" "${FIX}${MQTTD_UNIT}" "${FIX}${MQTTD_POLICY_PATH}" \
-    "${FIX}${MQTTD_WANTS}"
+rm -f "${FIX}${MQTTD_BIN}" "${FIX}${MQTTD_UNIT}" "${FIX}${MQTTD_POLICY_PATH}"
 expect_set "the MQTT bridge absent from the image" \
-    "mqttd-bin=FAIL mqttd-unit-file=FAIL mqttd-policy-file=FAIL mqttd-enabled=FAIL mqttd-static-user=FAIL mqttd-grant-user=FAIL mqttd-account-exists=FAIL mqttd-per-member=FAIL mqttd-no-danger=PASS mqttd-broker-configurable=FAIL mqttd-env-on-state=FAIL" \
+    "mqttd-bin=FAIL mqttd-unit-file=FAIL mqttd-policy-file=FAIL mqttd-static-user=FAIL mqttd-grant-user=FAIL mqttd-account-exists=FAIL mqttd-per-member=FAIL mqttd-no-danger=PASS mqttd-broker-configurable=FAIL mqttd-env-on-state=FAIL" \
     "is not in this image at all" \
     "there is no grant on com.mos.mosd at all" \
     "no EnvironmentFile= line at all"
 
-# --- 5b. installed but never enabled ----------------------------------------
-# The root is a read-only verity squashfs, so systemctl enable has nowhere to
-# write: a unit that ships disabled ships permanently disabled.
-FIX="${WORK}/mqttd-disabled"
+# --- 5b. installed AND enabled ----------------------------------------------
+# THE STATE THE IMAGE SHIPPED IN until RFCT-104, and the direction this case
+# used to test. mqtt.enabled now seeds false for every profile, so a bridge
+# enabled in the image runs from early boot until mosd's first reconcile stops
+# it -- publishing at a broker the same switch has not started. The root is a
+# read-only verity squashfs, so nothing on the device can disable it either.
+FIX="${WORK}/mqttd-enabled"
 new_fixture "${FIX}"
-rm -f "${FIX}${MQTTD_WANTS}"
-expect_set "the bridge installed but not enabled" \
-    "mqttd-enabled=FAIL" \
-    "cannot be fixed with systemctl enable on the device"
+ln -sf "${MQTTD_UNIT}" "${FIX}${MQTTD_WANTS}"
+expect_set "the bridge enabled in the image" \
+    "mqttd-not-enabled=FAIL" \
+    "the bridge starts at boot regardless of mqtt.enabled"
 
 # --- 5c. back to DynamicUser ------------------------------------------------
 # The unit's ORIGINAL state, and the one that makes the grant a rule matching
@@ -1064,7 +1117,7 @@ expect_set "the bridge back on DynamicUser=yes" \
 # failures are at boot, on the device.
 FIX="${WORK}/mqttd-no-account"
 new_fixture "${FIX}"
-printf 'root:x:0:0:root:/root:/bin/bash\n' >"${FIX}/etc/passwd"
+drop_account "${FIX}" "${MQTTD_UNIT_SRC}"
 expect_set "the bridge's account missing from /etc/passwd" \
     "mqttd-account-exists=FAIL" \
     "no such account is in"
@@ -1121,6 +1174,73 @@ mutate_mqttd_unit "${FIX}" 's|^EnvironmentFile=-.*|EnvironmentFile=-/etc/mos/mqt
 expect_set "the bridge's EnvironmentFile on a path no mount unit backs" \
     "mqttd-env-on-state=FAIL" \
     "no .mount unit in the image mounts"
+
+# ===========================================================================
+# RFCT-104: the MQTT broker, installed and INERT
+# ===========================================================================
+# The assertions these drive are worth exactly what these cases are worth. The
+# broker's binary, its unit and its account are the ordinary half; the case
+# that matters is 5k, because "the image does not enable this unit" is a fact
+# about an ABSENCE, and an absence is the easiest thing in the world to assert
+# by accident in a way that can never fail.
+
+mutate_broker_unit() {
+    local dir="$1" expr="$2" f="$1${BROKER_UNIT}" before
+    before="$(cat "${f}")"
+    sed -i "${expr}" "${f}"
+    [ "${before}" != "$(cat "${f}")" ] ||
+        { echo "error: sed '${expr}' changed nothing in ${BROKER_UNIT}; the shipped unit no longer contains what this case mutates" >&2; exit 1; }
+}
+
+# --- 5j. the broker is not in the image -------------------------------------
+# THE STATE MAIN WAS IN until this task, and the reason the bridge's 30s WARN
+# had nothing to connect to: mqtt.enabled would start a bridge and no broker.
+FIX="${WORK}/broker-absent"
+new_fixture "${FIX}"
+rm -f "${FIX}${BROKER_BIN}" "${FIX}${BROKER_UNIT}"
+expect_set "the MQTT broker absent from the image" \
+    "broker-bin=FAIL broker-unit-file=FAIL broker-static-user=FAIL broker-account-exists=FAIL" \
+    "${BROKER_BIN} is missing or not a regular file" \
+    "${BROKER_UNIT} is missing or not a regular file" \
+    "A dynamic uid is allocated at start and gone at stop" \
+    "no account of that name is in"
+
+# --- 5k. the broker enabled in the image ------------------------------------
+# The defect this whole task exists to make impossible. A wants symlink baked
+# into the image starts the broker on every boot before anything reads
+# mqtt.enabled, and mosd -- which owns the lifecycle -- would be stopping a
+# unit systemd had already started. The root is read-only, so nobody can
+# disable it on the device.
+FIX="${WORK}/broker-enabled"
+new_fixture "${FIX}"
+ln -sf "${BROKER_UNIT}" "${FIX}${BROKER_WANTS}"
+expect_set "the broker enabled in the image" \
+    "broker-not-enabled=FAIL" \
+    "so the broker listens from early boot"
+
+# --- 5l. the broker on DynamicUser ------------------------------------------
+# The bridge's original defect, reached by a different route: there is no
+# D-Bus grant here to break, but /var/lib/mos/mqtt-broker-users.toml is on
+# STATE and a uid allocated at start names nobody on the next boot. Two
+# assertions fire, because a unit with no User= also names no account.
+FIX="${WORK}/broker-dynamic-user"
+new_fixture "${FIX}"
+mutate_broker_unit "${FIX}" 's/^User=mos-mqtt-broker$/DynamicUser=yes/'
+expect_set "the broker on DynamicUser=yes" \
+    "broker-static-user=FAIL broker-account-exists=FAIL" \
+    "A dynamic uid is allocated at start and gone at stop" \
+    "no account of that name is in"
+
+# --- 5m. the broker's account is not in the image ---------------------------
+# uid 969 is created in os/rootfs/Dockerfile.v2 and nowhere else. Without it
+# systemd refuses the unit, so turning mqtt.enabled on brings up a bridge and
+# no broker -- the exact shape of the failure this campaign started from.
+FIX="${WORK}/broker-no-account"
+new_fixture "${FIX}"
+drop_account "${FIX}" "${BROKER_UNIT_SRC}"
+expect_set "the broker's account missing from /etc/passwd" \
+    "broker-account-exists=FAIL" \
+    "no account of that name is in"
 
 # ===========================================================================
 # The connd contract, and the namespace check that depends on it
