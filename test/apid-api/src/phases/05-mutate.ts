@@ -318,19 +318,27 @@ async function mutateContainers(ctx: PhaseContext, log: ConsoleLog): Promise<voi
     (html) => switchVerdict(html, "enabled", false),
   );
   // PROMOTED FROM A SKIP, and the measurement corrected an assumption on the
-  // way. This was three candidate wordings reported as SKIP on absence; the
-  // live run of 2026-08-24 showed which one is real and that the other two are
-  // not:
+  // way. This was three candidate wordings reported as SKIP on absence. The
+  // live run of 2026-08-24 showed the window actually contains, in order:
   //
-  //   - mosd emits NO `container: turn_off` line. The reconciler logs
-  //     `container: turn_on begin` on the way up and nothing symmetrical on the
-  //     way down, so a pattern waiting for one would wait forever.
-  //   - systemd names the unit FIRST, not the verb:
-  //         etc-containers-systemd.mount: Deactivated successfully.
-  //     The old candidate expected `Deactivating ... etc-containers-...`, i.e.
-  //     verb before unit, and would never have matched.
+  //     mosd:    container: turn_on begin
+  //     mosd:    container: starting the bind
+  //     systemd: Mounting etc-containers-systemd.mount - Quadlet unit ...
+  //     systemd: Mounted etc-containers-systemd.mount - Quadlet unit ...
+  //     systemd: Unmounting etc-containers-systemd.mount - Quadlet unit ...
+  //     systemd: etc-containers-systemd.mount: Deactivated successfully.
+  //     systemd: Unmounted etc-containers-systemd.mount - Quadlet unit ...
   //
-  // What actually appears is the line below, and it is now required.
+  // So of the three old candidates, the systemd one WOULD have matched
+  // (`Unmounting etc-containers-systemd.mount`) and the loose "any line naming
+  // the mount" one certainly did. The one that is simply wrong is the FIRST:
+  // mosd emits NO `container: turn_off` line at all. Its reconciler logs
+  // `container: turn_on begin` on the way up and nothing symmetrical coming
+  // down, so a pattern waiting for one would wait forever.
+  //
+  // The line below is the unambiguous one -- it names the unit and says the
+  // deactivation SUCCEEDED, where `Unmounting` only says it was attempted --
+  // and it is now required rather than merely hoped for.
   await expectConsoleLine(
     report,
     log,

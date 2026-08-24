@@ -477,16 +477,38 @@ console_tail_line() {
     tail -n 1 "$1" 2>/dev/null | tr -d '\r' | tr -dc '[:print:]' | cut -c1-100
 }
 
+# The console log is APPENDED TO across a reboot: the second boot of a guest
+# that reset in place writes into the SAME file, under the first boot's
+# APID_LISTENING line. A whole-file grep therefore answers "apid is listening"
+# using a line the PREVIOUS boot wrote -- measured 2026-08-24, where it declared
+# the guest ready 0s after a reboot that had just taken it down, and then spent
+# its whole deadline waiting for a /healthz that could not come.
+#
+# So every wait is anchored: `from` is the console's size at the moment the wait
+# began, and only bytes after it are searched. Boot 1's file is truncated by
+# launch_boot, so its anchor is 0 and nothing changes for it.
+console_size() {
+    stat -c %s "$1" 2>/dev/null || echo 0
+}
+
+console_since() {
+    local file="$1" from="$2"
+    tail -c "+$((from + 1))" "${file}" 2>/dev/null
+}
+
 wait_for_apid() {
-    local label="$1" console="$2" ip="$3" start elapsed last_report console_seen
+    local label="$1" console="$2" ip="$3" from="${4:-0}" start elapsed last_report console_seen hit
     start="${SECONDS}"
     last_report=0
     console_seen=0
     while :; do
         elapsed=$((SECONDS - start))
-        if [ "${console_seen}" -eq 0 ] && grep -q 'APID_LISTENING' "${console}" 2>/dev/null; then
-            console_seen=1
-            pass "[${label}] APID_LISTENING on the console after ${elapsed}s: $(grep -m1 'APID_LISTENING' "${console}" | tr -d '\r' | tr -dc '[:print:]' | cut -c1-120)"
+        if [ "${console_seen}" -eq 0 ]; then
+            hit="$(console_since "${console}" "${from}" | grep -m1 'APID_LISTENING' || true)"
+            if [ -n "${hit}" ]; then
+                console_seen=1
+                pass "[${label}] APID_LISTENING on the console after ${elapsed}s: $(printf '%s' "${hit}" | tr -d '\r' | tr -dc '[:print:]' | cut -c1-120)"
+            fi
         fi
         if [ "${console_seen}" -eq 1 ] && probe_healthz "${ip}"; then
             pass "[${label}] https://${ip}:${HTTPS_PORT}/healthz answered 200 from inside ${BUN_IMAGE} after ${elapsed}s: $(cut -c1-160 "${ART_DIR}/healthz.last")"
@@ -608,10 +630,43 @@ run_suite boot1 "${GUEST_IP}" "console-boot1.log" "${PHASES}"
 # `-no-reboot`, the guest resets in place, the container is still there, and
 # the right move is to wait for apid to come back on the SAME container rather
 # than to start a second one against a disk something is already booting.
+#
+# WHICH SHAPE HAPPENED IS NOT DECIDABLE IMMEDIATELY. Phase 07 returns as soon as
+# the HTTPS port stops answering, which is well before QEMU has finished tearing
+# itself down: measured 2026-08-24, `docker inspect` still reported the
+# container RUNNING at that instant, this branch concluded "the guest reset in
+# place", and the run then waited out its whole deadline for apid on a container
+# that had exited seconds later. A single observation of a state that is
+# actively changing is not an observation of which shape this is.
+#
+# So the container is given a bounded grace period to exit. Still running at the
+# end of it IS the reset-in-place shape; exiting during it is the -no-reboot
+# shape. The grace is generous relative to how long a QEMU teardown takes and
+# short relative to a boot, so it costs nothing in the ordinary case.
+QEMU_EXIT_GRACE="${MOS_APID_QEMU_EXIT_GRACE:-90}"
+
+qemu_still_running_after_grace() {
+    local waited=0
+    while [ "${waited}" -lt "${QEMU_EXIT_GRACE}" ]; do
+        if [ "$(docker inspect "${GUEST_CID}" --format '{{.State.Running}}' 2>/dev/null)" != "true" ]; then
+            note "the QEMU container exited ${waited}s after the reboot phase"
+            return 1
+        fi
+        sleep "${POLL_INTERVAL}"
+        waited=$((waited + POLL_INTERVAL))
+    done
+    return 0
+}
+
 if [ "${BOOT2}" = "1" ]; then
-    if [ "$(docker inspect "${GUEST_CID}" --format '{{.State.Running}}' 2>/dev/null)" = "true" ]; then
-        pass "the QEMU container is still running after the reboot phase: the guest reset in place, so no second boot is needed"
-        wait_for_apid boot1-again "${CONSOLE1}" "${GUEST_IP}" || finish
+    # Anchored here, BEFORE anything waits: the second boot appends to the same
+    # console file when the guest resets in place, and boot 1's APID_LISTENING
+    # line is already in it.
+    CONSOLE1_AFTER_REBOOT="$(console_size "${CONSOLE1}")"
+    note "waiting up to ${QEMU_EXIT_GRACE}s to see whether QEMU exits (-no-reboot) or the guest resets in place"
+    if qemu_still_running_after_grace; then
+        pass "the QEMU container is still running ${QEMU_EXIT_GRACE}s after the reboot phase: the guest reset in place, so no second boot is needed"
+        wait_for_apid boot1-again "${CONSOLE1}" "${GUEST_IP}" "${CONSOLE1_AFTER_REBOOT}" || finish
         run_suite boot2 "${GUEST_IP}" "console-boot1.log" "${BOOT2_PHASES}"
     else
         pass "the QEMU container exited after the reboot phase: under -no-reboot that exit IS the guest asking for a reset"

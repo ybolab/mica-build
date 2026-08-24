@@ -3,7 +3,7 @@
  *
  * Power-off is asserted the same way the reboot was: mark the console, read the
  * confirm token off the page, post, and then wait for systemd to reach its
- * power-off transaction on the serial line. The 303 is apid's handler
+ * power-off transaction on the serial line. The 202 is apid's handler
  * answering; `Reached target Power-Off` is the machine doing it. Only the
  * second one is evidence.
  *
@@ -16,6 +16,8 @@
 import { checkbox } from "../client.ts";
 import type { Phase, PhaseContext } from "../runner.ts";
 import {
+  POWER_ACCEPTED_STATUS,
+  POWER_UNCONFIRMED_STATUS,
   POWEROFF_PATTERNS,
   confirmTokenFor,
   expectPortStopsAnswering,
@@ -65,12 +67,12 @@ const phase: Phase = {
     const unconfirmed = await client.post(POWEROFF_ACTION, {});
     report.note(`    POST ${POWEROFF_ACTION} with no confirm field answered ${unconfirmed.status}`);
     report.check(
-      unconfirmed.status !== 303,
+      unconfirmed.status !== POWER_ACCEPTED_STATUS,
       "an unconfirmed POST /power/poweroff is not answered as an accepted power action",
       [
-        `expected: anything but the 303 the CONFIRMED post below is asserted to return`,
+        `expected: anything but the ${POWER_ACCEPTED_STATUS} the CONFIRMED post below is asserted to return (measured: ${POWER_UNCONFIRMED_STATUS})`,
         `actual:   ${unconfirmed.status}`,
-        `note:     a 303 here would mean the confirm field decides nothing.`,
+        `note:     a ${POWER_ACCEPTED_STATUS} here would mean the confirm field decides nothing.`,
       ].join("\n"),
     );
     const stillUp = await client.get("/healthz", { sendCookies: false });
@@ -87,11 +89,11 @@ const phase: Phase = {
     });
     report.expectStatus(
       posted,
-      303,
-      "POST /power/poweroff carrying the page's own confirm token is accepted (303)",
+      POWER_ACCEPTED_STATUS,
+      `POST /power/poweroff carrying the page's own confirm token is accepted (${POWER_ACCEPTED_STATUS})`,
     );
 
-    // A 303 ALONE IS NOT ACCEPTANCE. Measured 2026-08-24 on the first live run:
+    // A REDIRECT IS NOT ACCEPTANCE. Measured 2026-08-24 on the first live run:
     // with no valid session in the jar, apid's auth gate answers EVERY route
     // except /healthz with 303 to /login -- including this one. The status
     // check above passed while nothing whatsoever had been asked of the
@@ -104,10 +106,10 @@ const phase: Phase = {
     // is that it is NOT the gate's, which is the distinction that was missing.
     const postedTo = posted.headers.get("location");
     report.check(
-      posted.status === 303 && postedTo !== undefined && !isGateRedirect(postedTo),
+      postedTo === undefined || !isGateRedirect(postedTo),
       "the accepted POST /power/poweroff is an ACCEPTED ACTION and not the auth gate bouncing an unauthenticated caller",
       [
-        `expected: 303 whose Location is neither /login nor /setup`,
+        `expected: not a redirect to the login or setup page`,
         `actual:   ${posted.status} -> ${JSON.stringify(postedTo ?? "<no Location>")}`,
         `note:     a 303 to /login means the session was not honoured and the machine was`,
         `          never asked to power off. Every assertion below would then be`,
@@ -133,7 +135,7 @@ const phase: Phase = {
         "the CONSOLE shows the guest powering off -- the machine acted, not merely the handler",
         [
           `expected: a line matching one of ${POWEROFF_PATTERNS.length} power-off patterns`,
-          `actual:   none within ${evidence.elapsedMs}ms of the 303`,
+          `actual:   none within ${evidence.elapsedMs}ms of the ${POWER_ACCEPTED_STATUS}`,
           `patterns: ${POWEROFF_PATTERNS.map(String).join(" | ")}`,
           `the last console lines since the post:`,
           evidence.tail === "" ? "          <the console produced nothing at all>" : evidence.tail,
@@ -148,7 +150,7 @@ const phase: Phase = {
     } else {
       report.skip(
         "the CONSOLE shows the guest powering off",
-        `${noConsoleReason(config)} -- that leaves only the 303 and the port going quiet, and neither one proves the machine acted`,
+        `${noConsoleReason(config)} -- that leaves only the ${POWER_ACCEPTED_STATUS} and the port going quiet, and neither one proves the machine acted`,
       );
     }
 

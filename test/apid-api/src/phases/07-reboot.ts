@@ -288,6 +288,24 @@ export function truncate(text: string, limit: number): string {
  * power action -- so the status code alone cannot tell "the machine is going
  * down" from "the machine never heard you".
  */
+/**
+ * What apid answers a CONFIRMED power action with.
+ *
+ * MEASURED 2026-08-24 against the live guest, and it is not what this suite
+ * assumed. Every other form post in apid answers 303 See Other -- the
+ * post/redirect/get a browser wants -- so 07 and 08 expected 303 here too.
+ * `/power/reboot` and `/power/poweroff` answer **202 Accepted**, which is the
+ * honest code for the thing they actually do: the machine is going away, so
+ * there is no page to redirect to and no request that will ever be served from
+ * the other side. The reboot was confirmed on the console 1002ms later, so 202
+ * IS acceptance and the 303 expectation was simply wrong.
+ *
+ * An unconfirmed post answers 422, not a redirect.
+ */
+export const POWER_ACCEPTED_STATUS = 202;
+/** What an unconfirmed power action is refused with. Measured, same run. */
+export const POWER_UNCONFIRMED_STATUS = 422;
+
 export function isGateRedirect(location: string): boolean {
   const target = location.split("?")[0] ?? location;
   return target === "/login" || target === "/setup";
@@ -622,13 +640,13 @@ const phase: Phase = {
     const wrong = await client.post(REBOOT_ACTION, { confirm: checkbox(true, "not-the-confirm-token") });
     report.note(`    POST ${REBOOT_ACTION} with a wrong confirm answered ${wrong.status}`);
     report.check(
-      absent.status !== 303 || wrong.status !== 303,
+      absent.status !== POWER_ACCEPTED_STATUS && wrong.status !== POWER_ACCEPTED_STATUS,
       "an unconfirmed POST /power/reboot is not answered as an accepted power action",
       [
-        `expected: at least one of the two unconfirmed posts to be refused rather than accepted`,
+        `expected: NEITHER unconfirmed post to be answered ${POWER_ACCEPTED_STATUS} (measured: both are ${POWER_UNCONFIRMED_STATUS})`,
         `actual:   no-confirm answered ${absent.status}, wrong-confirm answered ${wrong.status}`,
-        `note:     303 is what the CONFIRMED post below is asserted to return, so two 303s`,
-        `          here would mean the confirm field decides nothing.`,
+        `note:     ${POWER_ACCEPTED_STATUS} is what the CONFIRMED post below is asserted to return, so either of`,
+        `          these answering it would mean the confirm field decides nothing.`,
       ].join("\n"),
     );
 
@@ -679,8 +697,8 @@ const phase: Phase = {
     });
     report.expectStatus(
       posted,
-      303,
-      "POST /power/reboot carrying the page's own confirm token is accepted (303)",
+      POWER_ACCEPTED_STATUS,
+      `POST /power/reboot carrying the page's own confirm token is accepted (${POWER_ACCEPTED_STATUS})`,
     );
 
     // A 303 ALONE IS NOT ACCEPTANCE. Measured 2026-08-24 on the first live run:
@@ -696,10 +714,10 @@ const phase: Phase = {
     // is that it is NOT the gate's, which is the distinction that was missing.
     const postedTo = posted.headers.get("location");
     report.check(
-      posted.status === 303 && postedTo !== undefined && !isGateRedirect(postedTo),
+      postedTo === undefined || !isGateRedirect(postedTo),
       "the accepted POST /power/reboot is an ACCEPTED ACTION and not the auth gate bouncing an unauthenticated caller",
       [
-        `expected: 303 whose Location is neither /login nor /setup`,
+        `expected: not a redirect to the login or setup page`,
         `actual:   ${posted.status} -> ${JSON.stringify(postedTo ?? "<no Location>")}`,
         `note:     a 303 to /login means the session was not honoured and the machine was`,
         `          never asked to reboot. Every assertion below would then be`,

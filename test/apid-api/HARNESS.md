@@ -64,7 +64,19 @@ around it:
                             Phases 07b-postreboot .. 08-poweroff.
 
 Which of the two shapes happened is decided **by looking** — is the QEMU
-container still running — never by assuming. If a future `os/qemu-run.sh` drops
+container still running — never by assuming. But it is looked at over a
+**grace period**, not once: phase 07 returns as soon as the HTTPS port goes
+quiet, which is before QEMU has finished tearing itself down. Measured
+2026-08-24, a single `docker inspect` at that instant still said *running*, the
+harness concluded "reset in place", and then waited out its whole deadline for
+apid on a container that had exited seconds later. Still running after
+`MOS_APID_QEMU_EXIT_GRACE` seconds is the reset-in-place shape; exiting during
+it is the `-no-reboot` shape.
+
+The readiness wait is **anchored to a console offset** for the same reason. A
+guest that resets in place appends to the *same* capture file, under the first
+boot's `APID_LISTENING` line, so a whole-file grep answers "apid is listening"
+with a line the previous boot wrote. If a future `os/qemu-run.sh` drops
 `-no-reboot`, the guest resets in place, the container is still there, and the
 harness waits for apid to come back on that same container instead of starting a
 second one against a disk something is already booting.
@@ -110,6 +122,7 @@ timeout it prints the last 40 console lines *before* tearing anything down.
 | `MOS_APID_BOOT2` | `1` | run the second boot and the post-reboot phases |
 | `MOS_APID_READY_TIMEOUT` | `900` | deadline for apid to answer |
 | `MOS_APID_CONTAINER_TIMEOUT` | `240` | deadline to find the QEMU container |
+| `MOS_APID_QEMU_EXIT_GRACE` | `90` | how long to let QEMU exit before calling it a reset-in-place |
 | `MOS_APID_KEEP_DISK` | `0` | keep the 4 GiB `disk.img` after the run |
 | `MOS_QEMU_HTTPS_PORT` / `MOS_QEMU_HTTP_PORT` | `18443` / `18080` | forwarded ports |
 | `MOS_QEMU_RUN_SECONDS` / `MOS_QEMU_TIMEOUT` | `2400` / `2700` | QEMU-side backstops |
