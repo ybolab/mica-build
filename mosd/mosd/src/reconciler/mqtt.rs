@@ -66,6 +66,15 @@ const CONFIG_PATH_ENV: &str = "MOSD_MQTT_BROKER_CONFIG";
 /// `/var/lib/mos/mqtt-broker-users.toml`, precisely so that this file does
 /// not need to be protected.
 const CONFIG_MODE: u32 = 0o644;
+/// `ActiveState` of a unit systemd has given up on.
+///
+/// Worth naming because it is not merely "down": it is the state in which a
+/// unit that has exhausted its start limit REFUSES further start jobs, which
+/// is what [`MqttReconciler::turn_broker_on`] has to clear before it can start
+/// anything. `systemd::is_active` deliberately does not distinguish it from
+/// `inactive` -- for "should I start this?" they are the same answer, and only
+/// this reconciler needs the difference.
+const FAILED_STATE: &str = "failed";
 
 /// Reconciler for the `mqtt` settings subtree.
 pub struct MqttReconciler<C: UnitControl> {
@@ -186,6 +195,67 @@ impl<C: UnitControl> MqttReconciler<C> {
         Ok(true)
     }
 
+    /// Start `unit`, and on failure WARN instead of failing the reconcile.
+    ///
+    /// **`mqtt.enabled` is a master switch, and a switch that cannot be turned
+    /// on is not a reason to fail everything it switches.** `apply` covers the
+    /// whole `mqtt` subtree, so an `Err` from a start makes the reconcile of
+    /// `mqtt.enabled` itself depend on a unit being startable -- which in
+    /// practice means depending on `mqtt.listen` being valid. That is the
+    /// coupling this reconciler was built not to have, and the module docs and
+    /// [`mosd_settings::MqttSettings`] both say so.
+    ///
+    /// The refusal is REACHABLE, not theoretical. `mos-mqtt-broker.service`
+    /// carries `StartLimitIntervalSec=60` / `StartLimitBurst=5`, so a broker
+    /// that fails for a persistent reason -- an unparseable
+    /// `mqtt.listen.address` is the one this reconciler renders verbatim and
+    /// refuses to correct -- exhausts five attempts in about 25 seconds, and
+    /// systemd then rejects every start job for the rest of that minute.
+    ///
+    /// And it is worse than one operator seeing one error, because reconcilers
+    /// run together: an unrelated settings write -- a hostname change, a WiFi
+    /// edit -- would fail on a broker in cool-off that has nothing to do with
+    /// the change being made.
+    ///
+    /// **Nothing is hidden by this.** The WARN names the unit and the error,
+    /// and the live state below publishes each unit's `activeState`, which the
+    /// apid MQTT pane already renders as a failed broker pointing the operator
+    /// at `journalctl -u mos-mqtt-broker`. Report, do not gate.
+    ///
+    /// Start only. The stop and disable path keeps propagating its errors: a
+    /// unit that will not stop is not something a start limit causes, and
+    /// `mqtt.enabled = false` that silently left a broker listening is a
+    /// failure worth failing on.
+    async fn start_or_warn(&self, unit: &str) {
+        if let Err(error) = self.control.start(unit).await {
+            tracing::warn!(
+                unit,
+                %error,
+                "mqtt: the unit refused to start; mqtt.enabled stays applied and the unit's real \
+                 state is published as it is"
+            );
+        }
+    }
+
+    /// Clear `unit`'s failed state so the start after it is not refused.
+    ///
+    /// Warns rather than propagating, for the same reason
+    /// [`MqttReconciler::start_or_warn`] does: this call exists only on the
+    /// way up, and a bus failure here would fail the reconcile of
+    /// `mqtt.enabled` over a broker that is already broken. Continuing costs
+    /// nothing -- the start below is attempted either way, and if it is
+    /// refused it warns in its own right.
+    async fn reset_failed_or_warn(&self, unit: &str) {
+        if let Err(error) = self.control.reset_failed(unit).await {
+            tracing::warn!(
+                unit,
+                %error,
+                "mqtt: could not clear the unit's failed state; a start may be refused until its \
+                 start-limit window elapses"
+            );
+        }
+    }
+
     /// Bring the broker up, restarting it when the config it is running
     /// against has been rewritten.
     ///
@@ -205,15 +275,36 @@ impl<C: UnitControl> MqttReconciler<C> {
         if !is_enabled(&self.control.unit_file_state(BROKER_UNIT).await?) {
             self.control.enable(BROKER_UNIT).await?;
         }
-        if is_active(&self.control.active_state(BROKER_UNIT).await?) {
+        let active_state = self.control.active_state(BROKER_UNIT).await?;
+        if is_active(&active_state) {
             if config_changed {
                 self.control.restart(BROKER_UNIT).await?;
             }
         } else {
+            // A FAILED broker may be inside its start-limit window, and inside
+            // it systemd refuses start jobs outright. Clear the failure first,
+            // so an operator who has just corrected the address gets a broker
+            // that comes up on THIS apply -- rather than one that stays down
+            // until the minute expires and something else happens to trigger
+            // another reconcile, with nothing anywhere saying they have to save
+            // twice and wait.
+            //
+            // Guarded on the state and not issued unconditionally. It would be
+            // harmless -- `reset-failed` on a healthy unit does nothing -- but
+            // a call log that shows it on every apply stops distinguishing the
+            // broker that needed rescuing from the one that did not.
+            //
+            // Broker only. The bridge carries no StartLimit override, so it
+            // inherits systemd's 10-second default, which at its RestartSec=5
+            // fits about two attempts and is therefore unreachable -- the very
+            // gap the broker's 60-second interval was added to close.
+            if active_state == FAILED_STATE {
+                self.reset_failed_or_warn(BROKER_UNIT).await;
+            }
             // Not running: start it. A restart here would work too, but
             // starting says what is meant, and a broker that is down is not
             // running a stale config — it is running none.
-            self.control.start(BROKER_UNIT).await?;
+            self.start_or_warn(BROKER_UNIT).await;
         }
         Ok(())
     }
@@ -228,7 +319,7 @@ impl<C: UnitControl> MqttReconciler<C> {
             self.control.enable(BRIDGE_UNIT).await?;
         }
         if !is_active(&self.control.active_state(BRIDGE_UNIT).await?) {
-            self.control.start(BRIDGE_UNIT).await?;
+            self.start_or_warn(BRIDGE_UNIT).await;
         }
         Ok(())
     }
@@ -518,6 +609,165 @@ mod tests {
             ]
         );
         assert_eq!(state["enabled"], serde_json::json!(true));
+    }
+
+    /// The other half of the StartLimit amendment. `mos-mqtt-broker.service`
+    /// carries `StartLimitIntervalSec=60` / `StartLimitBurst=5`, and inside
+    /// that window systemd REFUSES start jobs on a unit that has exhausted its
+    /// burst. Converging by "not active, so start it" therefore issues a start
+    /// that cannot succeed, and the operator who has just fixed the address
+    /// would have to save again after the minute expired -- with nothing
+    /// telling them so.
+    #[tokio::test]
+    async fn a_failed_broker_is_reset_before_it_is_started() {
+        let dir = tempfile::tempdir().unwrap();
+        let (reconciler, _config) = fixture(dir.path(), "inactive", "enabled");
+        reconciler.control.set_active_state(BROKER_UNIT, "failed");
+
+        reconciler
+            .apply(&settings(true, "127.0.0.1", 1883, false))
+            .await
+            .unwrap();
+
+        // ORDER is the assertion: a reset AFTER the start would clear the
+        // failure and leave the broker still down.
+        assert_eq!(
+            reconciler.control.calls(),
+            vec![
+                "reset-failed mos-mqtt-broker.service".to_string(),
+                "start mos-mqtt-broker.service".to_string(),
+                "start mos-mqttd.service".to_string(),
+            ]
+        );
+    }
+
+    /// No wasted call on the healthy path, and -- more to the point -- a call
+    /// log in which `reset-failed` means something. Issued on every apply it
+    /// would stop distinguishing the broker that needed rescuing from the one
+    /// that never failed.
+    #[tokio::test]
+    async fn a_broker_that_is_not_failed_is_not_reset() {
+        let dir = tempfile::tempdir().unwrap();
+        let (reconciler, _config) = fixture(dir.path(), "inactive", "disabled");
+
+        reconciler
+            .apply(&settings(true, "127.0.0.1", 1883, false))
+            .await
+            .unwrap();
+
+        assert_eq!(
+            reconciler.control.calls(),
+            vec![
+                "enable mos-mqtt-broker.service".to_string(),
+                "start mos-mqtt-broker.service".to_string(),
+                "enable mos-mqttd.service".to_string(),
+                "start mos-mqttd.service".to_string(),
+            ],
+            "a broker that never failed must not be reset-failed"
+        );
+    }
+
+    /// A start systemd REFUSES must not fail the reconcile. `apply` covers the
+    /// whole `mqtt` subtree, so an `Err` here fails `mqtt.enabled` itself over
+    /// a unit in start-limit cool-off -- the same coupling that
+    /// `an_address_that_cannot_parse_still_starts_both_units` exists to
+    /// forbid, arriving one step later. Worse, reconcilers run together: an
+    /// unrelated hostname or WiFi write would fail on a broker in cool-off that
+    /// has nothing to do with it. Do not "fix" this into an `Err`.
+    #[tokio::test]
+    async fn a_refused_broker_start_does_not_fail_the_reconcile() {
+        let dir = tempfile::tempdir().unwrap();
+        let (reconciler, _config) = fixture(dir.path(), "inactive", "enabled");
+        reconciler.control.refuse_start(BROKER_UNIT);
+
+        let state = reconciler
+            .apply(&settings(true, "127.0.0.1", 1883, false))
+            .await
+            .expect("a refused start warns; it must never fail the reconcile");
+
+        // The bridge is still driven: the broker's refusal must not abort the
+        // rest of the subtree's convergence either.
+        assert_eq!(
+            reconciler.control.calls(),
+            vec![
+                "start mos-mqtt-broker.service".to_string(),
+                "start mos-mqttd.service".to_string(),
+            ]
+        );
+        // And the failure is REPORTED rather than hidden. Both units are still
+        // in the published state, and the broker's `activeState` is what it
+        // really is -- which is what the apid pane renders and points at
+        // `journalctl -u mos-mqtt-broker`.
+        assert_eq!(
+            state["units"],
+            json!([
+                {
+                    "unit": "mos-mqtt-broker.service",
+                    "activeState": "inactive",
+                    "unitFileState": "enabled",
+                },
+                {
+                    "unit": "mos-mqttd.service",
+                    "activeState": "active",
+                    "unitFileState": "enabled",
+                },
+            ])
+        );
+    }
+
+    /// The bridge gets the same treatment as the broker, for the same reason:
+    /// `mqtt.enabled` is one switch over two units, and neither of them being
+    /// startable is a reason to fail the switch.
+    #[tokio::test]
+    async fn a_refused_bridge_start_does_not_fail_the_reconcile_either() {
+        let dir = tempfile::tempdir().unwrap();
+        let (reconciler, _config) = fixture(dir.path(), "inactive", "enabled");
+        reconciler.control.refuse_start(BRIDGE_UNIT);
+
+        let state = reconciler
+            .apply(&settings(true, "127.0.0.1", 1883, false))
+            .await
+            .expect("a refused bridge start warns; it must never fail the reconcile");
+
+        assert_eq!(state["enabled"], json!(true));
+        assert_eq!(state["units"][0]["activeState"], json!("active"));
+        assert_eq!(state["units"][1]["activeState"], json!("inactive"));
+    }
+
+    /// Stop and disable keep propagating. A start limit cannot cause them, and
+    /// `mqtt.enabled = false` that quietly left a broker listening is a failure
+    /// worth failing on -- the leniency above is scoped to the start path and
+    /// must not spread.
+    #[tokio::test]
+    async fn turning_the_switch_off_still_propagates_a_failure() {
+        let dir = tempfile::tempdir().unwrap();
+        let (reconciler, _config) = fixture(dir.path(), "active", "enabled");
+        // Refusing `start` is the only injectable failure, and the off path
+        // must never reach it: what this asserts is that turning the switch off
+        // issues stops and disables and no start at all, so the `?` on those
+        // calls is still the code that runs.
+        reconciler.control.refuse_start(BROKER_UNIT);
+        reconciler.control.refuse_start(BRIDGE_UNIT);
+
+        reconciler
+            .apply(&settings(false, "127.0.0.1", 1883, false))
+            .await
+            .unwrap();
+
+        let calls = reconciler.control.calls();
+        assert!(
+            calls.iter().all(|call| !call.starts_with("start ")),
+            "the off path must issue no start: {calls:?}"
+        );
+        assert_eq!(
+            calls,
+            vec![
+                "stop mos-mqttd.service".to_string(),
+                "disable mos-mqttd.service".to_string(),
+                "stop mos-mqtt-broker.service".to_string(),
+                "disable mos-mqtt-broker.service".to_string(),
+            ]
+        );
     }
 
     #[tokio::test]
