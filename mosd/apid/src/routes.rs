@@ -1829,11 +1829,12 @@ async fn containers_enable(
 /// Everything the MQTT pane renders, gathered before any markup is built.
 ///
 /// The live-state keys this reads are the pane's half of a contract with
-/// mosd's mqtt reconciler: `enabled`, `listenAddress`, `listenPort` and
-/// `authEnabled` -- camelCase and flat, as the container reconciler publishes
-/// its own. Every one of them is optional here: a key the reconciler has not
-/// published renders as "unknown" and never as a default, because a listen
-/// address on this page is a claim about what the broker is actually bound to.
+/// mosd's mqtt reconciler: `enabled`, `listenAddress`, `listenPort`,
+/// `authEnabled` and `activeState` (the broker unit's) -- camelCase and flat,
+/// as the container reconciler publishes its own. Every one of them is
+/// optional here: a key the reconciler has not published renders as "unknown"
+/// and never as a default, because a listen address on this page is a claim
+/// about what the broker is actually bound to.
 struct MqttView {
     /// `mqtt.enabled` -- what the operator asked for.
     enabled: bool,
@@ -1858,6 +1859,20 @@ impl MqttView {
     /// The published listen port.
     fn port(&self) -> Option<u64> {
         self.state.as_ref()?.get("listenPort")?.as_u64()
+    }
+
+    /// Whether the broker unit is in systemd's `failed` state.
+    ///
+    /// This is how a listen address the broker cannot use reaches the
+    /// operator. Nothing rejects such a value -- not the reconciler, not this
+    /// pane -- because rejecting it would make the master switch depend on
+    /// `listen` being valid, which is the conflation RFCT-104 rejected. The
+    /// broker takes the value, fails to parse it and exits, and the only
+    /// evidence is the unit state. A pane that showed "enabled" and stopped
+    /// there would be reporting the operator's request back to them as though
+    /// it were an outcome.
+    fn broker_failed(&self) -> bool {
+        self.text("activeState") == Some("failed")
     }
 
     /// Whether the published listener would accept a connection from off this
@@ -1924,6 +1939,15 @@ const MQTT_SEPARATE_CONFIG_NOTICE: &str = "The listen address, the port and auth
 /// The exposure, stated as what it lets a stranger do.
 const MQTT_OPEN_LISTENER_WARNING: &str = "This broker accepts unauthenticated connections from the network. It is bound off loopback with authentication disabled, so any host that can reach that address can publish and subscribe on this device without a password.";
 
+/// A failed broker, and where the reason is.
+///
+/// The pane cannot say WHY it failed -- it has a unit state and not the
+/// journal -- so it says where the reason is instead of guessing at one. The
+/// commonest cause is a listen address that is not an IP address, because the
+/// broker binds an interface and does not resolve names, but naming that as
+/// the cause here would be a diagnosis the pane has not made.
+const MQTT_BROKER_FAILED_NOTICE: &str = "The broker unit has failed: MQTT is switched on, but mos-mqtt-broker.service is not running and the bridge has nothing to connect to. Run journalctl -u mos-mqtt-broker on the device for the reason it exited.";
+
 fn mqtt_page(view: &MqttView, banner: Option<Markup>) -> Html<String> {
     let address = view.text("listenAddress").unwrap_or("unknown");
     let port = view
@@ -1938,6 +1962,11 @@ fn mqtt_page(view: &MqttView, banner: Option<Markup>) -> Html<String> {
 
             h2 { "Switch" }
             p { "MQTT: " b { (if view.enabled { "enabled" } else { "disabled" }) } }
+            p { "Broker unit: " b { (view.text("activeState").unwrap_or("unknown")) } " (" code { "mos-mqtt-broker.service" } ")" }
+            // What the switch was asked to do, and what came of it, are two
+            // different facts and the pane reports both: "enabled" above is
+            // the request, the unit state is the outcome.
+            @if view.broker_failed() { (error_box(MQTT_BROKER_FAILED_NOTICE)) }
             p {
                 "One switch drives both halves: the broker (" code { "mos-mqtt-broker.service" }
                 ") and the bridge (" code { "mos-mqttd.service" } "). Turning it off stops both, "

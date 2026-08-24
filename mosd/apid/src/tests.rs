@@ -2750,13 +2750,29 @@ fn mqtt_tree(enabled: bool) -> serde_json::Value {
     })
 }
 
-/// The live-state subtree mosd's mqtt reconciler publishes.
+/// The live-state subtree mosd's mqtt reconciler publishes, with the broker
+/// unit in the state a working switch produces.
 fn mqtt_state(enabled: bool, address: &str, port: u64, auth_enabled: bool) -> serde_json::Value {
+    let active_state = if enabled { "active" } else { "inactive" };
+    mqtt_state_with_unit(enabled, address, port, auth_enabled, active_state)
+}
+
+/// The same, with the broker unit's `activeState` chosen explicitly -- which
+/// is the only way to describe a broker that took the settings and then
+/// exited.
+fn mqtt_state_with_unit(
+    enabled: bool,
+    address: &str,
+    port: u64,
+    auth_enabled: bool,
+    active_state: &str,
+) -> serde_json::Value {
     json!({
         "enabled": enabled,
         "listenAddress": address,
         "listenPort": port,
         "authEnabled": auth_enabled,
+        "activeState": active_state,
     })
 }
 
@@ -2987,6 +3003,117 @@ async fn the_mqtt_open_listener_warning_tracks_the_configuration_not_the_page() 
         !body.contains("accepts unauthenticated connections"),
         "a stopped broker must not be reported as accepting connections: {body}"
     );
+}
+
+#[tokio::test]
+async fn a_failed_broker_is_named_on_the_pane_with_somewhere_to_look() {
+    // The switch is on, so the pane would otherwise say "enabled" and stop.
+    // That is the request, not the outcome: the broker took the settings, hit
+    // a listen address it could not parse and exited. Nothing rejected the
+    // value -- rejecting it is the coupling RFCT-104 forbids -- so the unit
+    // state is the only evidence there is, and the pane is where an operator
+    // meets it.
+    let (router, fake) = test_app(mqtt_tree(true));
+    fake.set_state_entry(
+        "mqtt",
+        mqtt_state_with_unit(true, "localhost", 1883, false, "failed"),
+    );
+    let cookie = login(&router, "hunter2secret").await;
+    let body = body_string(get(&router, "/mqtt", Some(&cookie)).await).await;
+
+    assert!(
+        body.contains("Broker unit: <b>failed</b>"),
+        "the unit state must be on the page, not just the switch position: {body}"
+    );
+    assert!(
+        body.contains("The broker unit has failed"),
+        "a failed broker must be stated plainly: {body}"
+    );
+    assert!(
+        body.contains("journalctl -u mos-mqtt-broker"),
+        "the pane must say where the reason is, since it does not have the reason: {body}"
+    );
+    // And it must not claim to know why. The pane has a unit state, not the
+    // journal; naming the listen address as the cause would be a diagnosis it
+    // has not made, and would be wrong for every other way a broker can fail.
+    assert!(
+        !body.contains("is not an IP address"),
+        "the pane must not guess at the cause of the failure: {body}"
+    );
+}
+
+#[tokio::test]
+async fn a_broker_that_is_running_is_not_reported_as_failed() {
+    // So the failure notice means something when it appears.
+    for (enabled, active_state) in [(true, "active"), (false, "inactive"), (true, "activating")] {
+        let (router, fake) = test_app(mqtt_tree(enabled));
+        fake.set_state_entry(
+            "mqtt",
+            mqtt_state_with_unit(enabled, "127.0.0.1", 1883, false, active_state),
+        );
+        let cookie = login(&router, "hunter2secret").await;
+        let body = body_string(get(&router, "/mqtt", Some(&cookie)).await).await;
+        assert!(
+            !body.contains("The broker unit has failed"),
+            "a unit in {active_state} must not be reported as failed: {body}"
+        );
+        assert!(
+            body.contains(&format!("Broker unit: <b>{active_state}</b>")),
+            "the unit state must be reported as published: {body}"
+        );
+    }
+}
+
+#[tokio::test]
+async fn a_listen_address_the_broker_cannot_use_does_not_stop_the_switch_saving() {
+    // The other half of the amendment, and the same rule as the open-listener
+    // guard: apid does not validate the listen address. `localhost` is exactly
+    // the value that kills the broker -- it binds an interface and does not
+    // resolve names -- and it must still be possible to save the switch while
+    // it is set, in both directions. A pane that refused here, or greyed the
+    // button out, would have made the master switch depend on `listen` being
+    // valid through the UI instead of through a gate.
+    let (router, fake) = test_app(mqtt_tree(false));
+    fake.set_state_entry(
+        "mqtt",
+        mqtt_state_with_unit(false, "localhost", 1883, false, "failed"),
+    );
+    let cookie = login(&router, "hunter2secret").await;
+
+    let body = body_string(get(&router, "/mqtt", Some(&cookie)).await).await;
+    assert!(
+        body.contains(r#"<button type="submit">Save</button>"#),
+        "the Save button must be present and not disabled on any listen value: {body}"
+    );
+
+    let response = post_form(&router, "/mqtt/enable", "enabled=on", Some(&cookie)).await;
+    assert_eq!(
+        response.status(),
+        StatusCode::SEE_OTHER,
+        "the switch must save while the listen address is one the broker cannot use"
+    );
+    assert_eq!(location(&response), "/mqtt?saved=1");
+    assert_eq!(fake.set_paths(), vec!["mqtt.enabled"]);
+    assert_eq!(
+        fake.get_settings("mqtt.enabled").await.unwrap(),
+        json!(true)
+    );
+    // And nothing rewrote the address to something the broker would accept:
+    // repairing it here would be the same coupling arriving as a courtesy.
+    assert_eq!(
+        fake.get_settings("mqtt.listen.address").await.unwrap(),
+        json!("127.0.0.1"),
+        "saving the switch must not touch the listener at all"
+    );
+
+    // Off again, with the same broken address.
+    let response = post_form(&router, "/mqtt/enable", "", Some(&cookie)).await;
+    assert_eq!(response.status(), StatusCode::SEE_OTHER);
+    assert_eq!(
+        fake.get_settings("mqtt.enabled").await.unwrap(),
+        json!(false)
+    );
+    assert_eq!(fake.set_paths(), vec!["mqtt.enabled"; 2]);
 }
 
 /// Every `post(...)` route registered in `routes.rs` appears in
