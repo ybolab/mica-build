@@ -1,0 +1,75 @@
+[Unit]
+Description=mos MQTT broker (rumqttd, TCP only, v3.1.1 and v5)
+After=network.target mosd.service
+Wants=mosd.service
+
+# mosd renders the configuration and then starts this unit. Without the file
+# there is nothing to bind and no way to learn what to bind, so a broker
+# started here could only exit -- and systemd would restart it every five
+# seconds forever. The condition makes "mosd has not configured me" a skipped
+# start instead of a restart loop.
+ConditionPathExists=/run/mos/mqtt-broker.toml
+
+[Service]
+Type=simple
+
+# WHAT IS NOT IN THIS FILE, AND WHY.
+# The listen address, the port and the auth flag are absent on purpose. The
+# root filesystem is an immutable dm-verity squashfs: a value written here
+# would be fixed at image build time and identical on every device flashed
+# with the image, and `systemctl edit` has nowhere to write. mosd renders all
+# three from the `mqtt` settings subtree into /run/mos/mqtt-broker.toml before
+# it starts this unit, so the device's own configuration is the only source.
+#
+# Credentials are not here either, and are not in the settings tree: mosd
+# publishes that tree over com.mos.Item1, so a password in it would be a
+# published password. They live in /var/lib/mos/mqtt-broker-users.toml on
+# STATE, the same way the device password already does. The file is optional;
+# with auth on and no file the broker starts and refuses every login.
+ExecStart=/usr/bin/mos-mqtt-broker --config /run/mos/mqtt-broker.toml
+Restart=on-failure
+RestartSec=5
+
+# IDENTITY: a STATIC system user (uid = gid = 969), not DynamicUser.
+#
+# The broker reads /var/lib/mos/mqtt-broker-users.toml, a file on STATE that
+# outlives every start of this unit and survives an A/B update. A dynamic uid
+# is allocated at start and gone at stop, so there is no identity to grant
+# that file to: the ownership written on one boot names nobody on the next,
+# and the only way to keep it readable would be to make the credentials
+# world-readable. A pinned uid is what lets a credentials file be owned by
+# this service and by nothing else.
+User=mos-mqtt-broker
+Group=mos-mqtt-broker
+
+# Sandboxing, as for mos-mqttd. This one listens rather than connects, which
+# makes it the only daemon in the image that accepts traffic it did not ask
+# for; it still owns no state beyond one file it reads, writes nothing, execs
+# nothing, and needs neither root nor any capability.
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+SystemCallArchitectures=native
+CapabilityBoundingSet=
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+RemoveIPC=yes
+UMask=0077
+
+# The unit carries install information, and the image deliberately does not
+# create the symlink. mqtt.enabled is the master switch and mosd owns the
+# lifecycle: it starts and stops this unit from the settings tree. A
+# multi-user.target.wants symlink baked into the image would start the broker
+# on every boot regardless of the switch, which is the one thing the switch
+# exists to prevent. The section is kept so that `systemctl enable` remains
+# meaningful to anyone debugging on a writable root.
+[Install]
+WantedBy=multi-user.target

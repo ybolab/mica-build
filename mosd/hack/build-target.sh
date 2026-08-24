@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Cross-build mosd, apid and mos-mqttd for one Rust target and verify the ELF.
+# Cross-build mosd, apid, mos-mqttd and mos-mqtt-broker for one Rust target
+# and verify the ELF.
 #
 #   bash mosd/hack/build-target.sh <rust-target> <elf-arch-substring>
 #   bash mosd/hack/build-target.sh aarch64-unknown-linux-gnu aarch64
@@ -16,9 +17,10 @@ export PATH="$HOME/.cargo/bin:$PATH"
 TARGET="${1:?usage: build-target.sh <rust-target> <elf-arch>}"
 ELF_ARCH="${2:?usage: build-target.sh <rust-target> <elf-arch>}"
 
-cargo build --release --locked --target "${TARGET}" -p mosd -p apid -p mos-mqttd
+cargo build --release --locked --target "${TARGET}" \
+    -p mosd -p apid -p mos-mqttd -p mos-mqtt-broker
 
-for name in mosd apid mos-mqttd; do
+for name in mosd apid mos-mqttd mos-mqtt-broker; do
     BIN="$(pwd)/target/${TARGET}/release/${name}"
     if ! file -b "${BIN}" | grep -q "ELF 64-bit.*${ELF_ARCH}"; then
         echo "error: ${BIN} is not an ${ELF_ARCH} ELF: $(file -b "${BIN}")" >&2
