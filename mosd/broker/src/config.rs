@@ -26,7 +26,9 @@ pub struct BrokerConfig {
     /// The address to bind. An IP address, not a hostname: this is a bind, and
     /// a bind names an interface rather than resolving one.
     pub listen_address: String,
-    /// The TCP port to bind, for both the v4 and the v5 listener.
+    /// The TCP port to bind. One port, and therefore one listener: see the
+    /// note on `broker_config` in `main.rs` for why MQTT 5.0 cannot simply be
+    /// served alongside 3.1.1 on it.
     pub listen_port: u16,
     /// Whether connections must present a username and password from
     /// [`load_users`].
