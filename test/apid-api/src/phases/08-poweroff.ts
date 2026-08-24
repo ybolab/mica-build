@@ -19,6 +19,7 @@ import {
   POWEROFF_PATTERNS,
   confirmTokenFor,
   expectPortStopsAnswering,
+  isGateRedirect,
   noConsoleReason,
   openConsole,
   truncate,
@@ -90,12 +91,43 @@ const phase: Phase = {
       "POST /power/poweroff carrying the page's own confirm token is accepted (303)",
     );
 
+    // A 303 ALONE IS NOT ACCEPTANCE. Measured 2026-08-24 on the first live run:
+    // with no valid session in the jar, apid's auth gate answers EVERY route
+    // except /healthz with 303 to /login -- including this one. The status
+    // check above passed while nothing whatsoever had been asked of the
+    // machine, which made the most destructive assertion in the suite green on
+    // a run where the guest was never going to go down.
+    //
+    // The Location is what tells the two apart, so it is asserted rather than
+    // the status alone. The success target is not hardcoded here (that would
+    // couple this phase to a redirect apid is free to change); what is asserted
+    // is that it is NOT the gate's, which is the distinction that was missing.
+    const postedTo = posted.headers.get("location");
+    report.check(
+      posted.status === 303 && postedTo !== undefined && !isGateRedirect(postedTo),
+      "the accepted POST /power/poweroff is an ACCEPTED ACTION and not the auth gate bouncing an unauthenticated caller",
+      [
+        `expected: 303 whose Location is neither /login nor /setup`,
+        `actual:   ${posted.status} -> ${JSON.stringify(postedTo ?? "<no Location>")}`,
+        `note:     a 303 to /login means the session was not honoured and the machine was`,
+        `          never asked to power off. Every assertion below would then be`,
+        `          measuring a device nobody told to do anything.`,
+      ].join("\n"),
+    );
+
     if (consoleLog !== undefined) {
       const evidence = await consoleLog.waitFor(POWEROFF_PATTERNS, {
         report,
         what: "systemd reaching its power-off transaction on the console",
         timeoutMs: POWEROFF_EVIDENCE_TIMEOUT_MS,
       });
+      if (evidence.unavailableReason !== undefined) {
+        report.skip(
+          "the CONSOLE shows the guest powering off -- the machine acted, not merely the handler",
+          `${evidence.unavailableReason} -- the wait ended because the log stopped being readable, ` +
+            `which is not evidence that the guest failed to power off`,
+        );
+      } else {
       report.check(
         evidence.matched,
         "the CONSOLE shows the guest powering off -- the machine acted, not merely the handler",
@@ -107,6 +139,7 @@ const phase: Phase = {
           evidence.tail === "" ? "          <the console produced nothing at all>" : evidence.tail,
         ].join("\n"),
       );
+      }
       if (evidence.matched) {
         report.note(
           `    console evidence ${evidence.elapsedMs}ms after the post: ${truncate(evidence.line ?? "", 120)}`,

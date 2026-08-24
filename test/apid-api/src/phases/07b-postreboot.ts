@@ -32,6 +32,7 @@
  */
 
 import { Client, type HttpResponse } from "../client.ts";
+import { splitLines } from "../console.ts";
 import type { Reporter } from "../report.ts";
 import type { Phase, PhaseContext } from "../runner.ts";
 import { BACKOFF_BASE_MS, expectedWindowMs, waitForWindow } from "./06-backoff.ts";
@@ -388,13 +389,10 @@ const phase: Phase = {
         );
         report.note(`    console: ${truncate(found.line ?? "", 120)}`);
       } else {
-        const onALogLine = findMatch(
-          consoleLog
-            .all()
-            .split(/\r?\n/)
-            .map((line) => line.trimEnd()),
-          [anywhere],
-        );
+        // splitLines, not a bare split: systemd colours the boot log, and an
+        // ANSI run sitting against the hostname would break a pattern that
+        // spans it.
+        const onALogLine = findMatch(splitLines(consoleLog.all()), [anywhere]);
         if (onALogLine !== undefined) {
           report.pass(
             "the boot-2 CONSOLE carries the new hostname on its own boot log lines",

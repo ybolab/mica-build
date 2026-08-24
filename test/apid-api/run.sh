@@ -100,11 +100,15 @@ PROGRESS_INTERVAL="${MOS_APID_PROGRESS_INTERVAL:-15}"
 RUN_SECONDS="${MOS_QEMU_RUN_SECONDS:-2400}"
 QEMU_TIMEOUT="${MOS_QEMU_TIMEOUT:-2700}"
 
-# The second boot is gated OFF by default. It runs the post-reboot phases, and
-# those phase modules are owned by another subtask and do not exist yet; a
-# harness whose own verification depended on them could not be verified at all.
-# Turn it on with MOS_APID_BOOT2=1 once 07b-postreboot and 08-poweroff land.
-BOOT2="${MOS_APID_BOOT2:-0}"
+# The second boot is ON by default. It was gated off while 07b-postreboot and
+# 08-poweroff did not exist -- a harness whose own verification depended on
+# modules that were not there could not be verified at all -- and both landed,
+# so the default now matches what the suite can actually do. Off by default
+# would mean the reboot phase takes the guest down and NOTHING observes it come
+# back: 07 ends with the machine deliberately gone, so a run that stops there
+# leaves the most expensive evidence in the campaign uncollected.
+# MOS_APID_BOOT2=0 turns it off for a boot-1-only run.
+BOOT2="${MOS_APID_BOOT2:-1}"
 BOOT2_PHASES="${MOS_APID_BOOT2_PHASES:-07b-postreboot,08-poweroff}"
 
 PHASES="${MOS_APID_PHASES:-}"
@@ -319,7 +323,7 @@ if [ "${DRY_RUN}" -eq 1 ]; then
     if [ "${BOOT2}" = "1" ]; then
         note "would then    boot a second time on the same disk for ${BOOT2_PHASES}"
     else
-        note "second boot is OFF (MOS_APID_BOOT2=1 turns it on once the post-reboot phases exist)"
+        note "second boot is OFF (MOS_APID_BOOT2=0 was set; the default is on)"
     fi
     finish
 fi
@@ -599,8 +603,27 @@ fi
 # merger that reached inside it would have to be changed in step with it -- and
 # would silently produce zeros on the day it was not.
 MERGED="${ART_DIR}/result.json"
+# The IMAGE IDENTITY goes in the envelope, because a result file that does not
+# say which artefact it covered is a result file that cannot be trusted a week
+# later. `x64-mos-v2-latest.img` is a symlink and its target changes under it
+# every time somebody builds; the resolved name and the mtime are what pin a run
+# to a surface. This is also what makes the /mqtt skew guard in 04-readonly
+# legible: when that check goes red, this block says whether the image moved.
+IMG_RESOLVED="$(readlink -f "${IMG}" 2>/dev/null || echo "${IMG}")"
+IMG_MTIME_EPOCH="$(stat -c %Y "${IMG_RESOLVED}" 2>/dev/null || echo 0)"
+IMG_MTIME_ISO="$(date -u -d "@${IMG_MTIME_EPOCH}" +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || echo unknown)"
+IMG_BYTES="$(stat -c %s "${IMG_RESOLVED}" 2>/dev/null || echo 0)"
 {
-    printf '{\n  "boots": [\n'
+    printf '{\n'
+    printf '  "image": {\n'
+    printf '    "latest": "%s",\n' "${IMG##*/}"
+    printf '    "resolved": "%s",\n' "${IMG_RESOLVED##*/}"
+    printf '    "resolvedPath": "%s",\n' "${IMG_RESOLVED}"
+    printf '    "mtime": "%s",\n' "${IMG_MTIME_ISO}"
+    printf '    "mtimeEpoch": %s,\n' "${IMG_MTIME_EPOCH}"
+    printf '    "bytes": %s\n' "${IMG_BYTES}"
+    printf '  },\n'
+    printf '  "boots": [\n'
     sep=""
     for label in boot1 boot2; do
         rf="${ART_DIR}/result-${label}.json"
@@ -615,6 +638,7 @@ MERGED="${ART_DIR}/result.json"
         "${CHECKS_PASSED}" "${CHECKS_FAILED}" "$((CHECKS_PASSED + CHECKS_FAILED))"
 } >"${MERGED}"
 note "merged result written to ${MERGED}"
+note "image under test: ${IMG_RESOLVED##*/} (mtime ${IMG_MTIME_ISO})"
 note "console logs kept: ${CONSOLE1}$([ -s "${CONSOLE2}" ] && printf ' %s' "${CONSOLE2}")"
 
 if [ "${SUITE_RC}" -ne 0 ] && [ "${CHECKS_FAILED}" -eq 0 ]; then
