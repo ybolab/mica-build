@@ -725,7 +725,7 @@ async fn stored_key_list(fake: &FakeSettings) -> serde_json::Value {
 /// that is missing here. Without that, adding a route and forgetting this list
 /// leaves exactly one unauthenticated write path and every existing test still
 /// green -- the list would describe the routes someone remembered.
-const ALL_MUTATIONS: [(&str, &str); 9] = [
+const ALL_MUTATIONS: [(&str, &str); 10] = [
     ("/ssh/enable", "enabled=on"),
     (
         "/ssh/password",
@@ -734,6 +734,7 @@ const ALL_MUTATIONS: [(&str, &str); 9] = [
     ("/ssh/keys/add", "key=ssh-ed25519%20AAAA"),
     ("/ssh/keys/remove", "identifier=SHA256%3Aanything"),
     ("/containers/enable", "enabled=on"),
+    ("/mqtt/enable", "enabled=on"),
     ("/hostname", "hostname=renamed"),
     // POST /network was reachable with no test asserting it rejects an
     // anonymous request. `unauthenticated_panes_redirect_to_login` covers the
@@ -2727,6 +2728,264 @@ async fn the_pane_does_not_list_quadlet_files_while_containers_are_off() {
     assert!(
         body.contains("Not listed while containers are disabled"),
         "the pane must explain the empty list rather than showing one: {body}"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// RFCT-104: the MQTT pane
+// ---------------------------------------------------------------------------
+
+/// A settings tree with the mqtt subtree, authenticated as `ssh_tree`.
+fn mqtt_tree(enabled: bool) -> serde_json::Value {
+    let hash = auth::hash_password("hunter2secret").unwrap();
+    json!({
+        "hostname": "mos",
+        "network": {},
+        "access": { "webAdmin": { "password_hash": hash } },
+        "mqtt": {
+            "enabled": enabled,
+            "listen": { "address": "127.0.0.1", "port": 1883 },
+            "auth": { "enabled": false },
+        },
+    })
+}
+
+/// The live-state subtree mosd's mqtt reconciler publishes.
+fn mqtt_state(enabled: bool, address: &str, port: u64, auth_enabled: bool) -> serde_json::Value {
+    json!({
+        "enabled": enabled,
+        "listenAddress": address,
+        "listenPort": port,
+        "authEnabled": auth_enabled,
+    })
+}
+
+#[tokio::test]
+async fn the_mqtt_pane_states_the_behaviour_change_not_a_generic_warning() {
+    let (router, _fake) = test_app(mqtt_tree(false));
+    let cookie = login(&router, "hunter2secret").await;
+    let body = body_string(get(&router, "/mqtt", Some(&cookie)).await).await;
+
+    // The container pane's rule, applied here: state the consequence, not a
+    // caution. Each clause separately, because a page that said only "MQTT is
+    // disabled by default" would pass a check for the switch's name while
+    // leaving out the thing an operator has to act on -- that a unit which was
+    // running before the update is not running now.
+    assert!(
+        body.contains("stops the MQTT bridge"),
+        "the pane must say the update stops a unit that was running: {body}"
+    );
+    assert!(
+        body.contains("mos-mqttd"),
+        "the pane must name the unit that stops, or the operator cannot look for it: {body}"
+    );
+    assert!(
+        body.contains("only ever retried"),
+        "the pane must say why nothing that worked has broken: {body}"
+    );
+}
+
+#[tokio::test]
+async fn the_mqtt_pane_says_the_switch_drives_both_halves() {
+    // The switch is not "enable the broker". A pane that named only one of the
+    // two would leave an operator turning MQTT off and expecting the bridge to
+    // carry on reaching some other broker.
+    let (router, _fake) = test_app(mqtt_tree(true));
+    let cookie = login(&router, "hunter2secret").await;
+    let body = body_string(get(&router, "/mqtt", Some(&cookie)).await).await;
+
+    assert!(body.contains("MQTT: <b>enabled</b>"), "{body}");
+    assert!(body.contains("mos-mqtt-broker.service"), "{body}");
+    assert!(body.contains("mos-mqttd.service"), "{body}");
+    assert!(
+        body.contains("Turning it off stops both"),
+        "the pane must say the switch stops both halves: {body}"
+    );
+}
+
+#[tokio::test]
+async fn the_mqtt_pane_says_listen_and_auth_are_not_validated_by_the_switch() {
+    // D2: `listen` and `auth` are a separate configuration and the switch
+    // validates neither. That was a decision, and the pane is the only place
+    // an operator meets the switch -- so it is where the decision is stated,
+    // or they will assume the switch checked something for them.
+    let (router, _fake) = test_app(mqtt_tree(true));
+    let cookie = login(&router, "hunter2secret").await;
+    let body = body_string(get(&router, "/mqtt", Some(&cookie)).await).await;
+
+    assert!(
+        body.contains("configured separately from this switch"),
+        "the pane must say the listener is configured elsewhere: {body}"
+    );
+    assert!(
+        body.contains("this switch does not validate them"),
+        "the pane must say the switch validates nothing: {body}"
+    );
+    assert!(
+        body.contains("refuse to start"),
+        "the pane must say nothing refuses to start on a listen/auth combination: {body}"
+    );
+}
+
+#[tokio::test]
+async fn the_mqtt_pane_renders_before_mosd_has_published_any_state() {
+    // No `set_state_entry`, so `get_state("mqtt")` fails -- which is the state
+    // of a device that has just booted. The pane has to render anyway: a 502
+    // here would mean the switch cannot be turned on until something else has
+    // already turned it on.
+    for enabled in [false, true] {
+        let (router, _fake) = test_app(mqtt_tree(enabled));
+        let cookie = login(&router, "hunter2secret").await;
+        let response = get(&router, "/mqtt", Some(&cookie)).await;
+        assert_eq!(response.status(), StatusCode::OK, "enabled={enabled}");
+        let body = body_string(response).await;
+        assert!(
+            body.contains("Live MQTT state unavailable"),
+            "the missing state must be reported, not silently rendered as a listener: {body}"
+        );
+        // Unknown, not a made-up default: `127.0.0.1` on the page would be a
+        // claim about a listener nobody has measured.
+        assert!(
+            body.contains("Listen address: <b>unknown</b>"),
+            "an unpublished address must read as unknown: {body}"
+        );
+        assert!(
+            body.contains("Listen port: <b>unknown</b>"),
+            "an unpublished port must read as unknown: {body}"
+        );
+        assert!(
+            body.contains("Authentication: <b>unknown</b>"),
+            "unpublished auth must read as unknown, not as disabled: {body}"
+        );
+        // And the form is still there to submit.
+        assert!(body.contains(r#"action="/mqtt/enable""#), "{body}");
+    }
+}
+
+#[tokio::test]
+async fn the_mqtt_pane_shows_the_published_listener_read_only() {
+    let (router, fake) = test_app(mqtt_tree(true));
+    fake.set_state_entry("mqtt", mqtt_state(true, "127.0.0.1", 1883, true));
+    let cookie = login(&router, "hunter2secret").await;
+    let body = body_string(get(&router, "/mqtt", Some(&cookie)).await).await;
+
+    assert!(body.contains("Listen address: <b>127.0.0.1</b>"), "{body}");
+    assert!(body.contains("Listen port: <b>1883</b>"), "{body}");
+    assert!(body.contains("Authentication: <b>enabled</b>"), "{body}");
+    // Read-only: the only writable control on the pane is the switch.
+    assert_eq!(
+        body.matches("<form").count(),
+        2,
+        "the pane must carry the switch form and the nav logout form and nothing else -- \
+         the listener is displayed, not edited: {body}"
+    );
+}
+
+#[tokio::test]
+async fn enabling_mqtt_writes_the_master_switch_and_nothing_else() {
+    let (router, fake) = test_app(mqtt_tree(false));
+    let cookie = login(&router, "hunter2secret").await;
+
+    let response = post_form(&router, "/mqtt/enable", "enabled=on", Some(&cookie)).await;
+    assert_eq!(response.status(), StatusCode::SEE_OTHER);
+    assert_eq!(location(&response), "/mqtt?saved=1");
+    // D1: the switch is a master switch and nothing else. A handler that also
+    // wrote `mqtt.listen` or `mqtt.auth` -- to "make it safe" -- would be the
+    // coupling D2 forbids, arriving through the save path instead of a gate.
+    assert_eq!(fake.set_paths(), vec!["mqtt.enabled"]);
+    assert_eq!(
+        fake.get_settings("mqtt.enabled").await.unwrap(),
+        json!(true)
+    );
+}
+
+#[tokio::test]
+async fn an_unticked_mqtt_box_disables_rather_than_doing_nothing() {
+    // A checkbox absent from the form body is how HTML says "off". Reading it
+    // as "no change" would make MQTT impossible to turn back off through the
+    // pane, and the failure is silent: the page redirects and says "Settings
+    // saved."
+    let (router, fake) = test_app(mqtt_tree(true));
+    let cookie = login(&router, "hunter2secret").await;
+
+    post_form(&router, "/mqtt/enable", "", Some(&cookie)).await;
+    assert_eq!(fake.set_paths(), vec!["mqtt.enabled"]);
+    assert_eq!(
+        fake.get_settings("mqtt.enabled").await.unwrap(),
+        json!(false),
+        "an unticked checkbox must write false, not leave the setting alone"
+    );
+}
+
+#[tokio::test]
+async fn an_open_mqtt_listener_is_warned_about_and_still_saves() {
+    // The guard on D2. A broker bound off-host with authentication off is
+    // worth saying out loud and is NOT worth refusing: an operator who widened
+    // the bind made a decision, and a pane that answered it by declining to
+    // save would be a pane whose reason for not saving cannot be read
+    // anywhere. Both halves are asserted here, in one test, because it is the
+    // combination that is the requirement -- a warning alone would pass a
+    // check for the text while the save path had quietly grown a gate.
+    let (router, fake) = test_app(mqtt_tree(true));
+    fake.set_state_entry("mqtt", mqtt_state(true, "0.0.0.0", 1883, false));
+    let cookie = login(&router, "hunter2secret").await;
+
+    let body = body_string(get(&router, "/mqtt", Some(&cookie)).await).await;
+    assert!(
+        body.contains("accepts unauthenticated connections from the network"),
+        "an off-host bind with auth off must be stated as what it lets a stranger do: {body}"
+    );
+
+    // ...and the form still submits, in exactly that state.
+    let response = post_form(&router, "/mqtt/enable", "enabled=on", Some(&cookie)).await;
+    assert_eq!(
+        response.status(),
+        StatusCode::SEE_OTHER,
+        "the switch must save while the listener is open: {body}"
+    );
+    assert_eq!(location(&response), "/mqtt?saved=1");
+    assert_eq!(fake.set_paths(), vec!["mqtt.enabled"]);
+    assert_eq!(
+        fake.get_settings("mqtt.enabled").await.unwrap(),
+        json!(true),
+        "an open listener must not turn the save into a no-op"
+    );
+}
+
+#[tokio::test]
+async fn the_mqtt_open_listener_warning_tracks_the_configuration_not_the_page() {
+    // Three configurations that must NOT warn, so the warning means something
+    // when it does appear. A pane that warned on everything would train an
+    // operator to ignore it.
+    let quiet = [
+        // Loopback with auth off: the default, and unreachable from off-host.
+        (true, "127.0.0.1", false),
+        // Loopback v6, same reasoning -- the broker treats both as loopback.
+        (true, "::1", false),
+        // Off-host WITH auth: a deliberate, defended configuration.
+        (true, "0.0.0.0", true),
+    ];
+    for (enabled, address, auth_enabled) in quiet {
+        let (router, fake) = test_app(mqtt_tree(enabled));
+        fake.set_state_entry("mqtt", mqtt_state(enabled, address, 1883, auth_enabled));
+        let cookie = login(&router, "hunter2secret").await;
+        let body = body_string(get(&router, "/mqtt", Some(&cookie)).await).await;
+        assert!(
+            !body.contains("accepts unauthenticated connections"),
+            "{address} with auth={auth_enabled} must not warn: {body}"
+        );
+    }
+
+    // And with the switch off there is no listener to warn about: the broker
+    // is not running, so an open bind in the last published state describes
+    // something that has already stopped.
+    let (router, fake) = test_app(mqtt_tree(false));
+    fake.set_state_entry("mqtt", mqtt_state(false, "0.0.0.0", 1883, false));
+    let cookie = login(&router, "hunter2secret").await;
+    let body = body_string(get(&router, "/mqtt", Some(&cookie)).await).await;
+    assert!(
+        !body.contains("accepts unauthenticated connections"),
+        "a stopped broker must not be reported as accepting connections: {body}"
     );
 }
 
