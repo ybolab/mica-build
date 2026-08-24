@@ -109,8 +109,44 @@ have systemctl || {
 log "booted slot bootname: $BOOTED"
 
 # --- probe a: systemd ------------------------------------------------------
+#
+# THIS GATE CANNOT WAIT FOR `is-system-running` TO SAY `running`, and the first
+# version of this probe did exactly that.
+#
+# mos-health.service is `WantedBy=multi-user.target`, so it is a job in the
+# INITIAL TRANSACTION. `is-system-running` reports `starting` until every job
+# in that transaction is done -- including this one. The probe was therefore
+# waiting for a state that requires its own completion: it burned the full
+# settle window on every boot and then failed. Measured on two x64 boots:
+# "Startup finished" landed 31 ms and 35 ms AFTER this unit exited, which is
+# the signature of being the last job.
+#
+# `os/health/test.sh` never caught it because it stubs the answer
+# (`is-system-running) echo "${FAKE_SYS_STATE:-running}"`), so the probe was
+# handed the state it wanted and the suite stayed green for as long as nobody
+# booted the thing.
+#
+# WHAT THE GATE ACTUALLY WANTS TO KNOW is "did anything fail", and that is
+# answered directly by enumerating failed units -- which the `degraded` branch
+# below already did. `is-system-running` was only ever a rollup of it.
+#
+# So `starting` is resolved rather than trusted: if the only job still RUNNING
+# is this gate, nothing else is going to change and the boot is finished as far
+# as every other unit is concerned. If some other job is still running, that is
+# a real "still starting" and it is named.
 SETTLE=$(conf_get settle-sec)
 : "${SETTLE:=60}"
+SELF_UNIT=mos-health.service
+
+# Units of jobs still in state `running`, excluding this gate's own. A job in
+# state `waiting` is blocked on ordering -- mos-status-led.service waits on
+# this unit by design -- so waiting jobs are not evidence of anything.
+other_running_jobs() {
+    run systemctl list-jobs --no-legend --plain 2>/dev/null |
+        awk -v self="$SELF_UNIT" '$4 == "running" && $2 != self {print $2}' |
+        tr '\n' ' '
+}
+
 waited=0
 while :; do
     sysstate=$(run systemctl is-system-running 2>/dev/null)
@@ -118,16 +154,19 @@ while :; do
     initializing | starting) ;;
     *) break ;;
     esac
+    # Nothing but this gate is running: waiting longer cannot change the
+    # answer, because the answer is waiting on us. Without this the settle
+    # window is spent in full on EVERY boot.
+    others=$(other_running_jobs)
+    [ -z "$others" ] && break
     [ "$waited" -ge "$SETTLE" ] && break
     sleep 1
     waited=$((waited + 1))
 done
 log "systemd is-system-running = ${sysstate:-unknown} (settled after ${waited}s)"
-case "$sysstate" in
-running)
-    log "probe systemd: OK"
-    ;;
-degraded)
+
+# The substantive check, shared by every state that reaches it.
+check_failed_units() {
     failed=$(run systemctl list-units --state=failed --no-legend --plain --full 2>/dev/null |
         awk '{print $1}')
     for unit in $failed; do
@@ -138,7 +177,22 @@ degraded)
         [ "$tolerated" = 1 ] || fail "failed unit outside the allowlist: $unit"
         log "tolerated failed unit: $unit"
     done
+}
+
+case "$sysstate" in
+running)
+    log "probe systemd: OK"
+    ;;
+degraded)
+    check_failed_units
     log "probe systemd: OK (degraded, every failed unit allowlisted)"
+    ;;
+initializing | starting)
+    others=$(other_running_jobs)
+    [ -z "$others" ] ||
+        fail "systemd is still ${sysstate} after ${waited}s with jobs running that are not this gate: ${others}"
+    check_failed_units
+    log "probe systemd: OK (${sysstate}, but this gate is the only job left running; every failed unit allowlisted)"
     ;;
 *)
     fail "systemd is-system-running = ${sysstate:-unknown}"

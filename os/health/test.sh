@@ -89,6 +89,7 @@ exit 0'
     fake systemctl '
 case "$1" in
   is-system-running) echo "${FAKE_SYS_STATE:-running}" ;;
+  list-jobs) printf "%s" "${FAKE_JOBS:-}" ;;
   list-units) printf "%s" "${FAKE_FAILED_UNITS:-}" ;;
   list-unit-files) case "${FAKE_UNITS:-mosd.service apid.service}" in *"$3"*) echo "$3 enabled" ;; esac ;;
 esac
@@ -205,6 +206,50 @@ healthy_fakes
 out=$(run_health FAKE_SYS_STATE=maintenance 2>&1) && rc=0 || rc=$?
 check "maintenance -> exit 1" "1" "$rc"
 check "maintenance -> no mark-good" "no" "$(marked_good)"
+
+# --- health gate: `starting`, which is the state this gate ALWAYS sees ------
+#
+# mos-health.service is WantedBy=multi-user.target, so it is a job in the
+# initial transaction and `is-system-running` cannot report anything but
+# `starting` while it runs. Until these cases existed the suite only ever
+# handed the probe `running` (the stub's default), so the one state the gate
+# actually meets on a device was the one state never tested -- and the gate
+# failed every real boot while the suite stayed green.
+#
+# `list-jobs` columns are JOB UNIT TYPE STATE. A job in state `waiting` is
+# blocked on ordering (mos-status-led.service waits on this gate by design);
+# only a job still `running` means something else is genuinely in flight.
+
+new_case starting-self-only
+healthy_fakes
+# This gate is the only job running, and mos-status-led is waiting on it.
+out=$(run_health FAKE_SYS_STATE=starting FAKE_JOBS='1 mos-health.service start running
+2 mos-status-led.service start waiting
+' 2>&1) && rc=0 || rc=$?
+check "starting with only this gate running -> exit 0" "0" "$rc"
+check "starting with only this gate running -> mark-good" "yes" "$(marked_good)"
+
+new_case starting-other-job-running
+healthy_fakes
+out=$(run_health FAKE_SYS_STATE=starting FAKE_JOBS='1 mos-health.service start running
+2 something-slow.service start running
+' 2>&1) && rc=0 || rc=$?
+check "starting with another job running -> exit 1" "1" "$rc"
+check "starting with another job running -> no mark-good" "no" "$(marked_good)"
+check "starting with another job running -> names the job" "yes" \
+    "$(grep -q 'something-slow.service' <<<"$out" && echo yes || echo no)"
+
+new_case starting-self-only-unlisted-failure
+healthy_fakes
+# Settled by the self-only rule, but a unit has failed: the gate must still
+# refuse. Otherwise the `starting` path would be a way past the allowlist.
+out=$(run_health FAKE_SYS_STATE=starting FAKE_JOBS='1 mos-health.service start running
+' FAKE_FAILED_UNITS='broken.service loaded failed failed X
+' 2>&1) && rc=0 || rc=$?
+check "starting + unlisted failed unit -> exit 1" "1" "$rc"
+check "starting + unlisted failed unit -> no mark-good" "no" "$(marked_good)"
+check "starting + unlisted failed unit -> named" "yes" \
+    "$(grep -q 'broken.service' <<<"$out" && echo yes || echo no)"
 
 # --- health gate: mosd and apid --------------------------------------------
 new_case mosd-down
