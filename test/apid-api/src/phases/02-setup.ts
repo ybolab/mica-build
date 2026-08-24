@@ -244,14 +244,27 @@ const phase: Phase = {
     );
 
     // -- 8. the redirect leads somewhere real --------------------------------
-    const landed = await client.follow(accepted);
-    report.expectStatus(landed, 200, "following the setup redirect to / answers 200 with the new session");
-    report.expectHeaderMatches(landed, "content-type", /^text\/html/i, "the page at / is served as HTML");
-    report.check(
-      landed.body.trim() !== "",
-      "the page at / has a body, so the session really is being honoured",
-      [`expected: a non-empty body`, `actual:   ${landed.body.length} bytes`].join("\n"),
-    );
+    //
+    // GUARDED for the same reason as 03-login step 7: `follow` throws on a
+    // response with no Location, and a phase that throws stops reporting. The
+    // live run of 2026-08-24 lost the whole tail of 03-login to exactly that,
+    // so the shape is fixed here too rather than waiting for a run to find it.
+    if (accepted.headers.get("location") === undefined) {
+      report.skip(
+        "following the setup redirect to / answers 200 with the new session",
+        `the setup response was ${accepted.status} and carried no Location header, so there is ` +
+          `no redirect to follow. The failure is the one reported above.`,
+      );
+    } else {
+      const landed = await client.follow(accepted);
+      report.expectStatus(landed, 200, "following the setup redirect to / answers 200 with the new session");
+      report.expectHeaderMatches(landed, "content-type", /^text\/html/i, "the page at / is served as HTML");
+      report.check(
+        landed.body.trim() !== "",
+        "the page at / has a body, so the session really is being honoured",
+        [`expected: a non-empty body`, `actual:   ${landed.body.length} bytes`].join("\n"),
+      );
+    }
 
     // -- 9. the device left setup mode -- the device-effect assertion --------
     //

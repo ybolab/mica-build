@@ -100,11 +100,15 @@ PROGRESS_INTERVAL="${MOS_APID_PROGRESS_INTERVAL:-15}"
 RUN_SECONDS="${MOS_QEMU_RUN_SECONDS:-2400}"
 QEMU_TIMEOUT="${MOS_QEMU_TIMEOUT:-2700}"
 
-# The second boot is gated OFF by default. It runs the post-reboot phases, and
-# those phase modules are owned by another subtask and do not exist yet; a
-# harness whose own verification depended on them could not be verified at all.
-# Turn it on with MOS_APID_BOOT2=1 once 07b-postreboot and 08-poweroff land.
-BOOT2="${MOS_APID_BOOT2:-0}"
+# The second boot is ON by default. It was gated off while 07b-postreboot and
+# 08-poweroff did not exist -- a harness whose own verification depended on
+# modules that were not there could not be verified at all -- and both landed,
+# so the default now matches what the suite can actually do. Off by default
+# would mean the reboot phase takes the guest down and NOTHING observes it come
+# back: 07 ends with the machine deliberately gone, so a run that stops there
+# leaves the most expensive evidence in the campaign uncollected.
+# MOS_APID_BOOT2=0 turns it off for a boot-1-only run.
+BOOT2="${MOS_APID_BOOT2:-1}"
 BOOT2_PHASES="${MOS_APID_BOOT2_PHASES:-07b-postreboot,08-poweroff}"
 
 PHASES="${MOS_APID_PHASES:-}"
@@ -315,11 +319,17 @@ if [ "${DRY_RUN}" -eq 1 ]; then
     note "               https://<guest>:${HTTPS_PORT}/healthz to answer 200 from inside ${BUN_IMAGE}"
     note "would run      docker run --network ${NET} -v ${REPO_ROOT}:/w -v ${OUT_REAL}:/w/_out -w /w/test/apid-api ${BUN_IMAGE} bun run src/main.ts"
     note "               APID_HOST=<guest> APID_HTTPS_PORT=${HTTPS_PORT} APID_HTTP_PORT=${HTTP_PORT}"
+    if [ -n "${APID_NEGATIVE:-}" ]; then
+        note "               APID_NEGATIVE=${APID_NEGATIVE} -- this run is EXPECTED TO BE RED"
+    fi
+    if [ -n "${APID_HANDOFF:-}" ]; then
+        note "               APID_HANDOFF=${APID_HANDOFF}"
+    fi
     note "               APID_CONSOLE=${ART_IN_CONTAINER}/console-boot1.log APID_PHASES=${PHASES:-<all>}"
     if [ "${BOOT2}" = "1" ]; then
         note "would then    boot a second time on the same disk for ${BOOT2_PHASES}"
     else
-        note "second boot is OFF (MOS_APID_BOOT2=1 turns it on once the post-reboot phases exist)"
+        note "second boot is OFF (MOS_APID_BOOT2=0 was set; the default is on)"
     fi
     finish
 fi
@@ -467,16 +477,38 @@ console_tail_line() {
     tail -n 1 "$1" 2>/dev/null | tr -d '\r' | tr -dc '[:print:]' | cut -c1-100
 }
 
+# The console log is APPENDED TO across a reboot: the second boot of a guest
+# that reset in place writes into the SAME file, under the first boot's
+# APID_LISTENING line. A whole-file grep therefore answers "apid is listening"
+# using a line the PREVIOUS boot wrote -- measured 2026-08-24, where it declared
+# the guest ready 0s after a reboot that had just taken it down, and then spent
+# its whole deadline waiting for a /healthz that could not come.
+#
+# So every wait is anchored: `from` is the console's size at the moment the wait
+# began, and only bytes after it are searched. Boot 1's file is truncated by
+# launch_boot, so its anchor is 0 and nothing changes for it.
+console_size() {
+    stat -c %s "$1" 2>/dev/null || echo 0
+}
+
+console_since() {
+    local file="$1" from="$2"
+    tail -c "+$((from + 1))" "${file}" 2>/dev/null
+}
+
 wait_for_apid() {
-    local label="$1" console="$2" ip="$3" start elapsed last_report console_seen
+    local label="$1" console="$2" ip="$3" from="${4:-0}" start elapsed last_report console_seen hit
     start="${SECONDS}"
     last_report=0
     console_seen=0
     while :; do
         elapsed=$((SECONDS - start))
-        if [ "${console_seen}" -eq 0 ] && grep -q 'APID_LISTENING' "${console}" 2>/dev/null; then
-            console_seen=1
-            pass "[${label}] APID_LISTENING on the console after ${elapsed}s: $(grep -m1 'APID_LISTENING' "${console}" | tr -d '\r' | tr -dc '[:print:]' | cut -c1-120)"
+        if [ "${console_seen}" -eq 0 ]; then
+            hit="$(console_since "${console}" "${from}" | grep -m1 'APID_LISTENING' || true)"
+            if [ -n "${hit}" ]; then
+                console_seen=1
+                pass "[${label}] APID_LISTENING on the console after ${elapsed}s: $(printf '%s' "${hit}" | tr -d '\r' | tr -dc '[:print:]' | cut -c1-120)"
+            fi
         fi
         if [ "${console_seen}" -eq 1 ] && probe_healthz "${ip}"; then
             pass "[${label}] https://${ip}:${HTTPS_PORT}/healthz answered 200 from inside ${BUN_IMAGE} after ${elapsed}s: $(cut -c1-160 "${ART_DIR}/healthz.last")"
@@ -515,9 +547,30 @@ wait_for_apid() {
 # -- it is a sibling-container arrangement, so our /tmp is ours and the
 # daemon's is the daemon's. The container then sees an EMPTY directory and says
 # `Module not found`, which reads like a bug in the suite and is not.
+#
+# APID_NEGATIVE and APID_HANDOFF are FORWARDED when the caller set them, and
+# omitted entirely when it did not, so an unset knob keeps the suite's own
+# default rather than being overridden with an empty string.
+#
+# APID_NEGATIVE is the reason this matters: it is how a live run is made to go
+# RED on demand, which is the other half of proving the suite works -- the
+# selftest proves the machinery can fail offline, and this proves it can fail
+# against the actual guest. Without the forward, `APID_NEGATIVE=... make
+# os-apid-api-test` would run green and look like the inversion had been
+# applied, which is precisely the false negative the knob exists to rule out.
 SUITE_RC=0
+suite_passthrough() {
+    local -n out="$1"
+    out=()
+    [ -n "${APID_NEGATIVE:-}" ] && out+=(-e "APID_NEGATIVE=${APID_NEGATIVE}")
+    [ -n "${APID_HANDOFF:-}" ] && out+=(-e "APID_HANDOFF=${APID_HANDOFF}")
+    return 0
+}
+
 run_suite() {
     local label="$1" ip="$2" console_name="$3" phases="$4" log rc p f
+    local -a passthrough
+    suite_passthrough passthrough
     log="${ART_DIR}/suite-${label}.log"
     if [ ! -f "${SCRIPT_DIR}/src/main.ts" ]; then
         fail "[${label}] the suite entry point test/apid-api/src/main.ts does not exist, so nothing was asserted about apid"
@@ -534,6 +587,7 @@ run_suite() {
         -e APID_CONSOLE="${ART_IN_CONTAINER}/${console_name}" \
         -e APID_RESULT_JSON="${ART_IN_CONTAINER}/result-${label}.json" \
         -e APID_PHASES="${phases}" \
+        ${passthrough[@]+"${passthrough[@]}"} \
         "${BUN_IMAGE}" bun run src/main.ts 2>&1 | tee "${log}"
     rc="${PIPESTATUS[0]}"
     set -e
@@ -576,10 +630,75 @@ run_suite boot1 "${GUEST_IP}" "console-boot1.log" "${PHASES}"
 # `-no-reboot`, the guest resets in place, the container is still there, and
 # the right move is to wait for apid to come back on the SAME container rather
 # than to start a second one against a disk something is already booting.
+#
+# WHICH SHAPE HAPPENED IS NOT DECIDABLE IMMEDIATELY. Phase 07 returns as soon as
+# the HTTPS port stops answering, which is well before QEMU has finished tearing
+# itself down: measured 2026-08-24, `docker inspect` still reported the
+# container RUNNING at that instant, this branch concluded "the guest reset in
+# place", and the run then waited out its whole deadline for apid on a container
+# that had exited seconds later. A single observation of a state that is
+# actively changing is not an observation of which shape this is.
+#
+# So the container is given a bounded grace period to exit. Still running at the
+# end of it IS the reset-in-place shape; exiting during it is the -no-reboot
+# shape. The grace is generous relative to how long a QEMU teardown takes and
+# short relative to a boot, so it costs nothing in the ordinary case.
+QEMU_EXIT_GRACE="${MOS_APID_QEMU_EXIT_GRACE:-90}"
+
+qemu_still_running_after_grace() {
+    local waited=0
+    while [ "${waited}" -lt "${QEMU_EXIT_GRACE}" ]; do
+        if [ "$(docker inspect "${GUEST_CID}" --format '{{.State.Running}}' 2>/dev/null)" != "true" ]; then
+            note "the QEMU container exited ${waited}s after the reboot phase"
+            return 1
+        fi
+        sleep "${POLL_INTERVAL}"
+        waited=$((waited + POLL_INTERVAL))
+    done
+    return 0
+}
+
+#
+# AND FIRST: DID PHASE 07 ACTUALLY POST A REBOOT? A second boot only means
+# something if the first one ended in one. 07 writes its handoff immediately
+# after the confirmed POST, so that file existing AND being newer than this run
+# is the signal -- and its absence is exactly what a run where 07 was SKIPPED
+# looks like, which happens whenever an earlier phase fails.
+#
+# Without this check such a run waits out the full readiness deadline on a
+# guest that never rebooted: the console has no NEW apid line to find, because
+# apid never restarted. Measured on this campaign's first full run, where a
+# genuine daemon defect in 05 skipped 06 and 07 and the harness went on to
+# treat the still-running first boot as a second one -- and every post-reboot
+# assertion then ran against a machine that had not rebooted.
+HANDOFF_FILE="${ART_DIR}/handoff-07-reboot.json"
+
+reboot_was_posted() {
+    [ -f "${HANDOFF_FILE}" ] || return 1
+    # Newer than the disk we prepared for THIS run, so a handoff left behind by
+    # an earlier run cannot vouch for this one.
+    [ "${HANDOFF_FILE}" -nt "${RUN_DIR}/disk.img" ] || return 1
+    return 0
+}
+
+if [ "${BOOT2}" = "1" ] && ! reboot_was_posted; then
+    note "no reboot was posted in the first boot: ${HANDOFF_FILE##*/} is $([ -f "${HANDOFF_FILE}" ] && echo "older than this run's disk" || echo "absent")."
+    note "  07-reboot writes it right after the confirmed POST /power/reboot, so this means 07"
+    note "  did not run -- an earlier phase failed and the runner skipped it. There is no second"
+    note "  boot to make, and the post-reboot phases are NOT attempted: running them against the"
+    note "  first boot would assert that a machine which never restarted had restarted."
+    BOOT2=0
+fi
+
 if [ "${BOOT2}" = "1" ]; then
-    if [ "$(docker inspect "${GUEST_CID}" --format '{{.State.Running}}' 2>/dev/null)" = "true" ]; then
-        pass "the QEMU container is still running after the reboot phase: the guest reset in place, so no second boot is needed"
-        wait_for_apid boot1-again "${CONSOLE1}" "${GUEST_IP}" || finish
+    # Anchored here, BEFORE anything waits: the second boot appends to the same
+    # console file when the guest resets in place, and boot 1's APID_LISTENING
+    # line is already in it.
+    CONSOLE1_AFTER_REBOOT="$(console_size "${CONSOLE1}")"
+    note "waiting up to ${QEMU_EXIT_GRACE}s to see whether QEMU exits (-no-reboot) or the guest resets in place"
+    if qemu_still_running_after_grace; then
+        pass "the QEMU container is still running ${QEMU_EXIT_GRACE}s after the reboot phase: the guest reset in place, so no second boot is needed"
+        wait_for_apid boot1-again "${CONSOLE1}" "${GUEST_IP}" "${CONSOLE1_AFTER_REBOOT}" || finish
         run_suite boot2 "${GUEST_IP}" "console-boot1.log" "${BOOT2_PHASES}"
     else
         pass "the QEMU container exited after the reboot phase: under -no-reboot that exit IS the guest asking for a reset"
@@ -599,8 +718,27 @@ fi
 # merger that reached inside it would have to be changed in step with it -- and
 # would silently produce zeros on the day it was not.
 MERGED="${ART_DIR}/result.json"
+# The IMAGE IDENTITY goes in the envelope, because a result file that does not
+# say which artefact it covered is a result file that cannot be trusted a week
+# later. `x64-mos-v2-latest.img` is a symlink and its target changes under it
+# every time somebody builds; the resolved name and the mtime are what pin a run
+# to a surface. This is also what makes the /mqtt skew guard in 04-readonly
+# legible: when that check goes red, this block says whether the image moved.
+IMG_RESOLVED="$(readlink -f "${IMG}" 2>/dev/null || echo "${IMG}")"
+IMG_MTIME_EPOCH="$(stat -c %Y "${IMG_RESOLVED}" 2>/dev/null || echo 0)"
+IMG_MTIME_ISO="$(date -u -d "@${IMG_MTIME_EPOCH}" +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || echo unknown)"
+IMG_BYTES="$(stat -c %s "${IMG_RESOLVED}" 2>/dev/null || echo 0)"
 {
-    printf '{\n  "boots": [\n'
+    printf '{\n'
+    printf '  "image": {\n'
+    printf '    "latest": "%s",\n' "${IMG##*/}"
+    printf '    "resolved": "%s",\n' "${IMG_RESOLVED##*/}"
+    printf '    "resolvedPath": "%s",\n' "${IMG_RESOLVED}"
+    printf '    "mtime": "%s",\n' "${IMG_MTIME_ISO}"
+    printf '    "mtimeEpoch": %s,\n' "${IMG_MTIME_EPOCH}"
+    printf '    "bytes": %s\n' "${IMG_BYTES}"
+    printf '  },\n'
+    printf '  "boots": [\n'
     sep=""
     for label in boot1 boot2; do
         rf="${ART_DIR}/result-${label}.json"
@@ -615,6 +753,7 @@ MERGED="${ART_DIR}/result.json"
         "${CHECKS_PASSED}" "${CHECKS_FAILED}" "$((CHECKS_PASSED + CHECKS_FAILED))"
 } >"${MERGED}"
 note "merged result written to ${MERGED}"
+note "image under test: ${IMG_RESOLVED##*/} (mtime ${IMG_MTIME_ISO})"
 note "console logs kept: ${CONSOLE1}$([ -s "${CONSOLE2}" ] && printf ' %s' "${CONSOLE2}")"
 
 if [ "${SUITE_RC}" -ne 0 ] && [ "${CHECKS_FAILED}" -eq 0 ]; then

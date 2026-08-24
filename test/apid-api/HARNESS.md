@@ -64,13 +64,35 @@ around it:
                             Phases 07b-postreboot .. 08-poweroff.
 
 Which of the two shapes happened is decided **by looking** — is the QEMU
-container still running — never by assuming. If a future `os/qemu-run.sh` drops
+container still running — never by assuming. But it is looked at over a
+**grace period**, not once: phase 07 returns as soon as the HTTPS port goes
+quiet, which is before QEMU has finished tearing itself down. Measured
+2026-08-24, a single `docker inspect` at that instant still said *running*, the
+harness concluded "reset in place", and then waited out its whole deadline for
+apid on a container that had exited seconds later. Still running after
+`MOS_APID_QEMU_EXIT_GRACE` seconds is the reset-in-place shape; exiting during
+it is the `-no-reboot` shape.
+
+The second boot is also **conditional on a reboot having been posted at all**.
+Phase 07 writes its handoff immediately after the confirmed `POST
+/power/reboot`, so that file being present and newer than this run's `disk.img`
+is the signal. When an earlier phase fails, the runner skips 07, nothing
+reboots — and without this check the harness would wait out its full readiness
+deadline on a guest that never restarted, then run every post-reboot assertion
+against the first boot. Measured on this campaign's first full run.
+
+The readiness wait is **anchored to a console offset** for the same reason. A
+guest that resets in place appends to the *same* capture file, under the first
+boot's `APID_LISTENING` line, so a whole-file grep answers "apid is listening"
+with a line the previous boot wrote. If a future `os/qemu-run.sh` drops
 `-no-reboot`, the guest resets in place, the container is still there, and the
 harness waits for apid to come back on that same container instead of starting a
 second one against a disk something is already booting.
 
-The second boot is **off by default** (`MOS_APID_BOOT2=1`) until the
-`07b-postreboot` and `08-poweroff` phase modules exist.
+The second boot is **on by default**. It was off while `07b-postreboot` and
+`08-poweroff` did not exist; both now do. `MOS_APID_BOOT2=0` turns it off for a
+boot-1-only run — but note what that costs: phase 07 ends with the guest
+deliberately down, so a run that stops there never observes it come back.
 
 ## The console is the only journal
 
@@ -105,12 +127,21 @@ timeout it prints the last 40 console lines *before* tearing anything down.
 | variable | default | what it is |
 | --- | --- | --- |
 | `MOS_APID_PHASES` | all | passed through as `APID_PHASES` |
-| `MOS_APID_BOOT2` | `0` | run the second boot and the post-reboot phases |
+| `MOS_APID_BOOT2` | `1` | run the second boot and the post-reboot phases |
 | `MOS_APID_READY_TIMEOUT` | `900` | deadline for apid to answer |
 | `MOS_APID_CONTAINER_TIMEOUT` | `240` | deadline to find the QEMU container |
+| `MOS_APID_QEMU_EXIT_GRACE` | `90` | how long to let QEMU exit before calling it a reset-in-place |
 | `MOS_APID_KEEP_DISK` | `0` | keep the 4 GiB `disk.img` after the run |
 | `MOS_QEMU_HTTPS_PORT` / `MOS_QEMU_HTTP_PORT` | `18443` / `18080` | forwarded ports |
 | `MOS_QEMU_RUN_SECONDS` / `MOS_QEMU_TIMEOUT` | `2400` / `2700` | QEMU-side backstops |
+| `APID_NEGATIVE` | — | forwarded to the suite: invert the first matching check, to prove a live run can go RED |
+| `APID_HANDOFF` | `<result dir>/handoff-07-reboot.json` | forwarded to the suite: where 07 leaves what 07b reads |
+
+`APID_NEGATIVE` and `APID_HANDOFF` are passed through only when set, so an unset
+knob keeps the suite's own default instead of being overridden with an empty
+string. `APID_NEGATIVE` names a substring of `"<phase-id>: <check text>"`; the
+first check it matches has its verdict inverted, and a value matching *nothing*
+fails the run rather than passing quietly — so a typo cannot read as evidence.
 
 ## Artefacts
 
@@ -124,6 +155,22 @@ Reporting follows `os/verify-image-v2.sh`: one `PASS:`/`FAIL:` line per
 assertion and a final `RESULT: PASS|FAIL (n/m checks)` with counted totals.
 **Zero checks is a failure** — a run that asserted nothing must not read as
 success.
+
+### The 07 → 07b handoff
+
+The two boots are two separate `bun` processes, so nothing survives between them
+in memory. Phase 07 writes what 07b needs — the hostname it expects to read back,
+the login-backoff state it left behind — as JSON, and 07b reads it. A missing
+handoff makes 07b **skip** with that reason rather than invent one.
+
+The default path is `dirname(APID_RESULT_JSON)/handoff-07-reboot.json`, i.e.
+`_out/x64/apid-api/handoff-07-reboot.json`. That directory is the right home for
+it because it outlives both boots and is bind-mounted at the *same* path in both
+`bun` invocations — a handoff written to a container-local path would vanish with
+the container that wrote it.
+
+`APID_HANDOFF` overrides that path. It is the knob to set when running the two
+boots by hand, or when running 07b against a handoff from an earlier run.
 
 ## Running it from a worktree
 

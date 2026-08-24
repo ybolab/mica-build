@@ -38,15 +38,47 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { Client, checkbox } from "../client.ts";
+import {
+  openConsole as openSharedConsole,
+  splitLines,
+  type ConsoleLog as SharedConsoleLog,
+  type Marker,
+} from "../console.ts";
 import type { Config } from "../config.ts";
 import type { Reporter } from "../report.ts";
 import type { Phase, PhaseContext } from "../runner.ts";
 import { BACKOFF_STATE_KEY, type BackoffState } from "./06-backoff.ts";
+import { HOSTNAME_TARGET_STATE_KEY } from "./05-mutate.ts";
 
 const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
 
 // ---------------------------------------------------------------------------
 // the console
+//
+// THIS IS AN ADAPTER, NOT A READER. The reader is `src/console.ts`.
+//
+// When this file was written that module had not landed on any branch, so the
+// three phases needing console evidence -- 07, 07b and 08 -- shared a ~150-line
+// reader defined here. Both now exist, and two readers of the same file is a
+// defect in waiting: they would drift, and the one with the weaker offset
+// discipline would be the one holding the most destructive assertions in the
+// suite.
+//
+// `src/console.ts` is the one that survives. It is stricter in the way that
+// matters here: a log that SHRINKS makes it refuse to attribute any line to any
+// window (`available` goes false, and the reporting helpers turn that into
+// SKIP), where this reader silently restarted from offset 0 -- which is exactly
+// how a line written during the BOOT comes to satisfy an assertion about a POST
+// made thirty seconds ago. It also carries labelled per-observation markers
+// rather than one mutable offset, strips OSC as well as CSI escapes, and drops
+// a half-written trailing line instead of matching on it.
+//
+// What survives from this reader is its INTERFACE, because 07b and 08 are
+// written against it and rewriting two phases to chase an API change would be
+// churn with no assertion behind it: `mark()`/`since()`/`all()`, a `waitFor`
+// taking SEVERAL patterns and printing progress while it waits (a 240s port
+// wait that says nothing for four minutes is indistinguishable from a hang),
+// and a `tail` handed back when the wait expires.
 // ---------------------------------------------------------------------------
 
 /**
@@ -60,23 +92,55 @@ const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout
  * machine is down there is nothing left to ask.
  */
 export class ConsoleLog {
-  #offset = 0;
+  readonly #shared: SharedConsoleLog;
+  #marker: Marker;
 
-  constructor(readonly path: string) {}
+  constructor(shared: SharedConsoleLog) {
+    this.#shared = shared;
+    // A handle is useless without a window, and a caller that forgets to mark
+    // must not silently get the whole boot: the opening mark is taken here.
+    this.#marker = shared.mark("this phase's first observation");
+  }
+
+  /** The path being watched. */
+  get path(): string {
+    return this.#shared.path ?? "(none)";
+  }
+
+  /**
+   * False once the log has become unreadable or has shrunk under a mark. A
+   * caller that gets false must SKIP -- never pass, and never fail: an
+   * unreadable console is an absence of evidence about the guest, not evidence
+   * about it.
+   */
+  get available(): boolean {
+    return this.#shared.available;
+  }
+
+  /** Why the console cannot be used, in a sentence fit for a SKIP line. */
+  get unavailableReason(): string | undefined {
+    return this.#shared.unavailableReason;
+  }
 
   /** Remember where the log currently ends. Everything asserted comes after. */
-  mark(): void {
-    this.#offset = sizeOf(this.path);
+  mark(label = "the action about to be taken"): void {
+    this.#marker = this.#shared.mark(label);
   }
 
   /** Everything written since the last `mark()`. */
   since(): string {
-    return readFrom(this.path, this.#offset);
+    return this.#shared.textSince(this.#marker);
   }
 
-  /** The whole capture. For a boot-2 log, where the boot itself is the subject. */
+  /**
+   * The whole capture, ignoring every mark.
+   *
+   * For boot 2, where the BOOT ITSELF is the subject and the evidence is
+   * therefore older than any mark this process could have taken. Nothing about
+   * an action performed by this suite may be asserted with it.
+   */
   all(): string {
-    return readFrom(this.path, 0);
+    return this.#shared.textSince(WHOLE_CAPTURE);
   }
 
   /**
@@ -105,10 +169,30 @@ export class ConsoleLog {
     let lines: string[] = [];
 
     for (;;) {
-      lines = linesOf(options.fromStart === true ? this.all() : this.since());
+      lines = splitLines(options.fromStart === true ? this.all() : this.since());
       const hit = findMatch(lines, patterns);
       if (hit !== undefined) {
-        return { ...hit, matched: true, elapsedMs: Date.now() - started, tail: "" };
+        return {
+          ...hit,
+          matched: true,
+          elapsedMs: Date.now() - started,
+          tail: "",
+          unavailableReason: undefined,
+        };
+      }
+      // Checked AFTER the match attempt and before the sleep: if the log went
+      // away mid-wait, "no line matched" is not a fact about the guest, and
+      // waiting out the remaining four minutes to say so would be waiting on a
+      // file nothing will read again.
+      if (!this.#shared.available) {
+        return {
+          matched: false,
+          pattern: undefined,
+          line: undefined,
+          elapsedMs: Date.now() - started,
+          tail: lines.slice(-40).join("\n"),
+          unavailableReason: this.#shared.unavailableReason,
+        };
       }
       const now = Date.now();
       if (now >= deadline) break;
@@ -129,9 +213,17 @@ export class ConsoleLog {
       line: undefined,
       elapsedMs: Date.now() - started,
       tail: lines.slice(-40).join("\n"),
+      unavailableReason: undefined,
     };
   }
 }
+
+/** Offset zero: the whole capture, for `all()`. */
+const WHOLE_CAPTURE: Marker = {
+  label: "the beginning of the capture",
+  offset: 0,
+  takenAt: 0,
+};
 
 export interface ConsoleMatch {
   readonly matched: boolean;
@@ -140,6 +232,12 @@ export interface ConsoleMatch {
   readonly elapsedMs: number;
   /** The last 40 console lines, populated only when the wait expired. */
   readonly tail: string;
+  /**
+   * Set only when the log became unreadable DURING the wait. It separates "the
+   * guest did not do it" from "we stopped being able to see", and the caller
+   * must turn the second into a SKIP.
+   */
+  readonly unavailableReason: string | undefined;
 }
 
 /** The first line matching any pattern, and which pattern found it. */
@@ -149,6 +247,9 @@ export function findMatch(
 ): { readonly pattern: string; readonly line: string } | undefined {
   for (const line of lines) {
     for (const pattern of patterns) {
+      // A /g pattern keeps `lastIndex` between calls, so `test` would silently
+      // skip every other line. Reset before each use.
+      pattern.lastIndex = 0;
       if (pattern.test(line)) return { pattern: String(pattern), line };
     }
   }
@@ -163,16 +264,9 @@ export function findMatch(
  * console-derived half of a check with a stated reason, never to pass it.
  */
 export function openConsole(config: Config): ConsoleLog | undefined {
-  const configured = config.consoleLog;
-  if (configured === undefined) return undefined;
-  try {
-    // Existence and readability, not content: QEMU appends to this file while
-    // the suite runs, so it may legitimately be empty at this instant.
-    fs.accessSync(configured, fs.constants.R_OK);
-  } catch {
-    return undefined;
-  }
-  return new ConsoleLog(configured);
+  const shared = openSharedConsole(config.consoleLog);
+  if (!shared.available) return undefined;
+  return new ConsoleLog(shared);
 }
 
 /** Why the console half of a check could not be made. Said out loud, always. */
@@ -182,47 +276,40 @@ export function noConsoleReason(config: Config): string {
     : `APID_CONSOLE names ${JSON.stringify(config.consoleLog)}, which this process cannot read`;
 }
 
-function sizeOf(file: string): number {
-  try {
-    return fs.statSync(file).size;
-  } catch {
-    return 0;
-  }
-}
-
-function readFrom(file: string, offset: number): string {
-  let fd: number | undefined;
-  try {
-    const size = fs.statSync(file).size;
-    // A shrunken file means it was rotated or replaced under us; start over
-    // rather than read from an offset that now means something else.
-    const from = size < offset ? 0 : offset;
-    if (size <= from) return "";
-    fd = fs.openSync(file, "r");
-    const buffer = Buffer.allocUnsafe(size - from);
-    const read = fs.readSync(fd, buffer, 0, size - from, from);
-    // latin1, not utf8: a serial console carries firmware bytes, ANSI escapes
-    // and half-written lines, and a utf8 decode would replace them with U+FFFD
-    // and could corrupt the very line an assertion is about.
-    return buffer.subarray(0, read).toString("latin1");
-  } catch {
-    return "";
-  } finally {
-    if (fd !== undefined) fs.closeSync(fd);
-  }
-}
-
-const ANSI = /\x1b\[[0-9;?]*[A-Za-z]/g;
-
-function linesOf(text: string): string[] {
-  return text
-    .split(/\r?\n/)
-    .map((line) => line.replace(ANSI, "").trimEnd())
-    .filter((line) => line !== "");
-}
-
 export function truncate(text: string, limit: number): string {
   return text.length <= limit ? text : `${text.slice(0, limit)}...`;
+}
+
+/**
+ * Is this redirect the AUTH GATE turning a caller away, rather than a handler
+ * accepting what it was asked to do?
+ *
+ * routes.rs's `gate` sends an unauthenticated caller to /login, or to /setup on
+ * a device with no admin password hash. Both are 303, and so is a successful
+ * power action -- so the status code alone cannot tell "the machine is going
+ * down" from "the machine never heard you".
+ */
+/**
+ * What apid answers a CONFIRMED power action with.
+ *
+ * MEASURED 2026-08-24 against the live guest, and it is not what this suite
+ * assumed. Every other form post in apid answers 303 See Other -- the
+ * post/redirect/get a browser wants -- so 07 and 08 expected 303 here too.
+ * `/power/reboot` and `/power/poweroff` answer **202 Accepted**, which is the
+ * honest code for the thing they actually do: the machine is going away, so
+ * there is no page to redirect to and no request that will ever be served from
+ * the other side. The reboot was confirmed on the console 1002ms later, so 202
+ * IS acceptance and the 303 expectation was simply wrong.
+ *
+ * An unconfirmed post answers 422, not a redirect.
+ */
+export const POWER_ACCEPTED_STATUS = 202;
+/** What an unconfirmed power action is refused with. Measured, same run. */
+export const POWER_UNCONFIRMED_STATUS = 422;
+
+export function isGateRedirect(location: string): boolean {
+  const target = location.split("?")[0] ?? location;
+  return target === "/login" || target === "/setup";
 }
 
 /**
@@ -300,8 +387,17 @@ export interface Handoff {
   readonly writtenAtMs: number;
   /** The `apid_session` VALUE held before the reboot, for 07b to replay. */
   readonly sessionCookieValue: string | undefined;
-  /** What 05 renamed the device to, and what 07b expects to find after boot 2. */
-  readonly hostnameTarget: string;
+  /**
+   * What 05 ACTUALLY renamed the device to, or undefined when 05 did not run.
+   *
+   * Read from `ctx.state`, which only 05 writes -- deliberately not from
+   * `config.hostnameTarget`. The configured value is what 05 would rename TO;
+   * it says nothing about whether the rename happened. Recording the config
+   * here made 07b assert that "the hostname 05 set survived the restart" on a
+   * phase-restricted run where 05 never ran, which is a claim about an event
+   * that did not occur. Undefined makes 07b SKIP instead, with that reason.
+   */
+  readonly hostnameTarget: string | undefined;
   /** What 06 left the login guard at. Undefined if 06 did not run. */
   readonly backoff: BackoffState | undefined;
   readonly rebootPostedAtMs: number;
@@ -528,7 +624,7 @@ const phase: Phase = {
     const consoleLog = openConsole(config);
 
     // -- 2. mark, so everything asserted below is AFTER this point ----------
-    if (consoleLog !== undefined) consoleLog.mark();
+    if (consoleLog !== undefined) consoleLog.mark("reading /power and posting the UNCONFIRMED reboots");
 
     // -- 3. read the confirm token off the page, as a browser would ---------
     const powerPage = await client.get("/power");
@@ -554,13 +650,13 @@ const phase: Phase = {
     const wrong = await client.post(REBOOT_ACTION, { confirm: checkbox(true, "not-the-confirm-token") });
     report.note(`    POST ${REBOOT_ACTION} with a wrong confirm answered ${wrong.status}`);
     report.check(
-      absent.status !== 303 || wrong.status !== 303,
+      absent.status !== POWER_ACCEPTED_STATUS && wrong.status !== POWER_ACCEPTED_STATUS,
       "an unconfirmed POST /power/reboot is not answered as an accepted power action",
       [
-        `expected: at least one of the two unconfirmed posts to be refused rather than accepted`,
+        `expected: NEITHER unconfirmed post to be answered ${POWER_ACCEPTED_STATUS} (measured: both are ${POWER_UNCONFIRMED_STATUS})`,
         `actual:   no-confirm answered ${absent.status}, wrong-confirm answered ${wrong.status}`,
-        `note:     303 is what the CONFIRMED post below is asserted to return, so two 303s`,
-        `          here would mean the confirm field decides nothing.`,
+        `note:     ${POWER_ACCEPTED_STATUS} is what the CONFIRMED post below is asserted to return, so either of`,
+        `          these answering it would mean the confirm field decides nothing.`,
       ].join("\n"),
     );
 
@@ -572,7 +668,19 @@ const phase: Phase = {
     );
     if (consoleLog !== undefined) {
       await sleep(UNCONFIRMED_GRACE_MS);
-      const suspicious = findMatch(linesOf(consoleLog.since()), SHUTDOWN_PATTERNS);
+      const window = splitLines(consoleLog.since());
+      const suspicious = findMatch(window, SHUTDOWN_PATTERNS);
+      // An ABSENCE assertion over a window we cannot read is vacuously true,
+      // and this one guards the claim that a rejected /power/reboot did not
+      // take the machine down. If the log went away, say so and SKIP; passing
+      // here on no bytes at all would be the most flattering lie in the phase.
+      if (!consoleLog.available) {
+        report.skip(
+          `no shutdown transaction appeared on the console in the ${UNCONFIRMED_GRACE_MS}ms after the unconfirmed posts`,
+          `${consoleLog.unavailableReason ?? "the console log became unreadable"} -- with no bytes to search, ` +
+            `"nothing resembling a shutdown appeared" would be true of a console nobody can read`,
+        );
+      } else {
       report.check(
         suspicious === undefined,
         `no shutdown transaction appeared on the console in the ${UNCONFIRMED_GRACE_MS}ms after the unconfirmed posts`,
@@ -583,6 +691,7 @@ const phase: Phase = {
           `          begun its shutdown transaction still answers for a moment.`,
         ].join("\n"),
       );
+      }
     } else {
       report.skip(
         "the console shows no shutdown after the unconfirmed posts",
@@ -591,15 +700,39 @@ const phase: Phase = {
     }
 
     // -- 5. the real one ----------------------------------------------------
-    if (consoleLog !== undefined) consoleLog.mark();
+    if (consoleLog !== undefined) consoleLog.mark("the CONFIRMED POST /power/reboot");
     const rebootPostedAtMs = Date.now();
     const posted = await client.post(REBOOT_ACTION, {
       confirm: checkbox(true, rebootToken ?? "the-token-was-not-found-on-the-page"),
     });
     report.expectStatus(
       posted,
-      303,
-      "POST /power/reboot carrying the page's own confirm token is accepted (303)",
+      POWER_ACCEPTED_STATUS,
+      `POST /power/reboot carrying the page's own confirm token is accepted (${POWER_ACCEPTED_STATUS})`,
+    );
+
+    // A 303 ALONE IS NOT ACCEPTANCE. Measured 2026-08-24 on the first live run:
+    // with no valid session in the jar, apid's auth gate answers EVERY route
+    // except /healthz with 303 to /login -- including this one. The status
+    // check above passed while nothing whatsoever had been asked of the
+    // machine, which made the most destructive assertion in the suite green on
+    // a run where the guest was never going to go down.
+    //
+    // The Location is what tells the two apart, so it is asserted rather than
+    // the status alone. The success target is not hardcoded here (that would
+    // couple this phase to a redirect apid is free to change); what is asserted
+    // is that it is NOT the gate's, which is the distinction that was missing.
+    const postedTo = posted.headers.get("location");
+    report.check(
+      postedTo === undefined || !isGateRedirect(postedTo),
+      "the accepted POST /power/reboot is an ACCEPTED ACTION and not the auth gate bouncing an unauthenticated caller",
+      [
+        `expected: not a redirect to the login or setup page`,
+        `actual:   ${posted.status} -> ${JSON.stringify(postedTo ?? "<no Location>")}`,
+        `note:     a 303 to /login means the session was not honoured and the machine was`,
+        `          never asked to reboot. Every assertion below would then be`,
+        `          measuring a device nobody told to do anything.`,
+      ].join("\n"),
     );
 
     // Write the handoff NOW, while there is still a filesystem to write it to
@@ -610,7 +743,11 @@ const phase: Phase = {
       writtenAtIso: new Date(rebootPostedAtMs).toISOString(),
       writtenAtMs: rebootPostedAtMs,
       sessionCookieValue: sessionCookie?.value,
-      hostnameTarget: config.hostnameTarget,
+      // From 05's own state, never from config: see the field's doc comment.
+      hostnameTarget: (() => {
+        const applied = ctx.state.get(HOSTNAME_TARGET_STATE_KEY);
+        return typeof applied === "string" ? applied : undefined;
+      })(),
       backoff,
       rebootPostedAtMs,
     };
@@ -647,6 +784,13 @@ const phase: Phase = {
         what: "systemd's shutdown transaction on the console",
         timeoutMs: SHUTDOWN_EVIDENCE_TIMEOUT_MS,
       });
+      if (evidence.unavailableReason !== undefined) {
+        report.skip(
+          "the CONSOLE shows the guest shutting down -- the machine acted, not merely the handler",
+          `${evidence.unavailableReason} -- the wait ended because the log stopped being readable, ` +
+            `which is not evidence that the guest failed to shut down`,
+        );
+      } else {
       report.check(
         evidence.matched,
         "the CONSOLE shows the guest shutting down -- the machine acted, not merely the handler",
@@ -658,6 +802,7 @@ const phase: Phase = {
           evidence.tail === "" ? "          <the console produced nothing at all>" : evidence.tail,
         ].join("\n"),
       );
+      }
       if (evidence.matched) {
         report.note(
           `    console evidence ${evidence.elapsedMs}ms after the post: ${truncate(evidence.line ?? "", 120)}`,

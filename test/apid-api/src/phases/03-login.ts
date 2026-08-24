@@ -135,6 +135,24 @@ const phase: Phase = {
     const wrong = await client.post("/login", {
       password: `${config.adminPassword}-wrong`,
     });
+    // MEASURED 2026-08-24 against the live x64 guest, and the reason the first
+    // real run of this suite was red: the window must be timed from HERE, when
+    // the 401 came back, and NOT from `attemptedAt` above.
+    //
+    // auth.rs arms the guard while it is handling the request, so the window
+    // opens at some instant BEFORE this response was written -- but the request
+    // itself is not instant. apid hashes the submitted password with argon2,
+    // deliberately slowly, and on a TCG guest that one POST took OVER A SECOND
+    // end to end. Timing the 1s window from before the request therefore had it
+    // already "expired" by the time the response arrived, the phase waited only
+    // its margin, and the correct password was refused 429 by a guard that was
+    // still armed.
+    //
+    // Timing from the response is safe in the direction that matters: the guard
+    // armed at or before this instant, so waiting BACKOFF_BASE from here always
+    // covers the real window rather than a fraction of it.
+    const failedAt = Date.now();
+    const wrongTookMs = failedAt - attemptedAt;
     report.expectStatus(wrong, 401, "POST /login with the wrong password is answered 401");
     report.check(
       wrong.setCookie.length === 0,
@@ -153,7 +171,7 @@ const phase: Phase = {
     // held until the window has demonstrably passed. Exactly one failure was
     // made above precisely to keep that window at one second; four would make
     // it eight, and the suite would be waiting on its own throttle.
-    const armedUntil = attemptedAt + BACKOFF_BASE_MS;
+    const armedUntil = failedAt + BACKOFF_BASE_MS;
     const waitMs = Math.max(0, armedUntil - Date.now()) + BACKOFF_MARGIN_MS;
     await sleep(waitMs);
 
@@ -170,7 +188,11 @@ const phase: Phase = {
               " counted that this phase did not make."
             : ""
         }`,
-        `waited:   ${waitMs}ms after the single failed attempt (BACKOFF_BASE=${BACKOFF_BASE_MS}ms)`,
+        `waited:   ${waitMs}ms after the 401 came back (BACKOFF_BASE=${BACKOFF_BASE_MS}ms,` +
+          ` margin ${BACKOFF_MARGIN_MS}ms)`,
+        `the 401:  the wrong-password POST itself took ${wrongTookMs}ms round trip -- apid hashes`,
+        `          with argon2, so this is normally the largest term here. If it is large AND`,
+        `          this check is red, the window is being timed from the wrong instant again.`,
       ].join("\n"),
     );
     report.expectHeader(good, "location", "/", "the accepted login redirects to /");
@@ -211,14 +233,31 @@ const phase: Phase = {
     );
 
     // -- 7. the redirect leads somewhere real --------------------------------
-    const landed = await client.follow(good);
-    report.expectStatus(landed, 200, "following the login redirect to / answers 200 with the new session");
-    report.expectHeaderMatches(landed, "content-type", /^text\/html/i, "the page at / is served as HTML");
-    report.check(
-      landed.body.trim() !== "",
-      "the page at / has a body, so the new session really is being honoured",
-      [`expected: a non-empty body`, `actual:   ${landed.body.length} bytes`].join("\n"),
-    );
+    //
+    // GUARDED, because `follow` throws on a response carrying no Location and a
+    // phase that throws stops reporting. Measured 2026-08-24: when the login
+    // above came back 429, this line raised RedirectWithoutLocationError, the
+    // runner caught it as "03-login threw instead of reporting", and the three
+    // checks below were never reached -- so a timing bug in step 5 cost the run
+    // its account of steps 7 onwards as well. One bad response should cost one
+    // red line, not the rest of the phase.
+    if (good.headers.get("location") === undefined) {
+      report.skip(
+        "following the login redirect to / answers 200 with the new session",
+        `the login response was ${good.status} and carried no Location header, so there is no ` +
+          `redirect to follow. The failure is the one reported above; this check cannot be ` +
+          `made until that one is green.`,
+      );
+    } else {
+      const landed = await client.follow(good);
+      report.expectStatus(landed, 200, "following the login redirect to / answers 200 with the new session");
+      report.expectHeaderMatches(landed, "content-type", /^text\/html/i, "the page at / is served as HTML");
+      report.check(
+        landed.body.trim() !== "",
+        "the page at / has a body, so the new session really is being honoured",
+        [`expected: a non-empty body`, `actual:   ${landed.body.length} bytes`].join("\n"),
+      );
+    }
 
     // -- 8. what this phase leaves behind ------------------------------------
     //

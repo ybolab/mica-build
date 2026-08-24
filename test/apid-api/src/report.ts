@@ -106,7 +106,19 @@ export class Reporter {
   }
 
   endPhase(): void {
+    const phase = this.#current;
     this.#current = undefined;
+    if (phase === undefined || phase.status === "fail") return;
+    // A phase that asserted NOTHING must not read as a pass. Measured
+    // 2026-08-24: 07b-postreboot ran, skipped all five of its checks because
+    // the handoff it needed was missing, and reported `PASS 07b-postreboot` in
+    // the result JSON -- the same "no failures means success" reading that
+    // `run.sh` already refuses at the whole-run level, reappearing one level
+    // down. `beginPhase` starts a phase optimistically at "pass" and only a
+    // FAIL moves it, so a phase with nothing but skips kept the optimism.
+    if (!phase.checks.some((check) => check.status === "pass")) {
+      phase.status = "skip";
+    }
   }
 
   /** Record a whole phase that never ran. Reported, never silently dropped. */

@@ -37,7 +37,7 @@
  *     columns are asserted for every row, always.
  */
 
-import { Client, type HttpResponse } from "../client.ts";
+import { Client, checkbox, type HttpResponse } from "../client.ts";
 import type { Phase, PhaseContext } from "../runner.ts";
 
 /**
@@ -381,6 +381,7 @@ const phase: Phase = {
     await assertFallbackAndTraversal(ctx);
     await assertPostOnlyGuards(ctx);
     await assertBuiltin(ctx, anonymous);
+    await assertImageSkewGuard(ctx);
 
     // The anonymous client must still be anonymous, or every 303 above was
     // asserted against a client that might have had a session all along.
@@ -784,6 +785,79 @@ async function assertBuiltin(ctx: PhaseContext, anonymous: Client): Promise<void
     "location",
     "/login",
     "the unauthenticated /builtin/ redirect names /login",
+  );
+}
+
+// ---------------------------------------------------------------------------
+// 6. the image-skew guard
+// ---------------------------------------------------------------------------
+
+/**
+ * Routes that exist in THIS TREE's routes.rs but not in the running image.
+ *
+ * This is under-coverage that announces itself, and the reason it is a CHECK
+ * rather than a sentence in a report is that a sentence in a report is read
+ * once. Measured 2026-08-24: the image under test is built from a tree at or
+ * before 67b999b; local main gained `.route("/mqtt", get(mqtt_form))` and
+ * `.route("/mqtt/enable", post(mqtt_enable))` at ddf3a86, 12:07, AFTER the
+ * image was built at 10:48. So this branch has the routes, the device does
+ * not, and `PANES` and `POST_ONLY` above correctly omit them.
+ *
+ * The assertions are therefore that these paths behave as the FALLBACK, which
+ * is the truth about the device today. They are chosen to be the two that
+ * CANNOT both survive the routes arriving:
+ *
+ *   - `GET /mqtt` with `Accept: *\/*` is 404 only because §4.2 condition 3
+ *     refuses to make HTML for a wildcard range. A real `get(mqtt_form)`
+ *     ignores `Accept` entirely and answers 200. (The `text/html` column is
+ *     deliberately NOT asserted: the SPA fallback and a real pane BOTH return
+ *     200 there, so it would prove nothing either way.)
+ *   - `POST /mqtt/enable` is 405 only because §4.2 condition 2 checks the
+ *     method before anything else. A real `post(mqtt_enable)` answers 303, or
+ *     400, or anything but 405.
+ *
+ * When somebody rebuilds the image from a newer main, both go red at once and
+ * the failure detail says what to do about it.
+ */
+const SKEWED_ROUTES_HINT =
+  "the image now serves /mqtt; add it to PANES and /mqtt/enable to POST_ONLY in 04-readonly, then update this guard.";
+
+async function assertImageSkewGuard(ctx: PhaseContext): Promise<void> {
+  const { client, report } = ctx;
+  report.note(
+    "  -- 6. the image-skew guard: routes this TREE has that the running IMAGE does not",
+  );
+
+  const wildcard = await client.raw("/mqtt", { headers: { Accept: "*/*" } });
+  report.check(
+    wildcard.status === 404,
+    "GET /mqtt with Accept: */* -> 404: the running image has NO /mqtt route, so this is the static-asset fallback and not a pane",
+    [
+      `expected: 404 -- §4.2 condition 3 refuses to produce HTML for a wildcard range,`,
+      `          which is the only reason an unrouted path 404s here.`,
+      `actual:   ${wildcard.status}${describeBody(wildcard)}`,
+      ``,
+      `THIS IS AN IMAGE-SKEW GUARD, NOT A DEFECT IN apid. A 200 means the device`,
+      `now HAS the route -- local main added /mqtt at ddf3a86 (12:07 2026-08-24),`,
+      `after the image under test was built (10:48). So:`,
+      `  ${SKEWED_ROUTES_HINT}`,
+    ].join("\n"),
+  );
+
+  const enable = await client.post("/mqtt/enable", { enabled: checkbox(true) });
+  report.check(
+    enable.status === 405,
+    "POST /mqtt/enable -> 405: the running image has NO /mqtt/enable route, so the fallback refuses it on the method",
+    [
+      `expected: 405 -- §4.2 condition 2 checks the method before anything else,`,
+      `          so an unrouted path refuses a POST without looking at the body.`,
+      `actual:   ${enable.status}${describeBody(enable)}`,
+      ``,
+      `THIS IS AN IMAGE-SKEW GUARD, NOT A DEFECT IN apid. Anything but 405 means`,
+      `a real post(mqtt_enable) answered, i.e. the image is newer than the one`,
+      `this phase was written against. So:`,
+      `  ${SKEWED_ROUTES_HINT}`,
+    ].join("\n"),
   );
 }
 
