@@ -4459,3 +4459,56 @@ because it says what it is measured at where it is read.
     here would put the correction where no reader of those tables looks, and
     would edit §1.3 and §2.2 from an entry whose whole purpose is to route
     work out of §10.3 — so it is recorded, not done.
+
+### 10.4 The surface now has an over-the-wire test suite
+
+*Measured at `2a6003f`; source section: §4.2, §4.4, §5.2. This entry carries its
+own descriptors, per §10.3's rule above.*
+
+`test/apid-api/` is a bun + TypeScript suite that talks to apid **over the
+network**, on a booted x64 image in QEMU, the way a browser would. It runs with
+`make os-apid-api-test`, and it has no runtime dependencies: a client that
+followed redirects, managed cookies invisibly or normalised request targets
+would hide the exact behaviours it exists to observe. Nine ordered phases run
+against **one** boot, because a boot is expensive; each phase declares what it
+assumes the previous one left behind, and the runner refuses a phase that does
+not. The full record is `docs/task/RFCT-105.md`.
+
+**What it asserts that an in-process test of the `Router` cannot.** The
+self-signed certificate apid generates into its `StateDirectory`, inspected
+rather than merely trusted. The `:80 → :443` redirect as a real `308` with a
+real `Location`. Request targets **verbatim on the wire**, which a normalising
+client rewrites before apid ever sees them. The session cookie as a real
+`Set-Cookie`, from both the `/setup` and `/login` handlers, with the absence of
+any CSRF marker checked beside it — so §3.3's reliance on `SameSite=Lax` is a
+verified property rather than a stated one. The login guard across a genuinely
+new TCP connection and across a real reboot. And a form post travelling
+apid → system bus → mosd → a reconciler → the device, observed on the far end
+through the bus read-back and through systemd's and mosd's own lines on the
+captured console, never by its status code alone.
+
+**Three limits, and they are load-bearing for any reader of §4:**
+
+1. **§4.4's traversal guards are not covered.** `serve::respond` calls
+   `asset_path::resolve` — the function holding every §4.4 guard — only when a
+   bundle root exists, and a bundle-less device is what §5.2 calls the shipped
+   state of every device. The suite therefore covers **§4.2's fallback
+   contract** instead and says so in the module rather than letting a passing
+   `/../../etc/passwd` probe read as a traversal test. Closing it needs a
+   bundle seeded at `/srv/ui` on **DATA**; the available seeding tool writes
+   **STATE** only.
+2. **The reboot is two boots off one disk.** `os/qemu-run.sh` passes
+   `-no-reboot`, so a guest-initiated reboot makes QEMU exit rather than reset.
+   The second boot still comes up through firmware, GRUB and the grubenv the
+   reboot wrote; what is not exercised is QEMU's own reset. It is also opt-in
+   and has not yet been run.
+3. **Image/code skew.** The image under test predates `/mqtt` and
+   `POST /mqtt/enable`, so those routes are uncovered, and the suite carries no
+   guard that goes red when the image is rebuilt.
+
+**Status, stated so nobody reads more into this than is there:** the suite is
+merged and its offline selftest is green (37/37, every assertion helper driven
+against deliberately wrong input), but **no live phase run has completed** —
+the one recorded live run is the harness's own, which correctly went red on the
+then-missing suite entry point. Nothing in this document should yet be read as
+verified on a device by it.
