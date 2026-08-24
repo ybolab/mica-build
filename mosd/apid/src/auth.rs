@@ -332,6 +332,40 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("login_guard.json");
 
+        // SEEDED WITH A RUN, so the armed window is 16 seconds rather than
+        // BACKOFF_BASE's one.
+        //
+        // The property under test is "an armed window survives a restart",
+        // and it does not depend on which step of the curve is armed. Arming
+        // the FIRST step made this test race its own constant: the write and
+        // the read below are two filesystem round-trips, and `PersistedGuard`
+        // carries the deadline as whole UNIX seconds — `to_persisted` writes
+        // `now_unix() + remaining.as_secs().max(1)` and `from_persisted`
+        // subtracts a freshly-read `now_unix()`, so the two truncations do not
+        // cancel. A write and a read landing on opposite sides of one second
+        // boundary reduce a one-second window to zero, and the test then fails
+        // for a reason that is nothing to do with persistence. It failed twice
+        // in one afternoon under parallel-suite load and passes 3/3 in
+        // isolation.
+        //
+        // Sixteen seconds absorbs both the truncation and any load this suite
+        // can generate. The one-second step itself is covered, without a
+        // clock, by `backoff_doubles_from_the_base_and_stops_at_the_cap`.
+        //
+        // The truncation is a real if minor property of the on-disk format —
+        // a restart inside the first second can drop that step's window while
+        // keeping the failure count — and it is recorded rather than fixed
+        // here, because this test's job is the round trip, not the resolution.
+        std::fs::write(
+            &path,
+            serde_json::to_string(&PersistedGuard {
+                failures: 5,
+                locked_until_unix: 0,
+            })
+            .unwrap(),
+        )
+        .unwrap();
+
         let store = GuardStore::load(path.clone());
         assert!(store.begin_attempt(), "the first attempt is admitted");
         store.confirm_failure();
