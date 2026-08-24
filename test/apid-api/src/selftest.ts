@@ -32,6 +32,7 @@ import {
   UNCHECKED,
   checkbox,
   encodeForm,
+  sniServerName,
 } from "./client.ts";
 import { ConfigError, loadConfig, type Config } from "./config.ts";
 import { Reporter } from "./report.ts";
@@ -715,6 +716,66 @@ try {
     [
       `expected: 18443/18080, mos-e2e-admin-pw, mos-e2e-renamed, all phases`,
       `actual:   ${defaults.httpsPort}/${defaults.httpPort}, ${defaults.adminPassword}, ${defaults.hostnameTarget}, ${String(defaults.phases)}`,
+    ].join("\n"),
+  );
+  outer.endPhase();
+
+  // -- SNI is never an IP literal -------------------------------------------
+  //
+  // This phase is PURE: no TLS, no key, no socket, not even the stub. That is
+  // the point. The header above records a deliberate decision to carry no
+  // private key, and the direct cost of that decision was that NOTHING in this
+  // repository ever reached `tls.connect()` -- so `servername: <an IP>` shipped
+  // and threw synchronously on the first live run, in `inspectCertificate()`
+  // and in every raw HTTPS write, before a byte left the process. `APID_HOST`
+  // is always an IP literal here, so that was every live run, all nine phases.
+  //
+  // Testing the pure decision function restores the guard without reopening the
+  // no-key decision: `sniServerName` is what the two `tls.connect()` call sites
+  // consult, and it is total, synchronous and network-free.
+  outer.beginPhase(
+    "selftest-sni",
+    "SNI is omitted for an IP literal and sent for a hostname",
+    "nothing; sniServerName is pure -- no TLS, no key, no socket",
+  );
+  outer.note("");
+  outer.note("PHASE selftest-sni: SNI is omitted for an IP literal and sent for a hostname");
+
+  // The campaign's own shapes: loopback, the QEMU user-net guest address, and a
+  // container address on the shared docker network -- what APID_HOST really is.
+  const ipv4Hosts = ["127.0.0.1", "10.0.2.15", "172.18.0.8"];
+  const ipv4Sent = ipv4Hosts.filter((host) => sniServerName(host) !== undefined);
+  outer.check(
+    ipv4Sent.length === 0,
+    "an IPv4 literal yields no server name, so tls.connect() is never handed one",
+    [
+      `expected: undefined for ${ipv4Hosts.join(", ")}`,
+      `actual:   ${ipv4Sent.length === 0 ? "undefined for all of them" : `a name for ${ipv4Sent.join(", ")}`}`,
+    ].join("\n"),
+  );
+
+  const ipv6Hosts = ["::1", "2001:0db8:0000:0000:0000:ff00:0042:8329"];
+  const ipv6Sent = ipv6Hosts.filter((host) => sniServerName(host) !== undefined);
+  outer.check(
+    ipv6Sent.length === 0,
+    "an IPv6 literal yields no server name, in both the compressed and full forms",
+    [
+      `expected: undefined for ${ipv6Hosts.join(", ")}`,
+      `actual:   ${ipv6Sent.length === 0 ? "undefined for both" : `a name for ${ipv6Sent.join(", ")}`}`,
+    ].join("\n"),
+  );
+
+  // The positive control. Without it, a helper hardwired to return undefined
+  // would satisfy both cases above -- and would silently drop SNI against a
+  // device addressed by name.
+  const nameHosts = ["mos.local", "localhost", "example.test"];
+  const nameWrong = nameHosts.filter((host) => sniServerName(host) !== host);
+  outer.check(
+    nameWrong.length === 0,
+    "a hostname is passed through unchanged, so SNI still goes out when it is legal",
+    [
+      `expected: each of ${nameHosts.join(", ")} returned unchanged`,
+      `actual:   ${nameWrong.length === 0 ? "each returned unchanged" : nameWrong.map((h) => `${h} -> ${String(sniServerName(h))}`).join("; ")}`,
     ].join("\n"),
   );
   outer.endPhase();
