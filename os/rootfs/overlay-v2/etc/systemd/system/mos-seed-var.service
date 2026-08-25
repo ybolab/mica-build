@@ -23,11 +23,15 @@ Before=local-fs.target systemd-tmpfiles-setup.service shutdown.target
 # while any unit outside its allowlist has failed, so a first boot ends with
 # the slot unconfirmed and, after an update, rolled back.
 #
-# THIS LINE IS A STOPGAP AND IS NAMED AS ONE. Ordering against each writer of
-# /var by name is a list to keep current, and the next one systemd adds lands
-# in the same place. The structural repair is to populate EPHEMERAL at IMAGE
-# ASSEMBLY (mkfs.ext4 -d) so there is no runtime seed to race -- recorded in
-# docs/task/RFCT-106.md.
+# THE STRUCTURAL REPAIR IS DONE and this line is now the belt to its brace.
+# EPHEMERAL ships already seeded -- the image assembler fills it with
+# mkfs.ext4 -d and writes the stamp -- so ConditionPathExists above makes this
+# unit a no-op on every normal boot, and there is nothing to race.
+#
+# What is left is the path where EPHEMERAL has been WIPED. The seed does run
+# then, and in principle it could race the same way; that boot is not one
+# anything else is competing for, but the ordering costs nothing and the
+# failure it prevents is a device that will not come up.
 Before=systemd-networkd-persistent-storage.service
 Conflicts=shutdown.target
 ConditionPathExists=!/var/.mos-var-seeded

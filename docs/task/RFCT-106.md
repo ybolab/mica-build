@@ -218,13 +218,19 @@ directory tar had created but not yet chowned, and failed with EACCES as
 User=systemd-network. Ordering it after the seed is in place as a **stopgap**,
 labelled as one in the unit.
 
-**The structural repair, DEFERRED and recorded here so it is not lost:**
-populate EPHEMERAL at image assembly with `mkfs.ext4 -d`, from the same factory
-tree, so the filesystem is already seeded when it is first mounted and there is
-no runtime seed for anything to race. `mos-seed-var` then only runs on the
-recovery path where EPHEMERAL has been wiped, which is not a boot anything else
-is racing. That removes the class rather than ordering against one member of
-it, and it applies to both boards.
+**The structural repair is DONE.** EPHEMERAL is populated at image assembly
+with `mkfs.ext4 -d` / `mke2fs -d`, from the same factory tree the rootfs build
+now exports (390 KB, 93 entries — it costs nothing to carry). The stamp
+`/var/.mos-var-seeded` is written in at the same time, so `mos-seed-var`'s
+`ConditionPathExists=!` makes it a no-op on a normal boot. It stays for the one
+path that still needs it: EPHEMERAL wiped, which is not a boot anything else is
+racing. The `Before=` line stays as the belt to that brace.
+
+Verified on an assembled x64 image, before it had ever booted: the EPHEMERAL
+partition already holds `lib backups cache local lock log mail opt run spool`
+and `.mos-var-seeded` at inode 12. os/verify-image-v2.sh asserts the stamp and
+a populated `/lib` — the stamp specifically, because a seeded tree WITHOUT it
+would still run the seed and still race.
 
 ## The assertion that would have caught this
 

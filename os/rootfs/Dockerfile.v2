@@ -1765,7 +1765,33 @@ RUN set -eu; mkdir -p /out/boot; \
         : > /out/boot/.no-kernel-in-root; \
     fi
 
+# The factory /var tree, exported so the image assembler can SEED THE EPHEMERAL
+# FILESYSTEM AT ASSEMBLY (RFCT-106) instead of copying it out on first boot.
+#
+# Seeding at runtime meant mos-seed-var ran at the same moment as every other
+# unit that writes /var. Debian 13's systemd ships
+# systemd-networkd-persistent-storage.service, which creates
+# /var/lib/systemd/network as soon as /var appears; the two raced, and losing
+# it failed the seed, which failed var-lib-mos.mount, which failed mosd, apid
+# and the health gate -- a first boot that looks like a device that will not
+# come up. Ordering against that one unit is a list to keep current.
+#
+# A filesystem that is ALREADY seeded when it is first mounted has nothing to
+# race. mos-seed-var stays for the path where EPHEMERAL has been wiped, and its
+# ConditionPathExists on the stamp means it does not run otherwise.
+#
+# 390 KB and 93 entries, measured on the x64 image: this costs nothing to
+# carry through the build.
+RUN set -eu; \
+    [ -d /rootfs/usr/share/factory/var ] || { echo "error: /usr/share/factory/var is not in the packed root; the EPHEMERAL filesystem would be assembled empty and /var would have no dpkg database, no spool and no mosd state directory" >&2; exit 1; }; \
+    mkdir -p /out/factory-var; \
+    cp -a /rootfs/usr/share/factory/var/. /out/factory-var/; \
+    n="$(find /out/factory-var | wc -l)"; \
+    [ "${n}" -gt 10 ] || { echo "error: the exported factory /var has only ${n} entries; an almost-empty tree here would seed an almost-empty /var and every check downstream would pass" >&2; exit 1; }; \
+    echo "factory var: ${n} entries, $(du -sk /out/factory-var | cut -f1) KB"
+
 FROM scratch AS artifact
+COPY --from=pack /out/factory-var/ /factory-var/
 COPY --from=pack /out/rootfs-verity.img /
 COPY --from=pack /out/rootfs-verity.env /
 COPY --from=pack /out/rootfs-report-v2.txt /

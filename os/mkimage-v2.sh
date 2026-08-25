@@ -93,9 +93,15 @@ lc() {
 # Formats one partition slot's ext4 filesystem into a standalone image file.
 # Args: out-file size-MiB fs-label fs-uuid
 mkext4() {
+    local seed="${5:-}"
     truncate -s "$2M" "$1"
-    mke2fs -q -t ext4 -b "${EXT4_BLOCK_SIZE}" -L "$3" -U "$4" \
-        -O "${EXT4_FEATURES}" -E "root_owner=0:0,hash_seed=$4" "$1"
+    if [ -n "${seed}" ]; then
+        mke2fs -q -t ext4 -b "${EXT4_BLOCK_SIZE}" -L "$3" -U "$4" \
+            -O "${EXT4_FEATURES}" -E "root_owner=0:0,hash_seed=$4" -d "${seed}" "$1"
+    else
+        mke2fs -q -t ext4 -b "${EXT4_BLOCK_SIZE}" -L "$3" -U "$4" \
+            -O "${EXT4_FEATURES}" -E "root_owner=0:0,hash_seed=$4" "$1"
+    fi
 }
 
 # Compiles boot.cmd into the boot.scr both slots share. SOURCE_DATE_EPOCH is
@@ -244,6 +250,19 @@ mkboot() {
 # ROOTFS_VERITY_ENV, BOOT_CMDLINE_A, BOOT_CMDLINE_B, IMG_OUT.
 assemble() {
     workdir="$(mktemp -d)"
+    # The factory /var tree the rootfs build exported, copied so the stamp can
+    # be added without writing into _out.
+    # FACTORY_VAR arrives through the environment like every other input to
+    # this half, because the container re-execs this script and the assembly
+    # function runs before the top-level OUT_DIR assignment. Using OUT_DIR here
+    # cost one build with `OUT_DIR: unbound variable`.
+    FACTORY_VAR_STAGE="${workdir}/factory-var"
+    if [ ! -d "${FACTORY_VAR:-}" ]; then
+        echo "error: FACTORY_VAR=${FACTORY_VAR:-<unset>} is not a directory. The rootfs build exports the factory /var tree; run 'MOS_BOARD=cx3576 bash os/rootfs/build-v2.sh' first" >&2
+        exit 1
+    fi
+    mkdir -p "${FACTORY_VAR_STAGE}"
+    cp -a "${FACTORY_VAR}/." "${FACTORY_VAR_STAGE}/"
     trap 'rm -rf "${workdir:-}"' EXIT
 
     for input in "${KERNEL_IMAGE}" "${DTB}"; do
@@ -374,7 +393,23 @@ assemble() {
         "${BOOT_CMDLINE_B}" B "${ROOTFS_B_GUID}" "${BOOT_VERITY_ENV_B_NAME}"
     mkext4 "${workdir}/meta.img" "${META_SIZE_MIB}" "${META_FS_LABEL}" "${META_FS_UUID}"
     mkext4 "${workdir}/state.img" "${STATE_SIZE_MIB}" "${STATE_FS_LABEL}" "${STATE_FS_UUID}"
-    mkext4 "${workdir}/ephemeral.img" "${MOS_VAR_MIB}" "${EPHEMERAL_FS_LABEL}" "${EPHEMERAL_FS_UUID}"
+    # EPHEMERAL SHIPS ALREADY SEEDED (RFCT-106). /var is a mount of this
+    # filesystem, and an empty one hides the tree the installed packages
+    # expect. mos-seed-var used to copy that tree out on the first boot -- at
+    # the same moment as every other unit that writes /var, and Debian 13's
+    # systemd-networkd-persistent-storage.service creates
+    # /var/lib/systemd/network as soon as /var appears. The two raced; a lost
+    # race failed the seed, which failed var-lib-mos.mount, which failed mosd,
+    # apid and the health gate. Seeding here removes the race instead of
+    # ordering against one member of it. The stamp goes in too, so
+    # mos-seed-var's ConditionPathExists keeps it from running on a normal
+    # boot; it stays for the path where EPHEMERAL has been wiped.
+    : >"${FACTORY_VAR_STAGE}/.mos-var-seeded"
+    [ -d "${FACTORY_VAR_STAGE}/lib" ] || {
+        echo "error: the staged factory /var has no lib/; seeding EPHEMERAL from it would produce a /var with no dpkg database and no mosd state directory" >&2
+        exit 1
+    }
+    mkext4 "${workdir}/ephemeral.img" "${MOS_VAR_MIB}" "${EPHEMERAL_FS_LABEL}" "${EPHEMERAL_FS_UUID}" "${FACTORY_VAR_STAGE}"
     mkext4 "${workdir}/data.img" "${DATA_SIZE_MIB}" "${DATA_FS_LABEL}" "${DATA_FS_UUID}"
 
     local img_tmp="${IMG_OUT}.tmp"
@@ -548,6 +583,7 @@ fi
 
 if host_can_assemble; then
     env KERNEL_IMAGE="${KERNEL_IMAGE}" DTB="${DTB}" UBOOT="${UBOOT}" UBOOT_DEBUG="${UBOOT_DEBUG}" \
+        FACTORY_VAR="${OUT_DIR}/factory-var" \
         ROOTFS_VERITY_IMG="${ROOTFS_VERITY_IMG}" ROOTFS_VERITY_ENV="${ROOTFS_VERITY_ENV}" \
         BOOT_CMDLINE_A="${BOOT_CMDLINE_A}" BOOT_CMDLINE_B="${BOOT_CMDLINE_B}" \
         IMG_OUT="${OUT_DIR}/${IMG_NAME}" "${INNER_ENV[@]}" \
@@ -561,6 +597,7 @@ else
         -e DTB=/board/out/kernel/rk3576-src.dtb \
         -e UBOOT="/board/out/${UBOOT_VARIANT_DIR}/${UBOOT_BIN_NAME}" \
         -e UBOOT_DEBUG="/board/out/${UBOOT_DEBUG_VARIANT_DIR}/${UBOOT_BIN_NAME}" \
+        -e FACTORY_VAR=/work/_out/cx3576/factory-var \
         -e ROOTFS_VERITY_IMG=/work/_out/cx3576/rootfs-verity.img \
         -e ROOTFS_VERITY_ENV=/work/_out/cx3576/rootfs-verity.env \
         -e BOOT_CMDLINE_A=/work/_out/cx3576/boot-cmdline-a.txt \

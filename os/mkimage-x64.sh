@@ -102,6 +102,17 @@ trap 'rm -rf "${WORK}"' EXIT
 # Everything that touches the image runs in one container: the host has no
 # sgdisk, no mtools and no grub-mkstandalone, and requiring them would make
 # this script work on one machine.
+# The factory /var tree, seeded into EPHEMERAL at ASSEMBLY (RFCT-106) rather
+# than copied out on first boot. A filesystem that is already seeded when it is
+# first mounted has nothing to race; see the comment on the mkfs below.
+FACTORY_VAR="${OUT_DIR}/factory-var"
+if [ ! -d "${FACTORY_VAR}" ]; then
+    echo "error: ${FACTORY_VAR} not found. The rootfs build exports it; run 'MOS_BOARD=${MOS_BOARD} bash os/rootfs/build-v2.sh' first" >&2
+    exit 1
+fi
+mkdir -p "${WORK}/factory-var"
+cp -a "${FACTORY_VAR}/." "${WORK}/factory-var/"
+
 cp "${ROOTFS_IMG}" "${WORK}/rootfs.img"
 cp "${KERNEL}" "${WORK}/vmlinuz"
 cp "${INITRD}" "${WORK}/initrd.img"
@@ -267,14 +278,40 @@ b_list="$(mdir -/ -b -i boot-b.img ::/ | sort)"
 }
 
 mkfs_ext4() {
-    local out="$1" mib="$2" label="$3" uuid="$4"
+    local out="$1" mib="$2" label="$3" uuid="$4" seed="${5:-}"
     truncate -s "$(( mib * MIB ))" "${out}"
-    mkfs.ext4 -q -F -b "${EXT4_BLOCK_SIZE}" -O "${EXT4_FEATURES}" \
-        -L "${label}" -U "${uuid}" "${out}"
+    if [ -n "${seed}" ]; then
+        mkfs.ext4 -q -F -b "${EXT4_BLOCK_SIZE}" -O "${EXT4_FEATURES}" \
+            -L "${label}" -U "${uuid}" -d "${seed}" "${out}"
+    else
+        mkfs.ext4 -q -F -b "${EXT4_BLOCK_SIZE}" -O "${EXT4_FEATURES}" \
+            -L "${label}" -U "${uuid}" "${out}"
+    fi
 }
+
+# EPHEMERAL SHIPS ALREADY SEEDED (RFCT-106).
+#
+# /var is a mount of this filesystem, and mounting an EMPTY one over the
+# image's /var hides the tree the installed packages expect. mos-seed-var used
+# to copy that tree out on the first boot -- at the same moment as every other
+# unit that writes /var. Debian 13's systemd-networkd-persistent-storage.service
+# creates /var/lib/systemd/network as soon as /var appears; the two raced, and
+# whichever lost, lost badly: a failed seed failed var-lib-mos.mount, which
+# failed mosd, apid and the health gate. From outside, a device that will not
+# come up -- intermittently, which is worse.
+#
+# Seeding here removes the race rather than ordering against one member of it.
+# The stamp goes in too, so mos-seed-var's ConditionPathExists keeps it from
+# running at all on a normal boot; it stays for the path where EPHEMERAL has
+# been wiped, which is not a boot anything else is racing.
+: >"factory-var/.mos-var-seeded"
+if [ ! -d factory-var/lib ]; then
+    echo "error: the staged factory /var has no lib/; seeding EPHEMERAL from it would produce a /var with no dpkg database and no mosd state directory" >&2
+    exit 1
+fi
 mkfs_ext4 meta.img      "${META_SIZE_MIB}" "${META_FS_LABEL}"      "${META_FS_UUID}"
 mkfs_ext4 state.img     "${STATE_SIZE_MIB}" "${STATE_FS_LABEL}"     "${STATE_FS_UUID}"
-mkfs_ext4 ephemeral.img "${MOS_VAR_MIB}"   "${EPHEMERAL_FS_LABEL}" "${EPHEMERAL_FS_UUID}"
+mkfs_ext4 ephemeral.img "${MOS_VAR_MIB}"   "${EPHEMERAL_FS_LABEL}" "${EPHEMERAL_FS_UUID}" factory-var
 mkfs_ext4 data.img      "${DATA_SIZE_MIB}" "${DATA_FS_LABEL}"      "${DATA_FS_UUID}"
 
 truncate -s "$(( DISK_MIB * MIB ))" disk.img

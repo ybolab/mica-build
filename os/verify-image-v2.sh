@@ -2335,11 +2335,26 @@ check_ext4() {
         fail "e2fsck -fn on ${name} reported errors"
     fi
 
-    # Created empty at build: the seed oneshots populate them on first boot.
+    # WHAT A PARTITION SHOULD CONTAIN AT BUILD IS PER PARTITION, and saying
+    # "all of them empty" stopped being true when EPHEMERAL started shipping
+    # seeded (RFCT-106). Left as it was, this assertion and the seeded-EPHEMERAL
+    # one below would contradict each other -- and the contradiction would only
+    # surface on an assembled image, which is where the last one did.
+    #
+    # META, STATE and DATA are still empty at build: their seed oneshots run on
+    # first boot and race nothing, because nothing else writes them that early.
+    # EPHEMERAL is /var, which every early systemd unit writes, so it is filled
+    # at assembly instead; the check for that is where check_ext4 is called.
     local entries
     entries="$(debugfs -R "ls -p /" "${img}" 2>/dev/null |
         awk -F/ 'NF >= 7 && $6 != "." && $6 != ".." && $6 != "lost+found" {print $6}' || true)"
-    if [ -z "${entries}" ]; then
+    if [ "${name}" = "ephemeral" ]; then
+        if [ -n "${entries}" ]; then
+            pass "factory: ${name} is populated at build ($(echo "${entries}" | wc -w) entries), which is what makes mos-seed-var a no-op on a normal boot"
+        else
+            fail "factory: ${name} is EMPTY at build. /var would be filled on the first boot, concurrently with every systemd unit that writes /var -- the race that failed mosd, apid and the health gate intermittently (RFCT-106)"
+        fi
+    elif [ -z "${entries}" ]; then
         pass "factory: ${name} is empty at build (nothing but lost+found)"
     else
         fail "factory: ${name} is not empty at build; it contains: $(echo "${entries}" | tr '\n' ' ')"
@@ -2350,6 +2365,26 @@ check_ext4() {
 check_ext4 meta "${PART_START_MIB_META}" "${META_SIZE_MIB}" "${META_FS_LABEL}" "${META_FS_UUID}"
 check_ext4 state "${PART_START_MIB_STATE}" "${STATE_SIZE_MIB}" "${STATE_FS_LABEL}" "${STATE_FS_UUID}"
 check_ext4 ephemeral "${PART_START_MIB_EPHEMERAL}" "${MOS_VAR_MIB}" "${EPHEMERAL_FS_LABEL}" "${EPHEMERAL_FS_UUID}"
+
+# EPHEMERAL SHIPS SEEDED, and the stamp is what proves it (RFCT-106).
+#
+# /var is a mount of this filesystem. It used to be assembled EMPTY and filled
+# on the first boot by mos-seed-var, which ran concurrently with every other
+# unit that writes /var -- and lost that race often enough to fail mosd, apid
+# and the health gate on some boots and not others. A filesystem that is
+# already seeded when it is first mounted has nothing to race.
+#
+# The stamp is asserted rather than the tree: mos-seed-var's
+# ConditionPathExists keys on exactly this path, so its presence is what makes
+# the unit a no-op on a normal boot. A seeded tree WITHOUT the stamp would
+# still run the seed and still race.
+eph_seeded="$(debugfs -R "stat /.mos-var-seeded" "${TMP}/ephemeral.img" 2>/dev/null | sed -n 's/^Inode: \([0-9]*\).*/\1/p' | first_line || true)"
+eph_lib="$(debugfs -R "ls /lib" "${TMP}/ephemeral.img" 2>/dev/null | grep -c . || true)"
+if [ -n "${eph_seeded}" ] && [ "${eph_lib:-0}" -gt 0 ]; then
+    pass "the EPHEMERAL filesystem ships already seeded from the factory /var (stamp at inode ${eph_seeded}, /lib populated), so mos-seed-var is a no-op on a normal boot and races nothing"
+else
+    fail "the EPHEMERAL filesystem ships $([ -n "${eph_seeded}" ] && echo "stamped but empty" || echo "unstamped"). /var would be filled on the first boot, concurrently with every systemd unit that writes /var -- the race that failed mosd, apid and the health gate intermittently (RFCT-106)"
+fi
 check_ext4 data "${PART_START_MIB_DATA}" "${DATA_SIZE_MIB}" "${DATA_FS_LABEL}" "${DATA_FS_UUID}"
 
 # ===========================================================================
