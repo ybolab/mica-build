@@ -3341,7 +3341,12 @@ check_mqtt_broker
 # dm-verity squashfs, so the file has to be a SYMLINK onto the STATE-backed
 # tree; a bind-mounted file would not do, because a bind cannot be replaced by
 # rename and rename is how a credential is written without a torn read.
-SHADOW_LINK_TARGET=/var/lib/mos/shadow
+# /run is a tmpfs. The shadow file is BUILT THERE ON EVERY BOOT from
+# /usr/share/factory/etc/shadow, which is why the packed root must ship neither
+# the file nor its destination: a transient root password that survived a
+# reboot would not be transient, and mos supports no other kind
+# (docs/design/access.md §4.2 superseded the per-device password).
+SHADOW_LINK_TARGET=/run/mos/shadow
 FACTORY_SHADOW=/usr/share/factory/etc/shadow
 
 # Half one of the end-to-end property: the path PAM reads IS the symlink, and it
@@ -3356,7 +3361,7 @@ else
 fi
 
 # Half two: nothing inside the squashfs can satisfy that path. Both the source
-# (/etc/shadow itself) and the destination (/var/lib/mos/shadow) must be absent
+# (/etc/shadow itself) and the destination (/run/mos/shadow) must be absent
 # as regular files in the packed image, or PAM would read an image-wide file
 # that is byte-identical on every device. This is the pair that makes the claim
 # "PAM reads the STATE copy" provable from the artifact rather than asserted.
@@ -3366,26 +3371,47 @@ else
     pass "no regular /etc/shadow inside the squashfs (nothing shadows the STATE-backed copy)"
 fi
 if [ -e "${ROOT}${SHADOW_LINK_TARGET}" ] || [ -L "${ROOT}${SHADOW_LINK_TARGET}" ]; then
-    fail "${SHADOW_LINK_TARGET} exists inside the squashfs, so /etc/shadow would resolve to an image file rather than to the STATE bind"
+    fail "${SHADOW_LINK_TARGET} exists inside the squashfs, so /etc/shadow would resolve to an image file -- byte-identical on every device in the fleet -- rather than to the copy built in RAM at boot"
 else
-    pass "${SHADOW_LINK_TARGET} does not exist inside the squashfs, so the symlink can only ever resolve through var-lib-mos.mount onto STATE"
+    pass "${SHADOW_LINK_TARGET} does not exist inside the squashfs, so the symlink can only ever resolve to the file mos-shadow-reconcile builds in RAM"
 fi
 
-# And the link target must be exactly what var-lib-mos.mount puts on STATE.
-# A symlink into a directory nothing mounts is a dangling file, not a credential.
-VLM_UNIT="${ROOT}/etc/systemd/system/var-lib-mos.mount"
-vlm_where="$(sed -n 's/^Where=//p' "${VLM_UNIT}" 2>/dev/null | tail -n1)"
-vlm_what="$(sed -n 's/^What=//p' "${VLM_UNIT}" 2>/dev/null | tail -n1)"
-# Derived from the ACTUAL link destination, not from the constant above: a
-# check against the constant would keep passing for a symlink retargeted
-# anywhere else, which is the whole thing being guarded against.
+# And the link must land on a tmpfs, which is what makes the one credential mos
+# supports on the console -- a TRANSIENT root password -- transient BY
+# CONSTRUCTION rather than by protocol. Under /run the password is gone at the
+# next boot because the memory is gone, and nothing has to remember to clear
+# it. The previous design put this file on STATE and cleared it on the next
+# boot from a marker; that made "transient" a thing a oneshot had to succeed
+# at, and a failed, masked or reordered oneshot left the password live on disk.
+#
+# Asserted in BOTH directions, and derived from the ACTUAL link destination
+# rather than from the constant above: a check against the constant would keep
+# passing for a symlink retargeted anywhere else, which is the whole thing
+# being guarded against.
 link_dir="$([ -n "${shadow_dest}" ] && dirname "${shadow_dest}" || echo "<not a symlink>")"
-if [ -n "${shadow_dest}" ] && [ "${vlm_where}" = "${link_dir}" ] &&
-    [ "${vlm_what#/mnt/state/}" != "${vlm_what}" ]; then
-    pass "the /etc/shadow symlink lands in ${vlm_where}, which var-lib-mos.mount binds from ${vlm_what} on STATE"
+case "${link_dir}" in
+/run | /run/*) link_on_tmpfs=1 ;;
+*) link_on_tmpfs=0 ;;
+esac
+if [ -z "${shadow_dest}" ]; then
+    fail "/etc/shadow is not a symlink, so it has no target directory to place; a regular file on the read-only verity root can never be written"
+elif [ "${link_on_tmpfs}" -eq 1 ]; then
+    pass "the /etc/shadow symlink lands in ${link_dir}, under /run: systemd mounts /run as a tmpfs before any unit starts, so a transient root password cannot outlive the boot that set it"
 else
-    fail "the /etc/shadow symlink target dir '${link_dir}' is not bound from STATE by var-lib-mos.mount (Where='${vlm_where}', What='${vlm_what}')"
+    fail "the /etc/shadow symlink target dir '${link_dir}' is not under /run. mos supports no persistent password (docs/design/access.md 4.2), so a credential file on storage that survives a reboot can only be made transient by a protocol something has to run -- exactly the design RFCT-105 removed"
 fi
+# The same claim from the other side: it must NOT be on STATE or on /var. A
+# symlink that satisfies "is a symlink" and "is not a regular file in the
+# image" while pointing back at the persistent copy would pass everything else
+# here.
+case "${link_dir}" in
+/mnt/state/* | /var/lib/* | /var/*)
+    fail "the /etc/shadow symlink points at '${link_dir}', which is persistent storage; the transient password would survive the reboot that is supposed to end it"
+    ;;
+*)
+    pass "the /etc/shadow symlink points at nothing under /mnt/state or /var, so no shadow file is kept on persistent storage"
+    ;;
+esac
 
 # /etc/passwd and /etc/group stay in the image, read-only: only the
 # secret-bearing file moves, so account definitions remain verity-covered.
@@ -3445,9 +3471,15 @@ sq_grep /etc/systemd/system/mos-shadow-reconcile.service \
 # after= / before= must name the real unit names, and each named unit must be
 # in the image: an ordering against a unit that does not exist is inert.
 # unit-file-path pairs, so "named" and "present" are asserted together.
-for pair in "After:var-lib-mos.mount:/etc/systemd/system/var-lib-mos.mount" \
-    "Before:mosd.service:/usr/lib/systemd/system/mosd.service" \
-    "Before:ssh.service:/usr/lib/systemd/system/ssh.service"; do
+# EVERY reader is listed, not a sample. The file does not exist until this unit
+# runs -- it is built in RAM -- so a reader that starts first finds no
+# /etc/shadow at all and fails every account closed, including the one an
+# operator is trying to use. That failure direction is the safe one, which is
+# exactly why the ordering has to be complete rather than approximately right.
+for pair in "Before:mosd.service:/usr/lib/systemd/system/mosd.service" \
+    "Before:ssh.service:/usr/lib/systemd/system/ssh.service" \
+    "Before:systemd-logind.service:/usr/lib/systemd/system/systemd-logind.service" \
+    "Before:systemd-user-sessions.service:/usr/lib/systemd/system/systemd-user-sessions.service"; do
     IFS=':' read -r keyw dep depfile <<<"${pair}"
     # Whitespace-separated unit list, matched as a whole token: a substring
     # match would accept "Before=xmosd.serviceX" and a bare grep for the name
@@ -3459,7 +3491,7 @@ for pair in "After:var-lib-mos.mount:/etc/systemd/system/var-lib-mos.mount" \
     if [ ! -f "${REC_UNIT}" ]; then
         fail "mos-shadow-reconcile.service is missing, so its ${keyw}=${dep} ordering cannot be checked"
     elif [ "${named}" -eq 0 ]; then
-        fail "mos-shadow-reconcile.service has no ${keyw}= naming ${dep}; /etc/shadow would be read or written before it converges"
+        fail "mos-shadow-reconcile.service has no ${keyw}= naming ${dep}; ${dep} would look for /etc/shadow before this unit builds it, and find no file at all"
     elif [ ! -f "${ROOT}${depfile}" ]; then
         fail "mos-shadow-reconcile.service orders ${keyw}=${dep} but ${depfile} is not in the image; systemd drops an ordering against a non-existent unit SILENTLY"
     else
@@ -3467,28 +3499,84 @@ for pair in "After:var-lib-mos.mount:/etc/systemd/system/var-lib-mos.mount" \
     fi
 done
 
-# mos-seed-state must hand the reconciler the /mnt/state path: on first boot it
-# runs inside the local mount phase, before var-lib-mos.mount exists, so the
-# default /var/lib/mos would not yet be the STATE directory.
-sq_grep /usr/lib/mos/mos-seed-state \
-    '^/usr/lib/mos/mos-shadow-reconcile /mnt/state/mos/shadow$' \
-    "mos-seed-state seeds the STATE shadow directly at /mnt/state/mos/shadow (var-lib-mos.mount is not up yet on first boot)"
+# ...and it must carry NO ordering against STATE. The file is built on a tmpfs
+# systemd has already mounted, so a dependency on var-lib-mos.mount would delay
+# the credential file behind a storage mount that can fail -- and it would say,
+# to the next reader of this unit, that the file still lives on STATE.
+if [ ! -f "${REC_UNIT}" ]; then
+    fail "mos-shadow-reconcile.service is missing, so its lack of a STATE ordering cannot be checked"
+elif rec_state_dep="$(grep -nE '^(After|Requires|RequiresMountsFor|BindsTo)=.*(var-lib-mos|/mnt/state)' "${REC_UNIT}" | tr '\n' ' ')" &&
+    [ -n "${rec_state_dep}" ]; then
+    fail "mos-shadow-reconcile.service still depends on STATE: ${rec_state_dep}. It builds /run/mos/shadow in RAM and touches no persistent storage; an ordering against a mount it does not need can only delay or block the file PAM opens"
+else
+    pass "mos-shadow-reconcile.service declares no After=/Requires= against var-lib-mos.mount or /mnt/state; it needs only the tmpfs systemd has already mounted"
+fi
+
+# And nothing may seed a shadow file onto STATE behind its back. mos-seed-state
+# ran the reconciler against /mnt/state/mos/shadow on first boot, back when
+# /etc/shadow resolved there; with the file in RAM that line would put a
+# credential on persistent storage that nothing reads and nothing ever clears.
+if [ ! -f "${ROOT}/usr/lib/mos/mos-seed-state" ]; then
+    fail "/usr/lib/mos/mos-seed-state is not in the image, so its handling of the shadow file cannot be checked"
+elif seed_shadow="$(grep -nE 'mos-shadow-reconcile|/mnt/state/[a-z]*/?shadow' "${ROOT}/usr/lib/mos/mos-seed-state" | grep -v '^[0-9]*:#' | tr '\n' ' ')" &&
+    [ -n "${seed_shadow}" ]; then
+    fail "mos-seed-state still puts a shadow file on STATE: ${seed_shadow}. The only credential mos supports is a transient root password, and a copy on a partition that survives reboots cannot be transient by construction"
+else
+    pass "mos-seed-state seeds no shadow file onto STATE; the only /etc/shadow on the device is the one built in RAM at boot"
+fi
 
 # The unit being present and enabled is asserted above. That is not the same as
-# it DOING anything: what makes the root password transient is that this script
-# clears the marker on every boot. Assert the script the unit runs actually
-# carries that logic, so a reconciler stripped back to the account-sync path
-# would fail here rather than silently make a "transient" password permanent.
+# it DOING anything, and what it must do has changed shape: the file is
+# REBUILT from the factory copy on every boot. There is no marker and no
+# next-boot protocol any more, so what has to be proven from the artifact is
+# that the build reads the factory copy and NOT whatever was there before. A
+# script that preserved existing entries would make a password persist across
+# reboots on a tmpfs too, the moment anything restored the file.
 REC_SCRIPT="${ROOT}/usr/lib/mos/mos-shadow-reconcile"
-rec_marker="$(sed -n 's/^MARKER=.*\/\([a-z-]*\)".*/\1/p' "${REC_SCRIPT}" 2>/dev/null | first_line)"
 if [ ! -f "${REC_SCRIPT}" ]; then
-    fail "/usr/lib/mos/mos-shadow-reconcile is not in the image, so the transient-password clearing cannot be checked"
-elif [ -z "${rec_marker}" ]; then
-    fail "mos-shadow-reconcile names no transient-password marker file; nothing would ever clear a transient root password and it would survive every reboot"
-elif ! grep -qE '^[[:space:]]*rm -f "\$MARKER"' "${REC_SCRIPT}"; then
-    fail "mos-shadow-reconcile names the marker '${rec_marker}' but never removes it, so a transient root password would be re-applied on every boot instead of being cleared"
+    fail "/usr/lib/mos/mos-shadow-reconcile is not in the image, so nothing would build /etc/shadow and every account would be unauthenticable"
 else
-    pass "mos-shadow-reconcile clears the transient-password marker '${rec_marker}' on every boot, which is what makes the password transient"
+    rec_defects=""
+    grep -qE '^FACTORY=.*/usr/share/factory/etc/shadow' "${REC_SCRIPT}" ||
+        rec_defects="${rec_defects} it does not name ${FACTORY_SHADOW} as its source;"
+    grep -qE '^SHADOW=.*/run/' "${REC_SCRIPT}" ||
+        rec_defects="${rec_defects} its default destination is not under /run, so the file it builds would not be on a tmpfs;"
+    # The build loop's input redirection is the load-bearing line: reading the
+    # DESTINATION here is precisely how a transient password would survive.
+    grep -qE 'done[[:space:]]*<"\$FACTORY"' "${REC_SCRIPT}" ||
+        rec_defects="${rec_defects} its build loop does not read \$FACTORY;"
+    # `if`, not `grep ... && assign`: in the GOOD case the grep matches nothing
+    # and that compound returns non-zero, which is a live trap in a file run
+    # under set -e -- the same one that killed this build once at the openssl
+    # purge guard and once at the reconciler ordering assertion.
+    if grep -qE 'done[[:space:]]*<"\$SHADOW"' "${REC_SCRIPT}"; then
+        rec_defects="${rec_defects} its build loop reads \$SHADOW, i.e. it carries the previous boot's entries forward, which is exactly what makes a password persist;"
+    fi
+    # Every entry that comes out of the image is locked. A signed rootfs is
+    # byte-identical across the fleet, so a usable hash in the factory copy is
+    # a usable hash on every device.
+    grep -qE '\$2 = "!"' "${REC_SCRIPT}" ||
+        rec_defects="${rec_defects} it does not force a locked password field on the entries it copies;"
+    if [ -z "${rec_defects}" ]; then
+        pass "mos-shadow-reconcile builds ${SHADOW_LINK_TARGET} in RAM from ${FACTORY_SHADOW} on every boot, locking every entry it copies and reading nothing from the previous boot -- which is what makes the root password transient without a protocol to get wrong"
+    else
+        fail "mos-shadow-reconcile would not make the root password transient:${rec_defects}"
+    fi
+fi
+
+# The factory copy is now the ONLY source of the shadow file, so a usable hash
+# in it is a usable hash on every device flashed with this image. Asserted here
+# rather than trusted: the entries above are checked for PRESENCE, and a
+# present entry with a real hash would satisfy every one of them.
+if [ ! -f "${FAC}" ]; then
+    fail "${FACTORY_SHADOW} is missing, so the shipped credential set cannot be checked"
+else
+    fac_unlocked="$(awk -F: '$2 !~ /^[!*]/ && $2 != "" { print $1 }' "${FAC}" | tr '\n' ' ')"
+    if [ -z "${fac_unlocked}" ]; then
+        pass "every entry in ${FACTORY_SHADOW} is locked (password field ! or * or empty), so the image ships no usable credential for any account"
+    else
+        fail "${FACTORY_SHADOW} ships a usable password hash for: ${fac_unlocked}. The rootfs is signed and byte-identical across the fleet, so that is the same credential on every device, and it is the file every boot rebuilds /etc/shadow from"
+    fi
 fi
 
 # The two environment overrides that let os/shadow-reconcile-test.sh drive the

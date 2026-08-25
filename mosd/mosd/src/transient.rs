@@ -84,8 +84,30 @@ pub fn production_shadow_path() -> PathBuf {
 /// Derived from the shadow path, never hardcoded, so a caller working on an
 /// alternate path — `mos-seed-state`'s `/mnt/state/mos/shadow`, or a test's
 /// temporary file — gets the marker that belongs to it.
+///
+/// THE SYMLINK IS RESOLVED FIRST, and that is the whole point of this function
+/// not being one line. `Path::with_file_name` is LEXICAL: it rewrites the last
+/// component of the string and resolves nothing. On the v2 image
+/// `/etc/shadow` is a symlink onto STATE, so writing the shadow file follows
+/// the link and succeeds while a marker placed "beside" it lexically lands in
+/// the literal `/etc/` — a dm-verity squashfs. The write fails with
+/// `Read-only file system (os error 30)`, mosd returns an error over the bus,
+/// and apid answers `502 Bad Gateway`: the transient SSH root password, which
+/// is the documented way back into a locked-out device, does not work at all.
+///
+/// Found from outside by the apid API suite on a booted x64 image (RFCT-105).
+/// No unit test could see it: this function's own test asserted three paths
+/// that were already resolved, and the ONE path production passes — the
+/// `/etc/shadow` symlink — was not among them.
+///
+/// `canonicalize` needs the path to exist. When it does not — a test's
+/// not-yet-created temporary file, a caller probing before first boot — the
+/// lexical answer is correct and is what is returned, because an unresolvable
+/// path has no symlink to follow.
 pub fn transient_marker_path(shadow_path: &Path) -> PathBuf {
-    shadow_path.with_file_name(MARKER_NAME)
+    std::fs::canonicalize(shadow_path)
+        .unwrap_or_else(|_| shadow_path.to_path_buf())
+        .with_file_name(MARKER_NAME)
 }
 
 /// Whether a transient root password is currently set.
@@ -305,6 +327,51 @@ mod tests {
         assert_eq!(
             transient_marker_path(Path::new("/tmp/case-3/shadow")),
             Path::new("/tmp/case-3/transient-root-password")
+        );
+    }
+
+    /// THE CASE PRODUCTION ACTUALLY PASSES, and the one the three above miss.
+    ///
+    /// Every path in the test above is already resolved. The only path mosd
+    /// ever hands this function on a device is `/etc/shadow`, which on the v2
+    /// image is a SYMLINK onto STATE -- and `Path::with_file_name` is lexical,
+    /// so the marker used to land in the literal `/etc/`, a read-only
+    /// dm-verity squashfs. mosd failed with `os error 30`, apid answered 502,
+    /// and the transient SSH root password -- the documented way back into a
+    /// locked-out device -- did not work at all. Found from outside by the
+    /// apid API suite on a booted image (RFCT-105); no unit test could see it.
+    ///
+    /// The assertion is that the marker follows the LINK TARGET's directory,
+    /// not the link's own.
+    #[test]
+    fn the_marker_follows_a_symlinked_shadow_to_where_it_really_lives() {
+        let dir = tempfile::tempdir().unwrap();
+        let state = dir.path().join("state");
+        let etc = dir.path().join("etc");
+        std::fs::create_dir_all(&state).unwrap();
+        std::fs::create_dir_all(&etc).unwrap();
+
+        let real_shadow = state.join("shadow");
+        std::fs::write(&real_shadow, "root:!:20000:::::\n").unwrap();
+        let link = etc.join("shadow");
+        std::os::unix::fs::symlink(&real_shadow, &link).unwrap();
+
+        assert_eq!(
+            transient_marker_path(&link),
+            std::fs::canonicalize(&state).unwrap().join(MARKER_NAME),
+            "the marker must sit beside the shadow file the link POINTS AT; \
+             beside the link itself is a read-only squashfs on a real device"
+        );
+    }
+
+    /// A path that does not exist yet keeps the lexical answer, because an
+    /// unresolvable path has no symlink to follow. A caller probing before the
+    /// file is created must not be handed an error.
+    #[test]
+    fn a_path_that_does_not_exist_still_gets_a_marker_beside_it() {
+        assert_eq!(
+            transient_marker_path(Path::new("/tmp/definitely-not-created/shadow")),
+            Path::new("/tmp/definitely-not-created/transient-root-password")
         );
     }
 

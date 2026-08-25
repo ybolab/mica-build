@@ -1,183 +1,80 @@
 #!/bin/sh
-# Reconcile the STATE-backed /etc/shadow with the accounts the image ships.
+# Build /etc/shadow in RAM from the copy the image ships.
 #
-# On layout v2 the root filesystem is a dm-verity squashfs, so /etc/shadow
-# cannot be written where it sits. It is shipped as a symlink to
-# /var/lib/mos/shadow, which is the bind target of var-lib-mos.mount and
-# therefore lands on the STATE partition; the image's own copy is kept as the
-# factory template at /usr/share/factory/etc/shadow. That is what makes a
-# per-device password possible at all: PAM -> pam_unix -> /etc/shadow now
-# resolves to a writable file, and mosd rewrites the root: line by atomic
-# rename (which is also why this is a symlink and not a bind-mounted file --
-# a bind-mounted file cannot be replaced by rename).
+# WHY IN RAM. mos supports exactly one kind of operator credential on the
+# console: a TRANSIENT root password, set through the web UI and gone at the
+# next boot. There is no persistent per-device password -- that model existed
+# and was superseded (docs/design/access.md §4.2), because a password is a
+# persistent credential with no rotation path.
 #
-# This runs on EVERY boot, not once. A seed-once design would freeze the file
-# at whatever accounts existed on the day the device was flashed, so a later
-# A/B update that adds a system account would leave that account with no shadow
-# entry at all. Reconciling instead means the file converges on each boot.
+# Given that, a shadow file on a partition that SURVIVES REBOOTS is wrong, not
+# merely redundant. It made "transient" a PROTOCOL rather than a PROPERTY: the
+# password was written to STATE, a marker was written beside it, and this
+# script cleared it on the next boot. Nothing enforced that. This unit is
+# `WantedBy=multi-user.target` and only `Before=` sshd -- no unit `Requires=`
+# it -- so a failed, masked or reordered oneshot left the "transient" password
+# live on disk with sshd starting anyway.
 #
-# Three rules, in this order:
-#   1. A TRANSIENT root password -- one mosd set through the web UI and recorded
-#      in a marker beside this file -- is cleared. That is what makes it
-#      transient, and it is the one deliberate exception to rule 2. See the
-#      block below for why it is a marker and not a flag.
-#   2. Any other entry that already exists in the STATE file is NEVER touched.
-#      The device's own credential always wins over the image's -- an update must
-#      not be able to reset or replace a password the operator set.
-#   3. An account in /etc/passwd with no STATE entry gets one appended, always
-#      LOCKED. A signed rootfs is byte-identical across the whole fleet, so any
-#      hash carried in the image would be a shared secret by construction; the
-#      factory entry is used only for its aging fields.
+# /run is a tmpfs. A reboot clears the password because the memory is gone,
+# which nothing can fail to do. And if this script does not run, /etc/shadow
+# does not exist and PAM fails closed: the failure direction is now safe.
 #
-# Nothing else is written: if every account already has an entry and no
-# transient password is pending, the file is not replaced at all, so a second
-# run on a converged system is a no-op.
+# It also removed a whole defect class. The marker had to sit "beside" the
+# shadow file, and /etc/shadow was a symlink onto STATE, so the lexical sibling
+# landed in the read-only squashfs -- mosd failed with os error 30 and apid
+# answered 502, which meant the documented way back into a locked-out device
+# did not work at all (RFCT-105). With the file in RAM there is no marker and
+# no next-boot protocol to get wrong.
 #
-# Usage: mos-shadow-reconcile [shadow-path]
-# The path defaults to /var/lib/mos/shadow. mos-seed-state passes
-# /mnt/state/mos/shadow instead, because on first boot it runs inside the local
-# mount phase, before var-lib-mos.mount has bound that directory onto /var.
-#
-# MOS_SHADOW_PASSWD and MOS_SHADOW_FACTORY redirect the two absolute inputs.
-# They exist so os/shadow-reconcile-test.sh can drive this exact script against
-# fixtures in a temp dir without root and without a /usr/share/factory; nothing
-# on the device sets them.
+# WHAT IS STILL RECONCILED. Every account in /etc/passwd must have a shadow
+# entry, and any account the factory copy does not name gets one appended
+# LOCKED. A signed rootfs is byte-identical across the fleet, so no usable hash
+# may come out of the image; and a later A/B update that adds a system account
+# must not leave it with no entry at all. That is why this rebuilds rather than
+# seeds once.
 set -eu
 
-SHADOW="${1:-/var/lib/mos/shadow}"
+SHADOW="${1:-/run/mos/shadow}"
 PASSWD="${MOS_SHADOW_PASSWD:-/etc/passwd}"
 FACTORY="${MOS_SHADOW_FACTORY:-/usr/share/factory/etc/shadow}"
 
 [ -f "$PASSWD" ] || { echo "no $PASSWD to reconcile against" >&2; exit 1; }
-[ -f "$FACTORY" ] || { echo "no $FACTORY to seed from" >&2; exit 1; }
+[ -f "$FACTORY" ] || { echo "no $FACTORY to build from" >&2; exit 1; }
 
 dir="$(dirname "$SHADOW")"
-[ -d "$dir" ] || { echo "$dir does not exist; is var-lib-mos.mount up?" >&2; exit 1; }
+mkdir -p "$dir"
+chmod 0755 "$dir"
 
-# --- transient root password -------------------------------------------------
-# mosd's com.mos.mosd1.SetTransientRootPassword writes a bcrypt hash into the
-# root: line AND records that same hash in a marker beside this file. Clearing
-# it again is this script's job, which is what makes the password transient: it
-# is set once, over the network, and it does not survive a reboot.
-#
-# This runs BEFORE the converged early exit further down, because a converged
-# system -- every account already has an entry -- is exactly the common case, and
-# a check placed after that exit would never run on a fielded device at all.
-#
-# The marker is compared against the hash the file actually carries; it is not a
-# "lock root on every boot" flag, and that difference is the entire reason it
-# exists. Any hash mosd did not write — set by hand over the serial console, or
-# by some future provisioning path — fails the comparison, so the file is left
-# alone and that credential survives the reboot its owner expects it to. Only a
-# hash this system set is cleared. (A baked ROOT_PASSWORD is NOT such a case on
-# v2: the pack stage fails any build whose factory shadow carries a usable
-# hash, so no buildable v2 image reaches this branch that way.)
-MARKER="${dir}/transient-root-password"
-if [ -s "$MARKER" ]; then
-    want=$(head -n1 "$MARKER")
-    cur=''
-    has_root=no
-    if [ -f "$SHADOW" ] && grep -q '^root:' "$SHADOW"; then
-        has_root=yes
-        cur=$(awk -F: '$1 == "root" { print $2; exit }' "$SHADOW")
-    fi
-    if [ -z "$want" ] || [ "$has_root" = no ]; then
-        # An empty first line names no hash, and a file with no root: line has
-        # no field to rewrite. Neither may be turned into a write: forcing the
-        # field to the empty string is specifically forbidden, because an EMPTY
-        # hash field is passwordless root rather than a locked account.
-        echo "shadow: transient marker names no usable hash; ${SHADOW} left alone"
-    elif [ "$cur" = "$want" ]; then
-        ttmp="${SHADOW}.transient.$$"
-        trap 'rm -f "$ttmp"' EXIT INT TERM
-        awk -F: -v OFS=: '$1 == "root" { $2 = "!" } { print }' "$SHADOW" >"$ttmp"
-        chgrp shadow "$ttmp"
-        chmod 0640 "$ttmp"
-        mv -f "$ttmp" "$SHADOW"
-        trap - EXIT INT TERM
-        echo "shadow: transient root password cleared"
-    else
-        echo "shadow: transient marker does not match the current root hash; leaving it alone"
-    fi
-fi
-# Stale in every branch: the hash it named has either just been cleared or was
-# never the one in the file, so it can only mislead the next boot.
-rm -f "$MARKER"
-
-# Force the hash field of a shadow line to a locked marker. Anything that is
-# not already '!' or '*' is replaced, and that deliberately includes an EMPTY
-# field: empty does not mean locked, it means pam_unix accepts any password.
 lock_entry() {
     echo "$1" | awk -F: -v OFS=: '{ if ($2 !~ /^[!*]/) $2 = "!"; print }'
 }
 
-tmp="${SHADOW}.reconcile.$$"
+tmp="${SHADOW}.build.$$"
 trap 'rm -f "$tmp"' EXIT INT TERM
 
-if [ -f "$SHADOW" ]; then
-    cat "$SHADOW" >"$tmp"
-else
-    : >"$tmp"
-fi
+# FROM THE FACTORY COPY, EVERY BOOT. Not from whatever was there before: there
+# is nothing to preserve, and rebuilding is what makes the transient password
+# transient without a protocol.
+: >"$tmp"
+while IFS= read -r line; do
+    [ -n "$line" ] || continue
+    lock_entry "$line" >>"$tmp"
+done <"$FACTORY"
 
-# Every entry below is added with `>>`, so a copy whose final line is NOT
-# newline-terminated would take the first appended entry onto that same line
-# and weld two accounts into one malformed record -- in the file pam_unix
-# authenticates against. Worse, the welded account no longer matches the
-# `grep -q "^${user}:"` guard below, so the next boot appends it again and the
-# damage compounds. Repair the terminator once, here, before anything appends.
-#
-# The last byte is inspected through od rather than compared directly, because
-# command substitution strips trailing newlines: `$(tail -c 1 "$tmp")` is the
-# empty string BOTH for a file ending in a newline and for a file ending in no
-# byte at all, which is exactly the distinction that has to be made. Rendered
-# as hex, a terminator is 0a and nothing else is.
-#
-# The `-s` guard means an empty copy is left empty: there is no final line to
-# terminate, and a bare newline would become a blank first line.
-#
-# This writes to $tmp, never to $SHADOW. A file that is unterminated but needs
-# no new entry therefore still reaches the converged early exit below, which
-# discards $tmp and leaves $SHADOW untouched -- deliberately. With nothing to
-# append there is nothing that can be welded, so rewriting the file would buy
-# no safety and would turn a no-op boot into a write to a credential store.
-# Do not "fix" this into an unconditional rewrite.
-if [ -s "$tmp" ]; then
-    if [ "$(tail -c 1 "$tmp" | od -An -tx1 | tr -d ' \n')" != "0a" ]; then
-        printf '\n' >>"$tmp"
-    fi
-fi
-
-today=$(( $(date +%s) / 86400 ))
+# Rule: an account in /etc/passwd with no entry gets one, LOCKED.
 added=0
-while IFS=: read -r user rest; do
+while IFS=: read -r user _rest; do
     [ -n "$user" ] || continue
-    case "$user" in \#*) continue ;; esac
-    if grep -q "^${user}:" "$tmp"; then continue; fi
-    line="$(grep "^${user}:" "$FACTORY" | head -n1)"
-    if [ -n "$line" ]; then
-        lock_entry "$line" >>"$tmp"
-    else
-        echo "${user}:!:${today}:0:99999:7:::" >>"$tmp"
+    if ! awk -F: -v u="$user" '$1 == u { found = 1 } END { exit !found }' "$tmp"; then
+        printf '%s:!:20000:0:99999:7:::\n' "$user" >>"$tmp"
+        added=$((added + 1))
+        echo "shadow: added locked entry for '$user'"
     fi
-    added=$((added + 1))
-    echo "shadow: added locked entry for '${user}'"
 done <"$PASSWD"
 
-# unix_chkpwd runs setgid shadow specifically so that a non-root PAM stack can
-# read this file; 0640 root:shadow is the mode that makes that work and the
-# mode Debian ships. Enforced on every run, not only when the file is rewritten.
-if [ "$added" -eq 0 ]; then
-    rm -f "$tmp"
-    chgrp shadow "$SHADOW"
-    chmod 0640 "$SHADOW"
-    echo "shadow: already converged, ${SHADOW} untouched"
-    exit 0
-fi
-
-chgrp shadow "$tmp"
+chgrp shadow "$tmp" 2>/dev/null || true
 chmod 0640 "$tmp"
 mv -f "$tmp" "$SHADOW"
 trap - EXIT INT TERM
-sync
-echo "shadow: reconciled ${SHADOW} (${added} entry/entries added)"
+
+echo "shadow: built ${SHADOW} in RAM from ${FACTORY} (${added} account(s) appended locked)"
