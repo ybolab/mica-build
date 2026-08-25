@@ -1,9 +1,10 @@
 # RFCT-107 PLAN-014 M1: delete v1 and restructure the os/ tree without changing a byte of the image
 
-- **status**: pending
+- **status**: in progress
 - **priority**: P1
-- **owner**: -
+- **owner**: ai-agent
 - **createdAt**: 2026-08-25 10:50
+- **claimedAt**: 2026-08-25 11:05
 - **plan**: PLAN-014 (M1)
 
 Delete the v1 single-slot chain and reshape `os/` into the PLAN-014 target
