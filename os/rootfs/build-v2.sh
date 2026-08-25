@@ -19,7 +19,7 @@
 #   boot-cmdline-b.txt    kernel append line for the B slot
 #   rootfs-report-v2.txt  package list + installed size
 #
-# Every layout constant is read from os/layout/cx3576-v2.env.
+# Every layout constant is read from os/boards/cx3576/board.env.
 set -euo pipefail
 
 SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
@@ -47,7 +47,7 @@ x64)
     ;;
 esac
 DOCKER_PLATFORM="linux/${MOS_ARCH}"
-LAYOUT_ENV="$REPO_ROOT/os/layout/${MOS_BOARD}-v2.env"
+LAYOUT_ENV="$REPO_ROOT/os/boards/${MOS_BOARD}/board.env"
 BOARD_DIR=${BOARD_DIR:-"$REPO_ROOT/board/${MOS_BOARD}"}
 OUT_DIR="$REPO_ROOT/_out/${MOS_BOARD}"
 # Installed-size budget. A per-board fact for the same reason
@@ -91,13 +91,13 @@ if [ ! -f "$LAYOUT_ENV" ]; then
     echo "error: $LAYOUT_ENV not found" >&2
     exit 1
 fi
-# shellcheck source=../layout/cx3576-v2.env
+# shellcheck source=../boards/cx3576/board.env
 . "$LAYOUT_ENV"
 
 # Board console facts. These describe a board's serial console, not its
 # partition layout -- and the comment here used to say "if a second board ever
 # needs a v2 image they move into a per-board file". x64 is that second board,
-# so they moved: each os/layout/<board>-v2.env now carries its own
+# so they moved: each os/boards/<board>/board.env now carries its own
 # BOARD_CMDLINE_ARGS, and this refuses a layout that forgot to.
 SIZE_BUDGET_MB="${SIZE_BUDGET_MB:-${BOARD_SIZE_BUDGET_MB:-}}"
 if [ -z "$SIZE_BUDGET_MB" ]; then

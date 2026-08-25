@@ -157,10 +157,10 @@ os-uboot-handshake-test:
 # second direction is what would have caught BOOT_ATTEMPTS_DEFAULT sitting in
 # the grub board's layout before RAUC refused it on the device.
 os-layout-lint:
-	bash os/layout/lint.sh
+	bash os/verify/lint.sh
 
 os-layout-lint-test:
-	bash os/layout/lint-test.sh
+	bash os/verify/lint-test.sh
 
 # Every shell script that enables pipefail, checked for an early-exiting reader
 # on the right of a pipe. `producer | grep -q PATTERN` inverts its own answer

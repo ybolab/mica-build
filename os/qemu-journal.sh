@@ -19,7 +19,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(dirname "${SCRIPT_DIR}")"
 OUT_DIR="${REPO_ROOT}/_out/x64"
-. "${REPO_ROOT}/os/layout/x64-v2.env"
+. "${REPO_ROOT}/os/boards/x64/board.env"
 DISK="${OUT_DIR}/.qemu/disk.img"
 
 if [ ! -f "${DISK}" ]; then

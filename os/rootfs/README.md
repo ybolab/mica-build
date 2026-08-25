@@ -185,7 +185,7 @@ Outputs to `_out/cx3576/`, all consumed by `os/mkimage-v2.sh`:
 | `boot-cmdline-a.txt` / `-b.txt` | the full kernel `append` line for each slot |
 | `rootfs-report-v2.txt` | package list, installed size, setuid/setgid inventory, file capabilities |
 
-Every layout constant is read from `os/layout/cx3576-v2.env`; none is duplicated
+Every layout constant is read from `os/boards/cx3576/board.env`; none is duplicated
 in `build-v2.sh`, `Dockerfile.v2` or the overlay. The board console/storage
 cmdline fragment (`console=ttyFIQ0,… earlycon=… net.ifnames=0`) is a board fact
 too and lives there as `BOARD_CMDLINE_ARGS`, moved out of `build-v2.sh` when
@@ -334,7 +334,7 @@ them at runtime.
 `os/rootfs/overlay-v2/etc/rauc/system.conf` is **generated** by
 `os/rauc/render-config.sh` (RFCT-014's renderer, which owns the template and
 its assertions) and is gitignored. `build-v2.sh` runs the renderer before
-staging the overlay, so the template plus `os/layout/cx3576-v2.env` are the
+staging the overlay, so the template plus `os/boards/cx3576/board.env` are the
 single source of truth and the rendered file cannot drift from them.
 
 `os/bundle.sh` still runs `render-config.sh --check`. It now guards a narrower
@@ -372,7 +372,7 @@ The rule is: **identity, credentials, pairings and update state never live on
 
 The DATA constants (`DATA_GUID`, `DATA_PARTNUM`, `DATA_FS_UUID`,
 `MOS_VAR_MIB`) are **required**: `build-v2.sh` fails if any is missing from
-`os/layout/cx3576-v2.env`. There is deliberately no fallback. A build that
+`os/boards/cx3576/board.env`. There is deliberately no fallback. A build that
 quietly emitted the superseded nine-partition arrangement — `/var` growing, no
 `/srv` — would pass every downstream check, which is precisely the class of
 silent-wrong-artifact this layout work exists to prevent.

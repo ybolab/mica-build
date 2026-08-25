@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # Check a board layout against the board-definition schema.
 #
-#   bash os/layout/lint.sh                 every os/layout/*-v2.env
-#   bash os/layout/lint.sh <file> [...]    the named ones
+#   bash os/verify/lint.sh                 every os/boards/*/board.env
+#   bash os/verify/lint.sh <file> [...]    the named ones
 #
 # WHY THIS EXISTS. A board is defined by its layout file, and the shared build
 # and verification scripts read that definition rather than knowing any board's
@@ -11,7 +11,7 @@
 # the omission, and a key a board CANNOT honour reads as a policy nobody
 # implements.
 #
-# The second failure is the one that has actually happened. os/layout/x64-v2.env
+# The second failure is the one that has actually happened. os/boards/x64/board.env
 # declared BOOT_ATTEMPTS_DEFAULT=3, BOOT_ATTEMPTS_MIN and BOOT_ATTEMPTS_MAX
 # under a comment asserting that grub keeps attempt counters "where U-Boot keeps
 # them in its redundant environment; the CONTRACT is identical". It is not:
@@ -25,6 +25,7 @@
 set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+BOARDS="${HERE}/../boards"
 
 # The counters live in a FILE, not in shell variables.
 #
@@ -86,7 +87,12 @@ KNOWN_ROLES="raw-blob uboot-env esp verity-slot ext4"
 
 lint_one() {
     local env_file="$1" board
+    # A board's identity is its DIRECTORY now -- boards/<board>/board.env --
+    # so a bare basename would report every board as "board.env".
     board="$(basename "${env_file}")"
+    if [ "${board}" = "board.env" ]; then
+        board="$(basename "$(dirname "${env_file}")")"
+    fi
 
     # Each file in its own subshell: sourcing two layouts into one process
     # would let the first board's keys satisfy the second board's checks, and
@@ -208,7 +214,7 @@ lint_one() {
 if [ "$#" -gt 0 ]; then
     FILES=("$@")
 else
-    FILES=("${HERE}"/*-v2.env)
+    FILES=("${BOARDS}"/*/board.env)
 fi
 
 # Each layout must be READ TO THE END and must contribute assertions of its own.

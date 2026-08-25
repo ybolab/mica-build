@@ -4,7 +4,7 @@
 # os/rootfs/overlay-v2/etc/rauc/system.conf, which RFCT-013's overlay mechanism
 # copies to /etc/rauc/system.conf. Never hand-edit the rendered file: every
 # GUID and every attempt count below is substituted from
-# os/layout/cx3576-v2.env, so this configuration cannot drift from the GPT the
+# os/boards/cx3576/board.env, so this configuration cannot drift from the GPT the
 # image assembler writes.
 
 [system]

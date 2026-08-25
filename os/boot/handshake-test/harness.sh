@@ -51,8 +51,8 @@ MKIMAGE="${CACHE}/mkimage"
 MKENVIMAGE="${CACHE}/mkenvimage"
 BOOT_CMD="${REPO}/os/boot/cx3576-boot.cmd"
 
-# shellcheck source=../../layout/cx3576-v2.env
-. "${REPO}/os/layout/cx3576-v2.env"
+# shellcheck source=../../boards/cx3576/board.env
+. "${REPO}/os/boards/cx3576/board.env"
 
 ulimit -c 0 # SIGABRT is an expected cycle ending; do not litter cores
 

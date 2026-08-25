@@ -58,10 +58,10 @@ REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 # one key used turns a layout that stopped defining it into a sentence instead
 # of an empty path that fails four lines later as "image missing".
 # shellcheck source=/dev/null  # a data file of assignments, resolved at runtime
-. "${REPO_ROOT}/os/layout/x64-v2.env"
+. "${REPO_ROOT}/os/boards/x64/board.env"
 
 OUT_DIR="${REPO_ROOT}/_out/x64"
-IMG="${OUT_DIR}/${IMAGE_LATEST_NAME:?os/layout/x64-v2.env did not define IMAGE_LATEST_NAME}"
+IMG="${OUT_DIR}/${IMAGE_LATEST_NAME:?os/boards/x64/board.env did not define IMAGE_LATEST_NAME}"
 RUN_DIR="${OUT_DIR}/.qemu"
 ART_DIR="${OUT_DIR}/apid-api"
 

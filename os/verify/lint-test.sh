@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Prove os/layout/lint.sh rejects a broken board definition.
+# Prove os/verify/lint.sh rejects a broken board definition.
 #
 # WHY. A linter that has only ever been observed passing is not evidence, and
 # this one proved the point about itself: its first version printed FAIL lines
@@ -15,6 +15,7 @@ set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 LINT="${HERE}/lint.sh"
+BOARDS="${HERE}/../boards"
 WORK="$(mktemp -d)"
 trap 'rm -rf "${WORK}"' EXIT
 
@@ -24,13 +25,15 @@ RAN=""
 ok() { PASS_N=$((PASS_N + 1)); echo "PASS: $*"; }
 no() { FAIL_N=$((FAIL_N + 1)); echo "FAIL: $*" >&2; }
 
-# Run the linter on a mutated copy; assert it rejects, and name what it must say.
+# Run the linter on a mutated copy of a board definition; assert it rejects,
+# and name what it must say. The copy is deliberately NOT called board.env: a
+# rejection message should say "candidate", not name a real board it is not.
 reject() {
-    local name="$1" src="$2" want="$3" mutate="$4" out rc=0
+    local name="$1" board="$2" want="$3" mutate="$4" out rc=0
     RAN="${RAN} ${name}"
-    cp "${HERE}/${src}" "${WORK}/lint-v2.env"
+    cp "${BOARDS}/${board}/board.env" "${WORK}/candidate.env"
     ( cd "${WORK}" && eval "${mutate}" )
-    out="$(bash "${LINT}" "${WORK}/lint-v2.env" 2>&1)" || rc=$?
+    out="$(bash "${LINT}" "${WORK}/candidate.env" 2>&1)" || rc=$?
     if [ "${rc}" -eq 0 ]; then
         no "${name}: lint.sh ACCEPTED a layout it must reject"
         return
@@ -45,70 +48,70 @@ reject() {
 # THE CASE THIS LINTER WAS WRITTEN FOR. x64 carried BOOT_ATTEMPTS_DEFAULT=3
 # under a comment claiming grub's contract matches U-Boot's. It does not, RAUC
 # refuses the rendered configuration, and rauc.service exits 1 on the device.
-reject boot-attempts-on-grub x64-v2.env \
+reject boot-attempts-on-grub x64 \
     "RAUC refuses a grub configuration that sets boot attempts" \
-    "printf 'BOOT_ATTEMPTS_DEFAULT=3\n' >> lint-v2.env"
+    "printf 'BOOT_ATTEMPTS_DEFAULT=3\n' >> candidate.env"
 
-reject grub-without-grubenv x64-v2.env \
+reject grub-without-grubenv x64 \
     "no RAUC_GRUBENV" \
-    "sed -i '/^RAUC_GRUBENV=/d' lint-v2.env"
+    "sed -i '/^RAUC_GRUBENV=/d' candidate.env"
 
-reject uboot-without-attempts cx3576-v2.env \
+reject uboot-without-attempts cx3576 \
     "no BOOT_ATTEMPTS_DEFAULT is declared" \
-    "sed -i '/^BOOT_ATTEMPTS_DEFAULT=/d' lint-v2.env"
+    "sed -i '/^BOOT_ATTEMPTS_DEFAULT=/d' candidate.env"
 
-reject no-partition-set x64-v2.env \
+reject no-partition-set x64 \
     "declares no LAYOUT_PARTITIONS" \
-    "sed -i '/^LAYOUT_PARTITIONS=/d' lint-v2.env"
+    "sed -i '/^LAYOUT_PARTITIONS=/d' candidate.env"
 
-reject missing-role-key x64-v2.env \
+reject missing-role-key x64 \
     "declares no ESP_FAT_VOLUME_ID" \
-    "sed -i '/^ESP_FAT_VOLUME_ID=/d' lint-v2.env"
+    "sed -i '/^ESP_FAT_VOLUME_ID=/d' candidate.env"
 
-reject forbidden-role-key x64-v2.env \
+reject forbidden-role-key x64 \
     "which that role cannot honour" \
-    "printf 'ROOTFS_A_FS_UUID=00000000-0000-4000-8000-000000000000\n' >> lint-v2.env"
+    "printf 'ROOTFS_A_FS_UUID=00000000-0000-4000-8000-000000000000\n' >> candidate.env"
 
-reject unknown-role x64-v2.env \
+reject unknown-role x64 \
     "is not one of" \
-    "sed -i 's/^STATE_ROLE=ext4/STATE_ROLE=btrfs/' lint-v2.env"
+    "sed -i 's/^STATE_ROLE=ext4/STATE_ROLE=btrfs/' candidate.env"
 
-reject missing-common-key x64-v2.env \
+reject missing-common-key x64 \
     "declares no META_GUID" \
-    "sed -i '/^META_GUID=/d' lint-v2.env"
+    "sed -i '/^META_GUID=/d' candidate.env"
 
-reject partition-number-gap x64-v2.env \
+reject partition-number-gap x64 \
     "these numbers are absent" \
-    "sed -i 's/^DATA_PARTNUM=9/DATA_PARTNUM=10/' lint-v2.env"
+    "sed -i 's/^DATA_PARTNUM=9/DATA_PARTNUM=10/' candidate.env"
 
-reject duplicate-partition-number x64-v2.env \
+reject duplicate-partition-number x64 \
     "is declared twice" \
-    "sed -i 's/^STATE_PARTNUM=7/STATE_PARTNUM=6/' lint-v2.env"
+    "sed -i 's/^STATE_PARTNUM=7/STATE_PARTNUM=6/' candidate.env"
 
 # One fact in three units. cx3576 spells a start as MiB, as a sector AND as a
 # byte offset, as three independent literals; nothing tied them together until
 # this check, and three literals can drift apart one edit at a time.
-reject start-units-disagree cx3576-v2.env \
+reject start-units-disagree cx3576 \
     "disagree" \
-    "sed -i 's/^BOOT_A_START_SECTOR=36864/BOOT_A_START_SECTOR=36865/' lint-v2.env"
+    "sed -i 's/^BOOT_A_START_SECTOR=36864/BOOT_A_START_SECTOR=36865/' candidate.env"
 
-reject offset-units-disagree cx3576-v2.env \
+reject offset-units-disagree cx3576 \
     "disagree" \
-    "sed -i 's/^BOOT_A_OFFSET_BYTES=18874368/BOOT_A_OFFSET_BYTES=18874369/' lint-v2.env"
+    "sed -i 's/^BOOT_A_OFFSET_BYTES=18874368/BOOT_A_OFFSET_BYTES=18874369/' candidate.env"
 
-reject no-arch x64-v2.env \
+reject no-arch x64 \
     "declares no MOS_ARCH" \
-    "sed -i '/^MOS_ARCH=/d' lint-v2.env"
+    "sed -i '/^MOS_ARCH=/d' candidate.env"
 
-reject bad-status-led x64-v2.env \
+reject bad-status-led x64 \
     "it must be 0 or 1" \
-    "sed -i 's/^BOARD_HAS_STATUS_LED=0/BOARD_HAS_STATUS_LED=no/' lint-v2.env"
+    "sed -i 's/^BOARD_HAS_STATUS_LED=0/BOARD_HAS_STATUS_LED=no/' candidate.env"
 
 # The other direction: the shipped layouts must PASS. Without this the suite
 # would be satisfied by a linter that rejects everything.
 for board in cx3576 x64; do
     RAN="${RAN} accepts-${board}"
-    if bash "${LINT}" "${HERE}/${board}-v2.env" >/dev/null 2>&1; then
+    if bash "${LINT}" "${BOARDS}/${board}/board.env" >/dev/null 2>&1; then
         ok "accepts-${board}: the shipped layout passes"
     else
         no "accepts-${board}: lint.sh REJECTS the shipped layout"

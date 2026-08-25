@@ -10,7 +10,7 @@ set -euo pipefail
 # "RESULT: PASS|FAIL (n/m checks)" summary; exits non-zero if any check fails.
 # Totals are dynamic (PASS_N/total); nothing to hand-bump when checks change.
 #
-# Every layout constant is read from os/layout/cx3576-v2.env. Nothing here
+# Every layout constant is read from os/boards/cx3576/board.env. Nothing here
 # restates a GUID, an offset or a size, and nothing here enumerates a unit list
 # that the image itself can be asked for: the hwinit set grows, and a hardcoded
 # list is how a newly added unit silently falls outside coverage.
@@ -31,13 +31,13 @@ BOARD_DIR="${BOARD_DIR:-${REPO_ROOT}/board/cx3576}"
 # verified by the same assertions, which is the point of having them read the
 # layout rather than name partitions and a bootloader directly.
 MOS_BOARD="${MOS_BOARD:-cx3576}"
-LAYOUT_ENV="${SCRIPT_DIR}/layout/${MOS_BOARD}-v2.env"
+LAYOUT_ENV="${SCRIPT_DIR}/boards/${MOS_BOARD}/board.env"
 
 if [ ! -f "${LAYOUT_ENV}" ]; then
     echo "error: ${LAYOUT_ENV} not found" >&2
     exit 1
 fi
-# shellcheck source=layout/cx3576-v2.env
+# shellcheck source=boards/cx3576/board.env
 . "${LAYOUT_ENV}"
 
 # READ FROM THE IMAGE, not pinned. "6.1.115" is the cx3576 BSP kernel; x64 runs
@@ -3225,7 +3225,7 @@ check_packed_mountpoints
 # correct configuration of the other -- reported as a defect in the image
 # rather than as a check that was written for a single board.
 sq_grep /etc/rauc/system.conf "^bootloader=${RAUC_BOOTLOADER}\$" \
-    "RAUC system.conf selects the ${RAUC_BOOTLOADER} bootloader backend, which is what os/layout/${LAYOUT_BOARD}-v2.env specifies"
+    "RAUC system.conf selects the ${RAUC_BOOTLOADER} bootloader backend, which is what os/boards/${LAYOUT_BOARD}/board.env specifies"
 if [ "$(grep -c '^bootname=[AB]$' "${RAUC_CONF}" 2>/dev/null || true)" = "2" ]; then
     pass "RAUC system.conf gives both rootfs slots a bootname (A and B), so a booted slot can be named at all"
 else

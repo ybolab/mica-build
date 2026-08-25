@@ -20,7 +20,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(dirname "${SCRIPT_DIR}")"
 OUT_DIR="${REPO_ROOT}/_out/x64"
-. "${REPO_ROOT}/os/layout/x64-v2.env"
+. "${REPO_ROOT}/os/boards/x64/board.env"
 IMG="${MOS_QEMU_IMAGE:-${OUT_DIR}/${IMAGE_LATEST_NAME}}"
 TIMEOUT="${MOS_QEMU_TIMEOUT:-240}"
 MEM="${MOS_QEMU_MEM:-2048}"

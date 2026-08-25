@@ -5,7 +5,7 @@ set -euo pipefail
 # can be exercised without the BSP and without os/rootfs/build-v2.sh. Asserts
 # that two consecutive assemblies are byte-identical and that the resulting GPT
 # carries all eleven partitions with the labels, GUIDs and typecodes pinned in
-# os/layout/cx3576-v2.env, plus the guards that refuse a stale partition number
+# os/boards/cx3576/board.env, plus the guards that refuse a stale partition number
 # or a loader area that does not contain a loader.
 #
 # Everything is created under a private $TMPDIR workspace; nothing outside it
@@ -13,8 +13,8 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(dirname "${SCRIPT_DIR}")"
-# shellcheck source=layout/cx3576-v2.env
-. "${SCRIPT_DIR}/layout/cx3576-v2.env"
+# shellcheck source=boards/cx3576/board.env
+. "${SCRIPT_DIR}/boards/cx3576/board.env"
 
 WORK="$(mktemp -d)"
 trap 'rm -rf "${WORK}"' EXIT

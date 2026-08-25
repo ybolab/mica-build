@@ -25,13 +25,13 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(dirname "${SCRIPT_DIR}")"
 MOS_BOARD="${MOS_BOARD:-cx3576}"
-LAYOUT_ENV="${SCRIPT_DIR}/layout/${MOS_BOARD}-v2.env"
+LAYOUT_ENV="${SCRIPT_DIR}/boards/${MOS_BOARD}/board.env"
 
 if [ ! -f "${LAYOUT_ENV}" ]; then
     echo "error: ${LAYOUT_ENV} not found (MOS_BOARD=${MOS_BOARD})" >&2
     exit 1
 fi
-# shellcheck source=layout/cx3576-v2.env
+# shellcheck source=boards/cx3576/board.env
 . "${LAYOUT_ENV}"
 
 MANIFEST_IN="${SCRIPT_DIR}/rauc/manifest.raucm.in"

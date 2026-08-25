@@ -25,7 +25,7 @@
 #
 # The baseline fixture is not hand-written either: it is the SHIPPED
 # os/rootfs/overlay-v2/etc/fstab.in rendered with the SHIPPED
-# os/layout/cx3576-v2.env, exactly as os/rootfs/build-v2.sh renders it, plus the
+# os/boards/cx3576/board.env, exactly as os/rootfs/build-v2.sh renders it, plus the
 # directories and the binary stand-in new_fixture documents below -- every one
 # of them derived from the verifier's own constants. Every case then MUTATES
 # that baseline. Mutating an fstab this script had authored would prove only
@@ -50,7 +50,7 @@ set -euo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 VERIFIER="${HERE}/verify-image-v2.sh"
 FSTAB_IN="${HERE}/rootfs/overlay-v2/etc/fstab.in"
-LAYOUT_ENV="${HERE}/layout/cx3576-v2.env"
+LAYOUT_ENV="${HERE}/boards/cx3576/board.env"
 # The SHIPPED unit, not one this script authors: the ordering assertions exist
 # to catch the shipped file losing its ordering, and a fixture built from a
 # local copy would go on passing after the real unit changed.
@@ -59,7 +59,7 @@ LED_UNIT_SRC="${HERE}/rootfs/overlay-v2/usr/lib/systemd/system/mos-status-led.se
 for required in "${VERIFIER}" "${FSTAB_IN}" "${LAYOUT_ENV}" "${LED_UNIT_SRC}"; do
     [ -f "${required}" ] || { echo "error: ${required} not found" >&2; exit 1; }
 done
-# shellcheck source=layout/cx3576-v2.env
+# shellcheck source=boards/cx3576/board.env
 . "${LAYOUT_ENV}"
 for key in DATA_GUID STATE_GUID EPHEMERAL_GUID META_GUID; do
     eval "value=\${$key:-}"

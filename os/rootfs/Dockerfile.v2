@@ -126,7 +126,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # 11 MB of a rootfs slot, and it makes "this board has no Bluetooth" a runtime
 # discovery rather than a property of the image.
 #
-# BOARD_RADIOS comes from the layout: os/layout/<board>-v2.env. Empty means the
+# BOARD_RADIOS comes from the layout: os/boards/<board>/board.env. Empty means the
 # board declares none, which is a statement rather than an omission.
 ARG BOARD_RADIOS=""
 RUN set -eu; \
@@ -751,7 +751,7 @@ RUN rm -f /etc/ssh/ssh_host_*
 # seed oneshots (mos-seed-state converges on every boot; the others act on
 # first boot), the /var fill-up policies and the fw_env.config pointing at
 # the uenv pair.
-# The tree is rendered from os/layout/cx3576-v2.env by build-v2.sh; nothing
+# The tree is rendered from os/boards/cx3576/board.env by build-v2.sh; nothing
 # here duplicates a layout constant. Modes are set explicitly so the packed
 # image cannot inherit a host umask.
 # /root gets its own mkdir/chown/chmod rather than joining the 0755 mountpoint
