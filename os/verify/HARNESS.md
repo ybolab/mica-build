@@ -8,16 +8,20 @@
     bash os/verify/run.sh --help
     bash os/verify/run.sh -t "arith"    # extra arguments go to `bun test`
     bash os/verify/run.sh --lint FILE   # the lint instead of the suite
+    make os-verify-parity               # the image-contract parity harness
+    bash os/verify/run.sh --parity --board x64 --probe
 
 It finds bun — on the host, or failing that in the container pinned as
 `IMAGE_BUN_1` — installs the dev dependencies if `node_modules/` is absent,
 typechecks `src/`, runs the suite, and then checks the suite actually ran.
 
-`--lint` is a MODE and is recognised only in first position, so it can never be
-mistaken for a `bun test` filter. It shares the install, the typecheck and the
-`run_bun` seam; only the last step differs, which is what keeps ONE place
-deciding how bun is invoked. Its file arguments are made absolute before they
-are handed on, because `run_bun` cds into the package first.
+`--lint` and `--parity` are MODES and are recognised only in first position, so
+neither can be mistaken for a `bun test` filter. Both share the install, the
+typecheck and the `run_bun` seam; only the last step differs, which is what
+keeps ONE place deciding how bun is invoked. `--lint`'s file arguments are made
+absolute before they are handed on, because `run_bun` cds into the package
+first. `--parity` is the one mode that cannot take the container route — see
+"The hole, measured rather than assumed" below.
 
 ## Zero tests is a failure, and bun does not agree
 
@@ -46,7 +50,10 @@ it; that was a real defect here, caught by running the failing side.
 ## Driven from the failing side
 
 Every guard in `run.sh` was run against the condition it exists to catch, and
-each returns 1:
+each returns 1. **The `108/108` in this table is M3's measurement, not the
+suite's current size**: M4a took it to 214, and the number is kept as the record
+of that run rather than silently updated — a count in prose is a count nobody
+re-runs, which is why the CI step name no longer carries one.
 
 | driven | what it printed |
 |--------|-----------------|
@@ -161,6 +168,141 @@ the suite still reports 108/108 and the step exits 1.
 `test/apid-api/run.sh:122` still uses `BUN_IMAGE="${MOS_APID_BUN_IMAGE:-oven/bun:1}"`
 — a **floating tag**. PLAN-014 names `test/apid-api` out of scope, so it is
 recorded in `images.env` beside the pin rather than changed here.
+
+## The image tools: a second seam, with the same shape and one hole
+
+`src/tools.ts` decides where `sgdisk`, `mtools`, `tune2fs`/`debugfs`,
+`unsquashfs` and `veritysetup` come from, exactly as `run_bun` decides where bun
+comes from: two routes, one function, a caller that passes an argv and reads a
+status and cannot tell which answered.
+
+| condition | route |
+|---|---|
+| `MOS_VERIFY_TOOLS=host` | this host — **refused**, naming them, if any are missing |
+| `MOS_VERIFY_TOOLS=container` | the pinned `IMAGE_ALPINE_3_21`, even where the host has them |
+| every tool on `PATH` | this host |
+| any tool missing | the pinned container |
+| any tool missing, and no docker | **refused**, naming both |
+
+The route is announced, as bun's is, and the announce line is the only thing
+that says which tools produced a verdict:
+
+    os/verify: image tools in alpine:3.21@sha256:48b0309c… (no sgdisk, mdir, mcopy, mlabel, unsquashfs, veritysetup on this host)
+
+The container is created **once** per run and each call is a `docker exec` into
+it. `docker run` costs ~200 ms and `apk add` costs seconds; the shell verifier
+pays both once because it re-execs its whole self inside, and a port that made
+one container per tool call would pay them per call — M4b–M4d will make
+hundreds. The image is obtained up front for the reason `run_bun` obtains the
+bun image up front: a well-formed digest naming no image arrives as `docker run`
+exit 125, which is indistinguishable at the seam from the tool exiting 125.
+
+Mounts are **identity mounts**, and every path the run depends on is asserted
+visible *inside* the container before any tool runs — same reasoning, same
+words, as the bun seam above, and the same `/tmp` quirk behind it.
+
+### Driven from the failing side
+
+| driven | what it did |
+|---|---|
+| `MOS_VERIFY_TOOLS=hsot` | refused, before the ~30 s oracle run — the route is decided once, up front |
+| `MOS_VERIFY_TOOLS=host` on this tool-less host | refused, naming `sgdisk, mdir, mcopy, mlabel, unsquashfs, veritysetup` |
+| `IMAGE_ALPINE_3_21` = a well-formed digest naming no image | refused **by the key**, at the pull, before any tool ran |
+| `IMAGE_ALPINE_3_21` = a tag | `from.sh`'s refusal, naming the key and the file |
+| no image tools **and** no docker | refused, naming both and `IMAGE_ALPINE_3_21` |
+| `--work` under `/tmp` | refused, naming the sentinel and the mount |
+| no bun on the host, `--parity` | refused — see below. The suite on the same host, re-run at the final commit: **214/214** in the pinned bun container, exit 0 |
+| `--board x86` | `'x86' is not a board this tree ships … os/boards/ holds cx3576, x64` |
+| `--image` with two boards | refused; one image cannot be both boards' |
+| `--image` naming a file that is not there | refused |
+| `--board` with no value | refused; an option taking the next flag as its value verifies something nobody asked for |
+| `--parity` in a non-first position | refused, as `--lint` is |
+
+`extractRange` is TypeScript rather than `dd`, and the substitution was
+measured rather than argued: against ROOTFS-A of the real cx3576 image both
+produce `sha256:565af2a3…142b777`.
+
+### The hole, measured rather than assumed
+
+`--parity` is the one mode that **cannot** take the pinned bun container, and
+`run.sh` refuses it there by name. The harness drives docker itself — to re-run
+`os/verify-image-v2.sh`, which re-execs into alpine on a tool-less host, and to
+read the image with the tools above. Inside the bun container that is
+docker-in-docker, and the pinned bun image has no docker client:
+
+```
+$ docker run --rm oven/bun:1@sha256:5ff6… sh -c 'command -v docker || echo NO-DOCKER-CLI'
+NO-DOCKER-CLI
+```
+
+— no `curl` in it either, so the daemon socket cannot be reached by hand. So a
+host with **neither** bun **nor** the image tools cannot yet run the full
+verifier, and RFCT-110's "tool-less-host container path verified for the full
+verifier, not just the lint" is **not satisfied by M4a**. Closing it is a
+decision M4a does not own: a bun image that also carries the
+gptfdisk/mtools/e2fsprogs/squashfs-tools/cryptsetup set (one image, two
+decisions), a docker client added to the bun pin, or the harness speaking the
+daemon's HTTP API over the socket from bun. Whichever it is, it is a new pin in
+`os/build-env/images.env`.
+
+The suite and the lint are unaffected: both still run in the pinned bun
+container on a host with nothing but docker, and CI still takes that route.
+
+## The parity harness, and why it is not a count
+
+`src/parity.ts` diffs `os/verify-image-v2.sh`'s conclusions against the check
+register's, **per check**. The register is empty at M4a; M4b–M4d fill it.
+
+The oracle prints `PASS: <prose>`, `FAIL: <prose>`, `SKIP: <prose>` and a final
+`RESULT:` line, and nothing else — measured on both boards' real images: every
+one of 398 and 312 stdout lines is one of those. The prose is not an identifier,
+so identity is **assigned**, by a matcher carried on each ported check. That is
+`os/tests/ui-location-test.sh`'s `ASSERTIONS` table at a larger scale, and it is
+a field on the check rather than a table beside it so that the two cannot drift.
+
+Three guards make the comparison mean something:
+
+| guard | the failure it catches |
+|---|---|
+| the parsed PASS/FAIL/SKIP counts must equal the oracle's **own** `PASS_N`/`FAIL_N`/`SKIP_N` | a parser that missed conclusions reports agreement about the part it read |
+| a run with no conclusions at all is an error | M3a's oracle reported agreement "on all 0 keys" — diff of two empty files is green |
+| `not-ported` is a first-class outcome and forces `INCOMPLETE` | "0 divergences" about a comparison that compared nothing is the most misleading true sentence available |
+
+A check that fires per instance (eleven `p<n> PARTLABEL is …` conclusions from
+one call site) is compared as a **set of (id, instance) pairs**, never as a
+count: R4 measured one defect as 465, 467, 562 and 925 differing bytes purely
+from the clock gap between runs, so anything compared here is compared as
+identity.
+
+### It has been driven red
+
+`src/parity.test.ts` produces every outcome the harness can report, including
+the ones a healthy run never sees — an ambiguous register, an orphaned result, a
+check that fired on neither side, and two firings whose **count** matches while
+their identities do not.
+
+And end to end, against the real images. A temporary register of five checks —
+one that agrees, one that answers FAIL where the oracle says PASS, one that
+answers where the oracle SKIPs, one `many` check that answers only its first
+firing, and one claiming a line nothing prints — was run on both boards and
+then reverted (`git diff` clean). Every outcome was named by id:
+
+| | cx3576 | x64 |
+|---|---|---|
+| `agree` | 2 | 2 |
+| `diverge` | 2 — `gpt-partition-count` PASS/FAIL, `esp-skip-cx` **SKIP/PASS** | 2 — `gpt-partition-count` PASS/FAIL, `loader-skip-x64` **SKIP/FAIL** |
+| `ts-silent` | 10 — `gpt-partlabel[2]` … `[11]` | 8 — `gpt-partlabel[2]` … `[9]` |
+| `orphan` | 1 — `ghost-check` | 1 — `ghost-check` |
+| `ambiguous` | 2 | 1 |
+| `not-ported` | 382 | 299 |
+| exit | **1** (FAIL, not 2) | **1** |
+
+The `ambiguous` rows were not planned. The temporary check registered
+`partitions` as its matcher, which is a substring of three other conclusions on
+cx3576 and two on x64, and the harness refused to attribute any of them —
+naming the line numbers it found (`4 and 77`, `4 and 261`). A matcher too loose
+to identify one check is the first mistake M4b can make, and it is caught by the
+instrument rather than by a reviewer.
 
 ## Re-checking the parser against the shell
 
