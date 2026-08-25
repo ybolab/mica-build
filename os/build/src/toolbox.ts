@@ -296,13 +296,49 @@ export class Toolbox {
               'apt-get update -qq >/dev/null && DEBIAN_FRONTEND=noninteractive apt-get install -y -qq '
               + `--no-install-recommends ${toolset.packages.join(' ')} >/dev/null`,
             ]
-        const r = await $`${docker} exec ${container} ${install}`.nothrow().quiet()
-        if (r.exitCode !== 0) {
+
+        // RETRIED, BECAUSE THE INDEX IS FETCHED OVER THE NETWORK AND APK LIES
+        // ABOUT LOSING IT. Measured on this host, 2026-08-25: 40 consecutive
+        // `apk add --no-cache -q e2fsprogs e2fsprogs-extra` runs in the pinned
+        // alpine, 3 of them failed -- and the failure reads
+        //
+        //     ERROR: unable to select packages:
+        //       e2fsprogs (no such package):
+        //
+        // about a package that is unquestionably in that image, because the
+        // index fetch failed and apk describes an empty index as an empty
+        // repository. (A fourth shape was seen once: exit 6 naming a
+        // half-resolved e2fsprogs-libs, which is the same fetch failing further
+        // along.) At ~7% per install and eight toolbox opens in a suite run,
+        // that is a red run every other time for a reason that has nothing to
+        // do with what is under test -- which is the same objection this
+        // package makes to a 5-second default timeout.
+        //
+        // Three attempts, not one, and a package that genuinely does not exist
+        // fails identically three times -- so this hides no real failure, it
+        // only stops the network deciding the verdict. The refusal says how
+        // many attempts were made, so a reader is never told about one run when
+        // there were three.
+        const attempts = 3
+        let installed: ToolResult | undefined
+        for (let attempt = 1; attempt <= attempts; attempt += 1) {
+          const r = await $`${docker} exec ${container} ${install}`.nothrow().quiet()
+          if (r.exitCode === 0) { installed = undefined; break }
+          installed = {
+            argv: install, route: 'container', exitCode: r.exitCode,
+            stdout: r.stdout.toString(), stderr: r.stderr.toString(), ok: false,
+          }
+          if (attempt < attempts) await Bun.sleep(1000 * attempt)
+        }
+        if (installed !== undefined) {
           throw new Error(
-            `the ${toolset.key} toolset could not be installed in ${image} (exit ${r.exitCode}):\n`
+            `the ${toolset.key} toolset could not be installed in ${image}, in ${attempts} attempts `
+            + `(last exit ${installed.exitCode}):\n`
             + `  packages: ${toolset.packages.join(' ')}\n`
-            + `  stderr:   ${r.stderr.toString().trimEnd() || '(empty)'}\n`
-            + `  stdout:   ${r.stdout.toString().trimEnd() || '(empty)'}`,
+            + `  stderr:   ${installed.stderr.trimEnd() || '(empty)'}\n`
+            + `  stdout:   ${installed.stdout.trimEnd() || '(empty)'}\n`
+            + `  note:     apk reports a failed index FETCH as "no such package", so that sentence is `
+            + `not evidence the package is absent -- three attempts are.`,
           )
         }
       }

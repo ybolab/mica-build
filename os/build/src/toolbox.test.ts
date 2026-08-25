@@ -245,6 +245,28 @@ describe('a toolbox that cannot provide its tools does not open', () => {
       .rejects.toThrow(/could not be installed.*this-package-does-not-exist-xyz/s)
   }, OPEN_TIMEOUT_MS)
 
+  test('an install failure says how many attempts were made, and does not read as one', async () => {
+    // The install is retried because apk reports a failed index FETCH as "no
+    // such package" -- measured at ~7% of runs on this host, which is a red
+    // suite every other time. A package that really is absent fails identically
+    // every attempt, so nothing is hidden; what must not happen is a refusal
+    // that describes one attempt when there were three.
+    const bad: Toolset = {
+      key: 'still-no-such-package',
+      imageKey: 'IMAGE_ALPINE_3_21',
+      manager: 'apk',
+      packages: ['this-package-does-not-exist-xyz'],
+      tools: ['sh'],
+    }
+    let msg = ''
+    try {
+      const tb = await Toolbox.open(bad, { route: 'container' })
+      await tb.close()
+    } catch (e) { msg = (e as Error).message }
+    expect(msg).toContain('in 3 attempts')
+    expect(msg).toContain('apk reports a failed index FETCH as "no such package"')
+  }, OPEN_TIMEOUT_MS)
+
   test('an image key images.env does not define is refused BY THE KEY, before any container', async () => {
     const bad: Toolset = {
       key: 'no-such-image',
