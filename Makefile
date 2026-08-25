@@ -130,7 +130,7 @@ os-repart-test:
 os-ui-location-test:
 	bash os/ui-location-test.sh
 
-# SPIKE RFCT-087: executes the SHIPPED os/boot/cx3576-boot.cmd — compiled by
+# SPIKE RFCT-087: executes the SHIPPED os/boards/cx3576/boot.cmd — compiled by
 # the same mkimage invocation the assembler uses, byte-unmodified — under a
 # U-Boot v2026.07 sandbox binary (same source pin as the board build) that
 # carries the board's persistent-env contract, against a layout-v2 GPT disk

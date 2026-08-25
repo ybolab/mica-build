@@ -28,7 +28,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(dirname "${SCRIPT_DIR}")"
 LAYOUT_ENV="${REPO_ROOT}/os/boards/x64/board.env"
 OUT_DIR="${REPO_ROOT}/_out/x64"
-GRUB_CFG_IN="${SCRIPT_DIR}/boot/x64-grub.cfg"
+GRUB_CFG_IN="${SCRIPT_DIR}/boards/x64/grub.cfg"
 
 # shellcheck source=boards/x64/board.env
 . "${LAYOUT_ENV}"

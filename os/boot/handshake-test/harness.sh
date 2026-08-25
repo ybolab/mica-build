@@ -4,7 +4,7 @@ set -euo pipefail
 # RFCT-087 — offline U-Boot A/B handshake harness, container side.
 #
 # Runs INSIDE the image os/boot/handshake-test/Dockerfile builds (started by
-# run.sh). Executes the SHIPPED os/boot/cx3576-boot.cmd — compiled by the same
+# run.sh). Executes the SHIPPED os/boards/cx3576/boot.cmd — compiled by the same
 # `mkimage -T script` invocation os/mkimage-v2.sh uses, byte-unmodified —
 # under a U-Boot v2026.07 sandbox binary (same source pin as the board build)
 # against a layout-v2 GPT disk image backed by a host file, and asserts the
@@ -49,7 +49,7 @@ UBOOT="${CACHE}/u-boot"
 DTB="${CACHE}/u-boot.dtb"
 MKIMAGE="${CACHE}/mkimage"
 MKENVIMAGE="${CACHE}/mkenvimage"
-BOOT_CMD="${REPO}/os/boot/cx3576-boot.cmd"
+BOOT_CMD="${REPO}/os/boards/cx3576/boot.cmd"
 
 # shellcheck source=../../boards/cx3576/board.env
 . "${REPO}/os/boards/cx3576/board.env"

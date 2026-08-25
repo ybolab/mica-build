@@ -43,7 +43,7 @@ statusfile=@STATUSFILE@
 # at all, which takes the health gate and the status indicator down with it.
 # Observed exactly that way on the x64 image, by booting it.
 #
-# What grub has instead is a ONE-SHOT try, not a count: os/boot/x64-grub.cfg
+# What grub has instead is a ONE-SHOT try, not a count: os/boards/x64/grub.cfg
 # keeps ORDER, <slot>_OK and <slot>_TRY in grubenv, so a slot gets a single
 # attempt that the health gate either confirms or does not. The A/B ORDERING
 # and the rollback are the same contract on both boards; the NUMBER of

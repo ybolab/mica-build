@@ -445,9 +445,9 @@ fi
 
 # Contract cross-check: the filename boot.scr builds at runtime must be the one
 # that is actually present in that slot. Both halves are read out of
-# os/boot/cx3576-boot.cmd rather than restated here, so this fails if either
+# os/boards/cx3576/boot.cmd rather than restated here, so this fails if either
 # the load line or the slotsuffix assignments drift.
-BOOT_CMD_FILE="${SCRIPT_DIR}/boot/cx3576-boot.cmd"
+BOOT_CMD_FILE="${SCRIPT_DIR}/boards/cx3576/boot.cmd"
 VERITY_BASE="${BOOT_VERITY_ENV_NAME%.env}"
 check "boot.cmd loads the per-slot verity env first" \
     "$(sed -n '/^if load mmc/{s/.*[[:space:]]\([^[:space:]]*\);[[:space:]]*then$/\1/p;q}' "${BOOT_CMD_FILE}")" \

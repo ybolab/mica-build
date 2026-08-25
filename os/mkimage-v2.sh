@@ -8,7 +8,7 @@ set -euo pipefail
 # constant comes from os/boards/cx3576/board.env; nothing is duplicated here.
 #
 # Each boot slot holds Image, rk3576-src.dtb, the shared boot.scr compiled from
-# os/boot/cx3576-boot.cmd, and a per-slot mos-verity.env. It holds NO
+# os/boards/cx3576/boot.cmd, and a per-slot mos-verity.env. It holds NO
 # extlinux/extlinux.conf: U-Boot tries extlinux before boot.scr in both boot
 # frameworks, so an extlinux config here would silently bypass the RAUC A/B
 # handshake (docs/design/uboot-ab-handshake.md sections 5.4-5.5).
@@ -61,7 +61,7 @@ export E2FSPROGS_FAKE_TIME
 ROOTFS_PRODUCER="os/rootfs/build-v2.sh"
 # Overridable only so os/mkimage-v2-selftest.sh can point the numbering guard
 # below at a deliberately-stale copy; every real build uses the tree's own file.
-BOOT_CMD="${BOOT_CMD:-${SCRIPT_DIR}/boot/cx3576-boot.cmd}"
+BOOT_CMD="${BOOT_CMD:-${SCRIPT_DIR}/boards/cx3576/boot.cmd}"
 
 # Set by assemble() from rootfs-verity.env, read by mkverityenv().
 root_hash=""

@@ -2021,7 +2021,7 @@ if is_uboot_board; then
     # boot-attempt decrement, then fails to find Image in a partition that now holds
     # something else, and the board is bricked until it is re-flashed. This reads the
     # numbers back out of the COMPILED script in the assembled image, not out of
-    # os/boot/cx3576-boot.cmd, so it also covers a boot.scr built from a stale source.
+    # os/boards/cx3576/boot.cmd, so it also covers a boot.scr built from a stale source.
     scr_body="$(tr -d '\0' < "${TMP}/scr-A" 2>/dev/null || true)"
     for want in "bootpart:A:${BOOT_A_PARTNUM}" "bootpart:B:${BOOT_B_PARTNUM}" \
         "rootpart:A:${ROOTFS_A_PARTNUM}" "rootpart:B:${ROOTFS_B_PARTNUM}"; do
@@ -3250,7 +3250,7 @@ for pair in "A:${ROOTFS_A_GUID}" "B:${ROOTFS_B_GUID}"; do
     elif [ "$(lc "${root_arg}")" = "root=partuuid=$(lc "${guid}")" ]; then
         pass "slot ${slot}: root= names the slot's own PARTUUID, so rauc's root= fallback identifies the booted slot"
     else
-        fail "slot ${slot}: the boot path sets neither rauc.slot= nor a root= naming the slot device (found '${root_arg:-none}'). rauc 1.8 derives the booted slot from rauc.slot= or root= and matches it against bootname / slot name / realpath(device); '${root_arg:-none}' matches none of those, so \`rauc status\` fails with \"Did not find booted slot\", RAUC_SYSTEM_BOOTED_BOOTNAME is never emitted, mos-health exits 0 without ever running \`rauc status mark-good\`, and every update rolls back when the boot credits run out. Fix belongs in the boot path (os/boot/cx3576-boot.cmd), NOT here"
+        fail "slot ${slot}: the boot path sets neither rauc.slot= nor a root= naming the slot device (found '${root_arg:-none}'). rauc 1.8 derives the booted slot from rauc.slot= or root= and matches it against bootname / slot name / realpath(device); '${root_arg:-none}' matches none of those, so \`rauc status\` fails with \"Did not find booted slot\", RAUC_SYSTEM_BOOTED_BOOTNAME is never emitted, mos-health exits 0 without ever running \`rauc status mark-good\`, and every update rolls back when the boot credits run out. Fix belongs in the boot path (os/boards/cx3576/boot.cmd), NOT here"
     fi
 done
 

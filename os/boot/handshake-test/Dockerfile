@@ -97,7 +97,7 @@ RUN cd /uboot && \
                    --disable CMD_UPL && \
     make olddefconfig && \
     # Env-contract and script-vocabulary pins, board-Dockerfile style: each of
-    # these is a command or a placement cx3576-boot.cmd depends on, and an
+    # these is a command or a placement the board's boot.cmd depends on, and an
     # olddefconfig that silently dropped one would surface as a confusing
     # runtime failure instead of a red build.
     for line in \
