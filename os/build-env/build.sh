@@ -332,7 +332,7 @@ check_dockerfile_frontends() {
         echo "error: no tracked Dockerfile declares a '# syntax=' line, so this check passed by having nothing to check. Every Dockerfile in this tree carried one when it was written; if that is genuinely no longer true, delete this check rather than leaving it green and empty" >&2
         return 1
     }
-    echo "frontend pin: ${seen} Dockerfile(s) agree with IMAGE_DOCKERFILE_FRONTEND" >&2
+    [ "${bad}" = 0 ] && echo "frontend pin: ${seen} Dockerfile(s) agree with IMAGE_DOCKERFILE_FRONTEND" >&2
     return "${bad}"
 }
 [ -n "${IMAGE_DOCKERFILE_FRONTEND-}" ] || {

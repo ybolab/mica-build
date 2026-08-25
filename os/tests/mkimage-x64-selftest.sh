@@ -128,6 +128,18 @@ require_visible_workspace() {
     # order of those two independent.
     local probe_image
     probe_image="$(bash "${REPO_ROOT}/os/build-env/from.sh" --ref IMAGE_DEBIAN_TRIXIE)"
+    # THE IMAGE FIRST, THEN THE MOUNT, because this function reports on the
+    # mount and one `docker run` cannot tell the two apart. R6 found it the
+    # honest way: a deliberately wrong digest in os/build-env/images.env made
+    # docker refuse the reference, and this reported "the docker daemon cannot
+    # bind-mount the workspace" and sent the reader to TMPDIR -- which was
+    # fine. Docker's own message was above it, so nothing was hidden, but the
+    # conclusion this script drew from it was wrong, and a harness that names
+    # the wrong cause costs more than one that names none.
+    docker run --rm "${probe_image}" true >/dev/null 2>&1 || {
+        echo "error: the docker daemon cannot run ${probe_image} at all, so nothing here can say whether the workspace is visible to it. That reference comes from IMAGE_DEBIAN_TRIXIE in os/build-env/images.env; if it was just changed, docker's own message above says whether it resolves" >&2
+        exit 1
+    }
     if docker run --rm -v "${WORK}:/t" "${probe_image}" test -f /t/visible; then
         return 0
     fi
