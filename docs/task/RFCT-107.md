@@ -33,17 +33,18 @@ tree by pure `git mv` — zero logic changes.
   **apart from the enumerated set of shipped comment lines below** — seven files
   in which the only difference is a path string inside a comment.
 
-  AMENDED 2026-08-25, at M1 close. The reason is that this clause and this task's
-  own Scope were mutually unsatisfiable, not that the implementation fell short.
-  Scope requires "Update every path reference: Makefile, inter-script,
-  `shellcheck source=`, the consumer lists in the board env headers, doc
-  citations". Seven of the files carrying such references are files the image
-  SHIPS, so updating them changes image bytes, and not updating them leaves the
-  shipped tree citing paths that no longer exist. No implementation could satisfy
-  both clauses. The M1 gate built both sides, measured the delta, found it
-  confined to comment lines, and refused to close on the unamended text; the
-  decision taken on that measurement was to accept the delta and enumerate it
-  here rather than to exempt those seven files from Scope.
+  AMENDED 2026-08-25, at M1 close, **by the user**. The reason is that this
+  clause and this task's own Scope were mutually unsatisfiable, not that the
+  implementation fell short. Scope requires "Update every path reference:
+  Makefile, inter-script, `shellcheck source=`, the consumer lists in the board
+  env headers, doc citations". Seven of the files carrying such references are
+  files the image SHIPS, so updating them changes image bytes, and not updating
+  them leaves the shipped tree citing paths that no longer exist. No
+  implementation could satisfy both clauses. The M1 gate built both sides,
+  measured the delta, found it confined to comment lines, and refused to close on
+  the unamended text; the decision the user took on that measurement was to
+  accept the delta and enumerate it here rather than to exempt those seven files
+  from Scope.
 
   The enumerated set — source file, and where it lands in the image:
 
