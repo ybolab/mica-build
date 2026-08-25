@@ -87,8 +87,10 @@ Run it by hand when `src/board-env.ts` changes. From the repository root:
 
 ```sh
 cat > /tmp/dump.ts <<'EOF'
-import { parseBoardEnv } from './os/verify/src/board-env.ts'
-import { readFileSync } from 'node:fs'
+// Imported dynamically and by absolute path: this file lives in /tmp, so a
+// relative specifier would resolve against /tmp rather than the repository.
+const { parseBoardEnv } = await import(`${process.cwd()}/os/verify/src/board-env.ts`)
+const { readFileSync } = await import('node:fs')
 const path = process.argv[2]!
 for (const [k, v] of parseBoardEnv(readFileSync(path, 'utf8'), path).values)
   console.log(`${k}=${v}`)
