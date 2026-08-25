@@ -22,27 +22,32 @@ const cache = new Map<string, string>()
 /**
  * The image reference `key` names in os/build-env/images.env.
  *
+ * @param resolver the script to ask. A parameter only so the two guards below
+ *   are REACHABLE: neither an absent from.sh nor one that exits 0 printing
+ *   nothing can be produced by asking the real one, and a guard that can only
+ *   fire when the repository is broken is a guard nobody has run. M3a and M3b
+ *   each shipped one of those.
  * @throws Error carrying from.sh's own refusal, which names the key and the file.
  */
-export async function resolveImage(key: string): Promise<string> {
-  const hit = cache.get(key)
+export async function resolveImage(key: string, resolver: string = FROM_SH): Promise<string> {
+  const hit = resolver === FROM_SH ? cache.get(key) : undefined
   if (hit !== undefined) return hit
 
   // Checked rather than left to bash. `bash /gone/from.sh --ref IMAGE_BUN_1`
   // fails with "No such file or directory" and the only proper noun in that
   // sentence is the path -- which a reader who asked for an image KEY reads as
   // a statement about the key.
-  if (!existsSync(FROM_SH)) {
+  if (!existsSync(resolver)) {
     throw new Error(
-      `${FROM_SH} does not exist, so no images.env key can be resolved -- including ${key}. `
+      `${resolver} does not exist, so no images.env key can be resolved -- including ${key}. `
       + `src/paths.ts anchors this path; either os/build-env/ moved or that anchor did.`,
     )
   }
 
-  const r = await $`bash ${FROM_SH} --ref ${key}`.nothrow().quiet()
+  const r = await $`bash ${resolver} --ref ${key}`.nothrow().quiet()
   if (r.exitCode !== 0) {
     throw new Error(
-      `os/build-env/from.sh refused ${key} (exit ${r.exitCode}):\n${r.stderr.toString().trimEnd()}`,
+      `${resolver} refused ${key} (exit ${r.exitCode}):\n${r.stderr.toString().trimEnd()}`,
     )
   }
 
@@ -54,13 +59,13 @@ export async function resolveImage(key: string): Promise<string> {
   // nothing; this is the caller refusing to build a command line out of it.
   if (ref === '') {
     throw new Error(
-      `os/build-env/from.sh exited 0 for ${key} and printed nothing. An empty reference substituted `
+      `${resolver} exited 0 for ${key} and printed nothing. An empty reference substituted `
       + `into a docker command line is not a missing image -- docker reads the next word as the `
       + `image name -- so it is refused here, where the key is still in hand.`,
     )
   }
 
-  cache.set(key, ref)
+  if (resolver === FROM_SH) cache.set(key, ref)
   return ref
 }
 

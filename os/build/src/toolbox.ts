@@ -72,6 +72,17 @@ export interface Toolset {
   /** Environment every call in this toolset gets, e.g. E2FSPROGS_FAKE_TIME. */
   readonly env?: Readonly<Record<string, string>>
   /**
+   * Where this toolset's tools came from, when that decides what it may DO.
+   *
+   * One tool uses it: rauc. A bundle is written by one rauc and installed by
+   * another on the device, and commit 9a43a59 records what happens when they
+   * are not the same build -- so src/tools/rauc.ts refuses a bundle-writing
+   * call unless this says 'shipped'. It lives on the toolset rather than being
+   * inferred from `carry`, because "this binary is the one this tree built" is
+   * a claim the toolset makes, not something a file path can prove.
+   */
+  readonly provenance?: 'shipped' | 'distro'
+  /**
    * A host capability the tools' presence does not imply.
    *
    * mke2fs 1.46.5 is on this host's PATH and cannot switch orphan_file off, so

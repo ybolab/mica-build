@@ -70,7 +70,7 @@ export const CX3576_ASSEMBLY: Toolset = {
   imageKey: 'IMAGE_ALPINE_3_21',
   manager: 'apk',
   packages: ['bash', 'coreutils', 'sgdisk', 'dosfstools', 'mtools', 'e2fsprogs', 'e2fsprogs-extra', 'u-boot-tools'],
-  tools: ['sgdisk', 'mkfs.vfat', 'mcopy', 'mdir', 'mke2fs', 'dumpe2fs', 'debugfs', 'mkimage', 'dd', 'truncate'],
+  tools: ['sgdisk', 'mkfs.vfat', 'mcopy', 'mdir', 'minfo', 'mke2fs', 'dumpe2fs', 'debugfs', 'mkimage', 'dd', 'truncate'],
   hostProbe: mke2fsCanWriteTheseLayouts,
 }
 
@@ -89,7 +89,7 @@ export const X64_ASSEMBLY: Toolset = {
   imageKey: 'IMAGE_DEBIAN_TRIXIE',
   manager: 'apt',
   packages: ['gdisk', 'dosfstools', 'mtools', 'e2fsprogs', 'grub-efi-amd64-bin', 'grub-common'],
-  tools: ['sgdisk', 'mkfs.vfat', 'mcopy', 'mmd', 'mdir', 'mke2fs', 'dumpe2fs', 'debugfs', 'grub-mkstandalone', 'dd', 'truncate'],
+  tools: ['sgdisk', 'mkfs.vfat', 'mcopy', 'mmd', 'mdir', 'minfo', 'mke2fs', 'dumpe2fs', 'debugfs', 'grub-mkstandalone', 'dd', 'truncate'],
   hostProbe: mke2fsCanWriteTheseLayouts,
 }
 
