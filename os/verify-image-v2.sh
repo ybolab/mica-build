@@ -3215,7 +3215,7 @@ check_packed_mountpoints
 
 # --- M4 integration: RAUC must be able to identify the BOOTED slot ---
 #
-# os/health/mos-health reads RAUC_SYSTEM_BOOTED_BOOTNAME out of
+# os/rootfs/overlay-v2/usr/lib/mos/mos-health reads RAUC_SYSTEM_BOOTED_BOOTNAME out of
 # `rauc status --output-format=shell` and exits 0 early when it is empty. If
 # rauc can never identify the booted slot the gate silently no-ops forever:
 # `rauc status mark-good` is never reached, the installed slot is never
@@ -3282,7 +3282,7 @@ done
 if [ ! -f "${ROOT}/usr/lib/mos/mos-health" ]; then
     fail "/usr/lib/mos/mos-health missing, so its RAUC status parsing cannot be checked"
 elif grep -q 'RAUC_SYSTEM_BOOTED_SLOT' "${ROOT}/usr/lib/mos/mos-health"; then
-    fail "mos-health parses RAUC_SYSTEM_BOOTED_SLOT, which rauc 1.8 NEVER emits. \`rauc status --output-format=shell\` emits RAUC_SYSTEM_BOOTED_BOOTNAME (plus per-slot RAUC_SLOT_STATE_n='booted'); verified against rauc 1.8 driving this exact system.conf. The gate therefore always reads an empty slot, always exits 0 and never reaches \`rauc status mark-good\`, so every update rolls back. Fix belongs in os/health/mos-health, NOT here"
+    fail "mos-health parses RAUC_SYSTEM_BOOTED_SLOT, which rauc 1.8 NEVER emits. \`rauc status --output-format=shell\` emits RAUC_SYSTEM_BOOTED_BOOTNAME (plus per-slot RAUC_SLOT_STATE_n='booted'); verified against rauc 1.8 driving this exact system.conf. The gate therefore always reads an empty slot, always exits 0 and never reaches \`rauc status mark-good\`, so every update rolls back. Fix belongs in os/rootfs/overlay-v2/usr/lib/mos/mos-health, NOT here"
 else
     pass "mos-health does not depend on the non-existent RAUC_SYSTEM_BOOTED_SLOT variable"
 fi

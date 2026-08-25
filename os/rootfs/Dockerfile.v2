@@ -14,6 +14,38 @@
 # on the rendered overlay tree, both staged into the context by build-v2.sh.
 # Executes arm64 binaries: on x86 hosts install emulation once with
 #   docker run --privileged --rm tonistiigi/binfmt --install arm64
+#
+# WHERE THE SHELL IS. Not here. Every RUN body longer than one command lives in
+# os/rootfs/scripts/ and is reached the same way:
+#
+#   RUN --mount=type=bind,source=os/rootfs/scripts,target=/mos-scripts \
+#       sh /mos-scripts/<name>.sh
+#
+# A BIND MOUNT AND NOT A COPY, because a COPY would put the script in the image.
+# The mount exists only for the duration of its RUN and leaves nothing behind --
+# not the files and not the /mos-scripts directory -- which is what lets this
+# split be invisible in the packed root. Verified rather than assumed: RFCT-111
+# built x64 before and after and got the same rootfs-verity.img sha256.
+#
+# THE ARGUMENTS STILL ARRIVE, and by the same route they always did. Docker puts
+# every ARG that has a value into the RUN's ENVIRONMENT, so the shell -- and
+# therefore any child of it -- reads them from there. `sh /mos-scripts/x.sh`
+# inherits BOARD_RADIOS, WITH_CONTAINERS, MOS_ARCH and the rest unchanged, and an
+# ARG declared with no value is unset in the script exactly as it was in the RUN,
+# so a `set -u` on it still fails. Each script names the arguments it reads in
+# its header.
+#
+# `sh <path>` and not the shebang, so the interpreter is the caller's decision
+# rather than a mode bit a bind mount or a checkout could lose. It is the same
+# /bin/sh a RUN would have used.
+#
+# WHAT DID NOT MOVE. The package lists, and the RUNs that are a single command.
+# A stage's package set IS the image, and reading it should not need a second
+# file open; a one-line RUN gains nothing from a hop. The comments stayed too:
+# they explain what the image IS, which is what this file is for. Only the
+# comments that sat INSIDE a RUN body went with their code -- and they are real
+# shell comments now, where before they were text the Dockerfile parser deleted
+# before the shell ever saw the line.
 # =============================================================================
 
 # ---------------------------------------------------------------------------
@@ -58,13 +90,8 @@ ARG MOS_IMAGE_DEBIAN_TRIXIE
 ARG MOS_IMAGE_DEBIAN_BOOKWORM
 
 FROM --platform=$BUILDPLATFORM ${MOS_IMAGE_DEBIAN_TRIXIE} AS certs
-RUN set -eu; \
-    apt-get update; \
-    DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends ca-certificates; \
-    test -s /etc/ssl/certs/ca-certificates.crt || \
-        { echo "error: ca-certificates installed but generated no bundle" >&2; exit 1; }; \
-    grep -c 'BEGIN CERTIFICATE' /etc/ssl/certs/ca-certificates.crt > /etc/ssl/certs/.mos-cert-count; \
-    echo "trust: generated $(cat /etc/ssl/certs/.mos-cert-count) CA certificates"
+RUN --mount=type=bind,source=os/rootfs/scripts,target=/mos-scripts \
+    sh /mos-scripts/ca-certificates-generate.sh
 
 # THE SAME KEY AS THE certs STAGE, AND NOT RE-DECLARED. ARG is per-stage for
 # everything a RUN reads -- the pack stage below re-declares BOARD_RADIOS for
@@ -154,23 +181,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # BOARD_RADIOS comes from the layout: os/boards/<board>/board.env. Empty means the
 # board declares none, which is a statement rather than an omission.
 ARG BOARD_RADIOS=""
-RUN set -eu; \
-    if [ -z "${BOARD_RADIOS}" ]; then \
-        echo "radios: this board declares none; no bluez, wpasupplicant, hostapd or rfkill"; \
-        exit 0; \
-    fi; \
-    apt-get update; \
-    pkgs=""; \
-    for r in ${BOARD_RADIOS}; do \
-        case "${r}" in \
-        wifi) pkgs="${pkgs} wpasupplicant hostapd rfkill" ;; \
-        bluetooth) pkgs="${pkgs} bluez rfkill" ;; \
-        *) echo "error: BOARD_RADIOS names '${r}'; this image knows wifi and bluetooth" >&2; exit 1 ;; \
-        esac; \
-    done; \
-    apt-get install -y --no-install-recommends ${pkgs}; \
-    rm -rf /var/lib/apt/lists/*; \
-    echo "radios: ${BOARD_RADIOS} ->${pkgs}"
+RUN --mount=type=bind,source=os/rootfs/scripts,target=/mos-scripts \
+    sh /mos-scripts/radios-packages.sh
 
 # The TRUST ANCHORS, copied in from the `certs` stage.
 #
@@ -201,23 +213,8 @@ RUN set -eu; \
 COPY --from=certs /usr/share/ca-certificates /usr/share/ca-certificates
 COPY --from=certs /etc/ssl/certs /etc/ssl/certs
 COPY --from=certs /etc/ca-certificates.conf /etc/ca-certificates.conf
-RUN set -eu; \
-    test -s /etc/ssl/certs/ca-certificates.crt || \
-        { echo "error: /etc/ssl/certs/ca-certificates.crt is missing or empty. The image can speak TLS and cannot verify anyone: container pulls, curl and any HTTPS update fetch all fail with 'certificate signed by unknown authority'" >&2; exit 1; }; \
-    certs="$(grep -c 'BEGIN CERTIFICATE' /etc/ssl/certs/ca-certificates.crt)"; \
-    want="$(cat /etc/ssl/certs/.mos-cert-count)"; \
-    rm -f /etc/ssl/certs/.mos-cert-count; \
-    [ "${certs}" = "${want}" ] || \
-        { echo "error: the certs stage generated ${want} certificates and ${certs} arrived here. A COPY that drops or truncates the bundle leaves TLS working for whatever happens to still verify, which is the hardest version of this failure to notice" >&2; exit 1; }; \
-    [ "${certs}" -ge 100 ] || \
-        { echo "error: the CA bundle holds only ${certs} certificates" >&2; exit 1; }; \
-    dangling="$(find /etc/ssl/certs -xtype l | head -n3 | tr '\n' ' ')"; \
-    [ -z "${dangling}" ] || \
-        { echo "error: /etc/ssl/certs has dangling symlinks (${dangling}...); the hash farm points at /usr/share/ca-certificates and that copy did not arrive" >&2; exit 1; }; \
-    if command -v openssl >/dev/null 2>&1; then \
-        echo "error: the openssl CLI is in the packed root. The certificates are copied in precisely so it is not: it is 2.5 MB, nothing here uses it (apid's TLS is rustls/rcgen/ring), and it brings /usr/bin/c_rehash, which is Perl. Something else has started depending on it" >&2; exit 1; \
-    fi; \
-    echo "trust: ${certs} CA certificates in place, no openssl CLI"
+RUN --mount=type=bind,source=os/rootfs/scripts,target=/mos-scripts \
+    sh /mos-scripts/ca-certificates-verify.sh
 
 # PLAN-012: the container engine, on the board's say-so.
 #
@@ -334,28 +331,8 @@ RUN if [ "$WITH_CONTAINERS" = "1" ]; then \
 # The TEMPLATES are left installed and NOT enabled: mosd enables and starts
 # exactly the instance the settings tree asks for. Their ExecStart paths are
 # asserted against the reconcilers' own constants by os/verify-image-v2.sh.
-RUN set -eu; \
-    if [ -z "${BOARD_RADIOS}" ]; then \
-        echo "radios: none declared; no packaged radio units to mask"; \
-        exit 0; \
-    fi; \
-    mkdir -p /etc/systemd/system; \
-    for u in hostapd.service wpa_supplicant.service \
-             dbus-fi.w1.wpa_supplicant1.service; do \
-        rm -f "/etc/systemd/system/${u}"; \
-        ln -s /dev/null "/etc/systemd/system/${u}"; \
-        [ "$(readlink "/etc/systemd/system/${u}")" = /dev/null ]; \
-    done; \
-    rm -f /etc/systemd/system/multi-user.target.wants/hostapd.service \
-          /etc/systemd/system/multi-user.target.wants/wpa_supplicant.service; \
-    for u in hostapd@.service wpa_supplicant@.service; do \
-        test -f "/usr/lib/systemd/system/${u}"; \
-        if find /etc/systemd/system /usr/lib/systemd/system -path '*.wants/*' \
-                -name "${u}" | grep -q .; then \
-            echo "error: ${u} is statically enabled; mosd owns that lifecycle" >&2; exit 1; \
-        fi; \
-    done; \
-    echo "connd: hostapd.service and wpa_supplicant.service masked, templates present and unenabled"
+RUN --mount=type=bind,source=os/rootfs/scripts,target=/mos-scripts \
+    sh /mos-scripts/radios-mask-units.sh
 
 # PLAN-012: the container engine ships INSTALLED AND INERT.
 #
@@ -396,55 +373,20 @@ RUN set -eu; \
 # health gate reports green.
 ARG RAUC_DIR
 COPY ${RAUC_DIR}/ /tmp/rauc/
-RUN set -eu; \
-    for f in rauc rauc.service rauc-service.sh de.pengutronix.rauc.conf de.pengutronix.rauc.service; do \
-        [ -f "/tmp/rauc/${f}" ] || { echo "error: ${f} is not in the staged os/update/rauc output; run 'make os-rauc' first. An image without it boots, reports itself healthy, and cannot install an update" >&2; exit 1; }; \
-    done; \
-    install -m0755 /tmp/rauc/rauc            /usr/bin/rauc; \
-    install -d -m0755 /usr/libexec; \
-    install -m0755 /tmp/rauc/rauc-service.sh /usr/libexec/rauc-service.sh; \
-    install -d -m0755 /usr/lib/systemd/system /usr/share/dbus-1/system.d /usr/share/dbus-1/system-services; \
-    install -m0644 /tmp/rauc/rauc.service    /usr/lib/systemd/system/rauc.service; \
-    install -m0644 /tmp/rauc/de.pengutronix.rauc.conf    /usr/share/dbus-1/system.d/de.pengutronix.rauc.conf; \
-    install -m0644 /tmp/rauc/de.pengutronix.rauc.service /usr/share/dbus-1/system-services/de.pengutronix.rauc.service; \
-    sed -n 's/^RAUC_VERSION=//p' /tmp/rauc/RAUC_VERSION.env >/rootfs-report.rauc; \
-    [ -s /rootfs-report.rauc ] || { echo "error: the staged rauc carries no RAUC_VERSION; os/update/bundle.sh compares that against its own rauc before it writes a bundle, and an empty value would make the comparison pass by finding nothing" >&2; exit 1; }; \
-    echo "rauc: installed $(cat /rootfs-report.rauc), $(stat -c%s /usr/bin/rauc) bytes"; \
-    rm -rf /tmp/rauc
+RUN --mount=type=bind,source=os/rootfs/scripts,target=/mos-scripts \
+    sh /mos-scripts/rauc-install.sh
 
 # NOT LINKED AGAINST A SECOND TLS STACK, asserted against the binary that is
 # actually in this root rather than against the build's own claim. `ldd` here
 # is the loader's answer under emulation for a foreign board; a curl or GnuTLS
 # soname reappearing would mean the source build silently regained streaming.
-RUN set -eu; \
-    if ldd /usr/bin/rauc | grep -ciE 'curl|gnutls' >/dev/null; then \
-        echo "error: the rauc in this image links curl or GnuTLS:" >&2; \
-        ldd /usr/bin/rauc | grep -iE 'curl|gnutls' >&2; \
-        echo "os/update/rauc/ builds it with -Dnetwork=false -Dstreaming=false precisely so it does not" >&2; exit 1; \
-    fi; \
-    ldd /usr/bin/rauc | awk '{print "  " $1}' | sort
+RUN --mount=type=bind,source=os/rootfs/scripts,target=/mos-scripts \
+    sh /mos-scripts/rauc-assert-no-tls-stack.sh
 
 ARG PODMAN_DIR
 COPY ${PODMAN_DIR}/ /tmp/podman/
-RUN if [ "$WITH_CONTAINERS" != "1" ]; then rm -rf /tmp/podman; exit 0; fi; \
-    set -eu; \
-    for b in podman quadlet crun conmon netavark aardvark-dns catatonit; do \
-        if [ ! -f "/tmp/podman/${b}" ]; then \
-            echo "error: ${b} is not in the staged os/podman output. WITH_CONTAINERS=1 asks for an engine and no engine was built; run 'make podman' first. Continuing would produce an image that boots, reports itself healthy, and cannot run a container" >&2; exit 1; \
-        fi; \
-    done; \
-    install -d -m0755 /usr/libexec/podman; \
-    install -m0755 /tmp/podman/podman /usr/bin/podman; \
-    install -m0755 /tmp/podman/crun   /usr/bin/crun; \
-    for b in quadlet conmon netavark aardvark-dns catatonit; do \
-        install -m0755 "/tmp/podman/${b}" "/usr/libexec/podman/${b}"; \
-    done; \
-    install -d -m0755 /etc/containers/systemd; \
-    install -d -m0755 /usr/lib/systemd/system-generators; \
-    ln -sf ../../../libexec/podman/quadlet \
-        /usr/lib/systemd/system-generators/podman-system-generator; \
-    rm -rf /tmp/podman; \
-    echo "podman: seven self-built binaries installed"
+RUN --mount=type=bind,source=os/rootfs/scripts,target=/mos-scripts \
+    sh /mos-scripts/podman-install.sh
 
 # Three assertions about the ASSEMBLED root, each of which the previous
 # arrangement could not make.
@@ -457,30 +399,8 @@ RUN if [ "$WITH_CONTAINERS" != "1" ]; then rm -rf /tmp/podman; exit 0; fi; \
 #    and that list needed the rootfs. ldd here has neither problem.
 # 3. THE CONFIG FILES PODMAN ACTUALLY READS are present. Their paths come from
 #    podman v5.8.6's own source, cited in each file.
-RUN if [ "$WITH_CONTAINERS" != "1" ]; then exit 0; fi; \
-    set -eu; \
-    found="$(find /etc/systemd /usr/lib/systemd /usr/local/lib/systemd \
-                  -name 'podman*' -not -name 'podman-system-generator' \
-                  2>/dev/null || true)"; \
-    [ -z "${found}" ] || \
-        { echo "error: the image contains podman systemd units, which os/podman is not supposed to install: ${found}. The engine must be inert because nothing starts it, not because something masks it" >&2; exit 1; }; \
-    missing=""; \
-    for b in /usr/bin/podman /usr/bin/crun /usr/libexec/podman/quadlet \
-             /usr/libexec/podman/conmon /usr/libexec/podman/netavark \
-             /usr/libexec/podman/aardvark-dns; do \
-        for lib in $(ldd "${b}" 2>/dev/null | awk '/not found/{print $1}'); do \
-            missing="${missing} ${b}:${lib}"; \
-        done; \
-    done; \
-    [ -z "${missing}" ] || \
-        { echo "error: the loader cannot resolve these libraries in the assembled root:${missing}. Each is an exec-time failure on the device. Add the runtime package to the WITH_CONTAINERS apt list above, or drop the os/podman build tag that pulls the dependency" >&2; exit 1; }; \
-    ldd /usr/libexec/podman/catatonit 2>&1 | grep -q 'not a dynamic executable' || \
-        { echo "error: catatonit is dynamically linked. It is copied INTO containers as their init, where the libc is whatever the container ships" >&2; exit 1; }; \
-    ls /usr/lib/*/libsystemd.so.0 >/dev/null 2>&1 || \
-        { echo "error: libsystemd.so.0 is not in the image. podman DLOPENS it by name for journald logging (go-systemd sdjournal/functions.go:37), so no NEEDED or ldd check can see this dependency -- and containers.conf sets log_driver=journald, so losing it loses container logs silently rather than failing" >&2; exit 1; }; \
-    command -v nft >/dev/null || \
-        { echo "error: nft is not in the image. netavark 2.x has no iptables driver and execs nft by name off PATH; without it every container network setup fails" >&2; exit 1; }; \
-    echo "podman: no units, every soname resolves, nft present"
+RUN --mount=type=bind,source=os/rootfs/scripts,target=/mos-scripts \
+    sh /mos-scripts/podman-assert.sh
 
 # The engine is EXERCISED here, not merely installed.
 #
@@ -521,57 +441,8 @@ RUN if [ "$WITH_CONTAINERS" != "1" ]; then exit 0; fi; \
 # whether a file exists needs no cgroups. A limitation stated accurately is
 # still a place things hide, so each line above names a specific claim rather
 # than gesturing at what this stage can reach.
-RUN if [ "$WITH_CONTAINERS" != "1" ]; then exit 0; fi; \
-    set -eu; \
-    ran() { \
-        out="$("$@" 2>&1 || true)"; \
-        case "${out}" in \
-        *"exec format error"*|*"not found"*|*"cannot execute"*|"") \
-            echo "error: $1 did not execute on arm64 under emulation. Output was: ${out:-<nothing>}" >&2; return 1;; \
-        esac; \
-        printf '  %s\n' "${out}" | head -n1; \
-    }; \
-    ran podman --version | grep -q '5\.' || \
-        { echo "error: podman did not report a 5.x version" >&2; exit 1; }; \
-    ran /usr/libexec/podman/netavark --version | grep -q 'netavark' || \
-        { echo "error: netavark did not report its version" >&2; exit 1; }; \
-    ran /usr/libexec/podman/aardvark-dns --version | grep -q 'aardvark' || \
-        { echo "error: aardvark-dns did not report its version" >&2; exit 1; }; \
-    crun_out="$(crun --version 2>&1 || true)"; \
-    case "${crun_out}" in \
-    *"crun version"*) : ;; \
-    *"re-execute libcrun via memory file descriptor"*) \
-        echo "  crun: executed; version withheld under emulation (memfd re-exec unavailable)";; \
-    *) echo "error: crun neither reported a version nor failed the one way emulation is known to break it. Output was: ${crun_out}" >&2; exit 1;; \
-    esac; \
-    nft_out="$(nft --version 2>&1 || true)"; \
-    case "${nft_out}" in \
-    *"nftables v"*) : ;; \
-    *"Unable to initialize Netlink socket"*) \
-        echo "  nft: executed; netlink unavailable in the build sandbox";; \
-    *) echo "error: nft neither reported a version nor failed the one way the build sandbox is known to break it. Output was: ${nft_out}" >&2; exit 1;; \
-    esac; \
-    printf '[engine\nruntime = \n' >/tmp/broken.conf; \
-    if ! CONTAINERS_CONF=/tmp/broken.conf podman --version 2>&1 | grep -q 'Failed to obtain podman configuration'; then \
-        rm -f /tmp/broken.conf; \
-        echo "error: podman did not complain about a deliberately malformed containers.conf, so the check below cannot fail and proves nothing. Either podman stopped reading the file on this path, or the message changed" >&2; exit 1; \
-    fi; \
-    rm -f /tmp/broken.conf; \
-    if podman --version 2>&1 | grep -q 'Failed to obtain podman configuration'; then \
-        echo "error: podman cannot parse the image's /etc/containers/containers.conf: $(podman --version 2>&1 | head -n2)" >&2; exit 1; \
-    fi; \
-    echo "  containers.conf parses: podman reports the malformed control and accepts the shipped file"; \
-    probe=/etc/containers/systemd/mos-build-probe.container; \
-    printf '[Container]\nImage=docker.io/library/busybox\nExec=sleep 1\n[Install]\nWantedBy=multi-user.target\n' >"${probe}"; \
-    out="$(/usr/libexec/podman/quadlet --dryrun 2>&1)"; \
-    rm -f "${probe}"; \
-    printf '%s\n' "${out}" | grep -q 'mos-build-probe.service' || \
-        { echo "error: Quadlet did not generate a unit for a valid .container file. The generator is installed but not doing its job, and on the device that failure is silent: the operator's file is simply ignored. Output was: ${out}" >&2; exit 1; }; \
-    printf '%s\n' "${out}" | grep -qE 'ExecStart=.*podman' || \
-        { echo "error: Quadlet generated a unit whose ExecStart does not invoke podman: ${out}" >&2; exit 1; }; \
-    printf '%s\n' "${out}" | grep -q 'busybox' || \
-        { echo "error: the generated unit does not name the image the .container file asked for; Quadlet parsed the file but dropped its content: ${out}" >&2; exit 1; }; \
-    echo "podman: engine and Quadlet generator exercised on arm64 — a .container file generates a podman ExecStart"
+RUN --mount=type=bind,source=os/rootfs/scripts,target=/mos-scripts \
+    sh /mos-scripts/podman-exercise.sh
 
 # Image profile. mosd reads this file ONCE, on first boot, to seed
 # `access.ssh.enabled`, and it FAILS CLOSED: missing, unreadable or carrying a
@@ -587,15 +458,8 @@ RUN if [ "$WITH_CONTAINERS" != "1" ]; then exit 0; fi; \
 # is inside the read-only verity root, so a production device cannot be edited
 # into a development one.
 ARG MOS_PROFILE=dev
-RUN set -eu; \
-    case "${MOS_PROFILE}" in \
-    dev | prod) ;; \
-    *) echo "error: MOS_PROFILE is '${MOS_PROFILE}'; it must be exactly 'dev' or 'prod' in lowercase. mosd's comparison is case-sensitive and every other value resolves to prod, which silently disables SSH" >&2; exit 1 ;; \
-    esac; \
-    mkdir -p /usr/lib/mos; \
-    printf 'MOS_PROFILE=%s\n' "${MOS_PROFILE}" > /usr/lib/mos/profile.conf; \
-    chmod 0444 /usr/lib/mos/profile.conf; \
-    echo "profile: MOS_PROFILE=${MOS_PROFILE}"
+RUN --mount=type=bind,source=os/rootfs/scripts,target=/mos-scripts \
+    sh /mos-scripts/profile-write.sh
 
 # Kernel modules. Debian is merged-usr (/lib -> usr/lib) and the tar's paths
 # start with lib/, so it cannot be ADDed to / directly — extract to a temp dir
@@ -629,72 +493,15 @@ RUN set -eu; \
 # need this and does not exist yet, and keying it to amd64 would make that
 # board's first symptom the message above rather than a build error.
 ARG RAUC_BOOTLOADER=uboot
-RUN set -eu; \
-    if [ "$RAUC_BOOTLOADER" = "grub" ]; then \
-        apt-get update; \
-        # libdevmapper is grub-editenv's one dependency this root does not \
-        # already carry at THIS point in the build. It arrives later anyway, \
-        # with cryptsetup-bin in the amd64 block below -- but depending on \
-        # that ordering would make this step pass or fail according to where \
-        # someone moves it, so it is named here and the step stands alone. \
-        apt-get install -y --no-install-recommends libdevmapper1.02.1; \
-        cd /tmp; \
-        apt-get download grub-common; \
-        dpkg-deb --fsys-tarfile grub-common_*.deb \
-            | tar -xO ./usr/bin/grub-editenv > /usr/bin/grub-editenv; \
-        chmod 0755 /usr/bin/grub-editenv; \
-        rm -f /tmp/grub-common_*.deb; \
-        cd /; \
-        [ -s /usr/bin/grub-editenv ] || \
-            { echo "error: extracting grub-editenv produced an empty file; RAUC's grub backend would fail at runtime with 'No such file or directory'" >&2; exit 1; }; \
-        missing="$(ldd /usr/bin/grub-editenv | awk '/not found/{print $1}' | tr '\n' ' ')"; \
-        [ -z "${missing}" ] || \
-            { echo "error: grub-editenv was taken out of its package but this root does not carry:${missing}. Extracting one file skips dependency resolution, so a missing library shows up as a dynamic-link failure at runtime, inside a child process RAUC reports only as 'Failed to start grub-editenv'" >&2; exit 1; }; \
-        grub-editenv --help >/dev/null 2>&1 || \
-            { echo "error: grub-editenv is installed and will not run" >&2; exit 1; }; \
-        echo "rauc: grub-editenv installed ($(stat -c%s /usr/bin/grub-editenv) bytes), which the grub backend execs to read and write grubenv"; \
-    fi
+RUN --mount=type=bind,source=os/rootfs/scripts,target=/mos-scripts \
+    sh /mos-scripts/grub-editenv-install.sh
 
 ARG MOS_ARCH=arm64
 COPY os/rootfs/initramfs/ /tmp/initramfs/
 ARG MODULES_TAR
 COPY ${MODULES_TAR} /tmp/modules.tar
-RUN set -eu; \
-    if [ "$MOS_ARCH" = "amd64" ]; then \
-        apt-get update; \
-        apt-get install -y --no-install-recommends linux-image-amd64 cryptsetup-bin; \
-        ls /boot/vmlinuz-* >/dev/null 2>&1 || \
-            { echo "error: linux-image-amd64 installed no kernel under /boot; the x64 image has nothing to boot" >&2; exit 1; }; \
-        install -m0755 /tmp/initramfs/hooks/mos-verity /etc/initramfs-tools/hooks/mos-verity; \
-        install -m0755 /tmp/initramfs/scripts/mos-verity /etc/initramfs-tools/scripts/local-top/mos-verity; \
-        update-initramfs -u -k all; \
-        lsinitramfs /boot/initrd.img-* | grep -q 'sbin/veritysetup' || \
-            { echo "error: the rebuilt initramfs does not contain veritysetup. Without it nothing assembles /dev/dm-0 and the boot hangs waiting for a device that is never created" >&2; exit 1; }; \
-        lsinitramfs /boot/initrd.img-* | grep -q 'scripts/local-top/mos-verity' || \
-            { echo "error: the rebuilt initramfs does not contain the mos-verity local-top script" >&2; exit 1; }; \
-        for cmd in tr sed awk grep cut head tail sort uniq expr basename dirname xargs find; do \
-            if grep -qE "(^|[ \t;|(&])${cmd}[ \t]" /etc/initramfs-tools/scripts/local-top/mos-verity; then \
-                echo "error: the mos-verity script calls '${cmd}', which a klibc initramfs does not have. Its whole command set is blkid cat chroot cpio dd dmesg false fstype gunzip halt insmod ipconfig kill kmod ln losetup ls minips mkdir mkfifo mknod modprobe mount mv nfsmount nuke pivot_root poweroff readlink reboot resume rmmod run-init sh sleep sync true udevadm umount uname, plus what a hook copies in. A missing command here fails AFTER the kernel has handed over, which on a headless machine is indistinguishable from a hang" >&2; exit 1; \
-            fi; \
-        done; \
-        # NOTHING IS PURGED WITH dpkg AFTER THIS POINT, and that is the whole \
-        # reason cryptsetup-bin survives to the package-manager purge stage \
-        # instead of being removed here. An `apt-get purge` fires the kernel \
-        # package'"'"'s triggers, update-initramfs runs a SECOND time with the \
-        # hook already gone, and the initrd that ships has no veritysetup in it \
-        # -- while the two assertions above, which ran before that, both passed. \
-        # A check whose subject is rebuilt after it runs is not a check. \
-        # The purge stage below removes the binary with rm, which fires nothing. \
-        rm -rf /var/lib/apt/lists/*; \
-        rm -f /tmp/modules.tar; \
-    else \
-        mkdir -p /tmp/mods /usr/lib/modules; \
-        tar -xf /tmp/modules.tar -C /tmp/mods; \
-        cp -a /tmp/mods/lib/modules/. /usr/lib/modules/; \
-        rm -rf /tmp/mods /tmp/modules.tar; \
-    fi; \
-    rm -rf /tmp/initramfs; \
-    ls /usr/lib/modules >/dev/null
+RUN --mount=type=bind,source=os/rootfs/scripts,target=/mos-scripts \
+    sh /mos-scripts/kernel-and-initramfs.sh
 
 # WiFi/BT firmware: AIC8800D80 combo (single SKU; the bcmdhd/AP6275S fallback
 # was dropped when the fleet was confirmed AIC-only and the kernel stopped
@@ -710,15 +517,8 @@ COPY board/cx3576/rootfs/firmware/aic_userconfig_8800d80.txt \
      board/cx3576/rootfs/firmware/fw_patch_table_8800d80_u02.bin \
      board/cx3576/rootfs/firmware/fmacfw_8800d80_u02.bin \
      /tmp/fw/
-RUN set -eu; \
-    if [ "$MOS_ARCH" = "amd64" ]; then \
-        rm -rf /tmp/fw; \
-    else \
-        mkdir -p /usr/lib/firmware; \
-        mv /tmp/fw/* /usr/lib/firmware/; \
-        rmdir /tmp/fw; \
-        test -f /usr/lib/firmware/fmacfw_8800d80_u02.bin; \
-    fi
+RUN --mount=type=bind,source=os/rootfs/scripts,target=/mos-scripts \
+    sh /mos-scripts/firmware-install.sh
 
 # Networking: DHCP on all eth* (kernel cmdline has net.ifnames=0)
 #
@@ -737,25 +537,8 @@ RUN set -eu; \
 # listening from early boot until mosd's first reconcile shut it down — exactly
 # the window this design exists to close. Turning SSH on is a runtime decision
 # made against the settings tree, never a property of the image.
-RUN printf '%s\n' \
-        '[Match]' \
-        'Name=eth*' \
-        '' \
-        '[Network]' \
-        'DHCP=yes' \
-        > /etc/systemd/network/80-dhcp.network && \
-    { systemctl enable systemd-networkd systemd-resolved || true; } && \
-    mkdir -p /etc/systemd/system/multi-user.target.wants && \
-    for u in systemd-networkd systemd-resolved; do \
-        [ -L "/etc/systemd/system/multi-user.target.wants/$u.service" ] || \
-            ln -s "/lib/systemd/system/$u.service" \
-                  "/etc/systemd/system/multi-user.target.wants/$u.service"; \
-    done && \
-    test -L /etc/systemd/system/multi-user.target.wants/systemd-networkd.service && \
-    test -L /etc/systemd/system/multi-user.target.wants/systemd-resolved.service && \
-    rm -f /etc/systemd/system/multi-user.target.wants/ssh.service && \
-    test ! -e /etc/systemd/system/multi-user.target.wants/ssh.service && \
-    echo "ssh.service left DISABLED in the image (both profiles; mosd owns the lifecycle)"
+RUN --mount=type=bind,source=os/rootfs/scripts,target=/mos-scripts \
+    sh /mos-scripts/network-and-ssh-units.sh
 # /etc/resolv.conf cannot be replaced here (bind-mounted by buildkit during RUN);
 # the stub-resolv.conf symlink is created in the pack stage instead. It points
 # into /run, so it stays writable with / read-only.
@@ -786,63 +569,8 @@ RUN rm -f /etc/ssh/ssh_host_*
 # verity root, is not protected against either.
 ARG OVERLAY_DIR
 COPY ${OVERLAY_DIR}/ /tmp/overlay/
-RUN cp -a /tmp/overlay/. / && \
-    rm -rf /tmp/overlay && \
-    { [ ! -e /etc/fw_env.config ] || chmod 0644 /etc/fw_env.config; } && \
-    chmod 0755 /usr/lib/mos/mos-seed-var /usr/lib/mos/mos-seed-state \
-               /usr/lib/mos/mos-seed-home /usr/lib/mos/mos-seed-root \
-               /usr/lib/mos/mos-shadow-reconcile && \
-    chmod 0644 /etc/fstab /etc/repart.d/*.conf \
-               /etc/tmpfiles.d/mos-var.conf \
-               /etc/systemd/system/mos-seed-*.service \
-               /etc/systemd/system/mos-apply-hostname.service \
-               /etc/systemd/system/mos-shadow-reconcile.service \
-               /etc/systemd/system/var-lib-mos.mount \
-               /etc/systemd/system/etc-ssh.mount \
-               /etc/systemd/system/etc-hostname.mount \
-               /etc/systemd/system/usr-local-lib-systemd-system.mount \
-               /etc/systemd/system/home.mount \
-               /etc/systemd/system/root.mount && \
-    mkdir -p /srv /mnt/state /mnt/meta /home \
-             /etc/systemd/system/local-fs.target.wants \
-             /etc/systemd/system/timers.target.wants \
-             /etc/systemd/system/multi-user.target.wants && \
-    mkdir -p -m 0700 /root && chown 0:0 /root && chmod 0700 /root && \
-    mkdir -p -m 0755 /usr/local/lib/systemd /usr/local/lib/systemd/system && \
-    chown 0:0 /usr/local/lib/systemd /usr/local/lib/systemd/system && \
-    mkdir -p /etc/containers/systemd && chmod 0755 /etc/containers/systemd && \
-    { [ ! -e /etc/systemd/system/boot.mount ] || { \
-        mkdir -p -m 0755 /boot && \
-        chmod 0644 /etc/systemd/system/boot.mount && \
-        ln -sf /etc/systemd/system/boot.mount \
-            /etc/systemd/system/local-fs.target.wants/boot.mount && \
-        test -L /etc/systemd/system/local-fs.target.wants/boot.mount; }; } && \
-    : "etc-containers-systemd.mount is INSTALLED and deliberately NOT linked into" \
-      "local-fs.target.wants below. It was, until PLAN-012 M3: RFCT-102 added the" \
-      "symlink because without it the Quadlet directory was the image's empty one" \
-      "and nothing persisted. That was the right fix for an image with no switch," \
-      "and it pre-empted the switch. Statically enabled, the bind comes up at every" \
-      "boot regardless of container.enabled, Quadlet generates units from STATE," \
-      "and they start -- so anything able to write /mnt/state/quadlet has a" \
-      "root-capable container at the next reboot with no operator decision in the" \
-      "path. mosd's ContainerReconciler enables and starts it when the setting says" \
-      "true, which is the same runtime-scoped enablement every other mos-driven" \
-      "unit uses." && \
-    for u in mos-seed-var.service mos-seed-state.service mos-seed-home.service \
-             mos-seed-root.service \
-             var-lib-mos.mount \
-             etc-ssh.mount etc-hostname.mount home.mount root.mount \
-             usr-local-lib-systemd-system.mount \
-             mos-apply-hostname.service; do \
-        ln -sf "/etc/systemd/system/$u" "/etc/systemd/system/local-fs.target.wants/$u" && \
-        test -L "/etc/systemd/system/local-fs.target.wants/$u"; \
-    done && \
-    ln -sf /lib/systemd/system/fstrim.timer \
-           /etc/systemd/system/timers.target.wants/fstrim.timer && \
-    test -L /etc/systemd/system/timers.target.wants/fstrim.timer && \
-    ln -sf /etc/systemd/system/mos-shadow-reconcile.service \
-           /etc/systemd/system/multi-user.target.wants/mos-shadow-reconcile.service && \
-    test -L /etc/systemd/system/multi-user.target.wants/mos-shadow-reconcile.service
+RUN --mount=type=bind,source=os/rootfs/scripts,target=/mos-scripts \
+    sh /mos-scripts/overlay-install.sh
 
 # The RADIO mount points, for boards that have radios.
 #
@@ -859,19 +587,8 @@ RUN cp -a /tmp/overlay/. / && \
 # whose overlay had all three. x64 could not catch that: it declares no radio,
 # so it takes the early exit and never reaches the test at all. A board with
 # the feature is the only one that runs this code.
-RUN set -eu; \
-    if [ -z "${BOARD_RADIOS}" ]; then \
-        echo "radios: none declared; no radio mount points to wire"; \
-        exit 0; \
-    fi; \
-    for u in var-lib-bluetooth.mount etc-wpa_supplicant.mount etc-hostapd.mount; do \
-        test -f "/etc/systemd/system/$u" || \
-            { echo "error: ${BOARD_RADIOS} declared but /etc/systemd/system/$u is not in the overlay" >&2; exit 1; }; \
-        chmod 0644 "/etc/systemd/system/$u"; \
-        ln -sf "/etc/systemd/system/$u" "/etc/systemd/system/local-fs.target.wants/$u"; \
-        test -L "/etc/systemd/system/local-fs.target.wants/$u"; \
-    done; \
-    echo "radios: mount points wired for ${BOARD_RADIOS}"
+RUN --mount=type=bind,source=os/rootfs/scripts,target=/mos-scripts \
+    sh /mos-scripts/radios-mounts.sh
 
 # The container configuration mos ships INSTEAD of the distribution's.
 #
@@ -883,16 +600,8 @@ RUN set -eu; \
 # so if the overlay ever stops carrying one of these, podman does not fail. It
 # falls back to a built-in default nobody chose -- graphroot on the EPHEMERAL
 # partition, or a signature policy that is not the one reviewed here.
-RUN if [ "$WITH_CONTAINERS" != "1" ]; then exit 0; fi; \
-    set -eu; \
-    for f in /etc/containers/policy.json /etc/containers/containers.conf \
-             /etc/containers/registries.conf /etc/containers/storage.conf; do \
-        test -f "${f}" || \
-            { echo "error: ${f} is missing from the assembled root. mos ships its own container configuration because containers-common is not installed; without this file podman silently uses a built-in default" >&2; exit 1; }; \
-    done; \
-    test ! -e /usr/share/containers/containers.conf || \
-        { echo "error: /usr/share/containers/containers.conf exists. mos deliberately ships one config layer, at /etc; a second file underneath it supplies settings that reading /etc does not reveal" >&2; exit 1; }; \
-    echo "podman: mos config present at /etc/containers, no second layer under /usr/share"
+RUN --mount=type=bind,source=os/rootfs/scripts,target=/mos-scripts \
+    sh /mos-scripts/podman-assert-config.sh
 
 # mosd management daemon: binary + systemd unit (enabled) + D-Bus system policy.
 # build-v2.sh always stages MOSD_DIR (empty when WITH_MOSD=0), so the COPY works
@@ -915,44 +624,8 @@ RUN if [ "$WITH_CONTAINERS" != "1" ]; then exit 0; fi; \
 ARG MOSD_DIR
 ARG WITH_MOSD=1
 COPY ${MOSD_DIR}/ /tmp/mosd/
-RUN if [ "$WITH_MOSD" = "1" ] && [ -f /tmp/mosd/mosd ]; then \
-        install -m 0755 /tmp/mosd/mosd /usr/bin/mosd && \
-        install -m 0644 /tmp/mosd/mosd.service /usr/lib/systemd/system/mosd.service && \
-        install -m 0644 /tmp/mosd/com.mos.mosd.conf /usr/share/dbus-1/system.d/com.mos.mosd.conf && \
-        install -m 0644 /tmp/mosd/com.mos.ext.conf /usr/share/dbus-1/system.d/com.mos.ext.conf && \
-        mkdir -p /var/lib/mos /etc/systemd/system/multi-user.target.wants && \
-        ln -sf /usr/lib/systemd/system/mosd.service \
-               /etc/systemd/system/multi-user.target.wants/mosd.service && \
-        test -L /etc/systemd/system/multi-user.target.wants/mosd.service; \
-    fi && \
-    if [ "$WITH_MOSD" = "1" ] && [ -f /tmp/mosd/apid ]; then \
-        install -m 0755 /tmp/mosd/apid /usr/bin/apid && \
-        install -m 0644 /tmp/mosd/apid.service /usr/lib/systemd/system/apid.service && \
-        mkdir -p /etc/systemd/system/multi-user.target.wants && \
-        ln -sf /usr/lib/systemd/system/apid.service \
-               /etc/systemd/system/multi-user.target.wants/apid.service && \
-        test -L /etc/systemd/system/multi-user.target.wants/apid.service; \
-    fi && \
-    if [ "$WITH_MOSD" = "1" ] && [ -f /tmp/mosd/mos-mqttd ]; then \
-        install -m 0755 /tmp/mosd/mos-mqttd /usr/bin/mos-mqttd && \
-        install -m 0644 /tmp/mosd/mos-mqttd.service \
-                /usr/lib/systemd/system/mos-mqttd.service && \
-        install -m 0644 /tmp/mosd/mos-mqttd.conf \
-                /usr/share/dbus-1/system.d/mos-mqttd.conf && \
-        mkdir -p /etc/systemd/system/multi-user.target.wants && \
-        rm -f /etc/systemd/system/multi-user.target.wants/mos-mqttd.service && \
-        test ! -e /etc/systemd/system/multi-user.target.wants/mos-mqttd.service && \
-        echo "mos-mqttd.service left DISABLED in the image (mosd owns the lifecycle; mqtt.enabled starts it)"; \
-    fi && \
-    if [ "$WITH_MOSD" = "1" ] && [ -f /tmp/mosd/mos-mqtt-broker ]; then \
-        install -m 0755 /tmp/mosd/mos-mqtt-broker /usr/bin/mos-mqtt-broker && \
-        install -m 0644 /tmp/mosd/mos-mqtt-broker.service \
-                /usr/lib/systemd/system/mos-mqtt-broker.service && \
-        mkdir -p /etc/systemd/system/multi-user.target.wants && \
-        rm -f /etc/systemd/system/multi-user.target.wants/mos-mqtt-broker.service && \
-        test ! -e /etc/systemd/system/multi-user.target.wants/mos-mqtt-broker.service && \
-        echo "mos-mqtt-broker.service left DISABLED in the image (mosd owns the lifecycle; no D-Bus policy, it speaks none)"; \
-    fi && rm -rf /tmp/mosd
+RUN --mount=type=bind,source=os/rootfs/scripts,target=/mos-scripts \
+    sh /mos-scripts/mosd-install.sh
 
 # The mos-mqttd service account.
 #
@@ -985,21 +658,8 @@ RUN if [ "$WITH_MOSD" = "1" ] && [ -f /tmp/mosd/mosd ]; then \
 # LAST-CHANGE field for the same determinism reason as the mos account: useradd
 # stamps today's date, which would change the packed rootfs -- and its
 # dm-verity root hash -- on every build day for no content reason.
-RUN set -eu; \
-    if awk -F: '$3 == 970 || $1 == "mos-mqttd"' /etc/passwd | grep -q .; then \
-        echo "error: uid 970 or the name mos-mqttd is already taken in the base image: $(awk -F: '$3 == 970 || $1 == "mos-mqttd"' /etc/passwd)" >&2; exit 1; \
-    fi; \
-    groupadd --system --gid 970 mos-mqttd; \
-    useradd --system --uid 970 --gid 970 --no-create-home \
-            --home-dir /nonexistent --shell /usr/sbin/nologin \
-            --comment "mos MQTT bridge" mos-mqttd; \
-    chage -d 2020-01-01 mos-mqttd; \
-    ent="$(awk -F: '$1 == "mos-mqttd"' /etc/passwd)"; \
-    case "${ent}" in \
-    mos-mqttd:x:970:970:*:/nonexistent:/usr/sbin/nologin) ;; \
-    *) echo "error: mos-mqttd passwd entry is not the pinned one: ${ent}" >&2; exit 1 ;; \
-    esac; \
-    echo "mos-mqttd system account created: ${ent}"
+RUN --mount=type=bind,source=os/rootfs/scripts,target=/mos-scripts \
+    sh /mos-scripts/account-mos-mqttd.sh
 
 # The mos-mqtt-broker service account.
 #
@@ -1031,21 +691,8 @@ RUN set -eu; \
 # LAST-CHANGE field for the same determinism reason as the accounts above:
 # useradd stamps today's date, which would change the packed rootfs -- and its
 # dm-verity root hash -- on every build day for no content reason.
-RUN set -eu; \
-    if awk -F: '$3 == 969 || $1 == "mos-mqtt-broker"' /etc/passwd | grep -q .; then \
-        echo "error: uid 969 or the name mos-mqtt-broker is already taken in the base image: $(awk -F: '$3 == 969 || $1 == "mos-mqtt-broker"' /etc/passwd)" >&2; exit 1; \
-    fi; \
-    groupadd --system --gid 969 mos-mqtt-broker; \
-    useradd --system --uid 969 --gid 969 --no-create-home \
-            --home-dir /nonexistent --shell /usr/sbin/nologin \
-            --comment "mos MQTT broker" mos-mqtt-broker; \
-    chage -d 2020-01-01 mos-mqtt-broker; \
-    ent="$(awk -F: '$1 == "mos-mqtt-broker"' /etc/passwd)"; \
-    case "${ent}" in \
-    mos-mqtt-broker:x:969:969:*:/nonexistent:/usr/sbin/nologin) ;; \
-    *) echo "error: mos-mqtt-broker passwd entry is not the pinned one: ${ent}" >&2; exit 1 ;; \
-    esac; \
-    echo "mos-mqtt-broker system account created: ${ent}"
+RUN --mount=type=bind,source=os/rootfs/scripts,target=/mos-scripts \
+    sh /mos-scripts/account-mos-mqtt-broker.sh
 
 # Board hardware init: best-effort oneshots from os/boards/cx3576/hwinit/ +
 # per-board facts staged from BOARD_DIR/init into /etc/mos.
@@ -1083,37 +730,8 @@ RUN set -eu; \
 ARG BOARD_INIT_DIR
 COPY os/boards/cx3576/hwinit/ /tmp/hwinit/
 COPY ${BOARD_INIT_DIR}/ /tmp/board-init/
-RUN set -eu; \
-    mkdir -p /etc/mos /usr/lib/mos /etc/systemd/system/multi-user.target.wants \
-        /usr/lib/udev/rules.d; \
-    cp -a /tmp/board-init/. /etc/mos/; \
-    enabled=0; declared=0; \
-    for c in /tmp/board-init/*.conf; do \
-        [ -e "$c" ] || continue; \
-        n="$(basename "$c" .conf)"; \
-        declared=$((declared + 1)); \
-        script="/tmp/hwinit/hwinit-$n"; unit="/tmp/hwinit/mos-$n.service"; \
-        [ -f "$script" ] || { echo "error: /etc/mos/$n.conf is a board fact that no hwinit script reads (there is no os/boards/cx3576/hwinit/hwinit-$n); a fact nothing consumes is a silent no-op on the device" >&2; exit 1; }; \
-        [ -f "$unit" ] || { echo "error: os/boards/cx3576/hwinit/hwinit-$n has no unit to run it (there is no os/boards/cx3576/hwinit/mos-$n.service)" >&2; exit 1; }; \
-        install -m 0755 "$script" /usr/lib/mos/; \
-        install -m 0644 "$unit" /usr/lib/systemd/system/; \
-        ln -sf "/usr/lib/systemd/system/mos-$n.service" \
-               "/etc/systemd/system/multi-user.target.wants/mos-$n.service"; \
-        test -L "/etc/systemd/system/multi-user.target.wants/mos-$n.service"; \
-        for r in /tmp/hwinit/*-mos-"$n"-*.rules; do \
-            [ -e "$r" ] || continue; \
-            install -m 0644 "$r" /usr/lib/udev/rules.d/; \
-        done; \
-        enabled=$((enabled + 1)); \
-    done; \
-    test "$enabled" = "$declared"; \
-    for f in /usr/lib/mos/hwinit-*; do \
-        [ -e "$f" ] || continue; \
-        n="$(basename "$f" | sed 's/^hwinit-//')"; \
-        [ -f "/etc/mos/$n.conf" ] || { echo "error: /usr/lib/mos/hwinit-$n shipped without /etc/mos/$n.conf; it can never run, and it drags its command dependencies into the image for nothing" >&2; exit 1; }; \
-    done; \
-    echo "hwinit: $declared board fact(s) declared, $enabled unit(s) installed and enabled"; \
-    rm -rf /tmp/hwinit /tmp/board-init
+RUN --mount=type=bind,source=os/rootfs/scripts,target=/mos-scripts \
+    sh /mos-scripts/hwinit-install.sh
 
 # journald in RAM only, as in v1. /var is writable under v2, so persistent
 # journal is now possible, but enabling it is a separate decision (flash wear,
@@ -1163,30 +781,8 @@ RUN mkdir -p /etc/systemd/journald.conf.d && \
 # --no-create-home: /home is the mountpoint of home.mount and must be EMPTY in
 # the packed root, which is a read-only verity squashfs. The real directory is
 # created on DATA by mos-seed-home, with these same two numbers.
-RUN set -eu; \
-    test -x /bin/bash || \
-        { echo "error: /bin/bash is not in the image, so it cannot be the mos login shell" >&2; exit 1; }; \
-    groupadd --gid 1000 mos; \
-    useradd --uid 1000 --gid 1000 --no-create-home --home-dir /home/mos \
-            --shell /bin/bash --comment "mos operator" mos; \
-    chage -d 2020-01-01 mos; \
-    ent="$(awk -F: '$1 == "mos"' /etc/passwd)"; \
-    [ "$(echo "${ent}" | cut -d: -f3,4,6,7)" = "1000:1000:/home/mos:/bin/bash" ] || \
-        { echo "error: the mos entry in /etc/passwd is '${ent}', expected uid 1000, gid 1000, home /home/mos, shell /bin/bash" >&2; exit 1; }; \
-    [ "$(awk -F: '$1 == "mos" { print $3; exit }' /etc/group)" = "1000" ] || \
-        { echo "error: the mos group is not gid 1000" >&2; exit 1; }; \
-    extra="$(awk -F: '$1 != "mos" && $4 ~ /(^|,)mos(,|$)/ { print $1 }' /etc/group | tr '\n' ' ')"; \
-    [ -z "${extra}" ] || \
-        { echo "error: mos is a member of supplementary group(s): ${extra}; phase 1 grants none, and no sudo" >&2; exit 1; }; \
-    mh="$(awk -F: '$1 == "mos" { print $2; exit }' /etc/shadow)"; \
-    case "${mh}" in \
-        "") echo "error: the mos entry in /etc/shadow has an EMPTY password field, which means PASSWORDLESS login: pam_unix accepts any password, including none. Empty is not a locked marker" >&2; exit 1 ;; \
-        '!'* | '*'*) ;; \
-        *) echo "error: the mos entry in /etc/shadow carries a usable password hash. A signed rootfs is byte-identical on every device, so any hash inside one is a fleet-wide shared secret" >&2; exit 1 ;; \
-    esac; \
-    [ "$(awk -F: '$1 == "mos" { print $3; exit }' /etc/shadow)" = "18262" ] || \
-        { echo "error: the mos shadow last-change field is not the pinned day 18262 (2020-01-01)" >&2; exit 1; }; \
-    echo "account: mos uid=1000 gid=1000 shell=/bin/bash home=/home/mos, no supplementary groups, shadow field '${mh}'"
+RUN --mount=type=bind,source=os/rootfs/scripts,target=/mos-scripts \
+    sh /mos-scripts/account-mos.sh
 
 # There is deliberately NO ROOT_PASSWORD build arg. A v2 rootfs is a signed
 # squashfs, byte-identical on every device, so any usable hash baked
@@ -1303,61 +899,8 @@ RUN dpkg-query -W -f='${Package}\t${Installed-Size}\n' > /rootfs-report.pkgs
 # The self-checks below are what make this step able to FAIL. A purge that
 # silently removed too much would otherwise surface as a device that does not
 # boot, on hardware, days later.
-RUN set -eu; \
-    rm -rf /var/lib/dpkg /var/lib/apt /var/cache/apt /var/cache/debconf \
-           /etc/apt /etc/dpkg /usr/lib/apt /usr/lib/dpkg /usr/share/debconf \
-           /usr/share/perl /usr/share/perl5 \
-           /usr/bin/dpkg /usr/bin/dpkg-deb /usr/bin/dpkg-divert \
-           /usr/bin/dpkg-maintscript-helper /usr/bin/dpkg-query \
-           /usr/bin/dpkg-split /usr/bin/dpkg-statoverride /usr/bin/dpkg-trigger \
-           /usr/sbin/dpkg-preconfigure /usr/sbin/dpkg-reconfigure \
-           /usr/bin/apt /usr/bin/apt-cache /usr/bin/apt-cdrom /usr/bin/apt-config \
-           /usr/bin/apt-get /usr/bin/apt-key /usr/bin/apt-mark /usr/bin/apt-sortpkgs \
-           /usr/bin/gpgv /usr/bin/perl /usr/bin/perl5.* \
-           /usr/lib/*-linux-gnu/perl-base /usr/lib/*-linux-gnu/libapt-pkg.so.* \
-           /usr/lib/*-linux-gnu/libapt-private.so.* ; \
-    rm -f /usr/bin/debconf /usr/bin/debconf-apt-progress /usr/bin/debconf-communicate \
-          /usr/bin/debconf-copydb /usr/bin/debconf-escape /usr/bin/debconf-set-selections \
-          /usr/bin/debconf-show /usr/bin/deb-systemd-helper /usr/bin/deb-systemd-invoke \
-          /usr/bin/ucf /usr/bin/ucfq /usr/bin/ucfr \
-          /usr/sbin/adduser /usr/sbin/deluser /usr/sbin/addgroup /usr/sbin/delgroup \
-          /usr/sbin/update-rc.d /usr/sbin/dpkg-fsys-usrunmess \
-          /usr/sbin/pam-auth-update /usr/sbin/pam_getenv \
-          /usr/bin/linux-check-removal /usr/bin/linux-run-hooks \
-          /usr/bin/linux-update-symlinks /usr/bin/linux-version \
-          /usr/sbin/update-initramfs \
-          /usr/sbin/veritysetup /usr/sbin/cryptsetup /usr/sbin/integritysetup \
-          /etc/initramfs-tools/hooks/mos-verity \
-          /usr/lib/systemd/system/apt-daily.timer \
-          /usr/lib/systemd/system/apt-daily.service \
-          /usr/lib/systemd/system/apt-daily-upgrade.timer \
-          /usr/lib/systemd/system/apt-daily-upgrade.service \
-          /usr/lib/systemd/system/dpkg-db-backup.timer \
-          /usr/lib/systemd/system/dpkg-db-backup.service \
-          /etc/systemd/system/timers.target.wants/apt-daily.timer \
-          /etc/systemd/system/timers.target.wants/apt-daily-upgrade.timer \
-          /etc/systemd/system/timers.target.wants/dpkg-db-backup.timer ; \
-    left="$(find /etc/systemd /usr/lib/systemd -name 'apt-daily*' -o -name 'dpkg-db-backup*' 2>/dev/null | tr '\n' ' ')"; \
-    [ -z "${left}" ] || \
-        { echo "error: package-management timers survived the purge: ${left}. They are enabled, they fire daily, and every one of them fails on an image with no apt and no dpkg -- which is noise in the journal shaped exactly like a real fault" >&2; exit 1; }; \
-    for gone in dpkg dpkg-query apt apt-get perl; do \
-        if command -v "${gone}" >/dev/null 2>&1; then \
-            echo "error: ${gone} survived the package-manager purge; the packed root still carries a way to install software" >&2; exit 1; \
-        fi; \
-    done; \
-    for kept in bash sh ls cp mv rm sed awk grep find systemctl sshd ssh scp curl ip; do \
-        command -v "${kept}" >/dev/null 2>&1 || \
-            { echo "error: the purge removed ${kept}, which the image needs at runtime" >&2; exit 1; }; \
-    done; \
-    test -s /etc/ssl/certs/ca-certificates.crt || \
-        { echo "error: the purge removed the CA bundle. It is a GENERATED file, not a shipped one -- update-ca-certificates writes it from /usr/share/ca-certificates -- so anything that sweeps package-manager output can take it, and the loss is silent until the first HTTPS connection" >&2; exit 1; }; \
-    dangling="$(grep -rlI '^#!.*perl' /usr/bin /usr/sbin /usr/lib/systemd /etc 2>/dev/null || true)"; \
-    [ -z "${dangling}" ] || \
-        { echo "error: perl is gone but these scripts still name it as their interpreter: ${dangling}" >&2; exit 1; }; \
-    kept_copyrights="$(find /usr/share/doc -name copyright -type f 2>/dev/null | wc -l)"; \
-    [ "${kept_copyrights}" -ge 100 ] || \
-        { echo "error: only ${kept_copyrights} copyright files are left under /usr/share/doc; Debian ships them to satisfy redistribution terms" >&2; exit 1; }; \
-    echo "package management removed; ${kept_copyrights} copyright files kept"
+RUN --mount=type=bind,source=os/rootfs/scripts,target=/mos-scripts \
+    sh /mos-scripts/package-manager-purge.sh
 
 # Build report (moved out of the tree by the pack stage; never ships in the
 # image). TOTAL_MB is measured HERE, after the purge, so the budget gate in
@@ -1391,34 +934,8 @@ COPY --from=rootfs / /rootfs/
 # the v2-only paths added: the overlay's mount units, seed scripts, repart.d
 # definitions and fw_env.config. Only our own paths are scanned; vendor
 # packages ship translations and are none of our business.
-RUN set -e; \
-    mos_paths=""; \
-    for f in /rootfs/usr/lib/mos /rootfs/etc/mos \
-             /rootfs/usr/lib/udev/rules.d/60-mos-*.rules \
-             /rootfs/usr/lib/systemd/system/mos-*.service \
-             /rootfs/usr/lib/systemd/system/mosd.service \
-             /rootfs/usr/lib/systemd/system/apid.service \
-             /rootfs/usr/share/dbus-1/system.d/com.mos.mosd.conf \
-             /rootfs/usr/share/dbus-1/system.d/com.mos.ext.conf \
-             /rootfs/etc/systemd/network/*.network \
-             /rootfs/etc/systemd/system/mos-*.service \
-             /rootfs/etc/systemd/system/etc-ssh.mount \
-             /rootfs/etc/systemd/system/etc-hostname.mount \
-             /rootfs/etc/systemd/system/etc-wpa_supplicant.mount \
-             /rootfs/etc/systemd/system/etc-hostapd.mount \
-             /rootfs/etc/systemd/system/var-lib-mos.mount \
-             /rootfs/etc/repart.d /rootfs/etc/fstab \
-             /rootfs/etc/fw_env.config; do \
-        if [ -e "$f" ]; then mos_paths="$mos_paths $f"; fi; \
-    done; \
-    test -n "$mos_paths"; \
-    hits=$(grep -rlP '[\x{3400}-\x{4dbf}\x{4e00}-\x{9fff}\x{f900}-\x{faff}]' \
-        $mos_paths 2>/dev/null || true); \
-    if [ -n "$hits" ]; then \
-        echo 'CJK text found in mos-owned image files:' >&2; \
-        echo "$hits" >&2; \
-        exit 1; \
-    fi
+RUN --mount=type=bind,source=os/rootfs/scripts,target=/mos-scripts \
+    sh /mos-scripts/pack-cjk-guard.sh
 
 # Tree surgery that cannot happen in the rootfs stage, either because buildkit
 # bind-mounts the file during RUN or because it would break dpkg.
@@ -1448,18 +965,8 @@ RUN set -e; \
 #    Created HERE and not with the other mountpoints above: this mkdir replaces
 #    /var wholesale, so anything an earlier stage put there is gone. The first
 #    attempt at this fix did exactly that and changed nothing.
-RUN mkdir -p /out && \
-    mv /rootfs/rootfs-report.txt /out/rootfs-report-v2.txt && \
-    ln -sf ../run/systemd/resolve/stub-resolv.conf /rootfs/etc/resolv.conf && \
-    echo 'mos' > /rootfs/etc/hostname && \
-    echo '127.0.1.1 mos' >> /rootfs/etc/hosts && \
-    : > /rootfs/etc/machine-id && \
-    mkdir -p /rootfs/usr/share/factory && \
-    mv /rootfs/var /rootfs/usr/share/factory/var && \
-    mkdir -m 0755 /rootfs/var && \
-    mkdir -m 1777 /rootfs/var/tmp && \
-    ln -sf ../../../etc/machine-id \
-        /rootfs/usr/share/factory/var/lib/dbus/machine-id
+RUN --mount=type=bind,source=os/rootfs/scripts,target=/mos-scripts \
+    sh /mos-scripts/pack-tree-surgery.sh
 
 # /var is declared DISPOSABLE (fixed-size EPHEMERAL, wipeable for log
 # cleanup), and that contract is only real if nothing that matters lives there.
@@ -1468,33 +975,8 @@ RUN mkdir -p /out && \
 # mountpoint must exist in the factory /var that gets restored on first boot.
 # A silently-missing bind here would mean losing the apid admin password hash
 # or every Bluetooth pairing on a /var wipe.
-RUN set -eu; \
-    # /var/lib/bluetooth only on a board that HAS Bluetooth: the pairing
-    # database is precious state there and does not exist at all on a board
-    # with no radio, where demanding its mount unit would fail a correct image.
-    precious="/var/lib/mos"; \
-    case " ${BOARD_RADIOS} " in *" bluetooth "*) precious="${precious} /var/lib/bluetooth" ;; esac; \
-    for w in ${precious}; do \
-        unit="$(echo "${w#/}" | tr / -).mount"; \
-        f="/rootfs/etc/systemd/system/${unit}"; \
-        if [ ! -f "$f" ]; then \
-            echo "error: ${w} holds precious state but ${unit} does not exist" >&2; exit 1; \
-        fi; \
-        if [ ! -L "/rootfs/etc/systemd/system/local-fs.target.wants/${unit}" ]; then \
-            echo "error: ${unit} exists but is not enabled; ${w} would stay on the disposable /var" >&2; exit 1; \
-        fi; \
-        grep -q "^Where=${w}\$" "$f" || { echo "error: ${unit} does not mount ${w}" >&2; exit 1; }; \
-        grep -qE "^What=/mnt/state/" "$f" || { echo "error: ${unit} is not backed by STATE" >&2; exit 1; }; \
-        if [ ! -d "/rootfs/usr/share/factory${w}" ]; then \
-            echo "error: ${w} is missing from the factory /var, so the bind would have no mountpoint" >&2; exit 1; \
-        fi; \
-        echo "precious: ${w} -> STATE via ${unit}"; \
-    done; \
-    grep -q '^Storage=volatile$' /rootfs/etc/systemd/journald.conf.d/00-volatile.conf || \
-        { echo "error: journald is not Storage=volatile; the journal would fill the fixed-size /var" >&2; exit 1; }; \
-    echo "precious: journald Storage=volatile (journal never lands on /var)"; \
-    test -L /rootfs/usr/share/factory/var/lib/dbus/machine-id || \
-        { echo "error: /var/lib/dbus/machine-id is not a symlink; a baked D-Bus id is per-image identity on a disposable filesystem" >&2; exit 1; }
+RUN --mount=type=bind,source=os/rootfs/scripts,target=/mos-scripts \
+    sh /mos-scripts/pack-assert-var-disposable.sh
 
 # PLAN-011 D5's writable unit directory. Deliberately NOT folded into the loop
 # above: that loop is about /var being disposable and ends by requiring a
@@ -1507,22 +989,8 @@ RUN set -eu; \
 # survive a reboot; its mountpoint cannot be created at runtime on a verity root,
 # so a missing directory here is a mount unit that FAILS AT BOOT rather than a
 # feature that quietly does nothing.
-RUN set -eu; \
-    ext_dir=/usr/local/lib/systemd/system; \
-    ext_unit=usr-local-lib-systemd-system.mount; \
-    f="/rootfs/etc/systemd/system/${ext_unit}"; \
-    if [ ! -d "/rootfs${ext_dir}" ]; then \
-        echo "error: ${ext_dir} is not in the packed root; a verity root cannot create it at runtime, so ${ext_unit} fails at boot and no extension unit can ever be installed" >&2; exit 1; \
-    fi; \
-    if [ ! -f "$f" ]; then \
-        echo "error: ${ext_unit} does not exist; ${ext_dir} would stay on the read-only squashfs and a unit written there would vanish at reboot" >&2; exit 1; \
-    fi; \
-    if [ ! -L "/rootfs/etc/systemd/system/local-fs.target.wants/${ext_unit}" ]; then \
-        echo "error: ${ext_unit} exists but is not enabled; the directory would never be bound and installing a unit would appear to work until the next boot" >&2; exit 1; \
-    fi; \
-    grep -q "^Where=${ext_dir}\$" "$f" || { echo "error: ${ext_unit} does not mount ${ext_dir}" >&2; exit 1; }; \
-    grep -qE "^What=/mnt/state/" "$f" || { echo "error: ${ext_unit} is not backed by STATE, so installed units would not survive an A/B update" >&2; exit 1; }; \
-    echo "extensions: ${ext_dir} -> STATE via ${ext_unit}"
+RUN --mount=type=bind,source=os/rootfs/scripts,target=/mos-scripts \
+    sh /mos-scripts/pack-assert-extension-dir.sh
 
 # /etc/shadow moves onto STATE. PLAN-010 M5 gives every device its own root
 # password, and pam_unix reads it from /etc/shadow -- which on v2 sits on the
@@ -1542,13 +1010,8 @@ RUN set -eu; \
 # Done here and not in the rootfs stage because every package postinst still
 # needs a real file: a tool like chpasswd would follow a symlink laid down
 # earlier and write through it.
-RUN set -eu; \
-    test -f /rootfs/etc/shadow && test ! -L /rootfs/etc/shadow; \
-    mkdir -p /rootfs/usr/share/factory/etc; \
-    cp -a /rootfs/etc/shadow /rootfs/usr/share/factory/etc/shadow; \
-    chmod 0640 /rootfs/usr/share/factory/etc/shadow; \
-    ln -sfn /run/mos/shadow /rootfs/etc/shadow; \
-    echo "shadow: /etc/shadow -> /run/mos/shadow (tmpfs), factory copy retained"
+RUN --mount=type=bind,source=os/rootfs/scripts,target=/mos-scripts \
+    sh /mos-scripts/pack-shadow-relocate.sh
 
 # Assert the whole chain, at build time, so it can only pass for the intended
 # artifact. Each of these is a defect that would otherwise be invisible: a
@@ -1572,74 +1035,8 @@ RUN set -eu; \
 # defects: an EMPTY field means the account accepts any password, while a
 # USABLE HASH means a credential that every device in the fleet shares. A
 # single message would let one be diagnosed as the other.
-RUN set -eu; \
-    link="$(readlink /rootfs/etc/shadow || true)"; \
-    [ "${link}" = "/run/mos/shadow" ] || \
-        { echo "error: /etc/shadow is '${link:-not a symlink}', expected a symlink to /run/mos/shadow" >&2; exit 1; }; \
-    grep -qx 'Where=/var/lib/mos' /rootfs/etc/systemd/system/var-lib-mos.mount || \
-        { echo "error: the /etc/shadow symlink target is not the Where= of var-lib-mos.mount, so it is not STATE-backed" >&2; exit 1; }; \
-    fac=/rootfs/usr/share/factory/etc/shadow; \
-    test -f "${fac}"; \
-    mode="$(stat -c %a "${fac}")"; \
-    [ "${mode}" = "640" ] || { echo "error: factory shadow is mode ${mode}, expected 640" >&2; exit 1; }; \
-    sg="$(awk -F: '$1 == "shadow" { print $3 }' /rootfs/etc/group)"; \
-    test -n "${sg}"; \
-    own="$(stat -c '%u:%g' "${fac}")"; \
-    [ "${own}" = "0:${sg}" ] || \
-        { echo "error: factory shadow is owned ${own}, expected 0:${sg} (root:shadow); unix_chkpwd needs egid shadow to read it" >&2; exit 1; }; \
-    grep -q '^root:' "${fac}" || { echo "error: factory shadow has no root: entry" >&2; exit 1; }; \
-    rh="$(awk -F: '$1 == "root" { print $2; exit }' "${fac}")"; \
-    case "${rh}" in \
-        "") echo "error: the root: entry in the factory shadow has an EMPTY hash field, which means PASSWORDLESS root login: pam_unix accepts any password, including none. Empty is not a locked marker; only '!' (including '!!' and '!'-prefixed forms that retain a hash) and '*' lock an account" >&2; exit 1 ;; \
-        '!'* | '*'*) ;; \
-        *) echo "error: the packed rootfs carries a usable root password hash. A signed rootfs is byte-identical on every device, so this is a fleet-wide shared secret. Something in the build wrote a root credential; v2 has no ROOT_PASSWORD build arg on purpose, and root access is provisioned at runtime (mosd's transient password)" >&2; exit 1 ;; \
-    esac; \
-    missing=""; empty=""; hashed=""; \
-    while IFS=: read -r u _; do \
-        [ -n "${u}" ] || continue; \
-        line="$(grep "^${u}:" "${fac}" | head -n1)"; \
-        if [ -z "${line}" ]; then missing="${missing} ${u}"; continue; fi; \
-        h="$(printf '%s' "${line}" | cut -d: -f2)"; \
-        case "${h}" in \
-            "") empty="${empty} ${u}" ;; \
-            '!'* | '*'*) ;; \
-            *) hashed="${hashed} ${u}" ;; \
-        esac; \
-    done < /rootfs/etc/passwd; \
-    [ -z "${missing}" ] || \
-        { echo "error: accounts in /etc/passwd with no factory shadow entry:${missing}" >&2; exit 1; }; \
-    [ -z "${empty}" ] || \
-        { echo "error: account(s) in the factory shadow with an EMPTY password field:${empty}. An empty field means PASSWORDLESS login -- pam_unix accepts any password, including none. Empty is not a locked marker; only '!' (including '!!' and '!'-prefixed forms that retain a hash) and '*' lock an account" >&2; exit 1; }; \
-    [ -z "${hashed}" ] || \
-        { echo "error: account(s) in the factory shadow carrying a usable password hash:${hashed}. A signed rootfs is byte-identical on every device in the fleet, so any hash baked into one is a shared secret by construction. Passwords are provisioned per device at runtime, never in the image" >&2; exit 1; }; \
-    unit=/rootfs/etc/systemd/system/mos-shadow-reconcile.service; \
-    test -f "${unit}"; \
-    test -x /rootfs/usr/lib/mos/mos-shadow-reconcile; \
-    test -L /rootfs/etc/systemd/system/multi-user.target.wants/mos-shadow-reconcile.service || \
-        { echo "error: mos-shadow-reconcile.service is installed but not enabled; /etc/shadow would never converge with the image accounts" >&2; exit 1; }; \
-    # ORDERED BEFORE EVERY READER, not after a mount. The reconciler used to
-    # require var-lib-mos.mount because the shadow file lived on STATE; it now
-    # builds the file in /run, which systemd has already mounted, so there is
-    # no storage dependency left to order against.
-    #
-    # What must be asserted instead is that nothing reads /etc/shadow before it
-    # exists. If this ordering is lost the failure is not a wrong password --
-    # it is PAM finding no shadow file at all, which fails closed for every
-    # account including the transient root the operator is trying to use.
-    for reader in mosd.service ssh.service systemd-logind.service; do \
-        grep -qE "^Before=.*\\b${reader}\\b" "${unit}" || \
-            { echo "error: mos-shadow-reconcile.service does not order Before=${reader}; that reader would find no /etc/shadow at all, because the file is built in RAM by this unit" >&2; exit 1; }; \
-    done; \
-    if grep -qE '^After=.*var-lib-mos' "${unit}"; then \
-        echo "error: mos-shadow-reconcile.service still orders After=var-lib-mos.mount, but it no longer touches STATE -- the shadow file is built in /run. A storage dependency that is not needed delays the unit behind a mount that can fail." >&2; exit 1; \
-    fi; \
-    for dep in mosd.service ssh.service; do \
-        grep -qE "^Before=.*\b${dep}\b" "${unit}" || \
-            { echo "error: mos-shadow-reconcile.service does not order Before=${dep}" >&2; exit 1; }; \
-    done; \
-    test -f /rootfs/usr/lib/systemd/system/ssh.service || \
-        { echo "error: mos-shadow-reconcile.service orders Before=ssh.service but that unit is not in the image; systemd drops such an ordering silently" >&2; exit 1; }; \
-    echo "shadow: symlink -> STATE, factory copy 0640 0:${sg}, root locked, reconcile unit enabled and ordered"
+RUN --mount=type=bind,source=os/rootfs/scripts,target=/mos-scripts \
+    sh /mos-scripts/pack-assert-shadow-chain.sh
 
 # Privilege inventory of the SOURCE tree, captured before packing so the packed
 # image can be diffed against it. Numeric uid/gid deliberately: the tree is
@@ -1688,13 +1085,8 @@ ARG VERITY_HASH_BLOCK_SIZE=4096
 #
 # Ownership does not need forcing to be deterministic: it comes from a pinned
 # base image and a pinned package set. Step 2 is what keeps it honest.
-RUN set -eu; \
-    test -n "${SQUASHFS_TIME}"; \
-    mksquashfs /rootfs /out/rootfs.squashfs \
-        -comp zstd -Xcompression-level 19 \
-        -noappend -no-exports \
-        -mkfs-time "${SQUASHFS_TIME}" -all-time "${SQUASHFS_TIME}" \
-        -processors 1
+RUN --mount=type=bind,source=os/rootfs/scripts,target=/mos-scripts \
+    sh /mos-scripts/pack-squashfs.sh
 
 # Step 2 — ownership/mode gate. mksquashfs is supposed to carry the source
 # tree's uid/gid through untouched, and -all-root used to break exactly that.
@@ -1702,20 +1094,8 @@ RUN set -eu; \
 # captured before packing, and fail the build on ANY difference, so this class
 # of bug is a build error instead of something a reviewer has to spot.
 # -lln prints numeric ids, matching how privileged-src.txt was written.
-RUN set -eu; \
-    unsquashfs -lln /out/rootfs.squashfs \
-        | awk 'substr($1,4,1) ~ /[sS]/ || substr($1,7,1) ~ /[sS]/ { \
-                 split($2, o, "/"); path = $NF; sub(/^squashfs-root\/?/, "", path); \
-                 if (path != "") printf "%s %s %s %s\n", $1, o[1], o[2], path }' \
-        | sort > /out/privileged-pkg.txt; \
-    if ! diff -u /out/privileged-src.txt /out/privileged-pkg.txt; then \
-        echo "error: packing changed setuid/setgid ownership or modes; the squashfs must preserve the source tree's uid/gid (check for -all-root / -force-uid / -force-gid)" >&2; \
-        exit 1; \
-    fi; \
-    { echo; \
-      echo "== setuid/setgid (mode uid gid path; identical in source tree and packed image) =="; \
-      cat /out/privileged-pkg.txt; \
-    } >> /out/rootfs-report-v2.txt
+RUN --mount=type=bind,source=os/rootfs/scripts,target=/mos-scripts \
+    sh /mos-scripts/pack-assert-privileged.sh
 
 # Step 3 — dm-verity. veritysetup gets the pinned salt and a pinned UUID: both
 # default to random values, and the UUID lands in the verity superblock at the
@@ -1723,43 +1103,8 @@ RUN set -eu; \
 # run. The hash tree is appended to the squashfs in the same file via
 # --hash-offset, and the result is padded to a whole MiB because the image
 # assembler dd's it into the slot at a MiB boundary.
-RUN set -eu; \
-    test -n "${VERITY_SALT}" && test -n "${VERITY_UUID}"; \
-    sq_bytes="$(stat -c %s /out/rootfs.squashfs)"; \
-    if [ $((sq_bytes % VERITY_DATA_BLOCK_SIZE)) -ne 0 ]; then \
-        echo "error: squashfs size ${sq_bytes} is not a multiple of ${VERITY_DATA_BLOCK_SIZE}" >&2; exit 1; \
-    fi; \
-    data_blocks=$((sq_bytes / VERITY_DATA_BLOCK_SIZE)); \
-    hash_start_block=$((sq_bytes / VERITY_HASH_BLOCK_SIZE)); \
-    cp /out/rootfs.squashfs /out/rootfs-verity.img; \
-    root_hash="$(veritysetup format /out/rootfs-verity.img /out/rootfs-verity.img \
-        --hash="${VERITY_HASH_ALGO}" \
-        --data-block-size="${VERITY_DATA_BLOCK_SIZE}" \
-        --hash-block-size="${VERITY_HASH_BLOCK_SIZE}" \
-        --data-blocks="${data_blocks}" \
-        --hash-offset="${sq_bytes}" \
-        --salt="${VERITY_SALT}" \
-        --uuid="${VERITY_UUID}" \
-        | awk '/^Root hash:/ { print $NF }')"; \
-    test -n "${root_hash}"; \
-    raw_bytes="$(stat -c %s /out/rootfs-verity.img)"; \
-    image_bytes=$(( (raw_bytes + 1048575) / 1048576 * 1048576 )); \
-    truncate -s "${image_bytes}" /out/rootfs-verity.img; \
-    rm -f /out/rootfs.squashfs; \
-    { echo "VERITY_ROOT_HASH=${root_hash}"; \
-      echo "VERITY_SALT=${VERITY_SALT}"; \
-      echo "VERITY_UUID=${VERITY_UUID}"; \
-      echo "VERITY_HASH_ALGO=${VERITY_HASH_ALGO}"; \
-      echo "VERITY_DATA_BLOCK_SIZE=${VERITY_DATA_BLOCK_SIZE}"; \
-      echo "VERITY_HASH_BLOCK_SIZE=${VERITY_HASH_BLOCK_SIZE}"; \
-      echo "VERITY_DATA_BLOCKS=${data_blocks}"; \
-      echo "VERITY_HASH_START_BLOCK=${hash_start_block}"; \
-      echo "VERITY_DATA_SECTORS=$((sq_bytes / 512))"; \
-      echo "SQUASHFS_BYTES=${sq_bytes}"; \
-      echo "IMAGE_BYTES=${image_bytes}"; \
-    } > /out/rootfs-verity.env; \
-    echo "pack: squashfs ${sq_bytes} B + verity -> ${raw_bytes} B -> padded ${image_bytes} B"; \
-    echo "pack: root hash ${root_hash}"
+RUN --mount=type=bind,source=os/rootfs/scripts,target=/mos-scripts \
+    sh /mos-scripts/pack-verity.sh
 
 
 # The kernel and initramfs, extracted OUT of the root for boards whose
@@ -1776,23 +1121,8 @@ RUN set -eu; \
 # Copied for every architecture and simply absent on arm64, where the board
 # supplies its own Image: `cp` of a glob that matches nothing would fail the
 # build, so the miss is explicit.
-RUN set -eu; mkdir -p /out/boot; \
-    if ls /rootfs/boot/vmlinuz-* >/dev/null 2>&1; then \
-        cp /rootfs/boot/vmlinuz-* /out/boot/vmlinuz; \
-        cp /rootfs/boot/initrd.img-* /out/boot/initrd.img; \
-        contents="$(lsinitramfs /out/boot/initrd.img 2>/dev/null)"; \
-        [ -n "${contents}" ] || \
-            { echo "error: could not read the exported initramfs at all. A Debian initrd is a CONCATENATION -- an uncompressed early cpio for microcode, then the compressed main archive -- so zcat reads the first and stops, and any check built on it reports every file as missing whatever the archive holds" >&2; exit 1; }; \
-        for want in usr/sbin/veritysetup scripts/local-top/mos-verity; do \
-            printf '%s\n' "${contents}" | grep -qx "${want}" || \
-                { echo "error: the EXPORTED initramfs does not contain ${want}. The rootfs stage asserted it was there; if that passed and this did not, something rebuilt the initramfs afterwards -- a dpkg trigger is the usual cause. Without veritysetup the boot stops at 'ALERT! /dev/dm-0 does not exist'" >&2; exit 1; }; \
-        done; \
-        echo "boot: the exported initramfs carries veritysetup and the mos-verity script"; \
-        echo "boot: staged $(ls /rootfs/boot/vmlinuz-* | wc -l) kernel(s) for a bootloader that cannot read squashfs"; \
-    else \
-        echo "boot: no /boot/vmlinuz-* in the root; this board's bootloader is given its kernel by the BSP build"; \
-        : > /out/boot/.no-kernel-in-root; \
-    fi
+RUN --mount=type=bind,source=os/rootfs/scripts,target=/mos-scripts \
+    sh /mos-scripts/pack-export-boot.sh
 
 # The factory /var tree, exported so the image assembler can SEED THE EPHEMERAL
 # FILESYSTEM AT ASSEMBLY (RFCT-106) instead of copying it out on first boot.
@@ -1811,13 +1141,8 @@ RUN set -eu; mkdir -p /out/boot; \
 #
 # 390 KB and 93 entries, measured on the x64 image: this costs nothing to
 # carry through the build.
-RUN set -eu; \
-    [ -d /rootfs/usr/share/factory/var ] || { echo "error: /usr/share/factory/var is not in the packed root; the EPHEMERAL filesystem would be assembled empty and /var would have no dpkg database, no spool and no mosd state directory" >&2; exit 1; }; \
-    mkdir -p /out/factory-var; \
-    cp -a /rootfs/usr/share/factory/var/. /out/factory-var/; \
-    n="$(find /out/factory-var | wc -l)"; \
-    [ "${n}" -gt 10 ] || { echo "error: the exported factory /var has only ${n} entries; an almost-empty tree here would seed an almost-empty /var and every check downstream would pass" >&2; exit 1; }; \
-    echo "factory var: ${n} entries, $(du -sk /out/factory-var | cut -f1) KB"
+RUN --mount=type=bind,source=os/rootfs/scripts,target=/mos-scripts \
+    sh /mos-scripts/pack-export-factory-var.sh
 
 FROM scratch AS artifact
 COPY --from=pack /out/factory-var/ /factory-var/

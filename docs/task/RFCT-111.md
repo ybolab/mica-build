@@ -1,9 +1,10 @@
 # RFCT-111 PLAN-014 M5: the rootfs build split into one Dockerfile per stage, driven from TS
 
-- **status**: pending
+- **status**: in progress
 - **priority**: P1
-- **owner**: -
+- **owner**: ai-agent
 - **createdAt**: 2026-08-25 10:50
+- **claimedAt**: 2026-08-25 22:05
 - **plan**: PLAN-014 (M5)
 
 Split the 1,798-line `Dockerfile.v2` into the `rootfs/stages/` chain — one
