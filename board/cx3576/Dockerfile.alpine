@@ -1,4 +1,4 @@
-# syntax=docker/dockerfile:1
+# syntax=docker/dockerfile:1@sha256:ecfaec9ed6d810b56388c508f4121597bfbba70d41a6dfeee4d8cad5f295fc32
 # Assemble the U-Boot, kernel, DTB, and Alpine rootfs artifacts into disk.img.
 # Layout: U-Boot at LBA 64, boot at 16 MiB, and rootfs at 80 MiB.
 

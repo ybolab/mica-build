@@ -1,4 +1,4 @@
-# syntax=docker/dockerfile:1
+# syntax=docker/dockerfile:1@sha256:ecfaec9ed6d810b56388c508f4121597bfbba70d41a6dfeee4d8cad5f295fc32
 # RFCT-087 — U-Boot sandbox build for the offline A/B handshake harness.
 #
 # Same source pin as board/cx3576/uboot/Dockerfile (v2026.07 commit): the

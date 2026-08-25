@@ -292,6 +292,56 @@ fi
 bash "${HERE}/from.sh" --check
 
 # ---------------------------------------------------------------------------
+# The one pin that cannot be delivered by from.sh: `# syntax=`
+# ---------------------------------------------------------------------------
+# Every Dockerfile in this tree opens with `# syntax=<image>`, and BuildKit
+# hands the file to THAT image to parse before any ARG exists -- so unlike every
+# FROM in the tree it cannot be fed a --build-arg, and os/build-env/from.sh has
+# no way to reach it. The reference has to be written out at each Dockerfile.
+#
+# WHICH IS EXACTLY THE SHAPE M2b REFUSED -- a value in more than one place, of
+# which all but one eventually stop being it -- so the copies are checked here
+# instead of trusted. images.env stays the single source: it holds the digest,
+# and a Dockerfile whose line has drifted from it fails `make build-env` by
+# name. Bumping the frontend is one PENDING in images.env and twelve edits this
+# refuses to let anyone forget.
+#
+# EVERY TRACKED DOCKERFILE, not a list kept here. A list would be the second
+# table again, one level up, and a Dockerfile added without being added to it
+# would be the unpinned frontend this check exists to prevent -- silently, since
+# nothing would look at it. git ls-files is the same derivation
+# os/tests/shell-pipefail-lint.sh uses for the same reason.
+#
+# A DOCKERFILE WITH NO `# syntax=` LINE AT ALL IS ACCEPTED, and that is a
+# decision rather than a gap: without the directive BuildKit uses the frontend
+# built into the daemon, fetches nothing, and there is no floating reference to
+# pin. What must not happen is a directive naming something OTHER than the
+# recorded digest.
+check_dockerfile_frontends() {
+    local f line bad=0 seen=0
+    while IFS= read -r f; do
+        [ -f "${REPO_ROOT}/${f}" ] || continue
+        line="$(sed -n '1,3s/^#[[:space:]]*syntax=[[:space:]]*//p' "${REPO_ROOT}/${f}" | head -n1)"
+        [ -n "${line}" ] || continue
+        seen=$((seen + 1))
+        [ "${line}" = "${IMAGE_DOCKERFILE_FRONTEND}" ] && continue
+        echo "error: ${f} declares '# syntax=${line}', but os/build-env/images.env records IMAGE_DOCKERFILE_FRONTEND=${IMAGE_DOCKERFILE_FRONTEND}. The frontend parses this Dockerfile before any ARG exists, so it cannot be passed as a build argument and the reference has to be written out here -- which is why it is checked against the file rather than trusted. Change images.env and every Dockerfile together, or neither" >&2
+        bad=1
+    done < <(cd "${REPO_ROOT}" && git ls-files '*Dockerfile' '*Dockerfile.*' '*/Dockerfile' 2>/dev/null)
+    [ "${seen}" -gt 0 ] || {
+        echo "error: no tracked Dockerfile declares a '# syntax=' line, so this check passed by having nothing to check. Every Dockerfile in this tree carried one when it was written; if that is genuinely no longer true, delete this check rather than leaving it green and empty" >&2
+        return 1
+    }
+    echo "frontend pin: ${seen} Dockerfile(s) agree with IMAGE_DOCKERFILE_FRONTEND" >&2
+    return "${bad}"
+}
+[ -n "${IMAGE_DOCKERFILE_FRONTEND-}" ] || {
+    echo "error: os/build-env/images.env defines no IMAGE_DOCKERFILE_FRONTEND, but every Dockerfile in this tree names a frontend image on its '# syntax=' line. Without the key there is nothing to check those twelve copies against" >&2
+    exit 1
+}
+check_dockerfile_frontends
+
+# ---------------------------------------------------------------------------
 # The builder that can reach the chosen platform
 # ---------------------------------------------------------------------------
 # THE `default` BUILDER IS NAMED EXPLICITLY FOR A NATIVE BUILD, and that is the
