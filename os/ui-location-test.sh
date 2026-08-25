@@ -54,7 +54,13 @@ LAYOUT_ENV="${HERE}/boards/cx3576/board.env"
 # The SHIPPED unit, not one this script authors: the ordering assertions exist
 # to catch the shipped file losing its ordering, and a fixture built from a
 # local copy would go on passing after the real unit changed.
-LED_UNIT_SRC="${HERE}/rootfs/overlay-v2/usr/lib/systemd/system/mos-status-led.service"
+#
+# The indicator is a BOARD file and has only ever existed in cx3576's overlay.
+# This pointed into the shared overlay-v2 tree instead, so the target had never
+# run: it exited at the existence check below, on a path nothing has ever
+# written. Corrected to the real location when RFCT-107 moved that overlay to
+# os/boards/cx3576/overlay/.
+LED_UNIT_SRC="${HERE}/boards/cx3576/overlay/usr/lib/systemd/system/mos-status-led.service"
 
 for required in "${VERIFIER}" "${FSTAB_IN}" "${LAYOUT_ENV}" "${LED_UNIT_SRC}"; do
     [ -f "${required}" ] || { echo "error: ${required} not found" >&2; exit 1; }

@@ -275,17 +275,17 @@ cp -a "$OVERLAY_SRC/." "$OVERLAY_STAGE/"
 # It used to live in overlay-v2 and be deleted here for boards that declare no
 # LED. Adding a file and then removing it is a worse statement than never
 # adding it: the shared overlay claimed every board has an indicator, and the
-# truth lived in a conditional somewhere else. os/rootfs/overlay-cx3576/ now
+# truth lived in a conditional somewhere else. os/boards/cx3576/overlay/ now
 # carries mos-status-led, its unit and its wants symlink, so the file's
 # LOCATION is the fact. A board with an indicator ships one by having one.
 #
 # BOARD_HAS_STATUS_LED stays, because the verifier still needs to know which
 # outcome to assert -- present and enabled, or absent entirely.
 
-BOARD_OVERLAY_SRC="$REPO_ROOT/os/rootfs/overlay-$MOS_BOARD"
+BOARD_OVERLAY_SRC="$REPO_ROOT/os/boards/$MOS_BOARD/overlay"
 if [ -d "$BOARD_OVERLAY_SRC" ]; then
     cp -a "$BOARD_OVERLAY_SRC/." "$OVERLAY_STAGE/"
-    echo "overlay: layered $(find "$BOARD_OVERLAY_SRC" -type f | wc -l) board-specific file(s) from overlay-$MOS_BOARD"
+    echo "overlay: layered $(find "$BOARD_OVERLAY_SRC" -type f | wc -l) board-specific file(s) from boards/$MOS_BOARD/overlay"
 fi
 if [ ! -s "$OVERLAY_STAGE/etc/rauc/system.conf" ]; then
     echo "error: os/rauc/render-config.sh produced no system.conf to stage" >&2

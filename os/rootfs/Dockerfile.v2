@@ -823,7 +823,7 @@ RUN cp -a /tmp/overlay/. / && \
 #
 # var-lib-bluetooth.mount, etc-wpa_supplicant.mount and etc-hostapd.mount are
 # the writable configuration directories for bluez, wpa_supplicant and hostapd.
-# They live in os/rootfs/overlay-cx3576/ with the rest of that board's radio
+# They live in os/boards/cx3576/overlay/ with the rest of that board's radio
 # facts, so on a board with none they are simply not there -- and the chmod and
 # the local-fs.target.wants loop above used to name them unconditionally, which
 # is what failed the first x64 build after the move: `chmod: cannot access`.

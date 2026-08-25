@@ -2696,7 +2696,7 @@ else
     pass "/etc/modules-load.d/wifi.conf is gone (superseded by mos-modules)"
 fi
 
-# BOARD-GATED. The indicator is a board file -- os/rootfs/overlay-cx3576/ --
+# BOARD-GATED. The indicator is a board file -- os/boards/cx3576/overlay/ --
 # so a board that declares none carries neither the unit nor the script, and
 # every assertion below would be about a path that is correctly absent.
 #
