@@ -1,9 +1,10 @@
 # RFCT-109 PLAN-014 M3: the bun+TS foundation, proven on the board-definition lint
 
-- **status**: pending
+- **status**: in progress
 - **priority**: P1
-- **owner**: -
+- **owner**: ai-agent
 - **createdAt**: 2026-08-25 10:50
+- **claimedAt**: 2026-08-25 20:00
 - **plan**: PLAN-014 (M3)
 
 Bootstrap `os/verify/` as a bun+TypeScript package in the `test/apid-api`
