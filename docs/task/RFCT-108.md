@@ -257,12 +257,28 @@ Three decisions M2d inherits, and one measurement that did not come out green.
 What was run, and what was not. Green from pinned digests on this host: the four
 builder images; podman's seven binaries for amd64; rauc for amd64; the cx3576
 u-boot and kernel BSP builders (both `--platform=$BUILDPLATFORM` cross builds,
-so they run natively); the offline U-Boot handshake harness. NOT run: anything
-targeting linux/arm64 -- podman, rauc and the rootfs for cx3576 -- because no
-builder on this host advertises that platform and there is no binfmt
-registration to give it one. The x64 rootfs was not built either; it is a
-forty-minute assembly whose FROM rewiring is exercised by the same
-`os/build-env/from.sh` call the other builds prove.
+so they run natively); the offline U-Boot handshake harness, forced to rebuild
+rather than served from its cached `mos-hs-src`; and the x64 rootfs, all the way
+to a 241 MB `rootfs-verity.img`, which is the only consumer of
+`IMAGE_DEBIAN_BOOKWORM` and therefore the only thing that proves that pin.
+
+NOT run: anything targeting linux/arm64 -- podman, rauc and the rootfs for
+cx3576. Not "expensive and skipped": impossible here. `/proc/sys/fs/binfmt_misc`
+is empty, no buildx builder on this host advertises linux/arm64 (the
+docker-container ones report `linux/amd64, linux/386` only), and
+`docker run --platform linux/arm64` gives `exec format error`. The refusals are
+named rather than attempted, and the arm64 chain additionally needs an arm64
+builder family, per the constraint recorded above.
+
+One observation from re-running the amd64 podman build a second time, recorded
+because it is easy to mistake for something this milestone caused and is not:
+`crun`, `conmon` and `catatonit` came out byte-identical across the two runs and
+`podman`, `quadlet`, `netavark` and `aardvark-dns` did not. Both runs used the
+same builder images and the same pinned sources, so this is a property of the Go
+and Rust builds themselves, not of the FROM rewiring. It was not investigated --
+RFCT-108 asks for reproducible BUILD ENVIRONMENTS, not reproducible engine
+binaries -- but anything that later wants to compare an engine binary against a
+recorded hash will meet it.
 
 Beyond the switchover, `podman`, `quadlet`, `crun`, `conmon`, `catatonit`,
 `netavark`, `aardvark-dns` and `rauc` were each EXECUTED and asked for their
