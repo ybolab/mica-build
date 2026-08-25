@@ -6,11 +6,30 @@
 #       -> --build-arg
 #          MOS_IMAGE_UBUNTU_2404=ubuntu:24.04@sha256:33ceb719...
 #
+#   bash os/build-env/from.sh --ref IMAGE_ALPINE_3_21
+#       -> alpine:3.21@sha256:48b0309c...
+#
 #   bash os/build-env/from.sh --check     validate every IMAGE_ key, print
 #                                         nothing, exit 0 or 1
 #
 # PLAN-014 M2 (RFCT-108), the M2c half: every Dockerfile in this tree takes its
 # base image as a build argument, and this is the only thing that produces one.
+#
+# WHY --ref EXISTS, added by the R6 remediation. M2c's scope was Dockerfile
+# `FROM` lines, so --build-arg was the only output shape it needed. The R6 sweep
+# then found eighteen more references that are not FROM lines at all: fifteen of
+# them are `docker run`, which takes its image POSITIONALLY and has no
+# --build-arg to carry one. Three of those fifteen are on the shipping path --
+# os/mkimage-v2.sh, os/mkimage-x64.sh and os/update/bundle.sh, the containers
+# that write the GPT, the filesystems and the signed update bundle.
+#
+# The alternative was for each of those call sites to run the pair form and cut
+# the value back out of `--build-arg NAME=value`, which is fifteen small parsers
+# of this script's output -- a second reader of a format, of exactly the kind
+# M2b refused for the pin table itself. One resolver, one validation path, two
+# output shapes: the pair form for `docker build`, the bare reference for
+# `docker run`. Both go through resolve_key below, so a key that is refused for
+# a Dockerfile is refused identically for a container.
 #
 # WHY A SCRIPT AND NOT `$(grep ... images.env)` AT EACH CALL SITE. There are
 # eight call sites -- os/podman/build.sh, os/update/rauc/build.sh,
@@ -127,6 +146,34 @@ check_local_key() {
     return 0
 }
 
+# ONE KEY -> ITS VALIDATED VALUE, and the only place that decides which check a
+# key gets. Both output shapes call this: --ref prints what it returns, and the
+# pair form wraps it in --build-arg. Written as a function rather than inlined
+# twice because the dispatch below IS the policy -- "a base image is either an
+# upstream reference pinned by digest or one this repository builds" -- and a
+# policy stated in two places is a policy that eventually holds in one.
+resolve_key() {
+    local key="$1" val
+    # `${!key-}` is empty for a key that is absent AND for a key that is
+    # defined empty, and both are the same failure here: a FROM with nothing
+    # after it. docker reports that as "base name should not be blank", which
+    # names neither the key nor the file.
+    val="${!key-}"
+    if [ -z "${val}" ]; then
+        echo "error: os/build-env/images.env defines no ${key}. Every base image in this tree is a key in that file; if this is a new one, add it there rather than writing it into a FROM or a docker run" >&2
+        return 1
+    fi
+    case "${key}" in
+    IMAGE_*) check_image_key "${key}" "${val}" || return 1 ;;
+    LOCAL_*) check_local_key "${key}" "${val}" || return 1 ;;
+    *)
+        echo "error: ${key} is neither an IMAGE_ nor a LOCAL_ key, so os/build-env/from.sh cannot say what would make it valid. A base image is either an upstream reference pinned by digest (IMAGE_) or one this repository builds (LOCAL_)" >&2
+        return 1
+        ;;
+    esac
+    printf '%s\n' "${val}"
+}
+
 # --check: every IMAGE_ key in the file, whether or not this run consumes it.
 # os/build-env/build.sh calls this before it builds anything, for the reason its
 # PENDING scan gives: a pin added for one build and wrong is wrong the day it is
@@ -156,9 +203,29 @@ if [ "${1-}" != "${1#--arch=}" ]; then
     }
 fi
 
+# --ref: the bare reference, for the callers that have nowhere to put a
+# --build-arg. Exactly one key, and the value goes to stdout with nothing else
+# on it, so `IMG="$(... --ref KEY)"` is the whole call site.
+#
+# ONE KEY AND NOT A LIST, deliberately. A list would have to be read back by
+# position, and a caller that mismatched the order would get a well-formed
+# reference to the wrong image -- which is the one failure this file exists to
+# prevent and the one a `docker run` would not report, because the wrong base
+# still runs. One key per call is one answer that cannot be mis-indexed.
+if [ "${1-}" = "--ref" ]; then
+    shift
+    [ "$#" -eq 1 ] || {
+        echo "error: --ref takes exactly one os/build-env/images.env key. It prints one reference on stdout; a call with none would print an empty string that a caller would substitute into a docker command line as no image at all, and a call with several would have to be read back by position" >&2
+        exit 1
+    }
+    resolve_key "$1"
+    exit 0
+fi
+
 [ "$#" -gt 0 ] || {
     cat >&2 <<'USAGE'
 usage: from.sh [--arch=<amd64|arm64>] <ARG_NAME>=<IMAGES_ENV_KEY> [...]
+       from.sh [--arch=<amd64|arm64>] --ref <IMAGES_ENV_KEY>
        from.sh --check
 
 A call with no pairs would print nothing and exit 0, and a caller that
@@ -178,25 +245,14 @@ for pair in "$@"; do
         bad=1
         continue
     fi
-    # `${!key-}` is empty for a key that is absent AND for a key that is
-    # defined empty, and both are the same failure here: a FROM with nothing
-    # after it. docker reports that as "base name should not be blank", which
-    # names neither the key nor the file.
-    val="${!key-}"
-    if [ -z "${val}" ]; then
-        echo "error: os/build-env/images.env defines no ${key} (asked for as ${arg}). Every base image in this tree is a key in that file; if this is a new one, add it there rather than writing it into a FROM" >&2
+    # The same validation --ref performs, because it IS --ref's: one dispatch,
+    # so a key that a Dockerfile may not stand on is one a `docker run` may not
+    # stand on either. The loop keeps going on a failure rather than exiting, so
+    # a call naming four keys reports all four rather than the first.
+    if ! val="$(resolve_key "${key}")"; then
         bad=1
         continue
     fi
-    case "${key}" in
-    IMAGE_*) check_image_key "${key}" "${val}" || bad=1 ;;
-    LOCAL_*) check_local_key "${key}" "${val}" || bad=1 ;;
-    *)
-        echo "error: ${key} is neither an IMAGE_ nor a LOCAL_ key, so os/build-env/from.sh cannot say what would make it valid. A base image is either an upstream reference pinned by digest (IMAGE_) or one this repository builds (LOCAL_)" >&2
-        bad=1
-        continue
-        ;;
-    esac
     out+=(--build-arg "${arg}=${val}")
 done
 [ "${bad}" = 0 ] || exit 1
