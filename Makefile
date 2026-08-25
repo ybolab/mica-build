@@ -207,3 +207,36 @@ cx3576-%:
 
 x64-%:
 	@echo "x64 has no BSP build; use the talos image pipeline (board/x64/README.md)" && false
+
+# The apid API suite: boot the x64 image in QEMU with apid's port forwarded,
+# wait for the daemon to answer, and drive it over a real socket. It is the
+# only thing in this repository that TALKS TO apid rather than reading it --
+# os-verify-cx3576-v2 inspects the binary and the image, mosd's own tests
+# exercise handlers in-process, and neither can tell a route that exists in
+# routes.rs from a route the running daemon actually serves. A session cookie
+# that is missing Secure, a redirect that names a port nothing can reach, an
+# auth gate that lets one route through unauthenticated: all of them are
+# invisible from inside the process and obvious from outside it.
+#
+# IT BUILDS NOTHING and assumes _out/x64/x64-mos-v2-latest.img already exists;
+# a missing image is refused by name, with the two commands that make it. A
+# target that quietly rebuilt would turn a check into a forty-minute build and
+# would then be testing the tree rather than the artefact under test.
+#
+# THE RUN DIRECTORY IS SHARED. os/qemu-run.sh boots out of the single fixed
+# path _out/x64/.qemu, which the x64 verification line uses too, so this target
+# and that line CANNOT RUN AT ONCE -- two runs overwrite each other's disk.img
+# and the loser fails somewhere unrelated. The harness refuses to start while
+# another container holds that directory rather than discovering the collision
+# halfway through a nine-minute boot.
+#
+# `bash test/apid-api/run.sh --dry-run` performs the preconditions and the
+# network discovery and boots nothing; it is how to check the harness in
+# seconds. Needs docker, and it fails loudly when it cannot run rather than
+# skipping.
+#
+# Declared phony on its own line rather than added to the grouped .PHONY above,
+# so appending this target changes nothing that was already here.
+.PHONY: os-apid-api-test
+os-apid-api-test:
+	bash test/apid-api/run.sh

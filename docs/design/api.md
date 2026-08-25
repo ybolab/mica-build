@@ -4459,3 +4459,87 @@ because it says what it is measured at where it is read.
     here would put the correction where no reader of those tables looks, and
     would edit §1.3 and §2.2 from an entry whose whole purpose is to route
     work out of §10.3 — so it is recorded, not done.
+
+### 10.4 The surface now has an over-the-wire test suite, and it found a defect
+
+*Measured at `9ef15c6`; source section: §4.2, §4.4, §5.2. This entry carries its
+own descriptors, per §10.3's rule above.*
+
+`test/apid-api/` is a bun + TypeScript suite that talks to apid **over the
+network**, on a booted x64 image in QEMU, the way a browser would. It runs with
+`make os-apid-api-test`, and it has no runtime dependencies: a client that
+followed redirects, managed cookies invisibly or normalised request targets
+would hide the exact behaviours it exists to observe. Nine ordered phases run
+against **one** boot, because a boot is expensive; each phase declares what it
+assumes the previous one left behind, and the runner refuses a phase that does
+not. The full record is `docs/task/RFCT-105.md`.
+
+**What it asserts that an in-process test of the `Router` cannot.** The
+self-signed certificate apid generates into its `StateDirectory`, inspected
+rather than merely trusted. The `:80 → :443` redirect as a real `308` with a
+real `Location`. Request targets **verbatim on the wire**, which a normalising
+client rewrites before apid ever sees them. The session cookie as a real
+`Set-Cookie`, from both the `/setup` and `/login` handlers, with the absence of
+any CSRF marker checked beside it — so §3.3's reliance on `SameSite=Lax` is a
+verified property rather than a stated one. The login guard across a genuinely
+new TCP connection and across a real reboot. And a form post travelling
+apid → system bus → mosd → a reconciler → the device, observed on the far end
+through the bus read-back and through systemd's and mosd's own lines on the
+captured console, never by its status code alone.
+
+**Four limits, and they are load-bearing for any reader of §4:**
+
+1. **§4.4's traversal guards are not covered.** `serve::respond` calls
+   `asset_path::resolve` — the function holding every §4.4 guard — only when a
+   bundle root exists, and a bundle-less device is what §5.2 calls the shipped
+   state of every device. The suite therefore covers **§4.2's fallback
+   contract** instead and says so in the module rather than letting a passing
+   `/../../etc/passwd` probe read as a traversal test. Closing it needs a
+   bundle seeded at `/srv/ui` on **DATA**; the available seeding tool writes
+   **STATE** only.
+2. **The reboot is two boots off one disk.** `os/qemu-run.sh` passes
+   `-no-reboot`, so a guest-initiated reboot makes QEMU exit rather than reset.
+   The second boot still comes up through firmware, GRUB and the grubenv the
+   reboot wrote; what is not exercised is QEMU's own reset. The second boot has
+   now run: the reboot, the firmware/GRUB boot behind it and the power-off are
+   all read off the console rather than off a status code.
+3. **Image/code skew, now guarded.** The image under test predates `/mqtt` and
+   `POST /mqtt/enable`, so those routes are still uncovered — but the suite now
+   asserts `GET /mqtt` with `Accept: */*` → **404** and `POST /mqtt/enable` →
+   **405**, the two answers §4.2's fallback gives and a real route cannot, so a
+   rebuilt image turns both red instead of gaining two silently untested
+   routes. The guard buys notification, not coverage.
+4. **`/network`'s no-op round trip is not exercised.** A freshly provisioned
+   device renders no configured interface at all — the link the suite talks
+   over is brought up by systemd-networkd's defaults, not by mosd — so there is
+   no existing configuration to post back unchanged, and posting a static
+   address from this suite would reconfigure the interface every other
+   assertion travels over. The phase asserts the pane renders and skips the
+   round trip with that reason.
+
+**What it found, on its first full live run.** `POST /ssh/password` answers
+**502 Bad Gateway** on the shipped x64 image: mosd writes the transient
+password's marker with `Path::with_file_name` on `/etc/shadow`, which is
+*lexical*, so the shadow write follows the symlink onto STATE and succeeds
+while the marker lands in the literal read-only `/etc` (`create
+/etc/.transient-root-password.mosd-tmp: Read-only file system (os error 30)`).
+The transient SSH root password is therefore non-functional on this image.
+mosd's own unit test for that path asserts only already-resolved paths, and
+`mosd/apid/tests/e2e.rs` runs `MOSD_DRY_RUN=1` precisely so no reconciler
+executes — so a real read-only rootfs behind a real system bus, which is the
+narrow claim above, is what it took to see it. Reported, not fixed;
+`docs/task/RFCT-105.md` carries the reproduction and the root cause.
+
+**Status, stated so nobody reads more into this than is there:** the offline
+selftest is green (37/37, every assertion helper driven against deliberately
+wrong input) and the live run has happened — `make os-apid-api-test` →
+`RESULT: FAIL (231/232 checks)`, the single failure being the 502 above, with
+01-transport, 02-setup, 03-login and 04-readonly green (196 checks). Because
+that failure lands in 05, the runner contains it and phases 06, 07, 07b and 08
+**skip** in a continuous run; their evidence comes from a separate grouped run
+(`RESULT: PASS (128/128 checks)` across two real boots), which is weaker
+evidence than one continuous nine-phase run and is labelled as such in the
+record. What this document may now be read as verified on: §4.2's fallback
+contract, §3.3's reliance on `SameSite=Lax` with no CSRF token beside it, the
+gate's setup/login redirects, and the cookie's attributes from both handlers.
+Not §4.4.
