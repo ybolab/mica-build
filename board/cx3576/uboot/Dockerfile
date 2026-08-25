@@ -1,4 +1,4 @@
-# syntax=docker/dockerfile:1
+# syntax=docker/dockerfile:1@sha256:ecfaec9ed6d810b56388c508f4121597bfbba70d41a6dfeee4d8cad5f295fc32
 # Build U-Boot v2026.07 with RK3576 DDR v1.12 and BL31 v1.24.
 # Recovery enters RockUSB; failed boot falls back to RockUSB.
 #

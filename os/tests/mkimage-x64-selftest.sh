@@ -120,7 +120,27 @@ echo "workspace ${WORK}"
 # and leaves nothing behind. Diagnosed here by name rather than discovered as a
 # missing image four minutes later.
 require_visible_workspace() {
-    if docker run --rm -v "${WORK}:/t" debian:trixie-slim test -f /t/visible; then
+    # The base comes from os/build-env/images.env like every other image here.
+    # Resolved INSIDE the function rather than reused from ASSEMBLY_BASE_IMAGE,
+    # because this runs BEFORE that is derived -- and it has to: the derivation
+    # copies the assembler into a workspace the daemon may not be able to see,
+    # which is the very thing this checks. Naming the key directly keeps the
+    # order of those two independent.
+    local probe_image
+    probe_image="$(bash "${REPO_ROOT}/os/build-env/from.sh" --ref IMAGE_DEBIAN_TRIXIE)"
+    # THE IMAGE FIRST, THEN THE MOUNT, because this function reports on the
+    # mount and one `docker run` cannot tell the two apart. R6 found it the
+    # honest way: a deliberately wrong digest in os/build-env/images.env made
+    # docker refuse the reference, and this reported "the docker daemon cannot
+    # bind-mount the workspace" and sent the reader to TMPDIR -- which was
+    # fine. Docker's own message was above it, so nothing was hidden, but the
+    # conclusion this script drew from it was wrong, and a harness that names
+    # the wrong cause costs more than one that names none.
+    docker run --rm "${probe_image}" true >/dev/null 2>&1 || {
+        echo "error: the docker daemon cannot run ${probe_image} at all, so nothing here can say whether the workspace is visible to it. That reference comes from IMAGE_DEBIAN_TRIXIE in os/build-env/images.env; if it was just changed, docker's own message above says whether it resolves" >&2
+        exit 1
+    }
+    if docker run --rm -v "${WORK}:/t" "${probe_image}" test -f /t/visible; then
         return 0
     fi
     echo "error: the docker daemon cannot bind-mount the workspace ${WORK}" >&2
@@ -143,7 +163,27 @@ rm -f "${WORK}/visible"
 # tools the assembly uses. If the docker invocation is ever reshaped so these
 # patterns stop matching, this refuses by name rather than falling back to some
 # older guess.
-ASSEMBLY_BASE_IMAGE="$(sed -n 's|^[[:space:]]*\([a-z0-9][a-z0-9._/-]*:[a-z0-9][a-z0-9._-]*\) bash -c .*|\1|p' "${ASSEMBLER}" | head -n1)"
+# WHAT IS READ OFF THE ASSEMBLER IS NOW THE images.env KEY, not the image. Until
+# R6 the assembler named `debian:trixie-slim` literally and this scraped that
+# string; it now resolves the key through os/build-env/from.sh, so the literal
+# is gone from the assembler and there is nothing of that shape left to scrape.
+#
+# The derivation is unchanged in the way that matters, and moves up one level:
+# this still reads the assembler rather than restating anything, so an assembler
+# that switches to another key brings this with it and the assertion container
+# stays the assembly container. What it gains is that the resolution is
+# from.sh's -- the assertions now run on the same DIGEST the assembly runs on,
+# where before they ran on whatever the tag resolved to at the moment each was
+# pulled, which for a floating tag is not necessarily the same bytes twice.
+ASSEMBLY_BASE_KEY="$(sed -n 's|^[^#]*from\.sh" --ref \([A-Z][A-Z0-9_]*\).*|\1|p' "${ASSEMBLER}" | head -n1)"
+[ -n "${ASSEMBLY_BASE_KEY}" ] || {
+    echo "error: could not read the assembly container's images.env key out of ${ASSEMBLER}; it is expected to resolve one with \`from.sh --ref <KEY>\` on a single line. The assertion phase would silently use a different image" >&2
+    exit 1
+}
+ASSEMBLY_BASE_IMAGE="$(bash "${REPO_ROOT}/os/build-env/from.sh" --ref "${ASSEMBLY_BASE_KEY}")" || {
+    echo "error: ${ASSEMBLY_BASE_KEY}, read out of ${ASSEMBLER}, does not resolve through os/build-env/from.sh -- so the assembly this script is about could not start either" >&2
+    exit 1
+}
 ASSEMBLY_PACKAGES="$(awk '
     /apt-get install/ && !seen { grab = 1; seen = 1 }
     grab { line = line " " $0; if ($0 !~ /\\$/) grab = 0 }
@@ -155,15 +195,11 @@ ASSEMBLY_PACKAGES="$(awk '
         sub(/^ /, "", line); sub(/ $/, "", line)
         print line
     }' "${ASSEMBLER}")"
-[ -n "${ASSEMBLY_BASE_IMAGE}" ] || {
-    echo "error: could not read the assembly container's base image out of ${ASSEMBLER}; the assertion phase would silently use a different one" >&2
-    exit 1
-}
 [ -n "${ASSEMBLY_PACKAGES}" ] || {
     echo "error: could not read the assembly container's package line out of ${ASSEMBLER}; the assertion phase would silently use a different one" >&2
     exit 1
 }
-echo "assembly container: ${ASSEMBLY_BASE_IMAGE} + ${ASSEMBLY_PACKAGES}"
+echo "assembly container: ${ASSEMBLY_BASE_KEY} -> ${ASSEMBLY_BASE_IMAGE} + ${ASSEMBLY_PACKAGES}"
 
 # Built once and cached, rather than apt-get'ed per container: the assertion
 # phase makes dozens of tool calls and one network fetch instead of dozens is
@@ -233,6 +269,32 @@ cp "${ASSEMBLER}" "${TREE}/os/mkimage-x64.sh"
 cp "${COMMON}" "${TREE}/os/mkimage-common.sh"
 cp "${LAYOUT_ENV}" "${TREE}/os/boards/x64/board.env"
 cp "${GRUB_CFG_IN}" "${TREE}/os/boards/x64/grub.cfg"
+
+# THE PIN MACHINERY IS PART OF THE TREE THE ASSEMBLER RUNS OUT OF, since R6.
+# Four files became seven, and the arithmetic is the reason rather than a
+# preference. The assembler resolves its base image with
+# `bash "${REPO_ROOT}/os/build-env/from.sh" --ref ...`, and REPO_ROOT is derived
+# from its OWN location -- which in this script is ${TREE}, not the repository.
+# Without these copies that call resolves to a path under ${TREE} that does not
+# exist, and the assembly fails on a missing resolver rather than on anything
+# this file is testing.
+#
+# THE Makefile IS NOT PADDING. os/build-env/from.sh checks for
+# ${REPO_ROOT}/Makefile before it reads anything, precisely so that a wrong
+# REPO_ROOT is reported as a wrong REPO_ROOT instead of as a missing key. The
+# fabricated tree has to satisfy that check the way the real tree does, and the
+# shipped file is copied rather than a stub touched into place -- a stub would
+# make this fixture pass a check the real tree passes for a different reason.
+#
+# COPIED, LIKE EVERYTHING ELSE HERE, rather than bound from the repository, so
+# that this fixture keeps the property the comment above claims for it: nothing
+# under ${TREE} can reach a tracked file. It also means a wrong digest recorded
+# in os/build-env/images.env reaches the assembly through the copy, which is how
+# the R6 failing-side proof for this site was driven.
+mkdir -p "${TREE}/os/build-env"
+cp "${REPO_ROOT}/os/build-env/from.sh" "${TREE}/os/build-env/from.sh"
+cp "${REPO_ROOT}/os/build-env/images.env" "${TREE}/os/build-env/images.env"
+cp "${REPO_ROOT}/Makefile" "${TREE}/Makefile"
 TREE_ASSEMBLER="${TREE}/os/mkimage-x64.sh"
 TREE_LAYOUT="${TREE}/os/boards/x64/board.env"
 TREE_GRUB_CFG="${TREE}/os/boards/x64/grub.cfg"

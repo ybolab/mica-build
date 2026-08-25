@@ -154,6 +154,19 @@ if [ "${INNER}" -eq 0 ] && [ -z "${FIXTURE_ROOT}" ]; then
         fi
         inner_args+=("${img_in}")
         rc=0
+        # THE VERIFICATION BASE, resolved from os/build-env/images.env rather
+        # than named here, and it is IMAGE_ALPINE_3_21 -- the same key
+        # os/mkimage-v2.sh assembles from. That is the point of using a key
+        # rather than a literal at both ends: this container reads back the
+        # GPT, the filesystems and the capabilities that one wrote, with
+        # sgdisk, debugfs, unsquashfs and getcap out of the same base. Two
+        # floating tags could drift apart between the write and the read, and
+        # the verifier would then be describing an image assembled by tools it
+        # is not running.
+        #
+        # RESOLVED INSIDE THIS BRANCH for the reason the branch exists: the
+        # tool-ful host above verifies natively and needs no image.
+        VERIFY_IMAGE="$(bash "${REPO_ROOT}/os/build-env/from.sh" --ref IMAGE_ALPINE_3_21)"
         # -e MOS_EXPECT_DEV_KEYRING: the dev-keyring escape must survive the
         # container re-exec, or a sanctioned dev image would verify green on a
         # tool-ful host and red on a tool-less one. docker only propagates the
@@ -170,7 +183,7 @@ if [ "${INNER}" -eq 0 ] && [ -z "${FIXTURE_ROOT}" ]; then
         # the image, which sends the reader to rebuild something that is not
         # the problem.
         docker run --rm "${mounts[@]}" -e BOARD_DIR=/board -e MOS_EXPECT_DEV_KEYRING \
-            -e MOS_BOARD="${MOS_BOARD}" -e MOS_VERIFY_ALLOW_STALE alpine:3.21 \
+            -e MOS_BOARD="${MOS_BOARD}" -e MOS_VERIFY_ALLOW_STALE "${VERIFY_IMAGE}" \
             sh -c 'apk add --no-cache -q bash coreutils diffutils gptfdisk sgdisk dosfstools mtools e2fsprogs e2fsprogs-extra squashfs-tools cryptsetup libcap libcap-setcap dtc && exec bash /work/os/verify-image-v2.sh "$@"' \
             _ "${inner_args[@]}" || rc=$?
         if [ -n "${tmp_board}" ]; then

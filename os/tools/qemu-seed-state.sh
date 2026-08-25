@@ -59,9 +59,14 @@ done
 # The VALUES, not `-e NAME`. Layout keys are set, not exported, so the bare
 # form passes nothing and the container fails on an unbound variable while
 # forty-nine others are equally absent. Same trap as os/mkimage-x64.sh.
+# The base, from os/build-env/images.env; see os/tools/qemu-run.sh. This one
+# writes INTO the STATE partition of a disk image with mke2fs and debugfs, so
+# which e2fsprogs it gets decides what the guest then mounts.
+SEED_IMAGE="$(bash "${REPO_ROOT}/os/build-env/from.sh" --ref IMAGE_DEBIAN_TRIXIE)"
+
 docker run --rm -v "${WORK}:/w" -v "${OUT_DIR}/.qemu:/d" \
     -e STATE_PARTNUM="${STATE_PARTNUM}" -e STATE_SIZE_MIB="${STATE_SIZE_MIB}" \
-    debian:trixie-slim bash -c '
+    "${SEED_IMAGE}" bash -c '
     set -eu
     apt-get update -qq >/dev/null 2>&1
     DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends \

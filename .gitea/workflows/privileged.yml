@@ -154,7 +154,18 @@ jobs:
           $SUDO true || { echo "runner is neither root nor passwordless-sudo" >&2; exit 1; }
           docker info >/dev/null || { echo "no reachable docker daemon" >&2; exit 1; }
           docker buildx version >/dev/null || { echo "docker buildx is not available" >&2; exit 1; }
-          docker run --rm --privileged alpine:3.21 sh -c 'test -e /dev/loop-control && losetup -f >/dev/null' \
+          # The probe's base comes from os/build-env/images.env like every other
+          # image in this tree. It runs after actions/checkout, so the resolver
+          # is on disk; that ordering is what makes a key usable here at all.
+          #
+          # AND IT IS A PREFLIGHT OF THE PIN ITSELF, which is worth having this
+          # early. If images.env carries a PENDING, a tag where a digest belongs
+          # or a malformed digest, this step fails in seconds with from.sh's own
+          # message -- rather than the pipeline spending hours on the kernel and
+          # U-Boot builds and then failing in os/mkimage-v2.sh's assembly, which
+          # is the same defect reported from the far end of the long pole.
+          PROBE_IMAGE="$(bash os/build-env/from.sh --ref IMAGE_ALPINE_3_21)"
+          docker run --rm --privileged "${PROBE_IMAGE}" sh -c 'test -e /dev/loop-control && losetup -f >/dev/null' \
             || { echo "the daemon refuses --privileged containers or has no loop devices" >&2; exit 1; }
 
       - name: Install suite dependencies

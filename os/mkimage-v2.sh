@@ -617,6 +617,25 @@ if host_can_assemble; then
         bash "${BASH_SOURCE[0]}" --assemble
 else
     echo "sgdisk/mkfs.vfat/mcopy/mkimage/dumpe2fs/debugfs/mke2fs(>=1.47) not all available on the host; assembling in a container"
+    # THE ASSEMBLY BASE, resolved from os/build-env/images.env rather than named
+    # here. This container writes the GPT, the ESP and every filesystem of the
+    # image that ships, out of an apk toolset it installs at run time, so
+    # "which alpine" is a decision about the on-disk bytes of a device -- the
+    # same class of decision as which compiler built mosd, and recorded the same
+    # way. PLAN-014 decision 4.
+    #
+    # RESOLVED HERE AND NOT AT THE TOP OF THE FILE, which is the one thing this
+    # edit had to get right. The branch above is the whole reason this fallback
+    # exists: a host carrying sgdisk, mke2fs >= 1.47 and the rest assembles
+    # natively and never needs an image at all. Resolving at file scope would
+    # have made a valid images.env a precondition of the HOST path too -- a new
+    # way for a build to fail that has nothing to do with what it is doing.
+    #
+    # NO --arch=. That flag checks a LOCAL_ tag's single architecture against
+    # the build; IMAGE_ALPINE_3_21 is a multi-architecture index and docker
+    # picks the manifest matching the daemon. Passing an arch here would assert
+    # something this key cannot be wrong about.
+    ASSEMBLY_IMAGE="$(bash "${REPO_ROOT}/os/build-env/from.sh" --ref IMAGE_ALPINE_3_21)"
     docker run --rm \
         -v "${REPO_ROOT}:/work" \
         -v "${BOARD_DIR}:/board:ro" \
@@ -631,7 +650,7 @@ else
         -e BOOT_CMDLINE_B=/work/_out/cx3576/boot-cmdline-b.txt \
         -e IMG_OUT="/work/_out/cx3576/${IMG_NAME}" \
         "${DOCKER_PIN_ARGS[@]}" \
-        alpine:3.21 \
+        "${ASSEMBLY_IMAGE}" \
         sh -c 'apk add --no-cache -q bash coreutils sgdisk dosfstools mtools e2fsprogs e2fsprogs-extra u-boot-tools && exec bash /work/os/mkimage-v2.sh --assemble'
 fi
 

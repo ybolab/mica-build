@@ -513,6 +513,23 @@ if host_can_build; then
         bash "${BASH_SOURCE[0]}" --build
 else
     echo "rauc/mksquashfs/mkfs.vfat/mcopy/mkimage/jq not all available on the host; building in a container"
+    # THE BUNDLE BASE, resolved from os/build-env/images.env rather than named
+    # here. This container assembles and SIGNS the update bundle a device will
+    # install: it installs squashfs-tools and the four libraries rauc links
+    # against, drops the rauc built by os/update/rauc/build.sh into
+    # /usr/local/bin, and runs it over the signing key mounted below. Which
+    # debian supplies mksquashfs decides the bytes of every image inside that
+    # bundle, and which supplies libssl3t64/libglib decides what the rauc doing
+    # the signing is dynamically linked against -- the one thing
+    # os/update/rauc's own build exists to control (see the NEEDED check there:
+    # no curl, no GnuTLS). A floating tag here would have let that move
+    # underneath a binary pinned precisely so it could not.
+    #
+    # RESOLVED INSIDE THIS BRANCH, not at file scope, for the reason the branch
+    # above states: a host that already has rauc, mksquashfs, mcopy and jq
+    # builds the bundle natively and needs no image. See os/mkimage-v2.sh, whose
+    # fallback has the same shape and the same reason.
+    BUNDLE_IMAGE="$(bash "${REPO_ROOT}/os/build-env/from.sh" --ref IMAGE_DEBIAN_TRIXIE)"
     # The resolved CERT/KEY/KEYRING are bind-mounted read-only one file at a
     # time and the CONTAINER paths are what the inner run sees. This is what
     # makes caller-supplied keys work on this branch too: they can live
@@ -542,7 +559,7 @@ else
         -e BUNDLE_OUT="/work/_out/${MOS_BOARD}/${BUNDLE_NAME}" \
         -e BUNDLE_VERSION="${BUNDLE_VERSION}" \
         -e BUNDLE_COMPATIBLE="${BUNDLE_COMPATIBLE}" \
-        debian:trixie-slim \
+        "${BUNDLE_IMAGE}" \
         bash -c 'apt-get update -qq && apt-get install -y -qq --no-install-recommends \
             squashfs-tools dosfstools mtools u-boot-tools jq \
             libglib2.0-0t64 libjson-glib-1.0-0 libfdisk1 libssl3t64 >/dev/null && \

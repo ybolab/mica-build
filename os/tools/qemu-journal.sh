@@ -34,7 +34,14 @@ trap 'rm -rf "${WORK}"' EXIT
 cp "${DISK}" "${WORK}/disk.img"
 printf '%s\n' "$@" >"${WORK}/args"
 
-docker run --rm -v "${WORK}:/w" -e EPHEMERAL_FS_UUID debian:trixie-slim bash -c '
+# The base, from os/build-env/images.env, for the reason os/tools/qemu-run.sh
+# gives at length: this file has no host path either -- it reads an ext4
+# partition out of a disk image with gdisk, e2fsprogs and systemd's own
+# journalctl, none of which this host has. Resolved at file scope for the same
+# reason.
+JOURNAL_IMAGE="$(bash "${REPO_ROOT}/os/build-env/from.sh" --ref IMAGE_DEBIAN_TRIXIE)"
+
+docker run --rm -v "${WORK}:/w" -e EPHEMERAL_FS_UUID "${JOURNAL_IMAGE}" bash -c '
     set -eu
     apt-get update -qq >/dev/null 2>&1
     DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends \
