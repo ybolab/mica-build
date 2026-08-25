@@ -193,6 +193,27 @@ Mounts are **identity mounts**, and every path the run depends on is asserted
 visible *inside* the container before any tool runs — same reasoning, same
 words, as the bun seam above, and the same `/tmp` quirk behind it.
 
+### Driven from the failing side
+
+| driven | what it did |
+|---|---|
+| `MOS_VERIFY_TOOLS=hsot` | refused, before the ~30 s oracle run — the route is decided once, up front |
+| `MOS_VERIFY_TOOLS=host` on this tool-less host | refused, naming `sgdisk, mdir, mcopy, mlabel, unsquashfs, veritysetup` |
+| `IMAGE_ALPINE_3_21` = a well-formed digest naming no image | refused **by the key**, at the pull, before any tool ran |
+| `IMAGE_ALPINE_3_21` = a tag | `from.sh`'s refusal, naming the key and the file |
+| no image tools **and** no docker | refused, naming both and `IMAGE_ALPINE_3_21` |
+| `--work` under `/tmp` | refused, naming the sentinel and the mount |
+| no bun on the host, `--parity` | refused — see below. The suite on the same host: **207/207** in the pinned bun container |
+| `--board x86` | `'x86' is not a board this tree ships … os/boards/ holds cx3576, x64` |
+| `--image` with two boards | refused; one image cannot be both boards' |
+| `--image` naming a file that is not there | refused |
+| `--board` with no value | refused; an option taking the next flag as its value verifies something nobody asked for |
+| `--parity` in a non-first position | refused, as `--lint` is |
+
+`extractRange` is TypeScript rather than `dd`, and the substitution was
+measured rather than argued: against ROOTFS-A of the real cx3576 image both
+produce `sha256:565af2a3…142b777`.
+
 ### The hole, measured rather than assumed
 
 `--parity` is the one mode that **cannot** take the pinned bun container, and
