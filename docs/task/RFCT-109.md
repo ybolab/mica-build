@@ -114,6 +114,31 @@ matches its glob, but exits **0** when a file matches and declares no tests —
 `os/verify/lint.sh`'s own header records about its counters. `run.sh` reads the
 `Ran N tests` count out of the run and turns zero red.
 
+### A hole in the shell lint, measured 2026-08-25
+
+The typed model's declared-vs-absent distinction is not academic. `lint.sh`'s
+forbidden-key check is `eval "val=\${${name}_${key}:-}"` followed by
+`[ -z "${val}" ] && continue`, so an empty declaration is indistinguishable
+from an absent one. On a copy of the real x64 layout:
+
+```
+ROOTFS_A_FS_UUID=00000000-0000-4000-8000-000000000000  -> rc=1, rejected
+ROOTFS_A_FS_UUID=""                                    -> RESULT: PASS (1/1 checks), rc=0
+```
+
+The same forbidden key, on the same forbidden role, passes when declared empty.
+`lint-test.sh`'s `forbidden-role-key` case only ever appends a non-empty value,
+so nothing has been looking. The required direction is wrong in a smaller way:
+`ESP_FAT_VOLUME_ID=""` fails as *"declares no ESP_FAT_VOLUME_ID"* — it does
+declare it, as empty, and the message sends a reader to the wrong edit.
+
+**Consequence for M3b's parity gate.** The ported lint can close this, because
+`Partition.declared(suffix)` answers presence without consulting the value. It
+will therefore be **stricter than the shell on this axis, deliberately**, and a
+verdict-for-verdict parity requirement against the shell lint would be
+unsatisfiable because of it. The empty-declaration case belongs in the negative
+fixtures rather than in the parity baseline.
+
 ### For M3b and M3c
 
 - **The bun seam is one function.** `run_bun()` in `run.sh`; every caller
