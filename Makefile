@@ -235,7 +235,7 @@ x64-%:
 # target that quietly rebuilt would turn a check into a forty-minute build and
 # would then be testing the tree rather than the artefact under test.
 #
-# THE RUN DIRECTORY IS SHARED. os/qemu-run.sh boots out of the single fixed
+# THE RUN DIRECTORY IS SHARED. os/tools/qemu-run.sh boots out of the single fixed
 # path _out/x64/.qemu, which the x64 verification line uses too, so this target
 # and that line CANNOT RUN AT ONCE -- two runs overwrite each other's disk.img
 # and the loser fails somewhere unrelated. The harness refuses to start while

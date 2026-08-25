@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # Boot the x64 disk image in QEMU, through firmware, from the disk.
 #
-#   bash os/qemu-run.sh                 boot and leave the console attached
-#   MOS_QEMU_TIMEOUT=300 bash os/qemu-run.sh --capture <file>
+#   bash os/tools/qemu-run.sh                 boot and leave the console attached
+#   MOS_QEMU_TIMEOUT=300 bash os/tools/qemu-run.sh --capture <file>
 #
 # NOT `-kernel`. QEMU will happily load a kernel and initrd from the host and
 # skip the disk entirely, and that would be a faster test of a smaller thing:
@@ -18,7 +18,7 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-REPO_ROOT="$(dirname "${SCRIPT_DIR}")"
+REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 OUT_DIR="${REPO_ROOT}/_out/x64"
 . "${REPO_ROOT}/os/boards/x64/board.env"
 IMG="${MOS_QEMU_IMAGE:-${OUT_DIR}/${IMAGE_LATEST_NAME}}"
@@ -46,7 +46,7 @@ fi
 # the same state rather than from whatever the last one left.
 RUN_DIR="${OUT_DIR}/.qemu"
 # MOS_QEMU_REUSE_DISK keeps the disk a previous --prepare-only made, so
-# os/qemu-seed-state.sh's writes survive into the boot. Without it every run
+# os/tools/qemu-seed-state.sh's writes survive into the boot. Without it every run
 # starts from the pristine image, which is the right default: a test that
 # silently inherited the last run's state would pass for reasons nobody chose.
 if [ "${MOS_QEMU_REUSE_DISK:-0}" = "1" ]; then
@@ -120,7 +120,7 @@ if [ -n "${MOS_QEMU_APPEND:-}" ]; then
 fi
 
 if [ "${PREPARE_ONLY}" -eq 1 ]; then
-    echo "prepared ${RUN_DIR}/disk.img; seed it with os/qemu-seed-state.sh, then run with MOS_QEMU_REUSE_DISK=1"
+    echo "prepared ${RUN_DIR}/disk.img; seed it with os/tools/qemu-seed-state.sh, then run with MOS_QEMU_REUSE_DISK=1"
     exit 0
 fi
 

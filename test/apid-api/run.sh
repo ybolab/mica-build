@@ -21,7 +21,7 @@
 # refused" with nothing to say which door was shut:
 #
 #   1. QEMU's user-mode `hostfwd` binds inside the container running QEMU.
-#   2. That container must publish the port, which os/qemu-run.sh does.
+#   2. That container must publish the port, which os/tools/qemu-run.sh does.
 #   3. `-p 127.0.0.1:...` publishes on the DOCKER HOST's loopback. This script
 #      runs INSIDE a container; that loopback is not ours and there is no route
 #      to it. Measured 2026-08-24: this session sits on a docker network at
@@ -36,25 +36,25 @@
 #
 # THE CONSOLE IS THE ONLY JOURNAL. mos keeps journald at Storage=volatile
 # because /var is the EPHEMERAL partition, so a guest's log dies with the
-# guest. os/qemu-journal.sh does not work and is committed as known-broken for
+# guest. os/tools/qemu-journal.sh does not work and is committed as known-broken for
 # exactly that reason; it is not called here. Instead every boot is captured to
 # a file under _out/, MOS_QEMU_APPEND puts journald on the serial line, and
 # apid's own `APID_LISTENING` line becomes a readiness signal that can be
 # waited on. Dropping that append to "simplify" a run deletes the signal the
 # wait depends on -- which has already cost this campaign one investigation.
 #
-# ONE RUN DIRECTORY, SHARED. os/qemu-run.sh's RUN_DIR is the single fixed path
+# ONE RUN DIRECTORY, SHARED. os/tools/qemu-run.sh's RUN_DIR is the single fixed path
 # _out/x64/.qemu, and the x64 verification line uses it too. Two runs at once
 # clobber each other's disk.img, so this script refuses to start while another
 # container holds it. That check is not politeness: the path cannot be moved
-# from here, because os/qemu-run.sh belongs to the image line and is not ours
+# from here, because os/tools/qemu-run.sh belongs to the image line and is not ours
 # to edit.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 # The board layout is the board definition; the image's name is read from it
-# rather than repeated here, the same way os/qemu-run.sh reads it. `:?` on the
+# rather than repeated here, the same way os/tools/qemu-run.sh reads it. `:?` on the
 # one key used turns a layout that stopped defining it into a sentence instead
 # of an empty path that fails four lines later as "image missing".
 # shellcheck source=/dev/null  # a data file of assignments, resolved at runtime
@@ -75,7 +75,7 @@ ART_DIR="${OUT_DIR}/apid-api"
 RUN_DIR_REAL="$(readlink -f "${RUN_DIR}")"
 OUT_REAL="$(readlink -f "${REPO_ROOT}/_out")"
 
-# Ports: the same names os/qemu-run.sh reads, so a caller sets them once and
+# Ports: the same names os/tools/qemu-run.sh reads, so a caller sets them once and
 # the two halves cannot disagree about which port was opened.
 HTTPS_PORT="${MOS_QEMU_HTTPS_PORT:-18443}"
 HTTP_PORT="${MOS_QEMU_HTTP_PORT:-18080}"
@@ -98,7 +98,7 @@ CONTAINER_TIMEOUT="${MOS_APID_CONTAINER_TIMEOUT:-240}"
 POLL_INTERVAL="${MOS_APID_POLL_INTERVAL:-5}"
 PROGRESS_INTERVAL="${MOS_APID_PROGRESS_INTERVAL:-15}"
 
-# The QEMU-side backstops. RUN_SECONDS is when os/qemu-run.sh presses the
+# The QEMU-side backstops. RUN_SECONDS is when os/tools/qemu-run.sh presses the
 # virtual power button; TIMEOUT is when it gives up on the container entirely,
 # and it must exceed RUN_SECONDS by more than the 90s grace that script allows
 # a guest which ignores ACPI. Both are generous because the normal end of a run
@@ -195,7 +195,7 @@ network_holding() {
 # A container's address on the discovered network, looked up BY NAME because
 # the map key in `docker network inspect` is the container id and reading a map
 # key needs a template variable. The name is stable for the life of the
-# container. os/qemu-run.sh sets none, so it is docker's random name -- which is
+# container. os/tools/qemu-run.sh sets none, so it is docker's random name -- which is
 # also why the QEMU container cannot simply be looked up by name to begin with.
 address_on_network() {
     local cid name members
@@ -274,7 +274,7 @@ pass "docker is usable"
 HOLDERS="$(run_dir_holders)"
 if [ -n "${HOLDERS}" ]; then
     fail "another container already binds ${RUN_DIR_REAL}: ${HOLDERS//$'\n'/, }"
-    note "  that is os/qemu-run.sh's single fixed run directory and it is SHARED with the x64"
+    note "  that is os/tools/qemu-run.sh's single fixed run directory and it is SHARED with the x64"
     note "  verification line. Continuing would overwrite its disk.img underneath a running"
     note "  boot, so this run refuses rather than clobbering it. Wait for that run to finish."
     finish
@@ -316,8 +316,8 @@ ART_IN_CONTAINER="/w/_out/x64/apid-api"
 
 if [ "${DRY_RUN}" -eq 1 ]; then
     note "--dry-run: nothing will be booted"
-    note "would prepare  ${RUN_DIR}/disk.img from ${IMG##*/} (os/qemu-run.sh --prepare-only)"
-    note "would boot     os/qemu-run.sh --capture ${CONSOLE1}"
+    note "would prepare  ${RUN_DIR}/disk.img from ${IMG##*/} (os/tools/qemu-run.sh --prepare-only)"
+    note "would boot     os/tools/qemu-run.sh --capture ${CONSOLE1}"
     note "               MOS_QEMU_FORWARD=1 MOS_QEMU_NETWORK=${NET}"
     note "               MOS_QEMU_APPEND=systemd.journald.forward_to_console=1"
     note "               MOS_QEMU_RUN_SECONDS=${RUN_SECONDS} MOS_QEMU_TIMEOUT=${QEMU_TIMEOUT}"
@@ -351,7 +351,7 @@ trap 'teardown' EXIT
 # observed as a change to the disk rather than as a fresh machine.
 #
 # The append is passed on every invocation, not only on the prepare.
-# os/qemu-run.sh adds it to the linux line unconditionally, so over a run it
+# os/tools/qemu-run.sh adds it to the linux line unconditionally, so over a run it
 # lands two or three times; a repeated systemd.journald.forward_to_console=1 is
 # the same value twice and costs nothing, whereas one boot that silently lacks
 # it deletes the readiness signal this entire script waits on.
@@ -366,9 +366,9 @@ QEMU_ENV=(
 )
 
 note "preparing the disk from ${IMG##*/} (a ~2 GiB copy; nothing boots yet)"
-if ! env "${QEMU_ENV[@]}" bash "${REPO_ROOT}/os/qemu-run.sh" --prepare-only >"${ART_DIR}/prepare.log" 2>&1; then
+if ! env "${QEMU_ENV[@]}" bash "${REPO_ROOT}/os/tools/qemu-run.sh" --prepare-only >"${ART_DIR}/prepare.log" 2>&1; then
     PREPARED=1  # a partial copy still has to be cleaned up
-    fail "os/qemu-run.sh --prepare-only failed; see ${ART_DIR}/prepare.log"
+    fail "os/tools/qemu-run.sh --prepare-only failed; see ${ART_DIR}/prepare.log"
     tail -n 20 "${ART_DIR}/prepare.log" >&2 || true
     finish
 fi
@@ -380,7 +380,7 @@ launch_boot() {
     : >"${console}"
     QEMU_CID=""
     env "${QEMU_ENV[@]}" MOS_QEMU_REUSE_DISK=1 \
-        bash "${REPO_ROOT}/os/qemu-run.sh" --capture "${console}" \
+        bash "${REPO_ROOT}/os/tools/qemu-run.sh" --capture "${console}" \
         >"${ART_DIR}/launch-${label}.log" 2>&1 &
     QEMU_PID=$!
     note "[${label}] QEMU launched in the background (pid ${QEMU_PID}); console -> ${console##*/}"
@@ -388,7 +388,7 @@ launch_boot() {
 
 # --- 4. find the guest ------------------------------------------------------
 # Two conditions, held apart because they fail for different reasons and the
-# message has to say which. os/qemu-run.sh starts its container with `--rm` and
+# message has to say which. os/tools/qemu-run.sh starts its container with `--rm` and
 # no `--name`, so the only handle on it is the bind mount -- and the SAME mount
 # is held for a moment by the short-lived mtools container that writes the
 # kernel append into the ESP, which is NOT on the discovered network. Requiring
@@ -625,7 +625,7 @@ note "boot1 was ready $((SECONDS - BOOT1_START))s after launch"
 run_suite boot1 "${GUEST_IP}" "console-boot1.log" "${PHASES}"
 
 # --- 7. the second boot -----------------------------------------------------
-# os/qemu-run.sh:167 passes `-no-reboot`, so a guest-initiated reboot makes
+# os/tools/qemu-run.sh:167 passes `-no-reboot`, so a guest-initiated reboot makes
 # QEMU EXIT rather than reset. That file belongs to the image line and is not
 # ours to change, so the harness works WITH the flag: phase 07 posts
 # /power/reboot, QEMU exits, and that exit IS the evidence the guest asked for
@@ -633,7 +633,7 @@ run_suite boot1 "${GUEST_IP}" "console-boot1.log" "${PHASES}"
 # firmware, GRUB and the grubenv the reboot just wrote.
 #
 # Which of the two happened is decided BY LOOKING -- is the QEMU container
-# still running -- and never by assuming. If a future os/qemu-run.sh drops
+# still running -- and never by assuming. If a future os/tools/qemu-run.sh drops
 # `-no-reboot`, the guest resets in place, the container is still there, and
 # the right move is to wait for apid to come back on the SAME container rather
 # than to start a second one against a disk something is already booting.
