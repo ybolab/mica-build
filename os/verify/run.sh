@@ -5,6 +5,7 @@
 #   bash os/verify/run.sh --help
 #   bash os/verify/run.sh src/board.test.ts   extra arguments go to `bun test`
 #   bash os/verify/run.sh --lint         the board-definition schema lint instead
+#   bash os/verify/run.sh --parity       diff this port against os/verify-image-v2.sh
 #
 # WHAT THIS PACKAGE IS. PLAN-014 M3: the bun+TypeScript foundation the rest of
 # os/ moves onto, in the shape test/apid-api already established -- bun.lock,
@@ -49,6 +50,7 @@ usage() {
     cat <<'USAGE'
 usage: bash os/verify/run.sh [--help] [bun-test-args...]
        bash os/verify/run.sh --lint [board.env ...]
+       bash os/verify/run.sh --parity [harness-args...]
 
 Installs the dev dependencies if they are missing, typechecks src/, then runs
 the suite. Any extra arguments are passed to `bun test` (a filename filter, for
@@ -59,6 +61,13 @@ layouts instead of the suite -- `make os-layout-lint`. Same install, same
 typecheck, same bun; only the last step differs. The flag has to come first so
 that it can never be mistaken for a `bun test` filter.
 
+With --parity FIRST, it runs the image-contract parity harness -- `make
+os-verify-parity`. It runs os/verify-image-v2.sh and the os/verify check
+register against the SAME image and diffs their conclusions per check, for both
+shipped boards. Its remaining arguments are the harness's own; try --parity
+--help. Unlike the two above it needs docker AND a bun on this host: see the
+refusal below.
+
 A host with no bun runs the same steps in the bun container pinned by digest as
 IMAGE_BUN_1 in os/build-env/images.env. That route is taken automatically; it
 needs docker, and it is announced on the first line of output so a run is never
@@ -68,25 +77,33 @@ environment:
   MOS_VERIFY_BUN         the bun binary to use, instead of searching PATH and ~/.bun
   MOS_VERIFY_CONTAINER=1 use the pinned container even where a host bun exists,
                          which is how the two routes are compared on one host
+  MOS_VERIFY_TOOLS       host|container -- where --parity's image tools come from,
+                         instead of choosing by what this host has
 USAGE
 }
 
-# --lint is a MODE, not a filter, so it is recognised only in first position.
+# --lint and --parity are MODES, not filters, so each is recognised only in
+# first position.
 MODE=suite
 case "${1:-}" in
 --help | -h) usage; exit 0 ;;
 --lint) MODE=lint; shift ;;
+--parity) MODE=parity; shift ;;
 esac
 
-# ...and anywhere else it is a MISTAKE, refused rather than forwarded. Driven
+# ...and anywhere else either is a MISTAKE, refused rather than forwarded. Driven
 # from the failing side: `run.sh src/lint.test.ts --lint` handed --lint to
 # `bun test`, which ignored the unknown flag, ran the suite and exited 0 -- so
 # asking for the lint got a green that was about something else entirely.
+# --parity is refused here on the same evidence rather than on the analogy: the
+# harness's own argument parser rejects an unknown option, but in the SUITE mode
+# it never reaches that parser, and `bun test --parity` is the same green about
+# the same wrong thing.
 for arg in "$@"; do
-    [ "${arg}" = "--lint" ] || continue
-    echo "error: --lint has to be the FIRST argument; here it came after '$1'." >&2
+    case "${arg}" in --lint | --parity) ;; *) continue ;; esac
+    echo "error: ${arg} has to be the FIRST argument; here it came after '$1'." >&2
     echo "       Anywhere else it would be forwarded to \`bun test\`, which ignores it and" >&2
-    echo "       reports a green suite in answer to a request for the lint." >&2
+    echo "       reports a green suite in answer to a request for something else." >&2
     exit 1
 done
 
@@ -133,6 +150,35 @@ elif [ -z "${BUN}" ]; then
         ROUTE=container
         WHY="no bun on this host"
     fi
+fi
+
+# THE ONE MODE THE CONTAINER ROUTE CANNOT CARRY, refused here rather than three
+# steps later. --parity drives docker itself: it re-runs os/verify-image-v2.sh,
+# which re-execs into the pinned alpine when the host lacks sgdisk, and its own
+# image helpers take that same container for the same reason. Inside the bun
+# container that means docker-in-docker, and the pinned bun image has no docker
+# client at all -- measured 2026-08-25, `docker run oven/bun:1@sha256:5ff6...
+# sh -c 'command -v docker'` prints nothing, and there is no curl in it either
+# to reach the daemon socket by hand.
+#
+# So this is a REAL GAP and it is stated as one rather than worked around: a
+# host with neither bun nor the image tools cannot yet run the parity harness,
+# and RFCT-110's "tool-less-host container path verified for the full verifier"
+# is not satisfied by M4a. Closing it needs a decision M4a does not own -- a bun
+# image that also carries the gptfdisk/mtools/e2fsprogs/squashfs/cryptsetup set
+# (one image, two decisions), or a docker client added to the bun pin, or the
+# harness speaking the daemon's HTTP API over the socket from bun. Whichever it
+# is, it is a new pin in os/build-env/images.env and belongs to the milestone
+# that closes the gate.
+if [ "${MODE}" = parity ] && [ "${ROUTE}" = container ]; then
+    echo "error: --parity needs a bun on THIS host, and there is none (${WHY})." >&2
+    echo "       The suite and the lint run in the pinned bun container; --parity cannot, because it" >&2
+    echo "       drives docker itself -- both to re-run os/verify-image-v2.sh and to read the image" >&2
+    echo "       with sgdisk/mtools/debugfs/unsquashfs/veritysetup -- and the pinned bun image" >&2
+    echo "       carries no docker client. Running it there would be docker-in-docker." >&2
+    echo "       Install bun, or set MOS_VERIFY_BUN to one. RFCT-110 records this gap: the" >&2
+    echo "       tool-less-host route for the FULL verifier is not closed by M4a." >&2
+    exit 1
 fi
 
 MOUNTS=()
@@ -305,6 +351,20 @@ if [ "${MODE}" = lint ]; then
     echo "os/verify: board-definition schema lint"
     rc=0
     run_bun run src/lint-cli.ts "$@" || rc=$?
+    exit "${rc}"
+fi
+
+# --- the parity harness ------------------------------------------------------
+# No vacuity guard here either, and for a stronger reason than the lint's: the
+# harness refuses its own vacuous cases from the inside. parseShellRun turns a
+# reading that disagrees with the verifier's own counters into an error, and a
+# run in which nothing was compared can only come out INCOMPLETE or FAIL --
+# never PASS. Its exit status is three-valued and is passed through unchanged:
+# 0 full parity, 2 checks still unported, 1 a divergence.
+if [ "${MODE}" = parity ]; then
+    echo "os/verify: image-contract parity harness"
+    rc=0
+    run_bun run src/parity-cli.ts "$@" || rc=$?
     exit "${rc}"
 fi
 

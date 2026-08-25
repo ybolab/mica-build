@@ -12,9 +12,10 @@
 # self-evidently correct long after the reason for one of its lines has
 # changed. The two assemblers already share their layout format and
 # os/update/rauc/render-config.sh as files for the same reason, and PLAN-014
-# is removing the duplication that was not shared that way (os/health/'s
-# byte-identical pair is on M5's list). Adding a third instance of the same
-# mistake while removing the first two is not a trade this campaign can make.
+# removed the duplication that was not shared that way: os/health/'s
+# byte-identical pair is gone (RFCT-111 collapsed it into the overlay copy the
+# image actually ships). Adding a third instance of the same mistake while
+# removing the first two is not a trade this campaign can make.
 #
 # WHERE IT LIVES, AND WHY HERE. Alongside its only two callers, under their
 # name prefix: `ls os/` shows mkimage-common.sh, mkimage-v2.sh and

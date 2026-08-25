@@ -9,6 +9,13 @@ This is PLAN-014's M3, in the shape `test/apid-api` (RFCT-105) already
 established: `bun.lock`, `package.json`, `tsconfig.json`, `run.sh`, `src/`.
 Nothing here runs on the device. The image ships no bun.
 
+Since M4a it also holds the **image-inspection helpers** and the **parity
+harness** the port of `os/verify-image-v2.sh` is gated on — see "Reading an
+image" and "The parity harness" below. **No check has been ported yet**: the
+register in `src/checks.ts` is empty by design, M4b–M4d fill it, and the
+harness reports every one of the oracle's 398 and 312 conclusions as
+*unclaimed* rather than as agreement.
+
 ## Everything reads `board.env`, and until now everything sourced it
 
 `os/boards/<board>/board.env` is the single source of truth for a board —
@@ -153,6 +160,104 @@ test: it would mean `source`-ing a board definition to check the thing whose
 entire purpose is not to, and pointed at an untrusted file it would execute it.
 Re-run it by hand when the parser changes; the recipe is in `HARNESS.md`.
 
+## Reading an image, without touching the host
+
+`src/image.ts` drives the same five tool families `os/verify-image-v2.sh` does,
+and no others: **sgdisk** for the GPT, **mtools at an offset** for the FAT boot
+slots, a byte range extracted out of the image and read with
+**tune2fs/debugfs**, **unsquashfs** for the packed root, and `veritysetup
+verify`, which walks the hash tree in userspace and never creates a
+device-mapper target, never calls losetup and never mounts anything. No loop
+mounts, no host mutation, no root.
+
+`src/tools.ts` is the seam that decides where the tools come from — this host,
+or the container pinned as `IMAGE_ALPINE_3_21`, the same key the assembler and
+the shell verifier use, resolved through `os/build-env/from.sh --ref`. One
+container per run, prepared once, `docker exec` per call; `MOS_VERIFY_TOOLS`
+forces a route.
+
+### Four of the five tools succeed at nothing
+
+Every one of these was measured on 2026-08-25 in the pinned `alpine:3.21`, and
+every one is refused rather than returned:
+
+| tool | driven with | what it does |
+|---|---|---|
+| `sgdisk -p` | 64 MiB of zeros, no GPT | prints `Creating new GPT entries in memory.`, **invents a random disk GUID** — two runs on the same file gave `82861E6A-…` then `21E337DD-…` — lists no partitions, and **exits 0** |
+| `sgdisk --verify` | the same file | **"No problems found."** |
+| `debugfs -R "ls -p /"` | a file that is not ext4 | **exits 0**, empty stdout, `ls: Filesystem not open` on stderr |
+| `unsquashfs -d D A p/not/in/it` | a path not in the archive | **exits 0** and leaves `D` empty |
+| `veritysetup verify` | a wrong root hash / a non-verity file | **exit 1 for both** — one is the failing direction of the check, the other is the tool getting nowhere |
+| `mcopy -n` | a file not in the slot | exit 1, `File "::/x" not found` — the one that is honest |
+
+So no helper decides anything by exit status alone. `sgdisk` is refused by its
+own admission sentence (`os/verify-image-v2.sh:1397` greps for the same one);
+`debugfs` by the rule that its stderr must be **exactly** the version banner;
+`unsquashfs` by asserting each requested path landed; `veritysetup` by
+distinguishing the two exit-1 messages. Every refusal names the tool, the argv,
+the status and what it saw.
+
+`--probe` drives all of them against a real image and prints what they read —
+which is both the evidence they work and the fastest way to see what a check
+has to work with:
+
+```sh
+bash os/verify/run.sh --parity --board cx3576 --probe
+```
+
+## The parity harness
+
+```sh
+make os-verify-parity                          # both boards
+bash os/verify/run.sh --parity --board x64 --all
+```
+
+It runs `os/verify-image-v2.sh` and this package's check register against the
+**same image** and diffs their conclusions **per check**. The oracle is not
+modified to help: a verifier edited to make its readings easier to compare is
+no longer independent of the thing it measures.
+
+**Identity, not a count.** The oracle prints prose, and the two directions of
+one check share only a leading clause — `eq_ci` prints `X is Y` on the way
+through and `X is 'Z', expected Y` on the way out. So each ported check carries
+the substring that identifies its own PASS line (and, where the directions
+differ, its FAIL and SKIP lines) as a field on the check itself. That is
+`os/tests/ui-location-test.sh`'s `ASSERTIONS` register at a larger scale, and
+it lives on the check so a port cannot exist without saying which conclusion it
+replaces.
+
+**A skip is a third verdict.** The oracle skips 3 checks on cx3576 and 22 on
+x64, and a skip never equals a pass here: pass-vs-skip is a divergence with a
+name, and a SKIP line no check registered stays *unclaimed* rather than
+matching the check's pass matcher.
+
+**What it reports**, per check: `agree`, `diverge`, `not-ported` (the shell
+concluded and nothing claims it), `ts-silent` (claimed, and the port said
+nothing), `orphan` (the port concluded and no shell line matched), `unfired`
+(registered, applicable, silent on both sides) and `ambiguous` (the register
+cannot tell two checks apart, or one check from two lines).
+
+**Exit status is three-valued**: `0` full parity, `2` INCOMPLETE — still
+unported checks, which is every run until M4e — and `1` a real divergence. A
+caller who only looked at "non-zero" could not tell an unfinished migration
+from a broken one.
+
+The parser also refuses a reading that disagrees with the oracle's **own**
+counters, because a parser that missed conclusions would report agreement about
+the part it read. And a comparison in which nothing was compared can only come
+out INCOMPLETE or FAIL, never PASS — M3a's board-env oracle once reported
+agreement "on all 0 keys" because both dumps were empty.
+
+### Where it stands, 2026-08-25
+
+Both boards, against the images the M1 gate built, with the harness's shell side
+invoked exactly as `make os-verify-<board>-v2` invokes it:
+
+| board | oracle | register | unclaimed | conclusion |
+|---|---|---|---|---|
+| cx3576 | `PASS (395/395 checks, 3 skipped)` | 0 checks | **398 of 398** | INCOMPLETE |
+| x64 | `PASS (290/290 checks, 22 skipped)` | 0 checks | **312 of 312** | INCOMPLETE |
+
 ## Running
 
 ```sh
@@ -208,6 +313,12 @@ src/board.ts        the typed model: assignments -> partitions, roles, bootloade
 src/lint.ts         the schema lint: the model -> a verdict and the sentence for it
 src/lint-cli.ts     argv, printing and an exit status; every decision is in lint.ts
 src/paths.ts        where the package sits, anchored rather than counted
+src/tools.ts        the tool seam: this host, or the pinned alpine; one place decides
+src/image.ts        sgdisk / mtools / tune2fs+debugfs / unsquashfs / veritysetup, typed
+src/checks.ts       the check register -- EMPTY at M4a -- and what a check is handed
+src/parity.ts       the diff: shell conclusions vs port results, per check, by identity
+src/parity-cli.ts   argv and orchestration; every decision is in parity.ts
+src/probe.ts        drives every helper against a real image and prints what it read
 src/*.test.ts       the suite; every refusal has a positive control beside it
 ```
 

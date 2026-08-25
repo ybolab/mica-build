@@ -15,7 +15,7 @@ BOARDS := cx3576 x64
 	os-image-cx3576-v2 os-verify-cx3576-v2 os-bundle-cx3576 os-devkeys os-health-test podman \
 	os-shadow-test os-dbus-policy-test os-repart-test os-ui-location-test \
 	os-uboot-handshake-test os-mkimage-v2-test os-mkimage-x64-test \
-	os-layout-lint os-layout-lint-test os-verify-test os-build-test \
+	os-layout-lint os-layout-lint-test os-verify-test os-verify-parity os-build-test \
 	docs-verify docs-verify-test build-env
 
 help:
@@ -37,6 +37,7 @@ help:
 	@echo "  os-layout-lint      check every board layout against the board-definition schema"
 	@echo "  os-layout-lint-test prove the layout linter rejects a broken board definition, including one declared empty"
 	@echo "  os-verify-test      run the os/verify bun+TypeScript suite (typecheck + bun test)"
+	@echo "  os-verify-parity    diff the TypeScript image verifier against os/verify-image-v2.sh, per check, both boards (docker)"
 	@echo "  os-build-test       run the os/build bun+TypeScript suite: board geometry and the toolset wrappers (docker)"
 	@echo "  docs-verify         assert both document indexes agree with the tree, in both directions"
 	@echo "  docs-verify-test    prove the index assertions actually fail on a duplicated row or entry"
@@ -277,6 +278,28 @@ os-layout-lint-test:
 # route announced; CI installs no bun, so that is the route it takes.
 os-verify-test:
 	bash os/verify/run.sh
+
+# PLAN-014 M4: the gate the port is migrated under.
+#
+# Runs os/verify-image-v2.sh and the os/verify check register against the SAME
+# image, both boards, and diffs their conclusions PER CHECK -- by identity, not
+# by count. A count breaks whenever the suite is widened, and "no FAIL lines" is
+# invariant under a run in which nothing executed; os/tests/ui-location-test.sh
+# says the same thing about the same problem at its own scale.
+#
+# THIS TARGET IS EXPECTED TO EXIT 2 UNTIL M4e, and that is not a wart. Exit 2 is
+# INCOMPLETE: the two sides agree on everything they both decided, and the
+# oracle still concludes things nothing in the register claims. Exit 1 is a real
+# divergence, an ambiguous register or a check that fired on neither side, and
+# exit 0 is full parity -- which is the condition under which the shell verifier
+# is deleted. Three values, because a caller who only looked at "non-zero" could
+# not tell an unfinished migration from a broken one.
+#
+# It is deliberately NOT part of the shared floor for that reason. It needs a
+# built image for each board, docker, and a bun on the host -- see run.sh's
+# refusal for why this one mode cannot take the pinned bun container.
+os-verify-parity:
+	bash os/verify/run.sh --parity
 
 # PLAN-014 M6a: the TypeScript build driver -- the typed board geometry the
 # assemblers will read, and the Bun.$ wrappers for the toolset they will drive.

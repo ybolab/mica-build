@@ -1,9 +1,10 @@
 # RFCT-110 PLAN-014 M4: the image-contract verifier ported to TS under a per-check parity gate
 
-- **status**: pending
+- **status**: in progress
 - **priority**: P1
-- **owner**: -
+- **owner**: ai-agent
 - **createdAt**: 2026-08-25 10:50
+- **claimedAt**: 2026-08-25 22:04
 - **plan**: PLAN-014 (M4)
 
 Port `verify-image-v2.sh` (4,620 lines, both boards via runtime branches)
