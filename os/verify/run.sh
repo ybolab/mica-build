@@ -201,11 +201,15 @@ else
             [ -d "${argdir}" ] || continue
             argdir="$(cd "${argdir}" && pwd)"
             case "${argdir}/" in "${REPO_ROOT}/"*) continue ;; esac
+            # `if`, not `[ ... ] && seen=1`: a bare && list whose test fails on
+            # the last iteration leaves the loop with status 1, and this script
+            # runs under `set -e`. Two files in one directory is the case that
+            # would have reached it.
             seen=0
             for m in ${MOUNTS[@]+"${MOUNTS[@]}"}; do
-                [ "${m}" = "${argdir}:${argdir}:ro" ] && seen=1
+                if [ "${m}" = "${argdir}:${argdir}:ro" ]; then seen=1; fi
             done
-            [ "${seen}" = 1 ] || MOUNTS+=(-v "${argdir}:${argdir}:ro")
+            if [ "${seen}" = 0 ]; then MOUNTS+=(-v "${argdir}:${argdir}:ro"); fi
             NEED_SEEN+=("${arg}")
         done
     fi
@@ -220,8 +224,9 @@ else
     # all three ways in still fail, and all three exit 1 -- the lint's own
     # existsSync says "<path> not found", `bun test` over a vanished package
     # says "No tests found!", and `bun run src/lint-cli.ts` says "Module not
-    # found". Nothing reports a false green, and the claim that it would be
-    # wrong.
+    # found". Nothing reports a false green, and a comment claiming otherwise
+    # would be exactly the kind of unchecked assertion this package exists to
+    # catch -- so it was driven, and then rewritten.
     #
     # What it buys is the CAUSE. Each of those three sentences describes a file
     # that is missing, and on this route the file is not missing -- the mount is
