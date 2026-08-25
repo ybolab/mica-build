@@ -176,14 +176,28 @@ bun run typecheck
 bun test
 ```
 
-bun is not required on the host. Until RFCT-109's pinned-container path lands,
-run it in a container, mounting the **repository** (a `/tmp` mount does not
-propagate to the docker daemon here and silently yields an empty directory):
+**bun is not required on the host.** A host without one runs the same three
+targets unchanged: `run.sh` falls back to the bun pinned by digest as
+`IMAGE_BUN_1` in `os/build-env/images.env`, which needs docker and nothing else.
+There is no separate command to remember and no flag to pass — the route is
+chosen automatically and announced on the first line of output:
 
-```sh
-docker run --rm -v "$(git rev-parse --show-toplevel):/w" -w /w/os/verify \
-  oven/bun:1 sh -c 'bun install && bun run typecheck && bun test'
 ```
+os/verify: 1.4.0 in oven/bun:1@sha256:5ff6… (no bun on this host)
+RESULT: PASS (26/26 checks)
+```
+
+`MOS_VERIFY_CONTAINER=1` forces that route on a host that *does* have bun, which
+is how the two are compared; `MOS_VERIFY_BUN` names a binary instead. Setting
+both is refused.
+
+This matters more since M3b than it did before. `make os-layout-lint` used to
+run on bare bash, and now needs bun like the suite does — so the container path
+is what keeps a board definition checkable on a host that has only docker,
+rather than a convenience. `.gitea/workflows/check.yml` installs no bun for
+exactly this reason: the runner takes the container route, so the pin is
+exercised on every push. See `HARNESS.md` for the mount, which is an identity
+mount and not a `/w`, and why.
 
 ## Layout
 
