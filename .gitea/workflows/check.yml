@@ -254,7 +254,11 @@ jobs:
       # status alone: a pass proves the suite ran, and this proves WHICH bun ran
       # it. The reference is resolved by from.sh, the one resolver, so this
       # assertion cannot drift from the pin the way a literal here would.
-      - name: The os/verify suite (108 tests), in the pinned bun container
+      # The count is deliberately NOT in this name. It was "(108 tests)" and M4a
+      # took it to 207; a number in a step name is a number nobody re-runs the
+      # job to check, and this campaign has spent whole tasks on counts that
+      # broke the moment a suite was widened. run.sh prints the real one.
+      - name: The os/verify suite, in the pinned bun container
         run: |
           set -euo pipefail
           image="$(bash os/build-env/from.sh --ref IMAGE_BUN_1)"
@@ -278,3 +282,11 @@ jobs:
           echo "It therefore does not check that os/verify works on any other bun --" >&2
           echo "including whatever bun a developer has on PATH, which is the route" >&2
           echo "run.sh prefers locally." >&2
+          echo >&2
+          echo "It also does not run make os-verify-parity (PLAN-014 M4). That target" >&2
+          echo "needs a BUILT IMAGE for each board, docker, and a bun on the host --" >&2
+          echo "run.sh refuses --parity on the container route, because the harness" >&2
+          echo "drives docker itself and the pinned bun image has no docker client." >&2
+          echo "None of those hold here. The port's own suite (parity.ts, image.ts," >&2
+          echo "tools.ts and their cases) DOES run above; what is untested on this" >&2
+          echo "runner is the comparison against a real image." >&2
