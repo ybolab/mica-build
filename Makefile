@@ -14,7 +14,8 @@ BOARDS := cx3576 x64
 	os-quadlet-doc-test \
 	os-image-cx3576-v2 os-verify-cx3576-v2 os-bundle-cx3576 os-devkeys os-health-test podman \
 	os-shadow-test os-dbus-policy-test os-repart-test os-ui-location-test \
-	os-uboot-handshake-test os-mkimage-v2-test os-layout-lint os-layout-lint-test \
+	os-uboot-handshake-test os-mkimage-v2-test os-mkimage-x64-test \
+	os-layout-lint os-layout-lint-test \
 	docs-verify docs-verify-test build-env
 
 help:
@@ -32,6 +33,7 @@ help:
 	@echo "  os-repart-test      prove first-boot repart growth grows DATA and cannot wipe the loader (privileged docker)"
 	@echo "  os-ui-location-test prove the custom-UI location assertions in the v2 verifier actually fail when the location moves"
 	@echo "  os-mkimage-v2-test  prove the v2 assembler rebuilds byte-identically, and refuses every layout mistake that would need a re-flash (docker)"
+	@echo "  os-mkimage-x64-test prove the x64 assembler rebuilds byte-identically, and refuses every boot-chain mistake that leaves a machine at the UEFI shell (docker)"
 	@echo "  os-layout-lint      check every board layout against the board-definition schema"
 	@echo "  os-layout-lint-test prove the layout linter rejects a broken board definition"
 	@echo "  docs-verify         assert both document indexes agree with the tree, in both directions"
@@ -165,6 +167,55 @@ os-ui-location-test:
 os-mkimage-v2-test:
 	mkdir -p $(CURDIR)/_out/tmp
 	TMPDIR=$${TMPDIR:-$(CURDIR)/_out/tmp} bash os/tests/mkimage-v2-selftest.sh
+
+# The same instrument for the OTHER board, and it exists SEPARATELY FROM THE
+# PORT IT PRECEDES for one reason: PLAN-014 M6c ports this assembler to
+# TypeScript and will gate that port on byte-identity, and a byte-identity gate
+# CANNOT SEE A DROPPED REFUSAL. A port that quietly loses the ESP cluster-count
+# floor still produces identical bytes for a good input and passes the gate
+# perfectly; what it stopped catching is a machine sitting at the UEFI shell
+# with nothing on the console to say why. Folding this into M6c would also have
+# made that port's scope "port it, and also write the test that should have
+# existed", which is how ports acquire a reputation for being risky.
+#
+# So the half worth more than the byte comparison is again the refusals, and
+# again they are driven FROM THE FAILING SIDE -- an ESP sized below the 65525
+# clusters FAT32 requires (mkfs.vfat writes a FAT32 boot sector over it and
+# reports success; OVMF leaves the partition out of its device list entirely), a
+# grubenv that is not exactly 1024 bytes (GRUB ignores it silently, which looks
+# exactly like an A/B order that never changes), a dm-verity root hash baked
+# into the one file RAUC never rewrites, a per-slot kernel on the ESP no install
+# could ever replace, two boot slots that do not carry the same files, an
+# exported /var with no dpkg database, and a timestamp the seeding pass cannot
+# write. Every one of them names the assertion it expects BY IDENTITY and the
+# harness diffs that against the set that actually fired, so a case that trips
+# the wrong guard on the way is a FAIL rather than a pass -- and the register of
+# identities is itself checked against the shipped source first, because a row
+# naming a message the code can no longer produce asserts nothing while looking
+# exactly like coverage.
+#
+# Byte-identity is asserted as IDENTITY, never as a byte delta: the single
+# seeding-time defect RFCT-106 closed measured 465, 467, 562 or 925 differing
+# bytes depending only on the gap between the two assemblies and on whether
+# relatime had bumped the fixture's atimes that day, so a pinned count would be
+# flaky for a reason that has nothing to do with the code.
+#
+# Fixture-based like its sibling and cheaper: no BSP, no U-Boot blobs, no
+# boot.scr to compile, no built image and no root -- synthetic kernel, initrd,
+# rootfs-verity and a fabricated factory /var are the whole input set, which is
+# what keeps it in the cheap CI lane RFCT-086 records. Needs docker, and it
+# fails loudly when it cannot run rather than skipping.
+#
+# The assembler takes NO input from the environment -- it derives its layout,
+# its grub.cfg and its output directory from its own location -- so the
+# selftest copies those four files into its workspace and runs the shipped
+# script there. Nothing is written to the developer's _out/x64. TMPDIR is
+# defaulted into the gitignored _out/ for the same reason as above: the
+# workspace has to be bind-mountable by the docker daemon and a sandboxed
+# private /tmp is not.
+os-mkimage-x64-test:
+	mkdir -p $(CURDIR)/_out/tmp
+	TMPDIR=$${TMPDIR:-$(CURDIR)/_out/tmp} bash os/tests/mkimage-x64-selftest.sh
 
 # SPIKE RFCT-087: executes the SHIPPED os/boards/cx3576/boot.cmd — compiled by
 # the same mkimage invocation the assembler uses, byte-unmodified — under a
