@@ -1,0 +1,6 @@
+# The build context is os/rauc/, which also holds the DEVELOPMENT SIGNING KEYS
+# (.devkeys/, gitignored) and the configuration templates. None of it belongs
+# in a build context: a key that reaches a layer is a key in the image cache.
+# Only the version lock is copied in.
+*
+!versions.lock

@@ -147,6 +147,24 @@ fi
 # an image build occasionally take an hour with no indication why. It is a
 # separate target, and the absence of its output is an error with the command
 # to run in it.
+# RAUC, built from upstream source by os/rauc/build.sh. Staged like podman and
+# like mosd: the Dockerfile COPYs a directory under _out, never a path outside
+# the build context.
+RAUC_STAGE="$OUT_DIR/rauc"
+rm -rf "$RAUC_STAGE"
+mkdir -p "$RAUC_STAGE"
+RAUC_OUT="$REPO_ROOT/os/rauc/out-$MOS_ARCH"
+for f in rauc rauc.service rauc-service.sh de.pengutronix.rauc.conf de.pengutronix.rauc.service NEEDED.txt RAUC_VERSION.env; do
+    if [ ! -f "$RAUC_OUT/$f" ]; then
+        echo "error: $RAUC_OUT/$f not found." >&2
+        echo "RAUC is built from source now, not installed from Debian (os/rauc/versions.env says why)." >&2
+        echo "Build it with 'MOS_BOARD=$MOS_BOARD make os-rauc'." >&2
+        exit 1
+    fi
+    cp "$RAUC_OUT/$f" "$RAUC_STAGE/$f"
+done
+echo "rauc: staged $(sed -n 's/^RAUC_VERSION=//p' "$RAUC_STAGE/RAUC_VERSION.env") for $MOS_ARCH"
+
 PODMAN_STAGE="$OUT_DIR/podman"
 rm -rf "$PODMAN_STAGE"
 mkdir -p "$PODMAN_STAGE"
@@ -425,6 +443,7 @@ if ! docker buildx build \
         --build-arg MODULES_TAR="_out/$MOS_BOARD/modules.tar" \
         --build-arg MOSD_DIR="_out/$MOS_BOARD/mosd" \
         --build-arg PODMAN_DIR="_out/$MOS_BOARD/podman" \
+        --build-arg RAUC_DIR="_out/$MOS_BOARD/rauc" \
         --build-arg BOARD_INIT_DIR="_out/$MOS_BOARD/init" \
         --build-arg OVERLAY_DIR="_out/$MOS_BOARD/overlay-v2" \
         --build-arg WITH_MOSD="$WITH_MOSD" \

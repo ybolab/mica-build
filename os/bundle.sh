@@ -73,9 +73,11 @@ BUNDLE_BOOT_FAT_LABEL=BOOT
 # Debian 13 rauc (1.13). It was found by failure rather than by a check -- 1.8
 # refused the x64 slot model outright when it was finally asked to read it.
 #
-# Pinning both to "trixie" in two files would be a coincidence maintained by
-# hand. This reads the version the IMAGE recorded at its own build and compares
-# it to the one running here, so the two cannot drift without saying so.
+# Both halves now come from os/rauc/ -- the image's rauc and this one are built
+# from the same pinned source, so agreeing is the normal state rather than a
+# coincidence. The check remains because they are built at different TIMES: an
+# image flashed before a version bump and a bundle built after it would differ,
+# and that is exactly the case nothing else would notice.
 assert_rauc_matches_image() {
     local report="$1" want have
     if [ ! -f "${report}" ]; then
@@ -83,17 +85,17 @@ assert_rauc_matches_image() {
         exit 1
     fi
     want="$(sed -n 's/^RAUC_VERSION //p' "${report}" | tail -n1)"
-    have="$(dpkg-query -W -f='${Version}' rauc 2>/dev/null || true)"
+    have="$(sed -n 's/^RAUC_VERSION=//p' "${RAUC_BUILD_ENV:-/nonexistent}" 2>/dev/null || true)"
     if [ -z "${want}" ]; then
         echo "error: ${report} records no RAUC_VERSION. It predates the check, or the rootfs build stopped emitting it -- either way the comparison would pass by finding nothing" >&2
         exit 1
     fi
     if [ -z "${have}" ]; then
-        echo "error: no rauc package version here; this half of the comparison is missing and the check would be vacuous" >&2
+        echo "error: no RAUC_VERSION from ${RAUC_BUILD_ENV:-<unset>}; this half of the comparison is missing and the check would pass by finding nothing. Build rauc with 'make os-rauc'" >&2
         exit 1
     fi
     if [ "${want}" != "${have}" ]; then
-        echo "error: this rauc is ${have}, the image ships ${want}. A bundle written by one version and installed by another is a format and slot-model contract nobody checked; bring the build container and the image to the same Debian release" >&2
+        echo "error: this rauc is ${have}, the image ships ${want}. A bundle written by one version and installed by another is a format and slot-model contract nobody checked. Both come from os/rauc/versions.env now, so this means the image predates a version bump: rebuild the rootfs" >&2
         exit 1
     fi
     echo "rauc ${have} here, ${want} in the image"
@@ -471,6 +473,21 @@ host_can_build() {
 # rather than rewritten from the host paths: a substitution that only matched
 # the BSP board's prefix left x64's kernel path untouched and the build failed
 # inside the container on a host path.
+# THE HOST's architecture, not the board's. The bundle is written on the build
+# machine, so the rauc that writes it is a host binary -- while the image being
+# bundled for may be a foreign board. Both are built from os/rauc/versions.env,
+# which is what makes their VERSIONS the same thing to compare.
+case "$(uname -m)" in
+x86_64) HOST_ARCH=amd64 ;;
+aarch64) HOST_ARCH=arm64 ;;
+*) echo "error: unsupported build host architecture $(uname -m); os/rauc/ builds amd64 and arm64" >&2; exit 1 ;;
+esac
+RAUC_HOST_BIN="${REPO_ROOT}/os/rauc/out-${HOST_ARCH}/rauc"
+if [ ! -f "${RAUC_HOST_BIN}" ]; then
+    echo "error: ${RAUC_HOST_BIN} not found. RAUC is built from source now, not installed from Debian (os/rauc/versions.env says why); build it with 'MOS_BOARD=${MOS_BOARD} make os-rauc'" >&2
+    exit 1
+fi
+
 if [ "${RAUC_BOOTLOADER}" = "uboot" ]; then
     CONTAINER_KERNEL_IMAGE="/board/out/kernel/Image"
     CONTAINER_INITRD_IMAGE=""
@@ -484,6 +501,7 @@ fi
 if host_can_build; then
     env MOS_BOARD="${MOS_BOARD}" \
         ROOTFS_REPORT="${OUT_DIR}/rootfs-report-v2.txt" \
+        RAUC_BUILD_ENV="${REPO_ROOT}/os/rauc/out-${HOST_ARCH}/RAUC_VERSION.env" \
         KERNEL_IMAGE="${KERNEL_IMAGE}" DTB="${DTB}" \
         INITRD_IMAGE="${INITRD_IMAGE:-}" \
         ROOTFS_VERITY_IMG="${ROOTFS_VERITY_IMG}" \
@@ -514,6 +532,8 @@ else
         -e ROOTFS_VERITY_IMG="/work/_out/${MOS_BOARD}/rootfs-verity.img" \
         -e ROOTFS_VERITY_ENV="/work/_out/${MOS_BOARD}/rootfs-verity.env" \
         -e ROOTFS_REPORT="/work/_out/${MOS_BOARD}/rootfs-report-v2.txt" \
+        -e RAUC_BIN="/work/os/rauc/out-${HOST_ARCH}/rauc" \
+        -e RAUC_BUILD_ENV="/work/os/rauc/out-${HOST_ARCH}/RAUC_VERSION.env" \
         -e BOOT_CMDLINE_A="${BOOT_CMDLINE_A:+/work/_out/${MOS_BOARD}/boot-cmdline-a.txt}" \
         -e BOOT_CMDLINE_B="${BOOT_CMDLINE_B:+/work/_out/${MOS_BOARD}/boot-cmdline-b.txt}" \
         -e CERT=/keys/signer.cert.pem \
@@ -524,7 +544,9 @@ else
         -e BUNDLE_COMPATIBLE="${BUNDLE_COMPATIBLE}" \
         debian:trixie-slim \
         bash -c 'apt-get update -qq && apt-get install -y -qq --no-install-recommends \
-            rauc squashfs-tools dosfstools mtools u-boot-tools jq >/dev/null && \
+            squashfs-tools dosfstools mtools u-boot-tools jq \
+            libglib2.0-0t64 libjson-glib-1.0-0 libfdisk1 libssl3t64 >/dev/null && \
+            install -m0755 "${RAUC_BIN}" /usr/local/bin/rauc && \
             exec bash /work/os/bundle.sh --build'
 fi
 

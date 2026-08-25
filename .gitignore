@@ -22,3 +22,7 @@ os/rootfs/overlay-v2/etc/rauc/system.conf
 # Optional local RAUC keyring for developer images: a copy of a dev CA cert
 # dropped in so a locally built image can install locally built bundles.
 os/rootfs/overlay-v2/etc/rauc/keyring.pem
+
+# Built by os/rauc/build.sh, like os/podman/out-*: compiled artefacts, not source.
+os/rauc/out-*/
+os/rauc/versions.lock

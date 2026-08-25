@@ -177,6 +177,16 @@ os-layout-lint-test:
 # pattern was found. It cost this tree a false PASS on the assertion that only
 # one D-Bus policy names com.mos.mosd, and another on the members the MQTT
 # bridge is forbidden to be granted. The rationale is at the top of the script.
+# RAUC, built from upstream source instead of installed from Debian. The reason
+# is measured and recorded in os/rauc/versions.env: the distribution builds it
+# with streaming on, that links libcurl-gnutls, and rauc was the ONLY consumer
+# of that library in the whole packed root -- it brought GnuTLS, p11-kit, GMP,
+# Nettle and Kerberos into a signed image for an install path this project
+# defers. Built here it links libc, libcrypto, libfdisk, glib and json-glib,
+# all of which the image already carries.
+os-rauc:
+	MOS_BOARD=$(or $(MOS_BOARD),cx3576) bash os/rauc/build.sh
+
 os-shell-pipefail-lint:
 	bash os/shell-pipefail-lint.sh
 
