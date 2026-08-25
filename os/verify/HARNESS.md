@@ -50,7 +50,10 @@ it; that was a real defect here, caught by running the failing side.
 ## Driven from the failing side
 
 Every guard in `run.sh` was run against the condition it exists to catch, and
-each returns 1:
+each returns 1. **The `108/108` in this table is M3's measurement, not the
+suite's current size**: M4a took it to 214, and the number is kept as the record
+of that run rather than silently updated — a count in prose is a count nobody
+re-runs, which is why the CI step name no longer carries one.
 
 | driven | what it printed |
 |--------|-----------------|
@@ -208,7 +211,7 @@ words, as the bun seam above, and the same `/tmp` quirk behind it.
 | `IMAGE_ALPINE_3_21` = a tag | `from.sh`'s refusal, naming the key and the file |
 | no image tools **and** no docker | refused, naming both and `IMAGE_ALPINE_3_21` |
 | `--work` under `/tmp` | refused, naming the sentinel and the mount |
-| no bun on the host, `--parity` | refused — see below. The suite on the same host: **207/207** in the pinned bun container |
+| no bun on the host, `--parity` | refused — see below. The suite on the same host, re-run at the final commit: **214/214** in the pinned bun container, exit 0 |
 | `--board x86` | `'x86' is not a board this tree ships … os/boards/ holds cx3576, x64` |
 | `--image` with two boards | refused; one image cannot be both boards' |
 | `--image` naming a file that is not there | refused |
