@@ -213,14 +213,25 @@ else
     # THE MOUNT THAT SUCCEEDS AND CARRIES NOTHING. On this host a bind mount of
     # anything under /tmp propagates as an EMPTY DIRECTORY rather than failing:
     # measured 2026-08-25, `docker run -v /tmp/d:/tmp/d ... cat /tmp/d/f` reports
-    # "No such file or directory" for a file the host reads fine. A lint whose
-    # input disappeared that way would check nothing, and `bun test` exits 0 on
-    # a file that declares no tests -- so both halves of this script could report
-    # green about a file that was never there. That is the precise failure this
-    # package exists to make impossible, so every path the run depends on is
-    # asserted VISIBLE INSIDE THE CONTAINER before any of them is used. One
-    # container, ~260ms, and it also reports the version, so it costs no extra
-    # start over the `bun --version` the host route prints.
+    # "No such file or directory" for a file the host reads fine.
+    #
+    # WHAT THIS GUARD IS AND IS NOT, measured rather than assumed. It is NOT the
+    # only thing between that mount and a green run: with this check disabled,
+    # all three ways in still fail, and all three exit 1 -- the lint's own
+    # existsSync says "<path> not found", `bun test` over a vanished package
+    # says "No tests found!", and `bun run src/lint-cli.ts` says "Module not
+    # found". Nothing reports a false green, and the claim that it would be
+    # wrong.
+    #
+    # What it buys is the CAUSE. Each of those three sentences describes a file
+    # that is missing, and on this route the file is not missing -- the mount is
+    # empty, and the file is exactly where the caller said it was. A reader sent
+    # to look for a path they can `cat` is being sent to the wrong edit, which is
+    # the same defect M3b recorded when lint.sh said "declares no X" about a file
+    # containing X="". So every path the run depends on is asserted VISIBLE
+    # INSIDE THE CONTAINER first, and the refusal names the mount. One container,
+    # ~260ms, and it carries the version too, so it costs no extra start over the
+    # `bun --version` the host route prints.
     PREFLIGHT=("${HERE}/package.json" "${HERE}/src/lint-cli.ts")
     PREFLIGHT+=(${NEED_SEEN[@]+"${NEED_SEEN[@]}"})
     probe="$(docker run --rm "${MOUNTS[@]}" "${BUN_IMAGE}" \
@@ -236,10 +247,11 @@ else
         echo "error: the pinned bun container cannot see paths that this host can:" >&2
         printf '%s\n' "${unseen}" | while IFS= read -r u; do echo "         ${u}" >&2; done
         echo "       The mount succeeded and delivered nothing, which is how a bind mount of /tmp" >&2
-        echo "       behaves on this host -- so the container would have linted no file at all and" >&2
-        echo "       had no error to report about it. Put the file somewhere the docker daemon can" >&2
-        echo "       actually share (inside the repository, or under _out/ or /srv), or run on a" >&2
-        echo "       host with bun so no mount is involved." >&2
+        echo "       behaves on this host. Without this check the run would still have failed -- but" >&2
+        echo "       it would have failed saying the file was not found, and the file IS there; it is" >&2
+        echo "       the mount that is empty. Put it somewhere the docker daemon can actually share" >&2
+        echo "       (inside the repository, or under _out/ or /srv), or run on a host with bun so no" >&2
+        echo "       mount is involved." >&2
         exit 1
     fi
 fi
