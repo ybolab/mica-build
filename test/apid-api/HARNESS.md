@@ -15,7 +15,7 @@ There are three doors between this script and apid, and all three fail as
 "connection refused" with nothing to say which one was shut:
 
 1. QEMU's user-mode `hostfwd` binds **inside the container running QEMU**.
-2. That container must also **publish** the port, which `os/qemu-run.sh` does.
+2. That container must also **publish** the port, which `os/tools/qemu-run.sh` does.
 3. `-p 127.0.0.1:<port>:<port>` publishes on the **docker host's** loopback.
    Anything running in a container has its own loopback and no route to that
    one. Measured 2026-08-24: this session is on a docker network at
@@ -36,7 +36,7 @@ container that writes the kernel append into the ESP and holds the same mount.
 
 ## One run directory, shared
 
-`os/qemu-run.sh`'s `RUN_DIR` is the single fixed path `_out/x64/.qemu`. The x64
+`os/tools/qemu-run.sh`'s `RUN_DIR` is the single fixed path `_out/x64/.qemu`. The x64
 verification line uses it too. **The two cannot run at once**: each would
 overwrite the other's `disk.img` and the loser would fail somewhere unrelated.
 
@@ -45,12 +45,12 @@ directory, and it compares **resolved** paths — `docker inspect` reports the
 path it was *given*, not the path it *resolved*, so a run directory reached
 through a symlink would otherwise slip past the guard.
 
-`os/qemu-run.sh` is owned by the image line and is **not edited** by this
+`os/tools/qemu-run.sh` is owned by the image line and is **not edited** by this
 harness; the path cannot be moved, so it is guarded instead.
 
 ## Two boots off one disk, because of `-no-reboot`
 
-`os/qemu-run.sh:167` passes `-no-reboot`, so a guest-initiated reboot makes QEMU
+`os/tools/qemu-run.sh:167` passes `-no-reboot`, so a guest-initiated reboot makes QEMU
 **exit** instead of resetting. The harness works with the flag rather than
 around it:
 
@@ -84,7 +84,7 @@ against the first boot. Measured on this campaign's first full run.
 The readiness wait is **anchored to a console offset** for the same reason. A
 guest that resets in place appends to the *same* capture file, under the first
 boot's `APID_LISTENING` line, so a whole-file grep answers "apid is listening"
-with a line the previous boot wrote. If a future `os/qemu-run.sh` drops
+with a line the previous boot wrote. If a future `os/tools/qemu-run.sh` drops
 `-no-reboot`, the guest resets in place, the container is still there, and the
 harness waits for apid to come back on that same container instead of starting a
 second one against a disk something is already booting.
@@ -97,7 +97,7 @@ deliberately down, so a run that stops there never observes it come back.
 ## The console is the only journal
 
 mos keeps journald at `Storage=volatile` because `/var` is the EPHEMERAL
-partition, so a guest's log dies with the guest. `os/qemu-journal.sh` **does not
+partition, so a guest's log dies with the guest. `os/tools/qemu-journal.sh` **does not
 work** and is committed as known-broken for exactly that reason; this harness
 does not call it and does not try to fix it.
 

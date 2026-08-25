@@ -1629,7 +1629,7 @@ if is_uboot_board; then
         fail "the loader type must be unique and distinct from linux-generic/ESP; p${LOADER_PARTNUM} type is '${loader_type}' and ${LOADER_TYPE_N} partition(s) carry ${LOADER_TYPECODE}"
     fi
 else
-    skip "the loader-partition protections (${EXPECT_PARTS}-partition ${MOS_BOARD} layout has no loader): a grub board keeps its firmware in flash, not at a fixed sector, so there is no raw region for systemd-repart to discard and no GPT entry to assert. cx3576 needs these; os/uboot-handshake-test.sh remains the only cover for the U-Boot A/B handshake either way"
+    skip "the loader-partition protections (${EXPECT_PARTS}-partition ${MOS_BOARD} layout has no loader): a grub board keeps its firmware in flash, not at a fixed sector, so there is no raw region for systemd-repart to discard and no GPT entry to assert. cx3576 needs these; os/tests/handshake-test/ remains the only cover for the U-Boot A/B handshake either way"
 fi
 
 if [ "${SLOT_MIB}" -gt 0 ]; then

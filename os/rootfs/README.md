@@ -333,12 +333,12 @@ them at runtime.
 ## RAUC system.conf is rendered, not committed
 
 `os/rootfs/overlay-v2/etc/rauc/system.conf` is **generated** by
-`os/rauc/render-config.sh` (RFCT-014's renderer, which owns the template and
+`os/update/rauc/render-config.sh` (RFCT-014's renderer, which owns the template and
 its assertions) and is gitignored. `build-v2.sh` runs the renderer before
 staging the overlay, so the template plus `os/boards/cx3576/board.env` are the
 single source of truth and the rendered file cannot drift from them.
 
-`os/bundle.sh` still runs `render-config.sh --check`. It now guards a narrower
+`os/update/bundle.sh` still runs `render-config.sh --check`. It now guards a narrower
 case — someone hand-editing the generated file after the last build — rather
 than committed-copy drift, which can no longer happen. Note that `bundle.sh`
 consumes `rootfs-verity.img` too, so `build-v2.sh` has necessarily run first
