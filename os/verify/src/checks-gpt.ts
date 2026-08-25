@@ -12,7 +12,7 @@
 // A verity slot's size is content-derived, so the layout does not declare it --
 // `walkLayout` takes it as a parameter and everything downstream of the slots
 // follows from it. It is read off the image here, once, exactly as
-// os/verify-image-v2.sh:1440 reads it, and it is refused unless it is a
+// os/verify-image-v2.sh:1441 reads it, and it is refused unless it is a
 // positive whole-MiB multiple. When it is refused the walk is fed 0, which is
 // what makes the size and image-size checks FAIL rather than compare a slot
 // against a size derived from itself.
@@ -118,7 +118,7 @@ export const GPT_CHECKS: readonly CheckCase[] = [
     },
   },
 
-  // ═══ NOT PORTED: the partition COUNT (os/verify-image-v2.sh:1417) ═══
+  // ═══ NOT PORTED: the partition COUNT (os/verify-image-v2.sh:1419) ═══
   //
   // `pass "exactly ${EXPECT_PARTS} partitions"`. Its identity cannot be
   // expressed as a substring, and this was measured rather than guessed --

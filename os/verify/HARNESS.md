@@ -217,6 +217,7 @@ words, as the bun seam above, and the same `/tmp` quirk behind it.
 | `--image` naming a file that is not there | refused |
 | `--board` with no value | refused; an option taking the next flag as its value verifies something nobody asked for |
 | `--parity` in a non-first position | refused, as `--lint` is |
+| M4b: a real cx3576 image with `sgdisk -c 9:stat` and BOOT-B's FAT label set to `BOOT` | the oracle went `RESULT FAIL (392/394, 3 skipped)`, the two FAIL lines were both CLAIMED (`not-ported … FAIL 0`), and the port answered FAIL to both: `agree 84, diverge 0` |
 
 `extractRange` is TypeScript rather than `dd`, and the substitution was
 measured rather than argued: against ROOTFS-A of the real cx3576 image both
@@ -248,10 +249,35 @@ daemon's HTTP API over the socket from bun. Whichever it is, it is a new pin in
 The suite and the lint are unaffected: both still run in the pinned bun
 container on a host with nothing but docker, and CI still takes that route.
 
+## Where the matcher runs out, measured
+
+`ShellMatcher` identifies a conclusion by a **substring** of the oracle's line,
+and M4b found two conclusions that have no substring which is both unique and
+board-independent. Counted against both boards' real output rather than argued:
+
+| conclusion | candidate | cx3576 | x64 |
+|---|---|---|---|
+| `exactly ${EXPECT_PARTS} partitions` | ` partitions` | 3 | 3 |
+| | `exactly ` | 13 | 8 |
+| `${slot} contains ${f}` | ` contains ` | 12 — four of them `contains no …` | 6 |
+
+For the first, the only token left is the partition COUNT, which is the literal
+`os/verify-image-v2.sh:1408` deliberately stopped writing down. For the second,
+the four extra lines on cx3576 belong to U-Boot-only checks that are M4d's, so
+whichever batch registers ` contains ` first makes the other's lines
+`ambiguous` — the collision is symmetric and cannot be resolved by ordering.
+
+Both are separable by an ANCHOR: `^exactly \d+ partitions$` and
+`^BOOT-[AB] contains \S+$`. Adding a regex alternative to `ShellMatcher` is a
+change to the instrument, so M4b measured it and left it, the way M4a left the
+"beyond the oracle" flag. Until then the two families stay `not-ported` — which
+is the state this harness exists to describe rather than round off.
+
 ## The parity harness, and why it is not a count
 
 `src/parity.ts` diffs `os/verify-image-v2.sh`'s conclusions against the check
-register's, **per check**. The register is empty at M4a; M4b–M4d fill it.
+register's, **per check**. The register was empty at M4a; M4b filled in batch 1
+and M4c–M4d fill the rest.
 
 The oracle prints `PASS: <prose>`, `FAIL: <prose>`, `SKIP: <prose>` and a final
 `RESULT:` line, and nothing else — measured on both boards' real images: every

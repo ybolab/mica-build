@@ -10,7 +10,7 @@
 // ═══ WHERE THE SLOTS COME FROM ═══
 //
 // From the LAYOUT's `<SLOT>_OFFSET_BYTES`, which is what the oracle uses
-// (:1770). Not from the GPT's first sector, though both agree on a healthy
+// (:1769-1770). Not from the GPT's first sector, though both agree on a healthy
 // image: WHERE a slot is, is asserted by `gpt-partition-start`, and reading the
 // offset back out of the same table would make these checks agree with a
 // partition that had moved. The offset here is the layout's claim, and what is

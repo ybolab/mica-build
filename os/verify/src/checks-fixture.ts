@@ -7,7 +7,7 @@
 //
 // ═══ WHY A FAKE IMAGE AND NOT A MUTATED REAL ONE ═══
 //
-// Both, actually: `os/verify/PARITY.md` records an end-to-end run against a
+// Both, actually: `os/verify/HARNESS.md` records an end-to-end run against a
 // real image edited on disk, which is what proves the whole pipeline reports
 // the failing direction. What that run CANNOT be is one mutation per check --
 // it is a 1.3 GB copy and a three-minute run each time, and half the mutations

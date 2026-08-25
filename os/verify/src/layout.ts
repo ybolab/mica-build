@@ -1,5 +1,5 @@
 // The partition table the BOARD DEFINITION describes, walked the way
-// os/verify-image-v2.sh:1468-1516 walks it.
+// os/verify-image-v2.sh:1450-1516 walks it.
 //
 // PLAN-014 M4b (RFCT-110). This is one half of every GPT geometry check: the
 // other half is the table the IMAGE actually carries, read by `readGpt`. The
@@ -125,7 +125,7 @@ export function walkLayout(board: Board, slotSectors: number): LayoutWalk {
   if (names === undefined || names.length === 0) {
     throw new ToolOutputError(
       `${board.path} declares no LAYOUT_PARTITIONS; this walk walks the board definition and has `
-      + `nothing to walk. os/verify-image-v2.sh:1412 refuses the same state for the same reason.`,
+      + `nothing to walk. os/verify-image-v2.sh:1414 refuses the same state for the same reason.`,
     )
   }
 
