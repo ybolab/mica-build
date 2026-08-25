@@ -228,6 +228,12 @@ class Parser {
           throw this.errorAt(this.i, `the shell metacharacter ${describe(c)} outside quotes. Quote it if it is part of the value`)
         case '*': case '?': case '[':
           throw this.errorAt(this.i, `the glob character ${describe(c)} outside quotes. A board definition states values; it does not match filenames`)
+        case '~':
+          // A shell DOES expand this on the right of an assignment: `A=~/foo`
+          // is `/root/foo`. Taking it literally here would be a silent
+          // disagreement with every existing consumer of these files, which is
+          // the one thing this parser must not be -- so it is refused instead.
+          throw this.errorAt(this.i, 'a tilde. A shell expands `~` on the right of an assignment, so a value containing one means different things to different readers and to different users. Write the path out, or quote the tilde to mean it literally')
         default:
           out += c
           this.i++
@@ -306,6 +312,10 @@ class Parser {
       this.i++ // the '$'
       const name = this.readName()
       return this.lookup(name, defined, key, dollarAt)
+    }
+
+    if (next === '\'' || next === '"') {
+      throw this.errorAt(dollarAt, `ANSI-C quoting \`$${next}...${next}\`, which turns backslash escapes into bytes. This parser resolves \`\${NAME}\` and \`$((arithmetic))\`; write the characters out`)
     }
 
     throw this.errorAt(dollarAt, `\`$${next ?? ''}\` -- ${next === undefined || next === '\n' || next === ' ' || next === '\t' ? 'a bare `$`' : 'a shell special parameter'}. This parser resolves \`\${NAME}\` and \`$((arithmetic))\`; write '\\$' inside double quotes, or single-quote the value, if the character is meant literally`)

@@ -177,10 +177,15 @@ describe('what it refuses, and what it must still accept', () => {
     refuses('A=one|two\n', 'shell metacharacter')
     refuses('A=one&two\n', 'shell metacharacter')
     refuses('A=*.img\n', 'glob character')
+    // A shell expands this one, so taking it literally would be a silent
+    // disagreement with every existing consumer rather than a safe default.
+    refuses('A=~/boards\n', 'A shell expands `~` on the right of an assignment')
+    refuses('A=$\'a\\nb\'\n', 'ANSI-C quoting')
     expect(valueOf('A="one two"\n', 'A')).toBe('one two')
     expect(valueOf('A=^orphan_file,^metadata_csum_seed\n', 'A')).toBe('^orphan_file,^metadata_csum_seed')
     expect(valueOf('A=@1577836800\n', 'A')).toBe('@1577836800')
     expect(valueOf('A=/usr/lib/firmware/fw.bin\n', 'A')).toBe('/usr/lib/firmware/fw.bin')
+    expect(valueOf('A="~/literal"\n', 'A')).toBe('~/literal')
   })
 
   test('an unterminated quote is reported where it OPENED, not at the end of the file', () => {
