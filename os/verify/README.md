@@ -11,10 +11,10 @@ Nothing here runs on the device. The image ships no bun.
 
 Since M4a it also holds the **image-inspection helpers** and the **parity
 harness** the port of `os/verify-image-v2.sh` is gated on — see "Reading an
-image" and "The parity harness" below. **No check has been ported yet**: the
-register in `src/checks.ts` is empty by design, M4b–M4d fill it, and the
-harness reports every one of the oracle's 398 and 312 conclusions as
-*unclaimed* rather than as agreement.
+image" and "The parity harness" below. **M4b ported batch 1**: 21 checks
+covering the GPT geometry, the boot slots' filesystems and the RAUC slot
+contract. Everything still unported is reported as *unclaimed* rather than as
+agreement, and the run's conclusion stays INCOMPLETE until M4e.
 
 ## Everything reads `board.env`, and until now everything sourced it
 
@@ -248,15 +248,49 @@ the part it read. And a comparison in which nothing was compared can only come
 out INCOMPLETE or FAIL, never PASS — M3a's board-env oracle once reported
 agreement "on all 0 keys" because both dumps were empty.
 
-### Where it stands, 2026-08-25
+### Where it stands after M4b, 2026-08-25
 
 Both boards, against the images the M1 gate built, with the harness's shell side
 invoked exactly as `make os-verify-<board>-v2` invokes it:
 
-| board | oracle | register | unclaimed | conclusion |
-|---|---|---|---|---|
-| cx3576 | `PASS (395/395 checks, 3 skipped)` | 0 checks | **398 of 398** | INCOMPLETE |
-| x64 | `PASS (290/290 checks, 22 skipped)` | 0 checks | **312 of 312** | INCOMPLETE |
+| board | oracle | register | compared | unclaimed | conclusion |
+|---|---|---|---|---|---|
+| cx3576 | `PASS (395/395 checks, 3 skipped)` | 21 checks | 84 | **314 of 398** (was 398) | INCOMPLETE |
+| x64 | `PASS (290/290 checks, 22 skipped)` | 21 checks | 72 | **240 of 312** (was 312) | INCOMPLETE |
+
+`diverge`, `ts-silent`, `orphan`, `unfired` and `ambiguous` are **0 on both
+boards**, which is what makes the exit status 2 rather than 1.
+
+### Batch 1, and the two conclusions a substring cannot name
+
+| module | checks | what they read |
+|---|---|---|
+| `src/checks-gpt.ts` | 12 | the table the image carries (`readGpt`) against the one the board declares (`walkLayout`) |
+| `src/checks-slots.ts` | 3 | the FAT32 signature, volume serial and volume label of BOOT-A and BOOT-B |
+| `src/checks-rauc.ts` | 6 | `/etc/rauc/system.conf` in the packed root, against the layout the GPT was written from |
+
+Two of the oracle's conclusions are **deliberately left unclaimed**, and the
+reason is measured rather than argued. `ShellMatcher` identifies a conclusion by
+a **substring**, and these two have none that is board-independent and unique:
+
+| conclusion | candidate matcher | claims |
+|---|---|---|
+| `exactly ${EXPECT_PARTS} partitions` | ` partitions` | 3 lines on cx3576, 3 on x64 |
+| | `exactly ` | 13 lines on cx3576, 8 on x64 |
+| `${slot} contains ${f}` | ` contains ` | also `BOOT-A contains no extlinux/…` and `BOOT-A contains no initramfs file`, twice each on cx3576 |
+
+The only remaining token in the first is the partition **count** — the literal
+`os/verify-image-v2.sh:1408` deliberately stopped writing down, because
+`EXPECT_PARTS=11` is why `MOS_BOARD=x64` once died four checks in. Putting it
+back inside the register would make a board that changed its partition count
+report `orphan` rather than red.
+
+The second collides with checks that are M4d's (`is_uboot_board`-gated), in both
+directions: whichever batch registers ` contains ` first makes the other's lines
+`ambiguous`. Both want an **anchored** matcher — `^exactly \d+ partitions$` and
+`^BOOT-[AB] contains \S+$` separate them cleanly — which is a change to
+`ShellMatcher` and therefore M4e's, on the same list as the "beyond the oracle"
+flag M4a left it.
 
 ## Running
 
@@ -315,7 +349,13 @@ src/lint-cli.ts     argv, printing and an exit status; every decision is in lint
 src/paths.ts        where the package sits, anchored rather than counted
 src/tools.ts        the tool seam: this host, or the pinned alpine; one place decides
 src/image.ts        sgdisk / mtools / tune2fs+debugfs / unsquashfs / veritysetup, typed
-src/checks.ts       the check register -- EMPTY at M4a -- and what a check is handed
+src/checks.ts       the check register, and what a check is handed
+src/checks-gpt.ts   batch 1a: the GPT geometry, image table vs board definition
+src/checks-slots.ts batch 1b: the boot slots' FAT filesystems
+src/checks-rauc.ts  batch 1c: the RAUC slot contract in the packed root
+src/checks-fixture.ts  a synthetic image, for driving a ported check RED
+src/layout.ts       the board definition walked into the table it describes
+src/verdict.ts      how a ported check spells its conclusion
 src/parity.ts       the diff: shell conclusions vs port results, per check, by identity
 src/parity-cli.ts   argv and orchestration; every decision is in parity.ts
 src/probe.ts        drives every helper against a real image and prints what it read

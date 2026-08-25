@@ -45,6 +45,9 @@ import {
   type GptPartition,
   type GptTable,
 } from './image.ts'
+import { GPT_CHECKS } from './checks-gpt.ts'
+import { RAUC_CHECKS } from './checks-rauc.ts'
+import { SLOT_CHECKS } from './checks-slots.ts'
 import { ToolOutputError, type ToolRuntime } from './tools.ts'
 import type { CheckResult, RegisteredCheck, Verdict } from './parity.ts'
 
@@ -92,11 +95,20 @@ export interface CheckCase extends RegisteredCheck {
 /**
  * Every ported check, in no particular order.
  *
- * EMPTY AT M4a. See the head of this file: this is the state the harness must
- * describe rather than round off, and os/verify/README.md's parity section
- * records what the two boards' oracles conclude that nothing here claims yet.
+ * One module per batch, concatenated here. The batches are separate files and
+ * not sections of this one because each carries its own reading of the image --
+ * the GPT walk, the FAT slots, the packed root -- and because M4c and M4d add
+ * to the register without touching what M4b landed.
+ *
+ * M4a left this EMPTY on purpose; M4b fills in batch 1 (GPT geometry, the boot
+ * slots' filesystems, and the RAUC contract), and what is still unclaimed stays
+ * `not-ported` rather than being rounded off to agreement.
  */
-export const CHECKS: readonly CheckCase[] = []
+export const CHECKS: readonly CheckCase[] = [
+  ...GPT_CHECKS,
+  ...SLOT_CHECKS,
+  ...RAUC_CHECKS,
+]
 
 /**
  * Refuse a register that cannot be diffed, before anything runs against it.
