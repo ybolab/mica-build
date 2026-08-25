@@ -65,12 +65,48 @@ BUNDLE_BOOT_FAT_LABEL=BOOT
 # runs on the host or inside the container: KERNEL_IMAGE, DTB,
 # ROOTFS_VERITY_IMG, ROOTFS_VERITY_ENV, BOOT_CMDLINE_A, BOOT_CMDLINE_B, CERT,
 # KEY, KEYRING, BUNDLE_OUT, BUNDLE_VERSION, BUNDLE_COMPATIBLE.
+# THE RAUC THAT BUILDS A BUNDLE MUST BE THE RAUC THAT INSTALLS IT.
+#
+# The bundle format and the slot model are a contract between two programs that
+# never meet. Until this check, nothing made them the same version: bundles
+# were built in a bookworm container (rauc 1.8) and installed by the image's
+# Debian 13 rauc (1.13). It was found by failure rather than by a check -- 1.8
+# refused the x64 slot model outright when it was finally asked to read it.
+#
+# Pinning both to "trixie" in two files would be a coincidence maintained by
+# hand. This reads the version the IMAGE recorded at its own build and compares
+# it to the one running here, so the two cannot drift without saying so.
+assert_rauc_matches_image() {
+    local report="$1" want have
+    if [ ! -f "${report}" ]; then
+        echo "error: ${report} not found; the image's RAUC version is unknown and a bundle built by an unknown-matching rauc is not one this can vouch for. Run the rootfs build first" >&2
+        exit 1
+    fi
+    want="$(sed -n 's/^RAUC_VERSION //p' "${report}" | tail -n1)"
+    have="$(dpkg-query -W -f='${Version}' rauc 2>/dev/null || true)"
+    if [ -z "${want}" ]; then
+        echo "error: ${report} records no RAUC_VERSION. It predates the check, or the rootfs build stopped emitting it -- either way the comparison would pass by finding nothing" >&2
+        exit 1
+    fi
+    if [ -z "${have}" ]; then
+        echo "error: no rauc package version here; this half of the comparison is missing and the check would be vacuous" >&2
+        exit 1
+    fi
+    if [ "${want}" != "${have}" ]; then
+        echo "error: this rauc is ${have}, the image ships ${want}. A bundle written by one version and installed by another is a format and slot-model contract nobody checked; bring the build container and the image to the same Debian release" >&2
+        exit 1
+    fi
+    echo "rauc ${have} here, ${want} in the image"
+}
+
 build() {
     local workdir stage
     workdir="$(mktemp -d)"
     trap 'rm -rf "${workdir:-}"' EXIT
     stage="${workdir}/input"
     mkdir -p "${stage}"
+
+    assert_rauc_matches_image "${ROOTFS_REPORT}"
 
     # THE BOOT HALF, which is the one thing that genuinely differs between the
     # two bootloaders (RFCT-106).
@@ -447,6 +483,7 @@ fi
 
 if host_can_build; then
     env MOS_BOARD="${MOS_BOARD}" \
+        ROOTFS_REPORT="${OUT_DIR}/rootfs-report-v2.txt" \
         KERNEL_IMAGE="${KERNEL_IMAGE}" DTB="${DTB}" \
         INITRD_IMAGE="${INITRD_IMAGE:-}" \
         ROOTFS_VERITY_IMG="${ROOTFS_VERITY_IMG}" \
@@ -476,6 +513,7 @@ else
         -e DTB="${CONTAINER_DTB}" \
         -e ROOTFS_VERITY_IMG="/work/_out/${MOS_BOARD}/rootfs-verity.img" \
         -e ROOTFS_VERITY_ENV="/work/_out/${MOS_BOARD}/rootfs-verity.env" \
+        -e ROOTFS_REPORT="/work/_out/${MOS_BOARD}/rootfs-report-v2.txt" \
         -e BOOT_CMDLINE_A="${BOOT_CMDLINE_A:+/work/_out/${MOS_BOARD}/boot-cmdline-a.txt}" \
         -e BOOT_CMDLINE_B="${BOOT_CMDLINE_B:+/work/_out/${MOS_BOARD}/boot-cmdline-b.txt}" \
         -e CERT=/keys/signer.cert.pem \
@@ -484,7 +522,7 @@ else
         -e BUNDLE_OUT="/work/_out/${MOS_BOARD}/${BUNDLE_NAME}" \
         -e BUNDLE_VERSION="${BUNDLE_VERSION}" \
         -e BUNDLE_COMPATIBLE="${BUNDLE_COMPATIBLE}" \
-        debian:bookworm-slim \
+        debian:trixie-slim \
         bash -c 'apt-get update -qq && apt-get install -y -qq --no-install-recommends \
             rauc squashfs-tools dosfstools mtools u-boot-tools jq >/dev/null && \
             exec bash /work/os/bundle.sh --build'

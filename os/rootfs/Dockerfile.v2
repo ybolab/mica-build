@@ -1123,6 +1123,21 @@ RUN set -eu; \
 # has to weigh the root that actually ships.
 RUN dpkg-query -W -f='${Package}\t${Installed-Size}\n' > /rootfs-report.pkgs
 
+# The exact RAUC the image will run, recorded so the thing that BUILDS bundles
+# can refuse to build one with a different version.
+#
+# The bundle format and the slot model are a contract between two programs that
+# never meet: rauc on a build machine writes the bundle, rauc on the device
+# installs it. Nothing made them the same version. os/bundle.sh built in a
+# bookworm container (1.8) while the image ran Debian 13's (1.13) -- and 1.8
+# would have refused this board's slot model outright had anyone asked it,
+# which is how the mismatch was found: not by a check, by a failure.
+#
+# dpkg-query rather than `rauc --version`: this stage runs under emulation for
+# a foreign-architecture board, and reading a text field cannot fail the way
+# executing a binary can.
+RUN dpkg-query -W -f='${Version}' rauc > /rootfs-report.rauc
+
 # ---------------------------------------------------------------------------
 # Remove package management from the packed root
 # ---------------------------------------------------------------------------
@@ -1270,8 +1285,9 @@ RUN set -eu; \
 # build-v2.sh weighs the root that ships rather than the one that was built.
 RUN { cat /rootfs-report.pkgs; \
       echo; \
+      echo "RAUC_VERSION $(cat /rootfs-report.rauc)"; \
       echo "TOTAL_MB $(du -sxm --exclude=/proc --exclude=/sys --exclude=/dev / 2>/dev/null | cut -f1)"; \
-    } > /rootfs-report.txt && rm -f /rootfs-report.pkgs
+    } > /rootfs-report.txt && rm -f /rootfs-report.pkgs /rootfs-report.rauc
 
 # ---------------------------------------------------------------------------
 # Pack: squashfs-zstd + appended dm-verity hash tree
