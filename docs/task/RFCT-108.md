@@ -139,3 +139,148 @@ image as content rather than as a tag -- `--output type=oci` plus
 the table is published and belongs with M2c's rewiring. Nothing in this
 repository cross-builds the builder images today, and the per-architecture
 hashes did not need it.
+
+## M2c (2026-08-25): every FROM through images.env, and the mosd cross-build inside
+
+No Dockerfile in this repository names a base image any more. All fourteen
+`FROM` lines that referenced one take it as a build argument, produced by the
+new `os/build-env/from.sh` out of `os/build-env/images.env`, and every one of
+them is declared with NO default -- so a caller that forgets the argument is
+refused by docker with "base name should not be blank" before any stage runs,
+rather than building green against a tag.
+
+The inventory, re-derived rather than taken from the milestone note:
+
+| Dockerfile | stage | was | now |
+| --- | --- | --- | --- |
+| `os/podman/Dockerfile` | src | `debian:trixie-slim` | `LOCAL_MOS_BUILD_BASE` |
+| | c-build | `debian:trixie-slim` | `LOCAL_MOS_BUILD_C` |
+| | rust-build | `rust:1.90-trixie` | `LOCAL_MOS_BUILD_RUST` |
+| | go-build | `golang:1.25-trixie` | `LOCAL_MOS_BUILD_GO` |
+| | verify | `debian:trixie-slim` | `LOCAL_MOS_BUILD_BASE` |
+| `os/update/rauc/Dockerfile` | src | `debian:trixie-slim` | `LOCAL_MOS_BUILD_BASE` |
+| | build | `debian:trixie-slim` | `LOCAL_MOS_BUILD_C` |
+| `os/rootfs/Dockerfile.v2` | certs | `debian:trixie-slim` | `IMAGE_DEBIAN_TRIXIE` |
+| | rootfs | `debian:trixie-slim` | `IMAGE_DEBIAN_TRIXIE` |
+| | pack | `debian:bookworm-slim` | `IMAGE_DEBIAN_BOOKWORM` |
+| `board/cx3576/uboot/Dockerfile` | build | `ubuntu:24.04` | `IMAGE_UBUNTU_2404` |
+| `board/cx3576/kernel/Dockerfile` | build | `ubuntu:24.04` | `IMAGE_UBUNTU_2404` |
+| `board/cx3576/Dockerfile.alpine` | assemble | `ubuntu:24.04` | `IMAGE_UBUNTU_2404` |
+| `board/cx3576/rootfs/alpine/Dockerfile` | rootfs | `ARG ALPINE_IMAGE=alpine:3.24.1@sha256:28bd…` | `IMAGE_ALPINE_3_24_1` |
+| | pack | `ubuntu:24.04` | `IMAGE_UBUNTU_2404` |
+| `os/tests/handshake-test/Dockerfile` | src | `ubuntu:24.04` | `IMAGE_UBUNTU_2404` |
+
+Three decisions M2d inherits, and one measurement that did not come out green.
+
+- **The rootfs stays on upstream digests; the component builds move onto the
+  builder family.** The distinction is what the stage does. `os/podman` and
+  `os/update/rauc` COMPILE, so they stand on `mos-build-{base,c,go,rust}` and
+  keep only their own components' `-dev` packages. `os/rootfs/Dockerfile.v2`
+  assembles the device root, and its package set IS the shipped system -- a
+  builder image under it would install git, binutils, xz, gcc and ccache into
+  the thing that boots. It gets the digest, which was the only property missing.
+  The BSP builders keep `ubuntu:24.04` by the boundary RFCT-108 states, and get
+  the digest and nothing else.
+
+- **A LOCAL_ FROM costs the multi-architecture index, and that is now the
+  binding constraint on arm64 component builds.** `debian:trixie-slim@sha256:…`
+  is an index and docker picks the manifest matching `--platform`;
+  `localhost/mos-build-c` is exactly the one architecture `make build-env` last
+  produced. So `MOS_ARCH=arm64 make podman` needs an arm64 builder family, and
+  producing one needs a builder that can both reach linux/arm64 and read a local
+  tag. Only the `docker` driver reads local tags (M2b measured the
+  docker-container driver treating `localhost/` as a registry hostname), and the
+  `docker` driver reaches linux/arm64 only where the HOST has binfmt registered.
+  `os/build-env/from.sh` refuses the mismatch by name and `os/podman/build.sh`
+  refuses the unreachable platform by name, both naming the fix. On a host with
+  `tonistiigi/binfmt --install arm64` the whole arm64 chain works with no change
+  to any file here; on this host, which has no binfmt registration at all
+  (`/proc/sys/fs/binfmt_misc` is empty and no buildx builder advertises
+  linux/arm64), it cannot run and is refused rather than attempted.
+
+- **MOS_PODMAN_STRICT and MOS_RAUC_STRICT are gone; PENDING now fails.** Both
+  defaulted to a warning, justified in comments by "which is what CI sets".
+  Nothing in this repository has ever set either one -- not
+  `.gitea/workflows/check.yml`, not `privileged.yml`, not the Makefile, not the
+  two `build.sh` scripts, which passed `${…:-0}` through. So the release path
+  and the developer path were the same warning and the sentence describing the
+  difference was the only place the difference existed. The CODE was wrong, not
+  the prose: `os/podman/versions.env` has always read "The build prints the hash
+  it computed and fails", and `os/build-env/images.env` implements exactly that.
+  A build that warns while its documentation says it fails teaches a reader to
+  stop believing the documentation.
+
+- **The mosd acceptance clause is NOT satisfied, and the reason is precise.**
+  RFCT-108 asks that the containerised cross-build produce "identical binaries
+  from the container as the host build did (same rustc, `--locked`)". Both
+  controls hold literally: the host's rustc 1.98.0 and `mos-build-rust`'s are
+  the SAME FILE (sha256 `3690cc576ede…93e2`), as is the aarch64 `libstd` rlib
+  (`42af98a620b4…31fd`), because rustup's channel artifacts and the standalone
+  tarball `images.env` pins are the same upstream bytes; `--locked` was passed
+  on both sides; `CARGO_HOME`, the workspace path and `CARGO_TARGET_DIR` were
+  held to the same absolute paths, and the target directory was wiped between
+  runs so cargo could not return the first build's output as fresh.
+
+  All four binaries differ. **220 of the 221 rlibs are byte-identical.** The one
+  exception is `libring-*.rlib`, and its 40 object files carry
+  `GCC: (Ubuntu 11.4.0-1ubuntu1~22.04.3)` on the host side and
+  `GCC: (Debian 14.2.0-19)` in the container: `ring` compiles C and assembly
+  through the `cc` crate with whichever cross compiler is present, and that
+  compiler also drives the final link. So containerising did not change what
+  rustc produced from this source; it changed which C toolchain compiles one
+  crate and links the result -- which is not the container boundary but the
+  container CONTENTS, and is the thing decision 4 deliberately changed. Two
+  independent container runs produce byte-identical binaries, so the difference
+  is not nondeterminism.
+
+  The clause as written therefore cannot be satisfied on any machine whose host
+  cross-gcc differs from the pinned builder's, which is every machine that does
+  not already run Debian trixie. **This is left red for the gate to rule on;
+  RFCT-108's acceptance text is not amended here.**
+
+  What IS established, and is arguably the property the clause was reaching for:
+  `mosd/hack/build-aarch64.sh` is byte-reproducible with itself. Two independent
+  runs with `mosd/target` deleted between them produce identical `mosd`, `apid`,
+  `mos-mqttd` and `mos-mqtt-broker`. Before M2c the same question could not be
+  asked of the host path at all, because what it produced depended on whichever
+  rustup the machine happened to carry.
+
+  A related correction to the record: the machine this ran on DOES have a host
+  Rust toolchain. `command -v cargo` is empty because `~/.cargo/bin` is not on
+  the ambient PATH -- and the pre-M2c `build-target.sh` prepended it itself, so
+  the historical path was runnable. `~/.rustup/toolchains/` holds nine
+  toolchains dating from 2026-04-17, of which exactly one (1.96.0) carries the
+  `aarch64-unknown-linux-gnu` std the cross build needs. Installing 1.98.0 to
+  build the comparison side also set it as rustup's default, overwriting the
+  previous setting, which is not recoverable.
+
+What was run, and what was not. Green from pinned digests on this host: the four
+builder images; podman's seven binaries for amd64; rauc for amd64; the cx3576
+u-boot and kernel BSP builders (both `--platform=$BUILDPLATFORM` cross builds,
+so they run natively); the offline U-Boot handshake harness. NOT run: anything
+targeting linux/arm64 -- podman, rauc and the rootfs for cx3576 -- because no
+builder on this host advertises that platform and there is no binfmt
+registration to give it one. The x64 rootfs was not built either; it is a
+forty-minute assembly whose FROM rewiring is exercised by the same
+`os/build-env/from.sh` call the other builds prove.
+
+Beyond the switchover, `podman`, `quadlet`, `crun`, `conmon`, `catatonit`,
+`netavark`, `aardvark-dns` and `rauc` were each EXECUTED and asked for their
+version, in the digest-pinned trixie with the sonames `NEEDED.txt` names
+installed, and each reported exactly what `versions.env` pins. `podman info`
+(privileged, for the user-namespace re-exec) resolves its own crun and reports
+`netavark 2.1.0` as the network backend. What compiled each was read back out of
+the artefact rather than assumed: `go version -m` says `go1.26.7` for podman and
+quadlet, `.comment` says `GCC (Debian 14.2.0-19)` for the C components and rauc,
+and the Rust binaries' std paths name rustc commit `88d9e12ae178…` -- 1.98.0.
+
+Known gap this milestone did not close, recorded rather than left implicit:
+three Dockerfiles written as HEREDOCS inside test scripts still name a base
+image directly -- `os/tests/mkimage-v2-selftest.sh:280` and
+`os/tests/repart-loader-test.sh:79` (`alpine:3.21`) and
+`os/tests/quadlet-doc-test.sh:91` (`debian:trixie-slim`) -- as do six
+`docker run` base images in `os/tests/repart-loader-test.sh`,
+`os/tools/qemu-run.sh`, `os/tools/qemu-journal.sh` and
+`.gitea/workflows/privileged.yml`. They are floats of the same kind. They were
+left because RFCT-108's scope line is about Dockerfiles' `FROM`, and because the
+first of them is a file R5 is live in.
