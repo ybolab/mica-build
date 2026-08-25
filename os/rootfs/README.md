@@ -253,7 +253,7 @@ above and apply identically here) **plus**:
   slot good, and every update rolls back. 47 KB.
 - **`libubootenv-tool`** — provides `fw_printenv` / `fw_setenv`. RAUC's U-Boot
   backend needs it, and so does the first-boot machine-id oneshot (RFCT-015).
-- **`curl`** — the health gate's apid probe (`os/health/mos-health`) fetches
+- **`curl`** — the health gate's apid probe (`os/rootfs/overlay-v2/usr/lib/mos/mos-health`) fetches
   `https://127.0.0.1/healthz`. It prefers `curl`, falls back to `wget`, and
   SKIPs when neither is present. `rauc` links libcurl but does not ship the
   binary, so without this package the gate reported green while covering two of

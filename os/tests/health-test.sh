@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
-# Offline tests for os/health. Every external command the scripts call (rauc,
-# systemctl, busctl, curl, df, fw_setenv, fw_printenv) is faked in a $TMPDIR
-# directory prepended to PATH, so no host state is ever read or written: the
-# real rauc/systemctl are never invoked and no U-Boot environment is touched.
+# Offline tests for the health gate and the machine-id oneshot. Every external
+# command the scripts call (rauc, systemctl, busctl, curl, df, fw_setenv,
+# fw_printenv) is faked in a $TMPDIR directory prepended to PATH, so no host
+# state is ever read or written: the real rauc/systemctl are never invoked and
+# no U-Boot environment is touched.
 #
 #   bash os/tests/health-test.sh
 # The fake bodies below are shell source passed as literal strings; their `$`
@@ -11,8 +12,12 @@
 set -euo pipefail
 
 HERE=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
-# The scripts under test stay in os/health/; this test moved out of it.
-HEALTH=$HERE/../health
+# The scripts under test are the ones that SHIP: the overlay is copied into the
+# image verbatim by the v2 rootfs build, so testing that copy tests the file the
+# device runs. There used to be a second, byte-identical copy under os/health/
+# that this pointed at instead; RFCT-111 collapsed it (see the note at the foot
+# of this file).
+HEALTH=$HERE/../rootfs/overlay-v2/usr/lib/mos
 WORK=$(mktemp -d)
 trap 'rm -rf "$WORK"' EXIT
 PASS=0
@@ -340,19 +345,27 @@ check "already set -> exit 0" "0" "$rc"
 check "already set -> no rewrite" "no" \
     "$(grep -q '^fw_setenv machine_id' "$CALLS" && echo yes || echo no)"
 
-# --- staged overlay copies must not drift from the sources ------------------
-OVERLAY=$HERE/../rootfs/overlay-v2
-for pair in \
-    "mos-health:$OVERLAY/usr/lib/mos/mos-health" \
-    "mos-machine-id:$OVERLAY/usr/lib/mos/mos-machine-id" \
-    "mos-health.service:$OVERLAY/usr/lib/systemd/system/mos-health.service" \
-    "mos-machine-id.service:$OVERLAY/usr/lib/systemd/system/mos-machine-id.service" \
-    "health.conf:$OVERLAY/etc/mos/health.conf"; do
-    src=${pair%%:*}
-    dst=${pair#*:}
-    check "overlay copy in sync: $src" "yes" \
-        "$(cmp -s "$HEALTH/$src" "$dst" && echo yes || echo no)"
-done
+# --- the five "overlay copy in sync" checks that used to close this file -----
+#
+# They are GONE, and the count moved 62 -> 57 for that reason and no other.
+#
+# What they checked: that os/health/mos-health, mos-machine-id, their two units
+# and health.conf had not drifted from the byte-identical second copies under
+# os/rootfs/overlay-v2/. Two copies of a file kept in step by whoever remembers
+# both, with os/health/sync-overlay.sh to re-copy them and these five `cmp`s to
+# notice when someone forgot.
+#
+# RFCT-111 deleted os/health/ and sync-overlay.sh with it. The overlay is what
+# the image build copies in, so the overlay is the only copy there is -- and
+# there is no longer a second file for the first to drift from. That is why
+# these checks were removed rather than rewritten: a check needs two operands,
+# and one of them no longer exists. Nothing that used to fail here can now
+# happen and go unnoticed; it cannot happen.
+#
+# The tests ABOVE are what took over: HEALTH now resolves into the overlay, so
+# every one of the 57 remaining checks runs the shipping file directly. Before
+# this change they ran the os/health/ copy and trusted these five to tell them
+# it matched.
 
 echo
 echo "RESULT: $([ "$FAIL" -eq 0 ] && echo PASS || echo FAIL) ($PASS/$((PASS + FAIL)) checks)"
