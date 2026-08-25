@@ -12,14 +12,14 @@
 # definition, because that is the smallest thing in the tree that every other
 # thing reads: os/boards/<board>/board.env, parsed as DATA rather than sourced.
 #
-# THE SEAM FOR THE TOOL-LESS HOST. Exactly one function below decides how bun
-# is invoked -- run_bun. Today it runs whatever bun it can find on the host.
-# RFCT-109's remaining half puts a pinned container in front of that decision,
-# with the digest recorded in os/build-env/images.env, and nothing outside
-# run_bun should need to change for it: every caller passes an argv and reads
-# an exit status. The manual command that works in the meantime is in the
-# refusal below, so a host without bun is told what to run rather than left
-# with "command not found".
+# THE SEAM FOR THE TOOL-LESS HOST, now closed. Exactly one function below
+# decides how bun is invoked -- run_bun -- and it has two routes: a bun binary
+# on the host, or the digest-pinned bun container recorded as IMAGE_BUN_1 in
+# os/build-env/images.env. Every caller passes an argv and reads an exit status
+# and cannot tell which route it got, which is what makes a host with no bun a
+# SUPPORTED host rather than a documented limitation. Before M3b that was a
+# nicety; since M3b it is a regression-closer, because os-layout-lint used to
+# run on bare bash and now needs bun like the suite does.
 #
 # ZERO TESTS IS A FAILURE, AND BUN DOES NOT AGREE. Measured with bun 1.4.0 on
 # 2026-08-25: `bun test` exits 1 when no test FILE matches its glob, but exits
@@ -59,8 +59,15 @@ layouts instead of the suite -- `make os-layout-lint`. Same install, same
 typecheck, same bun; only the last step differs. The flag has to come first so
 that it can never be mistaken for a `bun test` filter.
 
+A host with no bun runs the same steps in the bun container pinned by digest as
+IMAGE_BUN_1 in os/build-env/images.env. That route is taken automatically; it
+needs docker, and it is announced on the first line of output so a run is never
+ambiguous about which bun produced it.
+
 environment:
-  MOS_VERIFY_BUN   the bun binary to use, instead of searching PATH and ~/.bun
+  MOS_VERIFY_BUN         the bun binary to use, instead of searching PATH and ~/.bun
+  MOS_VERIFY_CONTAINER=1 use the pinned container even where a host bun exists,
+                         which is how the two routes are compared on one host
 USAGE
 }
 
@@ -98,36 +105,177 @@ if [ "${MODE}" = lint ]; then
     set -- ${ABS[@]+"${ABS[@]}"}
 fi
 
-# --- how bun is invoked, and the only place that decides -------------------
+# --- how bun is invoked, and the only place that decides ---------------------
+# Two routes, one seam. A bun binary on the host, or the digest-pinned bun
+# container. The choice is made once, here, and announced.
+ROUTE=host
+WHY=""
 BUN="${MOS_VERIFY_BUN:-}"
-if [ -z "${BUN}" ]; then
+
+# An explicit binary and an explicit container are contradictory instructions.
+# Honouring one silently would run a bun other than the one that was asked for,
+# and the whole point of pinning is that which bun ran is never a guess.
+if [ -n "${BUN}" ] && [ "${MOS_VERIFY_CONTAINER:-0}" = 1 ]; then
+    echo "error: MOS_VERIFY_BUN names a binary and MOS_VERIFY_CONTAINER asks for the pinned" >&2
+    echo "       container. Those are two different buns; set one or the other, not both." >&2
+    exit 1
+fi
+
+if [ "${MOS_VERIFY_CONTAINER:-0}" = 1 ]; then
+    ROUTE=container
+    WHY="MOS_VERIFY_CONTAINER=1"
+elif [ -z "${BUN}" ]; then
     if command -v bun >/dev/null 2>&1; then
         BUN="$(command -v bun)"
     elif [ -x "${HOME:-/root}/.bun/bin/bun" ]; then
         BUN="${HOME:-/root}/.bun/bin/bun"
+    else
+        ROUTE=container
+        WHY="no bun on this host"
     fi
 fi
 
-if [ -z "${BUN}" ]; then
-    echo "error: no bun on this host, and the pinned-container fallback is not wired up yet (RFCT-109)." >&2
-    echo "       Set MOS_VERIFY_BUN to a bun binary, or run the suite in a container from the repository root:" >&2
-    echo "" >&2
-    echo "         docker run --rm -v \"\$(git rev-parse --show-toplevel):/w\" -w /w/os/verify \\" >&2
-    echo "           oven/bun:1 sh -c 'bun install && bun run typecheck && bun test'" >&2
-    echo "" >&2
-    echo "       Mount the REPOSITORY, not a temporary directory: a /tmp mount does not propagate" >&2
-    echo "       to the docker daemon on this host and silently yields an empty directory." >&2
-    exit 1
+MOUNTS=()
+BUN_IMAGE=""
+BUN_VERSION=""
+
+if [ "${ROUTE}" = host ]; then
+    BUN_VERSION="$("${BUN}" --version 2>/dev/null || echo '?')"
+else
+    command -v docker >/dev/null 2>&1 || {
+        echo "error: no bun on this host, and no docker to run the pinned one in." >&2
+        echo "       os/verify needs one of the two. Either install bun, or set MOS_VERIFY_BUN to a" >&2
+        echo "       bun binary, or install docker -- the bun this tree runs is recorded as" >&2
+        echo "       IMAGE_BUN_1 in os/build-env/images.env and needs a container runtime to be it." >&2
+        exit 1
+    }
+
+    # ONE resolver, the tree's own. from.sh validates that the key exists, is a
+    # digest and not a tag, and is well formed, and it says so naming the key
+    # and the file -- so none of that is restated here.
+    BUN_IMAGE="$(bash "${REPO_ROOT}/os/build-env/from.sh" --ref IMAGE_BUN_1)" || exit 1
+
+    # A digest that is well formed and WRONG is the one failure from.sh cannot
+    # see: it checks the shape of a reference, not that a registry has it. Left
+    # to the `docker run` below, that arrives as exit 125 with a manifest error
+    # -- and 125 at this seam is indistinguishable from bun itself exiting 125.
+    # So the image is obtained ONCE, here, where the failure can still be
+    # attributed to the key that carries it.
+    if ! docker image inspect "${BUN_IMAGE}" >/dev/null 2>&1; then
+        echo "os/verify: ${BUN_IMAGE} is not in the local image store; pulling it"
+        docker pull -q "${BUN_IMAGE}" >/dev/null 2>&1 || {
+            echo "error: IMAGE_BUN_1=${BUN_IMAGE} could not be obtained." >&2
+            echo "       That key in os/build-env/images.env is this tree's record of which bun it runs." >&2
+            echo "       The reference is well formed -- from.sh just checked that -- so what failed is" >&2
+            echo "       the lookup: either no image has that digest, or this host cannot reach the" >&2
+            echo "       registry. A run that continued past this would be a run by an unknown bun." >&2
+            exit 1
+        }
+    fi
+
+    # WHY THE REPOSITORY IS MOUNTED AT ITS OWN PATH, and not at /w or /work like
+    # the two image assemblers. Those containers RUN A SCRIPT and build their
+    # paths inside; this one is a TOOL handed paths from outside. The lint's file
+    # arguments were absolutised against the caller's cwd above, and paths.ts
+    # resolves the shipped boards by climbing from import.meta.dir -- both
+    # produce HOST absolute paths. Under a /w mount they would name nothing
+    # inside the container, and the fix for that would be a prefix rewrite: a
+    # second path arithmetic, on the one input whose identity the verdict is
+    # about. Mounted at its own path there is no rewrite to get wrong and no
+    # arithmetic to go stale -- the same bytes answer to the same name on both
+    # routes, which is what makes the two runs comparable verdict for verdict.
+    # os/tests/mkimage-v2-selftest.sh and mkimage-x64-selftest.sh mount ${WORK}
+    # at ${WORK} for their tool containers and say so in the same terms.
+    MOUNTS=(-v "${REPO_ROOT}:${REPO_ROOT}")
+
+    # A board file OUTSIDE the repository is a case the host route serves and so
+    # this one must too: its directory is mounted at its own path as well. Read
+    # only -- the lint never writes to what it is checking.
+    NEED_SEEN=()
+    if [ "${MODE}" = lint ]; then
+        for arg in "$@"; do
+            case "${arg}" in -*) continue ;; esac
+            argdir="$(dirname "${arg}")"
+            # A directory that is not there means the FILE is not there, and
+            # that is the lint's own error to report, in its own words.
+            [ -d "${argdir}" ] || continue
+            argdir="$(cd "${argdir}" && pwd)"
+            case "${argdir}/" in "${REPO_ROOT}/"*) continue ;; esac
+            # `if`, not `[ ... ] && seen=1`: a bare && list whose test fails on
+            # the last iteration leaves the loop with status 1, and this script
+            # runs under `set -e`. Two files in one directory is the case that
+            # would have reached it.
+            seen=0
+            for m in ${MOUNTS[@]+"${MOUNTS[@]}"}; do
+                if [ "${m}" = "${argdir}:${argdir}:ro" ]; then seen=1; fi
+            done
+            if [ "${seen}" = 0 ]; then MOUNTS+=(-v "${argdir}:${argdir}:ro"); fi
+            NEED_SEEN+=("${arg}")
+        done
+    fi
+
+    # THE MOUNT THAT SUCCEEDS AND CARRIES NOTHING. On this host a bind mount of
+    # anything under /tmp propagates as an EMPTY DIRECTORY rather than failing:
+    # measured 2026-08-25, `docker run -v /tmp/d:/tmp/d ... cat /tmp/d/f` reports
+    # "No such file or directory" for a file the host reads fine.
+    #
+    # WHAT THIS GUARD IS AND IS NOT, measured rather than assumed. It is NOT the
+    # only thing between that mount and a green run: with this check disabled,
+    # all three ways in still fail, and all three exit 1 -- the lint's own
+    # existsSync says "<path> not found", `bun test` over a vanished package
+    # says "No tests found!", and `bun run src/lint-cli.ts` says "Module not
+    # found". Nothing reports a false green, and a comment claiming otherwise
+    # would be exactly the kind of unchecked assertion this package exists to
+    # catch -- so it was driven, and then rewritten.
+    #
+    # What it buys is the CAUSE. Each of those three sentences describes a file
+    # that is missing, and on this route the file is not missing -- the mount is
+    # empty, and the file is exactly where the caller said it was. A reader sent
+    # to look for a path they can `cat` is being sent to the wrong edit, which is
+    # the same defect M3b recorded when lint.sh said "declares no X" about a file
+    # containing X="". So every path the run depends on is asserted VISIBLE
+    # INSIDE THE CONTAINER first, and the refusal names the mount. One container,
+    # ~260ms, and it carries the version too, so it costs no extra start over the
+    # `bun --version` the host route prints.
+    PREFLIGHT=("${HERE}/package.json" "${HERE}/src/lint-cli.ts")
+    PREFLIGHT+=(${NEED_SEEN[@]+"${NEED_SEEN[@]}"})
+    probe="$(docker run --rm "${MOUNTS[@]}" "${BUN_IMAGE}" \
+        sh -c 'bun --version; for f in "$@"; do [ -e "$f" ] || printf "unseen:%s\n" "$f"; done' \
+        sh "${PREFLIGHT[@]}" 2>&1)" || {
+        echo "error: the pinned bun container would not start." >&2
+        printf '%s\n' "${probe}" >&2
+        exit 1
+    }
+    BUN_VERSION="$(printf '%s\n' "${probe}" | head -n 1)"
+    unseen="$(printf '%s\n' "${probe}" | sed -n 's/^unseen://p')"
+    if [ -n "${unseen}" ]; then
+        echo "error: the pinned bun container cannot see paths that this host can:" >&2
+        printf '%s\n' "${unseen}" | while IFS= read -r u; do echo "         ${u}" >&2; done
+        echo "       The mount succeeded and delivered nothing, which is how a bind mount of /tmp" >&2
+        echo "       behaves on this host. Without this check the run would still have failed -- but" >&2
+        echo "       it would have failed saying the file was not found, and the file IS there; it is" >&2
+        echo "       the mount that is empty. Put it somewhere the docker daemon can actually share" >&2
+        echo "       (inside the repository, or under _out/ or /srv), or run on a host with bun so no" >&2
+        echo "       mount is involved." >&2
+        exit 1
+    fi
 fi
 
 run_bun() {
-    # The seam. Everything above and below passes an argv and reads a status;
-    # replacing this body with a `docker run ... "${BUN_IMAGE}" bun "$@"` is the
-    # whole of the tool-less-host path.
-    ( cd "${HERE}" && "${BUN}" "$@" )
+    # The seam. Everything above and below passes an argv and reads a status,
+    # and neither can tell which of the two routes answered.
+    if [ "${ROUTE}" = container ]; then
+        docker run --rm "${MOUNTS[@]}" -w "${HERE}" "${BUN_IMAGE}" bun "$@"
+    else
+        ( cd "${HERE}" && "${BUN}" "$@" )
+    fi
 }
 
-echo "os/verify: $("${BUN}" --version 2>/dev/null || echo '?') at ${BUN}"
+if [ "${ROUTE}" = container ]; then
+    echo "os/verify: ${BUN_VERSION} in ${BUN_IMAGE} (${WHY})"
+else
+    echo "os/verify: ${BUN_VERSION} at ${BUN}"
+fi
 
 # --- dependencies ------------------------------------------------------------
 # `bun test` needs none of this -- bun:test and the node: builtins are in the

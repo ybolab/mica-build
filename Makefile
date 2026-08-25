@@ -252,11 +252,14 @@ os-uboot-handshake-test:
 # are what the help lists, what two board.env files cite and what a person
 # types, and what moved is the implementation, not the question being asked.
 #
-# Both go through os/verify/run.sh so that there is still exactly ONE place
-# deciding how bun is invoked -- the seam RFCT-109's remaining half replaces
-# with a pinned container. os-layout-lint-test is os-verify-test filtered to the
-# lint's own cases; run.sh's vacuity guard counts `Ran N tests`, so a filter
-# that matched nothing is red rather than green.
+# Both go through os/verify/run.sh so that there is exactly ONE place deciding
+# how bun is invoked -- which is what let the pinned-bun container become a
+# second route inside that one function rather than a second way in. These two
+# targets used to run on bare bash; since the lint was ported they need bun,
+# and on a host without one they run it in the container pinned as IMAGE_BUN_1.
+# os-layout-lint-test is os-verify-test filtered to the lint's own cases;
+# run.sh's vacuity guard counts `Ran N tests`, so a filter that matched nothing
+# is red rather than green.
 os-layout-lint:
 	bash os/verify/run.sh --lint
 
@@ -268,9 +271,9 @@ os-layout-lint-test:
 # os/verify/run.sh finds bun, installs the dev dependencies if they are absent,
 # typechecks and runs the suite -- and turns a run that asserted nothing red,
 # which bun does not: measured with bun 1.4.0, `bun test` exits 0 on a test file
-# that declares no tests. The tool-less-host path (a pinned bun container) lands
-# with the rest of RFCT-109; until it does, the script names the docker command
-# that stands in for it rather than failing as "bun: command not found".
+# that declares no tests. A host with no bun runs all of that in the container
+# pinned as IMAGE_BUN_1 in os/build-env/images.env, automatically and with the
+# route announced; CI installs no bun, so that is the route it takes.
 os-verify-test:
 	bash os/verify/run.sh
 

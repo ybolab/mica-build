@@ -1,10 +1,11 @@
 # RFCT-109 PLAN-014 M3: the bun+TS foundation, proven on the board-definition lint
 
-- **status**: in progress
+- **status**: completed
 - **priority**: P1
 - **owner**: ai-agent
 - **createdAt**: 2026-08-25 10:50
 - **claimedAt**: 2026-08-25 20:00
+- **completedAt**: 2026-08-25 21:28
 - **plan**: PLAN-014 (M3)
 
 Bootstrap `os/verify/` as a bun+TypeScript package in the `test/apid-api`
@@ -280,3 +281,208 @@ make os-layout-lint-test     RESULT: PASS (42/42 tests)    was 17/17
 make os-verify-test          RESULT: PASS (108/108 tests)  was 66/66
 make os-shell-pipefail-lint  RESULT: PASS (34/34 files)    was 36/36, minus the two deleted
 ```
+
+## M3c — the tool-less host, and M3 closed (landed)
+
+The third of three parts, and the gate. `os/verify/run.sh` grows a second route
+inside `run_bun` — the bun pinned as `IMAGE_BUN_1` in `os/build-env/images.env`
+— and CI is wired to take it. RFCT-109's third acceptance clause was the only
+one outstanding; it is met, and M3 is **completed**.
+
+Since M3b this clause is a **regression-closer rather than a nicety**.
+`os-layout-lint` used to run on bare bash; the port made it bun-dependent, along
+with `os-verify-test` and `os-layout-lint-test`. Before M3c a host with only
+docker could not check a board definition at all.
+
+### The seam took a second route, not a second entry point
+
+```sh
+run_bun() {
+    if [ "${ROUTE}" = container ]; then
+        docker run --rm "${MOUNTS[@]}" -w "${HERE}" "${BUN_IMAGE}" bun "$@"
+    else
+        ( cd "${HERE}" && "${BUN}" "$@" )
+    fi
+}
+```
+
+Both callers — `run_bun run src/lint-cli.ts` and `run_bun test` — are unchanged,
+as is the install. The route is chosen once and **announced on the first line**,
+because a run that cannot say which bun produced it is a run whose pin is
+decorative.
+
+| condition | route |
+|---|---|
+| `MOS_VERIFY_BUN` | that binary |
+| `MOS_VERIFY_CONTAINER=1` | the pinned container, even where a host bun exists |
+| both | **refused** — two different buns |
+| `bun` on `PATH`, else `~/.bun/bin/bun` | that binary |
+| neither | the pinned container |
+| neither, and no docker | **refused**, naming both |
+
+`IMAGE_BUN_1` is consumed through `os/build-env/from.sh --ref` — the one
+resolver. Nothing here re-pins it or re-validates it, and its comment, which
+said nothing read the key yet, now says what does.
+
+### The mount is an identity mount, and that is the whole of the path problem
+
+`-v "${REPO_ROOT}:${REPO_ROOT}"`, not `/w` (x64's assembler) or `/work`
+(cx3576's). Those containers **run a script** and construct their paths inside.
+This one is a **tool handed paths from outside**: `--lint` absolutises its file
+arguments against the caller's cwd before `run_bun` sees them, and `paths.ts`
+resolves the shipped boards by climbing from `import.meta.dir`. Both produce
+*host* absolute paths, which under a `/w` mount name nothing inside the
+container.
+
+The alternative was a prefix rewrite — a second path arithmetic, on the one
+input whose identity the verdict is about, and the exact mechanism by which a
+container could lint a *different file* and report a green about it. An identity
+mount has no rewrite to get wrong: the same bytes answer to the same name on
+both routes. `os/tests/mkimage-v2-selftest.sh:292` and
+`mkimage-x64-selftest.sh:220` mount `${WORK}` at `${WORK}` for their tool
+containers and state the reason in the same terms — "so every file argument
+resolves identically". A board file outside the repository gets its directory
+mounted at its own path too, read-only.
+
+### The no-bun demonstration
+
+A stock system `PATH` under `env -i`, with a `HOME` that has no `.bun`. This
+host keeps bun at `/srv/bkd/runtime/bun` and `/root/.bun/bin/bun`; neither
+`/usr/bin` nor `/bin` contains one, so the environment genuinely cannot find
+bun — `command -v bun` fails and `bun --version` is "command not found".
+
+```
+env -i PATH=/usr/bin:/bin HOME=<no .bun> make os-layout-lint       26/26   rc=0
+env -i PATH=/usr/bin:/bin HOME=<no .bun> make os-layout-lint-test  42/42   rc=0
+env -i PATH=/usr/bin:/bin HOME=<no .bun> make os-verify-test     108/108   rc=0
+```
+
+Each announced `1.4.0 in oven/bun:1@sha256:5ff6… (no bun on this host)`. Also
+run with `node_modules/` moved aside, so `bun install --frozen-lockfile` ran
+**inside the container** too: install, typecheck, 108/108, rc=0.
+
+### The two routes agree, on ten cases
+
+Both shipped boards (each alone and together), four negative fixtures built from
+the real x64 layout, a copy outside the repository, and a mixed in-repo /
+out-of-repo run. Every one: **identical exit status, identical stdout,
+identical stderr.**
+
+The streams were compared **separately**, and that is not pedantry. Compared as
+one interleaved capture, two of the ten appear to differ — docker delivers
+stderr ahead of stdout where a native process writing to a single redirected
+file does not. The lines are the same lines in a different order, and a
+comparison that had stopped at the interleaved diff would have reported a
+divergence that does not exist.
+
+### Driven from the failing side
+
+| driven | result |
+|---|---|
+| `IMAGE_BUN_1` = well-formed digest naming no image | refused **by the key**, before any run |
+| `IMAGE_BUN_1` = a tag | `from.sh`'s refusal, naming key and file |
+| `IMAGE_BUN_1` removed | `from.sh`'s refusal, naming key and file |
+| board file under `/tmp`, container route | refused, naming the path **and the empty mount** |
+| no bun **and** no docker | refused, naming bun, `MOS_VERIFY_BUN` and `IMAGE_BUN_1` |
+| `MOS_VERIFY_BUN` + `MOS_VERIFY_CONTAINER` | refused as contradictory |
+| CI precondition step, on a host that has bun | red — the route would not have been taken |
+| CI suite step, forced onto a host bun | **108/108 and rc=1** — passed on the wrong bun |
+
+All `images.env` mutations were reverted and `git diff` is clean.
+
+The wrong-digest case is the one the seam has to catch itself. `from.sh`
+validates the *shape* of a reference, not that a registry has it; left to
+`docker run`, a bad digest arrives as exit 125, which at this seam is
+indistinguishable from bun exiting 125. So the image is obtained once, up front,
+where the failure can still be attributed to the key that carries it.
+
+### What the visibility guard actually buys — measured, not assumed
+
+A bind mount of `/tmp` on this host **succeeds and delivers an empty directory**.
+So every path a run depends on is asserted visible inside the container first.
+
+The first draft of that guard's comment claimed it was what stood between an
+empty mount and a green run. Driven with the refusal disabled, **that is false**
+and the comment was corrected before it shipped: all three ways in fail and all
+three exit 1 — the lint's `existsSync` says `<path> not found`, `bun test` over
+a vanished package says `No tests found!` (exit 1, not the 0 it gives a file
+declaring no tests), and `bun run src/lint-cli.ts` says `Module not found`.
+
+What it buys is the **cause**. Each of those sentences describes a missing file,
+and on this route the file is exactly where the caller said it was — it is the
+mount that is empty. That is the same defect M3b recorded in `lint.sh`, which
+said "declares no X" about a file containing `X=""`. Worth 260 ms; not worth a
+false claim.
+
+### CI: the decision is that CI installs no bun
+
+Which bun CI installs *is* the pin decision. It installs none. The runner has no
+bun of its own, so `run.sh` takes the container route and runs the digest —
+the same bun a developer without one gets, on every push. Installing one instead
+meant either a floating `curl bun.sh/install`, the loosest kind of reference R6
+spent a sweep removing, or a second pin in a second place free to disagree with
+the first. This way the tool-less-host path is not a claim tested once by hand:
+it is the path CI takes, so it goes red the day it stops working.
+
+A **separate `os-verify` job**, not a step in `offline-suites`, whose first
+sentence is that its suites need neither root nor docker. This one needs docker,
+and a scope statement that quietly stopped being true would cost more than a job.
+
+Two preconditions, because a green tick has to be about the route it claims. A
+runner that *had* bun would pass the suite on that bun and never touch the pin,
+so that is asserted before the suite; and because the exit status proves the
+tests ran but not which bun ran them, the announce line is grepped for the
+reference `from.sh` resolves. Both were driven: forced onto a host bun the suite
+still reports 108/108 and the step exits 1.
+
+**The bun precondition was too strict on its first draft**, and driving it is
+what found that. It tested `[ -e "$HOME/.bun" ]`, where `run.sh` tests for an
+executable at `$HOME/.bun/bin/bun`; `bun install` creates `$HOME/.bun/install/
+cache` as a side effect even when the binary lives elsewhere, so the looser test
+rejects a runner that is genuinely bun-less. A precondition stricter than the
+rule it guards fails honest runs. Fixed to test exactly what `run.sh` tests.
+
+**Coverage, stated honestly.** This is an increase, not a like-for-like
+replacement: neither `os-layout-lint` nor `os-layout-lint-test` ran in CI
+before, so the board-definition schema is checked on push for the first time,
+and since M3b the lint's 42 cases ride along inside `os-verify-test`.
+`os-shell-pipefail-lint` is still **not** wired — it needs neither bun nor
+docker, and is named in the job summary rather than left to be rediscovered.
+
+**Not executed here.** The workflow itself was not run — there is no runner in
+this environment. What was run is each step's script, verbatim from the YAML,
+in the environment it targets: the precondition passes on a bun-less host and
+fails on this one, and the suite step passes bun-less and fails when forced onto
+a host bun. Whether the Gitea `ubuntu-latest` runner provides a usable docker is
+the one thing that could not be checked from here; if it does not, the job fails
+loudly on its first step naming what is missing, rather than skipping.
+
+### The floor
+
+```
+make docs-verify              375/375
+make docs-verify-test         8/8
+make os-shell-pipefail-lint   34/34
+make os-layout-lint           26/26
+make os-layout-lint-test      42/42
+make os-verify-test           108/108
+make os-mkimage-v2-test       166 PASS
+make os-mkimage-x64-test      PASS=196
+make build-env                12 Dockerfile(s) agree
+```
+
+`shellcheck` (koalaman/shellcheck:stable) is clean on the rewritten `run.sh`.
+
+### The parity table was not re-derived
+
+One of its two sides is deleted, so it cannot be re-run from the working tree,
+and reading it is not checking it. The recipe from `d33e929` is in
+`os/verify/HARNESS.md`. M3c did not resurrect the shell pair to compare against.
+
+### Nothing was amended
+
+No acceptance clause turned out unsatisfiable, and this gate amended no part of
+its own task record. Two defects found in code under test — the CI precondition
+and the visibility-guard comment — were in code this change itself introduced,
+and were fixed here rather than recorded, which is the opposite case to M3b's
+findings in `lint.sh`.

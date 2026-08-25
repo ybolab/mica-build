@@ -131,7 +131,7 @@ Each task is a single line linking to its detail file. All detailed information 
 - [x] [**RFCT-106 x64 A/B: the update has to land where the firmware actually looks**](RFCT-106.md) `P0`
 - [x] [**RFCT-107 PLAN-014 M1: delete v1 and restructure the os/ tree without changing a byte of the image**](RFCT-107.md) `P1`
 - [x] [**RFCT-108 PLAN-014 M2: the pinned build-environment image family**](RFCT-108.md) `P1`
-- [ ] [**RFCT-109 PLAN-014 M3: the bun+TS foundation, proven on the board-definition lint**](RFCT-109.md) `P1`
+- [x] [**RFCT-109 PLAN-014 M3: the bun+TS foundation, proven on the board-definition lint**](RFCT-109.md) `P1`
 - [ ] [**RFCT-110 PLAN-014 M4: the image-contract verifier ported to TS under a per-check parity gate**](RFCT-110.md) `P1`
 - [ ] [**RFCT-111 PLAN-014 M5: the rootfs build split into one Dockerfile per stage, driven from TS**](RFCT-111.md) `P1`
 - [ ] [**RFCT-112 PLAN-014 M6: the assemblers ported to TS under the byte-identity gate**](RFCT-112.md) `P1`

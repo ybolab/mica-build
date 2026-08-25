@@ -9,7 +9,8 @@
     bash os/verify/run.sh -t "arith"    # extra arguments go to `bun test`
     bash os/verify/run.sh --lint FILE   # the lint instead of the suite
 
-It finds bun, installs the dev dependencies if `node_modules/` is absent,
+It finds bun — on the host, or failing that in the container pinned as
+`IMAGE_BUN_1` — installs the dev dependencies if `node_modules/` is absent,
 typechecks `src/`, runs the suite, and then checks the suite actually ran.
 
 `--lint` is a MODE and is recognised only in first position, so it can never be
@@ -49,7 +50,12 @@ each returns 1:
 
 | driven | what it printed |
 |--------|-----------------|
-| bash present, no bun on `PATH`, no `~/.bun` | the container command to run instead |
+| bash present, no bun on `PATH`, no `~/.bun` | runs the pinned container — `26/26`, `42/42`, `108/108`, from a stock `PATH=/usr/bin:/bin` under `env -i` |
+| the same, and no docker either | refuses, naming bun, `MOS_VERIFY_BUN` and `IMAGE_BUN_1` |
+| `IMAGE_BUN_1` set to a well-formed digest naming no image | refuses by the key, before any run — `docker run` would have returned 125, which is indistinguishable from bun exiting 125 |
+| `IMAGE_BUN_1` set to a tag, or removed | `from.sh`'s own refusal, naming the key and the file |
+| `MOS_VERIFY_BUN` and `MOS_VERIFY_CONTAINER` both set | refused; they are two different buns |
+| `--lint` on a board file under `/tmp`, container route | refuses, naming the path and the empty mount rather than the file |
 | a copy whose `REPO_ROOT` has no `Makefile` | the computed `HERE` and `REPO_ROOT`, and that one of them is stale |
 | a suite whose only test file declares no tests | the vacuity refusal above |
 | a suite with one deliberately red test | `RESULT: FAIL (bun test exited 1; 0 passed of 1 run)` |
@@ -65,28 +71,96 @@ still to come.
 
 ## The seam for a host without bun
 
-Exactly one function decides how bun is invoked:
+Exactly one function decides how bun is invoked, and it has two routes:
 
 ```sh
 run_bun() {
-    ( cd "${HERE}" && "${BUN}" "$@" )
+    if [ "${ROUTE}" = container ]; then
+        docker run --rm "${MOUNTS[@]}" -w "${HERE}" "${BUN_IMAGE}" bun "$@"
+    else
+        ( cd "${HERE}" && "${BUN}" "$@" )
+    fi
 }
 ```
 
-Every caller passes an argv and reads an exit status. RFCT-109's remaining half
-replaces that body with a `docker run … "${BUN_IMAGE}" bun "$@"`, with the
-digest recorded in `os/build-env/images.env` — nothing outside `run_bun` needs
-to change for it.
+Every caller passes an argv and reads an exit status, and none can tell which
+route answered. The image is `IMAGE_BUN_1` in `os/build-env/images.env`,
+resolved through `os/build-env/from.sh --ref` — the one resolver; nothing here
+re-pins or re-validates it.
 
-`MOS_VERIFY_BUN` names a bun binary explicitly; otherwise `PATH` is searched,
-then `~/.bun/bin/bun`. With none of the three, the run **refuses and prints the
-container command**, rather than dying as `bun: command not found`.
+The route is chosen once and **announced on the first line of output**, so a run
+is never ambiguous about which bun produced it:
 
-Note for whoever wires the container: `test/apid-api/run.sh:122` uses
-`BUN_IMAGE="${MOS_APID_BUN_IMAGE:-oven/bun:1}"` — a **floating tag**, which is
-what RFCT-109 wants replaced on the mos side by a recorded pin. `os/verify` has
-no such default: there is one variable, `MOS_VERIFY_BUN`, and it names a
-binary, so adding an image pin adds a name rather than overriding one.
+    os/verify: 1.4.0 at /srv/bkd/runtime/bun
+    os/verify: 1.4.0 in oven/bun:1@sha256:5ff6… (no bun on this host)
+
+| condition | route |
+|---|---|
+| `MOS_VERIFY_BUN` set | that binary |
+| `MOS_VERIFY_CONTAINER=1` | the pinned container, even where a host bun exists |
+| both set | **refused** — they are two different buns |
+| `bun` on `PATH`, else `~/.bun/bin/bun` | that binary |
+| none of the above | the pinned container |
+| none of the above, and no docker | **refused**, naming both |
+
+### Why the repository is mounted at its own path
+
+`-v "${REPO_ROOT}:${REPO_ROOT}"`, not `/w` or `/work` like the two image
+assemblers. Those containers **run a script** and build their paths inside; this
+one is a **tool handed paths from outside**. `--lint`'s file arguments are
+absolutised against the caller's cwd before `run_bun` sees them, and `paths.ts`
+resolves the shipped boards by climbing from `import.meta.dir` — both produce
+*host* absolute paths. Under a `/w` mount they would name nothing inside the
+container, and the fix would be a prefix rewrite: a second path arithmetic, on
+the one input whose identity the verdict is about.
+
+An identity mount has no rewrite to get wrong. `os/tests/mkimage-v2-selftest.sh`
+and `mkimage-x64-selftest.sh` mount `${WORK}` at `${WORK}` for their tool
+containers for this reason, and say so in the same terms.
+
+A board file **outside** the repository gets its directory mounted at its own
+path too, read-only.
+
+### The mount that succeeds and carries nothing
+
+On this host a bind mount of anything under `/tmp` propagates as an **empty
+directory** rather than failing. So every path a run depends on is asserted
+visible *inside the container* before any of them is used — one extra container,
+~260 ms, which also carries the version.
+
+That guard buys the **cause, not the verdict**, and the difference was measured
+rather than assumed. With the refusal disabled, all three ways in still fail and
+all three exit 1: the lint's own `existsSync` says `<path> not found`, `bun test`
+over a vanished package says `No tests found!` (exit 1 — not the 0 it gives a
+file that declares no tests), and `bun run src/lint-cli.ts` says `Module not
+found`. Nothing reports a false green. But each of those sentences describes a
+*missing file*, and on this route the file is exactly where the caller said it
+was — it is the mount that is empty. Sending a reader to look for a path they
+can `cat` is the same defect `lint.sh` had when it said "declares no X" about a
+file containing `X=""`.
+
+### The two routes agree
+
+Ten cases, each run both ways, comparing **stdout and stderr separately** and
+the exit status: both shipped boards, each alone and together, four negative
+fixtures, a copy outside the repository, and a mixed in-repo/out-of-repo run.
+All ten identical.
+
+Compared as a single interleaved stream they appear to differ, and that is an
+artefact worth knowing: docker delivers stderr ahead of stdout where a native
+process writing to one redirected file does not. The lines are the same lines.
+
+### Where the container pin is exercised
+
+`.gitea/workflows/check.yml`'s `os-verify` job installs **no bun**, so the
+runner takes this route on every push. The job asserts that it did — it greps
+the announce line for the reference `from.sh` resolves — because the suite's
+exit status proves the tests ran, not which bun ran them. Forced onto a host bun
+the suite still reports 108/108 and the step exits 1.
+
+`test/apid-api/run.sh:122` still uses `BUN_IMAGE="${MOS_APID_BUN_IMAGE:-oven/bun:1}"`
+— a **floating tag**. PLAN-014 names `test/apid-api` out of scope, so it is
+recorded in `images.env` beside the pin rather than changed here.
 
 ## Re-checking the parser against the shell
 
