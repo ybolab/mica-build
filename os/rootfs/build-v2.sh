@@ -253,6 +253,18 @@ cp -a "$OVERLAY_SRC/." "$OVERLAY_STAGE/"
 #
 # Layered rather than selected: everything both boards share stays in one
 # place, so a change to it cannot reach one board and miss the other.
+# The status indicator is a BOARD FILE, not a shared one with an exception.
+#
+# It used to live in overlay-v2 and be deleted here for boards that declare no
+# LED. Adding a file and then removing it is a worse statement than never
+# adding it: the shared overlay claimed every board has an indicator, and the
+# truth lived in a conditional somewhere else. os/rootfs/overlay-cx3576/ now
+# carries mos-status-led, its unit and its wants symlink, so the file's
+# LOCATION is the fact. A board with an indicator ships one by having one.
+#
+# BOARD_HAS_STATUS_LED stays, because the verifier still needs to know which
+# outcome to assert -- present and enabled, or absent entirely.
+
 BOARD_OVERLAY_SRC="$REPO_ROOT/os/rootfs/overlay-$MOS_BOARD"
 if [ -d "$BOARD_OVERLAY_SRC" ]; then
     cp -a "$BOARD_OVERLAY_SRC/." "$OVERLAY_STAGE/"
@@ -409,6 +421,7 @@ if ! docker buildx build \
         -f "$SCRIPT_DIR/Dockerfile.v2" \
         --build-arg MOS_ARCH="$MOS_ARCH" \
         --build-arg RAUC_BOOTLOADER="$RAUC_BOOTLOADER" \
+        --build-arg BOARD_RADIOS="$BOARD_RADIOS" \
         --build-arg MODULES_TAR="_out/$MOS_BOARD/modules.tar" \
         --build-arg MOSD_DIR="_out/$MOS_BOARD/mosd" \
         --build-arg PODMAN_DIR="_out/$MOS_BOARD/podman" \

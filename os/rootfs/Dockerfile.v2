@@ -100,15 +100,42 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         kmod \
         openssh-server \
         iproute2 \
-        bluez \
-        rfkill \
         rauc \
         rauc-service \
         libubootenv-tool \
         curl \
-        wpasupplicant \
-        hostapd \
     && rm -rf /var/lib/apt/lists/*
+
+# The radio userland, only for boards that declare a radio.
+#
+# bluez 4823 KB + wpasupplicant 3902 KB + hostapd 2329 KB + rfkill 111 KB =
+# 11.2 MB, and on a board with no radio every one of them is inert at best:
+# bluetoothd starts, finds no adapter, and stays running; the WiFi reconcilers
+# render configuration for interfaces that do not exist. Installed software
+# that cannot work is not free -- it is attack surface, journal noise and
+# 11 MB of a rootfs slot, and it makes "this board has no Bluetooth" a runtime
+# discovery rather than a property of the image.
+#
+# BOARD_RADIOS comes from the layout: os/layout/<board>-v2.env. Empty means the
+# board declares none, which is a statement rather than an omission.
+ARG BOARD_RADIOS=""
+RUN set -eu; \
+    if [ -z "${BOARD_RADIOS}" ]; then \
+        echo "radios: this board declares none; no bluez, wpasupplicant, hostapd or rfkill"; \
+        exit 0; \
+    fi; \
+    apt-get update; \
+    pkgs=""; \
+    for r in ${BOARD_RADIOS}; do \
+        case "${r}" in \
+        wifi) pkgs="${pkgs} wpasupplicant hostapd rfkill" ;; \
+        bluetooth) pkgs="${pkgs} bluez rfkill" ;; \
+        *) echo "error: BOARD_RADIOS names '${r}'; this image knows wifi and bluetooth" >&2; exit 1 ;; \
+        esac; \
+    done; \
+    apt-get install -y --no-install-recommends ${pkgs}; \
+    rm -rf /var/lib/apt/lists/*; \
+    echo "radios: ${BOARD_RADIOS} ->${pkgs}"
 
 # The TRUST ANCHORS, copied in from the `certs` stage.
 #
@@ -273,6 +300,10 @@ RUN if [ "$WITH_CONTAINERS" = "1" ]; then \
 # exactly the instance the settings tree asks for. Their ExecStart paths are
 # asserted against the reconcilers' own constants by os/verify-image-v2.sh.
 RUN set -eu; \
+    if [ -z "${BOARD_RADIOS}" ]; then \
+        echo "radios: none declared; no packaged radio units to mask"; \
+        exit 0; \
+    fi; \
     mkdir -p /etc/systemd/system; \
     for u in hostapd.service wpa_supplicant.service \
              dbus-fi.w1.wpa_supplicant1.service; do \
@@ -694,11 +725,8 @@ RUN cp -a /tmp/overlay/. / && \
                /etc/systemd/system/mos-apply-hostname.service \
                /etc/systemd/system/mos-shadow-reconcile.service \
                /etc/systemd/system/var-lib-mos.mount \
-               /etc/systemd/system/var-lib-bluetooth.mount \
                /etc/systemd/system/etc-ssh.mount \
                /etc/systemd/system/etc-hostname.mount \
-               /etc/systemd/system/etc-wpa_supplicant.mount \
-               /etc/systemd/system/etc-hostapd.mount \
                /etc/systemd/system/usr-local-lib-systemd-system.mount \
                /etc/systemd/system/home.mount \
                /etc/systemd/system/root.mount && \
@@ -730,8 +758,7 @@ RUN cp -a /tmp/overlay/. / && \
     for u in mos-seed-var.service mos-seed-state.service mos-seed-home.service \
              mos-seed-root.service \
              var-lib-mos.mount \
-             var-lib-bluetooth.mount etc-ssh.mount etc-hostname.mount \
-             etc-wpa_supplicant.mount etc-hostapd.mount home.mount root.mount \
+             etc-ssh.mount etc-hostname.mount home.mount root.mount \
              usr-local-lib-systemd-system.mount \
              mos-apply-hostname.service; do \
         ln -sf "/etc/systemd/system/$u" "/etc/systemd/system/local-fs.target.wants/$u" && \
@@ -743,6 +770,35 @@ RUN cp -a /tmp/overlay/. / && \
     ln -sf /etc/systemd/system/mos-shadow-reconcile.service \
            /etc/systemd/system/multi-user.target.wants/mos-shadow-reconcile.service && \
     test -L /etc/systemd/system/multi-user.target.wants/mos-shadow-reconcile.service
+
+# The RADIO mount points, for boards that have radios.
+#
+# var-lib-bluetooth.mount, etc-wpa_supplicant.mount and etc-hostapd.mount are
+# the writable configuration directories for bluez, wpa_supplicant and hostapd.
+# They live in os/rootfs/overlay-cx3576/ with the rest of that board's radio
+# facts, so on a board with none they are simply not there -- and the chmod and
+# the local-fs.target.wants loop above used to name them unconditionally, which
+# is what failed the first x64 build after the move: `chmod: cannot access`.
+#
+# AFTER the overlay copy above, not before it. Placed before, this loop looked
+# for the units under /etc/systemd/system while they were still sitting in
+# /tmp/overlay, and reported "declared but not in the overlay" for a board
+# whose overlay had all three. x64 could not catch that: it declares no radio,
+# so it takes the early exit and never reaches the test at all. A board with
+# the feature is the only one that runs this code.
+RUN set -eu; \
+    if [ -z "${BOARD_RADIOS}" ]; then \
+        echo "radios: none declared; no radio mount points to wire"; \
+        exit 0; \
+    fi; \
+    for u in var-lib-bluetooth.mount etc-wpa_supplicant.mount etc-hostapd.mount; do \
+        test -f "/etc/systemd/system/$u" || \
+            { echo "error: ${BOARD_RADIOS} declared but /etc/systemd/system/$u is not in the overlay" >&2; exit 1; }; \
+        chmod 0644 "/etc/systemd/system/$u"; \
+        ln -sf "/etc/systemd/system/$u" "/etc/systemd/system/local-fs.target.wants/$u"; \
+        test -L "/etc/systemd/system/local-fs.target.wants/$u"; \
+    done; \
+    echo "radios: mount points wired for ${BOARD_RADIOS}"
 
 # The container configuration mos ships INSTEAD of the distribution's.
 #
@@ -923,11 +979,22 @@ RUN set -eu; \
 # BOARD_INIT_DIR may be an empty dir (boards without hw-init facts): every unit
 # is condition-gated on its conf file, so enabling them is safe either way.
 #
-# The enable list is ENUMERATED from the units that are actually present, never
+# The install list is ENUMERATED from the board facts actually staged, never
 # restated here. A hardcoded list is what let this file drift behind the v1
 # Dockerfile once already: mos-mac and mos-gadget were installed but silently
 # left disabled, costing the image its stable MAC and its USB debug console
-# with no error anywhere. Adding a unit to os/hwinit/ is now enough.
+# with no error anywhere. Adding os/hwinit/hwinit-<n> plus mos-<n>.service, and
+# an <n>.conf to the board, is enough.
+#
+# A BOARD ONLY GETS THE SCRIPTS FOR FACILITIES IT DECLARES. Every unit is
+# condition-gated on its conf file, so shipping all of them to every board was
+# harmless in the sense that the extra ones never ran -- but "never runs" is a
+# property of a file being absent, not of a gate being right. x64 is a QEMU
+# machine with no Bluetooth: it was carrying hwinit-bt, whose `rfkill unblock`
+# put a dependency on a binary that board has no reason to install, and the
+# image verifier reported exactly that. Dead code in a signed read-only root is
+# not free, and both directions are asserted below: a conf with no script is an
+# unread board fact, and a script with no conf is a unit that can never run.
 #
 # No board fact appears in this stage. Module names, sysfs paths, UART device,
 # CAN bitrate, MAC seed and gadget IDs all live in BOARD_INIT_DIR and are read
@@ -939,19 +1006,32 @@ RUN set -eu; \
     mkdir -p /etc/mos /usr/lib/mos /etc/systemd/system/multi-user.target.wants \
         /usr/lib/udev/rules.d; \
     cp -a /tmp/board-init/. /etc/mos/; \
-    install -m 0755 /tmp/hwinit/hwinit-* /usr/lib/mos/; \
-    install -m 0644 /tmp/hwinit/*.service /usr/lib/systemd/system/; \
-    install -m 0644 /tmp/hwinit/*.rules /usr/lib/udev/rules.d/; \
-    enabled=0; \
-    for f in /tmp/hwinit/*.service; do \
-        u="$(basename "$f")"; \
-        ln -sf "/usr/lib/systemd/system/$u" \
-               "/etc/systemd/system/multi-user.target.wants/$u"; \
-        test -L "/etc/systemd/system/multi-user.target.wants/$u"; \
+    enabled=0; declared=0; \
+    for c in /tmp/board-init/*.conf; do \
+        [ -e "$c" ] || continue; \
+        n="$(basename "$c" .conf)"; \
+        declared=$((declared + 1)); \
+        script="/tmp/hwinit/hwinit-$n"; unit="/tmp/hwinit/mos-$n.service"; \
+        [ -f "$script" ] || { echo "error: /etc/mos/$n.conf is a board fact that no hwinit script reads (there is no os/hwinit/hwinit-$n); a fact nothing consumes is a silent no-op on the device" >&2; exit 1; }; \
+        [ -f "$unit" ] || { echo "error: os/hwinit/hwinit-$n has no unit to run it (there is no os/hwinit/mos-$n.service)" >&2; exit 1; }; \
+        install -m 0755 "$script" /usr/lib/mos/; \
+        install -m 0644 "$unit" /usr/lib/systemd/system/; \
+        ln -sf "/usr/lib/systemd/system/mos-$n.service" \
+               "/etc/systemd/system/multi-user.target.wants/mos-$n.service"; \
+        test -L "/etc/systemd/system/multi-user.target.wants/mos-$n.service"; \
+        for r in /tmp/hwinit/*-mos-"$n"-*.rules; do \
+            [ -e "$r" ] || continue; \
+            install -m 0644 "$r" /usr/lib/udev/rules.d/; \
+        done; \
         enabled=$((enabled + 1)); \
     done; \
-    test "$enabled" -gt 0; \
-    echo "hwinit: enabled $enabled unit(s)"; \
+    test "$enabled" = "$declared"; \
+    for f in /usr/lib/mos/hwinit-*; do \
+        [ -e "$f" ] || continue; \
+        n="$(basename "$f" | sed 's/^hwinit-//')"; \
+        [ -f "/etc/mos/$n.conf" ] || { echo "error: /usr/lib/mos/hwinit-$n shipped without /etc/mos/$n.conf; it can never run, and it drags its command dependencies into the image for nothing" >&2; exit 1; }; \
+    done; \
+    echo "hwinit: $declared board fact(s) declared, $enabled unit(s) installed and enabled"; \
     rm -rf /tmp/hwinit /tmp/board-init
 
 # journald in RAM only, as in v1. /var is writable under v2, so persistent
@@ -1197,6 +1277,14 @@ RUN { cat /rootfs-report.pkgs; \
 # Pack: squashfs-zstd + appended dm-verity hash tree
 # ---------------------------------------------------------------------------
 FROM --platform=$BUILDPLATFORM debian:bookworm-slim AS pack
+# ARG IS PER-STAGE. BOARD_RADIOS is declared again here because the pack stage
+# asserts properties of the assembled root that depend on it -- which board
+# state directories are precious, and therefore which mount units must exist.
+# Declared once in the rootfs stage, it expands EMPTY here, and under `set -u`
+# that is a build failure rather than a wrong answer. This one failed loudly;
+# the dangerous version of the same mistake is a check that silently reads an
+# empty value as "no radios" on a board that has them.
+ARG BOARD_RADIOS=""
 RUN apt-get update && apt-get install -y --no-install-recommends \
         squashfs-tools cryptsetup-bin libcap2-bin \
         initramfs-tools-core \
@@ -1286,7 +1374,12 @@ RUN mkdir -p /out && \
 # A silently-missing bind here would mean losing the apid admin password hash
 # or every Bluetooth pairing on a /var wipe.
 RUN set -eu; \
-    for w in /var/lib/mos /var/lib/bluetooth; do \
+    # /var/lib/bluetooth only on a board that HAS Bluetooth: the pairing
+    # database is precious state there and does not exist at all on a board
+    # with no radio, where demanding its mount unit would fail a correct image.
+    precious="/var/lib/mos"; \
+    case " ${BOARD_RADIOS} " in *" bluetooth "*) precious="${precious} /var/lib/bluetooth" ;; esac; \
+    for w in ${precious}; do \
         unit="$(echo "${w#/}" | tr / -).mount"; \
         f="/rootfs/etc/systemd/system/${unit}"; \
         if [ ! -f "$f" ]; then \

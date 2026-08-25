@@ -222,6 +222,20 @@ skip() {
 # UENV_* is really about.
 is_uboot_board() { [ "${RAUC_BOOTLOADER}" = "uboot" ]; }
 
+# Whether the board declares a radio of this kind (BOARD_RADIOS in the layout).
+# x64 is a QEMU machine: it has no Wi-Fi chip and no Bluetooth controller, so
+# hostapd, wpa_supplicant, bluez and their unit templates are not merely absent
+# from its image, they would be wrong to ship -- dead daemons and dead masks in
+# a signed read-only root. The assertions they carry are skipped BY NAME rather
+# than deleted, so a board that does declare a radio still gets every one.
+board_has_radio() { case " ${BOARD_RADIOS} " in *" $1 "*) return 0 ;; *) return 1 ;; esac; }
+
+# Whether the board declares an hwinit fact of this name (BOARD_HWINIT_CONFS).
+# The Dockerfile installs hwinit-<n> and mos-<n>.service ONLY for a declared
+# fact, so on a board that declares none -- x64 -- these files are absent by
+# construction rather than by a condition that happens to be false.
+board_has_hwinit() { case " ${BOARD_HWINIT_CONFS} " in *" $1 "*) return 0 ;; *) return 1 ;; esac; }
+
 # GPT tooling prints GUIDs uppercase; udev/libblkid print the same GUIDs
 # lowercase, and that is the spelling a kernel cmdline, an fstab entry and a
 # RAUC device path must use. Both denote the same GUID, so every comparison in
@@ -506,6 +520,32 @@ check_packed_mountpoints() {
 STATUS_LED_UNIT="/usr/lib/systemd/system/mos-status-led.service"
 check_status_led() {
     local unit="${ROOT}${STATUS_LED_UNIT}"
+
+    # BOTH DIRECTIONS, because either mistake ships silently.
+    #
+    # A board that declares no indicator must not carry the unit: it reads
+    # /sys/class/leds/status-{red,blue}/brightness, which do not exist there,
+    # so it fails on EVERY boot -- a permanently-failed unit on a shipped image,
+    # indistinguishable to an operator from a real fault. That is what x64 did
+    # until BOARD_HAS_STATUS_LED reached the image assembler.
+    #
+    # And a board that DOES declare one must carry it, or the absence would
+    # pass as "correctly not shipped" on the board that needs it.
+    if [ "${BOARD_HAS_STATUS_LED}" = "0" ]; then
+        local led_left
+        led_left="$(find "${ROOT}/usr/lib/systemd/system" "${ROOT}/etc/systemd/system" "${ROOT}/usr/lib/mos" \
+            -name 'mos-status-led*' 2>/dev/null | sed "s|^${ROOT}||" | tr '\n' ' ')"
+        if [ -z "${led_left}" ]; then
+            pass "${MOS_BOARD} declares no status indicator and ships no mos-status-led files, so nothing fails every boot reading /sys/class/leds on a board that has none"
+        else
+            fail "${MOS_BOARD} declares BOARD_HAS_STATUS_LED=0 but the image carries:${led_left}. The unit reads /sys/class/leds/status-*/brightness, which this board does not have, so it fails on every boot"
+        fi
+        return
+    fi
+    if [ ! -f "${unit}" ]; then
+        fail "${MOS_BOARD} declares BOARD_HAS_STATUS_LED=1 but ${STATUS_LED_UNIT} is not in the image; the indicator the operator reads to know the device is up would never run"
+        return
+    fi
     if [ -f "${unit}" ] && grep -Eq '^After=mos-health\.service$' "${unit}"; then
         pass "catches an indicator that reports ready before the slot is confirmed: mos-status-led.service is ordered after mos-health.service"
     else
@@ -2408,6 +2448,28 @@ if [ -n "${BOARD_HWINIT_CONFS}" ]; then
 else
     skip "the per-board hwinit facts under /etc/mos (${MOS_BOARD} declares BOARD_HWINIT_CONFS empty): this board has no CAN bus, USB gadget controller, Bluetooth radio or burned MAC for an hwinit unit to read"
 fi
+# The other direction, which the loop above cannot see: a conf that ships
+# WITHOUT being declared. The layout is what the rest of the build reasons
+# from -- the Dockerfile installs an hwinit script only for a declared fact --
+# so an undeclared conf means the layout understates the board. cx3576 shipped
+# modules.conf while BOARD_HWINIT_CONFS named five of its six facts, and every
+# forward check passed on all five. health.conf is excluded by name: it is
+# shared by every board and asserted unconditionally above.
+hwinit_undeclared=""
+for f in "${ROOT}"/etc/mos/*.conf; do
+    [ -f "${f}" ] || continue
+    c="$(basename "${f}" .conf)"
+    [ "${c}" = "health" ] && continue
+    case " ${BOARD_HWINIT_CONFS} " in
+    *" ${c} "*) ;;
+    *) hwinit_undeclared="${hwinit_undeclared} ${c}" ;;
+    esac
+done
+if [ -z "${hwinit_undeclared}" ]; then
+    pass "every /etc/mos/*.conf in the image is declared in ${MOS_BOARD}'s BOARD_HWINIT_CONFS; the layout is not understating what this board carries"
+else
+    fail "these board facts ship in /etc/mos but are NOT declared in BOARD_HWINIT_CONFS:${hwinit_undeclared}. The layout is what the build reasons from, so an undeclared fact is one no check here covers"
+fi
 
 # The board facts are READ, never restated: os/verify-image.sh already asserts
 # their values against board/cx3576/init, which is the user's area. Here we
@@ -2452,98 +2514,139 @@ else
     done
     [ -z "${skipped_owned}" ] ||
         skip "the enabled-at-boot assertion for${skipped_owned}: these are started by mosd from the settings tree, not by the image, and their own checks assert the image does NOT enable them"
-    if [ -z "${not_enabled}" ]; then
-        pass "every mos-*.service present in the image is also enabled"
+    # How many units this loop actually JUDGED. Without it, a board whose every
+    # mos-*.service is reconciler-owned -- x64, which declares no hwinit facts
+    # and so ships no hwinit unit at all -- gets "every mos-*.service present is
+    # also enabled" from a loop that examined none of them. A count of zero
+    # judged is a skip, not a pass.
+    hw_judged=0
+    for u in ${hw_units}; do
+        case " ${reconciler_owned} " in *" ${u} "*) continue ;; esac
+        hw_judged=$((hw_judged + 1))
+    done
+    if [ "${hw_judged}" -eq 0 ]; then
+        skip "the enabled-at-boot assertion (${MOS_BOARD} ships no hwinit unit: every mos-*.service in the image is reconciler-owned): there is no unit here whose enablement could be right or wrong"
+    elif [ -z "${not_enabled}" ]; then
+        pass "every one of the ${hw_judged} hwinit mos-*.service unit(s) present in the image is also enabled"
     else
         fail "these mos-*.service units are installed but NOT enabled:${not_enabled}"
     fi
 fi
-# The hwinit helper scripts are enumerated the same way, from os/hwinit/.
+# The hwinit helper scripts are enumerated the same way, from os/hwinit/, and
+# counted against what the board DECLARES. "at least one is present" was the
+# old test; it cannot tell a board that legitimately has none from one whose
+# install step silently dropped all of them, and it fails a QEMU machine for
+# not having a CAN bus. The count is the assertion now.
 hw_helpers="$(cd "${ROOT}/usr/lib/mos" 2>/dev/null && ls hwinit-* 2>/dev/null || true)"
-if [ -n "${hw_helpers}" ]; then
-    pass "hwinit helpers present in /usr/lib/mos: $(echo "${hw_helpers}" | tr '\n' ' ')"
+hw_helper_n="$(printf '%s\n' "${hw_helpers}" | grep -c . || true)"
+hw_declared_n="$(printf '%s\n' ${BOARD_HWINIT_CONFS} | grep -c . || true)"
+if [ "${hw_helper_n}" = "${hw_declared_n}" ] && [ "${hw_declared_n}" != "0" ]; then
+    pass "all ${hw_declared_n} hwinit helper(s) ${MOS_BOARD} declares are in /usr/lib/mos: $(echo "${hw_helpers}" | tr '\n' ' ')"
+elif [ "${hw_declared_n}" = "0" ] && [ "${hw_helper_n}" = "0" ]; then
+    skip "the hwinit helper scripts (${MOS_BOARD} declares BOARD_HWINIT_CONFS empty): the image ships none, which is asserted here as an equality rather than assumed -- a helper present without a board fact to read would fail this"
 else
-    fail "no hwinit-* helpers found in /usr/lib/mos"
+    fail "${MOS_BOARD} declares ${hw_declared_n} hwinit fact(s) (${BOARD_HWINIT_CONFS:-none}) but /usr/lib/mos holds ${hw_helper_n} helper(s): $(echo "${hw_helpers}" | tr '\n' ' '). A helper with no fact can never run; a fact with no helper is never applied"
 fi
-sq_regular /usr/lib/udev/rules.d/60-mos-gadget-getty.rules
-sq_grep /usr/lib/udev/rules.d/60-mos-gadget-getty.rules 'serial-getty@ttyGS0\.service' \
-    "the udev rule pulls in serial-getty@ttyGS0 when the gadget enumerates"
-sq_regular /usr/bin/btattach
-if [ -f "${ROOT}/etc/bluetooth/main.conf" ] && grep -qE "^[[:space:]]*Name[[:space:]]*=" "${ROOT}/etc/bluetooth/main.conf"; then
-    fail "/etc/bluetooth/main.conf pins Name (blocks the hostname plugin)"
+if board_has_hwinit gadget; then
+    sq_regular /usr/lib/udev/rules.d/60-mos-gadget-getty.rules
+    sq_grep /usr/lib/udev/rules.d/60-mos-gadget-getty.rules 'serial-getty@ttyGS0\.service' \
+        "the udev rule pulls in serial-getty@ttyGS0 when the gadget enumerates"
 else
-    pass "/etc/bluetooth/main.conf leaves Name to the hostname plugin"
+    skip "the USB-gadget getty udev rule (${MOS_BOARD} declares no gadget in BOARD_HWINIT_CONFS): there is no gadget controller to enumerate a ttyGS0 for, and the rule ships only with the hwinit script that configures it"
 fi
-sq_enabled bluetooth.service
+if board_has_radio bluetooth; then
+    sq_regular /usr/bin/btattach
+    if [ -f "${ROOT}/etc/bluetooth/main.conf" ] && grep -qE "^[[:space:]]*Name[[:space:]]*=" "${ROOT}/etc/bluetooth/main.conf"; then
+        fail "/etc/bluetooth/main.conf pins Name (blocks the hostname plugin)"
+    else
+        pass "/etc/bluetooth/main.conf leaves Name to the hostname plugin"
+    fi
+    sq_enabled bluetooth.service
+else
+    skip "the Bluetooth userland (btattach, bluez's main.conf and the bluetooth.service enablement symlink): ${MOS_BOARD} declares no bluetooth in BOARD_RADIOS, so the image ships no controller stack to configure or enable"
+fi
 if [ -e "${ROOT}/etc/modules-load.d/wifi.conf" ]; then
     fail "/etc/modules-load.d/wifi.conf still present (superseded by mos-modules)"
 else
     pass "/etc/modules-load.d/wifi.conf is gone (superseded by mos-modules)"
 fi
 
-# --- the status indicator: red until multi-user.target, then blue ------------
-# The device tree gives status-red `default-state = "on"`, so the kernel lights
-# red at init and only a consumer in the rootfs ever turns it off. Upstream has
-# one for the Alpine v1 demo; the v2 systemd rootfs had none, which shipped a
-# booted board on a permanent "still booting" red.
+# BOARD-GATED. The indicator is a board file -- os/rootfs/overlay-cx3576/ --
+# so a board that declares none carries neither the unit nor the script, and
+# every assertion below would be about a path that is correctly absent.
 #
-# Modelled on the mos-shadow-reconcile block below: M4 shipped units that were
-# installed but never enabled, and Before= lines naming units that were absent.
-# systemd drops both SILENTLY, so presence alone proves nothing.
-sq_regular /usr/lib/mos/mos-status-led
-LED_SCRIPT="${ROOT}/usr/lib/mos/mos-status-led"
-led_script_mode="$(stat -c %a "${LED_SCRIPT}" 2>/dev/null || echo none)"
-if [ -x "${LED_SCRIPT}" ] && [ ! -L "${LED_SCRIPT}" ]; then
-    pass "/usr/lib/mos/mos-status-led is executable (mode 0${led_script_mode})"
-else
-    fail "/usr/lib/mos/mos-status-led is mode ${led_script_mode}, not executable; ExecStart= would fail with 203/EXEC and the board would stay on the kernel's boot red for the whole session"
-fi
-sq_regular /usr/lib/systemd/system/mos-status-led.service
-# ENABLED, not merely installed: an installed-but-unenabled unit is exactly the
-# M4 failure, and it is invisible -- nothing logs it and nothing fails.
-sq_enabled mos-status-led.service
-sq_grep /usr/lib/systemd/system/mos-status-led.service \
-    '^ExecStart=/usr/lib/mos/mos-status-led start$' \
-    "mos-status-led.service runs /usr/lib/mos/mos-status-led start"
-# Without ExecStop= the shutdown half simply does not exist, and a board that is
-# powered down but still energised keeps reading as ready.
-sq_grep /usr/lib/systemd/system/mos-status-led.service \
-    '^ExecStop=/usr/lib/mos/mos-status-led stop$' \
-    "mos-status-led.service restores red on stop (ExecStop=)"
-# Not a style point: a Type=oneshot unit without RemainAfterExit counts as
-# inactive the moment ExecStart returns, so systemd runs ExecStop immediately
-# and the board snaps back to red the instant it went blue.
-sq_grep /usr/lib/systemd/system/mos-status-led.service \
-    '^RemainAfterExit=yes$' \
-    "mos-status-led.service sets RemainAfterExit=yes, so ExecStop runs at shutdown and not straight after ExecStart"
-# After=, never Before=: the unit is pulled in BY multi-user.target and ordered
-# AFTER it, so the target is reached without waiting for the LED. Ordered the
-# other way round, an unwritable brightness attribute would hold up boot.
-sq_grep /usr/lib/systemd/system/mos-status-led.service \
-    '^After=multi-user\.target$' \
-    "mos-status-led.service is ordered After=multi-user.target, so nothing in boot blocks on the indicator"
-
-# The no-dark ordering, asserted IN THE SHIPPED SCRIPT and per branch. Turning
-# the destination colour on before extinguishing the source is the whole reason
-# the transition is safe: with the two writes swapped there is an instant where
-# both LEDs are off and the board reads as dead. Nothing else can catch that --
-# either order is valid shell and passes every syntax check.
-for spec in "start:led_on.*BLUE:led_off.*RED:blue is switched ON before red is switched off, so the boot->ready transition never goes dark" \
-    "stop:led_on.*RED:led_off.*BLUE:red is switched ON before blue is switched off, so the ready->shutdown transition never goes dark"; do
-    IFS=':' read -r branch first second what <<<"${spec}"
-    # Region-scoped by line number: the branch label opens it, the next `;;`
-    # closes it, so a write in the other branch cannot satisfy this one.
-    if [ -f "${LED_SCRIPT}" ] && awk -v label="${branch})" -v a="${first}" -v z="${second}" '
-        $0 == label { inb = 1; next }
-        inb && $0 ~ /^[[:space:]]*;;[[:space:]]*$/ { inb = 0; next }
-        inb && !na && $0 ~ a { na = NR }
-        inb && !nz && $0 ~ z { nz = NR }
-        END { exit !(na > 0 && nz > 0 && na < nz) }' "${LED_SCRIPT}"; then
-        pass "mos-status-led ${branch}: ${what}"
+# check_status_led asserts the ABSENCE for those boards, so the two together
+# cover both directions: declared and shipped, or declared-not and not there.
+# Gating only one of them is how the first attempt at this left a check
+# reading a script the image no longer had.
+if [ "${BOARD_HAS_STATUS_LED}" = "1" ]; then
+    # --- the status indicator: red until multi-user.target, then blue ------------
+    # The device tree gives status-red `default-state = "on"`, so the kernel lights
+    # red at init and only a consumer in the rootfs ever turns it off. Upstream has
+    # one for the Alpine v1 demo; the v2 systemd rootfs had none, which shipped a
+    # booted board on a permanent "still booting" red.
+    #
+    # Modelled on the mos-shadow-reconcile block below: M4 shipped units that were
+    # installed but never enabled, and Before= lines naming units that were absent.
+    # systemd drops both SILENTLY, so presence alone proves nothing.
+    sq_regular /usr/lib/mos/mos-status-led
+    LED_SCRIPT="${ROOT}/usr/lib/mos/mos-status-led"
+    led_script_mode="$(stat -c %a "${LED_SCRIPT}" 2>/dev/null || echo none)"
+    if [ -x "${LED_SCRIPT}" ] && [ ! -L "${LED_SCRIPT}" ]; then
+        pass "/usr/lib/mos/mos-status-led is executable (mode 0${led_script_mode})"
     else
-        fail "mos-status-led ${branch}: ${what} — /usr/lib/mos/mos-status-led is missing, or its ${branch}) branch does not write /${first}/ before /${second}/"
+        fail "/usr/lib/mos/mos-status-led is mode ${led_script_mode}, not executable; ExecStart= would fail with 203/EXEC and the board would stay on the kernel's boot red for the whole session"
     fi
-done
+    sq_regular /usr/lib/systemd/system/mos-status-led.service
+    # ENABLED, not merely installed: an installed-but-unenabled unit is exactly the
+    # M4 failure, and it is invisible -- nothing logs it and nothing fails.
+    sq_enabled mos-status-led.service
+    sq_grep /usr/lib/systemd/system/mos-status-led.service \
+        '^ExecStart=/usr/lib/mos/mos-status-led start$' \
+        "mos-status-led.service runs /usr/lib/mos/mos-status-led start"
+    # Without ExecStop= the shutdown half simply does not exist, and a board that is
+    # powered down but still energised keeps reading as ready.
+    sq_grep /usr/lib/systemd/system/mos-status-led.service \
+        '^ExecStop=/usr/lib/mos/mos-status-led stop$' \
+        "mos-status-led.service restores red on stop (ExecStop=)"
+    # Not a style point: a Type=oneshot unit without RemainAfterExit counts as
+    # inactive the moment ExecStart returns, so systemd runs ExecStop immediately
+    # and the board snaps back to red the instant it went blue.
+    sq_grep /usr/lib/systemd/system/mos-status-led.service \
+        '^RemainAfterExit=yes$' \
+        "mos-status-led.service sets RemainAfterExit=yes, so ExecStop runs at shutdown and not straight after ExecStart"
+    # After=, never Before=: the unit is pulled in BY multi-user.target and ordered
+    # AFTER it, so the target is reached without waiting for the LED. Ordered the
+    # other way round, an unwritable brightness attribute would hold up boot.
+    sq_grep /usr/lib/systemd/system/mos-status-led.service \
+        '^After=multi-user\.target$' \
+        "mos-status-led.service is ordered After=multi-user.target, so nothing in boot blocks on the indicator"
+
+    # The no-dark ordering, asserted IN THE SHIPPED SCRIPT and per branch. Turning
+    # the destination colour on before extinguishing the source is the whole reason
+    # the transition is safe: with the two writes swapped there is an instant where
+    # both LEDs are off and the board reads as dead. Nothing else can catch that --
+    # either order is valid shell and passes every syntax check.
+    for spec in "start:led_on.*BLUE:led_off.*RED:blue is switched ON before red is switched off, so the boot->ready transition never goes dark" \
+        "stop:led_on.*RED:led_off.*BLUE:red is switched ON before blue is switched off, so the ready->shutdown transition never goes dark"; do
+        IFS=':' read -r branch first second what <<<"${spec}"
+        # Region-scoped by line number: the branch label opens it, the next `;;`
+        # closes it, so a write in the other branch cannot satisfy this one.
+        if [ -f "${LED_SCRIPT}" ] && awk -v label="${branch})" -v a="${first}" -v z="${second}" '
+            $0 == label { inb = 1; next }
+            inb && $0 ~ /^[[:space:]]*;;[[:space:]]*$/ { inb = 0; next }
+            inb && !na && $0 ~ a { na = NR }
+            inb && !nz && $0 ~ z { nz = NR }
+            END { exit !(na > 0 && nz > 0 && na < nz) }' "${LED_SCRIPT}"; then
+            pass "mos-status-led ${branch}: ${what}"
+        else
+            fail "mos-status-led ${branch}: ${what} — /usr/lib/mos/mos-status-led is missing, or its ${branch}) branch does not write /${first}/ before /${second}/"
+        fi
+    done
+else
+    skip "the status-indicator unit and script assertions (${MOS_BOARD} declares BOARD_HAS_STATUS_LED=0): the files live in the board overlay and this board has none; check_status_led asserts they are absent rather than assuming it"
+fi
+
 
 # --- M4: RAUC ---
 sq_regular /usr/bin/rauc
@@ -2889,7 +2992,9 @@ check_ext_policy
 # mos-mqttd.conf) already install to the /usr/share path; bluez caught up.
 # Both are accepted because dbus-daemon reads both, and asserting only the new
 # one would make this verifier refuse a correct bookworm image.
-if [ -f "${ROOT}/usr/share/dbus-1/system.d/bluetooth.conf" ] ||
+if ! board_has_radio bluetooth; then
+    skip "bluez's D-Bus policy (${MOS_BOARD} declares no bluetooth in BOARD_RADIOS): there is no bluetoothd in the image to own org.bluez, so a policy granting the name would guard nothing"
+elif [ -f "${ROOT}/usr/share/dbus-1/system.d/bluetooth.conf" ] ||
     [ -f "${ROOT}/etc/dbus-1/system.d/bluetooth.conf" ]; then
     pass "bluez ships a D-Bus policy (in /usr/share/dbus-1/system.d or /etc/dbus-1/system.d); without it bluetoothd cannot own org.bluez"
 else
@@ -3156,7 +3261,16 @@ fi
 # --- M4: wipe-safety — nothing precious is reachable only from /var ---
 # This is the assertion that makes "/var is discardable" true rather than
 # aspirational: identity, credentials and pairings must be binds onto STATE.
-for pair in "var-lib-mos.mount:/var/lib/mos" "var-lib-bluetooth.mount:/var/lib/bluetooth"; do
+# /var/lib/bluetooth holds pairings, which only exist on a board with a
+# controller. It is appended rather than listed, so a board without the radio
+# asserts the identity bind and nothing it does not have.
+precious_pairs="var-lib-mos.mount:/var/lib/mos"
+if board_has_radio bluetooth; then
+    precious_pairs="${precious_pairs} var-lib-bluetooth.mount:/var/lib/bluetooth"
+else
+    skip "the STATE bind for /var/lib/bluetooth (${MOS_BOARD} declares no bluetooth in BOARD_RADIOS): with no controller there are no pairings to keep across an A/B update"
+fi
+for pair in ${precious_pairs}; do
     IFS=':' read -r unit where <<<"${pair}"
     f="${ROOT}/etc/systemd/system/${unit}"
     if [ ! -f "${f}" ]; then
@@ -3916,118 +4030,128 @@ fi
 # on read_connd_contract.
 read_connd_contract
 
-# --- the daemons and their unit templates ---
-sq_regular /usr/sbin/hostapd
-sq_regular /usr/sbin/wpa_supplicant
-sq_regular "/usr/lib/systemd/system/${STA_UNIT}"
-sq_regular "/usr/lib/systemd/system/${AP_UNIT}"
+if board_has_radio wifi; then
+    # --- the daemons and their unit templates ---
+    sq_regular /usr/sbin/hostapd
+    sq_regular /usr/sbin/wpa_supplicant
+    sq_regular "/usr/lib/systemd/system/${STA_UNIT}"
+    sq_regular "/usr/lib/systemd/system/${AP_UNIT}"
 
-# The unit's ExecStart and the reconciler's render path are ONE contract: the
-# template bakes the config file name into its command line, so a rename on
-# either side leaves a daemon starting against a file nothing writes. Both
-# systemd instance specifiers are accepted (%i escaped, %I unescaped); for a
-# plain interface name they are the same string, and which one the packager
-# chose is not this repo's business.
-# Args: description unit-path config-dir config-name-with-{interface}
-check_execstart() {
-    local what="$1" unit="$2" dir="$3" name="$4" spec want found=0
-    if [ ! -f "${ROOT}${unit}" ]; then
-        fail "${what}: ${unit} is not in the image, so mosd would drive a unit that does not exist"
-        return
-    fi
-    for spec in '%i' '%I'; do
-        want="${dir}/$(printf '%s' "${name}" | sed "s|{interface}|${spec}|")"
-        if grep -F -- "ExecStart=" "${ROOT}${unit}" | grep -F -- "${want}" >/dev/null; then
-            found=1
-            pass "${what}: $(basename "${unit}") reads ${want}, which is exactly what the reconciler renders"
-            break
+    # The unit's ExecStart and the reconciler's render path are ONE contract: the
+    # template bakes the config file name into its command line, so a rename on
+    # either side leaves a daemon starting against a file nothing writes. Both
+    # systemd instance specifiers are accepted (%i escaped, %I unescaped); for a
+    # plain interface name they are the same string, and which one the packager
+    # chose is not this repo's business.
+    # Args: description unit-path config-dir config-name-with-{interface}
+    check_execstart() {
+        local what="$1" unit="$2" dir="$3" name="$4" spec want found=0
+        if [ ! -f "${ROOT}${unit}" ]; then
+            fail "${what}: ${unit} is not in the image, so mosd would drive a unit that does not exist"
+            return
+        fi
+        for spec in '%i' '%I'; do
+            want="${dir}/$(printf '%s' "${name}" | sed "s|{interface}|${spec}|")"
+            if grep -F -- "ExecStart=" "${ROOT}${unit}" | grep -F -- "${want}" >/dev/null; then
+                found=1
+                pass "${what}: $(basename "${unit}") reads ${want}, which is exactly what the reconciler renders"
+                break
+            fi
+        done
+        if [ "${found}" -eq 0 ]; then
+            fail "${what}: $(basename "${unit}")'s ExecStart does not name ${dir}/${name} (with %i or %I); it is '$(grep -F 'ExecStart=' "${ROOT}${unit}" | tr '\n' ' ')'. The unit and the reconciler disagree about the config path, so the daemon starts against a file nothing writes"
+        fi
+    }
+    check_execstart "station" "/usr/lib/systemd/system/${STA_UNIT}" "${STA_DIR}" "${STA_CONF}"
+    check_execstart "access point" "/usr/lib/systemd/system/${AP_UNIT}" "${AP_DIR}" "${AP_CONF}"
+
+    # mosd owns these lifecycles: it enables and starts exactly the instance the
+    # settings tree asks for. A statically enabled template instance would race it.
+    for u in "${STA_UNIT}" "${AP_UNIT}"; do
+        if [ -n "$(find "${ROOT}/etc/systemd/system" "${ROOT}/usr/lib/systemd/system" \
+            -name "${u}" -path '*.wants/*' 2>/dev/null || true)" ]; then
+            fail "${u} is statically enabled in the image; mosd owns that lifecycle and would race the image's own instance"
+        else
+            pass "${u} is installed but NOT statically enabled (mosd owns the lifecycle)"
         fi
     done
-    if [ "${found}" -eq 0 ]; then
-        fail "${what}: $(basename "${unit}")'s ExecStart does not name ${dir}/${name} (with %i or %I); it is '$(grep -F 'ExecStart=' "${ROOT}${unit}" | tr '\n' ' ')'. The unit and the reconciler disagree about the config path, so the daemon starts against a file nothing writes"
-    fi
-}
-check_execstart "station" "/usr/lib/systemd/system/${STA_UNIT}" "${STA_DIR}" "${STA_CONF}"
-check_execstart "access point" "/usr/lib/systemd/system/${AP_UNIT}" "${AP_DIR}" "${AP_CONF}"
 
-# mosd owns these lifecycles: it enables and starts exactly the instance the
-# settings tree asks for. A statically enabled template instance would race it.
-for u in "${STA_UNIT}" "${AP_UNIT}"; do
-    if [ -n "$(find "${ROOT}/etc/systemd/system" "${ROOT}/usr/lib/systemd/system" \
-        -name "${u}" -path '*.wants/*' 2>/dev/null || true)" ]; then
-        fail "${u} is statically enabled in the image; mosd owns that lifecycle and would race the image's own instance"
-    else
-        pass "${u} is installed but NOT statically enabled (mosd owns the lifecycle)"
-    fi
-done
+    # Both packages ship a non-templated unit their postinst ENABLES. Masked, not
+    # merely disabled: masking is the only form that also blocks the D-Bus
+    # activation path wpasupplicant ships
+    # (/usr/share/dbus-1/system-services/fi.w1.wpa_supplicant1.service). On v2 the
+    # mask lives inside the signed read-only root, so it cannot be undone on device.
+    for u in hostapd.service wpa_supplicant.service dbus-fi.w1.wpa_supplicant1.service; do
+        dest="$(readlink "${ROOT}/etc/systemd/system/${u}" 2>/dev/null || true)"
+        if [ "${dest}" = "/dev/null" ]; then
+            pass "${u} is masked (-> /dev/null); it cannot start and fight mosd for the radio"
+        else
+            fail "${u} is not masked (it is '${dest:-not a symlink to /dev/null}'). The package enables it, and it starts a second daemon on the same radio against a config mosd never writes while mosd's own instance still reports healthy"
+        fi
+        if [ -n "$(find "${ROOT}/etc/systemd/system" "${ROOT}/usr/lib/systemd/system" \
+            -name "${u}" -path '*.wants/*' 2>/dev/null || true)" ]; then
+            fail "${u} still carries the package's *.wants enablement symlink"
+        else
+            pass "${u} carries no enablement symlink from the package postinst"
+        fi
+    done
 
-# Both packages ship a non-templated unit their postinst ENABLES. Masked, not
-# merely disabled: masking is the only form that also blocks the D-Bus
-# activation path wpasupplicant ships
-# (/usr/share/dbus-1/system-services/fi.w1.wpa_supplicant1.service). On v2 the
-# mask lives inside the signed read-only root, so it cannot be undone on device.
-for u in hostapd.service wpa_supplicant.service dbus-fi.w1.wpa_supplicant1.service; do
-    dest="$(readlink "${ROOT}/etc/systemd/system/${u}" 2>/dev/null || true)"
-    if [ "${dest}" = "/dev/null" ]; then
-        pass "${u} is masked (-> /dev/null); it cannot start and fight mosd for the radio"
-    else
-        fail "${u} is not masked (it is '${dest:-not a symlink to /dev/null}'). The package enables it, and it starts a second daemon on the same radio against a config mosd never writes while mosd's own instance still reports healthy"
-    fi
-    if [ -n "$(find "${ROOT}/etc/systemd/system" "${ROOT}/usr/lib/systemd/system" \
-        -name "${u}" -path '*.wants/*' 2>/dev/null || true)" ]; then
-        fail "${u} still carries the package's *.wants enablement symlink"
-    else
-        pass "${u} carries no enablement symlink from the package postinst"
-    fi
-done
+    # --- the config directories must be WRITABLE at runtime, backed by STATE -----
+    # The v2 root is a read-only dm-verity squashfs. A reconciler rendering into a
+    # read-only path fails on device and nowhere else, so the BACKING is asserted,
+    # not just that the directory exists: the bind must name the directory, its
+    # source must be on STATE, and the unit must actually be ENABLED — M4 shipped
+    # units that were installed and never enabled.
+    for where in "${STA_DIR}" "${AP_DIR}"; do
+        [ -n "${where}" ] || continue
+        unit="$(echo "${where#/}" | tr / -).mount"
+        f="${ROOT}/etc/systemd/system/${unit}"
+        if [ ! -f "${f}" ]; then
+            fail "${where} is a reconciler render target but ${unit} does not exist; on the read-only verity root the render would fail on device and nowhere else"
+        elif ! grep -qx "Where=${where}" "${f}"; then
+            fail "${unit} does not mount ${where} (its Where= is '$(sed -n 's/^Where=//p' "${f}" | tail -n1)')"
+        elif ! grep -qE '^What=/mnt/state/' "${f}"; then
+            fail "${unit} is not backed by STATE (What= must be under /mnt/state); a tmpfs or nothing at all would lose every configured network on reboot"
+        elif [ -z "$(find "${ROOT}/etc/systemd/system" -name "${unit}" -path '*.wants/*' 2>/dev/null || true)" ]; then
+            fail "${unit} exists but is not enabled; ${where} would stay on the read-only squashfs"
+        else
+            pass "${where} is a STATE-backed bind via ${unit} ($(sed -n 's/^What=//p' "${f}" | tail -n1)), so the reconciler can write there and the result survives an A/B update"
+        fi
+        # The bind source has to be created before the mount is attempted, and with
+        # a mode that does not expose the pre-shared keys the directory ends up
+        # holding. mos-seed-state is the only thing that runs early enough.
+        # "|| true": ${f} does not exist on a board with no radios, and a sed over
+        # a missing file exits non-zero. Under set -euo pipefail that kills the
+        # script HERE -- after the fail() above has printed, but before RESULT: is
+        # ever reached, so the run has no verdict line at all and its exit status
+        # reads like any other failure. The absence this loop exists to report was
+        # the thing that stopped it from reporting.
+        src="$(sed -n 's/^What=//p' "${f}" 2>/dev/null | tail -n1 || true)"
+        base="$(basename "${src:-none}")"
+        seed="${ROOT}/usr/lib/mos/mos-seed-state"
+        # The seed script creates both directories from one loop, so the assertion
+        # is in two halves: the loop does mkdir + chmod 0700 under /mnt/state, and
+        # THIS directory's name is one of the loop's items. Either half alone would
+        # pass for a script that creates the other directory twice.
+        if [ -n "${src}" ] && [ -f "${seed}" ] &&
+            grep -q 'mkdir -p "/mnt/state/\$d"' "${seed}" &&
+            grep -q 'chmod 0700 "/mnt/state/\$d"' "${seed}" &&
+            sed -n 's/^for d in \(.*\); do$/\1/p' "${seed}" | tr ' ' '\n' | grep -Fx "${base}" >/dev/null; then
+            pass "mos-seed-state creates ${src} at 0700 before ${unit} is attempted"
+        else
+            fail "mos-seed-state does not create ${src} (0700); the bind would have no source on first boot and ${where} would stay read-only"
+        fi
+    done
 
-# --- the config directories must be WRITABLE at runtime, backed by STATE -----
-# The v2 root is a read-only dm-verity squashfs. A reconciler rendering into a
-# read-only path fails on device and nowhere else, so the BACKING is asserted,
-# not just that the directory exists: the bind must name the directory, its
-# source must be on STATE, and the unit must actually be ENABLED — M4 shipped
-# units that were installed and never enabled.
-for where in "${STA_DIR}" "${AP_DIR}"; do
-    [ -n "${where}" ] || continue
-    unit="$(echo "${where#/}" | tr / -).mount"
-    f="${ROOT}/etc/systemd/system/${unit}"
-    if [ ! -f "${f}" ]; then
-        fail "${where} is a reconciler render target but ${unit} does not exist; on the read-only verity root the render would fail on device and nowhere else"
-    elif ! grep -qx "Where=${where}" "${f}"; then
-        fail "${unit} does not mount ${where} (its Where= is '$(sed -n 's/^Where=//p' "${f}" | tail -n1)')"
-    elif ! grep -qE '^What=/mnt/state/' "${f}"; then
-        fail "${unit} is not backed by STATE (What= must be under /mnt/state); a tmpfs or nothing at all would lose every configured network on reboot"
-    elif [ -z "$(find "${ROOT}/etc/systemd/system" -name "${unit}" -path '*.wants/*' 2>/dev/null || true)" ]; then
-        fail "${unit} exists but is not enabled; ${where} would stay on the read-only squashfs"
+    # The AP's DHCP server is systemd-networkd's own DHCPServer=yes. dnsmasq would
+    # be a second package and a second lifecycle for a job already done.
+    if [ -e "${ROOT}/usr/sbin/dnsmasq" ]; then
+        fail "dnsmasq ships in the image; the provisioning AP hands out addresses through systemd-networkd's DHCPServer=yes and a second DHCP server on the same link is a conflict, not a fallback"
     else
-        pass "${where} is a STATE-backed bind via ${unit} ($(sed -n 's/^What=//p' "${f}" | tail -n1)), so the reconciler can write there and the result survives an A/B update"
+        pass "no dnsmasq in the image (the AP's DHCP server is systemd-networkd's own DHCPServer=yes)"
     fi
-    # The bind source has to be created before the mount is attempted, and with
-    # a mode that does not expose the pre-shared keys the directory ends up
-    # holding. mos-seed-state is the only thing that runs early enough.
-    src="$(sed -n 's/^What=//p' "${f}" 2>/dev/null | tail -n1)"
-    base="$(basename "${src:-none}")"
-    seed="${ROOT}/usr/lib/mos/mos-seed-state"
-    # The seed script creates both directories from one loop, so the assertion
-    # is in two halves: the loop does mkdir + chmod 0700 under /mnt/state, and
-    # THIS directory's name is one of the loop's items. Either half alone would
-    # pass for a script that creates the other directory twice.
-    if [ -n "${src}" ] && [ -f "${seed}" ] &&
-        grep -q 'mkdir -p "/mnt/state/\$d"' "${seed}" &&
-        grep -q 'chmod 0700 "/mnt/state/\$d"' "${seed}" &&
-        sed -n 's/^for d in \(.*\); do$/\1/p' "${seed}" | tr ' ' '\n' | grep -Fx "${base}" >/dev/null; then
-        pass "mos-seed-state creates ${src} at 0700 before ${unit} is attempted"
-    else
-        fail "mos-seed-state does not create ${src} (0700); the bind would have no source on first boot and ${where} would stay read-only"
-    fi
-done
-
-# The AP's DHCP server is systemd-networkd's own DHCPServer=yes. dnsmasq would
-# be a second package and a second lifecycle for a job already done.
-if [ -e "${ROOT}/usr/sbin/dnsmasq" ]; then
-    fail "dnsmasq ships in the image; the provisioning AP hands out addresses through systemd-networkd's DHCPServer=yes and a second DHCP server on the same link is a conflict, not a fallback"
 else
-    pass "no dnsmasq in the image (the AP's DHCP server is systemd-networkd's own DHCPServer=yes)"
+    skip "the Wi-Fi userland (hostapd, wpa_supplicant, their unit templates, the ExecStart/render-path contract, the masking of the packages' own units, the STATE-backed binds for the two config directories, and the absence of dnsmasq): ${MOS_BOARD} declares no wifi in BOARD_RADIOS, so there is no radio for a station or an access point to run on and the image ships neither daemon"
 fi
 
 # --- the image's networkd namespace must not collide with mosd's ---
