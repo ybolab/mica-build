@@ -8,6 +8,27 @@ Documentation=file:/usr/lib/mos/mos-seed-var
 DefaultDependencies=no
 RequiresMountsFor=/var
 Before=local-fs.target systemd-tmpfiles-setup.service shutdown.target
+# ...and before systemd's own writer of /var/lib/systemd/network.
+#
+# systemd-networkd-persistent-storage.service is BindsTo/After
+# systemd-networkd.service, which starts with DefaultDependencies=no -- so it
+# runs early, ordered after nothing this image controls, and lands squarely in
+# the middle of the seed. Measured on a boot: seed starts 08:26:26.85, that
+# unit starts 08:26:27.33, fails 08:26:29.09, seed finishes 08:26:29.28. It
+# runs as User=systemd-network and opens /var/lib/systemd/network, which at
+# that instant exists but is still owned by root -- tar restores directory
+# ownership in a final pass -- so it gets EACCES and fails.
+#
+# It fails CLOSED and loudly: mos-health refuses to confirm the booted slot
+# while any unit outside its allowlist has failed, so a first boot ends with
+# the slot unconfirmed and, after an update, rolled back.
+#
+# THIS LINE IS A STOPGAP AND IS NAMED AS ONE. Ordering against each writer of
+# /var by name is a list to keep current, and the next one systemd adds lands
+# in the same place. The structural repair is to populate EPHEMERAL at IMAGE
+# ASSEMBLY (mkfs.ext4 -d) so there is no runtime seed to race -- recorded in
+# docs/task/RFCT-106.md.
+Before=systemd-networkd-persistent-storage.service
 Conflicts=shutdown.target
 ConditionPathExists=!/var/.mos-var-seeded
 

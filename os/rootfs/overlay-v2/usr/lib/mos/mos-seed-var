@@ -10,6 +10,30 @@
 #
 # Runs before systemd-tmpfiles-setup so that tmpfiles' own /var entries are
 # applied on top of the seeded tree rather than racing it.
+#
+# IT MERGES, AND THAT IS A CORRECTNESS REQUIREMENT, NOT A CONVENIENCE.
+#
+# This used to be `cp -a "$FACTORY/." /var/`, and on Debian 13 that fails:
+#
+#   cp: cannot create directory '/var/./lib/systemd/network': File exists
+#
+# systemd-networkd-persistent-storage.service -- new in the systemd this
+# release ships -- creates /var/lib/systemd/network as soon as /var is
+# available, which is the same moment this runs. cp decides a directory is
+# absent, then calls mkdir, and loses the race in between. It is a RACE, so it
+# failed on some boots and not others: the same image booted cleanly once and
+# then failed twice in a row.
+#
+# What it costs when it loses is not a warning. `set -e` ends the script, the
+# unit fails, and because var-lib-mos.mount requires it, mosd, apid and the
+# health gate all fail with it -- a first boot that looks, from outside, like a
+# device that will not come up.
+#
+# The repair is not `Before=` on whichever unit was observed to collide: that
+# is a list to keep current, and the next writer of /var lands in the same
+# place. tar merges into existing directories instead of creating them, and
+# --skip-old-files leaves anything already present alone, which is what a
+# first-boot SEED means. The property is then true whoever else is writing.
 set -eu
 
 STAMP=/var/.mos-var-seeded
@@ -18,6 +42,6 @@ FACTORY=/usr/share/factory/var
 [ -d "$FACTORY" ] || { echo "no $FACTORY to seed from" >&2; exit 1; }
 [ -e "$STAMP" ] && exit 0
 
-cp -a "$FACTORY/." /var/
+tar -C "$FACTORY" -cf - . | tar -C /var -xf - --skip-old-files
 sync
 : > "$STAMP"
