@@ -1,44 +1,15 @@
-# os/rootfs — Debian systemd arm64 rootfs (cx3576, PLAN-010 M1)
+# os/rootfs — Debian systemd arm64 rootfs (cx3576)
 
-Builds a minimal Debian trixie + systemd root filesystem for the cx3576
-board as a minimally-sized, content-derived ext4 image, ready to be dd'd into
-the disk image by the assembly step.
+Builds a minimal Debian trixie + systemd root filesystem for the cx3576 board
+as a squashfs + dm-verity slot image, ready to be written into an A/B rootfs
+slot by the assembly step.
 
-## Sizing
-
-The pack stage computes the image size from content only (deterministic — no
-clock, no randomness):
-
-```
-size_mib = ceil(du_mib(/rootfs) * 115 / 100) + 48
-```
-
-The 15% headroom scales with content; the fixed 48 MiB margin covers ext4
-metadata (journal, inode tables, bitmaps) plus everything that must be written
-BEFORE systemd-repart + growfs expand the partition on first boot: journal
-replay, systemd first-boot machine-id and /var directories, and ssh host key
-generation. `os/verify-image.sh` asserts that at least 32 MiB of that margin
-survives packing as free space. The ext4 block size is pinned to 4 KiB
-(`mke2fs -b 4096`, matching the page size) so mke2fs's "small" profile cannot
-silently switch to 1 KiB blocks now that the filesystem is under 512 MiB.
-
-## Build
-
-```sh
-# needs board/cx3576/out/kernel/modules.tar (make -C board/cx3576 kernel),
-# or point BOARD_DIR at prebuilt BSP artifacts:
-BOARD_DIR=/srv/ai/mos/board/cx3576 bash os/rootfs/build.sh
-```
-
-Outputs to `_out/cx3576/`: `rootfs.img` (ext4, content-derived whole-MiB size)
-and `rootfs-report.txt` (package list + installed size; the build fails if the
-installed size exceeds 400 MB).
-
-On x86 hosts, arm64 emulation comes from binfmt
-(`docker run --privileged --rm tonistiigi/binfmt --install arm64`). If the
-current builder still lacks linux/arm64 (e.g. host binfmt registration is
-unavailable), build.sh automatically falls back to a docker-container builder
-named `mos-arm64`, whose buildkit image bundles its own QEMU emulators.
+The v1 single-slot chain this directory started as — `build.sh`, `Dockerfile`,
+and the `os/mkimage.sh` / `os/verify-image.sh` that consumed them — was deleted
+by RFCT-107 (PLAN-014 M1); git history is its archive. The sections up to
+"Layout v2" below describe the parts of the build that were never generation-
+specific: the package set, the config directories, the image profile, mosd and
+the board hardware-init layer.
 
 ## Package allowlist
 
@@ -99,17 +70,16 @@ Masked rather than disabled because `wpasupplicant` ships
 ### Config directories
 
 `/etc/wpa_supplicant` and `/etc/hostapd` are both mode **0700** — once a device
-is configured they hold pre-shared keys in the clear. On v1 the root is a
-writable ext4, so the directories are simply there. On v2 the root is a
-read-only dm-verity squashfs, so each is a STATE-backed bind
+is configured they hold pre-shared keys in the clear. The root is a read-only
+dm-verity squashfs, so each is a STATE-backed bind
 (`etc-wpa_supplicant.mount`, `etc-hostapd.mount`) exactly as `/etc/ssh` is; a
 reconciler rendering into a read-only path fails on device and nowhere else.
 
 ## Image profile (`/usr/lib/mos/profile.conf`)
 
-`MOS_PROFILE=dev` by default; `MOS_PROFILE=prod bash os/rootfs/build.sh` (or
-`build-v2.sh`) builds the production image from the same tree. The build rejects
-anything that is not exactly `dev` or `prod` in lowercase.
+`MOS_PROFILE=dev` by default; `MOS_PROFILE=prod bash os/rootfs/build-v2.sh`
+builds the production image from the same tree. The build rejects anything that
+is not exactly `dev` or `prod` in lowercase.
 
 mosd reads this file once, on first boot, to seed `access.ssh.enabled`, and it
 **fails closed**: a file that is missing, unreadable, misspelt or carrying an
@@ -117,13 +87,13 @@ unrecognised value all resolve to `prod`, which means SSH off. The comparison is
 case-sensitive, so `DEV` resolves to prod too. Every one of those mistakes
 produces an image where all the checks are green and the dev SSH path has simply
 disappeared, which is why the value is validated at build time and asserted
-again by `os/verify-image.sh` / `os/verify-image-v2.sh` against the packed
+again by `os/verify-image-v2.sh` against the packed
 artifact — including that `dev` implies `ssh.service` is enabled in the image
 and `prod` implies it is not.
 
 The file lives in `/usr/lib` and not `/etc` because it describes the *image*,
-not the device; on v2 that also puts it inside the read-only verity root, where
-a production device cannot be edited into a development one.
+not the device; that also puts it inside the read-only verity root, where a
+production device cannot be edited into a development one.
 
 ## mosd
 
@@ -184,67 +154,27 @@ The Bluetooth adapter name needs no unit of its own: bluez's hostname plugin
 is loaded by default and overrides `Name`, so the adapter follows the system
 hostname as long as `/etc/bluetooth/main.conf` does not pin one.
 
-## Dev profile — root login (v1 only)
-
-`ROOT_PASSWORD=... bash os/rootfs/build.sh` sets the root password and writes
-`PermitRootLogin yes`. **Dev only — never use for production images.** By
-default (unset), root stays locked and SSH root login is not enabled.
-
-This build arg exists **only on the v1 path**. `build-v2.sh` deliberately has
-no `ROOT_PASSWORD`: a v2 rootfs is a signed squashfs, byte-identical on every
-device, and its pack stage fails any build whose factory shadow carries a
-usable hash. See "Dev root access on v2" below.
-
-## First-boot growth
-
-The flashed image is packed minimally but lands on much larger media (cx3576
-eMMC: 116 GiB), so the rootfs grows to fill the disk automatically on first
-boot:
-
-- `/etc/repart.d/50-rootfs.conf` (`Type=linux-generic`) makes systemd-repart
-  grow partition 2 and relocate the backup GPT. The service is statically
-  enabled by the `systemd-repart` package and only activates when
-  `/etc/repart.d` is non-empty; unmatched partitions are never touched.
-- `/etc/fstab` mounts the rootfs with `x-systemd.growfs`, which emits a unit
-  running `systemd-growfs` (online ext4 grow).
-
-Both steps are systemd-native, idempotent (no-op when there is no free space),
-and cannot wedge boot. A growpart/cloud-guest-utils fallback was rejected as
-unnecessary since repart is part of systemd upstream.
-
-**"Zero extra packages" was true on bookworm and is not on trixie**, which is
-a fact worth stating rather than quietly editing: bookworm shipped
-`systemd-repart` inside the `systemd` package, trixie splits it into a package
-of its own. `os/rootfs/Dockerfile.v2` names it in the install list because of
-that, and `os/verify-image-v2.sh` asserts the enablement symlink. The failure
-if it were missing announces nothing — the device boots and DATA simply never
-grows past the 64 MiB the assembler creates.
-
-## Determinism deviation
-
-SSH host keys are generated at build time by the openssh-server postinst and
-baked into the image — acceptable for the dev profile, not for reproducible
-production builds.
-
 ---
 
 # Layout v2 — squashfs + dm-verity rootfs (PLAN-010 M4)
 
-`build-v2.sh` / `Dockerfile.v2` / `overlay-v2/` are a **sibling** of the v1 path
-above, not a replacement. v1 keeps building the writable single-slot ext4 root
-and is untouched; `make os-image-cx3576` and `make os-verify-cx3576` keep
-passing. Everything below applies only to v2.
-
-The design record is `docs/design/ro-root.md` — read it before changing
-anything here.
+`build-v2.sh` / `Dockerfile.v2` / `overlay-v2/` are the build. The design record
+is `docs/design/ro-root.md` — read it before changing anything here.
 
 ## Build
 
 ```sh
-# same prerequisites as v1
+# needs board/cx3576/out/kernel/modules.tar (make -C board/cx3576 kernel),
+# or point BOARD_DIR at prebuilt BSP artifacts:
 BOARD_DIR=/srv/ai/mos/board/cx3576 make os-rootfs-cx3576-v2   # rootfs only
 BOARD_DIR=/srv/ai/mos/board/cx3576 make os-image-cx3576-v2    # rootfs + full v2 image
 ```
+
+On x86 hosts, arm64 emulation comes from binfmt
+(`docker run --privileged --rm tonistiigi/binfmt --install arm64`). If the
+current builder still lacks linux/arm64 (e.g. host binfmt registration is
+unavailable), `build-v2.sh` automatically falls back to a docker-container
+builder named `mos-arm64`, whose buildkit image bundles its own QEMU emulators.
 
 Outputs to `_out/cx3576/`, all consumed by `os/mkimage-v2.sh`:
 
@@ -256,10 +186,10 @@ Outputs to `_out/cx3576/`, all consumed by `os/mkimage-v2.sh`:
 | `rootfs-report-v2.txt` | package list, installed size, setuid/setgid inventory, file capabilities |
 
 Every layout constant is read from `os/layout/cx3576-v2.env`; none is duplicated
-in `build-v2.sh`, `Dockerfile.v2` or the overlay. The one thing that is *not* a
-layout constant is the board console/storage cmdline fragment
-(`console=ttyFIQ0,… earlycon=… net.ifnames=0`), carried over
-verbatim from v1's `APPEND` and kept in `build-v2.sh`.
+in `build-v2.sh`, `Dockerfile.v2` or the overlay. The board console/storage
+cmdline fragment (`console=ttyFIQ0,… earlycon=… net.ifnames=0`) is a board fact
+too and lives there as `BOARD_CMDLINE_ARGS`, moved out of `build-v2.sh` when
+x64 became the second board to need a v2 image.
 
 ### The cmdline files are a contract
 
@@ -303,7 +233,7 @@ is a build error rather than a review finding. The verified inventory is in
 
 ## v2 package allowlist
 
-v1's list (systemd systemd-sysv systemd-resolved udev dbus kmod openssh-server
+The base list (systemd systemd-sysv systemd-resolved udev dbus kmod openssh-server
 iproute2 bluez rfkill wpasupplicant hostapd — the two connd packages, their
 masking and their config directories are documented under "Package allowlist"
 above and apply identically here) **plus**:
@@ -374,7 +304,7 @@ sysfs). See `docs/design/ro-root.md` §6 for the one override that read-only
 growth target moved off the root, and what happens to `/etc/machine-id` are all
 explained in `docs/design/ro-root.md`.
 
-## Board hardware init — parity with v1 is enumerated, not restated
+## Board hardware init — the enable list is enumerated, not restated
 
 `Dockerfile.v2` installs `hwinit-*`, `*.service` **and** `*.rules` from
 `os/hwinit/`, and derives the enable list by iterating the units that are
@@ -386,7 +316,7 @@ for f in /tmp/hwinit/*.service; do u="$(basename "$f")"; ln -sf ... ; done
 
 This is not a style preference. The previous hardcoded
 `for u in mos-modules mos-otg mos-can mos-bt` list is exactly how this file
-drifted behind the v1 `Dockerfile` once already: when `mos-mac` and
+drifted behind the since-deleted v1 `Dockerfile` once already: when `mos-mac` and
 `mos-gadget` were added, both were *installed* by the existing globs but never
 *enabled*, and `60-mos-gadget-getty.rules` was not installed at all — so a v2
 image silently lost its stable MAC and its USB debug console with no error
@@ -412,6 +342,16 @@ case — someone hand-editing the generated file after the last build — rather
 than committed-copy drift, which can no longer happen. Note that `bundle.sh`
 consumes `rootfs-verity.img` too, so `build-v2.sh` has necessarily run first
 and the file is present.
+
+## systemd-repart is a package of its own on trixie
+
+**"Zero extra packages" was true on bookworm and is not on trixie**, which is
+a fact worth stating rather than quietly editing: bookworm shipped
+`systemd-repart` inside the `systemd` package, trixie splits it into a package
+of its own. `os/rootfs/Dockerfile.v2` names it in the install list because of
+that, and `os/verify-image-v2.sh` asserts the enablement symlink. The failure
+if it were missing announces nothing — the device boots and DATA simply never
+grows past the 64 MiB the assembler creates.
 
 ## Storage tiers, and the /var contract
 
@@ -439,11 +379,9 @@ silent-wrong-artifact this layout work exists to prevent.
 
 ## CJK guard
 
-The v2 pack stage runs the same CJK check as the v1 pack stage, over the same
-character ranges, extended with the v2-only mos-owned paths (the overlay's
-mount units, seed scripts, `repart.d` definitions, `fstab` and
-`fw_env.config`). Vendor packages ship translations and are deliberately not
-scanned.
+The pack stage runs a CJK check over the mos-owned paths — the overlay's mount
+units, seed scripts, `repart.d` definitions, `fstab` and `fw_env.config`.
+Vendor packages ship translations and are deliberately not scanned.
 
 ## Dev root access on v2
 
@@ -468,10 +406,10 @@ What a developer actually gets on v2:
 ## Determinism, and what still deviates
 
 Two cache-hot `make os-rootfs-cx3576-v2` runs produce a byte-identical
-`rootfs-verity.img`. Unlike v1, sshd host keys are **not** baked into the image
-— they would be a private key shared by every device and would change the verity
-root hash on every cold build; `mos-seed-state` generates them per device on
-first boot instead.
+`rootfs-verity.img`. sshd host keys are **not** baked into the image — they
+would be a private key shared by every device and would change the verity root
+hash on every cold build; `mos-seed-state` generates them per device on first
+boot instead.
 
 What still deviates on a cold build: the byte layout depends on the
 `squashfs-tools` and `cryptsetup` versions pulled from `debian:bookworm-slim` in

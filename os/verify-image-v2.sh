@@ -10,9 +10,6 @@ set -euo pipefail
 # "RESULT: PASS|FAIL (n/m checks)" summary; exits non-zero if any check fails.
 # Totals are dynamic (PASS_N/total); nothing to hand-bump when checks change.
 #
-# v1 (os/verify-image.sh) is untouched and keeps verifying the single-slot
-# image; this is a sibling, not a rewrite.
-#
 # Every layout constant is read from os/layout/cx3576-v2.env. Nothing here
 # restates a GUID, an offset or a size, and nothing here enumerates a unit list
 # that the image itself can be asked for: the hwinit set grows, and a hardcoded
@@ -2592,9 +2589,16 @@ else
     fail "these board facts ship in /etc/mos but are NOT declared in BOARD_HWINIT_CONFS:${hwinit_undeclared}. The layout is what the build reasons from, so an undeclared fact is one no check here covers"
 fi
 
-# The board facts are READ, never restated: os/verify-image.sh already asserts
-# their values against board/cx3576/init, which is the user's area. Here we
-# only assert that each unit that exists is also enabled.
+# The board facts are READ, never restated: their VALUES are the board owner's
+# area (board/cx3576/init), and nothing here second-guesses them. Here we only
+# assert that each unit that exists is also enabled.
+#
+# RFCT-107 note: the v1 verifier did assert those values (modules.conf's module
+# list, can.conf's bitrate, bt.conf's UART, otg.conf's mode, mac.conf's seed)
+# and was deleted with the rest of the v1 chain, so no check in this tree reads
+# them today. That coverage was cx3576-only and hardcoded per board, which is
+# the shape PLAN-014 is moving away from; recorded here rather than silently
+# lost, for the verifier port (PLAN-014 M4) to decide on deliberately.
 hw_units="$(cd "${ROOT}/usr/lib/systemd/system" 2>/dev/null && ls mos-*.service 2>/dev/null || true)"
 if [ -z "${hw_units}" ]; then
     fail "no mos-*.service units found in /usr/lib/systemd/system"

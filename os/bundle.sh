@@ -20,7 +20,7 @@ set -euo pipefail
 # default; CERT/KEY/KEYRING in the environment override the defaults, which is
 # how a release build points this script at real signing material. When the
 # host has no rauc, the whole build runs in a bookworm container the script
-# launches — the same fallback pattern os/mkimage.sh uses for sgdisk.
+# launches — the same fallback pattern os/mkimage-v2.sh uses for sgdisk.
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(dirname "${SCRIPT_DIR}")"

@@ -1743,7 +1743,8 @@ sibling document.
    `SetSettings`.** The file's own comment at `:4` called this a *"Dev skeleton
    posture: root owns the name, everyone may talk to it."* It was the shipped
    file — `os/rootfs/build.sh:38` copies it into the image staging directory
-   (carried from `mos-ui-inventory.md` section 3.6).
+   (carried from `mos-ui-inventory.md` section 3.6). *`os/rootfs/build.sh` was
+   the v1 stager, deleted by RFCT-107; `build-v2.sh` stages the same file.*
 
    > **[re-anchored]** — RFCT-058, campaign `apid`. **This is fact 2, and it is
    > the fact the rest of §6 reasons from, so it is dated here once and
@@ -2782,9 +2783,9 @@ it. Under options 2 and 3 it is live, so it is costed here.
 | **Crate and binary name** | `mosd/webd/Cargo.toml:2` (`name = "webd"`); workspace member list `mosd/Cargo.toml:3`; the directory `mosd/webd/`; cross-build script `mosd/hack/build-aarch64.sh:9` (`-p mosd -p webd`) and `:11` | Mechanical |
 | **systemd unit** | `mosd/dist/webd.service` (13 lines, the file itself); ordering reference in `os/rootfs/overlay-v2/etc/systemd/system/var-lib-mos.mount:10` (`Before=mosd.service webd.service`) and its comment at `:3` | The unit is also what option 2 rewrites — see 7.4.2 |
 | **D-Bus policy** | **zero cost today** — `mosd/dist/com.mos.mosd.conf` does not contain the string `webd` (verified: `grep -c webd` returns 0). It is a ~~12-line~~ **73-line** file whose only identity is `root` — see the staleness note below | **But under option 2 the policy gains a `user="<webd user>"` rule (6.3.2), at which point this becomes a rename surface.** Ordering matters |
-| **Image verifier assertions** | v2: `os/verify-image-v2.sh:922-929` — four assertions plus `sq_enabled webd.service`; and `:1184-1200`, the health-probe block that names `webd` in both its `pass` and `fail` strings. v1: `os/verify-image.sh:603-628` — seven assertions on the binary, the ELF architecture, two unit lines and the enablement symlink | Two verifiers, not one |
+| **Image verifier assertions** | v2: `os/verify-image-v2.sh:922-929` — four assertions plus `sq_enabled webd.service`; and `:1184-1200`, the health-probe block that names `webd` in both its `pass` and `fail` strings. v1: `os/verify-image.sh:603-628` — seven assertions on the binary, the ELF architecture, two unit lines and the enablement symlink | Two verifiers when measured; **one since RFCT-107 deleted the v1 chain** |
 | **`StateDirectory` and deployed data** | `mosd/dist/webd.service:10` (`StateDirectory=mos/webd`); default `WEBD_STATE_DIR=/var/lib/mos/webd` at `mosd/webd/src/config.rs:38-40`; documented at `mosd/webd/src/main.rs:12-13` | See 7.4.2 — this is the only item with a cost on **already-deployed** devices |
-| **Image / build wiring** | `os/rootfs/build-v2.sh:73-74` and `os/rootfs/build.sh:39-40` (stage the binary and the unit); `os/rootfs/Dockerfile.v2:282-288` (install binary, unit and enablement symlink) and `:377`; `os/rootfs/Dockerfile:211-217` and `:289` | **The `Makefile` is not affected**: `grep -c webd Makefile` returns 0. Its 70 lines only route to the scripts above. Recorded because it is commonly assumed otherwise |
+| **Image / build wiring** | `os/rootfs/build-v2.sh:73-74` and `os/rootfs/build.sh:39-40` (stage the binary and the unit); `os/rootfs/Dockerfile.v2:282-288` (install binary, unit and enablement symlink) and `:377`; `os/rootfs/Dockerfile:211-217` and `:289`. **The `build.sh` / `Dockerfile` half is gone since RFCT-107** | **The `Makefile` is not affected**: `grep -c webd Makefile` returns 0. Its 70 lines only route to the scripts above. Recorded because it is commonly assumed otherwise |
 | **Health gate** | `os/health/mos-health:162-181` (probe c: `unit_present webd.service`, `https://127.0.0.1/healthz`), plus the byte-identical overlay copy `os/rootfs/overlay-v2/usr/lib/mos/mos-health` and its stager `os/health/sync-overlay.sh:13`; and `os/health/test.sh` | Two copies that `os/health/test.sh` exists to keep in sync |
 | **Settings schema** | **No persisted key changes.** The only `webd` strings under `mosd/mosd-settings/` are doc comments — `src/model.rs:51`, `:65` and `src/migration.rs:121`, `:126` (*"v1 -> v2: adds the webd-owned `access` subtree"*). No serde rename, no key, no TOML field. **So a rename needs no settings migration** | The single most reassuring finding here |
 | **Docs** | 54 files, **of which 10 are `*.zh.md`**: `docs/architecture.zh.md`, `docs/README.zh.md`, `docs/design/{access,boards,display,mosd,provisioning,remote-management}.zh.md`, `docs/research/{init-strategy,os-comparison}.zh.md` | The Chinese copies are translations that will silently contradict the English after a rename. They are outside this campaign's scope and were not edited |
@@ -2886,6 +2887,11 @@ only part of the rename that a fielded device notices.**
 > copies (`os/health/mos-health` and the overlay copy) **will be edited a second
 > time** if and when option 2 is built. Bundling would have been roughly half
 > the work; sequencing was chosen anyway, and this is what it costs.
+>
+> *RFCT-107 (PLAN-014 M1) has since deleted the v1 chain, so
+> `os/verify-image.sh` is no longer one of the files that second edit would
+> touch. The cost is one verifier, not two; nothing else in the argument
+> changes.*
 
 **Recommendation: do not rename as a standalone change. Rename only if and when
 the option-2 unit rewrite happens, in the same change.**

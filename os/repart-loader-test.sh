@@ -28,7 +28,7 @@
 #
 #   bash os/repart-loader-test.sh [image]...
 #
-# With no argument both pipelines' latest images are tested, whichever exist.
+# With no argument the latest assembled image is tested, if one exists.
 # Needs docker with --privileged (loop devices). Fails loudly if unavailable;
 # it never skips silently.
 set -euo pipefail
@@ -51,13 +51,12 @@ fail() { echo "FAIL: $*"; fail_count=$((fail_count + 1)); }
 
 IMAGES=("$@")
 if [ "${#IMAGES[@]}" -eq 0 ]; then
-    for candidate in "${REPO_ROOT}/_out/cx3576/cx3576-mos-latest.img" \
-        "${REPO_ROOT}/_out/cx3576/${IMAGE_LATEST_NAME}"; do
+    for candidate in "${REPO_ROOT}/_out/cx3576/${IMAGE_LATEST_NAME}"; do
         [ -f "${candidate}" ] && IMAGES+=("${candidate}")
     done
 fi
 if [ "${#IMAGES[@]}" -eq 0 ]; then
-    echo "error: no image found; build one with 'make os-image-cx3576' or 'make os-image-cx3576-v2'" >&2
+    echo "error: no image found; build one with 'make os-image-cx3576-v2'" >&2
     exit 1
 fi
 command -v docker >/dev/null || { echo "error: docker is required" >&2; exit 1; }

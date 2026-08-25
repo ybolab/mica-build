@@ -22,14 +22,14 @@ mos/
 └── Makefile         top-level routing; run `make help` for the full target list
 ```
 
-Two image generations coexist for cx3576. **v1** is the single-rootfs
-development image (`make os-image-cx3576`, `make os-verify-cx3576`). **v2** is
-the A/B layout: squashfs + dm-verity read-only root, RAUC updates, U-Boot
-`BOOT_ORDER` handshake (`make os-image-cx3576-v2`, `make os-verify-cx3576-v2`,
-`make os-bundle-cx3576`). They share nothing but the board artifacts, and the
-two U-Boot variants are not interchangeable — v1 pairs with
-`make -C board/cx3576 uboot`, v2 with `make -C board/cx3576 uboot-mos`. See
-`docs/plan/PLAN-010.md` M4 and `docs/design/uboot-ab-handshake.md`.
+The image is **v2**: the A/B layout — squashfs + dm-verity read-only root,
+RAUC updates, U-Boot `BOOT_ORDER` handshake (`make os-image-cx3576-v2`,
+`make os-verify-cx3576-v2`, `make os-bundle-cx3576`), paired with the U-Boot
+built by `make -C board/cx3576 uboot-mos`. See `docs/plan/PLAN-010.md` M4 and
+`docs/design/uboot-ab-handshake.md`.
+
+The v1 single-slot development image it grew out of was deleted by RFCT-107
+(PLAN-014 M1); git history is its archive.
 
 `talos/` is an untracked standalone git repository (large upstream fork history),
 archived at its final commit and kept for reference only; everything else is

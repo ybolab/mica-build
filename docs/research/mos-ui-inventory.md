@@ -354,8 +354,9 @@ plus the `After=` and `StateDirectory=` lines
 
 **Any local process may call any method on `com.mos.mosd`, including `Reboot`
 and `PowerOff`.** The comment in the file calls this a dev skeleton posture. It
-is the shipped policy — `os/rootfs/build.sh:38` copies this exact file into the
-image staging directory.
+is the shipped policy — `os/rootfs/build-v2.sh` copies this exact file into the
+image staging directory. (Measured against `os/rootfs/build.sh:38`, the v1
+stager RFCT-107 deleted; the v2 stager does the same thing.)
 
 ---
 
