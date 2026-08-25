@@ -13,12 +13,30 @@
 // satisfy any assertion phrased as "the same string the file has".
 
 import { describe, expect, test } from 'bun:test'
-import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { BoardEnvError } from './board-env.ts'
-import { isKnownRole, KNOWN_ROLES, loadBoard } from './board.ts'
+import { isKnownRole, KNOWN_ROLES, loadBoard, loadBoards } from './board.ts'
 import { boardEnvPath, BOARDS_DIR } from './paths.ts'
+
+/**
+ * Write a mutated copy of a real board definition and hand it to `fn`.
+ *
+ * The copy is deliberately NOT called board.env: a message about it should say
+ * "candidate", not name a real board it is not. The same correction
+ * os/verify/lint-test.sh already carries.
+ */
+function withMutatedBoard<T>(board: string, edit: (text: string) => string, fn: (path: string) => T): T {
+  const dir = mkdtempSync(join(tmpdir(), 'mos-board-'))
+  try {
+    const p = join(dir, 'candidate.env')
+    writeFileSync(p, edit(readFileSync(boardEnvPath(board), 'utf8')))
+    return fn(p)
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+}
 
 const cx3576 = loadBoard(boardEnvPath('cx3576'))
 const x64 = loadBoard(boardEnvPath('x64'))
@@ -272,40 +290,50 @@ describe('both boards at once', () => {
 
 describe('the model reports, and the parser refuses', () => {
   test('a key typed as a number whose value is not becomes a fault, not an exception', () => {
-    const text = readFileSync(boardEnvPath('x64'), 'utf8').replace('STATE_PARTNUM=7', 'STATE_PARTNUM=seven')
-    const dir = mkdtempSync(join(tmpdir(), 'mos-board-'))
-    const p = join(dir, 'candidate.env')
-    writeFileSync(p, text)
-    const board = loadBoard(p)
-    // Read to the end -- the other eight partitions still model.
-    expect(board.partitions.length).toBe(9)
-    expect(board.partition('STATE')!.partnum).toBeUndefined()
-    expect(board.faults.map(f => f.key)).toEqual(['STATE_PARTNUM'])
-    expect(board.faults[0]!.value).toBe('seven')
-    expect(board.faults[0]!.reason).toContain('is read as a number here, and it is not one')
+    withMutatedBoard('x64', t => t.replace('STATE_PARTNUM=7', 'STATE_PARTNUM=seven'), p => {
+      const board = loadBoard(p)
+      // Read to the end -- the other eight partitions still model.
+      expect(board.partitions.length).toBe(9)
+      expect(board.partition('STATE')!.partnum).toBeUndefined()
+      expect(board.faults.map(f => f.key)).toEqual(['STATE_PARTNUM'])
+      expect(board.faults[0]!.value).toBe('seven')
+      expect(board.faults[0]!.reason).toContain('is read as a number here, and it is not one')
+    })
   })
 
   test('a real board definition with a command substitution injected is REFUSED, by name', () => {
     // The whole point, end to end: a board definition is data, and the day one
     // of them acquires a `$(...)` the reader must say so rather than run it.
-    const text = readFileSync(boardEnvPath('x64'), 'utf8')
-      .replace('MOS_ARCH=amd64', 'MOS_ARCH=$(uname -m)')
-    const dir = mkdtempSync(join(tmpdir(), 'mos-board-'))
-    const p = join(dir, 'candidate.env')
-    writeFileSync(p, text)
+    withMutatedBoard('x64', t => t.replace('MOS_ARCH=amd64', 'MOS_ARCH=$(uname -m)'), p => {
+      let err: unknown
+      try {
+        loadBoard(p)
+      } catch (e) {
+        err = e
+      }
+      expect(err).toBeInstanceOf(BoardEnvError)
+      const e = err as BoardEnvError
+      expect(e.message).toContain('command substitution `$(...)`')
+      expect(e.path).toBe(p)
+      expect(e.sourceLine).toBe('MOS_ARCH=$(uname -m)')
+      expect(e.line).toBeGreaterThan(0)
+    })
+  })
+})
 
-    let err: unknown
-    try {
-      loadBoard(p)
-    } catch (e) {
-      err = e
-    }
-    expect(err).toBeInstanceOf(BoardEnvError)
-    const e = err as BoardEnvError
-    expect(e.message).toContain('command substitution `$(...)`')
-    expect(e.path).toBe(p)
-    expect(e.sourceLine).toBe('MOS_ARCH=$(uname -m)')
-    expect(e.line).toBeGreaterThan(0)
+describe('loading every board at once, which is what a lint does', () => {
+  test('loadBoards reads them in the order it is given, each with its own identity', () => {
+    const both = loadBoards(BOARDS_DIR, ['cx3576', 'x64'])
+    expect(both.map(b => b.name)).toEqual(['cx3576', 'x64'])
+    expect(both.map(b => b.partitions.length)).toEqual([11, 9])
+    // Separate models, not one environment that let the first board's keys
+    // satisfy the second's -- which is why lint.sh sources each in a subshell.
+    expect(both[1]!.declared('LOADER_PARTNUM')).toBe(false)
+    expect(both[0]!.declared('LOADER_PARTNUM')).toBe(true)
+  })
+
+  test('a board that is not there fails as a missing file, naming it', () => {
+    expect(() => loadBoards(BOARDS_DIR, ['no-such-board'])).toThrow(/no-such-board/)
   })
 })
 

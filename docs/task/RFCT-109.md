@@ -52,7 +52,7 @@ os/verify/README.md     HARNESS.md
 os/verify/src/board-env.ts   the parser
 os/verify/src/board.ts       the typed model
 os/verify/src/paths.ts       where the package sits, anchored rather than counted
-os/verify/src/*.test.ts      64 tests
+os/verify/src/*.test.ts      66 tests
 ```
 
 `tsconfig.json` is `test/apid-api`'s, unchanged: `strict`,

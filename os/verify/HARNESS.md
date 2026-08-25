@@ -29,7 +29,7 @@ So `run.sh` reads the count out of the run — the `Ran N tests` line — and tu
 exits 0 without printing that line at all, because the exit status alone cannot
 tell a green suite from one that never executed.
 
-The count pattern accepts `Ran 1 test` as well as `Ran 64 tests`. A pattern
+The count pattern accepts `Ran 1 test` as well as `Ran 66 tests`. A pattern
 that insisted on the plural would read a single-test filter as vacuous and fail
 it; that was a real defect here, caught by running the failing side.
 
