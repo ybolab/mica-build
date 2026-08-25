@@ -342,6 +342,37 @@ export async function fatVolumeLabel(rt: ToolRuntime, slot: FatSlot): Promise<st
 }
 
 /**
+ * The FAT volume SERIAL, as `minfo` reports it.
+ *
+ * Not the label. `mlabel` reads the label, which an operator chose; the serial
+ * is the four bytes mkfs.vfat wrote, and the two answer different questions --
+ * os/verify-image-v2.sh:1795 and :1805 ask both, separately, and a factory
+ * image has to satisfy both.
+ *
+ * A slot with no serial is refused rather than returned as the empty string:
+ * minfo prints `serial number: <hex>` for every FAT it can read at all, so a
+ * missing line means it read something that is not one, and an empty answer
+ * would make "the volume id is wrong" indistinguishable from "there is no
+ * filesystem here".
+ */
+export async function fatVolumeSerial(rt: ToolRuntime, slot: FatSlot): Promise<string> {
+  const out = await mtool(rt, ['minfo', '-i', mtoolsTarget(slot)], slot, 'reading the volume serial')
+  const line = /^serial number: *(.*?) *$/m.exec(out)
+  if (line === null || (line[1] ?? '').trim() === '') {
+    throw new ToolOutputError(
+      `minfo on the FAT at offset ${slot.offsetBytes} of ${slot.image} exited 0 and printed no `
+      + `"serial number:" line:\n${out.trim() || '(nothing)'}`,
+    )
+  }
+  // Spaces come out, and NOTHING ELSE does. os/verify-image-v2.sh:1796 pipes
+  // through `tr -d ' '` and no more, so a minfo that printed `C357-6003` would
+  // make the oracle FAIL against a layout that declares `C3576003` -- and a
+  // port that also stripped the dash would pass where the oracle fails, which
+  // is a divergence hidden by the port rather than found by it.
+  return (line[1] as string).replace(/ /g, '')
+}
+
+/**
  * Every path in the slot, recursively, as `::/name` -- `mdir -/ -b`'s own form.
  *
  * An empty listing is returned as an empty array rather than refused: a boot

@@ -46,6 +46,8 @@ import {
   type GptTable,
 } from './image.ts'
 import { GPT_CHECKS } from './checks-gpt.ts'
+import { RAUC_CHECKS } from './checks-rauc.ts'
+import { SLOT_CHECKS } from './checks-slots.ts'
 import { ToolOutputError, type ToolRuntime } from './tools.ts'
 import type { CheckResult, RegisteredCheck, Verdict } from './parity.ts'
 
@@ -104,6 +106,8 @@ export interface CheckCase extends RegisteredCheck {
  */
 export const CHECKS: readonly CheckCase[] = [
   ...GPT_CHECKS,
+  ...SLOT_CHECKS,
+  ...RAUC_CHECKS,
 ]
 
 /**
