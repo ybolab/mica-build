@@ -119,20 +119,7 @@ BOOT2="${MOS_APID_BOOT2:-1}"
 BOOT2_PHASES="${MOS_APID_BOOT2_PHASES:-07b-postreboot,08-poweroff}"
 
 PHASES="${MOS_APID_PHASES:-}"
-# The default comes from os/build-env/images.env; the override stays, because a
-# caller pointing this harness at another bun build is a thing someone may
-# legitimately want and pinning a default does not take it away.
-#
-# WRITTEN AS AN if RATHER THAN ${VAR:-$(...)}, deliberately. Inside a `:-`
-# default the command substitution's failure does not reliably reach `set -e`,
-# so an images.env that from.sh refuses would have assigned an EMPTY BUN_IMAGE
-# and the harness would have failed later, in `docker run`, about an argument
-# count. The refusal has to be the thing that stops the run.
-if [ -n "${MOS_APID_BUN_IMAGE:-}" ]; then
-    BUN_IMAGE="${MOS_APID_BUN_IMAGE}"
-else
-    BUN_IMAGE="$(bash "${REPO_ROOT}/os/build-env/from.sh" --ref IMAGE_BUN_1)"
-fi
+BUN_IMAGE="${MOS_APID_BUN_IMAGE:-oven/bun:1}"
 KEEP_DISK="${MOS_APID_KEEP_DISK:-0}"
 
 DRY_RUN=0
