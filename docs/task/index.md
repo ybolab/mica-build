@@ -129,7 +129,7 @@ Each task is a single line linking to its detail file. All detailed information 
 - [x] [**RFCT-104 A master switch for MQTT, and a broker for the bridge that has only ever retried**](RFCT-104.md) `P1`
 - [x] [**RFCT-105 An over-the-wire suite for apid: nine phases against one boot, and effects observed on the device**](RFCT-105.md) `P1`
 - [x] [**RFCT-106 x64 A/B: the update has to land where the firmware actually looks**](RFCT-106.md) `P0`
-- [ ] [**RFCT-107 PLAN-014 M1: delete v1 and restructure the os/ tree without changing a byte of the image**](RFCT-107.md) `P1`
+- [x] [**RFCT-107 PLAN-014 M1: delete v1 and restructure the os/ tree without changing a byte of the image**](RFCT-107.md) `P1`
 - [ ] [**RFCT-108 PLAN-014 M2: the pinned build-environment image family**](RFCT-108.md) `P1`
 - [ ] [**RFCT-109 PLAN-014 M3: the bun+TS foundation, proven on the board-definition lint**](RFCT-109.md) `P1`
 - [ ] [**RFCT-110 PLAN-014 M4: the image-contract verifier ported to TS under a per-check parity gate**](RFCT-110.md) `P1`
