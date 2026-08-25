@@ -211,9 +211,25 @@ else
     FILES=("${HERE}"/*-v2.env)
 fi
 
+# Each layout must be READ TO THE END and must contribute assertions of its own.
+#
+# lint_one runs in a subshell so that one board's keys cannot satisfy another
+# board's checks. That isolation also swallows the subshell's death: when the
+# x64 layout referenced BOOT_SIZE_MIB after that key had been renamed, `set -u`
+# killed the subshell at the first line of the file, the board contributed ZERO
+# assertions, and the run reported `RESULT: PASS (1/1 checks)` from the OTHER
+# board alone. The vacuity guard below could not see it either -- the total was
+# not zero. So the status is read, and the per-file count has to move.
 for f in "${FILES[@]}"; do
     [ -f "${f}" ] || { echo "error: ${f} not found" >&2; exit 1; }
-    lint_one "${f}"
+    read -r before_pass before_fail <"${COUNT_FILE}"
+    if ! lint_one "${f}"; then
+        fail "$(basename "${f}"): could not be read to the end -- the shell exited while sourcing it, so none of the checks below ever ran. An unset key referenced under 'set -u' does this, and the layout then passes by contributing nothing"
+    fi
+    read -r after_pass after_fail <"${COUNT_FILE}"
+    if [ "${before_pass}${before_fail}" = "${after_pass}${after_fail}" ]; then
+        fail "$(basename "${f}"): made no assertions at all; a layout nothing checks reports the same green as one that passes"
+    fi
 done
 
 read -r PASS_N FAIL_N <"${COUNT_FILE}"
