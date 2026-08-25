@@ -15,15 +15,21 @@ set -euo pipefail
 #
 # The output filename carries the assembly-time epoch, but the image CONTENT is
 # deterministic: fixed GPT GUIDs, fixed FAT volume ids, fixed ext4 fs UUIDs and
-# hash seeds, E2FSPROGS_FAKE_TIME, and all staged files touched to FILE_MTIME.
-# Known deviation (inherited from v1): the FAT partitions are byte-identical
-# only across builds using the same mtools version, and rootfs-verity.img is
-# only as reproducible as the pipeline that produced it.
+# hash seeds, E2FSPROGS_FAKE_TIME, all staged BOOT files touched to FILE_MTIME,
+# and -- for the one filesystem seeded from a source tree, EPHEMERAL -- every
+# in-use inode's atime and ctime rewritten to FILE_MTIME after the fact, because
+# `touch` reaches neither of them through mke2fs -d (see pin_seeded_times).
+# Known deviations: the FAT partitions are byte-identical only across builds
+# using the same mtools version; rootfs-verity.img is only as reproducible as
+# the pipeline that produced it; and EPHEMERAL's file MTIMES are the factory
+# /var export's own, so they are as reproducible as os/rootfs/build-v2.sh makes
+# them -- this script carries them through, it does not invent them.
 #
-# When the host lacks sgdisk/mkfs.vfat/mcopy or an mke2fs new enough to turn
-# off orphan_file (e2fsprogs >= 1.47), the assembly runs inside an Alpine
-# container (--assemble mode); epoch naming and the -latest symlink always
-# happen on the host side.
+# When the host lacks sgdisk/mkfs.vfat/mcopy/dumpe2fs/debugfs or an mke2fs new
+# enough to turn off orphan_file (e2fsprogs >= 1.47), the assembly runs inside
+# an Alpine container (--assemble mode); epoch naming and the -latest symlink
+# always happen on the host side. Alpine ships dumpe2fs and debugfs in
+# e2fsprogs-EXTRA, not e2fsprogs, which is why the package line names both.
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(dirname "${SCRIPT_DIR}")"
@@ -88,14 +94,92 @@ lc() {
     printf '%s' "$1" | tr '[:upper:]' '[:lower:]'
 }
 
+# Rewrites every in-use inode's atime and ctime to FILE_MTIME, in place, in the
+# finished filesystem. Only a filesystem seeded with `mke2fs -d` needs this, and
+# it is the difference between "EPHEMERAL is seeded" and "EPHEMERAL rebuilds
+# byte-identically" -- before this the two differed in 106 bytes of the inode
+# table, spanning every inode the seed created.
+#
+# mke2fs -d copies the SOURCE inode's atime, mtime and ctime into the image, and
+# two of those three are this script's own noise rather than the exported tree's
+# content:
+#
+#   ctime  assemble() copies the factory /var into a staging dir so the stamp
+#          can be added without writing into _out, and the kernel stamps every
+#          copied inode's ctime with the moment of that copy. NO syscall sets
+#          ctime -- not touch, not utimensat -- so the only way to pin it is to
+#          write the inode table, which is what this does.
+#   atime  cp -a preserves the source's atime, and reading the source to make
+#          the FIRST copy is itself what bumps it under relatime. So assembly 2
+#          seeds EPHEMERAL with a timestamp assembly 1 created, and the two
+#          images differ in a field neither build was asked about.
+#
+# mtime is deliberately left alone: it is the producer's data, carried in
+# through cp -a, not something this script invents. crtime is mke2fs's own
+# invention and E2FSPROGS_FAKE_TIME already pins it (that is all it can pin --
+# it does not reach times copied in from a source tree).
+#
+# The inode set comes from the inode bitmap rather than from walking the source
+# tree, so it cannot be desynchronised by a filename debugfs's parser would
+# split, and it starts at the filesystem's first non-reserved inode so mke2fs's
+# own reserved inodes are left exactly as mke2fs wrote them. The enumerated
+# count is cross-checked against the superblock's free-inode total: if a future
+# dumpe2fs changes how it prints ranges, this refuses the build instead of
+# silently pinning nothing and handing the byte-identity check a fake pass.
+pin_seeded_times() {
+    local img="$1"
+    local hdr first count free_total want got cmds n errs
+    hdr="$(dumpe2fs -h "${img}" 2>/dev/null)"
+    first="$(printf '%s\n' "${hdr}" | sed -n 's/^First inode: *//p')"
+    count="$(printf '%s\n' "${hdr}" | sed -n 's/^Inode count: *//p')"
+    free_total="$(printf '%s\n' "${hdr}" | sed -n 's/^Free inodes: *//p')"
+    for n in "${first}" "${count}" "${free_total}"; do
+        if ! [[ "${n}" =~ ^[0-9]+$ ]]; then
+            echo "error: could not read the inode geometry of ${img} from dumpe2fs (first='${first}' count='${count}' free='${free_total}')" >&2
+            exit 1
+        fi
+    done
+    # Reserved inodes 1..first-1 are mke2fs's, and are not being rewritten.
+    want=$(( count - free_total - (first - 1) ))
+
+    cmds="${img}.times"
+    dumpe2fs "${img}" 2>/dev/null | sed -n 's/^  Free inodes: *//p' | tr ',' '\n' |
+        awk -v first="${first}" -v count="${count}" -v t="${FILE_MTIME}" '
+            { gsub(/[ \t]/, ""); if ($0 == "") next
+              n = split($0, r, /-+/); lo = r[1] + 0; hi = (n > 1 ? r[2] + 0 : lo)
+              for (i = lo; i <= hi; i++) free[i] = 1 }
+            END { for (i = first; i <= count; i++) if (!(i in free))
+                      printf "sif <%d> atime %s\nsif <%d> ctime %s\n", i, t, i, t }
+        ' > "${cmds}"
+    got=$(( $(wc -l < "${cmds}") / 2 ))
+    if [ "${got}" -ne "${want}" ]; then
+        echo "error: the inode bitmap of ${img} says ${want} inodes are in use from ${first} up, but parsing dumpe2fs's free-inode ranges found ${got}; refusing to pin timestamps against a listing this script no longer understands" >&2
+        exit 1
+    fi
+    # debugfs exits 0 even when an individual command fails, so its stderr is
+    # the only failure signal there is; everything but its version banner is an
+    # error. Silencing the stream instead would let a rename of `sif` turn this
+    # into a no-op that still reports success.
+    errs="$(debugfs -w -f "${cmds}" "${img}" 2>&1 >/dev/null | grep -v '^debugfs [0-9]' || true)"
+    if [ -n "${errs}" ]; then
+        echo "error: debugfs could not pin the seeded timestamps in ${img}: ${errs}" >&2
+        exit 1
+    fi
+    rm -f "${cmds}"
+}
+
 # Formats one partition slot's ext4 filesystem into a standalone image file.
-# Args: out-file size-MiB fs-label fs-uuid
+# Args: out-file size-MiB fs-label fs-uuid [seed-dir]
 mkext4() {
     local seed="${5:-}"
     truncate -s "$2M" "$1"
     if [ -n "${seed}" ]; then
         mke2fs -q -t ext4 -b "${EXT4_BLOCK_SIZE}" -L "$3" -U "$4" \
             -O "${EXT4_FEATURES}" -E "root_owner=0:0,hash_seed=$4" -d "${seed}" "$1"
+        # Every seeded filesystem, not just today's only one: an unseeded
+        # mke2fs invents all four times and E2FSPROGS_FAKE_TIME pins them, but
+        # the moment a tree is copied in, two of them come from the host clock.
+        pin_seeded_times "$1"
     else
         mke2fs -q -t ext4 -b "${EXT4_BLOCK_SIZE}" -L "$3" -U "$4" \
             -O "${EXT4_FEATURES}" -E "root_owner=0:0,hash_seed=$4" "$1"
@@ -403,6 +487,10 @@ assemble() {
     # mos-seed-var's ConditionPathExists keeps it from running on a normal
     # boot; it stays for the path where EPHEMERAL has been wiped.
     : >"${FACTORY_VAR_STAGE}/.mos-var-seeded"
+    # The one file in the seed this script authors, so the one whose mtime is
+    # this script's to pin; pin_seeded_times() below handles its atime and
+    # ctime along with every other seeded inode's.
+    touch -h -d "${FILE_MTIME}" "${FACTORY_VAR_STAGE}/.mos-var-seeded"
     [ -d "${FACTORY_VAR_STAGE}/lib" ] || {
         echo "error: the staged factory /var has no lib/; seeding EPHEMERAL from it would produce a /var with no dpkg database and no mosd state directory" >&2
         exit 1
@@ -559,7 +647,8 @@ IMG_NAME="${IMAGE_NAME_PREFIX}$(date +%s)${IMAGE_NAME_SUFFIX}"
 host_can_assemble() {
     command -v sgdisk >/dev/null && command -v mkfs.vfat >/dev/null &&
         command -v mcopy >/dev/null && command -v mke2fs >/dev/null &&
-        command -v mkimage >/dev/null || return 1
+        command -v mkimage >/dev/null && command -v dumpe2fs >/dev/null &&
+        command -v debugfs >/dev/null || return 1
     local probe rc=0
     probe="$(mktemp)"
     truncate -s "${META_SIZE_MIB}M" "${probe}"
@@ -587,7 +676,7 @@ if host_can_assemble; then
         IMG_OUT="${OUT_DIR}/${IMG_NAME}" "${INNER_ENV[@]}" \
         bash "${BASH_SOURCE[0]}" --assemble
 else
-    echo "sgdisk/mkfs.vfat/mcopy/mkimage/mke2fs(>=1.47) not all available on the host; assembling in a container"
+    echo "sgdisk/mkfs.vfat/mcopy/mkimage/dumpe2fs/debugfs/mke2fs(>=1.47) not all available on the host; assembling in a container"
     docker run --rm \
         -v "${REPO_ROOT}:/work" \
         -v "${BOARD_DIR}:/board:ro" \
@@ -603,7 +692,7 @@ else
         -e IMG_OUT="/work/_out/cx3576/${IMG_NAME}" \
         "${DOCKER_PIN_ARGS[@]}" \
         alpine:3.21 \
-        sh -c 'apk add --no-cache -q bash coreutils sgdisk dosfstools mtools e2fsprogs u-boot-tools && exec bash /work/os/mkimage-v2.sh --assemble'
+        sh -c 'apk add --no-cache -q bash coreutils sgdisk dosfstools mtools e2fsprogs e2fsprogs-extra u-boot-tools && exec bash /work/os/mkimage-v2.sh --assemble'
 fi
 
 ln -sfn "${IMG_NAME}" "${OUT_DIR}/${IMAGE_LATEST_NAME}"
