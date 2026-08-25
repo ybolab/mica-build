@@ -53,6 +53,9 @@ each returns 1:
 | a copy whose `REPO_ROOT` has no `Makefile` | the computed `HERE` and `REPO_ROOT`, and that one of them is stale |
 | a suite whose only test file declares no tests | the vacuity refusal above |
 | a suite with one deliberately red test | `RESULT: FAIL (bun test exited 1; 0 passed of 1 run)` |
+| `--lint` on a file that is not there | `error: <abs path> not found`, and the path is the one it actually looked at |
+| `--lint` on a relative path, from three different cwds | the same verdict each time -- the absolutising works |
+| `--lint` in a NON-first position | refused. It used to be forwarded to `bun test`, which ignores the unknown flag and reports a green suite in answer to a request for the lint |
 
 The path anchors are checked the same way in `src/paths.test.ts`: each ascent
 is asserted at the count it uses **and at the counts on either side**, and the

@@ -71,6 +71,18 @@ case "${1:-}" in
 --lint) MODE=lint; shift ;;
 esac
 
+# ...and anywhere else it is a MISTAKE, refused rather than forwarded. Driven
+# from the failing side: `run.sh src/lint.test.ts --lint` handed --lint to
+# `bun test`, which ignored the unknown flag, ran the suite and exited 0 -- so
+# asking for the lint got a green that was about something else entirely.
+for arg in "$@"; do
+    [ "${arg}" = "--lint" ] || continue
+    echo "error: --lint has to be the FIRST argument; here it came after '$1'." >&2
+    echo "       Anywhere else it would be forwarded to \`bun test\`, which ignores it and" >&2
+    echo "       reports a green suite in answer to a request for the lint." >&2
+    exit 1
+done
+
 # The lint's arguments are FILES, and run_bun cds into this package before it
 # invokes bun -- so a relative path from the caller's shell would resolve
 # against os/verify/ and be reported as "not found" for the wrong reason.
