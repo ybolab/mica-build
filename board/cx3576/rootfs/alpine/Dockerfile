@@ -9,8 +9,27 @@
 #   make rootfs -> out/rootfs/rootfs.img
 # =============================================================================
 
-ARG ALPINE_IMAGE=alpine:3.24.1@sha256:28bd5fe8b56d1bd048e5babf5b10710ebe0bae67db86916198a6eec434943f8b
-FROM ${ALPINE_IMAGE} AS rootfs
+# THE TWO BASE IMAGES, INJECTED FROM os/build-env/images.env by
+# os/build-env/from.sh, which board/cx3576/Makefile calls. RFCT-108 M2c.
+#
+# THE ALPINE PIN IS NOT NEW; IT MOVED. What stood here was
+#
+#     ARG ALPINE_IMAGE=alpine:3.24.1@sha256:28bd5fe8...943f8b
+#
+# -- the one digest pin this repository had before PLAN-014 M2, and the
+# precedent images.env cites for pinning an INDEX digest rather than a
+# per-architecture one. The bytes are unchanged: images.env carries that exact
+# digest, copied and not re-resolved. What changes is that "what does this
+# repository build on" now has one answer in one file, instead of one answer
+# here and none anywhere else.
+#
+# NO DEFAULTS, which is the other half of the move. A pin written as an ARG
+# DEFAULT is a pin any caller can silently replace, and a caller that forgets
+# the argument builds against something else with no error at all. Without a
+# default docker refuses before the first stage runs.
+ARG MOS_IMAGE_ALPINE_3_24_1
+ARG MOS_IMAGE_UBUNTU_2404
+FROM ${MOS_IMAGE_ALPINE_3_24_1} AS rootfs
 
 RUN apk add --no-cache \
         openrc busybox-openrc busybox-mdev-openrc \
@@ -117,7 +136,7 @@ RUN test -x /sbin/dhcpcd && \
     grep -qx 'PermitRootLogin yes' /etc/ssh/sshd_config.d/10-rk3576-debug.conf && \
     test -x /usr/bin/btmgmt
 
-FROM --platform=$BUILDPLATFORM ubuntu:24.04 AS pack
+FROM --platform=$BUILDPLATFORM ${MOS_IMAGE_UBUNTU_2404} AS pack
 RUN apt-get update && apt-get install -y --no-install-recommends e2fsprogs ripgrep \
     && rm -rf /var/lib/apt/lists/*
 COPY --from=rootfs / /rootfs/

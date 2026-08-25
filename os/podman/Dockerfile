@@ -51,20 +51,56 @@
 # what the cache mounts below buy instead — per-stage apt caches so an
 # invalidated stage re-installs from local .debs, plus compiled-output caches
 # for all three languages.
+#
+# RFCT-108 M2c DID NOT UNDO THAT. The four stages now start from four SHARED
+# images (mos-build-{base,c,go,rust}) instead of four upstream tags, which is a
+# change to where the language toolchain comes from and not to how many stages
+# there are. Each stage keeps its own apt list, holding exactly the -dev
+# packages its own components need, so the measurement above still describes
+# what a one-package edit costs: adding libsystemd-dev to the Go list
+# invalidates go-build and nothing else. The shared images carry compilers; they
+# carry no component's headers, and that boundary is what keeps them shared.
 
-ARG BUILDER_IMAGE=debian:trixie-slim
-ARG GO_IMAGE=golang:1.25-trixie
-ARG RUST_IMAGE=rust:1.90-trixie
+# THE FOUR BUILDER IMAGES, INJECTED FROM os/build-env/images.env by
+# os/build-env/from.sh, which os/podman/build.sh calls. PLAN-014 decision 4 and
+# RFCT-108 M2c; what stood here until M2c was
+#
+#     ARG BUILDER_IMAGE=debian:trixie-slim
+#     ARG GO_IMAGE=golang:1.25-trixie
+#     ARG RUST_IMAGE=rust:1.90-trixie
+#
+# -- three tags upstream repoints on its own schedule, so "which compiler built
+# the engine on this device" was answerable only from a build log, and only if
+# somebody kept one.
+#
+# NO DEFAULTS, DELIBERATELY, and this is the one place in this file that differs
+# from ELF_ARCH's reasoning below. ELF_ARCH is defaulted so that a bare
+# `docker buildx build` on this Dockerfile still checks SOMETHING; a default
+# here would do the opposite, because the thing it would default to is exactly
+# the unpinned float this milestone removes. Without a value docker refuses with
+# "base name (${MOS_BUILD_BASE}) should not be blank" before any stage runs,
+# which is a loud failure; with a default it would build green against an image
+# nobody chose. Build this through `make podman`.
+#
+# THE SWITCHOVER IS A TOOLCHAIN BUMP AS WELL AS AN IMAGE SWAP. golang:1.25 was a
+# Go line upstream no longer supports; mos-build-go is 1.26.7 and mos-build-rust
+# is 1.98.0 against the old rust:1.90. podman, netavark and aardvark-dns were
+# re-proven under both, not merely rebuilt -- see os/podman/README.md.
+ARG MOS_BUILD_BASE
+ARG MOS_BUILD_C
+ARG MOS_BUILD_GO
+ARG MOS_BUILD_RUST
 
 # ---------------------------------------------------------------------------
 # Sources: fetched once, hashed, shared by every builder below
 # ---------------------------------------------------------------------------
-FROM --platform=$BUILDPLATFORM ${BUILDER_IMAGE} AS src
-RUN --mount=type=cache,target=/var/cache/apt,id=apt-cache-src,sharing=locked \
-    --mount=type=cache,target=/var/lib/apt/lists,id=apt-lists-src,sharing=locked \
-    rm -f /etc/apt/apt.conf.d/docker-clean && \
-    apt-get update && apt-get install -y --no-install-recommends \
-        git ca-certificates
+# NO apt-get HERE ANY MORE. This stage needs git and a CA bundle, and those
+# are two of the five packages mos-build-base exists to carry and ASSERTS from
+# inside itself (os/build-env/base/Dockerfile). Re-installing them would make
+# the assertion decorative: the floor would be a thing the base promises and
+# nothing spends, and the first slimmed base would be found by a failed clone
+# in a component build instead of by the image that claims the floor.
+FROM --platform=$BUILDPLATFORM ${MOS_BUILD_BASE} AS src
 # versions.lock, not versions.env: build.sh derives it by stripping comments
 # and blank lines. The two carry identical values, and the lock is what this
 # stage's cache key is computed over.
@@ -95,11 +131,30 @@ COPY versions.lock /versions.env
 # it traded a few MB in a stage that never ships for `fatal: not a git
 # repository` in the middle of a compile.
 #
-# PENDING is accepted and reported rather than silently passed: it is how a
-# version is bumped (see versions.env). MOS_PODMAN_STRICT=1 refuses it, which
-# is what CI sets, so an unhashed source can reach a developer and never a
-# release.
-ARG MOS_PODMAN_STRICT=0
+# PENDING PRINTS THE HASH IT COMPUTED AND FAILS. There is no environment
+# variable that softens it, and until RFCT-108 M2c there was one:
+# MOS_PODMAN_STRICT defaulted to 0 and turned this into a warning.
+#
+# THE KNOB WAS REMOVED BECAUSE ITS JUSTIFICATION WAS NEVER IMPLEMENTED. The
+# comment here said MOS_PODMAN_STRICT=1 "is what CI sets, so an unhashed source
+# can reach a developer and never a release" -- and nothing in this repository
+# has ever set it: not .gitea/workflows/check.yml, not privileged.yml, not the
+# Makefile, not os/podman/build.sh, which passed through
+# ${MOS_PODMAN_STRICT:-0}. Measured by grep across the whole tree, M2c. So the
+# release path and the developer path were the same warning, and the sentence
+# describing the difference was the only place the difference existed.
+#
+# WHICH OF THE TWO WAS WRONG, the prose or the code: the code. os/podman/
+# versions.env's own bump instructions have always read "The build prints the
+# hash it computed and fails", os/build-env/images.env implements exactly that
+# and records why (M2a: an unpinned pin fails nothing downstream, so a warning
+# floats for as long as nobody reads a log), and a build that WARNS while its
+# documentation says it FAILS teaches a reader to stop believing the
+# documentation. The prose was the contract worth keeping; this now keeps it.
+#
+# What it costs is real and small: a bump is two runs instead of one. What it
+# buys is that `git log` can never contain a commit whose engine came from an
+# unhashed tag.
 RUN --mount=type=cache,target=/root/.cache/git \
     set -eu; . /versions.env; \
     fetch() { \
@@ -109,10 +164,7 @@ RUN --mount=type=cache,target=/root/.cache/git \
         got="$(git -C "/src/${name}" archive --format=tar "${tag}" | sha256sum | cut -d' ' -f1)"; \
         if [ "${want}" = "PENDING" ]; then \
             echo "HASH ${name} ${tag} ${got}"; \
-            if [ "${MOS_PODMAN_STRICT}" = "1" ]; then \
-                echo "error: ${name} is pinned to ${tag} with no hash, and MOS_PODMAN_STRICT=1 refuses that. Record the hash printed above in os/podman/versions.env" >&2; exit 1; \
-            fi; \
-            echo "warning: ${name} ${tag} is UNHASHED. Record ${got} in os/podman/versions.env — until then this build trusts whatever the tag points at today" >&2; \
+            echo "error: ${name} is pinned to ${tag} with no hash. Record ${name}_SHA256=${got} in os/podman/versions.env and run again; until then this build would compile whatever the tag points at today, which is a different fact from the source this tree agreed to ship" >&2; exit 1; \
         elif [ "${want}" != "${got}" ]; then \
             echo "error: ${name} ${tag} hashes to ${got}, but os/podman/versions.env pins ${want}. Either the tag was moved upstream or the pin is stale; do not paste the new hash in without finding out which" >&2; exit 1; \
         else \
@@ -129,7 +181,18 @@ RUN --mount=type=cache,target=/root/.cache/git \
 # ---------------------------------------------------------------------------
 # C components. Runs AS aarch64 under the builder's emulation.
 # ---------------------------------------------------------------------------
-FROM ${BUILDER_IMAGE} AS c-build
+FROM ${MOS_BUILD_C} AS c-build
+# THE LANGUAGE TOOLCHAIN CAME WITH THE IMAGE; THE COMPONENTS' HEADERS DID NOT,
+# and the split is the whole reason mos-build-c is a shared image and this apt
+# list still exists. build-essential, make, cmake, pkgconf, autoconf, automake,
+# libtool, python3, ccache and file are facts about compiling C, so they are in
+# mos-build-c, which asserts their versions from inside itself. The six -dev
+# packages below are facts about crun, conmon and catatonit -- three programs --
+# and hoisting them into the shared image would put them in the cache key of
+# every OTHER component that stands on it. os/podman/Dockerfile measured that
+# arithmetic in the note further up: one dependency list for five compilers
+# turned a one-package edit into ~42 minutes of recompilation.
+#
 # Grouped by what needs each package. A missing build tool reports as a missing
 # command a hundred lines into a compile, which is how an earlier revision of
 # this file spent an iteration on an absent autoconf.
@@ -137,17 +200,17 @@ RUN --mount=type=cache,target=/var/cache/apt,id=apt-cache-c,sharing=locked \
     --mount=type=cache,target=/var/lib/apt/lists,id=apt-lists-c,sharing=locked \
     rm -f /etc/apt/apt.conf.d/docker-clean && \
     apt-get update && apt-get install -y --no-install-recommends \
-        build-essential git make cmake pkgconf file python3 ca-certificates \
-        autoconf automake libtool ccache \
         libseccomp-dev libcap-dev \
         libjson-c-dev libyajl-dev \
         libglib2.0-dev \
         libsystemd-dev
-# ccache in front of the real compilers. The C components had NO compiled-object
-# cache while the Go stage had two (/root/.cache/go-build and /go/pkg/mod), so
-# any change upstream of this stage paid a full crun recompile -- ~10 minutes
-# under emulation -- to rebuild bytes identical to the previous run's.
-ENV CCACHE_DIR=/ccache PATH="/usr/lib/ccache:${PATH}"
+# CCACHE_DIR AND THE /usr/lib/ccache PATH ENTRY ARE SET BY mos-build-c, not
+# here, and the mounts below are what make them worth setting: ccache in front
+# of the real compilers gives the C components the compiled-object cache the Go
+# stage has had since it was written (/root/.cache/go-build and /go/pkg/mod).
+# Without it any change upstream of this stage paid a full crun recompile --
+# ~10 minutes under emulation -- to rebuild bytes identical to the previous
+# run's. A cache DIRECTORY is not a cache; the consumer's mount is.
 COPY --from=src /src/crun /src/crun
 COPY --from=src /src/conmon /src/conmon
 COPY --from=src /src/catatonit /src/catatonit
@@ -196,12 +259,21 @@ RUN --mount=type=cache,target=/ccache,id=ccache-c \
 # ---------------------------------------------------------------------------
 # Rust: netavark and aardvark-dns
 # ---------------------------------------------------------------------------
-FROM ${RUST_IMAGE} AS rust-build
+# mos-build-rust, which is Rust 1.98.0 from the tarball images.env pins by
+# sha256, against the rust:1.90-trixie tag that stood here before M2c. netavark
+# and aardvark-dns compile and their test suites are not what this stage runs,
+# so "it built" is the whole claim -- os/podman/README.md records what was
+# checked beyond that.
+#
+# protobuf-compiler and pkgconf stay HERE: netavark's build script runs protoc
+# for its plugin API, which is a fact about netavark. ca-certificates is gone
+# from this list because mos-build-base carries it and asserts it.
+FROM ${MOS_BUILD_RUST} AS rust-build
 RUN --mount=type=cache,target=/var/cache/apt,id=apt-cache-rust,sharing=locked \
     --mount=type=cache,target=/var/lib/apt/lists,id=apt-lists-rust,sharing=locked \
     rm -f /etc/apt/apt.conf.d/docker-clean && \
     apt-get update && apt-get install -y --no-install-recommends \
-        protobuf-compiler pkgconf ca-certificates
+        protobuf-compiler pkgconf
 COPY --from=src /src/netavark /src/netavark
 COPY --from=src /src/aardvark-dns /src/aardvark-dns
 # No --target and no crt-static: this is a native glibc build, so cargo's host
@@ -232,12 +304,24 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry,id=cargo-registry \
 # ---------------------------------------------------------------------------
 # Go: podman and its Quadlet generator
 # ---------------------------------------------------------------------------
-FROM ${GO_IMAGE} AS go-build
+# mos-build-go, which is Go 1.26.7 from the tarball images.env pins by sha256,
+# against the golang:1.25-trixie tag that stood here before M2c -- a line Go no
+# longer supports.
+#
+# build-essential IS STILL INSTALLED HERE, and that is not an oversight:
+# mos-build-go deliberately carries no C compiler. podman needs one because
+# CGO_ENABLED is mandatory for it (the note at the top of this file quotes
+# podman's own Makefile), but a cgo consumer needs its own -dev list anyway --
+# the four below -- so putting gcc in the shared Go image would give every
+# pure-Go consumer a C toolchain in its cache key and still not spare this
+# stage its apt line. git, ca-certificates and binutils are gone from this list:
+# mos-build-base carries all three and asserts them.
+FROM ${MOS_BUILD_GO} AS go-build
 RUN --mount=type=cache,target=/var/cache/apt,id=apt-cache-go,sharing=locked \
     --mount=type=cache,target=/var/lib/apt/lists,id=apt-lists-go,sharing=locked \
     rm -f /etc/apt/apt.conf.d/docker-clean && \
     apt-get update && apt-get install -y --no-install-recommends \
-        build-essential pkgconf git ca-certificates binutils \
+        build-essential pkgconf \
         libseccomp-dev libsubid-dev libsqlite3-dev libsystemd-dev
 COPY --from=src /src/podman /src/podman
 
@@ -300,16 +384,17 @@ RUN --mount=type=cache,target=/root/.cache/go-build \
 # ---------------------------------------------------------------------------
 # Collect, and prove every artifact is what it claims to be
 # ---------------------------------------------------------------------------
-FROM ${BUILDER_IMAGE} AS verify
+# mos-build-base again, and this stage is the reason its floor names `file` and
+# `binutils` rather than leaving them to whoever needs them: every assertion
+# below is `file -b` reading an ELF header and `objdump -p` reading a NEEDED
+# list. No apt-get, for the reason the src stage gives.
+FROM ${MOS_BUILD_BASE} AS verify
 # The architecture this build is FOR, so the assertion below cannot pass by
 # naming the one it was first written against. Defaulted rather than required
-# so a bare `docker buildx build` on this Dockerfile still checks something.
+# so a bare `docker buildx build` on this Dockerfile still checks something --
+# unlike the four image arguments at the top, whose default would be the
+# unpinned base this milestone exists to remove.
 ARG ELF_ARCH=aarch64
-RUN --mount=type=cache,target=/var/cache/apt,id=apt-cache-verify,sharing=locked \
-    --mount=type=cache,target=/var/lib/apt/lists,id=apt-lists-verify,sharing=locked \
-    rm -f /etc/apt/apt.conf.d/docker-clean && \
-    apt-get update && apt-get install -y --no-install-recommends \
-        file binutils
 COPY --from=c-build /out/ /out/
 COPY --from=rust-build /out/ /out/
 COPY --from=go-build /out/ /out/

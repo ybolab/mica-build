@@ -37,7 +37,27 @@
 # BUILDPLATFORM, not TARGETPLATFORM: ca-certificates is `Architecture: all`.
 # The bundle is data, identical for arm64 and amd64, so generating it under
 # emulation would buy nothing and cost the emulation.
-FROM --platform=$BUILDPLATFORM debian:trixie-slim AS certs
+# THE THREE BASE IMAGES OF THIS FILE, INJECTED FROM os/build-env/images.env by
+# os/build-env/from.sh, which os/rootfs/build-v2.sh calls. RFCT-108 M2c; what
+# stood on the three FROM lines below were the bare tags `debian:trixie-slim`
+# (twice) and `debian:bookworm-slim`, which upstream repoints whenever it
+# rebuilds -- so the answer to "which Debian is in this device image" was the
+# date of the build and nothing in the tree.
+#
+# NOT mos-build-*, AND THAT IS THE DISTINCTION THIS FILE TURNS ON. The builder
+# family is for stages that COMPILE; these two stages assemble a device root and
+# pack it, and the rootfs stage's package set IS the shipped system. Putting a
+# builder image under it would install git, binutils, xz, gcc and ccache into
+# the thing that boots. What these keys buy is the digest, which is the only
+# property that was missing.
+#
+# NO DEFAULTS: without a value docker refuses before any stage runs; with one it
+# would build green against an image nobody chose. Build through
+# `make os-rootfs-<board>`.
+ARG MOS_IMAGE_DEBIAN_TRIXIE
+ARG MOS_IMAGE_DEBIAN_BOOKWORM
+
+FROM --platform=$BUILDPLATFORM ${MOS_IMAGE_DEBIAN_TRIXIE} AS certs
 RUN set -eu; \
     apt-get update; \
     DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends ca-certificates; \
@@ -46,7 +66,12 @@ RUN set -eu; \
     grep -c 'BEGIN CERTIFICATE' /etc/ssl/certs/ca-certificates.crt > /etc/ssl/certs/.mos-cert-count; \
     echo "trust: generated $(cat /etc/ssl/certs/.mos-cert-count) CA certificates"
 
-FROM --platform=$TARGETPLATFORM debian:trixie-slim AS rootfs
+# THE SAME KEY AS THE certs STAGE, AND NOT RE-DECLARED. ARG is per-stage for
+# everything a RUN reads -- the pack stage below re-declares BOARD_RADIOS for
+# exactly that reason -- but a FROM line resolves against the arguments declared
+# before the FIRST stage, which is the only scope a FROM can see. So one
+# declaration up there serves all three FROMs and none of the RUNs.
+FROM --platform=$TARGETPLATFORM ${MOS_IMAGE_DEBIAN_TRIXIE} AS rootfs
 
 # Strict package allowlist — add nothing here without documenting it in README.md.
 # v2 additions over v1: libubootenv-tool (fw_printenv/fw_setenv — RAUC's U-Boot
@@ -1346,7 +1371,7 @@ RUN { cat /rootfs-report.pkgs; \
 # ---------------------------------------------------------------------------
 # Pack: squashfs-zstd + appended dm-verity hash tree
 # ---------------------------------------------------------------------------
-FROM --platform=$BUILDPLATFORM debian:bookworm-slim AS pack
+FROM --platform=$BUILDPLATFORM ${MOS_IMAGE_DEBIAN_BOOKWORM} AS pack
 # ARG IS PER-STAGE. BOARD_RADIOS is declared again here because the pack stage
 # asserts properties of the assembled root that depend on it -- which board
 # state directories are precious, and therefore which mount units must exist.

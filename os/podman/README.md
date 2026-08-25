@@ -30,12 +30,18 @@ image you cannot yet get out of it.
 
 `versions.env` is the only file to edit. Set the tag, set its hash to the
 literal `PENDING`, and run `make podman`: the build prints the hash it
-computed and warns. Paste that in and run again.
+computed and **fails**. Paste that in and run again.
 
 The two-step is deliberate. It makes recording a hash an act, rather than a
-value copied from an upstream page that nobody re-checked. `MOS_PODMAN_STRICT=1`
-turns the warning into a failure, which is what CI sets — an unhashed source
-can reach a developer's build and never a release.
+value copied from an upstream page that nobody re-checked.
+
+Until RFCT-108 M2c the build printed the hash and *warned*, and
+`MOS_PODMAN_STRICT=1` turned the warning into a failure — described here and in
+`versions.env` as "what CI sets". Nothing in this repository ever set it, in any
+workflow, Makefile target or script, so the developer path and the release path
+were the same warning and a half-finished bump built green against whatever the
+tag pointed at that day. The knob is gone; the behaviour is now the one both
+files always described.
 
 The hash is over `git archive` of the tag, so it covers the tree that is
 actually compiled. A tag can be moved upstream; a tree hash cannot.

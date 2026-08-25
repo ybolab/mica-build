@@ -282,19 +282,14 @@ fi
 # to docker, a malformed reference is an error about a manifest, and a
 # well-formed reference to a TAG is not an error at all -- it is the silent
 # float this milestone exists to remove.
-bad=0
-for k in "${KEYS[@]}"; do
-    [ "${k#IMAGE_}" != "${k}" ] || continue
-    v="${!k-}"
-    if [ "${v#*@}" = "${v}" ]; then
-        echo "error: ${k}=${v} in os/build-env/images.env names a TAG and not a digest. A tag is repointed by upstream whenever it rebuilds; pin it as name:tag@sha256:<64 hex> (see the HOW TO BUMP A DIGEST note in that file)" >&2
-        bad=1
-    elif ! [[ "${v}" =~ ^[a-z0-9][a-z0-9._/-]*:[A-Za-z0-9._-]+@sha256:[0-9a-f]{64}$ ]]; then
-        echo "error: ${k}=${v} in os/build-env/images.env is not a well-formed digest pin. Expected name:tag@sha256: followed by exactly 64 lowercase hex digits" >&2
-        bad=1
-    fi
-done
-[ "${bad}" = 0 ] || exit 1
+#
+# DELEGATED TO os/build-env/from.sh SINCE M2c, where it used to be written out
+# here. M2c gave every Dockerfile in the tree its FROM as a build argument, so
+# eight other call sites now need exactly this judgement, and two copies of "is
+# this a digest" is one copy that eventually stops being it. --check validates
+# EVERY IMAGE_ key, which is the same scope this loop had and the same scope the
+# PENDING scan above has: a pin that is wrong is wrong the day it is written.
+bash "${HERE}/from.sh" --check
 
 # ---------------------------------------------------------------------------
 # The builder that can reach the chosen platform
