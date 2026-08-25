@@ -123,6 +123,17 @@ class Parser {
   }
 
   parse(): BoardEnvFile {
+    // CRLF, refused before anything else is read. A shell sourcing a file with
+    // DOS line endings puts the carriage return INSIDE every value, so
+    // `RAUC_BOOTLOADER` becomes "grub\r" -- which compares unequal to "grub"
+    // everywhere, prints identically to it in every error message, and would
+    // send a reader hunting through a lint that says a board declares grub and
+    // is not grub. One check up front beats that at every use site.
+    const cr = this.text.indexOf('\r')
+    if (cr !== -1) {
+      throw this.errorAt(cr, 'a carriage return: this file has DOS line endings. A shell would make the return part of the value, so every key here would end in an invisible character that compares unequal to what it prints as')
+    }
+
     const assignments: Assignment[] = []
     const values = new Map<string, string>()
     const seen = new Map<string, number[]>()
