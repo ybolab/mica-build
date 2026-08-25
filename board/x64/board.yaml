@@ -1,6 +1,6 @@
 # Board metadata — generic x86_64 platform (UEFI).
 # Not consumed by any build today: the v2 pipeline (os/mkimage-v2.sh,
-# os/bundle.sh) hardcodes what it needs and currently targets cx3576 only.
+# os/update/bundle.sh) hardcodes what it needs and currently targets cx3576 only.
 # This file is the board's human-readable contract until a build step reads it.
 name: x64
 arch: amd64

@@ -557,7 +557,7 @@ check_status_led() {
 
 # A RAUC keyring baked into the signed read-only root makes every flashed
 # device trust every bundle that CA signs — for the dev CA of
-# os/rauc/gen-dev-keys.sh, that is anyone holding a gitignored directory. The
+# os/update/rauc/gen-dev-keys.sh, that is anyone holding a gitignored directory. The
 # overlay path is gitignored precisely so a developer CAN drop one in for
 # local bundle testing, which is why absence cannot be assumed and has to be
 # asserted; os/rootfs/build-v2.sh refuses to stage one under the same toggle.

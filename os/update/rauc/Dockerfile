@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1
 # RAUC, built from upstream source without the network and streaming modes.
 #
-#   make os-rauc   → os/rauc/out-<arch>/{rauc, rauc.service,
+#   make os-rauc   → os/update/rauc/out-<arch>/{rauc, rauc.service,
 #                                        de.pengutronix.rauc.conf,
 #                                        de.pengutronix.rauc.service,
 #                                        NEEDED.txt, SHA256SUMS}
@@ -10,11 +10,11 @@
 # `-o` exports. Nothing here installs into a rootfs; os/rootfs/Dockerfile.v2
 # copies the output in.
 #
-# WHY: see os/rauc/versions.env. Short version -- Debian builds rauc with
+# WHY: see os/update/rauc/versions.env. Short version -- Debian builds rauc with
 # streaming on, that links libcurl-gnutls, and rauc was the only thing in the
 # whole packed root that used it. Turning it off removes a second TLS stack
 # from a signed image; it does not remove a feature this project ships, because
-# the streaming install path is DEFERRED in os/rauc/manifest.raucm.in.
+# the streaming install path is DEFERRED in os/update/rauc/manifest.raucm.in.
 
 FROM debian:trixie-slim AS src
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -37,11 +37,11 @@ RUN set -eu; . /versions.env; \
     if [ "${RAUC_SHA256}" = "PENDING" ]; then \
         echo "HASH rauc ${RAUC_VERSION} ${got}"; \
         if [ "${MOS_RAUC_STRICT}" = "1" ]; then \
-            echo "error: rauc is pinned to ${RAUC_VERSION} with no hash and MOS_RAUC_STRICT=1 refuses that. Record the hash printed above in os/rauc/versions.env" >&2; exit 1; \
+            echo "error: rauc is pinned to ${RAUC_VERSION} with no hash and MOS_RAUC_STRICT=1 refuses that. Record the hash printed above in os/update/rauc/versions.env" >&2; exit 1; \
         fi; \
-        echo "warning: rauc ${RAUC_VERSION} is UNHASHED. Record ${got} in os/rauc/versions.env -- until then this build trusts whatever the tag points at today" >&2; \
+        echo "warning: rauc ${RAUC_VERSION} is UNHASHED. Record ${got} in os/update/rauc/versions.env -- until then this build trusts whatever the tag points at today" >&2; \
     elif [ "${RAUC_SHA256}" != "${got}" ]; then \
-        echo "error: rauc ${RAUC_VERSION} hashes to ${got}, but os/rauc/versions.env pins ${RAUC_SHA256}. Either the tag was moved upstream or the pin is stale; do not paste the new hash in without finding out which" >&2; exit 1; \
+        echo "error: rauc ${RAUC_VERSION} hashes to ${got}, but os/update/rauc/versions.env pins ${RAUC_SHA256}. Either the tag was moved upstream or the pin is stale; do not paste the new hash in without finding out which" >&2; exit 1; \
     else \
         echo "ok rauc ${RAUC_VERSION} ${got}"; \
     fi; \
@@ -95,7 +95,7 @@ RUN set -eu; \
     if grep -qiE 'curl|gnutls|nettle|krb5' /staging/NEEDED.txt; then \
         echo "error: the built rauc links a network/TLS library it must not:" >&2; \
         grep -iE 'curl|gnutls|nettle|krb5' /staging/NEEDED.txt >&2; \
-        echo "That is the whole reason this build exists (os/rauc/versions.env)." >&2; exit 1; \
+        echo "That is the whole reason this build exists (os/update/rauc/versions.env)." >&2; exit 1; \
     fi; \
     echo "rauc NEEDED:"; sed 's/^/  /' /staging/NEEDED.txt
 

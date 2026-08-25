@@ -628,7 +628,7 @@ done
 # would make RAUC install an update over the RUNNING slot after a renumbering,
 # silently. Positive direction first (the real template renders), then negative.
 echo "--- RAUC slot device shape ---"
-RENDER="${REPO_ROOT}/os/rauc/render-config.sh"
+RENDER="${REPO_ROOT}/os/update/rauc/render-config.sh"
 if SYSTEM_CONF_OUT="${WORK}/system.conf.real" bash "${RENDER}" >/dev/null 2>&1; then
     echo "PASS: the shipped system.conf.in renders"
 else
@@ -643,8 +643,8 @@ else
     FAILED=1
 fi
 sed 's|^device=/dev/disk/by-partuuid/@ROOTFS_A_PARTUUID@|device=/dev/mmcblk0p6|' \
-    "${REPO_ROOT}/os/rauc/system.conf.in" > "${WORK}/system.conf.in.stale"
-if cmp -s "${WORK}/system.conf.in.stale" "${REPO_ROOT}/os/rauc/system.conf.in"; then
+    "${REPO_ROOT}/os/update/rauc/system.conf.in" > "${WORK}/system.conf.in.stale"
+if cmp -s "${WORK}/system.conf.in.stale" "${REPO_ROOT}/os/update/rauc/system.conf.in"; then
     echo "FAIL: the doctored system.conf.in is identical to the real one; the negative test would pass vacuously"
     FAILED=1
 elif SYSTEM_CONF_IN="${WORK}/system.conf.in.stale" SYSTEM_CONF_OUT="${WORK}/system.conf.stale" \

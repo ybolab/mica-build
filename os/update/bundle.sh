@@ -3,7 +3,7 @@ set -euo pipefail
 
 # Builds the signed RAUC update bundle for cx3576 (layout v2).
 #
-#   bash os/bundle.sh [VERSION]        VERSION also settable as MOS_BUNDLE_VERSION
+#   bash os/update/bundle.sh [VERSION]        VERSION also settable as MOS_BUNDLE_VERSION
 #
 # Output: _out/cx3576/mos-cx3576-<epoch>.raucb plus the mos-cx3576-latest.raucb
 # symlink, mirroring the image naming convention. The epoch is in the FILENAME
@@ -16,28 +16,28 @@ set -euo pipefail
 #   boot.vfat    a FAT32 image with Image, the dtb, boot.scr and the per-slot
 #                verity env files, written raw into the inactive boot slot
 #
-# Signed with the development key from os/rauc/.devkeys/ (make os-devkeys) by
+# Signed with the development key from os/update/rauc/.devkeys/ (make os-devkeys) by
 # default; CERT/KEY/KEYRING in the environment override the defaults, which is
 # how a release build points this script at real signing material. When the
 # host has no rauc, the whole build runs in a bookworm container the script
 # launches — the same fallback pattern os/mkimage-v2.sh uses for sgdisk.
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-REPO_ROOT="$(dirname "${SCRIPT_DIR}")"
+REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 MOS_BOARD="${MOS_BOARD:-cx3576}"
-LAYOUT_ENV="${SCRIPT_DIR}/boards/${MOS_BOARD}/board.env"
+LAYOUT_ENV="${REPO_ROOT}/os/boards/${MOS_BOARD}/board.env"
 
 if [ ! -f "${LAYOUT_ENV}" ]; then
     echo "error: ${LAYOUT_ENV} not found (MOS_BOARD=${MOS_BOARD})" >&2
     exit 1
 fi
-# shellcheck source=boards/cx3576/board.env
+# shellcheck source=../boards/cx3576/board.env
 . "${LAYOUT_ENV}"
 
 MANIFEST_IN="${SCRIPT_DIR}/rauc/manifest.raucm.in"
 # U-BOOT ONLY. A grub board has no compiled boot script; its boot payload is
 # the kernel, the initrd and the per-slot verity facts, installed as files.
-BOOT_CMD="${SCRIPT_DIR}/boot/${MOS_BOARD}-boot.cmd"
+BOOT_CMD="${REPO_ROOT}/os/boards/${MOS_BOARD}/boot.cmd"
 ROOTFS_PRODUCER="os/rootfs/build-v2.sh"
 
 # Reads one KEY=value out of a plain env-style file without executing it.
@@ -73,7 +73,7 @@ BUNDLE_BOOT_FAT_LABEL=BOOT
 # Debian 13 rauc (1.13). It was found by failure rather than by a check -- 1.8
 # refused the x64 slot model outright when it was finally asked to read it.
 #
-# Both halves now come from os/rauc/ -- the image's rauc and this one are built
+# Both halves now come from os/update/rauc/ -- the image's rauc and this one are built
 # from the same pinned source, so agreeing is the normal state rather than a
 # coincidence. The check remains because they are built at different TIMES: an
 # image flashed before a version bump and a bundle built after it would differ,
@@ -95,7 +95,7 @@ assert_rauc_matches_image() {
         exit 1
     fi
     if [ "${want}" != "${have}" ]; then
-        echo "error: this rauc is ${have}, the image ships ${want}. A bundle written by one version and installed by another is a format and slot-model contract nobody checked. Both come from os/rauc/versions.env now, so this means the image predates a version bump: rebuild the rootfs" >&2
+        echo "error: this rauc is ${have}, the image ships ${want}. A bundle written by one version and installed by another is a format and slot-model contract nobody checked. Both come from os/update/rauc/versions.env now, so this means the image predates a version bump: rebuild the rootfs" >&2
         exit 1
     fi
     echo "rauc ${have} here, ${want} in the image"
@@ -475,16 +475,16 @@ host_can_build() {
 # inside the container on a host path.
 # THE HOST's architecture, not the board's. The bundle is written on the build
 # machine, so the rauc that writes it is a host binary -- while the image being
-# bundled for may be a foreign board. Both are built from os/rauc/versions.env,
+# bundled for may be a foreign board. Both are built from os/update/rauc/versions.env,
 # which is what makes their VERSIONS the same thing to compare.
 case "$(uname -m)" in
 x86_64) HOST_ARCH=amd64 ;;
 aarch64) HOST_ARCH=arm64 ;;
-*) echo "error: unsupported build host architecture $(uname -m); os/rauc/ builds amd64 and arm64" >&2; exit 1 ;;
+*) echo "error: unsupported build host architecture $(uname -m); os/update/rauc/ builds amd64 and arm64" >&2; exit 1 ;;
 esac
-RAUC_HOST_BIN="${REPO_ROOT}/os/rauc/out-${HOST_ARCH}/rauc"
+RAUC_HOST_BIN="${REPO_ROOT}/os/update/rauc/out-${HOST_ARCH}/rauc"
 if [ ! -f "${RAUC_HOST_BIN}" ]; then
-    echo "error: ${RAUC_HOST_BIN} not found. RAUC is built from source now, not installed from Debian (os/rauc/versions.env says why); build it with 'MOS_BOARD=${MOS_BOARD} make os-rauc'" >&2
+    echo "error: ${RAUC_HOST_BIN} not found. RAUC is built from source now, not installed from Debian (os/update/rauc/versions.env says why); build it with 'MOS_BOARD=${MOS_BOARD} make os-rauc'" >&2
     exit 1
 fi
 
@@ -501,7 +501,7 @@ fi
 if host_can_build; then
     env MOS_BOARD="${MOS_BOARD}" \
         ROOTFS_REPORT="${OUT_DIR}/rootfs-report-v2.txt" \
-        RAUC_BUILD_ENV="${REPO_ROOT}/os/rauc/out-${HOST_ARCH}/RAUC_VERSION.env" \
+        RAUC_BUILD_ENV="${REPO_ROOT}/os/update/rauc/out-${HOST_ARCH}/RAUC_VERSION.env" \
         KERNEL_IMAGE="${KERNEL_IMAGE}" DTB="${DTB}" \
         INITRD_IMAGE="${INITRD_IMAGE:-}" \
         ROOTFS_VERITY_IMG="${ROOTFS_VERITY_IMG}" \
@@ -532,8 +532,8 @@ else
         -e ROOTFS_VERITY_IMG="/work/_out/${MOS_BOARD}/rootfs-verity.img" \
         -e ROOTFS_VERITY_ENV="/work/_out/${MOS_BOARD}/rootfs-verity.env" \
         -e ROOTFS_REPORT="/work/_out/${MOS_BOARD}/rootfs-report-v2.txt" \
-        -e RAUC_BIN="/work/os/rauc/out-${HOST_ARCH}/rauc" \
-        -e RAUC_BUILD_ENV="/work/os/rauc/out-${HOST_ARCH}/RAUC_VERSION.env" \
+        -e RAUC_BIN="/work/os/update/rauc/out-${HOST_ARCH}/rauc" \
+        -e RAUC_BUILD_ENV="/work/os/update/rauc/out-${HOST_ARCH}/RAUC_VERSION.env" \
         -e BOOT_CMDLINE_A="${BOOT_CMDLINE_A:+/work/_out/${MOS_BOARD}/boot-cmdline-a.txt}" \
         -e BOOT_CMDLINE_B="${BOOT_CMDLINE_B:+/work/_out/${MOS_BOARD}/boot-cmdline-b.txt}" \
         -e CERT=/keys/signer.cert.pem \
@@ -547,7 +547,7 @@ else
             squashfs-tools dosfstools mtools u-boot-tools jq \
             libglib2.0-0t64 libjson-glib-1.0-0 libfdisk1 libssl3t64 >/dev/null && \
             install -m0755 "${RAUC_BIN}" /usr/local/bin/rauc && \
-            exec bash /work/os/bundle.sh --build'
+            exec bash /work/os/update/bundle.sh --build'
 fi
 
 ln -sfn "${BUNDLE_NAME}" "${OUT_DIR}/${BUNDLE_LATEST}"

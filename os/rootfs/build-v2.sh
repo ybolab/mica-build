@@ -146,17 +146,17 @@ fi
 # an image build occasionally take an hour with no indication why. It is a
 # separate target, and the absence of its output is an error with the command
 # to run in it.
-# RAUC, built from upstream source by os/rauc/build.sh. Staged like podman and
+# RAUC, built from upstream source by os/update/rauc/build.sh. Staged like podman and
 # like mosd: the Dockerfile COPYs a directory under _out, never a path outside
 # the build context.
 RAUC_STAGE="$OUT_DIR/rauc"
 rm -rf "$RAUC_STAGE"
 mkdir -p "$RAUC_STAGE"
-RAUC_OUT="$REPO_ROOT/os/rauc/out-$MOS_ARCH"
+RAUC_OUT="$REPO_ROOT/os/update/rauc/out-$MOS_ARCH"
 for f in rauc rauc.service rauc-service.sh de.pengutronix.rauc.conf de.pengutronix.rauc.service NEEDED.txt RAUC_VERSION.env; do
     if [ ! -f "$RAUC_OUT/$f" ]; then
         echo "error: $RAUC_OUT/$f not found." >&2
-        echo "RAUC is built from source now, not installed from Debian (os/rauc/versions.env says why)." >&2
+        echo "RAUC is built from source now, not installed from Debian (os/update/rauc/versions.env says why)." >&2
         echo "Build it with 'MOS_BOARD=$MOS_BOARD make os-rauc'." >&2
         exit 1
     fi
@@ -250,15 +250,15 @@ fi
 OVERLAY_SRC="$SCRIPT_DIR/overlay-v2"
 OVERLAY_STAGE="$OUT_DIR/overlay-v2"
 
-# The RAUC system.conf is rendered from os/rauc/system.conf.in and the layout
+# The RAUC system.conf is rendered from os/update/rauc/system.conf.in and the layout
 # env by RFCT-014's renderer, which owns that template and its assertions (the
 # statusfile must not land on /var, the boot-attempts radix range, and the
 # fw_env.config structure). It is generated rather than committed: a rendered
-# artifact in git can drift from its template, and os/bundle.sh's --check can
+# artifact in git can drift from its template, and os/update/bundle.sh's --check can
 # only report that drift after the fact, not prevent it. Rendering it here, on
 # the build path that consumes it, makes the template the single source of
 # truth. The renderer writes into OVERLAY_SRC, so it must run before staging.
-MOS_BOARD="$MOS_BOARD" bash "$REPO_ROOT/os/rauc/render-config.sh"
+MOS_BOARD="$MOS_BOARD" bash "$REPO_ROOT/os/update/rauc/render-config.sh"
 
 rm -rf "$OVERLAY_STAGE"
 mkdir -p "$OVERLAY_STAGE"
@@ -289,13 +289,13 @@ if [ -d "$BOARD_OVERLAY_SRC" ]; then
     echo "overlay: layered $(find "$BOARD_OVERLAY_SRC" -type f | wc -l) board-specific file(s) from boards/$MOS_BOARD/overlay"
 fi
 if [ ! -s "$OVERLAY_STAGE/etc/rauc/system.conf" ]; then
-    echo "error: os/rauc/render-config.sh produced no system.conf to stage" >&2
+    echo "error: os/update/rauc/render-config.sh produced no system.conf to stage" >&2
     exit 1
 fi
 
 # A RAUC keyring inside the overlay ships in the signed read-only root, where
 # it makes every device flashed with this image trust whatever that CA signs —
-# and os/rauc/gen-dev-keys.sh documents dropping the DEV CA exactly here for
+# and os/update/rauc/gen-dev-keys.sh documents dropping the DEV CA exactly here for
 # local bundle testing. That workflow stays possible, but only when named:
 # MOS_EXPECT_DEV_KEYRING=1 is the same explicit-toggle shape as the verifier's
 # fixture hook (MOS_VERIFY_FIXTURE_ROOT, RFCT-077) — nothing in the build or CI

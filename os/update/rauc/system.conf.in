@@ -1,6 +1,6 @@
 # /etc/rauc/system.conf — RAUC slot model for mos on cx3576 (layout v2).
 #
-# TEMPLATE. The shipped file is rendered by os/rauc/render-config.sh into
+# TEMPLATE. The shipped file is rendered by os/update/rauc/render-config.sh into
 # os/rootfs/overlay-v2/etc/rauc/system.conf, which RFCT-013's overlay mechanism
 # copies to /etc/rauc/system.conf. Never hand-edit the rendered file: every
 # GUID and every attempt count below is substituted from
@@ -71,7 +71,7 @@ bundle-formats=verity
 [keyring]
 # Bundle signatures are verified against this CMS keyring. It is NOT shipped by
 # this task and NOT in git: a development keyring would be a trusted signer on
-# every device. `make os-devkeys` writes os/rauc/.devkeys/ca.cert.pem, which a
+# every device. `make os-devkeys` writes os/update/rauc/.devkeys/ca.cert.pem, which a
 # developer can drop in at os/rootfs/overlay-v2/etc/rauc/keyring.pem (that path
 # is gitignored). Production keyring provisioning is out of scope here; until
 # one is installed, `rauc install` on device fails closed.
@@ -89,7 +89,7 @@ path=/etc/rauc/keyring.pem
 # so these are lowercased by the renderer.
 
 # The slot sections themselves are rendered per board by
-# os/rauc/render-config.sh, because the shape of the boot half genuinely
+# os/update/rauc/render-config.sh, because the shape of the boot half genuinely
 # differs between the two bootloaders and pretending otherwise is what broke
 # x64 (RFCT-106):
 #

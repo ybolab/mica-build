@@ -63,10 +63,10 @@ os-verify-cx3576-v2:
 	bash os/verify-image-v2.sh
 
 os-bundle-cx3576:
-	bash os/bundle.sh
+	bash os/update/bundle.sh
 
 os-devkeys:
-	bash os/rauc/gen-dev-keys.sh
+	bash os/update/rauc/gen-dev-keys.sh
 
 os-health-test:
 	bash os/health/test.sh
@@ -170,14 +170,14 @@ os-layout-lint-test:
 # one D-Bus policy names com.mos.mosd, and another on the members the MQTT
 # bridge is forbidden to be granted. The rationale is at the top of the script.
 # RAUC, built from upstream source instead of installed from Debian. The reason
-# is measured and recorded in os/rauc/versions.env: the distribution builds it
+# is measured and recorded in os/update/rauc/versions.env: the distribution builds it
 # with streaming on, that links libcurl-gnutls, and rauc was the ONLY consumer
 # of that library in the whole packed root -- it brought GnuTLS, p11-kit, GMP,
 # Nettle and Kerberos into a signed image for an install path this project
 # defers. Built here it links libc, libcrypto, libfdisk, glib and json-glib,
 # all of which the image already carries.
 os-rauc:
-	MOS_BOARD=$(or $(MOS_BOARD),cx3576) bash os/rauc/build.sh
+	MOS_BOARD=$(or $(MOS_BOARD),cx3576) bash os/update/rauc/build.sh
 
 os-shell-pipefail-lint:
 	bash os/shell-pipefail-lint.sh

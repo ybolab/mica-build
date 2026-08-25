@@ -43,7 +43,7 @@ fake() {
 
 # Verbatim shape of `rauc status --output-format=shell` as emitted by rauc 1.8-2
 # (the version the bookworm allowlist installs) driving the rendered
-# os/rauc/system.conf, captured in a container with rauc.slot=A on the kernel
+# os/update/rauc/system.conf, captured in a container with rauc.slot=A on the kernel
 # command line. Trimmed to the rows a parser can care about; every variable NAME
 # and the quoting are exactly as observed. $1 is the booted bootname, empty for
 # the "rauc answered but names no booted slot" case.
