@@ -542,27 +542,38 @@ export function lintFile(path: string): BoardLint {
 }
 
 /**
- * Lint every named file, and refuse a run that asserted nothing.
+ * Refuse a file that contributed no assertions at all.
  *
  * PER FILE, not just in total. When the x64 layout referenced a key that had
  * been renamed, `set -u` killed the shell predecessor's subshell at the first
  * line, the board contributed ZERO assertions, and the run reported
  * `RESULT: PASS (1/1 checks)` from the OTHER board alone. A total that is not
  * zero cannot see that; a per-file count can.
+ *
+ * IT IS A BACKSTOP, AND EXPORTED SO THAT IT CAN BE TESTED AS ONE. No input can
+ * currently reach it through lintFile: lintBoard always contributes something,
+ * because a board with no LAYOUT_PARTITIONS still fails on that, and a file the
+ * parser refuses becomes a finding. It was proved unreachable by mutation --
+ * deleting the branch left the suite green -- and it is kept anyway, because
+ * "no check can produce zero" is an invariant of the CURRENT check set, and the
+ * shell predecessor's history is what happens when such an invariant quietly
+ * stops holding. The invariant itself is asserted separately, over degenerate
+ * files.
  */
+export function requireAssertions(one: BoardLint): BoardLint {
+  if (one.checks.length > 0) return one
+  return {
+    ...one,
+    checks: [{
+      board: one.board,
+      ok: false,
+      message: 'made no assertions at all; a layout nothing checks reports the same green as one that passes',
+    }],
+  }
+}
+
 export function lintPaths(paths: readonly string[]): LintRun {
-  const boards = paths.map((p) => {
-    const one = lintFile(p)
-    if (one.checks.length > 0) return one
-    return {
-      ...one,
-      checks: [{
-        board: one.board,
-        ok: false,
-        message: 'made no assertions at all; a layout nothing checks reports the same green as one that passes',
-      }],
-    }
-  })
+  const boards = paths.map(p => requireAssertions(lintFile(p)))
 
   const checks = boards.flatMap(b => b.checks)
   const passed = checks.filter(c => c.ok).length

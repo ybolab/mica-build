@@ -32,6 +32,7 @@ import {
   lintFile,
   lintPaths,
   REQUIRED_BOARD_KEYS,
+  requireAssertions,
   ROLE_SCHEMA,
   shippedBoardPaths,
   SHIPPED_BOARDS,
@@ -436,18 +437,55 @@ describe('the run itself', () => {
   // The shell predecessor learned this when `set -u` killed the subshell
   // sourcing x64 at line 1: the board contributed ZERO checks and the run
   // reported "RESULT: PASS (1/1 checks)" from cx3576 alone.
-  test('a file that asserts nothing is a failure, per file and not just in total', () => {
+  //
+  // requireAssertions is called with a hand-made zero-check result rather than
+  // reached through a file, because NO file can reach it -- see its comment.
+  // Testing it through lintPaths left the branch uncovered: a mutation that
+  // deleted it entirely kept the suite green, which is how this test came to
+  // exist in this shape.
+  test('a file that asserts nothing is a failure', () => {
+    const nothing = requireAssertions({
+      path: '/nowhere/candidate.env',
+      board: 'candidate.env',
+      checks: [],
+      unreadable: false,
+    })
+    expect(nothing.checks.length).toBe(1)
+    expect(nothing.checks[0]?.ok).toBe(false)
+    expect(nothing.checks[0]?.message).toContain('made no assertions at all')
+    // And it leaves a file that DID assert something alone.
+    const real = lintFile(boardEnvPath('x64'))
+    expect(requireAssertions(real)).toBe(real)
+  })
+
+  // The invariant that guard backstops: however broken a file is, it produces
+  // at least one check. A run's per-file count is only evidence while this
+  // holds, and the failure it protects against -- one board contributing
+  // nothing while the total stayed non-zero -- is what the shell predecessor
+  // shipped for as long as it existed.
+  test('every file produces at least one check, however degenerate', () => {
     const dir = mkdtempSync(join(tmpdir(), 'mos-lint-'))
     try {
-      const empty = join(dir, 'nothing.env')
-      writeFileSync(empty, '# a comment, and no assignments at all\n')
-      const run = lintPaths([boardEnvPath('x64'), empty])
+      const degenerate: Record<string, string> = {
+        'empty.env': '',
+        'comment.env': '# a comment, and no assignments at all\n',
+        'one-key.env': 'LAYOUT_VERSION=2\n',
+        'not-a-board.env': 'HELLO=world\n',
+        'refused.env': 'MOS_ARCH=$(uname -m)\n',
+      }
+      for (const [name, text] of Object.entries(degenerate)) {
+        const p = join(dir, name)
+        writeFileSync(p, text)
+        const one = lintFile(p)
+        expect(one.checks.length, `${name} produced no checks at all`).toBeGreaterThan(0)
+        expect(one.checks.some(c => !c.ok), `${name} produced no failure`).toBe(true)
+      }
+      // And through the run, beside a board that passes: the total is not zero,
+      // so only the per-file view can see the broken one.
+      const run = lintPaths([boardEnvPath('cx3576'), join(dir, 'comment.env')])
       expect(run.ok).toBe(false)
-      const nothing = run.boards.find(b => b.board === 'nothing.env')
-      expect(nothing?.checks.length).toBeGreaterThan(0)
-      // The total is not zero -- cx3576's passes are in it -- so only a
-      // per-file count can see this.
       expect(run.passed).toBeGreaterThan(0)
+      expect(run.boards.find(b => b.board === 'comment.env')?.checks.length).toBeGreaterThan(0)
     } finally {
       rmSync(dir, { recursive: true, force: true })
     }
