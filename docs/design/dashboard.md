@@ -343,9 +343,10 @@ better mechanism and then hid it.**
   four gap-table rows:
   - **row 1** — which slot is running. The two-slot model is fully specified
     (`os/rauc/system.conf.in:75-95`, partition GUIDs at
-    `os/layout/cx3576-v2.env:209-219`), but there is no bus mechanism: a UI would
-    have to subprocess `rauc status --output-format=shell`, and `apid` cannot,
-    because it never spawns a process (`mosd/apid/src/settings_api.rs:10-12`,
+    `os/boards/cx3576/board.env:209-219`), but there is no bus mechanism: a UI
+    would have to subprocess `rauc status --output-format=shell`, and `apid`
+    cannot, because it never spawns a process
+    (`mosd/apid/src/settings_api.rs:10-12`,
     which states *"mosd owns every system action: apid never spawns a process and
     never talks to systemd itself"*).
   - **row 2** — boot attempt credits. `BOOT_A_LEFT` / `BOOT_B_LEFT` in the

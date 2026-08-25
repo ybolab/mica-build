@@ -21,12 +21,13 @@ Evidence convention used throughout:
   `6.1.115` [V]), fetched read-only.
 - **[U]** UNVERIFIED — cannot be established without a board build or hardware.
 
-`os/layout/cx3576-v2.env` (RFCT-020) had **not** landed when this analysis was
-written against branch base `fd6233f`; `ls os/layout/` → no such directory [V].
-Every constant below is therefore quoted from the campaign layout-v2 table. The
-file has since landed with RFCT-020, so every generated file (defconfig
-fragment, `fw_env.config`, `boot.cmd`) **must be regenerated from
-`os/layout/cx3576-v2.env`** so the two sides cannot drift.
+The board definition (RFCT-020) had **not** landed when this analysis was
+written against branch base `fd6233f`; no directory in the tree held it [V].
+Every constant below is therefore quoted from the campaign layout-v2 table. It
+has since landed, and RFCT-107 (PLAN-014 M1) moved it to its present path, so
+every generated file (defconfig fragment, `fw_env.config`, `boot.cmd`) **must
+be regenerated from `os/boards/cx3576/board.env`** so the two sides cannot
+drift.
 
 The v1 single-slot chain (`os/mkimage.sh`, `os/verify-image.sh`,
 `os/rootfs/build.sh`, `os/rootfs/Dockerfile`) still existed when this analysis
@@ -292,7 +293,7 @@ slot re-selected.
 ### 3.2 Defconfig fragment (paste into the custom defconfig)
 
 Verified symbol names and semantics against `v2026.07`. Regenerate the three
-hex values from `os/layout/cx3576-v2.env`, which has since landed with
+hex values from `os/boards/cx3576/board.env`, which has since landed with
 RFCT-020, whenever the layout changes.
 
 ```
@@ -355,7 +356,7 @@ Notes, each with its evidence:
 
 ```
 # /etc/fw_env.config — U-Boot environment access from Linux.
-# Generated from os/layout/cx3576-v2.env; do not hand-edit.
+# Generated from os/boards/cx3576/board.env; do not hand-edit.
 # Two device lines == redundant environment; both copies must be listed.
 #
 # Device name     Device offset   Env. size
@@ -532,10 +533,11 @@ Slot-agnostic: the running copy may boot either slot. Per-slot verity parameters
 are *not* baked in — they are imported from the chosen slot's boot partition
 (§7.3), so the script is byte-identical in both boot partitions.
 
-**This block is synced to the shipped `os/boot/cx3576-boot.cmd`**, which is what
-`os/mkimage-v2.sh` compiles into `boot.scr`. It now differs from the version
-first published here in **two** places. Both were defects that made every update
-revert silently, and both are recorded in the shipped script's provenance header:
+**This block is synced to the shipped `os/boards/cx3576/boot.cmd`**, which is
+what `os/mkimage-v2.sh` compiles into `boot.scr`. It now differs from the
+version first published here in **two** places. Both were defects that made
+every update revert silently, and both are recorded in the shipped script's
+provenance header:
 
 1. **The slot-suffixed verity env.** The script sets `slotsuffix` alongside
    `bootslot` and loads `mos-verity-${slotsuffix}.env`, falling back to the
@@ -1198,7 +1200,7 @@ ones that blocked M4 entirely; all three are resolved by `8b24f9d`.
    name or device path, so the other two routes have nothing to work with.
    Verified against rauc 1.8: without it, `rauc status` reports *"Did not find
    booted slot (matching '/dev/dm-0')"*, `mark-good` is never reached, and every
-   installed slot rolls back. Shipped in `os/boot/cx3576-boot.cmd`.
+   installed slot rolls back. Shipped in `os/boards/cx3576/boot.cmd`.
 
 Dependencies this creates on other subtasks, for scheduling:
 

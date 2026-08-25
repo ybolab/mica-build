@@ -5,7 +5,7 @@ packed, how the kernel assembles it without an initramfs, and where every
 runtime write goes once `/` is immutable.
 
 Companion documents: `docs/plan/PLAN-006.md` Parts C, D and J (the A/B update
-design this implements), `os/layout/cx3576-v2.env` (every layout constant),
+design this implements), `os/boards/cx3576/board.env` (every layout constant),
 `os/rootfs/README.md` (how to build it).
 
 > **Daemon rename (campaign `apid`, 2026-08-19, RFCT-056).** The HTTPS management
@@ -145,7 +145,7 @@ investigations agree on every point.
 `extlinux/extlinux.conf`: RFCT-018 found that both U-Boot boot frameworks try
 extlinux *before* `boot.scr`, so an extlinux config in a slot would silently
 bypass the whole RAUC A/B handshake. `os/mkimage-v2.sh` instead compiles
-`os/boot/cx3576-boot.cmd` into a `boot.scr` shared by both slots and derives a
+`os/boards/cx3576/boot.cmd` into a `boot.scr` shared by both slots and derives a
 per-slot `mos-verity-<slot>.env` by extracting the `dm-mod.create="..."` and
 `dm-mod.waitfor=` fragments out of these files with `sed`. The filename carries
 the slot because a RAUC bundle installs one boot payload into whichever slot is
@@ -192,10 +192,10 @@ console=ttyFIQ0,1500000 earlycon=uart8250,mmio32,0x2ad40000 storagemedia=emmc ne
   `ROOTFS_B_GUID` — which the layout env holds in uppercase — comparing
   case-insensitively (RFCT-020), so the two spellings coexist by design.
 - The console/earlycon/storagemedia/net.ifnames arguments are board facts and
-  live in `os/layout/<board>-v2.env` as `BOARD_CMDLINE_ARGS`. They were carried
-  over from the `APPEND` line of the v1 single-slot assembler, which RFCT-107
-  deleted; the root argument is `root=/dev/dm-0 ... ro` rather than v1's
-  `root=PARTLABEL=rootfs rw`.
+  live in `os/boards/<board>/board.env` as `BOARD_CMDLINE_ARGS`. They were
+  carried over from the `APPEND` line of the v1 single-slot assembler, which
+  RFCT-107 deleted; the root argument is `root=/dev/dm-0 ... ro` rather than
+  v1's `root=PARTLABEL=rootfs rw`.
 - `rootwait` is kept. Note that if `dm-init` fails, `/dev/dm-0` never appears
   and `rootwait` waits forever; recovery from that state is U-Boot's job
   (`BOOT_x_LEFT` attempt counters plus a watchdog reset), not the kernel's.
@@ -270,7 +270,7 @@ partitions absorb everything:
 
 > **Partition numbers shifted in M5.** The Rockchip loader area became a real
 > GPT partition at p1 (RFCT-031), so every partition after it moved up by one.
-> The numbers above are the current ones and match `os/layout/cx3576-v2.env`.
+> The numbers above are the current ones and match `os/boards/cx3576/board.env`.
 > Partition **GUIDs did not move** — the identity digits in each GUID are
 > allocated in the order partitions were added and are frozen once allocated,
 > which is exactly why the dm-verity cmdline, `/etc/fstab`, `/etc/fw_env.config`
@@ -479,7 +479,7 @@ the seeded content and under 2% of the smallest realistic eMMC, so `/var` can
 never compete with DATA for the disk. Changing the number moves DATA's start
 offset, so it is frozen for a flashed fleet in the same way
 `MOS_ROOTFS_SLOT_MIB` is; the constant and this rationale live in
-`os/layout/cx3576-v2.env`.
+`os/boards/cx3576/board.env`.
 
 **Standing review criterion for future units**, not a one-off audit result:
 **identity, credentials, pairings and update state never live on `/var`.** Any
@@ -502,8 +502,8 @@ is what §4's "Fill-up containment" below is for.
 
 **The DATA constants are required, and the build proves it.** `build-v2.sh`
 fails if `DATA_GUID`, `DATA_PARTNUM`, `DATA_FS_UUID` or `MOS_VAR_MIB` is absent
-from `os/layout/cx3576-v2.env`, naming the file and the missing keys. All four
-are demanded even though only `DATA_GUID` is read here, because a
+from `os/boards/cx3576/board.env`, naming the file and the missing keys. All
+four are demanded even though only `DATA_GUID` is read here, because a
 partially-edited layout env is the failure being guarded against: the assembler
 needs the other three, and a rootfs built against half a layout is the kind of
 artifact that reaches hardware before anyone notices.
@@ -523,7 +523,7 @@ definition count must be eight, and exactly one definition must carry
 The three block mounts are `/etc/fstab` entries rather than hand-written
 `.mount` units, so that `x-systemd.growfs` works through the fstab generator
 and mountpoint ordering is derived automatically. They are keyed on
-`PARTUUID=` taken from `os/layout/cx3576-v2.env`, **lowercased**: udev builds
+`PARTUUID=` taken from `os/boards/cx3576/board.env`, **lowercased**: udev builds
 `/dev/disk/by-partuuid/` symlinks from libblkid, which formats GUIDs in
 lowercase, and systemd's fstab generator resolves `PARTUUID=` through those
 symlinks without normalising case. (The kernel cmdline is case-insensitive, but
@@ -738,7 +738,7 @@ That is the only form systemd accepts for `systemd.machine_id=` and for
 **Status — steps 1 and 2 are live; step 3 is what remains.** The U-Boot half has
 landed: `uboot-mos` is on main, a v2 image carries it (and `os/mkimage-v2.sh`
 refuses to assemble a v2 image around the debug variant), and
-`os/boot/cx3576-boot.cmd` appends `systemd.machine_id=${machine_id}` whenever
+`os/boards/cx3576/boot.cmd` appends `systemd.machine_id=${machine_id}` whenever
 that environment variable is set. The redundant environment this design depends
 on genuinely exists on a v2 device, which is also why `/etc/fw_env.config`
 addresses something real rather than something planned.
@@ -802,7 +802,8 @@ Every `/etc` write path in the v1 rootfs, and what happens to it under v2:
 
 ### Board hardware-init units under a read-only root
 
-All six `os/hwinit` units are read-only-root safe, checked rather than assumed:
+All six `os/boards/cx3576/hwinit/` units are read-only-root safe, checked
+rather than assumed:
 every `/etc` reference in `hwinit-modules`, `hwinit-otg`, `hwinit-can`,
 `hwinit-bt`, `hwinit-mac` and `hwinit-gadget` is a **read** of its
 `/etc/mos/*.conf` fact file. Their writes go to configfs
@@ -818,8 +819,11 @@ takes the `mode=` from `otg.conf`. Nothing regresses for the default
 configuration, and no code needs changing for it today. When the override is
 actually wanted, the fix is the same shape as everything else here — read it
 from `/mnt/state` (persistent) or `/run` (per-boot) with the `/etc/mos` path
-kept as a fallback. That is a change to `os/hwinit`, which is shared with v1,
-so it is deliberately not made unilaterally from the v2 side.
+kept as a fallback. That is a change to `os/boards/cx3576/hwinit/`. It was held
+back while that directory was shared with the v1 chain and a v2-side change
+would have been unilateral; RFCT-107 deleted v1 and moved the directory under
+the board, so what holds it back now is only that nothing needs the override
+yet.
 
 ### Correction: hostname was not a latent gap
 
