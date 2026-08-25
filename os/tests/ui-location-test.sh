@@ -461,6 +461,7 @@ ui-no-filesystem|catches a custom UI root with NO filesystem under it||ABSENT
 builtin-on-disk|catches a built-in escape that has grown an on-disk half||PASS
 builtin-in-binary|catches a built-in escape that is no longer inside the binary||PASS
 mountpoints-exist|every fstab/bind mountpoint exists in the read-only root|mountpoint(s) missing from the read-only root|PASS
+led-unit-present|declares BOARD_HAS_STATUS_LED=1 but||ABSENT
 led-after-health|catches an indicator that reports ready before the slot is confirmed||PASS
 led-requires-health|catches an indicator that turns blue on a slot whose health gate failed||PASS
 dev-keyring|catches a baked-in RAUC keyring||PASS
@@ -523,6 +524,17 @@ networkd-namespace|networkd namespace is clear|networkd namespace|PASS
 # durable part: TWO separate authors wrote assertions past that boundary without
 # noticing, which makes it a property of the file rather than a lapse by either.
 # A third will do it again unless something says so.
+#
+# AND A THIRD DID, ARRIVING FROM THE OTHER SIDE -- not past the hook exit, but
+# inside a function the hook has always dispatched. check_status_led guards on
+# the unit's ABSENCE before it reads anything out of it, and that guard had no
+# row here for the whole life of this file. Being inside a dispatched function
+# is not enough: an assertion is covered only once it is NAMED, and until some
+# case drives its branch the gap is silent. Case 12 below drove it from the day
+# it was written and the harness said so every time -- but LED_UNIT_SRC pointed
+# at a path the tree no longer had, so this file exited at its own existence
+# check having run zero cases, and nobody was there to read the complaint.
+# RFCT-107 fixed the path, the 64 cases ran, and the guard finally got a name.
 #
 # So: if you add an assertion to the verifier and want it driven from here, wrap
 # it in a function, add the name to the hook dispatch list, and add its rows
@@ -1006,14 +1018,20 @@ expect_set "a status indicator ordered after the health gate but not requiring i
     "BOOT_x_LEFT counter is about to roll it back"
 
 # --- 12. the unit dropped from the image ------------------------------------
-# Both assertions read the unit, so removing the file fails them together and
-# the case names both rather than trimming to the one it was written for.
+# check_status_led guards on absence FIRST and RETURNS, so the two ordering
+# assertions never run here -- they are named ABSENT for the same reason case 7
+# names its six: "did not run" is a different fact from "ran and passed". The
+# short-circuit is the verifier being right, not a gap: with no unit in the
+# image there is nothing to order after the gate, and one clear "it is not in
+# the image" beats two derived complaints about directives missing from a file
+# that does not exist. Cases 10 and 11 reach the ordering assertions precisely
+# because they MUTATE the unit instead of deleting it.
 FIX="${WORK}/led-unit-absent"
 new_fixture "${FIX}"
 rm -f "${FIX}/usr/lib/systemd/system/mos-status-led.service"
 expect_set "the status-LED unit dropped from the image" \
-    "led-after-health=FAIL led-requires-health=FAIL" \
-    "runs 'rauc status mark-good'"
+    "led-unit-present=FAIL led-after-health=ABSENT led-requires-health=ABSENT" \
+    "/usr/lib/systemd/system/mos-status-led.service is not in the image"
 
 # --- 13. a RAUC keyring baked into the read-only root ------------------------
 # The overlay path is gitignored so a developer CAN drop the dev CA in for
