@@ -159,3 +159,124 @@ fixtures rather than in the parity baseline.
 - `os-shell-pipefail-lint` moves from 35/35 to **36/36**: `os/verify/run.sh` is
   the 36th file, and it is scanned and clean. `shellcheck` (koalaman/shellcheck
   :stable) reports nothing on it.
+
+## M3b — the ported lint, and the shell pair retired (landed)
+
+The second of three parts. `os/verify/src/lint.ts` + `src/lint.test.ts` replace
+`os/verify/lint.sh` + `lint-test.sh`, which are **deleted**. `os-layout-lint`
+and `os-layout-lint-test` **keep their names** and both now go through
+`run.sh`, so there is still exactly one place deciding how bun is invoked.
+
+M3 stays **in progress**: M3c owns the tool-less-host container path and the CI
+wiring, and closes the task.
+
+### The parity check, run before the oracle was deleted
+
+Thirty mutated copies of the real layouts through both lints — lint-test.sh's
+fourteen cases, eleven empty-declaration spellings, three that are not data at
+all, and both boards unmutated:
+
+| | cases |
+|---|---|
+| both reject | 24 |
+| both accept | 2 (`cx3576`, `x64`, unmutated) |
+| **shell accepted, port rejects** | **4** |
+| shell rejected, port accepts | 0 |
+
+Every divergence is in one direction. The recipe to redo the comparison from
+`d33e929` — the last commit that still had `lint.sh` — is in
+`os/verify/HARNESS.md`, because one of its two sides no longer exists in the
+working tree.
+
+### The four divergences, each a measured hole
+
+| mutation of a real layout | `lint.sh` | `src/lint.ts` |
+|---|---|---|
+| `ROOTFS_A_FS_UUID=""` on a `verity-slot` | **PASS** | reject |
+| `BOOT_ATTEMPTS_DEFAULT=""` on the grub board | **PASS** | reject |
+| `LAYOUT_PARTITIONS=" "` | **PASS**, "0 partitions, numbered 1..0" | reject |
+| `MOS_ARCH=$(uname -m)` | **PASS** — the shell *ran* it | reject |
+
+The first two are one hole seen twice, and the second is the check this linter
+was written for. The third emitted a `PASS` line, so the vacuity guard was
+satisfied by a board that declared no partitions at all. A fifth, closed one
+layer down by the parser rather than here: a board declaring **no** `MOS_ARCH`
+passed `lint.sh` when the caller exported `MOS_ARCH`, because `source` reads the
+process environment.
+
+**Strictness that is not indiscriminate.** An empty declaration the schema does
+not forbid stays a statement: `BOARD_RADIOS=""` means this board has none, and
+x64 keeps passing with all three of its empty lists. A test exists solely to
+hold that line — mutation M5 below shows that a port failing every empty
+declaration would reject the board it exists to accept.
+
+**Messages diverge where verdicts do not.** `lint.sh` said "declares no
+ESP_FAT_VOLUME_ID" about a file containing `ESP_FAT_VOLUME_ID=""`; absent and
+empty get different sentences now. A non-numeric `STATE_PARTNUM=seven` was
+reported only as the downstream "partition number 7 is absent", naming a
+partition that is declared correctly; it is now named at its own key. An
+unresolvable reference was reported as "made no assertions at all", naming
+neither key nor line; the parser names both.
+
+### Defects found in the retired script, recorded rather than fixed
+
+- **`lint.sh:211` made its own read-to-the-end check dead code.** `lint_one`'s
+  body is `( … ) || true`, so the function always returned 0 and the
+  `if ! lint_one` branch at :232 — with its "could not be read to the end"
+  message — never ran. Measured: a layout that dies while being sourced is
+  caught only by the per-file counter at :236, which says "made no assertions
+  at all" instead. Both are in the port, and the parser refusal now names the
+  key and the line, so the message that never printed is not needed.
+- **A missing role cascaded into a spurious numbering failure.** `STATE_ROLE=""`
+  produced two FAIL lines from `lint.sh`: the role, and "these numbers are
+  absent: 7" — because the `continue` past the role also skipped that
+  partition's number. The port reports one.
+
+### Proved able to go red — eleven mutations
+
+Each turns exactly one check off and is restored; `git diff` clean after.
+
+```
+baseline                                              42 pass   0 fail
+M1  forbidden keys test the value, not presence       40 pass   2 fail
+M2  grub stops forbidding boot attempts               40 pass   2 fail
+M3  empty is treated as absent again (the shell's)    31 pass  11 fail
+M4  the partition set is judged by its string         41 pass   1 fail
+M5  EVERY empty declaration becomes a fault           38 pass   4 fail
+M6  the three-units check compares MiB to MiB         41 pass   1 fail
+M7  numbering stops looking for gaps                  41 pass   1 fail
+M8  an unknown role is accepted                       41 pass   1 fail
+M9  the per-file vacuity guard is removed             41 pass   1 fail
+M10 a duplicate partition number is not noticed       41 pass   1 fail
+M11 a parser refusal becomes a pass                   39 pass   3 fail
+restored                                              42 pass   0 fail
+```
+
+**M9 was green on its first run**, and that is the one worth recording: the
+guard was unreachable, because `lintBoard` always contributes at least one
+check. It is now extracted as `requireAssertions`, tested directly as the
+backstop it is, and the invariant it backstops — every file produces at least
+one check, however degenerate — is asserted over five degenerate inputs.
+
+### Makefile: the names are kept
+
+RFCT-109's Scope allows keeping `os-layout-lint` / `os-layout-lint-test` or
+registering successors. Keeping them is the smaller change: they are what
+`help:` lists, what both `board.env` files cite and what a person types, and
+what moved is the implementation, not the question. `os-layout-lint` runs
+`run.sh --lint`; `os-layout-lint-test` runs `run.sh src/lint.test.ts`, which is
+`os-verify-test` filtered to the lint's own cases and still passes through
+run.sh's `Ran N tests` vacuity guard.
+
+`--lint` is a MODE, recognised only in first position so it can never be
+mistaken for a `bun test` filter. It shares the install, the typecheck and the
+`run_bun` seam — M3c's container path still has exactly one body to replace.
+
+### Counts after M3b
+
+```
+make os-layout-lint          RESULT: PASS (26/26 checks)   was 2/2
+make os-layout-lint-test     RESULT: PASS (42/42 tests)    was 17/17
+make os-verify-test          RESULT: PASS (108/108 tests)  was 66/66
+make os-shell-pipefail-lint  RESULT: PASS (34/34 files)    was 36/36, minus the two deleted
+```
