@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
 # The single entry point for os/verify.
 #
-#   bash os/verify/run.sh              install if needed, typecheck, then test
+#   bash os/verify/run.sh                install if needed, typecheck, then test
 #   bash os/verify/run.sh --help
-#   bash os/verify/run.sh board.env    extra arguments go to `bun test`
+#   bash os/verify/run.sh src/board.test.ts   extra arguments go to `bun test`
+#   bash os/verify/run.sh --lint         the board-definition schema lint instead
 #
 # WHAT THIS PACKAGE IS. PLAN-014 M3: the bun+TypeScript foundation the rest of
 # os/ moves onto, in the shape test/apid-api already established -- bun.lock,
@@ -24,9 +25,10 @@
 # 2026-08-25: `bun test` exits 1 when no test FILE matches its glob, but exits
 # 0 when a file matches and declares no tests -- "Ran 0 tests across 1 file",
 # green. That is the exact shape of the failure this tree keeps finding in its
-# own checkers: os/verify/lint.sh printed FAIL lines and reported "RESULT: PASS
-# (0/0 checks)" because its counters died in a subshell. So the count is read
-# out of the run and a run that asserted nothing is turned red here.
+# own checkers: the shell lint this package replaced printed FAIL lines and
+# reported "RESULT: PASS (0/0 checks)" because its counters died in a subshell.
+# So the count is read out of the run and a run that asserted nothing is turned
+# red here. The same guard, at the lint's own granularity, is in src/lint.ts.
 set -euo pipefail
 
 # Anchored, not counted. `..` arithmetic always produces a path, so a file that
@@ -46,19 +48,55 @@ done
 usage() {
     cat <<'USAGE'
 usage: bash os/verify/run.sh [--help] [bun-test-args...]
+       bash os/verify/run.sh --lint [board.env ...]
 
 Installs the dev dependencies if they are missing, typechecks src/, then runs
 the suite. Any extra arguments are passed to `bun test` (a filename filter, for
 example). Every step must pass; nothing here skips.
+
+With --lint FIRST, it runs the board-definition schema lint over the named
+layouts instead of the suite -- `make os-layout-lint`. Same install, same
+typecheck, same bun; only the last step differs. The flag has to come first so
+that it can never be mistaken for a `bun test` filter.
 
 environment:
   MOS_VERIFY_BUN   the bun binary to use, instead of searching PATH and ~/.bun
 USAGE
 }
 
+# --lint is a MODE, not a filter, so it is recognised only in first position.
+MODE=suite
 case "${1:-}" in
 --help | -h) usage; exit 0 ;;
+--lint) MODE=lint; shift ;;
 esac
+
+# ...and anywhere else it is a MISTAKE, refused rather than forwarded. Driven
+# from the failing side: `run.sh src/lint.test.ts --lint` handed --lint to
+# `bun test`, which ignored the unknown flag, ran the suite and exited 0 -- so
+# asking for the lint got a green that was about something else entirely.
+for arg in "$@"; do
+    [ "${arg}" = "--lint" ] || continue
+    echo "error: --lint has to be the FIRST argument; here it came after '$1'." >&2
+    echo "       Anywhere else it would be forwarded to \`bun test\`, which ignores it and" >&2
+    echo "       reports a green suite in answer to a request for the lint." >&2
+    exit 1
+done
+
+# The lint's arguments are FILES, and run_bun cds into this package before it
+# invokes bun -- so a relative path from the caller's shell would resolve
+# against os/verify/ and be reported as "not found" for the wrong reason.
+if [ "${MODE}" = lint ]; then
+    ABS=()
+    for arg in "$@"; do
+        case "${arg}" in
+        -*) ABS+=("${arg}") ;;
+        /*) ABS+=("${arg}") ;;
+        *) ABS+=("${PWD}/${arg}") ;;
+        esac
+    done
+    set -- ${ABS[@]+"${ABS[@]}"}
+fi
 
 # --- how bun is invoked, and the only place that decides -------------------
 BUN="${MOS_VERIFY_BUN:-}"
@@ -108,6 +146,19 @@ fi
 # --- typecheck ---------------------------------------------------------------
 echo "os/verify: typecheck"
 run_bun run typecheck
+
+# --- the lint, which is the other thing this package is for ------------------
+# No vacuity guard here, because the lint carries its own: src/lint.ts refuses a
+# run in which any FILE contributed zero assertions, which is finer than a total
+# that is merely non-zero. The shell predecessor learned that the hard way --
+# one board died while being sourced, contributed nothing, and the run reported
+# PASS from the other board alone.
+if [ "${MODE}" = lint ]; then
+    echo "os/verify: board-definition schema lint"
+    rc=0
+    run_bun run src/lint-cli.ts "$@" || rc=$?
+    exit "${rc}"
+fi
 
 # --- the suite, and the guard against a run that asserted nothing ------------
 OUT="$(mktemp)"

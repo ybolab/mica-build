@@ -25,7 +25,7 @@ import { boardEnvPath, BOARDS_DIR } from './paths.ts'
  *
  * The copy is deliberately NOT called board.env: a message about it should say
  * "candidate", not name a real board it is not. The same correction
- * os/verify/lint-test.sh already carries.
+ * os/verify/src/lint.test.ts carries the same correction.
  */
 function withMutatedBoard<T>(board: string, edit: (text: string) => string, fn: (path: string) => T): T {
   const dir = mkdtempSync(join(tmpdir(), 'mos-board-'))
@@ -327,7 +327,8 @@ describe('loading every board at once, which is what a lint does', () => {
     expect(both.map(b => b.name)).toEqual(['cx3576', 'x64'])
     expect(both.map(b => b.partitions.length)).toEqual([11, 9])
     // Separate models, not one environment that let the first board's keys
-    // satisfy the second's -- which is why lint.sh sources each in a subshell.
+    // satisfy the second's -- which is why the retired shell lint sourced each
+    // one in its own subshell, and why loadBoard() shares no state between files.
     expect(both[1]!.declared('LOADER_PARTNUM')).toBe(false)
     expect(both[0]!.declared('LOADER_PARTNUM')).toBe(true)
   })

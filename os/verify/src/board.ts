@@ -11,7 +11,7 @@
 // definition is CORRECT. A missing LAYOUT_PARTITIONS, a role no checker knows,
 // a partition with no PARTNUM -- all of those are reported as absent or
 // unknown and handed on. The schema lint is a separate consumer of this model
-// (os/verify/lint.sh today, its TypeScript successor next), and it is the one
+// (os/verify/src/lint.ts, which M3b ported off the shell), and it is the one
 // that gets to say a board is wrong. Two reasons: a model that threw on the
 // first fault could only ever report one, and a lint whose messages came from
 // its data layer would say what the model noticed rather than what a board
@@ -197,17 +197,26 @@ export function modelBoard(env: BoardEnvFile, name: string): Board {
 }
 
 /**
- * Read and model one `boards/<board>/board.env`.
+ * The board name a path stands for.
  *
  * The board's identity is its DIRECTORY, not the filename: every board
  * definition is called `board.env`, so a basename would report them all as
- * "board.env" -- which is the correction os/verify/lint.sh already carries.
+ * "board.env". A file called anything else keeps its own name -- which is what
+ * makes a mutated copy report as "candidate.env" rather than as a real board
+ * it is not.
+ *
+ * Exported because the lint needs it for a file the parser REFUSED, where
+ * there is no Board to ask.
  */
+export function boardNameForPath(path: string): string {
+  return basename(path) === 'board.env' ? basename(dirname(path)) : basename(path)
+}
+
+/** Read and model one `boards/<board>/board.env`. */
 export function loadBoard(path: string): Board {
   const text = readFileSync(path, 'utf8')
   const env = parseBoardEnv(text, path)
-  const name = basename(path) === 'board.env' ? basename(dirname(path)) : basename(path)
-  return modelBoard(env, name)
+  return modelBoard(env, boardNameForPath(path))
 }
 
 /** Read every board under a `boards/` directory, in name order. */

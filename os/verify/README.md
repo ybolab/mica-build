@@ -92,6 +92,50 @@ needs to read.
 Keys typed as numbers whose values are not become `Board.faults` — collected,
 never thrown, never dropped.
 
+## The lint, and where it is stricter
+
+`src/lint.ts` is the board-definition schema lint: every key a role requires is
+present, and no key a role does not use is present. The second direction is the
+one that earns its keep — `BOOT_ATTEMPTS_DEFAULT=3` sat in the x64 layout under
+a comment claiming U-Boot's contract was identical, nothing objected, and RAUC
+refused the rendered configuration on the device.
+
+It replaces `lint.sh` + `lint-test.sh`, which `source`d each definition and read
+every key as `${NAME:-}`. That idiom gives the same answer for a key that is
+**absent** and a key that is **declared empty**, so every check built on it had
+a spelling that walked straight through. All four were run against the shell
+lint on 2026-08-25:
+
+| mutation of a real layout | `lint.sh` | `src/lint.ts` |
+|---|---|---|
+| `ROOTFS_A_FS_UUID=""` on a `verity-slot` | **PASS** | reject |
+| `BOOT_ATTEMPTS_DEFAULT=""` on the grub board | **PASS** | reject |
+| `LAYOUT_PARTITIONS=" "` | **PASS**, "0 partitions, numbered 1..0" | reject |
+| `MOS_ARCH` deleted, but exported by the caller | **PASS** | reject |
+| the same four, spelled non-empty | reject | reject |
+
+The first two are the same hole seen twice; the second is the check this linter
+was written for. The third even emitted a `PASS` line, so the vacuity guard was
+satisfied by a board that declared no partitions at all. The fourth is closed
+one layer down — the parser never reads `process.env`.
+
+So the port is **stricter than its predecessor on purpose**, and asks
+`declared()` — presence, answered without consulting the value — wherever the
+shell tested for emptiness. On the 30-case parity table in `HARNESS.md` the two
+agree on 26 and differ on exactly these four, every one in the direction of the
+port rejecting what the shell accepted.
+
+**Strictness that is not indiscriminate.** An empty declaration the schema does
+not forbid stays a *statement*: `BOARD_RADIOS=""` means this board has none, and
+x64 must keep passing with all three of its empty lists. There is a test whose
+only job is to hold that line, because a port that closed the hole by failing
+every empty declaration would reject the board it exists to accept.
+
+**The messages diverge where the verdicts do not.** `lint.sh` said "declares no
+ESP_FAT_VOLUME_ID" about a file containing `ESP_FAT_VOLUME_ID=""`, which sends a
+reader looking for a line that is already there. Absent and empty get different
+sentences here.
+
 ## Verified against the oracle it replaces
 
 The parser was checked against `bash` **sourcing the same file**: every key of
@@ -112,12 +156,16 @@ Re-run it by hand when the parser changes; the recipe is in `HARNESS.md`.
 ## Running
 
 ```sh
-make os-verify-test
+make os-verify-test        # the whole suite
+make os-layout-lint        # the schema lint, over every board this tree ships
+make os-layout-lint-test   # the lint's own cases, which is the suite filtered
 ```
 
 or, equivalently, `bash os/verify/run.sh` — install if needed, `typecheck`,
 then `bun test`, with a guard that turns a run asserting nothing red. See
-`HARNESS.md` for why that guard exists and how to drive it.
+`HARNESS.md` for why that guard exists and how to drive it. `bash
+os/verify/run.sh --lint [board.env ...]` is the lint; the flag has to come
+first, so it can never be mistaken for a `bun test` filter.
 
 Directly, with bun on the host:
 
@@ -143,10 +191,14 @@ docker run --rm -v "$(git rev-parse --show-toplevel):/w" -w /w/os/verify \
 run.sh              the entry point; the only place that decides how bun is invoked
 src/board-env.ts    the parser: board.env text -> assignments, faithfully or not at all
 src/board.ts        the typed model: assignments -> partitions, roles, bootloader, lists
+src/lint.ts         the schema lint: the model -> a verdict and the sentence for it
+src/lint-cli.ts     argv, printing and an exit status; every decision is in lint.ts
 src/paths.ts        where the package sits, anchored rather than counted
 src/*.test.ts       the suite; every refusal has a positive control beside it
 ```
 
-`lint.sh` and `lint-test.sh` are the **shell** board-definition schema lint,
-still the thing `make os-layout-lint` and `make os-layout-lint-test` run. They
-are unchanged by this package and are RFCT-109's next step to port.
+`lint.sh` and `lint-test.sh` — the shell board-definition schema lint and its
+negative test — were **retired** in M3b. `src/lint.ts` and `src/lint.test.ts`
+replace them, `make os-layout-lint` and `make os-layout-lint-test` keep their
+names, and both now go through `run.sh`. What changed in the verdicts, and why
+each change is deliberate, is in "The lint, and where it is stricter" above.
