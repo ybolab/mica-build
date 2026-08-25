@@ -2,8 +2,8 @@
 # Build the squashfs + dm-verity arm64 rootfs slot image for cx3576 (layout v2).
 # Usage: [BOARD_DIR=...] [WITH_MOSD=0|1] [WITH_CONTAINERS=0|1] [MOS_PROFILE=dev|prod] bash os/rootfs/build-v2.sh
 #
-# There is deliberately NO ROOT_PASSWORD here (v1's build.sh keeps it). A v2
-# rootfs is a signed, byte-identical squashfs, and the pack stage FAILS any
+# There is deliberately NO ROOT_PASSWORD here. A v2 rootfs is a signed,
+# byte-identical squashfs, and the pack stage FAILS any
 # build whose factory shadow carries a usable hash — so a baked v2 root
 # password is unbuildable by design, not merely discouraged. Dev root access on
 # v2 is the transient password set at runtime through mosd
@@ -19,8 +19,7 @@
 #   boot-cmdline-b.txt    kernel append line for the B slot
 #   rootfs-report-v2.txt  package list + installed size
 #
-# v1 (os/rootfs/build.sh) is untouched and keeps producing the writable ext4
-# root. Every layout constant is read from os/layout/cx3576-v2.env.
+# Every layout constant is read from os/layout/cx3576-v2.env.
 set -euo pipefail
 
 SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)

@@ -191,9 +191,11 @@ console=ttyFIQ0,1500000 earlycon=uart8250,mmio32,0x2ad40000 storagemedia=emmc ne
   `os/mkimage-v2.sh` cross-checks each slot's table against `ROOTFS_A_GUID` /
   `ROOTFS_B_GUID` — which the layout env holds in uppercase — comparing
   case-insensitively (RFCT-020), so the two spellings coexist by design.
-- The console/earlycon/storagemedia/net.ifnames arguments are carried over from
-  the v1 `APPEND` in `os/mkimage.sh`. v1's `root=PARTLABEL=rootfs rw` is
-  replaced by `root=/dev/dm-0 ... ro`.
+- The console/earlycon/storagemedia/net.ifnames arguments are board facts and
+  live in `os/layout/<board>-v2.env` as `BOARD_CMDLINE_ARGS`. They were carried
+  over from the `APPEND` line of the v1 single-slot assembler, which RFCT-107
+  deleted; the root argument is `root=/dev/dm-0 ... ro` rather than v1's
+  `root=PARTLABEL=rootfs rw`.
 - `rootwait` is kept. Note that if `dm-init` fails, `/dev/dm-0` never appears
   and `rootwait` waits forever; recovery from that state is U-Boot's job
   (`BOOT_x_LEFT` attempt counters plus a watchdog reset), not the kernel's.

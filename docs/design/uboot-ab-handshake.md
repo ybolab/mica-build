@@ -28,6 +28,15 @@ file has since landed with RFCT-020, so every generated file (defconfig
 fragment, `fw_env.config`, `boot.cmd`) **must be regenerated from
 `os/layout/cx3576-v2.env`** so the two sides cannot drift.
 
+The v1 single-slot chain (`os/mkimage.sh`, `os/verify-image.sh`,
+`os/rootfs/build.sh`, `os/rootfs/Dockerfile`) still existed when this analysis
+was written, and §1.4, §5.3, §5.4 and §5.5 quote `os/mkimage.sh` by line as the
+baseline the v2 assembler had to match. RFCT-107 (PLAN-014 M1) **deleted** that
+chain. Every `os/mkimage.sh:NN` anchor below is therefore a citation into git
+history, not into the tree — verified when written, and not re-derivable by
+opening the file. What those anchors established is now carried by
+`os/mkimage-v2.sh` and asserted by `os/verify-image-v2.sh`.
+
 `CONFIG_SQUASHFS_XATTR` is out of scope here: L1 approved and applied it to
 `board/common/mos-required.fragment` directly. No action in this document.
 

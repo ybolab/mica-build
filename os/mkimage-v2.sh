@@ -13,8 +13,6 @@ set -euo pipefail
 # frameworks, so an extlinux config here would silently bypass the RAUC A/B
 # handshake (docs/design/uboot-ab-handshake.md sections 5.4-5.5).
 #
-# v1 (os/mkimage.sh) is untouched and keeps building the single-slot image.
-#
 # The output filename carries the assembly-time epoch, but the image CONTENT is
 # deterministic: fixed GPT GUIDs, fixed FAT volume ids, fixed ext4 fs UUIDs and
 # hash seeds, E2FSPROGS_FAKE_TIME, and all staged files touched to FILE_MTIME.

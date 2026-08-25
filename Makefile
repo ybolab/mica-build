@@ -10,7 +10,7 @@ BOARDS := cx3576 x64
 # the delegated names are open-ended; a stray file named e.g. `cx3576-kernel`
 # in this directory would shadow the delegation, which is a visible "Nothing to
 # be done" rather than a wrong build.
-.PHONY: help os os-image-cx3576 os-verify-cx3576 os-rootfs-cx3576-v2 \
+.PHONY: help os os-rootfs-cx3576-v2 \
 	os-quadlet-doc-test \
 	os-image-cx3576-v2 os-verify-cx3576-v2 os-bundle-cx3576 os-devkeys os-health-test podman \
 	os-shadow-test os-dbus-policy-test os-repart-test os-ui-location-test \
@@ -20,8 +20,6 @@ BOARDS := cx3576 x64
 help:
 	@echo "mos build targets:"
 	@echo "  os                  RETIRED by PLAN-010; use the os-*-cx3576-v2 targets"
-	@echo "  os-image-cx3576     build the cx3576 mos disk image (rootfs + BSP artifacts; BOARD_DIR=...)"
-	@echo "  os-verify-cx3576    verify the assembled cx3576 mos disk image against the image contract"
 	@echo "v2 (A/B layout, squashfs+dm-verity rootfs, RAUC updates):"
 	@echo "  os-rootfs-cx3576-v2 build the squashfs+dm-verity rootfs slot image"
 	@echo "  os-image-cx3576-v2  build the cx3576 A/B disk image (layout v2)"
@@ -46,19 +44,13 @@ help:
 # than being deleted for the reason x64-% has one: with neither a recipe nor a
 # rule, `make os` prints "Nothing to be done for 'os'" and exits 0 -- a
 # retired build path that reports success is the failure mode every check in
-# this repository exists to prevent.
+# this repository exists to prevent. That reasoning is unchanged by RFCT-107
+# deleting the v1 single-slot chain this message used to also name; only the
+# targets it points at moved on.
 os:
 	@echo "os: retired by PLAN-010 (Talos base -> systemd + mosd)." >&2
-	@echo "    v1 image: make os-image-cx3576 / os-verify-cx3576" >&2
-	@echo "    v2 (A/B): make os-image-cx3576-v2 / os-verify-cx3576-v2 / os-bundle-cx3576" >&2
+	@echo "    build and verify with: make os-image-cx3576-v2 / os-verify-cx3576-v2 / os-bundle-cx3576" >&2
 	@false
-
-os-image-cx3576:
-	bash os/rootfs/build.sh
-	bash os/mkimage.sh
-
-os-verify-cx3576:
-	bash os/verify-image.sh
 
 os-rootfs-cx3576-v2:
 	bash os/rootfs/build-v2.sh

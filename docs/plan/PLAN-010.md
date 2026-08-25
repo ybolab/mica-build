@@ -97,7 +97,9 @@ apid + kiosk (one UI, local/remote paths)    RAUC (native) + tough (TUF signing)
   = systemd unit states + mosd checks -> rauc mark-good.
 - v2 is a sibling of v1 throughout: new files, new Makefile targets, a new
   `...-0002-...` GUID namespace. `os/mkimage.sh` and `os/verify-image.sh` are
-  untouched, so a v1 image is still buildable and verifiable.
+  untouched, so a v1 image is still buildable and verifiable. *(True as
+  delivered. RFCT-107 / PLAN-014 M1 has since deleted the v1 chain — v1 is no
+  longer buildable from the tree, only from git history.)*
 
 #### What was delivered
 

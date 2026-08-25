@@ -7,11 +7,8 @@
 #   → _out/cx3576/rootfs-verity.env     verity parameters for the assembler/cmdline
 #   → _out/cx3576/rootfs-report-v2.txt  package list + installed size
 #
-# Sibling of ./Dockerfile, not a replacement: v1 keeps building the writable
-# single-slot ext4 root and is not touched by this file. The rootfs stage is
-# v1's content plus what a read-only A/B root needs (RAUC, libubootenv, the
-# overlay-v2 mount wiring); the pack stage swaps mke2fs for mksquashfs +
-# veritysetup.
+# The rootfs stage builds the packed root; the pack stage turns it into a
+# squashfs with an appended dm-verity hash tree (mksquashfs + veritysetup).
 #
 # Build context = repo root. Depends on board/cx3576/out/kernel/modules.tar and
 # on the rendered overlay tree, both staged into the context by build-v2.sh.
@@ -1031,11 +1028,11 @@ RUN set -eu; \
 # is condition-gated on its conf file, so enabling them is safe either way.
 #
 # The install list is ENUMERATED from the board facts actually staged, never
-# restated here. A hardcoded list is what let this file drift behind the v1
-# Dockerfile once already: mos-mac and mos-gadget were installed but silently
-# left disabled, costing the image its stable MAC and its USB debug console
-# with no error anywhere. Adding os/hwinit/hwinit-<n> plus mos-<n>.service, and
-# an <n>.conf to the board, is enough.
+# restated here. A hardcoded list is what let this file drift behind the
+# (since deleted) v1 Dockerfile once already: mos-mac and mos-gadget were
+# installed but silently left disabled, costing the image its stable MAC and
+# its USB debug console with no error anywhere. Adding os/hwinit/hwinit-<n>
+# plus mos-<n>.service, and an <n>.conf to the board, is enough.
 #
 # A BOARD ONLY GETS THE SCRIPTS FOR FACILITIES IT DECLARES. Every unit is
 # condition-gated on its conf file, so shipping all of them to every board was
@@ -1158,9 +1155,8 @@ RUN set -eu; \
         { echo "error: the mos shadow last-change field is not the pinned day 18262 (2020-01-01)" >&2; exit 1; }; \
     echo "account: mos uid=1000 gid=1000 shell=/bin/bash home=/home/mos, no supplementary groups, shadow field '${mh}'"
 
-# There is deliberately NO ROOT_PASSWORD build arg on the v2 path (v1's
-# Dockerfile keeps it: that root is a writable per-build ext4). A v2 rootfs is
-# a signed squashfs, byte-identical on every device, so any usable hash baked
+# There is deliberately NO ROOT_PASSWORD build arg. A v2 rootfs is a signed
+# squashfs, byte-identical on every device, so any usable hash baked
 # into it is a fleet-wide shared secret — and the pack stage's factory-shadow
 # assertion below fails the build on exactly that, for every account and with
 # no profile exception. Plumbing an arg into an unbuildable state would only

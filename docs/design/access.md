@@ -349,10 +349,10 @@ Decision 2026-08-17: prod ships SSH. **Two** profiles ship today, selected at
 build time and recorded in the image.
 
 `/usr/lib/mos/profile.conf` carries `MOS_PROFILE=dev` or `MOS_PROFILE=prod`,
-mode 0444, written by `os/rootfs/build.sh` / `build-v2.sh`. It is under
-`/usr/lib` and not `/etc` because it describes the *image* rather than the
-device — and on v2 that also puts it inside the read-only verity root, where
-a production device cannot be edited into a development one.
+mode 0444, written by `os/rootfs/build-v2.sh`. It is under `/usr/lib` and not
+`/etc` because it describes the *image* rather than the device — and that also
+puts it inside the read-only verity root, where a production device cannot be
+edited into a development one.
 
 **Both profiles now seed `access.ssh.enabled = false`**, and neither image ships
 `ssh.service` enabled; both image verifiers assert the disabled state. The
