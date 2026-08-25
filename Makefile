@@ -15,7 +15,7 @@ BOARDS := cx3576 x64
 	os-image-cx3576-v2 os-verify-cx3576-v2 os-bundle-cx3576 os-devkeys os-health-test podman \
 	os-shadow-test os-dbus-policy-test os-repart-test os-ui-location-test \
 	os-uboot-handshake-test os-mkimage-v2-test os-layout-lint os-layout-lint-test \
-	docs-verify docs-verify-test
+	docs-verify docs-verify-test build-env
 
 help:
 	@echo "mos build targets:"
@@ -37,6 +37,7 @@ help:
 	@echo "  docs-verify         assert both document indexes agree with the tree, in both directions"
 	@echo "  docs-verify-test    prove the index assertions actually fail on a duplicated row or entry"
 	@echo "  podman              build the container engine from source into os/podman/out-\$$MOS_ARCH"
+	@echo "  build-env           build the digest-pinned builder image localhost/mos-build-base"
 	@echo "  os-quadlet-doc-test run docs/design/containers.md's examples through Quadlet"
 	@echo "  cx3576-<t>          delegate target <t> to board/cx3576 (uboot|kernel|rootfs|image|clean)"
 
@@ -248,6 +249,28 @@ os-quadlet-doc-test:
 # has the reasoning.
 podman:
 	bash os/podman/build.sh
+
+# PLAN-014 M2: the builder image every component build stands on, built from a
+# base pinned by DIGEST in os/build-env/images.env rather than by a tag upstream
+# repoints whenever it rebuilds. Decision 4 rejected the official `golang:` /
+# `rust:` images for the same reason podman and rauc are built from source here:
+# a build environment nobody chose is a shipped dependency nobody recorded, and
+# "what did this build run on" has to be answerable from the tree rather than
+# from a build log.
+#
+# It carries only the language-independent floor -- ca-certificates, git, file,
+# binutils, xz -- and ASSERTS that floor from inside itself, so an apt archive
+# that moved backwards fails the build rather than the component two images
+# above it. Per-language apt lists stay in mos-build-{c,go,rust}: one shared
+# list is one cache key for unrelated compilers, and os/podman/Dockerfile
+# measured what that costs at about 42 minutes of recompilation for a
+# one-package edit.
+#
+# Needs docker. MOS_BUILD_PLATFORM=linux/<arch> cross-builds it; the default is
+# the host. It fails loudly when a pin is missing, unresolved or written as a
+# tag rather than skipping.
+build-env:
+	bash os/build-env/build.sh
 
 cx3576-%:
 	$(MAKE) -C board/cx3576 $*
