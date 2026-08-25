@@ -159,8 +159,34 @@ hostname as long as `/etc/bluetooth/main.conf` does not pin one.
 
 # Layout v2 — squashfs + dm-verity rootfs (PLAN-010 M4)
 
-`build-v2.sh` / `Dockerfile.v2` / `overlay-v2/` are the build. The design record
-is `docs/design/ro-root.md` — read it before changing anything here.
+`build-v2.sh` / `Dockerfile.v2` / `scripts/` / `overlay-v2/` are the build. The
+design record is `docs/design/ro-root.md` — read it before changing anything
+here.
+
+## Where the shell is: `scripts/`
+
+`Dockerfile.v2` holds almost no shell. Every `RUN` body longer than one command
+is a file in `scripts/`, reached by a bind mount that leaves nothing in the
+image:
+
+```dockerfile
+RUN --mount=type=bind,source=os/rootfs/scripts,target=/mos-scripts \
+    sh /mos-scripts/<name>.sh
+```
+
+Build arguments still arrive through the environment, the way they always did,
+so the scripts read `BOARD_RADIOS`, `WITH_CONTAINERS`, `MOS_ARCH` and the rest
+unchanged. The package lists and the single-command `RUN`s stayed in the
+Dockerfile: a stage's package set *is* the image, and a one-line `RUN` gains
+nothing from a hop.
+
+`scripts/README.md` has the rest — why a mount and not a `COPY`, why these files
+must stay POSIX `sh`, and how to check that a change to one of them is the
+refactor it claims to be.
+
+RFCT-111 (PLAN-014 M5) did this, so that M5 can split `Dockerfile.v2` into one
+Dockerfile per stage: a stage boundary can only be drawn through shell that is
+addressable.
 
 ## Build
 
@@ -412,6 +438,36 @@ would be a private key shared by every device and would change the verity root
 hash on every cold build; `mos-seed-state` generates them per device on first
 boot instead.
 
-What still deviates on a cold build: the byte layout depends on the
-`squashfs-tools` and `cryptsetup` versions pulled from `debian:bookworm-slim` in
-the pack stage. Pinning that base image by digest is the follow-up.
+`cache-hot` is doing real work in that sentence and RFCT-111 measured how much.
+**A cold x64 build does not reproduce itself.** Three cold builds — two of one
+unmodified `Dockerfile.v2`, one of another — produced three different
+`rootfs-verity.img` sha256s, and in every pairing the differing set was the same
+six of 9,241 entries:
+
+| Entry | Why it moves |
+|---|---|
+| `/boot/initrd.img-*` | `update-initramfs` does not compress reproducibly. The 961 files *inside* are identical between runs; only the container's bytes differ (three runs gave 37190070, 37189886 and 37189690 bytes) |
+| `/usr/share/factory/var/log/dpkg.log` | records the wall-clock time of each of its 694 operations. Strip the timestamps and two runs are byte-identical: same operations, same order |
+| `/usr/share/factory/var/log/apt/history.log`, `.../term.log` | same, `Start-Date`/`End-Date` |
+| `/usr/share/factory/var/log/alternatives.log` | same |
+| `/usr/share/factory/var/cache/ldconfig/aux-cache` | build-time cache |
+
+They survive because the package-manager purge takes `/var/lib/dpkg` and
+`/var/lib/apt` but not `/var/log`, and the pack stage then moves `/var` to
+`/usr/share/factory/var` whole. Removing them would change image content, which
+is outside PLAN-014's scope; this is recorded, not fixed.
+
+**What this means for a byte-identity gate.** Changing the Dockerfile
+necessarily invalidates the layer cache, so "byte-identical before and after"
+cannot be measured cache-hot — and measured cold it fails for the six reasons
+above whether or not anything changed. A gate that compares sha256 across a
+build change is measuring the clock. The gate that works is the one RFCT-111
+used: extract both images and `diff -r` the trees, then check that the differing
+set is no larger than the control's, where the control is two cold builds of the
+*unmodified* file.
+
+Also cold-build-dependent, and now closed: the byte layout used to depend on
+whichever `squashfs-tools` and `cryptsetup` came out of a floating
+`debian:bookworm-slim` in the pack stage. RFCT-108 (PLAN-014 M2) pins that base
+by digest through `os/build-env/images.env`, so the pack tools are a decision
+rather than a build date.
