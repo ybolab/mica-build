@@ -22,6 +22,40 @@
 # A/B order -> kernel -> initramfs verity -> systemd -> mosd. Nothing here is
 # a test-only shortcut, and in particular there is no `-kernel` path: booting
 # the kernel directly would skip the two components most likely to be wrong.
+#
+# DETERMINISM, AND THE ONE THING IT STILL DOES NOT COVER. Two assemblies of
+# identical inputs must produce identical bytes. PLAN-014 hangs byte-identity
+# gates on RFCT-111 and RFCT-112, and a gate that fails for reasons unrelated to
+# the work it gates is a gate everyone learns to wave through. The controls are
+# the ones os/mkimage-v2.sh already uses, for the same reasons: GPT GUIDs, FAT
+# volume ids and ext4 fs UUIDs fixed in board.env, `mkfs.vfat --invariant`,
+# every FAT entry staged with its mtime touched to FILE_MTIME and copied with
+# `mcopy -m`, E2FSPROGS_FAKE_TIME exported into the assembly, and
+# `mke2fs -E hash_seed` pinned to each filesystem's own UUID.
+#
+# This file had NONE of them. Two assemblies four minutes apart differed in nine
+# MiB: the ESP, both boot FATs, the four ext4 superblocks and EPHEMERAL's two
+# backup superblocks. Eight of those nine now hold byte-for-byte.
+#
+# THE NINTH DOES NOT, and it is a defect rather than an accepted deviation.
+# EPHEMERAL's inode table still moves, in two ways, and both come from how the
+# factory /var is seeded below rather than from anything on this list:
+#   - `.mos-var-seeded` is created fresh on every assembly, so its atime, mtime
+#     and ctime are all assembly time;
+#   - `cp -a` stages the tree so the stamp can be added without writing into
+#     _out, and `mke2fs -d` copies each SOURCE inode's ctime. The kernel stamps
+#     ctime at the moment of the copy and no syscall can set it, so a `touch`
+#     fixes the first of these and not the second. Measured: 93 inodes move,
+#     one of them in three timestamps and ninety-two in ctime alone.
+# os/mkimage-v2.sh seeds EPHEMERAL the same way and has the same defect. The
+# mechanism is being chosen there; whatever lands is meant to apply here too,
+# and a second, divergent fix in this file would be worse than the defect.
+#
+# Deviations that ARE accepted, the first two inherited from os/mkimage-v2.sh:
+# the FAT partitions are byte-identical only across builds using the same mtools
+# version; rootfs-verity.img is only as reproducible as the pipeline that made
+# it; and BOOTX64.EFI is only as reproducible as the grub-efi-amd64-bin in the
+# container image named below.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -167,10 +201,23 @@ cd /w
 . /w/layout.env
 MIB=1048576
 
+# DETERMINISM, and why each control below is a separate line.
+#
+# mke2fs reads E2FSPROGS_FAKE_TIME out of the ENVIRONMENT, and sourcing a file
+# SETS without EXPORTING. The pin has lived in board.env since the file was
+# written; until this export it sat in this shell and every mkfs below still
+# stamped s_wtime and s_lastcheck off the real clock -- a documented layout key
+# doing nothing, which is worse than an absent one because it reads as covered.
+export E2FSPROGS_FAKE_TIME
+
 # --- the ESP: static, in no slot group ---------------------------------------
 esp_bytes=$(( ESP_SIZE_MIB * MIB ))
 truncate -s "${esp_bytes}" esp.img
-mkfs.vfat -F 32 -n "${ESP_FAT_LABEL}" -i "${ESP_FAT_VOLUME_ID}" esp.img >/dev/null
+# --invariant, or mkfs.vfat stamps the volume-label directory entry with the
+# real clock. -i already pins the volume id, which is the deviation people
+# remember; the timestamp is the one they do not, and it moved the ESP's MiB on
+# every assembly.
+mkfs.vfat --invariant -F 32 -n "${ESP_FAT_LABEL}" -i "${ESP_FAT_VOLUME_ID}" esp.img >/dev/null
 
 # FAT32 OR THE FIRMWARE WILL NOT MOUNT IT. Below 65525 clusters the filesystem
 # is not FAT32 no matter what -F said, and mkfs.vfat does not refuse: at 32 MiB
@@ -233,10 +280,20 @@ grub-editenv grubenv set A_OK=0 A_TRY=0 B_OK=0 B_TRY=0
     exit 1
 }
 
-mmd -i esp.img ::/EFI ::/EFI/BOOT ::/EFI/mos
-mcopy -i esp.img BOOTX64.EFI ::/EFI/BOOT/BOOTX64.EFI
-mcopy -i esp.img grub.cfg    ::/EFI/mos/grub.cfg
-mcopy -i esp.img grubenv     ::/EFI/mos/grubenv
+# Staged and copied as a TREE, which is how os/mkimage-v2.sh:mkboot does it and
+# is not merely a style choice here. `mcopy -m` takes each entry's timestamp
+# from its source, so a `touch` to FILE_MTIME pins it -- but the ESP needs three
+# DIRECTORIES, and `mmd` has no source to take a time from: it stamps ::/EFI,
+# ::/EFI/BOOT and ::/EFI/mos with the real clock and -m cannot reach them.
+# Copying the staged tree with -s -m gives every directory entry, file and
+# folder alike, a pinned source. Measured: mmd + per-file `mcopy -m` still moved
+# 18 bytes across two assemblies 3 seconds apart; this moves none.
+mkdir -p esp-stage/EFI/BOOT esp-stage/EFI/mos
+cp BOOTX64.EFI esp-stage/EFI/BOOT/BOOTX64.EFI
+cp grub.cfg    esp-stage/EFI/mos/grub.cfg
+cp grubenv     esp-stage/EFI/mos/grubenv
+find esp-stage -exec touch -h -d "${FILE_MTIME}" {} +
+mcopy -s -m -i esp.img esp-stage/EFI ::/
 
 # NOTHING PER-SLOT ON THE ESP. Asserted rather than assumed: a kernel or a
 # cmdline that reappeared here would be read by GRUB in preference to nothing
@@ -256,16 +313,20 @@ done
 # the volume id as A's, so BOOT_B_FAT_VOLUME_ID sat in the layout with nothing
 # writing it. mlabel cannot set a volume id, so each is made rather than copied.
 boot_bytes=$(( BOOT_SIZE_MIB * MIB ))
+# Pinned before the loop, not inside it: both slots copy the same three files,
+# and touching them twice would only make the second slot's timestamps depend on
+# the first slot's having already happened.
+touch -h -d "${FILE_MTIME}" vmlinuz initrd.img cmdline.cfg
 for slot in a b; do
     case "${slot}" in
     a) label="${BOOT_A_FAT_LABEL}"; volid="${BOOT_A_FAT_VOLUME_ID}" ;;
     b) label="${BOOT_B_FAT_LABEL}"; volid="${BOOT_B_FAT_VOLUME_ID}" ;;
     esac
     truncate -s "${boot_bytes}" "boot-${slot}.img"
-    mkfs.vfat -F 32 -n "${label}" -i "${volid}" "boot-${slot}.img" >/dev/null
-    mcopy -i "boot-${slot}.img" vmlinuz     "::/${SLOT_KERNEL_NAME}"
-    mcopy -i "boot-${slot}.img" initrd.img  "::/${SLOT_INITRD_NAME}"
-    mcopy -i "boot-${slot}.img" cmdline.cfg "::/${SLOT_CMDLINE_NAME}"
+    mkfs.vfat --invariant -F 32 -n "${label}" -i "${volid}" "boot-${slot}.img" >/dev/null
+    mcopy -m -i "boot-${slot}.img" vmlinuz     "::/${SLOT_KERNEL_NAME}"
+    mcopy -m -i "boot-${slot}.img" initrd.img  "::/${SLOT_INITRD_NAME}"
+    mcopy -m -i "boot-${slot}.img" cmdline.cfg "::/${SLOT_CMDLINE_NAME}"
 done
 
 # The two slots must differ ONLY in their filesystem identity.
@@ -280,11 +341,21 @@ b_list="$(mdir -/ -b -i boot-b.img ::/ | sort)"
 mkfs_ext4() {
     local out="$1" mib="$2" label="$3" uuid="$4" seed="${5:-}"
     truncate -s "$(( mib * MIB ))" "${out}"
+    # hash_seed is pinned to the filesystem's OWN uuid -- the same rule as
+    # os/mkimage-v2.sh:mkext4 -- so it is derived, not a fourteenth constant to
+    # keep in step. Left to itself mke2fs draws it at random and writes it to
+    # sb+0xEC, which moves the superblock on every assembly.
+    # root_owner=0:0 states the ownership rather than inheriting the caller's
+    # uid; it is invariant today only because this assembly happens to run as
+    # root in the container, and an image's root directory should not be owned
+    # by whoever built it.
     if [ -n "${seed}" ]; then
         mkfs.ext4 -q -F -b "${EXT4_BLOCK_SIZE}" -O "${EXT4_FEATURES}" \
+            -E "root_owner=0:0,hash_seed=${uuid}" \
             -L "${label}" -U "${uuid}" -d "${seed}" "${out}"
     else
         mkfs.ext4 -q -F -b "${EXT4_BLOCK_SIZE}" -O "${EXT4_FEATURES}" \
+            -E "root_owner=0:0,hash_seed=${uuid}" \
             -L "${label}" -U "${uuid}" "${out}"
     fi
 }
