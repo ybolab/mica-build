@@ -132,6 +132,24 @@ lint_one() {
                 fail "${board}: ${name} is role ${role} and declares ${name}_${key}=${val}, which that role cannot honour. A constant nobody reads is how a board comes to claim a capability it does not have"
             done
 
+            # One fact, three units. A board may spell a start as MiB, as a
+            # sector and as a byte offset; cx3576 does, as three independent
+            # literals, and three literals can disagree. Checked rather than
+            # trusted -- and only when both forms are present, so a board that
+            # declares one is not forced to declare the others.
+            local mib sect off
+            eval "mib=\${${name}_START_MIB:-}"
+            eval "sect=\${${name}_START_SECTOR:-}"
+            eval "off=\${${name}_OFFSET_BYTES:-}"
+            if [ -n "${mib}" ] && [ -n "${sect}" ] &&
+                [ "${sect}" -ne $((mib * MIB_BYTES / SECTOR_SIZE)) ]; then
+                fail "${board}: ${name}_START_MIB=${mib} and ${name}_START_SECTOR=${sect} disagree; ${mib} MiB is $((mib * MIB_BYTES / SECTOR_SIZE)) sectors"
+            fi
+            if [ -n "${mib}" ] && [ -n "${off}" ] &&
+                [ "${off}" -ne $((mib * MIB_BYTES)) ]; then
+                fail "${board}: ${name}_START_MIB=${mib} and ${name}_OFFSET_BYTES=${off} disagree; ${mib} MiB is $((mib * MIB_BYTES)) bytes"
+            fi
+
             eval "val=\${${name}_PARTNUM:-}"
             case " ${seen_nums} " in
             *" ${val} "*) fail "${board}: partition number ${val} is declared twice (${name})" ;;

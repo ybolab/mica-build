@@ -85,6 +85,17 @@ reject duplicate-partition-number x64-v2.env \
     "is declared twice" \
     "sed -i 's/^STATE_PARTNUM=6/STATE_PARTNUM=5/' lint-v2.env"
 
+# One fact in three units. cx3576 spells a start as MiB, as a sector AND as a
+# byte offset, as three independent literals; nothing tied them together until
+# this check, and three literals can drift apart one edit at a time.
+reject start-units-disagree cx3576-v2.env \
+    "disagree" \
+    "sed -i 's/^BOOT_A_START_SECTOR=36864/BOOT_A_START_SECTOR=36865/' lint-v2.env"
+
+reject offset-units-disagree cx3576-v2.env \
+    "disagree" \
+    "sed -i 's/^BOOT_A_OFFSET_BYTES=18874368/BOOT_A_OFFSET_BYTES=18874369/' lint-v2.env"
+
 reject no-arch x64-v2.env \
     "declares no MOS_ARCH" \
     "sed -i '/^MOS_ARCH=/d' lint-v2.env"
@@ -111,7 +122,8 @@ done
 EXPECTED="accepts-cx3576 accepts-x64 bad-status-led boot-attempts-on-grub
 duplicate-partition-number forbidden-role-key grub-without-grubenv
 missing-common-key missing-role-key no-arch no-partition-set
-partition-number-gap unknown-role uboot-without-attempts"
+offset-units-disagree partition-number-gap start-units-disagree
+unknown-role uboot-without-attempts"
 got="$(tr ' ' '\n' <<<"${RAN}" | grep -v '^$' | sort | tr '\n' ' ')"
 want="$(tr ' \n' '\n\n' <<<"${EXPECTED}" | grep -v '^$' | sort | tr '\n' ' ')"
 if [ "${got}" = "${want}" ]; then

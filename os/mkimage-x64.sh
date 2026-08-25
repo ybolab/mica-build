@@ -160,10 +160,41 @@ mcopy -i esp.img initrd.img  ::/initrd-a
 mcopy -i esp.img vmlinuz     ::/vmlinuz-b
 mcopy -i esp.img initrd.img  ::/initrd-b
 
-# Both slots start life identical, as on cx3576: an image that shipped an empty
-# B would have nothing to fall back TO on the first bad update.
-cp esp.img esp-b.img
-mlabel -i esp-b.img "::${BOOT_B_FAT_LABEL}"
+# Both slots start life with the same CONTENTS, as on cx3576: an image that
+# shipped an empty B would have nothing to fall back TO on the first bad update.
+#
+# But B gets its OWN filesystem identity, not a copy of A's. `cp` plus `mlabel`
+# changed the label and left the FAT volume id as A's, so the layout declared
+# BOOT_B_FAT_VOLUME_ID and nothing ever wrote it -- a constant with no reader,
+# which is the same shape as the boot-attempts value that sat in this board's
+# layout claiming a U-Boot contract grub does not implement. Found by running
+# os/verify-image-v2.sh against an x64 image for the first time:
+#   FAIL: factory: BOOT-B FAT volume id is 'C3576103', expected C3576104
+#
+# mlabel cannot set a volume id, so B is made rather than copied, and the
+# contents are copied in afterwards. os/mkimage-v2.sh builds cx3576's two slots
+# the same way, each through mkfs.vfat with its own -n and -i.
+truncate -s "${esp_bytes}" esp-b.img
+mkfs.vfat -F 32 -n "${BOOT_B_FAT_LABEL}" -i "${BOOT_B_FAT_VOLUME_ID}" esp-b.img >/dev/null
+mmd -i esp-b.img ::/EFI ::/EFI/BOOT ::/EFI/mos
+mcopy -i esp-b.img BOOTX64.EFI ::/EFI/BOOT/BOOTX64.EFI
+mcopy -i esp-b.img grub.cfg    ::/EFI/mos/grub.cfg
+mcopy -i esp-b.img grubenv     ::/EFI/mos/grubenv
+mcopy -i esp-b.img vmlinuz     ::/vmlinuz-a
+mcopy -i esp-b.img initrd.img  ::/initrd-a
+mcopy -i esp-b.img vmlinuz     ::/vmlinuz-b
+mcopy -i esp-b.img initrd.img  ::/initrd-b
+
+# The two slots must differ ONLY in their filesystem identity. Asserted here
+# rather than left to the verifier: a divergence introduced above would ship,
+# and the verifier only checks the files it knows to look for.
+a_list="$(mdir -/ -b -i esp.img ::/ | sort)"
+b_list="$(mdir -/ -b -i esp-b.img ::/ | sort)"
+[ "${a_list}" = "${b_list}" ] || {
+    echo "error: the two boot slots do not carry the same files" >&2
+    diff <(printf '%s\n' "${a_list}") <(printf '%s\n' "${b_list}") >&2 || true
+    exit 1
+}
 
 mkfs_ext4() {
     local out="$1" mib="$2" label="$3" uuid="$4"

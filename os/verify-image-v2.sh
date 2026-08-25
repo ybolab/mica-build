@@ -43,7 +43,11 @@ fi
 # shellcheck source=layout/cx3576-v2.env
 . "${LAYOUT_ENV}"
 
-KERNEL_VERSION="6.1.115"
+# READ FROM THE IMAGE, not pinned. "6.1.115" is the cx3576 BSP kernel; x64 runs
+# Debian's (6.12.101+deb13-amd64), so a literal here fails a correct image and
+# says the modules directory is wrong. Resolved after the root is unpacked --
+# see KERNEL_VERSION= below the unpack.
+KERNEL_VERSION=""
 
 INNER=0
 EXPECT_SYMLINK=0
@@ -77,7 +81,7 @@ FIXTURE_ROOT="${MOS_VERIFY_FIXTURE_ROOT:-}"
 
 if [ -z "${FIXTURE_ROOT}" ]; then
     if [ -z "${IMG}" ]; then
-        IMG="${REPO_ROOT}/_out/cx3576/${IMAGE_LATEST_NAME}"
+        IMG="${REPO_ROOT}/_out/${MOS_BOARD}/${IMAGE_LATEST_NAME}"
         EXPECT_SYMLINK=1
     fi
     if [ ! -e "${IMG}" ]; then
@@ -98,8 +102,12 @@ if [ -z "${FIXTURE_ROOT}" ]; then
     # downloaded release image, where the local tree is not its source at all.
     if [ "${MOS_VERIFY_ALLOW_STALE:-0}" != "1" ]; then
         stale=""
-        for input in "${REPO_ROOT}/_out/cx3576/rootfs-verity.img" \
-                     "${REPO_ROOT}/os/podman/out-arm64/podman"; do
+        # Board-derived, not literal. These named cx3576 and out-arm64
+        # whatever board was being verified, so an x64 run's freshness was
+        # judged by arm64 artefacts -- it would pass on a stale x64 image and
+        # refuse a fresh one whenever the arm64 tree happened to be newer.
+        for input in "${REPO_ROOT}/_out/${MOS_BOARD}/rootfs-verity.img" \
+                     "${REPO_ROOT}/os/podman/out-${MOS_ARCH}/podman"; do
             [ -e "${input}" ] || continue
             [ "${input}" -nt "${IMG}" ] && stale="${stale} ${input##*/}"
         done
@@ -158,8 +166,14 @@ if [ "${INNER}" -eq 0 ] && [ -z "${FIXTURE_ROOT}" ]; then
         # verify-image-v2.sh` on a tool-less host checks the x64 image against
         # cx3576's eleven-partition GPT and reports 191 failures that are all
         # the harness's. Observed exactly that way.
+        # -e MOS_VERIFY_ALLOW_STALE: the third variable to need this, and the
+        # third to be found by it silently not working. The staleness guard
+        # runs on BOTH sides of the re-exec, so an outer run told to allow a
+        # stale image re-checks it inside and refuses -- with a message about
+        # the image, which sends the reader to rebuild something that is not
+        # the problem.
         docker run --rm "${mounts[@]}" -e BOARD_DIR=/board -e MOS_EXPECT_DEV_KEYRING \
-            -e MOS_BOARD="${MOS_BOARD}" alpine:3.21 \
+            -e MOS_BOARD="${MOS_BOARD}" -e MOS_VERIFY_ALLOW_STALE alpine:3.21 \
             sh -c 'apk add --no-cache -q bash coreutils diffutils gptfdisk sgdisk dosfstools mtools e2fsprogs e2fsprogs-extra squashfs-tools cryptsetup libcap libcap-setcap dtc && exec bash /work/os/verify-image-v2.sh "$@"' \
             _ "${inner_args[@]}" || rc=$?
         if [ -n "${tmp_board}" ]; then
@@ -183,6 +197,30 @@ fail() {
     FAIL_N=$((FAIL_N + 1))
     echo "FAIL: $*"
 }
+
+# A SKIP IS NOT A PASS, and it must not be able to look like one.
+#
+# Some assertions describe a bootloader only one board has: U-Boot's loader
+# blob at a fixed sector, its redundant environment, its boot script. On a
+# grub board they are not failures and they are not successes -- they are
+# checks that do not apply, and the only wrong thing to do with them is run
+# them silently or not at all.
+#
+# Both wrong outcomes produce the same green as a real pass. This repository
+# has found that family of defect five times in one afternoon, so a skip here
+# is PRINTED, COUNTED and carried into the summary, and it must say what does
+# not apply and WHY -- because "not applicable" without a reason is how a
+# check that should have run comes to be skipped forever.
+SKIP_N=0
+skip() {
+    SKIP_N=$((SKIP_N + 1))
+    echo "SKIP: $*"
+}
+
+# True when the layout's RAUC backend counts boot attempts through a U-Boot
+# environment -- which is what every assertion below that mentions LOADER_* or
+# UENV_* is really about.
+is_uboot_board() { [ "${RAUC_BOOTLOADER}" = "uboot" ]; }
 
 # GPT tooling prints GUIDs uppercase; udev/libblkid print the same GUIDs
 # lowercase, and that is the spelling a kernel cmdline, an fstab entry and a
@@ -1303,7 +1341,15 @@ ptable="$(sgdisk -p "${IMG}" 2>/dev/null || true)"
 disk_guid="$(echo "${ptable}" | sed -n 's/^Disk identifier (GUID): //p')"
 eq_ci "disk GUID" "${disk_guid}" "${DISK_GUID}"
 
-EXPECT_PARTS=11
+# The count comes from the board definition, not from a literal. `EXPECT_PARTS=11`
+# was the cx3576 number, and it is why `MOS_BOARD=x64` did not report a
+# difference — it died on `LOADER_PARTNUM: unbound variable` four checks in.
+EXPECT_PARTS=0
+for _p in ${LAYOUT_PARTITIONS}; do EXPECT_PARTS=$((EXPECT_PARTS + 1)); done
+if [ "${EXPECT_PARTS}" -eq 0 ]; then
+    echo "error: ${LAYOUT_ENV} declares no LAYOUT_PARTITIONS; this verifier walks the board definition and has nothing to walk" >&2
+    exit 1
+fi
 part_count="$(echo "${ptable}" | grep -cE '^[[:space:]]+[0-9]+[[:space:]]' || true)"
 if [ "${part_count}" = "${EXPECT_PARTS}" ]; then
     pass "exactly ${EXPECT_PARTS} partitions"
@@ -1337,27 +1383,75 @@ else
     slot_sectors=0
 fi
 
-rootfs_b_start_mib=$((ROOTFS_A_START_MIB + SLOT_MIB))
-meta_start_mib=$((rootfs_b_start_mib + SLOT_MIB))
-state_start_mib=$((meta_start_mib + META_SIZE_MIB))
-ephemeral_start_mib=$((state_start_mib + STATE_SIZE_MIB))
-data_start_mib=$((ephemeral_start_mib + MOS_VAR_MIB))
-total_size_mib=$((data_start_mib + DATA_SIZE_MIB + IMAGE_TAIL_SLACK_MIB))
+# THE PARTITION TABLE, WALKED FROM THE BOARD DEFINITION.
+#
+# What replaced an eleven-row literal table: every row is built by iterating
+# LAYOUT_PARTITIONS and resolving each field from the layout by name. A board
+# that declares eight partitions produces eight rows; one that declares eleven
+# produces eleven. Nothing here knows which partitions a board has.
+#
+# SIZE resolves in one order, and the order is the schema's: an explicit
+# _SIZE_SECTORS, else _SIZE_MIB, else -- for a verity-slot -- the size read
+# back out of the image, because a rootfs slot's size is content-derived and
+# declaring it would be restating what the build computed.
+#
+# START is where this stops being a lookup and becomes an assertion. A
+# partition either declares a fixed start (_START_SECTOR or _START_MIB) or it
+# BEGINS WHERE THE PREVIOUS ONE ENDED. That is what a partition table means,
+# and walking it that way makes the packing itself the thing under test: the
+# old code carried a hand-written chain (rootfs_b_start_mib = ... ; meta_start_mib
+# = ... ; four more) which restated the arithmetic the assembler had already
+# done, so a gap agreed on by both would have passed.
+part_size_sectors() {
+    local name="$1" v
+    eval "v=\${${name}_SIZE_SECTORS:-}"
+    [ -n "${v}" ] && { echo "${v}"; return; }
+    eval "v=\${${name}_SIZE_MIB:-}"
+    [ -n "${v}" ] && { echo $((v * SECTORS_PER_MIB)); return; }
+    eval "v=\${${name}_ROLE:-}"
+    if [ "${v}" = "verity-slot" ]; then echo "${slot_sectors}"; return; fi
+    echo ""
+}
+
+part_fixed_start_sectors() {
+    local name="$1" v
+    eval "v=\${${name}_START_SECTOR:-}"
+    [ -n "${v}" ] && { echo "${v}"; return; }
+    eval "v=\${${name}_START_MIB:-}"
+    [ -n "${v}" ] && { echo $((v * SECTORS_PER_MIB)); return; }
+    echo ""
+}
 
 # num|label|typecode|guid|size-sectors|start-sector
-part_rows=(
-    "${LOADER_PARTNUM}|${LOADER_LABEL}|${LOADER_TYPECODE}|${LOADER_GUID}|${LOADER_SIZE_SECTORS}|${LOADER_START_SECTOR}"
-    "${UENV_A_PARTNUM}|${UENV_A_LABEL}|${UENV_A_TYPECODE}|${UENV_A_GUID}|${UENV_SIZE_SECTORS}|${UENV_A_START_SECTOR}"
-    "${UENV_B_PARTNUM}|${UENV_B_LABEL}|${UENV_B_TYPECODE}|${UENV_B_GUID}|${UENV_SIZE_SECTORS}|${UENV_B_START_SECTOR}"
-    "${BOOT_A_PARTNUM}|${BOOT_A_LABEL}|${BOOT_A_TYPECODE}|${BOOT_A_GUID}|$((BOOT_SIZE_MIB * SECTORS_PER_MIB))|${BOOT_A_START_SECTOR}"
-    "${BOOT_B_PARTNUM}|${BOOT_B_LABEL}|${BOOT_B_TYPECODE}|${BOOT_B_GUID}|$((BOOT_SIZE_MIB * SECTORS_PER_MIB))|${BOOT_B_START_SECTOR}"
-    "${ROOTFS_A_PARTNUM}|${ROOTFS_A_LABEL}|${ROOTFS_A_TYPECODE}|${ROOTFS_A_GUID}|${slot_sectors}|${ROOTFS_A_START_SECTOR}"
-    "${ROOTFS_B_PARTNUM}|${ROOTFS_B_LABEL}|${ROOTFS_B_TYPECODE}|${ROOTFS_B_GUID}|${slot_sectors}|$((rootfs_b_start_mib * SECTORS_PER_MIB))"
-    "${META_PARTNUM}|${META_LABEL}|${META_TYPECODE}|${META_GUID}|$((META_SIZE_MIB * SECTORS_PER_MIB))|$((meta_start_mib * SECTORS_PER_MIB))"
-    "${STATE_PARTNUM}|${STATE_LABEL}|${STATE_TYPECODE}|${STATE_GUID}|$((STATE_SIZE_MIB * SECTORS_PER_MIB))|$((state_start_mib * SECTORS_PER_MIB))"
-    "${EPHEMERAL_PARTNUM}|${EPHEMERAL_LABEL}|${EPHEMERAL_TYPECODE}|${EPHEMERAL_GUID}|$((MOS_VAR_MIB * SECTORS_PER_MIB))|$((ephemeral_start_mib * SECTORS_PER_MIB))"
-    "${DATA_PARTNUM}|${DATA_LABEL}|${DATA_TYPECODE}|${DATA_GUID}|$((DATA_SIZE_MIB * SECTORS_PER_MIB))|$((data_start_mib * SECTORS_PER_MIB))"
-)
+part_rows=()
+cursor=0
+for name in ${LAYOUT_PARTITIONS}; do
+    eval "row_num=\${${name}_PARTNUM}"
+    eval "row_label=\${${name}_LABEL}"
+    eval "row_type=\${${name}_TYPECODE}"
+    eval "row_guid=\${${name}_GUID}"
+
+    row_size="$(part_size_sectors "${name}")"
+    if [ -z "${row_size}" ]; then
+        echo "error: ${LAYOUT_ENV} gives ${name} no size: it declares neither ${name}_SIZE_SECTORS nor ${name}_SIZE_MIB, and its role is not verity-slot" >&2
+        exit 1
+    fi
+
+    row_start="$(part_fixed_start_sectors "${name}")"
+    if [ -z "${row_start}" ]; then
+        row_start="${cursor}"
+    fi
+    cursor=$((row_start + row_size))
+
+    part_rows+=("${row_num}|${row_label}|${row_type}|${row_guid}|${row_size}|${row_start}")
+    # Recorded per partition so later checks can ask "where does STATE start"
+    # without re-deriving it. The hand-written chain this replaced
+    # (meta_start_mib = ...; state_start_mib = ...) was the same numbers
+    # computed a second time, which is how a checker and an assembler come to
+    # agree on a wrong answer.
+    eval "PART_START_MIB_${name}=$((row_start / SECTORS_PER_MIB))"
+done
+total_size_mib=$(( cursor / SECTORS_PER_MIB + IMAGE_TAIL_SLACK_MIB ))
 
 for row in "${part_rows[@]}"; do
     IFS='|' read -r n label typecode guid want_size want_start <<<"${row}"
@@ -1400,65 +1494,91 @@ for row in "${part_rows[@]}"; do
     fi
 done
 
-# --- LOADER: the reason first-boot growth no longer wipes the bootloader -----
+# HOW MANY linux-generic PARTITIONS THIS GPT CARRIES. Counted for every board,
+# because section 8 cross-checks it against the shipped repart definition count
+# and that check is not U-Boot's -- systemd-repart pairs definitions with
+# partitions IN ORDER on every board, and a mismatch shifts every definition
+# onto the wrong partition rather than failing.
 #
-# systemd-repart discards every region of the disk that no GPT entry covers, and
-# it does so on first boot while growing DATA. The Rockchip idbloader lives at
-# raw sector 64; before it had an entry, the growth run TRIMmed it and the device
-# reached maskrom on the next power-on. The protection is the ENTRY, so these
-# check the entry actually covers the bytes, not merely that it exists.
-loader_first="$(p_field "${LOADER_PARTNUM}" "First sector" | awk '{print $1}')"
-loader_size="$(p_field "${LOADER_PARTNUM}" "Partition size" | awk '{print $1}')"
-loader_type="$(p_field "${LOADER_PARTNUM}" "Partition GUID code" | awk '{print $1}')"
-
-# Abutment: a gap between the loader partition and uenv-a would itself be an
-# uncovered region, and repart would discard that.
-if [[ "${loader_first}" =~ ^[0-9]+$ ]] && [[ "${loader_size}" =~ ^[0-9]+$ ]] &&
-    [ $((loader_first + loader_size)) -eq "${UENV_A_START_SECTOR}" ]; then
-    pass "p${LOADER_PARTNUM} (${LOADER_LABEL}) ends exactly where ${UENV_A_LABEL} begins (sector ${UENV_A_START_SECTOR}); no untracked gap is left between them"
-else
-    fail "p${LOADER_PARTNUM} (${LOADER_LABEL}) covers sectors ${loader_first}..$((${loader_first:-0} + ${loader_size:-0} - 1)) but ${UENV_A_LABEL} starts at ${UENV_A_START_SECTOR}; anything not covered by a partition entry is discarded by systemd-repart"
-fi
-
-# The loader partition and the U-Boot fit check must describe the same bytes.
-if [ $((LOADER_SIZE_SECTORS * BYTES_PER_SECTOR)) -eq "${UBOOT_MAX_BYTES}" ]; then
-    pass "p${LOADER_PARTNUM} is ${UBOOT_MAX_BYTES} bytes, exactly the limit the U-Boot fit check enforces"
-else
-    fail "p${LOADER_PARTNUM} is $((LOADER_SIZE_SECTORS * BYTES_PER_SECTOR)) bytes but UBOOT_MAX_BYTES is ${UBOOT_MAX_BYTES}; a blob that passes the fit check could still overrun the partition"
-fi
-
-# The first byte of the partition must be the idbloader magic. An entry over
-# the wrong bytes protects nothing.
-loader_magic="$(dd if="${IMG}" bs="${BYTES_PER_SECTOR}" skip="${LOADER_START_SECTOR}" count=1 status=none 2>/dev/null | od -An -tx1 -N4 | tr -d ' \n' || true)"
-if [ "${loader_magic}" = "${LOADER_MAGIC_HEX}" ]; then
-    pass "p${LOADER_PARTNUM} starts with the Rockchip idbloader magic ${LOADER_MAGIC_HEX} ('RKNS')"
-else
-    fail "p${LOADER_PARTNUM} starts with '${loader_magic}', expected the idbloader magic ${LOADER_MAGIC_HEX} ('RKNS'); the partition does not cover a bootloader"
-fi
-
-# THE REPART-MATCHING PROOF. repart pairs definition files with existing
-# partitions BY TYPE UUID in disk order. The claim "no definition can ever match
-# the loader" is therefore a countable fact about the assembled GPT: the loader's
-# type must appear on exactly one partition and must not be a type any
-# definition uses. Counted here, and cross-checked against the shipped
-# definition count in section 8.
+# It used to be counted inside the loader block below, so gating that block on
+# the bootloader took this with it and section 8 died on an unbound variable.
+# A count that only exists on one board is not a property of the GPT.
 LINUX_GENERIC_N=0
-LOADER_TYPE_N=0
 for n in $(seq 1 "${EXPECT_PARTS}"); do
     t="$(lc "$(p_field "${n}" "Partition GUID code" | awk '{print $1}')")"
-    if [ "${t}" = "$(lc "${TYPECODE_LINUX}")" ]; then
-        LINUX_GENERIC_N=$((LINUX_GENERIC_N + 1))
-    elif [ "${t}" = "$(lc "${LOADER_TYPECODE}")" ]; then
-        LOADER_TYPE_N=$((LOADER_TYPE_N + 1))
-    fi
+    [ "${t}" = "$(lc "${TYPECODE_LINUX}")" ] && LINUX_GENERIC_N=$((LINUX_GENERIC_N + 1))
 done
-if [ "$(lc "${loader_type}")" = "$(lc "${LOADER_TYPECODE}")" ] &&
-    [ "$(lc "${LOADER_TYPECODE}")" != "$(lc "${TYPECODE_LINUX}")" ] &&
-    [ "$(lc "${LOADER_TYPECODE}")" != "$(lc "${TYPECODE_ESP}")" ] &&
-    [ "${LOADER_TYPE_N}" = "1" ]; then
-    pass "p${LOADER_PARTNUM} is the only ${LOADER_TYPECODE} partition, and that type is neither linux-generic nor the ESP type, so no /etc/repart.d definition can pair with it"
+
+# U-BOOT ONLY. Everything in this section is about a bootloader image written
+# raw at a fixed sector and the GPT entry that stops systemd-repart from
+# discarding it. A grub board has neither: its firmware is in flash, not at a
+# sector of the disk, so there is no region to protect and no entry to check.
+#
+# Gated on the layout's RAUC backend and SKIPPED OUT LOUD. Running these on a
+# board with no loader partition is how this verifier used to die with
+# `LOADER_PARTNUM: unbound variable`; deleting them would lose cx3576's
+# protection against the failure that once left a device in maskrom; and
+# skipping them quietly would report the same green as running them.
+if is_uboot_board; then
+    # --- LOADER: the reason first-boot growth no longer wipes the bootloader -----
+    #
+    # systemd-repart discards every region of the disk that no GPT entry covers, and
+    # it does so on first boot while growing DATA. The Rockchip idbloader lives at
+    # raw sector 64; before it had an entry, the growth run TRIMmed it and the device
+    # reached maskrom on the next power-on. The protection is the ENTRY, so these
+    # check the entry actually covers the bytes, not merely that it exists.
+    loader_first="$(p_field "${LOADER_PARTNUM}" "First sector" | awk '{print $1}')"
+    loader_size="$(p_field "${LOADER_PARTNUM}" "Partition size" | awk '{print $1}')"
+    loader_type="$(p_field "${LOADER_PARTNUM}" "Partition GUID code" | awk '{print $1}')"
+
+    # Abutment: a gap between the loader partition and uenv-a would itself be an
+    # uncovered region, and repart would discard that.
+    if [[ "${loader_first}" =~ ^[0-9]+$ ]] && [[ "${loader_size}" =~ ^[0-9]+$ ]] &&
+        [ $((loader_first + loader_size)) -eq "${UENV_A_START_SECTOR}" ]; then
+        pass "p${LOADER_PARTNUM} (${LOADER_LABEL}) ends exactly where ${UENV_A_LABEL} begins (sector ${UENV_A_START_SECTOR}); no untracked gap is left between them"
+    else
+        fail "p${LOADER_PARTNUM} (${LOADER_LABEL}) covers sectors ${loader_first}..$((${loader_first:-0} + ${loader_size:-0} - 1)) but ${UENV_A_LABEL} starts at ${UENV_A_START_SECTOR}; anything not covered by a partition entry is discarded by systemd-repart"
+    fi
+
+    # The loader partition and the U-Boot fit check must describe the same bytes.
+    if [ $((LOADER_SIZE_SECTORS * BYTES_PER_SECTOR)) -eq "${UBOOT_MAX_BYTES}" ]; then
+        pass "p${LOADER_PARTNUM} is ${UBOOT_MAX_BYTES} bytes, exactly the limit the U-Boot fit check enforces"
+    else
+        fail "p${LOADER_PARTNUM} is $((LOADER_SIZE_SECTORS * BYTES_PER_SECTOR)) bytes but UBOOT_MAX_BYTES is ${UBOOT_MAX_BYTES}; a blob that passes the fit check could still overrun the partition"
+    fi
+
+    # The first byte of the partition must be the idbloader magic. An entry over
+    # the wrong bytes protects nothing.
+    loader_magic="$(dd if="${IMG}" bs="${BYTES_PER_SECTOR}" skip="${LOADER_START_SECTOR}" count=1 status=none 2>/dev/null | od -An -tx1 -N4 | tr -d ' \n' || true)"
+    if [ "${loader_magic}" = "${LOADER_MAGIC_HEX}" ]; then
+        pass "p${LOADER_PARTNUM} starts with the Rockchip idbloader magic ${LOADER_MAGIC_HEX} ('RKNS')"
+    else
+        fail "p${LOADER_PARTNUM} starts with '${loader_magic}', expected the idbloader magic ${LOADER_MAGIC_HEX} ('RKNS'); the partition does not cover a bootloader"
+    fi
+
+    # THE REPART-MATCHING PROOF. repart pairs definition files with existing
+    # partitions BY TYPE UUID in disk order. The claim "no definition can ever match
+    # the loader" is therefore a countable fact about the assembled GPT: the loader's
+    # type must appear on exactly one partition and must not be a type any
+    # definition uses. Counted here, and cross-checked against the shipped
+    # definition count in section 8.
+    LOADER_TYPE_N=0
+    for n in $(seq 1 "${EXPECT_PARTS}"); do
+        t="$(lc "$(p_field "${n}" "Partition GUID code" | awk '{print $1}')")"
+        if [ "${t}" = "$(lc "${LOADER_TYPECODE}")" ]; then
+            LOADER_TYPE_N=$((LOADER_TYPE_N + 1))
+        fi
+    done
+    if [ "$(lc "${loader_type}")" = "$(lc "${LOADER_TYPECODE}")" ] &&
+        [ "$(lc "${LOADER_TYPECODE}")" != "$(lc "${TYPECODE_LINUX}")" ] &&
+        [ "$(lc "${LOADER_TYPECODE}")" != "$(lc "${TYPECODE_ESP}")" ] &&
+        [ "${LOADER_TYPE_N}" = "1" ]; then
+        pass "p${LOADER_PARTNUM} is the only ${LOADER_TYPECODE} partition, and that type is neither linux-generic nor the ESP type, so no /etc/repart.d definition can pair with it"
+    else
+        fail "the loader type must be unique and distinct from linux-generic/ESP; p${LOADER_PARTNUM} type is '${loader_type}' and ${LOADER_TYPE_N} partition(s) carry ${LOADER_TYPECODE}"
+    fi
 else
-    fail "the loader type must be unique and distinct from linux-generic/ESP; p${LOADER_PARTNUM} type is '${loader_type}' and ${LOADER_TYPE_N} partition(s) carry ${LOADER_TYPECODE}"
+    skip "the loader-partition protections (${EXPECT_PARTS}-partition ${MOS_BOARD} layout has no loader): a grub board keeps its firmware in flash, not at a fixed sector, so there is no raw region for systemd-repart to discard and no GPT entry to assert. cx3576 needs these; os/uboot-handshake-test.sh remains the only cover for the U-Boot A/B handshake either way"
 fi
 
 if [ "${SLOT_MIB}" -gt 0 ]; then
@@ -1472,7 +1592,11 @@ else
     fail "rootfs slot ${SLOT_MIB} MiB is below the ${MOS_ROOTFS_SLOT_MIB} MiB layout floor"
 fi
 
-size_terms="${ROOTFS_A_START_MIB} + 2*${SLOT_MIB} + ${META_SIZE_MIB} + ${STATE_SIZE_MIB} + ${MOS_VAR_MIB} + ${DATA_SIZE_MIB} + ${IMAGE_TAIL_SLACK_MIB} MiB"
+# Spelled from the walk, not from a sum of the partitions cx3576 happens to
+# have. The old term list named ROOTFS_A_START, two slots, META, STATE,
+# MOS_VAR and DATA -- correct for one board and silently wrong for any other,
+# in a message an engineer reads when the size does not match.
+size_terms="the ${EXPECT_PARTS} partitions ${LAYOUT_PARTITIONS} end at $((cursor / SECTORS_PER_MIB)) MiB, plus ${IMAGE_TAIL_SLACK_MIB} MiB of tail slack"
 expected_size=$((total_size_mib * MIB_BYTES))
 actual_size="$(stat -Lc %s "${IMG}" 2>/dev/null || echo 0)"
 if [ "${SLOT_MIB}" -gt 0 ] && [ "${actual_size}" = "${expected_size}" ]; then
@@ -1500,58 +1624,66 @@ else
     fail "data must be the last partition and end at sector ${want_data_last} (${IMAGE_TAIL_SLACK_MIB} MiB tail slack); it is p${last_part_num} ending at '${data_last_sector}'"
 fi
 
-# ===========================================================================
-# 2. Raw pre-GPT area: the uboot-mos blob at sector 64
-# ===========================================================================
+# U-BOOT ONLY, same reason as the loader-partition section above: this whole
+# section reads the idbloader out of the raw pre-GPT area and compares it with
+# what the BSP built. A UEFI board has nothing at sector 64.
+if is_uboot_board; then
+    # ===========================================================================
+    # 2. Raw pre-GPT area: the uboot-mos blob at sector 64
+    # ===========================================================================
 
-UBOOT_SRC="${BOARD_DIR}/out/${UBOOT_VARIANT_DIR}/${UBOOT_BIN_NAME}"
-UBOOT_DEBUG_SRC="${BOARD_DIR}/out/${UBOOT_DEBUG_VARIANT_DIR}/${UBOOT_BIN_NAME}"
-UBOOT_OFFSET_BYTES=$((UBOOT_SEEK_SECTOR * BYTES_PER_SECTOR))
+    UBOOT_SRC="${BOARD_DIR}/out/${UBOOT_VARIANT_DIR}/${UBOOT_BIN_NAME}"
+    UBOOT_DEBUG_SRC="${BOARD_DIR}/out/${UBOOT_DEBUG_VARIANT_DIR}/${UBOOT_BIN_NAME}"
+    UBOOT_OFFSET_BYTES=$((UBOOT_SEEK_SECTOR * BYTES_PER_SECTOR))
 
-if [ ! -f "${UBOOT_SRC}" ]; then
-    fail "u-boot compare source not found: ${UBOOT_SRC} (build it with 'make -C board/cx3576 uboot-mos')"
-    uboot_size=0
-else
-    uboot_size="$(stat -c %s "${UBOOT_SRC}")"
-    if dd if="${IMG}" skip="${UBOOT_OFFSET_BYTES}" count="${uboot_size}" iflag=skip_bytes,count_bytes status=none 2>/dev/null |
-        cmp -s - "${UBOOT_SRC}"; then
-        pass "u-boot at sector ${UBOOT_SEEK_SECTOR} matches the ${UBOOT_VARIANT_DIR} variant (${UBOOT_SRC})"
+    if [ ! -f "${UBOOT_SRC}" ]; then
+        fail "u-boot compare source not found: ${UBOOT_SRC} (build it with 'make -C board/cx3576 uboot-mos')"
+        uboot_size=0
     else
-        fail "u-boot at sector ${UBOOT_SEEK_SECTOR} differs from ${UBOOT_SRC}; a v2 image may only carry the ${UBOOT_VARIANT_DIR} variant"
+        uboot_size="$(stat -c %s "${UBOOT_SRC}")"
+        if dd if="${IMG}" skip="${UBOOT_OFFSET_BYTES}" count="${uboot_size}" iflag=skip_bytes,count_bytes status=none 2>/dev/null |
+            cmp -s - "${UBOOT_SRC}"; then
+            pass "u-boot at sector ${UBOOT_SEEK_SECTOR} matches the ${UBOOT_VARIANT_DIR} variant (${UBOOT_SRC})"
+        else
+            fail "u-boot at sector ${UBOOT_SEEK_SECTOR} differs from ${UBOOT_SRC}; a v2 image may only carry the ${UBOOT_VARIANT_DIR} variant"
+        fi
     fi
-fi
 
-# Pairing guard. The debug variant boots and looks healthy but has
-# CONFIG_ENV_IS_NOWHERE and no pinned bootmeth order, so the A/B handshake
-# would silently never run. Asserting the image DIFFERS from it is what catches
-# a debug blob copied into the uboot-mos directory.
-if [ ! -f "${UBOOT_DEBUG_SRC}" ]; then
-    fail "u-boot debug-variant compare source not found: ${UBOOT_DEBUG_SRC}; the ${UBOOT_VARIANT_DIR}/${UBOOT_DEBUG_VARIANT_DIR} pairing guard cannot be evaluated"
-else
-    debug_size="$(stat -c %s "${UBOOT_DEBUG_SRC}")"
-    if dd if="${IMG}" skip="${UBOOT_OFFSET_BYTES}" count="${debug_size}" iflag=skip_bytes,count_bytes status=none 2>/dev/null |
-        cmp -s - "${UBOOT_DEBUG_SRC}"; then
-        fail "the blob at sector ${UBOOT_SEEK_SECTOR} is byte-identical to the DEBUG u-boot (${UBOOT_DEBUG_SRC}). A v2 image carrying it would boot, look healthy and never run the RAUC A/B handshake: no BOOT_ORDER, no attempt counters, no rollback. Rebuild with 'make -C board/cx3576 uboot-mos'"
+    # Pairing guard. The debug variant boots and looks healthy but has
+    # CONFIG_ENV_IS_NOWHERE and no pinned bootmeth order, so the A/B handshake
+    # would silently never run. Asserting the image DIFFERS from it is what catches
+    # a debug blob copied into the uboot-mos directory.
+    if [ ! -f "${UBOOT_DEBUG_SRC}" ]; then
+        fail "u-boot debug-variant compare source not found: ${UBOOT_DEBUG_SRC}; the ${UBOOT_VARIANT_DIR}/${UBOOT_DEBUG_VARIANT_DIR} pairing guard cannot be evaluated"
     else
-        pass "u-boot at sector ${UBOOT_SEEK_SECTOR} differs from the debug variant (${UBOOT_DEBUG_VARIANT_DIR}), so the A/B variant is paired correctly"
+        debug_size="$(stat -c %s "${UBOOT_DEBUG_SRC}")"
+        if dd if="${IMG}" skip="${UBOOT_OFFSET_BYTES}" count="${debug_size}" iflag=skip_bytes,count_bytes status=none 2>/dev/null |
+            cmp -s - "${UBOOT_DEBUG_SRC}"; then
+            fail "the blob at sector ${UBOOT_SEEK_SECTOR} is byte-identical to the DEBUG u-boot (${UBOOT_DEBUG_SRC}). A v2 image carrying it would boot, look healthy and never run the RAUC A/B handshake: no BOOT_ORDER, no attempt counters, no rollback. Rebuild with 'make -C board/cx3576 uboot-mos'"
+        else
+            pass "u-boot at sector ${UBOOT_SEEK_SECTOR} differs from the debug variant (${UBOOT_DEBUG_VARIANT_DIR}), so the A/B variant is paired correctly"
+        fi
     fi
-fi
 
-if [ "${uboot_size}" -gt 0 ] && [ $((UBOOT_OFFSET_BYTES + uboot_size)) -le "${UENV_A_OFFSET_BYTES}" ] &&
-    [ "${uboot_size}" -le "${UBOOT_MAX_BYTES}" ]; then
-    pass "u-boot ends at $((UBOOT_OFFSET_BYTES + uboot_size)) bytes, below ${UENV_A_LABEL} at ${UENV_A_START_MIB} MiB"
-else
-    fail "u-boot (${uboot_size} bytes at offset ${UBOOT_OFFSET_BYTES}) reaches into ${UENV_A_LABEL} at ${UENV_A_OFFSET_BYTES} bytes / ${UENV_A_START_MIB} MiB"
-fi
+    if [ "${uboot_size}" -gt 0 ] && [ $((UBOOT_OFFSET_BYTES + uboot_size)) -le "${UENV_A_OFFSET_BYTES}" ] &&
+        [ "${uboot_size}" -le "${UBOOT_MAX_BYTES}" ]; then
+        pass "u-boot ends at $((UBOOT_OFFSET_BYTES + uboot_size)) bytes, below ${UENV_A_LABEL} at ${UENV_A_START_MIB} MiB"
+    else
+        fail "u-boot (${uboot_size} bytes at offset ${UBOOT_OFFSET_BYTES}) reaches into ${UENV_A_LABEL} at ${UENV_A_OFFSET_BYTES} bytes / ${UENV_A_START_MIB} MiB"
+    fi
 
-# Containment in the LOADER PARTITION, with room to spare. "Ends before uenv-a"
-# above is the byte-offset form of the same statement; this one is expressed
-# against the partition entry, which is what actually protects the bytes.
-loader_bytes=$((LOADER_SIZE_SECTORS * BYTES_PER_SECTOR))
-if [ "${uboot_size}" -gt 0 ] && [ "${uboot_size}" -lt "${loader_bytes}" ]; then
-    pass "u-boot (${uboot_size} bytes) is fully contained in p${LOADER_PARTNUM} (${loader_bytes} bytes) with $((loader_bytes - uboot_size)) bytes to spare"
+    # Containment in the LOADER PARTITION, with room to spare. "Ends before uenv-a"
+    # above is the byte-offset form of the same statement; this one is expressed
+    # against the partition entry, which is what actually protects the bytes.
+    loader_bytes=$((LOADER_SIZE_SECTORS * BYTES_PER_SECTOR))
+    if [ "${uboot_size}" -gt 0 ] && [ "${uboot_size}" -lt "${loader_bytes}" ]; then
+        pass "u-boot (${uboot_size} bytes) is fully contained in p${LOADER_PARTNUM} (${loader_bytes} bytes) with $((loader_bytes - uboot_size)) bytes to spare"
+    else
+        fail "u-boot is ${uboot_size} bytes and p${LOADER_PARTNUM} is ${loader_bytes} bytes; the blob must fit inside its own partition with room left"
+    fi
+
 else
-    fail "u-boot is ${uboot_size} bytes and p${LOADER_PARTNUM} is ${loader_bytes} bytes; the blob must fit inside its own partition with room left"
+    skip "the raw pre-GPT loader area (bootloader=${RAUC_BOOTLOADER}): there is no idbloader at sector 64 on a board whose firmware lives in flash, so there is nothing to compare against the BSP build"
 fi
 
 # ===========================================================================
@@ -1604,7 +1736,19 @@ check_boot_slot() {
         fail "BOOT-${slot} FAT filesystem unreadable (cannot list files)"
     fi
     local f
-    for f in Image rk3576-src.dtb "${BOOT_SCRIPT_NAME}" "${verity_env}"; do
+    # FROM THE BOARD DEFINITION. This was `Image rk3576-src.dtb boot.scr
+    # ${verity_env}` -- one board's boot chain written into a script both
+    # boards run. An x64 slot holds an EFI binary, a GRUB configuration and
+    # kernel/initrd pairs; the two lists have nothing in common, so neither
+    # belongs here.
+    #
+    # @SLOT@ expands to the lowercase slot letter for boards whose slots carry
+    # per-slot files. x64 uses none: it builds one ESP holding both slots'
+    # kernels and copies it, so each slot legitimately contains both.
+    local slot_lc required
+    slot_lc="$(printf '%s' "${slot}" | tr 'AB' 'ab')"
+    required="${BOOT_SLOT_REQUIRED_FILES//@SLOT@/${slot_lc}}"
+    for f in ${required}; do
         if grep -qxF "::/${f}" <<<"${listing}"; then
             pass "BOOT-${slot} contains ${f}"
         else
@@ -1612,39 +1756,53 @@ check_boot_slot() {
         fi
     done
 
-    # THE assertion that keeps the A/B handshake reachable. Both U-Boot boot
-    # frameworks try extlinux BEFORE boot.scr, so an extlinux config in a v2
-    # boot slot silently bypasses the entire handshake: BOOT_ORDER is never
-    # consulted, the attempt counters are never decremented and rollback never
-    # happens. There is no error on the console — just a device that boots one
-    # slot forever and cannot roll back.
-    if grep -qi "extlinux" <<<"${listing}"; then
-        fail "BOOT-${slot} contains extlinux ($(echo "${listing}" | grep -i extlinux | tr '\n' ' ')). Both U-Boot boot frameworks try extlinux BEFORE boot.scr, so this silently bypasses the whole RAUC A/B handshake: BOOT_ORDER is never honoured, boot attempts are never counted and rollback never happens, with no error anywhere. Remove it."
-    else
-        pass "BOOT-${slot} contains no extlinux/ directory and no extlinux.conf (a v2 slot must boot via ${BOOT_SCRIPT_NAME})"
-    fi
-
-    if grep -qi "initr" <<<"${listing}"; then
-        fail "BOOT-${slot} contains an initramfs/initrd file: $(echo "${listing}" | grep -i initr | tr '\n' ' ')"
-    else
-        pass "BOOT-${slot} contains no initramfs file"
-    fi
-
-    local out
-    for f in Image rk3576-src.dtb; do
-        out="${TMP}/boot-${slot}-${f}"
-        local src
-        if [ "${f}" = "Image" ]; then src="${KERNEL_SRC}"; else src="${DTB_SRC}"; fi
-        if ! mcopy -n -i "${fatimg}" "::/${f}" "${out}" 2>/dev/null; then
-            fail "BOOT-${slot} ${f} missing or unreadable"
-        elif [ ! -f "${src}" ]; then
-            fail "BOOT-${slot} ${f} compare source not found: ${src}"
-        elif cmp -s "${out}" "${src}"; then
-            pass "factory: BOOT-${slot} ${f} matches the local BSP artifact ${src}"
+    # U-BOOT ONLY, and the middle one of these is not merely inapplicable to a
+    # grub board -- it is INVERTED. "the slot contains no initramfs file" is
+    # right for cx3576, whose kernel needs none, and wrong for x64, whose slot
+    # MUST carry initrd-a and initrd-b. Left ungated it would not have crashed;
+    # it would have failed a correct image and sent someone looking for a
+    # defect in the assembler.
+    #
+    # The extlinux assertion is U-Boot's by construction (both of its boot
+    # frameworks try extlinux before boot.scr), and the Image/dtb comparison is
+    # against artefacts only a BSP board builds.
+    if is_uboot_board; then
+        # THE assertion that keeps the A/B handshake reachable. Both U-Boot boot
+        # frameworks try extlinux BEFORE boot.scr, so an extlinux config in a v2
+        # boot slot silently bypasses the entire handshake: BOOT_ORDER is never
+        # consulted, the attempt counters are never decremented and rollback never
+        # happens. There is no error on the console — just a device that boots one
+        # slot forever and cannot roll back.
+        if grep -qi "extlinux" <<<"${listing}"; then
+            fail "BOOT-${slot} contains extlinux ($(echo "${listing}" | grep -i extlinux | tr '\n' ' ')). Both U-Boot boot frameworks try extlinux BEFORE boot.scr, so this silently bypasses the whole RAUC A/B handshake: BOOT_ORDER is never honoured, boot attempts are never counted and rollback never happens, with no error anywhere. Remove it."
         else
-            fail "factory: BOOT-${slot} ${f} differs from the local BSP artifact ${src}"
+            pass "BOOT-${slot} contains no extlinux/ directory and no extlinux.conf (a v2 slot must boot via ${BOOT_SCRIPT_NAME})"
         fi
-    done
+
+        if grep -qi "initr" <<<"${listing}"; then
+            fail "BOOT-${slot} contains an initramfs/initrd file: $(echo "${listing}" | grep -i initr | tr '\n' ' ')"
+        else
+            pass "BOOT-${slot} contains no initramfs file"
+        fi
+
+        local out
+        for f in Image rk3576-src.dtb; do
+            out="${TMP}/boot-${slot}-${f}"
+            local src
+            if [ "${f}" = "Image" ]; then src="${KERNEL_SRC}"; else src="${DTB_SRC}"; fi
+            if ! mcopy -n -i "${fatimg}" "::/${f}" "${out}" 2>/dev/null; then
+                fail "BOOT-${slot} ${f} missing or unreadable"
+            elif [ ! -f "${src}" ]; then
+                fail "BOOT-${slot} ${f} compare source not found: ${src}"
+            elif cmp -s "${out}" "${src}"; then
+                pass "factory: BOOT-${slot} ${f} matches the local BSP artifact ${src}"
+            else
+                fail "factory: BOOT-${slot} ${f} differs from the local BSP artifact ${src}"
+            fi
+        done
+    else
+        skip "BOOT-${slot}: the extlinux, no-initramfs and Image/dtb assertions (bootloader=${RAUC_BOOTLOADER}). extlinux is a U-Boot boot framework; a GRUB slot legitimately CARRIES an initrd, so the no-initramfs rule is inverted here rather than absent; and Image/rk3576-src.dtb are BSP artefacts this board does not build"
+    fi
 
     # THE LED ASSERTION, and it is made against the copy EXTRACTED FROM THE
     # IMAGE, not against ${DTB_SRC}. The byte-compare above only says the slot
@@ -1658,115 +1816,154 @@ check_boot_slot() {
     # active-low line (flags 1) and status-blue off an active-high one (flags 0),
     # so a single inverted cell turns "lit at boot" into "dark at boot" with
     # every label and every default-state still spelling exactly right.
-    local dtb="${TMP}/boot-${slot}-rk3576-src.dtb"
-    local led name want_state want_flags want_pol got
-    local -a gpio_cells
-    for led in "status-red:on:1:active-low" "status-blue:off:0:active-high"; do
-        IFS=':' read -r name want_state want_flags want_pol <<<"${led}"
+    # BOARD-GATED on BOARD_HAS_STATUS_LED. These read a Rockchip device tree
+    # for the two status LEDs and their GPIO polarity. A board with no
+    # indicator has no such nodes and no such device tree -- twelve failures
+    # about hardware it does not have.
+    #
+    # Not deleted, because the polarity assertion is the load-bearing one: a
+    # single inverted flags cell turns 'lit at boot' into 'dark at boot' with
+    # every label and default-state still spelling exactly right, and cx3576
+    # ships an indicator the operator reads to know the device is up.
+    if [ "${BOARD_HAS_STATUS_LED}" = "1" ]; then
+        local dtb="${TMP}/boot-${slot}-rk3576-src.dtb"
+        local led name want_state want_flags want_pol got
+        local -a gpio_cells
+        for led in "status-red:on:1:active-low" "status-blue:off:0:active-high"; do
+            IFS=':' read -r name want_state want_flags want_pol <<<"${led}"
 
-        got="$(fdtget "${dtb}" "/leds/${name}" label 2>/dev/null || true)"
-        if [ "${got}" = "${name}" ]; then
-            pass "BOOT-${slot} rk3576-src.dtb: /leds/${name} label is '${name}'"
-        else
-            fail "BOOT-${slot} rk3576-src.dtb: /leds/${name} label is '${got:-missing}', expected '${name}'"
-        fi
+            got="$(fdtget "${dtb}" "/leds/${name}" label 2>/dev/null || true)"
+            if [ "${got}" = "${name}" ]; then
+                pass "BOOT-${slot} rk3576-src.dtb: /leds/${name} label is '${name}'"
+            else
+                fail "BOOT-${slot} rk3576-src.dtb: /leds/${name} label is '${got:-missing}', expected '${name}'"
+            fi
 
-        got="$(fdtget "${dtb}" "/leds/${name}" default-state 2>/dev/null || true)"
-        if [ "${got}" = "${want_state}" ]; then
-            pass "BOOT-${slot} rk3576-src.dtb: /leds/${name} default-state is '${want_state}'"
-        else
-            fail "BOOT-${slot} rk3576-src.dtb: /leds/${name} default-state is '${got:-missing}', expected '${want_state}'"
-        fi
+            got="$(fdtget "${dtb}" "/leds/${name}" default-state 2>/dev/null || true)"
+            if [ "${got}" = "${want_state}" ]; then
+                pass "BOOT-${slot} rk3576-src.dtb: /leds/${name} default-state is '${want_state}'"
+            else
+                fail "BOOT-${slot} rk3576-src.dtb: /leds/${name} default-state is '${got:-missing}', expected '${want_state}'"
+            fi
 
-        # No pipe here on purpose: an early-exiting consumer on the read side
-        # is the SIGPIPE class this file now avoids structurally. awk would
-        # read to EOF and be safe, but not piping at all costs nothing and
-        # removes the question rather than requiring the reader to re-derive it.
-        read -r -a gpio_cells <<<"$(fdtget -t x "${dtb}" "/leds/${name}" gpios 2>/dev/null || true)"
-        got="${gpio_cells[2]-}"
-        if [ "${got}" = "${want_flags}" ]; then
-            pass "BOOT-${slot} rk3576-src.dtb: /leds/${name} GPIO flags cell is ${want_flags} (${want_pol})"
+            # No pipe here on purpose: an early-exiting consumer on the read side
+            # is the SIGPIPE class this file now avoids structurally. awk would
+            # read to EOF and be safe, but not piping at all costs nothing and
+            # removes the question rather than requiring the reader to re-derive it.
+            read -r -a gpio_cells <<<"$(fdtget -t x "${dtb}" "/leds/${name}" gpios 2>/dev/null || true)"
+            got="${gpio_cells[2]-}"
+            if [ "${got}" = "${want_flags}" ]; then
+                pass "BOOT-${slot} rk3576-src.dtb: /leds/${name} GPIO flags cell is ${want_flags} (${want_pol})"
+            else
+                fail "BOOT-${slot} rk3576-src.dtb: /leds/${name} GPIO flags cell is '${got:-missing}', expected ${want_flags} (${want_pol}); the wrong polarity drives this LED backwards while its label and default-state still read correctly"
+            fi
+        done
+    else
+        skip "BOOT-${slot}: the status-LED device-tree assertions (${MOS_BOARD} declares BOARD_HAS_STATUS_LED=0): there is no indicator on this board, so there are no /leds nodes and no GPIO polarity to get backwards"
+    fi
+
+    # Pulled out for the cross-slot comparisons below, both of which are
+    # U-Boot's: the compiled boot script and the verity environment it sources.
+    # A grub board keeps neither in the slot -- its verity parameters are on
+    # the kernel command line GRUB builds -- so there is nothing to extract.
+    if is_uboot_board; then
+        mcopy -n -i "${fatimg}" "::/${BOOT_SCRIPT_NAME}" "${TMP}/scr-${slot}" 2>/dev/null || true
+        mcopy -n -i "${fatimg}" "::/${verity_env}" "${TMP}/verity-${slot}.env" 2>/dev/null || true
+    fi
+}
+
+check_boot_slot A "${BOOT_A_IMG}" "${BOOT_A_OFFSET_BYTES}" "${BOOT_A_FAT_LABEL}" "${BOOT_A_FAT_VOLUME_ID}" "${BOOT_VERITY_ENV_A_NAME:-}"
+check_boot_slot B "${BOOT_B_IMG}" "${BOOT_B_OFFSET_BYTES}" "${BOOT_B_FAT_LABEL}" "${BOOT_B_FAT_VOLUME_ID}" "${BOOT_VERITY_ENV_B_NAME:-}"
+
+# U-BOOT ONLY. Everything from here to the next section is about boot.scr --
+# the compiled script U-Boot runs, its uImage magic, and the GPT partition
+# NUMBER baked into it because hush cannot read the layout file. A grub board
+# has no boot script: GRUB reads its own grub.cfg and addresses slots by
+# PARTUUID on the kernel command line, so none of it applies and none of it
+# can be silently dropped.
+if is_uboot_board; then
+    # boot.scr is deliberately identical in both slots: whichever copy U-Boot runs
+    # may boot either slot, so they must not diverge.
+    if [ -f "${TMP}/scr-A" ] && [ -f "${TMP}/scr-B" ] && cmp -s "${TMP}/scr-A" "${TMP}/scr-B"; then
+        pass "factory: ${BOOT_SCRIPT_NAME} is byte-identical in BOOT-A and BOOT-B"
+    else
+        fail "factory: ${BOOT_SCRIPT_NAME} differs between BOOT-A and BOOT-B (or is missing); the same script must be able to boot either slot"
+    fi
+
+    scr_magic="$(od -An -tx1 -N4 "${TMP}/scr-A" 2>/dev/null | tr -d ' \n' || true)"
+    if [ "${scr_magic}" = "27051956" ]; then
+        pass "${BOOT_SCRIPT_NAME} carries the legacy uImage magic 27051956"
+    else
+        fail "${BOOT_SCRIPT_NAME} magic is '${scr_magic}', expected 27051956 (mkimage -T script output)"
+    fi
+
+    # THE RENUMBERING ASSERTION. boot.scr addresses its slot as `mmc 0:${bootpart}`
+    # — a literal GPT partition NUMBER baked into the compiled script, because hush
+    # cannot read the layout file. Inserting the loader partition shifted every
+    # number by one. A stale value does not announce itself: U-Boot persists the
+    # boot-attempt decrement, then fails to find Image in a partition that now holds
+    # something else, and the board is bricked until it is re-flashed. This reads the
+    # numbers back out of the COMPILED script in the assembled image, not out of
+    # os/boot/cx3576-boot.cmd, so it also covers a boot.scr built from a stale source.
+    scr_body="$(tr -d '\0' < "${TMP}/scr-A" 2>/dev/null || true)"
+    for want in "bootpart:A:${BOOT_A_PARTNUM}" "bootpart:B:${BOOT_B_PARTNUM}" \
+        "rootpart:A:${ROOTFS_A_PARTNUM}" "rootpart:B:${ROOTFS_B_PARTNUM}"; do
+        IFS=':' read -r var slot num <<<"${want}"
+        got="$(awk -v slot="${slot}" -v var="${var}" '
+            $1 == "setenv" && $2 == "bootslot" && $3 == slot { in_slot = 1; next }
+            $1 == "setenv" && $2 == var && in_slot { print $3; exit }
+        ' <<<"${scr_body}")"
+        if [ "${got}" = "${num}" ]; then
+            pass "${BOOT_SCRIPT_NAME} sets ${var}=${num} for slot ${slot}, matching the layout"
         else
-            fail "BOOT-${slot} rk3576-src.dtb: /leds/${name} GPIO flags cell is '${got:-missing}', expected ${want_flags} (${want_pol}); the wrong polarity drives this LED backwards while its label and default-state still read correctly"
+            fail "${BOOT_SCRIPT_NAME} sets ${var}='${got:-nothing}' for slot ${slot}, but the layout puts that partition at p${num}; U-Boot would load from the wrong partition after already persisting the attempt decrement"
         fi
     done
 
-    mcopy -n -i "${fatimg}" "::/${BOOT_SCRIPT_NAME}" "${TMP}/scr-${slot}" 2>/dev/null || true
-    mcopy -n -i "${fatimg}" "::/${verity_env}" "${TMP}/verity-${slot}.env" 2>/dev/null || true
-}
-
-check_boot_slot A "${BOOT_A_IMG}" "${BOOT_A_OFFSET_BYTES}" "${BOOT_A_FAT_LABEL}" "${BOOT_A_FAT_VOLUME_ID}" "${BOOT_VERITY_ENV_A_NAME}"
-check_boot_slot B "${BOOT_B_IMG}" "${BOOT_B_OFFSET_BYTES}" "${BOOT_B_FAT_LABEL}" "${BOOT_B_FAT_VOLUME_ID}" "${BOOT_VERITY_ENV_B_NAME}"
-
-# boot.scr is deliberately identical in both slots: whichever copy U-Boot runs
-# may boot either slot, so they must not diverge.
-if [ -f "${TMP}/scr-A" ] && [ -f "${TMP}/scr-B" ] && cmp -s "${TMP}/scr-A" "${TMP}/scr-B"; then
-    pass "factory: ${BOOT_SCRIPT_NAME} is byte-identical in BOOT-A and BOOT-B"
-else
-    fail "factory: ${BOOT_SCRIPT_NAME} differs between BOOT-A and BOOT-B (or is missing); the same script must be able to boot either slot"
-fi
-
-scr_magic="$(od -An -tx1 -N4 "${TMP}/scr-A" 2>/dev/null | tr -d ' \n' || true)"
-if [ "${scr_magic}" = "27051956" ]; then
-    pass "${BOOT_SCRIPT_NAME} carries the legacy uImage magic 27051956"
-else
-    fail "${BOOT_SCRIPT_NAME} magic is '${scr_magic}', expected 27051956 (mkimage -T script output)"
-fi
-
-# THE RENUMBERING ASSERTION. boot.scr addresses its slot as `mmc 0:${bootpart}`
-# — a literal GPT partition NUMBER baked into the compiled script, because hush
-# cannot read the layout file. Inserting the loader partition shifted every
-# number by one. A stale value does not announce itself: U-Boot persists the
-# boot-attempt decrement, then fails to find Image in a partition that now holds
-# something else, and the board is bricked until it is re-flashed. This reads the
-# numbers back out of the COMPILED script in the assembled image, not out of
-# os/boot/cx3576-boot.cmd, so it also covers a boot.scr built from a stale source.
-scr_body="$(tr -d '\0' < "${TMP}/scr-A" 2>/dev/null || true)"
-for want in "bootpart:A:${BOOT_A_PARTNUM}" "bootpart:B:${BOOT_B_PARTNUM}" \
-    "rootpart:A:${ROOTFS_A_PARTNUM}" "rootpart:B:${ROOTFS_B_PARTNUM}"; do
-    IFS=':' read -r var slot num <<<"${want}"
-    got="$(awk -v slot="${slot}" -v var="${var}" '
-        $1 == "setenv" && $2 == "bootslot" && $3 == slot { in_slot = 1; next }
-        $1 == "setenv" && $2 == var && in_slot { print $3; exit }
-    ' <<<"${scr_body}")"
-    if [ "${got}" = "${num}" ]; then
-        pass "${BOOT_SCRIPT_NAME} sets ${var}=${num} for slot ${slot}, matching the layout"
+    # U-BOOT ONLY: the per-slot verity environment file the boot script sources.
+    # A grub slot carries no such file -- its verity table is on the kernel
+    # command line in grub.cfg, and the cmdline assertions check that from the
+    # image for both boards.
+    if is_uboot_board; then
+        # Each slot's verity env must point dm-verity at its OWN rootfs partition;
+        # swapping them would make an update verify the slot it just replaced.
+        verity_env_ok=1
+        for pair in "A:${ROOTFS_A_GUID}:${ROOTFS_B_GUID}" "B:${ROOTFS_B_GUID}:${ROOTFS_A_GUID}"; do
+            IFS=':' read -r slot own other <<<"${pair}"
+            body="$(cat "${TMP}/verity-${slot}.env" 2>/dev/null || true)"
+            body_lc="$(lc "${body}")"
+            if [ -z "${body}" ]; then
+                fail "BOOT-${slot} ${BOOT_VERITY_ENV_NAME%.env}-$(lc "${slot}").env is missing or empty"
+                verity_env_ok=0
+            elif [ "${body_lc#*"$(lc "${own}")"}" != "${body_lc}" ] &&
+                [ "${body_lc#*"$(lc "${other}")"}" = "${body_lc}" ]; then
+                pass "BOOT-${slot} verity env references its own rootfs PARTUUID ${own} and not the other slot's"
+            else
+                fail "BOOT-${slot} verity env must reference PARTUUID ${own} (its own rootfs slot) and must not mention ${other}"
+                verity_env_ok=0
+            fi
+        done
     else
-        fail "${BOOT_SCRIPT_NAME} sets ${var}='${got:-nothing}' for slot ${slot}, but the layout puts that partition at p${num}; U-Boot would load from the wrong partition after already persisting the attempt decrement"
+        verity_env_ok=1
+        skip "the per-slot verity environment files (bootloader=${RAUC_BOOTLOADER}): a GRUB slot carries no verity env; the table is on the kernel command line, which is checked from the image above"
     fi
-done
 
-# Each slot's verity env must point dm-verity at its OWN rootfs partition;
-# swapping them would make an update verify the slot it just replaced.
-verity_env_ok=1
-for pair in "A:${ROOTFS_A_GUID}:${ROOTFS_B_GUID}" "B:${ROOTFS_B_GUID}:${ROOTFS_A_GUID}"; do
-    IFS=':' read -r slot own other <<<"${pair}"
-    body="$(cat "${TMP}/verity-${slot}.env" 2>/dev/null || true)"
-    body_lc="$(lc "${body}")"
-    if [ -z "${body}" ]; then
-        fail "BOOT-${slot} ${BOOT_VERITY_ENV_NAME%.env}-$(lc "${slot}").env is missing or empty"
-        verity_env_ok=0
-    elif [ "${body_lc#*"$(lc "${own}")"}" != "${body_lc}" ] &&
-        [ "${body_lc#*"$(lc "${other}")"}" = "${body_lc}" ]; then
-        pass "BOOT-${slot} verity env references its own rootfs PARTUUID ${own} and not the other slot's"
+    # The two files are the same table over different partitions: rewriting A's
+    # PARTUUID to B's must reproduce B's file exactly. Anything else means the
+    # slots' verity parameters have drifted apart.
+    if [ "${verity_env_ok}" -eq 1 ]; then
+        sed "s/$(lc "${ROOTFS_A_GUID}")/$(lc "${ROOTFS_B_GUID}")/g" "${TMP}/verity-A.env" >"${TMP}/verity-A-as-B.env"
+        if cmp -s "${TMP}/verity-A-as-B.env" "${TMP}/verity-B.env"; then
+            pass "the A and B verity env files differ only in the rootfs PARTUUID"
+        else
+            fail "the A and B verity env files differ by more than the rootfs PARTUUID: $(diff "${TMP}/verity-A-as-B.env" "${TMP}/verity-B.env" | tr '\n' ' ')"
+        fi
     else
-        fail "BOOT-${slot} verity env must reference PARTUUID ${own} (its own rootfs slot) and must not mention ${other}"
-        verity_env_ok=0
+        fail "the A/B verity env comparison could not be made (a slot's verity env is missing or wrong)"
     fi
-done
 
-# The two files are the same table over different partitions: rewriting A's
-# PARTUUID to B's must reproduce B's file exactly. Anything else means the
-# slots' verity parameters have drifted apart.
-if [ "${verity_env_ok}" -eq 1 ]; then
-    sed "s/$(lc "${ROOTFS_A_GUID}")/$(lc "${ROOTFS_B_GUID}")/g" "${TMP}/verity-A.env" >"${TMP}/verity-A-as-B.env"
-    if cmp -s "${TMP}/verity-A-as-B.env" "${TMP}/verity-B.env"; then
-        pass "the A and B verity env files differ only in the rootfs PARTUUID"
-    else
-        fail "the A and B verity env files differ by more than the rootfs PARTUUID: $(diff "${TMP}/verity-A-as-B.env" "${TMP}/verity-B.env" | tr '\n' ' ')"
-    fi
 else
-    fail "the A/B verity env comparison could not be made (a slot's verity env is missing or wrong)"
+    skip "the boot.scr assertions (bootloader=${RAUC_BOOTLOADER}): there is no compiled boot script in a slot GRUB boots, no uImage magic to check, and no baked-in partition number to catch drifting -- GRUB addresses slots by PARTUUID on the kernel command line, which the cmdline assertions below cover instead"
 fi
 
 # ===========================================================================
@@ -1778,8 +1975,43 @@ fi
 # table (rather than against the build-time env file) is what makes this an
 # end-to-end assertion — it proves the cmdline the device will actually boot
 # with describes the bytes actually in the slot.
-CREATE="$(sed -n 's/.*dm-mod\.create="\([^"]*\)".*/\1/p' "${TMP}/verity-A.env" 2>/dev/null || true)"
-WAITFOR="$(sed -n 's/.*\(dm-mod\.waitfor=[^ ]*\).*/\1/p' "${TMP}/verity-A.env" 2>/dev/null || true)"
+# THE KERNEL COMMAND LINE, FROM WHEREVER THIS BOARD KEEPS IT.
+#
+# Everything below asserts properties of the command line that are true of BOTH
+# boards -- the verity table exists and is read-only, dm-mod.waitfor is present,
+# the root hash matches the locally built rootfs, and the boot path names its
+# slot. Only the SOURCE differs: U-Boot sources a verity env file out of the
+# boot slot, GRUB writes the arguments into its own grub.cfg.
+#
+# Skipping these on a grub board would have been the easy move and the wrong
+# one: it would drop real coverage of verity, of the read-only flag and of
+# rauc.slot=, on the board this project now verifies first. So the extraction
+# is board-aware and the assertions are not.
+board_cmdline() {
+    local slot="$1"
+    if is_uboot_board; then
+        cat "${TMP}/verity-${slot}.env" 2>/dev/null || true
+        return
+    fi
+    # GRUB: the `linux` line for this slot inside the ESP's grub.cfg. Read from
+    # the image's own boot slot, not from os/boot/x64-grub.cfg -- the template
+    # is what the build INTENDED and this is what the device will read.
+    local esp cfg
+    case "${slot}" in
+    A) esp="${BOOT_A_IMG}" ;;
+    B) esp="${BOOT_B_IMG}" ;;
+    esac
+    cfg="${TMP}/grubcfg-${slot}"
+    mcopy -n -i "${esp}" "::/EFI/mos/grub.cfg" "${cfg}" 2>/dev/null || true
+    # One entry per slot; take the linux line of the entry for THIS slot.
+    awk -v want="$(lc "${slot}")" '
+        /menuentry/ { inentry = (tolower($0) ~ ("--id " want) || tolower($0) ~ ("slot " want)) }
+        inentry && $1 == "linux" { print; exit }
+    ' "${cfg}" 2>/dev/null || true
+}
+
+CREATE="$(board_cmdline A | sed -n 's/.*dm-mod\.create="\([^"]*\)".*/\1/p')"
+WAITFOR="$(board_cmdline A | sed -n 's/.*\(dm-mod\.waitfor=[^ ]*\).*/\1/p')"
 
 cmdline_hash=""
 cmdline_salt=""
@@ -1817,7 +2049,7 @@ else
     fail "ROOTFS-A payload FAILED dm-verity verification against BOOT-A's root hash ${cmdline_hash}: $(tr '\n' ' ' <"${TMP}/verity-verify.log")"
 fi
 
-ROOTFS_VERITY_ENV="${REPO_ROOT}/_out/cx3576/rootfs-verity.env"
+ROOTFS_VERITY_ENV="${REPO_ROOT}/_out/${MOS_BOARD}/rootfs-verity.env"
 if [ ! -f "${ROOTFS_VERITY_ENV}" ]; then
     fail "verity parameter file not found: ${ROOTFS_VERITY_ENV} (produce it with os/rootfs/build-v2.sh)"
 else
@@ -1833,9 +2065,9 @@ eq_ci "verity salt on the cmdline" "${cmdline_salt}" "${VERITY_SALT}"
 # before the partitions exist. The boot then fails INTERMITTENTLY rather than
 # cleanly, which is the hardest class of bug to find later.
 if [ -n "${WAITFOR}" ]; then
-    pass "the kernel cmdline carries ${WAITFOR} (required on ${KERNEL_VERSION}: dm-init runs at late_initcall and does not wait for eMMC discovery)"
+    pass "the kernel cmdline carries ${WAITFOR} (required on the BSP kernel this board ships: dm-init runs at late_initcall and does not wait for eMMC discovery)"
 else
-    fail "the kernel cmdline carries NO dm-mod.waitfor=. It is REQUIRED on kernel ${KERNEL_VERSION}, not optional: dm_init_init() runs at late_initcall and wait_for_device_probe() does not cover eMMC card discovery, so verity assembly races the eMMC probe and boot becomes flaky rather than broken"
+    fail "the kernel cmdline carries NO dm-mod.waitfor=. It is REQUIRED, not optional: dm_init_init() runs at late_initcall and wait_for_device_probe() does not cover eMMC card discovery, so verity assembly races the eMMC probe and boot becomes flaky rather than broken"
 fi
 
 # squashfs superblock: magic 'hsqs', compression id at offset 20 (6 == zstd).
@@ -1867,38 +2099,54 @@ if [ -n "${CREATE}" ] && grep -q '^rootfs,,,ro,' <<<"${CREATE}"; then
 else
     fail "the dm-verity table is not marked read-only; expected a table beginning 'rootfs,,,ro,' (got '${CREATE}')"
 fi
-# boot.scr is a uImage-wrapped text script, so the root arguments it assembles
-# are readable straight out of it.
-if [ -f "${TMP}/scr-A" ] &&
-    grep -aq 'root=/dev/dm-0' "${TMP}/scr-A" &&
-    grep -aq 'rootfstype=squashfs' "${TMP}/scr-A" &&
-    grep -aqE 'rootfstype=squashfs ro( |$)' "${TMP}/scr-A"; then
-    pass "${BOOT_SCRIPT_NAME} boots root=/dev/dm-0 rootfstype=squashfs ro (read-only squashfs root)"
-else
-    fail "${BOOT_SCRIPT_NAME} does not set 'root=/dev/dm-0 rootfstype=squashfs ro'; the v2 root must be mounted read-only from the verity device"
-fi
+# U-BOOT ONLY. These read the root arguments out of the compiled boot script.
+# On a grub board the same arguments are on the kernel command line GRUB
+# builds, and the cmdline assertions above already cover them -- the verity
+# table, its read-only flag, the waitfor and the root= device are all checked
+# there, from the image, for both boards.
+if is_uboot_board; then
+    # boot.scr is a uImage-wrapped text script, so the root arguments it assembles
+    # are readable straight out of it.
+    if [ -f "${TMP}/scr-A" ] &&
+        grep -aq 'root=/dev/dm-0' "${TMP}/scr-A" &&
+        grep -aq 'rootfstype=squashfs' "${TMP}/scr-A" &&
+        grep -aqE 'rootfstype=squashfs ro( |$)' "${TMP}/scr-A"; then
+        pass "${BOOT_SCRIPT_NAME} boots root=/dev/dm-0 rootfstype=squashfs ro (read-only squashfs root)"
+    else
+        fail "${BOOT_SCRIPT_NAME} does not set 'root=/dev/dm-0 rootfstype=squashfs ro'; the v2 root must be mounted read-only from the verity device"
+    fi
 
-# ROOTFS-B is zero-filled at build: the first update is what fills it.
-rootfs_b_nonzero="$(dd if="${IMG}" bs=1M skip="${rootfs_b_start_mib}" count="${SLOT_MIB}" status=none 2>/dev/null | tr -d '\0' | wc -c || echo -1)"
-if [ "${SLOT_MIB}" -gt 0 ] && [ "${rootfs_b_nonzero}" = "0" ]; then
-    pass "factory: ROOTFS-B is entirely zero (${SLOT_MIB} MiB; the first update fills it)"
+    # ROOTFS-B is zero-filled at build: the first update is what fills it.
+    rootfs_b_nonzero="$(dd if="${IMG}" bs=1M skip="${PART_START_MIB_ROOTFS_B}" count="${SLOT_MIB}" status=none 2>/dev/null | tr -d '\0' | wc -c || echo -1)"
+    if [ "${SLOT_MIB}" -gt 0 ] && [ "${rootfs_b_nonzero}" = "0" ]; then
+        pass "factory: ROOTFS-B is entirely zero (${SLOT_MIB} MiB; the first update fills it)"
+    else
+        fail "factory: ROOTFS-B contains ${rootfs_b_nonzero} non-zero bytes, expected none"
+    fi
 else
-    fail "factory: ROOTFS-B contains ${rootfs_b_nonzero} non-zero bytes, expected none"
+    skip "the boot.scr root-argument assertions (bootloader=${RAUC_BOOTLOADER}): there is no compiled boot script on this board; GRUB assembles the same arguments onto the kernel command line, which the cmdline assertions above check from the image"
 fi
 
 # ===========================================================================
 # 5. The U-Boot environment pair is zero-filled at build
 # ===========================================================================
 
-for pair in "A:${UENV_A_OFFSET_BYTES}" "B:${UENV_B_OFFSET_BYTES}"; do
-    IFS=':' read -r slot offset <<<"${pair}"
-    nonzero="$(dd if="${IMG}" skip="${offset}" count="${UENV_SIZE_BYTES}" iflag=skip_bytes,count_bytes status=none 2>/dev/null | tr -d '\0' | wc -c || echo -1)"
-    if [ "${nonzero}" = "0" ]; then
-        pass "factory: UENV-${slot} is entirely zero ($((UENV_SIZE_BYTES / 1024)) KiB at ${offset} bytes; U-Boot populates it on first boot)"
-    else
-        fail "factory: UENV-${slot} contains ${nonzero} non-zero bytes, expected none"
-    fi
-done
+# U-BOOT ONLY: section 5 exists because the redundant U-Boot environment must
+# ship zeroed, so U-Boot writes it on first boot rather than inheriting a
+# build machine's. A grub board has no such pair.
+if is_uboot_board; then
+    for pair in "A:${UENV_A_OFFSET_BYTES}" "B:${UENV_B_OFFSET_BYTES}"; do
+        IFS=':' read -r slot offset <<<"${pair}"
+        nonzero="$(dd if="${IMG}" skip="${offset}" count="${UENV_SIZE_BYTES}" iflag=skip_bytes,count_bytes status=none 2>/dev/null | tr -d '\0' | wc -c || echo -1)"
+        if [ "${nonzero}" = "0" ]; then
+            pass "factory: UENV-${slot} is entirely zero ($((UENV_SIZE_BYTES / 1024)) KiB at ${offset} bytes; U-Boot populates it on first boot)"
+        else
+            fail "factory: UENV-${slot} contains ${nonzero} non-zero bytes, expected none"
+        fi
+    done
+else
+    skip "the zero-filled U-Boot environment pair (bootloader=${RAUC_BOOTLOADER}): this board has no uenv partitions, so there is nothing that must ship blank for the bootloader to populate"
+fi
 
 # ===========================================================================
 # 6. META / STATE / EPHEMERAL / DATA
@@ -1956,12 +2204,13 @@ check_ext4() {
     else
         fail "factory: ${name} is not empty at build; it contains: $(echo "${entries}" | tr '\n' ' ')"
     fi
+
 }
 
-check_ext4 meta "${meta_start_mib}" "${META_SIZE_MIB}" "${META_FS_LABEL}" "${META_FS_UUID}"
-check_ext4 state "${state_start_mib}" "${STATE_SIZE_MIB}" "${STATE_FS_LABEL}" "${STATE_FS_UUID}"
-check_ext4 ephemeral "${ephemeral_start_mib}" "${MOS_VAR_MIB}" "${EPHEMERAL_FS_LABEL}" "${EPHEMERAL_FS_UUID}"
-check_ext4 data "${data_start_mib}" "${DATA_SIZE_MIB}" "${DATA_FS_LABEL}" "${DATA_FS_UUID}"
+check_ext4 meta "${PART_START_MIB_META}" "${META_SIZE_MIB}" "${META_FS_LABEL}" "${META_FS_UUID}"
+check_ext4 state "${PART_START_MIB_STATE}" "${STATE_SIZE_MIB}" "${STATE_FS_LABEL}" "${STATE_FS_UUID}"
+check_ext4 ephemeral "${PART_START_MIB_EPHEMERAL}" "${MOS_VAR_MIB}" "${EPHEMERAL_FS_LABEL}" "${EPHEMERAL_FS_UUID}"
+check_ext4 data "${PART_START_MIB_DATA}" "${DATA_SIZE_MIB}" "${DATA_FS_LABEL}" "${DATA_FS_UUID}"
 
 # ===========================================================================
 # 7. Packed root filesystem contents
@@ -2035,17 +2284,29 @@ sq_enabled_any() {
 
 # --- kernel modules and firmware (carried over from v1) ---
 modules_entries="$(ls "${ROOT}/usr/lib/modules" 2>/dev/null || true)"
-if [ "${modules_entries}" = "${KERNEL_VERSION}" ]; then
-    pass "/usr/lib/modules contains exactly ${KERNEL_VERSION}"
+# THE PROPERTY IS "EXACTLY ONE", not "exactly 6.1.115". The version was pinned
+# at the top of this file to the cx3576 BSP kernel, so the x64 image -- running
+# Debian's 6.12.101+deb13-amd64, which is correct for it -- failed with a
+# message saying its modules directory was wrong. What actually matters is that
+# a single kernel's modules are present: two entries means a stale set shipped
+# beside the live one, and none means the modules never made it in.
+KERNEL_VERSION="$(printf '%s' "${modules_entries}" | tr -d ' ')"
+if [ -n "${KERNEL_VERSION}" ] && [ "$(printf '%s\n' "${modules_entries}" | wc -l)" = "1" ]; then
+    pass "/usr/lib/modules contains exactly one kernel's modules (${KERNEL_VERSION})"
 else
-    fail "/usr/lib/modules entries: '$(echo "${modules_entries}" | tr '\n' ' ')', expected exactly ${KERNEL_VERSION}"
+    fail "/usr/lib/modules entries: '$(echo "${modules_entries}" | tr '\n' ' ')', expected exactly one"
 fi
-# AIC8800D80 single SKU: the confirmed U02 runtime firmware set, nothing else.
-sq_regular /usr/lib/firmware/aic_userconfig_8800d80.txt
-sq_regular /usr/lib/firmware/fw_adid_8800d80_u02.bin
-sq_regular /usr/lib/firmware/fw_patch_8800d80_u02.bin
-sq_regular /usr/lib/firmware/fw_patch_table_8800d80_u02.bin
-sq_regular /usr/lib/firmware/fmacfw_8800d80_u02.bin
+# The board's radio firmware set, from its definition. This was five literal
+# AIC8800D80 paths -- correct for cx3576, and five failures on a board with no
+# radio at all. An empty BOARD_FIRMWARE_FILES is the board saying it carries
+# none, which is why the skip below names the board rather than the files.
+if [ -n "${BOARD_FIRMWARE_FILES}" ]; then
+    for fw in ${BOARD_FIRMWARE_FILES}; do
+        sq_regular "${fw}"
+    done
+else
+    skip "the board radio-firmware set (${MOS_BOARD} declares BOARD_FIRMWARE_FILES empty): there is no radio on this board, so there is no runtime firmware it must carry"
+fi
 sq_regular /usr/lib/systemd/systemd
 
 # --- base services (carried over from v1) ---
@@ -2062,18 +2323,29 @@ sq_grep /etc/systemd/journald.conf.d/00-volatile.conf '^Storage=volatile$' \
     "journald is Storage=volatile (the journal never lands on the fixed-size /var)"
 
 # --- mosd (carried over from v1) ---
-elf_is_aarch64() {
+# e_machine follows the board's architecture. It was pinned to aarch64, so the
+# x64 image reported "/usr/bin/mosd is not an aarch64 ELF" -- true, and not a
+# defect: the binary is exactly the architecture that board asks for. The
+# assertion that earns its keep is "the staged binary matches THIS board", which
+# is what catches a host-arch artefact shipping to a device.
+case "${MOS_ARCH}" in
+arm64) ELF_MACHINE_LE=b700 ;;
+amd64) ELF_MACHINE_LE=3e00 ;;
+*) echo "error: MOS_ARCH is '${MOS_ARCH}'; this verifier knows arm64 and amd64" >&2; exit 1 ;;
+esac
+
+elf_is_board_arch() {
     local head
     head="$(od -An -tx1 -N20 "${ROOT}$1" 2>/dev/null | tr -d ' \n' || true)"
-    # ELF magic 7f454c46; e_machine at offset 18 is 0xB7 (aarch64, LE).
-    if [ "${head:0:8}" = "7f454c46" ] && [ "${head:36:4}" = "b700" ]; then
-        pass "$1 is an aarch64 ELF"
+    # ELF magic 7f454c46; e_machine is the 16-bit LE field at offset 18.
+    if [ "${head:0:8}" = "7f454c46" ] && [ "${head:36:4}" = "${ELF_MACHINE_LE}" ]; then
+        pass "$1 is a ${MOS_ARCH} ELF"
     else
-        fail "$1 is not an aarch64 ELF (header: '${head:0:40}')"
+        fail "$1 is not a ${MOS_ARCH} ELF (header: '${head:0:40}')"
     fi
 }
 sq_regular /usr/bin/mosd
-elf_is_aarch64 /usr/bin/mosd
+elf_is_board_arch /usr/bin/mosd
 sq_grep /usr/lib/systemd/system/mosd.service 'BusName=com.mos.mosd' \
     "/usr/lib/systemd/system/mosd.service has BusName=com.mos.mosd"
 sq_enabled mosd.service
@@ -2082,7 +2354,7 @@ sq_regular /usr/share/dbus-1/system.d/com.mos.ext.conf
 
 # --- apid (carried over from v1) ---
 sq_regular "${APID_BIN}"
-elf_is_aarch64 "${APID_BIN}"
+elf_is_board_arch "${APID_BIN}"
 # Section 6.3's escape, asserted against the image rather than against the
 # crate; the helper and its reasoning are up beside the other helpers.
 check_builtin_ui
@@ -2096,17 +2368,32 @@ sq_enabled apid.service
 # Single SKU: bcmdhd was dropped with the AIC-only fleet decision and must not
 # creep back into the module list.
 # Comment lines are excluded — the file may legitimately EXPLAIN the drop.
-if [ -f "${ROOT}/etc/mos/modules.conf" ] && \
-    ! grep -v '^[[:space:]]*#' "${ROOT}/etc/mos/modules.conf" | grep 'bcmdhd' >/dev/null; then
-    pass "/etc/mos/modules.conf loads no bcmdhd module (single-SKU AIC8800)"
+# The module list is about THIS BOARD'S radio, so it is gated on the board
+# declaring one. A board with no firmware set has no modules.conf to hold a
+# driver name, and asserting one would be asserting the presence of hardware.
+if [ -n "${BOARD_FIRMWARE_FILES}" ]; then
+    if [ -f "${ROOT}/etc/mos/modules.conf" ] && \
+        ! grep -v '^[[:space:]]*#' "${ROOT}/etc/mos/modules.conf" | grep 'bcmdhd' >/dev/null; then
+        pass "/etc/mos/modules.conf loads no bcmdhd module (single-SKU AIC8800)"
+    else
+        fail "/etc/mos/modules.conf missing or still loads bcmdhd (single-SKU AIC8800 board)"
+    fi
+    sq_grep /etc/mos/modules.conf 'aic8800_fdrv' "/etc/mos/modules.conf lists aic8800_fdrv"
+    sq_grep /etc/mos/modules.conf '^aic8800_btlpm$' "/etc/mos/modules.conf lists aic8800_btlpm (BT core of the combo chip)"
 else
-    fail "/etc/mos/modules.conf missing or still loads bcmdhd (single-SKU AIC8800 board)"
+    skip "the radio module-list assertions (${MOS_BOARD} declares no BOARD_FIRMWARE_FILES): there is no radio, so there is no driver the module list must load and no superseded one it must not"
 fi
-sq_grep /etc/mos/modules.conf 'aic8800_fdrv' "/etc/mos/modules.conf lists aic8800_fdrv"
-sq_grep /etc/mos/modules.conf '^aic8800_btlpm$' "/etc/mos/modules.conf lists aic8800_btlpm (BT core of the combo chip)"
-for c in otg can bt mac gadget health; do
-    sq_regular "/etc/mos/${c}.conf"
-done
+
+# health.conf is shared by every board and is asserted unconditionally; the
+# rest are the board's own hardware facts.
+sq_regular "/etc/mos/health.conf"
+if [ -n "${BOARD_HWINIT_CONFS}" ]; then
+    for c in ${BOARD_HWINIT_CONFS}; do
+        sq_regular "/etc/mos/${c}.conf"
+    done
+else
+    skip "the per-board hwinit facts under /etc/mos (${MOS_BOARD} declares BOARD_HWINIT_CONFS empty): this board has no CAN bus, USB gadget controller, Bluetooth radio or burned MAC for an hwinit unit to read"
+fi
 
 # The board facts are READ, never restated: os/verify-image.sh already asserts
 # their values against board/cx3576/init, which is the user's area. Here we
@@ -2119,12 +2406,38 @@ else
     # ENUMERATED, never hardcoded: the hwinit set grows (mos-mac and mos-gadget
     # were added and silently shipped disabled once already), and a hardcoded
     # list is exactly how the next added unit falls outside coverage.
+    # UNITS A RECONCILER OWNS ARE DELIBERATELY NOT ENABLED, and this loop used
+    # to say every mos-*.service must be. That was true while every mos-* unit
+    # was an hwinit oneshot; it stopped being true when PLAN-011 D7 shipped
+    # mos-mqttd and mos-mqtt-broker INERT, started and stopped by mosd from
+    # `mqtt.enabled`. An image that force-enabled them would defeat the switch.
+    #
+    # So the two assertions would have contradicted each other -- check_mqttd
+    # and check_mqtt_broker assert these are NOT enabled, this one asserted
+    # they must be -- and the contradiction only surfaced when a real image
+    # carrying the broker was verified for the first time. Neither side's
+    # tests could see it: the fixture-driven checks never ran on an assembled
+    # root, and this enumeration never ran on one that had the broker in it.
+    #
+    # Derived from the checks that own them, not a second hardcoded list: a
+    # future reconciler-owned unit is added HERE and to its own inert check, or
+    # it fails one of the two.
+    # Bare unit names: MQTTD_UNIT and MQTT_BROKER_UNIT above are full paths and
+    # would never match. Each name here is asserted inert by check_mqttd or
+    # check_mqtt_broker; adding one without adding it there fails that check.
+    reconciler_owned="mos-mqttd.service mos-mqtt-broker.service"
     not_enabled=""
+    skipped_owned=""
     for u in ${hw_units}; do
+        case " ${reconciler_owned} " in
+        *" ${u} "*) skipped_owned="${skipped_owned} ${u}"; continue ;;
+        esac
         if [ -z "$(find "${ROOT}/etc/systemd/system" -name "${u}" -path '*.wants/*' 2>/dev/null || true)" ]; then
             not_enabled="${not_enabled} ${u}"
         fi
     done
+    [ -z "${skipped_owned}" ] ||
+        skip "the enabled-at-boot assertion for${skipped_owned}: these are started by mosd from the settings tree, not by the image, and their own checks assert the image does NOT enable them"
     if [ -z "${not_enabled}" ]; then
         pass "every mos-*.service present in the image is also enabled"
     else
@@ -2220,21 +2533,28 @@ done
 
 # --- M4: RAUC ---
 sq_regular /usr/bin/rauc
-sq_regular /usr/bin/fw_printenv
-# fw_setenv is a SYMLINK to fw_printenv on trixie and was a second regular file
-# on bookworm: libubootenv now ships one multi-call binary. What RAUC needs is
-# a working fw_setenv, so the assertion is that the path RESOLVES to a regular
-# file, whichever way the packager spelled it. Asserting "regular file" here
-# would fail on a correct image, and asserting "symlink" would fail on the
-# previous one.
-if [ -f "${ROOT}/usr/bin/fw_setenv" ]; then
-    if [ -L "${ROOT}/usr/bin/fw_setenv" ]; then
-        pass "/usr/bin/fw_setenv resolves to a regular file (symlink -> $(readlink "${ROOT}/usr/bin/fw_setenv"))"
+# U-BOOT ONLY. RAUC writes the boot slot through fw_setenv on a uboot board
+# and through grub-editenv on a grub one; the grub helper is asserted in its
+# own section above, keyed on the same RAUC_BOOTLOADER.
+if is_uboot_board; then
+    sq_regular /usr/bin/fw_printenv
+    # fw_setenv is a SYMLINK to fw_printenv on trixie and was a second regular file
+    # on bookworm: libubootenv now ships one multi-call binary. What RAUC needs is
+    # a working fw_setenv, so the assertion is that the path RESOLVES to a regular
+    # file, whichever way the packager spelled it. Asserting "regular file" here
+    # would fail on a correct image, and asserting "symlink" would fail on the
+    # previous one.
+    if [ -f "${ROOT}/usr/bin/fw_setenv" ]; then
+        if [ -L "${ROOT}/usr/bin/fw_setenv" ]; then
+            pass "/usr/bin/fw_setenv resolves to a regular file (symlink -> $(readlink "${ROOT}/usr/bin/fw_setenv"))"
+        else
+            pass "/usr/bin/fw_setenv is a regular file"
+        fi
     else
-        pass "/usr/bin/fw_setenv is a regular file"
+        fail "/usr/bin/fw_setenv is missing or does not resolve to a regular file; RAUC writes the boot slot through it and the A/B handover fails on the device"
     fi
 else
-    fail "/usr/bin/fw_setenv is missing or does not resolve to a regular file; RAUC writes the boot slot through it and the A/B handover fails on the device"
+    skip "fw_printenv/fw_setenv (bootloader=${RAUC_BOOTLOADER}): RAUC reaches this board's boot state through grub-editenv, which is asserted separately above"
 fi
 sq_regular /etc/rauc/system.conf
 
@@ -2579,11 +2899,18 @@ else
     fail "RAUC system.conf must give both rootfs slots a bootname=A / bootname=B; without one, rauc has no bootable slot group"
 fi
 
-# The effective cmdline is assembled by boot.scr from its own rootargs plus the
-# per-slot verity env, so either may legitimately carry rauc.slot=.
+# The effective cmdline: on a U-Boot board it is assembled by boot.scr from its
+# own rootargs PLUS the per-slot verity env, so either may legitimately carry
+# rauc.slot=; on a grub board it is the whole `linux` line for that slot. Both
+# go through board_cmdline, and the assertion below is the same either way --
+# rauc must be able to name the slot it booted, whatever wrote the arguments.
 for pair in "A:${ROOTFS_A_GUID}" "B:${ROOTFS_B_GUID}"; do
     IFS=':' read -r slot guid <<<"${pair}"
-    cmdline_src="$(cat "${TMP}/scr-A" "${TMP}/verity-${slot}.env" 2>/dev/null | tr -d '\0' || true)"
+    if is_uboot_board; then
+        cmdline_src="$(cat "${TMP}/scr-A" "${TMP}/verity-${slot}.env" 2>/dev/null | tr -d '\0' || true)"
+    else
+        cmdline_src="$(board_cmdline "${slot}" | tr -d '\0' || true)"
+    fi
     root_arg="$(grep -ao 'root=[^ "]*' <<<"${cmdline_src}" | first_line || true)"
     if grep -aqE "rauc\.slot=(\\\$\{bootslot\}|${slot})" <<<"${cmdline_src}"; then
         pass "slot ${slot}: the boot path sets rauc.slot=, so rauc can identify the booted slot"
@@ -2650,27 +2977,33 @@ if [ "${RAUC_BOOTLOADER}" = "grub" ]; then
     fi
 fi
 
-# --- M4: U-Boot environment access from Linux ---
-sq_regular /etc/fw_env.config
-fwenv="${ROOT}/etc/fw_env.config"
-fwenv_lines="$(grep -cE '^/dev/' "${fwenv}" 2>/dev/null || echo 0)"
-if [ "${fwenv_lines}" = "2" ]; then
-    pass "/etc/fw_env.config has exactly two device lines (this is what marks the environment redundant to libubootenv)"
-else
-    fail "/etc/fw_env.config has ${fwenv_lines} device lines, expected 2; with only one side configured, every read from the other fails its CRC check"
-fi
-uenv_hex="$(printf '0x%x' "${UENV_SIZE_BYTES}")"
-fwenv_ok=1
-for guid in "${UENV_A_GUID}" "${UENV_B_GUID}"; do
-    if ! grep -qiE "^/dev/disk/by-partuuid/$(lc "${guid}")[[:space:]]+0x0[[:space:]]+${uenv_hex}[[:space:]]*$" "${fwenv}" 2>/dev/null; then
-        fwenv_ok=0
-        bad_uenv="${guid}"
+# U-BOOT ONLY: fw_env.config tells libubootenv where the redundant U-Boot
+# environment lives. A grub board has no such environment and no such file.
+if is_uboot_board; then
+    # --- M4: U-Boot environment access from Linux ---
+    sq_regular /etc/fw_env.config
+    fwenv="${ROOT}/etc/fw_env.config"
+    fwenv_lines="$(grep -cE '^/dev/' "${fwenv}" 2>/dev/null || echo 0)"
+    if [ "${fwenv_lines}" = "2" ]; then
+        pass "/etc/fw_env.config has exactly two device lines (this is what marks the environment redundant to libubootenv)"
+    else
+        fail "/etc/fw_env.config has ${fwenv_lines} device lines, expected 2; with only one side configured, every read from the other fails its CRC check"
     fi
-done
-if [ "${fwenv_ok}" -eq 1 ]; then
-    pass "/etc/fw_env.config addresses both UENV partitions at offset 0x0 with size ${uenv_hex}"
+    uenv_hex="$(printf '0x%x' "${UENV_SIZE_BYTES}")"
+    fwenv_ok=1
+    for guid in "${UENV_A_GUID}" "${UENV_B_GUID}"; do
+        if ! grep -qiE "^/dev/disk/by-partuuid/$(lc "${guid}")[[:space:]]+0x0[[:space:]]+${uenv_hex}[[:space:]]*$" "${fwenv}" 2>/dev/null; then
+            fwenv_ok=0
+            bad_uenv="${guid}"
+        fi
+    done
+    if [ "${fwenv_ok}" -eq 1 ]; then
+        pass "/etc/fw_env.config addresses both UENV partitions at offset 0x0 with size ${uenv_hex}"
+    else
+        fail "/etc/fw_env.config has no '/dev/disk/by-partuuid/$(lc "${bad_uenv}") 0x0 ${uenv_hex}' line"
+    fi
 else
-    fail "/etc/fw_env.config has no '/dev/disk/by-partuuid/$(lc "${bad_uenv}") 0x0 ${uenv_hex}' line"
+    skip "/etc/fw_env.config and its two-device redundancy assertions (bootloader=${RAUC_BOOTLOADER}): there is no U-Boot environment on this board, so there is nothing for libubootenv to address"
 fi
 
 # --- M4: health gate and first-boot machine id ---
@@ -2807,6 +3140,19 @@ check_no_package_manager
 # store for its whole life before this: TLS code with nobody to believe, which
 # fails only on the first outbound connection and reports it as the remote's
 # fault ("certificate signed by unknown authority").
+check_ca_bundle() {
+    local bundle=/etc/ssl/certs/ca-certificates.crt n
+    if [ ! -s "${ROOT}${bundle}" ]; then
+        fail "${bundle} is missing or empty; the image can speak TLS and cannot verify anyone. Container pulls, curl and any HTTPS update fetch fail closed with 'certificate signed by unknown authority'"
+        return
+    fi
+    n="$(grep -c 'BEGIN CERTIFICATE' "${ROOT}${bundle}" 2>/dev/null || echo 0)"
+    if [ "${n}" -ge 100 ]; then
+        pass "${bundle} holds ${n} CA certificates (a count, not a pinned set: the assertion is that the store was GENERATED, which is what fails when ca-certificates ships without its postinst having run)"
+    else
+        fail "${bundle} holds only ${n} certificates; the package is installed but its trust store was not generated"
+    fi
+}
 check_ca_bundle
 
 # --- PLAN-012: the container engine, installed and inert ---------------------
@@ -3480,7 +3826,7 @@ else
 fi
 
 # The source tree's inventory, captured by the Dockerfile before packing.
-ROOTFS_REPORT="${REPO_ROOT}/_out/cx3576/rootfs-report-v2.txt"
+ROOTFS_REPORT="${REPO_ROOT}/_out/${MOS_BOARD}/rootfs-report-v2.txt"
 if [ "${cap_observable}" -eq 0 ]; then
     fail "file-capability preservation not evaluated (the environment cannot observe capabilities)"
 elif [ ! -f "${ROOTFS_REPORT}" ]; then
@@ -3791,7 +4137,16 @@ else
     fail "transient.rs pins ${crypt_n} distinct crypt(3) prefixes ($(printf '%s' "${crypt_prefixes}" | tr '\n' ' ')); the format the image must support is ambiguous, so the libcrypt check below cannot mean anything"
 fi
 
-LIBCRYPT_LINK="/usr/lib/aarch64-linux-gnu/libcrypt.so.1"
+# The multiarch triplet follows the board. This was pinned to
+# aarch64-linux-gnu, so on x64 the check reported that libcrypt "does not
+# resolve to a regular file in the image" -- true of a path that board never
+# had, and a statement about the wrong directory rather than about the library.
+case "${MOS_ARCH}" in
+arm64) MULTIARCH_TRIPLET=aarch64-linux-gnu ;;
+amd64) MULTIARCH_TRIPLET=x86_64-linux-gnu ;;
+*) echo "error: MOS_ARCH is '${MOS_ARCH}'; this verifier knows arm64 and amd64" >&2; exit 1 ;;
+esac
+LIBCRYPT_LINK="/usr/lib/${MULTIARCH_TRIPLET}/libcrypt.so.1"
 LIBCRYPT_REAL=""
 if [ -e "${ROOT}${LIBCRYPT_LINK}" ]; then
     LIBCRYPT_REAL="$(readlink -f "${ROOT}${LIBCRYPT_LINK}" 2>/dev/null || true)"
@@ -3816,9 +4171,14 @@ fi
 # summary
 # ===========================================================================
 total=$((PASS_N + FAIL_N))
+# The skip count is in the summary, not only in the body. A reader who scrolls
+# to the last line is the reader most likely to mistake "nothing applied" for
+# "everything passed".
+skips=""
+[ "${SKIP_N}" -gt 0 ] && skips=", ${SKIP_N} skipped (${MOS_BOARD}/${RAUC_BOOTLOADER}; each named above)"
 if [ "${FAIL_N}" -eq 0 ]; then
-    echo "RESULT: PASS (${PASS_N}/${total} checks)"
+    echo "RESULT: PASS (${PASS_N}/${total} checks${skips})"
 else
-    echo "RESULT: FAIL (${PASS_N}/${total} checks)"
+    echo "RESULT: FAIL (${PASS_N}/${total} checks${skips})"
     exit 1
 fi
