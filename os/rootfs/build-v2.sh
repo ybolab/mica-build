@@ -394,7 +394,7 @@ fi
 # is unavailable), fall back to a docker-container builder: its buildkit image
 # bundles QEMU emulators and needs no host binfmt.
 BUILDER_ARGS=()
-if [ -z "${BUILDX_BUILDER:-}" ] && ! docker buildx inspect 2>/dev/null | grep -q "${DOCKER_PLATFORM}"; then
+if [ -z "${BUILDX_BUILDER:-}" ] && ! docker buildx inspect 2>/dev/null | grep -c "${DOCKER_PLATFORM}" >/dev/null; then
     echo "note: current builder lacks ${DOCKER_PLATFORM}; using docker-container builder 'mos-${MOS_ARCH}'"
     docker buildx inspect "mos-${MOS_ARCH}" >/dev/null 2>&1 || \
         docker buildx create --name "mos-${MOS_ARCH}" --driver docker-container >/dev/null

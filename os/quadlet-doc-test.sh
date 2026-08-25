@@ -80,7 +80,7 @@ fi
 # builder selection as os/podman/build.sh: buildx's docker-container driver
 # bundles QEMU, so no host binfmt registration is needed.
 BUILDER_ARGS=()
-if [ -z "${BUILDX_BUILDER:-}" ] && ! docker buildx inspect 2>/dev/null | grep -q 'linux/arm64'; then
+if [ -z "${BUILDX_BUILDER:-}" ] && ! docker buildx inspect 2>/dev/null | grep -c 'linux/arm64' >/dev/null; then
     docker buildx inspect mos-arm64 >/dev/null 2>&1 ||
         docker buildx create --name mos-arm64 --driver docker-container >/dev/null
     BUILDER_ARGS=(--builder mos-arm64)

@@ -170,6 +170,16 @@ os-layout-lint:
 os-layout-lint-test:
 	bash os/layout/lint-test.sh
 
+# Every shell script that enables pipefail, checked for an early-exiting reader
+# on the right of a pipe. `producer | grep -q PATTERN` inverts its own answer
+# there: -q exits at the first match, the producer dies of SIGPIPE, and pipefail
+# hands back that failure -- so the pipeline reports "not found" BECAUSE the
+# pattern was found. It cost this tree a false PASS on the assertion that only
+# one D-Bus policy names com.mos.mosd, and another on the members the MQTT
+# bridge is forbidden to be granted. The rationale is at the top of the script.
+os-shell-pipefail-lint:
+	bash os/shell-pipefail-lint.sh
+
 docs-verify:
 	bash docs/verify-index.sh
 

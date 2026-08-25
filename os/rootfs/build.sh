@@ -62,7 +62,7 @@ fi
 # is unavailable), fall back to a docker-container builder: its buildkit image
 # bundles QEMU emulators and needs no host binfmt.
 BUILDER_ARGS=()
-if [ -z "${BUILDX_BUILDER:-}" ] && ! docker buildx inspect 2>/dev/null | grep -q 'linux/arm64'; then
+if [ -z "${BUILDX_BUILDER:-}" ] && ! docker buildx inspect 2>/dev/null | grep -c 'linux/arm64' >/dev/null; then
     echo "note: current builder lacks linux/arm64; using docker-container builder 'mos-arm64'"
     docker buildx inspect mos-arm64 >/dev/null 2>&1 || \
         docker buildx create --name mos-arm64 --driver docker-container >/dev/null

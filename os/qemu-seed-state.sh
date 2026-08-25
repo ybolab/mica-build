@@ -86,7 +86,7 @@ docker run --rm -v "${WORK}:/w" -v "${OUT_DIR}/.qemu:/d" \
         debugfs -w -R "write /w/files/${local} ${dst}" state.img >/dev/null 2>&1
         # Written, or the run would boot a disk that silently lacks the file
         # and every conclusion drawn from it would be about the wrong system.
-        debugfs -R "stat ${dst}" state.img 2>/dev/null | grep -q "Inode:" || {
+        debugfs -R "stat ${dst}" state.img 2>/dev/null | grep -c "Inode:" >/dev/null || {
             echo "error: ${dst} was not written into STATE" >&2; exit 1; }
         echo "  seeded ${dst}"
     done </w/manifest

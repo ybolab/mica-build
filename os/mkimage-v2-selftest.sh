@@ -369,14 +369,14 @@ for slot in a b; do
     esac
     listing="$(mdir -i "${IMG}@@${off}" -b ::/ 2>/dev/null || true)"
     for f in "::/Image" "::/rk3576-src.dtb" "::/${BOOT_SCRIPT_NAME}" "::/${venv}"; do
-        if echo "${listing}" | grep -qF "${f}"; then
+        if echo "${listing}" | grep -cF "${f}" >/dev/null; then
             echo "PASS: boot-${slot} contains ${f}"
         else
             echo "FAIL: boot-${slot} is missing ${f}"
             FAILED=1
         fi
     done
-    if echo "${listing}" | grep -qi "extlinux"; then
+    if echo "${listing}" | grep -ci "extlinux" >/dev/null; then
         echo "FAIL: boot-${slot} contains an extlinux entry: ${listing}"
         FAILED=1
     else
@@ -386,7 +386,7 @@ for slot in a b; do
     # A RAUC-installed slot carries ONLY the slot-suffixed files, so a factory
     # slot must too: any unsuffixed file here would mean the layout a device
     # boots from after an update differs from the one it was flashed with.
-    if echo "${listing}" | grep -qF "::/${BOOT_VERITY_ENV_NAME}"; then
+    if echo "${listing}" | grep -cF "::/${BOOT_VERITY_ENV_NAME}" >/dev/null; then
         echo "FAIL: boot-${slot} carries the unsuffixed ${BOOT_VERITY_ENV_NAME}; a RAUC-installed slot never has one"
         FAILED=1
     else
@@ -463,7 +463,7 @@ for slot in a b; do
     suffix="$(grep -oE "^ +setenv slotsuffix ${slot}\$" "${BOOT_CMD_FILE}" | awk '{print $3}')"
     check "boot.cmd sets slotsuffix=${slot} for that slot" "${suffix}" "${slot}"
     want="${VERITY_BASE}-${suffix}.env"
-    if mdir -i "${IMG}@@${off}" -b ::/ 2>/dev/null | grep -qF "::/${want}"; then
+    if mdir -i "${IMG}@@${off}" -b ::/ 2>/dev/null | grep -cF "::/${want}" >/dev/null; then
         echo "PASS: boot-${slot} contains ${want}, the exact name boot.scr will load"
     else
         echo "FAIL: boot-${slot} does not contain ${want}, the name boot.scr will load"
@@ -636,7 +636,7 @@ else
     FAILED=1
 fi
 if grep -q '^device=/dev/disk/by-partuuid/' "${WORK}/system.conf.real" 2>/dev/null &&
-    ! grep '^device=' "${WORK}/system.conf.real" | grep -qv '^device=/dev/disk/by-partuuid/'; then
+    ! grep '^device=' "${WORK}/system.conf.real" | grep -cv '^device=/dev/disk/by-partuuid/' >/dev/null; then
     echo "PASS: every rendered RAUC slot device is a by-partuuid path (renumbering cannot mis-target an install)"
 else
     echo "FAIL: a rendered RAUC slot device is not a by-partuuid path: $(grep '^device=' "${WORK}/system.conf.real" | tr '\n' ' ')"

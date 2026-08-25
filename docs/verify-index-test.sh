@@ -123,7 +123,7 @@ expect_fail() {
     run_verifier "${FIX}"
     got_fail="$(grep -c '^  FAIL ' "${WORK}/out" || true)"
     for pat in "$@"; do
-        grep -F -- "${pat}" "${WORK}/out" | grep -q '^  FAIL ' || {
+        grep -F -- "${pat}" "${WORK}/out" | grep -c '^  FAIL ' >/dev/null || {
             unmatched=1
             echo "    | no FAIL line contains: ${pat}"
         }

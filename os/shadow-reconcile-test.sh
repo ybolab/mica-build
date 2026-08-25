@@ -121,7 +121,7 @@ well_formed() {
 exists() { [ -e "$1" ] && echo yes || echo no; }
 lines_after_root() { grep -v '^root:' "$SHADOW" || true; }
 no_temp_files() {
-    if find "$STATE" -name '*.transient.*' -o -name '*.reconcile.*' | grep -q .; then
+    if find "$STATE" -name '*.transient.*' -o -name '*.reconcile.*' | grep -c . >/dev/null; then
         echo no
     else
         echo yes

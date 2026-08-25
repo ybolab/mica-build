@@ -22,7 +22,7 @@ cargo build --release --locked --target "${TARGET}" \
 
 for name in mosd apid mos-mqttd mos-mqtt-broker; do
     BIN="$(pwd)/target/${TARGET}/release/${name}"
-    if ! file -b "${BIN}" | grep -q "ELF 64-bit.*${ELF_ARCH}"; then
+    if ! file -b "${BIN}" | grep -c "ELF 64-bit.*${ELF_ARCH}" >/dev/null; then
         echo "error: ${BIN} is not an ${ELF_ARCH} ELF: $(file -b "${BIN}")" >&2
         exit 1
     fi

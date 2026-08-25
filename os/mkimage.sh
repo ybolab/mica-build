@@ -162,7 +162,7 @@ EOF
     local verify
     verify="$(sgdisk --verify "${img_tmp}")"
     echo "${verify}"
-    if ! echo "${verify}" | grep -q "No problems found"; then
+    if ! echo "${verify}" | grep -c "No problems found" >/dev/null; then
         echo "error: sgdisk --verify reported problems" >&2
         exit 1
     fi

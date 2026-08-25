@@ -40,7 +40,7 @@ done
 # name and same condition as os/rootfs/build-v2.sh, deliberately: two ways to
 # get an arm64 builder would be two things to keep working.
 BUILDER_ARGS=()
-if [ -z "${BUILDX_BUILDER:-}" ] && ! docker buildx inspect 2>/dev/null | grep -q "linux/${MOS_ARCH}"; then
+if [ -z "${BUILDX_BUILDER:-}" ] && ! docker buildx inspect 2>/dev/null | grep -c "linux/${MOS_ARCH}" >/dev/null; then
     echo "note: current builder lacks linux/${MOS_ARCH}; using docker-container builder 'mos-${MOS_ARCH}'"
     docker buildx inspect "mos-${MOS_ARCH}" >/dev/null 2>&1 ||
         docker buildx create --name "mos-${MOS_ARCH}" --driver docker-container >/dev/null

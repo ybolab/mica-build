@@ -456,7 +456,7 @@ assemble() {
     local verify verify_rc=0
     verify="$(sgdisk --verify "${img_tmp}")" || verify_rc=$?
     echo "${verify}"
-    if [ "${verify_rc}" -ne 0 ] || ! echo "${verify}" | grep -q "No problems found"; then
+    if [ "${verify_rc}" -ne 0 ] || ! echo "${verify}" | grep -c "No problems found" >/dev/null; then
         echo "error: sgdisk --verify reported problems (exit ${verify_rc})" >&2
         exit 1
     fi

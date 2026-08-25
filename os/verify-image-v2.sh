@@ -668,6 +668,20 @@ EXT_POLICY_PATH=/usr/share/dbus-1/system.d/com.mos.ext.conf
 # widened-prefix guard could not fail: T8 forced it never to fire and the suite
 # still reported PASS with zero FAIL lines. This is the SECOND author to write
 # assertions past that boundary -- see the warning at the hook exit.
+# The same text as dbus_policy_rules_only, reflowed to ONE XML TAG PER LINE.
+# D-Bus rules routinely span several source lines --
+#     <allow send_destination="com.mos.mosd"
+#            send_interface="com.mos.Item1"
+#            send_member="GetItems"/>
+# -- so anything that judges a rule line by line sees the bus name and the
+# member on different lines and can conclude the grant names no member. Which
+# is the more dangerous direction: it turns a correctly scoped grant into a
+# reported hazard, and the obvious repair is to stop scoping it.
+dbus_policy_tags() {
+    dbus_policy_rules_only "$1" | tr '\n' ' ' | sed 's|>|>\n|g' |
+        sed 's/^[[:space:]]*//; s/[[:space:]][[:space:]]*/ /g' | grep . || true
+}
+
 check_ext_policy() {
     ext_policy_rules="${TMP}/ext-policy-rules.xml"
     : >"${ext_policy_rules}"
@@ -822,7 +836,7 @@ EOF
         sed 's/.*send_member="\(.*\)"/\1/' | sort -u || true)"
     mqttd_danger=""
     for m in ${MQTTD_FORBIDDEN_MEMBERS}; do
-        if printf '%s\n' "${mqttd_members}" | grep -Fxq "${m}"; then
+        if printf '%s\n' "${mqttd_members}" | grep -Fxc "${m}" >/dev/null; then
             mqttd_danger="${mqttd_danger} ${m}"
         fi
     done
@@ -1180,7 +1194,7 @@ check_container_engine() {
     # journald logging (go-systemd sdjournal/functions.go:37), so it appears in
     # no NEEDED list and ldd cannot see it. containers.conf sets
     # log_driver = "journald", so losing it does not fail -- it loses logs.
-    if find "${ROOT}/usr/lib" -name 'libsystemd.so.0' -print -quit 2>/dev/null | grep -q .; then
+    if find "${ROOT}/usr/lib" -name 'libsystemd.so.0' -print -quit 2>/dev/null | grep -c . >/dev/null; then
         pass "libsystemd.so.0 is in the image; podman dlopens it by name for journald logging, which is a dependency neither a NEEDED list nor ldd can report"
     else
         fail "libsystemd.so.0 is not in the image. podman DLOPENS it for journald logging, so nothing in the link-time or loader checks above can see this missing -- and with log_driver=journald the symptom is container logs quietly going nowhere, not an error"
@@ -1264,7 +1278,7 @@ check_container_engine() {
         fail "${QUADLET_MOUNT_UNIT} is not in the image, so ${QUADLET_DIR} stays on the read-only squashfs. Quadlet reads /run, /etc and /usr/share under containers/systemd and nothing else: /run is tmpfs and the other two are in the verity root, so an operator has NOWHERE to install a container that survives a reboot"
     elif [ "${ce_where}" != "${QUADLET_DIR}" ]; then
         fail "${QUADLET_MOUNT_UNIT} mounts '${ce_where}', not ${QUADLET_DIR} — which is the only one of Quadlet's three search directories an operator can be given"
-    elif ! printf '%s' "${ce_what}" | grep -q '^/mnt/state/'; then
+    elif ! printf '%s' "${ce_what}" | grep -c '^/mnt/state/' >/dev/null; then
         fail "${QUADLET_MOUNT_UNIT} is backed by '${ce_what}', not STATE. Installed containers would not survive an A/B update"
     elif [ -L "${ROOT}/etc/systemd/system/local-fs.target.wants/${QUADLET_MOUNT_UNIT}" ]; then
         fail "${QUADLET_MOUNT_UNIT} is STATICALLY ENABLED. The bind then comes up at every boot whatever container.enabled says, Quadlet generates units from STATE, and they start — so anything able to write /mnt/state/quadlet gets a root-capable container at the next reboot with no operator decision anywhere in the path, and PLAN-012's switch gates nothing. mosd's ContainerReconciler enables it at runtime when the setting is true"
@@ -2806,22 +2820,60 @@ fi
 # documenting the hazard into a reported instance of it, and the obvious repair
 # (delete the warning) is strictly worse than the check. A real <allow> or
 # <deny> naming com.mos.mosd in a second file still trips it.
+#
+# `grep -c ... >/dev/null` and NOT `grep -q`: -q exits at the first match, which
+# closes the pipe under the writer on the left; that writer dies of SIGPIPE
+# (141), and `set -o pipefail` reports the status of the RIGHTMOST command to
+# exit non-zero -- so the pipeline reads as FAILED exactly when the pattern was
+# FOUND. This check reported "com.mos.mosd.conf is the ONLY file" on an image
+# whose mos-mqttd.conf grants three members on that very name, and it reported
+# it BECAUSE the grant was there. -c reads to EOF, so nothing is ever handed a
+# closed pipe, and the count goes to /dev/null because only the status is read.
+#
+# A SECOND FILE IS NOT AUTOMATICALLY A DEFECT, and asserting that it is made
+# this check contradict the design. mos-mqttd.conf grants the MQTT bridge three
+# named members on com.mos.mosd, deliberately and with its rationale in the
+# file: the bridge is the only daemon in the image with a network socket, so it
+# does not run as root, so it needs a grant, and the grant names members
+# precisely so it can never reach Reboot or SetTransientRootPassword. A rule
+# that banned the file outright would be satisfied only by deleting the grant
+# (breaking the bridge) or by widening com.mos.mosd back to every local uid.
+#
+# What actually has to hold is that no second file re-opens the name to
+# ANYBODY: every rule naming it must sit inside a <policy user=> or
+# <policy group=> block -- not the default context -- and must name a member
+# rather than the interface at large. That is judged here, from the file, and
+# does not depend on check_mqttd running later.
 mosd_policy_dups=""
+mosd_policy_scoped=""
 for d in /etc/dbus-1/system.d /usr/share/dbus-1/system.d; do
     [ -d "${ROOT}${d}" ] || continue
     for f in "${ROOT}${d}"/*; do
         [ -f "${f}" ] || continue
         [ "${f#"${ROOT}"}" = "${MOSD_POLICY_PATH}" ] && continue
-        if [ -n "${mosd_bus_name}" ] &&
-            dbus_policy_rules_only "${f}" | grep -Fq "${mosd_bus_name}"; then
-            mosd_policy_dups="${mosd_policy_dups} ${f#"${ROOT}"}"
+        [ -n "${mosd_bus_name}" ] || continue
+        dbus_policy_tags "${f}" | grep -Fc "${mosd_bus_name}" >/dev/null || continue
+        unscoped="$(dbus_policy_tags "${f}" |
+            awk -v name="${mosd_bus_name}" '
+                /^<policy/ { scoped = ($0 ~ /user=/ || $0 ~ /group=/) ? 1 : 0; next }
+                /^<\/policy/ { scoped = 0; next }
+                index($0, name) > 0 {
+                    member = ($0 ~ /send_member=/ || $0 ~ /receive_member=/) ? 1 : 0
+                    if (!scoped || !member) print
+                }' | tr '\n' ' ')"
+        if [ -n "${unscoped}" ]; then
+            mosd_policy_dups="${mosd_policy_dups} ${f#"${ROOT}"} [${unscoped}]"
+        else
+            mosd_policy_scoped="${mosd_policy_scoped} ${f#"${ROOT}"}"
         fi
     done
 done
-if [ -z "${mosd_policy_dups}" ]; then
-    pass "${MOSD_POLICY_PATH} is the ONLY file under /etc/dbus-1/system.d or /usr/share/dbus-1/system.d that mentions ${mosd_bus_name:-the mosd bus name}; no second policy can override the root-only restriction"
+if [ -n "${mosd_policy_dups}" ]; then
+    fail "a second D-Bus policy file grants ${mosd_bus_name:-the mosd bus name} outside a named identity or without naming a member:${mosd_policy_dups}. dbus-daemon reads both system.d directories and applies later rules over earlier ones, so this reinstates what ${MOSD_POLICY_PATH} removes -- and every other policy check here would still pass"
+elif [ -n "${mosd_policy_scoped}" ]; then
+    pass "the only other file(s) naming ${mosd_bus_name} --${mosd_policy_scoped} -- grant it strictly per-member inside a <policy user=|group=> block, so nothing outside ${MOSD_POLICY_PATH} widens the name to the default context"
 else
-    fail "a second D-Bus policy file mentions ${mosd_bus_name:-the mosd bus name}:${mosd_policy_dups}. dbus-daemon reads both system.d directories and applies later rules over earlier ones, so this file can reinstate the default-context allow that ${MOSD_POLICY_PATH} removes -- and every other policy check here would still pass"
+    pass "${MOSD_POLICY_PATH} is the ONLY file under /etc/dbus-1/system.d or /usr/share/dbus-1/system.d that mentions ${mosd_bus_name:-the mosd bus name}; no second policy can override the root-only restriction"
 fi
 
 # --- the extension D-Bus policy grants com.mos.ext.* and NOTHING ELSE --------
