@@ -18,7 +18,8 @@ set -euo pipefail
 # hash seeds, E2FSPROGS_FAKE_TIME, all staged BOOT files touched to FILE_MTIME,
 # and -- for the one filesystem seeded from a source tree, EPHEMERAL -- every
 # in-use inode's atime and ctime rewritten to FILE_MTIME after the fact, because
-# `touch` reaches neither of them through mke2fs -d (see pin_seeded_times).
+# `touch` reaches neither of them through mke2fs -d (see pin_seeded_times, in
+# the shared os/mkimage-common.sh).
 # Known deviations: the FAT partitions are byte-identical only across builds
 # using the same mtools version; rootfs-verity.img is only as reproducible as
 # the pipeline that produced it; and EPHEMERAL's file MTIMES are the factory
@@ -94,79 +95,18 @@ lc() {
     printf '%s' "$1" | tr '[:upper:]' '[:lower:]'
 }
 
-# Rewrites every in-use inode's atime and ctime to FILE_MTIME, in place, in the
-# finished filesystem. Only a filesystem seeded with `mke2fs -d` needs this, and
-# it is the difference between "EPHEMERAL is seeded" and "EPHEMERAL rebuilds
-# byte-identically" -- before this the two differed in 106 bytes of the inode
-# table, spanning every inode the seed created.
+# pin_seeded_times(), the pass that makes a `mke2fs -d` filesystem rebuild
+# byte-identically, is shared with os/mkimage-x64.sh rather than copied into it:
+# it is an argument about which inode timestamps are the producer's and which
+# are the assembler's, and two copies of an argument drift silently. See the
+# file for the reasoning and for how it reaches the other assembler's container.
 #
-# mke2fs -d copies the SOURCE inode's atime, mtime and ctime into the image, and
-# two of those three are this script's own noise rather than the exported tree's
-# content:
-#
-#   ctime  assemble() copies the factory /var into a staging dir so the stamp
-#          can be added without writing into _out, and the kernel stamps every
-#          copied inode's ctime with the moment of that copy. NO syscall sets
-#          ctime -- not touch, not utimensat -- so the only way to pin it is to
-#          write the inode table, which is what this does.
-#   atime  cp -a preserves the source's atime, and reading the source to make
-#          the FIRST copy is itself what bumps it under relatime. So assembly 2
-#          seeds EPHEMERAL with a timestamp assembly 1 created, and the two
-#          images differ in a field neither build was asked about.
-#
-# mtime is deliberately left alone: it is the producer's data, carried in
-# through cp -a, not something this script invents. crtime is mke2fs's own
-# invention and E2FSPROGS_FAKE_TIME already pins it (that is all it can pin --
-# it does not reach times copied in from a source tree).
-#
-# The inode set comes from the inode bitmap rather than from walking the source
-# tree, so it cannot be desynchronised by a filename debugfs's parser would
-# split, and it starts at the filesystem's first non-reserved inode so mke2fs's
-# own reserved inodes are left exactly as mke2fs wrote them. The enumerated
-# count is cross-checked against the superblock's free-inode total: if a future
-# dumpe2fs changes how it prints ranges, this refuses the build instead of
-# silently pinning nothing and handing the byte-identity check a fake pass.
-pin_seeded_times() {
-    local img="$1"
-    local hdr first count free_total want got cmds n errs
-    hdr="$(dumpe2fs -h "${img}" 2>/dev/null)"
-    first="$(printf '%s\n' "${hdr}" | sed -n 's/^First inode: *//p')"
-    count="$(printf '%s\n' "${hdr}" | sed -n 's/^Inode count: *//p')"
-    free_total="$(printf '%s\n' "${hdr}" | sed -n 's/^Free inodes: *//p')"
-    for n in "${first}" "${count}" "${free_total}"; do
-        if ! [[ "${n}" =~ ^[0-9]+$ ]]; then
-            echo "error: could not read the inode geometry of ${img} from dumpe2fs (first='${first}' count='${count}' free='${free_total}')" >&2
-            exit 1
-        fi
-    done
-    # Reserved inodes 1..first-1 are mke2fs's, and are not being rewritten.
-    want=$(( count - free_total - (first - 1) ))
-
-    cmds="${img}.times"
-    dumpe2fs "${img}" 2>/dev/null | sed -n 's/^  Free inodes: *//p' | tr ',' '\n' |
-        awk -v first="${first}" -v count="${count}" -v t="${FILE_MTIME}" '
-            { gsub(/[ \t]/, ""); if ($0 == "") next
-              n = split($0, r, /-+/); lo = r[1] + 0; hi = (n > 1 ? r[2] + 0 : lo)
-              for (i = lo; i <= hi; i++) free[i] = 1 }
-            END { for (i = first; i <= count; i++) if (!(i in free))
-                      printf "sif <%d> atime %s\nsif <%d> ctime %s\n", i, t, i, t }
-        ' > "${cmds}"
-    got=$(( $(wc -l < "${cmds}") / 2 ))
-    if [ "${got}" -ne "${want}" ]; then
-        echo "error: the inode bitmap of ${img} says ${want} inodes are in use from ${first} up, but parsing dumpe2fs's free-inode ranges found ${got}; refusing to pin timestamps against a listing this script no longer understands" >&2
-        exit 1
-    fi
-    # debugfs exits 0 even when an individual command fails, so its stderr is
-    # the only failure signal there is; everything but its version banner is an
-    # error. Silencing the stream instead would let a rename of `sif` turn this
-    # into a no-op that still reports success.
-    errs="$(debugfs -w -f "${cmds}" "${img}" 2>&1 >/dev/null | grep -v '^debugfs [0-9]' || true)"
-    if [ -n "${errs}" ]; then
-        echo "error: debugfs could not pin the seeded timestamps in ${img}: ${errs}" >&2
-        exit 1
-    fi
-    rm -f "${cmds}"
-}
+# Sourced by a path derived from this script's own location, which is what makes
+# --assemble mode work unchanged: that mode re-executes THIS FILE inside the
+# container with the repo bound at /work, so ${SCRIPT_DIR} is /work/os there and
+# the same expression resolves on both sides of the boundary.
+# shellcheck source=mkimage-common.sh
+. "${SCRIPT_DIR}/mkimage-common.sh"
 
 # Formats one partition slot's ext4 filesystem into a standalone image file.
 # Args: out-file size-MiB fs-label fs-uuid [seed-dir]

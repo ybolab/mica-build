@@ -23,33 +23,39 @@
 # a test-only shortcut, and in particular there is no `-kernel` path: booting
 # the kernel directly would skip the two components most likely to be wrong.
 #
-# DETERMINISM, AND THE ONE THING IT STILL DOES NOT COVER. Two assemblies of
-# identical inputs must produce identical bytes. PLAN-014 hangs byte-identity
-# gates on RFCT-111 and RFCT-112, and a gate that fails for reasons unrelated to
-# the work it gates is a gate everyone learns to wave through. The controls are
-# the ones os/mkimage-v2.sh already uses, for the same reasons: GPT GUIDs, FAT
-# volume ids and ext4 fs UUIDs fixed in board.env, `mkfs.vfat --invariant`,
-# every FAT entry staged with its mtime touched to FILE_MTIME and copied with
-# `mcopy -m`, E2FSPROGS_FAKE_TIME exported into the assembly, and
-# `mke2fs -E hash_seed` pinned to each filesystem's own UUID.
+# DETERMINISM. Two assemblies of identical inputs must produce identical bytes.
+# PLAN-014 hangs byte-identity gates on RFCT-111 and RFCT-112, and a gate that
+# fails for reasons unrelated to the work it gates is a gate everyone learns to
+# wave through. The controls are the ones os/mkimage-v2.sh already uses, for the
+# same reasons: GPT GUIDs, FAT volume ids and ext4 fs UUIDs fixed in board.env,
+# `mkfs.vfat --invariant`, every FAT entry staged with its mtime touched to
+# FILE_MTIME and copied with `mcopy -m`, E2FSPROGS_FAKE_TIME exported into the
+# assembly, and `mke2fs -E hash_seed` pinned to each filesystem's own UUID.
 #
 # This file had NONE of them. Two assemblies four minutes apart differed in nine
 # MiB: the ESP, both boot FATs, the four ext4 superblocks and EPHEMERAL's two
-# backup superblocks. Eight of those nine now hold byte-for-byte.
+# backup superblocks. Eight closed when the controls above landed.
 #
-# THE NINTH DOES NOT, and it is a defect rather than an accepted deviation.
-# EPHEMERAL's inode table still moves, in two ways, and both come from how the
-# factory /var is seeded below rather than from anything on this list:
-#   - `.mos-var-seeded` is created fresh on every assembly, so its atime, mtime
-#     and ctime are all assembly time;
-#   - `cp -a` stages the tree so the stamp can be added without writing into
-#     _out, and `mke2fs -d` copies each SOURCE inode's ctime. The kernel stamps
-#     ctime at the moment of the copy and no syscall can set it, so a `touch`
-#     fixes the first of these and not the second. Measured: 93 inodes move,
-#     one of them in three timestamps and ninety-two in ctime alone.
-# os/mkimage-v2.sh seeds EPHEMERAL the same way and has the same defect. The
-# mechanism is being chosen there; whatever lands is meant to apply here too,
-# and a second, divergent fix in this file would be worse than the defect.
+# THE NINTH WAS EPHEMERAL'S INODE TABLE, and it is closed by two lines further
+# down rather than by anything on that list, because `mke2fs -d` copies the
+# SOURCE inode's times into the image and no control over mke2fs reaches them:
+#   - `.mos-var-seeded` is authored here on every assembly, so its mtime is
+#     assembly time until it is touched to FILE_MTIME;
+#   - every seeded inode's ctime is the moment `cp -a` staged the tree, and
+#     its atime is whatever relatime last made of the source. NO syscall sets
+#     ctime, so the only way to pin it is to write the inode table. That is
+#     pin_seeded_times(), in the shared os/mkimage-common.sh -- SHARED with
+#     os/mkimage-v2.sh, which has the identical defect for the identical
+#     reason, and not copied: it is a correctness argument about which of an
+#     inode's four times belong to the producer, and two copies of an argument
+#     drift. It runs INSIDE the container, because the host cannot: mke2fs
+#     1.46.5, no sgdisk, no mcopy.
+# Measured on this branch, same inputs staged once: four assemblies over twelve
+# minutes, all byte-identical. Remove pin_seeded_times and MiB 1361 reopens by
+# 465 bytes over 93 inodes; remove the stamp touch and it reopens by 5;
+# reset the staged tree's atimes so relatime bumps them again -- the state a
+# machine that has not built today is in -- and it reopens by 925 over 92
+# atimes and 93 ctimes, which is the same defect looking like a flake.
 #
 # Deviations that ARE accepted, the first two inherited from os/mkimage-v2.sh:
 # the FAT partitions are byte-identical only across builds using the same mtools
@@ -141,7 +147,14 @@ trap 'rm -rf "${WORK}"' EXIT
 # first mounted has nothing to race; see the comment on the mkfs below.
 FACTORY_VAR="${OUT_DIR}/factory-var"
 if [ ! -d "${FACTORY_VAR}" ]; then
-    echo "error: ${FACTORY_VAR} not found. The rootfs build exports it; run 'MOS_BOARD=${MOS_BOARD} bash os/rootfs/build-v2.sh' first" >&2
+    # The board is a LITERAL here, matching the same instruction on line 77.
+    # It used to interpolate ${MOS_BOARD}, which no board.env sets and this
+    # script never needs -- so under `set -u` the one case someone wrote an
+    # actionable message for died with "MOS_BOARD: unbound variable" instead of
+    # printing it. A ${MOS_BOARD:-x64} default would still be wrong: this file
+    # hardcodes x64 in LAYOUT_ENV and OUT_DIR and reads MOS_BOARD for nothing,
+    # so a cx3576 left in the environment would name the wrong board to build.
+    echo "error: ${FACTORY_VAR} not found. The rootfs build exports it; run 'MOS_BOARD=x64 bash os/rootfs/build-v2.sh' first" >&2
     exit 1
 fi
 mkdir -p "${WORK}/factory-var"
@@ -199,6 +212,14 @@ cd /w
 # merely set -- which is every key in the file -- arrives unset, and `set -u`
 # then names one of them while the other forty-nine are equally missing.
 . /w/layout.env
+# The shared assembler code, carried across the container boundary the same way
+# the layout is: copied into the work directory on the host, sourced by a
+# literal path here. This heredoc is <<'INNER' -- single-quoted so the HOST
+# expands none of the ${...} below, which the container must expand against the
+# layout just sourced -- and a `.` of a literal path is the only route in that
+# contains no `$` at all, so it reads identically on both sides of that quote.
+# Splicing the function's text in would have meant unquoting the heredoc.
+. /w/mkimage-common.sh
 MIB=1048576
 
 # DETERMINISM, and why each control below is a separate line.
@@ -353,6 +374,11 @@ mkfs_ext4() {
         mkfs.ext4 -q -F -b "${EXT4_BLOCK_SIZE}" -O "${EXT4_FEATURES}" \
             -E "root_owner=0:0,hash_seed=${uuid}" \
             -L "${label}" -U "${uuid}" -d "${seed}" "${out}"
+        # Every seeded filesystem, not just today's only one: an unseeded
+        # mke2fs invents all four times and E2FSPROGS_FAKE_TIME pins them, but
+        # the moment a tree is copied in, two of them come from the host clock.
+        # os/mkimage-v2.sh:mkext4 calls this at exactly the same point.
+        pin_seeded_times "${out}"
     else
         mkfs.ext4 -q -F -b "${EXT4_BLOCK_SIZE}" -O "${EXT4_FEATURES}" \
             -E "root_owner=0:0,hash_seed=${uuid}" \
@@ -376,6 +402,12 @@ mkfs_ext4() {
 # running at all on a normal boot; it stays for the path where EPHEMERAL has
 # been wiped, which is not a boot anything else is racing.
 : >"factory-var/.mos-var-seeded"
+# The one file in the seed this script authors, so the one whose mtime is this
+# script's to pin. pin_seeded_times() below handles its atime and ctime along
+# with every other seeded inode's, but it deliberately does not touch mtime --
+# that is the producer's data everywhere else in this tree, and here there is no
+# producer but this line. Without it `.mos-var-seeded` alone still moves.
+touch -h -d "${FILE_MTIME}" "factory-var/.mos-var-seeded"
 if [ ! -d factory-var/lib ]; then
     echo "error: the staged factory /var has no lib/; seeding EPHEMERAL from it would produce a /var with no dpkg database and no mosd state directory" >&2
     exit 1
@@ -441,6 +473,13 @@ echo "assembled ${DISK_MIB} MiB, ${SLOT_MIB} MiB per rootfs slot"
 INNER
 
 cp "${LAYOUT_ENV}" "${WORK}/layout.env"
+# The shared assembler code crosses the same way, and by copy rather than by a
+# second bind mount: this script has exactly one mount and one path vocabulary
+# (/w), and adding an /os alongside it would mean two rules for "where does a
+# path inside the container come from" in a file whose inner script is already
+# a heredoc. The copy is also what keeps the container's view immutable for the
+# length of the run -- /w is torn down by the EXIT trap either way.
+cp "${SCRIPT_DIR}/mkimage-common.sh" "${WORK}/mkimage-common.sh"
 {
     echo "DISK_MIB=${disk_mib}"
     echo "SLOT_MIB=${slot_mib}"
