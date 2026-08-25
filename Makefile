@@ -37,7 +37,7 @@ help:
 	@echo "  docs-verify         assert both document indexes agree with the tree, in both directions"
 	@echo "  docs-verify-test    prove the index assertions actually fail on a duplicated row or entry"
 	@echo "  podman              build the container engine from source into os/podman/out-\$$MOS_ARCH"
-	@echo "  build-env           build the digest-pinned builder image localhost/mos-build-base"
+	@echo "  build-env           build the pinned builder images localhost/mos-build-{base,c,go,rust}"
 	@echo "  os-quadlet-doc-test run docs/design/containers.md's examples through Quadlet"
 	@echo "  cx3576-<t>          delegate target <t> to board/cx3576 (uboot|kernel|rootfs|image|clean)"
 
@@ -258,13 +258,25 @@ podman:
 # "what did this build run on" has to be answerable from the tree rather than
 # from a build log.
 #
-# It carries only the language-independent floor -- ca-certificates, git, file,
-# binutils, xz -- and ASSERTS that floor from inside itself, so an apt archive
-# that moved backwards fails the build rather than the component two images
-# above it. Per-language apt lists stay in mos-build-{c,go,rust}: one shared
-# list is one cache key for unrelated compilers, and os/podman/Dockerfile
-# measured what that costs at about 42 minutes of recompilation for a
-# one-package edit.
+# mos-build-base carries only the language-independent floor -- ca-certificates,
+# git, file, binutils, xz -- and ASSERTS that floor from inside itself, so an apt
+# archive that moved backwards fails the build rather than the component two
+# images above it. mos-build-{c,go,rust} are FROM it and each keeps its OWN apt
+# list: one shared list is one cache key for unrelated compilers, and
+# os/podman/Dockerfile measured what that costs at about 42 minutes of
+# recompilation for a one-package edit.
+#
+# WHAT EACH ONE ASSERTS, AND WHY THE TWO KINDS DIFFER. mos-build-c's gcc comes
+# from apt against live deb.debian.org, which no digest here pins, so it asserts
+# version FLOORS -- an exact match would go red on the next trixie point release.
+# mos-build-go and mos-build-rust install tarballs pinned by sha256, so they
+# assert EXACT versions: there the version is a fact the tree owns.
+#
+# All four assert by USE as well as by number: each compiles and links a program
+# and reads the architecture back out of the ELF, because a version string
+# answers on an image with no libc headers, no linker and no std for its target.
+# mos-build-go and mos-build-rust also link for the OTHER architecture, which is
+# what the device builds actually need.
 #
 # Needs docker. MOS_BUILD_PLATFORM=linux/<arch> cross-builds it; the default is
 # the host. It fails loudly when a pin is missing, unresolved or written as a
