@@ -179,3 +179,102 @@ jobs:
           echo "  make os-image-cx3576-v2 / os-verify-cx3576-v2   image assembly and verification" >&2
           echo "Not run here (board artifact builds; cross toolchains and BSP trees):" >&2
           echo "  make cx3576-uboot / cx3576-kernel / cx3576-image" >&2
+          echo "Not run here (bash only, needs neither bun nor docker; simply not wired yet):" >&2
+          echo "  make os-shell-pipefail-lint" >&2
+
+  # The os/verify bun+TypeScript suite, and the board-definition schema lint
+  # that now lives inside it. A SEPARATE JOB rather than a step in
+  # offline-suites, because that job's first sentence is that its suites need
+  # neither root nor docker, and this one needs docker. A scope statement that
+  # quietly stopped being true would be worse than an extra job.
+  #
+  # WHICH BUN CI RUNS IS THE PIN DECISION, and the decision is: none. No bun is
+  # installed here. The runner has none of its own, so os/verify/run.sh takes
+  # its container route and runs the bun pinned by digest as IMAGE_BUN_1 in
+  # os/build-env/images.env -- the same bun a developer without one gets, and
+  # the same one on every push regardless of what a runner image happens to
+  # ship. Installing bun instead would have meant either a floating
+  # `curl bun.sh/install` -- the loosest kind of reference this campaign spent
+  # R6 removing -- or a second pin, in a second place, free to disagree with the
+  # first. This way the tool-less-host path is not a claim tested once by hand;
+  # it is the path CI takes, so it goes red the day it stops working.
+  #
+  # THIS IS A COVERAGE INCREASE, not a like-for-like replacement. Neither
+  # os-layout-lint nor os-layout-lint-test ran here before, so the
+  # board-definition schema is checked on push for the first time; and since the
+  # lint's 42 cases live in the same suite, os-verify-test covers them too.
+  os-verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install suite dependencies
+        run: |
+          set -euo pipefail
+          SUDO=""
+          [ "$(id -u)" -eq 0 ] || SUDO="sudo"
+          $SUDO apt-get update
+          $SUDO apt-get install -y --no-install-recommends bash make ca-certificates git
+
+      # The precondition, asserted rather than assumed. A runner that HAD a bun
+      # would run the suite on that bun and pass, and the pinned container --
+      # the thing this job exists to exercise -- would never be touched: a green
+      # tick about something other than what it claims. A runner with no docker
+      # would fail deep inside run.sh instead of here. Both are named now.
+      - name: This runner has no bun, which is what makes the next steps a proof
+        run: |
+          set -euo pipefail
+          command -v docker >/dev/null 2>&1 || {
+            echo "error: no docker on this runner. os/verify runs bun in the container pinned as" >&2
+            echo "       IMAGE_BUN_1 in os/build-env/images.env, and there is no other bun here." >&2
+            exit 1
+          }
+          docker version --format 'docker {{.Server.Version}}'
+          if command -v bun >/dev/null 2>&1; then
+            echo "error: this runner already has bun at $(command -v bun)." >&2
+            echo "       os/verify would use it and the pinned container would go unexercised, so this" >&2
+            echo "       job would report green about a route it never took. Either remove it, or set" >&2
+            echo "       MOS_VERIFY_CONTAINER=1 on the steps below so the pin is still what runs." >&2
+            exit 1
+          fi
+          # EXACTLY what run.sh's discovery tests -- an executable at
+          # $HOME/.bun/bin/bun -- and not `[ -e "$HOME/.bun" ]`. Driven from the
+          # failing side: `bun install` creates $HOME/.bun/install/cache as a
+          # side effect even when the binary lives elsewhere, so the looser test
+          # rejects a runner that is genuinely bun-less. A precondition that is
+          # stricter than the rule it guards fails honest runs.
+          if [ -x "$HOME/.bun/bin/bun" ]; then
+            echo "error: $HOME/.bun/bin/bun exists; run.sh prefers it over the container." >&2
+            echo "       Same problem as a bun on PATH: the pin would go unexercised." >&2
+            exit 1
+          fi
+          echo "no bun on PATH and none at ~/.bun/bin/bun: os/verify takes its pinned-container route"
+
+      # `tee` and then grep the announce line, rather than trusting the exit
+      # status alone: a pass proves the suite ran, and this proves WHICH bun ran
+      # it. The reference is resolved by from.sh, the one resolver, so this
+      # assertion cannot drift from the pin the way a literal here would.
+      - name: The os/verify suite (108 tests), in the pinned bun container
+        run: |
+          set -euo pipefail
+          image="$(bash os/build-env/from.sh --ref IMAGE_BUN_1)"
+          make os-verify-test 2>&1 | tee /tmp/os-verify.log
+          grep -qF "in ${image} (no bun on this host)" /tmp/os-verify.log || {
+            echo "error: the suite passed, but not in the pinned container." >&2
+            echo "       Expected an announce line naming ${image}; os/verify/run.sh prints one on" >&2
+            echo "       every run and it is the only thing that says which bun produced the result." >&2
+            exit 1
+          }
+
+      # The shipped board definitions themselves, which the suite does not check
+      # -- it checks the checker. Both boards, 26 assertions.
+      - name: Both shipped board layouts against the schema
+        run: make os-layout-lint
+
+      - name: What this job does not cover
+        if: always()
+        run: |
+          echo "This job runs bun ONLY as the digest pinned in os/build-env/images.env." >&2
+          echo "It therefore does not check that os/verify works on any other bun --" >&2
+          echo "including whatever bun a developer has on PATH, which is the route" >&2
+          echo "run.sh prefers locally." >&2
