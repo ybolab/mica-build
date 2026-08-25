@@ -15,6 +15,7 @@ import {
   mountDirs,
   mountFault,
   REQUIRED_TOOLS,
+  routeReason,
   runChecked,
   TOOL_IMAGE_KEY,
   TOOL_PACKAGES,
@@ -48,6 +49,26 @@ describe('the route is chosen once, and a value that is neither is refused', () 
     // the run then being about a bun -- or a tool set -- nobody asked for.
     expect(() => chooseRoute('contaner', [])).toThrow(/takes 'host' or 'container'/)
     expect(() => chooseRoute('1', ['sgdisk'])).toThrow(/is '1'/)
+  })
+})
+
+describe('the announce line says WHY, because it is the only thing that says which tools ran', () => {
+  test('missing tools are named', () => {
+    expect(routeReason(undefined, ['sgdisk', 'mdir'])).toBe('no sgdisk, mdir on this host')
+  })
+
+  test('a forced container on a tool-ful host names the variable that forced it', () => {
+    expect(routeReason('container', [])).toBe('MOS_VERIFY_TOOLS=container')
+  })
+
+  test('never an empty subject', () => {
+    // Driven by a real regression: once parity-cli decided the route up front
+    // and passed it in, createToolRuntime stopped computing the missing list
+    // and announced "(no  on this host)".
+    for (const reason of [routeReason(undefined, []), routeReason('container', []), routeReason('host', [])]) {
+      expect(reason).not.toMatch(/^no\s*$|no\s+on this host/)
+      expect(reason.length).toBeGreaterThan(3)
+    }
   })
 })
 

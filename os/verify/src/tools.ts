@@ -234,6 +234,22 @@ export function chooseRoute(forced: string | undefined, missing: readonly string
   return missing.length === 0 ? 'host' : 'container'
 }
 
+/**
+ * Why the container route was taken, in the words the caller would recognise.
+ *
+ * Separate from chooseRoute because the ROUTE and the REASON have different
+ * inputs, and conflating them cost a message: once parity-cli started deciding
+ * the route up front and passing it in, createToolRuntime stopped computing the
+ * missing list at all and announced "(no  on this host)" -- a sentence with the
+ * subject removed. The announce line is the only thing that says which tools
+ * produced a verdict, so an empty one is not cosmetic.
+ */
+export function routeReason(forced: string | undefined, missing: readonly string[]): string {
+  if (missing.length > 0) return `no ${missing.join(', ')} on this host`
+  if (forced === 'container') return 'MOS_VERIFY_TOOLS=container'
+  return 'asked for'
+}
+
 function isDir(path: string): boolean {
   return existsSync(path) && statSync(path).isDirectory()
 }
@@ -329,7 +345,10 @@ export async function createToolRuntime(request: RuntimeRequest): Promise<ToolRu
   const log = request.log ?? ((line: string) => console.error(line))
   const forced = request.route ?? process.env['MOS_VERIFY_TOOLS']
 
-  const missing = forced === 'container' ? [] : await missingHostTools()
+  // Computed even when the route is already decided: it is the REASON, not the
+  // decision, and the announce line is the only thing that says which tools
+  // produced a verdict.
+  const missing = await missingHostTools()
   const route = chooseRoute(forced, missing)
 
   if (route === 'host') {
@@ -517,7 +536,7 @@ async function createContainerRuntime(
     )
   }
 
-  const announce = `os/verify: image tools in ${image} (no ${missing.join(', ')} on this host)`
+  const announce = `os/verify: image tools in ${image} (${routeReason(request.route ?? process.env['MOS_VERIFY_TOOLS'], missing)})`
   log(announce)
 
   return {

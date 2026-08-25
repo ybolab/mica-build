@@ -181,6 +181,11 @@ status and cannot tell which answered.
 | any tool missing | the pinned container |
 | any tool missing, and no docker | **refused**, naming both |
 
+The route is announced, as bun's is, and the announce line is the only thing
+that says which tools produced a verdict:
+
+    os/verify: image tools in alpine:3.21@sha256:48b0309c… (no sgdisk, mdir, mcopy, mlabel, unsquashfs, veritysetup on this host)
+
 The container is created **once** per run and each call is a `docker exec` into
 it. `docker run` costs ~200 ms and `apk add` costs seconds; the shell verifier
 pays both once because it re-execs its whole self inside, and a port that made
