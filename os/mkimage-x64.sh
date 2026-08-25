@@ -13,7 +13,7 @@
 # assertions, where a mistake in either is a mistake in both.
 #
 # What the two DO share is the layout format and the RAUC slot model, and those
-# are shared as files rather than as copied constants: os/layout/x64-v2.env and
+# are shared as files rather than as copied constants: os/boards/x64/board.env and
 # the same os/rauc/render-config.sh.
 #
 # WHAT THIS IMAGE IS FOR. x64 is a product target -- amd64 industrial PCs --
@@ -26,11 +26,11 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(dirname "${SCRIPT_DIR}")"
-LAYOUT_ENV="${REPO_ROOT}/os/layout/x64-v2.env"
+LAYOUT_ENV="${REPO_ROOT}/os/boards/x64/board.env"
 OUT_DIR="${REPO_ROOT}/_out/x64"
-GRUB_CFG_IN="${SCRIPT_DIR}/boot/x64-grub.cfg"
+GRUB_CFG_IN="${SCRIPT_DIR}/boards/x64/grub.cfg"
 
-# shellcheck source=layout/x64-v2.env
+# shellcheck source=boards/x64/board.env
 . "${LAYOUT_ENV}"
 
 ROOTFS_IMG="${OUT_DIR}/rootfs-verity.img"

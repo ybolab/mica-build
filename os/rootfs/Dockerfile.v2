@@ -126,7 +126,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # 11 MB of a rootfs slot, and it makes "this board has no Bluetooth" a runtime
 # discovery rather than a property of the image.
 #
-# BOARD_RADIOS comes from the layout: os/layout/<board>-v2.env. Empty means the
+# BOARD_RADIOS comes from the layout: os/boards/<board>/board.env. Empty means the
 # board declares none, which is a statement rather than an omission.
 ARG BOARD_RADIOS=""
 RUN set -eu; \
@@ -751,7 +751,7 @@ RUN rm -f /etc/ssh/ssh_host_*
 # seed oneshots (mos-seed-state converges on every boot; the others act on
 # first boot), the /var fill-up policies and the fw_env.config pointing at
 # the uenv pair.
-# The tree is rendered from os/layout/cx3576-v2.env by build-v2.sh; nothing
+# The tree is rendered from os/boards/cx3576/board.env by build-v2.sh; nothing
 # here duplicates a layout constant. Modes are set explicitly so the packed
 # image cannot inherit a host umask.
 # /root gets its own mkdir/chown/chmod rather than joining the 0755 mountpoint
@@ -823,7 +823,7 @@ RUN cp -a /tmp/overlay/. / && \
 #
 # var-lib-bluetooth.mount, etc-wpa_supplicant.mount and etc-hostapd.mount are
 # the writable configuration directories for bluez, wpa_supplicant and hostapd.
-# They live in os/rootfs/overlay-cx3576/ with the rest of that board's radio
+# They live in os/boards/cx3576/overlay/ with the rest of that board's radio
 # facts, so on a board with none they are simply not there -- and the chmod and
 # the local-fs.target.wants loop above used to name them unconditionally, which
 # is what failed the first x64 build after the move: `chmod: cannot access`.
@@ -1022,8 +1022,15 @@ RUN set -eu; \
     esac; \
     echo "mos-mqtt-broker system account created: ${ent}"
 
-# Board hardware init: generic best-effort oneshots (os/hwinit, board-agnostic
-# mechanism) + per-board facts staged from BOARD_DIR/init into /etc/mos.
+# Board hardware init: best-effort oneshots from os/boards/cx3576/hwinit/ +
+# per-board facts staged from BOARD_DIR/init into /etc/mos.
+#
+# The MECHANISM is board-agnostic -- nothing below names a board -- but the
+# units are filed under cx3576 because cx3576 is the only board that declares
+# a hardware fact for them to read. x64 declares none, so the loop below
+# installs none of them there; the COPY is what it has always been, a
+# fixed path staged into /tmp for the loop to select from.
+#
 # BOARD_INIT_DIR may be an empty dir (boards without hw-init facts): every unit
 # is condition-gated on its conf file, so enabling them is safe either way.
 #
@@ -1031,8 +1038,9 @@ RUN set -eu; \
 # restated here. A hardcoded list is what let this file drift behind the
 # (since deleted) v1 Dockerfile once already: mos-mac and mos-gadget were
 # installed but silently left disabled, costing the image its stable MAC and
-# its USB debug console with no error anywhere. Adding os/hwinit/hwinit-<n>
-# plus mos-<n>.service, and an <n>.conf to the board, is enough.
+# its USB debug console with no error anywhere. Adding hwinit-<n> plus
+# mos-<n>.service under os/boards/cx3576/hwinit/, and an <n>.conf to the
+# board, is enough.
 #
 # A BOARD ONLY GETS THE SCRIPTS FOR FACILITIES IT DECLARES. Every unit is
 # condition-gated on its conf file, so shipping all of them to every board was
@@ -1048,7 +1056,7 @@ RUN set -eu; \
 # CAN bitrate, MAC seed and gadget IDs all live in BOARD_INIT_DIR and are read
 # from /etc/mos at runtime by the units.
 ARG BOARD_INIT_DIR
-COPY os/hwinit/ /tmp/hwinit/
+COPY os/boards/cx3576/hwinit/ /tmp/hwinit/
 COPY ${BOARD_INIT_DIR}/ /tmp/board-init/
 RUN set -eu; \
     mkdir -p /etc/mos /usr/lib/mos /etc/systemd/system/multi-user.target.wants \
@@ -1060,8 +1068,8 @@ RUN set -eu; \
         n="$(basename "$c" .conf)"; \
         declared=$((declared + 1)); \
         script="/tmp/hwinit/hwinit-$n"; unit="/tmp/hwinit/mos-$n.service"; \
-        [ -f "$script" ] || { echo "error: /etc/mos/$n.conf is a board fact that no hwinit script reads (there is no os/hwinit/hwinit-$n); a fact nothing consumes is a silent no-op on the device" >&2; exit 1; }; \
-        [ -f "$unit" ] || { echo "error: os/hwinit/hwinit-$n has no unit to run it (there is no os/hwinit/mos-$n.service)" >&2; exit 1; }; \
+        [ -f "$script" ] || { echo "error: /etc/mos/$n.conf is a board fact that no hwinit script reads (there is no os/boards/cx3576/hwinit/hwinit-$n); a fact nothing consumes is a silent no-op on the device" >&2; exit 1; }; \
+        [ -f "$unit" ] || { echo "error: os/boards/cx3576/hwinit/hwinit-$n has no unit to run it (there is no os/boards/cx3576/hwinit/mos-$n.service)" >&2; exit 1; }; \
         install -m 0755 "$script" /usr/lib/mos/; \
         install -m 0644 "$unit" /usr/lib/systemd/system/; \
         ln -sf "/usr/lib/systemd/system/mos-$n.service" \

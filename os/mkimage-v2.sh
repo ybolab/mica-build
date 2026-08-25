@@ -5,10 +5,10 @@ set -euo pipefail
 # disk image — layout v2, eleven partitions: the raw Rockchip loader area, a
 # redundant U-Boot env pair, two FAT32 boot slots, two raw squashfs+dm-verity
 # rootfs slots and the meta/state/ephemeral/data ext4 partitions. Every layout
-# constant comes from os/layout/cx3576-v2.env; nothing is duplicated here.
+# constant comes from os/boards/cx3576/board.env; nothing is duplicated here.
 #
 # Each boot slot holds Image, rk3576-src.dtb, the shared boot.scr compiled from
-# os/boot/cx3576-boot.cmd, and a per-slot mos-verity.env. It holds NO
+# os/boards/cx3576/boot.cmd, and a per-slot mos-verity.env. It holds NO
 # extlinux/extlinux.conf: U-Boot tries extlinux before boot.scr in both boot
 # frameworks, so an extlinux config here would silently bypass the RAUC A/B
 # handshake (docs/design/uboot-ab-handshake.md sections 5.4-5.5).
@@ -27,7 +27,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(dirname "${SCRIPT_DIR}")"
-LAYOUT_ENV="${SCRIPT_DIR}/layout/cx3576-v2.env"
+LAYOUT_ENV="${SCRIPT_DIR}/boards/cx3576/board.env"
 
 if [ ! -f "${LAYOUT_ENV}" ]; then
     echo "error: ${LAYOUT_ENV} not found" >&2
@@ -45,7 +45,7 @@ else
     ROOTFS_SLOT_PINNED=0
     _slot_pin=""
 fi
-# shellcheck source=layout/cx3576-v2.env
+# shellcheck source=boards/cx3576/board.env
 . "${LAYOUT_ENV}"
 if [ "${ROOTFS_SLOT_PINNED}" = 1 ]; then
     if ! [[ "${_slot_pin}" =~ ^[1-9][0-9]*$ ]]; then
@@ -61,7 +61,7 @@ export E2FSPROGS_FAKE_TIME
 ROOTFS_PRODUCER="os/rootfs/build-v2.sh"
 # Overridable only so os/mkimage-v2-selftest.sh can point the numbering guard
 # below at a deliberately-stale copy; every real build uses the tree's own file.
-BOOT_CMD="${BOOT_CMD:-${SCRIPT_DIR}/boot/cx3576-boot.cmd}"
+BOOT_CMD="${BOOT_CMD:-${SCRIPT_DIR}/boards/cx3576/boot.cmd}"
 
 # Set by assemble() from rootfs-verity.env, read by mkverityenv().
 root_hash=""
@@ -79,7 +79,7 @@ env_file_get() {
     sed -n "s/^$2=//p" "$1" | tail -n1
 }
 
-# GPT tooling — sgdisk, and therefore os/layout/cx3576-v2.env — writes GUIDs in
+# GPT tooling — sgdisk, and therefore os/boards/cx3576/board.env — writes GUIDs in
 # uppercase, while udev/libblkid write the /dev/disk/by-partuuid/ names in
 # lowercase, which is the form the kernel cmdline has to use. Both spellings
 # denote the same GUID, so every identifier comparison in this script folds
@@ -163,7 +163,7 @@ mkbootscr() {
         ' "${BOOT_CMD}")"
         if [ "${got}" != "${num}" ]; then
             echo "error: ${BOOT_CMD} sets '${var}' to '${got:-nothing}' for slot ${slot}, but the layout puts that partition at p${num}." >&2
-            echo "boot.scr addresses partitions by number (mmc 0:\${bootpart}); a stale number means U-Boot loads the kernel from the wrong partition, or from none, AFTER it has already persisted the boot-attempt decrement. Update ${BOOT_CMD} to match os/layout/cx3576-v2.env." >&2
+            echo "boot.scr addresses partitions by number (mmc 0:\${bootpart}); a stale number means U-Boot loads the kernel from the wrong partition, or from none, AFTER it has already persisted the boot-attempt decrement. Update ${BOOT_CMD} to match os/boards/cx3576/board.env." >&2
             exit 1
         fi
     done
@@ -288,7 +288,7 @@ assemble() {
         fi
     done
 
-    # LOADER geometry. os/layout/cx3576-v2.env cannot compute, so the identities
+    # LOADER geometry. os/boards/cx3576/board.env cannot compute, so the identities
     # it documents are asserted here: the partition must start exactly where the
     # BootROM looks, must end exactly where uenv-a begins, and its size must be
     # the same number of bytes the U-Boot fit check uses. If these drift the

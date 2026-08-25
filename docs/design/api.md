@@ -3527,9 +3527,9 @@ surface an operator can watch. What 4e adds beyond phase 5 is **mosd** work — 
 bus method and a `rauc install` caller, neither of which exists — plus a staging
 location constrained by size: a bundle staged for `rauc install` is ~72 MiB
 (`docs/task/RFCT-054.md:37-38`) against a 64 MiB STATE
-(`os/layout/cx3576-v2.env:260`), so it must stage on DATA — the same tier §5.2
-chose for `/srv/ui`, for the same reason, and it is the only partition carrying
-`x-systemd.growfs` (`os/rootfs/overlay-v2/etc/fstab.in:16`).
+(`os/boards/cx3576/board.env:260`), so it must stage on DATA — the same tier
+§5.2 chose for `/srv/ui`, for the same reason, and it is the only partition
+carrying `x-systemd.growfs` (`os/rootfs/overlay-v2/etc/fstab.in:16`).
 
 **One asymmetry between this phase and phase 5 that makes §7 concrete rather
 than abstract.** The update-upload path **is** signature-checked and the

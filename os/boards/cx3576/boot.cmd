@@ -25,7 +25,7 @@
 # also the radix RAUC uses for BOOT_x_LEFT. Keep boot-attempts in 1..9.
 #
 # PARTITION NUMBERS. bootpart/rootpart below are literal GPT partition numbers,
-# because hush cannot read os/layout/cx3576-v2.env. They are BOOT_A_PARTNUM /
+# because hush cannot read os/boards/cx3576/board.env. They are BOOT_A_PARTNUM /
 # BOOT_B_PARTNUM / ROOTFS_A_PARTNUM / ROOTFS_B_PARTNUM from that file, and
 # os/mkimage-v2.sh refuses to compile this script if any of the four disagrees.
 # Do not edit one here without editing the layout: a stale number sends U-Boot

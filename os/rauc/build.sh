@@ -14,7 +14,7 @@ set -euo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(dirname "$(dirname "${HERE}")")"
 MOS_BOARD="${MOS_BOARD:-cx3576}"
-LAYOUT_ENV="${HERE}/../layout/${MOS_BOARD}-v2.env"
+LAYOUT_ENV="${HERE}/../boards/${MOS_BOARD}/board.env"
 
 if [ ! -f "${LAYOUT_ENV}" ]; then
     echo "error: ${LAYOUT_ENV} not found (MOS_BOARD=${MOS_BOARD})" >&2

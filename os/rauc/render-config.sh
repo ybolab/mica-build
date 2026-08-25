@@ -7,7 +7,7 @@
 #
 # Output: os/rootfs/overlay-v2/etc/rauc/system.conf, which RFCT-013's overlay
 # mechanism copies into the image at /etc/rauc/system.conf. The rendered file
-# is GITIGNORED, never committed: the template plus os/layout/cx3576-v2.env are
+# is GITIGNORED, never committed: the template plus os/boards/cx3576/board.env are
 # the single source of truth, and a committed rendering could drift from them
 # with nothing to notice until after the fact. os/rootfs/build-v2.sh runs this
 # renderer before staging the overlay; --check (run by os/bundle.sh) now only
@@ -19,7 +19,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(dirname "${SCRIPT_DIR}")"
 REPO_ROOT="$(dirname "${REPO_ROOT}")"
 MOS_BOARD="${MOS_BOARD:-cx3576}"
-LAYOUT_ENV="${REPO_ROOT}/os/layout/${MOS_BOARD}-v2.env"
+LAYOUT_ENV="${REPO_ROOT}/os/boards/${MOS_BOARD}/board.env"
 OVERLAY="${REPO_ROOT}/os/rootfs/overlay-v2"
 # Overridable only so os/mkimage-v2-selftest.sh can drive the renderer against a
 # deliberately-broken template; every real invocation uses the tree's own files.
@@ -39,7 +39,7 @@ if [ ! -f "${LAYOUT_ENV}" ]; then
     echo "error: ${LAYOUT_ENV} not found (MOS_BOARD=${MOS_BOARD})" >&2
     exit 1
 fi
-# shellcheck source=../layout/cx3576-v2.env
+# shellcheck source=../boards/cx3576/board.env
 # Sourced BEFORE the input list is decided, because what is required depends on
 # RAUC_BOOTLOADER, which the layout defines. Reading it first would have taken
 # the `:-uboot` default on every board and demanded fw_env.config from a grub

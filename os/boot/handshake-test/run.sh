@@ -6,7 +6,7 @@ set -euo pipefail
 # Builds (once, with network) a U-Boot v2026.07 SANDBOX binary carrying the
 # board's persistent-env contract, caches the artifacts under _out/, then runs
 # os/boot/handshake-test/harness.sh inside the builder image against the
-# SHIPPED os/boot/cx3576-boot.cmd. Every run after the first build is offline:
+# SHIPPED os/boards/cx3576/boot.cmd. Every run after the first build is offline:
 # the builder image is local and the run mounts only local paths.
 #
 #   make os-uboot-handshake-test        # or: bash os/boot/handshake-test/run.sh

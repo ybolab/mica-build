@@ -5,7 +5,7 @@ set -euo pipefail
 # can be exercised without the BSP and without os/rootfs/build-v2.sh. Asserts
 # that two consecutive assemblies are byte-identical and that the resulting GPT
 # carries all eleven partitions with the labels, GUIDs and typecodes pinned in
-# os/layout/cx3576-v2.env, plus the guards that refuse a stale partition number
+# os/boards/cx3576/board.env, plus the guards that refuse a stale partition number
 # or a loader area that does not contain a loader.
 #
 # Everything is created under a private $TMPDIR workspace; nothing outside it
@@ -13,8 +13,8 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(dirname "${SCRIPT_DIR}")"
-# shellcheck source=layout/cx3576-v2.env
-. "${SCRIPT_DIR}/layout/cx3576-v2.env"
+# shellcheck source=boards/cx3576/board.env
+. "${SCRIPT_DIR}/boards/cx3576/board.env"
 
 WORK="$(mktemp -d)"
 trap 'rm -rf "${WORK}"' EXIT
@@ -445,9 +445,9 @@ fi
 
 # Contract cross-check: the filename boot.scr builds at runtime must be the one
 # that is actually present in that slot. Both halves are read out of
-# os/boot/cx3576-boot.cmd rather than restated here, so this fails if either
+# os/boards/cx3576/boot.cmd rather than restated here, so this fails if either
 # the load line or the slotsuffix assignments drift.
-BOOT_CMD_FILE="${SCRIPT_DIR}/boot/cx3576-boot.cmd"
+BOOT_CMD_FILE="${SCRIPT_DIR}/boards/cx3576/boot.cmd"
 VERITY_BASE="${BOOT_VERITY_ENV_NAME%.env}"
 check "boot.cmd loads the per-slot verity env first" \
     "$(sed -n '/^if load mmc/{s/.*[[:space:]]\([^[:space:]]*\);[[:space:]]*then$/\1/p;q}' "${BOOT_CMD_FILE}")" \

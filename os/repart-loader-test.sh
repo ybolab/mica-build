@@ -34,12 +34,12 @@
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-LAYOUT_ENV="${REPO_ROOT}/os/layout/cx3576-v2.env"
+LAYOUT_ENV="${REPO_ROOT}/os/boards/cx3576/board.env"
 if [ ! -f "${LAYOUT_ENV}" ]; then
     echo "error: ${LAYOUT_ENV} not found" >&2
     exit 1
 fi
-# shellcheck source=layout/cx3576-v2.env
+# shellcheck source=boards/cx3576/board.env
 . "${LAYOUT_ENV}"
 
 GROWN_SIZE="8G"

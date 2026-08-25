@@ -19,7 +19,7 @@
 #   boot-cmdline-b.txt    kernel append line for the B slot
 #   rootfs-report-v2.txt  package list + installed size
 #
-# Every layout constant is read from os/layout/cx3576-v2.env.
+# Every layout constant is read from os/boards/cx3576/board.env.
 set -euo pipefail
 
 SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
@@ -47,7 +47,7 @@ x64)
     ;;
 esac
 DOCKER_PLATFORM="linux/${MOS_ARCH}"
-LAYOUT_ENV="$REPO_ROOT/os/layout/${MOS_BOARD}-v2.env"
+LAYOUT_ENV="$REPO_ROOT/os/boards/${MOS_BOARD}/board.env"
 BOARD_DIR=${BOARD_DIR:-"$REPO_ROOT/board/${MOS_BOARD}"}
 OUT_DIR="$REPO_ROOT/_out/${MOS_BOARD}"
 # Installed-size budget. A per-board fact for the same reason
@@ -91,13 +91,13 @@ if [ ! -f "$LAYOUT_ENV" ]; then
     echo "error: $LAYOUT_ENV not found" >&2
     exit 1
 fi
-# shellcheck source=../layout/cx3576-v2.env
+# shellcheck source=../boards/cx3576/board.env
 . "$LAYOUT_ENV"
 
 # Board console facts. These describe a board's serial console, not its
 # partition layout -- and the comment here used to say "if a second board ever
 # needs a v2 image they move into a per-board file". x64 is that second board,
-# so they moved: each os/layout/<board>-v2.env now carries its own
+# so they moved: each os/boards/<board>/board.env now carries its own
 # BOARD_CMDLINE_ARGS, and this refuses a layout that forgot to.
 SIZE_BUDGET_MB="${SIZE_BUDGET_MB:-${BOARD_SIZE_BUDGET_MB:-}}"
 if [ -z "$SIZE_BUDGET_MB" ]; then
@@ -220,8 +220,9 @@ else
     echo "note: WITH_MOSD=0; building rootfs without mosd"
 fi
 
-# Board hardware-init facts (confs consumed by the os/hwinit units), staged
-# like mosd so the Dockerfile COPY always has a directory (may be empty).
+# Board hardware-init facts (confs consumed by the os/boards/cx3576/hwinit
+# units), staged like mosd so the Dockerfile COPY always has a directory
+# (may be empty).
 INIT_STAGE="$OUT_DIR/init"
 rm -rf "$INIT_STAGE"
 mkdir -p "$INIT_STAGE"
@@ -275,17 +276,17 @@ cp -a "$OVERLAY_SRC/." "$OVERLAY_STAGE/"
 # It used to live in overlay-v2 and be deleted here for boards that declare no
 # LED. Adding a file and then removing it is a worse statement than never
 # adding it: the shared overlay claimed every board has an indicator, and the
-# truth lived in a conditional somewhere else. os/rootfs/overlay-cx3576/ now
+# truth lived in a conditional somewhere else. os/boards/cx3576/overlay/ now
 # carries mos-status-led, its unit and its wants symlink, so the file's
 # LOCATION is the fact. A board with an indicator ships one by having one.
 #
 # BOARD_HAS_STATUS_LED stays, because the verifier still needs to know which
 # outcome to assert -- present and enabled, or absent entirely.
 
-BOARD_OVERLAY_SRC="$REPO_ROOT/os/rootfs/overlay-$MOS_BOARD"
+BOARD_OVERLAY_SRC="$REPO_ROOT/os/boards/$MOS_BOARD/overlay"
 if [ -d "$BOARD_OVERLAY_SRC" ]; then
     cp -a "$BOARD_OVERLAY_SRC/." "$OVERLAY_STAGE/"
-    echo "overlay: layered $(find "$BOARD_OVERLAY_SRC" -type f | wc -l) board-specific file(s) from overlay-$MOS_BOARD"
+    echo "overlay: layered $(find "$BOARD_OVERLAY_SRC" -type f | wc -l) board-specific file(s) from boards/$MOS_BOARD/overlay"
 fi
 if [ ! -s "$OVERLAY_STAGE/etc/rauc/system.conf" ]; then
     echo "error: os/rauc/render-config.sh produced no system.conf to stage" >&2

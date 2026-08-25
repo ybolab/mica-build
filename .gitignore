@@ -13,7 +13,7 @@ update/sign/.devkeys/
 os/rauc/.devkeys/
 
 # The RAUC system configuration is RENDERED from os/rauc/system.conf.in and
-# os/layout/cx3576-v2.env by os/rauc/render-config.sh, which os/rootfs/build-v2.sh
+# os/boards/cx3576/board.env by os/rauc/render-config.sh, which os/rootfs/build-v2.sh
 # runs before staging the overlay. It is generated rather than committed so the
 # template stays the single source of truth and the rendered file cannot drift
 # away from it.
