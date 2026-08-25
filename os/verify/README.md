@@ -52,9 +52,15 @@ operator (`${X:-y}`, `${X#p}`, `${X/a/b}`, `${#X}`, `${!X}`), the shell special
 parameters and a bare `$`, a reference to a key the file does not define,
 unquoted whitespace, unquoted metacharacters `; & | < > ( )` and globs `* ? [`,
 backslash escapes outside quotes, line continuations, an unterminated quote,
-`export`/`unset`/`source`-style command prefixes, DOS line endings, and
-anything inside `$(( ))` that is not integer arithmetic — including a division
-by zero, a hex literal, a leading-zero octal, `**`, and assignment.
+`export`/`unset`/`source`-style command prefixes, DOS line endings, ANSI-C
+quoting, an unquoted `~`, and anything inside `$(( ))` that is not integer
+arithmetic — including a division by zero, a hex literal, a leading-zero octal,
+`**`, and assignment.
+
+The unquoted `~` is refused for the opposite reason to the rest: a shell
+**does** expand it on the right of an assignment (`A=~/foo` is `/root/foo`), so
+reading it literally here would be a silent disagreement with every existing
+consumer of these files. Quoted, it is a literal tilde and is accepted.
 
 Every refusal names the file, the line, the column and the offending line.
 
