@@ -60,12 +60,27 @@ describe('the route is measured, and both of them happen here', () => {
     // has no `-O ^orphan_file`. os/mkimage-v2.sh's host_can_assemble() probes
     // for the same reason -- "older host tools silently cannot, so probe
     // instead of guessing".
-    const onPath = (await $`sh -c ${'command -v mke2fs'}`.nothrow().quiet()).exitCode === 0
+    // Asserted as the RULE, not as this machine: the suite runs on a host with
+    // a too-old mke2fs and also INSIDE the pinned bun container, which has none
+    // at all, and the probe has to be right about both. A first draft asserted
+    // "mke2fs is on PATH" outright and went red on the container route -- a
+    // test about the machine rather than about the behaviour.
+    const onPath = (await $`sh -c ${'command -v mke2fs >/dev/null 2>&1'}`.nothrow().quiet()).exitCode === 0
     const probe = await mke2fsCanWriteTheseLayouts()
-    expect(`on PATH: ${onPath}`).toBe('on PATH: true')
     expect(typeof probe.why).toBe('string')
     expect(probe.why.length).toBeGreaterThan(10)
-    if (!probe.ok) expect(probe.why).toMatch(/e2fsprogs >= 1\.47/)
+    if (!onPath) {
+      // No tool: the probe must say that, and must not claim capability.
+      expect(probe.ok).toBe(false)
+      expect(probe.why).toBe('there is no mke2fs here at all')
+    } else if (!probe.ok) {
+      // Present and INCAPABLE -- the case that makes this a probe rather than a
+      // `command -v`, and the one this campaign's host is in.
+      expect(probe.why).toMatch(/e2fsprogs >= 1\.47/)
+      expect(probe.why).toMatch(/^mke2fs [0-9]/)
+    } else {
+      expect(probe.why).toContain('writes the layouts these boards declare')
+    }
   })
 })
 

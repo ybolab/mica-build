@@ -36,6 +36,13 @@ import type { Toolset } from './toolbox.ts'
  * mke2fs to lay a superblock out on paper.
  */
 export async function mke2fsCanWriteTheseLayouts(): Promise<{ ok: boolean, why: string }> {
+  // Absent and present-but-too-old are different sentences. Rolling them
+  // together would say "cannot write these layouts" about a host that has no
+  // mke2fs at all, which sends a reader to check a version that is not there.
+  if ((await $`sh -c ${'command -v mke2fs >/dev/null 2>&1'}`.nothrow().quiet()).exitCode !== 0) {
+    return { ok: false, why: 'there is no mke2fs here at all' }
+  }
+
   const dir = makeWorkDir('mke2fs-probe')
   const probe = join(dir, 'probe.img')
   try {
@@ -43,7 +50,8 @@ export async function mke2fsCanWriteTheseLayouts(): Promise<{ ok: boolean, why: 
     const r = await $`mke2fs -q -n -t ext4 -b 4096 -O ${'^orphan_file,^metadata_csum_seed'} -E ${'root_owner=0:0,hash_seed=5ac35760-0002-4000-8000-000000000107'} ${probe}`
       .nothrow().quiet()
     if (r.exitCode === 0) return { ok: true, why: "this host's mke2fs writes the layouts these boards declare" }
-    const version = (await $`mke2fs -V`.nothrow().quiet()).stderr.toString().split('\n')[0]?.trim() ?? '(unknown)'
+    const v = await $`mke2fs -V`.nothrow().quiet()
+    const version = `${v.stderr.toString()}${v.stdout.toString()}`.split('\n')[0]?.trim() || 'this mke2fs'
     return {
       ok: false,
       why: `${version} cannot write these layouts (-O ^orphan_file needs e2fsprogs >= 1.47)`,
