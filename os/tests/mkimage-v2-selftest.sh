@@ -92,6 +92,52 @@ mkcmdline() { # out-file rootfs-partition-guid
 mkcmdline "${WORK}/boot-cmdline-a.txt" "$(lc "${ROOTFS_A_GUID}")"
 mkcmdline "${WORK}/boot-cmdline-b.txt" "${ROOTFS_B_GUID}"
 
+# --- synthetic factory /var (stand-in for _out/${MOS_BOARD}/factory-var) ------
+# bb48e49 made FACTORY_VAR a mandatory input to --assemble: EPHEMERAL now ships
+# already seeded from the /var tree os/rootfs/build-v2.sh exports, instead of
+# mos-seed-var racing every other first-boot writer to copy it out. That commit
+# did not touch this file, so from bb48e49 until now every assembly below died
+# on the precondition before it started, and the only check in this repository
+# that claims to prove byte-identical rebuilds proved nothing. It failed
+# silently because it had no Makefile target; it has one now.
+#
+# The tree is FABRICATED, like every other input here, rather than taken from
+# _out/${MOS_BOARD}/factory-var. That is the whole point of this script: it
+# exercises the assembler "without the BSP and without os/rootfs/build-v2.sh"
+# (header above), which is what lets RFCT-086 keep it in the cheap CI lane --
+# minutes, no BSP artifacts -- next to the image-pipeline lane that needs a
+# built image. Reading _out/ would trade one unrunnable state for another: a
+# fresh clone has no _out/, so the script would still refuse on most machines,
+# just with a different message, and producing one costs a ~40-minute emulated
+# arm64 rootfs build to test an assembler that does not care what /var holds.
+#
+# Only two properties of the real export reach the assembler: FACTORY_VAR must
+# be a directory, and it must contain lib/ -- os/mkimage-v2.sh refuses a /var
+# that would leave the image with no dpkg database and no mosd state directory.
+# The subdirectories below are the ones the real export actually carries, so if
+# that guard is ever widened to name another of them this fixture fails the way
+# the real input would rather than passing by being unopinionated.
+#
+# Every entry is touched to FILE_MTIME, the instant the assembler pins its own
+# staged boot files to. mke2fs -d copies the SOURCE inode's atime, mtime and
+# ctime into the image -- E2FSPROGS_FAKE_TIME only reaches the times mke2fs
+# invents for itself, which is crtime and the superblock -- so a fixture built
+# at wall-clock time would seed EPHEMERAL with values that move between runs and
+# the comparison below would be measuring this script instead of the assembler.
+#
+# Note what pinning here can and cannot do, because it is the difference between
+# the two halves of what this check reports. `touch` sets atime and mtime; NO
+# syscall sets ctime, and os/mkimage-v2.sh copies the tree (cp -a) into a
+# staging dir before seeding, which stamps every staged inode's ctime with the
+# time of that copy. So a pinned fixture removes mtime from the comparison and
+# cannot remove ctime. Whatever still moves inside EPHEMERAL after this is the
+# assembler's own doing, which is exactly what the check is for.
+FACTORY_VAR_FIXTURE="${WORK}/factory-var"
+mkdir -p "${FACTORY_VAR_FIXTURE}"/{backups,cache,lib/dpkg,lib/mos,local,log,spool,tmp}
+fill "${FACTORY_VAR_FIXTURE}/lib/dpkg/status" 4096 S
+fill "${FACTORY_VAR_FIXTURE}/log/wtmp" 1024 W
+find "${FACTORY_VAR_FIXTURE}" -exec touch -h -d "${FILE_MTIME}" {} +
+
 # --- assemble twice ----------------------------------------------------------
 # mke2fs must be able to switch orphan_file off (e2fsprogs >= 1.47); when the
 # host cannot, run the assembler in TOOL_IMAGE — the prebuilt equivalent of
@@ -143,6 +189,7 @@ run_assemble() {
             DTB="${WORK}/bsp/rk3576-src.dtb" \
             UBOOT="${UBOOT_FIXTURE}" \
             UBOOT_DEBUG="${UBOOT_DEBUG_FIXTURE}" \
+            FACTORY_VAR="${FACTORY_VAR_FIXTURE}" \
             ROOTFS_VERITY_IMG="${WORK}/${verity}" \
             ROOTFS_VERITY_ENV="${WORK}/rootfs-verity.env" \
             BOOT_CMDLINE_A="${WORK}/boot-cmdline-a.txt" \
@@ -164,6 +211,7 @@ run_assemble() {
             -e DTB=/t/bsp/rk3576-src.dtb \
             -e UBOOT="/t/${UBOOT_FIXTURE#"${WORK}/"}" \
             -e UBOOT_DEBUG="/t/${UBOOT_DEBUG_FIXTURE#"${WORK}/"}" \
+            -e FACTORY_VAR="/t/${FACTORY_VAR_FIXTURE#"${WORK}/"}" \
             -e ROOTFS_VERITY_IMG="/t/${verity}" \
             -e ROOTFS_VERITY_ENV=/t/rootfs-verity.env \
             -e BOOT_CMDLINE_A=/t/boot-cmdline-a.txt \
@@ -344,20 +392,55 @@ check "ephemeral is exactly MOS_VAR_MIB (${MOS_VAR_MIB} MiB), no longer a growth
     "$(part_field "${EPHEMERAL_PARTNUM}" 'Partition size' | cut -d' ' -f1)" \
     "$((MOS_VAR_MIB * MIB_BYTES / SECTOR_SIZE))"
 
-# The four ext4 partitions must carry the pinned label and fs UUID and hold no
-# content beyond what mke2fs itself creates.
-assert_ext4() { # partnum start-mib size-mib fs-label fs-uuid
-    local part="${WORK}/ext4-p$1.img"
+# The four ext4 partitions must carry the pinned label and fs UUID, and hold in
+# their root exactly what their role calls for: nothing beyond what mke2fs
+# itself creates, except EPHEMERAL, which ships SEEDED (below).
+#
+# The optional sixth argument is the expected root listing, space-separated and
+# LC_ALL=C-sorted; omitted means "empty". The comparison is against the listing
+# rather than a COUNT, which is what it was until now: a count answers "how
+# many" when the question is "which", and it would go on passing if the seeded
+# tree were replaced wholesale by the same number of different entries.
+assert_ext4() { # partnum start-mib size-mib fs-label fs-uuid [expected-root-entries]
+    local part="${WORK}/ext4-p$1.img" want="${6-}" got
     dd if="${IMG}" bs=1M skip="$2" count="$3" status=none > "${part}"
     check "p$1 fs label" "$(dumpe2fs -h "${part}" 2>/dev/null | sed -n 's/^Filesystem volume name: *//p')" "$4"
     check "p$1 fs UUID" "$(dumpe2fs -h "${part}" 2>/dev/null | sed -n 's/^Filesystem UUID: *//p')" "$5"
-    check "p$1 is empty apart from lost+found" \
-        "$(debugfs -R 'ls -p /' "${part}" 2>/dev/null | tr '/' '\n' | grep -cvE '^$|^[0-9]+$|^\.$|^\.\.$|^lost\+found$')" 0
+    # grep -v exits 1 when it filters every line out, and under `set -o pipefail`
+    # that would fail the assignment -- but an empty root is the EXPECTED result
+    # for three of these four partitions. `|| got=""` makes "nothing left" mean
+    # the empty listing instead of aborting the run.
+    got="$(debugfs -R 'ls -p /' "${part}" 2>/dev/null | tr '/' '\n' |
+        grep -vE '^$|^[0-9]+$|^\.$|^\.\.$|^lost\+found$' | LC_ALL=C sort | tr '\n' ' ' | sed 's/ $//')" || got=""
+    if [ -n "${want}" ]; then
+        check "p$1 root holds exactly the seeded factory /var" "${got}" "${want}"
+    else
+        check "p$1 is empty apart from lost+found" "${got}" ""
+    fi
     rm -f "${part}"
 }
+
+# EPHEMERAL SHIPS SEEDED (RFCT-106, bb48e49). /var is a mount of this
+# filesystem and an empty one hides the tree the installed packages expect, so
+# the assembler seeds it at build time instead of letting mos-seed-var race
+# every other first-boot writer to copy it out. Asserting "empty apart from
+# lost+found" here — what this script did until now, because bb48e49 changed
+# the assembler and not its selftest — asserts the exact opposite of what the
+# image is required to carry, and would go red against a CORRECT image.
+#
+# The factory half is derived from the fixture: restating it would only assert
+# that two lists in this file agree with each other. The stamp is restated by
+# name, because it is a contract with something outside this script —
+# mos-seed-var's ConditionPathExists is what keeps the first-boot seeder from
+# running over a /var that is already populated, and a stamp that stopped
+# shipping would put the race back without changing anything visible here.
+EPHEMERAL_WANT="$( { echo .mos-var-seeded; ls -A "${FACTORY_VAR_FIXTURE}"; } |
+    LC_ALL=C sort | tr '\n' ' ' | sed 's/ $//')"
+
 assert_ext4 "${META_PARTNUM}" "${META_START_MIB}" "${META_SIZE_MIB}" "${META_FS_LABEL}" "${META_FS_UUID}"
 assert_ext4 "${STATE_PARTNUM}" "${STATE_START_MIB}" "${STATE_SIZE_MIB}" "${STATE_FS_LABEL}" "${STATE_FS_UUID}"
-assert_ext4 "${EPHEMERAL_PARTNUM}" "${EPHEMERAL_START_MIB}" "${MOS_VAR_MIB}" "${EPHEMERAL_FS_LABEL}" "${EPHEMERAL_FS_UUID}"
+assert_ext4 "${EPHEMERAL_PARTNUM}" "${EPHEMERAL_START_MIB}" "${MOS_VAR_MIB}" "${EPHEMERAL_FS_LABEL}" "${EPHEMERAL_FS_UUID}" \
+    "${EPHEMERAL_WANT}"
 assert_ext4 "${DATA_PARTNUM}" "${DATA_START_MIB}" "${DATA_SIZE_MIB}" "${DATA_FS_LABEL}" "${DATA_FS_UUID}"
 
 # Both FAT slots carry the kernel, the dtb and the shared boot.scr, plus their
@@ -643,8 +726,26 @@ else
     echo "FAIL: a rendered RAUC slot device is not a by-partuuid path: $(grep '^device=' "${WORK}/system.conf.real" | tr '\n' ' ')"
     FAILED=1
 fi
-sed 's|^device=/dev/disk/by-partuuid/@ROOTFS_A_PARTUUID@|device=/dev/mmcblk0p6|' \
-    "${REPO_ROOT}/os/update/rauc/system.conf.in" > "${WORK}/system.conf.in.stale"
+# The doctoring is an APPENDED slot group, not a rewritten one. It used to sed
+# `device=/dev/disk/by-partuuid/@ROOTFS_A_PARTUUID@` in place, but d178715 (x64
+# A/B) moved the slot sections out of the template and behind @SLOTS@, because
+# the boot half genuinely differs between the two bootloaders — so there is no
+# longer a device= line in system.conf.in for a sed to hit, and the message the
+# guard prints changed in the same commit. Both anchors were stale from then on.
+# The vacuity guard below is what caught that, instead of a green run reporting
+# coverage it no longer had; that is the entire reason it is written this way.
+#
+# Appending leaves @SLOTS@ intact, so the real slot model still renders and the
+# extra group is the only thing the guard can be refusing. It also does not care
+# what shape the slot sections take next, which is what went wrong the last time.
+cp "${REPO_ROOT}/os/update/rauc/system.conf.in" "${WORK}/system.conf.in.stale"
+cat >> "${WORK}/system.conf.in.stale" <<'STALE_SLOT'
+
+[slot.rootfs.9]
+device=/dev/mmcblk0p6
+type=raw
+bootname=stale
+STALE_SLOT
 if cmp -s "${WORK}/system.conf.in.stale" "${REPO_ROOT}/os/update/rauc/system.conf.in"; then
     echo "FAIL: the doctored system.conf.in is identical to the real one; the negative test would pass vacuously"
     FAILED=1
@@ -652,7 +753,8 @@ elif SYSTEM_CONF_IN="${WORK}/system.conf.in.stale" SYSTEM_CONF_OUT="${WORK}/syst
     bash "${RENDER}" > "${WORK}/render-stale.log" 2>&1; then
     echo "FAIL: the renderer accepted a slot addressed as /dev/mmcblk0p6"
     FAILED=1
-elif grep -qF "addresses a slot by something other than a PARTUUID" "${WORK}/render-stale.log"; then
+elif grep -qF "addresses a slot in a form its type does not allow" "${WORK}/render-stale.log" &&
+    grep -qF "/dev/mmcblk0p6 (type=raw, not addressed by PARTUUID)" "${WORK}/render-stale.log"; then
     echo "PASS: the renderer refuses a slot addressed by partition number, and says why"
 else
     echo "FAIL: the renderer refused the doctored template for the wrong reason: $(tr '\n' ' ' < "${WORK}/render-stale.log")"

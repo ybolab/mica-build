@@ -14,7 +14,7 @@ BOARDS := cx3576 x64
 	os-quadlet-doc-test \
 	os-image-cx3576-v2 os-verify-cx3576-v2 os-bundle-cx3576 os-devkeys os-health-test podman \
 	os-shadow-test os-dbus-policy-test os-repart-test os-ui-location-test \
-	os-uboot-handshake-test os-layout-lint os-layout-lint-test \
+	os-uboot-handshake-test os-mkimage-v2-test os-layout-lint os-layout-lint-test \
 	docs-verify docs-verify-test
 
 help:
@@ -31,6 +31,7 @@ help:
 	@echo "  os-dbus-policy-test prove the shipped mosd D-Bus policy is root-only against a real dbus-daemon"
 	@echo "  os-repart-test      prove first-boot repart growth grows DATA and cannot wipe the loader (privileged docker)"
 	@echo "  os-ui-location-test prove the custom-UI location assertions in the v2 verifier actually fail when the location moves"
+	@echo "  os-mkimage-v2-test  prove the v2 assembler rebuilds byte-identically, and refuses every layout mistake that would need a re-flash (docker)"
 	@echo "  os-layout-lint      check every board layout against the board-definition schema"
 	@echo "  os-layout-lint-test prove the layout linter rejects a broken board definition"
 	@echo "  docs-verify         assert both document indexes agree with the tree, in both directions"
@@ -129,6 +130,40 @@ os-repart-test:
 # rather than skipping.
 os-ui-location-test:
 	bash os/tests/ui-location-test.sh
+
+# The only check in this repository that claims to prove BYTE-IDENTICAL
+# rebuilds. It drives the real os/mkimage-v2.sh --assemble twice over fabricated
+# BSP, rootfs-verity and factory-/var inputs and requires the two images to
+# compare equal, then reads the result back with sgdisk/mdir/dumpe2fs/debugfs and
+# requires every partition, unique GUID, typecode, start sector, FAT payload and
+# ext4 root listing to match os/boards/cx3576/board.env.
+#
+# The half that is worth more than the byte comparison is the refusals, driven
+# from the failing side: a stale partition number in boot.cmd, a pin the rootfs
+# does not fit, a loader blob without the idbloader magic, a cmdline that lost
+# dm-mod.waitfor, a RAUC slot addressed by partition number. None of those
+# announce themselves on hardware -- a stale bootpart makes U-Boot persist the
+# boot-attempt decrement and then fail to find Image, and the board needs
+# re-flashing -- so the build refusing is the entire defence, and a refusal that
+# has only ever been observed working is not evidence that it still can.
+#
+# It had no target from RFCT-020 until now, which is precisely why nobody
+# noticed it stopped running: bb48e49 gave the assembler a mandatory FACTORY_VAR
+# and did not touch the selftest, so every assembly died on the precondition and
+# the byte-identity claim above went unmeasured. PLAN-014 M5/M6 hang gates on
+# this instrument; it needs a name something can invoke.
+#
+# Needs docker. No BSP, no built image, no root -- minutes, unlike
+# os-repart-test, which needs privileged docker and an image. It fails loudly
+# when it cannot run rather than skipping.
+#
+# TMPDIR is defaulted into the gitignored _out/ because the workspace has to be
+# bind-mountable by the docker daemon and a sandboxed private /tmp is not. An
+# already-set TMPDIR wins, and the script still refuses by name -- printing this
+# same remedy -- when whatever it ends up with is invisible to the daemon.
+os-mkimage-v2-test:
+	mkdir -p $(CURDIR)/_out/tmp
+	TMPDIR=$${TMPDIR:-$(CURDIR)/_out/tmp} bash os/tests/mkimage-v2-selftest.sh
 
 # SPIKE RFCT-087: executes the SHIPPED os/boards/cx3576/boot.cmd — compiled by
 # the same mkimage invocation the assembler uses, byte-unmodified — under a
