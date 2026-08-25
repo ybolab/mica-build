@@ -26,20 +26,20 @@
 # SizeMinBytes=0 from the uenv placeholders, reconstructing the state in which
 # repart refused the whole run and /srv silently never grew (RFCT-027).
 #
-#   bash os/repart-loader-test.sh [image]...
+#   bash os/tests/repart-loader-test.sh [image]...
 #
 # With no argument the latest assembled image is tested, if one exists.
 # Needs docker with --privileged (loop devices). Fails loudly if unavailable;
 # it never skips silently.
 set -euo pipefail
 
-REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 LAYOUT_ENV="${REPO_ROOT}/os/boards/cx3576/board.env"
 if [ ! -f "${LAYOUT_ENV}" ]; then
     echo "error: ${LAYOUT_ENV} not found" >&2
     exit 1
 fi
-# shellcheck source=boards/cx3576/board.env
+# shellcheck source=../boards/cx3576/board.env
 . "${LAYOUT_ENV}"
 
 GROWN_SIZE="8G"
@@ -71,7 +71,7 @@ trap 'rm -rf "${work}"' EXIT
 # Every path this script hands sgdisk lives under ${REPO_ROOT}/_out — the
 # shipped images and ${work} both — so mounting _out at itself makes every
 # argument resolve identically and keeps the output byte-identical to a host
-# run. Same shape as os/mkimage-v2-selftest.sh's assertion tooling, for the
+# run. Same shape as os/tests/mkimage-v2-selftest.sh's assertion tooling, for the
 # same reason: a missing host tool must not read as a FAIL that indicts the
 # image.
 if ! command -v sgdisk >/dev/null 2>&1; then

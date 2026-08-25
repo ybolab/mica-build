@@ -121,7 +121,7 @@ log "booted slot bootname: $BOOTED"
 # "Startup finished" landed 31 ms and 35 ms AFTER this unit exited, which is
 # the signature of being the last job.
 #
-# `os/health/test.sh` never caught it because it stubs the answer
+# `os/tests/health-test.sh` never caught it because it stubs the answer
 # (`is-system-running) echo "${FAKE_SYS_STATE:-running}"`), so the probe was
 # handed the state it wanted and the suite stayed green for as long as nobody
 # booted the thing.

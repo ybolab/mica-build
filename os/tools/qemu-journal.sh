@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # Read the journal out of the disk the last QEMU run left behind.
 #
-#   bash os/qemu-journal.sh [journalctl args...]
-#   bash os/qemu-journal.sh -u systemd-resolved -p err
+#   bash os/tools/qemu-journal.sh [journalctl args...]
+#   bash os/tools/qemu-journal.sh -u systemd-resolved -p err
 #
 # WHY THIS INSTEAD OF A LOGIN. The console shows systemd's status lines and
 # nothing else: a unit that fails prints "[FAILED] ... See 'systemctl status'
@@ -17,13 +17,13 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-REPO_ROOT="$(dirname "${SCRIPT_DIR}")"
+REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 OUT_DIR="${REPO_ROOT}/_out/x64"
 . "${REPO_ROOT}/os/boards/x64/board.env"
 DISK="${OUT_DIR}/.qemu/disk.img"
 
 if [ ! -f "${DISK}" ]; then
-    echo "error: ${DISK} not found. Run 'bash os/qemu-run.sh' first; this reads the disk that run left behind." >&2
+    echo "error: ${DISK} not found. Run 'bash os/tools/qemu-run.sh' first; this reads the disk that run left behind." >&2
     exit 1
 fi
 

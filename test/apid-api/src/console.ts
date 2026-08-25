@@ -10,7 +10,7 @@
  * written by systemd and by mosd -- not by the route being exercised.
  *
  * It is also the only usable journal here: the image sets journald
- * `Storage=volatile`, and `os/qemu-journal.sh` is committed KNOWN-BROKEN (it is
+ * `Storage=volatile`, and `os/tools/qemu-journal.sh` is committed KNOWN-BROKEN (it is
  * neither called nor repaired from this suite). The guest boots with
  * `systemd.journald.forward_to_console=1`, so systemd's and mosd's own lines
  * land on the serial console, which the harness captures to the path in

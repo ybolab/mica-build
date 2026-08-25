@@ -5,7 +5,7 @@
 # 6.2's built-in escape as an on-image fact, and the packed-root mountpoint
 # check that the first of those CHAINS to.
 #
-#   bash os/ui-location-test.sh
+#   bash os/tests/ui-location-test.sh
 #
 # WHY THIS EXISTS. `make os-verify-cx3576-v2` runs those assertions against the
 # assembled image and they pass. That is one direction. An assertion nobody has
@@ -48,9 +48,11 @@
 set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-VERIFIER="${HERE}/verify-image-v2.sh"
-FSTAB_IN="${HERE}/rootfs/overlay-v2/etc/fstab.in"
-LAYOUT_ENV="${HERE}/boards/cx3576/board.env"
+OS_DIR="$(dirname "${HERE}")"
+REPO_ROOT="$(dirname "${OS_DIR}")"
+VERIFIER="${OS_DIR}/verify-image-v2.sh"
+FSTAB_IN="${OS_DIR}/rootfs/overlay-v2/etc/fstab.in"
+LAYOUT_ENV="${OS_DIR}/boards/cx3576/board.env"
 # The SHIPPED unit, not one this script authors: the ordering assertions exist
 # to catch the shipped file losing its ordering, and a fixture built from a
 # local copy would go on passing after the real unit changed.
@@ -60,12 +62,12 @@ LAYOUT_ENV="${HERE}/boards/cx3576/board.env"
 # run: it exited at the existence check below, on a path nothing has ever
 # written. Corrected to the real location when RFCT-107 moved that overlay to
 # os/boards/cx3576/overlay/.
-LED_UNIT_SRC="${HERE}/boards/cx3576/overlay/usr/lib/systemd/system/mos-status-led.service"
+LED_UNIT_SRC="${OS_DIR}/boards/cx3576/overlay/usr/lib/systemd/system/mos-status-led.service"
 
 for required in "${VERIFIER}" "${FSTAB_IN}" "${LAYOUT_ENV}" "${LED_UNIT_SRC}"; do
     [ -f "${required}" ] || { echo "error: ${required} not found" >&2; exit 1; }
 done
-# shellcheck source=boards/cx3576/board.env
+# shellcheck source=../boards/cx3576/board.env
 . "${LAYOUT_ENV}"
 for key in DATA_GUID STATE_GUID EPHEMERAL_GUID META_GUID; do
     eval "value=\${$key:-}"
@@ -110,12 +112,12 @@ EXT_MOUNT_UNIT="$(verifier_const EXT_MOUNT_UNIT '"')"
 # A hand-written stand-in would keep this suite green after the real policy
 # widened its own_prefix, which is the single most dangerous edit the file has.
 EXT_POLICY_PATH="$(verifier_const EXT_POLICY_PATH '')"
-EXT_POLICY_SRC="${HERE}/../mosd/dist/$(basename "${EXT_POLICY_PATH}")"
+EXT_POLICY_SRC="${REPO_ROOT}/mosd/dist/$(basename "${EXT_POLICY_PATH}")"
 [ -f "${EXT_POLICY_SRC}" ] || {
     echo "error: ${EXT_POLICY_SRC} not found; ${VERIFIER} asserts ${EXT_POLICY_PATH} but mosd ships no such policy" >&2
     exit 1
 }
-EXT_MOUNT_UNIT_SRC="${HERE}/rootfs/overlay-v2/etc/systemd/system/${EXT_MOUNT_UNIT}"
+EXT_MOUNT_UNIT_SRC="${OS_DIR}/rootfs/overlay-v2/etc/systemd/system/${EXT_MOUNT_UNIT}"
 [ -f "${EXT_MOUNT_UNIT_SRC}" ] || {
     echo "error: ${EXT_MOUNT_UNIT_SRC} not found; ${VERIFIER} names ${EXT_MOUNT_UNIT} as PLAN-011 D5's bind unit but the overlay ships no such file" >&2
     exit 1
@@ -131,8 +133,8 @@ MQTTD_BIN="$(verifier_const MQTTD_BIN '"')"
 MQTTD_UNIT="$(verifier_const MQTTD_UNIT '"')"
 MQTTD_POLICY_PATH="$(verifier_const MQTTD_POLICY_PATH '"')"
 MQTTD_WANTS="$(verifier_const MQTTD_WANTS '"')"
-MQTTD_UNIT_SRC="${HERE}/../mosd/mqttd/dist/$(basename "${MQTTD_UNIT}")"
-MQTTD_POLICY_SRC="${HERE}/../mosd/dist/$(basename "${MQTTD_POLICY_PATH}")"
+MQTTD_UNIT_SRC="${REPO_ROOT}/mosd/mqttd/dist/$(basename "${MQTTD_UNIT}")"
+MQTTD_POLICY_SRC="${REPO_ROOT}/mosd/dist/$(basename "${MQTTD_POLICY_PATH}")"
 for required in "${MQTTD_UNIT_SRC}" "${MQTTD_POLICY_SRC}"; do
     [ -f "${required}" ] || {
         echo "error: ${required} not found; ${VERIFIER} asserts the MQTT bridge into the image but the tree ships no such file" >&2
@@ -153,7 +155,7 @@ MQTTD_ENV_DIR="$(dirname "$(sed -n 's/^EnvironmentFile=-\{0,1\}//p' "${MQTTD_UNI
 BROKER_BIN="$(verifier_const BROKER_BIN '"')"
 BROKER_UNIT="$(verifier_const BROKER_UNIT '"')"
 BROKER_WANTS="$(verifier_const BROKER_WANTS '"')"
-BROKER_UNIT_SRC="${HERE}/../mosd/broker/dist/$(basename "${BROKER_UNIT}")"
+BROKER_UNIT_SRC="${REPO_ROOT}/mosd/broker/dist/$(basename "${BROKER_UNIT}")"
 [ -f "${BROKER_UNIT_SRC}" ] || {
     echo "error: ${BROKER_UNIT_SRC} not found; ${VERIFIER} asserts the MQTT broker into the image but the tree ships no such unit" >&2
     exit 1
@@ -166,9 +168,9 @@ CONTAINER_BINARIES="$(verifier_const CONTAINER_BINARIES '"')"
 QUADLET_GENERATOR="$(verifier_const QUADLET_GENERATOR '"')"
 QUADLET_DIR="$(verifier_const QUADLET_DIR '"')"
 QUADLET_MOUNT_UNIT="$(verifier_const QUADLET_MOUNT_UNIT '"')"
-QUADLET_MOUNT_SRC="${HERE}/rootfs/overlay-v2/etc/systemd/system/${QUADLET_MOUNT_UNIT}"
+QUADLET_MOUNT_SRC="${OS_DIR}/rootfs/overlay-v2/etc/systemd/system/${QUADLET_MOUNT_UNIT}"
 CONTAINER_STORAGE_CONF="$(verifier_const CONTAINER_STORAGE_CONF '"')"
-CONTAINER_STORAGE_SRC="${HERE}/rootfs/overlay-v2${CONTAINER_STORAGE_CONF}"
+CONTAINER_STORAGE_SRC="${OS_DIR}/rootfs/overlay-v2${CONTAINER_STORAGE_CONF}"
 [ -f "${CONTAINER_STORAGE_SRC}" ] || {
     echo "error: ${CONTAINER_STORAGE_SRC} not found; ${VERIFIER} asserts container image storage off the wipeable /var but the overlay ships no ${CONTAINER_STORAGE_CONF}" >&2
     exit 1
@@ -181,14 +183,14 @@ CONTAINER_POLICY="$(verifier_const CONTAINER_POLICY '"')"
 CONTAINER_CONF="$(verifier_const CONTAINER_CONF '"')"
 CONTAINER_REGISTRIES="$(verifier_const CONTAINER_REGISTRIES '"')"
 CONTAINER_NFT="$(verifier_const CONTAINER_NFT '"')"
-CONTAINER_CONF_SRC="${HERE}/rootfs/overlay-v2${CONTAINER_CONF}"
+CONTAINER_CONF_SRC="${OS_DIR}/rootfs/overlay-v2${CONTAINER_CONF}"
 [ -f "${CONTAINER_CONF_SRC}" ] || {
     echo "error: ${CONTAINER_CONF_SRC} not found; ${VERIFIER} asserts mos ships its own ${CONTAINER_CONF} in place of containers-common's but the overlay has no such file" >&2
     exit 1
 }
 
 MQTTD_ENV_MOUNT_SRC="$(grep -rl "^Where=${MQTTD_ENV_DIR}\$" \
-    "${HERE}/rootfs/overlay-v2/etc/systemd/system" 2>/dev/null | head -n1)"
+    "${OS_DIR}/rootfs/overlay-v2/etc/systemd/system" 2>/dev/null | head -n1)"
 [ -n "${MQTTD_ENV_MOUNT_SRC}" ] || {
     echo "error: no overlay .mount unit has Where=${MQTTD_ENV_DIR}, which ${MQTTD_UNIT_SRC} reads its EnvironmentFile from; the shipped unit and the shipped mounts disagree and no fixture can paper over that" >&2
     exit 1
@@ -720,7 +722,7 @@ expect_set "/srv absent from the tree: existence is chained, and the far end of 
 # The one M5 assertion this harness can reach, and it is reachable BY DESIGN:
 # the D5 block declines to assert its own mountpoint's existence and delegates
 # it to PACKED_MOUNTPOINTS instead, saying that "owning it there rather than
-# here is what puts it inside the fixture hook, where os/ui-location-test.sh can
+# here is what puts it inside the fixture hook, where os/tests/ui-location-test.sh can
 # watch it fail without an image". That sentence is a claim about this file, and
 # until this case existed it was not true of it.
 #
@@ -1261,7 +1263,7 @@ expect_set "the broker's account missing from /etc/passwd" \
 # MOS_VERIFY_RECONCILER_DIR is what makes this drivable at all: without it the
 # rot could only be waited for. The copy is of the REAL reconcilers, so the
 # case is about one removed line and not about a directory this test authored.
-RECONCILER_SRC="${HERE}/../mosd/mosd/src/reconciler"
+RECONCILER_SRC="${REPO_ROOT}/mosd/mosd/src/reconciler"
 [ -d "${RECONCILER_SRC}" ] || {
     echo "error: ${RECONCILER_SRC} not found; the verifier reads the connd contract out of it" >&2
     exit 1

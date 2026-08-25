@@ -1,20 +1,20 @@
 #!/usr/bin/env bash
 # Build RAUC from upstream source for one architecture.
 #
-#   MOS_BOARD=x64 bash os/rauc/build.sh      → os/rauc/out-amd64/
-#   MOS_BOARD=cx3576 bash os/rauc/build.sh   → os/rauc/out-arm64/
+#   MOS_BOARD=x64 bash os/update/rauc/build.sh      → os/update/rauc/out-amd64/
+#   MOS_BOARD=cx3576 bash os/update/rauc/build.sh   → os/update/rauc/out-arm64/
 #
 # Same driver shape as os/podman/build.sh, and for the same reason: the
 # Dockerfile's last stage is FROM scratch and `-o` exports it, so nothing here
 # writes into a rootfs. os/rootfs/Dockerfile.v2 copies the result in.
 #
-# WHY THE BUILD EXISTS AT ALL: os/rauc/versions.env.
+# WHY THE BUILD EXISTS AT ALL: os/update/rauc/versions.env.
 set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-REPO_ROOT="$(dirname "$(dirname "${HERE}")")"
+REPO_ROOT="$(cd "${HERE}/../../.." && pwd)"
 MOS_BOARD="${MOS_BOARD:-cx3576}"
-LAYOUT_ENV="${HERE}/../boards/${MOS_BOARD}/board.env"
+LAYOUT_ENV="${HERE}/../../boards/${MOS_BOARD}/board.env"
 
 if [ ! -f "${LAYOUT_ENV}" ]; then
     echo "error: ${LAYOUT_ENV} not found (MOS_BOARD=${MOS_BOARD})" >&2
@@ -67,7 +67,7 @@ if [ -n "${missing}" ]; then
     exit 1
 fi
 if grep -ciE 'curl|gnutls' "${OUT}/NEEDED.txt" >/dev/null; then
-    echo "error: the exported rauc links curl or GnuTLS; see os/rauc/versions.env for why that is the one thing this build must not do" >&2
+    echo "error: the exported rauc links curl or GnuTLS; see os/update/rauc/versions.env for why that is the one thing this build must not do" >&2
     cat "${OUT}/NEEDED.txt" >&2
     exit 1
 fi

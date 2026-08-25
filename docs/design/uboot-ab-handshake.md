@@ -1025,7 +1025,7 @@ unit would suppress the symptom; instead the loader area is now a real GPT
 partition (`loader`, p1, LBA 64, 32704 sectors, type
 `8DA63339-0007-60C0-C436-083AC8230908`). First-boot TRIM stays enabled and the
 final state carries **no `--discard=no` anywhere** — protection comes from the
-partition entry existing. `os/repart-loader-test.sh` proves both directions with
+partition entry existing. `os/tests/repart-loader-test.sh` proves both directions with
 a real `systemd-repart` on a real image: the image as built keeps LBA 64, and the
 same image with only that one GPT entry deleted loses it.
 

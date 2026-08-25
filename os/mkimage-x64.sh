@@ -14,7 +14,7 @@
 #
 # What the two DO share is the layout format and the RAUC slot model, and those
 # are shared as files rather than as copied constants: os/boards/x64/board.env and
-# the same os/rauc/render-config.sh.
+# the same os/update/rauc/render-config.sh.
 #
 # WHAT THIS IMAGE IS FOR. x64 is a product target -- amd64 industrial PCs --
 # and QEMU boots this same image from the same GPT through the same firmware

@@ -2,26 +2,25 @@
 # Renders the RAUC system configuration from the layout-v2 constants, and
 # asserts that the U-Boot environment access file agrees with the GPT.
 #
-#   bash os/rauc/render-config.sh            render (writes the overlay file)
-#   bash os/rauc/render-config.sh --check    verify the rendered file is current
+#   bash os/update/rauc/render-config.sh            render (writes the overlay file)
+#   bash os/update/rauc/render-config.sh --check    verify the rendered file is current
 #
 # Output: os/rootfs/overlay-v2/etc/rauc/system.conf, which RFCT-013's overlay
 # mechanism copies into the image at /etc/rauc/system.conf. The rendered file
 # is GITIGNORED, never committed: the template plus os/boards/cx3576/board.env are
 # the single source of truth, and a committed rendering could drift from them
 # with nothing to notice until after the fact. os/rootfs/build-v2.sh runs this
-# renderer before staging the overlay; --check (run by os/bundle.sh) now only
+# renderer before staging the overlay; --check (run by os/update/bundle.sh) now only
 # guards the narrower case of the rendered file being edited by hand after the
 # last build.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-REPO_ROOT="$(dirname "${SCRIPT_DIR}")"
-REPO_ROOT="$(dirname "${REPO_ROOT}")"
+REPO_ROOT="$(cd "${SCRIPT_DIR}/../../.." && pwd)"
 MOS_BOARD="${MOS_BOARD:-cx3576}"
 LAYOUT_ENV="${REPO_ROOT}/os/boards/${MOS_BOARD}/board.env"
 OVERLAY="${REPO_ROOT}/os/rootfs/overlay-v2"
-# Overridable only so os/mkimage-v2-selftest.sh can drive the renderer against a
+# Overridable only so os/tests/mkimage-v2-selftest.sh can drive the renderer against a
 # deliberately-broken template; every real invocation uses the tree's own files.
 SYSTEM_CONF_IN="${SYSTEM_CONF_IN:-${SCRIPT_DIR}/system.conf.in}"
 SYSTEM_CONF_OUT="${SYSTEM_CONF_OUT:-${OVERLAY}/etc/rauc/system.conf}"
@@ -39,7 +38,7 @@ if [ ! -f "${LAYOUT_ENV}" ]; then
     echo "error: ${LAYOUT_ENV} not found (MOS_BOARD=${MOS_BOARD})" >&2
     exit 1
 fi
-# shellcheck source=../boards/cx3576/board.env
+# shellcheck source=../../boards/cx3576/board.env
 # Sourced BEFORE the input list is decided, because what is required depends on
 # RAUC_BOOTLOADER, which the layout defines. Reading it first would have taken
 # the `:-uboot` default on every board and demanded fw_env.config from a grub
@@ -238,13 +237,13 @@ rootfs_slots() {
 device=/dev/disk/by-partuuid/$(lower "${ROOTFS_A_GUID}")
 type=raw
 bootname=A
-# adaptive=block-hash-index — DEFERRED, see os/rauc/manifest.raucm.in.
+# adaptive=block-hash-index — DEFERRED, see os/update/rauc/manifest.raucm.in.
 
 [slot.rootfs.1]
 device=/dev/disk/by-partuuid/$(lower "${ROOTFS_B_GUID}")
 type=raw
 bootname=B
-# adaptive=block-hash-index — DEFERRED, see os/rauc/manifest.raucm.in.
+# adaptive=block-hash-index — DEFERRED, see os/update/rauc/manifest.raucm.in.
 SLOTS
 }
 
@@ -347,11 +346,11 @@ if [ "${MODE}" = "check" ]; then
     # render step they have not run yet.
     if [ ! -f "${SYSTEM_CONF_OUT}" ]; then
         echo "error: ${SYSTEM_CONF_OUT} has not been rendered yet (it is generated, not committed)." >&2
-        echo "Run 'bash os/rauc/render-config.sh' — os/rootfs/build-v2.sh does this automatically before staging the overlay." >&2
+        echo "Run 'bash os/update/rauc/render-config.sh' — os/rootfs/build-v2.sh does this automatically before staging the overlay." >&2
         exit 1
     fi
     if ! diff -u "${SYSTEM_CONF_OUT}" "${rendered}"; then
-        echo "error: ${SYSTEM_CONF_OUT} is stale; re-run 'bash os/rauc/render-config.sh'" >&2
+        echo "error: ${SYSTEM_CONF_OUT} is stale; re-run 'bash os/update/rauc/render-config.sh'" >&2
         exit 1
     fi
     echo "rauc config current: ${SYSTEM_CONF_OUT}"

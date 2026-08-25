@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # Write files into the STATE partition of the x64 disk image before booting it.
 #
-#   bash os/qemu-seed-state.sh <local-file> <path-inside-state> [...]
-#   bash os/qemu-seed-state.sh ./app.container /quadlet/app.container
+#   bash os/tools/qemu-seed-state.sh <local-file> <path-inside-state> [...]
+#   bash os/tools/qemu-seed-state.sh ./app.container /quadlet/app.container
 #
 # WHY. STATE is where a device's configuration lives: mosd's settings.toml, the
 # Quadlet directory, the STATE-backed unit directory. Testing anything that
@@ -14,22 +14,22 @@
 # corrupt the host if it got a path wrong.
 #
 # The image itself is never touched: this edits _out/x64/.qemu/disk.img, the
-# copy os/qemu-run.sh boots. Run it AFTER qemu-run.sh has made that copy --
+# copy os/tools/qemu-run.sh boots. Run it AFTER qemu-run.sh has made that copy --
 # which it does at the start of every run, so the order is:
 #
-#   bash os/qemu-run.sh --prepare-only     (makes the copy, boots nothing)
-#   bash os/qemu-seed-state.sh ...         (writes into it)
-#   MOS_QEMU_REUSE_DISK=1 bash os/qemu-run.sh --capture ...
+#   bash os/tools/qemu-run.sh --prepare-only     (makes the copy, boots nothing)
+#   bash os/tools/qemu-seed-state.sh ...         (writes into it)
+#   MOS_QEMU_REUSE_DISK=1 bash os/tools/qemu-run.sh --capture ...
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-REPO_ROOT="$(dirname "${SCRIPT_DIR}")"
+REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 OUT_DIR="${REPO_ROOT}/_out/x64"
 . "${REPO_ROOT}/os/boards/x64/board.env"
 DISK="${OUT_DIR}/.qemu/disk.img"
 
 if [ ! -f "${DISK}" ]; then
-    echo "error: ${DISK} not found. Run 'bash os/qemu-run.sh --prepare-only' first: this writes into the disk copy that run makes, not into the image itself." >&2
+    echo "error: ${DISK} not found. Run 'bash os/tools/qemu-run.sh --prepare-only' first: this writes into the disk copy that run makes, not into the image itself." >&2
     exit 1
 fi
 if [ "$#" -eq 0 ] || [ $(( $# % 2 )) -ne 0 ]; then

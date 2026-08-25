@@ -15,7 +15,7 @@
 # BECAUSE the grant was there. The same shape sat in the assertion that the MQTT
 # bridge is granted none of Reboot, PowerOff, SetSettings or
 # SetTransientRootPassword -- a security assertion whose failure direction was
-# green -- and in os/shadow-reconcile-test.sh's "no temporary files were left
+# green -- and in os/tests/shadow-reconcile-test.sh's "no temporary files were left
 # behind". Nineteen sites in twelve files carried it.
 #
 # The rule is narrow on purpose, so that it has no false positives to teach
@@ -36,7 +36,7 @@
 # paragraph above -- is not reported as an instance of it.
 set -euo pipefail
 
-cd "$(dirname "$0")/.."
+cd "$(dirname "$0")/../.."
 
 PASS_N=0
 FAIL_N=0

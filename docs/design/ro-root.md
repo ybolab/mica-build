@@ -770,8 +770,8 @@ respect this.
 partitions by GUID (`/dev/disk/by-partuuid/…`, offset 0, size 64 KiB) rather
 than at a hardcoded `/dev/mmcblk0` offset: the GUIDs are layout constants, the
 disk name is not. It is the single `fw_env.config` source in the tree — RFCT-014
-deliberately did not create a competing `os/rauc/fw_env.config.in` and instead
-**asserts this file's structure** in `os/rauc/render-config.sh`: exactly two
+deliberately did not create a competing `os/update/rauc/fw_env.config.in` and instead
+**asserts this file's structure** in `os/update/rauc/render-config.sh`: exactly two
 device lines (which is what marks the environment redundant to libubootenv),
 each matching its UENV GUID case-insensitively at offset 0 with size
 `UENV_SIZE_BYTES`, and the partition starts cross-checked against

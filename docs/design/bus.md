@@ -525,7 +525,7 @@ them nowhere: nothing installed `mos-mqttd` into the image. The wiring is
 `os/rootfs/build-v2.sh` (staging), `os/rootfs/Dockerfile.v2` (install and
 enable) and `mosd/hack/build-aarch64.sh` (cross-build), and it is asserted by
 `check_mqttd` in `os/verify-image-v2.sh`, driven offline by
-`os/ui-location-test.sh`. Three properties are worth stating here rather than
+`os/tests/ui-location-test.sh`. Three properties are worth stating here rather than
 leaving in the unit, because each was a defect the wiring exposed and none of
 them is visible from the code side.
 
@@ -597,7 +597,7 @@ pair a switch.
   `mosd/broker/dist/mos-mqtt-broker.service` keeps its `[Install]` section
   anyway, so `systemctl enable` stays meaningful to anyone debugging. The image
   assertion is `check_mqtt_broker` in `os/verify-image-v2.sh`, driven offline
-  from fixtures by `os/ui-location-test.sh` — including the fixture that creates
+  from fixtures by `os/tests/ui-location-test.sh` — including the fixture that creates
   the symlink and requires the check to fail.
 - **[implemented]** `mqtt.enabled` starts it. `MqttReconciler`
   (`mosd/mosd/src/reconciler/mqtt.rs`, `name()` and `subtree()` both `"mqtt"`)

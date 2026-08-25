@@ -7,7 +7,7 @@ other and what survives an update are yours to describe — in systemd's terms,
 not in a mos-specific format.
 
 This document is the integrator's guide to doing that. Every example below is
-extracted by `os/quadlet-doc-test.sh` and fed to the Quadlet generator this
+extracted by `os/tests/quadlet-doc-test.sh` and fed to the Quadlet generator this
 image actually ships, so an example that stopped working fails the test suite
 rather than sitting here looking correct.
 

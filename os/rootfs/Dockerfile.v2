@@ -55,12 +55,12 @@ FROM --platform=$TARGETPLATFORM debian:trixie-slim AS rootfs
 # three components while still reporting green).
 #
 # RAUC IS NOT INSTALLED FROM DEBIAN ANY MORE. It is built from upstream source
-# by os/rauc/ and copied in below, because Debian builds it with
+# by os/update/rauc/ and copied in below, because Debian builds it with
 # -Dstreaming=true and that links libcurl-gnutls: measured on this image, rauc
 # was the ONLY consumer of libcurl-gnutls in the whole packed root, and it
 # brought GnuTLS, p11-kit, GMP, Nettle and the Kerberos libraries with it. A
 # second TLS stack, in an image whose own daemons use rustls on purpose, for a
-# streaming install path os/rauc/manifest.raucm.in records as DEFERRED.
+# streaming install path os/update/rauc/manifest.raucm.in records as DEFERRED.
 #
 # The three libraries listed below arrived as rauc's dependencies and are named
 # explicitly now that nothing pulls them in: glib, json-glib and libfdisk are
@@ -361,7 +361,7 @@ RUN set -eu; \
 #   podman-kube@.service       the Kubernetes YAML path. PLAN-002 removed
 #                              Kubernetes as a one-way commitment; this was a
 #                              corner of it arriving by the back door.
-# RAUC, built from upstream by os/rauc/ (see os/rauc/versions.env for why it is
+# RAUC, built from upstream by os/update/rauc/ (see os/update/rauc/versions.env for why it is
 # not the Debian package). Five files, and all five are on the activation path:
 # the binary, the unit, the script the D-Bus service file Execs, the bus policy
 # and the activation file itself. Debian splits these across two packages and
@@ -373,7 +373,7 @@ ARG RAUC_DIR
 COPY ${RAUC_DIR}/ /tmp/rauc/
 RUN set -eu; \
     for f in rauc rauc.service rauc-service.sh de.pengutronix.rauc.conf de.pengutronix.rauc.service; do \
-        [ -f "/tmp/rauc/${f}" ] || { echo "error: ${f} is not in the staged os/rauc output; run 'make os-rauc' first. An image without it boots, reports itself healthy, and cannot install an update" >&2; exit 1; }; \
+        [ -f "/tmp/rauc/${f}" ] || { echo "error: ${f} is not in the staged os/update/rauc output; run 'make os-rauc' first. An image without it boots, reports itself healthy, and cannot install an update" >&2; exit 1; }; \
     done; \
     install -m0755 /tmp/rauc/rauc            /usr/bin/rauc; \
     install -d -m0755 /usr/libexec; \
@@ -383,7 +383,7 @@ RUN set -eu; \
     install -m0644 /tmp/rauc/de.pengutronix.rauc.conf    /usr/share/dbus-1/system.d/de.pengutronix.rauc.conf; \
     install -m0644 /tmp/rauc/de.pengutronix.rauc.service /usr/share/dbus-1/system-services/de.pengutronix.rauc.service; \
     sed -n 's/^RAUC_VERSION=//p' /tmp/rauc/RAUC_VERSION.env >/rootfs-report.rauc; \
-    [ -s /rootfs-report.rauc ] || { echo "error: the staged rauc carries no RAUC_VERSION; os/bundle.sh compares that against its own rauc before it writes a bundle, and an empty value would make the comparison pass by finding nothing" >&2; exit 1; }; \
+    [ -s /rootfs-report.rauc ] || { echo "error: the staged rauc carries no RAUC_VERSION; os/update/bundle.sh compares that against its own rauc before it writes a bundle, and an empty value would make the comparison pass by finding nothing" >&2; exit 1; }; \
     echo "rauc: installed $(cat /rootfs-report.rauc), $(stat -c%s /usr/bin/rauc) bytes"; \
     rm -rf /tmp/rauc
 
@@ -395,7 +395,7 @@ RUN set -eu; \
     if ldd /usr/bin/rauc | grep -ciE 'curl|gnutls' >/dev/null; then \
         echo "error: the rauc in this image links curl or GnuTLS:" >&2; \
         ldd /usr/bin/rauc | grep -iE 'curl|gnutls' >&2; \
-        echo "os/rauc/ builds it with -Dnetwork=false -Dstreaming=false precisely so it does not" >&2; exit 1; \
+        echo "os/update/rauc/ builds it with -Dnetwork=false -Dstreaming=false precisely so it does not" >&2; exit 1; \
     fi; \
     ldd /usr/bin/rauc | awk '{print "  " $1}' | sort
 
@@ -1183,13 +1183,13 @@ RUN dpkg-query -W -f='${Package}\t${Installed-Size}\n' > /rootfs-report.pkgs
 #
 # The bundle format and the slot model are a contract between two programs that
 # never meet: rauc on a build machine writes the bundle, rauc on the device
-# installs it. Nothing made them the same version. os/bundle.sh built in a
+# installs it. Nothing made them the same version. os/update/bundle.sh built in a
 # bookworm container (1.8) while the image ran Debian 13's (1.13) -- and 1.8
 # would have refused this board's slot model outright had anyone asked it,
 # which is how the mismatch was found: not by a check, by a failure.
 #
 # /rootfs-report.rauc is written where rauc is INSTALLED, further up, from the
-# version os/rauc/ pinned. It used to be `dpkg-query -W rauc` here; there is no
+# version os/update/rauc/ pinned. It used to be `dpkg-query -W rauc` here; there is no
 # rauc package any more.
 
 # ---------------------------------------------------------------------------

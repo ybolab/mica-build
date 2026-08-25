@@ -59,7 +59,7 @@ export E2FSPROGS_FAKE_TIME
 # The four rootfs-side inputs all come from the same producer; name it in every
 # error message so a missing input is actionable.
 ROOTFS_PRODUCER="os/rootfs/build-v2.sh"
-# Overridable only so os/mkimage-v2-selftest.sh can point the numbering guard
+# Overridable only so os/tests/mkimage-v2-selftest.sh can point the numbering guard
 # below at a deliberately-stale copy; every real build uses the tree's own file.
 BOOT_CMD="${BOOT_CMD:-${SCRIPT_DIR}/boards/cx3576/boot.cmd}"
 
@@ -120,13 +120,13 @@ mkbootscr() {
         fi
     done < <(grep -oE 'BOOT_[AB]_LEFT [0-9]+' "${BOOT_CMD}" | awk '{print $2}')
     # The per-slot names, the pattern boot.scr builds at runtime and the pattern
-    # os/bundle.sh writes must all be the same derivation of the base name. Any
+    # os/update/bundle.sh writes must all be the same derivation of the base name. Any
     # of the three drifting means an updated slot silently fails to boot, so
     # tie them together here rather than trusting three copies of a string.
     local verity_base="${BOOT_VERITY_ENV_NAME%.env}"
     if [ "${BOOT_VERITY_ENV_A_NAME}" != "${verity_base}-a.env" ] ||
         [ "${BOOT_VERITY_ENV_B_NAME}" != "${verity_base}-b.env" ]; then
-        echo "error: BOOT_VERITY_ENV_A_NAME/BOOT_VERITY_ENV_B_NAME must be '${verity_base}-a.env'/'${verity_base}-b.env' to match what os/bundle.sh writes into a RAUC boot payload" >&2
+        echo "error: BOOT_VERITY_ENV_A_NAME/BOOT_VERITY_ENV_B_NAME must be '${verity_base}-a.env'/'${verity_base}-b.env' to match what os/update/bundle.sh writes into a RAUC boot payload" >&2
         exit 1
     fi
     # rauc identifies the booted slot from rauc.slot= on the kernel cmdline; it
