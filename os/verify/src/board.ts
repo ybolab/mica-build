@@ -11,7 +11,7 @@
 // definition is CORRECT. A missing LAYOUT_PARTITIONS, a role no checker knows,
 // a partition with no PARTNUM -- all of those are reported as absent or
 // unknown and handed on. The schema lint is a separate consumer of this model
-// (os/verify/lint.sh today, its TypeScript successor next), and it is the one
+// (os/verify/src/lint.ts, which M3b ported off the shell), and it is the one
 // that gets to say a board is wrong. Two reasons: a model that threw on the
 // first fault could only ever report one, and a lint whose messages came from
 // its data layer would say what the model noticed rather than what a board

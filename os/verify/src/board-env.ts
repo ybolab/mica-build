@@ -14,7 +14,7 @@
 // refusal is the point. A parser that quietly skipped a line it did not
 // understand would produce a board definition missing a key, and a missing key
 // makes a shared script fail somewhere far from the omission (which is the
-// failure os/verify/lint.sh's own header records).
+// failure the retired os/verify/lint.sh recorded in its own header).
 //
 // WHAT IT ACCEPTS, and every one of these shapes is in a real board.env today:
 //
@@ -326,9 +326,9 @@ class Parser {
     if (v === undefined) {
       // Deliberately NOT falling back to process.env. A board definition that
       // resolved differently depending on who ran the reader would not be a
-      // definition. And an unset reference is the failure lint.sh's header
-      // records: under `set -u` the shell died at the first line of the file,
-      // the board contributed zero assertions, and the run reported PASS.
+      // definition. And an unset reference is the failure the retired shell
+      // lint recorded: under `set -u` the shell died at the first line of the
+      // file, the board contributed zero assertions, and the run reported PASS.
       throw this.errorAt(at, `\`\${${name}}\` is referenced by \`${key}\` but this file has not defined it above. A board definition is self-contained -- the process environment is not consulted, deliberately, because a definition that changes with the caller is not one`)
     }
     return v

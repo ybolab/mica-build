@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
 # The single entry point for os/verify.
 #
-#   bash os/verify/run.sh              install if needed, typecheck, then test
+#   bash os/verify/run.sh                install if needed, typecheck, then test
 #   bash os/verify/run.sh --help
-#   bash os/verify/run.sh board.env    extra arguments go to `bun test`
+#   bash os/verify/run.sh src/board.test.ts   extra arguments go to `bun test`
+#   bash os/verify/run.sh --lint         the board-definition schema lint instead
 #
 # WHAT THIS PACKAGE IS. PLAN-014 M3: the bun+TypeScript foundation the rest of
 # os/ moves onto, in the shape test/apid-api already established -- bun.lock,
@@ -24,9 +25,10 @@
 # 2026-08-25: `bun test` exits 1 when no test FILE matches its glob, but exits
 # 0 when a file matches and declares no tests -- "Ran 0 tests across 1 file",
 # green. That is the exact shape of the failure this tree keeps finding in its
-# own checkers: os/verify/lint.sh printed FAIL lines and reported "RESULT: PASS
-# (0/0 checks)" because its counters died in a subshell. So the count is read
-# out of the run and a run that asserted nothing is turned red here.
+# own checkers: the shell lint this package replaced printed FAIL lines and
+# reported "RESULT: PASS (0/0 checks)" because its counters died in a subshell.
+# So the count is read out of the run and a run that asserted nothing is turned
+# red here. The same guard, at the lint's own granularity, is in src/lint.ts.
 set -euo pipefail
 
 # Anchored, not counted. `..` arithmetic always produces a path, so a file that

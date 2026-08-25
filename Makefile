@@ -35,7 +35,7 @@ help:
 	@echo "  os-mkimage-v2-test  prove the v2 assembler rebuilds byte-identically, and refuses every layout mistake that would need a re-flash (docker)"
 	@echo "  os-mkimage-x64-test prove the x64 assembler rebuilds byte-identically, and refuses every boot-chain mistake that leaves a machine at the UEFI shell (docker)"
 	@echo "  os-layout-lint      check every board layout against the board-definition schema"
-	@echo "  os-layout-lint-test prove the layout linter rejects a broken board definition"
+	@echo "  os-layout-lint-test prove the layout linter rejects a broken board definition, including one declared empty"
 	@echo "  os-verify-test      run the os/verify bun+TypeScript suite (typecheck + bun test)"
 	@echo "  docs-verify         assert both document indexes agree with the tree, in both directions"
 	@echo "  docs-verify-test    prove the index assertions actually fail on a duplicated row or entry"
@@ -244,11 +244,24 @@ os-uboot-handshake-test:
 # is complete AND that no board declares a key its role cannot honour -- the
 # second direction is what would have caught BOOT_ATTEMPTS_DEFAULT sitting in
 # the grub board's layout before RAUC refused it on the device.
+#
+# THE NAMES ARE KEPT AND WHAT THEY RUN CHANGED (RFCT-109 M3b). Both targets used
+# to run a shell pair that `source`d each board definition; they now run the
+# TypeScript port, which parses it. RFCT-109's scope allows either keeping these
+# names or registering successors, and keeping them is the smaller change: they
+# are what the help lists, what two board.env files cite and what a person
+# types, and what moved is the implementation, not the question being asked.
+#
+# Both go through os/verify/run.sh so that there is still exactly ONE place
+# deciding how bun is invoked -- the seam RFCT-109's remaining half replaces
+# with a pinned container. os-layout-lint-test is os-verify-test filtered to the
+# lint's own cases; run.sh's vacuity guard counts `Ran N tests`, so a filter
+# that matched nothing is red rather than green.
 os-layout-lint:
-	bash os/verify/lint.sh
+	bash os/verify/run.sh --lint
 
 os-layout-lint-test:
-	bash os/verify/lint-test.sh
+	bash os/verify/run.sh src/lint.test.ts
 
 # PLAN-014 M3: the bun+TypeScript foundation, entered through one script.
 #
