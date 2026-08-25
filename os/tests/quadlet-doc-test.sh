@@ -87,8 +87,34 @@ if [ -z "${BUILDX_BUILDER:-}" ] && ! docker buildx inspect 2>/dev/null | grep -c
 fi
 
 cp "${QUADLET}" "${WORK}/quadlet"
+
+# THE BASE, from os/build-env/images.env, and by the --build-arg form rather
+# than by interpolating a reference into the heredoc. That is forced by the
+# heredoc's own body: the RUN below relies on ${out} reaching the Dockerfile
+# UNEXPANDED, so the delimiter has to stay quoted and nothing in here expands
+# on the host side. `ARG` before `FROM` is the same shape M2c gave every
+# Dockerfile in the tree -- declared with no default, so a build that forgets
+# the argument is refused rather than falling back to something.
+#
+# WHY IT MATTERS FOR THIS TEST SPECIFICALLY: what runs in the container is the
+# quadlet binary out of os/podman/out-arm64, generating systemd units that are
+# then asserted against docs/design/containers.md. It is dynamically linked, so
+# the base decides the glibc it loads against -- and a base that drifted would
+# surface as a documentation test failing about unit content.
+mapfile -t FROM_ARGS < <(bash "${REPO_ROOT}/os/build-env/from.sh" \
+    MOS_IMAGE_DEBIAN_TRIXIE=IMAGE_DEBIAN_TRIXIE)
+# mapfile cannot fail, so its status says nothing about the process inside the
+# substitution; an empty array is what a refusal looks like from here, and an
+# empty array would build with no --build-arg and no FROM at all. Same check,
+# and for the same reason, as os/podman/build.sh's.
+[ "${#FROM_ARGS[@]}" -eq 2 ] || {
+    echo "error: os/build-env/from.sh did not yield the base image (see its message above); this build would have run with an empty FROM" >&2
+    exit 1
+}
+
 cat >"${WORK}/Dockerfile" <<'DOCKERFILE'
-FROM debian:trixie-slim AS run
+ARG MOS_IMAGE_DEBIAN_TRIXIE
+FROM ${MOS_IMAGE_DEBIAN_TRIXIE} AS run
 COPY quadlet /usr/libexec/podman/quadlet
 COPY units/ /etc/containers/systemd/
 RUN set -eu; \
@@ -100,6 +126,7 @@ COPY --from=run /generated.txt /
 DOCKERFILE
 
 docker buildx build "${BUILDER_ARGS[@]}" \
+    "${FROM_ARGS[@]}" \
     --platform linux/arm64 \
     -f "${WORK}/Dockerfile" \
     -o "${WORK}/out" \

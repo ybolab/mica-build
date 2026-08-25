@@ -160,7 +160,16 @@ host_can_assemble() {
 # When the assembly has to run in a container the workspace must be reachable
 # by the docker daemon; a sandboxed private /tmp is not.
 require_visible_workspace() {
-    if docker run --rm -v "${WORK}:/t" alpine:3.21 test -f /t/rootfs-verity.img; then
+    # CONTAINER_BASE is resolved by the caller, in the one branch that needs an
+    # image at all. Asserted rather than assumed: this function would otherwise
+    # run `docker run --rm -v ... "" test -f ...`, and docker reports an empty
+    # image argument as a usage error about the wrong number of arguments --
+    # which reads as a bug in this line rather than as an unresolved pin.
+    [ -n "${CONTAINER_BASE:-}" ] || {
+        echo "error: require_visible_workspace was called before CONTAINER_BASE was resolved from os/build-env/images.env" >&2
+        exit 1
+    }
+    if docker run --rm -v "${WORK}:/t" "${CONTAINER_BASE}" test -f /t/rootfs-verity.img; then
         return 0
     fi
     echo "error: the docker daemon cannot bind-mount the workspace ${WORK}" >&2
@@ -275,9 +284,30 @@ for t in "${ASSERT_TOOLS[@]}"; do
     command -v "${t}" >/dev/null 2>&1 || missing_tools=1
 done
 if ! host_can_assemble || [ "${missing_tools}" -eq 1 ]; then
+    # THE SAME KEY os/mkimage-v2.sh's own container fallback resolves, so the
+    # tools these assertions run are the tools that assembled the image rather
+    # than a second alpine that happened to be current on a different day.
+    #
+    # NAMED HERE RATHER THAN READ OUT OF THE ASSEMBLER, which is a difference
+    # from os/tests/mkimage-x64-selftest.sh worth stating instead of leaving as
+    # an inconsistency. That file derives both the base and the package line
+    # from os/mkimage-x64.sh; this one already restates the package line on the
+    # RUN below -- see the comment above ASSERT_TOOLS, which says the image
+    # "carries exactly the package line os/mkimage-v2.sh's own container
+    # fallback installs" and then writes it out again. R6 pinned what was
+    # floating and did not close that older gap: making this derive would
+    # change what the selftest asserts, and this change is meant to alter no
+    # count. What it does buy is that the two restatements can no longer differ
+    # in the one place that used to float, because both sides now resolve
+    # IMAGE_ALPINE_3_21.
+    #
+    # The heredoc is unquoted so ${CONTAINER_BASE} expands -- the same shape
+    # os/tests/mkimage-x64-selftest.sh's tool image already uses. Nothing else
+    # in the body is a shell expansion.
+    CONTAINER_BASE="$(bash "${REPO_ROOT}/os/build-env/from.sh" --ref IMAGE_ALPINE_3_21)"
     require_visible_workspace
-    TOOL_IMAGE="$(docker build -q - <<'EOF'
-FROM alpine:3.21
+    TOOL_IMAGE="$(docker build -q - <<EOF
+FROM ${CONTAINER_BASE}
 RUN apk add --no-cache -q bash coreutils sgdisk dosfstools mtools e2fsprogs e2fsprogs-extra u-boot-tools
 EOF
     )"

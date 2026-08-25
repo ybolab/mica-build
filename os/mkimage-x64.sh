@@ -490,8 +490,23 @@ cp "${SCRIPT_DIR}/mkimage-common.sh" "${WORK}/mkimage-common.sh"
     echo "DATA_START_MIB=${data_start}"
 } >>"${WORK}/layout.env"
 
+# THE ASSEMBLY BASE, resolved from os/build-env/images.env rather than named
+# here. This container writes the GPT, the ESP, the ext4 filesystems and the
+# GRUB image of what ships on x64, out of an apt toolset it installs at run
+# time. Which debian that is decides those bytes -- the comment at the top of
+# this file already says BOOTX64.EFI is only as reproducible as the
+# grub-efi-amd64-bin in "the container image named below", and until this line
+# the answer to which one that was was a date. PLAN-014 decision 4.
+#
+# os/tests/mkimage-x64-selftest.sh READS THE KEY OFF THE LINE BELOW and resolves
+# it the same way, so its assertion container stays the assembly container. It
+# used to read the literal image; the key is the same derivation one level up,
+# and it refuses by name if this line is ever reshaped so the pattern stops
+# matching. Keep `--ref <KEY>` on one line here.
+ASSEMBLY_IMAGE="$(bash "${REPO_ROOT}/os/build-env/from.sh" --ref IMAGE_DEBIAN_TRIXIE)"
+
 docker run --rm -v "${WORK}:/w" \
-    debian:trixie-slim bash -c '
+    "${ASSEMBLY_IMAGE}" bash -c '
         apt-get update -qq >/dev/null 2>&1
         DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends \
             gdisk dosfstools mtools e2fsprogs grub-efi-amd64-bin grub-common >/dev/null 2>&1

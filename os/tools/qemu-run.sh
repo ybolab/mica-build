@@ -21,6 +21,21 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 OUT_DIR="${REPO_ROOT}/_out/x64"
 . "${REPO_ROOT}/os/boards/x64/board.env"
+
+# THE CONTAINER THIS FILE RUNS EVERYTHING IN, resolved from
+# os/build-env/images.env. Unlike the assemblers, this one is resolved at file
+# scope and not inside a branch, because there is no host path to protect: the
+# comment at the top of this file says QEMU runs in a container BECAUSE this
+# host has none, so every route through this script needs the image and a
+# failure to resolve it is a failure of the run either way.
+#
+# ONE RESOLUTION FOR THREE USES -- the ESP grub.cfg edit under
+# MOS_QEMU_APPEND, and the two qemu invocations at the bottom. They were three
+# separate `debian:trixie-slim` literals and had to stay in step by hand; the
+# machine model, the firmware build and the disk interface are pinned here
+# precisely so "a green run means the same thing on someone else's laptop", and
+# the ovmf that supplies the firmware comes out of this base.
+QEMU_IMAGE="$(bash "${REPO_ROOT}/os/build-env/from.sh" --ref IMAGE_DEBIAN_TRIXIE)"
 IMG="${MOS_QEMU_IMAGE:-${OUT_DIR}/${IMAGE_LATEST_NAME}}"
 TIMEOUT="${MOS_QEMU_TIMEOUT:-240}"
 MEM="${MOS_QEMU_MEM:-2048}"
@@ -104,7 +119,7 @@ fi
 if [ -n "${MOS_QEMU_APPEND:-}" ]; then
     esp_off=$(( BOOT_A_START_MIB * 1048576 ))
     docker run --rm -v "${RUN_DIR}:/w" -e OFF="${esp_off}" -e APPEND="${MOS_QEMU_APPEND}" \
-        debian:trixie-slim bash -c '
+        "${QEMU_IMAGE}" bash -c '
             set -eu
             apt-get update -qq >/dev/null 2>&1
             DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends mtools >/dev/null 2>&1
@@ -255,9 +270,9 @@ INSTALL_AND_RUN='
     bash /w/run.sh'
 
 if [ -n "${CAPTURE}" ]; then
-    timeout "${TIMEOUT}" docker run "${DOCKER_ARGS[@]}" debian:trixie-slim \
+    timeout "${TIMEOUT}" docker run "${DOCKER_ARGS[@]}" "${QEMU_IMAGE}" \
         bash -c "${INSTALL_AND_RUN}" >"${CAPTURE}" 2>&1 || true
     echo "console captured to ${CAPTURE} ($(wc -l <"${CAPTURE}") lines)"
 else
-    docker run "${DOCKER_ARGS[@]}" debian:trixie-slim bash -c "${INSTALL_AND_RUN}"
+    docker run "${DOCKER_ARGS[@]}" "${QEMU_IMAGE}" bash -c "${INSTALL_AND_RUN}"
 fi

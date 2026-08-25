@@ -75,8 +75,14 @@ trap 'rm -rf "${work}"' EXIT
 # same reason: a missing host tool must not read as a FAIL that indicts the
 # image.
 if ! command -v sgdisk >/dev/null 2>&1; then
-    TOOL_IMAGE="$(docker build -q - <<'EOF'
-FROM alpine:3.21
+    # The base, from os/build-env/images.env -- IMAGE_ALPINE_3_21, the same key
+    # os/mkimage-v2.sh assembles from and os/verify-image-v2.sh verifies from,
+    # so the sgdisk that reads a GPT here is the sgdisk that wrote it. The
+    # heredoc is unquoted so ${TOOL_BASE} expands; nothing else in the body is a
+    # shell expansion.
+    TOOL_BASE="$(bash "${REPO_ROOT}/os/build-env/from.sh" --ref IMAGE_ALPINE_3_21)"
+    TOOL_IMAGE="$(docker build -q - <<EOF
+FROM ${TOOL_BASE}
 RUN apk add --no-cache -q sgdisk
 EOF
     )"
@@ -152,13 +158,25 @@ mkdefs() {
 # Runs a real systemd-repart over a copy of the image on a loop device, with
 # STOCK settings: no --discard flag at all, so discard is on. Echoes the four
 # bytes at LBA 64 afterwards; the run's own log lands in ${work}/<name>.log.
+# THE REPART CONTAINER'S BASE, from os/build-env/images.env, resolved once for
+# the three containers below that share it: the two systemd-repart runs and the
+# unsquashfs that reads /etc/repart.d back out of the shipped root.
+#
+# IMAGE_DEBIAN_BOOKWORM AND NOT _TRIXIE, which is the pre-existing choice and
+# not a new one -- all three named `debian:bookworm-slim` literally before R6
+# and this records what they already ran on rather than moving them. Note that
+# this key's own comment in images.env used to say the pack stage of
+# os/rootfs/Dockerfile.v2 consumed it and NOTHING ELSE; R6 made that false and
+# amended it, which is the only edit R6 made to an existing entry there.
+REPART_BASE="$(bash "${REPO_ROOT}/os/build-env/from.sh" --ref IMAGE_DEBIAN_BOOKWORM)"
+
 run_repart() {
     local name="$1" defs="$2"
     local copy="${work}/${name}.img"
 
     truncate -s "${GROWN_SIZE}" "${copy}"
 
-    docker run --rm --privileged -v "${work}:/w" debian:bookworm-slim sh -c "
+    docker run --rm --privileged -v "${work}:/w" "${REPART_BASE}" sh -c "
         set -e
         apt-get update -qq >/dev/null 2>&1
         apt-get install -y -qq systemd util-linux >/dev/null 2>&1
@@ -294,7 +312,7 @@ run_repart_rc() {
     local name="$1" defs="$2" src="$3" rc=0
     cp "${src}" "${work}/${name}.img"
     truncate -s "${GROWN_SIZE}" "${work}/${name}.img"
-    docker run --rm --privileged -v "${work}:/w" debian:bookworm-slim sh -c "
+    docker run --rm --privileged -v "${work}:/w" "${REPART_BASE}" sh -c "
         set -e
         apt-get update -qq >/dev/null 2>&1
         apt-get install -y -qq systemd util-linux >/dev/null 2>&1
@@ -325,7 +343,7 @@ elif [ ! -f "${ROOTFS_SLOT}" ]; then
 else
     cp "${ROOTFS_SLOT}" "${work}/slot.squashfs"
     rm -rf "${work}/defs-shipped" "${work}/defs-prefix"
-    docker run --rm -v "${work}:/w" debian:bookworm-slim sh -c '
+    docker run --rm -v "${work}:/w" "${REPART_BASE}" sh -c '
         set -e
         apt-get update -qq >/dev/null 2>&1
         apt-get install -y -qq squashfs-tools >/dev/null 2>&1
