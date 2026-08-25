@@ -13,6 +13,7 @@ import {
   chooseRoute,
   missingHostTools,
   mountDirs,
+  mountFault,
   REQUIRED_TOOLS,
   runChecked,
   TOOL_IMAGE_KEY,
@@ -96,6 +97,37 @@ describe('mounts are identity mounts, and there is one per directory', () => {
     // when what is missing is the file they named.
     const ghost = join(REPO_ROOT, '_out', 'nothing-here.img')
     expect(mountDirs([ghost])).toEqual([dirname(ghost)])
+  })
+})
+
+describe('the mount preflight probes CONTENT, because a path proves nothing', () => {
+  const base = { unseen: [] as string[], echoed: 'S', sentinel: 'S', workDir: '/w' }
+
+  test('a mount that carries what the host has is no fault', () => {
+    expect(mountFault(base)).toBeUndefined()
+  })
+
+  test('a path the container cannot see names it and names the mount', () => {
+    // The shape this host produces: a bind mount under /tmp succeeds and
+    // delivers an empty directory, so the sentinel FILE is not in it.
+    const fault = mountFault({ ...base, unseen: ['/tmp/w/.probe'] })
+    expect(fault).toContain('/tmp/w/.probe')
+    expect(fault).toContain('the mount that is empty')
+  })
+
+  test('a mount that carries something ELSE is a fault too', () => {
+    // Cannot be produced on this host -- so it is driven here rather than left
+    // as a branch nobody has ever seen take. The first version of this guard
+    // asked `[ -e "$dir" ]` of the work directory, which an empty mount
+    // SATISFIES: run with --work under /tmp it reported no problem at all.
+    const fault = mountFault({ ...base, echoed: 'something else' })
+    expect(fault).toContain("reads back as 'something else'")
+    expect(fault).toContain('a content probe and not an existence one')
+  })
+
+  test('a sentinel that reads back empty is reported as (nothing)', () => {
+    expect(mountFault({ ...base, echoed: '' })).toContain('reads back as (nothing)')
+    expect(mountFault({ ...base, echoed: undefined })).toContain('reads back as (nothing)')
   })
 })
 

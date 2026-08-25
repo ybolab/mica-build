@@ -18,13 +18,13 @@
 // "non-zero" would be unable to tell an unfinished migration from a broken one,
 // and those are opposite instructions.
 
-import { existsSync, mkdirSync } from 'node:fs'
+import { existsSync, mkdirSync, readdirSync } from 'node:fs'
 import { isAbsolute, join, resolve } from 'node:path'
-import { boardEnvPath, OS_DIR, REPO_ROOT } from './paths.ts'
+import { BOARDS_DIR, boardEnvPath, OS_DIR, REPO_ROOT } from './paths.ts'
 import { loadBoard, type Board } from './board.ts'
 import { CHECKS, checksFor, createImageContext, runChecks, type CheckCase } from './checks.ts'
 import { diffParity, formatReport, parseShellRun, type ParityReport } from './parity.ts'
-import { createToolRuntime, type ToolRuntime } from './tools.ts'
+import { chooseRoute, createToolRuntime, missingHostTools, type ToolRoute, type ToolRuntime } from './tools.ts'
 import { probeImage } from './probe.ts'
 
 const SHELL_VERIFIER = join(OS_DIR, 'verify-image-v2.sh')
@@ -37,6 +37,8 @@ interface Options {
   probe: boolean
   json: string | undefined
   workRoot: string
+  /** Decided once for the whole run, before the first oracle run. */
+  route?: ToolRoute
 }
 
 function usage(): string {
@@ -164,13 +166,31 @@ async function runShellVerifier(
   return { stdout, code }
 }
 
+/**
+ * Load a board definition, or say which board was asked for and which exist.
+ *
+ * loadBoard's own failure is an ENOENT naming a path -- true, and it sends a
+ * reader who typed `--board x86` to look for a file rather than to look at the
+ * flag they typed.
+ */
+function boardOrRefuse(name: string): Board {
+  const path = boardEnvPath(name)
+  if (!existsSync(path)) {
+    throw new Error(
+      `'${name}' is not a board this tree ships. ${path} does not exist; `
+      + `os/boards/ holds ${readdirSync(BOARDS_DIR).sort().join(', ')}.`,
+    )
+  }
+  return loadBoard(path)
+}
+
 async function parityForBoard(
   boardName: string,
   image: string,
   options: Options,
   checks: readonly CheckCase[],
 ): Promise<{ report: ParityReport, failures: string[] }> {
-  const board = loadBoard(boardEnvPath(boardName))
+  const board = boardOrRefuse(boardName)
   if (!existsSync(image)) {
     throw new Error(
       `${image} is not there. Build it, or name one with --image; a parity run needs the SAME image `
@@ -196,6 +216,7 @@ async function parityForBoard(
   const tools: ToolRuntime = await createToolRuntime({
     readOnly: [image, REPO_ROOT],
     workDir,
+    route: options.route,
     log: line => console.log(line),
   })
 
@@ -221,11 +242,19 @@ async function parityForBoard(
 
 async function main(): Promise<number> {
   const options = parseArgs(Bun.argv.slice(2))
+
+  // WHERE THE TOOLS COME FROM IS DECIDED ONCE, HERE, before the first oracle
+  // run. Left to the first createToolRuntime it would be decided per board and
+  // AFTER a ~30 s shell verifier run -- so `MOS_VERIFY_TOOLS=hsot` would cost
+  // half a minute before saying it was a typo, and a two-board run could in
+  // principle take one route for cx3576 and another for x64.
+  options.route = chooseRoute(process.env['MOS_VERIFY_TOOLS'], await missingHostTools())
+
   const reports: ParityReport[] = []
   let worst = 0
 
   for (const boardName of options.boards) {
-    const board = loadBoard(boardEnvPath(boardName))
+    const board = boardOrRefuse(boardName)
     const image = options.image === undefined
       ? defaultImage(board)
       : (isAbsolute(options.image) ? options.image : resolve(process.cwd(), options.image))

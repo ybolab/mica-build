@@ -36,8 +36,8 @@
 // status says so with `allow`. The check decides what a failure means; the
 // helper never decides it by silence.
 
-import { existsSync, statSync } from 'node:fs'
-import { dirname, resolve } from 'node:path'
+import { existsSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs'
+import { dirname, join, resolve } from 'node:path'
 import { REPO_ROOT } from './paths.ts'
 
 /** The image key every route below resolves through os/build-env/from.sh. */
@@ -256,6 +256,43 @@ export function mountDirs(paths: readonly string[]): string[] {
   return [...dirs].sort()
 }
 
+/**
+ * The preflight's verdict, as a pure function so both branches can be driven.
+ *
+ * The `unseen` branch is the one this host produces -- a bind mount under /tmp
+ * delivers an empty directory and the sentinel FILE is not in it. The
+ * `echoed` branch covers the subtler shape: a mount that carries something
+ * other than what the host has at that path. It cannot be produced on this
+ * host, so it is driven in the suite instead of being left as a branch nobody
+ * has ever seen take.
+ */
+export function mountFault(input: {
+  unseen: readonly string[]
+  echoed: string | undefined
+  sentinel: string
+  workDir: string
+}): string | undefined {
+  if (input.unseen.length > 0) {
+    return `the pinned tool container cannot see paths that this host can:\n`
+      + input.unseen.map(u => `         ${u}`).join('\n')
+      + `\n       The mount succeeded and delivered nothing, which is how a bind mount of /tmp`
+      + `\n       behaves on this host. The file IS there; it is the mount that is empty. Put it`
+      + `\n       somewhere the docker daemon can actually share (inside the repository, or under`
+      + `\n       _out/ or /srv).`
+  }
+  if (input.echoed !== input.sentinel) {
+    const got = input.echoed === undefined || input.echoed === '' ? '(nothing)' : `'${input.echoed}'`
+    return `the work directory ${input.workDir} is mounted into the tool container and does not\n`
+      + `       carry its contents. A sentinel written there reads back as ${got} inside the\n`
+      + `       container, where it should read '${input.sentinel}'.\n`
+      + `       The DIRECTORY being visible proves nothing -- an empty bind mount preserves that\n`
+      + `       much, which is why this is a content probe and not an existence one. Every\n`
+      + `       partition extracted into it would be written on one side of the mount and read on\n`
+      + `       the other. Put the work directory under the repository, _out/ or /srv.`
+  }
+  return undefined
+}
+
 const liveContainers = new Set<string>()
 /** Distinguishes concurrent runtimes in one process; the pid alone would not. */
 let runtimeSeq = 0
@@ -405,27 +442,56 @@ async function createContainerRuntime(
 
   // THE MOUNT THAT SUCCEEDS AND CARRIES NOTHING. On this host a bind mount of
   // anything under /tmp propagates as an EMPTY DIRECTORY rather than failing --
-  // measured 2026-08-25 and recorded at os/verify/run.sh:217. Without this, a
+  // measured 2026-08-25 and recorded at os/verify/run.sh:217. Without a guard, a
   // helper would report "sgdisk: cannot open image.img" about a file the host
-  // reads fine, and send the reader to look for a path they can `cat`. So every
-  // path this runtime was asked to carry is asserted VISIBLE INSIDE THE
-  // CONTAINER before any tool runs, and the refusal names the mount.
-  const wanted = [...(request.readOnly ?? []).map(p => resolve(p)), workDir]
-  const probe = await exec(['sh', '-c',
-    'for f in "$@"; do [ -e "$f" ] || printf "unseen:%s\\n" "$f"; done', 'sh', ...wanted])
-  const unseen = probe.stdout.split('\n').filter(l => l.startsWith('unseen:')).map(l => l.slice(7))
-  if (unseen.length > 0) {
+  // reads fine, and send the reader to look for a path they can `cat`.
+  //
+  // EVERY PROBE HERE IS A PROBE FOR CONTENT, NOT FOR A PATH, and that
+  // distinction was found by driving it rather than reasoned about. The first
+  // version asked `[ -e "$dir" ]` of each mounted directory -- and an empty
+  // mount SATISFIES that: the directory is there inside the container, it just
+  // carries nothing. Run with --work under /tmp it reported no problem at all.
+  // A directory's existence is exactly the fact a broken bind mount preserves.
+  //
+  // So: a read-only directory is proved by a WITNESS ENTRY taken from the host
+  // listing, and the work directory -- which is written, and where every
+  // extracted partition lands -- by a sentinel written here and read back
+  // inside, compared byte for byte.
+  const witnesses: string[] = []
+  for (const p of request.readOnly ?? []) {
+    const abs = resolve(p)
+    if (!isDir(abs)) {
+      witnesses.push(abs)
+      continue
+    }
+    const entries = readdirSync(abs)
+    // Nothing to witness with, and nothing to lose: an empty directory carries
+    // the same nothing whether or not the mount works.
+    if (entries[0] !== undefined) witnesses.push(join(abs, entries[0]))
+  }
+
+  const sentinelName = `.mos-verify-mount-probe-${process.pid}-${runtimeSeq}`
+  const sentinelPath = join(workDir, sentinelName)
+  const sentinel = `mos-verify ${process.pid} ${runtimeSeq} ${name}`
+  writeFileSync(sentinelPath, sentinel)
+
+  const refuseWith = async (message: string): Promise<never> => {
+    rmSync(sentinelPath, { force: true })
     await capture(['docker', 'rm', '-f', name])
     liveContainers.delete(name)
-    throw new ToolOutputError(
-      `the pinned tool container cannot see paths that this host can:\n`
-      + unseen.map(u => `         ${u}`).join('\n')
-      + `\n       The mount succeeded and delivered nothing, which is how a bind mount of /tmp`
-      + `\n       behaves on this host. The file IS there; it is the mount that is empty. Put it`
-      + `\n       somewhere the docker daemon can actually share (inside the repository, or under`
-      + `\n       _out/ or /srv).`,
-    )
+    throw new ToolOutputError(message)
   }
+
+  const probe = await exec(['sh', '-c',
+    'for f in "$@"; do [ -e "$f" ] || printf "unseen:%s\\n" "$f"; done; '
+    + 'printf "sentinel:"; cat "$1" 2>/dev/null; printf "\\n"',
+    'sh', sentinelPath, ...witnesses])
+  const unseen = probe.stdout.split('\n').filter(l => l.startsWith('unseen:')).map(l => l.slice(7))
+  const echoed = probe.stdout.split('\n').find(l => l.startsWith('sentinel:'))?.slice('sentinel:'.length)
+
+  const fault = mountFault({ unseen, echoed, sentinel, workDir })
+  if (fault !== undefined) await refuseWith(fault)
+  rmSync(sentinelPath, { force: true })
 
   const add = await exec(['apk', 'add', '--no-cache', '-q', ...TOOL_PACKAGES])
   if (add.code !== 0) {
