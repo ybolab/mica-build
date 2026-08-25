@@ -146,7 +146,8 @@ find "${FACTORY_VAR_FIXTURE}" -exec touch -h -d "${FILE_MTIME}" {} +
 host_can_assemble() {
     command -v sgdisk >/dev/null && command -v mkfs.vfat >/dev/null &&
         command -v mcopy >/dev/null && command -v mke2fs >/dev/null &&
-        command -v mkimage >/dev/null || return 1
+        command -v mkimage >/dev/null && command -v dumpe2fs >/dev/null &&
+        command -v debugfs >/dev/null || return 1
     local probe rc=0
     probe="${WORK}/mke2fs-probe.img"
     truncate -s "${META_SIZE_MIB}M" "${probe}"
@@ -277,7 +278,7 @@ if ! host_can_assemble || [ "${missing_tools}" -eq 1 ]; then
     require_visible_workspace
     TOOL_IMAGE="$(docker build -q - <<'EOF'
 FROM alpine:3.21
-RUN apk add --no-cache -q bash coreutils sgdisk dosfstools mtools e2fsprogs u-boot-tools
+RUN apk add --no-cache -q bash coreutils sgdisk dosfstools mtools e2fsprogs e2fsprogs-extra u-boot-tools
 EOF
     )"
     [ -n "${TOOL_IMAGE}" ] || { echo "error: could not build the container tool image" >&2; exit 1; }
