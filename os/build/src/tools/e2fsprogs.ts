@@ -5,11 +5,27 @@
 //   mke2fs    exit status.
 //   dumpe2fs  exit status, plus a header this parser must actually understand
 //             -- a field it cannot read is refused rather than defaulted.
-//   debugfs   ITS STDERR. debugfs EXITS 0 even when an individual command
-//             inside it failed, so its exit status says nothing. This is the
-//             single most important line in os/mkimage-common.sh's header:
-//             "Silencing the stream instead would let a rename of `sif` turn
-//             this into a no-op that still reports success."
+//   debugfs   ITS STDERR, mostly -- and the detail matters here, so it was
+//             MEASURED rather than taken from the comment that describes it.
+//             debugfs 1.47.1, `-w -f <cmds> <img>`, on 2026-08-25:
+//
+//               valid commands, real filesystem     rc 0, banner only
+//               UNKNOWN command (`sif_renamed`)     rc 1, "Command not found"
+//               bad ARGUMENT (`sif <999999>`)       rc 0, "File not found ..."
+//               image is not a filesystem           rc 0, "Bad magic number"
+//               image is not there at all           rc 0, "No such file ..."
+//               command file is not there           rc 1, "No such file ..."
+//               command file is EMPTY               rc 0, banner only
+//
+//             So neither signal alone is the verdict: three failure shapes exit
+//             0 and two exit 1, and both are read below.
+//             os/mkimage-common.sh gives the reason for reading stderr as "a
+//             rename of `sif` [would] turn this into a no-op that still reports
+//             success" -- that example does NOT hold for this debugfs, which
+//             exits 1 on an unknown command. The argument is right and the
+//             example is not; the shapes that really are silent are a bad
+//             ARGUMENT and an image that cannot be opened. The empty-command-
+//             file row is the one neither signal carries, and it is refused.
 //
 // That is three tools in one toolset with three different answers to "did it
 // work", which is why toolbox.run() interprets none of them.
@@ -32,6 +48,7 @@
 // signal handled correctly, so that the port is a translation rather than a
 // rediscovery.
 
+import { existsSync, readFileSync } from 'node:fs'
 import type { Toolbox, ToolResult } from '../toolbox.ts'
 import { ToolError } from '../toolbox.ts'
 
@@ -193,10 +210,33 @@ export async function dumpe2fsFull(tb: Toolbox, image: string): Promise<string> 
  *   a script too. Both sides of the container boundary see the same path.
  */
 export async function debugfsApply(tb: Toolbox, image: string, commandsFile: string): Promise<ToolResult> {
+  // A COMMAND FILE WITH NOTHING IN IT EXITS 0 WITH A CLEAN STDERR -- measured,
+  // and it is the one failure neither signal carries. pin_seeded_times builds
+  // this file by parsing dumpe2fs's free-inode ranges, so an empty one is
+  // exactly what a parse that understood nothing would produce: the pass runs,
+  // pins no timestamps, reports success, and EPHEMERAL quietly stops rebuilding
+  // byte-identically. That function cross-checks its own count upstream of
+  // here; this is the same refusal at the tool, for every other caller.
+  const script = existsSync(commandsFile) ? readFileSync(commandsFile, 'utf8') : undefined
+  if (script !== undefined && script.split('\n').every(l => l.trim() === '')) {
+    throw new Error(
+      `${commandsFile} contains no debugfs command. debugfs would read it, do nothing and exit 0 with `
+      + `an empty stderr -- the same success as a run that applied every command in it. If this file `
+      + `is generated, what failed is whatever generated it.`,
+    )
+  }
+
   const r = await tb.run(['debugfs', '-w', '-f', commandsFile, image])
-  // The exit status still matters when it is nonzero -- debugfs failing to OPEN
-  // the filesystem does say so that way. It is just not sufficient.
-  if (!r.ok) throw new ToolError(r, `debugfs could not open ${image}`)
+  // The exit status is not sufficient, and it is not nothing either: an
+  // unrecognised command and a command file that cannot be read both arrive
+  // this way.
+  if (!r.ok) {
+    throw new ToolError(
+      r,
+      `debugfs exited ${r.exitCode} applying ${commandsFile} to ${image} -- which is how it reports a `
+      + `command it does not recognise, and a command file it cannot read`,
+    )
+  }
 
   const errs = r.stderr.split('\n')
     .filter(l => l.trim() !== '')

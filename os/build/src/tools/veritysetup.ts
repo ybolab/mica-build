@@ -75,6 +75,20 @@ export function formatArgs(spec: VerityFormatSpec): string[] {
 }
 
 /**
+ * The root hash out of `veritysetup format`'s output, or undefined.
+ *
+ * Exported so the refusal below is REACHABLE without a veritysetup that
+ * misbehaves: no argument makes the real tool exit 0 and print no hash, so a
+ * guard against it could otherwise never be run -- and this campaign has twice
+ * found a guard that was itself unreachable, each time only by mutating it.
+ */
+export function parseRootHash(stdout: string): string | undefined {
+  const m = /^Root hash:\s+([0-9a-fA-F]+)\s*$/m.exec(stdout)
+  if (m === null || m[1] === undefined) return undefined
+  return m[1].toLowerCase()
+}
+
+/**
  * Format the hash tree and return the root hash.
  *
  * @throws ToolError when veritysetup fails, AND when it succeeds without
@@ -85,8 +99,8 @@ export async function format(tb: Toolbox, spec: VerityFormatSpec): Promise<strin
   const r = await tb.must(formatArgs(spec), {
     note: `veritysetup could not format a hash tree over ${spec.dataFile}`,
   })
-  const m = /^Root hash:\s+([0-9a-fA-F]+)\s*$/m.exec(r.stdout)
-  if (m === null || m[1] === undefined) {
+  const hash = parseRootHash(r.stdout)
+  if (hash === undefined) {
     throw new ToolError(
       r,
       `veritysetup format exited 0 over ${spec.dataFile} and printed no readable "Root hash:" line. `
@@ -95,7 +109,7 @@ export async function format(tb: Toolbox, spec: VerityFormatSpec): Promise<strin
       + `does not exist"`,
     )
   }
-  return m[1].toLowerCase()
+  return hash
 }
 
 export interface VerityVerifySpec {

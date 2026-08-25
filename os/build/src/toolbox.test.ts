@@ -14,6 +14,7 @@ import { join } from 'node:path'
 import { $ } from 'bun'
 import { makeWorkDir, REPO_ROOT } from './paths.ts'
 import { Toolbox, ToolError, type Toolset } from './toolbox.ts'
+import { OPEN_TIMEOUT_MS, TOOL_TIMEOUT_MS } from './testing.ts'
 import { COREUTILS, CX3576_ASSEMBLY, mke2fsCanWriteTheseLayouts } from './toolsets.ts'
 
 const docker = process.env.MOS_BUILD_DOCKER || 'docker'
@@ -27,13 +28,13 @@ beforeAll(async () => {
   work = makeWorkDir('toolbox')
   host = await Toolbox.open(COREUTILS, { mounts: [REPO_ROOT], cwd: work, announce: l => announced.push(l) })
   container = await Toolbox.open(CX3576_ASSEMBLY, { mounts: [REPO_ROOT], cwd: work, announce: l => announced.push(l) })
-})
+}, OPEN_TIMEOUT_MS)
 
 afterAll(async () => {
   await host?.close()
   await container?.close()
   if (work !== '') rmSync(work, { recursive: true, force: true })
-})
+}, OPEN_TIMEOUT_MS)
 
 describe('the route is measured, and both of them happen here', () => {
   test('coreutils is on this host, so that toolset runs on the host', () => {
@@ -77,7 +78,7 @@ describe('a tool that runs, runs the same way on both routes', () => {
     expect(Bun.file(join(work, 'b.img')).size).toBe(1048576)
     // Byte-identical, which is the property every later milestone is gated on.
     expect(await Bun.file(join(work, 'a.img')).bytes()).toEqual(await Bun.file(join(work, 'b.img')).bytes())
-  })
+  }, TOOL_TIMEOUT_MS)
 
   test('the identity mount makes a host path name the same file inside', async () => {
     // Not /w and not /work. The container is handed a path built OUTSIDE it,
@@ -198,7 +199,7 @@ describe('a toolbox that cannot provide its tools does not open', () => {
     expect(msg).toContain('missing:')
     expect(msg).toMatch(/debugfs/)
     expect(msg).toContain('e2fsprogs')
-  })
+  }, OPEN_TIMEOUT_MS)
 
   test('the positive control: the same image WITH the extra package opens', async () => {
     // Otherwise the assertion above would also pass if nothing could ever open.
@@ -215,7 +216,7 @@ describe('a toolbox that cannot provide its tools does not open', () => {
     } finally {
       await tb.close()
     }
-  })
+  }, OPEN_TIMEOUT_MS)
 
   test('a package that does not exist is an install failure naming the packages', async () => {
     const bad: Toolset = {
@@ -227,7 +228,7 @@ describe('a toolbox that cannot provide its tools does not open', () => {
     }
     await expect(Toolbox.open(bad, { route: 'container' }))
       .rejects.toThrow(/could not be installed.*this-package-does-not-exist-xyz/s)
-  })
+  }, OPEN_TIMEOUT_MS)
 
   test('an image key images.env does not define is refused BY THE KEY, before any container', async () => {
     const bad: Toolset = {
@@ -263,7 +264,7 @@ describe('the session is torn down, and says so if used afterwards', () => {
     await tb.close()
     await tb.close()
     expect((await $`${docker} inspect ${name}`.nothrow().quiet()).exitCode).not.toBe(0)
-  })
+  }, OPEN_TIMEOUT_MS)
 
   test('a call after close names the toolbox rather than a random container id', async () => {
     const tb = await Toolbox.open(COREUTILS, { route: 'host' })

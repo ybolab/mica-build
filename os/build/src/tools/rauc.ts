@@ -96,7 +96,15 @@ export async function bundle(tb: RaucToolbox, spec: BundleSpec): Promise<ToolRes
 
 export interface InfoSpec {
   readonly bundle: string
-  /** `--keyring`. Without it rauc does not verify the signature. */
+  /**
+   * `--keyring`.
+   *
+   * Optional in this type and NOT optional to rauc: measured against rauc 1.13,
+   * `rauc info` with no keyring exits 1 with "No keyring file or directory
+   * provided" rather than reading the bundle unverified. It stays optional here
+   * only so that behaviour can be demonstrated from a test; every real caller
+   * passes one, and os/update/bundle.sh's verify_bundle does.
+   */
   readonly keyring?: string
   /** `--conf`. os/update/bundle.sh loads the system.conf the image ships. */
   readonly conf?: string
