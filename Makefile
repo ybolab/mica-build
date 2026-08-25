@@ -69,14 +69,14 @@ os-devkeys:
 	bash os/update/rauc/gen-dev-keys.sh
 
 os-health-test:
-	bash os/health/test.sh
+	bash os/tests/health-test.sh
 
 # Drives the real mos-shadow-reconcile against fixtures in a temp dir: the
 # transient-root-password clearing, the mismatch branch that lets a dev image's
 # ROOT_PASSWORD survive a reboot, and the pre-existing append rule. Needs no
 # root and touches no host state.
 os-shadow-test:
-	bash os/shadow-reconcile-test.sh
+	bash os/tests/shadow-reconcile-test.sh
 
 # Stands up a real dbus-daemon whose configuration <include>s the SHIPPED
 # mosd/dist/com.mos.mosd.conf, owns com.mos.mosd from a root connection, and
@@ -96,7 +96,7 @@ os-dbus-policy-test:
 # Needs privileged docker, so it is a dedicated target rather than part of
 # os-verify; it fails loudly when it cannot run rather than skipping.
 os-repart-test:
-	bash os/repart-loader-test.sh
+	bash os/tests/repart-loader-test.sh
 
 # Drives the real os/verify-image-v2.sh against mutated fixtures -- an fstab
 # with /srv moved onto EPHEMERAL or STATE, one stripped of x-systemd.growfs, one
@@ -128,7 +128,7 @@ os-repart-test:
 # Needs no root, no image and no docker, and it fails loudly when it cannot run
 # rather than skipping.
 os-ui-location-test:
-	bash os/ui-location-test.sh
+	bash os/tests/ui-location-test.sh
 
 # SPIKE RFCT-087: executes the SHIPPED os/boards/cx3576/boot.cmd — compiled by
 # the same mkimage invocation the assembler uses, byte-unmodified — under a
@@ -139,10 +139,10 @@ os-ui-location-test:
 # other slot is chosen at zero, exhaustion refills to 3, a slot missing its
 # mos-verity-<slot>.env is burned, and a returning booti burns the slot it
 # tried. Needs docker; network only on the first (uncached) build, offline
-# afterwards. See os/boot/handshake-test/harness.sh for the execution model,
+# afterwards. See os/tests/handshake-test/harness.sh for the execution model,
 # including the one emulated transition (kernel handoff) and why.
 os-uboot-handshake-test:
-	bash os/boot/handshake-test/run.sh
+	bash os/tests/handshake-test/run.sh
 
 # Structural check on the two document indexes. It exists because the indexes
 # are the one thing no other check can reach: a document that is never listed
@@ -180,7 +180,7 @@ os-rauc:
 	MOS_BOARD=$(or $(MOS_BOARD),cx3576) bash os/update/rauc/build.sh
 
 os-shell-pipefail-lint:
-	bash os/shell-pipefail-lint.sh
+	bash os/tests/shell-pipefail-lint.sh
 
 docs-verify:
 	bash docs/verify-index.sh
@@ -203,7 +203,7 @@ docs-verify-test:
 # Quadlet generator the image ships. A configuration example nothing executes
 # is a claim that cannot fail; this makes the document part of the suite.
 os-quadlet-doc-test:
-	bash os/quadlet-doc-test.sh
+	bash os/tests/quadlet-doc-test.sh
 
 # PLAN-012 M1: the container engine, built from upstream source into seven
 # aarch64 binaries. Same arrangement as the board artifact builds -- a

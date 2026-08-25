@@ -20,7 +20,7 @@ REPO_ROOT="$(cd "${SCRIPT_DIR}/../../.." && pwd)"
 MOS_BOARD="${MOS_BOARD:-cx3576}"
 LAYOUT_ENV="${REPO_ROOT}/os/boards/${MOS_BOARD}/board.env"
 OVERLAY="${REPO_ROOT}/os/rootfs/overlay-v2"
-# Overridable only so os/mkimage-v2-selftest.sh can drive the renderer against a
+# Overridable only so os/tests/mkimage-v2-selftest.sh can drive the renderer against a
 # deliberately-broken template; every real invocation uses the tree's own files.
 SYSTEM_CONF_IN="${SYSTEM_CONF_IN:-${SCRIPT_DIR}/system.conf.in}"
 SYSTEM_CONF_OUT="${SYSTEM_CONF_OUT:-${OVERLAY}/etc/rauc/system.conf}"

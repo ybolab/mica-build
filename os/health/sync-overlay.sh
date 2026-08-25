@@ -2,7 +2,7 @@
 # Stage os/health into the v2 rootfs overlay (os/rootfs/overlay-v2), which is a
 # plain mirror of the target filesystem copied into the image by the v2 rootfs
 # build. The sources here are the single point of edit; run this after changing
-# any of them. `os/health/test.sh` fails if the two ever drift.
+# any of them. `os/tests/health-test.sh` fails if the two ever drift.
 set -euo pipefail
 HERE=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 OVERLAY=$HERE/../rootfs/overlay-v2

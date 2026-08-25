@@ -61,7 +61,7 @@ done
 # MOS_VERIFY_FIXTURE_ROOT redirects the ONE input a small set of assertions
 # read -- a directory standing in for the unpacked read-only root, holding an
 # etc/fstab, the mountpoints and /usr/bin/apid -- and runs that set and nothing
-# else. It exists so os/ui-location-test.sh can drive THIS EXACT SCRIPT against
+# else. It exists so os/tests/ui-location-test.sh can drive THIS EXACT SCRIPT against
 # mutated fixtures and watch the assertions fail, without building an image;
 # nothing in the build or in make os-verify-cx3576-v2 sets it. A verifier
 # assertion that has only ever been observed passing is not evidence, and a
@@ -70,7 +70,7 @@ done
 # The set is check_ui_location, check_builtin_ui, check_packed_mountpoints,
 # check_status_led, check_dev_keyring, check_ext_unit_dir and check_ext_policy,
 # and it is expected to GROW.
-# os/ui-location-test.sh names the members it expects and diffs that against
+# os/tests/ui-location-test.sh names the members it expects and diffs that against
 # what actually ran, so widening this hook makes that test say which name it
 # did not expect rather than silently changing a count -- which is why the
 # count it used to assert had to go.
@@ -589,7 +589,7 @@ check_dev_keyring() {
 # The mountpoint's EXISTENCE is not asserted here. It is a member of
 # PACKED_MOUNTPOINTS, so check_packed_mountpoints owns it -- and owning it there
 # rather than here is what puts it inside the fixture hook, where
-# os/ui-location-test.sh can watch it fail without an image.
+# os/tests/ui-location-test.sh can watch it fail without an image.
 EXT_UNIT_DIR="/usr/local/lib/systemd/system"
 EXT_MOUNT_UNIT="usr-local-lib-systemd-system.mount"
 
@@ -995,7 +995,7 @@ check_mqtt_broker() {
 # Both fallbacks are gone. The marker is a PREFIX now, matching the code, and
 # an unread contract makes the group fail rather than substitute.
 #
-# MOS_VERIFY_RECONCILER_DIR exists so os/ui-location-test.sh can point this at
+# MOS_VERIFY_RECONCILER_DIR exists so os/tests/ui-location-test.sh can point this at
 # a mutated copy of the reconcilers and watch the read fail. Without it the
 # rot above could not be driven, only waited for.
 RECONCILER_DIR="${MOS_VERIFY_RECONCILER_DIR:-${REPO_ROOT}/mosd/mosd/src/reconciler}"
@@ -1325,7 +1325,7 @@ check_container_engine() {
 }
 
 # The fixture hook: run only the assertions above, against the fixture, and
-# summarise. os/ui-location-test.sh is the only caller.
+# summarise. os/tests/ui-location-test.sh is the only caller.
 if [ -n "${FIXTURE_ROOT}" ]; then
     ROOT="${FIXTURE_ROOT}"
     FSTAB="${ROOT}/etc/fstab"
@@ -1351,7 +1351,7 @@ if [ -n "${FIXTURE_ROOT}" ]; then
     exit 1
 fi
 # BOUNDARY. Fixture mode has just exited. Every assertion written inline BELOW
-# this point is structurally invisible to os/ui-location-test.sh -- it cannot be
+# this point is structurally invisible to os/tests/ui-location-test.sh -- it cannot be
 # driven against a fixture, so it can never be observed failing, and nothing
 # says so at the point of temptation. Two authors have already written past this
 # line (PLAN-011 D5's mount-unit set and its com.mos.ext.conf policy set) and
@@ -3503,7 +3503,7 @@ check_container_engine
 
 # --- PLAN-011 D6: the MQTT bridge as installed -------------------------------
 # Same arrangement, same reason. The function is up with the fixture set so
-# os/ui-location-test.sh can watch each of its assertions fail without an
+# os/tests/ui-location-test.sh can watch each of its assertions fail without an
 # image; this is the call that runs them against the real one.
 check_mqttd
 
@@ -3755,7 +3755,7 @@ else
     fi
 fi
 
-# The two environment overrides that let os/shadow-reconcile-test.sh drive the
+# The two environment overrides that let os/tests/shadow-reconcile-test.sh drive the
 # REAL script against fixtures. They are safe only while nothing in the image
 # sets them: a stray drop-in pointing MOS_SHADOW_PASSWD or MOS_SHADOW_FACTORY
 # elsewhere would silently reconcile root's credentials against the wrong files,
@@ -4288,7 +4288,7 @@ fi
 # M5: connd userland, image profile, and the crypt(3) format
 # ===========================================================================
 # The contract read, and the namespace check that depends on it, are defined
-# up with the fixture-hook set so os/ui-location-test.sh can drive them; they
+# up with the fixture-hook set so os/tests/ui-location-test.sh can drive them; they
 # are CALLED here so the non-fixture path runs them in exactly this position.
 # The rationale, including the empty-marker rot that made this a function, is
 # on read_connd_contract.

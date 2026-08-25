@@ -6,7 +6,7 @@
 # passed as the argument the script already takes, so nothing on the host is
 # read or written.
 #
-#   bash os/shadow-reconcile-test.sh
+#   bash os/tests/shadow-reconcile-test.sh
 #
 # No root required. `chgrp shadow` is the one thing in the script that needs
 # privilege; when it is unavailable a fake is put on PATH ahead of the real one
@@ -14,7 +14,7 @@
 set -euo pipefail
 
 HERE=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
-SCRIPT=$HERE/rootfs/overlay-v2/usr/lib/mos/mos-shadow-reconcile
+SCRIPT=$HERE/../rootfs/overlay-v2/usr/lib/mos/mos-shadow-reconcile
 WORK=$(mktemp -d)
 trap 'rm -rf "$WORK"' EXIT
 PASS=0

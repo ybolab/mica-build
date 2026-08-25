@@ -2,7 +2,7 @@
 # Feed every example in docs/design/containers.md to the Quadlet generator this
 # image ships (PLAN-012 M4).
 #
-#   bash os/quadlet-doc-test.sh
+#   bash os/tests/quadlet-doc-test.sh
 #
 # WHY THIS EXISTS. A document full of configuration examples is a document that
 # rots silently: Quadlet gains a key, drops one, renames a section, and the
@@ -19,7 +19,7 @@
 set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-REPO_ROOT="$(cd "${HERE}/.." && pwd)"
+REPO_ROOT="$(cd "${HERE}/../.." && pwd)"
 DOC="${REPO_ROOT}/docs/design/containers.md"
 QUADLET="${MOS_QUADLET_BIN:-${REPO_ROOT}/os/podman/out-arm64/quadlet}"
 

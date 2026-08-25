@@ -12,9 +12,10 @@ set -euo pipefail
 # is written and no host system state is touched.
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-REPO_ROOT="$(dirname "${SCRIPT_DIR}")"
-# shellcheck source=boards/cx3576/board.env
-. "${SCRIPT_DIR}/boards/cx3576/board.env"
+OS_DIR="$(dirname "${SCRIPT_DIR}")"
+REPO_ROOT="$(dirname "${OS_DIR}")"
+# shellcheck source=../boards/cx3576/board.env
+. "${OS_DIR}/boards/cx3576/board.env"
 
 WORK="$(mktemp -d)"
 trap 'rm -rf "${WORK}"' EXIT
@@ -147,7 +148,7 @@ run_assemble() {
             BOOT_CMDLINE_A="${WORK}/boot-cmdline-a.txt" \
             BOOT_CMDLINE_B="${WORK}/boot-cmdline-b.txt" \
             IMG_OUT="${WORK}/${out}" "${pin_env[@]}" \
-            bash "${SCRIPT_DIR}/mkimage-v2.sh" --assemble
+            bash "${OS_DIR}/mkimage-v2.sh" --assemble
     else
         local pin_args=()
         if [ -n "${pin}" ]; then
@@ -447,7 +448,7 @@ fi
 # that is actually present in that slot. Both halves are read out of
 # os/boards/cx3576/boot.cmd rather than restated here, so this fails if either
 # the load line or the slotsuffix assignments drift.
-BOOT_CMD_FILE="${SCRIPT_DIR}/boards/cx3576/boot.cmd"
+BOOT_CMD_FILE="${OS_DIR}/boards/cx3576/boot.cmd"
 VERITY_BASE="${BOOT_VERITY_ENV_NAME%.env}"
 check "boot.cmd loads the per-slot verity env first" \
     "$(sed -n '/^if load mmc/{s/.*[[:space:]]\([^[:space:]]*\);[[:space:]]*then$/\1/p;q}' "${BOOT_CMD_FILE}")" \

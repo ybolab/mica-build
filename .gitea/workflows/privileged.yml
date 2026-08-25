@@ -117,11 +117,11 @@ jobs:
       # daemon can bind-mount, which is why TMPDIR points into the checkout
       # instead of a possibly-private /tmp -- the script's own preflight
       # rejects an invisible workspace and prints this exact remedy.
-      - name: os/mkimage-v2-selftest.sh
+      - name: os/tests/mkimage-v2-selftest.sh
         run: |
           set -euo pipefail
           mkdir -p _out/tmp
-          TMPDIR="$PWD/_out/tmp" bash os/mkimage-v2-selftest.sh
+          TMPDIR="$PWD/_out/tmp" bash os/tests/mkimage-v2-selftest.sh
 
   # The full pipeline: BSP kernel and U-Boot, the v2 image, its verification,
   # a signed (dev-key) bundle, and os-repart-test against the image just

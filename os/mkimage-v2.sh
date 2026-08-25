@@ -59,7 +59,7 @@ export E2FSPROGS_FAKE_TIME
 # The four rootfs-side inputs all come from the same producer; name it in every
 # error message so a missing input is actionable.
 ROOTFS_PRODUCER="os/rootfs/build-v2.sh"
-# Overridable only so os/mkimage-v2-selftest.sh can point the numbering guard
+# Overridable only so os/tests/mkimage-v2-selftest.sh can point the numbering guard
 # below at a deliberately-stale copy; every real build uses the tree's own file.
 BOOT_CMD="${BOOT_CMD:-${SCRIPT_DIR}/boards/cx3576/boot.cmd}"
 

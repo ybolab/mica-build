@@ -4,13 +4,15 @@
 # directory prepended to PATH, so no host state is ever read or written: the
 # real rauc/systemctl are never invoked and no U-Boot environment is touched.
 #
-#   bash os/health/test.sh
+#   bash os/tests/health-test.sh
 # The fake bodies below are shell source passed as literal strings; their `$`
 # expressions are expanded when the fake runs, not when it is written.
 # shellcheck disable=SC2016
 set -euo pipefail
 
 HERE=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+# The scripts under test stay in os/health/; this test moved out of it.
+HEALTH=$HERE/../health
 WORK=$(mktemp -d)
 trap 'rm -rf "$WORK"' EXIT
 PASS=0
@@ -103,12 +105,12 @@ exit 0'
 run_health() {
     env -i PATH="$BIN:/usr/bin:/bin" CALLS_FILE="$CALLS" MOS_HEALTH_CONF="$CONF" \
         CASE_DIR="$CASE" \
-        "$@" sh "$HERE/mos-health"
+        "$@" sh "$HEALTH/mos-health"
 }
 
 run_machine_id() {
     env -i PATH="$BIN:/usr/bin:/bin" CALLS_FILE="$CALLS" \
-        "$@" sh "$HERE/mos-machine-id"
+        "$@" sh "$HEALTH/mos-machine-id"
 }
 
 check() {
@@ -349,7 +351,7 @@ for pair in \
     src=${pair%%:*}
     dst=${pair#*:}
     check "overlay copy in sync: $src" "yes" \
-        "$(cmp -s "$HERE/$src" "$dst" && echo yes || echo no)"
+        "$(cmp -s "$HEALTH/$src" "$dst" && echo yes || echo no)"
 done
 
 echo
