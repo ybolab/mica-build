@@ -66,7 +66,15 @@ fi
 # built FOR that architecture, which os/build-env/from.sh checks next and
 # RFCT-108's M2b note describes.
 BUILDER_ARGS=(--builder default)
-if ! docker buildx inspect default 2>/dev/null | grep -q "linux/${MOS_ARCH}"; then
+# The whole output is captured BEFORE anything reads it, rather than piped into
+# a grep. An early-exiting `grep -q` on the right of a pipe closes it the moment
+# it matches; under `set -o pipefail` the producer then dies of SIGPIPE and the
+# PIPELINE reports failure exactly when the pattern IS found -- so the refusal
+# below would fire on the hosts that can build, intermittently, depending on
+# whether the output fit the pipe buffer first. os/tests/shell-pipefail-lint.sh
+# exists for this one mistake and caught this line.
+default_platforms="$(docker buildx inspect default 2>/dev/null || true)"
+if ! printf '%s\n' "${default_platforms}" | grep -c "linux/${MOS_ARCH}" >/dev/null; then
     echo "error: the 'default' buildx builder does not offer linux/${MOS_ARCH} on this host, and it is the only builder that can be used here: every stage of os/update/rauc/Dockerfile is FROM a localhost/mos-build-* tag, which lives in the local docker image store, and a docker-container builder treats 'localhost/' as a registry hostname. Register the emulator on the HOST -- docker run --privileged --rm tonistiigi/binfmt --install ${MOS_ARCH} -- so that the default builder can reach it; a docker-container builder would not help" >&2
     exit 1
 fi

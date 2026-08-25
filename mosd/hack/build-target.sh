@@ -93,24 +93,52 @@ IMAGE="${FROM_ARGS[1]#MOS_BUILD_RUST=}"
 CARGO_CACHE="${REPO_ROOT}/_out/cargo"
 mkdir -p "${CARGO_CACHE}/registry" "${CARGO_CACHE}/git"
 
-# THE WORKSPACE IS MOUNTED AT A FIXED PATH, /src, and that is a deliberate
-# improvement rather than an accident of writing a `docker run`. rustc records
-# the paths it was given; mounting the workspace where it happens to live on
-# this machine would make the output depend on the checkout directory, so two
-# machines building the same commit would produce different binaries for a
-# reason that is not about the source. A fixed path removes that variable. It
-# also means the binaries this produces are NOT byte-comparable with a host
-# cargo run from a different directory, which is the first thing the switchover
-# comparison had to control for.
+# THE REPOSITORY IS MOUNTED, NOT mosd/, AND THAT IS NOT A CONVENIENCE.
+# mosd/Cargo.toml's workspace members include `../update/sign` -- a crate that
+# lives OUTSIDE the directory this script's own path arithmetic calls the
+# workspace. Mounting mosd/ alone produced
 #
+#   error: failed to load manifest for workspace member `/src/../update/sign`
+#   Caused by: No such file or directory (os error 2)
+#
+# which names the file and not the cause, and which the host build could never
+# have hit because the host build could see the whole checkout. This was found
+# by the switchover comparison, and it is precisely the class of thing that
+# comparison exists to find: a container boundary drawn one directory too tight.
+#
+# The check below is the general form, so the next member added outside mosd/
+# fails with a sentence instead of a missing file.
+#
+# AT A FIXED PATH, /src, deliberately. rustc records the paths it is given, so
+# mounting the checkout where it happens to live would make the output depend on
+# the directory the repository was cloned into -- two machines, same commit,
+# different binaries, for a reason that is not about the source. It also means
+# these binaries are NOT byte-comparable with a host cargo run from a different
+# directory, which is the first variable the switchover comparison controlled.
+while IFS= read -r m; do
+    [ -n "${m}" ] || continue
+    case "${m}" in
+    ../*) ;;
+    *) continue ;;
+    esac
+    abs="$(cd "${WORKSPACE}" && cd "$(dirname "${m}")" 2>/dev/null && pwd)/$(basename "${m}")" || abs=""
+    case "${abs}" in
+    "${REPO_ROOT}"/*) ;;
+    *)
+        echo "error: mosd/Cargo.toml lists the workspace member '${m}', which resolves outside ${REPO_ROOT}. This build mounts the repository into the container and nothing above it, so cargo would report that member as a missing Cargo.toml rather than as a member the container cannot see" >&2
+        exit 1
+        ;;
+    esac
+done < <(sed -n 's/^members = \[\(.*\)\]/\1/p' "${WORKSPACE}/Cargo.toml" | tr ',' '\n' | tr -d ' "')
+
 # `--network host` is not used and is not needed: cargo fetches through the
 # container's default network, and the only thing bound in is this repository.
 docker run --rm \
     --platform "linux/${IMAGE_ARCH}" \
-    -v "${WORKSPACE}:/src" \
+    -v "${REPO_ROOT}:/src" \
     -v "${CARGO_CACHE}/registry:/usr/local/cargo/registry" \
     -v "${CARGO_CACHE}/git:/usr/local/cargo/git" \
-    -w /src \
+    -w /src/mosd \
     -e "TARGET=${TARGET}" \
     --entrypoint /bin/bash \
     "${IMAGE}" -c '
@@ -137,25 +165,35 @@ docker run --rm \
 # exec time on the device -- which is the same class of failure as building the
 # wrong architecture entirely, but reported one binary later.
 #
-# IT RUNS ON THE HOST, on the exported files, and that is deliberate: the
-# container asserts what it built, this asserts what landed in the directory
-# os/rootfs/build-v2.sh is about to copy from. os/podman/build.sh and
-# os/update/rauc/build.sh draw the same line for the same reason. `file` is a
-# host tool here -- and if a host has none, the check would silently not run,
-# so its absence is refused rather than skipped.
-command -v file >/dev/null 2>&1 || {
-    echo "error: 'file' is not on PATH, so the per-binary architecture check below cannot run. It is the check that catches a target which built one crate for the host, and skipping it silently is how that ships" >&2
-    exit 1
-}
+# IT IS A SECOND CONTAINER, NOT THE BUILD ONE, and not the host either. The
+# separation is the one os/podman/build.sh and os/update/rauc/build.sh draw: the
+# build asserts what it BUILT, this asserts what LANDED in the directory
+# os/rootfs/build-v2.sh is about to copy from, so an export that dropped a file
+# or a mount that wrote somewhere unexpected is caught rather than assumed away.
+#
+# Running it on the host would have been the obvious way to get that separation
+# and it would have cost the thing this whole change buys: `file` would become a
+# host requirement, and RFCT-108's outcome for this script is that the host
+# needs docker and NOTHING else. A second `docker run` keeps both properties --
+# and the `file` it uses is mos-build-base's, whose version images.env pins a
+# floor for, rather than whatever the machine happens to ship.
+docker run --rm \
+    --platform "linux/${IMAGE_ARCH}" \
+    -v "${WORKSPACE}/target:/target:ro" \
+    -e "TARGET=${TARGET}" -e "ELF_ARCH=${ELF_ARCH}" \
+    --entrypoint /bin/bash "${IMAGE}" -c '
+        set -euo pipefail
+        for name in mosd apid mos-mqttd mos-mqtt-broker; do
+            bin="/target/${TARGET}/release/${name}"
+            [ -f "${bin}" ] || { echo "error: ${name} was not produced by the build" >&2; exit 1; }
+            got="$(file -b "${bin}")"
+            case "${got}" in
+            *"ELF 64-bit"*"${ELF_ARCH}"*) ;;
+            *) echo "error: ${name} is not an ${ELF_ARCH} ELF: ${got}" >&2; exit 1 ;;
+            esac
+        done
+        echo "mosd: four ${ELF_ARCH} ELFs in target/${TARGET}/release"
+    '
 for name in mosd apid mos-mqttd mos-mqtt-broker; do
-    BIN="${WORKSPACE}/target/${TARGET}/release/${name}"
-    if [ ! -f "${BIN}" ]; then
-        echo "error: ${BIN} was not produced by the build" >&2
-        exit 1
-    fi
-    if ! file -b "${BIN}" | grep -c "ELF 64-bit.*${ELF_ARCH}" >/dev/null; then
-        echo "error: ${BIN} is not an ${ELF_ARCH} ELF: $(file -b "${BIN}")" >&2
-        exit 1
-    fi
-    echo "${BIN}"
+    echo "${WORKSPACE}/target/${TARGET}/release/${name}"
 done

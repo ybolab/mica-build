@@ -164,7 +164,7 @@ RUN --mount=type=cache,target=/root/.cache/git \
         got="$(git -C "/src/${name}" archive --format=tar "${tag}" | sha256sum | cut -d' ' -f1)"; \
         if [ "${want}" = "PENDING" ]; then \
             echo "HASH ${name} ${tag} ${got}"; \
-            echo "error: ${name} is pinned to ${tag} with no hash. Record ${name}_SHA256=${got} in os/podman/versions.env and run again; until then this build would compile whatever the tag points at today, which is a different fact from the source this tree agreed to ship" >&2; exit 1; \
+            echo "error: ${name} is pinned to ${tag} with no hash. Record the hash above against ${name} in os/podman/versions.env and run again; until then this build would compile whatever the tag points at today, which is a different fact from the source this tree agreed to ship" >&2; exit 1; \
         elif [ "${want}" != "${got}" ]; then \
             echo "error: ${name} ${tag} hashes to ${got}, but os/podman/versions.env pins ${want}. Either the tag was moved upstream or the pin is stale; do not paste the new hash in without finding out which" >&2; exit 1; \
         else \
