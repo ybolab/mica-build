@@ -116,8 +116,9 @@ allowlist. Set `WITH_MOSD=0` to build the rootfs without mosd (default is on).
 
 ## Board hardware init
 
-Generic, board-agnostic mechanism in `os/hwinit/` (six best-effort units +
-scripts); board-specific facts (module names, sysfs paths, UART device, CAN
+Board-agnostic mechanism, filed under the only board that declares facts for
+it, in `os/boards/cx3576/hwinit/` (six best-effort units + scripts);
+board-specific facts (module names, sysfs paths, UART device, CAN
 defaults, MAC seed, gadget IDs) in conf files staged from `BOARD_DIR/init/`
 (falling back to the in-repo `board/cx3576/init/`) into `/etc/mos/`. Every unit
 is condition-gated on its conf file and never blocks, delays, or fails the
@@ -307,8 +308,8 @@ explained in `docs/design/ro-root.md`.
 ## Board hardware init — the enable list is enumerated, not restated
 
 `Dockerfile.v2` installs `hwinit-*`, `*.service` **and** `*.rules` from
-`os/hwinit/`, and derives the enable list by iterating the units that are
-actually present:
+`os/boards/cx3576/hwinit/`, and derives the enable list by iterating the units
+that are actually present:
 
 ```
 for f in /tmp/hwinit/*.service; do u="$(basename "$f")"; ln -sf ... ; done
@@ -320,8 +321,8 @@ drifted behind the since-deleted v1 `Dockerfile` once already: when `mos-mac` an
 `mos-gadget` were added, both were *installed* by the existing globs but never
 *enabled*, and `60-mos-gadget-getty.rules` was not installed at all — so a v2
 image silently lost its stable MAC and its USB debug console with no error
-anywhere. Adding a unit to `os/hwinit/` is now sufficient; the build also
-asserts at least one unit was enabled, so a glob that matches nothing fails
+anywhere. Adding a unit to `os/boards/cx3576/hwinit/` is now sufficient; the
+build also asserts at least one unit was enabled, so a glob that matches nothing fails
 loudly.
 
 No board fact is restated in the v2 layer. Module names, sysfs paths, UART

@@ -220,8 +220,9 @@ else
     echo "note: WITH_MOSD=0; building rootfs without mosd"
 fi
 
-# Board hardware-init facts (confs consumed by the os/hwinit units), staged
-# like mosd so the Dockerfile COPY always has a directory (may be empty).
+# Board hardware-init facts (confs consumed by the os/boards/cx3576/hwinit
+# units), staged like mosd so the Dockerfile COPY always has a directory
+# (may be empty).
 INIT_STAGE="$OUT_DIR/init"
 rm -rf "$INIT_STAGE"
 mkdir -p "$INIT_STAGE"

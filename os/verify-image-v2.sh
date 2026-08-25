@@ -2657,8 +2657,8 @@ else
         fail "these mos-*.service units are installed but NOT enabled:${not_enabled}"
     fi
 fi
-# The hwinit helper scripts are enumerated the same way, from os/hwinit/, and
-# counted against what the board DECLARES. "at least one is present" was the
+# The hwinit helper scripts are enumerated the same way, from
+# os/boards/cx3576/hwinit/, and counted against what the board DECLARES. "at least one is present" was the
 # old test; it cannot tell a board that legitimately has none from one whose
 # install step silently dropped all of them, and it fails a QEMU machine for
 # not having a CAN bus. The count is the assertion now.
