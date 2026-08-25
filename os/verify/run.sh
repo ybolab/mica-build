@@ -46,19 +46,43 @@ done
 usage() {
     cat <<'USAGE'
 usage: bash os/verify/run.sh [--help] [bun-test-args...]
+       bash os/verify/run.sh --lint [board.env ...]
 
 Installs the dev dependencies if they are missing, typechecks src/, then runs
 the suite. Any extra arguments are passed to `bun test` (a filename filter, for
 example). Every step must pass; nothing here skips.
+
+With --lint FIRST, it runs the board-definition schema lint over the named
+layouts instead of the suite -- `make os-layout-lint`. Same install, same
+typecheck, same bun; only the last step differs. The flag has to come first so
+that it can never be mistaken for a `bun test` filter.
 
 environment:
   MOS_VERIFY_BUN   the bun binary to use, instead of searching PATH and ~/.bun
 USAGE
 }
 
+# --lint is a MODE, not a filter, so it is recognised only in first position.
+MODE=suite
 case "${1:-}" in
 --help | -h) usage; exit 0 ;;
+--lint) MODE=lint; shift ;;
 esac
+
+# The lint's arguments are FILES, and run_bun cds into this package before it
+# invokes bun -- so a relative path from the caller's shell would resolve
+# against os/verify/ and be reported as "not found" for the wrong reason.
+if [ "${MODE}" = lint ]; then
+    ABS=()
+    for arg in "$@"; do
+        case "${arg}" in
+        -*) ABS+=("${arg}") ;;
+        /*) ABS+=("${arg}") ;;
+        *) ABS+=("${PWD}/${arg}") ;;
+        esac
+    done
+    set -- ${ABS[@]+"${ABS[@]}"}
+fi
 
 # --- how bun is invoked, and the only place that decides -------------------
 BUN="${MOS_VERIFY_BUN:-}"
@@ -108,6 +132,19 @@ fi
 # --- typecheck ---------------------------------------------------------------
 echo "os/verify: typecheck"
 run_bun run typecheck
+
+# --- the lint, which is the other thing this package is for ------------------
+# No vacuity guard here, because the lint carries its own: src/lint.ts refuses a
+# run in which any FILE contributed zero assertions, which is finer than a total
+# that is merely non-zero. The shell predecessor learned that the hard way --
+# one board died while being sourced, contributed nothing, and the run reported
+# PASS from the other board alone.
+if [ "${MODE}" = lint ]; then
+    echo "os/verify: board-definition schema lint"
+    rc=0
+    run_bun run src/lint-cli.ts "$@" || rc=$?
+    exit "${rc}"
+fi
 
 # --- the suite, and the guard against a run that asserted nothing ------------
 OUT="$(mktemp)"
