@@ -250,10 +250,30 @@ identity.
 `src/parity.test.ts` produces every outcome the harness can report, including
 the ones a healthy run never sees — an ambiguous register, an orphaned result, a
 check that fired on neither side, and two firings whose **count** matches while
-their identities do not. End to end, with a temporary register that agreed on
-one check, disagreed on two and orphaned a third, the harness named each by id
-on both boards; the register was then restored and `git diff` is clean. The
-detail is in `docs/task/RFCT-110.md`.
+their identities do not.
+
+And end to end, against the real images. A temporary register of five checks —
+one that agrees, one that answers FAIL where the oracle says PASS, one that
+answers where the oracle SKIPs, one `many` check that answers only its first
+firing, and one claiming a line nothing prints — was run on both boards and
+then reverted (`git diff` clean). Every outcome was named by id:
+
+| | cx3576 | x64 |
+|---|---|---|
+| `agree` | 2 | 2 |
+| `diverge` | 2 — `gpt-partition-count` PASS/FAIL, `esp-skip-cx` **SKIP/PASS** | 2 — `gpt-partition-count` PASS/FAIL, `loader-skip-x64` **SKIP/FAIL** |
+| `ts-silent` | 10 — `gpt-partlabel[2]` … `[11]` | 8 — `gpt-partlabel[2]` … `[9]` |
+| `orphan` | 1 — `ghost-check` | 1 — `ghost-check` |
+| `ambiguous` | 2 | 1 |
+| `not-ported` | 382 | 299 |
+| exit | **1** (FAIL, not 2) | **1** |
+
+The `ambiguous` rows were not planned. The temporary check registered
+`partitions` as its matcher, which is a substring of three other conclusions on
+cx3576 and two on x64, and the harness refused to attribute any of them —
+naming the line numbers it found (`4 and 77`, `4 and 261`). A matcher too loose
+to identify one check is the first mistake M4b can make, and it is caught by the
+instrument rather than by a reviewer.
 
 ## Re-checking the parser against the shell
 
