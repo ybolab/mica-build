@@ -16,30 +16,55 @@
 # from a signed image; it does not remove a feature this project ships, because
 # the streaming install path is DEFERRED in os/update/rauc/manifest.raucm.in.
 
-FROM debian:trixie-slim AS src
-RUN apt-get update && apt-get install -y --no-install-recommends \
-        git ca-certificates \
-    && rm -rf /var/lib/apt/lists/*
+# THE TWO BUILDER IMAGES, INJECTED FROM os/build-env/images.env by
+# os/build-env/from.sh, which os/update/rauc/build.sh calls. RFCT-108 M2c; what
+# stood here was `FROM debian:trixie-slim` twice -- a tag upstream repoints
+# whenever it rebuilds, so "which toolchain built the rauc on this device" was
+# answerable only from a build log.
+#
+# NO DEFAULTS. Without a value docker refuses with "base name should not be
+# blank" before any stage runs; with a default it would build green against an
+# image nobody chose, which is the float this milestone removes. Build this
+# through `make os-rauc`.
+ARG MOS_BUILD_BASE
+ARG MOS_BUILD_C
+
+# No apt-get: git and the CA bundle are two of the five packages mos-build-base
+# carries and ASSERTS from inside itself. Re-installing them here would make
+# that assertion decorative -- a floor nothing spends is a floor that is never
+# tested, and the first slimmed base would be found by a failed clone instead of
+# by the image whose whole job is to claim the floor.
+FROM ${MOS_BUILD_BASE} AS src
 COPY versions.lock /versions.env
 
 # The tag is fetched and the TREE is hashed, not the tarball: a release
 # tarball can be re-rolled, and a tag can be moved. `git archive` of the tag is
 # a deterministic byte stream over the source that is actually compiled.
 #
-# PENDING is accepted and reported rather than silently passed -- it is how a
-# version is bumped. MOS_RAUC_STRICT=1 refuses it, so an unhashed source can
-# reach a developer and never a release.
-ARG MOS_RAUC_STRICT=0
+# PENDING PRINTS THE HASH IT COMPUTED AND FAILS, with no environment variable
+# that softens it. Until RFCT-108 M2c there was one: MOS_RAUC_STRICT defaulted
+# to 0 and this was a warning.
+#
+# THE KNOB WENT BECAUSE ITS JUSTIFICATION WAS NEVER IMPLEMENTED. The comment
+# here said an unhashed source "can reach a developer and never a release" --
+# which is true only if the release path sets MOS_RAUC_STRICT=1, and nothing in
+# this repository ever has: not .gitea/workflows/check.yml, not privileged.yml,
+# not the Makefile, not os/update/rauc/build.sh, which passed through
+# ${MOS_RAUC_STRICT:-0}. Measured by grep across the whole tree, M2c. The
+# developer path and the release path were the same warning.
+#
+# os/update/rauc/versions.env's bump instructions carried the knob's name and so
+# were not false the way os/podman/versions.env's were -- but a value that is
+# never 1 makes the parenthesis describing it the only place the behaviour
+# exists. os/build-env/images.env records the general form of this reasoning
+# (M2a): a pin that only warns floats for as long as nobody reads a log.
 RUN set -eu; . /versions.env; \
     git clone --quiet --depth 1 --branch "${RAUC_VERSION}" \
         https://github.com/rauc/rauc.git /src/rauc; \
     got="$(git -C /src/rauc archive --format=tar "${RAUC_VERSION}" | sha256sum | cut -d' ' -f1)"; \
     if [ "${RAUC_SHA256}" = "PENDING" ]; then \
         echo "HASH rauc ${RAUC_VERSION} ${got}"; \
-        if [ "${MOS_RAUC_STRICT}" = "1" ]; then \
-            echo "error: rauc is pinned to ${RAUC_VERSION} with no hash and MOS_RAUC_STRICT=1 refuses that. Record the hash printed above in os/update/rauc/versions.env" >&2; exit 1; \
-        fi; \
-        echo "warning: rauc ${RAUC_VERSION} is UNHASHED. Record ${got} in os/update/rauc/versions.env -- until then this build trusts whatever the tag points at today" >&2; \
+        echo "error: rauc is pinned to ${RAUC_VERSION} with no hash. Record RAUC_SHA256=${got} in os/update/rauc/versions.env and run again; until then this build would compile whatever the tag points at today, which is a different fact from the source this tree agreed to ship" >&2; exit 1; \
     elif [ "${RAUC_SHA256}" != "${got}" ]; then \
         echo "error: rauc ${RAUC_VERSION} hashes to ${got}, but os/update/rauc/versions.env pins ${RAUC_SHA256}. Either the tag was moved upstream or the pin is stale; do not paste the new hash in without finding out which" >&2; exit 1; \
     else \
@@ -47,9 +72,16 @@ RUN set -eu; . /versions.env; \
     fi; \
     rm -rf /src/rauc/.git
 
-FROM debian:trixie-slim AS build
+# mos-build-c carries the C toolchain -- gcc, libc6-dev via build-essential,
+# pkgconf providing pkg-config, and binutils from mos-build-base -- and asserts
+# their versions from inside itself. What stays in this apt list is what is
+# about RAUC rather than about C: meson and ninja are rauc's build system, and
+# the five -dev packages are the libraries rauc links. That boundary is the one
+# os/podman/Dockerfile measured at ~42 minutes: a component's headers in a
+# shared image put them in every other component's cache key.
+FROM ${MOS_BUILD_C} AS build
 RUN apt-get update && apt-get install -y --no-install-recommends \
-        meson ninja-build pkg-config gcc libc6-dev binutils \
+        meson ninja-build \
         libglib2.0-dev libjson-glib-dev libssl-dev libfdisk-dev \
         libdbus-1-dev \
     && rm -rf /var/lib/apt/lists/*

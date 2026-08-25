@@ -30,15 +30,62 @@ image you cannot yet get out of it.
 
 `versions.env` is the only file to edit. Set the tag, set its hash to the
 literal `PENDING`, and run `make podman`: the build prints the hash it
-computed and warns. Paste that in and run again.
+computed and **fails**. Paste that in and run again.
 
 The two-step is deliberate. It makes recording a hash an act, rather than a
-value copied from an upstream page that nobody re-checked. `MOS_PODMAN_STRICT=1`
-turns the warning into a failure, which is what CI sets — an unhashed source
-can reach a developer's build and never a release.
+value copied from an upstream page that nobody re-checked.
+
+Until RFCT-108 M2c the build printed the hash and *warned*, and
+`MOS_PODMAN_STRICT=1` turned the warning into a failure — described here and in
+`versions.env` as "what CI sets". Nothing in this repository ever set it, in any
+workflow, Makefile target or script, so the developer path and the release path
+were the same warning and a half-finished bump built green against whatever the
+tag pointed at that day. The knob is gone; the behaviour is now the one both
+files always described.
 
 The hash is over `git archive` of the tag, so it covers the tree that is
 actually compiled. A tag can be moved upstream; a tree hash cannot.
+
+## Which compiler builds it (RFCT-108 M2c)
+
+The four builder stages stand on `localhost/mos-build-{base,c,go,rust}`, built
+by `make build-env` from `os/build-env/images.env`. Until RFCT-108 M2c they
+stood on `debian:trixie-slim`, `golang:1.25-trixie` and `rust:1.90-trixie` --
+three tags upstream repoints on its own schedule.
+
+That was a **toolchain bump as well as an image swap**: Go 1.25 to 1.26.7 (1.25
+is a line Go no longer supports) and Rust 1.90 to 1.98.0. So the engine was
+re-proven under it rather than merely rebuilt, on amd64, at switchover:
+
+| binary | built by | reported version | `versions.env` pins |
+| --- | --- | --- | --- |
+| podman | `go1.26.7` (from `go version -m`) | 5.8.6 | `v5.8.6` |
+| quadlet | `go1.26.7` | 5.8.6 | (podman's tree) |
+| crun | GCC (Debian 14.2.0-19) | 1.29.1 | `1.29.1` |
+| conmon | GCC (Debian 14.2.0-19) | 2.2.1 | `v2.2.1` |
+| catatonit | GCC (Debian 14.2.0-19) | 0.2.1 | `v0.2.1` |
+| netavark | rustc `88d9e12ae178…` = 1.98.0 | 2.1.0 | `v2.1.0` |
+| aardvark-dns | rustc `88d9e12ae178…` = 1.98.0 | 2.1.0 | `v2.1.0` |
+
+"Built by" was read out of each artefact, not assumed from the image. Each
+binary was then EXECUTED, in the digest-pinned trixie with the sonames
+`NEEDED.txt` names installed -- not the builder image, which carries the `-dev`
+headers and not the runtime libraries. `podman info` (privileged, because it
+re-execs into a user namespace) resolves this build's own conmon and crun and
+reports `netavark 2.1.0` as its network backend, with `+SECCOMP +JSON_C` --
+which is the `-dev` list below doing its job.
+
+The `-dev` packages stay in this Dockerfile and are deliberately NOT in
+`mos-build-c`. libseccomp, libcap, libjson-c, libyajl, glib and libsystemd are
+facts about crun, conmon and catatonit; hoisting them into the shared image
+would put them in the cache key of every other component that stands on it,
+which is the ~42-minute measurement recorded at the top of the Dockerfile. For
+the same reason `mos-build-go` carries no C compiler and the Go stage installs
+`build-essential` itself.
+
+Building for **arm64 needs an arm64 builder family**, because a `localhost/` tag
+carries exactly one architecture where a `name:tag@sha256:` digest is a
+multi-architecture index. `os/podman/build.sh` refuses the mismatch by name.
 
 ## Why build it, when trixie ships a working one
 

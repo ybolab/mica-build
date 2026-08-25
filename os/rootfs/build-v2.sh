@@ -433,10 +433,28 @@ fi
 
 log=$(mktemp)
 trap 'rm -f "$log"' EXIT
+# The two base images of Dockerfile.v2, resolved out of os/build-env/images.env
+# before a forty-minute build starts rather than at the FROM line that consumes
+# them. NO --arch: both are IMAGE_ keys, which images.env pins as MULTI-
+# ARCHITECTURE index digests precisely so that a cross build picks the right
+# manifest -- the check os/podman/build.sh needs is about localhost tags, which
+# carry exactly one architecture, and this file uses none.
+mapfile -t FROM_ARGS < <("$REPO_ROOT/os/build-env/from.sh" \
+    MOS_IMAGE_DEBIAN_TRIXIE=IMAGE_DEBIAN_TRIXIE \
+    MOS_IMAGE_DEBIAN_BOOKWORM=IMAGE_DEBIAN_BOOKWORM)
+# mapfile cannot fail, so its status says nothing about the process inside the
+# substitution; an empty array is what a refusal looks like from here, and it
+# would reach docker as a build with no --build-arg at all.
+if [ "${#FROM_ARGS[@]}" -ne 4 ]; then
+    echo "error: os/build-env/from.sh did not yield the two base images (see its message above); this build would have run with an unpinned or missing FROM" >&2
+    exit 1
+fi
+
 if ! docker buildx build \
         "${BUILDER_ARGS[@]}" \
         --platform "$DOCKER_PLATFORM" \
         -f "$SCRIPT_DIR/Dockerfile.v2" \
+        "${FROM_ARGS[@]}" \
         --build-arg MOS_ARCH="$MOS_ARCH" \
         --build-arg RAUC_BOOTLOADER="$RAUC_BOOTLOADER" \
         --build-arg BOARD_RADIOS="$BOARD_RADIOS" \

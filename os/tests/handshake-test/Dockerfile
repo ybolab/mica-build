@@ -6,7 +6,20 @@
 # for the host (sandbox_defconfig) so the shipped boot.scr can be executed
 # without hardware. Network is needed once, for this build; every run of the
 # harness afterwards is offline (docker caches every stage).
-FROM ubuntu:24.04 AS src
+# THE BUILDER IMAGE, INJECTED FROM os/build-env/images.env by
+# os/build-env/from.sh, which os/tests/handshake-test/run.sh calls. RFCT-108
+# M2c; what stood here was the bare tag `ubuntu:24.04`.
+#
+# THE SAME KEY THE BSP BUILDERS USE, deliberately: the comment at the top of
+# this file says the harness must exercise the SAME U-Boot generation the board
+# runs, only built for the host. That claim is about the source pin, and it is
+# weaker than it reads if the two builds do not also stand on the same builder
+# -- a sandbox U-Boot compiled by a different gcc than board/cx3576/uboot's is a
+# different program being asserted about.
+#
+# NO DEFAULT: without a value docker refuses before any stage runs.
+ARG MOS_IMAGE_UBUNTU_2404
+FROM ${MOS_IMAGE_UBUNTU_2404} AS src
 
 ARG DEBIAN_FRONTEND=noninteractive
 RUN apt-get update && apt-get install -y --no-install-recommends \

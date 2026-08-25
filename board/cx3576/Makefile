@@ -12,10 +12,29 @@ VENDOR_MINILOADER := uboot/MiniLoaderAll.bin
 # to Perl/macOS shasum. Both accept the same `-c` checkfile format.
 SHA256 := $(shell command -v sha256sum >/dev/null 2>&1 && echo sha256sum || echo "shasum -a 256")
 
+# EVERY BASE IMAGE BELOW COMES FROM os/build-env/images.env (RFCT-108 M2c). The
+# four Dockerfiles this Makefile drives declare their FROM argument with NO
+# default, so a recipe that forgot to pass one fails at `docker buildx build`
+# with "base name should not be blank" rather than building against a tag.
+#
+# WHY IT IS CALLED IN THE RECIPE AND NOT ASSIGNED WITH $(shell ...). A `:=`
+# assignment runs the command while make PARSES the file, discards its exit
+# status and its stderr, and leaves the variable empty on failure -- so a broken
+# pin would reach docker as a missing argument, and every target in this file
+# would carry the failure whether or not it builds an image. Inside a recipe,
+# `X="$$(...)" && docker ...` propagates: the substitution's non-zero status
+# fails the assignment, the `&&` short-circuits, and make stops with the message
+# from.sh printed. The one cost is that the value is computed per target, which
+# is a file read.
+FROM_SH := ../../os/build-env/from.sh
+UBUNTU_ARG := MOS_IMAGE_UBUNTU_2404=IMAGE_UBUNTU_2404
+ALPINE_ARG := MOS_IMAGE_ALPINE_3_24_1=IMAGE_ALPINE_3_24_1
+
 all: image
 
 uboot:
-	docker buildx build -f uboot/Dockerfile \
+	IMG="$$(bash $(FROM_SH) $(UBUNTU_ARG))" && \
+	docker buildx build -f uboot/Dockerfile $$IMG \
 	  $(if $(UBOOT_COMMIT),--build-arg UBOOT_COMMIT=$(UBOOT_COMMIT)) \
 	  $(if $(RKBIN_COMMIT),--build-arg RKBIN_COMMIT=$(RKBIN_COMMIT)) \
 	  -o out/uboot uboot
@@ -23,26 +42,30 @@ uboot:
 # mos A/B variant (persistent redundant env + boot.scr contract); consumed by
 # the v2 image pipeline, while the debug variant above stays on v1/alpine.
 uboot-mos:
-	docker buildx build -f uboot/Dockerfile --target artifact-mos \
+	IMG="$$(bash $(FROM_SH) $(UBUNTU_ARG))" && \
+	docker buildx build -f uboot/Dockerfile --target artifact-mos $$IMG \
 	  $(if $(UBOOT_COMMIT),--build-arg UBOOT_COMMIT=$(UBOOT_COMMIT)) \
 	  $(if $(RKBIN_COMMIT),--build-arg RKBIN_COMMIT=$(RKBIN_COMMIT)) \
 	  -o out/uboot-mos uboot
 
 kernel:
-	docker buildx build --build-context mos-common=../common -f kernel/Dockerfile \
+	IMG="$$(bash $(FROM_SH) $(UBUNTU_ARG))" && \
+	docker buildx build --build-context mos-common=../common -f kernel/Dockerfile $$IMG \
 	  $(if $(KERNEL_COMMIT),--build-arg KERNEL_COMMIT=$(KERNEL_COMMIT)) \
 	  $(if $(KERNEL_EXPECT),--build-arg KERNEL_EXPECT=$(KERNEL_EXPECT)) \
 	  -o out/kernel .
 
 rootfs: kernel
-	docker buildx build -f rootfs/alpine/Dockerfile \
+	IMG="$$(bash $(FROM_SH) $(ALPINE_ARG) $(UBUNTU_ARG))" && \
+	docker buildx build -f rootfs/alpine/Dockerfile $$IMG \
 	  --platform linux/arm64 \
 	  --build-context kernel-out=out/kernel \
 	  --build-context firmware=rootfs/firmware \
 	  -o out/rootfs rootfs/alpine
 
 image: uboot rootfs
-	docker buildx build -f Dockerfile.alpine --target artifact -o out .
+	IMG="$$(bash $(FROM_SH) $(UBUNTU_ARG))" && \
+	docker buildx build -f Dockerfile.alpine --target artifact $$IMG -o out .
 	@cd out && $(SHA256) disk.img > disk.img.sha256
 	@ls -la out/disk.img
 	@cat out/disk.img.sha256

@@ -34,9 +34,24 @@ docker image inspect "${IMAGE_TAG}" >/dev/null 2>&1 || need_build=1
 
 if [ "${need_build}" = "1" ]; then
     echo "== building the sandbox U-Boot (network needed on the first, uncached build) =="
-    DOCKER_BUILDKIT=1 docker build --target src -t "${IMAGE_TAG}" "${SCRIPT_DIR}"
+    # The builder image, out of os/build-env/images.env (RFCT-108 M2c). The
+    # Dockerfile declares MOS_IMAGE_UBUNTU_2404 with no default, so this is not
+    # optional -- and it is resolved before the first of the two builds rather
+    # than in front of each, so a bad pin cannot leave a tagged src stage behind
+    # to be reused as a cache on the next run.
+    mapfile -t FROM_ARGS < <("${REPO_ROOT}/os/build-env/from.sh" \
+        MOS_IMAGE_UBUNTU_2404=IMAGE_UBUNTU_2404)
+    # mapfile cannot fail, so its status says nothing about the process inside
+    # the substitution; an empty array is what a refusal looks like from here.
+    [ "${#FROM_ARGS[@]}" -eq 2 ] || {
+        echo "error: os/build-env/from.sh did not yield the builder image (see its message above); this build would have run with a missing FROM" >&2
+        exit 1
+    }
+    DOCKER_BUILDKIT=1 docker build --target src -t "${IMAGE_TAG}" \
+        "${FROM_ARGS[@]}" "${SCRIPT_DIR}"
     mkdir -p "${OUT}"
     DOCKER_BUILDKIT=1 docker build --target artifact \
+        "${FROM_ARGS[@]}" \
         --output "type=local,dest=${OUT}" "${SCRIPT_DIR}"
     for a in "${ARTIFACTS[@]}"; do
         [ -f "${OUT}/${a}" ] || { echo "error: build did not produce ${OUT}/${a}" >&2; exit 1; }

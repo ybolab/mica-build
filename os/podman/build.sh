@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Build the container engine from upstream source into seven aarch64 binaries.
 #
-#   [MOS_PODMAN_STRICT=1] bash os/podman/build.sh
+#   bash os/podman/build.sh
 #   → os/podman/out/{podman,quadlet,crun,conmon,netavark,aardvark-dns,catatonit}
 #
 # A script rather than a bare `docker buildx build` in the Makefile, for one
@@ -13,6 +13,16 @@
 set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# Two levels up, proved rather than assumed: os/build-env/from.sh is reached
+# through it, and a relative path here would resolve against whatever directory
+# the caller happened to be in. os-bundle-cx3576 spent two merges broken on
+# exactly that.
+REPO_ROOT="$(cd "${HERE}/../.." && pwd)"
+FROM_SH="${REPO_ROOT}/os/build-env/from.sh"
+[ -f "${FROM_SH}" ] || {
+    echo "error: ${FROM_SH} does not exist. os/podman/build.sh derives REPO_ROOT as two levels above itself; if this file moved, that arithmetic moved with it" >&2
+    exit 1
+}
 
 # MOS_ARCH selects the target. The output directory follows it, so an arm64 and
 # an amd64 set can coexist: one shared out/ would mean every board switch is a
@@ -34,17 +44,40 @@ for tool in docker; do
     }
 done
 
-# If the current builder cannot run linux/arm64 (host binfmt registration
-# unavailable), fall back to a docker-container builder: its buildkit image
-# bundles QEMU emulators and needs no host binfmt. Same reasoning, same builder
-# name and same condition as os/rootfs/build-v2.sh, deliberately: two ways to
-# get an arm64 builder would be two things to keep working.
-BUILDER_ARGS=()
-if [ -z "${BUILDX_BUILDER:-}" ] && ! docker buildx inspect 2>/dev/null | grep -c "linux/${MOS_ARCH}" >/dev/null; then
-    echo "note: current builder lacks linux/${MOS_ARCH}; using docker-container builder 'mos-${MOS_ARCH}'"
-    docker buildx inspect "mos-${MOS_ARCH}" >/dev/null 2>&1 ||
-        docker buildx create --name "mos-${MOS_ARCH}" --driver docker-container >/dev/null
-    BUILDER_ARGS=(--builder "mos-${MOS_ARCH}")
+# THE BUILDER: `default`, EXPLICITLY, AND WHY THIS FILE CANNOT INHERIT ONE.
+# Until RFCT-108 M2c this block picked a docker-container builder whenever the
+# ambient one could not reach linux/${MOS_ARCH}, and passed no --builder
+# otherwise -- inheriting whatever `docker buildx use` last selected.
+#
+# Neither is possible any more, and the reason is the switchover itself: every
+# stage below is now FROM a localhost/mos-build-* tag, which exists only in the
+# LOCAL DOCKER IMAGE STORE. Only the `docker` driver can resolve one. A
+# docker-container builder has its own content store and treats `localhost/` as
+# a registry HOSTNAME, producing `dial tcp [::1]:80: connect: connection
+# refused` against a FROM line that is correct -- measured by M2b, and the same
+# reason os/build-env/build.sh pins itself to `default`. Inheriting was worse
+# still: a leftover `mos-rauc-arm64` from an unrelated build is a plausible
+# ambient selection on any host that has ever run `make os-rauc`.
+#
+# So the emulation fallback becomes a REFUSAL, and it is deliberately phrased
+# around what is missing rather than around this host's architecture: the
+# default builder reaches linux/${MOS_ARCH} exactly when the host has binfmt
+# registered for it, and on such a host this build works cross-architecture with
+# no change to this file. What it needs beyond that is an mos-build-* family
+# built FOR that architecture, which os/build-env/from.sh checks next and
+# RFCT-108's M2b note describes.
+BUILDER_ARGS=(--builder default)
+# The whole output is captured BEFORE anything reads it, rather than piped into
+# a grep. An early-exiting `grep -q` on the right of a pipe closes it the moment
+# it matches; under `set -o pipefail` the producer then dies of SIGPIPE and the
+# PIPELINE reports failure exactly when the pattern IS found -- so the refusal
+# below would fire on the hosts that can build, intermittently, depending on
+# whether the output fit the pipe buffer first. os/tests/shell-pipefail-lint.sh
+# exists for this one mistake and caught this line.
+default_platforms="$(docker buildx inspect default 2>/dev/null || true)"
+if ! printf '%s\n' "${default_platforms}" | grep -c "linux/${MOS_ARCH}" >/dev/null; then
+    echo "error: the 'default' buildx builder does not offer linux/${MOS_ARCH} on this host, and it is the only builder that can be used here: every stage of os/podman/Dockerfile is FROM a localhost/mos-build-* tag, which lives in the local docker image store, and a docker-container builder treats 'localhost/' as a registry hostname. Register the emulator on the HOST -- docker run --privileged --rm tonistiigi/binfmt --install ${MOS_ARCH} -- so that the default builder can reach it; a docker-container builder would not help" >&2
+    exit 1
 fi
 
 # NO image-libs.txt, and no rootfs prerequisite. An earlier revision generated
@@ -72,12 +105,36 @@ if [ ! -s "${HERE}/versions.lock" ]; then
     exit 1
 fi
 
+# THE FOUR BUILDER IMAGES, resolved out of os/build-env/images.env before
+# anything is deleted or built. os/podman/Dockerfile declares them with no
+# defaults, so a missing one is refused here by name -- with the command that
+# makes it -- rather than by docker, which reports a missing localhost tag as a
+# failed pull from a registry called `localhost`.
+#
+# --arch IS PASSED, and it is the check this switchover added. A local tag
+# carries exactly ONE architecture, unlike the multi-architecture digests
+# images.env pins for upstream bases, so `MOS_ARCH=arm64 make podman` against an
+# amd64 builder family has to be refused. Left to docker it surfaces as "no
+# match for platform in manifest" against a FROM line that is correct.
+mapfile -t FROM_ARGS < <("${FROM_SH}" --arch="${MOS_ARCH}" \
+    MOS_BUILD_BASE=LOCAL_MOS_BUILD_BASE \
+    MOS_BUILD_C=LOCAL_MOS_BUILD_C \
+    MOS_BUILD_GO=LOCAL_MOS_BUILD_GO \
+    MOS_BUILD_RUST=LOCAL_MOS_BUILD_RUST)
+# mapfile itself cannot fail, so its exit status says nothing about the process
+# inside the substitution; an empty array is what a refusal looks like from
+# here, and an empty array would build with no --build-arg at all.
+[ "${#FROM_ARGS[@]}" -eq 8 ] || {
+    echo "error: os/build-env/from.sh did not yield the four builder images (see its message above); this build would have run with an unpinned or missing FROM" >&2
+    exit 1
+}
+
 rm -rf "${OUT}"
 mkdir -p "${OUT}"
 
 docker buildx build "${BUILDER_ARGS[@]}" \
     --platform "linux/${MOS_ARCH}" \
-    --build-arg "MOS_PODMAN_STRICT=${MOS_PODMAN_STRICT:-0}" \
+    "${FROM_ARGS[@]}" \
     --build-arg "ELF_ARCH=${ELF_ARCH}" \
     -f "${HERE}/Dockerfile" \
     -o "${OUT}" \
