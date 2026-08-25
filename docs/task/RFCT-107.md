@@ -61,8 +61,45 @@ tree by pure `git mv` — zero logic changes.
   file, or a difference outside a comment line in one of these seven, is a
   regression and not covered here. What was measured to establish that is
   recorded under "The M1 baseline" below.
-- `make docs-verify` passes; a repo-wide grep finds no reference to a
-  deleted or pre-move path.
+- `make docs-verify` passes; **no code or build file references a deleted or
+  pre-move path**; **live design documents that cite one are updated or
+  annotated**; and **historical records that cite one are left standing**.
+
+  AMENDED 2026-08-25, after M1 close, **by the user**, on the recommendation of
+  L2 and L1. The reason is that the clause as drafted was unsatisfiable in
+  principle, not that the sweep fell short of it.
+
+  The original text read: "`make docs-verify` passes; a repo-wide grep finds no
+  reference to a deleted or pre-move path." **No tree could satisfy that.** A
+  path stops being named in the working tree as soon as the thing that names it
+  is updated, but it cannot stop being named in the record of the work that
+  moved it — and it must not. `docs/task/RFCT-*.md` and `docs/plan/PLAN-0*.md`
+  are dated statements of what was true when they were written; editing their
+  citations to the post-move paths would not correct a stale reference, it would
+  falsify a historical record, and the grep would go quiet on a tree that had
+  been made less truthful rather than more.
+
+  What the clause did not admit is the distinction the amended text is built on:
+
+  - a **live reference** is one something in the tree resolves — a Makefile
+    target, an inter-script call, a `shellcheck source=` directive, a consumer
+    list in a board env header. When it names a path that no longer exists it is
+    a defect, and this is what the clause was aiming at.
+  - a **historical citation** points into git history. It names the old path
+    *because* that is where the thing it cites lives, and it is correct
+    precisely for the reason the grep flags it.
+
+  A live design document is the case between the two, and is why the middle
+  requirement exists: it is read as current, so it may not silently cite a dead
+  path, but its analysis was true when written and is not to be rewritten. The
+  answer there is annotation — say that the anchors below are citations into
+  history — and both such documents were handled that way.
+
+  The work the clause was aiming at was done, and was verified done before this
+  amendment was written. The evidence is the M1 gate's sweep, re-run at this
+  commit; it is recorded under "The third acceptance clause: what was measured,
+  and when" below, which is the same measurement the gate took and not a
+  replacement for it.
 
 ## Dependencies
 
@@ -176,19 +213,88 @@ No image-content normalisation mandate was added in the course of this decision.
 M5's determinism normalisation in the `90-pack` stage stays exactly as
 `docs/plan/PLAN-014.md` already defines it.
 
-### The third acceptance clause, as measured
+### The third acceptance clause: what was measured, and when
 
-Recorded because it is not literally true and closing the task without saying so
-would mislead. `make docs-verify` passes (375/375). The repo-wide grep does
-**not** return nothing: 23 of the 54 deleted or pre-move paths are still named
-somewhere. Every one of those places is a document — 43 files under
-`docs/task/RFCT-*`, 5 under `docs/plan/`, 1 under `docs/research/`, and two live
-design documents. **No code or build file references a pre-move path**; the only
-non-docs hit is `os/rootfs/README.md:8`, which states that the v1 chain "was
-deleted". The two live design documents were annotated rather than rewritten —
-`docs/design/uboot-ab-handshake.md:32-38` records that every `os/mkimage.sh:NN`
-anchor below it "is therefore a citation into git history, not into the tree",
-and `docs/design/dashboard.md` carries the equivalent note. The historical task
-and plan records were deliberately left standing, because rewriting them would
-falsify what was true when they were written. The clause as drafted does not
-admit that distinction; the work it was aiming at was done.
+Two dates meet here, and the difference between them is the point.
+
+**Measured by the M1 gate at close** (2026-08-25, base `34d7b20`, moved
+`457ad5d`). The gate found the clause as drafted was not literally true, recorded
+that instead of closing quietly over it, and **did not amend the requirement**,
+because amending a requirement was not the gate's to do.
+
+**Amended after close, the same day**, by the user — the third Acceptance bullet
+above. So this subsection is no longer a note that the clause fails; it is the
+evidence the amended clause rests on, and it stays for that reason.
+
+**Re-run at this commit** rather than copied forward, before the amendment was
+written. The numbers below are the re-run's.
+
+#### The sweep, and how to repeat it
+
+The paths at issue are every path `git diff --name-status -M 34d7b20 HEAD`
+reports as deleted or as the source of a rename — **54 of them, 5 deleted and 49
+moved** — each then searched for across every tracked file.
+
+**A literal substring search overstates the result, and the overstatement lands
+on code.** `os/rootfs/Dockerfile` was deleted; `os/rootfs/Dockerfile.v2` is live
+and is cited widely. A substring match counts the second as a hit for the first,
+adding 14 files — 8 of them code or build files, including `os/podman/Dockerfile`,
+`os/build-env/images.env`, `os/update/rauc/Dockerfile` and
+`os/rootfs/initramfs/scripts/mos-verity`. All 14 are false positives: every one
+names `Dockerfile.v2` and none names the deleted file. The match has to reject a
+path-continuation character:
+
+```
+git grep -lIP "\Qos/rootfs/Dockerfile\E(?![A-Za-z0-9_./-])"
+```
+
+Without that guard the sweep reports 68 files rather than 54 and appears to show
+the tree's own build files citing a deleted path. It is the one trap in
+re-checking this clause, so it is written down.
+
+#### What the sweep returns
+
+- **23 of the 54 paths are still named** somewhere in the tracked tree; the other
+  31 are gone from it entirely.
+- **54 files name at least one**, and the split is what the amended clause turns
+  on:
+
+  | where | files | what they are |
+  | --- | --- | --- |
+  | `docs/task/RFCT-*.md` | 44 | historical records |
+  | `docs/plan/PLAN-0*.md` | 6 | historical records |
+  | `docs/design/` | 2 | **live documents — annotated, below** |
+  | `docs/research/` | 1 | historical record |
+  | outside `docs/` | 1 | `os/rootfs/README.md` |
+
+- **No code or build file references a pre-move path. Zero.** No Makefile target,
+  no inter-script call, no `shellcheck source=` directive, no board env consumer
+  list. The single hit outside `docs/` is `os/rootfs/README.md:8`, which names
+  `os/mkimage.sh` and `os/verify-image.sh` in order to say that the v1 chain
+  "was deleted" — it describes the deletion rather than depending on it.
+- `make docs-verify` passes, 375/375.
+
+#### The two live design documents
+
+Both were annotated rather than rewritten, and by different means — worth knowing
+before looking for a note that is not there in the shape expected:
+
+- `docs/design/uboot-ab-handshake.md:32-38` carries **one note above the affected
+  sections**: the v1 chain "still existed when this analysis was written",
+  RFCT-107 deleted it, and "every `os/mkimage.sh:NN` anchor below is therefore a
+  citation into git history, not into the tree".
+- `docs/design/dashboard.md` instead annotates **at each citation** — `:1747-1748`,
+  `:2787`, `:2789` and `:2891-2895` — each marking the v1 half of a claim as
+  deleted by RFCT-107 and stating what survives it, e.g. "the cost is one
+  verifier, not two; nothing else in the argument changes".
+
+#### One correction to the gate's own count
+
+The gate recorded 43 files under `docs/task/RFCT-*` and 5 under `docs/plan/`; the
+re-run finds **44 and 6**. This is not drift since M1 close: the identical sweep
+run against the gate's own commit `ab6ffe3` returns the same 54 files, name for
+name, that it returns at this commit. The two extra are `docs/task/RFCT-107.md`
+and `docs/plan/PLAN-014.md` — this record and its plan, the two documents the
+campaign was writing as it measured, each of which names the v1 chain it deleted.
+Excluding those two gives exactly 43 and 5. Every other number the gate recorded
+stands as it wrote it.
