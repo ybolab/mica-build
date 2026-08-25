@@ -15,7 +15,7 @@ BOARDS := cx3576 x64
 	os-image-cx3576-v2 os-verify-cx3576-v2 os-bundle-cx3576 os-devkeys os-health-test podman \
 	os-shadow-test os-dbus-policy-test os-repart-test os-ui-location-test \
 	os-uboot-handshake-test os-mkimage-v2-test os-mkimage-x64-test \
-	os-layout-lint os-layout-lint-test \
+	os-layout-lint os-layout-lint-test os-verify-test \
 	docs-verify docs-verify-test build-env
 
 help:
@@ -36,6 +36,7 @@ help:
 	@echo "  os-mkimage-x64-test prove the x64 assembler rebuilds byte-identically, and refuses every boot-chain mistake that leaves a machine at the UEFI shell (docker)"
 	@echo "  os-layout-lint      check every board layout against the board-definition schema"
 	@echo "  os-layout-lint-test prove the layout linter rejects a broken board definition"
+	@echo "  os-verify-test      run the os/verify bun+TypeScript suite (typecheck + bun test)"
 	@echo "  docs-verify         assert both document indexes agree with the tree, in both directions"
 	@echo "  docs-verify-test    prove the index assertions actually fail on a duplicated row or entry"
 	@echo "  podman              build the container engine from source into os/podman/out-\$$MOS_ARCH"
@@ -248,6 +249,17 @@ os-layout-lint:
 
 os-layout-lint-test:
 	bash os/verify/lint-test.sh
+
+# PLAN-014 M3: the bun+TypeScript foundation, entered through one script.
+#
+# os/verify/run.sh finds bun, installs the dev dependencies if they are absent,
+# typechecks and runs the suite -- and turns a run that asserted nothing red,
+# which bun does not: measured with bun 1.4.0, `bun test` exits 0 on a test file
+# that declares no tests. The tool-less-host path (a pinned bun container) lands
+# with the rest of RFCT-109; until it does, the script names the docker command
+# that stands in for it rather than failing as "bun: command not found".
+os-verify-test:
+	bash os/verify/run.sh
 
 # Every shell script that enables pipefail, checked for an early-exiting reader
 # on the right of a pipe. `producer | grep -q PATTERN` inverts its own answer
