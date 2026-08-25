@@ -1,10 +1,11 @@
 # RFCT-106 x64 A/B: the update has to land where the firmware actually looks
 
-- **status**: in progress
+- **status**: completed
 - **priority**: P0
 - **owner**: ai-agent
 - **createdAt**: 2026-08-25 07:05
 - **claimedAt**: 2026-08-25 07:05
+- **completedAt**: 2026-08-25 11:02
 
 `rauc install` on the x64 image cannot succeed. Not "has a bug" — cannot
 succeed, by construction, and it was found by trying to run the A/B test the
