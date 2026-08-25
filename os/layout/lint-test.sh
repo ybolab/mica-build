@@ -62,8 +62,8 @@ reject no-partition-set x64-v2.env \
     "sed -i '/^LAYOUT_PARTITIONS=/d' lint-v2.env"
 
 reject missing-role-key x64-v2.env \
-    "declares no BOOT_A_FAT_VOLUME_ID" \
-    "sed -i '/^BOOT_A_FAT_VOLUME_ID=/d' lint-v2.env"
+    "declares no ESP_FAT_VOLUME_ID" \
+    "sed -i '/^ESP_FAT_VOLUME_ID=/d' lint-v2.env"
 
 reject forbidden-role-key x64-v2.env \
     "which that role cannot honour" \
@@ -79,11 +79,11 @@ reject missing-common-key x64-v2.env \
 
 reject partition-number-gap x64-v2.env \
     "these numbers are absent" \
-    "sed -i 's/^DATA_PARTNUM=8/DATA_PARTNUM=9/' lint-v2.env"
+    "sed -i 's/^DATA_PARTNUM=9/DATA_PARTNUM=10/' lint-v2.env"
 
 reject duplicate-partition-number x64-v2.env \
     "is declared twice" \
-    "sed -i 's/^STATE_PARTNUM=6/STATE_PARTNUM=5/' lint-v2.env"
+    "sed -i 's/^STATE_PARTNUM=7/STATE_PARTNUM=6/' lint-v2.env"
 
 # One fact in three units. cx3576 spells a start as MiB, as a sector AND as a
 # byte offset, as three independent literals; nothing tied them together until

@@ -1747,19 +1747,39 @@ fi
 KERNEL_SRC="${BOARD_DIR}/out/kernel/Image"
 DTB_SRC="${BOARD_DIR}/out/kernel/rk3576-src.dtb"
 
+# The boot filesystem(s) this board actually has. A U-Boot board has a per-slot
+# PAIR, because U-Boot loads boot.scr from the partition its own environment
+# selected. A grub board has ONE ESP: UEFI firmware picks the ESP and nothing on
+# the device can select the other, so a second one would be a filesystem no boot
+# ever reads (RFCT-106).
+# Every board has a per-slot boot PARTITION pair; a grub board also has an ESP
+# that is in no slot group at all (RFCT-106). GRUB can read any partition, so
+# the pair is genuinely per-slot on both boards -- it is only the FIRMWARE that
+# cannot choose, which is why the thing it boots is separate and static.
 BOOT_A_IMG="${IMG}@@${BOOT_A_OFFSET_BYTES}"
 BOOT_B_IMG="${IMG}@@${BOOT_B_OFFSET_BYTES}"
+if ! is_uboot_board; then
+    ESP_IMG="${IMG}@@${ESP_OFFSET_BYTES}"
+fi
 
 # Args: slot-letter fat-image offset-bytes fat-label volume-id verity-env-name
 check_boot_slot() {
     local slot="$1" fatimg="$2" offset="$3" want_label="$4" want_volid="$5" verity_env="$6"
 
+    # The slot LETTER, for the temp files later sections read back by letter
+    # (verity-A.env, boot-B-Image). The first argument is the display NAME --
+    # "BOOT-A", or "ESP" on a board with one boot filesystem -- because that is
+    # what every message here has to say. Deriving the letter from it rather
+    # than naming the temp files after the display string keeps the readers
+    # working: they ask for A and B, and always did.
+    local letter="${slot##*-}"
+
     local sig
     sig="$(dd if="${IMG}" skip=$((offset + 82)) count=5 iflag=skip_bytes,count_bytes status=none 2>/dev/null || true)"
     if [ "${sig}" = "FAT32" ]; then
-        pass "BOOT-${slot} has a FAT32 boot sector signature at $((offset / MIB_BYTES)) MiB"
+        pass "${slot} has a FAT32 boot sector signature at $((offset / MIB_BYTES)) MiB"
     else
-        fail "BOOT-${slot} FAT32 signature not found at offset $((offset / MIB_BYTES)) MiB + 82"
+        fail "${slot} FAT32 signature not found at offset $((offset / MIB_BYTES)) MiB + 82"
     fi
 
     local volid
@@ -1769,7 +1789,7 @@ check_boot_slot() {
     # resolves a boot slot by volume id, and RAUC writes partition CONTENTS
     # without touching the GPT, so the PARTLABEL and partition GUID (asserted
     # above) survive an install and remain the real identity.
-    eq_ci "factory: BOOT-${slot} FAT volume id" "${volid}" "${want_volid}"
+    eq_ci "factory: ${slot} FAT volume id" "${volid}" "${want_volid}"
 
     # FACTORY ONLY, same reason as the volume id: a RAUC-installed boot slot
     # gets the neutral label "BOOT". Nothing addresses a boot slot by label
@@ -1779,15 +1799,15 @@ check_boot_slot() {
     local label
     label="$(mlabel -s -i "${fatimg}" :: 2>/dev/null | sed -n 's/^ *Volume label is //p' | sed 's/ *$//' || true)"
     if [ "${label}" = "${want_label}" ]; then
-        pass "factory: BOOT-${slot} FAT volume label is '${want_label}' (an updated slot legitimately reads 'BOOT')"
+        pass "factory: ${slot} FAT volume label is '${want_label}' (an updated slot legitimately reads 'BOOT')"
     else
-        fail "factory: BOOT-${slot} FAT volume label is '${label}', expected '${want_label}' on a factory image"
+        fail "factory: ${slot} FAT volume label is '${label}', expected '${want_label}' on a factory image"
     fi
 
     local listing
     listing="$(mdir -/ -b -i "${fatimg}" ::/ 2>/dev/null || true)"
     if [ -z "${listing}" ]; then
-        fail "BOOT-${slot} FAT filesystem unreadable (cannot list files)"
+        fail "${slot} FAT filesystem unreadable (cannot list files)"
     fi
     local f
     # FROM THE BOARD DEFINITION. This was `Image rk3576-src.dtb boot.scr
@@ -1800,13 +1820,17 @@ check_boot_slot() {
     # per-slot files. x64 uses none: it builds one ESP holding both slots'
     # kernels and copies it, so each slot legitimately contains both.
     local slot_lc required
-    slot_lc="$(printf '%s' "${slot}" | tr 'AB' 'ab')"
+    # The trailing letter of the slot NAME (BOOT-A -> a). The name is what the
+    # messages say, and on a grub board it is "ESP" -- one filesystem holding
+    # both slots' files -- so there is no letter to take and @SLOT@ never
+    # appears in that board's BOOT_SLOT_REQUIRED_FILES.
+    slot_lc="$(printf '%s' "${slot##*-}" | tr 'AB' 'ab')"
     required="${BOOT_SLOT_REQUIRED_FILES//@SLOT@/${slot_lc}}"
     for f in ${required}; do
         if grep -qxF "::/${f}" <<<"${listing}"; then
-            pass "BOOT-${slot} contains ${f}"
+            pass "${slot} contains ${f}"
         else
-            fail "BOOT-${slot} is missing ${f}"
+            fail "${slot} is missing ${f}"
         fi
     done
 
@@ -1828,34 +1852,34 @@ check_boot_slot() {
         # happens. There is no error on the console — just a device that boots one
         # slot forever and cannot roll back.
         if grep -qi "extlinux" <<<"${listing}"; then
-            fail "BOOT-${slot} contains extlinux ($(echo "${listing}" | grep -i extlinux | tr '\n' ' ')). Both U-Boot boot frameworks try extlinux BEFORE boot.scr, so this silently bypasses the whole RAUC A/B handshake: BOOT_ORDER is never honoured, boot attempts are never counted and rollback never happens, with no error anywhere. Remove it."
+            fail "${slot} contains extlinux ($(echo "${listing}" | grep -i extlinux | tr '\n' ' ')). Both U-Boot boot frameworks try extlinux BEFORE boot.scr, so this silently bypasses the whole RAUC A/B handshake: BOOT_ORDER is never honoured, boot attempts are never counted and rollback never happens, with no error anywhere. Remove it."
         else
-            pass "BOOT-${slot} contains no extlinux/ directory and no extlinux.conf (a v2 slot must boot via ${BOOT_SCRIPT_NAME})"
+            pass "${slot} contains no extlinux/ directory and no extlinux.conf (a v2 slot must boot via ${BOOT_SCRIPT_NAME})"
         fi
 
         if grep -qi "initr" <<<"${listing}"; then
-            fail "BOOT-${slot} contains an initramfs/initrd file: $(echo "${listing}" | grep -i initr | tr '\n' ' ')"
+            fail "${slot} contains an initramfs/initrd file: $(echo "${listing}" | grep -i initr | tr '\n' ' ')"
         else
-            pass "BOOT-${slot} contains no initramfs file"
+            pass "${slot} contains no initramfs file"
         fi
 
         local out
         for f in Image rk3576-src.dtb; do
-            out="${TMP}/boot-${slot}-${f}"
+            out="${TMP}/boot-${letter}-${f}"
             local src
             if [ "${f}" = "Image" ]; then src="${KERNEL_SRC}"; else src="${DTB_SRC}"; fi
             if ! mcopy -n -i "${fatimg}" "::/${f}" "${out}" 2>/dev/null; then
-                fail "BOOT-${slot} ${f} missing or unreadable"
+                fail "${slot} ${f} missing or unreadable"
             elif [ ! -f "${src}" ]; then
-                fail "BOOT-${slot} ${f} compare source not found: ${src}"
+                fail "${slot} ${f} compare source not found: ${src}"
             elif cmp -s "${out}" "${src}"; then
-                pass "factory: BOOT-${slot} ${f} matches the local BSP artifact ${src}"
+                pass "factory: ${slot} ${f} matches the local BSP artifact ${src}"
             else
-                fail "factory: BOOT-${slot} ${f} differs from the local BSP artifact ${src}"
+                fail "factory: ${slot} ${f} differs from the local BSP artifact ${src}"
             fi
         done
     else
-        skip "BOOT-${slot}: the extlinux, no-initramfs and Image/dtb assertions (bootloader=${RAUC_BOOTLOADER}). extlinux is a U-Boot boot framework; a GRUB slot legitimately CARRIES an initrd, so the no-initramfs rule is inverted here rather than absent; and Image/rk3576-src.dtb are BSP artefacts this board does not build"
+        skip "${slot}: the extlinux, no-initramfs and Image/dtb assertions (bootloader=${RAUC_BOOTLOADER}). extlinux is a U-Boot boot framework; a GRUB slot legitimately CARRIES an initrd, so the no-initramfs rule is inverted here rather than absent; and Image/rk3576-src.dtb are BSP artefacts this board does not build"
     fi
 
     # THE LED ASSERTION, and it is made against the copy EXTRACTED FROM THE
@@ -1880,7 +1904,7 @@ check_boot_slot() {
     # every label and default-state still spelling exactly right, and cx3576
     # ships an indicator the operator reads to know the device is up.
     if [ "${BOARD_HAS_STATUS_LED}" = "1" ]; then
-        local dtb="${TMP}/boot-${slot}-rk3576-src.dtb"
+        local dtb="${TMP}/boot-${letter}-rk3576-src.dtb"
         local led name want_state want_flags want_pol got
         local -a gpio_cells
         for led in "status-red:on:1:active-low" "status-blue:off:0:active-high"; do
@@ -1888,16 +1912,16 @@ check_boot_slot() {
 
             got="$(fdtget "${dtb}" "/leds/${name}" label 2>/dev/null || true)"
             if [ "${got}" = "${name}" ]; then
-                pass "BOOT-${slot} rk3576-src.dtb: /leds/${name} label is '${name}'"
+                pass "${slot} rk3576-src.dtb: /leds/${name} label is '${name}'"
             else
-                fail "BOOT-${slot} rk3576-src.dtb: /leds/${name} label is '${got:-missing}', expected '${name}'"
+                fail "${slot} rk3576-src.dtb: /leds/${name} label is '${got:-missing}', expected '${name}'"
             fi
 
             got="$(fdtget "${dtb}" "/leds/${name}" default-state 2>/dev/null || true)"
             if [ "${got}" = "${want_state}" ]; then
-                pass "BOOT-${slot} rk3576-src.dtb: /leds/${name} default-state is '${want_state}'"
+                pass "${slot} rk3576-src.dtb: /leds/${name} default-state is '${want_state}'"
             else
-                fail "BOOT-${slot} rk3576-src.dtb: /leds/${name} default-state is '${got:-missing}', expected '${want_state}'"
+                fail "${slot} rk3576-src.dtb: /leds/${name} default-state is '${got:-missing}', expected '${want_state}'"
             fi
 
             # No pipe here on purpose: an early-exiting consumer on the read side
@@ -1907,13 +1931,13 @@ check_boot_slot() {
             read -r -a gpio_cells <<<"$(fdtget -t x "${dtb}" "/leds/${name}" gpios 2>/dev/null || true)"
             got="${gpio_cells[2]-}"
             if [ "${got}" = "${want_flags}" ]; then
-                pass "BOOT-${slot} rk3576-src.dtb: /leds/${name} GPIO flags cell is ${want_flags} (${want_pol})"
+                pass "${slot} rk3576-src.dtb: /leds/${name} GPIO flags cell is ${want_flags} (${want_pol})"
             else
-                fail "BOOT-${slot} rk3576-src.dtb: /leds/${name} GPIO flags cell is '${got:-missing}', expected ${want_flags} (${want_pol}); the wrong polarity drives this LED backwards while its label and default-state still read correctly"
+                fail "${slot} rk3576-src.dtb: /leds/${name} GPIO flags cell is '${got:-missing}', expected ${want_flags} (${want_pol}); the wrong polarity drives this LED backwards while its label and default-state still read correctly"
             fi
         done
     else
-        skip "BOOT-${slot}: the status-LED device-tree assertions (${MOS_BOARD} declares BOARD_HAS_STATUS_LED=0): there is no indicator on this board, so there are no /leds nodes and no GPIO polarity to get backwards"
+        skip "${slot}: the status-LED device-tree assertions (${MOS_BOARD} declares BOARD_HAS_STATUS_LED=0): there is no indicator on this board, so there are no /leds nodes and no GPIO polarity to get backwards"
     fi
 
     # Pulled out for the cross-slot comparisons below, both of which are
@@ -1921,13 +1945,55 @@ check_boot_slot() {
     # A grub board keeps neither in the slot -- its verity parameters are on
     # the kernel command line GRUB builds -- so there is nothing to extract.
     if is_uboot_board; then
-        mcopy -n -i "${fatimg}" "::/${BOOT_SCRIPT_NAME}" "${TMP}/scr-${slot}" 2>/dev/null || true
-        mcopy -n -i "${fatimg}" "::/${verity_env}" "${TMP}/verity-${slot}.env" 2>/dev/null || true
+        mcopy -n -i "${fatimg}" "::/${BOOT_SCRIPT_NAME}" "${TMP}/scr-${letter}" 2>/dev/null || true
+        mcopy -n -i "${fatimg}" "::/${verity_env}" "${TMP}/verity-${letter}.env" 2>/dev/null || true
     fi
 }
 
-check_boot_slot A "${BOOT_A_IMG}" "${BOOT_A_OFFSET_BYTES}" "${BOOT_A_FAT_LABEL}" "${BOOT_A_FAT_VOLUME_ID}" "${BOOT_VERITY_ENV_A_NAME:-}"
-check_boot_slot B "${BOOT_B_IMG}" "${BOOT_B_OFFSET_BYTES}" "${BOOT_B_FAT_LABEL}" "${BOOT_B_FAT_VOLUME_ID}" "${BOOT_VERITY_ENV_B_NAME:-}"
+check_boot_slot BOOT-A "${BOOT_A_IMG}" "${BOOT_A_OFFSET_BYTES}" "${BOOT_A_FAT_LABEL}" "${BOOT_A_FAT_VOLUME_ID}" "${BOOT_VERITY_ENV_A_NAME:-}"
+check_boot_slot BOOT-B "${BOOT_B_IMG}" "${BOOT_B_OFFSET_BYTES}" "${BOOT_B_FAT_LABEL}" "${BOOT_B_FAT_VOLUME_ID}" "${BOOT_VERITY_ENV_B_NAME:-}"
+
+# --- the ESP: static, in no slot group, and holding NOTHING per-slot ---------
+if is_uboot_board; then
+    skip "the ESP assertions (bootloader=${RAUC_BOOTLOADER}): U-Boot is firmware, so this board has no EFI system partition and its boot pair is the whole boot chain"
+else
+    esp_listing="$(mdir -/ -b -i "${ESP_IMG}" ::/ 2>/dev/null || true)"
+    if [ -z "${esp_listing}" ]; then
+        fail "the ESP at $((ESP_OFFSET_BYTES / MIB_BYTES)) MiB is unreadable; the firmware would find no EFI binary and the machine would not boot at all"
+    else
+        esp_missing=""
+        for f in ${ESP_REQUIRED_FILES}; do
+            grep -qxF "::/${f}" <<<"${esp_listing}" || esp_missing="${esp_missing} ${f}"
+        done
+        if [ -z "${esp_missing}" ]; then
+            pass "the ESP carries the whole static boot chain ($(echo "${ESP_REQUIRED_FILES}" | tr '\n' ' '))"
+        else
+            fail "the ESP is missing:${esp_missing}"
+        fi
+        # THE ASSERTION RFCT-106 EXISTS FOR, from the other side. A per-slot
+        # file on the ESP is one that no install can replace: the ESP is in no
+        # slot group, so it would be frozen at whatever was flashed while the
+        # rootfs it describes moved on.
+        esp_perslot=""
+        for stray in "${SLOT_KERNEL_NAME}" "${SLOT_INITRD_NAME}" "${SLOT_CMDLINE_NAME}"; do
+            grep -qxF "::/${stray}" <<<"${esp_listing}" && esp_perslot="${esp_perslot} ${stray}"
+        done
+        if [ -z "${esp_perslot}" ]; then
+            pass "the ESP carries no per-slot file (no ${SLOT_KERNEL_NAME}, ${SLOT_INITRD_NAME} or ${SLOT_CMDLINE_NAME}); everything an update replaces lives on the slot's own boot partition"
+        else
+            fail "the ESP carries per-slot file(s):${esp_perslot}. The ESP is in no RAUC slot group, so nothing would ever replace them -- the boot chain would keep naming the rootfs that shipped with the image"
+        fi
+        # grub.cfg on the ESP must not carry a root hash: it is the one file no
+        # install rewrites.
+        esp_cfg="${TMP}/esp-grub.cfg"
+        mcopy -n -i "${ESP_IMG}" "::/EFI/mos/grub.cfg" "${esp_cfg}" 2>/dev/null || true
+        if grep -E '^[[:space:]]*linux[[:space:]]' "${esp_cfg}" 2>/dev/null | grep -cE '[0-9a-f]{32,}' >/dev/null; then
+            fail "the ESP's grub.cfg bakes a literal hash into a linux line. It changes with every build and nothing installs this file, so the next update would boot the new rootfs against the old root hash"
+        else
+            pass "the ESP's grub.cfg carries no literal hash; the dm-verity values come from the slot's own cmdline.cfg, which RAUC installs"
+        fi
+    fi
+fi
 
 # U-BOOT ONLY. Everything from here to the next section is about boot.scr --
 # the compiled script U-Boot runs, its uImage magic, and the GPT partition
@@ -1987,13 +2053,13 @@ if is_uboot_board; then
             body="$(cat "${TMP}/verity-${slot}.env" 2>/dev/null || true)"
             body_lc="$(lc "${body}")"
             if [ -z "${body}" ]; then
-                fail "BOOT-${slot} ${BOOT_VERITY_ENV_NAME%.env}-$(lc "${slot}").env is missing or empty"
+                fail "${slot} ${BOOT_VERITY_ENV_NAME%.env}-$(lc "${slot}").env is missing or empty"
                 verity_env_ok=0
             elif [ "${body_lc#*"$(lc "${own}")"}" != "${body_lc}" ] &&
                 [ "${body_lc#*"$(lc "${other}")"}" = "${body_lc}" ]; then
-                pass "BOOT-${slot} verity env references its own rootfs PARTUUID ${own} and not the other slot's"
+                pass "${slot} verity env references its own rootfs PARTUUID ${own} and not the other slot's"
             else
-                fail "BOOT-${slot} verity env must reference PARTUUID ${own} (its own rootfs slot) and must not mention ${other}"
+                fail "${slot} verity env must reference PARTUUID ${own} (its own rootfs slot) and must not mention ${other}"
                 verity_env_ok=0
             fi
         done
@@ -2047,21 +2113,41 @@ board_cmdline() {
         cat "${TMP}/verity-${slot}.env" 2>/dev/null || true
         return
     fi
-    # GRUB: the `linux` line for this slot inside the ESP's grub.cfg. Read from
-    # the image's own boot slot, not from os/boot/x64-grub.cfg -- the template
-    # is what the build INTENDED and this is what the device will read.
-    local esp cfg
+    # GRUB: the EFFECTIVE command line, composed the way the bootloader composes
+    # it (RFCT-106). The ESP's grub.cfg holds the board constants -- each slot's
+    # PARTUUID and the fixed arguments -- and the SLOT'S OWN boot partition
+    # holds the values that change with the build. Neither half is the command
+    # line; GRUB expands one into the other at boot, and so does this.
+    #
+    # Composing it here rather than asserting the halves separately is the
+    # point: everything downstream verifies the ROOT HASH THE KERNEL WILL BE
+    # GIVEN against the payload actually in that slot. A check that read the
+    # fragment alone would pass on a grub.cfg that never referenced it, and a
+    # check that read grub.cfg alone would pass on a slot whose cmdline.cfg was
+    # never installed.
+    local slot_lc frag cfg line
+    slot_lc="$(lc "${slot}")"
+    frag="${TMP}/slot-cmdline-${slot_lc}.cfg"
+    cfg="${TMP}/esp-grub-for-${slot_lc}.cfg"
     case "${slot}" in
-    A) esp="${BOOT_A_IMG}" ;;
-    B) esp="${BOOT_B_IMG}" ;;
+    A | a) mcopy -n -i "${BOOT_A_IMG}" "::/${SLOT_CMDLINE_NAME}" "${frag}" 2>/dev/null || true ;;
+    B | b) mcopy -n -i "${BOOT_B_IMG}" "::/${SLOT_CMDLINE_NAME}" "${frag}" 2>/dev/null || true ;;
     esac
-    cfg="${TMP}/grubcfg-${slot}"
-    mcopy -n -i "${esp}" "::/EFI/mos/grub.cfg" "${cfg}" 2>/dev/null || true
-    # One entry per slot; take the linux line of the entry for THIS slot.
-    awk -v want="$(lc "${slot}")" '
-        /menuentry/ { inentry = (tolower($0) ~ ("--id " want) || tolower($0) ~ ("slot " want)) }
-        inentry && $1 == "linux" { print; exit }
-    ' "${cfg}" 2>/dev/null || true
+    mcopy -n -i "${ESP_IMG}" "::/EFI/mos/grub.cfg" "${cfg}" 2>/dev/null || true
+    line="$(grep -E "^[[:space:]]*linux .*slot_${slot_lc}_root" "${cfg}" 2>/dev/null | first_line || true)"
+    [ -n "${line}" ] || return 0
+    # Expand ${MOS_*} from the fragment's `set NAME=value` lines. Anything the
+    # fragment does not define is left unexpanded, so a missing fact shows up in
+    # the assertion output as a literal ${MOS_ROOT_HASH} rather than as a
+    # silently empty field.
+    while IFS= read -r setline; do
+        local name value
+        name="${setline#set }"
+        value="${name#*=}"
+        name="${name%%=*}"
+        line="${line//\$\{${name}\}/${value}}"
+    done < <(grep -E '^set MOS_[A-Z_]+=' "${frag}" 2>/dev/null || true)
+    printf '%s\n' "${line}"
 }
 
 CREATE="$(board_cmdline A | sed -n 's/.*dm-mod\.create="\([^"]*\)".*/\1/p')"
@@ -2678,19 +2764,58 @@ sq_regular /etc/rauc/system.conf
 RAUC_CONF="${ROOT}/etc/rauc/system.conf"
 # The slot devices must be the layout's rootfs and boot partitions, addressed
 # by PARTUUID. A wrong GUID here installs an update over the running slot.
+rauc_slot_device() {
+    awk -v s="[slot.$1]" '$0 == s {f = 1; next} /^\[/ {f = 0} f && /^device=/ {sub(/^device=/, ""); print; exit}' "${RAUC_CONF}" 2>/dev/null || true
+}
+rauc_slot_field() {
+    awk -v s="[slot.$1]" -v k="^$2=" '$0 == s {f = 1; next} /^\[/ {f = 0} f && $0 ~ k {sub(k, ""); print; exit}' "${RAUC_CONF}" 2>/dev/null || true
+}
+
+# The PARTITION slots, on every board.
 rauc_slots_ok=1
-for pair in "rootfs.0:${ROOTFS_A_GUID}" "rootfs.1:${ROOTFS_B_GUID}" "boot.0:${BOOT_A_GUID}" "boot.1:${BOOT_B_GUID}"; do
+bad_slot=""
+rauc_pairs="rootfs.0:${ROOTFS_A_GUID} rootfs.1:${ROOTFS_B_GUID} boot.0:${BOOT_A_GUID} boot.1:${BOOT_B_GUID}"
+rauc_pair_n=0
+for pair in ${rauc_pairs}; do
     IFS=':' read -r slot guid <<<"${pair}"
-    got="$(awk -v s="[slot.${slot}]" '$0 == s {f = 1; next} /^\[/ {f = 0} f && /^device=/ {sub(/^device=/, ""); print; exit}' "${RAUC_CONF}" 2>/dev/null || true)"
+    rauc_pair_n=$((rauc_pair_n + 1))
+    got="$(rauc_slot_device "${slot}")"
     if [ "$(lc "${got}")" != "/dev/disk/by-partuuid/$(lc "${guid}")" ]; then
         rauc_slots_ok=0
         bad_slot="${slot} -> '${got}' (expected /dev/disk/by-partuuid/$(lc "${guid}"))"
     fi
 done
 if [ "${rauc_slots_ok}" -eq 1 ]; then
-    pass "RAUC system.conf addresses all four slots by the layout's partition GUIDs"
+    pass "RAUC system.conf addresses all ${rauc_pair_n} partition slots by the layout's partition GUIDs"
 else
     fail "RAUC system.conf slot device mismatch: ${bad_slot}"
+fi
+
+# THE PER-SLOT BOOT PAYLOAD MUST BE THE BOOT PARTITIONS -- and on a grub board,
+# NOT the ESP. This is the assertion RFCT-106 exists for.
+#
+# The x64 image declared [slot.boot.0] and [slot.boot.1] on its two ESPs. Every
+# check here passed: the GUIDs were the layout's, the devices were by-partuuid
+# paths, the slots were parented correctly. What none of them asked was whether
+# the firmware could ever boot the one being installed into. It could not: UEFI
+# picks an ESP and nothing on the device gets a say, so the inactive one was a
+# filesystem no boot ever reads.
+if is_uboot_board; then
+    skip "the ESP-versus-boot-slot assertion (bootloader=${RAUC_BOOTLOADER}): U-Boot is firmware and this board has no ESP, so there is no partition the boot slots could wrongly be"
+else
+    esp_guid_lc="$(lc "${ESP_GUID}")"
+    slot_devs="$(grep '^device=' "${RAUC_CONF}" 2>/dev/null || true)"
+    if grep -qi "${esp_guid_lc}" <<<"${slot_devs}"; then
+        fail "a RAUC slot points at the ESP (${esp_guid_lc}). The ESP is what the FIRMWARE boots; putting it in a slot group means an install rewrites the EFI binary and the grubenv that records which slot is good, and a power loss during that write leaves a machine that boots nothing"
+    else
+        pass "no RAUC slot points at the ESP; the partition the firmware boots is in no slot group, so no install can rewrite the EFI binary or the grubenv beside it"
+    fi
+    if [ "$(lc "$(rauc_slot_device boot.0)")" = "/dev/disk/by-partuuid/$(lc "${BOOT_A_GUID}")" ] &&
+        [ "$(lc "$(rauc_slot_device boot.1)")" = "/dev/disk/by-partuuid/$(lc "${BOOT_B_GUID}")" ]; then
+        pass "the boot slots are the per-slot boot PARTITIONS ($(lc "${BOOT_A_GUID}") / $(lc "${BOOT_B_GUID}")), which the first-stage GRUB selects from grubenv and can therefore actually read"
+    else
+        fail "the boot slots are not the layout's boot partitions: boot.0='$(rauc_slot_device boot.0)', boot.1='$(rauc_slot_device boot.1)'"
+    fi
 fi
 
 # RENUMBERING SAFETY. Every slot device must be a by-partuuid path. A
@@ -2698,7 +2823,19 @@ fi
 # a partition ahead of it would silently point RAUC at the wrong slot — it would
 # install an update over the running rootfs. Asserted as a shape, so the config
 # cannot acquire such a path later.
-bad_devs="$(grep '^device=' "${RAUC_CONF}" 2>/dev/null | grep -v '^device=/dev/disk/by-partuuid/' || true)"
+bad_devs="$(awk '
+    /^\[slot\./ { type = ""; dev = ""; next }
+    /^type=/     { type = substr($0, 6) }
+    /^device=/   { dev  = substr($0, 8) }
+    dev != "" && type != "" {
+        if (type == "file") {
+            if (dev !~ /^\//) print dev " (type=file, not an absolute path)"
+        } else if (dev !~ /^\/dev\/disk\/by-partuuid\//) {
+            print dev " (type=" type ", not addressed by PARTUUID)"
+        }
+        dev = ""
+    }
+' "${RAUC_CONF}" 2>/dev/null || true)"
 if [ -z "${bad_devs}" ]; then
     pass "every RAUC slot device is a /dev/disk/by-partuuid/ path; no slot is addressed by partition number, so renumbering cannot mis-target an install"
 else

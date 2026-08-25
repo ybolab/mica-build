@@ -378,7 +378,7 @@ echo "layout: $have_defs repart definitions, 1 of them growing"
 if [ -f "$OVERLAY_STAGE/etc/systemd/system/boot.mount.in" ]; then
     render "$OVERLAY_STAGE/etc/systemd/system/boot.mount.in" \
            "$OVERLAY_STAGE/etc/systemd/system/boot.mount" \
-        BOOT_A_GUID "$(lower "$BOOT_A_GUID")"
+        ESP_GUID "$(lower "$ESP_GUID")"
 fi
 
 render "$OVERLAY_STAGE/etc/fstab.in" "$OVERLAY_STAGE/etc/fstab" \

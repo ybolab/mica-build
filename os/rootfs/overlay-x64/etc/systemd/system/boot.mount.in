@@ -13,18 +13,21 @@
 # ROLL BACK -- the same shape as the missing rauc-service D-Bus files that
 # os/rootfs/Dockerfile.v2 records at the top of its package list.
 #
-# boot-a specifically, and that is a decision with a stated limit. The firmware
-# picks which ESP to boot and UEFI BootOrder is firmware state, not disk state,
-# so mos cannot make a second ESP authoritative without firmware cooperation.
-# What A/B protects here is a bad UPDATE -- the rootfs pair plus the order in
-# grubenv -- and that is complete. What it does not protect is a corrupt ESP.
+# THE ESP, singular (RFCT-106). The firmware picks which ESP to boot and UEFI
+# BootOrder is firmware state, not disk state, so mos cannot make a second ESP
+# authoritative without firmware cooperation -- which is why this board has one
+# and the per-slot boot payload is a set of FILES on it. What A/B protects here
+# is a bad UPDATE: the rootfs pair, the per-slot kernel/initrd/cmdline files
+# installed beside it, and the order in grubenv. What it does not protect is a
+# corrupt ESP; that is bought instead by how little is ever written to it --
+# after flashing, only grubenv and three files per install.
 Description=EFI System Partition (RAUC grubenv lives here)
 DefaultDependencies=no
 Before=local-fs.target
-After=blockdev@dev-disk-by\x2dpartuuid-@BOOT_A_GUID@.target
+After=blockdev@dev-disk-by\x2dpartuuid-@ESP_GUID@.target
 
 [Mount]
-What=/dev/disk/by-partuuid/@BOOT_A_GUID@
+What=/dev/disk/by-partuuid/@ESP_GUID@
 Where=/boot
 Type=vfat
 # umask=0077: the ESP holds the boot chain. Anything that can read it can read

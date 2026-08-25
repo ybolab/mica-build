@@ -18,6 +18,9 @@ description=mos A/B update bundle for @COMPATIBLE@
 # whole bundle up front — and it is the only format system.conf accepts.
 format=verity
 
+# The image set is rendered per board by os/bundle.sh: the rootfs half is the
+# same everywhere, the boot half is one FAT image on a U-Boot board and three
+# files on a grub board. See @SLOTS@ in os/rauc/system.conf.in for why.
 [image.rootfs]
 filename=rootfs.img
 # adaptive=block-hash-index
@@ -29,5 +32,4 @@ filename=rootfs.img
 #   RAUC code). Turn it on together with the streaming updater, not before, so the
 #   bundle format and the client that consumes it change in one step.
 
-[image.boot]
-filename=boot.vfat
+@BOOT_IMAGES@

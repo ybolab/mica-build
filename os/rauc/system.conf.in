@@ -88,24 +88,21 @@ path=/etc/rauc/keyring.pem
 # /dev/disk/by-partuuid/ come from libblkid, which formats GUIDs in lowercase,
 # so these are lowercased by the renderer.
 
-[slot.rootfs.0]
-device=/dev/disk/by-partuuid/@ROOTFS_A_PARTUUID@
-type=raw
-bootname=A
-# adaptive=block-hash-index — DEFERRED, see os/rauc/manifest.raucm.in.
-
-[slot.rootfs.1]
-device=/dev/disk/by-partuuid/@ROOTFS_B_PARTUUID@
-type=raw
-bootname=B
-# adaptive=block-hash-index — DEFERRED, see os/rauc/manifest.raucm.in.
-
-[slot.boot.0]
-device=/dev/disk/by-partuuid/@BOOT_A_PARTUUID@
-type=vfat
-parent=rootfs.0
-
-[slot.boot.1]
-device=/dev/disk/by-partuuid/@BOOT_B_PARTUUID@
-type=vfat
-parent=rootfs.1
+# The slot sections themselves are rendered per board by
+# os/rauc/render-config.sh, because the shape of the boot half genuinely
+# differs between the two bootloaders and pretending otherwise is what broke
+# x64 (RFCT-106):
+#
+#   uboot  — a per-slot BOOT PARTITION. U-Boot reads BOOT_ORDER from its own
+#            environment and then loads boot.scr from the partition it picked,
+#            so the inactive boot partition really is the one the next boot
+#            will read.
+#   grub   — per-slot FILES on the single ESP. UEFI firmware picks the ESP, not
+#            the device, so a second ESP is one nothing can select; the kernel,
+#            the initrd and the per-slot kernel command line (which carries
+#            that slot's dm-verity root hash) are installed as `file` slots
+#            onto the ESP the firmware actually boots.
+#
+# Both shapes parent the boot half to the rootfs slot, so a slot's kernel and
+# its root filesystem are installed and rolled back as one unit.
+@SLOTS@

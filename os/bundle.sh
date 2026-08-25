@@ -24,17 +24,20 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(dirname "${SCRIPT_DIR}")"
-LAYOUT_ENV="${SCRIPT_DIR}/layout/cx3576-v2.env"
+MOS_BOARD="${MOS_BOARD:-cx3576}"
+LAYOUT_ENV="${SCRIPT_DIR}/layout/${MOS_BOARD}-v2.env"
 
 if [ ! -f "${LAYOUT_ENV}" ]; then
-    echo "error: ${LAYOUT_ENV} not found" >&2
+    echo "error: ${LAYOUT_ENV} not found (MOS_BOARD=${MOS_BOARD})" >&2
     exit 1
 fi
 # shellcheck source=layout/cx3576-v2.env
 . "${LAYOUT_ENV}"
 
 MANIFEST_IN="${SCRIPT_DIR}/rauc/manifest.raucm.in"
-BOOT_CMD="${SCRIPT_DIR}/boot/cx3576-boot.cmd"
+# U-BOOT ONLY. A grub board has no compiled boot script; its boot payload is
+# the kernel, the initrd and the per-slot verity facts, installed as files.
+BOOT_CMD="${SCRIPT_DIR}/boot/${MOS_BOARD}-boot.cmd"
 ROOTFS_PRODUCER="os/rootfs/build-v2.sh"
 
 # Reads one KEY=value out of a plain env-style file without executing it.
@@ -69,118 +72,192 @@ build() {
     stage="${workdir}/input"
     mkdir -p "${stage}"
 
-    # boot.scr, compiled from the same source the image assembler uses and
-    # pinned to FILE_MTIME: without SOURCE_DATE_EPOCH mkimage stamps the legacy
-    # image header with the current time.
+    # THE BOOT HALF, which is the one thing that genuinely differs between the
+    # two bootloaders (RFCT-106).
     #
-    # The credit defaults the script installs on a virgin environment have to
-    # stay where RAUC's hex counter and U-Boot's decimal `test -gt` agree. The
-    # assembler checks this too; a bundle can be built without ever building an
-    # image, so the check belongs on both paths.
-    local credits
-    while read -r credits; do
-        if [ "${credits}" -lt "${BOOT_ATTEMPTS_MIN}" ] || [ "${credits}" -gt "${BOOT_ATTEMPTS_MAX}" ]; then
-            echo "error: ${BOOT_CMD} sets a boot-attempts value of ${credits}; RAUC writes this counter in hex and U-Boot compares it in decimal, so it must stay in ${BOOT_ATTEMPTS_MIN}..${BOOT_ATTEMPTS_MAX}" >&2
+    #   uboot — one FAT image per slot pair, carrying kernel, dtb, boot.scr and
+    #           the per-slot verity env files. U-Boot selects a boot PARTITION
+    #           from its own environment, so installing that filesystem into
+    #           the inactive boot slot is what the next boot will read.
+    #   grub  — three FILES: the kernel, the initrd and the per-slot verity
+    #           facts. UEFI firmware picks the ESP, not the device, so there is
+    #           one ESP and the payload is installed onto it by path.
+    if [ "${RAUC_BOOTLOADER}" = "uboot" ]; then
+        # boot.scr, compiled from the same source the image assembler uses and
+        # pinned to FILE_MTIME: without SOURCE_DATE_EPOCH mkimage stamps the legacy
+        # image header with the current time.
+        #
+        # The credit defaults the script installs on a virgin environment have to
+        # stay where RAUC's hex counter and U-Boot's decimal `test -gt` agree. The
+        # assembler checks this too; a bundle can be built without ever building an
+        # image, so the check belongs on both paths.
+        local credits
+        while read -r credits; do
+            if [ "${credits}" -lt "${BOOT_ATTEMPTS_MIN}" ] || [ "${credits}" -gt "${BOOT_ATTEMPTS_MAX}" ]; then
+                echo "error: ${BOOT_CMD} sets a boot-attempts value of ${credits}; RAUC writes this counter in hex and U-Boot compares it in decimal, so it must stay in ${BOOT_ATTEMPTS_MIN}..${BOOT_ATTEMPTS_MAX}" >&2
+                exit 1
+            fi
+        done < <(grep -oE 'BOOT_[AB]_LEFT [0-9]+' "${BOOT_CMD}" | awk '{print $2}')
+        SOURCE_DATE_EPOCH="${FILE_MTIME#@}" \
+            mkimage -T script -C none -n "mos boot" -d "${BOOT_CMD}" "${workdir}/${BOOT_SCRIPT_NAME}" >/dev/null
+
+        # Per-slot verity parameters, lifted out of the cmdline files exactly as
+        # os/mkimage-v2.sh does — the dm-verity table is computed in one place only,
+        # by the rootfs producer.
+        #
+        # BOTH slots' env files ship, under slot-suffixed names, because a single
+        # boot payload can land in either slot and the table names that slot's own
+        # rootfs partition. boot.scr loads the slot-suffixed name FIRST and falls
+        # back to the unsuffixed ${BOOT_VERITY_ENV_NAME} only for older
+        # hand-assembled boot partitions (os/mkimage-v2.sh refuses to compile a
+        # boot.cmd without the suffixed load), so an installed slot boots straight
+        # from these files. The unsuffixed name is deliberately not written: a
+        # factory slot carries none either, and shipping one here would make an
+        # updated slot's layout differ from the flashed one.
+        #
+        # The same cross-checks as os/mkimage-v2.sh's mkverityenv() run here, and
+        # must: a bundle can be built without ever assembling an image, and these
+        # env files are the ONLY tie between the shipped mos-verity-{a,b}.env and
+        # the shipped rootfs.img. A cmdline pointing at the wrong slot's partition
+        # or carrying some other build's root hash would otherwise land in a signed
+        # bundle and fail only on hardware, after the slot was already written.
+        local root_hash verity_salt
+        root_hash="$(env_file_get "${ROOTFS_VERITY_ENV}" VERITY_ROOT_HASH)"
+        verity_salt="$(env_file_get "${ROOTFS_VERITY_ENV}" VERITY_SALT)"
+        if [ -z "${root_hash}" ]; then
+            echo "error: VERITY_ROOT_HASH missing from ${ROOTFS_VERITY_ENV}; fix ${ROOTFS_PRODUCER}" >&2
             exit 1
         fi
-    done < <(grep -oE 'BOOT_[AB]_LEFT [0-9]+' "${BOOT_CMD}" | awk '{print $2}')
-    SOURCE_DATE_EPOCH="${FILE_MTIME#@}" \
-        mkimage -T script -C none -n "mos boot" -d "${BOOT_CMD}" "${workdir}/${BOOT_SCRIPT_NAME}" >/dev/null
+        if [ "$(lc "${verity_salt}")" != "$(lc "${VERITY_SALT}")" ]; then
+            echo "error: ${ROOTFS_VERITY_ENV} salt '${verity_salt}' does not match the pinned VERITY_SALT '${VERITY_SALT}'; fix ${ROOTFS_PRODUCER}" >&2
+            exit 1
+        fi
+        local verity_base="${BOOT_VERITY_ENV_NAME%.env}"
+        write_verity_env() {
+            local out="$1" cmdline="$2" slot="$3" guid="$4"
+            local create waitfor
+            create="$(sed -n 's/.*\(dm-mod\.create="[^"]*"\).*/\1/p' "${cmdline}")"
+            waitfor="$(sed -n 's/.*\(dm-mod\.waitfor=[^ ]*\).*/\1/p' "${cmdline}")"
+            if [ -z "${create}" ] || [ -z "${waitfor}" ]; then
+                echo "error: ${cmdline} carries no dm-mod.create=/dm-mod.waitfor= verity table for slot ${slot}; fix ${ROOTFS_PRODUCER}" >&2
+                exit 1
+            fi
+            local create_lc waitfor_lc guid_lc hash_lc salt_lc
+            create_lc="$(lc "${create}")"
+            waitfor_lc="$(lc "${waitfor}")"
+            guid_lc="$(lc "${guid}")"
+            hash_lc="$(lc "${root_hash}")"
+            salt_lc="$(lc "${verity_salt}")"
+            if [ "${create_lc#*"${guid_lc}"}" = "${create_lc}" ]; then
+                echo "error: the slot-${slot} verity table in ${cmdline} does not reference PARTUUID ${guid} (compared case-insensitively); each slot must point dm-verity at its own rootfs partition." >&2
+                echo "  found: ${create}" >&2
+                echo "Fix ${ROOTFS_PRODUCER}." >&2
+                exit 1
+            fi
+            if [ "${waitfor_lc#*"${guid_lc}"}" = "${waitfor_lc}" ]; then
+                echo "error: the slot-${slot} dm-mod.waitfor= in ${cmdline} does not reference PARTUUID ${guid} (compared case-insensitively); the wait must name the same partition the verity table uses." >&2
+                echo "  found: ${waitfor}" >&2
+                echo "Fix ${ROOTFS_PRODUCER}." >&2
+                exit 1
+            fi
+            if [ "${create_lc#*"${hash_lc}"}" = "${create_lc}" ]; then
+                echo "error: the slot-${slot} verity table in ${cmdline} does not carry the root hash ${root_hash} from ${ROOTFS_VERITY_ENV} (compared case-insensitively)." >&2
+                echo "  found: ${create}" >&2
+                echo "Fix ${ROOTFS_PRODUCER}." >&2
+                exit 1
+            fi
+            if [ "${create_lc#*"${salt_lc}"}" = "${create_lc}" ]; then
+                echo "error: the slot-${slot} verity table in ${cmdline} does not carry the salt ${verity_salt} from ${ROOTFS_VERITY_ENV} (compared case-insensitively)." >&2
+                echo "  found: ${create}" >&2
+                echo "Fix ${ROOTFS_PRODUCER}." >&2
+                exit 1
+            fi
+            printf 'verity_args=%s %s\n' "${create}" "${waitfor}" > "${out}"
+        }
+        write_verity_env "${workdir}/${verity_base}-a.env" "${BOOT_CMDLINE_A}" A "${ROOTFS_A_GUID}"
+        write_verity_env "${workdir}/${verity_base}-b.env" "${BOOT_CMDLINE_B}" B "${ROOTFS_B_GUID}"
 
-    # Per-slot verity parameters, lifted out of the cmdline files exactly as
-    # os/mkimage-v2.sh does — the dm-verity table is computed in one place only,
-    # by the rootfs producer.
-    #
-    # BOTH slots' env files ship, under slot-suffixed names, because a single
-    # boot payload can land in either slot and the table names that slot's own
-    # rootfs partition. boot.scr loads the slot-suffixed name FIRST and falls
-    # back to the unsuffixed ${BOOT_VERITY_ENV_NAME} only for older
-    # hand-assembled boot partitions (os/mkimage-v2.sh refuses to compile a
-    # boot.cmd without the suffixed load), so an installed slot boots straight
-    # from these files. The unsuffixed name is deliberately not written: a
-    # factory slot carries none either, and shipping one here would make an
-    # updated slot's layout differ from the flashed one.
-    #
-    # The same cross-checks as os/mkimage-v2.sh's mkverityenv() run here, and
-    # must: a bundle can be built without ever assembling an image, and these
-    # env files are the ONLY tie between the shipped mos-verity-{a,b}.env and
-    # the shipped rootfs.img. A cmdline pointing at the wrong slot's partition
-    # or carrying some other build's root hash would otherwise land in a signed
-    # bundle and fail only on hardware, after the slot was already written.
-    local root_hash verity_salt
-    root_hash="$(env_file_get "${ROOTFS_VERITY_ENV}" VERITY_ROOT_HASH)"
-    verity_salt="$(env_file_get "${ROOTFS_VERITY_ENV}" VERITY_SALT)"
-    if [ -z "${root_hash}" ]; then
-        echo "error: VERITY_ROOT_HASH missing from ${ROOTFS_VERITY_ENV}; fix ${ROOTFS_PRODUCER}" >&2
-        exit 1
+        cp "${KERNEL_IMAGE}" "${workdir}/Image"
+        cp "${DTB}" "${workdir}/rk3576-src.dtb"
+        find "${workdir}" -maxdepth 1 -type f -exec touch -h -d "${FILE_MTIME}" {} +
+
+        truncate -s "${BOOT_SIZE_MIB}M" "${stage}/boot.vfat"
+        mkfs.vfat --invariant -F 32 -n "${BUNDLE_BOOT_FAT_LABEL}" "${stage}/boot.vfat" >/dev/null
+        mcopy -s -m -i "${stage}/boot.vfat" \
+            "${workdir}/Image" "${workdir}/rk3576-src.dtb" \
+            "${workdir}/${BOOT_SCRIPT_NAME}" \
+            "${workdir}/${verity_base}-a.env" "${workdir}/${verity_base}-b.env" ::/
+    else
+        # A grub board's slot boot partition holds three files: the kernel, the
+        # initrd and that slot's dm-verity facts. Same slot TYPE as cx3576's
+        # (vfat) and the same one-image-per-slot-class model; only the contents
+        # differ, because U-Boot needs a compiled boot script and GRUB reads its
+        # own configuration from the ESP.
+        #
+        # The SAME bytes work in either slot, deliberately. The rootfs PARTUUIDs
+        # live in the ESP's grub.cfg, which no install rewrites, so nothing in
+        # here is slot-specific -- a bundle carries one image per slot class and
+        # RAUC chooses the target, so anything slot-specific would be wrong half
+        # the time.
+        #
+        # Read from the verity env the rootfs build produced, not recomputed: a
+        # second computation of the same hash is a second thing to get wrong.
+        # env_file_get, not `.`, is the same reader the rest of this script uses.
+        : >"${workdir}/${SLOT_CMDLINE_NAME}"
+        for pair in MOS_SECTORS:VERITY_DATA_SECTORS \
+            MOS_DATA_BLOCK_SIZE:VERITY_DATA_BLOCK_SIZE \
+            MOS_HASH_BLOCK_SIZE:VERITY_HASH_BLOCK_SIZE \
+            MOS_DATA_BLOCKS:VERITY_DATA_BLOCKS \
+            MOS_HASH_START_BLOCK:VERITY_HASH_START_BLOCK \
+            MOS_HASH_ALGO:VERITY_HASH_ALGO \
+            MOS_ROOT_HASH:VERITY_ROOT_HASH \
+            MOS_SALT:VERITY_SALT; do
+            grub_name="${pair%%:*}"
+            env_name="${pair#*:}"
+            value="$(env_file_get "${ROOTFS_VERITY_ENV}" "${env_name}")"
+            if [ -z "${value}" ]; then
+                echo "error: ${env_name} missing from ${ROOTFS_VERITY_ENV}; the installed slot would get an incomplete dm-verity table and GRUB would refuse to boot it. Fix ${ROOTFS_PRODUCER}" >&2
+                exit 1
+            fi
+            printf 'set %s=%s\n' "${grub_name}" "${value}" >>"${workdir}/${SLOT_CMDLINE_NAME}"
+        done
+        if ! grep -qE '^set MOS_ROOT_HASH=[0-9a-f]{32,}$' "${workdir}/${SLOT_CMDLINE_NAME}"; then
+            echo "error: the cmdline fragment carries no root hash; every slot installed from this bundle would refuse to boot" >&2
+            exit 1
+        fi
+
+        cp "${KERNEL_IMAGE}" "${workdir}/${SLOT_KERNEL_NAME}"
+        cp "${INITRD_IMAGE}" "${workdir}/${SLOT_INITRD_NAME}"
+        find "${workdir}" -maxdepth 1 -type f -exec touch -h -d "${FILE_MTIME}" {} +
+
+        truncate -s "${BOOT_SIZE_MIB}M" "${stage}/boot.vfat"
+        mkfs.vfat --invariant -F 32 -n "${BUNDLE_BOOT_FAT_LABEL}" "${stage}/boot.vfat" >/dev/null
+        mcopy -s -m -i "${stage}/boot.vfat" \
+            "${workdir}/${SLOT_KERNEL_NAME}" "${workdir}/${SLOT_INITRD_NAME}" \
+            "${workdir}/${SLOT_CMDLINE_NAME}" ::/
     fi
-    if [ "$(lc "${verity_salt}")" != "$(lc "${VERITY_SALT}")" ]; then
-        echo "error: ${ROOTFS_VERITY_ENV} salt '${verity_salt}' does not match the pinned VERITY_SALT '${VERITY_SALT}'; fix ${ROOTFS_PRODUCER}" >&2
-        exit 1
-    fi
-    local verity_base="${BOOT_VERITY_ENV_NAME%.env}"
-    write_verity_env() {
-        local out="$1" cmdline="$2" slot="$3" guid="$4"
-        local create waitfor
-        create="$(sed -n 's/.*\(dm-mod\.create="[^"]*"\).*/\1/p' "${cmdline}")"
-        waitfor="$(sed -n 's/.*\(dm-mod\.waitfor=[^ ]*\).*/\1/p' "${cmdline}")"
-        if [ -z "${create}" ] || [ -z "${waitfor}" ]; then
-            echo "error: ${cmdline} carries no dm-mod.create=/dm-mod.waitfor= verity table for slot ${slot}; fix ${ROOTFS_PRODUCER}" >&2
-            exit 1
-        fi
-        local create_lc waitfor_lc guid_lc hash_lc salt_lc
-        create_lc="$(lc "${create}")"
-        waitfor_lc="$(lc "${waitfor}")"
-        guid_lc="$(lc "${guid}")"
-        hash_lc="$(lc "${root_hash}")"
-        salt_lc="$(lc "${verity_salt}")"
-        if [ "${create_lc#*"${guid_lc}"}" = "${create_lc}" ]; then
-            echo "error: the slot-${slot} verity table in ${cmdline} does not reference PARTUUID ${guid} (compared case-insensitively); each slot must point dm-verity at its own rootfs partition." >&2
-            echo "  found: ${create}" >&2
-            echo "Fix ${ROOTFS_PRODUCER}." >&2
-            exit 1
-        fi
-        if [ "${waitfor_lc#*"${guid_lc}"}" = "${waitfor_lc}" ]; then
-            echo "error: the slot-${slot} dm-mod.waitfor= in ${cmdline} does not reference PARTUUID ${guid} (compared case-insensitively); the wait must name the same partition the verity table uses." >&2
-            echo "  found: ${waitfor}" >&2
-            echo "Fix ${ROOTFS_PRODUCER}." >&2
-            exit 1
-        fi
-        if [ "${create_lc#*"${hash_lc}"}" = "${create_lc}" ]; then
-            echo "error: the slot-${slot} verity table in ${cmdline} does not carry the root hash ${root_hash} from ${ROOTFS_VERITY_ENV} (compared case-insensitively)." >&2
-            echo "  found: ${create}" >&2
-            echo "Fix ${ROOTFS_PRODUCER}." >&2
-            exit 1
-        fi
-        if [ "${create_lc#*"${salt_lc}"}" = "${create_lc}" ]; then
-            echo "error: the slot-${slot} verity table in ${cmdline} does not carry the salt ${verity_salt} from ${ROOTFS_VERITY_ENV} (compared case-insensitively)." >&2
-            echo "  found: ${create}" >&2
-            echo "Fix ${ROOTFS_PRODUCER}." >&2
-            exit 1
-        fi
-        printf 'verity_args=%s %s\n' "${create}" "${waitfor}" > "${out}"
-    }
-    write_verity_env "${workdir}/${verity_base}-a.env" "${BOOT_CMDLINE_A}" A "${ROOTFS_A_GUID}"
-    write_verity_env "${workdir}/${verity_base}-b.env" "${BOOT_CMDLINE_B}" B "${ROOTFS_B_GUID}"
-
-    cp "${KERNEL_IMAGE}" "${workdir}/Image"
-    cp "${DTB}" "${workdir}/rk3576-src.dtb"
-    find "${workdir}" -maxdepth 1 -type f -exec touch -h -d "${FILE_MTIME}" {} +
-
-    truncate -s "${BOOT_SIZE_MIB}M" "${stage}/boot.vfat"
-    mkfs.vfat --invariant -F 32 -n "${BUNDLE_BOOT_FAT_LABEL}" "${stage}/boot.vfat" >/dev/null
-    mcopy -s -m -i "${stage}/boot.vfat" \
-        "${workdir}/Image" "${workdir}/rk3576-src.dtb" \
-        "${workdir}/${BOOT_SCRIPT_NAME}" \
-        "${workdir}/${verity_base}-a.env" "${workdir}/${verity_base}-b.env" ::/
 
     cp "${ROOTFS_VERITY_IMG}" "${stage}/rootfs.img"
 
+    # The boot half of the image set, one line pair per payload file. Spliced
+    # by LINE rather than substituted: sed cannot put a newline into a
+    # replacement, and this block has several.
+    printf '[image.boot]\nfilename=boot.vfat\n' >"${workdir}/boot-images"
+    awk -v f="${workdir}/boot-images" '
+        $0 == "@BOOT_IMAGES@" { while ((getline line < f) > 0) print line; next }
+        { print }
+    ' "${MANIFEST_IN}" >"${workdir}/manifest.in"
+
     sed -e "s|@COMPATIBLE@|${BUNDLE_COMPATIBLE}|g" \
         -e "s|@VERSION@|${BUNDLE_VERSION}|g" \
-        "${MANIFEST_IN}" > "${stage}/manifest.raucm"
-    if grep -q '@[A-Z_]\+@' "${stage}/manifest.raucm"; then
-        echo "error: unrendered placeholder left in the manifest" >&2
+        "${workdir}/manifest.in" > "${stage}/manifest.raucm"
+    # Comment lines excluded. The template DOCUMENTS the other template's
+    # placeholder by name, and a check over the raw bytes rejected the manifest
+    # for a sentence about @SLOTS@ -- the third time in this change that a
+    # blunt grep failed a correct file for saying what it does.
+    if grep -vE '^[[:space:]]*#' "${stage}/manifest.raucm" | grep -c '@[A-Z_]\+@' >/dev/null; then
+        echo "error: unrendered placeholder left in a manifest VALUE:" >&2
+        grep -nE '@[A-Z_]+@' "${stage}/manifest.raucm" | grep -vE ':[[:space:]]*#' >&2
         exit 1
     fi
     # rauc 1.8 has no --bundle-format flag; the format is declared in the
@@ -266,15 +343,15 @@ if ! [[ "${BUNDLE_VERSION}" =~ ^[A-Za-z0-9][A-Za-z0-9._+-]*$ ]]; then
     exit 1
 fi
 
-BOARD_DIR="${BOARD_DIR:-${REPO_ROOT}/board/cx3576}"
-OUT_DIR="${REPO_ROOT}/_out/cx3576"
+BOARD_DIR="${BOARD_DIR:-${REPO_ROOT}/board/${MOS_BOARD}}"
+OUT_DIR="${REPO_ROOT}/_out/${MOS_BOARD}"
 KEYDIR="${SCRIPT_DIR}/rauc/.devkeys"
 SYSTEM_CONF="${REPO_ROOT}/os/rootfs/overlay-v2/etc/rauc/system.conf"
 
 # The shipped slot configuration must be current before anything is signed
 # against it: a stale system.conf means the bundle's compatible string or the
 # slot GUIDs no longer describe the devices in the field.
-bash "${SCRIPT_DIR}/rauc/render-config.sh" --check
+MOS_BOARD="${MOS_BOARD}" bash "${SCRIPT_DIR}/rauc/render-config.sh" --check
 
 BUNDLE_COMPATIBLE="$(sed -n 's/^compatible=//p' "${SYSTEM_CONF}")"
 if [ -z "${BUNDLE_COMPATIBLE}" ]; then
@@ -308,18 +385,36 @@ done
 
 ROOTFS_VERITY_IMG="${OUT_DIR}/rootfs-verity.img"
 ROOTFS_VERITY_ENV="${OUT_DIR}/rootfs-verity.env"
-BOOT_CMDLINE_A="${OUT_DIR}/boot-cmdline-a.txt"
-BOOT_CMDLINE_B="${OUT_DIR}/boot-cmdline-b.txt"
-KERNEL_IMAGE="${BOARD_DIR}/out/kernel/Image"
-DTB="${BOARD_DIR}/out/kernel/rk3576-src.dtb"
 
-for input in "${ROOTFS_VERITY_IMG}" "${ROOTFS_VERITY_ENV}" "${BOOT_CMDLINE_A}" "${BOOT_CMDLINE_B}"; do
+# Where the kernel comes from is a board fact. A BSP board builds its own and
+# the bundle takes it from BOARD_DIR; a Debian-kernel board takes the one the
+# rootfs build already extracted into _out, which is also the one the image
+# assembler put on the ESP -- so the bundle and the flashed image cannot ship
+# different kernels for the same build.
+if [ "${RAUC_BOOTLOADER}" = "uboot" ]; then
+    BOOT_CMDLINE_A="${OUT_DIR}/boot-cmdline-a.txt"
+    BOOT_CMDLINE_B="${OUT_DIR}/boot-cmdline-b.txt"
+    KERNEL_IMAGE="${BOARD_DIR}/out/kernel/Image"
+    DTB="${BOARD_DIR}/out/kernel/rk3576-src.dtb"
+    REQUIRED_INPUTS="${ROOTFS_VERITY_IMG} ${ROOTFS_VERITY_ENV} ${BOOT_CMDLINE_A} ${BOOT_CMDLINE_B}"
+    REQUIRED_BOARD_INPUTS="${KERNEL_IMAGE} ${DTB}"
+else
+    BOOT_CMDLINE_A=""
+    BOOT_CMDLINE_B=""
+    KERNEL_IMAGE="${OUT_DIR}/boot/vmlinuz"
+    INITRD_IMAGE="${OUT_DIR}/boot/initrd.img"
+    DTB=""
+    REQUIRED_INPUTS="${ROOTFS_VERITY_IMG} ${ROOTFS_VERITY_ENV} ${KERNEL_IMAGE} ${INITRD_IMAGE}"
+    REQUIRED_BOARD_INPUTS=""
+fi
+
+for input in ${REQUIRED_INPUTS}; do
     if [ ! -f "${input}" ]; then
-        echo "error: ${input} not found; run 'bash ${ROOTFS_PRODUCER}' first" >&2
+        echo "error: ${input} not found; run 'MOS_BOARD=${MOS_BOARD} bash ${ROOTFS_PRODUCER}' first" >&2
         exit 1
     fi
 done
-for input in "${KERNEL_IMAGE}" "${DTB}"; do
+for input in ${REQUIRED_BOARD_INPUTS}; do
     if [ ! -f "${input}" ]; then
         echo "error: ${input} not found; build the BSP or set BOARD_DIR (currently: ${BOARD_DIR})" >&2
         exit 1
@@ -336,8 +431,24 @@ host_can_build() {
         command -v mkimage >/dev/null && command -v jq >/dev/null
 }
 
+# The same inputs, named as the CONTAINER sees them. Spelled out per board
+# rather than rewritten from the host paths: a substitution that only matched
+# the BSP board's prefix left x64's kernel path untouched and the build failed
+# inside the container on a host path.
+if [ "${RAUC_BOOTLOADER}" = "uboot" ]; then
+    CONTAINER_KERNEL_IMAGE="/board/out/kernel/Image"
+    CONTAINER_INITRD_IMAGE=""
+    CONTAINER_DTB="/board/out/kernel/rk3576-src.dtb"
+else
+    CONTAINER_KERNEL_IMAGE="/work/_out/${MOS_BOARD}/boot/vmlinuz"
+    CONTAINER_INITRD_IMAGE="/work/_out/${MOS_BOARD}/boot/initrd.img"
+    CONTAINER_DTB=""
+fi
+
 if host_can_build; then
-    env KERNEL_IMAGE="${KERNEL_IMAGE}" DTB="${DTB}" \
+    env MOS_BOARD="${MOS_BOARD}" \
+        KERNEL_IMAGE="${KERNEL_IMAGE}" DTB="${DTB}" \
+        INITRD_IMAGE="${INITRD_IMAGE:-}" \
         ROOTFS_VERITY_IMG="${ROOTFS_VERITY_IMG}" \
         ROOTFS_VERITY_ENV="${ROOTFS_VERITY_ENV}" \
         BOOT_CMDLINE_A="${BOOT_CMDLINE_A}" BOOT_CMDLINE_B="${BOOT_CMDLINE_B}" \
@@ -359,16 +470,18 @@ else
         -v "${CERT}:/keys/signer.cert.pem:ro" \
         -v "${KEY}:/keys/signer.key.pem:ro" \
         -v "${KEYRING}:/keys/ca.cert.pem:ro" \
-        -e KERNEL_IMAGE=/board/out/kernel/Image \
-        -e DTB=/board/out/kernel/rk3576-src.dtb \
-        -e ROOTFS_VERITY_IMG=/work/_out/cx3576/rootfs-verity.img \
-        -e ROOTFS_VERITY_ENV=/work/_out/cx3576/rootfs-verity.env \
-        -e BOOT_CMDLINE_A=/work/_out/cx3576/boot-cmdline-a.txt \
-        -e BOOT_CMDLINE_B=/work/_out/cx3576/boot-cmdline-b.txt \
+        -e MOS_BOARD="${MOS_BOARD}" \
+        -e KERNEL_IMAGE="${CONTAINER_KERNEL_IMAGE}" \
+        -e INITRD_IMAGE="${CONTAINER_INITRD_IMAGE}" \
+        -e DTB="${CONTAINER_DTB}" \
+        -e ROOTFS_VERITY_IMG="/work/_out/${MOS_BOARD}/rootfs-verity.img" \
+        -e ROOTFS_VERITY_ENV="/work/_out/${MOS_BOARD}/rootfs-verity.env" \
+        -e BOOT_CMDLINE_A="${BOOT_CMDLINE_A:+/work/_out/${MOS_BOARD}/boot-cmdline-a.txt}" \
+        -e BOOT_CMDLINE_B="${BOOT_CMDLINE_B:+/work/_out/${MOS_BOARD}/boot-cmdline-b.txt}" \
         -e CERT=/keys/signer.cert.pem \
         -e KEY=/keys/signer.key.pem \
         -e KEYRING=/keys/ca.cert.pem \
-        -e BUNDLE_OUT="/work/_out/cx3576/${BUNDLE_NAME}" \
+        -e BUNDLE_OUT="/work/_out/${MOS_BOARD}/${BUNDLE_NAME}" \
         -e BUNDLE_VERSION="${BUNDLE_VERSION}" \
         -e BUNDLE_COMPATIBLE="${BUNDLE_COMPATIBLE}" \
         debian:bookworm-slim \

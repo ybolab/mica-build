@@ -230,17 +230,73 @@ grub)  BOOTLOADER_EXTRA="grubenv=${RAUC_GRUBENV:?RAUC_GRUBENV must be set for a 
     ;;
 esac
 
-render "${SYSTEM_CONF_IN}" "${rendered}" \
+# The slot sections, built for THIS board's bootloader. See the comment at
+# @SLOTS@ in the template for why the two shapes differ.
+rootfs_slots() {
+    cat <<SLOTS
+[slot.rootfs.0]
+device=/dev/disk/by-partuuid/$(lower "${ROOTFS_A_GUID}")
+type=raw
+bootname=A
+# adaptive=block-hash-index — DEFERRED, see os/rauc/manifest.raucm.in.
+
+[slot.rootfs.1]
+device=/dev/disk/by-partuuid/$(lower "${ROOTFS_B_GUID}")
+type=raw
+bootname=B
+# adaptive=block-hash-index — DEFERRED, see os/rauc/manifest.raucm.in.
+SLOTS
+}
+
+# BOTH BOOTLOADERS NOW HAVE THE SAME SLOT MODEL (RFCT-106): a rootfs pair and
+# a boot-partition pair, each boot slot parented to its rootfs slot. The
+# difference between the boards is which component SELECTS the boot partition
+# -- U-Boot from its own environment, the first-stage GRUB on the ESP from
+# grubenv -- and that is not visible here.
+#
+# The x64 board used to declare its two ESPs as the boot pair. RAUC installed
+# into the inactive one, which nothing mounts and the firmware never boots.
+SLOTS_TEXT="$(
+    rootfs_slots
+    cat <<SLOTS
+
+[slot.boot.0]
+device=/dev/disk/by-partuuid/$(lower "${BOOT_A_GUID}")
+type=vfat
+parent=rootfs.0
+
+[slot.boot.1]
+device=/dev/disk/by-partuuid/$(lower "${BOOT_B_GUID}")
+type=vfat
+parent=rootfs.1
+SLOTS
+)"
+
+# @SLOTS@ is a BLOCK, not a scalar, and render() substitutes with
+# `sed s|@X@|value|`: a replacement containing newlines is a sed syntax error,
+# not a multi-line substitution. So the block is spliced in by line first, and
+# the scalar pass runs over the result -- which also keeps render()'s
+# no-placeholder-left assertion meaningful for every other key.
+slots_file="$(mktemp)"
+templ_file="$(mktemp)"
+trap 'rm -f "${slots_file}" "${templ_file}"' EXIT
+printf '%s\n' "${SLOTS_TEXT}" >"${slots_file}"
+awk -v f="${slots_file}" '
+    $0 == "@SLOTS@" { while ((getline line < f) > 0) print line; next }
+    { print }
+' "${SYSTEM_CONF_IN}" >"${templ_file}"
+if grep -q '^@SLOTS@$' "${templ_file}"; then
+    echo "error: the @SLOTS@ line survived the block splice; the slot model would be missing from ${rendered}" >&2
+    exit 1
+fi
+
+render "${templ_file}" "${rendered}" \
     COMPATIBLE "${COMPATIBLE}" \
     BOOTLOADER "${RAUC_BOOTLOADER}" \
     BOOTLOADER_EXTRA "${BOOTLOADER_EXTRA}" \
     STATUSFILE "${STATUSFILE}" \
     BOOT_ATTEMPTS_LINE "${BOOT_ATTEMPTS_LINE}" \
-    BOOT_ATTEMPTS_PRIMARY_LINE "${BOOT_ATTEMPTS_PRIMARY_LINE}" \
-    ROOTFS_A_PARTUUID "$(lower "${ROOTFS_A_GUID}")" \
-    ROOTFS_B_PARTUUID "$(lower "${ROOTFS_B_GUID}")" \
-    BOOT_A_PARTUUID "$(lower "${BOOT_A_GUID}")" \
-    BOOT_B_PARTUUID "$(lower "${BOOT_B_GUID}")"
+    BOOT_ATTEMPTS_PRIMARY_LINE "${BOOT_ATTEMPTS_PRIMARY_LINE}"
 
 # RENUMBERING SAFETY. Every slot device must be addressed by PARTUUID. A
 # /dev/mmcblk0pN path would encode a partition NUMBER, and the numbers shift
@@ -248,11 +304,27 @@ render "${SYSTEM_CONF_IN}" "${rendered}" \
 # just did. RAUC would then install an update over the running rootfs, with no
 # error anywhere. The GUIDs cannot drift this way, so the shape is enforced here
 # rather than left to review.
-bad_devs="$(grep '^device=' "${rendered}" | grep -v '^device=/dev/disk/by-partuuid/' || true)"
+# Checked PER SLOT against its type, because a `file` slot's device IS a path
+# and a blanket "everything must be a PARTUUID" rule would have to be deleted
+# to let the grub boards through -- which would take the renumbering guard with
+# it for the partition slots that still need it.
+bad_devs="$(awk '
+    /^\[slot\./ { type = ""; dev = ""; next }
+    /^type=/     { type = substr($0, 6) }
+    /^device=/   { dev  = substr($0, 8) }
+    dev != "" && type != "" {
+        if (type == "file") {
+            if (dev !~ /^\//) print dev " (type=file, not an absolute path)"
+        } else if (dev !~ /^\/dev\/disk\/by-partuuid\//) {
+            print dev " (type=" type ", not addressed by PARTUUID)"
+        }
+        dev = ""
+    }
+' "${rendered}")"
 if [ -n "${bad_devs}" ]; then
-    echo "error: ${SYSTEM_CONF_IN} addresses a slot by something other than a PARTUUID:" >&2
+    echo "error: ${SYSTEM_CONF_IN} addresses a slot in a form its type does not allow:" >&2
     echo "${bad_devs}" >&2
-    echo "Slot devices must be /dev/disk/by-partuuid/<guid>. A /dev/mmcblk0pN path encodes a partition number, and inserting a partition ahead of the slots renumbers it silently — RAUC would install over the running slot." >&2
+    echo "A partition slot must be /dev/disk/by-partuuid/<guid>: a /dev/mmcblk0pN path encodes a partition NUMBER, and inserting a partition ahead of the slots renumbers it silently — RAUC would install over the running slot. A file slot must be an absolute path on a mounted filesystem." >&2
     exit 1
 fi
 
