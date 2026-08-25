@@ -218,6 +218,21 @@ if [ -n "${MOS_QEMU_FORWARD:-}" ]; then
         DOCKER_ARGS+=(--network "${MOS_QEMU_NETWORK}")
         echo "note: QEMU joins the '${MOS_QEMU_NETWORK}' network; a sibling container reaches it at <container-ip>:${https_port}, NOT at 127.0.0.1"
     fi
+    # MOS_QEMU_SSH_PORT, off unless asked for, because it is the way IN to a
+    # machine whose whole security posture is that there is no way in until an
+    # operator makes one. It exists because two things this repository has to
+    # verify cannot be reached over HTTP at all: `rauc install`, which apid
+    # exposes no endpoint for, and whether the transient root password actually
+    # AUTHENTICATES -- the API can only report that it was set. A feature with
+    # no way to exercise it end to end is the existence-versus-function trap in
+    # its purest form, so the harness gets a door rather than the assertions
+    # getting weaker.
+    if [ -n "${MOS_QEMU_SSH_PORT:-}" ]; then
+        ssh_port="${MOS_QEMU_SSH_PORT}"
+        HOSTFWD="${HOSTFWD},hostfwd=tcp::${ssh_port}-:22"
+        DOCKER_ARGS+=(-p "127.0.0.1:${ssh_port}:${ssh_port}")
+        echo "note: forwarding :${ssh_port} -> guest :22; sshd still has to be enabled and given a key or a password through the API before it answers"
+    fi
     echo "note: forwarding :${https_port} -> guest :443 and :${http_port} -> guest :80"
     echo "note: on the docker host that is https://127.0.0.1:${https_port}; from another container it is the QEMU container's own address on a shared network (see MOS_QEMU_NETWORK)"
     echo "note: the guest ships no admin password until something completes /setup, which is why the host publish is loopback-only"
