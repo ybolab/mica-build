@@ -726,7 +726,7 @@ fn a_bus_name_with_no_class_yields_no_address_and_no_invented_class() {
         class,
         Some("ext"),
         "the namespace was substituted for a class, which is the wrong-class defect \
-         PLAN-011 D5 names, reached by the other route"
+         this rule exists to prevent, reached by the other route"
     );
     assert_ne!(
         class,

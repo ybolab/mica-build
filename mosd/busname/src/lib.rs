@@ -259,8 +259,8 @@ mod tests {
             parsed.origin,
             Origin::System,
             "com.mos.ext must never be system-origin: an unprivileged uid can own it \
-             (measured, RFCT-093 Investigation), so classifying it as system lets a third \
-             party present itself as the system"
+             (measured against dbus-daemon 1.12.20), so classifying it as system lets a \
+             third party present itself as the system"
         );
         assert_eq!(
             parsed.class, None,

@@ -667,9 +667,9 @@ async fn the_bare_extension_namespace_has_no_class_and_is_not_system() {
 
     assert_eq!(
         entry["origin"], "extension",
-        "com.mos.ext is EXTENSION origin: an unprivileged uid can own this name (measured, \
-         RFCT-093), so publishing it as system-origin would let any third party present itself \
-         to operators and to the bridge as the system; got {entry:#}"
+        "com.mos.ext is EXTENSION origin: an unprivileged uid can own this name (measured \
+         against dbus-daemon 1.12.20), so publishing it as system-origin would let any third \
+         party present itself to operators and to the bridge as the system; got {entry:#}"
     );
     assert!(
         entry["class"].is_null(),
