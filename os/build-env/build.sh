@@ -5,7 +5,7 @@
 #   bash os/build-env/build.sh         same thing
 #   MOS_BUILD_PLATFORM=linux/arm64 ... build for another architecture
 #
-# PLAN-014 M2. A driver script rather than a `docker buildx build`
+# A driver script rather than a `docker buildx build`
 # line in the Makefile, for the reason os/podman/build.sh gives: the builder
 # selection and the lock derivation below are real logic, and a Makefile recipe
 # that grew them would grow their bugs a second time. This is also where the

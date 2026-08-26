@@ -4,20 +4,19 @@
 #
 #   make build-env   -> localhost/mos-build-base
 #
-# PLAN-014 M2, decision 4. The image name, the digest it is built
-# from and the versions it asserts are all values in os/build-env/images.env;
-# nothing in this file names any of them. That is the point of the milestone:
-# "which environment did this build run in" has to be answerable from the tree.
+# The image name, the digest it is built from and the versions it asserts are
+# all values in os/build-env/images.env; nothing in this file names any of them,
+# so "which environment did this build run in" is answerable from the tree.
 #
 # WHAT IS IN IT, AND WHY SO LITTLE. ca-certificates, git, file, binutils, xz --
 # the things a builder needs whatever language it is building. Compilers,
 # language runtimes and their headers are NOT here; they belong to
 # mos-build-{c,go,rust}, each with its own apt list.
 #
-# That split is measured, not aesthetic. os/podman/Dockerfile tried the obvious
-# economy of one shared builder so the apt work happens once, and recorded what
-# it cost: adding a single package to the merged list invalidated the cache for
-# every component behind it, about 42 minutes of recompilation under emulation,
+# That split is measured, not aesthetic. One shared builder makes the apt work
+# happen once and costs the cache: adding a single package to the merged list
+# invalidates it for every component behind it, about 42 minutes of
+# recompilation under emulation,
 # because one dependency list is one cache key for five unrelated compilers.
 # Kept apart, a Go-only package edit rebuilds the Go image and nothing else.
 #
@@ -27,9 +26,9 @@
 # whatever trixie holds on the day it runs. So "the packages were requested" and
 # "the floor is there" are different claims, and only the second one is what
 # every image above this one is entitled to assume. The assert stage makes the
-# second claim, inside the image, and fails the build when it is false --
-# RFCT-108's "each builder image asserts its toolchain version internally",
-# applied to the one image whose toolchain is the floor itself.
+# second claim, inside the image, and fails the build when it is false. Every
+# builder image asserts its own toolchain version internally; this is that rule
+# applied to the image whose toolchain is the floor itself.
 
 # No default, and the `check=skip` above is what that costs. A default would
 # mean a driver that failed to pass the argument still builds -- from a floating
