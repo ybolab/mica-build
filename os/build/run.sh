@@ -92,9 +92,10 @@ both.
 With --bundle FIRST, it builds and SIGNS the RAUC update bundle -- the
 TypeScript port of os/update/bundle.sh (PLAN-014 M6d). Same shape, same
 first-position rule; try --bundle --help. Unlike the two assemblers this one
-takes a board, because os/update/bundle.sh takes one: it is a single script
+takes a board, because os/update/bundle.sh took one: it was a single script
 whose two branches differ only in what a boot slot holds, which is the one
-thing RFCT-106 made a board fact.
+thing RFCT-106 made a board fact. Both branches are gated -- M6e built an x64
+bundle against the shell before deleting it.
 
 The suite drives the real external toolset -- sgdisk, mtools, dd, mkimage,
 veritysetup, e2fsprogs and rauc. Each of those runs on the host when the host

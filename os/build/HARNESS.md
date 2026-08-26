@@ -1507,39 +1507,123 @@ make os-mkimage-x64-test   RESULT: PASS    PASS=196 FAIL_STATE=0, rc=0
 
 Both figures match the record exactly. The shell was green when it went.
 
-## What M6e needs to delete the shell
+## What M6e did, and what it left
 
-- **`os/update/bundle.sh` is NOT deleted**, and neither are `os/mkimage-v2.sh`,
-  `os/mkimage-x64.sh` or `os/mkimage-common.sh`. All four are oracles at this
-  commit.
-- **`make os-bundle-cx3576` still runs `bash os/update/bundle.sh`** and was
-  re-measured green here. The TypeScript entry point is
-  `bash os/build/run.sh --bundle`; giving it the make target is M6e's call, not
-  a change to smuggle into a milestone whose gate is that nothing changed.
-- **`os/update/rauc/render-config.sh` is NOT ported and does not need to be.**
-  `src/bundle-cli.ts` runs `bash …/render-config.sh --check` as a subprocess,
-  exactly as the shell does. That script owns the rendered `system.conf`; it is
-  not one of the three RFCT-112 names.
-- **The x64 bundle branch is ported but NOT gated.** Both branches of
-  `bundle.sh` are in `src/bundle.ts` and the grub half's two refusals are driven
-  from the failing side, but no x64 bundle was built by either implementation:
-  RFCT-112's acceptance says "byte-identical bundles for cx3576", and this
-  worktree has no x64 rootfs to bundle. If M6e wants that comparison it needs an
-  `_out/x64/` carrying `rootfs-verity.{img,env}` and `boot/{vmlinuz,initrd.img}`.
-- **`bundleToolset()`'s tool list grew by five** — `mkfs.vfat`, `truncate`, `cp`,
-  `find`, `touch` — because the port drives them inside the container where the
-  shell drives them inside its own. The PACKAGE list is untouched and is still
-  `os/update/bundle.sh`'s, verbatim.
-- **`mkfs.vfat`'s `-i` is now optional in `src/tools/mtools.ts`.** The two
-  assemblers still pass it and are still checked for eight hex digits; the
-  bundle passes neither a volume id nor a slot label, because its boot payload
-  is installed into whichever slot is inactive and must not carry that slot's
-  FAT identity.
-- `docs/task/index.md` is still unchecked for RFCT-112, and `RFCT-112.md` is
-  still `in progress`. M6e closes both.
-- Re-run all three gates on the tree that ships. The recipes and values are
-  above: `f36bf809…` for the cx3576 image, `bdf340e9…` for x64, and
-  `d7506b62…` (114425856 bytes) for the cx3576 bundle payload.
+The four oracles are gone: `os/mkimage-v2.sh`, `os/mkimage-x64.sh`,
+`os/mkimage-common.sh`, `os/update/bundle.sh`. So are the two selftests that
+drove them, `os/tests/mkimage-{v2,x64}-selftest.sh`. The gate above was taken
+first, in its own commit, because it cannot be taken again.
+
+**Every target, and what it points at now.** Nothing was left pointing at
+nothing.
+
+| target | before | after |
+|---|---|---|
+| `os-image-cx3576-v2` | `bash os/mkimage-v2.sh` | `bash os/build/run.sh --mkimage-v2` |
+| `os-bundle-cx3576` | `bash os/update/bundle.sh` | `bash os/build/run.sh --bundle` |
+| `os-mkimage-v2-test` | `os/tests/mkimage-v2-selftest.sh` | **REMOVED** |
+| `os-mkimage-x64-test` | `os/tests/mkimage-x64-selftest.sh` | **REMOVED** |
+| *(the x64 assembler)* | *no target, and never had one* | unchanged — `bash os/build/run.sh --mkimage-x64` |
+
+**The two selftests are removed rather than repointed**, which is M4e's
+precedent at `6eadc65` and the right one. A target that still exists and passes
+because nothing is behind it is worse than no target: it reads as coverage from
+the one place people look for coverage. Repointing them would have meant
+rewriting both harnesses around a different invocation — the v2 suite shells out
+to the assembler by path, and the x64 suite SCRAPES the `images.env` key out of
+it with `from.sh --ref <KEY>` on a single line — which is a port, not a repoint,
+and M6b/M6c already did that port into `src/mkimage-{v2,x64}.test.ts`.
+
+**Removal was checked, not asserted.** `make -n os-mkimage-v2-test` and
+`make -n os-mkimage-x64-test` both answer `No rule to make target`. The
+tombstone in the Makefile says what they proved and where each half now lives.
+
+**And the repointing was checked by running it, after the deletion**, which is
+the one thing that makes the table above evidence rather than intent. With all
+four shell files gone from the working tree:
+
+```
+make os-bundle-cx3576         -> 114425856 bytes  d7506b62…    the gate's payload
+bash os/build/run.sh --mkimage-v2  -> f36bf809…                the gate's image
+```
+
+Both are the values the oracle produced an hour earlier, from a tree that no
+longer contains the oracle.
+
+**`make os-image-cx3576-v2` was NOT run end to end, and this is why.** Its first
+line is `bash os/rootfs/build-v2.sh`, which rebuilds the rootfs and overwrites
+`_out/cx3576/rootfs-verity.img` — the input every gate above is measured over.
+Running it would have destroyed the inputs while the evidence was being written.
+Its second line is the one the deletion changed, and that line is the
+`f36bf809…` above. The first line is untouched by M6e.
+
+**`make os-build-test` gained a CI job, and that is not a courtesy.** The step
+that ran `os/tests/mkimage-v2-selftest.sh` in `.gitea/workflows/privileged.yml`
+is REPOINTED to `make os-build-test` rather than deleted, because **that suite
+was in no workflow at all** — `check.yml` runs `os-verify-test` and nothing ran
+`os-build-test`. Removing the step would have taken every assembler assertion
+out of CI at the same commit that deleted the only other place they lived, which
+is the exact opposite of deleting a suite at parity. The repointed step also
+covers the x64 assembler and the bundle builder, which the old one did not.
+
+### One test would have gone vacuous, silently, and was caught
+
+`os/verify/src/tools.test.ts`'s "two files in one directory are one mount"
+named `os/mkimage-common.sh` and `os/mkimage-v2.sh` as its two files.
+`mountDirs()` falls back to `dirname()` for a path that is not there, so after
+the deletion **it would have kept passing** — while asserting nothing about
+files, and having silently become a duplicate of the `a path that is not there
+yields its PARENT` case directly below it.
+
+Measured rather than reasoned about: with one fixture replaced by a ghost and
+the existence check removed, the old shape reports `1 pass`. With the existence
+check in place it reports `1 fail` at the `existsSync` line. The test now names
+two files in `os/update/rauc/` and **asserts they exist** before asserting what
+they mount to, so the next deletion that hits it fails loudly instead of
+quietly.
+
+This is the same failure mode as a make target that passes with nothing behind
+it, one layer down, and it is worth stating that `os/` now contains **no
+top-level files at all** — every one of them was an oracle.
+
+### What was NOT chased, deliberately
+
+Roughly 150 comments in `os/build/src/` cite `os/mkimage-v2.sh:NNN`,
+`os/mkimage-x64.sh:NNN` and `os/update/bundle.sh:NNN` as the provenance of a
+line of TypeScript. **Those are left alone.** They are the record of what was
+ported from where, they are true statements about a file that existed at a
+commit in this repository's history, and rewriting them would erase the only
+audit trail the port has while touching every file in the package. What was
+repointed instead is the strictly smaller set that would MISLEAD:
+
+- anything **executable** — the two Makefile targets, the CI step;
+- **remedies** that told a reader to run a script that is gone
+  (`os/tools/qemu-run.sh:53`, `test/apid-api/run.sh:263`, both of which said
+  `bash os/mkimage-x64.sh`, both now `bash os/build/run.sh --mkimage-x64`);
+- **present-tense claims about the tree's shape** that the deletion made false —
+  `src/pin-seeded-times.ts:54` ("`os/mkimage-common.sh` is NOT deleted by this
+  milestone"), `os/build-env/from.sh:23` (three shipping-path `docker run`
+  sites), `os/build/run.sh:95` ("because `os/update/bundle.sh` takes one").
+
+### The `shell-pipefail-lint` scope, which RFCT-112's acceptance names
+
+The lint scanned **32** files and now scans **26**. Counted both before and
+after by running it, which is the only reason this figure is right: the guess
+written here first was 28, on the assumption that only the four oracles were in
+scope. **The two selftests were in scope too** — `git show HEAD:` on each finds
+`pipefail` twice in the v2 suite and six times in the x64 one — so the drop is
+4 + 2 and not 4.
+
+```
+before   RESULT: PASS (32/32 files clean, 32 scanned)
+after    RESULT: PASS (26/26 files clean, 26 scanned)
+```
+
+RFCT-112's acceptance says this scope "shrinks to the remaining device-side
+shell", and it has. What is left, read off the lint's own output rather than
+recalled: `os/build/`, `os/build-env/`, `os/podman/`, `os/rootfs/`, `os/tests/`,
+`os/tools/`, `os/update/`, `os/verify/` and `test/` — nine directories, and
+**no top-level `os/*.sh` at all**, which is the shape the acceptance describes.
 
 ## What M6d and M6e need from M6c
 

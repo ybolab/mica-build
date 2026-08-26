@@ -260,7 +260,7 @@ finish() {
 note "repository ${REPO_ROOT}"
 
 if [ ! -e "${IMG}" ]; then
-    fail "image ${IMG##*/} is missing; this harness builds nothing. Build it: MOS_BOARD=x64 bash os/rootfs/build-v2.sh && bash os/mkimage-x64.sh"
+    fail "image ${IMG##*/} is missing; this harness builds nothing. Build it: MOS_BOARD=x64 bash os/rootfs/build-v2.sh && bash os/build/run.sh --mkimage-x64"
     finish
 fi
 pass "image present: ${IMG##*/} -> $(basename "$(readlink -f "${IMG}")")"

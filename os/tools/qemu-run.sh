@@ -50,7 +50,7 @@ case "${1:-}" in
 esac
 
 if [ ! -e "${IMG}" ]; then
-    echo "error: ${IMG} not found. Build it: MOS_BOARD=x64 bash os/rootfs/build-v2.sh && bash os/mkimage-x64.sh" >&2
+    echo "error: ${IMG} not found. Build it: MOS_BOARD=x64 bash os/rootfs/build-v2.sh && bash os/build/run.sh --mkimage-x64" >&2
     exit 1
 fi
 

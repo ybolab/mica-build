@@ -19,9 +19,11 @@
 # `FROM` lines, so --build-arg was the only output shape it needed. The R6 sweep
 # then found eighteen more references that are not FROM lines at all: fifteen of
 # them are `docker run`, which takes its image POSITIONALLY and has no
-# --build-arg to carry one. Three of those fifteen are on the shipping path --
+# --build-arg to carry one. Three of those fifteen were on the shipping path --
 # os/mkimage-v2.sh, os/mkimage-x64.sh and os/update/bundle.sh, the containers
-# that write the GPT, the filesystems and the signed update bundle.
+# that write the GPT, the filesystems and the signed update bundle. PLAN-014 M6e
+# deleted all three; os/build/ opens those containers now, through src/toolbox.ts,
+# and still resolves its images through this script.
 #
 # The alternative was for each of those call sites to run the pair form and cut
 # the value back out of `--build-arg NAME=value`, which is fifteen small parsers

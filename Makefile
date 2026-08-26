@@ -14,7 +14,7 @@ BOARDS := cx3576 x64
 	os-quadlet-doc-test \
 	os-image-cx3576-v2 os-verify-cx3576-v2 os-bundle-cx3576 os-devkeys os-health-test podman \
 	os-shadow-test os-dbus-policy-test os-repart-test \
-	os-uboot-handshake-test os-mkimage-v2-test os-mkimage-x64-test \
+	os-uboot-handshake-test \
 	os-layout-lint os-layout-lint-test os-verify-test os-build-test \
 	docs-verify docs-verify-test build-env
 
@@ -31,8 +31,6 @@ help:
 	@echo "  os-shadow-test      run the offline tests for the STATE /etc/shadow reconciler"
 	@echo "  os-dbus-policy-test prove the shipped mosd D-Bus policy is root-only against a real dbus-daemon"
 	@echo "  os-repart-test      prove first-boot repart growth grows DATA and cannot wipe the loader (privileged docker)"
-	@echo "  os-mkimage-v2-test  prove the v2 assembler rebuilds byte-identically, and refuses every layout mistake that would need a re-flash (docker)"
-	@echo "  os-mkimage-x64-test prove the x64 assembler rebuilds byte-identically, and refuses every boot-chain mistake that leaves a machine at the UEFI shell (docker)"
 	@echo "  os-layout-lint      check every board layout against the board-definition schema"
 	@echo "  os-layout-lint-test prove the layout linter rejects a broken board definition, including one declared empty"
 	@echo "  os-verify-test      run the os/verify bun+TypeScript suite (typecheck + bun test)"
@@ -60,9 +58,14 @@ os:
 os-rootfs-cx3576-v2:
 	bash os/rootfs/build-v2.sh
 
+# THE SHIPPING ASSEMBLER, and since PLAN-014 M6e it is the TypeScript one.
+# os/mkimage-v2.sh was this until RFCT-112 M6e ported it into os/build/ and
+# deleted it, at byte-identity: four images from the two implementations over
+# identical inputs, one sha256 (f36bf809...), with a one-byte control that moved
+# both to the same new hash and back. os/build/HARNESS.md carries the recipe.
 os-image-cx3576-v2:
 	bash os/rootfs/build-v2.sh
-	bash os/mkimage-v2.sh
+	bash os/build/run.sh --mkimage-v2
 
 # THE IMAGE CONTRACT. os/verify-image-v2.sh was this until RFCT-110 M4e ported
 # it into os/verify/ and deleted it; src/verify-cli.ts prints the same
@@ -75,8 +78,14 @@ os-image-cx3576-v2:
 os-verify-cx3576-v2:
 	bash os/verify/run.sh --verify --board cx3576
 
+# Likewise: os/update/bundle.sh was this until M6e. Gated the same way, on the
+# squashfs PAYLOAD rather than the file -- rauc salts the bundle's own verity
+# hash tree at random and the CMS signature carries a signingTime, so the file
+# hash moves every run and a file comparison would be flaky for a reason that
+# has nothing to do with the code. Both boards were gated; --board x64 builds
+# the grub branch.
 os-bundle-cx3576:
-	bash os/update/bundle.sh
+	bash os/build/run.sh --bundle
 
 os-devkeys:
 	bash os/update/rauc/gen-dev-keys.sh
@@ -130,88 +139,47 @@ os-repart-test:
 # are driven from the failing side, which is what os-ui-location-test existed
 # to guarantee.
 
-# The only check in this repository that claims to prove BYTE-IDENTICAL
-# rebuilds. It drives the real os/mkimage-v2.sh --assemble twice over fabricated
-# BSP, rootfs-verity and factory-/var inputs and requires the two images to
-# compare equal, then reads the result back with sgdisk/mdir/dumpe2fs/debugfs and
-# requires every partition, unique GUID, typecode, start sector, FAT payload and
-# ext4 root listing to match os/boards/cx3576/board.env.
+# os-mkimage-v2-test AND os-mkimage-x64-test WERE HERE, and both went with the
+# assemblers they drove (PLAN-014 M6e, RFCT-112).
 #
-# The half that is worth more than the byte comparison is the refusals, driven
-# from the failing side: a stale partition number in boot.cmd, a pin the rootfs
-# does not fit, a loader blob without the idbloader magic, a cmdline that lost
-# dm-mod.waitfor, a RAUC slot addressed by partition number. None of those
-# announce themselves on hardware -- a stale bootpart makes U-Boot persist the
-# boot-attempt decrement and then fail to find Image, and the board needs
-# re-flashing -- so the build refusing is the entire defence, and a refusal that
-# has only ever been observed working is not evidence that it still can.
+# Each ran the REAL shell assembler -- `bash os/mkimage-v2.sh --assemble`,
+# `bash os/mkimage-x64.sh` -- twice over fabricated inputs, required the two
+# images to compare EQUAL, then read the result back with sgdisk/mdir/dumpe2fs/
+# debugfs/minfo and required every partition, GUID, typecode, start sector, FAT
+# payload and ext4 root listing to match the board definition. 166 and 196
+# assertions. With those scripts deleted there is nothing left to drive: the v2
+# suite shelled out to the assembler by path, and the x64 suite SCRAPED the
+# images.env key out of it with `from.sh --ref <KEY>` on a single line.
 #
-# It had no target from RFCT-020 until now, which is precisely why nobody
-# noticed it stopped running: bb48e49 gave the assembler a mandatory FACTORY_VAR
-# and did not touch the selftest, so every assembly died on the precondition and
-# the byte-identity claim above went unmeasured. PLAN-014 M5/M6 hang gates on
-# this instrument; it needs a name something can invoke.
+# They are REMOVED rather than repointed, and that is the honest outcome. A
+# target that still exists and passes because nothing is behind it is worse than
+# no target -- it reads as coverage from the one place people look for coverage.
+# Repointing them at the TypeScript assemblers would have meant rewriting both
+# harnesses around a different invocation, which is a port, not a repoint.
 #
-# Needs docker. No BSP, no built image, no root -- minutes, unlike
-# os-repart-test, which needs privileged docker and an image. It fails loudly
-# when it cannot run rather than skipping.
+# WHAT THEY PROVED IS NOT LOST, and that is the condition under which they went.
 #
-# TMPDIR is defaulted into the gitignored _out/ because the workspace has to be
-# bind-mountable by the docker daemon and a sandboxed private /tmp is not. An
-# already-set TMPDIR wins, and the script still refuses by name -- printing this
-# same remedy -- when whatever it ends up with is invisible to the daemon.
-os-mkimage-v2-test:
-	mkdir -p $(CURDIR)/_out/tmp
-	TMPDIR=$${TMPDIR:-$(CURDIR)/_out/tmp} bash os/tests/mkimage-v2-selftest.sh
-
-# The same instrument for the OTHER board, and it exists SEPARATELY FROM THE
-# PORT IT PRECEDES for one reason: PLAN-014 M6c ports this assembler to
-# TypeScript and will gate that port on byte-identity, and a byte-identity gate
-# CANNOT SEE A DROPPED REFUSAL. A port that quietly loses the ESP cluster-count
-# floor still produces identical bytes for a good input and passes the gate
-# perfectly; what it stopped catching is a machine sitting at the UEFI shell
-# with nothing on the console to say why. Folding this into M6c would also have
-# made that port's scope "port it, and also write the test that should have
-# existed", which is how ports acquire a reputation for being risky.
+#   BYTE-IDENTICAL REBUILDS. This was their headline claim and it is now made by
+#   a stronger instrument. `src/mkimage-v2.test.ts` and `src/mkimage-x64.test.ts`
+#   each assemble repeatedly from fabricated inputs and require identity, AND
+#   each carries the live control the selftests never had -- one changed input,
+#   images that compare UNEQUAL -- so "identical" cannot be a comparison that
+#   always passes. Above that, RFCT-112's gate compared the deleted shell
+#   against the port over the SAME real inputs and got one sha256 per board.
 #
-# So the half worth more than the byte comparison is again the refusals, and
-# again they are driven FROM THE FAILING SIDE -- an ESP sized below the 65525
-# clusters FAT32 requires (mkfs.vfat writes a FAT32 boot sector over it and
-# reports success; OVMF leaves the partition out of its device list entirely), a
-# grubenv that is not exactly 1024 bytes (GRUB ignores it silently, which looks
-# exactly like an A/B order that never changes), a dm-verity root hash baked
-# into the one file RAUC never rewrites, a per-slot kernel on the ESP no install
-# could ever replace, two boot slots that do not carry the same files, an
-# exported /var with no dpkg database, and a timestamp the seeding pass cannot
-# write. Every one of them names the assertion it expects BY IDENTITY and the
-# harness diffs that against the set that actually fired, so a case that trips
-# the wrong guard on the way is a FAIL rather than a pass -- and the register of
-# identities is itself checked against the shipped source first, because a row
-# naming a message the code can no longer produce asserts nothing while looking
-# exactly like coverage.
+#   THE REFUSALS, which are worth more than the byte comparison, because none of
+#   them announce themselves on hardware -- a stale bootpart makes U-Boot persist
+#   the boot-attempt decrement and then fail to find Image, and the board needs
+#   re-flashing. All 33 of os/mkimage-v2.sh's and all 14 reachable ones of
+#   os/mkimage-x64.sh + os/mkimage-common.sh are ported, each driven from the
+#   FAILING side with a positive control beside it. os/build/HARNESS.md tables
+#   them one by one against the site that drives each red.
 #
-# Byte-identity is asserted as IDENTITY, never as a byte delta: the single
-# seeding-time defect RFCT-106 closed measured 465, 467, 562 or 925 differing
-# bytes depending only on the gap between the two assemblies and on whether
-# relatime had bumped the fixture's atimes that day, so a pinned count would be
-# flaky for a reason that has nothing to do with the code.
+# Both ran green immediately before they were deleted -- 166 and 196, rc=0 --
+# so they went at parity rather than in place of a failure.
 #
-# Fixture-based like its sibling and cheaper: no BSP, no U-Boot blobs, no
-# boot.scr to compile, no built image and no root -- synthetic kernel, initrd,
-# rootfs-verity and a fabricated factory /var are the whole input set, which is
-# what keeps it in the cheap CI lane RFCT-086 records. Needs docker, and it
-# fails loudly when it cannot run rather than skipping.
-#
-# The assembler takes NO input from the environment -- it derives its layout,
-# its grub.cfg and its output directory from its own location -- so the
-# selftest copies those four files into its workspace and runs the shipped
-# script there. Nothing is written to the developer's _out/x64. TMPDIR is
-# defaulted into the gitignored _out/ for the same reason as above: the
-# workspace has to be bind-mountable by the docker daemon and a sandboxed
-# private /tmp is not.
-os-mkimage-x64-test:
-	mkdir -p $(CURDIR)/_out/tmp
-	TMPDIR=$${TMPDIR:-$(CURDIR)/_out/tmp} bash os/tests/mkimage-x64-selftest.sh
+# They run under `make os-build-test`, which needs docker and no BSP, no built
+# image and no root, exactly as they did.
 
 # SPIKE RFCT-087: executes the SHIPPED os/boards/cx3576/boot.cmd — compiled by
 # the same mkimage invocation the assembler uses, byte-unmodified — under a
@@ -293,7 +261,7 @@ os-verify-test:
 # mkimage, veritysetup, e2fsprogs and rauc for real, and this host has none of
 # the first four. Each runs on the host where the host has it and in the image
 # pinned for its toolset otherwise -- the same rule os/mkimage-v2.sh's
-# host_can_assemble() applies, one level down. Nothing is skipped: a tool
+# host_can_assemble() applied before M6e deleted it, now src/toolbox.ts's. Nothing is skipped: a tool
 # reachable neither way is a failure, not a gap.
 os-build-test:
 	bash os/build/run.sh

@@ -58,7 +58,8 @@ done
 
 # The VALUES, not `-e NAME`. Layout keys are set, not exported, so the bare
 # form passes nothing and the container fails on an unbound variable while
-# forty-nine others are equally absent. Same trap as os/mkimage-x64.sh.
+# forty-nine others are equally absent. Same trap as the x64 assembler's
+# (os/mkimage-x64.sh until PLAN-014 M6e; now os/build/src/mkimage-x64.ts).
 # The base, from os/build-env/images.env; see os/tools/qemu-run.sh. This one
 # writes INTO the STATE partition of a disk image with mke2fs and debugfs, so
 # which e2fsprogs it gets decides what the guest then mounts.
