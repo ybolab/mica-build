@@ -176,7 +176,7 @@ RUN --mount=type=bind,source=os/rootfs/scripts,target=/mos-scripts \
 #
 # WHICH FILES IS THE BOARD'S DECISION AND NOT THIS FILE'S, which is the whole
 # of what M5d changed here. board/<b>/rootfs/firmware is the vendor BSP drop:
-# 33 files, most of them for other AIC parts (8800dc, 8800dw) and other silicon
+# 32 files, most of them for other AIC parts (8800dc, 8800dw) and other silicon
 # revisions. Only the confirmed U02 runtime set may enter a signed root, and
 # that set is BOARD_FIRMWARE_FILES in os/boards/<b>/board.env -- where it
 # already was. os/verify-image-v2.sh has asserted the image against exactly

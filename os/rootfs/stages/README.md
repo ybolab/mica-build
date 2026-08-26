@@ -209,7 +209,7 @@ trees:
 | `BOARD_INIT_DIR` | `$BOARD_DIR/init` | the board declares no hardware facts |
 
 **The firmware is filtered, and by the board's own list.**
-`board/<b>/rootfs/firmware` is the vendor BSP drop — 33 files for cx3576, most
+`board/<b>/rootfs/firmware` is the vendor BSP drop — 32 files for cx3576, most
 of them other AIC parts (8800dc, 8800dw) and other silicon revisions — and only
 the confirmed runtime set may enter a signed root. That set is
 `BOARD_FIRMWARE_FILES` in `os/boards/<b>/board.env`, where it already was:
@@ -277,7 +277,7 @@ What x64 does show is the mechanism in the state the change is about:
 mounted on this host and no builder advertises `linux/arm64`. What WAS driven
 for cx3576 is the staging, which is where the parameterisation lives: pointed at
 the in-repo BSP, `build-v2.sh` selected exactly the five files
-`BOARD_FIRMWARE_FILES` declares out of the drop's 33, staged the thirteen
+`BOARD_FIRMWARE_FILES` declares out of the drop's 32, staged the thirteen
 `os/boards/cx3576/hwinit` files and the six confs, and then stopped at the arm64
 builder. The guards were driven from the failing side too, on x64 and by hand: a
 declared firmware file the BSP lacks, a declared path outside `/usr/lib/firmware`,

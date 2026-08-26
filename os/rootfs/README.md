@@ -712,3 +712,106 @@ whichever `squashfs-tools` and `cryptsetup` came out of a floating
 `debian:bookworm-slim` in the pack stage. RFCT-108 (PLAN-014 M2) pins that base
 by digest through `os/build-env/images.env`, so the pack tools are a decision
 rather than a build date.
+
+### RFCT-111 M5e: the milestone gate — and the number that is NOT zero
+
+The three sections above each gate one STEP of the cut against the step before
+it. This one gates **the whole of M5**: the nine-stage chain at the tree that
+ships, against the tree as it stood the commit before the cut (`66bb0b8`'s parent —
+the last tree with no `os/rootfs/stages/` in it, built from `Dockerfile.v2`
+alone). Cold, x64, **2026-08-26**, both sides cut with
+`git worktree add --detach`, both on the `default` buildx builder.
+
+**Each side ran its OWN `os/rootfs/build-v2.sh`, unmodified.** The two drivers
+are not the same program — the pre-M5 one calls `docker buildx build` over one
+Dockerfile, the M5 one calls `os/build/run.sh --build-rootfs` over nine — and
+neither takes `--no-cache`. M5c and M5d handled that by re-listing the argument
+set `build-v2.sh` computes into a `chain-cold.sh`; that works, and the
+transcription is a second variable between two sides whose whole claim is that
+there is only one. Here `--no-cache` is injected instead by a `docker` shim on
+`PATH` at exactly two Dockerfile shapes — `os/rootfs/Dockerfile.v2` and
+`os/rootfs/stages/*.Dockerfile` — so the staged inputs (mosd, podman, rauc)
+build warm and identically on both sides and nothing about the argument set is
+retyped. Coldness is then MEASURED rather than assumed: BuildKit prints `CACHED`
+on every step it reuses, and across all three builds the only `CACHED` lines are
+the digest-pinned base-image resolves. Not one `RUN` was reused.
+
+| | entries, of 9,241 |
+|---|---|
+| the control — the pre-M5 tree against ITSELF, two cold builds 7 minutes apart | **6** |
+| the subject — the pre-M5 tree against the nine-stage chain | **14** |
+| **beyond the control** | **8** |
+
+**Eight, and not zero, and it is the recorded outcome rather than a
+regression.** All eight are the account family — `/etc/passwd`, `/etc/group`,
+`/etc/gshadow`, `usr/share/factory/etc/shadow` and the four `-` backups — and
+all eight are one account at a different LINE POSITION. `account-mos.sh` moved
+into `10-base` when the chain was cut (`stages/README.md` tables it), while the
+two MQTT service accounts stayed with the feature material in
+`34-feature-mqtt`, so the `mos` operator is now created before them and used to
+be created after. Measured rather than reasoned: the four live files are
+**identical as SETS** (`sort` and `diff` agree), same uid, same gid, same
+fields; the four `-` backups differ by exactly one entry each, because `useradd`
+snapshots the file before each change and the change it snapshots is a different
+one. Nothing resolves differently — `/etc/passwd` is not order-sensitive — and
+RFCT-111's acceptance clause names this case: byte-identity "where achievable",
+and otherwise "full verifier parity plus an explicitly anchored new-baseline
+commit". **That fallback has two halves and both are owed.** The parity is
+section 3 of this gate: `RESULT: PASS (290/290 checks, 22 skipped)`, 0 FAIL, on
+an image assembled from a chain-built rootfs. The anchored new-baseline commit
+is `docs/task/RFCT-111.md`, section "The M5 baseline" — which enumerates the
+eight entries, states how wide the allowance is and what a later gate must
+compare against instead of `84c12f4`. This gate first recorded only the parity
+half, which is half a discharge and reads like a whole one.
+
+**The seventh control entry of M5d is gone, which is what M5d predicted.**
+`apt/eipp.log.xz` is byte-identical on both pairings today, so the control is
+**6** again — the number M5a, M5b and M5c measured. A control that was 6, then
+7, then 6 is a property of the day and of `deb.debian.org`'s index, exactly as
+M5d recorded it, and not of any tree.
+
+Driven past the entry count, because eight entries that differ for the right
+reason and eight that differ for a new one read identically in a list:
+
+- **`unsquashfs -lln` over all 9,241 entries: 0 differing rows on BOTH
+  pairings**, comparing mode, uid/gid and path with size and mtime excluded and
+  re-sorted on that triple. Every mtime in both listings is the pinned
+  `2020-01-01 00:00`. The listing's only differences are SIZES: the initrd on
+  both pairings (gzip, and the control moves it too), and `/etc/passwd-`,
+  `/etc/group-`, `/etc/gshadow-` on the subject pairing — the same one account.
+  The comparison was driven from the failing side before it was believed: one
+  mode bit, one gid and one renamed path each register, and the unmutated pair
+  is 0.
+- **`dpkg.log` with its timestamps stripped is byte-identical over all 694
+  operations, on BOTH pairings.** That is the direct check on the ordering the
+  feature stages are arranged to preserve, and it is intact across the entire
+  milestone — not just across M5d.
+- `apt/history.log` differs on 16 lines, every one a `Start-Date` or `End-Date`.
+  `alternatives.log` differs on 4, which are one `update-alternatives --install`
+  of `mt` with a different timestamp on each side.
+- **`apt/term.log` differs on 22 lines: 16 are `Log started`/`Log ended`, and
+  6 are the RSA/ECDSA/ED25519 host-key fingerprints `openssh-server`'s postinst
+  echoes** — three per side. Those six appear in the CONTROL pairing as well, so
+  they are the day and not the change; the keys themselves are removed by
+  `stages/10-base` and are not in the image.
+- `/usr/lib/firmware` does not exist in any of the three packed roots, and
+  `/etc/shadow` is a symlink to `/run/mos/shadow` on both sides, which is why it
+  is absent from the differing set while the factory copy is in it.
+
+**Measured a fourth time, at the exact commit that ships.** The subject build
+above is the tree as M5d left it. The tree this file is in adds three comment
+lines to build inputs (`build-v2.sh` and `40-board.Dockerfile`, the BSP file
+count), which are not instructions but are still context bytes, so the whole
+pairing was re-run against it rather than argued about: **the same 14 entries,
+the same list, and 0 differing `-lln` rows** on mode, uid/gid and path, with
+`dpkg.log` byte-identical over the same 694 operations.
+
+That gives a second control, and an independent one: the two M5 trees against
+EACH OTHER — cold, comment-only apart — differ on **6** entries, which is the
+control set exactly. So the eight extra entries in the table above are the
+pre-M5 tree against an M5 tree, and nothing else in the session produced them.
+
+The recipe is in `_out/gate/` of the M5e worktree — `cold.sh` (one tree, one
+cold build, through that tree's own driver), `bin/docker` (the shim, with its
+decision driven from both sides), `extract.sh`, `compare.sh` and `lines.sh` (the
+per-log accounting above) — and it is meant to be re-run rather than cited.

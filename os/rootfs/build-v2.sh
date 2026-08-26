@@ -277,7 +277,7 @@ fi
 # Radio firmware, filtered to what the board declares.
 #
 # NOT the whole BSP drop. board/<b>/rootfs/firmware is the vendor tarball --
-# 33 files for cx3576, most of them other AIC parts (8800dc, 8800dw) and other
+# 32 files for cx3576, most of them other AIC parts (8800dc, 8800dw) and other
 # silicon revisions -- and only the confirmed runtime set may enter a signed
 # root. BOARD_FIRMWARE_FILES in os/boards/<b>/board.env is that set and already
 # was: os/verify-image-v2.sh has asserted the image against it since x64
