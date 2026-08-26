@@ -10,10 +10,9 @@
 //! always describes what the switch would start, at no flash cost.
 //! `mqtt.enabled` is a master switch and nothing else (see
 //! [`mosd_settings::MqttSettings`]): false means neither unit runs, and no
-//! combination of `listen` and `auth` changes that. Order reverses between up
-//! and down -- broker then bridge starting, the bridge being the broker's
-//! client; bridge then broker stopping, or the client logs connection failures
-//! about a deliberate shutdown.
+//! `listen`/`auth` combination changes that. Order reverses between up and down
+//! -- broker then bridge starting, the bridge being the broker's client; bridge
+//! then broker stopping, or the client logs failures about a deliberate stop.
 
 use std::path::PathBuf;
 
@@ -185,10 +184,10 @@ impl<C: UnitControl> MqttReconciler<C> {
     /// about 25 seconds and systemd rejects every start job for the rest of that
     /// minute; reconcilers run together, so an unrelated write would fail on a
     /// broker in cool-off. The WARN names the unit and the error, and the live
-    /// state publishes each unit's `activeState`, which the apid MQTT pane
-    /// renders pointing at `journalctl -u mos-mqtt-broker`. Start only: the stop
-    /// and disable path keeps propagating errors, because `mqtt.enabled = false`
-    /// that left a broker listening is worth failing on.
+    /// state publishes each unit's `activeState`, which the apid pane renders
+    /// pointing at `journalctl -u mos-mqtt-broker`. Start only: the stop path
+    /// keeps propagating errors, `mqtt.enabled = false` that left a broker
+    /// listening being worth failing on.
     async fn start_or_warn(&self, unit: &str) {
         if let Err(error) = self.control.start(unit).await {
             tracing::warn!(
