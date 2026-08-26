@@ -17,9 +17,8 @@
 // os/boards/*/board.env, src/geometry.ts, src/pin-seeded-times.ts,
 // src/tools/ -- and not as a `case`.
 //
-// WHAT THE PORT HAD TO GET RIGHT. RFCT-112's gate is a BYTE-IDENTICAL image
-// against the shell from identical inputs, so every decision that reaches the
-// output bytes is transcribed rather than improved:
+// EVERY DECISION THAT REACHES THE OUTPUT BYTES IS FIXED. Two assemblies from
+// identical inputs must be byte-identical:
 //
 //   * the same pinned debian (IMAGE_DEBIAN_TRIXIE) out of the same apt package
 //     list -- BOOTX64.EFI is only as reproducible as the grub-efi-amd64-bin in
@@ -44,12 +43,11 @@
 //     would report a mismatch is the byte-identity gate -- as a diff in the
 //     middle of a 512 MiB filesystem.
 //
-// AND THE ONE SPELLING THAT DID CHANGE: sizes go to sgdisk in sectors and `-a
-// 2048` is passed, where the shell writes `+NM` and passes no alignment at all.
-// M6a measured `+131072S` and `+64M` byte-identical at 512-byte sectors and the
-// flag orders byte-identical; the alignment is x64's own GPT_ALIGN_SECTORS and
-// the same number sgdisk defaults to, which src/mkimage-x64.test.ts re-measures
-// against a real sgdisk rather than asserting in prose. See gptSpecFor.
+// SIZES GO TO sgdisk IN SECTORS, with `-a 2048` passed explicitly. `+131072S`
+// and `+64M` are byte-identical at 512-byte sectors, and the alignment is
+// x64's own GPT_ALIGN_SECTORS and the same number sgdisk defaults to, which
+// src/mkimage-x64.test.ts re-measures against a real sgdisk rather than
+// asserting in prose. See gptSpecFor.
 //
 // DETERMINISM. The controls are board.env's -- fixed GPT GUIDs, fixed FAT volume
 // ids, fixed ext4 fs UUIDs, `mkfs.vfat --invariant`, every FAT entry staged with
@@ -81,12 +79,11 @@ export const BOARD = 'x64'
 /**
  * The producer of the rootfs-side inputs, named in every message about one.
  *
- * The BOARD IS A LITERAL in that sentence, not `${MOS_BOARD}`, and
- * os/mkimage-x64.sh:150 records why at length: it used to interpolate a variable
- * no board.env sets, so under `set -u` the one case someone had written an
- * actionable message for died with "MOS_BOARD: unbound variable" instead of
- * printing it -- and a `${MOS_BOARD:-x64}` default would still have been wrong,
- * because a cx3576 left in the environment would name the wrong board to build.
+ * The BOARD IS A LITERAL in that sentence, not `${MOS_BOARD}`. Interpolating a
+ * variable no board.env sets makes the one case with an actionable message die
+ * on the unbound variable instead of printing it -- and a `${MOS_BOARD:-x64}`
+ * default is wrong too, because a cx3576 left in the environment would name
+ * the wrong board to build.
  */
 export const ROOTFS_PRODUCER = `MOS_BOARD=${BOARD} bash os/rootfs/build-v2.sh`
 
@@ -296,10 +293,9 @@ export function bootSlotFault(aList: readonly string[], bList: readonly string[]
  * AND ON THIS BOARD A WRONG ALIGNMENT DOES NOT ANNOUNCE ITSELF. Measured
  * (src/mkimage-x64.test.ts): `-a 4096` over the real x64 geometry moves the ESP
  * from sector 2048 to 4096, prints "Information: Moved requested sector", and
- * EXITS 0. That is not what M6b found on cx3576, where the same flag makes sgdisk
- * refuse the table with exit 4 -- the relocation there would push uenv-b into
- * boot-a and there is no room. So the two boards' third alignment case is a
- * different failure, the shape depends on the geometry rather than on the flag,
+ * EXITS 0. On cx3576 the same flag makes sgdisk refuse the table with exit 4 --
+ * the relocation there would push uenv-b into boot-a and there is no room. The
+ * shape depends on the geometry rather than on the flag,
  * and on x64 this read-back is the only thing that would report it.
  *
  * It earns its keep for one more reason: this assembler passes `-a 2048` where
@@ -537,15 +533,15 @@ export async function assembleX64(
     const slotFault = bootSlotFault(await listFat(tb, bootA), await listFat(tb, bootB))
     if (slotFault !== undefined) throw new Error(slotFault)
 
-    // --- EPHEMERAL SHIPS ALREADY SEEDED (RFCT-106). /var is a mount of this
+    // --- EPHEMERAL SHIPS ALREADY SEEDED. /var is a mount of this
     // filesystem and mounting an EMPTY one over the image's /var hides the tree
-    // the installed packages expect. mos-seed-var used to copy that tree out on
-    // the first boot -- at the same moment as every other unit that writes /var.
-    // Debian 13's systemd-networkd-persistent-storage.service creates
-    // /var/lib/systemd/network as soon as /var appears; the two raced, and
-    // whichever lost, lost badly: a failed seed failed var-lib-mos.mount, which
-    // failed mosd, apid and the health gate. Seeding here removes the race rather
-    // than ordering against one member of it. The stamp goes in too, so
+    // the installed packages expect. Copying that tree out on the first boot
+    // instead would run at the same moment as every other unit that writes
+    // /var: Debian 13's systemd-networkd-persistent-storage.service creates
+    // /var/lib/systemd/network as soon as /var appears, the two race, and a
+    // failed seed fails var-lib-mos.mount, which fails mosd, apid and the
+    // health gate. Seeding here removes the race rather than ordering against
+    // one member of it. The stamp goes in too, so
     // mos-seed-var's ConditionPathExists keeps it from running at all on a normal
     // boot; it stays for the path where EPHEMERAL has been wiped.
     //

@@ -1,13 +1,13 @@
 // /etc/shadow lives in RAM, and the image ships no usable credential.
 //
-// PLAN-014 M4d (RFCT-110). The second family no batch owned. Like the MQTT
-// pair it is board-UNCONDITIONAL -- 19 conclusions on each shipped board,
-// measured 2026-08-26 -- and like it, several of its conclusions have the SHAPE
-// of a batch-2a helper without being one: `/etc/shadow is a symlink to
-// /run/mos/shadow` is written inline, not through `sq_symlink`, so it carries a
-// parenthetical batch 2a's matcher would not have found.
+// The second family no batch owned. Like the MQTT pair it is
+// board-UNCONDITIONAL -- 19 conclusions on each shipped board, measured
+// 2026-08-26 -- and like it, several of its conclusions have the SHAPE of a
+// batch-2a helper without being one: `/etc/shadow is a symlink to
+// /run/mos/shadow` is written inline, not through `sq_symlink`, so it carries
+// a parenthetical batch 2a's matcher would not have found.
 //
-// ═══ THE PROPERTY, END TO END ═══
+// THE PROPERTY, END TO END.
 //
 // docs/design/access.md 4.2 supports exactly one credential on the console: a
 // TRANSIENT root password. On v2 the only path pam_unix will read for it is
@@ -34,9 +34,9 @@
 //     loop reading its own destination is exactly how a password survives;
 //   * and the factory copy itself carries no usable hash for any account.
 //
-// ═══ TWO CHECKS DISAGREE ABOUT AN EMPTY PASSWORD FIELD, AND BOTH ARE PORTED ═══
+// TWO CHECKS DISAGREE ABOUT AN EMPTY PASSWORD FIELD, AND BOTH ARE PORTED.
 //
-// `factory-shadow-locked` (os/verify-image-v2.sh:3765) treats an EMPTY field as
+// `factory-shadow-locked` treats an EMPTY field as
 // locked -- its awk is `$2 !~ /^[!*]/ && $2 != ""`. `factory-shadow-accounts-
 // locked` (:3875-3899) treats it as the WORST case and says so: an empty field is
 // passwordless login, not a locked marker. The second is right and the first
@@ -442,7 +442,7 @@ export const SHADOW_CHECKS: readonly CheckCase[] = [
       const hits = lines(root, SEED_STATE)
         .map((l, i) => ({ l, n: i + 1 }))
         // `grep -v '^[0-9]*:#'`: a COMMENT is not a seeding, and the file is
-        // allowed to explain why it no longer does this.
+        // allowed to explain why it does not do this.
         .filter(({ l }) => /mos-shadow-reconcile|\/mnt\/state\/[a-z]*\/?shadow/.test(l) && !l.startsWith('#'))
       return [verdict(
         'seed-state-no-shadow-on-state',
@@ -587,10 +587,9 @@ export const SHADOW_CHECKS: readonly CheckCase[] = [
   },
 
   {
-    // RFCT-024 scoped the rule to root because root was the only account in the
-    // image; RFCT-039 added `mos`, so it is widened here to every account
-    // /etc/passwd names. A check that stayed root-shaped would quietly stop
-    // covering the case it was written for.
+    // The rule covers every account /etc/passwd names, not just root: a check
+    // that stayed root-shaped would quietly stop covering the case it was
+    // written for as soon as a second account shipped.
     //
     // TWO failure branches with two messages, because they are two different
     // defects with different repairs. EMPTY means the account accepts any

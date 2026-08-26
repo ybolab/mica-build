@@ -12,24 +12,19 @@
 #   bash os/build-env/from.sh --check     validate every IMAGE_ key, print
 #                                         nothing, exit 0 or 1
 #
-# PLAN-014 M2 (RFCT-108), the M2c half: every Dockerfile in this tree takes its
-# base image as a build argument, and this is the only thing that produces one.
+# Every Dockerfile in this tree takes its base image as a build argument, and
+# this is the only thing that produces one.
 #
-# WHY --ref EXISTS, added by the R6 remediation. M2c's scope was Dockerfile
-# `FROM` lines, so --build-arg was the only output shape it needed. The R6 sweep
-# then found eighteen more references that are not FROM lines at all: fifteen of
-# them are `docker run`, which takes its image POSITIONALLY and has no
-# --build-arg to carry one. Three of those fifteen were on the shipping path --
-# os/mkimage-v2.sh, os/mkimage-x64.sh and os/update/bundle.sh, the containers
-# that write the GPT, the filesystems and the signed update bundle. PLAN-014 M6e
-# deleted all three; os/build/ opens those containers now, through src/toolbox.ts,
-# and still resolves its images through this script.
+# WHY --ref EXISTS. `docker run` takes its image POSITIONALLY and has no
+# --build-arg to carry one, and around fifteen call sites in this tree are
+# `docker run` -- including os/build/'s toolbox, which opens the containers
+# that write the GPT, the filesystems and the signed update bundle.
 #
-# The alternative was for each of those call sites to run the pair form and cut
+# The alternative is for each of those call sites to run the pair form and cut
 # the value back out of `--build-arg NAME=value`, which is fifteen small parsers
-# of this script's output -- a second reader of a format, of exactly the kind
-# M2b refused for the pin table itself. One resolver, one validation path, two
-# output shapes: the pair form for `docker build`, the bare reference for
+# of this script's output -- a second reader of a format. One resolver, one
+# validation path, two output shapes: the pair form for `docker build`, the
+# bare reference for
 # `docker run`. Both go through resolve_key below, so a key that is refused for
 # a Dockerfile is refused identically for a container.
 #
@@ -116,8 +111,8 @@ check_image_key() {
 # docker picks the right manifest, while `localhost/mos-build-c` is exactly the
 # one architecture `make build-env` last produced. A component build that asks
 # for the other one gets "no match for platform in manifest" pointing at a FROM
-# line that is correct, which is the same shape of misdirection M2b measured
-# when a docker-container builder tried to resolve a localhost tag. Asked here,
+# line that is correct -- the same shape of misdirection a docker-container
+# builder produces when it tries to resolve a localhost tag. Asked here,
 # it names the image, the two architectures and the command -- and because it is
 # a MEASUREMENT of the image rather than a rule about this host, it starts
 # passing on its own the day arm64 builder images exist.

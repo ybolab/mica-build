@@ -1,17 +1,15 @@
 # syntax=docker/dockerfile:1@sha256:ecfaec9ed6d810b56388c508f4121597bfbba70d41a6dfeee4d8cad5f295fc32
 # Build Linux 6.1.115, modules, and the CX3576-Z device tree.
 # THE BUILDER IMAGE, INJECTED FROM os/build-env/images.env by
-# os/build-env/from.sh, which board/cx3576/Makefile calls. RFCT-108 M2c; what
-# stood on the FROM line below was the bare tag `ubuntu:24.04`, which Canonical
-# repoints on every point release -- so the answer to "which toolchain produced
-# this artefact" was the date of the build.
+# os/build-env/from.sh, which board/cx3576/Makefile calls. A bare tag like
+# `ubuntu:24.04` is one Canonical repoints on every point release, so the answer
+# to "which toolchain produced this artefact" would be the date of the build.
 #
-# STILL UBUNTU, AND NOT RESTRUCTURED. RFCT-108 draws that boundary explicitly:
-# the BSP builders "get digest pins only". This cross-compiles a vendor tree
-# against gcc-aarch64-linux-gnu, python3-pyelftools, swig and
-# device-tree-compiler at the versions that tree was tested with; moving it onto
-# mos-build-c would be a BSP rebuilt under a toolchain nobody has booted on the
-# hardware, which is a different milestone from pinning what it already runs on.
+# UBUNTU AND NOT mos-build-c: the BSP builders get digest pins only. This
+# cross-compiles a vendor tree against gcc-aarch64-linux-gnu,
+# python3-pyelftools, swig and device-tree-compiler at the versions that tree
+# was tested with, and moving it onto mos-build-c would be a BSP rebuilt under
+# a toolchain nobody has booted on the hardware.
 #
 # NO DEFAULT: without a value docker refuses before any stage runs, which is
 # loud; with one it would build green against an image nobody chose.

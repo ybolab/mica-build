@@ -60,7 +60,7 @@ for d in wpa_supplicant hostapd; do
     chmod 0700 "/mnt/state/$d"
 done
 
-# The writable system unit directory of PLAN-011 D5, bound onto
+# The writable system unit directory, bound onto
 # /usr/local/lib/systemd/system by usr-local-lib-systemd-system.mount. 0755
 # root:root: unlike the two directories above this one holds no secret, and
 # systemd -- which reads it as PID 1, i.e. as root -- must be able to traverse
@@ -77,7 +77,7 @@ done
 mkdir -p /mnt/state/systemd-units
 chmod 0755 /mnt/state/systemd-units
 
-# PLAN-012 D4: the Quadlet unit directory, bound onto /etc/containers/systemd.
+# The Quadlet unit directory, bound onto /etc/containers/systemd.
 # Quadlet's own search path is /run, /etc and /usr/share under
 # containers/systemd -- measured, not assumed -- and the only one of the three
 # an operator can be given is /etc. Without this the container feature ships
@@ -93,13 +93,11 @@ chmod 0755 /mnt/state/quadlet
 
 # NO SHADOW FILE IS SEEDED HERE, deliberately. /etc/shadow is a symlink to
 # /run/mos/shadow and mos-shadow-reconcile.service builds it in RAM on every
-# boot. This script used to run that same reconciler against
-# /mnt/state/mos/shadow so the file would exist on STATE before anything read
-# it; that line is gone because the only credential mos supports on the console
-# is a TRANSIENT root password, and a credential file on a partition that
-# survives reboots cannot be transient by construction -- only by a protocol
-# that something has to remember to run. Seeding it here would put a shadow
-# file back on persistent storage where nothing reads it and nothing clears it.
+# boot. The only credential mos supports on the console is a TRANSIENT root
+# password, and a credential file on a partition that survives reboots cannot
+# be transient by construction -- only by a protocol something has to remember
+# to run. Seeding one here would put a shadow file on persistent storage where
+# nothing reads it and nothing clears it.
 
 for t in rsa ecdsa ed25519; do
     key="/mnt/state/ssh/ssh_host_${t}_key"

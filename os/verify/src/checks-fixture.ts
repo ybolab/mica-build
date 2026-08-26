@@ -1,11 +1,11 @@
 // A synthetic image, for driving a ported check RED.
 //
-// PLAN-014 M4b (RFCT-110). RFCT-096's rule is that a ported check lands with
-// the fixture that fails it, because the parity harness cannot tell a check
-// that PASSES from a check that CANNOT FAIL -- both report "agrees with the
-// oracle" against a healthy image, and only a mutation separates them.
+// A check lands with the fixture that fails it, because nothing can tell a
+// check that PASSES from a check that CANNOT FAIL -- both report green against
+// a healthy image,
+// and only a mutation separates them.
 //
-// ═══ WHY A FAKE IMAGE AND NOT A MUTATED REAL ONE ═══
+// WHY A FAKE IMAGE AND NOT A MUTATED REAL ONE.
 //
 // Both, actually: `os/verify/HARNESS.md` records an end-to-end run against a
 // real image edited on disk, which is what proves the whole pipeline reports
@@ -226,19 +226,14 @@ const FSTAB_IN = join(OS_DIR, 'rootfs', 'overlay-v2', 'etc', 'fstab.in')
 /**
  * The escape page's markup, TRANSCRIBED -- and deliberately a second copy.
  *
- * This was read out of `os/verify-image-v2.sh` at fixture-build time, so that
- * the fixture's idea of the constant and the CHECK's idea of it came from two
- * places and could not drift apart silently. The oracle is deleted (RFCT-110
- * M4e), so there is no third party left to read; the property is kept by
- * leaving this an INDEPENDENT literal from `checks-root.ts`'s and asserting
- * the two equal in `checks-root.test.ts`.
+ * The fixture's idea of the constant and the CHECK's idea of it come from two
+ * places, so they cannot drift apart silently: this is an INDEPENDENT literal
+ * from `checks-root.ts`'s, and `checks-root.test.ts` asserts the two equal.
  *
  * Deliberately NOT `import { BUILTIN_MARKUP }`. Seeding the fixture from the
  * very constant the check greps for would make the positive case true by
  * construction -- the check would find what the fixture was built from, and an
  * edit to that one constant would move both sides at once and stay green.
- *
- * `os/verify-image-v2.sh:335` at `dabc9e8` is where it came from.
  */
 const ORACLE_BUILTIN_MARKUP = '<form method="post" action="/builtin/deactivate">'
 
@@ -423,7 +418,7 @@ const PURGE_THRESHOLD = 100
  * no /usr/share/containers/containers.conf (a second config layer podman would
  * merge before /etc, so an operator reading /etc would see half the settings)
  * and no local-fs.target.wants symlink for the Quadlet mount (a static
- * enablement is what makes PLAN-012's switch gate nothing).
+ * enablement is what makes the container switch gate nothing).
  */
 function seedEngine(root: string, board: Board, file: WriteFile): void {
   for (const b of [
@@ -641,8 +636,8 @@ function elfHeader(arch: string | undefined): Buffer {
  * follows MOS_ARCH, the bootloader helpers follow RAUC_BOOTLOADER, fw_env.config
  * addresses the two UENV partitions by the GUIDs and the size the board
  * declares, and the multiarch directory libcrypt lands in follows MOS_ARCH too.
- * Pinning any of them would make `packedRootFixture(x64)` an arm64 tree with the
- * wrong names -- which is the shape M4d found and removed.
+ * Pinning any of them would make `packedRootFixture(x64)` an arm64 tree with
+ * the wrong names.
  */
 function seedSystem(root: string, board: Board, file: WriteFile): void {
   enable(root, 'systemd-networkd.service')
@@ -923,12 +918,11 @@ function seedMqtt(root: string, file: WriteFile): void {
 }
 
 // ---------------------------------------------------------------------------
-// M4d: what the BOARD's own declarations say this image carries
+// What the BOARD's own declarations say this image carries
 // ---------------------------------------------------------------------------
 
 /**
- * The board-conditional payload -- and the half of this fixture that was
- * cx3576-shaped until M4d.
+ * The board-conditional payload.
  *
  * Everything below is driven by the board definition's own lists, which is what
  * makes `packedRootFixture(x64)` a genuinely x64-shaped tree rather than a

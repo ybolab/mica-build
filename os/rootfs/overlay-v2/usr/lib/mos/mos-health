@@ -1,11 +1,11 @@
 #!/bin/sh
-# mos health gate — PLAN-006 Part E, the PENDING_CONFIRM -> CONFIRMED edge.
+# mos health gate -- the PENDING_CONFIRM -> CONFIRMED edge.
 #
 # Probes the system in order (systemd state, mosd, apid), reports /var
 # pressure to mosd, and on success runs `rauc status mark-good` to confirm the
 # booted slot. On failure it does NOTHING: no mark-good, no reboot, no
 # remediation. Rollback is the U-Boot BOOT_x_LEFT counter's job and stealing it
-# would break the PLAN-006 Part F contract.
+# would break the rollback contract.
 #
 # No-op (exit 0) when rauc is absent or reports no booted slot — a v1 image or
 # a container. Idempotent: mark-good on an already-confirmed slot is not an

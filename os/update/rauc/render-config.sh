@@ -5,15 +5,14 @@
 #   bash os/update/rauc/render-config.sh            render (writes the overlay file)
 #   bash os/update/rauc/render-config.sh --check    verify the rendered file is current
 #
-# Output: os/rootfs/overlay-v2/etc/rauc/system.conf, which RFCT-013's overlay
+# Output: os/rootfs/overlay-v2/etc/rauc/system.conf, which the overlay
 # mechanism copies into the image at /etc/rauc/system.conf. The rendered file
 # is GITIGNORED, never committed: the template plus os/boards/cx3576/board.env are
 # the single source of truth, and a committed rendering could drift from them
 # with nothing to notice until after the fact. os/rootfs/build-v2.sh runs this
-# renderer before staging the overlay; --check (run by the bundle builder, which is
-# os/build/src/bundle.ts since PLAN-014 M6e deleted os/update/bundle.sh) now only
-# guards the narrower case of the rendered file being edited by hand after the
-# last build.
+# renderer before staging the overlay; --check (run by the bundle builder,
+# os/build/src/bundle.ts) guards the narrower case of the rendered file being
+# edited by hand after the last build.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -22,10 +21,8 @@ MOS_BOARD="${MOS_BOARD:-cx3576}"
 LAYOUT_ENV="${REPO_ROOT}/os/boards/${MOS_BOARD}/board.env"
 OVERLAY="${REPO_ROOT}/os/rootfs/overlay-v2"
 # Overridable so a test can drive the renderer against a deliberately-broken
-# template; every real invocation uses the tree's own files. The test that did
-# so was os/tests/mkimage-v2-selftest.sh, which PLAN-014 M6e deleted with the
-# shell assembler it belonged to -- so THIS OVERRIDE CURRENTLY HAS NO CALLER.
-# It is kept rather than removed because it is the only way to reach the
+# template; every real invocation uses the tree's own files. THIS OVERRIDE
+# CURRENTLY HAS NO CALLER. It is kept because it is the only way to reach the
 # renderer's refusal branches without editing a committed template, and a knob
 # with no caller is visible here whereas a deleted one is not.
 SYSTEM_CONF_IN="${SYSTEM_CONF_IN:-${SCRIPT_DIR}/system.conf.in}"
@@ -151,7 +148,7 @@ esac
 
 # --- /etc/fw_env.config assertions -----------------------------------------
 #
-# The file itself is RFCT-013's overlay template, rendered into the image by
+# The file itself is the overlay template, rendered into the image by
 # os/rootfs/build-v2.sh. This task owns its contract, so it is asserted here
 # rather than duplicated into a second competing file: two device lines (which
 # is what marks the environment redundant to libubootenv — configure only one
@@ -253,14 +250,14 @@ bootname=B
 SLOTS
 }
 
-# BOTH BOOTLOADERS NOW HAVE THE SAME SLOT MODEL (RFCT-106): a rootfs pair and
+# BOTH BOOTLOADERS NOW HAVE THE SAME SLOT MODEL: a rootfs pair and
 # a boot-partition pair, each boot slot parented to its rootfs slot. The
 # difference between the boards is which component SELECTS the boot partition
 # -- U-Boot from its own environment, the first-stage GRUB on the ESP from
 # grubenv -- and that is not visible here.
 #
-# The x64 board used to declare its two ESPs as the boot pair. RAUC installed
-# into the inactive one, which nothing mounts and the firmware never boots.
+# x64's boot pair is NOT its two ESPs: RAUC would install into the inactive
+# one, which nothing mounts and the firmware never boots.
 SLOTS_TEXT="$(
     rootfs_slots
     cat <<SLOTS

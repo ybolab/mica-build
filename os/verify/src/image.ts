@@ -1,15 +1,15 @@
 // Reading a mos disk image without touching the host.
 //
-// PLAN-014 M4 (RFCT-110), the M4a half: the typed helpers M4b..M4d port checks
-// on top of. The toolset is os/verify-image-v2.sh's, unchanged and deliberately
-// so -- sgdisk for the GPT, mtools at an offset for the FAT boot slots, a byte
-// range extracted out of the image and read with debugfs/tune2fs for the ext4
-// partitions, unsquashfs for the packed root, and `veritysetup verify`, which
-// walks the hash tree in USERSPACE and never creates a device-mapper target,
-// never calls losetup and never mounts anything. No loop mounts, no host
-// mutation, nothing that needs root.
+// The typed helpers M4b..M4d port checks on top of. The toolset is
+// os/verify-image-v2.sh's, unchanged and deliberately so -- sgdisk for the
+// GPT, mtools at an offset for the FAT boot slots, a byte range extracted out
+// of the image and read with debugfs/tune2fs for the ext4 partitions,
+// unsquashfs for the packed root, and `veritysetup verify`, which walks the
+// hash tree in USERSPACE and never creates a device-mapper target, never calls
+// losetup and never mounts anything. No loop mounts, no host mutation, nothing
+// that needs root.
 //
-// ═══ WHAT THIS FILE IS REALLY ABOUT: TOOLS THAT SUCCEED AT NOTHING ═══
+// WHAT THIS FILE IS REALLY ABOUT: TOOLS THAT SUCCEED AT NOTHING.
 //
 // Every helper below was driven against a malformed input before it was
 // written, on 2026-08-25 in the pinned alpine:3.21 with the package set the
@@ -729,7 +729,7 @@ export interface VerityRequest {
  *
  * It never creates a device-mapper target, never calls losetup and never mounts
  * anything -- which is what makes it safe against a host, and it is the reason
- * the oracle chose it (os/verify-image-v2.sh:2190).
+ * the oracle chose it.
  *
  * BOTH ANSWERS EXIT 1, AND ONLY ONE OF THEM IS AN ANSWER. Measured:
  *   "Verification of root hash failed."          -> exit 1, the failing DIRECTION

@@ -2,9 +2,7 @@
 // version-skewed binary, each REALLY made and each required to turn the smoke
 // run red.
 //
-// RFCT-113 M7c, discharging the first acceptance clause.
-//
-// ═══ WHY THESE ARE NOT UNIT TESTS ═══
+// WHY THESE ARE NOT UNIT TESTS.
 //
 // smoke.ts's whole design is that every verdict is reachable from a FABRICATED
 // `ExecResult`, and that is right: it is what makes the red branches runnable
@@ -20,7 +18,7 @@
 // root, with the real self-built artifact -- and drives the real `docker run`
 // at it. What comes back is measured, not chosen.
 //
-// ═══ EVERY MUTATION REFUSES TO BE A NO-OP ═══
+// EVERY MUTATION REFUSES TO BE A NO-OP.
 //
 // Each Dockerfile asserts its own PRE-state and POST-state and exits non-zero if
 // either is not what the mutation requires. A no-op therefore fails the image
@@ -30,7 +28,7 @@
 // container: four subtasks in this campaign wrote a `String.replace` that
 // matched nothing and would have reported a passing branch never reached.
 //
-// ═══ EVERY CASE CARRIES ITS POSITIVE CONTROL ═══
+// EVERY CASE CARRIES ITS POSITIVE CONTROL.
 //
 // The same artifact is run through the UNMUTATED root in the same pass and
 // required to pass. Without it, a case is satisfied by any image that fails for
@@ -40,7 +38,7 @@
 // because M7b's map sent them to the wrong one, and a case that only asserted
 // `verdict === 'fail'` would have been just as green then as now.
 //
-// ═══ WHAT THIS DOES NOT DO ═══
+// WHAT THIS DOES NOT DO.
 //
 // It does not build a rootfs. It reads the factory root the build already
 // exported, exactly as the smoke runner does, and refuses when there is none --
@@ -82,7 +80,7 @@ export const BUILD_TIMEOUT_MS = 300_000
 export interface NegativeCase {
   /** Short name, printed and used in the image tag. */
   readonly name: string
-  /** Which conjunct of RFCT-113's first acceptance clause this is. */
+  /** Which of the three defect shapes this case makes. */
   readonly clause: string
   /** The register entry it breaks. Everything else in the root is untouched. */
   readonly artifact: string
@@ -201,12 +199,11 @@ export const CASES: readonly NegativeCase[] = [
     clause: 'a deliberately version-skewed binary fails the build',
     artifact: 'crun',
     // THE BINARY IS SKEWED, NOT THE PIN, and that is which half of the loop this
-    // case owns. RFCT-113's THIRD acceptance clause is the other half -- bump a
-    // pin without rebuilding -- and it is driven end to end in smoke.test.ts and
-    // was driven against the real image by M7b. Clause 1 says "a version-skewed
-    // BINARY", so this moves the binary and leaves the repository alone: a
-    // negative test that edited a tracked versions.env would have to put it back,
-    // and a test whose cleanup can fail is a test that can leave the tree wrong.
+    // case owns. The other half -- bump a pin without rebuilding -- is driven
+    // end to end in smoke.test.ts. Moving the binary leaves the repository
+    // alone: a negative test that edited a tracked versions.env would have to
+    // put it back, and a test whose cleanup can fail is a test that can leave
+    // the tree wrong.
     //
     // The expected pre-state is READ FROM THE PIN by the caller and interpolated
     // here, so a legitimate version bump makes this mutation refuse by name

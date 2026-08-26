@@ -17,10 +17,10 @@
 # the streaming install path is DEFERRED in os/update/rauc/manifest.raucm.in.
 
 # THE TWO BUILDER IMAGES, INJECTED FROM os/build-env/images.env by
-# os/build-env/from.sh, which os/update/rauc/build.sh calls. RFCT-108 M2c; what
-# stood here was `FROM debian:trixie-slim` twice -- a tag upstream repoints
-# whenever it rebuilds, so "which toolchain built the rauc on this device" was
-# answerable only from a build log.
+# os/build-env/from.sh, which os/update/rauc/build.sh calls. A bare
+# `FROM debian:trixie-slim` is a tag upstream repoints whenever it rebuilds, so
+# "which toolchain built the rauc on this device" would be answerable only from
+# a build log.
 #
 # NO DEFAULTS. Without a value docker refuses with "base name should not be
 # blank" before any stage runs; with a default it would build green against an
@@ -41,23 +41,11 @@ COPY versions.lock /versions.env
 # tarball can be re-rolled, and a tag can be moved. `git archive` of the tag is
 # a deterministic byte stream over the source that is actually compiled.
 #
-# PENDING PRINTS THE HASH IT COMPUTED AND FAILS, with no environment variable
-# that softens it. Until RFCT-108 M2c there was one: MOS_RAUC_STRICT defaulted
-# to 0 and this was a warning.
-#
-# THE KNOB WENT BECAUSE ITS JUSTIFICATION WAS NEVER IMPLEMENTED. The comment
-# here said an unhashed source "can reach a developer and never a release" --
-# which is true only if the release path sets MOS_RAUC_STRICT=1, and nothing in
-# this repository ever has: not .gitea/workflows/check.yml, not privileged.yml,
-# not the Makefile, not os/update/rauc/build.sh, which passed through
-# ${MOS_RAUC_STRICT:-0}. Measured by grep across the whole tree, M2c. The
-# developer path and the release path were the same warning.
-#
-# os/update/rauc/versions.env's bump instructions carried the knob's name and so
-# were not false the way os/podman/versions.env's were -- but a value that is
-# never 1 makes the parenthesis describing it the only place the behaviour
-# exists. os/build-env/images.env records the general form of this reasoning
-# (M2a): a pin that only warns floats for as long as nobody reads a log.
+# PENDING PRINTS THE HASH IT COMPUTED AND FAILS, with deliberately no
+# environment variable that softens it. A strictness knob would only mean
+# something if the release path set it, and a knob that is never set makes the
+# sentence describing it the only place the difference exists: a pin that only
+# warns floats for as long as nobody reads a log.
 RUN set -eu; . /versions.env; \
     git clone --quiet --depth 1 --branch "${RAUC_VERSION}" \
         https://github.com/rauc/rauc.git /src/rauc; \

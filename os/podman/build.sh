@@ -45,7 +45,7 @@ for tool in docker; do
 done
 
 # THE BUILDER: `default`, EXPLICITLY, AND WHY THIS FILE CANNOT INHERIT ONE.
-# Until RFCT-108 M2c this block picked a docker-container builder whenever the
+# An earlier arrangement picked a docker-container builder whenever the
 # ambient one could not reach linux/${MOS_ARCH}, and passed no --builder
 # otherwise -- inheriting whatever `docker buildx use` last selected.
 #
@@ -54,18 +54,17 @@ done
 # LOCAL DOCKER IMAGE STORE. Only the `docker` driver can resolve one. A
 # docker-container builder has its own content store and treats `localhost/` as
 # a registry HOSTNAME, producing `dial tcp [::1]:80: connect: connection
-# refused` against a FROM line that is correct -- measured by M2b, and the same
-# reason os/build-env/build.sh pins itself to `default`. Inheriting was worse
-# still: a leftover `mos-rauc-arm64` from an unrelated build is a plausible
-# ambient selection on any host that has ever run `make os-rauc`.
+# refused` against a FROM line that is correct, which is the same reason
+# os/build-env/build.sh pins itself to `default`. Inheriting is worse still: a
+# leftover `mos-rauc-arm64` from an unrelated build is a plausible ambient
+# selection on any host that has ever run `make os-rauc`.
 #
 # So the emulation fallback becomes a REFUSAL, and it is deliberately phrased
 # around what is missing rather than around this host's architecture: the
 # default builder reaches linux/${MOS_ARCH} exactly when the host has binfmt
 # registered for it, and on such a host this build works cross-architecture with
 # no change to this file. What it needs beyond that is an mos-build-* family
-# built FOR that architecture, which os/build-env/from.sh checks next and
-# RFCT-108's M2b note describes.
+# built FOR that architecture, which os/build-env/from.sh checks next.
 BUILDER_ARGS=(--builder default)
 # The whole output is captured BEFORE anything reads it, rather than piped into
 # a grep. An early-exiting `grep -q` on the right of a pipe closes it the moment

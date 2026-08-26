@@ -1,12 +1,11 @@
 // The seam that decides HOW an image-inspection tool is invoked, and the only
 // place that decides it.
 //
-// PLAN-014 M4 (RFCT-110), the M4a half. os/verify-image-v2.sh reads a disk
-// image with sgdisk, mtools at an offset, debugfs/tune2fs over a dd-extracted
-// partition, unsquashfs and a userspace `veritysetup verify` -- and NOTHING
-// ELSE: no loop mounts, no losetup, no device-mapper, no mount(8). The port
-// keeps that toolset exactly, so this file is about where the tools come from
-// rather than which ones they are.
+// Os/verify-image-v2.sh reads a disk image with sgdisk, mtools at an offset,
+// debugfs/tune2fs over a dd-extracted partition, unsquashfs and a userspace
+// `veritysetup verify` -- and NOTHING ELSE: no loop mounts, no losetup, no
+// device-mapper, no mount(8). The port keeps that toolset exactly, so this
+// file is about where the tools come from rather than which ones they are.
 //
 // TWO ROUTES, ONE SEAM -- the same shape os/verify/run.sh gave bun in M3, and
 // for the same reason. A caller passes an argv and reads an exit status and
@@ -65,7 +64,7 @@ export const REQUIRED_TOOLS = [
   'debugfs',
   'tune2fs',
   'dumpe2fs',
-  // e2fsck is the ext4 family's own verdict (os/verify-image-v2.sh:2342) and
+  // e2fsck is the ext4 family's own verdict and
   // batch 4b drives it. It ships in `e2fsprogs`, which the container route
   // already installs -- which is exactly why it has to be NAMED: the host route
   // checks this list and nothing else, so a tool that is only ever reached
@@ -123,7 +122,7 @@ export interface ToolResult {
  * shape appeared once: exit 6 naming a half-resolved e2fsprogs-libs, which is
  * the same fetch failing further along.)
  *
- * ═══ WHY A RETRY IS LEGITIMATE HERE AND A VERDICT RETRY IS NOT ═══
+ * WHY A RETRY IS LEGITIMATE HERE AND A VERDICT RETRY IS NOT.
  *
  * This package's rule is that an unreliable environment is itself a finding and
  * that a retry hiding one is a retry deciding the verdict. That rule is about a
@@ -247,9 +246,8 @@ export interface RuntimeRequest {
    * argv or from paths.ts climbing import.meta.dir, and both are HOST absolute
    * paths. Under a short mount they would name nothing inside the container,
    * and the repair would be a prefix rewrite: a second path arithmetic, on the
-   * one input whose identity the verdict is about. os/verify/run.sh:189 draws
-   * the same line for the same reason, and os/tests/mkimage-v2-selftest.sh:292
-   * had it first, before PLAN-014 M6e deleted that suite with its assembler.
+   * one input whose identity the verdict is about. os/verify/run.sh draws the
+   * same line for the same reason.
    */
   readonly readOnly?: readonly string[]
   /** One host directory the tools may WRITE to. Mounted at its own path. */

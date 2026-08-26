@@ -1,12 +1,12 @@
 // The command names a shell script invokes at COMMAND POSITION, and whether
 // each resolves inside the packed root.
 //
-// PLAN-014 M4f (RFCT-110). A transcription of `mos_script_commands` and
-// `sq_resolves_cmd` (os/verify-image-v2.sh:4168-4230), in their own module
-// because they are a nine-stage text pipeline and putting them beside the check
-// that uses them would bury it.
+// A transcription of `mos_script_commands` and `sq_resolves_cmd`, in their own
+// module because they are a
+// nine-stage text pipeline and putting them beside the check that uses them
+// would bury it.
 //
-// ═══ WHY A PIPELINE AND NOT A SHELL PARSER ═══
+// WHY A PIPELINE AND NOT A SHELL PARSER.
 //
 // Because that is what the oracle is, and the port has to agree with the oracle
 // -- including where the oracle is wrong. A real parser would find commands this
@@ -19,7 +19,7 @@
 // uses `have X ||` precisely to mark curl and wget optional, and asserting those
 // exist would be asserting the wrong thing.
 //
-// ═══ THE ONE PLACE `sq_resolves_cmd` DIFFERS FROM EVERY OTHER PATH TEST HERE ═══
+// THE ONE PLACE `sq_resolves_cmd` DIFFERS FROM EVERY OTHER PATH TEST HERE.
 //
 // It chases symlinks WITHIN THE IMAGE: an absolute link target resolves against
 // ROOT and not against the host's `/`. Everywhere else in this harness `[ -f ]`
@@ -41,8 +41,8 @@ const SH_KEYWORDS = ' if then else elif fi for while until do done case esac in 
 /**
  * The function names the script defines, which are not external commands.
  *
- * The oracle's `sed -n` for a `name() {` at the start of a line
- * (os/verify-image-v2.sh:4171): the `{` must be on the SAME line. A function
+ * The oracle's `sed -n` for a `name() {` at the start of a line: the `{` must
+ * be on the SAME line. A function
  * opened on the next line is missed, by the oracle and therefore by this.
  */
 function definedFunctions(script: string): string[] {

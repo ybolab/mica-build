@@ -5,11 +5,9 @@
 # Build arguments read from the environment: MOS_BOARD.
 #
 # MOS_BOARD reaches this script for its DIAGNOSTICS ONLY -- nothing below
-# branches on it. The units used to be COPYd from a fixed os/boards/cx3576/
-# path on every board and these messages named that path, so an x64 build that
-# tripped one was told to add a file under another board's directory. The
-# content now arrives staged in /tmp/hwinit from the board's own tree, and the
-# messages name the tree it came from.
+# branches on it. The content arrives staged in /tmp/hwinit from the board's
+# own tree, and the messages name the tree it came from, so a build that trips
+# one is told to add a file under ITS board's directory.
 
 set -eu
 mkdir -p /etc/mos /usr/lib/mos /etc/systemd/system/multi-user.target.wants \

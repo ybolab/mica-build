@@ -1,11 +1,11 @@
 // Batch 4a: the connd contract, the Wi-Fi userland, and mosd's networkd namespace.
 //
-// PLAN-014 M4f (RFCT-110). Twenty-two conclusions on cx3576 and four on x64 --
-// the contract read (:1030), the nineteen assertions it feeds (:4310-4432, all
-// of them behind `board_has_radio wifi`), and the two namespace conclusions
-// that run on every board (:1066, :4441).
+// Twenty-two conclusions on cx3576 and four on x64 -- the contract read
+// (:1030), the nineteen assertions it feeds (:4310-4432, all of them behind
+// `board_has_radio wifi`), and the two namespace conclusions that run on every
+// board (:1066, :4441).
 //
-// ═══ THIS FILE READS mosd/ SOURCES, AND THAT IS THE POINT ═══
+// THIS FILE READS mosd/ SOURCES, AND THAT IS THE POINT.
 //
 // Every path, prefix and unit name the Wi-Fi assertions compare against is READ
 // out of `mosd/mosd/src/reconciler/` rather than restated here, exactly as the
@@ -18,7 +18,7 @@
 // provide, or drives a unit the image does not install, fails on the device and
 // nowhere else.
 //
-// ═══ AND THE EXTRACTOR ITSELF ROTTED ONCE, WHICH IS WHY THERE IS NO FALLBACK ═══
+// AND THE EXTRACTOR ITSELF ROTTED ONCE, WHICH IS WHY THERE IS NO FALLBACK.
 //
 // The oracle records it (:994): the sweep marker was read with a regex over
 // `file_name.contains("...")`, network.rs was refactored to an anchored
@@ -37,7 +37,7 @@
 // assumed -- a marker read out of a `starts_with` that had lost its `ends_with`
 // would describe a wider sweep than the code performs.
 //
-// ═══ WHY THE MATCHERS ARE GENERATED AT MODULE LOAD ═══
+// WHY THE MATCHERS ARE GENERATED AT MODULE LOAD.
 //
 // `wpa_supplicant@.service` is not written down here either, so the register
 // entry that claims `/usr/lib/systemd/system/wpa_supplicant@.service is a

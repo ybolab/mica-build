@@ -4,7 +4,7 @@
 #
 #   make build-env   -> localhost/mos-build-c
 #
-# PLAN-014 M2 (RFCT-108), decision 4. FROM localhost/mos-build-base, which is
+# FROM localhost/mos-build-base, which is
 # itself built from a digest pinned in os/build-env/images.env; the chain is
 # pinned at its root, which is the only place a chain can be pinned. Nothing in
 # this file names an image, a version or a floor.

@@ -1,6 +1,6 @@
 # Source for the boot.scr written into BOOT-A and BOOT-B. Compiled by
 # os/mkimage-v2.sh with SOURCE_DATE_EPOCH pinned to the layout-v2 FILE_MTIME.
-# Body follows docs/design/uboot-ab-handshake.md section 5.3 (RFCT-018), with
+# Body follows docs/design/uboot-ab-handshake.md section 5.3, with
 # TWO deliberate divergences from the version first published there. Both were
 # defects that made updates silently revert, and section 5.3 documents both
 # and is synced to this file.
@@ -9,13 +9,13 @@
 #    mos-verity-<slot>.env, falling back to the unsuffixed name. A RAUC bundle
 #    installs a single boot payload into whichever slot is inactive, so it has
 #    to ship both slots' files under distinct names; an unsuffixed file cannot
-#    identify a slot (RFCT-014 escalation E1).
+#    identify a slot.
 # 2. bootargs carries rauc.slot=${bootslot}. The root device is /dev/dm-0, a
 #    device-mapper node rather than a partition, which rauc cannot match against
 #    any slot's bootname, slot name or realpath(device) — verified against rauc
 #    1.8: without rauc.slot= it fails with "Did not find booted slot (matching
 #    '/dev/dm-0')", so the health gate never reaches `rauc status mark-good`
-#    and the installed slot is rolled back (RFCT-017 integration check).
+#    and the installed slot is rolled back.
 #
 # boot.cmd — mos A/B handshake for CX3576-Z (layout v2).
 # Compiled to boot.scr and written to BOTH boot partitions by the assembler.

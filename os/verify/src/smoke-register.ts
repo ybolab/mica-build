@@ -1,21 +1,17 @@
 // The twelve artifacts this repository BUILDS, where each one lands in the
 // factory root, and how each one is asked what version it is.
 //
-// RFCT-113 M7b. The task's Scope names eleven -- mosd, apid, mos-mqttd,
-// mos-mqtt-broker, rauc, podman, quadlet, crun, conmon, netavark, aardvark-dns
-// -- plus catatonit, and until M7 the last thing done to any of them was to
-// LINK them. "It linked", "it runs" and "it is the version we decided" are
-// three different claims, and only the first was ever checked before an image
-// shipped.
+// The twelve are mosd, apid, mos-mqttd, mos-mqtt-broker, rauc, podman,
+// quadlet, crun, conmon, netavark, aardvark-dns and catatonit. "It linked",
+// "it runs" and "it is the version we decided" are three different claims, and
+// linking is the only one a build makes on its own.
 //
-// ═══ WHY THIS LIST IS NOT THE "SECOND LIST" THE CAMPAIGN KEEPS DELETING ═══
-//
-// It carries no version STRING. Every `pin` below is a function that reads the
+// THIS LIST IS NOT A SECOND COPY OF THE PINS. It carries no version STRING. Every `pin` below is a function that reads the
 // value out of the file that owns it, at run time -- see smoke-pins.ts. What is
 // written down here is identity (which artifact, which installed path, which
 // key) and never a value, which is the distinction between a register and a
-// copy. `TOOL_PACKAGES` copied from an `apk add` line was a copy; so was the
-// hwinit list that drifted and cost the image its stable MAC.
+// copy: a list of values transcribed from the files that own them drifts, and
+// the drift is silent.
 //
 // The set itself is checked in BOTH DIRECTIONS by `pinCoverageFaults` below,
 // which is run by the smoke runner rather than only by its tests: every
@@ -26,55 +22,27 @@
 // seven of eight, and a check that gets greener by looking at less is the
 // failure this package exists to make visible.
 //
-// ═══ THE INSTALLED PATHS ARE MEASURED, NOT ASSUMED ═══
+// THE INSTALLED PATHS ARE MEASURED, NOT ASSUMED.
 //
 // Five of the seven container binaries are NOT in /usr/bin.
 // `os/rootfs/scripts/podman-install.sh` puts podman and crun there and the
 // other five under /usr/libexec/podman/, and it writes the five with
 // `install -m0755 "/tmp/podman/${b}" "/usr/libexec/podman/${b}"` -- a
 // ${VAR}-assembled destination, so the literal path appears nowhere in the
-// script and no grep of it could confirm these. They were found by running the
-// wrong path and reading rc=127 back out of the real image, and a wrong path
-// here fails the same loud way rather than passing quietly.
+// script and no grep of it could confirm these. A wrong path here fails loudly
+// with rc=127 rather than passing quietly.
 //
-// ═══ THE TWO THAT COULD NOT ANSWER, AND NOW DO ═══
+// mosd AND apid ANSWER `--version` BEFORE ANY DAEMON INITIALISATION --
+// provisioning, bus connection or key generation. That ordering is the whole
+// contract: asking a daemon for its version must not MUTATE. `/usr/bin/mosd`
+// with no argv still provisions (secrets/, settings.toml) and still exits 1 on
+// the absent system bus, and `/usr/bin/mosd -v` -- NOT this flag -- falls
+// through into that same daemon and prints no version at all.
 //
-// M7b recorded mosd and apid as UNCLAIMED -- a third verdict rather than a pass
-// or a skip, for the reason the M4a check register gave when it was empty: a
-// conclusion nobody reached must not report as one that was reached and held.
-// The measurement behind it was that both IGNORED argv entirely and started the
-// daemon: mosd wrote a hostname and a seeded generation into /var/lib/mos and
-// died on the absent system bus, apid minted a TLS keypair and a session
-// signing key and never returned. Closing that meant editing `mosd/` Rust
-// sources, which PLAN-014 excluded, so M7b found it and did not act on it.
-//
-// THE USER LIFTED THAT EXCLUSION ON 2026-08-26 for exactly a `--version`
-// handler that answers BEFORE any daemon initialisation, provisioning, bus
-// connection or key generation. RFCT-113 M7d landed one in each, and these two
-// entries are `version` like the other ten.
-//
-// RE-MEASURED IN THE x64 FACTORY ROOT after the rebuild, on 2026-08-26, and the
-// MUTATION is what was measured rather than only the output:
-//
-//   /usr/bin/mosd --version -> `mosd 0.1.0 (60b9ccc76939)`, rc=0, 249ms
-//     round trip INCLUDING `docker run`. /var/lib/mos does not exist before the
-//     invocation and does not exist after it.
-//   /usr/bin/apid --version -> `apid 0.1.0 (60b9ccc76939)`, rc=0, 255ms
-//     the same way -- against rc=124 and never returning, before. No
-//     certificate, no session key, no /var/lib/mos at all.
-//
-// AND THE UNCHANGED PATHS WERE MEASURED TOO, because "it answers --version" and
-// "it still starts" are two claims: `/usr/bin/mosd` with no argv still
-// provisions (secrets/, settings.toml) and still exits 1 on the absent system
-// bus, and `/usr/bin/mosd -v` -- NOT this flag -- falls through into exactly
-// that same daemon and prints no version at all.
-//
-// AND THEY CARRY A SECOND HALF THE OTHER TEN DO NOT: the commit they were built
-// from, marked `embedsBuildCommit` below and asserted by the runner against the
-// commit the BUILD recorded embedding. mos-mqttd and mos-mqtt-broker are built
-// by the same script from the same workspace and deliberately do NOT carry one
-// -- the exclusion was lifted for two files, not for four, and widening it here
-// would be this milestone's judgement standing in for the user's decision.
+// Those two also report the commit they were built from, marked
+// `embedsBuildCommit` below and asserted by the runner against the commit the
+// BUILD recorded embedding. mos-mqttd and mos-mqtt-broker come out of the same
+// workspace and deliberately do NOT carry one.
 
 import { cratePath, readCratePackageVersion, readPin, pinKeys, type Pin } from './smoke-pins.ts'
 import { PODMAN_VERSIONS_ENV, RAUC_VERSIONS_ENV, VERSIONS_ENV_FILES } from './smoke-pins.ts'
@@ -87,7 +55,7 @@ import { PODMAN_VERSIONS_ENV, RAUC_VERSIONS_ENV, VERSIONS_ENV_FILES } from './sm
  * asserts only the first. `unclaimed` asserts neither and is never invoked at
  * all; it exists so that "we did not check this" is a thing the output can say.
  *
- * NO ENTRY BELOW IS `unclaimed` SINCE M7d, and the kind stays anyway. It is the
+ * NO ENTRY BELOW IS `unclaimed`, and the kind stays anyway. It is the
  * only honest thing to write down for an artifact this repository ships and
  * cannot yet ask -- the alternatives are to report it as passing or to leave it
  * out of the register, and both are a green that got greener by looking at
@@ -118,7 +86,7 @@ export interface Artifact {
   /**
    * Whether this artifact also reports the COMMIT it was built from.
    *
-   * RFCT-113 M7d. Two of the twelve do -- mosd and apid, which print
+   * Two of the twelve do -- mosd and apid, which print
    * `<name> <version> (<commit>)` -- and the runner asserts that commit against
    * the one the BUILD recorded embedding, out of `_out/<board>/mosd-build.txt`.
    *
@@ -148,11 +116,10 @@ export const ARTIFACTS: readonly Artifact[] = [
   // `mosd/versions.env`, because a pin file exists to fix an UPSTREAM version
   // and these have no upstream.
   {
-    // WAS UNCLAIMED UNTIL M7d, and the entry above says by whose decision it
-    // stopped being. mosd/mosd/src/main.rs answers --version from a synchronous
-    // `main`, before the tokio runtime, the subscriber, the settings store and
-    // provisioning -- so the invocation this row makes is minimal in the sense
-    // Scope means: it reports, it exits 0, and it leaves nothing behind.
+    // mosd/mosd/src/main.rs answers --version from a synchronous `main`,
+    // before the tokio runtime, the subscriber, the settings store and
+    // provisioning -- so this invocation reports, exits 0, and leaves nothing
+    // behind.
     name: 'mosd',
     path: '/usr/bin/mosd',
     pin: crate('mosd'),
@@ -160,9 +127,8 @@ export const ARTIFACTS: readonly Artifact[] = [
     embedsBuildCommit: true,
   },
   {
-    // The same, and the hang is gone with it: before M7d this binary bound
-    // 0.0.0.0:443 and never returned, which is why M7b would not let the runner
-    // invoke it at all.
+    // The same, and for the same reason: without the early handler this binary
+    // binds 0.0.0.0:443 and never returns.
     name: 'apid',
     path: '/usr/bin/apid',
     pin: crate('apid'),
@@ -266,7 +232,7 @@ export const ARTIFACTS: readonly Artifact[] = [
     // top. Scope says catatonit "gets an exec-only check", not "gets only an
     // exec-only check".
     //
-    // ═══ THE NORMALISATION, STATED, BECAUSE THIS IS WHERE IT COULD GO SOFT ═══
+    // THE NORMALISATION, STATED, BECAUSE THIS IS WHERE IT COULD GO SOFT.
     //
     // The pin is `CATATONIT_VERSION=v0.2.1` and the binary says
     // `tini version 0.2.1_catatonit`. Neither string contains the other, so the
@@ -326,23 +292,7 @@ export const ARTIFACTS: readonly Artifact[] = [
  * (a binary that lost its `--version`) into a category membership nobody chose.
  * A binary that is asked for a version and does not give one is a FAIL.
  *
- * IT HELD apid AND mosd, AND IT IS NOW EMPTY -- which is the proof the fix
- * landed, and the reason this classification is a mechanism rather than a
- * placeholder. M7b wrote the constant with that outcome named in advance:
- * "M7d writes those handlers. When they land, both names move from UNCLAIMED to
- * PASS and this constant becomes empty."
- *
- * The user LIFTED PLAN-014's `mosd/` exclusion on 2026-08-26 for exactly one
- * change -- a `--version` handler in `mosd/mosd/src/main.rs` and
- * `mosd/apid/src/main.rs` that reports the crate version and exits 0 BEFORE any
- * daemon initialisation, provisioning, bus connection or key generation. That
- * ordering was the point: what M7b measured is not merely that the two could
- * not answer, but that ASKING MUTATED -- mosd wrote a hostname and a seeded
- * generation into /var/lib/mos, apid generated a TLS keypair and a session
- * signing key. Re-measured after M7d landed: both answer in ~250ms with rc=0
- * and /var/lib/mos is never created. The entries above carry the numbers.
- *
- * EMPTY IS NOT DEAD. `unclaimedFaults` still refuses any run whose register
+ * IT IS EMPTY, AND EMPTY IS NOT DEAD. `unclaimedFaults` still refuses any run whose register
  * marks something unclaimed, and an empty authorisation makes that STRICTER
  * rather than weaker: nothing may go unasked without this constant, a register
  * entry and the lock in smoke-register.test.ts all moving in one diff. The

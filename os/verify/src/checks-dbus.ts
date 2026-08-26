@@ -1,10 +1,10 @@
 // Batch 4a: the D-Bus policies -- the system bus, mosd's root-only grant, the
 // extension namespace, and bluez's.
 //
-// PLAN-014 M4f (RFCT-110). Eleven conclusions on each board, one of them a SKIP
-// on x64. Everything here reads the unpacked root and nothing else.
+// Eleven conclusions on each board, one of them a SKIP on x64. Everything here
+// reads the unpacked root and nothing else.
 //
-// ═══ WHY A POLICY PARSER AND NOT A grep ═══
+// WHY A POLICY PARSER AND NOT A grep.
 //
 // The oracle does not grep these files and says why, twice, in its own prose: a
 // D-Bus rule routinely spans several source lines, so a line-oriented reader
@@ -26,7 +26,7 @@
 //   policyFacts     the big awk at :2989 -- rules collected per <policy> BLOCK,
 //                   because a rule's block is what decides who it applies to
 //
-// ═══ AND WHY THE BUS NAME IS READ, NEVER WRITTEN DOWN ═══
+// AND WHY THE BUS NAME IS READ, NEVER WRITTEN DOWN.
 //
 // `com.mos.mosd` appears nowhere in this file as the name being checked. The
 // oracle reads it out of mosd.service's `BusName=` (:2975) precisely so that a
@@ -73,7 +73,7 @@ export function regularFileFollowingLinks(root: string, path: string): boolean {
 }
 
 /**
- * `dbus_policy_rules_only` (os/verify-image-v2.sh:661): XML comments removed.
+ * `dbus_policy_rules_only`: XML comments removed.
  *
  * The state machine is the oracle's, transcribed: `incomment` persists ACROSS
  * lines, an unterminated `<!--` swallows the rest of the file, and every input
@@ -212,8 +212,7 @@ export function policyFacts(text: string, bus: string): PolicyFacts {
 }
 
 /**
- * The oracle's `sed -n` for `BusName=`, with `tr -d '\r'` and `tail -n1` after it
- * (os/verify-image-v2.sh:2975).
+ * The oracle's `sed -n` for `BusName=`, with `tr -d '\r'` and `tail -n1` after it.
  *
  * The LAST such line, not the first: systemd itself takes the last assignment
  * of a key in a unit file, and a unit carrying two would otherwise be judged
@@ -474,7 +473,7 @@ const MOSD_CHECKS: readonly CheckCase[] = [
 ]
 
 // ---------------------------------------------------------------------------
-// check_ext_policy -- os/verify-image-v2.sh:735
+// check_ext_policy
 // ---------------------------------------------------------------------------
 
 const EXT_GRANT_RE = /allow own_prefix="com\.mos\.ext"/
