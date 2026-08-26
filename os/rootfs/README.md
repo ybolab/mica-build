@@ -166,10 +166,19 @@ here.
 ## The build is a chain: `stages/`
 
 There is no single `Dockerfile.v2` any more. `stages/` holds one Dockerfile per
-stage — `10-base`, `20-install`, `90-pack`, and `30-40-unsplit` until M5c and
-M5d cut it — built in numeric order, each `FROM` the local image tag the
-previous one was written to. `build-v2.sh` still stages the context and computes
-every argument; sequencing is `os/build/run.sh --build-rootfs`.
+stage — `10-base`, `20-install`, five `30-feature-*`, `40-board`, `90-pack` —
+built in numeric order, each `FROM` the local image tag the previous one was
+written to. `build-v2.sh` still stages the context and computes every argument;
+sequencing is `os/build/run.sh --build-rootfs`.
+
+**A feature is a file, so declining one is leaving the file out.** RFCT-111
+replaced the `WITH_*` build arguments with stage selection: `--without
+containers` builds a chain with no `31-feature-containers` in it, and the
+driver refuses a name that matches no feature stage rather than silently
+building the full image. `WITH_CONTAINERS=0` and `WITH_MOSD=0` still work —
+`build-v2.sh` turns them into that flag — and `_out/<board>/rootfs-stages.txt`
+records which features were declined, because an image built without a feature
+stage and an image whose feature stage did nothing look identical afterwards.
 
 `stages/README.md` is the file to read first: what the chain is, which stage
 holds what, the one reordering the cut required and why, and the measurement
@@ -187,8 +196,10 @@ RUN --mount=type=bind,source=os/rootfs/scripts,target=/mos-scripts \
 ```
 
 Build arguments still arrive through the environment, the way they always did,
-so the scripts read `BOARD_RADIOS`, `WITH_CONTAINERS`, `MOS_ARCH` and the rest
-unchanged. The package lists and the single-command `RUN`s stayed in the stage
+so the scripts read `BOARD_RADIOS`, `MOS_ARCH`, `RAUC_BOOTLOADER` and the rest
+unchanged. `WITH_CONTAINERS` and `WITH_MOSD` are no longer among them: they were
+build arguments five scripts tested independently, and they are now the presence
+of `31-feature-containers` and `33-feature-mosd` in the chain. The package lists and the single-command `RUN`s stayed in the stage
 files: a stage's package set *is* the image, and a one-line `RUN` gains nothing
 from a hop. `ARG` is per stage and now also per *file*, so an argument a stage's
 `RUN`s read must be declared in that stage's file — `BOARD_RADIOS` is declared
@@ -552,6 +563,45 @@ anchored new-baseline commit". This is that anchor, and the parity half was run:
 `MOS_BOARD=x64 bash os/verify-image-v2.sh` on an image assembled from a
 chain-built rootfs reports **`RESULT: PASS (290/290 checks, 22 skipped)`**, the
 same count as before the split.
+
+### RFCT-111 M5c: the feature cut, measured
+
+`30-40-unsplit` cut into five `30-feature-*` stages and `40-board`, with the
+board work moved behind every feature. Both sides built cold on **2026-08-26**
+through the same driver with the same arguments — the only difference is the
+tree — and both extracted with the same `unsquashfs`:
+
+| | entries |
+|---|---|
+| control — two cold builds that changed nothing (M5a, and M5b again) | **6** |
+| M5b's subject — the single file vs the four-stage chain | 14 |
+| **M5c's subject — that chain vs the nine-stage chain** | **6** |
+| beyond the control | **0** |
+
+The differing set **is** the control's set, entry for entry:
+`/boot/initrd.img-*`, the four `/usr/share/factory/var/log` files and
+`aux-cache`. Nothing in the account family moved this time, which is the
+difference between M5c's reordering and M5b's: M5b had to lift `account-mos.sh`
+into the floor stage past two service accounts, and M5c moved no account-
+creating RUN across another one.
+
+Driven further than the entry count, because six entries that differ for the
+right reason and six that differ for a new one look the same in a list:
+
+- `unsquashfs -lln` over all **9,241** entries differs on **one line**, and only
+  in the initrd's SIZE (37,189,906 against 37,189,851 bytes). Every mode, uid,
+  gid, and path on both sides is identical.
+- `dpkg.log` with its timestamps stripped is **byte-identical**: the same 694
+  operations in the same order. That is the direct check on the ordering
+  constraint the cut was designed around — the `apt` transactions still run
+  radios, containers, `grub-editenv`, kernel.
+- `alternatives.log` is two lines and identical once `update-alternatives`' own
+  timestamp is removed; `apt/history.log` is identical once `Start-Date` and
+  `End-Date` are.
+
+The recipe is in `_out/gate/` of the M5c worktree — `chain-cold.sh` (one tree,
+one cold chain), `extract.sh` (M5b's, verbatim but for the root) and
+`compare.sh` — and it is meant to be re-run rather than cited.
 
 Also cold-build-dependent, and now closed: the byte layout used to depend on
 whichever `squashfs-tools` and `cryptsetup` came out of a floating

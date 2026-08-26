@@ -2,7 +2,7 @@
 # Install the kernel: Debian's own on amd64 (with a verity initramfs), the BSP's
 # modules.tar elsewhere.
 #
-# Called from os/rootfs/stages/30-40-unsplit.Dockerfile, where the reasoning lives.
+# Called from os/rootfs/stages/40-board.Dockerfile, where the reasoning lives.
 # Build arguments read from the environment: MOS_ARCH.
 
 set -eu

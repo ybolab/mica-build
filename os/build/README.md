@@ -324,7 +324,19 @@ bash os/build/run.sh src/geometry.test.ts   # extra arguments go to `bun test`
 
 bash os/build/run.sh --mkimage-v2           # assemble the cx3576 image
 bash os/build/run.sh --mkimage-v2 --help
+
+bash os/build/run.sh --build-rootfs --board x64 --plan       # decide the chain
+bash os/build/run.sh --build-rootfs --board x64 --plan --without containers
 ```
+
+`--build-rootfs` is the os/rootfs stage-chain driver (`src/stages.ts` decides,
+`src/stages-cli.ts` runs). `--without NAME` is RFCT-111's **stage selection**,
+which replaced the `WITH_*` build arguments: it leaves the `<n>-feature-NAME`
+stage out of the chain, refuses a name no feature stage matches rather than
+silently building the full image, and refuses to decline a stage that is not a
+feature. `os/rootfs/stages/README.md` has the whole mechanism; the caller-facing
+route is `os/rootfs/build-v2.sh`, which turns `WITH_CONTAINERS=0`, `WITH_MOSD=0`
+and `MOS_ROOTFS_WITHOUT` into these flags.
 
 `--mkimage-v2` is a **mode**, recognised only in first position: anywhere else it
 would be forwarded to `bun test`, which ignores an unknown flag and reports a
@@ -346,8 +358,8 @@ neither way is a failure, not a gap.
 container route — and mounts the host's docker client (a static Go binary) and
 `/var/run/docker.sock` at their own paths, so the toolbox can still start
 *sibling* containers from in there. Both routes were run to completion: 199/199
-either way at M6a, and 406/406 once M6b's assembler and M5b's stage driver
-both landed.
+either way at M6a, 406/406 once M6b's assembler and M5b's stage driver both
+landed, and 422/422 with M5c's stage selection.
 
 ```
 os/build: 1.4.0 at /srv/bkd/runtime/bun
@@ -382,7 +394,9 @@ src/boot-cx3576.ts         boot.cmd's guards and the per-slot verity env, both p
 src/pin-seeded-times.ts    the argument os/mkimage-common.sh exists to keep in one place
 src/mkimage-v2.ts          the cx3576 assembler
 src/mkimage-v2-cli.ts      the host half: where the inputs are, and the -latest symlink
-src/**/*.test.ts           406 tests; every refusal has a positive control beside it
+src/stages.ts              os/rootfs/stages/ -> a chain: order, tags, args, and what is declined
+src/stages-cli.ts          the only file here that runs docker buildx
+src/**/*.test.ts           every refusal has a positive control beside it
 ```
 
 `HARNESS.md` carries how each guard was driven from the failing side, the bash

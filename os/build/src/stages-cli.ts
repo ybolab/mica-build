@@ -25,10 +25,12 @@ import {
   DEFAULT_TERMINAL_TARGET,
   discoverStages,
   planChain,
+  selectStages,
   stageManifest,
   StageChainError,
   STAGES_DIR,
   type StageBuild,
+  type StageFile,
 } from './stages.ts'
 import { REPO_ROOT } from './paths.ts'
 
@@ -45,6 +47,7 @@ interface Options {
   terminalTarget: string
   planOnly: boolean
   noCache: boolean
+  without: string[]
   args: Record<string, string>
 }
 
@@ -65,6 +68,12 @@ function usage(): string {
     '  --builder NAME   buildx builder. Default: whichever is current',
     '  --arg KEY=VALUE  a build argument, repeatable. Each is passed only to the',
     '                   stages that DECLARE it; one no stage declares is refused',
+    '  --without NAME   leave out the <number>-feature-NAME stage, repeatable.',
+    '                   This is RFCT-111\'s stage selection, and it replaced the',
+    '                   WITH_* build args: a declined feature is a stage that is',
+    '                   not built, not an argument every RUN inside it has to',
+    '                   test. A NAME that matches no feature stage is refused --',
+    '                   silently building the full image is the failure',
     '  --plan           print the chain and the exact command lines, run nothing',
     '  --no-cache       build every stage from scratch. For the determinism gate:',
     '                   a chain replayed out of cache is not a cold build',
@@ -86,6 +95,7 @@ export function parseArgs(argv: readonly string[]): Options {
     terminalTarget: DEFAULT_TERMINAL_TARGET,
     planOnly: false,
     noCache: false,
+    without: [],
     args: {},
   }
   // An option whose value is the NEXT FLAG is the mistake that silently
@@ -133,6 +143,9 @@ export function parseArgs(argv: readonly string[]): Options {
         break
       case '--no-cache':
         o.noCache = true
+        break
+      case '--without':
+        o.without.push(value(a, argv[++i]))
         break
       case '--arg': {
         const kv = value(a, argv[++i])
@@ -288,9 +301,11 @@ export async function main(argv: readonly string[]): Promise<number> {
     return 1
   }
 
-  const stages = discoverStages(opts.stagesDir)
+  const all = discoverStages(opts.stagesDir)
+  let stages: StageFile[]
   let builds: StageBuild[]
   try {
+    stages = selectStages(all, opts.without)
     builds = planChain(stages, {
       board: opts.board,
       supplied: opts.args,
@@ -305,6 +320,14 @@ export async function main(argv: readonly string[]): Promise<number> {
     throw e
   }
 
+  if (opts.without.length > 0) {
+    // Said out loud, every run, because a stage that is not built leaves no
+    // trace in the image to distinguish it from a stage that did nothing.
+    console.log(
+      `os/rootfs: leaving out ${opts.without.map((w) => `${w} (feature)`).join(', ')} -- `
+      + `${all.length - stages.length} of ${all.length} stage(s) declined`,
+    )
+  }
   const lines = builds.map(
     (b, i) =>
       `  ${String(i + 1).padStart(2)}. ${b.name.padEnd(16)} ${b.terminal ? `-> ${opts.dest ?? '(no --dest)'}` : `-> ${b.tag}`}`,
@@ -366,7 +389,7 @@ export async function main(argv: readonly string[]): Promise<number> {
   // The record, written only after every stage succeeded: a manifest listing
   // stages that did not all build would be a list of intentions.
   const manifest = join(opts.dest!, MANIFEST_NAME)
-  writeFileSync(manifest, stageManifest(builds, stages))
+  writeFileSync(manifest, stageManifest(builds, stages, opts.without))
   console.log(`\nos/rootfs: ${builds.length} stages built; chain recorded in ${manifest}`)
   return 0
 }

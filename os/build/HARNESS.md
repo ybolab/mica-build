@@ -22,7 +22,8 @@ Both routes were run to completion on 2026-08-25, this host:
 | pinned bun container (`MOS_BUILD_CONTAINER=1`) | **199/199** | 99 s |
 
 M6b added the assembler and raised the count by **158**, to 358; M5b's stage
-driver merged alongside it and the package now runs **406/406** in 1 m 58 s. The
+driver merged alongside it, taking the package to **406/406**, and M5c's stage
+SELECTION added **16** more, for **422/422** in 2 m 44 s. The
 suite assembles **seven** whole cx3576 images over fabricated inputs, which is
 the price of having one full assembly in it rather than only at the gate — a
 chain that runs end to end is the thing a table of unit refusals cannot assert.

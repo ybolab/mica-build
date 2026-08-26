@@ -1,10 +1,9 @@
 #!/bin/sh
 # Assert mos's own container configuration is present and is the only layer.
 #
-# Called from os/rootfs/stages/30-40-unsplit.Dockerfile, where the reasoning lives.
-# Build arguments read from the environment: WITH_CONTAINERS.
+# Called from os/rootfs/stages/31-feature-containers.Dockerfile, where the reasoning lives.
+# Build arguments read from the environment: none.
 
-if [ "$WITH_CONTAINERS" != "1" ]; then exit 0; fi
 set -eu
 for f in /etc/containers/policy.json /etc/containers/containers.conf \
          /etc/containers/registries.conf /etc/containers/storage.conf; do
