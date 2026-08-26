@@ -421,8 +421,8 @@ neither way is a failure, not a gap.
 container route — and mounts the host's docker client (a static Go binary) and
 `/var/run/docker.sock` at their own paths, so the toolbox can still start
 *sibling* containers from in there. Both routes were run to completion: 199/199
-either way at M6a, and 406/406 once M6b's assembler and M5b's stage driver
-both landed.
+either way at M6a, 406/406 once M6b's assembler and M5b's stage driver both
+landed, and **527/527** with M6c's x64 assembler on top.
 
 ```
 os/build: 1.4.0 at /srv/bkd/runtime/bun
@@ -461,7 +461,7 @@ src/layout-x64.ts          x64's DERIVED layout -- a second arithmetic, not a se
 src/grub-x64.ts            grub.cfg's three guards and the per-slot cmdline fragment, all pure
 src/mkimage-x64.ts         the x64 assembler
 src/mkimage-x64-cli.ts     its host half
-src/**/*.test.ts           500 tests; every refusal has a positive control beside it
+src/**/*.test.ts           527 tests; every refusal has a positive control beside it
 ```
 
 `HARNESS.md` carries how each guard was driven from the failing side, both bash

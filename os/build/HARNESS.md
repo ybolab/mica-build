@@ -670,6 +670,7 @@ mapped against the x64 layout: `esp` at 1, `boot-a` at 65, `boot-b` at 161,
 | `bash os/mkimage-x64.sh` | ~70 s |
 | `bash os/build/run.sh --mkimage-x64` | ~27 s |
 | the whole `src/mkimage-x64.test.ts` file (three full assemblies, fabricated inputs) | ~70 s |
+| `make os-build-test`, the whole suite at 527 tests | ~4 m 30 s |
 
 ## Every x64 refusal, and the mutation that drives it red
 
