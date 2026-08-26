@@ -188,12 +188,12 @@ apid never spawns a process and never talks to systemd itself"*
 (`mosd/apid/src/settings_api.rs:10-12`).
 
 **The bus and the interface.** The transport is **D-Bus**, via `zbus`
-(`mosd/apid/Cargo.toml:29` → `mosd/Cargo.toml:24`). The proxy declares the
+(`mosd/apid/Cargo.toml:31` → `mosd/Cargo.toml:28`). The proxy declares the
 interface `com.mos.mosd1`, the well-known service name `com.mos.mosd`, and the
-object path `/com/mos/mosd` (`mosd/apid/src/bus_client.rs:9-13`). mosd's side
-declares the same three: `BUS_NAME` (`mosd/mosd/src/bus.rs:20`), `OBJECT_PATH`
-(`mosd/mosd/src/bus.rs:22`) and the interface attribute
-(`mosd/mosd/src/bus.rs:179`). Which bus is chosen is configuration: `WEBD_BUS`
+object path `/com/mos/mosd` (`mosd/apid/src/bus_client.rs:15-19`). mosd's side
+declares the same three: `BUS_NAME` (`mosd/mosd/src/bus.rs:25`), `OBJECT_PATH`
+(`mosd/mosd/src/bus.rs:27`) and the interface attribute
+(`mosd/mosd/src/bus.rs:510`). Which bus is chosen is configuration: `WEBD_BUS`
 selects system (the default) or session (`mosd/apid/src/config.rs:41-45`).
 
 **Every method apid calls today — five, across two proxy traits.** The
@@ -212,14 +212,13 @@ so listed once per verb below:
 | `set_transient_root_password(password)` | `bus_client.rs:24` | `mosd/mosd/src/bus.rs:365` | `POST /ssh/password` (`routes.rs:1272`) |
 
 **What apid does not call, and cannot receive.** mosd exposes a seventh method,
-`ReportHealth` (`mosd/mosd/src/bus.rs:231`), which the proxy does not declare
+`ReportHealth` — `report_health` (`mosd/mosd/src/bus.rs:550`), which the proxy does not declare
 (`mosd/apid/src/bus_client.rs:14-21`); its caller in the tree is the boot health
 gate, not apid. mosd also emits two signals, and apid subscribes to neither.
-`SettingsChanged(path, value_json)` fires after every successful `SetSettings`
-(`mosd/mosd/src/bus.rs:212-214`, declared at `:292-297`); `ItemsChanged` fires
+`SettingsChanged(path, value_json)` fires after every successful `set_settings`
+(`mosd/mosd/src/bus.rs:531-533`, declared at `:727-728`); `ItemsChanged` fires
 once per accumulated batch of item-tree changes, declared on `com.mos.Item1`
-(`mosd/mosd/src/tree.rs:450-451`), served at the service root (`:35-38`) and
-emitted at `:618-619`. The proxy declares **no** `#[zbus(signal)]` member for
+(`mosd/mosd/src/tree.rs:440`, `:451`), served at the service root (`:35`). The proxy declares **no** `#[zbus(signal)]` member for
 either (`mosd/apid/src/bus_client.rs:14-21`), so apid has no push notification
 of a settings change from any source, including itself.
 
@@ -231,12 +230,12 @@ drops the cache on any call error so the next request reconnects; the documented
 consequence is that mosd being down surfaces as per-request errors rather than a
 crash (`mosd/apid/src/bus_client.rs:23-26`, `:42-59`). A failed call renders a
 502 page reading *"The management daemon is unavailable."*
-(`mosd/apid/src/routes.rs:106-116`).
+(`mosd/apid/src/routes.rs:650-660`, message at `:656`).
 
 **Who else may call.** The shipped D-Bus policy restricts `com.mos.mosd` to
 root in both directions — the default context denies both `send_destination` and
-`receive_sender` (`mosd/dist/com.mos.mosd.conf:63-66`) and only `user="root"`
-is allowed to own, send and receive (`:68-72`). The file also carries an
+`receive_sender` (`mosd/dist/com.mos.mosd.conf:69-72`) and only `user="root"`
+is allowed to own, send and receive (`:74-78`). The file also carries an
 explicit extension point describing the block a future non-root apid would need
 (`mosd/dist/com.mos.mosd.conf:32-46`) and a deliberately deferred per-method
 allowlist (`:48-61`). Note that `docs/design/dashboard.md:1317-1320` cites this
@@ -246,9 +245,9 @@ longer true — the code wins, and the policy is root-only.
 ### 1.4 Authentication as shipped
 
 **Where the credential lives.** One password, stored as an argon2id PHC string
-at the settings dot-path `access.webAdmin.password_hash`
-(`mosd/apid/src/routes.rs:98-103`; the typed field is
-`mosd/mosd-settings/src/model.rs:52-53` and `:66-71`). Hashing is argon2id with
+at the settings dot-path `access.webAdmin.password_hash` — the value apid reads through
+`password_hash` (`mosd/apid/src/routes.rs:642-646`), typed at
+`mosd/mosd-settings/src/model.rs:175-177`. Hashing is argon2id with
 default parameters (`mosd/apid/src/auth.rs:13-19`) and verification parses the
 PHC string (`mosd/apid/src/auth.rs:22-26`). Nothing else in the crate
 authenticates: there is no second credential, no user table, and no reference to
@@ -266,15 +265,15 @@ id with an expiry, and returns `<id>.<mac>` as the cookie value
 **Cookie attributes and expiry.** The cookie is named `apid_session`
 (`mosd/apid/src/session.rs:18`) and is set as
 `Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=86400`
-(`mosd/apid/src/session.rs:91`); logout re-sets the same attributes with
-`Max-Age=0` (`mosd/apid/src/session.rs:96`). Server-side the TTL is 24 hours
+(`mosd/apid/src/session.rs:103`); logout re-sets the same attributes with
+`Max-Age=0` (`mosd/apid/src/session.rs:108`). Server-side the TTL is 24 hours
 (`mosd/apid/src/session.rs:19`), enforced on every verification, with an expired
 entry removed as it is found (`mosd/apid/src/session.rs:66-79`). **Sessions live
 in memory only** — a `HashMap` in the store (`mosd/apid/src/session.rs:26`) —
 so, as the module doc states, *"an apid restart logs everyone out"*
 (`mosd/apid/src/session.rs:5-6`). The HMAC signing key, by contrast, is
 persisted: 32 bytes at `session.key` in the state directory, generated on first
-start with mode `0600` (`mosd/apid/src/tls.rs:85-103`).
+start with mode `0o600` (`mosd/apid/src/tls.rs:37`, called from `:100`).
 
 **What a request carries.** Only the cookie. The gate extracts it from the
 `Cookie` header by prefix match (`mosd/apid/src/session.rs:99-111`) and verifies
@@ -307,12 +306,13 @@ to clear one with).
 
 **TLS material.** The certificate is self-signed and generated on first start
 into the state directory: CN `mos`, SANs `DNS:mos`, `DNS:localhost`,
-`IP:127.0.0.1` (`mosd/apid/src/tls.rs:44-81`), with the private key written mode
-`0600` (`mosd/apid/src/tls.rs:30-42`, `:78`) inside a state directory created
-mode `0700` (`mosd/apid/src/tls.rs:20-28`). That directory defaults to
+`IP:127.0.0.1` — the certificate is built at `mosd/apid/src/tls.rs:59-67`, with
+the private key written mode `0o600` (`mosd/apid/src/tls.rs:37`, called from
+`:78`) inside a state directory created mode `0o700`
+(`mosd/apid/src/tls.rs:24`). That directory defaults to
 `/var/lib/mos/apid` and is overridable by `APID_STATE_DIR`
 (`mosd/apid/src/config.rs:38-40`), and is provided by systemd as
-`StateDirectory=mos/apid` (`mosd/dist/apid.service:10`). There is no ACME
+`StateDirectory=mos/apid` (`mosd/dist/apid.service:16`). There is no ACME
 client, no certificate rotation, and no way to install an operator-supplied
 certificate in `mosd/apid/src/tls.rs`.
 
@@ -333,8 +333,8 @@ backward through a registered chain (`mosd/mosd-settings/src/migration.rs:46-57`
 public entry point at `:89`).
 
 **Persistence.** TOML at `/var/lib/mos/settings.toml`
-(`mosd/mosd-settings/src/store.rs:12`), written atomically through `Store`
-(`mosd/mosd-settings/src/store.rs:14-18`). Every struct in the model carries
+(`mosd/mosd-settings/src/store.rs:67`), written atomically through `Store`
+(`mosd/mosd-settings/src/store.rs:69-73`). Every struct in the model carries
 `#[serde(deny_unknown_fields)]` (for example
 `mosd/mosd-settings/src/model.rs:15`, `:49`, `:78`, `:128`, `:139`, `:154`,
 `:170`, `:195`, `:205`, `:230`, `:247`, `:308`, `:319`), so an unknown key
@@ -359,11 +359,11 @@ fails the load rather than being silently dropped.
 **Two properties of the write path an API author needs.** First, a write is
 **validated against the typed tree before it is persisted**: `SetSettings`
 builds a candidate, calls `Settings::set` — which deserializes the whole root
-into `Settings` (`mosd/mosd-settings/src/model.rs:367-371`) — and only then
-calls `store.save` (`mosd/mosd/src/bus.rs:199-203`), so a malformed write
+into a candidate `Self` (`mosd/mosd-settings/src/model.rs:474-478`) — and only then
+calls `store.save` (`mosd/mosd/src/bus.rs:430-435`), so a malformed write
 mutates nothing. Second, **the dot-path syntax has no array indexing**: the
 model comment says a list is *"written as a whole JSON array through the
-dot-path API"* (`mosd/mosd-settings/src/model.rs:213-214`), which is exactly why
+dot-path API"* (`mosd/mosd-settings/src/model.rs:320-321`), which is exactly why
 the SSH pane reads the whole key list, edits it in memory, and writes the whole
 list back (`mosd/apid/src/routes.rs:1061-1080`).
 
@@ -383,19 +383,19 @@ name/subtree pairs:
 | `wifiAp` | `wifi.ap` | `mosd/mosd/src/reconciler/wifi_ap.rs:718-724` |
 
 **The live-state tree.** It is a plain `serde_json::Value`, not a typed model
-(`mosd/mosd/src/bus.rs:46-49`), and `GetState` returns the subtree at a dot-path
-or `InvalidArgs` (`mosd/mosd/src/bus.rs:219-224`). Four kinds of thing write into
+(`mosd/mosd/src/bus.rs:52-53`), and `GetState` returns the subtree at a dot-path
+or `InvalidArgs` (`mosd/mosd/src/bus.rs:538-542`). Four kinds of thing write into
 it, and that set is the entire read surface an API can expose:
 
 1. **One key per reconciler**, named by `name()` above, holding that
    reconciler's applied result, or `{"error": "..."}` when it failed
-   (`mosd/mosd/src/bus.rs:125-132`, `:137-148`).
+   (`mosd/mosd/src/bus.rs:437-441`, `:453-455`).
 2. **`power`** — `{last_action, requested_by}`, recorded *before* the action so
-   the record survives the machine going down (`mosd/mosd/src/bus.rs:86-100`).
-3. **`health.<component>`** — `{status, detail}`, written by `ReportHealth`
-   (`mosd/mosd/src/bus.rs:231-251`).
+   the record survives the machine going down (`mosd/mosd/src/bus.rs:191-192`).
+3. **`health.<component>`** — `{status, detail}`, written by `report_health`
+   (`mosd/mosd/src/bus.rs:546`, `:550`).
 4. **`dry_run`** — present only when `MOSD_DRY_RUN=1`
-   (`mosd/mosd/src/main.rs:43`, `:90-93`), in which case no reconcilers are
+   (`mosd/mosd/src/main.rs:21`, `:145`, `:227-228`), in which case no reconcilers are
    registered at all (`:71-75`) and the power control is a stub (`:78-82`).
 
 Of that surface, apid reads exactly two paths today: `network` and `sshd`
@@ -695,25 +695,25 @@ and the choice is costed.
 
 | Root | Backed by | Methods | Why it is separate |
 |---|---|---|---|
-| `/api/v1/settings/<dot-path>` | `Settings` (`mosd/mosd-settings/src/model.rs:16-32`) via `GetSettings` / `SetSettings` (`mosd/mosd/src/bus.rs:182`, `:191`) | `GET`, `PUT` | typed, validated, persisted to `/var/lib/mos/settings.toml` (`mosd/mosd-settings/src/store.rs:12`), survives reboot and A/B update (`docs/design/access.md:504`) |
-| `/api/v1/state/<dot-path>` | the live-state tree via `GetState` (`mosd/mosd/src/bus.rs:219`) | `GET` only | untyped `serde_json::Value` (`mosd/mosd/src/bus.rs:46-49`), in memory, written only from inside mosd by the four writers section 1.5 names |
-| `/api/v1/actions/<verb>` | the `/Actions/reboot` and `/Actions/poweroff` items (`mosd/mosd/src/actions.rs:46`, `:47`), and `SetTransientRootPassword` (`mosd/mosd/src/bus.rs:365`) | `POST` only | not state at all — see §2.3 |
+| `/api/v1/settings/<dot-path>` | `Settings` (`mosd/mosd-settings/src/model.rs:16-32`) via `GetSettings` / `SetSettings` (`mosd/mosd/src/bus.rs:513`, `:522`) | `GET`, `PUT` | typed, validated, persisted to `/var/lib/mos/settings.toml` (`mosd/mosd-settings/src/store.rs:12`), survives reboot and A/B update (`docs/design/access.md:504`) |
+| `/api/v1/state/<dot-path>` | the live-state tree via `GetState` (`mosd/mosd/src/bus.rs:538`) | `GET` only | untyped `serde_json::Value` (`mosd/mosd/src/bus.rs:53`), in memory, written only from inside mosd by the four writers section 1.5 names |
+| `/api/v1/actions/<verb>` | the `/Actions/reboot` and `/Actions/poweroff` items (`mosd/mosd/src/actions.rs:46-47`), and `SetTransientRootPassword` (`mosd/mosd/src/bus.rs:703`) | `POST` only | not state at all — see §2.3 |
 
 The split is mosd's, not a stylistic preference. The two trees have different
-types (`settings: Settings` and `state: Value`, `mosd/mosd/src/bus.rs:47-48`),
+types (`settings: Settings` and `state: Value`, `mosd/mosd/src/bus.rs:52-53`),
 different mutability (`SetSettings` exists; there is no `SetState` anywhere in
 the proxy trait, `mosd/apid/src/bus_client.rs:20-25`, nor in mosd's interface
-impl, `mosd/mosd/src/bus.rs:179-298`), and different lifetimes (the settings tree
-is saved atomically on every write, `mosd/mosd/src/bus.rs:202`; the live-state
+impl, `mosd/mosd/src/bus.rs:510-725`), and different lifetimes (the settings tree
+is saved atomically on every write, `mosd/mosd/src/bus.rs:434`; the live-state
 tree is a field of `Inner` that starts empty or as `{"dry_run": true}`,
 `mosd/mosd/src/bus.rs:63-64`, `mosd/mosd/src/main.rs:90-93`). An API that merged
 them would have to decide on every request which half a path belonged to.
 
 **The dot-path is the resource identifier, verbatim.** `GET
 /api/v1/settings/access.ssh` returns exactly what `GetSettings("access.ssh")`
-returns (`mosd/mosd/src/bus.rs:182-186`). `PUT /api/v1/settings/hostname` with
+returns (`mosd/mosd/src/bus.rs:513-517`). `PUT /api/v1/settings/hostname` with
 body `"router"` performs exactly `SetSettings("hostname", "\"router\"")`
-(`mosd/mosd/src/bus.rs:191-216`). This is the recommendation, and the
+(`mosd/mosd/src/bus.rs:522-535`). This is the recommendation, and the
 alternative it rejects is the interesting part.
 
 **Rejected: hand-shaped REST nouns that do not map onto the tree** (`GET
@@ -780,7 +780,7 @@ up believing access was withdrawn while the key still grants root."*
 /api/v1/ssh/authorized-keys/{fingerprint}`. A client using the first can produce
 a list the second would have rejected. The floor is the same either way, because
 both end at `SetSettings` → `Settings::set` → `store.save`
-(`mosd/mosd/src/bus.rs:199-203`), and the collection route additionally runs
+(`mosd/mosd/src/bus.rs:430-435`), and the collection route additionally runs
 `validate_authorized_keys` first — the same validator mosd runs before rendering
 the file (`mosd/apid/src/routes.rs:1885-1889`). So the difference is the quality
 of the error message, not whether a bad list can be written. That is an
@@ -821,14 +821,14 @@ destroy the credential.
 | WiFi AP | `GET`/`PUT /api/v1/settings/wifi.ap` | `WifiApSettings` (`model.rs:248-275`) | `psk` redacted on read; `mode` is `off`/`provisioning`/`always` (`:296-304`) |
 | SSH enable state and policy | `GET`/`PUT /api/v1/settings/access.ssh`, `.../access.ssh.enabled` | `SshSettings` (`model.rs:79-106`) | default `enabled: false` (`:110-112`) |
 | SSH keys | the authorized-keys collection above | `access.ssh.authorizedKeys` | **every key is a root key** (`docs/design/access.md` §4.1, `mosd/apid/src/routes.rs:1762`); the API response must carry that sentence in a `notice` field for the same reason the pane must carry it |
-| Transient root password | `POST /api/v1/actions/transient-root-password` | `SetTransientRootPassword` (`mosd/mosd/src/bus.rs:365`) | an action, not a setting — see §2.3 |
+| Transient root password | `POST /api/v1/actions/transient-root-password` | `SetTransientRootPassword` (`mosd/mosd/src/bus.rs:703`) | an action, not a setting — see §2.3 |
 | Web admin credential | `GET /api/v1/settings/access.webAdmin` (redacted), `PUT` refused | `WebAdminSettings` (`model.rs:68-71`) | see §3.2 for why the API does not offer a password change in phase 1 |
 | Console | `GET`/`PUT /api/v1/settings/access.console` | `ConsoleSettings` (`model.rs:140-145`) | only the `debug` image ships the shell at all (`model.rs:141-142`) |
-| Power | `POST /api/v1/actions/reboot`, `.../poweroff` | the `/Actions/reboot`/`/Actions/poweroff` items (`mosd/mosd/src/actions.rs:46`, `:47`) | actions — see §2.3 |
-| Reconciler results | `GET /api/v1/state/<name>` for `hostname`, `network`, `sshd`, `wifiClient`, `wifiAp` | one key per reconciler (`mosd/mosd/src/bus.rs:125-132`, `:137-148`) | an entry is either the applied result or `{"error": "..."}`; the API passes both through unchanged |
-| Last power request | `GET /api/v1/state/power` | `{last_action, requested_by}` (`mosd/mosd/src/bus.rs:86-100`) | recorded *before* the action, so it survives the machine going down |
-| Health | `GET /api/v1/state/health` and `GET /api/v1/health` | `health.<component>` (`mosd/mosd/src/bus.rs:231-251`) | the two are different questions — see §2.4 |
-| Dry-run marker | `GET /api/v1/state/dry_run` | present only under `MOSD_DRY_RUN=1` (`mosd/mosd/src/main.rs:43`, `:90-93`) | in that mode no reconcilers are registered at all (`:71-75`), so every other state key is absent |
+| Power | `POST /api/v1/actions/reboot`, `.../poweroff` | the `/Actions/reboot`/`/Actions/poweroff` items (`mosd/mosd/src/actions.rs:46-47`) | actions — see §2.3 |
+| Reconciler results | `GET /api/v1/state/<name>` for `hostname`, `network`, `sshd`, `wifiClient`, `wifiAp` | one key per reconciler (`mosd/mosd/src/bus.rs:437-441`, `:453-455`) | an entry is either the applied result or `{"error": "..."}`; the API passes both through unchanged |
+| Last power request | `GET /api/v1/state/power` | `{last_action, requested_by}` (`mosd/mosd/src/bus.rs:191-192`) | recorded *before* the action, so it survives the machine going down |
+| Health | `GET /api/v1/state/health` and `GET /api/v1/health` | `health.<component>` (`mosd/mosd/src/bus.rs:546`) | the two are different questions — see §2.4 |
+| Dry-run marker | `GET /api/v1/state/dry_run` | present only under `MOSD_DRY_RUN=1` (`mosd/mosd/src/main.rs:21`, `:145`, `:227-228`) | in that mode no reconcilers are registered at all (`:71-75`), so every other state key is absent |
 
 **Where the settings tree and a sensible REST resource genuinely disagree, and
 what was chosen.** Three cases, all decided toward the tree:
@@ -991,9 +991,9 @@ Content-Type: application/json
 | `not_found` | 404 | apid | unknown route, or a collection item that does not exist |
 | `request_invalid` | 400 | apid | the body is not JSON, or not the shape the route takes |
 | `validation_failed` | 422 | apid | apid's own validators rejected it: `valid_hostname` (`routes.rs:262-270`), `validate_iface` (`:273-281`), `validate_transient_password` (`:1240-1255`), `parse_authorized_key` (`:1288`) |
-| `settings_rejected` | 422 | mosd | mosd answered `org.freedesktop.DBus.Error.InvalidArgs` (`mosd/mosd/src/bus.rs:158-160`, `:198`, `:222`) |
-| `settings_io` | 500 | mosd | mosd answered `IOError` (`mosd/mosd/src/bus.rs:161`) |
-| `mosd_failed` | 500 | mosd | mosd answered `Failed` (`mosd/mosd/src/bus.rs:163`, `:176`, `:111`, `:120`) |
+| `settings_rejected` | 422 | mosd | mosd answered `org.freedesktop.DBus.Error.InvalidArgs` (`mosd/mosd/src/bus.rs:489-491`, `:529`, `:541`) |
+| `settings_io` | 500 | mosd | mosd answered `IOError` (`mosd/mosd/src/bus.rs:492`) |
+| `mosd_failed` | 500 | mosd | mosd answered `Failed` (`mosd/mosd/src/bus.rs:493-495`, `:507`, `:258`, `:272`) |
 | `mosd_unreachable` | **503** | apid | the call could not be made at all |
 
 **The question that matters: does the API surface mosd's errors or translate
@@ -1024,9 +1024,9 @@ sites named above — one change, in one file. Sequencing it is §8's.
 **Why translate rather than pass the fdo error through.** Passing it through
 means the client has to know D-Bus to use an HTTP API, and it means the wire
 format of the API is set by a dependency of a dependency. Worse, the messages
-are anyhow chains built by mosd with `{err:#}` (`mosd/mosd/src/bus.rs:176`).
+are anyhow chains built by mosd with `{err:#}` (`mosd/mosd/src/bus.rs:507`).
 mosd carries a contract that one of them — the transient-password path — never
-echoes the password (`mosd/mosd/src/bus.rs:170-177`, restated in
+echoes the password (`mosd/mosd/src/bus.rs:499-507`, restated in
 `mosd/apid/src/bus_client.rs:201-203` and `mosd/apid/src/settings_api.rs:26-30`),
 but that contract is stated for that one method. Making the HTTP body a verbatim
 copy of every chained message from every method extends a one-method promise
@@ -1551,7 +1551,7 @@ anywhere in the crate — `grep -ni csrf mosd/apid/src/*.rs` returns nothing at
 The gate calls `GetSettings("access")` on **every** request before deciding
 anything (`mosd/apid/src/routes.rs:704`), including unauthenticated ones. So an
 unauthenticated flood already costs one D-Bus round trip per request against the
-single lock mosd holds over both trees (`mosd/mosd/src/bus.rs:44-49`, `:183`).
+single lock mosd holds over both trees (`mosd/mosd/src/bus.rs:51-53`, `:514`).
 Adding an API does not create this, but it adds routes that are attractive to
 automate against. This design does not solve it.
 
@@ -3138,7 +3138,7 @@ so.
 the fdo error name into a typed error, and teaches the HTML handlers to stop
 rendering `bus_error` (`mosd/apid/src/routes.rs:650-660`) for a value mosd
 merely rejected. Optionally in the same phase, mosd's `to_fdo`
-(`mosd/mosd/src/bus.rs:156-166`) stops collapsing `NotFound`, `ReadOnly` and
+(`mosd/mosd/src/bus.rs:487-497`) stops collapsing `NotFound`, `ReadOnly` and
 `Validation` (`mosd/mosd-settings/src/error.rs:7-31`) into one
 `InvalidArgs`.
 
@@ -3595,7 +3595,7 @@ instances, not a generality.**
 
 - **Splitting mosd's `to_fdo`.** `NotFound`, `ReadOnly` and
   `Validation` (`mosd/mosd-settings/src/error.rs:7-31`) to stop collapsing into
-  one `InvalidArgs` (`mosd/mosd/src/bus.rs:156-166`). §2.4 emits a single
+  one `InvalidArgs` (`mosd/mosd/src/bus.rs:487-497`). §2.4 emits a single
   `settings_rejected` for all three as a result, and §2.1 makes *"changing which
   `error.code` an existing failure emits"* a major-version bump. So after v1
   ships, this improvement costs a `v2`.
@@ -3747,7 +3747,7 @@ Those are different axes and this document only moved one of them.
 targets.** The gate calls `GetSettings("access")` on **every** request before
 deciding anything, including unauthenticated ones
 (`mosd/apid/src/routes.rs:704`), against the single lock mosd holds over both
-trees (`mosd/mosd/src/bus.rs:44-49`). An unauthenticated flood already costs one
+trees (`mosd/mosd/src/bus.rs:51-53`). An unauthenticated flood already costs one
 D-Bus round trip per request; an API is a thing scripts hammer by design, and
 §3.2 makes that cost structural by *depending* on the read being there.
 
