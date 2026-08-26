@@ -1,7 +1,7 @@
 //! One place that knows how to write a configuration file on this appliance.
 //!
-//! WHY THIS EXISTS. mosd renders configuration into paths that are STATE-backed
-//! bind mounts, and the correct way to write one depends on WHAT was bound:
+//! mosd renders configuration into paths that are STATE-backed bind mounts,
+//! and the correct way to write one depends on WHAT is bound:
 //!
 //!   * a bound DIRECTORY -- /etc/ssh, /etc/hostapd, /etc/wpa_supplicant,
 //!     /etc/containers/systemd, /var/lib/mos. The files inside are ordinary
@@ -17,10 +17,8 @@
 //!     gives the previous value until the next mount. That last failure passes
 //!     every test that does not run on a device.
 //!
-//! Two copies of the temp-and-rename dance already existed -- transient.rs and
-//! the AP reconciler -- and the hostname reconciler needed a third, different
-//! one. Each caller choosing for itself means each caller has to know whether
-//! its path is a mount point, which is not visible in the code.
+//! One place, because a caller choosing for itself has to know whether its own
+//! path is a mount point, and that is not visible in the code.
 
 use std::path::Path;
 
@@ -45,7 +43,7 @@ pub fn write_config(path: &Path, contents: &str, mode: u32) -> Result<()> {
 /// Separate entry point rather than a fourth argument on every call site: one
 /// file in mosd needs an owner (the shadow file transient.rs rewrites) and the
 /// rest do not, and a `None` repeated at every other call reads as if the
-/// question had been considered there.
+/// question had been asked there.
 ///
 /// # Errors
 ///

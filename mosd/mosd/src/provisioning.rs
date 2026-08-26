@@ -496,9 +496,9 @@ mod tests {
             );
         }
 
-        // An absent file is the case that actually happens: a rootfs built
-        // before the profile file was added, or a bind mount that did not come
-        // up. It must not open SSH either.
+        // An absent file is the case that happens in practice: a rootfs
+        // carrying no profile file, or a bind mount that did not come up. It
+        // must not open SSH either.
         let missing = dir.path().join("no-such-profile.conf");
         assert!(!missing.exists());
         assert_eq!(read_profile(&missing), Profile::Prod);

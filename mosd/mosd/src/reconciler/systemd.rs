@@ -424,10 +424,10 @@ pub mod mock {
             // The transition lands on the per-unit entry as well, so a second
             // apply sees what the first left behind for THAT unit rather than
             // for whichever unit was touched last.
-            // PER-UNIT ONLY. An earlier version also moved the shared
-            // `active`/`file` defaults, so starting ONE unit made every unit
-            // the test had not named read back as active -- and a reconciler
-            // that then skipped starting a container looked correct. The
+            // PER-UNIT ONLY: the shared `active`/`file` defaults are NOT
+            // moved. Moving them would make starting ONE unit read back as
+            // active for every unit the test never named, and a reconciler
+            // that then skipped starting a container would look correct. The
             // constructor's pair stays what it is: the answer for units
             // nothing has touched.
             match verb {

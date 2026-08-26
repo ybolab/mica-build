@@ -209,14 +209,13 @@ pub fn hash_password(password: &str) -> Result<String> {
 /// credential must reject every password, not accept any.
 ///
 /// **Test-only.** Nothing outside this module's tests calls it: the access and
-/// connd reconcilers it was written for verify nothing against
-/// `access.device.passwordHash`, and apid's admin login uses its own
-/// `apid::auth::verify_password`. It is kept rather than deleted because two
-/// `ensure_identity` tests use it as their assertion mechanism — "the stored
-/// hash verifies against the stored plaintext" — and deleting it would either
-/// drop those assertions or re-inline Argon2 twice. `#[cfg(test)]` removes the
-/// part that was actually hazardous: a security-control-shaped public API that
-/// nothing had wired up yet.
+/// connd reconcilers verify nothing against `access.device.passwordHash`, and
+/// apid's admin login uses its own `apid::auth::verify_password`. It is kept
+/// rather than deleted because two `ensure_identity` tests use it as their
+/// assertion mechanism — "the stored hash verifies against the stored
+/// plaintext" — and deleting it would either drop those assertions or re-inline
+/// Argon2 twice. `#[cfg(test)]` is what keeps it from being a
+/// security-control-shaped public API that nothing has wired up.
 #[must_use]
 #[cfg(test)]
 fn verify_password(hash: &str, password: &str) -> bool {
@@ -510,9 +509,9 @@ mod tests {
         );
     }
 
-    // The test this whole campaign exists for: nothing generated here may be
-    // a fleet-wide constant, and the two secrets of one device must be
-    // independent draws rather than one string used twice.
+    // The central guard: nothing generated here may be a fleet-wide constant,
+    // and the two secrets of one device must be independent draws rather than
+    // one string used twice.
     #[test]
     fn two_hundred_devices_share_no_secret() {
         const DEVICES: usize = 200;

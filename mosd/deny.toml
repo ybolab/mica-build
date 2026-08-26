@@ -17,8 +17,7 @@ allow = [
     # linked into a shipped binary. It is also a dedication that explicitly
     # does NOT grant patent rights, which is the consideration that actually
     # applies to a device shipped to customers and the reason this entry names
-    # one crate on one chain rather than opening the list to a licence
-    # (RFCT-104):
+    # one crate on one chain rather than opening the list to a licence:
     #
     #   rumqttd -> config -> rust-ini -> ordered-multimap -> dlv-list
     #           -> const-random -> const-random-macro -> tiny-keccak
