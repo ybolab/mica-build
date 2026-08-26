@@ -530,16 +530,25 @@ export async function assembleX64(
     // mos-seed-var's ConditionPathExists keeps it from running at all on a normal
     // boot; it stays for the path where EPHEMERAL has been wiped.
     //
-    // ONE `touch` CREATES IT AND PINS IT, where the shell writes `: >file` and
-    // then touches. Both leave an empty file with that mtime, and both run in the
-    // container -- which is the half that matters, because this is the one file
-    // in the seed this assembler authors and it is written into the tree mke2fs
-    // reads. pinSeededTimes handles its atime and ctime along with every other
-    // seeded inode's; it deliberately does not touch mtime, which is the
+    // CREATED AND THEN PINNED, IN TWO CALLS, where the shell writes `: >file`
+    // and then `touch -h -d`. It is two calls because `touch -h` DOES NOT CREATE
+    // -- measured here, not assumed: `-h` makes touch operate on the link rather
+    // than its target, so on a path that does not exist it fails with
+    //
+    //     touch: setting times of '.../.mos-var-seeded': No such file or directory
+    //
+    // rather than creating an empty file. A first draft of this port collapsed
+    // the two into one call and got exactly that, forty steps into an assembly.
+    //
+    // BOTH RUN IN THE CONTAINER, which is the half that matters: this is the one
+    // file in the seed this assembler authors, and it is written into the tree
+    // mke2fs reads. pinSeededTimes handles its atime and ctime along with every
+    // other seeded inode's; it deliberately does not touch mtime, which is the
     // producer's data everywhere else in the tree and here has no producer but
-    // this line.
+    // these two lines.
     const stamp = join(factoryVarStage, SEED_STAMP)
-    await tb.must(['touch', '-h', '-d', fileMtime, stamp], { note: `could not create and pin ${stamp}` })
+    await tb.must(['touch', stamp], { note: `could not create ${stamp}` })
+    await tb.must(['touch', '-h', '-d', fileMtime, stamp], { note: `could not pin the mtime of ${stamp}` })
     if (!existsSync(join(factoryVarStage, 'lib'))) {
       throw new Error(
         'the staged factory /var has no lib/; seeding EPHEMERAL from it would produce a /var with no '
