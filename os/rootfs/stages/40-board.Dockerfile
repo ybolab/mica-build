@@ -41,15 +41,16 @@
 # that arrives later ("depending on that ordering would make this step pass or
 # fail according to where someone moves it" -- its own comment); hwinit reads
 # the staged board facts. The other direction is the one that could bite, and
-# does not: the two feature RUNs that moved forward read the overlay, which
-# stages/20-install installs two stages earlier.
+# does not: the two feature RUNs that moved forward read the overlay, and
+# stages/20-install installs that before any feature stage runs.
 #
 # WHAT IT COSTS, MEASURED AND NOT ARGUED. The apt transactions still run in the
 # order they ran before -- radios, containers, grub-editenv, kernel -- because
 # the feature stages are ordered to keep that true, and their order is what
 # decides the order of entries in the logs the pack stage carries into
 # /usr/share/factory/var/log. The gate is the content diff in
-# os/rootfs/README.md; M5c's number is recorded there.
+# os/rootfs/README.md, and M5c's number is recorded there: SIX differing
+# entries of 9,241, which is the control's own set -- nothing beyond it.
 #
 # ═══ WHEN 30-40-unsplit's HEADER SAID "THIS FILE IS EMPTY, DELETE IT" ═══
 #
