@@ -273,6 +273,88 @@ where its own shell stages. `cp -a` is `--preserve=all`, which includes xattrs;
 neither container does — so moving that one step would change EPHEMERAL's bytes,
 and the only thing that would report it is the gate.
 
+## The bundle builder
+
+`src/bundle.ts` with `src/bundle-cli.ts` over it — the port of
+`os/update/bundle.sh`, which builds and **signs** the RAUC update bundle a
+device installs.
+
+**The gate is byte-identity against the shell, and it is met.** Same board
+definition, same `_out/cx3576/` inputs, same BSP kernel, same
+`os/update/rauc/.devkeys`, shell builder and TypeScript builder:
+
+```
+114425856 bytes  d7506b6279e6f3643da8938d0be8a025abe01bb1ea10ad57abcd9ad753d86aea   make os-bundle-cx3576  (×2)
+114425856 bytes  d7506b6279e6f3643da8938d0be8a025abe01bb1ea10ad57abcd9ad753d86aea   run.sh --bundle
+```
+
+**The comparison is the PAYLOAD, and the shell is what says so.** The squashfs
+at the head of the bundle is a pure function of the inputs; the bytes after it
+are deliberately not — rauc salts the bundle's own dm-verity hash tree at random
+and the CMS signature carries a `signingTime`. The `hash` field `rauc info`
+reports moved on every run above; the payload digest did not. `HARNESS.md`
+carries the recipe, the live one-byte control, and the checks made on the
+prebuilt inputs before they were trusted.
+
+`os/update/bundle.sh` carries **28** `echo "error:` sites; the port has **31**
+refusals, and every one is driven from the failing side with a positive control
+beside it.
+
+### The two it refuses that the shell does not
+
+**The empty credit read.** `bundle.sh` checks the boot-attempt credits with
+
+```sh
+done < <(grep -oE 'BOOT_[AB]_LEFT [0-9]+' "${BOOT_CMD}" | awk '{print $2}')
+```
+
+and with `boot.cmd` missing, or carrying no credit, grep produces no stdout, the
+loop body never runs and the guard passes having compared nothing — before
+`mkimage` dies on the same path. That is how `os-bundle-cx3576` stayed broken
+through two merges earlier in this campaign. `requireBootAttempts` refuses an
+empty read by name and returns the credits it saw, so a caller can say **four**
+rather than "exit 0". It can only turn a vacuous pass into a refusal.
+
+`os/mkimage-v2.sh`'s copy of the same guard has the same shape and is covered by
+accident — `checkBootCmdTokens` runs next and refuses a `boot.cmd` with no
+`rauc.slot=`. The bundle path has no second guard, which is why the refusal is
+added there rather than in the range check both share.
+
+**A host route that cannot carry the shipped rauc.** The bundle toolset gets its
+rauc by `docker cp`, and declares `provenance: 'shipped'` — which is what
+`src/tools/rauc.ts` checks before it will write a bundle at all. On the host
+route there is nothing to copy a binary into, so that claim would be made about
+whatever `rauc` PATH resolved to first. `openBundleToolbox` measures the route
+and refuses the mismatch by name, before anything is written. Commit 9a43a59:
+a bundle built by rauc 1.8 that the device's 1.13 refused, "found by failure
+rather than by a check".
+
+### What decides the bytes, and is therefore transcribed
+
+- **The mcopy order** — `Image rk3576-src.dtb boot.scr mos-verity-a.env
+  mos-verity-b.env` — because that is the order they land in the FAT directory.
+  A written-out list in both places; nothing globs.
+- **No `-i` and no slot label on `mkfs.vfat`.** One image, two possible
+  destinations: the payload is installed into whichever boot slot is inactive,
+  so it must not carry that slot's FAT identity. `--invariant` is what keeps the
+  volume id off the wall clock instead.
+- **Every staged file touched to `FILE_MTIME` before `mcopy`**, because `mcopy
+  -m` takes each entry's mtime from its source.
+- **rauc's `--mksquashfs-args`, verbatim.** rauc drives mksquashfs itself and
+  without them stamps the payload with the wall clock, the build container's uid
+  map and a thread count.
+
+### Both bootloaders, one script
+
+`bundle.sh` is a single script whose two branches differ only in what a boot
+slot holds — a compiled `boot.scr` plus both slots' verity env files on U-Boot,
+the kernel, the initrd and a GRUB cmdline fragment on grub — which is the one
+thing RFCT-106 made a board fact. So this is one module with one branch on
+`RAUC_BOOTLOADER`, and `--bundle` takes a board where `--mkimage-v2` and
+`--mkimage-x64` are separate arms. The grub branch's refusals are driven from
+the failing side; **no x64 bundle has been built by either implementation**,
+because RFCT-112 gates cx3576 and this tree has no x64 rootfs to bundle.
+
 ## The toolbox: how an external tool is run
 
 `src/toolbox.ts` is one function with two routes, which is `os/verify/run.sh`'s
@@ -402,6 +484,9 @@ bash os/build/run.sh --mkimage-v2           # assemble the cx3576 image
 bash os/build/run.sh --mkimage-v2 --help
 bash os/build/run.sh --mkimage-x64          # assemble the x64 image
 bash os/build/run.sh --mkimage-x64 --help
+bash os/build/run.sh --bundle               # build and SIGN the update bundle
+bash os/build/run.sh --bundle 1.2.3         # ... at a version
+bash os/build/run.sh --bundle --help
 
 bash os/build/run.sh --build-rootfs --board x64 --plan       # decide the chain
 bash os/build/run.sh --build-rootfs --board x64 --plan --without containers
@@ -416,18 +501,25 @@ feature. `os/rootfs/stages/README.md` has the whole mechanism; the caller-facing
 route is `os/rootfs/build-v2.sh`, which turns `WITH_CONTAINERS=0`, `WITH_MOSD=0`
 and `MOS_ROOTFS_WITHOUT` into these flags.
 
-`--mkimage-v2` and `--mkimage-x64` are **modes**, each recognised only in first
-position: anywhere else one would be forwarded to `bun test`, which ignores an
-unknown flag and reports a green suite in answer to a request to assemble an
-image. That is `os/verify/run.sh`'s rule, driven there from the failing side and
-driven here for all three modes — `bash os/build/run.sh filter --mkimage-x64`
-exits 1 by name, as do the other two.
+`--mkimage-v2`, `--mkimage-x64` and `--bundle` are **modes**, each recognised
+only in first position: anywhere else one would be forwarded to `bun test`,
+which ignores an unknown flag and reports a green suite in answer to a request
+to assemble an image. That is `os/verify/run.sh`'s rule, driven there from the
+failing side and driven here for all four modes — `bash os/build/run.sh filter
+--mkimage-x64` exits 1 by name, as do the other three.
 
 The two assemblers are two arms of one dispatch rather than one arm with a
 `--board` flag, for the reason the two assembler sections above give: the boards
 share a layout format and a slot model and nothing about their boot chains. One
 writes a U-Boot loader at a fixed sector, the other builds a standalone EFI
-binary, and a mistake in either would otherwise be a mistake in both.
+binary, and a mistake in either would otherwise be a mistake in both. `--bundle`
+DOES take a board, and that is not an inconsistency: `os/update/bundle.sh` is
+one script whose two branches differ only in what a boot slot holds, which
+RFCT-106 made a board fact.
+
+`make os-bundle-cx3576` still runs the shell. It is the oracle the port is
+measured against and RFCT-112 deletes it last; until then `--bundle` is the
+TypeScript entry point.
 
 `run.sh` finds bun — on the host, or failing that in the container pinned as
 `IMAGE_BUN_1` — installs the dev dependencies if `node_modules/` is absent,
@@ -485,10 +577,13 @@ src/layout-x64.ts          x64's DERIVED layout -- a second arithmetic, not a se
 src/grub-x64.ts            grub.cfg's three guards and the per-slot cmdline fragment, all pure
 src/mkimage-x64.ts         the x64 assembler
 src/mkimage-x64-cli.ts     its host half
+src/bundle.ts              the signed RAUC update bundle, both bootloaders
+src/bundle-cli.ts          its host half: the signing material, the epoch name, -latest
 src/stages.ts              os/rootfs/stages/ -> a chain: order, tags, args, and what is declined
 src/stages-cli.ts          the only file here that runs docker buildx
-src/**/*.test.ts           543 tests; every refusal has a positive control beside it
+src/**/*.test.ts           661 tests; every refusal has a positive control beside it
 ```
 
 `HARNESS.md` carries how each guard was driven from the failing side, both bash
-oracles for the geometry, both byte-identity gates, and what M6d and M6e need.
+oracles for the geometry, all three byte-identity gates, and what M6e needs to
+delete the shell.

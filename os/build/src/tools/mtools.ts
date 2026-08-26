@@ -32,11 +32,28 @@ export interface FatSpec {
   readonly image: string
   /** `-n`. BOOT_A_FAT_LABEL and friends. */
   readonly label: string
-  /** `-i`. The volume ID, hex, pinned in the board definition. */
-  readonly volumeId: string
+  /**
+   * `-i`. The volume ID, hex, pinned in the board definition.
+   *
+   * OPTIONAL, AND ITS ABSENCE IS A DECISION ONE CALLER MAKES. Both assemblers
+   * pin it, because a slot's filesystem is that slot's: BOOT_A carries
+   * C3576003 and BOOT_B C3576004, and an image whose volume id came out
+   * different from the pinned one is a reproducibility failure only a byte
+   * comparison would see. os/update/bundle.sh pins NEITHER label nor volume
+   * id, and says why: "one image, two possible destinations" -- a bundle's
+   * boot payload is installed into whichever boot slot is inactive, so it
+   * cannot carry that slot's FAT identity. `--invariant` is what keeps the
+   * volume id off the wall clock in that case, and it is passed either way.
+   */
+  readonly volumeId?: string
 }
 
 export function mkfsVfatArgs(spec: FatSpec): string[] {
+  if (spec.volumeId === undefined) {
+    // No -i. --invariant still applies: without it mkfs.vfat derives the
+    // volume id from the current time and the filesystem differs per build.
+    return ['mkfs.vfat', '--invariant', '-F', '32', '-n', spec.label, spec.image]
+  }
   if (!/^[0-9A-Fa-f]{8}$/.test(spec.volumeId)) {
     // mkfs.vfat takes -i as hex and a malformed one is not always refused;
     // a volume ID that came out different from the one pinned would be a

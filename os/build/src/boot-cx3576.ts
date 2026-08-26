@@ -199,6 +199,27 @@ export interface VerityEnv {
 }
 
 /**
+ * The two verity tokens a slot's kernel cmdline carries, as the shell's two
+ * `sed -n` substitutions yield them.
+ *
+ * SEPARATE FROM THE GUARDS THAT READ THEM, because two scripts read the same
+ * two tokens out of the same two files and must agree about what they say:
+ * os/mkimage-v2.sh's mkverityenv() and os/update/bundle.sh's
+ * write_verity_env(). They REFUSE differently -- the assembler gives
+ * dm-mod.create= and dm-mod.waitfor= a sentence each, the bundle builder rolls
+ * them into one, and the bundle builder additionally requires the pinned salt
+ * -- so the refusals stay two functions. The EXTRACTION is one, so a cmdline
+ * carrying two tables cannot mean one thing to the image and another to the
+ * bundle installed onto it.
+ */
+export function verityCmdlineFields(cmdline: string): { create: string, waitfor: string } {
+  return {
+    create: lastPerLine(cmdline, /dm-mod\.create="[^"]*"/g),
+    waitfor: lastPerLine(cmdline, /dm-mod\.waitfor=[^ \n]*/g),
+  }
+}
+
+/**
  * One slot's mos-verity-<slot>.env, lifted out of that slot's kernel cmdline.
  *
  * The verity table is NOT re-derived here: it is taken from the cmdline the
@@ -216,8 +237,7 @@ export function verityEnvFor(options: {
   rootHash: string
   producer: string
 }): VerityEnv {
-  const create = lastPerLine(options.cmdline, /dm-mod\.create="[^"]*"/g)
-  const waitfor = lastPerLine(options.cmdline, /dm-mod\.waitfor=[^ \n]*/g)
+  const { create, waitfor } = verityCmdlineFields(options.cmdline)
 
   if (create === '') {
     throw new Error(`${options.cmdlinePath} carries no dm-mod.create= verity table; fix ${options.producer}`)

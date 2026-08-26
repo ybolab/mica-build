@@ -224,7 +224,18 @@ export function bundleToolset(options: BundleToolsetOptions = {}): Toolset & { p
       'squashfs-tools', 'dosfstools', 'mtools', 'u-boot-tools', 'jq',
       'libglib2.0-0t64', 'libjson-glib-1.0-0', 'libfdisk1', 'libssl3t64',
     ],
-    tools: ['rauc', 'mksquashfs', 'mcopy', 'mkimage', 'jq'],
+    // rauc, mksquashfs, mcopy, mkimage and jq are the shell's own list -- the
+    // five it names in host_can_build(). The other five are the coreutils and
+    // dosfstools binaries os/update/bundle.sh runs INSIDE this container after
+    // it has started: `truncate -s <N>M`, `mkfs.vfat --invariant`, two `cp`s of
+    // the kernel and the slot image, and `find ... -exec touch -h -d` to pin
+    // every staged file to FILE_MTIME. They are asserted for the reason the
+    // whole probe exists -- `mcopy -m` takes each entry's mtime from its
+    // source, so a missing `touch` is not a missing binary, it is a FAT
+    // directory stamped with the wall clock -- and because dosfstools provides
+    // mkfs.vfat while the base image provides the rest, so "the packages
+    // installed" is not one fact.
+    tools: ['rauc', 'mksquashfs', 'mcopy', 'mkimage', 'jq', 'mkfs.vfat', 'truncate', 'cp', 'find', 'touch'],
     carry: [{ from: bin, to: '/usr/local/bin/rauc', mode: '0755' }],
     provenance: 'shipped',
   }
