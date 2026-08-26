@@ -94,7 +94,7 @@ os/
 │   │   ├── 10-base/           # system-essential: debootstrap floor, mounts, machine-id,
 │   │   │                      #   health, shadow-reconcile
 │   │   ├── 20-install/        # first-boot/install: mos-seed-*, repart.d
-│   │   ├── 30-feature-*/      # one per switchable feature: containers, mqtt, radios, ssh
+│   │   ├── 30-feature-*/      # one per switchable feature: containers, mqtt, radios
 │   │   ├── 40-board/          # board overlay + firmware (parameterised by boards/<b>)
 │   │   └── 90-pack/           # squashfs+verity export, determinism normalisation
 │   ├── scripts/               # shell blobs extracted from the old Dockerfile.v2
@@ -162,11 +162,18 @@ on the mutated fixtures; the shell verifier is deleted only at full parity.
 into the `stages/` chain above; the TS build driver (from M3
 infrastructure) sequences them via local image tags; inline shell blobs land
 in `rootfs/scripts/`; the `os/health/` duplicates collapse into the overlay
-copy; feature selection becomes stage selection. Gates: the assembled image
-is byte-identical where achievable — if apt-layer reordering makes that
-unattainable, the gate falls back to full verifier parity plus an explicitly
-anchored new baseline commit; negative test: dropping a feature stage must
-turn the corresponding verifier checks red.
+copy; feature selection becomes stage selection. **ssh is NOT one of those
+features** — amended 2026-08-26 at M5 close, **by the user**: *"ssh belongs in
+base, it is core."* It is installed by `10-base` and `20-install`, and
+`rootfs/scripts/package-manager-purge.sh`'s keep-list names `sshd ssh scp`, so
+an ssh-less chain does not merely ship without sshd, it fails to build. A
+`30-feature-ssh` would have been a switch with nothing behind it, and would have
+turned "every mos image carries sshd" from a contract into an accident.
+RFCT-111, "ssh is a floor capability, not a feature", has the measurements.
+Gates: the assembled image is byte-identical where achievable — if apt-layer
+reordering makes that unattainable, the gate falls back to full verifier parity
+plus an explicitly anchored new baseline commit; negative test: dropping a
+feature stage must turn the corresponding verifier checks red.
 
 **M6 — the assemblers, ported under byte-identity.** `mkimage-v2.sh`,
 `mkimage-x64.sh`, `bundle.sh` and build orchestration move to TS in
@@ -204,6 +211,20 @@ and M5.
 - **Per-stage chaining loses single-file BuildKit cross-stage parallelism
   and shared cache mounts.** Accepted (decision 2): the rootfs chain is
   already linear; per-stage local images cache naturally.
+- **Per-stage chaining also costs the QEMU-bundled `docker-container`
+  builder, so cx3576 CI waits on runner binfmt.** Accepted 2026-08-26 **by
+  the user**, as a known cost of decision 2. Each stage opens
+  `FROM ${MOS_STAGE_PREV}` — a local image tag — and only the `docker` driver
+  can resolve one; a `docker-container` builder answers "pull access denied"
+  about a registry for an image that is present (measured, RFCT-111 M5b).
+  That builder was how an amd64 host built arm64 without host `binfmt_misc`,
+  so cx3576 now needs the runner to provide binfmt and **cannot be built
+  without it** — `os/rootfs/build-v2.sh` refuses up front with the install
+  command rather than failing inside BuildKit. **No registry is introduced
+  into the build path** to work around it: a local registry would resolve the
+  stage tags, and it would add a daemon, a lifetime and a network dependency
+  to a build that has none. `os/rootfs/stages/README.md`, "The builder must
+  resolve local tags", carries the measurement and the consequence to expect.
 - **Byte-identity across the M5 split may be unattainable** if package
   install order changes layer content; the fallback gate (verifier parity +
   anchored baseline) is defined up front, not improvised.
@@ -221,6 +242,22 @@ containerisation, doc citation updates. No change to device-side runtime
 behaviour, image content contracts (outside explicitly anchored baselines),
 `board/` BSP builds (digest pins only), `mosd/` Rust sources, or
 `test/apid-api`.
+
+**Amendment, 2026-08-26 — one line of `test/apid-api`, by the user.** The
+`test/apid-api` exclusion is lifted for exactly one change: `run.sh:122`'s
+`BUN_IMAGE="${MOS_APID_BUN_IMAGE:-oven/bun:1}"` now defaults to `IMAGE_BUN_1`.
+That was the last floating image reference in the repository and the only one of
+the twenty R6 found that R6 could not close — it wired it, then reverted the
+wiring, because a finding does not widen a boundary the plan drew, and escalated
+instead. `oven/bun:1` is a MAJOR-version tag that upstream repoints onto every
+1.x release, and the harness it runs decides whether apid's API is judged
+conformant.
+
+**The amendment is this line and nothing else.** `mosd/` Rust sources, `board/`
+BSP content, device-side runtime behaviour and the rest of `test/apid-api` all
+remain excluded. Recorded here rather than left implicit so that the boundary
+reads as deliberately moved by the user, once, rather than silently crossed —
+the discipline every other clause change in this campaign follows.
 
 ## Alternatives
 
