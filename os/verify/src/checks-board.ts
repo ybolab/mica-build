@@ -62,12 +62,12 @@
 
 import { existsSync, readdirSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { loadBoard, type Board } from './board.ts'
+import type { Board } from './board.ts'
+import { boardsWhere, hasFirmware, hasHwinit, hasLed, hasRadio, isUBoot, SHIPPED } from './board-scope.ts'
 import { entry, ETC_UNITS, packedRoot, wantsLink } from './checks-root.ts'
 import type { CheckCase, ImageContext } from './checks.ts'
 import { fatList, readBytes } from './image.ts'
 import type { CheckResult } from './parity.ts'
-import { boardEnvPath, requireShippedBoards } from './paths.ts'
 import { ToolOutputError } from './tools.ts'
 import { skipped, verdict } from './verdict.ts'
 
@@ -75,29 +75,10 @@ import { skipped, verdict } from './verdict.ts'
 // the shipped boards, and the predicates the families are scoped by
 // ---------------------------------------------------------------------------
 
-/**
- * Every board under `os/boards/`, modelled once at module load.
- *
- * `requireShippedBoards` refuses an empty answer, which here would mean a
- * register that generated no board-conditional check at all and then reported
- * no divergence about any of them.
- */
-const SHIPPED: readonly Board[] = requireShippedBoards().map(name => loadBoard(boardEnvPath(name)))
-
-function boardsWhere(predicate: (board: Board) => boolean): string[] {
-  return SHIPPED.filter(predicate).map(b => b.name)
-}
-
-/** `is_uboot_board` (os/verify-image-v2.sh:233), asked of a definition. */
-const isUBoot = (board: Board): boolean => board.bootloader === 'uboot'
-/** `board_has_radio` (:241). */
-const hasRadio = (board: Board, kind: string): boolean => (board.radios ?? []).includes(kind)
-/** `board_has_hwinit` (:247). */
-const hasHwinit = (board: Board, fact: string): boolean => (board.hwinitConfs ?? []).includes(fact)
-/** `[ -n "${BOARD_FIRMWARE_FILES}" ]` (:2488). Declared-empty is not absent. */
-const hasFirmware = (board: Board): boolean => (board.firmwareFiles ?? []).length > 0
-/** `[ "${BOARD_HAS_STATUS_LED}" = "1" ]` (:2720). A string compare, as the oracle spells it. */
-const hasLed = (board: Board): boolean => board.hasStatusLed === '1'
+// The predicates and the derived board lists live in `board-scope.ts` since
+// M4f: batch 4a's bootloader-environment and Wi-Fi families need the same
+// three, and a second spelling of `is_uboot_board` beside this one is the
+// drift M4c found twice as a defect. Nothing was copied -- they MOVED.
 
 // ---------------------------------------------------------------------------
 // the three shapes a board-conditional conclusion takes
