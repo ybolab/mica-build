@@ -14,9 +14,14 @@ import { basename, join } from 'node:path'
 import {
   auditChain,
   buildArgv,
+  DEFAULT_OCI_TARGET,
   DEFAULT_TERMINAL_TARGET,
   discoverStages,
+  factoryRootRef,
   featureOf,
+  ociExport,
+  ociRecord,
+  OCI_ARCHIVE_NAME,
   planChain,
   PREV_ARG,
   readStageFile,
@@ -51,10 +56,16 @@ function scratch(files: Record<string, string>): string {
 
 const FIRST = `FROM debian\nRUN true\n`
 const LINK = `ARG ${PREV_ARG}\nFROM \${${PREV_ARG}}\nRUN true\n`
-const TERMINAL = `ARG ${PREV_ARG}\nFROM \${${PREV_ARG}} AS closed\nRUN true\nFROM scratch AS artifact\nCOPY --from=closed /x /\n`
+// The terminal stage has TWO export surfaces (RFCT-113 M7): `artifact`, the
+// files the assembler reads, and `factory-root`, the packed root as an image.
+// NO_OCI keeps the pre-M7 shape so the fault for a missing second surface has
+// something to fire on -- a fixture that always satisfies a check is how a
+// check stops being one.
+const NO_OCI = `ARG ${PREV_ARG}\nFROM \${${PREV_ARG}} AS closed\nRUN true\nFROM scratch AS artifact\nCOPY --from=closed /x /\n`
+const TERMINAL = `${NO_OCI}FROM scratch AS ${DEFAULT_OCI_TARGET}\nCOPY --from=closed / /\n`
 
 function messages(stages: readonly StageFile[]): string {
-  return auditChain(stages, DEFAULT_TERMINAL_TARGET)
+  return auditChain(stages, DEFAULT_TERMINAL_TARGET, DEFAULT_OCI_TARGET)
     .map((f) => f.message)
     .join('\n')
 }
@@ -87,7 +98,7 @@ describe('readStageFile', () => {
 
   test('reads named targets and not unnamed ones', () => {
     const s = readStageFile('/x/90-p.Dockerfile', TERMINAL)
-    expect(s.targets).toEqual(['closed', 'artifact'])
+    expect(s.targets).toEqual(['closed', 'artifact', DEFAULT_OCI_TARGET])
   })
 
   test('reads a target whose FROM carries flags BEFORE the image', () => {
@@ -113,7 +124,7 @@ describe('readStageFile', () => {
 
 describe('auditChain refuses, by name', () => {
   test('a directory with no stages at all', () => {
-    const faults = auditChain([], DEFAULT_TERMINAL_TARGET)
+    const faults = auditChain([], DEFAULT_TERMINAL_TARGET, DEFAULT_OCI_TARGET)
     expect(faults).toHaveLength(1)
     expect(faults[0]!.message).toContain('holds no *.Dockerfile')
   })
@@ -160,13 +171,24 @@ describe('auditChain refuses, by name', () => {
     expect(messages(discoverStages(dir))).toContain(`defines no \`AS ${DEFAULT_TERMINAL_TARGET}\``)
   })
 
+  // The pre-M7 terminal stage, which exported the assembler's files and nothing
+  // else. It is a valid chain by every other rule here, which is exactly why
+  // this fault is worth having: the build succeeds, the assembler gets its
+  // image, and the only thing missing is that nothing was ever executed.
+  test('a last stage that exports files but no OCI image of the root', () => {
+    const dir = scratch({ '10-base.Dockerfile': FIRST, '90-pack.Dockerfile': NO_OCI })
+    const said = messages(discoverStages(dir))
+    expect(said).toContain(`defines no \`AS ${DEFAULT_OCI_TARGET}\``)
+    expect(said).not.toContain(`defines no \`AS ${DEFAULT_TERMINAL_TARGET}\``)
+  })
+
   test('and accepts the shape the real chain has', () => {
     const dir = scratch({
       '10-base.Dockerfile': FIRST,
       '20-install.Dockerfile': LINK,
       '90-pack.Dockerfile': TERMINAL,
     })
-    expect(auditChain(discoverStages(dir), DEFAULT_TERMINAL_TARGET)).toEqual([])
+    expect(auditChain(discoverStages(dir), DEFAULT_TERMINAL_TARGET, DEFAULT_OCI_TARGET)).toEqual([])
   })
 })
 
@@ -207,7 +229,7 @@ describe('planChain', () => {
     scratch({
       '10-base.Dockerfile': `ARG TRIXIE\nFROM \${TRIXIE}\nARG MOS_PROFILE=dev\nRUN true\n`,
       '20-install.Dockerfile': `ARG ${PREV_ARG}\nFROM \${${PREV_ARG}}\nARG OVERLAY_DIR\nRUN true\n`,
-      '90-pack.Dockerfile': `ARG ${PREV_ARG}\nARG BOOKWORM\nFROM \${${PREV_ARG}} AS closed\nRUN true\nFROM scratch AS artifact\nCOPY --from=closed /x /\n`,
+      '90-pack.Dockerfile': `ARG ${PREV_ARG}\nARG BOOKWORM\nFROM \${${PREV_ARG}} AS closed\nRUN true\nFROM scratch AS artifact\nCOPY --from=closed /x /\nFROM scratch AS ${DEFAULT_OCI_TARGET}\nCOPY --from=closed / /\n`,
     })
   const supplied = {
     TRIXIE: 'debian@sha256:aaa',
@@ -347,6 +369,161 @@ describe('buildArgv', () => {
   })
 })
 
+// RFCT-113 M7: the packed root exported as an OCI image.
+//
+// Everything here is about the three ways the export can succeed and still be
+// worthless -- the wrong stage, an unusable epoch, and a cache flag that would
+// silently export a SECOND root -- because none of the three shows up as a
+// failure at the time.
+describe('ociExport -- the factory root as an OCI image', () => {
+  const dir = () =>
+    scratch({
+      '10-base.Dockerfile': `ARG TRIXIE\nFROM \${TRIXIE}\nRUN true\n`,
+      '90-pack.Dockerfile': TERMINAL,
+    })
+  const plan = () => planChain(discoverStages(dir()), { board: 'x64', supplied: { TRIXIE: 'x' } })
+  const opts = {
+    context: '/repo',
+    platform: 'linux/amd64',
+    board: 'x64',
+    dest: '/out/x64',
+    sourceDateEpoch: '1577836800',
+  }
+
+  test('the whole command line, and where the archive lands', () => {
+    const builds = plan()
+    const oci = ociExport(builds[1]!, opts)
+    expect(oci.archive).toBe(`/out/x64/${OCI_ARCHIVE_NAME}`)
+    expect(oci.ref).toBe('localhost/mos-factory-root:x64')
+    expect(oci.argv).toEqual([
+      'buildx',
+      'build',
+      '--platform',
+      'linux/amd64',
+      '-f',
+      builds[1]!.path,
+      '--build-arg',
+      `${PREV_ARG}=mos-rootfs-stage:x64-10-base`,
+      '--target',
+      DEFAULT_OCI_TARGET,
+      '--provenance=false',
+      '--sbom=false',
+      '--output',
+      `type=oci,dest=/out/x64/${OCI_ARCHIVE_NAME},name=localhost/mos-factory-root:x64,rewrite-timestamp=true`,
+      '/repo',
+    ])
+  })
+
+  // The epoch is not a flag, so nothing downstream can refuse it: buildkit
+  // reads SOURCE_DATE_EPOCH from the environment and an unparseable value is
+  // simply an absent one, which is the wall clock in the config and in every
+  // layer entry. Measured: two cold builds one second apart differed in the
+  // layer diffID and in nothing else.
+  test('the epoch travels in the environment, not the argv', () => {
+    const oci = ociExport(plan()[1]!, opts)
+    expect(oci.env).toEqual({ SOURCE_DATE_EPOCH: '1577836800' })
+    expect(oci.argv.join(' ')).not.toContain('SOURCE_DATE_EPOCH')
+  })
+
+  test('the three flags that make it reproduce are all present', () => {
+    // Each was measured to be load-bearing on this host, and each is invisible
+    // in the output when it is missing -- an archive with a wall-clock layer
+    // and one without look identical to `docker load`.
+    const line = ociExport(plan()[1]!, opts).argv.join(' ')
+    expect(line).toContain('rewrite-timestamp=true')
+    expect(line).toContain('--provenance=false')
+    expect(line).toContain('--sbom=false')
+  })
+
+  test('an epoch that is not a count of seconds is refused, including the touch(1) spelling', () => {
+    // `@1577836800` is how os/boards/<board>/board.env writes the same instant
+    // for touch. Passed through unstripped it would reach buildkit as garbage
+    // and be ignored, so it is refused here where there is still someone to
+    // tell.
+    for (const bad of ['@1577836800', '', 'now', '2020-01-01', '15778 36800']) {
+      expect(() => ociExport(plan()[1]!, { ...opts, sourceDateEpoch: bad })).toThrow(
+        /not a count of seconds/,
+      )
+    }
+    expect(() => ociExport(plan()[1]!, opts)).not.toThrow()
+  })
+
+  test('a stage that is not the terminal one is refused', () => {
+    // An OCI image of 10-base would be a root with no podman, no rauc and no
+    // mosd in it -- and every smoke check for a binary that is not there has to
+    // be written to notice that, or it passes.
+    expect(() => ociExport(plan()[0]!, opts)).toThrow(/not the terminal stage/)
+  })
+
+  test('--no-cache never reaches it, whatever the chain was built with', () => {
+    // The chain uses --no-cache for the determinism gate. This invocation must
+    // read the cache that run just filled: cold, it would rebuild all nine
+    // stages and export a root that is NOT the one the assembler was handed.
+    expect(ociExport(plan()[1]!, opts).argv).not.toContain('--no-cache')
+  })
+
+  test('the builder is passed through when there is one, and absent when there is not', () => {
+    expect(ociExport(plan()[1]!, { ...opts, builder: 'mos-amd64' }).argv.slice(0, 4)).toEqual([
+      'buildx',
+      'build',
+      '--builder',
+      'mos-amd64',
+    ])
+    expect(ociExport(plan()[1]!, opts).argv).not.toContain('--builder')
+  })
+
+  test('the reference is board-scoped, so two boards cannot overwrite each other', () => {
+    expect(factoryRootRef('x64')).not.toBe(factoryRootRef('cx3576'))
+    expect(ociExport(plan()[1]!, { ...opts, board: 'cx3576' }).ref).toBe(
+      'localhost/mos-factory-root:cx3576',
+    )
+  })
+
+  test('a custom --oci-target reaches --target and nothing else', () => {
+    const argv = ociExport(plan()[1]!, { ...opts, ociTarget: 'somewhere-else' }).argv
+    expect(argv[argv.indexOf('--target') + 1]).toBe('somewhere-else')
+  })
+})
+
+describe('ociRecord', () => {
+  const fields = {
+    board: 'x64',
+    ref: 'localhost/mos-factory-root:x64',
+    platform: 'linux/amd64',
+    target: DEFAULT_OCI_TARGET,
+    archive: '/out/x64/factory-root.oci',
+    bytes: 123456789,
+    sha256: 'a'.repeat(64),
+    sourceDateEpoch: '1577836800',
+  }
+
+  test('records what was exported, as tab-separated fields a reader can grep', () => {
+    const text = ociRecord(fields)
+    const kv = new Map(
+      text
+        .split('\n')
+        .filter((l) => l && !l.startsWith('#'))
+        .map((l) => l.split('\t') as [string, string]),
+    )
+    expect(kv.get('ref')).toBe('localhost/mos-factory-root:x64')
+    expect(kv.get('platform')).toBe('linux/amd64')
+    expect(kv.get('sha256')).toBe('a'.repeat(64))
+    expect(kv.get('bytes')).toBe('123456789')
+    expect(kv.get('source-date-epoch')).toBe('1577836800')
+    // The basename, not the path the exporting host happened to use: the
+    // record travels with the archive it names.
+    expect(kv.get('archive')).toBe('factory-root.oci')
+  })
+
+  test('says in the file that the hash is not a baseline', () => {
+    // os/rootfs/README.md's reasoning, carried to where someone would actually
+    // meet the number. A cold rootfs build does not reproduce itself, so a
+    // reader who takes this hash as an expectation has a check that fails on
+    // every honest rebuild -- and would then be deleted rather than understood.
+    expect(ociRecord(fields)).toContain('NOT a baseline')
+  })
+})
+
 describe('selectStages -- RFCT-111 stage selection, which replaced the WITH_* args', () => {
   // The four-feature shape the shipped chain has, in miniature. Every case
   // below is driven from this one directory so that "it dropped the right file"
@@ -388,7 +565,7 @@ describe('selectStages -- RFCT-111 stage selection, which replaced the WITH_* ar
     const stages = discoverStages(dir())
     const kept = selectStages(stages, ['containers', 'mosd', 'radios'])
     expect(kept.map((s) => s.name)).toEqual(['10-base', '40-board', '90-pack'])
-    expect(auditChain(kept, DEFAULT_TERMINAL_TARGET)).toEqual([])
+    expect(auditChain(kept, DEFAULT_TERMINAL_TARGET, DEFAULT_OCI_TARGET)).toEqual([])
   })
 
   test('the empty selection is the whole chain, and is the same array content', () => {
@@ -429,7 +606,7 @@ describe('selectStages -- RFCT-111 stage selection, which replaced the WITH_* ar
         '90-pack.Dockerfile': TERMINAL,
       }),
     )
-    expect(auditChain(ok, DEFAULT_TERMINAL_TARGET)).toEqual([])
+    expect(auditChain(ok, DEFAULT_TERMINAL_TARGET, DEFAULT_OCI_TARGET)).toEqual([])
   })
 
   test('refuses a feature name nothing matches, and lists the ones that exist', () => {
@@ -571,6 +748,8 @@ describe('parseArgs', () => {
       '/out/x64',
       '--platform',
       'linux/amd64',
+      '--source-date-epoch',
+      '1577836800',
       '--arg',
       'MOS_ARCH=amd64',
       '--arg',
@@ -578,7 +757,34 @@ describe('parseArgs', () => {
     ])
     expect(o.board).toBe('x64')
     expect(o.dest).toBe('/out/x64')
+    expect(o.sourceDateEpoch).toBe('1577836800')
+    expect(o.ociTarget).toBe(DEFAULT_OCI_TARGET)
     expect(o.args).toEqual({ MOS_ARCH: 'amd64', BOARD_RADIOS: '' })
+  })
+
+  test('a real build with no --source-date-epoch is refused; a plan without one is not', () => {
+    // Not defaulted to `now`, and not defaulted to the mtime of anything.
+    // buildkit takes this from the ENVIRONMENT, so an absent value produces an
+    // archive rather than an error -- one whose config and whose every layer
+    // entry carry the wall clock, and which therefore agrees with no other
+    // build of the same tree. The failure that would be seen first is a
+    // determinism gate with nothing to compare, days later.
+    expect(() => parseArgs(['--board', 'x64', '--dest', '/out/x64'])).toThrow(
+      /--source-date-epoch is required/,
+    )
+    expect(parseArgs(['--board', 'x64', '--plan']).sourceDateEpoch).toBeUndefined()
+  })
+
+  test('--oci-target overrides the target, and refuses to swallow the next flag', () => {
+    expect(
+      parseArgs(['--board', 'x64', '--plan', '--oci-target', 'other']).ociTarget,
+    ).toBe('other')
+    expect(() => parseArgs(['--board', 'x64', '--oci-target', '--plan'])).toThrow(
+      /--oci-target needs a value/,
+    )
+    expect(() => parseArgs(['--board', 'x64', '--source-date-epoch', '--plan'])).toThrow(
+      /--source-date-epoch needs a value/,
+    )
   })
 
   test('an empty --arg value is a value, not a missing one', () => {
@@ -605,6 +811,8 @@ describe('parseArgs', () => {
   })
 
   test('a real build with no --dest is refused; a plan without one is not', () => {
+    // --dest first: a caller who named neither should be told about the one
+    // that decides whether anything is written at all.
     expect(() => parseArgs(['--board', 'x64'])).toThrow(/--dest is required/)
     expect(parseArgs(['--board', 'x64', '--plan']).planOnly).toBe(true)
   })
@@ -639,7 +847,7 @@ describe('the chain this tree actually ships', () => {
   const stages = discoverStages()
 
   test('is a chain auditChain accepts', () => {
-    expect(auditChain(stages, DEFAULT_TERMINAL_TARGET)).toEqual([])
+    expect(auditChain(stages, DEFAULT_TERMINAL_TARGET, DEFAULT_OCI_TARGET)).toEqual([])
   })
 
   test('starts at 10-base and ends at 90-pack', () => {
@@ -647,9 +855,22 @@ describe('the chain this tree actually ships', () => {
     expect(stages[stages.length - 1]!.name).toBe('90-pack')
   })
 
-  test('90-pack defines all three of its internal targets', () => {
+  test('90-pack defines all four of its internal targets, in the order it explains them', () => {
     const pack = stages.find((s) => s.name === '90-pack')!
-    expect(pack.targets).toEqual(['closed', 'pack', 'artifact'])
+    expect(pack.targets).toEqual(['closed', 'pack', 'artifact', DEFAULT_OCI_TARGET])
+  })
+
+  // WHICH tree the OCI image is of, asserted rather than trusted to the name.
+  // `closed` is the same root three edits earlier -- it still has a populated
+  // /var and a real /etc/shadow -- and an export taken from it would smoke-test
+  // binaries in a tree that never ships. The two differ by one word in one
+  // COPY, and nothing else in the file would change if that word did.
+  test('the factory-root export is taken from the PACKED tree, not from `closed`', () => {
+    const pack = stages.find((s) => s.name === '90-pack')!
+    const body = readFileSync(pack.path, 'utf8')
+    const after = body.slice(body.indexOf(`FROM scratch AS ${DEFAULT_OCI_TARGET}`))
+    expect(after).toContain('COPY --from=pack /rootfs/ /')
+    expect(after).not.toContain('--from=closed')
   })
 
   test('10-base defines the certs stage its trust anchors are COPIED from', () => {
@@ -703,7 +924,7 @@ describe('the chain this tree actually ships', () => {
     for (const f of stages.filter((s) => featureOf(s) !== undefined)) {
       const kept = selectStages(stages, [featureOf(f)!])
       expect(kept.map((s) => s.name)).not.toContain(f.name)
-      expect(auditChain(kept, DEFAULT_TERMINAL_TARGET)).toEqual([])
+      expect(auditChain(kept, DEFAULT_TERMINAL_TARGET, DEFAULT_OCI_TARGET)).toEqual([])
     }
   })
 

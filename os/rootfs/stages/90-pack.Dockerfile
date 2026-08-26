@@ -6,20 +6,28 @@
 # the only stage file with more than one FROM of its own, and the reason is
 # worth stating rather than discovering.
 #
-# THREE STAGES IN ONE FILE, AND WHY.
+# FOUR STAGES IN ONE FILE, AND WHY.
 #
-#   closed    FROM the previous chain tag, on the TARGET platform. The last
-#             three things done to the device root: take the package
-#             inventory, remove package management, write the build report.
-#             They are here rather than in 10-base because they are ordered
-#             LAST by construction -- dpkg-query has to see every package any
-#             feature or board stage installed, and the purge has to be the
-#             last step that needs dpkg. A "floor" stage cannot hold a step
-#             that must run after everything.
-#   pack      FROM bookworm, on the BUILD platform. Packing is a build-host
-#             job: it runs mksquashfs and veritysetup over a tree, never
-#             executes anything from it, and so does not want emulation.
-#   artifact  FROM scratch, the export surface the driver writes out.
+#   closed        FROM the previous chain tag, on the TARGET platform. The last
+#                 three things done to the device root: take the package
+#                 inventory, remove package management, write the build report.
+#                 They are here rather than in 10-base because they are ordered
+#                 LAST by construction -- dpkg-query has to see every package
+#                 any feature or board stage installed, and the purge has to be
+#                 the last step that needs dpkg. A "floor" stage cannot hold a
+#                 step that must run after everything.
+#   pack          FROM bookworm, on the BUILD platform. Packing is a build-host
+#                 job: it runs mksquashfs and veritysetup over a tree, never
+#                 executes anything from it, and so does not want emulation.
+#   artifact      FROM scratch, the export surface the driver writes out.
+#   factory-root  FROM scratch, on the TARGET platform: the packed root ITSELF
+#                 as an OCI image, so RFCT-113's smoke runner can execute the
+#                 self-built binaries in the root that ships them. TWO EXPORT
+#                 SURFACES, not one, because they are different kinds of thing:
+#                 `artifact` is files the assembler consumes, `factory-root` is
+#                 an image a runtime consumes, and buildkit exports one target
+#                 per invocation. The driver builds this one second, off the
+#                 cache the first filled.
 #
 # The alternative was a fourth stage FILE between 40-board and this one, for
 # `closed` alone. It was not taken: closing the root and packing it are one
@@ -405,3 +413,44 @@ COPY --from=pack /out/rootfs-verity.img /
 COPY --from=pack /out/rootfs-verity.env /
 COPY --from=pack /out/rootfs-report-v2.txt /
 COPY --from=pack /out/boot/ /boot/
+
+# ---------------------------------------------------------------------------
+# The factory root as an OCI image (RFCT-113 M7)
+# ---------------------------------------------------------------------------
+# WHY THIS EXISTS. Eleven artifacts in this image are built by this repository --
+# mosd, apid, mos-mqttd, mos-mqtt-broker, rauc, podman, quadlet, crun, conmon,
+# netavark, aardvark-dns -- and until now the last thing done to any of them was
+# to LINK them. "It linked" and "it runs" are different claims, and the second
+# was first made on a device: a wrong-architecture binary, a missing soname, or a
+# version that does not match the pin in versions.env all survive to first boot.
+# RFCT-113 executes each of them before the image ships, and an executor needs a
+# root to execute them IN. This is that root, in the one form a container runtime
+# can be handed directly.
+#
+# WHY /rootfs FROM `pack`, AND NOT `closed`. `closed` is the cheaper answer: it
+# is already an image, already on the target platform, and exporting it costs a
+# tag. It is also not what ships. Everything between the two -- the tree surgery
+# and the shadow relocation above -- is the difference: /var moves aside to
+# /usr/share/factory/var and leaves an empty mountpoint, /etc/shadow becomes a
+# symlink to /run/mos/shadow, /etc/resolv.conf becomes a symlink into /run.
+# A binary smoke-tested in `closed` is a binary tested in a tree that still has
+# a populated /var and a real /etc/shadow -- tested, that is, somewhere other
+# than the root it will run on. /rootfs at this point is the byte-for-byte input
+# to mksquashfs, so this exports the root that ships and nothing adjacent to it.
+#
+# WHY IT IS THE LAST THING IN THE FILE. `COPY --from=pack` takes pack's FINAL
+# state wherever this stage is written, so its position changes nothing that
+# docker does -- and everything about how the next reader understands it. Placed
+# above the surgery it would read as a capture of the tree before it, which is
+# the wrong tree and an easy mistake to inherit.
+#
+# PLATFORM, AND WHY THE EXPORT ITSELF NEEDS NO EMULATION. There is no
+# `--platform` flag here, so the stage is built for TARGETPLATFORM and the image
+# DECLARES the board's architecture -- which is what makes `docker run` reach for
+# binfmt/qemu-user on an arm64 image, per RFCT-113's scope. Nothing in this
+# stage EXECUTES anything from the root, so producing it does not: measured on
+# an amd64 host with binfmt_misc unmounted, `--platform linux/arm64` produced an
+# `{"architecture":"arm64","os":"linux"}` OCI image with no emulation present.
+# Building the arm64 root is still gated on emulation; exporting one is not.
+FROM scratch AS factory-root
+COPY --from=pack /rootfs/ /

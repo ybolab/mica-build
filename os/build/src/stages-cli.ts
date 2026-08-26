@@ -21,9 +21,13 @@ import { join } from 'node:path'
 
 import {
   buildArgv,
+  DEFAULT_OCI_TARGET,
   DEFAULT_TAG_REPO,
   DEFAULT_TERMINAL_TARGET,
   discoverStages,
+  ociExport,
+  ociRecord,
+  OCI_RECORD_NAME,
   planChain,
   selectStages,
   stageManifest,
@@ -45,6 +49,8 @@ interface Options {
   builder: string | undefined
   stagesDir: string
   terminalTarget: string
+  ociTarget: string
+  sourceDateEpoch: string | undefined
   planOnly: boolean
   noCache: boolean
   without: string[]
@@ -59,7 +65,10 @@ function usage(): string {
     '',
     'Builds os/rootfs/stages/*.Dockerfile in numeric order, each FROM the local',
     'image tag the previous one was written to. The last stage exports its',
-    `\`${DEFAULT_TERMINAL_TARGET}\` target into --dest.`,
+    `\`${DEFAULT_TERMINAL_TARGET}\` target into --dest, and then its`,
+    `\`${DEFAULT_OCI_TARGET}\` target as an OCI archive beside it -- the packed`,
+    "root as an image, which is what RFCT-113's smoke runner executes the",
+    'self-built binaries inside.',
     '',
     '  --board NAME     names the tags, so two boards can be in flight at once',
     '  --dest DIR       where the terminal stage exports. Required unless --plan',
@@ -74,9 +83,17 @@ function usage(): string {
     '                   not built, not an argument every RUN inside it has to',
     '                   test. A NAME that matches no feature stage is refused --',
     '                   silently building the full image is the failure',
+    '  --source-date-epoch N  seconds since the epoch, stamped into the OCI',
+    '                   export so it reproduces. Required unless --plan: buildkit',
+    '                   reads this from the ENVIRONMENT, so an absent value is',
+    '                   not an error, it is the wall clock in every layer entry',
+    '  --oci-target T   the terminal stage target exported as an OCI image.',
+    `                   Default: ${DEFAULT_OCI_TARGET}`,
     '  --plan           print the chain and the exact command lines, run nothing',
     '  --no-cache       build every stage from scratch. For the determinism gate:',
-    '                   a chain replayed out of cache is not a cold build',
+    '                   a chain replayed out of cache is not a cold build. It does',
+    '                   NOT reach the OCI export, which must replay the cache the',
+    '                   chain just filled or it would export a second, different root',
   ].join('\n')
 }
 
@@ -93,6 +110,8 @@ export function parseArgs(argv: readonly string[]): Options {
     builder: undefined,
     stagesDir: STAGES_DIR,
     terminalTarget: DEFAULT_TERMINAL_TARGET,
+    ociTarget: DEFAULT_OCI_TARGET,
+    sourceDateEpoch: undefined,
     planOnly: false,
     noCache: false,
     without: [],
@@ -138,6 +157,12 @@ export function parseArgs(argv: readonly string[]): Options {
       case '--target':
         o.terminalTarget = value(a, argv[++i])
         break
+      case '--oci-target':
+        o.ociTarget = value(a, argv[++i])
+        break
+      case '--source-date-epoch':
+        o.sourceDateEpoch = value(a, argv[++i])
+        break
       case '--plan':
         o.planOnly = true
         break
@@ -166,6 +191,17 @@ export function parseArgs(argv: readonly string[]): Options {
   if (!o.planOnly && !o.dest) {
     throw new Error(
       `--dest is required: the terminal stage has to export somewhere. Use --plan to decide the chain without building it.\n\n${usage()}`,
+    )
+  }
+  // REFUSED HERE RATHER THAN DEFAULTED, and that is the whole point of the
+  // option. buildkit takes SOURCE_DATE_EPOCH from the environment; unset, it
+  // does not complain, it stamps the wall clock into the image config and into
+  // every entry of the exported layer. So an export with no epoch is not a
+  // failure anyone sees -- it is an artifact that differs on every run, whose
+  // first symptom is a determinism gate that has nothing to compare.
+  if (!o.planOnly && o.sourceDateEpoch === undefined) {
+    throw new Error(
+      `--source-date-epoch is required: without it the OCI export of the factory root stamps the wall clock into its config and its layer, and no two builds of one tree agree. os/rootfs/build-v2.sh passes the board's FILE_MTIME, which is the same instant the squashfs is pinned to.\n\n${usage()}`,
     )
   }
   return o
@@ -248,8 +284,17 @@ function refuseDriver(builder: string | undefined, driver: string): string {
   ].join('\n')
 }
 
-async function run(argv: string[], label: string): Promise<void> {
-  const proc = Bun.spawn(argv, { stdout: 'inherit', stderr: 'inherit', stdin: 'ignore' })
+async function run(
+  argv: string[],
+  label: string,
+  env: Readonly<Record<string, string>> = {},
+): Promise<void> {
+  const proc = Bun.spawn(argv, {
+    stdout: 'inherit',
+    stderr: 'inherit',
+    stdin: 'ignore',
+    env: { ...process.env, ...env },
+  })
   const code = await proc.exited
   if (code !== 0) {
     throw new Error(`${label} exited ${code}`)
@@ -310,6 +355,7 @@ export async function main(argv: readonly string[]): Promise<number> {
       board: opts.board,
       supplied: opts.args,
       terminalTarget: opts.terminalTarget,
+      ociTarget: opts.ociTarget,
     })
   } catch (e) {
     if (e instanceof StageChainError) {
@@ -348,6 +394,23 @@ export async function main(argv: readonly string[]): Promise<number> {
         }).join(' ')}`,
       )
     }
+    // The OCI export is planned too, and with the same placeholders the stage
+    // lines use. A --plan that stopped at the chain would describe a build
+    // shorter than the one --plan exists to describe.
+    const oci = ociExport(builds[builds.length - 1]!, {
+      context: opts.context,
+      platform: opts.platform,
+      board: opts.board,
+      builder: opts.builder,
+      dest: opts.dest ?? '<dest>',
+      sourceDateEpoch: opts.sourceDateEpoch ?? '0',
+      ociTarget: opts.ociTarget,
+    })
+    console.log(
+      `\n# ${builds[builds.length - 1]!.name} -- the factory root as an OCI image`
+      + `\nSOURCE_DATE_EPOCH=${opts.sourceDateEpoch ?? '<source-date-epoch>'}`
+      + ` docker ${oci.argv.join(' ')}`,
+    )
     return 0
   }
 
@@ -372,7 +435,7 @@ export async function main(argv: readonly string[]): Promise<number> {
     console.log(`\n=== os/rootfs stage ${b.name} ===`)
     await run(
       [
-        'docker',
+        dockerBin(),
         ...buildArgv(b, {
           context: opts.context,
           platform: opts.platform,
@@ -386,11 +449,69 @@ export async function main(argv: readonly string[]): Promise<number> {
     )
   }
 
+  // The terminal stage a second time, for its other export surface. After the
+  // loop rather than inside it because it is not a link in the chain: nothing
+  // starts FROM it, and if it failed the chain would still have produced every
+  // artifact the assembler needs. What would be missing is the ability to run
+  // anything, which is why it is a failure here and not a warning.
+  const terminal = builds[builds.length - 1]!
+  const oci = ociExport(terminal, {
+    context: opts.context,
+    platform: opts.platform,
+    board: opts.board,
+    builder: opts.builder,
+    dest: opts.dest!,
+    sourceDateEpoch: opts.sourceDateEpoch!,
+    ociTarget: opts.ociTarget,
+  })
+  console.log(`\n=== os/rootfs ${terminal.name} -> ${opts.ociTarget} (OCI) ===`)
+  await run([dockerBin(), ...oci.argv], `${terminal.name} ${opts.ociTarget} export`, oci.env)
+
   // The record, written only after every stage succeeded: a manifest listing
   // stages that did not all build would be a list of intentions.
   const manifest = join(opts.dest!, MANIFEST_NAME)
   writeFileSync(manifest, stageManifest(builds, stages, opts.without))
   console.log(`\nos/rootfs: ${builds.length} stages built; chain recorded in ${manifest}`)
+
+  // Hashed here and not by whoever wants the number later: this is the only
+  // moment at which the file and the arguments that produced it are both in
+  // hand. os/rootfs/README.md's gate compares two builds' archives, and a hash
+  // taken from the artifact alone could not say which epoch or which platform
+  // it was taken under.
+  const archive = Bun.file(oci.archive)
+  const bytes = archive.size
+  if (bytes === 0) {
+    console.error(
+      `error: ${oci.archive} is empty or absent after the export reported success. An OCI archive of a ${bytes}-byte root is not something anything can be executed in`,
+    )
+    return 1
+  }
+  // Streamed, not read whole: the archive is the size of the root, and a
+  // several-hundred-megabyte Uint8Array to produce 32 bytes is a cost with no
+  // reason behind it.
+  const hasher = new Bun.CryptoHasher('sha256')
+  for await (const chunk of archive.stream()) hasher.update(chunk)
+  const sha256 = hasher.digest('hex')
+  const record = join(opts.dest!, OCI_RECORD_NAME)
+  writeFileSync(
+    record,
+    ociRecord({
+      board: opts.board,
+      ref: oci.ref,
+      platform: opts.platform,
+      target: opts.ociTarget,
+      archive: oci.archive,
+      bytes,
+      sha256,
+      sourceDateEpoch: opts.sourceDateEpoch!,
+    }),
+  )
+  console.log(
+    `os/rootfs: factory root exported to ${oci.archive}`
+    + ` (${(bytes / 1048576).toFixed(1)} MB, sha256 ${sha256.slice(0, 16)}...)`
+    + `\nos/rootfs: load it with \`${dockerBin()} load -i ${oci.archive}\` -> ${oci.ref}`
+    + `\nos/rootfs: export recorded in ${record}`,
+  )
   return 0
 }
 
