@@ -4,12 +4,6 @@
 >
 > A dedicated product UI on the HDMI output — status panel, setup wizard,
 > and application UI on an attached screen, with optional touch/USB input.
->
-> **Daemon rename (campaign `apid`, 2026-08-19, RFCT-056).** The HTTPS management
-> daemon formerly called `webd` is now `apid` — it is the API daemon, and the
-> dashboard is one of the things it serves. Only the name changed here; the
-> mechanism this document describes is unaffected. See
-> `docs/design/dashboard.md` §7.4.
 
 ## 1. Principle: one UI codebase
 

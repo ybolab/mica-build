@@ -12,12 +12,6 @@
 > new and is the single authoritative statement of the credential model. The
 > `.zh.md` sibling has not been updated and is stale.
 >
-> **Daemon rename (campaign `apid`, 2026-08-19, RFCT-056).** The HTTPS management
-> daemon formerly called `webd` is now `apid` — it is the API daemon, and the
-> dashboard is one of the things it serves. Only the name changed here; the
-> mechanism this document describes is unaffected. See
-> `docs/design/dashboard.md` §7.4.
->
 > **Model change (campaign `sshweb`, 2026-08-19).** SSH access no longer uses
 > the device password at all: see `docs/design/access.md` §4. The device
 > credential is still minted at first boot and still on STATE, and it now
