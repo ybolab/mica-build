@@ -1,6 +1,6 @@
 // `bash os/verify/run.sh --smoke [--board NAME]` -- the entry point.
 //
-// RFCT-113 M7b. Prints one line per artifact and one RESULT line, which is the
+// Prints one line per artifact and one RESULT line, which is the
 // shape `src/verify-cli.ts` already established for the image contract, so a
 // reader of one run knows how to read the other.
 //
@@ -14,7 +14,7 @@
 // CITED BY CONTENT AND NOT BY LINE NUMBER, which this file got wrong once: the
 // citation said `run.sh:98`, and adding `--smoke` to run.sh moved that refusal
 // to line 127. A reference that the referring change itself invalidates is the
-// reference rot PLAN-014 lists as its largest risk.
+// reference rot this tree keeps having to repair.
 
 import { shippedBoards } from './paths.ts'
 import { smokeRun, type SmokeResult } from './smoke.ts'

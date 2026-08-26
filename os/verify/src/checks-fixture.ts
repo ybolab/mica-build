@@ -1,8 +1,8 @@
 // A synthetic image, for driving a ported check RED.
 //
-// RFCT-096's rule is that a ported check lands with the fixture that fails it,
-// because the parity harness cannot tell a check that PASSES from a check that
-// CANNOT FAIL -- both report "agrees with the oracle" against a healthy image,
+// A check lands with the fixture that fails it, because nothing can tell a
+// check that PASSES from a check that CANNOT FAIL -- both report green against
+// a healthy image,
 // and only a mutation separates them.
 //
 // ═══ WHY A FAKE IMAGE AND NOT A MUTATED REAL ONE ═══
@@ -228,8 +228,8 @@ const FSTAB_IN = join(OS_DIR, 'rootfs', 'overlay-v2', 'etc', 'fstab.in')
  *
  * This was read out of `os/verify-image-v2.sh` at fixture-build time, so that
  * the fixture's idea of the constant and the CHECK's idea of it came from two
- * places and could not drift apart silently. The oracle is deleted (RFCT-110
- * M4e), so there is no third party left to read; the property is kept by
+ * places and could not drift apart silently. That script is gone, so there is
+ * no third party left to read; the property is kept by
  * leaving this an INDEPENDENT literal from `checks-root.ts`'s and asserting
  * the two equal in `checks-root.test.ts`.
  *
@@ -423,7 +423,7 @@ const PURGE_THRESHOLD = 100
  * no /usr/share/containers/containers.conf (a second config layer podman would
  * merge before /etc, so an operator reading /etc would see half the settings)
  * and no local-fs.target.wants symlink for the Quadlet mount (a static
- * enablement is what makes PLAN-012's switch gate nothing).
+ * enablement is what makes the container switch gate nothing).
  */
 function seedEngine(root: string, board: Board, file: WriteFile): void {
   for (const b of [

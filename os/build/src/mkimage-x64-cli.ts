@@ -6,7 +6,7 @@
 // THE EPOCH IN THE FILENAME IS THE ONLY PER-BUILD VARIATION, and it is computed
 // here, once, so that nothing downstream of this line is allowed to see a clock.
 // An assembler that could read the time is an assembler whose output might
-// depend on when it ran, and the whole of RFCT-112's gate is that it does not.
+// depend on when it ran, and the byte-identity gate is that it does not.
 //
 // WHAT IT DOES NOT DO, AND THAT IS DELIBERATE. It does not derive its inputs
 // from ${MOS_BOARD}: os/mkimage-x64.sh hardcodes x64 in its layout path and its

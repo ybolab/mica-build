@@ -20,10 +20,8 @@
 // inode's atime and ctime rewritten after the fact, because `touch` reaches
 // neither of them through mke2fs -d (src/pin-seeded-times.ts).
 //
-// WHAT THE PORT HAD TO GET RIGHT, AND WHAT IT DELIBERATELY DID NOT CHANGE.
-// RFCT-112's gate is a BYTE-IDENTICAL image against the shell, from identical
-// inputs, so every decision that reaches the output bytes is transcribed rather
-// than improved:
+// EVERY DECISION THAT REACHES THE OUTPUT BYTES IS FIXED, not a matter of
+// style. Two assemblies from identical inputs must be byte-identical:
 //
 //   * every external tool runs in the SAME pinned alpine, out of the same apk
 //     package list, because which mtools wrote the FAT decides its bytes;

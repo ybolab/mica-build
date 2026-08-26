@@ -5,9 +5,9 @@
 #   bash os/build/run.sh --help
 #   bash os/build/run.sh src/geometry.test.ts   extra arguments go to `bun test`
 #
-# WHAT THIS PACKAGE IS. PLAN-014 M6a: the TypeScript build driver the
-# two disk assemblers and the bundle builder move onto, in the shape os/verify
-# established in M3 -- bun.lock, package.json, tsconfig.json, run.sh, src/. This
+# WHAT THIS PACKAGE IS. The TypeScript build driver behind the two disk
+# assemblers and the bundle builder, in the same shape as os/verify --
+# bun.lock, package.json, tsconfig.json, run.sh, src/. This
 # milestone opens it with the two things every later part needs and nothing
 # else: the TYPED GEOMETRY of a board (taken from os/verify's model, not a
 # second copy of it) and Bun.$ WRAPPERS for the external toolset. No assembly

@@ -11,9 +11,8 @@
 // file is the choice:
 //
 //   1. COPY IT. Refused, and not as a matter of taste. Two parsers that must
-//      agree about the same bytes are the duplication PLAN-014 has spent its
-//      length removing (os/health's byte-identical pair, mkimage-common.sh's
-//      header on why an ARGUMENT must not be copied). The failure mode is not
+//      agree about the same bytes are exactly the duplication this tree keeps
+//      removing. The failure mode is not
 //      that a copy is wrong on the day it is made: it is that it reads as
 //      self-evidently correct years after one of its reasons changed.
 //

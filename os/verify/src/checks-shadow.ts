@@ -587,10 +587,9 @@ export const SHADOW_CHECKS: readonly CheckCase[] = [
   },
 
   {
-    // RFCT-024 scoped the rule to root because root was the only account in the
-    // image; RFCT-039 added `mos`, so it is widened here to every account
-    // /etc/passwd names. A check that stayed root-shaped would quietly stop
-    // covering the case it was written for.
+    // The rule covers every account /etc/passwd names, not just root: a check
+    // that stayed root-shaped would quietly stop covering the case it was
+    // written for as soon as a second account shipped.
     //
     // TWO failure branches with two messages, because they are two different
     // defects with different repairs. EMPTY means the account accepts any

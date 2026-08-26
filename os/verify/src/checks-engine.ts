@@ -224,9 +224,8 @@ const ENGINE_CHECKS: readonly CheckCase[] = [
   }),
 
   engineCheck({
-    // Reached by EXEC, so no NEEDED-soname check can see it. It was missing from
-    // the image RFCT-101/102 shipped, which passed every assertion this file
-    // then had.
+    // Reached by EXEC, so no NEEDED-soname check can see it: an image can be
+    // missing it and pass every soname assertion in this file.
     id: 'container-engine-nft',
     shell: {
       pass: 'nft is in the image; netavark 2.x has no iptables driver',

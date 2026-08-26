@@ -246,9 +246,8 @@ export interface RuntimeRequest {
    * argv or from paths.ts climbing import.meta.dir, and both are HOST absolute
    * paths. Under a short mount they would name nothing inside the container,
    * and the repair would be a prefix rewrite: a second path arithmetic, on the
-   * one input whose identity the verdict is about. os/verify/run.sh:189 draws
-   * the same line for the same reason, and os/tests/mkimage-v2-selftest.sh:292
-   * had it first, before PLAN-014 M6e deleted that suite with its assembler.
+   * one input whose identity the verdict is about. os/verify/run.sh draws the
+   * same line for the same reason.
    */
   readonly readOnly?: readonly string[]
   /** One host directory the tools may WRITE to. Mounted at its own path. */

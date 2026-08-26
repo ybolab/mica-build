@@ -1,8 +1,8 @@
 // Batch 4a: the two persistent home directories, the `mos` account, and the
 // STATE binds that make "/var is discardable" true rather than aspirational.
 //
-// Fourteen conclusions on each board -- ten from RFCT-039's /home and
-// RFCT-054's /root (:3903-4154), four from the wipe-safety pairs and
+// Fourteen conclusions on each board -- ten from /home and
+// /root (:3903-4154), four from the wipe-safety pairs and
 // `check_ext_unit_dir` (:3450, :613). One of the four is a SKIP on a board
 // with no Bluetooth controller.
 //
@@ -28,8 +28,8 @@
 // ═══ THE SEED SCRIPTS ARE READ, NOT RUN ═══
 //
 // `mos-seed-home` and `mos-seed-root` are asserted by a STATIC read of eleven
-// lines of shell. There is no offline harness for either (the follow-up is in
-// docs/task/RFCT-054.md), so idempotence and non-clobbering are read rather
+// lines of shell. There is no offline harness for either, so idempotence and
+// non-clobbering are read rather
 // than exercised -- and the port reproduces the read, including its exact
 // anchored patterns, rather than substituting a smarter one. A port that
 // understood the script better than the oracle does would diverge on the first
@@ -594,7 +594,7 @@ const ACCOUNT_CHECKS: readonly CheckCase[] = [
   {
     // An account pointed at a directory the bind does not cover would look
     // completely healthy and would lose everything on the next update -- which
-    // is the entire problem RFCT-039 exists to solve.
+    // is the entire problem the /home bind exists to solve.
     id: 'mos-home-inside-the-bind',
     shell: {
       pass: `' home /home/${MOS_USER} is inside `,
@@ -789,9 +789,9 @@ const EXT_UNIT_DIR_CHECKS: readonly CheckCase[] = [
   },
 
   {
-    // The negative half, and NOT symmetry for its own sake. PLAN-011 D5
-    // originally named /etc/systemd/system as this bind's target and was
-    // corrected on 2026-08-22. Anyone reading the superseded sentence would
+    // The negative half, and NOT symmetry for its own sake. /etc/systemd/system
+    // is a plausible-looking target for this bind and a wrong one. Anyone
+    // reaching for it would
     // repair the "deviation" by pointing the bind back, and that diff reads
     // like restoring the plan while reintroducing the hazard: the image ships
     // this boot chain's own mount units AND their local-fs.target.wants

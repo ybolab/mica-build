@@ -450,7 +450,7 @@ const ESP_CHECKS: readonly CheckCase[] = [
   },
 
   {
-    // THE ASSERTION RFCT-106 EXISTS FOR, from the other side. A per-slot file on
+    // THE PER-SLOT RULE, from the other side. A per-slot file on
     // the ESP is one that NO INSTALL CAN REPLACE: the ESP is in no slot group,
     // so it would be frozen at whatever was flashed while the rootfs it
     // describes moved on.

@@ -1,8 +1,7 @@
 // Where a self-built artifact's RECORDED VERSION is read from, and nothing else.
 //
-// RFCT-113 M7b. The task's third acceptance clause is the one that gives this
-// whole milestone its value -- "the version loop is closed: bumping a
-// `versions.env` pin without rebuilding the artifact turns the smoke run red"
+// THE VERSION LOOP IS CLOSED HERE: bumping a `versions.env` pin without
+// rebuilding the artifact turns the smoke run red
 // -- and a loop is only closed if the two ends are the SAME FILE. So every
 // function here READS a pin out of the file that owns it, at run time, and
 // there is deliberately no literal version string anywhere in os/verify/.
@@ -94,7 +93,7 @@ export function readVersionsEnv(file: string): ReadonlyMap<string, string> {
  * Every version pin a `versions.env` declares, in file order.
  *
  * THIS IS THE DIRECTION THAT CATCHES A NEW ARTIFACT. The register in
- * `smoke-register.ts` names the artifacts RFCT-113 lists; this names the pins
+ * `smoke-register.ts` names the artifacts; this names the pins
  * the tree actually carries, and `smoke-register.test.ts` requires the second
  * set to be covered by the first. Without it, adding an eighth binary to
  * `os/podman/` -- with its pin, its hash and its install line -- would leave the

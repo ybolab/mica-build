@@ -964,7 +964,7 @@ interface SshUnitCase {
 
 /**
  * KillMode= and ExecReload= are INHERITED from Debian's openssh-server, not
- * authored here, and RFCT-047's correctness rests on both.
+ * authored here, and the sshd reconciler's correctness rests on both.
  *
  * The reload is the mitigation and KillMode is defence in depth: an operator who
  * sets a transient root password over their own SSH session keeps it because the

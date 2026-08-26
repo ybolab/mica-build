@@ -11,7 +11,7 @@
 //
 // THE EPOCH IN THE FILENAME IS THE ONLY PER-BUILD VARIATION, and it is computed
 // here, once. The bundle CONTENT must not depend on when it was built -- that
-// is what makes RFCT-112's gate a hash -- so nothing downstream of this line is
+// is what makes the rebuild gate a hash -- so nothing downstream of this line is
 // allowed to see a clock.
 //
 // TWO THINGS THIS FILE RESOLVES THAT THE BUILD HALF THEN ONLY USES.

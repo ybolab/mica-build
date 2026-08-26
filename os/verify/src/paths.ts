@@ -3,8 +3,7 @@
 // Path arithmetic counted in `..` is right until a file moves, and then it is
 // wrong SILENTLY: `resolve(dir, '..', '..')` always produces a path, and the
 // first thing to notice is a reader failing on a directory that is empty
-// rather than absent. PLAN-014 M1 has just moved most of os/ once and M5/M6
-// will move more, so every ascent here is anchored on something that must be
+// rather than absent, so every ascent here is anchored on something that must be
 // AT the destination, and the failure names the path it computed, the marker
 // it wanted and the number of levels it climbed.
 

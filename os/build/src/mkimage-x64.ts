@@ -17,9 +17,8 @@
 // os/boards/*/board.env, src/geometry.ts, src/pin-seeded-times.ts,
 // src/tools/ -- and not as a `case`.
 //
-// WHAT THE PORT HAD TO GET RIGHT. RFCT-112's gate is a BYTE-IDENTICAL image
-// against the shell from identical inputs, so every decision that reaches the
-// output bytes is transcribed rather than improved:
+// EVERY DECISION THAT REACHES THE OUTPUT BYTES IS FIXED. Two assemblies from
+// identical inputs must be byte-identical:
 //
 //   * the same pinned debian (IMAGE_DEBIAN_TRIXIE) out of the same apt package
 //     list -- BOOTX64.EFI is only as reproducible as the grub-efi-amd64-bin in
