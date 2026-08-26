@@ -7,7 +7,7 @@
 - **plan**: PLAN-015 (M4)
 
 `docs/verify-citations.sh` checks the `path:line` citations in the English
-design documents. `make docs-verify-citations` runs it advisory;
+design documents. `make docs-verify-citations` runs it as a gate;
 `make docs-verify-citations-test` runs its negative tests; the offline CI job
 runs both. It is read-only, and needs bash, coreutils, grep, sed and awk and
 nothing else.
@@ -57,6 +57,20 @@ bare filename that is shorthand for a path named earlier in the prose
 contain (`u-boot/env/mmc.c:118`, `axum-0.8.9/src/lib.rs:10`). An in-scope
 citation carrying no quote gets check 1 only; that count is printed too.
 
+That last class carries a limit of its own. A citation whose first path segment
+is not a repo-root directory is skipped as outside this tree and counted there,
+never failed -- so `talos/hack/cx3576/dev-config/config.yaml`, a path that did
+exist here, reads exactly like `axum-0.8.9/src/lib.rs:10`, which never did. The
+script header says this and the summary prints it. It was found by tripping over
+a dangling `talos/` path in `docs/design/provisioning.md`, not by reasoning
+about the scope rule.
+
+A second limit sits beside the provenance one and is not mechanical either. A
+citation whose line still resolves while the text it named has moved is
+invisible to the checker when the citation carries no quote: check 1 passes on
+the new occupant of that line, and there is no check 2 to run. RFCT-128 records
+the campaign's instance.
+
 The content check reads its fragment as a literal excerpt, so a fragment that
 names a thing rather than quoting the source is reported when the name does not
 appear in the cited lines. Moving such a fragment away from the citation is the
@@ -79,13 +93,13 @@ failures in `api.md`, 55 in `dashboard.md`, 10 in `uboot-ab-handshake.md`, 1 in
 `bash docs/verify-citations.sh --advisory` exits 0 over the same tree and
 reports the same counts.
 
-## Why it is advisory
+## Why the counts above are drift, not defects
 
 The 297 failures above are real drift in the documents, not defects in the
-check. The Makefile target and the CI step pass `--advisory` so the drift is
-visible without turning the whole suite red before anyone has repaired it. The
-flag is the only thing that changes when the documents are repaired and a run
-over the tree is green.
+check. `--advisory` exists so a tree carrying known drift can report it without
+turning the whole suite red; the Makefile target and the CI step do not pass it,
+and a citation that does not resolve, or a quote no longer at the lines it
+cites, fails the build. RFCT-128 records the repair that made that honest.
 
 ## Negative tests
 
