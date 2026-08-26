@@ -3,25 +3,22 @@
 #
 #   bash os/tests/factory-root-gate/gate.sh _out/x64
 #
-# `make os-factory-root-gate` IS THIS, since RFCT-113 M7c decided it on
-# 2026-08-26: a real target rather than a deleted directory, because the
-# invariant here is the assumption every other M7 result rests on and nothing
-# else checks it. M7a wrote the script and took the measurements in
-# os/rootfs/stages/README.md with it; what it lacked was something that ran it.
-# It is also a step in .gitea/workflows/privileged.yml's deep lane, which is the
-# only place it can run on cx3576. README.md here carries the decision in full.
+# `make os-factory-root-gate` runs this, and so does the deep lane in
+# .gitea/workflows/privileged.yml -- the only place it can run on cx3576. The
+# invariant it checks is the one every smoke-run result rests on, and nothing
+# else checks it. README.md here carries the reasoning in full.
 #
-# WHY A CONTAINER. Neither side of the comparison is readable on the build host:
-# there is no unsquashfs and no getcap. os/verify/src/tools.ts answers the same
-# problem the same way, and this uses ITS image key and ITS package list, so a
-# difference here cannot be a difference between two versions of squashfs-tools.
+# It runs in a container because neither side of the comparison is readable on
+# the build host: there is no unsquashfs and no getcap. os/verify/src/tools.ts
+# answers the same problem the same way, and this uses ITS image key and ITS
+# package list, so a difference here cannot be a difference between two versions
+# of squashfs-tools.
 #
-# WHY IT ALWAYS RUNS mutate.sh. Four of inner.sh's five comparisons had only
-# ever been seen agreeing, and the capability one had nothing behind it at all --
-# this root carries no file capabilities, so it compared an empty file with an
-# empty file and reported agreement. A comparison nobody has watched fail is not
-# a check, so proving each one can fail is part of the gate rather than a thing
-# to remember to do.
+# It always runs mutate.sh, because a comparison nobody has watched fail is not
+# a check: the capability comparison in particular has nothing behind it on a
+# root that carries no file capabilities, where it compares an empty file with
+# an empty file and reports agreement. Proving each comparison can fail is part
+# of the gate.
 set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"

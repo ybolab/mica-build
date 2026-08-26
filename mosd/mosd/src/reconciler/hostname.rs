@@ -247,12 +247,11 @@ mod file_tests {
     /// The reconciler renders the file; WHICH write strategy is used is
     /// crate::fswrite's decision and is tested there.
     ///
-    /// This assertion moved. It used to check that the inode survived, which
-    /// is true on a device -- /etc/hostname is a mount point, so fswrite
-    /// writes in place -- and false in a temp directory, where fswrite
-    /// correctly renames. A test that encodes the strategy rather than the
-    /// outcome fails when the strategy is chosen correctly for the test's own
-    /// environment.
+    /// The assertion is on the CONTENT, not on the inode. Inode survival is
+    /// true on a device -- /etc/hostname is a mount point, so fswrite writes
+    /// in place -- and false in a temp directory, where fswrite correctly
+    /// renames. A test that encodes the strategy rather than the outcome fails
+    /// when the strategy is chosen correctly for the test's own environment.
     #[tokio::test]
     async fn the_hostname_file_holds_exactly_the_name() {
         let dir = tempfile::tempdir().expect("tempdir");

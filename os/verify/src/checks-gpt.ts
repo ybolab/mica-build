@@ -1,13 +1,13 @@
 // Batch 1a: the GPT geometry.
 //
-// PLAN-014 M4b (RFCT-110). Every check here reads the table THE IMAGE CARRIES
-// through `readGpt` and the table THE BOARD DECLARES through `walkLayout`, and
-// compares the two. The context deliberately offers no route from a check to a
-// board-resolved partition table: a check comparing the image to the board
-// definition has to read the two independently, or it hands itself the same
-// number on both sides.
+// Every check here reads the table THE IMAGE CARRIES through `readGpt` and the
+// table THE BOARD DECLARES through `walkLayout`, and compares the two. The
+// context deliberately offers no route from a check to a board-resolved
+// partition table: a check comparing the image to the board definition has to
+// read the two independently, or it hands itself the same number on both
+// sides.
 //
-// ═══ THE ONE NUMBER THAT CROSSES ═══
+// THE ONE NUMBER THAT CROSSES.
 //
 // A verity slot's size is content-derived, so the layout does not declare it --
 // `walkLayout` takes it as a parameter and everything downstream of the slots
@@ -118,7 +118,7 @@ export const GPT_CHECKS: readonly CheckCase[] = [
     },
   },
 
-  // ═══ NOT PORTED: the partition COUNT (os/verify-image-v2.sh:1419) ═══
+  // NOT PORTED: the partition COUNT.
   //
   // `pass "exactly ${EXPECT_PARTS} partitions"`. Its identity cannot be
   // expressed as a substring, and this was measured rather than guessed --

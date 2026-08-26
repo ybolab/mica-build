@@ -1,17 +1,17 @@
 // The three grub.cfg guards, each driven from the FAILING side, and each with a
 // positive control beside it.
 //
-// WHY A POSITIVE CONTROL EVERY TIME. A guard that refused everything would
+// A positive control every time, because a guard that refused everything would
 // satisfy every negative case in this file. The controls are the tree's own
 // os/boards/x64/grub.cfg and the tree's own board definition -- not a fixture
 // built to pass -- so "the shipped file renders clean" is asserted against the
-// file that actually ships.
+// file that ships.
 //
-// AND WHY THE MUTATIONS ARE CHECKED TO BE MUTATIONS. M6b recorded a near-miss
-// worth repeating: removing `rauc.slot=${bootslot}` with String.replace changed
-// only the COMMENT that mentioned it, the guard stayed green, and the negative
-// test was not negative. Every mutation below asserts that it changed the line
-// it meant to change before asserting that the guard noticed.
+// And every mutation is checked to be a mutation. Removing `rauc.slot=${bootslot}`
+// with String.replace can change only the COMMENT that mentions it, leaving the
+// guard green and the negative test not negative, so each mutation below asserts
+// that it changed the line it meant to change before asserting that the guard
+// noticed.
 
 import { describe, expect, test } from 'bun:test'
 import { readFileSync } from 'node:fs'
@@ -112,8 +112,7 @@ describe('the verity facts, read out of the env file', () => {
 
 describe('the per-slot fragment', () => {
   test('is byte-for-byte what os/mkimage-x64.sh prints', () => {
-    // Copied from the shell's own output over these inputs (its "slot A boot
-    // facts" block, with the two-space indent it adds for display removed).
+    // The exact block this fragment must be, over these inputs.
     expect(cmdlineFacts(FACTS)).toBe(
       'set MOS_SECTORS=464928\n'
       + 'set MOS_DATA_BLOCK_SIZE=4096\n'
@@ -147,9 +146,9 @@ describe('the substitutions', () => {
   const subs = grubSubstitutions(g)
 
   test('the PARTUUIDs are LOWERCASED, and the board spells them uppercase', () => {
-    // `lower()` in the shell. The kernel matches PARTUUID as a string; a
-    // dm-mod.waitfor carrying the uppercase spelling waits for a partition that
-    // never appears, and the machine hangs in the initramfs with no message.
+    // The kernel matches PARTUUID as a string, so a dm-mod.waitfor carrying the
+    // uppercase spelling waits for a partition that never appears, and the
+    // machine hangs in the initramfs with no message.
     expect(g.requirePartition('ROOTFS_A').require('GUID')).toBe('5AC35760-0064-4000-8000-000000000005')
     expect(subs.ROOTFS_A_PARTUUID).toBe('5ac35760-0064-4000-8000-000000000005')
     expect(subs.ROOTFS_B_PARTUUID).toBe('5ac35760-0064-4000-8000-000000000006')
@@ -170,15 +169,12 @@ describe('the substitutions', () => {
     )
   })
 
-  // THE $-EXPANSION CLASS. The comment above renderTemplate used to say the
-  // right-hand side "has no right-hand-side syntax at all"; that was wrong. A
-  // STRING replacement in JavaScript expands $&, $`, $' , $$ and $n, and
-  // BOARD_CMDLINE_ARGS is free-form board text -- a kernel argument, which is
-  // freer than the board name that carries the same hazard in bundle.ts.
-  //
-  // A cmdline containing `$&` would have been silently rewritten into the
-  // grub.cfg that boots the machine. Fixed with a replacer function, which is
-  // never scanned for those sequences.
+  // The $-expansion class. A STRING replacement in JavaScript expands $&, $`,
+  // $' , $$ and $n, and BOARD_CMDLINE_ARGS is free-form board text -- a kernel
+  // argument, which is freer than the board name that carries the same hazard
+  // in bundle.ts. A cmdline containing `$&` would be silently rewritten into
+  // the grub.cfg that boots the machine, so the substitution uses a replacer
+  // function, which is never scanned for those sequences.
   test.each([
     ['$&', 'console=ttyS0 mos.tag=$& net.ifnames=0'],
     ['$`', 'console=ttyS0 mos.tag=$` net.ifnames=0'],
@@ -192,10 +188,9 @@ describe('the substitutions', () => {
   })
 
   test('EVERY occurrence is replaced, not just the first', () => {
-    // The shell's sed has a /g; a port using String.replace would substitute the
-    // slot A menuentry and leave slot B's placeholder in place, producing an
-    // image whose B slot cannot boot and whose A slot can -- found on the first
-    // rollback and not before.
+    // A single-substitution replace would fill the slot A menuentry and leave
+    // slot B's placeholder in place, producing an image whose B slot cannot
+    // boot and whose A slot can -- found on the first rollback and not before.
     expect(renderTemplate('@A@ @A@ @A@', { A: 'z' })).toBe('z z z')
   })
 })
@@ -253,9 +248,9 @@ describe('guard 1: an unrendered placeholder', () => {
   })
 
   test('lowercase @name@ is NOT a placeholder', () => {
-    // The shell's pattern is '@[A-Z_]\+@'. GRUB configs contain no @lowercase@
-    // today, and a port that widened the pattern would start refusing files the
-    // shell accepts.
+    // The placeholder pattern is uppercase-only. GRUB configs carry no
+    // @lowercase@ today, and widening the pattern would start refusing files
+    // that are correct.
     expect(unrenderedPlaceholders('linux @foo@ bar')).toEqual([])
   })
 })
@@ -270,9 +265,9 @@ describe('guard 2: a literal hash on a linux line', () => {
   })
 
   test('a hash in a COMMENT does not fire -- a false positive the shell recorded', () => {
-    // "two earlier drafts of this check did that and rejected the correct file,
-    // once for a comment and once for the console message printed when a fragment
-    // is missing."
+    // A hash-shaped string can appear in a comment and in the console message
+    // printed when a fragment is missing; neither is a literal hash on a linux
+    // line, and refusing them would reject the correct file.
     const withComment = TEMPLATE.replace(
       'load_env',
       '# the root hash looks like 29809478ef06ccd26a88fb48f5faa78e8477a20dad8ca407a435eaa14419ef8a\nload_env',
@@ -350,10 +345,9 @@ describe('guard 3: a fragment nothing reads', () => {
 
 describe('the embedded GRUB', () => {
   test('early.cfg is three lines and $root is LITERAL', () => {
-    // The shell's heredoc is unquoted, so `${ESP_FAT_LABEL}` expands and `\$root`
-    // does not. A port that expanded $root would embed the host shell's idea of
-    // it -- which is nothing -- and GRUB would look for its config on a device
-    // spelled `()`.
+    // `${ESP_FAT_LABEL}` is substituted here and `$root` is not: it is GRUB's
+    // own variable. Expanding it would embed the builder's idea of it -- which
+    // is nothing -- and GRUB would look for its config on a device spelled `()`.
     expect(earlyCfg('MOS-ESP')).toBe(
       'search --no-floppy --label MOS-ESP --set root\n'
       + 'set prefix=($root)/EFI/mos\n'

@@ -209,14 +209,13 @@ pub fn hash_password(password: &str) -> Result<String> {
 /// credential must reject every password, not accept any.
 ///
 /// **Test-only.** Nothing outside this module's tests calls it: the access and
-/// connd reconcilers it was written for verify nothing against
-/// `access.device.passwordHash`, and apid's admin login uses its own
-/// `apid::auth::verify_password`. It is kept rather than deleted because two
-/// `ensure_identity` tests use it as their assertion mechanism — "the stored
-/// hash verifies against the stored plaintext" — and deleting it would either
-/// drop those assertions or re-inline Argon2 twice. `#[cfg(test)]` removes the
-/// part that was actually hazardous: a security-control-shaped public API that
-/// nothing had wired up yet.
+/// connd reconcilers verify nothing against `access.device.passwordHash`, and
+/// apid's admin login uses its own `apid::auth::verify_password`. It is kept
+/// rather than deleted because two `ensure_identity` tests use it as their
+/// assertion mechanism — "the stored hash verifies against the stored
+/// plaintext" — and deleting it would either drop those assertions or re-inline
+/// Argon2 twice. `#[cfg(test)]` is what keeps it from being a
+/// security-control-shaped public API that nothing has wired up.
 #[must_use]
 #[cfg(test)]
 fn verify_password(hash: &str, password: &str) -> bool {
@@ -372,8 +371,8 @@ mod tests {
         fs::metadata(path).expect("stat").permissions().mode() & 0o7777
     }
 
-    // R6.1 — a fresh STATE gets a complete identity, and the stored hash is
-    // really the hash of the plaintext that was written next to it.
+    // A fresh STATE gets a complete identity, and the stored hash is really
+    // the hash of the plaintext that was written next to it.
     #[test]
     fn fresh_state_gets_identity_and_both_secrets() {
         let (dir, settings) = provision();
@@ -425,8 +424,8 @@ mod tests {
         );
     }
 
-    // R6.2 — a second call must not regenerate anything. A regenerated
-    // credential locks the operator out of a fielded device.
+    // A second call must not regenerate anything: a regenerated credential
+    // locks the operator out of a fielded device.
     #[test]
     fn second_call_is_a_genuine_no_op() {
         let (dir, first) = provision();
@@ -445,7 +444,7 @@ mod tests {
         assert_eq!(secret_bytes(dir.path(), AP_PSK_FILE), psk_before);
     }
 
-    // R6.3a — interrupted first boot that got as far as the device_id: only the
+    // Interrupted first boot that got as far as the device_id: only the
     // credential half is completed.
     #[test]
     fn partial_state_with_device_id_only_completes_the_credential() {
@@ -475,7 +474,7 @@ mod tests {
         assert!(read_ap_psk(dir.path()).expect("read psk").is_some());
     }
 
-    // R6.3b — the other direction: credential present, device_id missing. The
+    // The other direction: credential present, device_id missing. The
     // credential must come through byte-identical, hash and plaintext alike.
     #[test]
     fn partial_state_with_credential_only_completes_the_device_id() {
@@ -510,9 +509,9 @@ mod tests {
         );
     }
 
-    // R6.4 — the test this whole campaign exists for: nothing generated here
-    // may be a fleet-wide constant, and the two secrets of one device must be
-    // independent draws rather than one string used twice.
+    // The central guard: nothing generated here may be a fleet-wide constant,
+    // and the two secrets of one device must be independent draws rather than
+    // one string used twice.
     #[test]
     fn two_hundred_devices_share_no_secret() {
         const DEVICES: usize = 200;
@@ -573,9 +572,9 @@ mod tests {
         );
     }
 
-    // R6.5 — read the bits back rather than trusting the create call: an
-    // inherited umask or a temp file left by an earlier run could widen either.
-    // The expected modes are written out as literals, not as the constants the
+    // Read the bits back rather than trusting the create call: an inherited
+    // umask or a temp file left by an earlier run could widen either. The
+    // expected modes are written out as literals, not as the constants the
     // implementation uses, so that widening a constant fails here instead of
     // silently moving the goalposts.
     #[test]
@@ -588,8 +587,8 @@ mod tests {
         assert_eq!(mode_of(&secrets.join(AP_PSK_FILE)), 0o600);
     }
 
-    // R6.5b — a pre-existing world-readable directory and a leftover temp file
-    // from an interrupted run must both be tightened, not inherited.
+    // A pre-existing world-readable directory and a leftover temp file from an
+    // interrupted run must both be tightened, not inherited.
     #[test]
     fn a_lax_pre_existing_secrets_directory_is_tightened() {
         let dir = TempDir::new().expect("tempdir");
@@ -608,8 +607,8 @@ mod tests {
         assert!(!stale.exists(), "temp file left behind after rename");
     }
 
-    // R6.6 — alphabet and length, over enough characters that a stray symbol
-    // would show up.
+    // Alphabet and length, over enough characters that a stray symbol would
+    // show up.
     #[test]
     fn generated_secrets_use_only_the_unambiguous_alphabet() {
         let rng = SystemRandom::new();
@@ -636,7 +635,7 @@ mod tests {
         );
     }
 
-    // R6.7 — a near miss is a miss.
+    // A near miss is a miss.
     #[test]
     fn verify_password_rejects_a_one_character_miss() {
         let (dir, settings) = provision();
@@ -659,8 +658,8 @@ mod tests {
         assert!(!verify_password("not a phc string", &password));
     }
 
-    // R6.8 — assert the invariant on the document that actually lands on STATE,
-    // rather than trusting the types to have kept the plaintext out.
+    // Assert the invariant on the document that actually lands on STATE, rather
+    // than trusting the types to have kept the plaintext out.
     #[test]
     fn settings_document_contains_no_plaintext_secret() {
         let (dir, settings) = provision();

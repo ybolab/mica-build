@@ -1,6 +1,6 @@
-// Batch 4b's kernel-command-line family, driven from the failing side.
+// The kernel-command-line family, driven from the failing side.
 //
-// PLAN-014 M4g (RFCT-110), RFCT-096's rule. The assertions are the same on both
+// The assertions are the same on both
 // boards and only the EXTRACTION differs, so nearly every case below is run
 // twice -- once against a U-Boot slot's verity env and once against a grub
 // board's grub.cfg composed with its slot's cmdline.cfg. A family tested on one
@@ -584,9 +584,9 @@ describe('the ESP and the GRUB boot chain', () => {
   })
 
   test('RED when the ESP carries a PER-SLOT file no install could ever replace', async () => {
-    // THE ASSERTION RFCT-106 EXISTS FOR, from the other side: the ESP is in no
-    // slot group, so a vmlinuz here would be frozen at whatever was flashed
-    // while the rootfs it describes moved on.
+    // From the other side: the ESP is in no slot group, so a vmlinuz here
+    // would be frozen at whatever was flashed while the rootfs it describes
+    // moved on.
     const r = one(await drive('esp-no-per-slot-file', x64World({
       fat: x64Fat({ [`${offsetOf(x64, 'ESP')}::vmlinuz`]: 'kernel' }),
     })))

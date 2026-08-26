@@ -1,6 +1,6 @@
 // The ten small root-side families, driven from the failing side.
 //
-// PLAN-014 M4f (RFCT-110), RFCT-096. Green first, one edit, red, and the message
+// Green first, one edit, red, and the message
 // names the thing. The edits are the shapes these failures took:
 //
 //   - a host-architecture binary staged into a device image. Every other check

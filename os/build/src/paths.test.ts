@@ -4,8 +4,8 @@
 // are right": they would also resolve if the count were wrong and the wrong
 // directory happened to exist. Each ascent below is checked at the count it
 // uses AND at the counts on either side, and the neighbours must FAIL. An
-// anchor satisfied by more than one answer is not an anchor -- and PLAN-014 has
-// moved most of os/ once already with M5 still to come.
+// anchor satisfied by more than one answer is not an anchor, and directories
+// under os/ do move.
 
 import { describe, expect, test } from 'bun:test'
 import { existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs'

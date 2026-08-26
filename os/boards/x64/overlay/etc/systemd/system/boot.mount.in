@@ -13,7 +13,7 @@
 # ROLL BACK -- the same shape as the missing rauc-service D-Bus files that
 # os/rootfs/Dockerfile.v2 records at the top of its package list.
 #
-# THE ESP, singular (RFCT-106). The firmware picks which ESP to boot and UEFI
+# THE ESP, singular. The firmware picks which ESP to boot and UEFI
 # BootOrder is firmware state, not disk state, so mos cannot make a second ESP
 # authoritative without firmware cooperation -- which is why this board has one
 # and the per-slot boot payload is a set of FILES on it. What A/B protects here

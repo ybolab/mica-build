@@ -23,10 +23,10 @@ FAIL=0
 [ -f "$SCRIPT" ] || { echo "no $SCRIPT to test" >&2; exit 1; }
 
 # A bcrypt hash of the shape mosd writes, and a second one standing in for a
-# hash mosd did NOT write (set by hand over the serial console, or by a future
-# provisioning path -- on v2 no buildable image can BAKE one, since the pack
-# stage fails a factory shadow with a usable hash). Opaque on purpose: the
-# script compares them as strings and never parses them.
+# hash mosd did NOT write -- set by hand over the serial console, say; no
+# buildable image can bake one, since the pack stage fails a factory shadow with
+# a usable hash. Opaque on purpose: the script compares them as strings and
+# never parses them.
 MOS_HASH='$2b$12$abcdefghijklmnopqrstuvOJqM0iZ5wKzXwZ2G8bqZ0aVjPQnDGa'
 DEV_HASH='$2b$12$ZZZZZZZZZZZZZZZZZZZZZuOJqM0iZ5wKzXwZ2G8bqZ0aVjPQnDGa'
 
@@ -137,20 +137,12 @@ ends_with_newline() {
 group_of() { stat -c %G "$1"; }
 mode_of() { stat -c %a "$1"; }
 
-# THE SEMANTICS THESE CASES PIN, and what changed.
+# The semantics these cases pin.
 #
 # /etc/shadow is BUILT IN RAM from /usr/share/factory/etc/shadow on every boot.
 # There is no marker, no next-boot clearing protocol, and no rule that an
-# existing entry wins over the image's -- because mos supports exactly one
-# console credential, a TRANSIENT root password, and the per-device persistent
-# password model was superseded (docs/design/access.md §4.2).
-#
-# The cases this replaces asserted that protocol: a marker matching the current
-# root hash cleared it, a mismatched one did not, an existing entry survived.
-# Every one of them described a mechanism that only existed because the file
-# lived on a partition that survives reboots. They are not rewritten, they are
-# gone, and the property they were approximating is now case 2 below -- stated
-# directly instead of through a protocol.
+# existing entry wins over the image's: mos supports exactly one console
+# credential, a TRANSIENT root password (docs/design/access.md §4.2).
 
 # --- 1. the file is built from the factory copy, every entry locked ----------
 new_case build-from-factory ""
@@ -161,13 +153,10 @@ check "build -> result is terminated" "yes" "$(ends_with_newline "$SHADOW")"
 check "build -> mode is 0640" "640" "$(mode_of "$SHADOW")"
 [ "$GROUP_MODE" = real ] && check "build -> group is shadow" "shadow" "$(group_of "$SHADOW")"
 
-# --- 2. A PASSWORD DOES NOT SURVIVE A RUN -----------------------------------
+# --- 2. a password does not survive a run -----------------------------------
 #
-# THE SECURITY PROPERTY, stated directly. Under the old design this needed a
-# marker to be written, matched and cleared, and nothing enforced that the
-# clearing ever ran -- no unit Requires= the reconciler, so a failed or masked
-# oneshot left the password live. Now the file is rebuilt from the image, so a
-# password survives only if the rebuild does not happen, and if the rebuild
+# The security property, stated directly. The file is rebuilt from the image, so
+# a password survives only if the rebuild does not happen -- and if the rebuild
 # does not happen there is no shadow file at all and PAM fails closed.
 new_case password-does-not-survive "$(shadow_with "$MOS_HASH")"
 check "before -> the password is present" "$MOS_HASH" "$(root_field)"
@@ -224,8 +213,7 @@ check "missing factory -> exits non-zero" "yes" "$([ "$rc" -ne 0 ] && echo yes |
 
 # --- 6. a factory copy whose last line is unterminated ----------------------
 #
-# Kept from the old suite: the failure it guards against is unchanged. An
-# unterminated last line would glue two entries together on append.
+# An unterminated last line would glue two entries together on append.
 new_case unterminated-factory ""
 printf 'root:!:19000:0:99999:7:::\ndaemon:*:19000:0:99999:7:::' >"$CASE/factory"
 run_reconcile >/dev/null
@@ -236,9 +224,8 @@ check "unterminated factory -> daemon survived intact" "yes" \
 
 # --- 7. the destination directory is created if absent ----------------------
 #
-# /run/mos does not exist on a fresh boot: /run is an empty tmpfs. The old
-# design could assume its directory existed because var-lib-mos.mount had
-# created it; this one must make its own.
+# /run/mos does not exist on a fresh boot: /run is an empty tmpfs, so the
+# script creates its own destination directory.
 new_case creates-its-directory ""
 rm -rf "$STATE"
 run_reconcile >/dev/null

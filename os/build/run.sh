@@ -5,9 +5,9 @@
 #   bash os/build/run.sh --help
 #   bash os/build/run.sh src/geometry.test.ts   extra arguments go to `bun test`
 #
-# WHAT THIS PACKAGE IS. PLAN-014 M6a (RFCT-112): the TypeScript build driver the
-# two disk assemblers and the bundle builder move onto, in the shape os/verify
-# established in M3 -- bun.lock, package.json, tsconfig.json, run.sh, src/. This
+# WHAT THIS PACKAGE IS. The TypeScript build driver behind the two disk
+# assemblers and the bundle builder, in the same shape as os/verify --
+# bun.lock, package.json, tsconfig.json, run.sh, src/. This
 # milestone opens it with the two things every later part needs and nothing
 # else: the TYPED GEOMETRY of a board (taken from os/verify's model, not a
 # second copy of it) and Bun.$ WRAPPERS for the external toolset. No assembly
@@ -76,26 +76,21 @@ the build arguments it computed; try --build-rootfs --help. Same install, same
 typecheck, same bun; only the last step differs. The flag has to come first so
 that it can never be mistaken for a `bun test` filter.
 
-With --mkimage-v2 FIRST, it assembles the cx3576 image instead -- the
-TypeScript port of os/mkimage-v2.sh (PLAN-014 M6b). Its remaining arguments are
-the assembler's own; try --mkimage-v2 --help. The same first-position rule
-applies, for the same reason.
+With --mkimage-v2 FIRST, it assembles the cx3576 image instead. Its remaining
+arguments are the assembler's own; try --mkimage-v2 --help. The same
+first-position rule applies, for the same reason.
 
-With --mkimage-x64 FIRST, it assembles the x64 image -- the TypeScript port of
-os/mkimage-x64.sh (PLAN-014 M6c). Same shape, same first-position rule; try
---mkimage-x64 --help. It is a fourth arm rather than a board argument to the
-third because the two assemblers share a board format and a slot model and
-nothing else: one writes a U-Boot loader at a fixed sector and the other builds
-a standalone EFI binary, and a mistake in either would otherwise be a mistake in
-both.
+With --mkimage-x64 FIRST, it assembles the x64 image. Same shape, same
+first-position rule; try --mkimage-x64 --help. It is a fourth arm rather than a
+board argument to the third because the two assemblers share a board format and
+a slot model and nothing else: one writes a U-Boot loader at a fixed sector and
+the other builds a standalone EFI binary, and a mistake in either would
+otherwise be a mistake in both.
 
-With --bundle FIRST, it builds and SIGNS the RAUC update bundle -- the
-TypeScript port of os/update/bundle.sh (PLAN-014 M6d). Same shape, same
-first-position rule; try --bundle --help. Unlike the two assemblers this one
-takes a board, because os/update/bundle.sh took one: it was a single script
-whose two branches differ only in what a boot slot holds, which is the one
-thing RFCT-106 made a board fact. Both branches are gated -- M6e built an x64
-bundle against the shell before deleting it.
+With --bundle FIRST, it builds and SIGNS the RAUC update bundle. Same shape,
+same first-position rule; try --bundle --help. Unlike the two assemblers this
+one takes a board, because its two branches differ only in what a boot slot
+holds, and that is a board fact.
 
 The suite drives the real external toolset -- sgdisk, mtools, dd, mkimage,
 veritysetup, e2fsprogs and rauc. Each of those runs on the host when the host

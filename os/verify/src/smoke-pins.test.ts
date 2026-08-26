@@ -1,13 +1,13 @@
 // The pin readers, driven from the failing side.
 //
-// RFCT-113 M7b, RFCT-096's rule. Every case here that matters is a case where
+// Every case here that matters is a case where
 // the reader must REFUSE, because the failure mode this file guards is a reader
 // that returns something plausible instead: an empty expectation that nothing
 // can meet, or -- worse -- a dependency's version silently standing in for a
 // crate's. Both would produce a smoke run that is red or green for a reason
 // nobody could act on.
 //
-// THE POSITIVE CONTROLS ARE THE SHIPPED FILES. Every negative case below is a
+// The positive controls are the shipped files. Every negative case below is a
 // fabricated fixture, and a suite of nothing but fabricated fixtures proves
 // only that the reader handles files nobody has. So each group also reads the
 // REAL os/podman/versions.env, os/update/rauc/versions.env and crate manifests,

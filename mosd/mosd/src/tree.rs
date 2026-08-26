@@ -1,4 +1,4 @@
-//! The `com.mos.Item1` item-tree façade (PLAN-011 M1, M2).
+//! The `com.mos.Item1` item-tree façade.
 //!
 //! Projects the settings tree and the live-state tree as one flat item tree
 //! per `docs/design/bus.md`: `GetItems() -> a{sa{sv}}` and the coalesced

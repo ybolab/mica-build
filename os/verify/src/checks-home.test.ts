@@ -1,16 +1,16 @@
 // The persistent homes, the mos account and the STATE binds, driven from the
 // failing side.
 //
-// PLAN-014 M4f (RFCT-110), RFCT-096. Each case is green first, then ONE edit.
+// Each case is green first, then ONE edit.
 // The edits are the shapes these failures take on a device rather than in a
 // diff:
 //
 //   - a bind pointed at STATE instead of DATA. It reads as a tidy-up -- both are
 //     persistent -- and it puts a directory of unbounded size on the 64 MiB
 //     partition that holds the settings tree and the sshd host keys.
-//   - a mount unit installed and never ENABLED. M4 shipped exactly that; the
-//     target stays inside the read-only squashfs for ever and every check that
-//     only looked for the file still passes.
+//   - a mount unit installed and never ENABLED. The target stays inside the
+//     read-only squashfs for ever, and every check that only looks for the file
+//     still passes.
 //   - `mos` resolving to a different uid. The account is there, the shell is
 //     right, and every file already on DATA belongs to nobody.
 //   - a seed script that writes under /root. It runs BEFORE root.mount, so /root
@@ -714,11 +714,11 @@ describe('nothing precious is reachable only from /var', () => {
 })
 
 describe('the writable, persistent system unit directory', () => {
-  test('the bind absent fails, naming PLAN-011 D5\'s extension model', async () => {
+  test('the bind absent fails, naming the extension model it breaks', async () => {
     const fx = await mutated('ext-unit-dir-state-bind', root => rmSync(join(root, EXT_MOUNT)))
     try {
       expect(await messageOf(fx, 'ext-unit-dir-state-bind'))
-        .toContain("PLAN-011 D5's whole extension model does not work on the device")
+        .toContain('the whole extension model does not work on the device')
     }
     finally {
       fx.dispose()
@@ -750,7 +750,7 @@ describe('the writable, persistent system unit directory', () => {
   })
 
   test('re-pointing the bind at /etc/systemd/system fails BOTH checks', async () => {
-    // The change that reads like restoring PLAN-011 D5's original sentence and
+    // The change that reads like restoring the plan's original target and
     // actually reintroduces the hazard it was corrected for. It has to fail the
     // negative half too, because that is the half nothing else in the image can
     // tell apart from a legitimate change.

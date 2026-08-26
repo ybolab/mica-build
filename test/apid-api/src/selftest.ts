@@ -13,7 +13,7 @@
  *
  * It needs no network, no docker, no QEMU and no image: the peer is a stub
  * HTTP server on loopback, spoken to over `node:net`. It runs in seconds and
- * it is what every later subtask uses to know it did not break the machinery.
+ * it is how a change to the machinery is known not to have broken it.
  *
  * The stub speaks plain HTTP, not HTTPS, and carries NO private key. Every
  * case below is transport-independent -- the helpers operate on a parsed
@@ -741,8 +741,8 @@ try {
   outer.note("");
   outer.note("PHASE selftest-sni: SNI is omitted for an IP literal and sent for a hostname");
 
-  // The campaign's own shapes: loopback, the QEMU user-net guest address, and a
-  // container address on the shared docker network -- what APID_HOST really is.
+  // The three shapes APID_HOST takes: loopback, the QEMU user-net guest
+  // address, and a container address on the shared docker network.
   const ipv4Hosts = ["127.0.0.1", "10.0.2.15", "172.18.0.8"];
   const ipv4Sent = ipv4Hosts.filter((host) => sniServerName(host) !== undefined);
   outer.check(

@@ -5,7 +5,7 @@
 # Build arguments read from the environment: none.
 #
 # The `if [ "$WITH_CONTAINERS" != "1" ]; then rm -rf /tmp/podman; exit 0; fi`
-# that opened this file is gone with the argument (RFCT-111 M5c): the stage is
+# that opened this file is gone with the argument: the stage is
 # the switch, so running at all means the engine was asked for.
 
 set -eu

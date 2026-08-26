@@ -1,10 +1,8 @@
 // The check register, and what runChecks refuses to turn into a verdict.
 //
-// PLAN-014 M4a. The register is EMPTY here -- M4a ports no checks -- so the
-// well-formedness assertion over the shipped CHECKS is vacuous today and stops
-// being vacuous with M4b's first entry. The synthetic registers below are what
-// make that line mean something before then: every rule it enforces is driven
-// against a register that breaks it.
+// The well-formedness assertion over the shipped CHECKS only says the register
+// as it stands is acceptable. The synthetic registers below are what give it
+// teeth: every rule it enforces is driven against a register that breaks it.
 
 import { describe, expect, test } from 'bun:test'
 import {
@@ -22,9 +20,8 @@ function check(over: Partial<CheckCase> & Pick<CheckCase, 'id' | 'run'>): CheckC
 
 describe('the register refuses a shape that cannot be diffed', () => {
   test('the shipped register is well formed', () => {
-    // Vacuous while CHECKS is empty -- M4a ports no checks -- and it stops
-    // being vacuous with M4b's first entry. The refusals below are what make
-    // this line mean something before then.
+    // The shipped register, as a smoke check. The refusals below are what
+    // make the rules it satisfies mean something.
     expect(() => assertRegisterWellFormed()).not.toThrow()
     expect(CHECKS.length).toBeGreaterThanOrEqual(0)
   })

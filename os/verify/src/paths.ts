@@ -3,8 +3,7 @@
 // Path arithmetic counted in `..` is right until a file moves, and then it is
 // wrong SILENTLY: `resolve(dir, '..', '..')` always produces a path, and the
 // first thing to notice is a reader failing on a directory that is empty
-// rather than absent. PLAN-014 M1 has just moved most of os/ once and M5/M6
-// will move more, so every ascent here is anchored on something that must be
+// rather than absent, so every ascent here is anchored on something that must be
 // AT the destination, and the failure names the path it computed, the marker
 // it wanted and the number of levels it climbed.
 
@@ -52,13 +51,11 @@ export function boardEnvPath(board: string): string {
 /**
  * The boards this tree ships, in name order, READ OFF THE TREE.
  *
- * Discovered rather than written down. lint.ts used to keep this as a literal
- * -- `SHIPPED_BOARDS = ['cx3576', 'x64']` -- and every caller iterates it, so a
- * board added under os/boards/ and not to the literal was a board nothing here
- * ever read. Measured on 2026-08-26: with a third definition in place,
- * `make os-layout-lint` still reported `RESULT: PASS (26/26 checks)` and never
- * named it. That is green by having looked at less, which is the failure this
- * package exists to make visible in other people's checkers. A directory
+ * Discovered rather than written down. A literal -- `SHIPPED_BOARDS =
+ * ['cx3576', 'x64']` -- is what every caller iterates, so a board added under
+ * os/boards/ and not to the literal is a board nothing here ever reads:
+ * `make os-layout-lint` reports `RESULT: PASS (26/26 checks)` and never names
+ * it. That is green by having looked at less. A directory
  * listing cannot fall behind the directory.
  *
  * A `boards/<name>/` with no `board.env` in it is not a board and is skipped:

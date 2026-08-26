@@ -1,5 +1,5 @@
 //! Integration tests: the `com.mos.Item1` item-tree façade over a private
-//! session bus (PLAN-011 M1 and M2, `docs/design/bus.md`).
+//! session bus (`docs/design/bus.md`).
 //!
 //! Same harness as `tests/bus.rs`: a private `dbus-daemon --session` plus the
 //! `mosd` binary in dry-run mode (no reconcilers, so the host is never

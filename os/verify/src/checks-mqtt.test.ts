@@ -1,6 +1,6 @@
 // The MQTT pair driven from the failing side.
 //
-// PLAN-014 M4d (RFCT-110), RFCT-096. Each case is ONE edit to a fixture
+// Each case is ONE edit to a fixture
 // asserted green first, and each edit is a shape the real defect took: the
 // bridge absent from the image while its crate and protocol tests were green, a
 // `DynamicUser=yes` no `<policy user=>` could name, an ExecStart with a broker

@@ -1,6 +1,6 @@
-// Batch 1a driven from the failing side: one mutation per ported check.
+// The GPT families, driven from the failing side: one mutation per check.
 //
-// PLAN-014 M4b (RFCT-110), RFCT-096's rule. Each case asserts the check is
+// Each case asserts the check is
 // GREEN against an unmutated fixture and RED against a fixture that differs in
 // exactly one field -- because "agrees with the oracle" is what a check that
 // cannot fail also reports, and only the mutation separates them.

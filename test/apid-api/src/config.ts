@@ -71,8 +71,8 @@ function port(env: Env, name: string, fallback: number): number {
  * caller and the guest -- QEMU's `hostfwd` binds inside that container, that
  * container must publish the port, and `-p 127.0.0.1:...` publishes on the
  * DOCKER HOST's loopback, which is not the caller's. A default of loopback
- * makes all three failures present identically as "connection refused", which
- * cost this campaign three runs before it was measured (2026-08-24).
+ * makes all three failures present identically as "connection refused", with
+ * nothing in the message to say which door was shut.
  */
 export function loadConfig(env: Env = process.env): Config {
   const host = text(env, "APID_HOST");

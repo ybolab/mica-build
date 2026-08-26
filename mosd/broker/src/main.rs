@@ -133,9 +133,9 @@ fn main() -> Result<()> {
 /// decides: where to listen, and who may log in.
 ///
 /// A function rather than a block inside `main` so that the shape of what gets
-/// served is a value a test can assert on. The defect this replaces -- two
-/// listeners on one port -- was invisible to every test precisely because the
-/// config was built inline and nothing could look at it.
+/// served is a value a test can assert on. A config built inline is a config
+/// no test can look at -- two listeners on one port is exactly the defect that
+/// hides there.
 fn broker_config(listen: SocketAddr, auth: Option<HashMap<String, String>>) -> rumqttd::Config {
     let connections = ConnectionSettings {
         connection_timeout_ms: CONNECTION_TIMEOUT_MS,
@@ -162,19 +162,16 @@ fn broker_config(listen: SocketAddr, auth: Option<HashMap<String, String>>) -> r
     //
     // v4 is the half that has to survive: the only client in the image is
     // mos-mqttd, which connects through rumqttc's top-level `AsyncClient`, and
-    // that is the 3.1.1 surface. On a boot where v5 won the race the bridge
-    // could not reach the broker at all.
+    // that is the 3.1.1 surface. On a boot where v5 wins the race the bridge
+    // cannot reach the broker at all.
     //
-    // There is also nowhere to put a second listener. `mqtt.listen` in the
-    // settings model carries one address and one port by design, so serving
-    // 5.0 as well would mean changing the settings schema, which is not this
-    // campaign's to change.
+    // There is also nowhere to put a second listener: `mqtt.listen` in the
+    // settings model carries one address and one port by design.
     //
-    // MQTT 5.0 is therefore deferred, not refused. If a customer client ever
-    // needs it, it wants either a second port or a `protocol` key under
-    // `mqtt.listen` -- a settings-schema decision for the user to make, not
-    // something to smuggle in here by handing rumqttd a map it will race
-    // against itself.
+    // MQTT 5.0 is therefore deferred, not refused. Serving it wants either a
+    // second port or a `protocol` key under `mqtt.listen` -- a settings-schema
+    // decision, not something to smuggle in here by handing rumqttd a map it
+    // will race against itself.
     let v4 = HashMap::from([(
         "mos".to_string(),
         ServerSettings {
@@ -231,7 +228,7 @@ mod tests {
         SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), port)
     }
 
-    /// The regression test for the defect this file was rewritten to fix.
+    /// Exactly one listener, asserted on the VALUE.
     ///
     /// rumqttd runs `v4` and `v5` as separate servers that each `bind()` for
     /// themselves, so configuring both on one address means one of them dies

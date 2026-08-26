@@ -12,7 +12,7 @@ VENDOR_MINILOADER := uboot/MiniLoaderAll.bin
 # to Perl/macOS shasum. Both accept the same `-c` checkfile format.
 SHA256 := $(shell command -v sha256sum >/dev/null 2>&1 && echo sha256sum || echo "shasum -a 256")
 
-# EVERY BASE IMAGE BELOW COMES FROM os/build-env/images.env (RFCT-108 M2c). The
+# EVERY BASE IMAGE BELOW COMES FROM os/build-env/images.env. The
 # four Dockerfiles this Makefile drives declare their FROM argument with NO
 # default, so a recipe that forgot to pass one fails at `docker buildx build`
 # with "base name should not be blank" rather than building against a tag.

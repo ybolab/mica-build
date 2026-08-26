@@ -11,7 +11,7 @@
 // definition is CORRECT. A missing LAYOUT_PARTITIONS, a role no checker knows,
 // a partition with no PARTNUM -- all of those are reported as absent or
 // unknown and handed on. The schema lint is a separate consumer of this model
-// (os/verify/src/lint.ts, which M3b ported off the shell), and it is the one
+// (os/verify/src/lint.ts), and it is the one
 // that gets to say a board is wrong. Two reasons: a model that threw on the
 // first fault could only ever report one, and a lint whose messages came from
 // its data layer would say what the model noticed rather than what a board
@@ -121,10 +121,10 @@ export function modelBoard(env: BoardEnvFile, name: string): Board {
   // DOUBLE. Past 2^53 that stops being exact -- which is the same reason
   // board-env.ts:431-434 evaluates `$(( ))` in BigInt and says so: "a size that
   // is silently one byte out is the class of defect this whole package exists
-  // to make visible". This function used to hand back `Number(t)` regardless,
-  // so `ROOTFS_A_SIZE_SECTORS=9007199254740993` read back as ...992 with
-  // `faults` EMPTY -- inexact, and silent about it, in the one place whose job
-  // is to be neither.
+  // to make visible". Handing back `Number(t)` regardless would read
+  // `ROOTFS_A_SIZE_SECTORS=9007199254740993` back as ...992 with `faults`
+  // EMPTY -- inexact, and silent about it, in the one place whose job is to be
+  // neither.
   //
   // A FAULT, not a BigInt. Widening the type would ripple through walkLayout,
   // every GPT comparison and image.ts's sector arithmetic -- a change to the

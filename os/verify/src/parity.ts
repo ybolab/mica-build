@@ -1,13 +1,13 @@
 // The parity harness: what the shell verifier concluded, what the TypeScript
 // port concluded, and where the two differ -- PER CHECK.
 //
-// PLAN-014 M4 (RFCT-110), the M4a half. M4b..M4d port os/verify-image-v2.sh's
-// checks in batches and M4e deletes it at full parity; this file is the
-// instrument all four are measured by. Nothing in here runs a check. It parses
-// one verifier's output, takes the other's results, and says -- by NAME, per
-// check -- agree, diverge, or not ported.
+// M4b..M4d port os/verify-image-v2.sh's checks in batches and M4e deletes it
+// at full parity; this file is the instrument all four are measured by.
+// Nothing in here runs a check. It parses one verifier's output, takes the
+// other's results, and says -- by NAME, per check -- agree, diverge, or not
+// ported.
 //
-// ═══ WHY NOT A COUNT ═══
+// WHY NOT A COUNT.
 //
 // os/tests/ui-location-test.sh is this repository's reference for the
 // discipline and this file follows it deliberately: it names the assertions it
@@ -24,7 +24,7 @@
 //     count it vanishes into the noise; here a SKIP is a THIRD verdict that
 //     never equals a PASS, so pass-vs-skip is a divergence with a name.
 //
-// ═══ HOW A SHELL LINE GETS AN IDENTITY ═══
+// HOW A SHELL LINE GETS AN IDENTITY.
 //
 // os/verify-image-v2.sh prints `PASS: <prose>`, `FAIL: <prose>`, `SKIP: <prose>`
 // and nothing else -- measured on both boards' real images, 2026-08-25: every
@@ -43,11 +43,11 @@
 // without saying which shell conclusion it replaces, and cannot claim a shell
 // conclusion without being ported.
 //
-// The shell verifier is NOT modified to emit ids. It is the oracle; an oracle
-// edited to make its readings easier to compare is no longer independent of the
-// thing it measures.
+// The shell verifier is NOT modified to emit ids. It is the oracle, and an
+// oracle edited to make its readings easier to compare is not independent of
+// the thing it measures.
 //
-// ═══ WHAT "NOT PORTED" MUST LOOK LIKE ═══
+// WHAT "NOT PORTED" MUST LOOK LIKE.
 //
 // At M4a the register is EMPTY, so every shell conclusion is unclaimed. That is
 // the expected state and the harness has to SAY it rather than report agreement

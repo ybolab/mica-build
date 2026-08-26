@@ -1,12 +1,12 @@
 // Batch 4a: the container engine, the package-manager purge, and the trust store.
 //
-// PLAN-014 M4f (RFCT-110). Fifteen conclusions on each board -- ten from
-// `check_container_engine` (:1191), four from `check_no_package_manager`
-// (:1112) and one from `check_ca_bundle` (:3498). Three families in one module
-// because all three are the same act read from three sides: what the pack stage
-// PUT IN the root, what it TOOK OUT, and what it GENERATED on the way through.
+// Fifteen conclusions on each board -- ten from `check_container_engine`
+// (:1191), four from `check_no_package_manager` (:1112) and one from
+// `check_ca_bundle` (:3498). Three families in one module because all three
+// are the same act read from three sides: what the pack stage PUT IN the root,
+// what it TOOK OUT, and what it GENERATED on the way through.
 //
-// ═══ THE ONE SHAPE THIS REGISTER CANNOT EXPRESS, MEASURED AND RECORDED ═══
+// THE ONE SHAPE THIS REGISTER CANNOT EXPRESS, MEASURED AND RECORDED.
 //
 // `check_container_engine` opens with an early return:
 //
@@ -30,7 +30,7 @@
 // rather than papered over, because a limitation nobody recorded is one the next
 // batch rediscovers as a bug.
 //
-// ═══ WHY THE UNIT SEARCH EXCLUDES *.wants/* ═══
+// WHY THE UNIT SEARCH EXCLUDES *.wants/*.
 //
 // On purpose, not by oversight, and the oracle says so: an enablement symlink is
 // the NEXT check's subject and a dangling one can exist with no unit file behind
@@ -187,7 +187,7 @@ const ENGINE_CHECKS: readonly CheckCase[] = [
           ? 'the container engine is in the image: podman, crun, conmon, netavark, aardvark-dns, '
             + 'quadlet and its systemd generator'
           : `the container engine is incomplete:${missing.map(m => ` ${m}`).join('')} missing. `
-            + `PLAN-012 ships the engine installed and inert; a partial install is a switch that `
+            + `the engine ships installed and inert; a partial install is a switch that `
             + `turns on nothing`,
       )]
     },
@@ -224,9 +224,8 @@ const ENGINE_CHECKS: readonly CheckCase[] = [
   }),
 
   engineCheck({
-    // Reached by EXEC, so no NEEDED-soname check can see it. It was missing from
-    // the image RFCT-101/102 shipped, which passed every assertion this file
-    // then had.
+    // Reached by EXEC, so no NEEDED-soname check can see it: an image can be
+    // missing it and pass every soname assertion in this file.
     id: 'container-engine-nft',
     shell: {
       pass: 'nft is in the image; netavark 2.x has no iptables driver',
@@ -330,7 +329,7 @@ const ENGINE_CHECKS: readonly CheckCase[] = [
 
   engineCheck({
     // The default helper_binaries_dir begins with two directories under
-    // /usr/local, a prefix this image makes PARTIALLY WRITABLE (PLAN-011 D5).
+    // /usr/local, a prefix this image makes PARTIALLY WRITABLE.
     // Pinned, not searched.
     id: 'container-engine-helper-dir-pinned',
     shell: {
@@ -373,7 +372,7 @@ const ENGINE_CHECKS: readonly CheckCase[] = [
           ? 'no podman unit carries an enablement symlink; the engine is inert in the shipped image'
           : `podman units carry an enablement symlink in the image:${enabled.join(' ')} . `
             + `The device would run containers before anyone asked, which is the opposite of `
-            + `PLAN-012's default-off switch`,
+            + `the default-off switch`,
       )
     },
   }),
@@ -486,7 +485,8 @@ const ENGINE_CHECKS: readonly CheckCase[] = [
           `${QUADLET_MOUNT_UNIT} is STATICALLY ENABLED. The bind then comes up at every boot whatever `
           + `container.enabled says, Quadlet generates units from STATE, and they start — so anything `
           + `able to write /mnt/state/quadlet gets a root-capable container at the next reboot with no `
-          + `operator decision anywhere in the path, and PLAN-012's switch gates nothing. mosd's `
+          + `operator decision anywhere in the path, and the container.enabled switch gates `
+          + `nothing. mosd's `
           + `ContainerReconciler enables it at runtime when the setting is true`)
       }
       return verdict(id, true,
@@ -498,7 +498,7 @@ const ENGINE_CHECKS: readonly CheckCase[] = [
 ]
 
 // ---------------------------------------------------------------------------
-// check_no_package_manager -- os/verify-image-v2.sh:1112
+// check_no_package_manager
 // ---------------------------------------------------------------------------
 
 const PKGMGR_BINARIES = [
@@ -633,7 +633,7 @@ const PURGE_CHECKS: readonly CheckCase[] = [
 ]
 
 // ---------------------------------------------------------------------------
-// check_ca_bundle -- os/verify-image-v2.sh:3498
+// check_ca_bundle
 // ---------------------------------------------------------------------------
 
 const CA_BUNDLE = '/etc/ssl/certs/ca-certificates.crt'

@@ -4,13 +4,12 @@
 #
 #   make build-env   -> localhost/mos-build-go
 #
-# PLAN-014 M2 (RFCT-108), decision 4: NOT `golang:1.25-trixie`. The official
-# image is a moving floor nobody here chose -- it picks its own Debian release,
-# its own CA bundle and its own git, and changes all three on its own schedule,
-# so "what did this build run on" is answerable only as a date. This is
-# mos-build-base, which is a pinned digest, plus one tarball whose bytes are
-# named in os/build-env/images.env. What that costs is written in PLAN-014's
-# risks: a Go security release now arrives by editing images.env.
+# NOT `golang:1.25-trixie`. The official image is a moving floor nobody here
+# chose -- it picks its own Debian release, its own CA bundle and its own git,
+# and changes all three on its own schedule, so "what did this build run on"
+# is answerable only as a date. This is mos-build-base, which is a pinned
+# digest, plus one tarball whose bytes are named in os/build-env/images.env.
+# The cost is that a Go security release arrives by editing images.env.
 #
 # TWO STAGES, AND THE SPLIT IS NOT COSMETIC. `fetch` needs curl to get the
 # tarball; the finished builder does not, and a network client in a build image
@@ -226,7 +225,7 @@ RUN set -eu; \
 # os/build-env/build.sh's read-back: an image that inherits its parent's record
 # and writes none of its own is asserting nothing under its own name.
 LABEL org.opencontainers.image.title="mos-build-go" \
-      org.opencontainers.image.description="mos Go toolchain, sha256-pinned tarball (PLAN-014 M2, RFCT-108)" \
+      org.opencontainers.image.description="mos Go toolchain, sha256-pinned tarball" \
       org.opencontainers.image.base.name="${MOS_BASE_IMAGE}" \
       com.mos.build-env.source="os/build-env/go/Dockerfile" \
       com.mos.build-env.pins="os/build-env/images.env"

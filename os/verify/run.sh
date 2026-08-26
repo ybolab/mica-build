@@ -9,34 +9,22 @@
 #   bash os/verify/run.sh --smoke        execute the self-built artifacts in the factory root
 #   bash os/verify/run.sh --smoke-negative   break the root three ways, and require each red
 #
-# WHAT THIS PACKAGE IS. PLAN-014 M3: the bun+TypeScript foundation the rest of
-# os/ moves onto, in the shape test/apid-api already established -- bun.lock,
-# package.json, tsconfig.json, run.sh, src/. It starts with the board
-# definition, because that is the smallest thing in the tree that every other
-# thing reads: os/boards/<board>/board.env, parsed as DATA rather than sourced.
-#
-# THE SEAM FOR THE TOOL-LESS HOST, now closed. Exactly one function below
-# decides how bun is invoked -- run_bun -- and it has two routes: a bun binary
-# on the host, or the digest-pinned bun container recorded as IMAGE_BUN_1 in
+# THE SEAM FOR THE TOOL-LESS HOST. Exactly one function below decides how bun
+# is invoked -- run_bun -- and it has two routes: a bun binary on the host, or
+# the digest-pinned bun container recorded as IMAGE_BUN_1 in
 # os/build-env/images.env. Every caller passes an argv and reads an exit status
 # and cannot tell which route it got, which is what makes a host with no bun a
-# SUPPORTED host rather than a documented limitation. Before M3b that was a
-# nicety; since M3b it is a regression-closer, because os-layout-lint used to
-# run on bare bash and now needs bun like the suite does.
+# SUPPORTED host rather than a documented limitation.
 #
-# ZERO TESTS IS A FAILURE, AND BUN DOES NOT AGREE. Measured with bun 1.4.0 on
-# 2026-08-25: `bun test` exits 1 when no test FILE matches its glob, but exits
-# 0 when a file matches and declares no tests -- "Ran 0 tests across 1 file",
-# green. That is the exact shape of the failure this tree keeps finding in its
-# own checkers: the shell lint this package replaced printed FAIL lines and
-# reported "RESULT: PASS (0/0 checks)" because its counters died in a subshell.
-# So the count is read out of the run and a run that asserted nothing is turned
-# red here. The same guard, at the lint's own granularity, is in src/lint.ts.
+# ZERO TESTS IS A FAILURE, AND BUN DOES NOT AGREE. `bun test` exits 1 when no
+# test FILE matches its glob, but exits 0 when a file matches and declares no
+# tests -- "Ran 0 tests across 1 file", green. So the count is read out of the
+# run and a run that asserted nothing is turned red here. The same guard, at
+# the lint's own granularity, is in src/lint.ts.
 set -euo pipefail
 
 # Anchored, not counted. `..` arithmetic always produces a path, so a file that
-# moves fails later on a directory that is empty rather than absent -- and
-# PLAN-014 has moved most of os/ once already, with M5 and M6 still to come.
+# moves fails later on a directory that is empty rather than absent.
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${HERE}/../.." && pwd)"
 for anchor in "${HERE}/package.json" "${HERE}/src/board-env.ts" "${REPO_ROOT}/Makefile" "${REPO_ROOT}/os/boards"; do
@@ -75,7 +63,7 @@ IMAGE_ALPINE_3_21 -- and on a host with no bun it runs in a second pinned image,
 IMAGE_BUN_1 plus the client pinned as IMAGE_DOCKER_CLI_28, with the daemon
 socket mounted. That is a privilege grant, taken only in this mode.
 
-With --smoke FIRST, it runs RFCT-113's smoke runner: it loads
+With --smoke FIRST, it runs the smoke runner: it loads
 _out/<board>/factory-root.oci -- the packed root the build exports as an OCI
 image -- and EXECUTES every self-built artifact inside it, requiring exit 0 and
 that the version each one reports equals the version this repository pinned. It
@@ -83,7 +71,7 @@ needs DOCKER for the same reason --verify does and one stronger: the whole point
 is to run the shipped binaries, and they are built for the board rather than for
 this host. It refuses rather than skipping when the image is absent.
 
-With --smoke-negative FIRST, it runs RFCT-113's three negative tests: it builds
+With --smoke-negative FIRST, it runs the three negative tests: it builds
 three images from that board's factory root, each carrying one deliberately made
 defect -- a wrong-arch binary, a binary whose NEEDed library has been taken away,
 and a binary that reports a version other than its pin -- and requires the smoke
@@ -121,20 +109,18 @@ case "${1:-}" in
 --smoke-negative) MODE=smoke-negative; shift ;;
 esac
 
-# The two modes that drive docker themselves. Named once, because every place
-# below that used to test `[ "${MODE}" = verify ]` is asking this question and
-# not that one -- and a second spelling of the same condition is how --smoke
-# would come to mount a socket in one place and not in the other.
+# The two modes that drive docker themselves. Named once: every place below is
+# asking THIS question and not `[ "${MODE}" = verify ]`, and a second spelling
+# of the same condition is how --smoke would come to mount a socket in one
+# place and not in the other.
 needs_docker() { case "${MODE}" in verify | smoke | smoke-negative) return 0 ;; *) return 1 ;; esac; }
 
-# ...and anywhere else either is a MISTAKE, refused rather than forwarded. Driven
-# from the failing side: `run.sh src/lint.test.ts --lint` handed --lint to
-# `bun test`, which ignored the unknown flag, ran the suite and exited 0 -- so
-# asking for the lint got a green that was about something else entirely.
-# --verify is refused here on the same evidence rather than on the analogy: the
-# verifier's own argument parser rejects an unknown option, but in the SUITE mode
-# it never reaches that parser, and `bun test --verify` is the same green about
-# the same wrong thing.
+# ...and anywhere else either is a MISTAKE, refused rather than forwarded.
+# `run.sh src/lint.test.ts --lint` hands --lint to `bun test`, which ignores
+# the unknown flag, runs the suite and exits 0 -- so asking for the lint would
+# get a green that is about something else entirely. In SUITE mode an argument
+# never reaches the verifier's own parser, so `bun test --verify` is the same
+# green about the same wrong thing.
 for arg in "$@"; do
     case "${arg}" in --lint | --verify | --smoke | --smoke-negative) ;; *) continue ;; esac
     echo "error: ${arg} has to be the FIRST argument; here it came after '$1'." >&2
@@ -161,13 +147,10 @@ fi
 # --verify's path arguments, for the same reason and one worse one.
 #
 # The lint's paths are READ, so resolving one against os/verify/ produces a
-# "not found" -- wrong, but visible. The deleted parity harness's --json was
-# WRITTEN, and it printed back the relative string it was given, so the run
-# reported writing a diff to a path the caller could not cat. Measured on
-# 2026-08-26 from the repository root: the message named
-# _out/m4c/jsontest/before.json and the file was created one directory tree
-# over, under this package. M4b hit it and worked around it; --verify's --work
-# is written the same way and is absolutised here for the same reason.
+# "not found" -- wrong, but visible. --work is WRITTEN: a relative value would
+# be echoed back as the caller typed it while the directory was created one
+# tree over, under this package, so the run reports writing to a path the
+# caller cannot cat.
 #
 # NOT the loop above, which absolutises every bare argument: here the paths are
 # the VALUES of two options and `--board cx3576` is a bare argument too. So only
@@ -226,31 +209,15 @@ elif [ -z "${BUN}" ]; then
     fi
 fi
 
-# THE ONE MODE THE CONTAINER ROUTE COULD NOT CARRY, AND NOW CAN.
+# THE DOCKER-DRIVING MODES ON A BUN-LESS HOST.
 #
 # --verify drives docker itself: src/tools.ts takes the pinned alpine whenever
 # the host lacks sgdisk/mtools/debugfs/unsquashfs/veritysetup, which on a
 # tool-less host is always. Inside the bun container that is docker-in-docker,
-# and IMAGE_BUN_1 carries no docker client, so this used to be a refusal.
-#
-# MEASURED, at the line, before it was closed -- M4e, 2026-08-26, running the
-# full verifier inside the pinned bun image with the repository identity-mounted:
-#
-#   * the register's own seam refused: createToolRuntime said "this host has no
-#     sgdisk, ... fdtget and no docker to run the pinned ones in";
-#   * the shell verifier this package replaced died at its own :185 with exit
-#     127, `docker: command not found`, for the same one cause;
-#   * mounting the daemon socket changed NEITHER -- what was missing is the
-#     CLIENT, not a reachable daemon;
-#   * `docker run <IMAGE_BUN_1> sh -c 'command -v docker'` printed nothing, and
-#     there is no curl, wget, nc, python3 or socat in it either.
-#
-# THE USER DECIDED TO CLOSE IT BY ADDING A PIN, on 2026-08-26, and this is that
-# decision carried out: os/verify/Dockerfile is the pinned bun image plus the
-# client out of IMAGE_DOCKER_CLI_28, and RFCT-110's third acceptance clause is
-# satisfied rather than amended. The alternative that needs no pin -- teaching
-# src/tools.ts to speak the daemon's HTTP API over the socket, which does work
-# from bun -- was NOT chosen and is not implemented.
+# and IMAGE_BUN_1 carries no docker client -- not curl, wget, nc, python3 or
+# socat either, and mounting the daemon socket does not help because what is
+# missing is the CLIENT. So os/verify/Dockerfile is the pinned bun image plus
+# the client out of IMAGE_DOCKER_CLI_28.
 #
 # BUILT HERE AND NOT BY `make build-env`. That target builds the four
 # mos-build-* compiler images and nothing runs it before running the verifier;
@@ -384,8 +351,6 @@ else
     # about. Mounted at its own path there is no rewrite to get wrong and no
     # arithmetic to go stale -- the same bytes answer to the same name on both
     # routes, which is what makes the two runs comparable verdict for verdict.
-    # os/tests/mkimage-v2-selftest.sh and mkimage-x64-selftest.sh mount ${WORK}
-    # at ${WORK} for their tool containers and say so in the same terms.
     MOUNTS=(-v "${REPO_ROOT}:${REPO_ROOT}")
 
     # THE DAEMON SOCKET, for --verify only, at its own path like everything else
@@ -429,29 +394,20 @@ else
         done
     fi
 
-    # THE MOUNT THAT SUCCEEDS AND CARRIES NOTHING. On this host a bind mount of
-    # anything under /tmp propagates as an EMPTY DIRECTORY rather than failing:
-    # measured 2026-08-25, `docker run -v /tmp/d:/tmp/d ... cat /tmp/d/f` reports
-    # "No such file or directory" for a file the host reads fine.
+    # THE MOUNT THAT SUCCEEDS AND CARRIES NOTHING. On some hosts a bind mount
+    # of anything under /tmp propagates as an EMPTY DIRECTORY rather than
+    # failing: `docker run -v /tmp/d:/tmp/d ... cat /tmp/d/f` reports "No such
+    # file or directory" for a file the host reads fine.
     #
-    # WHAT THIS GUARD IS AND IS NOT, measured rather than assumed. It is NOT the
-    # only thing between that mount and a green run: with this check disabled,
-    # all three ways in still fail, and all three exit 1 -- the lint's own
-    # existsSync says "<path> not found", `bun test` over a vanished package
-    # says "No tests found!", and `bun run src/lint-cli.ts` says "Module not
-    # found". Nothing reports a false green, and a comment claiming otherwise
-    # would be exactly the kind of unchecked assertion this package exists to
-    # catch -- so it was driven, and then rewritten.
-    #
-    # What it buys is the CAUSE. Each of those three sentences describes a file
-    # that is missing, and on this route the file is not missing -- the mount is
-    # empty, and the file is exactly where the caller said it was. A reader sent
-    # to look for a path they can `cat` is being sent to the wrong edit, which is
-    # the same defect M3b recorded when lint.sh said "declares no X" about a file
-    # containing X="". So every path the run depends on is asserted VISIBLE
-    # INSIDE THE CONTAINER first, and the refusal names the mount. One container,
-    # ~260ms, and it carries the version too, so it costs no extra start over the
-    # `bun --version` the host route prints.
+    # THIS GUARD BUYS THE CAUSE, NOT THE FAILURE. Without it the run still
+    # fails and still exits 1 -- the lint's own existsSync says "<path> not
+    # found", `bun test` over a vanished package says "No tests found!", and
+    # `bun run src/lint-cli.ts` says "Module not found" -- but every one of
+    # those sentences describes a file that is missing, and here the file is
+    # not missing: the mount is empty. So every path the run depends on is
+    # asserted VISIBLE INSIDE THE CONTAINER first, and the refusal names the
+    # mount. One container, ~260ms, and it carries the version too, so it costs
+    # no extra start over the `bun --version` the host route prints.
     PREFLIGHT=("${HERE}/package.json" "${HERE}/src/lint-cli.ts")
     PREFLIGHT+=(${NEED_SEEN[@]+"${NEED_SEEN[@]}"})
     probe="$(docker run --rm "${MOUNTS[@]}" "${BUN_IMAGE}" \
@@ -513,9 +469,9 @@ run_bun run typecheck
 # --- the lint, which is the other thing this package is for ------------------
 # No vacuity guard here, because the lint carries its own: src/lint.ts refuses a
 # run in which any FILE contributed zero assertions, which is finer than a total
-# that is merely non-zero. The shell predecessor learned that the hard way --
-# one board died while being sourced, contributed nothing, and the run reported
-# PASS from the other board alone.
+# that is merely non-zero -- one board that dies while being read contributes
+# nothing, and a merely non-zero total reports PASS from the other board
+# alone.
 if [ "${MODE}" = lint ]; then
     echo "os/verify: board-definition schema lint"
     rc=0
@@ -528,8 +484,7 @@ fi
 # suite's: src/verify-cli.ts carries its own, at a granularity this script
 # cannot see. A run in which the register concluded NOTHING is turned red there,
 # by count, because `RESULT: PASS (0/0 checks)` is invariant under a run in
-# which nothing executed -- which is exactly how the shell lint this package
-# replaced reported green while its counters died in a subshell.
+# which nothing executed.
 if [ "${MODE}" = verify ]; then
     echo "os/verify: image contract"
     rc=0

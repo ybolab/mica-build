@@ -5,7 +5,7 @@
 #   bash os/build-env/build.sh         same thing
 #   MOS_BUILD_PLATFORM=linux/arm64 ... build for another architecture
 #
-# PLAN-014 M2 (RFCT-108). A driver script rather than a `docker buildx build`
+# A driver script rather than a `docker buildx build`
 # line in the Makefile, for the reason os/podman/build.sh gives: the builder
 # selection and the lock derivation below are real logic, and a Makefile recipe
 # that grew them would grow their bugs a second time. This is also where the
@@ -283,10 +283,10 @@ fi
 # well-formed reference to a TAG is not an error at all -- it is the silent
 # float this milestone exists to remove.
 #
-# DELEGATED TO os/build-env/from.sh SINCE M2c, where it used to be written out
-# here. M2c gave every Dockerfile in the tree its FROM as a build argument, so
-# eight other call sites now need exactly this judgement, and two copies of "is
-# this a digest" is one copy that eventually stops being it. --check validates
+# DELEGATED TO os/build-env/from.sh, not written out here. Every Dockerfile in
+# the tree takes its FROM as a build argument, so eight other call sites need
+# exactly this judgement, and two copies of "is this a digest" is one copy that
+# eventually stops being it. --check validates
 # EVERY IMAGE_ key, which is the same scope this loop had and the same scope the
 # PENDING scan above has: a pin that is wrong is wrong the day it is written.
 bash "${HERE}/from.sh" --check
@@ -299,8 +299,9 @@ bash "${HERE}/from.sh" --check
 # FROM in the tree it cannot be fed a --build-arg, and os/build-env/from.sh has
 # no way to reach it. The reference has to be written out at each Dockerfile.
 #
-# WHICH IS EXACTLY THE SHAPE M2b REFUSED -- a value in more than one place, of
-# which all but one eventually stop being it -- so the copies are checked here
+# WHICH IS EXACTLY THE SHAPE THIS FILE OTHERWISE REFUSES -- a value in more
+# than one place, of which all but one eventually stop being it -- so the
+# copies are checked here
 # instead of trusted. images.env stays the single source: it holds the digest,
 # and a Dockerfile whose line has drifted from it fails `make build-env` by
 # name. Bumping the frontend is one PENDING in images.env and twelve edits this

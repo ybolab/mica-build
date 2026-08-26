@@ -1,10 +1,10 @@
 // Batch 2b: /etc/fstab, and where the custom UI root actually lands.
 //
-// PLAN-014 M4c (RFCT-110). Four storage tiers, two shape assertions about the
-// table itself, and the six-way question the four tier checks cannot answer:
-// which entry governs the path apid reads.
+// Four storage tiers, two shape assertions about the table itself, and the
+// six-way question the four tier checks cannot answer: which entry governs the
+// path apid reads.
 //
-// ═══ WHY UI_ROOT IS ASSERTED SEPARATELY AT ALL ═══
+// WHY UI_ROOT IS ASSERTED SEPARATELY AT ALL.
 //
 // The tier checks are about PARTITIONS. None of them would notice /srv/ui
 // moving off DATA -- onto STATE, where 64 MiB holds the settings tree and the
@@ -13,7 +13,7 @@
 // disappears. Both are silent on the device and neither is visible to a check
 // that only asks "is DATA mounted at /srv with growfs".
 //
-// ═══ ONE CHECK, SEVEN FIRINGS, AND WHY NOT SEVEN CHECKS ═══
+// ONE CHECK, SEVEN FIRINGS, AND WHY NOT SEVEN CHECKS.
 //
 // `check_ui_location` has two paths. With no covering fstab entry it emits ONE
 // conclusion and returns; otherwise it emits SIX. Seven independent `one`

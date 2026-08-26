@@ -5,10 +5,9 @@
 # Called from os/rootfs/stages/40-board.Dockerfile, where the reasoning lives.
 # Build arguments read from the environment: BOARD_FIRMWARE_FILES.
 #
-# It used to read MOS_ARCH and take an `amd64` early exit, because the stage
-# COPYd cx3576's five firmware files onto every board and this was where the
-# other board threw them away. The board now stages what it carries, so the
-# question this script asks is what is here rather than which board it is on.
+# It reads no MOS_ARCH and takes no per-board early exit: the board stages what
+# it carries, so the question this script asks is what is HERE rather than
+# which board it is on.
 
 set -eu
 if [ -z "${BOARD_FIRMWARE_FILES}" ]; then

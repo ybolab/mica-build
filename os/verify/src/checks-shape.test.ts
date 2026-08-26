@@ -1,7 +1,6 @@
-// Batch 4b's image-shape and file-capability family, driven from the failing side.
+// The image-shape and file-capability family, driven from the failing side.
 //
-// PLAN-014 M4g (RFCT-110), RFCT-096's rule. Four conclusions per board, and two
-// of them are the last two things this campaign could not express: the
+// Four conclusions per board, and two of them are awkward to express: the
 // partition COUNT, which has no board-independent substring, and the capability
 // comparison, whose passing direction on both shipped images is "both empty".
 

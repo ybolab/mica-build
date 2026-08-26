@@ -8,7 +8,7 @@
 //
 // THE EPOCH IS IN THE FILENAME ONLY. The bundle CONTENT is a function of the
 // inputs and the version string and never of the wall clock, which is what
-// makes RFCT-112's gate a hash rather than an argument: two builds of the same
+// makes the rebuild gate a hash rather than an argument: two builds of the same
 // version from the same inputs produce the same payload. That is measured here
 // (payloadReport) rather than claimed, and it is measured over the PAYLOAD --
 // the squashfs at the head of the bundle -- because the bytes after it are
@@ -571,7 +571,7 @@ export interface PayloadReport {
  * inputs; the bytes after it are not. rauc salts the bundle's own dm-verity
  * hash tree at random and the CMS signature carries a signingTime attribute,
  * so two builds of the same version differ in the tail and MUST NOT in the
- * head. That makes this digest RFCT-112's gate for the bundle.
+ * head. That makes this digest the rebuild gate for the bundle.
  *
  * `bytes_used` sits at offset 40 of the squashfs superblock as a little-endian
  * u64 -- `od -An -tu8 -j40 -N8` in the shell -- and is rounded up to the 4096
@@ -782,7 +782,7 @@ export async function buildBundle(
     let bootAttemptsSeen = 0
 
     // THE BOOT HALF, which is the one thing that genuinely differs between the
-    // two bootloaders (RFCT-106).
+    // two bootloaders.
     if (geometry.bootloader === 'uboot') {
       const bootCmdText = readFileSync(bootCmdPath, 'utf8')
       bootAttemptsSeen = requireBootAttempts(geometry, bootCmdText, bootCmdPath).length

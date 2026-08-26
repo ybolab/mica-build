@@ -14,9 +14,8 @@
 # `--verify`. A host with bun never builds it; the suite and the lint never
 # build it.
 #
-# WHY THIS EXISTS. RFCT-110's third acceptance clause is "tool-less-host
-# container path verified for the full verifier, not just the lint", and M4e
-# measured it unsatisfiable as the tree stood. os/verify drives docker itself --
+# WHY THIS EXISTS. The full verifier has to run on a host with no bun, and
+# IMAGE_BUN_1 alone cannot carry it: os/verify drives docker itself --
 # src/tools.ts reads the image with sgdisk, mtools, debugfs, unsquashfs and
 # veritysetup out of IMAGE_ALPINE_3_21 -- and the pinned bun image carries no
 # docker client at all, so inside it every route ends at `docker: command not

@@ -6,8 +6,8 @@
  * post here travels apid -> the system bus -> mosd -> a reconciler -> the
  * device, and only the far end of that chain is worth asserting on. Posting
  * /hostname and getting a 303 proves that a handler returned. It does not
- * prove the hostname changed -- and a suite that checked only status codes
- * would have passed on every defect this campaign has found this week.
+ * prove the hostname changed, and a suite that checked only status codes would
+ * pass on a device that never acted on the post.
  *
  * So every mutation below is observed at least twice, and never only by its
  * status code:
@@ -658,23 +658,19 @@ async function networkNoOp(ctx: PhaseContext, log: ConsoleLog): Promise<void> {
   // name with another one's addressing.
   const forms = interfaceForms(pane.body);
   if (forms.length === 0) {
-    // MEASURED 2026-08-24, and it corrects an assumption this phase shipped
-    // with: a freshly provisioned mos device has NO mosd-managed interface at
-    // all. /network renders the "Add interface" fieldset and nothing above it,
+    // A freshly provisioned mos device has NO mosd-managed interface at all:
+    // /network renders the "Add interface" fieldset and nothing above it,
     // because the link the suite is talking over is brought up by
     // systemd-networkd's own defaults rather than by anything in mosd's
-    // settings. The pane is right; the expectation was wrong.
+    // settings.
     //
-    // This used to FAIL here ("GET /network names the interface it is currently
-    // configuring") before skipping the round trip -- a red line about the
-    // device being in its ordinary shipped state. There is genuinely no no-op
-    // to make: with nothing configured, posting `dhcp=on` would CREATE
-    // configuration rather than post existing configuration back unchanged, and
-    // posting a static address from this suite is forbidden outright. So the
-    // honest report is a skip that says what the pane actually contained.
-    //
-    // What IS still asserted is that the pane renders at all, which is the part
-    // that does not depend on how the device is configured.
+    // There is then no no-op round trip to make -- with nothing configured,
+    // posting `dhcp=on` would CREATE configuration rather than post existing
+    // configuration back unchanged, and posting a static address from this
+    // suite is forbidden outright -- so the round trip is skipped with the
+    // pane's actual contents as the reason. What is still asserted is that the
+    // pane renders at all, which does not depend on how the device is
+    // configured.
     report.check(
       pane.body.includes("Add interface"),
       "GET /network renders the interface pane (the 'Add interface' fieldset)",

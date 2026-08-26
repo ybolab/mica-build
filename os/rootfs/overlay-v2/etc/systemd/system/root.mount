@@ -11,8 +11,8 @@ Description=Persistent root home directory from the DATA partition
 # on without a ceiling.
 #
 # KEY LOGIN DOES NOT DEPEND ON THIS BIND. sshd reads
-# /etc/ssh/authorized_keys.d/%u, never /root/.ssh/authorized_keys -- RFCT-034
-# chose that path precisely because /root was ephemeral -- so a /root that
+# /etc/ssh/authorized_keys.d/%u, never /root/.ssh/authorized_keys -- that path
+# was chosen precisely because /root was ephemeral -- so a /root that
 # fails to mount does not lock anyone out. The reverse is also worth knowing: a
 # key written to /root/.ssh/authorized_keys now SURVIVES a reboot and still
 # grants nothing, because AuthorizedKeysFile REPLACES the default locations

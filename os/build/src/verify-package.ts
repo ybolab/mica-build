@@ -1,6 +1,6 @@
 // THE ONE PLACE os/build REACHES INTO os/verify.
 //
-// M3 (RFCT-109) built the typed board model in os/verify/src: board-env.ts
+// M3 built the typed board model in os/verify/src: board-env.ts
 // parses `boards/<board>/board.env` as DATA -- never sourcing it, never reading
 // process.env, refusing by name everything a shell would have executed -- and
 // board.ts turns that into partitions, roles, bootloader and the board lists,
@@ -11,15 +11,14 @@
 // file is the choice:
 //
 //   1. COPY IT. Refused, and not as a matter of taste. Two parsers that must
-//      agree about the same bytes are the duplication PLAN-014 has spent its
-//      length removing (os/health's byte-identical pair, mkimage-common.sh's
-//      header on why an ARGUMENT must not be copied). The failure mode is not
+//      agree about the same bytes are exactly the duplication this tree keeps
+//      removing. The failure mode is not
 //      that a copy is wrong on the day it is made: it is that it reads as
 //      self-evidently correct years after one of its reasons changed.
 //
 //   2. A THIRD, SHARED PACKAGE. That means MOVING M3's sources out of the
 //      package whose README, HARNESS and 108 tests describe them where they
-//      are, three days after that gate closed and while M4 (RFCT-110) is still
+//      are, three days after that gate closed and while M4 is still
 //      to port the verifier on top of them. The cost is real and the benefit is
 //      a directory name.
 //

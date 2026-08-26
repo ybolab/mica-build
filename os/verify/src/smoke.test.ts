@@ -1,6 +1,6 @@
 // The runner, driven from the failing side without a daemon, an image or a build.
 //
-// RFCT-113 M7b, RFCT-096's rule. Everything here is reachable because the
+// Everything here is reachable because the
 // runner takes an `Exec` -- a function from argv to (status, stdout, stderr) --
 // so the suite fabricates outcomes a healthy tree can never produce: a
 // wrong-architecture refusal, a binary that is not where the register says, a
@@ -8,12 +8,12 @@
 // against a correct image would have no way to show that its RED branches work,
 // and a check whose red branch has never run is a check nobody has run.
 //
-// THE VERSION LOOP IS TESTED AS A LOOP, not as a comparison. RFCT-113's third
-// acceptance clause is "bumping a `versions.env` pin without rebuilding the
-// artifact turns the smoke run red", and the case below does exactly that: one
-// fixture file, one unchanged binary output, one edit to the pin, and the
-// verdict flips. Asserting `judge` on two literals would test the comparison
-// and say nothing about whether the pin is re-read from the file it lives in.
+// The version loop is tested as a loop, not as a comparison: bumping a
+// `versions.env` pin without rebuilding the artifact must turn the smoke run
+// red, and the case below does exactly that -- one fixture file, one unchanged
+// binary output, one edit to the pin, and the verdict flips. Asserting `judge`
+// on two literals would test the comparison and say nothing about whether the
+// pin is re-read from the file it lives in.
 
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test'
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
@@ -105,9 +105,9 @@ describe('versionTokens -- one reader for ten different sentences', () => {
     }
   })
 
-  // MAXIMAL MUNCH IS THE POINT. A `contains` over a substring would let a
+  // Maximal munch is the point. A `contains` over a substring would let a
   // 1.29.10 binary satisfy a 1.29.1 pin, which is a version skew reported as
-  // agreement -- the exact failure RFCT-113 exists to catch.
+  // agreement -- the exact failure the smoke run exists to catch.
   test('a longer version does not satisfy a shorter pin', () => {
     expect(versionTokens('crun version 1.29.10')).toEqual(['1.29.10'])
     expect(versionTokens('crun version 1.29.10')).not.toContain('1.29.1')
@@ -155,14 +155,11 @@ describe('versionTokens -- one reader for ten different sentences', () => {
     expect(versionTokens('client 1.2.3, server 4.5.6')).toEqual(['1.2.3', '4.5.6'])
   })
 
-  // ═══ THE SHAPE M7d WILL EMIT — MEASURED, NOT REASONED ABOUT ═══
-  //
-  // M7d's mosd/apid `--version` handlers report the git commit alongside the
-  // crate version: `mosd <version> (<short-sha>)`, `-dirty` when the worktree
-  // was, `unknown` when the value is absent. Nothing here hard-codes a
-  // `name X.Y.Z` shape, so the parser should already take it -- but "should
-  // already" is exactly the reasoning that put a redundant right-hand guard in
-  // this function, so these are run rather than argued.
+  // mosd and apid report the git commit alongside the crate version:
+  // `mosd <version> (<short-sha>)`, `-dirty` when the worktree is, `unknown`
+  // when the value is absent. Nothing here hard-codes a `name X.Y.Z` shape, so
+  // the parser should already take it -- and "should already" is exactly the
+  // reasoning these cases exist to replace.
   test('a version line carrying a git short-sha yields the version and not the sha', () => {
     expect(versionTokens('mosd 0.1.0 (abc1234)')).toEqual(['0.1.0'])
     expect(versionTokens('mosd 0.1.0-dirty (abc1234-dirty)')).toEqual(['0.1.0'])
@@ -285,9 +282,8 @@ describe('judge -- the build commit, asserted only against a recorded fact', () 
     expect(r.message).toMatch(/MOS_BUILD_COMMIT not passed in/)
   })
 
-  // RFCT-113 M7d's instruction for an unavailable fact: print it, assert
-  // nothing. The distinction that matters is that the row does not read like a
-  // commit that was checked and agreed.
+  // An unavailable fact is printed and asserted about nothing. What matters is
+  // that the row does not read like a commit that was checked and agreed.
   test('no recorded commit means the row PASSES and says the commit was not asserted', () => {
     for (const f of [undefined, fact(undefined), fact('')]) {
       const r = judge(mosd, pin('0.1.0'), ok('mosd 0.1.0 (00b674e9a628)'), f)
@@ -410,15 +406,11 @@ describe('judge -- the version contract', () => {
     expect(r.message).toContain('NO version at all')
   })
 
-  // EVERY DIAGNOSIS, AGAINST THE STATUS AND TEXT THAT WERE MEASURED PRODUCING IT.
-  //
-  // RFCT-113 M7c. These cases used to assert the OLD map -- 126 for wrong-arch
-  // and for an unresolvable loader, 127 for a missing path -- and they passed,
-  // because a fabricated `ExecResult` lets the test choose the status whose
-  // diagnosis it then asserts. Two of the three were wrong about the real
-  // world; `diagnose`'s comment carries the measurement, and
-  // src/smoke-negative.ts drives all three through a real container so that
-  // this table can never again agree with itself and with nothing else.
+  // Every diagnosis, against the status and text measured producing it. A
+  // fabricated `ExecResult` lets a test choose the status whose diagnosis it
+  // then asserts, so this table would otherwise agree with itself and with
+  // nothing else: `diagnose`'s comment carries the measurement, and
+  // src/smoke-negative.ts drives all three through a real container.
   //
   // The literals below are the MEASURED first lines, verbatim, not paraphrases.
   const WRONG_ARCH = { status: 255, stdout: '', stderr: 'exec /usr/bin/crun: exec format error\n' }
@@ -718,15 +710,12 @@ describe('conclude', () => {
   })
 
   test('an unclaimed artifact is NOT inside the pass count, on any of the three lines', () => {
-    // RFCT-113 M7c, and this case exists because its mutation stopped biting.
-    // HARNESS.md's sweep recorded "`unclaimed` folded into `pass` in `conclude`
-    // -> 2 fails". Re-run at M7c it was 0: M7d emptied EXPECTED_UNCLAIMED, and
-    // with no unclaimed artifact in the shipped register the only cases left
-    // that produce one asserted the CONCLUSION and a phrase, never the counts.
-    // The conclusion does not move under that mutation -- `unclaimed > 0` still
-    // fires -- so a `conclude` that filed an unasked artifact under `pass`
-    // passed the whole suite. That is the shape this repository calls a guard
-    // whose removal changes no test.
+    // With no unclaimed artifact in the shipped register, the cases that
+    // produce one assert the CONCLUSION and a phrase rather than the counts,
+    // and the conclusion does not move under the mutation that folds
+    // `unclaimed` into `pass` -- `unclaimed > 0` still fires. Without this
+    // case, a `conclude` that filed an unasked artifact under `pass` passes the
+    // whole suite: a guard whose removal changes no test.
     //
     // Asserted on the INCOMPLETE line and on the FAIL line, because they are two
     // separate format strings and a mutation could reach either.
@@ -928,12 +917,9 @@ describe('smokeRun over the real register', () => {
     return ok(`${artifact.name} ${artifact.pin().expected}`)
   }
 
-  // UNTIL M7d THIS CASE READ "ten pass, two unclaimed, and that is INCOMPLETE",
-  // because mosd and apid had no `--version` to ask for. The user lifted
-  // PLAN-014's exclusion on `mosd/` Rust sources on 2026-08-26, both got one,
-  // and the register stopped calling them unclaimed. This is the same assertion
-  // over the new answer, not a weakened one: the count is still the register's
-  // full size and the conclusion is still driven from what every entry did.
+  // Every entry in the register answers `--version`, so the count is the
+  // register's full size and the conclusion is driven from what every entry
+  // did, not from a subset.
   test('the twelve shipped artifacts all answer, and that is PASS', async () => {
     const run = await smokeRun({ board: 'x64', exec: honest })
     expect(run.results.length).toBe(ARTIFACTS.length)

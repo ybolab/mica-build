@@ -1,8 +1,7 @@
 // Batch 4a, the remainder: the small families that read only the unpacked root.
 //
-// PLAN-014 M4f (RFCT-110). Twenty-six conclusions on cx3576 and twenty-five on
-// x64, from ten places in the oracle that share no subject except the tree they
-// read:
+// Twenty-six conclusions on cx3576 and twenty-five on x64, from ten places in
+// the oracle that share no subject except the tree they read:
 //
 //   systemd-networkd enabled          :2500      1 / 1
 //   the ELF architecture of mosd/apid :2517      2 / 2
@@ -19,7 +18,7 @@
 // would put more prose in headers than in checks, and because every one of them
 // is `packedRoot()` plus a read.
 //
-// ═══ WHAT IS READ OUT OF mosd/ HERE, AND WHY ═══
+// WHAT IS READ OUT OF mosd/ HERE, AND WHY.
 //
 // The profile KEY and default path come from `provisioning.rs`, and the crypt(3)
 // prefix from `transient.rs`. Both are the oracle's own reads and both exist for
@@ -29,7 +28,7 @@
 // is in scope under PLAN-014's Scope section -- "No change to ... `mosd/` Rust
 // sources" -- and nothing here writes to them.
 //
-// ═══ AND ONE DEFECT IN THE CODE UNDER TEST, REPRODUCED RATHER THAN FIXED ═══
+// AND ONE DEFECT IN THE CODE UNDER TEST, REPRODUCED RATHER THAN FIXED.
 //
 // `fwenv_lines="$(grep -cE '^/dev/' "${fwenv}" 2>/dev/null || echo 0)"` (:3331).
 // On a file that EXISTS and has no `^/dev/` line, `grep -c` prints `0` and exits
@@ -872,9 +871,9 @@ const PROFILE_CHECKS: readonly CheckCase[] = [
   },
 
   {
-    // ssh.service must NOT be enabled in the image, on EITHER profile. This
-    // assertion used to be profile-dependent and pointed the other way; mosd now
-    // seeds access.ssh.enabled false for dev and prod alike, so an image that
+    // ssh.service must NOT be enabled in the image, on EITHER profile -- the
+    // assertion is deliberately NOT profile-dependent. mosd seeds
+    // access.ssh.enabled false for dev and prod alike, so an image that
     // shipped ssh.service enabled would be listening from early boot until
     // mosd's first reconcile stopped it -- precisely the window the setting
     // exists to close.
@@ -965,7 +964,7 @@ interface SshUnitCase {
 
 /**
  * KillMode= and ExecReload= are INHERITED from Debian's openssh-server, not
- * authored here, and RFCT-047's correctness rests on both.
+ * authored here, and the sshd reconciler's correctness rests on both.
  *
  * The reload is the mitigation and KillMode is defence in depth: an operator who
  * sets a transient root password over their own SSH session keeps it because the
@@ -1006,13 +1005,13 @@ const SSH_UNIT_CHECKS: readonly CheckCase[] = [
     failMatcher: 'ssh.service does NOT set KillMode=process (found ',
     passMessage: 'ssh.service sets KillMode=process, so a restart would spare established sessions '
       + '— defence in depth only: what actually protects an operator\'s own session is that the '
-      + 'reconciler RELOADS on a config-only change (RFCT-047), and this passing is not a reason to '
+      + 'reconciler RELOADS on a config-only change, and this passing is not a reason to '
       + 'restart instead',
     failMessage: found => `ssh.service does NOT set KillMode=process (found '${found}'; systemd `
       + `defaults to control-group). The image has lost its second line of defence: anything that `
       + `RESTARTS this unit now kills established SSH sessions with it. This does not by itself `
       + `disconnect an operator setting a transient root password — the reconciler reloads rather than `
-      + `restarts (RFCT-047) — but that reload is now the ONLY thing preventing it, so do not treat `
+      + `restarts — but that reload is now the ONLY thing preventing it, so do not treat `
       + `this as cosmetic`,
   }),
   sshUnitCheck({
@@ -1022,9 +1021,9 @@ const SSH_UNIT_CHECKS: readonly CheckCase[] = [
     passMatcher: 'ssh.service carries ExecReload=,',
     failMatcher: 'ssh.service has NO ExecReload=.',
     passMessage: 'ssh.service carries ExecReload=, so the config-only reload the sshd reconciler '
-      + 'issues (RFCT-047) can actually reach the running sshd',
+      + 'issues can actually reach the running sshd',
     failMessage: () => 'ssh.service has NO ExecReload=. The sshd reconciler RELOADS this unit on a '
-      + 'configuration-only change (RFCT-047); without ExecReload that reload fails, and the rendered '
+      + 'configuration-only change; without ExecReload that reload fails, and the rendered '
       + 'sshd configuration — PasswordAuthentication included — silently never applies to the running '
       + 'listener',
   }),

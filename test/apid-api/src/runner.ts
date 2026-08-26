@@ -1,18 +1,14 @@
 /**
  * Phases, and their assumptions made structural.
  *
- * This suite runs against ONE boot. A TCG boot of the image reaches apid's
- * APID_LISTENING line in 60-66s and both readiness signals in 65-72s --
- * measured on this host on 2026-08-24, across this campaign's eight runs,
- * under TCG with no /dev/kvm and on a quiet machine. A boot per test is still
- * not viable on that figure, and the reason was never the boot alone: a full
- * lifecycle run is TWO boots, nine phases, 06-backoff's deliberately doubling
- * login windows and an argon2 hash behind every login -- about four minutes
- * end to end, measured the same way. Against that, per-test isolation would
+ * This suite runs against ONE boot. A TCG boot with no /dev/kvm on a quiet
+ * machine reaches apid's APID_LISTENING line in 60-66s and both readiness
+ * signals in 65-72s, and a full lifecycle run -- two boots, nine phases,
+ * 06-backoff's deliberately doubling login windows and an argon2 hash behind
+ * every login -- takes about four minutes end to end. Per-test isolation would
  * multiply the boot across dozens of checks until it dominated everything the
- * suite actually measures. So per-test isolation was never on the table: the
- * phases are ordered and they hand state to each other.
- * State coupling is accepted -- and then made visible, because the failure it
+ * suite measures, so the phases are ordered and hand state to each other.
+ * State coupling is accepted and then made visible, because the failure it
  * invites is reading a phase-4 red as a phase-4 bug when phase 3 is what broke.
  *
  * Two mechanisms carry that:

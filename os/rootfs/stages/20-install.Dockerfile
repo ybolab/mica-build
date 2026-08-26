@@ -1,6 +1,5 @@
 # syntax=docker/dockerfile:1@sha256:ecfaec9ed6d810b56388c508f4121597bfbba70d41a6dfeee4d8cad5f295fc32
-# =============================================================================
-# stages/20-install — the read-only-root wiring: seed units, repart.d, network
+# stages/20-install -- the read-only-root wiring: seed units, repart.d, network.
 #
 # ONE LINK IN THE CHAIN; stages/README.md says what the chain is.
 #
@@ -10,7 +9,6 @@
 # every feature: a feature stage that adds a mount point or a unit is adding it
 # to a root that is already wired, and 30-feature-*'s radio mounts and
 # container configuration are both assertions ABOUT what this stage installed.
-# =============================================================================
 
 # THE LINK BACK UP THE CHAIN. MOS_STAGE_PREV is the local image tag the
 # previous stage was written to; the driver passes it and refuses to build a
@@ -27,9 +25,9 @@ FROM ${MOS_STAGE_PREV}
 # two WiFi reconcilers write 90-wifi-client-<iface>.network and
 # 90-wifi-ap-<iface>.network into /run/systemd/network; networkd applies the
 # first match in lexical order across both directories, so 80- sits between them
-# deliberately. os/verify-image-v2.sh asserts that ordering, and asserts that no
-# file the IMAGE ships could ever be mistaken for a reconciler-owned one — the
-# network reconciler DELETES every *-mos-*.network it did not itself render.
+# deliberately. os/verify asserts that ordering, and asserts that no file the
+# IMAGE ships could ever be mistaken for a reconciler-owned one -- the network
+# reconciler DELETES every *-mos-*.network it did not itself render.
 #
 # ssh.service is left DISABLED in the image, on BOTH profiles. mosd seeds
 # `access.ssh.enabled` false for dev and prod alike (see

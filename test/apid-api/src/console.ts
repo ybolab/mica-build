@@ -28,10 +28,10 @@
  *     file is unreadable, or it is truncated out from under a mark, then
  *     `available` is false and the reporting helpers below emit a SKIP naming
  *     the reason. A console check that silently passes with no console to read
- *     is the defect class this campaign has already hit three times -- and an
- *     ABSENCE assertion (5.4's "the password never appears in the log") is the
- *     worst instance of it, because with no bytes to search it is vacuously
- *     true. `expectConsoleAbsent` therefore also refuses an EMPTY window.
+ *     is a check that asserts nothing -- and an ABSENCE assertion (5.4's "the
+ *     password never appears in the log") is the worst instance of it, because
+ *     with no bytes to search it is vacuously true. `expectConsoleAbsent`
+ *     therefore also refuses an EMPTY window.
  */
 
 import { closeSync, openSync, readSync, statSync } from "node:fs";

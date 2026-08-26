@@ -313,8 +313,8 @@ mod tests {
         out
     }
 
-    // R6.1 — a fresh STATE is seeded into a tree the device can actually run on,
-    // and that tree is on disk when the call returns.
+    // A fresh STATE is seeded into a tree the device can actually run on, and
+    // that tree is on disk when the call returns.
     #[test]
     fn fresh_state_is_seeded_and_persisted() {
         let dir = TempDir::new().expect("tempdir");
@@ -344,7 +344,7 @@ mod tests {
             "the device credential must exist after first boot"
         );
 
-        // R2.4/R2.5 — nothing is invented for hardware this build cannot see.
+        // Nothing is invented for hardware this build cannot see.
         assert!(
             settings.network.is_empty(),
             "network must stay empty: the image's static 80-dhcp.network already \
@@ -361,7 +361,7 @@ mod tests {
         assert_eq!(on_disk, settings);
     }
 
-    // R6.2 — the "run twice, same state" acceptance criterion. Note the outcome
+    // The "run twice, same state" acceptance criterion. Note the outcome
     // assertion: without it this test passes even with the `Complete` guard
     // removed, because re-seeding an already seeded tree happens to reproduce
     // the same bytes.
@@ -403,8 +403,8 @@ mod tests {
         );
     }
 
-    // R6.3 — an operator's own values survive. This is the case that catches a
-    // guard removal for real: the stored SSH state is the opposite of what the
+    // An operator's own values survive. This is the case that catches a guard
+    // removal for real: the stored SSH state is the opposite of what the
     // profile would seed, and the hostname is not the built-in default.
     #[test]
     fn operator_changes_survive_a_re_run() {
@@ -437,8 +437,8 @@ mod tests {
         assert_eq!(store.load().expect("reload again"), settings);
     }
 
-    // R2.2 — the hostname rule also protects an operator who renamed the device
-    // before provisioning finished, e.g. through a pre-seeded STATE.
+    // The hostname rule also protects an operator who renamed the device before
+    // provisioning finished, e.g. through a pre-seeded STATE.
     #[test]
     fn seeding_does_not_overwrite_a_non_default_hostname() {
         let dir = TempDir::new().expect("tempdir");
@@ -456,8 +456,8 @@ mod tests {
         assert_eq!(settings.provisioning.state, ProvisioningState::Complete);
     }
 
-    // R6.4 — the profile matrix, including every way of being malformed. Only
-    // the literal `dev` may open SSH.
+    // The profile matrix, including every way of being malformed. Only the
+    // literal `dev` may open SSH.
     #[test]
     fn profile_matrix_fails_closed() {
         let dir = TempDir::new().expect("tempdir");
@@ -496,9 +496,9 @@ mod tests {
             );
         }
 
-        // An absent file is the case that actually happens: a rootfs built
-        // before the profile file was added, or a bind mount that did not come
-        // up. It must not open SSH either.
+        // An absent file is the case that happens in practice: a rootfs
+        // carrying no profile file, or a bind mount that did not come up. It
+        // must not open SSH either.
         let missing = dir.path().join("no-such-profile.conf");
         assert!(!missing.exists());
         assert_eq!(read_profile(&missing), Profile::Prod);
@@ -530,9 +530,9 @@ mod tests {
         assert_eq!(read_profile(&path), Profile::Dev);
     }
 
-    // R3 — the profile really drives the seeded value, not just `read_profile`.
-    // Both profiles now seed SSH OFF, so this is the assertion that the dev
-    // image does not open SSH either: persistent access is a public key in
+    // The profile really drives the seeded value, not just `read_profile`. Both
+    // profiles now seed SSH OFF, so this is the assertion that the dev image
+    // does not open SSH either: persistent access is a public key in
     // `access.ssh.authorizedKeys`, and the transient root password is set at
     // runtime. The prod side is unchanged and deliberately still asserted —
     // dropping it would leave the fail-closed direction untested.
@@ -577,7 +577,7 @@ mod tests {
         );
     }
 
-    // R6.6 — the offline property. The hostname is a pure function of the device
+    // The offline property. The hostname is a pure function of the device
     // identity, so it needs no DHCP, no DNS and no MAC lookup. This proves the
     // derivation; it does not prove the process makes no syscall, which is
     // covered instead by the module carrying no networking API at all.
@@ -619,7 +619,7 @@ mod tests {
         assert_eq!(seed("abc"), "mos-abc");
     }
 
-    // R6.5 — a failing save must not leave a tree claiming `complete`.
+    // A failing save must not leave a tree claiming `complete`.
     #[test]
     fn a_failed_save_leaves_no_complete_tree_on_disk() {
         let dir = TempDir::new().expect("tempdir");
@@ -653,7 +653,7 @@ mod tests {
         assert!(!dir.path().join("settings.toml").exists());
     }
 
-    // R6.5 — and a failure *before* the save must leave an existing on-disk tree
+    // And a failure *before* the save must leave an existing on-disk tree
     // byte-identical, not partially rewritten.
     #[test]
     fn a_failed_identity_step_leaves_the_on_disk_tree_untouched() {

@@ -1,14 +1,12 @@
-//! Reconciler for the `container` settings subtree (PLAN-012 M3).
+//! Reconciler for the `container` settings subtree.
 //!
 //! **What this switch actually operates, and why it is not a service.** The
 //! engine is daemonless: `podman run` forks `conmon`, which execs `crun`, and
 //! nothing stays resident. os/podman does not run upstream's
 //! `make install.systemd`, so the image contains no podman unit at all --
 //! there is no `podman.socket` to leave masked and no service to leave
-//! stopped. PLAN-012 D3 was written against the packaged engine and said
-//! "enable+start on true, stop+disable on false"; the unit it meant no longer
-//! exists, and this module is where that gets restated rather than quietly
-//! reinterpreted.
+//! stopped. "Enable+start on true, stop+disable on false" therefore names no
+//! unit here.
 //!
 //! What remains as the real gate is the Quadlet directory. Quadlet is a
 //! systemd GENERATOR: at every daemon-reload it reads
@@ -46,8 +44,8 @@ pub const QUADLET_MOUNT_UNIT: &str = "etc-containers-systemd.mount";
 
 /// Directory Quadlet reads. Measured from `quadlet --dryrun`, which prints its
 /// own search path as `[/run/containers/systemd /etc/containers/systemd
-/// /usr/share/containers/systemd]` -- PLAN-012 D4's first draft named
-/// `/usr/local/lib/systemd/system`, which Quadlet never looks at.
+/// /usr/share/containers/systemd]`. `/usr/local/lib/systemd/system` is not on
+/// that path and Quadlet never looks at it.
 const DEFAULT_QUADLET_DIR: &str = "/etc/containers/systemd";
 /// Override for tests.
 pub const QUADLET_DIR_ENV: &str = "MOS_QUADLET_DIR";
@@ -168,22 +166,20 @@ impl<C: UnitControl> ContainerReconciler<C> {
         self.control.daemon_reload().await?;
         tracing::info!("container: daemon-reload returned");
 
-        // AND THEN START THEM, which is the step whose absence made the switch
-        // do nothing at all.
+        // AND THEN START THEM. Without this step the switch does nothing at
+        // all: a daemon-reload re-runs Quadlet, which writes the unit AND --
+        // when the .container file has an [Install] section -- the .wants
+        // symlink saying it should be running, but systemd does not act on a
+        // symlink that appeared during a reload. It starts wanted units when
+        // the target is started, and multi-user.target is reached long before
+        // mosd runs. The units then exist, are marked as wanted, and sit
+        // inactive: the bind mounted, the reconciler reporting success, and no
+        // container ever running.
         //
-        // A daemon-reload re-runs Quadlet, which writes the unit AND -- when
-        // the .container file has an [Install] section -- the .wants symlink
-        // that says it should be running. systemd does not act on a symlink
-        // that appeared during a reload: it starts wanted units when the
-        // target is started, and multi-user.target was reached long before
-        // mosd ran. So the units existed, were marked as wanted, and sat
-        // inactive. Measured in QEMU: the bind mounted, the reconciler
-        // reported success, and no container ever ran.
-        //
-        // This is not orchestration (PLAN-012 D4). The integrator wrote
-        // `WantedBy=`, Quadlet already acted on it; mos is making an
-        // instruction that was given take effect, not deciding anything about
-        // what should run or in what order.
+        // This is not orchestration. The integrator wrote `WantedBy=` and
+        // Quadlet already acted on it; mos is making an instruction that was
+        // given take effect, not deciding anything about what should run or in
+        // what order.
         let mut started = Vec::new();
         let generated = self.generated_units();
         tracing::info!(count = generated.len(), units = ?generated, "container: units Quadlet generated");

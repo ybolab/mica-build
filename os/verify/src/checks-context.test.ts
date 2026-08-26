@@ -1,13 +1,10 @@
 // The image context's caches, driven from the side where they LIE.
 //
-// PLAN-014 M4c (RFCT-110). `createImageContext` memoises two expensive things
-// -- a partition's extracted bytes and the unpacked read-only root -- and one
-// of them used to be keyed on the slot's NAME while the other always rewrote
-// its destination. M4b found it and left it, correctly, because the repair is a
-// decision. This file is the failing side of that repair: every packed-root
-// check in batch 2 goes through `unpackRoot`, so a cache that hands back the
-// previous image's tree makes all of them agree with the oracle about an image
-// neither of them read.
+// `createImageContext` memoises two expensive things -- a partition's extracted
+// bytes and the unpacked read-only root -- and both must be keyed on the image
+// as well as on the slot. Every packed-root check goes through `unpackRoot`, so
+// a cache that hands back the previous image's tree makes all of them agree
+// with the oracle about an image neither of them read.
 //
 // Nothing here runs a container. `sgdisk` and `unsquashfs` are answered by a
 // runtime built below, which is what lets the two images differ in exactly one

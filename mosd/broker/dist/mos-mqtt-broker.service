@@ -21,10 +21,9 @@ ConditionPathExists=/run/mos/mqtt-broker.toml
 # That is reachable today. The reconciler renders mqtt.listen.address verbatim
 # and deliberately does not reject a value it cannot parse, because an error
 # there would fail the reconcile of mqtt.enabled itself. So an operator who
-# hand-edits the settings file on STATE to listen_address = "localhost" earns
-# a permanent five-second loop. This campaign exists because mos-mqttd warned
-# every THIRTY seconds against an absent broker and that was judged too noisy;
-# shipping a five-second loop in the fix would be worse than the defect.
+# hand-edits the settings file on STATE to listen_address = "localhost" would
+# otherwise earn a permanent five-second loop, writing into the journal on
+# STATE every time round.
 #
 # 5 starts in 60 seconds. The burst is what a transient failure gets: five
 # attempts spaced by RestartSec=5 span about 25 seconds, which covers the

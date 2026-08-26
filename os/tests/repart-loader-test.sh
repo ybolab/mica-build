@@ -24,7 +24,7 @@
 # SHIPS, unpacked out of the packed root, and asserts that DATA is bigger
 # afterwards — the growth /srv depends on. Its negative direction removes
 # SizeMinBytes=0 from the uenv placeholders, reconstructing the state in which
-# repart refused the whole run and /srv silently never grew (RFCT-027).
+# repart refused the whole run and /srv silently never grew.
 #
 #   bash os/tests/repart-loader-test.sh [image]...
 #
@@ -71,16 +71,12 @@ trap 'rm -rf "${work}"' EXIT
 # Every path this script hands sgdisk lives under ${REPO_ROOT}/_out — the
 # shipped images and ${work} both — so mounting _out at itself makes every
 # argument resolve identically and keeps the output byte-identical to a host
-# run. Same shape as the assertion tooling in os/tests/mkimage-v2-selftest.sh --
-# deleted by PLAN-014 M6e with the shell assembler; os/build/src/toolbox.ts is
-# where that rule lives now -- and for the same reason: a missing host tool must
-# not read as a FAIL that indicts the image.
+# run. os/build/src/toolbox.ts holds the same rule, for the same reason: a
+# missing host tool must not read as a FAIL that indicts the image.
 if ! command -v sgdisk >/dev/null 2>&1; then
     # The base, from os/build-env/images.env -- IMAGE_ALPINE_3_21, the same key
     # os/build/src/toolsets.ts assembles from and os/verify/src/tools.ts verifies
-    # from (they were os/mkimage-v2.sh and os/verify-image-v2.sh until PLAN-014
-    # M6e and M4e), so the sgdisk that reads a GPT here is the sgdisk that wrote
-    # it. The
+    # from, so the sgdisk that reads a GPT here is the sgdisk that wrote it. The
     # heredoc is unquoted so ${TOOL_BASE} expands; nothing else in the body is a
     # shell expansion.
     TOOL_BASE="$(bash "${REPO_ROOT}/os/build-env/from.sh" --ref IMAGE_ALPINE_3_21)"
@@ -127,14 +123,13 @@ loader_magic_of() {
 # The set is SYNTHESISED rather than copied from the image so that this test
 # covers both pipelines from one code path: v1 and v2 ship different definition
 # sets, and what is under test here is the loader, not either set.
-# SizeMinBytes=0 is set for the same reason the shipped v2 definitions now set
-# it: systemd-repart will not claim an EXISTING partition smaller than the
+# SizeMinBytes=0 is set for the same reason the shipped v2 definitions set it:
+# systemd-repart will not claim an EXISTING partition smaller than the
 # definition's minimum size, and that minimum defaults to 10 MiB, while uenv-a
-# and uenv-b are 64 KiB. The shipped definitions used to omit it, which made
-# repart abort the whole run with "Can't fit requested partitions into available
-# free space" before touching anything -- so v2's /srv never grew. That defect
-# is FIXED (RFCT-027), and the growth check further down runs the SHIPPED
-# definitions to prove it rather than these synthesised ones.
+# and uenv-b are 64 KiB. Omitting it makes repart abort the whole run with
+# "Can't fit requested partitions into available free space" before touching
+# anything, so /srv never grows. The growth check further down runs the SHIPPED
+# definitions rather than these synthesised ones.
 mkdefs() {
     local img="$1" dir="$2" n=0 i part_count type
     rm -rf "${dir}"
@@ -165,12 +160,8 @@ mkdefs() {
 # the three containers below that share it: the two systemd-repart runs and the
 # unsquashfs that reads /etc/repart.d back out of the shipped root.
 #
-# IMAGE_DEBIAN_BOOKWORM AND NOT _TRIXIE, which is the pre-existing choice and
-# not a new one -- all three named `debian:bookworm-slim` literally before R6
-# and this records what they already ran on rather than moving them. Note that
-# this key's own comment in images.env used to say the pack stage of
-# the rootfs build consumed it and NOTHING ELSE; R6 made that false and
-# amended it, which is the only edit R6 made to an existing entry there.
+# IMAGE_DEBIAN_BOOKWORM and not _TRIXIE: all three containers run on
+# `debian:bookworm-slim`, and the pin records that rather than moving them.
 REPART_BASE="$(bash "${REPO_ROOT}/os/build-env/from.sh" --ref IMAGE_DEBIAN_BOOKWORM)"
 
 run_repart() {

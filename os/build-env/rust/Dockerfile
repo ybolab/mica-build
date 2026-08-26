@@ -4,8 +4,7 @@
 #
 #   make build-env   -> localhost/mos-build-rust
 #
-# PLAN-014 M2 (RFCT-108), decision 4: NOT `rust:1.90-trixie`, for the reason
-# mos-build-go's header gives. This is mos-build-base -- a pinned digest --
+# NOT `rust:1.90-trixie`, for the reason mos-build-go's header gives. This is mos-build-base -- a pinned digest --
 # plus upstream's standalone installer, whose bytes are named in
 # os/build-env/images.env.
 #
@@ -26,9 +25,9 @@
 # mosd/.cargo/config.toml already names `aarch64-linux-gnu-gcc` as the linker
 # for them. So this image also installs the cross std, pinned by its own
 # sha256, and the matching Debian cross linker, and then PROVES the combination
-# by linking a binary for the other architecture. RFCT-108 moves
-# mosd/hack/build-target.sh inside this image in M2c; an image that could not
-# cross-compile would be a handoff that cannot be taken.
+# by linking a binary for the other architecture. mosd/hack/build-target.sh
+# runs inside this image, and an image that could not cross-compile would be a
+# handoff that cannot be taken.
 ARG MOS_BASE_IMAGE
 
 # ---------------------------------------------------------------------------
@@ -293,7 +292,7 @@ RUN set -eu; \
 # os/build-env/build.sh's read-back: an image that inherits its parent's record
 # and writes none of its own is asserting nothing under its own name.
 LABEL org.opencontainers.image.title="mos-build-rust" \
-      org.opencontainers.image.description="mos Rust toolchain, sha256-pinned tarballs, cross-capable (PLAN-014 M2, RFCT-108)" \
+      org.opencontainers.image.description="mos Rust toolchain, sha256-pinned tarballs, cross-capable" \
       org.opencontainers.image.base.name="${MOS_BASE_IMAGE}" \
       com.mos.build-env.source="os/build-env/rust/Dockerfile" \
       com.mos.build-env.pins="os/build-env/images.env"

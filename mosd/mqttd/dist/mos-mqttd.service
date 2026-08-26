@@ -44,22 +44,21 @@ RestartSec=5
 
 # IDENTITY: a STATIC system user, not DynamicUser.
 #
-# This unit used DynamicUser=yes until the bridge was wired into the image,
-# and the wiring is what showed the problem. com.mos.mosd is a ROOT-ONLY bus
-# name (mosd/dist/com.mos.mosd.conf, RFCT-048): the default context DENIES
-# both send_destination and receive_sender. A dynamic uid is therefore refused
-# by that policy, and the bridge would start, connect to the broker and
-# publish nothing at all -- a failure with no error at the point of cause.
+# com.mos.mosd is a ROOT-ONLY bus name (mosd/dist/com.mos.mosd.conf): the
+# default context DENIES both send_destination and receive_sender. Under
+# DynamicUser=yes this bridge is refused by that policy, and it starts,
+# connects to the broker and publishes nothing at all -- a failure with no
+# error at the point of cause.
 #
-# The fix is a D-Bus grant, and a grant needs an identity to name.
-# <policy user="..."> resolves its user when dbus-daemon reads the file at
-# startup, which is before any dynamic user for this unit exists, so a
-# DynamicUser name cannot be granted anything: the rule would parse, load, and
-# match nothing. A rule that cannot match is worse than a missing rule --
-# it reads, in a diff and in a review, exactly like a working grant.
+# A D-Bus grant needs an identity to name. <policy user="..."> resolves its
+# user when dbus-daemon reads the file at startup, which is before any dynamic
+# user for this unit exists, so a DynamicUser name can be granted nothing: the
+# rule parses, loads, and matches nothing. A rule that cannot match is worse
+# than a missing rule -- it reads, in a diff and in a review, exactly like a
+# working grant.
 #
 # So: a static system user with a pinned uid/gid, granted exactly three
-# members in mosd/dist/mos-mqttd.conf. Everything DynamicUser was providing
+# members in mosd/dist/mos-mqttd.conf. Everything DynamicUser would provide
 # implicitly is stated explicitly below instead.
 User=mos-mqttd
 Group=mos-mqttd
@@ -83,7 +82,7 @@ MemoryDenyWriteExecute=yes
 SystemCallArchitectures=native
 CapabilityBoundingSet=
 RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
-# DynamicUser=yes implied these two. Stated now that it is gone.
+# DynamicUser=yes would imply these two; they are stated explicitly.
 RemoveIPC=yes
 UMask=0077
 
