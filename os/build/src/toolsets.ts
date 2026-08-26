@@ -106,7 +106,27 @@ export const X64_ASSEMBLY: Toolset = {
   imageKey: 'IMAGE_DEBIAN_TRIXIE',
   manager: 'apt',
   packages: ['gdisk', 'dosfstools', 'mtools', 'e2fsprogs', 'grub-efi-amd64-bin', 'grub-common'],
-  tools: ['sgdisk', 'mkfs.vfat', 'mcopy', 'mmd', 'mdir', 'minfo', 'mke2fs', 'dumpe2fs', 'debugfs', 'grub-mkstandalone', 'dd', 'truncate'],
+  // grub-editenv sits beside grub-mkstandalone because os/mkimage-x64.sh runs
+  // BOTH and they come from different packages -- grub-mkstandalone from
+  // grub-common and the EFI target from grub-efi-amd64-bin -- so "grub is
+  // installed" is not one fact. A grubenv that was never created is a 0-byte
+  // file, which the size guard catches; a grub-editenv that is absent is
+  // "command not found" attributed to whichever step ran first.
+  //
+  // cp, find and touch are asserted for the same reason they are in
+  // CX3576_ASSEMBLY, but note that the two assemblers stage DIFFERENT things in
+  // the container. os/mkimage-x64.sh runs `cp -a` of the factory /var ON THE
+  // HOST (line 161, outside its docker run) and runs `cp`, `find ... -exec
+  // touch` and the seed stamp INSIDE; os/mkimage-v2.sh runs all of it inside.
+  // src/mkimage-x64.ts keeps each on the side its own shell has it, because
+  // `cp -a` is `--preserve=all` -- which includes xattrs -- mke2fs -d copies
+  // xattrs into the image, and this campaign's host runs SELinux while neither
+  // container does. Moving that one step would change EPHEMERAL's bytes, and
+  // the only thing that would report it is the byte-identity gate.
+  tools: [
+    'sgdisk', 'mkfs.vfat', 'mcopy', 'mmd', 'mdir', 'minfo', 'mke2fs', 'dumpe2fs', 'debugfs',
+    'grub-mkstandalone', 'grub-editenv', 'dd', 'truncate', 'cp', 'find', 'touch',
+  ],
   hostProbe: mke2fsCanWriteTheseLayouts,
 }
 

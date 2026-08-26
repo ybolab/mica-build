@@ -62,6 +62,7 @@ usage() {
 usage: bash os/build/run.sh [--help] [bun-test-args...]
        bash os/build/run.sh --build-rootfs [driver-args...]
        bash os/build/run.sh --mkimage-v2 [assembler-args...]
+       bash os/build/run.sh --mkimage-x64 [assembler-args...]
 
 Installs the dev dependencies if they are missing, typechecks src/, then runs
 the suite. Any extra arguments are passed to `bun test` (a filename filter, for
@@ -78,6 +79,14 @@ With --mkimage-v2 FIRST, it assembles the cx3576 image instead -- the
 TypeScript port of os/mkimage-v2.sh (PLAN-014 M6b). Its remaining arguments are
 the assembler's own; try --mkimage-v2 --help. The same first-position rule
 applies, for the same reason.
+
+With --mkimage-x64 FIRST, it assembles the x64 image -- the TypeScript port of
+os/mkimage-x64.sh (PLAN-014 M6c). Same shape, same first-position rule; try
+--mkimage-x64 --help. It is a fourth arm rather than a board argument to the
+third because the two assemblers share a board format and a slot model and
+nothing else: one writes a U-Boot loader at a fixed sector and the other builds
+a standalone EFI binary, and a mistake in either would otherwise be a mistake in
+both.
 
 The suite drives the real external toolset -- sgdisk, mtools, dd, mkimage,
 veritysetup, e2fsprogs and rauc. Each of those runs on the host when the host
@@ -100,14 +109,17 @@ USAGE
 # else entirely. A request to build a rootfs, or to assemble an image, answered
 # by a passing test suite.
 #
-# Two modes rather than one, and they stay two: they arrived from different
-# milestones (M5b and M6b) and share only the preamble above and run_bun below.
-# Nothing about either is a version of the other.
+# Three modes rather than one, and they stay three: they arrived from different
+# milestones (M5b, M6b and M6c) and share only the preamble above and run_bun
+# below. Nothing about any of them is a version of another -- in particular
+# --mkimage-x64 is an ARM of this dispatch and not a `--board` flag on
+# --mkimage-v2, for the reason the usage text gives.
 MODE=suite
 case "${1:-}" in
 --help | -h) usage; exit 0 ;;
 --build-rootfs) MODE=build-rootfs; shift ;;
 --mkimage-v2) MODE=mkimage-v2; shift ;;
+--mkimage-x64) MODE=mkimage-x64; shift ;;
 esac
 for arg in "$@"; do
     case "${arg}" in --build-rootfs) ;; *) continue ;; esac
@@ -120,6 +132,14 @@ done
 for arg in "$@"; do
     case "${arg}" in --mkimage-v2) ;; *) continue ;; esac
     echo "error: --mkimage-v2 has to be the FIRST argument; here it came after '$1'." >&2
+    echo "       Anywhere else it would be forwarded to \`bun test\`, which ignores it and reports" >&2
+    echo "       a green suite in answer to a request to assemble an image." >&2
+    exit 1
+done
+
+for arg in "$@"; do
+    case "${arg}" in --mkimage-x64) ;; *) continue ;; esac
+    echo "error: --mkimage-x64 has to be the FIRST argument; here it came after '$1'." >&2
     echo "       Anywhere else it would be forwarded to \`bun test\`, which ignores it and reports" >&2
     echo "       a green suite in answer to a request to assemble an image." >&2
     exit 1
@@ -357,6 +377,18 @@ if [ "${MODE}" = mkimage-v2 ]; then
     echo "os/build: assembling the cx3576 image"
     rc=0
     run_bun run src/mkimage-v2-cli.ts "$@" || rc=$?
+    exit "${rc}"
+fi
+
+# The x64 assembler. Everything the block above says applies unchanged: it
+# produces a FILE and reads the assembled partition table back out of it before
+# it will rename it into place, so there is no shape of "ran and asserted
+# nothing" for a count to guard against; and it needs docker but not `docker
+# buildx`, so the container route carries it.
+if [ "${MODE}" = mkimage-x64 ]; then
+    echo "os/build: assembling the x64 image"
+    rc=0
+    run_bun run src/mkimage-x64-cli.ts "$@" || rc=$?
     exit "${rc}"
 fi
 
