@@ -42,6 +42,15 @@ image family that all component builds consume.
   an arm64-capable host has verified it. Every other statement in this record
   stands either way.
 
+  RATIFIED 2026-08-26, **by the user**, at campaign close and merge into main.
+  The question was put explicitly — ratify or revert — with the reason restated
+  (a host capability, not an implementation shortfall; the same constraint
+  already accepted in the cx3576 CI decision and both dispositions), and the
+  user confirmed the close-out package carrying the ratification
+  recommendation. The revertibility above is thereby discharged; the clause
+  stands as amended, and the arm64 verification remains owed to the first
+  binfmt-registered host, where no file change is expected.
+
   The reason is a host capability, not an implementation shortfall. Three
   measurements, taken by the M2 gate on the machine this milestone was built on:
   `/proc/sys/fs/binfmt_misc` is empty and `binfmt_misc` is not even mounted; NO
