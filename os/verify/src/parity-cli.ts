@@ -20,7 +20,7 @@
 
 import { existsSync, mkdirSync, readdirSync } from 'node:fs'
 import { isAbsolute, join, resolve } from 'node:path'
-import { BOARDS_DIR, boardEnvPath, OS_DIR, REPO_ROOT } from './paths.ts'
+import { BOARDS_DIR, boardEnvPath, OS_DIR, REPO_ROOT, requireShippedBoards } from './paths.ts'
 import { loadBoard, type Board } from './board.ts'
 import { CHECKS, checksFor, createImageContext, runChecks, type CheckCase } from './checks.ts'
 import { diffParity, formatReport, parseShellRun, type ParityReport } from './parity.ts'
@@ -28,7 +28,11 @@ import { chooseRoute, createToolRuntime, missingHostTools, type ToolRoute, type 
 import { probeImage } from './probe.ts'
 
 const SHELL_VERIFIER = join(OS_DIR, 'verify-image-v2.sh')
-const SHIPPED_BOARDS = ['cx3576', 'x64'] as const
+// Every board under os/boards/, read off the tree rather than written down --
+// the same defect lint.ts carried: a board added to os/boards/ and not to a
+// literal is a board `make os-verify-parity` never opens, and the run is green
+// for having covered less. requireShippedBoards refuses an empty answer, which
+// here would mean a parity run that compared nothing and reported no divergence.
 
 interface Options {
   boards: string[]
@@ -92,7 +96,7 @@ function parseArgs(argv: readonly string[]): Options {
         throw new Error(`unknown option '${arg}'.\n\n${usage()}`)
     }
   }
-  if (options.boards.length === 0) options.boards = [...SHIPPED_BOARDS]
+  if (options.boards.length === 0) options.boards = requireShippedBoards()
   if (options.image !== undefined && options.boards.length !== 1) {
     throw new Error(
       `--image names one file and this run covers ${options.boards.length} boards. One image cannot `
