@@ -581,7 +581,7 @@ src/bundle.ts              the signed RAUC update bundle, both bootloaders
 src/bundle-cli.ts          its host half: the signing material, the epoch name, -latest
 src/stages.ts              os/rootfs/stages/ -> a chain: order, tags, args, and what is declined
 src/stages-cli.ts          the only file here that runs docker buildx
-src/**/*.test.ts           658 tests; every refusal has a positive control beside it
+src/**/*.test.ts           661 tests; every refusal has a positive control beside it
 ```
 
 `HARNESS.md` carries how each guard was driven from the failing side, both bash
