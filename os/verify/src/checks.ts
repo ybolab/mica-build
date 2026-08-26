@@ -7,31 +7,19 @@
 // does not treat it as one -- every one of the oracle's conclusions comes out
 // `not-ported`, and the run's conclusion is INCOMPLETE.
 //
-// Why the matcher lives on the check.
+// The matcher lives on the check rather than in a table of ids kept beside them,
+// for the reason ui-location-test.sh gives for its own register being one
+// structure rather than two: a port and its identity that live in different
+// places drift, and the drift is invisible -- a check whose matcher stopped
+// matching reports the same "no divergence" as a check that agrees. Here the two
+// cannot separate: a CheckCase with no `shell` matcher does not typecheck, and a
+// matcher with no check is not a CheckCase.
 //
-// The obvious alternative is a table mapping ids to substrings, kept beside the
-// checks. It was rejected for the reason ui-location-test.sh gives for its own
-// register being one structure rather than two: a port and its identity that
-// live in different places drift, and the drift is invisible -- a check whose
-// matcher stopped matching reports the same "no divergence" as a check that
-// agrees. Here the two cannot separate. A CheckCase with no `shell` matcher
-// does not typecheck; a matcher with no check is not a CheckCase.
-//
-// WHAT M4b adds, per check.
-//
-//   {
-//     id: 'gpt-disk-guid',
-//     shell: { pass: 'disk GUID is' },          // eq_ci prints "X is Y" / "X is 'Z', expected Y"
-//     run: async (ctx) => {
-//       const gpt = await ctx.gpt()
-//       const want = ctx.board.get('DISK_GUID') ?? ''
-//       return [eq('gpt-disk-guid', gpt.diskGuid, want, `disk GUID is ${want}`)]
-//     },
-//   }
-//
-// and, in the same change, its negative test -- a port without one is not
-// done. The harness cannot tell a check that passes from a check that
-// cannot fail; only a fixture that drives it red can.
+// Each entry carries an `id`, a `shell` matcher (`{ pass: 'disk GUID is' }` for
+// an `eq_ci` that prints "X is Y" one way and "X is 'Z', expected Y" the other),
+// and a `run` that returns the port's conclusions -- and, in the same change,
+// its negative test. The harness cannot tell a check that passes from a check
+// that cannot fail; only a fixture that drives it red can.
 
 import { createHash } from 'node:crypto'
 import { closeSync, existsSync, mkdirSync, mkdtempSync, openSync, readSync, renameSync, rmSync } from 'node:fs'
@@ -379,25 +367,19 @@ export function createImageContext(request: ContextRequest): ImageContext {
   }
 
   // The cache is keyed on the payload's content, and that is the whole point.
-  //
-  // Keyed on the slot's NAME -- `root-rootfs-a` -- and short-circuited on
-  // `existsSync(dest)`, it would be wrong: `extract` beside it always reopens
-  // its destination with 'w', so a second run at the same `--work` against a
-  // DIFFERENT image re-extracts the partition and then hands back the PREVIOUS
-  // image's unpacked root. The two runs would describe two different images
-  // with nothing anywhere complaining: every packed-root check would go on
-  // reading a tree that had nothing to do with the image named on the command
-  // line, and report agreement about it. Clearing _out/parity before
-  // every run and said so; a cache whose correctness depends on the caller
-  // remembering to delete it is not a cache.
-  //
-  // Why keying and not dropping the short-circuit. Dropping it does stop the
-  // silent wrong answer -- `squashfsExtract` refuses a `dest` that exists, by
-  // name -- but it converts every re-run at one `--work` into a hard refusal,
-  // so the only way to run twice is the `rm -rf` that was already the
-  // workaround. Keying on content keeps the reuse AND makes it sound: the same
-  // bytes resolve to the same directory, different bytes cannot, and the key
-  // cannot go stale because it IS the content. Nothing has to be invalidated.
+  // Keyed on the slot's name -- `root-rootfs-a` -- and short-circuited on
+  // `existsSync(dest)` it would be wrong, because `extract` beside it always
+  // reopens its destination with 'w': a second run at the same `--work` against
+  // a different image re-extracts the partition and then hands back the previous
+  // image's unpacked root, so every packed-root check reads a tree unrelated to
+  // the image named on the command line and reports agreement about it. A cache
+  // whose correctness depends on the caller remembering to delete it is not a
+  // cache. Dropping the short-circuit instead does stop the silent wrong answer
+  // -- `squashfsExtract` refuses a `dest` that exists, by name -- but converts
+  // every re-run at one `--work` into a hard refusal. Keying on content keeps
+  // the reuse and makes it sound: the same bytes resolve to the same directory,
+  // different bytes cannot, and the key cannot go stale because it IS the
+  // content.
   //
   // Why it is published by rename. A run killed mid-unsquashfs leaves a PARTIAL
   // tree, and a partial tree at the right name is indistinguishable from a
