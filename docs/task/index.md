@@ -138,4 +138,4 @@ Each task is a single line linking to its detail file. All detailed information 
 - [x] [**RFCT-113 PLAN-014 M7: built artifacts smoke-run on the base rootfs**](RFCT-113.md) `P1`
 - [x] [**RFCT-114 PLAN-015 M1: function-oriented comments in os/, Makefile and board/**](RFCT-114.md) `P2`
 - [x] [**RFCT-115 PLAN-015 M2: function-oriented comments in mosd/, excluding apid**](RFCT-115.md) `P2`
-- [-] [**RFCT-116 PLAN-015 M3: function-oriented comments in the test scripts**](RFCT-116.md) `P2`
+- [x] [**RFCT-116 PLAN-015 M3: function-oriented comments in the test scripts**](RFCT-116.md) `P2`
