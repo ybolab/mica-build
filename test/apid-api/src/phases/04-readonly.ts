@@ -3,38 +3,14 @@
  * the static-asset fallback, the path-traversal contract and the POST-only
  * guards.
  *
- * Nothing here changes one thing on the device. Every request is a GET, with
- * two exceptions that are still read-only in effect: a `POST` to a fallback
- * path, which `serve::fallback` refuses on the method before it looks at
- * anything else, and the `GET`s aimed at the POST-only mutation routes, which
- * exist precisely to prove that a GET reaches no handler. Anything that
- * actually mutates belongs in 05-mutate.
+ * Nothing here changes the device. Every request is a GET, bar two that are
+ * read-only in effect: a `POST` to a fallback path, which `serve::fallback`
+ * refuses on the method first, and the `GET`s aimed at POST-only mutation
+ * routes, which prove a GET reaches no handler. Mutation belongs in 05-mutate.
  *
- * Three properties of this file are load-bearing and are the reason it is as
- * long as it is:
- *
- *   - **A pane is not proved by a 200.** The gate is a `middleware::from_fn`
- *     layered over every route, so a gate misfire that served the wrong pane
- *     still answers 200 with `text/html`. Every pane therefore also asserts a
- *     string that ONLY that pane renders. The nav bar is rendered into all six
- *     of them and carries the words "Network", "Power", "SSH" and
- *     "Containers", so those words discriminate nothing; the markers below are
- *     sentences and legends from the pane bodies for exactly that reason.
- *
- *   - **Every path-shape assertion goes through `client.raw()`.** `fetch()`
- *     normalises `..` and `%2e%2e` before the request leaves the process
- *     (measured 2026-08-24, and the selftest holds that measurement). A
- *     traversal probe issued through `fetch` asserts on a string the client
- *     rewrote, which is a test of bun and not of apid.
- *
- *   - **`Accept` decides half the fallback contract.** `serve::offers_html()`
- *     is true only for an `Accept` range of exactly `text/html` or `text/*`.
- *     The wildcard range -- spelled out here rather than written literally,
- *     because the literal three characters would close this comment -- is
- *     FALSE. It is curl's default, and it is this client's default. Running
- *     the fallback set with a default client returns 404 for every row and
- *     produces six green checks that reached none of the code they name. Both
- *     columns are asserted for every row, always.
+ * Every path-shape assertion goes through `client.raw()`: `fetch()` normalises
+ * `..` and `%2e%2e` before the request leaves the process (measured 2026-08-24,
+ * held by the selftest), so a probe issued through `fetch` tests bun, not apid.
  */
 
 import { Client, checkbox, type HttpResponse } from "../client.ts";
@@ -51,48 +27,34 @@ const HTML_CONTENT_TYPE = /^text\/html\s*(;.*)?$/i;
 /** How much of an unexpected body to quote in a failure detail. */
 const SNIPPET = 200;
 
-// ---------------------------------------------------------------------------
 // 1. The panes
-// ---------------------------------------------------------------------------
 
 interface Pane {
   readonly path: string;
-  /** A string ONLY this pane renders. Never a word the nav bar also carries. */
+  /**
+   * A string only this pane renders, never a word the nav bar also carries: the
+   * gate is a `middleware::from_fn` over every route, so a misfire that served
+   * the wrong pane still answers 200 with `text/html`, and "Network", "Power",
+   * "SSH" and "Containers" render into all six panes.
+   */
   readonly marker: string;
   /** Named in the check text, so a red line says what was looked for. */
   readonly markerName: string;
 }
 
 /**
- * The six declared, session-gated GET panes and the string that identifies
- * each one.
+ * The six declared, session-gated GET panes and the string identifying each.
  *
- * `/ssh`, `/containers` and `/hostname` are fixed by the subtask brief.
- * `/`, `/network` and `/power` were chosen here, and the choices are:
- *
- *   - `/` renders `pane("Status", status_body(..))`. `status_body` emits
- *     `h2 { "System" }` and `h2 { "Network state" }` unconditionally -- before
- *     any branch on whether mosd answered -- so `Network state` survives a
- *     device whose bus calls are all failing, where the pane renders error
- *     boxes and nothing else. It is also not a nav word: the nav renders
- *     `>Network</a>`, which does not contain the substring `Network state`.
- *
- *   - `/network` renders one `form` per configured interface and then, outside
- *     that loop, an "Add interface" fieldset. The per-interface forms are
- *     conditional on there being interfaces -- the pane's own empty branch is
- *     `p { "No interfaces configured." }` -- so a marker taken from them would
- *     be a marker that depends on the device's network configuration. The
- *     "Add interface" legend is unconditional and is rendered by no other pane.
- *
- *   - `/power` opens with one unconditional sentence above both action forms.
- *     The forms themselves carry the confirm tokens, which 05-mutate and
- *     07/08 need; a read-only phase should not assert on the token strings,
- *     because that would couple this phase to the shape of a control it must
- *     never submit. The sentence is the stable, body-level choice.
- *
- * `/hostname` is handled separately below: its marker is the CURRENT hostname,
- * which cannot be hardcoded, so the assertion is that the field is there and
- * carries a non-empty value.
+ * `/` uses `Network state`: `status_body` emits that `h2` unconditionally,
+ * before any branch on whether mosd answered, so it survives a device whose bus
+ * calls all fail, and `>Network</a>` does not contain it. `/network` uses the
+ * unconditional "Add interface" legend, because the per-interface forms are
+ * conditional on there being interfaces (the empty branch is `p { "No
+ * interfaces configured." }`). `/power` uses its one unconditional opening
+ * sentence rather than the confirm tokens its forms carry, which would couple a
+ * read-only phase to a control it must never submit. `/hostname` is handled
+ * below: its marker is the current hostname, which cannot be hardcoded, so the
+ * assertion is that the field is present and non-empty.
  */
 const PANES: readonly Pane[] = [
   {
@@ -122,22 +84,19 @@ const PANES: readonly Pane[] = [
   },
 ];
 
-// ---------------------------------------------------------------------------
 // 2. The reserved /api/ subtree
-// ---------------------------------------------------------------------------
 
 /**
  * Targets that must all produce `api_not_found`'s envelope.
  *
- * `/api` and `/api/` are BOTH here, and the pair is the point rather than a
- * duplicate. `nest("/api", ..)` claims `/api`, `/api/x` and `/api/x/y` and
- * **not** `/api/` -- which is why routes.rs declares `/api/` a second time,
- * with `any(api_not_found)`, immediately after the nest. If that second
- * declaration were ever dropped, `/api/` would fall through to the asset
- * router: a request that begins `/api/` answered by the SPA fallback, which is
- * exactly what api.md §4.1 rule 1 forbids. Over the wire is the only place
- * that split is observable -- from inside the router both spellings look like
- * the same prefix.
+ * `/api` and `/api/` are both here, and the pair is the point.
+ * `nest("/api", ..)` claims `/api`, `/api/x` and `/api/x/y` and **not** `/api/`,
+ * which is why routes.rs declares `/api/` a second time with
+ * `any(api_not_found)` immediately after the nest. Drop that second
+ * declaration and `/api/` falls through to the asset router -- a request
+ * beginning `/api/` answered by the SPA fallback, which api.md §4.1 rule 1
+ * forbids. Over the wire is the only place that split is observable: from
+ * inside the router both spellings look like the same prefix.
  */
 const API_TARGETS: readonly string[] = [
   "/api/",
@@ -147,66 +106,44 @@ const API_TARGETS: readonly string[] = [
   "/api/deeply/nested/thing",
 ];
 
-// ---------------------------------------------------------------------------
 // 3. The static-asset fallback and path traversal
-// ---------------------------------------------------------------------------
 
 interface FallbackRow {
   readonly target: string;
   /** Expected status for `Accept: text/html`. */
   readonly withHtml: 200 | 404;
-  /** Expected status for `Accept: * / *`. Always 404; see `offers_html`. */
+  /**
+   * Expected status for `Accept: * / *`, always 404: `offers_html()` is true
+   * only for a range of exactly `text/html` or `text/*`. That wildcard range --
+   * spelled out rather than written literally, because the literal three
+   * characters would close this comment -- is curl's default and this client's,
+   * so running the table with a default client returns 404 for every row and
+   * greens six checks that reached none of the code they name. Both columns are
+   * asserted for every row, always.
+   */
   readonly withAny: 404;
-  /** Which of §4.2's conditions decides this row, quoted in the check text. */
+  /**
+   * Which of §4.2's conditions decides this row, quoted in the check text.
+   * `ends_in_a_route_segment()` rejects a `%` exactly as it rejects a `.`,
+   * because a surviving `%` may decode to one, so the `%2f` rows are each one
+   * segment containing `%` rather than a traversal.
+   */
   readonly because: string;
 }
 
 /**
  * The fallback contract, both columns, in the shape `serve::respond` produces
- * it ON A BUNDLE-LESS DEVICE.
+ * it on a bundle-less device. Each row's `because` names the deciding §4.2
+ * condition; `/no-such-route` is the control proving the `Accept` column does
+ * work rather than everything being 404.
  *
- * What this table does not test: api.md §4.4's traversal guards.
- *
- * `serve::respond()` calls `asset_path::resolve()` -- the function that holds
- * every §4.4 guard: the dot-segment rejection, the residual-escape rejection,
- * the NUL rejection, the escaped-separator rejection and the
- * canonicalised-root containment assertion -- ONLY inside
- * `if let Some(root) = active_root(..)`. With no bundle active at `/srv/ui`,
- * `active_root` is `None` and that whole block is skipped. Not one line of
- * §4.4 executes.
- *
- * The 404s below therefore come from §4.2 conditions 3 and 4 --
- * `offers_html()` and `ends_in_a_route_segment()` -- and from nowhere else.
- * They are the RIGHT statuses arrived at by a DIFFERENT route, and a comment
- * here claiming this phase covers §4.4 would be precisely the defect this
- * suite exists to prevent: a green check standing in for code that never ran.
- *
- * Reaching §4.4 needs an active bundle on the DATA partition at `/srv/ui`,
- * and the seeding tool writes STATE only, so closing that gap needs a
- * bundle-seeding step this phase does not have.
- *
- * The rows:
- *
- *   `/../../etc/passwd` -- last segment `passwd`, no `.` and no `%`, so
- *   `ends_in_a_route_segment()` is TRUE. With `text/html` it reaches condition
- *   5 and gets the built-in UI: **200 is the CORRECT answer and is asserted as
- *   correct.** It is the SPA fallback on a bundle-less device, not a traversal
- *   hole -- no filesystem was consulted, because `active_root` was `None`.
- *   The assertion that would actually catch a traversal is the NEGATIVE one on
- *   the body, made below, and it is worth more than the status code.
- *
- *   `/%2e%2e%2fetc%2fpasswd`, `/%252e%252e%2fetc%2fpasswd`, `/x%00y` -- the
- *   `%2f` are literal escapes, not separators, so each target is a SINGLE
- *   segment containing `%`. `ends_in_a_route_segment()` rejects a `%` exactly
- *   as it rejects a `.`, because a surviving `%` may decode to one. 404 in
- *   both columns.
- *
- *   `/no-such-route` -- an ordinary SPA route: no `.`, no `%`. 200 under
- *   `text/html`, 404 under the wildcard range. This row is the control that
- *   proves the `Accept` column is doing work rather than everything being 404.
- *
- *   `/no-such-asset.js` -- last segment carries a `.`, so it reads as a
- *   filename and never becomes HTML. 404 in both columns.
+ * This table does not test api.md §4.4's traversal guards. `serve::respond()`
+ * calls `asset_path::resolve()` -- which holds the dot-segment, residual-escape,
+ * NUL and escaped-separator rejections and the canonicalised-root containment
+ * assertion -- only inside `if let Some(root) = active_root(..)`, so with no
+ * bundle active at `/srv/ui` not one line of §4.4 executes; the 404s come from
+ * §4.2 conditions 3 and 4 instead. Reaching §4.4 needs an active bundle on the
+ * DATA partition at `/srv/ui`, and the seeding tool writes STATE only.
  */
 const FALLBACK_ROWS: readonly FallbackRow[] = [
   {
@@ -251,18 +188,15 @@ const FALLBACK_ROWS: readonly FallbackRow[] = [
 /**
  * Signs that a passwd file reached the client.
  *
- * These are asserted ABSENT from the 200 that `/../../etc/passwd` returns.
- * That body should be the built-in Status pane, and the Status pane reads
- * mosd and `/proc/uptime` and nothing else -- so none of these can appear in
- * it legitimately. If one ever does, the 200 has stopped being the SPA
- * fallback and has started being a file, and the status code alone would not
- * have said so.
+ * These are asserted absent from the 200 that `/../../etc/passwd` returns.
+ * That body should be the built-in Status pane, which reads mosd and
+ * `/proc/uptime` and nothing else, so none of these can appear in it
+ * legitimately. If one does, the 200 has stopped being the SPA fallback and
+ * become a file, which the status code alone would not say.
  */
 const PASSWD_SIGNS: readonly string[] = ["root:", "/bin/", ":x:0:0:"];
 
-// ---------------------------------------------------------------------------
 // 4. The POST-only guards
-// ---------------------------------------------------------------------------
 
 /**
  * Every route routes.rs declares with `post(..)` and no `get(..)`, at the
@@ -274,7 +208,7 @@ const PASSWD_SIGNS: readonly string[] = ["root:", "/bin/", ":x:0:0:"];
  * password, change the key list, start the container engine, end a session or
  * deactivate a working custom UI. A 405 here is the guard holding.
  *
- * `/power/reboot` and `/power/poweroff` are deliberately NOT in this list --
+ * `/power/reboot` and `/power/poweroff` are deliberately not in this list:
  * they are issued separately below, each followed immediately by a `/healthz`
  * probe, so the liveness assertion sits next to the request it is about.
  */
@@ -288,29 +222,24 @@ const POST_ONLY: readonly string[] = [
   "/builtin/deactivate",
 ];
 
-// ---------------------------------------------------------------------------
 // 5. /builtin and /builtin/
-// ---------------------------------------------------------------------------
 
 /**
  * The escape section's legend and button label, rendered by `escape_section()`
  * and therefore by `builtin_home` alone.
  *
- * `home` -- the handler behind `/` and behind the SPA fallback -- does NOT
- * render it: routes.rs says so in as many words, that `/` is conditional and
- * stays conditional and the escape control belongs on the pane that is
- * reachable unconditionally. That makes this string a marker for `/builtin`
- * specifically, rather than a marker for "some Status pane", which is what the
- * "same pane" assertion needs it to be.
+ * `home` -- the handler behind `/` and behind the SPA fallback -- does not
+ * render it: `/` is conditional and stays conditional, and the escape control
+ * belongs on the pane reachable unconditionally. That makes this string a
+ * marker for `/builtin` specifically rather than for "some Status pane", which
+ * is what the "same pane" assertion needs.
  */
 const BUILTIN_MARKER = "Deactivate the custom UI";
 
 /** Both `/builtin` spellings render `pane("Status", ..)`, hence this `h1`. */
 const STATUS_HEADING = "<h1>Status</h1>";
 
-// ---------------------------------------------------------------------------
 // helpers
-// ---------------------------------------------------------------------------
 
 function snippet(body: string): string {
   return body.length <= SNIPPET ? body : `${body.slice(0, SNIPPET)}...`;
@@ -347,9 +276,7 @@ function errorObjectOf(parsed: unknown): Record<string, unknown> | undefined {
   return error as Record<string, unknown>;
 }
 
-// ---------------------------------------------------------------------------
 // the phase
-// ---------------------------------------------------------------------------
 
 const phase: Phase = {
   id: "04-readonly",
@@ -389,7 +316,7 @@ const phase: Phase = {
       ].join("\n"),
     );
 
-    // And the session-bearing client must STILL hold its session: a phase that
+    // And the session-bearing client must still hold its session: a phase that
     // silently lost the cookie would hand 05-mutate a broken assumption, and
     // 05's failures would read as 05's bugs.
     report.check(
@@ -403,9 +330,7 @@ const phase: Phase = {
   },
 };
 
-// ---------------------------------------------------------------------------
 // 1. panes
-// ---------------------------------------------------------------------------
 
 async function assertPanes(ctx: PhaseContext): Promise<void> {
   const { client, report } = ctx;
@@ -464,16 +389,14 @@ async function assertPanes(ctx: PhaseContext): Promise<void> {
   if (current !== undefined && current !== "") ctx.state.set("04-readonly:hostname", current);
 }
 
-// ---------------------------------------------------------------------------
 // 2. the reserved /api/ subtree
-// ---------------------------------------------------------------------------
 
 async function assertApiSubtree(ctx: PhaseContext, anonymous: Client): Promise<void> {
   const { client, report } = ctx;
   report.note("  -- 2. the reserved /api/ subtree and its 404 envelope");
 
   for (const target of API_TARGETS) {
-    // raw(), because the /api vs /api/ split IS a path-shape assertion: the
+    // raw(), because the /api vs /api/ split is a path-shape assertion: the
     // trailing slash is the entire difference between the two declarations in
     // routes.rs, and a client that normalised it away would collapse the two
     // cases into one and still print two PASS lines.
@@ -525,7 +448,7 @@ async function assertApiSubtree(ctx: PhaseContext, anonymous: Client): Promise<v
     );
 
     // Ends-with, not equals. The envelope's wording is `no API route at
-    // <path>`, but the contract-bearing half is the PATH: it is what tells a
+    // <path>`, but the contract-bearing half is the path: it is what tells a
     // client which of its requests was refused, and it is the half that would
     // silently break if `OriginalUri` were ever swapped for the nested `Uri`
     // (which would report `/versions`, not `/api/versions`).
@@ -550,9 +473,9 @@ async function assertApiSubtree(ctx: PhaseContext, anonymous: Client): Promise<v
   }
 
   // The gate wraps `/api/` exactly as it wraps everything but `/healthz`. An
-  // API client that saw the 404 envelope above and concluded "the prefix is
-  // reserved but open" would be wrong, and would misread its own 303s as
-  // routing bugs. `/healthz` is the ONLY unauthenticated route.
+  // API client that read the 404 envelope above as "the prefix is reserved but
+  // open" would misread its own 303s as routing bugs. `/healthz` is the only
+  // unauthenticated route.
   const gated = await anonymous.raw("/api/versions", { sendCookies: false });
   report.expectStatus(
     gated,
@@ -567,9 +490,7 @@ async function assertApiSubtree(ctx: PhaseContext, anonymous: Client): Promise<v
   );
 }
 
-// ---------------------------------------------------------------------------
 // 3. the fallback and the traversal contract
-// ---------------------------------------------------------------------------
 
 async function assertFallbackAndTraversal(ctx: PhaseContext): Promise<void> {
   const { client, report } = ctx;
@@ -635,7 +556,7 @@ async function assertFallbackAndTraversal(ctx: PhaseContext): Promise<void> {
 
   // The assertion that would actually catch a traversal.
   //
-  // `/../../etc/passwd` answering 200 is CORRECT: `active_root` is `None`, so
+  // `/../../etc/passwd` answering 200 is correct: `active_root` is `None`, so
   // no path was ever resolved against a filesystem, and §4.2 condition 5 hands
   // back the built-in UI. The status code alone cannot tell that apart from a
   // 200 carrying /etc/passwd. This can, and it is the check worth having.
@@ -670,9 +591,7 @@ async function assertFallbackAndTraversal(ctx: PhaseContext): Promise<void> {
   );
 }
 
-// ---------------------------------------------------------------------------
 // 4. the POST-only guards
-// ---------------------------------------------------------------------------
 
 async function assertPostOnlyGuards(ctx: PhaseContext): Promise<void> {
   const { client, report } = ctx;
@@ -680,7 +599,7 @@ async function assertPostOnlyGuards(ctx: PhaseContext): Promise<void> {
 
   // The two power actions first, each followed straight away by /healthz.
   //
-  // A 405 says the ROUTER refused the GET. It does not say the handler was not
+  // A 405 says the router refused the GET. It does not say the handler was not
   // reached -- a route that had grown a GET handler which fired and then
   // returned the wrong status would look identical from here. A live /healthz
   // immediately afterwards says the machine is still running, which is the
@@ -715,21 +634,19 @@ async function assertPostOnlyGuards(ctx: PhaseContext): Promise<void> {
   }
 }
 
-// ---------------------------------------------------------------------------
 // 5. /builtin and /builtin/
-// ---------------------------------------------------------------------------
 
 async function assertBuiltin(ctx: PhaseContext, anonymous: Client): Promise<void> {
   const { client, report } = ctx;
   report.note("  -- 5. /builtin and /builtin/: both spellings, one pane");
 
-  // raw() for both: the trailing slash IS the assertion. `nest("/builtin", ..)`
-  // claims `/builtin` and NOT `/builtin/`, which is why routes.rs declares the
-  // slashed spelling a second time outside the nest. §6.3 asks for ONE
+  // raw() for both: the trailing slash is the assertion. `nest("/builtin", ..)`
+  // claims `/builtin` and not `/builtin/`, which is why routes.rs declares the
+  // slashed spelling a second time outside the nest. §6.3 asks for one
   // unconditional path to the built-in UI, and an operator recovering a device
-  // -- who is reading the slashed spelling out of the design document -- should
-  // not have to get the slash right. A client that normalised the difference
-  // would test one spelling twice.
+  // reads the slashed spelling out of the design document, so neither spelling
+  // may depend on getting the slash right. A client that normalised the
+  // difference would test one spelling twice.
   for (const target of ["/builtin", "/builtin/"] as const) {
     const response = await client.raw(target);
     report.expectStatus(response, 200, `GET ${target} answers 200`);
@@ -752,11 +669,11 @@ async function assertBuiltin(ctx: PhaseContext, anonymous: Client): Promise<void
   }
 
   // ...and the shared marker above is a marker, not something every pane has:
-  // `/` renders `pane("Status", status_body(..))` with no escape section, and
-  // routes.rs says that is deliberate -- `/` is conditional and stays
-  // conditional, and the escape control belongs on the unconditional path.
-  // Without this line, "both spellings render the same pane" would be
-  // satisfied by both of them rendering any Status pane at all.
+  // `/` renders `pane("Status", status_body(..))` with no escape section,
+  // deliberately -- `/` is conditional and stays conditional, and the escape
+  // control belongs on the unconditional path. Without this line, "both
+  // spellings render the same pane" would be satisfied by both of them
+  // rendering any Status pane at all.
   const root = await client.get("/");
   report.check(
     !root.body.includes(BUILTIN_MARKER),
@@ -767,7 +684,7 @@ async function assertBuiltin(ctx: PhaseContext, anonymous: Client): Promise<void
     ].join("\n"),
   );
 
-  // Gated like everything else except /healthz. §6.3's prefix is a way IN to
+  // Gated like everything else except /healthz. §6.3's prefix is a way in to
   // the built-in UI for an authenticated operator; it is not a hole.
   const gated = await anonymous.raw("/builtin/", { sendCookies: false });
   report.expectStatus(
@@ -783,36 +700,21 @@ async function assertBuiltin(ctx: PhaseContext, anonymous: Client): Promise<void
   );
 }
 
-// ---------------------------------------------------------------------------
 // 6. the image-skew guard
-// ---------------------------------------------------------------------------
 
 /**
- * Routes that exist in THIS TREE's routes.rs but not in the running image.
+ * Routes this tree's routes.rs declares that the running image does not have.
  *
- * This is under-coverage that announces itself, and the reason it is a CHECK
- * rather than a sentence in a report is that a sentence in a report is read
- * once. Measured 2026-08-24: the image under test is built from a tree at or
- * before 67b999b; local main gained `.route("/mqtt", get(mqtt_form))` and
- * `.route("/mqtt/enable", post(mqtt_enable))` at ddf3a86, 12:07, AFTER the
- * image was built at 10:48. So this branch has the routes, the device does
- * not, and `PANES` and `POST_ONLY` above correctly omit them.
- *
- * The assertions are therefore that these paths behave as the FALLBACK, which
- * is the truth about the device today. They are chosen to be the two that
- * CANNOT both survive the routes arriving:
- *
- *   - `GET /mqtt` with `Accept: *\/*` is 404 only because §4.2 condition 3
- *     refuses to make HTML for a wildcard range. A real `get(mqtt_form)`
- *     ignores `Accept` entirely and answers 200. (The `text/html` column is
- *     deliberately NOT asserted: the SPA fallback and a real pane BOTH return
- *     200 there, so it would prove nothing either way.)
- *   - `POST /mqtt/enable` is 405 only because §4.2 condition 2 checks the
- *     method before anything else. A real `post(mqtt_enable)` answers 303, or
- *     400, or anything but 405.
- *
- * When somebody rebuilds the image from a newer main, both go red at once and
- * the failure detail says what to do about it.
+ * Measured 2026-08-24: the image is built from a tree at or before 67b999b, and
+ * main gained `.route("/mqtt", get(mqtt_form))` and `.route("/mqtt/enable",
+ * post(mqtt_enable))` at ddf3a86 12:07, after the image was built at 10:48, so
+ * `PANES` and `POST_ONLY` correctly omit them. A check rather than a report
+ * sentence, so both go red at once when the image is rebuilt from a newer main.
+ * `GET /mqtt` under a wildcard `Accept` is 404 only because §4.2 condition 3
+ * refuses HTML for that range, where a real `get(mqtt_form)` answers 200 (the
+ * `text/html` column is deliberately not asserted -- the SPA fallback and a real
+ * pane both return 200 there); `POST /mqtt/enable` is 405 only because §4.2
+ * condition 2 checks the method first. Neither can survive the route arriving.
  */
 const SKEWED_ROUTES_HINT =
   "the image now serves /mqtt; add it to PANES and /mqtt/enable to POST_ONLY in 04-readonly, then update this guard.";

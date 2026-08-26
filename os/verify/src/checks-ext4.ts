@@ -1,57 +1,30 @@
 // Batch 4b: the four ext4 storage tiers.
 //
-// `check_ext4` is called four times -- META,
-// STATE, EPHEMERAL, DATA -- and prints SIX conclusions each, plus one about
-// EPHEMERAL's seed stamp: 25 conclusions per board, the largest single family
-// left unclaimed after batch 4a.
+// `check_ext4` is called once per tier -- META and STATE, EPHEMERAL and DATA --
+// and prints six conclusions each plus one about EPHEMERAL's seed stamp: 25
+// conclusions per board.
 //
-// WHERE THE PARTITION COMES FROM.
+// The bytes come from `dd if=IMG bs=1M skip=${PART_START_MIB_x}
+// count=${x_SIZE_MIB}` -- the layout's offset, walked by `walkLayout` exactly as
+// :1491-1517 walks it, and NOT the GPT's first sector, which
+// `gpt-partition-start` asserts separately. The tier order is the layout's too:
+// every `ext4`-role partition in LAYOUT_PARTITIONS order, which on both shipped
+// boards is meta, state, ephemeral, data, so a fifth tier arrives as a new
+// (id, instance) pair with no register entry edited.
 //
-// `dd if=IMG bs=1M skip=${PART_START_MIB_x} count=${x_SIZE_MIB}` -- the LAYOUT's
-// offset, walked by `walkLayout` here exactly as :1491-1517 walks it, and NOT
-// the GPT's first sector. Both agree on a healthy image; which one is right is
-// asserted by `gpt-partition-start`, and reading these bytes through the GPT
-// would make this family agree with a partition that had moved.
-//
-// The ORDER of the tiers is the layout's too. The oracle names them in four
-// literal call sites; here they are every `ext4`-role partition in
-// LAYOUT_PARTITIONS order, which on both shipped boards is exactly meta, state,
-// ephemeral, data. A fifth tier added to a board definition is checked without
-// a register entry being edited -- and, being `many`, it arrives as a new
-// (id, instance) pair rather than as a count that went up.
-//
-// THREE THINGS THE ORACLE CONCLUDES THAT ARE NOT WHAT THEY LOOK LIKE.
-//
-// All three are REPRODUCED here and none is repaired. A port that hardened its
-// oracle would diverge from it, and the divergence would be the port's.
-//
-//  1. `e2fsck -fn` EXITS 0 ON A TRUNCATED FILESYSTEM. Measured 2026-08-26: an
-//     8192-block filesystem in a 4096-block file makes e2fsck print "Either the
-//     superblock or the partition table is likely to be corrupt!", run all five
-//     passes, and exit 0. :2342 is `if e2fsck -fn "${img}" >/dev/null 2>&1`, so
-//     both streams are discarded and the status alone decides -- and the
-//     conclusion is `e2fsck -fn on data is clean`. The branch is reachable: this
-//     extract is `count=${size_mib}` at the layout's offset, so an image whose
-//     tail is short produces exactly that file. See `e2fsckClean` in image.ts.
-//
-//  2. `debugfs -R "ls -p /"` EXITS 0 ON A FILE THAT IS NOT EXT4, with empty
-//     stdout and "Filesystem not open" on stderr. :2358's `|| true` swallows
-//     the stderr, `entries` is empty -- and for META, STATE and DATA an empty
-//     listing is the PASSING direction. So `factory: meta is empty at build
-//     (nothing but lost+found)` is what the oracle concludes about a partition
-//     that holds no filesystem at all. `debugfsEntriesOrNone` below reproduces
-//     it and says so.
-//
-//  3. `tune2fs -l` and `dumpe2fs -h` are `|| true`, so a partition they cannot
-//     open arrives at the label, UUID, feature and size checks as the empty
-//     string -- four FAILs describing values rather than one refusal naming the
-//     tool. Reproduced by `ext4SuperOrNone`.
-//
-// The result is that a tier which is not a filesystem at all produces, on both
-// verifiers, four FAILs (label, UUID, size, e2fsck), one PASS (no orphan_file --
-// there are no features to have it) and one PASS (empty at build). Two of those
-// six greens are vacuous. They are recorded, asserted as their own cases, and
-// left for whoever owns the oracle.
+// Three oracle conclusions are reproduced rather than repaired. `e2fsck -fn`
+// exits 0 on a truncated filesystem -- measured 2026-08-26, an 8192-block
+// filesystem in a 4096-block file prints "Either the superblock or the partition
+// table is likely to be corrupt!", runs all five passes and exits 0, and :2342's
+// `if e2fsck -fn "${img}" >/dev/null 2>&1` lets the status alone decide; see
+// `e2fsckClean` in image.ts. `debugfs -R "ls -p /"` exits 0 on a file that is
+// not ext4 with empty stdout and "Filesystem not open" on stderr, which :2358's
+// `|| true` swallows, and an empty listing is the passing direction for META,
+// STATE and DATA; `debugfsEntriesOrNone` reproduces it. `tune2fs -l` and
+// `dumpe2fs -h` are `|| true`, so a partition they cannot open reaches the
+// label, UUID, feature and size checks as the empty string; `ext4SuperOrNone`
+// reproduces it. A tier that is not a filesystem therefore produces four FAILs
+// and two vacuous greens on both verifiers, asserted here as their own cases.
 
 import type { Board } from './board.ts'
 import type { CheckCase, ImageContext } from './checks.ts'
@@ -243,7 +216,7 @@ export const EXT4_CHECKS: readonly CheckCase[] = [
     // orphan_file cannot be mounted by the 6.1 kernel these images are built
     // for, so its presence makes the partition unusable on the device.
     //
-    // A VACUOUS PASS LIVES HERE: on a partition tune2fs could not open there
+    // A vacuous PASS lives here: on a partition tune2fs could not open there
     // are no features at all, so `grep -w orphan_file` matches nothing and the
     // check passes. Reproduced -- the feature list comes from the same
     // `|| true` the label does.
@@ -301,7 +274,7 @@ export const EXT4_CHECKS: readonly CheckCase[] = [
   },
 
   {
-    // THE STATUS IS THE WHOLE TEST, and it is not the truth. See the header:
+    // The status is the whole test, and it is not the truth. See the header:
     // e2fsck exits 0 on a truncated filesystem after saying it is likely
     // corrupt. The oracle sends both streams to /dev/null; this keeps the
     // report and puts it in the FAILING message only, so the passing sentence
@@ -327,7 +300,7 @@ export const EXT4_CHECKS: readonly CheckCase[] = [
   },
 
   {
-    // WHAT A PARTITION SHOULD CONTAIN AT BUILD IS PER PARTITION (:2352). META,
+    // What a partition should contain at build is per partition (:2352). META,
     // STATE and DATA ship empty; EPHEMERAL ships SEEDED, because /var is
     // written by every early systemd unit and a filesystem filled on first boot
     // races all of them.
@@ -370,7 +343,7 @@ export const EXT4_CHECKS: readonly CheckCase[] = [
   },
 
   {
-    // EPHEMERAL SHIPS SEEDED, and the STAMP is what proves it (:2379-2397).
+    // EPHEMERAL ships seeded, and the STAMP is what proves it (:2379-2397).
     //
     // The stamp is asserted rather than the tree because mos-seed-var's
     // ConditionPathExists keys on exactly this path: a seeded tree WITHOUT the

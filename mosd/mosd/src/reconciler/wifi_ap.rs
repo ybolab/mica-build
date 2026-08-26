@@ -1,28 +1,25 @@
 //! WiFi access-point reconciler: renders hostapd configuration from `wifi.ap`,
 //! drives `hostapd@<interface>.service`, and renders the networkd unit that
-//! gives the access point its address and its DHCP server.
+//! gives the access point its address and its DHCP server. Three system
+//! effects, in this order:
 //!
-//! Three system effects, in this order:
-//!
-//! 1. `/etc/hostapd/<interface>.conf` is rendered from `wifi.ap`. It carries
-//!    the WPA2 pre-shared key, so it is written at 0600.
-//! 2. a networkd `.network` unit for the interface is rendered, carrying the
-//!    AP-side address and `DHCPServer=yes`. An access point clients can
-//!    associate with but which hands out no address is an access point nothing
-//!    can reach — the provisioning UI included.
-//! 3. `hostapd@<interface>.service` is brought to the state `wifi.ap.mode`
-//!    asks for.
+//! - `/etc/hostapd/<interface>.conf` is rendered from `wifi.ap`. It carries the
+//!   WPA2 pre-shared key, so it is written at 0600.
+//! - a networkd `.network` unit for the interface is rendered, carrying the
+//!   AP-side address and `DHCPServer=yes`. An access point clients can
+//!   associate with but which hands out no address is an access point nothing
+//!   can reach, the provisioning UI included.
+//! - `hostapd@<interface>.service` is brought to the state `wifi.ap.mode` asks
+//!   for.
 //!
 //! Configuration before unit, deliberately: hostapd reads its configuration
 //! once at start, so a unit started against a stale file beacons the previous
-//! SSID with the previous key.
+//! SSID with the previous key. The station role is not handled here —
+//! `wifi.client` belongs to [`super::wifi_client`], the two roles cannot share
+//! one radio, and this reconciler's answer to that is to report the conflict
+//! and touch nothing (see [`AccessPoint::Conflict`]).
 //!
-//! **The station role is not handled here.** `wifi.client` belongs to
-//! [`super::wifi_client`]. The two roles cannot share one radio, and this
-//! reconciler's answer to that is to *report* the conflict and touch nothing —
-//! see [`AccessPoint::Conflict`].
-//!
-//! **Secret hygiene.** The pre-shared key reaches exactly one place: the 0600
+//! Secret hygiene: the pre-shared key reaches exactly one place, the 0600
 //! configuration file. It is never published in the live-state tree (which is
 //! served over D-Bus), never named in an error, and this module contains no
 //! logging statement at all.
@@ -264,18 +261,15 @@ fn validate_interface(interface: &str) -> Result<()> {
 /// True when `value` can be carried verbatim on the right-hand side of a
 /// hostapd configuration line with no way of meaning anything else.
 ///
-/// **hostapd's rules are not wpa_supplicant's.** hostapd takes the bytes after
-/// the `=` literally to the end of the line: there is no quoting to escape
-/// into, so a `"` is an ordinary character and a newline is a new directive.
-/// The predicate is therefore printable ASCII (which excludes the newline that
-/// would start a directive of its own) with neither a leading nor a trailing
-/// space, because hostapd's line reader is not documented to preserve them and
-/// a silently trimmed value is a value the operator did not configure.
-///
-/// `"` and `\` are excluded as well. Neither is dangerous in a raw hostapd
-/// value, but keeping the accepted set identical to the station reconciler's
-/// means one escaping discipline across both files rather than two sets that
-/// have to be reasoned about separately; the cost is that a handful of legal
+/// hostapd's rules are not wpa_supplicant's: it takes the bytes after the `=`
+/// literally to the end of the line, so there is no quoting to escape into, a
+/// `"` is an ordinary character and a newline is a new directive. The predicate
+/// is therefore printable ASCII, with neither a leading nor a trailing space,
+/// because hostapd's line reader is not documented to preserve them and a
+/// silently trimmed value is a value the operator did not configure. `"` and
+/// `\` are excluded as well — neither is dangerous in a raw hostapd value, but
+/// keeping the accepted set identical to the station reconciler's means one
+/// escaping discipline across both files; the cost is that a handful of legal
 /// SSIDs take the hex form and stay just as correct.
 fn is_plain(value: &str) -> bool {
     !value.is_empty()
@@ -407,11 +401,10 @@ fn parse_cidr(address: &str) -> Result<(Ipv4Addr, u32)> {
 ///
 /// Derived from the address and nothing else, deliberately: the pool is not a
 /// second setting an operator has to keep in step, and a pool computed from
-/// anything but the address is a pool that can fall outside the subnet — which
-/// networkd accepts and which then hands out addresses no client can use.
-///
-/// The pool starts one address above the access point and runs to the last
-/// address before the broadcast address.
+/// anything but the address can fall outside the subnet — which networkd
+/// accepts and which then hands out addresses no client can use. The pool
+/// starts one address above the access point and runs to the last address
+/// before the broadcast address.
 ///
 /// # Errors
 ///
@@ -445,14 +438,12 @@ fn dhcp_pool(host: Ipv4Addr, prefix: u32) -> Result<(u32, u32)> {
 /// `psk`.
 ///
 /// Pure and deterministic: the same inputs always produce the same bytes, so a
-/// re-render can be compared against what is on disk to decide whether
-/// anything actually changed.
-///
-/// WPA2-PSK only (`wpa=2`, `rsn_pairwise=CCMP`): the settings model has no
-/// field to ask for anything else, and an open access point is not something
-/// `wifi.ap` can express. `ieee80211d=1` is what makes `country_code` more
-/// than a comment — without it hostapd carries the code but does not advertise
-/// the regulatory domain.
+/// re-render can be compared against what is on disk to decide whether anything
+/// changed. WPA2-PSK only (`wpa=2`, `rsn_pairwise=CCMP`): the settings model
+/// has no field to ask for anything else, and an open access point is not
+/// something `wifi.ap` can express. `ieee80211d=1` is what makes `country_code`
+/// more than a comment — without it hostapd carries the code but does not
+/// advertise the regulatory domain.
 ///
 /// # Errors
 ///

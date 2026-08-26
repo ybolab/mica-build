@@ -54,22 +54,17 @@ impl Default for Settings {
 
 /// Container engine policy, reconciled by `ContainerReconciler`.
 ///
-/// Named for the CAPABILITY, not the implementation: if the engine is ever
-/// replaced, this key, its bus item and its apid pane are unchanged and only
-/// the binaries move.
-///
-/// **Disabled by default, and false means nothing runs.** The engine is
-/// daemonless -- there is no socket and no service to leave stopped -- so what
-/// this switch actually gates is whether `/etc/containers/systemd` is bound
-/// from STATE. Unbound, that path is the empty directory inside the read-only
-/// verity root, Quadlet finds nothing to parse, and no container unit exists
-/// to be started.
-///
-/// The default is false because of what true costs: mos does not build
-/// rootless, so containers run root-capable, and
-/// **turning this on grants root-equivalent capability to whatever can write a
-/// `.container` file into STATE.** That is the switch's whole purpose, not a
-/// side effect of it.
+/// Named for the capability, not the implementation: if the engine is replaced,
+/// this key, its bus item and its apid pane are unchanged and only the binaries
+/// move. Disabled by default, and false means nothing runs — the engine is
+/// daemonless, with no socket and no service to leave stopped, so what this
+/// switch gates is whether `/etc/containers/systemd` is bound from STATE.
+/// Unbound, that path is the empty directory inside the read-only verity root,
+/// Quadlet finds nothing to parse, and no container unit exists to be started.
+/// The default is false because mos does not build rootless, so containers run
+/// root-capable and turning this on grants root-equivalent capability to
+/// whatever can write a `.container` file into STATE. That is the switch's
+/// purpose, not a side effect.
 #[derive(Debug, Clone, PartialEq, Default, serde::Serialize, serde::Deserialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct ContainerSettings {
@@ -81,25 +76,21 @@ pub struct ContainerSettings {
 /// MQTT policy: the master switch for the broker and the bridge, and the
 /// listener and credential policy the broker is rendered from.
 ///
-/// **`enabled` is a master switch and nothing else.** False means neither the
+/// `enabled` is a master switch and nothing else. False means neither the
 /// broker nor the bridge runs: no `mos-mqtt-broker.service`, no
-/// `mos-mqttd.service`. It validates nothing, and it depends on nothing below
-/// it -- there is no combination of `listen` and `auth` that makes the switch
-/// mean something other than "run both" or "run neither".
+/// `mos-mqttd.service`. It validates nothing and depends on nothing below it —
+/// no combination of `listen` and `auth` makes it mean anything other than "run
+/// both" or "run neither". `listen` and `auth` are a separate configuration,
+/// deliberately not coupled to the switch: no code may refuse to start on a
+/// listen/auth combination. A broker bound off-host with `auth.enabled = false`
+/// is worth a loud WARN in the journal and not a gate, because an operator who
+/// widened the bind made a decision and a daemon that answers by quietly not
+/// starting is one whose reason for being down cannot be read anywhere.
 ///
-/// **`listen` and `auth` are a separate configuration, deliberately NOT
-/// coupled to the switch.** No code may refuse to start on a listen/auth
-/// combination. A broker bound off-host with `auth.enabled = false` is worth a
-/// loud WARN in the journal and is not worth a gate: an operator who widened
-/// the bind made a decision, and a daemon that answers it by quietly not
-/// starting is a daemon whose reason for being down cannot be read anywhere.
-///
-/// The default is false because of what the fleet actually looks like: no
-/// shipped device has a broker, so the bridge has never once connected -- it
-/// has only ever retried. Defaulting to true would ship that retry loop under
-/// a new name. Defaulting to false makes turning MQTT on the operator action
-/// it has always been in practice, at the cost -- accepted deliberately -- of
-/// fielded devices dropping the bridge until the switch is set.
+/// The default is false because no shipped device has a broker, so the bridge
+/// has only ever retried; defaulting to true would ship that retry loop under a
+/// new name. The accepted cost is that fielded devices drop the bridge until
+/// the switch is set.
 #[derive(Debug, Clone, PartialEq, Default, serde::Serialize, serde::Deserialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct MqttSettings {

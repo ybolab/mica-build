@@ -1,28 +1,17 @@
 /**
  * The proof that this suite can fail.
  *
- * This repository does not accept a check that has only ever been observed
- * passing as evidence -- `os/verify-image-v2.sh` says so of itself, and
- * `docs-verify-test` and `os-layout-lint-test` are the established shape. So
- * every assertion helper, the cookie jar, the redirect refusal, the verbatim
- * request writer and the phase runner are driven here against inputs that are
- * DELIBERATELY WRONG, and each one is required to have failed WITH ITS OWN
- * MESSAGE. A `PASS:` line below means "this wrong input was correctly
- * rejected". Positive controls sit alongside them, because a helper hardwired
- * to always fail would satisfy the negatives alone.
- *
- * It needs no network, no docker, no QEMU and no image: the peer is a stub
- * HTTP server on loopback, spoken to over `node:net`. It runs in seconds and
- * it is how a change to the machinery is known not to have broken it.
- *
- * The stub speaks plain HTTP, not HTTPS, and carries NO private key. Every
- * case below is transport-independent -- the helpers operate on a parsed
- * `HttpResponse` -- and committing a throwaway TLS key to get coverage that
- * phase 01 already provides against the device would trade a real secret-scan
- * alarm and a real expiry cliff for nothing. `inspectCertificate()` is
- * therefore exercised against apid, not here; that is a stated limit.
+ * A check only ever observed passing is not evidence here -- the shape
+ * `os/verify-image-v2.sh`, `docs-verify-test` and `os-layout-lint-test`
+ * establish. Every assertion helper, the cookie jar, the redirect refusal, the
+ * verbatim writer and the phase runner are driven against wrong inputs and each
+ * must fail with its own message, with positive controls alongside because a
+ * helper hardwired to fail satisfies the negatives alone. It needs no network,
+ * docker, QEMU or image: the peer is a stub HTTP server on loopback over
+ * `node:net`, carrying no private key, so `inspectCertificate()` is exercised
+ * against apid in phase 01 instead -- a stated limit, taken over a TLS key that
+ * would be a secret-scan alarm and an expiry cliff.
  */
-
 import * as net from "node:net";
 
 import {
@@ -38,9 +27,7 @@ import { ConfigError, loadConfig, type Config } from "./config.ts";
 import { Reporter } from "./report.ts";
 import { EmptyAssumesError, runPhases, type Phase, type PhaseContext } from "./runner.ts";
 
-// ---------------------------------------------------------------------------
 // the stub peer
-// ---------------------------------------------------------------------------
 
 interface StubReply {
   readonly status?: number;
@@ -119,7 +106,7 @@ async function startStub(): Promise<Stub> {
       if (firstSpace < 0 || lastSpace <= firstSpace) return;
 
       const method = requestLine.slice(0, firstSpace);
-      // The request target, taken as BYTES off the request line. No URL
+      // The request target, taken as bytes off the request line. No URL
       // object, no percent-decode, no dot-segment collapse -- if this stub
       // normalised, the verbatim-target case below would be testing the stub.
       const target = requestLine.slice(firstSpace + 1, lastSpace);
@@ -168,9 +155,7 @@ async function startStub(): Promise<Stub> {
   return { port, close: () => server.close() };
 }
 
-// ---------------------------------------------------------------------------
 // probes: a captured Reporter, so a helper's failure can be inspected
-// ---------------------------------------------------------------------------
 
 interface Probe {
   readonly reporter: Reporter;
@@ -260,9 +245,7 @@ function requireAccepted(name: string, drive: (reporter: Reporter) => void): voi
   );
 }
 
-// ---------------------------------------------------------------------------
 // the cases
-// ---------------------------------------------------------------------------
 
 const stub = await startStub();
 const config: Config = loadConfig({

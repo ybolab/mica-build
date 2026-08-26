@@ -1,37 +1,13 @@
 /**
- * The QEMU console log -- this suite's SECOND observation channel.
+ * The QEMU console log -- this suite's second observation channel.
  *
- * Every other assertion in this suite observes apid through apid's own HTTP
- * surface, which means every answer is the thing under test describing itself.
- * A form post that travels apid -> system bus -> mosd -> a reconciler -> the
- * device cannot be proved that way: a 303 proves only that a handler returned,
- * and a re-rendered pane proves only that the bus round-tripped. Neither
- * proves the DEVICE changed. The console log does, because the lines in it are
- * written by systemd and by mosd -- not by the route being exercised.
- *
- * It is also the only usable journal here: the image sets journald
- * `Storage=volatile`, and `os/tools/qemu-journal.sh` is committed KNOWN-BROKEN (it is
- * neither called nor repaired from this suite). The guest boots with
- * `systemd.journald.forward_to_console=1`, so systemd's and mosd's own lines
- * land on the serial console, which the harness captures to the path in
- * `APID_CONSOLE` and APPENDS TO for as long as the suite runs.
- *
- * Two rules are what make it evidence rather than decoration:
- *
- *   - MARK FIRST. `mark()` captures the current end-of-file offset and every
- *     observation is made against bytes written after it. A TCG boot writes
- *     thousands of lines, and `Started ssh.service` is among them; a
- *     whole-file grep would let the BOOT satisfy an assertion about a POST
- *     made thirty seconds ago. That is why every function here takes a Marker,
- *     and why this module contains no whole-file search at all.
- *   - A MISSING LOG IS A SKIP, NEVER A PASS. If `APID_CONSOLE` is unset, or the
- *     file is unreadable, or it is truncated out from under a mark, then
- *     `available` is false and the reporting helpers below emit a SKIP naming
- *     the reason. A console check that silently passes with no console to read
- *     is a check that asserts nothing -- and an ABSENCE assertion (5.4's "the
- *     password never appears in the log") is the worst instance of it, because
- *     with no bytes to search it is vacuously true. `expectConsoleAbsent`
- *     therefore also refuses an EMPTY window.
+ * Every other assertion observes apid through apid's own HTTP surface, so the
+ * answer is the thing under test describing itself; these lines are written by
+ * systemd and by mosd instead. It is also the only usable journal: the image
+ * sets journald `Storage=volatile` and `os/tools/qemu-journal.sh` is committed
+ * known-broken, so the guest boots with
+ * `systemd.journald.forward_to_console=1` and the harness appends the serial
+ * console to `APID_CONSOLE` for as long as the suite runs.
  */
 
 import { closeSync, openSync, readSync, statSync } from "node:fs";
@@ -45,9 +21,14 @@ const EVIDENCE_LINES = 12;
 const EVIDENCE_LINE_BYTES = 300;
 
 /**
- * A position in the console log, taken BEFORE the action whose effect is to be
+ * A position in the console log, taken before the action whose effect is to be
  * observed. Everything asserted with this marker is asserted about bytes the
  * guest wrote afterwards.
+ *
+ * Mark first is the rule: a TCG boot writes thousands of lines and `Started
+ * ssh.service` is among them, so a whole-file grep would let the boot satisfy
+ * an assertion about a POST made thirty seconds ago. Every function here takes
+ * a Marker, and this module contains no whole-file search at all.
  */
 export interface Marker {
   /** What was about to happen when it was taken; quoted in failure details. */
@@ -257,13 +238,12 @@ export function openConsole(path: string | undefined): ConsoleLog {
   return new ConsoleLog(path);
 }
 
-// ---------------------------------------------------------------------------
-// reporting helpers
-//
-// Every console-backed assertion in the suite goes through one of these three.
-// That is the only reason "an unreadable log is a SKIP, never a PASS" is a
-// property of the code rather than a rule each phase has to remember.
-// ---------------------------------------------------------------------------
+// reporting helpers. Every console-backed assertion in the suite goes through
+// one of these three, which is why "an unreadable log is a SKIP, never a PASS"
+// is a property of the code rather than a rule each phase has to remember: with
+// `APID_CONSOLE` unset, unreadable or truncated under a mark, `available` is
+// false and these emit a SKIP naming the reason. `expectConsoleAbsent` also
+// refuses an empty window, an absence assertion over no bytes being vacuous.
 
 export interface ConsoleExpectOptions {
   readonly timeoutMs?: number;
@@ -427,9 +407,7 @@ export function expectConsoleAbsent(
   );
 }
 
-// ---------------------------------------------------------------------------
 // text handling
-// ---------------------------------------------------------------------------
 
 const ESC = String.fromCharCode(27);
 const BEL = String.fromCharCode(7);

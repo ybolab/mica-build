@@ -2,61 +2,35 @@
 //
 // Every family here is guarded in the oracle by a condition read out of the
 // board definition -- `is_uboot_board`, `board_has_radio`, `board_has_hwinit`,
-// `BOARD_HAS_STATUS_LED`, `BOARD_FIRMWARE_FILES` -- so on one board it
-// concludes and on the other it SKIPS. That is the whole difficulty of this
-// batch and it shows up in three places.
+// `BOARD_HAS_STATUS_LED`, `BOARD_FIRMWARE_FILES` -- so on one board it concludes
+// and on the other it SKIPS. Three consequences.
 //
-// 1. A SKIP IS A THIRD VERDICT.
+// A skip is a third verdict: `parity.ts` never defaults `shell.skip` to
+// `shell.pass` and nothing here supplies one that would. Measured on both
+// boards' real output 2026-08-26: 3 SKIP conclusions on cx3576, 22 on x64. A
+// family that skips carries an explicit `skip` matcher and answers `skipped()`.
 //
-// `parity.ts` never defaults `shell.skip` to `shell.pass`, and this file never
-// supplies one that would. Measured on both boards' real output on 2026-08-26:
-// 3 SKIP conclusions on cx3576 and 22 on x64. A check whose skip matcher fell
-// back to its pass matcher would claim the SKIP line, be handed a `pass` from
-// the port, and compare as though the oracle had run it -- green for a family
-// that never executed. So a family that skips is registered with an explicit
-// `skip` matcher, and the TypeScript side answers with `skipped()`.
+// The board lists are derived, never written down: `uBootBoards()` is every
+// board whose `RAUC_BOOTLOADER` is uboot, `ledBoards()` every board declaring
+// `BOARD_HAS_STATUS_LED=1`, computed at module load, so a third board in
+// `os/boards/` is covered with nothing here edited.
 //
-// 2. THE BOARD LISTS ARE DERIVED, NEVER WRITTEN DOWN.
+// One `one` check per path, never a `many` over a loose substring: the radio
+// firmware set, the hwinit confs, `btattach` and the status-LED files are all
+// `sq_regular` calls, so a `many` over ` is a regular file` would also claim
+// batch 2a's twenty-six board-invariant paths. Likewise ` contains ` names
+// fourteen lines on cx3576 where `BOOT-A contains Image` names one. So each path
+// gets its own check with the path in its matcher, and the boot-slot listing is
+// generated per (board, slot, file) out of `BOOT_SLOT_REQUIRED_FILES` with
+// `@SLOT@` substituted as the oracle substitutes it (:1838).
 //
-// `boards:` takes literal names, and a two-name literal written out here would
-// mean a board added to `os/boards/` is a board the gate never opens. The
-// lists are computed at module load from the shipped definitions themselves:
-// `uBootBoards()` is every board whose `RAUC_BOOTLOADER` is uboot, `ledBoards()`
-// every board declaring `BOARD_HAS_STATUS_LED=1`, and so on. A third board
-// dropped into `os/boards/` is covered by whichever families its own definition
-// selects, and by none of the others, with nothing here edited.
-//
-// 3. ONE `one` CHECK PER PATH, NEVER A `many` OVER A LOOSE SUBSTRING.
-//
-// The radio firmware set, the hwinit confs, `btattach` and the status-LED files
-// are all `sq_regular` calls, so their conclusions read `<path> is a regular
-// file` -- exactly like the twenty-six board-invariant paths in batch 2a. A
-// `many` check here registering ` is a regular file` would claim all of those
-// too and make the whole of batch 2a `ambiguous`, and batch 2a could not repair
-// it by having landed first. So each path gets its own check, generated from
-// the board's own declaration, and its matcher carries the path.
-//
-// The same reasoning applies to ` contains `. `BOOT-A contains Image` names
-// ONE line; ` contains ` names fourteen on
-// cx3576. The boot-slot listing below is generated one check per (board, slot,
-// file) out of `BOOT_SLOT_REQUIRED_FILES`, with `@SLOT@` substituted the way the
-// oracle substitutes it (:1838), so the collision never arises.
-//
-// AND WHERE A GROUP SKIPS AS ONE LINE.
-//
-// Several families print N conclusions on the board that has the hardware and
-// ONE skip on the board that does not -- five firmware paths against one `the
-// board radio-firmware set (...)`. One shell line can have exactly one owner;
-// two checks claiming it is `ambiguous` and exit 1. So the group's skip gets a
-// dedicated register entry, `<family>-skipped`, scoped by `boards:` to the
-// boards where the group is skipped, and the per-item checks are scoped to the
-// boards where it runs. The two scopes are complements of one derived
-// predicate, so they cannot drift apart or overlap.
-//
-// A `-skipped` check has no failing direction against an image, and neither
-// does the oracle's `skip` -- what it asserts is the DERIVATION, and that is
-// what its tests drive: a board definition declaring the feature must leave the
-// skip list, and one declaring it empty must be in it.
+// Where a group skips as one line the skip gets a dedicated `<family>-skipped`
+// entry, scoped by `boards:` to where the group skips while the per-item checks
+// are scoped to where it runs -- two complements of one derived predicate, so
+// they cannot drift apart or overlap, and one shell line keeps exactly one owner
+// (two claimants is `ambiguous` and exit 1). A `-skipped` check has no failing
+// direction against an image; what it asserts is the derivation, which is what
+// its tests drive.
 
 import { existsSync, readdirSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
@@ -70,17 +44,13 @@ import type { CheckResult } from './parity.ts'
 import { ToolOutputError } from './tools.ts'
 import { skipped, verdict } from './verdict.ts'
 
-// ---------------------------------------------------------------------------
 // the shipped boards, and the predicates the families are scoped by
-// ---------------------------------------------------------------------------
 
 // The predicates and the derived board lists live in `board-scope.ts`: the
 // bootloader-environment and Wi-Fi families need the same three, and a second
 // spelling of `is_uboot_board` beside this one is drift waiting to happen.
 
-// ---------------------------------------------------------------------------
 // the three shapes a board-conditional conclusion takes
-// ---------------------------------------------------------------------------
 
 /**
  * `sq_regular` for a path the board itself declares.
@@ -145,9 +115,7 @@ function packedGrep(input: {
   }
 }
 
-// ---------------------------------------------------------------------------
 // the loader partition
-// ---------------------------------------------------------------------------
 
 /**
  * A board key that must be a whole number, or a THROW naming it.
@@ -174,7 +142,7 @@ const LOADER_CHECKS: readonly CheckCase[] = [
   {
     // Abutment, and the entry that owns the group's SKIP on a grub board.
     //
-    // WHY THIS ONE OWNS IT. The skip's own sentence is "there is no raw region
+    // Why this one owns it. The skip's own sentence is "there is no raw region
     // for systemd-repart to discard and no GPT entry to assert", and this is
     // the assertion about exactly that: a gap between the loader partition and
     // uenv-a is an uncovered region, and repart discards uncovered regions on
@@ -287,7 +255,7 @@ const LOADER_CHECKS: readonly CheckCase[] = [
 
   {
     // The type is the protection. systemd-repart pairs a definition with a
-    // partition BY TYPE, so a loader carrying linux-generic or the ESP type is
+    // partition by type, so a loader carrying linux-generic or the ESP type is
     // a loader some /etc/repart.d file can be made to grow into. Unique, and
     // distinct from both, or the entry protects nothing.
     id: 'loader-typecode-unique',
@@ -337,9 +305,7 @@ function loaderSkipMessage(board: Board): string {
     + `os/tests/handshake-test/ remains the only cover for the U-Boot A/B handshake either way`
 }
 
-// ---------------------------------------------------------------------------
 // what a boot slot must contain
-// ---------------------------------------------------------------------------
 
 
 /**
@@ -444,7 +410,7 @@ const SLOT_LISTING_CHECKS: readonly CheckCase[] = [
   },
 
   {
-    // U-BOOT ONLY, and INVERTED on a grub board rather than merely
+    // U-Boot only, and inverted on a grub board rather than merely
     // inapplicable: an x64 slot MUST carry initrd-a and initrd-b. Left ungated
     // this would fail a correct image and send someone looking for a defect in
     // the assembler, which is why it is scoped rather than made unconditional
@@ -487,9 +453,7 @@ function uBootSlotSkipMessage(board: Board, slot: string): string {
     + `than absent; and Image/rk3576-src.dtb are BSP artefacts this board does not build`
 }
 
-// ---------------------------------------------------------------------------
 // the radio -- firmware set (:2488-2494) and module list (:2559-2570)
-// ---------------------------------------------------------------------------
 
 function radioFirmwareChecks(board: Board): CheckCase[] {
   return (board.firmwareFiles ?? []).map(fw => boardRegularFile('board-firmware', board.name, fw))
@@ -557,9 +521,7 @@ const RADIO_CHECKS: readonly CheckCase[] = [
   ),
 ]
 
-// ---------------------------------------------------------------------------
 // the hwinit facts
-// ---------------------------------------------------------------------------
 
 function hwinitConfChecks(board: Board): CheckCase[] {
   return (board.hwinitConfs ?? []).map(c => boardRegularFile('hwinit-conf', board.name, `/etc/mos/${c}.conf`))
@@ -627,7 +589,7 @@ const HWINIT_CHECKS: readonly CheckCase[] = [
   },
 
   {
-    // A SKIP ON BOTH BOARDS, which is why it is registered at all. The two
+    // A SKIP on both boards, which is why it is registered at all. The two
     // reconciler-owned units are deliberately NOT enabled -- mosd starts them
     // from `mqtt.enabled` -- so the enumeration above steps over them and says
     // so. An unregistered SKIP is an unclaimed conclusion; a skip matcher that
@@ -756,9 +718,7 @@ const HWINIT_CHECKS: readonly CheckCase[] = [
 
 const RECONCILER_OWNED: readonly string[] = ['mos-mqttd.service', 'mos-mqtt-broker.service']
 
-// ---------------------------------------------------------------------------
 // the Bluetooth userland -- os/verify-image-v2.sh:2695-2705, and wifi.conf
-// ---------------------------------------------------------------------------
 
 const BLUETOOTH_CHECKS: readonly CheckCase[] = [
   boardRegularFileForFeature(
@@ -849,9 +809,7 @@ const BLUETOOTH_CHECKS: readonly CheckCase[] = [
   },
 ]
 
-// ---------------------------------------------------------------------------
 // the status indicator -- check_status_led (:531) and the overlay set (:2720)
-// ---------------------------------------------------------------------------
 
 const LED_SCRIPT = '/usr/lib/mos/mos-status-led'
 const LED_UNIT = '/usr/lib/systemd/system/mos-status-led.service'
@@ -866,7 +824,7 @@ const LED_CHECKS: readonly CheckCase[] = [
     // so it fails on EVERY boot -- a permanently-failed unit on a shipped
     // image, indistinguishable to an operator from a real fault.
     //
-    // ITS FAILING DIRECTION IS ONLY REACHABLE FROM A FIXTURE: on x64's real
+    // Its failing direction is only reachable from a fixture: on x64's real
     // image the branch passes, so checks-board.test.ts drives it red against an
     // x64-shaped packed-root fixture carrying mos-status-led files.
     id: 'status-led-absent',
@@ -1063,7 +1021,7 @@ const LED_CHECKS: readonly CheckCase[] = [
 ]
 
 /**
- * The no-dark ordering, asserted IN THE SHIPPED SCRIPT and per branch.
+ * The no-dark ordering, asserted in the shipped script and per branch.
  *
  * Turning the destination colour on before extinguishing the source is the
  * whole reason the transition is safe: with the two writes swapped there is an
@@ -1124,9 +1082,7 @@ function ledFilesLeft(root: string): string[] {
   return out
 }
 
-// ---------------------------------------------------------------------------
 // shared readers
-// ---------------------------------------------------------------------------
 
 /**
  * A directory listing, or nothing.

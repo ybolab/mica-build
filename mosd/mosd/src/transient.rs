@@ -1,29 +1,23 @@
 //! Transient root password: set once by the operator, gone on the next boot.
 //!
-//! The appliance ships with root carrying no password at all and SSH off.
-//! Persistent access is by SSH public key. A transient password exists for the
-//! one case a key cannot cover — an operator standing in front of a device that
-//! has no key installed yet — and it must not outlive that session. So it is
-//! deliberately NOT a setting: nothing about it is persisted in the settings
-//! tree, and nothing re-applies it on the next boot.
+//! The appliance ships with root carrying no password at all and SSH off,
+//! persistent access being by SSH public key. A transient password exists for
+//! the one case a key cannot cover — an operator standing in front of a device
+//! with no key installed yet — and must not outlive that session, so it is
+//! deliberately not a setting: nothing about it is persisted in the settings
+//! tree and nothing re-applies it on the next boot.
 //!
-//! Two files on STATE carry it:
-//!
-//! - the shadow file itself, whose `root:` hash field is rewritten with a
-//!   bcrypt hash of the password;
-//! - a **marker** beside it, [`transient_marker_path`], holding exactly that
-//!   hash.
-//!
-//! `mos-shadow-reconcile` runs on every boot before sshd and mosd. When the
+//! Two files on STATE carry it: the shadow file itself, whose `root:` hash
+//! field is rewritten with a bcrypt hash of the password, and a marker beside
+//! it, [`transient_marker_path`], holding exactly that hash.
+//! `mos-shadow-reconcile` runs on every boot before sshd and mosd; when the
 //! marker's hash still equals the shadow file's root hash it rewrites the field
 //! to `!` and deletes the marker, so the password vanishes. When the two
 //! disagree the shadow file is left alone: something other than this module
 //! owns the current hash — a dev image's build-time `ROOT_PASSWORD`, for
-//! instance — and clearing it would be this code overwriting a credential it
-//! did not set. That distinction is the whole reason a marker exists instead of
-//! "lock root on every boot".
-//!
-//! Nothing here logs the password or the hash.
+//! instance — and clearing it would overwrite a credential this code did not
+//! set. That distinction is the whole reason a marker exists instead of "lock
+//! root on every boot". Nothing here logs the password or the hash.
 
 use std::path::{Path, PathBuf};
 
@@ -85,24 +79,19 @@ pub fn production_shadow_path() -> PathBuf {
 /// alternate path — `mos-seed-state`'s `/mnt/state/mos/shadow`, or a test's
 /// temporary file — gets the marker that belongs to it.
 ///
-/// The symlink is resolved first, and that is the whole point of this function
-/// not being one line. `Path::with_file_name` is LEXICAL: it rewrites the last
-/// component of the string and resolves nothing. On the v2 image
-/// `/etc/shadow` is a symlink onto STATE, so writing the shadow file follows
-/// the link and succeeds while a marker placed "beside" it lexically lands in
-/// the literal `/etc/` — a dm-verity squashfs. The write fails with
-/// `Read-only file system (os error 30)`, mosd returns an error over the bus,
-/// and apid answers `502 Bad Gateway`: the transient SSH root password, which
-/// is the documented way back into a locked-out device, does not work at all.
-///
-/// A test over already-resolved paths cannot see any of that; the one path
-/// production passes is the `/etc/shadow` symlink, so a test has to pass one
-/// too.
-///
-/// `canonicalize` needs the path to exist. When it does not — a test's
-/// not-yet-created temporary file, a caller probing before first boot — the
-/// lexical answer is correct and is what is returned, because an unresolvable
-/// path has no symlink to follow.
+/// The symlink is resolved first, and that is why this is not one line.
+/// `Path::with_file_name` is lexical: it rewrites the last component of the
+/// string and resolves nothing. On the v2 image `/etc/shadow` is a symlink onto
+/// STATE, so writing the shadow file follows the link and succeeds while a
+/// marker placed "beside" it lexically lands in the literal `/etc/`, a
+/// dm-verity squashfs. The write then fails with `Read-only file system (os
+/// error 30)`, mosd returns an error over the bus, and apid answers `502 Bad
+/// Gateway`: the transient SSH root password, the documented way back into a
+/// locked-out device, does not work at all. A test over already-resolved paths
+/// cannot see that, so a test has to pass the `/etc/shadow` symlink production
+/// passes. `canonicalize` needs the path to exist; when it does not, the
+/// lexical answer is correct and is what is returned, an unresolvable path
+/// having no symlink to follow.
 pub fn transient_marker_path(shadow_path: &Path) -> PathBuf {
     std::fs::canonicalize(shadow_path)
         .unwrap_or_else(|_| shadow_path.to_path_buf())

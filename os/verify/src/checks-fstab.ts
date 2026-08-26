@@ -4,30 +4,24 @@
 // six-way question the four tier checks cannot answer: which entry governs the
 // path apid reads.
 //
-// WHY UI_ROOT IS ASSERTED SEPARATELY AT ALL.
+// UI_ROOT is asserted separately because the tier checks are about partitions:
+// none would notice /srv/ui moving off DATA -- onto STATE, where 64 MiB holds
+// the settings tree and the sshd host keys and the first large bundle fills it,
+// or onto /var, which is wiped by design and has no growfs, so every installed
+// custom UI silently disappears. Both are silent on the device and invisible to
+// a check that only asks "is DATA mounted at /srv with growfs".
 //
-// The tier checks are about PARTITIONS. None of them would notice /srv/ui
-// moving off DATA -- onto STATE, where 64 MiB holds the settings tree and the
-// sshd host keys and the first large bundle fills it; or onto /var, which is
-// wiped by design and has no growfs, so every installed custom UI silently
-// disappears. Both are silent on the device and neither is visible to a check
-// that only asks "is DATA mounted at /srv with growfs".
-//
-// ONE CHECK, SEVEN FIRINGS, AND WHY NOT SEVEN CHECKS.
-//
-// `check_ui_location` has two paths. With no covering fstab entry it emits ONE
-// conclusion and returns; otherwise it emits SIX. Seven independent `one`
-// checks could not model that -- on the early-return path six of them would
-// conclude nothing, the oracle would print nothing for them, and the harness
-// would report six `unfired` rows, which is exit 1 for a run that behaved
-// correctly. So this is a single `many` check whose instance is the assertion's
-// own clause, and the early return is one firing rather than six absences.
-// os/tests/ui-location-test.sh names the same seven identities for the same
-// reason and asserts the six ABSENT in its case 7.
-//
-// The matcher is `custom UI root`, measured at exactly six lines on each board.
-// It is the only substring common to all seven messages: five of them read
-// `catches a custom UI root ...` and the sixth reads `catches content baked
+// One check, seven firings. `check_ui_location` emits one conclusion and returns
+// when no fstab entry covers the path, and six otherwise. Seven independent
+// `one` checks could not model that: on the early-return path six would conclude
+// nothing, the oracle would print nothing for them, and the harness would report
+// six `unfired` rows -- exit 1 for a run that behaved correctly. So this is a
+// single `many` check whose instance is the assertion's own clause, and the
+// early return is one firing rather than six absences.
+// os/tests/ui-location-test.sh names the same seven identities and asserts the
+// six absent in its case 7. The matcher is `custom UI root`, measured at exactly
+// six lines on each board and the only substring common to all seven messages --
+// five read `catches a custom UI root ...` and the sixth `catches content baked
 // under the custom UI root`.
 
 import { existsSync, lstatSync, readdirSync, readFileSync, type Stats } from 'node:fs'
@@ -57,7 +51,7 @@ interface FstabEntry {
 /**
  * /etc/fstab as rows, comments dropped, fields split on whitespace.
  *
- * ABSENT IS AN EMPTY TABLE and not a throw, on the same reasoning as
+ * Absent is an empty table and not a throw, on the same reasoning as
  * checks-rauc.ts's system.conf: whether the packed root carries an /etc/fstab
  * is a fact about the image, and it is one the oracle answers with a FAIL on
  * every check here -- its awk redirects a missing file to /dev/null and the
@@ -103,9 +97,7 @@ function hasOption(options: string, opt: string): boolean {
   return `,${options},`.includes(`,${opt},`)
 }
 
-// ---------------------------------------------------------------------------
 // the four storage tiers
-// ---------------------------------------------------------------------------
 
 interface TierCase {
   readonly id: string
@@ -194,12 +186,10 @@ function tierCheck(t: TierCase): CheckCase {
   }
 }
 
-// ---------------------------------------------------------------------------
 // where UI_ROOT lands
-// ---------------------------------------------------------------------------
 
 /**
- * The fstab row whose mountpoint is the LONGEST PREFIX of `path`.
+ * The fstab row whose mountpoint is the longest prefix of `path`.
  *
  * Derived rather than looked up, so moving UI_ROOT moves the check with it and
  * mounting something else over the path it sits under is noticed rather than
@@ -314,7 +304,7 @@ export const FSTAB_CHECKS: readonly CheckCase[] = [
 
       const row = coveringRow(rows, UI_ROOT)
       if (row === undefined) {
-        // THE EARLY RETURN, and the whole reason this check is `many`: one
+        // The early return, and the whole reason this check is `many`: one
         // conclusion instead of six, on both sides, rather than six silences.
         return [uiFiring(UI_NO_FILESYSTEM, false,
           `${UI_NO_FILESYSTEM}: no /etc/fstab entry covers ${UI_ROOT}, so it lands on the read-only `

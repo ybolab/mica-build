@@ -2,22 +2,15 @@
  * The login backoff, measured from outside the process it protects.
  *
  * mosd/apid/src/auth.rs sets BACKOFF_BASE = 1s and BACKOFF_MAX = 300s, and the
- * window after N consecutive failures is `1s * 2^(N-1)`, capped. Two of that
- * design's properties cannot be shown by a test that lives inside apid:
- *
- *   - the throttle is enforced across a genuinely NEW TCP connection, not just
- *     on a kept-alive one that a handler-level test would reuse, and
- *   - the guard is GLOBAL rather than per-client, so an armed window refuses
- *     the CORRECT password too.
- *
- * The second is not a curiosity. It is an operational fact with a cost: an
- * administrator who knows the password waits, exactly as an attacker does.
- * This phase asserts it deliberately rather than treating it as a surprise.
- *
- * The counters persist to `<state_dir>/login_guard.json` and survive a restart
- * (docs/design/access.md section 6). That half is asserted in
- * 07b-postreboot, on the far side of a real reboot; this phase's last act is to
- * leave the guard ARMED so 07b has something to find.
+ * window after N consecutive failures is `1s * 2^(N-1)`, capped. Two properties
+ * of that design cannot be shown from inside apid: the throttle is enforced
+ * across a genuinely new TCP connection, not a kept-alive one a handler-level
+ * test would reuse; and the guard is global rather than per-client, so an armed
+ * window refuses the correct password too, at the cost that an administrator
+ * who knows the password waits exactly as an attacker does. The counters
+ * persist to `<state_dir>/login_guard.json` and survive a restart
+ * (docs/design/access.md section 6); that half is asserted in 07b-postreboot,
+ * and this phase's last act is to leave the guard armed so 07b finds it.
  */
 
 import { Client, type HttpResponse } from "../client.ts";
@@ -86,17 +79,13 @@ export type WindowOutcome = WindowOpened | WindowUnexpected | WindowTimedOut;
 /**
  * Hold a wrong password against the guard until it lets one through again.
  *
- * `since` is the wall-clock of the PREVIOUS 401, not of the first probe, so the
- * returned `windowMs` is the whole window and not "the window minus whatever
- * the caller did in between".
- *
- * Every probe opens a new socket. A 401 here IS the next failure: it means the
- * guard admitted the attempt and auth.rs rejected the password, which is what
- * arms the next, longer window.
- *
- * Exported because 07b-postreboot measures the SAME curve on the far side of a
- * reboot, and two copies of this loop would be two chances to measure it
- * differently.
+ * `since` is the wall-clock of the previous 401, not of the first probe, so the
+ * returned `windowMs` is the whole window and not "the window minus whatever the
+ * caller did in between". Every probe opens a new socket, and a 401 here is the
+ * next failure: the guard admitted the attempt and auth.rs rejected the
+ * password, which arms the next, longer window. Exported because 07b-postreboot
+ * measures the same curve on the far side of a reboot, and two copies of this
+ * loop would be two chances to measure it differently.
  */
 export async function waitForWindow(
   probe: Client,

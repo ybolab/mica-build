@@ -1,28 +1,21 @@
 //! The protocol, as a state machine.
 //!
-//! Events in, [`Effects`] out, and no clock, socket or bus handle anywhere
-//! inside: time arrives as an explicit monotonic `now`, measured from the
-//! bridge's start. Every rate limit, every expiry and every gate is therefore
-//! decided by a pure function of state and `now`, which is what makes the
-//! protocol tests exact rather than timing-dependent.
-//!
-//! # The alive gate
+//! Events in, [`Effects`] out, and no clock, socket or bus handle inside: time
+//! arrives as an explicit monotonic `now`, measured from the bridge's start, so
+//! every rate limit, expiry and gate is a pure function of state and `now`.
+//! That is what makes the protocol tests exact rather than timing-dependent.
 //!
 //! `docs/design/bus.md` §10.1's liveness rule is that a keepalive arms a 60 s
-//! window and the device publishes only inside it. That gate is applied here
-//! to **publishing**, and only to publishing: an `N` for a changed item, an
-//! answer to an `R`, a heartbeat, a full republish and the retained-state
-//! clear of a vanished device are all silent without a live window. A `W` is
-//! not — it is control, not publication, and a broker that is entitled to
-//! write is entitled to write whether or not anyone is currently listening.
+//! window and the device publishes only inside it. The gate applies to
+//! publishing and only to publishing: an `N` for a changed item, an answer to
+//! an `R`, a heartbeat, a full republish and the retained-state clear of a
+//! vanished device are all silent without a live window. A `W` is not — it is
+//! control, not publication.
 //!
-//! # The mirror
-//!
-//! The bridge keeps its own copy of the item tree, seeded from `GetItems` and
-//! maintained from `ItemsChanged`. A full republish is therefore served
-//! entirely from memory: a keepalive storm cannot turn into a `GetItems`
-//! storm against mosd, which is the second half of the rate limit D6 asks
-//! for.
+//! The bridge mirrors the item tree, seeded from `GetItems` and maintained from
+//! `ItemsChanged`, so a full republish is served from memory and a keepalive
+//! storm cannot become a `GetItems` storm against mosd — the second half of the
+//! rate limit D6 asks for.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::time::Duration;
@@ -178,21 +171,18 @@ impl Bridge {
     }
 
     /// The service left the bus: clear every topic it left retained, so no
-    /// subscriber is left reading a value from a device that is no longer
-    /// there.
-    ///
-    /// A clear is a zero-length payload, which deletes the retained message
-    /// rather than replacing it with a value — distinct from
-    /// `{"value": null}`, which says the item is there and invalid.
+    /// subscriber reads a value from a device that is no longer there. A clear
+    /// is a zero-length payload, which deletes the retained message rather than
+    /// replacing it with a value — distinct from `{"value": null}`, which says
+    /// the item is there and invalid.
     ///
     /// The address survives the device, deliberately. It is read out of the
     /// tree, and the tree just left — but the device id it named is the
     /// identity of the machine this bridge runs on, not of the process that
-    /// reported it. Forgetting it would leave the bridge unable to parse even
-    /// a keepalive addressed to itself, so a mosd restart would silence the
-    /// bridge until a keepalive happened to arrive after the tree came back.
-    /// If the device does come back under a different id,
-    /// [`Self::resync_address`] notices and clears the old topics then.
+    /// reported it. Forgetting it would leave the bridge unable to parse even a
+    /// keepalive addressed to itself. If the device comes back under a
+    /// different id, [`Self::resync_address`] notices and clears the old topics
+    /// then.
     pub fn on_device_vanished(&mut self, now: Duration) -> Effects {
         self.items.clear();
         self.pending_clears

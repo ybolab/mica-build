@@ -1,37 +1,29 @@
-//! SSH access reconciler: renders the sshd drop-in from `access.ssh` and
-//! drives `ssh.service`.
+//! SSH access reconciler: renders the sshd drop-in from `access.ssh` and drives
+//! `ssh.service`. Three system effects, in this order:
 //!
-//! Three system effects, in this order:
-//!
-//! 1. `/etc/ssh/authorized_keys.d/<account>` is rendered from
-//!    `access.ssh.authorizedKeys`, at 0600, after the list has been
-//!    re-validated — one file per managed login account, every one of them
-//!    holding the same key list.
-//! 2. `/etc/ssh/sshd_config.d/10-mos.conf` is rendered from `access.ssh`. That
-//!    directory is the one writable part of `/etc` on the v2 read-only root —
-//!    it is a STATE-backed bind mount (`etc-ssh.mount`).
-//! 3. `ssh.service` is brought to the state `access.ssh.enabled` asks for.
+//! - `/etc/ssh/authorized_keys.d/<account>` is rendered from
+//!   `access.ssh.authorizedKeys`, at 0600, after the list has been re-validated
+//!   — one file per managed login account, every one holding the same key list.
+//! - `/etc/ssh/sshd_config.d/10-mos.conf` is rendered from `access.ssh`. That
+//!   directory is the one writable part of `/etc` on the v2 read-only root, a
+//!   STATE-backed bind mount (`etc-ssh.mount`).
+//! - `ssh.service` is brought to the state `access.ssh.enabled` asks for.
 //!
 //! Configuration before service start, deliberately: an sshd started against a
-//! stale drop-in is listening on the wrong port, or accepting an
-//! authentication method the operator has already turned off.
+//! stale drop-in listens on the wrong port, or accepts an authentication method
+//! the operator has already turned off.
 //!
-//! **The device password does not reach PAM.** The credential of record for
-//! shell access is an SSH public key, or a transient password set through
-//! `crate::transient` that the next boot clears. Nothing reads
-//! `secrets/device-password` back: a hash in the root shadow entry would be a
-//! password on a fielded device that never expires.
-//!
-//! **`PasswordAuthentication` is gated on that transient password.** The
-//! rendered value is the setting AND `transient::transient_password_active`:
-//! root ships locked and stays locked unless a transient password is active, so
-//! offering password authentication at any other time advertises an
-//! authentication method that cannot succeed.
-//!
-//! **`AuthorizedKeysFile` is not rendered here.** It is a static image file,
-//! `05-mos-authorized-keys.conf`, which sorts ahead of this reconciler's
-//! `10-mos.conf`; sshd keeps the first value it obtains for a non-repeatable
-//! keyword, so emitting the keyword here would be dead text at best.
+//! The device password does not reach PAM. The credential of record for shell
+//! access is an SSH public key, or a transient password set through
+//! `crate::transient` that the next boot clears; nothing reads
+//! `secrets/device-password` back, because a hash in the root shadow entry
+//! would be a password on a fielded device that never expires.
+//! `PasswordAuthentication` is gated on that transient password: the rendered
+//! value is the setting AND `transient::transient_password_active`, so root
+//! ships locked and stays locked unless a transient password is active.
+//! `AuthorizedKeysFile` is not rendered here — it is the static image file
+//! `05-mos-authorized-keys.conf`, which sorts ahead of `10-mos.conf`, and sshd
+//! keeps the first value it obtains for a non-repeatable keyword.
 
 use std::path::PathBuf;
 
@@ -178,19 +170,14 @@ fn validate_listen_addresses(addresses: &[String]) -> Result<()> {
 ///
 /// Pure and deterministic: the same settings always produce the same bytes, so
 /// a re-render can be compared against what is on disk to decide whether
-/// anything actually changed.
-///
-/// An empty `listen_addresses` emits **no** `ListenAddress` directive at all,
-/// which is sshd's "listen on every address". Encoding "listen nowhere" as the
-/// empty list would make an operator who enables SSH without naming an address
-/// end up with a running but unreachable server; closure is already expressed
-/// by `enabled: false`.
-///
-/// `password_authentication` is the **effective** value: the caller has
-/// already ANDed the setting with whether a transient root password is active.
-/// A parameter and not a second read, so this function stays pure and its
-/// bytes stay comparable in a test.
-///
+/// anything changed. An empty `listen_addresses` emits no `ListenAddress`
+/// directive at all, which is sshd's "listen on every address"; encoding
+/// "listen nowhere" as the empty list would leave an operator who enables SSH
+/// without naming an address with a running but unreachable server, and closure
+/// is already expressed by `enabled: false`. `password_authentication` is the
+/// effective value — the caller has already ANDed the setting with whether a
+/// transient root password is active — passed as a parameter rather than read
+/// again, so this function stays pure and its bytes stay comparable in a test.
 /// No `AuthorizedKeysFile` directive is emitted: the static
 /// `05-mos-authorized-keys.conf` owns that keyword and sorts first.
 fn render_drop_in(ssh: &SshSettings, password_authentication: bool) -> String {
@@ -276,20 +263,18 @@ impl<C: UnitControl> SshdReconciler<C> {
 
     /// Render the same key list into one file per entry of `accounts`.
     ///
-    /// The caller has already re-validated the list, and it is rendered
-    /// **once** before the first file is opened, so no two accounts can be
-    /// written from different key lists. An unchanged file is not rewritten:
-    /// these live on STATE, and a no-op rewrite still costs a flash write.
-    ///
-    /// **No account is checked for existence.** Asking `/etc/passwd` would
-    /// couple this reconciler to account state it does not own, failing in the
-    /// window where the account and this render land out of order. A key file
-    /// for an account that cannot log in is inert: `AuthorizedKeysFile
+    /// The caller has already re-validated the list, and it is rendered once
+    /// before the first file is opened, so no two accounts can be written from
+    /// different key lists. An unchanged file is not rewritten: these live on
+    /// STATE, and a no-op rewrite still costs a flash write. No account is
+    /// checked for existence — asking `/etc/passwd` would couple this
+    /// reconciler to account state it does not own, failing in the window where
+    /// the account and this render land out of order. A key file for an account
+    /// that cannot log in is inert: `AuthorizedKeysFile
     /// /etc/ssh/authorized_keys.d/%u` expands from the user sshd is
-    /// authenticating, so a file no login names is never read.
-    ///
-    /// `accounts` is a parameter and not a read of [`MANAGED_LOGIN_ACCOUNTS`]
-    /// so a test can prove that against an account name no system could have.
+    /// authenticating, so a file no login names is never read. `accounts` is a
+    /// parameter and not a read of [`MANAGED_LOGIN_ACCOUNTS`] so a test can
+    /// prove that against an account name no system could have.
     fn apply_authorized_keys(&self, keys: &[AuthorizedKey], accounts: &[&str]) -> Result<()> {
         let rendered = render_authorized_keys(keys);
         if !self.authorized_keys_dir.exists() {
@@ -326,37 +311,31 @@ impl<C: UnitControl> SshdReconciler<C> {
             .collect()
     }
 
-    /// Bring `ssh.service` to the state `ssh.enabled` asks for.
+    /// Bring `ssh.service` to the state `ssh.enabled` asks for. Reads before it
+    /// writes, so a system already in the target state gets no calls at all.
     ///
-    /// Reads before it writes, so a system already in the target state gets no
-    /// calls at all.
-    ///
-    /// **A configuration-only change reloads; it never restarts.** A rewritten
+    /// A configuration-only change reloads and never restarts. A rewritten
     /// drop-in that nothing re-reads is a configuration that silently did not
     /// take effect, so an already-running sshd has to be told — but a restart
     /// tears the daemon down, and the moment that matters most is exactly the
     /// one where an operator is setting a transient root password over their
     /// existing SSH session in order to gain access. sshd re-reads its
     /// configuration on `SIGHUP`, so a reload applies the change while every
-    /// established session keeps running.
+    /// established session keeps running. `KillMode` is not what keeps them
+    /// alive: Debian's `openssh-server` ships `KillMode=process`, which would
+    /// spare established sessions across a restart, but nothing in this image
+    /// chose that value and a future package revision can change it silently.
     ///
-    /// **`KillMode` is not what keeps those sessions alive.** Debian's
-    /// `openssh-server` ships `KillMode=process`, which would spare established
-    /// sessions across a restart, but nothing in this image chose that value
-    /// and a future package revision can change it silently. Reload survives by
-    /// construction rather than by that grace.
-    ///
-    /// **This depends on `ssh.service` carrying `ExecReload`**, which is the
-    /// Debian package's and not this repo's. A unit without it makes systemd
-    /// refuse the job, and the refusal is surfaced with an error naming
-    /// `ExecReload` and saying the change has not been applied. There is
-    /// deliberately **no fallback to `restart`**: it would reintroduce the
-    /// disconnect this reload prevents and hide the missing `ExecReload`.
-    ///
-    /// Enable/disable and start/stop are unit **state** changes, not
-    /// configuration changes, and stay as they are. A unit that is not running
-    /// but should be is started, never reloaded: reloading a stopped daemon
-    /// applies a configuration to nothing.
+    /// This depends on `ssh.service` carrying `ExecReload`, which is the Debian
+    /// package's and not this repo's. A unit without it makes systemd refuse
+    /// the job, and the refusal is surfaced with an error naming `ExecReload`
+    /// and saying the change has not been applied. There is deliberately no
+    /// fallback to `restart`: it would reintroduce the disconnect this reload
+    /// prevents and hide the missing `ExecReload`. Enable/disable and
+    /// start/stop are unit state changes rather than configuration changes and
+    /// stay as they are; a unit that is not running but should be is started,
+    /// never reloaded, because reloading a stopped daemon applies a
+    /// configuration to nothing.
     async fn apply_unit(&self, ssh: &SshSettings, config_changed: bool) -> Result<()> {
         if ssh.enabled {
             if !is_enabled(&self.control.unit_file_state(SSH_UNIT).await?) {

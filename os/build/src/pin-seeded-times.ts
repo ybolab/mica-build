@@ -1,61 +1,35 @@
 // pin_seeded_times, ported: every in-use inode's atime and ctime rewritten to
 // FILE_MTIME, in place, in a finished filesystem.
 //
-// THIS FILE IS AN ARGUMENT, NOT A UTILITY, and os/mkimage-common.sh says so at
-// length -- which is why that file exists at all rather than the function being
-// copied into both assemblers. The argument is carried here rather than
-// summarised, because a copy of an argument "reads as self-evidently correct
-// long after the reason for one of its lines has changed".
-//
-// WHAT IT IS FOR. Only a filesystem seeded with `mke2fs -d` needs it, and it is
-// the difference between "EPHEMERAL is seeded" and "EPHEMERAL rebuilds
-// byte-identically" -- before it the two differed in 106 bytes of the inode
-// table, spanning every inode the seed created.
-//
-// WHICH OF AN INODE'S FOUR TIMES ARE THE ASSEMBLER'S NOISE. mke2fs -d copies the
-// SOURCE inode's atime, mtime and ctime into the image, and two of those three
-// are noise rather than the exported tree's content:
-//
-//   ctime  The assembler copies the factory /var out of _out before seeding, so
-//          the stamp can be added without writing into _out. The kernel stamps
-//          every copied inode's ctime with the moment of that copy. NO syscall
-//          sets ctime -- not touch, not utimensat -- so the only way to pin it
-//          is to write the inode table, which is what this does.
-//   atime  cp -a preserves the source's atime, and reading the source to make
-//          the FIRST copy is itself what bumps it under relatime. So assembly 2
-//          seeds EPHEMERAL with a timestamp assembly 1 created, and the two
-//          images differ in a field neither build was asked about.
-//
-// mtime is deliberately left alone: it is the producer's data, carried in
+// Only a filesystem seeded with `mke2fs -d` needs it, and it is the difference
+// between "EPHEMERAL is seeded" and "EPHEMERAL rebuilds byte-identically":
+// without it two builds differ in 106 bytes of the inode table, spanning every
+// inode the seed created.
+// mtime is deliberately left alone -- it is the producer's data, carried in
 // through the copy, not something an assembler invents. crtime is mke2fs's own
-// invention and E2FSPROGS_FAKE_TIME already pins it -- that is all it can pin;
-// it does not reach times copied in from a source tree.
-//
-// THE INODE SET COMES FROM THE BITMAP, NOT FROM WALKING THE SOURCE TREE, so it
-// cannot be desynchronised by a filename a parser would split, and it starts at
-// the filesystem's first non-reserved inode so mke2fs's own reserved inodes are
-// left exactly as mke2fs wrote them.
-//
-// AND THE COUNT IS CROSS-CHECKED AGAINST THE SUPERBLOCK. If a future dumpe2fs
-// changes how it prints ranges, this refuses the build instead of silently
-// pinning nothing and handing the byte-identity check a fake pass. That
-// cross-check is the whole reason the parse is allowed to be a parse: an empty
-// or partial command file is the exact output of a reader that understood
-// nothing, and it is indistinguishable from success at every other layer --
-// debugfs runs it, does nothing, and exits 0 with a clean stderr (measured;
-// src/tools/e2fsprogs.ts refuses that shape at the tool as well).
-//
-// WHY THE PORT IS NOT A CALL INTO THE SHELL. The three primitives it stands on
-// are wrapped in src/tools/e2fsprogs.ts, each with the right failure signal --
-// mke2fs by its exit status, dumpe2fs by its exit status plus a header this
-// parser must actually understand, debugfs by ITS STDERR. What is not wrapped,
-// and is here, is the free-inode-range parse and the atime/ctime generation.
-// Both assemblers need it and it must not be written twice, so this file is
-// its only home.
+// invention and E2FSPROGS_FAKE_TIME already pins it; that is all it can pin,
+// and it does not reach times copied in from a source tree. The three
+// primitives this stands on are wrapped in src/tools/e2fsprogs.ts; the
+// free-inode-range parse and the atime/ctime generation are here, in their only
+// home, because both assemblers need them and they must not be written twice.
 
 import { rmSync, writeFileSync } from 'node:fs'
 import type { Toolbox } from './toolbox.ts'
 import { debugfsApply, dumpe2fsFull, dumpe2fsHeader } from './tools/e2fsprogs.ts'
+
+// mke2fs -d copies the source inode's atime, mtime and ctime into the image,
+// and two of the three are the assembler's noise rather than the exported
+// tree's content:
+//
+//   ctime  The assembler copies the factory /var out of _out before seeding, so
+//          the stamp can be added without writing into _out, and the kernel
+//          stamps every copied inode's ctime with the moment of that copy. NO
+//          syscall sets ctime -- not touch, not utimensat -- so the only way to
+//          pin it is to write the inode table, which is what this does.
+//   atime  cp -a preserves the source's atime, and reading the source to make
+//          the first copy is itself what bumps it under relatime, so assembly 2
+//          seeds EPHEMERAL with a timestamp assembly 1 created and the two
+//          images differ in a field neither build was asked about.
 
 export interface PinnedTimes {
   /** How many inodes the superblock says are in use from the first non-reserved one up. */
@@ -71,13 +45,14 @@ export interface PinnedTimes {
  *
  * The listing is dumpe2fs's group output -- `  Free inodes: 12-2048` -- one
  * block per group, each a comma-separated list of single numbers and inclusive
- * ranges. The shell reads it with a sed that anchors on TWO LEADING SPACES
- * before `Free inodes:`, and those two spaces are load-bearing: the SUPERBLOCK also prints `Free inodes:`,
- * unindented, and it carries the whole-filesystem total. Reading that line as a
- * group would mark a range of inodes free that no group ever said was.
- *
- * A group with nothing free prints the key and an empty value; that is a real
- * shape and not a parse failure.
+ * ranges. The shell reads it with a sed anchored on two leading spaces before
+ * `Free inodes:`, and those two spaces are load-bearing: the superblock prints
+ * `Free inodes:` unindented, carrying the whole-filesystem total, and reading
+ * that line as a group would mark a range of inodes free that no group said was.
+ * The inode set comes from the bitmap rather than a walk of the source tree, so
+ * a filename a parser would split cannot desynchronise it, and it starts at the
+ * first non-reserved inode so mke2fs's reserved inodes stay as it wrote them. A
+ * group with nothing free prints the key and an empty value: a real shape.
  */
 export function inUseInodes(listing: string, firstInode: bigint, inodeCount: bigint): bigint[] {
   if (firstInode <= 0n || inodeCount < firstInode) {
@@ -95,9 +70,9 @@ export function inUseInodes(listing: string, firstInode: bigint, inodeCount: big
       if (t === '') continue
       // `split(/-+/)` in the awk: one or more dashes, so `12--20` reads as a
       // range rather than as a token this refuses. Kept identical; a listing
-      // this parser reads DIFFERENTLY from the shell is the one thing a port of
-      // a parser must not introduce, and the count cross-check below is what
-      // catches it when it does.
+      // this parser reads differently from the shell is the one thing a port of
+      // a parser must not introduce, and the count cross-check below catches it
+      // when it does.
       const parts = t.split(/-+/).filter(s => s !== '')
       const lo = parts[0]
       const hi = parts.length > 1 ? parts[1] : parts[0]
@@ -136,16 +111,17 @@ export function timeCommands(inodes: readonly bigint[], fileMtime: string): stri
 }
 
 /**
- * The cross-check, as its own function so the refusal is REACHABLE.
+ * The cross-check, as its own function so the refusal is reachable.
  *
- * `want` comes from the superblock and `got` from the group listing, and they
- * are two independent readings of the same filesystem. Nothing a caller can pass
- * to pinSeededTimes makes a real dumpe2fs disagree with itself, so a guard left
- * inline there could only ever be observed NOT firing -- which this tree has
- * twice shipped and found by mutation (os/verify/run.sh's count line, M3a's and
- * M3b's vacuity guards). Split out, it is driven with the numbers a real
- * filesystem produced and a listing truncated the way a changed dumpe2fs would
- * truncate it.
+ * `want` comes from the superblock and `got` from the group listing: two
+ * independent readings of the same filesystem. If a future dumpe2fs changes how
+ * it prints ranges, this refuses the build rather than pinning nothing and
+ * handing the byte-identity check a fake pass -- an empty or partial command
+ * file is the exact output of a reader that understood nothing, and debugfs
+ * runs it, does nothing and exits 0 with a clean stderr. Nothing a caller can
+ * pass to pinSeededTimes makes a real dumpe2fs disagree with itself, so a guard
+ * left inline there could only be observed NOT firing; split out, it is driven
+ * with real numbers and a listing truncated the way a changed dumpe2fs would.
  */
 export function refuseUnlessCountsAgree(image: string, want: bigint, got: bigint, firstInode: bigint): void {
   if (got === want) return

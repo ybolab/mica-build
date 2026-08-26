@@ -1,29 +1,24 @@
 // Batch 1b: the boot slots' filesystems.
 //
-// `check_boot_slot` runs twice per board, once
-// for BOOT-A and once for BOOT-B, and everything it concludes is `many` here
-// with the slot NAME as the instance -- not a count. R4 measured one defect as
-// 465, 467, 562 and 925 differing bytes from nothing but the clock, so a
-// family that fired twice and matched twice would say nothing about WHICH
-// slot.
+// `check_boot_slot` runs twice per board, for BOOT-A and BOOT-B, and everything
+// it concludes is `many` here with the slot name as the instance rather than a
+// count: one defect measured as 465, 467, 562 and 925 differing bytes from
+// nothing but the clock, and a family that fired twice and matched twice would
+// say nothing about which slot.
 //
-// WHERE THE SLOTS COME FROM.
+// The slots come from the layout's `<SLOT>_OFFSET_BYTES`, which is what the
+// oracle uses (:1769-1770), and not from the GPT's first sector though both
+// agree on a healthy image: where a slot is is asserted by
+// `gpt-partition-start`, and reading the offset back out of the same table would
+// make these checks agree with a partition that had moved. The offset is the
+// layout's claim; what is under test is the filesystem at it.
 //
-// From the LAYOUT's `<SLOT>_OFFSET_BYTES`, which is what the oracle uses
-// (:1769-1770). Not from the GPT's first sector, though both agree on a healthy
-// image: WHERE a slot is, is asserted by `gpt-partition-start`, and reading the
-// offset back out of the same table would make these checks agree with a
-// partition that had moved. The offset here is the layout's claim, and what is
-// under test is the filesystem at it.
-//
-// THE THREE FACTORY ASSERTIONS.
-//
-// The FAT32 signature, the volume SERIAL and the volume LABEL. The last two are
-// factory-only and the oracle says why at :1796 and :1804: a RAUC-installed
-// slot legitimately reads volume id 1234ABCD and label "BOOT", because a
-// bundle's boot.vfat is built with `mkfs.vfat --invariant`. Nothing resolves a
-// slot by either -- the PARTLABEL and partition GUID are the real identity and
-// survive an install -- so these say "factory:" and mean it.
+// Three factory assertions: the FAT32 signature, the volume serial and the
+// volume label. The last two are factory-only and the oracle says why at :1796
+// and :1804 -- a RAUC-installed slot legitimately reads volume id 1234ABCD and
+// label "BOOT", because a bundle's boot.vfat is built with
+// `mkfs.vfat --invariant`. Nothing resolves a slot by either; the PARTLABEL and
+// partition GUID are the real identity and survive an install.
 
 import type { Board } from './board.ts'
 import { PER_SLOT_FACTORY, SLOTS, slotOffsetBytes } from './boot-slots.ts'
@@ -152,7 +147,7 @@ export const SLOT_CHECKS: readonly CheckCase[] = [
     },
   },
 
-  // NOT PORTED: the required-file listing.
+  // Not ported: the required-file listing.
   //
   // `pass "${slot} contains ${f}"`, once per entry of BOOT_SLOT_REQUIRED_FILES
   // -- four per slot on cx3576, three on x64. Its identity is blocked by the

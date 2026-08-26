@@ -1,26 +1,17 @@
 // mtools and mkfs.vfat: the FAT filesystems, which the firmware reads.
 //
-// FAILURE SIGNAL. Exit status for mcopy, mmd and mdir. NOT for mkfs.vfat, and
-// that is the point of this file.
+// Failure signal: exit status for mcopy, mmd and mdir. NOT for mkfs.vfat, which
+// does not enforce FAT32 under `-F 32`: given a partition too small for 65525
+// clusters it writes a FAT32 boot sector over a filesystem that is not FAT32
+// and exits 0, so everything trusting that boot sector agrees. OVMF computes
+// the type as the specification says and refuses it -- "the ESP was simply
+// absent from the firmware's device list and the machine dropped to the UEFI
+// shell" (os/mkimage-x64.sh, which also records that asking minfo for the type
+// passed on that exact image). The check is therefore a cluster count,
+// readFatClusters, with an unreadable count refused rather than compared:
+// `[ "" -lt 65525 ]` is a shell error and `undefined < 65525` is false.
 //
-// mkfs.vfat -F 32 DOES NOT ENFORCE FAT32. Given a partition too small to hold
-// 65525 clusters it writes a FAT32 boot sector over a filesystem that is not
-// FAT32, exits 0, and every tool that trusts the boot sector agrees with it.
-// os/mkimage-x64.sh records what that cost: OVMF computes the type the way the
-// specification says, refuses the filesystem, and "the ESP was simply absent
-// from the firmware's device list and the machine dropped to the UEFI shell".
-// It also records that the FIRST version of that check asked minfo for the TYPE
-// and passed on the exact image that would not boot. So the check that works is
-// a CLUSTER COUNT, and readFatClusters below is it -- with an unreadable count
-// refused rather than compared, because `[ "" -lt 65525 ]` is a shell error and
-// `undefined < 65525` is false.
-//
-// REPRODUCIBILITY. `--invariant` on mkfs.vfat (without it the volume-label
-// directory entry carries the wall clock) and `-m` on mcopy (each entry keeps
-// its source's mtime, which the caller has pinned). Both are required fields
-// rather than defaults for the same reason SOURCE_DATE_EPOCH is in mkimage.ts:
-// the failure they prevent is an image that differs between builds and nothing
-// that reports it.
+// Reproducibility: every mkfs.vfat passes `--invariant`, every mcopy `-m`.
 
 import type { Toolbox, ToolResult } from '../toolbox.ts'
 import { ToolError } from '../toolbox.ts'
@@ -35,7 +26,7 @@ export interface FatSpec {
   /**
    * `-i`. The volume ID, hex, pinned in the board definition.
    *
-   * OPTIONAL, AND ITS ABSENCE IS A DECISION ONE CALLER MAKES. Both assemblers
+   * Optional, and its absence is a decision one caller makes. Both assemblers
    * pin it, because a slot's filesystem is that slot's: BOOT_A carries
    * C3576003 and BOOT_B C3576004, and an image whose volume id came out
    * different from the pinned one is a reproducibility failure only a byte

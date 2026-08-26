@@ -7,19 +7,18 @@
 #   make uboot-mos  (--target artifact-mos) mos A/B variant: persistent redundant
 #     env + boot.scr contract (docs/design/uboot-ab-handshake.md); pairs with the
 #     v2 image only — its env offsets fall inside the v1 boot partition.
-# THE BUILDER IMAGE, INJECTED FROM os/build-env/images.env by
+
+# The builder image is injected from os/build-env/images.env by
 # os/build-env/from.sh, which board/cx3576/Makefile calls. A bare tag like
 # `ubuntu:24.04` is one Canonical repoints on every point release, so the answer
 # to "which toolchain produced this artefact" would be the date of the build.
-#
-# UBUNTU AND NOT mos-build-c: the BSP builders get digest pins only. This
-# cross-compiles a vendor tree against gcc-aarch64-linux-gnu,
+# Ubuntu and not mos-build-c: the BSP builders get digest pins only, because
+# this cross-compiles a vendor tree against gcc-aarch64-linux-gnu,
 # python3-pyelftools, swig and device-tree-compiler at the versions that tree
-# was tested with, and moving it onto mos-build-c would be a BSP rebuilt under
-# a toolchain nobody has booted on the hardware.
-#
-# NO DEFAULT: without a value docker refuses before any stage runs, which is
-# loud; with one it would build green against an image nobody chose.
+# was tested with, and mos-build-c would be a BSP rebuilt under a toolchain
+# nobody has booted on the hardware. There is no default: without a value docker
+# refuses before any stage runs, where a default would build green against an
+# image nobody chose.
 ARG MOS_IMAGE_UBUNTU_2404
 FROM --platform=$BUILDPLATFORM ${MOS_IMAGE_UBUNTU_2404} AS build
 
@@ -167,11 +166,6 @@ RUN cd /uboot && \
 #   this stage's env persists in eMMC, so a value left behind by a saveenv or
 #   by hand at the U-Boot prompt would outlive the reboot and silently undo
 #   the eMMC-first order. The assertion below pins this stage's own string.
-# This stage rebuilds u-boot.dtb, so it re-asserts bootdev-order — the one
-# property we deliberately diverge from upstream on (eMMC first, SD as
-# fallback) and the one that ships in the v2 A/B image. The LED and SD-power
-# assertions of the build stage are deliberately not repeated: this stage
-# edits no DTS and the nodes they cover are unchanged by scripts/config.
 FROM build AS build-mos
 ARG DDR_BLOB=rk3576_ddr_lp4_2112MHz_lp5_2736MHz_v1.12.bin
 ARG BL31_BLOB=rk3576_bl31_v1.24.elf
@@ -221,6 +215,11 @@ RUN cd /uboot && \
         ROCKCHIP_TPL=/rkbin/bin/rk35/${DDR_BLOB} BL31=/rkbin/bin/rk35/${BL31_BLOB} && \
     # Textual check only, as in the build stage above: it does not bind the
     # mmc0 alias to the eMMC controller (needs hardware; recorded no-action).
+    # This stage rebuilds u-boot.dtb, so bootdev-order is re-asserted here: the
+    # one property mos deliberately diverges from upstream on (eMMC first, SD as
+    # fallback) and the one that ships in the v2 A/B image. The LED and SD-power
+    # assertions of the build stage are not repeated, because this stage edits no
+    # DTS and the nodes they cover are unchanged by scripts/config.
     test "$(fdtget u-boot.dtb /bootstd bootdev-order)" = "mmc0 mmc1 usb" && \
     ls -la u-boot-rockchip.bin spl/u-boot-spl.bin u-boot.itb
 

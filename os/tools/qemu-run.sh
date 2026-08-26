@@ -3,18 +3,16 @@
 #
 #   bash os/tools/qemu-run.sh                 boot and leave the console attached
 #   MOS_QEMU_TIMEOUT=300 bash os/tools/qemu-run.sh --capture <file>
-#
-# NOT `-kernel`. QEMU will happily load a kernel and initrd from the host and
+
+# Not `-kernel`. QEMU will happily load a kernel and initrd from the host and
 # skip the disk entirely, and that would be a faster test of a smaller thing:
-# it bypasses the firmware, GRUB, grubenv and the A/B order -- which on this
+# it bypasses the firmware, GRUB, grubenv and the A/B order, which on this
 # board are exactly the parts with no other test. The image here boots the way
 # an industrial PC boots it: OVMF finds the ESP, runs BOOTX64.EFI, GRUB reads
 # its own grub.cfg and grubenv, and the kernel comes off the same partition
-# RAUC updates.
-#
-# QEMU runs inside a container because this host has none, and because pinning
-# the machine model, the firmware build and the disk interface here means a
-# green run means the same thing on someone else's laptop.
+# RAUC updates. QEMU runs inside a container because this host has none, and
+# because pinning the machine model, the firmware build and the disk interface
+# here means a green run means the same thing on someone else's laptop.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -22,19 +20,18 @@ REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 OUT_DIR="${REPO_ROOT}/_out/x64"
 . "${REPO_ROOT}/os/boards/x64/board.env"
 
-# THE CONTAINER THIS FILE RUNS EVERYTHING IN, resolved from
+# The container this file runs everything in, resolved from
 # os/build-env/images.env. Unlike the assemblers, this one is resolved at file
-# scope and not inside a branch, because there is no host path to protect: the
-# comment at the top of this file says QEMU runs in a container BECAUSE this
-# host has none, so every route through this script needs the image and a
-# failure to resolve it is a failure of the run either way.
-#
-# ONE RESOLUTION FOR THREE USES -- the ESP grub.cfg edit under
-# MOS_QEMU_APPEND, and the two qemu invocations at the bottom. They were three
-# separate `debian:trixie-slim` literals and had to stay in step by hand; the
-# machine model, the firmware build and the disk interface are pinned here
-# precisely so "a green run means the same thing on someone else's laptop", and
-# the ovmf that supplies the firmware comes out of this base.
+# scope and not inside a branch, because there is no host path to protect: QEMU
+# runs in a container because this host has none, so every route through this
+# script needs the image and a failure to resolve it fails the run either way.
+
+# One resolution for three uses -- the ESP grub.cfg edit under MOS_QEMU_APPEND,
+# and the two qemu invocations at the bottom. They were three separate
+# `debian:trixie-slim` literals and had to stay in step by hand; the machine
+# model, the firmware build and the disk interface are pinned here precisely so
+# "a green run means the same thing on someone else's laptop", and the ovmf
+# that supplies the firmware comes out of this base.
 QEMU_IMAGE="$(bash "${REPO_ROOT}/os/build-env/from.sh" --ref IMAGE_DEBIAN_TRIXIE)"
 IMG="${MOS_QEMU_IMAGE:-${OUT_DIR}/${IMAGE_LATEST_NAME}}"
 TIMEOUT="${MOS_QEMU_TIMEOUT:-240}"
@@ -100,23 +97,22 @@ else
         echo "note: virtual disk is ${DISK_MIB} MiB for a ${img_mib} MiB image, so systemd-repart has room to extend DATA"
 fi
 
-# Applied on BOTH paths, reused disk included. Inside the "grow the disk"
+# Applied on both paths, reused disk included. Inside the "grow the disk"
 # branch it would only run when the disk is fresh, so every run that reused a
 # seeded disk would silently boot without the debugging arguments it was told
 # to add and mosd's journal would never reach the console -- a daemon that
 # looks silent and is not.
-# MOS_QEMU_APPEND adds kernel arguments to the DISK COPY, by rewriting the
+
+# MOS_QEMU_APPEND adds kernel arguments to the disk copy, by rewriting the
 # grub.cfg in its ESP. The shipped image is untouched, and the boot still goes
-# through GRUB reading its own configuration -- so this is a debugging knob,
-# not a second boot path.
-#
-# It exists because mos keeps the journal in RAM
+# through GRUB reading its own configuration, so this is a debugging knob and
+# not a second boot path. It exists because mos keeps the journal in RAM
 # (/etc/systemd/journald.conf.d/00-volatile.conf sets Storage=volatile, which
-# follows from /var being the EPHEMERAL partition). That is a deliberate
-# design, and it means a failed unit's REASON is in a journal that dies with
-# the machine: the console shows "[FAILED] ... See systemctl status for
-# details" and the details are unreachable. systemd.journald.forward_to_console=1
-# puts them on the serial line.
+# follows from /var being the EPHEMERAL partition). That is deliberate, and it
+# means a failed unit's reason is in a journal that dies with the machine: the
+# console shows "[FAILED] ... See systemctl status for details" and the details
+# are unreachable. systemd.journald.forward_to_console=1 puts them on the
+# serial line.
 if [ -n "${MOS_QEMU_APPEND:-}" ]; then
     esp_off=$(( BOOT_A_START_MIB * 1048576 ))
     docker run --rm -v "${RUN_DIR}:/w" -e OFF="${esp_off}" -e APPEND="${MOS_QEMU_APPEND}" \
@@ -195,19 +191,17 @@ DOCKER_ARGS=(--rm -v "${RUN_DIR}:/w" -e MEM="${MEM}" -e RUN_SECONDS="${RUN_SECON
 [ -e /dev/kvm ] && DOCKER_ARGS+=(--device /dev/kvm)
 
 # MOS_QEMU_FORWARD opens a path from the host to apid inside the guest, for the
-# API suite. OFF BY DEFAULT, and the default is the point: a management daemon
-# is otherwise unreachable from outside the machine, which is what makes an
-# unattended run a closed box.
-#
-# TWO DOORS, not one. QEMU's user-mode `hostfwd` binds inside the CONTAINER,
-# so a forward alone reaches nothing; the container must publish the port too.
+# API suite. It is off by default, and the default is the point: a management
+# daemon is otherwise unreachable from outside the machine, which is what makes
+# an unattended run a closed box.
+
+# Two doors, not one. QEMU's user-mode `hostfwd` binds inside the container, so
+# a forward alone reaches nothing; the container must publish the port too.
 # Getting one of the two right produces a connection refused with nothing to
-# say which half is missing, so both are set here or neither is.
-#
-# Bound to 127.0.0.1 on the host. The guest has no password until the suite
+# say which half is missing, so both are set here or neither is. The forward is
+# bound to 127.0.0.1 on the host: the guest has no password until the suite
 # sets one, and until then anything that can reach the port can complete
-# first-boot setup and own the device -- so the forward does not leave
-# loopback, and it does not exist unless someone asked for it.
+# first-boot setup and own the device.
 HOSTFWD=""
 if [ -n "${MOS_QEMU_FORWARD:-}" ]; then
     https_port="${MOS_QEMU_HTTPS_PORT:-18443}"
@@ -216,7 +210,7 @@ if [ -n "${MOS_QEMU_FORWARD:-}" ]; then
     DOCKER_ARGS+=(-p "127.0.0.1:${https_port}:${https_port}"
         -p "127.0.0.1:${http_port}:${http_port}")
 
-    # THE THIRD DOOR, and the one that is invisible until it bites.
+    # The third door, and the one that is invisible until it bites.
     #
     # `-p 127.0.0.1:...` publishes on the DOCKER HOST's loopback. A caller
     # that is itself a container has its own loopback and its own network, so

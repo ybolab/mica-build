@@ -3,37 +3,28 @@
 // Four conclusions per board -- the default path being the `-latest` symlink,
 // the partition count, and the capability pair.
 //
-// `exactly ${EXPECT_PARTS} partitions` IS ONE ENTRY PER BOARD.
+// `exactly ${EXPECT_PARTS} partitions` is one entry per board. A single entry
+// cannot carry it: ` partitions` claims three conclusions on cx3576 and three on
+// x64, `exactly ` claims thirteen and eight, and the only distinguishing token
+// left is the count, a per-board number. So each board gets its own entry
+// generated from its own declaration, the way the ELF architecture does:
+// `exactly 11 partitions` and `exactly 9 partitions` are derivations from
+// `LAYOUT_PARTITIONS`, the same list the oracle counts, in the sense that
+// `BOOT-A contains Image` is a derivation from BOOT_SLOT_REQUIRED_FILES. A third
+// board in os/boards/ gets its own entry with its own count, unedited here.
 //
-// A single entry cannot carry it: ` partitions` claims three conclusions on
-// cx3576 and three on x64, `exactly ` claims thirteen and eight, and the only
-// distinguishing token left is the COUNT -- which is a per-board number, so a
-// single `EXPECT_PARTS` would be one board's answer written into a check both
-// boards run.
-//
-// So each board gets its own entry, generated from its own declaration, the
-// same way the ELF architecture does. `exactly 11 partitions`
-// and `exactly 9 partitions` are derivations from `LAYOUT_PARTITIONS` -- the
-// same list the oracle counts -- and not literals, in the same sense that
-// `BOOT-A contains Image` is a derivation from BOOT_SLOT_REQUIRED_FILES. A
-// third board dropped into os/boards/ gets its own entry with its own count and
-// nothing here is edited.
-//
-// THE CAPABILITY PAIR, AND A VACUOUS PASS IT CARRIES.
-//
-// The oracle establishes that the environment can OBSERVE a capability before
-// it compares any inventory, because an empty capability set and a container
-// that silently drops security.* xattrs are the same observation (:4255). That
-// probe is honest and it is ported as it stands.
-//
-// What it does not cover: `getcap -r DIR` on a directory that IS NOT THERE
-// exits 0 and prints `DIR (No such file or directory)` on STDERR -- measured
-// 2026-08-26 in the pinned alpine. :4283's `2>/dev/null` discards it, so the
-// packed inventory comes out EMPTY, and on these two images the source
-// inventory is empty too -- so the comparison passes, about a root nothing
-// read. Reproduced here (the getcap binding returns what it printed on stdout
-// and nothing else) and recorded for M4e; both shipped rootfs trees genuinely
-// carry no file capabilities, which the oracle's own message says out loud.
+// The capability pair carries a vacuous pass. The oracle establishes that the
+// environment can observe a capability before it compares any inventory, because
+// an empty capability set and a container that silently drops security.* xattrs
+// are the same observation (:4255); that probe is honest and is ported as it
+// stands. What it does not cover is that `getcap -r DIR` on a directory that is
+// not there exits 0 and prints `DIR (No such file or directory)` on stderr,
+// measured 2026-08-26 in the pinned alpine. :4283's `2>/dev/null` discards it,
+// so the packed inventory comes out empty, and on these two images the source
+// inventory is empty too, so the comparison passes about a root nothing read.
+// Reproduced here -- the getcap binding returns stdout and nothing else -- and
+// recorded for M4e; both shipped rootfs trees genuinely carry no file
+// capabilities, which the oracle's own message says out loud.
 
 import { existsSync, readFileSync, readlinkSync } from 'node:fs'
 import { join } from 'node:path'
@@ -48,7 +39,7 @@ import { verdict } from './verdict.ts'
  * `readlink IMG`, with the leading `./` the oracle strips already stripped.
  *
  * `undefined` when the path is not a symlink at all, which is `readlink`'s own
- * non-zero exit and the oracle's `|| true` -- a FAILED CHECK naming what it
+ * non-zero exit and the oracle's `|| true` -- a failed check naming what it
  * found, not a dead run.
  */
 function linkTarget(image: string): string | undefined {
@@ -128,7 +119,7 @@ const SHAPE_CHECKS: readonly CheckCase[] = [
   {
     // CONFIG_SQUASHFS_XATTR was enabled on the kernel side so a squashfs root
     // does not silently drop file capabilities. What can be proven from the
-    // PACKED IMAGE is that the capability set survived packing intact.
+    // Packed image is that the capability set survived packing intact.
     id: 'capabilities-preserved',
     shell: {
       pass: [
@@ -246,7 +237,7 @@ async function capsFromRoot(ctx: ImageContext): Promise<string[]> {
 }
 
 /**
- * `exactly ${EXPECT_PARTS} partitions`, as ONE ENTRY PER BOARD.
+ * `exactly ${EXPECT_PARTS} partitions`, as one entry per board.
  *
  * The count is `LAYOUT_PARTITIONS`' length, which is exactly what :1411-1412
  * counts, and it is the same list every other layout-derived check in this

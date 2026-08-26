@@ -2,14 +2,12 @@
  * Phase 01 -- transport.
  *
  * Everything asserted here is invisible to an in-process test of apid's axum
- * `Router`. A `Router` test calls handlers directly: there is no socket, so
- * there is no certificate; there is no second listener, so there is no
- * :80 -> :443 redirect; and there is no published port, so nothing proves the
- * daemon is reachable at all. This phase is the part of the suite that is
- * purely about the wire, and it runs first because everything after it
- * depends on the wire being what it claims to be.
+ * `Router`, which calls handlers directly: no socket, so no certificate; no
+ * second listener, so no :80 -> :443 redirect; no published port, so nothing
+ * proves the daemon is reachable. This phase is purely about the wire, and runs
+ * first because everything after it depends on the wire being what it claims.
  *
- * It is also the phase that establishes the device is UNCONFIGURED -- no
+ * It is also the phase that establishes the device is unconfigured -- no
  * admin password hash exists yet -- which is the precondition phase 02
  * consumes and can only observe once per boot.
  */
@@ -253,9 +251,7 @@ const phase: Phase = {
   },
 };
 
-// ---------------------------------------------------------------------------
 // helpers
-// ---------------------------------------------------------------------------
 
 /** A stable, printable rendering of a certificate's subject or issuer. */
 function distinguishedName(name: unknown): string {

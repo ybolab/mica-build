@@ -4,29 +4,28 @@
 #
 #   make build-env   -> localhost/mos-build-c
 #
-# FROM localhost/mos-build-base, which is
-# itself built from a digest pinned in os/build-env/images.env; the chain is
-# pinned at its root, which is the only place a chain can be pinned. Nothing in
-# this file names an image, a version or a floor.
-#
-# WHY THIS IS A SEPARATE IMAGE AND NOT MORE PACKAGES IN mos-build-base. Not
-# taste: os/podman/Dockerfile tried the merged list and recorded the bill --
-# adding one package to a shared apt list invalidated the cache for five
-# unrelated compilers, about 42 minutes of recompilation under emulation. Kept
-# apart, adding a C library here rebuilds this image and leaves Go and Rust
-# alone. The same arithmetic is why images.lock is filtered per image.
-#
-# WHAT IS IN IT, AND WHAT IS DELIBERATELY NOT. The LANGUAGE toolchain --
-# compiler, linker driver, the three build drivers a C project might use, and
-# ccache in front of the compiler. Component-specific -dev packages are NOT
-# here: os/podman/Dockerfile's C stage needs libseccomp-dev, libcap-dev,
-# libjson-c-dev, libyajl-dev, libglib2.0-dev and libsystemd-dev, and none of
-# those is a fact about C -- they are facts about crun and conmon. They belong
-# in a stage that is FROM mos-build-c with its own apt list, for the reason
-# above: a header that only crun needs must not invalidate an image netavark
-# also stands on. M2c makes that switchover.
-#
-# NATIVE ONLY, deliberately. This image carries no cross toolchain because the
+# FROM localhost/mos-build-base, which is itself built from a digest pinned in
+# os/build-env/images.env; the chain is pinned at its root, which is the only
+# place a chain can be pinned. Nothing in this file names an image, a version
+# or a floor.
+
+# It is a separate image rather than more packages in mos-build-base because
+# os/podman/Dockerfile tried the merged list and recorded the bill: adding one
+# package to a shared apt list invalidated the cache for five unrelated
+# compilers, about 42 minutes of recompilation under emulation. Kept apart,
+# adding a C library here rebuilds this image and leaves Go and Rust alone.
+# The same arithmetic is why images.lock is filtered per image.
+
+# What is in it is the language toolchain -- compiler, linker driver, the three
+# build drivers a C project might use, and ccache in front of the compiler.
+# Component-specific -dev packages are NOT here: os/podman/Dockerfile's C stage
+# needs libseccomp-dev, libcap-dev, libjson-c-dev, libyajl-dev, libglib2.0-dev
+# and libsystemd-dev, and none of those is a fact about C -- they are facts
+# about crun and conmon. They belong in a stage that is FROM mos-build-c with
+# its own apt list, so that a header only crun needs does not invalidate an
+# image netavark also stands on.
+
+# Native only, deliberately. This image carries no cross toolchain because the
 # C components in this tree are built under emulation at the target platform --
 # os/podman/build.sh passes --platform and lets buildkit's qemu do it -- so a
 # cross gcc here would be weight nothing invokes. mos-build-rust is the
@@ -87,24 +86,23 @@ ENV CCACHE_DIR=/ccache \
     PATH="/usr/lib/ccache:${PATH}"
 
 # The toolchain, asserted from inside the image that promises it.
-#
-# THE COMPILE IS THE ASSERTION, and the version numbers are the smaller half of
+
+# The compile is the assertion, and the version numbers are the smaller half of
 # this stage. `gcc --version` answers on an image whose libc headers were never
 # installed, whose linker is missing, and whose cross-arch confusion means it
 # emits objects for the host while claiming to be the target -- every one of
 # which is a green version check and a build that dies two images above, at a
-# distance from the cause. So this compiles a C and a C++ translation unit, links
-# both, and reads the architecture back out of the ELF with `file`, which is one
-# of the tools mos-build-base promised. An image that cannot produce a binary of
-# its own architecture is not a C toolchain whatever gcc prints.
-#
-# FLOORS, NOT EXACT VERSIONS. Everything above came from apt against live
+# distance from the cause. So this compiles a C and a C++ translation unit,
+# links both, and reads the architecture back out of the ELF with `file`, one
+# of the tools mos-build-base promised. An image that cannot produce a binary
+# of its own architecture is not a C toolchain whatever gcc prints.
+
+# Floors, not exact versions. Everything above came from apt against live
 # deb.debian.org, which the base digest does not pin, so an exact assertion
 # would go red on the next trixie point release and teach whoever hit it to
 # widen the check until it meant nothing. Contrast mos-build-go and
-# mos-build-rust, which assert EXACT versions because their toolchains arrive as
-# tarballs pinned by sha256 -- there the exact value is a fact the tree owns.
-#
+# mos-build-rust, which assert exact versions because their toolchains arrive
+# as tarballs pinned by sha256 -- there the exact value is a fact the tree owns.
 # autoconf/automake/libtoolize/python3 are presence-only; images.env records why
 # a floor on a build driver is a number nobody can justify raising.
 ARG MOS_BASE_IMAGE
@@ -166,8 +164,8 @@ RUN set -eu; \
         echo "MOS_BUILD_PYTHON3=$(python3 --version | awk '{print $2}')"; \
     } >/etc/mos-build/c.env
 
-# ITS OWN FILE, NOT THE PARENT'S. os/build-env/build.sh reads back
-# /etc/mos-build/<name>.env named after THIS image. mos-build-c inherits
+# Its own file, not the parent's. os/build-env/build.sh reads back
+# /etc/mos-build/<name>.env named after this image. mos-build-c inherits
 # /etc/mos-build/base.env from mos-build-base, so a check for a fixed filename
 # would be answered by the parent's record and would prove nothing about the
 # child; writing c.env is what makes "each builder image asserts its toolchain

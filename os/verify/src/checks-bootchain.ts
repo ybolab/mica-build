@@ -2,53 +2,32 @@
 // status-LED device tree, the compiled boot script, the verity env pair, and
 // the regions that must ship zero-filled.
 //
-// Six families, one module, because every one of them reads either
-// `board/<board>/out/` or a file mcopy'd out of a boot slot, and three of them
-// share the FIVE SKIP LINES a grub board prints in their place.
+// Six families in one module, because every one reads either `board/<board>/out/`
+// or a file mcopy'd out of a boot slot, and three share the five SKIP lines a
+// grub board prints in their place.
 //
-// THE SKIPS ARE THE REASON THESE ARE TOGETHER.
+// A shell line has exactly one owner, and the oracle wraps whole groups in
+// `if is_uboot_board ... else skip "..."`, so one skip conclusion stands for as
+// many as nine checks: :1750 the raw pre-GPT loader area (four), :2096 the
+// boot.scr assertions (nine), :2277 the boot.scr root-argument pair (two), :2299
+// the zero-filled U-Boot env pair (two), :1951 the status-LED device tree (six,
+// once per slot). So in each group one entry applies to every board and owns the
+// skip, and the rest are scoped by `boardsWhere(isUBoot)` or `hasLed`.
 //
-// A shell line has exactly one owner. The oracle wraps whole groups in
-// `if is_uboot_board ... else skip "..."`, so ONE skip conclusion stands for as
-// many as nine checks:
-//
-//   :1750  the raw pre-GPT loader area          <- four checks
-//   :2096  the boot.scr assertions              <- nine (script + verity env)
-//   :2277  the boot.scr root-argument ...       <- two
-//   :2299  the zero-filled U-Boot env pair      <- two
-//   :1951  <slot>: the status-LED device-tree   <- six, twice (once per slot)
-//
-// So in each group ONE entry applies to every board and owns the skip, and the
-// rest are scoped by `boardsWhere(isUBoot)` (or `hasLed`) and simply do not
-// exist on a board that prints none of their lines. M4d drew the same line for
-// the extlinux/no-initramfs pair and this follows it.
-//
-// THE BSP COMPARE, AND THE DECISION IT NEEDED.
-//
-// `board/cx3576/out/` is NOT POPULATED in a checkout, so the oracle's own run
-// is `RESULT FAIL (387/395)` with eight conclusions reading `... compare source
-// not found`. That is not a defect in the image and it is not something this
-// batch may repair: PLAN-014's Scope section puts `board/` BSP builds outside
-// this campaign -- "No change to ... `board/` BSP builds (digest pins only)" --
-// and populating the tree would turn eight of the oracle's FAILs into passes,
-// i.e. it would change the measurement rather than port it.
-//
-// SO THE PORT EXPRESSES THE ABSENCE, exactly as the oracle expresses it: it
-// reads the same paths, and when the compare source is not there it FAILS with
-// the same sentence. Both directions have a fixture -- a byte-identical source,
-// a differing one, and no source at all -- so the passing direction is driven
-// even though no shipped tree reaches it.
-//
-// ONE cx3576 LITERAL IN THE ORACLE, RECORDED RATHER THAN COPIED.
+// `board/cx3576/out/` is not populated in a checkout, so the oracle's own run is
+// `RESULT FAIL (387/395)` with eight conclusions reading `... compare source not
+// found`. PLAN-014's Scope section puts `board/` BSP builds outside this
+// campaign -- "No change to ... `board/` BSP builds (digest pins only)" -- so
+// the port expresses the absence exactly as the oracle does: same paths, same
+// sentence. Fixtures drive all three directions (byte-identical source,
+// differing source, no source).
 //
 // `BOARD_DIR="${BOARD_DIR:-${REPO_ROOT}/board/cx3576}"` (:28) and
-// `DTB_SRC="${BOARD_DIR}/out/kernel/rk3576-src.dtb"` (:1758) are board names
-// written into a script that is otherwise entirely board-derived. On the one
-// U-Boot board this tree ships the two agree, so this port derives both -- the
-// directory from the board's own name, the artefact names from that board's own
-// BOOT_SLOT_REQUIRED_FILES -- and a SECOND U-Boot board would be compared
-// against its own BSP here and against cx3576's there. That divergence would be
-// the oracle's; it is reported for M4e rather than reproduced.
+// `DTB_SRC="${BOARD_DIR}/out/kernel/rk3576-src.dtb"` (:1758) are the oracle's
+// only cx3576 literals; this port derives both -- the directory from the board's
+// own name, the artefact names from its BOOT_SLOT_REQUIRED_FILES -- so a second
+// U-Boot board would be compared against its own BSP here and cx3576's there.
+// That divergence is the oracle's, reported for M4e rather than reproduced.
 
 import { existsSync, statSync } from 'node:fs'
 import { join } from 'node:path'
@@ -110,9 +89,7 @@ function intKey(board: Board, name: string): number {
   return Number(raw)
 }
 
-// ---------------------------------------------------------------------------
 // 1. the raw pre-GPT area, and the two BSP compares over it (:1690-1750)
-// ---------------------------------------------------------------------------
 
 /**
  * The uboot-mos blob's size on disk, and 0 when its compare source is absent.
@@ -193,7 +170,7 @@ function rawBlobChecks(board: Board): CheckCase[] {
     },
 
     {
-      // THE PAIRING GUARD, and its passing direction is an INEQUALITY. The debug
+      // The pairing guard, and its passing direction is an INEQUALITY. The debug
       // variant boots and looks healthy, has CONFIG_ENV_IS_NOWHERE and no pinned
       // bootmeth order, and would make the A/B handshake silently never run.
       id: notDebugId,
@@ -244,7 +221,7 @@ function rawBlobChecks(board: Board): CheckCase[] {
     },
 
     {
-      // Containment in the LOADER PARTITION with room to spare. "Ends before
+      // Containment in the loader partition with room to spare. "Ends before
       // uenv-a" above is the byte-offset form of the same statement; this one is
       // expressed against the partition ENTRY, which is what actually protects
       // the bytes from systemd-repart's discard.
@@ -284,9 +261,7 @@ const RAW_BLOB_SKIP: readonly CheckCase[] = [
   },
 ]
 
-// ---------------------------------------------------------------------------
 // 2. the BSP kernel artefacts each slot must match (:1893-1907)
-// ---------------------------------------------------------------------------
 
 /**
  * The boot-slot files that come out of the BSP build rather than the assembler.
@@ -361,9 +336,7 @@ function bspCompareChecks(board: Board): CheckCase[] {
   }))
 }
 
-// ---------------------------------------------------------------------------
 // 3. the status-LED device tree (:1918-1953)
-// ---------------------------------------------------------------------------
 
 /**
  * The indicator contract, as the oracle states it at :1922.
@@ -380,7 +353,7 @@ function bspCompareChecks(board: Board): CheckCase[] {
  *
  * The SCOPE is derived: `boardsWhere(hasLed)`, never a board name.
  *
- * THE GPIO FLAGS CELL IS THE LOAD-BEARING ONE. `default-state` alone reads green
+ * The GPIO flags cell is the load-bearing one. `default-state` alone reads green
  * while a red LED behaves backwards: status-red hangs off an active-low line
  * and status-blue off an active-high one, so a single inverted cell turns "lit
  * at boot" into "dark at boot" with every label and every default-state still
@@ -482,9 +455,7 @@ const LED_SKIP: readonly CheckCase[] = [
   },
 ]
 
-// ---------------------------------------------------------------------------
 // 4. boot.scr -- the compiled boot script (:2014-2052, :2258-2276)
-// ---------------------------------------------------------------------------
 
 /** The compiled script out of a slot, or undefined when it is not there. */
 async function bootScript(ctx: ImageContext, slot: BootSlot): Promise<string | undefined> {
@@ -585,7 +556,7 @@ const BOOT_SCRIPT_CHECKS: readonly CheckCase[] = [
       const script = key(ctx.board, 'BOOT_SCRIPT_NAME')
       const file = await bootScript(ctx, SLOTS[0] as BootSlot)
       // `od -An -tx1 -N4 "${TMP}/scr-A" 2>/dev/null | tr -d ' \n' || true` -- an
-      // absent file is '' and a FAILED CHECK, not a dead run.
+      // absent file is '' and a failed check, not a dead run.
       const magic = file === undefined ? '' : uImageMagic(file)
       return [verdict('boot-scr-uimage-magic', magic === UIMAGE_MAGIC,
         magic === UIMAGE_MAGIC
@@ -654,9 +625,7 @@ const BOOT_SCRIPT_SKIPS: readonly CheckCase[] = [
   },
 ]
 
-// ---------------------------------------------------------------------------
 // 5. the per-slot verity environment pair (:2056-2094)
-// ---------------------------------------------------------------------------
 
 /** `${BOOT_VERITY_ENV_<X>_NAME}` out of the slot, as text. */
 export async function verityEnvText(ctx: ImageContext, slot: BootSlot): Promise<string> {
@@ -716,7 +685,7 @@ const VERITY_ENV_CHECKS: readonly CheckCase[] = [
     // The two files are the same table over different partitions: rewriting A's
     // PARTUUID to B's must reproduce B's file exactly.
     //
-    // THE PRECONDITION IS THE ORACLE'S. `verity_env_ok` is set by the check
+    // The precondition is the oracle's. `verity_env_ok` is set by the check
     // above, and when it is 0 this one prints "could not be made" WITHOUT
     // comparing anything -- so the two entries are coupled, and this one
     // re-derives the same precondition rather than inventing its own.
@@ -758,9 +727,7 @@ const VERITY_ENV_CHECKS: readonly CheckCase[] = [
   },
 ]
 
-// ---------------------------------------------------------------------------
 // 6. the regions that must ship zero-filled (:2264-2298)
-// ---------------------------------------------------------------------------
 
 /**
  * How many NON-ZERO bytes a range holds -- `tr -d '\0' | wc -c`.
@@ -843,7 +810,6 @@ const ZERO_FILL_CHECKS: readonly CheckCase[] = [
   },
 ]
 
-// ---------------------------------------------------------------------------
 
 /** Every per-board generated entry, from each shipped board's own definition. */
 function generatedFor(boards: readonly Board[]): CheckCase[] {

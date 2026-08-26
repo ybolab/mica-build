@@ -19,9 +19,7 @@ import type { Config } from "./config.ts";
 
 const DEFAULT_TIMEOUT_MS = 15_000;
 
-// ---------------------------------------------------------------------------
 // headers
-// ---------------------------------------------------------------------------
 
 /** A case-insensitive, repeat-preserving view over one response's headers. */
 export class ResponseHeaders {
@@ -61,9 +59,7 @@ export class ResponseHeaders {
   }
 }
 
-// ---------------------------------------------------------------------------
 // cookies
-// ---------------------------------------------------------------------------
 
 export interface ParsedCookie {
   /** The whole `Set-Cookie` line as it arrived, for attribute assertions. */
@@ -164,9 +160,7 @@ function isDeletion(cookie: ParsedCookie): boolean {
   return false;
 }
 
-// ---------------------------------------------------------------------------
 // errors
-// ---------------------------------------------------------------------------
 
 /**
  * `follow()` was asked to follow a redirect that leaves the authority the
@@ -213,9 +207,7 @@ export class ForeignHostError extends Error {
   }
 }
 
-// ---------------------------------------------------------------------------
 // responses and form fields
-// ---------------------------------------------------------------------------
 
 export type Scheme = "https" | "http";
 
@@ -286,41 +278,29 @@ export interface CertificateInfo {
   readonly raw: PeerCertificate | undefined;
 }
 
-// ---------------------------------------------------------------------------
 // SNI
-// ---------------------------------------------------------------------------
 
 /**
  * The SNI server name to send for `host`, or undefined when there is none.
  *
- * SNI carries a `host_name` and never an IP literal -- RFC 6066 section 3 says
- * so in as many words -- and bun ENFORCES it by THROWING at `tls.connect()`,
- * synchronously, before a socket is opened. Measured under bun 1.4.0 in
- * `oven/bun:1`: `TypeError [ERR_INVALID_ARG_VALUE]: The property
+ * SNI carries a `host_name` and never an IP literal (RFC 6066 section 3), and
+ * bun -- like node, so this is not a bun quirk -- enforces that by throwing at
+ * `tls.connect()` synchronously, before a socket is opened. Measured under bun
+ * 1.4.0 in `oven/bun:1`: `TypeError [ERR_INVALID_ARG_VALUE]: The property
  * 'options.servername' Setting the TLS ServerName to an IP address is not
- * permitted.` for both `127.0.0.1` and `::1`. A hostname, or the property
- * omitted, does not throw. Node behaves the same way; this is not a bun quirk.
- *
- * `config.host` is always an IP literal here -- it is the QEMU container's
- * address on the shared docker network, and `config.ts` refuses to default it
- * precisely so nobody aims the suite at loopback -- so passing it as
- * `servername` makes `inspectCertificate()` and every raw HTTPS write throw at
- * call time, and no TLS assertion against a real device can be made at all.
- *
- * Dropping SNI costs nothing here: certificate verification is already relaxed
- * for `config.host` (see `#tlsOptionsFor`), apid serves exactly one self-signed
- * certificate, and it does no name-based virtual hosting -- there is nothing
- * for a server name to select between.
- *
- * `net.isIP` returns 0 for anything that is not an IP literal, 4 or 6 otherwise.
+ * permitted.` for both `127.0.0.1` and `::1`; a hostname, or the property
+ * omitted, does not throw. `config.host` is always an IP literal here, so
+ * sending it as `servername` makes `inspectCertificate()` and every raw HTTPS
+ * write throw at call time. Dropping it costs nothing: verification is already
+ * relaxed for `config.host` (see `#tlsOptionsFor`), and apid serves one
+ * self-signed certificate with no name-based virtual hosting. `net.isIP` returns
+ * 0 for a non-IP-literal.
  */
 export function sniServerName(host: string): string | undefined {
   return net.isIP(host) === 0 ? host : undefined;
 }
 
-// ---------------------------------------------------------------------------
 // the client
-// ---------------------------------------------------------------------------
 
 export class Client {
   readonly jar = new CookieJar();
@@ -605,9 +585,7 @@ export class Client {
   }
 }
 
-// ---------------------------------------------------------------------------
 // low-level socket transport
-// ---------------------------------------------------------------------------
 
 interface SocketRequestInit {
   readonly host: string;
@@ -749,9 +727,7 @@ function dechunk(buffer: Buffer): Buffer {
   return Buffer.concat(out);
 }
 
-// ---------------------------------------------------------------------------
 // helpers
-// ---------------------------------------------------------------------------
 
 /** scheme://host[:port], with the scheme's default port elided as a URL does. */
 export function authorityOf(url: URL): string {

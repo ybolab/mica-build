@@ -1,22 +1,19 @@
 //! The `com.mos.Item1` item-tree façade.
 //!
-//! Projects the settings tree and the live-state tree as one flat item tree
-//! per `docs/design/bus.md`: `GetItems() -> a{sa{sv}}` and the coalesced
+//! Projects the settings tree and the live-state tree as one flat item tree per
+//! `docs/design/bus.md`: `GetItems() -> a{sa{sv}}` and the coalesced
 //! `ItemsChanged(a{sa{sv}})` signal on the service root [`ROOT_PATH`], plus
-//! `GetValue`/`SetValue` on every item object path below it (§1.1).
-//!
-//! The façade owns no state: every mutation still flows through
-//! [`MosdService`], the single writer — `SetValue` calls the very method
-//! `SetSettings` calls, so the two write paths cannot diverge (§1.2). It
-//! learns about changes through the service's change marker
-//! ([`MosdService::subscribe_changes`]), re-projects both trees, and emits one
+//! `GetValue`/`SetValue` on every item object path below it (§1.1). The façade
+//! owns no state: every mutation flows through [`MosdService`], the single
+//! writer — `SetValue` calls the very method `SetSettings` calls, so the two
+//! write paths cannot diverge (§1.2). It learns about changes through
+//! [`MosdService::subscribe_changes`], re-projects both trees, and emits one
 //! signal per accumulated batch of differences.
 //!
-//! The one thing the façade projects that neither tree carries is the
-//! `/Actions/<verb>` items (§7): constant-`0` items whose write triggers
-//! something instead of storing anything. They are [`crate::actions`]' verbs,
-//! dispatched through the very `MosdService` request paths the `Reboot` and
-//! `PowerOff` methods use.
+//! The one thing it projects that neither tree carries is the `/Actions/<verb>`
+//! items (§7): constant-`0` items whose write triggers something instead of
+//! storing anything, being [`crate::actions`]' verbs dispatched through the
+//! same request paths `Reboot` and `PowerOff` use.
 
 use std::collections::{BTreeMap, HashMap};
 use std::sync::Arc;
@@ -363,25 +360,19 @@ fn code_for(err: &SettingsError) -> i32 {
 
 /// `SetValue` on the item at absolute slash `path`, on behalf of `sender`.
 ///
-/// The façade's one write entry point, and the one place the two kinds of
-/// writable item part ways — decided against the projection the reader sees,
-/// so an item `GetItems` reports as `writable` is exactly an item this
-/// accepts:
-///
-/// - a **setting** goes to [`MosdService::write_setting`], the same call
-///   `SetSettings` makes: validated against the typed schema, persisted
-///   through the store, and the reconcilers owning the path re-applied;
-/// - an **action** goes to [`Actions::trigger`], which dispatches it through
-///   the `MosdService` request path that logs it and records it in live state
-///   BEFORE the power call, and stores nothing at all. `value` is ignored
-///   there: the write itself is the trigger (`docs/design/bus.md` §7).
-///
-/// Nothing here reconciles, persists or logs the request on its own. A failed
-/// write changes nothing (§3) and reports only its code; the reason is logged
-/// locally and never travels back to the caller. The two failure codes stay
-/// apart: [`SET_NOT_PERSISTED`] for the settings write that did not take
-/// effect, [`SET_NOT_DISPATCHED`] for the action whose request was already
-/// recorded before the dispatch failed.
+/// The façade's one write entry point, and where the two kinds of writable item
+/// part ways — decided against the projection the reader sees, so an item
+/// `GetItems` reports as `writable` is exactly an item this accepts. A setting
+/// goes to [`MosdService::write_setting`], the same call `SetSettings` makes:
+/// validated against the typed schema, persisted through the store, and the
+/// reconcilers owning the path re-applied. An action goes to
+/// [`Actions::trigger`], dispatched through the `MosdService` request path that
+/// logs it and records it in live state before the power call, storing nothing;
+/// `value` is ignored, the write itself being the trigger (`docs/design/bus.md`
+/// §7). A failed write changes nothing (§3) and reports only its code, the
+/// reason being logged locally and never travelling back to the caller:
+/// [`SET_NOT_PERSISTED`] for a settings write that did not take effect,
+/// [`SET_NOT_DISPATCHED`] for an action recorded before its dispatch failed.
 async fn set_item(
     service: &MosdService,
     actions: &Actions,

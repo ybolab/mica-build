@@ -1,30 +1,27 @@
 # syntax=docker/dockerfile:1@sha256:ecfaec9ed6d810b56388c508f4121597bfbba70d41a6dfeee4d8cad5f295fc32
-# stages/40-board -- everything the image carries because of WHICH BOARD it is:
+# stages/40-board -- everything the image carries because of which board it is:
 # the bootloader's environment editor, the kernel and its initramfs, the radio
 # firmware, and the hardware-init oneshots. Four RUNs, behind every feature
 # stage.
-#
-# NO BOARD IS NAMED IN THIS FILE. A board's content reaches a shared
-# instruction as a DIRECTORY whose contents the board chose, because A COPY
-# CANNOT BE GATED ON AN ARG; an empty directory is how a board says "none of
-# that here". os/rootfs/build-v2.sh stages all four -- MODULES_TAR,
-# BOARD_FIRMWARE_DIR, BOARD_HWINIT_DIR, BOARD_INIT_DIR -- beside each other,
+
+# No board is named in this file. A board's content reaches a shared
+# instruction as a directory whose contents the board chose, because a COPY
+# cannot be gated on an ARG; an empty directory is how a board says "none of
+# that here". os/rootfs/build-v2.sh stages all four (MODULES_TAR,
+# BOARD_FIRMWARE_DIR, BOARD_HWINIT_DIR and BOARD_INIT_DIR) beside each other,
 # from the board's own definition.
-#
-# WHAT THE BOARD DECIDES, AND WHERE IT SAYS SO. Every one of these is read from
-# os/boards/<board>/board.env, where the layout, the architecture, the
-# bootloader and the radio list already live:
-#
+
+# What the board decides is read from os/boards/<board>/board.env, where the
+# layout, the architecture, the bootloader and the radio list already live:
 #   BOARD_FIRMWARE_FILES   which firmware the image carries (empty = none)
 #   MOS_ARCH               which kernel and initramfs route it takes
 #   RAUC_BOOTLOADER        whether grub-editenv is needed at all
-#
-# and two directories os/rootfs/build-v2.sh stages from the board's own trees,
+# plus two directories os/rootfs/build-v2.sh stages from the board's own trees,
 # either of which may legitimately be empty: BOARD_FIRMWARE_DIR
 # (board/<b>/rootfs/firmware, filtered to BOARD_FIRMWARE_FILES) and
 # BOARD_HWINIT_DIR (os/boards/<b>/hwinit).
-#
-# THE BOARD WORK RUNS AFTER THE FEATURES because the stage numbers have to read
+
+# The board work runs after the features because the stage numbers have to read
 # in the order they run, and 30-feature-* before 40-board is the vocabulary
 # this tree fixed. It is safe in the direction that matters: nothing in these
 # four RUNs reads anything a feature stage writes. The kernel and initramfs
@@ -34,13 +31,13 @@
 # hwinit reads the staged board facts. In the other direction, the two feature
 # RUNs that read the overlay get it from stages/20-install, which runs before
 # any feature stage.
-#
-# THE ORDER OF THE APT TRANSACTIONS IS PART OF THE CONTRACT -- radios,
+
+# The order of the apt transactions is part of the contract -- radios,
 # containers, grub-editenv, kernel -- because it decides the order of entries
 # in the logs the pack stage carries into /usr/share/factory/var/log. The gate
 # is the content diff in os/rootfs/README.md.
 
-# THE LINK BACK UP THE CHAIN. MOS_STAGE_PREV is the local image tag the
+# The link back up the chain. MOS_STAGE_PREV is the local image tag the
 # previous stage was written to; the driver passes it and refuses to build a
 # stage that does not declare it. There is no default, so this file cannot be
 # built standalone against whatever `FROM` happened to be typed -- which is the
@@ -48,29 +45,28 @@
 ARG MOS_STAGE_PREV
 FROM ${MOS_STAGE_PREV}
 
-# grub-editenv, for the boards RAUC drives through the grub backend.
-#
-# RAUC's grub backend does not write grubenv itself -- it EXECS grub-editenv,
-# the way the uboot backend execs fw_setenv. Without it rauc.service starts and
-# then cannot answer anything:
+# grub-editenv, for the boards RAUC drives through the grub backend. RAUC's
+# grub backend does not write grubenv itself -- it execs grub-editenv, the way
+# the uboot backend execs fw_setenv. Without it rauc.service starts and then
+# cannot answer anything:
 #   Failed getting primary slot: grub backend: Failed to start grub-editenv:
 #   Failed to execute child process "grub-editenv" (No such file or directory)
 # which is a device with an A/B layout, a boot order in grubenv, and no way to
 # read or write it.
-#
-# THE FILE, NOT THE PACKAGE. `grub-common` is a 20 MB installed increment here
+
+# The file, not the package. `grub-common` is a 20 MB installed increment here
 # -- it drags in libfreetype6, libpng16, libfuse3, libefivar and gettext-base,
 # none of which a device that only rewrites a grubenv has any use for. The
 # binary itself is 403 KB and links only against libraries this root already
 # carries. apt-get download + dpkg-deb extracts exactly one path and installs
 # nothing, so no dependency resolution happens and nothing has to be purged
 # again afterwards.
-#
-# Gated on the BOOTLOADER, not on the architecture and not on the board name:
+
+# Gated on the bootloader, not on the architecture and not on the board name:
 # an arm64 UEFI board would need this and does not exist yet, and keying it to
 # amd64 would make that board's first symptom the message above rather than a
 # build error. It stays in 40-board rather than moving to 32-feature-rauc for
-# the same reason: the gate is a BOARD fact, and this is an apt transaction
+# the same reason -- the gate is a board fact -- and this is an apt transaction
 # whose position decides the order of the logs the pack stage keeps.
 ARG RAUC_BOOTLOADER=uboot
 RUN --mount=type=bind,source=os/rootfs/scripts,target=/mos-scripts \
@@ -83,7 +79,7 @@ RUN --mount=type=bind,source=os/rootfs/scripts,target=/mos-scripts \
 # On amd64 there is no vendor tree and no modules.tar: the QEMU image that
 # os/tools/qemu-run.sh boots takes Debian's own linux-image-amd64, which brings
 # its kernel, its initramfs and its modules in one package. build-v2.sh stages
-# an EMPTY-but-valid tar on that path rather than making this COPY conditional
+# an empty-but-valid tar on that path rather than making this COPY conditional
 # -- a COPY cannot be gated, and a missing context file is a build error a
 # hundred lines from its cause.
 ARG MOS_ARCH=arm64
@@ -93,13 +89,12 @@ COPY ${MODULES_TAR} /tmp/modules.tar
 RUN --mount=type=bind,source=os/rootfs/scripts,target=/mos-scripts \
     sh /mos-scripts/kernel-and-initramfs.sh
 
-# Radio firmware: the runtime set THIS BOARD declares, and nothing whatever for
-# a board that declares none.
-#
-# WHAT IT IS on the board that has a radio: the AIC8800D80 combo (single SKU).
-# Driver loading is the mos-modules unit's job, not this one's.
-#
-# WHICH FILES IS THE BOARD'S DECISION AND NOT THIS FILE'S.
+# Radio firmware: the runtime set this board declares, and nothing whatever
+# for a board that declares none. On the board that has a radio it is the
+# AIC8800D80 combo (single SKU); driver loading is the mos-modules unit's job,
+# not this one's.
+
+# Which files is the board's decision, not this file's.
 # board/<b>/rootfs/firmware is the vendor BSP drop: 32 files, most of them for
 # other AIC parts (8800dc, 8800dw) and other silicon revisions. Only the
 # confirmed U02 runtime set may enter a signed root, and that set is
@@ -107,16 +102,15 @@ RUN --mount=type=bind,source=os/rootfs/scripts,target=/mos-scripts \
 # against exactly that key, so this reads the list the verifier reads rather
 # than a second copy of it, and build-v2.sh stages precisely those files into
 # BOARD_FIRMWARE_DIR.
-#
-# AN EMPTY DIRECTORY IS HOW A BOARD SAYS "NO RADIO", and the script then
-# installs nothing AND CREATES NOTHING: no /usr/lib/firmware is made to stand
+
+# An empty directory is how a board says "no radio", and the script then
+# installs nothing and creates nothing: no /usr/lib/firmware is made to stand
 # empty where firmware would be. 2 MB of firmware for hardware that is not
 # there would be a file an operator reading the image cannot account for, and
-# an empty directory is a smaller version of the same question.
-#
-# THE LIST IS PASSED AS WELL AS STAGED, and that is a positive control rather
-# than a duplicate: the script asserts that every path the board declared is on
-# the root when it is done.
+# an empty directory is a smaller version of the same question. The list is
+# passed as well as staged, which is a positive control rather than a
+# duplicate: the script asserts that every path the board declared is on the
+# root when it is done.
 ARG BOARD_FIRMWARE_DIR
 ARG BOARD_FIRMWARE_FILES=""
 COPY ${BOARD_FIRMWARE_DIR}/ /tmp/fw/
@@ -124,28 +118,27 @@ RUN --mount=type=bind,source=os/rootfs/scripts,target=/mos-scripts \
     sh /mos-scripts/firmware-install.sh
 
 # Board hardware init: best-effort oneshots from the board's own hwinit
-# directory, plus the per-board facts they read, staged into /etc/mos.
-#
-# THE MECHANISM IS BOARD-AGNOSTIC -- nothing below names a board, and neither
-# does the content. os/boards/<board>/hwinit is staged into BOARD_HWINIT_DIR
-# the way board/<board>/init is staged into BOARD_INIT_DIR, and a board with no
-# hwinit directory stages an empty one.
-#
-# BOTH DIRECTORIES MAY BE EMPTY, and on x64 both are. Every unit is
+# directory, plus the per-board facts they read, staged into /etc/mos. The
+# mechanism is board-agnostic -- nothing below names a board, and neither does
+# the content. os/boards/<board>/hwinit is staged into BOARD_HWINIT_DIR the way
+# board/<board>/init is staged into BOARD_INIT_DIR, and a board with no hwinit
+# directory stages an empty one.
+
+# Both directories may be empty, and on x64 both are. Every unit is
 # condition-gated on its conf file, so enabling them is safe either way -- but
 # "never runs" is a property of a file being absent, not of a gate being right.
 # Dead code in a signed read-only root is not free: x64 is a QEMU machine with
 # no Bluetooth, and an hwinit-bt on it would put a `rfkill unblock` dependency
 # on a binary that board has no reason to install, which the image verifier
 # reports.
-#
-# THE INSTALL LIST IS ENUMERATED from the board facts actually staged, never
+
+# The install list is enumerated from the board facts actually staged, never
 # restated here. A hardcoded list drifts: mos-mac and mos-gadget installed but
 # silently left disabled costs the image its stable MAC and its USB debug
 # console with no error anywhere. Adding hwinit-<n> plus mos-<n>.service under
 # os/boards/<board>/hwinit, and an <n>.conf to the board, is enough.
-#
-# An hwinit directory that went missing stages an EMPTY one, and a board that
+
+# An hwinit directory that went missing stages an empty one, and a board that
 # declares any fact at all then hits the first assertion in the loop below ("a
 # board fact that no hwinit script reads"), by name. The other half -- a board
 # that declares BOARD_HWINIT_CONFS and whose board/<board>/init went missing --
@@ -153,11 +146,11 @@ RUN --mount=type=bind,source=os/rootfs/scripts,target=/mos-scripts \
 # holds that at image level, comparing declared facts against installed
 # helpers. A build-time copy of the verifier's equality would be the second
 # table this tree keeps deleting.
-#
-# NO BOARD FACT APPEARS IN THIS STAGE. Module names, sysfs paths, UART device,
+
+# No board fact appears in this stage. Module names, sysfs paths, UART device,
 # CAN bitrate, MAC seed and gadget IDs all live in BOARD_INIT_DIR and are read
 # from /etc/mos at runtime by the units. MOS_BOARD reaches the script for its
-# DIAGNOSTICS only -- so that a missing hwinit-<n> is reported as the path a
+# diagnostics only -- so that a missing hwinit-<n> is reported as the path a
 # reader should create, under the board that asked for it.
 ARG MOS_BOARD
 ARG BOARD_HWINIT_DIR

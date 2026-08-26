@@ -1,51 +1,47 @@
 # syntax=docker/dockerfile:1@sha256:ecfaec9ed6d810b56388c508f4121597bfbba70d41a6dfeee4d8cad5f295fc32
 # RAUC, built from upstream source without the network and streaming modes.
 #
-#   make os-rauc   → os/update/rauc/out-<arch>/{rauc, rauc.service,
-#                                        de.pengutronix.rauc.conf,
-#                                        de.pengutronix.rauc.service,
-#                                        NEEDED.txt, SHA256SUMS}
+#   make os-rauc -> os/update/rauc/out-<arch>/: rauc, rauc.service,
+#   de.pengutronix.rauc.conf, de.pengutronix.rauc.service, NEEDED.txt,
+#   SHA256SUMS
 #
 # Same shape as os/podman/Dockerfile: builder stages, then a scratch stage that
-# `-o` exports. Nothing here installs into a rootfs; os/rootfs/scripts/rauc-install.sh
-# copies the output in.
-#
-# WHY: see os/update/rauc/versions.env. Short version -- Debian builds rauc with
-# streaming on, that links libcurl-gnutls, and rauc was the only thing in the
-# whole packed root that used it. Turning it off removes a second TLS stack
-# from a signed image; it does not remove a feature this project ships, because
-# the streaming install path is DEFERRED in os/update/rauc/manifest.raucm.in.
+# `-o` exports. Nothing here installs into a rootfs;
+# os/rootfs/scripts/rauc-install.sh copies the output in.
 
-# THE TWO BUILDER IMAGES, INJECTED FROM os/build-env/images.env by
+# Why, in short (os/update/rauc/versions.env has it in full): Debian builds
+# rauc with streaming on, that links libcurl-gnutls, and rauc was the only
+# thing in the whole packed root that used it. Turning it off removes a second
+# TLS stack from a signed image; it does not remove a feature this project
+# ships, because the streaming install path is deferred in
+# os/update/rauc/manifest.raucm.in.
+
+# The two builder images, injected from os/build-env/images.env by
 # os/build-env/from.sh, which os/update/rauc/build.sh calls. A bare
 # `FROM debian:trixie-slim` is a tag upstream repoints whenever it rebuilds, so
 # "which toolchain built the rauc on this device" would be answerable only from
-# a build log.
-#
-# NO DEFAULTS. Without a value docker refuses with "base name should not be
-# blank" before any stage runs; with a default it would build green against an
-# image nobody chose, which is the float this milestone removes. Build this
-# through `make os-rauc`.
+# a build log. No defaults: without a value docker refuses with "base name
+# should not be blank" before any stage runs, while a default would build green
+# against an image nobody chose. Build this through `make os-rauc`.
 ARG MOS_BUILD_BASE
 ARG MOS_BUILD_C
 
 # No apt-get: git and the CA bundle are two of the five packages mos-build-base
-# carries and ASSERTS from inside itself. Re-installing them here would make
-# that assertion decorative -- a floor nothing spends is a floor that is never
-# tested, and the first slimmed base would be found by a failed clone instead of
-# by the image whose whole job is to claim the floor.
+# carries and asserts from inside itself. Re-installing them here would make
+# that assertion decorative -- a floor nothing spends is never tested, and the
+# first slimmed base would be found by a failed clone instead of by the image
+# whose whole job is to claim the floor.
 FROM ${MOS_BUILD_BASE} AS src
 COPY versions.lock /versions.env
 
-# The tag is fetched and the TREE is hashed, not the tarball: a release
-# tarball can be re-rolled, and a tag can be moved. `git archive` of the tag is
-# a deterministic byte stream over the source that is actually compiled.
+# The tag is fetched and the tree is hashed, not the tarball: a release tarball
+# can be re-rolled, and a tag can be moved. `git archive` of the tag is a
+# deterministic byte stream over the source that is actually compiled.
 #
-# PENDING PRINTS THE HASH IT COMPUTED AND FAILS, with deliberately no
+# A PENDING pin prints the hash it computed and fails, with deliberately no
 # environment variable that softens it. A strictness knob would only mean
-# something if the release path set it, and a knob that is never set makes the
-# sentence describing it the only place the difference exists: a pin that only
-# warns floats for as long as nobody reads a log.
+# something if the release path set it, and a pin that only warns floats for as
+# long as nobody reads a log.
 RUN set -eu; . /versions.env; \
     git clone --quiet --depth 1 --branch "${RAUC_VERSION}" \
         https://github.com/rauc/rauc.git /src/rauc; \
@@ -107,7 +103,7 @@ RUN set -eu; \
     DESTDIR=/staging ninja -C build install; \
     strip /staging/usr/bin/rauc
 
-# NO CURL AND NO SECOND TLS STACK. Asserted from the binary's own NEEDED list,
+# No curl and no second TLS stack, asserted from the binary's own NEEDED list,
 # because that is the claim -- not "the option was passed", which would still
 # be true if a future version linked curl for something else.
 RUN set -eu; \
@@ -119,17 +115,17 @@ RUN set -eu; \
     fi; \
     echo "rauc NEEDED:"; sed 's/^/  /' /staging/NEEDED.txt
 
-# THE ACTIVATION PATH IS FIVE FILES, not two. The D-Bus service file says
+# The activation path is five files, not two. The D-Bus service file says
 #   Exec=/usr/libexec/rauc-service.sh   SystemdService=rauc.service
 # so a bus-activated `rauc status` reaches the daemon through that script.
 # Shipping the binary and the unit and not the script leaves a name that
 # activates to nothing.
-#
-# Every file the image needs, present. A `rauc` with no unit and no D-Bus
-# policy is the split-package failure os/rootfs/stages/10-base.Dockerfile already records
-# at the top of its package list: the CLI proxies every command over the bus,
-# so without these it answers "the name de.pengutronix.rauc was not provided by
-# any .service files" and the health gate silently no-ops.
+
+# Every file the image needs must be present. A `rauc` with no unit and no
+# D-Bus policy is the split-package failure os/rootfs/stages/10-base.Dockerfile
+# records at the top of its package list: the CLI proxies every command over
+# the bus, so without these it answers "the name de.pengutronix.rauc was not
+# provided by any .service files" and the health gate silently no-ops.
 RUN set -eu; \
     for f in /staging/usr/bin/rauc \
              /staging/usr/lib/systemd/system/rauc.service \
