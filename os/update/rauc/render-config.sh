@@ -2,15 +2,15 @@
 # Renders the RAUC system configuration from the layout-v2 constants, and
 # asserts that the U-Boot environment access file agrees with the GPT.
 #
-#   bash os/update/rauc/render-config.sh            render (writes the overlay file)
-#   bash os/update/rauc/render-config.sh --check    verify the rendered file is current
-#
+#   bash os/update/rauc/render-config.sh          render the overlay file
+#   bash os/update/rauc/render-config.sh --check  verify the rendered file is current
+
 # Output: os/rootfs/overlay-v2/etc/rauc/system.conf, which the overlay
 # mechanism copies into the image at /etc/rauc/system.conf. The rendered file
-# is GITIGNORED, never committed: the template plus os/boards/cx3576/board.env are
-# the single source of truth, and a committed rendering could drift from them
-# with nothing to notice until after the fact. os/rootfs/build-v2.sh runs this
-# renderer before staging the overlay; --check (run by the bundle builder,
+# is gitignored, never committed: the template plus os/boards/cx3576/board.env
+# are the single source of truth, and a committed rendering could drift from
+# them with nothing to notice until after the fact. os/rootfs/build-v2.sh runs
+# this renderer before staging the overlay; --check (run by the bundle builder,
 # os/build/src/bundle.ts) guards the narrower case of the rendered file being
 # edited by hand after the last build.
 set -euo pipefail
@@ -21,8 +21,8 @@ MOS_BOARD="${MOS_BOARD:-cx3576}"
 LAYOUT_ENV="${REPO_ROOT}/os/boards/${MOS_BOARD}/board.env"
 OVERLAY="${REPO_ROOT}/os/rootfs/overlay-v2"
 # Overridable so a test can drive the renderer against a deliberately-broken
-# template; every real invocation uses the tree's own files. THIS OVERRIDE
-# CURRENTLY HAS NO CALLER. It is kept because it is the only way to reach the
+# template; every real invocation uses the tree's own files. The override
+# currently has no caller. It is kept because it is the only way to reach the
 # renderer's refusal branches without editing a committed template, and a knob
 # with no caller is visible here whereas a deleted one is not.
 SYSTEM_CONF_IN="${SYSTEM_CONF_IN:-${SCRIPT_DIR}/system.conf.in}"
@@ -84,7 +84,7 @@ render() {
     fi
 }
 
-# --- values ----------------------------------------------------------------
+# Values.
 
 # The board family string RAUC matches a bundle against. Derived from the
 # layout rather than spelled out, so one board file defines one compatible.
@@ -146,7 +146,7 @@ uboot | barebox)
     ;;
 esac
 
-# --- /etc/fw_env.config assertions -----------------------------------------
+# /etc/fw_env.config assertions.
 #
 # The file itself is the overlay template, rendered into the image by
 # os/rootfs/build-v2.sh. This task owns its contract, so it is asserted here
@@ -212,7 +212,7 @@ if [ "${RAUC_BOOTLOADER}" = "uboot" ]; then
     done
 fi
 
-# --- system.conf -----------------------------------------------------------
+# system.conf
 rendered="$(mktemp)"
 # ${fw_env_rendered:-} because the grub path never creates it, and an unset
 # variable in a trap fails under `set -u` at exit -- after the render has
@@ -250,9 +250,9 @@ bootname=B
 SLOTS
 }
 
-# BOTH BOOTLOADERS NOW HAVE THE SAME SLOT MODEL: a rootfs pair and
-# a boot-partition pair, each boot slot parented to its rootfs slot. The
-# difference between the boards is which component SELECTS the boot partition
+# Both bootloaders have the same slot model: a rootfs pair and a
+# boot-partition pair, each boot slot parented to its rootfs slot. The
+# difference between the boards is which component selects the boot partition
 # -- U-Boot from its own environment, the first-stage GRUB on the ESP from
 # grubenv -- and that is not visible here.
 #

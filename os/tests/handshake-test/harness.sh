@@ -3,45 +3,45 @@ set -euo pipefail
 
 # Offline U-Boot A/B handshake harness, container side.
 #
-# Runs INSIDE the image os/tests/handshake-test/Dockerfile builds (started by
-# run.sh). Executes the SHIPPED os/boards/cx3576/boot.cmd — compiled by the same
-# `mkimage -T script` invocation the assembler uses, byte-unmodified —
+# Runs inside the image os/tests/handshake-test/Dockerfile builds (started by
+# run.sh). Executes the shipped os/boards/cx3576/boot.cmd -- compiled by the
+# same `mkimage -T script` invocation the assembler uses, byte-unmodified --
 # under a U-Boot v2026.07 sandbox binary (same source pin as the board build)
 # against a layout-v2 GPT disk image backed by a host file, and asserts the
 # whole A/B handshake state machine across separate process invocations.
-#
-# EXECUTION MODEL — one process invocation = one boot cycle. Three facts of
-# the sandbox port make this work, all verified against the pinned source:
-#
-#  1. PERSISTENCE. The sandbox mmc driver mmaps its `filename` backing file
+
+# Execution model: one process invocation = one boot cycle. Three facts of the
+# sandbox port make this work, all verified against the pinned source.
+
+#  1. Persistence. The sandbox mmc driver mmaps its `filename` backing file
 #     MAP_SHARED, and the binary carries the board's env contract (redundant
 #     env at 0x1000000/0x1100000 on mmc 0), so the script's own saveenv lands
-#     in mmc0.img and is read back by the NEXT process — same lifecycle as
-#     eMMC across board resets.
-#
-#  2. RESET TERMINATES. `reset` on sandbox re-execs argv[0]
-#     (sandbox_reset -> os_relaunch -> execv). The harness invokes the binary
-#     with argv[0] pinned to /dev/null/mos-boot-cycle (bash `exec -a`), a path
-#     that can never exec, so the relaunch fails and the process exits 1: a
-#     reset ends the invocation instead of looping forever inside it. The next
-#     invocation IS the post-reset boot.
-#
-#  3. "KERNEL ACCEPTED CONTROL" IS EMULATED — this is the one place the
-#     harness stands in for hardware, and it is load-bearing for the decrement
-#     trajectory. On sandbox, booti can NEVER hand over control
-#     (booti_setup() fails unconditionally), so a cycle that reaches booti
-#     always falls through to the script's burn-the-slot tail. A slot that
-#     "boots and hangs before mark-good" — the case the 3->2->1->0 watchdog
-#     trajectory exists for — is modeled by seeding kernel_addr_r ABOVE the
-#     sandbox's 2048 MiB RAM: `load mmc 0:${bootpart} ${kernel_addr_r} Image`
-#     then hits the sandbox's hard os_abort() on the unmappable address and
-#     the process dies at exactly the semantic point where control leaves
-#     U-Boot — after the decrement's saveenv, before the burn. kernel_addr_r
-#     is board-env-provided on hardware (never set by the script), so seeding
-#     it is environment, not a script change.
-#
-# Everything under the cwd (a private workspace mounted at /work); nothing
-# else is written. Offline: no network use at all.
+#     in mmc0.img and is read back by the next process -- the same lifecycle
+#     as eMMC across board resets.
+
+#  2. Reset terminates. `reset` on sandbox re-execs argv[0] (sandbox_reset ->
+#     os_relaunch -> execv). The harness invokes the binary with argv[0] pinned
+#     to /dev/null/mos-boot-cycle (bash `exec -a`), a path that can never exec,
+#     so the relaunch fails and the process exits 1: a reset ends the
+#     invocation instead of looping forever inside it. The next invocation is
+#     the post-reset boot.
+
+#  3. "Kernel accepted control" is emulated -- the one place the harness stands
+#     in for hardware, and load-bearing for the decrement trajectory. On
+#     sandbox, booti can NEVER hand over control (booti_setup() fails
+#     unconditionally), so a cycle that reaches booti always falls through to
+#     the script's burn-the-slot tail. A slot that "boots and hangs before
+#     mark-good" -- the case the 3->2->1->0 watchdog trajectory exists for --
+#     is modelled by seeding kernel_addr_r above the sandbox's 2048 MiB RAM:
+#     `load mmc 0:${bootpart} ${kernel_addr_r} Image` then hits the sandbox's
+#     hard os_abort() on the unmappable address and the process dies at exactly
+#     the semantic point where control leaves U-Boot -- after the decrement's
+#     saveenv, before the burn. kernel_addr_r is board-env-provided on hardware
+#     (never set by the script), so seeding it is environment, not a script
+#     change.
+
+# Everything is written under the cwd (a private workspace mounted at /work);
+# nothing else. Offline: no network use at all.
 
 REPO=/repo
 CACHE=/cache
@@ -85,21 +85,19 @@ log_lacks() { # label log-file needle
 fill() { head -c "$2" /dev/zero | tr '\0' "$3" > "$1"; }
 
 # --- fixtures (synthetic)
-# boot.scr is the REAL contract artifact: the shipped source through the same
+# boot.scr is the real contract artifact: the shipped source through the same
 # mkimage invocation the assembler uses. The line below is
 # `mkimage -T script -C none -n "mos boot" -d $BOOT_CMD boot.scr`, and
 # os/build/src/tools/mkimage.ts's `bootScriptArgs` returns
 # ['mkimage','-T','script','-C','none','-n',name,'-d',input,output] -- argv-identical.
-#
-# One residual, recorded rather than fixed. `makeBootScript` sets AND VALIDATES
-# SOURCE_DATE_EPOCH -- mkimage silently falls back to the wall clock without it,
-# so an unvalidated value is a boot script that rebuilds differently every time
-# -- and this harness sets it nowhere. The two therefore produce DIFFERENT
-# BYTES, and "same invocation" must not be read here as "same output". It does
+
+# One residual, recorded rather than fixed: `makeBootScript` sets and validates
+# SOURCE_DATE_EPOCH -- mkimage silently falls back to the wall clock without
+# it, so an unvalidated value is a boot script that rebuilds differently every
+# time -- and this harness sets it nowhere. The two therefore produce different
+# bytes, and "same invocation" must not be read here as "same output". It does
 # not weaken what this harness tests: the U-Boot sandbox executes the script's
-# CONTENT, and the header timestamp it differs in is not part of that. Fixing it
-# would mean threading the board's FILE_MTIME in, a change to what this harness
-# builds rather than to a citation.
+# content, and the header timestamp it differs in is not part of that.
 "${MKIMAGE}" -T script -C none -n "mos boot" -d "${BOOT_CMD}" boot.scr >/dev/null
 fill Image $((4 * 1024 * 1024)) K
 fill rk3576-src.dtb $((64 * 1024)) D
@@ -170,7 +168,7 @@ check "noverity slot A lacks the unsuffixed ${BOOT_VERITY_ENV_NAME} fallback too
 check "boot.scr fixture is a legacy U-Boot image" \
     "$(od -An -tx1 -N4 boot.scr | tr -d ' \n')" 27051956
 
-# --- environment seeding -----------------------------------------------------
+# --- environment seeding
 # Only what the BOARD env provides and the script consumes: the load addresses.
 # No BOOT_ORDER / BOOT_x_LEFT — every scenario starts on the script's own
 # virgin-environment defaults. KERNEL_ADDR selects the cycle-ending mechanism:
@@ -183,7 +181,7 @@ seed_env() { # disk-img kernel-addr
     dd if=env.bin of="$1" bs=1M seek=$((UENV_B_OFFSET_BYTES / MIB_BYTES)) conv=notrunc status=none
 }
 
-# --- process invocations -----------------------------------------------------
+# --- process invocations
 # One boot cycle: run the shipped boot.scr the way the board's BOOTCOMMAND
 # discovers it (both slots carry identical copies; the harness loads the p4
 # copy, as bootmeth-script scan order would). argv[0] is pinned to an

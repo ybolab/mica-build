@@ -4,35 +4,33 @@
 #
 #   make build-env   -> localhost/mos-build-rust
 #
-# NOT `rust:1.90-trixie`, for the reason mos-build-go's header gives. This is mos-build-base -- a pinned digest --
-# plus upstream's standalone installer, whose bytes are named in
-# os/build-env/images.env.
-#
-# AND NOT rustup EITHER, which is the less obvious half of the same decision.
+# Not `rust:1.90-trixie`, for the reason mos-build-go's header gives: this is
+# mos-build-base -- a pinned digest -- plus upstream's standalone installer,
+# whose bytes are named in os/build-env/images.env.
+
+# And not rustup either, which is the less obvious half of the same decision.
 # rustup is a version resolver: it reads rust-toolchain.toml out of whatever
 # source tree it is pointed at and installs what that file asks for, over the
-# network, mid-build. In an image whose entire purpose is that the compiler is a
+# network, mid-build. In an image whose whole purpose is that the compiler is a
 # value in images.env, a resolver is the mechanism that quietly overrides it --
 # the same failure GOTOOLCHAIN=local closes on the Go side, arriving by a
 # different route. The standalone installer has no such path: what is unpacked
 # here is what runs, and a rust-toolchain.toml in a consumer's tree is inert.
-#
-# TWO ARCHITECTURES OF std, WHICH GO DOES NOT NEED AND RUST DOES. The
+
+# Two architectures of std, which Go does not need and Rust does. The
 # standalone `rust-` tarball ships std for its own host triple only, so an
 # image built from it alone can compile for exactly one target -- and the
 # target this project actually ships to is the other one:
 # mosd/hack/build-aarch64.sh cross-builds the device binaries, and
-# mosd/.cargo/config.toml already names `aarch64-linux-gnu-gcc` as the linker
-# for them. So this image also installs the cross std, pinned by its own
-# sha256, and the matching Debian cross linker, and then PROVES the combination
-# by linking a binary for the other architecture. mosd/hack/build-target.sh
-# runs inside this image, and an image that could not cross-compile would be a
+# mosd/.cargo/config.toml already names `aarch64-linux-gnu-gcc` as their
+# linker. So this image also installs the cross std, pinned by its own sha256,
+# and the matching Debian cross linker, and then proves the combination by
+# linking a binary for the other architecture. mosd/hack/build-target.sh runs
+# inside this image, and an image that could not cross-compile would be a
 # handoff that cannot be taken.
 ARG MOS_BASE_IMAGE
 
-# ---------------------------------------------------------------------------
 FROM ${MOS_BASE_IMAGE} AS fetch
-# ---------------------------------------------------------------------------
 
 # Filtered to this image's RUST_ keys only -- see os/build-env/images.env on the
 # prefix convention and os/podman/Dockerfile on what a shared cache key costs.
@@ -43,25 +41,23 @@ RUN --mount=type=cache,target=/var/cache/apt,id=apt-cache-mos-build-rust-fetch,s
     rm -f /etc/apt/apt.conf.d/docker-clean && \
     apt-get update && apt-get install -y --no-install-recommends curl
 
-# THE PINS, ENFORCED -- two of them, and the second is the cross std.
-#
-# THE BUMP FLOW is mos-build-go's: set a hash to PENDING, run `make build-env`,
-# this stage prints the sha256 it computed and FAILS, paste it in. No
-# environment variable softens it; os/build-env/images.env says why this file is
-# stricter than os/podman/Dockerfile on that one point.
-#
+# The pins, enforced -- two of them, and the second is the cross std. The bump
+# flow is mos-build-go's: set a hash to PENDING, run `make build-env`, this
+# stage prints the sha256 it computed and fails, paste it in. No environment
+# variable softens it; os/build-env/images.env says why this file is stricter
+# than os/podman/Dockerfile on that one point.
+
 # xz and not gz: upstream publishes both and the .xz is roughly half the bytes.
-# mos-build-base already promises xz-utils and asserts a floor on it, so this is
-# spending a dependency that is paid for rather than adding one.
-#
-# install.sh IS ASKED FOR EXACTLY THREE COMPONENTS. The combined tarball also
-# carries rust-docs, rust-analysis, clippy and rustfmt; none of them is needed
-# to run `cargo build --release --locked`, which is the whole of what
-# mosd/hack/build-target.sh does and therefore the whole of what M2c will ask
-# this image for, and each is tens of megabytes in an image that gets pulled by
-# every build. Naming the components explicitly rather than taking the default
-# also means a component upstream renames fails HERE, by name, instead of
-# silently not being installed.
+# mos-build-base already promises xz-utils and asserts a floor on it, so this
+# is spending a dependency that is paid for rather than adding one.
+
+# install.sh is asked for exactly three components. The combined tarball also
+# carries rust-docs, rust-analysis, clippy and rustfmt; none is needed to run
+# `cargo build --release --locked`, which is the whole of what
+# mosd/hack/build-target.sh does, and each is tens of megabytes in an image
+# every build pulls. Naming the components explicitly rather than taking the
+# default also means a component upstream renames fails here, by name, instead
+# of silently not being installed.
 ARG TARGETARCH
 RUN --mount=type=cache,target=/var/cache/mos-fetch,id=mos-fetch-rust,sharing=locked \
     set -eu; \
@@ -123,41 +119,37 @@ RUN --mount=type=cache,target=/var/cache/mos-fetch,id=mos-fetch-rust,sharing=loc
     [ -x /opt/rust/bin/rustc ] && [ -x /opt/rust/bin/cargo ] \
         || { echo "mos-build-rust: error: install.sh reported success but /opt/rust/bin does not hold both rustc and cargo" >&2; exit 1; }
 
-# ---------------------------------------------------------------------------
 FROM ${MOS_BASE_IMAGE} AS final
-# ---------------------------------------------------------------------------
 
 COPY images.lock /etc/mos-build/images.env
 COPY --from=fetch /opt/rust /opt/rust
 
-# THE LINKER IS NOT OPTIONAL, and this is the one apt list in os/build-env/
+# The linker is not optional, and this is the one apt list in os/build-env/
 # whose absence is not a missing convenience but a broken image. rustc does not
-# link: it drives the system `cc`, so without gcc and libc6-dev every single
-# build in this image dies at the last step with "linker `cc` not found" -- a
-# failure that says nothing about the image that caused it. gcc and libc6-dev
-# are named separately because --no-install-recommends drops the libc6-dev that
-# gcc merely recommends, which yields a compiler with no headers and no crt
+# link: it drives the system `cc`, so without gcc and libc6-dev every build in
+# this image dies at the last step with "linker `cc` not found" -- a failure
+# that says nothing about the image that caused it. gcc and libc6-dev are named
+# separately because --no-install-recommends drops the libc6-dev that gcc
+# merely recommends, which yields a compiler with no headers and no crt
 # objects: the exact half-toolchain that passes `rustc --version`.
-#
-# The CROSS linker is selected by the architecture this image is being built
-# FOR, because the interesting target is always the other one. Debian names the
+
+# The cross linker is selected by the architecture this image is being built
+# for, because the interesting target is always the other one. Debian names the
 # packages asymmetrically -- gcc-aarch64-linux-gnu with libc6-dev-arm64-cross,
 # gcc-x86-64-linux-gnu with libc6-dev-amd64-cross, three different spellings of
 # "arm64" between them -- so this is a case and not a computed string. A
 # computed one would be a package name nobody can grep for.
-#
-# THE CROSS libc IS NAMED FOR THE SAME REASON THE NATIVE ONE IS, and this one
-# was not theory: with only gcc-aarch64-linux-gnu installed, this image built,
+
+# The cross libc is named for the same reason the native one is, and this was
+# not theory: with only gcc-aarch64-linux-gnu installed, this image built,
 # asserted rustc 1.98.0 exactly, found std for both triples, linked a native
 # binary -- and then died on `cannot find crti.o` when it tried to link for
-# aarch64. Every version check passed. What caught it was the cross build being
-# an assertion rather than a claim; what it cost, because the assertion is here,
-# was one build instead of one afternoon inside M2c.
-#
-# ${cross} is left UNQUOTED on purpose -- it holds two package names and has to
+# aarch64. Every version check passed; what caught it was the cross build being
+# an assertion rather than a claim.
+
+# ${cross} is left unquoted on purpose -- it holds two package names and has to
 # word-split. That is the one place in os/build-env/ where an unquoted expansion
 # is correct, so it is said here rather than left for a reader to wonder about.
-#
 # build-essential is deliberately not used here, unlike mos-build-c: this image
 # needs a linker driver and a libc, not make, g++, dpkg-dev and the rest. Cargo
 # crates that need more (a C++ build script, pkg-config) add it in their own
@@ -194,22 +186,21 @@ ENV RUSTUP_HOME=/nonexistent \
     PATH="/opt/rust/bin:/usr/local/cargo/bin:${PATH}"
 
 # The toolchain, asserted from inside the image that promises it.
-#
-# EXACT, NOT A FLOOR, for rustc: it arrives as a tarball whose bytes are named
+
+# Exact, not a floor, for rustc: it arrives as a tarball whose bytes are named
 # by sha256 in os/build-env/images.env, so the version is a fact this tree owns
-# and anything else means the recorded hash and the installed compiler have come
-# apart. mos-build-c's gcc is the opposite case and gets a floor; the difference
-# is whether the thing asserted is pinned or merely requested.
-#
-# CARGO IS ASSERTED BY PRESENCE AND BY USE, NOT BY NUMBER, and that is
-# deliberate rather than an omission. cargo ships in the same pinned tarball, so
-# it is pinned; but its version STRING is upstream's own sequence and is not a
-# value images.env records, and inventing a second number that has to be kept in
-# step with RUST_VERSION by hand is inventing something that will disagree with
-# itself on some future release and be "fixed" by widening. What cargo is
-# actually required to do is build, and that is what is checked.
-#
-# BOTH BUILDS ARE REAL CARGO BUILDS. `rustc --version` answers on an image with
+# and anything else means the recorded hash and the installed compiler have
+# come apart. mos-build-c's gcc is the opposite case and gets a floor; the
+# difference is whether the thing asserted is pinned or merely requested.
+
+# cargo is asserted by presence and by use, not by number, and that is
+# deliberate. cargo ships in the same pinned tarball, so it is pinned; but its
+# version string is upstream's own sequence and is not a value images.env
+# records, and a second number kept in step with RUST_VERSION by hand would
+# disagree with itself on some future release and be "fixed" by widening. What
+# cargo is actually required to do is build, and that is what is checked.
+
+# Both builds are real cargo builds. `rustc --version` answers on an image with
 # no linker, with no std for the target, and with the cross linker missing --
 # three separate ways for this image to be useless that a version check cannot
 # see. --offline because the probes depend on nothing: any network access would

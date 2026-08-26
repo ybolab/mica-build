@@ -1,42 +1,36 @@
 # syntax=docker/dockerfile:1@sha256:ecfaec9ed6d810b56388c508f4121597bfbba70d41a6dfeee4d8cad5f295fc32
 # stages/90-pack -- close the root, then pack it: squashfs-zstd + dm-verity.
-#
-# THE LAST LINK IN THE CHAIN; stages/README.md says what the chain is. This is
-# the only stage file with more than one FROM of its own.
-#
-# FOUR STAGES IN ONE FILE, AND WHY.
-#
-#   closed        FROM the previous chain tag, on the TARGET platform. The last
-#                 three things done to the device root: take the package
-#                 inventory, remove package management, write the build report.
-#                 They are here rather than in 10-base because they are ordered
-#                 LAST by construction -- dpkg-query has to see every package
-#                 any feature or board stage installed, and the purge has to be
-#                 the last step that needs dpkg. A "floor" stage cannot hold a
-#                 step that must run after everything.
-#   pack          FROM bookworm, on the BUILD platform. Packing is a build-host
-#                 job: it runs mksquashfs and veritysetup over a tree, never
-#                 executes anything from it, and so does not want emulation.
-#   artifact      FROM scratch, the export surface the driver writes out.
-#   factory-root  FROM scratch, on the TARGET platform: the packed root ITSELF
-#                 as an OCI image, so the smoke runner can execute the
-#                 self-built binaries in the root that ships them. TWO EXPORT
-#                 SURFACES, not one, because they are different kinds of thing:
-#                 `artifact` is files the assembler consumes, `factory-root` is
-#                 an image a runtime consumes, and buildkit exports one target
-#                 per invocation. The driver builds this one second, off the
-#                 cache the first filled.
-#
-# `closed` is not a stage file of its own: closing the root and packing it are
-# one operation with one output, nothing else can run between them, and a stage
-# boundary that nothing can ever be inserted at is a file that only costs a
-# reader a hop.
+# The last link in the chain (stages/README.md says what the chain is), and the
+# only stage file with more than one FROM of its own.
 
-# THE LINK BACK UP THE CHAIN. MOS_STAGE_PREV is the local image tag the
+# Four stages in one file:
+#   closed        FROM the previous chain tag, on the target platform. The last
+#     three things done to the device root: take the package inventory, remove
+#     package management, write the build report. They are here rather than in
+#     10-base because they are ordered last by construction -- dpkg-query has
+#     to see every package any feature or board stage installed, and the purge
+#     has to be the last step that needs dpkg.
+#   pack          FROM bookworm, on the build platform. Packing runs mksquashfs
+#     and veritysetup over a tree and never executes anything from it, so it
+#     does not want emulation.
+#   artifact      FROM scratch, the export surface the driver writes out.
+#   factory-root  FROM scratch, on the target platform: the packed root itself
+#     as an OCI image, so the smoke runner can execute the self-built binaries
+#     in the root that ships them.
+
+# Two export surfaces, not one, because they are different kinds of thing:
+# `artifact` is files the assembler consumes, `factory-root` is an image a
+# runtime consumes, and buildkit exports one target per invocation. The driver
+# builds factory-root second, off the cache the first filled. `closed` is not a
+# stage file of its own: closing the root and packing it are one operation with
+# one output, nothing else can run between them, and a stage boundary that
+# nothing can ever be inserted at only costs a reader a hop.
+
+# The link back up the chain. MOS_STAGE_PREV is the local image tag the
 # previous stage was written to; the driver passes it and refuses to build a
 # stage that does not declare it. There is no default, so this file cannot be
 # built standalone against whatever `FROM` happened to be typed.
-#
+
 # MOS_IMAGE_DEBIAN_BOOKWORM is this file's own base, injected from
 # os/build-env/images.env by os/build-env/from.sh exactly as stages/10-base's
 # trixie key is, and declared here because the `pack` FROM below is the only
@@ -47,9 +41,7 @@
 ARG MOS_STAGE_PREV
 ARG MOS_IMAGE_DEBIAN_BOOKWORM
 
-# ---------------------------------------------------------------------------
-# Close the device root: inventory, purge, report
-# ---------------------------------------------------------------------------
+# Close the device root: inventory, purge, report.
 FROM ${MOS_STAGE_PREV} AS closed
 
 # Package inventory. Split from the size measurement below because the package
@@ -68,80 +60,60 @@ RUN dpkg-query -W -f='${Package}\t${Installed-Size}\n' > /rootfs-report.pkgs
 # /rootfs-report.rauc is written where rauc is INSTALLED, further up, from the
 # version os/update/rauc/ pinned; there is no rauc package to query.
 
-# ---------------------------------------------------------------------------
-# Remove package management from the packed root
-# ---------------------------------------------------------------------------
-# Nothing can install a package on this device. The root is a read-only
-# dm-verity squashfs and updates arrive as whole RAUC slots, so apt, dpkg and
-# the perl-base dpkg pre-depends on are BUILD-time tools. Shipping them costs
-# ~21 MB of dead weight and hands a working package manager to anyone who
-# reaches a shell on a device whose whole security model is that its root
-# cannot change.
-#
-# MEASURED BEFORE REMOVING, not assumed:
-#   - Nothing in overlay-v2, in mosd or in apid invokes dpkg or apt at runtime.
-#     The only two mentions in the overlay are comments.
-#   - Every perl script in the image is maintainer-script tooling that runs
-#     during installation and never after: deb-systemd-helper,
-#     deb-systemd-invoke, debconf-*, ucf*, and the /usr/sbin set — adduser,
-#     deluser, update-rc.d, pam-auth-update, pam_getenv, dpkg-fsys-usrunmess.
-#     They are removed here too — a script whose interpreter is gone is a trap,
-#     not a leftover.
-#
-#     THE CHECKS TEST A PROPERTY, NOT A PACKAGE NAME -- a copyright count, a
-#     version glob -- because a check pinned to a version of the thing it is
-#     checking fails on the upgrade it exists to survive.
-#
-#     THE apt AND dpkg TIMERS GO TOO. Removing /usr/bin/apt does not remove
-#     apt-daily.timer, apt-daily-upgrade.timer or dpkg-db-backup.timer, and all
-#     three are enabled by their packages into
-#     /etc/systemd/system/timers.target.wants. On a device with no package
-#     manager they fire daily and fail daily, and nothing else in the image is
-#     wrong enough to notice.
-#
-#     linux-base's FOUR HELPERS arrive with linux-base, which x64 pulls in
-#     through linux-image-amd64 and cx3576 never installs.
-#
-#     Their callers are NOT all the same:
-#       linux-check-removal, linux-run-hooks, linux-update-symlinks
-#           called only from the kernel package's preinst/postinst/prerm/postrm
-#       linux-version
-#           called by /usr/sbin/update-initramfs, which is a RUNTIME tool
-#
-#     update-initramfs goes too, and that is the decision worth stating: on a
-#     read-only dm-verity root it cannot write an initramfs anywhere that would
-#     be used. The initrd this image boots sits on the ESP, outside the verity
-#     tree, and is replaced by RAUC as part of the same signed bundle as the
-#     rootfs. A tool that appears to regenerate it would produce a file nothing
-#     reads.
-#
-#     The dangling-interpreter check below is a BUILD FAILURE and not a
-#     warning, because it is what enumerates the /usr/sbin set a hand survey
-#     misses.
-#
-#     adduser and deluser are safe to remove for a second, independent reason:
-#     /etc/passwd is inside the read-only verity root (only /etc/shadow is
-#     symlinked onto STATE), so no account can be created on a running device
-#     whether or not the tool is present.
-#   - dash, grep and gzip declare `Pre-Depends: dpkg`. That is a packaging-time
-#     relation, not a runtime one; their binaries never call it.
-#   - gpgv is reachable only from apt-key.
-#
-# /usr/share/doc IS KEPT, deliberately, and this is where the usual "slim
-# image" recipe goes wrong. It is 2.75 MB, of which 2.06 MB is 159 `copyright`
+# Remove package management from the packed root. Nothing can install a
+# package on this device: the root is a read-only dm-verity squashfs and
+# updates arrive as whole RAUC slots, so apt, dpkg and the perl-base dpkg
+# pre-depends on are build-time tools. Shipping them costs ~21 MB of dead
+# weight and hands a working package manager to anyone who reaches a shell on a
+# device whose whole security model is that its root cannot change. The
+# self-checks below are what make this step able to fail; a purge that silently
+# removed too much would surface as a device that does not boot, days later.
+
+# Measured before removing, not assumed. Nothing in overlay-v2, in mosd or in
+# apid invokes dpkg or apt at runtime -- the only two mentions in the overlay
+# are comments. Every perl script in the image is maintainer-script tooling
+# that runs during installation and never after (deb-systemd-helper,
+# deb-systemd-invoke, debconf-*, ucf*, and the /usr/sbin set: adduser, deluser,
+# update-rc.d, pam-auth-update, pam_getenv, dpkg-fsys-usrunmess), and they are
+# removed here too -- a script whose interpreter is gone is a trap, not a
+# leftover. dash, grep and gzip declare `Pre-Depends: dpkg`, a packaging-time
+# relation their binaries never call; gpgv is reachable only from apt-key.
+
+# The checks test a property, not a package name -- a copyright count, a
+# version glob -- because a check pinned to a version of the thing it is
+# checking fails on the upgrade it exists to survive. The dangling-interpreter
+# check below is a build failure and not a warning, because it is what
+# enumerates the /usr/sbin set a hand survey misses. adduser and deluser are
+# safe to remove for a second, independent reason: /etc/passwd is inside the
+# read-only verity root (only /etc/shadow is symlinked onto STATE), so no
+# account can be created on a running device whether or not the tool is there.
+
+# The apt and dpkg timers go too. Removing /usr/bin/apt does not remove
+# apt-daily.timer, apt-daily-upgrade.timer or dpkg-db-backup.timer, and all
+# three are enabled by their packages into
+# /etc/systemd/system/timers.target.wants. On a device with no package manager
+# they fire daily and fail daily, and nothing else in the image is wrong enough
+# to notice.
+
+# linux-base's four helpers arrive with linux-base, which x64 pulls in through
+# linux-image-amd64 and cx3576 never installs. Their callers are not all the
+# same: linux-check-removal, linux-run-hooks and linux-update-symlinks are
+# called only from the kernel package's preinst/postinst/prerm/postrm, while
+# linux-version is called by /usr/sbin/update-initramfs, a runtime tool.
+# update-initramfs goes too: on a read-only dm-verity root it cannot write an
+# initramfs anywhere that would be used -- the initrd this image boots sits on
+# the ESP, outside the verity tree, and is replaced by RAUC as part of the same
+# signed bundle as the rootfs.
+
+# /usr/share/doc is kept, deliberately, and this is where the usual "slim
+# image" recipe goes wrong: it is 2.75 MB, of which 2.06 MB is 159 `copyright`
 # files -- the licence texts Debian ships to satisfy the redistribution terms
 # of the GPL and friends. Deleting the directory would save 0.69 MB of
-# changelogs and breach those terms to do it.
-#
-# coreutils and openssh-client are also kept, by decision rather than by
-# oversight: coreutils is 17.6 MB and busybox would save most of it, but every
-# script in the image and in the verifier would then be running against
-# different tool semantics; openssh-client is 5.7 MB and outbound ssh/scp is a
-# field-support capability, not packaging residue.
-#
-# The self-checks below are what make this step able to FAIL. A purge that
-# silently removed too much would otherwise surface as a device that does not
-# boot, on hardware, days later.
+# changelogs and breach those terms to do it. coreutils (17.6 MB) and
+# openssh-client (5.7 MB) are kept by decision too: busybox would save most of
+# coreutils but every script in the image and in the verifier would then run
+# against different tool semantics, and outbound ssh/scp is a field-support
+# capability, not packaging residue.
 RUN --mount=type=bind,source=os/rootfs/scripts,target=/mos-scripts \
     sh /mos-scripts/package-manager-purge.sh
 
@@ -154,14 +126,12 @@ RUN { cat /rootfs-report.pkgs; \
       echo "TOTAL_MB $(du -sxm --exclude=/proc --exclude=/sys --exclude=/dev / 2>/dev/null | cut -f1)"; \
     } > /rootfs-report.txt && rm -f /rootfs-report.pkgs /rootfs-report.rauc
 
-# ---------------------------------------------------------------------------
-# Pack: squashfs-zstd + appended dm-verity hash tree
-# ---------------------------------------------------------------------------
+# Pack: squashfs-zstd + appended dm-verity hash tree.
 FROM --platform=$BUILDPLATFORM ${MOS_IMAGE_DEBIAN_BOOKWORM} AS pack
-# ARG IS PER-STAGE. BOARD_RADIOS is declared again here because the pack stage
+# ARG is per-stage. BOARD_RADIOS is declared again here because the pack stage
 # asserts properties of the assembled root that depend on it -- which board
 # state directories are precious, and therefore which mount units must exist.
-# Declared only in an earlier stage file it would expand EMPTY here, which
+# Declared only in an earlier stage file it would expand empty here, which
 # under `set -u` is a build failure rather than a check that silently reads "no
 # radios" on a board that has them.
 ARG BOARD_RADIOS=""
@@ -181,30 +151,29 @@ RUN --mount=type=bind,source=os/rootfs/scripts,target=/mos-scripts \
 # Tree surgery that cannot happen in the rootfs stage, either because buildkit
 # bind-mounts the file during RUN or because it would break dpkg.
 #  - /etc/resolv.conf -> /run, the only writable place with / read-only.
-#  - /etc/machine-id must EXIST and be empty: systemd cannot write it on a
+#  - /etc/machine-id must exist and be empty: systemd cannot write it on a
 #    read-only /etc, and falls back to bind-mounting a transient id from /run
 #    over it. U-Boot passes systemd.machine_id= to make it stable.
 #  - /var becomes an empty mountpoint for EPHEMERAL; the built tree moves to
 #    /usr/share/factory/var, from where mos-seed-var restores it on first boot.
-#  - EXCEPT /var/tmp, which is created in that mountpoint on purpose.
-#
-#    "Empty mountpoint" is right for everything a running system uses, and
-#    wrong for the window BEFORE the mount. systemd-resolved.service is ordered
+
+#  - Except /var/tmp, which is created in that mountpoint on purpose. "Empty
+#    mountpoint" is right for everything a running system uses and wrong for
+#    the window before the mount: systemd-resolved.service is ordered
 #    `Before=sysinit.target`, so it starts ahead of local-fs.target and sees
 #    the image's own /var. Its PrivateTmp= mounts a tmpfs on both /tmp and
 #    /var/tmp, and a mount point that does not exist cannot be created on a
 #    read-only root -- the service dies with 226/NAMESPACE on every boot and
 #    every restart.
-#
+
 #    Nothing about that failure names /var/tmp. The console says "[FAILED]
 #    Failed to start systemd-resolved.service" and the child's own message
 #    never reaches the journal, because it dies during namespace setup. What it
-#    costs is ALL DNS: /etc/resolv.conf is a symlink to resolved's stub, so the
+#    costs is all DNS: /etc/resolv.conf is a symlink to resolved's stub, so the
 #    device cannot resolve an update server, an MQTT broker or a container
-#    registry.
-#
-#    Created HERE and not with the other mountpoints above: this mkdir replaces
-#    /var wholesale, so anything an earlier stage put there is gone.
+#    registry. /var/tmp is created here and not with the other mountpoints
+#    above because this mkdir replaces /var wholesale, so anything an earlier
+#    stage put there is gone.
 RUN --mount=type=bind,source=os/rootfs/scripts,target=/mos-scripts \
     sh /mos-scripts/pack-tree-surgery.sh
 
@@ -222,33 +191,29 @@ RUN --mount=type=bind,source=os/rootfs/scripts,target=/mos-scripts \
 # folded into the loop above: that loop is about /var being disposable and ends
 # by requiring a /usr/share/factory template, which is right for /var/lib/mos
 # and wrong here -- there is no factory content for this directory and, by
-# design, no seed copy at all.
-#
-# What this defends is different too. The bind is what makes a third-party unit
-# survive a reboot; its mountpoint cannot be created at runtime on a verity
-# root, so a missing directory here is a mount unit that FAILS AT BOOT rather
-# than a feature that quietly does nothing.
+# design, no seed copy at all. What this defends is different too: the bind is
+# what makes a third-party unit survive a reboot, and its mountpoint cannot be
+# created at runtime on a verity root, so a missing directory here is a mount
+# unit that fails at boot rather than a feature that quietly does nothing.
 RUN --mount=type=bind,source=os/rootfs/scripts,target=/mos-scripts \
     sh /mos-scripts/pack-assert-extension-dir.sh
 
 # /etc/shadow moves onto STATE. Every device gets its own root password, and
 # pam_unix reads it from /etc/shadow -- which on v2 sits on the dm-verity
-# squashfs, where nothing can ever write it. The only writable paths
-# under /etc are the /etc/hostname and /etc/ssh binds, and a bind-mounted FILE
-# cannot be replaced by rename, which is how mosd writes a credential safely.
-# So the file ships as a SYMLINK into /var/lib/mos, the bind target of
-# var-lib-mos.mount, whose source is /mnt/state/mos. The image copy is retained
-# at /usr/share/factory/etc/shadow -- systemd's standard place for a factory
-# template, the same idea this stage already uses for /var -- and
-# mos-shadow-reconcile derives the STATE file from it on every boot.
-#
-# /etc/passwd and /etc/group deliberately stay in the image, read-only: only the
-# secret-bearing file moves, so account definitions remain part of the signed,
-# verity-covered root.
-#
-# Done here and not in the rootfs stage because every package postinst still
-# needs a real file: a tool like chpasswd would follow a symlink laid down
-# earlier and write through it.
+# squashfs, where nothing can ever write it. The only writable paths under /etc
+# are the /etc/hostname and /etc/ssh binds, and a bind-mounted file cannot be
+# replaced by rename, which is how mosd writes a credential safely. So the file
+# ships as a symlink into /var/lib/mos, the bind target of var-lib-mos.mount,
+# whose source is /mnt/state/mos.
+
+# The image copy is retained at /usr/share/factory/etc/shadow -- systemd's
+# standard place for a factory template, the same idea this stage already uses
+# for /var -- and mos-shadow-reconcile derives the STATE file from it on every
+# boot. /etc/passwd and /etc/group deliberately stay in the image, read-only:
+# only the secret-bearing file moves, so account definitions remain part of the
+# signed, verity-covered root. Done here and not in the rootfs stage because
+# every package postinst still needs a real file: a tool like chpasswd would
+# follow a symlink laid down earlier and write through it.
 RUN --mount=type=bind,source=os/rootfs/scripts,target=/mos-scripts \
     sh /mos-scripts/pack-shadow-relocate.sh
 
@@ -258,19 +223,16 @@ RUN --mount=type=bind,source=os/rootfs/scripts,target=/mos-scripts \
 # cannot read, a unit installed but never enabled, an ordering directive naming
 # a unit that does not exist (systemd drops those silently), or a real password
 # hash baked into a rootfs that is byte-identical across the entire fleet.
-#
-# The locked-password test runs over EVERY account in /etc/passwd, not just
+
+# The locked-password test runs over every account in /etc/passwd, not just
 # root: an empty field is not a locked marker, it is passwordless, and scoping
 # the test to root would leave every other account exposed. root keeps its own
 # dedicated case above it because a baked root credential is the single most
 # likely way a hash reaches this file, and this assertion is what keeps the
 # tree free of a ROOT_PASSWORD build arg; the loop below is the class, not the
-# instance.
-#
-# The two failure modes get two messages on purpose. They are different
-# defects: an EMPTY field means the account accepts any password, while a
-# USABLE HASH means a credential that every device in the fleet shares. A
-# single message would let one be diagnosed as the other.
+# instance. The two failure modes get two messages on purpose: an empty field
+# means the account accepts any password, while a usable hash means a
+# credential that every device in the fleet shares.
 RUN --mount=type=bind,source=os/rootfs/scripts,target=/mos-scripts \
     sh /mos-scripts/pack-assert-shadow-chain.sh
 
@@ -292,10 +254,8 @@ RUN { echo; \
       getcap -r /rootfs 2>/dev/null | sed 's|^/rootfs||' | sort; \
     } >> /out/rootfs-report-v2.txt
 
-# ---------------------------------------------------------------------------
 # Pack, in three steps so each can carry its own explanation and cache
 # independently: squash, assert, then hash.
-# ---------------------------------------------------------------------------
 ARG VERITY_SALT
 ARG VERITY_UUID
 ARG SQUASHFS_TIME
@@ -309,18 +269,17 @@ ARG VERITY_HASH_BLOCK_SIZE=4096
 #   -mkfs-time/-all-time  no wall clock in the superblock or in any inode
 #   -noappend             never merge into a pre-existing image
 #   -no-exports           drop the NFS export table (unused, extra bytes)
-#
-# There is deliberately NO -all-root, and no -force-uid/-force-gid either. They
+
+# There is deliberately no -all-root, and no -force-uid/-force-gid either. They
 # rewrite ownership but NOT mode bits, so every setgid binary whose group was
-# not root would ship setgid-ROOT: ssh-agent (_ssh), chage / expiry /
+# not root would ship setgid-root: ssh-agent (_ssh), chage / expiry /
 # unix_chkpwd (shadow), dbus-daemon-launch-helper (messagebus). That widens a
 # privilege boundary inside the one part of the system that is supposed to be
 # the trustworthy part. It also breaks unix_chkpwd in the other direction: it
 # needs egid shadow to read /etc/shadow, and egid root does not grant that, so
-# non-root PAM password verification stops working.
-#
-# Ownership does not need forcing to be deterministic: it comes from a pinned
-# base image and a pinned package set. Step 2 is what keeps it honest.
+# non-root PAM password verification stops working. Ownership does not need
+# forcing to be deterministic -- it comes from a pinned base image and a pinned
+# package set, and step 2 is what keeps it honest.
 RUN --mount=type=bind,source=os/rootfs/scripts,target=/mos-scripts \
     sh /mos-scripts/pack-squashfs.sh
 
@@ -343,35 +302,31 @@ RUN --mount=type=bind,source=os/rootfs/scripts,target=/mos-scripts \
     sh /mos-scripts/pack-verity.sh
 
 
-# The kernel and initramfs, extracted OUT of the root for boards whose
-# bootloader cannot read it.
-#
-# GRUB has no squashfs driver, so on x64 it cannot load a kernel from the
-# verity-protected root -- the kernel has to sit on the ESP as a plain file.
-# That is the same arrangement cx3576 already has (Image on the FAT boot
-# partition, not inside the squashfs) and it carries the same property, worth
-# stating rather than discovering: THE KERNEL IS NOT COVERED BY dm-verity on
-# either board. What protects it is that RAUC updates the boot slot as part of
-# the same signed bundle as the rootfs slot.
-#
+# The kernel and initramfs, extracted out of the root for boards whose
+# bootloader cannot read it. GRUB has no squashfs driver, so on x64 it cannot
+# load a kernel from the verity-protected root -- the kernel has to sit on the
+# ESP as a plain file. That is the same arrangement cx3576 already has (Image
+# on the FAT boot partition, not inside the squashfs) and it carries the same
+# property, worth stating rather than discovering: the kernel is not covered by
+# dm-verity on either board. What protects it is that RAUC updates the boot
+# slot as part of the same signed bundle as the rootfs slot.
+
 # Copied for every architecture and simply absent on arm64, where the board
 # supplies its own Image: `cp` of a glob that matches nothing would fail the
 # build, so the miss is explicit.
 RUN --mount=type=bind,source=os/rootfs/scripts,target=/mos-scripts \
     sh /mos-scripts/pack-export-boot.sh
 
-# The factory /var tree, exported so the image assembler can SEED THE EPHEMERAL
-# FILESYSTEM AT ASSEMBLY instead of copying it out on first boot.
-#
-# Seeding at runtime puts mos-seed-var at the same moment as every other unit
-# that writes /var. Debian 13's systemd ships
-# systemd-networkd-persistent-storage.service, which creates
-# /var/lib/systemd/network as soon as /var appears; the two race, and losing
+# The factory /var tree, exported so the image assembler can seed EPHEMERAL at
+# assembly instead of copying it out on first boot. Seeding at runtime puts
+# mos-seed-var at the same moment as every other unit that writes /var: Debian
+# 13's systemd ships systemd-networkd-persistent-storage.service, which creates
+# /var/lib/systemd/network as soon as /var appears, the two race, and losing
 # the race fails the seed, which fails var-lib-mos.mount, which fails mosd,
 # apid and the health gate -- a first boot that looks like a device that will
 # not come up. Ordering against that one unit is a list to keep current.
-#
-# A filesystem that is ALREADY seeded when it is first mounted has nothing to
+
+# A filesystem that is already seeded when it is first mounted has nothing to
 # race. mos-seed-var stays for the path where EPHEMERAL has been wiped, and its
 # ConditionPathExists on the stamp means it does not run otherwise. The tree is
 # 390 KB and 93 entries, so carrying it through the build costs nothing.
@@ -385,40 +340,36 @@ COPY --from=pack /out/rootfs-verity.env /
 COPY --from=pack /out/rootfs-report-v2.txt /
 COPY --from=pack /out/boot/ /boot/
 
-# ---------------------------------------------------------------------------
-# The factory root as an OCI image
-# ---------------------------------------------------------------------------
-# WHY THIS EXISTS. Eleven artifacts in this image are built by this repository
-# -- mosd, apid, mos-mqttd, mos-mqtt-broker, rauc, podman, quadlet, crun,
-# conmon, netavark, aardvark-dns -- and "it linked" and "it runs" are different
-# claims: a wrong-architecture binary, a missing soname, or a version that does
-# not match the pin in versions.env all survive to first boot. The smoke runner
-# executes each of them before the image ships, and an executor needs a root to
-# execute them IN. This is that root, in the one form a container runtime can
-# be handed directly.
-#
-# WHY /rootfs FROM `pack`, AND NOT `closed`. `closed` is the cheaper answer: it
+# The factory root as an OCI image.
+
+# Eleven artifacts in this image are built by this repository -- mosd, apid,
+# mos-mqttd, mos-mqtt-broker, rauc, podman, quadlet, crun, conmon, netavark,
+# aardvark-dns -- and "it linked" and "it runs" are different claims: a
+# wrong-architecture binary, a missing soname, or a version that does not match
+# the pin in versions.env all survive to first boot. The smoke runner executes
+# each of them before the image ships, and an executor needs a root to execute
+# them in. This is that root, in the one form a container runtime can be handed
+# directly.
+
+# /rootfs comes from `pack`, not `closed`. `closed` is the cheaper answer -- it
 # is already an image, already on the target platform, and exporting it costs a
-# tag. It is also not what ships. Everything between the two -- the tree surgery
-# and the shadow relocation above -- is the difference: /var moves aside to
+# tag -- but it is not what ships. Everything between the two, the tree surgery
+# and the shadow relocation above, is the difference: /var moves aside to
 # /usr/share/factory/var and leaves an empty mountpoint, /etc/shadow becomes a
 # symlink to /run/mos/shadow, /etc/resolv.conf becomes a symlink into /run.
-# A binary smoke-tested in `closed` is a binary tested in a tree that still has
-# a populated /var and a real /etc/shadow -- tested, that is, somewhere other
-# than the root it will run on. /rootfs at this point is the byte-for-byte input
-# to mksquashfs, so this exports the root that ships and nothing adjacent to it.
-#
-# WHY IT IS THE LAST THING IN THE FILE. `COPY --from=pack` takes pack's FINAL
-# state wherever this stage is written, so its position changes nothing that
-# docker does -- and everything about how the next reader understands it. Placed
-# above the surgery it would read as a capture of the tree before it, which is
-# the wrong tree and an easy mistake to inherit.
-#
-# PLATFORM, AND WHY THE EXPORT ITSELF NEEDS NO EMULATION. There is no
-# `--platform` flag here, so the stage is built for TARGETPLATFORM and the
-# image DECLARES the board's architecture -- which is what makes `docker run`
-# reach for binfmt/qemu-user on an arm64 image. Nothing in this stage EXECUTES
-# anything from the root, so producing it needs no emulation even with
+# /rootfs at this point is the byte-for-byte input to mksquashfs, so this
+# exports the root that ships and nothing adjacent to it.
+
+# It is the last thing in the file for the reader, not for docker: `COPY
+# --from=pack` takes pack's final state wherever this stage is written, so its
+# position changes nothing docker does. Placed above the surgery it would read
+# as a capture of the tree before it, which is the wrong tree and an easy
+# mistake to inherit.
+
+# There is no `--platform` flag here, so the stage is built for TARGETPLATFORM
+# and the image declares the board's architecture, which is what makes `docker
+# run` reach for binfmt/qemu-user on an arm64 image. Nothing in this stage
+# executes anything from the root, so producing it needs no emulation even with
 # binfmt_misc unmounted. Building the arm64 root is still gated on emulation;
 # exporting one is not.
 FROM scratch AS factory-root

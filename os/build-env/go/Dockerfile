@@ -4,32 +4,30 @@
 #
 #   make build-env   -> localhost/mos-build-go
 #
-# NOT `golang:1.25-trixie`. The official image is a moving floor nobody here
+# Not `golang:1.25-trixie`. The official image is a moving floor nobody here
 # chose -- it picks its own Debian release, its own CA bundle and its own git,
 # and changes all three on its own schedule, so "what did this build run on"
 # is answerable only as a date. This is mos-build-base, which is a pinned
 # digest, plus one tarball whose bytes are named in os/build-env/images.env.
 # The cost is that a Go security release arrives by editing images.env.
-#
-# TWO STAGES, AND THE SPLIT IS NOT COSMETIC. `fetch` needs curl to get the
+
+# Two stages, and the split is not cosmetic. `fetch` needs curl to get the
 # tarball; the finished builder does not, and a network client in a build image
-# is a tool nothing in it invokes. More usefully, the split separates "get
-# exactly these bytes" from "assert what we got", so the sha256 refusal below
-# happens in a stage whose only job is the bytes.
-#
-# WHAT MAKES THIS PIN REAL, AND THE ONE THING THAT WOULD UNDO IT. Since Go 1.21
+# is a tool nothing in it invokes. The split also separates "get exactly these
+# bytes" from "assert what we got", so the sha256 refusal below happens in a
+# stage whose only job is the bytes.
+
+# What makes this pin real, and the one thing that would undo it: since Go 1.21
 # the go command reads the `go` line of a go.mod and, if it names a newer
-# release, DOWNLOADS AND RUNS THAT TOOLCHAIN -- silently, mid-build, over the
+# release, downloads and runs that toolchain -- silently, mid-build, over the
 # network. A sha256-pinned tarball plus the default GOTOOLCHAIN setting is
 # therefore not a pinned Go at all: the first dependency with a forward `go`
-# line replaces the compiler this file went to the trouble of pinning, and
-# nothing in the build output says so. GOTOOLCHAIN=local is set below and
-# asserted below that. It is the single most load-bearing line in this file.
+# line replaces the compiler this file pinned, and nothing in the build output
+# says so. GOTOOLCHAIN=local is set below and asserted below that. It is the
+# single most load-bearing line in this file.
 ARG MOS_BASE_IMAGE
 
-# ---------------------------------------------------------------------------
 FROM ${MOS_BASE_IMAGE} AS fetch
-# ---------------------------------------------------------------------------
 
 # Filtered to this image's GO_ keys only, so a pin added for Rust or for M2c's
 # ubuntu BSP does not invalidate this download. os/build-env/images.env carries
@@ -43,28 +41,28 @@ RUN --mount=type=cache,target=/var/cache/apt,id=apt-cache-mos-build-go-fetch,sha
     rm -f /etc/apt/apt.conf.d/docker-clean && \
     apt-get update && apt-get install -y --no-install-recommends curl
 
-# THE PIN, ENFORCED. TARGETARCH selects which tarball, because they are
+# The pin, enforced. TARGETARCH selects which tarball, because they are
 # different files with different hashes -- which is why images.env reserves
 # GO_SHA256_<arch> per architecture rather than one key for "the" tarball.
-#
-# THE BUMP FLOW. Set GO_SHA256_<arch> to PENDING and run `make build-env`: this
-# stage downloads the tarball, prints the sha256 it computed, and FAILS. Paste
-# the value into images.env and run again. There is no environment variable that
-# softens it -- images.env says why this file is stricter than
+
+# The bump flow: set GO_SHA256_<arch> to PENDING and run `make build-env`, and
+# this stage downloads the tarball, prints the sha256 it computed, and fails.
+# Paste the value into images.env and run again. There is no environment
+# variable that softens it -- images.env says why this file is stricter than
 # os/podman/Dockerfile on that one point.
-#
-# THE DOWNLOAD IS CACHED AND THE VERIFICATION IS NOT. A cache mount is not part
+
+# The download is cached and the verification is not. A cache mount is not part
 # of the image layer, so a re-run after pasting the hash does not re-download
 # 80 MB. It is safe precisely because the sha256 is checked on every run,
 # cached or fresh: what the cache can hold is the pinned bytes or bytes that
 # fail the check. A cached file that does not match is re-downloaded once
 # rather than refused, so a truncated download self-heals instead of wedging
-# the build until someone learns the word "buildx prune".
-#
+# the build.
+
 # curl gets --proto '=https' --tlsv1.2 and not just -fsSL: without them a
 # redirect to plain http is followed silently, and a tarball fetched over http
 # is a tarball an intermediary chose. The sha256 would catch that too, which is
-# the point -- these are the layer that makes the sha256 the LAST line of
+# the point -- these are the layer that makes the sha256 the last line of
 # defence rather than the only one.
 ARG TARGETARCH
 RUN --mount=type=cache,target=/var/cache/mos-fetch,id=mos-fetch-go,sharing=locked \
@@ -102,9 +100,7 @@ RUN --mount=type=cache,target=/var/cache/mos-fetch,id=mos-fetch-go,sharing=locke
     tar -C /opt -xzf "${tb}"; \
     [ -x /opt/go/bin/go ] || { echo "mos-build-go: error: ${url} unpacked without an executable /opt/go/bin/go; the tarball layout is not what this file expects" >&2; exit 1; }
 
-# ---------------------------------------------------------------------------
 FROM ${MOS_BASE_IMAGE} AS final
-# ---------------------------------------------------------------------------
 
 COPY images.lock /etc/mos-build/images.env
 COPY --from=fetch /opt/go /opt/go
@@ -112,18 +108,18 @@ COPY --from=fetch /opt/go /opt/go
 # GOTOOLCHAIN=local is the pin. See the header: without it the go command
 # replaces this tarball with one it downloads, the first time a go.mod asks for
 # a newer release, and the build that produced a shipped binary is then not the
-# build this file describes. The assert stage below refuses an image where it is
-# not in effect, so deleting this line fails the build rather than the audit.
-#
-# GOFLAGS=-mod=readonly and not -mod=mod: a build that can rewrite the go.sum it
-# is being checked against is a build that cannot be checked. It is the default
-# in modern Go and is set anyway, because a default is a thing upstream can
-# change and a pinned build environment is exactly where that must not happen
-# quietly.
-#
+# build this file describes. The assert stage below refuses an image where it
+# is not in effect, so deleting this line fails the build rather than the audit.
+
+# GOFLAGS=-mod=readonly and not -mod=mod: a build that can rewrite the go.sum
+# it is being checked against is a build that cannot be checked. It is the
+# default in modern Go and is set anyway, because a default is a thing upstream
+# can change and a pinned build environment is exactly where that must not
+# happen quietly.
+
 # GOPATH=/go matches what every consumer of the official image already assumes,
-# so the cache mounts in os/podman/Dockerfile (/go/pkg/mod, /root/.cache/go-build)
-# keep working across M2c's switchover without being re-derived.
+# so the cache mounts in os/podman/Dockerfile (/go/pkg/mod,
+# /root/.cache/go-build) keep working without being re-derived.
 ENV GOROOT=/opt/go \
     GOPATH=/go \
     GOTOOLCHAIN=local \
@@ -131,8 +127,8 @@ ENV GOROOT=/opt/go \
     PATH="/opt/go/bin:/go/bin:${PATH}"
 
 # The toolchain, asserted from inside the image that promises it.
-#
-# EXACT, NOT A FLOOR, and the difference from mos-build-c is not a style
+
+# Exact, not a floor, and the difference from mos-build-c is not a style
 # choice. mos-build-c's gcc arrives from `apt-get install` against live
 # deb.debian.org, which no digest in this repository pins, so only a floor can
 # be maintained honestly there. This Go arrives as a tarball whose bytes are
@@ -141,17 +137,17 @@ ENV GOROOT=/opt/go \
 # the installed compiler have come apart -- a tarball unpacked over an older
 # one, a cached layer serving a pre-bump toolchain, an image someone edited by
 # hand. A floor would pass every one of those.
-#
-# THE BUILD IS THE ASSERTION. `go version` answers on an image whose GOROOT is
-# half-unpacked and whose linker cannot produce an executable. So this compiles
+
+# The build is the assertion. `go version` answers on an image whose GOROOT is
+# half-unpacked and whose linker cannot produce an executable, so this compiles
 # and links a real program and reads the architecture back out of the ELF with
-# `file`, one of the tools mos-build-base promises -- and then does it AGAIN for
+# `file`, one of the tools mos-build-base promises -- and then does it again for
 # the other architecture, because cross-compilation is the whole reason this
 # project has a build environment and Go is the one toolchain here that gets it
 # for free. mos-build-rust needs a pinned std tarball and an apt cross linker
 # for the same capability; asserting it here is what makes that asymmetry a
 # measured fact rather than a claim in a comment.
-#
+
 # GOPROXY=off during the probe: the probe imports nothing outside the standard
 # library, so any network access at all would mean the toolchain is resolving
 # something this file did not ask for, and off turns that into an error instead

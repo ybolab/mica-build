@@ -1,16 +1,15 @@
 #!/usr/bin/env bash
 # Build the pinned mos builder images out of os/build-env/images.env.
 #
-#   make build-env                     -> localhost/mos-build-{base,c,go,rust}
-#   bash os/build-env/build.sh         same thing
-#   MOS_BUILD_PLATFORM=linux/arm64 ... build for another architecture
+#   make build-env  -> localhost/mos-build-{base,c,go,rust}
+#   bash os/build-env/build.sh  does the same thing
+#   MOS_BUILD_PLATFORM=linux/arm64 ...  builds for another architecture
 #
-# A driver script rather than a `docker buildx build`
-# line in the Makefile, for the reason os/podman/build.sh gives: the builder
-# selection and the lock derivation below are real logic, and a Makefile recipe
-# that grew them would grow their bugs a second time. This is also where the
-# pins are ENFORCED -- a digest reaches `FROM` only after this script has agreed
-# it is a digest.
+# A driver script rather than a `docker buildx build` line in the Makefile, for
+# the reason os/podman/build.sh gives: the builder selection and the lock
+# derivation below are real logic, and a Makefile recipe that grew them would
+# grow their bugs a second time. This is also where the pins are enforced -- a
+# digest reaches `FROM` only after this script has agreed it is a digest.
 set -euo pipefail
 
 # Path arithmetic, then proved rather than assumed. This script is invoked as
@@ -38,21 +37,19 @@ command -v docker >/dev/null 2>&1 || {
     exit 1
 }
 
-# THE IMAGE TABLE. One row per builder image:
-#
-#   <directory under os/build-env/> : <lock key prefixes, comma-separated> : <images.env key holding its FROM>
-#
+# The image table, one row per builder image, written as
+# <directory under os/build-env/>:<lock key prefixes>:<images.env key holding its FROM>.
 # Nothing else in this script knows how many images there are, and no image's
 # row mentions another's keys -- that is what keeps one image's pin bump out of
 # another image's cache key.
-#
-# ORDER IS SEMANTIC, not cosmetic. c, go and rust are built FROM
-# LOCAL_MOS_BUILD_BASE, which is the tag the `base` row produces earlier in this
-# same run. A row whose FROM is a localhost/mos-build-* tag must therefore come
-# AFTER the row that produces it, or it silently builds on whatever a previous
-# run left in the local image store -- and a stale parent is invisible in the
-# output, because every assertion the child makes is about the child. The check
-# below enforces the ordering rather than trusting this comment.
+
+# Order is semantic, not cosmetic. c, go and rust are built FROM
+# LOCAL_MOS_BUILD_BASE, the tag the `base` row produces earlier in this same
+# run, so a row whose FROM is a localhost/mos-build-* tag must come after the
+# row that produces it, or it silently builds on whatever a previous run left
+# in the local image store -- and a stale parent is invisible in the output,
+# because every assertion the child makes is about the child. The check below
+# enforces the ordering rather than trusting this comment.
 IMAGES=(
     "base:BASE_:IMAGE_DEBIAN_TRIXIE"
     "c:C_:LOCAL_MOS_BUILD_BASE"
@@ -60,9 +57,7 @@ IMAGES=(
     "rust:RUST_:LOCAL_MOS_BUILD_BASE"
 )
 
-# ---------------------------------------------------------------------------
-# Which platform, decided before the pins are read
-# ---------------------------------------------------------------------------
+# Which platform, decided before the pins are read.
 # Defaults to the host. Cross-building a build environment is real work -- the
 # floor assertions run INSIDE the image, so an arm64 mos-build-base runs its
 # asserts under emulation -- and the toolchain tarballs are per-architecture,
@@ -84,9 +79,7 @@ MOS_BUILD_PLATFORM="${MOS_BUILD_PLATFORM:-${HOST_PLATFORM}}"
 }
 PLATFORM_ARCH="${MOS_BUILD_PLATFORM#linux/}"
 
-# ---------------------------------------------------------------------------
-# Read the pins
-# ---------------------------------------------------------------------------
+# Read the pins.
 # Comments and blank lines out, nothing else touched -- the same derivation
 # os/podman/build.sh and os/update/rauc/build.sh use, so images.lock and
 # versions.lock mean the same thing to a reader of either.
@@ -107,9 +100,7 @@ mapfile -t KEYS < <(printf '%s\n' "${STRIPPED}" | sed -n 's/^\([A-Za-z_][A-Za-z0
     exit 1
 }
 
-# ---------------------------------------------------------------------------
-# PENDING: the bump flow, and why it is fatal here
-# ---------------------------------------------------------------------------
+# PENDING: the bump flow, and why it is fatal here.
 # EVERY key is scanned, not only the ones this run consumes. A PENDING that
 # nothing reads yet is the worst kind: it sits in the tree looking recorded,
 # green in every build, until the day something reads it. os/build-env/images.env
@@ -130,33 +121,30 @@ resolve_digest() {
     printf '%s\n' "${digests%%$'\n'*}"
 }
 
-# THE OTHER HALF OF THE BUMP FLOW: a sha256 this script fetches and computes,
+# The other half of the bump flow: a sha256 this script fetches and computes,
 # the way resolve_digest above resolves a tag. A pin is recordable only if
-# something can tell you what to record; an instruction with no way to follow it
-# is how PENDING placeholders end up commented out instead of filled in.
-#
-# IT RUNS ON THE HOST ARCHITECTURE, DELIBERATELY, and that is the property that
-# makes a per-architecture pin recordable at all. The sha256 of a tarball does
-# not depend on the machine that computes it, so GO_SHA256_ARM64 can be recorded
+# something can tell you what to record; an instruction with no way to follow
+# it is how PENDING placeholders end up commented out instead of filled in.
+
+# It runs on the host architecture, deliberately, and that is what makes a
+# per-architecture pin recordable at all: the sha256 of a tarball does not
+# depend on the machine that computes it, so GO_SHA256_ARM64 can be recorded
 # from an amd64 laptop with no emulator, no binfmt registration and no arm64
-# build. Tying the hash to a build OF that architecture would have made half the
-# pins in images.env unrecordable by anyone who did not own the other machine --
-# and unrecordable pins are how a file like this fills up with commented-out
-# placeholders.
-#
-# IT RUNS INSIDE IMAGE_DEBIAN_TRIXIE and not on the host, so that this script
-# keeps needing docker and nothing else -- os/build-env/build.sh must not start
-# requiring a host curl of a particular vintage to bump a pin. That the image is
-# the digest-pinned one is not incidental either: fetching the bytes a pin will
-# name, through an unpinned container, would be recording a hash measured by
-# something nobody chose.
-#
-# WHAT IT IS NOT. This resolves; it does not verify. The verification lives in
-# each image's own fetch stage, which re-fetches and re-checks against whatever
-# got recorded here -- the same two-layer arrangement the digest pin has, where
-# this script proves the reference is well-formed and the image proves the
-# contents are what the reference promised. One place that computes and then
-# checks its own answer is a check that cannot fail.
+# build. Tying the hash to a build of that architecture would make half the
+# pins in images.env unrecordable by anyone who did not own the other machine.
+
+# It runs inside IMAGE_DEBIAN_TRIXIE and not on the host, so this script keeps
+# needing docker and nothing else rather than a host curl of a particular
+# vintage. That the image is the digest-pinned one is not incidental either:
+# fetching the bytes a pin will name, through an unpinned container, would
+# record a hash measured by something nobody chose.
+
+# It resolves; it does not verify. The verification lives in each image's own
+# fetch stage, which re-fetches and re-checks against whatever got recorded
+# here -- the same two-layer arrangement the digest pin has, where this script
+# proves the reference is well-formed and the image proves the contents are
+# what the reference promised. One place that computes and then checks its own
+# answer is a check that cannot fail.
 resolve_sha256() {
     # stdin: "<key> <url>" lines. stdout: "SHA256 <key> <value>" or "FAILED <key> <url>".
     docker run --rm -i --entrypoint /bin/sh "${IMAGE_DEBIAN_TRIXIE}" -c '
@@ -185,21 +173,21 @@ url_key_for() { printf '%s\n' "${1/_SHA256/_URL}"; }
 
 # A PENDING falls into one of four cases, and conflating them is what makes a
 # bump flow unusable:
-#
-#   IMAGE_*=name:tag@PENDING   resolvable here, by asking the registry.
-#   <img>_SHA256_*             resolvable here, by fetching what <img>_URL_*
-#                              names and hashing it.
-#   a key nothing consumes     no image row owns its prefix, so nothing in this
-#                              repository will ever read it. Refused by name.
-#                              This is the dormant PENDING: green in every build,
-#                              looking recorded, until the day something reads it.
-#   a key with no URL sibling  consumed but unresolvable -- an instruction with
-#                              no way to follow it. Refused by name.
-#
-# EVERY key is scanned, not only the ones this run consumes, and the order of
-# the two passes below is load-bearing: an unpinned BASE IMAGE is refused before
-# any hash is fetched, because the fetch happens THROUGH that image and a hash
-# measured through an unpinned container is not a fact this file should record.
+#   IMAGE_*=name:tag@PENDING -- resolvable here, by asking the registry.
+#   <img>_SHA256_* -- resolvable here, by fetching what <img>_URL_* names and
+#     hashing it.
+#   a key nothing consumes -- no image row owns its prefix, so nothing in this
+#     repository will ever read it. Refused by name. This is the dormant
+#     PENDING: green in every build, looking recorded, until the day something
+#     reads it.
+#   a key with no URL sibling -- consumed but unresolvable, an instruction with
+#     no way to follow it. Refused by name.
+
+# Every key is scanned, not only the ones this run consumes, and the order of
+# the two passes below is load-bearing: an unpinned base image is refused
+# before any hash is fetched, because the fetch happens through that image and
+# a hash measured through an unpinned container is not a fact this file should
+# record.
 TABLE_PREFIXES=() # "<prefix> <image name>" pairs, so a refusal can name the build that fixes it
 for row in "${IMAGES[@]}"; do
     rest="${row#*:}"
@@ -275,48 +263,43 @@ fi
     exit 1
 }
 
-# ---------------------------------------------------------------------------
-# Every IMAGE_ key must be digest-pinned, and well-formed
-# ---------------------------------------------------------------------------
-# Checked before `FROM` sees it, so the refusal names the key and the file. Left
-# to docker, a malformed reference is an error about a manifest, and a
-# well-formed reference to a TAG is not an error at all -- it is the silent
-# float this milestone exists to remove.
-#
-# DELEGATED TO os/build-env/from.sh, not written out here. Every Dockerfile in
-# the tree takes its FROM as a build argument, so eight other call sites need
-# exactly this judgement, and two copies of "is this a digest" is one copy that
-# eventually stops being it. --check validates
-# EVERY IMAGE_ key, which is the same scope this loop had and the same scope the
-# PENDING scan above has: a pin that is wrong is wrong the day it is written.
+# Every IMAGE_ key must be digest-pinned, and well-formed.
+
+# Checked before `FROM` sees it, so the refusal names the key and the file.
+# Left to docker, a malformed reference is an error about a manifest, and a
+# well-formed reference to a tag is not an error at all -- it is the silent
+# float this pinning exists to remove. The judgement is delegated to
+# os/build-env/from.sh rather than written out here: every Dockerfile in the
+# tree takes its FROM as a build argument, so eight other call sites need
+# exactly this test, and two copies of "is this a digest" is one copy that
+# eventually stops being it. --check validates every IMAGE_ key, the same scope
+# the PENDING scan above has: a pin that is wrong is wrong the day it is
+# written.
 bash "${HERE}/from.sh" --check
 
-# ---------------------------------------------------------------------------
-# The one pin that cannot be delivered by from.sh: `# syntax=`
-# ---------------------------------------------------------------------------
+# The one pin that cannot be delivered by from.sh: `# syntax=`.
+
 # Every Dockerfile in this tree opens with `# syntax=<image>`, and BuildKit
-# hands the file to THAT image to parse before any ARG exists -- so unlike every
-# FROM in the tree it cannot be fed a --build-arg, and os/build-env/from.sh has
-# no way to reach it. The reference has to be written out at each Dockerfile.
-#
-# WHICH IS EXACTLY THE SHAPE THIS FILE OTHERWISE REFUSES -- a value in more
-# than one place, of which all but one eventually stop being it -- so the
-# copies are checked here
-# instead of trusted. images.env stays the single source: it holds the digest,
-# and a Dockerfile whose line has drifted from it fails `make build-env` by
-# name. Bumping the frontend is one PENDING in images.env and twelve edits this
-# refuses to let anyone forget.
-#
-# EVERY TRACKED DOCKERFILE, not a list kept here. A list would be the second
-# table again, one level up, and a Dockerfile added without being added to it
-# would be the unpinned frontend this check exists to prevent -- silently, since
-# nothing would look at it. git ls-files is the same derivation
+# hands the file to that image to parse before any ARG exists, so unlike every
+# FROM in the tree it cannot be fed a --build-arg and os/build-env/from.sh has
+# no way to reach it. The reference has to be written out at each Dockerfile --
+# exactly the shape this file otherwise refuses, a value in more than one place
+# -- so the copies are checked here instead of trusted. images.env stays the
+# single source: it holds the digest, and a Dockerfile whose line has drifted
+# from it fails `make build-env` by name. Bumping the frontend is one PENDING
+# in images.env plus one edit per Dockerfile, and this refuses to let anyone
+# forget one.
+
+# Every tracked Dockerfile, not a list kept here. A list would be the second
+# table one level up, and a Dockerfile added without being added to it would be
+# the unpinned frontend this check exists to prevent -- silently, since nothing
+# would look at it. git ls-files is the same derivation
 # os/tests/shell-pipefail-lint.sh uses for the same reason.
-#
-# A DOCKERFILE WITH NO `# syntax=` LINE AT ALL IS ACCEPTED, and that is a
+
+# A Dockerfile with no `# syntax=` line at all is accepted, and that is a
 # decision rather than a gap: without the directive BuildKit uses the frontend
 # built into the daemon, fetches nothing, and there is no floating reference to
-# pin. What must not happen is a directive naming something OTHER than the
+# pin. What must not happen is a directive naming something other than the
 # recorded digest.
 check_dockerfile_frontends() {
     local f line bad=0 seen=0
@@ -342,40 +325,38 @@ check_dockerfile_frontends() {
 }
 check_dockerfile_frontends
 
-# ---------------------------------------------------------------------------
-# The builder that can reach the chosen platform
-# ---------------------------------------------------------------------------
-# THE `default` BUILDER IS NAMED EXPLICITLY FOR A NATIVE BUILD, and that is the
-# one place this differs from os/podman/build.sh and os/rootfs/build-v2.sh --
+# The builder that can reach the chosen platform.
+
+# The `default` builder is named explicitly for a native build, and that is the
+# one place this differs from os/podman/build.sh and os/rootfs/build-v2.sh,
 # which pass no --builder at all and inherit whatever `docker buildx use` last
-# selected. This family cannot inherit it, for a reason those two do not have:
-# three of the four images are FROM localhost/mos-build-base, a tag that exists
-# only in the LOCAL DOCKER IMAGE STORE, and only the `docker` driver can resolve
-# one. A docker-container builder has its own content store and treats
-# `localhost/...` as a registry HOSTNAME -- measured here, and what it produces
-# is `dial tcp [::1]:80: connect: connection refused` pointing at a FROM line
-# that is not wrong. Inheriting the ambient builder meant a leftover
-# `mos-rauc-arm64` from an unrelated build broke `make build-env` while blaming
-# the wrong file.
-#
-# So: native builds pin themselves to `default`. Cross builds still need a
-# docker-container builder, whose buildkit image bundles the emulators and needs
-# no host binfmt registration -- same name and same creation as the two scripts
-# above, so there is still only one way to get a cross-capable builder.
+# selected. This family cannot inherit it: three of the four images are FROM
+# localhost/mos-build-base, a tag that exists only in the local docker image
+# store, and only the `docker` driver can resolve one. A docker-container
+# builder has its own content store and treats `localhost/...` as a registry
+# hostname -- measured here, producing `dial tcp [::1]:80: connect: connection
+# refused` pointing at a FROM line that is not wrong.
+
+# So native builds pin themselves to `default`. Inheriting the ambient builder
+# meant a leftover `mos-rauc-arm64` from an unrelated build broke
+# `make build-env` while blaming the wrong file. Cross builds still need a
+# docker-container builder, whose buildkit image bundles the emulators and
+# needs no host binfmt registration -- same name and same creation as the two
+# scripts above, so there is still only one way to get a cross-capable builder.
 BUILDER_ARGS=(--builder default)
 if [ "${MOS_BUILD_PLATFORM}" != "${HOST_PLATFORM}" ]; then
-    # AND THEN THE LOCAL-TAG PROBLEM COMES BACK, so it is refused here by name
+    # And then the local-tag problem comes back, so it is refused here by name
     # rather than surfacing as a connection error to port 80. Closing it needs
-    # the parent handed over as CONTENT rather than as a tag -- exporting each
+    # the parent handed over as content rather than as a tag -- exporting each
     # image with `--output type=oci` and passing it to its children as
     # `--build-context <name>=oci-layout://<dir>` is the shape that works with a
     # container builder -- which is a change to how every image in the table is
-    # published, not a flag. It belongs with M2c's rewiring, not in front of it.
-    #
+    # published, not a flag.
+
     # Recorded rather than worked around, because the thing it would buy is
     # already bought: the per-architecture toolchain hashes do NOT need a cross
     # build to be recorded (resolve_sha256 above computes them on the host), and
-    # no target in this repository cross-builds the BUILDER images. What
+    # no target in this repository cross-builds the builder images. What
     # os/podman/build.sh cross-builds is the podman components, FROM upstream
     # references a container builder can resolve.
     for row in "${IMAGES[@]}"; do
@@ -393,9 +374,7 @@ if [ "${MOS_BUILD_PLATFORM}" != "${HOST_PLATFORM}" ]; then
     BUILDER_ARGS=(--builder "mos-${PLATFORM_ARCH}")
 fi
 
-# ---------------------------------------------------------------------------
-# The table, checked before anything is built
-# ---------------------------------------------------------------------------
+# The table, checked before anything is built.
 # Every ${VAR}-assembled path and every key reference in the table, resolved up
 # front rather than on the way past. A row is data, and a typo in one is found
 # by the loop that reaches it -- which, once M2b adds three more rows, means
@@ -448,9 +427,7 @@ for row in "${IMAGES[@]}"; do
 done
 [ "${bad}" = 0 ] || exit 1
 
-# ---------------------------------------------------------------------------
-# Build
-# ---------------------------------------------------------------------------
+# Build.
 for row in "${IMAGES[@]}"; do
     name="${row%%:*}"
     rest="${row#*:}"
