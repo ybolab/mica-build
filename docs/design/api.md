@@ -5,36 +5,14 @@
 > HTTP API, and that the human interface become one client of that API rather
 > than the only way in, so a site can replace it without forking the daemon.
 > The audience is whoever builds or replaces the mos management UI, and whoever
-> has to script the appliance without a browser. Sections 2-9 are the proposal
-> and are written by sibling tasks; section 1 is not a proposal at all — it is
-> the measured surface those sections must be derived from.
-
-> **CITATION NOTE, added 2026-08-26 (RFCT-113 M7c) — annotation, not a rewrite.**
-> This document cites `os/verify-image-v2.sh` and `os/tests/ui-location-test.sh`. Those scripts no
-> longer exist: PLAN-014 ported them into TypeScript and deleted them, each
-> gated on a measured equivalence rather than on review —
-> `os/verify-image-v2.sh` → `os/verify/` at **full verifier parity** (M4e,
-> `6eadc65`), and `os/mkimage-v2.sh` / `os/mkimage-x64.sh` / `os/update/bundle.sh`
-> → `os/build/` at **byte-identity** of the assembled image and of the bundle's
-> squashfs payload (M6e, `c55c7b0`).
->
-> **The citations are left as written**, including their line numbers, because
-> each records what was measured *in the file it names* — they are citations
-> into git history, and re-pointing a line number into a port would invent a
-> precision nobody checked. What to read instead:
-> `bash os/verify/run.sh --verify`, `bash os/build/run.sh --mkimage-v2` /
-> `--mkimage-x64` / `--bundle`. Nothing about the CONTENT of any assertion
-> below changed with the port.
->
-> `os/tests/ui-location-test.sh` went with the shell verifier at M4e; its
-> register is now part of `os/verify/`'s.
-
+> has to script the appliance without a browser. Sections 2-9 are the proposal;
+> section 1 is not a proposal at all — it is the measured surface those
+> sections must be derived from.
 
 ## 0. How to read this document
 
 **Status markers.** The discipline is `docs/design/access.md` section 0's;
-the marker set is deliberately **not** the same, and §10.3 item 15 is the
-audit trail for this paragraph. access.md carries four markers; this document
+the marker set is deliberately **not** the same. access.md carries four markers; this document
 takes two of them, drops two, and adds one of its own. Every section below
 that describes a **mechanism** carries one of:
 
@@ -49,60 +27,28 @@ access.md's `[partial]` is deliberately absent: under this campaign's merge
 gates a task that lands short of its section is returned to working rather
 than merged, so a subsection that would honestly carry `[partial]` is a
 defect to raise, not a state to label. Its `[decided]` is absent because the
-decisions this document waits on are routed through §10.3 items, which carry
-their resolutions inline.
+decisions this document waits on carry their resolutions inline, in the prose
+of the section that needs them.
 
 access.md's reason for the discipline applies here unchanged: *"dead code has a
 compiler, a test run and a grep-for-callers that can surface it; a security
 control that exists only as prose has no mechanism that will ever notice it is
-absent"* (`docs/design/access.md:33-36`). This document is mostly **[proposed]**,
+absent"* (`docs/design/access.md:55-58`). This document is mostly **[proposed]**,
 and marking it so is the point — a reader must be able to tell section 1 (which
 can be checked against the tree) from sections 2-9 (which cannot, because there
-is nothing to check yet). Sections 0 and 10 carry no marker: they describe no
-mechanism, which is the same exemption access.md states at
-`docs/design/access.md:40-41`.
+is nothing to check yet). Section 0 carries no marker: it describes no
+mechanism, which is the same exemption access.md states for its own unmarked
+sections (`docs/design/access.md:63-64`).
 
 **The commit this document was measured at.** Every factual claim in section 1
 was read out of the tree at commit
-`86cd669fa71889577f7e1ab1fab0e0e09a463dcf` — *"Merge webd SSH management:
-default-off SSH, transient password, persistent keys, /home and /root on
-DATA"* — which is this branch's merge base with `main`, with one exception this
-paragraph has to name rather than leave a table below it to contradict:
-**§1.3's proxy table is no longer `86cd669`'s.** Two of its rows cite
-`mosd/mosd/src/tree.rs` and `mosd/mosd/src/actions.rs`, files that did not
-exist at that commit — `git ls-tree -r --name-only 86cd669 -- mosd/mosd/src/`
-lists neither — and its mosd-side citations have been re-measured against
-**HEAD**. Its `mosd/apid/src/routes.rs` column has not, and has drifted.
-Everything else in section 1 is still `86cd669`'s, and a number of its line
-numbers have drifted too; catching all of it is `docs/task/RFCT-092.md`'s job,
-not this paragraph's to hand-patch. A reader on a later tree should re-measure
-before trusting a line number; for anything still pinned here, `git show
-86cd669:<path>` settles a disagreement.
-
-**The `apid` / `webd` path note — RESOLVED, kept as dated history.** Prose in
-this document says **apid**: it is the API daemon, and the dashboard is one
-thing it serves. When section 1 was measured at `86cd669` the crate directory
-was still `mosd/webd/`, so this note carried the check `test -d mosd/apid` and
-told a reader which of two worlds they were in.
-
-The rename landed on 2026-08-20 (campaign
-`l1-o7ee8v0o-20260819152009-apid`, merged as `b1e23b2`). Section 1's path
-citations were re-pointed to `mosd/apid/...` and `mosd/dist/apid.service`, each
-verified to open, and every cited line number was re-measured against the
-post-rename tree — 83 line citations across 10 files, all in range, with the
-load-bearing ones checked against their content rather than only their bounds.
-Renamed VALUES were re-measured too, not only paths. Re-pointing a citation
-while leaving the value it quotes untouched produces the worst failure a
-citation has: the reference resolves, and the line it lands on contradicts the
-sentence citing it. Eleven such values moved — the crate name, the binary path,
-`StateDirectory`, the session cookie, the state-directory default and its
-environment override, two quoted source comments, and the `find` examples — and
-each was checked against the file it cites rather than substituted by pattern.
-
-Claims were not touched. A re-measure corrects citations and renamed
-identifiers; a section-1 claim that had become false in substance would have
-been reported as a finding rather than quietly corrected. None had: every
-change here is the rename doing what it was designed to do.
+`86cd669fa71889577f7e1ab1fab0e0e09a463dcf`, this branch's merge base with
+`main`, and the citations under those claims are that commit's unless the
+sentence around them says otherwise. Line numbers drift, and a citation whose
+file was renamed or whose quoted text moved has been re-pointed at the current
+tree rather than left dangling. A reader on a later tree should re-measure
+before trusting a line number; for anything pinned to `86cd669`,
+`git show 86cd669:<path>` settles a disagreement.
 
 **What this document settles.** Section 1 settles what exists, so that no later
 section invents a surface mos does not have. Sections 2-9 propose the API, the
@@ -126,47 +72,48 @@ named.
 
 ### 1.1 What apid is, and the two constraints that bound every option
 
-As of `2a354c0` (re-measured after the rename; originally `86cd669`), apid is a Rust crate named `apid` (`mosd/apid/Cargo.toml:2`),
-built into a binary started by a systemd unit as `/usr/bin/apid`
-(`mosd/dist/apid.service:8`) after `mosd.service`
+apid is a Rust crate named `apid` (`mosd/apid/Cargo.toml:2`), built into a
+binary started by a systemd unit as `/usr/bin/apid`
+(`mosd/dist/apid.service:14`) after `mosd.service`
 (`mosd/dist/apid.service:3-4`), with its state directory declared as
-`StateDirectory=mos/apid` (`mosd/dist/apid.service:10`). The unit sets no
-`User=` line (`mosd/dist/apid.service:1-13`), so the daemon runs as root; the
+`StateDirectory=mos/apid` (`mosd/dist/apid.service:16`). The unit sets no
+`User=` line (`mosd/dist/apid.service:1-42`), so the daemon runs as root; the
 D-Bus policy file records the same fact from the other side — *"no shipped unit
-sets User=, mosd.service owns the name as root, apid.service and the boot health
-gate both run as root"* (`mosd/dist/com.mos.mosd.conf:12-14`).
+sets User=, mosd.service owns the name as root, apid.service and the boot
+health gate both run as root"* (`mosd/dist/com.mos.mosd.conf:11-13`).
 
 It binds two listeners, defaulting to `0.0.0.0:443` for HTTPS and `0.0.0.0:80`
 for the redirect-only HTTP listener (`mosd/apid/src/config.rs:34-37`), and
 prints exactly one machine-readable startup line,
-`WEBD_LISTENING https=<addr> http=<addr>` (`mosd/apid/src/main.rs:69`), routing
-everything else to stderr (`mosd/apid/src/main.rs:43-45`).
+`APID_LISTENING https=<addr> http=<addr>` (`mosd/apid/src/main.rs:18`, emitted
+at `:172`), routing everything else to stderr
+(`mosd/apid/src/main.rs:143-144`).
 
 **Constraint 1 — the pages are server-rendered maud, with no JavaScript build
-chain.** The template engine is `maud` (`mosd/apid/Cargo.toml:18`, resolved to
-`maud = "0.27"` at `mosd/Cargo.toml:43`), used directly in the handlers via the
-`html!` macro (`mosd/apid/src/routes.rs:14`). The HTTP stack is `axum`
-(`mosd/apid/Cargo.toml:15` → `axum = "0.8"` at `mosd/Cargo.toml:36`) served by
-`axum-server` (`mosd/apid/Cargo.toml:16` → `mosd/Cargo.toml:37`). There is no
-JavaScript: `routes.rs` contains no occurrence of the string `script` in any
-case (`grep -ci script mosd/apid/src/routes.rs` returns `0` at `86cd669`), and
-the only stylesheet is an inline constant (`mosd/apid/src/routes.rs:158-165`)
-injected into the page head as `style { (PreEscaped(STYLE)) }`
-(`mosd/apid/src/routes.rs:176`). The crate contains no non-Rust file other than
-its manifest (`find mosd/apid -type f ! -name '*.rs'` returns
-`mosd/apid/Cargo.toml` alone), so there is no bundler input, no `package.json`,
-and nothing for a build chain to consume.
+chain.** The template engine is maud (`mosd/apid/Cargo.toml:19`, resolved to
+`maud = "0.27"` at `mosd/Cargo.toml:66`), used directly in the handlers via the
+`html!` macro (`mosd/apid/src/routes.rs:29`). The HTTP stack is axum
+(`mosd/apid/Cargo.toml:15` → `axum = "0.8"` at `mosd/Cargo.toml:45`) served by
+axum-server (`mosd/apid/Cargo.toml:16` → `mosd/Cargo.toml:46`). There is no
+JavaScript: `grep -ci '<script\|javascript' mosd/apid/src/routes.rs` returns
+`0`, and the only stylesheet is an inline constant
+(`mosd/apid/src/routes.rs:727-734`) injected into the page head as
+`style { (PreEscaped(STYLE)) }` (`mosd/apid/src/routes.rs:745`). The crate
+contains no non-Rust file but its manifest and the generated OpenAPI document
+(`find mosd/apid -type f ! -name '*.rs'` returns `mosd/apid/openapi.json` and
+`mosd/apid/Cargo.toml`), so there is no bundler input, no `package.json`, and
+nothing for a build chain to consume.
 
 **Constraint 2 — TLS is rustls only.** `rustls` is pinned with
 `default-features = false` and the `ring`, `std` and `tls12` features
-(`mosd/Cargo.toml:38`), `axum-server` takes the `tls-rustls-no-provider`
-feature (`mosd/Cargo.toml:37`), certificate generation uses `rcgen` with the
-`ring` backend (`mosd/Cargo.toml:39`), and the daemon installs the ring provider
+(`mosd/Cargo.toml:61`), `axum-server` takes the `tls-rustls-no-provider`
+feature (`mosd/Cargo.toml:46`), certificate generation uses `rcgen` with the
+`ring` backend (`mosd/Cargo.toml:62`), and the daemon installs the ring provider
 explicitly before anything else runs
-(`mosd/apid/src/main.rs:46-48`). No OpenSSL, and no C TLS stack, appears in the
-crate's dependency list (`mosd/apid/Cargo.toml:11-29`). The workspace also
-forbids unsafe code (`mosd/Cargo.toml:10-11`) and the crate repeats the forbid
-locally (`mosd/apid/src/main.rs:21`).
+(`mosd/apid/src/main.rs:146-147`). No OpenSSL, and no C TLS stack, appears in
+the crate's dependency list (`mosd/apid/Cargo.toml:11-31`). The workspace also
+forbids unsafe code (`mosd/Cargo.toml:11`) and the crate repeats the forbid
+locally (`mosd/apid/src/main.rs:27`).
 
 These two constraints bound every option in sections 2-6: an API that requires a
 JavaScript toolchain to be usable from the shipped UI, or a TLS feature rustls
@@ -193,8 +140,8 @@ all of them at `mosd/apid/src/routes.rs:66`.
 | `GET /hostname` | `:50` | `hostname_form` (`:757`) | GET page | One text input pre-filled with the current hostname | `GetSettings("hostname")` (`:758`) |
 | `POST /hostname` | `:50` | `hostname_submit` (`:908`) | HTML form POST | 422 on an invalid name (`:915`); on success redirects to `/hostname?saved=1` (`:927`) | `SetSettings("hostname", …)` (`:922`) |
 | `GET /power` | `:51` | `power_form` (`:853`) | GET page | Two confirmation forms, each with a required checkbox carrying an action-specific token (`:790-796`) | none |
-| `POST /power/reboot` | `:55` | `power_reboot` (`:896`) → `power_submit` (`:869`) | HTML form POST | 422 when the confirm token does not match (`:870-878`); otherwise **202 Accepted** (`:890`) with the D-Bus call spawned on a detached task so the response goes out first (`:879-888`) | `Reboot()` (`:882`) |
-| `POST /power/poweroff` | `:56` | `power_poweroff` (`:900`) → `power_submit` (`:869`) | HTML form POST | Same shape | `PowerOff()` (`:883`) |
+| `POST /power/reboot` | `:55` | `power_reboot` (`:896`) → `power_submit` (`:869`) | HTML form POST | 422 when the confirm token does not match (`:870-878`); otherwise **202 Accepted** (`:890`) with the D-Bus call spawned on a detached task so the response goes out first (`:879-888`) | a write to the `/Actions/reboot` item over `com.mos.Item1` (`mosd/apid/src/bus_client.rs:40`, `:189-191`) |
+| `POST /power/poweroff` | `:56` | `power_poweroff` (`:900`) → `power_submit` (`:869`) | HTML form POST | Same shape | a write to the `/Actions/poweroff` item over `com.mos.Item1` (`mosd/apid/src/bus_client.rs:41`, `:193-195`) |
 | `GET /ssh` | `:57` | `ssh_form` (`:1200`) | GET page | SSH pane: stored `access.ssh` settings, the authorized-key list, and the sshd reconciler's live state | `GetSettings("access.ssh")` (`:1035`), `GetState("sshd")` (`:1045`) |
 | `POST /ssh/enable` | `:61` | `ssh_enable` (`:1216`) | HTML form POST | Writes the checkbox state and redirects to `/ssh?saved=1` (`:1225`) | `SetSettings("access.ssh.enabled", …)` (`:1220`) |
 | `POST /ssh/password` | `:62` | `ssh_password` (`:1261`) | HTML form POST | Sets a **transient** root password after a confirm token and a length check (`:1240-1259`) | `SetTransientRootPassword()` (`:1272`) |
@@ -808,8 +755,7 @@ capable as the bus, including the bus's limits:
   message: "unknown field `100`, expected `dhcp` or `static`" }`. This is a
   **pre-existing** limit of the dot-path model, not one the API introduces — the
   HTML form has it too — but an API that adopts the dot-path adopts it, and a
-  client must be told rather than left to discover it as a 502 (§2.4). It is
-  routed onward in §10.1.
+  client must be told rather than left to discover it as a 502 (§2.4).
 
 **The exception: two collection resources, added deliberately.** The dot-path
 model fails outright for the two arrays in the tree, because a per-item delete
@@ -858,7 +804,7 @@ than a list of dot-paths, because the two `psk` fields sit inside arrays and the
 dot-path syntax cannot name them (`mosd/mosd-settings/src/model.rs:213-214`).
 The residual risk is stated: this is a denylist, so a future secret-bearing field
 under a name not on it is exposed by default. That is a fail-open design and the
-mitigation is a test, not a hope — routed in §10.1. A redacted field is
+mitigation is a test, not a hope. A redacted field is
 **read-only through the API**: a `PUT` whose body contains `"<redacted>"` is
 rejected at 422 rather than written, because writing the sentinel would silently
 destroy the credential.
@@ -909,7 +855,7 @@ what was chosen.** Three cases, all decided toward the tree:
    or mosd publishes it into the live-state tree and the API reads it there.
    **Chosen: mosd publishes it**, and until it does, uptime has no API
    representation. Cost: the API is missing a field the HTML status pane shows,
-   until a mosd change lands. Routed in §10.1.
+   until a mosd change lands.
 
 ### 2.3 Operation inventory: today's form posts, tomorrow's API — **[proposed]**
 
@@ -994,7 +940,7 @@ knowable over the connection that asked.
   there is no change-password route anywhere in the crate. The API does not
   invent one: it would be the first operation the API offers that the UI does
   not, and it needs a decision about whether changing the password revokes
-  tokens (§3.2 says it does not). Routed in §10.1.
+  tokens (§3.2 says it does not).
 - **`ReportHealth`.** mosd exposes it (`mosd/mosd/src/bus.rs:231`) and apid does
   not declare it on the proxy (`mosd/webd/src/bus_client.rs:14-21`). The API does
   not expose it either: its caller is the boot health gate, a root-local process
@@ -1236,9 +1182,8 @@ nicer. They are consequences of there being one credential.
 authenticated admin, stored hashed in the settings tree, sent in an
 `Authorization` header. It is the **only** accepted credential on `/api/v1/`
 routes: the session cookie authenticates the HTML pages and nothing else. **That
-sentence has no exception, including for the bootstrap** — an earlier draft of
-this section carved one out and contradicted §3.3 by doing so; see the bootstrap
-paragraph below and 10.3 item 2.
+sentence has no exception, including for the bootstrap** — see the bootstrap
+paragraph below.
 
 **What a client sends on the wire.**
 
@@ -1415,7 +1360,6 @@ that is either unenforced or enforced against a clock that resets. So: tokens do
 not expire, and **revocation is the entire lifecycle**. The cost is blunt — a
 token that leaks and is forgotten works forever, and nothing in the system will
 ever remind anyone it exists beyond its appearance in `GET /api/v1/tokens`.
-Making expiry possible is routed in §10.1.
 
 **Relation to `access.webAdmin`: coexists. It does not replace it and does not
 derive from it.**
@@ -1550,8 +1494,7 @@ property. The built-in UI is unaffected because it is no-JavaScript by decision
    the bundle (§6.3), survives the A/B update that replaces apid (§3.2 reason 1),
    and is not revoked by an admin password change (§3.2 consequence 1). So
    *"deactivate the bundle"* is not a containment action, exactly as
-   *"change your password"* is not — which is the mirror image of the sentence
-   10.3 item 7 already owes the operator runbook. **Nothing in this design stops
+   *"change your password"* is not. **Nothing in this design stops
    it, and a CSRF token would not either**: a same-origin script reads the form,
    and the token in it, straight out of the page. The control that would is an
    authorisation boundary between a served bundle and the built-in prefix; §4.1's
@@ -1579,9 +1522,7 @@ anywhere in the crate — `grep -ni csrf mosd/webd/src/*.rs` returns nothing at
   not an added control — **and it is now unconditional, because no `/api/v1/`
   route accepts a cookie at all.** The mint that would have been the exception
   is `POST /builtin/tokens`, an HTML form on the form path (§3.2); a cookie
-  presented to `/api/v1/tokens` is a `401`. An earlier draft of §3.2 let the
-  cookie mint over `/api/v1/`, which made this bullet false; 10.3 item 2 records
-  that contradiction and the resolution taken.
+  presented to `/api/v1/tokens` is a `401`.
 - **The form path is covered for POST by `SameSite=Lax`**
   (`mosd/webd/src/session.rs:91`), which withholds the cookie from cross-site
   form submissions. That is a real control and it is the only one.
@@ -1610,7 +1551,7 @@ anything (`mosd/webd/src/routes.rs:131`), including unauthenticated ones. So an
 unauthenticated flood already costs one D-Bus round trip per request against the
 single lock mosd holds over both trees (`mosd/mosd/src/bus.rs:44-49`, `:183`).
 Adding an API does not create this, but it adds routes that are attractive to
-automate against. It is routed in §10.1 rather than solved here.
+automate against. This design does not solve it.
 
 ## 4. Static hosting
 
@@ -1750,8 +1691,7 @@ unconditional path, not two, so this trade is the one that section makes.
 
 The other legacy pane paths stay reserved until the phasing in section 8 moves
 each pane onto the API and deletes its route. Until then a custom UI cannot use
-those thirteen paths. That shrinkage is section 8's to schedule; the requirement
-is routed in 10.2 rather than decided here.
+those thirteen paths. That shrinkage is section 8's to schedule.
 
 ### 4.2 SPA fallback — **[implemented]**
 
@@ -1814,7 +1754,7 @@ one of these holds:
 subtree answers its own misses. That 404 must carry the API error shape rather
 than an empty body, so a client that mistypes a path gets the same
 machine-readable envelope as every other API error. The shape belongs to section
-2.4 and is **not specified here**; the requirement is routed in 10.2.
+2.4 and is **not specified here**.
 
 **The property to test.** After this rule, a request that a developer expected
 to be JSON never returns HTML with a 200. That is one integration test per
@@ -2181,7 +2121,7 @@ directories beneath it, `0644` for files.**
   root is `0` on every image that will ever exist. If a future `apid` account
   owns this tree instead, that uid **must** be pinned by number for exactly the
   reason `mos-seed-home` documents — the directory outlives the rootfs that
-  created it. That is routed in 10.2.
+  created it.
 - **Explicitly not under `/srv/home` or `/srv/root`.** Those are the bind
   sources for operator-owned trees (`/srv/home/mos` is uid 1000, mode `0700` —
   `os/rootfs/overlay-v2/usr/lib/mos/mos-seed-home:44-47`). A UI bundle is
@@ -2202,13 +2142,13 @@ contains no HTTP.
 **The one step with no code, named precisely.** Step 1's *unpack* is not in the
 tree: `activate` takes an already-staged `.staging-<generation>/` and the
 comment at the head of it says so — *"Step 1 is the operator's or the upload
-path's"*. That is not a shortfall against this subsection, which routes the
-archive-format choice to 10.2 rather than settling it, and against §8.2, which
+path's"*. That is not a shortfall against this subsection, which leaves the
+archive-format choice open, and against §8.2, which
 gives phase 4 the whole mechanism **except** the request that delivers the
 archive and gives that request to phase 5. The two install paths that exist
 today are both local: an operator stages a tree and an activate operation runs,
 or `startup::discover` picks up a staged directory at start-up. The endpoint
-that exposes the status read likewise belongs to §2 and is still routed in 10.2.
+that exposes the status read likewise belongs to §2.
 
 **Two behaviours worth reading back, because both look like something they are
 not.** A `mos-ui.json` that does not parse costs the bundle §4.3's opt-in
@@ -2248,8 +2188,7 @@ question rather than a design question — `mosd/hack/check.sh:9` runs
 on crates that build C, so the workspace's pure-Rust posture is upheld by
 **convention and review**, not by a gate: the only mechanical record of it is
 the `tough` pin comment (`mosd/Cargo.toml:33-35`). The choice is therefore
-between an uncompressed tar and a pure-Rust inflate, and it is routed in 10.2
-rather than settled here.
+between an uncompressed tar and a pure-Rust inflate, and is not settled here.
 
 **How the write is made atomic.** Five steps, and the ordering is the mechanism:
 
@@ -2317,7 +2256,7 @@ expectation at exactly the moment it should disagree. The read resolves
 - whether the compatibility check ran at activation, and its result.
 
 The endpoint's path and response shape belong to section 2 and are **not
-specified here**; the requirement is routed in 10.2.
+specified here**.
 
 ### 5.4 Survives-what — **[implemented]**
 
@@ -2519,7 +2458,7 @@ property, and it is stronger than any escape path.
 The concrete shape of the version token, the handshake header and the error body
 belongs to sections 2 and 3; the shape of the served set is fixed by §2.1's
 `GET /api/versions` and is not re-specified here. This section states the
-**requirement** only, and routes it in 10.2.
+**requirement** only.
 
 ### 6.2 The built-in default UI, inside verity — **[implemented]**
 
@@ -2581,7 +2520,7 @@ naming which one is load-bearing matters more than the count:
    verity root there is nothing at all — which is not hypothetical, because
    `APID_STATE_DIR` exists precisely so the daemon runs off-device
    (`mosd/apid/src/config.rs:38-40`) and that is how the crate's tests run. This
-   is a real gap; it is routed in 10.2 rather than counted as covered here.
+   is a real gap, and is not counted as covered here.
 
 **What we ship, and what we deliberately do not.** mos builds **no JavaScript
 toolchain**, and section 1.6 measured that at `86cd669` four independent ways.
@@ -2806,10 +2745,9 @@ turning a bundle problem into a startup error.
 ## 7. Trust: who may install a UI — **[proposed]**
 
 Section 5.3 specifies the on-disk install mechanism and takes no position on
-authorisation; 10.2 routes exactly that question here — *"§7 — **who may install
-a bundle.** §5.3 describes the mechanism and takes no position on
-authorisation."* This section answers it, and it answers it against the channels
-that exist rather than against the ones a security review would like to exist.
+authorisation. This section answers that question, and it answers it against the
+channels that exist rather than against the ones a security review would like to
+exist.
 
 ### 7.1 The channels that actually exist — **[implemented]**
 
@@ -2819,10 +2757,10 @@ an absence measured four ways is a fact about the device, not a proposal.
 
 | Channel | Exists at `86cd669`? | Reaches `/srv/ui`? | Credential | Signed? |
 |---|---|---|---|---|
-| **The API upload path** | **no** — `grep -rn Multipart mosd/` returns nothing; §5.3's transport is proposed and 10.2 routes the request that drives it to §2.3/§3 | would, by construction | §3.2's bearer token, or an authenticated session (§3.2's bootstrap) | nothing exists to sign against — see 7.3 |
+| **The API upload path** | **no** — `grep -rn Multipart mosd/` returns nothing; §5.3's transport is proposed and the request that drives it belongs to §2.3/§3 | would, by construction | §3.2's bearer token, or an authenticated session (§3.2's bootstrap) | nothing exists to sign against — see 7.3 |
 | **SSH** | **yes**, but **off by default on both image profiles** (`mosd/mosd-settings/src/model.rs:110-112`; `docs/design/access.md:212-218`), enabled only by an authenticated admin action through apid | **yes** — a shell writes the directory directly, with no involvement from apid at all | an authorized key, **every one of which is a root key** (`docs/design/access.md:225-230`; the pane says so and a test asserts the sentence, `mosd/webd/src/routes.rs:937-944`) | n/a |
 | **A RAUC bundle** | **yes**, as an update mechanism | **no.** RAUC declares four slots — `rootfs.0`, `rootfs.1`, `boot.0`, `boot.1` (`os/update/rauc/system.conf.in:75`, `:81`, `:87`, `:92`). DATA is not among them, and the survives-what table records the same from the other side (`docs/design/access.md:504`; §5.4) | n/a | **yes** — CMS, verified by `rauc` against `/etc/rauc/keyring.pem`, `plain` format refused (`os/update/rauc/system.conf.in:50-62`) |
-| **A factory image** | **yes**, but it ships DATA **empty.** `grep -n dataImg os/build/src/mkimage-v2.ts` returns exactly three lines: `:380` names the path, `:410` builds it with `makeExt4` — whose optional `seedDir` argument is **not passed**, so it is only `truncate` plus `mke2fs` and populates nothing — and `:439` `dd`s it into the image. Nothing mounts it and nothing copies into it. (This cited `os/mkimage-v2.sh:378`/`:450` until PLAN-014 M6e deleted that file; the two line numbers had already drifted to `:439`/`:511` before it went, which is the argument for citing a symbol rather than a line.) 10.2 records the consequence from the verifier's side: an assertion about `/srv/ui` *"becomes owed only if the image ever ships something under `/srv/ui`"* | not today; it would need new work in the image pipeline | n/a | the image is not signed; the **bundle** built from it is |
+| **A factory image** | **yes**, but it ships DATA **empty.** `grep -n dataImg os/build/src/mkimage-v2.ts` returns exactly three lines: `:378` names the path, `:408` builds it with `makeExt4` — whose optional `seedDir` argument is **not passed**, so it is only `truncate` plus `mke2fs` and populates nothing — and `:437` `dd`s it into the image. Nothing mounts it and nothing copies into it. From the verifier's side the consequence is that an assertion about `/srv/ui` becomes owed only if the image ever ships something under `/srv/ui` | not today; it would need new work in the image pipeline | n/a | the image is not signed; the **bundle** built from it is |
 | **The serial console** | **yes** — a getty spawns on both profiles | **no.** It *"has no account that will accept a credential"* (`docs/design/access.md:413-427`) | none that works | n/a |
 
 **The count that matters.** Of five candidate channels, exactly **one reaches
@@ -2974,7 +2912,7 @@ The argument in full, as three claims that can each be checked:
   nothing they already uploaded. The mitigation is not a signature — it is that
   §5.3's *"what is installed right now?"* read answers **from the served tree**,
   so a suspected compromise has one place to look. A revocation runbook must
-  therefore say *"and check `/srv/ui/current`"*; routed in 10.3.
+  therefore say *"and check `/srv/ui/current`"*.
 - **There is no provenance record at all.** After an upload, nothing on the
   device says who uploaded it, from where, or when. §3.3 already records that
   nothing in the crate logs which credential served a request. §5.3's read
@@ -3028,7 +2966,7 @@ re-litigated from zero.** If it is adopted:
 - **Code and dependency.** A signature verifier inside a root-privileged,
   network-facing daemon, plus whatever crate carries it. `mosd/deny.toml` bans no
   C-building crate and `mosd/hack/check.sh:9` checks only licenses, bans and
-  advisories (10.2), so the workspace's pure-Rust posture would be upheld by
+  advisories, so the workspace's pure-Rust posture would be upheld by
   review rather than by a gate at exactly the moment it mattered most.
 - **Operator cost.** The operator who wants to serve one HTML file now needs a
   key, a signing step, and a way to get an anchor onto a device. §6.2's
@@ -3057,9 +2995,9 @@ none of which needs a key.**
 `ReadWritePaths=` (§6.2 layer 3). So nothing at the process level bounds what
 the upload handler can write, and dm-verity does not help, because §4.4 already
 established that verity protects integrity and not confidentiality and a write
-outside `/` is not a write to `/`. 10.2 routes this to
-`mosd/dist/webd.service`; **this section endorses it as the concrete substitute
-for signing** — it is cheaper, it needs no key material, and it bounds a real
+outside `/` is not a write to `/`. The fix belongs in
+`mosd/dist/apid.service`, and **this section endorses it as the concrete
+substitute for signing** — it is cheaper, it needs no key material, and it bounds a real
 class of bugs rather than attesting an authorship nobody disputes.
 
 **Recommendation, restated in one line, because a section like this must end
@@ -3143,7 +3081,7 @@ The reconciliation costs nothing, because the two sentences are promises about
 
 What phase 4 **does** owe is a release note: `GET /` changes meaning on the A/B
 update that lands it, with no operator action, for every device that later
-activates a bundle. Routed in 10.3.
+activates a bundle.
 
 ### 8.2 The phases — **[proposed]**
 
@@ -3170,10 +3108,19 @@ At the time this table was written nothing in it had an owning campaign: the
 campaign that produced it (`l1-o7ee8v0o-20260819152142-api`) produced a design
 document and no product code, and the "Campaign" column was left honest rather
 than filled with a name that did not exist. Phase 4's row has since been
-updated in place with the campaign that landed it; the remaining rows are
-still unowned, and phase 2's row stays **not started** because it is gated on
-§10.3 item 5's rollback decision — which is now taken (see that item), so the
-gate is open.
+updated in place with the campaign that landed it, and the remaining rows are
+still unowned. Phase 2's row stays **not started**, but its gate is open: the
+rollback question a schema bump raises is decided, and the decision is the
+tolerant load path. `Store::load` no longer refuses a `schema_version` newer
+than it supports — `load_with_report`
+(`mosd/mosd-settings/src/store.rs:145`) strips the keys this schema does not
+know and parses what remains, and a document a future schema *reshaped* rather
+than extended falls back to `Settings::default()`, reported rather than
+returned as an error. The accepted cost is that the reshaped case abandons the
+admin credential and returns the device to setup mode, which is why mosd logs
+the report at `error!` level. The rule that follows for schema authors: prefer
+additive bumps; a reshaping bump forfeits settings on rollback and must say
+so.
 
 ---
 
@@ -3211,9 +3158,12 @@ hosting. `/healthz` still answers `ok` while mosd is dead (§2.4 case 3), becaus
 it must (`os/rootfs/overlay-v2/usr/lib/mos/mos-health:164-177`).
 
 **Why this is first and not folded into phase 2.** Two reasons, and the second
-is the load-bearing one. First, §10.1 item 3 records that §2.4's *whole error
-table* depends on recovering the fdo error name, and §2.4 itself is not
-implementable until it is. Second: §2.1's breaking-change list makes *"changing
+is the load-bearing one. First, §2.4's *whole error table* depends on
+recovering the fdo error name, and §2.4 is not implementable until it is —
+which apid now does, by downcasting to the concrete `zbus::Error`
+(`mosd/apid/src/routes.rs:535-536`) and mapping `FDO_INVALID_ARGS`,
+`FDO_IO_ERROR` and `FDO_FAILED` onto three distinct API error codes
+(`:541-552`). Second: §2.1's breaking-change list makes *"changing
 which `error.code` an existing failure emits"* a **major-version bump**. Landing
 the classification before `v1` freezes is the difference between a refactor and
 a `v2`. If `to_fdo`'s three collapsed cases are split *after* v1 ships,
@@ -3298,9 +3248,9 @@ the conclusion this document originally reached for the wrong reason.
 applies to the v3 → v4 bump that already shipped (RFCT-032): a device updated to
 schema v4 and then rolled back to a v3 binary hits `store.rs:63` identically.
 So this is a live property of the shipped A/B story that phase 2 would be the
-next thing to trigger, not a cost of the API. It is **larger than this document
-and is routed in 10.3** rather than solved here; what phase 2 owes is to not
-ship until it has an answer, because "mint a token, then roll back" is a
+next thing to trigger, not a cost of the API. It is **larger than this
+document** and is not solved here; what phase 2 owes is to not ship until it
+has an answer, because "mint a token, then roll back" is a
 plausible sequence and not an exotic one. Every later phase that changes the
 settings model inherits the same constraint.
 
@@ -3333,8 +3283,8 @@ an A/B update, because it is on STATE rather than in a `HashMap`
    Either resolution is legitimate; shipping without choosing one is not.
 
 **What is explicitly still missing.** No writes — a script can observe and not
-change. No static hosting, no bundles, no upload. No expiry on a token (§3.2,
-§10.1 item 9), so revocation is the entire lifecycle. No scopes: a read-only
+change. No static hosting, no bundles, no upload. No expiry on a token (§3.2),
+so revocation is the entire lifecycle. No scopes: a read-only
 token is not expressible, and a token minted here can do everything phase 3
 later adds.
 
@@ -3377,7 +3327,6 @@ HTML path answers **502** (`mosd/webd/src/routes.rs:106-116`), so one appliance
 reports one outage two ways until someone changes both. That is deliberate: §2.4
 says changing only the API is the wrong half of the trade, and this phase does
 the API half because the HTML half is a user-visible change to a shipped page.
-Routed in 10.3.
 
 **This is the phase at which `/api/v1` acquires a client**, and therefore the
 phase at which every cost in §9 starts being paid rather than contemplated.
@@ -3436,7 +3385,7 @@ feature, delivered without a single new network-reachable write path.
    dependency's: `/../../etc/passwd`, `/%2e%2e%2fetc%2fpasswd`,
    `/%252e%252e%2fetc%2fpasswd`, a path containing `%00`, and a request
    resolving through a symlink planted in a temporary bundle root — 404 for
-   every one (§4.4, 10.2).
+   every one (§4.4).
 3. §4.3's operator criterion: a replaced bundle is visible on a plain reload,
    with no cache clear, no hard refresh and no incognito window.
 4. A bundle activated against API `v1`, then an A/B update to an image serving
@@ -3491,8 +3440,8 @@ any of them is a bug in front of people who could have caused it by hand.
 
 **What ships.** The request that drives §5.3: a file-receiving authenticated
 route (no multipart handler exists anywhere in the crate — `grep -rn Multipart
-mosd/` returns nothing at `86cd669`), the archive-format dependency 10.2 routes
-and declines to settle, a bound on upload size, and §7's authorisation decision
+mosd/` returns nothing at `86cd669`), the archive-format dependency §5.3
+declines to settle, a bound on upload size, and §7's authorisation decision
 in force — bearer token or authenticated session, no signature.
 
 **What an operator can do that they could not before.** Install a UI on a device
@@ -3514,7 +3463,7 @@ product feature.
    refused at activation with a legible reason (§6.1 class 5, activation half).
 
 **What is explicitly still missing.** Provenance: nothing records who uploaded
-what (§7.4). Expiry on the credential that authorised it (§10.1 item 9).
+what (§7.4). Expiry on the credential that authorised it (§3.2).
 Signing (§7.4, and its four triggers).
 
 **This is the phase §7 is about**, and the phase boundary is where §7 becomes
@@ -3570,7 +3519,6 @@ away.** No keyring is shipped and none is in git
 (`os/update/rauc/system.conf.in:56-61`, `os/verify-image-v2.sh:1043-1047`), so until
 production keyring provisioning happens, `rauc install` **fails closed** and
 this phase's acceptance cannot be demonstrated on a shipped image at all.
-Routed in 10.3.
 
 **What is explicitly still missing after phase 6.** Everything in 8.3.
 
@@ -3582,14 +3530,13 @@ absence is a decision rather than an oversight.
 
 1. **Token expiry.** Needs a wall clock apid does not read — `SessionStore` uses
    `Instant` throughout (`mosd/webd/src/session.rs:10`, `:53`, `:72`), which is
-   monotonic and cannot express a deadline surviving a reboot (§3.2, §10.1 item
-   9). It is not phased because the prerequisite is not scheduled anywhere.
+   monotonic and cannot express a deadline surviving a reboot (§3.2). It is not
+   phased because the prerequisite is not scheduled anywhere.
 2. **A `SettingsChanged` subscription, and any change-stream API.** mosd emits
    the signal (`mosd/mosd/src/bus.rs:212-214`, `:292-297`) and the proxy
    declares no `#[zbus(signal)]` member (`mosd/webd/src/bus_client.rs:14-21`).
-   §10.1 item 10 routes it; `docs/design/dashboard.md` §8 phase 3 already claims
-   it for the UI side, and this document does not schedule work another
-   campaign's phasing owns.
+   `docs/design/dashboard.md` §8 phase 3 already claims it for the UI side, and
+   this document does not schedule work another campaign's phasing owns.
 3. **Scopes on API tokens.** §3.2 states there are none in phase 1 and that
    inventing them means the per-method D-Bus allowlist
    `mosd/dist/com.mos.mosd.conf:48-61` deliberately deferred. Adding a phase
@@ -3642,7 +3589,7 @@ the argument, and they do not make any of it free.
 **3. What becomes harder to change once `/api/v1` has a client — three concrete
 instances, not a generality.**
 
-- **Splitting mosd's `to_fdo`.** §10.1 item 2 wants `NotFound`, `ReadOnly` and
+- **Splitting mosd's `to_fdo`.** `NotFound`, `ReadOnly` and
   `Validation` (`mosd/mosd-settings/src/error.rs:7-31`) to stop collapsing into
   one `InvalidArgs` (`mosd/mosd/src/bus.rs:156-166`). §2.4 emits a single
   `settings_rejected` for all three as a result, and §2.1 makes *"changing which
@@ -3651,7 +3598,7 @@ instances, not a generality.**
 - **The VLAN dot-path limit.** `valid_iface_name` permits `.`
   (`mosd/webd/src/routes.rs:231-236`) while `split_path` splits on it
   unconditionally (`mosd/mosd-settings/src/path.rs:26-32`), so `network.eth0.100`
-  cannot be addressed (§2.2, §10.1 item 12). It is pre-existing; what is new is
+  cannot be addressed (§2.2). It is pre-existing; what is new is
   that fixing it now reaches a published contract, so a settings-syntax change
   becomes an API change.
 - **Uptime.** §2.2 chose that mosd should publish it into the live-state tree
@@ -3736,8 +3683,8 @@ traversal or an unpack bug is an arbitrary **root** write, and §4.4 already
 established that dm-verity does not help because it protects integrity, not
 confidentiality, and because the interesting targets — the settings tree,
 `/var/lib/mos/shadow`, `/etc/ssh/`, and `session.key` — are all on STATE,
-outside verity's coverage by design. 10.2 routes the fix; §7.4 endorses it as
-the concrete substitute for a signing scheme.
+outside verity's coverage by design. The fix belongs in the unit file, and §7.4
+endorses it as the concrete substitute for a signing scheme.
 
 **8. CSRF and the cookie path, once forms and an API coexist.** There is no CSRF
 token anywhere in the crate — `grep -ni csrf mosd/webd/src/*.rs` returns nothing
@@ -3755,8 +3702,9 @@ it on top-level cross-site **GET** navigations — so the mint must be a POST an
 there must never be a GET form of it.
 
 *Not mitigated as written; the design does not currently say enough to be
-checked.* This is a contradiction between §3.2 and §3.3, not a cost of
-API-first as such, and it is named in 10.3 with the resolution it needs before
+checked.* This is a property of the cookie path, not a cost of API-first as
+such, and §3.2 settles it by putting the mint at `POST /builtin/tokens` — a
+POST-only form path outside `/api/v1/`, with no GET form of it — before
 phase 2 ships.
 
 **9. Paths and tables that are burned permanently.** Three, all small, all
@@ -3798,14 +3746,13 @@ trees (`mosd/mosd/src/bus.rs:44-49`). An unauthenticated flood already costs one
 D-Bus round trip per request; an API is a thing scripts hammer by design, and
 §3.2 makes that cost structural by *depending* on the read being there.
 
-*Accepted and routed* (§10.1 item 6). The dependency is worth naming twice: the
-same call that makes the token check free is the one that makes the flood
-expensive, so caching it (which §10.1 item 6 contemplates) requires
-`SettingsChanged` (§10.1 item 10) and is not a local change.
+*Accepted.* The dependency is worth naming twice: the same call that makes the
+token check free is the one that makes the flood expensive, so caching it
+requires `SettingsChanged` and is not a local change.
 
 **What this does not foreclose, stated because a price list with no floor is
 not trustworthy either.** It does not reopen `docs/design/dashboard.md` §6.6's
-two-process recommendation — §6.4 depends on it and 10.2 says so. It does not
+two-process recommendation — §6.4 depends on it. It does not
 reopen §5.8's full-page-refresh decision for the built-in UI. It does not add a
 new way to be locked out: §6.3 establishes that a bad bundle cannot take the
 listener down, and that `docs/design/access.md` §9.1's existing lockout is
@@ -3813,755 +3760,3 @@ unchanged by everything in §4 through §6. And it does not make the appliance
 depend on JavaScript anywhere: the built-in UI stays server-rendered maud with
 no build step (§6.2, §8.1 option B), so a device with no custom bundle is
 byte-for-byte the posture §1.1 measured.
-
-## 10. Routed follow-ups
-
-Work this document identifies but does not own. A follow-up is recorded here
-rather than by editing another file: `docs/design/dashboard.md`,
-`docs/design/access.md`, `docs/design/mosd.md` and the crate itself are owned by
-parallel campaigns for the duration, and are cited above rather than changed.
-
-### 10.1 From the API surface
-
-Everything §2 and §3 found that belongs to a file this campaign may not edit, or
-to a later phase. All twelve were measured at `86cd669`.
-
-1. **`mosd/mosd/src/bus.rs` — uptime has no home in either tree.** `GET /`
-   reads `/proc/uptime` inside apid (`mosd/webd/src/routes.rs:581`), which the
-   crate's own rule says system facts should not be
-   (`mosd/webd/src/settings_api.rs:10-12`). mosd should publish uptime into the
-   live-state tree so §2.2's `/api/v1/state/` root can serve it; until it does,
-   the API has no uptime and the HTML status pane has a field the API cannot
-   reproduce.
-2. **`mosd/mosd/src/bus.rs:156-166` — `to_fdo` collapses three distinct
-   failures into one.** `NotFound`, `ReadOnly` and `Validation`
-   (`mosd/mosd-settings/src/error.rs:7-31`) all become
-   `fdo::Error::InvalidArgs`, so no caller can distinguish "that path does not
-   exist" from "that value is invalid" from "that path is read-only" without
-   parsing message text. §2.4 emits one code, `settings_rejected`, for all
-   three as a result. Splitting them needs a mosd change; the API is the
-   consumer that makes it worth doing.
-3. **`mosd/webd/src/bus_client.rs:68-71` (and `:80`, `:91`, `:103`, `:114`,
-   `:128`) — the fdo error name is discarded.** Every `zbus::Error` becomes an
-   `anyhow::Error` before any handler sees it, and `zbus` 5.19.0
-   (`mosd/Cargo.lock:2907-2908`) carries the distinction in
-   `Error::MethodError(OwnedErrorName, ...)`. §2.4's whole error table depends
-   on recovering it. This is a crate change and belongs to §8's phasing.
-4. **Redaction has no test and the design is fail-open.** §2.2 requires a
-   structural redactor keyed on field *name*, because the two `psk` fields sit
-   inside arrays the dot-path cannot address
-   (`mosd/mosd-settings/src/model.rs:213-214`, `:235-236`, `:260-261`). A
-   secret-bearing field added later under a name not on the list is exposed by
-   default. The mitigation is a test that walks `Settings::default()` — plus a
-   fixture with every optional field populated — and asserts no known-secret
-   field survives serialisation. Belongs with whoever implements §2.2.
-5. **`GET /healthz` answers `ok` while mosd is dead.** It returns before any
-   check (`mosd/webd/src/routes.rs:128-130`, `:153-155`), and the boot health
-   gate depends on exactly that (`os/rootfs/overlay-v2/usr/lib/mos/mos-health:164-177`).
-   §2.3 keeps it unchanged and §2.4 adds `GET /api/v1/health` beside it. What is
-   routed onward is the documentation debt: anything that treats `/healthz` as
-   "the appliance is healthy" — `docs/plan/PLAN-005.md:149`,
-   `docs/design/boards.md:91` — is relying on a narrower guarantee than it reads
-   as. Those files belong to other owners; they are cited, not edited.
-6. **`mosd/webd/src/routes.rs:131` — every request costs a D-Bus round trip.**
-   The gate calls `GetSettings("access")` before deciding anything, including
-   for unauthenticated requests, against the single lock mosd holds over both
-   trees (`mosd/mosd/src/bus.rs:44-49`). §3.2 exploits this (the token set
-   arrives free) and §3.3 names it as a DoS surface. Whoever owns apid's
-   performance should decide whether the gate caches with an invalidation on
-   `SettingsChanged` — which requires item 10.
-7. **`docs/design/access.md` §10.4 gains a row if §3.2 lands.** The
-   survives-what table (`docs/design/access.md:500-508`) enumerates credentials
-   by tier; `access.apiTokens` would be a settings-tree row with the same
-   answers as `access.ssh.authorizedKeys`. That file is owned by a parallel
-   campaign and is cited here rather than changed.
-8. **`docs/design/dashboard.md` §5.8 — is the 15-second floor a UI decision or
-   an apid decision?** It adopts full-page refresh at a 15-second default as
-   *"the dashboard's only live-value mechanism"*
-   (`docs/design/dashboard.md:1275-1276`) and names what that forecloses at
-   `:1304-1315`. A token-authenticated client polling `GET /api/v1/state/...` is
-   not a dashboard and is not obviously bound by it. Whoever owns that document
-   should say which it is; §2 assumed the former and did not re-open it.
-9. **No wall clock, so no token expiry (§3.2).** apid reads `Instant` only
-   (`mosd/webd/src/session.rs:10`, `:53`, `:72`), which cannot express a
-   deadline surviving a reboot. `expiresAt` on an API token is deferred to
-   whichever phase establishes a trusted wall clock, and until then revocation
-   is the entire lifecycle.
-10. **`SettingsChanged` exists and apid does not subscribe.** mosd emits it
-    after every successful `SetSettings` (`mosd/mosd/src/bus.rs:212-214`,
-    declared at `:292-297`); the proxy declares no `#[zbus(signal)]` member
-    (`mosd/webd/src/bus_client.rs:14-21`). An API that wanted to offer a change
-    stream — or a gate that wanted to cache (item 6) — cannot today. This is a
-    later phase, and it touches the same ground
-    `docs/design/dashboard.md` §5.8 settled for the UI.
-11. **No change-password operation exists anywhere.**
-    `access.webAdmin.password_hash` is written by exactly one handler,
-    `setup_submit` (`mosd/webd/src/routes.rs:441-444`), and no route changes it
-    afterwards. §2.3 declined to invent one over the API because it would be the
-    first operation the API offers that the UI does not, and because it needs a
-    decision this document only half-makes (§3.2: a password change does not
-    revoke tokens). It belongs to whoever owns the built-in UI's account pane.
-12. **The dot-path cannot address a VLAN interface.** `valid_iface_name` permits
-    `.` (`mosd/webd/src/routes.rs:231-236`) while `split_path` splits on it
-    unconditionally (`mosd/mosd-settings/src/path.rs:26-32`), so
-    `network.eth0.100` is rejected by `deny_unknown_fields`
-    (`mosd/mosd-settings/src/model.rs:308-315`). This is a pre-existing limit of
-    the settings model, not one the API introduces; it belongs to whoever owns
-    the settings path syntax, and §2.2 records that the API inherits it.
-
-### 10.2 From static hosting and the custom-UI lifecycle
-
-Each item names the file or the section that owns it, and one sentence saying
-what it owes. Nothing here is edited by this document.
-
-**To documents this campaign may not touch**
-
-- `docs/design/access.md` §10.2 and §10.4 — §5.2 adds a DATA-resident appliance
-  path (`/srv/ui`) that needs **no ninth bind**, and §5.4 adds three rows in
-  §10.4's vocabulary; both belong in access.md once its campaign fence lifts.
-- `docs/design/dashboard.md` §6 — §6.4 rests entirely on its two-process
-  recommendation (`:2198-2199`), so if that decision is ever reopened, §6 here
-  must be re-derived rather than assumed; the file belongs to campaign
-  `l1-o7ee8v0o-20260819152009-apid`.
-- `docs/design/dashboard.md` §6 line citations — its `main.rs:57-63`,
-  `:53-56` and `routes.rs:95-105` no longer resolve at `86cd669` (§6.4 records
-  the current numbers); a re-measure belongs to whoever next edits that file.
-- `docs/design/ro-root.md` §4 — the storage-tier table lists what lives on each
-  partition; `/srv/ui` is a new DATA resident and belongs in it.
-
-**To the API sections this task does not own (RFCT-064, §2 and §3)**
-
-Three of the five below were owed to §8.2 phase 4 and are discharged; each says
-so rather than sitting as an open debt, because an item that is done and still
-reads as owed costs its next reader the work of finding that out.
-
-- §2.4 — the **404 body for the `/api/` subtree fallback** that §4.1 rule 1
-  requires: a mistyped API path must return the API error envelope, not an
-  empty body and never HTML. **Discharged at `0d4f3c6`** —
-  `mosd/apid/src/routes.rs:171-188` answers the whole reserved subtree with
-  §2.4's envelope and `Cache-Control: no-store`. §2.4's optional `path` field is
-  omitted deliberately: it is the settings dot-path at fault and a request that
-  matched no route has none, so the requested path is carried in `message`.
-- §2.1 — the **API version token** §6.1 class 5 needs, for both the manifest
-  range check at activation and the mandatory re-check at apid start-up.
-  **Discharged as a value, not as a route**: the served set is
-  `SERVED_API_VERSIONS` in `mosd/apid/src/startup.rs`, with `CURRENT_API_VERSION`
-  asserted to be a member of it, and both the activation check and the start-up
-  re-check take it. `GET /api/versions` itself is still not declared — it is an
-  unauthenticated endpoint and therefore an authentication decision phase 2
-  reviews as a set — and the reservation 404s it meanwhile. Whoever lands that
-  route serves this constant rather than a second copy of it.
-- §2.3 — the **version handshake a client sends**, which §6.1 names as the
-  detector that makes a class-5 failure legible rather than confusing.
-- §2.2/§2.3 — the **"what is installed right now?" read** §5.3 specifies the
-  semantics of but not the shape: it must answer from the served tree and must
-  have a named answer for "no bundle active". **The semantics have landed and
-  the shape has not** — `Store::status` in `mosd/apid/src/bundle.rs:605` answers
-  from the served tree and `NO_CUSTOM_BUNDLE` is the named answer; no endpoint
-  exposes it. Note for whoever writes that endpoint: `status()` hashes the whole
-  tree and must not be called per request, which is why the asset router uses
-  `active_generation()` instead.
-- §2.3/§3 — the **bundle upload operation** itself: §5.3 specifies the on-disk
-  mechanism and says nothing about the request that drives it.
-
-**To sections 7-9 (RFCT-066)**
-
-- §7 — **who may install a bundle.** §5.3 describes the mechanism and takes no
-  position on authorisation; today the only credential in the crate is the
-  single webAdmin password (§1.4).
-- §8 — the **phasing that releases `/` and the thirteen legacy pane paths** from
-  §4.1's reserved set, and that moves the built-in panes under §6.3's reserved
-  prefix. §4.1 depends on this happening; it does not schedule it.
-- §9 — **what this forecloses**: the `/api` prefix is burned permanently (§4.1),
-  and the MIME allowlist lives inside the verity image so a customer cannot
-  extend it on device (§4.3).
-
-**To the crate and the image** — product code, none of which this campaign
-changes
-
-- `mosd/apid/Cargo.toml` — the **static-file dependency decision**: adopt
-  `tower-http` with the `fs` feature, or hand-roll. §4.4 requires that whichever
-  is chosen, the version is pinned exactly and the traversal behaviour is
-  asserted by a test **in this repository**, because `build_and_validate_path`
-  is private and carries no stability promise. **Decided at `0d4f3c6`:
-  hand-rolled.** No dependency was added, `tower-http` is still not a dependency
-  of the crate, and the traversal suite is in this repository
-  (`mosd/apid/src/assets/path.rs`). The pinning half of the requirement is
-  therefore moot rather than met.
-- `mosd/webd/Cargo.toml` — the **archive-format dependency** for §5.3's upload
-  transport. `mosd/deny.toml` bans no C-building crate and `mosd/hack/check.sh:9`
-  checks only licenses, bans and advisories, so the pure-Rust posture here is
-  convention (`mosd/Cargo.toml:33-35` is its only written trace) and the choice
-  needs a deliberate decision rather than a default.
-- `mosd/dist/webd.service` — **no sandboxing directives exist** (`:6-10` is the
-  whole `[Service]` section). §6.2 layer 3: the built-in UI's protection rests
-  entirely on dm-verity, with nothing behind it off a verity root. Adding
-  `ProtectSystem=` and an explicit `ReadWritePaths=` would give it a second
-  layer, and would also bound §4.4's traversal blast radius.
-- `mosd/mosd-settings/src/model.rs` — **only if** §6.3's deactivate is
-  implemented as a settings flag rather than as the removal of the `current`
-  pointer. `docs/design/access.md:468-474` applies either way: *"An unmodelled
-  setting is an unsupported setting."* **Discharged as not owed**: deactivate
-  landed as the removal of the pointer (`Store::deactivate`), so no setting was
-  added and none is owed.
-- `os/rootfs/overlay-v2/usr/lib/mos/` — **no seed unit is proposed** for
-  `/srv/ui` (§5.2 explains why). If one is ever added, its owner uid must be
-  pinned by number for the reason `mos-seed-home:24-30` documents. **Discharged
-  as confirmed**: phase 4 added no seed unit and no ninth bind, and the store
-  creates its root lazily on first activation. The conditional stands for
-  whoever ever adds one.
-- `os/verify-image-v2.sh` — no new assertion was proposed here: `/srv` as a
-  mountpoint (`:1277-1281`) and the DATA fstab entry (`:1425`) are already
-  asserted, and those are what §5.2 depends on. **Superseded at `0d4f3c6`, and
-  the reasoning it was superseded by is worth keeping.** Those three facts are
-  about `/srv` **as a partition** and would go on passing after somebody moved
-  the UI root to `/var/lib`, so they do not assert §5.2's location at all.
-  `check_ui_location` (`:254`) and `check_builtin_ui` (`:341`) were added for
-  that, pinning `/srv/ui` as the root and §6.3's prefix and deactivate form as
-  facts about `/usr/bin/apid`; every one of them is driven against an input in
-  which its fact is false by `os/verify/src/checks-fstab.test.ts` and
-  `checks-root.test.ts`, because an assertion nobody has seen fail is
-  consistent with an assertion that cannot fail. The
-  original conditional — an assertion becomes owed if the image ever ships
-  something under `/srv/ui` — is still open, and the image still ships
-  nothing there.
-
-### 10.3 From trust and phasing
-
-Everything §7, §8 and §9 found that belongs to a file this campaign may not
-edit, to a sibling section this task does not own, or to a later phase. Items 1
-to 3 are **contradictions or underspecifications between sibling sections**,
-found by being the first task positioned to read §2 through §6 together. **All
-three are now resolved, and each is kept here with its resolution recorded
-rather than deleted** — an item that vanishes leaves a reader who remembers it
-unable to tell whether it was handled or lost. Each names what was
-contradictory, which of the admissible resolutions was taken, where the resolved
-text now lives, and what remains owned elsewhere. All claims were measured at
-`86cd669`.
-
-**Both sentences above are bound to the period they were written in, and an
-entry appended after that period carries its own descriptors rather than
-inheriting them.** So: **an entry added after this section was written names its
-own source section and its own measurement commit, inline.** The scope sentence
-above describes items 1 to 14 and the measurement at `86cd669` is theirs; a
-later campaign that finds something §7, §8 and §9 did not, and measures it on a
-tree §10.3's author never saw, is not covered by either and does not need them
-restated. This is the same shape §1.1 uses for a re-measured claim — the
-original preserved as a true statement about when it was made, with a second
-period beside it. It also settles where such an entry sits: appended at the end
-is the region a reader scans as routed work, and it does not need to move,
-because it says what it is measured at where it is read.
-
-1. **Contradiction — §2.1 and §4.1 disagree about whether today's paths are
-   unchanged.** §2.1: *"The nineteen existing paths (section 1.2) keep their
-   method, their path and their behaviour unchanged"*. §4.1: `GET /`'s status
-   pane *"moves under section 6.3's reserved prefix"*, and the other legacy pane
-   paths are reserved *"until the phasing in section 8 moves each pane onto the
-   API and deletes its route"*. **Reconciled in §8.1** — §2.1's promise governs
-   the API and is true of phases 2 and 3; the HTML page paths carry no version
-   promise, and `/` moves in phase 4. If the owner of §2.1 reads that promise as
-   unconditional rather than as scoped to the API, §8.1 is the section that must
-   change, not §4.1.
-
-2. **Resolved — §3.2 and §3.3 disagreed about whether a cookie ever
-   authenticates an `/api/v1/` route.** §3.2 stated the bearer token was *"the
-   **only** accepted credential on `/api/v1/` routes"* and then that *"An
-   authenticated session cookie may mint a token"* via a built-in-UI pane; §3.3
-   claimed *"The API path has no CSRF exposure"* on the strength of the
-   bearer-only rule. Both could not hold while the mint was an `/api/v1/` route
-   reachable with a cookie. Two shapes were admissible, and **the first was
-   taken.**
-
-   **Resolution, now in §3.2 and §3.3: the mint is a cookie-authenticated form
-   POST at a non-`/api/v1/` path** — `POST /builtin/tokens`, under §6.3's
-   reserved built-in prefix, with `POST /builtin/tokens/revoke` beside it so the
-   built-in UI can deliver §8.1's capability (iii) in full.
-   `POST /api/v1/tokens` accepts a bearer token only and answers a cookie with a
-   `401`. §3.2's "only accepted credential" sentence therefore holds without
-   qualification, and §3.3's API-path claim is true rather than approximately
-   true. **The second shape — narrowing §3.3's CSRF claim to carve out a
-   cookie-authenticated `/api/v1/` mint — was rejected** because it places a
-   permanent-credential factory inside the one surface §3.3 can make its
-   strongest statement about, and that statement is worth more than the saved
-   route.
-
-   **What the resolution does not remove, and where it now lives.**
-   `SameSite=Lax` (`mosd/webd/src/session.rs:91` at `86cd669`) is a cross-site
-   control; the crate has no CSRF token; and after §4 and §5 land, apid's own
-   origin serves an operator-supplied bundle. A same-origin page can therefore
-   submit the mint form with the operator's cookie, and the token it obtains
-   outlives both the bundle and an admin password change. **That is now §3.3's
-   attack 5**, stated as an attack the design does not stop, with the reason a
-   CSRF token would not stop it either. **What remains owned by whoever
-   implements §3.2's bootstrap** is one mechanical obligation: **no GET form of
-   the mint may ever exist**, because `Lax` permits the cookie on a top-level
-   cross-site GET navigation. §9 item 8 was written before this resolution and
-   is now stale in one sentence; that is routed as item 14 below.
-
-3. **Resolved — §2.1's dual-major serving versus §6.1's start-up
-   deactivation.** §2.1 recommends apid *"serve the outgoing major version
-   alongside the new one for at least one image generation"*, explicitly because
-   a bundle that a version bump breaks survived the update that broke it. §6.1
-   required apid to deactivate, at start-up, a bundle whose declared range did
-   not include *"the version apid serves"* — singular, which read as an equality
-   would have deactivated precisely the bundles §2.1's recommendation exists to
-   protect.
-
-   **Resolution, now in §2.1 and §6.1: the relation is a set relation, and it
-   has one name.** §2.1 defines the `versions` array of `GET /api/versions` as
-   the **served set**, states that `current` is always a member of it, and
-   forbids the rest of the document from treating "the version apid serves" as a
-   single value. §6.1's class-5 check is **membership in the served set**, and
-   the deactivation trigger fires **only on an empty intersection** between the
-   bundle's declared range and the served set — never on a mismatch against
-   `current`. Both sections use the phrase *served set*, so the two can be read
-   against each other without translation.
-
-   **What remains owned by whoever implements §6.1's check** is the log line:
-   it must record the bundle's declared range **and** the served set it was
-   compared against. §6.1 states why — a deactivation that fires on the wrong
-   condition is indistinguishable, from the operator's side, from a correct one,
-   and the logged pair is what makes the two separable afterwards.
-
-4. **`docs/design/dashboard.md` §8 phase 4e is placed at §8.2 phase 6 here.**
-   That file is owned by campaign `l1-o7ee8v0o-20260819152009-apid` and is cited,
-   not edited. When that fence lifts, 4e's row (`docs/design/dashboard.md:2722`)
-   should record §8.2 phase 5 as its prerequisite — 4e's upload path, staging
-   location and progress surface are phase 5's, and what remains is the mosd bus
-   method and the `rauc install` caller, neither of which exists
-   (`grep -rci rauc mosd/mosd/src/` returns `0` in all six files at `86cd669`).
-
-5. **`mosd/mosd-settings/src/store.rs` — there is no production down-migration
-   path at all, so an A/B rollback across any schema bump fails the settings
-   load. Executed, not inferred.** §3.2 needs `access.apiTokens`, which needs
-   `SCHEMA_VERSION` 4 → 5 (`model.rs:11`), and §8.2 phase 2 records the four
-   cases that were run and their verbatim output. The load path answers
-   `on-disk schema_version 5 is newer than supported 4` at
-   `store.rs:63-67`, **before** `migrate` is reached at `:68`; the older binary
-   has no `MigrateV4ToV5` to walk down with in any case
-   (`no migration targeting schema version 5`); and
-   `#[serde(deny_unknown_fields)]` rejects the field even without a version bump
-   (``unknown field `apiTokens`, expected one of `webAdmin`, `ssh`, `console`,
-   `device` ``). `store.rs:68` is the only production caller of
-   `migrate` and it walks upward only — every `from > to` call in the tree is a
-   test. Because `mosd/mosd/src/main.rs:45-48` propagates a failed load with `?`
-   under `Restart=on-failure` (`mosd/dist/mosd.service:9`), the consequence is a
-   mosd crash loop and an appliance serving only the 502 page.
-   **This is pre-existing** — the shipped v3 → v4 bump has the same property —
-   so it is not the API's cost and not this document's to fix. Whoever owns
-   `mosd-settings` and the A/B story owes a decision: a pre-rollback downgrade
-   hook, a tolerant load path, or an explicit written acceptance that a schema
-   bump forfeits rollback. §8.2 phase 2 is gated on that decision existing.
-   Product code; this campaign changes none.
-
-   **The sharper statement of the same finding: the backward migrations are dead
-   code in production.** Not "rollback can fail" — the machinery that would carry
-   the rollback exists, is registered, and passes its tests, and no production
-   path can reach it. Each half was re-verified against the tree at `86cd669`
-   before being written here, by running it rather than by reading it.
-
-   - **The pattern is specified, in both directions.** `docs/design/mosd.md:63-65`
-     requires *"Migrations: Bottlerocket migrator pattern — forward AND backward
-     migration units shipped with each release"*, and §5.2 of that document
-     (heading at `docs/design/mosd.md:143`, *"Migration, and what a rollback
-     costs"*) costs the rollback direction in detail — *"Rolling back to v2 loses
-     three things, deliberately and irreversibly"* (`:152-157`). Both are written
-     as behaviour a device has.
-   - **The plan does require the direction to work — but not where mosd.md says
-     it does, and the discrepancy is recorded rather than repeated.**
-     `docs/design/mosd.md:64` attributes the requirement to *"PLAN-006 Part I"*.
-     PLAN-006 Part I is *"Update policy configuration"*
-     (`docs/plan/PLAN-006.md:228-231`) and says nothing about migrations. The
-     requirement is in **Part J, "Upgrade boundaries"**: *"machine config (STATE)
-     | Untouched; versioned migrations must support rollback direction"*
-     (`docs/plan/PLAN-006.md:241`), restating PLAN-005 Part I's *"Schema changes
-     go through versioned migrations that must also support the rollback
-     direction"* (`docs/plan/PLAN-005.md:260`). **The requirement is real; the
-     pointer to it is off by one part** — PLAN-006 renumbered the part PLAN-005
-     called I. Correcting that citation belongs to whoever owns
-     `docs/design/mosd.md`, which this campaign cites and does not edit.
-   - **The backward units exist and are registered.** `down` is a required method
-     on the `Migration` trait (`mosd/mosd-settings/src/migration.rs:23`); all
-     four shipped migrations implement it (`:115`, `:143`, `:186`, `:247`), all
-     four are in the default registry (`:74-81`), and
-     `MigrationRegistry::migrate` walks them descending whenever `from > to`
-     (`:46-56`).
-   - **They are tested, and the tests pass.** Executed at `86cd669`:
-     `cargo test --manifest-path mosd/Cargo.toml -p mosd-settings` reports
-     `test result: ok. 36 passed; 0 failed; 0 ignored` for
-     `tests/settings.rs`, including
-     `v0_document_migrates_up_and_back_down`,
-     `v2_document_migrates_down_to_v1_dropping_access`,
-     `v3_document_migrates_down_to_v2_dropping_only_v3_keys`,
-     `v3_document_round_trips_down_to_v2_and_back` and
-     `v4_document_migrates_down_to_v3_and_round_trips`. **Every `down` step has
-     coverage**, not only the v0→v1 and v3→v4 pair.
-   - **Nothing in production calls them.** Executed, and this is the load-bearing
-     one:
-
-     ```
-     $ grep -rn --include=*.rs 'migrate(' mosd/mosd/src mosd/webd/src mosd/mosd-settings/src \
-         | grep -v 'src/migration.rs'
-     mosd/mosd-settings/src/store.rs:68:        migrate(&mut doc, from, SCHEMA_VERSION)?;
-     ```
-
-     One production caller, and its `to` argument is the constant
-     `SCHEMA_VERSION`, so it can only ever walk **upward**. Every descending call
-     in the tree is a test:
-
-     ```
-     $ grep -rnoE 'migrate\(&mut doc, [0-9]+, [0-9]+\)' --include=*.rs mosd/ \
-         | awk -F'[,()]' '$3+0 > $4+0'
-     mosd/mosd-settings/tests/settings.rs:241:migrate(&mut doc, 1, 0)
-     mosd/mosd-settings/tests/settings.rs:277:migrate(&mut doc, 2, 1)
-     mosd/mosd-settings/tests/settings.rs:506:migrate(&mut doc, 3, 2)
-     mosd/mosd-settings/tests/settings.rs:536:migrate(&mut doc, 3, 2)
-     mosd/mosd-settings/tests/settings.rs:996:migrate(&mut doc, 4, 3)
-     mosd/mosd-settings/tests/settings.rs:1011:migrate(&mut doc, 4, 3)
-     mosd/mosd-settings/tests/settings.rs:1081:migrate(&mut doc, 4, 0)
-     ```
-
-     Seven call sites, all in `mosd/mosd-settings/tests/settings.rs`. And the one
-     situation a `down` step was written for — an older binary meeting a newer
-     tree — never reaches the migration machinery at all, because the guard at
-     `store.rs:63-67` returns before `migrate` at `:68` is called.
-
-   **So: written, registered, exercised by passing tests, unreachable from any
-   production path.** The shipped behaviour is one-directional migration with a
-   hard refusal in the rollback direction, and no `down` step this project has
-   ever written has run on an appliance.
-
-   **This is an instance of a defect class this project has already recorded
-   twice: a control that exists, is tested, and is never invoked.**
-   `docs/design/access.md:64` records `access.console.shellEnabled` as existing
-   *"in the schema with **no reconciler consuming it**"* and marks the row
-   **[not implemented]** on that ground alone;
-   `docs/design/provisioning.md:270-275` records
-   `mosd/mosd/src/identity.rs::verify_password` as *"now `#[cfg(test)]` precisely
-   because it had no caller outside its own tests"* (RFCT-037). **The migration
-   case is the sharper form of both**, because unlike either of them it has
-   *passing tests* — and a passing test is what a reader takes as evidence that a
-   mechanism works.
-
-   **Why the framing matters more than the defect.** `docs/design/access.md:33-36`
-   states the principle this document reuses in §0: *"dead code has a compiler, a
-   test run and a grep-for-callers that can surface it; a security control that
-   exists only as prose has no mechanism that will ever notice it is absent"*.
-   This case sits in the gap that sentence leaves open — the compiler and the
-   test run both report success, and the **grep-for-callers** is the only one of
-   the three that catches it. *"We have bidirectional migrations"* is a true
-   sentence about the source and a false sentence about the appliance, and it is
-   exactly the sentence someone would rely on when deciding that a schema bump is
-   safe to ship. In §0's vocabulary, the correct marker for the rollback
-   direction is **[not implemented]** — with the `down` code present in the
-   crate.
-
-   **No resolution is proposed, deliberately.** The three admissible ones are the
-   ones recorded above and nothing has been added to them. This item is owned by
-   whoever owns `mosd-settings` and the A/B story; specifying it away from a
-   document that does not own the code is how the wrong one gets chosen, and this
-   item's first draft already reached a wrong conclusion here once by inferring
-   rather than running.
-
-   **Resolved (2026-08-21, user decision, RFCT-082): the tolerant load path,
-   with the loss accepted in writing.** Of the three admissible resolutions,
-   the second was taken and the third's written acceptance was folded into it;
-   the pre-rollback downgrade hook was not, because the older binary cannot
-   carry a future schema's down-step by construction, so a hook could never be
-   more than best-effort where tolerance is total. `Store::load` no longer
-   refuses a newer `schema_version`: `load_with_report`
-   (`mosd/mosd-settings/src/store.rs`) strips the keys this schema does not
-   know — the same semantics `mosd.md` §5.2 already prices for a down
-   migration — and parses what remains; a document a future schema *reshaped*
-   rather than extended falls back to `Settings::default()`, reported, never
-   an error. mosd logs the report loudly at start-up
-   (`mosd/mosd/src/main.rs`), `error!`-level for the defaulted case, because
-   that case abandons the admin credential and returns the device to setup
-   mode — the accepted cost, priced against the alternative this item
-   documented: a crash loop on the rolled-back-to slot that fails its health
-   gate too, leaving no confirmable slot at all. The rule this creates for
-   schema authors is stated at the load path: **prefer additive bumps; a
-   reshaping bump forfeits settings on rollback and must say so in its
-   migration.** Five tests exercise the path, including the reshaped fall-back
-   and the save-after-rollback that persists the stripped document at this
-   schema version. The down-migrations remain registered and tested for the
-   staged-downgrade tooling a future release process may add; what this
-   resolution removes is their status as the only — and unreachable — rollback
-   story. **§8.2 phase 2's gate is therefore open.**
-
-6. **`mosd/dist/webd.service` — raised in priority, not newly routed.** 10.2
-   already routes `ProtectSystem=` and an explicit `ReadWritePaths=` to this
-   file. §7.4 endorses it as the **concrete substitute** for a bundle-signing
-   scheme, and §9 item 7 records it as the one unmitigated half of the
-   writable-directory cost. `:6-10` is the entire `[Service]` section at
-   `86cd669`.
-
-7. **An operator revocation runbook owes one sentence.** Revoking an API token
-   does **not** deactivate a bundle that token installed: the bundle is on DATA
-   and survives an A/B update (§5.4), while revocation takes effect on the next
-   request (§3.2). Whoever writes the operator documentation owes *"and check
-   `/srv/ui/current`"* beside *"revoke the token"*. §5.3's read is what makes
-   that sentence actionable.
-
-8. **A release note is owed at §8.2 phase 4.** `GET /` changes meaning on the
-   A/B update that lands static hosting: an operator who bookmarked the status
-   pane reaches the custom UI once one is active. §6.3 suggests the built-in
-   error pages (`mosd/webd/src/routes.rs:106-116`) name the reserved prefix;
-   that suggestion becomes an obligation at this phase, because it is the only
-   in-band way an operator learns the new address.
-
-9. **`docs/design/access.md` §8's phase table gains nothing from this document,
-   and that is worth recording.** §8.2's phases are apid and API work; none of
-   them changes an access channel, a credential class or a recovery path. The
-   one place they touch access.md's territory is `access.apiTokens`, which
-   §10.1 item 7 already routes to §10.4's survives-what table. That file is
-   owned by a parallel campaign and is cited, not changed.
-
-10. **`os/update/rauc/system.conf.in` — production keyring provisioning blocks §8.2
-    phase 6's acceptance.** *"until one is installed, `rauc install` on device
-    fails closed"* (`:56-61`), and the verifier asserts only the path, recording
-    that the keyring *"is deliberately not shipped"*
-    (`os/verify-image-v2.sh:1043-1047`). Named so phase 6 is not planned as if
-    it were unblocked. Not this document's to schedule.
-
-11. **`update/` — the on-device Uptane client is a stated trigger for revisiting
-    §7.** `update/README.md:25` lists it as explicitly not phase 1 and not
-    implemented, and §7.4 trigger 4 hangs on it. Whoever owns PLAN-006 should
-    know that §7's no-signing recommendation carries an explicit reconsideration
-    hook on their roadmap, rather than being a permanent posture.
-
-12. **The built-in UI's minimum capability set needs a home.** §8.1 makes option
-    B affordable by narrowing the built-in UI's job to five recovery
-    capabilities, and nothing in the tree asserts them: there is no test, no
-    verifier assertion and no document that would notice if the deactivate
-    control or the token-mint pane were dropped. It belongs to whoever owns the
-    built-in UI's scope, and until it has one, §8.1's reconciliation of option
-    B's cost rests on prose alone.
-
-13. **The 502/503 split is deliberate and temporary, and somebody owns closing
-    it.** §2.4 answers `mosd_unreachable` with **503** while the HTML path
-    answers **502** for the same failure (`mosd/webd/src/routes.rs:106-116`), so
-    after §8.2 phase 3 one appliance reports one outage two ways. §2.4 states
-    that changing only the API is the wrong half of the trade; §8.2 phase 3 does
-    the API half anyway, because the HTML half is a user-visible change to a
-    shipped page. Whoever owns the built-in UI's error pages owns the other
-    half.
-
-14. **§9 item 8 was written against the unresolved contradiction and is now
-    stale in one sentence.** It records the CSRF cost as *"Not mitigated as
-    written; the design does not currently say enough to be checked"* and refers
-    the reader to *"10.3 with the resolution it needs before phase 2 ships"*.
-    Item 2 above now records the resolution taken, §3.2 states the mint path and
-    its POST-only rule, and §3.3 carries the residual as a named attack — so the
-    "does not say enough to be checked" verdict no longer describes the document,
-    while the cost §9 exists to list is still real. §9 belongs to a sibling task
-    and is cited here rather than edited. Whoever next edits §9 should restate
-    item 8 as **partly mitigated**: the `/api/v1/` half is closed by the mint
-    moving off the API path, and the same-origin half is accepted and named
-    (§3.3 attack 5). The two quoted sentences in §9 item 8 that attribute the
-    cookie mint to an `/api/v1/` path describe a draft §3.2 no longer contains.
-
-15. **§0 claims this document reuses access.md's marker convention "in the same
-    form", and it does not. Measured at `0d4f3c6` by this entry, which is
-    §10.3's first appended after the boundary above; its source section is §0
-    and not §7, §8 or §9.** `api.md:14-15` states the convention is
-    `docs/design/access.md` section 0 *"reused here in the same form"*.
-    `docs/design/access.md:27-33` lists **four** markers — `[implemented]`,
-    `[partial]`, `[not implemented]`, `[decided]`. `api.md:18-20` lists
-    **three** — `[implemented]`, `[proposed]`, `[not implemented]`. **Two of
-    the four overlap.** api.md **dropped** `[partial]` and `[decided]`, and
-    **added** `[proposed]`. A sentence asserting sameness is therefore false,
-    in a document whose entire discipline is that a claim must be checkable
-    against something.
-
-    **The divergence is not cosmetic, and the missing marker is the reason this
-    entry exists rather than a footnote.** `[partial]` is the marker a
-    subsection that landed only in part would carry, and §§4, 5 and 6 have
-    none: under this campaign's merge gates a task that lands short is returned
-    to working rather than merged, so a partial subsection would mean something
-    merged that should not have — a defect to raise, not a label to apply. A
-    pass that met one and reached for `[partial]` would let a gate failure be
-    recorded as a documentation state, and a pass that invented a fourth marker
-    would be amending §0 while applying it. The absence is load-bearing; the
-    claim of sameness is what hides that it was a choice.
-
-    **The action owed, and it is one of exactly two.** *Either* the two forms
-    are reconciled — api.md adopts `[partial]` and `[decided]`, or §0 states
-    that it takes a named subset of access.md's set — *or* §0 stops claiming
-    sameness and states the divergence as **deliberate**, saying why
-    `[proposed]` exists here (most of this document proposes rather than
-    records) and why `[partial]` deliberately does not. Whoever next edits §0
-    owns the choice; it is not made here.
-
-    **Resolved (2026-08-21, RFCT-082): the second option.** §0 no longer
-    claims sameness; it now names which two markers are taken from access.md,
-    why `[proposed]` exists here and not there, why `[partial]` is
-    deliberately absent (a subsection that would carry it is a merge-gate
-    defect, not a documentation state), and why `[decided]` is not needed
-    (decisions are routed through §10.3 items, which record their resolutions
-    inline — as this paragraph itself demonstrates). Reconciliation was
-    rejected because importing `[partial]` would create the labelled state
-    this campaign's gates exist to make unrepresentable.
-
-    **Why it is not made here, stated so the omission is not read as an
-    oversight.** This pass applies the convention across §§4-6, and a pass that
-    also rewrote the section governing its own work would have written §0 with
-    nobody left to review it. That is the failure RFCT-067 refused for §9 item
-    8, and it is refused here for the same reason.
-
-    **One smaller thing for the same editor.** `api.md:15`'s citation of the
-    convention is `docs/design/access.md:23-30`, which spans the heading, the
-    lead-in sentence and the first three list items; the four-item list is
-    `:27-33`. Whichever resolution is taken, that citation wants re-pointing
-    with it.
-
-16. **Resolved — the actions-as-items-versus-methods fork is closed in favour
-    of writable action items, and `/api/v1/actions/<verb>` survives it with no
-    HTTP-visible change. Measured at `3b2ab65` by this entry, which carries
-    its own descriptors per the boundary above; its source is
-    `docs/research/venus-os-ui.md` §7 item 2 and this document's §1.3, §2.2
-    and §2.3, not §7, §8 or §9.** The research recorded it as a fork rather
-    than a gap: Venus reboots by `setValue(true)` on
-    `platform/Device/Reboot`, while *"mosd exposes `Reboot` and `PowerOff` as
-    D-Bus **methods** (`docs/design/mosd.md:194-195`), which a
-    value-forwarding remote bridge cannot carry, so this is a fork in the road
-    rather than a feature to add"*. Both branches were live while nothing
-    decided between them, and this document was written along the method
-    branch.
-
-    **The decision, and where it is now normative.** `docs/plan/PLAN-011.md`
-    D3 takes **items**, on the stated rationale that it is the property which
-    makes the planned value-only MQTT bridge sufficient — a bridge that
-    carries `SetValue` and nothing else can still reboot, update and
-    reconfigure a device. `docs/design/bus.md` §7 states it as contract: an
-    action is an item at `/Actions/<verb>` whose value always reads `0`, a
-    write triggers it, the service forces the value back to `0` and emits that
-    `0 -> 0` edge so every trigger's consumption is observable, and the
-    `SetValue` return code is the dispatch result. PLAN-011 M2 landed the two
-    verbs this document names — `/Actions/reboot` and `/Actions/poweroff`
-    (`mosd/mosd/src/actions.rs`, projected and dispatched through
-    `mosd/mosd/src/tree.rs`) — so those bus.md statements read
-    **[implemented]** rather than **[proposed]**.
-
-    **What it costs this document: nothing at the HTTP surface, and that is
-    the load-bearing half.** `POST /api/v1/actions/<verb>` (§2.2, §2.3)
-    remains exactly as specified — the same paths, the same `POST`-only
-    namespace named so that no reader expects a `GET`, the same
-    `202 Accepted` — and becomes a **thin mapping** onto the items. This is
-    not a promise made about future work: apid's power pane already consumes
-    them (`mosd/apid/src/bus_client.rs` writes `/Actions/reboot` and
-    `/Actions/poweroff` through `com.mos.Item1`), and the switch sits *below*
-    the `SettingsApi` trait — `mosd/apid/src/routes.rs` was not modified, so
-    the routes, the confirm-token gate §2.3 discusses and the `202` all come
-    out of unchanged code, and the route tests pass with their expectations
-    unmodified. §2.3's reasoning for `202` over `204` is untouched: a
-    `SetValue` on the action item is still a D-Bus call spawned so the
-    response goes out before the machine does.
-
-    **What is *not* claimed.** The `com.mos.mosd1` `Reboot` and `PowerOff`
-    methods are **still served by mosd** and are neither deprecated nor
-    removed — apid has simply stopped calling them, and `docs/design/bus.md`
-    §1.2 keeps their deprecation as a later decision, to be taken now that its
-    stated condition (apid consuming the tree) holds. A reader of this section
-    should not infer a removal from the switch.
-
-    **One accuracy fix is owed, and it is owed to sections this entry does not
-    edit.** §1.3's proxy table is headed *"Every method apid calls today —
-    six"* and gives `reboot()` and `power_off()` their own rows against
-    `mosd/mosd/src/bus.rs:257` and `:265` (`api.md:231-232`). At `3b2ab65` the
-    `com.mos.mosd1` proxy declares **four** methods and the two power calls
-    are `SetValue` writes on a second interface, so the count and those two
-    rows are stale — the sharpest instance, because §1.3 sits under §1, *"The
-    surface as it exists today"*, marked **[implemented]**, and is therefore
-    read as a description of the tree rather than of a plan. §2.2's
-    resource-model row for `/api/v1/actions/<verb>` (`:710`) and its Power row
-    (`:838`) both name `Reboot`/`PowerOff` as what backs the verbs; those are
-    now the backing of last resort rather than the path apid takes.
-    Each is a one-line fix owned by the section's editor. Making them from
-    here would put the correction where no reader of those tables looks, and
-    would edit §1.3 and §2.2 from an entry whose whole purpose is to route
-    work out of §10.3 — so it is recorded, not done.
-
-### 10.4 The surface now has an over-the-wire test suite, and it found a defect
-
-*Measured at `9ef15c6`; source section: §4.2, §4.4, §5.2. This entry carries its
-own descriptors, per §10.3's rule above.*
-
-`test/apid-api/` is a bun + TypeScript suite that talks to apid **over the
-network**, on a booted x64 image in QEMU, the way a browser would. It runs with
-`make os-apid-api-test`, and it has no runtime dependencies: a client that
-followed redirects, managed cookies invisibly or normalised request targets
-would hide the exact behaviours it exists to observe. Nine ordered phases run
-against **one** boot, because a boot is expensive; each phase declares what it
-assumes the previous one left behind, and the runner refuses a phase that does
-not. The full record is `docs/task/RFCT-105.md`.
-
-**What it asserts that an in-process test of the `Router` cannot.** The
-self-signed certificate apid generates into its `StateDirectory`, inspected
-rather than merely trusted. The `:80 → :443` redirect as a real `308` with a
-real `Location`. Request targets **verbatim on the wire**, which a normalising
-client rewrites before apid ever sees them. The session cookie as a real
-`Set-Cookie`, from both the `/setup` and `/login` handlers, with the absence of
-any CSRF marker checked beside it — so §3.3's reliance on `SameSite=Lax` is a
-verified property rather than a stated one. The login guard across a genuinely
-new TCP connection and across a real reboot. And a form post travelling
-apid → system bus → mosd → a reconciler → the device, observed on the far end
-through the bus read-back and through systemd's and mosd's own lines on the
-captured console, never by its status code alone.
-
-**Four limits, and they are load-bearing for any reader of §4:**
-
-1. **§4.4's traversal guards are not covered.** `serve::respond` calls
-   `asset_path::resolve` — the function holding every §4.4 guard — only when a
-   bundle root exists, and a bundle-less device is what §5.2 calls the shipped
-   state of every device. The suite therefore covers **§4.2's fallback
-   contract** instead and says so in the module rather than letting a passing
-   `/../../etc/passwd` probe read as a traversal test. Closing it needs a
-   bundle seeded at `/srv/ui` on **DATA**; the available seeding tool writes
-   **STATE** only.
-2. **The reboot is two boots off one disk.** `os/tools/qemu-run.sh` passes
-   `-no-reboot`, so a guest-initiated reboot makes QEMU exit rather than reset.
-   The second boot still comes up through firmware, GRUB and the grubenv the
-   reboot wrote; what is not exercised is QEMU's own reset. The second boot has
-   now run: the reboot, the firmware/GRUB boot behind it and the power-off are
-   all read off the console rather than off a status code.
-3. **Image/code skew, now guarded.** The image under test predates `/mqtt` and
-   `POST /mqtt/enable`, so those routes are still uncovered — but the suite now
-   asserts `GET /mqtt` with `Accept: */*` → **404** and `POST /mqtt/enable` →
-   **405**, the two answers §4.2's fallback gives and a real route cannot, so a
-   rebuilt image turns both red instead of gaining two silently untested
-   routes. The guard buys notification, not coverage.
-4. **`/network`'s no-op round trip is not exercised.** A freshly provisioned
-   device renders no configured interface at all — the link the suite talks
-   over is brought up by systemd-networkd's defaults, not by mosd — so there is
-   no existing configuration to post back unchanged, and posting a static
-   address from this suite would reconfigure the interface every other
-   assertion travels over. The phase asserts the pane renders and skips the
-   round trip with that reason.
-
-**What it found, on its first full live run.** `POST /ssh/password` answers
-**502 Bad Gateway** on the shipped x64 image: mosd writes the transient
-password's marker with `Path::with_file_name` on `/etc/shadow`, which is
-*lexical*, so the shadow write follows the symlink onto STATE and succeeds
-while the marker lands in the literal read-only `/etc` (`create
-/etc/.transient-root-password.mosd-tmp: Read-only file system (os error 30)`).
-The transient SSH root password is therefore non-functional on this image.
-mosd's own unit test for that path asserts only already-resolved paths, and
-`mosd/apid/tests/e2e.rs` runs `MOSD_DRY_RUN=1` precisely so no reconciler
-executes — so a real read-only rootfs behind a real system bus, which is the
-narrow claim above, is what it took to see it. Reported, not fixed;
-`docs/task/RFCT-105.md` carries the reproduction and the root cause.
-
-**Status, stated so nobody reads more into this than is there:** the offline
-selftest is green (37/37, every assertion helper driven against deliberately
-wrong input) and the live run has happened — `make os-apid-api-test` →
-`RESULT: FAIL (231/232 checks)`, the single failure being the 502 above, with
-01-transport, 02-setup, 03-login and 04-readonly green (196 checks). Because
-that failure lands in 05, the runner contains it and phases 06, 07, 07b and 08
-**skip** in a continuous run; their evidence comes from a separate grouped run
-(`RESULT: PASS (128/128 checks)` across two real boots), which is weaker
-evidence than one continuous nine-phase run and is labelled as such in the
-record. What this document may now be read as verified on: §4.2's fallback
-contract, §3.3's reliance on `SameSite=Lax` with no CSRF token beside it, the
-gate's setup/login redirects, and the cookie's attributes from both handlers.
-Not §4.4.
