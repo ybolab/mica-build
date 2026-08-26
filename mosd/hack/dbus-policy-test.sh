@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Live-bus tests for the SHIPPED D-Bus policies: mosd/dist/com.mos.mosd.conf
+# Live-bus tests for the shipped D-Bus policies: mosd/dist/com.mos.mosd.conf
 # (sections 0-3) and mosd/dist/com.mos.ext.conf (section 5).
 #
 #   bash mosd/hack/dbus-policy-test.sh
@@ -7,23 +7,22 @@
 # The policies claim com.mos.mosd is reachable only by root and that extensions
 # may own com.mos.ext.* and nothing else. Reading the XML back and asserting it
 # says so proves nothing about what dbus-daemon does with it, so this harness
-# stands up REAL dbus-daemons whose configurations <include> the shipped files
+# stands up real dbus-daemons whose configurations <include> the shipped files
 # verbatim, owns the name from a root connection, and then drives root and
-# non-root clients at them. Each shipped file gets its OWN bus, so a refusal is
+# non-root clients at them. Each shipped file gets its own bus, so a refusal is
 # always attributable to the one file under test rather than to the pair.
 #
-# Every guard is exercised in BOTH directions. A refusal-only suite would pass
+# Every guard is exercised in both directions. A refusal-only suite would pass
 # just as well against a policy that denied everything, including root, which is
 # the one failure a "non-root is refused" test cannot see.
 #
-# Section 4 is not about the shipped file at all. It MEASURES what dbus-daemon
-# means by own_prefix=, on a bus of its own, because PLAN-011 D5 bets the whole
-# com.mos.ext namespace on semantics it recorded as unverified. Sections 4 and 5
-# are not redundant: section 4 establishes what own_prefix means independent of
-# anything mos ships, section 5 establishes that the file mos actually installs
-# behaves that way.
+# Section 4 is not about the shipped file at all: it measures what dbus-daemon
+# means by own_prefix= on a bus of its own, because the whole com.mos.ext
+# namespace is granted by one such rule. Sections 4 and 5 are not redundant --
+# section 4 establishes what own_prefix means independent of anything mos ships,
+# section 5 establishes that the file mos installs behaves that way.
 #
-# THREE buses per run, one per group -- sections 0-3, section 4, section 5 -- so
+# Three buses per run, one per group -- sections 0-3, section 4, section 5 -- so
 # that nothing in one group can explain a result in another. Their only shared
 # base is a verbatim copy of the stock system.conf default stanza.
 #
@@ -375,11 +374,11 @@ chmod 0755 "${CLIENT}"
 
 # --- the bus configuration ---------------------------------------------------
 # The <policy context="default"> stanza below is a verbatim copy of the one in
-# the standard dbus system.conf, so the ONLY thing separating this bus from a
+# the standard dbus system.conf, so the only thing separating this bus from a
 # stock system bus is the shipped file it <include>s. Two of those base rules
 # matter here: `deny send_type="method_call"` (which is why dropping an allow is
 # enough on the send side) and `allow receive_type="signal"` (which is why it is
-# NOT enough on the receive side, and the shipped file carries an explicit deny).
+# not enough on the receive side, and the shipped file carries an explicit deny).
 SOCK="${WORK}/bus.sock"
 BUS_CONF="${WORK}/bus.conf"
 cat >"${BUS_CONF}" <<XML
@@ -501,29 +500,25 @@ check "non-root OWN of ${NAME} is refused" \
     "$(as_nobody own "${SOCK}" "${NAME}")"
 
 
-# --- 4. own_prefix semantics, MEASURED rather than assumed --------------------
-# PLAN-011 D5 hands third-party extensions the com.mos.ext.* namespace and grants
-# the whole of it with one rule, <allow own_prefix="com.mos.ext"/>. No deny list
-# accompanies it, because system names such as com.mos.mosd are believed to fall
-# outside the prefix and so to stay closed under the stock <deny own="*"/>. The
-# plan records that belief as NOT verified -- no dbus man page was available on
-# the authoring host -- and it is the load-bearing one: if the prefix reached
-# com.mos.mosd, a unit with DefaultDependencies=no could claim the daemon's own
-# name before mosd does and apid would be talking to an impostor.
+# --- 4. own_prefix semantics against a real dbus-daemon ----------------------
+# Third-party extensions get the com.mos.ext.* namespace from one rule,
+# <allow own_prefix="com.mos.ext"/>, with no deny list beside it: system names
+# such as com.mos.mosd stay closed only if they fall outside the prefix. That is
+# load-bearing -- if the prefix reached com.mos.mosd, a unit with
+# DefaultDependencies=no could claim the daemon's own name before mosd does and
+# apid would be talking to an impostor -- so this section measures it rather
+# than assuming it.
 #
-# This section settles it against a real dbus-daemon, and it deliberately runs
-# BEFORE any such policy file exists. The grant under test is a scaffolding
-# fragment written into ${WORK}; mosd/dist/com.mos.ext.conf is NOT read here and
-# is not created by this measurement. Measuring first and writing the policy
-# against the measurement is the point.
+# The grant under test is a scaffolding fragment written into ${WORK}.
+# mosd/dist/com.mos.ext.conf is not read here and is not created here: what
+# own_prefix means has to be established independent of anything mos ships.
 #
-# It gets its OWN dbus-daemon rather than a second <include> on the bus above,
-# for two reasons that both bear on whether the result means anything. On that
-# bus com.mos.mosd is already owned by a root connection and the shipped policy
-# carries com.mos.mosd rules of its own, so a refusal there could be the shipped
-# policy talking rather than own_prefix -- and the mutation that proves this
-# section can fail (widening the prefix to com.mos) would then be measuring the
-# wrong file. Here the base configuration is the same stock default stanza,
+# It gets its own dbus-daemon rather than a second <include> on the bus above.
+# On that bus com.mos.mosd is already owned by a root connection and the shipped
+# policy carries com.mos.mosd rules of its own, so a refusal there could be the
+# shipped policy talking rather than own_prefix -- and the mutation that proves
+# this section can fail (widening the prefix to com.mos) would be measuring the
+# wrong file. Here the base configuration is the stock default stanza,
 # <deny own="*"/> included, and the scaffolding fragment is the only other rule
 # in play, so the own_prefix grant is the only thing on the bus that can hand out
 # any name at all.
@@ -605,8 +600,8 @@ check "own_prefix grants com.mos.ext.foo to an unprivileged uid" "OWNED" \
 check "own_prefix grants a deeper suffix, com.mos.ext.sensor.abc123" "OWNED" \
     "$(measure_own com.mos.ext.sensor.abc123)"
 
-# THE load-bearing case. If this is ever OWNED, PLAN-011 D5's namespace decision
-# does not hold and the com.mos.ext grant needs an explicit deny list after all.
+# The load-bearing case. If this is ever OWNED, the com.mos.ext namespace grant
+# does not hold and needs an explicit deny list after all.
 check "own_prefix does NOT reach the system name com.mos.mosd" "${DENIED}" \
     "$(measure_own com.mos.mosd)"
 check "own_prefix does NOT reach a second system-shaped name, com.mos.other" \
@@ -620,12 +615,11 @@ check "own_prefix does NOT reach a second system-shaped name, com.mos.other" \
 check "own_prefix requires a '.' separator: com.mos.extra is refused" \
     "${DENIED}" "$(measure_own com.mos.extra)"
 
-# MEASURED on dbus-daemon 1.12.20, not inferred. PLAN-011 states no expectation
-# for the bare prefix, and the answer is not the conservative one: own_prefix
-# matches the prefix ITSELF, so an unprivileged uid may own com.mos.ext with no
-# suffix at all. It is inside the namespace extensions were given, so it grants
-# nothing the decision did not intend to give away, but it is a name the D5
-# grammar com.mos.ext.<class>[.<suffix>] never contemplated -- anything that
+# Measured on dbus-daemon 1.12.20, not inferred, and the answer is not the
+# conservative one: own_prefix matches the prefix itself, so an unprivileged uid
+# may own com.mos.ext with no suffix at all. That is inside the namespace
+# extensions are given, so it gives away nothing extra, but it is a name the
+# com.mos.ext.<class>[.<suffix>] grammar does not contemplate -- anything that
 # derives a class from the fourth dotted component has no fourth component here.
 check "own_prefix matches the bare prefix itself: com.mos.ext is OWNED" "OWNED" \
     "$(measure_own com.mos.ext)"
@@ -636,29 +630,22 @@ check "own_prefix matches the bare prefix itself: com.mos.ext is OWNED" "OWNED" 
 # case -- there would be nothing left asserting the default is closed.
 check "a name outside the prefix is still refused (org.example.thing)" \
     "${DENIED}" "$(measure_own org.example.thing)"
-# --- 5. the SHIPPED extension policy, mosd/dist/com.mos.ext.conf -------------
-# Sections 0-3 test com.mos.mosd.conf. This section tests the OTHER shipped
+# --- 5. the shipped extension policy, mosd/dist/com.mos.ext.conf -------------
+# Sections 0-3 test com.mos.mosd.conf. This section tests the other shipped
 # policy file, on its own dbus-daemon.
 #
-# Numbered 5, not 4: RFCT-093's own_prefix MEASUREMENT owns section 4. That
-# section establishes what dbus-daemon means by own_prefix independent of
-# anything mos ships, and this one establishes that the file mos actually
-# installs behaves that way. They are not redundant and neither subsumes the
-# other -- if the shipped file were deleted tomorrow the measurement would still
-# be true, and it would still be irrelevant to the device.
-#
-# A SEPARATE BUS, and the reason is attribution. This bus <include>s
-# com.mos.ext.conf and NOTHING else of ours, so when the unprivileged uid is
+# A separate bus, and the reason is attribution. This bus <include>s
+# com.mos.ext.conf and nothing else of ours, so when the unprivileged uid is
 # refused com.mos.mosd here, the refusal has exactly one available explanation:
 # the extension policy did not grant it and the stock <deny own="*"/> stood.
-# Had the bus also included com.mos.mosd.conf the result would have been
+# Had the bus also included com.mos.mosd.conf the result would be
 # over-determined -- and misleadingly so, because com.mos.mosd.conf does not
 # deny own= in the default context at all (it grants own= to root and leans on
 # the same stock deny), so a reader would credit the refusal to a rule that is
 # not there. Keeping the files apart is what makes this section evidence about
 # com.mos.ext.conf rather than about the pair.
 #
-# BOTH DIRECTIONS are asserted. A suite that only showed system names being
+# Both directions are asserted. A suite that only showed system names being
 # refused would pass unchanged against a policy file that granted nothing at
 # all, which is the single most likely way this file breaks: a typo in the
 # prefix costs every extension its bus name and denies nothing that was not
@@ -755,30 +742,28 @@ check "ext: nobody CANNOT own com.mos.extra (own_prefix needs a '.' separator)" 
 
 
 # --- 6. the MQTT bridge's grant, mosd/dist/mos-mqttd.conf --------------------
-# The bridge is a NON-ROOT client of a ROOT-ONLY name. Sections 1-2 established
+# The bridge is a non-root client of a root-only name. Sections 1-2 establish
 # that com.mos.mosd.conf refuses every non-root uid outright; this section is
 # about the file that punches three members through that refusal and must punch
 # through nothing else.
 #
-# BOTH FILES ON ONE BUS, unlike section 5. Section 5 kept the files apart
-# because its question was "what does com.mos.ext.conf grant on its own". The
+# Both files on one bus, unlike section 5. Section 5 keeps the files apart
+# because its question is "what does com.mos.ext.conf grant on its own". The
 # question here is the opposite: does the grant survive the deny it is layered
-# over, in the combination the device actually loads. Split across two buses,
-# the interesting result -- an allow overriding a deny in the same context --
-# could not occur at all.
+# over, in the combination the device loads. Split across two buses, the
+# interesting result -- an allow overriding a deny in the same context -- could
+# not occur at all.
 #
-# THE USERNAME IS SUBSTITUTED, AND THAT LIMIT IS EXPLICIT. <policy user="X">
+# The username is substituted, and that limit is explicit. <policy user="X">
 # resolves X when dbus-daemon starts. mos-mqttd is created by the image, not by
 # this host, so a verbatim copy of the shipped file would load a rule that
-# matches no uid -- and a rule that matches nothing PASSES a refusal suite for
+# matches no uid -- and a rule that matches nothing passes a refusal suite for
 # the wrong reason, which is the whole failure mode this file exists to avoid.
 # So the copy under test substitutes exactly one token, the substitution is
-# asserted to have changed exactly one line, and the shipped file's own
-# username is asserted separately. That the IMAGE creates mos-mqttd, and that
-# the unit runs as it, is the image verifier's half of the pair -- os/verify/,
-# entered through `bash os/verify/run.sh --verify`, which replaced
-# os/verify-image-v2.sh at full parity in PLAN-014 M4e. Neither half is a claim
-# about the other.
+# asserted to have changed exactly one line, and the shipped file's own username
+# is asserted separately. That the image creates mos-mqttd, and that the unit
+# runs as it, is the image verifier's half of the pair -- `bash os/verify/run.sh
+# --verify`. Neither half is a claim about the other.
 MQTTD_POLICY="${REPO_ROOT}/mosd/dist/mos-mqttd.conf"
 [ -f "${MQTTD_POLICY}" ] || { echo "no ${MQTTD_POLICY} to test" >&2; exit 1; }
 
@@ -910,8 +895,8 @@ check "mqttd: the bridge's uid CANNOT call SetTransientRootPassword" \
 check "mqttd: the bridge's uid CANNOT call com.mos.mosd1.SetSettings" \
     "ERROR org.freedesktop.DBus.Error.AccessDenied" \
     "$(as_mqttd call "${MQTTD_SOCK}" "${NAME}" com.mos.mosd1 SetSettings)"
-# RFCT-084's update members ride the same root-only interface and inherit the
-# same refusal; asserted by name anyway, because these are the members whose
+# The update members ride the same root-only interface and inherit the same
+# refusal; asserted by name anyway, because these are the members whose
 # accidental grant would be worst — a uid that can install a bundle or mark a
 # slot bad owns the device's next boot, network socket and all.
 check "mqttd: the bridge's uid CANNOT call com.mos.mosd1.InstallUpdate" \
