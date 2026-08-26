@@ -99,6 +99,66 @@ unchanged; `../build-v2.sh` translates them. What was replaced is the build
 without a feature stage and an image whose feature stage did nothing are
 indistinguishable afterwards, so it is written down at the time.
 
+### The omit-a-stage negative test, run
+
+RFCT-111: *"omitting a feature stage turns that feature's verifier checks red"*.
+A build that merely succeeds without the stage proves nothing — it is the same
+shape as a check observed only passing. So each case below goes through the
+**shipping path** (`../build-v2.sh`, not the driver by hand), then
+`os/mkimage-x64.sh`, then the real `os/verify-image-v2.sh`, and the comparison
+is an **identity diff** of the verifier's 312 PASS/FAIL/SKIP lines against the
+full build's — never a count.
+
+`os/verify-image-v2.sh` and not `os/verify`'s TypeScript port, because every
+check that goes red here is board- or feature-conditional, and `checks-root.ts`
+deliberately holds only checks whose conclusion text is identical on both
+boards. The container, MQTT and radio families are M4d's.
+
+Baseline, x64: `RESULT: PASS (290/290 checks, 22 skipped)`, zero FAIL lines.
+
+| declined | verifier | assertions that flip PASS → FAIL |
+|---|---|---|
+| `containers` | `FAIL (288/290, 22 skipped)` | `the container engine is incomplete: … missing`; `nft is not in the image` |
+| `mqtt` | `FAIL (288/290, 22 skipped)` | `mqttd: the unit runs as 'mos-mqttd' and no such account is in …/etc/passwd`; `mqtt-broker: the unit runs as 'mos-mqtt-broker' and no account of that name is in …/etc/passwd` |
+| `radios` | not a case on x64 | the board declares none, so all three scripts take their printed early exit and the stage contributes nothing to an x64 image. Omitting it turns nothing red because nothing was there. That branch is cx3576's and is unexercised on an amd64 host |
+| `mosd` | the build REFUSES, in `90-pack` | see below |
+
+Nothing else in the 312 moved in either case, but for the image filename, the
+root hash, and — for `containers` — the copyright count (163 → 158, the
+engine's own). The `mqtt` account census moves by exactly the two accounts:
+`all 25 accounts in …/etc/shadow have a LOCKED password field` → `all 23`.
+
+**Eight container assertions still PASS on an image with no engine**, and that
+is worth naming rather than leaving for someone to discover: the storage
+graphroot, the `helper_binaries_dir` pin, the STATE-backed
+`/etc/containers/systemd` bind, the four-config-file check and the
+no-second-layer check all read files the **overlay** ships, which
+`20-install` installs whether or not the engine is there; `libsystemd.so.0` is
+the base image's; and the two "no podman unit exists" checks are vacuously true
+when there is no podman. Only the engine-binary set and `nft` are statements
+about the feature.
+
+**`check_container_engine`'s "no engine at all" arm did NOT fire**, and cannot
+fire for any real build. It requires `/usr/bin/podman` *and*
+`/etc/containers/storage.conf` to be absent; `storage.conf` arrives with the
+overlay on every board. Measured: the declined-`containers` run contains zero
+occurrences of `carries no container engine at all`. Its only reachable driver
+is `os/tests/ui-location-test.sh` case 8k, which deletes `storage.conf` too.
+That is fortunate here — the early exit does not rescue the negative test — and
+it is a defect in the oracle, recorded for M4d rather than repaired in the
+change that found it.
+
+**`--without mosd` is a build refusal, on this tree and the one before it.**
+`90-pack`'s `pack-assert-var-disposable.sh` demands `/var/lib/mos`, because
+`var-lib-mos.mount` ships in the overlay on every board — and that directory is
+created by exactly one line, `mosd-install.sh`'s `mkdir -p /var/lib/mos`, which
+on the old tree sat inside `if [ "$WITH_MOSD" = "1" ]`. Driven on both sides:
+the pre-M5c tree built with `WITH_MOSD=0` stops at the same assertion with the
+same sentence. `WITH_MOSD=0` has been an unbuildable configuration and nothing
+noticed, because nobody built it. Not repaired here: which of the two should
+give — the overlay's unconditional mount unit, or the directory's owner — is an
+image content decision.
+
 ## The reorderings, and why each was necessary
 
 ### M5b's, when the chain was cut out of the single file

@@ -358,8 +358,8 @@ neither way is a failure, not a gap.
 container route — and mounts the host's docker client (a static Go binary) and
 `/var/run/docker.sock` at their own paths, so the toolbox can still start
 *sibling* containers from in there. Both routes were run to completion: 199/199
-either way at M6a, and 406/406 once M6b's assembler and M5b's stage driver
-both landed.
+either way at M6a, 406/406 once M6b's assembler and M5b's stage driver both
+landed, and 421/421 with M5c's stage selection.
 
 ```
 os/build: 1.4.0 at /srv/bkd/runtime/bun
