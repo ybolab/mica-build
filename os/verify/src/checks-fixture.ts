@@ -37,6 +37,7 @@ import type { Board } from './board.ts'
 import type { ImageContext } from './checks.ts'
 import type { FatSlot, GptPartition, GptTable } from './image.ts'
 import { walkLayout } from './layout.ts'
+import { CONTRACT, mountUnitFor } from './checks-connd.ts'
 import { OS_DIR } from './paths.ts'
 import type { ToolResult, ToolRuntime } from './tools.ts'
 import { ToolOutputError } from './tools.ts'
@@ -330,6 +331,7 @@ function seedHealthyRoot(root: string, board: Board): void {
   seedDbus(root, file)
   seedEngine(root, board, file)
   seedHomes(root, board, file)
+  seedConnd(root, board, file)
   seedShadow(root, file)
   seedMqtt(root, file)
   seedBoardShape(root, board, file)
@@ -514,6 +516,57 @@ function enableEtcUnit(root: string, unit: string, target: string): void {
   symlinkSync(`/etc/systemd/system/${unit}`, join(dir, unit))
 }
 
+// ---------------------------------------------------------------------------
+// M4f: the Wi-Fi userland, on the boards that declare a radio
+// ---------------------------------------------------------------------------
+
+/**
+ * hostapd, wpa_supplicant, their unit templates and the STATE binds behind them.
+ *
+ * EVERY NAME HERE COMES FROM THE CONND CONTRACT, read out of `mosd/` by the same
+ * function the checks read it with. That is the same trade `healthyGpt` makes
+ * one layer up and for the same reason: the fixture's job is to be green until
+ * it is MUTATED, so a baseline built from the contract is the baseline, and
+ * every assertion below comes from an edit to it. Writing `wpa_supplicant` down
+ * here instead would make the fixture stop tracking a rename in mosd while the
+ * checks followed it -- and the tests would then fail for a reason that is not
+ * about the image.
+ *
+ * The two ExecStart lines use DIFFERENT instance specifiers on purpose: the
+ * station's `%I` and the access point's `%i`, which is what both shipped images
+ * actually carry. A port that accepted only one of them would fail one of the
+ * two on a correct image, and only a fixture carrying both can show it does not.
+ */
+function seedConnd(root: string, board: Board, file: WriteFile): void {
+  if (!(board.radios ?? []).includes('wifi')) return
+  const c = CONTRACT
+
+  file('/usr/sbin/hostapd')
+  file('/usr/sbin/wpa_supplicant')
+  file(`/usr/lib/systemd/system/${c.staUnit}`,
+    `[Service]\nExecStart=/usr/sbin/wpa_supplicant -c ${c.staDir}/${c.staConf.replaceAll('{interface}', '%I')} -i %I\n`)
+  file(`/usr/lib/systemd/system/${c.apUnit}`,
+    `[Service]\nExecStart=/usr/sbin/hostapd ${c.apDir}/${c.apConf.replaceAll('{interface}', '%i')}\n`)
+
+  // The packages' own units, MASKED -- the only form that also blocks the D-Bus
+  // activation path wpasupplicant ships. Not merely disabled, and with no
+  // *.wants entry left behind by the postinst.
+  for (const u of ['hostapd.service', 'wpa_supplicant.service', 'dbus-fi.w1.wpa_supplicant1.service']) {
+    mkdirSync(join(root, '/etc/systemd/system'), { recursive: true })
+    symlinkSync('/dev/null', join(root, '/etc/systemd/system', u))
+  }
+
+  for (const where of [c.staDir, c.apDir]) {
+    const unit = mountUnitFor(where)
+    file(`/etc/systemd/system/${unit}`,
+      `[Mount]\nWhat=/mnt/state/${where.split('/').at(-1)}\nWhere=${where}\nType=none\nOptions=bind\n`)
+    enableEtcUnit(root, unit, 'local-fs.target.wants')
+  }
+
+  // Nothing at /usr/sbin/dnsmasq: the AP's DHCP server is systemd-networkd's own
+  // DHCPServer=yes, and a second one on the same link is a conflict.
+}
+
 /** What `seedHealthyRoot` hands its helpers: write a file, making its parents. */
 type WriteFile = (path: string, content?: string) => void
 
@@ -591,9 +644,18 @@ function seedShadow(root: string, file: WriteFile): void {
     + '  printf \'%s\\n\' "${line}" | awk -F: \'{ $2 = "!"; print }\'\n'
     + 'done <"$FACTORY"\n')
 
-  // ...and mos-seed-state, which must put NO shadow file on STATE.
+  // ...and mos-seed-state, which must put NO shadow file on STATE -- and which
+  // M4f also reads for the two connd render targets. The `for d in ...` loop is
+  // the shape the connd checks grep for, not decoration: the seed creates both
+  // directories from ONE loop, so the assertion is in two halves and either
+  // half alone would pass for a script that created the other twice.
   file('/usr/lib/mos/mos-seed-state',
-    '#!/bin/sh\nmkdir -p /mnt/state/mos /mnt/state/ssh /mnt/state/hostapd\n')
+    '#!/bin/sh\n'
+    + 'mkdir -p /mnt/state/mos /mnt/state/ssh\n'
+    + 'for d in wpa_supplicant hostapd; do\n'
+    + '    mkdir -p "/mnt/state/$d"\n'
+    + '    chmod 0700 "/mnt/state/$d"\n'
+    + 'done\n')
 }
 
 /**
