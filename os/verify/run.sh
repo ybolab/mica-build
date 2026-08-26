@@ -6,6 +6,7 @@
 #   bash os/verify/run.sh src/board.test.ts   extra arguments go to `bun test`
 #   bash os/verify/run.sh --lint         the board-definition schema lint instead
 #   bash os/verify/run.sh --parity       diff this port against os/verify-image-v2.sh
+#   bash os/verify/run.sh --build-rootfs build the os/rootfs stage chain
 #
 # WHAT THIS PACKAGE IS. PLAN-014 M3: the bun+TypeScript foundation the rest of
 # os/ moves onto, in the shape test/apid-api already established -- bun.lock,
@@ -51,6 +52,7 @@ usage() {
 usage: bash os/verify/run.sh [--help] [bun-test-args...]
        bash os/verify/run.sh --lint [board.env ...]
        bash os/verify/run.sh --parity [harness-args...]
+       bash os/verify/run.sh --build-rootfs [driver-args...]
 
 Installs the dev dependencies if they are missing, typechecks src/, then runs
 the suite. Any extra arguments are passed to `bun test` (a filename filter, for
@@ -67,6 +69,12 @@ register against the SAME image and diffs their conclusions per check, for both
 shipped boards. Its remaining arguments are the harness's own; try --parity
 --help. Unlike the two above it needs docker AND a bun on this host: see the
 refusal below.
+
+With --build-rootfs FIRST, it builds the os/rootfs stage chain -- one
+Dockerfile per stage from os/rootfs/stages/, each FROM the local image tag the
+previous one was written to. os/rootfs/build-v2.sh calls it with the build
+arguments it computed; try --build-rootfs --help. It needs docker and a host
+bun, for the same reason --parity does.
 
 A host with no bun runs the same steps in the bun container pinned by digest as
 IMAGE_BUN_1 in os/build-env/images.env. That route is taken automatically; it
@@ -89,6 +97,7 @@ case "${1:-}" in
 --help | -h) usage; exit 0 ;;
 --lint) MODE=lint; shift ;;
 --parity) MODE=parity; shift ;;
+--build-rootfs) MODE=build-rootfs; shift ;;
 esac
 
 # ...and anywhere else either is a MISTAKE, refused rather than forwarded. Driven
@@ -100,7 +109,7 @@ esac
 # it never reaches that parser, and `bun test --parity` is the same green about
 # the same wrong thing.
 for arg in "$@"; do
-    case "${arg}" in --lint | --parity) ;; *) continue ;; esac
+    case "${arg}" in --lint | --parity | --build-rootfs) ;; *) continue ;; esac
     echo "error: ${arg} has to be the FIRST argument; here it came after '$1'." >&2
     echo "       Anywhere else it would be forwarded to \`bun test\`, which ignores it and" >&2
     echo "       reports a green suite in answer to a request for something else." >&2
@@ -170,6 +179,21 @@ fi
 # harness speaking the daemon's HTTP API over the socket from bun. Whichever it
 # is, it is a new pin in os/build-env/images.env and belongs to the milestone
 # that closes the gate.
+# THE SECOND MODE THE CONTAINER ROUTE CANNOT CARRY, for the same reason and
+# with a narrower consequence. --build-rootfs drives `docker buildx build` once
+# per stage; inside the pinned bun container that is docker-in-docker against a
+# client that is not there. The gap is smaller than --parity's because this mode
+# is reached from os/rootfs/build-v2.sh, which already needs a docker on the
+# host to do anything at all -- so a host that can build a rootfs can run the
+# driver, and what it is being asked for on top is bun.
+if [ "${MODE}" = build-rootfs ] && [ "${ROUTE}" = container ]; then
+    echo "error: --build-rootfs needs a bun on THIS host, and there is none (${WHY})." >&2
+    echo "       It drives docker buildx once per stage, and the pinned bun image carries no" >&2
+    echo "       docker client -- running it there would be docker-in-docker. Install bun, or" >&2
+    echo "       set MOS_VERIFY_BUN to one." >&2
+    exit 1
+fi
+
 if [ "${MODE}" = parity ] && [ "${ROUTE}" = container ]; then
     echo "error: --parity needs a bun on THIS host, and there is none (${WHY})." >&2
     echo "       The suite and the lint run in the pinned bun container; --parity cannot, because it" >&2
@@ -365,6 +389,18 @@ if [ "${MODE}" = parity ]; then
     echo "os/verify: image-contract parity harness"
     rc=0
     run_bun run src/parity-cli.ts "$@" || rc=$?
+    exit "${rc}"
+fi
+
+# --- the rootfs stage chain --------------------------------------------------
+# No vacuity guard, and this is the one mode where that needs no argument: the
+# driver's own auditChain refuses a stages directory holding no Dockerfile and a
+# chain of exactly one, so "built nothing and exited 0" is a failure before any
+# docker runs. src/stages.test.ts drives both from the failing side.
+if [ "${MODE}" = build-rootfs ]; then
+    echo "os/verify: os/rootfs stage chain"
+    rc=0
+    run_bun run src/stages-cli.ts "$@" || rc=$?
     exit "${rc}"
 fi
 
