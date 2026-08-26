@@ -145,14 +145,23 @@ export function grubSubstitutions(geometry: Geometry): Record<string, string> {
  *
  * `replaceAll` on a LITERAL `@NAME@`, not a regular expression built from the
  * value: the values here include a command line full of `.` and `=` and one of
- * them (`console=ttyS0,115200 net.ifnames=0`) would be a live pattern. The shell
- * uses `sed s|...|...|g` and gets away with it because the LEFT side is the
- * literal placeholder; the right side is where a `\1` would bite, and this has
- * no right-hand-side syntax at all.
+ * them (`console=ttyS0,115200 net.ifnames=0`) would be a live pattern.
+ *
+ * AND THE REPLACEMENT IS A FUNCTION, for the other half of the same problem.
+ * An earlier version of this comment said the right-hand side "has no
+ * right-hand-side syntax at all", and that was WRONG: a *string* replacement in
+ * JavaScript expands `$&`, `` $` ``, `$'`, `$$` and `$n`. `BOARD_CMDLINE_ARGS`
+ * is free-form board text -- freer than the board name that carries the same
+ * hazard in `bundle.ts`'s manifest -- so a kernel argument containing `$&`
+ * would have been silently rewritten into the grub.cfg that boots the machine.
+ * A replacer function is never scanned for those sequences.
+ *
+ * No board carries one today, so this moves no bytes and the x64 image gate
+ * proves it: `bdf340e9…` before and after.
  */
 export function renderTemplate(template: string, substitutions: Record<string, string>): string {
   let out = template
-  for (const [name, value] of Object.entries(substitutions)) out = out.replaceAll(`@${name}@`, value)
+  for (const [name, value] of Object.entries(substitutions)) out = out.replaceAll(`@${name}@`, () => value)
   return out
 }
 

@@ -1427,32 +1427,107 @@ against a value it had itself corrupted.
 This site is **deleted along with its container**. It is not fixed: no change
 was made to it, and it stops existing because the file does.
 
-### …and `src/bundle.ts:448` has the same defect under a different character — THIS ONE SHIPS
+### …and `src/bundle.ts:448` had the same defect under a different character — FIXED HERE, at both sites
 
-**This corrects M6d's record.** `renderManifest`'s doc comment says "The
-substitutions are LITERAL. sed's are not", and the first half is only true of
-`&`. JavaScript expands `$&`, `` $` ``, `$'` and `$$` **in the replacement
-string**, and `String.replaceAll` is not exempt. Measured, same template, same
-harness as above:
+**This corrects M6d's record, and then closes it.** `renderManifest`'s doc
+comment said "The substitutions are LITERAL. sed's are not", and the first half
+was only true of `&`. JavaScript expands `$&`, `` $` ``, `$'`, `$$` and `$n` **in
+the replacement string**, and `String.replaceAll` is not exempt. Measured, same
+template, same harness as above, **before the fix**:
 
 ```
 sed  (shell, :289)     mos-a&b    ->  compatible=mos-a@COMPATIBLE@b
-TS   (bundle.ts:448)   mos-a&b    ->  compatible=mos-a&b               <- the & IS fixed
+TS   (bundle.ts:448)   mos-a&b    ->  compatible=mos-a&b               <- the & WAS fixed
 TS   (bundle.ts:448)   mos-a$&b   ->  compatible=mos-a@COMPATIBLE@b    <- SAME DEFECT, NEW TRIGGER
 TS   (bundle.ts:448)   mos-a$`b   ->  compatible=mos-acompatible=b
 TS   (bundle.ts:448)   mos-a$'b   ->  compatible=mos-ab
 TS   (bundle.ts:448)   mos-a$$b   ->  compatible=mos-a$b
 ```
 
-**The port did not remove the class; it moved the trigger from `&` to `$`.** The
-reachability is unchanged and still nil today — `compatible` is `mos-<board>`
-out of a rendered `system.conf`, and `verify_bundle`'s successor would still
-fail against a value it had corrupted — so this is latent in exactly the way the
-shell's was. What changed is that after the deletion it is no longer a defect
-being *reproduced*; it is a defect in the code that ships, with no oracle behind
-it and a comment above it asserting the opposite. The literal-substitution fix
-is `replaceAll('@COMPATIBLE@', () => compatible)`, which takes a function and
-performs no `$` expansion; it is deliberately not applied here.
+**The port had not removed the class; it had moved the trigger from `&` to `$`.**
+
+M6e first recorded this as shipping, on the reading that PLAN-014:220-223 put
+acting out of scope. **L2 ruled otherwise and the ruling is right**: `os/build/
+src/bundle.ts` was created by M6d (`eee58ca`, with `020d003` adding its tests)
+and no other subtask has ever touched it — `git log --follow` returns exactly
+those two commits. It is M6's own port, inside M6's own milestone, and the
+exclusion list covers device-side runtime behaviour, image content contracts,
+`board/`, `mosd/` and `test/apid-api` — none of which is `os/build/src/`. §4's
+record-not-fix instruction was about the *shell's* defect, where fixing a file
+about to be deleted is pointless. This is a live defect in code that ships.
+
+**A SECOND SITE, found by sweeping rather than by being told.** Every
+`replaceAll`/`replace` in `os/build/src/` was checked for a non-literal-safe
+replacement. `src/grub-x64.ts:155` had the identical defect:
+
+```ts
+for (const [name, value] of Object.entries(substitutions)) out = out.replaceAll(`@${name}@`, value)
+```
+
+and its doc comment made the same false claim in stronger words — that the
+right-hand side "has no right-hand-side syntax at all". **Its input is freer than
+the bundle's.** `BOARD_CMDLINE_ARGS` is arbitrary board text — a kernel command
+line — where `BUNDLE_COMPATIBLE` is only ever `mos-<board>`. A cmdline containing
+`$&` would have been silently rewritten into the `grub.cfg` that boots the
+machine.
+
+Three other `replace` sites were checked and are correct as written:
+`toolbox.ts:137` (replacement `'\''`, no `$`), `pin-seeded-times.ts:95` (empty
+replacement) and `sgdisk.ts:218` (`'$1'` against a real capture group, which is
+the intended use).
+
+**The fix is a replacer FUNCTION at both sites**, not an escape list:
+
+```ts
+.replaceAll('@COMPATIBLE@', () => options.compatible)
+out.replaceAll(`@${name}@`, () => value)
+```
+
+A function replacement is never scanned for `$` sequences. An escape list
+enumerating `$&`, `` $` ``, `$'`, `$$`, `$n` is a list that can go stale; a
+function cannot.
+
+**Driven from the failing side, and the negative was taken by reverting the fix
+and watching the tests go red** — `src/bundle.test.ts` and
+`src/grub-x64.test.ts`, six cases and five:
+
+```
+bundle.test.ts, fix reverted:   4 fail  ($&, $`, $', $$)
+grub-x64.test.ts, fix reverted: 4 fail  ($&, $`, $', $$)
+```
+
+**Exactly four of six and four of five fail, and the ones that do not are the
+controls.** A bare `&` lands literally in JavaScript either way — it is kept as a
+case because it is the shell's original defect and a future rewrite to a regex
+would break it — and `$1` with no capture group is also literal. A test set where
+*everything* went red would have been failing indiscriminately rather than
+catching this class. There is also an explicit positive control: an ordinary
+`mos-x64`/`0.0.0-dev` renders unchanged, without which a `renderManifest` that
+returned its input untouched would satisfy every case above.
+
+### The fix moves no bytes, and the DEAD ORACLE proves it
+
+The oracle cannot be re-run — it was deleted, correctly, in the commit before
+this one. But **the oracle's OUTPUT is recorded above**, and for a change that
+claims to move no bytes a recorded hash is a sound regression oracle. No shipped
+board can carry a trigger: `render-config.sh:88` sets
+`COMPATIBLE="mos-${LAYOUT_BOARD}"`, both boards render `mos-cx3576`/`mos-x64`,
+and both `BOARD_CMDLINE_ARGS` values are free of `$` and `&` — checked, not
+assumed.
+
+So all four gates were re-run against the fixed tree and **all four are
+unchanged**:
+
+| gate | before the fix | after the fix |
+|---|---|---|
+| cx3576 image | `f36bf809…` | `f36bf809…` |
+| x64 image | `bdf340e9…` | `bdf340e9…` |
+| cx3576 bundle payload | 114425856 `d7506b62…` | 114425856 `d7506b62…` |
+| x64 bundle payload | 288894976 `66bb6dc1…` | 288894976 `66bb6dc1…` |
+
+The x64 image is the load-bearing one for `grub-x64.ts`: the rendered `grub.cfg`
+is written onto the ESP, so a substitution that moved a byte would have moved
+that hash. It did not.
 
 ### Four stale `Dockerfile.v2` references in `os/build`'s text — SHIPS
 
@@ -1489,7 +1564,8 @@ and it must.**
 - **The sed site is `os/update/bundle.sh:289`, not `:294`.** `:294` falls inside
   the comment block below the substitution. Counted, not remembered.
 - **There is no `os-image-x64` make target**, and there never was one. M6c's note
-  below says "`os-image-x64` still runs `bash os/mkimage-x64.sh`";
+  below said "`os-image-x64` still runs `bash os/mkimage-x64.sh`" and is now
+  corrected in place;
   `make -n os-image-x64` answers `No rule to make target 'os-image-x64'`. The
   Makefile's only x64 rule is the `x64-%` pattern, which refuses BSP builds by
   name. So the x64 assembler has never had a make target and the deletion takes
@@ -1661,10 +1737,15 @@ recalled: `os/build/`, `os/build-env/`, `os/podman/`, `os/rootfs/`, `os/tests/`,
   commit because `os/mkimage-x64.sh` sources it (copied into the work directory
   as `/w/mkimage-common.sh`) and that script still ships.
 - The TypeScript assemblers have **no `make` target** and M6c deliberately did
-  not give one: `os-image-x64` still runs `bash os/mkimage-x64.sh`. Rewiring the
-  shipping path is M6e's call, not a change to smuggle into a milestone that must
-  prove nothing changed. `bash os/build/run.sh --mkimage-x64` is the entry point
-  until then.
+  not give one. ~~`os-image-x64` still runs `bash os/mkimage-x64.sh`.~~
+  **CORRECTED by M6e: there is no `os-image-x64` target and there never was
+  one.** `make -n os-image-x64` answers `No rule to make target
+  'os-image-x64'`; the Makefile's only x64 rule is the `x64-%` pattern, which
+  refuses BSP builds by name. So the x64 assembler had no make target before the
+  port either, and M6e's deletion took none away. Rewiring the shipping path was
+  M6e's call and it rewired the two targets that DID exist
+  (`os-image-cx3576-v2`, `os-bundle-cx3576`); `bash os/build/run.sh
+  --mkimage-x64` remains the x64 entry point, unchanged.
 - When `os/mkimage-x64.sh` goes, **`os/tests/mkimage-x64-selftest.sh` goes with
   it or is repointed**. It drives the shipped script directly and 196 of its
   assertions are about that; in particular it SCRAPES the `images.env` key out of

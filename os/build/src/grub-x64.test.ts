@@ -170,6 +170,27 @@ describe('the substitutions', () => {
     )
   })
 
+  // THE $-EXPANSION CLASS. The comment above renderTemplate used to say the
+  // right-hand side "has no right-hand-side syntax at all"; that was wrong. A
+  // STRING replacement in JavaScript expands $&, $`, $' , $$ and $n, and
+  // BOARD_CMDLINE_ARGS is free-form board text -- a kernel argument, which is
+  // freer than the board name that carries the same hazard in bundle.ts.
+  //
+  // A cmdline containing `$&` would have been silently rewritten into the
+  // grub.cfg that boots the machine. Fixed with a replacer function, which is
+  // never scanned for those sequences.
+  test.each([
+    ['$&', 'console=ttyS0 mos.tag=$& net.ifnames=0'],
+    ['$`', 'console=ttyS0 mos.tag=$` net.ifnames=0'],
+    ["$'", "console=ttyS0 mos.tag=$' net.ifnames=0"],
+    ['$$', 'console=ttyS0 mos.tag=$$ net.ifnames=0'],
+    ['&', 'console=ttyS0 mos.tag=a&b net.ifnames=0'],
+  ])('a cmdline carrying %s lands byte for byte', (_name, value) => {
+    const out = renderTemplate('linux /vmlinuz @BOARD_CMDLINE_ARGS@', { BOARD_CMDLINE_ARGS: value })
+    expect(out).toBe(`linux /vmlinuz ${value}`)
+    expect(out).not.toContain('@BOARD_CMDLINE_ARGS@')
+  })
+
   test('EVERY occurrence is replaced, not just the first', () => {
     // The shell's sed has a /g; a port using String.replace would substitute the
     // slot A menuentry and leave slot B's placeholder in place, producing an

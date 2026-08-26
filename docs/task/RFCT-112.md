@@ -90,7 +90,7 @@ and the ported form is the TS suite rather than a shell script under
 `os/tests/`.** All 33 refusals of `os/mkimage-v2.sh` and all 14 reachable ones of
 `os/mkimage-x64.sh` + `os/mkimage-common.sh` are driven from the failing side
 with a positive control beside each; `os/build/HARNESS.md` tables them one by
-one. `make os-build-test` is green at **661/661 across 25 files**.
+one. `make os-build-test` is green at **674/674 across 25 files**.
 
 **4. "Shell assemblers and selftest deleted afterwards" — DONE.** Four shell
 files and both selftests. `os/` now holds no top-level files at all. Both
@@ -109,7 +109,7 @@ docs-verify 375/375 · docs-verify-test 8/8
 os-shell-pipefail-lint 26/26 (26 scanned)      <- was 32/32
 os-layout-lint 26/26 · os-layout-lint-test 42/42
 os-verify-test 922/922 across 27 files
-os-build-test 661/661 across 25 files          (alone on the host; no flake seen)
+os-build-test 674/674 across 25 files          (alone on the host; no flake seen)
 os-health-test 57/57 · build-env "20 Dockerfile(s) agree"
 ```
 
@@ -117,15 +117,64 @@ os-health-test 57/57 · build-env "20 Dockerfile(s) agree"
 removed with the assemblers they drove, not repointed, on M4e's precedent that a
 target passing with nothing behind it is worse than no target.
 
-### Not fixed, and recorded instead
+### The `$`-expansion defect: recorded first, then FIXED
 
-`os/build/HARNESS.md` carries these with their reproductions. The one that
-matters most is a correction: **the `sed`-expands-`&` defect does not die with
-the file.** `src/bundle.ts:448` has the same defect under a different trigger —
-JavaScript expands `$&`, `` $` ``, `$'` and `$$` in a `replaceAll` replacement —
-so the port moved the character rather than removing the class, while its own
-comment says the substitution is literal. Latent today for the same reason the
-shell's was, and now a defect in code that ships with no oracle behind it.
+M6e first recorded this as shipping. **L2 ruled that it is M6's own to fix, and
+the ruling is right.** `os/build/src/bundle.ts` was created by M6d (`eee58ca`,
+tests in `020d003`) and `git log --follow` returns only those two commits, so no
+other subtask owns it; PLAN-014:220-223 excludes device-side runtime behaviour,
+image content contracts, `board/`, `mosd/` and `test/apid-api`, none of which is
+`os/build/src/`; and the spec's record-not-fix instruction was about the
+*shell's* defect, where fixing a file about to be deleted is pointless.
+
+`sed` expands `&`; JavaScript expands `$&`, `` $` ``, `$'`, `$$` and `$n` in a
+replacement string, and `replaceAll` is not exempt. The port had fixed `&` and
+reintroduced the same class under `$`, while its comment claimed the
+substitution was literal.
+
+**A second site was found by sweeping, not by being told.** Every
+`replaceAll`/`replace` in `os/build/src/` was checked. `src/grub-x64.ts:155` had
+the identical defect and a comment making the same claim in stronger words
+("no right-hand-side syntax at all"), and **its input is freer**:
+`BOARD_CMDLINE_ARGS` is an arbitrary kernel command line, where
+`BUNDLE_COMPATIBLE` is only ever `mos-<board>`. Three other `replace` sites were
+checked and are correct as written.
+
+Both fixed with a replacer **function** — never scanned for `$` sequences —
+rather than an escape list, which is a list that can go stale.
+
+**Driven from the failing side by reverting the fix**: 4 of 6 bundle cases and
+4 of 5 grub cases go red (`$&`, `` $` ``, `$'`, `$$`). The cases that do not are
+the controls — a bare `&` and a `$1` with no capture group are literal in
+JavaScript either way, and a set where everything went red would have been
+failing indiscriminately. A positive control asserts an ordinary
+`mos-x64`/`0.0.0-dev` renders unchanged.
+
+**The fix moves no bytes, proven against the dead oracle's recorded output.**
+The oracle cannot be re-run — it was deleted in `c55c7b0` — but a recorded hash
+is a sound regression oracle for a change that claims to move none. No shipped
+board can carry a trigger (`render-config.sh:88` is `COMPATIBLE="mos-${LAYOUT_BOARD}"`;
+both `BOARD_CMDLINE_ARGS` values are `$`- and `&`-free, checked). All four gates
+re-run against the fixed tree, all four unchanged:
+
+| gate | before fix | after fix |
+|---|---|---|
+| cx3576 image | `f36bf809…` | `f36bf809…` |
+| x64 image | `bdf340e9…` | `bdf340e9…` |
+| cx3576 bundle payload | 114425856 `d7506b62…` | 114425856 `d7506b62…` |
+| x64 bundle payload | 288894976 `66bb6dc1…` | 288894976 `66bb6dc1…` |
+
+The x64 image is load-bearing for `grub-x64.ts`: the rendered `grub.cfg` is
+written onto the ESP, so a substitution that moved a byte would have moved that
+hash.
+
+### Still recorded, not fixed
+
+`os/build/HARNESS.md` carries these with their reproductions: the shell's own
+`sed`/`&` site at `os/update/bundle.sh:289`, **deleted along with its container**
+rather than fixed; four stale `Dockerfile.v2` references in `os/build/src/`
+(successor `os/rootfs/scripts/pack-verity.sh`); and `verify-image-v2.sh:2674`,
+confirmed MOOT because M4e deleted that file.
 
 ### Left alone deliberately
 

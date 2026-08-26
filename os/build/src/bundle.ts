@@ -431,12 +431,26 @@ export function spliceBootImages(template: string, bootImages: string): string {
 /**
  * The rendered manifest: the boot block spliced in, then the two substitutions.
  *
- * The substitutions are LITERAL. sed's are not -- an `&` in a replacement
- * expands to the whole match -- and neither value can contain one today:
- * BUNDLE_VERSION is refused unless it matches `^[A-Za-z0-9][A-Za-z0-9._+-]*$`
- * and BUNDLE_COMPATIBLE is `mos-<board>` out of the rendered system.conf. It
- * is a real difference on a compatible string nobody writes, and it is written
- * down here rather than left for the gate to fail to notice.
+ * THE REPLACEMENTS ARE FUNCTIONS, AND THAT IS THE WHOLE POINT. A string
+ * replacement is NOT literal in JavaScript: `replaceAll` expands `$&`, `` $` ``,
+ * `$'`, `$$` and `$n` inside it. A replacer function is never scanned for those,
+ * so the value lands byte for byte whatever it contains.
+ *
+ * `os/update/bundle.sh:289` had this defect under a different character -- it
+ * substituted with `sed`, where an `&` in the replacement expands to the whole
+ * match -- and the first version of this port fixed `&` and reintroduced the
+ * same class under `$`, while its own comment claimed the substitution was
+ * LITERAL. Measured, before the fix: `mos-a$&b` rendered as
+ * `compatible=mos-a@COMPATIBLE@b`, a manifest nobody wrote, which
+ * `readBundleInfo`'s cross-check would then refuse against the uncorrupted
+ * value it was given.
+ *
+ * Neither value can carry a trigger today -- BUNDLE_VERSION is refused unless
+ * it matches `^[A-Za-z0-9][A-Za-z0-9._+-]*$`, and BUNDLE_COMPATIBLE is
+ * `mos-<board>` out of the rendered system.conf -- so this fix moves no bytes
+ * for any board that exists, and the payload gate proves it did not. It is
+ * fixed anyway, because "unreachable today" is a property of the board files
+ * and not of this function.
  */
 export function renderManifest(options: {
   template: string
@@ -445,7 +459,9 @@ export function renderManifest(options: {
   version: string
 }): string {
   const spliced = spliceBootImages(options.template, options.bootImages ?? BOOT_IMAGES_BLOCK)
-  return spliced.replaceAll('@COMPATIBLE@', options.compatible).replaceAll('@VERSION@', options.version)
+  return spliced
+    .replaceAll('@COMPATIBLE@', () => options.compatible)
+    .replaceAll('@VERSION@', () => options.version)
 }
 
 /**
