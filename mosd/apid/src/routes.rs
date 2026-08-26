@@ -1,16 +1,14 @@
 //! HTTP routes: auth gate middleware, the first-run setup wizard, login and
 //! logout flows, the status/network/hostname panes, the power pane, the SSH
-//! pane and §6.3's escape at the reserved `/builtin/` prefix.
-//!
-//! [`app`] is also where `docs/design/api.md` §4.1's precedence lives, as the
-//! *shape* of the router rather than as a check: declared routes, then the
-//! reserved `/api/` and `/builtin/` subtrees, then the asset router as the
-//! fallback.
+//! pane and §6.3's escape at the reserved `/builtin/` prefix. [`app`] is also
+//! where `docs/design/api.md` §4.1's precedence lives, as the shape of the
+//! router rather than as a check: declared routes, then the reserved `/api/`
+//! and `/builtin/` subtrees, then the asset router as the fallback.
 //!
 //! Every page below is a `maud` `html!` expansion over one `&str` stylesheet
-//! constant, which is §6.2's *"the built-in UI is compiled into the binary"*
+//! constant, which is §6.2's "the built-in UI is compiled into the binary"
 //! stated as a property of this file: no `include_str!`, no `include_bytes!`,
-//! no asset directory. §6.2 names dm-verity as the **only** protection on
+//! no asset directory. §6.2 names dm-verity as the only protection on
 //! `/usr/bin/apid` — `apid.service` has no `ProtectSystem=` — so an artifact
 //! that is bytes in the binary is behind that protection and an artifact that
 //! is files on disk would not be.
@@ -120,7 +118,7 @@ pub fn app(state: AppState) -> Router {
         // unconditional path to the built-in UI, and the reserved prefix
         // below is it.
         .route("/", get(serve::root))
-        // §6.3 candidate (A), the way *in*: a reserved prefix the asset router
+        // §6.3 candidate (A), the way in: a reserved prefix the asset router
         // can never shadow. It is unshadowable for the same structural reason
         // `/api/` is — axum matches declared routes before it consults a
         // fallback — and for no other. Nothing under `assets/` checks for this
@@ -129,14 +127,12 @@ pub fn app(state: AppState) -> Router {
         //
         // The nest claims the whole subtree — `/builtin/index.html` and
         // `/builtin/assets/app.js` included — which is what §6.3 means by
-        // burning a path prefix permanently. A prefix reserved for only some
-        // of its paths is not reserved.
-        //
-        // The two spellings split across the nest boundary, the same asymmetry
-        // `/api` has: the nest claims `/builtin` (the nested router sees `/`)
-        // and not `/builtin/`, so the trailing-slash spelling is declared
-        // outside it. Both must reach
-        // the pane; an operator recovering a device should not have to get the
+        // burning a path prefix permanently; a prefix reserved for only some of
+        // its paths is not reserved. The two spellings split across the nest
+        // boundary, the same asymmetry `/api` has: the nest claims `/builtin`
+        // (the nested router sees `/`) and not `/builtin/`, so the
+        // trailing-slash spelling is declared outside it. Both must reach the
+        // pane, an operator recovering a device should not have to get the
         // slash right, and the spelling the design document writes is the one
         // with it.
         .nest(
@@ -676,25 +672,22 @@ async fn gate(State(state): State<AppState>, request: Request, next: Next) -> Re
     }
 
     // The session check comes before the bus call, and the ordering is the
-    // point rather than a detail.
-    //
-    // It is sound because a live session already implies the device is out of
-    // setup mode. A session is minted in exactly two places: `login_submit`,
-    // which mints one only after `password_hash` returned `Some` and verified
-    // against it, and `setup_submit`, which mints one only after the
-    // `access.webAdmin` write that creates the hash has succeeded. There is no
-    // route that removes a hash, so "session verifies" cannot coexist with
-    // "no admin password is configured". An unset-password operation, if one
-    // is ever added, has to clear the session table in the same step, or it
-    // invalidates this short-circuit.
+    // point. It is sound because a live session already implies the device is
+    // out of setup mode: a session is minted in exactly two places —
+    // `login_submit`, only after `password_hash` returned `Some` and verified
+    // against it, and `setup_submit`, only after the `access.webAdmin` write
+    // that creates the hash has succeeded — and no route removes a hash, so
+    // "session verifies" cannot coexist with "no admin password is configured".
+    // An unset-password operation, if one is ever added, has to clear the
+    // session table in the same step or it invalidates this short-circuit.
     //
     // It buys two things. The gate is layered onto every route, so without it
-    // an authenticated page load costs one system-bus round trip per request
-    // -- fine for one server-rendered pane, not fine once a custom UI bundle
-    // (§4) serves dozens of static assets per page, none of which need mosd at
-    // all. And it means a static asset still serves while mosd is down, which
-    // is the same reasoning §6.1 applies to a broken bundle: a failure in one
-    // part must not take the surface that reports it with it.
+    // an authenticated page load costs one system-bus round trip per request --
+    // fine for one server-rendered pane, not fine once a custom UI bundle (§4)
+    // serves dozens of static assets per page, none of which need mosd. And a
+    // static asset still serves while mosd is down, which is the reasoning §6.1
+    // applies to a broken bundle: a failure in one part must not take the
+    // surface that reports it with it.
     if session::cookie_from_headers(request.headers())
         .is_some_and(|value| state.sessions.verify(&value))
     {
@@ -2218,31 +2211,25 @@ const MQTT_BRIDGE_UNIT: &str = "mos-mqttd.service";
 /// (`mosd/mosd/src/reconciler/mqtt.rs`) and is nested, not flat:
 /// `listen.address`, `listen.port`, `auth.enabled`, and a `units` array of one
 /// object per unit the reconciler drives. The pane adapts to that shape rather
-/// than the reconciler flattening itself for the pane, because:
+/// than the reconciler flattening itself for the pane, because the live state
+/// mirrors the settings subtree it applied (`mqtt.listen.address` in settings,
+/// `listen.address` in state), because it is published as bus items where
+/// `/mqtt/listen/address` is the idiomatic path shape, and because `units` has
+/// to be an array: the reconciler drives two units and a flat `activeState`
+/// cannot say whose state it is. Every entry carries its own `unit`,
+/// `activeState` and `unitFileState`, so the broker is the entry named
+/// `mos-mqtt-broker.service` and the bridge the one named `mos-mqttd.service`,
+/// and neither needs a key of its own.
 ///
-/// * the live state mirrors the settings subtree it applied -- `mqtt.listen.address`
-///   in settings, `listen.address` in state -- which is a rule a reader can
-///   predict without opening either file;
-/// * it is published as bus items, where `/mqtt/listen/address` is the
-///   idiomatic path shape;
-/// * `units` has to be an array: the reconciler drives two units, and a flat
-///   `activeState` cannot say whose state it is. Every entry carries its own
-///   `unit`, `activeState` and `unitFileState`, so the broker is the entry
-///   named `mos-mqtt-broker.service` and the bridge the one named
-///   `mos-mqttd.service`, and neither needs a key of its own; reporting both
-///   halves flat would take a new pair of keys each time the reconciler grows
-///   a unit.
-///
-/// Every field is optional here: a key the reconciler has not published
-/// renders as "unknown" and never as a default, because a listen address on
-/// this page is a claim about what the broker is actually bound to.
-///
-/// apid and mosd are separate crates talking over a bus, so no shared type
-/// holds the two ends of this together. What does is a pair of tests: the
-/// reconciler asserts its exact published key set and names this file as the
-/// consumer, and this crate's fixture is a verbatim copy of the reconciler's
-/// own expectation. Without that pair each side tests itself against a shape
-/// it invented, and both stay green while disagreeing.
+/// Every field is optional here: a key the reconciler has not published renders
+/// as "unknown" and never as a default, because a listen address on this page
+/// is a claim about what the broker is actually bound to. apid and mosd are
+/// separate crates talking over a bus, so no shared type holds the two ends
+/// together; what does is a pair of tests — the reconciler asserts its exact
+/// published key set and names this file as the consumer, and this crate's
+/// fixture is a verbatim copy of the reconciler's own expectation. Without that
+/// pair each side tests itself against a shape it invented, and both stay green
+/// while disagreeing.
 struct MqttView {
     /// `mqtt.enabled` -- what the operator asked for.
     enabled: bool,
