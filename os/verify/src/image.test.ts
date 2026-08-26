@@ -21,8 +21,8 @@
 // helper that has only ever been observed succeeding is indistinguishable from
 // a helper that cannot fail.
 
-import { describe, expect, test } from 'bun:test'
-import { mkdtempSync, mkdirSync, symlinkSync, writeFileSync } from 'node:fs'
+import { afterAll, describe, expect, test } from 'bun:test'
+import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import {
   debugfsRun,
@@ -46,7 +46,27 @@ import { REPO_ROOT } from './paths.ts'
 
 // A scratch directory under _out/, never /tmp: a bind mount of /tmp on this
 // host succeeds and delivers an empty directory, and these files are read back.
+//
+// _out/ IS CREATED, NOT ASSUMED, and that is the whole of this line's history.
+// It is gitignored build output (.gitignore:4) and `mkdtempSync` does not
+// create its parent, so on a fresh worktree, a clean clone and CI this threw
+// ENOENT at MODULE SCOPE -- which aborts the file before a single test in it is
+// declared. Measured on 2026-08-26 by moving _out/ aside: `make os-verify-test`
+// went from `PASS (373/373)` to `FAIL (332 passed of 333 run)`, i.e. the 40
+// tests in this file simply stopped existing. That is the failure mode this
+// package keeps finding in other people's checkers -- a ratio cannot see the
+// tests that were never declared, so 373/373 and 333/333 are equally green and
+// only one of them ran this file. The floor was green only because something
+// earlier in the run happened to create _out/ first.
+mkdirSync(join(REPO_ROOT, '_out'), { recursive: true })
 const SCRATCH = mkdtempSync(join(REPO_ROOT, '_out', 'verify-test-'))
+
+// ...and removed afterwards. It used to survive every run, so a tree that had
+// run the suite a few times carried a drift of _out/verify-test-* directories
+// that nothing owned. `force` so a run that never reached a test still exits.
+afterAll(() => {
+  rmSync(SCRATCH, { recursive: true, force: true })
+})
 
 interface Reply {
   readonly code?: number
