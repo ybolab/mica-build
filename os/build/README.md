@@ -197,6 +197,81 @@ The one spelling that did change: sizes go to sgdisk in sectors throughout, wher
 the shell mixes `+NS` and `+NM`. M6a measured those byte-identical at 512-byte
 sectors, and the suite re-runs the comparison rather than trusting the sentence.
 
+## The x64 assembler
+
+`src/mkimage-x64.ts`, with `src/layout-x64.ts`, `src/grub-x64.ts` and the same
+`src/pin-seeded-times.ts` under it and `src/mkimage-x64-cli.ts` over it.
+
+**The gate is byte-identity against the shell, and it is met.** Same prebuilt
+`_out/x64/` inputs, same board definition, shell assembler and TypeScript
+assembler, twice each:
+
+```
+bdf340e93a553a02ef4c1774dcba78db20520b09fc6faf5c8c76e0cb94575a8f   bash os/mkimage-x64.sh         (×2)
+bdf340e93a553a02ef4c1774dcba78db20520b09fc6faf5c8c76e0cb94575a8f   run.sh --mkimage-x64           (×2)
+```
+
+The prebuilt image sitting beside those inputs hashes something else
+(`095f718e…`) and is **not** an oracle: it was produced before R1 added the
+determinism controls, by an assembler with zero occurrences of `--invariant` or
+`E2FSPROGS_FAKE_TIME`. `HARNESS.md` carries the recipe, that trap, the live
+control and what a differing MiB block would have been reported as.
+
+`os/mkimage-x64.sh` carries **11** `echo "error:` sites and sources three more
+from `os/mkimage-common.sh`. All fourteen are ported and each is driven from the
+failing side with a positive control beside it.
+
+### Why this is not `mkimage-v2.ts` with a board parameter
+
+The same question `os/mkimage-x64.sh` answers about `os/mkimage-v2.sh`. That
+assembler is U-Boot — a loader at a fixed sector, a redundant environment pair, a
+compiled `boot.scr` and geometry assertions about all three — and none of it
+exists on a UEFI machine. What the two share is shared as **modules and files**
+(`src/geometry.ts`, `src/pin-seeded-times.ts`, `src/tools/`, the board
+definitions) and not as a `case`.
+
+`src/layout-x64.ts` sits beside `src/layout-cx3576.ts` for the same reason, and
+the difference is arithmetic rather than style: x64 applies its headroom
+percentage to the payload's **byte count** and ceilings to MiB afterwards, where
+cx3576 ceilings first. Measured — the two agree on all 2048 whole-MiB payloads
+and disagree on thousands of others. x64 also has **no pinned slot mode at all**:
+`os/mkimage-x64.sh` sources `board.env` before it reads `MOS_ROOTFS_SLOT_MIB`, so
+the environment never reaches it.
+
+### The ESP cluster floor, and why its position is the check
+
+The board says 64 MiB and the size is a **correctness** constraint. Below 65525
+clusters a filesystem is not FAT32 no matter what `-F 32` said, and `mkfs.vfat`
+does not refuse: at 32 MiB it produces an image mtools reads happily and OVMF
+leaves out of its device list entirely, dropping the machine to the UEFI shell.
+
+The check parses **free** clusters where the specification defines the type by
+**total**. On an empty filesystem free is total minus the root directory's one
+cluster — measured 129021 against 129022 — so it is conservative by exactly one
+*where it stands*. After the `mcopy` it is a free-space check wearing a
+FAT-specification message: 117119 once the ESP tree is staged. So it is ported
+where the shell has it, before anything is copied in, and `HARNESS.md` carries
+both numbers.
+
+### The whole table, read back
+
+There is no `checkLoaderLanded` here because there is no loader. Instead every
+partition is read back out of the assembled GPT and compared against the spec,
+and that is not decoration: measured, `-a 4096` over the real x64 geometry moves
+the ESP to sector 4096 **and shrinks it to 129024 sectors**, and exits 0. On
+cx3576 the same flag makes sgdisk refuse the table outright. The two boards' third
+alignment case is a different failure, so on this board the read-back is the only
+thing that would report it.
+
+### `cp -a` on the host
+
+`os/mkimage-x64.sh` stages the factory `/var` on the HOST and runs everything
+else in its container; `os/mkimage-v2.sh` stages it inside. Each port stages
+where its own shell stages. `cp -a` is `--preserve=all`, which includes xattrs;
+`mke2fs -d` copies xattrs into the image; and this host runs SELinux while
+neither container does — so moving that one step would change EPHEMERAL's bytes,
+and the only thing that would report it is the gate.
+
 ## The toolbox: how an external tool is run
 
 `src/toolbox.ts` is one function with two routes, which is `os/verify/run.sh`'s
@@ -377,13 +452,17 @@ src/tools/mkimage.ts       the U-Boot boot script
 src/tools/e2fsprogs.ts     mke2fs, dumpe2fs, debugfs
 src/tools/veritysetup.ts   the dm-verity hash tree
 src/tools/rauc.ts          the update bundle
-src/layout-cx3576.ts       the DERIVED layout: slot sizing, and the chain down to DATA
+src/layout-cx3576.ts       cx3576's DERIVED layout: slot sizing, and the chain down to DATA
 src/boot-cx3576.ts         boot.cmd's guards and the per-slot verity env, both pure
 src/pin-seeded-times.ts    the argument os/mkimage-common.sh exists to keep in one place
 src/mkimage-v2.ts          the cx3576 assembler
 src/mkimage-v2-cli.ts      the host half: where the inputs are, and the -latest symlink
-src/**/*.test.ts           406 tests; every refusal has a positive control beside it
+src/layout-x64.ts          x64's DERIVED layout -- a second arithmetic, not a second spelling
+src/grub-x64.ts            grub.cfg's three guards and the per-slot cmdline fragment, all pure
+src/mkimage-x64.ts         the x64 assembler
+src/mkimage-x64-cli.ts     its host half
+src/**/*.test.ts           500 tests; every refusal has a positive control beside it
 ```
 
-`HARNESS.md` carries how each guard was driven from the failing side, the bash
-oracle for the geometry, and what M6b needs.
+`HARNESS.md` carries how each guard was driven from the failing side, both bash
+oracles for the geometry, both byte-identity gates, and what M6d and M6e need.

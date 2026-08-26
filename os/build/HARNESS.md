@@ -596,27 +596,325 @@ Without `E2FSPROGS_FAKE_TIME`, atime came back as the wall clock rather than the
 source's — because reading the source to make the copy is itself what bumps it
 under relatime, which is the second half of that file's argument, observed.
 
-## What M6c and M6d need from M6b
+## THE BYTE-IDENTITY GATE: shell against TypeScript, x64
 
-- `src/layout-cx3576.ts` is **cx3576's** chain, and x64's is a different one.
-  Make `layout-x64.ts` beside it rather than a `case` inside this one: the two
-  boards agree on the slot-sizing IDEA and on nothing about the order of what
-  follows.
-- **`os/mkimage-common.sh` is still live** and must not be deleted or
-  restructured: `os/mkimage-x64.sh` sources it, by a path it COPIES into its work
-  directory as `/w/mkimage-common.sh`. `src/pin-seeded-times.ts` is the ported
-  argument; when M6c lands, the shell file goes with the shell assembler.
-- `pinSeededTimes(tb, image, fileMtime)` is board-neutral already — it takes a
-  path and a `touch -d` spelling and nothing else.
-- The toolbox's `cx3576-assembly` toolset now declares `cp`, `find` and `touch`
-  as well. `x64-assembly` does not yet, and M6c will want them for the same
-  reason: `cp -a` is `--preserve=all`, `mke2fs -d` copies xattrs, and a host with
-  SELinux stages different bytes from a container without it.
-- `run.sh --mkimage-v2` is the mode pattern to copy for `--mkimage-x64` and
-  `--bundle`, including the refusal when the flag is not first.
-- **The gate needs the oracle to reproduce ITSELF first.** Run the shell twice
-  before comparing. It costs 70 seconds and it is what turns a matching hash into
-  evidence.
+RFCT-112's second gate, M6c's. Same board definition, same prebuilt `_out/x64/`
+inputs, the shell assembler and the TypeScript one, twice each.
+
+```sh
+cp -al /path/to/prebuilt/_out/x64 _out/x64        # preserving mtimes
+rm -f _out/x64/x64-mos-v2-*.img                   # the prebuilt image is NOT an oracle -- see below
+
+bash os/mkimage-x64.sh                            # the oracle
+bash os/mkimage-x64.sh                            # again -- it must reproduce ITSELF first
+bash os/build/run.sh --mkimage-x64                # the port
+bash os/build/run.sh --mkimage-x64
+
+sha256sum _out/x64/x64-mos-v2-*.img
+```
+
+Result, 2026-08-26, this host — **four images, one hash**:
+
+```
+bdf340e93a553a02ef4c1774dcba78db20520b09fc6faf5c8c76e0cb94575a8f  shell run 1   bash os/mkimage-x64.sh
+bdf340e93a553a02ef4c1774dcba78db20520b09fc6faf5c8c76e0cb94575a8f  shell run 2   bash os/mkimage-x64.sh
+bdf340e93a553a02ef4c1774dcba78db20520b09fc6faf5c8c76e0cb94575a8f  TS run 1      run.sh --mkimage-x64
+bdf340e93a553a02ef4c1774dcba78db20520b09fc6faf5c8c76e0cb94575a8f  TS run 2      run.sh --mkimage-x64
+```
+
+1938 MiB, nine partitions, seven filesystems (three FAT32, four ext4), 512 MiB
+per rootfs slot from a 240123904-byte payload.
+
+### The prebuilt image beside the inputs is NOT an oracle
+
+The same trap M6b nearly walked into, and it is **sharper for x64**. The
+prebuilt `_out/x64/` was produced at `ab6ffe3`, before R1 added the five
+determinism controls: that tree's `os/mkimage-x64.sh` contains **zero**
+occurrences of `--invariant` or `E2FSPROGS_FAKE_TIME` where this tree's contains
+nine, and it has no `os/mkimage-common.sh` at all. So the image sitting beside
+those inputs is the output of an assembler that pinned **nothing** — FAT
+directory times, ext4 `s_wtime`, `s_lastcheck` and `s_hash_seed` all live — and
+it hashes
+
+```
+095f718e6593891df19638c4f5f37c3d550cbce11b1758e69800433b46e1c5d2   <- NOT the gate's value
+```
+
+Comparing against it would have reported a divergence that is not one. Checked,
+not assumed: `grep -c` of the two files, and the absent shared file.
+
+**Two shell runs on THIS tree are what make the TypeScript runs evidence.**
+Assembly reproduces itself — R1 made it so — so two assemblers over identical
+inputs must give identical bytes, and if the oracle did not agree with itself
+there would be nothing to compare against.
+
+**The comparison was checked live.** The suite carries the control
+(`src/mkimage-x64.test.ts`, "...and ONE changed input changes the bytes"): one
+different rootfs payload, everything else equal, and the images compare unequal.
+
+**Had they differed**, the report would have been the differing MiB blocks rather
+than the fact of a difference:
+
+```sh
+cmp -l shell.img ts.img | awk '{printf "%d\n", int(($1-1)/1048576)}' | uniq -c
+```
+
+mapped against the x64 layout: `esp` at 1, `boot-a` at 65, `boot-b` at 161,
+`rootfs-a` at 257, `rootfs-b` at 769, `meta` at 1281, `state` at 1297,
+`ephemeral` at 1361, `data` at 1873.
+
+### Cost, measured
+
+| | |
+|---|---|
+| `bash os/mkimage-x64.sh` | ~70 s |
+| `bash os/build/run.sh --mkimage-x64` | ~27 s |
+| the whole `src/mkimage-x64.test.ts` file (three full assemblies, fabricated inputs) | ~70 s |
+
+## Every x64 refusal, and the mutation that drives it red
+
+`os/mkimage-x64.sh` carries **11** `echo "error:` sites, each with its own `exit
+1`, and it sources `os/mkimage-common.sh`, which carries **3** more — **14
+reachable refusals**. RFCT-112 names five. There is also one guard with no
+message of its own (`sgdisk --verify`, line 471, refusing under `set -e`).
+
+All 14 are ported. Every negative below has a **positive control** beside it in
+the same file; without one, a guard that refused everything would satisfy the
+whole table.
+
+| # | shell | ported to | driven red by |
+|---|---|---|---|
+| 1 | `:83` five inputs absent | `requiredInputs`/`requireFile` | each of the five, absent; plus a DIRECTORY where a file belongs |
+| 2 | `:157` FACTORY_VAR not a directory | `assembleX64` | absent, and a FILE in its place |
+| 3 | `:174` unrendered placeholder | `unrenderedPlaceholders` | an unknown `@NOT_A_KEY@`; and a substitution REMOVED from the map |
+| 4 | `:190` literal hash on a linux line | `literalHashLines` | a 64-hex hash spliced onto both linux lines |
+| 5 | `:198` fragment variable unused | `unusedFragmentVars` | each of the five, `replaceAll`'d away |
+| 6 | `:265` ESP cluster floor | `checkEspIsFat32` | a real 32 MiB `mkfs.vfat -F 32`; and a whole assembly on a mutated board |
+| 7 | `:300` grubenv not 1024 bytes | `checkGrubenvSize` | 0, 1023 and 1025 |
+| 8 | `:325` per-slot file on the ESP | `strayEspEntries` | each of the three names, one at a time |
+| 9 | `:357` the two boot slots differ | `bootSlotFault` | a listing with one entry dropped |
+| 10 | `:412` factory /var has no `lib/` | `assembleX64` | a staged tree with only `cache/` |
+| 11 | `:514` "image assembly failed" | — | see below |
+| 12 | `common:99` inode geometry unreadable | `dumpe2fsHeader` | M6b's `src/pin-seeded-times.test.ts` |
+| 13 | `common:117` inode count cross-check | `refuseUnlessCountsAgree` | M6b's, with a truncated listing |
+| 14 | `common:126` debugfs stderr | `debugfsApply` | M6b's, with a renamed `sif` |
+
+**Number 11 has no analogue, and that is a structural difference rather than a
+dropped guard.** `error: image assembly failed` is the one line the HOST prints
+when its `docker run` exits non-zero — it exists because the shell re-execs a
+whole script inside a container and has nothing but an exit status to report. The
+port has no second process: every tool call goes through `Toolbox.must`, which
+throws a `ToolError` carrying the argv, the route, stdout and stderr. So the
+information that line was standing in for is delivered per call, by the call that
+failed, and there is nothing left to wrap. `src/toolbox.test.ts` drives that
+path.
+
+### The controls, listed, because they are what make the table mean anything
+
+- **the five inputs**: all five present, and the assembly proceeds;
+- **the shipped `grub.cfg`**: renders clean through all three text guards, with
+  two linux lines and every fragment variable referenced;
+- **a hash in a COMMENT and a hash in an `echo` line**: neither fires guard 4.
+  These are the two false positives `os/mkimage-x64.sh` records having shipped,
+  where an earlier draft grepped for the word "verity" and rejected the correct
+  file;
+- **a PARTUUID**: 32 hex digits in five dash-separated groups, longest unbroken
+  run 12 — which is why guard 4's threshold is `{32,}` and not `{12,}`, asserted
+  from both sides;
+- **grubenv at 1024**: passes, and a real `grub-editenv grubenv create` makes one
+  of exactly that size;
+- **a clean ESP listing**: no strays; and a per-slot name NESTED under `EFI/` is
+  not a stray either, because the shell greps with `-x` at the root;
+- **the pinned salt in UPPERCASE**: accepted, so the salt comparison is not a
+  literal one.
+
+## THE ESP CLUSTER FLOOR: why its POSITION is the whole check
+
+`os/mkimage-x64.sh:263` parses **free** clusters out of minfo's FSInfo sector.
+The FAT specification defines the type by **total** clusters. Those are not the
+same number, and the check is correct anyway — *where it stands*.
+
+Measured on a 64 MiB ESP, this host:
+
+| | |
+|---|---|
+| `free clusters=` immediately after `mkfs.vfat` | **129021** |
+| total clusters, computed from the BPB | **129022** |
+| `free clusters=` after the ESP tree is staged (12 MiB) | **117119** |
+
+On an empty filesystem free is total minus the root directory's one cluster, so
+the comparison is conservative by exactly one. **After the `mcopy` it is a
+free-space check**: it would refuse a valid FAT32 for being full while printing a
+message about the FAT specification, and it would stop refusing the case it
+exists for as soon as the payload grew. Moving it is the natural tidy-up during a
+port, and it is silent.
+
+So it is ported **where it stands**, immediately after `mkfs.vfat` and before
+anything is copied in, with that reasoning attached to `checkEspIsFat32`.
+
+**minfo prints no total at all** — only `free clusters=` in its Infosector block.
+That is *why* the shell reads free. `src/mkimage-x64.test.ts` derives the total
+from the BPB (`big size − reserved − fats × Big fatlen) / cluster size`) purely
+to MEASURE the relationship; the shipped check still reads free, where the shell
+reads it.
+
+Driven both ways: a real 32 MiB `mkfs.vfat -F 32` (which exits 0, which minfo
+calls FAT32, and which OVMF left out of its device list entirely) is refused; a
+64 MiB one is accepted; 33 MiB — the measured floor — passes.
+
+And it is driven **through a whole assembly** on a board mutated to
+`ESP_SIZE_MIB=32`, so its call site cannot be deleted unnoticed. A guard only ever
+called directly is a guard whose caller could have dropped it, which is exactly
+what `os/tests/mkimage-x64-selftest.sh` says a byte-identity gate cannot see.
+
+## THE ALIGNMENT: `-a 2048` where the shell passes none
+
+The one spelling this port changed on the `sgdisk` call. `os/mkimage-x64.sh`
+passes no `-a` at all and takes sgdisk's default; this passes the board's
+`GPT_ALIGN_SECTORS`, which x64 declares as 2048 — the same number. Measured over
+the real x64 geometry with real partition GUIDs (sgdisk invents random ones when
+they are not given, so a probe that omits them compares nothing):
+
+| alignment | what sgdisk did |
+|---|---|
+| omitted (sgdisk's default) | esp at 2048, 131072 sectors |
+| `-a 2048` (the board's) | **byte-identical table** |
+| `-a 1` | byte-identical too — nothing here needs relocating |
+| `-a 4096` | esp **moved to 4096 AND shrunk to 129024 sectors**, exit **0** |
+
+**The `-a 4096` row is not what M6b measured on cx3576, and that matters.** There
+sgdisk *refuses* the table (exit 4), because the relocation would push uenv-b into
+boot-a and there is no room. Here there is room, so it relocates silently — and it
+does not only move the ESP, it truncates it to stop at boot-a's original start.
+The two boards' third alignment case is a **different failure**, and the shape
+depends on the geometry rather than on the flag.
+
+Which is why `src/mkimage-x64.ts` READS THE ASSEMBLED TABLE BACK and compares
+every partition against the spec (`partitionFaults`). On this board a wrong
+alignment does not announce itself at all, so the read-back is the only thing
+that would report it. Driven red against a real `-a 4096` table and green against
+the one the assembler actually writes.
+
+## How `layout-x64.ts` differs from `layout-cx3576.ts`, and why it is a second file
+
+Three differences, each of which changes a number or a behaviour:
+
+1. **The headroom is applied in BYTES.** `os/mkimage-x64.sh:117` is
+   `(rootfs_bytes * PCT / 100 + MIB_BYTES - 1) / MIB_BYTES` — percentage first,
+   on the byte count, then the ceiling to MiB. cx3576's is
+   `(payload_mib * pct + 99) / 100`, with the ceiling to MiB first. Measured:
+   the two **agree on all 2048 whole-MiB payloads** and disagree on thousands of
+   others — 12583292 bytes gives **16 MiB** one way and **32** the other, and the
+   difference survives the 16 MiB alignment rather than being absorbed by it.
+   (`os/mkimage-v2.sh` refuses a payload that is not a whole MiB;
+   `os/mkimage-x64.sh` never checks, so the disagreement is reachable.)
+2. **There is no pinned mode.** `os/mkimage-v2.sh` captures
+   `${MOS_ROOTFS_SLOT_MIB+set}` *before* sourcing the board file, so an
+   environment pin selects the frozen-geometry mode. `os/mkimage-x64.sh` sources
+   `board.env` at line 74 and reads `MOS_ROOTFS_SLOT_MIB` at line 119 — the
+   board's 512 has already overwritten anything the environment said. x64 has one
+   mode, the floor, and `layout-x64.ts` has one too. Adding a pinned mode would
+   give the x64 release path a behaviour its shell has never had, inside the
+   milestone whose job is to prove nothing changed.
+3. **The partition set and the alignment.** Nine partitions against eleven, no
+   loader and no uenv pair, and no `checkLoaderLanded` because there is no loader
+   to land — replaced by the whole-table read-back above, for the reason that
+   section gives.
+
+What they DO share is shared as modules and not copied: `src/geometry.ts`,
+`src/pin-seeded-times.ts`, `src/tools/`, and the board files themselves.
+
+### The derived chain, against bash
+
+`src/layout-x64.test.ts` drives `decideSlot` against a bash `$(( ))` oracle over
+13 payloads — one byte either side of the floor (416074957/416074958) and of two
+alignment steps (429496730/429496731, 442918503/442918504), plus 1 byte, 1 MiB,
+2 GiB and 4 GiB − 1.
+
+The three constants are passed to bash as **arguments** rather than by sourcing
+`os/boards/x64/board.env`: an oracle that read the board file would be testing
+the parser this comparison is meant to be independent of.
+
+**And the oracle was checked to be live.** Dropping the `+ mib - 1` turns the
+ceiling into a floor. It is *not* visible at every payload — at 12583292 bytes
+both spellings still land on 16 after alignment, so a test that tried only that
+one would call a broken oracle live. At 268435457 bytes the ceiling gives 336 and
+the floor gives 320, and that is the payload the mutation is driven at.
+
+## `cp -a` ON THE HOST — the opposite of what M6b did, deliberately
+
+`os/mkimage-v2.sh` stages the factory `/var` **inside** its container.
+`os/mkimage-x64.sh` stages it **on the host** (line 161, outside its `docker
+run`) and runs everything else inside. Each port stages where its own shell
+stages.
+
+That is not fastidiousness. `cp -a` is `--preserve=all`, which includes
+**xattrs**; `mke2fs -d` copies xattrs into the image; and this campaign's host
+runs SELinux (`system_u:object_r:container_file_t:s0` on the factory `/var`
+tree) while neither container does. Moving that one step to the other side of the
+boundary would change EPHEMERAL's bytes, and **the only thing that would report
+it is the gate** — as a diff in the middle of a 512 MiB filesystem.
+
+`stageFactoryVarOnHost` is its own function so the one step that deliberately
+runs outside the container is visible as such, with the reason travelling with
+it. `cp -a`, not node's `cpSync`: node preserves neither ownership nor xattrs and
+would produce a different filesystem while reporting success.
+
+`cp`, `find` and `touch` are still declared in `X64_ASSEMBLY.tools`, because the
+assembly runs all three **inside** the container — `cp` for the ESP staging,
+`find ... -exec touch` for the mtimes, `touch` for the seed stamp and the
+per-slot payload. `grub-editenv` joined them for a related reason: it comes from
+`grub-common` and `grub-mkstandalone`'s EFI target from `grub-efi-amd64-bin`, so
+"grub is installed" is not one fact.
+
+### Measured while porting: `touch -h` does not create
+
+A first draft collapsed the shell's `: >file` plus `touch -h -d` into one
+`touch -h -d`. `-h` makes touch operate on the link rather than its target, so on
+a path that does not exist it does not create one:
+
+```
+touch: setting times of '.../.mos-var-seeded': No such file or directory
+```
+
+Forty steps into an assembly. It is two calls again, both in the container, where
+the shell has them.
+
+## What M6d and M6e need from M6c
+
+**M6d (the bundle, `os/update/bundle.sh`):**
+
+- `run.sh` now carries four modes (`--build-rootfs`, `--mkimage-v2`,
+  `--mkimage-x64`, and the suite). Add a fifth ARM; do not reshape the dispatch.
+  Each mode's first-position refusal is its own loop, and all three were driven:
+  `bash os/build/run.sh filter --mkimage-x64` exits 1 by name.
+- `bundleToolset()` already exists in `src/toolsets.ts` and already refuses to
+  open without the rauc this tree built. Nothing in M6c touched it.
+- `os/update/bundle.sh` was NOT touched or run. No bundle was built.
+
+**M6e (the deletion):**
+
+- **`os/mkimage-x64.sh` is NOT deleted**, and neither is `os/mkimage-v2.sh`.
+  Both are the oracles their gates are measured against.
+- **`os/mkimage-common.sh` can now be deleted** — both assemblers are ported and
+  `src/pin-seeded-times.ts` carries its argument. It is still live at this
+  commit because `os/mkimage-x64.sh` sources it (copied into the work directory
+  as `/w/mkimage-common.sh`) and that script still ships.
+- The TypeScript assemblers have **no `make` target** and M6c deliberately did
+  not give one: `os-image-x64` still runs `bash os/mkimage-x64.sh`. Rewiring the
+  shipping path is M6e's call, not a change to smuggle into a milestone that must
+  prove nothing changed. `bash os/build/run.sh --mkimage-x64` is the entry point
+  until then.
+- When `os/mkimage-x64.sh` goes, **`os/tests/mkimage-x64-selftest.sh` goes with
+  it or is repointed**. It drives the shipped script directly and 196 of its
+  assertions are about that; in particular it SCRAPES the `images.env` key out of
+  the assembler with `from.sh --ref <KEY>` on a single line, so the assertion
+  container stays the assembly container. `src/mkimage-x64.test.ts` covers the
+  refusals and three whole assemblies; what it does **not** cover is the
+  selftest's read-back of ext4 root listings and its BPB-level ESP assertions.
+- `docs/task/index.md` is still unchecked for RFCT-112. M6e closes it.
+- Re-run BOTH gates on the tree that ships. The recipes and hashes are above;
+  `f36bf809…` for cx3576 and `bdf340e9…` for x64.
 
 ## What M6b needs from here
 
