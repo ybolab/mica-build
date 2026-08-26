@@ -25,3 +25,11 @@ dashboard: `talos.dashboard.disabled` appears on no kernel command line this
 build composes. The kiosk extension service runs as a systemd unit. The splash
 master keeps its measured facts — a 76 KB PNG, 1920x1080 at 16 bits per channel
 — and drops the comparison to the file it replaced.
+
+An enumeration of instances and a broad acceptance criterion must be the same
+size. When a specification lists the cases it knows about and then states a
+criterion wider than that list, the two disagree about scope, and the criterion
+is the contract: the list is a starting point for finding the work, not a bound
+on it. Work that stops at the enumeration and reports the criterion met has
+reported something untrue. Where the two cannot be made the same size, the
+enumeration should say it is partial.

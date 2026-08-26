@@ -3,39 +3,23 @@
 // Fifteen conclusions on each board -- ten from `check_container_engine`
 // (:1191), four from `check_no_package_manager` (:1112) and one from
 // `check_ca_bundle` (:3498). Three families in one module because all three
-// are the same act read from three sides: what the pack stage PUT IN the root,
-// what it TOOK OUT, and what it GENERATED on the way through.
+// are the same act read from three sides: what the pack stage put in the root,
+// what it took out, and what it GENERATED on the way through.
 //
-// THE ONE SHAPE THIS REGISTER CANNOT EXPRESS, MEASURED AND RECORDED.
+// One shape this register cannot express, measured and recorded.
+// `check_container_engine` opens with an early return -- `if [ ! -e podman ] &&
+// [ ! -e storage.conf ]` then `pass "this image carries no container engine at
+// all ..."` -- so a WITH_CONTAINERS=0 image prints one conclusion where a normal
+// image prints ten. A dedicated entry owning that one line would report `unfired`
+// on both shipped boards, which is exit 1, and the nine suppressed checks have
+// no shell line to compare against. So `container-engine-installed` owns both
+// sentences through a `pass` matcher list and the other nine answer `skipped()`,
+// which on a WITH_CONTAINERS=0 image would produce nine `orphan` rows. Neither
+// shipped board produces that shape; both carry podman.
 //
-// `check_container_engine` opens with an early return:
-//
-//     if [ ! -e podman ] && [ ! -e storage.conf ]; then
-//         pass "this image carries no container engine at all ..."
-//         return
-//     fi
-//
-// -- so a WITH_CONTAINERS=0 image prints ONE conclusion where a normal image
-// prints ten, and the oracle's own words for the other nine are "skipped BY
-// IDENTITY rather than passing vacuously". The register has no way to say "this
-// check does not exist on this image": a dedicated entry owning that one line
-// would report `unfired` on both shipped boards, which is exit 1, and the nine
-// suppressed checks have no shell line to be compared against whatever they
-// answer.
-//
-// So: `container-engine-installed` owns BOTH sentences (a `pass` matcher list),
-// and the other nine answer `skipped()` when there is no engine. On a
-// WITH_CONTAINERS=0 image that would produce nine `orphan` rows. NEITHER SHIPPED
-// BOARD PRODUCES THAT SHAPE -- both carry podman -- and it is written down here
-// rather than papered over, because a limitation nobody recorded is one the next
-// batch rediscovers as a bug.
-//
-// WHY THE UNIT SEARCH EXCLUDES *.wants/*.
-//
-// On purpose, not by oversight, and the oracle says so: an enablement symlink is
-// the NEXT check's subject and a dangling one can exist with no unit file behind
-// it. Two checks that both fire on one mutation say less than two that each name
-// a distinct way the engine could start.
+// The unit search excludes *.wants/* on purpose, and the oracle says so: an
+// enablement symlink is the next check's subject and a dangling one can exist
+// with no unit file behind it.
 
 import { closeSync, lstatSync, openSync, readFileSync, readSync, readdirSync, statSync, type Stats } from 'node:fs'
 import { join } from 'node:path'
@@ -64,9 +48,7 @@ const QUADLET_MOUNT_UNIT = 'etc-containers-systemd.mount'
 const UNIT_TREES = ['/etc/systemd', '/usr/lib/systemd', '/usr/local/lib/systemd'] as const
 const ENABLEMENT_TREES = ['/etc/systemd/system', '/usr/lib/systemd/system'] as const
 
-// ---------------------------------------------------------------------------
 // the walks `find` performs, spelled once
-// ---------------------------------------------------------------------------
 
 /** `[ -e "${ROOT}${path}" ]`: exists, FOLLOWING a link -- a dangling one is absent. */
 function existsFollowingLinks(root: string, path: string): boolean {
@@ -120,9 +102,7 @@ function findUnder(
   return found.sort()
 }
 
-// ---------------------------------------------------------------------------
 // the container engine
-// ---------------------------------------------------------------------------
 
 /** The oracle's early-return guard (:1196): NEITHER podman nor storage.conf. */
 function noEngineAtAll(root: string): boolean {
@@ -329,7 +309,7 @@ const ENGINE_CHECKS: readonly CheckCase[] = [
 
   engineCheck({
     // The default helper_binaries_dir begins with two directories under
-    // /usr/local, a prefix this image makes PARTIALLY WRITABLE.
+    // /usr/local, a prefix this image makes partially writable.
     // Pinned, not searched.
     id: 'container-engine-helper-dir-pinned',
     shell: {
@@ -439,7 +419,7 @@ const ENGINE_CHECKS: readonly CheckCase[] = [
     // /usr/share under containers/systemd, of which /run is tmpfs and the other
     // two are inside the read-only squashfs.
     //
-    // AND IT MUST NOT BE STATICALLY ENABLED. That branch is the one with teeth:
+    // And it must not be statically enabled. That branch is the one with teeth:
     // the bind would come up at every boot whatever container.enabled says,
     // Quadlet would generate units from STATE and they would start, so anything
     // able to write /mnt/state/quadlet gets a root-capable container at the next
@@ -497,9 +477,7 @@ const ENGINE_CHECKS: readonly CheckCase[] = [
   }),
 ]
 
-// ---------------------------------------------------------------------------
 // check_no_package_manager
-// ---------------------------------------------------------------------------
 
 const PKGMGR_BINARIES = [
   '/usr/bin/dpkg', '/usr/bin/dpkg-query', '/usr/bin/dpkg-deb', '/usr/bin/apt',
@@ -516,7 +494,7 @@ const PKGMGR_TREES = [
 
 const PURGE_CHECKS: readonly CheckCase[] = [
   {
-    // THE TIMERS, not just the binaries. apt-daily.timer,
+    // The timers, not just the binaries. apt-daily.timer,
     // apt-daily-upgrade.timer and dpkg-db-backup.timer are enabled by their
     // packages and survive a purge that only removes /usr/bin/apt -- they then
     // fire daily on a device with no package manager and fail daily. Found by
@@ -610,7 +588,7 @@ const PURGE_CHECKS: readonly CheckCase[] = [
     },
     run: async (ctx): Promise<readonly CheckResult[]> => {
       const root = await packedRoot(ctx)
-      // `grep -rlI '^#!.*perl'`: recursive, names only, and -I SKIPS BINARY
+      // `grep -rlI '^#!.*perl'`: recursive, names only, and -I skips binary
       // FILES -- which matters, because /usr/bin holds thousands of them and a
       // reader without -I would match a stray byte sequence in an ELF.
       const dangling = findUnder(
@@ -632,9 +610,7 @@ const PURGE_CHECKS: readonly CheckCase[] = [
   },
 ]
 
-// ---------------------------------------------------------------------------
 // check_ca_bundle
-// ---------------------------------------------------------------------------
 
 const CA_BUNDLE = '/etc/ssl/certs/ca-certificates.crt'
 
@@ -684,9 +660,7 @@ const CA_CHECKS: readonly CheckCase[] = [
   },
 ]
 
-// ---------------------------------------------------------------------------
 // small readers the checks above share
-// ---------------------------------------------------------------------------
 
 /** The file's lines, or none. `grep` over a missing file matches nothing. */
 function grepLines(root: string, path: string): string[] {

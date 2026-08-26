@@ -748,9 +748,9 @@ the contract above.
    MQTT bridge publishes from the item tree (§8), so a secret that reached an
    item would reach a broker. `GetSettings` **cannot** redact, because apid
    authenticates against a value it reads through it — `login_submit` calls
-   `get_settings("access")` (`mosd/apid/src/routes.rs:1125`) and lifts
-   `webAdmin.password_hash` out of the reply (`mosd/apid/src/routes.rs:1129`,
-   helper at `:643-648`) to verify the submitted password against the stored
+   `get_settings("access")` (`mosd/apid/src/routes.rs:1118`) and lifts
+   `webAdmin.password_hash` out of the reply (`mosd/apid/src/routes.rs:1122`,
+   helper at `:637-643`) to verify the submitted password against the stored
    argon2id hash. Redacting that key from `GetSettings` would harden nothing
    reachable from the bus — the façade already covers that surface — and would
    lock every operator out of the dashboard. What keeps a verbatim

@@ -1,23 +1,19 @@
 # syntax=docker/dockerfile:1@sha256:ecfaec9ed6d810b56388c508f4121597bfbba70d41a6dfeee4d8cad5f295fc32
-# RFCT-087 — U-Boot sandbox build for the offline A/B handshake harness.
+# U-Boot sandbox build for the offline A/B handshake harness.
 #
 # Same source pin as board/cx3576/uboot/Dockerfile (v2026.07 commit): the
-# harness must exercise the SAME U-Boot generation the board runs, only built
+# harness must exercise the same U-Boot generation the board runs, only built
 # for the host (sandbox_defconfig) so the shipped boot.scr can be executed
 # without hardware. Network is needed once, for this build; every run of the
 # harness afterwards is offline (docker caches every stage).
-# THE BUILDER IMAGE, INJECTED FROM os/build-env/images.env by
-# os/build-env/from.sh, which os/tests/handshake-test/run.sh calls. RFCT-108
-# M2c; what stood here was the bare tag `ubuntu:24.04`.
-#
-# THE SAME KEY THE BSP BUILDERS USE, deliberately: the comment at the top of
-# this file says the harness must exercise the SAME U-Boot generation the board
-# runs, only built for the host. That claim is about the source pin, and it is
-# weaker than it reads if the two builds do not also stand on the same builder
-# -- a sandbox U-Boot compiled by a different gcc than board/cx3576/uboot's is a
-# different program being asserted about.
-#
-# NO DEFAULT: without a value docker refuses before any stage runs.
+
+# The builder image, injected from os/build-env/images.env by
+# os/build-env/from.sh, which os/tests/handshake-test/run.sh calls. It is the
+# same key the BSP builders use, deliberately: the claim above is about the
+# source pin, and it is weaker than it reads if the two builds do not also
+# stand on the same builder -- a sandbox U-Boot compiled by a different gcc
+# than board/cx3576/uboot's is a different program being asserted about. No
+# default: without a value docker refuses before any stage runs.
 ARG MOS_IMAGE_UBUNTU_2404
 FROM ${MOS_IMAGE_UBUNTU_2404} AS src
 
@@ -39,33 +35,34 @@ RUN git init -q /uboot && \
     git -C /uboot checkout -q --detach FETCH_HEAD && \
     test "$(git -C /uboot rev-parse HEAD)" = "${UBOOT_COMMIT}"
 
-# Sandbox build carrying the board's ENV CONTRACT (board/cx3576/uboot/Dockerfile
-# --target artifact-mos): redundant env pair at the SAME absolute eMMC offsets,
-# uenv-a 0x1000000 / uenv-b 0x1100000, 64 KiB each, on mmc device 0 — here a
-# host file, because the sandbox mmc driver mmaps the DT `filename` property
-# MAP_SHARED (drivers/mmc/sandbox_mmc.c, os_map_file), so saveenv genuinely
-# persists into the file across process invocations, which is what makes one
-# process invocation = one boot cycle testable at all.
-#
-# The one sandbox-only divergence that is a REQUIREMENT, not a convenience:
+# Sandbox build carrying the board's env contract
+# (board/cx3576/uboot/Dockerfile --target artifact-mos): redundant env pair at
+# the same absolute eMMC offsets, uenv-a 0x1000000 / uenv-b 0x1100000, 64 KiB
+# each, on mmc device 0 -- here a host file, because the sandbox mmc driver
+# mmaps the DT `filename` property MAP_SHARED (drivers/mmc/sandbox_mmc.c,
+# os_map_file), so saveenv genuinely persists into the file across process
+# invocations, which is what makes one process invocation = one boot cycle
+# testable at all.
+
+# The one sandbox-only divergence that is a requirement, not a convenience:
 # SANDBOX_RAM_SIZE_MB=2048. The shipped script loads the verity env at
 # 0x40f00000; sandbox default RAM is 256 MiB and any access above RAM is a hard
-# os_abort(). 2048 MiB puts every address the script uses in range — and leaves
-# the abort available on purpose: the harness models "the kernel accepted
-# control" by pointing kernel_addr_r ABOVE 2048 MiB, ending the process at the
-# `load ... Image` line, after the decrement's saveenv and before the
-# booti-returned burn. On sandbox booti can NEVER hand over control
+# os_abort(). 2048 MiB puts every address the script uses in range -- and
+# leaves the abort available on purpose: the harness models "the kernel
+# accepted control" by pointing kernel_addr_r above 2048 MiB, ending the
+# process at the `load ... Image` line, after the decrement's saveenv and
+# before the booti-returned burn. On sandbox booti can NEVER hand over control
 # (arch/sandbox/lib/bootm.c booti_setup unconditionally fails), so without that
 # abort the decrement trajectory 3->2->1->0 would be unreachable.
-#
+
 # The mmc node is appended to the sandbox devicetree; `filename` is relative,
 # resolved against the harness workspace cwd at run time.
-#
+
 # EFI_LOADER is off: sandbox_defconfig enables EFI capsule authentication,
 # whose ESL generation needs host tooling this image does not carry (Error 127
 # at lib/efi_loader/Makefile capsule_esl_file), and nothing in the handshake
-# touches EFI. UNIT_TEST must go with it — the built-in test suite
-# (test/boot/bootflow.c) links against EFI symbols unconditionally — and
+# touches EFI. UNIT_TEST must go with it -- the built-in test suite
+# (test/boot/bootflow.c) links against EFI symbols unconditionally -- and
 # UPL/CMD_UPL must go with UNIT_TEST, because cmd/upl.c links against the
 # suite's upl_get_test_data (CMD_UPL declares no Kconfig dependency on it).
 FROM src AS build
@@ -85,10 +82,11 @@ RUN cd /uboot && \
       '	};' \
       '};' >> arch/sandbox/dts/sandbox.dts && \
     # board/sandbox/sandbox.c overrides env_get_location() with a hardcoded
-    # priority list {NOWHERE, EXT4, FAT, SPI_FLASH} that never offers
-    # ENVL_MMC, and the driver-lookup loop stops at the first priority with no
-    # compiled driver — so with only ENV_IS_IN_MMC built, env_init() returns
-    # -ENODEV and the board refuses to start. MMC must replace the FIRST slot.
+    # priority list -- NOWHERE and EXT4, then FAT and SPI_FLASH -- that never
+    # offers ENVL_MMC, and the driver-lookup loop stops at the first priority
+    # with no compiled driver, so with only ENV_IS_IN_MMC built, env_init()
+    # returns -ENODEV and the board refuses to start. MMC must replace the
+    # first slot.
     sed -i 's/\tENVL_NOWHERE,/\tENVL_MMC,/' board/sandbox/sandbox.c && \
     grep -qF 'ENVL_MMC,' board/sandbox/sandbox.c && \
     scripts/config --disable ENV_IS_NOWHERE \

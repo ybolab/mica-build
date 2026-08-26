@@ -1,63 +1,33 @@
 // The board-definition schema lint.
 //
-// WHY THIS EXISTS. A board is defined by its layout file, and the shared build
-// and verification scripts read that definition rather than knowing any board's
-// shape. That only holds if the definition is complete and honest, and neither
-// is self-evident: a missing key makes a shared script fail somewhere far from
-// the omission, and a key a board CANNOT honour reads as a policy nobody
-// implements.
+// Shared build and verification scripts read a board's layout file rather than
+// knowing its shape, which only holds if the definition is complete and honest.
+// So both directions are checked: every key a role requires is present, and no
+// key a role does not use is present. The second is the one that has fired --
+// os/boards/x64/board.env declared BOOT_ATTEMPTS_DEFAULT=3 under a comment
+// asserting grub keeps attempt counters "where U-Boot keeps them in its
+// redundant environment; the CONTRACT is identical". It does not: RAUC's grub
+// backend refuses a configuration that sets boot attempts, and rauc.service
+// exited 1 with "Configuring boot attempts is valid for uboot or barebox only",
+// taking the health gate and the status indicator with it.
 //
-// The second failure is the one that has actually happened. os/boards/x64/board.env
-// declared BOOT_ATTEMPTS_DEFAULT=3 under a comment asserting that grub keeps
-// attempt counters "where U-Boot keeps them in its redundant environment; the
-// CONTRACT is identical". It is not: RAUC's grub backend has no attempt counter
-// and REFUSES a configuration that sets one. Nothing in the tree objected. The
-// image built, shipped, booted, and rauc.service exited 1 with "Configuring
-// boot attempts is valid for uboot or barebox only", taking the health gate and
-// the status indicator down with it.
+// The predecessor, os/verify/lint.sh, `source`d each definition and read every
+// key as `${NAME_KEY:-}`, which cannot tell declared empty from not declared.
+// Four holes measured 2026-08-25: `ROOTFS_A_FS_UUID=""` passed as a forbidden
+// key on a forbidden role where the non-empty spelling was rejected, because
+// `[ -z "${val}" ] && continue` skipped it; `BOOT_ATTEMPTS_DEFAULT=""` on the
+// grub board passed the same way; `LAYOUT_PARTITIONS=" "` passed, reporting "0
+// partitions, numbered 1..0, no gaps and no duplicates" and emitting a pass that
+// satisfied the vacuity guard; and a board declaring no MOS_ARCH passed when
+// MOS_ARCH was exported in the caller's environment. The last is closed one
+// layer down by board-env.ts parsing instead of sourcing; the first three here,
+// by asking `declared()`, which answers presence without consulting the value.
 //
-// So this checks BOTH directions: every key a role requires is present, and no
-// key a role does not use is present. Only the second one would have caught it.
-//
-// ---------------------------------------------------------------------------
-// WHAT THIS PORT CHANGES, AND WHY IT IS NOT A TRANSLATION
-//
-// The predecessor was os/verify/lint.sh: it `source`d each board definition in
-// a subshell and read every key as `${NAME_KEY:-}`. That idiom cannot tell
-// DECLARED EMPTY from NOT DECLARED, and four holes measured on 2026-08-25 all
-// come from exactly that:
-//
-//   1. `ROOTFS_A_FS_UUID=""` -- a forbidden key on a forbidden role -- PASSED.
-//      The non-empty spelling of the same line was rejected. `[ -z "${val}" ]
-//      && continue` skipped it, so the forbidden direction could be defeated by
-//      writing the claim as empty.
-//   2. `BOOT_ATTEMPTS_DEFAULT=""` on the grub board PASSED, by the same route.
-//      That is the check this linter was written for.
-//   3. `LAYOUT_PARTITIONS=" "` PASSED, reporting "0 partitions, numbered 1..0,
-//      no gaps and no duplicates" -- and emitting a pass, so the vacuity guard
-//      was satisfied by a board that declared no partitions at all.
-//   4. A board declaring no MOS_ARCH PASSED when MOS_ARCH was exported in the
-//      caller's environment, because `source` reads the process environment and
-//      `${MOS_ARCH:-}` cannot see where the value came from.
-//
-// Hole 4 is closed one layer down: board-env.ts parses instead of sourcing and
-// never consults process.env. Holes 1-3 are closed here, by asking
-// `declared()` -- which answers PRESENCE without consulting the value -- rather
-// than testing the value for emptiness.
-//
-// THIS MAKES THE PORT STRICTER THAN ITS PREDECESSOR, deliberately. The
-// emptiness of a declaration is never taken as its absence, because on these
-// boards emptiness is a STATEMENT: x64 declares BOARD_FIRMWARE_FILES="" and
-// BOARD_HWINIT_CONFS="" on purpose -- a QEMU machine has no radio firmware and
-// no MAC to burn. A schema that reads those as "not declared" cannot tell a
-// board that said "none" from a board that forgot to say anything.
-//
-// ---------------------------------------------------------------------------
-// THE MESSAGES ARE THE PRODUCT. A verdict tells a board engineer that something
-// is wrong; the message is what tells them which line to edit. So absent and
-// empty get DIFFERENT sentences even where they share a verdict: the shell said
-// "declares no ESP_FAT_VOLUME_ID" for `ESP_FAT_VOLUME_ID=""`, which sends a
-// reader looking for a line that is already there.
+// Emptiness is never taken as absence, because on these boards emptiness is a
+// statement: x64 declares BOARD_FIRMWARE_FILES="" and BOARD_HWINIT_CONFS="" on
+// purpose. And absent and empty get different sentences even where they share a
+// verdict, because "declares no ESP_FAT_VOLUME_ID" about a file containing
+// `ESP_FAT_VOLUME_ID=""` sends a reader looking for a line already there.
 
 import { BoardEnvError } from './board-env.ts'
 import {
@@ -77,7 +47,7 @@ export const COMMON_KEYS = ['PARTNUM', 'LABEL', 'GUID', 'TYPECODE'] as const
  * Per role: the keys it REQUIRES, and the keys it FORBIDS.
  *
  * A key in neither list is unconstrained -- placement keys (_START_MIB,
- * _START_SECTOR, _SIZE_MIB, _OFFSET_BYTES) differ legitimately between a
+ * _START_SECTOR and _SIZE_MIB, _OFFSET_BYTES) differ legitimately between a
  * fixed-start partition and one whose offset is derived, and pinning them here
  * would encode the arrangement this file exists to stop encoding.
  *
@@ -264,7 +234,7 @@ function lintPartitionInner(r: Recorder, p: Partition): void {
     }
   }
 
-  // THE FORBIDDEN DIRECTION, and the one hole 1 was in. Presence is the claim.
+  // The forbidden direction, and the one hole 1 was in. Presence is the claim.
   // A key declared empty is still a key this role has no meaning for, and a
   // reader of the file cannot tell it from a value that has yet to be filled in.
   for (const key of schema.forbidden) {
@@ -544,13 +514,13 @@ export function lintFile(path: string): BoardLint {
 /**
  * Refuse a file that contributed no assertions at all.
  *
- * PER FILE, not just in total. When the x64 layout referenced a key that had
+ * Per file, not just in total. When the x64 layout referenced a key that had
  * been renamed, `set -u` killed the shell predecessor's subshell at the first
  * line, the board contributed ZERO assertions, and the run reported
  * `RESULT: PASS (1/1 checks)` from the OTHER board alone. A total that is not
  * zero cannot see that; a per-file count can.
  *
- * IT IS A BACKSTOP, AND EXPORTED SO THAT IT CAN BE TESTED AS ONE. No input can
+ * It is a backstop, and exported so that it can be tested as one. No input can
  * currently reach it through lintFile: lintBoard always contributes something,
  * because a board with no LAYOUT_PARTITIONS still fails on that, and a file the
  * parser refuses becomes a finding. It was proved unreachable by mutation --
@@ -582,7 +552,7 @@ export function lintPaths(paths: readonly string[]): LintRun {
 }
 
 /**
- * The default target: every board this tree ships, by name, READ OFF THE TREE.
+ * The default target: every board this tree ships, by name, read off the tree.
  *
  * This was a literal, and a board added under os/boards/ was therefore a board
  * the lint never opened -- while still reporting `RESULT: PASS (26/26 checks)`,

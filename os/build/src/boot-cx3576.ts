@@ -1,22 +1,20 @@
 // What goes into a cx3576 boot slot, and the refusals that stand between a
 // well-formed boot slot and a bricked board.
 //
-// Everything here is PURE: text in, refusal or text out. That is deliberate.
-// Every guard below exists because the failure it catches does not announce
-// itself on hardware -- U-Boot loads a kernel from a partition that now holds
-// something else, AFTER it has already persisted the boot-attempt decrement --
-// so the guard is the entire defence, and a guard that has only ever been
-// observed working is not evidence that it still can. Made pure, each one can be
-// driven from the failing side by a test in milliseconds, against doctored text,
-// without assembling anything.
+// Everything here is pure: text in, refusal or text out. Every guard below
+// exists because the failure it catches does not announce itself on hardware --
+// U-Boot loads a kernel from a partition that now holds something else, after
+// it has already persisted the boot-attempt decrement -- so the guard is the
+// entire defence, and one only ever observed working is not evidence that it
+// still can. Pure, each is driven from the failing side against doctored text.
 //
-// THE CASE RULE, stated once here as os/mkimage-v2.sh states it once there. GPT
+// The case rule, stated once here as os/mkimage-v2.sh states it once there: GPT
 // tooling -- sgdisk, and therefore os/boards/cx3576/board.env -- writes GUIDs
-// UPPERCASE, while udev and libblkid write the /dev/disk/by-partuuid/ names
-// LOWERCASE, which is the form a kernel cmdline has to use. Both spellings
-// denote the same GUID, so every identifier comparison folds case first. The
-// real rootfs producer emits lowercase and the layout is uppercase, and a
-// literal comparison between them once refused a correct build.
+// uppercase, while udev and libblkid write the /dev/disk/by-partuuid/ names
+// lowercase, the form a kernel cmdline has to use. Both denote the same GUID,
+// so every identifier comparison folds case first: the rootfs producer emits
+// lowercase, the layout is uppercase, and a literal comparison refuses a
+// correct build.
 
 import type { Geometry } from './geometry.ts'
 
@@ -80,7 +78,7 @@ export function verityEnvBase(geometry: Geometry): string {
 
 /**
  * boot.cmd must put rauc.slot= on the kernel cmdline, and must load the
- * SLOT-SUFFIXED verity env.
+ * slot-suffixed verity env.
  *
  * rauc identifies the booted slot from `rauc.slot=` on the cmdline; it cannot
  * use root=, because the verity root is /dev/dm-0 and rauc matches only
@@ -113,7 +111,7 @@ export function checkBootCmdTokens(geometry: Geometry, bootCmd: string, path: st
  * `setenv bootslot <slot>`.
  *
  * The awk this replaces latches on the `setenv bootslot <slot>` line and then
- * takes the FIRST following assignment of the variable -- and never unlatches,
+ * takes the first following assignment of the variable -- and never unlatches,
  * which is why slot B's block must come after slot A's for slot A's answer to
  * be slot A's. Kept identical rather than tidied: a scan that read a different
  * line would agree with the shell on today's file and disagree on the next one.
@@ -132,10 +130,10 @@ export function bootCmdSetting(bootCmd: string, slot: string, name: string): str
 }
 
 /**
- * THE RENUMBERING GUARD.
+ * The renumbering guard.
  *
  * boot.cmd addresses its slot as `mmc 0:${bootpart}`, a literal GPT partition
- * NUMBER, because hush cannot read a layout file. So the numbers are written out
+ * number, because hush cannot read a layout file. So the numbers are written out
  * in boot.cmd and checked here against the layout instead: inserting or removing
  * any partition ahead of the boot slots shifts them, and a stale number does not
  * announce itself -- U-Boot just fails to find Image in a partition that now
@@ -175,11 +173,10 @@ export function checkBootCmd(geometry: Geometry, bootCmd: string, path: string):
  * What the shell's `sed -n` substitution yields: the LAST match on each line,
  * joined by newlines.
  *
- * sed's leading wildcard is greedy, so the capture is the last occurrence on
- * the line, and `-n` with a `p` flag prints once per matching line. Both are reproduced
- * because both decide what a cmdline carrying two verity tables would yield,
- * and "whatever JavaScript's first match happens to be" is not an answer to
- * that.
+ * sed's leading wildcard is greedy, so the capture is the last occurrence on the
+ * line, and `-n` with a `p` flag prints once per matching line. Both are
+ * reproduced because both decide what a cmdline carrying two verity tables
+ * yields, and "whatever JavaScript's first match happens to be" is not an answer.
  */
 function lastPerLine(text: string, pattern: RegExp): string {
   const out: string[] = []
@@ -202,15 +199,14 @@ export interface VerityEnv {
  * The two verity tokens a slot's kernel cmdline carries, as the shell's two
  * `sed -n` substitutions yield them.
  *
- * SEPARATE FROM THE GUARDS THAT READ THEM, because two scripts read the same
+ * Separate from the guards that read them, because two scripts read the same
  * two tokens out of the same two files and must agree about what they say:
  * os/mkimage-v2.sh's mkverityenv() and os/update/bundle.sh's
- * write_verity_env(). They REFUSE differently -- the assembler gives
+ * write_verity_env(). They refuse differently -- the assembler gives
  * dm-mod.create= and dm-mod.waitfor= a sentence each, the bundle builder rolls
- * them into one, and the bundle builder additionally requires the pinned salt
- * -- so the refusals stay two functions. The EXTRACTION is one, so a cmdline
- * carrying two tables cannot mean one thing to the image and another to the
- * bundle installed onto it.
+ * them into one and additionally requires the pinned salt -- so the refusals
+ * stay two functions. The extraction is one, so a cmdline carrying two tables
+ * cannot mean one thing to the image and another to the bundle installed onto it.
  */
 export function verityCmdlineFields(cmdline: string): { create: string, waitfor: string } {
   return {

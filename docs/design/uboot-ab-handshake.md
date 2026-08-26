@@ -114,7 +114,7 @@ files [V]. Putting the old names in a defconfig is silently ignored.
 
 `CONFIG_BOOTCOMMAND` is set by the Dockerfile to
 `"setenv boot_targets; bootflow scan -lb; echo BOOT FAILED - entering rockusb; rockusb 0 mmc 0"`
-(`board/cx3576/uboot/Dockerfile:108`) [V], and the resulting config has [V]:
+(`board/cx3576/uboot/Dockerfile:107`) [V], and the resulting config has [V]:
 
 ```
 CONFIG_BOOTSTD=y
@@ -178,7 +178,7 @@ a U-Boot larger than `UBOOT_MAX_BYTES` — the span from sector 64 to `uenv-a`,
 
 The kernel command line is not the assembler's. `os/rootfs/build-v2.sh:786`
 composes one per rootfs slot from that slot's verity parameters and the board's
-`BOARD_CMDLINE_ARGS` (`os/boards/cx3576/board.env:345`) [V].
+`BOARD_CMDLINE_ARGS` (`os/boards/cx3576/board.env:344`) [V].
 
 ---
 

@@ -65,28 +65,20 @@ IMAGE="${FROM_ARGS[1]#MOS_BUILD_RUST=}"
 CARGO_CACHE="${REPO_ROOT}/_out/cargo"
 mkdir -p "${CARGO_CACHE}/registry" "${CARGO_CACHE}/git"
 
-# The commit the binaries report is resolved here and passed in. mosd and apid
-# answer `--version` with `<name> <crate version> (<commit>)`, and the commit
-# half cannot be discovered from inside the container: this checkout is a git
-# worktree whose `.git` is a file naming a gitdir outside the mount, so git in
-# the container reports `not a git repository` even though git is installed
-# there. The value is resolved on the host and handed in as an environment
-# variable.
-#
-# An empty value is not an error. `-e MOS_BUILD_COMMIT=` sets the variable to
+# The commit the binaries report is resolved on the host and handed in as an
+# environment variable. mosd and apid answer `--version` with `<name> <crate
+# version> (<commit>)`, and the commit half cannot be discovered from inside the
+# container: this checkout is a git worktree whose `.git` is a file naming a
+# gitdir outside the mount, so git in the container reports `not a git
+# repository` even though git is installed there. An already-resolved
+# MOS_BUILD_COMMIT in the environment wins, so a release pipeline handed a commit
+# or a rebuild of an exported tarball with no .git says so rather than being told
+# it is `unknown`. An empty value is not an error: `-e MOS_BUILD_COMMIT=` sets
 # the empty string, `option_env!` yields `Some("")`, and both crates report
-# `unknown` and still exit 0: a build outside a checkout must still produce a
-# binary that can answer the question.
-#
-# Dirty is marked, never passed off as the clean SHA. `git status --porcelain`
-# and not `git diff`: an untracked-but-not-ignored `.rs` file is compiled into
-# these binaries exactly like a modified one, so it makes the tree dirty here
-# too.
-#
-# An already-resolved MOS_BUILD_COMMIT in the environment wins, so a build that
-# knows its own provenance -- a release pipeline handed a commit, a rebuild of
-# an exported tarball with no .git at all -- says so rather than being told it
-# is `unknown`.
+# `unknown` and still exit 0. Dirty is marked, never passed off as the clean SHA,
+# and the test is `git status --porcelain` rather than `git diff`: an
+# untracked-but-not-ignored `.rs` file is compiled in exactly like a modified
+# one.
 if [ -z "${MOS_BUILD_COMMIT:-}" ]; then
     MOS_BUILD_COMMIT=""
     if command -v git >/dev/null 2>&1 &&
@@ -135,13 +127,11 @@ MOSD_BUILD_RECORD="${REPO_ROOT}/_out/mosd-build.txt"
 #   error: failed to load manifest for workspace member `/src/../update/sign`
 #   Caused by: No such file or directory (os error 2)
 #
-# which names the file and not the cause. The check below is the general form,
-# so the next member added outside mosd/ fails with a sentence instead of a
-# missing file.
-#
-# At the fixed path /src: rustc records the paths it is given, so mounting the
-# checkout where it happens to live would make the output depend on the
-# directory the repository was cloned into -- two machines, same commit,
+# which names the file and not the cause. The check below is the general form, so
+# the next member added outside mosd/ fails with a sentence instead of a missing
+# file. At the fixed path /src, because rustc records the paths it is given:
+# mounting the checkout where it happens to live would make the output depend on
+# the directory the repository was cloned into -- two machines, same commit,
 # different binaries, for a reason that is not about the source.
 while IFS= read -r m; do
     [ -n "${m}" ] || continue

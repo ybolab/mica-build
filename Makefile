@@ -41,6 +41,8 @@ help:
 	@echo "  os-build-test       run the os/build bun+TypeScript suite: board geometry and the toolset wrappers (docker)"
 	@echo "  docs-verify         assert both document indexes agree with the tree, in both directions"
 	@echo "  docs-verify-test    prove the index assertions actually fail on a duplicated row or entry"
+	@echo "  docs-verify-citations      assert every design-document citation resolves and still quotes its source"
+	@echo "  docs-verify-citations-test prove the citation assertions actually fail on a moved line or a changed quote"
 	@echo "  podman              build the container engine from source into os/podman/out-\$$MOS_ARCH"
 	@echo "  build-env           build the pinned builder images localhost/mos-build-{base,c,go,rust}"
 	@echo "  os-quadlet-doc-test run docs/design/containers.md's examples through Quadlet"
@@ -253,14 +255,13 @@ docs-verify-test:
 # path resolves and the lines exist, and where the citing text quotes its
 # source, the quote is still at the lines it cites. Resolution alone is not
 # enough -- a quotation whose source was renamed underneath it still resolves,
-# and reads as a statement the source contradicts. Advisory today because the
-# documents carry drift the check reports honestly and nobody has repaired yet;
-# it gates once a run over the tree is green, and the flag is the only thing
-# that has to change. A provenance claim -- "measured at <commit>" -- is
-# validated against no file at all, here or anywhere, and stays a human
-# responsibility.
+# and reads as a statement the source contradicts. This gates: a citation that
+# does not resolve, or a quote no longer at the lines it cites, fails the build.
+# A provenance claim -- "measured at <commit>" -- is validated against no file at
+# all, here or anywhere, and stays a human responsibility; so is a citation whose
+# line still resolves while the text it names has moved.
 docs-verify-citations:
-	bash docs/verify-citations.sh --advisory
+	bash docs/verify-citations.sh
 
 # Negative tests for the target above. Each assertion is driven against a
 # fixture where its fact is false and required to fail with its own message,

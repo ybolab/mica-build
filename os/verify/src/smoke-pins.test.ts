@@ -50,7 +50,7 @@ function fixture(name: string, body: string): string {
 }
 
 describe('expectedFromRecorded -- the one normalisation, and its limits', () => {
-  // BOTH SPELLINGS ARE IN ONE SHIPPED FILE, which is why this exists at all.
+  // Both spellings are in one shipped file, which is why this exists at all.
   test('strips the git tag v from a pin that has one', () => {
     expect(expectedFromRecorded('v5.8.6')).toBe('5.8.6')
     expect(expectedFromRecorded('v1.13')).toBe('1.13')
@@ -61,7 +61,7 @@ describe('expectedFromRecorded -- the one normalisation, and its limits', () => 
     expect(expectedFromRecorded('0.1.0')).toBe('0.1.0')
   })
 
-  // THE FAILING SIDE OF THE NORMALISATION ITSELF. A blanket /^v/ would rewrite
+  // The failing side of the normalisation itself. A blanket /^v/ would rewrite
   // these, and a pin whose first character happened to be `v` would silently
   // become a different string -- in a comparison whose whole job is exactness.
   test('does not strip a v that is not a version prefix', () => {
@@ -81,7 +81,7 @@ describe('expectedFromRecorded -- the one normalisation, and its limits', () => 
 
 describe('readVersionsEnv and pinKeys, over the files this tree ships', () => {
   test('every versions.env the register reads is readable and non-empty', () => {
-    // THE VACUITY CONTROL, first. Everything below is a statement about a set,
+    // The vacuity control, first. Everything below is a statement about a set,
     // and a statement about an empty set is true for free.
     expect(VERSIONS_ENV_FILES.length).toBeGreaterThan(0)
     for (const file of VERSIONS_ENV_FILES) {
@@ -98,7 +98,7 @@ describe('readVersionsEnv and pinKeys, over the files this tree ships', () => {
       total += keys.length
     }
     // Deliberately a floor and not an equality: an exact count here would be a
-    // SECOND LIST of the pins, and would have to be edited every time one was
+    // Second list of the pins, and would have to be edited every time one was
     // added -- which is the drift smoke-register.ts's coverage check exists to
     // catch rather than to reproduce.
     expect(total).toBeGreaterThan(1)
@@ -123,7 +123,7 @@ describe('readPin', () => {
     expect(pin.expected).toBe(expectedFromRecorded(pin.recorded))
   })
 
-  // FAILING SIDE: a key that is not there. The message has to name the keys
+  // Failing side: a key that is not there. The message has to name the keys
   // that ARE, because the likeliest cause is a rename and the reader needs the
   // new name rather than confirmation of the old one.
   test('refuses a key the file does not declare, and names the ones it does', () => {
@@ -131,7 +131,7 @@ describe('readPin', () => {
     expect(() => readPin(PODMAN_VERSIONS_ENV, 'NOT_A_REAL_VERSION')).toThrow(/PODMAN_VERSION/)
   })
 
-  // FAILING SIDE: the key is there and EMPTY. This is the dangerous one -- an
+  // Failing side: the key is there and EMPTY. This is the dangerous one -- an
   // empty expectation is not a weaker check, it is a different one, and
   // rauc-install.sh already guards the same shape in its own words.
   test('refuses a declared-empty pin rather than treating it as no expectation', () => {
@@ -158,7 +158,7 @@ describe('readCratePackageVersion -- and why it tracks the TOML table', () => {
     }
   })
 
-  // THE CASE A ONE-LINE REGEX GETS WRONG, and the reason this reader is not
+  // The case a one-line regex gets wrong, and the reason this reader is not
   // one. `/^version = "(.*)"/m` over this file finds 9.9.9 and hands it back as
   // the crate's own -- a comparison that has silently started asserting a
   // dependency's version against a binary's, and passes or fails for a reason

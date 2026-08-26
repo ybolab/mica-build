@@ -6,34 +6,24 @@
 // `check_ext_unit_dir` (:3450, :613). One of the four is a SKIP on a board
 // with no Bluetooth controller.
 //
-// WHY EVERY ONE OF THESE READS THE TIER AND NOT A STRING.
+// Every one of these reads the tier and not a string: `/srv` is nowhere here as
+// the DATA path. The oracle reads the DATA mountpoint out of the fstab row for
+// DATA_GUID (:3934) so that a bind pointed at /mnt/state fails on the tier
+// rather than on a spelling -- STATE is 64 MiB of small precious identity and a
+// home directory is user data of unbounded size, so the two failures have
+// different repairs.
 //
-// `/srv` is nowhere in this file as the DATA path. The oracle reads the DATA
-// mountpoint out of the fstab row for DATA_GUID (:3934) precisely so a bind
-// pointed at /mnt/state fails ON THE TIER rather than on a spelling -- STATE is
-// 64 MiB of small precious identity and a home directory is user data of
-// unbounded size, so the two failures have different repairs and only the tier
-// distinguishes them. A check comparing against the literal would pass an image
-// whose fstab had moved DATA somewhere else.
+// Enablement is asserted separately every time, because a mount unit that is
+// present and not enabled leaves its target inside the read-only squashfs for
+// ever while a check that only looked for the file still passes. Each check
+// therefore has its own "exists but is not enabled" branch.
 //
-// AND WHY ENABLEMENT IS ASSERTED SEPARATELY EVERY TIME.
-//
-// A mount unit that is present and not enabled leaves its target inside the
-// read-only squashfs for ever, and every check that only looked for the file
-// would still pass. M4 shipped units that were installed and never enabled;
-// that is the failure this shape exists for, and it is why each of these checks
-// has an "exists but is not enabled" branch of its own rather than folding
-// presence and enablement into one test.
-//
-// THE SEED SCRIPTS ARE READ, NOT RUN.
-//
-// `mos-seed-home` and `mos-seed-root` are asserted by a STATIC read of eleven
-// lines of shell. There is no offline harness for either, so idempotence and
-// non-clobbering are read rather
-// than exercised -- and the port reproduces the read, including its exact
-// anchored patterns, rather than substituting a smarter one. A port that
-// understood the script better than the oracle does would diverge on the first
-// script the oracle misreads, and the divergence would be the port's.
+// The seed scripts are read, not run: `mos-seed-home` and `mos-seed-root` are
+// asserted by a static read of eleven lines of shell, there being no offline
+// harness for either, so idempotence and non-clobbering are read rather than
+// exercised. The port reproduces that read including its exact anchored
+// patterns, because a port that understood the script better than the oracle
+// does would diverge on the first script the oracle misreads.
 
 import { lstatSync, readFileSync, readdirSync, statSync } from 'node:fs'
 import { join } from 'node:path'
@@ -53,9 +43,7 @@ const EXT_UNIT_DIR = '/usr/local/lib/systemd/system'
 const EXT_MOUNT_UNIT = 'usr-local-lib-systemd-system.mount'
 const SEED_WRITE_CMDS = 'mkdir|touch|cp|mv|ln|rm|chmod|chown|install|tee|dd'
 
-// ---------------------------------------------------------------------------
 // the readers
-// ---------------------------------------------------------------------------
 
 function text(root: string, path: string): string {
   try {
@@ -164,9 +152,7 @@ function accountOf(root: string, user: string): Account | undefined {
   return undefined
 }
 
-// ---------------------------------------------------------------------------
 // the two binds, which have exactly the same shape
-// ---------------------------------------------------------------------------
 
 interface BindCase {
   readonly id: string
@@ -196,7 +182,7 @@ interface BindCase {
  * disagree about, say, whether an empty `What=` is "not under DATA" or "no
  * What=".
  *
- * THE `no /etc/fstab entry mounts DATA` SENTENCES ARE NOT INTERCHANGEABLE, and
+ * THE `no /etc/fstab entry mounts DATA` sentences are not interchangeable, and
  * that matters to the register rather than to the reader: both blocks print that
  * sentence and they differ only in the trailing `so home.mount's` / `so
  * root.mount's`. A fail matcher taken from the front of it would claim both
@@ -261,9 +247,7 @@ const ROOT_TIER_RATIONALE = 'A root home is user data of unbounded size — shel
   + 'it would take the settings tree and the sshd host keys with it. DATA is also the only partition '
   + 'repart grows'
 
-// ---------------------------------------------------------------------------
 // the seed units, which also have one shape
-// ---------------------------------------------------------------------------
 
 /**
  * `mos-seed-home.service` -- present, ordering the mount, and ENABLED.
@@ -311,7 +295,7 @@ const SEED_HOME_CHECK: CheckCase = {
 }
 
 /**
- * `mos-seed-root.service` -- and, unlike its /home twin, the SCRIPT'S MODE.
+ * `mos-seed-root.service` -- and, unlike its /home twin, the script's mode.
  *
  * A non-executable ExecStart= fails with 203/EXEC, the bind source is never
  * created and root.mount fails on every boot -- and nothing else in the image
@@ -372,9 +356,7 @@ const SEED_ROOT_CHECK: CheckCase = {
   },
 }
 
-// ---------------------------------------------------------------------------
 // what the seed scripts write, read statically
-// ---------------------------------------------------------------------------
 
 const SEED_HOME_SCRIPT_CHECK: CheckCase = {
   id: 'mos-seed-home-writes-data',
@@ -496,9 +478,7 @@ export function writesUnderRoot(script: string): string | undefined {
   return undefined
 }
 
-// ---------------------------------------------------------------------------
 // the account, asserted by NUMBER
-// ---------------------------------------------------------------------------
 
 const ACCOUNT_CHECKS: readonly CheckCase[] = [
   {
@@ -557,7 +537,7 @@ const ACCOUNT_CHECKS: readonly CheckCase[] = [
   },
 
   {
-    // NO SUDO AND NO SUPPLEMENTARY GROUPS is a deliberate phase-1 deferral, not
+    // No SUDO and no supplementary groups is a deliberate phase-1 deferral, not
     // an oversight -- and a deferral nothing asserts is one `usermod -aG` away
     // from being undone silently. sudo not being installed is checked too: a
     // group grant needs a binary to mean anything, and vice versa.
@@ -683,9 +663,7 @@ function supplementaryGroups(root: string, user: string): string[] {
   return found
 }
 
-// ---------------------------------------------------------------------------
 // the STATE binds: nothing precious is reachable only from /var
-// ---------------------------------------------------------------------------
 
 const hasBluetooth = (board: Board): boolean => hasRadio(board, 'bluetooth')
 

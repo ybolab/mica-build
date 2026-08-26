@@ -5,24 +5,18 @@
 //! is thereafter a fully working, configurable appliance. Wiping STATE returns
 //! it here, which is what makes "factory reset" mean anything.
 //!
-//! The load-bearing property is that **none of this may need a network**. An
-//! appliance is unboxed on a bench with no DHCP server, no DNS and possibly no
-//! cable, and it still has to come up with a hostname, an identity and a
-//! credential the operator can use. So the seeded hostname is derived from the
-//! device identity — itself drawn from the system CSPRNG by [`crate::identity`]
-//! — and this module references no networking API at all: no socket, no
-//! resolver, no DHCP lease, no MAC lookup, no wait on a network unit. The only
-//! I/O it performs is reading the image profile file and writing STATE.
-//!
-//! Seeding is committed by exactly one [`Store::save`]. Everything before that
-//! save mutates a private copy of the settings tree, so a failure at any step
-//! leaves both STATE and the caller's tree untouched: a tree that claims
-//! `Complete` while only half seeded is worse than one that claims nothing,
-//! because the next boot would trust it and never finish the job.
-//!
-//! [`ensure_provisioned`] is idempotent. On an already provisioned device it
-//! returns before touching anything at all, so no credential is regenerated, no
-//! operator setting is reverted and `seededGeneration` does not move.
+//! None of this may need a network: an appliance is unboxed on a bench with no
+//! DHCP server, no DNS and possibly no cable, and still has to come up with a
+//! hostname, an identity and a credential. The seeded hostname is therefore
+//! derived from the device identity — drawn from the system CSPRNG by
+//! [`crate::identity`] — and this module references no networking API at all:
+//! no socket, resolver, DHCP lease, MAC lookup or wait on a network unit. Its
+//! only I/O is reading the image profile file and writing STATE. Seeding is
+//! committed by exactly one [`Store::save`], everything before it mutating a
+//! private copy, so a failure at any step leaves STATE and the caller's tree
+//! untouched. [`ensure_provisioned`] is idempotent: on a provisioned device it
+//! returns before touching anything, so no credential is regenerated, no
+//! operator setting reverted and `seededGeneration` does not move.
 
 use std::fs;
 use std::path::Path;
@@ -103,35 +97,30 @@ pub enum Outcome {
 /// Provision this device if STATE says it has not been provisioned yet.
 ///
 /// When `settings.provisioning.state` is `pending`:
-///
-/// 1. [`identity::ensure_identity`] establishes `provisioning.deviceId` and
-///    both per-device secrets on `state_dir`;
-/// 2. `hostname` becomes `mos-<first eight hex chars of deviceId>`, but only
-///    while it is still the built-in default — an operator who has already
-///    named the device keeps that name;
-/// 3. `access.ssh.enabled` is taken from the image profile at `profile_path`,
-///    which today seeds it false for every profile (see
-///    [`Profile::ssh_enabled_default`]);
-/// 4. `network` is left empty on purpose. The image ships a static
-///    `80-dhcp.network` matching `eth*`, so DHCP already works with no seeded
-///    entry, whereas seeding one per interface name would render networkd units
-///    for interfaces that may not exist on this board;
-/// 5. `wifi` is left at its defaults: the station role stays off because there
-///    is no network to join yet, and AP mode is connd's call, not first boot's;
-/// 6. `provisioning.state` becomes `complete` and `seededGeneration` becomes
-///    [`SEEDING_GENERATION`];
-/// 7. the whole tree is persisted with one [`Store::save`].
-///
-/// On success `settings` is replaced with the seeded tree, so the caller's
-/// first reconcile already sees it.
+/// [`identity::ensure_identity`] establishes `provisioning.deviceId` and both
+/// per-device secrets on `state_dir`; `hostname` becomes `mos-<first eight hex
+/// chars of deviceId>`, but only while it is still the built-in default, so an
+/// operator who has already named the device keeps that name;
+/// `access.ssh.enabled` is taken from the image profile at `profile_path`,
+/// which today seeds it false for every profile (see
+/// [`Profile::ssh_enabled_default`]); `network` is left empty on purpose,
+/// because the image ships a static `80-dhcp.network` matching `eth*` so DHCP
+/// already works, whereas seeding one entry per interface name would render
+/// networkd units for interfaces that may not exist on this board; `wifi` is
+/// left at its defaults, the station role staying off because there is no
+/// network to join yet and AP mode being connd's call; `provisioning.state`
+/// becomes `complete` and `seededGeneration` becomes [`SEEDING_GENERATION`];
+/// and the whole tree is persisted with one [`Store::save`]. On success
+/// `settings` is replaced with the seeded tree, so the caller's first reconcile
+/// already sees it.
 ///
 /// # Errors
 ///
 /// Returns an error when the identity cannot be established or the settings
-/// cannot be persisted. In both cases STATE and `settings` are left exactly as
-/// they were, so the device stays unprovisioned and the next boot retries.
-/// A profile file that is missing, unreadable or malformed is *not* an error:
-/// it resolves to [`Profile::Prod`] with a warning (see [`read_profile`]).
+/// cannot be persisted; in both cases STATE and `settings` are left exactly as
+/// they were, so the device stays unprovisioned and the next boot retries. A
+/// profile file that is missing, unreadable or malformed is not an error: it
+/// resolves to [`Profile::Prod`] with a warning (see [`read_profile`]).
 pub fn ensure_provisioned(
     store: &Store,
     state_dir: &Path,
@@ -180,16 +169,12 @@ pub fn ensure_provisioned(
 /// Fails closed: a file that is missing, unreadable, carries no `MOS_PROFILE`
 /// key or carries a value this build does not know resolves to
 /// [`Profile::Prod`] with a warning, and the comparison is case-sensitive, so
-/// `DEV` is not `dev`.
-///
-/// No seeded value currently depends on the answer — both profiles seed the
-/// same tree — so today this rule decides nothing. It is kept exactly as it is
-/// because it is the safe direction to be wrong in, and because the moment any
-/// value becomes profile-dependent again, guessing [`Profile::Dev`] on a
-/// production device would be the expensive mistake.
-///
-/// Blank lines and `#` comments are skipped, a value may be wrapped in single
-/// or double quotes, and a repeated key takes its last value, as a shell would.
+/// `DEV` is not `dev`. No seeded value currently depends on the answer — both
+/// profiles seed the same tree — but the rule is kept because guessing
+/// [`Profile::Dev`] on a production device is the expensive direction to be
+/// wrong in. Blank lines and `#` comments are skipped, a value may be wrapped
+/// in single or double quotes, and a repeated key takes its last value, as a
+/// shell would.
 #[must_use]
 pub fn read_profile(path: &Path) -> Profile {
     let text = match fs::read_to_string(path) {

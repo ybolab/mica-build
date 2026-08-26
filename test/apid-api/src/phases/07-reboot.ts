@@ -1,29 +1,19 @@
 /**
  * The reboot, proven from the console rather than from a status code.
  *
- * A 303 proves apid's handler replied. It does not prove the machine acted, and
- * the difference between those two is the whole reason this suite runs against
- * a booted guest instead of against a router. So this phase marks the console,
- * posts, and then waits for systemd's shutdown transaction to appear on the
- * serial line. Only after that does it accept that the port going quiet means
- * "the guest went down" rather than "something moved in the network".
+ * A 303 proves apid's handler replied, not that the machine acted, so this
+ * phase marks the console, posts, and waits for systemd's shutdown transaction
+ * to appear on the serial line before accepting that a quiet port means the
+ * guest went down.
  *
- * `-no-reboot`, and why this phase ends where it does. os/tools/qemu-run.sh:167
- * passes `-no-reboot`, so a guest-initiated reboot makes QEMU EXIT instead of
- * resetting. That file belongs to the image line and is not edited here. The
- * harness works with the flag: it boots a SECOND time from the SAME disk
+ * os/tools/qemu-run.sh:167 passes `-no-reboot`, so a guest-initiated reboot
+ * makes QEMU exit instead of resetting. That file belongs to the image line and
+ * is not edited here; the harness boots a second time from the same disk
  * (MOS_QEMU_REUSE_DISK=1), so the machine comes back through firmware, GRUB and
- * the grubenv this reboot just wrote, and 07b-postreboot runs in a DIFFERENT
- * suite process. This phase therefore ends when the port stops answering. It
- * does not wait for the machine to come back; that would be waiting on a
- * process which has not been started yet.
- *
- * Because 07b is a different process, `ctx.state` cannot carry anything to it.
- * The handoff goes through a JSON file instead -- see `handoffPath`.
- *
- * The three phases that need console evidence -- 07, 07b and 08 -- reach it
- * through the reader defined here, which wraps `src/console.ts`. `openConsole`
- * is the single call site, so there is one place to redirect.
+ * the grubenv this reboot just wrote, and 07b-postreboot runs in a different
+ * suite process. This phase therefore ends when the port stops answering, and
+ * because 07b is a different process `ctx.state` cannot reach it -- the handoff
+ * goes through a JSON file, see `handoffPath`.
  */
 
 import * as fs from "node:fs";
@@ -43,34 +33,20 @@ import { HOSTNAME_TARGET_STATE_KEY } from "./05-mutate.ts";
 
 const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
 
-// ---------------------------------------------------------------------------
-// the console
+// the console: an adapter over `src/console.ts`, which is the reader.
 //
-// THIS IS AN ADAPTER, NOT A READER. The reader is `src/console.ts`.
-//
-// When this file was written that module had not landed on any branch, so the
-// three phases needing console evidence -- 07, 07b and 08 -- shared a ~150-line
-// reader defined here. Both now exist, and two readers of the same file is a
-// defect in waiting: they would drift, and the one with the weaker offset
-// discipline would be the one holding the most destructive assertions in the
-// suite.
-//
-// `src/console.ts` is the one that survives. It is stricter in the way that
-// matters here: a log that SHRINKS makes it refuse to attribute any line to any
-// window (`available` goes false, and the reporting helpers turn that into
-// SKIP), where this reader silently restarted from offset 0 -- which is exactly
-// how a line written during the BOOT comes to satisfy an assertion about a POST
-// made thirty seconds ago. It also carries labelled per-observation markers
+// `openConsole` is the single call site, so there is one place to redirect. The
+// reader is strict where it matters: a log that shrinks makes it refuse to
+// attribute any line to any window (`available` goes false, and the reporting
+// helpers turn that into SKIP), it carries labelled per-observation markers
 // rather than one mutable offset, strips OSC as well as CSI escapes, and drops
 // a half-written trailing line instead of matching on it.
 //
-// What survives from this reader is its INTERFACE, because 07b and 08 are
-// written against it and rewriting two phases to chase an API change would be
-// churn with no assertion behind it: `mark()`/`since()`/`all()`, a `waitFor`
-// taking SEVERAL patterns and printing progress while it waits (a 240s port
-// wait that says nothing for four minutes is indistinguishable from a hang),
-// and a `tail` handed back when the wait expires.
-// ---------------------------------------------------------------------------
+// What survives here is the interface 07b and 08 are written against:
+// `mark()`/`since()`/`all()`, a `waitFor` taking several patterns and printing
+// progress while it waits (a 240s port wait that says nothing for four minutes
+// is indistinguishable from a hang), and a `tail` handed back when the wait
+// expires.
 
 /**
  * mos keeps journald at `Storage=volatile` because /var is the EPHEMERAL
@@ -272,27 +248,24 @@ export function truncate(text: string, limit: number): string {
 }
 
 /**
- * Is this redirect the AUTH GATE turning a caller away, rather than a handler
+ * Is this redirect the auth gate turning a caller away, rather than a handler
  * accepting what it was asked to do?
  *
  * routes.rs's `gate` sends an unauthenticated caller to /login, or to /setup on
  * a device with no admin password hash. Both are 303, and so is a successful
- * power action -- so the status code alone cannot tell "the machine is going
+ * power action, so the status code alone cannot tell "the machine is going
  * down" from "the machine never heard you".
  */
 /**
- * What apid answers a CONFIRMED power action with.
+ * What apid answers a confirmed power action with.
  *
- * MEASURED 2026-08-24 against the live guest, and it is not what this suite
- * assumed. Every other form post in apid answers 303 See Other -- the
- * post/redirect/get a browser wants -- so 07 and 08 expected 303 here too.
- * `/power/reboot` and `/power/poweroff` answer **202 Accepted**, which is the
- * honest code for the thing they actually do: the machine is going away, so
- * there is no page to redirect to and no request that will ever be served from
- * the other side. The reboot was confirmed on the console 1002ms later, so 202
- * IS acceptance and the 303 expectation was simply wrong.
- *
- * An unconfirmed post answers 422, not a redirect.
+ * Measured 2026-08-24 against the live guest. Every other form post in apid
+ * answers 303 See Other -- the post/redirect/get a browser wants -- but
+ * `/power/reboot` and `/power/poweroff` answer 202 Accepted, the honest code
+ * for what they do: the machine is going away, so there is no page to redirect
+ * to and no request that will ever be served from the other side. The reboot
+ * was confirmed on the console 1002ms later, so 202 is acceptance. An
+ * unconfirmed post answers 422, not a redirect.
  */
 export const POWER_ACCEPTED_STATUS = 202;
 /** What an unconfirmed power action is refused with. Measured, same run. */
@@ -325,9 +298,7 @@ export const POWEROFF_PATTERNS: readonly RegExp[] = [
   /ACPI: Preparing to enter system sleep state S5/i,
 ];
 
-// ---------------------------------------------------------------------------
 // reading a confirm token out of a rendered form
-// ---------------------------------------------------------------------------
 
 /**
  * The confirm token for one power action, read out of `GET /power`'s HTML.
@@ -367,9 +338,7 @@ function attributesOf(tag: string): Map<string, string> {
   return attributes;
 }
 
-// ---------------------------------------------------------------------------
 // the 07 -> 07b handoff, across a process boundary
-// ---------------------------------------------------------------------------
 
 /** Everything 07b needs that only 07 could know. */
 export interface Handoff {
@@ -447,9 +416,7 @@ export function readHandoff(config: Config): HandoffRead {
   }
 }
 
-// ---------------------------------------------------------------------------
 // "the port stopped answering", with a deadline
-// ---------------------------------------------------------------------------
 
 /**
  * Errors that mean "there is no listener there any more", and nothing else.
@@ -569,9 +536,7 @@ export async function expectPortStopsAnswering(
   }
 }
 
-// ---------------------------------------------------------------------------
 // the phase
-// ---------------------------------------------------------------------------
 
 const REBOOT_ACTION = "/power/reboot";
 /** A window in which an UNCONFIRMED post must be shown to have caused nothing. */
@@ -702,8 +667,8 @@ const phase: Phase = {
       `POST /power/reboot carrying the page's own confirm token is accepted (${POWER_ACCEPTED_STATUS})`,
     );
 
-    // A 303 ALONE IS NOT ACCEPTANCE. Measured 2026-08-24 on the first live run:
-    // with no valid session in the jar, apid's auth gate answers EVERY route
+    // A 303 alone is not acceptance. Measured 2026-08-24 on the first live run:
+    // with no valid session in the jar, apid's auth gate answers every route
     // except /healthz with 303 to /login -- including this one. The status
     // check above passed while nothing whatsoever had been asked of the
     // machine, which made the most destructive assertion in the suite green on

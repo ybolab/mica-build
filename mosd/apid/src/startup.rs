@@ -41,11 +41,9 @@ use crate::bundle::{CompatCheck, Store};
 /// more than one member, with [`CURRENT_API_VERSION`] always among them. This
 /// constant is that array today.
 ///
-/// `GET /api/versions` itself is **not** declared: it is an unauthenticated
-/// endpoint and therefore an authentication decision, which §8.2 phase 2
-/// reviews as a set rather than one route at a time. `/api/` 404s everything,
-/// this path included, and that stays true. When phase 2 lands the route, it
-/// serves this constant rather than a second copy of it.
+/// `GET /api/versions` is declared (`routes::api_router`) and serves this
+/// constant rather than a second copy of it; it is unauthenticated by §2.1.
+/// Every path under `/api/` that is not a declared route still 404s.
 pub const SERVED_API_VERSIONS: &[&str] = &["v1"];
 
 /// §2.1's `current`: the member a client with no preference should use.

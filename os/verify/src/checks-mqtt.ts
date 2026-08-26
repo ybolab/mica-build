@@ -1,36 +1,29 @@
 // The MQTT bridge and broker: in the image, startable, and INERT.
 //
-// This family belongs to no batch in the original decomposition and that is
-// why it is here. It is board-UNCONDITIONAL -- 16 conclusions on each shipped
-// board, measured 2026-08-26 -- so it was not batch 3 as scoped; and `mqttd:
-// <path> is a regular file` LOOKS like `sq_regular` but is check_mqttd's own
-// prose with a `mqttd: ` prefix, so it was not in batch 2a's `sq_regular`
-// family either. It fell between the two.
+// Board-unconditional -- 16 conclusions on each shipped board, measured
+// 2026-08-26 -- so not batch 3 as scoped; and `mqttd: <path> is a regular file`
+// looks like `sq_regular` but is check_mqttd's own prose with a `mqttd: `
+// prefix, so not batch 2a either.
 //
-// WHAT THE FAMILY PROVES, AND WHY EACH HALF IS NEEDED.
-//
-// Every one of these is a defect the wiring actually had. The crate, the unit
-// and the protocol tests were all green while the bridge was absent from the
-// image entirely; when it was added, the unit's `DynamicUser=yes` could not be
-// named by any `<policy user=>`, and its ExecStart hardcoded a broker host into
-// a read-only squashfs. None of that is visible from the code side.
-//
-// The INERTNESS is the load-bearing half. `mqtt.enabled` is a master switch
-// that seeds false for every profile and mosd starts both units from it; an
+// Each half of the family is a defect the wiring actually had: the crate, the
+// unit and the protocol tests were all green while the bridge was absent from
+// the image entirely, and when it was added the unit's `DynamicUser=yes` could
+// not be named by any `<policy user=>` and its ExecStart hardcoded a broker host
+// into a read-only squashfs. None of that is visible from the code side.
+// Inertness is the load-bearing half: `mqtt.enabled` is a master switch that
+// seeds false for every profile and mosd starts both units from it, so an
 // enablement symlink baked into the image is the one thing that switch cannot
-// override, and the root is a read-only verity squashfs so nothing on the
-// device can remove it.
+// override, and the root is a read-only verity squashfs so nothing on the device
+// can remove it.
 //
-// WHY THE POLICY IS TAG-NORMALISED BEFORE IT IS READ.
-//
-// The shipped rules wrap their attributes across three lines, so a line-oriented
-// search for `send_member=` on a rule whose `send_destination=` is on the line
-// above finds nothing and reports a BLANKET grant that is not there. The oracle
-// hit that on its first run against the real file (:838-846) and answers it by
-// stripping comments and then putting one XML tag per line. This does the same,
-// in the same order, because the comment strip has to come first: a commented-out
-// `<allow send_destination="com.mos.mosd"/>` is commentary and must not read as a
-// grant.
+// The policy is tag-normalised before it is read. The shipped rules wrap their
+// attributes across three lines, so a line-oriented search for `send_member=` on
+// a rule whose `send_destination=` is on the line above finds nothing and reports
+// a blanket grant that is not there; the oracle hit that on its first run against
+// the real file (:838-846) and answers it by stripping comments and then putting
+// one XML tag per line. This does the same, in that order, because the comment
+// strip has to come first: a commented-out
+// `<allow send_destination="com.mos.mosd"/>` must not read as a grant.
 
 import { readdirSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
@@ -133,7 +126,7 @@ function accounts(root: string): Account[] {
 }
 
 /**
- * The policy file with comments removed and ONE XML TAG PER LINE.
+ * The policy file with comments removed and one XML tag per line.
  *
  * `dbus_policy_rules_only | tr '\n' ' ' | sed 's/</\n</g'` -- comments first,
  * because a commented-out rule must not become a rule when the tags are split.
@@ -171,9 +164,7 @@ function policyRules(root: string, path: string): string[] {
   return policyRuleLines(readFileSync(join(root, path), 'utf8'))
 }
 
-// ---------------------------------------------------------------------------
 // check_mqttd
-// ---------------------------------------------------------------------------
 
 const MQTTD_CHECKS: readonly CheckCase[] = [
   prefixedRegularFile('mqttd-bin', 'mqttd', MQTTD_BIN,
@@ -461,9 +452,7 @@ function mountUnitFor(root: string, dir: string): { name: string, what: string }
   return undefined
 }
 
-// ---------------------------------------------------------------------------
 // check_mqtt_broker
-// ---------------------------------------------------------------------------
 
 const BROKER_CHECKS: readonly CheckCase[] = [
   prefixedRegularFile('mqtt-broker-bin', 'mqtt-broker', BROKER_BIN,
@@ -478,7 +467,7 @@ const BROKER_CHECKS: readonly CheckCase[] = [
     // deliberately does not act on it: a broker enabled in the image would be
     // listening from early boot, before anything had consulted the switch.
     //
-    // THERE IS NO POLICY FILE IN THIS SET AND THAT IS NOT AN OMISSION. The
+    // There is no policy file in this set and that is not an omission. The
     // broker speaks no D-Bus at all -- it reads one file mosd renders into /run
     // and listens on a TCP socket -- so it has nothing to be granted.
     id: 'mqtt-broker-not-enabled',

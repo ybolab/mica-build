@@ -14,12 +14,10 @@
 > **[not implemented] — status of this document: awaiting a rewrite, not
 > retirement.** Two separable things live here and only one of them died.
 >
-> - **The MECHANISM is dead.** This document was last revised on 2026-08-17 at
->   05:40, *before* the Plan B decision landed the same day at 19:18
->   (`docs/architecture.md` MIGRATION NOTICE). Talos `apid`, `talosctl`, mutual
->   TLS to gRPC :50000, `trustd`, and the claim that both frontends are *"thin
->   frontends over `/run/machined.sock`"* all belonged to the Talos base that
->   systemd + mosd replaced. **None of it exists in the tree**: there is no
+> - **The MECHANISM is dead.** Talos `apid`, `talosctl`, mutual TLS to gRPC
+>   :50000, `trustd`, and the claim that both frontends are *"thin frontends
+>   over `/run/machined.sock`"* all belonged to the Talos base that systemd +
+>   mosd replaced. **None of it exists in the tree**: there is no
 >   `machined`, no `machined.sock` and no Talos `apid` anywhere in this
 >   repository.
 > - **The MODEL is alive, wanted, and undesigned.** A reverse-connected

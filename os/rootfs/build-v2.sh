@@ -1,37 +1,38 @@
 #!/usr/bin/env bash
 # Build the squashfs + dm-verity arm64 rootfs slot image for cx3576 (layout v2).
-# Usage: [BOARD_DIR=...] [WITH_MOSD=0|1] [WITH_CONTAINERS=0|1] [MOS_PROFILE=dev|prod]
+# Usage: [BOARD_DIR=...] [WITH_MOSD=0|1]
+#        [WITH_CONTAINERS=0|1] [MOS_PROFILE=dev|prod]
 #        [MOS_ROOTFS_WITHOUT="radios rauc mqtt ..."] bash os/rootfs/build-v2.sh
-#
-# There is deliberately NO ROOT_PASSWORD here. A v2 rootfs is a signed,
-# byte-identical squashfs, and the pack stage FAILS any
-# build whose factory shadow carries a usable hash — so a baked v2 root
-# password is unbuildable by design, not merely discouraged. Dev root access on
-# v2 is the transient password set at runtime through mosd
-# (SetTransientRootPassword; cleared on the next boot by mos-shadow-reconcile)
-# plus the serial console, whose root account stays locked until that password
-# is set. See docs/design/access.md section 4.1.
-#
+
+# There is deliberately no ROOT_PASSWORD here. A v2 rootfs is a signed,
+# byte-identical squashfs and the pack stage fails any build whose factory
+# shadow carries a usable hash, so a baked v2 root password is unbuildable by
+# design, not merely discouraged. Dev root access on v2 is the transient
+# password set at runtime through mosd (SetTransientRootPassword; cleared on
+# the next boot by mos-shadow-reconcile) plus the serial console, whose root
+# account stays locked until that password is set. See
+# docs/design/access.md section 4.1.
+
 # Outputs (all under _out/<board>/). The first four are consumed by the image
-# assembler -- os/build/src/mkimage-v2.ts and mkimage-x64.ts:
-#   rootfs-verity.img     squashfs-zstd with the verity hash tree appended,
-#                         padded to a whole MiB
-#   rootfs-verity.env     verity parameters, strict KEY=value
-#   boot-cmdline-a.txt    kernel append line for the A slot
-#   boot-cmdline-b.txt    kernel append line for the B slot
-#   rootfs-report-v2.txt  package list + installed size
-#   factory-root.oci      the packed root as an OCI image, in OCI-layout tar
-#                         form. NOT consumed by the assembler -- this is what
-#                         the smoke runner executes the self-built binaries in,
-#                         so that "it linked" and "it runs" stop being the same
-#                         claim. `docker load -i` it.
-#   factory-root.txt      what that archive is: ref, platform, size, sha256
-#   rootfs-stages.txt     the stage chain as built, and a `# declined:` line
-#   mosd-build.txt        the commit mosd and apid in this root were built from,
-#                         copied from _out/mosd-build.txt. NOT copied into the
-#                         image. Removed when mosd is declined; see below.
+# assembler, os/build/src/mkimage-v2.ts and mkimage-x64.ts:
+#   rootfs-verity.img: squashfs-zstd with the verity hash tree appended,
+#     padded to a whole MiB
+#   rootfs-verity.env: verity parameters, strict KEY=value
+#   boot-cmdline-a.txt, boot-cmdline-b.txt: the kernel append line per slot
+
+# The rest are records rather than assembler inputs:
+#   rootfs-report-v2.txt: package list + installed size
+#   factory-root.oci: the packed root as an OCI image, in OCI-layout tar form.
+#     NOT consumed by the assembler -- this is what the smoke runner executes
+#     the self-built binaries in, so "it linked" and "it runs" stop being the
+#     same claim. `docker load -i` it.
+#   factory-root.txt: what that archive is -- ref, platform, size, sha256
+#   rootfs-stages.txt: the stage chain as built, and a `# declined:` line
+#   mosd-build.txt: the commit mosd and apid in this root were built from,
+#     copied from _out/mosd-build.txt. NOT copied into the image. Removed when
+#     mosd is declined; see below.
 # os/rootfs/README.md, "Outputs to _out/<board>/", is the table version of this.
-#
+
 # Every layout constant is read from os/boards/cx3576/board.env.
 set -euo pipefail
 
@@ -100,21 +101,17 @@ case "$WITH_CONTAINERS" in
     exit 1
     ;;
 esac
-# THE DECLINED FEATURES, as one list.
-#
-# WITH_CONTAINERS and WITH_MOSD are the two historical spellings and they fold
-# into it here, so there is one answer to "is this feature in the image" and
-# every consumer below asks the same question. MOS_ROOTFS_WITHOUT is the general
-# form: a space-separated list of feature names, which is what makes the three
-# stages with no WITH_* history -- radios, rauc, mqtt -- reachable from the
-# shipping path at all. Without it the mechanism would exist and two of its five
-# subjects could only ever be exercised by calling the driver by hand, which is
-# the shape of switch this campaign keeps finding.
-#
-# A NAME NOTHING MATCHES IS NOT VALIDATED HERE, deliberately: the driver holds
-# the list of feature stages (it reads the directory) and refuses an unknown one
-# by name, with the features that do exist. A second copy of that list in this
-# file is the second table this repository keeps deleting.
+# The declined features, as one list. WITH_CONTAINERS and WITH_MOSD are the
+# two historical spellings and they fold into it here, so there is one answer
+# to "is this feature in the image" and every consumer below asks the same
+# question. MOS_ROOTFS_WITHOUT is the general form -- a space-separated list of
+# feature names -- and it is what makes the three stages with no WITH_* history
+# (radios, rauc, mqtt) reachable from the shipping path at all.
+
+# A name nothing matches is not validated here, deliberately: the driver holds
+# the list of feature stages (it reads the directory) and refuses an unknown
+# one by name, with the features that do exist. A second copy of that list in
+# this file is the second table this repository keeps deleting.
 MOS_ROOTFS_WITHOUT=${MOS_ROOTFS_WITHOUT:-}
 WITHOUT_FEATURES=" ${MOS_ROOTFS_WITHOUT} "
 [ "$WITH_CONTAINERS" = "1" ] || WITHOUT_FEATURES="${WITHOUT_FEATURES}containers "
@@ -161,13 +158,12 @@ fi
 VERITY_UUID=$(echo "$ROOTFS_A_GUID" | tr 'A-Z' 'a-z')
 # FILE_MTIME is the touch(1) form (@epoch); mksquashfs wants bare seconds.
 #
-# ONE INSTANT, TWO CONSUMERS. This value is also what the driver is given as
+# One instant, two consumers: this value is also what the driver is given as
 # --source-date-epoch, which buildkit stamps into the OCI export of the packed
-# root. They are deliberately the same number and not two pinned constants: the
-# squashfs and the OCI image are two encodings of ONE tree, and a second epoch
-# would be a second answer to "when was this root made" that nothing would ever
-# reconcile. The assembler already spells it this way for mkimage's
-# SOURCE_DATE_EPOCH, for the same reason.
+# root. Deliberately the same number and not two pinned constants -- the
+# squashfs and the OCI image are two encodings of one tree, and a second epoch
+# would be a second answer to "when was this root made" that nothing would
+# reconcile. The assembler spells it this way for mkimage's SOURCE_DATE_EPOCH.
 SQUASHFS_TIME=${FILE_MTIME#@}
 
 mkdir -p "$OUT_DIR"
@@ -189,21 +185,18 @@ else
     cp "$MODULES_TAR" "$OUT_DIR/modules.tar"
 fi
 
-# The container engine, built from source by os/podman.
-# Staged like modules.tar and mosd. The directory is created either way and is
-# left EMPTY when the engine is declined -- nothing COPYs it then, because
-# stages/31-feature-containers is not in the chain, and the mkdir is here so
-# that a stale directory from a previous WITH_CONTAINERS=1 build cannot be
-# picked up by the next one.
-#
-# NOT built on demand here. `make podman` compiles four Go/Rust/C trees and
-# takes tens of minutes; running it implicitly from a rootfs build would make
-# an image build occasionally take an hour with no indication why. It is a
-# separate target, and the absence of its output is an error with the command
-# to run in it.
-# RAUC, built from upstream source by os/update/rauc/build.sh. Staged like podman and
-# like mosd: the Dockerfile COPYs a directory under _out, never a path outside
-# the build context.
+# The container engine, built from source by os/podman, staged like
+# modules.tar and mosd. The directory is created either way and left empty when
+# the engine is declined -- nothing COPYs it then, because
+# stages/31-feature-containers is not in the chain, and the mkdir is here so a
+# stale directory from a previous WITH_CONTAINERS=1 build cannot be picked up
+# by the next one. It is NOT built on demand: `make podman` compiles four
+# Go/Rust/C trees and takes tens of minutes, so it is a separate target and the
+# absence of its output is an error carrying the command to run.
+
+# RAUC, built from upstream source by os/update/rauc/build.sh. Staged like
+# podman and like mosd: the Dockerfile COPYs a directory under _out, never a
+# path outside the build context.
 RAUC_STAGE="$OUT_DIR/rauc"
 rm -rf "$RAUC_STAGE"
 mkdir -p "$RAUC_STAGE"
@@ -295,14 +288,13 @@ else
     echo "note: mosd declined; building rootfs without stages/33-feature-mosd"
 fi
 
-# ==== THE BOARD'S OWN CONTENT, staged so that stages/40-board names no board ==
+# The board's own content, staged so that stages/40-board names no board.
 #
 # A COPY cannot be gated on an ARG, so a board's content reaches
-# stages/40-board as a DIRECTORY this script fills from the board's own trees,
+# stages/40-board as a directory this script fills from the board's own trees,
 # empty when the board declares nothing. The three below and modules.tar above
 # are the whole set, and they are together so that adding a board means filling
-# directories rather
-# than editing a Dockerfile.
+# directories rather than editing a Dockerfile.
 
 # Radio firmware, filtered to what the board declares.
 #
@@ -407,22 +399,18 @@ rm -rf "$OVERLAY_STAGE"
 mkdir -p "$OVERLAY_STAGE"
 cp -a "$OVERLAY_SRC/." "$OVERLAY_STAGE/"
 
-# Per-board overlay, layered ON TOP of the shared one. Only files that are
-# WRONG on another board belong here -- x64's ESP mount unit is one, because
+# Per-board overlay, layered on top of the shared one. Only files that are
+# wrong on another board belong here -- x64's ESP mount unit is one, because
 # RAUC's grub backend edits a file and the U-Boot backend edits a raw
 # partition, so /boot is a mountpoint on exactly one of the two boards.
-#
 # Layered rather than selected: everything both boards share stays in one
 # place, so a change to it cannot reach one board and miss the other.
-# The status indicator is a BOARD FILE, not a shared one with an exception.
-#
-# It is NOT in overlay-v2 and deleted here for boards that declare no LED:
-# adding a file and then removing it is a worse statement than never adding it,
-# because the shared overlay would claim every board has an indicator and the
-# truth would live in a conditional somewhere else. os/boards/cx3576/overlay/
-# carries mos-status-led, its unit and its wants symlink, so the file's
-# LOCATION is the fact. A board with an indicator ships one by having one.
-#
+
+# The status indicator is a board file. It is not in overlay-v2 and is deleted
+# here for boards that declare no LED: the shared overlay would otherwise claim
+# every board has an indicator and the truth would live in a conditional
+# somewhere else. os/boards/cx3576/overlay/ carries mos-status-led, its unit
+# and its wants symlink, so the file's location is the fact.
 # BOARD_HAS_STATUS_LED stays, because the verifier still needs to know which
 # outcome to assert -- present and enabled, or absent entirely.
 
@@ -480,19 +468,13 @@ render() {
 # Storage tiers. /srv (DATA, partition 10) is the only filesystem that grows;
 # /var (EPHEMERAL) is fixed-size disposable residue and must NOT carry
 # x-systemd.growfs.
-#
-# The DATA constants are REQUIRED, not optional. While partition 10 was still
-# being added to the layout env this build carried a nine-partition fallback so
-# the two halves could land in either order. That path is now unreachable, and
-# leaving it in would be worse than useless: if a constant went missing from the
-# layout env through a bad merge or an editing slip, the build would not fail —
-# it would quietly emit a nine-partition rootfs with /var growing and no /srv,
-# and every downstream check would pass. Fail loudly instead.
-#
-# All four are demanded even though only DATA_GUID is read here, because a
-# partially-edited layout env is exactly the failure this guards against: the
-# assembler needs the other three, and a rootfs built against half a layout is
-# the kind of artifact that reaches hardware before anyone notices.
+
+# The DATA constants are required, not optional. A fallback for a missing one
+# would not fail: it would quietly emit a nine-partition rootfs with /var
+# growing and no /srv, and every downstream check would pass. All four are
+# demanded even though only DATA_GUID is read here, because the assembler needs
+# the other three, and a rootfs built against half a layout is the kind of
+# artifact that reaches hardware before anyone notices.
 missing=""
 for key in DATA_GUID DATA_PARTNUM DATA_FS_UUID MOS_VAR_MIB; do
     eval "value=\${$key:-}"
@@ -563,30 +545,28 @@ else
         UENV_SIZE_HEX "$(printf '0x%x' "$UENV_SIZE_BYTES")"
 fi
 
-# THE BUILDER IS NAMED, AND IT HAS TO BE A `docker` DRIVER ONE.
-#
-# This is a CHAIN: os/rootfs/stages/ holds one Dockerfile per
-# stage, and every stage after the first opens `FROM ${MOS_STAGE_PREV}` -- a
-# local image tag the previous stage was written to. Resolving that needs a
-# builder whose driver can read the docker image store, and only the `docker`
-# driver can. Measured on this host: a docker-container builder handed a tag
-# that IS in the store answered "pull access denied, repository does not
-# exist", about a registry, for an image that is right there.
-#
+# The builder is named, and it has to be a `docker` driver one. This is a
+# chain: os/rootfs/stages/ holds one Dockerfile per stage, and every stage
+# after the first opens `FROM ${MOS_STAGE_PREV}`, a local image tag the
+# previous stage was written to. Resolving that needs a builder whose driver
+# can read the docker image store, and only the `docker` driver can. Measured
+# on this host: a docker-container builder handed a tag that is in the store
+# answered "pull access denied, repository does not exist", about a registry,
+# for an image that is right there.
+
 # So the builder is chosen explicitly rather than inherited. `default` is the
 # docker driver on every docker installation; BUILDX_BUILDER still wins,
 # because a caller who names a builder has made a decision, and the driver
-# checks whatever it is handed and refuses by name.
-#
-# WHAT THIS COSTS, and it is a real loss stated rather than absorbed. What
-# stood here created a docker-container builder when the current one could not
-# reach the target platform -- its buildkit image bundles QEMU, so an amd64
-# host could build cx3576's arm64 with no host binfmt at all, and
+# checks whatever it is handed and refuses by name. Empty means "whatever
+# docker considers current", which is what BUILDX_BUILDER sets.
+
+# The cost, stated rather than absorbed: what stood here created a
+# docker-container builder when the current one could not reach the target
+# platform -- its buildkit image bundles QEMU, so an amd64 host could build
+# cx3576's arm64 with no host binfmt at all, and
 # .gitea/workflows/privileged.yml relies on exactly that. That route cannot
-# carry a chain. A cross build now needs host binfmt_misc, and this says so
+# carry a chain, so a cross build now needs host binfmt_misc, and this says so
 # with the command rather than failing later inside buildkit.
-# Empty means "whatever docker considers current", which is what BUILDX_BUILDER
-# sets; the driver inspects that and refuses it by name if it cannot chain.
 BUILDER_ARGS=()
 if [ -n "${BUILDX_BUILDER:-}" ]; then
     echo "note: using the builder BUILDX_BUILDER names (${BUILDX_BUILDER}); os/verify checks that it can chain"
@@ -637,16 +617,15 @@ for a in "${FROM_ARGS[@]}"; do
     case "$a" in --build-arg) DRIVER_FROM_ARGS+=(--arg) ;; *) DRIVER_FROM_ARGS+=("$a") ;; esac
 done
 
-# STAGE SELECTION, which is what replaced the WITH_* build arguments.
-#
+# Stage selection, which is what replaced the WITH_* build arguments.
 # WITH_CONTAINERS and WITH_MOSD are the caller's spelling -- the environment
 # variable, and board/<name>/containers.env. A 0 names a stage the driver does
 # NOT build, rather than travelling into the build as a `--build-arg` that five
 # separate RUNs and scripts each have to test. One decision instead of five
 # copies of one.
-#
-# THE STAGED DIRECTORY'S ARGUMENT GOES WITH THE STAGE, and the driver enforces
-# that rather than trusting this list: an --arg no stage declares is REFUSED
+
+# The staged directory's argument goes with the stage, and the driver enforces
+# that rather than trusting this list: an --arg no stage declares is refused
 # (os/build/src/stages.ts, unusedArgs), because docker only warns about an
 # unused --build-arg and a warning scrolls past in a build this size. So
 # PODMAN_DIR is passed exactly when 31-feature-containers is in the chain and
@@ -756,29 +735,27 @@ if [ "$img_bytes" != "$IMAGE_BYTES" ] || [ $((img_bytes % MIB_BYTES)) -ne 0 ] ||
     exit 1
 fi
 
-# Kernel cmdline, one per slot.
-#
-# dm-init (CONFIG_DM_INIT=y, kernel 6.1.115) builds the verity device before
-# the root mount with no initramfs. Both the data and the hash device are the
-# same partition — the hash tree is appended to the squashfs — so the same
-# PARTUUID appears twice, and <hash_start_block> tells the target where the
-# tree begins. dm-init resolves PARTUUID= through dm_get_dev_t ->
-# name_to_dev_t -> devt_from_partuuid (case-insensitive), verified against the
-# vendor tree; see docs/design/ro-root.md.
-#
+# Kernel cmdline, one per slot. dm-init (CONFIG_DM_INIT=y, kernel 6.1.115)
+# builds the verity device before the root mount with no initramfs. Both the
+# data and the hash device are the same partition -- the hash tree is appended
+# to the squashfs -- so the same PARTUUID appears twice, and <hash_start_block>
+# tells the target where the tree begins. dm-init resolves PARTUUID= through
+# dm_get_dev_t -> name_to_dev_t -> devt_from_partuuid (case-insensitive),
+# verified against the vendor tree; see docs/design/ro-root.md.
+
 # dm-mod.waitfor= is MANDATORY, not an optimisation. dm_init_init runs at
 # late_initcall and its wait_for_device_probe() does not cover eMMC card
 # discovery, which happens on a delayed workqueue; without the wait the verity
 # table is built before the partitions exist, so the boot breaks intermittently
 # rather than cleanly. The assembler rejects a cmdline file that lacks it.
-#
+
 # The GUID is lowercased, the same form used in /etc/fstab and the same form
 # udev gives /dev/disk/by-partuuid/ (libblkid formats GUIDs lowercase). The
 # kernel compares with strncasecmp and accepts either, so one canonical
-# lowercase spelling everywhere is the least surprising choice.
-# The assembler cross-checks this table against ${ROOTFS_x_GUID}, which the
-# layout env holds uppercase, comparing case-insensitively. Do not
-# "fix" anything by uppercasing this: lowercase is what udev and fstab use.
+# lowercase spelling everywhere is the least surprising choice. The assembler
+# cross-checks this table against ${ROOTFS_x_GUID}, which the layout env holds
+# uppercase, comparing case-insensitively. Do not "fix" anything by
+# uppercasing this: lowercase is what udev and fstab use.
 write_cmdline() {
     local out="$1" guid="$2"
     local partuuid
@@ -808,31 +785,26 @@ if [ "$total_mb" -gt "$SIZE_BUDGET_MB" ]; then
 fi
 echo "installed size: ${total_mb} MB (budget ${SIZE_BUDGET_MB} MB)"
 
-# ─── THE SMOKE RUN, AND IT IS PART OF THE BUILD ──────────────────────────────
-#
-# A wrong-arch, missing-soname or version-skewed binary must FAIL THE BUILD,
-# and every self-built binary is executed inside the base rootfs before an
-# image ships it. That is this line: an image that ships them unexecuted looks
-# exactly like one whose smoke run passed.
-#
-# HERE RATHER THAN IN THE Makefile, and that is the whole reason it is one line
-# in one place. Two make targets run this script and so does the CI deep lane,
-# and anyone can run it directly; a step wired into the callers would be three
-# copies to keep in step and would be bypassed by the fourth. The root is not
-# handed to an assembler, to a bundle, or to a person, without its binaries
-# having been executed.
-#
-# NO SKIP AND NO OPT-OUT. A flag that turned this off would make "the build
-# passed" mean two things, and the one it would mean on the day somebody set the
-# flag is the one this milestone exists to end. `set -e` is what makes it a
-# gate: run.sh exits with the runner's own status, and a non-zero status here
-# ends the build before $OUT_DIR is handed on.
-#
-# IT ADDS NO DEPENDENCY THIS SCRIPT DID NOT ALREADY HAVE. run.sh --smoke needs
-# docker, which this script has needed since the first buildx line; and it needs
-# to EXECUTE the target platform, which for cx3576 means the same host binfmt
-# that the refusal at the top of this script already requires in order to build
-# at all. A host that can build this root can run what is in it.
+# The smoke run, and it is part of the build. A wrong-arch, missing-soname or
+# version-skewed binary must fail the build, so every self-built binary is
+# executed inside the base rootfs before an image ships it. That is this line:
+# an image that ships them unexecuted looks exactly like one whose smoke run
+# passed.
+
+# It is here rather than in the Makefile because two make targets run this
+# script, so does the CI deep lane, and anyone can run it directly; a step
+# wired into the callers would be three copies to keep in step and would be
+# bypassed by the fourth. The root is not handed to an assembler, to a bundle,
+# or to a person, without its binaries having been executed.
+
+# No skip and no opt-out: a flag that turned this off would make "the build
+# passed" mean two things. `set -e` is what makes it a gate -- run.sh exits
+# with the runner's own status, and a non-zero status here ends the build
+# before $OUT_DIR is handed on. It adds no dependency this script did not
+# already have: run.sh --smoke needs docker, which this script has needed since
+# the first buildx line, and it needs to execute the target platform, which for
+# cx3576 means the same host binfmt the refusal at the top of this script
+# already requires in order to build at all.
 echo
 echo "=== smoke: executing the self-built binaries inside the root just packed ==="
 MOS_BOARD="$MOS_BOARD" bash "$REPO_ROOT/os/verify/run.sh" --smoke --board "$MOS_BOARD"

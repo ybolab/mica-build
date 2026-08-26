@@ -1,40 +1,34 @@
 //! `docs/design/api.md` §6.1's five failure classes, enumerated end to end,
-//! with coverage asserted (§8.2 phase 4 acceptance 1).
-//!
-//! §8.2 phase 4: for each of §6.1's five classes, navigating to the reserved
-//! prefix reaches a working UI and one control there deactivates the bundle.
-//! *"The operator diagnoses nothing."*
+//! with coverage asserted (§8.2 phase 4 acceptance 1): for each class,
+//! navigating to the reserved prefix reaches a working UI and one control there
+//! deactivates the bundle. "The operator diagnoses nothing."
 //!
 //! `super::the_escape_answers_identically_whatever_the_bundle_store_holds`
 //! already states §6.3 as an invariance over bundle-store states, which is
-//! stronger than any enumeration, and nothing here restates it. What an
-//! invariance does not say is that each of §6.1's five specific failure modes
-//! can be constructed at all, that the escape works from each, and that the
-//! suite knows it exercised all five. That is this module.
+//! stronger than any enumeration. What an invariance does not say is that each
+//! of §6.1's five specific failure modes can be constructed at all, that the
+//! escape works from each, and that the suite knows it exercised all five. That
+//! is this module.
 //!
-//! Two rules govern the shape:
-//!
-//! 1. *"5 passed"* and *"3 passed, 2 never ran"* are the same number, so a
-//!    bare pass count is invariant across the defect it is supposed to detect.
-//!    The facts are declared by identity, the set that actually ran is
-//!    observed, the two are diffed, and a failure names what is missing and
-//!    what is unexpected.
-//!    `crate::startup::tests::no_hostile_store_can_stop_start_up` is the model.
-//! 2. Several classes produce the same observable — the built-in UI — so a
-//!    suite asserting only *"the built-in UI answered"* would pass with class
-//!    3's construction silently failing and falling through to class 1's
-//!    state. Each fact asserts the distinct state the mechanism reports for
-//!    that class — the digest mismatch, the empty intersection with both sets
-//!    named, the absent index, the file that will not open, the named "no
-//!    custom bundle is active" answer — and the evidence strings are asserted
-//!    pairwise distinct.
-//!    `crate::assets::path::tests::each_guard_is_exercised_by_exactly_one_hostile_feature`
-//!    is the model.
+//! Two rules govern the shape. First, "5 passed" and "3 passed, 2 never ran"
+//! are the same number, so a bare pass count is invariant across the defect it
+//! is supposed to detect: the facts are declared by identity, the set that
+//! actually ran is observed, the two are diffed, and a failure names what is
+//! missing and what is unexpected
+//! (`crate::startup::tests::no_hostile_store_can_stop_start_up` is the model).
+//! Second, several classes produce the same observable — the built-in UI — so a
+//! suite asserting only "the built-in UI answered" would pass with class 3's
+//! construction silently failing through to class 1's state. Each fact asserts
+//! the distinct state the mechanism reports for that class — the digest
+//! mismatch, the empty intersection with both sets named, the absent index, the
+//! file that will not open, the named "no custom bundle is active" answer — and
+//! the evidence strings are asserted pairwise distinct
+//! (`crate::assets::path::tests::each_guard_is_exercised_by_exactly_one_hostile_feature`
+//! is the model).
 //!
 //! Which layer each class is detected at is §6.1's own table: classes 1, 2 and
-//! 4 are the asset router's, per request; classes 3 and 5 are start-up's, and
-//! are driven through [`crate::startup::discover`], the entry point `main`
-//! calls.
+//! 4 are the asset router's, per request; classes 3 and 5 are start-up's,
+//! driven through [`crate::startup::discover`], the entry point `main` calls.
 
 use std::collections::BTreeSet;
 use std::fs;
@@ -96,25 +90,22 @@ fn install_declaring(files: &[(&str, &str)], served: &[&str]) -> TempDir {
 ///
 /// §6.1 class 4 names `EACCES` and `EIO`, and this suite has to exercise it
 /// whether or not the test runner can override permissions: a process holding
-/// `CAP_DAC_OVERRIDE` — root, which is how `mosd/hack/check.sh` is commonly
-/// run — reads a `0o000` file straight through, so a mode-only fixture would
-/// quietly test nothing there. A fixture that silently did not fire is
-/// indistinguishable from one that did.
-///
-/// So the mode is set, the construction is verified with the same call the
-/// mechanism makes, and if it did not take effect the entry is replaced by a
-/// UNIX socket, which no uid can open for reading (`ENXIO`). The name is
-/// returned and travels into the fact's evidence, so the record says which one
-/// ran rather than implying `EACCES` either way.
+/// `CAP_DAC_OVERRIDE` — root, which is how `mosd/hack/check.sh` is commonly run
+/// — reads a `0o000` file straight through, so a mode-only fixture would
+/// quietly test nothing there. So the mode is set, the construction is verified
+/// with the same call the mechanism makes, and if it did not take effect the
+/// entry is replaced by a UNIX socket, which no uid can open for reading
+/// (`ENXIO`). The name returned travels into the fact's evidence, so the record
+/// says which one ran rather than implying `EACCES` either way.
 ///
 /// The socket construction narrows one thing, stated because it changes which
 /// arm of `assets::serve::respond` answers. For the index the arm is the same
 /// either way: `serve_index` resolves the path and `serve_file`'s `fs::read`
 /// fails. For an inner asset `serve.rs` gates on `file.is_file()`, which a
 /// socket is not, so under a permission-overriding runner the 404 comes from
-/// the not-a-regular-file miss rather than from a failed `open`. The
-/// observable §6.1 specifies — 404 for that asset and nothing else changed —
-/// is identical, and it is the observable this suite asserts.
+/// the not-a-regular-file miss rather than from a failed `open`. The observable
+/// §6.1 specifies — 404 for that asset and nothing else changed — is identical,
+/// and it is what this suite asserts.
 fn will_not_open(path: &Path) -> &'static str {
     fs::set_permissions(path, fs::Permissions::from_mode(0o000)).expect("chmod 000");
     if fs::read(path).is_err() {
@@ -686,24 +677,22 @@ async fn every_one_of_6_1s_five_classes_reaches_the_escape_and_is_deactivated_fr
 }
 
 /// §6.1's negative control for class 5, and the reason it matters more here
-/// than anywhere else in the document: *"An escape hatch that fires on the
-/// wrong condition is worse than one that does not exist, because the operator
-/// will trust it."*
+/// than anywhere else in the document: "An escape hatch that fires on the wrong
+/// condition is worse than one that does not exist, because the operator will
+/// trust it."
 ///
 /// A bundle declaring `["v0", "v1"]` intersects the served set in `v1` and
-/// stays active through the real entry point. That rules out a check written
-/// as set equality, or as "declared must be a subset of served".
-///
-/// One case this layer cannot rule out. §2.1's
-/// dual-major case — a bundle matching only a served member that is *not*
-/// `current` — needs a served set with more than one member, and this binary's
-/// is `["v1"]` (`startup::SERVED_API_VERSIONS`). `startup::evaluate` takes the
-/// set as a parameter for exactly this reason but is private to that module,
-/// and `SERVED_API_VERSIONS` is the mechanism under test rather than something
-/// this suite may edit. So the dual-major case is
+/// stays active through the real entry point, which rules out a check written
+/// as set equality or as "declared must be a subset of served". One case this
+/// layer cannot rule out: §2.1's dual-major case — a bundle matching only a
+/// served member that is not `current` — needs a served set with more than one
+/// member, and this binary's is `["v1"]` (`startup::SERVED_API_VERSIONS`).
+/// `startup::evaluate` takes the set as a parameter for that reason but is
+/// private to that module, and `SERVED_API_VERSIONS` is the mechanism under
+/// test. So the dual-major case is
 /// `crate::startup::tests::a_bundle_matching_only_the_outgoing_major_stays_active`,
-/// which constructs `["v1", "v2"]` with `current` = `v2` and asserts the
-/// bundle survives — cited here rather than restated in a weaker form.
+/// which constructs `["v1", "v2"]` with `current` = `v2` and asserts the bundle
+/// survives — cited here rather than restated in a weaker form.
 #[tokio::test]
 async fn a_bundle_that_intersects_the_served_set_is_not_deactivated() {
     let manifest = r#"{"name":"demo","version":"1.0",

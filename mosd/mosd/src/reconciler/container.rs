@@ -1,29 +1,23 @@
 //! Reconciler for the `container` settings subtree.
 //!
-//! **What this switch actually operates, and why it is not a service.** The
-//! engine is daemonless: `podman run` forks `conmon`, which execs `crun`, and
-//! nothing stays resident. os/podman does not run upstream's
-//! `make install.systemd`, so the image contains no podman unit at all --
-//! there is no `podman.socket` to leave masked and no service to leave
-//! stopped. "Enable+start on true, stop+disable on false" therefore names no
-//! unit here.
+//! What this switch operates is not a service. The engine is daemonless:
+//! `podman run` forks `conmon`, which execs `crun`, and nothing stays resident;
+//! os/podman does not run upstream's `make install.systemd`, so the image
+//! contains no podman unit at all -- no `podman.socket` to leave masked and no
+//! service to leave stopped.
 //!
-//! What remains as the real gate is the Quadlet directory. Quadlet is a
-//! systemd GENERATOR: at every daemon-reload it reads
-//! `/etc/containers/systemd` and turns each `.container` file into a service,
-//! creating that service's `.wants` symlink itself when the file carries an
-//! `[Install]` section. So:
-//!
-//!   enabled = false  the STATE bind is not mounted, `/etc/containers/systemd`
-//!                    is the EMPTY directory inside the read-only verity root,
-//!                    Quadlet parses nothing, and no container unit exists.
-//!   enabled = true   the bind is mounted, Quadlet parses what the integrator
-//!                    put on STATE, and the units it generates start.
-//!
-//! **Why a daemon-reload is not optional here.** Mounting the directory
-//! changes nothing by itself: generators run at boot and on reload, so without
-//! one the mount is correct, the files are visible, and no unit exists --
-//! a state in which every individual step succeeded.
+//! The real gate is the Quadlet directory. Quadlet is a systemd generator: at
+//! every daemon-reload it reads `/etc/containers/systemd` and turns each
+//! `.container` file into a service, creating that service's `.wants` symlink
+//! itself when the file carries an `[Install]` section. With `enabled = false`
+//! the STATE bind is not mounted, `/etc/containers/systemd` is the empty
+//! directory inside the read-only verity root, Quadlet parses nothing and no
+//! container unit exists; with `enabled = true` the bind is mounted, Quadlet
+//! parses what the integrator put on STATE, and the units it generates start.
+//! The daemon-reload is not optional: mounting the directory changes nothing by
+//! itself, because generators run at boot and on reload, so without one the
+//! mount is correct, the files are visible, and no unit exists -- a state in
+//! which every individual step succeeded.
 
 use std::path::PathBuf;
 
@@ -35,7 +29,7 @@ use super::systemd::{Systemd, UnitControl, is_active, is_enabled};
 
 /// Mount unit binding `/etc/containers/systemd` from STATE.
 ///
-/// This is the switch. It ships INSTALLED AND NOT ENABLED: the image must not
+/// This is the switch. It ships installed and not enabled: the image must not
 /// carry its `local-fs.target.wants` symlink, or the Quadlet directory is
 /// bound at every boot regardless of the setting, and anything able to write
 /// STATE has a root-capable container at the next reboot with no operator
@@ -166,7 +160,7 @@ impl<C: UnitControl> ContainerReconciler<C> {
         self.control.daemon_reload().await?;
         tracing::info!("container: daemon-reload returned");
 
-        // AND THEN START THEM. Without this step the switch does nothing at
+        // And then start them. Without this step the switch does nothing at
         // all: a daemon-reload re-runs Quadlet, which writes the unit AND --
         // when the .container file has an [Install] section -- the .wants
         // symlink saying it should be running, but systemd does not act on a

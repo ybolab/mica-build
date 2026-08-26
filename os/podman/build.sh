@@ -44,32 +44,27 @@ for tool in docker; do
     }
 done
 
-# THE BUILDER: `default`, EXPLICITLY, AND WHY THIS FILE CANNOT INHERIT ONE.
-# An earlier arrangement picked a docker-container builder whenever the
-# ambient one could not reach linux/${MOS_ARCH}, and passed no --builder
-# otherwise -- inheriting whatever `docker buildx use` last selected.
-#
-# Neither is possible any more, and the reason is the switchover itself: every
-# stage below is now FROM a localhost/mos-build-* tag, which exists only in the
-# LOCAL DOCKER IMAGE STORE. Only the `docker` driver can resolve one. A
+# The builder is `default`, explicitly, because this file cannot inherit one:
+# every stage below is FROM a localhost/mos-build-* tag, which exists only in
+# the local docker image store, and only the `docker` driver can resolve one. A
 # docker-container builder has its own content store and treats `localhost/` as
-# a registry HOSTNAME, producing `dial tcp [::1]:80: connect: connection
-# refused` against a FROM line that is correct, which is the same reason
+# a registry hostname, producing `dial tcp [::1]:80: connect: connection
+# refused` against a FROM line that is correct -- the same reason
 # os/build-env/build.sh pins itself to `default`. Inheriting is worse still: a
 # leftover `mos-rauc-arm64` from an unrelated build is a plausible ambient
 # selection on any host that has ever run `make os-rauc`.
-#
-# So the emulation fallback becomes a REFUSAL, and it is deliberately phrased
-# around what is missing rather than around this host's architecture: the
-# default builder reaches linux/${MOS_ARCH} exactly when the host has binfmt
-# registered for it, and on such a host this build works cross-architecture with
-# no change to this file. What it needs beyond that is an mos-build-* family
-# built FOR that architecture, which os/build-env/from.sh checks next.
+
+# So the emulation fallback becomes a refusal, deliberately phrased around what
+# is missing rather than around this host's architecture: the default builder
+# reaches linux/${MOS_ARCH} exactly when the host has binfmt registered for it,
+# and on such a host this build works cross-architecture with no change to this
+# file. What it needs beyond that is an mos-build-* family built for that
+# architecture, which os/build-env/from.sh checks next.
 BUILDER_ARGS=(--builder default)
-# The whole output is captured BEFORE anything reads it, rather than piped into
+# The whole output is captured before anything reads it, rather than piped into
 # a grep. An early-exiting `grep -q` on the right of a pipe closes it the moment
 # it matches; under `set -o pipefail` the producer then dies of SIGPIPE and the
-# PIPELINE reports failure exactly when the pattern IS found -- so the refusal
+# pipeline reports failure exactly when the pattern IS found -- so the refusal
 # below would fire on the hosts that can build, intermittently, depending on
 # whether the output fit the pipe buffer first. os/tests/shell-pipefail-lint.sh
 # exists for this one mistake and caught this line.
@@ -105,17 +100,17 @@ if [ ! -s "${HERE}/versions.lock" ]; then
     exit 1
 fi
 
-# THE FOUR BUILDER IMAGES, resolved out of os/build-env/images.env before
+# The four builder images, resolved out of os/build-env/images.env before
 # anything is deleted or built. os/podman/Dockerfile declares them with no
 # defaults, so a missing one is refused here by name -- with the command that
 # makes it -- rather than by docker, which reports a missing localhost tag as a
 # failed pull from a registry called `localhost`.
-#
-# --arch IS PASSED, and it is the check this switchover added. A local tag
-# carries exactly ONE architecture, unlike the multi-architecture digests
-# images.env pins for upstream bases, so `MOS_ARCH=arm64 make podman` against an
-# amd64 builder family has to be refused. Left to docker it surfaces as "no
-# match for platform in manifest" against a FROM line that is correct.
+
+# --arch is passed, and it is the check this pinning added. A local tag carries
+# exactly one architecture, unlike the multi-architecture digests images.env
+# pins for upstream bases, so `MOS_ARCH=arm64 make podman` against an amd64
+# builder family has to be refused. Left to docker it surfaces as "no match for
+# platform in manifest" against a FROM line that is correct.
 mapfile -t FROM_ARGS < <("${FROM_SH}" --arch="${MOS_ARCH}" \
     MOS_BUILD_BASE=LOCAL_MOS_BUILD_BASE \
     MOS_BUILD_C=LOCAL_MOS_BUILD_C \

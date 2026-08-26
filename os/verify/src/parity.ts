@@ -1,60 +1,29 @@
 // The parity harness: what the shell verifier concluded, what the TypeScript
-// port concluded, and where the two differ -- PER CHECK.
+// port concluded, and where the two differ -- per check.
 //
-// M4b..M4d port os/verify-image-v2.sh's checks in batches and M4e deletes it
-// at full parity; this file is the instrument all four are measured by.
-// Nothing in here runs a check. It parses one verifier's output, takes the
-// other's results, and says -- by NAME, per check -- agree, diverge, or not
-// ported.
+// Nothing here runs a check: it parses one verifier's output, takes the other's
+// results, and says by name, per check, agree / diverge / not ported.
 //
-// WHY NOT A COUNT.
+// By name and not by count, following os/tests/ui-location-test.sh: "395 checks
+// both sides" is equally true of two runs that agreed on 395 and of two that
+// agreed on none because both were empty, and M3a's board-env oracle reported
+// agreement "on all 0 keys" for exactly that reason. A SKIP is a third verdict
+// that never equals a PASS, so pass-vs-skip is a named divergence rather than
+// noise in a total.
 //
-// os/tests/ui-location-test.sh is this repository's reference for the
-// discipline and this file follows it deliberately: it names the assertions it
-// expects BY IDENTITY and diffs that set against the set that actually ran,
-// because a count breaks whenever the suite is widened and "exit 0 with no FAIL
-// lines" is invariant under a run in which nothing executed at all. The same
-// two traps are live here and worse:
+// Identity is assigned rather than parsed. os/verify-image-v2.sh prints
+// `PASS: <prose>`, `FAIL: <prose>`, `SKIP: <prose>` and nothing else -- measured
+// on both boards' real images 2026-08-25, every one of 398 and 312 stdout lines
+// is a verdict line or the final RESULT line -- but the prose is not an
+// identifier: `eq_ci` prints "X is Y" passing and "X is 'Z', expected Y"
+// failing. So each ported check carries a substring from its PASS line, plus
+// separate substrings for FAIL and SKIP where the directions do not share one,
+// as a field on the CheckCase rather than a file that could drift from it. The
+// shell verifier is NOT modified to emit ids: an oracle edited to make its
+// readings easier to compare is not independent of the thing it measures.
 //
-//   * "395 checks both sides" is equally true of two runs that agreed on 395
-//     checks and of two runs that agreed on none because both were empty. M3a's
-//     board-env oracle reported agreement "on all 0 keys" for exactly that
-//     reason -- diff of two empty files is green.
-//   * A shell check that became a SKIP still contributes to a total. Under a
-//     count it vanishes into the noise; here a SKIP is a THIRD verdict that
-//     never equals a PASS, so pass-vs-skip is a divergence with a name.
-//
-// HOW A SHELL LINE GETS AN IDENTITY.
-//
-// os/verify-image-v2.sh prints `PASS: <prose>`, `FAIL: <prose>`, `SKIP: <prose>`
-// and nothing else -- measured on both boards' real images, 2026-08-25: every
-// one of 398 and 312 stdout lines is a verdict line or the final RESULT line.
-// The prose is not an identifier: `eq_ci` alone prints "X is Y" when it passes
-// and "X is 'Z', expected Y" when it fails, so the two directions of ONE check
-// share only their leading clause.
-//
-// So identity is ASSIGNED, by a register that each ported check carries with
-// it: a substring that appears in its PASS line, and -- where the directions do
-// not share one -- separate substrings for FAIL and SKIP. Exactly the shape of
-// ui-location-test.sh's ASSERTIONS table, which is the tree's own vocabulary
-// for this and has already caught a case asserting two identities the code
-// could never produce. The register is not a separate file that could drift
-// from the port: it is a field on the CheckCase, so a check cannot be ported
-// without saying which shell conclusion it replaces, and cannot claim a shell
-// conclusion without being ported.
-//
-// The shell verifier is NOT modified to emit ids. It is the oracle, and an
-// oracle edited to make its readings easier to compare is not independent of
-// the thing it measures.
-//
-// WHAT "NOT PORTED" MUST LOOK LIKE.
-//
-// At M4a the register is EMPTY, so every shell conclusion is unclaimed. That is
-// the expected state and the harness has to SAY it rather than report agreement
-// -- a report whose headline is "0 divergences" would be true, and would be the
-// most misleading true sentence available. So `not-ported` is a first-class
-// outcome, it is counted separately from agreement, and the conclusion of a run
-// with any of them is INCOMPLETE and never PASS.
+// `not-ported` is a first-class outcome, counted separately from agreement, and
+// a run with any of them concludes INCOMPLETE and never PASS.
 
 /** The three things a verifier can conclude about one check. A SKIP is not a PASS. */
 export type Verdict = 'pass' | 'fail' | 'skip'
@@ -94,7 +63,7 @@ const VERDICT_PREFIX: ReadonlyMap<string, Verdict> = new Map([
 /**
  * Parse the shell verifier's stdout, and refuse a parse that does not add up.
  *
- * THE SELF-CONSISTENCY GUARD IS THE POINT. The verifier counts its own
+ * The self-consistency guard is the point. The verifier counts its own
  * conclusions in PASS_N/FAIL_N/SKIP_N and prints them in its last line. This
  * parser counts them again from the lines. If the two disagree, the parser has
  * missed conclusions -- a message with an embedded newline, an output format
@@ -177,15 +146,13 @@ export function parseShellRun(stdout: string): ShellRun {
   return { lines, summary }
 }
 
-// ---------------------------------------------------------------------------
 // the register: how a ported check names the shell conclusion it replaces
-// ---------------------------------------------------------------------------
 
 export interface ShellMatcher {
   /**
    * A substring of the check's PASS line.
    *
-   * OPTIONAL SINCE M4d, and only for the one case that needs it: a check whose
+   * Optional since M4d, and only for the one case that needs it: a check whose
    * shell counterpart has no PASS line on any board it applies to. The oracle
    * has whole families that print N conclusions on the board with the hardware
    * and ONE `skip` on the board without -- the radio firmware set, the hwinit
@@ -365,7 +332,7 @@ export function diffParity(input: {
   const rows: ParityRow[] = []
   const applicable = checks.filter(c => appliesTo(c, board))
 
-  // --- claim each shell line ------------------------------------------------
+  // claim each shell line
   const shellByKey = new Map<string, { verdict: Verdict, line: number, message: string }>()
   const firedIds = new Set<string>()
 
@@ -427,7 +394,7 @@ export function diffParity(input: {
     shellByKey.set(key, { verdict: l.verdict, line: l.line, message: l.message })
   }
 
-  // --- pair the TypeScript results against them -----------------------------
+  // pair the TypeScript results against them
   const tsByKey = new Map<string, CheckResult>()
   for (const r of results) {
     const check = checks.find(c => c.id === r.id)
@@ -513,7 +480,7 @@ export function diffParity(input: {
     })
   }
 
-  // --- registered, applicable, and silent on both sides ---------------------
+  // registered, applicable, and silent on both sides
   for (const c of applicable) {
     if (firedIds.has(c.id)) continue
     if ([...tsByKey.keys()].some(k => splitKey(k)[0] === c.id)) continue
