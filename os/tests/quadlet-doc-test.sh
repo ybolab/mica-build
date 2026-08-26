@@ -3,16 +3,16 @@
 # image ships.
 #
 #   bash os/tests/quadlet-doc-test.sh
-#
+
 # A document full of configuration examples rots silently: Quadlet gains a key,
 # drops one, renames a section, and the examples go on looking correct to every
 # reader, because nothing in a markdown file can fail. So the examples are
 # extracted from the document and run through the real generator -- the arm64
 # binary in os/podman/out-arm64, under emulation, the one the device runs.
-#
+
 # The marker is an HTML comment, `<!-- quadlet: NAME -->`, immediately before
 # the fenced block. Invisible when the document is rendered, unambiguous to
-# parse, and it names the FILE the block is -- because Quadlet's behaviour
+# parse, and it names the file the block is, because Quadlet's behaviour
 # depends on the extension: a `.network` and a `.container` holding identical
 # bytes generate different units.
 set -euo pipefail
@@ -33,7 +33,7 @@ trap 'rm -rf "${WORK}"' EXIT
 UNITS="${WORK}/units"
 mkdir -p "${UNITS}"
 
-# --- extract -------------------------------------------------------------
+# --- extract
 # Every `<!-- quadlet: NAME -->` followed by a fenced block becomes NAME.
 python3 - "${DOC}" "${UNITS}" <<'PY'
 import io, re, sys
@@ -74,7 +74,7 @@ if [ "${count}" -lt 5 ]; then
     exit 1
 fi
 
-# --- run the real generator ---------------------------------------------
+# --- run the real generator
 # In a container, because the binary is aarch64 and this host is not. Same
 # builder selection as os/podman/build.sh: buildx's docker-container driver
 # bundles QEMU, so no host binfmt registration is needed.
@@ -87,19 +87,19 @@ fi
 
 cp "${QUADLET}" "${WORK}/quadlet"
 
-# THE BASE, from os/build-env/images.env, and by the --build-arg form rather
+# The base, from os/build-env/images.env, and by the --build-arg form rather
 # than by interpolating a reference into the heredoc. That is forced by the
 # heredoc's own body: the RUN below relies on ${out} reaching the Dockerfile
-# UNEXPANDED, so the delimiter has to stay quoted and nothing in here expands
-# on the host side. `ARG` before `FROM` is the same shape M2c gave every
-# Dockerfile in the tree -- declared with no default, so a build that forgets
-# the argument is refused rather than falling back to something.
-#
-# WHY IT MATTERS FOR THIS TEST SPECIFICALLY: what runs in the container is the
-# quadlet binary out of os/podman/out-arm64, generating systemd units that are
-# then asserted against docs/design/containers.md. It is dynamically linked, so
-# the base decides the glibc it loads against -- and a base that drifted would
-# surface as a documentation test failing about unit content.
+# unexpanded, so the delimiter has to stay quoted and nothing in here expands
+# on the host side. `ARG` before `FROM` is the shape every Dockerfile in the
+# tree uses -- declared with no default, so a build that forgets the argument
+# is refused rather than falling back to something.
+
+# It matters for this test specifically because what runs in the container is
+# the quadlet binary out of os/podman/out-arm64, generating systemd units that
+# are then asserted against docs/design/containers.md. It is dynamically
+# linked, so the base decides the glibc it loads against, and a base that
+# drifted would surface as a documentation test failing about unit content.
 mapfile -t FROM_ARGS < <(bash "${REPO_ROOT}/os/build-env/from.sh" \
     MOS_IMAGE_DEBIAN_TRIXIE=IMAGE_DEBIAN_TRIXIE)
 # mapfile cannot fail, so its status says nothing about the process inside the
@@ -136,7 +136,7 @@ docker buildx build "${BUILDER_ARGS[@]}" \
 }
 GENERATED="${WORK}/out/generated.txt"
 
-# --- assert --------------------------------------------------------------
+# --- assert
 pass=0
 fail=0
 check() {

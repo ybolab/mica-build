@@ -129,7 +129,7 @@ check() {
 
 marked_good() { grep -qx 'rauc status mark-good' "$CALLS" && echo yes || echo no; }
 
-# --- health gate: no-op paths ----------------------------------------------
+# --- health gate: no-op paths
 new_case rauc-absent
 out=$(run_health 2>&1) && rc=0 || rc=$?
 check "rauc absent -> exit 0" "0" "$rc"
@@ -170,7 +170,7 @@ check "unparseable rauc output -> no mark-good" "no" "$(marked_good)"
 check "unparseable rauc output -> says so" "yes" \
     "$(grep -q 'cannot parse' <<<"$out" && echo yes || echo no)"
 
-# --- health gate: success ---------------------------------------------------
+# --- health gate: success
 new_case healthy
 healthy_fakes
 out=$(run_health 2>&1) && rc=0 || rc=$?
@@ -188,7 +188,7 @@ out=$(run_health 2>&1) && rc=0 || rc=$?
 check "second run -> exit 0" "0" "$rc"
 check "second run -> mark-good again" "2" "$(grep -cx 'rauc status mark-good' "$CALLS")"
 
-# --- health gate: systemd states -------------------------------------------
+# --- health gate: systemd states
 new_case degraded-unlisted
 healthy_fakes
 out=$(run_health FAKE_SYS_STATE=degraded FAKE_FAILED_UNITS='broken.service loaded failed failed X
@@ -212,7 +212,7 @@ out=$(run_health FAKE_SYS_STATE=maintenance 2>&1) && rc=0 || rc=$?
 check "maintenance -> exit 1" "1" "$rc"
 check "maintenance -> no mark-good" "no" "$(marked_good)"
 
-# --- health gate: `starting`, which is the state this gate ALWAYS sees ------
+# --- health gate: `starting`, which is the state this gate ALWAYS sees
 #
 # mos-health.service is WantedBy=multi-user.target, so it is a job in the
 # initial transaction and `is-system-running` cannot report anything but
@@ -221,9 +221,10 @@ check "maintenance -> no mark-good" "no" "$(marked_good)"
 # actually meets on a device was the one state never tested -- and the gate
 # failed every real boot while the suite stayed green.
 #
-# `list-jobs` columns are JOB UNIT TYPE STATE. A job in state `waiting` is
-# blocked on ordering (mos-status-led.service waits on this gate by design);
-# only a job still `running` means something else is genuinely in flight.
+# The `list-jobs` columns are, in order: JOB, UNIT, then TYPE and STATE. A job
+# in state `waiting` is blocked on ordering (mos-status-led.service waits on
+# this gate by design); only a job still `running` means something else is
+# genuinely in flight.
 
 new_case starting-self-only
 healthy_fakes
@@ -256,7 +257,7 @@ check "starting + unlisted failed unit -> no mark-good" "no" "$(marked_good)"
 check "starting + unlisted failed unit -> named" "yes" \
     "$(grep -q 'broken.service' <<<"$out" && echo yes || echo no)"
 
-# --- health gate: mosd and apid --------------------------------------------
+# --- health gate: mosd and apid
 new_case mosd-down
 healthy_fakes
 out=$(run_health FAKE_BUSCTL_RC=1 2>&1) && rc=0 || rc=$?
@@ -283,7 +284,7 @@ check "apid.service absent -> exit 0" "0" "$rc"
 check "apid.service absent -> skip logged" "yes" \
     "$(grep -q 'probe apid: SKIP' <<<"$out" && echo yes || echo no)"
 
-# --- health gate: /var pressure is reported, never fatal --------------------
+# --- health gate: /var pressure is reported, never fatal
 new_case var-pressure
 healthy_fakes
 out=$(run_health FAKE_VAR_PCT=91 2>&1) && rc=0 || rc=$?
@@ -300,7 +301,7 @@ out=$(run_health FAKE_VAR_PCT=12 2>&1) && rc=0 || rc=$?
 check "/var under threshold -> reported ok" "yes" \
     "$(grep -q 'ReportHealth sss var ok' "$CALLS" && echo yes || echo no)"
 
-# --- machine id -------------------------------------------------------------
+# --- machine id
 new_case mid-no-tool
 out=$(run_machine_id 2>&1) && rc=0 || rc=$?
 check "fw_setenv absent -> exit 0" "0" "$rc"

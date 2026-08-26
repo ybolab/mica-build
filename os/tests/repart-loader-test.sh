@@ -3,34 +3,33 @@
 #
 # systemd-repart discards every region of the disk that no GPT partition entry
 # covers, and it does so on the first boot while growing DATA. The Rockchip
-# idbloader lives at raw LBA 64; while it sat outside every partition the growth
-# run TRIMmed it away, so the device booted once and reached maskrom on the next
-# power-on. That is not a Rockchip quirk — it generalises to every SoC that
-# boots from a raw offset.
-#
-# The fix is STRUCTURAL: the loader area is a real GPT partition, so repart
-# leaves it alone and first-boot TRIM stays enabled. This test proves that
-# property against a real systemd-repart on a real image on a loop device, with
-# discard ENABLED — stock settings, no --discard=no anywhere.
-#
-# Both directions, per image:
+# idbloader lives at raw LBA 64; while it sat outside every partition the
+# growth run TRIMmed it away, so the device booted once and reached maskrom on
+# the next power-on. That generalises to every SoC that boots from a raw
+# offset. The fix is structural: the loader area is a real GPT partition, so
+# repart leaves it alone and first-boot TRIM stays enabled.
+
+# This test proves that property against a real systemd-repart on a real image
+# on a loop device, with discard enabled -- stock settings, no --discard=no
+# anywhere. Both directions, per image:
 #   positive  the image as built, with its loader partition: LBA 64 survives.
-#   negative  the SAME image with only the loader partition entry deleted:
-#             LBA 64 is destroyed. Without this the positive case would prove
-#             nothing — a repart run that quietly did nothing at all would pass
-#             it. A guard that has never been seen to fire is not a guard.
-#
-# A second section then runs the repart definitions the v2 image ACTUALLY
-# SHIPS, unpacked out of the packed root, and asserts that DATA is bigger
-# afterwards — the growth /srv depends on. Its negative direction removes
+#   negative  the same image with only the loader partition entry deleted: LBA
+#             64 is destroyed. Without this the positive case would prove
+#             nothing, because a repart run that quietly did nothing at all
+#             would pass it. A guard that has never been seen to fire is not a
+#             guard.
+
+# A second section then runs the repart definitions the v2 image actually
+# ships, unpacked out of the packed root, and asserts that DATA is bigger
+# afterwards -- the growth /srv depends on. Its negative direction removes
 # SizeMinBytes=0 from the uenv placeholders, reconstructing the state in which
 # repart refused the whole run and /srv silently never grew.
 #
 #   bash os/tests/repart-loader-test.sh [image]...
 #
-# With no argument the latest assembled image is tested, if one exists.
-# Needs docker with --privileged (loop devices). Fails loudly if unavailable;
-# it never skips silently.
+# With no argument the latest assembled image is tested, if one exists. Needs
+# docker with --privileged (loop devices). Fails loudly if unavailable; it
+# never skips silently.
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
@@ -90,15 +89,14 @@ EOF
     echo "host has no sgdisk; using container image ${TOOL_IMAGE} for it"
 fi
 
-# --- the stopgap must not exist ---------------------------------------------
-# Protection comes from the partition entry. A --discard=no drop-in is the OTHER
-# approach, and carrying both would hide a regression in the partition entry
-# behind a flag nobody remembers is there — the positive case below would keep
-# passing for the wrong reason.
-# Scoped to os/rootfs, which is everything that lands in an image: an overlay
-# drop-in or a Dockerfile RUN that writes one. Prose elsewhere in the tree
-# EXPLAINS why the flag is not used, and matching that would make the check
-# unfalsifiable; comment lines are dropped for the same reason.
+# The stopgap must not exist. Protection comes from the partition entry; a
+# --discard=no drop-in is the other approach, and carrying both would hide a
+# regression in the partition entry behind a flag nobody remembers is there --
+# the positive case below would keep passing for the wrong reason. Scoped to
+# os/rootfs, which is everything that lands in an image: an overlay drop-in or
+# a Dockerfile RUN that writes one. Prose elsewhere in the tree explains why
+# the flag is not used, and matching that would make the check unfalsifiable;
+# comment lines are dropped for the same reason.
 discard_hits="$(grep -rn -- '--discard=no' "${REPO_ROOT}/os/rootfs" 2>/dev/null |
     grep -v ':[[:space:]]*#' || true)"
 if [ -z "${discard_hits}" ]; then
@@ -115,20 +113,20 @@ loader_magic_of() {
 
 # Builds a definition set matching an image's linux-generic partitions: one
 # inert placeholder per partition, in disk order, and the last one growing.
-# Derived from the image's own GPT rather than restated, so it stays correct for
-# both pipelines. repart pairs definitions with partitions BY TYPE UUID, so the
-# count is exactly the number of linux-generic partitions -- and the loader,
-# carrying LOADER_TYPECODE, is not one of them.
-#
-# The set is SYNTHESISED rather than copied from the image so that this test
+# Derived from the image's own GPT rather than restated, so it stays correct
+# for both pipelines. repart pairs definitions with partitions by type UUID, so
+# the count is exactly the number of linux-generic partitions -- and the
+# loader, carrying LOADER_TYPECODE, is not one of them.
+
+# The set is synthesised rather than copied from the image so that this test
 # covers both pipelines from one code path: v1 and v2 ship different definition
 # sets, and what is under test here is the loader, not either set.
 # SizeMinBytes=0 is set for the same reason the shipped v2 definitions set it:
-# systemd-repart will not claim an EXISTING partition smaller than the
+# systemd-repart will not claim an existing partition smaller than the
 # definition's minimum size, and that minimum defaults to 10 MiB, while uenv-a
 # and uenv-b are 64 KiB. Omitting it makes repart abort the whole run with
 # "Can't fit requested partitions into available free space" before touching
-# anything, so /srv never grows. The growth check further down runs the SHIPPED
+# anything, so /srv never grows. The growth check further down runs the shipped
 # definitions rather than these synthesised ones.
 mkdefs() {
     local img="$1" dir="$2" n=0 i part_count type
@@ -156,7 +154,7 @@ mkdefs() {
 # Runs a real systemd-repart over a copy of the image on a loop device, with
 # STOCK settings: no --discard flag at all, so discard is on. Echoes the four
 # bytes at LBA 64 afterwards; the run's own log lands in ${work}/<name>.log.
-# THE REPART CONTAINER'S BASE, from os/build-env/images.env, resolved once for
+# The repart container's base, from os/build-env/images.env, resolved once for
 # the three containers below that share it: the two systemd-repart runs and the
 # unsquashfs that reads /etc/repart.d back out of the shipped root.
 #
@@ -264,29 +262,26 @@ for IMAGE in "${IMAGES[@]}"; do
     fi
 done
 
-# ===========================================================================
-# v2: the SHIPPED repart definitions must actually GROW DATA
-# ===========================================================================
-# The loop above proves the loader survives, but it does so with a SYNTHESISED
+# v2: the shipped repart definitions must actually grow DATA.
+#
+# The loop above proves the loader survives, but it does so with a synthesised
 # definition set. That deliberately says nothing about the set the image
-# actually carries — and the set the image carried could not drive a successful
-# run at all: systemd-repart refuses to claim an EXISTING partition below the
-# definition's minimum size, which defaults to 10 MiB, while uenv-a and uenv-b
-# are 64 KiB. repart therefore concluded it had to CREATE two new partitions,
-# could not place them, and aborted with
+# actually carries -- and the set the image carried could not drive a
+# successful run at all: systemd-repart refuses to claim an existing partition
+# below the definition's minimum size, which defaults to 10 MiB, while uenv-a
+# and uenv-b are 64 KiB. repart therefore concluded it had to create two new
+# partitions, could not place them, and aborted with
 #     Can't fit requested partitions into available free space (6.7G), refusing.
 # before touching anything. /srv never grew on a real device, and a refusal
 # looks exactly like a clean exit.
-#
-# So this section runs the definitions THE IMAGE SHIPS, unpacked out of the
+
+# So this section runs the definitions the image ships, unpacked out of the
 # packed rootfs slot, and asserts the outcome that matters: DATA is bigger
-# afterwards. "repart did not error" is not enough — that is what the refusal
-# already looked like.
-#
-# The negative direction removes SizeMinBytes=0 from the two uenv definitions,
-# reconstructing the pre-fix state, and asserts the run REFUSES and DATA does
-# NOT grow. Without it the positive case would be a guard that has never been
-# seen to fire.
+# afterwards. "repart did not error" is not enough -- that is what the refusal
+# already looked like. The negative direction removes SizeMinBytes=0 from the
+# two uenv definitions, reconstructing the pre-fix state, and asserts the run
+# refuses and DATA does not grow. Without it the positive case would be a guard
+# that has never been seen to fire.
 V2_IMAGE=""
 for candidate in "${IMAGES[@]}"; do
     case "$(basename "${candidate}")" in
