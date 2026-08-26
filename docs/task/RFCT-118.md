@@ -60,6 +60,27 @@ table rather than a missing case:
   mosd's message text, which is the one thing §2.4 forbids: the message is
   passed through precisely because apid does not know mosd's rules.
 
+**§2.2 already works this exact case, and it comes out a validation failure.**
+Its VLAN example is an unknown dot-path: `network.eth0.100` is split on `.` by
+`split_path` unconditionally, the trailing segment lands as a field named `100`
+inside `IfaceSettings`, and `deny_unknown_fields` rejects it as
+`Validation { path: "network.eth0.100", message: "unknown field `100`, expected
+`dhcp` or `static`" }`. mosd maps `SettingsError::Validation` onto
+`InvalidArgs`, which is §2.4's `settings_rejected` row. So 422 is the answer the
+translation rule *produces* for a path that does not exist — the design
+document's own worked example of one — and not a convenience this task chose.
+§2.4 uses the same example to illustrate the envelope, at 422.
+
+**And the choice is load-bearing, so it must not be tidied up later.** §2.1's
+breaking list is exhaustive and it names *"changing which `error.code` (§2.4) an
+existing failure emits"* as breaking: it bumps `v1` to `v2`. A later reviewer
+who reaches for REST convention and re-reads this case as 404 `not_found` is
+therefore not making a cleanup — they are spending a major-version bump on it,
+and every correct v1 client that switched on `settings_rejected` is what they
+are spending it against. Once M3's oasdiff gate lands, CI says so before the
+merge rather than after. The reading is recorded here so the reasoning reaches
+that reviewer instead of being re-derived from the status code alone.
+
 An unknown *route* still answers 404 with the `not_found` envelope, unchanged
 from M1.
 
