@@ -372,9 +372,8 @@ export async function fatReadFile(rt: ToolRuntime, slot: FatSlot, path: string):
  * them. `false` means the file is not in the slot -- mcopy exits 1 saying
  * `File "::/x" not found`, the one honest absence in the mtools set -- and any other
  * non-zero exit throws, because "unreadable slot" and "file not in it" are different
- * edits. The destination is checked AFTER the copy as well as before: mcopy exiting
- * 0 having written nothing would leave the caller reading a file that is not there,
- * `unsquashfs -d`'s defect next door.
+ * edits. The destination is checked after the copy as well as before: mcopy exiting 0
+ * having written nothing is `unsquashfs -d`'s defect one directory along.
  */
 export async function fatCopyOut(
   rt: ToolRuntime,
@@ -860,9 +859,8 @@ export interface E2fsckVerdict {
  * `if e2fsck -fn "${img}" >/dev/null 2>&1`, so both streams go to /dev/null and the
  * status alone decides -- and the branch is reachable, because `check_ext4` extracts
  * `count=${size_mib}` MiB at the layout's offset and a short-tailed image produces
- * exactly this file. Reproduced and not repaired: the verdict is the STATUS as the
- * oracle reads it, and `E2fsckVerdict.report` keeps the sentence rather than
- * sending it to /dev/null.
+ * exactly this file. Reproduced and not repaired: the verdict is the STATUS the
+ * oracle reads, and `E2fsckVerdict.report` keeps the sentence rather than dropping it.
  */
 export async function e2fsckClean(rt: ToolRuntime, file: string): Promise<E2fsckVerdict> {
   const r = await rt.run(['e2fsck', '-fn', file], {
