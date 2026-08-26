@@ -1,7 +1,7 @@
 #!/bin/sh
 # Mask the packaged non-templated radio units, whose lifecycles mosd owns.
 #
-# Called from os/rootfs/Dockerfile.v2 (rootfs stage), where the reasoning lives.
+# Called from os/rootfs/stages/30-40-unsplit.Dockerfile, where the reasoning lives.
 # Build arguments read from the environment: BOARD_RADIOS.
 
 set -eu

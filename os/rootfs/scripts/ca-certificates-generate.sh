@@ -1,7 +1,7 @@
 #!/bin/sh
 # Install ca-certificates and record how many certificates the bundle holds.
 #
-# Called from os/rootfs/Dockerfile.v2 (certs stage), where the reasoning lives.
+# Called from os/rootfs/stages/10-base.Dockerfile (certs stage), where the reasoning lives.
 
 set -eu
 apt-get update

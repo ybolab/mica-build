@@ -1,7 +1,7 @@
 #!/bin/sh
 # Export the kernel and initramfs for a bootloader that cannot read squashfs.
 #
-# Called from os/rootfs/Dockerfile.v2 (pack stage), where the reasoning lives.
+# Called from os/rootfs/stages/90-pack.Dockerfile (pack stage), where the reasoning lives.
 
 set -eu; mkdir -p /out/boot
 if ls /rootfs/boot/vmlinuz-* >/dev/null 2>&1; then

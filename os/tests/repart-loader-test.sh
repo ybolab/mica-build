@@ -166,7 +166,7 @@ mkdefs() {
 # not a new one -- all three named `debian:bookworm-slim` literally before R6
 # and this records what they already ran on rather than moving them. Note that
 # this key's own comment in images.env used to say the pack stage of
-# os/rootfs/Dockerfile.v2 consumed it and NOTHING ELSE; R6 made that false and
+# the rootfs build consumed it and NOTHING ELSE; R6 made that false and
 # amended it, which is the only edit R6 made to an existing entry there.
 REPART_BASE="$(bash "${REPO_ROOT}/os/build-env/from.sh" --ref IMAGE_DEBIAN_BOOKWORM)"
 

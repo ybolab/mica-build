@@ -2124,7 +2124,7 @@ target: it is the one persistent tier already reachable without a unit.
 Two facts the image already guarantees and that this depends on:
 
 - The `/srv` mountpoint exists in the read-only root
-  (`os/rootfs/Dockerfile.v2:255`), and the verifier asserts every fstab and bind
+  (`os/rootfs/scripts/overlay-install.sh`), and the verifier asserts every fstab and bind
   mountpoint exists (`os/verify-image-v2.sh:1277-1281`).
 - DATA is the only partition `systemd-repart` grows and the only one carrying
   `x-systemd.growfs` (`os/rootfs/overlay-v2/etc/fstab.in:16`), so a bundle root
@@ -2530,7 +2530,7 @@ stylesheet is a `&str` constant emitted into each `<head>`
 and no non-Rust file in the crate other than its manifest.
 
 **How it gets there.** `os/rootfs/build-v2.sh:75-76` copies the cross-built
-`apid` binary and its unit into the build context; `os/rootfs/Dockerfile.v2:294`
+`apid` binary and its unit into the build context; `os/rootfs/scripts/mosd-install.sh`
 installs the binary as `/usr/bin/apid` mode `0755`, `:295` installs the unit,
 and `:297-299` enables it by symlink and **asserts the symlink exists**. The
 binary is then part of the tree that `os/rootfs/build-v2.sh` packs into the
@@ -2708,7 +2708,7 @@ file, or of a design document, and each is cited as such.
 The marker refers to the split itself, which exists: two units
 (`mosd/dist/mosd.service:8` → `/usr/bin/mosd`, `mosd/dist/apid.service:8` →
 `/usr/bin/apid`), two binaries installed separately by the image
-(`os/rootfs/Dockerfile.v2:285` and `:294`), ordered `After=network.target
+(`os/rootfs/scripts/mosd-install.sh`), ordered `After=network.target
 mosd.service` (`mosd/dist/apid.service:3`). What this subsection adds is the
 argument, not a mechanism.
 
@@ -3062,7 +3062,7 @@ to move.
 built-in UI that §6.2 says ships inside verity IS today's maud pages.** §6.2
 measures exactly that — *"At `86cd669` the built-in UI is **compiled into the
 `webd` binary**"* — and identifies how it gets inside the verity squashfs
-(`os/rootfs/build-v2.sh:75-76`, `os/rootfs/Dockerfile.v2:294`). No second
+(`os/rootfs/build-v2.sh:75-76`, `os/rootfs/scripts/mosd-install.sh`). No second
 artifact is proposed anywhere in §6 and none is needed. What this section adds
 is not a new artifact; it is **where those pages are reachable, and when they
 move**.

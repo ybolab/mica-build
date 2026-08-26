@@ -250,8 +250,8 @@ new_fixture() {
     ln -sf /usr/lib/systemd/system/mos-status-led.service \
         "${dir}/etc/systemd/system/multi-user.target.wants/mos-status-led.service"
     # PLAN-011 D5's bind unit, as SHIPPED, plus the local-fs.target.wants
-    # symlink os/rootfs/Dockerfile.v2 enables it with. The symlink is absolute
-    # and therefore dangles inside the fixture, exactly as the LED one above
+    # symlink os/rootfs/scripts/overlay-install.sh enables it with. The symlink
+    # is absolute and therefore dangles inside the fixture, as the LED one above
     # does: what the verifier asserts is that the symlink NAME is present under
     # a *.wants directory, because that is what enablement IS on the device.
     mkdir -p "${dir}/etc/systemd/system/local-fs.target.wants"
@@ -264,7 +264,8 @@ new_fixture() {
     mkdir -p "${dir}$(dirname "${EXT_POLICY_PATH}")"
     cp "${EXT_POLICY_SRC}" "${dir}${EXT_POLICY_PATH}"
 
-    # PLAN-011 D6's MQTT bridge, as os/rootfs/Dockerfile.v2 installs it: the
+    # PLAN-011 D6's MQTT bridge, as os/rootfs/scripts/mosd-install.sh installs
+    # it: the
     # binary (a stand-in, like apid's -- nothing here reads its contents), the
     # SHIPPED unit and the SHIPPED grant -- and NO enablement symlink. RFCT-104
     # made mqtt.enabled a master switch that seeds false and gave mosd the
@@ -320,7 +321,8 @@ new_fixture() {
             >"${dir}/usr/share/doc/pkg${i}/copyright"
     done
 
-    # PLAN-012's container engine, as os/rootfs/Dockerfile.v2 installs it:
+    # PLAN-012's container engine, as os/rootfs/scripts/podman-install.sh
+    # installs it:
     # seven self-built binaries (stand-ins -- nothing reads their contents) at
     # the paths podman's own source searches first, NO podman systemd unit of
     # any name, mos's own four config files, nft, and the Quadlet directory
@@ -1279,7 +1281,8 @@ expect_set "the broker on DynamicUser=yes" \
     "no account of that name is in"
 
 # --- 5m. the broker's account is not in the image ---------------------------
-# uid 969 is created in os/rootfs/Dockerfile.v2 and nowhere else. Without it
+# uid 969 is created in os/rootfs/scripts/account-mos-mqtt-broker.sh and
+# nowhere else. Without it
 # systemd refuses the unit, so turning mqtt.enabled on brings up a bridge and
 # no broker -- the exact shape of the failure this campaign started from.
 FIX="${WORK}/broker-no-account"
@@ -1455,7 +1458,8 @@ expect_set "nft missing from the image" \
 
 # --- 8c2b. libsystemd missing -----------------------------------------------
 # The dlopen category. Neither the NEEDED list os/podman emits nor the ldd run
-# in Dockerfile.v2 can see this one, and with log_driver=journald its absence
+# in os/rootfs/scripts/podman-assert.sh can see this one, and with
+# log_driver=journald its absence
 # does not fail anything -- container logs simply go nowhere.
 FIX="${WORK}/container-no-libsystemd"
 new_fixture "${FIX}"

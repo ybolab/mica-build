@@ -90,7 +90,8 @@ fi
 #     rootfs needed the engine and the engine's check needed the rootfs; a
 #     clean checkout could build neither.
 #
-# The check moved to os/rootfs/Dockerfile.v2, where it runs `ldd` against the
+# The check moved to os/rootfs/scripts/podman-assert.sh, where it runs `ldd`
+# against the
 # real binaries in the assembled root under emulation. That is the loader's own
 # answer about the image being shipped, not a list compared to a list.
 

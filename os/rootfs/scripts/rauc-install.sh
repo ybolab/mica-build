@@ -1,7 +1,7 @@
 #!/bin/sh
 # Install the five staged rauc files and record the version the image will run.
 #
-# Called from os/rootfs/Dockerfile.v2 (rootfs stage), where the reasoning lives.
+# Called from os/rootfs/stages/30-40-unsplit.Dockerfile, where the reasoning lives.
 
 set -eu
 for f in rauc rauc.service rauc-service.sh de.pengutronix.rauc.conf de.pengutronix.rauc.service; do

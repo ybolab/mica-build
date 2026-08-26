@@ -333,7 +333,7 @@ certificate, private key and session signing key are on STATE and survive an
 A/B update; they are lost only on a factory reset
 (`docs/design/ro-root.md:365`). [doc for the tier semantics, code for the mount.]
 
-Installation into the image: `os/rootfs/Dockerfile.v2:282-288` installs
+Installation into the image: `os/rootfs/scripts/mosd-install.sh` installs
 `/usr/bin/webd`, `/usr/lib/systemd/system/webd.service`, and the
 `multi-user.target.wants` enablement symlink; the v2 verifier asserts all three
 plus the `After=` and `StateDirectory=` lines

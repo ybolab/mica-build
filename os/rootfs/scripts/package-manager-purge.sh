@@ -1,7 +1,7 @@
 #!/bin/sh
 # Remove package management from the packed root, and prove what survived.
 #
-# Called from os/rootfs/Dockerfile.v2 (rootfs stage), where the reasoning lives.
+# Called from os/rootfs/stages/90-pack.Dockerfile (closed stage), where the reasoning lives.
 
 set -eu
 rm -rf /var/lib/dpkg /var/lib/apt /var/cache/apt /var/cache/debconf \

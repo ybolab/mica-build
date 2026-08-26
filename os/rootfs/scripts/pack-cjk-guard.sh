@@ -1,7 +1,7 @@
 #!/bin/sh
 # Fail the build on CJK text in a mos-owned image file.
 #
-# Called from os/rootfs/Dockerfile.v2 (pack stage), where the reasoning lives.
+# Called from os/rootfs/stages/90-pack.Dockerfile (pack stage), where the reasoning lives.
 
 set -e
     mos_paths=""
