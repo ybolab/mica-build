@@ -564,6 +564,45 @@ anchored new-baseline commit". This is that anchor, and the parity half was run:
 chain-built rootfs reports **`RESULT: PASS (290/290 checks, 22 skipped)`**, the
 same count as before the split.
 
+### RFCT-111 M5c: the feature cut, measured
+
+`30-40-unsplit` cut into five `30-feature-*` stages and `40-board`, with the
+board work moved behind every feature. Both sides built cold on **2026-08-26**
+through the same driver with the same arguments — the only difference is the
+tree — and both extracted with the same `unsquashfs`:
+
+| | entries |
+|---|---|
+| control — two cold builds that changed nothing (M5a, and M5b again) | **6** |
+| M5b's subject — the single file vs the four-stage chain | 14 |
+| **M5c's subject — that chain vs the nine-stage chain** | **6** |
+| beyond the control | **0** |
+
+The differing set **is** the control's set, entry for entry:
+`/boot/initrd.img-*`, the four `/usr/share/factory/var/log` files and
+`aux-cache`. Nothing in the account family moved this time, which is the
+difference between M5c's reordering and M5b's: M5b had to lift `account-mos.sh`
+into the floor stage past two service accounts, and M5c moved no account-
+creating RUN across another one.
+
+Driven further than the entry count, because six entries that differ for the
+right reason and six that differ for a new one look the same in a list:
+
+- `unsquashfs -lln` over all **9,241** entries differs on **one line**, and only
+  in the initrd's SIZE (37,189,906 against 37,189,851 bytes). Every mode, uid,
+  gid, and path on both sides is identical.
+- `dpkg.log` with its timestamps stripped is **byte-identical**: the same 694
+  operations in the same order. That is the direct check on the ordering
+  constraint the cut was designed around — the `apt` transactions still run
+  radios, containers, `grub-editenv`, kernel.
+- `alternatives.log` is two lines and identical once `update-alternatives`' own
+  timestamp is removed; `apt/history.log` is identical once `Start-Date` and
+  `End-Date` are.
+
+The recipe is in `_out/gate/` of the M5c worktree — `chain-cold.sh` (one tree,
+one cold chain), `extract.sh` (M5b's, verbatim but for the root) and
+`compare.sh` — and it is meant to be re-run rather than cited.
+
 Also cold-build-dependent, and now closed: the byte layout used to depend on
 whichever `squashfs-tools` and `cryptsetup` came out of a floating
 `debian:bookworm-slim` in the pack stage. RFCT-108 (PLAN-014 M2) pins that base
