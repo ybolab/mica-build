@@ -12,9 +12,9 @@
 ## 0. How to read this document
 
 **Status markers.** The discipline is `docs/design/access.md` section 0's;
-the marker set is deliberately **not** the same. access.md carries four markers; this document
-takes two of them, drops two, and adds one of its own. Every section below
-that describes a **mechanism** carries one of:
+the marker set is deliberately **not** the same. access.md carries four
+markers; this document takes two of them, drops two, and adds one of its own.
+Every section below that describes a **mechanism** carries one of:
 
 - **[implemented]** — code exists and is named, by path. (Taken from access.md.)
 - **[proposed]** — no code; this document is asking for it. (This document's
@@ -58,8 +58,8 @@ forecloses.
 
 **What this document does not settle.** It does not re-open anything
 `docs/design/dashboard.md` decided (see section 1.7): not the live-value
-mechanism, not the process architecture, not whether `com.mos.mosd1` is a
-supported contract, not the rename. It proposes no route handler code, no
+mechanism, not the process architecture, and not whether `com.mos.mosd1` is a
+supported contract. It proposes no route handler code, no
 markup, and no build tooling. It makes **no hardware claims** — nothing
 described or proposed here has been run on a device; every statement about
 current behaviour is a reading of source.
@@ -218,7 +218,8 @@ gate, not apid. mosd also emits two signals, and apid subscribes to neither.
 `SettingsChanged(path, value_json)` fires after every successful settings write
 (`mosd/mosd/src/bus.rs:531-533`, declared at `:727-728`); `ItemsChanged` fires
 once per accumulated batch of item-tree changes, declared on `com.mos.Item1`
-(`mosd/mosd/src/tree.rs:440`, `:451`), served at the service root (`:35`). The proxy declares **no** `#[zbus(signal)]` member for
+(`mosd/mosd/src/tree.rs:440`, `:451`), served at the service root (`:35`). The
+proxy declares **no** `#[zbus(signal)]` member for
 either (`mosd/apid/src/bus_client.rs:14-21`), so apid has no push notification
 of a settings change from any source, including itself.
 
@@ -684,10 +685,8 @@ than leave its own rows to contradict it: the two rows describing
 `/api/v1/actions/<verb>` cite `mosd/mosd/src/actions.rs`, a file that did not
 exist at `86cd669`, and they — together with this section's two
 `SetTransientRootPassword` citations — are measured at `d599cad` instead.
-Every other line citation in this section is still `86cd669`'s and a number of
-them have since drifted;
-catching those is `docs/task/RFCT-092.md`'s job, not this section's to
-hand-patch. Nothing here invents a model alongside mosd's; where the settings
+Every other line citation in this section has been re-measured against the
+current tree. Nothing here invents a model alongside mosd's; where the settings
 tree and a sensible REST resource genuinely disagree, the disagreement is named
 and the choice is costed.
 
@@ -713,7 +712,8 @@ them would have to decide on every request which half a path belonged to.
 /api/v1/settings/access.ssh` returns exactly what `GetSettings("access.ssh")`
 returns (`mosd/mosd/src/bus.rs:513-517`). `PUT /api/v1/settings/hostname` with
 body `"router"` performs exactly one `SetSettings("hostname", "\"router\"")` call, which parses
-the JSON and writes it at the path (`mosd/mosd/src/bus.rs:528-530`). This is the recommendation, and the
+the JSON and writes it at the path (`mosd/mosd/src/bus.rs:528-530`). This is
+the recommendation, and the
 alternative it rejects is the interesting part.
 
 **Rejected: hand-shaped REST nouns that do not map onto the tree** (`GET
@@ -922,7 +922,8 @@ knowable over the connection that asked.
   lifetime, in count and in blast radius, so calling them equivalents would
   mislead.
 - **`GET /healthz`** — declared at `mosd/apid/src/routes.rs:176` and answering
-  at `:722-724`. It keeps its path, its unauthenticated exemption (`:674`) and its literal `ok` body,
+  at `:722-724`. It keeps its path, its unauthenticated exemption (`:674`) and
+  its literal `ok` body,
   unchanged and unversioned, because it has a real consumer with a real failure
   path: the boot health gate probes `https://127.0.0.1/healthz` with curl and
   falls back to wget (`os/rootfs/overlay-v2/usr/lib/mos/mos-health:164-177`),
@@ -2005,7 +2006,8 @@ verity's coverage by design.
 `tower-http` is not a dependency of the crate — its manifest lists none
 (`mosd/apid/Cargo.toml:11-31`, section 1.6 evidence 1). The copy at
 `mosd/Cargo.lock:2364-2366` is version **0.6.11**, pulled in by the
-**dev-dependency** `reqwest` (`mosd/apid/Cargo.toml:34`), and it is built **without the `fs` feature**: its
+**dev-dependency** `reqwest` (`mosd/apid/Cargo.toml:34`), and it is built
+**without the `fs` feature**: its
 dependency list in the lockfile (`mosd/Cargo.lock:2395-2406`) contains no
 `tokio`, `mime_guess`, `httpdate` or `http-range-header`, all of which `fs`
 requires
