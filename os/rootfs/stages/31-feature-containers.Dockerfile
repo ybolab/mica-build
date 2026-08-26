@@ -9,10 +9,11 @@
 #
 # ═══ THIS STAGE IS THE SWITCH. WITH_CONTAINERS IS GONE ═══
 #
-# It used to be `ARG WITH_CONTAINERS=1`, tested by the RUN below and again by
-# four of the five scripts, each of which opened with `if [ "$WITH_CONTAINERS"
-# != "1" ]; then exit 0; fi`. RFCT-111 replaces that with stage selection:
-# a build that does not want the engine does not build this file.
+# It used to be `ARG WITH_CONTAINERS=1`, tested by the package RUN below and
+# again by every one of this stage's four scripts, each of which opened with
+# `if [ "$WITH_CONTAINERS" != "1" ]; then exit 0; fi`. RFCT-111 replaces that
+# with stage selection: a build that does not want the engine does not build
+# this file.
 #
 # WHY THAT IS A BETTER SWITCH AND NOT A RESPELLING OF THE SAME ONE. The old
 # arrangement had five independent copies of one decision, and a build in which
@@ -40,8 +41,8 @@
 # Positions 2, 6, 7, 8 and 13 of 30-40-unsplit, in that relative order.
 # `podman-assert-config` was the 13th: it sat after the board's kernel and
 # firmware RUNs because it needs the overlay, which stages/20-install installs.
-# The overlay is now two stages behind every feature, so it needs nothing that
-# is not already there and it rejoins the feature it belongs to.
+# The overlay is now two stages AHEAD of every feature, so it needs nothing
+# that is not already there and it rejoins the feature it belongs to.
 # =============================================================================
 
 # THE LINK BACK UP THE CHAIN. MOS_STAGE_PREV is the local image tag the
@@ -213,10 +214,15 @@ RUN --mount=type=bind,source=os/rootfs/scripts,target=/mos-scripts \
 
 # The container configuration mos ships INSTEAD of the distribution's.
 #
-# This is a separate RUN from the engine install because the files arrive with
-# the overlay, which stages/20-install installs before this file runs at all --
-# and the first draft of this check sat next to the install, where all four
-# paths were guaranteed absent.
+# This is a separate RUN from the engine install, and it stayed one through
+# M5c's cut even though the two are now four RUNs apart in the same file. The
+# files it asserts arrive with the OVERLAY, not with the engine: the first
+# draft of this check sat next to the install in the old single-file build,
+# where the overlay had not been unpacked yet and all four paths were
+# guaranteed absent. stages/20-install now installs the overlay two stages
+# ahead of every feature, so the hazard is gone -- but the subject of this
+# assertion is still the overlay's output, which is why it is not folded into
+# podman-install.sh.
 #
 # Nothing else writes them: golang-github-containers-common is not installed,
 # so if the overlay ever stops carrying one of these, podman does not fail. It

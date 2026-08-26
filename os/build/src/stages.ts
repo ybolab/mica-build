@@ -431,7 +431,7 @@ export function stageManifest(
 ): string {
   const lines = [
     '# os/rootfs stage chain, as built. One line per stage, in build order.',
-    `# declined: ${declined.length > 0 ? [...declined].sort().join(' ') : '(none -- every feature stage in the directory was built)'}`,
+    `# declined: ${declined.length > 0 ? [...new Set(declined)].sort().join(' ') : '(none -- every feature stage in the directory was built)'}`,
     '# name\tcontent-hash\ttag',
   ]
   builds.forEach((b, i) => {

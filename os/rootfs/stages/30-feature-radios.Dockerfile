@@ -17,18 +17,19 @@
 # carries into /usr/share/factory/var/log, so keeping radios ahead of
 # containers is what makes this cut a re-grouping rather than a re-install.
 #
-# THE SWITCH IS BOARD_RADIOS, AND IT STAYS AN ARGUMENT. The other feature
-# stages replaced a WITH_* boolean with the presence of a file; this one did
-# not, and the difference is deliberate. BOARD_RADIOS is a LIST -- `wifi`,
-# `bluetooth`, both -- read out of os/boards/<board>/board.env, so the stage
+# THE SWITCH IS BOARD_RADIOS, AND IT STAYS AN ARGUMENT. The two stages that
+# had a WITH_* boolean -- containers and mosd -- replaced it with the presence
+# of a file; this one did not, and the difference is deliberate. BOARD_RADIOS
+# is a LIST -- `wifi`, `bluetooth`, both -- read out of
+# os/boards/<board>/board.env, so the stage
 # has to read it even when it is present. Its empty value is a statement the
 # three scripts each print ("this board declares none"), and on x64 that
 # printed early exit is the only place on an amd64 host where any of this code
 # runs at all. Dropping the stage on a board with no radio would delete that.
 #
-# The stage IS omittable -- `bash os/build/run.sh --build-rootfs --without
-# radios` builds a chain without it -- and os/rootfs/build-v2.sh does not use
-# that, on purpose, for the reason above.
+# The stage IS omittable -- `MOS_ROOTFS_WITHOUT=radios` reaches
+# `--without radios` and builds a chain with no radio stage in it -- and no
+# board declines it, for the reason above.
 # =============================================================================
 
 # THE LINK BACK UP THE CHAIN. MOS_STAGE_PREV is the local image tag the
