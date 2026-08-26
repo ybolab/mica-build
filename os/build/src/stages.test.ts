@@ -25,7 +25,7 @@ import {
   unusedArgs,
   type StageFile,
 } from './stages.ts'
-import { parseArgs, parseDriver, driverCanChain } from './stages-cli.ts'
+import { parseArgs, parseDriver, driverCanChain, dockerBin } from './stages-cli.ts'
 
 // A scratch directory of stage files. Under the repository's own _out/ rather
 // than /tmp: a bind mount of /tmp on this host propagates as an EMPTY directory
@@ -369,6 +369,23 @@ describe('the driver refuses a builder that cannot chain', () => {
   test('parseDriver returns undefined rather than guessing', () => {
     expect(parseDriver('')).toBeUndefined()
     expect(parseDriver('ERROR: no builder\n')).toBeUndefined()
+  })
+
+  test('the docker CLI is this package\'s, not a bare name', () => {
+    // Measured: on the pinned-bun route the host client is bind-mounted at its
+    // own path and named in MOS_BUILD_DOCKER, and a bare `docker` there asks a
+    // different question -- is /usr/bin on this image's PATH. src/toolbox.ts
+    // reads the same variable for the same reason.
+    const before = process.env.MOS_BUILD_DOCKER
+    try {
+      delete process.env.MOS_BUILD_DOCKER
+      expect(dockerBin()).toBe('docker')
+      process.env.MOS_BUILD_DOCKER = '/usr/bin/docker'
+      expect(dockerBin()).toBe('/usr/bin/docker')
+    } finally {
+      if (before === undefined) delete process.env.MOS_BUILD_DOCKER
+      else process.env.MOS_BUILD_DOCKER = before
+    }
   })
 
   test('only the docker driver can resolve a local tag in FROM', () => {

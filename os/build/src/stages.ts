@@ -14,12 +14,17 @@
 // frontend check and os/tests/shell-pipefail-lint.sh derive their file sets the
 // same way and say so for the same reason. Adding a stage is adding a file.
 //
-// WHERE THIS BELONGS LATER. RFCT-112 (M6) puts build orchestration in
-// os/build/. This is in os/verify because os/verify is the bun package that
-// exists, typechecks and tests today, and because the board model this chain's
-// callers need is os/verify/src/board.ts -- the one typed reader, which must
-// not be copied. Nothing here imports anything but node builtins and this
-// package's paths.ts, so the move is an import rewrite.
+// WHY IT IS IN os/build AND NOT os/rootfs. RFCT-112 (M6) puts build
+// orchestration here, and this is orchestration. It landed in os/verify first,
+// because when RFCT-111 M5b needed it os/build did not exist in that branch yet
+// and a driver nobody can typecheck or test is not a deliverable; the move was
+// an import rewrite, exactly as its header there predicted, because both
+// packages' paths.ts export OS_DIR by the same name.
+//
+// It duplicates nothing of M6a's. The board model stays the single copy in
+// os/verify/src/board.ts, and nothing here needs Bun.$ or the toolbox: the only
+// external program this chain runs is docker, and only src/stages-cli.ts runs
+// it.
 
 import { readFileSync, readdirSync, statSync } from 'node:fs'
 import { basename, join } from 'node:path'

@@ -494,14 +494,14 @@ for a in "${FROM_ARGS[@]}"; do
     case "$a" in --build-arg) DRIVER_FROM_ARGS+=(--arg) ;; *) DRIVER_FROM_ARGS+=("$a") ;; esac
 done
 
-# THE CHAIN, not one Dockerfile. os/verify/run.sh --build-rootfs sequences
+# THE CHAIN, not one Dockerfile. os/build/run.sh --build-rootfs sequences
 # os/rootfs/stages/*.Dockerfile in numeric order, tagging each and handing it to
 # the next; everything above this line -- the staged context, the layout checks,
 # the verity parameters -- is unchanged and is still this script's job. The
 # driver decides only the order, the tags and which argument reaches which file,
 # and it refuses an argument no stage declares rather than letting docker warn
 # about it. See os/rootfs/stages/README.md.
-if ! bash "$REPO_ROOT/os/verify/run.sh" --build-rootfs \
+if ! bash "$REPO_ROOT/os/build/run.sh" --build-rootfs \
         --board "$MOS_BOARD" \
         --platform "$DOCKER_PLATFORM" \
         --context "$REPO_ROOT" \

@@ -60,10 +60,18 @@ done
 usage() {
     cat <<'USAGE'
 usage: bash os/build/run.sh [--help] [bun-test-args...]
+       bash os/build/run.sh --build-rootfs [driver-args...]
 
 Installs the dev dependencies if they are missing, typechecks src/, then runs
 the suite. Any extra arguments are passed to `bun test` (a filename filter, for
 example). Every step must pass; nothing here skips.
+
+With --build-rootfs FIRST, it builds the os/rootfs stage chain instead of the
+suite -- one Dockerfile per stage from os/rootfs/stages/, each FROM the local
+image tag the previous one was written to. os/rootfs/build-v2.sh calls it with
+the build arguments it computed; try --build-rootfs --help. Same install, same
+typecheck, same bun; only the last step differs. The flag has to come first so
+that it can never be mistaken for a `bun test` filter.
 
 The suite drives the real external toolset -- sgdisk, mtools, dd, mkimage,
 veritysetup, e2fsprogs and rauc. Each of those runs on the host when the host
@@ -79,9 +87,22 @@ environment:
 USAGE
 }
 
+# --build-rootfs is a MODE, not a filter, so it is recognised only in first
+# position. os/verify/run.sh learned this from the failing side: a mode flag
+# forwarded to `bun test` is ignored by it, and the suite then reports a green
+# that is about something else entirely.
+MODE=suite
 case "${1:-}" in
 --help | -h) usage; exit 0 ;;
+--build-rootfs) MODE=build-rootfs; shift ;;
 esac
+for arg in "$@"; do
+    case "${arg}" in --build-rootfs) ;; *) continue ;; esac
+    echo "error: --build-rootfs has to be the FIRST argument; here it came after '$1'." >&2
+    echo "       Anywhere else it would be forwarded to \`bun test\`, which ignores it and" >&2
+    echo "       reports a green suite in answer to a request for something else." >&2
+    exit 1
+done
 
 # --- how bun is invoked, and the only place in this package that decides ------
 ROUTE=host
@@ -222,6 +243,32 @@ else
     }
 fi
 
+# THE ONE MODE THE CONTAINER ROUTE CANNOT CARRY, and not for the reason
+# os/verify's --parity cannot: THAT image has no docker client at all, and this
+# one is given the client and the daemon socket precisely so its toolbox can
+# start sibling containers. What it is not given is `docker buildx`, which is a
+# CLI PLUGIN rather than a subcommand -- it lives in /usr/lib/docker/cli-plugins
+# on this host and that directory is not mounted. Driven, not assumed: with the
+# client and socket mounted and MOS_BUILD_DOCKER set, the container answers
+#
+#   docker: unknown command: docker buildx
+#
+# Mounting the plugin directory too would close it, and that is a decision
+# rather than a line: it puts a second host binary inside the pinned image, and
+# the pin exists so that what runs is a recorded value. Left open and named,
+# because --build-rootfs is reached from os/rootfs/build-v2.sh, which needs
+# docker on the host anyway -- so what this asks for on top is bun.
+if [ "${MODE}" = build-rootfs ] && [ "${ROUTE}" = container ]; then
+    echo "error: --build-rootfs needs a bun on THIS host, and there is none (${WHY})." >&2
+    echo "       The suite runs in the pinned bun container; this mode cannot, because it drives" >&2
+    echo "       \`docker buildx\` once per stage and buildx is a CLI PLUGIN, not a subcommand." >&2
+    echo "       ${DOCKER} and the daemon socket are both mounted into that image and work there;" >&2
+    echo "       the plugin directory (/usr/lib/docker/cli-plugins on this host) is not, so the" >&2
+    echo "       container answers 'docker: unknown command: docker buildx'." >&2
+    echo "       Install bun, or set MOS_BUILD_BUN to one." >&2
+    exit 1
+fi
+
 run_bun() {
     # The seam. Everything above and below passes an argv and reads a status,
     # and neither can tell which of the two routes answered.
@@ -259,6 +306,19 @@ fi
 # against each other rather than each against its own copy of the truth.
 echo "os/build: typecheck"
 run_bun run typecheck
+
+# --- the rootfs stage chain --------------------------------------------------
+# No vacuity guard, and this is the one mode where that needs no argument: the
+# driver's own auditChain refuses a stages directory holding no Dockerfile and a
+# chain of exactly one, so "built nothing and exited 0" is a failure before any
+# docker runs. src/stages.test.ts drives both from the failing side.
+#
+if [ "${MODE}" = build-rootfs ]; then
+    echo "os/build: os/rootfs stage chain"
+    rc=0
+    run_bun run src/stages-cli.ts "$@" || rc=$?
+    exit "${rc}"
+fi
 
 # --- the suite, and the guard against a run that asserted nothing ------------
 OUT="$(mktemp)"

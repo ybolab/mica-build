@@ -1,8 +1,8 @@
 // Build the os/rootfs stage chain, one Dockerfile at a time.
 //
-//   bash os/verify/run.sh --build-rootfs --board x64 --dest _out/x64 \
+//   bash os/build/run.sh --build-rootfs --board x64 --dest _out/x64 \
 //        --platform linux/amd64 --arg KEY=VALUE ...
-//   bash os/verify/run.sh --build-rootfs --board x64 --plan   (decide, run nothing)
+//   bash os/build/run.sh --build-rootfs --board x64 --plan   (decide, run nothing)
 //
 // PLAN-014 M5 (RFCT-111). os/rootfs/build-v2.sh still stages the build context
 // -- it cross-builds mosd, renders the overlay, checks the repart definitions
@@ -50,7 +50,7 @@ interface Options {
 
 function usage(): string {
   return [
-    'usage: bash os/verify/run.sh --build-rootfs --board NAME [--dest DIR] [--plan]',
+    'usage: bash os/build/run.sh --build-rootfs --board NAME [--dest DIR] [--plan]',
     '                            [--platform linux/ARCH] [--context DIR]',
     '                            [--builder NAME] [--arg KEY=VALUE]...',
     '',
@@ -159,6 +159,18 @@ export function parseArgs(argv: readonly string[]): Options {
 }
 
 /**
+ * The docker CLI to run, by this package's convention.
+ *
+ * src/toolbox.ts reads the same variable for the same reason: on the pinned-bun
+ * route the host's client is bind-mounted at its own path and named in
+ * MOS_BUILD_DOCKER, and a bare `docker` there is a different question ("is
+ * /usr/bin on this image's PATH?") from the one the caller asked.
+ */
+export function dockerBin(): string {
+  return process.env.MOS_BUILD_DOCKER || 'docker'
+}
+
+/**
  * The buildx driver behind a builder name, or undefined if it cannot be read.
  *
  * `docker buildx inspect` prints `Driver: docker` / `Driver: docker-container`
@@ -197,9 +209,22 @@ export function driverCanChain(driver: string | undefined): boolean {
   return driver === 'docker'
 }
 
-function refuseDriver(builder: string | undefined, driver: string | undefined): string {
+function refuseUnreadable(builder: string | undefined, detail: string): string {
   return [
-    `error: the buildx builder ${builder ? `'${builder}'` : '(current)'} uses the '${driver ?? 'unknown'}' driver, which cannot resolve a local image tag in FROM.`,
+    `error: cannot read which driver the buildx builder ${builder ? `'${builder}'` : '(current)'} uses.`,
+    `       ${detail}`,
+    '       The chain needs a `docker` driver builder -- every stage after the first starts FROM',
+    '       the local image tag the previous one was written to -- so this is decided before the',
+    '       first stage rather than discovered mid-build.',
+    '       If this is the pinned-bun container route: that image is given the docker CLI and the',
+    '       daemon socket, but `docker buildx` is a CLI PLUGIN and the plugin directory is not',
+    '       mounted, so buildx is absent there. Run --build-rootfs on a host with bun.',
+  ].join('\n')
+}
+
+function refuseDriver(builder: string | undefined, driver: string): string {
+  return [
+    `error: the buildx builder ${builder ? `'${builder}'` : '(current)'} uses the '${driver}' driver, which cannot resolve a local image tag in FROM.`,
     '       Every stage after the first starts FROM the tag the previous one was written to,',
     '       and that tag is in the docker image store, not in a registry. This driver looks in',
     '       the registry and reports "pull access denied ... repository does not exist" for an',
@@ -218,13 +243,40 @@ async function run(argv: string[], label: string): Promise<void> {
   }
 }
 
-async function inspectDriver(builder: string | undefined): Promise<string | undefined> {
-  const argv = ['docker', 'buildx', 'inspect']
+/**
+ * What `docker buildx inspect` answered, in three cases rather than two.
+ *
+ * "The driver is not `docker`" and "`docker buildx` could not be run at all"
+ * are different problems with different fixes, and collapsing them cost a
+ * measurement: on the pinned-bun route this reported the driver as `unknown`,
+ * which reads as a builder misconfiguration and is not one.
+ */
+type DriverProbe =
+  | { readonly kind: 'driver'; readonly name: string }
+  | { readonly kind: 'unreadable'; readonly detail: string }
+
+async function inspectDriver(builder: string | undefined): Promise<DriverProbe> {
+  const argv = [dockerBin(), 'buildx', 'inspect']
   if (builder) argv.push(builder)
-  const proc = Bun.spawn(argv, { stdout: 'pipe', stderr: 'pipe', stdin: 'ignore' })
-  const out = await new Response(proc.stdout).text()
-  await proc.exited
-  return parseDriver(out)
+  let out: string
+  let err: string
+  let code: number
+  try {
+    const proc = Bun.spawn(argv, { stdout: 'pipe', stderr: 'pipe', stdin: 'ignore' })
+    ;[out, err, code] = await Promise.all([
+      new Response(proc.stdout).text(),
+      new Response(proc.stderr).text(),
+      proc.exited,
+    ])
+  } catch (e) {
+    return { kind: 'unreadable', detail: `${argv[0]} could not be started: ${String(e)}` }
+  }
+  const name = parseDriver(out)
+  if (name) return { kind: 'driver', name }
+  return {
+    kind: 'unreadable',
+    detail: `\`${argv.join(' ')}\` exited ${code} and printed no 'Driver:' line${err.trim() ? `: ${err.trim().split('\n')[0]}` : ''}`,
+  }
 }
 
 export async function main(argv: readonly string[]): Promise<number> {
@@ -276,9 +328,13 @@ export async function main(argv: readonly string[]): Promise<number> {
     return 0
   }
 
-  const driver = await inspectDriver(opts.builder)
-  if (!driverCanChain(driver)) {
-    console.error(refuseDriver(opts.builder, driver))
+  const probe = await inspectDriver(opts.builder)
+  if (probe.kind === 'unreadable') {
+    console.error(refuseUnreadable(opts.builder, probe.detail))
+    return 1
+  }
+  if (!driverCanChain(probe.name)) {
+    console.error(refuseDriver(opts.builder, probe.name))
     return 1
   }
 

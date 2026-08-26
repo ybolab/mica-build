@@ -19,9 +19,10 @@ cannot be built standalone against whatever `FROM` line happened to be typed.
 Only `10-base` and `90-pack` name a base image of their own, and each names
 only the one its own `FROM` consumes — trixie here, bookworm there.
 
-The driver is `os/verify/src/stages.ts` (the plan) and `stages-cli.ts` (the
-run); `os/rootfs/build-v2.sh` still stages the build context and still is the
-whole build. See "Where the driver lives" below.
+The driver is `os/build/src/stages.ts` (the plan) and `stages-cli.ts` (the
+run), reached as `bash os/build/run.sh --build-rootfs`; `os/rootfs/build-v2.sh`
+still stages the build context and still is the whole build. See "Where the
+driver lives" below.
 
 **The stage list is the directory, not a list.** The driver reads
 `*.Dockerfile` here and sorts by the numeric prefix. Adding a stage is adding a
@@ -76,13 +77,22 @@ split across the overlay cannot be one omittable stage. Putting the overlay
 before every feature is what makes the rest of M5 possible.
 
 **It was measured, not argued.** A reordering can change the image, and the
-instrument for that is in `../README.md` under "Determinism, and what still
-deviates": extract both packed roots, `diff -r` the trees, and require the
-differing set to be no larger than a control of two cold builds of the
-unmodified file. It is a content diff and **not** a sha256, because a cold x64
-build does not reproduce itself — RFCT-111 measured two cold builds of the
-untouched `Dockerfile.v2` on this host at `1b3f5e50…` and `7aad6efd…`. A gate
-that compared hashes would fail on a correct change and pass on luck.
+instrument is in `../README.md` under "Determinism, and what still deviates":
+extract both packed roots, `diff -r --no-dereference` the trees, and compare the
+differing set against a control of two cold builds of the unmodified file. It is
+a content diff and **not** a sha256, because a cold x64 build does not reproduce
+itself — four cold builds of the untouched `Dockerfile.v2` on this host gave
+four different hashes. A gate that compared hashes would fail on a correct
+change and pass on luck.
+
+What it found: control **6** of 9,241 entries, subject **14**, so **8** beyond
+the control — every one of them in the account family, and every one the price
+of `account-mos.sh` moving into `10-base` while the two MQTT service accounts
+stay with the feature material. `../README.md` proves they are inert (the live
+files are identical as sets; the four `-` backups differ by exactly one entry
+because `useradd` snapshots before each change) and records the anchor RFCT-111
+asks for in that case: full verifier parity, `RESULT: PASS (290/290 checks, 22
+skipped)` on an image assembled from a chain-built rootfs.
 
 ## What did not move, and why it could not
 
@@ -154,20 +164,31 @@ without it and inverts its own answer with it. `os-shell-pipefail-lint` scans
 only files that enable the option, so these are outside its scope by
 construction rather than by exemption.
 
-## Where the driver lives, and where it belongs
+## Where the driver lives
 
-`os/verify/src/stages.ts` + `stages-cli.ts` + `stages.test.ts`, reached through
-`os/verify/run.sh --build-rootfs`.
+`os/build/src/stages.ts` + `stages-cli.ts` + `stages.test.ts`, reached through
+`bash os/build/run.sh --build-rootfs`. That is where RFCT-112 (M6) puts build
+orchestration, and this is orchestration.
 
-That is **not** where PLAN-014 will leave it. RFCT-112 (M6) puts build
-orchestration in `os/build/`, and M6a was building that package while this
-landed. The driver went into `os/verify` because that is the only bun package in
-the tree today that typechecks, runs `bun test` and carries the tool-less-host
-route — a driver nobody can run is not a deliverable — and because the board
-model it needs is `os/verify/src/board.ts`, the one typed reader, which must not
-be copied.
+It spent one afternoon in `os/verify` instead, because `os/build` did not exist
+in this branch until M6a merged and a driver nobody can typecheck or test is not
+a deliverable. The move cost three `git mv`s and no import edits at all: both
+packages' `paths.ts` export `OS_DIR` under the same name.
 
-The module is deliberately shaped for the move: `stages.ts` is pure and imports
-nothing but `node:fs`, `node:path` and this package's `paths.ts`;
-`stages-cli.ts` is the only file that runs docker. Relocating it into
-`os/build/` is three file moves, two import-path rewrites and a `run.sh` mode.
+It **duplicates nothing** of what M6a built. The board model stays the single
+copy in `os/verify/src/board.ts`; the chain needs no `Bun.$` wrapper and no
+`Toolbox`, because the only external program it runs is `docker` and only
+`stages-cli.ts` runs it — through `MOS_BUILD_DOCKER`, the same variable
+`src/toolbox.ts` reads, for the same reason. `stages.ts` is pure — `node:fs`,
+`node:path`, and this package's `paths.ts`.
+
+**The pinned-bun container route cannot carry this mode**, and not for the
+reason `os/verify --parity` cannot: *that* image has no docker client at all,
+while this package mounts the client and the daemon socket so its toolbox can
+start sibling containers. What it does not mount is `docker buildx`, which is a
+CLI **plugin** rather than a subcommand — on this host it lives in
+`/usr/lib/docker/cli-plugins`. Driven with the client and socket mounted and
+`MOS_BUILD_DOCKER` set, the container answers `docker: unknown command: docker
+buildx`. `run.sh` refuses the combination up front and says so. Mounting the
+plugin directory would close it, and that is a decision rather than a line: it
+puts a second unrecorded host binary inside a pinned image.
