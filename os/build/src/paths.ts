@@ -3,8 +3,7 @@
 // The reasoning is os/verify/src/paths.ts's, and the helper IS its function --
 // imported through verify-package.ts rather than copied. Counted `..`
 // arithmetic over DIRECTORIES always produces a path, so a stale count fails
-// later, on a directory that is empty rather than absent. PLAN-014 has already
-// moved most of os/ once (M1) and M5 will move the rootfs build, so every
+// later, on a directory that is empty rather than absent, so every
 // ascent here is anchored on something that must be AT the destination and the
 // failure names the path it computed.
 //

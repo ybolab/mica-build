@@ -198,13 +198,12 @@ function startSectorsOf(geometry: Geometry, p: PlacedPartition, layout: DerivedL
  * forgotten in the assembler is a partition sgdisk never writes, and the shell
  * has no way to notice.
  *
- * THE ALIGNMENT. os/mkimage-x64.sh passes NO `-a` and takes sgdisk's default;
- * this passes the board's GPT_ALIGN_SECTORS, which x64 declares as 2048 -- the
- * same number sgdisk defaults to. That is a deliberate difference in SPELLING
- * and it was MEASURED rather than assumed to be a difference in nothing (see
- * mkimage-x64.test.ts, which writes both tables with a real sgdisk over the real
- * x64 geometry and compares the bytes). The reason for spelling it is that a
- * board is the single source of truth for its board: GPT_ALIGN_SECTORS=2048 sits
+ * THE ALIGNMENT is passed explicitly -- the board's GPT_ALIGN_SECTORS, which
+ * x64 declares as 2048 -- rather than left to sgdisk's default, which is the
+ * same number. The two are byte-identical (mkimage-x64.test.ts writes both
+ * tables with a real sgdisk over the real x64 geometry and compares the
+ * bytes); spelling it out is what keeps the board the single source of truth
+ * for its own geometry. GPT_ALIGN_SECTORS=2048 sits
  * in os/boards/x64/board.env today, and an assembler that ignored it would keep
  * agreeing with the file only for as long as the file kept agreeing with
  * sgdisk's built-in default.
@@ -223,10 +222,9 @@ export function gptSpecFor(geometry: Geometry, layout: DerivedLayout): GptSpec {
     // 0n is geometry.ts's "the board declared none"; see its note. x64 declares
     // 2048, so this is the board's number and not a default invented here.
     alignSectors: geometry.disk.alignSectors === 0n ? undefined : geometry.disk.alignSectors,
-    // os/mkimage-x64.sh passes no --clear. M6a measured --clear on a freshly
-    // truncated (all-zero) file to be byte-identical to omitting it, and this
-    // omits it anyway: the measurement says the two agree, and matching the
-    // shell costs nothing.
+    // No --clear. On a freshly truncated (all-zero) file --clear is
+    // byte-identical to omitting it, so omitting it is the cheaper of two
+    // equal answers.
     partitions: geometry.partitions.map(p => ({
       partnum: p.requireInt('PARTNUM'),
       startSector: startSectorsOf(geometry, p, layout),

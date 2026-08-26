@@ -10,20 +10,11 @@
 # =============================================================================
 
 # THE TWO BASE IMAGES, INJECTED FROM os/build-env/images.env by
-# os/build-env/from.sh, which board/cx3576/Makefile calls. RFCT-108 M2c.
+# os/build-env/from.sh, which board/cx3576/Makefile calls. That is the one
+# place answering "what does this repository build on"; a pin written beside
+# its own FROM is a pin only that FROM's author reads.
 #
-# THE ALPINE PIN IS NOT NEW; IT MOVED. What stood here was
-#
-#     ARG ALPINE_IMAGE=alpine:3.24.1@sha256:28bd5fe8...943f8b
-#
-# -- the one digest pin this repository had before PLAN-014 M2, and the
-# precedent images.env cites for pinning an INDEX digest rather than a
-# per-architecture one. The bytes are unchanged: images.env carries that exact
-# digest, copied and not re-resolved. What changes is that "what does this
-# repository build on" now has one answer in one file, instead of one answer
-# here and none anywhere else.
-#
-# NO DEFAULTS, which is the other half of the move. A pin written as an ARG
+# NO DEFAULTS. A pin written as an ARG
 # DEFAULT is a pin any caller can silently replace, and a caller that forgets
 # the argument builds against something else with no error at all. Without a
 # default docker refuses before the first stage runs.

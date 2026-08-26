@@ -4,7 +4,7 @@
 //        --platform linux/amd64 --arg KEY=VALUE ...
 //   bash os/build/run.sh --build-rootfs --board x64 --plan   (decide, run nothing)
 //
-// PLAN-014 M5 (RFCT-111). os/rootfs/build-v2.sh still stages the build context
+// os/rootfs/build-v2.sh stages the build context
 // -- it cross-builds mosd, renders the overlay, checks the repart definitions
 // against the layout and computes every verity parameter -- and then calls this
 // instead of running one `docker buildx build` over one Dockerfile.

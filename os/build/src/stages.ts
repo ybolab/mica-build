@@ -14,11 +14,8 @@
 // frontend check and os/tests/shell-pipefail-lint.sh derive their file sets the
 // same way and say so for the same reason. Adding a stage is adding a file.
 //
-// WHY IT IS IN os/build AND NOT os/rootfs. RFCT-112 (M6) puts build
-// orchestration here, and this is orchestration. It landed in os/verify first,
-// because when RFCT-111 M5b needed it os/build did not exist in that branch yet
-// and a driver nobody can typecheck or test is not a deliverable; the move was
-// an import rewrite, exactly as its header there predicted, because both
+// WHY IT IS IN os/build AND NOT os/rootfs: build orchestration lives here, and
+// this is orchestration. Nothing in it is os/verify's, because both
 // packages' paths.ts export OS_DIR by the same name.
 //
 // It duplicates nothing of M6a's. The board model stays the single copy in
@@ -162,7 +159,7 @@ export function featureOf(stage: StageFile): string | undefined {
 }
 
 /**
- * The chain with named features left out -- RFCT-111's "stage selection".
+ * The chain with named features left out -- "stage selection".
  *
  * This is what replaced `--build-arg WITH_CONTAINERS=0`. The difference is not
  * spelling. A WITH_* argument reached the build, and every RUN and script that
@@ -176,7 +173,7 @@ export function featureOf(stage: StageFile): string | undefined {
  * IT REFUSES A NAME IT CANNOT FIND, and that is the point of the function
  * rather than a nicety. `--without contaners` that silently matched nothing
  * would build the FULL image and report success, which is the exact shape of
- * green PLAN-014 keeps finding: a switch observed only in the position that
+ * green this tree keeps finding: a switch observed only in the position that
  * changes nothing. It also refuses to drop a non-feature stage, because
  * `--without base` is a request for an image with no operator account and no
  * trust anchors, and the caller who typed it did not mean that.
@@ -305,8 +302,8 @@ export function auditChain(
       message: `is the last stage and defines no \`AS ${terminalTarget}\` target. That target is what the driver exports to the output directory; without it the build would export the last stage's whole filesystem instead of the artifact surface`,
     })
   }
-  // RFCT-113 M7's second export surface, audited exactly as the first one is
-  // and for a sharper reason. A missing `artifact` target fails the build at
+  // The second export surface, audited exactly as the first one is and for a
+  // sharper reason. A missing `artifact` target fails the build at
   // once -- the assembler has no rootfs-verity.img to read. A missing
   // `factory-root` target would only mean that nothing was ever executed
   // before the image shipped, which is precisely the state M7 exists to end and
@@ -349,7 +346,7 @@ export const DEFAULT_TERMINAL_TARGET = 'artifact'
 /**
  * The terminal stage's SECOND target: the packed root as an OCI image.
  *
- * RFCT-113 M7. `artifact` exports files -- rootfs-verity.img, the boot pair,
+ * `artifact` exports files -- rootfs-verity.img, the boot pair,
  * the factory /var -- for the image assembler to consume. This one exports the
  * root itself, in the form a container runtime takes, so that the eleven
  * self-built binaries in it can be EXECUTED before the image ships them.
@@ -635,7 +632,7 @@ export function ociRecord(fields: {
 /**
  * The record of what was built, written beside the artifacts.
  *
- * RFCT-111 asks the driver to record the stage list per build. Which stages ran
+ * The driver records the stage list per build. Which stages ran
  * is not derivable from the output afterwards -- an image built without a
  * feature stage looks like an image whose feature stage did nothing -- so it is
  * written down at the time.

@@ -44,7 +44,7 @@ if [ ! -s "${HERE}/versions.lock" ]; then
 fi
 
 # THE BUILDER: `default`, EXPLICITLY, AND WHY THIS FILE CANNOT INHERIT ONE.
-# Until RFCT-108 M2c this block picked a docker-container builder whenever the
+# An earlier arrangement picked a docker-container builder whenever the
 # ambient one could not reach linux/${MOS_ARCH}, and passed no --builder
 # otherwise -- inheriting whatever `docker buildx use` last selected.
 #
@@ -64,7 +64,7 @@ fi
 # registered for it, and on such a host this build works cross-architecture with
 # no change to this file. What it needs beyond that is an mos-build-* family
 # built FOR that architecture, which os/build-env/from.sh checks next and
-# RFCT-108's M2b note describes.
+# os/build-env/build.sh produces.
 BUILDER_ARGS=(--builder default)
 # The whole output is captured BEFORE anything reads it, rather than piped into
 # a grep. An early-exiting `grep -q` on the right of a pipe closes it the moment

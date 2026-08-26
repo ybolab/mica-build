@@ -1,22 +1,22 @@
 // The partition table the BOARD DEFINITION describes, walked the way
 // os/verify-image-v2.sh:1450-1516 walks it.
 //
-// PLAN-014 M4b (RFCT-110). This is one half of every GPT geometry check: the
-// other half is the table the IMAGE actually carries, read by `readGpt`. The
-// two are produced by different code from different inputs and only then
-// compared -- which is the property the oracle's own comment at :1450 insists
-// on, and the reason the hand-written chain it replaced (`rootfs_b_start_mib =
-// ...; meta_start_mib = ...`) was wrong: it restated the arithmetic the
-// assembler had already done, so a gap both agreed on would have passed.
+// This is one half of every GPT geometry check: the other half is the table
+// the IMAGE actually carries, read by `readGpt`. The two are produced by
+// different code from different inputs and only then compared -- which is the
+// property the oracle's own comment at :1450 insists on, and the reason the
+// hand-written chain it replaced (`rootfs_b_start_mib = ...; meta_start_mib =
+// ...`) was wrong: it restated the arithmetic the assembler had already done,
+// so a gap both agreed on would have passed.
 //
-// ═══ SIZE RESOLVES IN ONE ORDER, AND THE ORDER IS THE SCHEMA'S ═══
+// SIZE RESOLVES IN ONE ORDER, AND THE ORDER IS THE SCHEMA'S.
 //
 // An explicit `_SIZE_SECTORS`, else `_SIZE_MIB`, else -- for a `verity-slot` --
 // the size READ BACK OUT OF THE IMAGE, because a rootfs slot's size is
 // content-derived (`MOS_ROOTFS_SLOT_MIB` in the layout env) and declaring it
 // would be restating what the build computed.
 //
-// ═══ START IS WHERE THIS STOPS BEING A LOOKUP ═══
+// START IS WHERE THIS STOPS BEING A LOOKUP.
 //
 // A partition either declares a fixed start (`_START_SECTOR` or `_START_MIB`)
 // or it BEGINS WHERE THE PREVIOUS ONE ENDED. That is what a partition table

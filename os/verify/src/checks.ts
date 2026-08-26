@@ -1,14 +1,13 @@
 // The check register: one entry per image-contract check, carrying BOTH the
 // TypeScript that decides it and the shell conclusion it replaces.
 //
-// PLAN-014 M4 (RFCT-110). At M4a this register is EMPTY, on purpose: M4a builds
-// the instrument, M4b..M4d fill it in batches, M4e deletes
-// os/verify-image-v2.sh once nothing is left unclaimed. An empty register is
-// not a neutral state and the harness does not treat it as one -- every one of
-// the oracle's conclusions comes out `not-ported`, and the run's conclusion is
-// INCOMPLETE.
+// At M4a this register is EMPTY, on purpose: M4a builds the instrument,
+// M4b..M4d fill it in batches, M4e deletes os/verify-image-v2.sh once nothing
+// is left unclaimed. An empty register is not a neutral state and the harness
+// does not treat it as one -- every one of the oracle's conclusions comes out
+// `not-ported`, and the run's conclusion is INCOMPLETE.
 //
-// ═══ WHY THE MATCHER LIVES ON THE CHECK ═══
+// WHY THE MATCHER LIVES ON THE CHECK.
 //
 // The obvious alternative is a table mapping ids to substrings, kept beside the
 // checks. It was rejected for the reason ui-location-test.sh gives for its own
@@ -18,7 +17,7 @@
 // agrees. Here the two cannot separate. A CheckCase with no `shell` matcher
 // does not typecheck; a matcher with no check is not a CheckCase.
 //
-// ═══ WHAT M4b ADDS, PER CHECK ═══
+// WHAT M4b ADDS, PER CHECK.
 //
 //   {
 //     id: 'gpt-disk-guid',
@@ -30,8 +29,8 @@
 //     },
 //   }
 //
-// and, in the same change, its negative test -- a port without one is not done
-// (RFCT-096). The harness cannot tell a check that passes from a check that
+// and, in the same change, its negative test -- a port without one is not
+// done. The harness cannot tell a check that passes from a check that
 // cannot fail; only a fixture that drives it red can.
 
 import { createHash } from 'node:crypto'
@@ -88,9 +87,8 @@ export interface ImageContext {
    * Where this board's BUILD OUTPUTS are -- `_out/<board>`.
    *
    * Two checks read a file the build produced beside the image rather than a
-   * byte of the image itself: the verity parameter file
-   * (os/verify-image-v2.sh:2205) and the rootfs report (:4272). The oracle
-   * spells both `${REPO_ROOT}/_out/${MOS_BOARD}/...`, and so does
+   * byte of the image itself: the verity parameter file and the rootfs report.
+   * The oracle spells both `${REPO_ROOT}/_out/${MOS_BOARD}/...`, and so does
    * `createImageContext` -- this is a seam, not a second convention. It exists
    * because a suite that read the real `_out/` would pass on a host that had
    * built an image and fail on one that had not, and a skip reports the same
@@ -137,13 +135,13 @@ export interface CheckCase extends RegisteredCheck {
  *
  * One module per batch, concatenated here. The batches are separate files and
  * not sections of this one because each carries its own reading of the image --
- * the GPT walk, the FAT slots, the packed root -- and because M4c and M4d add
- * to the register without touching what M4b landed.
+ * the GPT walk, the FAT slots, the packed root -- and because a batch can be
+ * added to the register without touching another batch's file.
  *
- * M4a left this EMPTY on purpose; M4b filled in batch 1 (GPT geometry, the boot
- * slots' filesystems, and the RAUC contract), M4c batch 2 (the packed root's
- * content, /etc/fstab and where the custom UI root lands) and M4d batch 3 (the
- * board-conditional families, the MQTT pair and the shadow contract). What is
+ * Batch 1 is GPT geometry, the boot slots' filesystems and the RAUC contract;
+ * batch 2 the packed root's content, /etc/fstab and where the custom UI root
+ * lands; batch 3 the board-conditional families, the MQTT pair and the shadow
+ * contract. What is
  * still unclaimed stays `not-ported` rather than being rounded off to agreement.
  */
 export const CHECKS: readonly CheckCase[] = [
@@ -384,14 +382,14 @@ export function createImageContext(request: ContextRequest): ImageContext {
 
   // THE CACHE IS KEYED ON THE PAYLOAD'S CONTENT, and that is the whole point.
   //
-  // It used to be keyed on the slot's NAME -- `root-rootfs-a` -- and short-
-  // circuited on `existsSync(dest)`. `extract` beside it always reopens its
-  // destination with 'w', so a second run at the same `--work` against a
-  // DIFFERENT image re-extracted the partition and then handed back the
-  // PREVIOUS image's unpacked root. The two runs described two different images
-  // and nothing anywhere complained: every packed-root check went on reading a
-  // tree that had nothing to do with the image named on the command line, and
-  // reported agreement about it. M4b avoided it by clearing _out/parity before
+  // Keyed on the slot's NAME -- `root-rootfs-a` -- and short-circuited on
+  // `existsSync(dest)`, it would be wrong: `extract` beside it always reopens
+  // its destination with 'w', so a second run at the same `--work` against a
+  // DIFFERENT image re-extracts the partition and then hands back the PREVIOUS
+  // image's unpacked root. The two runs would describe two different images
+  // with nothing anywhere complaining: every packed-root check would go on
+  // reading a tree that had nothing to do with the image named on the command
+  // line, and report agreement about it. Clearing _out/parity before
   // every run and said so; a cache whose correctness depends on the caller
   // remembering to delete it is not a cache.
   //

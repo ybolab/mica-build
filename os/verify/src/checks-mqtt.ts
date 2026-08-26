@@ -1,13 +1,13 @@
 // The MQTT bridge and broker: in the image, startable, and INERT.
 //
-// PLAN-014 M4d (RFCT-110). This family belongs to no batch in the original
-// decomposition and that is why it is here. It is board-UNCONDITIONAL -- 16
-// conclusions on each shipped board, measured 2026-08-26 -- so it was not batch
-// 3 as scoped; and `mqttd: <path> is a regular file` LOOKS like `sq_regular`
-// but is check_mqttd's own prose with a `mqttd: ` prefix, so it was not in batch
-// 2a's `sq_regular` family either. It fell between the two.
+// This family belongs to no batch in the original decomposition and that is
+// why it is here. It is board-UNCONDITIONAL -- 16 conclusions on each shipped
+// board, measured 2026-08-26 -- so it was not batch 3 as scoped; and `mqttd:
+// <path> is a regular file` LOOKS like `sq_regular` but is check_mqttd's own
+// prose with a `mqttd: ` prefix, so it was not in batch 2a's `sq_regular`
+// family either. It fell between the two.
 //
-// ═══ WHAT THE FAMILY PROVES, AND WHY EACH HALF IS NEEDED ═══
+// WHAT THE FAMILY PROVES, AND WHY EACH HALF IS NEEDED.
 //
 // Every one of these is a defect the wiring actually had. The crate, the unit
 // and the protocol tests were all green while the bridge was absent from the
@@ -21,7 +21,7 @@
 // override, and the root is a read-only verity squashfs so nothing on the
 // device can remove it.
 //
-// ═══ WHY THE POLICY IS TAG-NORMALISED BEFORE IT IS READ ═══
+// WHY THE POLICY IS TAG-NORMALISED BEFORE IT IS READ.
 //
 // The shipped rules wrap their attributes across three lines, so a line-oriented
 // search for `send_member=` on a rule whose `send_destination=` is on the line
@@ -172,7 +172,7 @@ function policyRules(root: string, path: string): string[] {
 }
 
 // ---------------------------------------------------------------------------
-// check_mqttd -- os/verify-image-v2.sh:794-927
+// check_mqttd
 // ---------------------------------------------------------------------------
 
 const MQTTD_CHECKS: readonly CheckCase[] = [
@@ -462,7 +462,7 @@ function mountUnitFor(root: string, dir: string): { name: string, what: string }
 }
 
 // ---------------------------------------------------------------------------
-// check_mqtt_broker -- os/verify-image-v2.sh:946-984
+// check_mqtt_broker
 // ---------------------------------------------------------------------------
 
 const BROKER_CHECKS: readonly CheckCase[] = [

@@ -20,10 +20,8 @@
 // inode's atime and ctime rewritten after the fact, because `touch` reaches
 // neither of them through mke2fs -d (src/pin-seeded-times.ts).
 //
-// WHAT THE PORT HAD TO GET RIGHT, AND WHAT IT DELIBERATELY DID NOT CHANGE.
-// RFCT-112's gate is a BYTE-IDENTICAL image against the shell, from identical
-// inputs, so every decision that reaches the output bytes is transcribed rather
-// than improved:
+// EVERY DECISION THAT REACHES THE OUTPUT BYTES IS FIXED, not a matter of
+// style. Two assemblies from identical inputs must be byte-identical:
 //
 //   * every external tool runs in the SAME pinned alpine, out of the same apk
 //     package list, because which mtools wrote the FAT decides its bytes;
@@ -381,14 +379,14 @@ export async function assembleCx3576(
     await makeExt4(tb, geometry, metaImg, geometry.requireInt('META_SIZE_MIB'), 'META')
     await makeExt4(tb, geometry, stateImg, geometry.requireInt('STATE_SIZE_MIB'), 'STATE')
 
-    // EPHEMERAL SHIPS ALREADY SEEDED (RFCT-106). /var is a mount of this
+    // EPHEMERAL SHIPS ALREADY SEEDED. /var is a mount of this
     // filesystem, and an empty one hides the tree the installed packages
-    // expect. mos-seed-var used to copy that tree out on the first boot -- at
-    // the same moment as every other unit that writes /var, and Debian 13's
+    // expect. Copying that tree out on the first boot instead would run at the
+    // same moment as every other unit that writes /var, and Debian 13's
     // systemd-networkd-persistent-storage.service creates
-    // /var/lib/systemd/network as soon as /var appears. The two raced; a lost
-    // race failed the seed, which failed var-lib-mos.mount, which failed mosd,
-    // apid and the health gate. Seeding here removes the race instead of
+    // /var/lib/systemd/network as soon as /var appears: the two race, and a
+    // lost race fails the seed, which fails var-lib-mos.mount, which fails
+    // mosd, apid and the health gate. Seeding here removes the race instead of
     // ordering against one member of it. The stamp goes in too, so
     // mos-seed-var's ConditionPathExists keeps it from running on a normal
     // boot; it stays for the path where EPHEMERAL has been wiped.
@@ -504,14 +502,10 @@ export function checkLoaderMagic(geometry: Geometry, image: string, startSector:
  * THE LOADER LANDED WHERE IT WAS ASKED TO -- checked against the ASSEMBLED
  * TABLE, not against the request.
  *
- * This is the one place in the port where a difference between the two shell
- * assemblers turned out not to be cosmetic. M6a measured every flag-order and
- * unit difference between os/mkimage-v2.sh and os/mkimage-x64.sh to be
- * byte-identical, and found exactly one that is not: `-a 1` where a start is
- * sector 64. Without it sgdisk RELOCATES that start to sector 2048, SILENTLY,
- * and exits 0.
+ * `-a 1` IS NOT COSMETIC where a partition start is sector 64. Without it
+ * sgdisk RELOCATES that start to sector 2048, SILENTLY, and exits 0.
  *
- * cx3576's loader is at sector 64. A relocated loader partition no longer covers
+ * cx3576's loader is at sector 64. A relocated loader partition does not cover
  * the bootloader, and os/boards/cx3576/board.env spells out what happens next:
  * systemd-repart "discards every region of the disk that no partition entry
  * covers", on the very first boot while growing DATA, so "the device boots once

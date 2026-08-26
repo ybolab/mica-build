@@ -1,15 +1,15 @@
 // Batch 4b: the kernel command line, dm-verity, and the ESP's GRUB boot chain.
 //
-// PLAN-014 M4g (RFCT-110). Everything here asserts a property that is true of
-// BOTH boards -- the verity table exists and is read-only, dm-mod.waitfor is
-// present, the root hash matches the locally built rootfs, the payload actually
-// verifies, and the boot path names its slot. Only the SOURCE differs, and the
-// oracle says why at :2114: skipping these on a grub board would have been the
-// easy move and the wrong one, because it would drop real coverage of verity,
-// of the read-only flag and of rauc.slot= on the board this project verifies
-// first. So the EXTRACTION is board-aware and the assertions are not.
+// Everything here asserts a property that is true of BOTH boards -- the verity
+// table exists and is read-only, dm-mod.waitfor is present, the root hash
+// matches the locally built rootfs, the payload actually verifies, and the
+// boot path names its slot. Only the SOURCE differs, and the oracle says why
+// at :2114: skipping these on a grub board would have been the easy move and
+// the wrong one, because it would drop real coverage of verity, of the
+// read-only flag and of rauc.slot= on the board this project verifies first.
+// So the EXTRACTION is board-aware and the assertions are not.
 //
-// ═══ WHERE THE COMMAND LINE COMES FROM ═══
+// WHERE THE COMMAND LINE COMES FROM.
 //
 // U-Boot: the per-slot verity env file out of the slot's own FAT, which boot.scr
 // sources. One file, one line.
@@ -450,7 +450,7 @@ const ESP_CHECKS: readonly CheckCase[] = [
   },
 
   {
-    // THE ASSERTION RFCT-106 EXISTS FOR, from the other side. A per-slot file on
+    // THE PER-SLOT RULE, from the other side. A per-slot file on
     // the ESP is one that NO INSTALL CAN REPLACE: the ESP is in no slot group,
     // so it would be frozen at whatever was flashed while the rootfs it
     // describes moved on.

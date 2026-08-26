@@ -1,36 +1,25 @@
 # syntax=docker/dockerfile:1@sha256:ecfaec9ed6d810b56388c508f4121597bfbba70d41a6dfeee4d8cad5f295fc32
-# =============================================================================
-# stages/30-feature-radios — the radio userland, its unit masking, and its
+# stages/30-feature-radios -- the radio userland, its unit masking, and its
 # mount wiring: everything that is in the image because the BOARD DECLARES A
 # RADIO, and nothing that is in it for any other reason.
 #
-# PLAN-014 M5 (RFCT-111 M5c), cut out of the temporary 30-40-unsplit. The three
-# RUNs below were positions 1, 3 and 12 of that file: `radios-packages` and
-# `radios-mask-units` ran before the board work and `radios-mounts` after it,
-# with the container feature interleaved between them. A feature split across
-# other stages cannot be one omittable stage, so they are contiguous here.
+# IT IS THE FIRST FEATURE STAGE. `radios-packages` is the first `apt-get
+# install` after stages/10-base's allowlist, and the order of the apt
+# transactions decides the order entries land in dpkg's database and in the log
+# files the pack stage carries into /usr/share/factory/var/log.
 #
-# WHY IT IS THE FIRST FEATURE STAGE AND NOT THE SECOND. `radios-packages` is
-# the first `apt-get install` after stages/10-base's allowlist, and it was the
-# first in 30-40-unsplit too. The order of the apt transactions decides the
-# order entries land in dpkg's database and in the log files the pack stage
-# carries into /usr/share/factory/var/log, so keeping radios ahead of
-# containers is what makes this cut a re-grouping rather than a re-install.
-#
-# THE SWITCH IS BOARD_RADIOS, AND IT STAYS AN ARGUMENT. The two stages that
-# had a WITH_* boolean -- containers and mosd -- replaced it with the presence
-# of a file; this one did not, and the difference is deliberate. BOARD_RADIOS
-# is a LIST -- `wifi`, `bluetooth`, both -- read out of
-# os/boards/<board>/board.env, so the stage
-# has to read it even when it is present. Its empty value is a statement the
-# three scripts each print ("this board declares none"), and on x64 that
-# printed early exit is the only place on an amd64 host where any of this code
-# runs at all. Dropping the stage on a board with no radio would delete that.
+# THE SWITCH IS BOARD_RADIOS, AND IT STAYS AN ARGUMENT, unlike the containers
+# and mosd stages which switch on the presence of a file. BOARD_RADIOS is a
+# LIST -- `wifi`, `bluetooth`, both -- read out of os/boards/<board>/board.env,
+# so the stage has to read it even when it is present. Its empty value is a
+# statement the three scripts each print ("this board declares none"), and on
+# x64 that printed early exit is the only place on an amd64 host where any of
+# this code runs at all; dropping the stage on a board with no radio would
+# delete it.
 #
 # The stage IS omittable -- `MOS_ROOTFS_WITHOUT=radios` reaches
 # `--without radios` and builds a chain with no radio stage in it -- and no
 # board declines it, for the reason above.
-# =============================================================================
 
 # THE LINK BACK UP THE CHAIN. MOS_STAGE_PREV is the local image tag the
 # previous stage was written to; the driver passes it and refuses to build a
@@ -85,7 +74,7 @@ RUN --mount=type=bind,source=os/rootfs/scripts,target=/mos-scripts \
 #
 # The TEMPLATES are left installed and NOT enabled: mosd enables and starts
 # exactly the instance the settings tree asks for. Their ExecStart paths are
-# asserted against the reconcilers' own constants by os/verify-image-v2.sh.
+# asserted against the reconcilers' own constants by os/verify.
 RUN --mount=type=bind,source=os/rootfs/scripts,target=/mos-scripts \
     sh /mos-scripts/radios-mask-units.sh
 
@@ -93,18 +82,16 @@ RUN --mount=type=bind,source=os/rootfs/scripts,target=/mos-scripts \
 #
 # var-lib-bluetooth.mount, etc-wpa_supplicant.mount and etc-hostapd.mount are
 # the writable configuration directories for bluez, wpa_supplicant and hostapd.
-# They live in os/boards/cx3576/overlay/ with the rest of that board's radio
-# facts, so on a board with none they are simply not there -- and the chmod and
-# the local-fs.target.wants loop in stages/20-install's overlay-install.sh used
-# to name them unconditionally, which is what failed the first x64 build after
+# They live in os/boards/<board>/overlay/ with the rest of that board's radio
+# facts, so on a board with none they are simply not there -- which is why
+# stages/20-install's overlay-install.sh must not name them unconditionally
+# (`chmod: cannot access`).
 #
-# the move: `chmod: cannot access`.
-#
-# AFTER stages/20-install, never before it. Placed before, this loop looked
-# for the units under /etc/systemd/system while they were still sitting in
-# /tmp/overlay, and reported "declared but not in the overlay" for a board
-# whose overlay had all three. x64 could not catch that: it declares no radio,
-# so it takes the early exit and never reaches the test at all. A board with
-# the feature is the only one that runs this code.
+# AFTER stages/20-install, never before it. Placed before, this loop looks for
+# the units under /etc/systemd/system while they are still sitting in
+# /tmp/overlay, and reports "declared but not in the overlay" for a board whose
+# overlay has all three. x64 cannot catch that: it declares no radio, so it
+# takes the early exit and never reaches the test at all. A board with the
+# feature is the only one that runs this code.
 RUN --mount=type=bind,source=os/rootfs/scripts,target=/mos-scripts \
     sh /mos-scripts/radios-mounts.sh

@@ -1,26 +1,25 @@
 // Batch 4b: the image's shape, and the packed root's file capabilities.
 //
-// PLAN-014 M4g (RFCT-110). Four conclusions per board -- the default path being
-// the `-latest` symlink, the partition count, and the capability pair -- and
-// two of them needed something the register could not previously express.
+// Four conclusions per board -- the default path being the `-latest` symlink,
+// the partition count, and the capability pair.
 //
-// ═══ `exactly ${EXPECT_PARTS} partitions`, AND WHY IT WAS LEFT UNTIL LAST ═══
+// `exactly ${EXPECT_PARTS} partitions` IS ONE ENTRY PER BOARD.
 //
-// M4b measured it and left it: ` partitions` claims three conclusions on
+// A single entry cannot carry it: ` partitions` claims three conclusions on
 // cx3576 and three on x64, `exactly ` claims thirteen and eight, and the only
-// token left is the COUNT -- which os/verify-image-v2.sh:1408 deliberately
-// stopped writing down, because `EXPECT_PARTS=11` was the cx3576 number and it
-// is why `MOS_BOARD=x64` died four checks in on an unbound variable.
+// distinguishing token left is the COUNT -- which is a per-board number, so a
+// single `EXPECT_PARTS` would be one board's answer written into a check both
+// boards run.
 //
-// M4f solved the identical problem for the ELF architecture: ONE ENTRY PER
-// BOARD, generated from that board's own declaration. `exactly 11 partitions`
+// So each board gets its own entry, generated from its own declaration, the
+// same way the ELF architecture does. `exactly 11 partitions`
 // and `exactly 9 partitions` are derivations from `LAYOUT_PARTITIONS` -- the
 // same list the oracle counts -- and not literals, in the same sense that
 // `BOOT-A contains Image` is a derivation from BOOT_SLOT_REQUIRED_FILES. A
 // third board dropped into os/boards/ gets its own entry with its own count and
 // nothing here is edited.
 //
-// ═══ THE CAPABILITY PAIR, AND A VACUOUS PASS IT CARRIES ═══
+// THE CAPABILITY PAIR, AND A VACUOUS PASS IT CARRIES.
 //
 // The oracle establishes that the environment can OBSERVE a capability before
 // it compares any inventory, because an empty capability set and a container

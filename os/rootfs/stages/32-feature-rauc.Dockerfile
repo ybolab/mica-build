@@ -1,32 +1,20 @@
 # syntax=docker/dockerfile:1@sha256:ecfaec9ed6d810b56388c508f4121597bfbba70d41a6dfeee4d8cad5f295fc32
-# =============================================================================
-# stages/32-feature-rauc — the update client: five files off os/update/rauc's
+# stages/32-feature-rauc -- the update client: five files off os/update/rauc's
 # build, and the assertion that the binary in THIS root links no second TLS
 # stack.
 #
-# PLAN-014 M5 (RFCT-111 M5c), cut out of the temporary 30-40-unsplit
-# (positions 4 and 5).
-#
-# A FEATURE STAGE WITH NO CALLER-FACING SWITCH, and that is worth saying
-# plainly rather than leaving a reader to notice. RFCT-111 names four
-# switchable features; RAUC is not one of them, and no board declines it --
-# an image without RAUC is an image that cannot take an update, which is the
-# whole of mos's A/B design. It is a stage because the material has to live
-# somewhere and one-feature-per-stage is the vocabulary M5 chose, and because
-# it is the one grouping under which `rauc-install` and its no-TLS assertion
-# are obviously the same subject.
-#
-# So the mechanism can omit it -- `MOS_ROOTFS_WITHOUT=rauc` reaches
-# `--without rauc` and build-v2.sh then stages no rauc at all -- and no board
-# does. That route exists rather than being left for later on purpose: a switch
-# no shipping path can reach is a switch that has only ever been observed in the
-# position that changes nothing.
+# A FEATURE STAGE WITH NO CALLER-FACING SWITCH. No board declines it -- an
+# image without RAUC is an image that cannot take an update, which is the whole
+# of mos's A/B design. It is a stage because one-feature-per-stage is this
+# tree's vocabulary, and because it is the one grouping under which
+# `rauc-install` and its no-TLS assertion are obviously the same subject. The
+# mechanism can still omit it (`MOS_ROOTFS_WITHOUT=rauc` reaches
+# `--without rauc`), so the switch is reachable rather than theoretical.
 #
 # grub-editenv is NOT here. RAUC's grub backend execs it, so it reads as RAUC
 # material; it is installed in stages/40-board because it is gated on
 # RAUC_BOOTLOADER, which is a board fact, and because it is an apt transaction
 # and the board stage is where the rest of them are.
-# =============================================================================
 
 # THE LINK BACK UP THE CHAIN. MOS_STAGE_PREV is the local image tag the
 # previous stage was written to; the driver passes it and refuses to build a
@@ -36,14 +24,13 @@
 ARG MOS_STAGE_PREV
 FROM ${MOS_STAGE_PREV}
 
-# RAUC, built from upstream by os/update/rauc/ (see os/update/rauc/versions.env for why it is
-# not the Debian package). Five files, and all five are on the activation path:
-# the binary, the unit, the script the D-Bus service file Execs, the bus policy
-# and the activation file itself. Debian splits these across two packages and
-# the split has bitten this image before -- the note at the top of the package
-# list records what a `rauc` with no service files does, which is answer "the
-# name de.pengutronix.rauc was not provided by any .service files" while the
-# health gate reports green.
+# RAUC, built from upstream by os/update/rauc/ (os/update/rauc/versions.env
+# says why it is not the Debian package). Five files, and all five are on the
+# activation path: the binary, the unit, the script the D-Bus service file
+# Execs, the bus policy and the activation file itself. Debian splits these
+# across two packages, and a `rauc` with no service files answers "the name
+# de.pengutronix.rauc was not provided by any .service files" while the health
+# gate reports green.
 ARG RAUC_DIR
 COPY ${RAUC_DIR}/ /tmp/rauc/
 RUN --mount=type=bind,source=os/rootfs/scripts,target=/mos-scripts \

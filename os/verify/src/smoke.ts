@@ -2,25 +2,23 @@
 // ships it, and require the version it reports to be the version this
 // repository decided.
 //
-// RFCT-113 M7b. EXPLICITLY A SMOKE TEST -- execution and version identity, not
-// behaviour. The QEMU boot tests keep functional coverage and the ldd/NEEDED
-// checks stay where they are; nothing here asserts what a binary DOES.
+// EXPLICITLY A SMOKE TEST -- execution and version identity, not behaviour.
+// The QEMU boot tests keep functional coverage and the ldd/NEEDED checks stay
+// where they are; nothing here asserts what a binary DOES.
 //
-// ═══ WHAT THIS CLOSES ═══
-//
-// Before M7 the last thing done to any of the twelve was to LINK it. A
-// wrong-architecture binary, a missing soname and a version that does not match
-// its pin all survive to first boot, and all three look identical from a build
-// log: green. Three claims were being read as one --
+// WHAT IT CLOSES. Linking is the last thing a build does to any of the twelve.
+// A wrong-architecture binary, a missing soname and a version that does not
+// match its pin all survive to first boot, and all three look identical from a
+// build log: green. Three claims read as one --
 //
 //   "it linked"          the build did not fail
 //   "it runs"            the loader resolves it and it reaches main
 //   "it is the version   what ran is what os/podman/versions.env,
 //    we decided"          os/update/rauc/versions.env or the crate manifest says
 //
-// -- and only the first was ever checked.
+// -- and only the first is checked by the build itself.
 //
-// ═══ THE SEAM, AND WHY THE WHOLE RUNNER IS TESTABLE WITHOUT DOCKER ═══
+// THE SEAM, AND WHY THE WHOLE RUNNER IS TESTABLE WITHOUT DOCKER.
 //
 // Everything below takes an `Exec`: a function from argv to (status, stdout,
 // stderr). `dockerExec` is the one that runs a container; the suite passes one
@@ -28,32 +26,21 @@
 // reachable FROM THE FAILING SIDE without an image, a daemon or a build. A
 // check whose red branch has never executed is a check nobody has run.
 //
-// ═══ THE THREE VERDICTS, AND WHY THERE ARE THREE ═══
+// THE THREE VERDICTS. `pass` and `fail` are the obvious two. `unclaimed` is
+// the third: a conclusion nobody reached must not report as one that was
+// reached and held.
 //
-// `pass` and `fail` are the obvious two. `unclaimed` is the third, and it is
-// the M4a check register's word for the same idea: a conclusion nobody reached
-// must not report as one that was reached and held.
-//
-// NOTHING IN THE SHIPPED REGISTER IS UNCLAIMED ANY MORE, and the verdict stays.
-// M7b measured mosd and apid as having no `--version` at all -- both ignored
-// argv, started the daemon and MUTATED the machine -- and recorded that as
-// `unclaimed` rather than as a pass or a skip, because closing it meant editing
-// `mosd/` Rust sources, which PLAN-014 excluded. The user lifted that exclusion
-// on 2026-08-26 for exactly a `--version` handler, M7d landed one in each, and
-// the two entries became `version` like the other ten. What that leaves behind
-// is a verdict with no current claimant, kept for the next artifact this
-// repository builds and cannot yet ask -- deleting it would mean the only way
-// to add such an artifact is to report it as passing or to leave it out, and
-// this campaign has removed several checks that got greener by looking at less.
+// NOTHING IN THE SHIPPED REGISTER IS UNCLAIMED, and the verdict stays. It is
+// there for the next artifact this repository builds and cannot yet ask --
+// without it the only ways to add such an artifact are to report it as passing
+// or to leave it out, and both are a green that got greener by looking at less.
 // It is exercised from the failing side in smoke.test.ts, which is where a
 // verdict nobody currently produces has to be exercised.
 //
-// ═══ THE SECOND HALF OF THE VERSION CONTRACT: THE BUILD COMMIT ═══
-//
-// RFCT-113 M7d. mosd and apid also report the commit they were built from, and
-// the runner asserts it -- against a RECORDED BUILD FACT and never against
-// `git rev-parse HEAD`. See `BuildCommitFact` for why that distinction is the
-// entire value of the check.
+// THE SECOND HALF OF THE VERSION CONTRACT: THE BUILD COMMIT. mosd and apid also
+// report the commit they were built from, and the runner asserts it -- against
+// a RECORDED BUILD FACT and never against `git rev-parse HEAD`. See
+// `BuildCommitFact` for why that distinction is the entire value of the check.
 
 import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
@@ -157,49 +144,32 @@ export function versionTokens(line: string): string[] {
 }
 
 /**
- * THE COMMIT HALF: PRINTED BY M7b, ASSERTED SINCE M7d — and what had to be
- * built in between.
+ * THE COMMIT HALF OF THE VERSION CONTRACT.
  *
- * M7b measured that there was nothing to assert against, with a positive
- * control on the search. `_out/<board>/factory-root.txt` carried ref, platform,
- * target, archive, bytes, sha256 and source-date-epoch; `rootfs-stages.txt`
- * per-stage content hashes; `rootfs-verity.env` verity parameters. A grep for
- * `rev-parse|git describe|GIT_COMMIT|VCS_REF|SOURCE_COMMIT` across
- * `os/rootfs/build-v2.sh` and all of `os/build/src/*.ts` -- 39 files --
- * returned nothing, while the same grep shape hit `docs/plan/PLAN-014.md`
- * twice, so the search worked and the absence was real. With no recorded build
- * fact, M7b printed the reported line verbatim and asserted nothing about it.
- * That was the correct half of the requirement to implement at the time.
+ * The expectation is a BUILD FACT and never `git rev-parse HEAD`: comparing
+ * the reported sha against HEAD at run time is trivially green on any freshly
+ * built tree, and asserts that somebody just built rather than that the
+ * embedding works. `mosd/hack/build-target.sh` writes the commit it handed the
+ * compiler into `_out/mosd-build.txt`, build-v2.sh copies it to
+ * `_out/<board>/mosd-build.txt` beside the factory root, `readMosdBuildFact`
+ * reads it back and `judge` compares the two. See `BuildCommitFact`.
  *
- * M7b ALSO REFUSED THE ALTERNATIVE BY NAME, and that refusal still stands:
- * comparing the reported sha against `git rev-parse HEAD` at run time is
- * trivially green on any freshly built tree. It asserts that somebody just
- * built, not that the embedding works.
+ * THE PRINTED-ONLY STATE IS A BRANCH, not a deletion: when the record is absent
+ * -- a hand-assembled `_out/` -- the runner says so on its own first lines and
+ * the row says `commit was NOT asserted`. The reported line is carried verbatim
+ * into every version verdict (`[said: ...]`) either way, because a commit the
+ * runner cannot check is still one a reader must be able to see.
  *
- * M7d CLOSED THE GAP BY BUILDING THE MISSING FACT, not by weakening the
- * comparison -- `os/rootfs/build-v2.sh` is not `mosd/` and was never excluded.
- * `mosd/hack/build-target.sh` writes the commit it handed the compiler into
- * `_out/mosd-build.txt`, build-v2.sh copies it to `_out/<board>/mosd-build.txt`
- * beside the factory root, `readMosdBuildFact` reads it back and `judge`
- * compares the two. See `BuildCommitFact`.
- *
- * THE PRINTED-ONLY STATE IS KEPT AS A BRANCH rather than deleted: when the
- * record is absent -- a hand-assembled `_out/`, an image from before M7d -- the
- * runner says so on its own first lines and the row says `commit was NOT
- * asserted`. And the reported line is still carried verbatim into every version
- * verdict (`[said: ...]`), because a commit the runner cannot check is still one
- * a reader must be able to see.
- *
- * ONE MEASURED LIMIT, from M7b and unchanged: `mosd 0.1.0-rc.1 (abc1234)`
- * yields the numeric head only, so a pre-release pin and output would go RED
- * naming both sides -- visible rather than a silent pass. Neither crate takes a
- * pre-release version today; if one does, `versionTokens` is where to look.
+ * ONE LIMIT: `mosd 0.1.0-rc.1 (abc1234)` yields the numeric head only, so a
+ * pre-release pin and output go RED naming both sides -- visible rather than a
+ * silent pass. Neither crate takes a pre-release version today; if one does,
+ * `versionTokens` is where to look.
  */
 
 /**
  * Whether a `--version` line reports EXACTLY this commit.
  *
- * RFCT-113 M7d. mosd and apid print `<name> <version> (<commit>)`, and the
+ * mosd and apid print `<name> <version> (<commit>)`, and the
  * commit half is compared here rather than by `versionTokens`, which reads
  * dotted numbers and would never see a sha at all.
  *
@@ -207,7 +177,7 @@ export function versionTokens(line: string): string[] {
  * `line.includes('00b674e9a628')` is satisfied by `(00b674e9a628-dirty)`, so a
  * binary built from a MODIFIED worktree would report as agreeing with the clean
  * sha -- which is the one confusion the dirty marker exists to prevent. The
- * guards are the same shape this campaign uses for path arithmetic: a left
+ * guards are a left
  * `(?<![A-Za-z0-9-])` so a token may not start inside a longer run, and a right
  * `(?![A-Za-z0-9-])` so it may not end inside one. `-` is in BOTH classes on
  * purpose; that is what makes `-dirty` a different token rather than a suffix.
@@ -234,7 +204,7 @@ export function firstLine(stdout: string): string {
 /**
  * What the BUILD recorded about the commit it embedded, and where that came from.
  *
- * RFCT-113 M7d, and the shape of this type is the whole defence against a
+ * The shape of this type is the whole defence against a
  * vacuous check. The commit half of mosd's and apid's `--version` could be
  * "asserted" against `git rev-parse HEAD` at run time, and that would pass on
  * any freshly built tree while asserting only that somebody had just rebuilt --
@@ -244,10 +214,10 @@ export function firstLine(stdout: string): string {
  * beside the factory root, and this is what the runner reads back.
  *
  * `commit` is optional because the fact may genuinely not be there -- a
- * hand-assembled `_out/`, an image from before M7d -- and RFCT-113 M7d's
- * instruction for that case is to PRINT it and assert nothing rather than to
- * refuse. `source` is printed either way, so a run that asserted nothing about
- * the commit says so out loud instead of looking like one that did.
+ * hand-assembled `_out/` -- and the rule for that case is to PRINT it and
+ * assert nothing rather than to refuse. `source` is printed either way, so a
+ * run that asserted nothing about the commit says so out loud instead of
+ * looking like one that did.
  */
 export interface BuildCommitFact {
   /** The commit the build recorded embedding. Absent when none was recorded. */
@@ -259,13 +229,11 @@ export interface BuildCommitFact {
 /**
  * What a non-zero exit MEANS, from the status and what came back with it.
  *
- * RFCT-113 M7c, and this replaced a map that had never been measured. M7b wrote
- * the three-way split from the documented `docker run` convention -- 127 not
- * found, 126 cannot be invoked -- and both of the shapes RFCT-113's first
- * acceptance clause names land somewhere else. Measured on 2026-08-26, docker
- * 29.7.2, in EXACTLY the shape `dockerArgv` produces (no shell: the artifact IS
- * the container's init, so a failure to exec it surfaces as a `docker run`
- * failure rather than as a shell's 126):
+ * MEASURED, NOT TAKEN FROM THE `docker run` CONVENTION. That convention -- 127
+ * not found, 126 cannot be invoked -- gets both of the shapes below wrong.
+ * Measured against docker 29.7.2, in EXACTLY the shape `dockerArgv` produces
+ * (no shell: the artifact IS the container's init, so a failure to exec it
+ * surfaces as a `docker run` failure rather than as a shell's 126):
  *
  *   wrong-arch ELF            255  `exec <path>: exec format error`
  *   missing soname            127  `<path>: error while loading shared libraries:
@@ -372,7 +340,7 @@ export function judge(artifact: Artifact, pin: Pin, outcome: ExecResult, build?:
   const line = firstLine(outcome.stdout)
   const tokens = versionTokens(line)
   if (tokens.includes(pin.expected)) {
-    // `[said: ...]` is M7b's, and it stays on EVERY version row rather than
+    // `[said: ...]` stays on EVERY version row rather than
     // only the two that carry a commit: a runner that asserts a thing must
     // still show what it read, and the rows that assert no commit are exactly
     // the ones where the printed line is the only record of one.
@@ -518,11 +486,10 @@ export function conclude(results: readonly SmokeResult[], expected: number): Con
     exitCode: 0,
     counts,
     // The same four numbers FAIL and INCOMPLETE print, in the same order.
-    // The PASS line used to read `(12/12 artifacts executed, ...)`, which is a
-    // second format for one summary: a reader comparing a green run against a
-    // red one had to translate between them, and `0 unclaimed` -- the thing
-    // this milestone changed -- was not stated at all on the line that
-    // mattered most.
+    // One format for one summary: a second spelling on the green line would
+    // make a reader translate between it and the red one, and `0 unclaimed` is
+    // exactly the number that would go unstated on the line that matters
+    // most.
     line: `RESULT: PASS (${counts.pass} pass, ${counts.fail} fail, ${counts.unclaimed} unclaimed, of ${counts.total})`,
   }
 }
@@ -645,11 +612,11 @@ export const MOSD_BUILD_RECORD_NAME = 'mosd-build.txt'
  * `os/rootfs/build-v2.sh` copied in beside the image -- NOT out of the working
  * tree. See [`BuildCommitFact`].
  *
- * ABSENT IS NOT A REFUSAL HERE, unlike the factory root itself. RFCT-113 M7d's
- * instruction for a build fact the runner cannot see is to print it and assert
- * nothing, and the reason a refusal would be wrong is that this file is younger
- * than the images that may still be sitting in `_out/`: refusing would turn
- * "this image predates the commit stamp" into "this tree is broken". On a root
+ * ABSENT IS NOT A REFUSAL HERE, unlike the factory root itself. A build fact
+ * the runner cannot see is printed and asserted about nothing, because the
+ * record is younger than images that may still be sitting in `_out/`: refusing
+ * would turn "this image predates the commit stamp" into "this tree is
+ * broken". On a root
  * built by os/rootfs/build-v2.sh the record is always written, and when mosd is
  * DECLINED the same script removes it -- and then mosd and apid are not in the
  * image at all and `declinedFeatures` refuses the run before it reaches here.
@@ -740,7 +707,7 @@ export function declinedFeatures(text: string): string[] {
 /**
  * Run one program with a budget, and hand back everything it did.
  *
- * Exported since RFCT-113 M7c so `src/smoke-negative.ts` drives `docker build`
+ * Exported so `src/smoke-negative.ts` drives `docker build`
  * through the same seam the runner drives `docker run` through -- a second
  * spawn helper would be a second set of decisions about timeouts and about what
  * counts as output, agreeing with this one until one of them was edited.

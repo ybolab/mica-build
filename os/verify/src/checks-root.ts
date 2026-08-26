@@ -1,12 +1,12 @@
 // Batch 2a: what the packed read-only root CONTAINS.
 //
-// PLAN-014 M4c (RFCT-110). The largest family in the oracle and the flattest:
-// `sq_regular`, `sq_symlink`, `sq_grep` and the two unit-enablement helpers are
-// one-line assertions over the squashfs the device actually mounts, and all
-// four have the same matcher shape -- the conclusion's own `what` clause is the
+// The largest family in the oracle and the flattest: `sq_regular`,
+// `sq_symlink`, `sq_grep` and the two unit-enablement helpers are one-line
+// assertions over the squashfs the device actually mounts, and all four have
+// the same matcher shape -- the conclusion's own `what` clause is the
 // substring both directions share.
 //
-// ═══ WHY THE ROOT IS UNPACKED ONCE ═══
+// WHY THE ROOT IS UNPACKED ONCE.
 //
 // `ctx.unpackRoot()` unpacks the WHOLE archive -- 4,354 paths on cx3576, 9,238
 // on x64 -- and memoises it for the run, so the fifty-odd checks below pay for
@@ -16,7 +16,7 @@
 // tree. Every check in this file went through that one call, so the repair came
 // before the port did.
 //
-// ═══ WHAT IS NOT HERE ═══
+// WHAT IS NOT HERE.
 //
 // Everything the oracle guards with a board or profile condition -- the radio
 // firmware set, /etc/mos/<hwinit>.conf, the gadget and Bluetooth units, the
@@ -28,7 +28,7 @@
 // that was measured against both boards' real output rather than read off the
 // source.
 //
-// ═══ AND WHY NO MATCHER HERE IS ` contains ` ═══
+// AND WHY NO MATCHER HERE IS ` contains `.
 //
 // Measured on 2026-08-26 against both boards' real conclusion lists: the
 // substring ` contains ` claims 14 lines on cx3576 and 8 on x64. Ten of them
@@ -89,7 +89,7 @@ export function entry(root: string, path: string): Stats | undefined {
 }
 
 // ---------------------------------------------------------------------------
-// sq_regular -- os/verify-image-v2.sh:2414-2420
+// sq_regular
 // ---------------------------------------------------------------------------
 
 /**
@@ -164,7 +164,7 @@ function regularFileCheck(path: string): CheckCase {
 }
 
 // ---------------------------------------------------------------------------
-// sq_grep -- os/verify-image-v2.sh:661-668
+// sq_grep
 // ---------------------------------------------------------------------------
 
 interface GrepCase {
@@ -266,7 +266,7 @@ function grepCheck(c: GrepCase): CheckCase {
 }
 
 // ---------------------------------------------------------------------------
-// sq_enabled / sq_enabled_any -- os/verify-image-v2.sh:2442-2467
+// sq_enabled / sq_enabled_any
 // ---------------------------------------------------------------------------
 
 /**
@@ -377,16 +377,14 @@ function enabledCheck(c: EnabledCase): CheckCase {
 
 const BUILTIN_PREFIX = '/builtin'
 const APID_BIN = '/usr/bin/apid'
-// A fragment of the escape page AS RENDERED -- the deleted oracle's
-// BUILTIN_MARKUP, verbatim (os/verify-image-v2.sh:335 at dabc9e8). Markup and
+// A fragment of the escape page AS RENDERED, verbatim. Markup and
 // not a bare route constant: "/builtin/deactivate" alone would still be in the
 // binary after the pages moved out to an on-disk asset tree, which is the one
 // change this catches.
 //
 // EXPORTED so that checks-fixture.ts's independent transcription of the same
-// string can be asserted equal to it. That assertion used to be made against
-// the ORACLE's copy; with the oracle deleted the two surviving copies keep each
-// other honest instead, which is the same property with one fewer party.
+// string can be asserted equal to it. Two independent transcriptions of one
+// string keep each other honest; a shared constant would not.
 export const BUILTIN_MARKUP = '<form method="post" action="/builtin/deactivate">'
 const DEV_KEYRING_PATH = '/etc/rauc/keyring.pem'
 const PACKED_MOUNTPOINTS = [

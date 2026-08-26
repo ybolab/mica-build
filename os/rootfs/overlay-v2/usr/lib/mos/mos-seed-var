@@ -13,7 +13,7 @@
 #
 # IT MERGES, AND THAT IS A CORRECTNESS REQUIREMENT, NOT A CONVENIENCE.
 #
-# This used to be `cp -a "$FACTORY/." /var/`, and on Debian 13 that fails:
+# `cp -a "$FACTORY/." /var/` fails on Debian 13:
 #
 #   cp: cannot create directory '/var/./lib/systemd/network': File exists
 #

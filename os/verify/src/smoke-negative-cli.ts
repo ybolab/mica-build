@@ -1,7 +1,7 @@
 // `bash os/verify/run.sh --smoke-negative [--board NAME]` -- the entry point for
-// RFCT-113's three negative tests.
+// the three negative tests.
 //
-// RFCT-113 M7c. Same argv discipline as `src/smoke-cli.ts`, and for the same
+// Same argv discipline as `src/smoke-cli.ts`, and for the same
 // reason it gives: an unknown option that is accepted and ignored turns a
 // request for one thing into a green about another. There is no `--opt=value`
 // form here either.

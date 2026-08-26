@@ -1,7 +1,7 @@
 # /etc/fw_env.config — where fw_printenv/fw_setenv (libubootenv-tool) find the
 # redundant U-Boot environment pair.
 #
-# OWNER: RFCT-014 (RAUC integration). This is the single fw_env.config source
+# RAUC integration owns this file. It is the single fw_env.config source
 # in the tree; there is deliberately no os/update/rauc/fw_env.config.in to drift from
 # it. It is rendered from os/boards/cx3576/board.env by os/rootfs/build-v2.sh, and
 # os/update/rauc/render-config.sh asserts its contract (run on every bundle build):
