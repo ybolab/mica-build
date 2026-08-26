@@ -19,7 +19,8 @@ is prose; no mechanism checks any of them.
 Registry versions verified 2026-08-26 at crates.io: `utoipa` 5.5.0,
 `utoipa-axum` 0.2.0 (binds to the workspace's axum 0.8). Spec diffing:
 `oasdiff` (standalone Go binary) classifies OpenAPI changes as
-breaking/non-breaking.
+breaking/non-breaking. *(Amendment 1, 2026-08-26: utoipa-axum was dropped at
+implementation — see Decisions item 4.)*
 
 ## Decisions (user-set, 2026-08-26)
 
@@ -34,11 +35,21 @@ breaking/non-breaking.
 3. Breaking-change policy is enforced by machine: oasdiff in CI compares the
    PR's committed spec against the base branch's; a breaking classification
    fails the check, which is api.md §2.1's rule made mechanical.
+4. *(Amendment 1, ratified at integration, 2026-08-26.)* `utoipa-axum` is
+   dropped. Its 0.2.0 release depends on `paste` 1.0.15 (RUSTSEC-2024-0436,
+   unmaintained), which `mosd/deny.toml`'s `unmaintained = "all"` escalates
+   to an error. The supply-chain gate outranks the composition convenience:
+   routes are declared with utoipa's `context_path` instead, the generated
+   document is identical at the wire, and the dependency delta shrinks to
+   `utoipa` + `utoipa-gen`. Widening deny.toml was rejected — that would
+   permanently loosen the appliance's advisory gate for a build-time
+   convenience.
 
 ## Proposal
 
-- **M1 (RFCT-117)** Dependencies `utoipa`/`utoipa-axum` added at the
-  workspace level (latest stable, pinned like siblings). `GET /api/versions`
+- **M1 (RFCT-117)** Dependency `utoipa` added at the workspace level
+  (latest stable, pinned like siblings); route/document composition uses
+  utoipa's `context_path`, not utoipa-axum (Decisions item 4). `GET /api/versions`
   (unauthenticated, `{"versions":["v1"],"current":"v1"}`) and
   `GET /api/v1/meta` (session-authenticated,
   `{"api":"v1","settingsSchemaVersion":<SCHEMA_VERSION>,"daemon":"apid"}`)
@@ -84,7 +95,7 @@ breaking/non-breaking.
 ## Scope
 
 - **In**: `mosd/apid/**`, `mosd/Cargo.toml` + `mosd/Cargo.lock` (dependency
-  addition only), `.gitea/workflows/check.yml` (spec-identity + oasdiff
+  addition only; utoipa without utoipa-axum per Decisions item 4), `.gitea/workflows/check.yml` (spec-identity + oasdiff
   steps), `mosd/apid/openapi.json` (new, committed).
 - **Out**: bearer tokens and §3.2 token storage, write/action routes,
   collection resources, `test/apid-api/` phases (later phase), `mosd/mosd`
