@@ -303,7 +303,10 @@ export async function assembleCx3576(
     // loader. 'RKNS' is the first field of a Rockchip idbloader; a blob without
     // it is not something the BootROM will load, and shipping it would produce
     // an image that passes every structural check and does not boot.
-    const ubootMagic = magicHex(inputs.uboot)
+    // As many bytes as the board's magic spells, not four written down here: a
+    // board that declared a longer one would otherwise be compared against a
+    // truncated read and always disagree.
+    const ubootMagic = magicHex(inputs.uboot, loaderMagic.length / 2)
     if (ubootMagic !== loaderMagic) {
       throw new Error(
         `${inputs.uboot} starts with '${ubootMagic}', not the Rockchip idbloader magic `
