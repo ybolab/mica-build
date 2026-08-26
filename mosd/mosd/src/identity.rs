@@ -424,8 +424,8 @@ mod tests {
         );
     }
 
-    // A second call must not regenerate anything. A regenerated
-    // credential locks the operator out of a fielded device.
+    // A second call must not regenerate anything: a regenerated credential
+    // locks the operator out of a fielded device.
     #[test]
     fn second_call_is_a_genuine_no_op() {
         let (dir, first) = provision();

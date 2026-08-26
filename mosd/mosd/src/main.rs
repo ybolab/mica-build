@@ -19,14 +19,11 @@
 //!   it runs on.
 //! - `MOSD_SCAN` — a one-way test hook over the service scan ([`scan`]).
 //!   Setting it to `1` constructs the scan under `MOSD_DRY_RUN=1`, which on
-//!   its own constructs none. It can only ever turn the scan ON: in
-//!   production the scan is constructed unconditionally and the variable is
-//!   ignored, whatever it holds. No value of it disables anything.
-//!
-//!   The scan is passive — a match rule and read-only calls on whichever bus
-//!   `MOSD_BUS` already named, writing only the in-RAM live-state tree — so
-//!   lifting dry-run's suppression over it touches no file, no unit and no
-//!   host state.
+//!   its own constructs none. It can only ever turn the scan ON: in production
+//!   the scan is constructed unconditionally and the variable is ignored,
+//!   whatever it holds. The scan is passive — a match rule and read-only bus
+//!   calls, writing only the in-RAM live-state tree — so lifting dry-run's
+//!   suppression over it touches no file, no unit and no host state.
 //!
 //! One argument is understood, and it is answered before any of the above is
 //! read: `--version` (or `-V`) prints `mosd <crate version> (<build commit>)`
@@ -57,19 +54,14 @@ use tokio::signal::unix::{SignalKind, signal};
 
 fn main() -> anyhow::Result<()> {
     // `--version` is answered and returned from here, above every line that
-    // makes this process a daemon. The position is the requirement: a handler
-    // placed after initialisation would report the right version and still
-    // MUTATE the machine that asked it a question -- first-boot provisioning
-    // writes /var/lib/mos/settings.toml and /var/lib/mos/secrets/ before the
-    // daemon ever reaches the bus. Hence a synchronous `main` with the async
-    // body in `serve`: the answer is given before the tokio runtime is built,
-    // before the subscriber is installed, before any environment variable is
-    // read and before the settings store is opened.
+    // makes this process a daemon -- before the tokio runtime, the subscriber,
+    // any environment read and the settings store. The position is the
+    // requirement: first-boot provisioning writes /var/lib/mos/settings.toml
+    // and /var/lib/mos/secrets/ before the daemon reaches the bus, so a handler
+    // below it would answer a question and MUTATE the machine that asked.
     //
-    // Only the version flag is intercepted. mosd is started by systemd with no
-    // arguments (mosd/dist/mosd.service) and ignores whatever else it is given;
-    // refusing an unknown flag here would be a new way for this unit to fail on
-    // a device.
+    // Only the version flag is intercepted; mosd is started by systemd with no
+    // arguments and ignores whatever else it is given.
     if wants_version(std::env::args().skip(1)) {
         println!("{}", version_line());
         return Ok(());
@@ -79,23 +71,19 @@ fn main() -> anyhow::Result<()> {
 
 /// What the commit is reported as when the build supplied none.
 ///
-/// An absent commit is a value, not a failure. `option_env!` yields `None`
-/// whenever the binary was built without `MOS_BUILD_COMMIT` in the environment
-/// -- `cargo build` by hand, an editor's check-on-save -- and a `--version`
-/// that exited non-zero there would turn "we do not know which commit" into
-/// "this binary is broken". The smoke runner reads the same distinction from
-/// the other side: it asserts the commit only when the build recorded one.
+/// An absent commit is a value, not a failure: a `--version` that exited
+/// non-zero when `MOS_BUILD_COMMIT` is unset would turn "we do not know which
+/// commit" into "this binary is broken". The smoke runner reads the same
+/// distinction from the other side, asserting the commit only when the build
+/// recorded one.
 const UNKNOWN_COMMIT: &str = "unknown";
 
 /// Whether an argv (argv[1..]) is asking for the version.
 ///
-/// `-V` as well as `--version`: `mos-mqttd` and `mos-mqtt-broker` answer both
-/// through clap's `#[command(version)]`, and the four binaries out of this one
-/// repository spell the one question the same way.
-///
-/// A pure function over an iterator rather than a read of `std::env::args`
-/// inside `main`, so the tests below can drive it from the failing side without
-/// a process to spawn.
+/// `-V` as well as `--version`, because clap gives `mos-mqttd` and
+/// `mos-mqtt-broker` the pair and the four binaries spell the one question the
+/// same way. A pure function over an iterator rather than a read of
+/// `std::env::args`, so the tests below can drive it without spawning.
 fn wants_version(args: impl IntoIterator<Item = String>) -> bool {
     args.into_iter()
         .any(|arg| arg == "--version" || arg == "-V")
@@ -115,26 +103,19 @@ fn commit_or_unknown(embedded: Option<&'static str>) -> &'static str {
 
 /// The one line `--version` prints: `mosd <version> (<commit>)`.
 ///
-/// Both halves come from the build, and neither is written down here. The
-/// version is `mosd/mosd/Cargo.toml`'s `[package] version`, via Cargo's own
-/// `CARGO_PKG_VERSION` -- the same file `os/verify/src/smoke-pins.ts` reads to
-/// decide what this binary must report, so the two ends of that comparison are
-/// one value with two readers rather than a copy.
+/// Both halves come from the build. The version is `CARGO_PKG_VERSION`, the
+/// same `Cargo.toml` value `os/verify/src/smoke-pins.ts` reads to decide what
+/// this binary must report, so the comparison has two readers of one value.
 ///
-/// The commit is `MOS_BUILD_COMMIT`, passed in by `mosd/hack/build-target.sh`,
-/// which resolves it on the HOST. It is deliberately not discovered here, and
-/// there is deliberately no `build.rs` that shells out to git: the checkout is
-/// a git WORKTREE, so `/src/.git` under the build mount is a 41-byte file
-/// pointing at a gitdir outside it, and `git rev-parse HEAD` in there fails
-/// with `fatal: not a git repository` (rc=128). A build script written to
-/// tolerate that failure would silently embed nothing on every build.
+/// The commit is `MOS_BUILD_COMMIT`, resolved on the HOST by
+/// `mosd/hack/build-target.sh`. There is deliberately no `build.rs` that shells
+/// out to git: the build mount is a git WORKTREE, so `git rev-parse HEAD`
+/// inside it fails with `fatal: not a git repository`, and a build script
+/// written to tolerate that would embed nothing on every build.
 ///
-/// A commit sha is deterministic per commit, so embedding it does not cost
-/// reproducibility the way a wall-clock stamp would: two builds of one commit
-/// still agree. What it does cost is byte-identity ACROSS commits -- mosd and
-/// apid differ after ANY commit, including a docs-only one. Anything that
-/// compares these two binaries across commits carries a permanent expected
-/// difference.
+/// Embedding a sha costs no reproducibility -- two builds of one commit agree
+/// -- but it does cost byte-identity ACROSS commits, so anything comparing
+/// mosd against apid across commits carries a permanent expected difference.
 fn version_line() -> String {
     format!(
         "{} {} ({})",
@@ -148,12 +129,9 @@ fn version_line() -> String {
 async fn serve() -> anyhow::Result<()> {
     // INFO by default, not ERROR.
     //
-    // `tracing_subscriber::fmt::init()` reads RUST_LOG and falls back to ERROR
-    // when it is unset, which on a device means mosd records what FAILED and
-    // never what it did -- every reconciler apply, every settings write and
-    // every unit it drives invisible.
-    //
-    // RUST_LOG still wins, so a noisy debug session is one variable away.
+    // `tracing_subscriber::fmt::init()` falls back to ERROR when RUST_LOG is
+    // unset, which on a device means mosd records what FAILED and never what
+    // it did. RUST_LOG still wins, so a debug session is one variable away.
     tracing_subscriber::fmt()
         .with_env_filter(
             tracing_subscriber::EnvFilter::try_from_default_env()

@@ -12,10 +12,10 @@
 //!
 //! A service that does not conform to §6 is published anyway, with a
 //! `conformance` object naming what is missing and exactly one `warn!` on the
-//! way in. Nothing here refuses, drops or panics on a
-//! malformed service: the difference between best-effort and silently
-//! degraded is that the registry can say WHY a service publishes oddly, and
-//! an operator who cannot see that concludes the bridge is broken.
+//! way in. Nothing here refuses, drops or panics on a malformed service: the
+//! difference between best-effort and silently degraded is that the registry
+//! can say WHY a service publishes oddly, and an operator who cannot see that
+//! concludes the bridge is broken.
 //!
 //! # What is published, and what is not
 //!

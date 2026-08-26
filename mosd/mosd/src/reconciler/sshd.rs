@@ -17,11 +17,10 @@
 //! authentication method the operator has already turned off.
 //!
 //! **The device password does not reach PAM.** The credential of record for
-//! shell access is an SSH public key, or a transient password the operator
-//! sets explicitly through `crate::transient` and which the next boot clears.
-//! `secrets/device-password` stays on STATE and no production code reads it
-//! back: a hash written into the root account's shadow entry would make a
-//! fielded device carry a password that never expires.
+//! shell access is an SSH public key, or a transient password set through
+//! `crate::transient` that the next boot clears. Nothing reads
+//! `secrets/device-password` back: a hash in the root shadow entry would be a
+//! password on a fielded device that never expires.
 //!
 //! **`PasswordAuthentication` is gated on that transient password.** The
 //! rendered value is the setting AND `transient::transient_password_active`:
@@ -51,11 +50,9 @@ const SSH_UNIT: &str = "ssh.service";
 const DEFAULT_DROP_IN: &str = "/etc/ssh/sshd_config.d/10-mos.conf";
 /// Directory the per-account authorized-keys files are rendered into.
 ///
-/// Under `/etc/ssh` rather than `/root/.ssh` because `/etc/ssh` is a
-/// STATE-backed bind mount (`etc-ssh.mount` binds `/mnt/state/ssh` over it), so
-/// the files survive an A/B update. `/root` is on the ephemeral filesystem: a
-/// key written there would be gone on the next boot, which is precisely what
-/// "persistent access" must not mean.
+/// Under `/etc/ssh`, a STATE-backed bind mount (`etc-ssh.mount` binds
+/// `/mnt/state/ssh` over it), so the files survive an A/B update; `/root` is on
+/// the ephemeral filesystem and a key written there is gone on the next boot.
 ///
 /// The static `05-mos-authorized-keys.conf` points sshd at
 /// `/etc/ssh/authorized_keys.d/%u`, which sshd expands **per login user**, so
@@ -64,25 +61,20 @@ const DEFAULT_AUTHORIZED_KEYS_DIR: &str = "/etc/ssh/authorized_keys.d";
 /// Accounts this reconciler renders authorized keys for, in render order.
 ///
 /// **One key set, rendered for every managed login account.** Keys are not
-/// per-user in the settings tree — that would be a schema change for a device
-/// with a single operator. Every entry of `access.ssh.authorizedKeys` is
-/// therefore a root key as much as it is a `mos` key, and the web UI says so.
+/// per-user in the settings tree, so every entry of `access.ssh.authorizedKeys`
+/// is a root key as much as it is a `mos` key, and the web UI says so.
 ///
 /// **A constant list, deliberately not a scan of `/etc/passwd`.** Scanning
-/// would silently start granting key access to any account a future package
-/// happens to add, which is a privilege decision inherited from a dependency
-/// rather than made in code review. Adding an account here is a diff somebody
-/// has to approve; that is the entire point of the constant.
+/// would grant key access to any account a future package adds — a privilege
+/// decision inherited from a dependency rather than made in review.
 const MANAGED_LOGIN_ACCOUNTS: [&str; 2] = ["root", "mos"];
 /// Environment variable overriding the drop-in path.
 const DROP_IN_ENV: &str = "MOSD_SSHD_DROP_IN";
 /// Environment variable overriding the authorized-keys directory.
 ///
-/// Renamed from `MOSD_AUTHORIZED_KEYS`, which named a single **file**. A stale
-/// value carried over would now be treated as a directory and render
-/// `<that file>/root`, so the rename makes the changed meaning visible instead
-/// of quietly writing somewhere surprising. Nothing in the image sets either
-/// name; the override exists for tests.
+/// A DIRECTORY, which is why the name says so: a value naming a single file
+/// would be treated as a directory and render `<that file>/root`. Nothing in
+/// the image sets it; the override exists for tests.
 const AUTHORIZED_KEYS_DIR_ENV: &str = "MOSD_AUTHORIZED_KEYS_DIR";
 /// Mode of the rendered drop-in: world-readable configuration, owner-writable.
 const DROP_IN_MODE: u32 = 0o644;
@@ -137,10 +129,9 @@ impl SshdReconciler<Systemd> {
     /// [`AUTHORIZED_KEYS_DIR_ENV`] and [`transient::SHADOW_ENV`] if set, else
     /// the system locations.
     ///
-    /// The shadow path is resolved by [`transient::production_shadow_path`]
-    /// rather than by a second copy of the same constant and env var: two
-    /// constants naming one file drift, and this reconciler and the transient
-    /// module have to agree about which file the marker sits beside.
+    /// The shadow path is resolved by [`transient::production_shadow_path`],
+    /// not by a second copy of the constant and env var: this reconciler and
+    /// the transient module must agree which file the marker sits beside.
     pub fn production() -> Self {
         let drop_in = std::env::var(DROP_IN_ENV)
             .map(PathBuf::from)
@@ -195,12 +186,10 @@ fn validate_listen_addresses(addresses: &[String]) -> Result<()> {
 /// end up with a running but unreachable server; closure is already expressed
 /// by `enabled: false`.
 ///
-/// `password_authentication` is the **effective** value, not
-/// `ssh.password_authentication`: the caller has already ANDed the setting with
-/// whether a transient root password is active. It is a parameter rather than a
-/// second read of the settings so that this function stays pure — the gating
-/// input is state outside the settings tree, and a renderer that reached for it
-/// itself could not be compared byte-for-byte in a test.
+/// `password_authentication` is the **effective** value: the caller has
+/// already ANDed the setting with whether a transient root password is active.
+/// A parameter and not a second read, so this function stays pure and its
+/// bytes stay comparable in a test.
 ///
 /// No `AuthorizedKeysFile` directive is emitted: the static
 /// `05-mos-authorized-keys.conf` owns that keyword and sorts first.
@@ -287,24 +276,20 @@ impl<C: UnitControl> SshdReconciler<C> {
 
     /// Render the same key list into one file per entry of `accounts`.
     ///
-    /// The caller has already re-validated the list, so anything reaching this
-    /// point is renderable — and it is rendered **once**, before the first file
-    /// is opened, so no account can be written from a different key list than
-    /// another. An unchanged file is not rewritten: these live on STATE, and a
-    /// rewrite that changes nothing still costs a flash write on every
-    /// reconcile.
+    /// The caller has already re-validated the list, and it is rendered
+    /// **once** before the first file is opened, so no two accounts can be
+    /// written from different key lists. An unchanged file is not rewritten:
+    /// these live on STATE, and a no-op rewrite still costs a flash write.
     ///
-    /// **No account is checked for existence.** `mos` may not exist yet on a
-    /// given image, and asking `/etc/passwd` would couple this reconciler to
-    /// account state it does not own — failing exactly in the window where the
-    /// account and this render land out of order. A key file for an account
-    /// that cannot log in is inert: `AuthorizedKeysFile
-    /// /etc/ssh/authorized_keys.d/%u` is expanded from the user sshd is
-    /// authenticating, so a file no login ever names is never read.
+    /// **No account is checked for existence.** Asking `/etc/passwd` would
+    /// couple this reconciler to account state it does not own, failing in the
+    /// window where the account and this render land out of order. A key file
+    /// for an account that cannot log in is inert: `AuthorizedKeysFile
+    /// /etc/ssh/authorized_keys.d/%u` expands from the user sshd is
+    /// authenticating, so a file no login names is never read.
     ///
-    /// `accounts` is a parameter rather than a direct read of
-    /// [`MANAGED_LOGIN_ACCOUNTS`] so a test can prove that last paragraph
-    /// against an account name no system could have.
+    /// `accounts` is a parameter and not a read of [`MANAGED_LOGIN_ACCOUNTS`]
+    /// so a test can prove that against an account name no system could have.
     fn apply_authorized_keys(&self, keys: &[AuthorizedKey], accounts: &[&str]) -> Result<()> {
         let rendered = render_authorized_keys(keys);
         if !self.authorized_keys_dir.exists() {
@@ -356,22 +341,17 @@ impl<C: UnitControl> SshdReconciler<C> {
     /// established session keeps running.
     ///
     /// **`KillMode` is not what keeps those sessions alive.** Debian's
-    /// `openssh-server` happens to ship `KillMode=process`, which would spare
-    /// established sessions across a restart — but nothing in this image chose
-    /// that value, nothing here asserts it, and a future package revision could
-    /// change it with no signal on our side. Reload survives by construction
-    /// rather than by that grace, which is why a restart here would *not* be
-    /// equally fine.
+    /// `openssh-server` ships `KillMode=process`, which would spare established
+    /// sessions across a restart, but nothing in this image chose that value
+    /// and a future package revision can change it silently. Reload survives by
+    /// construction rather than by that grace.
     ///
-    /// **This depends on `ssh.service` carrying `ExecReload`.** That comes from
-    /// the Debian `openssh-server` package; this repo ships no `ssh.service`, so
-    /// the property is inherited rather than chosen — the same shape of problem
-    /// as `KillMode`, in a new place. A unit file without `ExecReload` makes
-    /// systemd refuse the job, and that refusal is surfaced with an error naming
-    /// `ExecReload` and saying the configuration change has not been applied.
-    /// There is deliberately **no fallback to `restart`**: falling back would
-    /// silently reintroduce the disconnect this reload exists to prevent, and
-    /// would hide the missing `ExecReload` from the next person to look.
+    /// **This depends on `ssh.service` carrying `ExecReload`**, which is the
+    /// Debian package's and not this repo's. A unit without it makes systemd
+    /// refuse the job, and the refusal is surfaced with an error naming
+    /// `ExecReload` and saying the change has not been applied. There is
+    /// deliberately **no fallback to `restart`**: it would reintroduce the
+    /// disconnect this reload prevents and hide the missing `ExecReload`.
     ///
     /// Enable/disable and start/stop are unit **state** changes, not
     /// configuration changes, and stay as they are. A unit that is not running
