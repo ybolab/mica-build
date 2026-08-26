@@ -475,9 +475,8 @@ impl<C: UnitControl> Reconciler for SshdReconciler<C> {
             "transientPasswordActive": transient_active,
             "listenAddresses": ssh.listen_addresses,
             "dropIn": self.drop_in_path.display().to_string(),
-            // Plural, and renamed from `authorizedKeysPath`: one key set is
-            // now rendered to one file per managed account, so a single path
-            // could only ever name one of them.
+            // Plural: one key set is rendered to one file per managed
+            // account, so a single path could only ever name one of them.
             "authorizedKeysPaths": self.authorized_keys_paths(),
             "authorizedKeys": authorized_keys,
             "unit": SSH_UNIT,

@@ -205,22 +205,19 @@ impl<C: UnitControl> MqttReconciler<C> {
     /// coupling this reconciler does not have, and the module docs and
     /// [`mosd_settings::MqttSettings`] both say so.
     ///
-    /// The refusal is REACHABLE, not theoretical. `mos-mqtt-broker.service`
-    /// carries `StartLimitIntervalSec=60` / `StartLimitBurst=5`, so a broker
-    /// that fails for a persistent reason -- an unparseable
-    /// `mqtt.listen.address` is the one this reconciler renders verbatim and
-    /// refuses to correct -- exhausts five attempts in about 25 seconds, and
-    /// systemd then rejects every start job for the rest of that minute.
-    ///
-    /// And it is worse than one operator seeing one error, because reconcilers
-    /// run together: an unrelated settings write -- a hostname change, a WiFi
-    /// edit -- would fail on a broker in cool-off that has nothing to do with
-    /// the change being made.
+    /// The refusal is REACHABLE. `mos-mqtt-broker.service` carries
+    /// `StartLimitIntervalSec=60` / `StartLimitBurst=5`, so a broker that
+    /// fails for a persistent reason -- an unparseable `mqtt.listen.address`,
+    /// which this reconciler renders verbatim and refuses to correct --
+    /// exhausts five attempts in about 25 seconds and systemd then rejects
+    /// every start job for the rest of that minute. Reconcilers run together,
+    /// so an unrelated settings write would fail on a broker in cool-off that
+    /// has nothing to do with the change being made.
     ///
     /// **Nothing is hidden by this.** The WARN names the unit and the error,
     /// and the live state below publishes each unit's `activeState`, which the
-    /// apid MQTT pane already renders as a failed broker pointing the operator
-    /// at `journalctl -u mos-mqtt-broker`. Report, do not gate.
+    /// apid MQTT pane renders as a failed broker pointing the operator at
+    /// `journalctl -u mos-mqtt-broker`. Report, do not gate.
     ///
     /// Start only. The stop and disable path keeps propagating its errors: a
     /// unit that will not stop is not something a start limit causes, and
