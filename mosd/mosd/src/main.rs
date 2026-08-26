@@ -2,33 +2,29 @@
 //!
 //! Owns the settings tree (persisted via `mosd-settings`) and a live-state
 //! tree, exposed on D-Bus as `com.mos.mosd` / `/com/mos/mosd` /
-//! `com.mos.mosd1`.
+//! `com.mos.mosd1`. Configuration comes from the environment:
 //!
-//! Configuration is taken from the environment:
-//!
-//! - `MOSD_SETTINGS_PATH` — settings file location (default
+//! - `MOSD_SETTINGS_PATH` — settings file (default
 //!   `/var/lib/mos/settings.toml`).
 //! - `MOSD_BUS` — `system` (default) or `session`.
-//! - `MOSD_SHADOW_PATH` — shadow file a transient root password is written
-//!   into (default `/etc/shadow`, which is a symlink onto STATE on the v2
-//!   image). The sshd reconciler honours the same variable.
+//! - `MOSD_SHADOW_PATH` — the shadow file a transient root password is written
+//!   into (default `/etc/shadow`, a symlink onto STATE on the v2 image); the
+//!   sshd reconciler honours the same variable.
 //! - `MOSD_DRY_RUN` — when `1`, first-boot provisioning is skipped, no
-//!   reconcilers are constructed, no service scan is constructed, power
-//!   actions are routed to a no-op control, and the live-state root carries
-//!   `{"dry_run": true}`; used by tests so the daemon never touches the host
-//!   it runs on.
-//! - `MOSD_SCAN` — a one-way test hook over the service scan ([`scan`]).
-//!   Setting it to `1` constructs the scan under `MOSD_DRY_RUN=1`, which on
-//!   its own constructs none. It can only ever turn the scan ON: in production
-//!   the scan is constructed unconditionally and the variable is ignored,
-//!   whatever it holds. The scan is passive — a match rule and read-only bus
-//!   calls, writing only the in-RAM live-state tree — so lifting dry-run's
-//!   suppression over it touches no file, no unit and no host state.
+//!   reconcilers or service scan are constructed, power actions go to a no-op
+//!   control, and the live-state root carries `{"dry_run": true}`; used by
+//!   tests so the daemon never touches its host.
+//! - `MOSD_SCAN` — a one-way test hook over the service scan ([`scan`]): `1`
+//!   constructs the scan under `MOSD_DRY_RUN=1`, which alone constructs none.
+//!   It can only turn the scan on; in production the scan is constructed
+//!   unconditionally and the variable ignored. The scan is passive — a match
+//!   rule and read-only bus calls writing only the in-RAM live-state tree — so
+//!   lifting dry-run over it touches no file, unit or host state.
 //!
-//! One argument is understood, and it is answered before any of the above is
-//! read: `--version` (or `-V`) prints `mosd <crate version> (<build commit>)`
-//! and exits 0 without provisioning, connecting to a bus or writing a file.
-//! See [`main`]. Anything else on the command line is ignored.
+//! `--version` (or `-V`) is answered before any of the above is read: it prints
+//! `mosd <crate version> (<build commit>)` and exits 0 without provisioning,
+//! connecting to a bus or writing a file (see [`main`]). Anything else on the
+//! command line is ignored.
 
 #![forbid(unsafe_code)]
 
@@ -103,19 +99,16 @@ fn commit_or_unknown(embedded: Option<&'static str>) -> &'static str {
 
 /// The one line `--version` prints: `mosd <version> (<commit>)`.
 ///
-/// Both halves come from the build. The version is `CARGO_PKG_VERSION`, the
-/// same `Cargo.toml` value `os/verify/src/smoke-pins.ts` reads to decide what
-/// this binary must report, so the comparison has two readers of one value.
-///
-/// The commit is `MOS_BUILD_COMMIT`, resolved on the HOST by
-/// `mosd/hack/build-target.sh`. There is deliberately no `build.rs` that shells
-/// out to git: the build mount is a git WORKTREE, so `git rev-parse HEAD`
-/// inside it fails with `fatal: not a git repository`, and a build script
-/// written to tolerate that would embed nothing on every build.
-///
-/// Embedding a sha costs no reproducibility -- two builds of one commit agree
-/// -- but it does cost byte-identity ACROSS commits, so anything comparing
-/// mosd against apid across commits carries a permanent expected difference.
+/// The version is `CARGO_PKG_VERSION`, the same `Cargo.toml` value
+/// `os/verify/src/smoke-pins.ts` reads to decide what this binary must report,
+/// so the comparison has two readers of one value. The commit is
+/// `MOS_BUILD_COMMIT`, resolved on the host by `mosd/hack/build-target.sh`:
+/// there is deliberately no `build.rs` shelling out to git, because the build
+/// mount is a git worktree and `git rev-parse HEAD` inside it fails with
+/// `fatal: not a git repository`. Embedding a sha costs no reproducibility --
+/// two builds of one commit agree -- but it does cost byte-identity across
+/// commits, so anything comparing mosd against apid across commits carries a
+/// permanent expected difference.
 fn version_line() -> String {
     format!(
         "{} {} ({})",
@@ -354,7 +347,7 @@ mod tests {
         assert!(wants_version(argv(&["-V"])));
     }
 
-    /// DRIVEN FROM THE FAILING SIDE. Every one of these must fall through into
+    /// Driven from the failing side. Every one of these must fall through into
     /// the daemon, and `-v` is the one that matters most: it is the spelling an
     /// operator reaches for, it is NOT this flag, and a loose match on it would
     /// silently stop mosd from starting on any unit that passed it.
@@ -390,7 +383,7 @@ mod tests {
         ])));
     }
 
-    /// ABSENT IS `unknown`, NEVER AN ERROR -- and empty counts as absent,
+    /// Absent is `unknown`, never an error -- and empty counts as absent,
     /// because `-e MOS_BUILD_COMMIT=` sets the variable to exactly that.
     #[test]
     fn a_commit_the_build_did_not_supply_reports_unknown() {
