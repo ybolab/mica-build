@@ -263,9 +263,79 @@ else
     echo "note: mosd declined; building rootfs without stages/33-feature-mosd"
 fi
 
-# Board hardware-init facts (confs consumed by the os/boards/cx3576/hwinit
-# units), staged like mosd so the Dockerfile COPY always has a directory
-# (may be empty).
+# ==== THE BOARD'S OWN CONTENT, staged so that stages/40-board names no board ==
+#
+# RFCT-111 M5d. 40-board used to COPY two fixed cx3576 paths on every board --
+# five AIC8800D80 firmware files and the six hwinit oneshots -- and x64 staged
+# both and discarded them at runtime. A COPY cannot be gated on an ARG, so what
+# replaced the literals is what MODULES_TAR and BOARD_INIT_DIR already were: a
+# DIRECTORY this script fills from the board's own trees, empty when the board
+# declares nothing. The three below and modules.tar above are the whole set,
+# and they are together so that adding a board means filling directories rather
+# than editing a Dockerfile.
+
+# Radio firmware, filtered to what the board declares.
+#
+# NOT the whole BSP drop. board/<b>/rootfs/firmware is the vendor tarball --
+# 33 files for cx3576, most of them other AIC parts (8800dc, 8800dw) and other
+# silicon revisions -- and only the confirmed runtime set may enter a signed
+# root. BOARD_FIRMWARE_FILES in os/boards/<b>/board.env is that set and already
+# was: os/verify-image-v2.sh has asserted the image against it since x64
+# arrived. Read here rather than copied, so the build and the verifier cannot
+# disagree about which firmware the board carries.
+#
+# The declared paths are INSTALLED paths (/usr/lib/firmware/...), because that
+# is what the verifier needs them to be. This takes the basename and requires
+# the BSP to have it: a declared file the drop does not contain is a build
+# error naming both, rather than a device whose driver finds no firmware.
+FW_STAGE="$OUT_DIR/firmware"
+rm -rf "$FW_STAGE"
+mkdir -p "$FW_STAGE"
+for fw in ${BOARD_FIRMWARE_FILES}; do
+    case "$fw" in
+    /usr/lib/firmware/*) ;;
+    *)
+        echo "error: $LAYOUT_ENV declares BOARD_FIRMWARE_FILES entry '$fw', which is not under /usr/lib/firmware/. The entries are INSTALLED paths -- os/verify-image-v2.sh checks the image for each one, and stages/40-board's installer asserts the same paths after the move" >&2
+        exit 1
+        ;;
+    esac
+    fw_src="$BOARD_DIR/rootfs/firmware/${fw##*/}"
+    if [ ! -f "$fw_src" ]; then
+        echo "error: $LAYOUT_ENV declares $fw and $fw_src does not exist." >&2
+        echo "Firmware is a BSP artefact like modules.tar; point BOARD_DIR at a tree that has it," >&2
+        echo "e.g. BOARD_DIR=/srv/ai/mos/board/$MOS_BOARD" >&2
+        exit 1
+    fi
+    cp "$fw_src" "$FW_STAGE/${fw##*/}"
+done
+if [ -n "${BOARD_FIRMWARE_FILES}" ]; then
+    echo "firmware: staged $(find "$FW_STAGE" -type f | wc -l | tr -d ' ') file(s) from $BOARD_DIR/rootfs/firmware"
+else
+    echo "note: $MOS_BOARD declares BOARD_FIRMWARE_FILES empty; staging no radio firmware"
+fi
+
+# The hwinit oneshots and their units, from THIS board's directory.
+#
+# os/boards/<b>/hwinit, not os/boards/cx3576/hwinit. The mechanism in
+# stages/40-board is board-agnostic and always was; what was filed under one
+# board was the CONTENT, because cx3576 was the only board declaring a fact for
+# any of it to read. x64 carried all six scripts, ran none, and the image
+# verifier reported hwinit-bt's `rfkill unblock` as a dependency on a binary
+# that board has no reason to install.
+#
+# A board with no hwinit/ stages an empty directory -- the same statement
+# BOARD_INIT_DIR below has always been allowed to make. It is not silent: a
+# board that declares a fact and stages no script for it fails in
+# hwinit-install.sh, by name.
+HWINIT_STAGE="$OUT_DIR/hwinit"
+rm -rf "$HWINIT_STAGE"
+mkdir -p "$HWINIT_STAGE"
+if [ -d "$REPO_ROOT/os/boards/$MOS_BOARD/hwinit" ]; then
+    cp -a "$REPO_ROOT/os/boards/$MOS_BOARD/hwinit/." "$HWINIT_STAGE/"
+fi
+
+# Board hardware-init facts (the confs the hwinit units consume), staged like
+# mosd so the Dockerfile COPY always has a directory (may be empty).
 INIT_STAGE="$OUT_DIR/init"
 rm -rf "$INIT_STAGE"
 mkdir -p "$INIT_STAGE"
@@ -577,7 +647,11 @@ if ! bash "$REPO_ROOT/os/build/run.sh" --build-rootfs \
         --arg MOS_ARCH="$MOS_ARCH" \
         --arg RAUC_BOOTLOADER="$RAUC_BOOTLOADER" \
         --arg BOARD_RADIOS="$BOARD_RADIOS" \
+        --arg MOS_BOARD="$MOS_BOARD" \
         --arg MODULES_TAR="_out/$MOS_BOARD/modules.tar" \
+        --arg BOARD_FIRMWARE_DIR="_out/$MOS_BOARD/firmware" \
+        --arg BOARD_FIRMWARE_FILES="$BOARD_FIRMWARE_FILES" \
+        --arg BOARD_HWINIT_DIR="_out/$MOS_BOARD/hwinit" \
         --arg BOARD_INIT_DIR="_out/$MOS_BOARD/init" \
         --arg OVERLAY_DIR="_out/$MOS_BOARD/overlay-v2" \
         ${SELECT_ARGS[@]+"${SELECT_ARGS[@]}"} \

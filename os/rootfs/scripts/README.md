@@ -47,6 +47,18 @@ copy was a chance to disagree with the others. A declined feature is now a stage
 file the driver does not build, so a script that runs at all was asked for.
 `../stages/README.md` has the mechanism.
 
+`MOS_ARCH` came off `firmware-install.sh`'s list for a related reason. RFCT-111
+M5d parameterised `40-board` by the board: the five AIC firmware files and the
+six hwinit oneshots used to be `COPY`d from fixed `cx3576` paths on every board,
+and this script was where the *other* board threw the firmware away, on
+`MOS_ARCH = amd64`. The board now stages what it carries, so the question the
+script asks is what is here rather than which board it is on — and
+`BOARD_FIRMWARE_FILES`, the same layout key `os/verify-image-v2.sh` checks the
+image against, is what it asserts landed. `hwinit-install.sh` gained `MOS_BOARD`
+in the same change and **branches on none of it**: it names the board's own
+`os/boards/<board>/hwinit` in its diagnostics, where it used to send every
+reader to `cx3576`'s.
+
 The failing side matches too. An `ARG` declared with no value is *unset* in the
 environment, not empty, so a `set -u` on it fails inside the script for the same
 reason and with the same message it failed inline. Each script names the
