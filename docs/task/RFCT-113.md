@@ -77,6 +77,33 @@ deep lane, and anyone can run it directly — a step wired into the callers woul
 be three copies to keep in step and bypassed by the fourth. No skip and no
 opt-out.
 
+**Its ordering, stated rather than implied.** Pack → export → *the two existing
+refusals about the archive* → smoke → (the caller assembles). The step sits
+**after** `build-v2.sh`'s own checks that `factory-root.oci` exists, is non-empty
+and carries an `index.json`, not before them — so a missing or non-OCI archive is
+still diagnosed as itself rather than arriving at the smoke runner as a
+`docker load` failure. Those refusals are ~120 lines earlier in the file; the
+smoke step is the last line, unguarded, with nothing after it whose success could
+mask it.
+
+**And what it costs a build that used to pass, driven rather than asserted.** A
+smoke failure now fails the image build — that is the clause. The dangerous
+half is the other one: *a build that silently skipped the step would produce an
+image indistinguishable from one whose smoke run passed*, which is
+`build-v2.sh`'s own sentence about a missing archive, now applying to this step.
+**There is no skip path**, and both ways a real build host could lack the means
+to run it were driven:
+
+| host | measured |
+|---|---|
+| bun present, **no docker** | `error: Executable not found in $PATH: "docker"`, exit **1** |
+| **no bun, no docker** | `error: --smoke on a host with no bun needs docker, and there is none`, exit **1** |
+
+Both were then run through the actual seam — the same command under
+`set -euo pipefail` with a line after it — and in neither case did that line
+execute. A host that cannot execute the image at all is caught earlier still, by
+`preflight`, which refuses before concluding anything about any artifact.
+
 **The three negative tests are `os/verify/src/smoke-negative.ts`**, `make
 os-smoke-negative-test`. Each MAKES its defect in a real image built from the
 real factory root and drives the real `docker run` at it — a wrong-arch ELF, a

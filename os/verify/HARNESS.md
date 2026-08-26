@@ -1195,12 +1195,30 @@ was reported as *"the path does not exist in the factory root"* (it is there).
 126, which the map gave to both, is produced by neither.
 
 **The same file already held the measurement.** `preflight`'s comment records
-`status 255` with `exec format error` for the arm64 wall. One half of the module
-had the measurement and the other had the convention, and nothing compared them
-— because both branches were reachable in the suite only from a **fabricated**
-`ExecResult`, where the test chooses the status whose diagnosis it then asserts.
-That is why RFCT-113's three negative tests are not unit tests: see
-`src/smoke-negative.ts`, and "The three negative tests" below.
+`status 255` with `exec format error` for the arm64 wall, *"measured on this host
+against a pulled upstream arm64v8/busybox"*. So this module held the measured
+wrong-arch status and the assumed one **at the same time**, roughly 450 lines
+apart, and nothing compared them — because both `judge` branches were reachable
+in the suite only from a **fabricated** `ExecResult`, where the test chooses the
+status whose diagnosis it then asserts. That is why RFCT-113's three negative
+tests are not unit tests: see `src/smoke-negative.ts`, and "The three negative
+tests" below.
+
+**A second instance of one shape, and the shape is worth naming.** L2 pointed at
+M4d's finding 6 above — `:3765` and `:3899` disagreeing about an empty shadow
+field — as the precedent, and it is: *one artifact holding two contradictory
+statements about the same fact, both of them shipping.* This is that, again.
+
+**But the two failed for different reasons, and collapsing them would lose the
+useful half.** M4d's pair were both driven from real fixtures; what they
+disagreed about was which of two plausible RULES to apply to a field, and the
+disagreement was findable by reading them side by side. This one was not
+findable that way, because only one side was ever a measurement: `preflight`'s
+255 came from a real `docker run`, and `judge`'s 126 came from `docker run`'s
+documented convention with a suite that confirmed it by supplying the number.
+**Reading the two side by side is what M4d needed; it is not what would have
+caught this.** What catches this is driving one case through the real seam —
+which is what M7c added, and which the M4d pair never needed.
 
 ### The three negative tests
 
