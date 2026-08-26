@@ -1,19 +1,17 @@
 /**
  * The proof that this suite can fail.
  *
- * A check only ever observed passing is not evidence here --
- * `os/verify-image-v2.sh` says so of itself, and `docs-verify-test` and
- * `os-layout-lint-test` are the established shape. So every assertion helper,
- * the cookie jar, the redirect refusal, the verbatim request writer and the
- * phase runner are driven against deliberately wrong inputs, each required to
- * have failed with its own message; a `PASS:` line means "this wrong input was
- * correctly rejected". Positive controls sit alongside them, because a helper
- * hardwired to always fail satisfies the negatives alone. The peer is a stub
- * HTTP server on loopback over `node:net`, so no network, docker, QEMU or image
- * is needed; it carries no private key, and every case here is
- * transport-independent, so `inspectCertificate()` is exercised against apid in
- * phase 01 instead. That is a stated limit: a throwaway TLS key would trade a
- * real secret-scan alarm and a real expiry cliff for coverage 01 already has.
+ * A check only ever observed passing is not evidence here, the shape
+ * `os/verify-image-v2.sh`, `docs-verify-test` and `os-layout-lint-test`
+ * establish. So every assertion helper, the cookie jar, the redirect refusal,
+ * the verbatim request writer and the phase runner are driven against
+ * deliberately wrong inputs, each required to have failed with its own message,
+ * with positive controls alongside because a helper hardwired to always fail
+ * satisfies the negatives alone. The peer is a stub HTTP server on loopback
+ * over `node:net`, needing no network, docker, QEMU or image and carrying no
+ * private key, so `inspectCertificate()` is exercised against apid in phase 01
+ * instead -- a stated limit, taken over a throwaway TLS key that would be a
+ * real secret-scan alarm and a real expiry cliff.
  */
 
 import * as net from "node:net";
