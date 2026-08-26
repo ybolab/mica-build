@@ -1,10 +1,10 @@
 //! The broker side, behind one trait.
 //!
-//! [`Transport`] is the seam the crate's recorded testing decision rests on
-//! (see the crate docs): everything this bridge is responsible for sits above
-//! it, and what sits below it is an MQTT client library that upstream already
-//! tests. The protocol tests supply their own implementation; the daemon
-//! supplies [`MqttTransport`].
+//! [`Transport`] is the seam the crate's tests rest on (see the crate docs):
+//! everything this bridge is responsible for sits above it, and what sits
+//! below it is an MQTT client library that upstream already tests. The
+//! protocol tests supply their own implementation; the daemon supplies
+//! [`MqttTransport`].
 
 use async_trait::async_trait;
 use rumqttc::{AsyncClient, QoS};
