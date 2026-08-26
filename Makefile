@@ -16,7 +16,8 @@ BOARDS := cx3576 x64
 	os-shadow-test os-dbus-policy-test os-repart-test \
 	os-uboot-handshake-test \
 	os-layout-lint os-layout-lint-test os-verify-test os-build-test \
-	docs-verify docs-verify-test build-env
+	docs-verify docs-verify-test \
+	docs-verify-citations docs-verify-citations-test build-env
 
 help:
 	@echo "mos build targets:"
@@ -247,6 +248,28 @@ docs-verify:
 # when it cannot run rather than skipping.
 docs-verify-test:
 	bash docs/verify-index-test.sh
+
+# Every `path:line` citation in the English design documents, checked twice: the
+# path resolves and the lines exist, and where the citing text quotes its
+# source, the quote is still at the lines it cites. Resolution alone is not
+# enough -- a quotation whose source was renamed underneath it still resolves,
+# and reads as a statement the source contradicts. Advisory today because the
+# documents carry drift the check reports honestly and nobody has repaired yet;
+# it gates once a run over the tree is green, and the flag is the only thing
+# that has to change. A provenance claim -- "measured at <commit>" -- is
+# validated against no file at all, here or anywhere, and stays a human
+# responsibility.
+docs-verify-citations:
+	bash docs/verify-citations.sh --advisory
+
+# Negative tests for the target above. Each assertion is driven against a
+# fixture where its fact is false and required to fail with its own message,
+# and the report's skipped counts are asserted as output -- a check that drops
+# a category quietly reads green while part of its input was never opened.
+# Needs no root and no network, and it fails loudly when it cannot run rather
+# than skipping.
+docs-verify-citations-test:
+	bash docs/verify-citations-test.sh
 
 # Every example in docs/design/containers.md, fed to the aarch64 Quadlet
 # generator the image ships. A configuration example nothing executes is a claim

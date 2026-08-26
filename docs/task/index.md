@@ -114,7 +114,7 @@ Each task is a single line linking to its detail file. All detailed information 
 - [x] [**RFCT-089 PLAN-011 M1: bus contract design doc and the read-only com.mos.Item1 tree facade**](RFCT-089.md) `P1`
 - [x] [**RFCT-090 PLAN-011 M2: writable items and /Actions/*, apid power pane on action items**](RFCT-090.md) `P1`
 - [x] [**RFCT-091 PLAN-011 M3: mos-mqttd, the MQTT data-publishing bridge**](RFCT-091.md) `P1`
-- [ ] [**RFCT-092 A mechanism that checks docs citations, because five of them rotted in two merges**](RFCT-092.md) `P2`
+- [x] [**RFCT-092 A mechanism that checks docs citations, because five of them rotted in two merges**](RFCT-092.md) `P2`
 - [x] [**RFCT-093 PLAN-011 M5: extension enablement — writable unit directory, the com.mos.ext namespace, and the bus scan**](RFCT-093.md) `P1`
 - [ ] [**RFCT-094 Dotted keys have no item object, and M5 makes that certain rather than theoretical**](RFCT-094.md) `P2`
 - [x] [**RFCT-095 The com.mos.ext policy assertions cannot fail, and hoisting them needs a different shape**](RFCT-095.md) `P2`
@@ -143,3 +143,11 @@ Each task is a single line linking to its detail file. All detailed information 
 - [x] [**RFCT-118 PLAN-016 M2: the read-only settings and state roots, redacted, under one error envelope**](RFCT-118.md) `P1`
 - [x] [**RFCT-119 PLAN-016 M3: the spec-identity check and the oasdiff breaking-change gate**](RFCT-119.md) `P1`
 - [x] [**RFCT-120 PLAN-016 M4: comment simplification inside mosd/apid**](RFCT-120.md) `P1`
+- [x] [**RFCT-121 PLAN-015 M4: the docs citation checker, resolution and content**](RFCT-121.md) `P2`
+- [ ] [**RFCT-122 PLAN-015 M5: api.md loses its citation banner, its defect register, and its rotted citations**](RFCT-122.md) `P2`
+- [ ] [**RFCT-123 PLAN-015 M5: dashboard.md loses its citation banner and the rejected-option analysis**](RFCT-123.md) `P2`
+- [ ] [**RFCT-124 PLAN-015 M5: the remaining design-doc banners, and architecture.md rewritten to the system that ships**](RFCT-124.md) `P2`
+- [ ] [**RFCT-125 PLAN-015 M5: the two HARNESS files become manuals instead of campaign journals**](RFCT-125.md) `P2`
+- [ ] [**RFCT-126 PLAN-015 M5: README sweep, root and extensions and the two TS suites**](RFCT-126.md) `P2`
+- [ ] [**RFCT-127 PLAN-015 M5: README sweep, the rootfs tree and the container engine**](RFCT-127.md) `P2`
+- [ ] [**RFCT-128 PLAN-015 M5: citations repaired against the checker, and the check made to gate**](RFCT-128.md) `P2`
