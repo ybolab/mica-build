@@ -211,6 +211,20 @@ and M5.
 - **Per-stage chaining loses single-file BuildKit cross-stage parallelism
   and shared cache mounts.** Accepted (decision 2): the rootfs chain is
   already linear; per-stage local images cache naturally.
+- **Per-stage chaining also costs the QEMU-bundled `docker-container`
+  builder, so cx3576 CI waits on runner binfmt.** Accepted 2026-08-26 **by
+  the user**, as a known cost of decision 2. Each stage opens
+  `FROM ${MOS_STAGE_PREV}` — a local image tag — and only the `docker` driver
+  can resolve one; a `docker-container` builder answers "pull access denied"
+  about a registry for an image that is present (measured, RFCT-111 M5b).
+  That builder was how an amd64 host built arm64 without host `binfmt_misc`,
+  so cx3576 now needs the runner to provide binfmt and **cannot be built
+  without it** — `os/rootfs/build-v2.sh` refuses up front with the install
+  command rather than failing inside BuildKit. **No registry is introduced
+  into the build path** to work around it: a local registry would resolve the
+  stage tags, and it would add a daemon, a lifetime and a network dependency
+  to a build that has none. `os/rootfs/stages/README.md`, "The builder must
+  resolve local tags", carries the measurement and the consequence to expect.
 - **Byte-identity across the M5 split may be unattainable** if package
   install order changes layer content; the fallback gate (verifier parity +
   anchored baseline) is defined up front, not improvised.

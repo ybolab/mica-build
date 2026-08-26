@@ -415,13 +415,46 @@ therefore checks the builder's driver up front and refuses by name, because
 that error arriving forty minutes into a build, pointing at Docker Hub, is a
 diagnosis nobody makes quickly.
 
-This matters for **cross-architecture builds and no other case**.
-`build-v2.sh` falls back to a `docker-container` builder exactly when the
-current builder cannot reach the target platform — an amd64 host building
-cx3576's arm64 without host `binfmt_misc`. On such a host the chain needs
-`binfmt` installed (so the `docker` driver can reach arm64 itself) or a local
-registry to hold the stage tags. A host that can build the target natively,
-or that has binfmt, is unaffected.
+This matters for **cross-architecture builds and no other case**. A host that
+can build the target natively, or that has `binfmt_misc`, is unaffected.
+
+**`build-v2.sh` does not fall back — it refuses.** What stood here before M5b
+created a `docker-container` builder when the current one could not reach the
+target platform, and that route cannot carry a chain, so the script now names
+the `default` builder and stops with the `binfmt` command in the message.
+Measured on this host, 2026-08-26:
+
+```
+error: the 'default' buildx builder cannot reach linux/arm64.
+       Its platforms are: linux/amd64, linux/amd64/v2, linux/amd64/v3, linux/amd64/v4
+       Install arm64 emulation on the host:
+         docker run --privileged --rm tonistiigi/binfmt --install arm64
+```
+
+### What that costs cx3576, and the decision taken on it
+
+**Accepted by the user, 2026-08-26, as a known cost of PLAN-014 decision 2**
+(per-stage Dockerfiles chained by local tag). Recorded here rather than solved,
+because the alternatives each give up something the decision was taken to keep:
+
+- **cx3576 CI waits on runner binfmt.** It cannot build arm64 until the runner
+  provides `binfmt_misc`; there is no arrangement of builders on a host without
+  it that produces a cx3576 image. `.gitea/workflows/privileged.yml` states the
+  requirement in its preflight header and marks it as analysed rather than
+  observed, which is still true: no arm64-capable runner has been available to
+  this campaign.
+- **No registry in the build path.** Holding the stage tags in a local registry
+  would let a `docker-container` builder resolve `FROM ${MOS_STAGE_PREV}`, and
+  it is deliberately not done. The chain resolves stages by **local tag**, and
+  keeping it that way is part of decision 2: a registry in the build path is a
+  daemon to run, a lifetime to manage and a network dependency in a build that
+  currently has none.
+
+The consequence to expect, so nobody reads it as a break: on a host without
+binfmt, `MOS_BOARD=cx3576` staging runs to completion — firmware, hwinit and
+board facts are all selected and staged — and then stops at the builder check.
+That is the refusal above, and it is the designed behaviour, not a failure to
+diagnose.
 
 ## The shell, the arguments, and the bind mount
 
