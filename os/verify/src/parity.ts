@@ -1,60 +1,37 @@
 // The parity harness: what the shell verifier concluded, what the TypeScript
 // port concluded, and where the two differ -- per check.
 //
-// M4b..M4d port os/verify-image-v2.sh's checks in batches and M4e deletes it
-// at full parity; this file is the instrument all four are measured by.
-// Nothing in here runs a check. It parses one verifier's output, takes the
-// other's results, and says -- by NAME, per check -- agree, diverge, or not
-// ported.
+// Nothing here runs a check: it parses one verifier's output, takes the other's
+// results, and says by name, per check, agree / diverge / not ported.
 //
-// Why not a count.
+// By name and not by count, following os/tests/ui-location-test.sh: a count
+// breaks whenever the suite is widened, and "exit 0 with no FAIL lines" is
+// invariant under a run in which nothing executed. "395 checks both sides" is
+// equally true of two runs that agreed on 395 and of two that agreed on none
+// because both were empty -- M3a's board-env oracle reported agreement "on all 0
+// keys" for exactly that reason, a diff of two empty files being green. And a
+// shell check that became a SKIP still contributes to a total; here a SKIP is a
+// third verdict that never equals a PASS, so pass-vs-skip is a named divergence.
 //
-// os/tests/ui-location-test.sh is this repository's reference for the
-// discipline and this file follows it deliberately: it names the assertions it
-// expects by identity and diffs that set against the set that actually ran,
-// because a count breaks whenever the suite is widened and "exit 0 with no FAIL
-// lines" is invariant under a run in which nothing executed at all. The same
-// two traps are live here and worse:
+// Identity is assigned rather than parsed. os/verify-image-v2.sh prints
+// `PASS: <prose>`, `FAIL: <prose>`, `SKIP: <prose>` and nothing else -- measured
+// on both boards' real images 2026-08-25, every one of 398 and 312 stdout lines
+// is a verdict line or the final RESULT line -- but the prose is not an
+// identifier: `eq_ci` prints "X is Y" passing and "X is 'Z', expected Y"
+// failing, so the two directions of one check share only their leading clause.
+// So each ported check carries a substring that appears in its PASS line, plus
+// separate substrings for FAIL and SKIP where the directions do not share one;
+// the shape of ui-location-test.sh's ASSERTIONS table. The register is a field
+// on the CheckCase rather than a file that could drift from it, so a check
+// cannot be ported without saying which shell conclusion it replaces, or claim
+// one without being ported. The shell verifier is NOT modified to emit ids: an
+// oracle edited to make its readings easier to compare is not independent of the
+// thing it measures.
 //
-//   * "395 checks both sides" is equally true of two runs that agreed on 395
-//     checks and of two runs that agreed on none because both were empty. M3a's
-//     board-env oracle reported agreement "on all 0 keys" for exactly that
-//     reason -- diff of two empty files is green.
-//   * A shell check that became a SKIP still contributes to a total. Under a
-//     count it vanishes into the noise; here a SKIP is a THIRD verdict that
-//     never equals a PASS, so pass-vs-skip is a divergence with a name.
-//
-// How a shell line gets an identity.
-//
-// os/verify-image-v2.sh prints `PASS: <prose>`, `FAIL: <prose>`, `SKIP: <prose>`
-// and nothing else -- measured on both boards' real images, 2026-08-25: every
-// one of 398 and 312 stdout lines is a verdict line or the final RESULT line.
-// The prose is not an identifier: `eq_ci` alone prints "X is Y" when it passes
-// and "X is 'Z', expected Y" when it fails, so the two directions of ONE check
-// share only their leading clause.
-//
-// So identity is ASSIGNED, by a register that each ported check carries with
-// it: a substring that appears in its PASS line, and -- where the directions do
-// not share one -- separate substrings for FAIL and SKIP. Exactly the shape of
-// ui-location-test.sh's ASSERTIONS table, which is the tree's own vocabulary
-// for this and has already caught a case asserting two identities the code
-// could never produce. The register is not a separate file that could drift
-// from the port: it is a field on the CheckCase, so a check cannot be ported
-// without saying which shell conclusion it replaces, and cannot claim a shell
-// conclusion without being ported.
-//
-// The shell verifier is NOT modified to emit ids. It is the oracle, and an
-// oracle edited to make its readings easier to compare is not independent of
-// the thing it measures.
-//
-// What "not ported" must look like.
-//
-// At M4a the register is EMPTY, so every shell conclusion is unclaimed. That is
-// the expected state and the harness has to SAY it rather than report agreement
-// -- a report whose headline is "0 divergences" would be true, and would be the
-// most misleading true sentence available. So `not-ported` is a first-class
-// outcome, it is counted separately from agreement, and the conclusion of a run
-// with any of them is INCOMPLETE and never PASS.
+// `not-ported` is a first-class outcome, counted separately from agreement, and
+// a run with any of them concludes INCOMPLETE and never PASS -- a report whose
+// headline was "0 divergences" over an empty register would be true and the most
+// misleading true sentence available.
 
 /** The three things a verifier can conclude about one check. A SKIP is not a PASS. */
 export type Verdict = 'pass' | 'fail' | 'skip'
