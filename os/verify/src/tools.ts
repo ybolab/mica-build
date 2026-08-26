@@ -94,17 +94,97 @@ export interface ToolResult {
 }
 
 /** A tool that ran and failed, or could not be run at all. */
+/**
+ * How many times the package install is attempted before it is believed.
+ *
+ * THE INDEX IS FETCHED OVER THE NETWORK AND APK LIES ABOUT LOSING IT. M6a
+ * measured it on this host: 40 consecutive `apk add` runs in the pinned alpine,
+ * 3 of them failed, and the failure reads
+ *
+ *     ERROR: unable to select packages:
+ *       e2fsprogs (no such package):
+ *
+ * about a package that image unquestionably carries -- because the INDEX FETCH
+ * failed and apk describes an empty index as an empty repository. (A fourth
+ * shape appeared once: exit 6 naming a half-resolved e2fsprogs-libs, which is
+ * the same fetch failing further along.)
+ *
+ * ═══ WHY A RETRY IS LEGITIMATE HERE AND A VERDICT RETRY IS NOT ═══
+ *
+ * This package's rule is that an unreliable environment is itself a finding and
+ * that a retry hiding one is a retry deciding the verdict. That rule is about a
+ * check's ANSWER. This is not an answer: it is the setup, it fails ~7% of the
+ * time, it MISREPORTS its own cause, and the header above notes that the port
+ * batches make hundreds of these calls -- so at one attempt the network decides
+ * whether a parity run is red, for a reason with nothing to do with the image.
+ *
+ * The distinction, stated once: a retry is legitimate when the underlying
+ * failure is MISREPORTED and the retry preserves an honest message; it is
+ * illegitimate when it turns a real signal into silence. A package that
+ * genuinely is not in the repository fails identically every attempt, and the
+ * refusal says how many were made -- so a reader is never told about one run
+ * when there were three.
+ */
+export const APK_ATTEMPTS = 3
+
+/**
+ * Run `attempt` until it exits 0, up to `attempts` times. Hands back the LAST
+ * result, successful or not; deciding what a failure means is the caller's.
+ *
+ * `pause` is a parameter so the suite can drive the exhausted case without
+ * spending three seconds sleeping. Nothing else passes it.
+ */
+export async function retryInstall(
+  attempt: () => Promise<ToolResult>,
+  attempts: number = APK_ATTEMPTS,
+  pause: (ms: number) => Promise<void> = ms => Bun.sleep(ms),
+): Promise<ToolResult> {
+  let last: ToolResult | undefined
+  for (let n = 1; n <= attempts; n += 1) {
+    last = await attempt()
+    if (last.code === 0) return last
+    if (n < attempts) await pause(1000 * n)
+  }
+  if (last === undefined) {
+    throw new ToolOutputError(
+      `retryInstall was asked for ${attempts} attempts and made none, so it has no result to `
+      + `report. A zero attempt count would turn a failed install into a silent success.`,
+    )
+  }
+  return last
+}
+
+/**
+ * What the refusal says after the last attempt, and the reason it says it.
+ *
+ * apk's own sentence is specific, confident and points somewhere useless: it
+ * blames a package the pinned image demonstrably carries. Quoting it unqualified
+ * sends a reader to look for a packaging problem that is not there.
+ */
+export function apkExhaustedNote(image: string, attempts: number = APK_ATTEMPTS): string {
+  return `  attempts: ${attempts}, and all of them failed\n`
+    + `  note:     apk reports a failed index FETCH as "no such package", so that sentence is\n`
+    + `            NOT evidence the named package is absent from ${image} -- ${attempts} attempts are.`
+}
+
 export class ToolError extends Error {
   readonly argv: readonly string[]
   readonly code: number
   readonly stdout: string
   readonly stderr: string
 
-  constructor(result: ToolResult, context: string) {
+  /**
+   * @param note Appended after the captured output, for a tool whose own
+   *   sentence is misleading. apk is the one that needs it: it reports a failed
+   *   index FETCH as "no such package", so quoting its stderr unqualified sends
+   *   a reader to look for a packaging problem that is not there.
+   */
+  constructor(result: ToolResult, context: string, note?: string) {
     super(
       `${context}: \`${result.argv.join(' ')}\` exited ${result.code}\n`
       + `  stderr: ${result.stderr.trim() || '(empty)'}\n`
-      + `  stdout: ${result.stdout.trim().slice(0, 400) || '(empty)'}`,
+      + `  stdout: ${result.stdout.trim().slice(0, 400) || '(empty)'}`
+      + (note === undefined ? '' : `\n${note}`),
     )
     this.name = 'ToolError'
     this.argv = result.argv
@@ -518,11 +598,11 @@ async function createContainerRuntime(
   if (fault !== undefined) await refuseWith(fault)
   rmSync(sentinelPath, { force: true })
 
-  const add = await exec(['apk', 'add', '--no-cache', '-q', ...TOOL_PACKAGES])
+  const add = await retryInstall(() => exec(['apk', 'add', '--no-cache', '-q', ...TOOL_PACKAGES]))
   if (add.code !== 0) {
     await capture(['docker', 'rm', '-f', name])
     liveContainers.delete(name)
-    throw new ToolError(add, `installing the image tools into ${image}`)
+    throw new ToolError(add, `installing the image tools into ${image}`, apkExhaustedNote(image))
   }
 
   // A tool the packages were supposed to carry and do not is the failure this
