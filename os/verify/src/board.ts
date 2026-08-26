@@ -1,32 +1,25 @@
 // The typed view of a board definition.
 //
-// What this adds over the parse. `board-env.ts` turns the file into a map of
-// strings, faithfully. This turns that map into the shape the rest of os/
-// actually reasons about: an ordered partition set, each entry's role and its
-// geometry, the bootloader backend, and the four lists a board declares. The
-// point is that a consumer stops spelling out `${BOOT_A_START_SECTOR:-}` and
-// starts asking a partition for its start sector.
+// `board-env.ts` turns the file into a map of strings, faithfully; this turns
+// that map into the shape the rest of os/ reasons about -- an ordered partition
+// set, each entry's role and geometry, the bootloader backend, and the four
+// lists a board declares -- so a consumer asks a partition for its start sector
+// instead of spelling out `${BOOT_A_START_SECTOR:-}`.
 //
-// The line this file does not cross. It never decides whether a board
-// definition is CORRECT. A missing LAYOUT_PARTITIONS, a role no checker knows,
-// a partition with no PARTNUM -- all of those are reported as absent or
-// unknown and handed on. The schema lint is a separate consumer of this model
-// (os/verify/src/lint.ts), and it is the one
-// that gets to say a board is wrong. Two reasons: a model that threw on the
-// first fault could only ever report one, and a lint whose messages came from
-// its data layer would say what the model noticed rather than what a board
-// engineer needs to read.
-//
-// So: the PARSER throws, because a file it cannot read faithfully is not a
-// board definition at all. The MODEL does not, because a board definition it
-// can read and disagrees with is exactly what a lint exists to report.
+// It never decides whether a definition is correct. A missing LAYOUT_PARTITIONS,
+// a role no checker knows, a partition with no PARTNUM: all reported as absent
+// or unknown and handed on. The schema lint (os/verify/src/lint.ts) is a
+// separate consumer and the one that says a board is wrong, because a model that
+// threw on the first fault could only ever report one, and a lint whose messages
+// came from its data layer would say what the model noticed rather than what a
+// board engineer needs to read. So the PARSER throws -- a file it cannot read
+// faithfully is not a board definition -- and the MODEL does not.
 //
 // Declared-empty is not absent, and keeping the two apart is most of the value
-// here. `BOARD_FIRMWARE_FILES=""` on x64 is a statement -- a QEMU machine has
-// no radio firmware -- and `BOARD_HWINIT_CONFS=""` likewise. Under the
-// `${X:-}` idiom every shell consumer uses, those are indistinguishable from a
-// board that never mentioned them. Here the first is `[]` and the second is
-// `undefined`.
+// here: `BOARD_FIRMWARE_FILES=""` on x64 is a statement, a QEMU machine having
+// no radio firmware, and `BOARD_HWINIT_CONFS=""` likewise. Under the `${X:-}`
+// idiom every shell consumer uses those are indistinguishable from a board that
+// never mentioned them; here the first is `[]` and the second `undefined`.
 
 import { readFileSync } from 'node:fs'
 import { basename, dirname, join } from 'node:path'
