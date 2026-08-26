@@ -43,6 +43,24 @@ function checkNamed(id: string): CheckCase {
   return found
 }
 
+/**
+ * The pass matcher, refused when absent.
+ *
+ * `ShellMatcher.pass` became optional in M4d for the entries that own a
+ * family's SKIP and nothing else. None of the checks this file names is one, so
+ * an absent matcher here is a register fault and not a case to tolerate.
+ */
+function passMatcher(id: string): string {
+  const m = checkNamed(id).shell.pass
+  if (m === undefined) {
+    throw new Error(
+      `'${id}' registers no pass matcher. Since M4d that is legal only for a check that owns a SKIP `
+      + `line and nothing else, and this one is compared against a PASS line.`,
+    )
+  }
+  return m
+}
+
 function guid(board: typeof cx3576, layout: string): string {
   return (board.partition(layout)?.guid ?? '').toLowerCase()
 }
@@ -288,7 +306,7 @@ describe('the four storage tiers', () => {
     // every one of them but also in the six UI assertions' text, so a
     // mountpoint matcher would go `ambiguous` on a run where both failed.
     const whats = ['fstab-data', 'fstab-state', 'fstab-meta', 'fstab-ephemeral']
-      .map(id => checkNamed(id).shell.pass)
+      .map(id => passMatcher(id))
     expect(new Set(whats).size).toBe(4)
     for (const w of whats) {
       expect(w.startsWith('(')).toBe(true)
@@ -484,7 +502,7 @@ describe('where the custom UI root actually lands', () => {
     // on each. It is the only substring common to all seven -- five read
     // `catches a custom UI root ...` and the sixth `catches content baked under
     // the custom UI root`.
-    const pass = checkNamed('ui-location').shell.pass
+    const pass = passMatcher('ui-location')
     for (const m of [
       UI_NO_FILESYSTEM, UI_OFF_DATA, UI_ON_STATE, UI_ON_EPHEMERAL,
       UI_UNASSERTED, UI_CEILING, UI_BAKED,

@@ -39,6 +39,24 @@ function checkNamed(id: string): CheckCase {
   return found
 }
 
+/**
+ * The pass matcher, refused when absent.
+ *
+ * `ShellMatcher.pass` became optional in M4d for the entries that own a
+ * family's SKIP and nothing else. None of the checks this file names is one, so
+ * an absent matcher here is a register fault and not a case to tolerate.
+ */
+function passMatcher(id: string): string {
+  const m = checkNamed(id).shell.pass
+  if (m === undefined) {
+    throw new Error(
+      `'${id}' registers no pass matcher. Since M4d that is legal only for a check that owns a SKIP `
+      + `line and nothing else, and this one is compared against a PASS line.`,
+    )
+  }
+  return m
+}
+
 async function verdictOf(fx: RootFixture, id: string): Promise<Verdict> {
   const got = await checkNamed(id).run(fx.ctx)
   expect(got.length).toBe(1)
@@ -190,7 +208,7 @@ describe('sq_grep -- a file in the packed root matches a pattern', () => {
       // The fail line CARRIES the pass matcher, which is why no separate fail
       // matcher is registered -- assert it rather than trusting it.
       expect(await messageOf(fx, 'packed-grep-dhcp'))
-        .toContain(checkNamed('packed-grep-dhcp').shell.pass)
+        .toContain(passMatcher('packed-grep-dhcp'))
     }
     finally {
       fx.dispose()
@@ -419,11 +437,11 @@ describe('the kernel modules', () => {
   test('the matcher is NOT ` contains `, which claims fourteen lines on cx3576', () => {
     // M4b measured the collision and left it; this is the batch that has to not
     // step in it. The registered matcher names one line.
-    const c = checkNamed('packed-modules-exactly-one')
-    expect(c.shell.pass).toBe("/usr/lib/modules contains exactly one kernel's modules")
-    expect(c.shell.pass.length).toBeGreaterThan(' contains '.length)
-    expect('BOOT-A contains Image').not.toContain(c.shell.pass)
-    expect('BOOT-A contains no initramfs file').not.toContain(c.shell.pass)
+    const pass = passMatcher('packed-modules-exactly-one')
+    expect(pass).toBe("/usr/lib/modules contains exactly one kernel's modules")
+    expect(pass.length).toBeGreaterThan(' contains '.length)
+    expect('BOOT-A contains Image').not.toContain(pass)
+    expect('BOOT-A contains no initramfs file').not.toContain(pass)
   })
 })
 

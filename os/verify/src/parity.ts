@@ -182,8 +182,25 @@ export function parseShellRun(stdout: string): ShellRun {
 // ---------------------------------------------------------------------------
 
 export interface ShellMatcher {
-  /** A substring of the check's PASS line. */
-  readonly pass: string
+  /**
+   * A substring of the check's PASS line.
+   *
+   * OPTIONAL SINCE M4d, and only for the one case that needs it: a check whose
+   * shell counterpart has no PASS line on any board it applies to. The oracle
+   * has whole families that print N conclusions on the board with the hardware
+   * and ONE `skip` on the board without -- the radio firmware set, the hwinit
+   * confs, the status-indicator overlay -- and a shell line can have exactly one
+   * owner, so that skip needs a register entry of its own. Such an entry has a
+   * `skip` matcher and genuinely nothing else.
+   *
+   * It is NOT a way to omit a matcher. `assertRegisterWellFormed` refuses a
+   * check that registers no matcher at all, because that check would claim no
+   * line on any board, report `unfired`, and be indistinguishable from one whose
+   * matcher had stopped matching. And an EMPTY pass matcher is still refused,
+   * for the original reason: the empty substring is contained in every line, so
+   * it would claim the run's first conclusion.
+   */
+  readonly pass?: string
   /** Of its FAIL line, when the two directions share no substring. */
   readonly fail?: string
   /**
