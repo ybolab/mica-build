@@ -613,14 +613,26 @@ bash os/build/run.sh --mkimage-x64
 sha256sum _out/x64/x64-mos-v2-*.img
 ```
 
-Result, 2026-08-26, this host — **four images, one hash**:
+Result, 2026-08-26, this host — **five images, one hash**:
 
 ```
-bdf340e93a553a02ef4c1774dcba78db20520b09fc6faf5c8c76e0cb94575a8f  shell run 1   bash os/mkimage-x64.sh
-bdf340e93a553a02ef4c1774dcba78db20520b09fc6faf5c8c76e0cb94575a8f  shell run 2   bash os/mkimage-x64.sh
-bdf340e93a553a02ef4c1774dcba78db20520b09fc6faf5c8c76e0cb94575a8f  TS run 1      run.sh --mkimage-x64
-bdf340e93a553a02ef4c1774dcba78db20520b09fc6faf5c8c76e0cb94575a8f  TS run 2      run.sh --mkimage-x64
+bdf340e93a553a02ef4c1774dcba78db20520b09fc6faf5c8c76e0cb94575a8f  x64-mos-v2-1787708550.img  shell
+bdf340e93a553a02ef4c1774dcba78db20520b09fc6faf5c8c76e0cb94575a8f  x64-mos-v2-1787708613.img  shell
+bdf340e93a553a02ef4c1774dcba78db20520b09fc6faf5c8c76e0cb94575a8f  x64-mos-v2-1787709504.img  TypeScript
+bdf340e93a553a02ef4c1774dcba78db20520b09fc6faf5c8c76e0cb94575a8f  x64-mos-v2-1787709624.img  TypeScript
+bdf340e93a553a02ef4c1774dcba78db20520b09fc6faf5c8c76e0cb94575a8f  x64-mos-v2-1787711949.img  TypeScript, RE-RUN AT THE FINAL TREE
 ```
+
+**The fifth is not ceremony.** Runs 3 and 4 were taken before `espSizeFaults` was
+deleted from the assembly path and before the boot-slot comparison was extracted
+into `bootSlotFault`. Neither of those should touch a byte, and "should" is what
+this rule refuses: the fifth run is the tree that ships, `git status` clean, and
+it produces the same hash. **Re-run the gate on the tree that ships, not on the
+tree the port was written against.**
+
+**Take the hashes from inside the worktree.** `/tmp` and `/srv` are shared across
+the concurrent worktrees on this host; a generic scratch filename is not evidence
+of whose bytes it holds. These five were read from `_out/x64/` directly.
 
 1938 MiB, nine partitions, seven filesystems (three FAT32, four ext4), 512 MiB
 per rootfs slot from a 240123904-byte payload.
@@ -631,7 +643,7 @@ The same trap M6b nearly walked into, and it is **sharper for x64**. The
 prebuilt `_out/x64/` was produced at `ab6ffe3`, before R1 added the five
 determinism controls: that tree's `os/mkimage-x64.sh` contains **zero**
 occurrences of `--invariant` or `E2FSPROGS_FAKE_TIME` where this tree's contains
-nine, and it has no `os/mkimage-common.sh` at all. So the image sitting beside
+eight, and it has no `os/mkimage-common.sh` at all. So the image sitting beside
 those inputs is the output of an assembler that pinned **nothing** — FAT
 directory times, ext4 `s_wtime`, `s_lastcheck` and `s_hash_seed` all live — and
 it hashes

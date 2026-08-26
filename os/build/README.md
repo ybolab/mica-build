@@ -208,13 +208,13 @@ assembler, twice each:
 
 ```
 bdf340e93a553a02ef4c1774dcba78db20520b09fc6faf5c8c76e0cb94575a8f   bash os/mkimage-x64.sh         (×2)
-bdf340e93a553a02ef4c1774dcba78db20520b09fc6faf5c8c76e0cb94575a8f   run.sh --mkimage-x64           (×2)
+bdf340e93a553a02ef4c1774dcba78db20520b09fc6faf5c8c76e0cb94575a8f   run.sh --mkimage-x64           (×3, the last at the final tree)
 ```
 
 The prebuilt image sitting beside those inputs hashes something else
 (`095f718e…`) and is **not** an oracle: it was produced before R1 added the
 determinism controls, by an assembler with zero occurrences of `--invariant` or
-`E2FSPROGS_FAKE_TIME`. `HARNESS.md` carries the recipe, that trap, the live
+`E2FSPROGS_FAKE_TIME` where this tree has eight. `HARNESS.md` carries the recipe, that trap, the live
 control and what a differing MiB block would have been reported as.
 
 `os/mkimage-x64.sh` carries **11** `echo "error:` sites and sources three more
