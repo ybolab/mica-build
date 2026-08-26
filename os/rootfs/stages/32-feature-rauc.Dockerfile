@@ -16,10 +16,11 @@
 # it is the one grouping under which `rauc-install` and its no-TLS assertion
 # are obviously the same subject.
 #
-# So the mechanism can omit it -- `--without rauc` builds a chain without this
-# file -- and nothing does. If a board ever should decline the update client,
-# the switch already exists and os/rootfs/build-v2.sh is the one file that has
-# to learn to use it.
+# So the mechanism can omit it -- `MOS_ROOTFS_WITHOUT=rauc` reaches
+# `--without rauc` and build-v2.sh then stages no rauc at all -- and no board
+# does. That route exists rather than being left for later on purpose: a switch
+# no shipping path can reach is a switch that has only ever been observed in the
+# position that changes nothing.
 #
 # grub-editenv is NOT here. RAUC's grub backend execs it, so it reads as RAUC
 # material; it is installed in stages/40-board because it is gated on
