@@ -3,47 +3,41 @@
 # `FROM` into a Dockerfile, and refuse everything that must not reach one.
 #
 #   bash os/build-env/from.sh MOS_IMAGE_UBUNTU_2404=IMAGE_UBUNTU_2404
-#       -> --build-arg
-#          MOS_IMAGE_UBUNTU_2404=ubuntu:24.04@sha256:33ceb719...
-#
+#       -> --build-arg MOS_IMAGE_UBUNTU_2404=ubuntu:24.04@sha256:33ceb719...
 #   bash os/build-env/from.sh --ref IMAGE_ALPINE_3_21
 #       -> alpine:3.21@sha256:48b0309c...
-#
-#   bash os/build-env/from.sh --check     validate every IMAGE_ key, print
-#                                         nothing, exit 0 or 1
+#   bash os/build-env/from.sh --check
+#       -> validate every IMAGE_ key, print nothing, exit 0 or 1
 #
 # Every Dockerfile in this tree takes its base image as a build argument, and
 # this is the only thing that produces one.
-#
-# WHY --ref EXISTS. `docker run` takes its image POSITIONALLY and has no
+
+# --ref exists because `docker run` takes its image positionally and has no
 # --build-arg to carry one, and around fifteen call sites in this tree are
 # `docker run` -- including os/build/'s toolbox, which opens the containers
-# that write the GPT, the filesystems and the signed update bundle.
-#
-# The alternative is for each of those call sites to run the pair form and cut
-# the value back out of `--build-arg NAME=value`, which is fifteen small parsers
-# of this script's output -- a second reader of a format. One resolver, one
-# validation path, two output shapes: the pair form for `docker build`, the
-# bare reference for
-# `docker run`. Both go through resolve_key below, so a key that is refused for
-# a Dockerfile is refused identically for a container.
-#
-# WHY A SCRIPT AND NOT `$(grep ... images.env)` AT EACH CALL SITE. There are
-# eight call sites -- os/podman/build.sh, os/update/rauc/build.sh,
+# that write the GPT, the filesystems and the signed update bundle. The
+# alternative is for each of those call sites to cut the value back out of
+# `--build-arg NAME=value`, which is fifteen small parsers of this script's
+# output. One resolver, one validation path, two output shapes: the pair form
+# for `docker build`, the bare reference for `docker run`. Both go through
+# resolve_key below, so a key refused for a Dockerfile is refused identically
+# for a container.
+
+# A script rather than `$(grep ... images.env)` at each call site, because
+# there are eight call sites -- os/podman/build.sh, os/update/rauc/build.sh,
 # os/rootfs/build-v2.sh, os/tests/handshake-test/run.sh,
 # mosd/hack/build-target.sh and four board/cx3576 make recipes -- and the check
 # that a value is a digest and not a tag is the entire point of the exercise. A
 # grep at each call site is eight copies of that check, of which seven
-# eventually stop being it. os/build-env/build.sh calls this too, with --check,
-# rather than keeping the second copy it started with.
-#
-# WHY THE ARGUMENT NAME IS WRITTEN OUT AT EACH CALL SITE rather than derived
-# from the key. Deriving it would make the Dockerfile's ARG name a consequence
-# of a naming rule in this file, and a reader of the Dockerfile would have to
-# come here to learn what feeds it. `MOS_IMAGE_UBUNTU_2404=IMAGE_UBUNTU_2404` is
-# the whole wiring, on one line, at the place that does the wiring.
-#
-# WHAT IT DOES NOT DO: build anything, or pull anything. It reads a file and
+# eventually stop being it. os/build-env/build.sh calls this too, with --check.
+
+# The argument name is written out at each call site rather than derived from
+# the key: deriving it would make the Dockerfile's ARG name a consequence of a
+# naming rule in this file, and a reader of the Dockerfile would have to come
+# here to learn what feeds it. `MOS_IMAGE_UBUNTU_2404=IMAGE_UBUNTU_2404` is the
+# whole wiring, on one line, at the place that does the wiring.
+
+# What it does not do: build anything, or pull anything. It reads a file and
 # asks the local image store one question. A caller that gets output from this
 # has a value it can put after `FROM`; a caller that gets a non-zero exit has a
 # reason.
@@ -104,17 +98,16 @@ check_image_key() {
 # neither the image that is missing nor the command that makes it. This is also
 # the check that keeps `make build-env` a real prerequisite rather than a step
 # in a README.
-#
-# AND WHICH ARCHITECTURE IT IS, when the caller says what it is building for.
-# This is the one property a locally-tagged FROM loses relative to an upstream
-# reference: `debian:trixie-slim@sha256:...` is a multi-architecture index and
-# docker picks the right manifest, while `localhost/mos-build-c` is exactly the
-# one architecture `make build-env` last produced. A component build that asks
-# for the other one gets "no match for platform in manifest" pointing at a FROM
-# line that is correct -- the same shape of misdirection a docker-container
-# builder produces when it tries to resolve a localhost tag. Asked here,
-# it names the image, the two architectures and the command -- and because it is
-# a MEASUREMENT of the image rather than a rule about this host, it starts
+
+# It also checks which architecture the image is, when the caller says what it
+# is building for. That is the one property a locally-tagged FROM loses
+# relative to an upstream reference: `debian:trixie-slim@sha256:...` is a
+# multi-architecture index and docker picks the right manifest, while
+# `localhost/mos-build-c` is exactly the one architecture `make build-env` last
+# produced. A component build that asks for the other one gets "no match for
+# platform in manifest" pointing at a FROM line that is correct. Asked here, it
+# names the image, the two architectures and the command -- and because it is a
+# measurement of the image rather than a rule about this host, it starts
 # passing on its own the day arm64 builder images exist.
 FROM_ARCH=""
 check_local_key() {
@@ -143,7 +136,7 @@ check_local_key() {
     return 0
 }
 
-# ONE KEY -> ITS VALIDATED VALUE, and the only place that decides which check a
+# One key to its validated value, and the only place that decides which check a
 # key gets. Both output shapes call this: --ref prints what it returns, and the
 # pair form wraps it in --build-arg. Written as a function rather than inlined
 # twice because the dispatch below IS the policy -- "a base image is either an
@@ -204,7 +197,7 @@ fi
 # --build-arg. Exactly one key, and the value goes to stdout with nothing else
 # on it, so `IMG="$(... --ref KEY)"` is the whole call site.
 #
-# ONE KEY AND NOT A LIST, deliberately. A list would have to be read back by
+# One key and not a list, deliberately. A list would have to be read back by
 # position, and a caller that mismatched the order would get a well-formed
 # reference to the wrong image -- which is the one failure this file exists to
 # prevent and the one a `docker run` would not report, because the wrong base
