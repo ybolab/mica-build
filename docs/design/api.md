@@ -635,7 +635,7 @@ installed on DATA survives the A/B update that replaced apid
 is in setup mode and redirects everything except `/setup`
 (`mosd/webd/src/routes.rs:135-140`). An authenticated probe cannot answer the
 question it exists to answer. The cost is an unauthenticated fingerprint:
-anyone who can reach port 443 (`mosd/webd/src/config.rs:34-37`) learns which API
+anyone who can reach port 443 (`mosd/apid/src/config.rs:34-37`) learns which API
 major versions this device speaks. The appliance already answers `/healthz` with
 the literal `ok` unauthenticated (`mosd/webd/src/routes.rs:128-130`, `:153-155`),
 so this is one more bit on a listener that already identifies itself — it is not
@@ -645,7 +645,7 @@ else: not the hostname, not `provisioning.deviceId`
 
 **What apid promises across a patch release versus an A/B image update.** The
 honest starting point is that **there is no apid patch release independent of an
-image update.** The binary is `/usr/bin/webd` (`mosd/dist/webd.service:8`), and
+image update.** The binary is `/usr/bin/webd` (`mosd/dist/apid.service:14`), and
 `/` is a verity-protected squashfs (`docs/design/access.md:468-474`); RAUC
 writes only the ROOTFS and BOOT slots (`docs/design/access.md:504`). Every
 change to apid therefore arrives as an A/B image update, and "patch release"
@@ -702,7 +702,7 @@ and the choice is costed.
 The split is mosd's, not a stylistic preference. The two trees have different
 types (`settings: Settings` and `state: Value`, `mosd/mosd/src/bus.rs:47-48`),
 different mutability (`SetSettings` exists; there is no `SetState` anywhere in
-the proxy trait, `mosd/webd/src/bus_client.rs:14-21`, nor in mosd's interface
+the proxy trait, `mosd/apid/src/bus_client.rs:20-25`, nor in mosd's interface
 impl, `mosd/mosd/src/bus.rs:179-298`), and different lifetimes (the settings tree
 is saved atomically on every write, `mosd/mosd/src/bus.rs:202`; the live-state
 tree is a field of `Inner` that starts empty or as `{"dry_run": true}`,
@@ -850,8 +850,8 @@ what was chosen.** Three cases, all decided toward the tree:
    (`mosd/webd/src/routes.rs:581`) — one of only two disk paths apid touches
    outside its own state directory (section 1.6). Exposing it over the API means
    either apid keeps reading it, which contradicts the rule the crate states
-   about itself — *"mosd owns every system action: webd never spawns a process
-   and never talks to systemd itself"* (`mosd/webd/src/settings_api.rs:10-12`) —
+   about itself — *"mosd owns every system action: apid never spawns a process
+   and never talks to systemd itself"* (`mosd/apid/src/settings_api.rs:10-12`) —
    or mosd publishes it into the live-state tree and the API reads it there.
    **Chosen: mosd publishes it**, and until it does, uptime has no API
    representation. Cost: the API is missing a field the HTML status pane shows,
@@ -942,7 +942,7 @@ knowable over the connection that asked.
   not, and it needs a decision about whether changing the password revokes
   tokens (§3.2 says it does not).
 - **`ReportHealth`.** mosd exposes it (`mosd/mosd/src/bus.rs:231`) and apid does
-  not declare it on the proxy (`mosd/webd/src/bus_client.rs:14-21`). The API does
+  not declare it on the proxy (`mosd/apid/src/bus_client.rs:20-25`). The API does
   not expose it either: its caller is the boot health gate, a root-local process
   that already has the bus, and turning it into an HTTP write would let any token
   holder forge a component's health status.
@@ -1000,12 +1000,12 @@ Content-Type: application/json
 them? Recommendation: translate the classification, pass the message through
 verbatim, and always say which side it came from.**
 
-The reason is what apid does today, which is neither. As of `86cd669`, apid
-**flattens**: `BusSettings` converts every `zbus::Error` straight to
-`anyhow::Error` with `err.into()` (`mosd/webd/src/bus_client.rs:70`, and the
-same line at `:80`, `:91`, `:103`, `:114`, `:128`), and every handler renders
-one page for the result — `bus_error`, HTTP **502**, body *"The management daemon
-is unavailable."* (`mosd/webd/src/routes.rs:106-116`). So a settings value mosd
+The reason is what the HTML path does today, which is neither. It **flattens**:
+`BusSettings` converts every `zbus::Error` to `anyhow::Error` with `err.into()`
+(`mosd/apid/src/bus_client.rs:159`, and the same line at `:170`, `:181`,
+`:206`), and every form handler renders one page for the result — `bus_error`,
+HTTP **502**, body *"The management daemon is unavailable."*
+(`mosd/apid/src/routes.rs:650-660`, message at `:656`). So a settings value mosd
 rejected as invalid is reported to the operator as the daemon being down:
 `network_submit` returns `bus_error` on a failed `SetSettings`
 (`mosd/webd/src/routes.rs:726-729`), and `write_key_list` does the same
@@ -1027,7 +1027,7 @@ format of the API is set by a dependency of a dependency. Worse, the messages
 are anyhow chains built by mosd with `{err:#}` (`mosd/mosd/src/bus.rs:176`).
 mosd carries a contract that one of them — the transient-password path — never
 echoes the password (`mosd/mosd/src/bus.rs:170-177`, restated in
-`mosd/webd/src/bus_client.rs:123-125` and `mosd/webd/src/settings_api.rs:26-30`),
+`mosd/apid/src/bus_client.rs:201-203` and `mosd/apid/src/settings_api.rs:26-30`),
 but that contract is stated for that one method. Making the HTTP body a verbatim
 copy of every chained message from every method extends a one-method promise
 across the whole interface, silently, and the extension is not written down
@@ -1061,7 +1061,7 @@ guessing. That is the failure mode, and it is why `message` is passed through.
    rather than today's 502 because apid itself is up and answering — 503 says
    "this server, temporarily", which is exactly what the connection cache makes
    true: the proxy is dropped after any failed call so the next request
-   reconnects (`mosd/webd/src/bus_client.rs:23-26`, `:56-59`). The cost is
+   reconnects (`mosd/apid/src/bus_client.rs:75-78`, `:56-59`). The cost is
    named: the HTML path returns 502 for the same underlying failure
    (`mosd/webd/src/routes.rs:106-116`), so until §8 changes both, one appliance
    reports one outage two ways. Changing only the API is the wrong half of that
@@ -1069,8 +1069,8 @@ guessing. That is the failure mode, and it is why `message` is passed through.
 3. **mosd down entirely, distinguished from "everything is fine".** This is the
    case that must not be got wrong, because apid surviving a dead mosd is an
    existing design property, stated in the crate: *"mosd not being up yet
-   therefore surfaces as per-request errors (502 pages), never as a webd crash"*
-   (`mosd/webd/src/bus_client.rs:23-26`). The trap is already in the tree:
+   therefore surfaces as per-request errors (502 pages), never as an apid
+   crash"* (`mosd/apid/src/bus_client.rs:76-78`). The trap is already in the tree:
    `/healthz` returns before any check (`mosd/webd/src/routes.rs:128-130`) and
    answers the literal `ok` (`:153-155`), so **an appliance whose mosd is dead
    answers `/healthz` with `ok`**. A monitor polling it sees a healthy device.
@@ -1133,22 +1133,22 @@ code at `86cd669`.
    `POST /login` takes `Form<LoginForm>` — axum's URL-encoded extractor
    (`mosd/webd/src/routes.rs:8`, `:499`), not JSON — answers **302 to `/`**
    (`:520-524`), and delivers the credential in a `Set-Cookie` header
-   (`:521`, value built at `mosd/webd/src/session.rs:90-92`). A client must
+   (`:521`, value built at `mosd/apid/src/session.rs:102-103`). A client must
    therefore URL-encode rather than serialise JSON, *not* follow the redirect,
    and parse a `Set-Cookie` header. None of those is hard; all three are the
    client pretending to be something it is not.
 3. **The credential does not survive a restart of the daemon that issued it.**
-   Sessions live in a `HashMap` in memory (`mosd/webd/src/session.rs:26`) and the
-   module says so: *"a webd restart logs everyone out"*
-   (`mosd/webd/src/session.rs:5-6`). Since apid ships inside the verity rootfs
-   (`mosd/dist/webd.service:8`, `docs/design/access.md:468-474`), **every A/B
+   Sessions live in a `HashMap` in memory (`mosd/apid/src/session.rs:32`) and the
+   module says so: *"an apid restart logs everyone out"*
+   (`mosd/apid/src/session.rs:5-6`). Since apid ships inside the verity rootfs
+   (`mosd/dist/apid.service:14`, `docs/design/access.md:468-474`), **every A/B
    image update invalidates every session**. A cron job's credential expires
    whenever the fleet is updated, and per item 1 the job's next run gets a 200
    and an HTML page.
 4. **The TTL is fixed at 24 hours and is not renewed by use.** The expiry is
-   stamped once at creation (`mosd/webd/src/session.rs:53`, TTL at `:19`) and
+   stamped once at creation (`mosd/apid/src/session.rs:59`, TTL at `:19`) and
    `verify` only compares against it — it never extends it
-   (`mosd/webd/src/session.rs:66-79`). A long-running client is logged out
+   (`mosd/apid/src/session.rs:72-88`). A long-running client is logged out
    mid-operation exactly 24 hours in, with no warning in any response before
    that point.
 5. **The expiry is monotonic, not absolute.** `Instant` (`session.rs:10`, `:53`)
@@ -1165,11 +1165,12 @@ code at `86cd669`.
 7. **A misconfigured script locks the operator out, repeatedly.** The login
    backoff is a single global counter, not per-client, by explicit design:
    *"the appliance has one admin password, so per-client tracking buys nothing
-   against an online guesser"* (`mosd/webd/src/auth.rs:28-31`). Five consecutive
-   failures arm a 30-second lockout that rejects **every** login attempt
-   (`mosd/webd/src/auth.rs:9-10`, `:52-58`; the 429 at
-   `mosd/webd/src/routes.rs:500-508`). A script retrying with a stale password
-   every ten seconds holds the human admin out of the web UI indefinitely. That
+   against an online guesser"* (`mosd/apid/src/auth.rs:53-54`). Each consecutive
+   failure doubles the wait before the next attempt is accepted, from one second
+   to a five-minute cap (`mosd/apid/src/auth.rs:13`, `:16`, `:40-47`), and the
+   window rejects **every** login attempt while it holds (`:102-108`, `:124-133`;
+   the 429 at `mosd/apid/src/routes.rs:1114-1123`). A script retrying with a
+   stale password holds the human admin out of the web UI indefinitely. That
    comment's reasoning is sound *for one password*; adding a second class of
    credential is what makes it stop being sound, which §3.2 has to answer.
 
@@ -1201,11 +1202,11 @@ is opaque to the client.
 `mos_<id>_<secret>`: an 8-byte hex `id` that is **not** secret, and a 32-byte
 hex `secret` from `OsRng`. The crate already has both halves of this idea —
 the session cookie is `<id>.<mac>` with a 16-byte `OsRng` id
-(`mosd/webd/src/session.rs:44-55`) — and the reason to keep the id visible is
+(`mosd/apid/src/session.rs:51-61`) — and the reason to keep the id visible is
 mechanical: with N tokens stored, an opaque blob forces apid to hash the
 presented secret and compare against all N entries on every request, while an
 embedded id is one lookup and one comparison. 32 bytes is 256 bits, double the
-session id's 128 (`mosd/webd/src/session.rs:46`), because unlike a session this
+session id's 128 (`mosd/apid/src/session.rs:52`), because unlike a session this
 credential is not going to expire on its own.
 
 **Where the credential is stored: the settings tree, on STATE, hashed.**
@@ -1236,8 +1237,8 @@ tier is chosen rather than inherited:
    than default to STATE by habit.
 3. **Anything else is unmodelled state.** *"An unmodelled setting is an
    unsupported setting"* (`docs/design/access.md:468-474`). apid's own state
-   directory `/var/lib/mos/webd` (`mosd/webd/src/config.rs:38-40`,
-   `mosd/dist/webd.service:10`) is on the same STATE bind and would satisfy
+   directory `/var/lib/mos/webd` (`mosd/apid/src/config.rs:38-40`,
+   `mosd/dist/apid.service:16`) is on the same STATE bind and would satisfy
    reason 1 — but a credential granting full management access that mosd does not
    know about gets no row in the survives-what table, no validation, and no
    backup story, and it sits outside the one place this project has decided
@@ -1264,14 +1265,14 @@ costs nothing new; it is recorded because "the hashes are readable" is the kind
 of sentence that should be written down before someone discovers it.
 
 **The hash: SHA-256, not argon2id, deliberately.** `access.webAdmin` uses
-argon2id (`mosd/webd/src/auth.rs:13-19`) because a human chose that password and
+argon2id (`mosd/apid/src/auth.rs:19-25`) because a human chose that password and
 an offline attacker with the hash can guess it. A token is 256 bits from `OsRng`
 and there is nothing to guess; a work factor would buy no security and would be
 paid on **every API request**, where the password's is paid once per login. The
-`sha2` crate is already a dependency (`mosd/webd/Cargo.toml:25`, used by
-`mosd/webd/src/session.rs:15`), so this adds nothing to the dependency list.
+`sha2` crate is already a dependency (`mosd/apid/Cargo.toml:26`, used by
+`mosd/apid/src/session.rs:15`), so this adds nothing to the dependency list.
 The comparison must be constant-time — the crate already contains the right
-primitive, `Mac::verify_slice` (`mosd/webd/src/session.rs:61`), and a `String`
+primitive, `Mac::verify_slice` (`mosd/apid/src/session.rs:67`), and a `String`
 `==` on hex digests is what must not be written. To be honest about the size of
 that requirement: a timing leak on a *stored digest* is not a practical attack,
 because learning the digest does not yield a preimage. Constant-time is required
@@ -1303,7 +1304,7 @@ Two properties of that route are load-bearing, and neither is optional:
 
 1. **It is POST-only, and no GET form of the mint may ever exist** — not as a
    convenience, not as a redirect target, not as a debugging affordance.
-   `SameSite=Lax` (`mosd/webd/src/session.rs:91` at `86cd669`) withholds the
+   `SameSite=Lax` (`mosd/apid/src/session.rs:103` at `86cd669`) withholds the
    cookie from a cross-site form POST and **permits** it on a top-level
    cross-site GET navigation, so a GET mint would be a permanent-credential
    factory reachable from any link an operator clicks.
@@ -1353,7 +1354,7 @@ Two costs, both inherited from the tree rather than introduced here:
 
 **Expiry: none in phase 1, and that is a decision, not an omission.** An
 absolute expiry needs a wall clock, and nothing in the crate reads one —
-`SessionStore` uses `Instant` throughout (`mosd/webd/src/session.rs:10`, `:53`,
+`SessionStore` uses `Instant` throughout (`mosd/apid/src/session.rs:10`, `:53`,
 `:72`), which is monotonic and cannot express a deadline that survives a reboot.
 Adding an `expiresAt` before there is a trusted wall clock would produce a field
 that is either unenforced or enforced against a clock that resets. So: tokens do
@@ -1372,7 +1373,7 @@ derive from it.**
   no-JavaScript browser client by `docs/design/dashboard.md`'s own decision
   (`docs/design/dashboard.md:1275-1276`), which has no use for a bearer token.
 - **Coexisting means two credentials at one privilege level** — and there is
-  only one privilege level, because apid runs as root (`mosd/dist/webd.service`
+  only one privilege level, because apid runs as root (`mosd/dist/apid.service`
   sets no `User=`, `:1-13`; `mosd/dist/com.mos.mosd.conf:12-14` records the same
   from the other side) and every route it serves is behind the same gate
   (`mosd/webd/src/routes.rs:66`). A token can do everything the operator can do
@@ -1387,11 +1388,11 @@ Two consequences of coexistence that must be stated in the UI, not just here:
    — a human rotating their own password must not break every script — and it
    means "I changed my password" is not a containment action. The UI's password
    pane has to say so.
-2. **§3.1 item 7 changes meaning.** The `auth.rs:28-31` comment's reasoning —
+2. **§3.1 item 7 changes meaning.** The `auth.rs:53-54` comment's reasoning —
    per-client tracking buys nothing because there is one password — held because
-   there was one credential. With tokens there are N, and the global 30-second
-   lockout (`mosd/webd/src/auth.rs:9-10`) still gates only `POST /login`
-   (`mosd/webd/src/routes.rs:500-508`). Bearer verification is **not** rate
+   there was one credential. With tokens there are N, and the global backoff
+   curve (`mosd/apid/src/auth.rs:40-47`) still gates only `POST /login`
+   (`mosd/apid/src/routes.rs:1114-1123`). Bearer verification is **not** rate
    limited and should not be: 256 bits of `OsRng` is not guessable online, and a
    shared counter on the token path would let anyone with a bad token lock out
    every script. The comment is not wrong; it is now scoped to the password path
@@ -1400,11 +1401,11 @@ Two consequences of coexistence that must be stated in the UI, not just here:
 ### 3.3 Threat model, and what it does not protect against — **[proposed]**
 
 **What the transport actually is.** rustls with the `ring` provider
-(`mosd/Cargo.toml:38`, installed explicitly at `mosd/webd/src/main.rs:46-48`),
+(`mosd/Cargo.toml:38`, installed explicitly at `mosd/apid/src/main.rs:146-147`),
 carrying a **self-signed certificate apid generates on first start**: CN `mos`,
 SANs `DNS:mos`, `DNS:localhost`, `IP:127.0.0.1`
-(`mosd/webd/src/tls.rs:44-81`, SAN construction at `:59-67`), private key mode
-`0600` (`:78`, `:30-42`) in a state directory created mode `0700` (`:20-28`).
+(`mosd/apid/src/tls.rs:47-81`, SAN construction at `:59-67`), private key mode
+`0o600` (`:78`, `:37`) in a state directory created mode `0o700` (`:24`).
 There is no ACME client, no rotation and no way to install an operator-supplied
 certificate anywhere in that file. Three things follow immediately:
 
@@ -1435,7 +1436,7 @@ relaxation, and this document recommends against ever adding
 `Access-Control-Allow-Origin` because the moment it exists, the argument becomes
 about which origins rather than whether. A second cost: a browser UI that needs
 a token has to hold it in JavaScript, where an XSS can read it — strictly worse
-than the `HttpOnly` cookie (`mosd/webd/src/session.rs:91`) for that one
+than the `HttpOnly` cookie (`mosd/apid/src/session.rs:103`) for that one
 property. The built-in UI is unaffected because it is no-JavaScript by decision
 (`docs/design/dashboard.md:1275-1276`).
 
@@ -1443,7 +1444,7 @@ property. The built-in UI is unaffected because it is no-JavaScript by decision
 
 1. **An active on-path attacker on the LAN captures the token on first use.**
    Because the certificate is self-signed with SANs that do not match the
-   address operators actually use (`mosd/webd/src/tls.rs:59-67`), every client
+   address operators actually use (`mosd/apid/src/tls.rs:59-67`), every client
    is configured to skip verification — the shipped boot health probe does
    exactly that, `curl -k` with a `wget --no-check-certificate` fallback
    (`os/rootfs/overlay-v2/usr/lib/mos/mos-health:168`, `:174`). An attacker who
@@ -1451,7 +1452,7 @@ property. The built-in UI is unaffected because it is no-JavaScript by decision
    certificate, and the client, told to accept anything, hands over the bearer
    token in the first request. Nothing in this design stops that. The mitigation
    that would — an operator-installed certificate, or a documented pin — does
-   not exist in `mosd/webd/src/tls.rs` at `86cd669`.
+   not exist in `mosd/apid/src/tls.rs` at `86cd669`.
 2. **A stolen token is full management access, indefinitely.** There is no
    expiry (§3.2), no binding to a client address, and no binding to a request.
    A token exfiltrated from a CI secret store, a laptop backup or a shell
@@ -1479,7 +1480,7 @@ property. The built-in UI is unaffected because it is no-JavaScript by decision
 5. **A same-origin page mints a permanent token with the operator's cookie.**
    §3.2's bootstrap is a cookie-authenticated form POST at
    `POST /builtin/tokens`, and its defence is `SameSite=Lax`
-   (`mosd/webd/src/session.rs:91`) and nothing else, because there is no CSRF
+   (`mosd/apid/src/session.rs:103`) and nothing else, because there is no CSRF
    token in the crate at `86cd669` — `grep -ni csrf mosd/webd/src/*.rs` returns
    nothing (§1.2). **`Lax` is a cross-site control and says nothing about a
    request issued from the device's own origin.** After §4 and §5 land, the
@@ -1505,10 +1506,10 @@ property. The built-in UI is unaffected because it is no-JavaScript by decision
 **Anyone with SSH is already root, so none of this applies to them.** Every
 authorized key is a root key (`docs/design/access.md` §4.1, and the sentence the
 pane is tested to carry, `mosd/webd/src/routes.rs:937-944`); apid runs as root
-(`mosd/dist/webd.service:1-13`); the D-Bus policy allows root to own, send and
+(`mosd/dist/apid.service:1-42`); the D-Bus policy allows root to own, send and
 receive (`mosd/dist/com.mos.mosd.conf:68-72`). A root shell reads
 `/var/lib/mos/settings.toml` directly, reads
-`/var/lib/mos/webd/session.key` (`mosd/webd/src/tls.rs:85-103`), and calls
+`/var/lib/mos/apid/session.key` (`mosd/apid/src/tls.rs:85-103`), and calls
 `com.mos.mosd1` without going through apid at all. **The API token's threat
 model is entirely about the network channel**; it adds nothing against local
 root and it is not intended to.
@@ -1524,7 +1525,7 @@ anywhere in the crate — `grep -ni csrf mosd/webd/src/*.rs` returns nothing at
   is `POST /builtin/tokens`, an HTML form on the form path (§3.2); a cookie
   presented to `/api/v1/tokens` is a `401`.
 - **The form path is covered for POST by `SameSite=Lax`**
-  (`mosd/webd/src/session.rs:91`), which withholds the cookie from cross-site
+  (`mosd/apid/src/session.rs:103`), which withholds the cookie from cross-site
   form submissions. That is a real control and it is the only one.
 - **One form-path route now mints a permanent credential, and that changes what
   `SameSite=Lax` is being asked to hold.** Against a cross-site attacker it
@@ -2777,7 +2778,7 @@ question in this section is about that one row.
 key is a root key"*, and `mos` is *"a persistent working directory and a non-root
 default shell, **not a lesser privilege level**"*
 (`docs/design/access.md:225-230`). apid runs as root — the unit sets no `User=`
-(`mosd/dist/webd.service:1-13`), and the D-Bus policy records the same fact from
+(`mosd/dist/apid.service:1-42`), and the D-Bus policy records the same fact from
 the other side (`mosd/dist/com.mos.mosd.conf:12-14`), with root allowed to own,
 send and receive (`:68-72`).
 
@@ -2787,8 +2788,8 @@ So an operator with SSH:
   bypassing every validation §5.3 specifies — no unpack check, no manifest
   parse, no digest, no compatibility check;
 - and **does not need to**. They read `/var/lib/mos/settings.toml` directly, they
-  read `/var/lib/mos/webd/session.key` and mint a valid session cookie (§4.4,
-  `mosd/webd/src/session.rs:44-55`), and they call `com.mos.mosd1` without going
+  read `/var/lib/mos/apid/session.key` and mint a valid session cookie (§4.4,
+  `mosd/apid/src/session.rs:51-61`), and they call `com.mos.mosd1` without going
   through apid at all.
 
 **A signature on a UI bundle stops none of that.** A verifier is code that runs
@@ -2835,11 +2836,11 @@ transfer:
    (`os/verify-image-v2.sh:1043-1047`). A UI-bundle verifier would need an anchor
    that no shipped device has.
 2. **The verification is `rauc`'s, not ours.** No Rust in this workspace verifies
-   a CMS signature — `mosd/webd/Cargo.toml:11-29` carries no signature crate
+   a CMS signature — `mosd/apid/Cargo.toml:11-31` carries no signature crate
    (`rustls` and `rcgen` are TLS, `sha2` is a bare digest). Reusing it means
    shelling out to `rauc`, and the crate's own rule forbids precisely that:
-   *"mosd owns every system action: webd never spawns a process and never talks
-   to systemd itself"* (`mosd/webd/src/settings_api.rs:10-12`).
+   *"mosd owns every system action: apid never spawns a process and never talks
+   to systemd itself"* (`mosd/apid/src/settings_api.rs:10-12`).
 3. **The key hierarchy is the wrong one even if it were reachable.** It is the
    fleet's OS-image signer. Signing a customer's HTML with the key that
    authorises a kernel and rootfs replacement makes the two operations equally
@@ -2920,7 +2921,7 @@ The argument in full, as three claims that can each be checked:
   "which bundle is this?" is answerable and "who put it here?" is not.
 - **An on-path attacker under §3.3 item 1 can substitute a bundle.** The
   certificate is self-signed with SANs that do not match the address operators
-  actually use (`mosd/webd/src/tls.rs:59-67`), so clients are configured to skip
+  actually use (`mosd/apid/src/tls.rs:59-67`), so clients are configured to skip
   verification and the token is captured on first use. **Of the three items,
   this is the only one a signature would close**, and it would close it only
   because the anchor would have been provisioned out of band — which is the same
@@ -3003,7 +3004,7 @@ class of bugs rather than attesting an authorship nobody disputes.
 **Recommendation, restated in one line, because a section like this must end
 with an answer and not with a survey: do not sign UI bundles in phase 1;
 authorise the upload with §3.2's token, spend the effort on `ProtectSystem=`
-and `ReadWritePaths=` in `mosd/dist/webd.service`, and revisit the moment any
+and `ReadWritePaths=` in `mosd/dist/apid.service`, and revisit the moment any
 one of the four triggers above becomes true.**
 
 ## 8. Migration and phasing — **[proposed]**
@@ -3126,13 +3127,13 @@ so.
 
 #### Phase 1 — recover the error classification, before any API exists
 
-**What ships.** `mosd/webd/src/bus_client.rs` stops converting every
-`zbus::Error` straight to `anyhow::Error`. At `86cd669` it does so at six call
-sites — `:70`, `:80`, `:91`, `:103`, `:114`, `:128` — and `zbus` 5.19.0
-(`mosd/Cargo.lock:2907-2908`) carries the distinction that is being thrown away
-in `Error::MethodError(OwnedErrorName, ...)`. The phase matches on it, carries
+**What ships.** The HTML path stops flattening every `zbus::Error` into one
+502. `BusSettings` converts with `err.into()` at four call sites
+(`mosd/apid/src/bus_client.rs:159`, `:170`, `:181`, `:206`) and `zbus` 5.19.0
+(`mosd/Cargo.lock:2907-2908`) carries the distinction in
+`Error::MethodError(OwnedErrorName, ...)`. The phase matches on it, carries
 the fdo error name into a typed error, and teaches the HTML handlers to stop
-rendering `bus_error` (`mosd/webd/src/routes.rs:106-116`) for a value mosd
+rendering `bus_error` (`mosd/apid/src/routes.rs:650-660`) for a value mosd
 merely rejected. Optionally in the same phase, mosd's `to_fdo`
 (`mosd/mosd/src/bus.rs:156-166`) stops collapsing `NotFound`, `ReadOnly` and
 `Validation` (`mosd/mosd-settings/src/error.rs:7-31`) into one
@@ -3147,7 +3148,7 @@ calls this out with the VLAN example. **This phase is a visible bug fix that
 needs no API at all.**
 
 **Acceptance.** A route test in which the in-memory `SettingsApi` fake
-(`mosd/webd/src/settings_api.rs:3-4`, `:35-47`) returns a mosd validation error
+(`mosd/apid/src/settings_api.rs:3-4`, `:33-47`) returns a mosd validation error
 renders mosd's message in the pane and does **not** render the 502 page; and a
 test in which the fake returns a transport failure still renders the 502 page.
 Both directions, because a test that only proves the new path leaves the old one
@@ -3259,7 +3260,7 @@ with one header and no browser emulation. §3.1's items 1 through 5 are fixed fo
 reads in this phase: an unauthenticated call gets a **401 with a body**, not a
 303 that a redirect-following client reports as success; the credential survives
 an A/B update, because it is on STATE rather than in a `HashMap`
-(`mosd/webd/src/session.rs:26`, `:5-6`); and it does not expire at 24 hours.
+(`mosd/apid/src/session.rs:32`, `:5-6`); and it does not expire at 24 hours.
 
 **Acceptance.** Four checks, each of which fails loudly if the phase is wrong:
 
@@ -3529,12 +3530,12 @@ a reason that already exists in this document, and each is named so that its
 absence is a decision rather than an oversight.
 
 1. **Token expiry.** Needs a wall clock apid does not read — `SessionStore` uses
-   `Instant` throughout (`mosd/webd/src/session.rs:10`, `:53`, `:72`), which is
+   `Instant` throughout (`mosd/apid/src/session.rs:10`, `:53`, `:72`), which is
    monotonic and cannot express a deadline surviving a reboot (§3.2). It is not
    phased because the prerequisite is not scheduled anywhere.
 2. **A `SettingsChanged` subscription, and any change-stream API.** mosd emits
    the signal (`mosd/mosd/src/bus.rs:212-214`, `:292-297`) and the proxy
-   declares no `#[zbus(signal)]` member (`mosd/webd/src/bus_client.rs:14-21`).
+   declares no `#[zbus(signal)]` member (`mosd/apid/src/bus_client.rs:20-25`).
    `docs/design/dashboard.md` §8 phase 3 already claims it for the UI side, and
    this document does not schedule work another campaign's phasing owns.
 3. **Scopes on API tokens.** §3.2 states there are none in phase 1 and that
@@ -3648,13 +3649,13 @@ can help. Those two mechanisms exist for this cost specifically.
 
 **6. The testing surface multiplies, and it multiplies in the daemon that must
 never fail to bind.** Today apid's tests are handler tests against an in-memory
-`SettingsApi` fake (`mosd/webd/src/settings_api.rs:3-4`, `:35-47`) plus an
+`SettingsApi` fake (`mosd/apid/src/settings_api.rs:3-4`, `:33-47`) plus an
 end-to-end suite on a private bus. After phase 5 the matrix is (every operation
 × HTML and JSON) × (bundle absent, present, corrupt, unreadable, incompatible)
 × (every major version served), plus §4.4's five traversal cases, §4.2's five
 fallback conditions, §4.3's cache criterion, and §6.1's start-up re-check — and
 that last one runs on the startup path of a daemon under `Restart=on-failure`
-(`mosd/dist/webd.service:9`).
+(`mosd/dist/apid.service:15`).
 
 *Partly mitigated.* §8.2's phasing adds no bundle dimension at all until phase
 4, and §6.1's constraint — evaluation strictly after the listeners bind
@@ -3674,8 +3675,8 @@ this device serves is verified"* stops being true.
 *Partly mitigated, and the unmitigated half is named precisely.* Mitigated:
 §4.4's install-time rejection of non-regular entries plus canonicalise-and-
 assert; §4.3's `nosniff` and fixed MIME table, which is what stops an uploaded
-file being sniffed into HTML on the origin that holds `webd_session`
-(`mosd/webd/src/session.rs:18`, `:91`); §6.2 layer 1, which keeps the built-in
+file being sniffed into HTML on the origin that holds `apid_session`
+(`mosd/apid/src/session.rs:18`, `:103`); §6.2 layer 1, which keeps the built-in
 UI unwritable by anything including root. **Not mitigated:** the process-level
 bound. `mosd/dist/webd.service:6-10` is the whole `[Service]` section and
 carries no `ProtectSystem=` and no `ReadWritePaths=` (§6.2 layer 3), so a
@@ -3690,7 +3691,7 @@ endorses it as the concrete substitute for a signing scheme.
 token anywhere in the crate — `grep -ni csrf mosd/webd/src/*.rs` returns nothing
 at `86cd669` — and §3.3's account is that the API path has no CSRF exposure
 because browsers do not attach `Authorization` cross-site, while the form path
-holds on `SameSite=Lax` alone (`mosd/webd/src/session.rs:91`). **The seam is
+holds on `SameSite=Lax` alone (`mosd/apid/src/session.rs:103`). **The seam is
 §3.2's bootstrap.** §3.2 says the bearer token is *"the **only** accepted
 credential on `/api/v1/` routes"* and then that *"an authenticated session
 cookie may mint a token"* — and a mint is the creation of a permanent credential
@@ -3726,7 +3727,7 @@ and written down; §4.1 and §4.3 each say so at the point of the decision.
 
 **10. Two credentials at one privilege level, and no unit of revocation smaller
 than "everything".** §3.2 records that apid runs as root and every route sits
-behind one gate (`mosd/dist/webd.service:1-13`,
+behind one gate (`mosd/dist/apid.service:1-42`,
 `mosd/webd/src/routes.rs:66`), so a token can do everything the operator can do
 over the API. "Give my CI a token that can read state but not reboot the
 appliance" is not expressible in phase 1, and making it expressible later means
