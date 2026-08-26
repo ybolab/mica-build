@@ -388,9 +388,12 @@ the announce line for the reference `from.sh` resolves — because the suite's
 exit status proves the tests ran, not which bun ran them. Forced onto a host bun
 the suite still reports 108/108 and the step exits 1.
 
-`test/apid-api/run.sh:122` still uses `BUN_IMAGE="${MOS_APID_BUN_IMAGE:-oven/bun:1}"`
-— a **floating tag**. PLAN-014 names `test/apid-api` out of scope, so it is
-recorded in `images.env` beside the pin rather than changed here.
+`test/apid-api/run.sh:122` used to default to `oven/bun:1` — a **floating
+major-version tag**, and the last unpinned image reference in the repository.
+PLAN-014 named `test/apid-api` out of scope, so R6 recorded it in `images.env`
+rather than changing it. **The user lifted that exclusion for that one line on
+2026-08-26** and it now defaults to `IMAGE_BUN_1`; the amendment is recorded in
+PLAN-014's Scope section, and the rest of the exclusion stands.
 
 ## The image tools: a second seam, with the same shape and one hole
 
