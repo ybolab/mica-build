@@ -1000,6 +1000,18 @@ mismatch".
 
 ### `mosd` and `apid` have no `--version`, and it is worse than absence
 
+> **DATED 2026-08-26 (M7b), AND SUPERSEDED BY M7d — annotated, not rewritten.**
+> Everything below is a correct record of what was measured *before* the user
+> lifted PLAN-014's `mosd/` exclusion. M7d landed a `--version` handler in each,
+> above every initialisation; both entries are `version` like the other ten,
+> `EXPECTED_UNCLAIMED` is now empty, and the shipped register's steady state is
+> `RESULT: PASS (12 pass, 0 fail, 0 unclaimed, of 12)`. **The escalation this
+> section records is the reason M7d exists**, so it stays as written: deleting
+> it would remove the evidence that the gap was found and refused rather than
+> quietly closed. The after-state is in `src/smoke-register.ts`'s header, and the
+> amendment is in `docs/plan/PLAN-014.md`'s Scope.
+
+
     $ docker run --rm --network none localhost/mos-factory-root:x64 /usr/bin/mosd --version
     rc=1
     INFO mosd::provisioning: first-boot provisioning complete hostname="mos-e9967fc0"
@@ -1055,6 +1067,14 @@ binary untouched:
 
     # reverted
     RESULT: INCOMPLETE (10 pass, 0 fail, 2 unclaimed, of 12)   exit 1
+
+**Those two RESULT lines are M7b's, and they are dated rather than wrong.** The
+`2 unclaimed` is mosd and apid before M7d gave them a `--version`; the same
+mutation on the same image at M7c reads
+`RESULT: FAIL (11 pass, 1 fail, 0 unclaimed, of 12)` and the reverted run reads
+`RESULT: PASS (12 pass, 0 fail, 0 unclaimed, of 12)`, exit 0. What the block
+records — that a bumped pin turns the run red naming both sides, and that
+reverting turns it back — is unchanged; only the census moved.
 
 It is driven in the suite as a **loop** too, not as a comparison: one fixture
 `versions.env`, one binary output held constant, one edit, and the verdict flips
@@ -1112,10 +1132,10 @@ to turn the suite red. Eleven of them:
 | mutation | effect |
 |----------|--------|
 | `versionTokens` loses its LEFT guard | 1 fail — `11.29.1` would satisfy a pin of `1.29.1` |
-| `unclaimed` folded into `pass` in `conclude` | 2 fails |
+| `unclaimed` folded into `pass` in `conclude` | 2 fails — **0 at M7c; see below** |
 | the count vacuity guard disabled | 3 fails |
-| the 127/126 diagnosis collapsed into one message | 2 fails |
-| an unclaimed artifact gets invoked after all | 4 fails |
+| the 127/126 diagnosis collapsed into one message | 2 fails — **8 at M7c** |
+| an unclaimed artifact gets invoked after all | 4 fails — **2 at M7c** |
 | the REVERSE coverage direction removed | 3 fails |
 | the empty-pin-file guard removed | 1 fail |
 | the forward direction swallows an unreadable pin | 1 fail |
@@ -1126,6 +1146,96 @@ to turn the suite red. Eleven of them:
 The helper that applies them **refuses a no-op match** and was observed refusing
 two, so "the mutation changed nothing and the suite stayed green" is not a
 result this sweep can produce.
+
+**Three of those numbers moved at M7c, and one of them moved to zero.** The
+counts are dated, not wrong — they are what the mutations produced against M7b's
+suite — and they were RE-RUN at M7c rather than adjusted on reasoning:
+
+- **`unclaimed` folded into `pass` in `conclude` → 0 fails.** M7d emptied
+  `EXPECTED_UNCLAIMED`, and with no unclaimed artifact in the shipped register
+  the only remaining cases that produce one asserted the *conclusion* and a
+  phrase, never the counts. The conclusion does not move under that mutation —
+  `unclaimed > 0` still fires — so a `conclude` that filed an unasked artifact
+  under `pass` passed the entire suite. **A guard whose removal changes no test
+  is not a guard**, and this one was load-bearing until the day the category
+  emptied. `smoke.test.ts` now locks the counts on the INCOMPLETE line and on the
+  FAIL line, with a nothing-unclaimed control beside them; the mutation is back
+  to biting, at 1 fail.
+- **an unclaimed artifact gets invoked after all → 2 fails**, down from 4, for
+  the same reason: two of the four cases were about the shipped register's two
+  unclaimed entries, which no longer exist. The two that remain are synthetic and
+  are the ones that should be — a verdict with no current claimant has to be
+  exercised somewhere that does not depend on the register having one.
+- **the 127/126 diagnosis collapsed into one message → 8 fails**, up from 2.
+  M7c replaced that map: it had never been measured and was wrong about both of
+  the shapes RFCT-113's first acceptance clause names. See "The exit-status
+  diagnosis, measured" below.
+
+The three that were *not* re-run are the coverage and pin-parsing rows, which
+M7c did not touch.
+
+### The exit-status diagnosis, measured
+
+M7b split a non-zero exit three ways from `docker run`'s **documented**
+convention rather than from a measurement. Measured at M7c — docker 29.7.2, in
+exactly the shape `dockerArgv` produces, no shell, so the artifact *is* the
+container's init and a failure to exec it surfaces as a `docker run` failure:
+
+| shape | rc | first line |
+|---|---|---|
+| wrong-arch ELF (`e_machine` → `0xB7`) | **255** | `exec <path>: exec format error` |
+| missing soname | **127** | `<path>: error while loading shared libraries: … cannot open shared object file` |
+| present, mode 000 | 126 | `docker: … exec: "<path>": permission denied.` |
+| path genuinely absent | 127 | `docker: … exec: "<path>": stat <path>: no such file or directory.` |
+| controls | 0 / 1 | `/bin/true`, `/bin/false` |
+
+So the old map was wrong on **both** of the cases it existed for: wrong-arch fell
+through to *"the program ran and refused"* (it never ran), and a missing soname
+was reported as *"the path does not exist in the factory root"* (it is there).
+126, which the map gave to both, is produced by neither.
+
+**The same file already held the measurement.** `preflight`'s comment records
+`status 255` with `exec format error` for the arm64 wall. One half of the module
+had the measurement and the other had the convention, and nothing compared them
+— because both branches were reachable in the suite only from a **fabricated**
+`ExecResult`, where the test chooses the status whose diagnosis it then asserts.
+That is why RFCT-113's three negative tests are not unit tests: see
+`src/smoke-negative.ts`, and "The three negative tests" below.
+
+### The three negative tests
+
+RFCT-113 M7c, first acceptance clause, on its literal reading: a wrong-arch, a
+missing-soname and a version-skewed binary each **fail the build**. Nothing
+invoked the smoke runner before M7c — 672 tracked files, 38 mentioning `smoke`,
+and the only executable invocation was `run.sh` calling its own CLI — so
+`os/rootfs/build-v2.sh` now runs it as its last step under `set -e`, and a root
+whose binaries do not run does not become an image.
+
+Each case MAKES its defect in a real image built from the real factory root and
+drives the real `docker run` at it:
+
+| case | mutation | artifact |
+|---|---|---|
+| wrong-arch | `e_machine` `0x3e` → `0xb7`, one byte | `/usr/bin/crun` |
+| missing-soname | `libjson-glib-1.0.so.0` removed — NEEDed by `rauc` and, measured, by nothing else in the register | `/usr/bin/rauc` |
+| version-skew | replaced by a shim reporting `1.29.2` against a pin of `1.29.1` | `/usr/bin/crun` |
+
+**Five assertions per case**, each ruling out a different way of passing
+vacuously: the image built; `preflight` still passes on the MUTATED image, so the
+failure is the artifact and not the host; the UNMUTATED artifact passes through
+the same runner in the same pass; the failure says the right thing **and not the
+wrong one**; and the whole run concludes FAIL, exit 1, with exactly one failure,
+named.
+
+**Every mutation refuses to be a no-op** — each Dockerfile asserts its own
+pre-state and post-state, so a no-op fails the image BUILD. Driven: writing
+`0x3e` back instead of `0xb7` gives `REFUSING: the write did not take` and the
+case reports DID NOT HOLD.
+
+**And the implementation was mutated too.** With M7b's diagnosis map restored,
+the two cases it was wrong about report DID NOT HOLD and version-skew still
+holds — `RESULT: FAIL (1 of 3 negative tests held)`. So the cases are not
+asserting `verdict === 'fail'` with extra words.
 
 ### And one bug the sweep found, which review had not
 
@@ -1185,8 +1295,16 @@ this classification is a mechanism rather than a placeholder.
 
     RESULT: INCOMPLETE (10 pass, 0 fail, 2 unclaimed, of 12). UNCLAIMED: mosd, apid. …
 
-A count alone habituates. This run's steady state is non-zero until M7d lands,
-so the number is precisely the part a reader stops seeing.
+A count alone habituates: the number is precisely the part a reader stops seeing.
+
+**That line is M7b's and the steady state is no longer non-zero.** M7d landed
+both handlers, `EXPECTED_UNCLAIMED` is empty, and the shipped register's steady
+state at M7c is `RESULT: PASS (12 pass, 0 fail, 0 unclaimed, of 12)`. The naming
+stays, and so does the reasoning for it — this is a category that decays in one
+direction, and the whole point of `unclaimedFaults` is that the next artifact
+this repository cannot ask has to be *added* by somebody rather than appearing.
+Emptying the set is what proved the fix landed, which is the mechanism doing what
+it was built for.
 
 ### catatonit: the normalisation, stated
 

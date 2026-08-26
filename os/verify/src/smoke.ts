@@ -257,6 +257,78 @@ export interface BuildCommitFact {
 }
 
 /**
+ * What a non-zero exit MEANS, from the status and what came back with it.
+ *
+ * RFCT-113 M7c, and this replaced a map that had never been measured. M7b wrote
+ * the three-way split from the documented `docker run` convention -- 127 not
+ * found, 126 cannot be invoked -- and both of the shapes RFCT-113's first
+ * acceptance clause names land somewhere else. Measured on 2026-08-26, docker
+ * 29.7.2, in EXACTLY the shape `dockerArgv` produces (no shell: the artifact IS
+ * the container's init, so a failure to exec it surfaces as a `docker run`
+ * failure rather than as a shell's 126):
+ *
+ *   wrong-arch ELF            255  `exec <path>: exec format error`
+ *   missing soname            127  `<path>: error while loading shared libraries:
+ *                                   libselinux.so.1: cannot open shared object file`
+ *   present, mode 000         126  `docker: ... exec: "<path>": permission denied.`
+ *   path genuinely absent     127  `docker: ... exec: "<path>": stat <path>: no such
+ *                                   file or directory.`
+ *   program ran and refused   its own status
+ *
+ * So the old map was wrong twice over, and wrong on both of the cases the clause
+ * exists for: a wrong-arch binary was diagnosed as "the program ran and refused"
+ * (it never ran), and a missing soname as "the path does not exist in the factory
+ * root" (it is there). 126, which the old map gave to both of them, is produced
+ * by neither -- it is a mode bit, a case nobody had considered.
+ *
+ * THE SAME FILE ALREADY KNEW. `preflight`'s comment records `status 255` with
+ * `exec format error` for the arm64 wall, measured against a pulled upstream
+ * arm64v8 image. One half of this module had the measurement and the other half
+ * had the convention, and nothing compared them -- because both `judge` branches
+ * were reachable in the suite only from a FABRICATED `ExecResult`, where the
+ * test chose the status it then asserted the diagnosis of. That is why the three
+ * negative tests this milestone owes are driven through a real container against
+ * a real mutated root: `os/verify/src/smoke-negative.ts`.
+ *
+ * 127 IS AMBIGUOUS AND IS SPLIT BY TEXT, not left to the status. ld.so exits 127
+ * after printing `error while loading shared libraries`, and docker exits 127
+ * when the path is not there at all; reporting either as the other sends a
+ * reader to the wrong file. The status alone cannot separate them, so this reads
+ * the output -- and falls back to naming BOTH possibilities rather than picking
+ * one, because a confident wrong diagnosis is worse than an honest pair.
+ *
+ * Pure, so every branch is reachable from the suite as well as from the
+ * container.
+ */
+export function diagnose(outcome: ExecResult): string {
+  const said = `${outcome.stdout}\n${outcome.stderr}`
+  if (/error while loading shared libraries/i.test(said)) {
+    return 'the file is there and the dynamic loader could not resolve it -- a shared library it '
+      + 'NEEDs is not in this root, so the binary never reached main'
+  }
+  if (/exec format error/i.test(said)) {
+    return 'the file could not be executed AT ALL -- the kernel refused the image with ENOEXEC. '
+      + 'A wrong-architecture binary is this, and so is a host with no emulator registered for '
+      + 'the image\'s platform; `preflight` rules out the second before any artifact is judged, '
+      + 'so at this point it is the binary'
+  }
+  if (outcome.status === 127) {
+    return 'the path does not exist in the factory root -- either this register names it wrongly, '
+      + 'or the install script stopped putting it there'
+  }
+  if (outcome.status === 126) {
+    return 'the path exists and could not be invoked -- measured, this is what a file with no '
+      + 'executable bit produces; the pack stage normalises modes, so a mode this runner cannot '
+      + 'execute is a question about 90-pack rather than about the binary'
+  }
+  if (outcome.status === 255) {
+    return 'the container could not be started on this path at all, and not for a reason named '
+      + 'above -- read the stderr; `docker run` failing to exec its init reports 255'
+  }
+  return 'the program ran and refused'
+}
+
+/**
  * Decide one artifact from what its invocation actually did.
  *
  * Pure, so every branch is reachable from the suite with a fabricated
@@ -282,22 +354,12 @@ export function judge(artifact: Artifact, pin: Pin, outcome: ExecResult, build?:
   }
 
   if (outcome.status !== 0) {
-    // The exit status carries the diagnosis and the three are worth separating:
-    // 127 is a path this register got wrong or an install script moved, 126 is a
-    // file that is there and cannot be executed -- the wrong-architecture and
-    // missing-soname shapes -- and anything else is the program's own refusal.
-    const why
-      = outcome.status === 127
-        ? 'the path does not exist in the factory root -- either this register names it wrongly, or the install script stopped putting it there'
-        : outcome.status === 126
-          ? 'the file is there and could not be executed -- a wrong-architecture binary, or a dynamic loader that could not resolve it'
-          : 'the program ran and refused'
     return {
       ...base,
       kind: contract.kind,
       verdict: 'fail',
       message:
-        `exited ${outcome.status}, expected 0 (${why}). `
+        `exited ${outcome.status}, expected 0 (${diagnose(outcome)}). `
         + `stdout=${JSON.stringify(firstLine(outcome.stdout))} `
         + `stderr=${JSON.stringify(firstLine(outcome.stderr))}`,
     }
@@ -675,7 +737,15 @@ export function declinedFeatures(text: string): string[] {
   )
 }
 
-async function capture(argv: readonly string[], timeoutMs: number): Promise<ExecResult> {
+/**
+ * Run one program with a budget, and hand back everything it did.
+ *
+ * Exported since RFCT-113 M7c so `src/smoke-negative.ts` drives `docker build`
+ * through the same seam the runner drives `docker run` through -- a second
+ * spawn helper would be a second set of decisions about timeouts and about what
+ * counts as output, agreeing with this one until one of them was edited.
+ */
+export async function capture(argv: readonly string[], timeoutMs: number): Promise<ExecResult> {
   const proc = Bun.spawn(argv as string[], { stdout: 'pipe', stderr: 'pipe', stdin: 'ignore' })
   // A BUDGET, NOT A COURTESY. `apid --version` starts an HTTPS server and never
   // returns -- measured, rc=124 against 25s -- so an unbounded wait here is a

@@ -212,6 +212,29 @@ jobs:
       - name: make os-verify-cx3576-v2
         run: make os-verify-cx3576-v2
 
+      # RFCT-113 M7c. THE SMOKE RUN ITSELF IS NOT A STEP HERE, deliberately:
+      # os/rootfs/build-v2.sh runs it as its last step under `set -e`, so the
+      # step above that builds the image has already executed every self-built
+      # binary inside the root it packed. A second invocation here would report
+      # the same green twice and would read like the only thing running it.
+      #
+      # These two are what build-v2.sh does NOT do. The gate compares the OCI
+      # export against the squashfs the device ships -- the assumption every
+      # smoke result rests on, and nothing else checks it. The negative tests
+      # break that root three ways and require the runner to notice; they are a
+      # check on the checker, and running them on every rootfs build would put
+      # three deliberate defects in front of every image.
+      #
+      # Both need the arm64 emulation this lane's label already promises: they
+      # EXECUTE what is in an arm64 root. Neither has been run on cx3576 by
+      # anybody -- see RFCT-113's disposition -- and this lane is where that
+      # first happens.
+      - name: make os-factory-root-gate
+        run: MOS_BOARD=cx3576 make os-factory-root-gate
+
+      - name: make os-smoke-negative-test
+        run: MOS_BOARD=cx3576 make os-smoke-negative-test
+
       # Development signing material for the bundle build. Dev keys,
       # deliberately: this lane proves the pipeline, and production signing is
       # an offline ceremony (docs/design/release-signing.md), never a CI step.

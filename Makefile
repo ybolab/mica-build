@@ -13,6 +13,7 @@ BOARDS := cx3576 x64
 .PHONY: help os os-rootfs-cx3576-v2 \
 	os-quadlet-doc-test \
 	os-image-cx3576-v2 os-verify-cx3576-v2 os-bundle-cx3576 os-devkeys os-health-test podman \
+	os-smoke-test os-smoke-negative-test os-factory-root-gate \
 	os-shadow-test os-dbus-policy-test os-repart-test \
 	os-uboot-handshake-test \
 	os-layout-lint os-layout-lint-test os-verify-test os-build-test \
@@ -25,6 +26,9 @@ help:
 	@echo "  os-rootfs-cx3576-v2 build the squashfs+dm-verity rootfs slot image"
 	@echo "  os-image-cx3576-v2  build the cx3576 A/B disk image (layout v2)"
 	@echo "  os-verify-cx3576-v2 verify the assembled v2 image against the v2 image contract (docker)"
+	@echo "  os-smoke-test       execute every self-built binary inside the factory root, assert its pin (docker)"
+	@echo "  os-smoke-negative-test  break that root three ways and require each to turn the run red (docker)"
+	@echo "  os-factory-root-gate    prove the root the smoke run executes in is the root the device ships (docker)"
 	@echo "  os-bundle-cx3576    build the RAUC update bundle"
 	@echo "  os-devkeys          generate the gitignored development signing material"
 	@echo "  os-health-test      run the offline tests for the health gate and machine-id oneshots"
@@ -77,6 +81,59 @@ os-image-cx3576-v2:
 # script re-exec'd into it. Verify the other board with --board.
 os-verify-cx3576-v2:
 	bash os/verify/run.sh --verify --board cx3576
+
+# RFCT-113 M7: every self-built binary EXECUTED inside the root that ships it,
+# and the version it reports required to equal the version this repository
+# pinned. `os-verify-cx3576-v2` reads the image; this one runs what is in it,
+# and the two answer different questions -- "it linked" and "it runs" were the
+# same claim in this tree until M7.
+#
+# THIS IS NOT THE ONLY THING THAT RUNS IT, and that is the point of RFCT-113's
+# first acceptance clause: `os/rootfs/build-v2.sh` runs the same command as its
+# last step, under `set -e`, so a root whose binaries do not run does not become
+# an image. This target is how to ask the question on its own, against a root
+# that is already built.
+#
+# Needs DOCKER, and for a stronger reason than the verifier does: it executes
+# binaries built for the BOARD, so the host must be able to run that platform --
+# which on cx3576 means binfmt_misc. It refuses rather than skipping when the
+# image is absent, and refuses before concluding anything when the host cannot
+# execute it. MOS_BOARD selects the board; x64 is the default.
+os-smoke-test:
+	bash os/verify/run.sh --smoke
+
+# RFCT-113 M7c: the three negative tests, which are a check on the check above.
+#
+# Each builds an image from that board's real factory root carrying one
+# deliberately made defect -- a wrong-arch binary, a binary whose NEEDed library
+# has been taken away, a binary that reports a version other than its pin -- and
+# requires the smoke run to go red naming the RIGHT cause and taking no other
+# artifact with it. Every mutation asserts its own before-and-after and fails
+# the image build rather than producing an unmutated image, so a case cannot
+# pass without having made its defect.
+#
+# It is a separate target from os-smoke-test rather than a flag on it because
+# these are three image builds and three deliberate defects, and putting them in
+# front of every rootfs build would make "the smoke run passed" mean two
+# different things depending on which invocation produced it.
+os-smoke-negative-test:
+	bash os/verify/run.sh --smoke-negative
+
+# RFCT-113 M7a's harness, given a target by M7c. It checks the one assumption
+# every other M7 result rests on and that nothing else checks: that the OCI
+# image the smoke run executes in is byte-for-byte the tree the device ships.
+# The two are produced by two exports of one stage, so nothing about their
+# agreement is structural -- and a smoke run inside a DIFFERENT tree is a
+# measurement of something that never boots.
+#
+# It compares 9,240 entries four ways and then BREAKS each comparison in turn
+# and requires each to go red: four of the five had only ever been seen
+# agreeing, and the file-capability one compared an empty inventory with an
+# empty inventory. Needs docker (neither side is readable on the build host --
+# no unsquashfs, no getcap) and a built rootfs, like os-verify-cx3576-v2.
+# MOS_BOARD selects the board; x64 is the default.
+os-factory-root-gate:
+	bash os/tests/factory-root-gate/gate.sh _out/$(or $(MOS_BOARD),x64)
 
 # Likewise: os/update/bundle.sh was this until M6e. Gated the same way, on the
 # squashfs PAYLOAD rather than the file -- rauc salts the bundle's own verity

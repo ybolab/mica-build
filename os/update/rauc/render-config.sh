@@ -10,7 +10,8 @@
 # is GITIGNORED, never committed: the template plus os/boards/cx3576/board.env are
 # the single source of truth, and a committed rendering could drift from them
 # with nothing to notice until after the fact. os/rootfs/build-v2.sh runs this
-# renderer before staging the overlay; --check (run by os/update/bundle.sh) now only
+# renderer before staging the overlay; --check (run by the bundle builder, which is
+# os/build/src/bundle.ts since PLAN-014 M6e deleted os/update/bundle.sh) now only
 # guards the narrower case of the rendered file being edited by hand after the
 # last build.
 set -euo pipefail
@@ -20,8 +21,13 @@ REPO_ROOT="$(cd "${SCRIPT_DIR}/../../.." && pwd)"
 MOS_BOARD="${MOS_BOARD:-cx3576}"
 LAYOUT_ENV="${REPO_ROOT}/os/boards/${MOS_BOARD}/board.env"
 OVERLAY="${REPO_ROOT}/os/rootfs/overlay-v2"
-# Overridable only so os/tests/mkimage-v2-selftest.sh can drive the renderer against a
-# deliberately-broken template; every real invocation uses the tree's own files.
+# Overridable so a test can drive the renderer against a deliberately-broken
+# template; every real invocation uses the tree's own files. The test that did
+# so was os/tests/mkimage-v2-selftest.sh, which PLAN-014 M6e deleted with the
+# shell assembler it belonged to -- so THIS OVERRIDE CURRENTLY HAS NO CALLER.
+# It is kept rather than removed because it is the only way to reach the
+# renderer's refusal branches without editing a committed template, and a knob
+# with no caller is visible here whereas a deleted one is not.
 SYSTEM_CONF_IN="${SYSTEM_CONF_IN:-${SCRIPT_DIR}/system.conf.in}"
 SYSTEM_CONF_OUT="${SYSTEM_CONF_OUT:-${OVERLAY}/etc/rauc/system.conf}"
 FSTAB_IN="${OVERLAY}/etc/fstab.in"
