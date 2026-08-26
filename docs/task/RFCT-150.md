@@ -571,9 +571,11 @@ The milestone's `m6metric.py`, over the whole tree.
 | 15+-line blocks, tree-wide | 387 | 372 |
 
 Restricted to the 44 files in scope: **caps 277 -> 0, banners 241 -> 0,
-15+-line blocks 85 -> 70, longest block 60 -> 36**. Every one of the 44 now
-scores below the score-8 threshold; none appears in the metric's over-threshold
-list.
+15+-line blocks 85 -> 70, longest block 60 -> 36**. Caps and banners are gone
+outright, but 17 of the 44 still score >= 8 and do still appear in the metric's
+over-threshold list: a surviving 15+-line block is worth 5, so any file that
+keeps two of them clears the threshold on block weight alone, with zero caps and
+zero banners. Tree-wide the count moved 142 -> 115.
 
 ## Findings — reported, not acted on
 

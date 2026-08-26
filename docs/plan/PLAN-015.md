@@ -227,8 +227,14 @@ constraints:
    as M3 (none expected in this pass).
 
 Acceptance: all existing gates green; the metric re-run shows caps ~0,
-banners ~0 outside rule-2 exceptions, and 15+-line blocks reduced to single
-digits with each survivor named and justified in the task files. Task numbers
+banners ~0 outside rule-2 exceptions, and every surviving 15+-line block
+named and justified in the task files. *(Amended at M6 RFCT-150 close: the
+original "reduced to single digits" target is withdrawn — measured on
+os/verify, the surviving blocks are MUST-KEEP classes 3 and 7 (tool tables,
+census data, quoted Scope clauses) whose shortening would delete measured
+facts; the justified-survivor discipline replaces the numeric target. An
+optional census-table split pass is recorded in the close package, not
+required.)* Task numbers
 RFCT-150..159 are reserved for this milestone; the concurrent docs workstream
 owns everything through RFCT-149 (its section-10 triage consumed 129..141,
 past the range first reserved here — corrected before any M6 task file was
