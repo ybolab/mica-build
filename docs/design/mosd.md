@@ -12,11 +12,9 @@
 > and §3's settings path). The `.zh.md` sibling has not been updated and is
 > stale.
 >
-> **Daemon rename (campaign `apid`, 2026-08-19, RFCT-056).** The HTTPS management
-> daemon formerly called `webd` is now `apid` — it is the API daemon, and the
-> dashboard is one of the things it serves. Only the name changed here; the
-> mechanism this document describes is unaffected. See
-> `docs/design/dashboard.md` §7.4.
+> **The HTTPS management daemon is `apid`.** It serves the API, and the
+> dashboard is one client of it. Documents and task records written before the
+> daemon was named that call it `webd`.
 >
 > **Updated for campaign `sshweb` (2026-08-19):** the tree is at **schema v4**
 > (`access.ssh.authorizedKeys`), and the `SshdReconciler` row in §5.3 is

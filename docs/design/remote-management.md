@@ -3,12 +3,8 @@
 > English | [中文](remote-management.zh.md)
 >
 > Who talks to the device, over what, with which trust. Decision record for
-> keeping Talos `apid` (upstream machine API) alongside `apid` (product UI,
-> called `webd` when this document was written).
->
-> **[decided] — daemon rename (campaign `apid`, 2026-08-19, RFCT-056).** The
-> product HTTPS daemon formerly called `webd` is now **`apid`** — it is the API
-> daemon, and the dashboard is one of the things it serves.
+> keeping Talos `apid` (upstream machine API) alongside `apid` (the mos product
+> HTTPS daemon — it serves the API, and the dashboard is one client of it).
 >
 > **Naming convention for this document, because the name now collides.** Bare
 > **`apid`** below means the mos product daemon. The upstream Talos machine API
