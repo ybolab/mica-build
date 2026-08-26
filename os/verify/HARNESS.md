@@ -452,87 +452,156 @@ A verdict table alone is not enough, and the messages were compared too. Where
 both reject, four of the port's sentences are deliberately different — see
 "where it is stricter" in `README.md`.
 
-## What is still unclaimed, by family — the M4f inventory
+## What batch 4b claimed, and what is left — the M4g measurement
 
-Measured 2026-08-26 against both boards' real images, at batch 4a's tip. `make
-os-verify-parity` says `INCOMPLETE` and exits 2, with **zero** diverging,
-ambiguous, orphaned, ts-silent or unfired rows on either board.
+Measured 2026-08-26 against both boards' real images, at batch 4b's tip. `make
+os-verify-parity` reports **zero** diverging, ambiguous, orphaned, ts-silent or
+unfired rows on either board.
 
-| | cx3576 | x64 |
+|  | cx3576 | x64 |
 |---|---|---|
 | oracle conclusions | 398 | 312 |
-| compared, and agreeing | 324 | 262 |
-| **UNCLAIMED** | **74** | **50** |
+| compared, and agreeing | **398** | **312** |
+| **UNCLAIMED** | **0** | **0** |
 
-Batches 1–4a have claimed 81% of cx3576's conclusions and 84% of x64's. **Group
-A is empty: every conclusion that reads only the unpacked root is ported.** What
-remains is thirteen families and every one of them reads image BYTES.
+M4f left 74 and 50 in thirteen families, every one of them reading image BYTES.
+Batch 4b ported all of them, in four modules and 75 register entries:
 
-`(Ns)` marks how many of a family's unclaimed conclusions are SKIPs, which never
-equal a pass and so need a register entry of their own.
-
-### Group B — what batch 4b faces
-
-| family | cx3576 | x64 | needs |
+| family | cx3576 | x64 | module |
 |---|---|---|---|
-| the four ext4 storage tiers | 25 | 25 | **`e2fsck -fn`** |
-| boot slot: the status-LED device tree | 12 | 2 (2s) | **`fdtget`** |
-| dm-verity and the kernel cmdline | 8 | 8 | — (`verityVerify` exists) |
-| boot.scr: the compiled boot script | 7 | 2 (2s) | **a uImage header reader** |
-| boot slot: the BSP artifact byte-compare | 6 | 0 | reads `board/<board>/out/` |
-| the ESP and the GRUB boot chain | 2 (2s) | 5 | — |
-| the U-Boot verity env pair | 3 | 0 | — |
-| factory: the zero-filled regions | 3 | 1 (1s) | — |
-| the raw pre-GPT U-Boot blob | 2 | 1 (1s) | — |
-| RAUC's `rauc.slot=` on the boot path | 2 | 2 | — |
-| file capabilities | 2 | 2 | xattr read in the container |
-| GPT: the partition count | 1 | 1 | a per-board literal, see below |
-| image-shape: the default path is the -latest symlink | 1 | 1 | — |
+| the four ext4 storage tiers | 25 | 25 | `checks-ext4.ts` |
+| boot slot: the status-LED device tree | 12 | 2 (2s) | `checks-bootchain.ts` |
+| dm-verity and the kernel cmdline | 8 | 8 | `checks-cmdline.ts` |
+| boot.scr: the compiled boot script | 7 | 2 (2s) | `checks-bootchain.ts` |
+| boot slot: the BSP artifact byte-compare | 6 | 0 | `checks-bootchain.ts` |
+| the ESP and the GRUB boot chain | 2 (2s) | 5 | `checks-cmdline.ts` |
+| the U-Boot verity env pair | 3 | 0 | `checks-bootchain.ts` |
+| factory: the zero-filled regions | 3 | 1 (1s) | `checks-bootchain.ts` |
+| the raw pre-GPT U-Boot blob | 2 | 1 (1s) | `checks-bootchain.ts` |
+| RAUC's `rauc.slot=` on the boot path | 2 | 2 | `checks-cmdline.ts` |
+| file capabilities | 2 | 2 | `checks-shape.ts` |
+| GPT: the partition count | 1 | 1 | `checks-shape.ts` |
+| image-shape: the `-latest` symlink | 1 | 1 | `checks-shape.ts` |
+| | **74** | **50** | |
 
-The classification is an ORDERED rule table over both boards' unclaimed lists,
-asserted to leave nothing unclassified and to sum to exactly 74 and 50. The
-order is load-bearing in two places, and both were re-derived rather than
-carried forward from M4d:
+### The three tool bindings, and what each does on a malformed input
 
-* `... compare source not found` is claimed by the BSP family BEFORE the
-  status-LED one, so `BOOT-A rk3576-src.dtb compare source not found` is a
-  missing build artefact and not a device-tree assertion. That moves two lines
-  M4d counted under the raw U-Boot blob into the BSP family: **6 / 2, not 4 / 4.**
-  The total is unchanged and so is the work — both families read
-  `board/<board>/out/`.
-* the U-Boot verity env PAIR is claimed before the dm-verity family, which
-  otherwise swallows it on the word `verity`.
+Driven against malformed inputs in the pinned alpine:3.21 before they were
+written, as M4a's five were. They are in `src/image.ts` and `--probe` drives all
+three against a real image.
 
-### Two things a reader of this table needs to know
+| tool | driven with | what it did |
+|---|---|---|
+| `fdtget` | 64 MiB of zeros | `Error at '/leds/status-red': FDT_ERR_BADMAGIC` on **stderr**, exit 1, EMPTY stdout — where sgdisk, given the same file, invents a disk GUID and exits 0 |
+| | an empty file | the same |
+| | a path that is not there | `Couldn't open blob from '...': No such file or directory`, exit 1 |
+| | a node or property that is not in the tree | `FDT_ERR_NOTFOUND`, exit 1 |
+| | **`-t x` on a STRING property** | **exit 0**, printing the string's BYTES as cells — `73 74 61 74 75 73 2d 72 65 64 0` for `status-red` |
+| | `-t x` vs the default radix | `6b 1d 1` against `107 29 1`: `-t x` is hexadecimal and the default is DECIMAL |
+| `e2fsck -fn` | zeros, an empty file, a squashfs, a directory, a missing file | exit **8** each time, naming the superblock |
+| | errors left uncorrected | exit 4 |
+| | **a TRUNCATED filesystem** | **exit 0** — after printing "The filesystem size (according to the superblock) is 8192 blocks / The physical size of the device is 4096 blocks / Either the superblock or the partition table is likely to be corrupt!" |
+| the uImage header | a file that is not there, or shorter than four bytes | `''` rather than a throw, because `od -An -tx1 -N4 2>/dev/null \| tr -d` is what the oracle compares |
+| | a file shorter than 64 bytes | `undefined`, not a struct of zeros — `imageType` 0 means "invalid", not "absent" |
 
-**cx3576's oracle run is RESULT FAIL in a worktree with no BSP build**, and that
-is not a defect in the image. Eight of its conclusions are `... compare source
-not found: /board/out/...` and `u-boot is 0 bytes`, because `board/cx3576/out/`
-is unpopulated. All eight are group B, all eight are `not-ported`, and parity is
-unaffected — the two sides agree on everything they both decided.
+`fdtget` is the first tool in this package that refuses honestly on every input
+it cannot read. The `-t x` row is the exception and it is REPRODUCED rather than
+refused: a `gpios` property that had become a string hands
+`os/verify-image-v2.sh:1942` the third BYTE of that string as the GPIO flags
+cell, and a helper that threw would turn a check the oracle FAILS into a run
+that died.
 
-**`exactly ${EXPECT_PARTS} partitions` is still unclaimable by a shared
-substring.** M4b measured it and it has not changed: ` partitions` claims three
-lines on cx3576 and three on x64, `exactly ` claims thirteen and eight, and the
-only token left is the COUNT, which `os/verify-image-v2.sh:1408` deliberately
-stopped writing down. It is now claimable the way M4f claims the ELF
-architecture: **one entry per board, generated from that board's own partition
-count** (`exactly 11 partitions` / `exactly 9 partitions`), which is a
-derivation from `os/boards/` and not a literal. That is 1 conclusion per board
-and it is left with the rest of group B.
+`getcap` was measured in the same session and is not a new binding: it exits
+**0** on a path that is not there and puts `<path> (No such file or directory)`
+on stderr.
 
-### Is a fifth batch needed?
+### Four vacuous passes in the code under test, reproduced and asserted
 
-**No.** Batch 4b is the last porting batch. It is 74 and 50 conclusions — about
-the size of batch 3 — and three tool bindings have to land FIRST, because
-nothing else can produce the conclusions that hang on them:
+None is repaired. A port that hardened its oracle would diverge from it and the
+divergence would be the port's; each is asserted as its own case, so removing
+the reproduction has to remove the record of it too.
 
-* **`fdtget`** — 12 conclusions on cx3576 depend on it and on nothing else.
-* **`e2fsck -fn`** — 4 per board, inside the ext4 family.
-* **a uImage header reader** for `boot.scr` — 7 on cx3576.
+1. **`e2fsck -fn` exits 0 on a truncated filesystem.** `:2342` is
+   `if e2fsck -fn "${img}" >/dev/null 2>&1`, so both streams are discarded and
+   the status alone decides — and the conclusion is `e2fsck -fn on data is
+   clean` about a filesystem e2fsck has just called likely corrupt. The branch
+   is REACHABLE: `check_ext4` extracts `count=${size_mib}` MiB at the layout's
+   offset, so an image whose tail is short produces exactly that file.
+2. **`debugfs -R "ls -p /"` exits 0 on a file it never opened**, with empty
+   stdout and `Filesystem not open` on stderr. `:2358`'s `|| true` drops the
+   stderr, and an empty listing is the PASSING direction for META, STATE and
+   DATA — so the oracle concludes `factory: meta is empty at build (nothing but
+   lost+found)` about a partition that holds no filesystem at all. The SAME
+   transcript on EPHEMERAL fails, which is what shows the pass is vacuous.
+3. **`tune2fs -l ... || true`** makes a partition it could not open arrive at
+   four checks as the empty string — four FAILs describing values rather than
+   one refusal naming the tool. Reproduced by `ext4SuperOrNone`, which returns
+   `undefined` only for a tune2fs that EXITED NON-ZERO; an exit-0 output whose
+   magic is not `0xEF53` still throws.
+4. **`getcap -r DIR` on a directory that is not there exits 0** and puts its
+   complaint on stderr, which `:4283` discards. The packed inventory then comes
+   out EMPTY — and on both shipped images the source inventory is empty too, so
+   the comparison passes about a root nothing read. Both trees genuinely carry
+   no file capabilities, which the oracle's own message says out loud.
 
-`ext4Super`, `ext4List`, `ext4Stat`, `debugfsRun` and `verityVerify` already
-exist in `src/image.ts`. Then **M4e** deletes the oracle at exit 0.
+### `exactly ${EXPECT_PARTS} partitions` — claimed, and how
+
+M4b measured that no shared substring works and that has not changed:
+` partitions` claims three conclusions on each board, `exactly ` claims thirteen
+and eight, and the only token left is the COUNT, which `:1408` deliberately
+stopped writing down. M4f's ELF entries solved the identical problem: **one
+entry per board, generated from that board's own declaration.** `exactly 11
+partitions` and `exactly 9 partitions` come from `LAYOUT_PARTITIONS`' own length
+— the same list the oracle counts — so a board that changes its layout changes
+both sides at once, and a third board in `os/boards/` gets its own entry with no
+register entry edited.
+
+### The BSP byte-compare, and the decision it needed
+
+`board/cx3576/out/` is NOT POPULATED in a checkout, so cx3576's ORACLE run is
+`RESULT FAIL (387/395)`: eight conclusions read `... compare source not found:
+/board/out/...` and `u-boot is 0 bytes`.
+
+**The port EXPRESSES that absence rather than populating the tree.**
+PLAN-014:220-223 puts `board/` BSP builds outside this campaign, and populating
+it would turn eight of the oracle's own FAILs into passes — changing the
+measurement rather than porting it. So the port reads the same paths and fails
+with the same sentence when the source is not there, and BOTH directions have
+fixtures, so the byte-compare's passing side is driven even though no shipped
+tree takes it. Parity is unaffected either way: the two sides agree on all eight.
+
+### Two cx3576 literals in the oracle, recorded rather than copied
+
+`BOARD_DIR="${BOARD_DIR:-${REPO_ROOT}/board/cx3576}"` (`:28`) and
+`DTB_SRC="${BOARD_DIR}/out/kernel/rk3576-src.dtb"` (`:1758`) are board names
+written into a script that is otherwise entirely board-derived. On the one
+U-Boot board this tree ships the two agree, so the port derives both — the
+directory from the board's own name (with `BOARD_DIR` still honoured, because
+the oracle's container re-exec supplies it), the artefact names from that
+board's own `BOOT_SLOT_REQUIRED_FILES`. A SECOND U-Boot board would be compared
+against its own BSP here and against cx3576's there. That divergence would be
+the oracle's, and it is recorded for M4e rather than reproduced.
+
+### One dead branch in the oracle
+
+`os/verify-image-v2.sh:2054` opens `if is_uboot_board` INSIDE a block already
+guarded by `if is_uboot_board` (`:2014`). Its `else` at `:2091` prints
+`the per-slot verity environment files (bootloader=...)`, and **no board can
+ever reach it**: a grub board takes the outer `else` at `:2096` instead. Neither
+shipped board prints that line, no register entry claims it, and nothing is
+unclaimed as a result. Recorded for M4e.
+
+### The status-LED contract is TRANSCRIBED, and its scope is derived
+
+`status-red:on:1:active-low` and `status-blue:off:0:active-high` (`:1922`) have
+nowhere board-side to be derived from: `os/boards/cx3576/board.env` declares
+`BOARD_HAS_STATUS_LED=1` and nothing about polarity. The same three facts per
+LED are asserted in three places in this tree — the oracle, the dts the kernel
+build compiles, and `board/cx3576/kernel/Dockerfile:134-139` — and the last two
+are `board/` BSP files PLAN-014:220-223 puts outside this campaign, so reading
+them would be a dependency on a tree this port must not require. The SCOPE is
+derived (`boardsWhere(hasLed)`), and the device tree's own file name comes from
+that board's `BOOT_SLOT_REQUIRED_FILES`.
 
 ## What batch 4a claimed, and the two shapes it could not express
 
@@ -578,6 +647,34 @@ is the point. It is a decision for whoever owns the oracle, beside the
 | `src/checks-board.test.ts` | batch 3's board-conditional families, each driven three ways — green on the board with the hardware, RED on a mutation of it, and SKIPPED on the board that declares it absent. Includes the first run ever made of `check_status_led`'s `BOARD_HAS_STATUS_LED=0` branch in its FAILING direction |
 | `src/checks-mqtt.test.ts` | the MQTT bridge and broker: present, startable, and INERT — plus the D-Bus policy read with its attributes wrapped across lines and a rule commented out, which is how the oracle first mis-read the real file |
 | `src/checks-shadow.test.ts` | the transient-password contract end to end, and the recorded disagreement between the oracle's two locked-field checks about an EMPTY password field |
+| `src/image.test.ts` | every tool, driven against a malformed input first: sgdisk inventing a GPT, debugfs opening nothing at exit 0, unsquashfs extracting nothing at exit 0, veritysetup using one status for an answer and a failure, `fdtget -t x` reading a string as cells, `e2fsck -fn` exiting 0 on a truncated filesystem, mcopy exiting 0 having written nothing |
+| `src/checks-ext4.test.ts` | the four storage tiers, and the three vacuous passes their tools produce -- each asserted as its own case, with the SAME transcript failing on the tier where the direction is inverted |
+| `src/checks-bootchain.test.ts` | the U-Boot chain, including the BSP byte-compare's PASSING direction, which no shipped tree reaches; and a `mutate()` helper that refuses an edit which changed nothing |
+| `src/checks-cmdline.test.ts` | one set of conclusions over TWO readers -- a U-Boot verity env and a GRUB command line composed from grub.cfg and the slot's own fragment -- with nearly every case run against both |
+| `src/checks-shape.test.ts` | the partition count as a per-board derivation, and the capability pair including the environment probe that keeps it from passing for the wrong reason |
 
 A model exercised only on fixtures its author wrote is a model of its author's
 expectations. Anything that passes on cx3576 alone is half tested.
+
+## What M4e inherits
+
+Batch 4b is the last porting batch and the register is complete: **0 unclaimed
+on both boards, 0 diverging, 0 ambiguous, 0 orphan, 0 ts-silent, 0 unfired.**
+`make os-verify-parity` exits 0. What M4e still has to decide, all of it about
+the ORACLE rather than the port:
+
+1. **Four vacuous passes and two live contradictions**, listed above and in
+   "What batch 4a claimed" below: `e2fsck` on a truncated filesystem, `debugfs`
+   on a file it never opened, `tune2fs`'s `|| true`, `getcap -r` on a directory
+   that is not there, `:3331`'s two-line device count, and the `:3765`/`:3899`
+   disagreement M4d recorded. Every one is reproduced and asserted; none is
+   repaired, because a port that hardened its oracle would diverge from it.
+2. **`board/cx3576` and `rk3576-src.dtb` are literals in an otherwise
+   board-derived script** (`:28`, `:1758`). A second U-Boot board would be
+   compared against cx3576's BSP.
+3. **A dead `else` branch** at `:2091`, unreachable from either board.
+4. **`check_container_engine`'s early return** has no register expression (M4f).
+5. The register is 333 entries across 17 modules; `board-scope.ts`,
+   `boot-slots.ts` and `image-layout.ts` hold everything more than one module
+   derives, so a third board in `os/boards/` is covered by whatever its own
+   definition selects with no entry edited.
