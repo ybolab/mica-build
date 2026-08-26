@@ -28,9 +28,10 @@
 // `board/cx3576/out/` is NOT POPULATED in a checkout, so the oracle's own run
 // is `RESULT FAIL (387/395)` with eight conclusions reading `... compare source
 // not found`. That is not a defect in the image and it is not something this
-// batch may repair: PLAN-014:220-223 puts `board/` BSP builds outside this
-// campaign, and populating the tree would turn eight of the oracle's FAILs into
-// passes -- i.e. it would change the measurement rather than port it.
+// batch may repair: PLAN-014's Scope section puts `board/` BSP builds outside
+// this campaign -- "No change to ... `board/` BSP builds (digest pins only)" --
+// and populating the tree would turn eight of the oracle's FAILs into passes,
+// i.e. it would change the measurement rather than port it.
 //
 // SO THE PORT EXPRESSES THE ABSENCE, exactly as the oracle expresses it: it
 // reads the same paths, and when the compare source is not there it FAILS with
@@ -372,9 +373,10 @@ function bspCompareChecks(board: Board): CheckCase[] {
  * `BOARD_HAS_STATUS_LED=1` and nothing about polarity. The same three facts per
  * LED are asserted in three places in this tree -- here, at
  * `board/cx3576/kernel/Dockerfile:134-139`, and in the .dts the kernel build
- * compiles -- and the last two are `board/` BSP files that PLAN-014:220-223
- * puts outside this campaign, so reading them would be a dependency on a tree
- * this port must not require.
+ * compiles -- and the last two are `board/` BSP files that PLAN-014's Scope
+ * section puts outside this campaign ("No change to ... `board/` BSP builds
+ * (digest pins only)"), so reading them would be a dependency on a tree this
+ * port must not require.
  *
  * The SCOPE is derived: `boardsWhere(hasLed)`, never a board name.
  *

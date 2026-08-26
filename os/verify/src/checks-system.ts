@@ -26,7 +26,8 @@
 // the same reason as the connd contract: mosd FAILS CLOSED on a profile it
 // cannot parse, so an image whose key had drifted would self-provision to prod
 // and disable its own sshd with every check still green. Reading those sources
-// is in scope under PLAN-014:220-223; nothing here writes to them.
+// is in scope under PLAN-014's Scope section -- "No change to ... `mosd/` Rust
+// sources" -- and nothing here writes to them.
 //
 // ═══ AND ONE DEFECT IN THE CODE UNDER TEST, REPRODUCED RATHER THAN FIXED ═══
 //
