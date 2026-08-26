@@ -101,8 +101,8 @@ cx3576 141/141 while x64 was wholly unreadable.
 assembler, twice each:
 
 ```
-f36bf80993583f6b9d097531a8efcd086e9aaaeabc014a367d7543582ecd8bce   bash os/mkimage-v2.sh          (×2)
-f36bf80993583f6b9d097531a8efcd086e9aaaeabc014a367d7543582ecd8bce   run.sh --mkimage-v2            (×3)
+f36bf80993583f6b9d097531a8efcd086e9aaaeabc014a367d7543582ecd8bce   bash os/mkimage-v2.sh          (×4)
+f36bf80993583f6b9d097531a8efcd086e9aaaeabc014a367d7543582ecd8bce   run.sh --mkimage-v2            (×4)
 ```
 
 `HARNESS.md` carries the recipe, the vacuity control and what a differing MiB
