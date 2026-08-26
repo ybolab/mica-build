@@ -223,19 +223,27 @@ export interface RootFixture {
 
 const FSTAB_IN = join(OS_DIR, 'rootfs', 'overlay-v2', 'etc', 'fstab.in')
 
-/** A constant read out of the ORACLE rather than retyped beside it. */
-function verifierConst(name: string): string {
-  const src = readFileSync(join(OS_DIR, 'verify-image-v2.sh'), 'utf8')
-  const m = new RegExp(`^${name}='(.*)'$`, 'm').exec(src)
-    ?? new RegExp(`^${name}="(.*)"$`, 'm').exec(src)
-  if (m?.[1] === undefined) {
-    throw new ToolOutputError(
-      `os/verify-image-v2.sh no longer defines ${name}; a fixture built without it would assert `
-      + `this file's idea of the constant rather than the oracle's.`,
-    )
-  }
-  return m[1]
-}
+/**
+ * The escape page's markup, TRANSCRIBED -- and deliberately a second copy.
+ *
+ * This was read out of `os/verify-image-v2.sh` at fixture-build time, so that
+ * the fixture's idea of the constant and the CHECK's idea of it came from two
+ * places and could not drift apart silently. The oracle is deleted (RFCT-110
+ * M4e), so there is no third party left to read; the property is kept by
+ * leaving this an INDEPENDENT literal from `checks-root.ts`'s and asserting
+ * the two equal in `checks-root.test.ts`.
+ *
+ * Deliberately NOT `import { BUILTIN_MARKUP }`. Seeding the fixture from the
+ * very constant the check greps for would make the positive case true by
+ * construction -- the check would find what the fixture was built from, and an
+ * edit to that one constant would move both sides at once and stay green.
+ *
+ * `os/verify-image-v2.sh:335` at `dabc9e8` is where it came from.
+ */
+const ORACLE_BUILTIN_MARKUP = '<form method="post" action="/builtin/deactivate">'
+
+/** For the drift assertion in checks-root.test.ts; see above. */
+export const FIXTURE_BUILTIN_MARKUP = ORACLE_BUILTIN_MARKUP
 
 function guidOfPartition(board: Board, layout: string): string {
   const g = board.partition(layout)?.guid
@@ -340,7 +348,7 @@ function seedHealthyRoot(root: string, board: Board): void {
   symlinkSync('../run/systemd/resolve/stub-resolv.conf', join(root, '/etc/resolv.conf'))
 
   // --- apid, carrying the escape page's markup ---
-  file('/usr/bin/apid', `ELF ...${verifierConst('BUILTIN_MARKUP')}... trailer\n`)
+  file('/usr/bin/apid', `ELF ...${ORACLE_BUILTIN_MARKUP}... trailer\n`)
 
   seedDbus(root, file)
   seedEngine(root, board, file)

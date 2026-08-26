@@ -13,9 +13,9 @@ BOARDS := cx3576 x64
 .PHONY: help os os-rootfs-cx3576-v2 \
 	os-quadlet-doc-test \
 	os-image-cx3576-v2 os-verify-cx3576-v2 os-bundle-cx3576 os-devkeys os-health-test podman \
-	os-shadow-test os-dbus-policy-test os-repart-test os-ui-location-test \
+	os-shadow-test os-dbus-policy-test os-repart-test \
 	os-uboot-handshake-test os-mkimage-v2-test os-mkimage-x64-test \
-	os-layout-lint os-layout-lint-test os-verify-test os-verify-parity os-build-test \
+	os-layout-lint os-layout-lint-test os-verify-test os-build-test \
 	docs-verify docs-verify-test build-env
 
 help:
@@ -24,20 +24,18 @@ help:
 	@echo "v2 (A/B layout, squashfs+dm-verity rootfs, RAUC updates):"
 	@echo "  os-rootfs-cx3576-v2 build the squashfs+dm-verity rootfs slot image"
 	@echo "  os-image-cx3576-v2  build the cx3576 A/B disk image (layout v2)"
-	@echo "  os-verify-cx3576-v2 verify the assembled v2 image against the v2 image contract"
+	@echo "  os-verify-cx3576-v2 verify the assembled v2 image against the v2 image contract (docker)"
 	@echo "  os-bundle-cx3576    build the RAUC update bundle"
 	@echo "  os-devkeys          generate the gitignored development signing material"
 	@echo "  os-health-test      run the offline tests for the health gate and machine-id oneshots"
 	@echo "  os-shadow-test      run the offline tests for the STATE /etc/shadow reconciler"
 	@echo "  os-dbus-policy-test prove the shipped mosd D-Bus policy is root-only against a real dbus-daemon"
 	@echo "  os-repart-test      prove first-boot repart growth grows DATA and cannot wipe the loader (privileged docker)"
-	@echo "  os-ui-location-test prove the custom-UI location assertions in the v2 verifier actually fail when the location moves"
 	@echo "  os-mkimage-v2-test  prove the v2 assembler rebuilds byte-identically, and refuses every layout mistake that would need a re-flash (docker)"
 	@echo "  os-mkimage-x64-test prove the x64 assembler rebuilds byte-identically, and refuses every boot-chain mistake that leaves a machine at the UEFI shell (docker)"
 	@echo "  os-layout-lint      check every board layout against the board-definition schema"
 	@echo "  os-layout-lint-test prove the layout linter rejects a broken board definition, including one declared empty"
 	@echo "  os-verify-test      run the os/verify bun+TypeScript suite (typecheck + bun test)"
-	@echo "  os-verify-parity    diff the TypeScript image verifier against os/verify-image-v2.sh, per check, both boards (docker)"
 	@echo "  os-build-test       run the os/build bun+TypeScript suite: board geometry and the toolset wrappers (docker)"
 	@echo "  docs-verify         assert both document indexes agree with the tree, in both directions"
 	@echo "  docs-verify-test    prove the index assertions actually fail on a duplicated row or entry"
@@ -66,8 +64,16 @@ os-image-cx3576-v2:
 	bash os/rootfs/build-v2.sh
 	bash os/mkimage-v2.sh
 
+# THE IMAGE CONTRACT. os/verify-image-v2.sh was this until RFCT-110 M4e ported
+# it into os/verify/ and deleted it; src/verify-cli.ts prints the same
+# PASS/FAIL/SKIP lines and the same RESULT line, and reproduced both boards'
+# summary counts exactly at the port's tip.
+#
+# Needs DOCKER on a host without sgdisk/mtools/debugfs/unsquashfs/veritysetup --
+# it reads them out of the pinned IMAGE_ALPINE_3_21, exactly as the deleted
+# script re-exec'd into it. Verify the other board with --board.
 os-verify-cx3576-v2:
-	bash os/verify-image-v2.sh
+	bash os/verify/run.sh --verify --board cx3576
 
 os-bundle-cx3576:
 	bash os/update/bundle.sh
@@ -105,37 +111,24 @@ os-dbus-policy-test:
 os-repart-test:
 	bash os/tests/repart-loader-test.sh
 
-# Drives the real os/verify-image-v2.sh against mutated fixtures -- an fstab
-# with /srv moved onto EPHEMERAL or STATE, one stripped of x-systemd.growfs, one
-# with a deeper /srv/ui entry, a root tree with a UI bundle BAKED under /srv/ui,
-# an asset tree shipped at the reserved /builtin prefix, an apid binary that no
-# longer carries the built-in escape page -- and requires each assertion to
-# fail, with its own message rather than merely a non-zero exit.
+# os-ui-location-test WAS HERE, and it went with the verifier it drove.
 #
-# It proves what the image contract cannot: that those assertions can fail at
-# all. os-verify-cx3576-v2 runs them against the assembled image and they pass,
-# which is one direction, and one direction is not evidence -- the checks
-# docs/design/api.md section 5.2 leans on are about /srv AS A PARTITION and
-# would go on passing after somebody moved the UI root to /var/lib, taking every
-# custom UI on every device with it.
+# It ran the REAL os/verify-image-v2.sh once per case against a mutated fixture
+# root -- an fstab with /srv moved onto EPHEMERAL or STATE, one stripped of
+# x-systemd.growfs, a UI bundle BAKED under /srv/ui, an asset tree at the
+# reserved /builtin prefix -- and required each assertion to fail with its own
+# message. With that script deleted (RFCT-110 M4e) the suite has nothing to
+# drive: it read the verifier's own source for constants and shelled out to it
+# 59 times. It is one of the "now-ported fixture suites" RFCT-110's scope names.
 #
-# Fixture mode also runs the packed-root mountpoint check the custom-UI
-# assertions CHAIN to, and the /srv-absent case requires that check to go red
-# with its own message. Six UI passes alone prove only that they do not
-# RE-DERIVE mountpoint existence; they do not prove anything still catches a
-# missing /srv, and from outside the two look the same. That check had only
-# ever been observed passing, because it runs against real images where /srv is
-# always there.
-#
-# Every case names the assertions it expects BY IDENTITY and the harness diffs
-# that against what ran. It does not count PASS lines: a count breaks whenever
-# fixture mode is widened, and the obvious repair -- exit 0 with no FAIL lines
-# -- is invariant under a run in which nothing executed, which would silently
-# turn the /srv-absent case from a proof of chaining into a proof of nothing.
-# Needs no root, no image and no docker, and it fails loudly when it cannot run
-# rather than skipping.
-os-ui-location-test:
-	bash os/tests/ui-location-test.sh
+# WHAT IT PROVED IS NOT LOST, and that is the condition under which it went.
+# Every one of its seven UI identities is a case in os/verify/src/checks-fstab.ts
+# with failing-side tests beside it in checks-fstab.test.ts -- /srv moved onto
+# STATE, moved onto the wipeable /var, content baked under the UI root, the
+# reserved prefix, and the packed-root mountpoint check the UI assertions CHAIN
+# to. Those run under `make os-verify-test`, need no image and no docker, and
+# are driven from the failing side, which is what os-ui-location-test existed
+# to guarantee.
 
 # The only check in this repository that claims to prove BYTE-IDENTICAL
 # rebuilds. It drives the real os/mkimage-v2.sh --assemble twice over fabricated
@@ -279,27 +272,19 @@ os-layout-lint-test:
 os-verify-test:
 	bash os/verify/run.sh
 
-# PLAN-014 M4: the gate the port is migrated under.
+# os-verify-parity WAS HERE, and it is removed rather than kept able to refuse.
 #
-# Runs os/verify-image-v2.sh and the os/verify check register against the SAME
-# image, both boards, and diffs their conclusions PER CHECK -- by identity, not
-# by count. A count breaks whenever the suite is widened, and "no FAIL lines" is
-# invariant under a run in which nothing executed; os/tests/ui-location-test.sh
-# says the same thing about the same problem at its own scale.
+# It ran os/verify-image-v2.sh and the os/verify register against the SAME image
+# and diffed their conclusions PER CHECK, by identity rather than by count. Its
+# one input was the oracle. With the oracle deleted the target could only refuse
+# every time or pass having compared nothing, and a target that passes because
+# there is nothing left to compare is the worst outcome available here -- it
+# reads exactly like a gate that is still being held.
 #
-# THIS TARGET IS EXPECTED TO EXIT 2 UNTIL M4e, and that is not a wart. Exit 2 is
-# INCOMPLETE: the two sides agree on everything they both decided, and the
-# oracle still concludes things nothing in the register claims. Exit 1 is a real
-# divergence, an ambiguous register or a check that fired on neither side, and
-# exit 0 is full parity -- which is the condition under which the shell verifier
-# is deleted. Three values, because a caller who only looked at "non-zero" could
-# not tell an unfinished migration from a broken one.
-#
-# It is deliberately NOT part of the shared floor for that reason. It needs a
-# built image for each board, docker, and a bun on the host -- see run.sh's
-# refusal for why this one mode cannot take the pinned bun container.
-os-verify-parity:
-	bash os/verify/run.sh --parity
+# The gate it held is recorded, not re-runnable. Its last run, at the port's tip:
+#     cx3576  PASS  compared 398, diverging 0, UNCLAIMED 0 of 398
+#     x64     PASS  compared 312, diverging 0, UNCLAIMED 0 of 312   rc=0
+# os/verify/HARNESS.md carries that and what the deletion froze.
 
 # PLAN-014 M6a: the TypeScript build driver -- the typed board geometry the
 # assemblers will read, and the Bun.$ wrappers for the toolset they will drive.

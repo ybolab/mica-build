@@ -732,12 +732,6 @@ describe('e2fsck -fn, whose exit status is the oracle\'s whole test', () => {
 // ── the legacy uImage header ───────────────────────────────────────────────
 
 describe('the uImage header reader, which has no tool to lie for it', () => {
-  let dir = ''
-  beforeAll(() => {
-    dir = join(scratch(), 'uimage')
-    mkdirSync(dir, { recursive: true })
-  })
-
   /** The first 64 bytes of the real cx3576 boot.scr, captured 2026-08-26. */
   const HEADER = Buffer.from(
     '27051956e6c334365e0be1000000' + '1a04'
@@ -745,8 +739,20 @@ describe('the uImage header reader, which has no tool to lie for it', () => {
     + Buffer.from('mos boot').toString('hex') + '00'.repeat(24),
     'hex',
   )
-  const scr = join(dir, 'boot.scr')
-  writeFileSync(scr, Buffer.concat([HEADER, Buffer.from('\0\0\x19\xfc\0\0\0\0setenv bootslot A\n', 'latin1')]))
+  // EVERY path derived from `dir` is derived INSIDE the hook, not just `dir`
+  // itself. Deriving one at describe scope from a `dir` the hook has not set
+  // yet produces `join('', 'boot.scr')` -- the RELATIVE path `boot.scr` -- and
+  // the write lands in whatever directory run.sh cd'd into. Measured: it left
+  // a real uImage at os/verify/boot.scr and every test still passed, because a
+  // file written to the wrong place reads back perfectly well from there.
+  let dir = ''
+  let scr = ''
+  beforeAll(() => {
+    dir = join(scratch(), 'uimage')
+    mkdirSync(dir, { recursive: true })
+    scr = join(dir, 'boot.scr')
+    writeFileSync(scr, Buffer.concat([HEADER, Buffer.from('\0\0\x19\xfc\0\0\0\0setenv bootslot A\n', 'latin1')]))
+  })
 
   test('the magic is the four bytes od prints, lowercase and unspaced', () => {
     expect(uImageMagic(scr)).toBe('27051956')

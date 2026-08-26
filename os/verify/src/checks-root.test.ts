@@ -19,11 +19,11 @@
 // hand-written wreck would go red for reasons the real failure does not have.
 
 import { describe, expect, test } from 'bun:test'
-import { mkdirSync, readdirSync, readFileSync, renameSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
-import { dirname, join } from 'node:path'
+import { mkdirSync, readdirSync, renameSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
+import { join } from 'node:path'
 import { loadBoard } from './board.ts'
-import { packedRootFixture, type RootFixture } from './checks-fixture.ts'
-import { ROOT_CHECKS } from './checks-root.ts'
+import { FIXTURE_BUILTIN_MARKUP, packedRootFixture, type RootFixture } from './checks-fixture.ts'
+import { BUILTIN_MARKUP, ROOT_CHECKS } from './checks-root.ts'
 import type { CheckCase } from './checks.ts'
 import { boardEnvPath } from './paths.ts'
 import type { CheckResult, Verdict } from './parity.ts'
@@ -645,13 +645,19 @@ describe('the built-in escape, as an on-image fact', () => {
     }
   })
 
-  test('the markup is read out of the ORACLE, so the two cannot drift', () => {
-    // The fixture seeds apid with a constant taken from os/verify-image-v2.sh
-    // rather than retyped here. If the oracle's BUILTIN_MARKUP changed and this
-    // file's copy did not, the check would go red against a correct image --
-    // and the failure would point at the image rather than at the constant.
-    const oracle = readFileSync(join(dirname(boardEnvPath('cx3576')), '..', '..', 'verify-image-v2.sh'), 'utf8')
-    expect(oracle).toContain("BUILTIN_MARKUP='<form method=\"post\" action=\"/builtin/deactivate\">'")
+  test('the two surviving copies of the markup cannot drift apart', () => {
+    // This used to read os/verify-image-v2.sh and assert the oracle's
+    // BUILTIN_MARKUP, so that the fixture's copy and the check's copy came from
+    // a common third source. The oracle is deleted (RFCT-110 M4e), so the two
+    // copies keep each other honest instead: checks-fixture.ts seeds apid from
+    // its own literal and checks-root.ts greps for its own, and if either is
+    // edited alone the check goes red against a correct image -- which is
+    // exactly the failure the oracle read was buying.
+    expect(FIXTURE_BUILTIN_MARKUP).toBe(BUILTIN_MARKUP)
+    // ...and the value itself, transcribed once more here, so that an edit
+    // which moved BOTH copies together still has to face a third statement of
+    // what the escape page actually renders.
+    expect(BUILTIN_MARKUP).toBe('<form method="post" action="/builtin/deactivate">')
   })
 })
 
