@@ -22,6 +22,11 @@ strings - the one permitted non-comment edit class, each change tabulated below.
   `os/build/run.sh`, `os/verify/src/checks-*.ts` (non-test) and the four
   `os/build-env/*/Dockerfile` LABEL values - task IDs leave user-visible
   strings there, and nothing else in those files is touched.
+- **String-only (second handover, from M2 via L2)**: four `.rs` string literals
+  under `mosd/` - `busname/src/lib.rs`, `mosd/tests/scan.rs`,
+  `mqttd/tests/protocol.rs`, `mosd/src/reconciler/sshd.rs`. M2 treated the
+  comments in those files; only the literal changes here. The
+  `sshd.rs` key-comment site is **deliberately retained** - see below.
 - **Out**: `mosd/apid/**` (PLAN-016), every non-test file under `os/` and
   `mosd/` that M1 and M2 already treated, `os/tests/**/README.md`, `Makefile`,
   `board/**`, `docs/design/**`, `docs/plan/**`, `*.zh.md`, `.gitea/**`.
@@ -177,6 +182,79 @@ touched**:
 
 Nothing asserts on those label values, so the four are a one-sided change.
 
+### The second handover: task-ID strings in `mosd/`
+
+M2 (RFCT-115) was comment-only by design and left this class for M3. All four
+sites were **re-located by content**, not by M2's line numbers, as instructed;
+three had moved by 1-3 lines.
+
+| file:line | before | after |
+|---|---|---|
+| `mosd/busname/src/lib.rs:262` | `(measured, RFCT-093 Investigation), so classifying it as system lets a third \` / `party present itself as the system` | `(measured against dbus-daemon 1.12.20), so classifying it as system lets a \` / `third party present itself as the system` |
+| `mosd/mosd/tests/scan.rs:670-672` | `...can own this name (measured, \` / `RFCT-093), so publishing it as system-origin would let any third party present itself \` / `to operators and to the bridge as the system; got {entry:#}` | `...can own this name (measured \` / `against dbus-daemon 1.12.20), so publishing it as system-origin would let any third \` / `party present itself to operators and to the bridge as the system; got {entry:#}` |
+| `mosd/mqttd/tests/protocol.rs:729` | `...which is the wrong-class defect \` / `PLAN-011 D5 names, reached by the other route` | `...which is the wrong-class defect \` / `this rule exists to prevent, reached by the other route` |
+| `mosd/mosd/src/reconciler/sshd.rs:947` | `.expect("the shadow file is no longer an input to this reconciler")` | `.expect("the shadow file is not an input to this reconciler")` |
+
+M2's list gave `sshd.rs:968`; by content the past-tense `expect()` is at
+**:947**. `:968` on both M2's branch and this one is
+`let (reconciler, paths) = fixture(...)` in a different test, so the number was
+stale exactly as L2 warned. `:947` is the only past-tense `expect()` in the
+file - the other three (`:1210`, `:1392`, `:1724`) are already present-tense.
+
+The first two messages keep the measurement they carried and lose only the
+task ID; `dbus-daemon 1.12.20` is the version `mosd/hack/dbus-policy-test.sh`
+section 4 measures against, so a reader of the panic still knows what was
+measured and where. Each of the four literals was grepped across `mosd/`,
+`test/`, `os/` and `docs/` first and appears **exactly once** - nothing
+compares them.
+
+**Rust continuation semantics were checked rather than assumed.** A `\` at
+end of line strips the newline *and* the next line's leading whitespace, so the
+re-wrap had to preserve the word spacing. The joined values were computed and
+read back before committing; all three concatenate with single spaces and no
+doubled or missing space. The `{entry:#}` capture in `scan.rs` is preserved,
+and no `{` or `}` was added anywhere.
+
+### `mosd/mosd/src/reconciler/sshd.rs:1004`/`:1006` - RETAINED as data
+
+**Option 1, and the tie-breaker is not close.** The task IDs at `:1004` and
+`:1006` are inside the comment field of committed SSH public-key constants -
+data, not prose - and L1's rule is that if changing that comment field would
+touch **any** assertion on the key line, both the doc lines and the constant
+stay. The greps were run first:
+
+    $ grep -rn "AAAAC3NzaC1lZDI1NTE5AAAAIL99V7xPTOP3jZjnbVPM7xC" .
+    mosd/mosd/src/reconciler/sshd.rs:1005    <- the constant
+    mosd/apid/src/tests.rs:625               <- the SAME key, second crate
+    mosd/apid/tests/e2e.rs:448,449           <- and again, plus its bare blob
+
+    $ grep -rn "rfct-034" mosd/ test/
+    mosd/apid/tests/e2e.rs:481   assert!(stored.contains("rfct-034-test-ed25519"), ...)
+    mosd/apid/src/tests.rs:878   assert!(body.contains("rfct-034-test-ed25519"), "comment missing")
+
+**Two live assertions assert on the comment field itself**, and both are in
+`mosd/apid/**` - a hard carve-out owned by a sibling workstream (PLAN-016)
+that this subtask may not edit. `mosd/apid/src/tests.rs:621-624` states the
+coupling in its own words: *"the same three keys `mosd/mosd/src/reconciler/
+sshd.rs` tests against, so both sides of the D-Bus boundary are exercised with
+identical input."* Changing the constant here would either break that stated
+identity across the D-Bus boundary or turn two apid tests red, and repairing
+either would mean editing a carved-out crate. Retained, both lines and the
+constant, exactly as L1's default directs.
+
+(A key line's SHA256 fingerprint is computed over the base64 blob only, so the
+`REAL_*_FINGERPRINT` constants would in fact have survived a comment-field
+edit. That is not what decides it - the two `contains` assertions are.)
+
+**`sshd.rs:1157` and `:1173` are retained on the same rule.**
+`"fresh@rfct-034"` is passed to a live `ssh-keygen -C` at `:1157` and asserted
+back as the parsed comment field at `:1173` (`assert_eq!(parsed.comment
+.as_deref(), Some("fresh@rfct-034"))`). It is a self-contained pair in one
+file, so it *could* move together - but it is an SSH key comment field with an
+assertion on it, which is the case L1's tie-breaker names. Retained, and
+recorded here rather than left implicit. It is a two-line change if L2 wants
+it.
+
 ### Test assertions that had to move with a verdict string
 
 Three verdict strings above are asserted by name. Both halves are in the same
@@ -310,6 +388,22 @@ RFCT-093's own_prefix MEASUREMENT owns section 4 ..." - was deleted outright.
    well-formedness assertion over the shipped CHECKS is vacuous today".
    `CHECKS` now spreads 17 families, so the sentence was false. Replaced with
    what the file does. The assertion itself was **not** touched - see below.
+6. **The two `mosd/` panic messages keep their measurement.** `RFCT-093` in
+   `busname/src/lib.rs:262` and `mosd/tests/scan.rs:671` was doing real work in
+   a failure message - it told the reader the classification was measured
+   rather than reasoned. Deleting the identifier alone would have left
+   "(measured,)" saying nothing, so both now name **what** was measured
+   against: `dbus-daemon 1.12.20`, the version `mosd/hack/dbus-policy-test.sh`
+   section 4 drives. The doc comments above each (which M2 already treated,
+   and which this subtask did not touch) still carry the full
+   `docs/task/RFCT-093.md` citation.
+7. **Four `docs/task/*.md` and `docs/plan/*.md` citations survive in `mosd/`
+   doc comments** (`busname/src/lib.rs:38,110,224,252`,
+   `mosd-settings/src/model.rs:366`, `mosd/src/identity.rs:102`). They are
+   comments in files M2 already treated, so out of this handover by its own
+   terms - and they are the same resolvable-path shape kept in `os/`.
+   `identity.rs:102` is additionally on PLAN-015's MUST-KEEP list (class 6,
+   the independent-draw rule).
 
 ## Left untreated, and why
 
@@ -353,6 +447,7 @@ Both bun suites were re-run after the final code commit.
 | docs index | `bash docs/verify-index.sh` | `384/384 PASS`, rc=0 |
 | apid harness | `bash test/apid-api/run.sh --dry-run` | refuses at its image precondition, rc=1 - **identical at `main`**, see below |
 | `bash -n` | every `.sh` touched (14 files) | all rc=0 |
+| Rust | `cargo fmt` / `cargo test` | **NOT RUN - no cargo or usable rustfmt on this host.** See below. |
 | shellcheck | container, same 14 files, vs `main` | 9 findings, **identical set**, rc=123 both sides |
 
 **The container route is what CI takes and is what these numbers are.** The
@@ -419,6 +514,36 @@ The same command against a detached `main` worktree with the same directory
 created prints the identical three lines. The scratch directory was removed
 afterwards.
 
+### The four `mosd/` string edits could not be gate-run here
+
+They were made rustfmt-neutral by construction instead.
+
+There is no cargo on this host, and `mosd/hack/check.sh` cannot run. The only
+complete Rust toolchain under `/srv/mos-rust-tools` is `rust96`;
+`/srv/mos-rust-tools/bin/rustfmt` fails with
+`error while loading shared libraries: librustc_driver-28a98848f7a7c026.so`,
+and no such library exists on this host. So `cargo fmt --check` was **not run**,
+and this record does not claim it was.
+
+What was done instead, since the repo does gate on rustfmt (`4f0937e`):
+
+- There is **no `rustfmt.toml` or `.rustfmt.toml`** anywhere in the tree, so
+  rustfmt runs at its defaults: `max_width = 100` and `format_strings = false`.
+  With `format_strings` off, rustfmt does not reflow string literal contents or
+  their manual `\`-continuation wrapping.
+- Every line this milestone added to a `.rs` file was measured: the widest is
+  **94 columns**, and the seven changed lines are 54, 65, 74, 89, 90, 91 and 94.
+  All are inside string literals; no code structure, indentation, argument list
+  or line break outside a literal was touched. The full four-file diff is seven
+  `-`/`+` pairs of string-continuation lines and nothing else.
+- The joined literal values were computed and read back, because a `\` at
+  end of line strips the newline *and* the following leading whitespace: all
+  three multi-line messages concatenate with correct single spacing.
+
+This is a construction argument, not a measurement. **L2 should run
+`mosd/hack/check.sh` on a host with cargo before merging**, and that is the one
+gate in this task file that a reader should not take on trust.
+
 ### Not run here, and why
 
 - `os/tests/health-test.sh` was expected to need an image; it does not, and it
@@ -437,7 +562,9 @@ afterwards.
 - `os/tests/quadlet-doc-test.sh` needs the arm64 Quadlet generator under
   emulation; **not run**. Same gate.
 - `mosd/hack/check.sh` runs cargo on a host that has none; **not attempted**,
-  and it is the one file in scope this milestone did not modify at all.
+  and it is the one file in scope this milestone did not modify at all. It is
+  also the gate that would cover the four `mosd/` string edits, so L2 should
+  run it on a host with cargo before merging.
 - `mosd/hack/build-target.sh` needs a full cross build; **not run**. `bash -n`
   and shellcheck are its gate, and its only executable change is the one
   tabulated error string.

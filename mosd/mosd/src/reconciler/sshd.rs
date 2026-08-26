@@ -944,7 +944,7 @@ mod tests {
         reconciler
             .apply(&settings_with(ssh_settings(true)))
             .await
-            .expect("the shadow file is no longer an input to this reconciler");
+            .expect("the shadow file is not an input to this reconciler");
 
         assert!(
             !paths.shadow.exists(),
