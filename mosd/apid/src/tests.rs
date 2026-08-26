@@ -221,7 +221,6 @@ async fn the_first_failure_arms_the_backoff_window() {
     // Every attempt inside that window is refused without being checked --
     // including the correct password, which is the point: the daemon cannot
     // tell the guesser apart from the administrator, so it answers neither.
-    // The old rule granted four free guesses before the first refusal.
     let second = post_form(&router, "/login", "password=wrongpass", None).await;
     assert_eq!(second.status(), StatusCode::TOO_MANY_REQUESTS);
 
@@ -466,9 +465,7 @@ async fn tampered_cookie_is_rejected() {
     assert_eq!(location(&response), "/login");
 }
 
-// ---------------------------------------------------------------------------
 // Power pane
-// ---------------------------------------------------------------------------
 
 /// One quiet period of the fake's polling deadline, used to give a detached
 /// power task every chance to run before asserting that none was started.
@@ -614,9 +611,7 @@ async fn get_on_power_actions_is_not_routed_and_does_not_act() {
     }
 }
 
-// ---------------------------------------------------------------------------
 // SSH pane
-// ---------------------------------------------------------------------------
 
 /// Real `ssh-keygen` output, the same three keys `mosd/mosd/src/reconciler/
 /// sshd.rs` tests against, so both sides of the D-Bus boundary are exercised
@@ -697,8 +692,8 @@ fn sshd_state(effective: bool, requested: bool, transient_active: bool) -> serde
         "passwordAuthentication": effective,
         "passwordAuthenticationRequested": requested,
         "transientPasswordActive": transient_active,
-        // Plural since RFCT-053: mosd renders one file per managed login
-        // account and publishes every path. apid reads none of them; the
+        // Plural: mosd renders one file per managed login account and
+        // publishes every path. apid reads none of them; the
         // fixture carries the real key name so it keeps describing state that
         // exists.
         "authorizedKeysPaths": [
@@ -1298,10 +1293,8 @@ async fn the_pane_and_a_removal_agree_on_the_fingerprint_openssh_prints() {
     }
 }
 
-// ---------------------------------------------------------------------------
 // The asset router: §4.1 precedence, the reserved `/api/` subtree, §4.2's SPA
 // fallback and §4.3's headers as applied.
-// ---------------------------------------------------------------------------
 
 /// What a browser sends on a navigation.
 const BROWSER_ACCEPT: &str =
@@ -1553,10 +1546,8 @@ async fn the_api_reservation_answers_every_shape_with_the_envelope() {
     }
 }
 
-// ---------------------------------------------------------------------------
 // §2.1's two discovery endpoints, and what the rest of the reserved subtree
 // still answers now that two of its paths are declared.
-// ---------------------------------------------------------------------------
 
 /// The exact document §2.1's discovery table gives for the served set.
 const VERSIONS_BODY: &str = r#"{"versions":["v1"],"current":"v1"}"#;
@@ -2143,10 +2134,8 @@ async fn head_is_admitted_and_carries_the_same_headers_as_get() {
     );
 }
 
-// ---------------------------------------------------------------------------
 // §6.3's escape: the built-in UI at the reserved `/builtin/` prefix, and the
 // control that deactivates a custom UI.
-// ---------------------------------------------------------------------------
 
 /// The prefix, spelled out here rather than imported, so that changing the
 /// spelling in `routes.rs` fails these tests instead of silently moving with
@@ -2345,8 +2334,8 @@ struct StoreState {
 /// Bundle-store states that differ in every way §6.1 distinguishes, named by
 /// identity.
 ///
-/// This is deliberately **not** an enumeration of §6.1's five classes as
-/// behaviours — that suite is RFCT-078's. It is the input set for the property
+/// This is deliberately not an enumeration of §6.1's five classes as
+/// behaviours — that suite is `broken_classes`. It is the input set for the property
 /// §6.3 actually argues from: *"the built-in handlers do not read `/srv/ui` at
 /// all, so no bundle state ... can affect them."*
 fn bundle_store_states() -> Vec<StoreState> {
@@ -2656,8 +2645,8 @@ async fn the_built_in_panes_reachable_beside_an_active_bundle_are_named() {
 /// §6.3's stated cost — *"(A) only helps an operator who knows the URL"* —
 /// closed on the built-in surfaces that lead to it, named by identity.
 ///
-/// The 502 page §6.3 actually cites is **not** among them, and F2 in
-/// `docs/task/RFCT-075.md` records why.
+/// The 502 page §6.3 cites is not among them: it is reached only when a mosd
+/// call fails, which a broken bundle does not cause.
 #[tokio::test]
 async fn the_escape_path_is_named_on_the_surfaces_that_lead_to_it() {
     let bundle = bundle_shadowing_the_prefix();
@@ -2686,10 +2675,8 @@ async fn the_escape_path_is_named_on_the_surfaces_that_lead_to_it() {
     );
 }
 
-// ---------------------------------------------------------------------------
 // access.md §6: the audit trail and the persisted backoff counter, observed
 // through the router — the same surface an attacker and an operator use
-// ---------------------------------------------------------------------------
 
 /// The router with the guard counters and the audit ring persisted under
 /// `dir`, which is what production gets from `main.rs`.
@@ -2882,9 +2869,7 @@ async fn the_backoff_window_survives_a_restart_at_the_http_surface() {
     );
 }
 
-// ---------------------------------------------------------------------------
-// PLAN-012 M3: the container pane
-// ---------------------------------------------------------------------------
+// The container pane
 
 /// A settings tree with the container subtree, authenticated as `ssh_tree`.
 fn container_tree(enabled: bool) -> serde_json::Value {
@@ -2903,7 +2888,7 @@ async fn the_container_pane_states_the_root_consequence_not_a_generic_warning() 
     let cookie = login(&router, "hunter2secret").await;
     let body = body_string(get(&router, "/containers", Some(&cookie)).await).await;
 
-    // PLAN-012 D5 asks for the specific consequence. Each clause is asserted
+    // The pane must state the specific consequence. Each clause is asserted
     // separately: a page that said only "runs as root" would pass a check for
     // the word "root" while leaving out what an operator needs to act on --
     // that writing a file into the Quadlet directory is what exercises it.
@@ -2966,9 +2951,7 @@ async fn the_pane_does_not_list_quadlet_files_while_containers_are_off() {
     );
 }
 
-// ---------------------------------------------------------------------------
-// RFCT-104: the MQTT pane
-// ---------------------------------------------------------------------------
+// The MQTT pane
 
 /// A settings tree with the mqtt subtree, authenticated as `ssh_tree`.
 fn mqtt_tree(enabled: bool) -> serde_json::Value {
@@ -2995,14 +2978,13 @@ fn mqtt_tree(enabled: bool) -> serde_json::Value {
 /// separately there by `the_published_shape_is_the_contract_with_the_apid_pane`,
 /// which names this file as the consumer.
 ///
-/// Copy it; do not adjust it. The fixture this replaced was invented here to
-/// match what the pane had chosen to read, which is a test of the pane against
-/// itself: it was flat, the reconciler has always been nested, and both crates
-/// stayed green while the pane rendered "unknown" for every value and the
-/// open-listener warning could not fire at all. A hand-written fixture cannot
-/// detect that it disagrees with the producer. This is still a second copy in
-/// a second crate -- apid and mosd talk over a bus and share no type -- but a
-/// named source makes the copy auditable, which the invented one was not.
+/// Copy it; do not adjust it. A fixture written here to match what the pane
+/// reads is a test of the pane against itself: it cannot detect that it
+/// disagrees with the producer, so both crates stay green while the pane
+/// renders "unknown" for every value and the open-listener warning cannot fire
+/// at all. This is still a second copy in a second crate -- apid and mosd talk
+/// over a bus and share no type -- but a named source makes the copy
+/// auditable.
 ///
 /// One field is necessarily not verbatim: `configPath` is the reconciler's own
 /// `config_path`, which is a `tempfile` directory in that test, so the
@@ -3420,8 +3402,8 @@ async fn a_failed_broker_is_named_on_the_pane_with_somewhere_to_look() {
     // The switch is on, so the pane would otherwise say "enabled" and stop.
     // That is the request, not the outcome: the broker took the settings, hit
     // a listen address it could not parse and exited. Nothing rejected the
-    // value -- rejecting it is the coupling RFCT-104 forbids -- so the unit
-    // state is the only evidence there is, and the pane is where an operator
+    // value -- rejecting it would couple the master switch to the listener --
+    // so the unit state is the only evidence there is, and the pane is where an operator
     // meets it.
     let (router, fake) = test_app(mqtt_tree(true));
     fake.set_state_entry(
@@ -3476,8 +3458,8 @@ async fn a_broker_that_is_running_is_not_reported_as_failed() {
 
 #[tokio::test]
 async fn a_listen_address_the_broker_cannot_use_does_not_stop_the_switch_saving() {
-    // The other half of the amendment, and the same rule as the open-listener
-    // guard: apid does not validate the listen address. `localhost` is exactly
+    // The same rule as the open-listener guard: apid does not validate the
+    // listen address. `localhost` is exactly
     // the value that kills the broker -- it binds an interface and does not
     // resolve names -- and it must still be possible to save the switch while
     // it is set, in both directions. A pane that refused here, or greyed the
@@ -3570,9 +3552,7 @@ fn every_mutating_route_is_covered_by_the_authentication_tests() {
     );
 }
 
-// ---------------------------------------------------------------------------
 // §2.2's two read-only resource roots.
-// ---------------------------------------------------------------------------
 
 /// A tree in the shape §2.2's inventory describes, carrying every one of the
 /// four redacted field names — at three depths and inside an array — so a walk

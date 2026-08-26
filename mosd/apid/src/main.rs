@@ -22,8 +22,7 @@
 //! above happens, without generating a certificate, a session key or a
 //! listener. See [`main`]. `--version` (or `-V`) prints `apid <crate version>
 //! (<build commit>)`; `--openapi` prints the OpenAPI document for the `/api`
-//! surface. Both exit 0. Anything else on the command line is ignored,
-//! exactly as it always has been.
+//! surface. Both exit 0. Anything else on the command line is ignored.
 
 #![forbid(unsafe_code)]
 
@@ -53,33 +52,20 @@ use tokio::signal::unix::{SignalKind, signal};
 use crate::settings_api::SettingsApi;
 
 fn main() -> anyhow::Result<()> {
-    // `--version`, ANSWERED AND RETURNED FROM HERE, above every line that makes
-    // this process a daemon. RFCT-113 M7d, and the same handler mosd carries;
-    // `mosd/mosd/src/main.rs` holds the long form of the shared reasoning.
+    // `--version` is answered and returned from here, above every line that
+    // makes this process a daemon. The position is the requirement: a handler
+    // below initialisation would generate a self-signed certificate and a
+    // session signing key into the state dir, bind 0.0.0.0:443 and 0.0.0.0:80,
+    // print APID_LISTENING and never exit, so a smoke run that asked for the
+    // version would hang rather than go red. Hence a synchronous `main` with
+    // the async body in `serve`: the answer is given before the tokio runtime
+    // is built, before the ring crypto provider is installed, before
+    // `Config::from_env`, before the state dir exists and before any key is
+    // generated. There is nothing above it. `mosd/mosd/src/main.rs` carries
+    // the same handler and the long form of the shared reasoning.
     //
-    // WHY THIS FILE WAS EDITABLE AT ALL: PLAN-014's Scope excludes `mosd/` Rust
-    // sources, and THE USER LIFTED THAT EXCLUSION ON 2026-08-26 for exactly
-    // this handler in exactly these two files, plus its build-time plumbing.
-    // The rest of the exclusion stands. mosd/mosd/src/main.rs records the
-    // amendment in full.
-    //
-    // The position is the requirement. Measured in the x64 factory root on
-    // 2026-08-26, before this handler existed: `/usr/bin/apid --version`
-    // ignored the flag, generated a self-signed certificate and a session
-    // signing key into /var/lib/mos/apid, bound 0.0.0.0:443 and 0.0.0.0:80,
-    // printed APID_LISTENING and NEVER EXITED -- rc=124 against a 20s budget.
-    // So a handler below initialisation would answer the question by minting
-    // key material and then hanging, and a smoke run that asked it would hang
-    // rather than go red.
-    //
-    // Hence a synchronous `main` with the async body moved into `serve`: the
-    // answer is given before the tokio runtime is built, before the ring crypto
-    // provider is installed, before `Config::from_env`, before the state dir
-    // exists and before any key is generated. There is nothing above it.
-    //
-    // AN UNRECOGNISED ARGV IS UNCHANGED, for the reason mosd's copy of this
-    // comment gives: apid is started by systemd with no arguments
-    // (mosd/dist/apid.service) and has always ignored what it was given.
+    // An unrecognised argv falls through to the daemon: apid is started by
+    // systemd with no arguments (mosd/dist/apid.service).
     if wants_version(std::env::args().skip(1)) {
         println!("{}", version_line());
         return Ok(());
@@ -97,7 +83,7 @@ fn main() -> anyhow::Result<()> {
 
 /// What the commit is reported as when the build supplied none.
 ///
-/// A VALUE AND NOT A FAILURE: a `--version` that exited non-zero because the
+/// A value and not a failure: a `--version` that exited non-zero because the
 /// plumbing did not reach it would turn "we do not know which commit" into
 /// "this binary is broken".
 const UNKNOWN_COMMIT: &str = "unknown";
@@ -123,7 +109,7 @@ fn wants_openapi(args: impl IntoIterator<Item = String>) -> bool {
 /// The build commit, or [`UNKNOWN_COMMIT`], from whatever the build embedded.
 ///
 /// Takes the embedded value as an argument so the absent case is reachable from
-/// a test in a binary that WAS built with a commit.
+/// a test in a binary that was built with a commit.
 fn commit_or_unknown(embedded: Option<&'static str>) -> &'static str {
     match embedded {
         Some(commit) if !commit.trim().is_empty() => commit,
@@ -138,12 +124,11 @@ fn commit_or_unknown(embedded: Option<&'static str>) -> &'static str {
 /// `os/verify/src/smoke-pins.ts` reads to decide what this binary must report:
 /// one value, two readers, no copy.
 ///
-/// The commit is `MOS_BUILD_COMMIT`, PASSED IN by `mosd/hack/build-target.sh`
-/// from the host. Not discovered here and no `build.rs`, because measured
-/// inside `localhost/mos-build-rust` with that build's own mount, `git
-/// rev-parse HEAD` exits 128 -- the checkout is a git worktree, so `/src/.git`
-/// points at a gitdir outside the mount. mosd's `version_line` records the
-/// measurement in full.
+/// The commit is `MOS_BUILD_COMMIT`, passed in by `mosd/hack/build-target.sh`
+/// from the host. Not discovered here and no `build.rs`: inside
+/// `localhost/mos-build-rust` with that build's own mount, `git rev-parse
+/// HEAD` exits 128, because the checkout is a git worktree and `/src/.git`
+/// points at a gitdir outside the mount.
 fn version_line() -> String {
     format!(
         "{} {} ({})",
@@ -233,8 +218,8 @@ async fn serve() -> anyhow::Result<()> {
 
 /// The `--version` handler, driven from the failing side.
 ///
-/// A module of its own because `mod tests` is already `src/tests.rs` -- the
-/// HTTP suite -- and RFCT-113 M7d opens this file and not that one.
+/// A module of its own because `mod tests` is already `src/tests.rs`, the
+/// HTTP suite.
 #[cfg(test)]
 mod version_tests {
     use super::{UNKNOWN_COMMIT, commit_or_unknown, version_line, wants_openapi, wants_version};
@@ -250,9 +235,9 @@ mod version_tests {
         assert!(wants_version(argv(&["-V"])));
     }
 
-    /// DRIVEN FROM THE FAILING SIDE. Every one of these must fall through into
-    /// the daemon. `-v` matters most: it is not this flag, and a loose match on
-    /// it would stop apid from ever binding a listener on a unit that passed it.
+    /// Every one of these must fall through into the daemon. `-v` matters
+    /// most: it is not this flag, and a loose match on it would stop apid from
+    /// ever binding a listener on a unit that passed it.
     #[test]
     fn nothing_else_is_this_flag() {
         for args in [
@@ -307,7 +292,7 @@ mod version_tests {
         }
     }
 
-    /// ABSENT IS `unknown`, NEVER AN ERROR -- and empty counts as absent,
+    /// Absent is `unknown` and never an error, and empty counts as absent,
     /// because `-e MOS_BUILD_COMMIT=` sets the variable to exactly that.
     #[test]
     fn a_commit_the_build_did_not_supply_reports_unknown() {
@@ -331,7 +316,7 @@ mod version_tests {
     /// The shape, not the values.
     ///
     /// No assertion here that the version equals `mosd/apid/Cargo.toml`:
-    /// `CARGO_PKG_VERSION` IS that file, so the comparison would be a value
+    /// `CARGO_PKG_VERSION` is that file, so the comparison would be a value
     /// against itself. It is made from outside instead, by
     /// `os/verify/src/smoke-pins.ts`, which parses the manifest independently.
     #[test]
