@@ -1,15 +1,14 @@
 #!/usr/bin/env bash
 # Feed every example in docs/design/containers.md to the Quadlet generator this
-# image ships (PLAN-012 M4).
+# image ships.
 #
 #   bash os/tests/quadlet-doc-test.sh
 #
-# WHY THIS EXISTS. A document full of configuration examples is a document that
-# rots silently: Quadlet gains a key, drops one, renames a section, and the
-# examples go on looking correct to every reader. Nothing in a markdown file
-# can fail. So the examples are EXTRACTED from the document and run through the
-# real generator -- the arm64 binary in os/podman/out-arm64, under emulation,
-# same one the device runs.
+# A document full of configuration examples rots silently: Quadlet gains a key,
+# drops one, renames a section, and the examples go on looking correct to every
+# reader, because nothing in a markdown file can fail. So the examples are
+# extracted from the document and run through the real generator -- the arm64
+# binary in os/podman/out-arm64, under emulation, the one the device runs.
 #
 # The marker is an HTML comment, `<!-- quadlet: NAME -->`, immediately before
 # the fenced block. Invisible when the document is rendered, unambiguous to
