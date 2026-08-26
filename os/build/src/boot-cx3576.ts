@@ -11,10 +11,10 @@
 // The case rule, stated once here as os/mkimage-v2.sh states it once there: GPT
 // tooling -- sgdisk, and therefore os/boards/cx3576/board.env -- writes GUIDs
 // uppercase, while udev and libblkid write the /dev/disk/by-partuuid/ names
-// lowercase, which is the form a kernel cmdline has to use. Both spellings
-// denote the same GUID, so every identifier comparison folds case first: the
-// rootfs producer emits lowercase and the layout is uppercase, and a literal
-// comparison between them refuses a correct build.
+// lowercase, the form a kernel cmdline has to use. Both denote the same GUID,
+// so every identifier comparison folds case first: the rootfs producer emits
+// lowercase, the layout is uppercase, and a literal comparison refuses a
+// correct build.
 
 import type { Geometry } from './geometry.ts'
 

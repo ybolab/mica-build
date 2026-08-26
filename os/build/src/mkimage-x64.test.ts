@@ -444,12 +444,12 @@ describe('`-a 2048` where the shell passes no alignment at all', () => {
     expect(r.exitCode).toBe(0)
     expect(`${r.stdout}${r.stderr}`).toContain('Moved requested sector from 2048 to 4096')
 
-    // And it does not only move it -- it shrinks it. Measured: the ESP comes back
-    // as 129024 sectors at 4096 rather than 131072 at 2048, because sgdisk caps
-    // the relocated partition at the next partition's original start (133120)
-    // instead of extending past it. A check that compared only the START would
-    // have called this an image with a correctly sized ESP in the wrong place; it
-    // is an image whose ESP is 1 MiB short as well.
+    // And it does not only move it -- it shrinks it. Measured: the ESP comes
+    // back as 129024 sectors at 4096 rather than 131072 at 2048, because sgdisk
+    // caps the relocated partition at the next partition's original start
+    // (133120) instead of extending past it. A check comparing only the start
+    // would call this a correctly sized ESP in the wrong place; its ESP is
+    // 1 MiB short as well.
     const got = []
     for (const p of spec.partitions) got.push(await readPartition(tb, img, p.partnum))
     expect(got[0]?.firstSector).toBe(4096n)

@@ -3,17 +3,15 @@
 //   bash os/build/run.sh --build-rootfs --board x64 --dest _out/x64 \
 //        --platform linux/amd64 --arg KEY=VALUE ...
 //   bash os/build/run.sh --build-rootfs --board x64 --plan   (decide, run nothing)
-//
 // os/rootfs/build-v2.sh stages the build context -- it cross-builds mosd,
 // renders the overlay, checks the repart definitions against the layout and
 // computes every verity parameter -- and then calls this instead of running one
-// `docker buildx build` over one Dockerfile.
-//
-// This adds two things: it decides the order and the tags (src/stages.ts, a
-// pure function with its own tests), and it refuses the two ways a chain fails
-// that a single file cannot. The build arguments, the platform, the context and
-// the output directory arrive from the caller unchanged, because a driver that
-// recomputed them would be a second answer to a question build-v2.sh answers.
+// `docker buildx build` over one Dockerfile. This adds two things: it decides
+// the order and the tags (src/stages.ts, a pure function with its own tests),
+// and it refuses the two ways a chain fails that a single file cannot. The
+// build arguments, platform, context and output directory arrive from the
+// caller unchanged, because a driver that recomputed them would be a second
+// answer to a question build-v2.sh answers.
 
 import { existsSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
@@ -245,11 +243,11 @@ export function parseDriver(inspectOutput: string): string | undefined {
  *   exist or may require authorization
  *
  * -- a message about Docker Hub, for an image that is right there, arriving
- * after however long the stage before it took; the same two files on the default
- * `docker` driver chain fine. So it is decided up front and refused by name. It
- * bites on one case: os/rootfs/build-v2.sh falls back to a docker-container
- * builder precisely when the current builder cannot reach the target platform,
- * an amd64 host building cx3576's arm64 with no host binfmt_misc.
+ * after however long the stage before it took; the same two files on the
+ * default `docker` driver chain fine. So it is decided up front and refused by
+ * name. It bites on one case: os/rootfs/build-v2.sh falls back to a
+ * docker-container builder precisely when the current builder cannot reach the
+ * target platform, an amd64 host building cx3576's arm64 with no binfmt_misc.
  */
 export function driverCanChain(driver: string | undefined): boolean {
   return driver === 'docker'

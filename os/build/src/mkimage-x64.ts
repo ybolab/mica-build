@@ -7,15 +7,14 @@
 // os/verify's typed model and this package's geometry; nothing is duplicated
 // here and nothing re-reads that file.
 //
-// Not src/mkimage-v2.ts with a board parameter, which is the same question
+// Not src/mkimage-v2.ts with a board parameter, the same question
 // os/mkimage-x64.sh answers about os/mkimage-v2.sh. That assembler is U-Boot: a
 // loader partition at a fixed sector, a redundant environment pair, a compiled
 // boot.scr and geometry assertions about all three, none of which exists on a
-// UEFI machine. Threading conditionals through it would put a second board's
-// boot chain inside the first board's assertions, where a mistake in either is
-// a mistake in both. What the two do share is shared as files and as modules --
-// os/boards/*/board.env, src/geometry.ts, src/pin-seeded-times.ts, src/tools/
-// -- and not as a `case`.
+// UEFI machine, and threading conditionals through it would put a second
+// board's boot chain inside the first board's assertions. What the two do share
+// is shared as files and modules -- os/boards/*/board.env, src/geometry.ts,
+// src/pin-seeded-times.ts, src/tools/ -- and not as a `case`.
 
 import { copyFileSync, existsSync, mkdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'

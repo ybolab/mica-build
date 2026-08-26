@@ -500,18 +500,16 @@ export function checkLoaderMagic(geometry: Geometry, image: string, startSector:
 
 /**
  * The loader landed where it was asked to -- checked against the assembled
- * table, not against the request.
- *
- * `-a 1` is not cosmetic where a partition start is sector 64: without it
- * sgdisk relocates that start to sector 2048, silently, and exits 0. cx3576's
- * loader is at sector 64, a relocated loader partition does not cover the
- * bootloader, and os/boards/cx3576/board.env spells out what happens next --
- * systemd-repart "discards every region of the disk that no partition entry
- * covers", on the first boot while growing DATA, so "the device boots once and
- * comes up in maskrom on the next power-on". An image in that state passes
- * every structural check there is and boots on a test bench. So this compares
- * what sgdisk wrote rather than what it was told, in its own function, drivable
- * from the failing side against a real table written with the alignment left out.
+ * table, not against the request. `-a 1` is not cosmetic where a partition start is sector 64: without it
+ * sgdisk relocates that start to sector 2048, silently, and exits 0. A
+ * relocated loader partition does not cover the bootloader, and
+ * os/boards/cx3576/board.env spells out what happens next -- systemd-repart
+ * "discards every region of the disk that no partition entry covers", on the
+ * first boot while growing DATA, so "the device boots once and comes up in
+ * maskrom on the next power-on". An image in that state passes every structural
+ * check there is and boots on a test bench. So this compares what sgdisk wrote
+ * rather than what it was told, drivable from the failing side against a real
+ * table written with the alignment left out.
  */
 export function checkLoaderLanded(geometry: Geometry, got: GptPartitionInfo): void {
   const loader = geometry.requirePartition('LOADER')

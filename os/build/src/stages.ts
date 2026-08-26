@@ -152,21 +152,17 @@ export function featureOf(stage: StageFile): string | undefined {
 }
 
 /**
- * The chain with named features left out -- "stage selection".
- *
- * This replaces `--build-arg WITH_CONTAINERS=0`, and the difference is not
+ * The chain with named features left out -- "stage selection". This replaces `--build-arg WITH_CONTAINERS=0`, and the difference is not
  * spelling: a WITH_* argument reached the build and every RUN and script that
  * cared had to test it -- five copies for the container engine, four for mosd,
  * each an independent chance to build an image with the engine installed and
  * its assertions skipped. Here the decision is made once, before docker starts,
- * and a declined feature is a file that is not built.
- *
- * It refuses a name it cannot find, which is the point of the function:
- * `--without contaners` silently matching nothing would build the full image
- * and report success, a switch observed only in the position that changes
- * nothing. It also refuses to drop a non-feature stage, because `--without
- * base` is a request for an image with no operator account and no trust
- * anchors, and the caller who typed it did not mean that.
+ * and a declined feature is a file that is not built. It refuses a name it
+ * cannot find, which is the point of the function: `--without contaners`
+ * silently matching nothing would build the full image and report success, a
+ * switch observed only in the position that changes nothing. It also refuses to
+ * drop a non-feature stage, because `--without base` is a request for an image
+ * with no operator account and no trust anchors.
  */
 export function selectStages(
   stages: readonly StageFile[],

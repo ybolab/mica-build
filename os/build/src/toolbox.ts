@@ -305,11 +305,10 @@ export class Toolbox {
         // index fetch failed and apk describes an empty index as an empty
         // repository. A fourth shape appeared once: exit 6 naming a
         // half-resolved e2fsprogs-libs, the same fetch failing further along.
-        // At ~7% per install and eight toolbox opens in a suite run, that is a
-        // red run every other time for a reason unrelated to what is under
-        // test. Three attempts, not one: a package that genuinely does not
-        // exist fails identically three times, so this hides no real failure,
-        // and the refusal says how many attempts were made.
+        // At ~7% per install and eight toolbox opens in a suite run that is a
+        // red run every other time, for a reason unrelated to what is under
+        // test. Three attempts: a package that genuinely does not exist fails
+        // identically three times, so this hides no real failure.
         const attempts = 3
         let installed: ToolResult | undefined
         for (let attempt = 1; attempt <= attempts; attempt += 1) {

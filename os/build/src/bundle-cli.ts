@@ -13,10 +13,9 @@
 // and all three are resolved and checked here so the failure names the file
 // that is missing -- an unset trio with no devkeys means `make os-devkeys`, a
 // caller-supplied path that does not exist is the caller's typo. And the host's
-// architecture, not the board's: the bundle is written on the build machine, so
-// the rauc writing it is a host binary while the image being bundled for may be
-// foreign. Both come from os/update/rauc/versions.env, which is what makes
-// their versions comparable.
+// architecture, not the board's: the rauc writing the bundle is a host binary
+// while the image bundled for may be foreign, and both come from
+// os/update/rauc/versions.env, which makes their versions comparable.
 
 import { existsSync, lstatSync, mkdirSync, readFileSync, symlinkSync, unlinkSync } from 'node:fs'
 import { arch as osArch } from 'node:os'

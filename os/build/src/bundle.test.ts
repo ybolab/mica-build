@@ -4,12 +4,9 @@
 // control beside it: without the control, a guard that refused everything would
 // satisfy the whole table, because "this input is refused" is worth nothing
 // until "this input is accepted" has been asserted about the same function.
-//
-// Every mutation is checked to be a mutation. `mutate` below throws when a
-// replacement matched nothing, because a negative test whose input was never
-// broken passes for the wrong reason -- a `String.replace` that changes only a
-// comment, or one that silently matches nothing, is caught this way rather than
-// by reading.
+// Every mutation is checked to be a mutation too -- `mutate` below throws when
+// a replacement matched nothing, because a negative test whose input was never
+// broken passes for the wrong reason.
 //
 // The fixtures are derived, not written down. The cmdlines are built out of
 // os/boards/cx3576/board.env's own ROOTFS_A_GUID/ROOTFS_B_GUID and VERITY_SALT,
@@ -705,19 +702,17 @@ describe('the mount set is derived from the inputs, and nests nothing', () => {
 // The whole path, against a real rauc.
 
 /**
- * The toolset the end-to-end case below runs in.
- *
- * Its `provenance` mark is a declaration this test makes about its own
+ * The toolset the end-to-end case below runs in. Its `provenance` mark is a declaration this test makes about its own
  * container, and it is 'shipped' so that the assembly can be driven in a clean
  * checkout where os/update/rauc/out-amd64/rauc has not been built. That is the
  * same freedom rauc.test.ts takes in the other direction, where it declares its
  * container's packaged rauc 'distro'. Nothing about a fixture bundle ships.
  *
- * What is being tested here is the assembly, not the provenance. The provenance
- * rule -- that a bundle is written only by the rauc this tree built -- is
- * asserted three times elsewhere and none of them uses this toolset: in
- * rauc.test.ts against a toolset marked 'distro' and against one marked with
- * nothing at all, and above, where openBundleToolbox refuses the host route.
+ * What is being tested here is the assembly, not the provenance: that rule --
+ * a bundle is written only by the rauc this tree built -- is asserted three
+ * times elsewhere, none using this toolset (rauc.test.ts against a 'distro'
+ * toolset and one marked with nothing, and above where openBundleToolbox
+ * refuses the host route).
  */
 const BUNDLE_E2E: Toolset = {
   key: 'bundle-e2e',

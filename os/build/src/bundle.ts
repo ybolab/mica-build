@@ -142,19 +142,16 @@ export interface RaucMatchInputs {
 }
 
 /**
- * The rauc that builds a bundle MUST be the rauc that installs it.
- *
- * A bundle built in a bookworm container (rauc 1.8) and installed by an image's
- * Debian 13 rauc (1.13) fails: 1.8 refuses the x64 slot model outright the
- * first time it is asked to read it. Both halves come from os/update/rauc/, so
- * agreeing is the normal state -- but they are built at different times, and an
- * image flashed before a version bump with a bundle built after it is the case
- * nothing else would notice.
- *
+ * The rauc that builds a bundle MUST be the rauc that installs it. A bundle
+ * built in a bookworm container (rauc 1.8) and installed by an image's Debian
+ * 13 rauc (1.13) fails: 1.8 refuses the x64 slot model outright the first time
+ * it is asked to read it. Both halves come from os/update/rauc/, so agreeing is
+ * normal -- but they are built at different times, and an image flashed before
+ * a version bump with a bundle built after it is the case nothing else notices.
  * Three of the four refusals are about the comparison itself rather than a
  * mismatch: a missing report, a report with no version in it and a build env
- * with no version in it would each make the comparison pass by finding nothing,
- * which is the same green as agreement.
+ * with no version in it would each make it pass by finding nothing, which is
+ * the same green as agreement.
  *
  * @returns the line the shell echoes on success, so a caller can print it.
  */
@@ -458,18 +455,16 @@ export function renderManifest(options: {
 /**
  * The two things a rendered manifest is refused for.
  *
- * Comment lines are excluded from the placeholder scan, and the shell's note
- * is the reason: manifest.raucm.in documents the other template's placeholder
- * by name ("See @SLOTS@ in os/update/rauc/system.conf.in for why"), and a
- * check over the raw bytes rejected a correct manifest for saying what it
- * does. The listing of offenders applies the same exclusion the same blunt way
- * -- over the `N:line` form grep -n produces -- because a reader comparing the
- * two implementations should see the same lines named.
- *
- * `format=verity` is asserted because rauc 1.8 has no --bundle-format flag:
- * the format is declared in the manifest, so a template edit could otherwise
- * quietly downgrade every bundle to the "plain" format that system.conf
- * refuses to install.
+ * Comment lines are excluded from the placeholder scan, for the shell's
+ * reason: manifest.raucm.in documents the other template's placeholder by name
+ * ("See @SLOTS@ in os/update/rauc/system.conf.in for why"), and a check over
+ * the raw bytes rejects a correct manifest for saying what it does. The listing
+ * of offenders applies the same exclusion the same blunt way, over the `N:line`
+ * form grep -n produces, so a reader comparing the two implementations sees the
+ * same lines named. `format=verity` is asserted because rauc 1.8 has no
+ * --bundle-format flag: the format is declared in the manifest, so a template
+ * edit could otherwise quietly downgrade every bundle to the "plain" format
+ * that system.conf refuses to install.
  */
 export function checkRenderedManifest(rendered: string, manifestInPath: string): void {
   const lines = rendered.split('\n')
@@ -560,15 +555,14 @@ export interface PayloadReport {
  *
  * The squashfs payload at the head of the bundle is a pure function of the
  * inputs; the bytes after it are not. rauc salts the bundle's own dm-verity
- * hash tree at random and the CMS signature carries a signingTime attribute,
- * so two builds of the same version differ in the tail and MUST NOT in the
- * head. That makes this digest the rebuild gate for the bundle.
- *
- * `bytes_used` sits at offset 40 of the squashfs superblock as a little-endian
- * u64 -- `od -An -tu8 -j40 -N8` in the shell -- and is rounded up to the 4096
- * rauc pads to. The magic is checked first because a `bytes_used` read out of
- * something that is not a superblock is a number, and a number that large
- * turns `head -c` into "the whole file" rather than into an error.
+ * hash tree at random and the CMS signature carries a signingTime attribute, so
+ * two builds of the same version differ in the tail and MUST NOT in the head,
+ * which makes this digest the bundle's rebuild gate. `bytes_used` sits at
+ * offset 40 of the squashfs superblock as a little-endian u64 -- `od -An -tu8
+ * -j40 -N8` in the shell -- rounded up to the 4096 rauc pads to. The magic is
+ * checked first because a `bytes_used` read out of something that is not a
+ * superblock is a number, and a number that large turns `head -c` into "the
+ * whole file" rather than into an error.
  */
 export function payloadReport(path: string): PayloadReport {
   const bundleBytes = statSync(path).size
