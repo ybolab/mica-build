@@ -429,12 +429,61 @@ rather than that the embedding works.
   `binfmt_misc` gives twelve failures about twelve binaries, which is twelve
   wrong diagnoses of one condition.
 
+### It is part of the build, since M7c
+
+`os/rootfs/build-v2.sh` runs `run.sh --smoke` as its **last step, under
+`set -e`**, so a root whose binaries do not run does not become an image. That is
+RFCT-113's first acceptance clause on its literal reading — "fail the build" —
+and until M7c **nothing in this tree invoked the runner at all**: no `make`
+target, neither `.gitea` workflow, and every `smoke` in `build-v2.sh` was a
+comment.
+
+In the script rather than in the `Makefile`, because two make targets run it, so
+does the CI deep lane, and anyone can run it directly; a step wired into the
+callers would be three copies to keep in step and bypassed by the fourth. There
+is no skip and no opt-out. `make os-smoke-test` is how to ask the question on its
+own, against a root that is already built.
+
+### The three negative tests — `make os-smoke-negative-test`
+
+A check on the check. Each case **makes** its defect in a real image built from
+the real factory root and drives the real `docker run` at it:
+
+| case | mutation | artifact |
+|---|---|---|
+| `wrong-arch` | `e_machine` `0x3e` → `0xb7`, one byte | `/usr/bin/crun` |
+| `missing-soname` | `libjson-glib-1.0.so.0` removed — NEEDed by `rauc` and, measured, by nothing else in the register | `/usr/bin/rauc` |
+| `version-skew` | replaced by a shim reporting `1.29.2` against a pin of `1.29.1` | `/usr/bin/crun` |
+
+They are **not** unit tests, and could not be. Everything else here is driven
+from a fabricated `ExecResult`, which is what makes the red branches runnable
+without a daemon — but a fabricated result is a statement the test wrote, and
+M7b's exit-status map was green throughout while being wrong about both of the
+shapes this clause names. See `HARNESS.md`, "The exit-status diagnosis,
+measured".
+
+Five things are asserted per case, each ruling out a different way of passing
+vacuously: the image built (**a mutation that changed nothing fails the image
+BUILD** — every Dockerfile asserts its own pre-state and post-state); `preflight`
+still passes on the *mutated* image, so the failure is the artifact and not the
+host; the *unmutated* artifact passes through the same runner in the same pass;
+the failure says the right thing **and not the wrong one**; and the whole run
+concludes FAIL, exit 1, with exactly one failure, named.
+
+The parts that decide *whether the cases run at all* — an empty list, a case
+naming an artifact the register does not have, an empty mutation body, a skew
+that is not a skew — are in `src/smoke-negative.test.ts` and need no daemon,
+because those are the failures that would otherwise be silent.
+
 ## Running
 
 ```sh
-make os-verify-test        # the whole suite
-make os-layout-lint        # the schema lint, over every board this tree ships
-make os-layout-lint-test   # the lint's own cases, which is the suite filtered
+make os-verify-test          # the whole suite
+make os-layout-lint          # the schema lint, over every board this tree ships
+make os-layout-lint-test     # the lint's own cases, which is the suite filtered
+make os-smoke-test           # execute the built artifacts in the factory root (docker)
+make os-smoke-negative-test  # break that root three ways, require each red (docker)
+make os-factory-root-gate    # is the OCI export the tree that ships? (docker)
 ```
 
 or, equivalently, `bash os/verify/run.sh` — install if needed, `typecheck`,

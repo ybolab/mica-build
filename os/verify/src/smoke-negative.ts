@@ -52,13 +52,13 @@ import { join } from 'node:path'
 
 import { REPO_ROOT } from './paths.ts'
 import { ARTIFACTS, type Artifact } from './smoke-register.ts'
+import type { Pin } from './smoke-pins.ts'
 import {
   capture,
   checkArtifact,
   dockerExec,
   EXEC_TIMEOUT_MS,
   loadFactoryRoot,
-  outDir,
   preflight,
   readFactoryRoot,
   readMosdBuildFact,
@@ -86,8 +86,17 @@ export interface NegativeCase {
   readonly clause: string
   /** The register entry it breaks. Everything else in the root is untouched. */
   readonly artifact: string
-  /** The mutation, as the body of a Dockerfile whose FROM is the factory root. */
-  readonly mutation: (artifact: Artifact) => string
+  /**
+    * The mutation, as the body of a Dockerfile whose FROM is the factory root.
+    *
+    * IT IS HANDED THE PIN, so the version-skew case is not a special case
+    * dispatched on the case's NAME. A name-keyed branch here would be a case
+    * that silently stops being mutated the day somebody renames it -- and the
+    * empty body that branch would then produce builds the UNMUTATED root, which
+    * is the exact shape of a negative test that passes having tested nothing.
+    * `runCase` refuses an empty body for the same reason, as a second net.
+    */
+  readonly mutation: (artifact: Artifact, pin: Pin) => string
   /** What the resulting failure must say. */
   readonly mustSay: RegExp
   /** The diagnosis it must NOT get, and why that one would be wrong. */
@@ -202,7 +211,7 @@ export const CASES: readonly NegativeCase[] = [
     // The expected pre-state is READ FROM THE PIN by the caller and interpolated
     // here, so a legitimate version bump makes this mutation refuse by name
     // instead of quietly skewing from a stale constant.
-    mutation: () => '',
+    mutation: (a, pin) => versionSkewMutation(a, pin.expected, skewedFrom(pin.expected)),
     mustSay: /Either the pin was bumped without rebuilding the artifact/,
     mustNotSay: /exited/,
     mustNotSayWhy:
@@ -298,11 +307,7 @@ export async function runCase(
   const artifact = artifactNamed(c.artifact)
   const tag = `mos-smoke-negative:${c.name}-${stamp}`
 
-  let body = c.mutation(artifact)
-  if (c.name === 'version-skew') {
-    const pin = artifact.pin()
-    body = versionSkewMutation(artifact, pin.expected, skewedFrom(pin.expected))
-  }
+  const body = c.mutation(artifact, artifact.pin())
   if (body === '') {
     return { name: c.name, held: false, lines: [`the case produced an EMPTY mutation, so the image would be the unmutated root`] }
   }
@@ -403,6 +408,23 @@ export async function negativeRun(opts: {
   const log = opts.log ?? ((l: string) => console.log(l))
   const cases = opts.cases ?? CASES
 
+  // THE VACUITY GUARD IS FIRST, BEFORE ANY IMAGE IS READ OR LOADED. `smokeRun`
+  // orders its own guards the same way and says why: a run that got as far as
+  // loading a 250 MB archive and starting a container before discovering it had
+  // nothing to do has already spent the time and already printed the header a
+  // reader would quote. It also means this refusal is reachable from the suite
+  // without a daemon, which is where a guard against an emptied list has to be
+  // reachable -- the one host that would otherwise exercise it is one that has
+  // just built an image.
+  if (cases.length === 0) {
+    return {
+      outcomes: [],
+      conclusion: 'FAIL',
+      exitCode: 1,
+      line: 'RESULT: FAIL (an EMPTY case list concludes nothing; three negative tests are owed)',
+    }
+  }
+
   const record = readFactoryRoot(opts.board)
   log(`os/verify negative: ${opts.board} ${record.ref} (${record.platform}, ${record.bytes} bytes)`)
   await loadFactoryRoot(record)
@@ -433,14 +455,6 @@ export async function negativeRun(opts: {
     outcomes.push(o)
   }
 
-  if (cases.length === 0) {
-    return {
-      outcomes,
-      conclusion: 'FAIL',
-      exitCode: 1,
-      line: 'RESULT: FAIL (an EMPTY case list concludes nothing; three negative tests are owed)',
-    }
-  }
   if (outcomes.length !== cases.length) {
     return {
       outcomes,
@@ -459,5 +473,3 @@ export async function negativeRun(opts: {
   }
 }
 
-/** Re-exported so the CLI does not reach into two modules for one run. */
-export { outDir }
