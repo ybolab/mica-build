@@ -20,7 +20,17 @@
 // baseline is asserted GREEN first in every case, because a fixture that fails
 // a check it did not mutate proves nothing about the mutation.
 
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, truncateSync, writeFileSync } from 'node:fs'
+import {
+  chmodSync,
+  chownSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  symlinkSync,
+  truncateSync,
+  writeFileSync,
+} from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import type { Board } from './board.ts'
@@ -317,9 +327,263 @@ function seedHealthyRoot(root: string, board: Board): void {
   // --- apid, carrying the escape page's markup ---
   file('/usr/bin/apid', `ELF ...${verifierConst('BUILTIN_MARKUP')}... trailer\n`)
 
+  seedShadow(root, file)
+  seedMqtt(root, file)
+  seedBoardShape(root, board, file)
+
   // Nothing at /builtin, nothing at /etc/rauc/keyring.pem, nothing under
   // /srv/ui: absence is the shipped state for all three, and seeding any of
   // them would make the fixture red before a test had mutated anything.
+}
+
+/** What `seedHealthyRoot` hands its helpers: write a file, making its parents. */
+type WriteFile = (path: string, content?: string) => void
+
+// ---------------------------------------------------------------------------
+// M4d: the accounts, the credential template, and the reconciler
+// ---------------------------------------------------------------------------
+
+/**
+ * The gid the image gives the `shadow` group. 42 on Debian, and the value both
+ * shipped images carry -- read back out of the fixture's own /etc/group by the
+ * check, never restated there.
+ */
+const SHADOW_GID = 42
+
+/**
+ * The accounts, as `/etc/passwd` and the factory `/etc/shadow` template.
+ *
+ * Small on purpose -- the real images carry 25 -- because what the checks read
+ * is the RELATION between the two files: every name in passwd has an entry in
+ * the template, and every entry in the template is locked. A hundred accounts
+ * would test the same relation more slowly.
+ *
+ * `mos-mqttd` and `mos-mqtt-broker` are here because the MQTT checks assert
+ * their units run as identities the image actually defines; that is one fact
+ * about one file and it belongs in one place.
+ */
+const ACCOUNTS: readonly { name: string, uid: number, gid: number, shell: string }[] = [
+  { name: 'root', uid: 0, gid: 0, shell: '/bin/bash' },
+  { name: 'mos', uid: 1000, gid: 1000, shell: '/bin/bash' },
+  { name: 'mos-mqttd', uid: 970, gid: 970, shell: '/usr/sbin/nologin' },
+  { name: 'mos-mqtt-broker', uid: 969, gid: 969, shell: '/usr/sbin/nologin' },
+]
+
+function seedShadow(root: string, file: WriteFile): void {
+  file('/etc/passwd', `${ACCOUNTS.map(a =>
+    `${a.name}:x:${a.uid}:${a.gid}::/home/${a.name}:${a.shell}`).join('\n')}\n`)
+  file('/etc/group', `root:x:0:\nshadow:x:${SHADOW_GID}:\nmos:x:1000:\n`)
+
+  // Every entry LOCKED: `!` in the password field. A signed rootfs is
+  // byte-identical across the fleet, so a usable hash here is a usable hash on
+  // every device -- which is the thing the check asserts and the reason the
+  // fixture must not carry one even as filler.
+  file('/usr/share/factory/etc/shadow',
+    `${ACCOUNTS.map(a => `${a.name}:!:20000:0:99999:7:::`).join('\n')}\n`)
+  // 0640 root:shadow, and it must survive packing: unix_chkpwd is setgid
+  // shadow precisely so a non-root PAM stack can read it.
+  chmodSync(join(root, '/usr/share/factory/etc/shadow'), 0o640)
+  ownAsRoot(root, '/usr/share/factory/etc/shadow', SHADOW_GID)
+
+  // The path pam_unix opens, pointing at the tmpfs -- and NOTHING at the
+  // destination inside the tree, because a /run/mos/shadow in the image would
+  // be a credential identical on every device in the fleet.
+  mkdirSync(join(root, '/etc'), { recursive: true })
+  symlinkSync('/run/mos/shadow', join(root, '/etc/shadow'))
+
+  // The reconcile unit's ordering, and the four units it orders against. An
+  // ordering naming a unit that is not in the image is dropped by systemd
+  // SILENTLY, so the check asserts the pair and so does the fixture.
+  file('/etc/systemd/system/mos-shadow-reconcile.service',
+    '[Unit]\n'
+    + 'Before=mosd.service ssh.service\n'
+    + 'Before=systemd-logind.service systemd-user-sessions.service\n'
+    + '[Service]\nExecStart=/usr/lib/mos/mos-shadow-reconcile\n')
+  for (const u of ['ssh.service', 'systemd-logind.service', 'systemd-user-sessions.service']) {
+    file(`/usr/lib/systemd/system/${u}`, '[Unit]\n')
+  }
+
+  // The script, in the shape the check reads it: source, destination, the
+  // build loop's input redirection, and the locked password field.
+  file('/usr/lib/mos/mos-shadow-reconcile',
+    '#!/bin/sh\n'
+    + 'FACTORY="${MOS_SHADOW_FACTORY:-/usr/share/factory/etc/shadow}"\n'
+    + 'SHADOW="${MOS_SHADOW_PASSWD:-/run/mos/shadow}"\n'
+    + 'while IFS= read -r line; do\n'
+    + '  printf \'%s\\n\' "${line}" | awk -F: \'{ $2 = "!"; print }\'\n'
+    + 'done <"$FACTORY"\n')
+
+  // ...and mos-seed-state, which must put NO shadow file on STATE.
+  file('/usr/lib/mos/mos-seed-state',
+    '#!/bin/sh\nmkdir -p /mnt/state/mos /mnt/state/ssh /mnt/state/hostapd\n')
+}
+
+/**
+ * `chown 0:gid`, or a sentence saying why it could not.
+ *
+ * The suite runs as root -- on the host and in the pinned bun container -- and
+ * the mode/ownership assertion this seeds for is one the real image satisfies
+ * by being packed as root. A bare EPERM here would surface as four unrelated
+ * check failures with no hint that the cause was the test user.
+ */
+function ownAsRoot(root: string, path: string, gid: number): void {
+  try {
+    chownSync(join(root, path), 0, gid)
+  }
+  catch (error) {
+    throw new ToolOutputError(
+      `the packed-root fixture cannot own ${path} as 0:${gid}: `
+      + `${error instanceof Error ? error.message : String(error)}.\n`
+      + `  The image packs that file 0640 root:shadow and a check asserts it, so the fixture has to `
+      + `reproduce it -- which needs root. This suite runs as root on the host and in the pinned bun `
+      + `container; a non-root run cannot seed this fixture.`,
+    )
+  }
+}
+
+// ---------------------------------------------------------------------------
+// M4d: the MQTT bridge and broker, installed and INERT
+// ---------------------------------------------------------------------------
+
+function seedMqtt(root: string, file: WriteFile): void {
+  file('/usr/bin/mos-mqttd')
+  file('/usr/bin/mos-mqtt-broker')
+
+  // A STATIC identity, an EnvironmentFile on a STATE-backed bind, and a broker
+  // host that comes from the environment rather than from the read-only root.
+  file('/usr/lib/systemd/system/mos-mqttd.service',
+    '[Service]\n'
+    + 'User=mos-mqttd\n'
+    + 'EnvironmentFile=-/var/lib/mos/mqttd.env\n'
+    + 'ExecStart=/usr/bin/mos-mqttd --broker ${MOS_MQTT_BROKER_HOST}\n')
+  file('/usr/lib/systemd/system/mos-mqtt-broker.service',
+    '[Service]\nUser=mos-mqtt-broker\n')
+
+  // The bind that makes /var/lib/mos writable and persistent. The check looks
+  // for a unit whose Where= is the EnvironmentFile's directory, so the fixture
+  // ships the same unit the image does rather than a stand-in.
+  file('/etc/systemd/system/var-lib-mos.mount',
+    '[Mount]\nWhat=/mnt/state/mos\nWhere=/var/lib/mos\nType=none\nOptions=bind\n')
+
+  // The grant: the same user the unit runs as, per MEMBER, and none of the
+  // four dangerous ones. Attributes wrapped across lines on purpose -- the
+  // shipped file wraps them, and a line-oriented reader that did not normalise
+  // tags would report a blanket grant that is not there.
+  file('/usr/share/dbus-1/system.d/mos-mqttd.conf',
+    '<busconfig>\n'
+    + '  <!-- <allow send_destination="com.mos.mosd"/> commentary, not a rule -->\n'
+    + '  <policy user="mos-mqttd">\n'
+    + '    <allow\n'
+    + '      send_destination="com.mos.mosd"\n'
+    + '      send_member="GetItems"/>\n'
+    + '    <allow send_destination="com.mos.mosd" send_member="SetValue"/>\n'
+    + '  </policy>\n'
+    + '</busconfig>\n')
+
+  // NOT enabled: no *.wants symlink for either. mosd starts them from
+  // mqtt.enabled, and an enablement baked into the image is the one thing that
+  // switch cannot override.
+}
+
+// ---------------------------------------------------------------------------
+// M4d: what the BOARD's own declarations say this image carries
+// ---------------------------------------------------------------------------
+
+/**
+ * The board-conditional payload -- and the half of this fixture that was
+ * cx3576-shaped until M4d.
+ *
+ * Everything below is driven by the board definition's own lists, which is what
+ * makes `packedRootFixture(x64)` a genuinely x64-shaped tree rather than a
+ * cx3576 one loaded with the wrong GUIDs: x64 declares no firmware, no hwinit
+ * fact, no radio and BOARD_HAS_STATUS_LED=0, so it gets none of these files.
+ * That is precisely what `status-led-absent` asserts, and its FAILING direction
+ * -- a board declaring no indicator that ships the unit anyway -- had never been
+ * driven anywhere in this tree before: os/tests/ui-location-test.sh:55 sources
+ * cx3576's board.env, which declares 1, so the =0 branch had only ever been
+ * observed passing.
+ */
+function seedBoardShape(root: string, board: Board, file: WriteFile): void {
+  const hwinit = board.hwinitConfs ?? []
+  const radios = board.radios ?? []
+  const firmware = board.firmwareFiles ?? []
+
+  for (const fw of firmware) file(fw)
+  if (firmware.length > 0) {
+    // The module list is about THIS BOARD'S radio: the driver it must load, the
+    // BT core of the same combo chip, and the superseded driver it must not.
+    // The comment line is deliberate -- the file may legitimately EXPLAIN the
+    // drop, and a reader that did not strip comments would call that a defect.
+    file('/etc/mos/modules.conf', '# bcmdhd was dropped with the AIC-only fleet decision\n'
+      + 'aic8800_fdrv\naic8800_btlpm\n')
+  }
+
+  for (const c of hwinit) {
+    if (c !== 'modules') file(`/etc/mos/${c}.conf`, `# ${c}\n`)
+    file(`/usr/lib/mos/hwinit-${c}`)
+    // One unit per fact, ENABLED. A unit installed and not enabled is the M4
+    // failure this family exists to catch, and it is invisible: nothing logs it.
+    file(`/usr/lib/systemd/system/mos-${c}.service`, '[Service]\n')
+    enable(root, `mos-${c}.service`)
+  }
+
+  if (hwinit.includes('gadget')) {
+    file('/usr/lib/udev/rules.d/60-mos-gadget-getty.rules',
+      'ACTION=="add", SUBSYSTEM=="tty", KERNEL=="ttyGS0", TAG+="systemd", '
+      + 'ENV{SYSTEMD_WANTS}="serial-getty@ttyGS0.service"\n')
+  }
+
+  if (radios.includes('bluetooth')) {
+    file('/usr/bin/btattach')
+    // No `Name =` line: pinning it blocks bluez's hostname plugin and every
+    // device in the fleet then advertises the same name.
+    file('/etc/bluetooth/main.conf', '[General]\nAlwaysPairable = false\n')
+    file('/usr/lib/systemd/system/bluetooth.service', '[Unit]\n')
+    enable(root, 'bluetooth.service', 'bluetooth.target.wants')
+  }
+
+  if (board.hasStatusLed === '1') {
+    file('/usr/lib/systemd/system/mos-status-led.service',
+      '[Unit]\n'
+      + 'After=mos-health.service\n'
+      + 'Requires=mos-health.service\n'
+      + 'After=multi-user.target\n'
+      + '[Service]\n'
+      + 'Type=oneshot\n'
+      + 'RemainAfterExit=yes\n'
+      + 'ExecStart=/usr/lib/mos/mos-status-led start\n'
+      + 'ExecStop=/usr/lib/mos/mos-status-led stop\n')
+    enable(root, 'mos-status-led.service')
+    // The branch labels sit at column 0 and each region is closed by a bare
+    // `;;`, because that is what the oracle's awk scopes on -- and the
+    // destination colour is switched ON before the source is switched off, so
+    // neither transition passes through an instant with both LEDs dark.
+    file('/usr/lib/mos/mos-status-led',
+      '#!/bin/sh\n'
+      + 'led_on() { echo 1 >"/sys/class/leds/status-$1/brightness"; }\n'
+      + 'led_off() { echo 0 >"/sys/class/leds/status-$1/brightness"; }\n'
+      + 'case "$1" in\n'
+      + 'start)\n'
+      + '\tled_on BLUE\n'
+      + '\tled_off RED\n'
+      + '\t;;\n'
+      + 'stop)\n'
+      + '\tled_on RED\n'
+      + '\tled_off BLUE\n'
+      + '\t;;\n'
+      + 'esac\n')
+    chmodSync(join(root, '/usr/lib/mos/mos-status-led'), 0o755)
+  }
+
+  // Nothing at /etc/modules-load.d/wifi.conf on ANY board: mos-modules
+  // superseded it, and the check that says so is board-unconditional.
+}
+
+/** A `*.wants` enablement symlink, in the tree /etc owns. */
+function enable(root: string, unit: string, target = 'multi-user.target.wants'): void {
+  const dir = join(root, '/etc/systemd/system', target)
+  mkdirSync(dir, { recursive: true })
+  symlinkSync(`/usr/lib/systemd/system/${unit}`, join(dir, unit))
 }
 
 /** A context over a synthetic packed root. Everything that reads the IMAGE throws. */
