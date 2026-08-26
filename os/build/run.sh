@@ -5,39 +5,31 @@
 #   bash os/build/run.sh --help
 #   bash os/build/run.sh src/geometry.test.ts   extra arguments go to `bun test`
 #
-# WHAT THIS PACKAGE IS. The TypeScript build driver behind the two disk
-# assemblers and the bundle builder, in the same shape as os/verify --
-# bun.lock, package.json, tsconfig.json, run.sh, src/. This
-# milestone opens it with the two things every later part needs and nothing
-# else: the TYPED GEOMETRY of a board (taken from os/verify's model, not a
-# second copy of it) and Bun.$ WRAPPERS for the external toolset. No assembly
-# happens here; that is M6b (cx3576), M6c (x64) and M6d (bundle).
+# The TypeScript build driver behind the two disk assemblers and the bundle
+# builder, in the same shape as os/verify -- bun.lock, package.json,
+# tsconfig.json, run.sh, src/.
 #
-# WHY THIS IS A SECOND SCRIPT AND NOT os/verify/run.sh PARAMETERISED. The two
-# do overlap -- both find a bun, both typecheck, both refuse a suite that
-# asserted nothing -- and the campaign's rule about duplication is that two
-# copies which must AGREE ABOUT THE SAME INPUT are the thing to remove. That is
-# why there is one board parser and not two (verify-package.ts says so at
-# length). These two scripts agree about nothing observable: each has to find a
-# working bun for its own package, and there is no input on which one of them
-# could be right and the other wrong. What they must not duplicate is the PIN --
-# which bun -- and they do not: both ask os/build-env/from.sh for IMAGE_BUN_1
-# and neither re-validates it.
+# A second script rather than os/verify/run.sh parameterised. The two overlap --
+# both find a bun, both typecheck, both refuse a suite that asserted nothing --
+# and the rule about duplication is that two copies which must agree about the
+# same input are the thing to remove. These two agree about nothing observable:
+# each finds a working bun for its own package, and there is no input on which
+# one could be right and the other wrong. What they must not duplicate is the
+# pin -- which bun -- and they do not: both ask os/build-env/from.sh for
+# IMAGE_BUN_1 and neither re-validates it.
 #
-# WHERE THEY GENUINELY DIFFER, and it is not cosmetic. os/verify needs bun and
-# nothing else. os/build drives sgdisk, mtools, mkimage, veritysetup, e2fsprogs
-# and rauc, and on a host that has none of them (this one has none of the first
-# four) the toolbox runs them in a pinned container -- so os/build needs a
-# DOCKER CLIENT wherever bun ends up running, including inside the pinned bun
-# container itself. That is what the extra mounts below are for, and os/verify
-# has no reason to carry any of it.
+# Where they genuinely differ is not cosmetic. os/verify needs bun and nothing
+# else; os/build drives sgdisk, mtools, mkimage, veritysetup, e2fsprogs and
+# rauc, and on a host with none of them (this one has none of the first four)
+# the toolbox runs them in a pinned container -- so os/build needs a docker
+# client wherever bun ends up running, including inside the pinned bun container
+# itself. That is what the extra mounts below are for.
 #
-# ZERO TESTS IS A FAILURE, AND BUN DOES NOT AGREE. Measured with bun 1.4.0:
-# `bun test` exits 1 when no test FILE matches its glob, but exits 0 when a file
-# matches and declares no tests -- "Ran 0 tests across 1 file", green. M3a and
-# M3b each shipped a guard against this that was itself unreachable, found only
-# by mutating it, so the guard at the bottom of this file was driven the same
-# way before it was committed: see HARNESS.md.
+# Zero tests is a failure and bun does not agree. Measured with bun 1.4.0:
+# `bun test` exits 1 when no test file matches its glob, but exits 0 when a file
+# matches and declares no tests -- "Ran 0 tests across 1 file", green. The guard
+# at the bottom of this file is driven from the failing side by mutation before
+# it is trusted: see HARNESS.md.
 set -euo pipefail
 
 # Anchored, not counted -- src/paths.ts states the reasoning for the TypeScript
@@ -185,7 +177,7 @@ elif [ -z "${BUN}" ]; then
     fi
 fi
 
-# THE DOCKER CLIENT IS A REQUIREMENT OF THIS PACKAGE, not of its bun route.
+# The docker client is a requirement of this package, not of its bun route.
 # src/toolbox.ts falls back to a pinned container for every tool the host does
 # not have, and this host has none of sgdisk, mcopy, mkimage or veritysetup. A
 # missing docker surfaced from inside a test reads as a tool failure; named
@@ -239,16 +231,15 @@ else
         }
     fi
 
-    # THE REPOSITORY AT ITS OWN PATH, and three more mounts os/verify has no use
-    # for. The identity mount is M3c's rule and this package needs it MORE, not
-    # less: a container started from inside this one is a SIBLING, created by
-    # the same daemon, so every -v it passes is resolved against the HOST
+    # The repository at its own path, and three more mounts os/verify has no
+    # use for. A container started from inside this one is a sibling, created by
+    # the same daemon, so every -v it passes is resolved against the host
     # filesystem. Under a /w mount the path bun computed inside would name a
     # different thing -- or nothing -- when the daemon read it back, and a bind
     # mount of a path the daemon cannot see does not fail here: it succeeds and
-    # delivers an EMPTY DIRECTORY (measured on this host with /tmp). Mounted at
+    # delivers an empty directory (measured on this host with /tmp). Mounted at
     # its own path there is nothing to translate: the same bytes answer to the
-    # same name in all three of the host, this container and its siblings.
+    # same name in the host, this container and its siblings.
     MOUNTS=(-v "${REPO_ROOT}:${REPO_ROOT}")
 
     # The docker CLI is a statically linked Go binary (checked with `file`), so
@@ -257,9 +248,9 @@ else
     # container has no business writing to the client that started it.
     MOUNTS+=(-v "${DOCKER}:${DOCKER}:ro" -v /var/run/docker.sock:/var/run/docker.sock)
 
-    # THE MOUNT THAT SUCCEEDS AND CARRIES NOTHING. On this host a bind mount of
+    # The mount that succeeds and carries nothing. On this host a bind mount of
     # anything under /tmp propagates as an empty directory rather than failing,
-    # so every path this run depends on is asserted VISIBLE INSIDE THE CONTAINER
+    # so every path this run depends on is asserted visible inside the container
     # before any of it is used. One container, and it carries the version and
     # the daemon check too, so it costs no extra start over the `bun --version`
     # the host route prints.
@@ -283,7 +274,7 @@ else
         exit 1
     fi
 
-    # A docker CLI that is present but cannot reach the daemon FROM IN HERE is
+    # A docker CLI that is present but cannot reach the daemon from in here is
     # the failure this route adds over the host route, and it is silent without
     # this: the socket mount can succeed while the daemon refuses the caller.
     "${DOCKER}" run --rm "${MOUNTS[@]}" --entrypoint "${DOCKER}" "${BUN_IMAGE}" \
@@ -297,11 +288,11 @@ else
     }
 fi
 
-# THE ONE MODE THE CONTAINER ROUTE CANNOT CARRY, and not for the reason
-# os/verify's --parity cannot: THAT image has no docker client at all, and this
+# The one mode the container route cannot carry, and not for the reason
+# os/verify's --parity cannot: that image has no docker client at all, and this
 # one is given the client and the daemon socket precisely so its toolbox can
 # start sibling containers. What it is not given is `docker buildx`, which is a
-# CLI PLUGIN rather than a subcommand -- it lives in /usr/lib/docker/cli-plugins
+# CLI plugin rather than a subcommand -- it lives in /usr/lib/docker/cli-plugins
 # on this host and that directory is not mounted. Driven, not assumed: with the
 # client and socket mounted and MOS_BUILD_DOCKER set, the container answers
 #
@@ -340,7 +331,7 @@ else
     echo "os/build: ${BUN_VERSION} at ${BUN}"
 fi
 
-# --- dependencies ------------------------------------------------------------
+# Dependencies.
 # `bun test` needs none of this -- bun:test and the node: builtins are in the
 # runtime. `tsc` does. So an install failure is reported as an install failure
 # rather than surfacing later as "tsc: command not found".
@@ -353,7 +344,7 @@ if [ ! -d "${HERE}/node_modules" ]; then
     }
 fi
 
-# --- typecheck ---------------------------------------------------------------
+# Typecheck.
 # This typechecks os/verify's sources too, because src/verify-package.ts imports
 # them and tsc follows a program's imports whether or not `include` names them.
 # That is deliberate: the two packages share a board model, so they are checked
@@ -361,7 +352,7 @@ fi
 echo "os/build: typecheck"
 run_bun run typecheck
 
-# --- the rootfs stage chain --------------------------------------------------
+# The rootfs stage chain.
 # No vacuity guard, and this is the one mode where that needs no argument: the
 # driver's own auditChain refuses a stages directory holding no Dockerfile and a
 # chain of exactly one, so "built nothing and exited 0" is a failure before any
@@ -374,7 +365,7 @@ if [ "${MODE}" = build-rootfs ]; then
     exit "${rc}"
 fi
 
-# --- the assembler -----------------------------------------------------------
+# The assembler.
 # No vacuity guard here either, and for its own reason: this mode produces a
 # FILE, and src/mkimage-v2.ts reads the loader back out of it before it will
 # rename it into place. There is no shape of "ran and asserted nothing"
