@@ -1,25 +1,22 @@
 //! WiFi station (uplink) reconciler: renders wpa_supplicant configuration from
 //! `wifi.client`, drives `wpa_supplicant@<interface>.service`, and renders the
-//! networkd unit that gives the associated link an address.
+//! networkd unit that gives the associated link an address. Three system
+//! effects, in this order:
 //!
-//! Three system effects, in this order:
-//!
-//! 1. `/etc/wpa_supplicant/wpa_supplicant-<interface>.conf` is rendered from
-//!    `wifi.client`. That is the path Debian's `wpa_supplicant@.service`
-//!    template reads, so the file name is a contract with the unit, not a
-//!    preference. It holds PSKs, so it is written at 0600.
-//! 2. a networkd `.network` unit for the interface is rendered, so an
-//!    associated link actually gets an address. Association without addressing
-//!    is a link that looks connected and carries no traffic.
-//! 3. `wpa_supplicant@<interface>.service` is brought to the state
-//!    `wifi.client` asks for.
+//! - `/etc/wpa_supplicant/wpa_supplicant-<interface>.conf` is rendered from
+//!   `wifi.client`. That is the path Debian's `wpa_supplicant@.service`
+//!   template reads, so the file name is a contract with the unit, not a
+//!   preference. It holds PSKs, so it is written at 0600.
+//! - a networkd `.network` unit for the interface is rendered, so an associated
+//!   link actually gets an address; association without addressing is a link
+//!   that looks connected and carries no traffic.
+//! - `wpa_supplicant@<interface>.service` is brought to the state `wifi.client`
+//!   asks for.
 //!
 //! Configuration before unit, deliberately: a supplicant started against a
 //! stale or absent configuration associates with the wrong network, or with
-//! none.
-//!
-//! **Access-point mode is not handled here.** This reconciler owns the station
-//! role only; `wifi.ap` belongs to its own reconciler.
+//! none. Access-point mode is not handled here — this reconciler owns the
+//! station role only, and `wifi.ap` belongs to its own reconciler.
 
 use std::path::{Path, PathBuf};
 
@@ -269,16 +266,13 @@ fn encode_psk(psk: &str) -> Result<String> {
 ///
 /// Pure and deterministic: the same settings always produce the same bytes, so
 /// a re-render can be compared against what is on disk to decide whether
-/// anything actually changed.
-///
-/// Networks are emitted highest `priority` first and each block states its
-/// `priority=` explicitly, so wpa_supplicant's own selection order is the order
-/// the settings asked for rather than the order the blocks happen to appear in.
-/// Equal priorities keep their settings order, because the sort is stable.
-///
-/// `update_config=0` is stated rather than left to the default: the file is
-/// mosd's render of `wifi.client`, and a `wpa_cli save_config` that rewrote it
-/// would be silently reverted on the next reconcile.
+/// anything changed. Networks are emitted highest `priority` first and each
+/// block states its `priority=` explicitly, so wpa_supplicant's selection order
+/// is the order the settings asked for rather than the order the blocks happen
+/// to appear in; equal priorities keep their settings order, the sort being
+/// stable. `update_config=0` is stated rather than left to the default: the
+/// file is mosd's render of `wifi.client`, and a `wpa_cli save_config` that
+/// rewrote it would be silently reverted on the next reconcile.
 ///
 /// # Errors
 ///
