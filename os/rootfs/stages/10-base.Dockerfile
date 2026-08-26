@@ -77,8 +77,8 @@ FROM --platform=$TARGETPLATFORM ${MOS_IMAGE_DEBIAN_TRIXIE} AS rootfs
 # three components while still reporting green).
 #
 # RAUC IS NOT INSTALLED FROM DEBIAN ANY MORE. It is built from upstream source
-# by os/update/rauc/ and installed further down the chain (today by
-# stages/30-40-unsplit), because Debian builds it with
+# by os/update/rauc/ and installed further down the chain, by
+# stages/32-feature-rauc, because Debian builds it with
 # -Dstreaming=true and that links libcurl-gnutls: measured on this image, rauc
 # was the ONLY consumer of libcurl-gnutls in the whole packed root, and it
 # brought GnuTLS, p11-kit, GMP, Nettle and the Kerberos libraries with it. A

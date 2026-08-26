@@ -1,7 +1,7 @@
 #!/bin/sh
 # Wire the radio state mount points that arrived with the board overlay.
 #
-# Called from os/rootfs/stages/30-40-unsplit.Dockerfile, where the reasoning lives.
+# Called from os/rootfs/stages/30-feature-radios.Dockerfile, where the reasoning lives.
 # Build arguments read from the environment: BOARD_RADIOS.
 
 set -eu

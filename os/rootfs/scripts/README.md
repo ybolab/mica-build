@@ -37,8 +37,15 @@ under `/tmp` would be invisible.
 Docker puts every `ARG` that has a value into the `RUN`'s **environment**, so
 the shell reads them from there — and so does any child of that shell. Nothing
 is passed explicitly on the `RUN` line, because nothing needs to be: the script
-inherits `BOARD_RADIOS`, `WITH_CONTAINERS`, `MOS_ARCH` and the rest exactly as
+inherits `BOARD_RADIOS`, `MOS_ARCH`, `RAUC_BOOTLOADER` and the rest exactly as
 an inline body would have seen them.
+
+`WITH_CONTAINERS` and `WITH_MOSD` used to be on that list and are not any more.
+RFCT-111 M5c replaced them with stage selection: five scripts each opened by
+testing `WITH_CONTAINERS` and a sixth tested `WITH_MOSD` four times, and every
+copy was a chance to disagree with the others. A declined feature is now a stage
+file the driver does not build, so a script that runs at all was asked for.
+`../stages/README.md` has the mechanism.
 
 The failing side matches too. An `ARG` declared with no value is *unset* in the
 environment, not empty, so a `set -u` on it fails inside the script for the same

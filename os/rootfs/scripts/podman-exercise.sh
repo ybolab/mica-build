@@ -1,10 +1,9 @@
 #!/bin/sh
 # Execute the engine and the Quadlet generator, rather than only installing them.
 #
-# Called from os/rootfs/stages/30-40-unsplit.Dockerfile, where the reasoning lives.
-# Build arguments read from the environment: WITH_CONTAINERS.
+# Called from os/rootfs/stages/31-feature-containers.Dockerfile, where the reasoning lives.
+# Build arguments read from the environment: none.
 
-if [ "$WITH_CONTAINERS" != "1" ]; then exit 0; fi
 set -eu
 ran() {
     out="$("$@" 2>&1 || true)"

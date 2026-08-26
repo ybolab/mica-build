@@ -182,10 +182,41 @@ export function parseShellRun(stdout: string): ShellRun {
 // ---------------------------------------------------------------------------
 
 export interface ShellMatcher {
-  /** A substring of the check's PASS line. */
-  readonly pass: string
-  /** Of its FAIL line, when the two directions share no substring. */
-  readonly fail?: string
+  /**
+   * A substring of the check's PASS line.
+   *
+   * OPTIONAL SINCE M4d, and only for the one case that needs it: a check whose
+   * shell counterpart has no PASS line on any board it applies to. The oracle
+   * has whole families that print N conclusions on the board with the hardware
+   * and ONE `skip` on the board without -- the radio firmware set, the hwinit
+   * confs, the status-indicator overlay -- and a shell line can have exactly one
+   * owner, so that skip needs a register entry of its own. Such an entry has a
+   * `skip` matcher and genuinely nothing else.
+   *
+   * It is NOT a way to omit a matcher. `assertRegisterWellFormed` refuses a
+   * check that registers no matcher at all, because that check would claim no
+   * line on any board, report `unfired`, and be indistinguishable from one whose
+   * matcher had stopped matching. And an EMPTY pass matcher is still refused,
+   * for the original reason: the empty substring is contained in every line, so
+   * it would claim the run's first conclusion.
+   */
+  readonly pass?: Matcher
+  /**
+   * Of its FAIL line, when the two directions share no substring.
+   *
+   * A LIST is allowed here, and it is what `fail` is usually given since M4d.
+   * The oracle's PASS branches say one thing; its FAIL branches FORK -- an
+   * ordering assertion fails differently when the unit is absent, when the
+   * ordering is not there, and when it names a unit the image does not ship,
+   * and those three sentences share no substring that is not also in some other
+   * check's line. One loose matcher covering all three is how a check comes to
+   * claim a neighbour's conclusion; three exact ones cannot.
+   *
+   * Each element is still a plain substring and the claim is still "exactly one
+   * registered check matches this line" -- a list widens what ONE check will
+   * answer for, never what two of them may share.
+   */
+  readonly fail?: Matcher
   /**
    * Of its SKIP line.
    *
@@ -195,7 +226,16 @@ export interface ShellMatcher {
    * on cx3576 and 22 on x64. An unregistered SKIP shows up as an unclaimed
    * conclusion with SKIP written next to it, which is a question, not a green.
    */
-  readonly skip?: string
+  readonly skip?: Matcher
+}
+
+/** One substring of the conclusion, or several alternative spellings of it. */
+export type Matcher = string | readonly string[]
+
+/** The alternatives a matcher offers, as a list. Never empty for a live matcher. */
+export function matcherAlternatives(matcher: Matcher | undefined): readonly string[] {
+  if (matcher === undefined) return []
+  return typeof matcher === 'string' ? [matcher] : matcher
 }
 
 /** What the diff needs of a ported check. `CheckCase` in checks.ts satisfies it. */
@@ -266,10 +306,10 @@ export interface ParityReport {
 
 const NOT_PORTED = '(unclaimed)'
 
-function matcherFor(check: RegisteredCheck, verdict: Verdict): string | undefined {
-  if (verdict === 'pass') return check.shell.pass
-  if (verdict === 'fail') return check.shell.fail ?? check.shell.pass
-  return check.shell.skip
+function matcherFor(check: RegisteredCheck, verdict: Verdict): readonly string[] {
+  if (verdict === 'pass') return matcherAlternatives(check.shell.pass)
+  if (verdict === 'fail') return matcherAlternatives(check.shell.fail ?? check.shell.pass)
+  return matcherAlternatives(check.shell.skip)
 }
 
 function appliesTo(check: RegisteredCheck, board: string): boolean {
@@ -330,10 +370,8 @@ export function diffParity(input: {
   const firedIds = new Set<string>()
 
   for (const l of shell.lines) {
-    const claimants = applicable.filter((c) => {
-      const needle = matcherFor(c, l.verdict)
-      return needle !== undefined && l.message.includes(needle)
-    })
+    const claimants = applicable.filter(c =>
+      matcherFor(c, l.verdict).some(needle => l.message.includes(needle)))
 
     if (claimants.length === 0) {
       rows.push({

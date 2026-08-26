@@ -399,12 +399,34 @@ bash os/build/run.sh src/geometry.test.ts   # extra arguments go to `bun test`
 
 bash os/build/run.sh --mkimage-v2           # assemble the cx3576 image
 bash os/build/run.sh --mkimage-v2 --help
+bash os/build/run.sh --mkimage-x64          # assemble the x64 image
+bash os/build/run.sh --mkimage-x64 --help
+
+bash os/build/run.sh --build-rootfs --board x64 --plan       # decide the chain
+bash os/build/run.sh --build-rootfs --board x64 --plan --without containers
 ```
 
-`--mkimage-v2` is a **mode**, recognised only in first position: anywhere else it
-would be forwarded to `bun test`, which ignores an unknown flag and reports a
-green suite in answer to a request to assemble an image. That is `os/verify/run.sh`'s
-rule, driven there from the failing side.
+`--build-rootfs` is the os/rootfs stage-chain driver (`src/stages.ts` decides,
+`src/stages-cli.ts` runs). `--without NAME` is RFCT-111's **stage selection**,
+which replaced the `WITH_*` build arguments: it leaves the `<n>-feature-NAME`
+stage out of the chain, refuses a name no feature stage matches rather than
+silently building the full image, and refuses to decline a stage that is not a
+feature. `os/rootfs/stages/README.md` has the whole mechanism; the caller-facing
+route is `os/rootfs/build-v2.sh`, which turns `WITH_CONTAINERS=0`, `WITH_MOSD=0`
+and `MOS_ROOTFS_WITHOUT` into these flags.
+
+`--mkimage-v2` and `--mkimage-x64` are **modes**, each recognised only in first
+position: anywhere else one would be forwarded to `bun test`, which ignores an
+unknown flag and reports a green suite in answer to a request to assemble an
+image. That is `os/verify/run.sh`'s rule, driven there from the failing side and
+driven here for all three modes — `bash os/build/run.sh filter --mkimage-x64`
+exits 1 by name, as do the other two.
+
+The two assemblers are two arms of one dispatch rather than one arm with a
+`--board` flag, for the reason the two assembler sections above give: the boards
+share a layout format and a slot model and nothing about their boot chains. One
+writes a U-Boot loader at a fixed sector, the other builds a standalone EFI
+binary, and a mistake in either would otherwise be a mistake in both.
 
 `run.sh` finds bun — on the host, or failing that in the container pinned as
 `IMAGE_BUN_1` — installs the dev dependencies if `node_modules/` is absent,
@@ -422,7 +444,8 @@ container route — and mounts the host's docker client (a static Go binary) and
 `/var/run/docker.sock` at their own paths, so the toolbox can still start
 *sibling* containers from in there. Both routes were run to completion: 199/199
 either way at M6a, 406/406 once M6b's assembler and M5b's stage driver both
-landed, and **527/527** with M6c's x64 assembler on top.
+landed, 422/422 with M5c's stage selection, and **NNN/NNN** with M6c's x64
+assembler on top.
 
 ```
 os/build: 1.4.0 at /srv/bkd/runtime/bun
@@ -461,7 +484,9 @@ src/layout-x64.ts          x64's DERIVED layout -- a second arithmetic, not a se
 src/grub-x64.ts            grub.cfg's three guards and the per-slot cmdline fragment, all pure
 src/mkimage-x64.ts         the x64 assembler
 src/mkimage-x64-cli.ts     its host half
-src/**/*.test.ts           527 tests; every refusal has a positive control beside it
+src/stages.ts              os/rootfs/stages/ -> a chain: order, tags, args, and what is declined
+src/stages-cli.ts          the only file here that runs docker buildx
+src/**/*.test.ts           NNN tests; every refusal has a positive control beside it
 ```
 
 `HARNESS.md` carries how each guard was driven from the failing side, both bash
