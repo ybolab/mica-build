@@ -1,10 +1,11 @@
 # RFCT-111 PLAN-014 M5: the rootfs build split into one Dockerfile per stage, driven from TS
 
-- **status**: in progress
+- **status**: completed
 - **priority**: P1
 - **owner**: ai-agent
 - **createdAt**: 2026-08-25 10:50
 - **claimedAt**: 2026-08-25 22:05
+- **completedAt**: 2026-08-26 07:10
 - **plan**: PLAN-014 (M5)
 
 Split the 1,798-line `Dockerfile.v2` into the `rootfs/stages/` chain — one
@@ -48,6 +49,63 @@ acceptable, composition wins).
 ## Dependencies
 
 - After RFCT-108 (pinned bases) and RFCT-109 (driver foundation).
+
+## What is discharged at close, and what is not
+
+M5 closes **2026-08-26**, on the user's decision on the ssh clause. The three
+acceptance clauses do not all close the same way, and a `completed` status that
+implied they did would be the kind of green this campaign keeps finding.
+
+**Clause 1 — byte-identity, or the fallback.** Discharged, in both halves.
+Byte-identity is not achievable and the clause anticipates that, so the fallback
+applies: **full verifier parity** — `RESULT: PASS (290/290 checks, 22 skipped)`,
+0 FAIL, x64, on an image assembled from a chain-built rootfs — **plus the
+anchored new-baseline commit**, which is "The M5 baseline" below. The clause was
+not amended; it contains its own fallback branch, so this discharges it.
+
+**Clause 2 — the omit-a-stage negative test.** Discharged, and recorded in
+`os/rootfs/stages/README.md`, "The omit-a-stage negative test, run": declining
+`containers` and declining `mqtt` each turn that feature's assertions red
+through the shipping path, compared as an identity diff of the verifier's
+PASS/FAIL/SKIP lines rather than as a count. **Two limits stated rather than
+absorbed.** The `radios` case is not exercisable on x64 — the board declares no
+radio, so the stage contributes nothing and omitting it turns nothing red; that
+branch is cx3576's. And the evidence was taken through
+`os/verify-image-v2.sh`, which **M4e has since deleted** at full parity with the
+TypeScript port, so that table is now a citation into git history and is
+annotated as such where it lives.
+
+**Clause 3 — "both boards build and verify green through the chain."** Not
+discharged for cx3576, and this is the honest statement of it rather than an
+amendment. x64 builds and verifies green through the chain, repeatedly and at
+the tree that ships. **cx3576 has never been built through the chain on any host
+available to this campaign.** `binfmt_misc` is not mounted here and no builder
+advertises `linux/arm64`, and since M5b the chain cannot use the QEMU-bundled
+`docker-container` builder that used to close that gap — the cost the user
+accepted, recorded under PLAN-014's risks. Driven at close:
+`make os-verify-cx3576-v2` exits 1 before running a single check, with
+*"`_out/cx3576/cx3576-mos-v2-latest.img` is not there … A verifier that carried
+on would report on nothing."*
+
+What that leaves unverified for cx3576, carried forward from the M5e gate rather
+than quietly dropped:
+
+- that an image built through the new path carries the five firmware files and
+  the six hwinit units — the `COPY`, the install and the assertions in
+  `40-board` are unexercised on the only board where they do anything;
+- `kernel-and-initramfs.sh`'s `modules.tar` arm;
+- `30-feature-radios` whole, and with it clause 2's `radios` case.
+
+What **was** driven for cx3576 is the staging, which is where M5d's
+parameterisation lives: pointed at the in-repo BSP, `build-v2.sh` selects the
+five files `BOARD_FIRMWARE_FILES` declares out of the drop's 32, stages the
+thirteen `os/boards/cx3576/hwinit` files and the six confs, and then stops at
+the builder check. That is a real measurement of the part that can be measured
+here, and it is not a substitute for the part that cannot.
+
+**The task closes with clause 3 outstanding for cx3576 because the blocker is a
+runner, not the work.** Nothing in the chain is known to be wrong on cx3576; it
+is unobserved. M7 runs on hardware and is where that is answered.
 
 ## ssh is a floor capability, not a feature
 

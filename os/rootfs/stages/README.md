@@ -118,6 +118,15 @@ check that goes red here is board- or feature-conditional, and `checks-root.ts`
 deliberately holds only checks whose conclusion text is identical on both
 boards. The container, MQTT and radio families are M4d's.
 
+> **Dated evidence.** `os/verify-image-v2.sh` was **deleted by M4e** (PLAN-014
+> M4) after this test was run, at full parity with the TypeScript port. The
+> table below is therefore a citation into git history and is left standing
+> rather than rewritten: it says what was observed, with the verifier it was
+> observed through. Its successor is `os/verify/`, driven by
+> `bash os/verify/run.sh --verify --board <b>`, and the families that flip here
+> now live in `checks-engine.ts` and `checks-mqtt.ts`. Re-running the negative
+> test against the port is M6/M7 work, not a correction to this record.
+
 Baseline, x64: `RESULT: PASS (290/290 checks, 22 skipped)`, zero FAIL lines.
 
 | declined | verifier | assertions that flip PASS → FAIL |
