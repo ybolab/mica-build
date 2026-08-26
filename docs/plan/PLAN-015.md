@@ -58,7 +58,12 @@ mosd/ (excl. apid): `mosd/mosd/src/main.rs` (~70% narrative),
 `mosd/mosd/src/reconciler/mqtt.rs`, `mosd/mosd/src/reconciler/sshd.rs`,
 `mosd/mosd/src/transient.rs`, `mosd/mosd/src/bus.rs`,
 `mosd/mosd/src/reconciler/wifi_ap.rs`. Estimated net reduction for mosd as a
-whole: ~44% of 8,523 comment lines.
+whole: ~44% of 8,523 comment lines. *(Correction, 2026-08-26, measured at M2
+close: the 8,523 figure is mosd INCLUDING mosd/apid/ and mosd/hack/ — 3,530
+lines, 36.6%, and the narrative-densest part — which Decisions item 4 and M3
+assign elsewhere. It is an estimate for the whole crate family, not an
+acceptance criterion for M2's carved scope; M2's own area measured 52 -> 9
+task-ID citations with the survivors being deliberate class-7 citations.)*
 
 test scripts: `mosd/hack/build-target.sh` (58% comments, header is an account
 of the previous implementation), `test/apid-api/run.sh`,
