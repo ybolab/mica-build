@@ -13,8 +13,18 @@ Since M4a it also holds the **image-inspection helpers** and the **parity
 harness** the port of `os/verify-image-v2.sh` is gated on — see "Reading an
 image" and "The parity harness" below. **M4b ported batch 1**: 21 checks
 covering the GPT geometry, the boot slots' filesystems and the RAUC slot
-contract. Everything still unported is reported as *unclaimed* rather than as
-agreement, and the run's conclusion stays INCOMPLETE until M4e.
+contract. Everything still unported was reported as *unclaimed* rather than as
+agreement, and the run's conclusion stayed INCOMPLETE for as long as anything
+was.
+
+**That is history now: M4e closed the port and deleted the oracle**
+(`os/verify-image-v2.sh`, at `6eadc65`), so nothing is unclaimed and the run
+concludes on its own checks — `RESULT: PASS (290/290 checks, 22 skipped)`,
+0 FAIL, x64, recorded at RFCT-111's close. `os-verify-parity` went with it,
+rather than being kept able to pass having compared nothing. Two `not-ported`
+citations survive **inside comments** in `src/checks-gpt.ts` and
+`src/checks-root.test.ts`, and they are about a matcher shape that was left
+open, not about a check that is missing.
 
 ## Everything reads `board.env`, and until now everything sourced it
 

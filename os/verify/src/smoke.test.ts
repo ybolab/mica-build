@@ -717,6 +717,30 @@ describe('conclude', () => {
     expect(c.line).toMatch(/not a pass and is not a skip/)
   })
 
+  test('an unclaimed artifact is NOT inside the pass count, on any of the three lines', () => {
+    // RFCT-113 M7c, and this case exists because its mutation stopped biting.
+    // HARNESS.md's sweep recorded "`unclaimed` folded into `pass` in `conclude`
+    // -> 2 fails". Re-run at M7c it was 0: M7d emptied EXPECTED_UNCLAIMED, and
+    // with no unclaimed artifact in the shipped register the only cases left
+    // that produce one asserted the CONCLUSION and a phrase, never the counts.
+    // The conclusion does not move under that mutation -- `unclaimed > 0` still
+    // fires -- so a `conclude` that filed an unasked artifact under `pass`
+    // passed the whole suite. That is the shape this repository calls a guard
+    // whose removal changes no test.
+    //
+    // Asserted on the INCOMPLETE line and on the FAIL line, because they are two
+    // separate format strings and a mutation could reach either.
+    expect(conclude([r('pass'), r('unclaimed')], 2).line)
+      .toContain('RESULT: INCOMPLETE (1 pass, 0 fail, 1 unclaimed, of 2)')
+    expect(conclude([r('pass'), r('fail'), r('unclaimed')], 3).line)
+      .toContain('RESULT: FAIL (1 pass, 1 fail, 1 unclaimed, of 3)')
+    // And the positive control: with nothing unclaimed the same three numbers
+    // are what they always were, so the case above is about the category and
+    // not about the arithmetic.
+    expect(conclude([r('pass'), r('fail')], 2).line)
+      .toContain('RESULT: FAIL (1 pass, 1 fail, 0 unclaimed, of 2)')
+  })
+
   // THE VACUITY GUARDS. `RESULT: PASS (6/6)` is invariant under a run that
   // threw half its work away, which is exactly how the shell lint this package
   // replaced reported PASS over zero checks.

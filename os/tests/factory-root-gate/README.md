@@ -1,23 +1,24 @@
 # `os/tests/factory-root-gate` — is the OCI export the tree that ships?
 
-**THIS HAS NO `make` TARGET, AND THAT IS NOT AN OVERSIGHT — IT IS RFCT-113 M7c'S
-DECISION TO MAKE.** M7a (the export) wrote it and used it to produce the
-measurements recorded in `os/rootfs/stages/README.md`. M7a did not give it a
-target because M7c owns the gate, and this campaign's rule is that a committed
-script nothing runs is worse than no script. It is committed rather than left in
-prose because re-deriving 250 lines from a recipe is worse still.
+**DECIDED 2026-08-26 BY RFCT-113 M7c: it becomes a real target.**
+`make os-factory-root-gate` (docker-requiring, like `os-verify-cx3576-v2`), and a
+step in `.gitea/workflows/privileged.yml`'s deep lane, which is the only place it
+can run on cx3576. The alternative — delete this directory and leave the recipe
+in `os/rootfs/stages/README.md` — was rejected for one reason: the invariant here
+is *the image the smoke run executes in is byte-for-byte the tree the device
+ships*, that is the assumption **every other M7 result rests on**, and nothing
+else in the tree checks it. The two trees come from two exports of one stage, so
+nothing about their agreement is structural; a smoke run inside a *different*
+tree is a measurement of something that never boots.
 
-**M7c: decide one of two things, and say which.**
+M7a wrote it and used it for the measurements in `os/rootfs/stages/README.md`,
+and left the target decision to M7c because this campaign's rule is that a
+committed script nothing runs is worse than no script. It now has something that
+runs it.
 
-1. **It becomes a real target.** The invariant it checks — *the image the smoke
-   run executes in is byte-for-byte the image the device ships* — is the
-   assumption every other M7 result rests on, and nothing else checks it. It
-   needs a built rootfs, the way `os-verify-cx3576-v2` needs a built image, so
-   it would be a docker-requiring target and not part of the unit floor.
-2. **The recipe in `os/rootfs/stages/README.md` suffices**, and this directory
-   is deleted — with the reason recorded, not merely by removal.
-
-What it may not do is stay here unrun.
+**It needs a MATCHED PAIR** — `factory-root.oci` and `rootfs-verity.img` from one
+build — and it says so and exits non-zero when it has neither, rather than
+skipping. `MOS_BOARD` selects the board; `x64` is the default.
 
 ## What it is
 
@@ -37,7 +38,8 @@ mutation pass, that line is a positive result that cannot fail.
 
 ```sh
 MOS_BOARD=x64 bash os/rootfs/build-v2.sh     # produces _out/x64/{rootfs-verity.img,factory-root.oci}
-bash os/tests/factory-root-gate/gate.sh _out/x64
+make os-factory-root-gate                    # MOS_BOARD selects the board; x64 by default
+bash os/tests/factory-root-gate/gate.sh _out/x64   # the same thing, said longhand
 ```
 
 Needs docker. It reads `_out/<board>/` and writes only under
@@ -58,3 +60,17 @@ difference between the two trees rather than between two versions of
 hardlinks. All five driven from the failing side. The full record, including
 the reproducibility measurements this harness does *not* cover, is in
 `os/rootfs/stages/README.md`.
+
+## What has NOT been run
+
+**cx3576, ever.** This host has no arm64 emulation and no BSP `modules.tar` to
+build a cx3576 root from, so the numbers above are x64's and there is no
+cx3576 column at all — the same wall RFCT-113's second acceptance clause hit, recorded as a
+disposition in `docs/task/RFCT-113.md`. The deep lane above is where it first
+runs on arm64.
+
+**M7c did not re-run it green.** The target landed and its REFUSAL was driven
+(`rootfs-verity.img is missing or empty`, exit 1, before comparing anything), but
+no matched pair existed on that host: the factory root available was M7d's, still
+in the docker image store, with no squashfs from the same build beside it. M7a's
+run above is the last green one.

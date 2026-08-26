@@ -16,10 +16,28 @@ acceptable, composition wins).
 ## Scope
 
 - `stages/10-base` (system-essential floor), `20-install` (seed units,
-  repart.d), `30-feature-*` (**containers, mqtt, radios** — one per
-  switchable feature, replacing `WITH_*` args with stage selection),
-  `40-board` (board overlay + firmware from `boards/<b>`), `90-pack`
-  (squashfs+verity, determinism normalisation).
+  repart.d), `30-feature-*` (**the feature stages in `os/rootfs/stages/`,
+  declinable with `--without`** — one per switchable feature, replacing `WITH_*`
+  args with stage selection), `40-board` (board overlay + firmware from
+  `boards/<b>`), `90-pack` (squashfs+verity, determinism normalisation).
+
+  AMENDED AGAIN 2026-08-26, at M7 close, **by the user**: the feature list
+  **points at the mechanism instead of enumerating members**. It read
+  "containers, mqtt, radios" (and, before the amendment below, "ssh"), and it was
+  **wrong in both directions at once** — it named `ssh`, which was never a stage
+  in this directory or in any commit that ever added one, and it omitted `rauc`
+  and `mosd`, which are.
+
+  **Pointing at the mechanism is not a way of avoiding the list; it is where the
+  list actually lives.** `os/build/src/stages.ts` derives the chain from the
+  directory — *"THE STAGE LIST IS THE DIRECTORY. There is no list of stages
+  anywhere else, deliberately: a stage added to the tree but not to a list would
+  be a stage that silently never runs"* — and `featureOf` picks the feature
+  stages out of it by name. A second list in a task record is exactly the copy
+  that mechanism exists to prevent, and it had already drifted twice by the time
+  anyone compared them. `--without <name>` refuses a name that matches no
+  feature stage, for the same reason: silently building the full image and
+  exiting 0 is the failure.
 
   AMENDED 2026-08-26, at M5 close, **by the user**. The list read
   "containers, mqtt, radios, ssh". **ssh is removed from it** — not because it

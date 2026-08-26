@@ -3,12 +3,13 @@
 #
 #   bash os/tests/factory-root-gate/gate.sh _out/x64
 #
-# THIS HAS NO `make` TARGET, DELIBERATELY. RFCT-113 M7a wrote it and used it to
-# take the measurements in os/rootfs/stages/README.md; M7c owns the gate and
-# decides whether it gets a target or whether the README recipe suffices and
-# this directory goes. README.md here states the decision in full. A committed
-# script nothing runs is worse than no script -- so if you are reading this
-# because it has sat here unrun, that is the thing to fix.
+# `make os-factory-root-gate` IS THIS, since RFCT-113 M7c decided it on
+# 2026-08-26: a real target rather than a deleted directory, because the
+# invariant here is the assumption every other M7 result rests on and nothing
+# else checks it. M7a wrote the script and took the measurements in
+# os/rootfs/stages/README.md with it; what it lacked was something that ran it.
+# It is also a step in .gitea/workflows/privileged.yml's deep lane, which is the
+# only place it can run on cx3576. README.md here carries the decision in full.
 #
 # WHY A CONTAINER. Neither side of the comparison is readable on the build host:
 # there is no unsquashfs and no getcap. os/verify/src/tools.ts answers the same

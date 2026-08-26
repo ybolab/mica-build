@@ -259,6 +259,33 @@ remain excluded. Recorded here rather than left implicit so that the boundary
 reads as deliberately moved by the user, once, rather than silently crossed —
 the discipline every other clause change in this campaign follows.
 
+**Amendment, 2026-08-26 — a `--version` handler in two `mosd/` binaries, by the
+user.** The `mosd/` Rust-sources exclusion is lifted for exactly this: a
+`--version` (and `-V`) handler in `mosd/mosd/src/main.rs` and
+`mosd/apid/src/main.rs` that reports the crate version and exits 0 **before any
+daemon initialisation, provisioning, bus connection or key generation**, plus its
+build-time plumbing. Landed by RFCT-113 M7d at `2e8d237`.
+
+**Why it was lifted.** M7's whole purpose is that every self-built binary is
+executed before an image ships it, and these two could not be asked. Measured
+before the change: `/usr/bin/mosd --version` → rc=1, having ignored the flag, run
+first-boot provisioning and left `settings.toml` and `secrets/` behind;
+`/usr/bin/apid --version` → rc=124 against a 20s budget, having generated a
+certificate and a session key, bound `0.0.0.0:443` and `0.0.0.0:80`, and never
+returned. Both **ignored argv and started the daemon, and the invocation mutated
+the machine** — which is why the *position* of the handler was the requirement
+and not a matter of taste. RFCT-113 M7b found the gap, DECLINED to close it
+citing this exclusion — its register entry read *"FINDING IS IN SCOPE, ACTING IS
+NOT"* — and escalated instead of widening the boundary itself.
+
+**The amendment is those two handlers and their plumbing, and nothing else.**
+Every other argv is unchanged and still ignored; refusing an unknown flag would
+be a new way for these units to fail on a device, which is device-side runtime
+behaviour and was not opened. `board/` BSP content, device-side runtime
+behaviour, and the rest of `mosd/` all remain excluded. Recorded here because
+M7d put the provenance in both `main.rs` files and in its commit message, and
+PLAN-014 is docs — the lane that commit did not have.
+
 ## Alternatives
 
 - **Freeze v1 under `legacy/` instead of deleting** — rejected (decision 1);
