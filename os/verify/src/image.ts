@@ -1,23 +1,17 @@
-// Reading a mos disk image without touching the host: no loop mounts, no host
-// mutation, nothing that needs root. The typed helpers M4b..M4d port checks on
-// top of, over os/verify-image-v2.sh's toolset unchanged -- sgdisk for the GPT,
-// mtools at an offset for the FAT boot slots, a byte range extracted out of the
-// image and read with debugfs/tune2fs for the ext4 partitions, unsquashfs for
-// the packed root, and `veritysetup verify`, which walks the hash tree in
-// USERSPACE and never creates a device-mapper target, never calls losetup and
-// never mounts anything.
+// Reading a mos disk image without touching the host: os/verify-image-v2.sh's
+// toolset unchanged -- sgdisk for the GPT, mtools at an offset for the FAT boot
+// slots, a byte range read with debugfs/tune2fs for the ext4 partitions,
+// unsquashfs for the packed root, and `veritysetup verify`, which walks the hash
+// tree in USERSPACE and never creates a device-mapper target, never calls
+// losetup and never mounts anything. No host mutation, nothing that needs root.
 //
-// Every helper was driven against a malformed input first, on 2026-08-25 in the
-// pinned alpine:3.21 with the package set the shell verifier installs. Four of
-// the five tools answer a question they could not answer with something that
-// reads exactly like an answer, and each quirk is recorded at the helper that
-// handles it -- `SGDISK_INVENTED`, `debugfsRun`, `squashfsExtract`,
-// `verityVerify`. So no helper decides anything by exit status alone; one that
-// cannot see its tool's did-the-work output refuses loudly, naming the tool and
-// what it saw, which is the rule tools.ts states for ToolError one layer up. The
-// shell verifier instead ends nearly every capture in `|| true` and lets the
-// empty string fail the check: it still goes red, but describing a VALUE when
-// the truth is that the tool never ran.
+// Four of the five tools answer a question they could not answer with something
+// that reads exactly like an answer, measured 2026-08-25 in the pinned
+// alpine:3.21 with the shell verifier's package set; each quirk is recorded at
+// its helper -- `SGDISK_INVENTED`, `debugfsRun`, `squashfsExtract`,
+// `verityVerify`. No helper decides by exit status alone: one blind to its
+// tool's did-the-work output refuses loudly and names it, the rule tools.ts
+// states for ToolError.
 
 import {
   closeSync,
@@ -370,21 +364,17 @@ export async function fatReadFile(rt: ToolRuntime, slot: FatSlot, path: string):
 /**
  * Copy one file out of the slot INTO A LOCAL PATH, and say whether it landed.
  *
- * NOT `fatReadFile` plus a write. mcopy's `-` target sends the file to stdout,
- * and this runtime reads stdout as TEXT -- fine for a `set MOS_*=` fragment and
- * destructive for a 290 KiB device tree, where every byte that is not valid
- * UTF-8 comes back as U+FFFD. The device tree and the compiled boot script are
- * both read as BYTES by the checks below, so mcopy writes them itself, exactly
- * as os/verify-image-v2.sh:1899 and :2003 have it write them.
- *
- * `false` means the file is not in the slot -- mcopy exits 1 saying
- * `File "::/x" not found`, the one honest absence in the mtools set. Any other
- * non-zero exit throws, because "the slot could not be read at all" and "the
- * file is not in it" are different edits.
- *
- * The destination is checked AFTER the copy as well as before: mcopy exiting 0
- * having written nothing would otherwise leave the caller reading a file that
- * is not there, which is `unsquashfs -d`'s defect one directory along.
+ * NOT `fatReadFile` plus a write. mcopy's `-` target sends the file to stdout and
+ * this runtime reads stdout as TEXT -- fine for a `set MOS_*=` fragment, destructive
+ * for a 290 KiB device tree, where every byte that is not valid UTF-8 comes back as
+ * U+FFFD. The device tree and the compiled boot script are read as BYTES below, so
+ * mcopy writes them itself, as os/verify-image-v2.sh:1899 and :2003 have it write
+ * them. `false` means the file is not in the slot -- mcopy exits 1 saying
+ * `File "::/x" not found`, the one honest absence in the mtools set -- and any other
+ * non-zero exit throws, because "unreadable slot" and "file not in it" are different
+ * edits. The destination is checked AFTER the copy as well as before: mcopy exiting
+ * 0 having written nothing would leave the caller reading a file that is not there,
+ * `unsquashfs -d`'s defect next door.
  */
 export async function fatCopyOut(
   rt: ToolRuntime,
@@ -818,8 +808,7 @@ export async function fdtGetResult(
  * cells, so a `gpios` that had become a string would hand `gpio_cells[2]` the
  * third byte of it rather than a refusal. Reproduced and not refused, because
  * os/verify-image-v2.sh:1941 reads exactly those cells and a helper that threw
- * would fail where the oracle fails the check, a different row in the parity
- * diff.
+ * would fail where the oracle fails the check.
  */
 export async function fdtGetCells(
   rt: ToolRuntime,
@@ -868,12 +857,12 @@ export interface E2fsckVerdict {
  * superblock) is 8192 blocks", "The physical size of the device is 4096 blocks",
  * "Either the superblock or the partition table is likely to be corrupt!" and
  * "Abort? no", then run all five passes and exit 0. The oracle's line is
- * `if e2fsck -fn "${img}" >/dev/null 2>&1`, so both streams go to /dev/null and
- * the status alone decides -- and the branch is reachable, because `check_ext4`
- * extracts `count=${size_mib}` MiB at the layout's offset and a short-tailed
- * image produces exactly this file. Reproduced and not repaired: the verdict is
- * the STATUS as the oracle reads it, and what this helper adds is that
- * `E2fsckVerdict.report` keeps the sentence instead of sending it to /dev/null.
+ * `if e2fsck -fn "${img}" >/dev/null 2>&1`, so both streams go to /dev/null and the
+ * status alone decides -- and the branch is reachable, because `check_ext4` extracts
+ * `count=${size_mib}` MiB at the layout's offset and a short-tailed image produces
+ * exactly this file. Reproduced and not repaired: the verdict is the STATUS as the
+ * oracle reads it, and `E2fsckVerdict.report` keeps the sentence rather than
+ * sending it to /dev/null.
  */
 export async function e2fsckClean(rt: ToolRuntime, file: string): Promise<E2fsckVerdict> {
   const r = await rt.run(['e2fsck', '-fn', file], {
