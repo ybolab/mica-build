@@ -45,3 +45,5 @@ Each plan is a single line linking to its detail file. All detailed information 
 - [ ] [**PLAN-012 Container engine - a self-built static Podman, off by default, switched from apid**](PLAN-012.md) `2026-08-23`
 - [ ] [**PLAN-013 The x64/QEMU verification vehicle - a whole-system check, an apid API suite, and the cx3576 back-port**](PLAN-013.md) `2026-08-24`
 - [x] [**PLAN-014 os/ restructure - board isolation, per-stage rootfs Dockerfiles, pinned build environments, and the TS build/verify toolchain**](PLAN-014.md) `2026-08-25`
+- [-] [**PLAN-015 Function-oriented comments - strip history from code, tests, and docs**](PLAN-015.md) `2026-08-26`
+- [-] [**PLAN-016 apid OpenAPI phase 1 - utoipa spec, discovery endpoints, read-only slice, breaking-change gate**](PLAN-016.md) `2026-08-26`
