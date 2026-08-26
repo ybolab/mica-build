@@ -103,9 +103,7 @@ function hasOption(options: string, opt: string): boolean {
   return `,${options},`.includes(`,${opt},`)
 }
 
-// ---------------------------------------------------------------------------
 // the four storage tiers
-// ---------------------------------------------------------------------------
 
 interface TierCase {
   readonly id: string
@@ -194,9 +192,7 @@ function tierCheck(t: TierCase): CheckCase {
   }
 }
 
-// ---------------------------------------------------------------------------
 // where UI_ROOT lands
-// ---------------------------------------------------------------------------
 
 /**
  * The fstab row whose mountpoint is the LONGEST PREFIX of `path`.

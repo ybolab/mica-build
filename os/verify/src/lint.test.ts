@@ -171,7 +171,7 @@ const PORTED: readonly RejectCase[] = [
   },
 ]
 
-// --- the axis the shell pair never tested: DECLARED EMPTY --------------------
+// the axis the shell pair never tested: DECLARED EMPTY
 //
 // `${NAME:-}` gives the same answer for a key that is absent and a key that is
 // declared empty, so every check the shell built on it has a spelling that

@@ -62,7 +62,7 @@ export async function probeImage(ctx: ImageContext, log: Log): Promise<void> {
   log(`── probe: ${ctx.board.name} ── ${ctx.image}`)
   log(`   tools: ${ctx.tools.announce}`)
 
-  // 1. sgdisk -----------------------------------------------------------------
+  // 1. sgdisk
   const gpt = await ctx.gpt()
   log(`   [sgdisk]      ${gpt.partitions.length} partitions, sector ${gpt.sectorSize} B,`
     + ` disk GUID ${gpt.diskGuid}, ${gpt.totalSectors} sectors`)
@@ -74,7 +74,7 @@ export async function probeImage(ctx: ImageContext, log: Log): Promise<void> {
   const verdict = await sgdiskVerify(ctx.tools, ctx.image)
   log(`   [sgdisk]      --verify: ${verdict.clean ? 'no problems' : `complaints: ${verdict.complaints.join(' | ')}`}`)
 
-  // 2. mtools, at an offset ---------------------------------------------------
+  // 2. mtools, at an offset
   for (const part of ctx.board.partitions.filter(p => p.role === 'esp')) {
     const label = part.label
     if (label === undefined) continue
@@ -88,7 +88,7 @@ export async function probeImage(ctx: ImageContext, log: Log): Promise<void> {
     })
   }
 
-  // 3. dd-extract + tune2fs/debugfs -------------------------------------------
+  // 3. dd-extract + tune2fs/debugfs
   for (const part of ctx.board.partitions.filter(p => p.role === 'ext4')) {
     const label = part.label
     if (label === undefined) continue
@@ -110,7 +110,7 @@ export async function probeImage(ctx: ImageContext, log: Log): Promise<void> {
     })
   }
 
-  // 4/5. unsquashfs and veritysetup, over the verity slot ---------------------
+  // 4/5. unsquashfs and veritysetup, over the verity slot
   for (const part of ctx.board.partitions.filter(p => p.role === 'verity-slot')) {
     const label = part.label
     if (label === undefined) continue

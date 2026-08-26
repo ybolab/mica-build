@@ -157,9 +157,7 @@ const hasWifi = (board: Board): boolean => hasRadio(board, 'wifi')
 const WIFI_BOARDS = boardsWhere(hasWifi)
 const NO_WIFI_BOARDS = boardsWhere(b => !hasWifi(b))
 
-// ---------------------------------------------------------------------------
 // the contract read itself
-// ---------------------------------------------------------------------------
 
 function contractMessage(c: ConndContract): string {
   return c.read
@@ -190,9 +188,7 @@ const CONTRACT_CHECK: CheckCase = {
   },
 }
 
-// ---------------------------------------------------------------------------
 // the Wi-Fi userland, on the boards that declare a radio
-// ---------------------------------------------------------------------------
 
 /** `sq_regular`, scoped to the Wi-Fi boards. */
 function wifiRegularFile(id: string, path: string): CheckCase {
@@ -497,9 +493,7 @@ const WIFI_SKIPPED: CheckCase = {
   )],
 }
 
-// ---------------------------------------------------------------------------
 // the image's networkd namespace, on EVERY board
-// ---------------------------------------------------------------------------
 
 const NETWORK_DIRS = [
   '/etc/systemd/network', '/usr/lib/systemd/network', '/run/systemd/network',
@@ -630,9 +624,7 @@ const SORT_ORDER_CHECK: CheckCase = {
   },
 }
 
-// ---------------------------------------------------------------------------
 // the register entries, generated from the contract
-// ---------------------------------------------------------------------------
 
 export const CONND_CHECKS: readonly CheckCase[] = [
   CONTRACT_CHECK,

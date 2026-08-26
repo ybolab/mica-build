@@ -31,7 +31,7 @@ const SLOT = 524288
 /** ...and on x64's. */
 const X64_SLOT = 1048576
 
-// ── real transcripts, one per tool per tier ────────────────────────────────
+// real transcripts, one per tool per tier
 
 interface TierReply {
   readonly tune2fs?: Partial<ToolResult>

@@ -48,9 +48,7 @@ const EXT_POLICY_PATH = '/usr/share/dbus-1/system.d/com.mos.ext.conf'
 const MOSD_UNIT = '/usr/lib/systemd/system/mosd.service'
 const POLICY_DIRS = ['/etc/dbus-1/system.d', '/usr/share/dbus-1/system.d'] as const
 
-// ---------------------------------------------------------------------------
 // reading a file the way the oracle's shell reads one
-// ---------------------------------------------------------------------------
 
 /** `cat "${ROOT}${path}" 2>/dev/null || true` -- the empty string when absent. */
 function readOrEmpty(root: string, path: string): string {
@@ -131,9 +129,7 @@ export function policyTags(text: string): string[] {
     .filter(s => s !== '')
 }
 
-// ---------------------------------------------------------------------------
 // the mosd policy, parsed per <policy> BLOCK
-// ---------------------------------------------------------------------------
 
 export interface PolicyFacts {
   /** `<allow>` rules in a default-context block naming the bus in either direction. */
@@ -225,9 +221,7 @@ export function mosdBusName(root: string): string {
   return lines.at(-1) ?? ''
 }
 
-// ---------------------------------------------------------------------------
 // the second-policy-file search
-// ---------------------------------------------------------------------------
 
 export interface SecondFile {
   readonly path: string
@@ -288,9 +282,7 @@ export function secondPolicyFiles(root: string, bus: string): SecondFile[] {
   return found
 }
 
-// ---------------------------------------------------------------------------
 // the checks
-// ---------------------------------------------------------------------------
 
 const MOSD_CHECKS: readonly CheckCase[] = [
   {
@@ -472,9 +464,7 @@ const MOSD_CHECKS: readonly CheckCase[] = [
   },
 ]
 
-// ---------------------------------------------------------------------------
 // check_ext_policy
-// ---------------------------------------------------------------------------
 
 const EXT_GRANT_RE = /allow own_prefix="com\.mos\.ext"/
 const EXT_WIDE_RE = /own_prefix="com\.mos"/
@@ -596,9 +586,7 @@ const EXT_CHECKS: readonly CheckCase[] = [
   },
 ]
 
-// ---------------------------------------------------------------------------
 // bluez's policy -- os/verify-image-v2.sh:3183. Board-conditional.
-// ---------------------------------------------------------------------------
 
 const hasBluetooth = (board: Board): boolean => hasRadio(board, 'bluetooth')
 

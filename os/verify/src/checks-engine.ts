@@ -64,9 +64,7 @@ const QUADLET_MOUNT_UNIT = 'etc-containers-systemd.mount'
 const UNIT_TREES = ['/etc/systemd', '/usr/lib/systemd', '/usr/local/lib/systemd'] as const
 const ENABLEMENT_TREES = ['/etc/systemd/system', '/usr/lib/systemd/system'] as const
 
-// ---------------------------------------------------------------------------
 // the walks `find` performs, spelled once
-// ---------------------------------------------------------------------------
 
 /** `[ -e "${ROOT}${path}" ]`: exists, FOLLOWING a link -- a dangling one is absent. */
 function existsFollowingLinks(root: string, path: string): boolean {
@@ -120,9 +118,7 @@ function findUnder(
   return found.sort()
 }
 
-// ---------------------------------------------------------------------------
 // the container engine
-// ---------------------------------------------------------------------------
 
 /** The oracle's early-return guard (:1196): NEITHER podman nor storage.conf. */
 function noEngineAtAll(root: string): boolean {
@@ -497,9 +493,7 @@ const ENGINE_CHECKS: readonly CheckCase[] = [
   }),
 ]
 
-// ---------------------------------------------------------------------------
 // check_no_package_manager
-// ---------------------------------------------------------------------------
 
 const PKGMGR_BINARIES = [
   '/usr/bin/dpkg', '/usr/bin/dpkg-query', '/usr/bin/dpkg-deb', '/usr/bin/apt',
@@ -632,9 +626,7 @@ const PURGE_CHECKS: readonly CheckCase[] = [
   },
 ]
 
-// ---------------------------------------------------------------------------
 // check_ca_bundle
-// ---------------------------------------------------------------------------
 
 const CA_BUNDLE = '/etc/ssl/certs/ca-certificates.crt'
 
@@ -684,9 +676,7 @@ const CA_CHECKS: readonly CheckCase[] = [
   },
 ]
 
-// ---------------------------------------------------------------------------
 // small readers the checks above share
-// ---------------------------------------------------------------------------
 
 /** The file's lines, or none. `grep` over a missing file matches nothing. */
 function grepLines(root: string, path: string): string[] {

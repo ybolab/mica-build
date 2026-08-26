@@ -177,9 +177,7 @@ export function parseShellRun(stdout: string): ShellRun {
   return { lines, summary }
 }
 
-// ---------------------------------------------------------------------------
 // the register: how a ported check names the shell conclusion it replaces
-// ---------------------------------------------------------------------------
 
 export interface ShellMatcher {
   /**
@@ -365,7 +363,7 @@ export function diffParity(input: {
   const rows: ParityRow[] = []
   const applicable = checks.filter(c => appliesTo(c, board))
 
-  // --- claim each shell line ------------------------------------------------
+  // claim each shell line
   const shellByKey = new Map<string, { verdict: Verdict, line: number, message: string }>()
   const firedIds = new Set<string>()
 
@@ -427,7 +425,7 @@ export function diffParity(input: {
     shellByKey.set(key, { verdict: l.verdict, line: l.line, message: l.message })
   }
 
-  // --- pair the TypeScript results against them -----------------------------
+  // pair the TypeScript results against them
   const tsByKey = new Map<string, CheckResult>()
   for (const r of results) {
     const check = checks.find(c => c.id === r.id)
@@ -513,7 +511,7 @@ export function diffParity(input: {
     })
   }
 
-  // --- registered, applicable, and silent on both sides ---------------------
+  // registered, applicable, and silent on both sides
   for (const c of applicable) {
     if (firedIds.has(c.id)) continue
     if ([...tsByKey.keys()].some(k => splitKey(k)[0] === c.id)) continue

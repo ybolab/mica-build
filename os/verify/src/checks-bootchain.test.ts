@@ -316,7 +316,7 @@ describe('the mutation helper refuses a no-op', () => {
   })
 })
 
-// ── the raw pre-GPT blob and its BSP compares ─────────────────────────────
+// the raw pre-GPT blob and its BSP compares
 
 const UBOOT_AT = 64 * 512
 const UBOOT_BLOB = Buffer.from('RKNSU-BOOT-BLOB-BYTES-0123456789')
@@ -432,7 +432,7 @@ describe('the containment pair reads the SAME uboot_size the compare did', () =>
   })
 })
 
-// ── the BSP kernel artefacts, per slot ────────────────────────────────────
+// the BSP kernel artefacts, per slot
 
 describe('the per-slot BSP byte-compare', () => {
   test('one entry per slot per artefact, derived from BOOT_SLOT_REQUIRED_FILES', async () => {
@@ -495,7 +495,7 @@ describe('the per-slot BSP byte-compare', () => {
   })
 })
 
-// ── the status-LED device tree ────────────────────────────────────────────
+// the status-LED device tree
 
 describe('the status-LED device tree', () => {
   test('twelve entries on cx3576, and none on a board with no indicator', () => {
@@ -577,7 +577,7 @@ describe('the status-LED device tree', () => {
   })
 })
 
-// ── the compiled boot script ──────────────────────────────────────────────
+// the compiled boot script
 
 describe('boot-scr-identical', () => {
   test('green when both slots carry the same compiled script', async () => {
@@ -730,7 +730,7 @@ describe('boot-scr-root-args', () => {
   })
 })
 
-// ── the verity environment pair ───────────────────────────────────────────
+// the verity environment pair
 
 describe('verity-env-own-partuuid', () => {
   test('green: each slot names its own rootfs and not the other', async () => {
@@ -806,7 +806,7 @@ describe('verity-env-ab-differ-only-by-partuuid', () => {
   })
 })
 
-// ── the regions that ship zero-filled ─────────────────────────────────────
+// the regions that ship zero-filled
 
 describe('rootfs-b-zero', () => {
   test('green on a slot that is entirely zero', async () => {

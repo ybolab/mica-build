@@ -76,7 +76,7 @@ function versionArtifact(name = 'thing', path = '/usr/bin/thing', p: () => Pin =
   return { name, path, pin: p, contract: { kind: 'version', argv: ['--version'] } }
 }
 
-// ─── the tokeniser ──────────────────────────────────────────────────────────
+// the tokeniser
 
 describe('versionTokens -- one reader for ten different sentences', () => {
   // THE TEN REAL OUTPUTS, captured 2026-08-26 by running each binary inside the
@@ -205,7 +205,7 @@ describe('versionTokens -- one reader for ten different sentences', () => {
   })
 })
 
-// ─── the commit half ────────────────────────────────────────────────────────
+// the commit half
 
 describe('reportsCommit -- a token match, and the -dirty confusion it exists for', () => {
   const CLEAN = 'mosd 0.1.0 (00b674e9a628)'
@@ -383,7 +383,7 @@ describe('pinSource', () => {
   })
 })
 
-// ─── judge ──────────────────────────────────────────────────────────────────
+// judge
 
 describe('judge -- the version contract', () => {
   test('exit 0 and the pinned version passes, and says where the pin came from', () => {
@@ -618,7 +618,7 @@ describe('catatonit -- two normalisations, and a loose includes() would pass on 
   })
 })
 
-// ─── THE VERSION LOOP, as a loop ────────────────────────────────────────────
+// THE VERSION LOOP, as a loop
 
 describe('the version loop closes: bump the pin, do not rebuild, run goes red', () => {
   test('one fixture file, one unchanged binary, one edit -- and the verdict flips', async () => {
@@ -679,7 +679,7 @@ describe('the version loop closes: bump the pin, do not rebuild, run goes red', 
   })
 })
 
-// ─── conclude, and the vacuity guard ────────────────────────────────────────
+// conclude, and the vacuity guard
 
 describe('conclude', () => {
   const r = (verdict: SmokeResult['verdict']): SmokeResult =>
@@ -752,7 +752,7 @@ describe('conclude', () => {
   })
 })
 
-// ─── the image record ───────────────────────────────────────────────────────
+// the image record
 
 describe('parseFactoryRootRecord', () => {
   const GOOD = [
@@ -833,7 +833,7 @@ describe('readFactoryRoot -- a missing image REFUSES rather than skipping', () =
   })
 })
 
-// ─── the declined-feature guard ─────────────────────────────────────────────
+// the declined-feature guard
 
 describe('declinedFeatures -- reading what the build left out, off its own manifest', () => {
   // The exact line os/build/src/stages.ts writes when nothing was declined,
@@ -860,7 +860,7 @@ describe('declinedFeatures -- reading what the build left out, off its own manif
   })
 })
 
-// ─── the preflight, and the arm64 wall ──────────────────────────────────────
+// the preflight, and the arm64 wall
 
 describe('preflight -- the positive control that runs before any conclusion', () => {
   test('a root that can execute /bin/true is accepted', async () => {
@@ -895,7 +895,7 @@ describe('preflight -- the positive control that runs before any conclusion', ()
   })
 })
 
-// ─── the argv the seam actually builds ──────────────────────────────────────
+// the argv the seam actually builds
 
 describe('dockerArgv', () => {
   test('runs the absolute path in the loaded ref, with no network and no leftover container', () => {

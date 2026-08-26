@@ -171,9 +171,7 @@ function policyRules(root: string, path: string): string[] {
   return policyRuleLines(readFileSync(join(root, path), 'utf8'))
 }
 
-// ---------------------------------------------------------------------------
 // check_mqttd
-// ---------------------------------------------------------------------------
 
 const MQTTD_CHECKS: readonly CheckCase[] = [
   prefixedRegularFile('mqttd-bin', 'mqttd', MQTTD_BIN,
@@ -461,9 +459,7 @@ function mountUnitFor(root: string, dir: string): { name: string, what: string }
   return undefined
 }
 
-// ---------------------------------------------------------------------------
 // check_mqtt_broker
-// ---------------------------------------------------------------------------
 
 const BROKER_CHECKS: readonly CheckCase[] = [
   prefixedRegularFile('mqtt-broker-bin', 'mqtt-broker', BROKER_BIN,

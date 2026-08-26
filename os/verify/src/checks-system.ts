@@ -69,9 +69,7 @@ const AK_EXPECT = '/etc/ssh/authorized_keys.d/%u'
 const SSH_UNIT = '/usr/lib/systemd/system/ssh.service'
 const MOS_HEALTH = '/usr/lib/mos/mos-health'
 
-// ---------------------------------------------------------------------------
 // readers
-// ---------------------------------------------------------------------------
 
 function text(root: string, path: string): string {
   try {
@@ -113,9 +111,7 @@ function modeOf(root: string, path: string): string {
   }
 }
 
-// ---------------------------------------------------------------------------
 // systemd-networkd, and the ELF architecture of the two daemons
-// ---------------------------------------------------------------------------
 
 const NETWORKD_CHECK: CheckCase = {
   // TWO ways a unit is enabled, and the second is not decoration: Debian's
@@ -192,9 +188,7 @@ function elfArchCheck(board: Board, path: string): CheckCase {
   }
 }
 
-// ---------------------------------------------------------------------------
 // the bootloader's environment access from Linux
-// ---------------------------------------------------------------------------
 
 const BOOTENV_CHECKS: readonly CheckCase[] = [
   {
@@ -418,9 +412,7 @@ export function devLineCount(root: string, path: string): string {
   return n === 0 ? '0\n0' : String(n)
 }
 
-// ---------------------------------------------------------------------------
 // the health gate's two root-side conclusions
-// ---------------------------------------------------------------------------
 
 const HEALTH_CHECKS: readonly CheckCase[] = [
   {
@@ -485,9 +477,7 @@ const HEALTH_CHECKS: readonly CheckCase[] = [
   },
 ]
 
-// ---------------------------------------------------------------------------
 // systemd-repart definitions
-// ---------------------------------------------------------------------------
 
 const REPART_CHECKS: readonly CheckCase[] = [
   {
@@ -654,9 +644,7 @@ function discardOverrides(root: string): string[] {
   return found.sort()
 }
 
-// ---------------------------------------------------------------------------
 // the AuthorizedKeysFile drop-in
-// ---------------------------------------------------------------------------
 
 /** `sed -n 's/^ *AuthorizedKeysFile +\(.*[^ ]\) *$/\1/p' | tail -n1`. */
 function authorizedKeysValue(root: string, path: string): string {
@@ -769,9 +757,7 @@ function lastValue(root: string, path: string, key: string): string {
   return values.at(-1) ?? ''
 }
 
-// ---------------------------------------------------------------------------
 // the image profile, and the SSH default it selects
-// ---------------------------------------------------------------------------
 
 export interface ProfileContract {
   readonly key: string
@@ -947,9 +933,7 @@ function sshWants(root: string): string[] {
   return found.sort()
 }
 
-// ---------------------------------------------------------------------------
 // ssh.service's inherited properties
-// ---------------------------------------------------------------------------
 
 interface SshUnitCase {
   readonly id: string
@@ -1029,9 +1013,7 @@ const SSH_UNIT_CHECKS: readonly CheckCase[] = [
   }),
 ]
 
-// ---------------------------------------------------------------------------
 // libcrypt, and the crypt(3) format mosd writes
-// ---------------------------------------------------------------------------
 
 const MULTIARCH: ReadonlyMap<string, string> = new Map([
   ['arm64', 'aarch64-linux-gnu'],
@@ -1201,9 +1183,7 @@ function printableRuns(bytes: Buffer): string[] {
   return out
 }
 
-// ---------------------------------------------------------------------------
 // every external binary the /usr/lib/mos boot scripts invoke
-// ---------------------------------------------------------------------------
 
 const BOOT_SCRIPT_COMMANDS: CheckCase = {
   // These scripts run at boot, as root, OUTSIDE any package's dependency graph,
@@ -1281,7 +1261,6 @@ function bootScriptCommands(root: string): string[] {
   return [...all].sort()
 }
 
-// ---------------------------------------------------------------------------
 
 export const SYSTEM_CHECKS: readonly CheckCase[] = [
   NETWORKD_CHECK,

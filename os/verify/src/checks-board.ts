@@ -70,17 +70,13 @@ import type { CheckResult } from './parity.ts'
 import { ToolOutputError } from './tools.ts'
 import { skipped, verdict } from './verdict.ts'
 
-// ---------------------------------------------------------------------------
 // the shipped boards, and the predicates the families are scoped by
-// ---------------------------------------------------------------------------
 
 // The predicates and the derived board lists live in `board-scope.ts`: the
 // bootloader-environment and Wi-Fi families need the same three, and a second
 // spelling of `is_uboot_board` beside this one is drift waiting to happen.
 
-// ---------------------------------------------------------------------------
 // the three shapes a board-conditional conclusion takes
-// ---------------------------------------------------------------------------
 
 /**
  * `sq_regular` for a path the board itself declares.
@@ -145,9 +141,7 @@ function packedGrep(input: {
   }
 }
 
-// ---------------------------------------------------------------------------
 // the loader partition
-// ---------------------------------------------------------------------------
 
 /**
  * A board key that must be a whole number, or a THROW naming it.
@@ -337,9 +331,7 @@ function loaderSkipMessage(board: Board): string {
     + `os/tests/handshake-test/ remains the only cover for the U-Boot A/B handshake either way`
 }
 
-// ---------------------------------------------------------------------------
 // what a boot slot must contain
-// ---------------------------------------------------------------------------
 
 
 /**
@@ -487,9 +479,7 @@ function uBootSlotSkipMessage(board: Board, slot: string): string {
     + `than absent; and Image/rk3576-src.dtb are BSP artefacts this board does not build`
 }
 
-// ---------------------------------------------------------------------------
 // the radio -- firmware set (:2488-2494) and module list (:2559-2570)
-// ---------------------------------------------------------------------------
 
 function radioFirmwareChecks(board: Board): CheckCase[] {
   return (board.firmwareFiles ?? []).map(fw => boardRegularFile('board-firmware', board.name, fw))
@@ -557,9 +547,7 @@ const RADIO_CHECKS: readonly CheckCase[] = [
   ),
 ]
 
-// ---------------------------------------------------------------------------
 // the hwinit facts
-// ---------------------------------------------------------------------------
 
 function hwinitConfChecks(board: Board): CheckCase[] {
   return (board.hwinitConfs ?? []).map(c => boardRegularFile('hwinit-conf', board.name, `/etc/mos/${c}.conf`))
@@ -756,9 +744,7 @@ const HWINIT_CHECKS: readonly CheckCase[] = [
 
 const RECONCILER_OWNED: readonly string[] = ['mos-mqttd.service', 'mos-mqtt-broker.service']
 
-// ---------------------------------------------------------------------------
 // the Bluetooth userland -- os/verify-image-v2.sh:2695-2705, and wifi.conf
-// ---------------------------------------------------------------------------
 
 const BLUETOOTH_CHECKS: readonly CheckCase[] = [
   boardRegularFileForFeature(
@@ -849,9 +835,7 @@ const BLUETOOTH_CHECKS: readonly CheckCase[] = [
   },
 ]
 
-// ---------------------------------------------------------------------------
 // the status indicator -- check_status_led (:531) and the overlay set (:2720)
-// ---------------------------------------------------------------------------
 
 const LED_SCRIPT = '/usr/lib/mos/mos-status-led'
 const LED_UNIT = '/usr/lib/systemd/system/mos-status-led.service'
@@ -1124,9 +1108,7 @@ function ledFilesLeft(root: string): string[] {
   return out
 }
 
-// ---------------------------------------------------------------------------
 // shared readers
-// ---------------------------------------------------------------------------
 
 /**
  * A directory listing, or nothing.

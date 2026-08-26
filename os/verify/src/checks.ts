@@ -274,9 +274,7 @@ export async function runChecks(ctx: ImageContext, checks: readonly CheckCase[] 
   return { results, failures }
 }
 
-// ---------------------------------------------------------------------------
 // building the context
-// ---------------------------------------------------------------------------
 
 export interface ContextRequest {
   readonly board: Board

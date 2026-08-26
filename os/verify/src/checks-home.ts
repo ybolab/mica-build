@@ -53,9 +53,7 @@ const EXT_UNIT_DIR = '/usr/local/lib/systemd/system'
 const EXT_MOUNT_UNIT = 'usr-local-lib-systemd-system.mount'
 const SEED_WRITE_CMDS = 'mkdir|touch|cp|mv|ln|rm|chmod|chown|install|tee|dd'
 
-// ---------------------------------------------------------------------------
 // the readers
-// ---------------------------------------------------------------------------
 
 function text(root: string, path: string): string {
   try {
@@ -164,9 +162,7 @@ function accountOf(root: string, user: string): Account | undefined {
   return undefined
 }
 
-// ---------------------------------------------------------------------------
 // the two binds, which have exactly the same shape
-// ---------------------------------------------------------------------------
 
 interface BindCase {
   readonly id: string
@@ -261,9 +257,7 @@ const ROOT_TIER_RATIONALE = 'A root home is user data of unbounded size — shel
   + 'it would take the settings tree and the sshd host keys with it. DATA is also the only partition '
   + 'repart grows'
 
-// ---------------------------------------------------------------------------
 // the seed units, which also have one shape
-// ---------------------------------------------------------------------------
 
 /**
  * `mos-seed-home.service` -- present, ordering the mount, and ENABLED.
@@ -372,9 +366,7 @@ const SEED_ROOT_CHECK: CheckCase = {
   },
 }
 
-// ---------------------------------------------------------------------------
 // what the seed scripts write, read statically
-// ---------------------------------------------------------------------------
 
 const SEED_HOME_SCRIPT_CHECK: CheckCase = {
   id: 'mos-seed-home-writes-data',
@@ -496,9 +488,7 @@ export function writesUnderRoot(script: string): string | undefined {
   return undefined
 }
 
-// ---------------------------------------------------------------------------
 // the account, asserted by NUMBER
-// ---------------------------------------------------------------------------
 
 const ACCOUNT_CHECKS: readonly CheckCase[] = [
   {
@@ -683,9 +673,7 @@ function supplementaryGroups(root: string, user: string): string[] {
   return found
 }
 
-// ---------------------------------------------------------------------------
 // the STATE binds: nothing precious is reachable only from /var
-// ---------------------------------------------------------------------------
 
 const hasBluetooth = (board: Board): boolean => hasRadio(board, 'bluetooth')
 

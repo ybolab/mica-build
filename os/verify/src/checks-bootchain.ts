@@ -110,9 +110,7 @@ function intKey(board: Board, name: string): number {
   return Number(raw)
 }
 
-// ---------------------------------------------------------------------------
 // 1. the raw pre-GPT area, and the two BSP compares over it (:1690-1750)
-// ---------------------------------------------------------------------------
 
 /**
  * The uboot-mos blob's size on disk, and 0 when its compare source is absent.
@@ -284,9 +282,7 @@ const RAW_BLOB_SKIP: readonly CheckCase[] = [
   },
 ]
 
-// ---------------------------------------------------------------------------
 // 2. the BSP kernel artefacts each slot must match (:1893-1907)
-// ---------------------------------------------------------------------------
 
 /**
  * The boot-slot files that come out of the BSP build rather than the assembler.
@@ -361,9 +357,7 @@ function bspCompareChecks(board: Board): CheckCase[] {
   }))
 }
 
-// ---------------------------------------------------------------------------
 // 3. the status-LED device tree (:1918-1953)
-// ---------------------------------------------------------------------------
 
 /**
  * The indicator contract, as the oracle states it at :1922.
@@ -482,9 +476,7 @@ const LED_SKIP: readonly CheckCase[] = [
   },
 ]
 
-// ---------------------------------------------------------------------------
 // 4. boot.scr -- the compiled boot script (:2014-2052, :2258-2276)
-// ---------------------------------------------------------------------------
 
 /** The compiled script out of a slot, or undefined when it is not there. */
 async function bootScript(ctx: ImageContext, slot: BootSlot): Promise<string | undefined> {
@@ -654,9 +646,7 @@ const BOOT_SCRIPT_SKIPS: readonly CheckCase[] = [
   },
 ]
 
-// ---------------------------------------------------------------------------
 // 5. the per-slot verity environment pair (:2056-2094)
-// ---------------------------------------------------------------------------
 
 /** `${BOOT_VERITY_ENV_<X>_NAME}` out of the slot, as text. */
 export async function verityEnvText(ctx: ImageContext, slot: BootSlot): Promise<string> {
@@ -758,9 +748,7 @@ const VERITY_ENV_CHECKS: readonly CheckCase[] = [
   },
 ]
 
-// ---------------------------------------------------------------------------
 // 6. the regions that must ship zero-filled (:2264-2298)
-// ---------------------------------------------------------------------------
 
 /**
  * How many NON-ZERO bytes a range holds -- `tr -d '\0' | wc -c`.
@@ -843,7 +831,6 @@ const ZERO_FILL_CHECKS: readonly CheckCase[] = [
   },
 ]
 
-// ---------------------------------------------------------------------------
 
 /** Every per-board generated entry, from each shipped board's own definition. */
 function generatedFor(boards: readonly Board[]): CheckCase[] {

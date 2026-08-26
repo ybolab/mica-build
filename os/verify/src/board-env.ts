@@ -163,7 +163,7 @@ class Parser {
     return { path: this.path, assignments, values, duplicates }
   }
 
-  // --- one assignment --------------------------------------------------------
+  // one assignment
 
   private assignment(defined: ReadonlyMap<string, string>): Assignment {
     const startLine = this.lineOf(this.i)
@@ -200,7 +200,7 @@ class Parser {
     return { key, value, raw, line: startLine }
   }
 
-  // --- a value, as a sequence of segments -----------------------------------
+  // a value, as a sequence of segments
 
   private value(defined: ReadonlyMap<string, string>, key: string): string {
     let out = ''
@@ -279,7 +279,7 @@ class Parser {
     }
   }
 
-  // --- $ ---------------------------------------------------------------------
+  // $
 
   private expansion(defined: ReadonlyMap<string, string>, key: string): string {
     const dollarAt = this.i
@@ -334,7 +334,7 @@ class Parser {
     return v
   }
 
-  // --- $(( )) ----------------------------------------------------------------
+  // $(( ))
 
   private arithmetic(defined: ReadonlyMap<string, string>, key: string): string {
     const openAt = this.i
@@ -362,7 +362,7 @@ class Parser {
     return value.toString()
   }
 
-  // --- scanning helpers ------------------------------------------------------
+  // scanning helpers
 
   private readName(): string {
     const from = this.i
@@ -421,7 +421,7 @@ function describe(c: string | undefined): string {
   return `\`${c}\``
 }
 
-// --- integer arithmetic, and nothing else ------------------------------------
+// integer arithmetic, and nothing else
 //
 // `$(( ))` in a shell is a small imperative language: it assigns, it
 // increments, it short-circuits, it indexes arrays. The board definitions use

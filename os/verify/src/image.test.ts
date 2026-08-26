@@ -132,7 +132,7 @@ function stub(replies: ReadonlyArray<readonly [string, Reply]>): ToolRuntime {
   }
 }
 
-// ── real transcripts ───────────────────────────────────────────────────────
+// real transcripts
 
 /** `sgdisk -p` on the real cx3576 image, trimmed to five partitions. */
 const SGDISK_P = `Disk /x.img: 2693120 sectors, 1.3 GiB
@@ -231,7 +231,7 @@ Compression zstd
 Block size 131072
 `
 
-// ── sgdisk ─────────────────────────────────────────────────────────────────
+// sgdisk
 
 describe('readGpt reads a real table, and refuses an invented one', () => {
   const good = stub([
@@ -315,7 +315,7 @@ describe('sgdiskVerify does not take "No problems found" as the verdict', () => 
   })
 })
 
-// ── mtools ─────────────────────────────────────────────────────────────────
+// mtools
 
 describe('mtools reads the FAT in place, at an offset', () => {
   const slot = { image: '/x.img', offsetBytes: 18874368 }
@@ -368,7 +368,7 @@ describe('mtools reads the FAT in place, at an offset', () => {
   })
 })
 
-// ── ext4 ───────────────────────────────────────────────────────────────────
+// ext4
 
 describe('tune2fs and debugfs, where the exit status is not the answer', () => {
   const ext4 = stub([
@@ -436,7 +436,7 @@ describe('tune2fs and debugfs, where the exit status is not the answer', () => {
   })
 })
 
-// ── squashfs ───────────────────────────────────────────────────────────────
+// squashfs
 
 describe('unsquashfs, which exits 0 having extracted nothing', () => {
   const sq = stub([
@@ -502,7 +502,7 @@ describe('unsquashfs, which exits 0 having extracted nothing', () => {
   })
 })
 
-// ── dm-verity ──────────────────────────────────────────────────────────────
+// dm-verity
 
 describe('veritysetup, where exit 1 means two different things', () => {
   const HASH = '776ffaf3c23c995829e39e443ef46e0b2ea5dd40d8a0ba9aa8849dfb9335f49f'
@@ -536,7 +536,7 @@ describe('veritysetup, where exit 1 means two different things', () => {
   })
 })
 
-// ── byte ranges ────────────────────────────────────────────────────────────
+// byte ranges
 
 describe('extractRange and readBytes need no tool, and refuse a short read', () => {
   // In a hook, not at describe scope: a describe BODY runs while bun is merely
@@ -573,7 +573,7 @@ describe('extractRange and readBytes need no tool, and refuse a short read', () 
   })
 })
 
-// ── fdtget ─────────────────────────────────────────────────────────────────
+// fdtget
 
 /**
  * Every transcript below was captured on 2026-08-26 in the pinned alpine:3.21
@@ -654,7 +654,7 @@ describe('fdtget refuses honestly, except in the one place it does not', () => {
   })
 })
 
-// ── e2fsck ─────────────────────────────────────────────────────────────────
+// e2fsck
 
 const E2FSCK_CLEAN = `e2fsck 1.47.1 (20-May-2024)
 Pass 1: Checking inodes, blocks, and sizes
@@ -729,7 +729,7 @@ describe('e2fsck -fn, whose exit status is the oracle\'s whole test', () => {
   })
 })
 
-// ── the legacy uImage header ───────────────────────────────────────────────
+// the legacy uImage header
 
 describe('the uImage header reader, which has no tool to lie for it', () => {
   /** The first 64 bytes of the real cx3576 boot.scr, captured 2026-08-26. */

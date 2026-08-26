@@ -191,9 +191,7 @@ export function imageFixture(request: FixtureRequest): Fixture {
   return { ctx, dispose: () => rmSync(dir, { recursive: true, force: true }) }
 }
 
-// ---------------------------------------------------------------------------
 // M4c: a synthetic PACKED ROOT, for the batch-2 checks
-// ---------------------------------------------------------------------------
 
 /**
  * A directory tree standing in for the unpacked read-only root, and a context
@@ -362,9 +360,7 @@ function seedHealthyRoot(root: string, board: Board): void {
   // them would make the fixture red before a test had mutated anything.
 }
 
-// ---------------------------------------------------------------------------
 // M4f: the D-Bus policies
-// ---------------------------------------------------------------------------
 
 /**
  * The system bus, the mosd policy and the extension policy.
@@ -394,9 +390,7 @@ function seedDbus(root: string, file: WriteFile): void {
     + '</busconfig>\n')
 }
 
-// ---------------------------------------------------------------------------
 // M4f: the container engine, the purge, and the trust store
-// ---------------------------------------------------------------------------
 
 /**
  * How many `copyright` files and CA certificates the fixture seeds.
@@ -458,9 +452,7 @@ function seedEngine(root: string, board: Board, file: WriteFile): void {
       `-----BEGIN CERTIFICATE-----\ncert${i}\n-----END CERTIFICATE-----`).join('\n')}\n`)
 }
 
-// ---------------------------------------------------------------------------
 // M4f: /home, /root, the mos account, and the STATE binds
-// ---------------------------------------------------------------------------
 
 /**
  * The two persistent homes, their seeds, and the binds that keep precious state
@@ -562,9 +554,7 @@ function enableEtcUnit(root: string, unit: string, target: string): void {
   symlinkSync(`/etc/systemd/system/${unit}`, join(dir, unit))
 }
 
-// ---------------------------------------------------------------------------
 // M4f: the Wi-Fi userland, on the boards that declare a radio
-// ---------------------------------------------------------------------------
 
 /**
  * hostapd, wpa_supplicant, their unit templates and the STATE binds behind them.
@@ -613,10 +603,8 @@ function seedConnd(root: string, board: Board, file: WriteFile): void {
   // DHCPServer=yes, and a second one on the same link is a conflict.
 }
 
-// ---------------------------------------------------------------------------
 // M4f: the small root-side families -- networkd, the ELF headers, the
 // bootloader environment, repart, sshd, the profile and libcrypt
-// ---------------------------------------------------------------------------
 
 /** ELF magic, then padding, then `e_machine` as the 16-bit LE field at offset 18. */
 function elfHeader(arch: string | undefined): Buffer {
@@ -762,9 +750,7 @@ function linuxGenericDefinitions(board: Board): string[] {
 /** What `seedHealthyRoot` hands its helpers: write a file, making its parents. */
 type WriteFile = (path: string, content?: string) => void
 
-// ---------------------------------------------------------------------------
 // M4d: the accounts, the credential template, and the reconciler
-// ---------------------------------------------------------------------------
 
 /**
  * The gid the image gives the `shadow` group. 42 on Debian, and the value both
@@ -873,9 +859,7 @@ function ownAsRoot(root: string, path: string, gid: number): void {
   }
 }
 
-// ---------------------------------------------------------------------------
 // M4d: the MQTT bridge and broker, installed and INERT
-// ---------------------------------------------------------------------------
 
 function seedMqtt(root: string, file: WriteFile): void {
   file('/usr/bin/mos-mqttd')
@@ -917,9 +901,7 @@ function seedMqtt(root: string, file: WriteFile): void {
   // switch cannot override.
 }
 
-// ---------------------------------------------------------------------------
 // What the BOARD's own declarations say this image carries
-// ---------------------------------------------------------------------------
 
 /**
  * The board-conditional payload.

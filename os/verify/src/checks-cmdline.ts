@@ -412,9 +412,7 @@ async function bootScriptText(ctx: ImageContext): Promise<string> {
   return Buffer.from(readBytes(dest, 0, statSync(dest).size)).toString('latin1')
 }
 
-// ---------------------------------------------------------------------------
 // the ESP: static, in no slot group, and holding NOTHING per-slot (:1968-2006)
-// ---------------------------------------------------------------------------
 
 const ESP_CHECKS: readonly CheckCase[] = [
   {
@@ -516,9 +514,7 @@ async function espListing(ctx: ImageContext): Promise<string[]> {
   return fatList(ctx.tools, espSlot(ctx))
 }
 
-// ---------------------------------------------------------------------------
 // RAUC's slot devices versus the ESP (:2854-2872)
-// ---------------------------------------------------------------------------
 
 function raucConf(root: string): string {
   const path = join(root, 'etc/rauc/system.conf')

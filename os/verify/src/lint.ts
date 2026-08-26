@@ -19,7 +19,6 @@
 // So this checks BOTH directions: every key a role requires is present, and no
 // key a role does not use is present. Only the second one would have caught it.
 //
-// ---------------------------------------------------------------------------
 // WHAT THIS PORT CHANGES, AND WHY IT IS NOT A TRANSLATION
 //
 // The predecessor was os/verify/lint.sh: it `source`d each board definition in
@@ -52,7 +51,6 @@
 // no MAC to burn. A schema that reads those as "not declared" cannot tell a
 // board that said "none" from a board that forgot to say anything.
 //
-// ---------------------------------------------------------------------------
 // THE MESSAGES ARE THE PRODUCT. A verdict tells a board engineer that something
 // is wrong; the message is what tells them which line to edit. So absent and
 // empty get DIFFERENT sentences even where they share a verdict: the shell said

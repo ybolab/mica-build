@@ -82,9 +82,7 @@ async function mutated(board: Board, id: string, mutate: (root: string) => void)
   return fx
 }
 
-// ---------------------------------------------------------------------------
 // the register itself
-// ---------------------------------------------------------------------------
 
 describe('the register batch 3 adds', () => {
   test('every id is unique, and every check registers at least one matcher', () => {
@@ -169,9 +167,7 @@ describe('the register batch 3 adds', () => {
   })
 })
 
-// ---------------------------------------------------------------------------
 // the status indicator -- both branches, both directions
-// ---------------------------------------------------------------------------
 
 describe('check_status_led, BOARD_HAS_STATUS_LED=0 (x64)', () => {
   test('the =0 branch PASSES on an x64-shaped tree that ships no mos-status-led file', async () => {
@@ -431,9 +427,7 @@ describe('the status-indicator overlay set', () => {
   })
 })
 
-// ---------------------------------------------------------------------------
 // the radio: firmware set, module list, Bluetooth userland
-// ---------------------------------------------------------------------------
 
 describe('the board radio-firmware set', () => {
   test('every declared firmware path is its own check, and each passes on cx3576', async () => {
@@ -627,9 +621,7 @@ describe('the Bluetooth userland', () => {
   })
 })
 
-// ---------------------------------------------------------------------------
 // the hwinit facts
-// ---------------------------------------------------------------------------
 
 describe('the per-board hwinit facts', () => {
   test('one check per declared conf on cx3576, and a SKIP on x64', async () => {
@@ -798,9 +790,7 @@ describe('the per-board hwinit facts', () => {
   })
 })
 
-// ---------------------------------------------------------------------------
 // the loader partition -- read off the GPT, not the packed root
-// ---------------------------------------------------------------------------
 
 const LOADER_MAGIC = Buffer.from('524b4e53', 'hex')
 
@@ -913,9 +903,7 @@ describe('the loader-partition protections', () => {
   })
 })
 
-// ---------------------------------------------------------------------------
 // what a boot slot must contain -- read through mtools
-// ---------------------------------------------------------------------------
 
 /** A context whose only readable thing is one `mdir` listing, for both slots. */
 function slotFixture(board: Board, listing: readonly string[]): Fixture {

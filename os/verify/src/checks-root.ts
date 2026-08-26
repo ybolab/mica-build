@@ -88,9 +88,7 @@ export function entry(root: string, path: string): Stats | undefined {
   }
 }
 
-// ---------------------------------------------------------------------------
 // sq_regular
-// ---------------------------------------------------------------------------
 
 /**
  * The paths the oracle asserts on EVERY board, in its own order.
@@ -163,9 +161,7 @@ function regularFileCheck(path: string): CheckCase {
   }
 }
 
-// ---------------------------------------------------------------------------
 // sq_grep
-// ---------------------------------------------------------------------------
 
 interface GrepCase {
   readonly id: string
@@ -265,9 +261,7 @@ function grepCheck(c: GrepCase): CheckCase {
   }
 }
 
-// ---------------------------------------------------------------------------
 // sq_enabled / sq_enabled_any
-// ---------------------------------------------------------------------------
 
 /**
  * The trees a `*.wants` symlink may live in.
@@ -371,9 +365,7 @@ function enabledCheck(c: EnabledCase): CheckCase {
   }
 }
 
-// ---------------------------------------------------------------------------
 // the rest, one at a time
-// ---------------------------------------------------------------------------
 
 const BUILTIN_PREFIX = '/builtin'
 const APID_BIN = '/usr/bin/apid'
