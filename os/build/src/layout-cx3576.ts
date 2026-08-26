@@ -1,36 +1,30 @@
-// The DERIVED layout of a cx3576 image: how big the rootfs slot is, and where
+// The derived layout of a cx3576 image: how big the rootfs slot is, and where
 // everything after it starts.
 //
-// WHY THIS IS NOT IN geometry.ts. Everything geometry.ts answers is a fact the
-// board definition states. Nothing here is: os/boards/cx3576/board.env declares
-// ROOTFS_A_START_MIB and stops, because rootfs-b, meta, state, ephemeral and
-// data all sit behind a slot whose size depends on the rootfs that was actually
-// built. That file "cannot compute" -- its own words -- so the chain is computed
-// by whoever assembles, which is this, and the identities the file documents
-// instead of computing are asserted here rather than trusted.
+// Not in geometry.ts: everything geometry.ts answers is a fact the board file
+// states and nothing here is. os/boards/cx3576/board.env declares
+// ROOTFS_A_START_MIB and stops -- rootfs-b, meta, state, ephemeral and data sit
+// behind a slot sized by the rootfs actually built, which it "cannot compute"
+// -- so the chain is computed here, and the identities it documents are checked.
 //
-// PURE, AND THAT IS THE POINT. Not one function in this file touches a disk, a
-// container or a tool. The arithmetic that decides where DATA starts is the
-// arithmetic a byte-identity gate is really comparing, and an arithmetic bug
-// that can only be reached by assembling a 1.3 GiB image is a bug found by
-// diffing 1.3 GiB. Everything below is reachable from a test in milliseconds
-// with a fabricated payload size, so the layout can be driven at sizes no real
-// rootfs has -- one MiB under a pin, one MiB over it, exactly on the alignment
-// boundary -- which is where an off-by-one lives.
-//
-// THE TWO SLOT MODES ARE SELECTED BY PRESENCE, NEVER BY VALUE, and that is a
-// requirement rather than a detail. os/mkimage-v2.sh captures
-// MOS_ROOTFS_SLOT_MIB with `${MOS_ROOTFS_SLOT_MIB+set}` before sourcing the
-// layout, precisely "so a release that legitimately pins the same number as the
-// built-in default still gets the strict mode". A port that compared the value
-// against MOS_ROOTFS_SLOT_MIB from the board file would agree with the shell on
-// every number and disagree about which MODE a release build is in -- and the
-// mode is what decides whether an oversized rootfs is a failure or a silently
-// bigger image that no flashed device can take an update for.
+// Pure, and that is the point: nothing here touches a disk, a container or a
+// tool. The arithmetic that decides where DATA starts is what a byte-identity
+// gate really compares, and a bug reachable only by assembling a 1.3 GiB image
+// is found by diffing 1.3 GiB. Every function below is reachable from a test at
+// sizes no rootfs has: one MiB under a pin, one over, on the alignment boundary.
 
 import type { Geometry, PlacedPartition } from './geometry.ts'
 import type { GptSpec } from './tools/sgdisk.ts'
 
+// The two slot modes are selected by presence, never by value, and that is a
+// requirement. os/mkimage-v2.sh captures MOS_ROOTFS_SLOT_MIB with
+// `${MOS_ROOTFS_SLOT_MIB+set}` before sourcing the layout, "so a release that
+// legitimately pins the same number as the built-in default still gets the
+// strict mode". Comparing the value against the board file's
+// MOS_ROOTFS_SLOT_MIB would agree with the shell on every number and disagree
+// about which mode a release build is in -- and the mode decides whether an
+// oversized rootfs is a failure or a silently bigger image that no flashed
+// device can take an update for.
 export type SlotMode = 'pinned' | 'floor'
 
 export interface SlotDecision {
@@ -69,7 +63,7 @@ export function parseSlotPin(raw: string): bigint {
 /**
  * How big the rootfs slot is, and which mode said so.
  *
- * pinned  the geometry is FROZEN at the pin and an oversized rootfs is a build
+ * pinned  the geometry is frozen at the pin and an oversized rootfs is a build
  *         failure. Growing the slot would move rootfs-b, meta, state and
  *         ephemeral, producing a GPT no already-flashed device can accept and
  *         RAUC bundles that no longer fit the deployed slot.
@@ -273,17 +267,16 @@ function startSectorsOf(geometry: Geometry, p: PlacedPartition, layout: DerivedL
 /**
  * The whole GPT, as one spec, in LAYOUT_PARTITIONS order.
  *
- * ORDER IS READ OFF THE BOARD, not written here. os/mkimage-v2.sh spells eleven
- * --new flags in a fixed sequence, which is a second copy of LAYOUT_PARTITIONS
- * that nothing checks; this walks the list. A partition added to the board file
- * and forgotten here would be a partition sgdisk never writes, and the shell has
- * no way to notice.
+ * Order is read off the board, not written here. os/mkimage-v2.sh spells eleven
+ * --new flags in a fixed sequence, a second copy of LAYOUT_PARTITIONS that
+ * nothing checks; this walks the list, so a partition added to the board file
+ * and forgotten here cannot become one sgdisk never writes.
  *
- * `-a ${GPT_ALIGN_SECTORS}` IS THE LOAD-BEARING FLAG. cx3576's loader starts at
- * sector 64, which is not 2048-aligned, and sgdisk SILENTLY RELOCATES a
- * misaligned start to 2048 and exits 0 (measured, M6a). So this passes the
- * board's alignment and the assembler reads the loader back out of the finished
- * table to prove it landed.
+ * `-a ${GPT_ALIGN_SECTORS}` is the load-bearing flag: cx3576's loader starts at
+ * sector 64, which is not 2048-aligned, and sgdisk silently relocates a
+ * misaligned start to 2048 and exits 0 (measured). So this passes the board's
+ * alignment and the assembler reads the loader back out of the finished table
+ * to prove it landed.
  */
 export function gptSpecFor(geometry: Geometry, layout: DerivedLayout): GptSpec {
   return {
