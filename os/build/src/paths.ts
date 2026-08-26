@@ -1,23 +1,18 @@
 // Where this package sits, and the proof that it still does.
 //
-// The reasoning is os/verify/src/paths.ts's, and the helper IS its function --
+// The reasoning is os/verify/src/paths.ts's and the helper IS its function,
 // imported through verify-package.ts rather than copied. Counted `..`
-// arithmetic over DIRECTORIES always produces a path, so a stale count fails
-// later, on a directory that is empty rather than absent, so every
-// ascent here is anchored on something that must be AT the destination and the
+// arithmetic over directories always produces a path, so a stale count fails
+// later on a directory that is empty rather than absent; every ascent here is
+// therefore anchored on something that must be at the destination, and the
 // failure names the path it computed.
 //
-// This package has two anchors os/verify does not:
-//
-//   os/verify itself. The board model os/build stands on lives there (see
-//   verify-package.ts), so "os/verify is where this package thinks it is" is a
-//   precondition of os/build working at all -- and asserting it here means a
-//   reader is told which of the two packages moved instead of reading a bare
-//   "Cannot find module" from bun.
-//
-//   os/build-env/from.sh. src/images.ts hands that path to bash, and a wrong
-//   one surfaces as "No such file or directory" attached to an image KEY --
-//   which reads as though the key were bad.
+// Two anchors os/verify does not have: os/verify itself, because the board
+// model os/build stands on lives there (see verify-package.ts) and naming it
+// here tells a reader which of the two packages moved instead of a bare
+// "Cannot find module" from bun; and os/build-env/from.sh, which src/images.ts
+// hands to bash, where a wrong path surfaces as "No such file or directory"
+// attached to an image key and reads as though the key were bad.
 
 import { existsSync, mkdirSync, mkdtempSync, readdirSync } from 'node:fs'
 import { join } from 'node:path'
@@ -59,7 +54,7 @@ export function boardEnvPath(board: string): string {
 }
 
 /**
- * The boards this tree ships, in name order, READ OFF THE TREE.
+ * The boards this tree ships, in name order, read off the tree.
  *
  * Discovered rather than written down. os/verify/src/lint.ts keeps the same
  * list as a literal (`SHIPPED_BOARDS = ['cx3576', 'x64']`), and the difference
@@ -74,7 +69,7 @@ export function boardEnvPath(board: string): string {
  * os/verify takes the name from the DIRECTORY.
  *
  * The caller must still refuse an empty answer -- see requireShippedBoards.
- * The directory is a parameter so that refusal is REACHABLE from a test: a
+ * The directory is a parameter so that refusal is reachable from a test: a
  * guard that can only fire when os/boards/ is empty is a guard nobody has run.
  */
 export function shippedBoards(dir: string = BOARDS_DIR): string[] {
@@ -110,8 +105,8 @@ export function requireShippedBoards(dir: string = BOARDS_DIR): string[] {
  * Scratch space for anything that has to exist as a FILE on disk.
  *
  * Under the package rather than under /tmp, and that is not a preference. On
- * this host a docker bind mount of anything under /tmp SUCCEEDS AND DELIVERS AN
- * EMPTY DIRECTORY -- measured 2026-08-25, and os/verify/run.sh carries a guard
+ * this host a docker bind mount of anything under /tmp succeeds and delivers an
+ * empty directory -- measured 2026-08-25, and os/verify/run.sh carries a guard
  * whose whole job is to name that failure when it happens. Every tool this
  * package drives may be running in a container, so a scratch file under /tmp
  * would be a file the tool cannot see, reported as a file that does not exist.

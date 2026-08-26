@@ -7,12 +7,11 @@
 // the toolbox's container: the layouts ask for `-O ^orphan_file`, which needs
 // e2fsprogs >= 1.47, and this host carries 1.46.5 -- os/mkimage-x64.sh says the
 // same of its own host ("It runs INSIDE the container, because the host cannot:
-// mke2fs 1.46.5, no sgdisk, no mcopy").
-//
-// The timestamp-pinning pass is deliberately not here: which of an inode's four
-// timestamps are noise, why the inode set comes from the bitmap rather than a
-// walk of the source tree, and why debugfs's stderr is the failure signal are
-// one argument and one module; this file provides its three primitives.
+// mke2fs 1.46.5, no sgdisk, no mcopy"). The timestamp-pinning pass is
+// deliberately not here: which of an inode's four timestamps are noise, why the
+// inode set comes from the bitmap rather than a walk of the source tree, and
+// why debugfs's stderr is the failure signal are one argument and one module;
+// this file provides its three primitives.
 
 import { existsSync, readFileSync } from 'node:fs'
 import type { Toolbox, ToolResult } from '../toolbox.ts'
