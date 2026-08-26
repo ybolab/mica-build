@@ -143,3 +143,8 @@ Each task is a single line linking to its detail file. All detailed information 
 - [x] [**RFCT-118 PLAN-016 M2: the read-only settings and state roots, redacted, under one error envelope**](RFCT-118.md) `P1`
 - [x] [**RFCT-119 PLAN-016 M3: the spec-identity check and the oasdiff breaking-change gate**](RFCT-119.md) `P1`
 - [x] [**RFCT-120 PLAN-016 M4: comment simplification inside mosd/apid**](RFCT-120.md) `P1`
+- [x] [**RFCT-150 PLAN-015 M6: form compression in os/verify**](RFCT-150.md) `P2`
+- [x] [**RFCT-151 PLAN-015 M6: form compression in os/build**](RFCT-151.md) `P2`
+- [x] [**RFCT-152 PLAN-015 M6: form compression in os/rootfs, build-env, podman, boards, tests, update and tools**](RFCT-152.md) `P2`
+- [x] [**RFCT-153 PLAN-015 M6: form compression in test/, mosd/ and board/**](RFCT-153.md) `P2`
+- [x] [**RFCT-154 PLAN-015 M6: the index rows, the metric re-run and the aggregate survivor record**](RFCT-154.md) `P2`
