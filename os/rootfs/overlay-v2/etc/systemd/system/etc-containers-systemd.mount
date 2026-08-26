@@ -1,12 +1,12 @@
 [Unit]
 Description=Quadlet unit directory on the STATE partition
-# PLAN-012 D4: an integrator installs a container application by dropping a
+# An integrator installs a container application by dropping a
 # .container (or .network, .volume, .pod) file where Quadlet reads it, and
 # systemd's generator turns it into a service.
 #
 # WHERE QUADLET ACTUALLY READS, MEASURED RATHER THAN ASSUMED. The plan's first
 # draft said the file goes into /usr/local/lib/systemd/system, the STATE-backed
-# unit directory PLAN-011 D5 shipped, on the reasoning that installing a
+# writable system unit directory, on the reasoning that installing a
 # container and installing an extension should be the same act. That was wrong.
 # `quadlet --dryrun` on the shipped binary reports its search path verbatim:
 #

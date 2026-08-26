@@ -1,7 +1,7 @@
 # /etc/rauc/system.conf — RAUC slot model for mos on cx3576 (layout v2).
 #
 # TEMPLATE. The shipped file is rendered by os/update/rauc/render-config.sh into
-# os/rootfs/overlay-v2/etc/rauc/system.conf, which RFCT-013's overlay mechanism
+# os/rootfs/overlay-v2/etc/rauc/system.conf, which the overlay mechanism
 # copies to /etc/rauc/system.conf. Never hand-edit the rendered file: every
 # GUID and every attempt count below is substituted from
 # os/boards/cx3576/board.env, so this configuration cannot drift from the GPT the

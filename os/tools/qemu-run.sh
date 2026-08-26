@@ -55,8 +55,8 @@ if [ ! -e "${IMG}" ]; then
 fi
 
 # The image is bound in from _out/, not copied: it is ~2 GiB, and a bind of a
-# /tmp path does not propagate on this host anyway (see os/build/src/mkimage-x64.ts,
-# which was os/mkimage-x64.sh until PLAN-014 M6e ported it at byte-identity).
+# /tmp path does not propagate on this host anyway (see
+# os/build/src/mkimage-x64.ts).
 # Read-only, so a run cannot mutate the artifact it is testing -- QEMU is given
 # a copy-on-write overlay instead, which also makes repeated runs start from
 # the same state rather than from whatever the last one left.

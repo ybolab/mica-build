@@ -4,7 +4,7 @@
 # Called from os/rootfs/stages/33-feature-mosd.Dockerfile, where the reasoning lives.
 # Build arguments read from the environment: none.
 #
-# EVERY FILE IS REQUIRED, and that is RFCT-111 M5c's change to this script.
+# EVERY FILE IS REQUIRED.
 # Each of the four blocks below used to open with
 #
 #   if [ "$WITH_MOSD" = "1" ] && [ -f /tmp/mosd/<binary> ]; then
