@@ -1,62 +1,21 @@
-// os/mkimage-x64.sh, ported: the x64 (amd64 industrial PC, UEFI) A/B GPT disk
-// image -- layout v2, nine partitions.
+// os/mkimage-x64.sh, ported: the x64 board (amd64 industrial PC, UEFI
+// firmware) A/B GPT disk image -- layout v2, nine partitions.
 //
 // One static ESP that GRUB is loaded from, a FAT32 boot partition per slot, two
 // raw squashfs+dm-verity rootfs slots and the meta/state/ephemeral/data ext4
 // partitions. Every layout constant comes from os/boards/x64/board.env through
-// os/verify's typed model and this package's geometry; nothing is duplicated here
-// and nothing re-reads that file.
+// os/verify's typed model and this package's geometry; nothing is duplicated
+// here and nothing re-reads that file.
 //
-// WHY THIS IS NOT src/mkimage-v2.ts WITH A BOARD PARAMETER, which is the same
-// question os/mkimage-x64.sh answers about os/mkimage-v2.sh. That assembler is
-// U-Boot: a loader partition at a fixed sector, a redundant environment pair, a
-// compiled boot.scr and geometry assertions about all three. None of it exists on
-// a UEFI machine. Threading conditionals through it would put a second board's
-// boot chain inside the first board's assertions, where a mistake in either is a
-// mistake in both. What the two DO share is shared as files and as modules --
-// os/boards/*/board.env, src/geometry.ts, src/pin-seeded-times.ts,
-// src/tools/ -- and not as a `case`.
-//
-// EVERY DECISION THAT REACHES THE OUTPUT BYTES IS FIXED. Two assemblies from
-// identical inputs must be byte-identical:
-//
-//   * the same pinned debian (IMAGE_DEBIAN_TRIXIE) out of the same apt package
-//     list -- BOOTX64.EFI is only as reproducible as the grub-efi-amd64-bin in
-//     that image, which is the header note os/mkimage-x64.sh opens with;
-//   * grub-mkstandalone and grub-editenv run with the WORK DIRECTORY AS CWD and
-//     relative filenames, exactly as the shell's `cd /w` gives them. An absolute
-//     path handed to grub-mkstandalone is a string this assembler would be
-//     inventing, and the work directory is the one path that differs between the
-//     shell (_out/x64/.mkimage-work) and this (os/build/.work/mkimage-x64-*);
-//   * the boot slots take THREE separate `mcopy -m` calls each, in the order
-//     vmlinuz, initrd.img, cmdline.cfg, because that is the order the entries
-//     land in the FAT directory. The ESP takes ONE `mcopy -s -m` of a staged
-//     tree, because `mmd` has no source to take a time from and stamps ::/EFI
-//     with the wall clock -- measured at 18 moving bytes in the shell's own
-//     header;
-//   * `cp -a` of the factory /var runs ON THE HOST, where os/mkimage-x64.sh:161
-//     runs it. THIS IS THE OPPOSITE OF src/mkimage-v2.ts and it is deliberate:
-//     that script stages inside its container and this one does not, `cp -a` is
-//     `--preserve=all` (which includes xattrs), mke2fs -d copies xattrs into the
-//     image, and this campaign's host runs SELinux while neither container does.
-//     Each port stages where its own shell stages, because the only thing that
-//     would report a mismatch is the byte-identity gate -- as a diff in the
-//     middle of a 512 MiB filesystem.
-//
-// SIZES GO TO sgdisk IN SECTORS, with `-a 2048` passed explicitly. `+131072S`
-// and `+64M` are byte-identical at 512-byte sectors, and the alignment is
-// x64's own GPT_ALIGN_SECTORS and the same number sgdisk defaults to, which
-// src/mkimage-x64.test.ts re-measures against a real sgdisk rather than
-// asserting in prose. See gptSpecFor.
-//
-// DETERMINISM. The controls are board.env's -- fixed GPT GUIDs, fixed FAT volume
-// ids, fixed ext4 fs UUIDs, `mkfs.vfat --invariant`, every FAT entry staged with
-// its mtime touched to FILE_MTIME and copied with `mcopy -m`,
-// E2FSPROGS_FAKE_TIME in the assembly's environment, and `-E hash_seed` pinned to
-// each filesystem's own UUID -- plus the one that none of those reach:
-// pinSeededTimes over EPHEMERAL, because `mke2fs -d` copies the SOURCE inode's
-// atime and ctime and no control over mke2fs touches them. Before those landed,
-// two assemblies of this image four minutes apart differed in NINE MiB.
+// Not src/mkimage-v2.ts with a board parameter, which is the same question
+// os/mkimage-x64.sh answers about os/mkimage-v2.sh. That assembler is U-Boot: a
+// loader partition at a fixed sector, a redundant environment pair, a compiled
+// boot.scr and geometry assertions about all three, none of which exists on a
+// UEFI machine. Threading conditionals through it would put a second board's
+// boot chain inside the first board's assertions, where a mistake in either is
+// a mistake in both. What the two do share is shared as files and as modules --
+// os/boards/*/board.env, src/geometry.ts, src/pin-seeded-times.ts, src/tools/
+// -- and not as a `case`.
 
 import { copyFileSync, existsSync, mkdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
@@ -66,6 +25,45 @@ import { cmdlineFacts, earlyCfg, GRUB_MODULES, renderGrubCfg, verityFactsFrom, t
 import { decideSlot, deriveLayout, gptSpecFor, placementMib, type DerivedLayout, type SlotDecision } from './layout-x64.ts'
 import { BOARDS_DIR, makeWorkDir, REPO_ROOT } from './paths.ts'
 import { pinSeededTimes } from './pin-seeded-times.ts'
+
+// Two assemblies from identical inputs must be byte-identical, so every
+// decision that reaches the output bytes is fixed:
+//
+//   * the same pinned debian (IMAGE_DEBIAN_TRIXIE) out of the same apt package
+//     list -- BOOTX64.EFI is only as reproducible as the grub-efi-amd64-bin in
+//     that image, the header note os/mkimage-x64.sh opens with;
+//   * grub-mkstandalone and grub-editenv run with the work directory as cwd and
+//     relative filenames, exactly as the shell's `cd /w` gives them. An
+//     absolute path handed to grub-mkstandalone is a string this assembler
+//     would be inventing, and the work directory is the one path that differs
+//     between the shell (_out/x64/.mkimage-work) and this
+//     (os/build/.work/mkimage-x64-*);
+//   * the boot slots take three separate `mcopy -m` calls each, in the order
+//     vmlinuz, initrd.img, cmdline.cfg, because that is the order the entries
+//     land in the FAT directory. The ESP takes one `mcopy -s -m` of a staged
+//     tree, because `mmd` has no source to take a time from and stamps ::/EFI
+//     with the wall clock -- measured at 18 moving bytes in the shell's header;
+//   * `cp -a` of the factory /var runs on the host, where os/mkimage-x64.sh:161
+//     runs it. That is the opposite of src/mkimage-v2.ts and it is deliberate:
+//     that script stages inside its container and this one does not, `cp -a` is
+//     `--preserve=all` (xattrs included), mke2fs -d copies xattrs into the
+//     image, and this host runs SELinux while neither container does. Each port
+//     stages where its own shell stages, because the only thing that would
+//     report a mismatch is the byte-identity gate, as a diff in the middle of a
+//     512 MiB filesystem;
+//   * sizes go to sgdisk in sectors, with `-a 2048` passed explicitly.
+//     `+131072S` and `+64M` are byte-identical at 512-byte sectors, and the
+//     alignment is x64's own GPT_ALIGN_SECTORS and the number sgdisk defaults
+//     to, which src/mkimage-x64.test.ts re-measures against a real sgdisk.
+//
+// The determinism controls are board.env's -- fixed GPT GUIDs, fixed FAT volume
+// ids, fixed ext4 fs UUIDs, `mkfs.vfat --invariant`, every FAT entry staged
+// with its mtime touched to FILE_MTIME and copied with `mcopy -m`,
+// E2FSPROGS_FAKE_TIME in the assembly's environment, and `-E hash_seed` pinned
+// to each filesystem's own UUID -- plus the one none of those reach:
+// pinSeededTimes over EPHEMERAL, because `mke2fs -d` copies the source inode's
+// atime and ctime and no control over mke2fs touches them. Without them, two
+// assemblies of this image four minutes apart differ in nine MiB.
 import { Toolbox } from './toolbox.ts'
 import { X64_ASSEMBLY } from './toolsets.ts'
 import { dd, truncate } from './tools/dd.ts'
@@ -152,14 +150,13 @@ export function requiredInputs(inputs: AssemblyInputs, grubCfgIn: string): strin
 }
 
 /**
- * Stage the factory /var tree ON THE HOST, with `cp -a`.
+ * Stage the factory /var tree on the host, with `cp -a`.
  *
- * Its own function so the ONE step this assembler deliberately runs outside its
- * container is visible as such rather than buried in a hundred-line assembly, and
- * so the reason travels with it. See this file's header: os/mkimage-x64.sh:161
- * runs this on the host, `cp -a` is `--preserve=all`, and mke2fs -d copies xattrs
- * into EPHEMERAL. Staging it in the container instead would be a change to the
- * shipped bytes made in the milestone whose job is to prove there is none.
+ * Its own function so the one step this assembler deliberately runs outside its
+ * container is visible as such rather than buried in a hundred-line assembly,
+ * and so the reason travels with it: os/mkimage-x64.sh:161 runs this on the
+ * host, `cp -a` is `--preserve=all`, and mke2fs -d copies xattrs into EPHEMERAL,
+ * so staging it in the container instead would change the shipped bytes.
  *
  * `cp -a`, not node's cpSync: node preserves neither ownership nor xattrs and
  * would produce a different filesystem while reporting success.
@@ -180,31 +177,27 @@ export async function stageFactoryVarOnHost(source: string, destination: string)
 }
 
 /**
- * THE ESP IS A REAL FAT32 -- BY CLUSTER COUNT, AT THE POINT THE SHELL ASKS.
+ * The ESP is a real FAT32 -- by cluster count, at the point the shell asks.
  *
- * READ THIS BEFORE MOVING THE CALL. os/mkimage-x64.sh:263 parses FREE clusters
+ * Read this before moving the call. os/mkimage-x64.sh:263 parses free clusters
  * out of minfo's FSInfo sector, where the FAT specification defines the type by
- * TOTAL clusters. On a filesystem nothing has been copied into, free is total
+ * total clusters. On a filesystem nothing has been copied into, free is total
  * minus the root directory's one cluster, so the comparison is conservative by
- * exactly one and correct WHERE IT STANDS -- and only there. Measured on a 64 MiB
- * ESP (src/mkimage-x64.test.ts re-measures it): free 129021 and total 129022
- * immediately after mkfs.vfat, and free 117119 once the ESP tree is staged.
+ * exactly one and correct where it stands -- and only there. Measured on a
+ * 64 MiB ESP (src/mkimage-x64.test.ts re-measures it): free 129021 and total
+ * 129022 immediately after mkfs.vfat, free 117119 once the ESP tree is staged.
+ * Moving this after the mcopy -- the natural tidy-up during a port -- silently
+ * turns a FAT-type check into a free-space check: it would refuse a valid FAT32
+ * for being full while printing a message about the FAT specification, and stop
+ * refusing the case it exists for as soon as the payload grew.
  *
- * So moving this after the mcopy -- the natural tidy-up during a port -- silently
- * turns a FAT-TYPE check into a FREE-SPACE check. It would refuse a valid FAT32
- * for being full, while printing a message about the FAT specification, and it
- * would stop refusing the case it exists for as soon as the payload grew. The
- * caller below calls it exactly where the shell does, and this is the note that
- * says why the position is not cosmetic.
- *
- * WHY THE CHECK IS A CLUSTER COUNT AND NOT A TYPE. `mkfs.vfat -F 32` does not
- * enforce FAT32: given a 32 MiB partition it writes a FAT32 boot sector over
- * 64495 clusters and exits 0, and minfo -- which reads the type out of the BPB --
- * calls it FAT32. OVMF computes the type the way the specification says, finds a
- * FAT32 BPB describing a FAT16 cluster count, and refuses the filesystem: the ESP
- * was simply absent from the firmware's device list and the machine dropped to
- * the UEFI shell. The FIRST version of this check asked minfo for the type and
- * passed on that exact image.
+ * The check is a cluster count and not a type because `mkfs.vfat -F 32` does
+ * not enforce FAT32: given a 32 MiB partition it writes a FAT32 boot sector
+ * over 64495 clusters and exits 0, and minfo, reading the type out of the BPB,
+ * calls it FAT32. OVMF computes the type as the specification says, finds a
+ * FAT32 BPB describing a FAT16 cluster count, and refuses the filesystem: the
+ * ESP is simply absent from the firmware's device list and the machine drops to
+ * the UEFI shell. Asking minfo for the type passes on that exact image.
  */
 export async function checkEspIsFat32(tb: Toolbox, image: string, espSizeMib: bigint): Promise<bigint> {
   const clusters = await readFatClusters(tb, image)
@@ -221,12 +214,12 @@ export async function checkEspIsFat32(tb: Toolbox, image: string, espSizeMib: bi
 }
 
 /**
- * grubenv IS EXACTLY 1024 BYTES, and a file of any other size is not a grubenv.
+ * grubenv is exactly 1024 bytes, and a file of any other size is not a grubenv.
  *
  * grub-editenv creates it that way and RAUC rewrites it in place with the same
- * tool. GRUB ignores one of the wrong size SILENTLY -- which looks exactly like
- * an A/B order that never changes, which is the one symptom this whole boot chain
- * exists to make impossible.
+ * tool. GRUB ignores one of the wrong size silently, which looks exactly like an
+ * A/B order that never changes -- the one symptom this boot chain exists to make
+ * impossible.
  *
  * A separate function for the reason src/mkimage-v2.ts gives for
  * checkLoaderLanded: nothing a caller can pass to the assembly makes a real
@@ -244,13 +237,13 @@ export function checkGrubenvSize(path: string, bytes: bigint): void {
 }
 
 /**
- * NOTHING PER-SLOT ON THE ESP -- asserted against the finished filesystem.
+ * Nothing per-slot on the ESP -- asserted against the finished filesystem.
  *
  * A kernel or a cmdline that reappeared here would be read by GRUB in preference
  * to nothing -- there is no "nothing" to prefer -- and would then be a per-install
  * file on the one partition RAUC never installs into.
  *
- * The names come from the BOARD (SLOT_KERNEL_NAME and friends), not from three
+ * The names come from the board (SLOT_KERNEL_NAME and friends), not from three
  * literals: os/mkimage-x64.sh spells `vmlinuz initrd.img cmdline.cfg`, which is
  * a second copy of the same three keys, and a board that renamed one would have
  * the stray check quietly stop covering it.
@@ -260,7 +253,7 @@ export function strayEspEntries(entries: readonly string[], slotFileNames: reado
 }
 
 /**
- * THE TWO BOOT SLOTS DIFFER ONLY IN THEIR FILESYSTEM IDENTITY.
+ * The two boot slots differ only in their filesystem identity.
  *
  * Both start life with the same contents: an image whose B side was empty would
  * have nothing to fall back TO on the first bad update, so "B is populated" is a
@@ -280,31 +273,25 @@ export function bootSlotFault(aList: readonly string[], bList: readonly string[]
 }
 
 /**
- * THE PARTITIONS LANDED WHERE THEY WERE ASKED TO -- read back out of the
- * ASSEMBLED TABLE, not compared against the request.
+ * The partitions landed where they were asked to -- read back out of the
+ * assembled table, not compared against the request.
  *
  * x64 has no loader partition and every start it declares is a whole MiB, which
  * is 2048 sectors, so no start is relocatable by the alignment this assembler
- * PASSES. That is a statement about the board file and the flag. This is a
- * statement about the table sgdisk actually wrote, and the two are not the same
- * claim -- which is exactly the lesson src/mkimage-v2.ts records for cx3576,
- * where asking sgdisk for a layout proved nothing about the layout.
+ * passes. That is a statement about the board file and the flag; this is one
+ * about the table sgdisk actually wrote, and the two are not the same claim --
+ * the lesson src/mkimage-v2.ts records for cx3576.
  *
- * AND ON THIS BOARD A WRONG ALIGNMENT DOES NOT ANNOUNCE ITSELF. Measured
+ * On this board a wrong alignment does not announce itself. Measured
  * (src/mkimage-x64.test.ts): `-a 4096` over the real x64 geometry moves the ESP
  * from sector 2048 to 4096, prints "Information: Moved requested sector", and
- * EXITS 0. On cx3576 the same flag makes sgdisk refuse the table with exit 4 --
- * the relocation there would push uenv-b into boot-a and there is no room. The
- * shape depends on the geometry rather than on the flag,
- * and on x64 this read-back is the only thing that would report it.
- *
- * It earns its keep for one more reason: this assembler passes `-a 2048` where
- * os/mkimage-x64.sh passes no alignment at all. That difference is measured to be
- * no difference, and this keeps it measured on every run rather than on the day
- * it was measured.
- *
- * Every mismatch is collected rather than thrown at the first: nine drifting
- * partitions should produce nine lines.
+ * exits 0, where on cx3576 the same flag makes sgdisk refuse the table with
+ * exit 4 -- the relocation there would push uenv-b into boot-a and there is no
+ * room. The shape depends on the geometry rather than on the flag, and on x64
+ * this read-back is the only thing that would report it. It also keeps measured,
+ * on every run, that this assembler's `-a 2048` and os/mkimage-x64.sh's absent
+ * alignment are the same bytes. Every mismatch is collected rather than thrown
+ * at the first: nine drifting partitions should produce nine lines.
  */
 export function partitionFaults(spec: GptSpec, got: readonly GptPartitionInfo[]): string[] {
   const faults: string[] = []
@@ -415,12 +402,12 @@ export async function assembleX64(
     const cmdlineCfg = join(workDir, 'cmdline.cfg')
     writeFileSync(cmdlineCfg, cmdlineFacts(verity))
 
-    // E2FSPROGS_FAKE_TIME IS ON THE TOOLSET, NOT ON THE ONE CALL THAT READS IT.
-    // mke2fs takes it out of the ENVIRONMENT, and sourcing a file SETS without
-    // EXPORTING -- the pin sat in board.env doing nothing at all until
-    // os/mkimage-x64.sh:232 exported it, "a documented layout key doing nothing,
+    // E2FSPROGS_FAKE_TIME is on the toolset, not on the one call that reads it.
+    // mke2fs takes it out of the environment, and sourcing a file sets without
+    // exporting -- the pin sits in board.env doing nothing until
+    // os/mkimage-x64.sh:232 exports it, "a documented layout key doing nothing,
     // which is worse than an absent one because it reads as covered". That
-    // `export` covers the WHOLE inner script, so every e2fsprogs tool in the
+    // `export` covers the whole inner script, so every e2fsprogs tool in the
     // assembly sees it; this puts it in the same place, on the session, rather
     // than deciding which tools care. src/tools/e2fsprogs.ts also passes it per
     // mke2fs call, and the two agree because both read geometry.ext4.fakeTime.
@@ -533,8 +520,8 @@ export async function assembleX64(
     const slotFault = bootSlotFault(await listFat(tb, bootA), await listFat(tb, bootB))
     if (slotFault !== undefined) throw new Error(slotFault)
 
-    // --- EPHEMERAL SHIPS ALREADY SEEDED. /var is a mount of this
-    // filesystem and mounting an EMPTY one over the image's /var hides the tree
+    // EPHEMERAL ships already seeded. /var is a mount of this filesystem and
+    // mounting an empty one over the image's /var hides the tree
     // the installed packages expect. Copying that tree out on the first boot
     // instead would run at the same moment as every other unit that writes
     // /var: Debian 13's systemd-networkd-persistent-storage.service creates
@@ -545,17 +532,16 @@ export async function assembleX64(
     // mos-seed-var's ConditionPathExists keeps it from running at all on a normal
     // boot; it stays for the path where EPHEMERAL has been wiped.
     //
-    // CREATED AND THEN PINNED, IN TWO CALLS, where the shell writes `: >file`
-    // and then `touch -h -d`. It is two calls because `touch -h` DOES NOT CREATE
-    // -- measured here, not assumed: `-h` makes touch operate on the link rather
-    // than its target, so on a path that does not exist it fails with
+    // Created and then pinned, in two calls, where the shell writes `: >file`
+    // and then `touch -h -d`. Two calls because `touch -h` does NOT create --
+    // measured, not assumed: `-h` makes touch operate on the link rather than
+    // its target, so on a path that does not exist it fails with
     //
     //     touch: setting times of '.../.mos-var-seeded': No such file or directory
     //
-    // rather than creating an empty file. A first draft of this port collapsed
-    // the two into one call and got exactly that, forty steps into an assembly.
+    // rather than creating an empty file.
     //
-    // BOTH RUN IN THE CONTAINER, which is the half that matters: this is the one
+    // Both run in the container, which is the half that matters: this is the one
     // file in the seed this assembler authors, and it is written into the tree
     // mke2fs reads. pinSeededTimes handles its atime and ctime along with every
     // other seeded inode's; it deliberately does not touch mtime, which is the
@@ -618,7 +604,7 @@ export async function assembleX64(
     // the same refusal; src/tools/sgdisk.ts carries the pairing.
     await verifyGpt(tb, imgTmp)
 
-    // --- READ THE TABLE BACK OUT OF THE ASSEMBLED IMAGE. See partitionFaults.
+    // Read the table back out of the assembled image. See partitionFaults.
     const got: GptPartitionInfo[] = []
     for (const p of spec.partitions) got.push(await readPartition(tb, imgTmp, p.partnum))
     const faults = partitionFaults(spec, got)
@@ -644,12 +630,12 @@ export async function assembleX64(
 /**
  * Format one partition's ext4 filesystem into a standalone image file.
  *
- * A seeded filesystem gets the timestamp pass afterwards -- EVERY seeded one, not
+ * A seeded filesystem gets the timestamp pass afterwards -- every seeded one, not
  * just today's only one: an unseeded mke2fs invents all four times and
  * E2FSPROGS_FAKE_TIME pins them, but the moment a tree is copied in, two of them
  * come from the host clock.
  *
- * hash_seed is pinned to the filesystem's OWN uuid, so it is derived rather than
+ * hash_seed is pinned to the filesystem's own uuid, so it is derived rather than
  * a fourteenth constant to keep in step. Left to itself mke2fs draws it at random
  * and writes it to sb+0xEC, which moves the superblock on every assembly.
  */
