@@ -140,8 +140,8 @@ all of them at `mosd/apid/src/routes.rs:66`.
 | `GET /hostname` | `:50` | `hostname_form` (`:757`) | GET page | One text input pre-filled with the current hostname | `GetSettings("hostname")` (`:758`) |
 | `POST /hostname` | `:50` | `hostname_submit` (`:908`) | HTML form POST | 422 on an invalid name (`:915`); on success redirects to `/hostname?saved=1` (`:927`) | `SetSettings("hostname", …)` (`:922`) |
 | `GET /power` | `:51` | `power_form` (`:853`) | GET page | Two confirmation forms, each with a required checkbox carrying an action-specific token (`:790-796`) | none |
-| `POST /power/reboot` | `:55` | `power_reboot` (`:896`) → `power_submit` (`:869`) | HTML form POST | 422 when the confirm token does not match (`:870-878`); otherwise **202 Accepted** (`:890`) with the D-Bus call spawned on a detached task so the response goes out first (`:879-888`) | a write to the `/Actions/reboot` item over `com.mos.Item1` (`mosd/apid/src/bus_client.rs:40`, `:189-191`) |
-| `POST /power/poweroff` | `:56` | `power_poweroff` (`:900`) → `power_submit` (`:869`) | HTML form POST | Same shape | a write to the `/Actions/poweroff` item over `com.mos.Item1` (`mosd/apid/src/bus_client.rs:41`, `:193-195`) |
+| `POST /power/reboot` | `:55` | `power_reboot` (`:896`) → `power_submit` (`:869`) | HTML form POST | 422 when the confirm token does not match (`:870-878`); otherwise **202 Accepted** (`:890`) with the D-Bus call spawned on a detached task so the response goes out first (`:879-888`) | a write to the `/Actions/reboot` item over the `com.mos.Item1` proxy (`mosd/apid/src/bus_client.rs:33`, path at `:40`, call at `:189-191`) |
+| `POST /power/poweroff` | `:56` | `power_poweroff` (`:900`) → `power_submit` (`:869`) | HTML form POST | Same shape | a write to the `/Actions/poweroff` item over the `com.mos.Item1` proxy (`mosd/apid/src/bus_client.rs:33`, path at `:41`, call at `:193-195`) |
 | `GET /ssh` | `:57` | `ssh_form` (`:1200`) | GET page | SSH pane: stored `access.ssh` settings, the authorized-key list, and the sshd reconciler's live state | `GetSettings("access.ssh")` (`:1035`), `GetState("sshd")` (`:1045`) |
 | `POST /ssh/enable` | `:61` | `ssh_enable` (`:1216`) | HTML form POST | Writes the checkbox state and redirects to `/ssh?saved=1` (`:1225`) | `SetSettings("access.ssh.enabled", …)` (`:1220`) |
 | `POST /ssh/password` | `:62` | `ssh_password` (`:1261`) | HTML form POST | Sets a **transient** root password after a confirm token and a length check (`:1240-1259`) | `SetTransientRootPassword()` (`:1272`) |
@@ -362,7 +362,7 @@ builds a candidate, calls `Settings::set` — which deserializes the whole root
 into a candidate `Self` (`mosd/mosd-settings/src/model.rs:474-478`) — and only then
 calls `store.save` (`mosd/mosd/src/bus.rs:430-435`), so a malformed write
 mutates nothing. Second, **the dot-path syntax has no array indexing**: the
-model comment says a list is *"written as a whole JSON array through the
+model comment says a list is *"Written as a whole JSON array through the
 dot-path API"* (`mosd/mosd-settings/src/model.rs:320`), which is exactly why
 the SSH pane reads the whole key list, edits it in memory, and writes the whole
 list back (`mosd/apid/src/routes.rs:1061-1080`).
@@ -438,9 +438,9 @@ so it is evidenced four ways, all measured at `86cd669`:
    `mosd/apid/src` and `mosd/apid/tests`).
 
 What the pages need instead is inlined: the single stylesheet is a `&str`
-constant emitted into each `<head>` (`mosd/apid/src/routes.rs:741-746`), from a constant
-described in the source as *"Inline stylesheet shared by every page; no external
-assets"* (`mosd/apid/src/routes.rs:726`). There is no favicon route, no font,
+constant emitted into the page head (`mosd/apid/src/routes.rs:741-746`), from a
+constant described in the source as *"Inline stylesheet shared by every page; no
+external assets"* (`mosd/apid/src/routes.rs:726`). There is no favicon route, no font,
 and no image: a request for `/favicon.ico` matches nothing in
 `mosd/apid/src/routes.rs:44-68`, so it is answered by the gate — a redirect to
 `/login` when unauthenticated (`mosd/apid/src/routes.rs:149`), and otherwise
@@ -695,7 +695,7 @@ and the choice is costed.
 
 | Root | Backed by | Methods | Why it is separate |
 |---|---|---|---|
-| `/api/v1/settings/<dot-path>` | the typed `Settings` tree (`mosd/mosd-settings/src/model.rs:16`) via `GetSettings` / `SetSettings` — `get_settings` and `set_settings` (`mosd/mosd/src/bus.rs:513`, `:522`) | `GET`, `PUT` | typed, validated, persisted to `/var/lib/mos/settings.toml` (`mosd/mosd-settings/src/store.rs:67`), survives reboot and A/B update (`docs/design/access.md:504`) |
+| `/api/v1/settings/<dot-path>` | the typed `Settings` tree (`mosd/mosd-settings/src/model.rs:16`) via `GetSettings` and `SetSettings` — `get_settings` (`mosd/mosd/src/bus.rs:513`) and `set_settings` (`:522`) | `GET`, `PUT` | typed, validated, persisted to `/var/lib/mos/settings.toml` (`mosd/mosd-settings/src/store.rs:67`), survives reboot and A/B update (`docs/design/access.md:504`) |
 | `/api/v1/state/<dot-path>` | the live-state tree via `GetState` — `get_state` (`mosd/mosd/src/bus.rs:538`) | `GET` only | an untyped `Value` (`mosd/mosd/src/bus.rs:53`), in memory, written only from inside mosd by the four writers section 1.5 names |
 | `/api/v1/actions/<verb>` | the `/Actions/reboot` and `/Actions/poweroff` items (`mosd/mosd/src/actions.rs:46-47`), and `SetTransientRootPassword` — `set_transient_root_password` (`mosd/mosd/src/bus.rs:703`) | `POST` only | not state at all — see §2.3 |
 
@@ -732,7 +732,7 @@ there is nothing to drift from.
 capable as the bus, including the bus's limits:
 
 - **No array indexing.** The dot-path syntax has none; the model says a list is
-  *"written as a whole JSON array through the dot-path API"*
+  *"Written as a whole JSON array through the dot-path API"*
   (`mosd/mosd-settings/src/model.rs:320`). Every client that wants to add
   one SSH key must read `access.ssh.authorizedKeys`, append, and write the whole
   list back — which is precisely what the HTML pane does today
@@ -1673,7 +1673,8 @@ are declared routes, so rule 3 falls out of rule 1's mechanism with no special
 case: at `86cd669` the reserved page paths are `/`, `/setup`, `/login`,
 `/logout`, `/network`, `/hostname`, `/power`, `/power/reboot`,
 `/power/poweroff`, `/ssh`, `/ssh/enable`, `/ssh/password`, `/ssh/keys/add`,
-`/ssh/keys/remove` and `/healthz` (`mosd/apid/src/routes.rs:45-65`). A custom
+`/ssh/keys/remove` and `/healthz`, each a `.route()` declaration
+(`mosd/apid/src/routes.rs:152-176`). A custom
 bundle cannot occupy any of them.
 
 **`/` is the one that matters, and it must not be waved past.** A replaceable UI
@@ -2073,7 +2074,9 @@ redirected onto DATA — `home.mount` binds `/srv/home` onto `/home`
 binds `/srv/root` onto `/root`
 (`os/rootfs/overlay-v2/etc/systemd/system/root.mount:29-30`). `/srv` is not a
 redirect: it is the DATA partition's **own mountpoint**, mounted directly from
-`/etc/fstab` (`os/rootfs/overlay-v2/etc/fstab.in:12`, `:16`), and the verifier
+the image's `fstab` — `/srv` is the DATA tier there
+(`os/rootfs/overlay-v2/etc/fstab.in:12`) and the only one carrying
+`x-systemd.growfs` (`:16`) — and the verifier
 asserts that entry by mountpoint and options, requiring
 `noatime` and `x-systemd.growfs` under the label
 *"DATA is the growth target"* (`os/verify/src/checks-fstab.ts:131-137`).
@@ -2488,7 +2491,7 @@ in which it is false.
 UI is **compiled into the `apid` binary**. The pages are `maud` `html!` macro
 expansions in `mosd/apid/src/routes.rs` (the macro is imported at `:29` and
 used by every page handler), and the only
-stylesheet is a `&str` constant emitted into each `<head>`
+stylesheet is a `&str` constant emitted into the page head
 (`mosd/apid/src/routes.rs:741-746`), described in the source as
 *"Inline stylesheet shared by every page; no external assets"*
 (`mosd/apid/src/routes.rs:726`). Section 1.6 evidences the rest: no
@@ -2685,7 +2688,7 @@ hard failure on purpose, and the code says why in as many words: *"Hard failure
 on purpose: an unwritable STATE means no device identity and no device
 credential, so there is no usable device to serve. A loud exit is better than a
 daemon that quietly serves an unprovisioned tree the operator cannot log in
-to."* (`mosd/mosd/src/main.rs:57-60`, with the `?` at `:67`). dashboard.md
+to."* (`mosd/mosd/src/main.rs:180-183`, with the `?` at `:190`). dashboard.md
 quotes the same comment and draws the consequence that matters here: *"After a
 merge there is no process left to render it: **a provisioning failure becomes a
 device with no UI and no diagnostic surface at all**, reachable only by serial
@@ -2765,7 +2768,7 @@ an absence measured four ways is a fact about the device, not a proposal.
 |---|---|---|---|---|
 | **The API upload path** | **no** — `grep -rn Multipart mosd/` returns nothing; §5.3's transport is proposed and the request that drives it belongs to §2.3/§3 | would, by construction | §3.2's bearer token, or an authenticated session (§3.2's bootstrap) | nothing exists to sign against — see 7.3 |
 | **SSH** | **yes**, but **off by default on both image profiles** (`mosd/mosd-settings/src/model.rs:110-112`; `docs/design/access.md:212-218`), enabled only by an authenticated admin action through apid | **yes** — a shell writes the directory directly, with no involvement from apid at all | an authorized key, **every one of which is a root key** (`docs/design/access.md:225-230`; the pane says so and a test asserts the sentence, `mosd/apid/src/routes.rs:1762`, `mosd/apid/src/tests.rs:797`) | n/a |
-| **A RAUC bundle** | **yes**, as an update mechanism | **no.** RAUC declares four slots — `rootfs.0`, `rootfs.1`, `boot.0`, `boot.1` (`os/update/rauc/system.conf.in:75`, `:81`, `:87`, `:92`). DATA is not among them, and the survives-what table records the same from the other side (`docs/design/access.md:504`; §5.4) | n/a | **yes** — CMS, verified by `rauc` against `/etc/rauc/keyring.pem`, `plain` format refused (`os/update/rauc/system.conf.in:50-62`) |
+| **A RAUC bundle** | **yes**, as an update mechanism | **no.** RAUC declares four slots — `rootfs.0` (`os/update/rauc/render-config.sh:239`), `rootfs.1` (`:245`), `boot.0` (`:265`) and `boot.1` (`:270`). DATA is not among them, and the survives-what table records the same from the other side (`docs/design/access.md:504`; §5.4) | n/a | **yes** — CMS, verified by `rauc` against `/etc/rauc/keyring.pem`, `plain` format refused (`os/update/rauc/system.conf.in:66-69`, `:78`) |
 | **A factory image** | **yes**, but it ships DATA **empty.** `grep -n dataImg os/build/src/mkimage-v2.ts` returns exactly three lines: `:378` names the path, `:408` builds it with `makeExt4` — whose optional `seedDir` argument is **not passed**, so it is only `truncate` plus `mke2fs` and populates nothing — and `:437` `dd`s it into the image. Nothing mounts it and nothing copies into it. From the verifier's side the consequence is that an assertion about `/srv/ui` becomes owed only if the image ever ships something under `/srv/ui` | not today; it would need new work in the image pipeline | n/a | the image is not signed; the **bundle** built from it is |
 | **The serial console** | **yes** — a getty spawns on both profiles | **no.** It *"has no account that will accept a credential"* (`docs/design/access.md:413-427`) | none that works | n/a |
 
@@ -2837,10 +2840,11 @@ transfer:
    shipped by this task and NOT in git"*, and *"until
    one is installed, `rauc install` on device fails closed"*
    (`os/update/rauc/system.conf.in:72-77`). The
-   image verifier asserts only the **path**, and records why in as many words:
-   *"the keyring itself is deliberately not shipped"*
-   (`os/verify-image-v2.sh:1043-1047`). A UI-bundle verifier would need an anchor
-   that no shipped device has.
+   image verifier asserts only that no keyring is baked into the packed root,
+   and records why in as many words: *"Absence is the shipped state; rauc
+   install fails closed until one is provisioned"*
+   (`os/verify/src/checks-root.ts:621-623`). A UI-bundle verifier would need an
+   anchor that no shipped device has.
 2. **The verification is `rauc`'s, not ours.** No Rust in this workspace verifies
    a CMS signature — `mosd/apid/Cargo.toml:11-31` carries no signature crate
    (`rustls` and `rcgen` are TLS, `sha2` is a bare digest). Reusing it means
