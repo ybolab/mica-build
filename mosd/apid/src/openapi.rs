@@ -23,7 +23,12 @@ use utoipa::OpenApi;
         version = "v1",
         description = "The appliance management API served over HTTPS on the device."
     ),
-    paths(crate::routes::api_versions, crate::routes::api_v1_meta)
+    paths(
+        crate::routes::api_versions,
+        crate::routes::api_v1_meta,
+        crate::routes::api_v1_settings,
+        crate::routes::api_v1_state
+    )
 )]
 struct ApiDoc;
 

@@ -1517,9 +1517,8 @@ async fn without_the_reservation_the_bundle_does_shadow_the_api() {
     );
 }
 
-/// The reservation covers the subtree and every method, for every path §2.1
-/// does not declare. The two paths it does declare are asserted separately,
-/// below.
+/// The reservation covers the subtree and every method, for every path the
+/// API does not declare. The declared paths are asserted separately, below.
 #[tokio::test]
 async fn the_api_reservation_answers_every_shape_with_the_envelope() {
     let bundle = install_bundle(&[("index.html", "<!doctype html><title>custom</title>")]);
@@ -1532,7 +1531,8 @@ async fn the_api_reservation_answers_every_shape_with_the_envelope() {
         ("GET", "/api/v1"),
         ("GET", "/api/versions/extra"),
         ("GET", "/api/v1/settings"),
-        ("GET", "/api/v1/settings/network.eth0"),
+        ("GET", "/api/v1/actions/reboot"),
+        ("GET", "/api/v1/wifi/client/networks"),
         ("POST", "/api/v1/settings"),
         ("DELETE", "/api/v1/tokens/1"),
     ] {
@@ -1689,42 +1689,59 @@ async fn api_v1_meta_is_401_in_setup_mode_too() {
     assert_eq!(envelope(response).await["code"], "not_authenticated");
 }
 
-/// The two declared paths are the only ones that changed. Every other path
-/// under `/api` keeps **both** of its answers: the subtree's own 404 with a
-/// session, and the gate's redirect without one, in either gate mode.
+/// The declared paths are the only ones that changed. Every other path under
+/// `/api` keeps **both** of its answers: the subtree's own 404 with a session,
+/// and the gate's redirect without one, in either gate mode.
+///
+/// The bare family prefixes are members of this class rather than exceptions
+/// to it. axum's `{*path}` wildcard matches at least one character, so
+/// `/api/v1/settings` and `/api/v1/settings/` name no dot-path and reach the
+/// not-found handler — and the gate's predicate has to agree with the router
+/// about that, or an unauthenticated request for one of them would be handed
+/// to a route that does not exist instead of being redirected.
 #[tokio::test]
 async fn every_other_api_path_keeps_both_of_its_answers() {
-    const UNDECLARED: &str = "/api/v1/settings/hostname";
+    const UNDECLARED: [&str; 6] = [
+        "/api/v1/actions/reboot",
+        "/api/v1/ssh/authorized-keys",
+        "/api/v1/settings",
+        "/api/v1/settings/",
+        "/api/v1/state",
+        "/api/v1/state/",
+    ];
 
     let (router, _) = test_app(configured_tree("hunter2secret"));
     let cookie = login(&router, "hunter2secret").await;
-
-    // With a session: the reserved subtree's own envelope, byte for byte.
-    let response = get(&router, UNDECLARED, Some(&cookie)).await;
-    assert_eq!(response.status(), StatusCode::NOT_FOUND);
-    assert_api_headers(&response, UNDECLARED);
-    assert_eq!(
-        body_string(response).await,
-        json!({
-            "error": {
-                "code": "not_found",
-                "message": format!("no API route at {UNDECLARED}"),
-                "source": "apid",
-            }
-        })
-        .to_string()
-    );
-
-    // Without one: the gate's redirect to `/login`.
-    let redirected = get(&router, UNDECLARED, None).await;
-    assert_eq!(redirected.status(), StatusCode::SEE_OTHER);
-    assert_eq!(location(&redirected), "/login");
-
-    // And in setup mode, the gate's redirect to `/setup`.
     let (fresh, _) = test_app(unconfigured_tree());
-    let redirected = get(&fresh, UNDECLARED, None).await;
-    assert_eq!(redirected.status(), StatusCode::SEE_OTHER);
-    assert_eq!(location(&redirected), "/setup");
+
+    for path in UNDECLARED {
+        // With a session: the reserved subtree's own envelope, byte for byte.
+        let response = get(&router, path, Some(&cookie)).await;
+        assert_eq!(response.status(), StatusCode::NOT_FOUND, "{path}");
+        assert_api_headers(&response, path);
+        assert_eq!(
+            body_string(response).await,
+            json!({
+                "error": {
+                    "code": "not_found",
+                    "message": format!("no API route at {path}"),
+                    "source": "apid",
+                }
+            })
+            .to_string(),
+            "{path}"
+        );
+
+        // Without one: the gate's redirect to `/login`.
+        let redirected = get(&router, path, None).await;
+        assert_eq!(redirected.status(), StatusCode::SEE_OTHER, "{path}");
+        assert_eq!(location(&redirected), "/login", "{path}");
+
+        // And in setup mode, the gate's redirect to `/setup`.
+        let redirected = get(&fresh, path, None).await;
+        assert_eq!(redirected.status(), StatusCode::SEE_OTHER, "{path}");
+        assert_eq!(location(&redirected), "/setup", "{path}");
+    }
 }
 
 /// `mosd/apid/openapi.json` is the bytes `apid --openapi` prints.
@@ -3551,4 +3568,558 @@ fn every_mutating_route_is_covered_by_the_authentication_tests() {
         missing.is_empty(),
         "these mutating routes are not in ALL_MUTATIONS, so no test asserts they reject an unauthenticated request: {missing:?}"
     );
+}
+
+// ---------------------------------------------------------------------------
+// §2.2's two read-only resource roots.
+// ---------------------------------------------------------------------------
+
+/// A tree in the shape §2.2's inventory describes, carrying every one of the
+/// four redacted field names — at three depths and inside an array — so a walk
+/// over the responses below proves the denylist covers all of them.
+///
+/// The admin hash is a real one so `login` works against this tree; every
+/// other secret is a marker string, which is what the "no plaintext survived"
+/// assertions look for.
+fn secret_tree(password: &str) -> serde_json::Value {
+    json!({
+        "hostname": "mos",
+        "network": {},
+        "access": {
+            "webAdmin": { "password_hash": auth::hash_password(password).unwrap() },
+            "device": { "passwordHash": "device-plaintext-marker" },
+            "ssh": {
+                "enabled": true,
+                "authorizedKeys": [
+                    { "comment": "laptop", "hash": "keyhash-plaintext-marker" },
+                ],
+            },
+        },
+        "wifi": {
+            "ap": { "ssid": "mos-ap", "psk": "ap-plaintext-marker" },
+            "client": {
+                "networks": [
+                    { "ssid": "home", "psk": "home-plaintext-marker" },
+                    {
+                        "ssid": "work",
+                        "psk": "work-plaintext-marker",
+                        "extra": { "hash": "deep-plaintext-marker" },
+                    },
+                ],
+            },
+        },
+    })
+}
+
+/// The live-state entry the state tests read, carrying all four names too:
+/// §2.2 states the redaction rule for the settings root, and this campaign
+/// extends it to the state root, so the state root is held to the same proof.
+fn secret_state_entry() -> serde_json::Value {
+    json!({
+        "psk": "state-ap-plaintext-marker",
+        "peers": [
+            { "ssid": "home", "psk": "state-peer-plaintext-marker" },
+            { "id": "laptop", "hash": "state-hash-plaintext-marker" },
+        ],
+        "admin": {
+            "passwordHash": "state-camel-plaintext-marker",
+            "nested": { "password_hash": "state-snake-plaintext-marker" },
+        },
+    })
+}
+
+/// Every marker string [`secret_tree`] and [`secret_state_entry`] plant.
+const PLAINTEXT_MARKERS: [&str; 9] = [
+    "device-plaintext-marker",
+    "keyhash-plaintext-marker",
+    "ap-plaintext-marker",
+    "home-plaintext-marker",
+    "work-plaintext-marker",
+    "deep-plaintext-marker",
+    "state-ap-plaintext-marker",
+    "state-peer-plaintext-marker",
+    "state-hash-plaintext-marker",
+];
+
+/// The four field names §2.2's redaction rule names.
+const SECRET_FIELD_NAMES: [&str; 4] = ["psk", "passwordHash", "password_hash", "hash"];
+
+/// The sentinel a redacted field carries.
+const REDACTED: &str = "<redacted>";
+
+/// Collect every secret-bearing field in `value` — at any depth, inside arrays
+/// included — as `(name, value)` pairs.
+///
+/// Written independently of the redactor under test: it walks the *response*,
+/// so a redactor that missed a branch is caught by the value it left behind
+/// rather than by agreeing with itself.
+fn secret_fields(value: &serde_json::Value, found: &mut Vec<(String, serde_json::Value)>) {
+    match value {
+        serde_json::Value::Object(fields) => {
+            for (name, child) in fields {
+                if SECRET_FIELD_NAMES.contains(&name.as_str()) {
+                    found.push((name.clone(), child.clone()));
+                } else {
+                    secret_fields(child, found);
+                }
+            }
+        }
+        serde_json::Value::Array(items) => {
+            for item in items {
+                secret_fields(item, found);
+            }
+        }
+        _ => {}
+    }
+}
+
+/// §2.2: the dot-path IS the resource identifier, so the body is exactly what
+/// `GetSettings("<dot-path>")` returns.
+#[tokio::test]
+async fn the_settings_root_answers_the_dot_paths_value_for_a_session() {
+    let (router, _) = test_app(secret_tree("hunter2secret"));
+    let cookie = login(&router, "hunter2secret").await;
+
+    let response = get(&router, "/api/v1/settings/hostname", Some(&cookie)).await;
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_api_headers(&response, "/api/v1/settings/hostname");
+    assert_eq!(body_string(response).await, r#""mos""#);
+
+    // A subtree, and a scalar reached through one: the passthrough has no
+    // shape of its own to impose.
+    let response = get(&router, "/api/v1/settings/access.ssh", Some(&cookie)).await;
+    assert_eq!(response.status(), StatusCode::OK);
+    let value: serde_json::Value = serde_json::from_str(&body_string(response).await).unwrap();
+    assert_eq!(value["enabled"], json!(true));
+
+    let response = get(
+        &router,
+        "/api/v1/settings/access.ssh.enabled",
+        Some(&cookie),
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(body_string(response).await, "true");
+}
+
+/// The second root, which is a different tree in mosd and so a different route
+/// here (§2.2): untyped, in memory, and written only from inside mosd.
+#[tokio::test]
+async fn the_state_root_answers_the_dot_paths_value_for_a_session() {
+    let (router, fake) = test_app(secret_tree("hunter2secret"));
+    fake.set_state_entry("hostname", json!({ "applied": "mos" }));
+    let cookie = login(&router, "hunter2secret").await;
+
+    let response = get(&router, "/api/v1/state/hostname", Some(&cookie)).await;
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_api_headers(&response, "/api/v1/state/hostname");
+    assert_eq!(body_string(response).await, r#"{"applied":"mos"}"#);
+
+    let response = get(&router, "/api/v1/state/hostname.applied", Some(&cookie)).await;
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(body_string(response).await, r#""mos""#);
+}
+
+/// The two roots are separate: a settings dot-path is not a state dot-path,
+/// and the routes do not fall back to each other.
+#[tokio::test]
+async fn the_two_roots_do_not_answer_for_each_other() {
+    let (router, fake) = test_app(secret_tree("hunter2secret"));
+    fake.set_state_entry("hostname", json!({ "applied": "mos" }));
+    let cookie = login(&router, "hunter2secret").await;
+
+    // `hostname` exists in both, with different values.
+    let settings = get(&router, "/api/v1/settings/hostname", Some(&cookie)).await;
+    let state = get(&router, "/api/v1/state/hostname", Some(&cookie)).await;
+    assert_ne!(
+        body_string(settings).await,
+        body_string(state).await,
+        "one root answered for the other"
+    );
+
+    // `network` exists only in the settings tree, so the state root must fail
+    // rather than serve the settings value.
+    let response = get(&router, "/api/v1/state/network", Some(&cookie)).await;
+    assert_ne!(response.status(), StatusCode::OK);
+}
+
+/// The document describes the served surface: a client reading only
+/// `openapi.json` has to learn both families and every outcome they have.
+#[test]
+fn the_openapi_document_covers_the_resource_routes() {
+    let document: serde_json::Value =
+        serde_json::from_str(&crate::openapi::document_json()).expect("the document is JSON");
+
+    for path in ["/api/v1/settings/{path}", "/api/v1/state/{path}"] {
+        let responses = &document["paths"][path]["get"]["responses"];
+        for status in ["200", "401", "422", "500", "503"] {
+            assert!(
+                responses[status].is_object(),
+                "{path} is missing its {status}: {document}"
+            );
+        }
+    }
+
+    // §2.2's sentinel is a value a client can receive, so the schema of the
+    // body has to say so; a client that has not been told treats
+    // `"<redacted>"` as the credential.
+    assert!(
+        document["components"]["schemas"]["ResourceValue"]["description"]
+            .as_str()
+            .is_some_and(|text| text.contains(REDACTED)),
+        "the resource body's schema does not describe the redaction sentinel: {document}"
+    );
+}
+
+/// §2.2's redaction rule, driven from the failing side: every field the
+/// denylist names, at every depth the tree puts one and inside the arrays the
+/// dot-path syntax cannot address, comes back as the sentinel.
+///
+/// The rule is fail-open — a secret-bearing field under a name not on the list
+/// is served — so this test is the mitigation §2.2 asks for. It walks the
+/// response rather than checking known locations, so a field added to the
+/// fixture is covered without editing an assertion here.
+#[tokio::test]
+async fn every_redacted_field_name_comes_back_redacted_from_the_settings_root() {
+    let (router, _) = test_app(secret_tree("hunter2secret"));
+    let cookie = login(&router, "hunter2secret").await;
+
+    // Two subtrees rather than one, because the whole-tree dot-path is `""`
+    // and this route family takes a non-empty one. Between them they hold all
+    // four names.
+    let mut found = Vec::new();
+    let mut bodies = String::new();
+    for path in ["/api/v1/settings/access", "/api/v1/settings/wifi"] {
+        let response = get(&router, path, Some(&cookie)).await;
+        assert_eq!(response.status(), StatusCode::OK, "{path}");
+        let body = body_string(response).await;
+        secret_fields(&serde_json::from_str(&body).unwrap(), &mut found);
+        bodies.push_str(&body);
+    }
+
+    let names: Vec<&str> = found.iter().map(|(name, _)| name.as_str()).collect();
+    for name in SECRET_FIELD_NAMES {
+        assert!(
+            names.contains(&name),
+            "the fixture no longer carries a `{name}` field, so this test does not cover it: {names:?}"
+        );
+    }
+    for (name, value) in &found {
+        assert_eq!(value, &json!(REDACTED), "`{name}` was served in the clear");
+    }
+    // The walk only sees fields it recognises. This sees the bytes.
+    for marker in PLAINTEXT_MARKERS {
+        assert!(
+            !bodies.contains(marker),
+            "`{marker}` reached the wire: {bodies}"
+        );
+    }
+}
+
+/// The same rule on the state root. §2.2 states it for the settings root only;
+/// this campaign extends it, because a denylist that covers one root while the
+/// other serves the same field names verbatim is a hole with a tested-looking
+/// lid.
+#[tokio::test]
+async fn the_state_root_is_redacted_by_the_same_rule() {
+    let (router, fake) = test_app(secret_tree("hunter2secret"));
+    fake.set_state_entry("wifiAp", secret_state_entry());
+    let cookie = login(&router, "hunter2secret").await;
+
+    let response = get(&router, "/api/v1/state/wifiAp", Some(&cookie)).await;
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = body_string(response).await;
+
+    let mut found = Vec::new();
+    secret_fields(&serde_json::from_str(&body).unwrap(), &mut found);
+    let names: Vec<&str> = found.iter().map(|(name, _)| name.as_str()).collect();
+    for name in SECRET_FIELD_NAMES {
+        assert!(names.contains(&name), "not covered: {name} in {names:?}");
+    }
+    for (name, value) in &found {
+        assert_eq!(value, &json!(REDACTED), "`{name}` was served in the clear");
+    }
+    for marker in PLAINTEXT_MARKERS {
+        assert!(
+            !body.contains(marker),
+            "`{marker}` reached the wire: {body}"
+        );
+    }
+}
+
+/// The structural walk keys on a field name, and a dot-path that names a
+/// secret field directly leaves no field name in the value: the response is
+/// the bare hash. So the requested path is redacted as well as the tree.
+#[tokio::test]
+async fn a_dot_path_that_names_a_secret_field_answers_the_sentinel() {
+    let (router, fake) = test_app(secret_tree("hunter2secret"));
+    fake.set_state_entry("wifiAp", secret_state_entry());
+    let cookie = login(&router, "hunter2secret").await;
+
+    for path in [
+        "/api/v1/settings/access.webAdmin.password_hash",
+        "/api/v1/settings/access.device.passwordHash",
+        "/api/v1/settings/wifi.ap.psk",
+        "/api/v1/state/wifiAp.psk",
+        "/api/v1/state/wifiAp.admin.passwordHash",
+    ] {
+        let response = get(&router, path, Some(&cookie)).await;
+        assert_eq!(response.status(), StatusCode::OK, "{path}");
+        assert_eq!(
+            body_string(response).await,
+            format!(r#""{REDACTED}""#),
+            "{path}"
+        );
+    }
+}
+
+/// A `zbus::Error::MethodError` naming `name`, with `message` as the body mosd
+/// sent back.
+///
+/// Constructed rather than provoked: `FakeSettings` returns plain `anyhow`
+/// errors, which are §2.4's `mosd_unreachable` fallback row and cannot reach
+/// the other three.
+fn method_error(name: &'static str, message: &str) -> zbus::Error {
+    let reply_to = zbus::message::Message::method_call("/com/mos/mosd", "GetSettings")
+        .expect("a well-formed method call")
+        .build(&())
+        .expect("an empty body serialises");
+    let name = zbus::names::ErrorName::try_from(name).expect("a well-formed fdo error name");
+    zbus::Error::MethodError(name.into(), Some(message.to_string()), reply_to)
+}
+
+/// A [`SettingsApi`] whose resource reads fail with the error the test chose.
+///
+/// `access` and the whole tree still read, because that is what the gate and
+/// `login_submit` need to get a session as far as a route that fails.
+struct FailingSettings {
+    tree: serde_json::Value,
+    /// The fdo error name mosd answered with, or `None` for a failure that
+    /// never reached mosd at all.
+    fdo_name: Option<&'static str>,
+}
+
+impl FailingSettings {
+    fn error(&self) -> anyhow::Error {
+        match self.fdo_name {
+            Some(name) => method_error(name, MOSD_MESSAGE).into(),
+            None => anyhow::anyhow!("no connection to mosd"),
+        }
+    }
+}
+
+/// The text mosd is pretending to have sent, which §2.4 requires apid to carry
+/// through untouched.
+const MOSD_MESSAGE: &str = "invalid settings value at `network.eth0.100`: unknown field `100`";
+
+#[async_trait::async_trait]
+impl SettingsApi for FailingSettings {
+    async fn get_settings(&self, path: &str) -> anyhow::Result<serde_json::Value> {
+        if path.is_empty() || path == "access" {
+            return Ok(if path.is_empty() {
+                self.tree.clone()
+            } else {
+                self.tree["access"].clone()
+            });
+        }
+        Err(self.error())
+    }
+
+    async fn set_settings(&self, _path: &str, _value: &serde_json::Value) -> anyhow::Result<()> {
+        unreachable!("the resource routes are read-only")
+    }
+
+    async fn get_state(&self, _path: &str) -> anyhow::Result<serde_json::Value> {
+        Err(self.error())
+    }
+
+    async fn reboot(&self) -> anyhow::Result<()> {
+        unreachable!("the resource routes are read-only")
+    }
+
+    async fn power_off(&self) -> anyhow::Result<()> {
+        unreachable!("the resource routes are read-only")
+    }
+
+    async fn set_transient_root_password(&self, _password: &str) -> anyhow::Result<()> {
+        unreachable!("the resource routes are read-only")
+    }
+}
+
+/// A router whose resource reads fail the way `fdo_name` says, plus a session
+/// cookie for it.
+async fn failing_app(fdo_name: Option<&'static str>) -> (Router, String) {
+    let api = Arc::new(FailingSettings {
+        tree: configured_tree("hunter2secret"),
+        fdo_name,
+    });
+    let router = app(AppState::new(api, SIGNING_KEY));
+    let cookie = login(&router, "hunter2secret").await;
+    (router, cookie)
+}
+
+/// The premise the classification rests on: `err.into()` in `bus_client.rs`
+/// converts a `zbus::Error` to `anyhow::Error` through the blanket `From`,
+/// which STORES the concrete error rather than flattening it, so the fdo name
+/// is still there to be recovered. If this ever stops holding, every row of
+/// §2.4's table below collapses into the fallback and the tests would say so
+/// one at a time; this says it once, in the one sentence it depends on.
+#[test]
+fn the_zbus_error_survives_the_conversion_to_anyhow() {
+    let err: anyhow::Error = method_error("org.freedesktop.DBus.Error.InvalidArgs", "boom").into();
+    let recovered = err
+        .downcast_ref::<zbus::Error>()
+        .expect("the conversion kept the zbus error");
+    match recovered {
+        zbus::Error::MethodError(name, message, _) => {
+            assert_eq!(name.as_str(), "org.freedesktop.DBus.Error.InvalidArgs");
+            assert_eq!(message.as_deref(), Some("boom"));
+        }
+        other => panic!("the variant changed: {other:?}"),
+    }
+}
+
+/// §2.4's table, row by row: mosd classifies, apid translates the
+/// classification, and mosd's message is carried through verbatim.
+#[tokio::test]
+async fn each_fdo_error_name_gets_its_own_envelope() {
+    for (fdo_name, code, status) in [
+        (
+            "org.freedesktop.DBus.Error.InvalidArgs",
+            "settings_rejected",
+            StatusCode::UNPROCESSABLE_ENTITY,
+        ),
+        (
+            "org.freedesktop.DBus.Error.IOError",
+            "settings_io",
+            StatusCode::INTERNAL_SERVER_ERROR,
+        ),
+        (
+            "org.freedesktop.DBus.Error.Failed",
+            "mosd_failed",
+            StatusCode::INTERNAL_SERVER_ERROR,
+        ),
+    ] {
+        for path in ["/api/v1/settings/wifi.ap", "/api/v1/state/wifiAp"] {
+            let (router, cookie) = failing_app(Some(fdo_name)).await;
+            let response = get(&router, path, Some(&cookie)).await;
+            assert_eq!(response.status(), status, "{fdo_name} at {path}");
+            assert_api_headers(&response, path);
+            assert_eq!(
+                response.headers().get(axum::http::header::RETRY_AFTER),
+                None,
+                "only the unreachable class carries Retry-After: {fdo_name}"
+            );
+            let error = envelope(response).await;
+            assert_eq!(error["code"], code, "{fdo_name}");
+            assert_eq!(error["source"], "mosd", "{fdo_name}");
+            // §2.4: apid substituting its own phrasing would hide every
+            // message mosd learns to produce.
+            assert_eq!(error["message"], MOSD_MESSAGE, "{fdo_name}");
+            // §2.4's optional member, which these routes DO name.
+            assert_eq!(
+                error["path"],
+                json!(path.rsplit('/').next().unwrap()),
+                "{fdo_name}"
+            );
+        }
+    }
+}
+
+/// The fallback row, and the only one whose `source` is apid: the call could
+/// not be made at all, which is a statement about this server rather than
+/// about the request. 503, because apid itself is up and answering.
+#[tokio::test]
+async fn an_unreachable_mosd_is_503_with_retry_after() {
+    // No `MethodError` at all, and a `MethodError` under a name §2.4's table
+    // does not list: both are the fallback.
+    for fdo_name in [None, Some("org.freedesktop.DBus.Error.UnknownObject")] {
+        for path in ["/api/v1/settings/wifi.ap", "/api/v1/state/wifiAp"] {
+            let (router, cookie) = failing_app(fdo_name).await;
+            let response = get(&router, path, Some(&cookie)).await;
+            assert_eq!(
+                response.status(),
+                StatusCode::SERVICE_UNAVAILABLE,
+                "{fdo_name:?} at {path}"
+            );
+            assert_api_headers(&response, path);
+            assert_eq!(
+                header_value(&response, axum::http::header::RETRY_AFTER),
+                "5",
+                "{fdo_name:?} at {path}"
+            );
+            let error = envelope(response).await;
+            assert_eq!(error["code"], "mosd_unreachable");
+            assert_eq!(error["source"], "apid");
+            assert!(error["message"].is_string());
+        }
+    }
+}
+
+/// A dot-path that does not exist answers **422 `settings_rejected`, not 404**,
+/// and the reading is deliberate. It reaches mosd, which rejects it with
+/// `InvalidArgs`, and §2.4's table is exhaustive on the fdo error name. The
+/// table's `not_found` row covers unknown ROUTES and collection items, and
+/// collections are out of phase 1 — a route that does exist, given a path mosd
+/// refused, is a rejection and reports as one.
+#[tokio::test]
+async fn a_dot_path_that_does_not_exist_is_422_and_not_404() {
+    let (router, cookie) = failing_app(Some("org.freedesktop.DBus.Error.InvalidArgs")).await;
+
+    let response = get(&router, "/api/v1/settings/no.such.path", Some(&cookie)).await;
+    assert_eq!(response.status(), StatusCode::UNPROCESSABLE_ENTITY);
+    let error = envelope(response).await;
+    assert_eq!(error["code"], "settings_rejected");
+    assert_eq!(error["path"], json!("no.such.path"));
+}
+
+/// §3.1's trap again, for the routes this campaign adds: an unauthenticated
+/// resource read answers §2.4's envelope with a 401 and **never** a redirect,
+/// in both gate modes. They inherit it from `ApiSession`; inheriting is not
+/// the same as being asserted.
+#[tokio::test]
+async fn the_resource_routes_are_401_without_a_session_in_both_gate_modes() {
+    const PATHS: [&str; 2] = ["/api/v1/settings/hostname", "/api/v1/state/hostname"];
+
+    let (configured, _) = test_app(secret_tree("hunter2secret"));
+    let (fresh, _) = test_app(unconfigured_tree());
+
+    for (mode, router) in [("configured", &configured), ("setup mode", &fresh)] {
+        for path in PATHS {
+            let response = get(router, path, None).await;
+            assert_eq!(
+                response.status(),
+                StatusCode::UNAUTHORIZED,
+                "{path} in {mode}"
+            );
+            assert_eq!(
+                response.headers().get(LOCATION),
+                None,
+                "{path} in {mode} answered a redirect, which a script reads as success"
+            );
+            assert_api_headers(&response, path);
+            let error = envelope(response).await;
+            assert_eq!(error["code"], "not_authenticated", "{path} in {mode}");
+            assert_eq!(error["source"], "apid", "{path} in {mode}");
+            // §2.4's `path` is the dot-path at fault, and a request that failed
+            // to authenticate never named one: the read did not happen.
+            assert_eq!(error.get("path"), None, "{path} in {mode}");
+        }
+    }
+}
+
+/// The three spellings of each resource root are one string plus two suffixes.
+///
+/// The router, the OpenAPI attribute and the gate predicate each need a
+/// different one, and a typo in any of them would serve a path the document
+/// does not describe or hand off a path the router does not have.
+#[test]
+fn the_resource_path_spellings_agree() {
+    for (prefix, route, doc) in [
+        crate::routes::SETTINGS_SPELLINGS,
+        crate::routes::STATE_SPELLINGS,
+    ] {
+        assert_eq!(route, format!("{prefix}{{*path}}"));
+        assert_eq!(doc, format!("{prefix}{{path}}"));
+    }
 }
