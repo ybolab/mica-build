@@ -146,6 +146,9 @@ Counted as lines matching `^[[:space:]]*(//|/\*|\*)`, base `231895a` -> HEAD.
 | `tests/e2e.rs` | 99 | 95 | -4 |
 | **total** | **3222** | **3090** | **-132 (4.1%)** |
 
+The two reverts described in Findings 3 are single-line swaps and do not move
+these counts.
+
 `src/assets/path.rs` gains a line because one four-line doc paragraph rewraps
 to five when the task ID is taken out of it.
 
@@ -453,7 +456,33 @@ After (`src/main.rs:55-68`, 14 lines):
    subject, so there was nothing here to keep or to reword. Nothing was
    deleted.
 
-3. **Deprecated dependency line, not touched.** `mosd/apid/Cargo.toml` is out
+3. **Two doc-comments in `src/routes.rs` are not comments — they are spec
+   source, and were reverted.** utoipa lifts the doc-comment of every
+   `#[utoipa::path]` handler and every `ToSchema`-derived type and field
+   straight into `openapi.json` as a `description`. Normalising typography in
+   one of those changes the committed document, which M1's
+   `the_committed_openapi_document_is_the_generated_one` correctly rejects.
+   Two edits hit this and both were reverted to the base text:
+
+   - `src/routes.rs:461` — `/// The dot-path IS the resource identifier`, the
+     doc of the `#[utoipa::path]`-annotated `api_v1_settings` handler. `IS`
+     kept.
+   - `src/routes.rs:371` — `/// ... A client tests **membership** in this set`,
+     the doc of `ApiVersions::versions`, a `ToSchema` field. `**membership**`
+     kept.
+
+   These were also M1/M2-authored comments, which this milestone was told not
+   to churn, so the revert is right on both counts. **The doc-comments on
+   utoipa-annotated items in `mosd/apid/src/routes.rs` — lines 315-520 — are
+   part of the published API surface. Editing one is an API change, not a
+   comment change.** No other comment in the crate has that property; the
+   remaining edits in that range are on plain functions.
+
+   The failure is why `cargo test` is the milestone's real gate: the
+   comment-only proof passes on this change, because a doc-comment edit *is* a
+   comment edit. Only the test knows the document moved.
+
+4. **Deprecated dependency line, not touched.** `mosd/apid/Cargo.toml` is out
    of scope by the milestone's own rules and was not opened.
 
 ## Verification
