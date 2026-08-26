@@ -714,11 +714,11 @@ describe('nothing precious is reachable only from /var', () => {
 })
 
 describe('the writable, persistent system unit directory', () => {
-  test('the bind absent fails, naming PLAN-011 D5\'s extension model', async () => {
+  test('the bind absent fails, naming the extension model it breaks', async () => {
     const fx = await mutated('ext-unit-dir-state-bind', root => rmSync(join(root, EXT_MOUNT)))
     try {
       expect(await messageOf(fx, 'ext-unit-dir-state-bind'))
-        .toContain("PLAN-011 D5's whole extension model does not work on the device")
+        .toContain('the whole extension model does not work on the device')
     }
     finally {
       fx.dispose()
@@ -750,7 +750,7 @@ describe('the writable, persistent system unit directory', () => {
   })
 
   test('re-pointing the bind at /etc/systemd/system fails BOTH checks', async () => {
-    // The change that reads like restoring PLAN-011 D5's original sentence and
+    // The change that reads like restoring the plan's original target and
     // actually reintroduces the hazard it was corrected for. It has to fail the
     // negative half too, because that is the half nothing else in the image can
     // tell apart from a legitimate change.

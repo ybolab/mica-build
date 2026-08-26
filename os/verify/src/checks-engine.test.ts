@@ -215,7 +215,7 @@ describe('the engine is INERT', () => {
   })
 
   test('/usr/local/lib/systemd is searched too -- the STATE-backed unit directory', async () => {
-    // PLAN-011 D5 makes that prefix writable from STATE, so a unit installed
+    // That prefix is writable from STATE, so a unit installed
     // there survives a reboot. It is the one unit directory an operator can
     // actually write to, and leaving it out of the search would exempt it.
     const fx = await mutated('container-engine-no-units',
@@ -501,7 +501,7 @@ describe('the Quadlet directory is writable, persistent and NOT enabled', () => 
     try {
       expect(await verdictOf(fx, 'container-engine-quadlet-bind')).toBe('fail')
       expect(await messageOf(fx, 'container-engine-quadlet-bind'))
-        .toContain("PLAN-012's switch gates nothing")
+        .toContain('the container.enabled switch gates nothing')
     }
     finally {
       fx.dispose()

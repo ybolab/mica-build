@@ -1005,13 +1005,13 @@ const SSH_UNIT_CHECKS: readonly CheckCase[] = [
     failMatcher: 'ssh.service does NOT set KillMode=process (found ',
     passMessage: 'ssh.service sets KillMode=process, so a restart would spare established sessions '
       + '— defence in depth only: what actually protects an operator\'s own session is that the '
-      + 'reconciler RELOADS on a config-only change (RFCT-047), and this passing is not a reason to '
+      + 'reconciler RELOADS on a config-only change, and this passing is not a reason to '
       + 'restart instead',
     failMessage: found => `ssh.service does NOT set KillMode=process (found '${found}'; systemd `
       + `defaults to control-group). The image has lost its second line of defence: anything that `
       + `RESTARTS this unit now kills established SSH sessions with it. This does not by itself `
       + `disconnect an operator setting a transient root password — the reconciler reloads rather than `
-      + `restarts (RFCT-047) — but that reload is now the ONLY thing preventing it, so do not treat `
+      + `restarts — but that reload is now the ONLY thing preventing it, so do not treat `
       + `this as cosmetic`,
   }),
   sshUnitCheck({
@@ -1021,9 +1021,9 @@ const SSH_UNIT_CHECKS: readonly CheckCase[] = [
     passMatcher: 'ssh.service carries ExecReload=,',
     failMatcher: 'ssh.service has NO ExecReload=.',
     passMessage: 'ssh.service carries ExecReload=, so the config-only reload the sshd reconciler '
-      + 'issues (RFCT-047) can actually reach the running sshd',
+      + 'issues can actually reach the running sshd',
     failMessage: () => 'ssh.service has NO ExecReload=. The sshd reconciler RELOADS this unit on a '
-      + 'configuration-only change (RFCT-047); without ExecReload that reload fails, and the rendered '
+      + 'configuration-only change; without ExecReload that reload fails, and the rendered '
       + 'sshd configuration — PasswordAuthentication included — silently never applies to the running '
       + 'listener',
   }),

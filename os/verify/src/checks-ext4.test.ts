@@ -415,13 +415,13 @@ describe('ext4-factory-content', () => {
     expect(at(await drive('ext4-factory-content', healthyTiers()), 'meta').verdict).toBe('pass')
   })
 
-  test('RED when EPHEMERAL is EMPTY -- the RFCT-106 race, from the other side', async () => {
+  test('RED when EPHEMERAL is EMPTY -- the first-boot /var race, from the other side', async () => {
     const t = healthyTiers()
     t['ephemeral'] = { ...t['ephemeral'] as TierReply, debugfsLs: lsp([]) }
     const r = at(await drive('ext4-factory-content', t), 'ephemeral')
     expect(r.verdict).toBe('fail')
     expect(r.message).toContain('factory: ephemeral is EMPTY at build')
-    expect(r.message).toContain('RFCT-106')
+    expect(r.message).toContain('the health gate intermittently')
   })
 
   test('A VACUOUS PASS, reproduced: debugfs exits 0 having opened nothing', async () => {

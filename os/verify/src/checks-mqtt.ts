@@ -177,13 +177,13 @@ function policyRules(root: string, path: string): string[] {
 
 const MQTTD_CHECKS: readonly CheckCase[] = [
   prefixedRegularFile('mqttd-bin', 'mqttd', MQTTD_BIN,
-    'so the MQTT bridge PLAN-011 D6 specifies is not in this image at all — the crate builds and its '
+    'so the MQTT bridge is not in this image at all — the crate builds and its '
     + 'protocol tests pass either way'),
   prefixedRegularFile('mqttd-unit', 'mqttd', MQTTD_UNIT,
-    'so the MQTT bridge PLAN-011 D6 specifies is not in this image at all — the crate builds and its '
+    'so the MQTT bridge is not in this image at all — the crate builds and its '
     + 'protocol tests pass either way'),
   prefixedRegularFile('mqttd-policy', 'mqttd', MQTTD_POLICY,
-    'so the MQTT bridge PLAN-011 D6 specifies is not in this image at all — the crate builds and its '
+    'so the MQTT bridge is not in this image at all — the crate builds and its '
     + 'protocol tests pass either way'),
 
   {

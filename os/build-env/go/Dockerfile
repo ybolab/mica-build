@@ -225,7 +225,7 @@ RUN set -eu; \
 # os/build-env/build.sh's read-back: an image that inherits its parent's record
 # and writes none of its own is asserting nothing under its own name.
 LABEL org.opencontainers.image.title="mos-build-go" \
-      org.opencontainers.image.description="mos Go toolchain, sha256-pinned tarball (PLAN-014 M2, RFCT-108)" \
+      org.opencontainers.image.description="mos Go toolchain, sha256-pinned tarball" \
       org.opencontainers.image.base.name="${MOS_BASE_IMAGE}" \
       com.mos.build-env.source="os/build-env/go/Dockerfile" \
       com.mos.build-env.pins="os/build-env/images.env"

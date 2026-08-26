@@ -173,7 +173,7 @@ RUN set -eu; \
 # child; writing c.env is what makes "each builder image asserts its toolchain
 # version internally" a thing that can be verified from outside the build log.
 LABEL org.opencontainers.image.title="mos-build-c" \
-      org.opencontainers.image.description="mos C/C++ toolchain (PLAN-014 M2, RFCT-108)" \
+      org.opencontainers.image.description="mos C/C++ toolchain" \
       org.opencontainers.image.base.name="${MOS_BASE_IMAGE}" \
       com.mos.build-env.source="os/build-env/c/Dockerfile" \
       com.mos.build-env.pins="os/build-env/images.env"

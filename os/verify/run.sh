@@ -63,7 +63,7 @@ IMAGE_ALPINE_3_21 -- and on a host with no bun it runs in a second pinned image,
 IMAGE_BUN_1 plus the client pinned as IMAGE_DOCKER_CLI_28, with the daemon
 socket mounted. That is a privilege grant, taken only in this mode.
 
-With --smoke FIRST, it runs RFCT-113's smoke runner: it loads
+With --smoke FIRST, it runs the smoke runner: it loads
 _out/<board>/factory-root.oci -- the packed root the build exports as an OCI
 image -- and EXECUTES every self-built artifact inside it, requiring exit 0 and
 that the version each one reports equals the version this repository pinned. It
@@ -71,7 +71,7 @@ needs DOCKER for the same reason --verify does and one stronger: the whole point
 is to run the shipped binaries, and they are built for the board rather than for
 this host. It refuses rather than skipping when the image is absent.
 
-With --smoke-negative FIRST, it runs RFCT-113's three negative tests: it builds
+With --smoke-negative FIRST, it runs the three negative tests: it builds
 three images from that board's factory root, each carrying one deliberately made
 defect -- a wrong-arch binary, a binary whose NEEDed library has been taken away,
 and a binary that reports a version other than its pin -- and requires the smoke

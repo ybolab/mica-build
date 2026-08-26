@@ -187,7 +187,7 @@ const ENGINE_CHECKS: readonly CheckCase[] = [
           ? 'the container engine is in the image: podman, crun, conmon, netavark, aardvark-dns, '
             + 'quadlet and its systemd generator'
           : `the container engine is incomplete:${missing.map(m => ` ${m}`).join('')} missing. `
-            + `PLAN-012 ships the engine installed and inert; a partial install is a switch that `
+            + `the engine ships installed and inert; a partial install is a switch that `
             + `turns on nothing`,
       )]
     },
@@ -372,7 +372,7 @@ const ENGINE_CHECKS: readonly CheckCase[] = [
           ? 'no podman unit carries an enablement symlink; the engine is inert in the shipped image'
           : `podman units carry an enablement symlink in the image:${enabled.join(' ')} . `
             + `The device would run containers before anyone asked, which is the opposite of `
-            + `PLAN-012's default-off switch`,
+            + `the default-off switch`,
       )
     },
   }),
@@ -485,7 +485,8 @@ const ENGINE_CHECKS: readonly CheckCase[] = [
           `${QUADLET_MOUNT_UNIT} is STATICALLY ENABLED. The bind then comes up at every boot whatever `
           + `container.enabled says, Quadlet generates units from STATE, and they start — so anything `
           + `able to write /mnt/state/quadlet gets a root-capable container at the next reboot with no `
-          + `operator decision anywhere in the path, and PLAN-012's switch gates nothing. mosd's `
+          + `operator decision anywhere in the path, and the container.enabled switch gates `
+          + `nothing. mosd's `
           + `ContainerReconciler enables it at runtime when the setting is true`)
       }
       return verdict(id, true,

@@ -353,7 +353,7 @@ export const EXT4_CHECKS: readonly CheckCase[] = [
               + `what makes mos-seed-var a no-op on a normal boot`
             : `factory: ${tier.name} is EMPTY at build. /var would be filled on the first boot, `
               + `concurrently with every systemd unit that writes /var -- the race that failed `
-              + `mosd, apid and the health gate intermittently (RFCT-106)`,
+              + `mosd, apid and the health gate intermittently`,
           { instance: tier.name },
         )
       }
@@ -400,8 +400,7 @@ export const EXT4_CHECKS: readonly CheckCase[] = [
             + `${stamp}, /lib populated), so mos-seed-var is a no-op on a normal boot and races nothing`
           : `the EPHEMERAL filesystem ships ${stamp !== undefined ? 'stamped but empty' : 'unstamped'}. `
             + `/var would be filled on the first boot, concurrently with every systemd unit that `
-            + `writes /var -- the race that failed mosd, apid and the health gate intermittently `
-            + `(RFCT-106)`,
+            + `writes /var -- the race that failed mosd, apid and the health gate intermittently`,
       )]
     },
   },
