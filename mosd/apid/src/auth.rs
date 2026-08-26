@@ -48,32 +48,27 @@ fn backoff_for(failures: u32) -> Duration {
 
 /// Global (not per-client) login backoff, on `docs/design/access.md` §3.3's
 /// curve: each consecutive failure doubles the wait before the next attempt is
-/// accepted, from [`BACKOFF_BASE`] up to [`BACKOFF_MAX`].
+/// accepted, from [`BACKOFF_BASE`] up to [`BACKOFF_MAX`]. A single shared
+/// counter is deliberate — the appliance has one admin password, so per-client
+/// tracking buys nothing against an online guesser, who would rotate source
+/// addresses anyway.
 ///
-/// A single shared counter is deliberate — the appliance has one admin
-/// password, so per-client tracking buys nothing against an online guesser,
-/// who would rotate source addresses anyway.
+/// The counter survives an expired window. Clearing `failures` when the window
+/// lapses would make the rule flat: an attacker waits the window out, the next
+/// run starts from zero, and the cost per guess never rises. Only
+/// [`LoginGuard::record_success`] resets the run, so guessing gets
+/// monotonically more expensive — under 300 guesses a day once the cap is
+/// reached. The curve never becomes permanent: §6 pairs its `lockoutThreshold`
+/// with "releasable only with physical presence" and apid has no presence
+/// check, so arming a threshold nothing can clear would let an attacker convert
+/// a guessing attempt into a permanent denial of management. The cap is the
+/// whole control — a locked-out administrator who knows the password waits at
+/// most [`BACKOFF_MAX`].
 ///
-/// Two properties are load-bearing:
-///
-/// - The counter survives an expired window. Clearing `failures` when the
-///   window lapses would make the rule flat: an attacker waits the window out,
-///   the next run starts from zero, and the cost per guess never rises. Only
-///   [`LoginGuard::record_success`] resets the run, so guessing gets
-///   monotonically more expensive — under 300 guesses a day once the cap is
-///   reached.
-/// - The curve never becomes permanent. §6 pairs its `lockoutThreshold`
-///   with "releasable only with physical presence", and apid has no presence
-///   check to release one with. On an appliance whose only management surface
-///   is this daemon, arming a threshold nothing can clear would let an
-///   attacker convert a guessing attempt into a permanent denial of
-///   management. The cap is therefore the whole control: a locked-out
-///   administrator who knows the password waits at most [`BACKOFF_MAX`].
-///
-/// Persistence is [`GuardStore`]'s job, not this type's: the guard stays a
-/// pure counter-and-clock so the curve remains testable without a filesystem,
-/// and the store wraps it to satisfy §6's "a power cycle must not reset the
-/// clock". (§6 asked for META; the state lives on STATE instead, and
+/// Persistence is [`GuardStore`]'s job, not this type's: the guard stays a pure
+/// counter-and-clock so the curve remains testable without a filesystem, and
+/// the store wraps it to satisfy §6's "a power cycle must not reset the clock".
+/// (§6 asked for META; the state lives on STATE instead, and
 /// `docs/design/access.md` §6 records that deviation and why.)
 #[derive(Default)]
 pub struct LoginGuard {
@@ -86,19 +81,17 @@ impl LoginGuard {
     /// attempt up front and admit it.
     ///
     /// Check and charge are one operation under one lock acquisition,
-    /// deliberately. A handler that consulted the guard, verified the
-    /// password, and only then recorded the outcome would hold the lock for
-    /// none of the middle — N concurrent submissions would all pass the bare
-    /// check before any of them recorded a failure, multiplying every window
-    /// on the curve by the attacker's concurrency. Charging at admission arms
-    /// the window before the lock is released, so a burst timed to a window's
-    /// expiry buys one guess, not N.
-    ///
-    /// The charge is the pessimistic one: [`Self::record_success`] repays it
-    /// by ending the run, and a failed attempt calls [`Self::confirm_failure`]
-    /// to move the window's start to the outcome. An attempt that ends in
-    /// neither — an infrastructure error mid-attempt — stays charged with the
-    /// admission-time window, which errs closed.
+    /// deliberately. A handler that consulted the guard, verified the password
+    /// and only then recorded the outcome would hold the lock for none of the
+    /// middle, so N concurrent submissions would all pass the bare check before
+    /// any recorded a failure, multiplying every window on the curve by the
+    /// attacker's concurrency. Charging at admission arms the window before the
+    /// lock is released, so a burst timed to a window's expiry buys one guess,
+    /// not N. The charge is the pessimistic one: [`Self::record_success`]
+    /// repays it by ending the run, and a failed attempt calls
+    /// [`Self::confirm_failure`] to move the window's start to the outcome. An
+    /// attempt that ends in neither — an infrastructure error mid-attempt —
+    /// stays charged with the admission-time window, which errs closed.
     pub fn begin_attempt(&mut self) -> bool {
         if !self.check() {
             return false;
@@ -330,23 +323,21 @@ mod tests {
 
         // Seeded with a run, so the armed window is 16 seconds rather than
         // BACKOFF_BASE's one. The property under test is "an armed window
-        // survives a restart" and it does not depend on which step of the
-        // curve is armed, but arming the first step races the format's own
-        // resolution: the write and the read below are two filesystem
-        // round-trips, and `PersistedGuard` carries the deadline as whole UNIX
-        // seconds — `to_persisted` writes `now_unix() +
-        // remaining.as_secs().max(1)` and `from_persisted` subtracts a
-        // freshly-read `now_unix()`, so the two truncations do not cancel. A
-        // write and a read landing on opposite sides of one second boundary
-        // reduce a one-second window to zero. Sixteen seconds absorbs both the
-        // truncation and any load this suite can generate; the one-second step
-        // itself is covered without a clock by
-        // `backoff_doubles_from_the_base_and_stops_at_the_cap`.
-        //
-        // The truncation is a real if minor property of the on-disk format — a
-        // restart inside the first second can drop that step's window while
-        // keeping the failure count — and it is recorded rather than fixed
-        // here, because this test's job is the round trip, not the resolution.
+        // survives a restart" and does not depend on which step of the curve is
+        // armed, but arming the first step races the format's own resolution:
+        // the write and the read below are two filesystem round-trips, and
+        // `PersistedGuard` carries the deadline as whole UNIX seconds —
+        // `to_persisted` writes `now_unix() + remaining.as_secs().max(1)` and
+        // `from_persisted` subtracts a freshly-read `now_unix()`, so the two
+        // truncations do not cancel and a write and read landing on opposite
+        // sides of a second boundary reduce a one-second window to zero.
+        // Sixteen seconds absorbs both the truncation and any load this suite
+        // can generate; the one-second step is covered without a clock by
+        // `backoff_doubles_from_the_base_and_stops_at_the_cap`. The truncation
+        // is a real if minor property of the on-disk format — a restart inside
+        // the first second can drop that step's window while keeping the
+        // failure count — recorded here rather than fixed, this test's job
+        // being the round trip.
         std::fs::write(
             &path,
             serde_json::to_string(&PersistedGuard {

@@ -1,27 +1,17 @@
 //! On-device identity and per-device credential generation.
 //!
-//! The rootfs is squashfs + dm-verity: read-only and byte-identical on every
-//! device in the fleet. Nothing secret can therefore be baked into the image —
-//! it would be a fleet-wide shared secret and it would make the verity root
-//! hash depend on a random value. This module is where a device instead gives
-//! itself an identity and its credentials, at first boot, from the system
-//! CSPRNG, and persists them to the STATE partition (`/var/lib/mos`, the only
-//! writable place that survives an A/B update).
-//!
-//! Two independent secrets are generated:
-//!
-//! - the **device password**, which authenticates the operator on SSH, the
-//!   local console and the apid admin UI;
-//! - the **AP PSK**, the WPA2 pre-shared key for provisioning AP mode.
-//!
-//! [`ensure_identity`] is the entry point and is idempotent: on an already
-//! provisioned STATE it is a genuine no-op. It never regenerates a credential
-//! that already exists, because a regenerated credential locks the operator out
-//! of a fielded device.
-//!
-//! This module is a library. Wiring it into the startup sequence, reconciling
-//! the device password into `/etc/shadow` and rendering the AP PSK into
-//! `hostapd.conf` all live elsewhere.
+//! The rootfs is squashfs + dm-verity: read-only and byte-identical across the
+//! fleet, so nothing secret can be baked into the image — it would be a
+//! fleet-wide shared secret and would make the verity root hash depend on a
+//! random value. A device instead gives itself an identity and its credentials
+//! here, at first boot, from the system CSPRNG, persisted to the STATE
+//! partition (`/var/lib/mos`, the only writable place that survives an A/B
+//! update): the device password, which authenticates the operator on SSH, the
+//! local console and the apid admin UI, and the AP PSK, the WPA2 pre-shared key
+//! for provisioning AP mode. [`ensure_identity`] is idempotent and never
+//! regenerates an existing credential, which would lock the operator out of a
+//! fielded device. Wiring it into startup, reconciling the password into
+//! `/etc/shadow` and rendering the PSK into `hostapd.conf` live elsewhere.
 
 use std::fs::{self, DirBuilder, File, OpenOptions, Permissions};
 use std::io::{self, Write};
@@ -92,29 +82,19 @@ pub enum Outcome {
 
 /// Give this device an identity and its per-device secrets, if it has none.
 ///
-/// Generates, only for the parts that are absent:
-///
-/// - `provisioning.device_id` — 16 random bytes as lowercase hex;
-/// - `access.device.password_hash` plus the plaintext device password at
-///   `<state_dir>/secrets/device-password`, bumping `access.device.generation`;
-/// - the AP PSK at `<state_dir>/secrets/ap-psk`.
-///
-/// The two secrets are drawn independently. PLAN-008 Part D reads as though the
-/// AP PSK could be the device password again; it is not, because recovering the
-/// WiFi PSK would then also hand over the root shell, and a second draw from
-/// the CSPRNG costs nothing.
-///
-/// The settings tree is mutated in place and **not** saved: the caller owns the
-/// single atomic settings write, so one save commits every change it made.
-/// `provisioning.state` is deliberately left alone — declaring first boot
-/// finished belongs to the caller that ran every other first-boot step too.
-///
-/// Re-running this on a provisioned device is a no-op that returns
-/// [`Outcome::AlreadyPresent`]. An interrupted first boot leaves half an
-/// identity behind; the missing half is completed and the present half is left
-/// byte-identical. A present `password_hash` whose plaintext file is missing is
-/// *not* regenerated: the hash is the credential of record, and replacing it
-/// would invalidate a password the operator may already be holding.
+/// Generates only the parts that are absent: `provisioning.device_id` (16
+/// random bytes as lowercase hex); `access.device.password_hash` plus the
+/// plaintext device password at `<state_dir>/secrets/device-password`, bumping
+/// `access.device.generation`; and the AP PSK at `<state_dir>/secrets/ap-psk`.
+/// The two secrets are drawn independently — PLAN-008 Part D reads as though
+/// the AP PSK could be the device password again, but recovering the WiFi PSK
+/// would then also hand over the root shell, and a second CSPRNG draw costs
+/// nothing. The settings tree is mutated in place and not saved: the caller
+/// owns the single atomic write, and `provisioning.state` is left alone.
+/// Re-running on a provisioned device returns [`Outcome::AlreadyPresent`];
+/// after an interrupted first boot the missing half is completed and the
+/// present half left byte-identical, and a `password_hash` whose plaintext file
+/// is missing is not regenerated, the hash being the credential of record.
 ///
 /// # Errors
 ///

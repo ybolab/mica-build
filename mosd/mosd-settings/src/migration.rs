@@ -154,20 +154,18 @@ impl Migration for MigrateV1ToV2 {
 ///
 /// `up` stamps `schema_version = 3` and adds empty `provisioning` and `wifi`
 /// tables when absent. An existing `access` table is left untouched, so
-/// `access.webAdmin` survives verbatim; the v3-only keys inside it are supplied
-/// by the model's serde defaults on deserialization.
+/// `access.webAdmin` survives verbatim; the v3-only keys inside it come from
+/// the model's serde defaults on deserialization.
 ///
 /// `down` stamps `schema_version = 2`, removes `provisioning` and `wifi`, and
 /// removes `ssh`, `console` and `device` from `access` while keeping
-/// `access.webAdmin`. Rolling back to v2 therefore LOSES three things, all of
-/// them deliberately: the SSH policy, the console shell policy, and the device
-/// credential hash and its generation counter. v2 software has no reconciler
-/// for any of them, so keeping the keys would leave a document v2 cannot
-/// deserialize (`deny_unknown_fields`) while dropping them costs nothing v2
-/// could have acted on. A device rolled back to v2 falls back to that release's
-/// behaviour — sshd untouched, no console shell, and web admin as the only
-/// credential — and rolling forward again restores the v3 defaults, not the
-/// values that were there before the rollback.
+/// `access.webAdmin`. Rolling back to v2 therefore loses the SSH policy, the
+/// console shell policy, and the device credential hash and its generation
+/// counter, all deliberately: v2 software has no reconciler for any of them, so
+/// keeping the keys would leave a document v2 cannot deserialize
+/// (`deny_unknown_fields`) while dropping them costs nothing v2 could have
+/// acted on. Rolling forward again restores the v3 defaults, not the values
+/// that were there before the rollback.
 pub struct MigrateV2ToV3;
 
 impl Migration for MigrateV2ToV3 {
@@ -313,18 +311,14 @@ impl Migration for MigrateV4ToV5 {
 
     /// Remove the `container` subtree, discarding an `enabled = true`.
     ///
-    /// Discarding it is the correct trade and not a limitation, for the same
-    /// reason [`MigrateV3ToV4::down`] discards authorized keys and for one
-    /// more. v4 software has no `ContainerReconciler`, so a preserved `true`
-    /// would be a device whose settings tree claims containers are on while
-    /// nothing binds the Quadlet directory or starts a unit -- an operator
-    /// reading the tree would believe a capability is live that is not.
-    ///
-    /// The second reason is specific to this key: v4's `Settings` carries
-    /// `deny_unknown_fields`, so a leftover `container` table does not merely
-    /// mislead, it makes the whole document unloadable. A rollback that
-    /// bricked settings parsing would be a far worse outcome than a switch the
-    /// operator has to set again.
+    /// Discarding it is the correct trade, for the reason
+    /// [`MigrateV3ToV4::down`] discards authorized keys and for one more. v4
+    /// software has no `ContainerReconciler`, so a preserved `true` would be a
+    /// device whose settings tree claims containers are on while nothing binds
+    /// the Quadlet directory or starts a unit. And v4's `Settings` carries
+    /// `deny_unknown_fields`, so a leftover `container` table makes the whole
+    /// document unloadable; a rollback that bricked settings parsing is far
+    /// worse than a switch the operator has to set again.
     ///
     /// A document with no `container` table is left untouched.
     fn down(&self, doc: &mut toml::Table) -> Result<(), SettingsError> {
@@ -376,17 +370,13 @@ impl Migration for MigrateV5ToV6 {
     ///
     /// Discarding it is the correct trade, for the two reasons
     /// [`MigrateV4ToV5::down`] gives for the container switch. v5 software has
-    /// no `MqttReconciler`: a preserved `true` would be a settings tree
-    /// announcing that MQTT is on while nothing on the device starts a broker
-    /// or a bridge unit, so the one place an operator would look to find out
-    /// would be the one place telling them the wrong thing.
-    ///
-    /// The second reason is the harder one. v5's `Settings` carries
-    /// `deny_unknown_fields`, so a leftover `mqtt` table does not merely
-    /// mislead -- it makes the whole document fail to deserialize, taking the
-    /// hostname, the network configuration and the admin credential down with
-    /// it. A rollback that bricked settings parsing would be far worse than a
-    /// switch the operator sets again after rolling forward.
+    /// no `MqttReconciler`, so a preserved `true` would be a settings tree
+    /// announcing that MQTT is on while nothing starts a broker or bridge unit.
+    /// And v5's `Settings` carries `deny_unknown_fields`, so a leftover `mqtt`
+    /// table does not merely mislead — it makes the whole document fail to
+    /// deserialize, taking the hostname, the network configuration and the
+    /// admin credential with it. A rollback that bricked settings parsing is
+    /// far worse than a switch the operator sets again.
     ///
     /// A document with no `mqtt` table is left untouched.
     fn down(&self, doc: &mut toml::Table) -> Result<(), SettingsError> {

@@ -1,20 +1,17 @@
-//! Shared systemd unit control: the operations a reconciler needs to converge
-//! a named unit's runtime state.
+//! Shared systemd unit control: the operations a reconciler needs to converge a
+//! named unit's runtime state. Deliberately unit-name-generic — the sshd
+//! reconciler drives `ssh.service` through it and the WiFi client and AP
+//! reconcilers drive `wpa_supplicant@…` and `hostapd` through the same trait.
 //!
-//! Deliberately unit-name-generic. The sshd reconciler drives `ssh.service`
-//! through it; the WiFi client and AP reconcilers drive `wpa_supplicant@…`
-//! and `hostapd` through the same trait. Nothing service-specific belongs
-//! here.
-//!
-//! **Enablement is runtime-scoped.** `EnableUnitFiles` with `runtime = false`
+//! Enablement is runtime-scoped. `EnableUnitFiles` with `runtime = false`
 //! writes symlinks under `/etc/systemd/system`, which the v2 read-only root
 //! does not offer: `/etc` lives on the dm-verity squashfs and only
 //! `/etc/ssh/sshd_config.d` is bind-mounted writable from STATE. Runtime scope
-//! writes to `/run/systemd/system` instead, which always works, and mosd
-//! reconciles the whole settings tree on every start — so the unit is brought
-//! back to its configured state each boot without needing a persisted symlink.
-//! `stop` is therefore the authoritative disablement at runtime, and `disable`
-//! keeps `systemctl is-enabled` honest for the current boot.
+//! writes to `/run/systemd/system`, which always works, and mosd reconciles the
+//! whole settings tree on every start, so the unit returns to its configured
+//! state each boot without a persisted symlink. `stop` is the authoritative
+//! disablement at runtime; `disable` keeps `systemctl is-enabled` honest for
+//! the current boot.
 
 use anyhow::Result;
 
@@ -92,25 +89,20 @@ pub trait UnitControl: Send + Sync {
     /// notably when the unit file has no `ExecReload`.
     async fn reload(&self, unit: &str) -> Result<()>;
 
-    /// Clear `unit`'s failed state, and with it the start rate limit that a
+    /// Clear `unit`'s failed state, and with it the start rate limit a
     /// repeatedly-failing unit accumulates.
     ///
-    /// The equivalent of `systemctl reset-failed <unit>`. It exists for the
-    /// START LIMIT and not for cosmetics. Once a unit exceeds its
-    /// `StartLimitBurst` within `StartLimitIntervalSec`, systemd does not
-    /// merely stop restarting it -- it REFUSES every further start job, from
-    /// any caller, until the window elapses or the failure is reset. A
-    /// reconciler that converges by reading [`UnitControl::active_state`] and
-    /// starting whatever is not active sees `failed`, issues the start, and
-    /// has it refused; the operator's fix then takes effect neither now nor
-    /// when they next save, but only once the window has expired AND
-    /// something happens to trigger another apply. Resetting first is what
-    /// makes "I fixed the setting and saved" mean the unit comes back up on
-    /// that apply.
-    ///
-    /// A no-op on a unit that is not failed, exactly as `systemctl
-    /// reset-failed` is. Callers still read the state first, so the call log
-    /// says which unit was actually in trouble.
+    /// The equivalent of `systemctl reset-failed <unit>`, and it exists for the
+    /// start limit rather than for cosmetics. Once a unit exceeds its
+    /// `StartLimitBurst` within `StartLimitIntervalSec`, systemd refuses every
+    /// further start job, from any caller, until the window elapses or the
+    /// failure is reset. A reconciler that converges by reading
+    /// [`UnitControl::active_state`] and starting whatever is not active sees
+    /// `failed`, issues the start and has it refused, so the operator's fix
+    /// would take effect only once the window expired and something triggered
+    /// another apply. A no-op on a unit that is not failed, as `systemctl
+    /// reset-failed` is; callers still read the state first, so the call log
+    /// says which unit was in trouble.
     ///
     /// # Errors
     ///

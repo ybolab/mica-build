@@ -8,20 +8,15 @@
 //! | `com.mos.<class>[.<suffix>]` | system | `com.mos.sensor.abc123` | `sensor` |
 //! | `com.mos.ext.<class>[.<suffix>]` | extension | `com.mos.ext.sensor.abc123` | `sensor` |
 //!
-//! So the class is the **third** dotted component of a system name and the
-//! **fourth** of an extension name. A reader that takes the third component
-//! unconditionally publishes `com.mos.ext.sensor.abc123` under the class
-//! `ext`. The MQTT bridge and mosd's service registry both have to make that
-//! distinction, so it lives here once, depended on rather than restated.
-//!
-//! The bare namespace `com.mos.ext` is a case of its own: extension origin
-//! with **no class**. It is measurably ownable by an unprivileged uid, so
-//! calling it system-origin would be origin spoofing, and it has no fourth
-//! component, so there is no class to invent. [`parse`] has the measurement
-//! and the reasoning.
-//!
-//! The rule is string parsing and this crate has **zero dependencies** on
-//! purpose, so that depending on it commits a consumer to nothing else.
+//! So the class is the third dotted component of a system name and the fourth
+//! of an extension name; a reader that takes the third unconditionally
+//! publishes `com.mos.ext.sensor.abc123` under the class `ext`. The MQTT bridge
+//! and mosd's service registry both need that distinction, so it lives here
+//! once. The bare namespace `com.mos.ext` is extension origin with no class —
+//! measurably ownable by an unprivileged uid, so calling it system-origin would
+//! be origin spoofing, and it has no fourth component to name; [`parse`]
+//! carries the measurement. This crate has zero dependencies on purpose, so
+//! depending on it commits a consumer to nothing else.
 
 #![forbid(unsafe_code)]
 
@@ -88,47 +83,34 @@ pub struct BusName<'a> {
     pub suffix: Option<&'a str>,
 }
 
-/// Parse `bus_name` under both grammars, or `None` when this grammar yields
-/// no class for it.
+/// Parse `bus_name` under both grammars, or `None` when this grammar yields no
+/// class for it.
 ///
-/// A `None` return is "not one of ours", and covers three things: a name
-/// outside `com.mos.` entirely, a name with nothing after `com.mos.`, and a
-/// name with an empty dotted component (`com.mos.sensor.`) — a D-Bus bus name
-/// has no empty components, so that is malformed rather than a `sensor`
-/// carrying an empty suffix, and a caller should not have to tell those apart
-/// for itself. Whenever this returns `Some`, `class` and `suffix` are
-/// non-empty wherever they are present.
+/// A `None` return is "not one of ours": a name outside `com.mos.` entirely, a
+/// name with nothing after `com.mos.`, and a name with an empty dotted
+/// component (`com.mos.sensor.`) — a D-Bus bus name has no empty components, so
+/// that is malformed rather than a `sensor` with an empty suffix. Whenever this
+/// returns `Some`, `class` and `suffix` are non-empty wherever they are
+/// present.
 ///
-/// # `com.mos.ext` is extension origin with no class
+/// `com.mos.ext` is extension origin with no class: it parses to
+/// `Origin::Extension` with `class: None`, not to `Origin::System` and not to
+/// `None`. An unprivileged uid can own the bare name, because
+/// `own_prefix="com.mos.ext"` matches the bare prefix itself, so the extension
+/// grant governs it and the default `<deny own="*"/>` does not. That is
+/// measured, not reasoned — `docs/task/RFCT-093.md` §"Investigation —
+/// `own_prefix` semantics (measured 2026-08-22)" against dbus-daemon 1.12.20,
+/// asserted by `mosd/hack/dbus-policy-test.sh` section 4, where uid 65534
+/// requesting the bare name is OWNED. Calling it system-origin would let an
+/// unprivileged third party present itself to operators, the dashboard and the
+/// MQTT bridge as the system. A bare `None` would discard one of the two true
+/// things about the name, and there is no fourth component to invent a class
+/// from.
 ///
-/// The bare namespace parses to `Origin::Extension` with `class: None` — not
-/// to `Origin::System`, and not to a `None` return.
-///
-/// - **Not `Origin::System`.** An unprivileged uid can own this name:
-///   `own_prefix="com.mos.ext"` matches the bare prefix itself, so the
-///   extension grant governs it and the default `<deny own="*"/>` does not.
-///   That is measured, not reasoned — `docs/task/RFCT-093.md` §"Investigation
-///   — `own_prefix` semantics (measured 2026-08-22)" against dbus-daemon
-///   1.12.20, asserted by `mosd/hack/dbus-policy-test.sh` section 4, where an
-///   unprivileged uid (65534) requesting the bare name is OWNED. Calling it
-///   system-origin would let any unprivileged third party present itself to
-///   operators, to the dashboard and to the MQTT bridge **as the system**.
-///   That is origin spoofing.
-/// - **Not a bare `None` either**, because there are two true things to say
-///   about this name and a `None` discards one of them. That it is *in the
-///   extension namespace* is the measured fact above — the same measurement
-///   shows the default deny refusing `com.mos.other`, so only the grant makes
-///   anything here ownable. That it has *no class* is the second. The type
-///   says both.
-/// - **And no invented class.** There is no fourth component; manufacturing
-///   one — `ext`, or an empty segment — would put a service on the bridge
-///   under a class nobody chose.
-///
-/// The MQTT bridge and mosd's service registry both read this rule, and
-/// `class: None` decides it for them once: the bridge refuses to address a
-/// service it cannot name a class for, and the registry's conformance gap
-/// falls out of the type instead of being re-derived from the prefix by hand.
-/// Recording that gap is the registry's job and not this crate's.
+/// The MQTT bridge and mosd's service registry both read this rule: the bridge
+/// refuses to address a service it cannot name a class for, and the registry's
+/// conformance gap falls out of the type rather than being re-derived from the
+/// prefix. Recording that gap is the registry's job, not this crate's.
 ///
 /// ```
 /// use mos_busname::{Origin, parse};
