@@ -60,10 +60,15 @@ done
 usage() {
     cat <<'USAGE'
 usage: bash os/build/run.sh [--help] [bun-test-args...]
+       bash os/build/run.sh --mkimage-v2 [assembler-args...]
 
 Installs the dev dependencies if they are missing, typechecks src/, then runs
 the suite. Any extra arguments are passed to `bun test` (a filename filter, for
 example). Every step must pass; nothing here skips.
+
+With --mkimage-v2 FIRST, it assembles the cx3576 image instead -- the
+TypeScript port of os/mkimage-v2.sh (PLAN-014 M6b). Its remaining arguments are
+the assembler's own; try --mkimage-v2 --help.
 
 The suite drives the real external toolset -- sgdisk, mtools, dd, mkimage,
 veritysetup, e2fsprogs and rauc. Each of those runs on the host when the host
@@ -79,9 +84,24 @@ environment:
 USAGE
 }
 
+# --mkimage-v2 is a MODE, not a filter, so it is recognised only in first
+# position -- os/verify/run.sh's rule, for the reason it records: anywhere else
+# the flag would be forwarded to `bun test`, which ignores an unknown option,
+# runs the whole suite and exits 0. A request to assemble an image would be
+# answered by a green suite about something else entirely.
+MODE=suite
 case "${1:-}" in
 --help | -h) usage; exit 0 ;;
+--mkimage-v2) MODE=mkimage-v2; shift ;;
 esac
+
+for arg in "$@"; do
+    case "${arg}" in --mkimage-v2) ;; *) continue ;; esac
+    echo "error: --mkimage-v2 has to be the FIRST argument; here it came after '$1'." >&2
+    echo "       Anywhere else it would be forwarded to \`bun test\`, which ignores it and reports" >&2
+    echo "       a green suite in answer to a request to assemble an image." >&2
+    exit 1
+done
 
 # --- how bun is invoked, and the only place in this package that decides ------
 ROUTE=host
@@ -259,6 +279,19 @@ fi
 # against each other rather than each against its own copy of the truth.
 echo "os/build: typecheck"
 run_bun run typecheck
+
+# --- the assembler -----------------------------------------------------------
+# No vacuity guard here, and it needs none: this mode produces a FILE, and
+# src/mkimage-v2.ts reads the loader back out of it before it will rename it into
+# place. There is no shape of "ran and asserted nothing" available -- the failure
+# mode a count guards against elsewhere is a suite that declared no tests, and
+# this declares no tests at all.
+if [ "${MODE}" = mkimage-v2 ]; then
+    echo "os/build: assembling the cx3576 image"
+    rc=0
+    run_bun run src/mkimage-v2-cli.ts "$@" || rc=$?
+    exit "${rc}"
+fi
 
 # --- the suite, and the guard against a run that asserted nothing ------------
 OUT="$(mktemp)"
