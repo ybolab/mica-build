@@ -7,30 +7,24 @@
 // device-mapper, no mount(8). The port keeps that toolset exactly, so this
 // file is about where the tools come from rather than which ones they are.
 //
-// Two routes, one seam. A caller passes an argv and reads an exit status and
-// cannot tell which route answered, which is what makes a host without gptfdisk
-// a supported host rather than a documented limitation. The container is the
-// pinned IMAGE_ALPINE_3_21 -- the same key os/mkimage-v2.sh assembles from and
-// the shell verifier re-execs into, resolved through the one resolver,
-// os/build-env/from.sh --ref. A key rather than a literal at both ends is the
-// point: this reads back a GPT, a FAT slot and a squashfs the assembler wrote,
-// with tools out of the same base, and two floating tags could drift apart
-// between the write and the read.
+// Two routes, one seam: a caller passes an argv and reads an exit status and
+// cannot tell which answered, which makes a host without gptfdisk a supported
+// host. The container is the pinned IMAGE_ALPINE_3_21 -- the same key
+// os/mkimage-v2.sh assembles from and the shell verifier re-execs into, resolved
+// through os/build-env/from.sh --ref -- so this reads back a GPT, a FAT slot and
+// a squashfs with tools out of the same base the assembler used.
 //
-// One container per runtime, not one per call. `docker run` costs ~200 ms and
-// `apk add` costs seconds; the shell verifier pays both once by re-execing its
-// whole self inside, and a port making one container per tool call would pay
-// them per call across hundreds of calls. So the container is created once,
-// prepared once, and every call is a `docker exec` into it. dispose() removes
-// it, and so does an exit handler, because a leaked container holding a
-// read-only mount of the repository is a mess a later run inherits.
+// One container per runtime, not one per call: `docker run` costs ~200 ms and
+// `apk add` costs seconds, and the port makes hundreds of calls. The container
+// is created once, prepared once, and every call is a `docker exec` into it.
+// dispose() removes it, and so does an exit handler, because a leaked container
+// holding a read-only mount of the repository is a mess a later run inherits.
 //
 // A tool that fails is not an empty string. The shell verifier ends nearly every
 // capture in `|| true`, so a tool that could not run arrives at the check as ""
 // and the check fails describing the value rather than the tool. Here a non-zero
 // exit throws ToolError naming the tool, the argv, the status and the stderr,
-// and a caller that means to tolerate a status says so with `allow`. The check
-// decides what a failure means; the helper never decides it by silence.
+// and a caller that means to tolerate a status says so with `allow`.
 
 import { existsSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'

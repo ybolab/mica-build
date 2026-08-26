@@ -1,36 +1,31 @@
 // The board-definition schema lint.
 //
-// A board is defined by its layout file and the shared build and verification
-// scripts read that definition rather than knowing any board's shape, which only
-// holds if the definition is complete and honest. So both directions are
-// checked: every key a role requires is present, and no key a role does not use
-// is present. The second is the one that has fired. os/boards/x64/board.env
-// declared BOOT_ATTEMPTS_DEFAULT=3 under a comment asserting grub keeps attempt
-// counters "where U-Boot keeps them in its redundant environment; the CONTRACT
-// is identical". It does not: RAUC's grub backend has no attempt counter and
-// refuses a configuration that sets one, so the image built, shipped, booted,
-// and rauc.service exited 1 with "Configuring boot attempts is valid for uboot
-// or barebox only", taking the health gate and the status indicator with it.
+// Shared build and verification scripts read a board's layout file rather than
+// knowing its shape, which only holds if the definition is complete and honest.
+// So both directions are checked: every key a role requires is present, and no
+// key a role does not use is present. The second is the one that has fired --
+// os/boards/x64/board.env declared BOOT_ATTEMPTS_DEFAULT=3 under a comment
+// asserting grub keeps attempt counters "where U-Boot keeps them in its
+// redundant environment; the CONTRACT is identical". It does not: RAUC's grub
+// backend refuses a configuration that sets boot attempts, and rauc.service
+// exited 1 with "Configuring boot attempts is valid for uboot or barebox only",
+// taking the health gate and the status indicator with it.
 //
-// The predecessor, os/verify/lint.sh, `source`d each definition in a subshell
-// and read every key as `${NAME_KEY:-}`, an idiom that cannot tell declared
-// empty from not declared. Four holes measured on 2026-08-25 come from exactly
-// that: `ROOTFS_A_FS_UUID=""` passed as a forbidden key on a forbidden role
-// where the non-empty spelling was rejected, because `[ -z "${val}" ] &&
-// continue` skipped it; `BOOT_ATTEMPTS_DEFAULT=""` on the grub board passed by
-// the same route; `LAYOUT_PARTITIONS=" "` passed, reporting "0 partitions,
-// numbered 1..0, no gaps and no duplicates" and emitting a pass that satisfied
-// the vacuity guard; and a board declaring no MOS_ARCH passed when MOS_ARCH was
-// exported in the caller's environment, because `source` reads the process
-// environment. The last is closed one layer down -- board-env.ts parses instead
-// of sourcing and never consults process.env -- and the first three here, by
-// asking `declared()`, which answers presence without consulting the value.
+// The predecessor, os/verify/lint.sh, `source`d each definition and read every
+// key as `${NAME_KEY:-}`, which cannot tell declared empty from not declared.
+// Four holes measured 2026-08-25: `ROOTFS_A_FS_UUID=""` passed as a forbidden
+// key on a forbidden role where the non-empty spelling was rejected, because
+// `[ -z "${val}" ] && continue` skipped it; `BOOT_ATTEMPTS_DEFAULT=""` on the
+// grub board passed the same way; `LAYOUT_PARTITIONS=" "` passed, reporting "0
+// partitions, numbered 1..0, no gaps and no duplicates" and emitting a pass that
+// satisfied the vacuity guard; and a board declaring no MOS_ARCH passed when
+// MOS_ARCH was exported in the caller's environment. The last is closed one
+// layer down by board-env.ts parsing instead of sourcing; the first three here,
+// by asking `declared()`, which answers presence without consulting the value.
 //
-// That makes this stricter than its predecessor, deliberately: emptiness is
-// never taken as absence, because on these boards emptiness is a statement --
-// x64 declares BOARD_FIRMWARE_FILES="" and BOARD_HWINIT_CONFS="" on purpose,
-// a QEMU machine having no radio firmware and no MAC to burn. The messages are
-// the product: absent and empty get different sentences even where they share a
+// Emptiness is never taken as absence, because on these boards emptiness is a
+// statement: x64 declares BOARD_FIRMWARE_FILES="" and BOARD_HWINIT_CONFS="" on
+// purpose. And absent and empty get different sentences even where they share a
 // verdict, because "declares no ESP_FAT_VOLUME_ID" about a file containing
 // `ESP_FAT_VOLUME_ID=""` sends a reader looking for a line already there.
 
