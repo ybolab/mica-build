@@ -449,7 +449,12 @@ if [ -n "${BUILDX_BUILDER:-}" ]; then
     echo "note: using the builder BUILDX_BUILDER names (${BUILDX_BUILDER}); os/verify checks that it can chain"
 else
     BUILDER_ARGS=(--builder default)
-    if ! docker buildx inspect default 2>/dev/null | grep -q "${DOCKER_PLATFORM}"; then
+    # `grep -c ... >/dev/null`, not `grep -q`: this file sets pipefail, and a
+    # -q grep exits as soon as it matches, so the producer dies of SIGPIPE and
+    # the pipeline reports failure exactly when the platform IS present. The
+    # line this replaced used the -c form for the same reason;
+    # os/tests/shell-pipefail-lint.sh caught the regression.
+    if ! docker buildx inspect default 2>/dev/null | grep -c "${DOCKER_PLATFORM}" >/dev/null; then
         echo "error: the 'default' buildx builder cannot reach ${DOCKER_PLATFORM}." >&2
         echo "       Its platforms are: $(docker buildx inspect default 2>/dev/null | sed -n 's/^Platforms:[[:space:]]*//p')" >&2
         echo "       Install ${MOS_ARCH} emulation on the host:" >&2

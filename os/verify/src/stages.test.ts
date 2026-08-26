@@ -7,7 +7,7 @@
 // checker stops being able to notice.
 
 import { describe, expect, test } from 'bun:test'
-import { mkdtempSync, writeFileSync, mkdirSync } from 'node:fs'
+import { mkdtempSync, writeFileSync, mkdirSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
@@ -32,10 +32,16 @@ import { parseArgs, parseDriver, driverCanChain } from './stages-cli.ts'
 // (os/verify/run.sh records the measurement), so a fixture there is invisible to
 // the container route and the same test would pass on one route and fail on the
 // other for a reason that has nothing to do with what it asserts.
+const FIXTURE_ROOT = join(STAGES_DIR, '..', '..', '..', '_out', 'stage-fixtures')
+// Cleared once per run rather than per fixture: each scratch() is a mkdtemp, so
+// without this the directory grows by ~25 every `bun test` and nothing ever
+// removes them. Cleared at load rather than in an afterAll so a run that dies
+// mid-suite still leaves exactly one run's worth to look at.
+rmSync(FIXTURE_ROOT, { recursive: true, force: true })
+
 function scratch(files: Record<string, string>): string {
-  const root = join(STAGES_DIR, '..', '..', '..', '_out', 'stage-fixtures')
-  mkdirSync(root, { recursive: true })
-  const dir = mkdtempSync(join(root, 'chain-'))
+  mkdirSync(FIXTURE_ROOT, { recursive: true })
+  const dir = mkdtempSync(join(FIXTURE_ROOT, 'chain-'))
   for (const [name, body] of Object.entries(files)) writeFileSync(join(dir, name), body)
   return dir
 }
