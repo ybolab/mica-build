@@ -49,11 +49,13 @@ import {
 import { BOARD_CHECKS } from './checks-board.ts'
 import { FSTAB_CHECKS } from './checks-fstab.ts'
 import { GPT_CHECKS } from './checks-gpt.ts'
+import { MQTT_CHECKS } from './checks-mqtt.ts'
 import { RAUC_CHECKS } from './checks-rauc.ts'
 import { ROOT_CHECKS } from './checks-root.ts'
+import { SHADOW_CHECKS } from './checks-shadow.ts'
 import { SLOT_CHECKS } from './checks-slots.ts'
 import { ToolOutputError, type ToolRuntime } from './tools.ts'
-import type { CheckResult, RegisteredCheck, Verdict } from './parity.ts'
+import { matcherAlternatives, type CheckResult, type RegisteredCheck, type Verdict } from './parity.ts'
 
 export type { CheckResult, Verdict }
 
@@ -117,6 +119,8 @@ export const CHECKS: readonly CheckCase[] = [
   ...ROOT_CHECKS,
   ...FSTAB_CHECKS,
   ...BOARD_CHECKS,
+  ...MQTT_CHECKS,
+  ...SHADOW_CHECKS,
 ]
 
 /**
@@ -138,18 +142,21 @@ export function assertRegisterWellFormed(checks: readonly CheckCase[] = CHECKS):
       throw new ToolOutputError(`two checks are registered as '${c.id}'.`)
     }
     seen.add(c.id)
-    if (c.shell.pass !== undefined && c.shell.pass.trim() === '') {
+    const alternatives = [c.shell.pass, c.shell.fail, c.shell.skip].flatMap(m => matcherAlternatives(m))
+    if (alternatives.some(m => m.trim() === '')) {
       throw new ToolOutputError(
-        `check '${c.id}' registers an empty PASS matcher. An empty substring is contained in every `
-        + `line, so it would claim the FIRST shell conclusion of the run and compare this check's `
-        + `verdict against something unrelated.`,
+        `check '${c.id}' registers an EMPTY matcher. An empty substring is contained in every line, `
+        + `so it would claim the FIRST shell conclusion of the run and compare this check's verdict `
+        + `against something unrelated.`,
       )
     }
     // The other half of making `pass` optional (M4d): a check that registers NO
     // matcher at all claims no line on any board, comes out `unfired`, and reads
     // exactly like a check whose matcher stopped matching. `pass` may be omitted
     // only by an entry that owns a SKIP instead -- never by one that owns nothing.
-    if (c.shell.pass === undefined && c.shell.fail === undefined && c.shell.skip === undefined) {
+    // An EMPTY LIST is the same fault wearing a different shape, which is why
+    // this counts alternatives rather than asking whether the fields are set.
+    if (alternatives.length === 0) {
       throw new ToolOutputError(
         `check '${c.id}' registers no matcher at all -- no pass, no fail, no skip. It could never `
         + `claim a shell conclusion, so it would report 'unfired' on every board, which is the same `

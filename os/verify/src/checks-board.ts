@@ -946,17 +946,22 @@ const LED_CHECKS: readonly CheckCase[] = [
     // unclaimed conclusion and two orphans for an image that is simply missing
     // the unit.
     //
-    // The FAIL matcher is `indicator`, swept on 2026-08-26 against every
-    // pass/fail string in the oracle: it appears in check_status_led's own
-    // conclusions and in two SKIP lines, and a skip is never matched by a fail
-    // matcher. The two SKIPs belong to families this file registers separately.
+    // The FAIL matcher is a LIST, and this check is why `Matcher` grew one:
+    // the three failure sentences share no substring that is not also in some
+    // other check's line. `mos-status-led.service ` is in the overlay family's
+    // failures too, `indicator` is in two SKIPs, and anything shorter reaches
+    // further still. Three exact spellings claim exactly these three lines.
     id: 'status-led-ordering',
     boards: boardsWhere(hasLed),
     cardinality: 'many',
     instance: /(reports ready before the slot is confirmed|turns blue on a slot whose health gate failed|is not in the image)/,
     shell: {
       pass: 'catches an indicator that ',
-      fail: 'indicator',
+      fail: [
+        "catches an indicator that reports ready before the slot is confirmed: mos-status-led.service has no 'After=",
+        "catches an indicator that turns blue on a slot whose health gate failed: mos-status-led.service has no 'Requires=",
+        'declares BOARD_HAS_STATUS_LED=1 but',
+      ],
     },
     run: async (ctx): Promise<readonly CheckResult[]> => {
       const root = await packedRoot(ctx)

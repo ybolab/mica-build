@@ -48,10 +48,11 @@ function checkNamed(id: string): CheckCase {
  */
 function passMatcher(id: string): string {
   const m = checkNamed(id).shell.pass
-  if (m === undefined) {
+  if (typeof m !== 'string') {
     throw new Error(
-      `'${id}' registers no pass matcher. Since M4d that is legal only for a check that owns a SKIP `
-      + `line and nothing else, and this one is compared against a PASS line.`,
+      `'${id}' registers no single-string pass matcher. Since M4d a matcher may be absent -- for a `
+      + `check that owns a SKIP line and nothing else -- or a LIST of alternative spellings. This `
+      + `check is compared against one PASS line and should register one substring.`,
     )
   }
   return m
