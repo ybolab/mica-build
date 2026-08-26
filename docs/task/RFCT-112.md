@@ -1,9 +1,10 @@
 # RFCT-112 PLAN-014 M6: the assemblers ported to TS under the byte-identity gate
 
-- **status**: pending
+- **status**: in progress
 - **priority**: P1
-- **owner**: -
+- **owner**: ai-agent
 - **createdAt**: 2026-08-25 10:50
+- **claimedAt**: 2026-08-25 21:42
 - **plan**: PLAN-014 (M6)
 
 Port `mkimage-v2.sh` (cx3576), `mkimage-x64.sh`, `bundle.sh` and build

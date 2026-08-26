@@ -15,7 +15,7 @@ BOARDS := cx3576 x64
 	os-image-cx3576-v2 os-verify-cx3576-v2 os-bundle-cx3576 os-devkeys os-health-test podman \
 	os-shadow-test os-dbus-policy-test os-repart-test os-ui-location-test \
 	os-uboot-handshake-test os-mkimage-v2-test os-mkimage-x64-test \
-	os-layout-lint os-layout-lint-test os-verify-test os-verify-parity \
+	os-layout-lint os-layout-lint-test os-verify-test os-verify-parity os-build-test \
 	docs-verify docs-verify-test build-env
 
 help:
@@ -38,6 +38,7 @@ help:
 	@echo "  os-layout-lint-test prove the layout linter rejects a broken board definition, including one declared empty"
 	@echo "  os-verify-test      run the os/verify bun+TypeScript suite (typecheck + bun test)"
 	@echo "  os-verify-parity    diff the TypeScript image verifier against os/verify-image-v2.sh, per check, both boards (docker)"
+	@echo "  os-build-test       run the os/build bun+TypeScript suite: board geometry and the toolset wrappers (docker)"
 	@echo "  docs-verify         assert both document indexes agree with the tree, in both directions"
 	@echo "  docs-verify-test    prove the index assertions actually fail on a duplicated row or entry"
 	@echo "  podman              build the container engine from source into os/podman/out-\$$MOS_ARCH"
@@ -299,6 +300,18 @@ os-verify-test:
 # refusal for why this one mode cannot take the pinned bun container.
 os-verify-parity:
 	bash os/verify/run.sh --parity
+
+# PLAN-014 M6a: the TypeScript build driver -- the typed board geometry the
+# assemblers will read, and the Bun.$ wrappers for the toolset they will drive.
+#
+# It needs DOCKER, which os-verify-test does not: the suite runs sgdisk, mtools,
+# mkimage, veritysetup, e2fsprogs and rauc for real, and this host has none of
+# the first four. Each runs on the host where the host has it and in the image
+# pinned for its toolset otherwise -- the same rule os/mkimage-v2.sh's
+# host_can_assemble() applies, one level down. Nothing is skipped: a tool
+# reachable neither way is a failure, not a gap.
+os-build-test:
+	bash os/build/run.sh
 
 # Every shell script that enables pipefail, checked for an early-exiting reader
 # on the right of a pipe. `producer | grep -q PATTERN` inverts its own answer
