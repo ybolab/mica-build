@@ -61,7 +61,7 @@ import {
   ext4Super,
   type Ext4Super,
 } from './image.ts'
-import { walkLayout } from './layout.ts'
+import { imageLayout } from './image-layout.ts'
 import type { CheckResult } from './parity.ts'
 import { ToolError, ToolOutputError } from './tools.ts'
 import { eqCi, verdict } from './verdict.ts'
@@ -94,30 +94,13 @@ async function tierRange(
   ctx: ImageContext,
   layoutName: string,
 ): Promise<{ offset: number, length: number, startMib: number, sizeMib: number }> {
-  const board = ctx.board
-  const mibBytes = board.mibBytes
-  const sectorSize = board.sectorSize
-  if (mibBytes === undefined || sectorSize === undefined || sectorSize <= 0) {
-    throw new ToolOutputError(`${board.path} must declare SECTOR_SIZE and MIB_BYTES as positive integers.`)
-  }
-  const sectorsPerMib = Math.floor(mibBytes / sectorSize)
-  const gpt = await ctx.gpt()
-  const partnum = Number(board.partition('ROOTFS_A')?.get('PARTNUM') ?? Number.NaN)
-  const slotSectors = gpt.partition(partnum)?.sizeSectors ?? 0
-  const walk = walkLayout(board, slotSectors)
-  const row = walk.row(layoutName)
-  if (row === undefined) {
-    throw new ToolOutputError(
-      `${board.path} lists no ${layoutName} in LAYOUT_PARTITIONS, so this family has no offset to `
-      + `read it at. Defaulted to 0 it would read the image's own GPT as a filesystem.`,
-    )
-  }
   // `PART_START_MIB_${name}=$((row_start / SECTORS_PER_MIB))` (:1516), and then
   // `dd bs=1M skip=... count=...`. Both units are MiB in the oracle, so both
   // are MiB here and the multiplication back to bytes happens once.
-  const startMib = Math.floor(row.startSector / sectorsPerMib)
-  const sizeMib = Math.floor(row.sizeSectors / sectorsPerMib)
-  return { offset: startMib * mibBytes, length: sizeMib * mibBytes, startMib, sizeMib }
+  const layout = await imageLayout(ctx)
+  const startMib = layout.startMib(layoutName)
+  const sizeMib = layout.sizeMib(layoutName)
+  return { offset: startMib * layout.mibBytes, length: sizeMib * layout.mibBytes, startMib, sizeMib }
 }
 
 /**

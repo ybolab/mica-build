@@ -63,6 +63,7 @@
 import { existsSync, readdirSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import type { Board } from './board.ts'
+import { PER_SLOT, SLOTS, slotOffsetBytes } from './boot-slots.ts'
 import { boardsWhere, hasFirmware, hasHwinit, hasLed, hasRadio, isUBoot, SHIPPED } from './board-scope.ts'
 import { entry, ETC_UNITS, packedRoot, wantsLink } from './checks-root.ts'
 import type { CheckCase, ImageContext } from './checks.ts'
@@ -343,24 +344,6 @@ function loaderSkipMessage(board: Board): string {
 // what a boot slot must contain -- os/verify-image-v2.sh:1839-1845, 1864-1874
 // ---------------------------------------------------------------------------
 
-/** The two slots, by the display names the oracle's messages use (:1963). */
-const SLOTS = [
-  { display: 'BOOT-A', layout: 'BOOT_A', letter: 'a' },
-  { display: 'BOOT-B', layout: 'BOOT_B', letter: 'b' },
-] as const
-
-const PER_SLOT = /^(BOOT-[AB])/
-
-function slotOffsetBytes(board: Board, layoutName: string): number {
-  const raw = board.partition(layoutName)?.get('OFFSET_BYTES')
-  if (raw === undefined || !/^\d+$/.test(raw.trim())) {
-    throw new ToolOutputError(
-      `${board.path} declares no usable ${layoutName}_OFFSET_BYTES (got '${raw ?? ''}'). Defaulted to `
-      + `0 this would list the image's own GPT as a FAT directory.`,
-    )
-  }
-  return Number(raw.trim())
-}
 
 /**
  * One `one` check per (board, slot, required file).
