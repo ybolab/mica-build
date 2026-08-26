@@ -3,37 +3,28 @@
 // Four conclusions per board -- the default path being the `-latest` symlink,
 // the partition count, and the capability pair.
 //
-// `exactly ${EXPECT_PARTS} partitions` is one entry per board.
+// `exactly ${EXPECT_PARTS} partitions` is one entry per board. A single entry
+// cannot carry it: ` partitions` claims three conclusions on cx3576 and three on
+// x64, `exactly ` claims thirteen and eight, and the only distinguishing token
+// left is the count, a per-board number. So each board gets its own entry
+// generated from its own declaration, the way the ELF architecture does:
+// `exactly 11 partitions` and `exactly 9 partitions` are derivations from
+// `LAYOUT_PARTITIONS`, the same list the oracle counts, in the sense that
+// `BOOT-A contains Image` is a derivation from BOOT_SLOT_REQUIRED_FILES. A third
+// board in os/boards/ gets its own entry with its own count, unedited here.
 //
-// A single entry cannot carry it: ` partitions` claims three conclusions on
-// cx3576 and three on x64, `exactly ` claims thirteen and eight, and the only
-// distinguishing token left is the COUNT -- which is a per-board number, so a
-// single `EXPECT_PARTS` would be one board's answer written into a check both
-// boards run.
-//
-// So each board gets its own entry, generated from its own declaration, the
-// same way the ELF architecture does. `exactly 11 partitions`
-// and `exactly 9 partitions` are derivations from `LAYOUT_PARTITIONS` -- the
-// same list the oracle counts -- and not literals, in the same sense that
-// `BOOT-A contains Image` is a derivation from BOOT_SLOT_REQUIRED_FILES. A
-// third board dropped into os/boards/ gets its own entry with its own count and
-// nothing here is edited.
-//
-// The capability pair, and a vacuous PASS it carries.
-//
-// The oracle establishes that the environment can OBSERVE a capability before
-// it compares any inventory, because an empty capability set and a container
-// that silently drops security.* xattrs are the same observation (:4255). That
-// probe is honest and it is ported as it stands.
-//
-// What it does not cover: `getcap -r DIR` on a directory that is not there
-// exits 0 and prints `DIR (No such file or directory)` on STDERR -- measured
-// 2026-08-26 in the pinned alpine. :4283's `2>/dev/null` discards it, so the
-// packed inventory comes out EMPTY, and on these two images the source
-// inventory is empty too -- so the comparison passes, about a root nothing
-// read. Reproduced here (the getcap binding returns what it printed on stdout
-// and nothing else) and recorded for M4e; both shipped rootfs trees genuinely
-// carry no file capabilities, which the oracle's own message says out loud.
+// The capability pair carries a vacuous pass. The oracle establishes that the
+// environment can observe a capability before it compares any inventory, because
+// an empty capability set and a container that silently drops security.* xattrs
+// are the same observation (:4255); that probe is honest and is ported as it
+// stands. What it does not cover is that `getcap -r DIR` on a directory that is
+// not there exits 0 and prints `DIR (No such file or directory)` on stderr,
+// measured 2026-08-26 in the pinned alpine. :4283's `2>/dev/null` discards it,
+// so the packed inventory comes out empty, and on these two images the source
+// inventory is empty too, so the comparison passes about a root nothing read.
+// Reproduced here -- the getcap binding returns stdout and nothing else -- and
+// recorded for M4e; both shipped rootfs trees genuinely carry no file
+// capabilities, which the oracle's own message says out loud.
 
 import { existsSync, readFileSync, readlinkSync } from 'node:fs'
 import { join } from 'node:path'

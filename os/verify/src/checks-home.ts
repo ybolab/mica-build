@@ -6,34 +6,27 @@
 // `check_ext_unit_dir` (:3450, :613). One of the four is a SKIP on a board
 // with no Bluetooth controller.
 //
-// Why every one of these reads the tier and not a string.
+// Every one of these reads the tier and not a string: `/srv` is nowhere in this
+// file as the DATA path. The oracle reads the DATA mountpoint out of the fstab
+// row for DATA_GUID (:3934) so that a bind pointed at /mnt/state fails on the
+// tier rather than on a spelling -- STATE is 64 MiB of small precious identity
+// and a home directory is user data of unbounded size, so the two failures have
+// different repairs and only the tier distinguishes them. A check comparing
+// against the literal would pass an image whose fstab had moved DATA elsewhere.
 //
-// `/srv` is nowhere in this file as the DATA path. The oracle reads the DATA
-// mountpoint out of the fstab row for DATA_GUID (:3934) precisely so a bind
-// pointed at /mnt/state fails on the tier rather than on a spelling -- STATE is
-// 64 MiB of small precious identity and a home directory is user data of
-// unbounded size, so the two failures have different repairs and only the tier
-// distinguishes them. A check comparing against the literal would pass an image
-// whose fstab had moved DATA somewhere else.
-//
-// And why enablement is asserted separately every time.
-//
-// A mount unit that is present and not enabled leaves its target inside the
-// read-only squashfs for ever, and every check that only looked for the file
-// would still pass. M4 shipped units that were installed and never enabled;
-// that is the failure this shape exists for, and it is why each of these checks
-// has an "exists but is not enabled" branch of its own rather than folding
+// Enablement is asserted separately every time, because a mount unit that is
+// present and not enabled leaves its target inside the read-only squashfs for
+// ever while every check that only looked for the file still passes. So each
+// check has its own "exists but is not enabled" branch rather than folding
 // presence and enablement into one test.
 //
-// The seed scripts are read, not run.
-//
-// `mos-seed-home` and `mos-seed-root` are asserted by a STATIC read of eleven
-// lines of shell. There is no offline harness for either, so idempotence and
-// non-clobbering are read rather
-// than exercised -- and the port reproduces the read, including its exact
-// anchored patterns, rather than substituting a smarter one. A port that
-// understood the script better than the oracle does would diverge on the first
-// script the oracle misreads, and the divergence would be the port's.
+// The seed scripts are read, not run: `mos-seed-home` and `mos-seed-root` are
+// asserted by a static read of eleven lines of shell, because there is no
+// offline harness for either, so idempotence and non-clobbering are read rather
+// than exercised. The port reproduces that read, including its exact anchored
+// patterns, rather than substituting a smarter one -- a port that understood the
+// script better than the oracle does would diverge on the first script the
+// oracle misreads, and the divergence would be the port's.
 
 import { lstatSync, readFileSync, readdirSync, statSync } from 'node:fs'
 import { join } from 'node:path'
