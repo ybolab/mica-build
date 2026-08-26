@@ -2,6 +2,14 @@
 # Install one hardware-init oneshot per board fact, and assert the two sets match.
 #
 # Called from os/rootfs/stages/40-board.Dockerfile, where the reasoning lives.
+# Build arguments read from the environment: MOS_BOARD.
+#
+# MOS_BOARD reaches this script for its DIAGNOSTICS ONLY -- nothing below
+# branches on it. The units used to be COPYd from a fixed os/boards/cx3576/
+# path on every board and these messages named that path, so an x64 build that
+# tripped one was told to add a file under another board's directory. The
+# content now arrives staged in /tmp/hwinit from the board's own tree, and the
+# messages name the tree it came from.
 
 set -eu
 mkdir -p /etc/mos /usr/lib/mos /etc/systemd/system/multi-user.target.wants \
@@ -13,8 +21,8 @@ for c in /tmp/board-init/*.conf; do
     n="$(basename "$c" .conf)"
     declared=$((declared + 1))
     script="/tmp/hwinit/hwinit-$n"; unit="/tmp/hwinit/mos-$n.service"
-    [ -f "$script" ] || { echo "error: /etc/mos/$n.conf is a board fact that no hwinit script reads (there is no os/boards/cx3576/hwinit/hwinit-$n); a fact nothing consumes is a silent no-op on the device" >&2; exit 1; }
-    [ -f "$unit" ] || { echo "error: os/boards/cx3576/hwinit/hwinit-$n has no unit to run it (there is no os/boards/cx3576/hwinit/mos-$n.service)" >&2; exit 1; }
+    [ -f "$script" ] || { echo "error: /etc/mos/$n.conf is a board fact that no hwinit script reads (there is no os/boards/$MOS_BOARD/hwinit/hwinit-$n); a fact nothing consumes is a silent no-op on the device" >&2; exit 1; }
+    [ -f "$unit" ] || { echo "error: os/boards/$MOS_BOARD/hwinit/hwinit-$n has no unit to run it (there is no os/boards/$MOS_BOARD/hwinit/mos-$n.service)" >&2; exit 1; }
     install -m 0755 "$script" /usr/lib/mos/
     install -m 0644 "$unit" /usr/lib/systemd/system/
     ln -sf "/usr/lib/systemd/system/mos-$n.service" \
