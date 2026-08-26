@@ -81,6 +81,19 @@ describe('readStageFile', () => {
     expect(s.targets).toEqual(['closed', 'artifact'])
   })
 
+  test('reads a target whose FROM carries flags BEFORE the image', () => {
+    // The first version of FROM_AS allowed --platform only AFTER the image, so
+    // `FROM --platform=$BUILDPLATFORM ${X} AS pack` matched nothing and the
+    // pack target went unseen -- which is the real spelling of both multi-FROM
+    // stage files in this tree. Found by attributing the 34 scripts to their
+    // stages with the same expression and getting `closed` for every pack-*.sh.
+    const s = readStageFile(
+      '/x/90-p.Dockerfile',
+      `ARG ${PREV_ARG}\nFROM \${${PREV_ARG}} AS closed\nFROM --platform=$BUILDPLATFORM \${BOOKWORM} AS pack\nFROM scratch AS artifact\n`,
+    )
+    expect(s.targets).toEqual(['closed', 'pack', 'artifact'])
+  })
+
   test('the content hash changes with the content', () => {
     const a = readStageFile('/x/10-b.Dockerfile', FIRST)
     const b = readStageFile('/x/10-b.Dockerfile', `${FIRST}RUN false\n`)
@@ -415,6 +428,15 @@ describe('the chain this tree actually ships', () => {
   test('starts at 10-base and ends at 90-pack', () => {
     expect(stages[0]!.name).toBe('10-base')
     expect(stages[stages.length - 1]!.name).toBe('90-pack')
+  })
+
+  test('90-pack defines all three of its internal targets', () => {
+    const pack = stages.find((s) => s.name === '90-pack')!
+    expect(pack.targets).toEqual(['closed', 'pack', 'artifact'])
+  })
+
+  test('10-base defines the certs stage its trust anchors are COPIED from', () => {
+    expect(stages[0]!.targets).toEqual(['certs', 'rootfs'])
   })
 
   test('every stage but the first is linked, and only the first names a distro image', () => {

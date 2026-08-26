@@ -23,7 +23,8 @@
 # no grep, no awk, no cut. The first version of this script used `tr` to strip
 # quotes and failed with "tr: not found" after the kernel had already handed
 # over, which reads as a hang on a headless machine. Everything below is shell
-# parameter expansion for that reason; os/rootfs/Dockerfile.v2 asserts it.
+# parameter expansion for that reason; os/rootfs/scripts/kernel-and-initramfs.sh
+# asserts it.
 set -e
 PREREQ=""
 prereqs() { echo "$PREREQ"; }

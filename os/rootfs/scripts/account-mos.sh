@@ -1,7 +1,7 @@
 #!/bin/sh
 # Create the pinned mos operator account (uid/gid 1000) and assert its grant.
 #
-# Called from os/rootfs/Dockerfile.v2 (rootfs stage), where the reasoning lives.
+# Called from os/rootfs/stages/10-base.Dockerfile (rootfs stage), where the reasoning lives.
 
 set -eu
 test -x /bin/bash ||

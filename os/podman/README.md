@@ -19,7 +19,7 @@ make podman          # → os/podman/out/
 | `catatonit` | container init, for `--init` |
 
 **Staging these into the rootfs is not wired yet** (PLAN-012 M2).
-`os/rootfs/Dockerfile.v2` still installs the engine from apt; this directory
+`os/rootfs/` still installed the engine from apt when this was written; this directory
 builds a parallel set that nothing consumes. The unfinished part is not the
 compile — it is deciding what happens to the apt package's configuration,
 `containers-common` policy files and seven systemd units when its binaries are

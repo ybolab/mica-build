@@ -1,7 +1,7 @@
 #!/bin/sh
 # Assert the writable unit directory exists and is STATE-backed.
 #
-# Called from os/rootfs/Dockerfile.v2 (pack stage), where the reasoning lives.
+# Called from os/rootfs/stages/90-pack.Dockerfile (pack stage), where the reasoning lives.
 
 set -eu
 ext_dir=/usr/local/lib/systemd/system

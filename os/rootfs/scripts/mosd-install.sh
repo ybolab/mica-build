@@ -1,7 +1,7 @@
 #!/bin/sh
 # Install mosd, apid and the two MQTT units; enable the first two, leave MQTT off.
 #
-# Called from os/rootfs/Dockerfile.v2 (rootfs stage), where the reasoning lives.
+# Called from os/rootfs/stages/30-40-unsplit.Dockerfile, where the reasoning lives.
 # Build arguments read from the environment: WITH_MOSD.
 
 if [ "$WITH_MOSD" = "1" ] && [ -f /tmp/mosd/mosd ]; then

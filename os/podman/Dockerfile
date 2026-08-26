@@ -29,7 +29,7 @@
 # THE BUILDER IS TRIXIE, matching the image's base on purpose: the binaries
 # link against the same glibc, libseccomp and libsubid sonames the rootfs
 # carries, so "it linked here" and "it runs there" are the same claim. The
-# verify stage emits each binary's NEEDED list and os/rootfs/Dockerfile.v2
+# verify stage emits each binary's NEEDED list and os/rootfs/scripts/podman-assert.sh
 # checks it with ldd against the assembled root, rather than trusting it.
 #
 # CGO IS REQUIRED — podman's own Makefile says so ("Podman does not work w/o
@@ -234,7 +234,7 @@ RUN --mount=type=cache,target=/ccache,id=ccache-c \
 # EVERY container on the device. Found by booting x64 and starting one, after
 # the CA bundle let the image pull succeed.
 #
-# os/rootfs/Dockerfile.v2 already asserts libsystemd.so.0 is in the image
+# os/rootfs/scripts/podman-assert.sh already asserts libsystemd.so.0 is in the image
 # because podman DLOPENS it for journald logging. That check is about podman
 # and could not see this: conmon's dependency is decided at COMPILE time, in a
 # different build, by whether a header was present.
@@ -400,7 +400,7 @@ COPY --from=rust-build /out/ /out/
 COPY --from=go-build /out/ /out/
 # NEEDED.txt is EMITTED here, not checked here. Whether each soname resolves is
 # a question about the image these binaries are going into, and it is asked in
-# os/rootfs/Dockerfile.v2 with `ldd` against the assembled root -- the loader's
+# os/rootfs/scripts/podman-assert.sh with `ldd` against the assembled root -- the loader's
 # own answer, rather than a list compared to a list from a previous build.
 RUN set -eu; cd /out; \
     for b in podman quadlet crun conmon catatonit netavark aardvark-dns; do \

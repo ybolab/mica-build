@@ -6,7 +6,7 @@
 #
 # Same driver shape as os/podman/build.sh, and for the same reason: the
 # Dockerfile's last stage is FROM scratch and `-o` exports it, so nothing here
-# writes into a rootfs. os/rootfs/Dockerfile.v2 copies the result in.
+# writes into a rootfs. os/rootfs/scripts/rauc-install.sh copies the result in.
 #
 # WHY THE BUILD EXISTS AT ALL: os/update/rauc/versions.env.
 set -euo pipefail

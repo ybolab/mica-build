@@ -1,7 +1,7 @@
 #!/bin/sh
 # Install one hardware-init oneshot per board fact, and assert the two sets match.
 #
-# Called from os/rootfs/Dockerfile.v2 (rootfs stage), where the reasoning lives.
+# Called from os/rootfs/stages/30-40-unsplit.Dockerfile, where the reasoning lives.
 
 set -eu
 mkdir -p /etc/mos /usr/lib/mos /etc/systemd/system/multi-user.target.wants \

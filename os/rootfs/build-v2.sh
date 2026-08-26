@@ -420,20 +420,50 @@ else
         UENV_SIZE_HEX "$(printf '0x%x' "$UENV_SIZE_BYTES")"
 fi
 
-# If the current builder cannot run linux/arm64 (e.g. host binfmt registration
-# is unavailable), fall back to a docker-container builder: its buildkit image
-# bundles QEMU emulators and needs no host binfmt.
+# THE BUILDER IS NAMED, AND IT HAS TO BE A `docker` DRIVER ONE.
+#
+# Since RFCT-111 this is a CHAIN: os/rootfs/stages/ holds one Dockerfile per
+# stage, and every stage after the first opens `FROM ${MOS_STAGE_PREV}` -- a
+# local image tag the previous stage was written to. Resolving that needs a
+# builder whose driver can read the docker image store, and only the `docker`
+# driver can. Measured on this host: a docker-container builder handed a tag
+# that IS in the store answered "pull access denied, repository does not
+# exist", about a registry, for an image that is right there.
+#
+# So the builder is chosen explicitly rather than inherited. `default` is the
+# docker driver on every docker installation; BUILDX_BUILDER still wins,
+# because a caller who names a builder has made a decision, and the driver
+# checks whatever it is handed and refuses by name.
+#
+# WHAT THIS COSTS, and it is a real loss stated rather than absorbed. What
+# stood here created a docker-container builder when the current one could not
+# reach the target platform -- its buildkit image bundles QEMU, so an amd64
+# host could build cx3576's arm64 with no host binfmt at all, and
+# .gitea/workflows/privileged.yml relies on exactly that. That route cannot
+# carry a chain. A cross build now needs host binfmt_misc, and this says so
+# with the command rather than failing later inside buildkit.
+# Empty means "whatever docker considers current", which is what BUILDX_BUILDER
+# sets; the driver inspects that and refuses it by name if it cannot chain.
 BUILDER_ARGS=()
-if [ -z "${BUILDX_BUILDER:-}" ] && ! docker buildx inspect 2>/dev/null | grep -c "${DOCKER_PLATFORM}" >/dev/null; then
-    echo "note: current builder lacks ${DOCKER_PLATFORM}; using docker-container builder 'mos-${MOS_ARCH}'"
-    docker buildx inspect "mos-${MOS_ARCH}" >/dev/null 2>&1 || \
-        docker buildx create --name "mos-${MOS_ARCH}" --driver docker-container >/dev/null
-    BUILDER_ARGS=(--builder "mos-${MOS_ARCH}")
+if [ -n "${BUILDX_BUILDER:-}" ]; then
+    echo "note: using the builder BUILDX_BUILDER names (${BUILDX_BUILDER}); os/verify checks that it can chain"
+else
+    BUILDER_ARGS=(--builder default)
+    if ! docker buildx inspect default 2>/dev/null | grep -q "${DOCKER_PLATFORM}"; then
+        echo "error: the 'default' buildx builder cannot reach ${DOCKER_PLATFORM}." >&2
+        echo "       Its platforms are: $(docker buildx inspect default 2>/dev/null | sed -n 's/^Platforms:[[:space:]]*//p')" >&2
+        echo "       Install ${MOS_ARCH} emulation on the host:" >&2
+        echo "         docker run --privileged --rm tonistiigi/binfmt --install ${MOS_ARCH}" >&2
+        echo "       A docker-container builder would bundle QEMU and would ALSO not work here: the" >&2
+        echo "       stage chain resolves FROM against the local image store, which that driver" >&2
+        echo "       cannot read. os/rootfs/stages/README.md records the measurement." >&2
+        exit 1
+    fi
 fi
 
 log=$(mktemp)
 trap 'rm -f "$log"' EXIT
-# The two base images of Dockerfile.v2, resolved out of os/build-env/images.env
+# The two base images of the chain, resolved out of os/build-env/images.env
 # before a forty-minute build starts rather than at the FROM line that consumes
 # them. NO --arch: both are IMAGE_ keys, which images.env pins as MULTI-
 # ARCHITECTURE index digests precisely so that a cross build picks the right
@@ -450,29 +480,44 @@ if [ "${#FROM_ARGS[@]}" -ne 4 ]; then
     exit 1
 fi
 
-if ! docker buildx build \
-        "${BUILDER_ARGS[@]}" \
+# from.sh yields `--build-arg KEY=VALUE` pairs; the driver takes `--arg KEY=VALUE`.
+# Rewritten here rather than teaching from.sh a second output shape: it has one
+# caller that wants docker's spelling and one that does not, and a resolver that
+# formats for whoever asks is a resolver two callers have to agree with.
+DRIVER_FROM_ARGS=()
+for a in "${FROM_ARGS[@]}"; do
+    case "$a" in --build-arg) DRIVER_FROM_ARGS+=(--arg) ;; *) DRIVER_FROM_ARGS+=("$a") ;; esac
+done
+
+# THE CHAIN, not one Dockerfile. os/verify/run.sh --build-rootfs sequences
+# os/rootfs/stages/*.Dockerfile in numeric order, tagging each and handing it to
+# the next; everything above this line -- the staged context, the layout checks,
+# the verity parameters -- is unchanged and is still this script's job. The
+# driver decides only the order, the tags and which argument reaches which file,
+# and it refuses an argument no stage declares rather than letting docker warn
+# about it. See os/rootfs/stages/README.md.
+if ! bash "$REPO_ROOT/os/verify/run.sh" --build-rootfs \
+        --board "$MOS_BOARD" \
         --platform "$DOCKER_PLATFORM" \
-        -f "$SCRIPT_DIR/Dockerfile.v2" \
-        "${FROM_ARGS[@]}" \
-        --build-arg MOS_ARCH="$MOS_ARCH" \
-        --build-arg RAUC_BOOTLOADER="$RAUC_BOOTLOADER" \
-        --build-arg BOARD_RADIOS="$BOARD_RADIOS" \
-        --build-arg MODULES_TAR="_out/$MOS_BOARD/modules.tar" \
-        --build-arg MOSD_DIR="_out/$MOS_BOARD/mosd" \
-        --build-arg PODMAN_DIR="_out/$MOS_BOARD/podman" \
-        --build-arg RAUC_DIR="_out/$MOS_BOARD/rauc" \
-        --build-arg BOARD_INIT_DIR="_out/$MOS_BOARD/init" \
-        --build-arg OVERLAY_DIR="_out/$MOS_BOARD/overlay-v2" \
-        --build-arg WITH_MOSD="$WITH_MOSD" \
-        --build-arg WITH_CONTAINERS="$WITH_CONTAINERS" \
-        --build-arg MOS_PROFILE="$MOS_PROFILE" \
-        --build-arg VERITY_SALT="$VERITY_SALT" \
-        --build-arg VERITY_UUID="$VERITY_UUID" \
-        --build-arg SQUASHFS_TIME="$SQUASHFS_TIME" \
-        --target artifact \
-        --output "type=local,dest=$OUT_DIR" \
-        "$REPO_ROOT" 2>&1 | tee "$log"; then
+        --context "$REPO_ROOT" \
+        --dest "$OUT_DIR" \
+        ${BUILDER_ARGS[@]+"${BUILDER_ARGS[@]}"} \
+        "${DRIVER_FROM_ARGS[@]}" \
+        --arg MOS_ARCH="$MOS_ARCH" \
+        --arg RAUC_BOOTLOADER="$RAUC_BOOTLOADER" \
+        --arg BOARD_RADIOS="$BOARD_RADIOS" \
+        --arg MODULES_TAR="_out/$MOS_BOARD/modules.tar" \
+        --arg MOSD_DIR="_out/$MOS_BOARD/mosd" \
+        --arg PODMAN_DIR="_out/$MOS_BOARD/podman" \
+        --arg RAUC_DIR="_out/$MOS_BOARD/rauc" \
+        --arg BOARD_INIT_DIR="_out/$MOS_BOARD/init" \
+        --arg OVERLAY_DIR="_out/$MOS_BOARD/overlay-v2" \
+        --arg WITH_MOSD="$WITH_MOSD" \
+        --arg WITH_CONTAINERS="$WITH_CONTAINERS" \
+        --arg MOS_PROFILE="$MOS_PROFILE" \
+        --arg VERITY_SALT="$VERITY_SALT" \
+        --arg VERITY_UUID="$VERITY_UUID" \
+        --arg SQUASHFS_TIME="$SQUASHFS_TIME" 2>&1 | tee "$log"; then
     if grep -qi 'exec format error' "$log"; then
         echo >&2
         echo "hint: ${MOS_ARCH} emulation is missing on this host. Install it with:" >&2

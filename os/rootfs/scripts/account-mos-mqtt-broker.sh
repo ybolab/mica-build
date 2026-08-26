@@ -1,7 +1,7 @@
 #!/bin/sh
 # Create the pinned mos-mqtt-broker service account (uid/gid 969).
 #
-# Called from os/rootfs/Dockerfile.v2 (rootfs stage), where the reasoning lives.
+# Called from os/rootfs/stages/30-40-unsplit.Dockerfile, where the reasoning lives.
 
 set -eu
 if awk -F: '$3 == 969 || $1 == "mos-mqtt-broker"' /etc/passwd | grep -q .; then

@@ -7,7 +7,7 @@
 #                                        NEEDED.txt, SHA256SUMS}
 #
 # Same shape as os/podman/Dockerfile: builder stages, then a scratch stage that
-# `-o` exports. Nothing here installs into a rootfs; os/rootfs/Dockerfile.v2
+# `-o` exports. Nothing here installs into a rootfs; os/rootfs/scripts/rauc-install.sh
 # copies the output in.
 #
 # WHY: see os/update/rauc/versions.env. Short version -- Debian builds rauc with
@@ -138,7 +138,7 @@ RUN set -eu; \
 # activates to nothing.
 #
 # Every file the image needs, present. A `rauc` with no unit and no D-Bus
-# policy is the split-package failure os/rootfs/Dockerfile.v2 already records
+# policy is the split-package failure os/rootfs/stages/10-base.Dockerfile already records
 # at the top of its package list: the CLI proxies every command over the bus,
 # so without these it answers "the name de.pengutronix.rauc was not provided by
 # any .service files" and the health gate silently no-ops.

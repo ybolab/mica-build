@@ -77,7 +77,12 @@ const ARG_LINE = /^\s*ARG\s+([A-Za-z_][A-Za-z0-9_]*)/i
 // only: `FROM $MOS_STAGE_PREV` also expands, but one spelling in one place is
 // the difference between a check and a guess about which spellings exist.
 const FROM_PREV = new RegExp(`^\\s*FROM\\s+(?:--\\S+\\s+)*\\$\\{${PREV_ARG}\\}(?:\\s|$)`, 'i')
-const FROM_AS = /^\s*FROM\s+\S+(?:\s+--\S+)*(?:\s+AS\s+([A-Za-z0-9._-]+))?\s*$/i
+// `FROM x AS y`, with the flags where docker actually puts them -- BEFORE the
+// image, not after. The first version of this pattern allowed them only after,
+// so `FROM --platform=$BUILDPLATFORM ${IMAGE} AS pack` matched nothing and the
+// pack target went unseen. It was caught by attributing the 34 scripts to their
+// stages with the same expression and getting `closed` for every pack-*.sh.
+const FROM_AS = /^\s*FROM\s+(?:--\S+\s+)*\S+(?:\s+AS\s+([A-Za-z0-9._-]+))?\s*$/i
 
 /**
  * Read one stage file. Parsing only -- what makes a chain valid is auditChain.

@@ -2,7 +2,7 @@
 # The tree edits that cannot happen in the rootfs stage: resolv.conf, identity
 # files, and /var moved aside to become an empty mountpoint.
 #
-# Called from os/rootfs/Dockerfile.v2 (pack stage), where the reasoning lives.
+# Called from os/rootfs/stages/90-pack.Dockerfile (pack stage), where the reasoning lives.
 
 mkdir -p /out &&
 mv /rootfs/rootfs-report.txt /out/rootfs-report-v2.txt &&

@@ -1,7 +1,7 @@
 #!/bin/sh
 # Append the dm-verity hash tree, pad to a whole MiB, and write the parameters out.
 #
-# Called from os/rootfs/Dockerfile.v2 (pack stage), where the reasoning lives.
+# Called from os/rootfs/stages/90-pack.Dockerfile (pack stage), where the reasoning lives.
 # Build arguments read from the environment: VERITY_SALT, VERITY_UUID, VERITY_HASH_ALGO, VERITY_DATA_BLOCK_SIZE,
 #   VERITY_HASH_BLOCK_SIZE.
 

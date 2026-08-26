@@ -1,7 +1,7 @@
 #!/bin/sh
 # Write the image's default DHCP network, enable networkd/resolved, leave sshd off.
 #
-# Called from os/rootfs/Dockerfile.v2 (rootfs stage), where the reasoning lives.
+# Called from os/rootfs/stages/20-install.Dockerfile, where the reasoning lives.
 
 printf '%s\n' \
     '[Match]' \

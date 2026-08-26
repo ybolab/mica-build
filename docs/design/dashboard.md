@@ -1841,7 +1841,7 @@ settings and state trees directly instead of over D-Bus.
 | **One systemd unit** | `mosd/dist/apid.service`, 13 lines, plus its enablement symlink and the four verifier assertions that pin it (`os/verify-image-v2.sh:922-929`) |
 | **One StateDirectory** | `/var/lib/mos/apid` (`apid.service:10`, default at `config.rs:38-40`), holding `cert.pem`, `key.pem`, `session.key` (`tls.rs:48-49`, `:85-86`). Note it does not disappear — it moves, and on already-deployed devices it has to be migrated or orphaned (7.4) |
 | **One settings parse** | **This saving does not exist.** `apid` never reads `settings.toml`: grepping `mosd/apid/src/` for `settings.toml`, `DEFAULT_PATH` and `mosd-settings` returns nothing, and `mosd/apid/Cargo.toml:11-28` does not depend on `mosd-settings`. `apid`'s entire configuration is four environment variables (`config.rs:33-45`). Recorded because it was offered as a saving and is not one |
-| **One crate and one binary in the image** | `mosd/apid/src/` is **2301 lines across 9 files**, of which `tests.rs` is 591 and `routes.rs` is 916, plus 359 lines of `tests/e2e.rs`. `mosd/mosd/src/` is **7401 lines**. The image drops one ELF at `/usr/bin/apid` (installed by `os/rootfs/Dockerfile.v2:282-288`); **binary size not measured** — no `cargo` was run |
+| **One crate and one binary in the image** | `mosd/apid/src/` is **2301 lines across 9 files**, of which `tests.rs` is 591 and `routes.rs` is 916, plus 359 lines of `tests/e2e.rs`. `mosd/mosd/src/` is **7401 lines**. The image drops one ELF at `/usr/bin/apid` (installed by `os/rootfs/scripts/mosd-install.sh`); **binary size not measured** — no `cargo` was run |
 
 **The dependency graph moves rather than shrinks.** `mosd/mosd/Cargo.toml:11-23`
 declares 12 dependencies; `mosd/apid/Cargo.toml:11-28` declares 16. The
@@ -2100,7 +2100,7 @@ does.** `apid` does two unusual things: it reads `/proc/uptime`
 | `RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6` | **yes** | `AF_UNIX` for `/run/dbus/system_bus_socket`, the two INET families for the listeners |
 | `ProtectHome=`, `ProtectKernelTunables=`, `ProtectKernelModules=`, `ProtectControlGroups=`, `RestrictSUIDSGID=`, `SystemCallFilter=@system-service` | **expected yes** | Nothing in `mosd/apid/src/` touches any of these surfaces; **not tested** |
 | `MemoryDenyWriteExecute=yes` | **expected yes, verify** | `rustls`/`ring` are ahead-of-time compiled with no JIT, but this is the directive most likely to break something subtly. **[inference; not tested]** |
-| `DynamicUser=yes` | **not recommended** | It gives the StateDirectory a private path and an unstable uid, and `/var/lib/mos` is a bind mount from the STATE partition that must survive A/B updates (`os/rootfs/overlay-v2/etc/systemd/system/var-lib-mos.mount:3`, `:10`). A static system user created in the rootfs is the right shape; creating it is rootfs work (`os/rootfs/Dockerfile.v2`), outside the crate |
+| `DynamicUser=yes` | **not recommended** | It gives the StateDirectory a private path and an unstable uid, and `/var/lib/mos` is a bind mount from the STATE partition that must survive A/B updates (`os/rootfs/overlay-v2/etc/systemd/system/var-lib-mos.mount:3`, `:10`). A static system user created in the rootfs is the right shape; creating it is rootfs work (`os/rootfs/scripts/account-mos.sh`), outside the crate |
 
 **(d) The concrete security gain nothing else provides.** Today root-`apid` can
 open `/var/lib/mos/secrets/device-password` and `.../ap-psk` — mode `0600` in a
@@ -2788,7 +2788,7 @@ it. Under options 2 and 3 it is live, so it is costed here.
 | **D-Bus policy** | **zero cost today** — `mosd/dist/com.mos.mosd.conf` does not contain the string `webd` (verified: `grep -c webd` returns 0). It is a ~~12-line~~ **73-line** file whose only identity is `root` — see the staleness note below | **But under option 2 the policy gains a `user="<webd user>"` rule (6.3.2), at which point this becomes a rename surface.** Ordering matters |
 | **Image verifier assertions** | v2: `os/verify-image-v2.sh:922-929` — four assertions plus `sq_enabled webd.service`; and `:1184-1200`, the health-probe block that names `webd` in both its `pass` and `fail` strings. v1: `os/verify-image.sh:603-628` — seven assertions on the binary, the ELF architecture, two unit lines and the enablement symlink | Two verifiers when measured; **one since RFCT-107 deleted the v1 chain** |
 | **`StateDirectory` and deployed data** | `mosd/dist/webd.service:10` (`StateDirectory=mos/webd`); default `WEBD_STATE_DIR=/var/lib/mos/webd` at `mosd/webd/src/config.rs:38-40`; documented at `mosd/webd/src/main.rs:12-13` | See 7.4.2 — this is the only item with a cost on **already-deployed** devices |
-| **Image / build wiring** | `os/rootfs/build-v2.sh:73-74` and `os/rootfs/build.sh:39-40` (stage the binary and the unit); `os/rootfs/Dockerfile.v2:282-288` (install binary, unit and enablement symlink) and `:377`; `os/rootfs/Dockerfile:211-217` and `:289`. **The `build.sh` / `Dockerfile` half is gone since RFCT-107** | **The `Makefile` is not affected**: `grep -c webd Makefile` returns 0. Its 70 lines only route to the scripts above. Recorded because it is commonly assumed otherwise |
+| **Image / build wiring** | `os/rootfs/build-v2.sh:73-74` and `os/rootfs/build.sh:39-40` (stage the binary and the unit); `os/rootfs/scripts/mosd-install.sh` (install binary, unit and enablement symlink); `os/rootfs/Dockerfile:211-217` and `:289`. **The `build.sh` / `Dockerfile` half is gone since RFCT-107** | **The `Makefile` is not affected**: `grep -c webd Makefile` returns 0. Its 70 lines only route to the scripts above. Recorded because it is commonly assumed otherwise |
 | **Health gate** | `os/rootfs/overlay-v2/usr/lib/mos/mos-health:162-181` (probe c: `unit_present webd.service`, `https://127.0.0.1/healthz`); and `os/tests/health-test.sh` | One file since RFCT-111 collapsed the `os/health/` duplicate into the overlay copy |
 | **Settings schema** | **No persisted key changes.** The only `webd` strings under `mosd/mosd-settings/` are doc comments — `src/model.rs:51`, `:65` and `src/migration.rs:121`, `:126` (*"v1 -> v2: adds the webd-owned `access` subtree"*). No serde rename, no key, no TOML field. **So a rename needs no settings migration** | The single most reassuring finding here |
 | **Docs** | 54 files, **of which 10 are `*.zh.md`**: `docs/architecture.zh.md`, `docs/README.zh.md`, `docs/design/{access,boards,display,mosd,provisioning,remote-management}.zh.md`, `docs/research/{init-strategy,os-comparison}.zh.md` | The Chinese copies are translations that will silently contradict the English after a rename. They are outside this campaign's scope and were not edited |
@@ -3021,7 +3021,7 @@ instead, this phase is replaced by the merge plus the four conditions listed at
 the end of 6.6.
 
 **Scope.**
-1. A static system user created in the rootfs (`os/rootfs/Dockerfile.v2`), a
+1. A static system user created in the rootfs (`os/rootfs/scripts/account-mos.sh`), a
    rewritten `mosd/dist/apid.service` carrying `User=`,
    `AmbientCapabilities=CAP_NET_BIND_SERVICE`, a matching
    `CapabilityBoundingSet=`, and the sandboxing set of 6.3.1c.

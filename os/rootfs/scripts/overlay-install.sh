@@ -1,7 +1,7 @@
 #!/bin/sh
 # Copy the rendered overlay in, set every mode explicitly, and wire the units.
 #
-# Called from os/rootfs/Dockerfile.v2 (rootfs stage), where the reasoning lives.
+# Called from os/rootfs/stages/20-install.Dockerfile, where the reasoning lives.
 
 cp -a /tmp/overlay/. / &&
 rm -rf /tmp/overlay &&

@@ -522,7 +522,7 @@ now, so each statement names where it lives:
 
 M3 shipped the crate, the unit file and fourteen protocol tests, and shipped
 them nowhere: nothing installed `mos-mqttd` into the image. The wiring is
-`os/rootfs/build-v2.sh` (staging), `os/rootfs/Dockerfile.v2` (install and
+`os/rootfs/build-v2.sh` (staging), `os/rootfs/scripts/mosd-install.sh` (install and
 enable) and `mosd/hack/build-aarch64.sh` (cross-build), and it is asserted by
 `check_mqttd` in `os/verify-image-v2.sh`, driven offline by
 `os/tests/ui-location-test.sh`. Three properties are worth stating here rather than
@@ -530,7 +530,7 @@ leaving in the unit, because each was a defect the wiring exposed and none of
 them is visible from the code side.
 
 - **[implemented]** The bridge runs as the **static system account
-  `mos-mqttd`** (uid/gid pinned to 990 in `os/rootfs/Dockerfile.v2`), not
+  `mos-mqttd`** (uid/gid pinned to 990 in `os/rootfs/scripts/account-mos-mqttd.sh`), not
   under `DynamicUser=yes` as M3's unit did. `com.mos.mosd` is a root-only bus
   name, so a non-root bridge needs an explicit grant, and `<policy user=>`
   resolves its user when dbus-daemon reads the file at startup — before any
@@ -585,13 +585,13 @@ against a broker that was not in the image. RFCT-104 put one there and gave the
 pair a switch.
 
 - **[implemented]** A broker **is** in the image: `/usr/bin/mos-mqtt-broker`,
-  installed by `os/rootfs/Dockerfile.v2` from `mosd/broker/`, which is rumqttd
+  installed by `os/rootfs/scripts/mosd-install.sh` from `mosd/broker/`, which is rumqttd
   0.20 used as a **library** with `default-features = false`. It runs as the
   static system account `mos-mqtt-broker` (uid = gid = 969, created in the same
   Dockerfile), for the reason the bridge's account is static but not the same
   one: the broker reads a credentials file on STATE, and a uid allocated at
   start names nobody on the next boot.
-- **[implemented]** It ships **inert**. `os/rootfs/Dockerfile.v2` installs
+- **[implemented]** It ships **inert**. `os/rootfs/scripts/mosd-install.sh` installs
   `mos-mqtt-broker.service` and deliberately does not create the
   `multi-user.target.wants` symlink, so nothing starts it at boot;
   `mosd/broker/dist/mos-mqtt-broker.service` keeps its `[Install]` section
