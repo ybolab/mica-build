@@ -131,6 +131,38 @@ Applied to the OCI side alone and then reverted: a single mode bit
 comparison red and each went silent again on revert. Without the capability
 mutation that row was an empty file compared with an empty file.
 
+#### The recipe, so the numbers can be re-taken rather than trusted
+
+Neither side of the comparison is readable on this host — there is no
+`unsquashfs` and no `getcap` worth relying on — so both run in the pinned
+`IMAGE_ALPINE_3_21` with `os/verify/src/tools.ts`'s package list, which is what
+makes a difference a difference in the trees rather than in two versions of
+`squashfs-tools`.
+
+```sh
+# 1. the two trees, from one build's output
+head -c "$(sed -n 's/^SQUASHFS_BYTES=//p' _out/x64/rootfs-verity.env)" \
+    _out/x64/rootfs-verity.img > sq.squashfs          # drop the verity tail and the MiB padding
+unsquashfs -n -xattrs -d sq sq.squashfs
+tar -xf _out/x64/factory-root.oci -C blobs            # the one blob that is a tar is the layer
+tar -xpf blobs/blobs/sha256/<layer> -C ocix --numeric-owner --xattrs --xattrs-include='*'
+
+# 2. the four comparisons, both sides walked the SAME way
+#    (two tools' listing formats differ, and a normalisation is somewhere for a
+#     difference to be lost)
+find . -mindepth 1 -printf '%M %U %G %P\n' | LC_ALL=C sort      # metadata
+diff -r --no-dereference sq ocix                                # content
+getcap -r . | LC_ALL=C sort                                      # capabilities
+find . -type f -links +1 -printf '%n %P\n' | LC_ALL=C sort      # hardlinks
+
+# 3. and then break each one, on the OCI side only, and put it back
+chmod 0700 ocix/usr/bin/rauc      # …chown :42, mv, dd one byte, setcap, rm+cp a hardlink
+```
+
+The entry count differs by one from `unsquashfs -lln`'s, and that is the whole
+of the difference between 9,240 and M5's 9,241: `-mindepth 1` excludes the root
+directory and `unsquashfs` lists `squashfs-root` itself.
+
 ### Adding the export changed nothing that ships — measured
 
 Built `--target artifact` from the pre-M7 `90-pack` and from this one against
@@ -145,6 +177,33 @@ starts `FROM`, and the header comments it adds are comments.
 alongside `unpack`, which is what `--load` does. So the export cannot both
 reproduce and land straight in the image store; it reproduces, and
 `docker load -i _out/<board>/factory-root.oci` is the reader's step.
+
+### arm64: the export needs no emulation; building the root still does
+
+RFCT-113 says the export happens "arm64 via the same binfmt/qemu-user path the
+rootfs build already uses". Measured, the export needs **no** such path, and
+that is worth separating from the part that does.
+
+`factory-root` is `FROM scratch` on TARGETPLATFORM fed by a `COPY` from a
+BUILDPLATFORM stage. Nothing in it executes anything from the root, so nothing
+in it needs an emulator. On this amd64 host — `/proc/sys/fs/binfmt_misc` not
+mounted, `Platforms: linux/amd64, /v2, /v3, /v4` and nothing else —
+`--platform linux/arm64` through that same two-stage shape, over a real arm64
+Debian tree as a **named fabricated stand-in** for the packed root, produced an
+`{"architecture":"arm64","os":"linux"}` OCI image carrying
+`ELF 64-bit LSB pie executable, ARM aarch64` binaries, twice, cold, with the
+same digest `70578a85abc5cbc4cc285fb8c02dce0b5444d4f4fd62ea00e09e11bb7686c0b3`.
+
+**What that does not show.** The cx3576 root itself was not built here and
+therefore was not exported: `MOS_BOARD=cx3576 bash os/update/rauc/build.sh`
+stops at *"the 'default' buildx builder does not offer linux/arm64 on this
+host"* before the chain is reached at all, and the BSP `modules.tar` is absent
+too. Nothing above says anything about cx3576's content, its size, or whether
+anything in it runs — `docker run` on the fabricated arm64 image gives
+`exec /bin/sh: exec format error` on this host, which is the same wall the smoke
+run itself will meet. What is established is that the export **mechanism** and
+the driver arm are board-independent; the cx3576 numbers are owed by a host with
+arm64 emulation.
 
 ## Why these numbers
 
