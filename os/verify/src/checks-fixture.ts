@@ -329,6 +329,7 @@ function seedHealthyRoot(root: string, board: Board): void {
 
   seedDbus(root, file)
   seedEngine(root, board, file)
+  seedHomes(root, board, file)
   seedShadow(root, file)
   seedMqtt(root, file)
   seedBoardShape(root, board, file)
@@ -432,6 +433,85 @@ function seedEngine(root: string, board: Board, file: WriteFile): void {
   file('/etc/ssl/certs/ca-certificates.crt',
     `${Array.from({ length: PURGE_THRESHOLD }, (_v, i) =>
       `-----BEGIN CERTIFICATE-----\ncert${i}\n-----END CERTIFICATE-----`).join('\n')}\n`)
+}
+
+// ---------------------------------------------------------------------------
+// M4f: /home, /root, the mos account, and the STATE binds
+// ---------------------------------------------------------------------------
+
+/**
+ * The two persistent homes, their seeds, and the binds that keep precious state
+ * off the discardable /var.
+ *
+ * The seed SCRIPTS are seeded in the shape the checks read them, which is a
+ * static read of a handful of anchored lines -- `mkdir /srv/root`,
+ * `chmod 0700 /srv/root`, `chown 0:0 /srv/root` at the start of a line and
+ * nothing else. That is deliberately the oracle's own reading rather than a
+ * plausible script: the check greps for those exact lines, so a fixture written
+ * to be realistic instead of to be READ would pass for the wrong reason.
+ *
+ * `/root` is chmod-ed and chown-ed because the mountpoint's own mode is asserted
+ * -- Debian ships it 0700 root:root and nothing guaranteed it stayed that way
+ * through the pack stage, and DATA is not verity-protected, so the mode is not
+ * implied by anything.
+ */
+function seedHomes(root: string, board: Board, file: WriteFile): void {
+  file('/bin/bash')
+
+  // /root's own mode, which is a separate fact from its existence.
+  chmodSync(join(root, '/root'), 0o700)
+  ownAsRoot(root, '/root', 0)
+
+  const mount = (unit: string, what: string, where: string): void => {
+    file(`/etc/systemd/system/${unit}`,
+      `[Mount]\nWhat=${what}\nWhere=${where}\nType=none\nOptions=bind\n[Install]\nWantedBy=local-fs.target\n`)
+    enableEtcUnit(root, unit, 'local-fs.target.wants')
+  }
+  mount('home.mount', '/srv/home', '/home')
+  mount('root.mount', '/srv/root', '/root')
+  mount('usr-local-lib-systemd-system.mount', '/mnt/state/systemd-units', '/usr/local/lib/systemd/system')
+  // var-lib-mos.mount is written by seedMqtt (the bridge's EnvironmentFile lives
+  // on it); enabling it is this family's business, and a unit installed and not
+  // enabled is precisely the failure both families exist to catch.
+  enableEtcUnit(root, 'var-lib-mos.mount', 'local-fs.target.wants')
+  if ((board.radios ?? []).includes('bluetooth')) {
+    mount('var-lib-bluetooth.mount', '/mnt/state/bluetooth', '/var/lib/bluetooth')
+  }
+
+  for (const [unit, before] of [
+    ['mos-seed-home.service', 'home.mount'],
+    ['mos-seed-root.service', 'root.mount'],
+  ] as const) {
+    file(`/etc/systemd/system/${unit}`,
+      `[Unit]\nBefore=${before}\n[Service]\nType=oneshot\nExecStart=/usr/lib/mos/${unit.replace('.service', '')}\n`)
+    enableEtcUnit(root, unit, 'local-fs.target.wants')
+  }
+
+  file('/usr/lib/mos/mos-seed-home',
+    '#!/bin/sh\n'
+    + '# The pair is PINNED, not resolved: the home on DATA outlives this rootfs.\n'
+    + 'MOS_UID=1000\n'
+    + 'MOS_GID=1000\n'
+    + '[ -d /srv/home/mos ] && exit 0\n'
+    + 'mkdir /srv/home/mos\n'
+    + 'chmod 0700 /srv/home/mos\n'
+    + 'chown "${MOS_UID}:${MOS_GID}" /srv/home/mos\n')
+
+  file('/usr/lib/mos/mos-seed-root',
+    '#!/bin/sh\n'
+    + '# Everything here is under /srv: /root before the bind is the verity root.\n'
+    + '[ -d /srv/root ] && exit 0\n'
+    + 'mkdir /srv/root\n'
+    + 'chmod 0700 /srv/root\n'
+    + 'chown 0:0 /srv/root\n')
+  chmodSync(join(root, '/usr/lib/mos/mos-seed-root'), 0o755)
+}
+
+/** A `*.wants` symlink for a unit that lives in /etc/systemd/system, not /usr/lib. */
+function enableEtcUnit(root: string, unit: string, target: string): void {
+  const dir = join(root, '/etc/systemd/system', target)
+  mkdirSync(dir, { recursive: true })
+  symlinkSync(`/etc/systemd/system/${unit}`, join(dir, unit))
 }
 
 /** What `seedHealthyRoot` hands its helpers: write a file, making its parents. */

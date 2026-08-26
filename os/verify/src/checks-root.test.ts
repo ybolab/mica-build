@@ -19,7 +19,7 @@
 // hand-written wreck would go red for reasons the real failure does not have.
 
 import { describe, expect, test } from 'bun:test'
-import { mkdirSync, readFileSync, renameSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
+import { mkdirSync, readdirSync, readFileSync, renameSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { loadBoard } from './board.ts'
 import { packedRootFixture, type RootFixture } from './checks-fixture.ts'
@@ -716,7 +716,12 @@ describe('the vacuity traps', () => {
     // empty tree" is a statement about the RUN, not about the image.
     const fx = packedRootFixture(cx3576)
     try {
-      for (const e of ['etc', 'usr', 'mnt', 'srv', 'var', 'home', 'root']) {
+      // EVERY top-level entry, read off the tree. It used to be a written-down
+      // list of seven names, and M4f's fixture grew a /bin -- so the tree was
+      // not empty, the guard did not fire, and the test failed for a reason
+      // that had nothing to do with the guard. A list restated beside the
+      // fixture is the drift this campaign keeps finding.
+      for (const e of readdirSync(fx.root)) {
         rmSync(join(fx.root, e), { recursive: true, force: true })
       }
       await expect(checkNamed('packed-builtin-no-on-disk-half').run(fx.ctx))

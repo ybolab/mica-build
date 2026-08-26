@@ -49,6 +49,7 @@ import {
 import { BOARD_CHECKS } from './checks-board.ts'
 import { DBUS_CHECKS } from './checks-dbus.ts'
 import { ENGINE_CHECKS_ALL } from './checks-engine.ts'
+import { HOME_CHECKS } from './checks-home.ts'
 import { FSTAB_CHECKS } from './checks-fstab.ts'
 import { GPT_CHECKS } from './checks-gpt.ts'
 import { MQTT_CHECKS } from './checks-mqtt.ts'
@@ -125,6 +126,7 @@ export const CHECKS: readonly CheckCase[] = [
   ...SHADOW_CHECKS,
   ...DBUS_CHECKS,
   ...ENGINE_CHECKS_ALL,
+  ...HOME_CHECKS,
 ]
 
 /**
