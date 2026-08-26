@@ -167,9 +167,6 @@ jobs:
       - name: The STATE /etc/shadow reconciler
         run: make os-shadow-test
 
-      - name: The custom-UI location assertions, and that they can fail
-        run: make os-ui-location-test
-
       - name: What this workflow does not cover
         if: always()
         run: |
@@ -283,10 +280,10 @@ jobs:
           echo "including whatever bun a developer has on PATH, which is the route" >&2
           echo "run.sh prefers locally." >&2
           echo >&2
-          echo "It also does not run make os-verify-parity (PLAN-014 M4). That target" >&2
-          echo "needs a BUILT IMAGE for each board, docker, and a bun on the host --" >&2
-          echo "run.sh refuses --parity on the container route, because the harness" >&2
+          echo "It also does not run make os-verify-cx3576-v2 (PLAN-014 M4). That" >&2
+          echo "target needs a BUILT IMAGE and docker, and a bun on the host --" >&2
+          echo "run.sh refuses --verify on the container route, because the verifier" >&2
           echo "drives docker itself and the pinned bun image has no docker client." >&2
-          echo "None of those hold here. The port's own suite (parity.ts, image.ts," >&2
-          echo "tools.ts and their cases) DOES run above; what is untested on this" >&2
-          echo "runner is the comparison against a real image." >&2
+          echo "None of those hold here. The port's own suite (image.ts, tools.ts and" >&2
+          echo "their cases) DOES run above; what is untested on this runner is the" >&2
+          echo "register against a real image." >&2

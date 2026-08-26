@@ -377,11 +377,17 @@ function enabledCheck(c: EnabledCase): CheckCase {
 
 const BUILTIN_PREFIX = '/builtin'
 const APID_BIN = '/usr/bin/apid'
-// A fragment of the escape page AS RENDERED -- the oracle's BUILTIN_MARKUP,
-// verbatim (os/verify-image-v2.sh:335). Markup and not a bare route constant:
-// "/builtin/deactivate" alone would still be in the binary after the pages
-// moved out to an on-disk asset tree, which is the one change this catches.
-const BUILTIN_MARKUP = '<form method="post" action="/builtin/deactivate">'
+// A fragment of the escape page AS RENDERED -- the deleted oracle's
+// BUILTIN_MARKUP, verbatim (os/verify-image-v2.sh:335 at dabc9e8). Markup and
+// not a bare route constant: "/builtin/deactivate" alone would still be in the
+// binary after the pages moved out to an on-disk asset tree, which is the one
+// change this catches.
+//
+// EXPORTED so that checks-fixture.ts's independent transcription of the same
+// string can be asserted equal to it. That assertion used to be made against
+// the ORACLE's copy; with the oracle deleted the two surviving copies keep each
+// other honest instead, which is the same property with one fewer party.
+export const BUILTIN_MARKUP = '<form method="post" action="/builtin/deactivate">'
 const DEV_KEYRING_PATH = '/etc/rauc/keyring.pem'
 const PACKED_MOUNTPOINTS = [
   '/mnt/state', '/mnt/meta', '/srv', '/var', '/home', '/root',

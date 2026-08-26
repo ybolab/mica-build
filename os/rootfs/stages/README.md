@@ -147,9 +147,11 @@ fire for any real build. It requires `/usr/bin/podman` *and*
 `/etc/containers/storage.conf` to be absent; `storage.conf` arrives with the
 overlay on every board. Measured: the declined-`containers` run contains zero
 occurrences of `carries no container engine at all`. Its only reachable driver
-is `os/tests/ui-location-test.sh` case 8k, which deletes `storage.conf` too.
-That is fortunate here — the early exit does not rescue the negative test — and
-it is a defect in the oracle, recorded for M4d rather than repaired in the
+was `os/tests/ui-location-test.sh` case 8k, which deleted `storage.conf` too.
+That was fortunate — the early exit did not rescue the negative test. Both that
+suite and the oracle are deleted (RFCT-110 M4e); the early return's
+inexpressibility survives in `os/verify/src/checks-engine.ts` and is recorded
+under "The oracle is deleted" in `os/verify/HARNESS.md`, rather than repaired in the
 change that found it.
 
 **`--without mosd` is a build refusal, on this tree and the one before it.**

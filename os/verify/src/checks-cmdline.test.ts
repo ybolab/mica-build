@@ -7,7 +7,7 @@
 // board is a family half tested, and this one has two completely different
 // readers behind one set of conclusions.
 
-import { afterAll, describe, expect, test } from 'bun:test'
+import { afterAll, beforeAll, describe, expect, test } from 'bun:test'
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { loadBoard, type Board } from './board.ts'
@@ -22,9 +22,36 @@ const cx3576 = loadBoard(boardEnvPath('cx3576'))
 const x64 = loadBoard(boardEnvPath('x64'))
 const SLOT = { cx3576: 524288, x64: 1048576 } as const
 
-mkdirSync(join(REPO_ROOT, '_out'), { recursive: true })
-const SCRATCH = mkdtempSync(join(REPO_ROOT, '_out', 'verify-cmdline-'))
+// CREATED AND REMOVED BY THE SAME CONDITION, which is what a `-t` filter broke.
+// `mkdtempSync` at MODULE SCOPE ran in every file bun LOADED, but `afterAll`
+// runs only in a file that has a MATCHING test -- so a filtered run created
+// four scratch directories and removed one, leaving exactly the `_out/verify-*`
+// drift image.test.ts's own comment says was fixed. Measured 2026-08-26:
+// `run.sh -t 'the partition count'` left verify-bootchain-*, verify-cmdline-*
+// and verify-test-* behind. `process.on('exit')` does NOT close it -- driven on
+// bun 1.4.0, the handler never fires under the test runner, filtered or not.
+// A top-level `beforeAll` does: it is skipped by exactly the condition that
+// skips `afterAll`, so the pair is symmetric again.
+let SCRATCH = ''
+beforeAll(() => {
+  mkdirSync(join(REPO_ROOT, '_out'), { recursive: true })
+  SCRATCH = mkdtempSync(join(REPO_ROOT, '_out', 'verify-cmdline-'))
+})
 afterAll(() => rmSync(SCRATCH, { recursive: true, force: true }))
+
+/**
+ * The scratch directory, refusing to be read before `beforeAll` made it.
+ *
+ * `join('', 'w1')` is `'w1'` -- a RELATIVE path, so a read that outran the hook
+ * would write fixtures into the process cwd and the tests would pass, which is
+ * the failure this package exists to catch rather than commit.
+ */
+function scratch(): string {
+  if (SCRATCH === '') {
+    throw new Error('the scratch directory was read before beforeAll created it')
+  }
+  return SCRATCH
+}
 
 /** A textual mutation that refuses to be a no-op -- see checks-bootchain.test.ts. */
 function mutate(text: string, from: string | RegExp, to: string): string {
@@ -105,7 +132,7 @@ let seq = 0
 
 function fixture(world: World): { ctx: ImageContext, dispose: () => void } {
   const board = world.board
-  const dir = join(SCRATCH, `w${seq += 1}`)
+  const dir = join(scratch(), `w${seq += 1}`)
   mkdirSync(dir, { recursive: true })
   const outDir = join(dir, 'out')
   mkdirSync(outDir, { recursive: true })

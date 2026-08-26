@@ -95,6 +95,6 @@ echo
 echo "To let a locally built image install these bundles, copy the keyring to"
 echo "  os/rootfs/overlay-v2/etc/rauc/keyring.pem   (gitignored)"
 echo "and rebuild the image with MOS_EXPECT_DEV_KEYRING=1 — both the build"
-echo "(os/rootfs/build-v2.sh) and the verifier (os/verify-image-v2.sh) refuse a"
+echo "(os/rootfs/build-v2.sh) and the verifier (make os-verify-cx3576-v2) refuse a"
 echo "baked keyring without it, and warn loudly with it. Do not do this for"
 echo "anything that leaves your desk."

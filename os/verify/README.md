@@ -202,29 +202,54 @@ which is both the evidence they work and the fastest way to see what a check
 has to work with:
 
 ```sh
-bash os/verify/run.sh --parity --board cx3576 --probe
+bash os/verify/run.sh --verify --board cx3576 --probe
 ```
 
-## The parity harness
+## Verifying an image
 
 ```sh
-make os-verify-parity                          # both boards
-bash os/verify/run.sh --parity --board x64 --all
+make os-verify-cx3576-v2                        # the image contract
+bash os/verify/run.sh --verify --board x64      # the other board
+bash os/verify/run.sh --verify --board x64 --image PATH
 ```
 
-It runs `os/verify-image-v2.sh` and this package's check register against the
-**same image** and diffs their conclusions **per check**. The oracle is not
-modified to help: a verifier edited to make its readings easier to compare is
-no longer independent of the thing it measures.
+`src/verify-cli.ts` runs the register against one assembled image and prints one
+`PASS:`/`FAIL:`/`SKIP:` line per conclusion and a `RESULT:` line — the format
+`os/verify-image-v2.sh` printed, kept deliberately, because
+`test/apid-api` describes its own output as that shape and several `docs/task/`
+records quote `RESULT:` lines as evidence.
+
+It needs **docker** on a host without `sgdisk`/`mtools`/`debugfs`/`unsquashfs`/
+`veritysetup`: the tools come out of the pinned `IMAGE_ALPINE_3_21`, exactly as
+the deleted script re-exec'd into it. It cannot run inside the pinned bun
+container — see `HARNESS.md`'s "The hole, measured rather than assumed".
+
+## The parity harness — REMOVED at M4e, and what it recorded
+
+**`make os-verify-parity` and `src/parity-cli.ts` are gone.** Their one input was
+`os/verify-image-v2.sh`, which RFCT-110 M4e deleted at full parity. A target
+whose oracle no longer exists can only refuse every time or pass having compared
+nothing, and the second reads exactly like a gate still being held.
+
+`src/parity.ts` stays: `CheckResult` and `Verdict` are imported by 36 modules and
+the `shell:` matcher backs all 333 register entries. `parseShellRun`,
+`diffParity` and `formatReport` now have **no production caller** and remain
+driven by `src/parity.test.ts` against synthetic transcripts.
+
+The rest of this section is the record of the gate, in the past tense. It ran
+`os/verify-image-v2.sh` and this package's check register against the **same
+image** and diffed their conclusions **per check**. The oracle was not modified
+to help: a verifier edited to make its readings easier to compare is no longer
+independent of the thing it measures.
 
 **Identity, not a count.** The oracle prints prose, and the two directions of
 one check share only a leading clause — `eq_ci` prints `X is Y` on the way
 through and `X is 'Z', expected Y` on the way out. So each ported check carries
 the substring that identifies its own PASS line (and, where the directions
-differ, its FAIL and SKIP lines) as a field on the check itself. That is
-`os/tests/ui-location-test.sh`'s `ASSERTIONS` register at a larger scale, and
-it lives on the check so a port cannot exist without saying which conclusion it
-replaces.
+differ, its FAIL and SKIP lines) as a field on the check itself. That was
+`os/tests/ui-location-test.sh`'s `ASSERTIONS` register at a larger scale — that
+suite is deleted too, and for the same reason — and it lives on the check so a
+port cannot exist without saying which conclusion it replaces.
 
 **A skip is a third verdict.** The oracle skips 3 checks on cx3576 and 22 on
 x64, and a skip never equals a pass here: pass-vs-skip is a divergence with a
@@ -237,10 +262,11 @@ nothing), `orphan` (the port concluded and no shell line matched), `unfired`
 (registered, applicable, silent on both sides) and `ambiguous` (the register
 cannot tell two checks apart, or one check from two lines).
 
-**Exit status is three-valued**: `0` full parity, `2` INCOMPLETE — still
-unported checks, which is every run until M4e — and `1` a real divergence. A
-caller who only looked at "non-zero" could not tell an unfinished migration
-from a broken one.
+**Exit status was three-valued**: `0` full parity, `2` INCOMPLETE — still
+unported checks — and `1` a real divergence. A caller who only looked at
+"non-zero" could not tell an unfinished migration from a broken one. The final
+run was `0` on both boards: `cx3576` compared 398 with 0 diverging and 0
+unclaimed, `x64` compared 312 the same way.
 
 The parser also refuses a reading that disagrees with the oracle's **own**
 counters, because a parser that missed conclusions would report agreement about

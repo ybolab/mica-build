@@ -7,7 +7,6 @@
 // machine and skip on another, and a skip reports the same green as a pass.
 
 import { describe, expect, test } from 'bun:test'
-import { existsSync, readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import {
   APK_ATTEMPTS,
@@ -83,16 +82,12 @@ describe('the tool set and the image it comes from', () => {
     }
   })
 
-  test('the alpine package list is the one os/verify-image-v2.sh installs', () => {
-    // Read out of the oracle rather than restated: the two must read an image
-    // with the same tools, or a parity divergence could be a package
-    // difference. The oracle is deleted at M4e and this assertion goes with it.
-    const verifier = join(OS_DIR, 'verify-image-v2.sh')
-    expect(existsSync(verifier)).toBe(true)
-    const line = /apk add --no-cache -q ([^&]+?) &&/.exec(readFileSync(verifier, 'utf8'))?.[1]
-    expect(line).toBeDefined()
-    expect((line as string).trim().split(/\s+/).sort()).toEqual([...TOOL_PACKAGES].sort())
-  })
+  // GONE WITH THE ORACLE, as this test itself said it would be: it read the
+  // `apk add` line out of os/verify-image-v2.sh and required TOOL_PACKAGES to
+  // equal it, so that a parity divergence could never be a package difference.
+  // There is no second tool list left to agree with -- TOOL_PACKAGES is now the
+  // only statement of what the verifier installs, and a test that compared it
+  // against itself would asserted nothing. Removed rather than weakened.
 
   test('the image comes from the one resolver, by key, as a digest', async () => {
     const ref = await toolImageRef()
@@ -113,7 +108,7 @@ describe('mounts are identity mounts, and there is one per directory', () => {
   })
 
   test('two files in one directory are one mount', () => {
-    expect(mountDirs([join(OS_DIR, 'verify-image-v2.sh'), join(OS_DIR, 'mkimage-v2.sh')])).toEqual([OS_DIR])
+    expect(mountDirs([join(OS_DIR, 'mkimage-common.sh'), join(OS_DIR, 'mkimage-v2.sh')])).toEqual([OS_DIR])
   })
 
   test('a path that is not there yields its PARENT, so the tool reports the file', () => {
