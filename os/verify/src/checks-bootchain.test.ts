@@ -12,7 +12,7 @@
 // direction is never taken. These cases take it: a temporary BOARD_DIR with a
 // matching artefact, one with a differing artefact, and one with none.
 
-import { afterAll, describe, expect, test } from 'bun:test'
+import { afterAll, beforeAll, describe, expect, test } from 'bun:test'
 import {
   mkdirSync,
   mkdtempSync,
@@ -41,9 +41,36 @@ const SLOT = { cx3576: 524288, x64: 1048576 } as const
 
 // _out/, never /tmp: these files are read back through helpers that this host's
 // docker cannot see under /tmp, and the suite's other scratch lives there too.
-mkdirSync(join(REPO_ROOT, '_out'), { recursive: true })
-const SCRATCH = mkdtempSync(join(REPO_ROOT, '_out', 'verify-bootchain-'))
+// CREATED AND REMOVED BY THE SAME CONDITION, which is what a `-t` filter broke.
+// `mkdtempSync` at MODULE SCOPE ran in every file bun LOADED, but `afterAll`
+// runs only in a file that has a MATCHING test -- so a filtered run created
+// four scratch directories and removed one, leaving exactly the `_out/verify-*`
+// drift image.test.ts's own comment says was fixed. Measured 2026-08-26:
+// `run.sh -t 'the partition count'` left verify-bootchain-*, verify-cmdline-*
+// and verify-test-* behind. `process.on('exit')` does NOT close it -- driven on
+// bun 1.4.0, the handler never fires under the test runner, filtered or not.
+// A top-level `beforeAll` does: it is skipped by exactly the condition that
+// skips `afterAll`, so the pair is symmetric again.
+let SCRATCH = ''
+beforeAll(() => {
+  mkdirSync(join(REPO_ROOT, '_out'), { recursive: true })
+  SCRATCH = mkdtempSync(join(REPO_ROOT, '_out', 'verify-bootchain-'))
+})
 afterAll(() => rmSync(SCRATCH, { recursive: true, force: true }))
+
+/**
+ * The scratch directory, refusing to be read before `beforeAll` made it.
+ *
+ * `join('', 'w1')` is `'w1'` -- a RELATIVE path, so a read that outran the hook
+ * would write fixtures into the process cwd and the tests would pass, which is
+ * the failure this package exists to catch rather than commit.
+ */
+function scratch(): string {
+  if (SCRATCH === '') {
+    throw new Error('the scratch directory was read before beforeAll created it')
+  }
+  return SCRATCH
+}
 
 // ── the boot slots' contents, as files a stubbed mcopy hands over ──────────
 
@@ -176,7 +203,7 @@ let seq = 0
 /** A context over a sparse image of the right size, and the stubbed tools above. */
 function fixture(world: World): { ctx: ImageContext, dispose: () => void } {
   const board = world.board
-  const dir = join(SCRATCH, `w${seq += 1}`)
+  const dir = join(scratch(), `w${seq += 1}`)
   mkdirSync(dir, { recursive: true })
   const image = join(dir, 'fixture.img')
   const mib = board.mibBytes ?? 1048576
@@ -240,7 +267,7 @@ async function drive(id: string, world: World): Promise<readonly CheckResult[]> 
   const fx = fixture(world)
   const saved = process.env['BOARD_DIR']
   if (world.bsp !== undefined) {
-    const dir = join(SCRATCH, `bsp${seq}`)
+    const dir = join(scratch(), `bsp${seq}`)
     for (const [rel, bytes] of Object.entries(world.bsp)) {
       const at = join(dir, rel)
       mkdirSync(join(at, '..'), { recursive: true })
@@ -252,7 +279,7 @@ async function drive(id: string, world: World): Promise<readonly CheckResult[]> 
   else {
     // No BSP tree at all -- which is what a checkout is, and what makes the
     // oracle's own cx3576 run RESULT FAIL (387/395).
-    process.env['BOARD_DIR'] = join(SCRATCH, 'no-such-bsp-tree')
+    process.env['BOARD_DIR'] = join(scratch(), 'no-such-bsp-tree')
   }
   try {
     return await checkNamed(id).run(fx.ctx)

@@ -21,7 +21,7 @@
 // helper that has only ever been observed succeeding is indistinguishable from
 // a helper that cannot fail.
 
-import { afterAll, describe, expect, test } from 'bun:test'
+import { afterAll, beforeAll, describe, expect, test } from 'bun:test'
 import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import {
@@ -67,8 +67,24 @@ import { REPO_ROOT } from './paths.ts'
 // tests that were never declared, so 373/373 and 333/333 are equally green and
 // only one of them ran this file. The floor was green only because something
 // earlier in the run happened to create _out/ first.
-mkdirSync(join(REPO_ROOT, '_out'), { recursive: true })
-const SCRATCH = mkdtempSync(join(REPO_ROOT, '_out', 'verify-test-'))
+//
+// CREATED AND REMOVED BY THE SAME CONDITION. It used to be made here, at module
+// scope, and removed in `afterAll` -- and those are not the same condition. Under
+// a `-t` FILTER bun LOADS every file, so every file made its scratch, but only a
+// file with a MATCHING test runs its `afterAll`. So a filtered run made four and
+// removed one, leaving exactly the `_out/verify-*` drift the paragraph below says
+// was fixed. Measured 2026-08-26: `run.sh -t 'the partition count'` left
+// verify-bootchain-*, verify-cmdline-* and verify-test-* behind; an UNFILTERED
+// run was clean, which is why it survived every floor this campaign ran.
+//
+// `process.on('exit')` does NOT close it -- driven on bun 1.4.0, the handler
+// never fires under the test runner, filtered or not. A top-level `beforeAll`
+// does: it is skipped by exactly the condition that skips `afterAll`.
+let SCRATCH = ''
+beforeAll(() => {
+  mkdirSync(join(REPO_ROOT, '_out'), { recursive: true })
+  SCRATCH = mkdtempSync(join(REPO_ROOT, '_out', 'verify-test-'))
+})
 
 // ...and removed afterwards. It used to survive every run, so a tree that had
 // run the suite a few times carried a drift of _out/verify-test-* directories
@@ -76,6 +92,19 @@ const SCRATCH = mkdtempSync(join(REPO_ROOT, '_out', 'verify-test-'))
 afterAll(() => {
   rmSync(SCRATCH, { recursive: true, force: true })
 })
+
+/**
+ * The scratch directory, refusing to be read before `beforeAll` made it.
+ *
+ * `join('', 'src.bin')` is `'src.bin'` -- a RELATIVE path, so a read that outran
+ * the hook would write fixtures into the process cwd and the tests would pass.
+ */
+function scratch(): string {
+  if (SCRATCH === '') {
+    throw new Error('the scratch directory was read before beforeAll created it')
+  }
+  return SCRATCH
+}
 
 interface Reply {
   readonly code?: number
@@ -438,7 +467,7 @@ describe('unsquashfs, which exits 0 having extracted nothing', () => {
   })
 
   test('a requested path that did not land is refused, though the tool exited 0', async () => {
-    const dest = join(SCRATCH, 'extract-nothing')
+    const dest = join(scratch(), 'extract-nothing')
     await expect(squashfsExtract(sq, '/r.img', dest, ['no/such/path']))
       .rejects.toThrow(/did not extract no\/such\/path/)
   })
@@ -451,7 +480,7 @@ describe('unsquashfs, which exits 0 having extracted nothing', () => {
     // right there, which is the mirror of the swallow this guard exists to
     // stop and just as wrong. The probe found it against the real image; this
     // is what keeps it found.
-    const dest = join(SCRATCH, 'extract-symlink')
+    const dest = join(scratch(), 'extract-symlink')
     const runtime = stub([['unsquashfs -n', {
       effect: () => {
         mkdirSync(join(dest, 'etc'), { recursive: true })
@@ -460,14 +489,14 @@ describe('unsquashfs, which exits 0 having extracted nothing', () => {
     }]])
     expect(await squashfsExtract(runtime, '/r.img', dest, ['etc/os-release'])).toBe(dest)
     // ...and the same guard still refuses a path the tool left nothing at.
-    const empty = join(SCRATCH, 'extract-symlink-empty')
+    const empty = join(scratch(), 'extract-symlink-empty')
     const nothing = stub([['unsquashfs -n', { effect: () => mkdirSync(empty, { recursive: true }) }]])
     await expect(squashfsExtract(nothing, '/r.img', empty, ['etc/os-release']))
       .rejects.toThrow(/did not extract etc\/os-release/)
   })
 
   test('extracting into a directory that already exists is refused', async () => {
-    const dest = join(SCRATCH, 'twice')
+    const dest = join(scratch(), 'twice')
     mkdirSync(dest, { recursive: true })
     await expect(squashfsExtract(sq, '/r.img', dest)).rejects.toThrow(/already exists/)
   })
@@ -510,11 +539,18 @@ describe('veritysetup, where exit 1 means two different things', () => {
 // ── byte ranges ────────────────────────────────────────────────────────────
 
 describe('extractRange and readBytes need no tool, and refuse a short read', () => {
-  const src = join(SCRATCH, 'src.bin')
-  writeFileSync(src, Buffer.from(Array.from({ length: 4096 }, (_, i) => i & 0xff)))
+  // In a hook, not at describe scope: a describe BODY runs while bun is merely
+  // REGISTERING tests, which happens in every loaded file even under a filter
+  // that matches none of them -- so this write would outrun the scratch it
+  // writes into. A describe-level beforeAll runs only if a test here runs.
+  let src = ''
+  beforeAll(() => {
+    src = join(scratch(), 'src.bin')
+    writeFileSync(src, Buffer.from(Array.from({ length: 4096 }, (_, i) => i & 0xff)))
+  })
 
   test('a range comes out byte for byte', () => {
-    const dest = join(SCRATCH, 'range.bin')
+    const dest = join(scratch(), 'range.bin')
     extractRange(src, 1024, 512, dest)
     const got = readBytes(dest, 0, 512)
     expect(got[0]).toBe(0)
@@ -523,13 +559,13 @@ describe('extractRange and readBytes need no tool, and refuse a short read', () 
   })
 
   test('a range past the end is refused, naming both sizes', () => {
-    expect(() => extractRange(src, 4000, 512, join(SCRATCH, 'over.bin')))
+    expect(() => extractRange(src, 4000, 512, join(scratch(), 'over.bin')))
       .toThrow(/which is 4096 bytes long/)
   })
 
   test('a NaN offset is refused rather than read from 0', () => {
     expect(() => readBytes(src, Number.NaN, 4)).toThrow(/non-negative whole number/)
-    expect(() => extractRange(src, 0, Number.NaN, join(SCRATCH, 'nan.bin'))).toThrow(/whole number/)
+    expect(() => extractRange(src, 0, Number.NaN, join(scratch(), 'nan.bin'))).toThrow(/whole number/)
   })
 
   test('reading past the end is a refusal, not a short buffer', () => {
@@ -696,8 +732,11 @@ describe('e2fsck -fn, whose exit status is the oracle\'s whole test', () => {
 // ── the legacy uImage header ───────────────────────────────────────────────
 
 describe('the uImage header reader, which has no tool to lie for it', () => {
-  const dir = join(SCRATCH, 'uimage')
-  mkdirSync(dir, { recursive: true })
+  let dir = ''
+  beforeAll(() => {
+    dir = join(scratch(), 'uimage')
+    mkdirSync(dir, { recursive: true })
+  })
 
   /** The first 64 bytes of the real cx3576 boot.scr, captured 2026-08-26. */
   const HEADER = Buffer.from(
@@ -756,8 +795,11 @@ describe('the uImage header reader, which has no tool to lie for it', () => {
 })
 
 describe('mcopy writing a file rather than a stdout string', () => {
-  const dir = join(SCRATCH, 'mcopy-out')
-  mkdirSync(dir, { recursive: true })
+  let dir = ''
+  beforeAll(() => {
+    dir = join(scratch(), 'mcopy-out')
+    mkdirSync(dir, { recursive: true })
+  })
   const slot = { image: '/w/x.img', offsetBytes: 18874368 }
 
   test('a file that landed is true, and the caller may read the BYTES', async () => {
