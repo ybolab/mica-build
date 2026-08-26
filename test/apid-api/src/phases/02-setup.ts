@@ -2,16 +2,15 @@
  * Phase 02 -- first-boot setup.
  *
  * This is the only phase in the suite that can run at all: /setup is
- * once-only, so every rejection it asserts is reachable ONLY before the
- * successful POST and the 409 is reachable ONLY after it. The order below is
+ * once-only, so every rejection it asserts is reachable only before the
+ * successful POST and the 409 is reachable only after it. The order below is
  * therefore load-bearing, not stylistic, and a re-run needs a fresh boot.
  *
  * The centre of the phase is not the 303. It is what the 303 carries and what
  * the device does afterwards: the session cookie, checked a name and five
  * attributes at a time -- SameSite=Lax there is the whole of apid's cross-site
- * defence, because there is no CSRF token --
- * and a second, stranger client observing that the gate now sends it somewhere
- * different.
+ * defence, because there is no CSRF token -- and a second, stranger client
+ * observing that the gate now sends it somewhere different.
  */
 
 import { Client, checkbox, parseSetCookie, type FormFields, type HttpResponse } from "../client.ts";
@@ -29,8 +28,9 @@ const SESSION_COOKIE = "apid_session";
  *
  * The name is checked separately from these; each attribute gets its own check
  * so a red run names the attribute that was lost rather than "the cookie was
- * wrong". Phase 03 asserts the same list against the cookie /login mints, because setup and login are two different
- * handlers and a divergence between them is exactly what this suite is for.
+ * wrong". Phase 03 asserts the same list against the cookie /login mints:
+ * setup and login are two different handlers, and a divergence between them is
+ * exactly what this suite is for.
  */
 const SESSION_COOKIE_ATTRIBUTES: readonly string[] = [
   "Path=/",
@@ -83,14 +83,14 @@ const phase: Phase = {
     // under test, so a rejection is attributable to that field and to nothing
     // else. Two details of the encoding matter:
     //
-    //   - `hostname` is OMITTED, not sent empty. Leaving the device's current
+    //   - `hostname` is omitted, not sent empty. Leaving the device's current
     //     name alone is what an operator who only wants a password does, and
     //     "" is itself an invalid hostname -- it would 422 for the wrong
     //     reason and the 400 cases below would never be reached.
-    //   - `dhcp` is a CHECKBOX. A ticked box sends its value; an unticked box
-    //     sends NOTHING AT ALL, it does not send "off". `checkbox()` says so
-    //     in the type. Ticked here so setup does not also try to commit a
-    //     static address that the fields deliberately do not carry.
+    //   - `dhcp` is a checkbox. A ticked box sends its value; an unticked box
+    //     sends nothing at all, not "off". `checkbox()` says so in the type.
+    //     Ticked here so setup does not also try to commit a static address
+    //     that the fields deliberately do not carry.
     const setupFields = (overrides: FormFields = {}): FormFields => ({
       password: config.adminPassword,
       confirm: config.adminPassword,
@@ -142,7 +142,7 @@ const phase: Phase = {
     // -- 3. a hostname that is not a hostname --------------------------------
     //
     // 422 and not 400: the password is valid here, so the request is
-    // well-formed and it is the hostname's CONTENT that is unprocessable.
+    // well-formed and it is the hostname's content that is unprocessable.
     const badHostname = await client.post("/setup", setupFields({ hostname: INVALID_HOSTNAME }));
     report.expectStatus(
       badHostname,
@@ -178,16 +178,13 @@ const phase: Phase = {
 
     // -- 6. there is no CSRF token, and that is the point --------------------
     //
-    // apid ships NO anti-forgery token of any kind. That is not an oversight
-    // this suite is working around: it means `SameSite=Lax` on the cookie
-    // asserted above is the ENTIRE cross-site defence for every mutating form
-    // in this surface -- /setup, /login, /network, /hostname, /ssh/*,
-    // /containers/enable, /power/reboot, /power/poweroff.
-    //
-    // So this check pins the current design rather than a token's absence. If
-    // someone ever weakens the cookie to SameSite=None, the attribute check
-    // above goes red and THIS check is the line that says what was lost with
-    // it: after that change there is nothing left defending those forms.
+    // apid ships no anti-forgery token of any kind, so `SameSite=Lax` on the
+    // cookie asserted above is the entire cross-site defence for every mutating
+    // form in this surface -- /setup, /login, /network, /hostname, /ssh/*,
+    // /containers/enable, /power/reboot, /power/poweroff. This check pins that
+    // design rather than a token's absence: if the cookie is ever weakened to
+    // SameSite=None, the attribute check above goes red and this check is the
+    // line that says what was lost with it.
     const csrfInForm = CSRF_MARKERS.filter((marker) => form.body.toLowerCase().includes(marker));
     const csrfInResponse = CSRF_MARKERS.filter((marker) =>
       accepted.body.toLowerCase().includes(marker),
@@ -245,10 +242,9 @@ const phase: Phase = {
 
     // -- 8. the redirect leads somewhere real --------------------------------
     //
-    // GUARDED for the same reason as 03-login step 7: `follow` throws on a
+    // Guarded for the same reason as 03-login step 7: `follow` throws on a
     // response with no Location, and a phase that throws stops reporting. The
-    // live run of 2026-08-24 lost the whole tail of 03-login to exactly that,
-    // so the shape is fixed here too rather than waiting for a run to find it.
+    // live run of 2026-08-24 lost the whole tail of 03-login to exactly that.
     if (accepted.headers.get("location") === undefined) {
       report.skip(
         "following the setup redirect to / answers 200 with the new session",
@@ -268,16 +264,13 @@ const phase: Phase = {
 
     // -- 9. the device left setup mode -- the device-effect assertion --------
     //
-    // HOW THIS IS OBSERVED, and why it is the assertion that matters: the
-    // gate's redirect target is driven by whether `access.webAdmin`'s password
-    // hash exists in MOSD's settings, not by anything apid holds in memory. So
-    // a SECOND client -- fresh, empty jar, no part of the exchange above --
-    // being sent to /login where phase 01 watched it be sent to /setup proves
-    // the POST travelled apid -> system bus -> mosd and that the write landed.
-    //
-    // The 303 in step 4 proves none of that: a handler that returned 303 and
-    // wrote nothing would pass it. A behaviour change observed by a different
-    // client is what cannot be faked.
+    // The gate's redirect target is driven by whether `access.webAdmin`'s
+    // password hash exists in mosd's settings, not by anything apid holds in
+    // memory. So a second client -- fresh, empty jar, no part of the exchange
+    // above -- being sent to /login where phase 01 watched it be sent to /setup
+    // proves the POST travelled apid -> system bus -> mosd and that the write
+    // landed. The 303 in step 4 proves none of that: a handler that returned
+    // 303 and wrote nothing would pass it.
     const recorded = ctx.state.get(GATE_TARGET_BEFORE_SETUP);
     const before = typeof recorded === "string" ? recorded : "/setup";
     const stranger = new Client(config);
@@ -315,9 +308,7 @@ const phase: Phase = {
   },
 };
 
-// ---------------------------------------------------------------------------
 // helpers
-// ---------------------------------------------------------------------------
 
 /**
  * A rejected setup must not hand out a session. Asserted for each rejection
