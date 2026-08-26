@@ -5,7 +5,6 @@
 // not copied), and hands back `number | undefined` fields. That is right for a
 // lint, which reports what is missing and never stops at the first fault; an
 // assembler wants the sector for sgdisk and the MiB for dd, or the build is over.
-//
 // It does not assemble and does not decide whether a board definition is
 // correct: os/verify/src/lint.ts reports a contradiction, this refuses to use
 // one, because there is no honest single number to hand an assembler when the
