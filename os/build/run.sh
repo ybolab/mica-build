@@ -63,6 +63,7 @@ usage: bash os/build/run.sh [--help] [bun-test-args...]
        bash os/build/run.sh --build-rootfs [driver-args...]
        bash os/build/run.sh --mkimage-v2 [assembler-args...]
        bash os/build/run.sh --mkimage-x64 [assembler-args...]
+       bash os/build/run.sh --bundle [bundle-args...]
 
 Installs the dev dependencies if they are missing, typechecks src/, then runs
 the suite. Any extra arguments are passed to `bun test` (a filename filter, for
@@ -88,6 +89,13 @@ nothing else: one writes a U-Boot loader at a fixed sector and the other builds
 a standalone EFI binary, and a mistake in either would otherwise be a mistake in
 both.
 
+With --bundle FIRST, it builds and SIGNS the RAUC update bundle -- the
+TypeScript port of os/update/bundle.sh (PLAN-014 M6d). Same shape, same
+first-position rule; try --bundle --help. Unlike the two assemblers this one
+takes a board, because os/update/bundle.sh takes one: it is a single script
+whose two branches differ only in what a boot slot holds, which is the one
+thing RFCT-106 made a board fact.
+
 The suite drives the real external toolset -- sgdisk, mtools, dd, mkimage,
 veritysetup, e2fsprogs and rauc. Each of those runs on the host when the host
 has it and in the container pinned for that toolset otherwise, which on a host
@@ -109,17 +117,18 @@ USAGE
 # else entirely. A request to build a rootfs, or to assemble an image, answered
 # by a passing test suite.
 #
-# Three modes rather than one, and they stay three: they arrived from different
-# milestones (M5b, M6b and M6c) and share only the preamble above and run_bun
-# below. Nothing about any of them is a version of another -- in particular
-# --mkimage-x64 is an ARM of this dispatch and not a `--board` flag on
-# --mkimage-v2, for the reason the usage text gives.
+# Four modes rather than one, and they stay four: they arrived from different
+# milestones (M5b, M6b, M6c and M6d) and share only the preamble above and
+# run_bun below. Nothing about any of them is a version of another -- in
+# particular --mkimage-x64 is an ARM of this dispatch and not a `--board` flag
+# on --mkimage-v2, for the reason the usage text gives.
 MODE=suite
 case "${1:-}" in
 --help | -h) usage; exit 0 ;;
 --build-rootfs) MODE=build-rootfs; shift ;;
 --mkimage-v2) MODE=mkimage-v2; shift ;;
 --mkimage-x64) MODE=mkimage-x64; shift ;;
+--bundle) MODE=bundle; shift ;;
 esac
 for arg in "$@"; do
     case "${arg}" in --build-rootfs) ;; *) continue ;; esac
@@ -142,6 +151,14 @@ for arg in "$@"; do
     echo "error: --mkimage-x64 has to be the FIRST argument; here it came after '$1'." >&2
     echo "       Anywhere else it would be forwarded to \`bun test\`, which ignores it and reports" >&2
     echo "       a green suite in answer to a request to assemble an image." >&2
+    exit 1
+done
+
+for arg in "$@"; do
+    case "${arg}" in --bundle) ;; *) continue ;; esac
+    echo "error: --bundle has to be the FIRST argument; here it came after '$1'." >&2
+    echo "       Anywhere else it would be forwarded to \`bun test\`, which ignores it and reports" >&2
+    echo "       a green suite in answer to a request to build a signed update bundle." >&2
     exit 1
 done
 
@@ -389,6 +406,25 @@ if [ "${MODE}" = mkimage-x64 ]; then
     echo "os/build: assembling the x64 image"
     rc=0
     run_bun run src/mkimage-x64-cli.ts "$@" || rc=$?
+    exit "${rc}"
+fi
+
+# The bundle builder. Everything the two blocks above say applies unchanged: it
+# produces a FILE and reads that file back through rauc -- with signature
+# verification ON, against the system.conf the image ships -- before it will
+# point the -latest symlink at it, so there is no shape of "ran and asserted
+# nothing" for a count to guard against; and it needs docker but not `docker
+# buildx`, so the container route carries it.
+#
+# It needs one thing the assemblers do not, and the failure is named by the
+# builder rather than here: the rauc binary os/update/rauc/build.sh produces for
+# THIS HOST's architecture. A bundle is written by one rauc and installed by
+# another on the device, and commit 9a43a59 records what happens when they are
+# not the same build.
+if [ "${MODE}" = bundle ]; then
+    echo "os/build: building the RAUC update bundle"
+    rc=0
+    run_bun run src/bundle-cli.ts "$@" || rc=$?
     exit "${rc}"
 fi
 
