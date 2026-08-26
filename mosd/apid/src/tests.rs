@@ -1689,42 +1689,59 @@ async fn api_v1_meta_is_401_in_setup_mode_too() {
     assert_eq!(envelope(response).await["code"], "not_authenticated");
 }
 
-/// The two declared paths are the only ones that changed. Every other path
-/// under `/api` keeps **both** of its answers: the subtree's own 404 with a
-/// session, and the gate's redirect without one, in either gate mode.
+/// The declared paths are the only ones that changed. Every other path under
+/// `/api` keeps **both** of its answers: the subtree's own 404 with a session,
+/// and the gate's redirect without one, in either gate mode.
+///
+/// The bare family prefixes are members of this class rather than exceptions
+/// to it. axum's `{*path}` wildcard matches at least one character, so
+/// `/api/v1/settings` and `/api/v1/settings/` name no dot-path and reach the
+/// not-found handler — and the gate's predicate has to agree with the router
+/// about that, or an unauthenticated request for one of them would be handed
+/// to a route that does not exist instead of being redirected.
 #[tokio::test]
 async fn every_other_api_path_keeps_both_of_its_answers() {
-    const UNDECLARED: &str = "/api/v1/settings/hostname";
+    const UNDECLARED: [&str; 6] = [
+        "/api/v1/actions/reboot",
+        "/api/v1/ssh/authorized-keys",
+        "/api/v1/settings",
+        "/api/v1/settings/",
+        "/api/v1/state",
+        "/api/v1/state/",
+    ];
 
     let (router, _) = test_app(configured_tree("hunter2secret"));
     let cookie = login(&router, "hunter2secret").await;
-
-    // With a session: the reserved subtree's own envelope, byte for byte.
-    let response = get(&router, UNDECLARED, Some(&cookie)).await;
-    assert_eq!(response.status(), StatusCode::NOT_FOUND);
-    assert_api_headers(&response, UNDECLARED);
-    assert_eq!(
-        body_string(response).await,
-        json!({
-            "error": {
-                "code": "not_found",
-                "message": format!("no API route at {UNDECLARED}"),
-                "source": "apid",
-            }
-        })
-        .to_string()
-    );
-
-    // Without one: the gate's redirect to `/login`.
-    let redirected = get(&router, UNDECLARED, None).await;
-    assert_eq!(redirected.status(), StatusCode::SEE_OTHER);
-    assert_eq!(location(&redirected), "/login");
-
-    // And in setup mode, the gate's redirect to `/setup`.
     let (fresh, _) = test_app(unconfigured_tree());
-    let redirected = get(&fresh, UNDECLARED, None).await;
-    assert_eq!(redirected.status(), StatusCode::SEE_OTHER);
-    assert_eq!(location(&redirected), "/setup");
+
+    for path in UNDECLARED {
+        // With a session: the reserved subtree's own envelope, byte for byte.
+        let response = get(&router, path, Some(&cookie)).await;
+        assert_eq!(response.status(), StatusCode::NOT_FOUND, "{path}");
+        assert_api_headers(&response, path);
+        assert_eq!(
+            body_string(response).await,
+            json!({
+                "error": {
+                    "code": "not_found",
+                    "message": format!("no API route at {path}"),
+                    "source": "apid",
+                }
+            })
+            .to_string(),
+            "{path}"
+        );
+
+        // Without one: the gate's redirect to `/login`.
+        let redirected = get(&router, path, None).await;
+        assert_eq!(redirected.status(), StatusCode::SEE_OTHER, "{path}");
+        assert_eq!(location(&redirected), "/login", "{path}");
+
+        // And in setup mode, the gate's redirect to `/setup`.
+        let redirected = get(&fresh, path, None).await;
+        assert_eq!(redirected.status(), StatusCode::SEE_OTHER, "{path}");
+        assert_eq!(location(&redirected), "/setup", "{path}");
+    }
 }
 
 /// `mosd/apid/openapi.json` is the bytes `apid --openapi` prints.
@@ -4046,4 +4063,39 @@ async fn a_dot_path_that_does_not_exist_is_422_and_not_404() {
     let error = envelope(response).await;
     assert_eq!(error["code"], "settings_rejected");
     assert_eq!(error["path"], json!("no.such.path"));
+}
+
+/// §3.1's trap again, for the routes this campaign adds: an unauthenticated
+/// resource read answers §2.4's envelope with a 401 and **never** a redirect,
+/// in both gate modes. They inherit it from `ApiSession`; inheriting is not
+/// the same as being asserted.
+#[tokio::test]
+async fn the_resource_routes_are_401_without_a_session_in_both_gate_modes() {
+    const PATHS: [&str; 2] = ["/api/v1/settings/hostname", "/api/v1/state/hostname"];
+
+    let (configured, _) = test_app(secret_tree("hunter2secret"));
+    let (fresh, _) = test_app(unconfigured_tree());
+
+    for (mode, router) in [("configured", &configured), ("setup mode", &fresh)] {
+        for path in PATHS {
+            let response = get(router, path, None).await;
+            assert_eq!(
+                response.status(),
+                StatusCode::UNAUTHORIZED,
+                "{path} in {mode}"
+            );
+            assert_eq!(
+                response.headers().get(LOCATION),
+                None,
+                "{path} in {mode} answered a redirect, which a script reads as success"
+            );
+            assert_api_headers(&response, path);
+            let error = envelope(response).await;
+            assert_eq!(error["code"], "not_authenticated", "{path} in {mode}");
+            assert_eq!(error["source"], "apid", "{path} in {mode}");
+            // §2.4's `path` is the dot-path at fault, and a request that failed
+            // to authenticate never named one: the read did not happen.
+            assert_eq!(error.get("path"), None, "{path} in {mode}");
+        }
+    }
 }
