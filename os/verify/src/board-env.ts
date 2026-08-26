@@ -1,20 +1,17 @@
 // A board definition, read as DATA.
 //
-// Why this file exists at all. `os/boards/<board>/board.env` is the single
-// source of truth for a board, and every consumer so far has read it by
-// `source`-ing it. That works because the shell will evaluate anything --
-// which is the whole problem: sourcing a board definition executes it. A key
+// `os/boards/<board>/board.env` is the single source of truth for a board and
+// every other consumer reads it by `source`-ing it, which executes it: a key
 // whose value is `$(rm -rf /)` is not a lint finding, it is a command that has
-// already run by the time any checker looks at the parsed result. The file is
-// data; nothing here ever hands it to a shell.
+// already run by the time a checker looks at the parsed result. Nothing here
+// ever hands the file to a shell.
 //
-// So this is a parser for the DIALECT the real board definitions are written
-// in -- assignments, comments, quotes, `${NAME}` and `$((arithmetic))` -- and
-// a refusal, by name, for everything else that would have been shell. The
-// refusal is the point. A parser that quietly skipped a line it did not
-// understand would produce a board definition missing a key, and a missing key
-// makes a shared script fail somewhere far from the omission (which is the
-// failure the retired os/verify/lint.sh recorded in its own header).
+// So this parses the dialect the real board definitions are written in --
+// assignments, comments, quotes, `${NAME}`, `$((arithmetic))` -- and refuses
+// everything else that would have been shell, by name. The refusal is the point:
+// a parser that quietly skipped a line it did not understand would produce a
+// definition missing a key, and a missing key makes a shared script fail far
+// from the omission.
 //
 // What it accepts, and every one of these shapes is in a real board.env today:
 //

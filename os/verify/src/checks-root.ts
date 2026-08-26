@@ -6,40 +6,27 @@
 // the same matcher shape -- the conclusion's own `what` clause is the
 // substring both directions share.
 //
-// Why the root is unpacked once.
-//
-// `ctx.unpackRoot()` unpacks the WHOLE archive -- 4,354 paths on cx3576, 9,238
+// `ctx.unpackRoot()` unpacks the whole archive -- 4,354 paths on cx3576, 9,238
 // on x64 -- and memoises it for the run, so the fifty-odd checks below pay for
-// one unsquashfs between them. Since M4c that cache is keyed on the payload's
-// content, which is what makes it safe to run twice at one `--work`: it used to
-// be keyed on the slot's name and would hand the second run the FIRST image's
-// tree. Every check in this file went through that one call, so the repair came
-// before the port did.
+// one unsquashfs between them. That cache is keyed on the payload's content,
+// which is what makes it safe to run twice at one `--work`: keyed on the slot's
+// name it handed the second run the first image's tree.
 //
-// What is not here.
+// A check lands here only if it produces the same conclusion text on both
+// shipped boards, measured against both boards' real output rather than read off
+// the source. Everything the oracle guards with a board or profile condition --
+// the radio firmware set, /etc/mos/<hwinit>.conf, the gadget and Bluetooth
+// units, the status indicator, fw_printenv/grub-editenv, hostapd/wpa_supplicant
+// -- needs a `boards:` list and a SKIP rather than a silence, and is M4d's.
 //
-// Everything the oracle guards with a board or profile condition -- the radio
-// firmware set, /etc/mos/<hwinit>.conf, the gadget and Bluetooth units, the
-// status indicator, fw_printenv/grub-editenv, hostapd/wpa_supplicant. Those
-// fire on one board and not the other, so their register entries need a
-// `boards:` list and their absence needs to be a SKIP rather than a silence.
-// They are M4d's. The rule this file follows is: a check lands here only if it
-// produces the SAME conclusion text on both shipped boards, which is a fact
-// that was measured against both boards' real output rather than read off the
-// source.
-//
-// And why no matcher here is ` contains `.
-//
-// Measured on 2026-08-26 against both boards' real conclusion lists: the
-// substring ` contains ` claims 14 lines on cx3576 and 8 on x64. Ten of them
-// are `BOOT-A contains Image`-shaped, which is M4d's boot-slot listing, and
-// four of those are U-Boot-only. `ShellMatcher` takes a substring and not a
-// regex, so whichever batch registered ` contains ` first would make the
-// other's lines `ambiguous` -- and M4d cannot repair that by landing later.
-// This file needs exactly one of those lines, the kernel-modules one, and
-// claims it by a substring long enough to name it alone:
-// `/usr/lib/modules contains exactly one kernel's modules`. The rest are left
-// unclaimed, on purpose.
+// No matcher here is ` contains `. Measured on 2026-08-26 against both boards'
+// real conclusion lists, that substring claims 14 lines on cx3576 and 8 on x64;
+// ten are `BOOT-A contains Image`-shaped, which is M4d's boot-slot listing.
+// `ShellMatcher` takes a substring and not a regex, so whichever batch
+// registered ` contains ` first would make the other's lines `ambiguous`, and
+// M4d cannot repair that by landing later. This file needs exactly one of those
+// lines and claims it by a substring long enough to name it alone:
+// `/usr/lib/modules contains exactly one kernel's modules`.
 
 import { existsSync, lstatSync, readdirSync, readFileSync, readlinkSync, type Stats } from 'node:fs'
 import { basename, dirname, join } from 'node:path'
