@@ -51,10 +51,23 @@
 // THE USER LIFTED THAT EXCLUSION ON 2026-08-26 for exactly a `--version`
 // handler that answers BEFORE any daemon initialisation, provisioning, bus
 // connection or key generation. RFCT-113 M7d landed one in each, and these two
-// entries are `version` like the other ten. Re-measured in the x64 factory root
-// after the rebuild: `/usr/bin/mosd --version` -> `mosd 0.1.0 (<commit>)`, rc=0,
-// and /var/lib/mos is NOT created; `/usr/bin/apid --version` -> `apid 0.1.0
-// (<commit>)`, rc=0, in milliseconds, with no certificate and no key generated.
+// entries are `version` like the other ten.
+//
+// RE-MEASURED IN THE x64 FACTORY ROOT after the rebuild, on 2026-08-26, and the
+// MUTATION is what was measured rather than only the output:
+//
+//   /usr/bin/mosd --version -> `mosd 0.1.0 (60b9ccc76939)`, rc=0, 249ms
+//     round trip INCLUDING `docker run`. /var/lib/mos does not exist before the
+//     invocation and does not exist after it.
+//   /usr/bin/apid --version -> `apid 0.1.0 (60b9ccc76939)`, rc=0, 255ms
+//     the same way -- against rc=124 and never returning, before. No
+//     certificate, no session key, no /var/lib/mos at all.
+//
+// AND THE UNCHANGED PATHS WERE MEASURED TOO, because "it answers --version" and
+// "it still starts" are two claims: `/usr/bin/mosd` with no argv still
+// provisions (secrets/, settings.toml) and still exits 1 on the absent system
+// bus, and `/usr/bin/mosd -v` -- NOT this flag -- falls through into exactly
+// that same daemon and prints no version at all.
 //
 // AND THEY CARRY A SECOND HALF THE OTHER TEN DO NOT: the commit they were built
 // from, marked `embedsBuildCommit` below and asserted by the runner against the
