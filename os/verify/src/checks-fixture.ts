@@ -327,6 +327,7 @@ function seedHealthyRoot(root: string, board: Board): void {
   // --- apid, carrying the escape page's markup ---
   file('/usr/bin/apid', `ELF ...${verifierConst('BUILTIN_MARKUP')}... trailer\n`)
 
+  seedDbus(root, file)
   seedShadow(root, file)
   seedMqtt(root, file)
   seedBoardShape(root, board, file)
@@ -334,6 +335,38 @@ function seedHealthyRoot(root: string, board: Board): void {
   // Nothing at /builtin, nothing at /etc/rauc/keyring.pem, nothing under
   // /srv/ui: absence is the shipped state for all three, and seeding any of
   // them would make the fixture red before a test had mutated anything.
+}
+
+// ---------------------------------------------------------------------------
+// M4f: the D-Bus policies
+// ---------------------------------------------------------------------------
+
+/**
+ * The system bus, the mosd policy and the extension policy.
+ *
+ * The extension policy is seeded WITH the commentary the shipped file carries,
+ * and that is the point rather than realism for its own sake: com.mos.ext.conf
+ * documents its own widening hazard in prose that NAMES com.mos.mosd and shows
+ * `own_prefix="com.mos"` as the mistake. A reader that could not tell an XML
+ * comment from a rule reports the warning as an instance of the thing it warns
+ * about -- so the fixture has to contain the trap, or the tests would prove
+ * comment-stripping works on a file that needs none.
+ *
+ * com.mos.mosd.conf is seeded by `seedHealthyRoot` above, beside the sq_grep
+ * that reads it; the parse-level facts this batch asserts are mutations OF that
+ * file, so it stays in one place.
+ */
+function seedDbus(root: string, file: WriteFile): void {
+  file('/usr/lib/systemd/system/dbus.service', '[Unit]\n')
+  file('/usr/lib/systemd/system/dbus.socket', '[Unit]\n')
+  file('/usr/share/dbus-1/system.d/com.mos.ext.conf',
+    '<busconfig>\n'
+    + '  <!-- Extension point. Do NOT widen this to own_prefix="com.mos": that\n'
+    + '       would grant ownership of com.mos.mosd to every local uid. -->\n'
+    + '  <policy context="default">\n'
+    + '    <allow own_prefix="com.mos.ext"/>\n'
+    + '  </policy>\n'
+    + '</busconfig>\n')
 }
 
 /** What `seedHealthyRoot` hands its helpers: write a file, making its parents. */
@@ -539,6 +572,11 @@ function seedBoardShape(root: string, board: Board, file: WriteFile): void {
     // device in the fleet then advertises the same name.
     file('/etc/bluetooth/main.conf', '[General]\nAlwaysPairable = false\n')
     file('/usr/lib/systemd/system/bluetooth.service', '[Unit]\n')
+    // The VENDOR path, which is where trixie's bluez installs it. The oracle
+    // accepts /etc/dbus-1/system.d too, because dbus-daemon reads both and a
+    // correct bookworm image puts it there.
+    file('/usr/share/dbus-1/system.d/bluetooth.conf',
+      '<busconfig>\n  <policy user="root">\n    <allow own="org.bluez"/>\n  </policy>\n</busconfig>\n')
     enable(root, 'bluetooth.service', 'bluetooth.target.wants')
   }
 

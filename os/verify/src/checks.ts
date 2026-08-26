@@ -47,6 +47,7 @@ import {
   type GptTable,
 } from './image.ts'
 import { BOARD_CHECKS } from './checks-board.ts'
+import { DBUS_CHECKS } from './checks-dbus.ts'
 import { FSTAB_CHECKS } from './checks-fstab.ts'
 import { GPT_CHECKS } from './checks-gpt.ts'
 import { MQTT_CHECKS } from './checks-mqtt.ts'
@@ -121,6 +122,7 @@ export const CHECKS: readonly CheckCase[] = [
   ...BOARD_CHECKS,
   ...MQTT_CHECKS,
   ...SHADOW_CHECKS,
+  ...DBUS_CHECKS,
 ]
 
 /**
