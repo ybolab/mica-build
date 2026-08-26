@@ -118,7 +118,7 @@ export const GPT_CHECKS: readonly CheckCase[] = [
     },
   },
 
-  // NOT PORTED: the partition COUNT (os/verify-image-v2.sh:1419).
+  // NOT PORTED: the partition COUNT.
   //
   // `pass "exactly ${EXPECT_PARTS} partitions"`. Its identity cannot be
   // expressed as a substring, and this was measured rather than guessed --

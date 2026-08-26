@@ -87,9 +87,8 @@ export interface ImageContext {
    * Where this board's BUILD OUTPUTS are -- `_out/<board>`.
    *
    * Two checks read a file the build produced beside the image rather than a
-   * byte of the image itself: the verity parameter file
-   * (os/verify-image-v2.sh:2205) and the rootfs report (:4272). The oracle
-   * spells both `${REPO_ROOT}/_out/${MOS_BOARD}/...`, and so does
+   * byte of the image itself: the verity parameter file and the rootfs report.
+   * The oracle spells both `${REPO_ROOT}/_out/${MOS_BOARD}/...`, and so does
    * `createImageContext` -- this is a seam, not a second convention. It exists
    * because a suite that read the real `_out/` would pass on a host that had
    * built an image and fail on one that had not, and a skip reports the same

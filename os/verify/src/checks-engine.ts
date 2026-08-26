@@ -497,7 +497,7 @@ const ENGINE_CHECKS: readonly CheckCase[] = [
 ]
 
 // ---------------------------------------------------------------------------
-// check_no_package_manager -- os/verify-image-v2.sh:1112
+// check_no_package_manager
 // ---------------------------------------------------------------------------
 
 const PKGMGR_BINARIES = [
@@ -632,7 +632,7 @@ const PURGE_CHECKS: readonly CheckCase[] = [
 ]
 
 // ---------------------------------------------------------------------------
-// check_ca_bundle -- os/verify-image-v2.sh:3498
+// check_ca_bundle
 // ---------------------------------------------------------------------------
 
 const CA_BUNDLE = '/etc/ssl/certs/ca-certificates.crt'

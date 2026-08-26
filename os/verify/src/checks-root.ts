@@ -89,7 +89,7 @@ export function entry(root: string, path: string): Stats | undefined {
 }
 
 // ---------------------------------------------------------------------------
-// sq_regular -- os/verify-image-v2.sh:2414-2420
+// sq_regular
 // ---------------------------------------------------------------------------
 
 /**
@@ -164,7 +164,7 @@ function regularFileCheck(path: string): CheckCase {
 }
 
 // ---------------------------------------------------------------------------
-// sq_grep -- os/verify-image-v2.sh:661-668
+// sq_grep
 // ---------------------------------------------------------------------------
 
 interface GrepCase {
@@ -266,7 +266,7 @@ function grepCheck(c: GrepCase): CheckCase {
 }
 
 // ---------------------------------------------------------------------------
-// sq_enabled / sq_enabled_any -- os/verify-image-v2.sh:2442-2467
+// sq_enabled / sq_enabled_any
 // ---------------------------------------------------------------------------
 
 /**

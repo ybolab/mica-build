@@ -1,6 +1,6 @@
 // Batch 1b: the boot slots' filesystems.
 //
-// `check_boot_slot` (os/verify-image-v2.sh:1776) runs twice per board, once
+// `check_boot_slot` runs twice per board, once
 // for BOOT-A and once for BOOT-B, and everything it concludes is `many` here
 // with the slot NAME as the instance -- not a count. R4 measured one defect as
 // 465, 467, 562 and 925 differing bytes from nothing but the clock, so a
@@ -152,7 +152,7 @@ export const SLOT_CHECKS: readonly CheckCase[] = [
     },
   },
 
-  // NOT PORTED: the required-file listing (os/verify-image-v2.sh:1841).
+  // NOT PORTED: the required-file listing.
   //
   // `pass "${slot} contains ${f}"`, once per entry of BOOT_SLOT_REQUIRED_FILES
   // -- four per slot on cx3576, three on x64. Its identity is blocked by the

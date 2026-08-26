@@ -48,8 +48,8 @@ export function skipped(id: string, message: string, firing: Firing = {}): Check
 }
 
 /**
- * The case-insensitive equality the oracle spells `eq_ci`
- * (os/verify-image-v2.sh:281): GUIDs and typecodes are hexadecimal and the
+ * The case-insensitive equality the oracle spells `eq_ci`: GUIDs and
+ * typecodes are hexadecimal and the
  * tools that print them disagree about case, so the comparison folds it and the
  * message does not.
  *

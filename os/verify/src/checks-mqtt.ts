@@ -172,7 +172,7 @@ function policyRules(root: string, path: string): string[] {
 }
 
 // ---------------------------------------------------------------------------
-// check_mqttd -- os/verify-image-v2.sh:794-927
+// check_mqttd
 // ---------------------------------------------------------------------------
 
 const MQTTD_CHECKS: readonly CheckCase[] = [
@@ -462,7 +462,7 @@ function mountUnitFor(root: string, dir: string): { name: string, what: string }
 }
 
 // ---------------------------------------------------------------------------
-// check_mqtt_broker -- os/verify-image-v2.sh:946-984
+// check_mqtt_broker
 // ---------------------------------------------------------------------------
 
 const BROKER_CHECKS: readonly CheckCase[] = [

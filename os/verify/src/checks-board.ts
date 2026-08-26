@@ -148,7 +148,7 @@ function packedGrep(input: {
 }
 
 // ---------------------------------------------------------------------------
-// the loader partition -- os/verify-image-v2.sh:1586-1646
+// the loader partition
 // ---------------------------------------------------------------------------
 
 /**
@@ -340,7 +340,7 @@ function loaderSkipMessage(board: Board): string {
 }
 
 // ---------------------------------------------------------------------------
-// what a boot slot must contain -- os/verify-image-v2.sh:1839-1845, 1864-1874
+// what a boot slot must contain
 // ---------------------------------------------------------------------------
 
 
@@ -560,7 +560,7 @@ const RADIO_CHECKS: readonly CheckCase[] = [
 ]
 
 // ---------------------------------------------------------------------------
-// the hwinit facts -- os/verify-image-v2.sh:2575-2703
+// the hwinit facts
 // ---------------------------------------------------------------------------
 
 function hwinitConfChecks(board: Board): CheckCase[] {

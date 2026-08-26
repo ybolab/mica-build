@@ -1,6 +1,6 @@
 // Batch 4b: the four ext4 storage tiers.
 //
-// `check_ext4` (os/verify-image-v2.sh:2306) is called four times -- META,
+// `check_ext4` is called four times -- META,
 // STATE, EPHEMERAL, DATA -- and prints SIX conclusions each, plus one about
 // EPHEMERAL's seed stamp: 25 conclusions per board, the largest single family
 // left unclaimed after batch 4a.

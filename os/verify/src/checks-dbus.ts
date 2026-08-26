@@ -73,7 +73,7 @@ export function regularFileFollowingLinks(root: string, path: string): boolean {
 }
 
 /**
- * `dbus_policy_rules_only` (os/verify-image-v2.sh:661): XML comments removed.
+ * `dbus_policy_rules_only`: XML comments removed.
  *
  * The state machine is the oracle's, transcribed: `incomment` persists ACROSS
  * lines, an unterminated `<!--` swallows the rest of the file, and every input
@@ -212,8 +212,7 @@ export function policyFacts(text: string, bus: string): PolicyFacts {
 }
 
 /**
- * The oracle's `sed -n` for `BusName=`, with `tr -d '\r'` and `tail -n1` after it
- * (os/verify-image-v2.sh:2975).
+ * The oracle's `sed -n` for `BusName=`, with `tr -d '\r'` and `tail -n1` after it.
  *
  * The LAST such line, not the first: systemd itself takes the last assignment
  * of a key in a unit file, and a unit carrying two would otherwise be judged
@@ -474,7 +473,7 @@ const MOSD_CHECKS: readonly CheckCase[] = [
 ]
 
 // ---------------------------------------------------------------------------
-// check_ext_policy -- os/verify-image-v2.sh:735
+// check_ext_policy
 // ---------------------------------------------------------------------------
 
 const EXT_GRANT_RE = /allow own_prefix="com\.mos\.ext"/

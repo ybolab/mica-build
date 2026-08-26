@@ -1,8 +1,8 @@
 // The command names a shell script invokes at COMMAND POSITION, and whether
 // each resolves inside the packed root.
 //
-// A transcription of `mos_script_commands` and `sq_resolves_cmd`
-// (os/verify-image-v2.sh:4168-4230), in their own module because they are a
+// A transcription of `mos_script_commands` and `sq_resolves_cmd`, in their own
+// module because they are a
 // nine-stage text pipeline and putting them beside the check that uses them
 // would bury it.
 //
@@ -41,8 +41,8 @@ const SH_KEYWORDS = ' if then else elif fi for while until do done case esac in 
 /**
  * The function names the script defines, which are not external commands.
  *
- * The oracle's `sed -n` for a `name() {` at the start of a line
- * (os/verify-image-v2.sh:4171): the `{` must be on the SAME line. A function
+ * The oracle's `sed -n` for a `name() {` at the start of a line: the `{` must
+ * be on the SAME line. A function
  * opened on the next line is missed, by the oracle and therefore by this.
  */
 function definedFunctions(script: string): string[] {

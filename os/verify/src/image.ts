@@ -729,7 +729,7 @@ export interface VerityRequest {
  *
  * It never creates a device-mapper target, never calls losetup and never mounts
  * anything -- which is what makes it safe against a host, and it is the reason
- * the oracle chose it (os/verify-image-v2.sh:2190).
+ * the oracle chose it.
  *
  * BOTH ANSWERS EXIT 1, AND ONLY ONE OF THEM IS AN ANSWER. Measured:
  *   "Verification of root hash failed."          -> exit 1, the failing DIRECTION

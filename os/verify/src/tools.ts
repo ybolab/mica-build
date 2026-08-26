@@ -64,7 +64,7 @@ export const REQUIRED_TOOLS = [
   'debugfs',
   'tune2fs',
   'dumpe2fs',
-  // e2fsck is the ext4 family's own verdict (os/verify-image-v2.sh:2342) and
+  // e2fsck is the ext4 family's own verdict and
   // batch 4b drives it. It ships in `e2fsprogs`, which the container route
   // already installs -- which is exactly why it has to be NAMED: the host route
   // checks this list and nothing else, so a tool that is only ever reached

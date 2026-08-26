@@ -30,7 +30,7 @@ export function boardsWhere(predicate: (board: Board) => boolean): string[] {
   return SHIPPED.filter(predicate).map(b => b.name)
 }
 
-/** `is_uboot_board` (os/verify-image-v2.sh:233), asked of a definition. */
+/** `is_uboot_board`, asked of a definition. */
 export const isUBoot = (board: Board): boolean => board.bootloader === 'uboot'
 
 /** `board_has_radio` (:241). */

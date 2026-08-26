@@ -2,9 +2,8 @@
 //
 // `walkLayout` needs a verity-slot size, because the board definition
 // deliberately does not declare where everything after the slots begins -- the
-// slot size is content-derived and read back from the GPT
-// (os/verify-image-v2.sh:1441). Three families now need that walk against a
-// live image: the ext4 tiers' offsets, ROOTFS-B's zero-fill extent, and the
+// slot size is content-derived and read back from the GPT. Three families need
+// that walk against a live image: the ext4 tiers' offsets, ROOTFS-B's zero-fill extent, and the
 // U-Boot blob's containment arithmetic. This is the one place that combines
 // them, so the reading is made once and the same way each time.
 //

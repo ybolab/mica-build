@@ -36,7 +36,7 @@
 //
 // TWO CHECKS DISAGREE ABOUT AN EMPTY PASSWORD FIELD, AND BOTH ARE PORTED.
 //
-// `factory-shadow-locked` (os/verify-image-v2.sh:3765) treats an EMPTY field as
+// `factory-shadow-locked` treats an EMPTY field as
 // locked -- its awk is `$2 !~ /^[!*]/ && $2 != ""`. `factory-shadow-accounts-
 // locked` (:3875-3899) treats it as the WORST case and says so: an empty field is
 // passwordless login, not a locked marker. The second is right and the first
