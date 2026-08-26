@@ -29,6 +29,7 @@ import { deriveLayout, gptSpecFor } from './layout-cx3576.ts'
 import {
   assembleCx3576,
   checkLoaderLanded,
+  checkLoaderMagic,
   envFileGet,
   magicHexAt,
   mountsFor,
@@ -461,6 +462,34 @@ describe('THE LOADER LANDS AT SECTOR 64, checked against the written table', () 
       .rejects.toThrow(/sgdisk could not write the GPT of/)
     rmSync(refused, { force: true })
   }, TOOL_TIMEOUT_MS)
+
+  test('the loader partition must CONTAIN a loader, read out of the image', async () => {
+    // The blob was checked before it was written; this is the same question
+    // asked of a different thing -- not "is the file a loader" but "is a loader
+    // at the sector the table points at". They come apart if the partition
+    // moved, if the dd went to the wrong offset, or if something written
+    // afterwards landed on top, and none of those announce themselves.
+    const img = join(dir, 'no-loader.img')
+    await truncate(tb, img, '2M')
+    expect(() => checkLoaderMagic(g, img, 64n))
+      .toThrow(/the first bytes of the loader partition are '00000000', not the idbloader magic '524b4e53'/)
+    // The positive control, at the same offset, on the same image.
+    await tb.must(['dd', `if=${base.uboot}`, `of=${img}`, 'bs=512', 'seek=64', 'count=1',
+      'conv=notrunc', 'status=none'])
+    expect(checkLoaderMagic(g, img, 64n)).toBe('524b4e53')
+    // And it reads at the START SECTOR it is given, not at a hard-coded 64: a
+    // relocated partition points somewhere with nothing in it.
+    expect(() => checkLoaderMagic(g, img, 2048n)).toThrow(/not the idbloader magic/)
+    rmSync(img, { force: true })
+  }, TOOL_TIMEOUT_MS)
+
+  test('a short read at the offset is refused as a short read, not as a wrong magic', () => {
+    // `undefined` compares unequal to everything, so a truncated image would
+    // otherwise be reported as carrying the wrong bootloader.
+    const stub = join(dir, 'two-bytes.bin')
+    writeFileSync(stub, Buffer.from([0x52, 0x4b]))
+    expect(() => magicHexAt(stub, 0n)).toThrow(/has only 2 byte\(s\) at offset 0, and 4 were read/)
+  })
 
   test('a size that came back short is refused as well as a moved start', async () => {
     // Both halves of the comparison. A check that only looked at the start would

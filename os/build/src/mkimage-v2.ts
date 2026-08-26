@@ -448,13 +448,7 @@ export async function assembleCx3576(
     // nothing; this asserts what is actually there.
     const got = await readPartition(tb, imgTmp, loaderPartnum);
     checkLoaderLanded(geometry, got)
-    const gotMagic = magicHexAt(imgTmp, geometry.sectorsToBytes(got.firstSector))
-    if (gotMagic !== loaderMagic) {
-      throw new Error(
-        `the first bytes of the ${loaderLabel} partition are '${gotMagic}', not the idbloader magic `
-        + `'${loaderMagic}'`,
-      )
-    }
+    const gotMagic = checkLoaderMagic(geometry, imgTmp, got.firstSector)
     const loaderBytes = geometry.sectorsToBytes(got.sizeSectors)
     log(
       `${loaderLabel} p${loaderPartnum}: sectors ${got.firstSector}..${got.firstSector + got.sizeSectors - 1n}, `
@@ -476,6 +470,31 @@ export async function assembleCx3576(
     if (ownToolbox) await tb.close()
     rmSync(workDir, { recursive: true, force: true })
   }
+}
+
+/**
+ * The first bytes of the loader PARTITION are a loader -- read out of the image.
+ *
+ * The blob was already checked before it was written, so this is the second half
+ * of the same question asked of a different thing: not "is the file a loader"
+ * but "is a loader at the sector the table points at". Those come apart if the
+ * partition moved, if the dd went to the wrong offset, or if anything written
+ * afterwards landed on top of it, and none of those announce themselves -- the
+ * image assembles, verifies and flashes.
+ *
+ * Its own function for the same reason checkLoaderLanded is: an inline check
+ * that nothing a caller can pass makes fail is a check that has only ever been
+ * observed not firing.
+ */
+export function checkLoaderMagic(geometry: Geometry, image: string, startSector: bigint): string {
+  const loader = geometry.requirePartition('LOADER')
+  const want = loader.require('MAGIC_HEX')
+  const got = magicHexAt(image, geometry.sectorsToBytes(startSector), want.length / 2)
+  if (got === want) return got
+  throw new Error(
+    `the first bytes of the ${loader.require('LABEL')} partition are '${got}', not the idbloader `
+    + `magic '${want}'`,
+  )
 }
 
 /**
