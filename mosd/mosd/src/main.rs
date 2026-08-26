@@ -404,7 +404,9 @@ fn service_scan_enabled(dry_run: bool, scan_override: Option<&str>) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::{UNKNOWN_COMMIT, commit_or_unknown, service_scan_enabled, version_line, wants_version};
+    use super::{
+        UNKNOWN_COMMIT, commit_or_unknown, service_scan_enabled, version_line, wants_version,
+    };
 
     fn argv(args: &[&str]) -> Vec<String> {
         args.iter().map(|s| (*s).to_string()).collect()
@@ -446,7 +448,11 @@ mod tests {
     /// place clap answers it for `mos-mqttd` and `mos-mqtt-broker`.
     #[test]
     fn the_flag_is_found_wherever_it_appears() {
-        assert!(wants_version(argv(&["--config", "/etc/x.toml", "--version"])));
+        assert!(wants_version(argv(&[
+            "--config",
+            "/etc/x.toml",
+            "--version"
+        ])));
     }
 
     /// ABSENT IS `unknown`, NEVER AN ERROR -- and empty counts as absent,
