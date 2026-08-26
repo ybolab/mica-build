@@ -1,22 +1,22 @@
 # syntax=docker/dockerfile:1@sha256:ecfaec9ed6d810b56388c508f4121597bfbba70d41a6dfeee4d8cad5f295fc32
 # stages/32-feature-rauc -- the update client: five files off os/update/rauc's
-# build, and the assertion that the binary in THIS root links no second TLS
+# build, and the assertion that the binary in this root links no second TLS
 # stack.
-#
-# A FEATURE STAGE WITH NO CALLER-FACING SWITCH. No board declines it -- an
+
+# A feature stage with no caller-facing switch. No board declines it -- an
 # image without RAUC is an image that cannot take an update, which is the whole
 # of mos's A/B design. It is a stage because one-feature-per-stage is this
 # tree's vocabulary, and because it is the one grouping under which
 # `rauc-install` and its no-TLS assertion are obviously the same subject. The
 # mechanism can still omit it (`MOS_ROOTFS_WITHOUT=rauc` reaches
 # `--without rauc`), so the switch is reachable rather than theoretical.
-#
+
 # grub-editenv is NOT here. RAUC's grub backend execs it, so it reads as RAUC
 # material; it is installed in stages/40-board because it is gated on
 # RAUC_BOOTLOADER, which is a board fact, and because it is an apt transaction
 # and the board stage is where the rest of them are.
 
-# THE LINK BACK UP THE CHAIN. MOS_STAGE_PREV is the local image tag the
+# The link back up the chain. MOS_STAGE_PREV is the local image tag the
 # previous stage was written to; the driver passes it and refuses to build a
 # stage that does not declare it. There is no default, so this file cannot be
 # built standalone against whatever `FROM` happened to be typed -- which is the
@@ -36,7 +36,7 @@ COPY ${RAUC_DIR}/ /tmp/rauc/
 RUN --mount=type=bind,source=os/rootfs/scripts,target=/mos-scripts \
     sh /mos-scripts/rauc-install.sh
 
-# NOT LINKED AGAINST A SECOND TLS STACK, asserted against the binary that is
+# Not linked against a second TLS stack, asserted against the binary that is
 # actually in this root rather than against the build's own claim. `ldd` here
 # is the loader's answer under emulation for a foreign board; a curl or GnuTLS
 # soname reappearing would mean the source build silently regained streaming.
