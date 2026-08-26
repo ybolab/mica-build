@@ -101,3 +101,19 @@ implementation — see Decisions item 4.)*
   collection resources, `test/apid-api/` phases (later phase), `mosd/mosd`
   and `mosd/mosd-settings` sources, docs/design/api.md rewrites (PLAN-015
   M5 owns docs), any change to the HTML form surface.
+
+## Routed onward (recorded at M3, 2026-08-26)
+
+- apid test `tests::the_audit_trail_records_the_login_lifecycle_and_never_the_password`
+  is load-sensitive: observed once answering 429 (login rate limiter) where the
+  test expects 401, on a run whose diff touched only YAML and markdown; passed
+  on four subsequent full runs. Pre-existing, not introduced by this plan; no
+  milestone here may carry a test fix (M4 is comment-only). Task file to be
+  created at campaign close once RFCT numbering past the reserved ranges
+  settles.
+- `oasdiff --fail-on ERR` alone is narrower than api.md §2.1: removing a
+  documented non-success response classifies `info` and passes. Closed in M3
+  by promoting named check ids (severity-levels file); the id->clause mapping
+  and the not-mechanisable residue (error.code value changes) are recorded in
+  RFCT-119.md.
+
