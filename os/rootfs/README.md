@@ -169,7 +169,7 @@ There is no single `Dockerfile.v2` any more. `stages/` holds one Dockerfile per
 stage — `10-base`, `20-install`, `90-pack`, and `30-40-unsplit` until M5c and
 M5d cut it — built in numeric order, each `FROM` the local image tag the
 previous one was written to. `build-v2.sh` still stages the context and computes
-every argument; sequencing is `os/verify/run.sh --build-rootfs`.
+every argument; sequencing is `os/build/run.sh --build-rootfs`.
 
 `stages/README.md` is the file to read first: what the chain is, which stage
 holds what, the one reordering the cut required and why, and the measurement
@@ -488,7 +488,7 @@ whether or not anything changed. A gate that compares sha256 across a build
 change is measuring the clock. The gate that works: extract both images and
 `diff -r --no-dereference` the trees, then check that the differing set is no
 larger than the control's, where the control is two cold builds of the
-*unmodified* file. `os/verify/run.sh --build-rootfs --no-cache` exists so the
+*unmodified* file. `os/build/run.sh --build-rootfs --no-cache` exists so the
 subject side can be cold without pruning the daemon's cache out from under
 every other build on the machine.
 
