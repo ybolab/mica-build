@@ -19,6 +19,12 @@
 #   boot-cmdline-a.txt    kernel append line for the A slot
 #   boot-cmdline-b.txt    kernel append line for the B slot
 #   rootfs-report-v2.txt  package list + installed size
+#   factory-root.oci      the packed root as an OCI image, in OCI-layout tar
+#                         form. NOT consumed by the assembler -- this is what
+#                         RFCT-113's smoke runner executes the self-built
+#                         binaries in, so that "it linked" and "it runs" stop
+#                         being the same claim. `docker load -i` it.
+#   factory-root.txt      what that archive is: ref, platform, size, sha256
 #
 # Every layout constant is read from os/boards/cx3576/board.env.
 set -euo pipefail
@@ -150,6 +156,14 @@ fi
 # content so sharing one value across A and B is correct.
 VERITY_UUID=$(echo "$ROOTFS_A_GUID" | tr 'A-Z' 'a-z')
 # FILE_MTIME is the touch(1) form (@epoch); mksquashfs wants bare seconds.
+#
+# ONE INSTANT, TWO CONSUMERS. This value is also what the driver is given as
+# --source-date-epoch, which buildkit stamps into the OCI export of the packed
+# root. They are deliberately the same number and not two pinned constants: the
+# squashfs and the OCI image are two encodings of ONE tree, and a second epoch
+# would be a second answer to "when was this root made" that nothing would ever
+# reconcile. os/mkimage-v2.sh already spells it this way for mkimage's
+# SOURCE_DATE_EPOCH, for the same reason.
 SQUASHFS_TIME=${FILE_MTIME#@}
 
 mkdir -p "$OUT_DIR"
@@ -659,7 +673,8 @@ if ! bash "$REPO_ROOT/os/build/run.sh" --build-rootfs \
         --arg MOS_PROFILE="$MOS_PROFILE" \
         --arg VERITY_SALT="$VERITY_SALT" \
         --arg VERITY_UUID="$VERITY_UUID" \
-        --arg SQUASHFS_TIME="$SQUASHFS_TIME" 2>&1 | tee "$log"; then
+        --arg SQUASHFS_TIME="$SQUASHFS_TIME" \
+        --source-date-epoch "$SQUASHFS_TIME" 2>&1 | tee "$log"; then
     if grep -qi 'exec format error' "$log"; then
         echo >&2
         echo "hint: ${MOS_ARCH} emulation is missing on this host. Install it with:" >&2
@@ -671,6 +686,28 @@ fi
 VERITY_ENV="$OUT_DIR/rootfs-verity.env"
 IMG="$OUT_DIR/rootfs-verity.img"
 REPORT="$OUT_DIR/rootfs-report-v2.txt"
+FACTORY_ROOT_OCI="$OUT_DIR/factory-root.oci"
+
+# The OCI export, asserted here as well as in the driver, because the two
+# statements are different. The driver checks the file it just wrote is not
+# empty; this checks that a build which reported success left one at all -- the
+# case that matters is a chain built by something OTHER than the current driver
+# (an older tree, a hand-typed docker command) dropping its output into the same
+# _out directory, where a stale or absent archive would be handed to the smoke
+# runner as this build's root. index.json is the OCI-layout entry point, so its
+# presence is what distinguishes an OCI archive from any other tar.
+if [ ! -s "$FACTORY_ROOT_OCI" ]; then
+    echo "error: $FACTORY_ROOT_OCI is missing or empty after a build that reported success." >&2
+    echo "       RFCT-113's smoke run executes the self-built binaries inside this image; with no" >&2
+    echo "       image there is nothing to execute them in, and an image that ships them unexecuted" >&2
+    echo "       looks exactly like one whose smoke run passed." >&2
+    exit 1
+fi
+if ! tar -tf "$FACTORY_ROOT_OCI" index.json >/dev/null 2>&1; then
+    echo "error: $FACTORY_ROOT_OCI has no index.json, so it is not an OCI image layout." >&2
+    echo "       Whatever wrote it did not write what \`docker load\` reads." >&2
+    exit 1
+fi
 
 # Read the pack stage's output the same way os/mkimage-v2.sh does: by parsing
 # KEY=value, never by sourcing a generated file.

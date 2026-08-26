@@ -220,7 +220,11 @@ export function selectStages(
  * against its predecessor, and a first stage that declares one would be a stage
  * expecting a predecessor it can never have.
  */
-export function auditChain(stages: readonly StageFile[], terminalTarget: string): StageFault[] {
+export function auditChain(
+  stages: readonly StageFile[],
+  terminalTarget: string,
+  ociTarget: string,
+): StageFault[] {
   const faults: StageFault[] = []
   if (stages.length === 0) {
     return [
@@ -301,6 +305,19 @@ export function auditChain(stages: readonly StageFile[], terminalTarget: string)
       message: `is the last stage and defines no \`AS ${terminalTarget}\` target. That target is what the driver exports to the output directory; without it the build would export the last stage's whole filesystem instead of the artifact surface`,
     })
   }
+  // RFCT-113 M7's second export surface, audited exactly as the first one is
+  // and for a sharper reason. A missing `artifact` target fails the build at
+  // once -- the assembler has no rootfs-verity.img to read. A missing
+  // `factory-root` target would only mean that nothing was ever executed
+  // before the image shipped, which is precisely the state M7 exists to end and
+  // which looks, from the outside, exactly like a build that smoke-tested
+  // everything and found nothing wrong.
+  if (!last.targets.includes(ociTarget)) {
+    faults.push({
+      path: last.path,
+      message: `is the last stage and defines no \`AS ${ociTarget}\` target. That target is the packed root exported as an OCI image, and it is what RFCT-113's smoke runner executes the self-built binaries inside; without it there is nothing to run them in, and a build that ships them unexecuted is indistinguishable from one that ran them all and passed`,
+    })
+  }
   return faults
 }
 
@@ -323,10 +340,48 @@ export interface ChainOptions {
   readonly supplied: Readonly<Record<string, string>>
   readonly tagRepo?: string
   readonly terminalTarget?: string
+  readonly ociTarget?: string
 }
 
 export const DEFAULT_TAG_REPO = 'mos-rootfs-stage'
 export const DEFAULT_TERMINAL_TARGET = 'artifact'
+
+/**
+ * The terminal stage's SECOND target: the packed root as an OCI image.
+ *
+ * RFCT-113 M7. `artifact` exports files -- rootfs-verity.img, the boot pair,
+ * the factory /var -- for the image assembler to consume. This one exports the
+ * root itself, in the form a container runtime takes, so that the eleven
+ * self-built binaries in it can be EXECUTED before the image ships them.
+ */
+export const DEFAULT_OCI_TARGET = 'factory-root'
+
+/**
+ * The OCI archive, written into --dest beside the other artifacts.
+ *
+ * A file and not merely a loaded tag, because the two answer different
+ * questions and only one of them is durable. A tag is daemon state: it says
+ * what is currently loaded, it is gone when the store is pruned, and it cannot
+ * be hashed. This is an OCI-layout tar -- `docker load -i` puts it back, and
+ * its sha256 is what makes "does this export reproduce" a measurement rather
+ * than an assurance. Measured on this host, two cold builds of one tree produce
+ * a byte-identical archive; see ociExport for the three flags that took.
+ */
+export const OCI_ARCHIVE_NAME = 'factory-root.oci'
+
+/** The record written beside the archive: what was exported, and from where. */
+export const OCI_RECORD_NAME = 'factory-root.txt'
+
+/**
+ * The image reference stamped into the archive, so `docker load` names it.
+ *
+ * Board-scoped for the same reason the stage tags are: two boards can be in
+ * flight at once, and an arm64 root loaded over an amd64 one under a shared
+ * name would smoke-test the wrong architecture and say nothing about it.
+ */
+export function factoryRootRef(board: string, repo = 'localhost/mos-factory-root'): string {
+  return `${repo}:${board}`
+}
 
 /**
  * A supplied argument no stage declares.
@@ -351,7 +406,7 @@ export function unusedArgs(
 export function planChain(stages: readonly StageFile[], opts: ChainOptions): StageBuild[] {
   const repo = opts.tagRepo ?? DEFAULT_TAG_REPO
   const target = opts.terminalTarget ?? DEFAULT_TERMINAL_TARGET
-  const faults = auditChain(stages, target)
+  const faults = auditChain(stages, target, opts.ociTarget ?? DEFAULT_OCI_TARGET)
   if (faults.length > 0) throw new StageChainError(faults)
   const stray = unusedArgs(stages, opts.supplied)
   if (stray.length > 0) {
@@ -428,6 +483,153 @@ export function buildArgv(
   }
   argv.push(opts.context)
   return argv
+}
+
+/** Everything the OCI export needs, as one value a test can read. */
+export interface OciExport {
+  /** Everything after `docker`, exactly as it will be spawned. */
+  readonly argv: readonly string[]
+  /** The environment additions -- SOURCE_DATE_EPOCH, which is not a flag. */
+  readonly env: Readonly<Record<string, string>>
+  /** Absolute path of the archive this writes. */
+  readonly archive: string
+  /** The reference stamped inside it. */
+  readonly ref: string
+}
+
+// Seconds since the epoch, and nothing else. `@1577836800` is the touch(1)
+// spelling os/boards/<board>/board.env uses for the same instant, and buildkit
+// would take it as a malformed value -- silently, because SOURCE_DATE_EPOCH is
+// read from the environment rather than parsed by a flag. os/rootfs/build-v2.sh
+// strips the `@` before passing it; this is what makes that a checked step
+// rather than a convention.
+const EPOCH_SECONDS = /^\d+$/
+
+/**
+ * The second build of the terminal stage: the packed root, as an OCI image.
+ *
+ * A SECOND INVOCATION AND NOT A SECOND --output, because buildkit exports ONE
+ * target per build and these are two targets: `artifact` is the file surface
+ * the assembler reads, `factory-root` is the root itself. Everything the two
+ * share -- the context, the platform, the build arguments, the `pack` stage
+ * that produced /rootfs -- is shared through the layer cache the first
+ * invocation just filled, so this costs the export and not the build.
+ *
+ * DELIBERATELY NO --no-cache, even when the chain was built with it. `--no-cache`
+ * is for the determinism gate, where the chain must not be a replay of an
+ * earlier run's cache; this invocation must be a replay, of the run that
+ * finished seconds ago. Passing it here would rebuild all nine stages a second
+ * time and export a DIFFERENT root from the one the assembler is about to
+ * consume -- two roots per build, differing for the reasons os/rootfs/README.md
+ * records, with nothing to say which one was smoke-tested.
+ *
+ * WHAT MAKES IT REPRODUCE, measured on the real 250 MB export of the x64 root
+ * rather than reasoned about. Two of these are load-bearing and one is not,
+ * and saying which is which is the point of writing them down:
+ *
+ *   SOURCE_DATE_EPOCH   Load-bearing. Pins the image config's `created`.
+ *                       Without it, two exports of ONE already-built root gave
+ *                       two different archives.
+ *   rewrite-timestamp   Load-bearing, but ONLY when the layer is genuinely
+ *                       rebuilt -- which is the case that matters and the one
+ *                       a convenient experiment misses. Two cold rebuilds of
+ *                       the pack stage without it: two different archives.
+ *                       With it: byte-identical, and equal to the warm build's.
+ *                       From a WARM cache it changes the bytes but both runs
+ *                       still agree, so measuring it warm would have "proved"
+ *                       it unnecessary.
+ *   --provenance/--sbom NOT load-bearing here, and kept anyway. Omitting them
+ *                       gave the identical archive: buildx 0.32.2 adds no
+ *                       attestation to a `type=oci` export. It does add one to
+ *                       a `--load`, which is where this was first seen, and the
+ *                       default has moved between buildx versions before. Two
+ *                       flags is a cheap way not to depend on an exporter
+ *                       default that is not ours to set.
+ *
+ * `rewrite-timestamp` CONFLICTS WITH LOADING. buildkit refuses
+ * `rewrite-timestamp` together with `unpack`, which is what `--load` does -- so
+ * the export cannot both reproduce and land straight in the image store. It
+ * reproduces; `docker load -i` is the other half, and it is the caller's step.
+ */
+export function ociExport(
+  build: StageBuild,
+  opts: {
+    readonly context: string
+    readonly platform: string
+    readonly board: string
+    readonly dest: string
+    readonly sourceDateEpoch: string
+    readonly builder?: string
+    readonly ociTarget?: string
+  },
+): OciExport {
+  if (!build.terminal) {
+    throw new StageChainError([
+      {
+        path: build.path,
+        message: `is not the terminal stage, and only the terminal stage exports the factory root. Exporting an earlier link would give an image of a root that is missing every stage after it -- including, for ${DEFAULT_OCI_TARGET}, the binaries the smoke run exists to execute`,
+      },
+    ])
+  }
+  if (!EPOCH_SECONDS.test(opts.sourceDateEpoch)) {
+    throw new StageChainError([
+      {
+        path: build.path,
+        message: `was given SOURCE_DATE_EPOCH='${opts.sourceDateEpoch}', which is not a count of seconds. buildkit reads that name from the ENVIRONMENT, so a value it cannot parse is not an error -- it is a build that quietly stamps the wall clock into the image config and every layer entry, and reproduces on no two runs`,
+      },
+    ])
+  }
+  const target = opts.ociTarget ?? DEFAULT_OCI_TARGET
+  const archive = join(opts.dest, OCI_ARCHIVE_NAME)
+  const ref = factoryRootRef(opts.board)
+  const argv = ['buildx', 'build']
+  if (opts.builder) argv.push('--builder', opts.builder)
+  argv.push('--platform', opts.platform, '-f', build.path)
+  if (build.prevTag) argv.push('--build-arg', `${PREV_ARG}=${build.prevTag}`)
+  for (const [k, v] of Object.entries(build.buildArgs)) argv.push('--build-arg', `${k}=${v}`)
+  argv.push('--target', target, '--provenance=false', '--sbom=false')
+  argv.push('--output', `type=oci,dest=${archive},name=${ref},rewrite-timestamp=true`)
+  argv.push(opts.context)
+  return { argv, env: { SOURCE_DATE_EPOCH: opts.sourceDateEpoch }, archive, ref }
+}
+
+/**
+ * The record written beside the archive.
+ *
+ * NOT A BASELINE. The sha256 here says what this build produced, so that two
+ * builds can be compared to each other; it is not a number anything is expected
+ * to match, for the reason os/rootfs/README.md gives at length -- a cold rootfs
+ * build does not reproduce itself, so a hash committed as an expectation is a
+ * check that looks like coverage and is not. What DOES reproduce is this export
+ * from one already-built root, and that is a property of the exporter, not of
+ * the tree.
+ */
+export function ociRecord(fields: {
+  readonly board: string
+  readonly ref: string
+  readonly platform: string
+  readonly target: string
+  readonly archive: string
+  readonly bytes: number
+  readonly sha256: string
+  readonly sourceDateEpoch: string
+}): string {
+  return [
+    `# The ${fields.board} factory root, exported as an OCI image by os/rootfs/stages/90-pack.Dockerfile.`,
+    '# RFCT-113 M7: the root the self-built binaries are executed in before the image ships them.',
+    `# Load it with: docker load -i ${fields.archive}`,
+    '#',
+    '# The sha256 is what this build produced, for comparison with another build.',
+    '# It is NOT a baseline: a cold rootfs build does not reproduce itself, so the',
+    '# root inside differs between trees for reasons os/rootfs/README.md enumerates.',
+    `ref\t${fields.ref}`,
+    `platform\t${fields.platform}`,
+    `target\t${fields.target}`,
+    `archive\t${basename(fields.archive)}`,
+    `bytes\t${fields.bytes}`,
+    `sha256\t${fields.sha256}`,
+    `source-date-epoch\t${fields.sourceDateEpoch}`,
+  ].join('\n') + '\n'
 }
 
 /**
