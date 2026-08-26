@@ -1,10 +1,6 @@
 # syntax=docker/dockerfile:1@sha256:ecfaec9ed6d810b56388c508f4121597bfbba70d41a6dfeee4d8cad5f295fc32
-# =============================================================================
-# stages/34-feature-mqtt — the two MQTT service accounts, mos-mqttd (970) and
+# stages/34-feature-mqtt -- the two MQTT service accounts, mos-mqttd (970) and
 # mos-mqtt-broker (969).
-#
-# PLAN-014 M5 (RFCT-111 M5c), cut out of the temporary 30-40-unsplit
-# (positions 15 and 16), unchanged and in that order.
 #
 # WHY THE ACCOUNTS ARE A STAGE AND THE BINARIES ARE NOT. The binaries are
 # installed by stages/33-feature-mosd, because they come out of the same cargo
@@ -12,23 +8,17 @@
 # separate because they are the half of the MQTT feature that is not a file
 # copy: each is a pinned uid/gid, a `chage -d` that keeps the shadow
 # LAST-CHANGE off the build date, and a collision check against the base image.
-# RFCT-111 names mqtt as one of the four switchable features, and this is the
-# part of it a board could decline without declining mosd.
+# This is the part of the feature a board can decline without declining mosd.
 #
-# WHAT OMITTING THIS STAGE DOES, measured rather than predicted: the image
-# still carries /usr/bin/mos-mqttd and mos-mqttd.service, the unit still says
-# User=mos-mqttd, and /etc/passwd has no such account -- so systemd refuses to
-# start the unit and dbus-daemon drops the mos-mqttd.conf policy rule. Both
-# failures are at boot, on the device. os/verify-image-v2.sh reports it as
-# "mqttd: the unit runs as 'mos-mqttd' and no such account is in
-# .../etc/passwd", which is the negative test RFCT-111 asks for.
+# WHAT OMITTING THIS STAGE DOES: the image still carries /usr/bin/mos-mqttd and
+# mos-mqttd.service, the unit still says User=mos-mqttd, and /etc/passwd has no
+# such account -- so systemd refuses to start the unit and dbus-daemon drops
+# the mos-mqttd.conf policy rule. Both failures are at boot, on the device.
+# os/verify reports it as "mqttd: the unit runs as 'mos-mqttd' and no such
+# account is in .../etc/passwd".
 #
-# BUILD-V2.SH DOES NOT COUPLE THIS TO mosd, and that is today's behaviour
-# preserved rather than a decision: WITH_MOSD=0 built an image with no mosd and
-# with both accounts. Now that they are a stage, dropping them with it is one
-# more `--without mqtt` -- a content decision for whoever owns the board
-# matrix, not something to fold into the cut.
-# =============================================================================
+# build-v2.sh does NOT couple this to mosd: `--without mosd` and
+# `--without mqtt` are separate decisions.
 
 # THE LINK BACK UP THE CHAIN. MOS_STAGE_PREV is the local image tag the
 # previous stage was written to; the driver passes it and refuses to build a
