@@ -1597,13 +1597,28 @@ audit trail the port has while touching every file in the package. What was
 repointed instead is the strictly smaller set that would MISLEAD:
 
 - anything **executable** — the two Makefile targets, the CI step;
-- **remedies** that told a reader to run a script that is gone
-  (`os/tools/qemu-run.sh:53`, `test/apid-api/run.sh:263`, both of which said
-  `bash os/mkimage-x64.sh`, both now `bash os/build/run.sh --mkimage-x64`);
+- **remedies** that told a reader to run a script that is gone —
+  `os/tools/qemu-run.sh:53`, which said `bash os/mkimage-x64.sh` and now says
+  `bash os/build/run.sh --mkimage-x64`;
 - **present-tense claims about the tree's shape** that the deletion made false —
   `src/pin-seeded-times.ts:54` ("`os/mkimage-common.sh` is NOT deleted by this
   milestone"), `os/build-env/from.sh:23` (three shipping-path `docker run`
-  sites), `os/build/run.sh:95` ("because `os/update/bundle.sh` takes one").
+  sites), `os/build/run.sh:95` ("because `os/update/bundle.sh` takes one");
+- **doc citations**, which PLAN-014's scope names explicitly:
+  `docs/design/release-signing.md` is a RUNBOOK and its step 2 command was
+  `bash os/update/bundle.sh 1.2.3`, now `bash os/build/run.sh --bundle 1.2.3`
+  (the port honours caller `CERT`/`KEY`/`KEYRING` — `src/bundle-cli.ts:145-147`
+  — which is what that ceremony depends on, checked before the line was
+  changed); and `docs/design/api.md:2804`, whose `grep -n "data\.img"
+  os/mkimage-v2.sh` recipe would now return nothing, repointed to
+  `grep -n dataImg os/build/src/mkimage-v2.ts` and re-run to confirm it returns
+  the three lines the sentence claims.
+
+**`test/apid-api/run.sh:263` carries the same stale remedy and was deliberately
+NOT changed.** It was repointed and then reverted: PLAN-014's scope
+(`docs/plan/PLAN-014.md:220-223`) excludes `test/apid-api`, and the same sentence
+excludes `board/`, which is why the two `board/*/board.yaml` citations are also
+left. Finding is in scope; acting is not.
 
 ### The `shell-pipefail-lint` scope, which RFCT-112's acceptance names
 
