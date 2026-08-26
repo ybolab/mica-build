@@ -1,40 +1,17 @@
 // sgdisk: the GPT.
 //
-// FAILURE SIGNAL. Its exit status, mostly -- with one exception that the shell
-// already learned and that is carried over here: `sgdisk --verify` can print
-// problems AND exit 0. os/mkimage-v2.sh says so in as many words ("Both failure
-// shapes -- nonzero exit AND problem text with exit 0 -- must reach the same
-// friendly error"), so verifyGpt below requires exit 0 and the sentence.
+// Failure signal: the exit status, plus one exception the shell already carries
+// -- `sgdisk --verify` prints problems and still exits 0, so verifyGpt requires
+// exit 0 AND the sentence ("Both failure shapes -- nonzero exit AND problem
+// text with exit 0 -- must reach the same friendly error", os/mkimage-v2.sh).
 //
-// THE OTHER THING sgdisk DOES QUIETLY is move a partition. A requested start
-// that is not a multiple of the alignment is RELOCATED, silently, with a
-// success exit. Measured here on 2026-08-25: `--new=1:64:+32704S` with no
-// `-a 1` lands the partition at sector 2048 and exits 0. On cx3576 that is the
-// bootloader ending up outside its own partition, which is why
-// GPT_ALIGN_SECTORS=1 is in that board's definition. So asking sgdisk for a
-// layout proves nothing about the layout: readPartition exists to read back
-// what is actually there, and it is the caller (M6b) that compares.
-//
-// WHAT THE ARGV SHAPE IS, AND WHY IT IS ONE SHAPE. The two shell assemblers
-// spell the same GPT differently: os/mkimage-v2.sh passes `--clear`, `-a 1` and
-// sizes as `+NS`, in the order new/change-name/typecode/partition-guid;
-// os/mkimage-x64.sh passes no --clear, no -a, sizes as `+NM`, in the order
-// new/typecode/partition-guid/change-name. Normalising that would be a change
-// to the shipped bytes made inside the milestone that must prove nothing
-// changed -- unless it is not a change at all, which was MEASURED rather than
-// assumed (2026-08-25, sgdisk 1.0.10, both orders and both size suffixes over
-// the same two partitions):
-//
-//   flag order new/name/type/guid vs new/type/guid/name   byte-identical
-//   +131072S vs +64M at 512-byte sectors                  byte-identical
-//   --clear on a freshly truncated (all-zero) file        byte-identical
-//   -a 1 where every start is already MiB-aligned         byte-identical
-//   -a 1 where a start is sector 64                       NOT the same: 64 vs 2048
-//
-// So the shape below is one shape, and the only knob that survives is the one
-// that was shown to matter: alignSectors. The suite re-runs those comparisons,
-// so the day a different sgdisk disagrees, it says so here rather than in M6b's
-// byte-identity gate.
+// sgdisk also relocates silently: a requested start that is not a multiple of
+// the alignment is moved, with a success exit. Measured 2026-08-25,
+// `--new=1:64:+32704S` with no `-a 1` lands the partition at sector 2048 and
+// exits 0 -- on cx3576 that is the bootloader outside its own partition, which
+// is why GPT_ALIGN_SECTORS=1 is in that board's definition. Asking sgdisk for a
+// layout proves nothing about the layout: readPartition reads back what is
+// actually there, and the caller compares.
 
 import type { Toolbox, ToolResult } from '../toolbox.ts'
 import { ToolError } from '../toolbox.ts'
@@ -48,6 +25,20 @@ export interface GptPartitionSpec {
   readonly guid?: string
 }
 
+/**
+ * One argv shape for both assemblers, because the difference was measured.
+ *
+ * os/mkimage-v2.sh passes `--clear`, `-a 1` and `+NS` sizes in the order
+ * new/change-name/typecode/partition-guid; os/mkimage-x64.sh passes no
+ * --clear, no -a, `+NM` sizes, in the order
+ * new/typecode/partition-guid/change-name. Measured 2026-08-25 with sgdisk
+ * 1.0.10 over the same two partitions: flag order, `+131072S` against `+64M`
+ * at 512-byte sectors, `--clear` on a freshly truncated all-zero file, and
+ * `-a 1` where every start is already MiB-aligned are all byte-identical.
+ * `-a 1` where a start is sector 64 is NOT: 64 against 2048. alignSectors is
+ * the one knob that survives, and the suite re-runs those comparisons so a
+ * different sgdisk disagrees here rather than in the byte-identity gate.
+ */
 export interface GptSpec {
   readonly diskGuid: string
   /**

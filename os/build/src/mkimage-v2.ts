@@ -12,39 +12,6 @@
 // extlinux/extlinux.conf: U-Boot tries extlinux before boot.scr in both boot
 // frameworks, so an extlinux config here would silently bypass the RAUC A/B
 // handshake (docs/design/uboot-ab-handshake.md sections 5.4-5.5).
-//
-// THE OUTPUT FILENAME CARRIES THE ASSEMBLY-TIME EPOCH; THE CONTENT DOES NOT
-// VARY. Fixed GPT GUIDs, fixed FAT volume ids, fixed ext4 fs UUIDs and hash
-// seeds, E2FSPROGS_FAKE_TIME, all staged BOOT files touched to FILE_MTIME, and
-// -- for the one filesystem seeded from a source tree, EPHEMERAL -- every in-use
-// inode's atime and ctime rewritten after the fact, because `touch` reaches
-// neither of them through mke2fs -d (src/pin-seeded-times.ts).
-//
-// EVERY DECISION THAT REACHES THE OUTPUT BYTES IS FIXED, not a matter of
-// style. Two assemblies from identical inputs must be byte-identical:
-//
-//   * every external tool runs in the SAME pinned alpine, out of the same apk
-//     package list, because which mtools wrote the FAT decides its bytes;
-//   * `cp -a` and `find ... -exec touch` run INSIDE that container, where the
-//     shell runs them. `cp -a` is `--preserve=all`, mke2fs -d copies xattrs into
-//     the image, and this host runs SELinux while alpine does not -- so staging
-//     on the host would have written security labels into EPHEMERAL that the
-//     shell's image does not carry;
-//   * mcopy is handed the staged files in the order a C-locale glob produces
-//     them, because that is the order they land in the FAT directory;
-//   * sizes go to sgdisk in sectors throughout, where the shell mixes `+NS` and
-//     `+NM`. That one IS a change of spelling, and it is the only one: M6a
-//     measured `+131072S` and `+64M` at 512-byte sectors to be byte-identical,
-//     and the suite re-runs that comparison rather than trusting this sentence.
-//
-// AND THE ONE THAT IS NOT COSMETIC: `-a ${GPT_ALIGN_SECTORS}`. sgdisk SILENTLY
-// RELOCATES a start that is not a multiple of the alignment -- measured, exit 0
-// -- and cx3576's loader starts at sector 64. An assembler that omitted or
-// mis-set the alignment would produce an image that passes every structural
-// check, boots on a bench, and comes up in maskrom on a board after
-// systemd-repart trims the region no partition covers. So the loader is READ
-// BACK OUT OF THE FINISHED TABLE and its start and length asserted; asking
-// sgdisk for a layout proves nothing about the layout.
 
 import { closeSync, copyFileSync, existsSync, mkdirSync, openSync, readFileSync, readSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { basename, dirname, join, resolve } from 'node:path'
@@ -54,6 +21,39 @@ import { decideSlot, deriveLayout, gptSpecFor, loaderIdentityFaults, slotPinFrom
 import { BOARDS_DIR, makeWorkDir, REPO_ROOT } from './paths.ts'
 import { pinSeededTimes } from './pin-seeded-times.ts'
 import { Toolbox } from './toolbox.ts'
+
+// The output filename carries the assembly-time epoch; the content does not
+// vary. Fixed GPT GUIDs, fixed FAT volume ids, fixed ext4 fs UUIDs and hash
+// seeds, E2FSPROGS_FAKE_TIME, all staged boot files touched to FILE_MTIME, and
+// -- for the one filesystem seeded from a source tree, EPHEMERAL -- every
+// in-use inode's atime and ctime rewritten afterwards, because `touch` reaches
+// neither of them through mke2fs -d (src/pin-seeded-times.ts).
+//
+// Two assemblies from identical inputs must be byte-identical, so every
+// decision that reaches the output bytes is fixed:
+//
+//   * every external tool runs in the same pinned alpine, out of the same apk
+//     package list, because which mtools wrote the FAT decides its bytes;
+//   * `cp -a` and `find ... -exec touch` run inside that container, where the
+//     shell runs them. `cp -a` is `--preserve=all`, mke2fs -d copies xattrs
+//     into the image, and this host runs SELinux while alpine does not, so
+//     staging on the host would write security labels into EPHEMERAL that the
+//     shell's image does not carry;
+//   * mcopy is handed the staged files in the order a C-locale glob produces
+//     them, because that is the order they land in the FAT directory;
+//   * sizes go to sgdisk in sectors throughout, where the shell mixes `+NS` and
+//     `+NM`. That one is a change of spelling and the only one: `+131072S` and
+//     `+64M` at 512-byte sectors are measured byte-identical, and the suite
+//     re-runs that comparison rather than trusting this sentence.
+//
+// And the one that is not cosmetic: `-a ${GPT_ALIGN_SECTORS}`. sgdisk silently
+// relocates a start that is not a multiple of the alignment -- measured, exit 0
+// -- and cx3576's loader starts at sector 64. An assembler that omitted or
+// mis-set the alignment would produce an image that passes every structural
+// check, boots on a bench, and comes up in maskrom on a board after
+// systemd-repart trims the region no partition covers. So the loader is read
+// back out of the finished table and its start and length asserted; asking
+// sgdisk for a layout proves nothing about the layout.
 import { CX3576_ASSEMBLY } from './toolsets.ts'
 import { dd, truncate } from './tools/dd.ts'
 import { mke2fs } from './tools/e2fsprogs.ts'
@@ -92,7 +92,7 @@ export interface AssembleOptions {
   /** An already-open toolbox. One is opened and closed here otherwise. */
   readonly toolbox?: Toolbox
   /**
-   * The rootfs slot pin, as supplied FROM THE ENVIRONMENT -- undefined meaning
+   * The rootfs slot pin, as supplied from the environment -- undefined meaning
    * not supplied at all, which is what selects the floor mode.
    *
    * Read from process.env by the CLI. A parameter here so both modes are
@@ -151,7 +151,7 @@ function requireFile(path: string, what: string): void {
  *
  * This is `dd if=... bs=... skip=... count=1 | od -An -tx1 -N4 | tr -d ' \n'` in
  * the shell, and it is deliberately NOT a tool call here. src/tools/dd.ts says
- * why: the image is a FILE ON THE HOST, so there is no reason to spend a
+ * why: the image is a file on the host, so there is no reason to spend a
  * container on reading four bytes of it -- and routing binary through `docker
  * exec` means routing it through a text stream, which is a corruption waiting
  * for the first byte that is not valid UTF-8. It reads exactly `bytes`, not the
@@ -246,7 +246,7 @@ export async function assembleCx3576(
     }
     const factoryVarStage = join(workDir, 'factory-var')
     mkdirSync(factoryVarStage, { recursive: true })
-    // IN THE CONTAINER, where the shell runs it. See this file's header.
+    // In the container, where the shell runs it. See this file's header.
     await tb.must(['cp', '-a', `${inputs.factoryVar}/.`, `${factoryVarStage}/`], {
       note: `could not stage the factory /var tree from ${inputs.factoryVar}`,
     })
@@ -255,7 +255,7 @@ export async function assembleCx3576(
     if (!existsSync(inputs.uboot)) {
       throw ubootMissingError(inputs.uboot, geometry.require('UBOOT_DEBUG_VARIANT_DIR'))
     }
-    // THE PAIRING GUARD: catches the whole family of "someone copied or
+    // The pairing guard: catches the whole family of "someone copied or
     // symlinked the debug build into uboot-mos because the real build was
     // inconvenient".
     if (inputs.ubootDebug !== undefined && existsSync(inputs.ubootDebug)
@@ -379,10 +379,10 @@ export async function assembleCx3576(
     await makeExt4(tb, geometry, metaImg, geometry.requireInt('META_SIZE_MIB'), 'META')
     await makeExt4(tb, geometry, stateImg, geometry.requireInt('STATE_SIZE_MIB'), 'STATE')
 
-    // EPHEMERAL SHIPS ALREADY SEEDED. /var is a mount of this
-    // filesystem, and an empty one hides the tree the installed packages
-    // expect. Copying that tree out on the first boot instead would run at the
-    // same moment as every other unit that writes /var, and Debian 13's
+    // EPHEMERAL ships already seeded. /var is a mount of this filesystem, and
+    // an empty one hides the tree the installed packages expect. Copying that
+    // tree out on the first boot instead would run at the same moment as every
+    // other unit that writes /var, and Debian 13's
     // systemd-networkd-persistent-storage.service creates
     // /var/lib/systemd/network as soon as /var appears: the two race, and a
     // lost race fails the seed, which fails var-lib-mos.mount, which fails
@@ -444,9 +444,9 @@ export async function assembleCx3576(
     // reach the same refusal; src/tools/sgdisk.ts carries the pairing.
     log(await verifyGpt(tb, imgTmp));
 
-    // --- READ THE LOADER BACK OUT OF THE ASSEMBLED IMAGE. sgdisk is free to
-    // move a requested start sector, so asserting what we asked for proves
-    // nothing; this asserts what is actually there.
+    // Read the loader back out of the assembled image: sgdisk is free to move
+    // a requested start sector, so asserting what we asked for proves nothing;
+    // this asserts what is actually there.
     const got = await readPartition(tb, imgTmp, loaderPartnum);
     checkLoaderLanded(geometry, got)
     const gotMagic = checkLoaderMagic(geometry, imgTmp, got.firstSector)
@@ -499,22 +499,17 @@ export function checkLoaderMagic(geometry: Geometry, image: string, startSector:
 }
 
 /**
- * THE LOADER LANDED WHERE IT WAS ASKED TO -- checked against the ASSEMBLED
- * TABLE, not against the request.
- *
- * `-a 1` IS NOT COSMETIC where a partition start is sector 64. Without it
- * sgdisk RELOCATES that start to sector 2048, SILENTLY, and exits 0.
- *
- * cx3576's loader is at sector 64. A relocated loader partition does not cover
- * the bootloader, and os/boards/cx3576/board.env spells out what happens next:
- * systemd-repart "discards every region of the disk that no partition entry
- * covers", on the very first boot while growing DATA, so "the device boots once
- * and comes up in maskrom on the next power-on". An image in that state passes
- * every structural check there is and boots on a test bench.
- *
- * Which is why this compares what sgdisk WROTE rather than what it was TOLD, and
- * why it is a separate function: it has to be drivable from the failing side
- * against a real table written by a real sgdisk with the alignment left out.
+ * The loader landed where it was asked to -- checked against the assembled
+ * table, not against the request. `-a 1` is not cosmetic where a partition start is sector 64: without it
+ * sgdisk relocates that start to sector 2048, silently, and exits 0. A
+ * relocated loader partition does not cover the bootloader, and
+ * os/boards/cx3576/board.env spells out what happens next -- systemd-repart
+ * "discards every region of the disk that no partition entry covers", on the
+ * first boot while growing DATA, so "the device boots once and comes up in
+ * maskrom on the next power-on". An image in that state passes every structural
+ * check there is and boots on a test bench. So this compares what sgdisk wrote
+ * rather than what it was told, drivable from the failing side against a real
+ * table written with the alignment left out.
  */
 export function checkLoaderLanded(geometry: Geometry, got: GptPartitionInfo): void {
   const loader = geometry.requirePartition('LOADER')
@@ -568,7 +563,7 @@ interface BootSlotSpec {
  *
  * The slots hold the same kernel, dtb and boot.scr; only the slot-suffixed
  * mos-verity-<slot>.env differs, and it is what points the shared script at this
- * slot's rootfs. The unsuffixed name is deliberately NOT written: a
+ * slot's rootfs. The unsuffixed name is deliberately not written: a
  * RAUC-installed slot only ever carries the suffixed files, so writing it here
  * would make a factory slot and an updated slot differ in layout and leave the
  * suffixed path untested until the first update. Deliberately no

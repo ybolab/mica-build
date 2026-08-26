@@ -1,26 +1,26 @@
-// The x64 assembler, driven over FABRICATED inputs -- and every refusal driven
+// The x64 assembler, driven over fabricated inputs -- and every refusal driven
 // from the failing side.
 //
-// FABRICATED, LIKE os/tests/mkimage-x64-selftest.sh's, AND FOR ITS REASON. A test
-// that read _out/x64/ would be a test that cannot run on a fresh clone, and
-// producing those inputs costs a whole rootfs build to exercise an assembler that
-// does not care what is inside the payload it places. The properties this
-// assembler actually reads off its inputs are their SIZE, the KEY=value lines of
-// one env file, and whether a directory has a lib/ in it -- all of which a
-// fixture carries honestly.
+// Fabricated like os/tests/mkimage-x64-selftest.sh's, and for its reason: a test
+// that read _out/x64/ could not run on a fresh clone, and producing those inputs
+// costs a whole rootfs build to exercise an assembler that does not care what is
+// inside the payload it places. The properties this assembler reads off its
+// inputs are their size, the KEY=value lines of one env file, and whether a
+// directory has a lib/ in it -- all of which a fixture carries honestly, at no
+// cost.
 //
-// THE BYTE-IDENTITY GATE IS NOT HERE. It is shell-against-TypeScript over the
+// The byte-identity gate is not here. It is shell-against-TypeScript over the
 // real _out/x64/ inputs, it takes a minute and 1.9 GiB, and os/build/HARNESS.md
-// carries the recipe and the four hashes. What IS here is everything that gate
-// cannot see: a gate compares bytes for a GOOD input, so a port that quietly
+// carries the recipe and the four hashes. What is here is everything that gate
+// cannot see: a gate compares bytes for a good input, so a port that quietly
 // dropped a refusal produces identical bytes for every good input and passes it
-// perfectly. os/tests/mkimage-x64-selftest.sh says the same thing about itself,
-// and names the ESP cluster-count floor as exactly that kind of loss.
+// perfectly. os/tests/mkimage-x64-selftest.sh says the same about itself, naming
+// the ESP cluster-count floor as exactly that kind of loss.
 //
-// AND ONE MEASUREMENT THAT IS HERE BECAUSE IT IS A CLAIM THIS PORT MAKES: `-a
-// 2048` where os/mkimage-x64.sh passes no alignment at all. That is the only
-// spelling this port changed on the sgdisk call, and it is compared against a
-// real sgdisk over the real x64 geometry rather than argued in a comment.
+// One measurement is here because it is a claim this port makes: `-a 2048` where
+// os/mkimage-x64.sh passes no alignment at all. That is the only spelling this
+// port changed on the sgdisk call, and it is compared against a real sgdisk over
+// the real x64 geometry rather than argued in a comment.
 
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test'
 import { createHash } from 'node:crypto'
@@ -161,7 +161,7 @@ function mutatedBoard(appended: string): { geometry: Geometry, cleanup: () => vo
   return { geometry: loadGeometryFromPath(path), cleanup: () => rmSync(d, { recursive: true, force: true }) }
 }
 
-// --- THE ASSEMBLY ------------------------------------------------------------
+// The assembly.
 
 describe('a whole x64 image, over fabricated inputs', () => {
   let out: Awaited<ReturnType<typeof assembleX64>>
@@ -294,7 +294,7 @@ describe('the assembly reproduces itself, and the comparison is LIVE', () => {
   }, ASSEMBLE_TIMEOUT_MS)
 })
 
-// --- THE ESP CLUSTER FLOOR ---------------------------------------------------
+// The ESP cluster floor.
 
 describe('THE ESP CLUSTER FLOOR, and why its POSITION is load-bearing', () => {
   test('a 32 MiB FAT32 is refused -- the exact filesystem OVMF would not mount', async () => {
@@ -328,7 +328,7 @@ describe('THE ESP CLUSTER FLOOR, and why its POSITION is load-bearing', () => {
   test('THE CHECK PARSES *FREE* CLUSTERS WHERE THE SPEC DEFINES THE TYPE BY *TOTAL*', async () => {
     // This is the landmine. On an empty filesystem free is total minus the root
     // directory's one cluster, so the comparison is conservative by exactly one
-    // and correct WHERE IT STANDS. Measured here rather than asserted:
+    // and correct where it stands. Measured here rather than asserted:
     const img = join(dir, 'esp-64.img')
     const free = await readFatClusters(tb, img)
     const info = await tb.must(['minfo', '-i', img])
@@ -384,7 +384,7 @@ describe('THE ESP CLUSTER FLOOR, and why its POSITION is load-bearing', () => {
   }, ASSEMBLE_TIMEOUT_MS)
 })
 
-// --- THE ALIGNMENT, MEASURED -------------------------------------------------
+// The alignment, measured.
 
 describe('`-a 2048` where the shell passes no alignment at all', () => {
   const layout = deriveLayout(g, 512n)
@@ -444,12 +444,12 @@ describe('`-a 2048` where the shell passes no alignment at all', () => {
     expect(r.exitCode).toBe(0)
     expect(`${r.stdout}${r.stderr}`).toContain('Moved requested sector from 2048 to 4096')
 
-    // AND IT DOES NOT ONLY MOVE IT -- IT SHRINKS IT. Measured: the ESP comes back
-    // as 129024 sectors at 4096 rather than 131072 at 2048, because sgdisk caps
-    // the relocated partition at the next partition's original start (133120)
-    // instead of extending past it. A check that compared only the START would
-    // have called this an image with a correctly sized ESP in the wrong place; it
-    // is an image whose ESP is 1 MiB short as well.
+    // And it does not only move it -- it shrinks it. Measured: the ESP comes
+    // back as 129024 sectors at 4096 rather than 131072 at 2048, because sgdisk
+    // caps the relocated partition at the next partition's original start
+    // (133120) instead of extending past it. A check comparing only the start
+    // would call this a correctly sized ESP in the wrong place; its ESP is
+    // 1 MiB short as well.
     const got = []
     for (const p of spec.partitions) got.push(await readPartition(tb, img, p.partnum))
     expect(got[0]?.firstSector).toBe(4096n)
@@ -475,7 +475,7 @@ describe('`-a 2048` where the shell passes no alignment at all', () => {
   }, TOOL_TIMEOUT_MS)
 })
 
-// --- THE REFUSALS ------------------------------------------------------------
+// The refusals.
 
 describe('the five inputs', () => {
   test('each one, absent, is refused by name and names the producer', async () => {

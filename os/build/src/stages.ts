@@ -1,32 +1,25 @@
 // The rootfs stage chain, as data.
 //
-// os/rootfs/stages/ holds one Dockerfile per stage. They are built in numeric
-// order, each FROM the local image tag the previous one was written to. This
-// module turns that directory into a PLAN -- which file, which tag, which build
+// os/rootfs/stages/ holds one Dockerfile per stage, built in numeric order,
+// each FROM the local image tag the previous one was written to. This module
+// turns that directory into a plan -- which file, which tag, which build
 // arguments, which one exports the artifact -- and refuses a directory that
 // cannot be a chain. It runs nothing: src/stages-cli.ts is the only file that
-// invokes docker, so everything decided here is decided by a pure function and
-// tested without a daemon.
+// invokes docker, so everything decided here is a pure function tested without
+// a daemon, and docker is the only external program the chain runs.
 //
-// THE STAGE LIST IS THE DIRECTORY. There is no list of stages anywhere else,
-// deliberately: a stage added to the tree but not to a list would be a stage
-// that silently never runs, and nothing would look at it. os/build-env's
-// frontend check and os/tests/shell-pipefail-lint.sh derive their file sets the
-// same way and say so for the same reason. Adding a stage is adding a file.
-//
-// WHY IT IS IN os/build AND NOT os/rootfs: build orchestration lives here, and
-// this is orchestration. Nothing in it is os/verify's, because both
-// packages' paths.ts export OS_DIR by the same name.
-//
-// It duplicates nothing of M6a's. The board model stays the single copy in
-// os/verify/src/board.ts, and nothing here needs Bun.$ or the toolbox: the only
-// external program this chain runs is docker, and only src/stages-cli.ts runs
-// it.
+// The stage list is the directory. There is no list of stages anywhere else,
+// deliberately: a stage added to the tree but not to a list would silently
+// never run. os/build-env's frontend check and os/tests/shell-pipefail-lint.sh
+// derive their file sets the same way. Adding a stage is adding a file.
 
 import { readFileSync, readdirSync, statSync } from 'node:fs'
 import { basename, join } from 'node:path'
 
 import { OS_DIR } from './paths.ts'
+
+// This lives in os/build because build orchestration does, and it duplicates
+// nothing: the board model stays the single copy in os/verify/src/board.ts.
 
 export const STAGES_DIR: string = join(OS_DIR, 'rootfs', 'stages')
 
@@ -71,11 +64,11 @@ export class StageChainError extends Error {
 // refused rather than sorted alphabetically among the ones that do.
 const STAGE_NAME = /^(\d+)-([A-Za-z0-9][A-Za-z0-9-]*)\.Dockerfile$/
 
-// `ARG NAME`, `ARG NAME=value`, leading space tolerated. Docker's own parser is
+// `ARG NAME` and `ARG NAME=value`, leading space tolerated. Docker's parser is
 // case-insensitive on the instruction; a lowercase `arg` would be a real
 // declaration and invisible to a case-sensitive pattern.
 const ARG_LINE = /^\s*ARG\s+([A-Za-z_][A-Za-z0-9_]*)/i
-// `FROM ${MOS_STAGE_PREV}` / `FROM ${MOS_STAGE_PREV} AS closed`. The brace form
+// `FROM ${MOS_STAGE_PREV}`, optionally with `AS closed`. The brace form
 // only: `FROM $MOS_STAGE_PREV` also expands, but one spelling in one place is
 // the difference between a check and a guess about which spellings exist.
 const FROM_PREV = new RegExp(`^\\s*FROM\\s+(?:--\\S+\\s+)*\\$\\{${PREV_ARG}\\}(?:\\s|$)`, 'i')
@@ -159,24 +152,17 @@ export function featureOf(stage: StageFile): string | undefined {
 }
 
 /**
- * The chain with named features left out -- "stage selection".
- *
- * This is what replaced `--build-arg WITH_CONTAINERS=0`. The difference is not
- * spelling. A WITH_* argument reached the build, and every RUN and script that
- * cared had to test it: five copies for the container engine, four for mosd,
- * each an independent chance to disagree with the others and build an image
- * with the engine installed and its assertions skipped. Here the decision is
- * made once, before docker is started, and a declined feature is a file that is
- * not built -- so there is nothing left inside the stage that can be wrong
- * about which way the switch went.
- *
- * IT REFUSES A NAME IT CANNOT FIND, and that is the point of the function
- * rather than a nicety. `--without contaners` that silently matched nothing
- * would build the FULL image and report success, which is the exact shape of
- * green this tree keeps finding: a switch observed only in the position that
- * changes nothing. It also refuses to drop a non-feature stage, because
- * `--without base` is a request for an image with no operator account and no
- * trust anchors, and the caller who typed it did not mean that.
+ * The chain with named features left out -- "stage selection". This replaces `--build-arg WITH_CONTAINERS=0`, and the difference is not
+ * spelling: a WITH_* argument reached the build and every RUN and script that
+ * cared had to test it -- five copies for the container engine, four for mosd,
+ * each an independent chance to build an image with the engine installed and
+ * its assertions skipped. Here the decision is made once, before docker starts,
+ * and a declined feature is a file that is not built. It refuses a name it
+ * cannot find, which is the point of the function: `--without contaners`
+ * silently matching nothing would build the full image and report success, a
+ * switch observed only in the position that changes nothing. It also refuses to
+ * drop a non-feature stage, because `--without base` is a request for an image
+ * with no operator account and no trust anchors.
  */
 export function selectStages(
   stages: readonly StageFile[],
@@ -505,48 +491,39 @@ const EPOCH_SECONDS = /^\d+$/
 /**
  * The second build of the terminal stage: the packed root, as an OCI image.
  *
- * A SECOND INVOCATION AND NOT A SECOND --output, because buildkit exports ONE
- * target per build and these are two targets: `artifact` is the file surface
- * the assembler reads, `factory-root` is the root itself. Everything the two
- * share -- the context, the platform, the build arguments, the `pack` stage
- * that produced /rootfs -- is shared through the layer cache the first
- * invocation just filled, so this costs the export and not the build.
- *
- * DELIBERATELY NO --no-cache, even when the chain was built with it. `--no-cache`
- * is for the determinism gate, where the chain must not be a replay of an
- * earlier run's cache; this invocation must be a replay, of the run that
- * finished seconds ago. Passing it here would rebuild all nine stages a second
- * time and export a DIFFERENT root from the one the assembler is about to
+ * A second invocation and not a second --output, because buildkit exports one
+ * target per build and these are two: `artifact` is the file surface the
+ * assembler reads, `factory-root` is the root itself. Everything the two share
+ * -- context, platform, build arguments, the `pack` stage that produced /rootfs
+ * -- comes from the layer cache the first invocation just filled, so this costs
+ * the export and not the build. Deliberately no --no-cache even when the chain
+ * was built with it: `--no-cache` is for the determinism gate, where the chain
+ * must not replay an earlier run's cache, and this invocation must be a replay
+ * of the run that finished seconds ago. Passing it would rebuild all nine
+ * stages and export a different root from the one the assembler is about to
  * consume -- two roots per build, differing for the reasons os/rootfs/README.md
- * records, with nothing to say which one was smoke-tested.
+ * records, with nothing to say which was smoke-tested.
  *
- * WHAT MAKES IT REPRODUCE, measured on the real 250 MB export of the x64 root
- * rather than reasoned about. Two of these are load-bearing and one is not,
- * and saying which is which is the point of writing them down:
+ * What makes it reproduce, measured on the real 250 MB export of the x64 root:
  *
- *   SOURCE_DATE_EPOCH   Load-bearing. Pins the image config's `created`.
- *                       Without it, two exports of ONE already-built root gave
- *                       two different archives.
- *   rewrite-timestamp   Load-bearing, but ONLY when the layer is genuinely
- *                       rebuilt -- which is the case that matters and the one
- *                       a convenient experiment misses. Two cold rebuilds of
- *                       the pack stage without it: two different archives.
- *                       With it: byte-identical, and equal to the warm build's.
- *                       From a WARM cache it changes the bytes but both runs
- *                       still agree, so measuring it warm would have "proved"
- *                       it unnecessary.
- *   --provenance/--sbom NOT load-bearing here, and kept anyway. Omitting them
- *                       gave the identical archive: buildx 0.32.2 adds no
- *                       attestation to a `type=oci` export. It does add one to
- *                       a `--load`, which is where this was first seen, and the
- *                       default has moved between buildx versions before. Two
- *                       flags is a cheap way not to depend on an exporter
- *                       default that is not ours to set.
+ *   SOURCE_DATE_EPOCH is load-bearing, pinning the image config's `created`;
+ *   without it two exports of one already-built root give two different
+ *   archives.
  *
- * `rewrite-timestamp` CONFLICTS WITH LOADING. buildkit refuses
- * `rewrite-timestamp` together with `unpack`, which is what `--load` does -- so
- * the export cannot both reproduce and land straight in the image store. It
- * reproduces; `docker load -i` is the other half, and it is the caller's step.
+ *   rewrite-timestamp is load-bearing only when the layer is genuinely rebuilt,
+ *   which is the case that matters and the one a convenient experiment misses:
+ *   two cold rebuilds of the pack stage without it give two different archives,
+ *   with it byte-identical and equal to the warm build's. From a warm cache it
+ *   changes the bytes but both runs still agree, so measuring it warm would
+ *   have "proved" it unnecessary. It also conflicts with loading -- buildkit
+ *   refuses `rewrite-timestamp` together with `unpack`, which is what `--load`
+ *   does -- so the export cannot both reproduce and land in the image store. It
+ *   reproduces; `docker load -i` is the caller's step.
+ *
+ *   --provenance/--sbom are not load-bearing here and are kept anyway: omitting
+ *   them gives the identical archive, because buildx 0.32.2 adds no attestation
+ *   to a `type=oci` export. It does add one to a `--load`, which is where this
+ *   was first seen, and the default has moved between buildx versions before.
  */
 export function ociExport(
   build: StageBuild,
@@ -632,17 +609,14 @@ export function ociRecord(fields: {
 /**
  * The record of what was built, written beside the artifacts.
  *
- * The driver records the stage list per build. Which stages ran
- * is not derivable from the output afterwards -- an image built without a
- * feature stage looks like an image whose feature stage did nothing -- so it is
- * written down at the time.
- *
- * THE DECLINED FEATURES ARE RECORDED TOO, and that half is the one M5c's stage
- * selection made necessary. A `# declined:` line naming nothing is not the same
- * statement as no line at all: the first says the build was asked for every
- * feature, the second says nobody wrote it down. Both are printed, always, so
- * an image with no container engine says why on its own manifest rather than
- * leaving a reader to notice a missing binary and guess.
+ * The driver records the stage list per build. Which stages ran is not
+ * derivable from the output afterwards -- an image built without a feature
+ * stage looks like an image whose feature stage did nothing -- so it is written
+ * down at the time. The declined features are recorded too: a `# declined:`
+ * line naming nothing is not the same statement as no line at all, the first
+ * saying the build was asked for every feature and the second that nobody wrote
+ * it down. Both are printed, always, so an image with no container engine says
+ * why on its own manifest.
  */
 export function stageManifest(
   builds: readonly StageBuild[],

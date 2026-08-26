@@ -6,48 +6,12 @@
 // against os/update/rauc/manifest.raucm.in and signed with the development key
 // unless CERT/KEY/KEYRING name real material.
 //
-// THE EPOCH IS IN THE FILENAME ONLY. The bundle CONTENT is a function of the
-// inputs and the version string and never of the wall clock, which is what
-// makes the rebuild gate a hash rather than an argument: two builds of the same
-// version from the same inputs produce the same payload. That is measured here
-// (payloadReport) rather than claimed, and it is measured over the PAYLOAD --
-// the squashfs at the head of the bundle -- because the bytes after it are
-// deliberately not stable: rauc salts the bundle's own verity hash tree at
-// random and the CMS signature carries a signingTime attribute.
-//
-// WHAT THE PORT HAD TO GET RIGHT.
-//
-//   * THE mcopy ORDER. `Image rk3576-src.dtb boot.scr mos-verity-a.env
-//     mos-verity-b.env` is the order the shell hands them over and therefore
-//     the order they land in the FAT directory. It is a written-out list in
-//     both places, not a glob, so it is transcribed as a list.
-//   * NO `-i` ON mkfs.vfat, AND NO SLOT LABEL. The shell's comment is the
-//     reason: "one image, two possible destinations". A bundle's boot payload
-//     is installed into whichever slot is inactive, so it must not carry that
-//     slot's FAT identity -- BUNDLE_BOOT_FAT_LABEL is the neutral `BOOT` and
-//     `--invariant` is what keeps the volume id off the wall clock.
-//   * EVERY STAGED FILE TOUCHED TO FILE_MTIME BEFORE mcopy, because `mcopy -m`
-//     takes each entry's mtime from its source.
-//   * rauc's `--mksquashfs-args`, verbatim. rauc drives mksquashfs itself and
-//     without them stamps the payload with the wall clock, the build
-//     container's uid map and a thread count.
-//
-// AND THE ONE PLACE THIS PORT DELIBERATELY REFUSES MORE THAN THE SHELL.
-// bundle.sh reads the boot-attempt credits through
-//
-//     done < <(grep -oE 'BOOT_[AB]_LEFT [0-9]+' "${BOOT_CMD}" | awk '{print $2}')
-//
-// and with the file missing, or carrying no credit at all, grep produces no
-// stdout, the loop body never runs and the range guard passes BY FINDING
-// NOTHING -- before mkimage dies on the same path, which is what made
-// `os-bundle-cx3576` look healthy through two merges earlier in this campaign.
-// requireBootAttempts refuses an empty read by name. It is the only behavioural
-// difference between the two, it can only ever turn a vacuous pass into a
-// refusal, and today's os/boards/cx3576/boot.cmd declares four credits, so it
-// changes nothing about the bytes. (os/mkimage-v2.sh's copy of the same guard
-// has the same shape and is covered by accident: checkBootCmdTokens runs next
-// and refuses a boot.cmd with no `rauc.slot=` in it. bundle.sh runs no such
-// second guard -- it is the one path where the hole is reachable.)
+// The epoch is in the filename only. Bundle content is a function of the inputs
+// and the version string, never of the wall clock, which is what makes the
+// rebuild gate a hash: payloadReport measures it over the payload -- the
+// squashfs at the head -- because the bytes after it are deliberately not
+// stable, rauc salting the bundle's own verity hash tree at random and the CMS
+// signature carrying a signingTime attribute.
 
 import { createHash } from 'node:crypto'
 import { closeSync, existsSync, mkdirSync, openSync, readFileSync, readSync, rmSync, statSync, writeFileSync } from 'node:fs'
@@ -61,6 +25,37 @@ import { truncate } from './tools/dd.ts'
 import { makeBootScript } from './tools/mkimage.ts'
 import { mcopy, mkfsVfat } from './tools/mtools.ts'
 import { bundle as raucBundle, info as raucInfo } from './tools/rauc.ts'
+
+// What the port has to get right:
+//
+//   * The mcopy order. `Image rk3576-src.dtb boot.scr mos-verity-a.env
+//     mos-verity-b.env` is the order the shell hands them over and therefore
+//     the order they land in the FAT directory. It is a written-out list in
+//     both places, not a glob, so it is transcribed as a list.
+//   * No `-i` on mkfs.vfat and no slot label: "one image, two possible
+//     destinations", so a bundle's boot payload, installed into whichever slot
+//     is inactive, must not carry that slot's FAT identity.
+//     BUNDLE_BOOT_FAT_LABEL is the neutral `BOOT` and `--invariant` keeps the
+//     volume id off the wall clock.
+//   * Every staged file touched to FILE_MTIME before mcopy, because `mcopy -m`
+//     takes each entry's mtime from its source.
+//   * rauc's `--mksquashfs-args`, verbatim. rauc drives mksquashfs itself and
+//     without them stamps the payload with the wall clock, the build
+//     container's uid map and a thread count.
+//
+// One refusal this port makes that the shell does not. bundle.sh reads the
+// boot-attempt credits through
+//
+//     done < <(grep -oE 'BOOT_[AB]_LEFT [0-9]+' "${BOOT_CMD}" | awk '{print $2}')
+//
+// so with the file missing, or carrying no credit at all, grep produces no
+// stdout, the loop body never runs and the range guard passes by finding
+// nothing. requireBootAttempts refuses an empty read by name. It can only turn
+// a vacuous pass into a refusal, and today's os/boards/cx3576/boot.cmd declares
+// four credits, so it changes nothing about the bytes. os/mkimage-v2.sh's copy
+// of the same guard is covered by accident -- checkBootCmdTokens runs next and
+// refuses a boot.cmd with no `rauc.slot=` in it -- while bundle.sh runs no such
+// second guard, so it is the one path where the hole is reachable.
 
 /**
  * The producer of the rootfs-side inputs, named in every message about one.
@@ -93,12 +88,12 @@ export const DEVKEY_DIR: string = join(OS_DIR, 'update', 'rauc', '.devkeys')
 /** os/update/rauc/render-config.sh, which owns the shipped slot configuration. */
 export const RENDER_CONFIG_SH: string = join(OS_DIR, 'update', 'rauc', 'render-config.sh')
 
-// --- the readers, each exactly as blunt as the shell's ----------------------
+// The readers, each exactly as blunt as the shell's.
 
 /**
  * One KEY=value out of a plain env-style file, without executing it.
  *
- * `sed -n "s/^KEY=//p" file | tail -n1` -- the LAST assignment wins, and a key
+ * `sed -n "s/^KEY=//p" file | tail -n1` -- the last assignment wins, and a key
  * that is not there yields the empty string rather than an absence. Both
  * matter: a file that assigns a key twice is answered the way the shell
  * answers it, and every caller here refuses the empty string explicitly rather
@@ -112,7 +107,7 @@ export function envFileGet(text: string, key: string): string {
 /**
  * The RAUC version os/rootfs/build-v2.sh recorded in the rootfs report.
  *
- * `sed -n 's/^RAUC_VERSION //p' | tail -n1` -- SPACE-separated there, because
+ * `sed -n 's/^RAUC_VERSION //p' | tail -n1` -- space-separated there, because
  * the report is a two-column list and not an env file. The `=` form belongs to
  * the build env; they are different files with different shapes and reading
  * either with the other's separator finds nothing, which is exactly the
@@ -147,20 +142,16 @@ export interface RaucMatchInputs {
 }
 
 /**
- * THE RAUC THAT BUILDS A BUNDLE MUST BE THE RAUC THAT INSTALLS IT.
- *
- * Commit 9a43a59 records the failure this stands in for: bundles were built in
- * a bookworm container (rauc 1.8) and installed by the image's Debian 13 rauc
- * (1.13), and 1.8 refused the x64 slot model outright the first time it was
- * asked to read it. Both halves come from os/update/rauc/ now, so agreeing is
- * the normal state -- but they are built at different TIMES, and an image
- * flashed before a version bump with a bundle built after it is precisely the
- * case nothing else would notice.
- *
- * THREE OF THE FOUR REFUSALS ARE ABOUT THE COMPARISON ITSELF, not about a
+ * The rauc that builds a bundle MUST be the rauc that installs it. A bundle
+ * built in a bookworm container (rauc 1.8) and installed by an image's Debian
+ * 13 rauc (1.13) fails: 1.8 refuses the x64 slot model outright the first time
+ * it is asked to read it. Both halves come from os/update/rauc/, so agreeing is
+ * normal -- but they are built at different times, and an image flashed before
+ * a version bump with a bundle built after it is the case nothing else notices.
+ * Three of the four refusals are about the comparison itself rather than a
  * mismatch: a missing report, a report with no version in it and a build env
- * with no version in it would each make the comparison pass by finding
- * nothing, which is the same green as agreement.
+ * with no version in it would each make it pass by finding nothing, which is
+ * the same green as agreement.
  *
  * @returns the line the shell echoes on success, so a caller can print it.
  */
@@ -199,7 +190,7 @@ export function assertRaucMatchesImage(inputs: RaucMatchInputs): string {
 /**
  * The boot-attempt credits boot.cmd installs, refusing a read that found none.
  *
- * THE EMPTY READ IS THE WHOLE POINT OF THIS FUNCTION -- see the file header.
+ * The empty read is the whole point of this function -- see the file header.
  * The shell's `while read` over an empty pipe runs its body zero times and
  * falls out of the loop having compared nothing, and a guard that reports the
  * same green for "every credit is in range" and "there were no credits" is not
@@ -232,7 +223,7 @@ export interface VerityFacts {
 /**
  * The root hash and salt the rootfs build recorded, checked against the pin.
  *
- * Neither is recomputed. The dm-verity table is computed in ONE place -- the
+ * Neither is recomputed. The dm-verity table is computed in one place -- the
  * rootfs producer -- and a second computation of the same hash is a second
  * thing to get wrong. What is checked is that the salt the producer used is
  * the salt the board pins, because a hash tree built with a random salt is not
@@ -266,24 +257,24 @@ export interface BundleVerityEnvInputs {
 /**
  * One slot's mos-verity-<slot>.env, and the five ways a cmdline is refused.
  *
- * BOTH slots' files ship in one bundle, under slot-suffixed names, because a
+ * Both slots' files ship in one bundle, under slot-suffixed names, because a
  * single boot payload can land in either slot and the table names that slot's
  * own rootfs partition. The unsuffixed name is deliberately not written: a
  * factory slot carries none either, and shipping one here would make an
  * updated slot's layout differ from the flashed one.
  *
- * THESE CHECKS ARE NOT A DUPLICATE OF THE ASSEMBLER'S, and the shell says why:
+ * These checks are not a duplicate of the assembler's, and the shell says why:
  * a bundle can be built without ever assembling an image, and these env files
- * are the ONLY tie between the shipped mos-verity-{a,b}.env and the shipped
+ * are the only tie between the shipped mos-verity-{a,b}.env and the shipped
  * rootfs.img. A cmdline pointing at the wrong slot's partition, or carrying
- * some other build's root hash, would otherwise land in a SIGNED bundle and
+ * some other build's root hash, would otherwise land in a signed bundle and
  * fail on hardware after the slot was already written.
  *
- * Two things differ from os/mkimage-v2.sh's mkverityenv() and both are the
- * shell's, kept: an absent dm-mod.create= and an absent dm-mod.waitfor= share
- * one sentence here, and the SALT is additionally required to appear in the
- * table -- the assembler checks the salt only against the pin, not against the
- * table it is about to ship.
+ * Two things differ from os/mkimage-v2.sh's mkverityenv(), both the shell's and
+ * both kept: an absent dm-mod.create= and an absent dm-mod.waitfor= share one
+ * sentence here, and the salt is additionally required to appear in the table --
+ * the assembler checks the salt only against the pin, not against the table it
+ * is about to ship.
  */
 export function bundleVerityEnvText(inputs: BundleVerityEnvInputs): string {
   const { create, waitfor } = verityCmdlineFields(inputs.cmdline)
@@ -349,13 +340,13 @@ export const GRUB_CMDLINE_PAIRS: readonly (readonly [string, string])[] = [
 /**
  * A grub board's slot cmdline fragment.
  *
- * The SAME bytes work in either slot, deliberately: the rootfs PARTUUIDs live
+ * The same bytes work in either slot, deliberately: the rootfs PARTUUIDs live
  * in the ESP's grub.cfg, which no install rewrites, so nothing in here is
  * slot-specific -- and a bundle carries one image per slot class with RAUC
  * choosing the target, so anything slot-specific would be wrong half the time.
  *
  * The closing check is not redundant with the per-key one above it. The
- * per-key check refuses a MISSING value; this one refuses a value that is
+ * per-key check refuses a missing value; this one refuses a value that is
  * present and not a hash -- a truncated or re-encoded root hash reaches the
  * device as a dm-verity table GRUB cannot use, and every slot installed from
  * that bundle refuses to boot.
@@ -381,7 +372,7 @@ export function grubCmdlineFragment(text: string, path: string): string {
   return out
 }
 
-// --- the manifest ------------------------------------------------------------
+// The manifest.
 
 /**
  * The boot half of the image set, one line pair per payload file.
@@ -408,7 +399,7 @@ function awkRecords(text: string): string[] {
 }
 
 /**
- * `@BOOT_IMAGES@` replaced by the block, spliced by LINE.
+ * `@BOOT_IMAGES@` replaced by the block, spliced by line.
  *
  * The shell splices with awk rather than sed and its comment says why: sed
  * cannot put a newline into a replacement, and this block has several. awk's
@@ -431,26 +422,23 @@ export function spliceBootImages(template: string, bootImages: string): string {
 /**
  * The rendered manifest: the boot block spliced in, then the two substitutions.
  *
- * THE REPLACEMENTS ARE FUNCTIONS, AND THAT IS THE WHOLE POINT. A string
- * replacement is NOT literal in JavaScript: `replaceAll` expands `$&`, `` $` ``,
- * `$'`, `$$` and `$n` inside it. A replacer function is never scanned for those,
- * so the value lands byte for byte whatever it contains.
- *
- * `os/update/bundle.sh:289` had this defect under a different character -- it
- * substituted with `sed`, where an `&` in the replacement expands to the whole
- * match -- and the first version of this port fixed `&` and reintroduced the
- * same class under `$`, while its own comment claimed the substitution was
- * LITERAL. Measured, before the fix: `mos-a$&b` rendered as
+ * The replacements are functions, and that is the whole point: a string
+ * replacement is NOT literal in JavaScript -- `replaceAll` expands `$&`,
+ * `` $` ``, `$'`, `$$` and `$n` inside it -- while a replacer function is never
+ * scanned for those, so the value lands byte for byte whatever it contains.
+ * `os/update/bundle.sh:289` carries the same defect under a different
+ * character, substituting with `sed`, where an `&` in the replacement expands
+ * to the whole match. Measured without the fix: `mos-a$&b` renders as
  * `compatible=mos-a@COMPATIBLE@b`, a manifest nobody wrote, which
- * `readBundleInfo`'s cross-check would then refuse against the uncorrupted
- * value it was given.
+ * `readBundleInfo`'s cross-check then refuses against the uncorrupted value it
+ * was given.
  *
  * Neither value can carry a trigger today -- BUNDLE_VERSION is refused unless
  * it matches `^[A-Za-z0-9][A-Za-z0-9._+-]*$`, and BUNDLE_COMPATIBLE is
- * `mos-<board>` out of the rendered system.conf -- so this fix moves no bytes
- * for any board that exists, and the payload gate proves it did not. It is
- * fixed anyway, because "unreachable today" is a property of the board files
- * and not of this function.
+ * `mos-<board>` out of the rendered system.conf -- so this moves no bytes for
+ * any board that exists, and the payload gate proves it. It is done anyway,
+ * because "unreachable today" is a property of the board files and not of this
+ * function.
  */
 export function renderManifest(options: {
   template: string
@@ -467,18 +455,16 @@ export function renderManifest(options: {
 /**
  * The two things a rendered manifest is refused for.
  *
- * COMMENT LINES ARE EXCLUDED from the placeholder scan, and the shell's note
- * is the reason: manifest.raucm.in DOCUMENTS the other template's placeholder
- * by name ("See @SLOTS@ in os/update/rauc/system.conf.in for why"), and a
- * check over the raw bytes rejected a correct manifest for saying what it
- * does. The listing of offenders applies the same exclusion the same blunt way
- * -- over the `N:line` form grep -n produces -- because a reader comparing the
- * two implementations should see the same lines named.
- *
- * `format=verity` is asserted because rauc 1.8 has no --bundle-format flag:
- * the format is declared in the manifest, so a template edit could otherwise
- * quietly downgrade every bundle to the "plain" format that system.conf
- * refuses to install.
+ * Comment lines are excluded from the placeholder scan, for the shell's
+ * reason: manifest.raucm.in documents the other template's placeholder by name
+ * ("See @SLOTS@ in os/update/rauc/system.conf.in for why"), and a check over
+ * the raw bytes rejects a correct manifest for saying what it does. The listing
+ * of offenders applies the same exclusion the same blunt way, over the `N:line`
+ * form grep -n produces, so a reader comparing the two implementations sees the
+ * same lines named. `format=verity` is asserted because rauc 1.8 has no
+ * --bundle-format flag: the format is declared in the manifest, so a template
+ * edit could otherwise quietly downgrade every bundle to the "plain" format
+ * that system.conf refuses to install.
  */
 export function checkRenderedManifest(rendered: string, manifestInPath: string): void {
   const lines = rendered.split('\n')
@@ -495,13 +481,13 @@ export function checkRenderedManifest(rendered: string, manifestInPath: string):
   }
 }
 
-// --- reading the bundle back -------------------------------------------------
+// Reading the bundle back.
 
 /**
  * What `jq -r` prints for a field, including the two answers that are not values.
  *
  * A key that is absent prints the four characters `null`, and a `select` that
- * matched nothing prints NOTHING -- so the shell compares `''` and `'null'`
+ * matched nothing prints nothing -- so the shell compares `''` and `'null'`
  * against the expected string and reports them in its message. Both are
  * reproduced: a port that turned either into `undefined` would compare its own
  * way and report a different sentence for the same broken bundle.
@@ -533,7 +519,7 @@ export const BUNDLE_SLOT_IMAGES: readonly (readonly [string, string])[] = [
  * The bundle read back through rauc, compared against what was asked for.
  *
  * This is the only way to prove a bundle is installable that does not write to
- * a real block device: `rauc info` with signature verification ON, through the
+ * a real block device: `rauc info` with signature verification on, through the
  * system.conf the image actually ships -- which is also the one place that
  * file is parsed by rauc at build time, so a slot definition rauc cannot read
  * fails the bundle build instead of failing on a device.
@@ -565,19 +551,18 @@ export interface PayloadReport {
 }
 
 /**
- * DETERMINISM, STATED AS A MEASURABLE VALUE RATHER THAN A CLAIM.
+ * Determinism, stated as a measurable value rather than a claim.
  *
  * The squashfs payload at the head of the bundle is a pure function of the
  * inputs; the bytes after it are not. rauc salts the bundle's own dm-verity
- * hash tree at random and the CMS signature carries a signingTime attribute,
- * so two builds of the same version differ in the tail and MUST NOT in the
- * head. That makes this digest the rebuild gate for the bundle.
- *
- * `bytes_used` sits at offset 40 of the squashfs superblock as a little-endian
- * u64 -- `od -An -tu8 -j40 -N8` in the shell -- and is rounded up to the 4096
- * rauc pads to. The magic is checked first because a `bytes_used` read out of
- * something that is not a superblock is a number, and a number that large
- * turns `head -c` into "the whole file" rather than into an error.
+ * hash tree at random and the CMS signature carries a signingTime attribute, so
+ * two builds of the same version differ in the tail and MUST NOT in the head,
+ * which makes this digest the bundle's rebuild gate. `bytes_used` sits at
+ * offset 40 of the squashfs superblock as a little-endian u64 -- `od -An -tu8
+ * -j40 -N8` in the shell -- rounded up to the 4096 rauc pads to. The magic is
+ * checked first because a `bytes_used` read out of something that is not a
+ * superblock is a number, and a number that large turns `head -c` into "the
+ * whole file" rather than into an error.
  */
 export function payloadReport(path: string): PayloadReport {
   const bundleBytes = statSync(path).size
@@ -605,7 +590,7 @@ export function payloadReport(path: string): PayloadReport {
   return { payloadBytes: Number(padded), payloadSha256, bundleBytes }
 }
 
-// --- building ----------------------------------------------------------------
+// Building.
 
 export interface BundleInputs {
   readonly board: string
@@ -680,14 +665,14 @@ export function bundleMountsFor(inputs: BundleInputs, workDir: string): string[]
  * Open the toolbox a bundle is built in, refusing a route that cannot honour
  * the toolset's claim about which rauc answers.
  *
- * THE HOST ROUTE HAS NO WAY TO CARRY A BINARY IN. `carry` is a `docker cp`, so
+ * The host route has no way to carry a binary in. `carry` is a `docker cp`, so
  * on the host route the toolbox runs whatever `rauc` is first on PATH -- while
  * the toolset still declares `provenance: 'shipped'`, which is what
- * src/tools/rauc.ts checks before it will write a bundle. A distro rauc on
- * PATH would therefore sign a bundle under a provenance claim that was made
- * about a different binary, and that is the one failure the provenance
- * machinery exists to prevent (commit 9a43a59). So the route is measured and
- * the mismatch refused, by name, before anything is written.
+ * src/tools/rauc.ts checks before it will write a bundle. A distro rauc on PATH
+ * would therefore sign a bundle under a provenance claim made about a different
+ * binary, the one failure the provenance machinery exists to prevent. So the
+ * route is measured and the mismatch refused, by name, before anything is
+ * written.
  *
  * The refusal is here rather than in src/toolbox.ts because provenance is not
  * a property of a toolset in general -- rauc is the only tool that has one --
@@ -781,8 +766,8 @@ export async function buildBundle(
     const verityEnvText = readFileSync(inputs.rootfsVerityEnv, 'utf8')
     let bootAttemptsSeen = 0
 
-    // THE BOOT HALF, which is the one thing that genuinely differs between the
-    // two bootloaders.
+    // The boot half, the one thing that genuinely differs between the two
+    // bootloaders.
     if (geometry.bootloader === 'uboot') {
       const bootCmdText = readFileSync(bootCmdPath, 'utf8')
       bootAttemptsSeen = requireBootAttempts(geometry, bootCmdText, bootCmdPath).length
@@ -835,7 +820,7 @@ export async function buildBundle(
       const bootVfat = join(stage, 'boot.vfat')
       await truncate(tb, bootVfat, `${geometry.requireInt('BOOT_SIZE_MIB')}M`)
       await mkfsVfat(tb, { image: bootVfat, label: BUNDLE_BOOT_FAT_LABEL })
-      // THE ORDER IS THE FAT DIRECTORY ORDER. Written out, as the shell writes
+      // The order is the FAT directory order. Written out, as the shell writes
       // it out; nothing here globs.
       await mcopy(tb, {
         image: bootVfat,
@@ -909,7 +894,7 @@ export async function buildBundle(
     })
 
     // Validated the only way that proves it is installable: read back through
-    // rauc with signature verification ON. No `rauc install` anywhere -- that
+    // rauc with signature verification on. No `rauc install` anywhere -- that
     // writes to real block devices.
     const info = await raucInfo(tb, {
       bundle: inputs.bundleOut,

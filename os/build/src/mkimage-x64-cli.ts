@@ -2,17 +2,16 @@
 // called, and the -latest symlink.
 //
 // The shell has no such seam -- it is one file from `stat -c%s` to `ln -sf` --
-// but the split is src/mkimage-v2-cli.ts's and it is taken for the same reason:
-// THE EPOCH IN THE FILENAME IS THE ONLY PER-BUILD VARIATION, and it is computed
-// here, once, so that nothing downstream of this line is allowed to see a clock.
-// An assembler that could read the time is an assembler whose output might
-// depend on when it ran, and the byte-identity gate is that it does not.
+// but the split is src/mkimage-v2-cli.ts's, for the same reason: the epoch in
+// the filename is the only per-build variation, computed here, once, so nothing
+// downstream may see a clock. An assembler that could read the time is one
+// whose output might depend on when it ran, and the byte-identity gate is that
+// it does not.
 //
-// WHAT IT DOES NOT DO, AND THAT IS DELIBERATE. It does not derive its inputs
-// from ${MOS_BOARD}: os/mkimage-x64.sh hardcodes x64 in its layout path and its
-// output directory and reads MOS_BOARD for nothing, so a cx3576 left in the
-// environment must not name the wrong board to build. See ROOTFS_PRODUCER in
-// src/mkimage-x64.ts for the failure that produced that rule.
+// It deliberately does not derive its inputs from ${MOS_BOARD}:
+// os/mkimage-x64.sh hardcodes x64 in its layout path and its output directory
+// and reads MOS_BOARD for nothing, so a cx3576 left in the environment must not
+// name the wrong board to build. See ROOTFS_PRODUCER in src/mkimage-x64.ts.
 
 import { lstatSync, mkdirSync, symlinkSync, unlinkSync } from 'node:fs'
 import { join } from 'node:path'

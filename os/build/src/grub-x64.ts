@@ -1,39 +1,32 @@
 // The x64 boot contract, as text: the grub.cfg the ESP carries and the per-slot
 // fragment RAUC replaces on every install.
 //
-// THE DIVIDING LINE IS THE WHOLE POINT, and it is a correctness rule
-// rather than a style: grub.cfg lives on the ESP, which no install ever rewrites,
-// so it may hold ONLY board constants -- each slot's PARTUUID and the fixed
-// kernel arguments. Everything that changes with a build -- the sector count, the
-// block sizes, the root hash, the salt -- goes into cmdline.cfg on the SLOT'S OWN
-// boot partition, because "a bundle carries one image per slot CLASS, so the
-// fragment's bytes have to be correct for whichever slot the install targets, and
-// anything slot-specific in it would make one of the two wrong".
-//
-// ONE ESP AND A BOOT PAIR, not two ESPs: with two, RAUC installs the payload
-// into the inactive ESP, which boot.mount never mounts and the embedded GRUB
-// config never searches. Every update then writes the new kernel and the new
-// root hash where nothing reads them, leaves the read copy naming the old
-// hash, and rolls back -- failing safe and never able to succeed.
-//
-// SO THE THREE GUARDS BELOW ARE ONE ARGUMENT IN THREE PARTS, and each is useless
-// without the others:
-//
-//   renderTemplate + unrenderedPlaceholders   a placeholder that was not
-//       substituted leaves the literal `@ROOTFS_A_PARTUUID@` in a kernel command
-//       line, which GRUB passes to the kernel verbatim.
-//   literalHashOnLinuxLine                    a per-install fact in the one file
-//       RAUC never rewrites.
-//   unusedFragmentVars                        ...and without this one the check
-//       above is "clean" because the linux line says nothing at all. A grub.cfg
-//       that referenced no ${MOS_*} would pass the hash check perfectly and boot
-//       with an empty dm-verity table.
-//
-// THIS FILE IS PURE. It reads no disk and runs no tool, which is what makes all
-// three drivable from the failing side in milliseconds -- and every one of them
-// guards a failure that announces itself only as a machine that will not boot.
+// The dividing line is a correctness rule. grub.cfg lives on the ESP, which no
+// install ever rewrites, so it may hold only board constants -- each slot's
+// PARTUUID and the fixed kernel arguments. Everything changing with a build --
+// sector count, block sizes, root hash, salt -- goes into cmdline.cfg on the
+// slot's own boot partition, because "a bundle carries one image per slot CLASS,
+// so the fragment's bytes have to be correct for whichever slot the install
+// targets, and anything slot-specific in it would make one of the two wrong".
+// And one ESP with a boot pair, not two ESPs: with two, RAUC installs into the
+// inactive ESP, which boot.mount never mounts and the embedded GRUB config
+// never searches, so every update writes the new kernel and root hash where
+// nothing reads them, leaves the read copy naming the old hash, and rolls back.
 
 import type { Geometry } from './geometry.ts'
+
+// The three guards below are one argument in three parts, each useless without
+// the others, and this file is pure -- no disk, no tool -- so each is drivable
+// from the failing side:
+//
+//   renderTemplate + unrenderedPlaceholders -- an unsubstituted placeholder
+//       leaves the literal `@ROOTFS_A_PARTUUID@` in a kernel command line,
+//       which GRUB passes to the kernel verbatim.
+//   literalHashOnLinuxLine -- a per-install fact in the one file RAUC never
+//       rewrites.
+//   unusedFragmentVars -- without which the check above is "clean" because the
+//       linux line says nothing at all: a grub.cfg referencing no ${MOS_*}
+//       passes the hash check and boots with an empty dm-verity table.
 
 /** The verity facts a build produces, read out of `_out/<board>/rootfs-verity.env`. */
 export interface VerityFacts {
@@ -67,14 +60,13 @@ export const VERITY_KEYS: readonly (readonly [keyof VerityFacts, string, string]
 /**
  * The five variables a linux line must actually consume.
  *
- * os/mkimage-x64.sh:196 spells this list; it is a SUBSET of VERITY_KEYS on
- * purpose and the subset is transcribed rather than widened to all eight. The
- * three it leaves out (MOS_DATA_BLOCK_SIZE, MOS_HASH_BLOCK_SIZE, MOS_HASH_ALGO)
- * are the ones whose values are constant across every build this tree produces,
- * so a grub.cfg that hardcoded them would still boot -- wrongly, but the check
- * this list drives is about the fragment being READ AT ALL, and five variables
- * establish that as well as eight. Widening it would be a new refusal introduced
- * by a port.
+ * os/mkimage-x64.sh:196 spells this list; it is a subset of VERITY_KEYS on
+ * purpose, transcribed rather than widened to all eight. The three it leaves
+ * out (MOS_DATA_BLOCK_SIZE, MOS_HASH_BLOCK_SIZE and MOS_HASH_ALGO) have values
+ * constant across every build this tree produces, so a grub.cfg hardcoding them
+ * would still boot -- wrongly, but the check this list drives is about the
+ * fragment being read at all, and five variables establish that as well as
+ * eight. Widening it would be a new refusal introduced by a port.
  */
 export const REQUIRED_FRAGMENT_VARS: readonly string[] = [
   'MOS_SECTORS', 'MOS_DATA_BLOCKS', 'MOS_HASH_START_BLOCK', 'MOS_ROOT_HASH', 'MOS_SALT',
@@ -83,11 +75,11 @@ export const REQUIRED_FRAGMENT_VARS: readonly string[] = [
 /**
  * Read the verity facts out of an env-style file's text, refusing an absent key.
  *
- * The shell SOURCES this file and then reads `${VERITY_DATA_SECTORS}` under
+ * The shell sources this file and then reads `${VERITY_DATA_SECTORS}` under
  * `set -u`, so a missing key is already fatal there -- as "VERITY_DATA_SECTORS:
  * unbound variable", which names the key and not the file. This names both.
  *
- * A key present and EMPTY is refused too, and that is the case worth stating: an
+ * A key present and empty is refused too, and that is the case worth stating: an
  * empty MOS_ROOT_HASH renders as `set MOS_ROOT_HASH=` in the fragment, which
  * os/boards/x64/grub.cfg reads as "no usable cmdline.cfg" and refuses the slot --
  * so an empty value produces an image that assembles, verifies, and boots
@@ -141,23 +133,18 @@ export function grubSubstitutions(geometry: Geometry): Record<string, string> {
 }
 
 /**
- * Substitute every `@NAME@` this assembler knows.
- *
- * `replaceAll` on a LITERAL `@NAME@`, not a regular expression built from the
- * value: the values here include a command line full of `.` and `=` and one of
- * them (`console=ttyS0,115200 net.ifnames=0`) would be a live pattern.
- *
- * AND THE REPLACEMENT IS A FUNCTION, for the other half of the same problem.
- * An earlier version of this comment said the right-hand side "has no
- * right-hand-side syntax at all", and that was WRONG: a *string* replacement in
- * JavaScript expands `$&`, `` $` ``, `$'`, `$$` and `$n`. `BOARD_CMDLINE_ARGS`
- * is free-form board text -- freer than the board name that carries the same
- * hazard in `bundle.ts`'s manifest -- so a kernel argument containing `$&`
- * would have been silently rewritten into the grub.cfg that boots the machine.
- * A replacer function is never scanned for those sequences.
- *
- * No board carries one today, so this moves no bytes and the x64 image gate
- * proves it: `bdf340e9…` before and after.
+ * Substitute every `@NAME@` this assembler knows, with `replaceAll` on a literal
+ * `@NAME@` rather than a regular expression built from the value: the values
+ * include a command line full of `.` and `=`, one of which
+ * (`console=ttyS0,115200 net.ifnames=0`) would be a live pattern. The
+ * replacement is a function for the other half of the same problem -- a
+ * *string* replacement in JavaScript expands `$&`, `` $` ``, `$'`, `$$` and
+ * `$n`, and `BOARD_CMDLINE_ARGS` is free-form board text, freer than the board
+ * name carrying the same hazard in `bundle.ts`'s manifest, so a kernel argument
+ * containing `$&` would be silently rewritten into the grub.cfg that boots the
+ * machine. A replacer function is never scanned for those sequences. No board
+ * carries one today, so this moves no bytes and the x64 image gate proves it:
+ * `bdf340e9…` before and after.
  */
 export function renderTemplate(template: string, substitutions: Record<string, string>): string {
   let out = template
@@ -189,14 +176,14 @@ export function linuxLines(rendered: string): { line: number, text: string }[] {
 }
 
 /**
- * A literal hash on a `linux` line -- ASSERTED BY SHAPE, NEVER BY THE WORD.
+ * A literal hash on a `linux` line -- asserted by shape, never by the word.
  *
- * A run of 32 or more hex characters. os/mkimage-x64.sh records that two earlier
- * drafts of this check grepped for the word "verity" and rejected the CORRECT
- * file, "once for a comment and once for the console message printed when a
- * fragment is missing" -- so the shape is what is tested, and it is tested
- * against the RENDERED text, because the placeholders that carry the board's
- * PARTUUIDs are substituted before this runs and a PARTUUID is not a hash.
+ * A run of 32 or more hex characters. os/mkimage-x64.sh records that grepping
+ * for the word "verity" rejects the correct file, "once for a comment and once
+ * for the console message printed when a fragment is missing" -- so the shape
+ * is what is tested, against the rendered text, because the placeholders
+ * carrying the board's PARTUUIDs are substituted before this runs and a
+ * PARTUUID is not a hash.
  *
  * (A GUID has 32 hex digits, but they arrive in five dash-separated groups; the
  * longest unbroken run is 12. That is why this is `{32,}` and not `{12,}`, and
@@ -274,7 +261,7 @@ export function renderGrubCfg(geometry: Geometry, template: string, sourcePath: 
  * real one.
  *
  * `regexp` is in the list because grub.cfg uses it to take the disk out of $root
- * and address each slot's boot partition on the SAME disk. Without it the command
+ * and address each slot's boot partition on the same disk. Without it the command
  * silently does nothing, mos_disk stays empty, and every menuentry looks for its
  * kernel on a device spelled ",gpt2".
  */
