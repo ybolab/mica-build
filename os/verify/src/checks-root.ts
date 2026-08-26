@@ -260,7 +260,7 @@ function grepCheck(c: GrepCase): CheckCase {
 }
 
 // ---------------------------------------------------------------------------
-// sq_enabled / sq_enabled_any -- os/verify-image-v2.sh:2442-2468
+// sq_enabled / sq_enabled_any -- os/verify-image-v2.sh:2442-2467
 // ---------------------------------------------------------------------------
 
 /**
@@ -372,7 +372,7 @@ function enabledCheck(c: EnabledCase): CheckCase {
 const BUILTIN_PREFIX = '/builtin'
 const APID_BIN = '/usr/bin/apid'
 // A fragment of the escape page AS RENDERED -- the oracle's BUILTIN_MARKUP,
-// verbatim (os/verify-image-v2.sh:330). Markup and not a bare route constant:
+// verbatim (os/verify-image-v2.sh:335). Markup and not a bare route constant:
 // "/builtin/deactivate" alone would still be in the binary after the pages
 // moved out to an on-disk asset tree, which is the one change this catches.
 const BUILTIN_MARKUP = '<form method="post" action="/builtin/deactivate">'

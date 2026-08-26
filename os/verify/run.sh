@@ -125,11 +125,12 @@ fi
 # --parity's path arguments, for the same reason and one worse one.
 #
 # The lint's paths are READ, so resolving one against os/verify/ produces a
-# "not found" -- wrong, but visible. --json is WRITTEN. `--parity --json
-# _out/m4c/diff.json` from the repository root put the file at
-# os/verify/_out/m4c/diff.json and then printed back the relative string it was
-# given, so the run reported writing a diff to a path that has nothing in it.
-# Measured on 2026-08-26; M4b hit it and worked around it.
+# "not found" -- wrong, but visible. --json is WRITTEN, and it printed back the
+# relative string it was given, so the run reported writing a diff to a path the
+# caller could not cat. Measured on 2026-08-26 from the repository root with
+# `--parity --board x64 --json _out/m4c/jsontest/before.json`: the message named
+# _out/m4c/jsontest/before.json and the file was created one directory tree
+# over, under this package. M4b hit it and worked around it.
 #
 # NOT the loop above, which absolutises every bare argument: here the paths are
 # the VALUES of three options and `--board cx3576` is a bare argument too. So
