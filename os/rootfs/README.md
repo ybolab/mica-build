@@ -793,6 +793,19 @@ reason and eight that differ for a new one read identically in a list:
   `/etc/shadow` is a symlink to `/run/mos/shadow` on both sides, which is why it
   is absent from the differing set while the factory copy is in it.
 
+**Measured a fourth time, at the exact commit that ships.** The subject build
+above is the tree as M5d left it. The tree this file is in adds three comment
+lines to build inputs (`build-v2.sh` and `40-board.Dockerfile`, the BSP file
+count), which are not instructions but are still context bytes, so the whole
+pairing was re-run against it rather than argued about: **the same 14 entries,
+the same list, and 0 differing `-lln` rows** on mode, uid/gid and path, with
+`dpkg.log` byte-identical over the same 694 operations.
+
+That gives a second control, and an independent one: the two M5 trees against
+EACH OTHER — cold, comment-only apart — differ on **6** entries, which is the
+control set exactly. So the eight extra entries in the table above are the
+pre-M5 tree against an M5 tree, and nothing else in the session produced them.
+
 The recipe is in `_out/gate/` of the M5e worktree — `cold.sh` (one tree, one
 cold build, through that tree's own driver), `bin/docker` (the shim, with its
 decision driven from both sides), `extract.sh`, `compare.sh` and `lines.sh` (the
