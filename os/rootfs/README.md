@@ -756,8 +756,13 @@ snapshots the file before each change and the change it snapshots is a different
 one. Nothing resolves differently — `/etc/passwd` is not order-sensitive — and
 RFCT-111's acceptance clause names this case: byte-identity "where achievable",
 and otherwise "full verifier parity plus an explicitly anchored new-baseline
-commit". Section 3 of this gate is that parity: `RESULT: PASS (290/290 checks,
-22 skipped)`, 0 FAIL, on an image assembled from a chain-built rootfs.
+commit". **That fallback has two halves and both are owed.** The parity is
+section 3 of this gate: `RESULT: PASS (290/290 checks, 22 skipped)`, 0 FAIL, on
+an image assembled from a chain-built rootfs. The anchored new-baseline commit
+is `docs/task/RFCT-111.md`, section "The M5 baseline" — which enumerates the
+eight entries, states how wide the allowance is and what a later gate must
+compare against instead of `84c12f4`. This gate first recorded only the parity
+half, which is half a discharge and reads like a whole one.
 
 **The seventh control entry of M5d is gone, which is what M5d predicted.**
 `apt/eipp.log.xz` is byte-identical on both pairings today, so the control is
