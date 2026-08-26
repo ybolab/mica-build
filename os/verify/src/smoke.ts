@@ -389,6 +389,54 @@ export function readFactoryRoot(
   return { ...parsed, archivePath: archive }
 }
 
+/** `_out/<board>/rootfs-stages.txt` -- what the driver recorded about the build. */
+export const STAGE_MANIFEST_NAME = 'rootfs-stages.txt'
+
+/**
+ * The feature stages the build was told to leave OUT, read off its own manifest.
+ *
+ * WHY THIS IS ASKED AT ALL. The register covers a FULL-FEATURED root: twelve
+ * artifacts, of which seven arrive with stages/31-feature-containers, one with
+ * 32-feature-rauc and four with 33-feature-mosd. Those stages are optional --
+ * `WITH_CONTAINERS=0` in a board's containers.env, or `MOS_ROOTFS_WITHOUT`,
+ * leaves them out, and os/rootfs/build-v2.sh supports both. Against such a root
+ * every artifact of a declined feature answers rc=127, and the run would print
+ * seven failures about seven binaries when what happened is one decision about
+ * one stage. That is the same defect `preflight` exists to prevent one level up.
+ *
+ * IT REFUSES RATHER THAN MODELLING IT. Teaching the register which feature owns
+ * which artifact, and reporting a declined one as some fourth verdict, would put
+ * a SKIP into a runner whose whole purpose is that nothing is skipped -- and a
+ * skip reports the same green as a pass. Refusing costs a board that declines a
+ * feature the ability to smoke-run at all, which is a smaller and much more
+ * visible cost than a green with a hole in it, and it is a decision for whoever
+ * ships such a board to make deliberately.
+ *
+ * Both shipped boards decline nothing today -- x64 has no containers.env at all
+ * and cx3576's says `WITH_CONTAINERS=1` -- so this guard is written from the
+ * manifest's own record rather than from a board file, and it fires on a
+ * configuration neither board is in.
+ */
+export function declinedFeatures(text: string): string[] {
+  for (const line of text.split('\n')) {
+    const m = /^#\s*declined:\s*(.*)$/.exec(line)
+    if (m === null) continue
+    const body = m[1]!.trim()
+    // `# declined: (none -- every feature stage in the directory was built)`.
+    // The parenthesis is the driver's way of saying "asked for, and nothing was
+    // declined" as opposed to "nobody wrote it down"; stageManifest's own
+    // comment says why both statements exist and why they must not look alike.
+    if (body === '' || body.startsWith('(')) return []
+    return body.split(/\s+/).filter(f => f !== '')
+  }
+  throw new Error(
+    `the stage manifest carries no \`# declined:\` line. os/build/src/stages.ts's stageManifest `
+    + `writes one on every build, naming the feature stages left out -- or saying in parentheses `
+    + `that none were. A manifest without it was written by something else, and the smoke run `
+    + `cannot tell a full-featured root from one built without its container engine.`,
+  )
+}
+
 async function capture(argv: readonly string[], timeoutMs: number): Promise<ExecResult> {
   const proc = Bun.spawn(argv as string[], { stdout: 'pipe', stderr: 'pipe', stdin: 'ignore' })
   // A BUDGET, NOT A COURTESY. `apid --version` starts an HTTPS server and never
@@ -547,6 +595,31 @@ export async function smokeRun(opts: SmokeRunOptions): Promise<{ results: SmokeR
   if (exec === undefined) {
     const record = readFactoryRoot(opts.board)
     log(`os/verify smoke: ${opts.board} ${record.ref} (${record.platform}, ${record.bytes} bytes, sha256 ${record.sha256})`)
+
+    // What the build left out, before anything is executed. See declinedFeatures.
+    const manifest = join(outDir(opts.board), STAGE_MANIFEST_NAME)
+    if (!existsSync(manifest)) {
+      throw new Error(
+        `${manifest} does not exist, so this run cannot tell whether the root beside it was built `
+        + `with every feature stage. os/rootfs/build-v2.sh writes it on every build; an image with `
+        + `no manifest was produced by something else, and the register covers a full-featured root.`,
+      )
+    }
+    const declined = declinedFeatures(readFileSync(manifest, 'utf8'))
+    if (declined.length > 0) {
+      throw new Error(
+        `${opts.board} was built WITHOUT the feature stage(s): ${declined.join(', ')}.\n`
+        + `       The smoke register covers a full-featured root -- seven of its twelve artifacts arrive\n`
+        + `       with stages/31-feature-containers, one with 32-feature-rauc and four with\n`
+        + `       33-feature-mosd -- so every artifact of a declined feature would answer rc=127 and this\n`
+        + `       run would print a handful of failures about binaries when what happened is one decision\n`
+        + `       about one stage. Recorded at ${manifest}.\n`
+        + `       This refuses rather than skipping the affected artifacts: a skip reports the same green\n`
+        + `       as a pass, which is the one outcome a runner that exists to execute everything must not\n`
+        + `       be able to produce.`,
+      )
+    }
+
     if (opts.load !== false) await loadFactoryRoot(record)
     exec = dockerExec(record.ref)
     await preflight(exec, record.platform)

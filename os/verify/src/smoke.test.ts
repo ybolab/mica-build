@@ -33,6 +33,7 @@ import {
   preflight,
   readFactoryRoot,
   smokeRun,
+  declinedFeatures,
   versionTokens,
   type Exec,
   type ExecResult,
@@ -470,6 +471,33 @@ describe('readFactoryRoot -- a missing image REFUSES rather than skipping', () =
     mkdirSync(dir, { recursive: true })
     writeFileSync(factoryRootPaths('x64', dir).record, 'ref\tx\n')
     expect(() => readFactoryRoot('x64', dir)).toThrow(/factory-root\.oci does not exist/)
+  })
+})
+
+// ─── the declined-feature guard ─────────────────────────────────────────────
+
+describe('declinedFeatures -- reading what the build left out, off its own manifest', () => {
+  // The exact line os/build/src/stages.ts writes when nothing was declined,
+  // captured from the real _out/x64/rootfs-stages.txt this tree produced.
+  const NONE = '# os/rootfs stage chain, as built. One line per stage, in build order.\n'
+    + '# declined: (none -- every feature stage in the directory was built)\n'
+    + '# name\tcontent-hash\ttag\n10-base\tabc\tmos-rootfs-stage:x64-10-base\n'
+
+  test('the parenthesised form means nothing was declined', () => {
+    expect(declinedFeatures(NONE)).toEqual([])
+  })
+
+  test('a real declined list is read, in the order it was written', () => {
+    const some = mutate(NONE, '# declined: (none -- every feature stage in the directory was built)', '# declined: containers mqtt')
+    expect(declinedFeatures(some)).toEqual(['containers', 'mqtt'])
+  })
+
+  // "A `# declined:` line naming nothing is not the same statement as no line
+  // at all" -- stageManifest's own words. The two must not look alike here
+  // either, so a manifest with no line is refused rather than read as "none".
+  test('a manifest with NO declined line is refused, not read as nothing declined', () => {
+    const missing = mutate(NONE, /^# declined:.*\n/m, '')
+    expect(() => declinedFeatures(missing)).toThrow(/carries no `# declined:` line/)
   })
 })
 
