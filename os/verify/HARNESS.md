@@ -242,7 +242,8 @@ summary line on both boards:
 cx3576's eight FAILs are the BSP byte-compares whose source tree a checkout does
 not carry. **The oracle failed those too, identically** — `make
 os-verify-cx3576-v2` was already red on a checkout without `board/`, and it
-still is. PLAN-014:220-223 puts BSP builds out of scope, and populating `board/`
+still is. PLAN-014's **Scope** section puts BSP builds out of scope — *"No
+change to … `board/` BSP builds (digest pins only)"* — and populating `board/`
 would turn eight of the oracle's own FAILs into passes: that changes the
 measurement rather than porting it.
 
@@ -825,9 +826,10 @@ register entry edited.
 /board/out/...` and `u-boot is 0 bytes`.
 
 **The port EXPRESSES that absence rather than populating the tree.**
-PLAN-014:220-223 puts `board/` BSP builds outside this campaign, and populating
-it would turn eight of the oracle's own FAILs into passes — changing the
-measurement rather than porting it. So the port reads the same paths and fails
+PLAN-014's **Scope** section puts `board/` BSP builds outside this campaign —
+*"No change to … `board/` BSP builds (digest pins only)"* — and populating it
+would turn eight of the oracle's own FAILs into passes, changing the measurement
+rather than porting it. So the port reads the same paths and fails
 with the same sentence when the source is not there, and BOTH directions have
 fixtures, so the byte-compare's passing side is driven even though no shipped
 tree takes it. Parity is unaffected either way: the two sides agree on all eight.
@@ -866,8 +868,9 @@ nowhere board-side to be derived from: `os/boards/cx3576/board.env` declares
 `BOARD_HAS_STATUS_LED=1` and nothing about polarity. The same three facts per
 LED are asserted in three places in this tree — the oracle, the dts the kernel
 build compiles, and `board/cx3576/kernel/Dockerfile:134-139` — and the last two
-are `board/` BSP files PLAN-014:220-223 puts outside this campaign, so reading
-them would be a dependency on a tree this port must not require. The SCOPE is
+are `board/` BSP files PLAN-014's **Scope** section puts outside this campaign
+(*"No change to … `board/` BSP builds (digest pins only)"*), so reading them
+would be a dependency on a tree this port must not require. The SCOPE is
 derived (`boardsWhere(hasLed)`), and the device tree's own file name comes from
 that board's `BOOT_SLOT_REQUIRED_FILES`.
 

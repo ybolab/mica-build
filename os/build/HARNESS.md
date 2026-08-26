@@ -1397,8 +1397,10 @@ clean throughout.
 Until this commit's successor, every defect below was justified by "it
 reproduces the shell". The shell is the thing being deleted, so that
 justification is what expires here. Each is recorded with its reproduction, and
-**none of them is fixed** — PLAN-014:220-223 puts finding in scope and acting
-out of it.
+**none of them is fixed** — PLAN-014's **Scope** section puts finding in scope
+and acting out of it: *"No change to device-side runtime behaviour, image content
+contracts (outside explicitly anchored baselines), `board/` BSP builds (digest
+pins only), `mosd/` Rust sources, or `test/apid-api`"*.
 
 The distinction the record demands is kept sharply: a defect **deleted along
 with its container** is one that has no remaining site in the tree, and a defect
@@ -1446,8 +1448,9 @@ TS   (bundle.ts:448)   mos-a$$b   ->  compatible=mos-a$b
 
 **The port had not removed the class; it had moved the trigger from `&` to `$`.**
 
-M6e first recorded this as shipping, on the reading that PLAN-014:220-223 put
-acting out of scope. **L2 ruled otherwise and the ruling is right**: `os/build/
+M6e first recorded this as shipping, on the reading that PLAN-014's **Scope**
+section put acting out of scope. **L2 ruled otherwise and the ruling is right**:
+`os/build/
 src/bundle.ts` was created by M6d (`eee58ca`, with `020d003` adding its tests)
 and no other subtask has ever touched it — `git log --follow` returns exactly
 those two commits. It is M6's own port, inside M6's own milestone, and the
@@ -1691,10 +1694,11 @@ repointed instead is the strictly smaller set that would MISLEAD:
   the three lines the sentence claims.
 
 **`test/apid-api/run.sh:263` carries the same stale remedy and was deliberately
-NOT changed.** It was repointed and then reverted: PLAN-014's scope
-(`docs/plan/PLAN-014.md:220-223`) excludes `test/apid-api`, and the same sentence
-excludes `board/`, which is why the two `board/*/board.yaml` citations are also
-left. Finding is in scope; acting is not.
+NOT changed.** It was repointed and then reverted: PLAN-014's **Scope** section
+excludes `test/apid-api` — *"No change to … `mosd/` Rust sources, or
+`test/apid-api`"* — and the same sentence excludes `board/`, which is why the two
+`board/*/board.yaml` citations are also left. Finding is in scope; acting is
+not.
 
 ### The `shell-pipefail-lint` scope, which RFCT-112's acceptance names
 
