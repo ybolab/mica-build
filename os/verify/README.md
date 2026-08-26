@@ -318,6 +318,79 @@ directions: whichever batch registers ` contains ` first makes the other's lines
 `ShellMatcher` and therefore M4e's, on the same list as the "beyond the oracle"
 flag M4a left it.
 
+## The smoke runner — "it linked", "it runs" and "it is the version we decided"
+
+RFCT-113 M7b. Twelve artifacts in the image are built by this repository — mosd,
+apid, mos-mqttd, mos-mqtt-broker, rauc, podman, quadlet, crun, conmon, netavark,
+aardvark-dns, catatonit — and until M7 the last thing done to any of them was to
+**link** them. Three different claims were being read as one, and only the first
+was ever checked:
+
+| claim | what would establish it |
+|-------|-------------------------|
+| it linked | the build did not fail |
+| it runs | the loader resolves it and it reaches `main` |
+| it is the version we decided | what ran is what `versions.env` says |
+
+A wrong-architecture binary, a missing soname and a version that does not match
+its pin all survive to first boot, and from a build log all three look identical:
+green.
+
+```sh
+bash os/verify/run.sh --smoke                # x64, or $MOS_BOARD
+bash os/verify/run.sh --smoke --board cx3576
+```
+
+It loads `_out/<board>/factory-root.oci` — the packed root the build exports as
+an OCI image — and runs each artifact **inside it**, at its installed path,
+with `--rm --network none`.
+
+### One list, two readers
+
+No version string is written down in this package. Every pin is read, at run
+time, out of the file that owns it: `os/podman/versions.env`,
+`os/update/rauc/versions.env`, and `mosd/<crate>/Cargo.toml` for the four
+binaries this repository writes. That is the whole of what makes the third
+acceptance clause true — *bumping a pin without rebuilding the artifact turns
+the smoke run red* — and it is the reason the register carries identity (which
+artifact, which path, which key) and never a value.
+
+`pinCoverageFaults` checks both directions and the **runner** calls it, not only
+its tests. Every `*_VERSION` in every `versions.env` must be claimed by some
+artifact; a new self-built binary that arrives with a pin and no register entry
+refuses the run instead of quietly not being executed.
+
+### Three verdicts, because two would be a lie
+
+`mosd` and `apid` have **no `--version`**. Measured inside the real factory root:
+`mosd --version` ignores the flag, runs first-boot provisioning and exits 1 on
+the absent system bus; `apid --version` ignores it, generates a TLS keypair,
+binds `:443` and never returns. Neither reports a version, neither exits 0, and
+neither invocation is *minimal* — both mutate. Closing that means editing
+`mosd/` Rust sources, which PLAN-014 excludes.
+
+So they are **unclaimed**: not a pass, not a skip, not invoked at all. The run
+concludes `INCOMPLETE` and exits non-zero. That is deliberate — the alternative
+is a green that has quietly stopped asking two of the eleven artifacts for a
+version, and this tree has deleted several checks for exactly that.
+
+```
+RESULT: INCOMPLETE (10 pass, 0 fail, 2 unclaimed, of 12)
+```
+
+### It refuses rather than skipping, in four places
+
+- **no image** — names the file and `MOS_BOARD=<b> bash os/rootfs/build-v2.sh`
+- **register vs pins disagree** — nothing is executed at all
+- **a feature stage was declined** — read off the build's own
+  `rootfs-stages.txt`; against such a root the declined feature's artifacts would
+  all answer `rc=127`, and a handful of failures about binaries is the wrong
+  diagnosis of one decision about one stage
+- **this host cannot execute the image** — a `/bin/true` preflight, which is
+  also the positive control. Without it an arm64 image on a host with no
+  `binfmt_misc` gives twelve failures about twelve binaries, which is twelve
+  wrong diagnoses of one condition.
+
 ## Running
 
 ```sh
@@ -384,6 +457,10 @@ src/layout.ts       the board definition walked into the table it describes
 src/verdict.ts      how a ported check spells its conclusion
 src/parity.ts       the diff: shell conclusions vs port results, per check, by identity
 src/parity-cli.ts   argv and orchestration; every decision is in parity.ts
+src/smoke-pins.ts   where a recorded version is READ from; no version string lives here
+src/smoke-register.ts  the twelve artifacts: identity and installed path, never a value
+src/smoke.ts        the runner: the exec seam, the verdicts, the refusals, the count guard
+src/smoke-cli.ts    argv, printing and an exit status; every decision is in smoke.ts
 src/probe.ts        drives every helper against a real image and prints what it read
 src/*.test.ts       the suite; every refusal has a positive control beside it
 ```
