@@ -817,7 +817,7 @@ const EXT_UNIT_DIR_CHECKS: readonly CheckCase[] = [
         binds.length === 0
           ? `no unit in the image mounts anything over /etc/systemd/system; the boot chain's own units `
             + `and their local-fs.target.wants enablement stay inside the verity root`
-          : `a unit in the image mounts over /etc/systemd/system (${binds.join(' ')} ). That directory `
+          : `a unit in the image mounts over /etc/systemd/system (${binds.join(' ')}). That directory `
             + `holds this boot chain's own mount units AND the local-fs.target.wants symlinks enabling `
             + `them, so the bind is performed by a unit living in the directory it hides and shadows the `
             + `enablement of every other STATE mount. PLAN-011 D5 named this target originally and it `

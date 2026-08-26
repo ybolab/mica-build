@@ -215,7 +215,7 @@ const ENGINE_CHECKS: readonly CheckCase[] = [
           ? 'the image contains no podman systemd unit of any name; the engine is inert by '
             + 'construction rather than by masking, so there is no mask list to keep in step with '
             + 'upstream'
-          : `the image contains podman systemd units:${units.map(u => ` ${u}`).join('')}. os/podman `
+          : `the image contains podman systemd units:${units.join(' ')} . os/podman `
             + `does not run 'make install.systemd', so anything named podman* under a unit directory `
             + `arrived by a path nobody intended -- and podman.socket in particular is `
             + `SOCKET-ACTIVATED, so being disabled is not enough`,
@@ -371,7 +371,7 @@ const ENGINE_CHECKS: readonly CheckCase[] = [
         enabled.length === 0,
         enabled.length === 0
           ? 'no podman unit carries an enablement symlink; the engine is inert in the shipped image'
-          : `podman units carry an enablement symlink in the image:${enabled.map(u => ` ${u}`).join('')}. `
+          : `podman units carry an enablement symlink in the image:${enabled.join(' ')} . `
             + `The device would run containers before anyone asked, which is the opposite of `
             + `PLAN-012's default-off switch`,
       )
@@ -537,7 +537,7 @@ const PURGE_CHECKS: readonly CheckCase[] = [
           ? 'no apt or dpkg systemd timer is in the image; removing the package manager\'s binaries '
             + 'does not remove its timers, and those fire daily whether or not anything is left for '
             + 'them to run'
-          : `package-management timers are in the image:${timers.map(t => ` ${t}`).join('')}. Each is `
+          : `package-management timers are in the image:${timers.join(' ')} . Each is `
             + `enabled by its package, fires daily, and fails daily on a root with no apt and no dpkg `
             + `— journal noise shaped exactly like a real fault`,
       )]

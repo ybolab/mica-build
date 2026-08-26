@@ -58,6 +58,7 @@ import { RAUC_CHECKS } from './checks-rauc.ts'
 import { ROOT_CHECKS } from './checks-root.ts'
 import { SHADOW_CHECKS } from './checks-shadow.ts'
 import { SLOT_CHECKS } from './checks-slots.ts'
+import { SYSTEM_CHECKS } from './checks-system.ts'
 import { ToolOutputError, type ToolRuntime } from './tools.ts'
 import { matcherAlternatives, type CheckResult, type RegisteredCheck, type Verdict } from './parity.ts'
 
@@ -129,6 +130,7 @@ export const CHECKS: readonly CheckCase[] = [
   ...ENGINE_CHECKS_ALL,
   ...HOME_CHECKS,
   ...CONND_CHECKS,
+  ...SYSTEM_CHECKS,
 ]
 
 /**

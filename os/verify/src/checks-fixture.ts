@@ -38,6 +38,7 @@ import type { ImageContext } from './checks.ts'
 import type { FatSlot, GptPartition, GptTable } from './image.ts'
 import { walkLayout } from './layout.ts'
 import { CONTRACT, mountUnitFor } from './checks-connd.ts'
+import { cryptPrefixes, readProfileContract } from './checks-system.ts'
 import { OS_DIR } from './paths.ts'
 import type { ToolResult, ToolRuntime } from './tools.ts'
 import { ToolOutputError } from './tools.ts'
@@ -335,6 +336,10 @@ function seedHealthyRoot(root: string, board: Board): void {
   seedShadow(root, file)
   seedMqtt(root, file)
   seedBoardShape(root, board, file)
+  // LAST: it prepends an ELF header to the two daemons seeded above and writes
+  // the ssh.service the shadow family also touches, so it has to see their
+  // final contents rather than be overwritten by them.
+  seedSystem(root, board, file)
 
   // Nothing at /builtin, nothing at /etc/rauc/keyring.pem, nothing under
   // /srv/ui: absence is the shipped state for all three, and seeding any of
@@ -509,6 +514,31 @@ function seedHomes(root: string, board: Board, file: WriteFile): void {
   chmodSync(join(root, '/usr/lib/mos/mos-seed-root'), 0o755)
 }
 
+/** The profile KEY mosd reads, out of mosd's own source. */
+function profileKeyFromMosd(): string {
+  const key = readProfileContract().key
+  if (key === '') {
+    throw new ToolOutputError(
+      'mosd/mosd/src/provisioning.rs no longer declares PROFILE_KEY. A fixture that wrote the key '
+      + 'down would keep passing while the image and mosd disagreed about it.',
+    )
+  }
+  return key
+}
+
+/** The one crypt(3) prefix transient.rs pins, for the fixture's libcrypt to carry. */
+function cryptPrefixFromMosd(): string {
+  const prefixes = cryptPrefixes()
+  if (prefixes.length !== 1) {
+    throw new ToolOutputError(
+      `mosd/mosd/src/transient.rs pins ${prefixes.length} crypt(3) prefixes; the fixture cannot make `
+      + `the libcrypt check green against an ambiguous source, and pinning one here would test this `
+      + `file's idea of the format rather than mosd's.`,
+    )
+  }
+  return prefixes[0] as string
+}
+
 /** A `*.wants` symlink for a unit that lives in /etc/systemd/system, not /usr/lib. */
 function enableEtcUnit(root: string, unit: string, target: string): void {
   const dir = join(root, '/etc/systemd/system', target)
@@ -565,6 +595,152 @@ function seedConnd(root: string, board: Board, file: WriteFile): void {
 
   // Nothing at /usr/sbin/dnsmasq: the AP's DHCP server is systemd-networkd's own
   // DHCPServer=yes, and a second one on the same link is a conflict.
+}
+
+// ---------------------------------------------------------------------------
+// M4f: the small root-side families -- networkd, the ELF headers, the
+// bootloader environment, repart, sshd, the profile and libcrypt
+// ---------------------------------------------------------------------------
+
+/** ELF magic, then padding, then `e_machine` as the 16-bit LE field at offset 18. */
+function elfHeader(arch: string | undefined): Buffer {
+  const head = Buffer.alloc(64)
+  head.write('\x7fELF', 0, 'latin1')
+  // Not a written-down pair of magic numbers on each side of the comparison:
+  // the CHECK reads MOS_ARCH out of the board and so does this, so a third
+  // architecture is a change in one place.
+  head.writeUInt16LE(arch === 'amd64' ? 0x3E : 0xB7, 18)
+  return head
+}
+
+/**
+ * What the ten small families read.
+ *
+ * BOARD-SHAPED THROUGHOUT, from the board's own declarations: the ELF machine
+ * follows MOS_ARCH, the bootloader helpers follow RAUC_BOOTLOADER, fw_env.config
+ * addresses the two UENV partitions by the GUIDs and the size the board
+ * declares, and the multiarch directory libcrypt lands in follows MOS_ARCH too.
+ * Pinning any of them would make `packedRootFixture(x64)` an arm64 tree with the
+ * wrong names -- which is the shape M4d found and removed.
+ */
+function seedSystem(root: string, board: Board, file: WriteFile): void {
+  enable(root, 'systemd-networkd.service')
+
+  for (const p of ['/usr/bin/mosd', '/usr/bin/apid']) {
+    const existing = readFileSync(join(root, p))
+    writeFileSync(join(root, p), Buffer.concat([elfHeader(board.arch), existing]))
+  }
+
+  if (board.bootloader === 'uboot') {
+    file('/usr/bin/fw_printenv')
+    // A SYMLINK, which is what trixie's libubootenv ships: one multi-call
+    // binary. The check accepts either spelling, and this is the one that would
+    // fail a naive "is a regular file" assertion.
+    symlinkSync('fw_printenv', join(root, '/usr/bin/fw_setenv'))
+    const size = Number(board.get('UENV_SIZE_BYTES') ?? 0)
+    const hex = `0x${size.toString(16)}`
+    file('/etc/fw_env.config',
+      ['UENV_A', 'UENV_B']
+        .map(k => `/dev/disk/by-partuuid/${(board.partition(k)?.guid ?? '').toLowerCase()}\t0x0\t${hex}`)
+        .join('\n') + '\n')
+  }
+  else {
+    file('/usr/bin/grub-editenv')
+  }
+
+  file('/usr/bin/curl')
+  seedBootScripts(root, file)
+
+  // One repart definition per linux-generic partition in the board's own walk,
+  // and exactly ONE of them growing. The count the check compares against comes
+  // from the GPT, so a fixture that wrote its own number would hand the check
+  // the same value on both sides of its own comparison.
+  for (const [i, name] of linuxGenericDefinitions(board).entries()) {
+    file(`/etc/repart.d/${name}`,
+      `[Partition]\nType=linux-generic\n${name === '80-data.conf' ? 'Weight=1000\n' : `Priority=${i}\n`}`)
+  }
+
+  file('/etc/ssh/sshd_config', 'Port 22\nPermitRootLogin prohibit-password\n')
+  file('/etc/ssh/sshd_config.d/05-mos-authorized-keys.conf',
+    'AuthorizedKeysFile /etc/ssh/authorized_keys.d/%u\n')
+  file('/etc/systemd/system/etc-ssh.mount',
+    '[Mount]\nWhat=/mnt/state/ssh\nWhere=/etc/ssh\nType=none\nOptions=bind\n')
+  enableEtcUnit(root, 'etc-ssh.mount', 'local-fs.target.wants')
+
+  // The profile: mode 0444, one lowercase value, and ssh.service NOT enabled.
+  file('/usr/lib/mos/profile.conf', `${profileKeyFromMosd()}=dev\n`)
+  chmodSync(join(root, '/usr/lib/mos/profile.conf'), 0o444)
+  file('/usr/lib/systemd/system/ssh.service',
+    '[Service]\nKillMode=process\nExecReload=/bin/kill -HUP $MAINPID\n')
+
+  // libcrypt, at the multiarch directory this board's MOS_ARCH selects, reached
+  // through the SONAME symlink the login stack loads -- and carrying the crypt(3)
+  // prefix transient.rs pins, read from transient.rs rather than typed here.
+  const triplet = board.arch === 'amd64' ? 'x86_64-linux-gnu' : 'aarch64-linux-gnu'
+  file(`/usr/lib/${triplet}/libcrypt.so.1.1.0`, `\x7fELF...${cryptPrefixFromMosd()}...\n`)
+  symlinkSync('libcrypt.so.1.1.0', join(root, `/usr/lib/${triplet}/libcrypt.so.1`))
+}
+
+/**
+ * A /usr/lib/mos script with enough shape to exercise the command extractor, and
+ * the binaries it names.
+ *
+ * SIXTEEN COMMANDS, because the check refuses fewer than ten: an extractor that
+ * stopped seeing commands would make the presence test pass while proving
+ * nothing, and the oracle guards that with a vacuity floor. A fixture sitting
+ * below the floor could not tell a working extractor from a broken one.
+ *
+ * The body is deliberately awkward in the ways the pipeline is about: a `case`
+ * block whose PATTERNS are not commands, a command substitution inside a
+ * double-quoted string, an escaped `#` in a message, a line continuation, a
+ * locally defined function, and a wrapper call. Each of those is a stage of the
+ * extractor and each has a case beside it.
+ */
+function seedBootScripts(root: string, file: WriteFile): void {
+  for (const c of [
+    'awk', 'cat', 'chmod', 'chown', 'cp', 'grep', 'head', 'mkdir',
+    'mktemp', 'mv', 'od', 'rm', 'sed', 'sleep', 'sync', 'tr',
+  ]) file(`/usr/bin/${c}`)
+
+  file('/usr/lib/mos/mos-health',
+    '#!/bin/sh\n'
+    + 'set -eu\n'
+    + '\n'
+    + 'have() { command -v "$1" >/dev/null 2>&1; }\n'
+    + 'probe() {\n'
+    + '    # a wrapper call: curl is OPTIONAL and must not be extracted\n'
+    + '    have curl || return 0\n'
+    + '}\n'
+    + '\n'
+    + 'tmp="$(mktemp -d)"\n'
+    + 'mkdir -p "${tmp}/work"\n'
+    + 'chmod 0700 "${tmp}"\n'
+    + 'chown 0:0 "${tmp}"\n'
+    + 'cat /proc/uptime | awk \'{ print $1 }\' >"${tmp}/uptime"\n'
+    + 'grep -q booted "${tmp}/uptime" || true\n'
+    + 'head -n1 "${tmp}/uptime" | tr -d \'\\n\' >"${tmp}/short"\n'
+    + 'sed -e \'s/x/y/\' "${tmp}/short" >"${tmp}/edited"\n'
+    + 'od -An -c "${tmp}/edited" >"${tmp}/dump"\n'
+    + 'cp "${tmp}/dump" "${tmp}/dump.bak"\n'
+    + 'mv "${tmp}/dump.bak" "${tmp}/dump.old"\n'
+    + 'printf \'%s\\n\' "state \\# ok" >"${tmp}/note"\n'
+    + 'case "${1:-status}" in\n'
+    + 'status)\n'
+    + '    probe\n'
+    + '    ;;\n'
+    + 'reset)\n'
+    + '    rm -rf "${tmp}/work"\n'
+    + '    ;;\n'
+    + 'esac\n'
+    + 'sleep 0 \\\n'
+    + '    && sync\n')
+}
+
+/** `80-data.conf` plus one definition per other linux-generic partition. */
+function linuxGenericDefinitions(board: Board): string[] {
+  const walk = walkLayout(board, Number(board.partition('ROOTFS_A')?.sizeSectors ?? 0))
+  const generic = walk.rows.filter(r => r.typecode.toLowerCase() === '0fc63daf-8483-4772-8e79-3d69d8477de4')
+  return generic.map((r, i) => (r.label.toLowerCase() === 'data' ? '80-data.conf' : `${10 + i}-${r.label}.conf`))
 }
 
 /** What `seedHealthyRoot` hands its helpers: write a file, making its parents. */
