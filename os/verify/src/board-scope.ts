@@ -8,7 +8,7 @@
 // literal). So the definitions MOVED here and `checks-board.ts` imports them;
 // nothing was copied.
 //
-// ═══ THE LISTS ARE DERIVED, NEVER WRITTEN DOWN ═══
+// THE LISTS ARE DERIVED, NEVER WRITTEN DOWN.
 //
 // `boards:` on a CheckCase takes literal names, and every list handed to it in
 // this tree is computed here from the shipped definitions themselves. A third

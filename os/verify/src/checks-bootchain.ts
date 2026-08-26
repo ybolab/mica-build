@@ -6,7 +6,7 @@
 // `board/<board>/out/` or a file mcopy'd out of a boot slot, and three of them
 // share the FIVE SKIP LINES a grub board prints in their place.
 //
-// ═══ THE SKIPS ARE THE REASON THESE ARE TOGETHER ═══
+// THE SKIPS ARE THE REASON THESE ARE TOGETHER.
 //
 // A shell line has exactly one owner. The oracle wraps whole groups in
 // `if is_uboot_board ... else skip "..."`, so ONE skip conclusion stands for as
@@ -23,7 +23,7 @@
 // exist on a board that prints none of their lines. M4d drew the same line for
 // the extlinux/no-initramfs pair and this follows it.
 //
-// ═══ THE BSP COMPARE, AND THE DECISION IT NEEDED ═══
+// THE BSP COMPARE, AND THE DECISION IT NEEDED.
 //
 // `board/cx3576/out/` is NOT POPULATED in a checkout, so the oracle's own run
 // is `RESULT FAIL (387/395)` with eight conclusions reading `... compare source
@@ -39,7 +39,7 @@
 // a differing one, and no source at all -- so the passing direction is driven
 // even though no shipped tree reaches it.
 //
-// ═══ ONE cx3576 LITERAL IN THE ORACLE, RECORDED RATHER THAN COPIED ═══
+// ONE cx3576 LITERAL IN THE ORACLE, RECORDED RATHER THAN COPIED.
 //
 // `BOARD_DIR="${BOARD_DIR:-${REPO_ROOT}/board/cx3576}"` (:28) and
 // `DTB_SRC="${BOARD_DIR}/out/kernel/rk3576-src.dtb"` (:1758) are board names

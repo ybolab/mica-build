@@ -4,7 +4,7 @@
 // the partition count, and the capability pair -- and two of them needed
 // something the register could not previously express.
 //
-// ═══ `exactly ${EXPECT_PARTS} partitions`, AND WHY IT WAS LEFT UNTIL LAST ═══
+// `exactly ${EXPECT_PARTS} partitions`, AND WHY IT WAS LEFT UNTIL LAST.
 //
 // M4b measured it and left it: ` partitions` claims three conclusions on
 // cx3576 and three on x64, `exactly ` claims thirteen and eight, and the only
@@ -20,7 +20,7 @@
 // third board dropped into os/boards/ gets its own entry with its own count and
 // nothing here is edited.
 //
-// ═══ THE CAPABILITY PAIR, AND A VACUOUS PASS IT CARRIES ═══
+// THE CAPABILITY PAIR, AND A VACUOUS PASS IT CARRIES.
 //
 // The oracle establishes that the environment can OBSERVE a capability before
 // it compares any inventory, because an empty capability set and a container

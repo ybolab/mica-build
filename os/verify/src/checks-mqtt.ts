@@ -7,7 +7,7 @@
 // prose with a `mqttd: ` prefix, so it was not in batch 2a's `sq_regular`
 // family either. It fell between the two.
 //
-// ═══ WHAT THE FAMILY PROVES, AND WHY EACH HALF IS NEEDED ═══
+// WHAT THE FAMILY PROVES, AND WHY EACH HALF IS NEEDED.
 //
 // Every one of these is a defect the wiring actually had. The crate, the unit
 // and the protocol tests were all green while the bridge was absent from the
@@ -21,7 +21,7 @@
 // override, and the root is a read-only verity squashfs so nothing on the
 // device can remove it.
 //
-// ═══ WHY THE POLICY IS TAG-NORMALISED BEFORE IT IS READ ═══
+// WHY THE POLICY IS TAG-NORMALISED BEFORE IT IS READ.
 //
 // The shipped rules wrap their attributes across three lines, so a line-oriented
 // search for `send_member=` on a rule whose `send_destination=` is on the line

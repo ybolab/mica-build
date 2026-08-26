@@ -7,7 +7,7 @@
 // /run/mos/shadow` is written inline, not through `sq_symlink`, so it carries
 // a parenthetical batch 2a's matcher would not have found.
 //
-// ═══ THE PROPERTY, END TO END ═══
+// THE PROPERTY, END TO END.
 //
 // docs/design/access.md 4.2 supports exactly one credential on the console: a
 // TRANSIENT root password. On v2 the only path pam_unix will read for it is
@@ -34,7 +34,7 @@
 //     loop reading its own destination is exactly how a password survives;
 //   * and the factory copy itself carries no usable hash for any account.
 //
-// ═══ TWO CHECKS DISAGREE ABOUT AN EMPTY PASSWORD FIELD, AND BOTH ARE PORTED ═══
+// TWO CHECKS DISAGREE ABOUT AN EMPTY PASSWORD FIELD, AND BOTH ARE PORTED.
 //
 // `factory-shadow-locked` (os/verify-image-v2.sh:3765) treats an EMPTY field as
 // locked -- its awk is `$2 !~ /^[!*]/ && $2 != ""`. `factory-shadow-accounts-

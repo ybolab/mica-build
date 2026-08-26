@@ -9,14 +9,14 @@
 // ...`) was wrong: it restated the arithmetic the assembler had already done,
 // so a gap both agreed on would have passed.
 //
-// ═══ SIZE RESOLVES IN ONE ORDER, AND THE ORDER IS THE SCHEMA'S ═══
+// SIZE RESOLVES IN ONE ORDER, AND THE ORDER IS THE SCHEMA'S.
 //
 // An explicit `_SIZE_SECTORS`, else `_SIZE_MIB`, else -- for a `verity-slot` --
 // the size READ BACK OUT OF THE IMAGE, because a rootfs slot's size is
 // content-derived (`MOS_ROOTFS_SLOT_MIB` in the layout env) and declaring it
 // would be restating what the build computed.
 //
-// ═══ START IS WHERE THIS STOPS BEING A LOOKUP ═══
+// START IS WHERE THIS STOPS BEING A LOOKUP.
 //
 // A partition either declares a fixed start (`_START_SECTOR` or `_START_MIB`)
 // or it BEGINS WHERE THE PREVIOUS ONE ENDED. That is what a partition table

@@ -6,7 +6,7 @@
 // nine-stage text pipeline and putting them beside the check that uses them
 // would bury it.
 //
-// ═══ WHY A PIPELINE AND NOT A SHELL PARSER ═══
+// WHY A PIPELINE AND NOT A SHELL PARSER.
 //
 // Because that is what the oracle is, and the port has to agree with the oracle
 // -- including where the oracle is wrong. A real parser would find commands this
@@ -19,7 +19,7 @@
 // uses `have X ||` precisely to mark curl and wget optional, and asserting those
 // exist would be asserting the wrong thing.
 //
-// ═══ THE ONE PLACE `sq_resolves_cmd` DIFFERS FROM EVERY OTHER PATH TEST HERE ═══
+// THE ONE PLACE `sq_resolves_cmd` DIFFERS FROM EVERY OTHER PATH TEST HERE.
 //
 // It chases symlinks WITHIN THE IMAGE: an absolute link target resolves against
 // ROOT and not against the host's `/`. Everywhere else in this harness `[ -f ]`

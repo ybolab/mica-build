@@ -8,7 +8,7 @@
 // ran with one board's env and an assembler that ran with another's would
 // agree with each other and fail here.
 //
-// ═══ WHY THE SLOT DEVICES ARE THE INTERESTING ONES ═══
+// WHY THE SLOT DEVICES ARE THE INTERESTING ONES.
 //
 // A wrong GUID in `[slot.rootfs.0]` installs an update over the RUNNING slot.
 // Nothing on the device notices until the next boot, and there is no rollback
@@ -17,7 +17,7 @@
 // acquire a `/dev/mmcblk0pN` path later: a partition number encodes a position
 // in a table this campaign has already renumbered once.
 //
-// ═══ WHAT IS NOT HERE ═══
+// WHAT IS NOT HERE.
 //
 // `sq_regular /usr/bin/rauc`, `/etc/rauc/system.conf is a regular file` and the
 // baked-in-keyring check are packed-root CONTENT and belong to M4c's batch --

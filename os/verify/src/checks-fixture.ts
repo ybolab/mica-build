@@ -5,7 +5,7 @@
 // a healthy image,
 // and only a mutation separates them.
 //
-// ═══ WHY A FAKE IMAGE AND NOT A MUTATED REAL ONE ═══
+// WHY A FAKE IMAGE AND NOT A MUTATED REAL ONE.
 //
 // Both, actually: `os/verify/HARNESS.md` records an end-to-end run against a
 // real image edited on disk, which is what proves the whole pipeline reports

@@ -7,7 +7,7 @@
 // does not treat it as one -- every one of the oracle's conclusions comes out
 // `not-ported`, and the run's conclusion is INCOMPLETE.
 //
-// ═══ WHY THE MATCHER LIVES ON THE CHECK ═══
+// WHY THE MATCHER LIVES ON THE CHECK.
 //
 // The obvious alternative is a table mapping ids to substrings, kept beside the
 // checks. It was rejected for the reason ui-location-test.sh gives for its own
@@ -17,7 +17,7 @@
 // agrees. Here the two cannot separate. A CheckCase with no `shell` matcher
 // does not typecheck; a matcher with no check is not a CheckCase.
 //
-// ═══ WHAT M4b ADDS, PER CHECK ═══
+// WHAT M4b ADDS, PER CHECK.
 //
 //   {
 //     id: 'gpt-disk-guid',

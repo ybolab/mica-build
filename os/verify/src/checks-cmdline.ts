@@ -9,7 +9,7 @@
 // read-only flag and of rauc.slot= on the board this project verifies first.
 // So the EXTRACTION is board-aware and the assertions are not.
 //
-// ═══ WHERE THE COMMAND LINE COMES FROM ═══
+// WHERE THE COMMAND LINE COMES FROM.
 //
 // U-Boot: the per-slot verity env file out of the slot's own FAT, which boot.scr
 // sources. One file, one line.

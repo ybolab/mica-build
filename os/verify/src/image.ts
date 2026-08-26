@@ -9,7 +9,7 @@
 // losetup and never mounts anything. No loop mounts, no host mutation, nothing
 // that needs root.
 //
-// ═══ WHAT THIS FILE IS REALLY ABOUT: TOOLS THAT SUCCEED AT NOTHING ═══
+// WHAT THIS FILE IS REALLY ABOUT: TOOLS THAT SUCCEED AT NOTHING.
 //
 // Every helper below was driven against a malformed input before it was
 // written, on 2026-08-25 in the pinned alpine:3.21 with the package set the

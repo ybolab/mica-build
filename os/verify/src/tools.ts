@@ -122,7 +122,7 @@ export interface ToolResult {
  * shape appeared once: exit 6 naming a half-resolved e2fsprogs-libs, which is
  * the same fetch failing further along.)
  *
- * ═══ WHY A RETRY IS LEGITIMATE HERE AND A VERDICT RETRY IS NOT ═══
+ * WHY A RETRY IS LEGITIMATE HERE AND A VERDICT RETRY IS NOT.
  *
  * This package's rule is that an unreliable environment is itself a finding and
  * that a retry hiding one is a retry deciding the verdict. That rule is about a

@@ -6,7 +6,7 @@
 // concludes and on the other it SKIPS. That is the whole difficulty of this
 // batch and it shows up in three places.
 //
-// ═══ 1. A SKIP IS A THIRD VERDICT ═══
+// 1. A SKIP IS A THIRD VERDICT.
 //
 // `parity.ts` never defaults `shell.skip` to `shell.pass`, and this file never
 // supplies one that would. Measured on both boards' real output on 2026-08-26:
@@ -16,7 +16,7 @@
 // that never executed. So a family that skips is registered with an explicit
 // `skip` matcher, and the TypeScript side answers with `skipped()`.
 //
-// ═══ 2. THE BOARD LISTS ARE DERIVED, NEVER WRITTEN DOWN ═══
+// 2. THE BOARD LISTS ARE DERIVED, NEVER WRITTEN DOWN.
 //
 // `boards:` takes literal names, and M4c found the same shape twice as a defect
 // -- `lint.ts:585` and `parity-cli.ts:31` each carried a two-name literal, so a
@@ -27,7 +27,7 @@
 // dropped into `os/boards/` is covered by whichever families its own definition
 // selects, and by none of the others, with nothing here edited.
 //
-// ═══ 3. ONE `one` CHECK PER PATH, NEVER A `many` OVER A LOOSE SUBSTRING ═══
+// 3. ONE `one` CHECK PER PATH, NEVER A `many` OVER A LOOSE SUBSTRING.
 //
 // The radio firmware set, the hwinit confs, `btattach` and the status-LED files
 // are all `sq_regular` calls, so their conclusions read `<path> is a regular
@@ -43,7 +43,7 @@
 // file) out of `BOOT_SLOT_REQUIRED_FILES`, with `@SLOT@` substituted the way the
 // oracle substitutes it (:1838), so the collision never arises.
 //
-// ═══ AND WHERE A GROUP SKIPS AS ONE LINE ═══
+// AND WHERE A GROUP SKIPS AS ONE LINE.
 //
 // Several families print N conclusions on the board that has the hardware and
 // ONE skip on the board that does not -- five firmware paths against one `the

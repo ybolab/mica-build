@@ -18,7 +18,7 @@
 // would put more prose in headers than in checks, and because every one of them
 // is `packedRoot()` plus a read.
 //
-// ═══ WHAT IS READ OUT OF mosd/ HERE, AND WHY ═══
+// WHAT IS READ OUT OF mosd/ HERE, AND WHY.
 //
 // The profile KEY and default path come from `provisioning.rs`, and the crypt(3)
 // prefix from `transient.rs`. Both are the oracle's own reads and both exist for
@@ -28,7 +28,7 @@
 // is in scope under PLAN-014's Scope section -- "No change to ... `mosd/` Rust
 // sources" -- and nothing here writes to them.
 //
-// ═══ AND ONE DEFECT IN THE CODE UNDER TEST, REPRODUCED RATHER THAN FIXED ═══
+// AND ONE DEFECT IN THE CODE UNDER TEST, REPRODUCED RATHER THAN FIXED.
 //
 // `fwenv_lines="$(grep -cE '^/dev/' "${fwenv}" 2>/dev/null || echo 0)"` (:3331).
 // On a file that EXISTS and has no `^/dev/` line, `grep -c` prints `0` and exits

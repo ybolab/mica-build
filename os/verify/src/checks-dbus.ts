@@ -4,7 +4,7 @@
 // Eleven conclusions on each board, one of them a SKIP on x64. Everything here
 // reads the unpacked root and nothing else.
 //
-// ═══ WHY A POLICY PARSER AND NOT A grep ═══
+// WHY A POLICY PARSER AND NOT A grep.
 //
 // The oracle does not grep these files and says why, twice, in its own prose: a
 // D-Bus rule routinely spans several source lines, so a line-oriented reader
@@ -26,7 +26,7 @@
 //   policyFacts     the big awk at :2989 -- rules collected per <policy> BLOCK,
 //                   because a rule's block is what decides who it applies to
 //
-// ═══ AND WHY THE BUS NAME IS READ, NEVER WRITTEN DOWN ═══
+// AND WHY THE BUS NAME IS READ, NEVER WRITTEN DOWN.
 //
 // `com.mos.mosd` appears nowhere in this file as the name being checked. The
 // oracle reads it out of mosd.service's `BusName=` (:2975) precisely so that a

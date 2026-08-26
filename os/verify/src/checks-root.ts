@@ -6,7 +6,7 @@
 // the same matcher shape -- the conclusion's own `what` clause is the
 // substring both directions share.
 //
-// ═══ WHY THE ROOT IS UNPACKED ONCE ═══
+// WHY THE ROOT IS UNPACKED ONCE.
 //
 // `ctx.unpackRoot()` unpacks the WHOLE archive -- 4,354 paths on cx3576, 9,238
 // on x64 -- and memoises it for the run, so the fifty-odd checks below pay for
@@ -16,7 +16,7 @@
 // tree. Every check in this file went through that one call, so the repair came
 // before the port did.
 //
-// ═══ WHAT IS NOT HERE ═══
+// WHAT IS NOT HERE.
 //
 // Everything the oracle guards with a board or profile condition -- the radio
 // firmware set, /etc/mos/<hwinit>.conf, the gadget and Bluetooth units, the
@@ -28,7 +28,7 @@
 // that was measured against both boards' real output rather than read off the
 // source.
 //
-// ═══ AND WHY NO MATCHER HERE IS ` contains ` ═══
+// AND WHY NO MATCHER HERE IS ` contains `.
 //
 // Measured on 2026-08-26 against both boards' real conclusion lists: the
 // substring ` contains ` claims 14 lines on cx3576 and 8 on x64. Ten of them

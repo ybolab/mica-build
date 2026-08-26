@@ -18,7 +18,7 @@
 // root, with the real self-built artifact -- and drives the real `docker run`
 // at it. What comes back is measured, not chosen.
 //
-// ═══ EVERY MUTATION REFUSES TO BE A NO-OP ═══
+// EVERY MUTATION REFUSES TO BE A NO-OP.
 //
 // Each Dockerfile asserts its own PRE-state and POST-state and exits non-zero if
 // either is not what the mutation requires. A no-op therefore fails the image
@@ -28,7 +28,7 @@
 // container: four subtasks in this campaign wrote a `String.replace` that
 // matched nothing and would have reported a passing branch never reached.
 //
-// ═══ EVERY CASE CARRIES ITS POSITIVE CONTROL ═══
+// EVERY CASE CARRIES ITS POSITIVE CONTROL.
 //
 // The same artifact is run through the UNMUTATED root in the same pass and
 // required to pass. Without it, a case is satisfied by any image that fails for
@@ -38,7 +38,7 @@
 // because M7b's map sent them to the wrong one, and a case that only asserted
 // `verdict === 'fail'` would have been just as green then as now.
 //
-// ═══ WHAT THIS DOES NOT DO ═══
+// WHAT THIS DOES NOT DO.
 //
 // It does not build a rootfs. It reads the factory root the build already
 // exported, exactly as the smoke runner does, and refuses when there is none --

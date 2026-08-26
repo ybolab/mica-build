@@ -6,7 +6,7 @@
 // are the same act read from three sides: what the pack stage PUT IN the root,
 // what it TOOK OUT, and what it GENERATED on the way through.
 //
-// ═══ THE ONE SHAPE THIS REGISTER CANNOT EXPRESS, MEASURED AND RECORDED ═══
+// THE ONE SHAPE THIS REGISTER CANNOT EXPRESS, MEASURED AND RECORDED.
 //
 // `check_container_engine` opens with an early return:
 //
@@ -30,7 +30,7 @@
 // rather than papered over, because a limitation nobody recorded is one the next
 // batch rediscovers as a bug.
 //
-// ═══ WHY THE UNIT SEARCH EXCLUDES *.wants/* ═══
+// WHY THE UNIT SEARCH EXCLUDES *.wants/*.
 //
 // On purpose, not by oversight, and the oracle says so: an enablement symlink is
 // the NEXT check's subject and a dangling one can exist with no unit file behind

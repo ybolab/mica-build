@@ -6,7 +6,7 @@
 // `check_ext_unit_dir` (:3450, :613). One of the four is a SKIP on a board
 // with no Bluetooth controller.
 //
-// ═══ WHY EVERY ONE OF THESE READS THE TIER AND NOT A STRING ═══
+// WHY EVERY ONE OF THESE READS THE TIER AND NOT A STRING.
 //
 // `/srv` is nowhere in this file as the DATA path. The oracle reads the DATA
 // mountpoint out of the fstab row for DATA_GUID (:3934) precisely so a bind
@@ -16,7 +16,7 @@
 // distinguishes them. A check comparing against the literal would pass an image
 // whose fstab had moved DATA somewhere else.
 //
-// ═══ AND WHY ENABLEMENT IS ASSERTED SEPARATELY EVERY TIME ═══
+// AND WHY ENABLEMENT IS ASSERTED SEPARATELY EVERY TIME.
 //
 // A mount unit that is present and not enabled leaves its target inside the
 // read-only squashfs for ever, and every check that only looked for the file
@@ -25,7 +25,7 @@
 // has an "exists but is not enabled" branch of its own rather than folding
 // presence and enablement into one test.
 //
-// ═══ THE SEED SCRIPTS ARE READ, NOT RUN ═══
+// THE SEED SCRIPTS ARE READ, NOT RUN.
 //
 // `mos-seed-home` and `mos-seed-root` are asserted by a STATIC read of eleven
 // lines of shell. There is no offline harness for either, so idempotence and
