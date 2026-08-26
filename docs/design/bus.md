@@ -524,8 +524,10 @@ M3 shipped the crate, the unit file and fourteen protocol tests, and shipped
 them nowhere: nothing installed `mos-mqttd` into the image. The wiring is
 `os/rootfs/build-v2.sh` (staging), `os/rootfs/scripts/mosd-install.sh` (install and
 enable) and `mosd/hack/build-aarch64.sh` (cross-build), and it is asserted by
-`check_mqttd` in `os/verify-image-v2.sh`, driven offline by
-`os/tests/ui-location-test.sh`. Three properties are worth stating here rather than
+the MQTT bridge checks in `os/verify/src/checks-mqtt.ts`, driven offline from
+fixtures by `checks-mqtt.test.ts`. (Both were `check_mqttd` in
+`os/verify-image-v2.sh` and `os/tests/ui-location-test.sh` until RFCT-110 M4e
+ported them and deleted those two files.) Three properties are worth stating here rather than
 leaving in the unit, because each was a defect the wiring exposed and none of
 them is visible from the code side.
 
@@ -596,9 +598,9 @@ pair a switch.
   `multi-user.target.wants` symlink, so nothing starts it at boot;
   `mosd/broker/dist/mos-mqtt-broker.service` keeps its `[Install]` section
   anyway, so `systemctl enable` stays meaningful to anyone debugging. The image
-  assertion is `check_mqtt_broker` in `os/verify-image-v2.sh`, driven offline
-  from fixtures by `os/tests/ui-location-test.sh` — including the fixture that creates
-  the symlink and requires the check to fail.
+  assertion is the broker family in `os/verify/src/checks-mqtt.ts`, driven
+  offline from fixtures by `checks-mqtt.test.ts` — including the fixture that
+  creates the symlink and requires the check to fail.
 - **[implemented]** `mqtt.enabled` starts it. `MqttReconciler`
   (`mosd/mosd/src/reconciler/mqtt.rs`, `name()` and `subtree()` both `"mqtt"`)
   enables and starts `mos-mqtt-broker.service` and then `mos-mqttd.service` on

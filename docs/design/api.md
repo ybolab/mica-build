@@ -2097,7 +2097,7 @@ are still eight. The image side is asserted rather than assumed:
 `os/verify-image-v2.sh`'s `check_ui_location` (`:254`) fixes `/srv/ui` as the root
 (`:210`) and chains to the packed-mountpoint check, and every one of those
 assertions is driven against an input in which its fact is false by
-`os/tests/ui-location-test.sh`.
+`os/verify/src/checks-fstab.test.ts`.
 
 **The path is `/srv/ui/`.**
 
@@ -2514,7 +2514,7 @@ form is unchanged and is asserted on the image rather than assumed:
 `os/verify-image-v2.sh`'s `check_builtin_ui` (`:341`) requires the deactivate
 form's rendered markup (`:231`) to be present in `/usr/bin/apid`, which is the
 compiled-into-the-binary property checked as an on-image fact rather than as a
-crate test, and `os/tests/ui-location-test.sh` drives that assertion against an input
+crate test, and `os/verify/src/checks-root.test.ts` drives that assertion against an input
 in which it is false.
 
 **Where it lives in the image: it is not a directory of files.** At `86cd669`
@@ -2602,7 +2602,7 @@ read-only root ships **nothing** at or under `/builtin`, so the prefix has not
 grown a second, separately-built on-disk half; and the deactivate form's
 rendered markup (`:231`) is present in `/usr/bin/apid`, which is true if and
 only if the pane is compiled into the binary. Both are guard-fired against a
-mutated input by `os/tests/ui-location-test.sh`.
+mutated input by `os/verify/src/checks-root.test.ts`.
 
 The deactivate control is **POST only** — no `GET` handler exists — so no
 prefetch, crawler or mis-clicked link can deactivate a working custom UI.
@@ -3998,8 +3998,9 @@ changes
   `check_ui_location` (`:254`) and `check_builtin_ui` (`:341`) were added for
   that, pinning `/srv/ui` as the root and §6.3's prefix and deactivate form as
   facts about `/usr/bin/apid`; every one of them is driven against an input in
-  which its fact is false by `os/tests/ui-location-test.sh`, because an assertion
-  nobody has seen fail is consistent with an assertion that cannot fail. The
+  which its fact is false by `os/verify/src/checks-fstab.test.ts` and
+  `checks-root.test.ts`, because an assertion nobody has seen fail is
+  consistent with an assertion that cannot fail. The
   original conditional — an assertion becomes owed if the image ever ships
   something under `/srv/ui` — is still open, and the image still ships
   nothing there.
