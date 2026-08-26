@@ -5,11 +5,10 @@ BOARDS := cx3576 x64
 
 # The <board>-% delegation rules are NOT listed here: .PHONY does not accept
 # patterns, so an entry like `cx3576-%` matches nothing and silently declares
-# nothing -- the delegated targets stayed shadowable by a file of the same
-# name the whole time it was listed. They stay pattern rules (unlisted) because
-# the delegated names are open-ended; a stray file named e.g. `cx3576-kernel`
-# in this directory would shadow the delegation, which is a visible "Nothing to
-# be done" rather than a wrong build.
+# nothing. They stay pattern rules (unlisted) because the delegated names are
+# open-ended; a stray file named e.g. `cx3576-kernel` in this directory shadows
+# the delegation, which is a visible "Nothing to be done" rather than a wrong
+# build.
 .PHONY: help os os-rootfs-cx3576-v2 \
 	os-quadlet-doc-test \
 	os-image-cx3576-v2 os-verify-cx3576-v2 os-bundle-cx3576 os-devkeys os-health-test podman \
@@ -46,14 +45,11 @@ help:
 	@echo "  os-quadlet-doc-test run docs/design/containers.md's examples through Quadlet"
 	@echo "  cx3576-<t>          delegate target <t> to board/cx3576 (uboot|kernel|rootfs|image|clean)"
 
-# PLAN-010 moved the OS core off Talos onto systemd + mosd, which retired the
-# Talos artifact build this target used to route to. It keeps a recipe rather
-# than being deleted for the reason x64-% has one: with neither a recipe nor a
-# rule, `make os` prints "Nothing to be done for 'os'" and exits 0 -- a
-# retired build path that reports success is the failure mode every check in
-# this repository exists to prevent. That reasoning is unchanged by RFCT-107
-# deleting the v1 single-slot chain this message used to also name; only the
-# targets it points at moved on.
+# `make os` is retired. It keeps a recipe rather than being deleted for the
+# reason x64-% has one: with neither a recipe nor a rule, `make os` prints
+# "Nothing to be done for 'os'" and exits 0, and a retired build path that
+# reports success is the failure mode every check in this repository exists to
+# prevent.
 os:
 	@echo "os: retired by PLAN-010 (Talos base -> systemd + mosd)." >&2
 	@echo "    build and verify with: make os-image-cx3576-v2 / os-verify-cx3576-v2 / os-bundle-cx3576" >&2
@@ -62,37 +58,29 @@ os:
 os-rootfs-cx3576-v2:
 	bash os/rootfs/build-v2.sh
 
-# THE SHIPPING ASSEMBLER, and since PLAN-014 M6e it is the TypeScript one.
-# os/mkimage-v2.sh was this until RFCT-112 M6e ported it into os/build/ and
-# deleted it, at byte-identity: four images from the two implementations over
-# identical inputs, one sha256 (f36bf809...), with a one-byte control that moved
-# both to the same new hash and back. os/build/HARNESS.md carries the recipe.
+# The shipping assembler: build the rootfs slot image, then write the A/B disk
+# image around it.
 os-image-cx3576-v2:
 	bash os/rootfs/build-v2.sh
 	bash os/build/run.sh --mkimage-v2
 
-# THE IMAGE CONTRACT. os/verify-image-v2.sh was this until RFCT-110 M4e ported
-# it into os/verify/ and deleted it; src/verify-cli.ts prints the same
-# PASS/FAIL/SKIP lines and the same RESULT line, and reproduced both boards'
-# summary counts exactly at the port's tip.
+# THE IMAGE CONTRACT: read the assembled image back and check it against the
+# contract, check by check.
 #
 # Needs DOCKER on a host without sgdisk/mtools/debugfs/unsquashfs/veritysetup --
-# it reads them out of the pinned IMAGE_ALPINE_3_21, exactly as the deleted
-# script re-exec'd into it. Verify the other board with --board.
+# it reads them out of the pinned IMAGE_ALPINE_3_21. Verify the other board
+# with --board.
 os-verify-cx3576-v2:
 	bash os/verify/run.sh --verify --board cx3576
 
-# RFCT-113 M7: every self-built binary EXECUTED inside the root that ships it,
-# and the version it reports required to equal the version this repository
-# pinned. `os-verify-cx3576-v2` reads the image; this one runs what is in it,
-# and the two answer different questions -- "it linked" and "it runs" were the
-# same claim in this tree until M7.
+# Every self-built binary EXECUTED inside the root that ships it, with the
+# version it reports required to equal the version this repository pinned.
+# `os-verify-cx3576-v2` reads the image; this one runs what is in it.
 #
-# THIS IS NOT THE ONLY THING THAT RUNS IT, and that is the point of RFCT-113's
-# first acceptance clause: `os/rootfs/build-v2.sh` runs the same command as its
-# last step, under `set -e`, so a root whose binaries do not run does not become
-# an image. This target is how to ask the question on its own, against a root
-# that is already built.
+# THIS IS NOT THE ONLY THING THAT RUNS IT: `os/rootfs/build-v2.sh` runs the same
+# command as its last step, under `set -e`, so a root whose binaries do not run
+# does not become an image. This target is how to ask the question on its own,
+# against a root that is already built.
 #
 # Needs DOCKER, and for a stronger reason than the verifier does: it executes
 # binaries built for the BOARD, so the host must be able to run that platform --
@@ -102,7 +90,7 @@ os-verify-cx3576-v2:
 os-smoke-test:
 	bash os/verify/run.sh --smoke
 
-# RFCT-113 M7c: the three negative tests, which are a check on the check above.
+# The three negative tests, which are a check on the check above.
 #
 # Each builds an image from that board's real factory root carrying one
 # deliberately made defect -- a wrong-arch binary, a binary whose NEEDed library
@@ -119,28 +107,23 @@ os-smoke-test:
 os-smoke-negative-test:
 	bash os/verify/run.sh --smoke-negative
 
-# RFCT-113 M7a's harness, given a target by M7c. It checks the one assumption
-# every other M7 result rests on and that nothing else checks: that the OCI
-# image the smoke run executes in is byte-for-byte the tree the device ships.
-# The two are produced by two exports of one stage, so nothing about their
-# agreement is structural -- and a smoke run inside a DIFFERENT tree is a
+# The assumption every smoke result rests on and nothing else checks: that the
+# OCI image the smoke run executes in is byte-for-byte the tree the device
+# ships. The two are produced by two exports of one stage, so nothing about
+# their agreement is structural -- and a smoke run inside a DIFFERENT tree is a
 # measurement of something that never boots.
 #
-# It compares 9,240 entries four ways and then BREAKS each comparison in turn
-# and requires each to go red: four of the five had only ever been seen
-# agreeing, and the file-capability one compared an empty inventory with an
-# empty inventory. Needs docker (neither side is readable on the build host --
-# no unsquashfs, no getcap) and a built rootfs, like os-verify-cx3576-v2.
-# MOS_BOARD selects the board; x64 is the default.
+# It compares the two trees four ways and then BREAKS each comparison in turn
+# and requires each to go red. Needs docker (neither side is readable on the
+# build host -- no unsquashfs, no getcap) and a built rootfs, like
+# os-verify-cx3576-v2. MOS_BOARD selects the board; x64 is the default.
 os-factory-root-gate:
 	bash os/tests/factory-root-gate/gate.sh _out/$(or $(MOS_BOARD),x64)
 
-# Likewise: os/update/bundle.sh was this until M6e. Gated the same way, on the
-# squashfs PAYLOAD rather than the file -- rauc salts the bundle's own verity
-# hash tree at random and the CMS signature carries a signingTime, so the file
-# hash moves every run and a file comparison would be flaky for a reason that
-# has nothing to do with the code. Both boards were gated; --board x64 builds
-# the grub branch.
+# The RAUC update bundle. Its rebuild gate is on the squashfs PAYLOAD rather
+# than on the file: rauc salts the bundle's own verity hash tree at random and
+# the CMS signature carries a signingTime, so the file hash moves every run.
+# --board x64 builds the grub branch.
 os-bundle-cx3576:
 	bash os/build/run.sh --bundle
 
@@ -177,219 +160,117 @@ os-dbus-policy-test:
 os-repart-test:
 	bash os/tests/repart-loader-test.sh
 
-# os-ui-location-test WAS HERE, and it went with the verifier it drove.
-#
-# It ran the REAL os/verify-image-v2.sh once per case against a mutated fixture
-# root -- an fstab with /srv moved onto EPHEMERAL or STATE, one stripped of
-# x-systemd.growfs, a UI bundle BAKED under /srv/ui, an asset tree at the
-# reserved /builtin prefix -- and required each assertion to fail with its own
-# message. With that script deleted (RFCT-110 M4e) the suite has nothing to
-# drive: it read the verifier's own source for constants and shelled out to it
-# 59 times. It is one of the "now-ported fixture suites" RFCT-110's scope names.
-#
-# WHAT IT PROVED IS NOT LOST, and that is the condition under which it went.
-# Every one of its seven UI identities is a case in os/verify/src/checks-fstab.ts
-# with failing-side tests beside it in checks-fstab.test.ts -- /srv moved onto
-# STATE, moved onto the wipeable /var, content baked under the UI root, the
-# reserved prefix, and the packed-root mountpoint check the UI assertions CHAIN
-# to. Those run under `make os-verify-test`, need no image and no docker, and
-# are driven from the failing side, which is what os-ui-location-test existed
-# to guarantee.
-
-# os-mkimage-v2-test AND os-mkimage-x64-test WERE HERE, and both went with the
-# assemblers they drove (PLAN-014 M6e, RFCT-112).
-#
-# Each ran the REAL shell assembler -- `bash os/mkimage-v2.sh --assemble`,
-# `bash os/mkimage-x64.sh` -- twice over fabricated inputs, required the two
-# images to compare EQUAL, then read the result back with sgdisk/mdir/dumpe2fs/
-# debugfs/minfo and required every partition, GUID, typecode, start sector, FAT
-# payload and ext4 root listing to match the board definition. 166 and 196
-# assertions. With those scripts deleted there is nothing left to drive: the v2
-# suite shelled out to the assembler by path, and the x64 suite SCRAPED the
-# images.env key out of it with `from.sh --ref <KEY>` on a single line.
-#
-# They are REMOVED rather than repointed, and that is the honest outcome. A
-# target that still exists and passes because nothing is behind it is worse than
-# no target -- it reads as coverage from the one place people look for coverage.
-# Repointing them at the TypeScript assemblers would have meant rewriting both
-# harnesses around a different invocation, which is a port, not a repoint.
-#
-# WHAT THEY PROVED IS NOT LOST, and that is the condition under which they went.
-#
-#   BYTE-IDENTICAL REBUILDS. This was their headline claim and it is now made by
-#   a stronger instrument. `src/mkimage-v2.test.ts` and `src/mkimage-x64.test.ts`
-#   each assemble repeatedly from fabricated inputs and require identity, AND
-#   each carries the live control the selftests never had -- one changed input,
-#   images that compare UNEQUAL -- so "identical" cannot be a comparison that
-#   always passes. Above that, RFCT-112's gate compared the deleted shell
-#   against the port over the SAME real inputs and got one sha256 per board.
-#
-#   THE REFUSALS, which are worth more than the byte comparison, because none of
-#   them announce themselves on hardware -- a stale bootpart makes U-Boot persist
-#   the boot-attempt decrement and then fail to find Image, and the board needs
-#   re-flashing. All 33 of os/mkimage-v2.sh's and all 14 reachable ones of
-#   os/mkimage-x64.sh + os/mkimage-common.sh are ported, each driven from the
-#   FAILING side with a positive control beside it. os/build/HARNESS.md tables
-#   them one by one against the site that drives each red.
-#
-# Both ran green immediately before they were deleted -- 166 and 196, rc=0 --
-# so they went at parity rather than in place of a failure.
-#
-# They run under `make os-build-test`, which needs docker and no BSP, no built
-# image and no root, exactly as they did.
-
-# SPIKE RFCT-087: executes the SHIPPED os/boards/cx3576/boot.cmd — compiled by
-# the same mkimage invocation the assembler uses, byte-unmodified — under a
-# U-Boot v2026.07 sandbox binary (same source pin as the board build) that
-# carries the board's persistent-env contract, against a layout-v2 GPT disk
-# backed by a host file. Proves the A/B handshake state machine across real
-# process invocations: the boot-attempt decrement persists 3->2->1->0, the
-# other slot is chosen at zero, exhaustion refills to 3, a slot missing its
-# mos-verity-<slot>.env is burned, and a returning booti burns the slot it
-# tried. Needs docker; network only on the first (uncached) build, offline
-# afterwards. See os/tests/handshake-test/harness.sh for the execution model,
-# including the one emulated transition (kernel handoff) and why.
+# Executes the SHIPPED os/boards/cx3576/boot.cmd -- compiled by the same mkimage
+# invocation the assembler uses, byte-unmodified -- under a U-Boot sandbox binary
+# (same source pin as the board build) that carries the board's persistent-env
+# contract, against a layout-v2 GPT disk backed by a host file. Proves the A/B
+# handshake state machine across real process invocations: the boot-attempt
+# decrement persists 3->2->1->0, the other slot is chosen at zero, exhaustion
+# refills to 3, a slot missing its mos-verity-<slot>.env is burned, and a
+# returning booti burns the slot it tried. Needs docker; network only on the
+# first (uncached) build, offline afterwards. See os/tests/handshake-test/harness.sh
+# for the execution model, including the one emulated transition (kernel handoff)
+# and why.
 os-uboot-handshake-test:
 	bash os/tests/handshake-test/run.sh
 
-# Structural check on the two document indexes. It exists because the indexes
-# are the one thing no other check can reach: a document that is never listed
-# in docs/README.md is not broken, does not fail a build, and is simply never
-# found again. That drift is measured, not hypothetical -- three design
-# documents had accumulated in the tree unlisted (docs/task/RFCT-045.md). Both
-# directions are asserted, because the forward half alone passes happily on an
-# index full of entries pointing at files a rename deleted.
 # A board is defined by its layout file and the shared scripts read that
 # definition rather than knowing any board's shape. This checks the definition
 # is complete AND that no board declares a key its role cannot honour -- the
-# second direction is what would have caught BOOT_ATTEMPTS_DEFAULT sitting in
-# the grub board's layout before RAUC refused it on the device.
-#
-# THE NAMES ARE KEPT AND WHAT THEY RUN CHANGED (RFCT-109 M3b). Both targets used
-# to run a shell pair that `source`d each board definition; they now run the
-# TypeScript port, which parses it. RFCT-109's scope allows either keeping these
-# names or registering successors, and keeping them is the smaller change: they
-# are what the help lists, what two board.env files cite and what a person
-# types, and what moved is the implementation, not the question being asked.
+# second direction is what catches e.g. BOOT_ATTEMPTS_DEFAULT sitting in the
+# grub board's layout, which RAUC refuses on the device.
 #
 # Both go through os/verify/run.sh so that there is exactly ONE place deciding
-# how bun is invoked -- which is what let the pinned-bun container become a
-# second route inside that one function rather than a second way in. These two
-# targets used to run on bare bash; since the lint was ported they need bun,
-# and on a host without one they run it in the container pinned as IMAGE_BUN_1.
-# os-layout-lint-test is os-verify-test filtered to the lint's own cases;
-# run.sh's vacuity guard counts `Ran N tests`, so a filter that matched nothing
-# is red rather than green.
+# how bun is invoked; on a host without bun they run in the container pinned as
+# IMAGE_BUN_1. os-layout-lint-test is os-verify-test filtered to the lint's own
+# cases; run.sh's vacuity guard counts `Ran N tests`, so a filter that matched
+# nothing is red rather than green.
 os-layout-lint:
 	bash os/verify/run.sh --lint
 
 os-layout-lint-test:
 	bash os/verify/run.sh src/lint.test.ts
 
-# PLAN-014 M3: the bun+TypeScript foundation, entered through one script.
+# The os/verify bun+TypeScript suite, entered through one script.
 #
 # os/verify/run.sh finds bun, installs the dev dependencies if they are absent,
 # typechecks and runs the suite -- and turns a run that asserted nothing red,
-# which bun does not: measured with bun 1.4.0, `bun test` exits 0 on a test file
-# that declares no tests. A host with no bun runs all of that in the container
-# pinned as IMAGE_BUN_1 in os/build-env/images.env, automatically and with the
-# route announced; CI installs no bun, so that is the route it takes.
+# which bun does not: `bun test` exits 0 on a test file that declares no tests.
+# A host with no bun runs all of that in the container pinned as IMAGE_BUN_1 in
+# os/build-env/images.env, automatically and with the route announced; CI
+# installs no bun, so that is the route it takes.
 os-verify-test:
 	bash os/verify/run.sh
 
-# os-verify-parity WAS HERE, and it is removed rather than kept able to refuse.
-#
-# It ran os/verify-image-v2.sh and the os/verify register against the SAME image
-# and diffed their conclusions PER CHECK, by identity rather than by count. Its
-# one input was the oracle. With the oracle deleted the target could only refuse
-# every time or pass having compared nothing, and a target that passes because
-# there is nothing left to compare is the worst outcome available here -- it
-# reads exactly like a gate that is still being held.
-#
-# The gate it held is recorded, not re-runnable. Its last run, at the port's tip:
-#     cx3576  PASS  compared 398, diverging 0, UNCLAIMED 0 of 398
-#     x64     PASS  compared 312, diverging 0, UNCLAIMED 0 of 312   rc=0
-# os/verify/HARNESS.md carries that and what the deletion froze.
-
-# PLAN-014 M6a: the TypeScript build driver -- the typed board geometry the
-# assemblers will read, and the Bun.$ wrappers for the toolset they will drive.
+# The TypeScript build driver: the typed board geometry the assemblers read, and
+# the Bun.$ wrappers for the toolset they drive.
 #
 # It needs DOCKER, which os-verify-test does not: the suite runs sgdisk, mtools,
-# mkimage, veritysetup, e2fsprogs and rauc for real, and this host has none of
-# the first four. Each runs on the host where the host has it and in the image
-# pinned for its toolset otherwise -- the same rule os/mkimage-v2.sh's
-# host_can_assemble() applied before M6e deleted it, now src/toolbox.ts's. Nothing is skipped: a tool
-# reachable neither way is a failure, not a gap.
+# mkimage, veritysetup, e2fsprogs and rauc for real. Each runs on the host where
+# the host has it and in the image pinned for its toolset otherwise, which is
+# src/toolbox.ts's rule. Nothing is skipped: a tool reachable neither way is a
+# failure, not a gap.
 os-build-test:
 	bash os/build/run.sh
+
+# RAUC, built from upstream source instead of installed from Debian. The reason
+# is recorded in os/update/rauc/versions.env: the distribution builds it with
+# streaming on, that links libcurl-gnutls, and rauc is the ONLY consumer of that
+# library in the whole packed root -- it would bring GnuTLS, p11-kit, GMP,
+# Nettle and Kerberos into a signed image for an install path this project
+# defers. Built here it links libc, libcrypto, libfdisk, glib and json-glib, all
+# of which the image already carries.
+os-rauc:
+	MOS_BOARD=$(or $(MOS_BOARD),cx3576) bash os/update/rauc/build.sh
 
 # Every shell script that enables pipefail, checked for an early-exiting reader
 # on the right of a pipe. `producer | grep -q PATTERN` inverts its own answer
 # there: -q exits at the first match, the producer dies of SIGPIPE, and pipefail
 # hands back that failure -- so the pipeline reports "not found" BECAUSE the
-# pattern was found. It cost this tree a false PASS on the assertion that only
-# one D-Bus policy names com.mos.mosd, and another on the members the MQTT
-# bridge is forbidden to be granted. The rationale is at the top of the script.
-# RAUC, built from upstream source instead of installed from Debian. The reason
-# is measured and recorded in os/update/rauc/versions.env: the distribution builds it
-# with streaming on, that links libcurl-gnutls, and rauc was the ONLY consumer
-# of that library in the whole packed root -- it brought GnuTLS, p11-kit, GMP,
-# Nettle and Kerberos into a signed image for an install path this project
-# defers. Built here it links libc, libcrypto, libfdisk, glib and json-glib,
-# all of which the image already carries.
-os-rauc:
-	MOS_BOARD=$(or $(MOS_BOARD),cx3576) bash os/update/rauc/build.sh
-
+# pattern was found. The rationale is at the top of the script.
 os-shell-pipefail-lint:
 	bash os/tests/shell-pipefail-lint.sh
 
+# Structural check on the two document indexes. It exists because the indexes
+# are the one thing no other check can reach: a document that is never listed in
+# docs/README.md is not broken, does not fail a build, and is simply never found
+# again. Both directions are asserted, because the forward half alone passes
+# happily on an index full of entries pointing at files a rename deleted.
 docs-verify:
 	bash docs/verify-index.sh
 
-# Negative tests for the target above, added because it had a hole exactly the
-# shape of the merges this repository performs: with a second (RFCT-073.md) row
-# injected into docs/task/index.md it reported 162/162 PASS and exit 0 -- the
-# count did not even move, so the before/after count comparison could not see it
-# either. Forward was a `grep -q`, satisfied by one occurrence or by five, and
-# reverse deduplicated with `sort -u` before the loop that would have noticed. A
+# Negative tests for the target above. Each assertion is driven against an index
+# where its fact is false and required to fail with ITS OWN message -- a
 # duplicated row is the likeliest wrong resolution of the two-row append
-# conflict every task record produces, so it is the one failure mode that most
-# needed to be reachable. Each assertion is driven against an index where its
-# fact is false and required to fail with ITS OWN message. Needs no root and no
-# network, and it fails loudly when it cannot run rather than skipping.
+# conflict every task record produces, and a forward `grep -q` plus a reverse
+# `sort -u` cannot see one. Needs no root and no network, and it fails loudly
+# when it cannot run rather than skipping.
 docs-verify-test:
 	bash docs/verify-index-test.sh
 
-# PLAN-012 M4: every example in docs/design/containers.md, fed to the aarch64
-# Quadlet generator the image ships. A configuration example nothing executes
-# is a claim that cannot fail; this makes the document part of the suite.
+# Every example in docs/design/containers.md, fed to the aarch64 Quadlet
+# generator the image ships. A configuration example nothing executes is a claim
+# that cannot fail; this makes the document part of the suite.
 os-quadlet-doc-test:
 	bash os/tests/quadlet-doc-test.sh
 
-# PLAN-012 M1: the container engine, built from upstream source into seven
-# aarch64 binaries. Same arrangement as the board artifact builds -- a
-# Dockerfile whose last stage is FROM scratch, exported with -o. Dynamically
-# linked against the image's glibc except catatonit, which is copied into
-# containers and must not depend on this image's libc; os/podman/README.md
-# has the reasoning.
+# The container engine, built from upstream source into seven aarch64 binaries.
+# Same arrangement as the board artifact builds -- a Dockerfile whose last stage
+# is FROM scratch, exported with -o. Dynamically linked against the image's
+# glibc except catatonit, which is copied into containers and must not depend on
+# this image's libc; os/podman/README.md has the reasoning.
 podman:
 	bash os/podman/build.sh
 
-# PLAN-014 M2: the builder image every component build stands on, built from a
-# base pinned by DIGEST in os/build-env/images.env rather than by a tag upstream
-# repoints whenever it rebuilds. Decision 4 rejected the official `golang:` /
-# `rust:` images for the same reason podman and rauc are built from source here:
-# a build environment nobody chose is a shipped dependency nobody recorded, and
-# "what did this build run on" has to be answerable from the tree rather than
-# from a build log.
+# The builder image every component build stands on, built from a base pinned by
+# DIGEST in os/build-env/images.env rather than by a tag upstream repoints
+# whenever it rebuilds.
 #
 # mos-build-base carries only the language-independent floor -- ca-certificates,
 # git, file, binutils, xz -- and ASSERTS that floor from inside itself, so an apt
 # archive that moved backwards fails the build rather than the component two
 # images above it. mos-build-{c,go,rust} are FROM it and each keeps its OWN apt
-# list: one shared list is one cache key for unrelated compilers, and
-# os/podman/Dockerfile measured what that costs at about 42 minutes of
-# recompilation for a one-package edit.
+# list: one shared list is one cache key for unrelated compilers.
 #
 # WHAT EACH ONE ASSERTS, AND WHY THE TWO KINDS DIFFER. mos-build-c's gcc comes
 # from apt against live deb.debian.org, which no digest here pins, so it asserts
@@ -441,9 +322,6 @@ x64-%:
 # network discovery and boots nothing; it is how to check the harness in
 # seconds. Needs docker, and it fails loudly when it cannot run rather than
 # skipping.
-#
-# Declared phony on its own line rather than added to the grouped .PHONY above,
-# so appending this target changes nothing that was already here.
 .PHONY: os-apid-api-test
 os-apid-api-test:
 	bash test/apid-api/run.sh
