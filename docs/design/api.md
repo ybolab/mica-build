@@ -438,9 +438,9 @@ so it is evidenced four ways, all measured at `86cd669`:
    `mosd/apid/src` and `mosd/apid/tests`).
 
 What the pages need instead is inlined: the single stylesheet is a `&str`
-constant emitted into each `<head>` (`mosd/apid/src/routes.rs:158-165`, `:176`),
+constant emitted into each `<head>` (`mosd/apid/src/routes.rs:741-746`), from a constant
 described in the source as *"Inline stylesheet shared by every page; no external
-assets"* (`mosd/apid/src/routes.rs:157`). There is no favicon route, no font,
+assets"* (`mosd/apid/src/routes.rs:726`). There is no favicon route, no font,
 and no image: a request for `/favicon.ico` matches nothing in
 `mosd/apid/src/routes.rs:44-68`, so it is answered by the gate — a redirect to
 `/login` when unauthenticated (`mosd/apid/src/routes.rs:149`), and otherwise
@@ -449,8 +449,8 @@ axum's default not-found.
 The consequence for section 4 is concrete rather than stylistic: static hosting
 is not a matter of pointing an existing middleware at a directory. Nothing in
 the crate reads a file off disk to serve it today, and the only disk paths it
-touches at all are `/proc/uptime` (`mosd/apid/src/routes.rs:581`) and its own
-state directory (`mosd/apid/src/tls.rs:47-49`, `:86`).
+touches at all are `/proc/uptime` (`mosd/apid/src/routes.rs:1223`) and its own
+state directory (`mosd/apid/src/tls.rs:48-49`, `:86`).
 
 ### 1.7 What the dashboard proposal already settled
 
@@ -921,13 +921,13 @@ knowable over the connection that asked.
   Their nearest API operations — minting and revoking a token — differ in
   lifetime, in count and in blast radius, so calling them equivalents would
   mislead.
-- **`GET /healthz` (`mosd/apid/src/routes.rs:176`, `:722-724`).** It keeps its
-  path, its unauthenticated exemption (`:128-130`) and its literal `ok` body,
+- **`GET /healthz`** — declared at `mosd/apid/src/routes.rs:176` and answering
+  at `:722-724`. It keeps its path, its unauthenticated exemption (`:674`) and its literal `ok` body,
   unchanged and unversioned, because it has a real consumer with a real failure
   path: the boot health gate probes `https://127.0.0.1/healthz` with curl and
   falls back to wget (`os/rootfs/overlay-v2/usr/lib/mos/mos-health:164-177`),
-  and the image verifier asserts that probe exists
-  (`os/verify-image-v2.sh:1350`). Moving it under `/api/v1/` would put a
+  and the image verifier asserts an HTTP client for that probe exists
+  (`os/verify/src/checks-system.ts:461-470`). Moving it under `/api/v1/` would put a
   version bump in the path of the boot gate whose failure is an A/B rollback
   (`docs/design/dashboard.md:2433-2435`).
   **But it answers a narrower question than its name suggests, and the API must
@@ -936,7 +936,8 @@ knowable over the connection that asked.
   mosd is dead. `GET /api/v1/health` is the API's health endpoint and reports
   both halves — see §2.4.
 - **A password change.** `access.webAdmin.password_hash` is written by exactly
-  one handler at `86cd669`, `setup_submit` (`mosd/apid/src/routes.rs:1024`), and
+  one handler, `setup_submit`, which writes the hash at
+  `mosd/apid/src/routes.rs:1024`, and
   there is no change-password route anywhere in the crate. The API does not
   invent one: it would be the first operation the API offers that the UI does
   not, and it needs a decision about whether changing the password revokes
@@ -1007,7 +1008,7 @@ The reason is what the HTML path does today, which is neither. It **flattens**:
 HTTP **502**, body *"The management daemon is unavailable."*
 (`mosd/apid/src/routes.rs:650-660`, message at `:656`). So a settings value mosd
 rejected as invalid is reported to the operator as the daemon being down:
-`network_submit` returns `bus_error` on a failed `SetSettings`
+`network_submit` returns `bus_error` when the settings write fails
 (`mosd/apid/src/routes.rs:1532-1538`), and `write_key_list` does the same
 (`:1075-1077`). The VLAN example above is exactly this — a rejection that reads
 as an outage.
@@ -1157,7 +1158,7 @@ code at `86cd669`.
    server's notion of now.
 6. **There is exactly one credential, and it identifies a human.** The only
    thing the crate authenticates against is
-   `access.webAdmin.password_hash` (`mosd/apid/src/routes.rs:642-646`); there is
+   the admin hash, read through `password_hash` (`mosd/apid/src/routes.rs:642-646`); there is
    no second credential, no user table, and no reference to `access.device` in
    the route module (section 1.4). A script therefore holds the operator's
    password. Revoking the script means changing that password, which logs the
@@ -1272,7 +1273,7 @@ paid on **every API request**, where the password's is paid once per login. The
 `sha2` crate is already a dependency (`mosd/apid/Cargo.toml:26`, used by
 `mosd/apid/src/session.rs:15`), so this adds nothing to the dependency list.
 The comparison must be constant-time — the crate already contains the right
-primitive, `Mac::verify_slice` (`mosd/apid/src/session.rs:67`), and a `String`
+primitive, `Mac::verify_slice` — `verify_slice` (`mosd/apid/src/session.rs:67`), and a `String`
 `==` on hex digests is what must not be written. To be honest about the size of
 that requirement: a timing leak on a *stored digest* is not a practical attack,
 because learning the digest does not yield a preimage. Constant-time is required
@@ -1391,7 +1392,7 @@ Two consequences of coexistence that must be stated in the UI, not just here:
 2. **§3.1 item 7 changes meaning.** The `auth.rs:53-54` comment's reasoning —
    per-client tracking buys nothing because there is one password — held because
    there was one credential. With tokens there are N, and the global backoff
-   curve (`mosd/apid/src/auth.rs:40-47`) still gates only `POST /login`
+   curve (`mosd/apid/src/auth.rs:40-47`) still gates only the login POST
    (`mosd/apid/src/routes.rs:1114-1123`). Bearer verification is **not** rate
    limited and should not be: 256 bits of `OsRng` is not guessable online, and a
    shared counter on the token path would let anyone with a bad token lock out
@@ -1403,7 +1404,7 @@ Two consequences of coexistence that must be stated in the UI, not just here:
 **What the transport actually is.** rustls with the `ring` provider
 (`mosd/Cargo.toml:38`, installed explicitly at `mosd/apid/src/main.rs:146-147`),
 carrying a **self-signed certificate apid generates on first start**: CN `mos`,
-SANs `DNS:mos`, `DNS:localhost`, `IP:127.0.0.1`
+SANs `DNS:mos`, `DNS:localhost` and the v4 loopback
 (`mosd/apid/src/tls.rs:47-81`, SAN construction at `:59-67`), private key mode
 `0o600` (`:78`, `:37`) in a state directory created mode `0o700` (`:24`).
 There is no ACME client, no rotation and no way to install an operator-supplied
@@ -1510,7 +1511,7 @@ pane is tested to carry, `mosd/apid/src/routes.rs:1762`, asserted at
 (`mosd/dist/apid.service:1-42`); the D-Bus policy allows root to own, send and
 receive (`mosd/dist/com.mos.mosd.conf:68-72`). A root shell reads
 `/var/lib/mos/settings.toml` directly, reads
-`/var/lib/mos/apid/session.key` (`mosd/apid/src/tls.rs:85-103`), and calls
+`session.key` in that directory (`mosd/apid/src/tls.rs:86`), and calls
 `com.mos.mosd1` without going through apid at all. **The API token's threat
 model is entirely about the network channel**; it adds nothing against local
 root and it is not intended to.
@@ -1559,8 +1560,8 @@ automate against. This design does not solve it.
 
 Section 1.6 measured the starting point at `86cd669`: apid served no static
 asset of any kind, from anywhere, and the only disk paths it read at all were
-`/proc/uptime` (`mosd/apid/src/routes.rs:728`) and its own state directory
-(`mosd/apid/src/tls.rs:47-49`, `:86`). Everything in this section was therefore
+`/proc/uptime` (`mosd/apid/src/routes.rs:1223`) and its own state directory
+(`mosd/apid/src/tls.rs:48-49`, `:86`). Everything in this section was therefore
 new code rather than a configuration change to something that existed, and it
 was marked **[proposed]** throughout for that reason. §8.2 phase 4 has since
 landed; the paragraphs below say where.
@@ -1900,31 +1901,32 @@ Only a plain miss is eligible for §4.2's fallback
 request the rules rejected can never come back as `200 text/html`.
 
 **What a successful traversal reaches, first, because it sets the stakes.**
-apid runs as **root** — `mosd/dist/apid.service` sets no `User=` line, and its
-entire `[Service]` section is four directives (`mosd/dist/apid.service:6-10`):
-`Type=`, `ExecStart=`, `Restart=` and `StateDirectory=`. There is no
-`ProtectSystem=`, no `ReadOnlyPaths=`, no `RootDirectory=`, no `PrivateTmp=`.
-The D-Bus policy records the same fact from the other side — *"no shipped unit
-sets User=, mosd.service owns the name as root, apid.service and the boot
-health gate both run as root"* (`mosd/dist/com.mos.mosd.conf:12-14`). A traversal is
-therefore an arbitrary file read **as root, with no sandbox**, and the reachable
-set includes at least:
+apid runs as **root** — `mosd/dist/apid.service` sets no `User=` line
+(`mosd/dist/apid.service:1-42`). Its `[Service]` section sandboxes the daemon
+in the directions a root network listener can afford, `PrivateTmp=` and
+`ProtectHome=` among them (`mosd/dist/apid.service:24-39`), but there is no
+`ProtectSystem=`, no `ReadOnlyPaths=` and no `RootDirectory=`, so nothing
+narrows what the process may **read**. The D-Bus policy records the privilege
+from the other side — *"no shipped unit sets User=, mosd.service owns the name
+as root, apid.service and the boot health gate both run as root"*
+(`mosd/dist/com.mos.mosd.conf:11-13`). A traversal is therefore an arbitrary
+file read **as root**, and the reachable set includes at least:
 
 - **`/var/lib/mos/settings.toml`** (`mosd/mosd-settings/src/store.rs:67`) — the
   whole settings tree, including the argon2id webAdmin hash
-  (`mosd/apid/src/routes.rs:218-223`) and every authorized SSH key.
+  (`mosd/apid/src/routes.rs:642-646`) and every authorized SSH key.
 - **`/var/lib/mos/shadow`**, which is what `/etc/shadow` is a symlink to
   (`docs/design/ro-root.md:270-289`).
 - **`/etc/ssh/`** — the sshd host private keys, bound from STATE
   (`docs/design/access.md:485`).
 - **apid's own state directory**, `/var/lib/mos/apid` by default
-  (`mosd/apid/src/config.rs:38-40`): the TLS private key, mode `0600`
-  (`mosd/apid/src/tls.rs:30-42`, `:78`), and **`session.key`**, the 32-byte HMAC
-  signing key (`mosd/apid/src/tls.rs:85-103`).
+  (`mosd/apid/src/config.rs:38-40`): the TLS private key, mode `0o600`
+  (`mosd/apid/src/tls.rs:37`, called from `:78`), and **`session.key`**, the 32-byte HMAC
+  signing key (`mosd/apid/src/tls.rs:86`).
 
 That last one is the escalation nobody should have to discover during an
 incident. A session cookie is `<id>.<hmac>` where the MAC is HMAC-SHA256 of the
-id under `session.key` (`mosd/apid/src/session.rs:44-55`). **Reading
+id under the persistent signing key (`mosd/apid/src/session.rs:44-47`, `:51-61`). **Reading
 `session.key` lets an attacker mint a valid session cookie**, which converts a
 file-read primitive into full administrative access without ever guessing the
 password.
@@ -1999,10 +2001,10 @@ verity's coverage by design.
    "no symlinks" rule applies to bundle *contents*.
 
 **On depending on a library, and what happens if its behaviour changes.**
-`tower-http` is not a dependency of the crate at `86cd669` (`mosd/apid/Cargo.toml:11-29`
-— section 1.6, evidence 1). The copy at `mosd/Cargo.lock:2364-2366` is version
-**0.6.11**, pulled in by the **dev-dependency** `reqwest`
-(`mosd/apid/Cargo.toml:32`), and it is built **without the `fs` feature**: its
+`tower-http` is not a dependency of the crate — its manifest lists none
+(`mosd/apid/Cargo.toml:11-31`, section 1.6 evidence 1). The copy at
+`mosd/Cargo.lock:2364-2366` is version **0.6.11**, pulled in by the
+**dev-dependency** `reqwest` (`mosd/apid/Cargo.toml:34`), and it is built **without the `fs` feature**: its
 dependency list in the lockfile (`mosd/Cargo.lock:2395-2406`) contains no
 `tokio`, `mime_guess`, `httpdate` or `http-range-header`, all of which `fs`
 requires
@@ -2071,10 +2073,10 @@ redirected onto DATA — `home.mount` binds `/srv/home` onto `/home`
 binds `/srv/root` onto `/root`
 (`os/rootfs/overlay-v2/etc/systemd/system/root.mount:29-30`). `/srv` is not a
 redirect: it is the DATA partition's **own mountpoint**, mounted directly from
-`/etc/fstab` (`os/rootfs/overlay-v2/etc/fstab.in:12`, `:23`), and the verifier
-asserts that entry by GUID, mountpoint and options —
-`check_fstab "DATA is the growth target" "${DATA_GUID}" /srv
-"noatime,x-systemd.growfs"` (`os/verify-image-v2.sh:1425`).
+`/etc/fstab` (`os/rootfs/overlay-v2/etc/fstab.in:12`, `:16`), and the verifier
+asserts that entry by mountpoint and options, requiring
+`noatime` and `x-systemd.growfs` under the label
+*"DATA is the growth target"* (`os/verify/src/checks-fstab.ts:131-137`).
 
 So `docs/design/access.md` §10.2's mechanism — *"one mount unit plus one
 verifier assertion"* (`docs/design/access.md:476-479`) — applies here at **half
@@ -2087,8 +2089,9 @@ target: it is the one persistent tier already reachable without a unit.
 Two facts the image already guarantees and that this depends on:
 
 - The `/srv` mountpoint exists in the read-only root
-  (`os/rootfs/scripts/overlay-install.sh`), and the verifier asserts every fstab and bind
-  mountpoint exists (`os/verify-image-v2.sh:1277-1281`).
+  (`os/rootfs/scripts/overlay-install.sh`), and the verifier asserts
+  *"every fstab/bind mountpoint exists in the read-only root"*
+  (`os/verify/src/checks-root.ts:548`).
 - DATA is the only partition `systemd-repart` grows and the only one carrying
   `x-systemd.growfs` (`os/rootfs/overlay-v2/etc/fstab.in:16`), so a bundle root
   here has no ceiling short of the disk.
@@ -2105,7 +2108,8 @@ than a ninth unit that has to be ordered against a mount.
 **Ownership and permissions: `root:root`, mode `0755` on `/srv/ui` and on the
 directories beneath it, `0644` for files.**
 
-- apid runs as root at `86cd669` (`mosd/dist/apid.service:1-13`), so it can write
+- apid runs as root — the unit sets no `User=` line
+  (`mosd/dist/apid.service:1-42`) — so it can write
   regardless of what the mode says.
 - **The mode is chosen for the daemon apid is meant to become, not the one it
   is.** `docs/design/dashboard.md` §6.6 adopts two processes with a real
@@ -2120,7 +2124,7 @@ directories beneath it, `0644` for files.**
   and `0700` would force a group or an ownership change the day apid stops
   being root.
 - **The owner is not pinned to a numeric uid**, unlike `/srv/home/mos`
-  (`os/rootfs/overlay-v2/usr/lib/mos/mos-seed-home:24-30`, `:44-47`), because
+  (`os/rootfs/overlay-v2/usr/lib/mos/mos-seed-home:41-42`), because
   root is `0` on every image that will ever exist. If a future `apid` account
   owns this tree instead, that uid **must** be pinned by number for exactly the
   reason `mos-seed-home` documents — the directory outlives the rootfs that
@@ -2445,15 +2449,15 @@ log line is what makes the two distinguishable after the fact.
 
 *One constraint on where that evaluation may happen, and it is not negotiable.*
 apid's `main` propagates every startup step with `?` —
-`config::Config::from_env()?` (`mosd/apid/src/main.rs:53`),
-`tls::ensure_state_dir(...)` (`:54`),
-`tls::load_or_generate_certificate(...)?` (`:56`),
-`tls::load_or_generate_session_key(...)?` (`:57`) — all **before** the listeners
-bind at `:62` and `:66`, and the unit is `Restart=on-failure`
-(`mosd/dist/apid.service:9`). A startup error therefore becomes a **crash loop
+`config::Config::from_env()?` (`mosd/apid/src/main.rs:150`),
+`tls::ensure_state_dir(...)` (`:151`),
+`tls::load_or_generate_certificate(...)?` (`:153`),
+`tls::load_or_generate_session_key(...)?` (`:154`) — all **before** the
+listeners bind at `:162` and `:166`, and the unit is `Restart=on-failure`
+(`mosd/dist/apid.service:15`). A startup error therefore becomes a **crash loop
 with no listener bound**, which is precisely the failure this section exists to
 prevent. **Bundle discovery and evaluation must happen after the listeners bind
-and after `APID_LISTENING` is printed (`mosd/apid/src/main.rs:72`), and every
+and after `APID_LISTENING` is printed (`mosd/apid/src/main.rs:172`), and every
 possible outcome must be a state the daemon holds, never an error it returns.**
 A bundle must not be able to stop apid from listening. That is the actual safety
 property, and it is stronger than any escape path.
@@ -2485,9 +2489,9 @@ UI is **compiled into the `apid` binary**. The pages are `maud` `html!` macro
 expansions in `mosd/apid/src/routes.rs` (the macro is imported at `:29` and
 used by every page handler), and the only
 stylesheet is a `&str` constant emitted into each `<head>`
-(`mosd/apid/src/routes.rs:278-285`, `:296`), described in the source as
+(`mosd/apid/src/routes.rs:741-746`), described in the source as
 *"Inline stylesheet shared by every page; no external assets"*
-(`mosd/apid/src/routes.rs:277`). Section 1.6 evidences the rest: no
+(`mosd/apid/src/routes.rs:726`). Section 1.6 evidences the rest: no
 `include_str!`/`include_bytes!`, no `assets/`, `static/` or `public/` directory,
 and no non-Rust file in the crate other than its manifest.
 
@@ -2506,8 +2510,8 @@ naming which one is load-bearing matters more than the count:
    `dm-mod.create=` and mounted read-only, with no fstab entry that could remount
    it (`os/rootfs/overlay-v2/etc/fstab.in:7-9`, `docs/design/ro-root.md:239`). A
    write to `/usr/bin/apid` fails at the block layer, not at a permission check.
-   **This holds even though apid runs as root** — the unit sets no `User=`
-   (`mosd/dist/apid.service:1-13`), so root is exactly what would be writing,
+   **This holds even though apid runs as root** — the unit sets no `User=` line
+   (`mosd/dist/apid.service:1-42`), so root is exactly what would be writing,
    and it still cannot. Nothing an operator uploads can reach the built-in UI,
    because nothing on the running system can.
 2. **Real but not load-bearing: the bundle root is on a different filesystem.**
@@ -2592,7 +2596,7 @@ because of how dispatch works rather than because of a check.
   who knows the URL. The mitigation proposed here — that the built-in error
   pages *"already exist and can name the path"* — **is the one surface that
   cannot carry it**, and RFCT-075 measured why: the crate's only error page is
-  `bus_error` (`mosd/apid/src/routes.rs:226-236`), reached when a mosd call
+  `bus_error` (`mosd/apid/src/routes.rs:650`), reached when a mosd call
   fails, and `gate` calls `get_settings("access")` on every path but `/healthz`
   *before* dispatch — so at the moment that page is on screen, `/builtin/` is
   answering 502 for the same reason, and naming the prefix there would advertise
@@ -2701,7 +2705,7 @@ is the fact.)*
 **The principle, stated once: the component that explains a failure must not be
 the component that failed.** dashboard.md applies it to processes — mosd may
 exit hard *because* apid is a different process and survives to render the 502
-page *"The management daemon is unavailable."* (`mosd/apid/src/routes.rs:106-116`,
+page *"The management daemon is unavailable."* (`mosd/apid/src/routes.rs:656`,
 reachable because the bus client connects lazily and drops its cache on error,
 `mosd/apid/src/bus_client.rs:23-26`, `:42-59`).
 
@@ -2778,7 +2782,7 @@ question in this section is about that one row.
 `docs/design/access.md` §4.1 states it without qualification: *"Every authorized
 key is a root key"*, and `mos` is *"a persistent working directory and a non-root
 default shell, **not a lesser privilege level**"*
-(`docs/design/access.md:225-230`). apid runs as root — the unit sets no `User=`
+(`docs/design/access.md:225-230`). apid runs as root — the unit sets no `User=` line
 (`mosd/dist/apid.service:1-42`), and the D-Bus policy records the same fact from
 the other side (`mosd/dist/com.mos.mosd.conf:12-14`), with root allowed to own,
 send and receive (`:68-72`).
@@ -2826,12 +2830,13 @@ come from reading them rather than from their names.
 **development-only**, gitignored, and carrying a banner that says so
 (`os/update/rauc/gen-dev-keys.sh:2-3`, `:8-10`). On device, verification is `rauc`'s,
 against `/etc/rauc/keyring.pem`, with `plain`-format bundles refused by
-configuration (`os/update/rauc/system.conf.in:50-62`). Three reasons it does not
+configuration (`os/update/rauc/system.conf.in:71-78`). Three reasons it does not
 transfer:
 
 1. **The trust anchor does not exist on any device.** The keyring is *"NOT
-   shipped by this task and NOT in git"*, and *"until one is installed,
-   `rauc install` on device fails closed"* (`os/update/rauc/system.conf.in:56-61`). The
+   shipped by this task and NOT in git"*, and *"until
+   one is installed, `rauc install` on device fails closed"*
+   (`os/update/rauc/system.conf.in:72-77`). The
    image verifier asserts only the **path**, and records why in as many words:
    *"the keyring itself is deliberately not shipped"*
    (`os/verify-image-v2.sh:1043-1047`). A UI-bundle verifier would need an anchor
@@ -2849,15 +2854,15 @@ transfer:
 
 **The TUF skeleton (`update/sign`, RFCT-016).** `mos-sign` is a member of the
 same cargo workspace (`mosd/Cargo.toml:3`) built on `tough` pinned at `=0.18.0`
-(`mosd/Cargo.toml:33-35`). It is **build-host tooling**: *"Everything here runs
-on a release build host, never on a device, and its output is static content"*
-(`update/README.md:3-5`). It is not installed into the image at all —
+(`mosd/Cargo.toml:42-44`). It is **build-host tooling**: it *"runs on a build
+host, never on a device, and its output is static content"*
+(`update/README.md:6-7`). It is not installed into the image at all —
 `grep -rn "mos-sign\|update/sign" os/` returns nothing at `86cd669`. And its
 README names the missing half without being asked: the **on-device Uptane
-client** — *"metadata fetch, ECU manifest, install gating"* — is *"Explicitly
-**not** phase 1, and not implemented here"* (`update/README.md:25`). Its own
-README also records that RAUC's CMS signature *"is a separate key hierarchy"*
-(`update/README.md:28`), so the two bodies of machinery do not compose with each
+client** is named as *"Explicitly out of scope for the whole crate"*
+(`update/README.md:34`). Its own README also records that RAUC's CMS signature
+*"is a separate key hierarchy"* (`update/README.md:44`), so the two bodies of
+machinery do not compose with each
 other either.
 
 **The conclusion, from reading rather than from the names: at `86cd669` there is
@@ -3143,8 +3148,8 @@ merely rejected. Optionally in the same phase, mosd's `to_fdo`
 `InvalidArgs`.
 
 **What an operator can do that they could not before.** Submit an invalid CIDR
-on `/network` and be told **why**. Today `network_submit` returns `bus_error` on
-a failed `SetSettings` (`mosd/apid/src/routes.rs:1532-1538`), and `write_key_list`
+on `/network` and be told **why**. Today `network_submit` returns `bus_error` when
+the settings write fails (`mosd/apid/src/routes.rs:1532-1538`), and `write_key_list`
 does the same (`:1075-1077`), so a rejected value is reported to the operator as
 *"The management daemon is unavailable."* — an outage message for a typo. §2.4
 calls this out with the VLAN example. **This phase is a visible bug fix that
@@ -3241,7 +3246,7 @@ below are the run's actual output.
 **What follows, corrected.** An A/B rollback into a phase-1 slot after a token
 has been minted does not degrade — it **fails the settings load**, and
 `mosd/mosd/src/main.rs:45-48` propagates that with `?`, so mosd exits. Under
-`Restart=on-failure` (`mosd/dist/mosd.service:9`) that is a crash loop, and
+`Restart=on-failure` (`mosd/dist/mosd.service:13`) that is a crash loop, and
 because apid's gate calls `GetSettings("access")` on **every** request
 (`mosd/apid/src/routes.rs:704`) the whole appliance answers the 502 page *"The
 management daemon is unavailable."* (`mosd/apid/src/routes.rs:650-660`). **The
@@ -3368,7 +3373,7 @@ Bundle discovery and evaluation must happen **after** the listeners bind and
 after the startup marker is printed, and every bundle outcome must be a state
 the daemon holds rather than an error it returns — because `main` propagates
 startup steps with `?` (`mosd/apid/src/main.rs:53-57`) under
-`Restart=on-failure` (`mosd/dist/apid.service:9`), so a bundle that could fail
+`Restart=on-failure` (`mosd/dist/apid.service:15`), so a bundle that could fail
 startup would produce a crash loop with no listener bound. **The marker is
 `APID_LISTENING`, not `WEBD_LISTENING` as this phase and §6.1 were written**;
 the rename moved the string as well as the paths. As landed, the two binds are
@@ -3520,7 +3525,7 @@ specific place, and it is drawn here so a later reader does not generalise it.
 
 **One prerequisite outside this document's scope, named rather than assumed
 away.** No keyring is shipped and none is in git
-(`os/update/rauc/system.conf.in:56-61`, `os/verify-image-v2.sh:1043-1047`), so until
+(`os/update/rauc/system.conf.in:72-77`, `os/verify/src/checks-root.ts:620-638`), so until
 production keyring provisioning happens, `rauc install` **fails closed** and
 this phase's acceptance cannot be demonstrated on a shipped image at all.
 
