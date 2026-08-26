@@ -12,7 +12,10 @@
 # plus the serial console, whose root account stays locked until that password
 # is set. See docs/design/access.md section 4.1.
 #
-# Outputs (all under _out/cx3576/, consumed by os/mkimage-v2.sh):
+# Outputs (all under _out/<board>/). The first four are consumed by the image
+# assembler -- os/build/src/mkimage-v2.ts and mkimage-x64.ts, which were
+# os/mkimage-v2.sh and os/mkimage-x64.sh until PLAN-014 M6e ported them at
+# byte-identity:
 #   rootfs-verity.img     squashfs-zstd with the verity hash tree appended,
 #                         padded to a whole MiB
 #   rootfs-verity.env     verity parameters, strict KEY=value
@@ -25,6 +28,11 @@
 #                         binaries in, so that "it linked" and "it runs" stop
 #                         being the same claim. `docker load -i` it.
 #   factory-root.txt      what that archive is: ref, platform, size, sha256
+#   rootfs-stages.txt     the stage chain as built, and a `# declined:` line
+#   mosd-build.txt        the commit mosd and apid in this root were built from,
+#                         copied from _out/mosd-build.txt. NOT copied into the
+#                         image. Removed when mosd is declined; see below.
+# os/rootfs/README.md, "Outputs to _out/<board>/", is the table version of this.
 #
 # Every layout constant is read from os/boards/cx3576/board.env.
 set -euo pipefail
@@ -162,7 +170,7 @@ VERITY_UUID=$(echo "$ROOTFS_A_GUID" | tr 'A-Z' 'a-z')
 # root. They are deliberately the same number and not two pinned constants: the
 # squashfs and the OCI image are two encodings of ONE tree, and a second epoch
 # would be a second answer to "when was this root made" that nothing would ever
-# reconcile. os/mkimage-v2.sh already spells it this way for mkimage's
+# reconcile. The assembler already spells it this way for mkimage's
 # SOURCE_DATE_EPOCH, for the same reason.
 SQUASHFS_TIME=${FILE_MTIME#@}
 
@@ -723,7 +731,7 @@ if ! tar -tf "$FACTORY_ROOT_OCI" index.json >/dev/null 2>&1; then
     exit 1
 fi
 
-# Read the pack stage's output the same way os/mkimage-v2.sh does: by parsing
+# Read the pack stage's output the same way the assembler does: by parsing
 # KEY=value, never by sourcing a generated file.
 env_get() { sed -n "s/^$2=//p" "$1" | tail -n1; }
 
@@ -769,13 +777,13 @@ fi
 # late_initcall and its wait_for_device_probe() does not cover eMMC card
 # discovery, which happens on a delayed workqueue; without the wait the verity
 # table is built before the partitions exist, so the boot breaks intermittently
-# rather than cleanly. os/mkimage-v2.sh rejects a cmdline file that lacks it.
+# rather than cleanly. The assembler rejects a cmdline file that lacks it.
 #
 # The GUID is lowercased, the same form used in /etc/fstab and the same form
 # udev gives /dev/disk/by-partuuid/ (libblkid formats GUIDs lowercase). The
 # kernel compares with strncasecmp and accepts either, so one canonical
 # lowercase spelling everywhere is the least surprising choice.
-# os/mkimage-v2.sh cross-checks this table against ${ROOTFS_x_GUID}, which the
+# The assembler cross-checks this table against ${ROOTFS_x_GUID}, which the
 # layout env holds uppercase, comparing case-insensitively (RFCT-020). Do not
 # "fix" anything by uppercasing this: lowercase is what udev and fstab use.
 write_cmdline() {

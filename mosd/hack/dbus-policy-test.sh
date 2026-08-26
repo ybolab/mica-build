@@ -775,8 +775,10 @@ check "ext: nobody CANNOT own com.mos.extra (own_prefix needs a '.' separator)" 
 # So the copy under test substitutes exactly one token, the substitution is
 # asserted to have changed exactly one line, and the shipped file's own
 # username is asserted separately. That the IMAGE creates mos-mqttd, and that
-# the unit runs as it, is os/verify-image-v2.sh's half of the pair -- neither
-# half is a claim about the other.
+# the unit runs as it, is the image verifier's half of the pair -- os/verify/,
+# entered through `bash os/verify/run.sh --verify`, which replaced
+# os/verify-image-v2.sh at full parity in PLAN-014 M4e. Neither half is a claim
+# about the other.
 MQTTD_POLICY="${REPO_ROOT}/mosd/dist/mos-mqttd.conf"
 [ -f "${MQTTD_POLICY}" ] || { echo "no ${MQTTD_POLICY} to test" >&2; exit 1; }
 

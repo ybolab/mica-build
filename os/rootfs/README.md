@@ -87,8 +87,9 @@ unrecognised value all resolve to `prod`, which means SSH off. The comparison is
 case-sensitive, so `DEV` resolves to prod too. Every one of those mistakes
 produces an image where all the checks are green and the dev SSH path has simply
 disappeared, which is why the value is validated at build time and asserted
-again by `os/verify-image-v2.sh` against the packed
-artifact — including that `dev` implies `ssh.service` is enabled in the image
+again by the image verifier (`bash os/verify/run.sh --verify`, which was
+`os/verify-image-v2.sh` until PLAN-014 M4e ported it at full parity) against the
+packed artifact — including that `dev` implies `ssh.service` is enabled in the image
 and `prod` implies it is not.
 
 The file lives in `/usr/lib` and not `/etc` because it describes the *image*,
@@ -242,14 +243,44 @@ command, if it cannot reach the target platform. `stages/README.md` records the
 measurement; `.gitea/workflows/privileged.yml` relied on the old fallback and
 its note says so.
 
-Outputs to `_out/cx3576/`, all consumed by `os/mkimage-v2.sh`:
+Outputs to `_out/<board>/`. The first four are consumed by the image assembler
+-- `os/build/src/mkimage-v2.ts` and `mkimage-x64.ts`, entered through
+`bash os/build/run.sh --mkimage-v2|--mkimage-x64`, which were `os/mkimage-v2.sh`
+and `os/mkimage-x64.sh` until PLAN-014 M6e ported them at byte-identity. The
+last three are **not**: they are read by RFCT-113's smoke runner, and nothing
+copies any of them into the image.
 
-| File | Contents |
-|---|---|
-| `rootfs-verity.img` | squashfs-zstd with the dm-verity hash tree appended, padded to a whole MiB |
-| `rootfs-verity.env` | verity parameters as strict `KEY=value` |
-| `boot-cmdline-a.txt` / `-b.txt` | the full kernel `append` line for each slot |
-| `rootfs-report-v2.txt` | package list, installed size, setuid/setgid inventory, file capabilities |
+| File | Read by | Contents |
+|---|---|---|
+| `rootfs-verity.img` | assembler | squashfs-zstd with the dm-verity hash tree appended, padded to a whole MiB |
+| `rootfs-verity.env` | assembler | verity parameters as strict `KEY=value` |
+| `boot-cmdline-a.txt` / `-b.txt` | assembler | the full kernel `append` line for each slot |
+| `rootfs-report-v2.txt` | a reader | package list, installed size, setuid/setgid inventory, file capabilities |
+| `factory-root.oci` | smoke runner | the packed root as an OCI-layout archive; `docker load -i` it |
+| `factory-root.txt` | smoke runner | what that archive is: `ref`, `platform`, `target`, `archive`, `bytes`, `sha256`, `source-date-epoch`, TAB-separated |
+| `rootfs-stages.txt` | smoke runner | the stage chain as built, and a `# declined:` line naming the feature stages left out -- or saying in parentheses that none were |
+| `mosd-build.txt` | smoke runner | **the commit `mosd` and `apid` in this root were built from** |
+
+### `mosd-build.txt`, and why it is a copy
+
+`mosd/hack/build-target.sh` writes `_out/mosd-build.txt` on every build --
+`target`, `elf-arch` and `commit`, TAB-separated, the same shape
+`factory-root.txt` uses so one reader reads both -- and `build-v2.sh` copies it
+into `_out/<board>/` beside the factory root. **It is not copied into the
+image.**
+
+Copied rather than read from the top-level path, because the top-level one
+describes *whatever was compiled most recently*: build cx3576 and then x64 and
+`_out/mosd-build.txt` says `aarch64-unknown-linux-gnu` while `_out/x64/` still
+holds x86-64 binaries. The per-board copy is what keeps the smoke runner
+comparing an image against the build that produced it.
+
+`build-v2.sh` **removes** it when `mosd` is declined, for the same reason it
+empties the staged `mosd/` directory: a record left by a previous build would
+describe binaries this image does not carry, and the smoke runner would then
+assert a commit against an artifact that is not there. Absent is a state it
+already handles -- it prints that nothing was asserted, and says so on its own
+first lines -- and stale is one nothing could catch.
 
 Every layout constant is read from `os/boards/cx3576/board.env`; none is duplicated
 in `build-v2.sh`, `stages/` or the overlay. The board console/storage
@@ -259,7 +290,7 @@ x64 became the second board to need a v2 image.
 
 ### The cmdline files are a contract
 
-`os/mkimage-v2.sh` does not re-derive the verity table: it lifts the
+The assembler does not re-derive the verity table: it lifts the
 `dm-mod.create="..."` and `dm-mod.waitfor=` fragments straight out of these two
 files with `sed` and writes them into each boot slot's `mos-verity.env`, next to
 the shared `boot.scr`. (The v2 slots carry no `extlinux.conf` — U-Boot tries
@@ -273,7 +304,7 @@ extlinux before `boot.scr`, which would bypass the RAUC A/B handshake.) So:
 - GUIDs are **lowercase** everywhere — cmdline and `fstab` alike — matching
   udev's `by-partuuid` symlinks, which libblkid formats lowercase. The kernel
   compares with `strncasecmp` and accepts either.
-  `os/mkimage-v2.sh` cross-checks the cmdline against the layout env's
+  The assembler cross-checks the cmdline against the layout env's
   uppercase `ROOTFS_x_GUID` case-insensitively (RFCT-020), so the two spellings
   coexist by design. Do not "reconcile" them by uppercasing the cmdline.
 
@@ -395,8 +426,8 @@ is an unread board fact and fails by name; a `/usr/lib/mos/hwinit-<n>` with no
 asserted at build time is the third direction — a board that declares
 `BOARD_HWINIT_CONFS` and whose `init/` went missing stages no conf, installs no
 unit, and the two counts agree at zero. That predates M5d, since `BOARD_INIT_DIR`
-was already a staged directory, and `os/verify-image-v2.sh` holds it at image
-level: it compares the declared facts against the installed helpers.
+was already a staged directory, and the image verifier (`os/verify/`) holds it at
+image level: it compares the declared facts against the installed helpers.
 
 No board fact is restated in the v2 layer, and since M5d no board NAME is
 either. Module names, sysfs paths, UART device and speed, CAN bitrate and FD
@@ -413,7 +444,9 @@ its assertions) and is gitignored. `build-v2.sh` runs the renderer before
 staging the overlay, so the template plus `os/boards/cx3576/board.env` are the
 single source of truth and the rendered file cannot drift from them.
 
-`os/update/bundle.sh` still runs `render-config.sh --check`. It now guards a narrower
+The bundle builder still runs `render-config.sh --check` -- `os/build/src/bundle.ts`
+since PLAN-014 M6e deleted `os/update/bundle.sh` at byte-identity of the squashfs
+payload. It guards a narrower
 case — someone hand-editing the generated file after the last build — rather
 than committed-copy drift, which can no longer happen. Note that `bundle.sh`
 consumes `rootfs-verity.img` too, so `build-v2.sh` has necessarily run first
@@ -425,7 +458,7 @@ and the file is present.
 a fact worth stating rather than quietly editing: bookworm shipped
 `systemd-repart` inside the `systemd` package, trixie splits it into a package
 of its own. `os/rootfs/stages/10-base.Dockerfile` names it in the install list because of
-that, and `os/verify-image-v2.sh` asserts the enablement symlink. The failure
+that, and the image verifier (`os/verify/`) asserts the enablement symlink. The failure
 if it were missing announces nothing — the device boots and DATA simply never
 grows past the 64 MiB the assembler creates.
 
@@ -577,7 +610,11 @@ unattainable, the fallback gate is full verifier parity plus an explicitly
 anchored new-baseline commit". This is that anchor, and the parity half was run:
 `MOS_BOARD=x64 bash os/verify-image-v2.sh` on an image assembled from a
 chain-built rootfs reports **`RESULT: PASS (290/290 checks, 22 skipped)`**, the
-same count as before the split.
+same count as before the split. *(That command is the one that was RUN, and it
+is left as written: the script it names was deleted by PLAN-014 M4e at full
+parity with `os/verify/`, so this is a citation into git history rather than a
+recipe. `bash os/verify/run.sh --verify --board x64` is the successor, and M4e
+reproduced both boards' summary counts exactly at the port's tip.)*
 
 ### RFCT-111 M5c: the feature cut, measured
 
@@ -730,7 +767,8 @@ set `build-v2.sh` computes into a `chain-cold.sh`; that works, and the
 transcription is a second variable between two sides whose whole claim is that
 there is only one. Here `--no-cache` is injected instead by a `docker` shim on
 `PATH` at exactly two Dockerfile shapes — `os/rootfs/Dockerfile.v2` and
-`os/rootfs/stages/*.Dockerfile` — so the staged inputs (mosd, podman, rauc)
+`os/rootfs/stages/*.Dockerfile`; the first was the single-file build this
+measurement compared against, and M5 deleted it once the chain replaced it — so the staged inputs (mosd, podman, rauc)
 build warm and identically on both sides and nothing about the argument set is
 retyped. Coldness is then MEASURED rather than assumed: BuildKit prints `CACHED`
 on every step it reuses, and across all three builds the only `CACHED` lines are

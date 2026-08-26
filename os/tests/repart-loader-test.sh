@@ -71,13 +71,16 @@ trap 'rm -rf "${work}"' EXIT
 # Every path this script hands sgdisk lives under ${REPO_ROOT}/_out — the
 # shipped images and ${work} both — so mounting _out at itself makes every
 # argument resolve identically and keeps the output byte-identical to a host
-# run. Same shape as os/tests/mkimage-v2-selftest.sh's assertion tooling, for the
-# same reason: a missing host tool must not read as a FAIL that indicts the
-# image.
+# run. Same shape as the assertion tooling in os/tests/mkimage-v2-selftest.sh --
+# deleted by PLAN-014 M6e with the shell assembler; os/build/src/toolbox.ts is
+# where that rule lives now -- and for the same reason: a missing host tool must
+# not read as a FAIL that indicts the image.
 if ! command -v sgdisk >/dev/null 2>&1; then
     # The base, from os/build-env/images.env -- IMAGE_ALPINE_3_21, the same key
-    # os/mkimage-v2.sh assembles from and os/verify-image-v2.sh verifies from,
-    # so the sgdisk that reads a GPT here is the sgdisk that wrote it. The
+    # os/build/src/toolsets.ts assembles from and os/verify/src/tools.ts verifies
+    # from (they were os/mkimage-v2.sh and os/verify-image-v2.sh until PLAN-014
+    # M6e and M4e), so the sgdisk that reads a GPT here is the sgdisk that wrote
+    # it. The
     # heredoc is unquoted so ${TOOL_BASE} expands; nothing else in the body is a
     # shell expansion.
     TOOL_BASE="$(bash "${REPO_ROOT}/os/build-env/from.sh" --ref IMAGE_ALPINE_3_21)"

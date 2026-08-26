@@ -5,7 +5,7 @@ set -euo pipefail
 #
 # Runs INSIDE the image os/tests/handshake-test/Dockerfile builds (started by
 # run.sh). Executes the SHIPPED os/boards/cx3576/boot.cmd — compiled by the same
-# `mkimage -T script` invocation os/mkimage-v2.sh uses, byte-unmodified —
+# `mkimage -T script` invocation the assembler uses, byte-unmodified —
 # under a U-Boot v2026.07 sandbox binary (same source pin as the board build)
 # against a layout-v2 GPT disk image backed by a host file, and asserts the
 # whole A/B handshake state machine across separate process invocations.
@@ -84,9 +84,29 @@ log_lacks() { # label log-file needle
 
 fill() { head -c "$2" /dev/zero | tr '\0' "$3" > "$1"; }
 
-# --- fixtures (mkimage-v2-selftest.sh style, synthetic) ----------------------
+# --- fixtures (synthetic, in the style the deleted mkimage-v2-selftest.sh used)
 # boot.scr is the REAL contract artifact: the shipped source through the same
-# mkimage invocation the assembler uses (os/mkimage-v2.sh compile_boot_script).
+# mkimage invocation the assembler uses -- os/build/src/tools/mkimage.ts's
+# `bootScriptArgs`, which was os/mkimage-v2.sh's `compile_boot_script` until
+# PLAN-014 M6e ported the assembler at byte-identity.
+#
+# THE CITATION WAS RE-CHECKED AT RFCT-113 M7c, not just re-pointed. This line
+# below is `mkimage -T script -C none -n "mos boot" -d $BOOT_CMD boot.scr`;
+# `bootScriptArgs` returns
+# ['mkimage','-T','script','-C','none','-n',name,'-d',input,output].
+# ARGV-IDENTICAL, and its own comment already says "os/mkimage-v2.sh's shape".
+# So the fidelity claim this harness rests on is SUBSTANTIVELY TRUE and only
+# the file it named had moved.
+#
+# ONE RESIDUAL, RECORDED RATHER THAN FIXED. `makeBootScript` sets AND VALIDATES
+# SOURCE_DATE_EPOCH -- mkimage silently falls back to the wall clock without it,
+# so an unvalidated value is a boot script that rebuilds differently every time
+# -- and this harness sets it nowhere. The two therefore produce DIFFERENT
+# BYTES, and "same invocation" must not be read here as "same output". It does
+# not weaken what this harness tests: the U-Boot sandbox executes the script's
+# CONTENT, and the header timestamp it differs in is not part of that. Fixing it
+# would mean threading the board's FILE_MTIME in, which is a change to what this
+# harness builds rather than to a citation, and is not M7c's.
 "${MKIMAGE}" -T script -C none -n "mos boot" -d "${BOOT_CMD}" boot.scr >/dev/null
 fill Image $((4 * 1024 * 1024)) K
 fill rk3576-src.dtb $((64 * 1024)) D

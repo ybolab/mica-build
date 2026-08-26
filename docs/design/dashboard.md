@@ -21,6 +21,28 @@
 > **Status markers** below follow `docs/design/access.md` §0 — `[implemented]`,
 > `[partial]`, `[not implemented]`, and `[decided]` for a settled question.
 
+> **CITATION NOTE, added 2026-08-26 (RFCT-113 M7c) — annotation, not a rewrite.**
+> This document cites `os/verify-image-v2.sh`, `os/verify-image.sh` and `os/update/bundle.sh`. Those scripts no
+> longer exist: PLAN-014 ported them into TypeScript and deleted them, each
+> gated on a measured equivalence rather than on review —
+> `os/verify-image-v2.sh` → `os/verify/` at **full verifier parity** (M4e,
+> `6eadc65`), and `os/mkimage-v2.sh` / `os/mkimage-x64.sh` / `os/update/bundle.sh`
+> → `os/build/` at **byte-identity** of the assembled image and of the bundle's
+> squashfs payload (M6e, `c55c7b0`).
+>
+> **The citations are left as written**, including their line numbers, because
+> each records what was measured *in the file it names* — they are citations
+> into git history, and re-pointing a line number into a port would invent a
+> precision nobody checked. What to read instead:
+> `bash os/verify/run.sh --verify`, `bash os/build/run.sh --mkimage-v2` /
+> `--mkimage-x64` / `--bundle`. Nothing about the CONTENT of any assertion
+> below changed with the port.
+>
+> `os/verify-image.sh` is older still: it went with the v1 single-slot chain
+> (`ebd4e8c`), which has no successor because it has no replacement — v1 is
+> retired, not ported.
+
+
 This document proposes turning the mos management UI from a set of forms into a
 dashboard. It proposes no code, no route handlers, no markup, and no rendering
 or live-update technology. Where a proposal only works under some technology

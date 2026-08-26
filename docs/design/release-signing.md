@@ -14,6 +14,24 @@
 > decision parked with the user (`docs/task/RFCT-045.md`), and a translation of
 > a live runbook that drifted from it would be worse than none.
 
+> **CITATION NOTE, added 2026-08-26 (RFCT-113 M7c) — annotation, not a rewrite.**
+> This document cites `os/verify-image-v2.sh`. Those scripts no
+> longer exist: PLAN-014 ported them into TypeScript and deleted them, each
+> gated on a measured equivalence rather than on review —
+> `os/verify-image-v2.sh` → `os/verify/` at **full verifier parity** (M4e,
+> `6eadc65`), and `os/mkimage-v2.sh` / `os/mkimage-x64.sh` / `os/update/bundle.sh`
+> → `os/build/` at **byte-identity** of the assembled image and of the bundle's
+> squashfs payload (M6e, `c55c7b0`).
+>
+> **The citations are left as written**, including their line numbers, because
+> each records what was measured *in the file it names* — they are citations
+> into git history, and re-pointing a line number into a port would invent a
+> precision nobody checked. What to read instead:
+> `bash os/verify/run.sh --verify`, `bash os/build/run.sh --mkimage-v2` /
+> `--mkimage-x64` / `--bundle`. Nothing about the CONTENT of any assertion
+> below changed with the port.
+
+
 ## 0. How to read this document
 
 **Status markers.** The discipline is `docs/design/access.md` section 0's — a
