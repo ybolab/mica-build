@@ -151,21 +151,22 @@ Each task is a single line linking to its detail file. All detailed information 
 - [x] [**RFCT-126 PLAN-015 M5: README sweep, root and extensions and the two TS suites**](RFCT-126.md) `P2`
 - [x] [**RFCT-127 PLAN-015 M5: README sweep, the rootfs tree and the container engine**](RFCT-127.md) `P2`
 - [x] [**RFCT-128 PLAN-015 M5: citations repaired against the checker, and the check made to gate**](RFCT-128.md) `P2`
-- [x] [**RFCT-129 apid reads /proc/uptime itself, against its own rule that mosd owns every system fact**](RFCT-129.md) `P2`
-- [x] [**RFCT-130 Three distinct settings failures reach the API as one error code, so a missing path and a bad value are indistinguishable**](RFCT-130.md) `P2`
-- [x] [**RFCT-131 /healthz answers ok before checking anything, and two documents read it as a statement about the appliance**](RFCT-131.md) `P2`
-- [x] [**RFCT-132 Every unauthenticated request costs a D-Bus round trip against the one lock mosd holds over both trees**](RFCT-132.md) `P2`
-- [x] [**RFCT-133 mosd emits SettingsChanged and apid's proxy cannot receive it**](RFCT-133.md) `P2`
-- [x] [**RFCT-134 The admin password can be set exactly once and no operation anywhere changes it**](RFCT-134.md) `P1`
-- [x] [**RFCT-135 The network form accepts a VLAN interface name that the settings path syntax then rejects**](RFCT-135.md) `P1`
-- [x] [**RFCT-136 The custom-UI bundle store is complete and no HTTP route reaches it**](RFCT-136.md) `P2`
-- [x] [**RFCT-137 apid's unit sandboxes almost everything except the filesystem it serves files out of**](RFCT-137.md) `P2`
-- [x] [**RFCT-138 The workspace's no-C-dependency posture is a comment, and cargo-deny is configured to enforce nothing**](RFCT-138.md) `P2`
-- [x] [**RFCT-139 No production RAUC keyring is provisioned, so rauc install fails closed on every shipped device**](RFCT-139.md) `P2`
-- [x] [**RFCT-140 One outage is reported two ways: the API answers 503 and the HTML pages answer 502**](RFCT-140.md) `P2`
-- [x] [**RFCT-141 The static-asset traversal guards have no over-the-wire coverage, because no device under test has a bundle**](RFCT-141.md) `P2`
+- [ ] [**RFCT-129 apid reads /proc/uptime itself, against its own rule that mosd owns every system fact**](RFCT-129.md) `P2`
+- [ ] [**RFCT-130 Three distinct settings failures reach the API as one error code, so a missing path and a bad value are indistinguishable**](RFCT-130.md) `P2`
+- [ ] [**RFCT-131 /healthz answers ok before checking anything, and two documents read it as a statement about the appliance**](RFCT-131.md) `P2`
+- [ ] [**RFCT-132 Every unauthenticated request costs a D-Bus round trip against the one lock mosd holds over both trees**](RFCT-132.md) `P2`
+- [ ] [**RFCT-133 mosd emits SettingsChanged and apid's proxy cannot receive it**](RFCT-133.md) `P2`
+- [ ] [**RFCT-134 The admin password can be set exactly once and no operation anywhere changes it**](RFCT-134.md) `P1`
+- [ ] [**RFCT-135 The network form accepts a VLAN interface name that the settings path syntax then rejects**](RFCT-135.md) `P1`
+- [ ] [**RFCT-136 The custom-UI bundle store is complete and no HTTP route reaches it**](RFCT-136.md) `P2`
+- [ ] [**RFCT-137 apid's unit sandboxes almost everything except the filesystem it serves files out of**](RFCT-137.md) `P2`
+- [ ] [**RFCT-138 The workspace's no-C-dependency posture is a comment, and cargo-deny is configured to enforce nothing**](RFCT-138.md) `P2`
+- [ ] [**RFCT-139 No production RAUC keyring is provisioned, so rauc install fails closed on every shipped device**](RFCT-139.md) `P2`
+- [ ] [**RFCT-140 One outage is reported two ways: the API answers 503 and the HTML pages answer 502**](RFCT-140.md) `P2`
+- [ ] [**RFCT-141 The static-asset traversal guards have no over-the-wire coverage, because no device under test has a bundle**](RFCT-141.md) `P2`
 - [ ] [**RFCT-142 Reading the U-Boot boot credits races a writer that no lock orders**](RFCT-142.md) `P1`
 - [x] [**RFCT-143 PLAN-015 M5: boards.md and display.md lose the claims that describe a build that does not exist**](RFCT-143.md) `P2`
+- [x] [**RFCT-144 PLAN-015 M5: the task index and the task files disagree about what is finished**](RFCT-144.md) `P2`
 - [x] [**RFCT-150 PLAN-015 M6: form compression in os/verify**](RFCT-150.md) `P2`
 - [x] [**RFCT-151 PLAN-015 M6: form compression in os/build**](RFCT-151.md) `P2`
 - [x] [**RFCT-152 PLAN-015 M6: form compression in os/rootfs, build-env, podman, boards, tests, update and tools**](RFCT-152.md) `P2`

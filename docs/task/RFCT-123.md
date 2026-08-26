@@ -1,8 +1,8 @@
 # RFCT-123 PLAN-015 M5: dashboard.md loses its citation banner and the rejected-option analysis
 
-- **status**: pending
+- **status**: done
 - **priority**: P2
-- **owner**: (unclaimed)
+- **owner**: PLAN-015 M5
 - **createdAt**: 2026-08-26
 - **plan**: PLAN-015 (M5)
 
