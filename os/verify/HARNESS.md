@@ -8,20 +8,243 @@
     bash os/verify/run.sh --help
     bash os/verify/run.sh -t "arith"    # extra arguments go to `bun test`
     bash os/verify/run.sh --lint FILE   # the lint instead of the suite
-    make os-verify-parity               # the image-contract parity harness
-    bash os/verify/run.sh --parity --board x64 --probe
+    make os-verify-cx3576-v2            # verify an assembled image
+    bash os/verify/run.sh --verify --board x64 --probe
 
 It finds bun — on the host, or failing that in the container pinned as
 `IMAGE_BUN_1` — installs the dev dependencies if `node_modules/` is absent,
 typechecks `src/`, runs the suite, and then checks the suite actually ran.
 
-`--lint` and `--parity` are MODES and are recognised only in first position, so
+`--lint` and `--verify` are MODES and are recognised only in first position, so
 neither can be mistaken for a `bun test` filter. Both share the install, the
 typecheck and the `run_bun` seam; only the last step differs, which is what
 keeps ONE place deciding how bun is invoked. `--lint`'s file arguments are made
 absolute before they are handed on, because `run_bun` cds into the package
-first. `--parity` is the one mode that cannot take the container route — see
+first. `--verify` is the one mode that cannot take the container route — see
 "The hole, measured rather than assumed" below.
+
+## The oracle is deleted — what that FREEZES, and who owns each one now
+
+`os/verify-image-v2.sh` is gone. It was the OS image contract for the whole of
+this repository's v2 life, and while it existed "the port reproduces the shell"
+was a complete answer to any question about a defect in the port. **It is not an
+answer any more.** Every defect below was reproduced deliberately, on that
+reasoning, and the reasoning died with the file — so each one is recorded here
+with what it concludes, why that is wrong, and, crucially, **whether it still
+ships**.
+
+Three outcomes, and they are not interchangeable. Nothing below was *fixed*.
+
+| | outcome | meaning |
+|---|---|---|
+| **SHIPS** | the defect is in `os/verify/src/`, today | a plain defect in this package, owned by whoever reads this |
+| **GONE** | the defect was in the deleted file and nowhere else | it left with its container; that is not the same as repaired |
+| **RECORD** | a property of the deleted file worth keeping | evidence, not a live defect |
+
+Every `:NNNN` below is a line number in the file **as it stood at `dabc9e8`**,
+the revision these were derived from and the last one before the deletion
+commit. Read it with
+
+    git show dabc9e8:os/verify-image-v2.sh
+
+or find the deletion itself with
+`git log --diff-filter=D -- os/verify-image-v2.sh`.
+
+**Line numbers were re-derived against that revision, not copied.** Three of the
+numbers previously recorded in this document were wrong, and one of them named
+the wrong construct entirely — see item 7. A citation into a deleted file cannot
+be checked by eye, so it was checked before the file went.
+
+### 1. `e2fsck -fn` exits 0 on a TRUNCATED filesystem — SHIPS
+
+`:2342` is `if e2fsck -fn "${img}" >/dev/null 2>&1`. Both streams go to
+`/dev/null` and the status alone decides, so the conclusion is
+`e2fsck -fn on data is clean` about a filesystem `e2fsck` has just described as
+`Either the superblock or the partition table is likely to be corrupt!` — it
+prints that and exits **0**. The branch is REACHABLE by `check_ext4`'s own
+extract: it takes `count=${size_mib}` MiB at the layout's offset, so an image
+whose tail is short produces exactly that file.
+
+Reproduced and asserted in `src/image.test.ts` (the `e2fsck` binding, driven
+against a truncated filesystem) and `src/checks-ext4.test.ts`. The port carries
+the same read, so **this is now a defect in `src/image.ts`**, not a fidelity
+decision.
+
+### 2. `debugfs -R "ls -p /"` exits 0 on a file it never opened — SHIPS
+
+`:2359`'s pipeline ends `|| true`, which drops `Filesystem not open` from
+stderr, and stdout is empty. An empty listing is the **passing** direction for
+META, STATE and DATA, so the oracle concluded `factory: meta is empty at build
+(nothing but lost+found)` about a partition holding no filesystem at all. The
+same transcript on EPHEMERAL FAILS, which is what shows the pass is vacuous.
+
+Asserted in `src/image.test.ts` and `src/checks-ext4.test.ts`, both directions.
+**Ships in `src/image.ts`.**
+
+### 3. `tune2fs -l … || true` — SHIPS, and the previous record of it was wrong twice
+
+`:2312` is `info="$(tune2fs -l "${img}" 2>/dev/null || true)"`. Re-measured in
+the pinned `alpine:3.21` on 2026-08-26, against a file `tune2fs` cannot open:
+
+    tune2fs raw exit = 1
+    info             = "tune2fs 1.47.1 (20-May-2024)"     <-- NOT the empty string
+
+Two corrections to what this document said before, and both matter to anyone
+writing the guard:
+
+* **It is not the empty string.** `tune2fs` prints its VERSION BANNER on stdout
+  before failing, so `info` is non-empty. A guard written as `if [ -z "$info" ]`
+  — the obvious repair — would never fire.
+* **It feeds three checks, not four.** `${info}` is read exactly three times:
+  the label (FAIL), the UUID (FAIL), and the feature list. The fourth
+  value-describing check in that function belongs to a *different* tool with the
+  same `|| true` shape — `dumpe2fs -h` at `:2331`, whose empty output makes
+  `fs_bytes` 0 and FAILs.
+
+The vacuous one is the same either way: `sed -n 's/^Filesystem features://p'`
+finds nothing in the banner, `grep -w orphan_file` matches nothing, and the
+oracle concludes **`no orphan_file feature`** about a filesystem it never
+opened. Driven, both branches, in `src/checks-ext4.test.ts`.
+
+`ext4SuperOrNone` reproduces the shape: it returns `undefined` only for a
+`tune2fs` that EXITED NON-ZERO, and an exit-0 output whose magic is not `0xEF53`
+still throws. **Ships in `src/image.ts` / `src/checks-ext4.ts`.**
+
+### 4. `getcap -r DIR` on a directory that is not there exits 0 — SHIPS
+
+`:4283` sends `getcap`'s complaint to `/dev/null`. `getcap` exits **0** and
+writes `<path> (No such file or directory)` to stderr, so the packed inventory
+comes out EMPTY — and on both shipped images the SOURCE inventory is empty too,
+so the comparison passes with `both EMPTY` about a root nothing read. Both trees
+genuinely carry no file capabilities, which the oracle's own message says out
+loud; that is what makes this survivable rather than urgent.
+
+Asserted in `src/checks-shape.test.ts`. **Ships in `src/checks-shape.ts`.**
+
+### 5. `:3332`'s two-line device count — SHIPS (the reproduction did not leave with the oracle)
+
+`:3332` is
+
+    fwenv_lines="$(grep -cE '^/dev/' "${fwenv}" 2>/dev/null || echo 0)"
+
+On a file that EXISTS with no `^/dev/` line, `grep -c` prints `0` **and** exits
+1 — so `|| echo 0` fires as well and the value is the two-line string `"0\n0"`,
+which the oracle interpolates into a FAIL message, putting a raw newline in the
+middle of a conclusion.
+
+**This one was listed as vanishing with the file. It does not.** The oracle's
+line is gone, but `devLineCount` in `src/checks-system.ts` returns the literal
+`'0\n0'` — an exact reproduction, written so that a port quietly emitting `0`
+could not agree with the oracle everywhere except the one image where the
+difference is the point. That reason is now void, and what is left is a
+verifier that will emit a conclusion with a newline inside it. Neither shipped
+image reaches the branch — both have two device lines. **Not repaired here**
+(RFCT-110 M4e is instructed not to repair behaviour), and asserted as its own
+case.
+
+### 6. `:3765` vs `:3899` disagree about an EMPTY shadow field — SHIPS, both halves
+
+`:3765` (`factory-shadow-locked`) treats an empty password field as **locked**;
+its awk is `$2 !~ /^[!*]/ && $2 != ""`. `:3899`
+(`factory-shadow-accounts-locked`) treats the same field as the **worst** case
+and says so: an empty field is passwordless login, `pam_unix` accepts any
+password including none. The second is right; the first would PASS an image the
+second FAILS.
+
+**Also listed as vanishing, and also does not.** Both are ported, both are in
+`src/checks-shadow.ts`, and after the deletion they are two checks in one
+shipping verifier that contradict each other about the same field. Driven in
+`src/checks-shadow.test.ts`.
+
+### 7. A dead `else` — GONE with the file, and its recorded line was WRONG
+
+`:2057` opens `if is_uboot_board; then` **inside** a block already guarded by
+`if is_uboot_board; then` at `:2014`. Its `else` — at **`:2076`** — sets
+`verity_env_ok=1` and prints `the per-slot verity environment files
+(bootloader=…)`, and **no board can reach it**: a grub board takes the OUTER
+`else` at `:2095` instead. Dead code wearing a live-looking message.
+
+This document previously named that `else` as `:2091`. **`:2091` is a different
+`else` entirely** — it belongs to `if [ "${verity_env_ok}" -eq 1 ]` at `:2084`
+and is perfectly reachable. The inner-`if`/outer-`else` numbers were off by
+three and one respectively. Corrected here from the file itself, before it went.
+
+The port has no such branch: `boardsWhere(isUBoot)` selects the scope once,
+so there is no inner re-test to have an unreachable arm. **GONE — deleted along
+with its container, not fixed.**
+
+### 8. Two cx3576 LITERALS in an otherwise board-derived script — GONE with the file
+
+`BOARD_DIR="${BOARD_DIR:-${REPO_ROOT}/board/cx3576}"` (`:28`) and
+`DTB_SRC="${BOARD_DIR}/out/kernel/rk3576-src.dtb"` (`:1758`). On the one U-Boot
+board this tree ships the literal and the derivation agree, so nothing was ever
+observed wrong; a SECOND U-Boot board would have been compared against
+cx3576's BSP and against its own, in the same run.
+
+The port derives both — the directory from the board's own name, the artefact
+names from that board's `BOOT_SLOT_REQUIRED_FILES` — so the divergence would
+have been the ORACLE's. **GONE.** `src/verify-cli.ts` also declines to default
+the board at all, which is the same defect one level up: `MOS_BOARD` unset once
+checked an x64 image against cx3576's eleven-partition GPT and reported 191
+failures that were all the harness's.
+
+### 9. `check_container_engine`'s early return has no register expression — SHIPS, with its consequence changed
+
+`:1191`'s early return at `:1196`–`:1199` prints ONE conclusion on a
+`WITH_CONTAINERS=0` image where a normal image prints ten, and calls the other
+nine "skipped BY IDENTITY". The register cannot say "this check does not exist
+on this image": an entry owning that one line reports `unfired` on both shipped
+boards. So `container-engine-installed` owns BOTH sentences and the other nine
+answer `skipped()`.
+
+The INABILITY still ships, in `src/checks-engine.ts`. Its recorded consequence
+does not: "nine `orphan` rows, and `orphan` forces exit 1" was a **parity**
+verdict, and parity is exactly what this deletion removes. On such an image
+`--verify` now prints one PASS and nine SKIP lines — which is defensible
+output, and which no longer forces a non-zero exit. **The defect is smaller
+than it was, and it is smaller for a reason that has nothing to do with anyone
+fixing it.** No shipped board produces the shape.
+
+### What the deletion also took, and what it did not
+
+**`os/tests/ui-location-test.sh` is GONE.** It drove `os/verify-image-v2.sh`
+against mutated fixtures and cannot outlive it; its assertions are ported and
+its `make os-ui-location-test` target is removed. That is one of the "now-ported
+fixture suites" RFCT-110's scope names.
+
+**`src/parity-cli.ts` and `make os-verify-parity` are GONE.** The harness's one
+input was the oracle; with the oracle deleted the target could only refuse or
+pass vacuously, and a target that passes because there is nothing left to
+compare is the worst available outcome. The last green run is recorded below
+rather than re-runnable.
+
+**`src/parity.ts` STAYS, and it is not dead by accident.** `CheckResult` and
+`Verdict` are imported by 36 modules, and `matcherAlternatives` /
+`RegisteredCheck` back the `shell:` matcher on every one of the 333 register
+entries. Removing the diff would mean rewriting all of them, which is a far
+larger change than the deletion this milestone authorises. `parseShellRun`,
+`diffParity` and `formatReport` now have **no production caller**; they remain
+driven by `src/parity.test.ts` against synthetic transcripts, which needs no
+oracle. Said plainly here because unreachable code with a passing test is the
+kind of thing that reads as live.
+
+**The last parity run, which can no longer be reproduced:**
+
+    cx3576  PASS  compared 398, diverging 0, UNCLAIMED 0 of 398
+    x64     PASS  compared 312, diverging 0, UNCLAIMED 0 of 312   rc=0
+
+and, at the same tree, the replacement verifier reproduces the oracle's own
+summary line on both boards:
+
+    x64      RESULT: PASS (290/290 checks, 22 skipped (x64/grub))      rc=0
+    cx3576   RESULT: FAIL (387/395 checks, 3 skipped (cx3576/uboot))   rc=1
+
+cx3576's eight FAILs are the BSP byte-compares whose source tree a checkout does
+not carry. **The oracle failed those too, identically** — `make
+os-verify-cx3576-v2` was already red on a checkout without `board/`, and it
+still is. PLAN-014:220-223 puts BSP builds out of scope, and populating `board/`
+would turn eight of the oracle's own FAILs into passes: that changes the
+measurement rather than porting it.
 
 ## Zero tests is a failure, and bun does not agree
 
@@ -528,14 +751,17 @@ the reproduction has to remove the record of it too.
    is REACHABLE: `check_ext4` extracts `count=${size_mib}` MiB at the layout's
    offset, so an image whose tail is short produces exactly that file.
 2. **`debugfs -R "ls -p /"` exits 0 on a file it never opened**, with empty
-   stdout and `Filesystem not open` on stderr. `:2358`'s `|| true` drops the
+   stdout and `Filesystem not open` on stderr. `:2359`'s `|| true` drops the
    stderr, and an empty listing is the PASSING direction for META, STATE and
    DATA — so the oracle concludes `factory: meta is empty at build (nothing but
    lost+found)` about a partition that holds no filesystem at all. The SAME
    transcript on EPHEMERAL fails, which is what shows the pass is vacuous.
-3. **`tune2fs -l ... || true`** makes a partition it could not open arrive at
-   four checks as the empty string — four FAILs describing values rather than
-   one refusal naming the tool. Reproduced by `ext4SuperOrNone`, which returns
+3. **`tune2fs -l ... || true`** (`:2312`) makes a partition it could not open
+   arrive at THREE checks as `tune2fs`'s version banner — not, as this line said
+   until M4e measured it, at four checks as the empty string. The fourth
+   value-describing check in that function is `dumpe2fs -h`'s (`:2331`), the
+   same shape in a different tool. One of the three, `orphan_file`, passes
+   VACUOUSLY. Reproduced by `ext4SuperOrNone`, which returns
    `undefined` only for a tune2fs that EXITED NON-ZERO; an exit-0 output whose
    magic is not `0xEF53` still throws.
 4. **`getcap -r DIR` on a directory that is not there exits 0** and puts its
@@ -584,12 +810,18 @@ the oracle's, and it is recorded for M4e rather than reproduced.
 
 ### One dead branch in the oracle
 
-`os/verify-image-v2.sh:2054` opens `if is_uboot_board` INSIDE a block already
-guarded by `if is_uboot_board` (`:2014`). Its `else` at `:2091` prints
+`os/verify-image-v2.sh:2057` opens `if is_uboot_board` INSIDE a block already
+guarded by `if is_uboot_board` (`:2014`). Its `else` at `:2076` prints
 `the per-slot verity environment files (bootloader=...)`, and **no board can
-ever reach it**: a grub board takes the outer `else` at `:2096` instead. Neither
+ever reach it**: a grub board takes the outer `else` at `:2095` instead. Neither
 shipped board prints that line, no register entry claims it, and nothing is
-unclaimed as a result. Recorded for M4e.
+unclaimed as a result.
+
+**These three numbers were `:2054`, `:2091` and `:2096` until M4e re-derived
+them from the file, and `:2091` was not merely off — it is a DIFFERENT `else`,
+belonging to `if [ "${verity_env_ok}" -eq 1 ]` at `:2084`, and reachable.** See
+"The oracle is deleted" above; the file is gone and the citations are now
+resolvable only through `dabc9e8`.
 
 ### The status-LED contract is TRANSCRIBED, and its scope is derived
 
@@ -621,7 +853,7 @@ nine answer `skipped()`; on such an image the run would report nine `orphan`
 rows. Neither shipped board produces that shape.
 
 **One defect in the code under test, reproduced and asserted rather than fixed.**
-`os/verify-image-v2.sh:3331` reads
+`os/verify-image-v2.sh:3332` (`:3331` until M4e re-derived it) reads
 
     fwenv_lines="$(grep -cE '^/dev/' "${fwenv}" 2>/dev/null || echo 0)"
 
@@ -656,24 +888,31 @@ is the point. It is a decision for whoever owns the oracle, beside the
 A model exercised only on fixtures its author wrote is a model of its author's
 expectations. Anything that passes on cx3576 alone is half tested.
 
-## What M4e inherits
+## What M4e inherited, and what it did with each
 
-Batch 4b is the last porting batch and the register is complete: **0 unclaimed
+Batch 4b was the last porting batch and the register is complete: **0 unclaimed
 on both boards, 0 diverging, 0 ambiguous, 0 orphan, 0 ts-silent, 0 unfired.**
-`make os-verify-parity` exits 0. What M4e still has to decide, all of it about
-the ORACLE rather than the port:
+`make os-verify-parity` exited 0 — the target is gone now, and the run is quoted
+in "The oracle is deleted" above rather than re-runnable. Everything M4e
+inherited was about the ORACLE rather than the port, and **every item below is
+now settled in that section, with SHIPS / GONE against each**. It is the
+authority; this list is the index into it.
 
-1. **Four vacuous passes and two live contradictions**, listed above and in
-   "What batch 4a claimed" below: `e2fsck` on a truncated filesystem, `debugfs`
-   on a file it never opened, `tune2fs`'s `|| true`, `getcap -r` on a directory
-   that is not there, `:3331`'s two-line device count, and the `:3765`/`:3899`
-   disagreement M4d recorded. Every one is reproduced and asserted; none is
-   repaired, because a port that hardened its oracle would diverge from it.
+1. **Four vacuous passes and two live contradictions**: `e2fsck` on a truncated
+   filesystem, `debugfs` on a file it never opened, `tune2fs`'s `|| true`,
+   `getcap -r` on a directory that is not there, `:3332`'s two-line device
+   count, and the `:3765`/`:3899` disagreement M4d recorded. All six SHIP —
+   including the last two, which were expected to leave with the file and did
+   not, because the reproductions live in `checks-system.ts` and
+   `checks-shadow.ts`. None is repaired.
 2. **`board/cx3576` and `rk3576-src.dtb` are literals in an otherwise
-   board-derived script** (`:28`, `:1758`). A second U-Boot board would be
-   compared against cx3576's BSP.
-3. **A dead `else` branch** at `:2091`, unreachable from either board.
+   board-derived script** (`:28`, `:1758`). GONE with the file; the port derives
+   both.
+3. **A dead `else` branch** at `:2076` — not `:2091`, which is a reachable one.
+   GONE with the file.
 4. **`check_container_engine`'s early return** has no register expression (M4f).
+   The inability SHIPS; its `orphan` consequence was a parity verdict and went
+   with parity.
 5. The register is 333 entries across 17 modules; `board-scope.ts`,
    `boot-slots.ts` and `image-layout.ts` hold everything more than one module
    derives, so a third board in `os/boards/` is covered by whatever its own
