@@ -42,7 +42,7 @@ import {
   SYSTEM_CONF,
 } from './bundle.ts'
 import { loadGeometry } from './geometry.ts'
-import { OS_DIR, REPO_ROOT } from './paths.ts'
+import { boardEnvPath, OS_DIR, REPO_ROOT } from './paths.ts'
 import { shippedRaucPath } from './toolsets.ts'
 
 /** The board a bundle is built for when nothing says otherwise, as in the shell. */
@@ -103,6 +103,22 @@ export function requireCompatible(text: string, path: string): string {
   const compatible = compatibleFrom(text)
   if (compatible === '') throw new Error(`no compatible= in ${path}`)
   return compatible
+}
+
+/**
+ * The board definition, refused by NAME rather than by ENOENT.
+ *
+ * `MOS_BOARD=cx3567` is a typo away from a working invocation and the file it
+ * would read is derived from it, so the sentence has to carry both -- the
+ * shell's does. Left to readFileSync the reader gets "ENOENT: no such file or
+ * directory, open '.../boards/cx3567/board.env'", which names the path and not
+ * the mistake, and which no reader of `make os-bundle-<board>` asked a question
+ * about a path.
+ */
+export function requireBoardEnv(board: string, exists: (p: string) => boolean = existsSync): string {
+  const path = boardEnvPath(board)
+  if (!exists(path)) throw new Error(`${path} not found (MOS_BOARD=${board})`)
+  return path
 }
 
 export interface SigningMaterial {
@@ -261,6 +277,7 @@ function boardFromArgv(argv: readonly string[]): string | undefined {
 
 export async function main(argv: readonly string[]): Promise<number> {
   const options = parseArgs(argv, process.env)
+  requireBoardEnv(options.board)
   const geometry = loadGeometry(options.board)
 
   // The shipped slot configuration must be current before anything is signed

@@ -50,7 +50,7 @@
 // second guard -- it is the one path where the hole is reachable.)
 
 import { createHash } from 'node:crypto'
-import { closeSync, existsSync, mkdirSync, openSync, readFileSync, readSync, statSync, writeFileSync } from 'node:fs'
+import { closeSync, existsSync, mkdirSync, openSync, readFileSync, readSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import { checkBootAttempts, verityCmdlineFields, verityEnvBase } from './boot-cx3576.ts'
 import { loadGeometry, type Geometry } from './geometry.ts'
@@ -914,5 +914,12 @@ export async function buildBundle(
     return { bundleOut: inputs.bundleOut, payload, info, bootAttemptsSeen }
   } finally {
     if (ownToolbox) await tb.close()
+    // `trap 'rm -rf "${workdir:-}"' EXIT` in the shell, and not housekeeping:
+    // the staging tree holds a COPY of the rootfs slot image and of the kernel,
+    // which is ~140 MiB for cx3576. Left behind, a suite that builds a handful
+    // of bundles fills os/build/.work with them -- measured at 557 MiB after
+    // seven runs before this line existed. Removed in the `finally`, so a build
+    // that threw leaves nothing either.
+    rmSync(workDir, { recursive: true, force: true })
   }
 }
