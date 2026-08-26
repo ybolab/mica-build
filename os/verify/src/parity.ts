@@ -43,9 +43,9 @@
 // without saying which shell conclusion it replaces, and cannot claim a shell
 // conclusion without being ported.
 //
-// The shell verifier is NOT modified to emit ids. It is the oracle; an oracle
-// edited to make its readings easier to compare is no longer independent of the
-// thing it measures.
+// The shell verifier is NOT modified to emit ids. It is the oracle, and an
+// oracle edited to make its readings easier to compare is not independent of
+// the thing it measures.
 //
 // WHAT "NOT PORTED" MUST LOOK LIKE.
 //

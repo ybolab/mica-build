@@ -442,7 +442,7 @@ export const SHADOW_CHECKS: readonly CheckCase[] = [
       const hits = lines(root, SEED_STATE)
         .map((l, i) => ({ l, n: i + 1 }))
         // `grep -v '^[0-9]*:#'`: a COMMENT is not a seeding, and the file is
-        // allowed to explain why it no longer does this.
+        // allowed to explain why it does not do this.
         .filter(({ l }) => /mos-shadow-reconcile|\/mnt\/state\/[a-z]*\/?shadow/.test(l) && !l.startsWith('#'))
       return [verdict(
         'seed-state-no-shadow-on-state',

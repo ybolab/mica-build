@@ -109,10 +109,10 @@ case "${1:-}" in
 --smoke-negative) MODE=smoke-negative; shift ;;
 esac
 
-# The two modes that drive docker themselves. Named once, because every place
-# below that used to test `[ "${MODE}" = verify ]` is asking this question and
-# not that one -- and a second spelling of the same condition is how --smoke
-# would come to mount a socket in one place and not in the other.
+# The two modes that drive docker themselves. Named once: every place below is
+# asking THIS question and not `[ "${MODE}" = verify ]`, and a second spelling
+# of the same condition is how --smoke would come to mount a socket in one
+# place and not in the other.
 needs_docker() { case "${MODE}" in verify | smoke | smoke-negative) return 0 ;; *) return 1 ;; esac; }
 
 # ...and anywhere else either is a MISTAKE, refused rather than forwarded.

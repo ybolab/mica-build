@@ -18,10 +18,9 @@
 //
 // 2. THE BOARD LISTS ARE DERIVED, NEVER WRITTEN DOWN.
 //
-// `boards:` takes literal names, and M4c found the same shape twice as a defect
-// -- `lint.ts:585` and `parity-cli.ts:31` each carried a two-name literal, so a
-// board added to `os/boards/` was a board the gate never opened. The lists here
-// are computed at module load from the shipped definitions themselves:
+// `boards:` takes literal names, and a two-name literal written out here would
+// mean a board added to `os/boards/` is a board the gate never opens. The
+// lists are computed at module load from the shipped definitions themselves:
 // `uBootBoards()` is every board whose `RAUC_BOOTLOADER` is uboot, `ledBoards()`
 // every board declaring `BOARD_HAS_STATUS_LED=1`, and so on. A third board
 // dropped into `os/boards/` is covered by whichever families its own definition
@@ -31,14 +30,14 @@
 //
 // The radio firmware set, the hwinit confs, `btattach` and the status-LED files
 // are all `sq_regular` calls, so their conclusions read `<path> is a regular
-// file` -- exactly like the twenty-six board-invariant paths M4c ported. A
+// file` -- exactly like the twenty-six board-invariant paths in batch 2a. A
 // `many` check here registering ` is a regular file` would claim all of those
 // too and make the whole of batch 2a `ambiguous`, and batch 2a could not repair
 // it by having landed first. So each path gets its own check, generated from
 // the board's own declaration, and its matcher carries the path.
 //
-// The same reasoning re-opens ` contains `, which M4b and M4c both had to leave
-// alone. `BOOT-A contains Image` names ONE line; ` contains ` names fourteen on
+// The same reasoning applies to ` contains `. `BOOT-A contains Image` names
+// ONE line; ` contains ` names fourteen on
 // cx3576. The boot-slot listing below is generated one check per (board, slot,
 // file) out of `BOOT_SLOT_REQUIRED_FILES`, with `@SLOT@` substituted the way the
 // oracle substitutes it (:1838), so the collision never arises.
@@ -75,10 +74,9 @@ import { skipped, verdict } from './verdict.ts'
 // the shipped boards, and the predicates the families are scoped by
 // ---------------------------------------------------------------------------
 
-// The predicates and the derived board lists live in `board-scope.ts` since
-// M4f: batch 4a's bootloader-environment and Wi-Fi families need the same
-// three, and a second spelling of `is_uboot_board` beside this one is the
-// drift M4c found twice as a defect. Nothing was copied -- they MOVED.
+// The predicates and the derived board lists live in `board-scope.ts`: the
+// bootloader-environment and Wi-Fi families need the same three, and a second
+// spelling of `is_uboot_board` beside this one is drift waiting to happen.
 
 // ---------------------------------------------------------------------------
 // the three shapes a board-conditional conclusion takes
@@ -825,8 +823,8 @@ const BLUETOOTH_CHECKS: readonly CheckCase[] = [
 
   {
     // Board-UNCONDITIONAL, and it belongs here rather than in batch 2a only
-    // because it is the other half of the radio story: the file was how the
-    // Wi-Fi modules used to be loaded, and mos-modules supersedes it. A board
+    // because it is the other half of the radio story: mos-modules supersedes
+    // that file as the way Wi-Fi modules are loaded. A board
     // with no radio must not carry it either, which is why there is no gate.
     id: 'radio-no-legacy-wifi-modules-conf',
     shell: {
@@ -866,13 +864,10 @@ const LED_CHECKS: readonly CheckCase[] = [
     // A board that declares no indicator must not carry the unit: it reads
     // /sys/class/leds/status-{red,blue}/brightness, which do not exist there,
     // so it fails on EVERY boot -- a permanently-failed unit on a shipped
-    // image, indistinguishable to an operator from a real fault. x64 did
-    // exactly that until BOARD_HAS_STATUS_LED reached the image assembler.
+    // image, indistinguishable to an operator from a real fault.
     //
-    // ITS FAILING DIRECTION HAD NEVER BEEN DRIVEN before M4d. The branch runs
-    // on x64's real image and passes, and os/tests/ui-location-test.sh:55
-    // sources cx3576's board.env -- which declares 1 -- so the fixture path
-    // never reached it either. checks-board.test.ts drives it red against an
+    // ITS FAILING DIRECTION IS ONLY REACHABLE FROM A FIXTURE: on x64's real
+    // image the branch passes, so checks-board.test.ts drives it red against an
     // x64-shaped packed-root fixture carrying mos-status-led files.
     id: 'status-led-absent',
     boards: boardsWhere(b => !hasLed(b)),

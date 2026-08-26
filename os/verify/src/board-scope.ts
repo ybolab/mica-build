@@ -1,12 +1,10 @@
 // The shipped boards, and the predicates a board-conditional check is scoped by.
 //
-// These were M4d's, private to `checks-board.ts`. Batch 4a needs three of them
-// -- `isUBoot` for the bootloader environment tools, `hasRadio` for the Wi-Fi
-// userland and bluez's policy -- and a SECOND spelling of "this board has a
-// U-Boot environment" beside the first is exactly the drift M4c found twice as
-// a defect (`lint.ts:585`, `parity-cli.ts:31`, each carrying a two-name board
-// literal). So the definitions MOVED here and `checks-board.ts` imports them;
-// nothing was copied.
+// They live here rather than in any one check module because several families
+// need the same three -- `isUBoot` for the bootloader environment tools,
+// `hasRadio` for the Wi-Fi userland and bluez's policy -- and a SECOND
+// spelling of "this board has a U-Boot environment" beside the first is drift
+// waiting to happen. One definition, imported.
 //
 // THE LISTS ARE DERIVED, NEVER WRITTEN DOWN.
 //

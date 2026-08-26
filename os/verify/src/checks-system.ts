@@ -871,9 +871,9 @@ const PROFILE_CHECKS: readonly CheckCase[] = [
   },
 
   {
-    // ssh.service must NOT be enabled in the image, on EITHER profile. This
-    // assertion used to be profile-dependent and pointed the other way; mosd now
-    // seeds access.ssh.enabled false for dev and prod alike, so an image that
+    // ssh.service must NOT be enabled in the image, on EITHER profile -- the
+    // assertion is deliberately NOT profile-dependent. mosd seeds
+    // access.ssh.enabled false for dev and prod alike, so an image that
     // shipped ssh.service enabled would be listening from early boot until
     // mosd's first reconcile stopped it -- precisely the window the setting
     // exists to close.

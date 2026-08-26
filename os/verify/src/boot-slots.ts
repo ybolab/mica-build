@@ -1,11 +1,9 @@
 // The two boot slots, and where the layout says each one's filesystem begins.
 //
-// This table was written down three times -- in `checks-slots.ts` (M4b), in
-// `checks-board.ts` (M4d) and, when batch 4b needed it a fourth time, here. A
-// second spelling of "the slots are BOOT-A and BOOT-B and their offsets come
-// from the layout" beside the first is exactly the drift M4c found twice as a
-// defect and M4f moved `board-scope.ts` out to stop, so the definition moved
-// here and the three modules import it. Nothing is copied.
+// One table, imported by `checks-slots.ts`, `checks-board.ts` and the ext4
+// family. A second spelling of "the slots are BOOT-A and BOOT-B and their
+// offsets come from the layout" beside the first is drift waiting to happen,
+// which is the same reason the board predicates live in `board-scope.ts`.
 //
 // `check_boot_slot BOOT-A ... BOOT-B ...` at os/verify-image-v2.sh:1963-1964 is
 // unconditional on both boards: a grub board's ESP is a THIRD filesystem
