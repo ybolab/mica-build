@@ -1,9 +1,9 @@
 # PLAN-014 os/ restructure: board isolation, per-stage rootfs Dockerfiles, pinned build environments, and the TypeScript build/verify toolchain
 
-- **status**: implementing
+- **status**: completed
 - **createdAt**: 2026-08-25 10:43
 - **approvedAt**: 2026-08-25 10:50
-- **completedAt**: -
+- **completedAt**: 2026-08-26 11:20
 - **relatedTask**: RFCT-107 (M1), RFCT-108 (M2), RFCT-109 (M3), RFCT-110 (M4), RFCT-111 (M5), RFCT-112 (M6), RFCT-113 (M7)
 - **milestones**: M1 delete v1 and restructure the tree; M2 pinned build-environment image family; M3 the bun+TS foundation; M4 the verifier ported to TS under a parity gate; M5 the rootfs build split into per-stage Dockerfiles; M6 the assemblers ported to TS under the byte-identity gate; M7 built artifacts smoke-run on the base rootfs
 
@@ -300,6 +300,252 @@ PLAN-014 is docs — the lane that commit did not have.
   sets the bun+TS precedent, and test iteration speed matters more than
   runtime performance here.
 
+## The close, 2026-08-26
+
+All seven milestone records (RFCT-107..RFCT-113) read `completed`. What follows
+is the part of the campaign that is **not** recoverable from the diff: the two
+clauses it did not discharge and what reopens them, the ledger of how every
+clause outcome was reached and by whom, what was never verified, and what was
+deleted and against which measurement. It is deliberately not a summary of what
+was built — the milestone records and the `HARNESS.md` / `README.md` files under
+`os/build/`, `os/verify/` and `os/rootfs/stages/` carry that.
+
+### The two dispositions, and what reopens them
+
+A **disposition** is this campaign's way of closing a milestone over a clause
+that is still live: the clause text is unchanged, the clause is **not true**, and
+it was closed over on a stated *physical* constraint — revertible, with a named
+trigger. Both were **decided by the user on L2's recommendation**, and both
+actors are named because both acted: L2 measured the walls and recommended, the
+user took the decision. Neither is a judgement that cx3576 is fine. **cx3576 is
+unobserved, which is not the same thing.**
+
+**RFCT-111 clause 3 — "both boards build and verify green through the chain."**
+Discharged for x64, repeatedly and at the tree that ships. **cx3576 was never
+built through the chain on any host this campaign had.** `binfmt_misc` is not
+mounted here, no builder advertises `linux/arm64`, and since M5b the chain can no
+longer fall back to the QEMU-bundled `docker-container` builder that used to
+close that gap — the cost the user accepted, recorded under Risks above. Closed
+over on the physical-runner constraint. Driven at close, so the state is a
+measurement and not an assumption: `make os-verify-cx3576-v2` exits 1 before
+running a single check, because there is no image for it to read.
+
+> **Trigger: the first arm64-capable host to build and verify cx3576 through the
+> chain settles clause 3 one way or the other. A FAILURE THERE REOPENS
+> RFCT-111.** Without a named trigger, "revertible" is only a softer way of
+> saying closed.
+
+The set to drive on that host is the one RFCT-111 carries forward rather than
+drops: `40-board`'s five firmware files and six hwinit units — the `COPY`, the
+install and the assertions are unexercised on the only board where they do
+anything; `kernel-and-initramfs.sh`'s `modules.tar` arm; and `30-feature-radios`
+whole, which is also clause 2's missing `radios` case.
+
+**RFCT-113 clause 2 — "the full artifact list passes on both boards' base
+roots."** Discharged for x64 — `RESULT: PASS (12 pass, 0 fail, 0 unclaimed, of
+12)`. Not discharged for cx3576, on **two independent constraints**, both
+measured:
+
+1. **There is no cx3576 factory root to execute anything in.** The chain cannot
+   be built here (the constraint above), *and* `board/cx3576/rootfs/` carries no
+   `modules.tar` — so even a capable host needs the BSP drop first.
+2. **Even given the image, this host cannot execute it.** Measured against a
+   *pulled upstream* arm64 image rather than one of ours, so it is a statement
+   about the host: `docker run --platform linux/arm64 arm64v8/busybox /bin/true`
+   → rc=255, `exec format error`.
+
+**That the two are independent is the operative fact**: an arm64-capable host
+alone does not settle this clause the way it settles RFCT-111's. It needs the BSP
+drop as well.
+
+> **Trigger: the first arm64-capable host WITH THE BSP DROP to build a cx3576
+> factory root and run the smoke list against it settles clause 2 one way or the
+> other. A FAILURE THERE REOPENS RFCT-113.**
+
+`.gitea/workflows/privileged.yml`'s deep lane is where that happens — its runner
+label already promises the arm64 emulation, `make os-image-cx3576-v2` runs the
+smoke list as part of the build, and M7c put `make os-factory-root-gate` and
+`make os-smoke-negative-test` beside it. **None of the three has ever run on
+cx3576.**
+
+**Precedent, so neither disposition reads as a one-off.** The same physical
+constraint — no `binfmt_misc`, no builder advertising `linux/arm64` — took an
+*applied default* at RFCT-108 M2 close and a *disposition* at M5 and again at M7:
+three uses of one rule, *"the reason is a host capability, not an implementation
+shortfall."*
+
+### The provenance ledger: six amendments, one satisfaction, two dispositions
+
+**These are three different things, and collapsing them into "resolved" destroys
+the only information they carry.**
+
+| kind | the clause text | the clause itself |
+|---|---|---|
+| **AMENDMENT** | changed | replaced by one that could be satisfied, and was |
+| **SATISFACTION** | untouched | made true by a change elsewhere |
+| **DISPOSITION** | untouched | **not** made true; closed over on a stated constraint, with a trigger |
+
+Every row below names its actor, because *who decided* is precisely the part a
+diff cannot recover.
+
+**Six amendments.**
+
+| # | clause | when | actor | why the text had to change |
+|---|---|---|---|---|
+| 1 | RFCT-107 — a rebuilt image is byte-identical to the pre-move build | 2026-08-25, at M1 close | **the user** | The clause and RFCT-107's own Scope were **mutually unsatisfiable**: seven files carrying path references are files the image *ships*, so updating them changes image bytes, and not updating them leaves the shipped tree citing paths that no longer exist. The M1 gate built both sides, measured the delta, found it confined to comment lines, and **refused to close on the unamended text**. The decision the user took on that measurement was to accept and enumerate the delta, not to exempt those seven files from Scope. |
+| 2 | RFCT-107 — the reference sweep | 2026-08-25, after M1 close | **the user**, on L2's and L1's recommendation | "a repo-wide grep finds no reference to a deleted or pre-move path" was **unsatisfiable in principle**: editing the citations in `docs/task/RFCT-*.md` and `docs/plan/PLAN-0*.md` to post-move paths would not correct a stale reference, it would falsify a dated record. The amended text carries the distinction the original lacked — a **live reference** (something in the tree resolves it; naming a dead path is a defect) versus a **historical citation** (points into git history, and is correct for the very reason a grep flags it). |
+| 3 | RFCT-108 — every build green from pinned digests | 2026-08-25, at M2 close | **L1**, on the M2 gate's recommendation — **NOT a user decision** | Qualified to amd64 component and image builds plus the amd64→aarch64 `mosd` cross build; arm64 builds are to be verified on a binfmt-registered host, where no file change is expected. The reason is the same host capability the two dispositions rest on. **Explicitly revertible on the user's objection**, in which case the clause returns to its unqualified form and M2 cannot close until an arm64-capable host has verified it. |
+| 4 | RFCT-108 — the `mosd` cross-build reproduces the pre-switchover host build | 2026-08-25, at M2 close | **the user** (direct decision) | The clause and **decision 4** were mutually unsatisfiable: decision 4 exists to replace the uncontrolled host toolchain, and the clause required the new controlled environment to reproduce the output of the very environment being replaced. Amended to permit the enumerated `libring` / C-toolchain difference, attributed by name. |
+| 5 | RFCT-111 — the feature-stage list | 2026-08-26, at M5 close | **the user** | `ssh` removed from the list — *"ssh belongs in base, it is core."* Not a preference but a measurement: an ssh-less chain cannot be built at all, so a `30-feature-ssh` would have been a switch with nothing behind it. |
+| 6 | RFCT-111 — the same list, again | 2026-08-26, at M7 close | **the user** | The list stops enumerating members and **points at the mechanism**. It was wrong in both directions at once: it named `ssh`, never a stage in this directory or in any commit that ever added one, and omitted `rauc` and `mosd`, which are. `os/build/src/stages.ts` derives the chain from the directory — *"THE STAGE LIST IS THE DIRECTORY"* — so a second list in a task record is exactly the copy that mechanism exists to prevent. |
+
+Alongside amendment 5 the user also **CLARIFIED**, without changing any clause
+text, that build-time inclusion (`--without`) and runtime enablement are **two
+separate options** for containers and mqtt rather than one flat list. It is not
+counted in the ledger because it amended nothing; it is noted here so a later
+reader does not re-collapse the two axes.
+
+**One satisfaction.**
+
+**RFCT-110 clause 3 — the verifier runs on a host with neither bun nor the image
+tools.** The clause text is **not amended**; it reads exactly as it always did,
+and it is now true. Three actors in order, which is the whole point of recording
+it as a satisfaction rather than as one more amendment: **M4e** measured the
+clause unsatisfiable, reported it with three costed closures and **took no
+action**; **the user** decided — add the pin, option (a), the configuration M4e
+had measured sufficient; **M4e** carried out that decision and re-measured on a
+genuinely bun-less host. What was unsatisfiable was one cause showing on both
+sides of the seam — **no docker client in the bun image** — and it did not close
+when the shell oracle was deleted, because the register drives docker just as
+much.
+
+**Two dispositions.** RFCT-111 clause 3 and RFCT-113 clause 2, above. Neither
+changed a clause; neither made one true.
+
+### What is NOT verified, stated as plainly as what is
+
+The campaign's gates say all of this in their own records. It is said once more
+at plan level because a plan marked `completed` is exactly the document that
+invites a reader to assume otherwise.
+
+- **cx3576 was never built through the chain, and no cx3576 image was ever
+  booted.** One thing that *did* happen must not be misread as this one: M6's
+  byte-identity gate **assembled** cx3576 images and bundles. That gate compares
+  two *assembler implementations* on identical inputs; it says nothing whatever
+  about the chain that produced those inputs, which on cx3576 no host available
+  to this campaign could run.
+- **No device-side runtime behaviour was exercised, on either board.** M5
+  establishes that the image **ships containers and mqtt inert**, and that the
+  register asserts that inertness and can fail if it stops being true. It does
+  **not** establish that flipping the switch on a booted device turns the feature
+  on — nothing here shows `containers.enabled` or `mqtt.enabled` actually
+  starting anything on hardware. The weaker claim must not be read as the
+  stronger one.
+- **No QEMU boot was run.** M7 is explicitly a smoke test — execution and version
+  identity, not behaviour — and its own scope assigns functional coverage to QEMU
+  boot tests. That half was not taken, by this campaign or beside it.
+- **`WITH_MOSD=0` has never produced an image, and on this tree cannot.** Stronger
+  than a gap, and driven on both sides: `90-pack`'s
+  `pack-assert-var-disposable.sh` demands `/var/lib/mos`, which is created by
+  exactly one line — `mosd-install.sh`'s `mkdir -p /var/lib/mos` — that the old
+  tree kept inside `if [ "$WITH_MOSD" = "1" ]`; the pre-M5c tree stops at the same
+  assertion with the same sentence. It has been an **unbuildable configuration
+  and nothing noticed, because nobody built it.** Deliberately not repaired:
+  which of the two should give — the overlay's unconditional mount unit, or the
+  directory's owner — is an image-content decision.
+- **`make os-factory-root-gate` has never run green on this host.** It needs a
+  **matched pair** — `factory-root.oci` and `rootfs-verity.img` from one build —
+  and no such pair existed at close; its *refusal* was driven instead
+  (`rootfs-verity.img is missing or empty`, exit 1, before comparing anything).
+  This weighs more than its place in a list suggests: the invariant it checks —
+  *the image the smoke run executes in is byte-for-byte the tree the device
+  ships* — is the assumption **every other M7 result rests on**, and the two trees
+  come from two exports of one stage, so nothing about their agreement is
+  structural. M7a's own green run of the same script (9,240 entries compared four
+  ways, every comparison driven from the failing side) is in
+  `os/tests/factory-root-gate/README.md`.
+- **M7's evidence stands on a hand-reconstructed record.** The smoke run and its
+  three negative tests were driven against a real x64 factory root — still in the
+  closing host's docker image store, carrying commit `60b9ccc76939` — with the
+  `_out/x64/` record around it **reconstructed by hand**, which each of those
+  files states on its own first line. The image is real; the record is not the one
+  a build wrote.
+
+### The two authorised scope amendments, both by the user, both narrow
+
+Both are recorded in full under **Scope** above; they are listed here so that the
+close does not read as though the campaign's boundary never moved.
+
+1. **One line of `test/apid-api`** — `run.sh`'s `BUN_IMAGE` default, from the
+   floating major-version tag `oven/bun:1` to `IMAGE_BUN_1`. It was the last
+   unpinned image reference in the repository, and the harness it runs decides
+   whether apid's API is judged conformant.
+2. **A `--version`/`-V` handler in two `mosd/` binaries** and its build plumbing
+   — `mosd/mosd/src/main.rs` and `mosd/apid/src/main.rs`, reporting the crate
+   version and exiting 0 **before any daemon initialisation, provisioning, bus
+   connection or key generation**. M7 could not otherwise ask two of the binaries
+   it exists to ask, and the measured behaviour before the change was that both
+   ignored argv, started the daemon, and **mutated the machine** in the process.
+
+**Both were escalated rather than taken.** The gate that found each declined to
+act and said so — R6 wired the `IMAGE_BUN_1` default, then **reverted its own
+wiring**, because a finding does not widen a boundary the plan drew; M7b's
+register entry read *"FINDING IS IN SCOPE, ACTING IS NOT"*. That property is
+worth carrying forward more than either amendment's content is.
+
+**The rest of the exclusion stands, unchanged**: `board/` BSP content (digest
+pins only), device-side runtime behaviour, image content contracts outside
+explicitly anchored baselines, everything else in `mosd/`, and the rest of
+`test/apid-api`.
+
+### What the campaign deleted, and the gate each file went at
+
+Deletion was the object and not a side effect — decisions 1 and 3 both end in a
+removal. **`os/` now has no top-level `*.sh` at all.** Every file below went at a
+**measured gate**, never on inspection or on a reviewer's judgement that the port
+looked equivalent.
+
+| deleted | lines | the measurement it went at |
+|---|---|---|
+| `os/verify-image-v2.sh` | 4,637 | Full per-check parity with the TS port: **398 checks compared on cx3576, 312 on x64, 0 diverging and 0 unclaimed on both**, rc=0. Parity of *conclusions*, not of passes — on cx3576 both sides fail the same eight BSP byte-compares, whose source tree a checkout does not carry. |
+| `os/tests/ui-location-test.sh` | 1,612 | The same gate. Its negative cases had to land in `os/verify/` first: a port without its negative test is not done. |
+| `os/mkimage-v2.sh` | 658 | Byte-identity, cx3576: four images (shell ×2, TS ×2), one hash `f36bf809…`. Two shell runs precede the two TS runs because an oracle that does not reproduce *itself* gives nothing to compare against. |
+| `os/mkimage-x64.sh` | 524 | Byte-identity, x64: four images, one hash `bdf340e9…`. |
+| `os/mkimage-common.sh` | 130 | The same two gates. |
+| `os/update/bundle.sh` | 571 | Byte-identity of the bundle **payload**: cx3576 `d7506b62…` (114,425,856 bytes), x64 `66bb6dc1…` (288,894,976). The payload and not the bundle *file*, measured rather than assumed — rauc salts the bundle's own verity hash tree and the CMS signature carries a `signingTime`, so **two runs of the same implementation differ**, and three runs here produced three different file hashes. |
+| `os/tests/mkimage-v2-selftest.sh` | 825 | All **33** refusals re-driven in the TS suite from the failing side, each with a positive control beside it. |
+| `os/tests/mkimage-x64-selftest.sh` | 1,171 | All **14** reachable refusals, likewise. |
+| `os/verify/src/parity-cli.ts` | 312 | The parity harness itself: with the oracle gone there was nothing left to compare against, so it left in the same change. `src/verify-cli.ts` landed *with* the deletion, because nothing in the package could verify an image on its own — the register had only ever run beside the oracle. |
+
+**10,440 lines**, and with them `make os-verify-parity` and
+`make os-ui-location-test`, which were **removed rather than kept able to
+refuse**. `os/verify/HARNESS.md` records every defect the deletion froze, marked
+SHIPS or GONE — including two that were expected to leave with the file and did
+not, because their reproductions live in the port.
+
+### The floor at close
+
+Re-run in full at this commit against the campaign's own floor as measured at
+`e0cb748`, all `rc=0`. This close is docs-only, so `docs-verify` is the target
+that had to stay green and every other one had to **not move**:
+
+| target | at `e0cb748` | at this commit |
+|---|---|---|
+| `docs-verify` | 375/375 | 375/375 |
+| `docs-verify-test` | 8/8 | 8/8 |
+| `os-shell-pipefail-lint` | 29/29, 29 scanned | 29/29, 29 scanned |
+| `os-layout-lint` | 26/26 | 26/26 |
+| `os-layout-lint-test` | 42/42 | 42/42 |
+| `os-verify-test` | 1066/1066, 31 files | 1066/1066, 31 files |
+| `os-build-test` | 689/689, 25 files | 689/689, 25 files |
+| `os-health-test` | 57/57 | 57/57 |
+| `build-env` | 21 Dockerfile(s) agree | 21 Dockerfile(s) agree |
+
+Not run here, and named rather than implied: everything needing an image, a board
+or an arm64 host — `os-image-*`, `os-verify-cx3576-v2`, `os-factory-root-gate`,
+`os-smoke-negative-test`. Their state is the "What is NOT verified" section
+above, which this commit does not change.
+
 ## Annotations
 
 - 2026-08-25: Plan drafted from the working-tree investigation; decisions
@@ -310,3 +556,12 @@ PLAN-014 is docs — the lane that commit did not have.
   per milestone, at the user's direction; execution dispatched through BKD
   three-tier coordination. M1 (RFCT-107) stays blocked until RFCT-106 lands
   on main.
+- 2026-08-26 11:20: **Campaign closed.** All seven milestone records read
+  `completed`; `status` moves `implementing` → `completed`. The close is **not**
+  a statement that every acceptance clause was discharged — two were not, and
+  "The close, 2026-08-26" above carries them at plan level with their reopen
+  triggers, alongside the provenance ledger (six amendments, one satisfaction,
+  two dispositions, each naming its actor), what was never verified, and the
+  measured gate every deleted file went at. **`docs/plan/index.md` still marks
+  this plan `[-]`**; per the index's own rules only the checkbox marker changes,
+  and that edit was left to the user because this task's scope was this file.
