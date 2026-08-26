@@ -629,13 +629,12 @@ async fn clears_owed_while_silent_are_paid_at_the_next_keepalive() {
 
 /// An extension publishes under its class, not under `ext`.
 ///
-/// An extension carries the name `com.mos.ext.<class>[.<suffix>]`,
-/// so the class is the fourth component where a system service's is the
-/// third. Reading the third unconditionally — which is what this bridge did
-/// before `mos-busname` — puts every extension's items under the class `ext`,
-/// and M5 names that as the defect to test for. The negative assertion is
-/// half the test: the equality alone would not say which wrong answer was
-/// ruled out.
+/// An extension carries the name `com.mos.ext.<class>[.<suffix>]`, so the
+/// class is the fourth component where a system service's is the third.
+/// Reading the third unconditionally puts every extension's items under the
+/// class `ext`, which is the wrong answer this test rules out. The negative
+/// assertion is half the test: the equality alone would not say which wrong
+/// answer was ruled out.
 #[tokio::test]
 async fn an_extension_publishes_under_its_class_and_never_under_ext() {
     let class = topic::class_of(EXTENSION_SERVICE).expect("a com.mos.* bus name");

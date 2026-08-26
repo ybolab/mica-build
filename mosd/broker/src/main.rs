@@ -162,8 +162,8 @@ fn broker_config(listen: SocketAddr, auth: Option<HashMap<String, String>>) -> r
     //
     // v4 is the half that has to survive: the only client in the image is
     // mos-mqttd, which connects through rumqttc's top-level `AsyncClient`, and
-    // that is the 3.1.1 surface. On a boot where v5 won the race the bridge
-    // could not reach the broker at all.
+    // that is the 3.1.1 surface. On a boot where v5 wins the race the bridge
+    // cannot reach the broker at all.
     //
     // There is also nowhere to put a second listener: `mqtt.listen` in the
     // settings model carries one address and one port by design.
@@ -228,7 +228,7 @@ mod tests {
         SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), port)
     }
 
-    /// The regression test for the defect this file was rewritten to fix.
+    /// Exactly one listener, asserted on the VALUE.
     ///
     /// rumqttd runs `v4` and `v5` as separate servers that each `bind()` for
     /// themselves, so configuring both on one address means one of them dies

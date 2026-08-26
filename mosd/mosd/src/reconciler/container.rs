@@ -166,22 +166,20 @@ impl<C: UnitControl> ContainerReconciler<C> {
         self.control.daemon_reload().await?;
         tracing::info!("container: daemon-reload returned");
 
-        // AND THEN START THEM, which is the step whose absence made the switch
-        // do nothing at all.
+        // AND THEN START THEM. Without this step the switch does nothing at
+        // all: a daemon-reload re-runs Quadlet, which writes the unit AND --
+        // when the .container file has an [Install] section -- the .wants
+        // symlink saying it should be running, but systemd does not act on a
+        // symlink that appeared during a reload. It starts wanted units when
+        // the target is started, and multi-user.target is reached long before
+        // mosd runs. The units then exist, are marked as wanted, and sit
+        // inactive: the bind mounted, the reconciler reporting success, and no
+        // container ever running.
         //
-        // A daemon-reload re-runs Quadlet, which writes the unit AND -- when
-        // the .container file has an [Install] section -- the .wants symlink
-        // that says it should be running. systemd does not act on a symlink
-        // that appeared during a reload: it starts wanted units when the
-        // target is started, and multi-user.target was reached long before
-        // mosd ran. So the units existed, were marked as wanted, and sat
-        // inactive. Measured in QEMU: the bind mounted, the reconciler
-        // reported success, and no container ever ran.
-        //
-        // This is not orchestration. The integrator wrote
-        // `WantedBy=`, Quadlet already acted on it; mos is making an
-        // instruction that was given take effect, not deciding anything about
-        // what should run or in what order.
+        // This is not orchestration. The integrator wrote `WantedBy=` and
+        // Quadlet already acted on it; mos is making an instruction that was
+        // given take effect, not deciding anything about what should run or in
+        // what order.
         let mut started = Vec::new();
         let generated = self.generated_units();
         tracing::info!(count = generated.len(), units = ?generated, "container: units Quadlet generated");

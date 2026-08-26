@@ -107,14 +107,13 @@ impl Store {
     /// **A document from a NEWER schema loads tolerantly instead of failing**
     /// (`docs/design/api.md` §10.3 item 5; `docs/design/mosd.md` §5.2). This
     /// is the A/B rollback path: the other slot ran a newer mosd, wrote its
-    /// schema to STATE, and then this slot was rolled back to. The old code
-    /// refused such a document, mosd propagated the error and exited, and
-    /// under `Restart=on-failure` the rolled-back-to slot became a crash
-    /// loop — which also fails that slot's health gate, so a rollback whose
-    /// whole point was reaching a working slot instead produced a device with
-    /// no confirmable slot at all. The down-migrations cannot help here by
-    /// construction: this binary cannot carry the migration a future schema
-    /// will need.
+    /// schema to STATE, and this slot was rolled back to. Refusing such a
+    /// document makes mosd propagate the error and exit, and under
+    /// `Restart=on-failure` the rolled-back-to slot is then a crash loop —
+    /// which also fails that slot's health gate, so a rollback whose whole
+    /// point is reaching a working slot produces a device with no confirmable
+    /// slot at all. The down-migrations cannot help here by construction: this
+    /// binary cannot carry the migration a future schema will need.
     ///
     /// What "tolerantly" means is exactly what `mosd.md` §5.2 already defines
     /// a rollback to cost: **keys this schema does not know are dropped, and
