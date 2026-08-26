@@ -14,10 +14,20 @@
 #     refuses to run otherwise -- its whole point is dropping to uid 65534.
 #   - a docker daemon reachable by the job user, with `--privileged`
 #     containers permitted (os-repart-test attaches loop devices) and
-#     `docker buildx` available (the BSP builds are buildx builds; linux/arm64
-#     emulation is NOT required on the host -- os/rootfs/build-v2.sh creates a
-#     docker-container builder with bundled QEMU when the host builder lacks
-#     the platform).
+#     `docker buildx` available (the BSP builds are buildx builds).
+#   - linux/arm64 emulation ON THE HOST, for the cx3576 lane:
+#       docker run --privileged --rm tonistiigi/binfmt --install arm64
+#     This line USED TO SAY the opposite -- that host emulation was not
+#     required, because os/rootfs/build-v2.sh created a docker-container
+#     builder with bundled QEMU when the host builder lacked the platform.
+#     RFCT-111 (PLAN-014 M5b) made the rootfs a CHAIN of one Dockerfile per
+#     stage, each `FROM` the local image tag the previous one was written to,
+#     and a docker-container builder cannot resolve a local tag -- measured, it
+#     reports "pull access denied" about a registry for an image that is
+#     present. build-v2.sh now uses the `default` docker-driver builder and
+#     refuses up front, naming the binfmt command, if it cannot reach the
+#     platform. NOT VERIFIED ON A RUNNER: no arm64-capable host was available
+#     to RFCT-111 M5b, so this is the requirement as analysed, not as observed.
 #   - the daemon must be able to bind-mount paths the job writes (the
 #     mkimage-v2 selftest points TMPDIR into the workspace for exactly this;
 #     a rootless daemon in a different mount namespace fails its visible-
@@ -186,9 +196,10 @@ jobs:
       - name: make cx3576-uboot-mos
         run: make cx3576-uboot-mos
 
-      # rootfs (squashfs + dm-verity, built for linux/arm64 -- build-v2.sh
-      # provisions its own emulating builder when the host lacks the
-      # platform) and the eleven-partition A/B image around it.
+      # rootfs (squashfs + dm-verity, built for linux/arm64 -- this needs host
+      # binfmt since RFCT-111 M5b; see the preflight note at the top of this
+      # file for what changed and why) and the eleven-partition A/B image
+      # around it.
       - name: make os-image-cx3576-v2
         run: make os-image-cx3576-v2
 

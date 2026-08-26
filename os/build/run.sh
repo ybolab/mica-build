@@ -60,15 +60,24 @@ done
 usage() {
     cat <<'USAGE'
 usage: bash os/build/run.sh [--help] [bun-test-args...]
+       bash os/build/run.sh --build-rootfs [driver-args...]
        bash os/build/run.sh --mkimage-v2 [assembler-args...]
 
 Installs the dev dependencies if they are missing, typechecks src/, then runs
 the suite. Any extra arguments are passed to `bun test` (a filename filter, for
 example). Every step must pass; nothing here skips.
 
+With --build-rootfs FIRST, it builds the os/rootfs stage chain instead of the
+suite -- one Dockerfile per stage from os/rootfs/stages/, each FROM the local
+image tag the previous one was written to. os/rootfs/build-v2.sh calls it with
+the build arguments it computed; try --build-rootfs --help. Same install, same
+typecheck, same bun; only the last step differs. The flag has to come first so
+that it can never be mistaken for a `bun test` filter.
+
 With --mkimage-v2 FIRST, it assembles the cx3576 image instead -- the
 TypeScript port of os/mkimage-v2.sh (PLAN-014 M6b). Its remaining arguments are
-the assembler's own; try --mkimage-v2 --help.
+the assembler's own; try --mkimage-v2 --help. The same first-position rule
+applies, for the same reason.
 
 The suite drives the real external toolset -- sgdisk, mtools, dd, mkimage,
 veritysetup, e2fsprogs and rauc. Each of those runs on the host when the host
@@ -84,16 +93,29 @@ environment:
 USAGE
 }
 
-# --mkimage-v2 is a MODE, not a filter, so it is recognised only in first
-# position -- os/verify/run.sh's rule, for the reason it records: anywhere else
-# the flag would be forwarded to `bun test`, which ignores an unknown option,
-# runs the whole suite and exits 0. A request to assemble an image would be
-# answered by a green suite about something else entirely.
+# --build-rootfs and --mkimage-v2 are MODES, not filters, so each is recognised
+# only in first position. os/verify/run.sh learned this from the failing side: a
+# mode flag forwarded to `bun test` is ignored by it -- an unknown option does
+# not stop the run -- and the suite then reports a green that is about something
+# else entirely. A request to build a rootfs, or to assemble an image, answered
+# by a passing test suite.
+#
+# Two modes rather than one, and they stay two: they arrived from different
+# milestones (M5b and M6b) and share only the preamble above and run_bun below.
+# Nothing about either is a version of the other.
 MODE=suite
 case "${1:-}" in
 --help | -h) usage; exit 0 ;;
+--build-rootfs) MODE=build-rootfs; shift ;;
 --mkimage-v2) MODE=mkimage-v2; shift ;;
 esac
+for arg in "$@"; do
+    case "${arg}" in --build-rootfs) ;; *) continue ;; esac
+    echo "error: --build-rootfs has to be the FIRST argument; here it came after '$1'." >&2
+    echo "       Anywhere else it would be forwarded to \`bun test\`, which ignores it and" >&2
+    echo "       reports a green suite in answer to a request for something else." >&2
+    exit 1
+done
 
 for arg in "$@"; do
     case "${arg}" in --mkimage-v2) ;; *) continue ;; esac
@@ -242,6 +264,32 @@ else
     }
 fi
 
+# THE ONE MODE THE CONTAINER ROUTE CANNOT CARRY, and not for the reason
+# os/verify's --parity cannot: THAT image has no docker client at all, and this
+# one is given the client and the daemon socket precisely so its toolbox can
+# start sibling containers. What it is not given is `docker buildx`, which is a
+# CLI PLUGIN rather than a subcommand -- it lives in /usr/lib/docker/cli-plugins
+# on this host and that directory is not mounted. Driven, not assumed: with the
+# client and socket mounted and MOS_BUILD_DOCKER set, the container answers
+#
+#   docker: unknown command: docker buildx
+#
+# Mounting the plugin directory too would close it, and that is a decision
+# rather than a line: it puts a second host binary inside the pinned image, and
+# the pin exists so that what runs is a recorded value. Left open and named,
+# because --build-rootfs is reached from os/rootfs/build-v2.sh, which needs
+# docker on the host anyway -- so what this asks for on top is bun.
+if [ "${MODE}" = build-rootfs ] && [ "${ROUTE}" = container ]; then
+    echo "error: --build-rootfs needs a bun on THIS host, and there is none (${WHY})." >&2
+    echo "       The suite runs in the pinned bun container; this mode cannot, because it drives" >&2
+    echo "       \`docker buildx\` once per stage and buildx is a CLI PLUGIN, not a subcommand." >&2
+    echo "       ${DOCKER} and the daemon socket are both mounted into that image and work there;" >&2
+    echo "       the plugin directory (/usr/lib/docker/cli-plugins on this host) is not, so the" >&2
+    echo "       container answers 'docker: unknown command: docker buildx'." >&2
+    echo "       Install bun, or set MOS_BUILD_BUN to one." >&2
+    exit 1
+fi
+
 run_bun() {
     # The seam. Everything above and below passes an argv and reads a status,
     # and neither can tell which of the two routes answered.
@@ -280,12 +328,31 @@ fi
 echo "os/build: typecheck"
 run_bun run typecheck
 
+# --- the rootfs stage chain --------------------------------------------------
+# No vacuity guard, and this is the one mode where that needs no argument: the
+# driver's own auditChain refuses a stages directory holding no Dockerfile and a
+# chain of exactly one, so "built nothing and exited 0" is a failure before any
+# docker runs. src/stages.test.ts drives both from the failing side.
+#
+if [ "${MODE}" = build-rootfs ]; then
+    echo "os/build: os/rootfs stage chain"
+    rc=0
+    run_bun run src/stages-cli.ts "$@" || rc=$?
+    exit "${rc}"
+fi
+
 # --- the assembler -----------------------------------------------------------
-# No vacuity guard here, and it needs none: this mode produces a FILE, and
-# src/mkimage-v2.ts reads the loader back out of it before it will rename it into
-# place. There is no shape of "ran and asserted nothing" available -- the failure
-# mode a count guards against elsewhere is a suite that declared no tests, and
-# this declares no tests at all.
+# No vacuity guard here either, and for its own reason: this mode produces a
+# FILE, and src/mkimage-v2.ts reads the loader back out of it before it will
+# rename it into place. There is no shape of "ran and asserted nothing"
+# available -- the failure a count guards against elsewhere is a suite that
+# declared no tests, and this declares no tests at all.
+#
+# And no container-route refusal, unlike --build-rootfs above: this mode needs
+# docker, which run.sh already asserts for every mode, but not `docker buildx`.
+# The toolbox starts sibling containers through the mounted client and socket,
+# which is exactly what the pinned bun image is given. Widening that refusal to
+# cover both modes would refuse a run that works.
 if [ "${MODE}" = mkimage-v2 ]; then
     echo "os/build: assembling the cx3576 image"
     rc=0

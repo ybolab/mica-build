@@ -20,7 +20,7 @@
 
 import { existsSync, mkdirSync, readdirSync } from 'node:fs'
 import { isAbsolute, join, resolve } from 'node:path'
-import { BOARDS_DIR, boardEnvPath, OS_DIR, REPO_ROOT } from './paths.ts'
+import { BOARDS_DIR, boardEnvPath, OS_DIR, REPO_ROOT, requireShippedBoards } from './paths.ts'
 import { loadBoard, type Board } from './board.ts'
 import { CHECKS, checksFor, createImageContext, runChecks, type CheckCase } from './checks.ts'
 import { diffParity, formatReport, parseShellRun, type ParityReport } from './parity.ts'
@@ -28,7 +28,11 @@ import { chooseRoute, createToolRuntime, missingHostTools, type ToolRoute, type 
 import { probeImage } from './probe.ts'
 
 const SHELL_VERIFIER = join(OS_DIR, 'verify-image-v2.sh')
-const SHIPPED_BOARDS = ['cx3576', 'x64'] as const
+// Every board under os/boards/, read off the tree rather than written down --
+// the same defect lint.ts carried: a board added to os/boards/ and not to a
+// literal is a board `make os-verify-parity` never opens, and the run is green
+// for having covered less. requireShippedBoards refuses an empty answer, which
+// here would mean a parity run that compared nothing and reported no divergence.
 
 interface Options {
   boards: string[]
@@ -92,7 +96,7 @@ function parseArgs(argv: readonly string[]): Options {
         throw new Error(`unknown option '${arg}'.\n\n${usage()}`)
     }
   }
-  if (options.boards.length === 0) options.boards = [...SHIPPED_BOARDS]
+  if (options.boards.length === 0) options.boards = requireShippedBoards()
   if (options.image !== undefined && options.boards.length !== 1) {
     throw new Error(
       `--image names one file and this run covers ${options.boards.length} boards. One image cannot `
@@ -274,8 +278,15 @@ async function main(): Promise<number> {
   }
 
   if (options.json !== undefined) {
-    await Bun.write(options.json, `${JSON.stringify(reports, null, 2)}\n`)
-    console.log(`os/verify: diff written to ${options.json}`)
+    // Reported as the ABSOLUTE path, always. run.sh absolutises this argument
+    // before bun ever sees it -- it is the only place the caller's cwd still
+    // exists, because run_bun cds into the package -- but a reader who invoked
+    // this file directly is owed the same. Echoing back the relative string is
+    // what made a diff written to the wrong directory invisible: the message
+    // named a path, the caller could not `cat` it, and nothing said why.
+    const at = resolve(process.cwd(), options.json)
+    await Bun.write(at, `${JSON.stringify(reports, null, 2)}\n`)
+    console.log(`os/verify: diff written to ${at}`)
   }
 
   // The summary a reader scrolls to. It leads with what is UNCLAIMED, because

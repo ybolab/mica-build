@@ -2,7 +2,7 @@
 # Assert the trust bundle copied from the certs stage arrived whole, and that
 # the openssl CLI did not come with it.
 #
-# Called from os/rootfs/Dockerfile.v2 (rootfs stage), where the reasoning lives.
+# Called from os/rootfs/stages/10-base.Dockerfile (rootfs stage), where the reasoning lives.
 
 set -eu
 test -s /etc/ssl/certs/ca-certificates.crt ||

@@ -1,7 +1,7 @@
 #!/bin/sh
 # Validate the image profile and write /usr/lib/mos/profile.conf.
 #
-# Called from os/rootfs/Dockerfile.v2 (rootfs stage), where the reasoning lives.
+# Called from os/rootfs/stages/10-base.Dockerfile (rootfs stage), where the reasoning lives.
 # Build arguments read from the environment: MOS_PROFILE.
 
 set -eu

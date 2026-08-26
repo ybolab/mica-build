@@ -159,13 +159,25 @@ hostname as long as `/etc/bluetooth/main.conf` does not pin one.
 
 # Layout v2 — squashfs + dm-verity rootfs (PLAN-010 M4)
 
-`build-v2.sh` / `Dockerfile.v2` / `scripts/` / `overlay-v2/` are the build. The
+`build-v2.sh` / `stages/` / `scripts/` / `overlay-v2/` are the build. The
 design record is `docs/design/ro-root.md` — read it before changing anything
 here.
 
+## The build is a chain: `stages/`
+
+There is no single `Dockerfile.v2` any more. `stages/` holds one Dockerfile per
+stage — `10-base`, `20-install`, `90-pack`, and `30-40-unsplit` until M5c and
+M5d cut it — built in numeric order, each `FROM` the local image tag the
+previous one was written to. `build-v2.sh` still stages the context and computes
+every argument; sequencing is `os/build/run.sh --build-rootfs`.
+
+`stages/README.md` is the file to read first: what the chain is, which stage
+holds what, the one reordering the cut required and why, and the measurement
+that the builder must use the `docker` driver.
+
 ## Where the shell is: `scripts/`
 
-`Dockerfile.v2` holds almost no shell. Every `RUN` body longer than one command
+The stage files hold almost no shell. Every `RUN` body longer than one command
 is a file in `scripts/`, reached by a bind mount that leaves nothing in the
 image:
 
@@ -176,17 +188,19 @@ RUN --mount=type=bind,source=os/rootfs/scripts,target=/mos-scripts \
 
 Build arguments still arrive through the environment, the way they always did,
 so the scripts read `BOARD_RADIOS`, `WITH_CONTAINERS`, `MOS_ARCH` and the rest
-unchanged. The package lists and the single-command `RUN`s stayed in the
-Dockerfile: a stage's package set *is* the image, and a one-line `RUN` gains
-nothing from a hop.
+unchanged. The package lists and the single-command `RUN`s stayed in the stage
+files: a stage's package set *is* the image, and a one-line `RUN` gains nothing
+from a hop. `ARG` is per stage and now also per *file*, so an argument a stage's
+`RUN`s read must be declared in that stage's file — `BOARD_RADIOS` is declared
+twice for that reason.
 
 `scripts/README.md` has the rest — why a mount and not a `COPY`, why these files
 must stay POSIX `sh`, and how to check that a change to one of them is the
 refactor it claims to be.
 
-RFCT-111 (PLAN-014 M5) did this, so that M5 can split `Dockerfile.v2` into one
+RFCT-111 M5a did this, so that M5b could split the single file into one
 Dockerfile per stage: a stage boundary can only be drawn through shell that is
-addressable.
+addressable. M5b then did the split.
 
 ## Build
 
@@ -198,10 +212,19 @@ BOARD_DIR=/srv/ai/mos/board/cx3576 make os-image-cx3576-v2    # rootfs + full v2
 ```
 
 On x86 hosts, arm64 emulation comes from binfmt
-(`docker run --privileged --rm tonistiigi/binfmt --install arm64`). If the
-current builder still lacks linux/arm64 (e.g. host binfmt registration is
-unavailable), `build-v2.sh` automatically falls back to a docker-container
-builder named `mos-arm64`, whose buildkit image bundles its own QEMU emulators.
+(`docker run --privileged --rm tonistiigi/binfmt --install arm64`), and since
+RFCT-111 M5b it is **required** for a cross build rather than optional.
+
+What stood here said `build-v2.sh` falls back to a docker-container builder
+whose buildkit image bundles QEMU, so host binfmt was not needed. That fallback
+is gone, and the reason is measured: the chain resolves `FROM ${MOS_STAGE_PREV}`
+against the **local docker image store**, and a `docker-container` builder
+cannot read it — handed a tag that is present it answers `pull access denied,
+repository does not exist`, about a registry. `build-v2.sh` now selects the
+`default` (docker-driver) builder and refuses up front, with the `binfmt`
+command, if it cannot reach the target platform. `stages/README.md` records the
+measurement; `.gitea/workflows/privileged.yml` relied on the old fallback and
+its note says so.
 
 Outputs to `_out/cx3576/`, all consumed by `os/mkimage-v2.sh`:
 
@@ -213,7 +236,7 @@ Outputs to `_out/cx3576/`, all consumed by `os/mkimage-v2.sh`:
 | `rootfs-report-v2.txt` | package list, installed size, setuid/setgid inventory, file capabilities |
 
 Every layout constant is read from `os/boards/cx3576/board.env`; none is duplicated
-in `build-v2.sh`, `Dockerfile.v2` or the overlay. The board console/storage
+in `build-v2.sh`, `stages/` or the overlay. The board console/storage
 cmdline fragment (`console=ttyFIQ0,… earlycon=… net.ifnames=0`) is a board fact
 too and lives there as `BOARD_CMDLINE_ARGS`, moved out of `build-v2.sh` when
 x64 became the second board to need a v2 image.
@@ -287,8 +310,8 @@ above and apply identically here) **plus**:
   passes. One line to revert if the size budget is ever revisited.
 
 Deliberately **not** added: `squashfs-tools` and `cryptsetup-bin`. Packing the
-root is a build-stage job (they are installed in `Dockerfile.v2`'s pack stage
-only), and the kernel opens the verity device straight from `dm-mod.create=`
+root is a build-stage job (they are installed in `stages/90-pack.Dockerfile`'s
+pack stage only), and the kernel opens the verity device straight from `dm-mod.create=`
 with no userspace tool involved.
 
 Installed size: **217 MB against the 400 MB budget** (v1 is 204 MB). rauc,
@@ -333,7 +356,7 @@ explained in `docs/design/ro-root.md`.
 
 ## Board hardware init — the enable list is enumerated, not restated
 
-`Dockerfile.v2` installs `hwinit-*`, `*.service` **and** `*.rules` from
+`scripts/hwinit-install.sh` installs `hwinit-*`, `*.service` **and** `*.rules` from
 `os/boards/cx3576/hwinit/`, and derives the enable list by iterating the units
 that are actually present:
 
@@ -375,7 +398,7 @@ and the file is present.
 **"Zero extra packages" was true on bookworm and is not on trixie**, which is
 a fact worth stating rather than quietly editing: bookworm shipped
 `systemd-repart` inside the `systemd` package, trixie splits it into a package
-of its own. `os/rootfs/Dockerfile.v2` names it in the install list because of
+of its own. `os/rootfs/stages/10-base.Dockerfile` names it in the install list because of
 that, and `os/verify-image-v2.sh` asserts the enablement symlink. The failure
 if it were missing announces nothing — the device boots and DATA simply never
 grows past the 64 MiB the assembler creates.
@@ -439,10 +462,11 @@ hash on every cold build; `mos-seed-state` generates them per device on first
 boot instead.
 
 `cache-hot` is doing real work in that sentence and RFCT-111 measured how much.
-**A cold x64 build does not reproduce itself.** Three cold builds — two of one
-unmodified `Dockerfile.v2`, one of another — produced three different
-`rootfs-verity.img` sha256s, and in every pairing the differing set was the same
-six of 9,241 entries:
+**A cold x64 build does not reproduce itself.** M5a took three cold builds; M5b
+took four more of the untouched single file — `1b3f5e50…`, `7aad6efd…`,
+`55cf38f3…`, `af841f4f…` — and every one of the seven produced a different
+`rootfs-verity.img` sha256. In every pairing the differing set was the same six
+of 9,241 entries:
 
 | Entry | Why it moves |
 |---|---|
@@ -457,14 +481,77 @@ They survive because the package-manager purge takes `/var/lib/dpkg` and
 `/usr/share/factory/var` whole. Removing them would change image content, which
 is outside PLAN-014's scope; this is recorded, not fixed.
 
-**What this means for a byte-identity gate.** Changing the Dockerfile
-necessarily invalidates the layer cache, so "byte-identical before and after"
-cannot be measured cache-hot — and measured cold it fails for the six reasons
-above whether or not anything changed. A gate that compares sha256 across a
-build change is measuring the clock. The gate that works is the one RFCT-111
-used: extract both images and `diff -r` the trees, then check that the differing
-set is no larger than the control's, where the control is two cold builds of the
-*unmodified* file.
+**What this means for a byte-identity gate.** Changing the build necessarily
+invalidates the layer cache, so "byte-identical before and after" cannot be
+measured cache-hot — and measured cold it fails for the six reasons above
+whether or not anything changed. A gate that compares sha256 across a build
+change is measuring the clock. The gate that works: extract both images and
+`diff -r --no-dereference` the trees, then check that the differing set is no
+larger than the control's, where the control is two cold builds of the
+*unmodified* file. `os/build/run.sh --build-rootfs --no-cache` exists so the
+subject side can be cold without pruning the daemon's cache out from under
+every other build on the machine.
+
+### A SEVENTH ENTRY THE SIX-ENTRY CONTROL CANNOT SEE: the build DATE
+
+M5b's control builds straddled midnight UTC and turned up an entry M5a's could
+not, because both of M5a's ran on one day. Two builds on **different days**
+also differ in
+
+| Entry | What differs |
+|---|---|
+| `/usr/share/factory/etc/shadow` | `systemd-network`, `messagebus`, `systemd-resolve` and `sshd` carry LAST-CHANGE `20690` on 2026-08-25 and `20691` on 2026-08-26 |
+| `/etc/shadow-` | the same four, plus `mos`'s own pre-`chage` row, which the backup keeps |
+
+This is the exact failure `chage -d 2020-01-01` exists to prevent, and the
+comments on the three mos accounts say so outright: *"useradd stamps TODAY into
+it, which would make the packed rootfs — and therefore its dm-verity root hash
+— differ on every build day for no content reason at all."* The pinning covers
+the three accounts this build creates. It does not cover the accounts Debian's
+own package postinsts create, and it does not cover the `-` backup files, which
+snapshot the state **before** `chage` ran.
+
+So the packed root, and its verity root hash, depend on the calendar day.
+Reported, not fixed: `/etc/shadow-` and `/etc/passwd-` are `useradd`'s
+pre-modification backups, unreadable and unwritable on a read-only verity root
+and read by nothing in the image, so removing them or pinning their dates is an
+image content change and outside PLAN-014's scope. A gate that must compare two
+builds should run them on the same day, or strip these two files.
+
+### RFCT-111 M5b: the stage split, measured
+
+The chain (`stages/`) against the single file it replaced, both built cold on
+one day, x64:
+
+| | entries |
+|---|---|
+| control — two cold builds of the unmodified single file | **6** |
+| subject — unmodified single file vs the chain | **14** |
+| beyond the control | **8**, every one in the account family |
+
+The eight are `/etc/passwd`, `/etc/group`, `/etc/gshadow`,
+`/usr/share/factory/etc/shadow` and the four `-` backups. They are the price of
+`account-mos.sh` moving into `10-base` while the two MQTT service accounts stay
+with the feature material, and they are semantically inert — which was proved
+rather than asserted:
+
+- the four live files are **identical as sets**; `mos` only changes line
+  position, and every uid, gid, shell, home and hash is unchanged.
+- the four `-` backups differ by **exactly one entry**: `useradd` snapshots the
+  file before each change, so the backup now holds the state before
+  `mos-mqtt-broker` (which includes `mos`) instead of the state before `mos`.
+- `unsquashfs -lln` over both images is identical for mode, uid, gid and path
+  on all 9,241 entries; the only size changes are these files and the initrd.
+
+**The reorder is not optional.** The floor's operator account cannot come after
+a feature's service accounts and still be the floor, so no arrangement of the
+stage vocabulary preserves that order. RFCT-111's acceptance anticipated this —
+"byte-identical **where achievable**; if apt-layer reordering makes that
+unattainable, the fallback gate is full verifier parity plus an explicitly
+anchored new-baseline commit". This is that anchor, and the parity half was run:
+`MOS_BOARD=x64 bash os/verify-image-v2.sh` on an image assembled from a
+chain-built rootfs reports **`RESULT: PASS (290/290 checks, 22 skipped)`**, the
+same count as before the split.
 
 Also cold-build-dependent, and now closed: the byte layout used to depend on
 whichever `squashfs-tools` and `cryptsetup` came out of a floating

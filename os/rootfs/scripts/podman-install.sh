@@ -1,7 +1,7 @@
 #!/bin/sh
 # Install the seven self-built container-engine binaries and the Quadlet generator.
 #
-# Called from os/rootfs/Dockerfile.v2 (rootfs stage), where the reasoning lives.
+# Called from os/rootfs/stages/30-40-unsplit.Dockerfile, where the reasoning lives.
 # Build arguments read from the environment: WITH_CONTAINERS.
 
 if [ "$WITH_CONTAINERS" != "1" ]; then rm -rf /tmp/podman; exit 0; fi

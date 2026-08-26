@@ -1,7 +1,7 @@
 #!/bin/sh
 # Squash the root, with every knob that would otherwise vary between builds pinned.
 #
-# Called from os/rootfs/Dockerfile.v2 (pack stage), where the reasoning lives.
+# Called from os/rootfs/stages/90-pack.Dockerfile (pack stage), where the reasoning lives.
 # Build arguments read from the environment: SQUASHFS_TIME.
 
 set -eu

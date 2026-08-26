@@ -1,16 +1,18 @@
-# os/rootfs/scripts — the shell that used to live inside `Dockerfile.v2`
+# os/rootfs/scripts — the shell that used to live inside the Dockerfile
 
-Every `RUN` body in `../Dockerfile.v2` longer than one command is a file here.
-The Dockerfile reaches each one the same way:
+Every `RUN` body in `../stages/*.Dockerfile` longer than one command is a file
+here. Each stage file reaches its own the same way:
 
 ```dockerfile
 RUN --mount=type=bind,source=os/rootfs/scripts,target=/mos-scripts \
     sh /mos-scripts/<name>.sh
 ```
 
-RFCT-111 (PLAN-014 M5) extracted them. The point is M5b: `Dockerfile.v2` splits
-into one Dockerfile per stage, and a stage boundary can only be drawn through
-shell that is addressable. These files are what M5b distributes.
+RFCT-111 M5a extracted them from the single `Dockerfile.v2`. The point was M5b:
+that file splits into one Dockerfile per stage, and a stage boundary can only be
+drawn through shell that is addressable. M5b has since distributed them — every
+file below names its stage in its own header, and `../stages/README.md` says
+which stage holds what.
 
 ## Why a bind mount and not a `COPY`
 
@@ -19,6 +21,11 @@ duration of its `RUN` and leaves nothing behind — neither the files nor the
 `/mos-scripts` directory. That is what makes the extraction invisible in the
 packed root, and it was measured, not assumed: x64 was built before and after
 and `rootfs-verity.img` had the same sha256.
+
+That measurement was cache-hot, which is the only way it could be made. M5b then
+measured that a **cold** x64 build does not reproduce itself at all — two cold
+builds of the untouched file gave `1b3f5e50…` and `7aad6efd…` — so the gate for
+a change here is the content diff recorded in `../README.md`, never a hash.
 
 `/mos-scripts` is at the top level rather than under `/tmp` on purpose. If the
 mount ever did leak, a stray directory at `/` is something `ls /` on the packed
@@ -40,7 +47,7 @@ arguments it reads in its header.
 
 ## Where the comments went
 
-The prose stayed in `Dockerfile.v2`. It explains what the image *is* — which
+The prose stayed in the stage files. It explains what the image *is* — which
 package is in the allowlist and why, which unit is deliberately not enabled —
 and that belongs next to the `FROM`, `ARG` and `COPY` it describes.
 
@@ -61,7 +68,7 @@ apostrophe in one had to be written `'"'"'` to be safe. Neither is needed here.
 ## The seam is the `RUN` boundary
 
 One `RUN` becomes exactly one script. None were merged and none were split.
-`Dockerfile.v2` already chose those boundaries for reasons it documents — the
+The single file already chose those boundaries for reasons it documents — the
 pack stage says outright that it is "in three steps so each can carry its own
 explanation and cache independently" — and re-cutting them would have been a
 second change riding along with the extraction, with nothing to check it
