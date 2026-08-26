@@ -11,10 +11,14 @@ This is PLAN-014's M6a and M6b (RFCT-112), in the shape `os/verify` established
 in M3 — `bun.lock`, `package.json`, `tsconfig.json`, `run.sh`, `src/`. Nothing
 here runs on the device. The image ships no bun.
 
-`os/mkimage-x64.sh` (x64) and `os/update/bundle.sh` are ported in M6c and M6d,
-under the same gate; M6e is the gate that deletes the shell. **`os/mkimage-v2.sh`
-is still here and is not to be edited**: it is the oracle the port is measured
-against, and it stops being one the moment the two are changed together.
+`os/mkimage-x64.sh` (x64) and `os/update/bundle.sh` were ported in M6c and M6d
+under the same gate, and **M6e deleted all four shell files** —
+`os/mkimage-v2.sh`, `os/mkimage-x64.sh`, `os/mkimage-common.sh` and
+`os/update/bundle.sh` — together with the two selftests that drove them. They
+were the oracles; the gate was re-taken on the tree that ships immediately
+before they went, and it cannot be re-taken now. The hashes below are that
+measurement, and `HARNESS.md` carries the recipes, the live controls and the
+defects the deletion froze.
 
 ## Where the board model comes from, and why it is not here
 
@@ -173,8 +177,8 @@ debugfs's stderr rather than its exit status is the failure signal. The three
 primitives it stands on are wrapped in `src/tools/e2fsprogs.ts`; the free-inode
 parse and the atime/ctime generation are here.
 
-`os/mkimage-common.sh` is **not deleted**: `os/mkimage-x64.sh` still sources it,
-and M6c is the port that frees it.
+`os/mkimage-common.sh` was deleted by M6e along with both assemblers that
+sourced it; this file is the only home its argument has now.
 
 Two claims, both asserted: two filesystems whose seeds differ only in atime and
 ctime come out byte-identical after the pass — **and differ without it**, which

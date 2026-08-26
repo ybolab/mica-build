@@ -1,7 +1,7 @@
 # Release signing: the production key ceremonies
 
-> **Status:** runbook. RFCT-083 made the tooling accept real keys — `os/update/bundle.sh`
-> honours caller CERT/KEY/KEYRING, `mos-sign verify` demands an out-of-band root,
+> **Status:** runbook. RFCT-083 made the tooling accept real keys — the bundle
+> builder honours caller CERT/KEY/KEYRING, `mos-sign verify` demands an out-of-band root,
 > rollback publication is gated — and then named the remaining step plainly:
 > *owning* production keys is an operational act, not a code change. This
 > document is that act, written down before it is performed, so that when it is
@@ -37,7 +37,7 @@ prevent:
    its sha256, length and dm-verity root hash. The `root` key is offline
    material; `targets`/`snapshot`/`timestamp` are online release-host keys.
    See `update/README.md` for the phase-1 scope.
-2. **The RAUC CMS signature** (`os/update/bundle.sh`, `rauc bundle`): an X.509
+2. **The RAUC CMS signature** (`os/build/src/bundle.ts`, `rauc bundle`): an X.509
    signer certificate, chained to a CA whose certificate is the device-side
    keyring, signs the bundle payload itself. This is what
    `/etc/rauc/system.conf` verifies at install time.
@@ -221,9 +221,9 @@ two years. `signer.key.pem` and `signer.cert.pem` go to the release signing
 host. `ca.cert.pem` is public: it is the keyring, and its sha256 goes in the
 ceremony minutes next to root.json's.
 
-`rauc bundle` takes PEM file paths; there is no HSM/PKCS#11 wiring in
-`os/update/bundle.sh` today, so the signer key is a file on the release host and the
-host's hygiene is part of the trust model. Worth saying rather than implying.
+`rauc bundle` takes PEM file paths; there is no HSM/PKCS#11 wiring in the bundle
+builder today, so the signer key is a file on the release host and the host's
+hygiene is part of the trust model. Worth saying rather than implying.
 
 ### 2.2 Signer reissue
 
@@ -288,7 +288,7 @@ MOS_PROFILE=prod make os-rootfs-cx3576-v2
 CERT=/path/to/signer.cert.pem \
 KEY=/path/to/signer.key.pem \
 KEYRING=/path/to/ca.cert.pem \
-    bash os/update/bundle.sh 1.2.3
+    bash os/build/run.sh --bundle 1.2.3
 
 # 3. Publish into the TUF repository with the online keys. The verity root
 #    hash is the bundle's own (verity-format) root hash as `rauc info`

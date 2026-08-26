@@ -249,7 +249,7 @@ export interface RuntimeRequest {
    * and the repair would be a prefix rewrite: a second path arithmetic, on the
    * one input whose identity the verdict is about. os/verify/run.sh:189 draws
    * the same line for the same reason, and os/tests/mkimage-v2-selftest.sh:292
-   * had it first.
+   * had it first, before PLAN-014 M6e deleted that suite with its assembler.
    */
   readonly readOnly?: readonly string[]
   /** One host directory the tools may WRITE to. Mounted at its own path. */

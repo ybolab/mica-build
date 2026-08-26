@@ -1182,7 +1182,8 @@ does not model.
 
 ## What M6d found in the code under test — reported, not fixed
 
-**`os/update/bundle.sh:294` substitutes with sed, which expands `&`.**
+**`os/update/bundle.sh:289` substitutes with sed, which expands `&`.**
+(M6d wrote `:294`; corrected by counting. M6e records the surviving half.)
 
 ```sh
 sed -e "s|@COMPATIBLE@|${BUNDLE_COMPATIBLE}|g" -e "s|@VERSION@|${BUNDLE_VERSION}|g"
@@ -1207,39 +1208,513 @@ seven runs**, because the staging tree holds a copy of the rootfs slot image and
 of the kernel. Not a defect in the shell — a defect the shell had already
 solved, found by measuring the port against it.
 
-## What M6e needs to delete the shell
+## THE M6e GATE: all four gates re-measured on the tree that ships
 
-- **`os/update/bundle.sh` is NOT deleted**, and neither are `os/mkimage-v2.sh`,
-  `os/mkimage-x64.sh` or `os/mkimage-common.sh`. All four are oracles at this
-  commit.
-- **`make os-bundle-cx3576` still runs `bash os/update/bundle.sh`** and was
-  re-measured green here. The TypeScript entry point is
-  `bash os/build/run.sh --bundle`; giving it the make target is M6e's call, not
-  a change to smuggle into a milestone whose gate is that nothing changed.
-- **`os/update/rauc/render-config.sh` is NOT ported and does not need to be.**
-  `src/bundle-cli.ts` runs `bash …/render-config.sh --check` as a subprocess,
-  exactly as the shell does. That script owns the rendered `system.conf`; it is
-  not one of the three RFCT-112 names.
-- **The x64 bundle branch is ported but NOT gated.** Both branches of
-  `bundle.sh` are in `src/bundle.ts` and the grub half's two refusals are driven
-  from the failing side, but no x64 bundle was built by either implementation:
-  RFCT-112's acceptance says "byte-identical bundles for cx3576", and this
-  worktree has no x64 rootfs to bundle. If M6e wants that comparison it needs an
-  `_out/x64/` carrying `rootfs-verity.{img,env}` and `boot/{vmlinuz,initrd.img}`.
-- **`bundleToolset()`'s tool list grew by five** — `mkfs.vfat`, `truncate`, `cp`,
-  `find`, `touch` — because the port drives them inside the container where the
-  shell drives them inside its own. The PACKAGE list is untouched and is still
-  `os/update/bundle.sh`'s, verbatim.
-- **`mkfs.vfat`'s `-i` is now optional in `src/tools/mtools.ts`.** The two
-  assemblers still pass it and are still checked for eight hex digits; the
-  bundle passes neither a volume id nor a slot label, because its boot payload
-  is installed into whichever slot is inactive and must not carry that slot's
-  FAT identity.
-- `docs/task/index.md` is still unchecked for RFCT-112, and `RFCT-112.md` is
-  still `in progress`. M6e closes both.
-- Re-run all three gates on the tree that ships. The recipes and values are
-  above: `f36bf809…` for the cx3576 image, `bdf340e9…` for x64, and
-  `d7506b62…` (114425856 bytes) for the cx3576 bundle payload.
+RFCT-112's absolute gate, re-derived on the tree that carries the deletion —
+merge of `bkd/kne86l83` (M1–M6d) into `bkd/st1gjg99`, `git status` clean. **This
+measurement cannot be re-run after this commit's successor**, because it is the
+oracles themselves that go, so it is taken here and nothing below is cited from
+a previous milestone.
+
+Inputs are `1w0jf032`'s `_out/{cx3576,x64}/` and `board/cx3576/out/`, `cp -al`'d
+in so the mtimes survive. Two things were checked about them before they were
+trusted, both the traps M6b, M6c and M6d each recorded nearly walking into:
+
+- **the prebuilt images and the prebuilt `.raucb` beside those inputs were
+  deleted, not compared against.** They were produced by older assemblers; the
+  x64 one predates the five determinism controls entirely.
+- **all four shell files `cmp` identical to `1w0jf032`'s**, so the oracle run
+  here is the same program M6d measured.
+
+### Gate 1 — cx3576 image · `f36bf80993583f6b9d097531a8efcd086e9aaaeabc014a367d7543582ecd8bce`
+
+```
+f36bf809…  cx3576-mos-v2-1787725009.img  shell
+f36bf809…  cx3576-mos-v2-1787725029.img  shell        <- the oracle reproduces ITSELF
+f36bf809…  cx3576-mos-v2-1787725042.img  TypeScript
+f36bf809…  cx3576-mos-v2-1787725054.img  TypeScript
+```
+
+### Gate 2 — x64 image · `bdf340e93a553a02ef4c1774dcba78db20520b09fc6faf5c8c76e0cb94575a8f`
+
+```
+bdf340e9…  x64-mos-v2-1787725278.img  shell
+bdf340e9…  x64-mos-v2-1787725304.img  shell
+bdf340e9…  x64-mos-v2-1787725331.img  TypeScript
+bdf340e9…  x64-mos-v2-1787725368.img  TypeScript
+```
+
+### Gate 3 — cx3576 bundle payload · 114425856 bytes · `d7506b6279e6f3643da8938d0be8a025abe01bb1ea10ad57abcd9ad753d86aea`
+
+```
+114425856  d7506b62…  shell        FILE sha256 ff303973…
+114425856  d7506b62…  shell        FILE sha256 f0c991e1…
+114425856  d7506b62…  TypeScript   FILE sha256 42bd670c…
+```
+
+**The three FILE hashes differing is the payload-not-file rule demonstrating
+itself** rather than being asserted. `rauc info`'s bundle `hash` moved on every
+run too — `085f504d…`, `cb0b0963…`, `51a86fea…` — while the per-slot checksums
+did not: `rootfs.img` `05b72468…` and `boot.vfat` `caf90a14…`, identical across
+shell and TypeScript. Do not "improve" this gate into a file hash.
+
+### THE CONTROLS, one per gate, live
+
+A gate that cannot report a difference is not a gate. Each control flips **one
+byte** of an input, runs BOTH implementations over the mutated tree, restores
+the byte and runs both again.
+
+The mutation is performed by the helper below, which **refuses a no-op by name**
+— it hashes before and after and exits 1 if they match, so a control that
+silently changed nothing cannot be mistaken for a control that passed. That
+refusal was itself driven: asked to write `0xe2` over a byte already `0xe2`, it
+printed `mutate: NO-OP -- byte at 4096 was already 0xe2 (0xe2). This is not a
+control.` It also **breaks the hardlink first**; these inputs are `cp -al`'d
+from another worktree on this host and an in-place write would have corrupted
+that worktree's copy as well as this one's.
+
+```sh
+#!/usr/bin/env bash
+# A mutation that is not a mutation asserts nothing while looking exactly like a
+# control, so this refuses a no-op by name. It also BREAKS THE HARDLINK first.
+set -euo pipefail
+f=$1; off=$2; newbyte=$3          # newbyte: two hex digits
+
+before=$(sha256sum "$f" | cut -d' ' -f1)
+mt=$(stat -c %y "$f")
+
+if [ "$(stat -c %h "$f")" -gt 1 ]; then
+    cp -a "$f" "$f.unlink.$$"; mv -f "$f.unlink.$$" "$f"
+    [ "$(stat -c %h "$f")" -eq 1 ] || { echo "mutate: hardlink not broken" >&2; exit 1; }
+    [ "$(sha256sum "$f" | cut -d' ' -f1)" = "$before" ] \
+        || { echo "mutate: breaking the link CHANGED the bytes" >&2; exit 1; }
+fi
+
+old=$(dd if="$f" bs=1 skip="$off" count=1 status=none | od -An -tx1 | tr -d ' \n')
+printf "\\x$newbyte" | dd of="$f" bs=1 seek="$off" count=1 conv=notrunc status=none
+touch -d "$mt" "$f"               # the assemblers read mtimes; the control must not move one
+
+after=$(sha256sum "$f" | cut -d' ' -f1)
+[ "$after" != "$before" ] || {
+    echo "mutate: NO-OP -- byte at $off was already 0x$newbyte (0x$old). This is not a control." >&2
+    exit 1
+}
+echo "mutate: $f @$off  0x$old -> 0x$newbyte   $before -> $after"
+```
+
+The payload digest for the two bundle gates is computed **independently of
+either implementation**, with `os/update/bundle.sh:366`'s own arithmetic, so the
+gate does not read a number one of the things under test printed:
+
+```sh
+n=$(od -An -tu8 -j40 -N8 "$f" | tr -d ' ')      # squashfs bytes_used
+n=$(( (n + 4095) / 4096 * 4096 ))
+head -c "$n" "$f" | sha256sum
+```
+
+It agreed with what the builder printed on **all 15 bundles** built for these
+four gates — 7 cx3576, 8 x64 — and disagreed on none.
+
+| gate | one byte | both implementations move to | restored |
+|---|---|---|---|
+| 1 cx3576 image | `_out/cx3576/rootfs-verity.img` @4096 `0xe2`→`0x01` | `9bdd49e8a899612419512e9b2ac68bfd75143b8a7c8f102a733bd47b419b4976` | back to `f36bf809…` |
+| 2 x64 image | `_out/x64/rootfs-verity.img` @4096 `0x5a`→`0x01` | `2a36e6171abba49bd2d9e2c87d24d35d8572027852fe44c73a76c42f83113512` | back to `bdf340e9…` |
+| 3 cx3576 bundle | `_out/cx3576/rootfs-verity.img` @4096 `0xe2`→`0x01` | `782532ada1d2f50931c6b51b5b6f0cdccb148c74ac1a629d43bbf24440b489c9` | back to `d7506b62…` |
+| 4 x64 bundle | `_out/x64/rootfs-verity.img` @4096 `0x5a`→`0x01` | `1941373d57782523d8c70395b24088f2ff7c9999319ce00aa99f7158c54d72f6` | back to `66bb6dc1…` |
+
+Each restore was `cmp`-verified against the pristine source file, not merely
+re-flipped.
+
+**The difference is confined to the structure that changed, and that is read off
+the image rather than assumed.** `cmp -l` of the good image against the mutated
+one, bucketed into MiB:
+
+```
+cx3576:   1 146              <- rootfs-a, one byte
+x64:      1 257 / 1 769      <- rootfs-a AND rootfs-b, one byte each
+```
+
+Mapped against the layouts (`rootfs-a` at 146 for cx3576; `rootfs-a` at 257 and
+`rootfs-b` at 769 for x64), and **the two boards differing here is the point**:
+cx3576 seeds one rootfs slot at assembly and x64 seeds both, so a control that
+reported the same shape for both would have been measuring nothing about either.
+
+For the two bundle gates the same fact is read a second way, by rauc rather than
+by `sha256sum`: under the mutation `rootfs.img`'s checksum moved in **both**
+implementations while `boot.vfat`'s held in both.
+
+| | rootfs.img | boot.vfat |
+|---|---|---|
+| cx3576, clean | `05b72468…` | `caf90a14…` |
+| cx3576, mutated | `6c5afc49…` **moved** | `caf90a14…` **held** |
+| x64, clean | `9522fba3…` | `394d2e50…` |
+| x64, mutated | `8c69d7a4…` **moved** | `394d2e50…` **held** |
+
+## THE BYTE-IDENTITY GATE: shell against TypeScript, the x64 bundle
+
+**A fourth gate, and it did not exist before this commit.** M6d recorded the x64
+bundle branch as "ported but NOT gated — no x64 bundle was built by either
+implementation", and left M6e the choice of building one. RFCT-112's acceptance
+names cx3576 only, so this is not owed; it is taken because after the deletion
+there is no oracle to take it against, ever.
+
+It was gateable. `1w0jf032`'s `_out/x64/` already carried everything the grub
+branch reads — `rootfs-verity.{img,env}` and `boot/{vmlinuz,initrd.img}` — which
+is precisely the input set M6d named as the thing it lacked.
+
+```sh
+MOS_BOARD=x64 bash os/update/rauc/render-config.sh   # system.conf is per-board
+MOS_BOARD=x64 bash os/update/bundle.sh               # the oracle
+MOS_BOARD=x64 bash os/update/bundle.sh               # again
+bash os/build/run.sh --bundle --board x64            # the port
+bash os/build/run.sh --bundle --board x64
+```
+
+Result — **four bundles, one payload**:
+
+```
+288894976 bytes  66bb6dc1d1bef49485069142b82570ad914e54336dde50cfc6edc2b54320e716  shell
+288894976 bytes  66bb6dc1…                                                          shell
+288894976 bytes  66bb6dc1…                                                          TypeScript
+288894976 bytes  66bb6dc1…                                                          TypeScript
+```
+
+with the bundle-level `hash` moving on all four (`b1d7f403…`, `a374e774…`,
+`d1a12e6c…`, `de72d517…`) exactly as it does for cx3576, and the per-slot
+checksums identical across implementations. The control is row 4 of the table
+above.
+
+**So the grub branch of `src/bundle.ts` is gated against its oracle, rather than
+inheriting the u-boot branch's evidence.** What is still NOT gated is any x64
+bundle *installed* on a machine; this proves the builder, not the update.
+
+`os/rootfs/overlay-v2/etc/rauc/system.conf` is rendered per board and was
+re-rendered back to cx3576 afterwards. It is generated, so `git status` stayed
+clean throughout.
+
+## What the deletion freezes — every defect the port reproduces
+
+Until this commit's successor, every defect below was justified by "it
+reproduces the shell". The shell is the thing being deleted, so that
+justification is what expires here. Each is recorded with its reproduction, and
+**none of them is fixed** — PLAN-014:220-223 puts finding in scope and acting
+out of it.
+
+The distinction the record demands is kept sharply: a defect **deleted along
+with its container** is one that has no remaining site in the tree, and a defect
+that **ships** is one the port carries forward. They are not the same outcome
+and "fixed" describes neither.
+
+### `os/update/bundle.sh:289` renders the manifest with `sed`, which expands `&` — DELETED ALONG WITH ITS CONTAINER
+
+```sh
+sed -e "s|@COMPATIBLE@|${BUNDLE_COMPATIBLE}|g" -e "s|@VERSION@|${BUNDLE_VERSION}|g"
+```
+
+An `&` in a sed replacement expands to the whole match. `BUNDLE_VERSION` cannot
+carry one — `:379` refuses it unless it matches `^[A-Za-z0-9][A-Za-z0-9._+-]*$`.
+**`BUNDLE_COMPATIBLE` has no such guard**: `:394` reads it straight out of the
+rendered `system.conf`. Reproduced:
+
+```
+BUNDLE_COMPATIBLE='mos-a&b'   ->   compatible=mos-a@COMPATIBLE@b
+```
+
+a manifest nobody wrote — and `verify_bundle` at `:334` would then compare its
+read-back against the uncorrupted `BUNDLE_COMPATIBLE` and refuse the bundle
+against a value it had itself corrupted.
+
+This site is **deleted along with its container**. It is not fixed: no change
+was made to it, and it stops existing because the file does.
+
+### …and `src/bundle.ts:448` had the same defect under a different character — FIXED HERE, at both sites
+
+**This corrects M6d's record, and then closes it.** `renderManifest`'s doc
+comment said "The substitutions are LITERAL. sed's are not", and the first half
+was only true of `&`. JavaScript expands `$&`, `` $` ``, `$'`, `$$` and `$n` **in
+the replacement string**, and `String.replaceAll` is not exempt. Measured, same
+template, same harness as above, **before the fix**:
+
+```
+sed  (shell, :289)     mos-a&b    ->  compatible=mos-a@COMPATIBLE@b
+TS   (bundle.ts:448)   mos-a&b    ->  compatible=mos-a&b               <- the & WAS fixed
+TS   (bundle.ts:448)   mos-a$&b   ->  compatible=mos-a@COMPATIBLE@b    <- SAME DEFECT, NEW TRIGGER
+TS   (bundle.ts:448)   mos-a$`b   ->  compatible=mos-acompatible=b
+TS   (bundle.ts:448)   mos-a$'b   ->  compatible=mos-ab
+TS   (bundle.ts:448)   mos-a$$b   ->  compatible=mos-a$b
+```
+
+**The port had not removed the class; it had moved the trigger from `&` to `$`.**
+
+M6e first recorded this as shipping, on the reading that PLAN-014:220-223 put
+acting out of scope. **L2 ruled otherwise and the ruling is right**: `os/build/
+src/bundle.ts` was created by M6d (`eee58ca`, with `020d003` adding its tests)
+and no other subtask has ever touched it — `git log --follow` returns exactly
+those two commits. It is M6's own port, inside M6's own milestone, and the
+exclusion list covers device-side runtime behaviour, image content contracts,
+`board/`, `mosd/` and `test/apid-api` — none of which is `os/build/src/`. §4's
+record-not-fix instruction was about the *shell's* defect, where fixing a file
+about to be deleted is pointless. This is a live defect in code that ships.
+
+**A SECOND SITE, found by sweeping rather than by being told.** Every
+`replaceAll`/`replace` in `os/build/src/` was checked for a non-literal-safe
+replacement. `src/grub-x64.ts:155` had the identical defect:
+
+```ts
+for (const [name, value] of Object.entries(substitutions)) out = out.replaceAll(`@${name}@`, value)
+```
+
+and its doc comment made the same false claim in stronger words — that the
+right-hand side "has no right-hand-side syntax at all". **Its input is freer than
+the bundle's.** `BOARD_CMDLINE_ARGS` is arbitrary board text — a kernel command
+line — where `BUNDLE_COMPATIBLE` is only ever `mos-<board>`. A cmdline containing
+`$&` would have been silently rewritten into the `grub.cfg` that boots the
+machine.
+
+Three other `replace` sites were checked and are correct as written:
+`toolbox.ts:137` (replacement `'\''`, no `$`), `pin-seeded-times.ts:95` (empty
+replacement) and `sgdisk.ts:218` (`'$1'` against a real capture group, which is
+the intended use).
+
+**The fix is a replacer FUNCTION at both sites**, not an escape list:
+
+```ts
+.replaceAll('@COMPATIBLE@', () => options.compatible)
+out.replaceAll(`@${name}@`, () => value)
+```
+
+A function replacement is never scanned for `$` sequences. An escape list
+enumerating `$&`, `` $` ``, `$'`, `$$`, `$n` is a list that can go stale; a
+function cannot.
+
+**Driven from the failing side, and the negative was taken by reverting the fix
+and watching the tests go red** — `src/bundle.test.ts` and
+`src/grub-x64.test.ts`, six cases and five:
+
+```
+bundle.test.ts, fix reverted:   4 fail  ($&, $`, $', $$)
+grub-x64.test.ts, fix reverted: 4 fail  ($&, $`, $', $$)
+```
+
+**Exactly four of six and four of five fail, and the ones that do not are the
+controls.** A bare `&` lands literally in JavaScript either way — it is kept as a
+case because it is the shell's original defect and a future rewrite to a regex
+would break it — and `$1` with no capture group is also literal. A test set where
+*everything* went red would have been failing indiscriminately rather than
+catching this class. There is also an explicit positive control: an ordinary
+`mos-x64`/`0.0.0-dev` renders unchanged, without which a `renderManifest` that
+returned its input untouched would satisfy every case above.
+
+### The fix moves no bytes, and the DEAD ORACLE proves it
+
+The oracle cannot be re-run — it was deleted, correctly, in the commit before
+this one. But **the oracle's OUTPUT is recorded above**, and for a change that
+claims to move no bytes a recorded hash is a sound regression oracle. No shipped
+board can carry a trigger: `render-config.sh:88` sets
+`COMPATIBLE="mos-${LAYOUT_BOARD}"`, both boards render `mos-cx3576`/`mos-x64`,
+and both `BOARD_CMDLINE_ARGS` values are free of `$` and `&` — checked, not
+assumed.
+
+So all four gates were re-run against the fixed tree and **all four are
+unchanged**:
+
+| gate | before the fix | after the fix |
+|---|---|---|
+| cx3576 image | `f36bf809…` | `f36bf809…` |
+| x64 image | `bdf340e9…` | `bdf340e9…` |
+| cx3576 bundle payload | 114425856 `d7506b62…` | 114425856 `d7506b62…` |
+| x64 bundle payload | 288894976 `66bb6dc1…` | 288894976 `66bb6dc1…` |
+
+The x64 image is the load-bearing one for `grub-x64.ts`: the rendered `grub.cfg`
+is written onto the ESP, so a substitution that moved a byte would have moved
+that hash. It did not.
+
+### Four stale `Dockerfile.v2` references in `os/build`'s text — SHIPS
+
+`os/rootfs/Dockerfile.v2` was deleted by M4c/M5b. Four sites in `os/build/src/`
+still name it in the present tense as the thing that runs `veritysetup`:
+
+```
+src/tools/veritysetup.ts:6         "os/rootfs/Dockerfile.v2 pipes it through awk and then asserts test -n"
+src/tools/veritysetup.test.ts:3    "The shape is os/rootfs/Dockerfile.v2's"
+src/tools/veritysetup.test.ts:62   test('the shape os/rootfs/Dockerfile.v2 uses, …')
+src/toolsets.ts:137                "os/rootfs/Dockerfile.v2 formats the hash tree"
+```
+
+The successor is **`os/rootfs/scripts/pack-verity.sh`**, driven from
+`90-pack.Dockerfile`, and it carries the identical shape the comments describe —
+`veritysetup format … | awk '/^Root hash:/ { print $NF }'` followed by
+`test -n "${root_hash}"` (`:17`, `:25`, `:26`). So the comments describe
+something true about a file with a different name. Recorded, not renamed.
+
+`HARNESS.md:331`'s mention is **not** one of these: it names the file in the
+past tense as the thing M4c/M5b deleted, which is correct.
+
+### `os/verify-image-v2.sh:2674`'s stale hwinit comment — MOOT, and confirmed so
+
+M5e deferred this to M6e. M4e deleted `os/verify-image-v2.sh` in `6eadc65`.
+Confirmed by `ls`: the file does not exist. There is nothing to record beyond
+its absence, and it was not gone looking for.
+
+### Two measured facts corrected
+
+**A gate never amends its own acceptance clauses; it may correct measured facts,
+and it must.**
+
+- **The sed site is `os/update/bundle.sh:289`, not `:294`.** `:294` falls inside
+  the comment block below the substitution. Counted, not remembered.
+- **There is no `os-image-x64` make target**, and there never was one. M6c's note
+  below said "`os-image-x64` still runs `bash os/mkimage-x64.sh`" and is now
+  corrected in place;
+  `make -n os-image-x64` answers `No rule to make target 'os-image-x64'`. The
+  Makefile's only x64 rule is the `x64-%` pattern, which refuses BSP builds by
+  name. So the x64 assembler has never had a make target and the deletion takes
+  none away.
+
+### The state of the shell at the moment it was deleted
+
+Recorded because "deleted at parity" is a claim about the oracle's health, not
+only about the port's. Immediately before the deletion, on this tree:
+
+```
+make os-mkimage-v2-test    RESULT: PASS    166 PASS assertions, rc=0
+make os-mkimage-x64-test   RESULT: PASS    PASS=196 FAIL_STATE=0, rc=0
+```
+
+Both figures match the record exactly. The shell was green when it went.
+
+## What M6e did, and what it left
+
+The four oracles are gone: `os/mkimage-v2.sh`, `os/mkimage-x64.sh`,
+`os/mkimage-common.sh`, `os/update/bundle.sh`. So are the two selftests that
+drove them, `os/tests/mkimage-{v2,x64}-selftest.sh`. The gate above was taken
+first, in its own commit, because it cannot be taken again.
+
+**Every target, and what it points at now.** Nothing was left pointing at
+nothing.
+
+| target | before | after |
+|---|---|---|
+| `os-image-cx3576-v2` | `bash os/mkimage-v2.sh` | `bash os/build/run.sh --mkimage-v2` |
+| `os-bundle-cx3576` | `bash os/update/bundle.sh` | `bash os/build/run.sh --bundle` |
+| `os-mkimage-v2-test` | `os/tests/mkimage-v2-selftest.sh` | **REMOVED** |
+| `os-mkimage-x64-test` | `os/tests/mkimage-x64-selftest.sh` | **REMOVED** |
+| *(the x64 assembler)* | *no target, and never had one* | unchanged — `bash os/build/run.sh --mkimage-x64` |
+
+**The two selftests are removed rather than repointed**, which is M4e's
+precedent at `6eadc65` and the right one. A target that still exists and passes
+because nothing is behind it is worse than no target: it reads as coverage from
+the one place people look for coverage. Repointing them would have meant
+rewriting both harnesses around a different invocation — the v2 suite shells out
+to the assembler by path, and the x64 suite SCRAPES the `images.env` key out of
+it with `from.sh --ref <KEY>` on a single line — which is a port, not a repoint,
+and M6b/M6c already did that port into `src/mkimage-{v2,x64}.test.ts`.
+
+**Removal was checked, not asserted.** `make -n os-mkimage-v2-test` and
+`make -n os-mkimage-x64-test` both answer `No rule to make target`. The
+tombstone in the Makefile says what they proved and where each half now lives.
+
+**And the repointing was checked by running it, after the deletion**, which is
+the one thing that makes the table above evidence rather than intent. With all
+four shell files gone from the working tree:
+
+```
+make os-bundle-cx3576         -> 114425856 bytes  d7506b62…    the gate's payload
+bash os/build/run.sh --mkimage-v2  -> f36bf809…                the gate's image
+```
+
+Both are the values the oracle produced an hour earlier, from a tree that no
+longer contains the oracle.
+
+**`make os-image-cx3576-v2` was NOT run end to end, and this is why.** Its first
+line is `bash os/rootfs/build-v2.sh`, which rebuilds the rootfs and overwrites
+`_out/cx3576/rootfs-verity.img` — the input every gate above is measured over.
+Running it would have destroyed the inputs while the evidence was being written.
+Its second line is the one the deletion changed, and that line is the
+`f36bf809…` above. The first line is untouched by M6e.
+
+**`make os-build-test` gained a CI job, and that is not a courtesy.** The step
+that ran `os/tests/mkimage-v2-selftest.sh` in `.gitea/workflows/privileged.yml`
+is REPOINTED to `make os-build-test` rather than deleted, because **that suite
+was in no workflow at all** — `check.yml` runs `os-verify-test` and nothing ran
+`os-build-test`. Removing the step would have taken every assembler assertion
+out of CI at the same commit that deleted the only other place they lived, which
+is the exact opposite of deleting a suite at parity. The repointed step also
+covers the x64 assembler and the bundle builder, which the old one did not.
+
+### One test would have gone vacuous, silently, and was caught
+
+`os/verify/src/tools.test.ts`'s "two files in one directory are one mount"
+named `os/mkimage-common.sh` and `os/mkimage-v2.sh` as its two files.
+`mountDirs()` falls back to `dirname()` for a path that is not there, so after
+the deletion **it would have kept passing** — while asserting nothing about
+files, and having silently become a duplicate of the `a path that is not there
+yields its PARENT` case directly below it.
+
+Measured rather than reasoned about: with one fixture replaced by a ghost and
+the existence check removed, the old shape reports `1 pass`. With the existence
+check in place it reports `1 fail` at the `existsSync` line. The test now names
+two files in `os/update/rauc/` and **asserts they exist** before asserting what
+they mount to, so the next deletion that hits it fails loudly instead of
+quietly.
+
+This is the same failure mode as a make target that passes with nothing behind
+it, one layer down, and it is worth stating that `os/` now contains **no
+top-level files at all** — every one of them was an oracle.
+
+### What was NOT chased, deliberately
+
+Roughly 150 comments in `os/build/src/` cite `os/mkimage-v2.sh:NNN`,
+`os/mkimage-x64.sh:NNN` and `os/update/bundle.sh:NNN` as the provenance of a
+line of TypeScript. **Those are left alone.** They are the record of what was
+ported from where, they are true statements about a file that existed at a
+commit in this repository's history, and rewriting them would erase the only
+audit trail the port has while touching every file in the package. What was
+repointed instead is the strictly smaller set that would MISLEAD:
+
+- anything **executable** — the two Makefile targets, the CI step;
+- **remedies** that told a reader to run a script that is gone —
+  `os/tools/qemu-run.sh:53`, which said `bash os/mkimage-x64.sh` and now says
+  `bash os/build/run.sh --mkimage-x64`;
+- **present-tense claims about the tree's shape** that the deletion made false —
+  `src/pin-seeded-times.ts:54` ("`os/mkimage-common.sh` is NOT deleted by this
+  milestone"), `os/build-env/from.sh:23` (three shipping-path `docker run`
+  sites), `os/build/run.sh:95` ("because `os/update/bundle.sh` takes one");
+- **doc citations**, which PLAN-014's scope names explicitly:
+  `docs/design/release-signing.md` is a RUNBOOK and its step 2 command was
+  `bash os/update/bundle.sh 1.2.3`, now `bash os/build/run.sh --bundle 1.2.3`
+  (the port honours caller `CERT`/`KEY`/`KEYRING` — `src/bundle-cli.ts:145-147`
+  — which is what that ceremony depends on, checked before the line was
+  changed); and `docs/design/api.md:2804`, whose `grep -n "data\.img"
+  os/mkimage-v2.sh` recipe would now return nothing, repointed to
+  `grep -n dataImg os/build/src/mkimage-v2.ts` and re-run to confirm it returns
+  the three lines the sentence claims.
+
+**`test/apid-api/run.sh:263` carries the same stale remedy and was deliberately
+NOT changed.** It was repointed and then reverted: PLAN-014's scope
+(`docs/plan/PLAN-014.md:220-223`) excludes `test/apid-api`, and the same sentence
+excludes `board/`, which is why the two `board/*/board.yaml` citations are also
+left. Finding is in scope; acting is not.
+
+### The `shell-pipefail-lint` scope, which RFCT-112's acceptance names
+
+The lint scanned **32** files and now scans **26**. Counted both before and
+after by running it, which is the only reason this figure is right: the guess
+written here first was 28, on the assumption that only the four oracles were in
+scope. **The two selftests were in scope too** — `git show HEAD:` on each finds
+`pipefail` twice in the v2 suite and six times in the x64 one — so the drop is
+4 + 2 and not 4.
+
+```
+before   RESULT: PASS (32/32 files clean, 32 scanned)
+after    RESULT: PASS (26/26 files clean, 26 scanned)
+```
+
+RFCT-112's acceptance says this scope "shrinks to the remaining device-side
+shell", and it has. What is left, read off the lint's own output rather than
+recalled: `os/build/`, `os/build-env/`, `os/podman/`, `os/rootfs/`, `os/tests/`,
+`os/tools/`, `os/update/`, `os/verify/` and `test/` — nine directories, and
+**no top-level `os/*.sh` at all**, which is the shape the acceptance describes.
 
 ## What M6d and M6e need from M6c
 
@@ -1262,10 +1737,15 @@ solved, found by measuring the port against it.
   commit because `os/mkimage-x64.sh` sources it (copied into the work directory
   as `/w/mkimage-common.sh`) and that script still ships.
 - The TypeScript assemblers have **no `make` target** and M6c deliberately did
-  not give one: `os-image-x64` still runs `bash os/mkimage-x64.sh`. Rewiring the
-  shipping path is M6e's call, not a change to smuggle into a milestone that must
-  prove nothing changed. `bash os/build/run.sh --mkimage-x64` is the entry point
-  until then.
+  not give one. ~~`os-image-x64` still runs `bash os/mkimage-x64.sh`.~~
+  **CORRECTED by M6e: there is no `os-image-x64` target and there never was
+  one.** `make -n os-image-x64` answers `No rule to make target
+  'os-image-x64'`; the Makefile's only x64 rule is the `x64-%` pattern, which
+  refuses BSP builds by name. So the x64 assembler had no make target before the
+  port either, and M6e's deletion took none away. Rewiring the shipping path was
+  M6e's call and it rewired the two targets that DID exist
+  (`os-image-cx3576-v2`, `os-bundle-cx3576`); `bash os/build/run.sh
+  --mkimage-x64` remains the x64 entry point, unchanged.
 - When `os/mkimage-x64.sh` goes, **`os/tests/mkimage-x64-selftest.sh` goes with
   it or is repointed**. It drives the shipped script directly and 196 of its
   assertions are about that; in particular it SCRAPES the `images.env` key out of

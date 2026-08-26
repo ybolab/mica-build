@@ -7,6 +7,7 @@
 // machine and skip on another, and a skip reports the same green as a pass.
 
 import { describe, expect, test } from 'bun:test'
+import { existsSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import {
   APK_ATTEMPTS,
@@ -107,8 +108,19 @@ describe('mounts are identity mounts, and there is one per directory', () => {
     expect(mountDirs([join(REPO_ROOT, 'Makefile')])).toEqual([REPO_ROOT])
   })
 
+  // THE FIXTURES ARE ASSERTED TO EXIST, and that is the whole difference
+  // between this test and the one below it. mountDirs() falls back to dirname()
+  // for a path that is not there, so two GHOST files in one directory give the
+  // same answer two real ones do -- this case would keep passing while silently
+  // becoming a duplicate of 'a path that is not there yields its PARENT'.
+  //
+  // It named os/mkimage-common.sh and os/mkimage-v2.sh until PLAN-014 M6e
+  // deleted them, which is exactly how that would have happened.
   test('two files in one directory are one mount', () => {
-    expect(mountDirs([join(OS_DIR, 'mkimage-common.sh'), join(OS_DIR, 'mkimage-v2.sh')])).toEqual([OS_DIR])
+    const dir = join(OS_DIR, 'update', 'rauc')
+    const pair = [join(dir, 'build.sh'), join(dir, 'gen-dev-keys.sh')]
+    for (const f of pair) expect(existsSync(f)).toBe(true)
+    expect(mountDirs(pair)).toEqual([dir])
   })
 
   test('a path that is not there yields its PARENT, so the tool reports the file', () => {

@@ -417,6 +417,49 @@ describe('the manifest is spliced by LINE, then substituted', () => {
     expect(rendered).toContain('[image.rootfs]')
   })
 
+  // THE $-EXPANSION CLASS, DRIVEN FROM THE FAILING SIDE.
+  //
+  // os/update/bundle.sh:289 substituted with `sed`, where an `&` in the
+  // replacement expands to the whole match; BUNDLE_COMPATIBLE has no guard
+  // against one (BUNDLE_VERSION does). The first version of this port fixed `&`
+  // and reintroduced the SAME CLASS under `$`, because a string replacement in
+  // JavaScript is not literal either -- it expands $&, $`, $' , $$ and $n.
+  //
+  // Every one of these five was measured expanding before the fix. They are
+  // cases rather than a loop so a failure names the sequence that broke.
+  test.each([
+    ['&  -- what sed expanded, and the reason this guard exists', 'mos-a&b'],
+    ['$& -- the whole match', 'mos-a$&b'],
+    ['$` -- everything before the match', 'mos-a$`b'],
+    ["$' -- everything after the match", "mos-a$'b"],
+    ['$$ -- an escaped dollar', 'mos-a$$b'],
+    ['$1 -- a capture group that does not exist', 'mos-a$1b'],
+  ])('a compatible carrying %s lands byte for byte', (_name, compatible) => {
+    const rendered = renderManifest({ template: MANIFEST_TEMPLATE, compatible, version: '1.2.3' })
+    expect(rendered).toContain(`compatible=${compatible}`)
+    // The failing side is specific: the placeholder must not come BACK. That is
+    // what $& did -- it re-inserted '@COMPATIBLE@' into the value.
+    expect(rendered).not.toContain('@COMPATIBLE@')
+  })
+
+  test('and the VERSION side too, though its own guard already refuses these', () => {
+    // renderManifest does not enforce the version regex -- readVersion does, one
+    // layer up -- so this function must be safe on its own terms.
+    const rendered = renderManifest({ template: MANIFEST_TEMPLATE, compatible: 'mos-cx3576', version: '1.2.3$&x' })
+    expect(rendered).toContain('version=1.2.3$&x')
+    expect(rendered).not.toContain('@VERSION@')
+  })
+
+  test('POSITIVE CONTROL: an ordinary mos-<board> is untouched by the fix', () => {
+    // Without this, a renderManifest that returned its input unchanged would
+    // satisfy every case above.
+    const rendered = renderManifest({ template: MANIFEST_TEMPLATE, compatible: 'mos-x64', version: '0.0.0-dev' })
+    expect(rendered).toContain('compatible=mos-x64')
+    expect(rendered).toContain('version=0.0.0-dev')
+    expect(rendered).not.toContain('@COMPATIBLE@')
+    expect(rendered).not.toContain('@VERSION@')
+  })
+
   test('the boot block is spliced where @BOOT_IMAGES@ was, and the placeholder is gone', () => {
     expect(MANIFEST_TEMPLATE).toContain('@BOOT_IMAGES@')
     const rendered = renderManifest({ template: MANIFEST_TEMPLATE, compatible: 'c', version: 'v' })
