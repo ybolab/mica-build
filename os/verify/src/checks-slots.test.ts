@@ -128,6 +128,7 @@ function slotFixture(
     gpt: async () => gpt,
     partition: async () => refuse('partition lookup'),
     fatSlot: async () => refuse('GPT-derived FAT slot -- these checks take the offset from the layout'),
+    extractAt: async () => refuse('image byte ranges'),
     extract: async () => refuse('extracted payloads'),
     unpackRoot: async () => refuse('unpacked root'),
   }

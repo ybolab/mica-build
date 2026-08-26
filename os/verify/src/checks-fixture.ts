@@ -22,6 +22,7 @@
 
 import {
   chmodSync,
+  existsSync,
   chownSync,
   mkdirSync,
   mkdtempSync,
@@ -172,6 +173,17 @@ export function imageFixture(request: FixtureRequest): Fixture {
       return { image, offsetBytes: found.firstSector * gpt.sectorSize }
     },
     extract: async () => refuse('extracted partition payloads'),
+    // NAMED, EMPTY, and not a refusal. The layout-addressed families hand this
+    // name to a TOOL and never read the bytes themselves -- the stub runtime
+    // keys its transcript on the file name, which is the tier. So the fixture
+    // supplies the name and nothing behind it: a check that did read the bytes
+    // gets `readBytes`'s own refusal naming a zero-length file, which is a
+    // sentence about the fixture rather than about the image.
+    extractAt: async (name: string) => {
+      const at = join(dir, name)
+      if (!existsSync(at)) writeFileSync(at, '')
+      return at
+    },
     unpackRoot: async () => refuse('unpacked root'),
   }
 
@@ -1026,6 +1038,7 @@ export function packedRootFixture(board: Board): RootFixture {
     gpt: async () => refuse('partition table'),
     partition: async () => refuse('partition table'),
     fatSlot: async () => refuse('FAT slots'),
+    extractAt: async () => refuse('image byte ranges'),
     extract: async () => refuse('extracted partition payloads'),
     unpackRoot: async () => root,
   }

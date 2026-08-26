@@ -107,6 +107,7 @@ function rootFixture(board: typeof cx3576, conf: string | undefined): { ctx: Ima
     partition: async () => refuse('partition table'),
     fatSlot: async () => refuse('FAT slot'),
     extract: async () => refuse('extracted payloads'),
+    extractAt: async () => refuse('image byte ranges'),
     unpackRoot: async () => root,
   }
   return { ctx, dispose: () => rmSync(dir, { recursive: true, force: true }) }
