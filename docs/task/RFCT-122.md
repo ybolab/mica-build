@@ -1,8 +1,8 @@
 # RFCT-122 PLAN-015 M5: api.md loses its citation banner, its defect register, and its rotted citations
 
-- **status**: pending
+- **status**: done
 - **priority**: P2
-- **owner**: (unclaimed)
+- **owner**: PLAN-015 M5
 - **createdAt**: 2026-08-26
 - **plan**: PLAN-015 (M5)
 

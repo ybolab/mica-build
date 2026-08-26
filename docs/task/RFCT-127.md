@@ -1,8 +1,8 @@
 # RFCT-127 PLAN-015 M5: README sweep, the rootfs tree and the container engine
 
-- **status**: pending
+- **status**: done
 - **priority**: P2
-- **owner**: (unclaimed)
+- **owner**: PLAN-015 M5
 - **createdAt**: 2026-08-26
 - **plan**: PLAN-015 (M5)
 

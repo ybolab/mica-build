@@ -1,8 +1,8 @@
 # RFCT-125 PLAN-015 M5: the two HARNESS files become manuals instead of campaign journals
 
-- **status**: pending
+- **status**: done
 - **priority**: P2
-- **owner**: (unclaimed)
+- **owner**: PLAN-015 M5
 - **createdAt**: 2026-08-26
 - **plan**: PLAN-015 (M5)
 

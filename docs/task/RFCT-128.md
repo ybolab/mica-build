@@ -37,6 +37,12 @@ document that cites it. This pass ran after all ten document subtasks and after
 the source-comment compression that moved 144 files, and that is why one run of
 the checker was enough to enumerate the work.
 
+A failure count is true only of the tree it was measured on. The list carried
+into this pass says 24; the run on the merged tree, after 144 source files have
+been reflowed, finds 66 — so the enumeration here is re-derived from its own
+run, and a list carried across a merge counts as orientation rather than as a
+work list.
+
 ## RESOLVES-BUT-WRONG
 
 A citation whose line still resolves while the text it named has moved is
