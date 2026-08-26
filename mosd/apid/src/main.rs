@@ -35,6 +35,7 @@ mod bus_client;
 mod config;
 mod openapi;
 mod persist;
+mod redact;
 mod routes;
 mod session;
 mod settings_api;

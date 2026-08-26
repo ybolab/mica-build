@@ -1517,9 +1517,8 @@ async fn without_the_reservation_the_bundle_does_shadow_the_api() {
     );
 }
 
-/// The reservation covers the subtree and every method, for every path §2.1
-/// does not declare. The two paths it does declare are asserted separately,
-/// below.
+/// The reservation covers the subtree and every method, for every path the
+/// API does not declare. The declared paths are asserted separately, below.
 #[tokio::test]
 async fn the_api_reservation_answers_every_shape_with_the_envelope() {
     let bundle = install_bundle(&[("index.html", "<!doctype html><title>custom</title>")]);
@@ -1532,7 +1531,8 @@ async fn the_api_reservation_answers_every_shape_with_the_envelope() {
         ("GET", "/api/v1"),
         ("GET", "/api/versions/extra"),
         ("GET", "/api/v1/settings"),
-        ("GET", "/api/v1/settings/network.eth0"),
+        ("GET", "/api/v1/actions/reboot"),
+        ("GET", "/api/v1/wifi/client/networks"),
         ("POST", "/api/v1/settings"),
         ("DELETE", "/api/v1/tokens/1"),
     ] {
@@ -3692,7 +3692,12 @@ async fn the_settings_root_answers_the_dot_paths_value_for_a_session() {
     let value: serde_json::Value = serde_json::from_str(&body_string(response).await).unwrap();
     assert_eq!(value["enabled"], json!(true));
 
-    let response = get(&router, "/api/v1/settings/access.ssh.enabled", Some(&cookie)).await;
+    let response = get(
+        &router,
+        "/api/v1/settings/access.ssh.enabled",
+        Some(&cookie),
+    )
+    .await;
     assert_eq!(response.status(), StatusCode::OK);
     assert_eq!(body_string(response).await, "true");
 }
@@ -3835,7 +3840,10 @@ async fn the_state_root_is_redacted_by_the_same_rule() {
         assert_eq!(value, &json!(REDACTED), "`{name}` was served in the clear");
     }
     for marker in PLAINTEXT_MARKERS {
-        assert!(!body.contains(marker), "`{marker}` reached the wire: {body}");
+        assert!(
+            !body.contains(marker),
+            "`{marker}` reached the wire: {body}"
+        );
     }
 }
 
@@ -4097,5 +4105,21 @@ async fn the_resource_routes_are_401_without_a_session_in_both_gate_modes() {
             // to authenticate never named one: the read did not happen.
             assert_eq!(error.get("path"), None, "{path} in {mode}");
         }
+    }
+}
+
+/// The three spellings of each resource root are one string plus two suffixes.
+///
+/// The router, the OpenAPI attribute and the gate predicate each need a
+/// different one, and a typo in any of them would serve a path the document
+/// does not describe or hand off a path the router does not have.
+#[test]
+fn the_resource_path_spellings_agree() {
+    for (prefix, route, doc) in [
+        crate::routes::SETTINGS_SPELLINGS,
+        crate::routes::STATE_SPELLINGS,
+    ] {
+        assert_eq!(route, format!("{prefix}{{*path}}"));
+        assert_eq!(doc, format!("{prefix}{{path}}"));
     }
 }

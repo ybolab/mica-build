@@ -18,10 +18,10 @@
 use std::net::IpAddr;
 use std::sync::Arc;
 
-use axum::extract::{Form, FromRequestParts, OriginalUri, Query, Request, State};
-use axum::http::header::{CACHE_CONTROL, HOST, LOCATION, SET_COOKIE};
+use axum::extract::{Form, FromRequestParts, OriginalUri, Path, Query, Request, State};
+use axum::http::header::{CACHE_CONTROL, HOST, LOCATION, RETRY_AFTER, SET_COOKIE};
 use axum::http::request::Parts;
-use axum::http::{HeaderMap, StatusCode};
+use axum::http::{HeaderMap, HeaderValue, StatusCode};
 use axum::middleware::{self, Next};
 use axum::response::{Html, IntoResponse, Redirect, Response};
 use axum::routing::{any, get, post};
@@ -36,6 +36,7 @@ use crate::assets::serve;
 use crate::audit::{Audit, Source};
 use crate::auth::{self, GuardStore};
 use crate::bundle::Store;
+use crate::redact;
 use crate::session::{self, SessionStore};
 use crate::settings_api::SettingsApi;
 
@@ -218,6 +219,38 @@ const API: &str = "/api";
 const VERSIONS_PATH: &str = "/versions";
 const V1_META_PATH: &str = "/v1/meta";
 
+/// §2.2's two read-only roots, in the three spellings they need.
+///
+/// The prefix is the shared one and the only one the gate predicate tests. The
+/// other two exist because axum names a wildcard segment `{*path}` and OpenAPI
+/// names a template parameter `{path}`, so the served path and the documented
+/// path cannot be the same string; `the_resource_path_spellings_agree` holds
+/// them to the prefix so they cannot drift apart.
+const V1_SETTINGS_PREFIX: &str = "/v1/settings/";
+const V1_SETTINGS_ROUTE: &str = "/v1/settings/{*path}";
+const V1_SETTINGS_DOC: &str = "/v1/settings/{path}";
+const V1_STATE_PREFIX: &str = "/v1/state/";
+const V1_STATE_ROUTE: &str = "/v1/state/{*path}";
+const V1_STATE_DOC: &str = "/v1/state/{path}";
+
+/// Each root's three spellings as one tuple, for the test that holds them
+/// together.
+#[cfg(test)]
+pub(crate) const SETTINGS_SPELLINGS: (&str, &str, &str) =
+    (V1_SETTINGS_PREFIX, V1_SETTINGS_ROUTE, V1_SETTINGS_DOC);
+#[cfg(test)]
+pub(crate) const STATE_SPELLINGS: (&str, &str, &str) =
+    (V1_STATE_PREFIX, V1_STATE_ROUTE, V1_STATE_DOC);
+
+/// The fdo error names mosd maps its `SettingsError` onto, and the three rows
+/// of §2.4's table that name one.
+const FDO_INVALID_ARGS: &str = "org.freedesktop.DBus.Error.InvalidArgs";
+const FDO_IO_ERROR: &str = "org.freedesktop.DBus.Error.IOError";
+const FDO_FAILED: &str = "org.freedesktop.DBus.Error.Failed";
+
+/// §2.4's `Retry-After` on the one class that carries it.
+const RETRY_AFTER_SECONDS: &str = "5";
+
 /// The major versions this build serves — §2.1's *served set*, which is an
 /// array because it can legitimately have more than one member.
 const SERVED_VERSIONS: [&str; 1] = ["v1"];
@@ -235,6 +268,8 @@ fn api_router() -> Router<AppState> {
     Router::new()
         .route(VERSIONS_PATH, get(api_versions))
         .route(V1_META_PATH, get(api_v1_meta))
+        .route(V1_SETTINGS_ROUTE, get(api_v1_settings))
+        .route(V1_STATE_ROUTE, get(api_v1_state))
         .fallback(api_not_found)
 }
 
@@ -246,8 +281,24 @@ fn api_router() -> Router<AppState> {
 /// under the prefix is absent from this list and reaches the gate's own
 /// logic unchanged.
 fn is_declared_api_route(path: &str) -> bool {
-    path.strip_prefix(API)
-        .is_some_and(|leaf| leaf == VERSIONS_PATH || leaf == V1_META_PATH)
+    path.strip_prefix(API).is_some_and(|leaf| {
+        leaf == VERSIONS_PATH || leaf == V1_META_PATH || resource_dot_path(leaf).is_some()
+    })
+}
+
+/// The dot-path a leaf names, when the leaf is one of §2.2's two roots.
+///
+/// A root prefix with nothing after it names none. axum's `{*path}` wildcard
+/// matches at least one character, so `/api/v1/settings` and
+/// `/api/v1/settings/` reach the subtree's not-found handler, and this
+/// predicate must hand off exactly what the router serves: a path the gate
+/// releases to a route that does not exist would answer a 404 where an
+/// unauthenticated caller has always been redirected.
+fn resource_dot_path(leaf: &str) -> Option<&str> {
+    let dot_path = leaf
+        .strip_prefix(V1_SETTINGS_PREFIX)
+        .or_else(|| leaf.strip_prefix(V1_STATE_PREFIX))?;
+    (!dot_path.is_empty()).then_some(dot_path)
 }
 
 /// Every `/api/` response, in the one shape §4.3 gives them: JSON in both
@@ -269,9 +320,6 @@ pub(crate) struct ApiError {
 }
 
 /// The envelope's payload.
-///
-/// `path` is absent. §2.4 defines it as the **settings dot-path** at fault,
-/// and neither an unmatched route nor a failed authentication names one.
 #[derive(serde::Serialize, utoipa::ToSchema)]
 pub(crate) struct ApiErrorDetail {
     /// Stable machine token, from an open set: a client that does not
@@ -281,18 +329,41 @@ pub(crate) struct ApiErrorDetail {
     message: String,
     /// The side the failure came from.
     source: &'static str,
+    /// The settings dot-path at fault (§2.4), when the failure names one.
+    ///
+    /// Optional, and omitted rather than sent empty: an unmatched route and a
+    /// failed authentication name no dot-path, and a member present with a
+    /// meaningless value is worse than an absent one.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    path: Option<String>,
 }
 
 impl ApiError {
     /// An envelope for a failure apid raised itself.
     fn apid(code: &'static str, message: String) -> Self {
+        Self::new(code, message, "apid")
+    }
+
+    /// An envelope for a failure mosd raised, carrying mosd's own message.
+    fn mosd(code: &'static str, message: String) -> Self {
+        Self::new(code, message, "mosd")
+    }
+
+    fn new(code: &'static str, message: String, source: &'static str) -> Self {
         Self {
             error: ApiErrorDetail {
                 code,
                 message,
-                source: "apid",
+                source,
+                path: None,
             },
         }
+    }
+
+    /// The same envelope, naming the settings dot-path at fault.
+    fn at(mut self, path: &str) -> Self {
+        self.error.path = Some(path.to_string());
+        self
     }
 }
 
@@ -370,6 +441,142 @@ pub(crate) async fn api_v1_meta(_session: ApiSession) -> Response {
             settings_schema_version: mosd_settings::SCHEMA_VERSION,
             daemon: "apid",
         },
+    )
+}
+
+/// The body of a resource `GET`: the value at the dot-path, as mosd holds it.
+///
+/// Any JSON value, because a dot-path names a subtree, an array or a scalar
+/// and §2.2's passthrough imposes no shape of its own. The string
+/// `"<redacted>"` is a value a client can receive anywhere inside it: every
+/// field named `psk`, `passwordHash`, `password_hash` or `hash`, at any depth
+/// and inside arrays, carries that sentinel instead of its value, and so does
+/// the whole body when the dot-path names one of those fields directly. It is
+/// read-only — writing it back would destroy the credential — and phase 1
+/// serves no write route to write it with.
+#[derive(serde::Serialize, utoipa::ToSchema)]
+#[serde(transparent)]
+pub(crate) struct ResourceValue(Value);
+
+/// The settings tree at a dot-path (§2.2).
+///
+/// The dot-path IS the resource identifier: this answers exactly what
+/// `GetSettings("<dot-path>")` returns, redacted. There is no second model
+/// beside `mosd-settings`, so there is nothing for one to drift from.
+#[utoipa::path(
+    get,
+    path = V1_SETTINGS_DOC,
+    context_path = API,
+    tag = "resources",
+    params(("path" = String, Path, description = "The settings dot-path, verbatim: `hostname`, `access.ssh`, `wifi.ap`")),
+    responses(
+        (status = 200, description = "The value at the dot-path, redacted", body = ResourceValue),
+        (status = 401, description = "No session cookie, or one that does not verify", body = ApiError),
+        (status = 422, description = "mosd rejected the dot-path (`settings_rejected`), which is also the answer for a dot-path that does not exist", body = ApiError),
+        (status = 500, description = "mosd failed to answer (`settings_io`, `mosd_failed`)", body = ApiError),
+        (status = 503, description = "The call to mosd could not be made (`mosd_unreachable`); carries `Retry-After`", body = ApiError),
+    ),
+)]
+pub(crate) async fn api_v1_settings(
+    _session: ApiSession,
+    State(state): State<AppState>,
+    Path(path): Path<String>,
+) -> Response {
+    resource_response(state.api.get_settings(&path).await, &path)
+}
+
+/// The live-state tree at a dot-path (§2.2).
+///
+/// A separate root and not a corner of the settings one, because mosd holds
+/// two trees with different types, different mutability and different
+/// lifetimes. `GET` only: there is no `SetState` on the bus to expose.
+#[utoipa::path(
+    get,
+    path = V1_STATE_DOC,
+    context_path = API,
+    tag = "resources",
+    params(("path" = String, Path, description = "The live-state dot-path, verbatim: `hostname`, `network`, `power`")),
+    responses(
+        (status = 200, description = "The value at the dot-path, redacted", body = ResourceValue),
+        (status = 401, description = "No session cookie, or one that does not verify", body = ApiError),
+        (status = 422, description = "mosd rejected the dot-path (`settings_rejected`), which is also the answer for a dot-path that does not exist", body = ApiError),
+        (status = 500, description = "mosd failed to answer (`settings_io`, `mosd_failed`)", body = ApiError),
+        (status = 503, description = "The call to mosd could not be made (`mosd_unreachable`); carries `Retry-After`", body = ApiError),
+    ),
+)]
+pub(crate) async fn api_v1_state(
+    _session: ApiSession,
+    State(state): State<AppState>,
+    Path(path): Path<String>,
+) -> Response {
+    resource_response(state.api.get_state(&path).await, &path)
+}
+
+/// One answer shape for both roots: the value redacted, or §2.4's envelope
+/// classified from what mosd said.
+fn resource_response(value: anyhow::Result<Value>, path: &str) -> Response {
+    match value {
+        Ok(value) => api_response(StatusCode::OK, ResourceValue(redact::redact(value, path))),
+        Err(err) => bus_api_error(&err, path),
+    }
+}
+
+/// §2.4's table, applied to a failed mosd call.
+///
+/// The classification is TRANSLATED and the message is NOT. mosd maps its
+/// `SettingsError` onto three fdo error names and zbus carries the name back,
+/// so the distinction exists all the way to here and only apid can lose it;
+/// the message is mosd's own words because no phrasing apid could pre-write
+/// would say which field was wrong.
+///
+/// The concrete `zbus::Error` is recovered by downcast: `bus_client.rs`
+/// converts with `err.into()`, and that conversion STORES the error rather
+/// than flattening it, so nothing there has to change for the name to be
+/// readable here.
+fn bus_api_error(err: &anyhow::Error, path: &str) -> Response {
+    tracing::warn!(error = %err, path, "mosd call failed");
+    let (status, error) = match err.downcast_ref::<zbus::Error>() {
+        Some(zbus::Error::MethodError(name, message, _)) => {
+            // An fdo error with no message is still a classification; the name
+            // is the most specific thing left to say.
+            let message = message.clone().unwrap_or_else(|| name.to_string());
+            match name.as_str() {
+                FDO_INVALID_ARGS => (
+                    StatusCode::UNPROCESSABLE_ENTITY,
+                    ApiError::mosd("settings_rejected", message),
+                ),
+                FDO_IO_ERROR => (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    ApiError::mosd("settings_io", message),
+                ),
+                FDO_FAILED => (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    ApiError::mosd("mosd_failed", message),
+                ),
+                _ => mosd_unreachable(err),
+            }
+        }
+        _ => mosd_unreachable(err),
+    };
+    let mut response = api_response(status, error.at(path));
+    // §2.4 gives `Retry-After` to exactly one class, and 503 is that class:
+    // apid is up and answering, and the proxy cache is dropped after a failed
+    // call so the next request reconnects.
+    if status == StatusCode::SERVICE_UNAVAILABLE {
+        response
+            .headers_mut()
+            .insert(RETRY_AFTER, HeaderValue::from_static(RETRY_AFTER_SECONDS));
+    }
+    response
+}
+
+/// §2.4's last row, which is exhaustive over everything the three above do not
+/// name: the call could not be made at all. `source` is apid because this is a
+/// statement about this server rather than about the request.
+fn mosd_unreachable(err: &anyhow::Error) -> (StatusCode, ApiError) {
+    (
+        StatusCode::SERVICE_UNAVAILABLE,
+        ApiError::apid("mosd_unreachable", format!("{err:#}")),
     )
 }
 
