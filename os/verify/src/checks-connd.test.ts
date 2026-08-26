@@ -1,6 +1,6 @@
 // The connd contract and the Wi-Fi userland, driven from the failing side.
 //
-// PLAN-014 M4f (RFCT-110), RFCT-096. The contract read is driven against MUTATED
+// The contract read is driven against MUTATED
 // COPIES of the mosd sources, which is what `MOS_VERIFY_RECONCILER_DIR` exists
 // for: without it the rot the oracle records could not be driven, only waited
 // for. The image-side assertions are driven against a mutated packed root.

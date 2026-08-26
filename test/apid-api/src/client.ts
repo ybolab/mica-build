@@ -295,18 +295,17 @@ export interface CertificateInfo {
  *
  * SNI carries a `host_name` and never an IP literal -- RFC 6066 section 3 says
  * so in as many words -- and bun ENFORCES it by THROWING at `tls.connect()`,
- * synchronously, before a socket is opened: measured 2026-08-24 under bun
- * 1.4.0 in `oven/bun:1`, `TypeError [ERR_INVALID_ARG_VALUE]: The property
+ * synchronously, before a socket is opened. Measured under bun 1.4.0 in
+ * `oven/bun:1`: `TypeError [ERR_INVALID_ARG_VALUE]: The property
  * 'options.servername' Setting the TLS ServerName to an IP address is not
  * permitted.` for both `127.0.0.1` and `::1`. A hostname, or the property
  * omitted, does not throw. Node behaves the same way; this is not a bun quirk.
  *
- * `config.host` in this campaign is ALWAYS an IP literal -- it is the QEMU
- * container's address on the shared docker network, and `config.ts` refuses to
- * default it precisely so nobody aims the suite at loopback. So passing it as
- * `servername` made `inspectCertificate()` and every raw HTTPS write throw at
- * call time, and the suite could not make a single TLS assertion against a
- * real device.
+ * `config.host` is always an IP literal here -- it is the QEMU container's
+ * address on the shared docker network, and `config.ts` refuses to default it
+ * precisely so nobody aims the suite at loopback -- so passing it as
+ * `servername` makes `inspectCertificate()` and every raw HTTPS write throw at
+ * call time, and no TLS assertion against a real device can be made at all.
  *
  * Dropping SNI costs nothing here: certificate verification is already relaxed
  * for `config.host` (see `#tlsOptionsFor`), apid serves exactly one self-signed

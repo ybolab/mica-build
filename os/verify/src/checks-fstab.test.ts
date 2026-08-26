@@ -1,6 +1,6 @@
-// Batch 2b driven from the failing side.
+// The fstab checks, driven from the failing side.
 //
-// PLAN-014 M4c (RFCT-110), RFCT-096's rule. The baseline /etc/fstab is RENDERED
+// The baseline /etc/fstab is RENDERED
 // FROM THE SHIPPED TEMPLATE, os/rootfs/overlay-v2/etc/fstab.in, with the
 // board's own GUIDs -- the same thing os/tests/ui-location-test.sh does and for
 // the same reason: a table hand-written here would test this file's idea of the
@@ -12,8 +12,7 @@
 // the wrong partition, a deeper mount landing over the UI root. The baseline is
 // asserted green FIRST in every case.
 //
-// ═══ THE EARLY RETURN IS TESTABLE, AND THAT IS WHY THIS IS ONE `many` CHECK ═══
-//
+// The early return is testable, and that is why this is one `many` check.
 // check_ui_location emits ONE conclusion when nothing covers UI_ROOT and SIX
 // otherwise. Seven independent `one` checks could not model that: on the
 // early-return path six of them would conclude nothing, the oracle would print

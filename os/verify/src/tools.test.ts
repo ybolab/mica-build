@@ -113,9 +113,6 @@ describe('mounts are identity mounts, and there is one per directory', () => {
   // for a path that is not there, so two GHOST files in one directory give the
   // same answer two real ones do -- this case would keep passing while silently
   // becoming a duplicate of 'a path that is not there yields its PARENT'.
-  //
-  // It named os/mkimage-common.sh and os/mkimage-v2.sh until PLAN-014 M6e
-  // deleted them, which is exactly how that would have happened.
   test('two files in one directory are one mount', () => {
     const dir = join(OS_DIR, 'update', 'rauc')
     const pair = [join(dir, 'build.sh'), join(dir, 'gen-dev-keys.sh')]

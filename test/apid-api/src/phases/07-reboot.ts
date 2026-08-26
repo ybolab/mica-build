@@ -21,18 +21,9 @@
  * Because 07b is a different process, `ctx.state` cannot carry anything to it.
  * The handoff goes through a JSON file instead -- see `handoffPath`.
  *
- * ---------------------------------------------------------------------------
- * A NOTE ON THE CONSOLE READER BELOW
- *
- * The campaign plan put a shared `src/console.ts` in the mutate subtask's
- * hands. At the time this file was written that module had not landed on
- * bkd/esf0br31, nor on any other branch in the repository, so the three phases
- * that need console evidence -- 07, 07b and 08 -- read it through the small
- * reader defined here and import it from this module. It lives HERE, in a file
- * this subtask owns, precisely so that it does not become a second
- * `src/console.ts` competing with the one that module is meant to provide.
- * When that module lands, `openConsole` is the only call site to redirect.
- * ---------------------------------------------------------------------------
+ * The three phases that need console evidence -- 07, 07b and 08 -- reach it
+ * through the reader defined here, which wraps `src/console.ts`. `openConsole`
+ * is the single call site, so there is one place to redirect.
  */
 
 import * as fs from "node:fs";

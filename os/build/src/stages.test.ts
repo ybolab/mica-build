@@ -56,9 +56,9 @@ function scratch(files: Record<string, string>): string {
 
 const FIRST = `FROM debian\nRUN true\n`
 const LINK = `ARG ${PREV_ARG}\nFROM \${${PREV_ARG}}\nRUN true\n`
-// The terminal stage has TWO export surfaces (RFCT-113 M7): `artifact`, the
-// files the assembler reads, and `factory-root`, the packed root as an image.
-// NO_OCI keeps the pre-M7 shape so the fault for a missing second surface has
+// The terminal stage has TWO export surfaces: `artifact`, the files the
+// assembler reads, and `factory-root`, the packed root as an image. NO_OCI
+// carries only the first, so the fault for a missing second surface has
 // something to fire on -- a fixture that always satisfies a check is how a
 // check stops being one.
 const NO_OCI = `ARG ${PREV_ARG}\nFROM \${${PREV_ARG}} AS closed\nRUN true\nFROM scratch AS artifact\nCOPY --from=closed /x /\n`
@@ -369,7 +369,7 @@ describe('buildArgv', () => {
   })
 })
 
-// RFCT-113 M7: the packed root exported as an OCI image.
+// The packed root exported as an OCI image.
 //
 // Everything here is about the three ways the export can succeed and still be
 // worthless -- the wrong stage, an unusable epoch, and a cache flag that would
@@ -524,7 +524,7 @@ describe('ociRecord', () => {
   })
 })
 
-describe('selectStages -- RFCT-111 stage selection, which replaced the WITH_* args', () => {
+describe('selectStages -- stage selection, in place of WITH_* build args', () => {
   // The four-feature shape the shipped chain has, in miniature. Every case
   // below is driven from this one directory so that "it dropped the right file"
   // and "it left the rest alone" are the same assertion.
@@ -890,10 +890,10 @@ describe('the chain this tree actually ships', () => {
     expect(withBase.map((s) => s.name)).toEqual(['10-base', '90-pack'])
   })
 
-  test('the feature stages are the four RFCT-111 names, and they run before the board', () => {
-    // The vocabulary PLAN-014 M5 fixed, asserted against the directory rather
-    // than against a list -- there is no list. `rauc` is a fifth feature stage
-    // with no caller-facing switch; its own header says why.
+  test('the feature stages are the four declinable names, and they run before the board', () => {
+    // Asserted against the directory rather than against a list -- there is no
+    // list. `rauc` is a fifth feature stage with no caller-facing switch; its
+    // own header says why.
     const features = stages.filter((s) => featureOf(s) !== undefined)
     expect(features.map((s) => featureOf(s))).toEqual([
       'radios',
@@ -907,9 +907,9 @@ describe('the chain this tree actually ships', () => {
   })
 
   test('no stage declares WITH_CONTAINERS or WITH_MOSD any more', () => {
-    // RFCT-111's actual deliverable: the WITH_* build args are replaced by
-    // stage selection. A stage that still declared one would be a second switch
-    // beside the one the driver operates, and the two could disagree.
+    // The WITH_* build args are replaced by stage selection. A stage that
+    // still declared one would be a second switch beside the one the driver
+    // operates, and the two could disagree.
     const stray = stages.flatMap((s) =>
       s.declaredArgs.filter((a) => a.startsWith('WITH_')).map((a) => `${s.name}:${a}`),
     )
@@ -937,10 +937,9 @@ describe('the chain this tree actually ships', () => {
     expect(declaring.length).toBeGreaterThanOrEqual(2)
   })
 
-  // RFCT-111 M5d's deliverable, asserted rather than claimed: `40-board`
-  // parameterised by the board instead of naming one.
+  // `40-board` is parameterised by the board instead of naming one.
   //
-  // THE BOARD NAMES ARE THE DIRECTORY, os/boards/, for the same reason the
+  // The board names come from the directory, os/boards/, for the same reason the
   // stage list is: a board added to the tree but not to a list here would be a
   // board this check cannot see, and it would pass for that reason alone.
   //

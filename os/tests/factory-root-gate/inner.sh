@@ -3,20 +3,19 @@
 #
 #   bash inner.sh <out-dir> <work-dir>
 #
-# THE QUESTION. os/rootfs/stages/90-pack.Dockerfile packs `pack`'s /rootfs into a
-# squashfs AND exports the same /rootfs as an OCI image. RFCT-113's smoke run
-# executes binaries in the second and the device ships the first, so if the two
-# are not one tree the smoke run is a check on something adjacent to the
-# artifact -- the exact shape of green this campaign keeps finding.
+# os/rootfs/stages/90-pack.Dockerfile packs `pack`'s /rootfs into a squashfs and
+# exports the same /rootfs as an OCI image. The smoke run executes binaries in
+# the second and the device ships the first, so if the two are not one tree the
+# smoke run is a check on something adjacent to the artifact.
 #
-# WHY FOUR COMPARISONS AND NOT ONE. `diff -r` cannot see a mode, a uid or a gid;
-# a listing cannot see a byte; neither can see a file capability, which lives in
+# Four comparisons and not one: `diff -r` cannot see a mode, a uid or a gid; a
+# listing cannot see a byte; neither can see a file capability, which lives in
 # an xattr that has to survive a buildkit layer export to reach either side; and
 # none of the three can see a hardlink becoming two files. A COPY that changed
 # what it staged moves a mode or a path before it moves a byte.
 #
-# IT EXITS NON-ZERO ON ANY DIFFERENCE. An earlier draft printed
-# "METADATA: 3 differing rows" and exited 0, which is a report and not a gate.
+# Any difference exits non-zero: a script that printed the differing rows and
+# exited 0 would be a report and not a gate.
 set -euo pipefail
 
 out="${1:?usage: inner.sh <out> <work>}"
@@ -128,7 +127,7 @@ echo
 if [ "${differing}" -eq 0 ]; then
     echo "FIDELITY: the exported OCI image is the tree that ships, on all four comparisons"
 else
-    echo "FIDELITY: ${differing} of 4 comparisons differ. The image RFCT-113's smoke run"
+    echo "FIDELITY: ${differing} of 4 comparisons differ. The image the smoke run"
     echo "          executes in is NOT the image the device ships, so nothing the smoke run"
     echo "          reports is about the shipped artifact."
     exit 1

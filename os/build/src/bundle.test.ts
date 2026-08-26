@@ -583,7 +583,7 @@ describe('the bundle read back through rauc, compared against what was asked for
 
 // --- G21: the payload digest -------------------------------------------------
 
-describe('the payload digest, which is RFCT-112\'s gate for the bundle', () => {
+describe('the payload digest, the bundle\'s identity', () => {
   let work = ''
   beforeAll(() => { work = makeWorkDir('payload') })
   afterAll(() => { if (work !== '') rmSync(work, { recursive: true, force: true }) })
@@ -826,9 +826,9 @@ describe('buildBundle end to end, against a real rauc', () => {
   }, OPEN_TIMEOUT_MS)
 
   test('THE PAYLOAD IS A PURE FUNCTION OF THE INPUTS: a second build hashes the same', async () => {
-    // The property RFCT-112 gates on, asserted by the suite rather than only by
-    // the campaign's own two runs -- so a change that puts a clock back into
-    // the staging path is a red test rather than a hash somebody has to compare.
+    // Asserted by the suite rather than by comparing two builds by hand, so a
+    // change that puts a clock back into the staging path is a red test rather
+    // than a hash somebody has to notice.
     const first = await buildBundle({ ...inputs, bundleOut: join(work, 'det-1.raucb') }, { toolbox: tb, log: () => {} })
     const second = await buildBundle({ ...inputs, bundleOut: join(work, 'det-2.raucb') }, { toolbox: tb, log: () => {} })
     expect(second.payload.payloadSha256).toBe(first.payload.payloadSha256)

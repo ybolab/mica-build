@@ -761,8 +761,8 @@ const EXT_UNIT_DIR_CHECKS: readonly CheckCase[] = [
       if (!regularFileFollowingLinks(root, unitPath)) {
         return [verdict(id, false,
           `${EXT_MOUNT_UNIT} is not in the image, so ${EXT_UNIT_DIR} stays on the read-only squashfs; `
-          + `a third-party unit written there is silently discarded at the next reboot and PLAN-011 `
-          + `D5's whole extension model does not work on the device`)]
+          + `a third-party unit written there is silently discarded at the next reboot and the `
+          + `whole extension model does not work on the device`)]
       }
       if (where !== EXT_UNIT_DIR) {
         return [verdict(id, false,
@@ -820,7 +820,7 @@ const EXT_UNIT_DIR_CHECKS: readonly CheckCase[] = [
           : `a unit in the image mounts over /etc/systemd/system (${binds.join(' ')}). That directory `
             + `holds this boot chain's own mount units AND the local-fs.target.wants symlinks enabling `
             + `them, so the bind is performed by a unit living in the directory it hides and shadows the `
-            + `enablement of every other STATE mount. PLAN-011 D5 named this target originally and it `
+            + `enablement of every other STATE mount. The plan named this target originally and it `
             + `was rejected on 2026-08-22; the writable unit directory is ${EXT_UNIT_DIR}, and `
             + `re-pointing it here looks like restoring the plan while reintroducing the defect`,
       )]

@@ -1,22 +1,22 @@
 /**
  * The far side of a real restart.
  *
- * This is where the campaign's most valuable assertions live, because every one
- * of them is about state that had to survive a power cycle. Nothing here can be
- * faked by a test that never took the machine down: the session table was in
- * RAM and is gone, the login guard's counters were on disk and are not, and the
- * hostname came back through firmware, GRUB and a fresh systemd.
+ * Every assertion here is about state that had to survive a power cycle, and
+ * none of it can be faked by a test that never took the machine down: the
+ * session table was in RAM and is gone, the login guard's counters were on disk
+ * and are not, and the hostname came back through firmware, GRUB and a fresh
+ * systemd.
  *
- * WHERE THINGS ACTUALLY LIVE, because getting this wrong turns an assertion
- * into a coincidence. `/var/lib/mos` is a bind mount onto the STATE partition
+ * Where things live, because getting this wrong turns an assertion into a
+ * coincidence. `/var/lib/mos` is a bind mount onto the STATE partition
  * (os/rootfs/overlay-v2/etc/systemd/system/var-lib-mos.mount, whose own comment
  * says /var lives on EPHEMERAL and is redirected rather than moved). So:
  *
  *   - `session.key` PERSISTS. The pre-reboot cookie is NOT voided by a
  *     regenerated signing key, and this phase does not claim it is.
  *   - `login_guard.json` PERSISTS. That is what makes the backoff assertion
- *     below a real test of docs/design/access.md section 6 and RFCT-085 rather
- *     than a hopeful one.
+ *     below a real test of docs/design/access.md section 6 rather than a
+ *     hopeful one.
  *   - `state.sessions` is an IN-RAM table. The old cookie is refused because
  *     its id is simply not in that table any more -- which is the reason this
  *     phase asserts, and the reason it states.
@@ -68,7 +68,7 @@ function escapeRegExp(text: string): string {
 const ASSERTIONS = [
   "the machine came back: apid answers /healthz on the second boot",
   "the pre-reboot session cookie is REFUSED after the restart",
-  "the login backoff survived the restart (access.md section 6, RFCT-085)",
+  "the login backoff survived the restart (access.md section 6)",
   "a fresh login succeeds again once the window has passed",
   "the hostname 05 set survived the restart",
 ] as const;
@@ -210,7 +210,7 @@ const phase: Phase = {
 
     // -- 3. the login backoff DID survive -----------------------------------
     //
-    // docs/design/access.md section 6 and RFCT-085: the counters are written to
+    // docs/design/access.md section 6: the counters are written to
     // <state_dir>/login_guard.json, and /var/lib/mos is bound onto STATE, so a
     // power cycle must not reset the clock. Which of the two possible
     // assertions is made depends on what is MEASURED, not on which one is
@@ -289,8 +289,8 @@ const phase: Phase = {
               `          predicts ${predicted}ms here`,
               `note:     login_guard.json lives under /var/lib/mos, which var-lib-mos.mount binds`,
               `          onto the STATE partition. A ~${BACKOFF_BASE_MS}ms window here means the`,
-              `          counters did NOT survive, which contradicts access.md section 6 and`,
-              `          RFCT-085 and is a finding rather than a flake.`,
+              `          counters did NOT survive, which contradicts access.md section 6`,
+              `          and is a finding rather than a flake.`,
             ].join("\n"),
           );
           report.note(

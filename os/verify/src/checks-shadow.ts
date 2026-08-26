@@ -223,7 +223,7 @@ export const SHADOW_CHECKS: readonly CheckCase[] = [
           : `the ${SHADOW} symlink target dir '${dir}' is not under /run. mos supports no persistent `
             + `password (docs/design/access.md 4.2), so a credential file on storage that survives a `
             + `reboot can only be made transient by a protocol something has to run -- exactly the `
-            + `design RFCT-105 removed`,
+            + `design mos does not have`,
       )]
     },
   },

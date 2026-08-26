@@ -6,32 +6,9 @@
 #   bash mosd/hack/build-target.sh aarch64-unknown-linux-gnu aarch64
 #   bash mosd/hack/build-target.sh x86_64-unknown-linux-gnu  x86-64
 #
-# THE COMPILER IS localhost/mos-build-rust, NOT THE HOST'S. PLAN-014 M2 decision
-# 4, RFCT-108 M2c. Until then the first line of work here was
-#
-#     export PATH="$HOME/.cargo/bin:$PATH"
-#
-# followed by `cargo build`, which made this the one build in the whole chain
-# with no pin of any kind: every other component names its compiler in
-# os/podman/versions.env, os/update/rauc/versions.env or now
-# os/build-env/images.env, and this one used whatever rustup the person running
-# it happened to have. PLAN-014's own context lists it as such -- "the one
-# wholly unpinned build in the chain". Two devices could ship mosd binaries
-# built by different compilers and nothing in the tree could say so.
-#
-# It was also, on the machine where this was written, unrunnable: `command -v
-# cargo` and `command -v rustc` were both empty while this script prepended
-# ~/.cargo/bin to PATH and ran cargo. A build path that reads as working because
-# nothing exercises it is the failure mode this campaign keeps finding.
-#
-# WHAT THE HOST NEEDS NOW: docker. That is RFCT-108's stated outcome for this
-# file and it is the whole of it -- no rustup, no cross linker, no target std.
-#
-# WHAT RUNS INSIDE: exactly the cargo line that used to run outside, with the
-# same --locked and the same --target. The container is a boundary around the
-# toolchain, not a change to the build, and that claim was tested at switchover
-# rather than asserted -- os/build-env/README.md records what the comparison
-# could and could not establish on the machine it was run on.
+# The compiler is localhost/mos-build-rust's, not the host's, so docker is the
+# one thing the host needs: no rustup, no cross linker, no target std. What
+# compiled these binaries is a value os/build-env/images.env records.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 WORKSPACE="$(pwd)"
@@ -41,9 +18,9 @@ FROM_SH="${REPO_ROOT}/os/build-env/from.sh"
 TARGET="${1:?usage: build-target.sh <rust-target> <elf-arch>}"
 ELF_ARCH="${2:?usage: build-target.sh <rust-target> <elf-arch>}"
 
-# Path arithmetic, proved rather than assumed: this file is reached from
-# os/rootfs/build-v2.sh, from mosd/hack/build-aarch64.sh and by hand, and a
-# relative path resolves against whichever of those was the caller.
+# os/rootfs/build-v2.sh, mosd/hack/build-aarch64.sh and a hand invocation all
+# reach this file, and a relative path resolves against whichever is the caller,
+# so both roots are derived from $0.
 for p in "${WORKSPACE}/Cargo.toml" "${FROM_SH}"; do
     [ -e "${p}" ] || {
         echo "error: ${p} does not exist. mosd/hack/build-target.sh derives the workspace as its own directory's parent and the repository as the level above that; if this file moved, that arithmetic moved with it" >&2
@@ -52,14 +29,13 @@ for p in "${WORKSPACE}/Cargo.toml" "${FROM_SH}"; do
 done
 
 command -v docker >/dev/null 2>&1 || {
-    echo "error: docker is required and not on PATH. Since RFCT-108 M2c this build runs inside localhost/mos-build-rust rather than on the host's cargo, which is what makes the compiler a value recorded in os/build-env/images.env instead of whatever the machine happened to have" >&2
+    echo "error: docker is required and not on PATH. This build runs inside localhost/mos-build-rust rather than on the host's cargo, which is what makes the compiler a value recorded in os/build-env/images.env instead of whatever the machine happens to have" >&2
     exit 1
 }
 
-# THE ARCHITECTURE THE IMAGE MUST BE, derived from the Rust target rather than
-# taken as a third argument: a second way to say the same thing is a thing that
-# can disagree with itself, and the disagreement would look like a wrong-arch
-# binary two builds later.
+# The image architecture is derived from the Rust target rather than taken as a
+# third argument: a second way to say the same thing can disagree with itself,
+# and the disagreement would look like a wrong-arch binary two builds later.
 case "${TARGET}" in
 aarch64-*) IMAGE_ARCH=amd64 ;; # cross-built FROM an amd64 builder
 x86_64-*) IMAGE_ARCH=amd64 ;;
@@ -80,55 +56,37 @@ mapfile -t FROM_ARGS < <("${FROM_SH}" --arch="${IMAGE_ARCH}" MOS_BUILD_RUST=LOCA
 }
 IMAGE="${FROM_ARGS[1]#MOS_BUILD_RUST=}"
 
-# THE CARGO CACHES ARE REPO-LOCAL BIND MOUNTS, not docker volumes and not
-# $HOME/.cargo. Repo-local because `make clean` and `rm -rf _out` then mean what
-# they say, and because a docker volume is state this repository would create on
-# a machine and never account for. NOT $HOME/.cargo, because the point of the
-# switchover is that the host carries no Rust state at all.
-#
-# CARGO_HOME=/usr/local/cargo is the image's own setting, deliberately the same
-# path os/podman/Dockerfile's cargo cache mounts already use -- so the two Rust
-# builds in this repository warm the same directory layout even though they do
-# not share the cache itself.
+# The cargo caches are repo-local bind mounts, not docker volumes and not
+# $HOME/.cargo: `make clean` and `rm -rf _out` then mean what they say, and the
+# host carries no Rust state at all. CARGO_HOME=/usr/local/cargo is the image's
+# own setting, the same path os/podman/Dockerfile's cargo cache mounts use, so
+# the two Rust builds here warm the same directory layout without sharing the
+# cache itself.
 CARGO_CACHE="${REPO_ROOT}/_out/cargo"
 mkdir -p "${CARGO_CACHE}/registry" "${CARGO_CACHE}/git"
 
-# ═══ THE COMMIT THE BINARIES REPORT, RESOLVED HERE AND PASSED IN ═════════════
+# The commit the binaries report is resolved here and passed in. mosd and apid
+# answer `--version` with `<name> <crate version> (<commit>)`, and the commit
+# half cannot be discovered from inside the container: this checkout is a git
+# worktree whose `.git` is a file naming a gitdir outside the mount, so git in
+# the container reports `not a git repository` even though git is installed
+# there. The value is resolved on the host and handed in as an environment
+# variable.
 #
-# RFCT-113 M7d. mosd and apid answer `--version` with
-# `<name> <crate version> (<commit>)`, and the commit half cannot be discovered
-# by the code that prints it: MEASURED on 2026-08-26 inside
-# localhost/mos-build-rust, with the exact mount the build below uses --
-#
-#   docker run --rm -v "${REPO_ROOT}:/src" -w /src/mosd ... \
-#       -c "command -v git; git rev-parse HEAD"
-#     command -v git   -> /usr/bin/git
-#     git rev-parse    -> fatal: not a git repository:
-#                         /srv/mos/.git/worktrees/ifukam2z          (rc=128)
-#
-# -- git IS in the image, and the repository is still not a repository from
-# inside it, because this checkout is a git WORKTREE whose `.git` is a 41-byte
-# file naming a gitdir OUTSIDE the mount. A build.rs that shelled out to git
-# would fail there, or -- written the way build scripts usually are, tolerating
-# a missing git -- would embed nothing on every single build and look like it
-# worked. So the value is resolved on the HOST, where the repository is a
-# repository, and handed in as an environment variable.
-#
-# AN EMPTY VALUE IS NOT AN ERROR. `-e MOS_BUILD_COMMIT=` sets the variable to
+# An empty value is not an error. `-e MOS_BUILD_COMMIT=` sets the variable to
 # the empty string, `option_env!` yields `Some("")`, and both crates report
-# `unknown` for it and still exit 0. A build outside a checkout must still
-# produce a binary that can answer the question, even if the answer is that
-# nobody recorded one.
+# `unknown` and still exit 0: a build outside a checkout must still produce a
+# binary that can answer the question.
 #
-# DIRTY IS MARKED, NEVER PASSED OFF AS THE CLEAN SHA. `git status --porcelain`
+# Dirty is marked, never passed off as the clean SHA. `git status --porcelain`
 # and not `git diff`: an untracked-but-not-ignored `.rs` file is compiled into
 # these binaries exactly like a modified one, so it makes the tree dirty here
 # too.
 #
-# THE CALLER MAY SUPPLY IT. An already-resolved MOS_BUILD_COMMIT in the
-# environment wins, which is how a build that knows its own provenance (a
-# release pipeline handed a commit, a rebuild of an exported tarball with no
-# .git at all) says so rather than being told it is `unknown`.
+# An already-resolved MOS_BUILD_COMMIT in the environment wins, so a build that
+# knows its own provenance -- a release pipeline handed a commit, a rebuild of
+# an exported tarball with no .git at all -- says so rather than being told it
+# is `unknown`.
 if [ -z "${MOS_BUILD_COMMIT:-}" ]; then
     MOS_BUILD_COMMIT=""
     if command -v git >/dev/null 2>&1 &&
@@ -146,25 +104,20 @@ else
     echo "mosd: no build commit could be resolved; mosd and apid will report unknown" >&2
 fi
 
-# THE RECORD THE SMOKE RUNNER READS, written beside the build rather than
+# The record the smoke runner reads, written beside the build rather than
 # inferred from it. `os/verify/src/smoke.ts` asserts the commit these binaries
-# REPORT against the commit this build EMBEDDED, and it has to take that second
-# value from somewhere that is not `git rev-parse HEAD` at run time -- which
-# would pass on any freshly built tree and assert only that somebody had just
-# rebuilt. os/rootfs/build-v2.sh copies this into _out/<board>/ beside the
+# report against the commit this build embedded, and that second value cannot
+# come from `git rev-parse HEAD` at run time, which would pass on any freshly
+# built tree. os/rootfs/build-v2.sh copies this into _out/<board>/ beside the
 # factory root it goes into.
 #
-# THIS COPY DESCRIBES THE LAST BUILD FOR ANY TARGET, which is why the runner
-# does not read it. MEASURED: an x64 rootfs build followed by
+# This copy describes the last build for any target, which is why the runner
+# reads the per-board copy instead: an x64 rootfs build followed by
 # `bash mosd/hack/build-aarch64.sh` leaves this file saying
 # target=aarch64-unknown-linux-gnu while _out/x64/ still holds x86_64 binaries.
-# The per-board copy build-v2.sh makes is what keeps the smoke runner comparing
-# an image against the build that produced it rather than against whatever was
-# compiled most recently.
 #
-# TAB-SEPARATED `key<TAB>value` with `#` comments, the shape
-# os/build/src/stages.ts already writes for factory-root.txt, so one reader
-# reads both.
+# Tab-separated `key<TAB>value` with `#` comments, the shape
+# os/build/src/stages.ts writes for factory-root.txt, so one reader reads both.
 MOSD_BUILD_RECORD="${REPO_ROOT}/_out/mosd-build.txt"
 {
     echo "# What mosd/hack/build-target.sh built, and the commit it embedded in mosd and apid."
@@ -175,28 +128,21 @@ MOSD_BUILD_RECORD="${REPO_ROOT}/_out/mosd-build.txt"
     printf 'commit\t%s\n' "${MOS_BUILD_COMMIT}"
 } >"${MOSD_BUILD_RECORD}"
 
-# THE REPOSITORY IS MOUNTED, NOT mosd/, AND THAT IS NOT A CONVENIENCE.
-# mosd/Cargo.toml's workspace members include `../update/sign` -- a crate that
-# lives OUTSIDE the directory this script's own path arithmetic calls the
-# workspace. Mounting mosd/ alone produced
+# The repository is mounted, not mosd/: mosd/Cargo.toml's workspace members
+# include `../update/sign`, a crate outside the directory this script's own path
+# arithmetic calls the workspace, and mounting mosd/ alone makes cargo fail with
 #
 #   error: failed to load manifest for workspace member `/src/../update/sign`
 #   Caused by: No such file or directory (os error 2)
 #
-# which names the file and not the cause, and which the host build could never
-# have hit because the host build could see the whole checkout. This was found
-# by the switchover comparison, and it is precisely the class of thing that
-# comparison exists to find: a container boundary drawn one directory too tight.
+# which names the file and not the cause. The check below is the general form,
+# so the next member added outside mosd/ fails with a sentence instead of a
+# missing file.
 #
-# The check below is the general form, so the next member added outside mosd/
-# fails with a sentence instead of a missing file.
-#
-# AT A FIXED PATH, /src, deliberately. rustc records the paths it is given, so
-# mounting the checkout where it happens to live would make the output depend on
-# the directory the repository was cloned into -- two machines, same commit,
-# different binaries, for a reason that is not about the source. It also means
-# these binaries are NOT byte-comparable with a host cargo run from a different
-# directory, which is the first variable the switchover comparison controlled.
+# At the fixed path /src: rustc records the paths it is given, so mounting the
+# checkout where it happens to live would make the output depend on the
+# directory the repository was cloned into -- two machines, same commit,
+# different binaries, for a reason that is not about the source.
 while IFS= read -r m; do
     [ -n "${m}" ] || continue
     case "${m}" in
@@ -236,30 +182,24 @@ docker run --rm \
         }
         . /etc/mos-build/rust.env
         echo "mosd: building ${TARGET} with rustc ${MOS_BUILD_RUSTC} from ${MOS_BUILD_IMAGE} (RUST_SHA256=${MOS_BUILD_RUST_SHA256})"
-        # --locked, unchanged from the host build this replaced: it is what makes
-        # Cargo.lock the decision and refuses a build that would have quietly
-        # updated it.
+        # --locked makes Cargo.lock the decision and refuses a build that
+        # would quietly update it.
         cargo build --release --locked --target "${TARGET}" \
             -p mosd -p apid -p mos-mqttd -p mos-mqtt-broker
     '
 
 # The ELF check is per binary, not just the first: a target that silently
-# produced a host-arch artifact for ONE crate would otherwise ship and fail at
-# exec time on the device -- which is the same class of failure as building the
-# wrong architecture entirely, but reported one binary later.
+# produced a host-arch artifact for one crate would otherwise ship and fail at
+# exec time on the device, one binary later than a wholly wrong-arch build.
 #
-# IT IS A SECOND CONTAINER, NOT THE BUILD ONE, and not the host either. The
-# separation is the one os/podman/build.sh and os/update/rauc/build.sh draw: the
-# build asserts what it BUILT, this asserts what LANDED in the directory
+# It runs in a second container, not the build one and not the host, the same
+# separation os/podman/build.sh and os/update/rauc/build.sh draw: the build
+# asserts what it built, this asserts what landed in the directory
 # os/rootfs/build-v2.sh is about to copy from, so an export that dropped a file
-# or a mount that wrote somewhere unexpected is caught rather than assumed away.
-#
-# Running it on the host would have been the obvious way to get that separation
-# and it would have cost the thing this whole change buys: `file` would become a
-# host requirement, and RFCT-108's outcome for this script is that the host
-# needs docker and NOTHING else. A second `docker run` keeps both properties --
-# and the `file` it uses is mos-build-base's, whose version images.env pins a
-# floor for, rather than whatever the machine happens to ship.
+# or a mount that wrote somewhere unexpected is caught. On the host it would
+# make `file` a host requirement, and docker is the only one this script has;
+# the `file` it uses is mos-build-base's, whose version images.env pins a floor
+# for.
 docker run --rm \
     --platform "linux/${IMAGE_ARCH}" \
     -v "${WORKSPACE}/target:/target:ro" \

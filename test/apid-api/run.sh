@@ -5,50 +5,47 @@
 #   bash test/apid-api/run.sh
 #   bash test/apid-api/run.sh --dry-run
 #
-# WHAT THIS IS FOR. Every other check in this repository reads apid's source,
-# its binary, or the image that ships it. This one TALKS TO IT: over a real
-# socket, to a daemon on a machine that came up through OVMF, GRUB and its own
-# unit ordering. It is therefore the only place where a route that exists in
-# routes.rs but is unreachable in the running daemon looks different from one
-# that works.
+# Every other check in this repository reads apid's source, its binary, or the
+# image that ships it. This one talks to it, over a real socket, to a daemon on
+# a machine that came up through OVMF, GRUB and its own unit ordering -- so it
+# is the only place where a route that exists in routes.rs but is unreachable in
+# the running daemon looks different from one that works.
 #
-# IT BUILDS NOTHING, deliberately. The image is an INPUT. A harness that
-# quietly rebuilt would turn a check into a forty-minute build, and it would
-# then be testing the tree rather than the artefact somebody meant to test --
-# so a missing image is refused by name, with the two commands that make it.
+# It builds nothing: the image is an input. A harness that quietly rebuilt would
+# turn a check into a forty-minute build and would be testing the tree rather
+# than the artefact somebody meant to test, so a missing image is refused by
+# name, with the two commands that make it.
 #
-# THREE DOORS BETWEEN HERE AND apid, and every one of them fails as "connection
-# refused" with nothing to say which door was shut:
+# Three doors sit between here and apid, and every one of them fails as
+# "connection refused" with nothing to say which door was shut:
 #
 #   1. QEMU's user-mode `hostfwd` binds inside the container running QEMU.
 #   2. That container must publish the port, which os/tools/qemu-run.sh does.
-#   3. `-p 127.0.0.1:...` publishes on the DOCKER HOST's loopback. This script
-#      runs INSIDE a container; that loopback is not ours and there is no route
-#      to it. Measured 2026-08-24: this session sits on a docker network at
-#      172.18.0.0/16 while a plain `docker run` lands on the default bridge at
-#      172.17.0.0/16, with nothing between them.
+#   3. `-p 127.0.0.1:...` publishes on the docker host's loopback. This script
+#      runs inside a container; that loopback is not ours and there is no route
+#      to it. A containerised session sits on its own docker network while a
+#      plain `docker run` lands on the default bridge, with nothing between
+#      them.
 #
-# So the guest's address is THE QEMU CONTAINER'S OWN ADDRESS on a network we
-# share with it, and that network is DISCOVERED rather than named here: this
-# script reads its own eth0 address and asks each docker network whether it
-# holds it. Hardcoding a network name would work on this host and nowhere else,
+# So the guest's address is the QEMU container's own address on a network this
+# script shares with it, and that network is discovered rather than named here:
+# the script reads its own eth0 address and asks each docker network whether it
+# holds it. Hardcoding a network name would work on one host and nowhere else,
 # and `hostname` is the container's short id about as often as it is a name.
 #
-# THE CONSOLE IS THE ONLY JOURNAL. mos keeps journald at Storage=volatile
-# because /var is the EPHEMERAL partition, so a guest's log dies with the
-# guest. os/tools/qemu-journal.sh does not work and is committed as known-broken for
-# exactly that reason; it is not called here. Instead every boot is captured to
-# a file under _out/, MOS_QEMU_APPEND puts journald on the serial line, and
-# apid's own `APID_LISTENING` line becomes a readiness signal that can be
-# waited on. Dropping that append to "simplify" a run deletes the signal the
-# wait depends on -- which has already cost this campaign one investigation.
+# The console is the only journal. mos keeps journald at Storage=volatile
+# because /var is the ephemeral partition, so a guest's log dies with the guest,
+# and os/tools/qemu-journal.sh is committed as known-broken for that reason and
+# is not called here. Instead every boot is captured to a file under _out/,
+# MOS_QEMU_APPEND puts journald on the serial line, and apid's own
+# `APID_LISTENING` line becomes a readiness signal that can be waited on.
+# Dropping that append deletes the signal the wait depends on.
 #
-# ONE RUN DIRECTORY, SHARED. os/tools/qemu-run.sh's RUN_DIR is the single fixed path
-# _out/x64/.qemu, and the x64 verification line uses it too. Two runs at once
-# clobber each other's disk.img, so this script refuses to start while another
-# container holds it. That check is not politeness: the path cannot be moved
-# from here, because os/tools/qemu-run.sh belongs to the image line and is not ours
-# to edit.
+# One run directory, shared: os/tools/qemu-run.sh's RUN_DIR is the single fixed
+# path _out/x64/.qemu, and the x64 verification line uses it too. Two runs at
+# once clobber each other's disk.img, so this script refuses to start while
+# another container holds it. The path cannot be moved from here, because
+# os/tools/qemu-run.sh belongs to the image line and is not ours to edit.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -66,12 +63,11 @@ RUN_DIR="${OUT_DIR}/.qemu"
 ART_DIR="${OUT_DIR}/apid-api"
 
 # Resolved once, and used for every comparison against a docker mount source.
-# `docker inspect` reports the path it was GIVEN, not the path it resolved --
-# measured 2026-08-24 against a symlinked bind, which inspected as the symlink.
-# A run directory reached through a symlink (a git worktree pointing _out at
-# the checkout that built the image is the ordinary case) would therefore slip
-# past a string comparison, and the guard below would wave through exactly the
-# collision it exists to stop.
+# `docker inspect` reports the path it was given, not the path it resolved, so a
+# run directory reached through a symlink -- a git worktree pointing _out at the
+# checkout that built the image is the ordinary case -- slips past a string
+# comparison, and the guard below would wave through the collision it exists to
+# stop.
 RUN_DIR_REAL="$(readlink -f "${RUN_DIR}")"
 OUT_REAL="$(readlink -f "${REPO_ROOT}/_out")"
 
@@ -80,19 +76,16 @@ OUT_REAL="$(readlink -f "${REPO_ROOT}/_out")"
 HTTPS_PORT="${MOS_QEMU_HTTPS_PORT:-18443}"
 HTTP_PORT="${MOS_QEMU_HTTP_PORT:-18080}"
 
-# A TCG boot on this host reaches APID_LISTENING in 60-66s and both readiness
-# signals in 65-72s -- measured 2026-08-24 across this campaign's eight runs,
-# under TCG with no /dev/kvm, on a quiet machine. Note what that is a
-# measurement _of_: the daemon answering, not a login prompt. This harness
-# never waits for a login prompt.
+# A TCG boot with no /dev/kvm on a quiet machine reaches APID_LISTENING in
+# 60-66s and both readiness signals in 65-72s. That measures the daemon
+# answering, not a login prompt; this harness never waits for a login prompt.
 #
 # READY_TIMEOUT stays at 900s regardless, because the deadline exists for the
-# bad case rather than the measured one. A contended host is materially slower,
-# by an amount nothing here has measured, and under contention the guest goes
-# long stretches without printing a line -- indistinguishable from a stall
-# unless the waiting loop says what it is doing. So: a generous deadline, an
-# override, and progress lines carrying the elapsed time and the last thing the
-# console said.
+# bad case rather than the measured one: a contended host is materially slower
+# and goes long stretches without printing a line, indistinguishable from a
+# stall unless the waiting loop says what it is doing. Hence a generous
+# deadline, an override, and progress lines carrying the elapsed time and the
+# last thing the console said.
 READY_TIMEOUT="${MOS_APID_READY_TIMEOUT:-900}"
 CONTAINER_TIMEOUT="${MOS_APID_CONTAINER_TIMEOUT:-240}"
 POLL_INTERVAL="${MOS_APID_POLL_INTERVAL:-5}"
@@ -107,37 +100,17 @@ PROGRESS_INTERVAL="${MOS_APID_PROGRESS_INTERVAL:-15}"
 RUN_SECONDS="${MOS_QEMU_RUN_SECONDS:-2400}"
 QEMU_TIMEOUT="${MOS_QEMU_TIMEOUT:-2700}"
 
-# The second boot is ON by default. It was gated off while 07b-postreboot and
-# 08-poweroff did not exist -- a harness whose own verification depended on
-# modules that were not there could not be verified at all -- and both landed,
-# so the default now matches what the suite can actually do. Off by default
-# would mean the reboot phase takes the guest down and NOTHING observes it come
-# back: 07 ends with the machine deliberately gone, so a run that stops there
-# leaves the most expensive evidence in the campaign uncollected.
-# MOS_APID_BOOT2=0 turns it off for a boot-1-only run.
+# The second boot is on by default: 07 ends with the machine deliberately gone,
+# so without it the reboot phase takes the guest down and nothing observes it
+# come back. MOS_APID_BOOT2=0 turns it off for a boot-1-only run.
 BOOT2="${MOS_APID_BOOT2:-1}"
 BOOT2_PHASES="${MOS_APID_BOOT2_PHASES:-07b-postreboot,08-poweroff}"
 
 PHASES="${MOS_APID_PHASES:-}"
-# PINNED, and it is the last floating image reference in this repository.
-#
-# `oven/bun:1` is a MAJOR-version tag that upstream repoints onto every 1.x
-# release -- the loosest reference the R6 sweep found, and the one it could not
-# close: the rest of the inventory could drift by a rebuild, this one could
-# drift by a feature release, and the harness it runs is what decides whether
-# apid's API is judged conformant. R6 wired it to IMAGE_BUN_1 and REVERTED the
-# wiring, because PLAN-014's Scope sentence names test/apid-api out of scope and
-# a finding does not widen a boundary the plan drew. It escalated instead.
-#
-# THE USER LIFTED THAT EXCLUSION FOR THIS ONE LINE, on 2026-08-26, as an
-# authorised scope amendment recorded in PLAN-014's Scope section. Nothing else
-# under test/apid-api is touched by it, and the rest of the exclusion --
-# mosd/ Rust sources, board/ BSP content, device-side runtime behaviour --
-# stands.
-#
-# MOS_APID_BUN_IMAGE still overrides, as it always did; what changed is the
-# DEFAULT, which is now the digest this tree records rather than whatever the
-# tag points at today.
+# The bun image is pinned by digest, not by tag. `oven/bun:1` is a
+# major-version tag upstream repoints onto every 1.x release, and this harness
+# is what decides whether apid's API is judged conformant, so the default is the
+# digest os/build-env/images.env records. MOS_APID_BUN_IMAGE overrides it.
 BUN_IMAGE="${MOS_APID_BUN_IMAGE:-$(bash "${REPO_ROOT}/os/build-env/from.sh" --ref IMAGE_BUN_1)}"
 KEEP_DISK="${MOS_APID_KEEP_DISK:-0}"
 
@@ -149,12 +122,11 @@ case "${1:-}" in
 esac
 
 # --- reporting, in the register os/verify-image-v2.sh uses ------------------
-# One PASS/FAIL line per assertion and a final RESULT with DYNAMIC totals. The
-# totals are counted, never written down: a hand-maintained constant stops
-# being true the first time somebody adds a check, and the obvious repair --
-# "no FAIL lines means success" -- is equally true of a run in which nothing
-# executed at all. Three checks on this campaign have already passed while
-# asserting nothing, so ZERO CHECKS IS A FAILURE here and says so.
+# One PASS/FAIL line per assertion and a final RESULT with dynamic totals. The
+# totals are counted, never written down: a hand-maintained constant stops being
+# true the first time somebody adds a check, and the obvious repair -- "no FAIL
+# lines means success" -- is equally true of a run in which nothing executed at
+# all. Zero checks is a failure here, and the RESULT line says so.
 CHECKS_PASSED=0
 CHECKS_FAILED=0
 pass() { CHECKS_PASSED=$((CHECKS_PASSED + 1)); echo "PASS: $*"; }
@@ -456,18 +428,17 @@ find_guest() {
 }
 
 # --- 5. wait for apid, and make the waiting legible -------------------------
-# BOTH signals, because either alone is a different claim. APID_LISTENING says
-# the daemon reached the point in its own start-up where it binds; a 200 from
-# /healthz says the three doors between here and that socket are open. A run
-# that had the first and not the second used to look like apid being down.
+# Both signals, because either alone is a different claim: APID_LISTENING says
+# the daemon reached the point in its own start-up where it binds, and a 200
+# from /healthz says the three doors between here and that socket are open.
 #
-# /healthz is the probe because it is the ONLY route the auth gate lets through
+# /healthz is the probe because it is the only route the auth gate lets through
 # unauthenticated. Anything else answers a redirect to /setup on a device that
 # has never been set up, and a redirect is not evidence that the daemon is
-# serving. Redirects are also not followed here on principle: apid's :80 -> :443
-# redirect names the GUEST's port 443, which is not followable through a port
-# forward, and a client that follows it blindly hangs in a way that reads as
-# apid being down.
+# serving. Redirects are not followed here either: apid's :80 -> :443 redirect
+# names the guest's port 443, which is not followable through a port forward,
+# and a client that follows it blindly hangs in a way that reads as apid being
+# down.
 #
 # The probe runs in the bun image ON THE DISCOVERED NETWORK -- the suite's own
 # runtime over the suite's own path -- so a green wait is evidence about the
@@ -546,10 +517,9 @@ wait_for_apid() {
             else
                 fail "[${label}] apid announced itself but https://${ip}:${HTTPS_PORT}/healthz never answered 200 within ${READY_TIMEOUT}s: $(cut -c1-160 "${ART_DIR}/healthz.last" 2>/dev/null)"
             fi
-            # A timeout with no evidence is the failure mode this campaign
-            # keeps paying for. The tail of the console goes out BEFORE
-            # anything unwinds, because the container is about to be stopped
-            # and the reader would otherwise be told only that it took too long.
+            # The tail of the console goes out before anything unwinds,
+            # because the container is about to be stopped and the reader
+            # would otherwise be told only that it took too long.
             echo "--- last 40 lines of ${console} ---" >&2
             tail -n 40 "${console}" 2>/dev/null | tr -d '\r' >&2 || true
             echo "--- end of console ---" >&2
@@ -687,16 +657,14 @@ qemu_still_running_after_grace() {
 #
 # AND FIRST: DID PHASE 07 ACTUALLY POST A REBOOT? A second boot only means
 # something if the first one ended in one. 07 writes its handoff immediately
-# after the confirmed POST, so that file existing AND being newer than this run
-# is the signal -- and its absence is exactly what a run where 07 was SKIPPED
-# looks like, which happens whenever an earlier phase fails.
+# after the confirmed POST, so that file existing and being newer than this run
+# is the signal -- and its absence is what a run where 07 was skipped looks
+# like, which happens whenever an earlier phase fails.
 #
-# Without this check such a run waits out the full readiness deadline on a
-# guest that never rebooted: the console has no NEW apid line to find, because
-# apid never restarted. Measured on this campaign's first full run, where a
-# genuine daemon defect in 05 skipped 06 and 07 and the harness went on to
-# treat the still-running first boot as a second one -- and every post-reboot
-# assertion then ran against a machine that had not rebooted.
+# Without this check such a run waits out the full readiness deadline on a guest
+# that never rebooted: the console has no new apid line to find, because apid
+# never restarted, and every post-reboot assertion then runs against a machine
+# that has not rebooted.
 HANDOFF_FILE="${ART_DIR}/handoff-07-reboot.json"
 
 reboot_was_posted() {

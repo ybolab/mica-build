@@ -163,7 +163,7 @@ RUN set -eu; \
 # Labels rather than only the file, so `docker inspect` reaches it too: the
 # images above this one are throwaway builders that nobody keeps a shell in.
 LABEL org.opencontainers.image.title="mos-build-base" \
-      org.opencontainers.image.description="mos common build floor (PLAN-014 M2, RFCT-108)" \
+      org.opencontainers.image.description="mos common build floor" \
       org.opencontainers.image.base.name="${MOS_BASE_IMAGE}" \
       com.mos.build-env.source="os/build-env/base/Dockerfile" \
       com.mos.build-env.pins="os/build-env/images.env"

@@ -10,7 +10,7 @@
  *     first thing that drifts is downward, which reads as a clean run.
  *   - A SKIP is NOT a pass. It gets its own line, it is excluded from the
  *     RESULT denominator, and it never contributes to the numerator. Counting
- *     skips as passes is the third defect class this campaign has hit.
+ *     skips as passes turns an unmade assertion into a green one.
  */
 
 import { writeFileSync } from "node:fs";

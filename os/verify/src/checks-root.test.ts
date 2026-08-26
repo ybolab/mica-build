@@ -1,18 +1,17 @@
-// Batch 2a driven from the failing side.
+// The packed-root families, driven from the failing side.
 //
-// PLAN-014 M4c (RFCT-110), RFCT-096's rule: a ported check lands with the
-// fixture that fails it, because the parity harness cannot tell a check that
-// PASSES from one that CANNOT FAIL. Both report "agrees with the oracle"
-// against a healthy image and only a mutation separates them.
+// Every check lands with the fixture that fails it, because the parity harness
+// cannot tell a check that PASSES from one that CANNOT FAIL: both report
+// "agrees with the oracle" against a healthy image, and only a mutation
+// separates them.
 //
 // The fixture is a real directory tree -- `packedRootFixture` -- seeded into
 // the state that makes every check here green, and every case below is ONE edit
 // to it. The baseline is asserted green FIRST in every case, because a fixture
 // that fails a check it did not mutate proves nothing about the mutation.
 //
-// ═══ WHAT THE MUTATIONS ARE CHOSEN TO CATCH ═══
-//
-// Not "obviously broken". Each is a shape the real failure takes: a file that
+// The mutations are not "obviously broken". Each is a shape the real failure
+// takes: a file that
 // became a SYMLINK when a package moved it, a config line that grew a suffix so
 // an anchored pattern stops matching, an enablement symlink that landed in the
 // wrong tree, a second kernel's modules shipped beside the live one. A
@@ -646,13 +645,10 @@ describe('the built-in escape, as an on-image fact', () => {
   })
 
   test('the two surviving copies of the markup cannot drift apart', () => {
-    // This used to read os/verify-image-v2.sh and assert the oracle's
-    // BUILTIN_MARKUP, so that the fixture's copy and the check's copy came from
-    // a common third source. The oracle is deleted (RFCT-110 M4e), so the two
-    // copies keep each other honest instead: checks-fixture.ts seeds apid from
-    // its own literal and checks-root.ts greps for its own, and if either is
-    // edited alone the check goes red against a correct image -- which is
-    // exactly the failure the oracle read was buying.
+    // There is no third source for this markup, so the two copies keep each
+    // other honest: checks-fixture.ts seeds apid from its own literal and
+    // checks-root.ts greps for its own, and if either is edited alone the check
+    // goes red against a correct image.
     expect(FIXTURE_BUILTIN_MARKUP).toBe(BUILTIN_MARKUP)
     // ...and the value itself, transcribed once more here, so that an edit
     // which moved BOTH copies together still has to face a third statement of

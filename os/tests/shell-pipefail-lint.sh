@@ -9,14 +9,9 @@
 # inverted, and which way it lands depends on whether the producer still had
 # bytes to write, which makes it a race rather than a reliable bug.
 #
-# This was not hypothetical. os/verify-image-v2.sh asserted that exactly one
-# D-Bus policy file names com.mos.mosd; the image shipped a second file granting
-# three members on that name; the check printed PASS, and it printed PASS
-# BECAUSE the grant was there. The same shape sat in the assertion that the MQTT
-# bridge is granted none of Reboot, PowerOff, SetSettings or
-# SetTransientRootPassword -- a security assertion whose failure direction was
-# green -- and in os/tests/shadow-reconcile-test.sh's "no temporary files were left
-# behind". Nineteen sites in twelve files carried it.
+# The worst instance of it is a security assertion whose failure direction is
+# green: "the MQTT bridge is granted none of Reboot, PowerOff, SetSettings or
+# SetTransientRootPassword" reports PASS precisely because the grant is there.
 #
 # The rule is narrow on purpose, so that it has no false positives to teach
 # anyone to ignore. Only -q is flagged: it prints NOTHING, so the exit status is
@@ -28,9 +23,9 @@
 # NOT flagged, though they exit early too: `| grep -m1`, `| head`, `| sed q`.
 # These PRINT, so they are normally used for their output -- test/apid-api/run.sh
 # does `hit="$(console_since ... | grep -m1 APID_LISTENING || true)"`, where the
-# matched line is the point and the status is discarded. An earlier draft of
-# this lint flagged -m as well and that line was its only hit in the whole tree:
-# a rule whose every finding is a false positive is worse than no rule.
+# matched line is the point and the status is discarded. Flagging -m as well
+# would make that line the rule's only hit in the tree, and a rule whose every
+# finding is a false positive is worse than no rule.
 #
 # Comment lines are skipped, so prose describing the trap -- including the
 # paragraph above -- is not reported as an instance of it.
@@ -51,11 +46,9 @@ mapfile -t files < <(git ls-files '*.sh' 'hack/*' | sort)
 scanned=0
 for f in "${files[@]}"; do
     [ -f "${f}" ] || continue
-    # The WHOLE file, not its first N lines. This scan originally looked at the
-    # head, on the reasoning that `set -euo pipefail` belongs at the top -- and
-    # test/apid-api/run.sh sets it on line 52, so the file was skipped entirely
-    # and never examined. A scoping heuristic that quietly excludes files is
-    # indistinguishable, in the output, from a tree that is clean.
+    # The WHOLE file, not its first N lines: `set -euo pipefail` does not have
+    # to be near the top, and a scoping heuristic that quietly excludes files
+    # is indistinguishable, in the output, from a tree that is clean.
     grep -c 'pipefail' "${f}" >/dev/null || continue
     scanned=$((scanned + 1))
     # A pipe, optional whitespace, then grep with -q among its flags; comment

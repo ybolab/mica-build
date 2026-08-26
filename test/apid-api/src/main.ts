@@ -1,11 +1,10 @@
 /**
  * The suite's entry point and the ordered phase registry.
  *
- * Every phase module is imported here, up front. That is deliberate: it means
- * no later subtask has to touch a shared file to add its work -- each fills in
- * exactly one phase module, and this registry never has to be edited again.
+ * Every phase module is imported here, up front, so adding work means filling
+ * in one phase module rather than editing a shared file.
  *
- * The order is fixed by design, not by convenience. It runs from the cheapest
+ * The order is fixed by design, not by convenience: it runs from the cheapest
  * and least destructive assertion to the one that takes the guest down, so a
  * failure early costs nothing and a failure late has everything before it
  * already recorded.
