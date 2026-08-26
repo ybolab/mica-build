@@ -935,7 +935,15 @@ Result, 2026-08-26, this host:
 114425856 bytes  d7506b6279e6f3643da8938d0be8a025abe01bb1ea10ad57abcd9ad753d86aea  shell
 114425856 bytes  d7506b6279e6f3643da8938d0be8a025abe01bb1ea10ad57abcd9ad753d86aea  shell, again
 114425856 bytes  d7506b6279e6f3643da8938d0be8a025abe01bb1ea10ad57abcd9ad753d86aea  TypeScript
+114425856 bytes  d7506b6279e6f3643da8938d0be8a025abe01bb1ea10ad57abcd9ad753d86aea  shell,      merged tree
+114425856 bytes  d7506b6279e6f3643da8938d0be8a025abe01bb1ea10ad57abcd9ad753d86aea  TypeScript, merged tree
 ```
+
+The last two are the same measurement re-taken after merging M4f, which added
+six modules and 250 tests to `os/verify` — a package `os/build` imports its
+board model from and typechecks against. None of it is read by the bundle
+builder, and **the hash says so rather than the sentence saying so**: re-run the
+gate on the tree that ships, not on the tree the port was written against.
 
 And `rauc info` reports the same checksum for each image INSIDE the bundle,
 which is the same fact read a second way — by rauc rather than by `sha256sum`,
@@ -954,6 +962,7 @@ identical again:
 ```
 114425856 bytes  782532ada1d2f50931c6b51b5b6f0cdccb148c74ac1a629d43bbf24440b489c9  shell,      one byte changed
 114425856 bytes  782532ada1d2f50931c6b51b5b6f0cdccb148c74ac1a629d43bbf24440b489c9  TypeScript, one byte changed
+114425856 bytes  782532ada1d2f50931c6b51b5b6f0cdccb148c74ac1a629d43bbf24440b489c9  both,       merged tree
 ```
 
 Three things at once: the gate can report a difference, the two implementations
