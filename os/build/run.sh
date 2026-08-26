@@ -5,7 +5,7 @@
 #   bash os/build/run.sh --help
 #   bash os/build/run.sh src/geometry.test.ts   extra arguments go to `bun test`
 #
-# WHAT THIS PACKAGE IS. PLAN-014 M6a (RFCT-112): the TypeScript build driver the
+# WHAT THIS PACKAGE IS. PLAN-014 M6a: the TypeScript build driver the
 # two disk assemblers and the bundle builder move onto, in the shape os/verify
 # established in M3 -- bun.lock, package.json, tsconfig.json, run.sh, src/. This
 # milestone opens it with the two things every later part needs and nothing

@@ -1,11 +1,11 @@
 // Batch 1b: the boot slots' filesystems.
 //
-// PLAN-014 M4b (RFCT-110). `check_boot_slot` (os/verify-image-v2.sh:1776) runs
-// twice per board, once for BOOT-A and once for BOOT-B, and everything it
-// concludes is `many` here with the slot NAME as the instance -- not a count.
-// R4 measured one defect as 465, 467, 562 and 925 differing bytes from nothing
-// but the clock, so a family that fired twice and matched twice would say
-// nothing about WHICH slot.
+// `check_boot_slot` (os/verify-image-v2.sh:1776) runs twice per board, once
+// for BOOT-A and once for BOOT-B, and everything it concludes is `many` here
+// with the slot NAME as the instance -- not a count. R4 measured one defect as
+// 465, 467, 562 and 925 differing bytes from nothing but the clock, so a
+// family that fired twice and matched twice would say nothing about WHICH
+// slot.
 //
 // ═══ WHERE THE SLOTS COME FROM ═══
 //

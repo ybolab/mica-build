@@ -1,8 +1,7 @@
 // Batch 4a, the remainder: the small families that read only the unpacked root.
 //
-// PLAN-014 M4f (RFCT-110). Twenty-six conclusions on cx3576 and twenty-five on
-// x64, from ten places in the oracle that share no subject except the tree they
-// read:
+// Twenty-six conclusions on cx3576 and twenty-five on x64, from ten places in
+// the oracle that share no subject except the tree they read:
 //
 //   systemd-networkd enabled          :2500      1 / 1
 //   the ELF architecture of mosd/apid :2517      2 / 2

@@ -1,9 +1,9 @@
 // Batch 4b: the four ext4 storage tiers.
 //
-// PLAN-014 M4g (RFCT-110). `check_ext4` (os/verify-image-v2.sh:2306) is called
-// four times -- META, STATE, EPHEMERAL, DATA -- and prints SIX conclusions each,
-// plus one about EPHEMERAL's seed stamp: 25 conclusions per board, the largest
-// single family left unclaimed after batch 4a.
+// `check_ext4` (os/verify-image-v2.sh:2306) is called four times -- META,
+// STATE, EPHEMERAL, DATA -- and prints SIX conclusions each, plus one about
+// EPHEMERAL's seed stamp: 25 conclusions per board, the largest single family
+// left unclaimed after batch 4a.
 //
 // ═══ WHERE THE PARTITION COMES FROM ═══
 //
@@ -330,7 +330,7 @@ export const EXT4_CHECKS: readonly CheckCase[] = [
     // WHAT A PARTITION SHOULD CONTAIN AT BUILD IS PER PARTITION (:2352). META,
     // STATE and DATA ship empty; EPHEMERAL ships SEEDED, because /var is
     // written by every early systemd unit and a filesystem filled on first boot
-    // races all of them (RFCT-106).
+    // races all of them.
     //
     // Which tier is which comes from the board definition, not from a name
     // written here: EPHEMERAL is the ext4 tier whose mountpoint is /var.

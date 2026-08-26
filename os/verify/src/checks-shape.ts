@@ -1,8 +1,8 @@
 // Batch 4b: the image's shape, and the packed root's file capabilities.
 //
-// PLAN-014 M4g (RFCT-110). Four conclusions per board -- the default path being
-// the `-latest` symlink, the partition count, and the capability pair -- and
-// two of them needed something the register could not previously express.
+// Four conclusions per board -- the default path being the `-latest` symlink,
+// the partition count, and the capability pair -- and two of them needed
+// something the register could not previously express.
 //
 // ═══ `exactly ${EXPECT_PARTS} partitions`, AND WHY IT WAS LEFT UNTIL LAST ═══
 //

@@ -1,13 +1,13 @@
 // Reading a mos disk image without touching the host.
 //
-// PLAN-014 M4 (RFCT-110), the M4a half: the typed helpers M4b..M4d port checks
-// on top of. The toolset is os/verify-image-v2.sh's, unchanged and deliberately
-// so -- sgdisk for the GPT, mtools at an offset for the FAT boot slots, a byte
-// range extracted out of the image and read with debugfs/tune2fs for the ext4
-// partitions, unsquashfs for the packed root, and `veritysetup verify`, which
-// walks the hash tree in USERSPACE and never creates a device-mapper target,
-// never calls losetup and never mounts anything. No loop mounts, no host
-// mutation, nothing that needs root.
+// The typed helpers M4b..M4d port checks on top of. The toolset is
+// os/verify-image-v2.sh's, unchanged and deliberately so -- sgdisk for the
+// GPT, mtools at an offset for the FAT boot slots, a byte range extracted out
+// of the image and read with debugfs/tune2fs for the ext4 partitions,
+// unsquashfs for the packed root, and `veritysetup verify`, which walks the
+// hash tree in USERSPACE and never creates a device-mapper target, never calls
+// losetup and never mounts anything. No loop mounts, no host mutation, nothing
+// that needs root.
 //
 // ═══ WHAT THIS FILE IS REALLY ABOUT: TOOLS THAT SUCCEED AT NOTHING ═══
 //

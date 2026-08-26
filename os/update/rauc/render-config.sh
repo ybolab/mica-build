@@ -253,7 +253,7 @@ bootname=B
 SLOTS
 }
 
-# BOTH BOOTLOADERS NOW HAVE THE SAME SLOT MODEL (RFCT-106): a rootfs pair and
+# BOTH BOOTLOADERS NOW HAVE THE SAME SLOT MODEL: a rootfs pair and
 # a boot-partition pair, each boot slot parented to its rootfs slot. The
 # difference between the boards is which component SELECTS the boot partition
 # -- U-Boot from its own environment, the first-stage GRUB on the ESP from

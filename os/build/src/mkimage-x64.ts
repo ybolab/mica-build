@@ -537,7 +537,7 @@ export async function assembleX64(
     const slotFault = bootSlotFault(await listFat(tb, bootA), await listFat(tb, bootB))
     if (slotFault !== undefined) throw new Error(slotFault)
 
-    // --- EPHEMERAL SHIPS ALREADY SEEDED (RFCT-106). /var is a mount of this
+    // --- EPHEMERAL SHIPS ALREADY SEEDED. /var is a mount of this
     // filesystem and mounting an EMPTY one over the image's /var hides the tree
     // the installed packages expect. mos-seed-var used to copy that tree out on
     // the first boot -- at the same moment as every other unit that writes /var.

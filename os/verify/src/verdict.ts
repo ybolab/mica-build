@@ -1,7 +1,7 @@
 // How a ported check spells its conclusion.
 //
-// PLAN-014 M4b (RFCT-110). Three constructors, in their own module so that the
-// check batches can use them without importing the register they are part of.
+// Three constructors, in their own module so that the check batches can use
+// them without importing the register they are part of.
 //
 // The MESSAGE is not the identity -- `parity.ts` pairs on (id, instance) and
 // compares verdicts, and the whole reason the matcher lives on the check is

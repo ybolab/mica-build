@@ -1,11 +1,10 @@
 // Batch 3: the checks that only some boards run at all.
 //
-// PLAN-014 M4d (RFCT-110). Every family here is guarded in the oracle by a
-// condition read out of the board definition -- `is_uboot_board`,
-// `board_has_radio`, `board_has_hwinit`, `BOARD_HAS_STATUS_LED`,
-// `BOARD_FIRMWARE_FILES` -- so on one board it concludes and on the other it
-// SKIPS. That is the whole difficulty of this batch and it shows up in three
-// places.
+// Every family here is guarded in the oracle by a condition read out of the
+// board definition -- `is_uboot_board`, `board_has_radio`, `board_has_hwinit`,
+// `BOARD_HAS_STATUS_LED`, `BOARD_FIRMWARE_FILES` -- so on one board it
+// concludes and on the other it SKIPS. That is the whole difficulty of this
+// batch and it shows up in three places.
 //
 // ═══ 1. A SKIP IS A THIRD VERDICT ═══
 //

@@ -1,8 +1,8 @@
 // Batch 2b: /etc/fstab, and where the custom UI root actually lands.
 //
-// PLAN-014 M4c (RFCT-110). Four storage tiers, two shape assertions about the
-// table itself, and the six-way question the four tier checks cannot answer:
-// which entry governs the path apid reads.
+// Four storage tiers, two shape assertions about the table itself, and the
+// six-way question the four tier checks cannot answer: which entry governs the
+// path apid reads.
 //
 // ═══ WHY UI_ROOT IS ASSERTED SEPARATELY AT ALL ═══
 //

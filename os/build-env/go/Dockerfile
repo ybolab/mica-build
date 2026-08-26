@@ -4,7 +4,7 @@
 #
 #   make build-env   -> localhost/mos-build-go
 #
-# PLAN-014 M2 (RFCT-108), decision 4: NOT `golang:1.25-trixie`. The official
+# PLAN-014 M2, decision 4: NOT `golang:1.25-trixie`. The official
 # image is a moving floor nobody here chose -- it picks its own Debian release,
 # its own CA bundle and its own git, and changes all three on its own schedule,
 # so "what did this build run on" is answerable only as a date. This is

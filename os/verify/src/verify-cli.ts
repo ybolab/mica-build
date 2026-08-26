@@ -4,12 +4,12 @@
 //   bash os/verify/run.sh --verify --board x64 --image PATH
 //   bash os/verify/run.sh --verify --board x64 --probe
 //
-// PLAN-014 M4e (RFCT-110). This is what `make os-verify-cx3576-v2` runs, and it
-// is the entry point os/verify-image-v2.sh used to be. The scope sentence in
-// RFCT-110 is "the shell verifier it REPLACES" -- so the deletion of that file
-// had to arrive with this, or the tree would have lost the ability to verify an
-// image at all and the milestone would have been a capability deletion wearing
-// a port's name.
+// This is what `make os-verify-cx3576-v2` runs, and it is the entry point
+// os/verify-image-v2.sh used to be. The scope sentence in RFCT-110 is "the
+// shell verifier it REPLACES" -- so the deletion of that file had to arrive
+// with this, or the tree would have lost the ability to verify an image at all
+// and the milestone would have been a capability deletion wearing a port's
+// name.
 //
 // ORCHESTRATION ONLY. The checks are in checks.ts and the sixteen modules it
 // composes; the tools are in tools.ts; nothing here decides anything about an

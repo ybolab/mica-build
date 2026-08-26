@@ -782,7 +782,7 @@ export async function buildBundle(
     let bootAttemptsSeen = 0
 
     // THE BOOT HALF, which is the one thing that genuinely differs between the
-    // two bootloaders (RFCT-106).
+    // two bootloaders.
     if (geometry.bootloader === 'uboot') {
       const bootCmdText = readFileSync(bootCmdPath, 'utf8')
       bootAttemptsSeen = requireBootAttempts(geometry, bootCmdText, bootCmdPath).length

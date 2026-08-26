@@ -381,7 +381,7 @@ export async function assembleCx3576(
     await makeExt4(tb, geometry, metaImg, geometry.requireInt('META_SIZE_MIB'), 'META')
     await makeExt4(tb, geometry, stateImg, geometry.requireInt('STATE_SIZE_MIB'), 'STATE')
 
-    // EPHEMERAL SHIPS ALREADY SEEDED (RFCT-106). /var is a mount of this
+    // EPHEMERAL SHIPS ALREADY SEEDED. /var is a mount of this
     // filesystem, and an empty one hides the tree the installed packages
     // expect. mos-seed-var used to copy that tree out on the first boot -- at
     // the same moment as every other unit that writes /var, and Debian 13's

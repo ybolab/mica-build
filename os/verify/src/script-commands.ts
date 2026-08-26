@@ -1,10 +1,10 @@
 // The command names a shell script invokes at COMMAND POSITION, and whether
 // each resolves inside the packed root.
 //
-// PLAN-014 M4f (RFCT-110). A transcription of `mos_script_commands` and
-// `sq_resolves_cmd` (os/verify-image-v2.sh:4168-4230), in their own module
-// because they are a nine-stage text pipeline and putting them beside the check
-// that uses them would bury it.
+// A transcription of `mos_script_commands` and `sq_resolves_cmd`
+// (os/verify-image-v2.sh:4168-4230), in their own module because they are a
+// nine-stage text pipeline and putting them beside the check that uses them
+// would bury it.
 //
 // ═══ WHY A PIPELINE AND NOT A SHELL PARSER ═══
 //

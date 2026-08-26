@@ -1,8 +1,8 @@
 // Batch 4a: the D-Bus policies -- the system bus, mosd's root-only grant, the
 // extension namespace, and bluez's.
 //
-// PLAN-014 M4f (RFCT-110). Eleven conclusions on each board, one of them a SKIP
-// on x64. Everything here reads the unpacked root and nothing else.
+// Eleven conclusions on each board, one of them a SKIP on x64. Everything here
+// reads the unpacked root and nothing else.
 //
 // ═══ WHY A POLICY PARSER AND NOT A grep ═══
 //

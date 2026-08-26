@@ -1,12 +1,11 @@
 // The seam that decides HOW an image-inspection tool is invoked, and the only
 // place that decides it.
 //
-// PLAN-014 M4 (RFCT-110), the M4a half. os/verify-image-v2.sh reads a disk
-// image with sgdisk, mtools at an offset, debugfs/tune2fs over a dd-extracted
-// partition, unsquashfs and a userspace `veritysetup verify` -- and NOTHING
-// ELSE: no loop mounts, no losetup, no device-mapper, no mount(8). The port
-// keeps that toolset exactly, so this file is about where the tools come from
-// rather than which ones they are.
+// Os/verify-image-v2.sh reads a disk image with sgdisk, mtools at an offset,
+// debugfs/tune2fs over a dd-extracted partition, unsquashfs and a userspace
+// `veritysetup verify` -- and NOTHING ELSE: no loop mounts, no losetup, no
+// device-mapper, no mount(8). The port keeps that toolset exactly, so this
+// file is about where the tools come from rather than which ones they are.
 //
 // TWO ROUTES, ONE SEAM -- the same shape os/verify/run.sh gave bun in M3, and
 // for the same reason. A caller passes an argv and reads an exit status and

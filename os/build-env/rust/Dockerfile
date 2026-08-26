@@ -4,7 +4,7 @@
 #
 #   make build-env   -> localhost/mos-build-rust
 #
-# PLAN-014 M2 (RFCT-108), decision 4: NOT `rust:1.90-trixie`, for the reason
+# PLAN-014 M2, decision 4: NOT `rust:1.90-trixie`, for the reason
 # mos-build-go's header gives. This is mos-build-base -- a pinned digest --
 # plus upstream's standalone installer, whose bytes are named in
 # os/build-env/images.env.

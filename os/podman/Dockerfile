@@ -341,7 +341,7 @@ COPY --from=src /src/podman /src/podman
 #                              (os/rootfs/overlay-v2/etc/containers/storage.conf)
 #                              and devicemapper is deprecated upstream. Also
 #                              keeps libbtrfs and libdevmapper out of the link.
-#   seccomp                    KEPT. On a root-mode engine (PLAN-012 D5) the
+#   seccomp                    KEPT. On a root-mode engine the
 #                              seccomp profile is the main thing between a
 #                              container and the host kernel.
 #   systemd                    KEPT. How Quadlet-generated units integrate.

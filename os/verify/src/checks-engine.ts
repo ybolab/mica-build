@@ -1,10 +1,10 @@
 // Batch 4a: the container engine, the package-manager purge, and the trust store.
 //
-// PLAN-014 M4f (RFCT-110). Fifteen conclusions on each board -- ten from
-// `check_container_engine` (:1191), four from `check_no_package_manager`
-// (:1112) and one from `check_ca_bundle` (:3498). Three families in one module
-// because all three are the same act read from three sides: what the pack stage
-// PUT IN the root, what it TOOK OUT, and what it GENERATED on the way through.
+// Fifteen conclusions on each board -- ten from `check_container_engine`
+// (:1191), four from `check_no_package_manager` (:1112) and one from
+// `check_ca_bundle` (:3498). Three families in one module because all three
+// are the same act read from three sides: what the pack stage PUT IN the root,
+// what it TOOK OUT, and what it GENERATED on the way through.
 //
 // ═══ THE ONE SHAPE THIS REGISTER CANNOT EXPRESS, MEASURED AND RECORDED ═══
 //
@@ -330,7 +330,7 @@ const ENGINE_CHECKS: readonly CheckCase[] = [
 
   engineCheck({
     // The default helper_binaries_dir begins with two directories under
-    // /usr/local, a prefix this image makes PARTIALLY WRITABLE (PLAN-011 D5).
+    // /usr/local, a prefix this image makes PARTIALLY WRITABLE.
     // Pinned, not searched.
     id: 'container-engine-helper-dir-pinned',
     shell: {

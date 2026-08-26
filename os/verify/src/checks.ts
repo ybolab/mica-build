@@ -1,12 +1,11 @@
 // The check register: one entry per image-contract check, carrying BOTH the
 // TypeScript that decides it and the shell conclusion it replaces.
 //
-// PLAN-014 M4 (RFCT-110). At M4a this register is EMPTY, on purpose: M4a builds
-// the instrument, M4b..M4d fill it in batches, M4e deletes
-// os/verify-image-v2.sh once nothing is left unclaimed. An empty register is
-// not a neutral state and the harness does not treat it as one -- every one of
-// the oracle's conclusions comes out `not-ported`, and the run's conclusion is
-// INCOMPLETE.
+// At M4a this register is EMPTY, on purpose: M4a builds the instrument,
+// M4b..M4d fill it in batches, M4e deletes os/verify-image-v2.sh once nothing
+// is left unclaimed. An empty register is not a neutral state and the harness
+// does not treat it as one -- every one of the oracle's conclusions comes out
+// `not-ported`, and the run's conclusion is INCOMPLETE.
 //
 // ═══ WHY THE MATCHER LIVES ON THE CHECK ═══
 //
@@ -30,8 +29,8 @@
 //     },
 //   }
 //
-// and, in the same change, its negative test -- a port without one is not done
-// (RFCT-096). The harness cannot tell a check that passes from a check that
+// and, in the same change, its negative test -- a port without one is not
+// done. The harness cannot tell a check that passes from a check that
 // cannot fail; only a fixture that drives it red can.
 
 import { createHash } from 'node:crypto'

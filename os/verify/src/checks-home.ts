@@ -1,10 +1,10 @@
 // Batch 4a: the two persistent home directories, the `mos` account, and the
 // STATE binds that make "/var is discardable" true rather than aspirational.
 //
-// PLAN-014 M4f (RFCT-110). Fourteen conclusions on each board -- ten from
-// RFCT-039's /home and RFCT-054's /root (:3903-4154), four from the wipe-safety
-// pairs and `check_ext_unit_dir` (:3450, :613). One of the four is a SKIP on a
-// board with no Bluetooth controller.
+// Fourteen conclusions on each board -- ten from RFCT-039's /home and
+// RFCT-054's /root (:3903-4154), four from the wipe-safety pairs and
+// `check_ext_unit_dir` (:3450, :613). One of the four is a SKIP on a board
+// with no Bluetooth controller.
 //
 // ═══ WHY EVERY ONE OF THESE READS THE TIER AND NOT A STRING ═══
 //

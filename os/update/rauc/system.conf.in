@@ -63,7 +63,7 @@ statusfile=@STATUSFILE@
 @BOOT_ATTEMPTS_LINE@
 @BOOT_ATTEMPTS_PRIMARY_LINE@
 
-# Accept verity-format bundles only (PLAN-006 Part B). Refusing "plain" here
+# Accept verity-format bundles only. Refusing "plain" here
 # means a bundle whose payload is only hashed at install time can never be
 # installed on a device.
 bundle-formats=verity
@@ -81,7 +81,7 @@ path=/etc/rauc/keyring.pem
 #
 # One group per A/B side: the rootfs slot carries the bootname the U-Boot
 # backend flips, the boot slot hangs off it as a child so kernel+dtb and the
-# root filesystem are installed and rolled back as one unit (PLAN-006 Part J).
+# root filesystem are installed and rolled back as one unit.
 #
 # Devices are named by partition GUID, never by /dev/mmcblkNpM: the GUIDs are
 # layout constants, the disk node name is not. The symlinks under
@@ -91,7 +91,7 @@ path=/etc/rauc/keyring.pem
 # The slot sections themselves are rendered per board by
 # os/update/rauc/render-config.sh, because the shape of the boot half genuinely
 # differs between the two bootloaders and pretending otherwise is what broke
-# x64 (RFCT-106):
+# x64:
 #
 #   uboot  — a per-slot BOOT PARTITION. U-Boot reads BOOT_ORDER from its own
 #            environment and then loads boot.scr from the partition it picked,

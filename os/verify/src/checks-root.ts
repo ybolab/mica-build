@@ -1,9 +1,9 @@
 // Batch 2a: what the packed read-only root CONTAINS.
 //
-// PLAN-014 M4c (RFCT-110). The largest family in the oracle and the flattest:
-// `sq_regular`, `sq_symlink`, `sq_grep` and the two unit-enablement helpers are
-// one-line assertions over the squashfs the device actually mounts, and all
-// four have the same matcher shape -- the conclusion's own `what` clause is the
+// The largest family in the oracle and the flattest: `sq_regular`,
+// `sq_symlink`, `sq_grep` and the two unit-enablement helpers are one-line
+// assertions over the squashfs the device actually mounts, and all four have
+// the same matcher shape -- the conclusion's own `what` clause is the
 // substring both directions share.
 //
 // ═══ WHY THE ROOT IS UNPACKED ONCE ═══

@@ -1,11 +1,11 @@
 // The MQTT bridge and broker: in the image, startable, and INERT.
 //
-// PLAN-014 M4d (RFCT-110). This family belongs to no batch in the original
-// decomposition and that is why it is here. It is board-UNCONDITIONAL -- 16
-// conclusions on each shipped board, measured 2026-08-26 -- so it was not batch
-// 3 as scoped; and `mqttd: <path> is a regular file` LOOKS like `sq_regular`
-// but is check_mqttd's own prose with a `mqttd: ` prefix, so it was not in batch
-// 2a's `sq_regular` family either. It fell between the two.
+// This family belongs to no batch in the original decomposition and that is
+// why it is here. It is board-UNCONDITIONAL -- 16 conclusions on each shipped
+// board, measured 2026-08-26 -- so it was not batch 3 as scoped; and `mqttd:
+// <path> is a regular file` LOOKS like `sq_regular` but is check_mqttd's own
+// prose with a `mqttd: ` prefix, so it was not in batch 2a's `sq_regular`
+// family either. It fell between the two.
 //
 // ═══ WHAT THE FAMILY PROVES, AND WHY EACH HALF IS NEEDED ═══
 //

@@ -12,7 +12,7 @@
 #   bash os/build-env/from.sh --check     validate every IMAGE_ key, print
 #                                         nothing, exit 0 or 1
 #
-# PLAN-014 M2 (RFCT-108), the M2c half: every Dockerfile in this tree takes its
+# PLAN-014 M2, the M2c half: every Dockerfile in this tree takes its
 # base image as a build argument, and this is the only thing that produces one.
 #
 # WHY --ref EXISTS, added by the R6 remediation. M2c's scope was Dockerfile

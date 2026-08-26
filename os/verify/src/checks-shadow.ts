@@ -1,11 +1,11 @@
 // /etc/shadow lives in RAM, and the image ships no usable credential.
 //
-// PLAN-014 M4d (RFCT-110). The second family no batch owned. Like the MQTT
-// pair it is board-UNCONDITIONAL -- 19 conclusions on each shipped board,
-// measured 2026-08-26 -- and like it, several of its conclusions have the SHAPE
-// of a batch-2a helper without being one: `/etc/shadow is a symlink to
-// /run/mos/shadow` is written inline, not through `sq_symlink`, so it carries a
-// parenthetical batch 2a's matcher would not have found.
+// The second family no batch owned. Like the MQTT pair it is
+// board-UNCONDITIONAL -- 19 conclusions on each shipped board, measured
+// 2026-08-26 -- and like it, several of its conclusions have the SHAPE of a
+// batch-2a helper without being one: `/etc/shadow is a symlink to
+// /run/mos/shadow` is written inline, not through `sq_symlink`, so it carries
+// a parenthetical batch 2a's matcher would not have found.
 //
 // ═══ THE PROPERTY, END TO END ═══
 //

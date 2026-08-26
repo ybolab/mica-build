@@ -1,11 +1,11 @@
 // Batch 1a: the GPT geometry.
 //
-// PLAN-014 M4b (RFCT-110). Every check here reads the table THE IMAGE CARRIES
-// through `readGpt` and the table THE BOARD DECLARES through `walkLayout`, and
-// compares the two. The context deliberately offers no route from a check to a
-// board-resolved partition table: a check comparing the image to the board
-// definition has to read the two independently, or it hands itself the same
-// number on both sides.
+// Every check here reads the table THE IMAGE CARRIES through `readGpt` and the
+// table THE BOARD DECLARES through `walkLayout`, and compares the two. The
+// context deliberately offers no route from a check to a board-resolved
+// partition table: a check comparing the image to the board definition has to
+// read the two independently, or it hands itself the same number on both
+// sides.
 //
 // ═══ THE ONE NUMBER THAT CROSSES ═══
 //

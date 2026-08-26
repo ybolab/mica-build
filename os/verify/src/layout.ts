@@ -1,13 +1,13 @@
 // The partition table the BOARD DEFINITION describes, walked the way
 // os/verify-image-v2.sh:1450-1516 walks it.
 //
-// PLAN-014 M4b (RFCT-110). This is one half of every GPT geometry check: the
-// other half is the table the IMAGE actually carries, read by `readGpt`. The
-// two are produced by different code from different inputs and only then
-// compared -- which is the property the oracle's own comment at :1450 insists
-// on, and the reason the hand-written chain it replaced (`rootfs_b_start_mib =
-// ...; meta_start_mib = ...`) was wrong: it restated the arithmetic the
-// assembler had already done, so a gap both agreed on would have passed.
+// This is one half of every GPT geometry check: the other half is the table
+// the IMAGE actually carries, read by `readGpt`. The two are produced by
+// different code from different inputs and only then compared -- which is the
+// property the oracle's own comment at :1450 insists on, and the reason the
+// hand-written chain it replaced (`rootfs_b_start_mib = ...; meta_start_mib =
+// ...`) was wrong: it restated the arithmetic the assembler had already done,
+// so a gap both agreed on would have passed.
 //
 // ═══ SIZE RESOLVES IN ONE ORDER, AND THE ORDER IS THE SCHEMA'S ═══
 //

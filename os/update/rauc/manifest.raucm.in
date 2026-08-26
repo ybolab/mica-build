@@ -24,7 +24,7 @@ format=verity
 [image.rootfs]
 filename=rootfs.img
 # adaptive=block-hash-index
-#   DEFERRED (PLAN-006 Part G). Adaptive/delta installs let RAUC fetch over
+#   DEFERRED. Adaptive/delta installs let RAUC fetch over
 #   HTTP ranges only the blocks that differ from the running slot. Enabling it
 #   costs a per-bundle block hash index and a streaming install path that
 #   nothing on the device drives yet: today an operator runs `rauc install` on

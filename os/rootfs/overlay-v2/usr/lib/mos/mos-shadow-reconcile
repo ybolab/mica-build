@@ -23,7 +23,7 @@
 # shadow file, and /etc/shadow was a symlink onto STATE, so the lexical sibling
 # landed in the read-only squashfs -- mosd failed with os error 30 and apid
 # answered 502, which meant the documented way back into a locked-out device
-# did not work at all (RFCT-105). With the file in RAM there is no marker and
+# did not work at all. With the file in RAM there is no marker and
 # no next-boot protocol to get wrong.
 #
 # WHAT IS STILL RECONCILED. Every account in /etc/passwd must have a shadow

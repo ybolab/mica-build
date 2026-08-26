@@ -2,10 +2,10 @@
 //
 //   bash os/verify/run.sh --parity --probe
 //
-// PLAN-014 M4 (RFCT-110), M4a. This is the instrument that answers "do the
-// helpers work against BOTH real images" without needing a single check to be
-// ported -- and it is what M4b will reach for first, because the fastest way to
-// write a check is to see what the helper already hands you.
+// M4a. This is the instrument that answers "do the helpers work against BOTH
+// real images" without needing a single check to be ported -- and it is what
+// M4b will reach for first, because the fastest way to write a check is to see
+// what the helper already hands you.
 //
 // It is a PROBE and not a check: it asserts nothing about the image and its
 // output is not a verdict. What it does assert is that each helper ran and

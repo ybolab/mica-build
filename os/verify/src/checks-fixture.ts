@@ -1,9 +1,9 @@
 // A synthetic image, for driving a ported check RED.
 //
-// PLAN-014 M4b (RFCT-110). RFCT-096's rule is that a ported check lands with
-// the fixture that fails it, because the parity harness cannot tell a check
-// that PASSES from a check that CANNOT FAIL -- both report "agrees with the
-// oracle" against a healthy image, and only a mutation separates them.
+// RFCT-096's rule is that a ported check lands with the fixture that fails it,
+// because the parity harness cannot tell a check that PASSES from a check that
+// CANNOT FAIL -- both report "agrees with the oracle" against a healthy image,
+// and only a mutation separates them.
 //
 // ═══ WHY A FAKE IMAGE AND NOT A MUTATED REAL ONE ═══
 //

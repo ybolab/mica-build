@@ -2,9 +2,9 @@
 // status-LED device tree, the compiled boot script, the verity env pair, and
 // the regions that must ship zero-filled.
 //
-// PLAN-014 M4g (RFCT-110). Six families, one module, because every one of them
-// reads either `board/<board>/out/` or a file mcopy'd out of a boot slot, and
-// three of them share the FIVE SKIP LINES a grub board prints in their place.
+// Six families, one module, because every one of them reads either
+// `board/<board>/out/` or a file mcopy'd out of a boot slot, and three of them
+// share the FIVE SKIP LINES a grub board prints in their place.
 //
 // ═══ THE SKIPS ARE THE REASON THESE ARE TOGETHER ═══
 //

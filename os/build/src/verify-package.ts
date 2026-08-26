@@ -1,6 +1,6 @@
 // THE ONE PLACE os/build REACHES INTO os/verify.
 //
-// M3 (RFCT-109) built the typed board model in os/verify/src: board-env.ts
+// M3 built the typed board model in os/verify/src: board-env.ts
 // parses `boards/<board>/board.env` as DATA -- never sourcing it, never reading
 // process.env, refusing by name everything a shell would have executed -- and
 // board.ts turns that into partitions, roles, bootloader and the board lists,
@@ -19,7 +19,7 @@
 //
 //   2. A THIRD, SHARED PACKAGE. That means MOVING M3's sources out of the
 //      package whose README, HARNESS and 108 tests describe them where they
-//      are, three days after that gate closed and while M4 (RFCT-110) is still
+//      are, three days after that gate closed and while M4 is still
 //      to port the verifier on top of them. The cost is real and the benefit is
 //      a directory name.
 //

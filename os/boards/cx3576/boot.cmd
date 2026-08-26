@@ -1,6 +1,6 @@
 # Source for the boot.scr written into BOOT-A and BOOT-B. Compiled by
 # os/mkimage-v2.sh with SOURCE_DATE_EPOCH pinned to the layout-v2 FILE_MTIME.
-# Body follows docs/design/uboot-ab-handshake.md section 5.3 (RFCT-018), with
+# Body follows docs/design/uboot-ab-handshake.md section 5.3, with
 # TWO deliberate divergences from the version first published there. Both were
 # defects that made updates silently revert, and section 5.3 documents both
 # and is synced to this file.

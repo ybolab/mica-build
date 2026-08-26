@@ -1,7 +1,7 @@
 // The x64 boot contract, as text: the grub.cfg the ESP carries and the per-slot
 // fragment RAUC replaces on every install.
 //
-// THE DIVIDING LINE IS THE WHOLE POINT (RFCT-106), and it is a correctness rule
+// THE DIVIDING LINE IS THE WHOLE POINT, and it is a correctness rule
 // rather than a style: grub.cfg lives on the ESP, which no install ever rewrites,
 // so it may hold ONLY board constants -- each slot's PARTUUID and the fixed
 // kernel arguments. Everything that changes with a build -- the sector count, the

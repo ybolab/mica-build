@@ -1,11 +1,11 @@
 // The parity harness: what the shell verifier concluded, what the TypeScript
 // port concluded, and where the two differ -- PER CHECK.
 //
-// PLAN-014 M4 (RFCT-110), the M4a half. M4b..M4d port os/verify-image-v2.sh's
-// checks in batches and M4e deletes it at full parity; this file is the
-// instrument all four are measured by. Nothing in here runs a check. It parses
-// one verifier's output, takes the other's results, and says -- by NAME, per
-// check -- agree, diverge, or not ported.
+// M4b..M4d port os/verify-image-v2.sh's checks in batches and M4e deletes it
+// at full parity; this file is the instrument all four are measured by.
+// Nothing in here runs a check. It parses one verifier's output, takes the
+// other's results, and says -- by NAME, per check -- agree, diverge, or not
+// ported.
 //
 // ═══ WHY NOT A COUNT ═══
 //

@@ -4,7 +4,7 @@
 #
 #   make build-env   -> localhost/mos-build-base
 #
-# PLAN-014 M2 (RFCT-108), decision 4. The image name, the digest it is built
+# PLAN-014 M2, decision 4. The image name, the digest it is built
 # from and the versions it asserts are all values in os/build-env/images.env;
 # nothing in this file names any of them. That is the point of the milestone:
 # "which environment did this build run in" has to be answerable from the tree.

@@ -1,9 +1,9 @@
 // Batch 4a: the connd contract, the Wi-Fi userland, and mosd's networkd namespace.
 //
-// PLAN-014 M4f (RFCT-110). Twenty-two conclusions on cx3576 and four on x64 --
-// the contract read (:1030), the nineteen assertions it feeds (:4310-4432, all
-// of them behind `board_has_radio wifi`), and the two namespace conclusions
-// that run on every board (:1066, :4441).
+// Twenty-two conclusions on cx3576 and four on x64 -- the contract read
+// (:1030), the nineteen assertions it feeds (:4310-4432, all of them behind
+// `board_has_radio wifi`), and the two namespace conclusions that run on every
+// board (:1066, :4441).
 //
 // ═══ THIS FILE READS mosd/ SOURCES, AND THAT IS THE POINT ═══
 //

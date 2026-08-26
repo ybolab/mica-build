@@ -102,7 +102,7 @@ case "$WITH_CONTAINERS" in
     exit 1
     ;;
 esac
-# THE DECLINED FEATURES, as one list (RFCT-111).
+# THE DECLINED FEATURES, as one list.
 #
 # WITH_CONTAINERS and WITH_MOSD are the two historical spellings and they fold
 # into it here, so there is one answer to "is this feature in the image" and
@@ -266,8 +266,8 @@ rm -f "$OUT_DIR/mosd-build.txt"
 if ! declined mosd; then
     bash "$REPO_ROOT/mosd/hack/build-target.sh" "$RUST_TARGET" "$ELF_ARCH"
     # The commit that build embedded in mosd and apid, carried into this board's
-    # output directory beside the factory root the two binaries end up in
-    # (RFCT-113 M7d). The smoke runner asserts what they REPORT against what was
+    # output directory beside the factory root the two binaries end up in.
+    # The smoke runner asserts what they REPORT against what was
     # EMBEDDED, and the alternative -- `git rev-parse HEAD` at run time -- would
     # pass on any freshly built tree while asserting nothing about whether the
     # embedding works at all. Copied rather than re-derived, so the value the
@@ -286,7 +286,7 @@ if ! declined mosd; then
         "$MOSD_STAGE/mos-mqttd"
     cp "$REPO_ROOT/mosd/mqttd/dist/mos-mqttd.service" "$MOSD_STAGE/mos-mqttd.service"
     cp "$REPO_ROOT/mosd/dist/mos-mqttd.conf" "$MOSD_STAGE/mos-mqttd.conf"
-    # The broker the bridge above connects to (RFCT-104). No D-Bus grant to
+    # The broker the bridge above connects to. No D-Bus grant to
     # stage beside it: it is not a bus client, it only listens on TCP. Its
     # config is not staged either -- mosd renders /run/mos/mqtt-broker.toml at
     # runtime, because a file baked into an immutable root would be the same
@@ -643,7 +643,7 @@ for a in "${FROM_ARGS[@]}"; do
     case "$a" in --build-arg) DRIVER_FROM_ARGS+=(--arg) ;; *) DRIVER_FROM_ARGS+=("$a") ;; esac
 done
 
-# STAGE SELECTION, which is what replaced the WITH_* build arguments (RFCT-111).
+# STAGE SELECTION, which is what replaced the WITH_* build arguments.
 #
 # WITH_CONTAINERS and WITH_MOSD are still the caller's spelling -- the
 # environment variable, and board/<name>/containers.env -- and they still mean
@@ -784,7 +784,7 @@ fi
 # kernel compares with strncasecmp and accepts either, so one canonical
 # lowercase spelling everywhere is the least surprising choice.
 # The assembler cross-checks this table against ${ROOTFS_x_GUID}, which the
-# layout env holds uppercase, comparing case-insensitively (RFCT-020). Do not
+# layout env holds uppercase, comparing case-insensitively. Do not
 # "fix" anything by uppercasing this: lowercase is what udev and fstab use.
 write_cmdline() {
     local out="$1" guid="$2"
