@@ -154,6 +154,14 @@ fi
 # rebuilt. os/rootfs/build-v2.sh copies this into _out/<board>/ beside the
 # factory root it goes into.
 #
+# THIS COPY DESCRIBES THE LAST BUILD FOR ANY TARGET, which is why the runner
+# does not read it. MEASURED: an x64 rootfs build followed by
+# `bash mosd/hack/build-aarch64.sh` leaves this file saying
+# target=aarch64-unknown-linux-gnu while _out/x64/ still holds x86_64 binaries.
+# The per-board copy build-v2.sh makes is what keeps the smoke runner comparing
+# an image against the build that produced it rather than against whatever was
+# compiled most recently.
+#
 # TAB-SEPARATED `key<TAB>value` with `#` comments, the shape
 # os/build/src/stages.ts already writes for factory-root.txt, so one reader
 # reads both.
