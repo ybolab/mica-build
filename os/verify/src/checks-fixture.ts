@@ -328,6 +328,7 @@ function seedHealthyRoot(root: string, board: Board): void {
   file('/usr/bin/apid', `ELF ...${verifierConst('BUILTIN_MARKUP')}... trailer\n`)
 
   seedDbus(root, file)
+  seedEngine(root, board, file)
   seedShadow(root, file)
   seedMqtt(root, file)
   seedBoardShape(root, board, file)
@@ -367,6 +368,70 @@ function seedDbus(root: string, file: WriteFile): void {
     + '    <allow own_prefix="com.mos.ext"/>\n'
     + '  </policy>\n'
     + '</busconfig>\n')
+}
+
+// ---------------------------------------------------------------------------
+// M4f: the container engine, the purge, and the trust store
+// ---------------------------------------------------------------------------
+
+/**
+ * How many `copyright` files and CA certificates the fixture seeds.
+ *
+ * EXACTLY the oracle's threshold, on purpose. The real images carry 162 and 150,
+ * and a fixture that carried those numbers would need twenty-odd deletions
+ * before a check noticed -- so the mutation that drives it red would be a bulk
+ * edit rather than one edit, and it would not say where the boundary is. At the
+ * threshold, removing ONE file is the whole test.
+ */
+const PURGE_THRESHOLD = 100
+
+/**
+ * The engine installed and INERT, its configuration, and what the purge left.
+ *
+ * Nothing here is a stand-in: the units, the mount and the config keys are the
+ * ones the checks read, in the shapes the shipped image has. The two things
+ * DELIBERATELY ABSENT are the ones absence is the correct state for -- there is
+ * no /usr/share/containers/containers.conf (a second config layer podman would
+ * merge before /etc, so an operator reading /etc would see half the settings)
+ * and no local-fs.target.wants symlink for the Quadlet mount (a static
+ * enablement is what makes PLAN-012's switch gate nothing).
+ */
+function seedEngine(root: string, board: Board, file: WriteFile): void {
+  for (const b of [
+    '/usr/bin/podman', '/usr/bin/crun', '/usr/libexec/podman/conmon',
+    '/usr/libexec/podman/netavark', '/usr/libexec/podman/aardvark-dns',
+    '/usr/libexec/podman/catatonit', '/usr/libexec/podman/quadlet',
+    '/usr/lib/systemd/system-generators/podman-system-generator',
+    '/usr/sbin/nft',
+  ]) file(b)
+
+  // DLOPENed by name, so it is in no NEEDED list -- and the directory follows
+  // the board's architecture, which is why the check searches /usr/lib whole
+  // rather than naming a multiarch triplet.
+  file(`/usr/lib/${board.arch === 'amd64' ? 'x86_64' : 'aarch64'}-linux-gnu/libsystemd.so.0`)
+
+  file('/etc/containers/policy.json', '{"default":[{"type":"insecureAcceptAnything"}]}\n')
+  file('/etc/containers/registries.conf', 'unqualified-search-registries = ["docker.io"]\n')
+  file('/etc/containers/containers.conf',
+    '[engine]\nhelper_binaries_dir = ["/usr/libexec/podman"]\nlog_driver = "journald"\n')
+  // DATA, not /var: /var is the EPHEMERAL partition, 512 MiB and wiped by
+  // design, so images there are capped and then silently destroyed.
+  file('/etc/containers/storage.conf', '[storage]\ndriver = "overlay"\ngraphroot = "/srv/containers/storage"\n')
+
+  file('/etc/systemd/system/etc-containers-systemd.mount',
+    '[Mount]\nWhat=/mnt/state/quadlet\nWhere=/etc/containers/systemd\nType=none\nOptions=bind\n')
+
+  // The purge's positive half: the licences Debian ships to satisfy the
+  // redistribution terms of the GPL and everything else in the image.
+  for (let i = 0; i < PURGE_THRESHOLD; i += 1) {
+    file(`/usr/share/doc/pkg${String(i).padStart(3, '0')}/copyright`, 'Format: https://…\n')
+  }
+
+  // The trust store, GENERATED rather than shipped -- which is what fails when
+  // ca-certificates installs without its postinst having run.
+  file('/etc/ssl/certs/ca-certificates.crt',
+    `${Array.from({ length: PURGE_THRESHOLD }, (_v, i) =>
+      `-----BEGIN CERTIFICATE-----\ncert${i}\n-----END CERTIFICATE-----`).join('\n')}\n`)
 }
 
 /** What `seedHealthyRoot` hands its helpers: write a file, making its parents. */
