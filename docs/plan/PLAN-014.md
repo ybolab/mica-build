@@ -303,12 +303,73 @@ PLAN-014 is docs — the lane that commit did not have.
 ## The close, 2026-08-26
 
 All seven milestone records (RFCT-107..RFCT-113) read `completed`. What follows
-is the part of the campaign that is **not** recoverable from the diff: the two
-clauses it did not discharge and what reopens them, the ledger of how every
-clause outcome was reached and by whom, what was never verified, and what was
-deleted and against which measurement. It is deliberately not a summary of what
-was built — the milestone records and the `HARNESS.md` / `README.md` files under
-`os/build/`, `os/verify/` and `os/rootfs/stages/` carry that.
+is the part of the campaign that is **not** recoverable from the diff: the one
+clause that closed the gap the campaign opened on, the two it did **not**
+discharge and what reopens them, the ledger of how every clause outcome was
+reached and by whom, what was never verified, and what was deleted and against
+which measurement. It is deliberately not a summary of what was built — the
+milestone records and the `HARNESS.md` / `README.md` files under `os/build/`,
+`os/verify/` and `os/rootfs/stages/` carry that.
+
+### The gap that closed: RFCT-113 clause 1, on its LITERAL reading
+
+RFCT-113 opened on the distance between *"it linked"* and *"it runs"*. **That gap
+is closed**, and the way it closed is the part worth recording at plan level: on
+the **literal** reading of clause 1 — a wrong-arch, a missing-soname and a
+version-skewed binary each fail **the build** — and not on the looser reading
+where they fail a check somebody has to remember to run.
+
+**`os/rootfs/build-v2.sh` runs the smoke step as its LAST LINE, under
+`set -euo pipefail`.** A self-built binary that does not run therefore fails the
+image build. The root is not handed to an assembler, to a bundle, or to a person
+without its binaries having been executed.
+
+Four properties, each measured rather than asserted:
+
+- **In the script, not in the `Makefile`.** Two make targets run this script, so
+  does the CI deep lane, and anyone can run it directly. A step wired into the
+  callers would be three copies to keep in step and bypassed by the fourth.
+- **Ordered after the archive refusals, not before them.** Pack → export →
+  `build-v2.sh`'s own checks that `factory-root.oci` exists, is non-empty and
+  carries an `index.json` → smoke → the caller assembles. So a missing or non-OCI
+  archive is still diagnosed as itself, rather than arriving at the smoke runner
+  as a `docker load` failure. The smoke step is last and unguarded, with
+  **nothing after it whose success could mask it**.
+- **No skip path, and its absence was driven both ways a real build host could
+  lack the means.** bun present and no docker → `error: Executable not found in
+  $PATH: "docker"`, exit 1; neither bun nor docker → `error: --smoke on a host
+  with no bun needs docker, and there is none`, exit 1. Both were then run
+  through the actual seam — the same command under `set -euo pipefail` with a
+  line after it — and **in neither case did that line execute**. A flag that
+  turned this step off would make "the build passed" mean two things, and the one
+  it would mean on the day somebody set the flag is the one this milestone exists
+  to end.
+- **It adds no dependency the script did not already have.** `run.sh --smoke`
+  needs docker, which `build-v2.sh` has needed since its first `buildx` line; and
+  it needs to *execute* the target platform, which for cx3576 is the same host
+  binfmt the refusal at the top of the script already demands in order to build
+  at all. **A host that can build this root can run what is in it** — which is
+  precisely why the literal reading turned out to be satisfiable.
+
+**This was a gate deciding which sense of its own clause applies, and it is a
+fourth thing — none of the three in the ledger below.** It is not an amendment:
+clause 1's text is unchanged and says what it always said. It is not a
+satisfaction and not a disposition. And it deliberately did **not** go to the
+user, because the stricter reading proved *satisfiable*, and a clause question
+only exists when it is not. Measured before deciding, because the two readings
+diverge only if the looser one is already satisfied and the stricter one is not —
+and they did diverge: 672 tracked files, 38 mentioning `smoke`, and the only
+executable invocation of the runner anywhere in the tree was `os/verify/run.sh`
+calling its own CLI. No `make` target, neither `.gitea` workflow, and every
+`smoke` in `build-v2.sh` was a **comment** — including the one that states the
+risk exactly: *"an image that ships them unexecuted looks exactly like one whose
+smoke run passed."*
+
+**Clause 1 carries no board qualifier and is discharged.** But the wiring it
+rests on has still only ever fired on x64 — the same build path exists for
+cx3576 and has never run there, which is the second disposition below. The two
+belong read together: the gate is real, and it has been observed working on one
+of the two boards it guards.
 
 ### The two dispositions, and what reopens them
 
@@ -525,9 +586,11 @@ not, because their reproductions live in the port.
 
 ### The floor at close
 
-Re-run in full at this commit against the campaign's own floor as measured at
-`e0cb748`, all `rc=0`. This close is docs-only, so `docs-verify` is the target
-that had to stay green and every other one had to **not move**:
+Re-run in full at this commit — after merging M7c's `d11a9f9`, which landed a
+docs-only addition to RFCT-113 and `os/verify/HARNESS.md` — against the
+campaign's own floor as measured at `e0cb748`, all `rc=0`. This close is
+docs-only, so `docs-verify` is the target that had to stay green and every other
+one had to **not move**:
 
 | target | at `e0cb748` | at this commit |
 |---|---|---|
@@ -565,3 +628,14 @@ above, which this commit does not change.
   measured gate every deleted file went at. **`docs/plan/index.md` still marks
   this plan `[-]`**; per the index's own rules only the checkbox marker changes,
   and that edit was left to the user because this task's scope was this file.
+- 2026-08-26 11:30: M7c's `d11a9f9` merged (docs-only: RFCT-113 and
+  `os/verify/HARNESS.md`), and the close gains what that commit made
+  measurable — **"The gap that closed: RFCT-113 clause 1, on its LITERAL
+  reading"**. The smoke step is the last line of `os/rootfs/build-v2.sh` under
+  `set -euo pipefail`, ordered after the archive refusals, with no skip path and
+  both host-capability gaps driven to exit 1 through the real seam. It is added
+  ahead of the dispositions deliberately: the honest close leads with the clause
+  that was discharged on the strictest reading available before the two that
+  were closed over. It is a **fourth** kind of clause outcome — a gate deciding
+  which sense of its own clause applies — and is not counted in the ledger's six
+  amendments, one satisfaction, two dispositions.
