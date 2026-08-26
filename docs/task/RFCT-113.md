@@ -194,3 +194,43 @@ needs a MATCHED PAIR — `factory-root.oci` and `rootfs-verity.img` from one bui
 M7a's own green run of the same script, 9,240 entries compared four ways with
 every comparison driven from the failing side, is in
 `os/tests/factory-root-gate/README.md`.
+
+## The floor at close
+
+Every line, at `07830c7`, all `rc=0`. The left column is the floor as measured
+at `4c95928` (the head M7c merged); the right is this tree.
+
+| target | at `4c95928` | at close | why it moved |
+|---|---|---|---|
+| `docs-verify` | 375/375 | 375/375 | — |
+| `docs-verify-test` | 8/8 | 8/8 | — |
+| `os-shell-pipefail-lint` | 29/29, 29 scanned | 29/29, **29 scanned** | no shell was added or deleted. The negative tests are TypeScript, and the Dockerfiles they build are generated at run time into a gitignored scratch directory, so the lint's file set is unchanged. |
+| `os-layout-lint` | 26/26 | 26/26 | — |
+| `os-layout-lint-test` | 42/42 | 42/42 | — |
+| `os-verify-test` | 1045/1045, 30 files | **1066/1066, 31 files** | +5 in `smoke.test.ts` (four measured exit-status cases replacing three fabricated ones, plus the count lock the re-run mutation sweep showed was missing) and +16 in the new `smoke-negative.test.ts`. |
+| `os-build-test` | 689/689, 25 files | 689/689, 25 files | — |
+| `os-health-test` | 57/57 | 57/57 | — |
+| `build-env` | 21 Dockerfile(s) agree | **21 Dockerfile(s) agree** | same reason as the shell lint: nothing added a tracked Dockerfile. |
+
+`os-build-test` was run **alone**, not concurrently with anything else, and did
+not flake: `689 pass, 0 fail, 3892 expect() calls, 25 files, 226.75s`. The known
+5s-hook-budget timeout — which reports `N pass / 1 fail` with the failing entry
+named `(unnamed)` and a total one higher — did not appear.
+
+`os-verify-test` was also run with `_out/` **absent**, in a `git worktree add
+--detach` on the same filesystem as the repository: `RESULT: PASS (1066/1066
+tests)`. The two new docker-requiring targets were driven there too, and both
+**refuse** rather than skipping — `error: x64: …/_out/x64/factory-root.txt does
+not exist`, exit 1, before executing anything. The worktree was removed and
+`git worktree prune` run.
+
+### What was NOT run, named rather than implied
+
+- **`make os-factory-root-gate` green.** It needs a matched pair and no such pair
+  exists on this host; its refusal was driven. See the section above.
+- **Anything on cx3576**, for the two measured reasons in the disposition.
+- **A real rootfs build.** The smoke run and the three negative tests were driven
+  against the real x64 factory root M7d built — still in this host's docker image
+  store, carrying commit `60b9ccc76939` — with the `_out/x64/` record around it
+  **reconstructed by hand**, which each of those files says on its own first
+  line. The image is real; the record is not the one a build wrote.
