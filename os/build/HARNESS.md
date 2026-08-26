@@ -312,13 +312,14 @@ bash os/build/run.sh --mkimage-v2
 sha256sum _out/cx3576/cx3576-mos-v2-*.img
 ```
 
-Result, 2026-08-26, this host — **four images, one hash**:
+Result, 2026-08-26, this host — **five images, one hash**:
 
 ```
 f36bf80993583f6b9d097531a8efcd086e9aaaeabc014a367d7543582ecd8bce  cx3576-mos-v2-1787704793.img  shell
 f36bf80993583f6b9d097531a8efcd086e9aaaeabc014a367d7543582ecd8bce  cx3576-mos-v2-1787704868.img  shell
 f36bf80993583f6b9d097531a8efcd086e9aaaeabc014a367d7543582ecd8bce  cx3576-mos-v2-1787705464.img  TypeScript
 f36bf80993583f6b9d097531a8efcd086e9aaaeabc014a367d7543582ecd8bce  cx3576-mos-v2-1787705541.img  TypeScript
+f36bf80993583f6b9d097531a8efcd086e9aaaeabc014a367d7543582ecd8bce  cx3576-mos-v2-1787707325.img  TypeScript, re-run at the final tree
 ```
 
 **A hash is the right comparison here and nowhere else in this campaign.** M5's
@@ -364,8 +365,8 @@ assumed: `cmp` of the two `os/mkimage-v2.sh` files, which differ.
 
 ## Every ported refusal, and the mutation that drives it red
 
-`os/mkimage-v2.sh` carries **34** `echo "error:` sites. All are ported; the
-table names where each is driven from the failing side. **A byte-identity gate
+`os/mkimage-v2.sh` carries **33** `echo "error:` sites, each with its own `exit
+1`. All are ported; the table names where each is driven from the failing side. **A byte-identity gate
 cannot see a dropped refusal** — a port that lost one produces identical bytes
 for every good input and passes the gate perfectly, and what it stopped catching
 is a board that needs re-flashing.
@@ -434,7 +435,7 @@ agree with the shell on today's file and disagree on the next one.
 
 ### the five RFCT-112 names, and the twenty-nine others
 
-RFCT-112 lists five guards. The script carries **thirty-four refusals**, and the
+RFCT-112 lists five guards. The script carries **thirty-three refusals**, and the
 rest are ported and driven too:
 
 | refusal | driven in |

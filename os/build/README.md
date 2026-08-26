@@ -102,7 +102,7 @@ assembler, twice each:
 
 ```
 f36bf80993583f6b9d097531a8efcd086e9aaaeabc014a367d7543582ecd8bce   bash os/mkimage-v2.sh          (×2)
-f36bf80993583f6b9d097531a8efcd086e9aaaeabc014a367d7543582ecd8bce   run.sh --mkimage-v2            (×2)
+f36bf80993583f6b9d097531a8efcd086e9aaaeabc014a367d7543582ecd8bce   run.sh --mkimage-v2            (×3)
 ```
 
 `HARNESS.md` carries the recipe, the vacuity control and what a differing MiB
@@ -115,7 +115,7 @@ content-diff rule exists because the *rootfs build* does not reproduce itself.
 **A gate cannot see a dropped refusal**, which is why the tests matter more than
 the hash. A port that quietly lost the boot-attempts range still produces
 identical bytes for every good input and passes perfectly; what it stopped
-catching is a board that needs re-flashing. So all thirty-four of the shell's
+catching is a board that needs re-flashing. So all thirty-three of the shell's
 refusals are ported, and each is driven from the failing side — `HARNESS.md`
 names the mutation for every one.
 
