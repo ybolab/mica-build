@@ -430,3 +430,109 @@ a `RUN` in a Dockerfile -- surfaces it.
 `#!/usr/bin/env bash`.** All 16 `.sh` files in the 144-file diff conform, and a
 tree-wide `grep -rln '^# !' --include='*.sh' .` returns nothing.
 
+## Gate results
+
+Run from the worktree root on the final commit, each captured to a file in a
+private scratch directory (`mktemp -d /tmp/m6-154-XXXX`, because concurrent
+subtasks share `/tmp`) with `set -o pipefail` in force.
+
+| gate | result | rc |
+| --- | --- | ---: |
+| `bash docs/verify-index.sh` | `411/411 PASS` | 0 |
+| `MOS_VERIFY_CONTAINER=1 bash os/verify/run.sh` | `RESULT: PASS (1066/1066 tests)` | 0 |
+| `MOS_BUILD_CONTAINER=1 bash os/build/run.sh` | `RESULT: PASS (689/689 tests)` | 0 |
+| `bash os/tests/shell-pipefail-lint.sh` | `RESULT: PASS (29/29 files clean, 29 scanned)` | 0 |
+| rustfmt / clippy / `cargo test` in `localhost/mos-build-rust` | rustfmt clean, clippy 0 warnings, `616 passed; 0 failed` | 0 |
+
+The output, as captured:
+
+```
+$ bash docs/verify-index.sh
+docs/verify-index.sh: design/ <-> docs/README.md
+docs/verify-index.sh: research/ <-> docs/README.md
+docs/verify-index.sh: task/RFCT-*.md <-> docs/task/index.md
+docs/verify-index.sh: 411/411 PASS
+
+$ MOS_VERIFY_CONTAINER=1 bash os/verify/run.sh
+Ran 1066 tests across 31 files. [16.20s]
+RESULT: PASS (1066/1066 tests)
+
+$ MOS_BUILD_CONTAINER=1 bash os/build/run.sh
+Ran 689 tests across 25 files. [252.32s]
+RESULT: PASS (689/689 tests)
+
+$ bash os/tests/shell-pipefail-lint.sh
+PASS: os/verify/run.sh pipes nothing into an early-exiting grep
+PASS: test/apid-api/run.sh pipes nothing into an early-exiting grep
+RESULT: PASS (29/29 files clean, 29 scanned)
+```
+
+### The index gate, before and after
+
+This subtask's first item is the gate that was red on the assembled branch. The
+four content subtasks each deliberately left `docs/task/index.md` alone so that
+one subtask could write every claim row at once and avoid a four-way append
+conflict; the cost is that the forward direction of section 3 fails once per
+unindexed record.
+
+Before the five rows: `4 FAILED, 396 passed`, one FAIL for each of
+`RFCT-150.md`, `RFCT-151.md`, `RFCT-152.md`, `RFCT-153.md`. After:
+`411/411 PASS`. The arithmetic is exact -- five new records at three checks
+each (forward, reverse, once-each) is 15, and 396 + 15 = 411.
+
+### Rust, in the pinned image
+
+`cargo` runs from `/src/mosd`: the workspace manifest is `mosd/Cargo.toml` and
+there is no root `Cargo.toml`. `dbus` is installed in-container before the run
+because `mosd/mosd/tests/{bus,scan}.rs` **refuse rather than skip** without a
+`dbus-daemon` -- a MUST-KEEP safety invariant doing exactly its job, and not a
+condition to work around.
+
+```
+$ rustfmt --edition 2024 --check $(find . -name "*.rs")
+(no output)
+
+$ cargo clippy --workspace --all-targets --locked -- -D warnings
+(no warnings)
+
+$ cargo test --workspace --locked
+616 passed; 0 failed; 0 ignored     (summed over 22 test binaries)
+```
+
+616 is the current count. RFCT-116's 593 is stale, as RFCT-153 also recorded.
+
+### The known build-suite flake did not appear
+
+The build suite's `afterAll` hook in `mkimage-v2.test.ts:127` (`await
+tb?.close()`, a `docker rm`) can time out at 5000 ms. It is byte-identical to
+`main` and already diagnosed. This run did not hit it -- `689/689`, rc 0, first
+attempt -- so no re-run was needed.
+
+## Findings -- reported, not acted on
+
+1. **The metric counts indentation as a banner.** `(.)\1{19,}` is applied to
+   the raw line, so any comment line indented 20 or more columns matches on its
+   leading whitespace alone. Nine lines tree-wide are miscounted this way. A
+   line-stripped match (`BAN.search(l.strip())`) would fix it without changing
+   any other number; every one of the other 130 hits matches the stripped text
+   too. Not changed here: the metric script is the milestone's instrument, and
+   editing it mid-milestone would make this re-run incomparable with the four
+   subtasks' own measurements.
+
+2. **The threshold rule cannot reach zero for a file with two justified
+   blocks.** A 15+-line block is worth 5, so two of them score 10 with no caps
+   and no banners. All 40 files still over threshold at HEAD are in this
+   position -- their caps and banners are zero and their score is pure block
+   weight. This is the arithmetic behind L1's decision to replace the numeric
+   "single digits" target with the justified-survivor rule, and it is why
+   "files over threshold" is no longer a useful headline number for M6.
+
+3. **`RFCT-150.md`'s metric table disagrees with the script.** Six of its eight
+   numbers are off by 1-7 against a re-run at the same two commits. Detailed
+   under Carry 1. Left as written, per scope.
+
+4. **54 files carry a 15+-line block and were never dispatched.** Each scores 5
+   to 7, so each sat under the score-8 threshold with exactly one block. If a
+   future milestone wants the tree-wide block count down rather than the
+   per-file score, the threshold is the wrong selector for it -- these 54 blocks
+   are 28% of the 190 that remain and no subtask in M6 could reach any of them.
