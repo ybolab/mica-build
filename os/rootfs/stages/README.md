@@ -217,10 +217,12 @@ Its seventeen RUNs, in the order that file had them, regrouped:
 | 15 `account-mos-mqttd`, 16 `account-mos-mqtt-broker` | `34-feature-mqtt` |
 | 17 `hwinit-install` | `40-board` |
 
-Two RUNs moved **earlier** (12 and 13, which sat behind the board work because
-they need the overlay — and the overlay is now two stages ahead of every
-feature), and six moved **later** (4 and 5 behind the container work, 9–11
-behind all of it). Within each group the relative order is unchanged.
+Two RUNs moved **earlier** — 12 and 13, which sat behind the board work only
+because they need the overlay, and the overlay is now ahead of every feature.
+Five moved **later**: 4 and 5 behind the container work, 9–11 behind all of it.
+RUN 2 slipped from second to fourth because the radio group closed up in front
+of it. Every other instruction, and the relative order inside every group, is
+unchanged.
 
 **What decided it.** Both arrangements were available: pull 12 and 13 forward,
 or push 9–11 back. The numbers have to read in the order they run — PLAN-014
