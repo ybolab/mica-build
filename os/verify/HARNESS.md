@@ -953,3 +953,204 @@ authority; this list is the index into it.
    `boot-slots.ts` and `image-layout.ts` hold everything more than one module
    derives, so a third board in `os/boards/` is covered by whatever its own
    definition selects with no entry edited.
+
+## The smoke runner (RFCT-113 M7b), and what was measured to build it
+
+The runner executes every self-built artifact inside the packed root and
+compares what it reports against the pin this repository records. Everything
+below is a measurement taken on **2026-08-26**, against the x64 factory root
+built from this tree (`localhost/mos-factory-root:x64`, `linux/amd64`,
+250 209 280 bytes, sha256 `6e036711ce306cd2…`).
+
+**THE DOCKER LAYER CACHE WAS WARM.** The stage images were already in this
+host's store from earlier worktrees, so `make build-env && MOS_ARCH=amd64 make
+podman && MOS_BOARD=x64 make os-rauc && MOS_BOARD=x64 bash
+os/rootfs/build-v2.sh` completed in about three minutes. Nothing below depends
+on that — every measurement is of the *resulting image*, not of the build — but
+it is stated because M7a's `rewrite-timestamp` finding is exactly the shape of
+answer a warm cache can fake.
+
+### The twelve, and what each one actually prints
+
+Read off the real image, one `docker run` per line. **Five of the seven
+container binaries are not in `/usr/bin`** — that was found by running the wrong
+path and reading `rc=127` back, not by reading the install script, because
+`podman-install.sh` writes them through a `${VAR}`-assembled destination and the
+literal path appears nowhere in it.
+
+| artifact | installed path | `--version`, line 1 of **stdout** | pin |
+|----------|----------------|-----------------------------------|-----|
+| rauc | `/usr/bin/rauc` | `rauc 1.13` | `RAUC_VERSION=v1.13` |
+| podman | `/usr/bin/podman` | `podman version 5.8.6` | `PODMAN_VERSION=v5.8.6` |
+| quadlet | `/usr/libexec/podman/quadlet` | `5.8.6` | `PODMAN_VERSION` |
+| crun | `/usr/bin/crun` | `crun version 1.29.1` | `CRUN_VERSION=1.29.1` |
+| conmon | `/usr/libexec/podman/conmon` | `conmon version 2.2.1` | `CONMON_VERSION=v2.2.1` |
+| netavark | `/usr/libexec/podman/netavark` | `netavark 2.1.0` | `NETAVARK_VERSION=v2.1.0` |
+| aardvark-dns | `/usr/libexec/podman/aardvark-dns` | `aardvark-dns 2.1.0` | `AARDVARK_VERSION=v2.1.0` |
+| catatonit | `/usr/libexec/podman/catatonit` | `tini version 0.2.1_catatonit` | `CATATONIT_VERSION=v0.2.1` |
+| mos-mqttd | `/usr/bin/mos-mqttd` | `mos-mqttd 0.1.0` | `mosd/mqttd/Cargo.toml` |
+| mos-mqtt-broker | `/usr/bin/mos-mqtt-broker` | `mos-mqtt-broker 0.1.0` | `mosd/broker/Cargo.toml` |
+| mosd | `/usr/bin/mosd` | **no version; starts the daemon** | `mosd/mosd/Cargo.toml` |
+| apid | `/usr/bin/apid` | **no version; never returns** | `mosd/apid/Cargo.toml` |
+
+Ten sentences, ten shapes. That is why there is one tokeniser and not twelve
+parsers: a per-artifact regex fails **open** when upstream reflows a banner —
+no match yields no version, and "no version" is easy to mistake for "no
+mismatch".
+
+### `mosd` and `apid` have no `--version`, and it is worse than absence
+
+    $ docker run --rm --network none localhost/mos-factory-root:x64 /usr/bin/mosd --version
+    rc=1
+    INFO mosd::provisioning: first-boot provisioning complete hostname="mos-e9967fc0"
+         ssh_enabled=false seeded_generation=1
+    INFO mosd: provisioning checked outcome=Seeded state_dir=/var/lib/mos
+    Caused by: 0: Failed to connect to address unix:path=/var/run/dbus/system_bus_socket
+
+    $ docker run --rm --network none localhost/mos-factory-root:x64 /usr/bin/apid --version
+    rc=124   (timed out at a 25s budget — it does not terminate)
+    INFO apid::tls: generated self-signed certificate cert=/var/lib/mos/apid/cert.pem
+    INFO apid::tls: generated session signing key key=/var/lib/mos/apid/session.key
+    INFO apid: apid serving https_addr=0.0.0.0:443 http_addr=0.0.0.0:80
+
+Both **ignore argv entirely and start the daemon**. Three failures at once: no
+version is reported, neither exits 0, and the invocation is not minimal — it
+mutates. Confirmed at the source and driven from the failing side:
+
+    grep -rn 'args()|args_os|env::args|CARGO_PKG_VERSION|clap' mosd/mosd/src/ mosd/apid/src/
+        -> 0 hits, across 21 and 19 .rs files
+    positive control, same trees, same command shape: 'async fn' -> 17 and 10 files
+    control the other way: grep -c clap mosd/mqttd/Cargo.toml mosd/broker/Cargo.toml -> 1, 1
+
+The search space is populated, the grep works, and the absence is real. Closing
+it means editing `mosd/mosd/src/main.rs` and `mosd/apid/src/main.rs` — `mosd/`
+Rust sources, excluded by PLAN-014 Scope:243 and reaffirmed at :256. **Finding
+is in scope, acting is not.** They are `unclaimed`, and they are not invoked:
+producing a `fail` from them would trade a clear "nobody asked" for a 25-second
+hang and a mutated `/var`.
+
+### catatonit is version-checked although Scope says exec-only
+
+The premise Scope gives — "catatonit (static, no `--version` contract)" — is
+measurably false: it exits 0 and prints `tini version 0.2.1_catatonit` (it is a
+fork of tini and keeps the banner). Leaving it exec-only would make the third
+acceptance clause *false for `CATATONIT_VERSION`* — a pin with no reader. The
+exec-only conjunct is **discharged rather than dropped**: a version contract
+asserts exit 0 exactly as an exec one does, and asserts the output on top. Scope
+says it "gets an exec-only check", not "gets only an exec-only check".
+
+### The version loop, closed and driven RED end to end
+
+The acceptance clause is *"bumping a `versions.env` pin without rebuilding the
+artifact turns the smoke run red"*. Driven against the real image, with the
+binary untouched:
+
+    # os/podman/versions.env: CRUN_VERSION=1.29.1  ->  1.29.2   (nothing rebuilt)
+    $ bash os/verify/run.sh --smoke --board x64
+    FAIL  crun  /usr/bin/crun  exit 0 but reports 1.29.1, and os/podman/versions.env pins
+                CRUN_VERSION=1.29.2 (expected 1.29.2). Its --version line was
+                "crun version 1.29.1". Either the pin was bumped without rebuilding the
+                artifact, or the artifact was built from something other than the pin.
+    RESULT: FAIL (9 pass, 1 fail, 2 unclaimed, of 12)          exit 1
+
+    # reverted
+    RESULT: INCOMPLETE (10 pass, 0 fail, 2 unclaimed, of 12)   exit 1
+
+It is driven in the suite as a **loop** too, not as a comparison: one fixture
+`versions.env`, one binary output held constant, one edit, and the verdict flips
+`pass -> fail -> pass`. Asserting `judge` on two literals would have tested the
+comparison and said nothing about whether the pin is re-read from the file it
+lives in.
+
+### The arm64 wall — measured, and there are TWO of them
+
+RFCT-113's second acceptance clause is "the full artifact list above passes on
+both boards' base roots". On this host it is satisfiable for x64 and
+**unsatisfiable for cx3576**, for two independent reasons.
+
+**Wall 1 — the cx3576 factory root cannot be built here at all**, so there is
+nothing to execute in:
+
+    $ MOS_BOARD=cx3576 bash os/update/rauc/build.sh
+    rc=1
+    error: the 'default' buildx builder does not offer linux/arm64 on this host …
+           docker run --privileged --rm tonistiigi/binfmt --install arm64
+
+and `board/cx3576/rootfs/` carries `alpine`, `assets`, `firmware` and **no
+`modules.tar`** — the only one in the tree is `_out/x64/modules.tar`, which is
+the other board. This is M7a's own finding at the next milestone: its arm64 OCI
+export was of a real aarch64 tree, but **not** of the cx3576 factory root.
+
+**Wall 2 — even given the image, this host cannot execute it.** Measured
+against a pulled upstream image rather than ours, so it is a statement about the
+host:
+
+    $ mount | grep binfmt        -> (binfmt_misc not mounted)
+    $ docker run --rm --platform linux/arm64 arm64v8/busybox:latest /bin/true
+    rc=255   exec /bin/true: exec format error
+    $ docker image inspect arm64v8/busybox:latest --format 'ARCH/OS'
+    arm64/linux
+
+The runner catches wall 2 in `preflight`, before concluding anything about any
+artifact, and says so naming the platform and the remedy — because without that
+control all twelve come back `fail` and twelve failures about twelve binaries
+are twelve wrong diagnoses of one condition. The refusal is reachable from the
+suite **without an arm64 image**, driven with exactly the status and text above.
+
+The cx3576 half is **not executed and therefore not verified**. What is
+board-independent was driven: the register, the pins, both coverage directions,
+every verdict, every refusal, and `--board cx3576` itself, which refuses naming
+the build command. The cx3576 numbers are owed by a host with binfmt and the BSP
+drop, not by a code change.
+
+## Driven from the failing side — the smoke runner's own mutation sweep
+
+`pinCoverageFaults() == []` and `RESULT: PASS` are both invariant under a check
+that cannot fail, so the implementation was mutated and each mutation confirmed
+to turn the suite red. Eleven of them:
+
+| mutation | effect |
+|----------|--------|
+| `versionTokens` loses its LEFT guard | 1 fail — `11.29.1` would satisfy a pin of `1.29.1` |
+| `unclaimed` folded into `pass` in `conclude` | 2 fails |
+| the count vacuity guard disabled | 3 fails |
+| the 127/126 diagnosis collapsed into one message | 2 fails |
+| an unclaimed artifact gets invoked after all | 4 fails |
+| the REVERSE coverage direction removed | 3 fails |
+| the empty-pin-file guard removed | 1 fail |
+| the forward direction swallows an unreadable pin | 1 fail |
+| the Cargo `[package]` table scoping removed | 2 fails |
+| the empty-pin refusal removed | 1 fail |
+| the `v`-prefix strip becomes a blanket replace | 1 fail |
+
+The helper that applies them **refuses a no-op match** and was observed refusing
+two, so "the mutation changed nothing and the suite stayed green" is not a
+result this sweep can produce.
+
+### And one bug the sweep found, which review had not
+
+`versionTokens` originally carried a right-hand guard `(?![.0-9])`, written to
+stop `1.29.10` satisfying a pin of `1.29.1`. **Removing it changed no test** —
+greed already gives that property, since after `[0-9]+(?:\.[0-9]+)+` has
+matched, the next character cannot be a digit. What it *did* change was a
+trailing dot: on `crun version 1.29.1.` the guard rejects the greedy match,
+backtracking finds nothing shorter that satisfies it either, and the line yields
+**no token at all** — reported as "reports NO version at all" and turned RED for
+a binary that printed exactly the right version and ended its sentence with a
+full stop. A guard that cannot fire on the case it was written for, and can fire
+on a case nobody considered, is worse than no guard. It is gone; the case is
+locked in; the left guard, which is load-bearing, stays.
+
+### The refusals, each driven red with its control beside it
+
+| refusal | driven by | control |
+|---------|-----------|---------|
+| no image | `readFactoryRoot` against an empty directory | a directory with both files is read |
+| record present, archive absent | record written alone | as above |
+| register vs pins disagree | the `crun` entry dropped | with it, the same counter moves |
+| a feature stage declined | `# declined: containers` written into the real `rootfs-stages.txt` | the unmutated manifest runs |
+| host cannot execute the image | fabricated `rc=255 exec format error` | `rc=0` is accepted |
+| a manifest with no `# declined:` line | the line deleted | the parenthesised "none" form reads as `[]` |
+
+The register-vs-pins case asserts that **nothing was executed** — the fake `Exec`
+counts its calls and the count is 0 — rather than only that an error was thrown.

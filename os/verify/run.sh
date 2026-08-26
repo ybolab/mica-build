@@ -6,6 +6,7 @@
 #   bash os/verify/run.sh src/board.test.ts   extra arguments go to `bun test`
 #   bash os/verify/run.sh --lint         the board-definition schema lint instead
 #   bash os/verify/run.sh --verify       verify an assembled image against the contract
+#   bash os/verify/run.sh --smoke        execute the self-built artifacts in the factory root
 #
 # WHAT THIS PACKAGE IS. PLAN-014 M3: the bun+TypeScript foundation the rest of
 # os/ moves onto, in the shape test/apid-api already established -- bun.lock,
@@ -51,6 +52,7 @@ usage() {
 usage: bash os/verify/run.sh [--help] [bun-test-args...]
        bash os/verify/run.sh --lint [board.env ...]
        bash os/verify/run.sh --verify [--board NAME] [--image PATH]
+       bash os/verify/run.sh --smoke [--board NAME]
 
 Installs the dev dependencies if they are missing, typechecks src/, then runs
 the suite. Any extra arguments are passed to `bun test` (a filename filter, for
@@ -71,6 +73,14 @@ IMAGE_ALPINE_3_21 -- and on a host with no bun it runs in a second pinned image,
 IMAGE_BUN_1 plus the client pinned as IMAGE_DOCKER_CLI_28, with the daemon
 socket mounted. That is a privilege grant, taken only in this mode.
 
+With --smoke FIRST, it runs RFCT-113's smoke runner: it loads
+_out/<board>/factory-root.oci -- the packed root the build exports as an OCI
+image -- and EXECUTES every self-built artifact inside it, requiring exit 0 and
+that the version each one reports equals the version this repository pinned. It
+needs DOCKER for the same reason --verify does and one stronger: the whole point
+is to run the shipped binaries, and they are built for the board rather than for
+this host. It refuses rather than skipping when the image is absent.
+
 A host with no bun runs the same steps in the bun container pinned by digest as
 IMAGE_BUN_1 in os/build-env/images.env. That route is taken automatically; it
 needs docker, and it is announced on the first line of output so a run is never
@@ -88,14 +98,21 @@ environment:
 USAGE
 }
 
-# --lint and --verify are MODES, not filters, so each is recognised only in
-# first position.
+# --lint, --verify and --smoke are MODES, not filters, so each is recognised only
+# in first position.
 MODE=suite
 case "${1:-}" in
 --help | -h) usage; exit 0 ;;
 --lint) MODE=lint; shift ;;
 --verify) MODE=verify; shift ;;
+--smoke) MODE=smoke; shift ;;
 esac
+
+# The two modes that drive docker themselves. Named once, because every place
+# below that used to test `[ "${MODE}" = verify ]` is asking this question and
+# not that one -- and a second spelling of the same condition is how --smoke
+# would come to mount a socket in one place and not in the other.
+needs_docker() { case "${MODE}" in verify | smoke) return 0 ;; *) return 1 ;; esac; }
 
 # ...and anywhere else either is a MISTAKE, refused rather than forwarded. Driven
 # from the failing side: `run.sh src/lint.test.ts --lint` handed --lint to
@@ -106,7 +123,7 @@ esac
 # it never reaches that parser, and `bun test --verify` is the same green about
 # the same wrong thing.
 for arg in "$@"; do
-    case "${arg}" in --lint | --verify) ;; *) continue ;; esac
+    case "${arg}" in --lint | --verify | --smoke) ;; *) continue ;; esac
     echo "error: ${arg} has to be the FIRST argument; here it came after '$1'." >&2
     echo "       Anywhere else it would be forwarded to \`bun test\`, which ignores it and" >&2
     echo "       reports a green suite in answer to a request for something else." >&2
@@ -232,11 +249,13 @@ fi
 # output because everything the run reports is about the run. Bump either pin
 # and the tag changes, so there is nothing stale to find.
 DOCKER_SOCK=""
-if [ "${MODE}" = verify ] && [ "${ROUTE}" = container ]; then
+if needs_docker && [ "${ROUTE}" = container ]; then
     command -v docker >/dev/null 2>&1 || {
-        echo "error: --verify on a host with no bun needs docker, and there is none (${WHY})." >&2
+        echo "error: --${MODE} on a host with no bun needs docker, and there is none (${WHY})." >&2
         echo "       It runs bun in the image pinned as IMAGE_BUN_1 and reads the image under test" >&2
         echo "       with the tools in IMAGE_ALPINE_3_21; both need a container runtime to be it." >&2
+        echo "       --smoke needs it for a second, stronger reason: it EXECUTES the shipped binaries" >&2
+        echo "       inside the factory root, and there is no route to that without a runtime." >&2
         exit 1
     }
 
@@ -300,11 +319,12 @@ else
         }
     fi
 
-    # --- and, for --verify only, the same bun WITH a docker client ------------
+    # --- and, for the docker-driving modes only, the same bun WITH a client ---
     # Everything above stays exactly as it is: the suite and the lint run in
     # IMAGE_BUN_1 unchanged, which is the image CI exercises on every push. Only
-    # the full verifier needs a client, because only it drives docker.
-    if [ "${MODE}" = verify ]; then
+    # the verifier and the smoke runner need a client, because only they drive
+    # docker.
+    if needs_docker; then
         CLI_IMAGE="$(bash "${REPO_ROOT}/os/build-env/from.sh" --ref IMAGE_DOCKER_CLI_28)" || exit 1
         if ! docker image inspect "${CLI_IMAGE}" >/dev/null 2>&1; then
             echo "os/verify: ${CLI_IMAGE} is not in the local image store; pulling it"
@@ -362,11 +382,11 @@ else
     # still resolve inside them: the paths are host paths and the daemon is the
     # host's. Under a /w mount they would name nothing, one level deeper.
     #
-    # It is a privilege grant and it is confined to the one mode that needs it:
+    # It is a privilege grant and it is confined to the modes that need it:
     # the suite and the lint never mount it, and a host with bun never gets
     # here. os/build-env/images.env's IMAGE_DOCKER_CLI_28 block says what it
     # costs, beside the decision to take it.
-    if [ "${MODE}" = verify ]; then
+    if needs_docker; then
         MOUNTS+=(-v "${DOCKER_SOCK}:/var/run/docker.sock")
     fi
 
@@ -501,6 +521,20 @@ if [ "${MODE}" = verify ]; then
     echo "os/verify: image contract"
     rc=0
     run_bun run src/verify-cli.ts "$@" || rc=$?
+    exit "${rc}"
+fi
+
+# --- the smoke runner --------------------------------------------------------
+# No vacuity guard here either, and at a granularity this script cannot see:
+# src/smoke.ts's `conclude` refuses a run whose conclusion count is not the
+# register's size, and refuses an EMPTY register outright. A summary line is
+# invariant under a run that threw half its work away -- `RESULT: PASS (6/6)`
+# reads identically whether the register held six or twelve -- so the count is
+# compared against what was asked for rather than against itself.
+if [ "${MODE}" = smoke ]; then
+    echo "os/verify: artifact smoke run"
+    rc=0
+    run_bun run src/smoke-cli.ts "$@" || rc=$?
     exit "${rc}"
 fi
 
