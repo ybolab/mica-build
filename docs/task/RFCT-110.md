@@ -1,10 +1,11 @@
 # RFCT-110 PLAN-014 M4: the image-contract verifier ported to TS under a per-check parity gate
 
-- **status**: in progress
+- **status**: completed
 - **priority**: P1
 - **owner**: ai-agent
 - **createdAt**: 2026-08-25 10:50
 - **claimedAt**: 2026-08-25 22:04
+- **completedAt**: 2026-08-26
 - **plan**: PLAN-014 (M4)
 
 Port `verify-image-v2.sh` (4,620 lines, both boards via runtime branches)
@@ -41,12 +42,28 @@ the shell verifier it replaces.
 
 ## M4e — the gate, 2026-08-26
 
-**Status stays `in progress`, deliberately.** Acceptance clause 3 —
-"tool-less-host container path verified for the full verifier, not just the
-lint" — **cannot be satisfied at the current pins**, and closing it is a scope
-decision this milestone does not own. Everything else in M4e is done.
+All three acceptance clauses are satisfied. **Clause 3 was measured
+unsatisfiable, escalated, and then closed by a decision the user made** — the
+sequence is recorded below in full, because the clause text is unchanged and a
+reader is owed the difference between a clause that was met and a clause that
+was weakened.
 
-### Clause 3, measured rather than reasoned
+### Clause 3 — unsatisfiable as the tree stood, then SATISFIED by a pin the user chose
+
+**Who decided what, in order.**
+
+| when | actor | what |
+|---|---|---|
+| 2026-08-26 | **M4e** | measured the clause unsatisfiable and reported it, with three costed closures; took no action |
+| 2026-08-26 | **the user** | decided: add the pin — option (a), the configuration M4e had measured sufficient |
+| 2026-08-26 | **M4e** | carried out that decision and re-measured on a genuinely bun-less host |
+
+**The clause text is NOT amended.** It reads exactly as it always did, and it is
+now true. That distinction is the point of this section: six earlier clause
+changes in this campaign were amendments, named as such, by the user. **This one
+is not an amendment — it is a satisfaction.**
+
+#### What was unsatisfiable, and how that was established
 
 Running the full verifier inside the pinned `IMAGE_BUN_1` on a host with neither
 bun nor the image tools fails, and both sides of the seam fail for the same one
@@ -64,12 +81,62 @@ register, and the register drives docker just as much.
 **What would close it, also measured.** Bind-mounting the host's docker client
 (a static binary) plus the socket into the pinned bun image, the full verifier
 ran to completion on this tool-less host: `PARITY x64: PASS — 312 compared, 0
-diverging, 0 unclaimed`, `rc=0`. So "a docker client added to the bun pin" is
+diverging, 0 unclaimed`, `rc=0`. So "a docker client added to the bun pin" was
 **sufficient**, not merely plausible. Bun in that image can also reach the
 daemon's HTTP API unaided (`fetch(..., { unix: '/var/run/docker.sock' })` → 200
 on `/_ping`), which needs no pin but is a rewrite of `tools.ts`'s process seam.
-Either way it is a decision about `os/build-env/images.env`, so it is reported
+Either way it is a decision about `os/build-env/images.env`, so it was reported
 rather than taken.
+
+#### What discharges the clause now
+
+**The user decided to add the pin.** Landed as:
+
+* **`IMAGE_DOCKER_CLI_28`** in `os/build-env/images.env` —
+  `docker:28-cli@sha256:625d9431…`, the index digest per that file's convention,
+  with WHO READS it, what it costs, and the decision itself recorded beside it.
+* **`os/verify/Dockerfile`** — the pinned bun image plus one file, the client.
+  Nothing is installed. The client is a STATIC binary (checked: `ldd` reports
+  "Not a valid dynamic program"), which is what lets an alpine-built client run
+  on a debian base.
+* **`os/verify/run.sh`** — builds it on demand for `--verify` only, tagged with
+  **both** input digests so a bumped pin cannot silently reuse the image built
+  from the old one, and mounts the daemon socket. Not built by `make build-env`:
+  that target builds the four `mos-build-*` compiler images and nothing runs it
+  before the verifier, so an image produced there would be absent exactly when
+  it is needed.
+
+**Re-measured on a genuinely bun-less host**, through the pinned image rather
+than the bind-mount that simulated it. The earlier evidence was taken with the
+oracle still present and `parity-cli.ts` is now deleted, so what is driven is the
+full TS verifier:
+
+    env -i PATH=/usr/bin:/bin HOME=<empty>   (no bun, no sgdisk/mtools/debugfs/
+                                              unsquashfs/veritysetup; docker only)
+    run.sh --verify --board x64      RESULT: PASS (290/290, 22 skipped)  rc=0
+    make os-verify-cx3576-v2         RESULT: FAIL (387/395, 3 skipped)   rc=1
+
+cx3576's eight FAILs are the BSP byte-compares a checkout cannot carry — the same
+eight the oracle failed, and not repaired.
+
+**What it costs, recorded rather than buried.** Mounting `/var/run/docker.sock`
+into a container is a privilege grant, and no other target in this tree takes
+one. It is confined to `--verify`; the suite and the lint still run in plain
+`IMAGE_BUN_1` and neither mounts the socket, which is also the route CI takes on
+every push.
+
+**Not implemented, and deliberately:** the no-pin alternative (`tools.ts`
+speaking the daemon HTTP API from bun). It was measured available and was not
+chosen.
+
+#### One further authorised amendment, by the user
+
+`test/apid-api/run.sh:122` defaulted to `oven/bun:1`, a floating major-version
+tag and the last unpinned image reference in the repository. `test/apid-api` is
+excluded by PLAN-014's Scope sentence; **the user lifted that exclusion for this
+one line on 2026-08-26** and it now defaults to `IMAGE_BUN_1`. Recorded in
+PLAN-014's Scope section, in `images.env`, and in `os/verify/HARNESS.md`. The
+rest of the exclusion stands.
 
 ### Clauses 1 and 2
 

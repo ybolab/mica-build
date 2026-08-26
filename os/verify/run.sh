@@ -66,12 +66,17 @@ It runs the os/verify check register against one assembled image and prints one
 PASS/FAIL/SKIP line per conclusion and a RESULT line, which is what
 os/verify-image-v2.sh printed before this package replaced it. Its remaining
 arguments are the verifier's own; try --verify --help. Unlike the two above it
-needs docker AND a bun on this host: see the refusal below.
+needs DOCKER whatever else this host has -- it reads the image with the tools in
+IMAGE_ALPINE_3_21 -- and on a host with no bun it runs in a second pinned image,
+IMAGE_BUN_1 plus the client pinned as IMAGE_DOCKER_CLI_28, with the daemon
+socket mounted. That is a privilege grant, taken only in this mode.
 
 A host with no bun runs the same steps in the bun container pinned by digest as
 IMAGE_BUN_1 in os/build-env/images.env. That route is taken automatically; it
 needs docker, and it is announced on the first line of output so a run is never
-ambiguous about which bun produced it.
+ambiguous about which bun produced it. For --verify the image is IMAGE_BUN_1
+plus the docker client pinned as IMAGE_DOCKER_CLI_28, built here on demand --
+see os/verify/Dockerfile.
 
 environment:
   MOS_VERIFY_BUN         the bun binary to use, instead of searching PATH and ~/.bun
@@ -191,53 +196,70 @@ elif [ -z "${BUN}" ]; then
     fi
 fi
 
-# THE ONE MODE THE CONTAINER ROUTE CANNOT CARRY, refused here rather than three
-# steps later. --verify drives docker itself: src/tools.ts takes the pinned
-# alpine whenever the host lacks sgdisk/mtools/debugfs/unsquashfs/veritysetup,
-# which on a tool-less host is always. Inside the bun container that is
-# docker-in-docker, and the pinned bun image carries no docker client.
+# THE ONE MODE THE CONTAINER ROUTE COULD NOT CARRY, AND NOW CAN.
 #
-# MEASURED, at the line, rather than argued -- M4e, 2026-08-26, running the full
-# verifier inside the pinned bun image with the repository identity-mounted:
+# --verify drives docker itself: src/tools.ts takes the pinned alpine whenever
+# the host lacks sgdisk/mtools/debugfs/unsquashfs/veritysetup, which on a
+# tool-less host is always. Inside the bun container that is docker-in-docker,
+# and IMAGE_BUN_1 carries no docker client, so this used to be a refusal.
 #
-#   * the register's own seam refuses: createToolRuntime says "this host has no
+# MEASURED, at the line, before it was closed -- M4e, 2026-08-26, running the
+# full verifier inside the pinned bun image with the repository identity-mounted:
+#
+#   * the register's own seam refused: createToolRuntime said "this host has no
 #     sgdisk, ... fdtget and no docker to run the pinned ones in";
-#   * the deleted oracle died at os/verify-image-v2.sh:185 with exit 127,
-#     `docker: command not found`, for the same one cause;
-#   * mounting the daemon socket changes NEITHER -- what is missing is the
-#     client, not a reachable daemon;
-#   * `docker run <IMAGE_BUN_1> sh -c 'command -v docker'` prints nothing, and
+#   * the shell verifier this package replaced died at its own :185 with exit
+#     127, `docker: command not found`, for the same one cause;
+#   * mounting the daemon socket changed NEITHER -- what was missing is the
+#     CLIENT, not a reachable daemon;
+#   * `docker run <IMAGE_BUN_1> sh -c 'command -v docker'` printed nothing, and
 #     there is no curl, wget, nc, python3 or socat in it either.
 #
-# So this is a REAL GAP and it is stated as one rather than worked around. It is
-# NOT an artefact of the oracle and it did not close when the oracle was
-# deleted: the full verifier is now the register, and the register needs docker
-# just as much. RFCT-110's "tool-less-host container path verified for the full
-# verifier, not just the lint" is therefore still open, and closing it is a
-# scope decision this milestone does not own. What would close it, also measured
-# rather than assumed:
+# THE USER DECIDED TO CLOSE IT BY ADDING A PIN, on 2026-08-26, and this is that
+# decision carried out: os/verify/Dockerfile is the pinned bun image plus the
+# client out of IMAGE_DOCKER_CLI_28, and RFCT-110's third acceptance clause is
+# satisfied rather than amended. The alternative that needs no pin -- teaching
+# src/tools.ts to speak the daemon's HTTP API over the socket, which does work
+# from bun -- was NOT chosen and is not implemented.
 #
-#   * a docker client added to the bun pin -- SUFFICIENT: with the host's
-#     client bind-mounted in beside the socket, the full verifier ran to
-#     completion on this tool-less host and exited 0;
-#   * a bun image that also carries the gptfdisk/mtools/e2fsprogs/
-#     squashfs-tools/cryptsetup set (one image, two decisions);
-#   * the tool seam speaking the daemon's HTTP API over the socket -- AVAILABLE
-#     without any new pin, since bun in the pinned image reaches /_ping over
-#     `fetch(..., { unix: '/var/run/docker.sock' })` unaided, but it is a
-#     rewrite of tools.ts's process seam rather than a pin.
+# BUILT HERE AND NOT BY `make build-env`. That target builds the four
+# mos-build-* compiler images and nothing runs it before running the verifier;
+# an image produced there would be absent at exactly the moment it is needed.
+# One layer, so it costs a second after the two bases are local.
 #
-# The first two are a new pin in os/build-env/images.env.
+# THE TAG CARRIES BOTH INPUT DIGESTS. A fixed tag would let a bumped pin reuse
+# the image built from the OLD one, and a stale parent is invisible in the
+# output because everything the run reports is about the run. Bump either pin
+# and the tag changes, so there is nothing stale to find.
+DOCKER_SOCK=""
 if [ "${MODE}" = verify ] && [ "${ROUTE}" = container ]; then
-    echo "error: --verify needs a bun on THIS host, and there is none (${WHY})." >&2
-    echo "       The suite and the lint run in the pinned bun container; --verify cannot, because it" >&2
-    echo "       drives docker itself -- it reads the image with sgdisk/mtools/debugfs/unsquashfs/" >&2
-    echo "       veritysetup out of the pinned alpine -- and the pinned bun image carries no docker" >&2
-    echo "       client. Running it there would be docker-in-docker." >&2
-    echo "       Install bun, or set MOS_VERIFY_BUN to one. RFCT-110 records this gap: the" >&2
-    echo "       tool-less-host route for the FULL verifier is still open, and closing it is a new" >&2
-    echo "       pin in os/build-env/images.env -- see os/verify/HARNESS.md." >&2
-    exit 1
+    command -v docker >/dev/null 2>&1 || {
+        echo "error: --verify on a host with no bun needs docker, and there is none (${WHY})." >&2
+        echo "       It runs bun in the image pinned as IMAGE_BUN_1 and reads the image under test" >&2
+        echo "       with the tools in IMAGE_ALPINE_3_21; both need a container runtime to be it." >&2
+        exit 1
+    }
+
+    # The socket is MOUNTED, so it has to be a socket on this host. A DOCKER_HOST
+    # naming a TCP daemon is a different arrangement -- the container would need
+    # the variable, not a mount -- and guessing which one a caller meant is how a
+    # verify run comes to talk to a daemon nobody chose.
+    case "${DOCKER_HOST:-}" in
+    "") DOCKER_SOCK=/var/run/docker.sock ;;
+    unix://*) DOCKER_SOCK="${DOCKER_HOST#unix://}" ;;
+    *)
+        echo "error: DOCKER_HOST=${DOCKER_HOST} is not a unix:// socket, and --verify on a bun-less" >&2
+        echo "       host reaches the daemon by MOUNTING its socket into the verify container." >&2
+        echo "       Run this on a host with bun, or point DOCKER_HOST at a unix socket." >&2
+        exit 1
+        ;;
+    esac
+    [ -S "${DOCKER_SOCK}" ] || {
+        echo "error: ${DOCKER_SOCK} is not a socket, so the verify container would start with no" >&2
+        echo "       daemon to reach and fail later reading the image. --verify needs it because" >&2
+        echo "       the image tools come from a container; the suite and the lint do not." >&2
+        exit 1
+    }
 fi
 
 MOUNTS=()
@@ -278,6 +300,46 @@ else
         }
     fi
 
+    # --- and, for --verify only, the same bun WITH a docker client ------------
+    # Everything above stays exactly as it is: the suite and the lint run in
+    # IMAGE_BUN_1 unchanged, which is the image CI exercises on every push. Only
+    # the full verifier needs a client, because only it drives docker.
+    if [ "${MODE}" = verify ]; then
+        CLI_IMAGE="$(bash "${REPO_ROOT}/os/build-env/from.sh" --ref IMAGE_DOCKER_CLI_28)" || exit 1
+        if ! docker image inspect "${CLI_IMAGE}" >/dev/null 2>&1; then
+            echo "os/verify: ${CLI_IMAGE} is not in the local image store; pulling it"
+            docker pull -q "${CLI_IMAGE}" >/dev/null 2>&1 || {
+                echo "error: IMAGE_DOCKER_CLI_28=${CLI_IMAGE} could not be obtained." >&2
+                echo "       That key in os/build-env/images.env is this tree's record of which docker" >&2
+                echo "       client the full verifier runs on a host with no bun. The reference is well" >&2
+                echo "       formed -- from.sh just checked that -- so what failed is the lookup." >&2
+                exit 1
+            }
+        fi
+
+        # BOTH digests in the tag. A fixed tag would let a bumped pin reuse an
+        # image built from the previous one, and nothing in a verify run reports
+        # which image it ran in beyond the announce line below -- so a stale
+        # parent would be invisible. Bump either pin and there is nothing stale
+        # to find, because the tag names something that was never built.
+        STAMP="$(printf '%s\n%s\n' "${BUN_IMAGE}" "${CLI_IMAGE}" | sha256sum | cut -c1-16)"
+        VERIFY_IMAGE="localhost/mos-verify-bun:${STAMP}"
+        if ! docker image inspect "${VERIFY_IMAGE}" >/dev/null 2>&1; then
+            echo "os/verify: building ${VERIFY_IMAGE} (pinned bun + pinned docker client)"
+            docker build -q \
+                --build-arg "MOS_BUN_IMAGE=${BUN_IMAGE}" \
+                --build-arg "MOS_DOCKER_CLI_IMAGE=${CLI_IMAGE}" \
+                -t "${VERIFY_IMAGE}" -f "${HERE}/Dockerfile" "${HERE}" >/dev/null || {
+                echo "error: could not build ${VERIFY_IMAGE} from os/verify/Dockerfile." >&2
+                echo "       It is two pinned FROMs and one COPY; nothing is installed and nothing is" >&2
+                echo "       fetched beyond those two images. Re-run without -q to see the build." >&2
+                exit 1
+            }
+        fi
+        BUN_IMAGE="${VERIFY_IMAGE}"
+        WHY="${WHY}; + the docker client pinned as IMAGE_DOCKER_CLI_28"
+    fi
+
     # WHY THE REPOSITORY IS MOUNTED AT ITS OWN PATH, and not at /w or /work like
     # the two image assemblers. Those containers RUN A SCRIPT and build their
     # paths inside; this one is a TOOL handed paths from outside. The lint's file
@@ -292,6 +354,21 @@ else
     # os/tests/mkimage-v2-selftest.sh and mkimage-x64-selftest.sh mount ${WORK}
     # at ${WORK} for their tool containers and say so in the same terms.
     MOUNTS=(-v "${REPO_ROOT}:${REPO_ROOT}")
+
+    # THE DAEMON SOCKET, for --verify only, at its own path like everything else
+    # this seam mounts. src/tools.ts creates the alpine tool container through
+    # it, so the containers it makes are SIBLINGS of this one on the host daemon
+    # rather than children -- which is exactly why the identity mounts above
+    # still resolve inside them: the paths are host paths and the daemon is the
+    # host's. Under a /w mount they would name nothing, one level deeper.
+    #
+    # It is a privilege grant and it is confined to the one mode that needs it:
+    # the suite and the lint never mount it, and a host with bun never gets
+    # here. os/build-env/images.env's IMAGE_DOCKER_CLI_28 block says what it
+    # costs, beside the decision to take it.
+    if [ "${MODE}" = verify ]; then
+        MOUNTS+=(-v "${DOCKER_SOCK}:/var/run/docker.sock")
+    fi
 
     # A board file OUTSIDE the repository is a case the host route serves and so
     # this one must too: its directory is mounted at its own path as well. Read

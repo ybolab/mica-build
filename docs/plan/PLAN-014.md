@@ -222,6 +222,22 @@ behaviour, image content contracts (outside explicitly anchored baselines),
 `board/` BSP builds (digest pins only), `mosd/` Rust sources, or
 `test/apid-api`.
 
+**Amendment, 2026-08-26 — one line of `test/apid-api`, by the user.** The
+`test/apid-api` exclusion is lifted for exactly one change: `run.sh:122`'s
+`BUN_IMAGE="${MOS_APID_BUN_IMAGE:-oven/bun:1}"` now defaults to `IMAGE_BUN_1`.
+That was the last floating image reference in the repository and the only one of
+the twenty R6 found that R6 could not close — it wired it, then reverted the
+wiring, because a finding does not widen a boundary the plan drew, and escalated
+instead. `oven/bun:1` is a MAJOR-version tag that upstream repoints onto every
+1.x release, and the harness it runs decides whether apid's API is judged
+conformant.
+
+**The amendment is this line and nothing else.** `mosd/` Rust sources, `board/`
+BSP content, device-side runtime behaviour and the rest of `test/apid-api` all
+remain excluded. Recorded here rather than left implicit so that the boundary
+reads as deliberately moved by the user, once, rather than silently crossed —
+the discipline every other clause change in this campaign follows.
+
 ## Alternatives
 
 - **Freeze v1 under `legacy/` instead of deleting** — rejected (decision 1);

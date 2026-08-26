@@ -119,7 +119,26 @@ BOOT2="${MOS_APID_BOOT2:-1}"
 BOOT2_PHASES="${MOS_APID_BOOT2_PHASES:-07b-postreboot,08-poweroff}"
 
 PHASES="${MOS_APID_PHASES:-}"
-BUN_IMAGE="${MOS_APID_BUN_IMAGE:-oven/bun:1}"
+# PINNED, and it is the last floating image reference in this repository.
+#
+# `oven/bun:1` is a MAJOR-version tag that upstream repoints onto every 1.x
+# release -- the loosest reference the R6 sweep found, and the one it could not
+# close: the rest of the inventory could drift by a rebuild, this one could
+# drift by a feature release, and the harness it runs is what decides whether
+# apid's API is judged conformant. R6 wired it to IMAGE_BUN_1 and REVERTED the
+# wiring, because PLAN-014's Scope sentence names test/apid-api out of scope and
+# a finding does not widen a boundary the plan drew. It escalated instead.
+#
+# THE USER LIFTED THAT EXCLUSION FOR THIS ONE LINE, on 2026-08-26, as an
+# authorised scope amendment recorded in PLAN-014's Scope section. Nothing else
+# under test/apid-api is touched by it, and the rest of the exclusion --
+# mosd/ Rust sources, board/ BSP content, device-side runtime behaviour --
+# stands.
+#
+# MOS_APID_BUN_IMAGE still overrides, as it always did; what changed is the
+# DEFAULT, which is now the digest this tree records rather than whatever the
+# tag points at today.
+BUN_IMAGE="${MOS_APID_BUN_IMAGE:-$(bash "${REPO_ROOT}/os/build-env/from.sh" --ref IMAGE_BUN_1)}"
 KEEP_DISK="${MOS_APID_KEEP_DISK:-0}"
 
 DRY_RUN=0
