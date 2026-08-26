@@ -1,46 +1,14 @@
-// The smoke runner: execute every self-built artifact inside the root that
-// ships it, and require the version it reports to be the version this
-// repository decided.
-//
-// EXPLICITLY A SMOKE TEST -- execution and version identity, not behaviour.
-// The QEMU boot tests keep functional coverage and the ldd/NEEDED checks stay
-// where they are; nothing here asserts what a binary DOES.
-//
-// WHAT IT CLOSES. Linking is the last thing a build does to any of the twelve.
-// A wrong-architecture binary, a missing soname and a version that does not
-// match its pin all survive to first boot, and all three look identical from a
-// build log: green. Three claims read as one --
-//
-//   "it linked"          the build did not fail
-//   "it runs"            the loader resolves it and it reaches main
-//   "it is the version   what ran is what os/podman/versions.env,
-//    we decided"          os/update/rauc/versions.env or the crate manifest says
-//
-// -- and only the first is checked by the build itself.
-//
-// THE SEAM, AND WHY THE WHOLE RUNNER IS TESTABLE WITHOUT DOCKER.
-//
-// Everything below takes an `Exec`: a function from argv to (status, stdout,
-// stderr). `dockerExec` is the one that runs a container; the suite passes one
-// that returns fabricated output, which is what makes every verdict here
-// reachable FROM THE FAILING SIDE without an image, a daemon or a build. A
-// check whose red branch has never executed is a check nobody has run.
-//
-// THE THREE VERDICTS. `pass` and `fail` are the obvious two. `unclaimed` is
-// the third: a conclusion nobody reached must not report as one that was
-// reached and held.
-//
-// NOTHING IN THE SHIPPED REGISTER IS UNCLAIMED, and the verdict stays. It is
-// there for the next artifact this repository builds and cannot yet ask --
-// without it the only ways to add such an artifact are to report it as passing
-// or to leave it out, and both are a green that got greener by looking at less.
-// It is exercised from the failing side in smoke.test.ts, which is where a
-// verdict nobody currently produces has to be exercised.
-//
-// THE SECOND HALF OF THE VERSION CONTRACT: THE BUILD COMMIT. mosd and apid also
-// report the commit they were built from, and the runner asserts it -- against
-// a RECORDED BUILD FACT and never against `git rev-parse HEAD`. See
-// `BuildCommitFact` for why that distinction is the entire value of the check.
+// The smoke runner: execute every self-built artifact inside the root that ships
+// it and require the version it reports to be the one os/podman/versions.env,
+// os/update/rauc/versions.env or the crate manifest pins. Execution and version
+// identity, not behaviour; the QEMU boot tests and the ldd/NEEDED checks keep
+// functional coverage. Everything below takes an `Exec`, so the suite reaches
+// every verdict from the failing side with fabricated output and no image,
+// daemon or build. The verdicts are pass, fail and `unclaimed` -- a conclusion
+// nobody reached, kept for the next artifact this tree builds and cannot yet
+// ask, and exercised in smoke.test.ts. mosd and apid also report their build
+// commit, asserted against a recorded build fact and never against
+// `git rev-parse HEAD`; see `BuildCommitFact`.
 
 import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
@@ -74,14 +42,12 @@ export interface SmokeResult {
   readonly verdict: Verdict
   readonly message: string
   /**
-   * The long form, printed BELOW the table rather than in the row.
+   * The long form, printed below the table rather than in the row.
    *
-   * Only `unclaimed` carries one, and it is the measured reason the artifact
-   * has no version contract. It is separated from `message` because a
-   * paragraph inside a column destroys the one property a per-artifact table
-   * has -- that twelve conclusions can be read at a glance -- and the reason a
-   * check was not run is exactly the thing a reader skims past when it is
-   * buried in a wall of text.
+   * Only `unclaimed` carries one: the measured reason the artifact has no
+   * version contract. It is separate from `message` because a paragraph inside
+   * a column destroys the table's one property -- twelve conclusions read at a
+   * glance -- and buries the reason a check was not run.
    */
   readonly detail?: string
 }
@@ -89,12 +55,11 @@ export interface SmokeResult {
 /**
  * A pin's file, relative to the repository root.
  *
- * NOT `basename`. Four of the twelve read a `Cargo.toml`, and four rows all
- * saying "in Cargo.toml" name nothing: `mosd/mqttd/Cargo.toml` and
- * `mosd/broker/Cargo.toml` are different files with the same last component,
- * and the whole point of printing the source is that a reader can go and edit
- * the right one. Absolute paths are worse in the other direction -- they carry
- * a worktree prefix that differs per checkout and turns every line into noise.
+ * NOT `basename`: four of the twelve read a `Cargo.toml`, and
+ * `mosd/mqttd/Cargo.toml` and `mosd/broker/Cargo.toml` are different files with
+ * the same last component, so a row saying "in Cargo.toml" would not tell a
+ * reader which one to edit. Absolute paths carry a worktree prefix that differs
+ * per checkout and turns every line into noise.
  */
 export function pinSource(file: string): string {
   return file.startsWith(REPO_ROOT + '/') ? file.slice(REPO_ROOT.length + 1) : file
@@ -103,89 +68,59 @@ export function pinSource(file: string): string {
 /**
  * Every version-shaped token on a line, by maximal munch.
  *
- * WHY A TOKENISER AND NOT TWELVE PARSERS. The ten artifacts that answer print
- * ten different sentences -- measured in the real x64 factory root:
+ * One tokeniser, not twelve parsers: the ten artifacts that answer print ten
+ * different sentences, measured in the real x64 factory root --
  *
- *   rauc 1.13                      podman version 5.8.6        5.8.6
- *   crun version 1.29.1            conmon version 2.2.1        netavark 2.1.0
- *   aardvark-dns 2.1.0             tini version 0.2.1_catatonit
- *   mos-mqttd 0.1.0                mos-mqtt-broker 0.1.0
+ *   rauc 1.13            podman version 5.8.6   5.8.6
+ *   crun version 1.29.1  conmon version 2.2.1   netavark 2.1.0
+ *   aardvark-dns 2.1.0   tini version 0.2.1_catatonit
+ *   mos-mqttd 0.1.0      mos-mqtt-broker 0.1.0
  *
- * A per-artifact regex would be twelve more things to keep current, each of
- * which fails OPEN when upstream reflows its banner: a regex that stops
- * matching yields no version, and "no version" is easy to mistake for "no
- * mismatch". Reading the numbers out of whatever is printed has no such
- * failure mode, because the comparison is against a value read from the pin
- * file and a missing token can only ever be a mismatch.
- *
- * MAXIMAL MUNCH IS THE POINT, not an implementation detail. `1.29.10` must not
- * satisfy a pin of `1.29.1`, so the run of digits and dots is taken whole and
- * compared whole. That property comes from the GREEDY quantifier, not from a
- * guard: after `[0-9]+(?:\.[0-9]+)+` has matched, the next character cannot be
- * a digit, because it would already have been consumed.
- *
- * THERE IS DELIBERATELY NO RIGHT-HAND GUARD, and the first version of this
- * function had one. `(?![.0-9])` was written to stop `1.29.10` satisfying
- * `1.29.1` -- which greed already does -- and it was found to be redundant by
- * mutation: removing it changed no test. What it DID change was a trailing dot.
- * On `crun version 1.29.1.` the guard rejects the greedy match, backtracking
- * finds nothing shorter that satisfies it either, and the line yields NO TOKEN
- * -- which this runner reports as "reports NO version at all" and turns RED for
- * a binary that printed exactly the right version and ended its sentence with a
- * full stop. A guard that cannot fire on the case it was written for and can
- * fire on a case nobody considered is worse than no guard.
- *
- * The LEFT guard stays, and it is load-bearing: without it a token can start in
- * the middle of a longer run, so `11.29.1` would offer `1.29.1` and a
- * version-skewed binary would report as agreeing with its pin.
+ * -- and a per-artifact regex fails open when upstream reflows one: no token
+ * read looks like no mismatch. A value read from the pin file can only mismatch.
  */
 export function versionTokens(line: string): string[] {
+  // Maximal munch is the point, not an implementation detail: greedy
+  // `[0-9]+(?:\.[0-9]+)+` takes the run of digits and dots whole, so the next
+  // character cannot be a digit and `1.29.10` cannot satisfy a pin of `1.29.1`.
+  // A right-hand `(?![.0-9])` is therefore redundant -- removing it changed no
+  // test -- and it is harmful: on `crun version 1.29.1.` it rejects the greedy
+  // match, backtracking finds nothing shorter, and the line yields no token at
+  // all, which this runner reports as "reports NO version at all" and turns red
+  // for a binary that printed the right version and ended with a full stop. The
+  // left guard is load-bearing: without it a token can start in the middle of a
+  // longer run, so `11.29.1` would offer `1.29.1` and a version-skewed binary
+  // would report as agreeing with its pin.
   return [...line.matchAll(/(?<![.0-9])[0-9]+(?:\.[0-9]+)+/g)].map(m => m[0])
 }
 
 /**
- * THE COMMIT HALF OF THE VERSION CONTRACT.
+ * The commit half of the version contract.
  *
- * The expectation is a BUILD FACT and never `git rev-parse HEAD`: comparing
- * the reported sha against HEAD at run time is trivially green on any freshly
- * built tree, and asserts that somebody just built rather than that the
- * embedding works. `mosd/hack/build-target.sh` writes the commit it handed the
- * compiler into `_out/mosd-build.txt`, build-v2.sh copies it to
- * `_out/<board>/mosd-build.txt` beside the factory root, `readMosdBuildFact`
- * reads it back and `judge` compares the two. See `BuildCommitFact`.
- *
- * THE PRINTED-ONLY STATE IS A BRANCH, not a deletion: when the record is absent
- * -- a hand-assembled `_out/` -- the runner says so on its own first lines and
- * the row says `commit was NOT asserted`. The reported line is carried verbatim
- * into every version verdict (`[said: ...]`) either way, because a commit the
- * runner cannot check is still one a reader must be able to see.
- *
- * ONE LIMIT: `mosd 0.1.0-rc.1 (abc1234)` yields the numeric head only, so a
- * pre-release pin and output go RED naming both sides -- visible rather than a
- * silent pass. Neither crate takes a pre-release version today; if one does,
- * `versionTokens` is where to look.
+ * `mosd/hack/build-target.sh` writes the commit it handed the compiler into
+ * `_out/mosd-build.txt`, build-v2.sh copies it to `_out/<board>/mosd-build.txt`,
+ * `readMosdBuildFact` reads it back and `judge` compares the two; see
+ * `BuildCommitFact`. The printed-only state is a branch, not a deletion: with no
+ * record -- a hand-assembled `_out/` -- the runner says so on its own first lines
+ * and the row says the commit was not asserted, and the reported line is carried
+ * verbatim into every version verdict (`[said: ...]`) either way. One limit:
+ * `mosd 0.1.0-rc.1 (abc1234)` yields the numeric head only, so a pre-release pin
+ * and output go red naming both sides. Neither crate takes a pre-release version
+ * today; if one does, `versionTokens` is where to look.
  */
 
 /**
- * Whether a `--version` line reports EXACTLY this commit.
+ * Whether a `--version` line reports exactly this commit.
  *
- * mosd and apid print `<name> <version> (<commit>)`, and the
- * commit half is compared here rather than by `versionTokens`, which reads
- * dotted numbers and would never see a sha at all.
- *
- * A TOKEN MATCH, NOT A SUBSTRING, and the whole reason is `-dirty`.
+ * mosd and apid print `<name> <version> (<commit>)`; the commit half is compared
+ * here rather than by `versionTokens`, which reads dotted numbers and would never
+ * see a sha. A token match, not a substring, because of `-dirty`:
  * `line.includes('00b674e9a628')` is satisfied by `(00b674e9a628-dirty)`, so a
- * binary built from a MODIFIED worktree would report as agreeing with the clean
- * sha -- which is the one confusion the dirty marker exists to prevent. The
- * guards are a left
- * `(?<![A-Za-z0-9-])` so a token may not start inside a longer run, and a right
- * `(?![A-Za-z0-9-])` so it may not end inside one. `-` is in BOTH classes on
- * purpose; that is what makes `-dirty` a different token rather than a suffix.
- *
- * An empty expectation matches nothing. `readMosdBuildFact` never returns one,
- * and if it ever did, a `RegExp('')` here would match every line and turn this
- * into a check that cannot fail -- the failure mode `readPin` refuses one level
- * down in the same words.
+ * binary built from a modified worktree would report as agreeing with the clean
+ * sha. `-` is in both the left `(?<![A-Za-z0-9-])` and the right
+ * `(?![A-Za-z0-9-])` class on purpose; that is what makes `-dirty` a different
+ * token rather than a suffix. An empty expectation matches nothing: a `RegExp('')`
+ * would match every line and turn this into a check that cannot fail.
  */
 export function reportsCommit(line: string, commit: string): boolean {
   if (commit === '') return false
@@ -202,22 +137,18 @@ export function firstLine(stdout: string): string {
 }
 
 /**
- * What the BUILD recorded about the commit it embedded, and where that came from.
+ * What the build recorded about the commit it embedded, and where that came from.
  *
- * The shape of this type is the whole defence against a
- * vacuous check. The commit half of mosd's and apid's `--version` could be
- * "asserted" against `git rev-parse HEAD` at run time, and that would pass on
- * any freshly built tree while asserting only that somebody had just rebuilt --
- * never that the embedding works. So the expectation is a BUILD FACT:
+ * The expectation is a build fact, never `git rev-parse HEAD`: comparing the
+ * reported sha against HEAD at run time passes on any freshly built tree and
+ * asserts only that somebody had just rebuilt, never that the embedding works.
  * `mosd/hack/build-target.sh` writes the commit it handed the compiler into
  * `_out/mosd-build.txt`, `os/rootfs/build-v2.sh` carries it into `_out/<board>/`
- * beside the factory root, and this is what the runner reads back.
- *
- * `commit` is optional because the fact may genuinely not be there -- a
- * hand-assembled `_out/` -- and the rule for that case is to PRINT it and
- * assert nothing rather than to refuse. `source` is printed either way, so a
- * run that asserted nothing about the commit says so out loud instead of
- * looking like one that did.
+ * beside the factory root, and this is what the runner reads back. `commit` is
+ * optional because the fact may genuinely not be there -- a hand-assembled
+ * `_out/` -- and the rule there is to print it and assert nothing rather than to
+ * refuse. `source` is printed either way, so a run that asserted nothing about
+ * the commit says so out loud.
  */
 export interface BuildCommitFact {
   /** The commit the build recorded embedding. Absent when none was recorded. */
@@ -227,48 +158,33 @@ export interface BuildCommitFact {
 }
 
 /**
- * What a non-zero exit MEANS, from the status and what came back with it.
+ * What a non-zero exit means, from the status and what came back with it.
  *
- * MEASURED, NOT TAKEN FROM THE `docker run` CONVENTION. That convention -- 127
- * not found, 126 cannot be invoked -- gets both of the shapes below wrong.
- * Measured against docker 29.7.2, in EXACTLY the shape `dockerArgv` produces
- * (no shell: the artifact IS the container's init, so a failure to exec it
- * surfaces as a `docker run` failure rather than as a shell's 126):
+ * Measured against docker 29.7.2 in exactly the shape `dockerArgv` produces --
+ * no shell, because the artifact IS the container's init, so a failure to exec
+ * it surfaces as a `docker run` failure rather than as a shell's 126. The
+ * `docker run` convention (127 not found, 126 cannot be invoked) gets the first
+ * two of these wrong:
  *
- *   wrong-arch ELF            255  `exec <path>: exec format error`
- *   missing soname            127  `<path>: error while loading shared libraries:
- *                                   libselinux.so.1: cannot open shared object file`
- *   present, mode 000         126  `docker: ... exec: "<path>": permission denied.`
- *   path genuinely absent     127  `docker: ... exec: "<path>": stat <path>: no such
- *                                   file or directory.`
- *   program ran and refused   its own status
+ *   wrong-arch ELF          255  `exec <path>: exec format error`
+ *   missing soname          127  `<path>: error while loading shared libraries:
+ *     libselinux.so.1: cannot open shared object file`
+ *   present, mode 000       126  `docker: ... exec: "<path>": permission denied.`
+ *   path genuinely absent   127  `docker: ... exec: "<path>": stat <path>: no
+ *     such file or directory.`
+ *   program ran and refused      its own status
  *
- * So the old map was wrong twice over, and wrong on both of the cases the clause
- * exists for: a wrong-arch binary was diagnosed as "the program ran and refused"
- * (it never ran), and a missing soname as "the path does not exist in the factory
- * root" (it is there). 126, which the old map gave to both of them, is produced
- * by neither -- it is a mode bit, a case nobody had considered.
- *
- * THE SAME FILE ALREADY KNEW. `preflight`'s comment records `status 255` with
- * `exec format error` for the arm64 wall, measured against a pulled upstream
- * arm64v8 image. One half of this module had the measurement and the other half
- * had the convention, and nothing compared them -- because both `judge` branches
- * were reachable in the suite only from a FABRICATED `ExecResult`, where the
- * test chose the status it then asserted the diagnosis of. That is why the three
- * negative tests this milestone owes are driven through a real container against
- * a real mutated root: `os/verify/src/smoke-negative.ts`.
- *
- * 127 IS AMBIGUOUS AND IS SPLIT BY TEXT, not left to the status. ld.so exits 127
- * after printing `error while loading shared libraries`, and docker exits 127
- * when the path is not there at all; reporting either as the other sends a
- * reader to the wrong file. The status alone cannot separate them, so this reads
- * the output -- and falls back to naming BOTH possibilities rather than picking
- * one, because a confident wrong diagnosis is worse than an honest pair.
- *
- * Pure, so every branch is reachable from the suite as well as from the
- * container.
+ * `preflight` records the same `status 255` with `exec format error` for the
+ * arm64 wall. Pure, so every branch is reachable from the suite; a fabricated
+ * `ExecResult` lets a test pick the status it then asserts the diagnosis of, so
+ * `os/verify/src/smoke-negative.ts` also drives the three negative cases through
+ * a real container against a real mutated root.
  */
 export function diagnose(outcome: ExecResult): string {
+  // 127 is ambiguous and is split by text, not left to the status: ld.so exits
+  // 127 after printing `error while loading shared libraries`, and docker exits
+  // 127 when the path is not there at all. The fallback names both possibilities
+  // rather than picking one.
   const said = `${outcome.stdout}\n${outcome.stderr}`
   if (/error while loading shared libraries/i.test(said)) {
     return 'the file is there and the dynamic loader could not resolve it -- a shared library it '
@@ -347,10 +263,9 @@ export function judge(artifact: Artifact, pin: Pin, outcome: ExecResult, build?:
     const version =
       `exit 0, reports ${pin.expected} == ${pin.key}=${pin.recorded} in ${pinSource(pin.file)} `
       + `[said: ${JSON.stringify(line)}]`
-    // THE SECOND HALF, for the two artifacts that carry a build commit. It is
-    // asserted only against a RECORDED build fact, never against the working
-    // tree's HEAD -- see BuildCommitFact for why that distinction is the whole
-    // value of this check.
+    // The second half, for the two artifacts that carry a build commit. It is
+    // asserted only against a recorded build fact, never against the working
+    // tree's HEAD -- see BuildCommitFact.
     if (artifact.embedsBuildCommit !== true) {
       return { ...base, kind: 'version', verdict: 'pass', message: version }
     }
@@ -403,7 +318,7 @@ export function judge(artifact: Artifact, pin: Pin, outcome: ExecResult, build?:
 export async function checkArtifact(artifact: Artifact, exec: Exec, build?: BuildCommitFact): Promise<SmokeResult> {
   const pin = artifact.pin()
   if (artifact.contract.kind === 'unclaimed') {
-    // NOT INVOKED, and that is a decision rather than an omission. mosd's only
+    // Not invoked, and that is a decision rather than an omission. mosd's only
     // invocation provisions a device and apid's never returns; running them to
     // produce a `fail` would trade a clear "nobody asked" for a 25-second hang
     // and a mutated /var, and would report the artifact as broken when what is
@@ -438,12 +353,10 @@ export function conclude(results: readonly SmokeResult[], expected: number): Con
     total: results.length,
   }
 
-  // THE NAMES, NOT JUST THE NUMBER. A category with a count and no members
-  // decays into background noise: "2 unclaimed" is a thing a reader stops
-  // seeing after the third run, and "mosd, apid" is a thing they can act on.
-  // It matters more than usual here because this run's steady state is
-  // non-zero -- the number is the part that will be habituated to, so the
-  // names go on the RESULT line itself and not only in the table above it.
+  // The names, not just the number: "2 unclaimed" is a count a reader stops
+  // seeing, and "mosd, apid" is something they can act on. This run's steady
+  // state is non-zero, so the names go on the RESULT line itself and not only
+  // in the table above it.
   const named = (verdict: Verdict): string =>
     results.filter(r => r.verdict === verdict).map(r => r.name).join(', ')
   if (expected <= 0 || counts.total !== expected) {
@@ -485,16 +398,15 @@ export function conclude(results: readonly SmokeResult[], expected: number): Con
     conclusion: 'PASS',
     exitCode: 0,
     counts,
-    // The same four numbers FAIL and INCOMPLETE print, in the same order.
-    // One format for one summary: a second spelling on the green line would
-    // make a reader translate between it and the red one, and `0 unclaimed` is
-    // exactly the number that would go unstated on the line that matters
-    // most.
+    // The same four numbers FAIL and INCOMPLETE print, in the same order. One
+    // format for one summary: a second spelling on the green line would make a
+    // reader translate between it and the red one, and `0 unclaimed` is exactly
+    // the number that would go unstated on the line that matters most.
     line: `RESULT: PASS (${counts.pass} pass, ${counts.fail} fail, ${counts.unclaimed} unclaimed, of ${counts.total})`,
   }
 }
 
-// ─── The image, and the one place that decides how a binary is executed ──────
+// The image, and the one place that decides how a binary is executed.
 
 /** What `_out/<board>/factory-root.txt` says the archive beside it is. */
 export interface FactoryRootRecord {
@@ -513,16 +425,14 @@ export function outDir(board: string): string {
 /**
  * Read a `key<TAB>value` record as data.
  *
- * TAB-SEPARATED, exactly as `ociRecord` in os/build/src/stages.ts writes it and
+ * Tab-separated, exactly as `ociRecord` in os/build/src/stages.ts writes it and
  * as `mosd/hack/build-target.sh` writes `_out/mosd-build.txt`, parsed rather
  * than sourced. Comment lines are skipped by having no tab, which is why
  * `# Load it with: docker load -i ...` cannot become a key -- a reader that
- * split on whitespace would have made one.
- *
- * ONE READER FOR BOTH RECORDS, because two parsers for one file format agree
- * right up until a value acquires a tab or a comment acquires one. The same
- * argument smoke-pins.ts makes about not writing a second `versions.env`
- * parser.
+ * split on whitespace would have made one. One reader for both records, because
+ * two parsers for one file format agree right up until a value or a comment
+ * acquires a tab; the same argument smoke-pins.ts makes about not writing a
+ * second `versions.env` parser.
  */
 export function parseTabRecord(text: string): Map<string, string> {
   const kv = new Map<string, string>()
@@ -559,10 +469,9 @@ export function parseFactoryRootRecord(text: string, path: string): FactoryRootR
  * Where the two files live for a board.
  *
  * `dir` is a parameter for `shippedBoards(dir)`'s reason: the refusal below has
- * to be REACHABLE from a test, and a guard that can only fire on a host that
- * has never built an image is a guard whose behaviour depends on the host it
- * runs on -- green here, red there, for reasons that are nothing to do with the
- * code.
+ * to be reachable from a test, and a guard that can only fire on a host that has
+ * never built an image is green here and red there for reasons that have nothing
+ * to do with the code.
  */
 export function factoryRootPaths(
   board: string,
@@ -574,11 +483,11 @@ export function factoryRootPaths(
 /**
  * Read the record, refusing loudly when the build has not been run.
  *
- * A MISSING IMAGE IS A REFUSAL, NOT A SKIP. `make os-verify-cx3576-v2` on a
- * tree with no image refuses before running a single check, and that is the
- * behaviour to copy: a smoke runner that skipped when it found nothing to smoke
- * would report the same green on a tree that had never built an image as on one
- * whose artifacts all passed.
+ * A missing image is a refusal, not a skip. `make os-verify-cx3576-v2` on a tree
+ * with no image refuses before running a single check, and that is the behaviour
+ * to copy: a runner that skipped when it found nothing to smoke would report the
+ * same green on a tree that had never built an image as on one whose artifacts
+ * all passed.
  */
 export function readFactoryRoot(
   board: string,
@@ -610,23 +519,14 @@ export const MOSD_BUILD_RECORD_NAME = 'mosd-build.txt'
  *
  * Read out of the record `mosd/hack/build-target.sh` wrote and
  * `os/rootfs/build-v2.sh` copied in beside the image -- NOT out of the working
- * tree. See [`BuildCommitFact`].
- *
- * ABSENT IS NOT A REFUSAL HERE, unlike the factory root itself. A build fact
- * the runner cannot see is printed and asserted about nothing, because the
- * record is younger than images that may still be sitting in `_out/`: refusing
- * would turn "this image predates the commit stamp" into "this tree is
- * broken". On a root
- * built by os/rootfs/build-v2.sh the record is always written, and when mosd is
- * DECLINED the same script removes it -- and then mosd and apid are not in the
- * image at all and `declinedFeatures` refuses the run before it reaches here.
- * So the absent branch is not the normal path; it is the one for an `_out/`
- * assembled by hand or left over from an older build.
- *
- * A RECORD THAT EXISTS AND CANNOT BE READ IS A REFUSAL, though. A file with no
- * `commit` key was written by something other than build-target.sh, and reading
- * that as "nothing recorded" would let a malformed record silently switch the
- * assertion off.
+ * tree. See [`BuildCommitFact`]. Absent is not a refusal here, unlike the
+ * factory root itself: the record is younger than images that may still be
+ * sitting in `_out/`, so a fact the runner cannot see is printed and asserted
+ * about nothing. A root built by os/rootfs/build-v2.sh always has it, and when
+ * mosd is declined that script removes it -- but then `declinedFeatures` refuses
+ * the run first. A record that exists and cannot be read IS a refusal: a file
+ * with no `commit` key was written by something other than build-target.sh, and
+ * reading that as "nothing recorded" would switch the assertion off silently.
  */
 export function readMosdBuildFact(board: string, dir: string = outDir(board)): BuildCommitFact {
   const path = join(dir, MOSD_BUILD_RECORD_NAME)
@@ -662,27 +562,16 @@ export function readMosdBuildFact(board: string, dir: string = outDir(board)): B
 /**
  * The feature stages the build was told to leave OUT, read off its own manifest.
  *
- * WHY THIS IS ASKED AT ALL. The register covers a FULL-FEATURED root: twelve
- * artifacts, of which seven arrive with stages/31-feature-containers, one with
- * 32-feature-rauc and four with 33-feature-mosd. Those stages are optional --
- * `WITH_CONTAINERS=0` in a board's containers.env, or `MOS_ROOTFS_WITHOUT`,
- * leaves them out, and os/rootfs/build-v2.sh supports both. Against such a root
- * every artifact of a declined feature answers rc=127, and the run would print
- * seven failures about seven binaries when what happened is one decision about
- * one stage. That is the same defect `preflight` exists to prevent one level up.
- *
- * IT REFUSES RATHER THAN MODELLING IT. Teaching the register which feature owns
- * which artifact, and reporting a declined one as some fourth verdict, would put
- * a SKIP into a runner whose whole purpose is that nothing is skipped -- and a
- * skip reports the same green as a pass. Refusing costs a board that declines a
- * feature the ability to smoke-run at all, which is a smaller and much more
- * visible cost than a green with a hole in it, and it is a decision for whoever
- * ships such a board to make deliberately.
- *
- * Both shipped boards decline nothing today -- x64 has no containers.env at all
- * and cx3576's says `WITH_CONTAINERS=1` -- so this guard is written from the
- * manifest's own record rather than from a board file, and it fires on a
- * configuration neither board is in.
+ * The register covers a full-featured root: twelve artifacts, of which seven
+ * arrive with stages/31-feature-containers, one with 32-feature-rauc and four
+ * with 33-feature-mosd. Those stages are optional -- `WITH_CONTAINERS=0` in a
+ * board's containers.env, or `MOS_ROOTFS_WITHOUT`, leaves them out -- and every
+ * artifact of a declined feature then answers rc=127, so the run would print
+ * seven failures about binaries when what happened is one decision about one
+ * stage. It refuses rather than modelling that: a fourth verdict for a declined
+ * artifact would put a skip into a runner whose whole purpose is that nothing is
+ * skipped. Both shipped boards decline nothing today (x64 has no containers.env;
+ * cx3576's says `WITH_CONTAINERS=1`), so the guard reads the manifest.
  */
 export function declinedFeatures(text: string): string[] {
   for (const line of text.split('\n')) {
@@ -714,7 +603,7 @@ export function declinedFeatures(text: string): string[] {
  */
 export async function capture(argv: readonly string[], timeoutMs: number): Promise<ExecResult> {
   const proc = Bun.spawn(argv as string[], { stdout: 'pipe', stderr: 'pipe', stdin: 'ignore' })
-  // A BUDGET, NOT A COURTESY. `apid --version` starts an HTTPS server and never
+  // A budget, not a courtesy. `apid --version` starts an HTTPS server and never
   // returns -- measured, rc=124 against 25s -- so an unbounded wait here is a
   // smoke run that hangs instead of concluding. The shipped register does not
   // invoke apid, but a register entry added later could, and a harness whose
@@ -738,14 +627,12 @@ export const EXEC_TIMEOUT_MS = 30_000
 /**
  * Load the archive, every run, and hand back the ref it loaded.
  *
- * WHY LOAD RATHER THAN TRUST A TAG. A tag is daemon state: it says what is
- * currently loaded, and `localhost/mos-factory-root:x64` may name a root some
- * other worktree on this host built an hour ago. `os/rootfs/build-v2.sh` guards
- * the same seam from the other side and says why -- "a stale or absent archive
- * would be handed to the smoke runner as this build's root". Loading is
- * idempotent and costs ~2s on the real 250 MB export because the layers are
- * already content-addressed; that is a cheap price for the tag pointing at the
- * bytes this record describes.
+ * Load rather than trust a tag. A tag is daemon state: it says what is currently
+ * loaded, and `localhost/mos-factory-root:x64` may name a root some other
+ * worktree on this host built an hour ago. `os/rootfs/build-v2.sh` guards the
+ * same seam from the other side -- "a stale or absent archive would be handed to
+ * the smoke runner as this build's root". Loading is idempotent and costs ~2s on
+ * the real 250 MB export because the layers are already content-addressed.
  */
 export async function loadFactoryRoot(
   record: FactoryRootRecord & { readonly archivePath: string },
@@ -763,17 +650,14 @@ export async function loadFactoryRoot(
  * The positive control, run before anything is concluded about any artifact.
  *
  * `/bin/true` is coreutils' and the packed root keeps coreutils by decision
- * (90-pack.Dockerfile says why). If it does not exit 0, NOTHING in this image
- * can be executed on this host, and every one of the twelve would come back
- * `fail` with a message about the artifact -- which would be twelve wrong
- * diagnoses of one condition.
- *
- * THIS IS WHERE THE arm64 WALL IS CAUGHT. On a host with no binfmt_misc,
- * `docker run` of an arm64 image answers `exec /bin/true: exec format error`
- * with status 255 -- measured on this host against a pulled upstream
- * arm64v8/busybox, so the measurement is about the host and not about our
- * export. Refusing here, naming the platform and the remedy, is the same shape
- * as `os-verify-cx3576-v2` refusing on a tree with no image.
+ * (90-pack.Dockerfile says why). If it does not exit 0, NOTHING in this image can
+ * be executed here, and all twelve would come back `fail` about the artifact --
+ * twelve wrong diagnoses of one condition. This is where the arm64 wall is
+ * caught: on a host with no binfmt_misc, `docker run` of an arm64 image answers
+ * `exec /bin/true: exec format error` with status 255, measured on this host
+ * against a pulled upstream arm64v8/busybox, so the measurement is about the host
+ * and not our export. Refusing here, naming the platform and the remedy, is the
+ * same shape as `os-verify-cx3576-v2` refusing on a tree with no image.
  */
 export async function preflight(exec: Exec, platform: string): Promise<void> {
   const r = await exec(['/bin/true'])
@@ -798,20 +682,20 @@ export async function preflight(exec: Exec, platform: string): Promise<void> {
 /**
  * The exact command one invocation becomes.
  *
- * Separated from `dockerExec` so the suite can assert the argv WITHOUT a
- * daemon: `--network none` and `--rm` are decisions, and a decision that only
- * exists inside a function nothing can observe is a decision nobody can check
- * has survived an edit.
+ * Separated from `dockerExec` so the suite can assert the argv without a daemon:
+ * `--network none` and `--rm` are decisions, and a decision that only exists
+ * inside a function nothing can observe is one nobody can check has survived an
+ * edit.
  */
 export function dockerArgv(ref: string, argv: readonly string[]): string[] {
   return [
     'docker',
     'run',
     '--rm',
-    // NO NETWORK. `podman --version` needs none, and a smoke runner that could
-    // reach a registry is a smoke runner whose result could depend on one. It
-    // also keeps apid-shaped binaries -- anything that binds a port -- from
-    // reaching the host's network if a later register entry runs one.
+    // No network. `podman --version` needs none, and a smoke runner that could
+    // reach a registry is one whose result could depend on a registry. It also
+    // keeps apid-shaped binaries -- anything that binds a port -- off the host's
+    // network if a later register entry runs one.
     '--network',
     'none',
     ref,
@@ -831,9 +715,9 @@ export interface SmokeRunOptions {
    * Which `versions.env` files coverage is checked against.
    *
    * A parameter for the same reason `artifacts` is: a suite that drove a
-   * two-artifact register against the SHIPPED pin files would get ten coverage
-   * faults about artifacts it was not testing, and the only way out of that
-   * would be to weaken the coverage check for everybody.
+   * two-artifact register against the shipped pin files would get ten coverage
+   * faults about artifacts it was not testing, and the only way out would be to
+   * weaken the coverage check for everybody.
    */
   readonly files?: readonly string[]
   /**
@@ -850,10 +734,9 @@ export interface SmokeRunOptions {
    * The recorded build commit, for the artifacts that embed one.
    *
    * A parameter for the same reason `exec` is: the suite has no `_out/<board>/`
-   * to read one from, and the branch where a fact IS present has to be
-   * reachable without building an image -- otherwise the only host that ever
-   * exercises the commit assertion is one that has just run a full rootfs
-   * build, and a check that runs nowhere else is a check nobody runs.
+   * to read one from, and the branch where a fact IS present has to be reachable
+   * without building an image -- otherwise the only host that ever exercises the
+   * commit assertion is one that has just run a full rootfs build.
    *
    * When it is omitted and the CLI is driving a real image, the fact is read
    * from `_out/<board>/mosd-build.txt`.
@@ -867,7 +750,7 @@ export interface SmokeRunOptions {
 /**
  * One board, end to end: coverage, image, control, twelve conclusions, verdict.
  *
- * The ORDER is the argument. Coverage first, because a register that has fallen
+ * The order is the argument. Coverage first, because a register that has fallen
  * behind its pin files makes every conclusion after it a statement about the
  * wrong set. The control second, because a host that cannot execute the image
  * turns every artifact red for one reason that has nothing to do with any of
@@ -930,7 +813,7 @@ export async function smokeRun(opts: SmokeRunOptions): Promise<{ results: SmokeR
       )
     }
 
-    // The build fact, READ AND PRINTED whether or not it is there. A run that
+    // The build fact, read and printed whether or not it is there. A run that
     // asserted nothing about the commit must say so on its own first lines
     // rather than look like one that did.
     if (build === undefined) build = readMosdBuildFact(opts.board)
