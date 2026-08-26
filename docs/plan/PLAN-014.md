@@ -94,7 +94,7 @@ os/
 │   │   ├── 10-base/           # system-essential: debootstrap floor, mounts, machine-id,
 │   │   │                      #   health, shadow-reconcile
 │   │   ├── 20-install/        # first-boot/install: mos-seed-*, repart.d
-│   │   ├── 30-feature-*/      # one per switchable feature: containers, mqtt, radios, ssh
+│   │   ├── 30-feature-*/      # one per switchable feature: containers, mqtt, radios
 │   │   ├── 40-board/          # board overlay + firmware (parameterised by boards/<b>)
 │   │   └── 90-pack/           # squashfs+verity export, determinism normalisation
 │   ├── scripts/               # shell blobs extracted from the old Dockerfile.v2
@@ -162,11 +162,18 @@ on the mutated fixtures; the shell verifier is deleted only at full parity.
 into the `stages/` chain above; the TS build driver (from M3
 infrastructure) sequences them via local image tags; inline shell blobs land
 in `rootfs/scripts/`; the `os/health/` duplicates collapse into the overlay
-copy; feature selection becomes stage selection. Gates: the assembled image
-is byte-identical where achievable — if apt-layer reordering makes that
-unattainable, the gate falls back to full verifier parity plus an explicitly
-anchored new baseline commit; negative test: dropping a feature stage must
-turn the corresponding verifier checks red.
+copy; feature selection becomes stage selection. **ssh is NOT one of those
+features** — amended 2026-08-26 at M5 close, **by the user**: *"ssh belongs in
+base, it is core."* It is installed by `10-base` and `20-install`, and
+`rootfs/scripts/package-manager-purge.sh`'s keep-list names `sshd ssh scp`, so
+an ssh-less chain does not merely ship without sshd, it fails to build. A
+`30-feature-ssh` would have been a switch with nothing behind it, and would have
+turned "every mos image carries sshd" from a contract into an accident.
+RFCT-111, "ssh is a floor capability, not a feature", has the measurements.
+Gates: the assembled image is byte-identical where achievable — if apt-layer
+reordering makes that unattainable, the gate falls back to full verifier parity
+plus an explicitly anchored new baseline commit; negative test: dropping a
+feature stage must turn the corresponding verifier checks red.
 
 **M6 — the assemblers, ported under byte-identity.** `mkimage-v2.sh`,
 `mkimage-x64.sh`, `bundle.sh` and build orchestration move to TS in
