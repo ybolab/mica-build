@@ -44,6 +44,17 @@ url = "2"
 tough = { version = "=0.18.0", default-features = false }
 axum = "0.8"
 axum-server = { version = "0.7", default-features = false, features = ["tls-rustls-no-provider"] }
+# The OpenAPI document is generated from the handlers and committed as
+# `mosd/apid/openapi.json`, so the spec cannot describe a route the code does
+# not serve. `utoipa-axum` is what makes that structural rather than a habit:
+# a route is registered once and lands in the axum router and in the document
+# from the same declaration.
+#
+# `axum_extras` is deliberately off. It teaches the `path` macro to read axum's
+# `Path`/`Query` extractors, and no documented route takes a path or query
+# parameter.
+utoipa = "5.5"
+utoipa-axum = "0.2"
 rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12"] }
 rcgen = { version = "0.14", default-features = false, features = ["crypto", "pem", "ring"] }
 argon2 = "0.5"
