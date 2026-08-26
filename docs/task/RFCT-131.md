@@ -23,8 +23,8 @@ for the boot health gate, which probes apid's liveness at
 failed units separately at `:169-180`. The problem is elsewhere. Two documents
 name the endpoint as if it reported appliance health:
 `docs/plan/PLAN-005.md:149` lists it as one of four `healthGate` checks beside
-*"all system services running"*, and `docs/design/boards.md:97` makes *"boots
-to webd healthz on hardware"* a board bring-up criterion. A board that reaches
+*"all system services running"*, and `docs/design/boards.md:98` makes *"booting
+to apid healthz on hardware"* a board bring-up criterion. A board that reaches
 that line with mosd crash-looping passes it.
 
 Both readings want narrowing to what the endpoint actually proves. Neither

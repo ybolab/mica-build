@@ -186,7 +186,7 @@ call returning the data — or **(b) needs new mosd work**, with the
 - **Feed:** `GetSettings("hostname")` — already called at
   `mosd/apid/src/routes.rs:567`; `GetSettings("provisioning")`, which returns
   `state`, `deviceId` and `seededGeneration`
-  (`mosd/mosd-settings/src/model.rs:278-286`).
+  (`mosd/mosd-settings/src/model.rs:269-277`).
 - **Availability: (a) available today.** `GetSettings("provisioning")` works
   today and `mosd/apid/src/` contains zero references to it — gap-table
   **row 8**, classified UI-work-only. Identity is a *setting*, not live state,
@@ -223,7 +223,7 @@ call returning the data — or **(b) needs new mosd work**, with the
   - (ii) is **(a) available today**, with a hard limitation: exactly one
     component reports health, exactly once per boot. `mos-health` calls
     `ReportHealth("var", …)` at
-    `os/rootfs/overlay-v2/usr/lib/mos/mos-health:194` / `:197`, and **nothing
+    `os/rootfs/overlay-v2/usr/lib/mos/mos-health:248` / `:251`, and **nothing
     ever refreshes it** (`mos-ui-inventory.md` section 6.2). The tile must
     therefore timestamp it as a boot-time reading, not present it as current.
   - (iii) is **(b) needs new mosd work** — gap-table **row 5**. A 262-line gate
@@ -331,7 +331,7 @@ better mechanism and then hid it.**
   model decrements a slot's credit **before** the boot and refunds it only when
   userspace reaches the health gate and runs `rauc status mark-good` — *"Saving
   before booting is what makes the counter a watchdog rather than a hint"*
-  (`docs/design/uboot-ab-handshake.md:456`). That produces a real state that
+  (`docs/design/uboot-ab-handshake.md:429`). That produces a real state that
   the operator can be in and cannot currently see: **installed, running, not yet
   confirmed good.**
 - **When it is red** (running slot unconfirmed, or credits at 1): **do not
@@ -383,7 +383,7 @@ better mechanism and then hid it.**
   *"yes — fills the media"*).
 - **Availability: (b) needs new mosd work** — gap-table **row 11**. Today the
   UI has *almost nothing*: only `/var`, only as a boot-time percentage inside
-  the `health.var` detail string (`os/rootfs/overlay-v2/usr/lib/mos/mos-health:186-199`).
+  the `health.var` detail string (`os/rootfs/overlay-v2/usr/lib/mos/mos-health:237-254`).
   `/srv` — the tier that actually fills up — has **no reporting of any kind**.
   The inventory's own judgement is that the `statvfs` read is trivial and the bus
   surface for it does not exist.
@@ -427,7 +427,7 @@ better mechanism and then hid it.**
   associated to a WiFi network.
 - **Feed:** `GetState("sshd")`, which publishes `enabled`, `port`,
   `permitRootLogin`, `passwordAuthentication`, `listenAddresses`, `activeState`
-  and `unitFileState` (`mosd/mosd/src/reconciler/sshd.rs:450-464`);
+  and `unitFileState` (`mosd/mosd/src/reconciler/sshd.rs:429-443`);
   `GetState("wifiAp")`, which already computes `ssid` and `ssidSource` for
   exactly this purpose (`mosd/mosd/src/reconciler/wifi_ap.rs:792-807`, and the
   single-radio conflict variant at `:739-750`); and `GetState("wifiClient")`,
@@ -822,7 +822,7 @@ proposal exist to protect a mos advantage rather than to close a mos gap.
    not yet confirmed good" state, and its UI says nothing about one. mos has that
    gate — credits decremented before the boot and refunded only when userspace
    reaches the health gate and runs `rauc status mark-good`
-   (`docs/design/uboot-ab-handshake.md:464`) — and has **no bus mechanism and
+   (`docs/design/uboot-ab-handshake.md:437`) — and has **no bus mechanism and
    no UI for it** (gap rows 2 and 5). This is the campaign's central finding:
    **mos built the better mechanism and then hid it.** The correct response is
    item 5 of section 4.1, not adopting Venus's manual "Press to boot" slot switch
@@ -831,7 +831,7 @@ proposal exist to protect a mos advantage rather than to close a mos gap.
 2. **Bundle signing.** mos builds signed verity-format bundles and configures
    RAUC to refuse `plain` format outright, so *"a bundle whose payload is only
    hashed at install time can never be installed on a device"*
-   (`os/update/rauc/system.conf.in:66-68`, bundles built by `os/build/src/bundle.ts:1-7`). Venus
+   (`os/update/rauc/system.conf.in:64-66`, bundles built by `os/build/src/bundle.ts:1-7`). Venus
    ships **no image signature on firmware** — swupdate built without
    `CONFIG_SIGNED_IMAGES` or any hash or encryption option in every machine
    defconfig read, leaving update authenticity resting on HTTPS transport for the
@@ -1719,8 +1719,8 @@ changes.
   and `ProtectSystem=`; and the policy file no longer contains a bare
   `<allow send_destination="com.mos.mosd"/>` in the `default` context.
 - **The honest end-to-end test is the boot health gate itself.** Probe c
-  (`os/rootfs/overlay-v2/usr/lib/mos/mos-health:162-181`) fetches `https://127.0.0.1/healthz` on port
-  443; probe b (`:151-160`) calls `com.mos.mosd1 GetState` over `busctl` as
+  (`os/rootfs/overlay-v2/usr/lib/mos/mos-health:216-232`) fetches `https://127.0.0.1/healthz` on port
+  443; probe b (`:202-213`) calls `com.mos.mosd1 GetState` over `busctl` as
   root. If the capability change broke the port bind, probe c fails. If the
   allowlist was written wrong, probe b fails. Both fail the gate loudly. That is
   a better test than any assertion about file contents, and it already exists.
