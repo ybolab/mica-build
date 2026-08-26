@@ -5,12 +5,6 @@
 > PLAN-008 Parts B and D survives. Companion to mosd.md, access.md and
 > provisioning.md.
 >
-> **Daemon rename (campaign `apid`, 2026-08-19, RFCT-056).** The HTTPS management
-> daemon formerly called `webd` is now `apid` — it is the API daemon, and the
-> dashboard is one of the things it serves. Only the name changed here; the
-> mechanism this document describes is unaffected. See
-> `docs/design/dashboard.md` §7.4.
->
 > No `.zh.md` translation exists for this document.
 
 ## 1. What changed from PLAN-008, and what did not

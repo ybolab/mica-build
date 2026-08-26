@@ -4,12 +4,6 @@
 >
 > How a board joins mos: what it must produce, what the OS build consumes, and
 > the hard assertions between them. Reference implementation: `board/cx3576`.
->
-> **Daemon rename (campaign `apid`, 2026-08-19, RFCT-056).** The HTTPS management
-> daemon formerly called `webd` is now `apid` — it is the API daemon, and the
-> dashboard is one of the things it serves. Only the name changed here; the
-> mechanism this document describes is unaffected. See
-> `docs/design/dashboard.md` §7.4.
 
 ## 1. Separation rule
 
@@ -17,14 +11,14 @@ BSP layers produce **artifacts**; the OS build consumes **artifacts**. Neither
 side reaches into the other's build. Yocto is permitted only inside a board
 directory (when a vendor ships BSP solely as Yocto layers, run
 `bitbake virtual/kernel virtual/bootloader` and export the deploy dir) — never
-in the talos/OS build chain.
+in the OS build chain.
 
 ## 2. Board directory layout
 
 ```
 board/<name>/
-├── board.yaml          # metadata consumed by image assembly (arch, console,
-│                       #   storage, cmdline extras, boot chain, features)
+├── board.yaml          # descriptive board metadata (arch, console, storage,
+│                       #   cmdline extras, boot chain, features)
 ├── Makefile            # make uboot | kernel | rootfs | image (buildkit only)
 ├── uboot/Dockerfile    # -> bootloader binary (e.g. u-boot-rockchip.bin)
 ├── kernel/             # -> Image, modules.tar, dtb
@@ -36,15 +30,16 @@ board/<name>/
 ```
 
 Boards with an upstream-supported boot chain (e.g. `board/x64`, UEFI) carry
-only `board.yaml` + README — kernel and bootloader come from the talos build.
+only `board.yaml` + README — firmware boots them, and the kernel is Debian's
+own `linux-image-amd64`, installed by the rootfs stage chain.
 
 ## 3. Artifact interface into the OS image
 
 | Artifact | Producer | Consumer |
 |---|---|---|
-| `Image` + `modules.tar` + `*.dtb` | `board/<n>/kernel` | talos Dockerfile: replaces the `modules-arm64` stage (`ARG BSP_KERNEL_IMAGE`); modules land in `/usr/lib/modules/<ver>`, firmware in `/usr/lib/firmware` |
-| bootloader binary | `board/<n>/uboot` | imager overlay `Install` step (raw write at `board.yaml` offset) |
-| `board.yaml` | board dir | imager profile / overlay `GetOptions`: kernel args, console, partition offsets |
+| `Image` + `modules.tar` + `*.dtb` | `board/<n>/kernel` | `os/rootfs/build-v2.sh` stages `MODULES_TAR`; `os/rootfs/stages/40-board.Dockerfile` extracts it into `/usr/lib/modules`; `os/build/src/mkimage-v2.ts` writes `Image` and the dtb into each boot slot |
+| bootloader binary | `board/<n>/uboot` | `os/build/src/mkimage-v2.ts`: raw write at the board's `UBOOT_SEEK_SECTOR` |
+| `board.yaml` | board dir | nothing reads it; it records what the board's Makefile produces. Kernel args, console and every partition offset are `os/boards/<n>/board.env` |
 | firmware blobs | board dir | rootfs firmware injection, trimmed per board |
 
 Modules/kernel version coupling is absolute: the modules tree inside the rootfs
@@ -60,11 +55,12 @@ assert (grep on the final .config, fail the build otherwise):
   (PLAN-006 Part D) cannot load modules before root is mounted.
 - Runtime: cgroup v2 set, containerd/netfilter prerequisites (the docker set
   already asserted in cx3576's Dockerfile), seccomp.
-- Talos baseline fragment: maintained once for all boards at
+- Shared baseline fragment: maintained once for all boards at
   `board/common/mos-required.fragment` (buildx named context `mos-common`),
   merged before olddefconfig — the source of truth for the list above plus the
-  machined-required pseudo filesystems (hugetlbfs, tracing, SELinux + LSM boot
-  list). Board-specific requirements stay in the board's own config baseline.
+  pseudo filesystems and security options it also asserts (hugetlbfs, tracing,
+  SELinux + LSM boot list). Board-specific requirements stay in the board's own
+  config baseline.
 
 ## 5. U-Boot requirements (uboot-chain boards)
 
@@ -75,31 +71,36 @@ rescue path (cx3576: recovery-key → rockusb, boot-failure → rockusb fallback
 The boot script and RAUC `system.conf` are generated from one source
 (`GenerateAssets`) to prevent drift.
 
-## 6. Kernel support policy (decision 2026-08-17)
+## 6. Kernel support policy
 
-The Talos-based OS core has hard kernel floors (fsopen/fsconfig mount API =
-5.2; `dm-mod.create=` verity = 5.1; legacy-overlay fallback shipped for < 6.7).
+The boot path sets the floor. The root is a squashfs carrying its own dm-verity
+hash tree, opened straight from the kernel command line by `dm-init` with no
+initramfs in front of it, and the userland above it is Debian trixie under
+systemd. A board kernel therefore has to carry the §4 assertion set built in —
+`=y`, never `=m`, because nothing can load a module before the root is there.
 Board intake tiers:
 
 | Tier | Kernel | Support |
 |---|---|---|
 | 1 | >= 5.10 LTS | Full support (mainstream vendor BSPs: RK 5.10/6.1, NXP 5.15/6.6, TI 6.1) |
 | 2 | 5.4 | Per-board evaluation; small shims expected, no structural work |
-| — | 4.x | **Not supported by the Talos core.** Options in order: (a) vendor kernel uplift / mainline the SoC; (b) "mos-lite" profile for that board (Alpine-class base + mos services as containers); (c) if 4.x boards become a primary requirement, that fires the init-strategy Plan B trigger (research/init-strategy.md) |
+| — | 4.x | **Out of support.** Options in order: (a) uplift the vendor kernel, or mainline the SoC; (b) a separate profile for that board on a smaller base with the mos services as containers, which gives up the signed A/B verity root the rest of this document assumes |
 
 ## 7. Adding a new board — checklist
 
 1. Create `board/<name>/` with board.yaml (+ kernel/uboot dirs if not UEFI).
 2. Kernel: vendor tree + mos-required fragment merged; assertions green.
 3. U-Boot: §5 config; verified boot keys enrolled.
-4. Smoke path first (Alpine or stock image) to validate hardware bring-up
-   before the Talos image — this is the role cx3576's Alpine demo played.
-5. Talos image consuming the artifacts boots to webd healthz on hardware.
+4. Smoke path first — a stock or vendor image — to validate hardware bring-up
+   before the full image is worth building.
+5. Rootfs from the stage chain (`os/rootfs/stages/`, ordered and driven by
+   `os/build/src/stages-cli.ts`), image assembled by `os/build/`, green against
+   `bash os/verify/run.sh --verify`, booting to apid healthz on hardware.
 6. Power-cut rig run before the board is called supported.
 
 ## 8. Current boards
 
 | Board | Arch | Boot chain | Status |
 |---|---|---|---|
-| cx3576 (CX3576-Z, RK3576) | arm64 | U-Boot @ eMMC sector 64, FIT | BSP artifacts build; Talos bring-up = next campaign. Gaps tracked in board README: verity kconfig, FIT signing, RAUC env handshake |
-| x64 (generic UEFI) | amd64 | upstream Talos (sd-boot/GRUB) | QEMU/CI baseline |
+| cx3576 (CX3576-Z, RK3576) | arm64 | U-Boot @ eMMC sector 64, FIT | BSP artifacts build. Gaps tracked in the board README: verity kconfig, FIT signing, RAUC env handshake |
+| x64 (generic UEFI) | amd64 | UEFI firmware -> GRUB | QEMU/CI baseline |
