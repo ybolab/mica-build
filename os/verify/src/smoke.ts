@@ -32,12 +32,28 @@
 //
 // `pass` and `fail` are the obvious two. `unclaimed` is the third, and it is
 // the M4a check register's word for the same idea: a conclusion nobody reached
-// must not report as one that was reached and held. mosd and apid are unclaimed
-// -- they have no `--version` and closing that means editing `mosd/` Rust
-// sources, which PLAN-014 excludes -- so a run over the shipped register today
-// concludes INCOMPLETE and exits non-zero. That is deliberate. The alternative
-// is a green that has quietly stopped asking two of the eleven artifacts for a
-// version, and this campaign has deleted several checks for exactly that.
+// must not report as one that was reached and held.
+//
+// NOTHING IN THE SHIPPED REGISTER IS UNCLAIMED ANY MORE, and the verdict stays.
+// M7b measured mosd and apid as having no `--version` at all -- both ignored
+// argv, started the daemon and MUTATED the machine -- and recorded that as
+// `unclaimed` rather than as a pass or a skip, because closing it meant editing
+// `mosd/` Rust sources, which PLAN-014 excluded. The user lifted that exclusion
+// on 2026-08-26 for exactly a `--version` handler, M7d landed one in each, and
+// the two entries became `version` like the other ten. What that leaves behind
+// is a verdict with no current claimant, kept for the next artifact this
+// repository builds and cannot yet ask -- deleting it would mean the only way
+// to add such an artifact is to report it as passing or to leave it out, and
+// this campaign has removed several checks that got greener by looking at less.
+// It is exercised from the failing side in smoke.test.ts, which is where a
+// verdict nobody currently produces has to be exercised.
+//
+// ═══ THE SECOND HALF OF THE VERSION CONTRACT: THE BUILD COMMIT ═══
+//
+// RFCT-113 M7d. mosd and apid also report the commit they were built from, and
+// the runner asserts it -- against a RECORDED BUILD FACT and never against
+// `git rev-parse HEAD`. See `BuildCommitFact` for why that distinction is the
+// entire value of the check.
 
 import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
@@ -141,41 +157,71 @@ export function versionTokens(line: string): string[] {
 }
 
 /**
- * THE COMMIT HALF: PRINTED, NOT ASSERTED — and which of the two that is.
+ * THE COMMIT HALF: PRINTED BY M7b, ASSERTED SINCE M7d — and what had to be
+ * built in between.
  *
- * M7d's `--version` handlers will report the git commit alongside the crate
- * version -- `mosd 0.1.0 (abc1234)`, `-dirty` when the worktree was, `unknown`
- * when the value is absent. The requirement on the runner is that the commit be
- * "asserted EQUAL TO the commit the artifact was actually built from WHEN THAT
- * FACT IS AVAILABLE TO THE RUNNER, and merely printed otherwise".
+ * M7b measured that there was nothing to assert against, with a positive
+ * control on the search. `_out/<board>/factory-root.txt` carried ref, platform,
+ * target, archive, bytes, sha256 and source-date-epoch; `rootfs-stages.txt`
+ * per-stage content hashes; `rootfs-verity.env` verity parameters. A grep for
+ * `rev-parse|git describe|GIT_COMMIT|VCS_REF|SOURCE_COMMIT` across
+ * `os/rootfs/build-v2.sh` and all of `os/build/src/*.ts` -- 39 files --
+ * returned nothing, while the same grep shape hit `docs/plan/PLAN-014.md`
+ * twice, so the search worked and the absence was real. With no recorded build
+ * fact, M7b printed the reported line verbatim and asserted nothing about it.
+ * That was the correct half of the requirement to implement at the time.
  *
- * IT IS NOT AVAILABLE, so this runner PRINTS it and asserts nothing about it.
- * Measured rather than assumed, with a positive control on the search: no git
- * provenance is recorded by the build at all. `_out/<board>/factory-root.txt`
- * carries ref, platform, target, archive, bytes, sha256 and source-date-epoch;
- * `rootfs-stages.txt` carries per-stage content hashes; `rootfs-verity.env`
- * carries verity parameters; `rootfs-report-v2.txt` is a package inventory. A
- * grep for `rev-parse|git describe|GIT_COMMIT|VCS_REF|SOURCE_COMMIT` across
- * `os/rootfs/build-v2.sh` and all of `os/build/src/*.ts` -- 39 files -- returns
- * nothing, while the same grep shape hits `docs/plan/PLAN-014.md` twice, so the
- * search worked and the absence is real.
+ * M7b ALSO REFUSED THE ALTERNATIVE BY NAME, and that refusal still stands:
+ * comparing the reported sha against `git rev-parse HEAD` at run time is
+ * trivially green on any freshly built tree. It asserts that somebody just
+ * built, not that the embedding works.
  *
- * THE ALTERNATIVE IS REFUSED BY NAME. Comparing the reported sha against
- * `git rev-parse HEAD` at run time would be trivially green on any freshly
- * built tree: it would assert that somebody just built, not that the embedding
- * works. A binary built three commits ago and never rebuilt would go red for
- * being stale rather than for being wrong, and one built from this commit would
- * go green whether the handler embedded a real sha or echoed the environment.
- * That is a check whose subject is derived from the same source moments
- * earlier, which is the shape this campaign keeps deleting.
+ * M7d CLOSED THE GAP BY BUILDING THE MISSING FACT, not by weakening the
+ * comparison -- `os/rootfs/build-v2.sh` is not `mosd/` and was never excluded.
+ * `mosd/hack/build-target.sh` writes the commit it handed the compiler into
+ * `_out/mosd-build.txt`, build-v2.sh copies it to `_out/<board>/mosd-build.txt`
+ * beside the factory root, `readMosdBuildFact` reads it back and `judge`
+ * compares the two. See `BuildCommitFact`.
  *
- * So the whole reported line is carried into the verdict message verbatim --
- * `[said: "mosd 0.1.0 (abc1234)"]` -- where a reader and a log both see the
- * commit, and nothing here claims to have checked it. Closing the assertion
- * needs a recorded build fact to exist first; that is a change to the BUILD, not
- * to this file.
+ * THE PRINTED-ONLY STATE IS KEPT AS A BRANCH rather than deleted: when the
+ * record is absent -- a hand-assembled `_out/`, an image from before M7d -- the
+ * runner says so on its own first lines and the row says `commit was NOT
+ * asserted`. And the reported line is still carried verbatim into every version
+ * verdict (`[said: ...]`), because a commit the runner cannot check is still one
+ * a reader must be able to see.
+ *
+ * ONE MEASURED LIMIT, from M7b and unchanged: `mosd 0.1.0-rc.1 (abc1234)`
+ * yields the numeric head only, so a pre-release pin and output would go RED
+ * naming both sides -- visible rather than a silent pass. Neither crate takes a
+ * pre-release version today; if one does, `versionTokens` is where to look.
  */
-export const COMMIT_HALF_IS_PRINTED_NOT_ASSERTED = true
+
+/**
+ * Whether a `--version` line reports EXACTLY this commit.
+ *
+ * RFCT-113 M7d. mosd and apid print `<name> <version> (<commit>)`, and the
+ * commit half is compared here rather than by `versionTokens`, which reads
+ * dotted numbers and would never see a sha at all.
+ *
+ * A TOKEN MATCH, NOT A SUBSTRING, and the whole reason is `-dirty`.
+ * `line.includes('00b674e9a628')` is satisfied by `(00b674e9a628-dirty)`, so a
+ * binary built from a MODIFIED worktree would report as agreeing with the clean
+ * sha -- which is the one confusion the dirty marker exists to prevent. The
+ * guards are the same shape this campaign uses for path arithmetic: a left
+ * `(?<![A-Za-z0-9-])` so a token may not start inside a longer run, and a right
+ * `(?![A-Za-z0-9-])` so it may not end inside one. `-` is in BOTH classes on
+ * purpose; that is what makes `-dirty` a different token rather than a suffix.
+ *
+ * An empty expectation matches nothing. `readMosdBuildFact` never returns one,
+ * and if it ever did, a `RegExp('')` here would match every line and turn this
+ * into a check that cannot fail -- the failure mode `readPin` refuses one level
+ * down in the same words.
+ */
+export function reportsCommit(line: string, commit: string): boolean {
+  if (commit === '') return false
+  const literal = commit.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  return new RegExp(`(?<![A-Za-z0-9-])${literal}(?![A-Za-z0-9-])`).test(line)
+}
 
 /** The first non-empty line of stdout -- where all ten artifacts print it. */
 export function firstLine(stdout: string): string {
@@ -186,12 +232,40 @@ export function firstLine(stdout: string): string {
 }
 
 /**
+ * What the BUILD recorded about the commit it embedded, and where that came from.
+ *
+ * RFCT-113 M7d, and the shape of this type is the whole defence against a
+ * vacuous check. The commit half of mosd's and apid's `--version` could be
+ * "asserted" against `git rev-parse HEAD` at run time, and that would pass on
+ * any freshly built tree while asserting only that somebody had just rebuilt --
+ * never that the embedding works. So the expectation is a BUILD FACT:
+ * `mosd/hack/build-target.sh` writes the commit it handed the compiler into
+ * `_out/mosd-build.txt`, `os/rootfs/build-v2.sh` carries it into `_out/<board>/`
+ * beside the factory root, and this is what the runner reads back.
+ *
+ * `commit` is optional because the fact may genuinely not be there -- a
+ * hand-assembled `_out/`, an image from before M7d -- and RFCT-113 M7d's
+ * instruction for that case is to PRINT it and assert nothing rather than to
+ * refuse. `source` is printed either way, so a run that asserted nothing about
+ * the commit says so out loud instead of looking like one that did.
+ */
+export interface BuildCommitFact {
+  /** The commit the build recorded embedding. Absent when none was recorded. */
+  readonly commit?: string
+  /** Where it came from, or why there is nothing. Always printed. */
+  readonly source: string
+}
+
+/**
  * Decide one artifact from what its invocation actually did.
  *
  * Pure, so every branch is reachable from the suite with a fabricated
  * `ExecResult` -- including the two that a healthy tree can never produce.
+ *
+ * `build` is the recorded build fact ([`BuildCommitFact`]), consulted only for
+ * an artifact whose register entry says it embeds a commit.
  */
-export function judge(artifact: Artifact, pin: Pin, outcome: ExecResult): SmokeResult {
+export function judge(artifact: Artifact, pin: Pin, outcome: ExecResult, build?: BuildCommitFact): SmokeResult {
   const { name, path, contract } = artifact
   const base = { name, path } as const
 
@@ -236,13 +310,50 @@ export function judge(artifact: Artifact, pin: Pin, outcome: ExecResult): SmokeR
   const line = firstLine(outcome.stdout)
   const tokens = versionTokens(line)
   if (tokens.includes(pin.expected)) {
+    // `[said: ...]` is M7b's, and it stays on EVERY version row rather than
+    // only the two that carry a commit: a runner that asserts a thing must
+    // still show what it read, and the rows that assert no commit are exactly
+    // the ones where the printed line is the only record of one.
+    const version =
+      `exit 0, reports ${pin.expected} == ${pin.key}=${pin.recorded} in ${pinSource(pin.file)} `
+      + `[said: ${JSON.stringify(line)}]`
+    // THE SECOND HALF, for the two artifacts that carry a build commit. It is
+    // asserted only against a RECORDED build fact, never against the working
+    // tree's HEAD -- see BuildCommitFact for why that distinction is the whole
+    // value of this check.
+    if (artifact.embedsBuildCommit !== true) {
+      return { ...base, kind: 'version', verdict: 'pass', message: version }
+    }
+    const recorded = build?.commit
+    if (recorded === undefined || recorded === '') {
+      return {
+        ...base,
+        kind: 'version',
+        verdict: 'pass',
+        message:
+          `${version}. Its commit was NOT asserted: `
+          + `${build?.source ?? 'no build record was supplied to this run'}.`,
+      }
+    }
+    if (reportsCommit(line, recorded)) {
+      return {
+        ...base,
+        kind: 'version',
+        verdict: 'pass',
+        message: `${version}, and reports the commit ${recorded} that ${build!.source} records this build embedding`,
+      }
+    }
     return {
       ...base,
       kind: 'version',
-      verdict: 'pass',
+      verdict: 'fail',
       message:
-        `exit 0, reports ${pin.expected} == ${pin.key}=${pin.recorded} in ${pinSource(pin.file)} `
-        + `[said: ${JSON.stringify(line)}]`,
+        `exit 0 and the pinned version, but its --version line ${JSON.stringify(line)} does not report `
+        + `the commit ${recorded} that ${build!.source} records this build embedding. Either the commit `
+        + `never reached the compiler -- MOS_BUILD_COMMIT not passed in, in which case the binary says `
+        + `"unknown" -- or this artifact is not from the build that record describes. A "-dirty" suffix `
+        + `on one side and not the other lands here too, and deliberately: a binary built from a `
+        + `modified worktree is not the commit it names.`,
     }
   }
   return {
@@ -259,7 +370,7 @@ export function judge(artifact: Artifact, pin: Pin, outcome: ExecResult): SmokeR
 }
 
 /** Run one artifact, or decline to. */
-export async function checkArtifact(artifact: Artifact, exec: Exec): Promise<SmokeResult> {
+export async function checkArtifact(artifact: Artifact, exec: Exec, build?: BuildCommitFact): Promise<SmokeResult> {
   const pin = artifact.pin()
   if (artifact.contract.kind === 'unclaimed') {
     // NOT INVOKED, and that is a decision rather than an omission. mosd's only
@@ -267,9 +378,9 @@ export async function checkArtifact(artifact: Artifact, exec: Exec): Promise<Smo
     // produce a `fail` would trade a clear "nobody asked" for a 25-second hang
     // and a mutated /var, and would report the artifact as broken when what is
     // missing is the question.
-    return judge(artifact, pin, { status: 0, stdout: '', stderr: '' })
+    return judge(artifact, pin, { status: 0, stdout: '', stderr: '' }, build)
   }
-  return judge(artifact, pin, await exec([artifact.path, ...artifact.contract.argv]))
+  return judge(artifact, pin, await exec([artifact.path, ...artifact.contract.argv]), build)
 }
 
 export interface Conclusion {
@@ -344,7 +455,13 @@ export function conclude(results: readonly SmokeResult[], expected: number): Con
     conclusion: 'PASS',
     exitCode: 0,
     counts,
-    line: `RESULT: PASS (${counts.pass}/${counts.total} artifacts executed, version identity asserted)`,
+    // The same four numbers FAIL and INCOMPLETE print, in the same order.
+    // The PASS line used to read `(12/12 artifacts executed, ...)`, which is a
+    // second format for one summary: a reader comparing a green run against a
+    // red one had to translate between them, and `0 unclaimed` -- the thing
+    // this milestone changed -- was not stated at all on the line that
+    // mattered most.
+    line: `RESULT: PASS (${counts.pass} pass, ${counts.fail} fail, ${counts.unclaimed} unclaimed, of ${counts.total})`,
   }
 }
 
@@ -365,13 +482,20 @@ export function outDir(board: string): string {
 }
 
 /**
- * Read the record the driver wrote beside the archive.
+ * Read a `key<TAB>value` record as data.
  *
- * TAB-SEPARATED `key\tvalue`, exactly as `ociRecord` in os/build/src/stages.ts
- * writes it, parsed rather than sourced. Comments start the file and are
- * skipped by having no tab.
+ * TAB-SEPARATED, exactly as `ociRecord` in os/build/src/stages.ts writes it and
+ * as `mosd/hack/build-target.sh` writes `_out/mosd-build.txt`, parsed rather
+ * than sourced. Comment lines are skipped by having no tab, which is why
+ * `# Load it with: docker load -i ...` cannot become a key -- a reader that
+ * split on whitespace would have made one.
+ *
+ * ONE READER FOR BOTH RECORDS, because two parsers for one file format agree
+ * right up until a value acquires a tab or a comment acquires one. The same
+ * argument smoke-pins.ts makes about not writing a second `versions.env`
+ * parser.
  */
-export function parseFactoryRootRecord(text: string, path: string): FactoryRootRecord {
+export function parseTabRecord(text: string): Map<string, string> {
   const kv = new Map<string, string>()
   for (const line of text.split('\n')) {
     if (line.startsWith('#')) continue
@@ -379,6 +503,11 @@ export function parseFactoryRootRecord(text: string, path: string): FactoryRootR
     if (tab < 0) continue
     kv.set(line.slice(0, tab).trim(), line.slice(tab + 1).trim())
   }
+  return kv
+}
+
+export function parseFactoryRootRecord(text: string, path: string): FactoryRootRecord {
+  const kv = parseTabRecord(text)
   const need = (k: string): string => {
     const v = kv.get(k)
     if (v === undefined || v === '') {
@@ -443,6 +572,63 @@ export function readFactoryRoot(
 
 /** `_out/<board>/rootfs-stages.txt` -- what the driver recorded about the build. */
 export const STAGE_MANIFEST_NAME = 'rootfs-stages.txt'
+
+/** `_out/<board>/mosd-build.txt` -- the commit this board's mosd and apid carry. */
+export const MOSD_BUILD_RECORD_NAME = 'mosd-build.txt'
+
+/**
+ * The commit the mosd and apid in this board's factory root were built from.
+ *
+ * Read out of the record `mosd/hack/build-target.sh` wrote and
+ * `os/rootfs/build-v2.sh` copied in beside the image -- NOT out of the working
+ * tree. See [`BuildCommitFact`].
+ *
+ * ABSENT IS NOT A REFUSAL HERE, unlike the factory root itself. RFCT-113 M7d's
+ * instruction for a build fact the runner cannot see is to print it and assert
+ * nothing, and the reason a refusal would be wrong is that this file is younger
+ * than the images that may still be sitting in `_out/`: refusing would turn
+ * "this image predates the commit stamp" into "this tree is broken". On a root
+ * built by os/rootfs/build-v2.sh the record is always written, and when mosd is
+ * DECLINED the same script removes it -- and then mosd and apid are not in the
+ * image at all and `declinedFeatures` refuses the run before it reaches here.
+ * So the absent branch is not the normal path; it is the one for an `_out/`
+ * assembled by hand or left over from an older build.
+ *
+ * A RECORD THAT EXISTS AND CANNOT BE READ IS A REFUSAL, though. A file with no
+ * `commit` key was written by something other than build-target.sh, and reading
+ * that as "nothing recorded" would let a malformed record silently switch the
+ * assertion off.
+ */
+export function readMosdBuildFact(board: string, dir: string = outDir(board)): BuildCommitFact {
+  const path = join(dir, MOSD_BUILD_RECORD_NAME)
+  const shown = pinSource(path)
+  if (!existsSync(path)) {
+    return {
+      source:
+        `${shown} does not exist, so no commit was recorded for this image. It is written by `
+        + `mosd/hack/build-target.sh on every build and copied here by os/rootfs/build-v2.sh; `
+        + `rebuild the board to have the commit asserted rather than printed`,
+    }
+  }
+  const kv = parseTabRecord(readFileSync(path, 'utf8'))
+  const commit = kv.get('commit')
+  if (commit === undefined) {
+    throw new Error(
+      `${path} carries no \`commit\` field. mosd/hack/build-target.sh writes one on every build -- `
+      + `empty when it could not resolve a commit -- so a record without the key was written by `
+      + `something else. Reading that as "nothing was recorded" would switch off the commit half of `
+      + `mosd's and apid's version check without saying so.`,
+    )
+  }
+  if (commit === '') {
+    return {
+      source:
+        `${shown} records an EMPTY commit: the build could not resolve one, so mosd and apid report `
+        + `"unknown" and there is nothing to compare that against`,
+    }
+  }
+  return { commit, source: shown }
+}
 
 /**
  * The feature stages the build was told to leave OUT, read off its own manifest.
@@ -623,6 +809,19 @@ export interface SmokeRunOptions {
   readonly allowUnclaimed?: readonly string[]
   /** Supplied by the suite; the CLI builds a dockerExec. */
   readonly exec?: Exec
+  /**
+   * The recorded build commit, for the artifacts that embed one.
+   *
+   * A parameter for the same reason `exec` is: the suite has no `_out/<board>/`
+   * to read one from, and the branch where a fact IS present has to be
+   * reachable without building an image -- otherwise the only host that ever
+   * exercises the commit assertion is one that has just run a full rootfs
+   * build, and a check that runs nowhere else is a check nobody runs.
+   *
+   * When it is omitted and the CLI is driving a real image, the fact is read
+   * from `_out/<board>/mosd-build.txt`.
+   */
+  readonly buildCommit?: BuildCommitFact
   /** Skip `docker load`; the suite has no archive to load. */
   readonly load?: boolean
   readonly log?: (line: string) => void
@@ -665,6 +864,7 @@ export async function smokeRun(opts: SmokeRunOptions): Promise<{ results: SmokeR
   }
 
   let exec = opts.exec
+  let build = opts.buildCommit
   if (exec === undefined) {
     const record = readFactoryRoot(opts.board)
     log(`os/verify smoke: ${opts.board} ${record.ref} (${record.platform}, ${record.bytes} bytes, sha256 ${record.sha256})`)
@@ -693,12 +893,22 @@ export async function smokeRun(opts: SmokeRunOptions): Promise<{ results: SmokeR
       )
     }
 
+    // The build fact, READ AND PRINTED whether or not it is there. A run that
+    // asserted nothing about the commit must say so on its own first lines
+    // rather than look like one that did.
+    if (build === undefined) build = readMosdBuildFact(opts.board)
+    log(
+      build.commit === undefined
+        ? `os/verify smoke: build commit NOT ASSERTED -- ${build.source}`
+        : `os/verify smoke: build commit ${build.commit}, from ${build.source}`,
+    )
+
     if (opts.load !== false) await loadFactoryRoot(record)
     exec = dockerExec(record.ref)
     await preflight(exec, record.platform)
   }
 
   const results: SmokeResult[] = []
-  for (const artifact of artifacts) results.push(await checkArtifact(artifact, exec))
+  for (const artifact of artifacts) results.push(await checkArtifact(artifact, exec, build))
   return { results, conclusion: conclude(results, artifacts.length) }
 }

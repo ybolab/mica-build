@@ -37,14 +37,44 @@
 // wrong path and reading rc=127 back out of the real image, and a wrong path
 // here fails the same loud way rather than passing quietly.
 //
-// ═══ THE TWO THAT CANNOT ANSWER ═══
+// ═══ THE TWO THAT COULD NOT ANSWER, AND NOW DO ═══
 //
-// mosd and apid have no `--version` contract, and that is not an oversight
-// here -- it is a property of the binaries, measured inside the real x64
-// factory root and recorded on each entry. They are UNCLAIMED, which is a third
-// verdict rather than a pass or a skip, for the reason the M4a check register
-// gave when it was empty: a conclusion nobody reached must not report as one
-// that was reached and held.
+// M7b recorded mosd and apid as UNCLAIMED -- a third verdict rather than a pass
+// or a skip, for the reason the M4a check register gave when it was empty: a
+// conclusion nobody reached must not report as one that was reached and held.
+// The measurement behind it was that both IGNORED argv entirely and started the
+// daemon: mosd wrote a hostname and a seeded generation into /var/lib/mos and
+// died on the absent system bus, apid minted a TLS keypair and a session
+// signing key and never returned. Closing that meant editing `mosd/` Rust
+// sources, which PLAN-014 excluded, so M7b found it and did not act on it.
+//
+// THE USER LIFTED THAT EXCLUSION ON 2026-08-26 for exactly a `--version`
+// handler that answers BEFORE any daemon initialisation, provisioning, bus
+// connection or key generation. RFCT-113 M7d landed one in each, and these two
+// entries are `version` like the other ten.
+//
+// RE-MEASURED IN THE x64 FACTORY ROOT after the rebuild, on 2026-08-26, and the
+// MUTATION is what was measured rather than only the output:
+//
+//   /usr/bin/mosd --version -> `mosd 0.1.0 (60b9ccc76939)`, rc=0, 249ms
+//     round trip INCLUDING `docker run`. /var/lib/mos does not exist before the
+//     invocation and does not exist after it.
+//   /usr/bin/apid --version -> `apid 0.1.0 (60b9ccc76939)`, rc=0, 255ms
+//     the same way -- against rc=124 and never returning, before. No
+//     certificate, no session key, no /var/lib/mos at all.
+//
+// AND THE UNCHANGED PATHS WERE MEASURED TOO, because "it answers --version" and
+// "it still starts" are two claims: `/usr/bin/mosd` with no argv still
+// provisions (secrets/, settings.toml) and still exits 1 on the absent system
+// bus, and `/usr/bin/mosd -v` -- NOT this flag -- falls through into exactly
+// that same daemon and prints no version at all.
+//
+// AND THEY CARRY A SECOND HALF THE OTHER TEN DO NOT: the commit they were built
+// from, marked `embedsBuildCommit` below and asserted by the runner against the
+// commit the BUILD recorded embedding. mos-mqttd and mos-mqtt-broker are built
+// by the same script from the same workspace and deliberately do NOT carry one
+// -- the exclusion was lifted for two files, not for four, and widening it here
+// would be this milestone's judgement standing in for the user's decision.
 
 import { cratePath, readCratePackageVersion, readPin, pinKeys, type Pin } from './smoke-pins.ts'
 import { PODMAN_VERSIONS_ENV, RAUC_VERSIONS_ENV, VERSIONS_ENV_FILES } from './smoke-pins.ts'
@@ -56,6 +86,12 @@ import { PODMAN_VERSIONS_ENV, RAUC_VERSIONS_ENV, VERSIONS_ENV_FILES } from './sm
  * version == the recorded pin -- so it is strictly stronger than `exec`, which
  * asserts only the first. `unclaimed` asserts neither and is never invoked at
  * all; it exists so that "we did not check this" is a thing the output can say.
+ *
+ * NO ENTRY BELOW IS `unclaimed` SINCE M7d, and the kind stays anyway. It is the
+ * only honest thing to write down for an artifact this repository ships and
+ * cannot yet ask -- the alternatives are to report it as passing or to leave it
+ * out of the register, and both are a green that got greener by looking at
+ * less. Its branches are exercised from the failing side in smoke.test.ts.
  */
 export type Contract =
   | { readonly kind: 'version'; readonly argv: readonly string[] }
@@ -79,6 +115,25 @@ export interface Artifact {
    */
   readonly pin: () => Pin
   readonly contract: Contract
+  /**
+   * Whether this artifact also reports the COMMIT it was built from.
+   *
+   * RFCT-113 M7d. Two of the twelve do -- mosd and apid, which print
+   * `<name> <version> (<commit>)` -- and the runner asserts that commit against
+   * the one the BUILD recorded embedding, out of `_out/<board>/mosd-build.txt`.
+   *
+   * A PROPERTY OF THE ARTIFACT AND NOT A SECOND CONTRACT KIND, because it is
+   * orthogonal to how the artifact is asked: the argv is the same `--version`,
+   * the exit status and the version identity are asserted the same way, and
+   * this adds one more thing the output must contain. Folding it into `kind`
+   * would give two spellings of `version` that behave identically in every
+   * other respect.
+   *
+   * Absent means the same as `false`: the ten upstream artifacts have no commit
+   * of ours to report, and mos-mqttd and mos-mqtt-broker do not report one
+   * because the scope amendment named two files, not four.
+   */
+  readonly embedsBuildCommit?: boolean
 }
 
 /** The container engine's shared pin file, named once per entry rather than per line. */
@@ -93,40 +148,26 @@ export const ARTIFACTS: readonly Artifact[] = [
   // `mosd/versions.env`, because a pin file exists to fix an UPSTREAM version
   // and these have no upstream.
   {
+    // WAS UNCLAIMED UNTIL M7d, and the entry above says by whose decision it
+    // stopped being. mosd/mosd/src/main.rs answers --version from a synchronous
+    // `main`, before the tokio runtime, the subscriber, the settings store and
+    // provisioning -- so the invocation this row makes is minimal in the sense
+    // Scope means: it reports, it exits 0, and it leaves nothing behind.
     name: 'mosd',
     path: '/usr/bin/mosd',
     pin: crate('mosd'),
-    contract: {
-      kind: 'unclaimed',
-      why:
-        'mosd parses no argv and has no --version. MEASURED in the x64 factory root: '
-        + '`/usr/bin/mosd --version` IGNORES the flag and starts the daemon -- it ran first-boot '
-        + 'provisioning (hostname=mos-<id>, seeded_generation=1, state_dir=/var/lib/mos) and then '
-        + 'exited 1 on the absent system bus. So all three halves of the Scope sentence fail at '
-        + 'once: no version is reported, the exit status is not 0, and the invocation is not '
-        + 'minimal -- it MUTATES. Confirmed at the source, driven from the failing side: '
-        + 'grep for args()/args_os/env::args/CARGO_PKG_VERSION/clap over mosd/mosd/src/ returns 0 '
-        + 'hits across 21 .rs files, while the same grep shape for `async fn` hits 17 of them and '
-        + 'mosd/mqttd/Cargo.toml declares clap. Closing this means editing mosd/mosd/src/main.rs, '
-        + 'which is `mosd/` Rust sources -- excluded by PLAN-014 Scope:243 and reaffirmed at :256. '
-        + 'FINDING IS IN SCOPE, ACTING IS NOT.',
-    },
+    contract: { kind: 'version', argv: ['--version'] },
+    embedsBuildCommit: true,
   },
   {
+    // The same, and the hang is gone with it: before M7d this binary bound
+    // 0.0.0.0:443 and never returned, which is why M7b would not let the runner
+    // invoke it at all.
     name: 'apid',
     path: '/usr/bin/apid',
     pin: crate('apid'),
-    contract: {
-      kind: 'unclaimed',
-      why:
-        'apid parses no argv and has no --version. MEASURED in the x64 factory root: '
-        + '`/usr/bin/apid --version` IGNORES the flag, generates a self-signed certificate and a '
-        + 'session signing key into /var/lib/mos/apid, binds 0.0.0.0:443 and 0.0.0.0:80, prints '
-        + 'APID_LISTENING and NEVER EXITS -- rc=124 against a 25s budget. It is the same three '
-        + 'failures as mosd and one worse: a smoke run that invoked it would hang rather than go '
-        + 'red. Confirmed at the source the same way: 0 hits across 19 .rs files. Closing it means '
-        + 'editing mosd/apid/src/main.rs, excluded by PLAN-014 Scope:243 and :256.',
-    },
+    contract: { kind: 'version', argv: ['--version'] },
+    embedsBuildCommit: true,
   },
   {
     name: 'mos-mqttd',
@@ -285,21 +326,30 @@ export const ARTIFACTS: readonly Artifact[] = [
  * (a binary that lost its `--version`) into a category membership nobody chose.
  * A binary that is asked for a version and does not give one is a FAIL.
  *
- * WHY THESE TWO, AND FOR HOW LONG. mosd and apid parse no argv at all; each
- * entry above carries the measurement. The user LIFTED PLAN-014's `mosd/`
- * exclusion on 2026-08-26 for exactly one change -- a `--version` handler in
- * `mosd/mosd/src/main.rs` and `mosd/apid/src/main.rs` that reports the crate
- * version and exits 0 BEFORE any daemon initialisation, provisioning, bus
- * connection or key generation. That ordering is the point: what was measured
- * is not merely that the two cannot answer, but that asking MUTATES -- mosd
- * wrote a hostname and a seeded generation into /var/lib/mos, apid generated a
- * TLS keypair and a session signing key.
+ * IT HELD apid AND mosd, AND IT IS NOW EMPTY -- which is the proof the fix
+ * landed, and the reason this classification is a mechanism rather than a
+ * placeholder. M7b wrote the constant with that outcome named in advance:
+ * "M7d writes those handlers. When they land, both names move from UNCLAIMED to
+ * PASS and this constant becomes empty."
  *
- * M7d writes those handlers. When they land, both names move from UNCLAIMED to
- * PASS and this constant becomes empty -- which is the proof the fix landed,
- * and the reason this classification is a mechanism rather than a placeholder.
+ * The user LIFTED PLAN-014's `mosd/` exclusion on 2026-08-26 for exactly one
+ * change -- a `--version` handler in `mosd/mosd/src/main.rs` and
+ * `mosd/apid/src/main.rs` that reports the crate version and exits 0 BEFORE any
+ * daemon initialisation, provisioning, bus connection or key generation. That
+ * ordering was the point: what M7b measured is not merely that the two could
+ * not answer, but that ASKING MUTATED -- mosd wrote a hostname and a seeded
+ * generation into /var/lib/mos, apid generated a TLS keypair and a session
+ * signing key. Re-measured after M7d landed: both answer in ~250ms with rc=0
+ * and /var/lib/mos is never created. The entries above carry the numbers.
+ *
+ * EMPTY IS NOT DEAD. `unclaimedFaults` still refuses any run whose register
+ * marks something unclaimed, and an empty authorisation makes that STRICTER
+ * rather than weaker: nothing may go unasked without this constant, a register
+ * entry and the lock in smoke-register.test.ts all moving in one diff. The
+ * green it now produces is over two empty sets, so smoke-register.test.ts
+ * drives both directions from fixtures rather than resting on it.
  */
-export const EXPECTED_UNCLAIMED: readonly string[] = ['apid', 'mosd']
+export const EXPECTED_UNCLAIMED: readonly string[] = []
 
 /** A register/pin-file disagreement, in the words the runner refuses with. */
 export interface CoverageFault {

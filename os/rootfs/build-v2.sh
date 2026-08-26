@@ -249,8 +249,22 @@ fi
 MOSD_STAGE="$OUT_DIR/mosd"
 rm -rf "$MOSD_STAGE"
 mkdir -p "$MOSD_STAGE"
+# Removed for the same reason the stage directory is emptied: a mosd-build.txt
+# left by a previous WITH_MOSD=1 build would describe binaries this image does
+# not carry, and the smoke runner would then assert a commit against an artifact
+# that is not there. Absent is a state it already handles; stale is one nothing
+# could catch.
+rm -f "$OUT_DIR/mosd-build.txt"
 if ! declined mosd; then
     bash "$REPO_ROOT/mosd/hack/build-target.sh" "$RUST_TARGET" "$ELF_ARCH"
+    # The commit that build embedded in mosd and apid, carried into this board's
+    # output directory beside the factory root the two binaries end up in
+    # (RFCT-113 M7d). The smoke runner asserts what they REPORT against what was
+    # EMBEDDED, and the alternative -- `git rev-parse HEAD` at run time -- would
+    # pass on any freshly built tree while asserting nothing about whether the
+    # embedding works at all. Copied rather than re-derived, so the value the
+    # runner compares against is the one the compiler was actually handed.
+    cp "$REPO_ROOT/_out/mosd-build.txt" "$OUT_DIR/mosd-build.txt"
     cp "$REPO_ROOT/mosd/target/$RUST_TARGET/release/mosd" "$MOSD_STAGE/mosd"
     cp "$REPO_ROOT/mosd/dist/mosd.service" "$MOSD_STAGE/mosd.service"
     cp "$REPO_ROOT/mosd/dist/com.mos.mosd.conf" "$MOSD_STAGE/com.mos.mosd.conf"
