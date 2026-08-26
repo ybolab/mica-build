@@ -1,25 +1,19 @@
 // The image helpers, driven from the failing side of every tool they use.
 //
-// Why a stub runtime and not a real image. `make os-verify-test` runs on a host
-// with no image built, and in CI inside the pinned bun container with no docker
-// under it. A suite that needed a 1.4 GiB image would be a suite that skipped,
-// and a skip reports the same green as a pass. So the tools' OUTPUT is the
-// fixture: every transcript below was captured on 2026-08-25 from the real
-// tools in the pinned alpine:3.21, against the real cx3576 image and against
-// deliberately malformed inputs, and pasted here verbatim. The helper under
-// test cannot tell the difference, which is the point.
-//
+// A stub runtime and not a real image: `make os-verify-test` runs on a host with
+// no image built, and in CI inside the pinned bun container with no docker under
+// it, and a suite that needed a 1.4 GiB image would be a suite that skipped. So
+// the tools' output is the fixture -- every transcript below was captured
+// 2026-08-25 from the real tools in the pinned alpine:3.21, against the real
+// cx3576 image and against deliberately malformed inputs, and pasted verbatim.
 // The stub shares tools.ts's own runChecked, so a non-zero exit throws here
-// exactly as it throws in production. A stub that decided for itself when to
-// throw would be testing the stub.
+// exactly as it throws in production.
 //
-// What this file is for. Four of the five tools answer a question they could
-// not answer with something shaped like an answer -- sgdisk invents a partition
-// table, debugfs exits 0 having opened nothing, unsquashfs exits 0 having
-// extracted nothing, veritysetup uses one exit status for an answer and for a
-// failure. Every one of those is driven below and every one must be refused. A
-// helper that has only ever been observed succeeding is indistinguishable from
-// a helper that cannot fail.
+// Four of the five tools answer a question they could not answer with something
+// shaped like an answer -- sgdisk invents a partition table, debugfs exits 0
+// having opened nothing, unsquashfs exits 0 having extracted nothing,
+// veritysetup uses one exit status for an answer and for a failure -- and every
+// one is driven below and must be refused.
 
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test'
 import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
@@ -56,26 +50,21 @@ import { REPO_ROOT } from './paths.ts'
 // A scratch directory under _out/, never /tmp: a bind mount of /tmp on this
 // host succeeds and delivers an empty directory, and these files are read back.
 //
-// _out/ is created, not assumed, and that is the whole of this line's history.
-// It is gitignored build output (.gitignore:4) and `mkdtempSync` does not
-// create its parent, so on a fresh worktree, a clean clone and CI this threw
-// ENOENT at module scope -- which aborts the file before a single test in it is
-// declared. Measured on 2026-08-26 by moving _out/ aside: `make os-verify-test`
-// went from `PASS (373/373)` to `FAIL (332 passed of 333 run)`, i.e. the 40
-// tests in this file simply stopped existing. That is the failure mode this
-// package keeps finding in other people's checkers -- a ratio cannot see the
-// tests that were never declared, so 373/373 and 333/333 are equally green and
-// only one of them ran this file. The floor was green only because something
-// earlier in the run happened to create _out/ first.
+// _out/ is created, not assumed: it is gitignored build output (.gitignore:4)
+// and `mkdtempSync` does not create its parent, so on a fresh worktree, a clean
+// clone and CI this threw ENOENT at module scope, aborting the file before a
+// single test in it was declared. Measured 2026-08-26 by moving _out/ aside,
+// `make os-verify-test` went from `PASS (373/373)` to `FAIL (332 passed of 333
+// run)` -- a ratio cannot see the tests that were never declared, so 373/373 and
+// 333/333 are equally green and only one of them ran this file.
 //
-// Created and removed by the same condition. It used to be made here, at module
-// scope, and removed in `afterAll` -- and those are not the same condition. Under
-// a `-t` FILTER bun LOADS every file, so every file made its scratch, but only a
-// file with a MATCHING test runs its `afterAll`. So a filtered run made four and
-// removed one, leaving exactly the `_out/verify-*` drift the paragraph below says
-// was fixed. Measured 2026-08-26: `run.sh -t 'the partition count'` left
-// verify-bootchain-*, verify-cmdline-* and verify-test-* behind; an UNFILTERED
-// run was clean, which is why it survived every floor this campaign ran.
+// Created and removed by the same condition. Made at module scope and removed in
+// `afterAll` those are not the same condition: under a `-t` filter bun loads
+// every file, so every file made its scratch, but only a file with a matching
+// test runs its `afterAll`. Measured 2026-08-26, `run.sh -t 'the partition
+// count'` left verify-bootchain-*, verify-cmdline-* and verify-test-* behind
+// while an unfiltered run was clean, which is why it survived every floor this
+// campaign ran.
 //
 // `process.on('exit')` does NOT close it -- driven on bun 1.4.0, the handler
 // never fires under the test runner, filtered or not. A top-level `beforeAll`

@@ -2,26 +2,20 @@
 // board.
 //
 // Every check lands with the fixture that fails it, because the parity harness
-// cannot tell a check that passes from one that cannot fail: both report
-// "agrees with the oracle" against a healthy image, and only a mutation
-// separates them.
+// cannot tell a check that passes from one that cannot fail: both report "agrees
+// with the oracle" against a healthy image. Every family here also has a third
+// direction, the SKIP it takes on the board without the hardware, so each is
+// driven three ways -- green on the board that has the thing, red on a mutation
+// of that board's tree, and skipped on the board that declares it absent.
 //
-// Every family here has a THIRD direction -- the SKIP it takes on the board
-// without the hardware -- and a skip is not a pass. So each family is driven
-// three ways: green on the board that has the thing, red on a mutation of that
-// board's tree, and SKIPPED on the board that declares it absent. A check that
-// answered `pass` where the oracle says `skip` is a divergence the parity run
-// would catch on a real image; these cases catch it on a host with none.
-//
-// `status-led-absent` -- check_status_led's BOARD_HAS_STATUS_LED=0 branch --
-// had never been observed FAILING anywhere in this tree. It runs on x64's real
-// image and passes (os/verify-image-v2.sh:549, dispatched unconditionally at
-// :1348), and os/tests/ui-location-test.sh:55 drives fixture mode with cx3576's
-// board.env, which declares 1, so the branch was reachable in one direction
-// only. os/verify-image-v2.sh:2716 leans on it to claim both directions are
-// covered. `the =0 branch FAILS when the image carries the unit anyway` below is
-// the first time its failing arm has been driven, and it needs the x64-shaped
-// packed-root fixture M4d added to `checks-fixture.ts` to do it.
+// `status-led-absent`, check_status_led's BOARD_HAS_STATUS_LED=0 branch, had
+// never been observed failing anywhere in this tree: it runs on x64's real image
+// and passes (os/verify-image-v2.sh:549, dispatched unconditionally at :1348),
+// and os/tests/ui-location-test.sh:55 drives fixture mode with cx3576's
+// board.env, which declares 1, while os/verify-image-v2.sh:2716 leans on it to
+// claim both directions are covered. `the =0 branch FAILS when the image carries
+// the unit anyway` below is the first time its failing arm has been driven, and
+// it needs the x64-shaped packed-root fixture in `checks-fixture.ts`.
 
 import { describe, expect, test } from 'bun:test'
 import { chmodSync, mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
