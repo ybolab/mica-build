@@ -60,8 +60,20 @@ was weakened.
 
 **The clause text is NOT amended.** It reads exactly as it always did, and it is
 now true. That distinction is the point of this section: six earlier clause
-changes in this campaign were amendments, named as such, by the user. **This one
-is not an amendment — it is a satisfaction.**
+changes in this campaign were amendments, named as such. **This one is not an
+amendment — it is a satisfaction.**
+
+> **Attribution corrected 2026-08-26, at the campaign close.** This sentence read
+> *"…named as such, **by the user**"*, and that is over-broad: **one of the six
+> was not the user's.** RFCT-108's clause 1 — the arm64-builds qualification —
+> was applied by **L1** on the M2 gate's recommendation, and that record states
+> in bold that it *"is NOT a decision the user took"* and is revertible if the
+> user objects. Only the attribution was wrong; the amendment-versus-satisfaction
+> distinction this sentence draws is sound and is untouched. The ledger is **not**
+> restated or renumbered here — it is six amendments, one satisfaction, two
+> dispositions, and PLAN-014's close carries the per-amendment actors. Whether
+> that amendment is ratified or reverted is a separate, open question and is not
+> settled by this correction.
 
 #### What was unsatisfiable, and how that was established
 
@@ -163,8 +175,19 @@ with the deletion. It reproduces the oracle's own summary line on both boards:
     cx3576   RESULT: FAIL (387/395 checks, 3 skipped (cx3576/uboot))   rc=1
 
 cx3576's eight FAILs are the BSP byte-compares whose source tree a checkout does
-not carry; the oracle failed those identically, and PLAN-014:220-223 puts BSP
-builds out of scope.
+not carry; the oracle failed those identically, and PLAN-014's **Scope** section
+puts BSP builds out of scope — *"No change to … `board/` BSP builds (digest pins
+only)"*.
+
+> **Citation corrected 2026-08-26, at the campaign close.** This read
+> `PLAN-014:220-223`, which is not where that exclusion lives — those lines are a
+> Risks bullet about the `docker-container` builder. The address was wrong from
+> the moment it was written, in this record and in RFCT-111 and RFCT-112, because
+> **L2 carried it in the L3 specs it issued and the records quoted it**; it is a
+> campaign artefact, not rot these records inherited. The substance was never
+> wrong. Replaced with the **section name and the clause text** rather than with
+> a corrected line number, because a line number is what failed here: PLAN-014
+> grew a closing section and any address into it would have moved again.
 
 `make os-verify-parity` and `make os-ui-location-test` are **removed** rather
 than kept able to refuse. `os/verify/HARNESS.md` records every defect the

@@ -264,10 +264,20 @@ What is verified here is that **the IMAGE ships the feature inert** and that
 **the REGISTER asserts that inertness and can fail if it stops being true**.
 
 **Not verified: that flipping the switch on a booted device turns the feature
-on.** That is device-side runtime behaviour, which PLAN-014:220-223 excludes,
-and establishing it needs a boot test. The evidence above is the weaker claim
-and must not be read as the stronger one: nothing here shows mosd's
-`containers.enabled` or `mqtt.enabled` actually starting anything on hardware.
+on.** That is device-side runtime behaviour, which PLAN-014's **Scope** section
+excludes — *"No change to device-side runtime behaviour"* — and establishing it
+needs a boot test. The evidence above is the weaker claim and must not be read
+as the stronger one: nothing here shows mosd's `containers.enabled` or
+`mqtt.enabled` actually starting anything on hardware.
+
+> **Citation corrected 2026-08-26, at the campaign close.** This cited
+> `PLAN-014:220-223`, which is a Risks bullet about the `docker-container`
+> builder and not this exclusion. The address was wrong when written — L2 carried
+> it in the L3 specs it issued and the records quoted it, so it is a campaign
+> artefact rather than rot this record inherited — while the substance was always
+> right. Replaced with the **section name and the clause text**, not a corrected
+> line number: PLAN-014 has since grown a closing section, and any address into
+> it would have moved again. RFCT-110 carries the same correction.
 
 ## ssh is a floor capability, not a feature
 
