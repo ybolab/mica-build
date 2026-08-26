@@ -15,7 +15,7 @@
  * This phase asserts it deliberately rather than treating it as a surprise.
  *
  * The counters persist to `<state_dir>/login_guard.json` and survive a restart
- * (docs/design/access.md section 6, RFCT-085). That half is asserted in
+ * (docs/design/access.md section 6). That half is asserted in
  * 07b-postreboot, on the far side of a real reboot; this phase's last act is to
  * leave the guard ARMED so 07b has something to find.
  */

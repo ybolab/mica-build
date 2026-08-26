@@ -165,10 +165,7 @@ interface FallbackRow {
  * The fallback contract, both columns, in the shape `serve::respond` produces
  * it ON A BUNDLE-LESS DEVICE.
  *
- * READ THE LIMIT BEFORE READING THE TABLE.
- *
- * ===========================================================================
- * WHAT THIS TABLE DOES NOT TEST: api.md §4.4's traversal guards.
+ * What this table does not test: api.md §4.4's traversal guards.
  *
  * `serve::respond()` calls `asset_path::resolve()` -- the function that holds
  * every §4.4 guard: the dot-segment rejection, the residual-escape rejection,
@@ -185,12 +182,10 @@ interface FallbackRow {
  * suite exists to prevent: a green check standing in for code that never ran.
  *
  * Reaching §4.4 needs an active bundle on the DATA partition at `/srv/ui`,
- * and the campaign's seeding tool writes STATE only. Closing that gap needs a
- * bundle-seeding step, which is not this phase and is not this campaign's
- * tooling as it stands.
- * ===========================================================================
+ * and the seeding tool writes STATE only, so closing that gap needs a
+ * bundle-seeding step this phase does not have.
  *
- * With that said, the rows:
+ * The rows:
  *
  *   `/../../etc/passwd` -- last segment `passwd`, no `.` and no `%`, so
  *   `ends_in_a_route_segment()` is TRUE. With `text/html` it reaches condition
