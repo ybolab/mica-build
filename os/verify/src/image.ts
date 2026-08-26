@@ -53,7 +53,17 @@
 // the tool never ran, and this campaign has spent whole tasks on the difference
 // between those two sentences.
 
-import { closeSync, existsSync, lstatSync, mkdirSync, openSync, readSync, statSync, writeSync } from 'node:fs'
+import {
+  closeSync,
+  existsSync,
+  lstatSync,
+  mkdirSync,
+  openSync,
+  readFileSync,
+  readSync,
+  statSync,
+  writeSync,
+} from 'node:fs'
 import { dirname, join } from 'node:path'
 import { ToolOutputError, type RunOptions, type ToolRuntime } from './tools.ts'
 
@@ -397,6 +407,55 @@ export async function fatReadFile(rt: ToolRuntime, slot: FatSlot, path: string):
   return out
 }
 
+/**
+ * Copy one file out of the slot INTO A LOCAL PATH, and say whether it landed.
+ *
+ * NOT `fatReadFile` plus a write. mcopy's `-` target sends the file to stdout,
+ * and this runtime reads stdout as TEXT -- fine for a `set MOS_*=` fragment and
+ * destructive for a 290 KiB device tree, where every byte that is not valid
+ * UTF-8 comes back as U+FFFD. The device tree and the compiled boot script are
+ * both read as BYTES by the checks below, so mcopy writes them itself, exactly
+ * as os/verify-image-v2.sh:1899 and :2003 have it write them.
+ *
+ * `false` means the file is not in the slot -- mcopy exits 1 saying
+ * `File "::/x" not found`, the one honest absence in the mtools set. Any other
+ * non-zero exit throws, because "the slot could not be read at all" and "the
+ * file is not in it" are different edits.
+ *
+ * The destination is checked AFTER the copy as well as before: mcopy exiting 0
+ * having written nothing would otherwise leave the caller reading a file that
+ * is not there, which is `unsquashfs -d`'s defect one directory along.
+ */
+export async function fatCopyOut(
+  rt: ToolRuntime,
+  slot: FatSlot,
+  path: string,
+  dest: string,
+): Promise<boolean> {
+  const target = path.startsWith('::') ? path : `::/${path.replace(/^\/+/, '')}`
+  mkdirSync(dirname(dest), { recursive: true })
+  const r = await rt.run([...MTOOLS_ENV, 'mcopy', '-n', '-i', mtoolsTarget(slot), target, dest], {
+    context: `copying ${path} out of the FAT at offset ${slot.offsetBytes} of ${slot.image}`,
+    allow: [1],
+  })
+  if (r.code !== 0) {
+    if (/not found/.test(r.stderr)) return false
+    throw new ToolOutputError(
+      `mcopy could not copy ${path} out of the FAT at offset ${slot.offsetBytes} of ${slot.image}, `
+      + `and not because it is absent:\n  ${r.stderr.trim() || '(no stderr)'}\n`
+      + `  Returning "absent" here would turn a broken read into a fact about the image.`,
+    )
+  }
+  if (!existsSync(dest)) {
+    throw new ToolOutputError(
+      `mcopy exited 0 copying ${path} out of the FAT at offset ${slot.offsetBytes} of ${slot.image} `
+      + `and ${dest} is not there. A caller reading that path next would find nothing and blame the `
+      + `image for a file the tool never wrote.`,
+    )
+  }
+  return true
+}
+
 /** The same read, with "it is not there" as an answer rather than a throw. */
 export async function fatTryReadFile(
   rt: ToolRuntime,
@@ -700,6 +759,327 @@ export async function verityVerify(rt: ToolRuntime, req: VerityRequest): Promise
     + `  data=${req.dataFile} hash=${req.hashFile} --hash-offset=${req.hashOffset}\n`
     + `  Reporting this as "mismatch" would blame the image for a wrong offset or an unreadable file.`,
   )
+}
+
+
+// ---------------------------------------------------------------------------
+// 6. the device tree, with fdtget
+// ---------------------------------------------------------------------------
+//
+// DRIVEN FROM THE FAILING SIDE, 2026-08-26, in the pinned alpine:3.21 with the
+// package set the shell verifier installs. fdtget is the FIRST tool in this
+// file that refuses honestly on every input it cannot read -- and it still has
+// one shape that answers a question it could not answer:
+//
+//   fdtget ZEROS.bin /leds/status-red label   (64 MiB of zeros)
+//       exit 1, EMPTY stdout, `Error at '/leds/status-red': FDT_ERR_BADMAGIC`
+//       on stderr. Where sgdisk INVENTS a GPT on the same input, libfdt names
+//       the magic it did not find.
+//   fdtget EMPTY.bin ...                      exit 1, FDT_ERR_BADMAGIC
+//   fdtget nosuch.dtb ...                     exit 1, `Couldn't open blob from
+//                                             'nosuch.dtb': No such file or directory`
+//   fdtget T.dtb /leds/status-green label     exit 1, FDT_ERR_NOTFOUND
+//   fdtget T.dtb /leds/status-red nosuch      exit 1, FDT_ERR_NOTFOUND
+//
+//   fdtget -t x T.dtb /leds/status-red label  exit 0, `73 74 61 74 75 73 2d 72 65 64 0`
+//       ^^ THE ONE THAT ANSWERS ANYWAY. `-t x` on a STRING property does not
+//       refuse: it prints the string's BYTES as cells. So a device tree whose
+//       `gpios` had become a string would hand the oracle's
+//       `gpio_cells[2]` the third byte of that string -- a plausible-looking
+//       hexadecimal number -- rather than a refusal. It is REPRODUCED here and
+//       not refused, because os/verify-image-v2.sh:1941 reads exactly those
+//       cells and a helper that threw would fail where the oracle FAILS THE
+//       CHECK, which is a different row in the parity diff.
+//
+//   fdtget T.dtb /leds/status-red gpios       exit 0, `107 29 1`   (DECIMAL)
+//   fdtget -t x T.dtb /leds/status-red gpios  exit 0, `6b 1d 1`    (hex)
+//       The default radix is decimal and `-t x` is hexadecimal. The oracle
+//       passes `-t x` and compares against 0 and 1, which read the same in
+//       both -- so the flag is not decoration, it is the only thing that keeps
+//       a flags cell of 10 from being compared as sixteen.
+//
+// WHY AN ABSENCE IS AN ANSWER HERE AND NOT A THROW. os/verify-image-v2.sh:1923
+// writes `$(fdtget ... 2>/dev/null || true)` and compares the empty string
+// against the wanted value, so on this tool every refusal is a FAILED CHECK
+// rather than a broken run. That is the behaviour the port has to reproduce.
+// What it does NOT reproduce is the collapse: `undefined` here means libfdt
+// said so, in its own words, and a non-zero exit saying anything else still
+// throws -- so "the dtb is not there" and "fdtget is not installed" cannot
+// arrive at a check as the same value.
+
+/** libfdt's own refusals, exactly as fdtget spells them on stderr. */
+const FDT_REFUSAL = /FDT_ERR_[A-Z]+|Couldn't open blob from/
+
+/** `-t` as fdtget spells it: string, hex, signed and unsigned integer. */
+export type FdtType = 's' | 'x' | 'i' | 'u'
+
+/**
+ * One property out of a flattened device tree, or `undefined` when libfdt
+ * refused to produce one.
+ *
+ * The refusal is quoted into nothing -- the caller gets `undefined` and the
+ * reason is lost, deliberately, because that is the oracle's semantics. A
+ * caller that needs the reason calls `fdtGetResult`.
+ */
+export async function fdtGet(
+  rt: ToolRuntime,
+  dtb: string,
+  node: string,
+  property: string,
+  options: { type?: FdtType } = {},
+): Promise<string | undefined> {
+  return (await fdtGetResult(rt, dtb, node, property, options)).value
+}
+
+export interface FdtRead {
+  /** The property's value as fdtget printed it, or undefined when it refused. */
+  readonly value: string | undefined
+  /** libfdt's own sentence, when it refused. */
+  readonly refusal: string | undefined
+}
+
+/** `fdtGet`, with libfdt's refusal kept rather than dropped. */
+export async function fdtGetResult(
+  rt: ToolRuntime,
+  dtb: string,
+  node: string,
+  property: string,
+  options: { type?: FdtType } = {},
+): Promise<FdtRead> {
+  const argv = options.type === undefined
+    ? ['fdtget', dtb, node, property]
+    : ['fdtget', '-t', options.type, dtb, node, property]
+  const r = await rt.run(argv, {
+    context: `reading ${node} ${property} out of ${dtb}`,
+    allow: [1],
+  })
+  if (r.code === 0) {
+    // A trailing newline and nothing else. An EMPTY value is a real answer --
+    // an empty string property -- and comes back as '' rather than undefined,
+    // so a check comparing it against a wanted value fails describing the
+    // value, which is what the oracle does.
+    return { value: r.stdout.replace(/\n$/, ''), refusal: undefined }
+  }
+  const said = `${r.stderr}${r.stdout}`.trim()
+  if (FDT_REFUSAL.test(said)) return { value: undefined, refusal: said.split('\n')[0] }
+  throw new ToolOutputError(
+    `fdtget exited ${r.code} on ${dtb} for a reason libfdt did not name:\n`
+    + `    ${said.split('\n').join('\n    ') || '(no output)'}\n`
+    + `  Every refusal this tool has been observed making carries FDT_ERR_* or "Couldn't open `
+    + `blob"; anything else is the tool failing to run, and reporting that as "the property is `
+    + `absent" would make a missing fdtget read as a defect in the device tree.`,
+  )
+}
+
+/**
+ * `fdtget -t x`, split into cells the way the oracle's `read -r -a` splits it.
+ *
+ * Returns `[]` when libfdt refused, which is what `gpio_cells` becomes in the
+ * shell -- an empty array whose `[2]` is unset, printed as `missing`.
+ */
+export async function fdtGetCells(
+  rt: ToolRuntime,
+  dtb: string,
+  node: string,
+  property: string,
+): Promise<string[]> {
+  const value = await fdtGet(rt, dtb, node, property, { type: 'x' })
+  if (value === undefined) return []
+  return value.trim().split(/\s+/).filter(c => c !== '')
+}
+
+// ---------------------------------------------------------------------------
+// 7. e2fsck -fn, whose exit status is the whole answer and is not the truth
+// ---------------------------------------------------------------------------
+//
+// DRIVEN FROM THE FAILING SIDE, 2026-08-26, e2fsck 1.47.1 in the pinned alpine:
+//
+//   e2fsck -fn CLEAN.img                      exit 0, five passes, a summary
+//   e2fsck -fn ZEROS.img                      exit 8, "Bad magic number in super-block"
+//   e2fsck -fn EMPTY.img                      exit 8
+//   e2fsck -fn A-SQUASHFS                     exit 8
+//   e2fsck -fn A-DIRECTORY                    exit 8
+//   e2fsck -fn nosuch.img                     exit 8, "No such file or directory"
+//
+//   e2fsck -fn TRUNCATED.img                  exit 0  <-- AND IT SAYS OTHERWISE
+//       An 8192-block filesystem in a 4096-block file. e2fsck prints
+//
+//           The filesystem size (according to the superblock) is 8192 blocks
+//           The physical size of the device is 4096 blocks
+//           Either the superblock or the partition table is likely to be corrupt!
+//           Abort? no
+//
+//       ...and then runs all five passes and EXITS 0. os/verify-image-v2.sh:2342
+//       is `if e2fsck -fn "${img}" >/dev/null 2>&1`, so both of those streams go
+//       to /dev/null and the status alone decides: the oracle concludes
+//       `e2fsck -fn on data is clean` about a filesystem e2fsck has just said is
+//       likely corrupt. That branch is REACHABLE -- `check_ext4` extracts
+//       `count=${size_mib}` MiB at the layout's offset, so an image whose tail
+//       is short produces exactly this file.
+//
+//       IT IS REPRODUCED AND NOT REPAIRED. The verdict here is the STATUS, as
+//       the oracle reads it. What this helper adds is that the report is KEPT
+//       rather than sent to /dev/null, so the sentence exists somewhere a reader
+//       can find it -- and `E2fsckVerdict.report` is what a future check would
+//       be built on if the oracle's owner decides that sentence should be red.
+//
+// THE EXIT CODES ARE A BITMASK (e2fsck(8)): 1 errors corrected, 2 corrected and
+// reboot, 4 errors left UNCORRECTED, 8 operational error, 16 usage error, 32
+// cancelled, 128 shared-library error. Under `-n` nothing is ever corrected, so
+// 1 and 2 cannot arise -- they are allowed anyway because a status this helper
+// refused would be a run that died where the oracle printed a FAIL. 16 and 32
+// are NOT allowed: a usage error is this port's argv being wrong and a cancel
+// is a signal, and neither is a statement about the filesystem.
+
+/** The statuses e2fsck uses to describe a FILESYSTEM, as opposed to itself. */
+export const E2FSCK_VERDICT_CODES = [0, 1, 2, 4, 8] as const
+
+export interface E2fsckVerdict {
+  /** `e2fsck -fn` exited 0 -- which is the whole of the oracle's test. */
+  readonly clean: boolean
+  readonly code: number
+  /** What it printed, banner removed. Empty on a filesystem it had nothing to say about. */
+  readonly report: readonly string[]
+}
+
+/** `e2fsck -fn FILE`, read the way os/verify-image-v2.sh:2342 reads it. */
+export async function e2fsckClean(rt: ToolRuntime, file: string): Promise<E2fsckVerdict> {
+  const r = await rt.run(['e2fsck', '-fn', file], {
+    context: `e2fsck -fn on ${file}`,
+    allow: [...E2FSCK_VERDICT_CODES],
+  })
+  const report = `${r.stdout}\n${r.stderr}`.split('\n')
+    .map(l => l.trim())
+    .filter(l => l !== '' && !E2FS_BANNER.test(l))
+  return { clean: r.code === 0, code: r.code, report }
+}
+
+// ---------------------------------------------------------------------------
+// 8. the legacy uImage header, which needs no tool at all
+// ---------------------------------------------------------------------------
+//
+// `mkimage -T script` wraps a text script in a 64-byte big-endian header whose
+// first four bytes are 0x27051956. os/verify-image-v2.sh:2024 reads exactly
+// those four with `od -An -tx1 -N4 ... | tr -d ' \n'` and compares the string.
+//
+// DRIVEN FROM THE FAILING SIDE. There is no tool here to lie, so the failing
+// side is this reader's own:
+//
+//   a file that is not there        `od` prints nothing, `|| true` swallows the
+//                                   status, and the oracle compares '' -- so
+//                                   `uImageMagic` answers '' rather than
+//                                   throwing, and the check fails describing
+//                                   the value.
+//   a file SHORTER than four bytes  same: '' rather than a short read.
+//   a file shorter than 64 bytes    `readUImage` is undefined -- there is no
+//                                   header to read, and returning a struct of
+//                                   zeros would make `imageType` read as 0
+//                                   ("invalid") rather than as absent.
+//
+// WHAT THIS READER KNOWS AND THE ORACLE DOES NOT. The header also carries the
+// image TYPE, and `type=6` is what makes a uImage a SCRIPT. The oracle checks
+// the magic and nothing else, so a uImage of any other type -- a kernel, a
+// ramdisk -- carries the same four bytes and passes. That is recorded here and
+// exposed through `--probe`; it is NOT turned into a check, because a port that
+// hardened its oracle would diverge from it and the divergence would be the
+// port's.
+
+export const UIMAGE_MAGIC = '27051956'
+/** Where the payload starts: the header is exactly 64 bytes (image.h). */
+export const UIMAGE_HEADER_BYTES = 64
+
+export interface UImageHeader {
+  /** The first four bytes as lowercase hex, `od -An -tx1 -N4 | tr -d ' \n'`'s form. */
+  readonly magic: string
+  readonly headerCrc: number
+  readonly timestamp: number
+  readonly dataSize: number
+  readonly loadAddress: number
+  readonly entryPoint: number
+  readonly dataCrc: number
+  readonly os: number
+  readonly arch: number
+  /** 6 is IH_TYPE_SCRIPT. Read, reported, and deliberately not asserted. */
+  readonly imageType: number
+  readonly compression: number
+  readonly name: string
+  readonly dataOffset: number
+}
+
+/**
+ * The first four bytes as lowercase hex, or '' when there are not four to read.
+ *
+ * '' is the value the oracle compares, and it is an ANSWER: a boot script that
+ * was never written into the slot fails the magic check rather than killing the
+ * run. Every other reader in this file refuses a short read; this one does not,
+ * and the reason is that its caller's shell counterpart does not either.
+ */
+export function uImageMagic(file: string): string {
+  let fd: number
+  try {
+    fd = openSync(file, 'r')
+  }
+  catch {
+    return ''
+  }
+  try {
+    const buf = new Uint8Array(4)
+    const got = readSync(fd, buf, 0, 4, 0)
+    if (got !== 4) return ''
+    return [...buf].map(b => b.toString(16).padStart(2, '0')).join('')
+  }
+  finally {
+    closeSync(fd)
+  }
+}
+
+/** The whole 64-byte header, or undefined when the file is not long enough to hold one. */
+export function readUImage(file: string): UImageHeader | undefined {
+  let size: number
+  try {
+    size = statSync(file).size
+  }
+  catch {
+    return undefined
+  }
+  if (size < UIMAGE_HEADER_BYTES) return undefined
+  const head = Buffer.from(readBytes(file, 0, UIMAGE_HEADER_BYTES))
+  return {
+    magic: head.subarray(0, 4).toString('hex'),
+    headerCrc: head.readUInt32BE(4),
+    timestamp: head.readUInt32BE(8),
+    dataSize: head.readUInt32BE(12),
+    loadAddress: head.readUInt32BE(16),
+    entryPoint: head.readUInt32BE(20),
+    dataCrc: head.readUInt32BE(24),
+    os: head[28] as number,
+    arch: head[29] as number,
+    imageType: head[30] as number,
+    compression: head[31] as number,
+    // NUL-padded, 32 bytes. `mos boot` on the shipped cx3576 script.
+    name: head.subarray(32, 64).toString('latin1').replace(/\0.*$/, ''),
+    dataOffset: UIMAGE_HEADER_BYTES,
+  }
+}
+
+/**
+ * The whole file with its NUL bytes removed -- `tr -d '\0' < FILE`.
+ *
+ * NOT the payload from offset 64. os/verify-image-v2.sh:2039 strips NULs from
+ * the ENTIRE file, header included, and then awks over the result; the header's
+ * remaining bytes never look like `setenv`, so the parse works. A reader that
+ * started at 64 would be a better reader and a different one, and the four
+ * partition-number conclusions it produces are compared against the oracle's.
+ */
+export function uImageText(file: string): string {
+  let bytes: Buffer
+  try {
+    bytes = Buffer.from(readFileSync(file))
+  }
+  catch {
+    return ''
+  }
+  return bytes.toString('latin1').replace(/\0/g, '')
 }
 
 // ---------------------------------------------------------------------------

@@ -65,9 +65,23 @@ export const REQUIRED_TOOLS = [
   'debugfs',
   'tune2fs',
   'dumpe2fs',
+  // e2fsck is the ext4 family's own verdict (os/verify-image-v2.sh:2342) and
+  // batch 4b drives it. It ships in `e2fsprogs`, which the container route
+  // already installs -- which is exactly why it has to be NAMED: the host route
+  // checks this list and nothing else, so a tool that is only ever reached
+  // through the container is a tool the host route runs without looking.
+  'e2fsck',
   'unsquashfs',
   'veritysetup',
   'getcap',
+  // setcap writes the xattr that getcap then reads back. The oracle's
+  // capability check (:4261) establishes that the environment can round-trip
+  // one BEFORE it compares any inventory, because an empty capability set and
+  // a container that silently drops security.* xattrs are the same observation.
+  'setcap',
+  // fdtget reads the status-LED nodes out of the device tree extracted from the
+  // boot slot (:1923). It ships in `dtc`.
+  'fdtget',
 ] as const
 
 /**

@@ -26,20 +26,29 @@ import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node
 import { join } from 'node:path'
 import {
   debugfsRun,
+  e2fsckClean,
   ext4List,
   ext4Stat,
   ext4Super,
   extractRange,
+  fatCopyOut,
   fatList,
   fatTryReadFile,
   fatVolumeLabel,
+  fdtGet,
+  fdtGetCells,
+  fdtGetResult,
   readBytes,
   readGpt,
+  readUImage,
   sgdiskVerify,
   squashfsExtract,
   squashfsList,
   squashfsSuper,
+  uImageMagic,
+  uImageText,
   verityVerify,
+  type UImageHeader,
 } from './image.ts'
 import { runChecked, ToolError, ToolOutputError, type ToolResult, type ToolRuntime } from './tools.ts'
 import { REPO_ROOT } from './paths.ts'
@@ -525,5 +534,259 @@ describe('extractRange and readBytes need no tool, and refuse a short read', () 
 
   test('reading past the end is a refusal, not a short buffer', () => {
     expect(() => readBytes(src, 4090, 16)).toThrow(/wanted 16 bytes/)
+  })
+})
+
+// ── fdtget ─────────────────────────────────────────────────────────────────
+
+/**
+ * Every transcript below was captured on 2026-08-26 in the pinned alpine:3.21
+ * with the package set the shell verifier installs -- fdtget out of `dtc`, and
+ * the device tree compiled from a four-line .dts carrying the two status LEDs.
+ */
+describe('fdtget refuses honestly, except in the one place it does not', () => {
+  const dtb = '/w/boot-a-rk3576-src.dtb'
+
+  test('a property that is there comes back without its newline', async () => {
+    const rt = stub([['fdtget', { stdout: 'status-red\n' }]])
+    expect(await fdtGet(rt, dtb, '/leds/status-red', 'label')).toBe('status-red')
+  })
+
+  test('64 MiB of ZEROS is FDT_ERR_BADMAGIC, not an invented tree', async () => {
+    // The contrast with sgdisk above is the whole reason this is asserted:
+    // given the same input sgdisk prints a disk GUID it made up and exits 0.
+    const rt = stub([['fdtget', {
+      code: 1,
+      stderr: `Error at '/leds/status-red': FDT_ERR_BADMAGIC\n`,
+    }]])
+    const read = await fdtGetResult(rt, dtb, '/leds/status-red', 'label')
+    expect(read.value).toBeUndefined()
+    expect(read.refusal).toMatch(/FDT_ERR_BADMAGIC/)
+  })
+
+  test('a node that is not in the tree is FDT_ERR_NOTFOUND and an ANSWER', async () => {
+    const rt = stub([['fdtget', {
+      code: 1,
+      stderr: `Error at '/leds/status-green': FDT_ERR_NOTFOUND\n`,
+    }]])
+    expect(await fdtGet(rt, dtb, '/leds/status-green', 'label')).toBeUndefined()
+  })
+
+  test('a dtb that was never extracted is "Couldn\'t open blob", also an answer', async () => {
+    const rt = stub([['fdtget', {
+      code: 1,
+      stderr: `Couldn't open blob from '${dtb}': No such file or directory\n`,
+    }]])
+    expect(await fdtGet(rt, dtb, '/leds/status-red', 'label')).toBeUndefined()
+  })
+
+  test('exit 1 saying something libfdt never says is NOT an absence', async () => {
+    // The failure this separates: `fdtget: not found` from a container without
+    // dtc. Read as "the property is absent" it would report a defect in the
+    // device tree, on an image whose device tree nothing ever opened.
+    const rt = stub([['fdtget', { code: 1, stderr: 'sh: fdtget: not found\n' }]])
+    await expect(fdtGet(rt, dtb, '/leds/status-red', 'label'))
+      .rejects.toThrow(/for a reason libfdt did not name/)
+  })
+
+  test('an EMPTY property value is the empty string, not an absence', async () => {
+    const rt = stub([['fdtget', { stdout: '\n' }]])
+    expect(await fdtGet(rt, dtb, '/leds/status-red', 'label')).toBe('')
+  })
+
+  test('-t x splits into cells the way `read -r -a` splits them', async () => {
+    const rt = stub([['fdtget -t x', { stdout: '6b 1d 1\n' }]])
+    expect(await fdtGetCells(rt, dtb, '/leds/status-red', 'gpios')).toEqual(['6b', '1d', '1'])
+  })
+
+  test('a refusal makes the cell array EMPTY, so [2] is missing rather than wrong', async () => {
+    const rt = stub([['fdtget -t x', { code: 1, stderr: `Error at 'gpios': FDT_ERR_NOTFOUND\n` }]])
+    const cells = await fdtGetCells(rt, dtb, '/leds/status-red', 'gpios')
+    expect(cells).toEqual([])
+    expect(cells[2]).toBeUndefined()
+  })
+
+  test('-t x on a STRING property answers anyway, and that is REPRODUCED', async () => {
+    // Measured: `fdtget -t x T.dtb /leds/status-red label` exits 0 and prints
+    // the string's bytes. So a `gpios` that had become a string hands
+    // os/verify-image-v2.sh:1942 the third BYTE of it -- `61` here -- as the
+    // GPIO flags cell. Refusing would be the better tool and the wrong port:
+    // the oracle FAILS that check, and a throw is a different parity row.
+    const rt = stub([['fdtget -t x', { stdout: '73 74 61 74 75 73 2d 72 65 64 0\n' }]])
+    const cells = await fdtGetCells(rt, dtb, '/leds/status-red', 'gpios')
+    expect(cells[2]).toBe('61')
+  })
+})
+
+// ── e2fsck ─────────────────────────────────────────────────────────────────
+
+const E2FSCK_CLEAN = `e2fsck 1.47.1 (20-May-2024)
+Pass 1: Checking inodes, blocks, and sizes
+Pass 2: Checking directory structure
+Pass 3: Checking directory connectivity
+Pass 4: Checking reference counts
+Pass 5: Checking group summary information
+data: 12/16384 files (8.3% non-contiguous), 1650/16384 blocks
+`
+
+/** e2fsck 1.47.1 on an 8192-block filesystem in a 4096-block file. EXIT 0. */
+const E2FSCK_TRUNCATED = `e2fsck 1.47.1 (20-May-2024)
+The filesystem size (according to the superblock) is 8192 blocks
+The physical size of the device is 4096 blocks
+Either the superblock or the partition table is likely to be corrupt!
+Abort? no
+
+Pass 1: Checking inodes, blocks, and sizes
+Pass 5: Checking group summary information
+data: 12/2048 files (8.3% non-contiguous), 1650/8192 blocks
+`
+
+const E2FSCK_NOT_EXT4 = `e2fsck 1.47.1 (20-May-2024)
+ext2fs_open2: Bad magic number in super-block
+e2fsck: Superblock invalid, trying backup blocks...
+e2fsck: Bad magic number in super-block while trying to open /w/meta.img
+`
+
+describe('e2fsck -fn, whose exit status is the oracle\'s whole test', () => {
+  test('a clean filesystem is clean, and the report is kept rather than dropped', async () => {
+    const rt = stub([['e2fsck -fn', { stdout: E2FSCK_CLEAN }]])
+    const v = await e2fsckClean(rt, '/w/data.img')
+    expect(v.clean).toBe(true)
+    expect(v.code).toBe(0)
+    expect(v.report.some(l => l.startsWith('Pass 5'))).toBe(true)
+    // The version banner is not part of what e2fsck said about the filesystem.
+    expect(v.report.some(l => /^e2fsck 1\.47/.test(l))).toBe(false)
+  })
+
+  test('a file that is not ext4 at all is exit 8, and that is NOT clean', async () => {
+    const rt = stub([['e2fsck -fn', { code: 8, stdout: E2FSCK_NOT_EXT4 }]])
+    const v = await e2fsckClean(rt, '/w/meta.img')
+    expect(v.clean).toBe(false)
+    expect(v.code).toBe(8)
+    expect(v.report.join(' ')).toMatch(/Bad magic number in super-block/)
+  })
+
+  test('errors left UNCORRECTED is exit 4 and is not clean', async () => {
+    const rt = stub([['e2fsck -fn', { code: 4, stdout: 'Inode 12 is in use, but has dtime set.  Fix? no\n' }]])
+    expect((await e2fsckClean(rt, '/w/state.img')).clean).toBe(false)
+  })
+
+  test('A TRUNCATED FILESYSTEM EXITS 0, and this reproduces that', async () => {
+    // THE VACUOUS PASS IN THE CODE UNDER TEST, asserted as its own case rather
+    // than repaired. e2fsck says the superblock or the partition table is
+    // likely to be corrupt and then exits 0; os/verify-image-v2.sh:2342 sends
+    // both streams to /dev/null and reads the status, so it concludes
+    // `e2fsck -fn on data is clean`. A port that read the REPORT instead would
+    // answer FAIL where the oracle answers PASS -- a divergence, and the
+    // divergence would be the port's.
+    const rt = stub([['e2fsck -fn', { code: 0, stdout: E2FSCK_TRUNCATED }]])
+    const v = await e2fsckClean(rt, '/w/data.img')
+    expect(v.clean).toBe(true)
+    // ...and the sentence the oracle threw away is here, for whoever decides
+    // whether it should be red.
+    expect(v.report.join(' ')).toMatch(/likely to be corrupt/)
+  })
+
+  test('a usage error is NOT a statement about the filesystem', async () => {
+    const rt = stub([['e2fsck -fn', { code: 16, stderr: 'Usage: e2fsck [-panyrcdfktvDFV]\n' }]])
+    await expect(e2fsckClean(rt, '/w/data.img')).rejects.toThrow(/exited 16/)
+  })
+})
+
+// ── the legacy uImage header ───────────────────────────────────────────────
+
+describe('the uImage header reader, which has no tool to lie for it', () => {
+  const dir = join(SCRATCH, 'uimage')
+  mkdirSync(dir, { recursive: true })
+
+  /** The first 64 bytes of the real cx3576 boot.scr, captured 2026-08-26. */
+  const HEADER = Buffer.from(
+    '27051956e6c334365e0be1000000' + '1a04'
+    + '00000000' + '00000000' + '1780edc9' + '05070600'
+    + Buffer.from('mos boot').toString('hex') + '00'.repeat(24),
+    'hex',
+  )
+  const scr = join(dir, 'boot.scr')
+  writeFileSync(scr, Buffer.concat([HEADER, Buffer.from('\0\0\x19\xfc\0\0\0\0setenv bootslot A\n', 'latin1')]))
+
+  test('the magic is the four bytes od prints, lowercase and unspaced', () => {
+    expect(uImageMagic(scr)).toBe('27051956')
+  })
+
+  test('a file that is not there is the EMPTY string, as `od 2>/dev/null` is', () => {
+    // Not a throw. os/verify-image-v2.sh:2024 compares '' against 27051956 and
+    // FAILS the check; a throw here would be a run that died instead.
+    expect(uImageMagic(join(dir, 'never-written'))).toBe('')
+  })
+
+  test('a file shorter than four bytes is the empty string too', () => {
+    const short = join(dir, 'short.scr')
+    writeFileSync(short, Buffer.from([0x27, 0x05]))
+    expect(uImageMagic(short)).toBe('')
+  })
+
+  test('the header comes out typed, including the type the oracle never reads', () => {
+    const h = readUImage(scr)
+    expect(h).toBeDefined()
+    expect((h as UImageHeader).magic).toBe('27051956')
+    expect((h as UImageHeader).name).toBe('mos boot')
+    // 6 is IH_TYPE_SCRIPT. Read and reported; deliberately not asserted by any
+    // check, because the oracle checks the magic and nothing else, and a uImage
+    // of any other type carries the same four bytes.
+    expect((h as UImageHeader).imageType).toBe(6)
+    expect((h as UImageHeader).dataOffset).toBe(64)
+  })
+
+  test('a file too short to hold a header is undefined, not a struct of zeros', () => {
+    const short = join(dir, 'stub.scr')
+    writeFileSync(short, Buffer.from('27051956', 'hex'))
+    expect(readUImage(short)).toBeUndefined()
+    expect(readUImage(join(dir, 'never-written'))).toBeUndefined()
+  })
+
+  test('the text is the WHOLE file with NULs removed, header included', () => {
+    // `tr -d '\0' < scr-A`, which is what the oracle awks over. A reader that
+    // started at offset 64 would be a better reader and a different one.
+    const text = uImageText(scr)
+    expect(text).toContain('mos boot')
+    expect(text).toContain('setenv bootslot A')
+    expect(text).not.toContain('\0')
+    expect(uImageText(join(dir, 'never-written'))).toBe('')
+  })
+})
+
+describe('mcopy writing a file rather than a stdout string', () => {
+  const dir = join(SCRATCH, 'mcopy-out')
+  mkdirSync(dir, { recursive: true })
+  const slot = { image: '/w/x.img', offsetBytes: 18874368 }
+
+  test('a file that landed is true, and the caller may read the BYTES', async () => {
+    const dest = join(dir, 'rk3576-src.dtb')
+    // WHY THIS HELPER EXISTS: the runtime reads stdout as TEXT, so `mcopy ... -`
+    // turns every byte of a 290 KiB device tree that is not valid UTF-8 into
+    // U+FFFD. mcopy writes the file itself instead.
+    const rt = stub([['mcopy', { effect: () => writeFileSync(dest, Buffer.from([0xd0, 0x0d, 0xfe, 0xed])) }]])
+    expect(await fatCopyOut(rt, slot, 'rk3576-src.dtb', dest)).toBe(true)
+    expect([...readBytes(dest, 0, 4)]).toEqual([0xd0, 0x0d, 0xfe, 0xed])
+  })
+
+  test('a file that is not in the slot is FALSE, an answer', async () => {
+    const rt = stub([['mcopy', { code: 1, stderr: 'File "::/nope" not found\n' }]])
+    expect(await fatCopyOut(rt, slot, 'nope', join(dir, 'nope'))).toBe(false)
+  })
+
+  test('exit 1 that is NOT an absence must not be read as one', async () => {
+    const rt = stub([['mcopy', { code: 1, stderr: 'init ::: non DOS media\n' }]])
+    await expect(fatCopyOut(rt, slot, 'boot.scr', join(dir, 'x.scr')))
+      .rejects.toThrow(/not because it is absent/)
+  })
+
+  test('mcopy exiting 0 having written NOTHING is refused', async () => {
+    // unsquashfs's defect one directory along: the status says it worked and
+    // the next read finds nothing, and the reason it finds nothing is
+    // indistinguishable from the file being empty in the image.
+    const rt = stub([['mcopy', { code: 0 }]])
+    await expect(fatCopyOut(rt, slot, 'boot.scr', join(dir, 'never.scr')))
+      .rejects.toThrow(/exited 0 .* and .* is not there/s)
   })
 })

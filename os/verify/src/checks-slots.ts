@@ -26,27 +26,15 @@
 // survive an install -- so these say "factory:" and mean it.
 
 import type { Board } from './board.ts'
+import { PER_SLOT_FACTORY, SLOTS, slotOffsetBytes } from './boot-slots.ts'
 import type { CheckCase } from './checks.ts'
 import { fatVolumeLabel, fatVolumeSerial, readBytes, type FatSlot } from './image.ts'
 import type { CheckResult } from './parity.ts'
 import { ToolOutputError } from './tools.ts'
 import { eqCi, verdict } from './verdict.ts'
 
-/**
- * The two slots, by the names the oracle's messages use.
- *
- * `check_boot_slot BOOT-A "${BOOT_A_IMG}" ...` at :1963-1964, unconditionally
- * on both boards: a grub board's ESP is a THIRD filesystem checked separately,
- * not one of these two. So the display name is `BOOT-<letter>` on every board,
- * and it is the instance every check below fires under.
- */
-const SLOTS = [
-  { display: 'BOOT-A', layout: 'BOOT_A' },
-  { display: 'BOOT-B', layout: 'BOOT_B' },
-] as const
-
 /** Every slot conclusion begins with the slot name, or with `factory: ` and it. */
-const PER_SLOT = /^(?:factory: )?(BOOT-[AB])\b/
+const PER_SLOT = PER_SLOT_FACTORY
 
 /** `mkfs.vfat` writes this at byte 82 of a FAT32 boot sector, and nowhere else. */
 const FAT32_SIGNATURE_OFFSET = 82
@@ -59,19 +47,11 @@ const FAT32_SIGNATURE_OFFSET = 82
  * about the slot.
  */
 function slotOffset(board: Board, image: string, layoutName: string): { slot: FatSlot, mib: number } {
-  const raw = board.partition(layoutName)?.get('OFFSET_BYTES')
-  if (raw === undefined || !/^\d+$/.test(raw.trim())) {
-    throw new ToolOutputError(
-      `${board.path} declares no usable ${layoutName}_OFFSET_BYTES (got '${raw ?? ''}'). Defaulted to `
-      + `0 this would read the image's own GPT as a FAT boot sector and report the answer as a fact `
-      + `about the slot.`,
-    )
-  }
   const mibBytes = board.mibBytes
   if (mibBytes === undefined || mibBytes <= 0) {
     throw new ToolOutputError(`${board.path} declares no usable MIB_BYTES.`)
   }
-  const offsetBytes = Number(raw.trim())
+  const offsetBytes = slotOffsetBytes(board, layoutName)
   return { slot: { image, offsetBytes }, mib: Math.floor(offsetBytes / mibBytes) }
 }
 

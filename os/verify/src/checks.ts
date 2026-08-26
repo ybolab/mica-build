@@ -37,6 +37,7 @@
 import { createHash } from 'node:crypto'
 import { closeSync, existsSync, mkdirSync, mkdtempSync, openSync, readSync, renameSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
+import { REPO_ROOT } from './paths.ts'
 import type { Board } from './board.ts'
 import {
   extractRange,
@@ -47,9 +48,13 @@ import {
   type GptTable,
 } from './image.ts'
 import { BOARD_CHECKS } from './checks-board.ts'
+import { BOOTCHAIN_CHECKS } from './checks-bootchain.ts'
+import { CMDLINE_CHECKS_ALL } from './checks-cmdline.ts'
+import { SHAPE_CHECKS_ALL } from './checks-shape.ts'
 import { CONND_CHECKS } from './checks-connd.ts'
 import { DBUS_CHECKS } from './checks-dbus.ts'
 import { ENGINE_CHECKS_ALL } from './checks-engine.ts'
+import { EXT4_CHECKS } from './checks-ext4.ts'
 import { HOME_CHECKS } from './checks-home.ts'
 import { FSTAB_CHECKS } from './checks-fstab.ts'
 import { GPT_CHECKS } from './checks-gpt.ts'
@@ -79,6 +84,19 @@ export interface ImageContext {
   readonly tools: ToolRuntime
   /** A directory the helpers may write extracts into. Never the image's own. */
   readonly workDir: string
+  /**
+   * Where this board's BUILD OUTPUTS are -- `_out/<board>`.
+   *
+   * Two checks read a file the build produced beside the image rather than a
+   * byte of the image itself: the verity parameter file
+   * (os/verify-image-v2.sh:2205) and the rootfs report (:4272). The oracle
+   * spells both `${REPO_ROOT}/_out/${MOS_BOARD}/...`, and so does
+   * `createImageContext` -- this is a seam, not a second convention. It exists
+   * because a suite that read the real `_out/` would pass on a host that had
+   * built an image and fail on one that had not, and a skip reports the same
+   * green as a pass.
+   */
+  readonly outDir: string
   /** The partition table, read once. */
   gpt: () => Promise<GptTable>
   /** A partition by GPT name (`boot-a`) or number. Throws when there is none. */
@@ -87,6 +105,17 @@ export interface ImageContext {
   fatSlot: (nameOrNumber: string | number) => Promise<FatSlot>
   /** That partition's bytes, extracted once into workDir. */
   extract: (nameOrNumber: string | number) => Promise<string>
+  /**
+   * An arbitrary byte range, extracted once into `workDir/<name>`.
+   *
+   * The seam the LAYOUT-addressed families need. `extract` above resolves a
+   * partition through the GPT, which is right for everything that reads a
+   * partition and wrong for the four ext4 tiers: os/verify-image-v2.sh:2309
+   * `dd`s them at `PART_START_MIB_x`, the offset the BOARD DEFINITION walks to,
+   * and a check that read them through the GPT would agree with a partition
+   * that had moved. `gpt-partition-start` is the check that says the two agree.
+   */
+  extractAt: (name: string, offset: number, length: number) => Promise<string>
   /** The read-only root, unpacked once out of the named verity slot. */
   unpackRoot: (slot?: string) => Promise<string>
 }
@@ -131,6 +160,10 @@ export const CHECKS: readonly CheckCase[] = [
   ...HOME_CHECKS,
   ...CONND_CHECKS,
   ...SYSTEM_CHECKS,
+  ...EXT4_CHECKS,
+  ...BOOTCHAIN_CHECKS,
+  ...CMDLINE_CHECKS_ALL,
+  ...SHAPE_CHECKS_ALL,
 ]
 
 /**
@@ -252,6 +285,8 @@ export interface ContextRequest {
   readonly image: string
   readonly tools: ToolRuntime
   readonly workDir: string
+  /** Defaults to `_out/<board>`, which is where the oracle looks. */
+  readonly outDir?: string
 }
 
 /**
@@ -290,6 +325,7 @@ function digestOf(file: string): string {
 
 export function createImageContext(request: ContextRequest): ImageContext {
   const { board, image, tools, workDir } = request
+  const outDir = request.outDir ?? join(REPO_ROOT, '_out', board.name)
   mkdirSync(workDir, { recursive: true })
 
   let gptOnce: Promise<GptTable> | undefined
@@ -322,6 +358,15 @@ export function createImageContext(request: ContextRequest): ImageContext {
     const p = await partition(nameOrNumber)
     const table = await gpt()
     return { image, offsetBytes: p.firstSector * table.sectorSize }
+  }
+
+  const ranges = new Map<string, Promise<string>>()
+  const extractAt = async (name: string, offset: number, length: number): Promise<string> => {
+    const existing = ranges.get(name)
+    if (existing !== undefined) return existing
+    const started = Promise.resolve(extractRange(image, offset, length, join(workDir, name)))
+    ranges.set(name, started)
+    return started
   }
 
   const extract = async (nameOrNumber: string | number): Promise<string> => {
@@ -395,5 +440,5 @@ export function createImageContext(request: ContextRequest): ImageContext {
     return started
   }
 
-  return { board, image, tools, workDir, gpt, partition, fatSlot, extract, unpackRoot }
+  return { board, image, tools, workDir, outDir, gpt, partition, fatSlot, extract, extractAt, unpackRoot }
 }

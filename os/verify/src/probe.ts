@@ -25,18 +25,23 @@ import { join } from 'node:path'
 import type { ImageContext } from './checks.ts'
 import {
   debugfsRun,
+  e2fsckClean,
   ext4List,
   ext4Super,
   fatList,
+  fatCopyOut,
   fatVolumeLabel,
+  fdtGetCells,
+  fdtGetResult,
   readBytes,
+  readUImage,
   sgdiskVerify,
   squashfsExtract,
   squashfsList,
   squashfsSuper,
+  uImageMagic,
   verityVerify,
 } from './image.ts'
-import { REPO_ROOT } from './paths.ts'
 
 type Log = (line: string) => void
 
@@ -95,6 +100,12 @@ export async function probeImage(ctx: ImageContext, log: Log): Promise<void> {
         + ` ${sb.blockCount} × ${sb.blockSize} B, state ${sb.state}`)
       log(`   [debugfs]     ${label}: / holds ${entries.length} entries —`
         + ` ${entries.map(e => e.name).join(' ')}`)
+      // M4g: the ext4 family's own verdict, and the one whose REPORT the oracle
+      // sends to /dev/null. Printed here so a truncated filesystem's "likely to
+      // be corrupt" is visible somewhere even though the status says clean.
+      const fsck = await e2fsckClean(ctx.tools, file)
+      log(`   [e2fsck]      ${label}: exit ${fsck.code} — ${fsck.clean ? 'clean' : 'NOT clean'}`
+        + `${fsck.report.length === 0 ? '' : ` — ${fsck.report.join(' | ').slice(0, 160)}`}`)
       return entries
     })
   }
@@ -146,7 +157,7 @@ export async function probeImage(ctx: ImageContext, log: Log): Promise<void> {
     // two agree is one of the things M4b ports. A probe that re-derived it
     // would be a second implementation of that check, in a file that asserts
     // nothing.
-    const paramFile = join(REPO_ROOT, '_out', ctx.board.name, 'rootfs-verity.env')
+    const paramFile = join(ctx.outDir, 'rootfs-verity.env')
     if (!existsSync(paramFile)) {
       log(`   [veritysetup] NOT RUN: ${paramFile} is not there, so this probe has no root hash to`)
       log(`                 verify ${label} against. Produce it with os/rootfs/build-v2.sh.`)
@@ -183,6 +194,51 @@ export async function probeImage(ctx: ImageContext, log: Log): Promise<void> {
       const out = await debugfsRun(ctx.tools, file, 'features')
       log(`   [debugfs]     ${firstExt4}: features — ${out.trim().split('\n').join(' ')}`)
       return out
+    })
+  }
+
+  // 7. M4g: fdtget and the uImage header, over whatever BOOT-A actually holds -
+  //
+  // Driven off the slot's OWN listing rather than off a file name written here:
+  // a `.dtb` is a device tree on any board that ships one and a `.scr` is a
+  // compiled boot script on any board that ships one, and a board that ships
+  // neither prints neither line instead of two refusals about files it never
+  // claimed to have.
+  const bootA = ctx.board.partitions.find(p => p.name === 'BOOT_A')?.label
+  if (bootA !== undefined) {
+    await step(log, `the boot slot's own files on ${bootA}`, async () => {
+      const slot = await ctx.fatSlot(bootA)
+      const listing = await fatList(ctx.tools, slot)
+      const named = listing.map(l => l.replace(/^::\//, ''))
+
+      for (const dtb of named.filter(f => f.endsWith('.dtb'))) {
+        const local = join(ctx.workDir, `probe-boot-a-${dtb}`)
+        if (!await fatCopyOut(ctx.tools, slot, dtb, local)) {
+          log(`   [fdtget]      ${dtb} is listed in ${bootA} and mcopy could not read it`)
+          continue
+        }
+        // BOTH DIRECTIONS, in the same breath, as the unsquashfs step does:
+        // a node that IS there and a node that is not, so the probe is never
+        // showing a helper that has only ever been observed succeeding.
+        const red = await fdtGetResult(ctx.tools, local, '/leds/status-red', 'label')
+        const cells = await fdtGetCells(ctx.tools, local, '/leds/status-red', 'gpios')
+        const ghost = await fdtGetResult(ctx.tools, local, '/leds/no-such-led', 'label')
+        log(`   [fdtget]      ${dtb}: /leds/status-red label ${red.value ?? `— ${red.refusal}`},`
+          + ` gpios (-t x) [${cells.join(' ')}]`)
+        log(`   [fdtget]      ${dtb}: a node that is NOT there refuses — ${ghost.refusal ?? 'IT DID NOT'}`)
+      }
+
+      for (const scr of named.filter(f => f.endsWith('.scr'))) {
+        const local = join(ctx.workDir, `probe-boot-a-${scr}`)
+        if (!await fatCopyOut(ctx.tools, slot, scr, local)) {
+          log(`   [uImage]      ${scr} is listed in ${bootA} and mcopy could not read it`)
+          continue
+        }
+        const header = readUImage(local)
+        log(`   [uImage]      ${scr}: magic ${uImageMagic(local)}, type ${header?.imageType ?? '(no header)'},`
+          + ` name '${header?.name ?? ''}', ${header?.dataSize ?? 0} B of payload at ${header?.dataOffset ?? 0}`)
+      }
+      return named
     })
   }
   log('')

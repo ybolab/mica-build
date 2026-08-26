@@ -103,10 +103,12 @@ function rootFixture(board: typeof cx3576, conf: string | undefined): { ctx: Ima
     image: join(dir, 'fixture.img'),
     tools: NO_TOOLS,
     workDir: dir,
+    outDir: dir,
     gpt: async () => refuse('partition table'),
     partition: async () => refuse('partition table'),
     fatSlot: async () => refuse('FAT slot'),
     extract: async () => refuse('extracted payloads'),
+    extractAt: async () => refuse('image byte ranges'),
     unpackRoot: async () => root,
   }
   return { ctx, dispose: () => rmSync(dir, { recursive: true, force: true }) }
