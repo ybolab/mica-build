@@ -603,6 +603,64 @@ The recipe is in `_out/gate/` of the M5c worktree — `chain-cold.sh` (one tree,
 one cold chain), `extract.sh` (M5b's, verbatim but for the root) and
 `compare.sh` — and it is meant to be re-run rather than cited.
 
+### RFCT-111 M5d: the board parameterisation, measured
+
+`40-board`'s two fixed `cx3576` `COPY`s replaced by staged directories
+(`../rootfs/stages/README.md`, "Declining a board"). Both sides built cold on
+**2026-08-26**, x64, through the same driver — the tree is the only difference —
+and both extracted with the same `unsquashfs`:
+
+| | entries |
+|---|---|
+| control — two cold builds that changed nothing (M5a, and M5b again) | 6 |
+| M5b's subject — the single file vs the four-stage chain | 14 |
+| M5c's subject — that chain vs the nine-stage chain | 6 |
+| **M5d's subject — literal board paths vs staged board directories** | **6** |
+| beyond the control | **0** |
+
+The differing set **is** the control's set, entry for entry:
+`/boot/initrd.img-*`, the four `/usr/share/factory/var/log` files and
+`aux-cache`. That is what an x64 build of this change should look like: x64 is
+the board that DISCARDED both of the things being parameterised, so a difference
+would have meant the mechanism changed what the board carries.
+
+Driven past the entry count:
+
+- **`unsquashfs -lln` over all 9,241 entries differs on ONE line**, and only in
+  the initrd's SIZE (37,189,836 against 37,189,967 bytes). Every mode, uid, gid
+  and path on both sides is identical.
+- **`dpkg.log` with its timestamps stripped is byte-identical** — the same 694
+  operations in the same order. `grub-editenv-install` did not move, so the apt
+  order the feature stages are arranged to preserve is unchanged.
+- `alternatives.log` (2 lines) and `apt/history.log` (12 lines) are identical
+  once their own timestamps are removed.
+- **`apt/term.log` is 657 lines on both sides and differs on exactly THREE**,
+  which are the RSA/ECDSA/ED25519 host-key fingerprints `openssh-server`'s
+  postinst echoes as it generates them. The keys themselves are removed by
+  `stages/10-base` and are not in the image; only the console echo survives in
+  the log. Present in the control for the same reason.
+- `/usr/lib/firmware` **does not exist** in either packed root, which is the
+  behaviour `firmware-install.sh` was written to keep: a board with no radio
+  gets no empty directory standing where firmware would be.
+
+**A DIFFERENCE THE GATE FOUND IN ITSELF, recorded because it is the kind that
+reads as a subject failure.** The first run of this gate reported 6 differing
+entries and then **24 differing lines in the `-lln` listing** — a mode
+difference, group-write set on `/etc`, `/usr`, `/usr/lib` and nine overlay
+files. Not the change: the control tree had been snapshotted with
+`git archive HEAD | tar -x`, which produced `664`/`775` where a checkout under
+`umask 022` gives `644`/`755`, and the overlay is `cp -a`'d from those files
+into the build context. The content diff could not see it — `diff -r` compares
+bytes, not modes — so the listing is what caught it, and it is the second time
+in this campaign that going past the entry count has been the thing that paid.
+Fixed by cutting the control side with `git worktree add --detach` instead, so
+both sides are checkouts made the same way; the numbers above are that run.
+
+The recipe is in `_out/gate/` of the M5d worktree — `chain-cold.sh` (one tree,
+one cold chain, and the extra `--arg`s the subject's `40-board` declares passed
+by the caller, because the driver REFUSES an argument no stage declares),
+`extract.sh` and `compare.sh` — and it is meant to be re-run rather than cited.
+
 Also cold-build-dependent, and now closed: the byte layout used to depend on
 whichever `squashfs-tools` and `cryptsetup` came out of a floating
 `debian:bookworm-slim` in the pack stage. RFCT-108 (PLAN-014 M2) pins that base
