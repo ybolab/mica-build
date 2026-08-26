@@ -252,6 +252,27 @@ export function auditChain(stages: readonly StageFile[], terminalTarget: string)
       })
     }
   }
+  // Two stages naming the SAME feature. Distinct numbers, so the duplicate-number
+  // fault above cannot see it -- and the consequence is worse than an ordering
+  // question: `--without <that feature>` would drop one of them, leave the other
+  // in the chain, and report success. A switch that half-fires is the shape of
+  // green this whole campaign is about.
+  const byFeature = new Map<string, StageFile[]>()
+  for (const s of stages) {
+    const f = featureOf(s)
+    if (!f) continue
+    const seen = byFeature.get(f)
+    if (seen) seen.push(s)
+    else byFeature.set(f, [s])
+  }
+  for (const [feature, group] of byFeature) {
+    if (group.length > 1) {
+      faults.push({
+        path: group.map((g) => basename(g.path)).join(', '),
+        message: `both name the feature '${feature}'. Their numbers differ, so the chain builds -- but \`--without ${feature}\` would drop one of them, leave the other in the image, and exit 0 reporting the feature declined`,
+      })
+    }
+  }
   stages.forEach((s, i) => {
     const first = i === 0
     if (first && s.declaresPrev) {

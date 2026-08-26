@@ -89,6 +89,10 @@ Three things make it a mechanism rather than a flag:
   `31-feature-containers`, so a build that declines the feature and still passes
   the argument is refused by `unusedArgs` — docker would merely warn, and a
   warning scrolls past in a build this size.
+- **Two stages cannot name the same feature.** Their numbers would differ, so
+  the shared-number fault cannot see it, and the consequence is worse than an
+  ordering question: `--without <that feature>` would drop one of them, leave
+  the other in the image, and exit 0 reporting the feature declined.
 
 `WITH_CONTAINERS=0` / `WITH_MOSD=0` and `board/<name>/containers.env` are
 unchanged; `../build-v2.sh` translates them. What was replaced is the build

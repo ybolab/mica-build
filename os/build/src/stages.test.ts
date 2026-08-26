@@ -405,6 +405,32 @@ describe('selectStages -- RFCT-111 stage selection, which replaced the WITH_* ar
     expect(kept.map((s) => s.name)).toContain('33-feature-mosd')
   })
 
+  // Distinct numbers, so the duplicate-NUMBER fault cannot see it, and the
+  // consequence is worse: the switch half-fires and still exits 0.
+  test('auditChain refuses two stages naming the same feature', () => {
+    const stages = discoverStages(
+      scratch({
+        '10-base.Dockerfile': FIRST,
+        '31-feature-containers.Dockerfile': LINK,
+        '32-feature-containers.Dockerfile': LINK,
+        '90-pack.Dockerfile': TERMINAL,
+      }),
+    )
+    expect(messages(stages)).toMatch(
+      /both name the feature 'containers'.*would drop one of them, leave the other in the image/s,
+    )
+    // The control: two DIFFERENT features at different numbers is fine.
+    const ok = discoverStages(
+      scratch({
+        '10-base.Dockerfile': FIRST,
+        '31-feature-containers.Dockerfile': LINK,
+        '32-feature-mosd.Dockerfile': LINK,
+        '90-pack.Dockerfile': TERMINAL,
+      }),
+    )
+    expect(auditChain(ok, DEFAULT_TERMINAL_TARGET)).toEqual([])
+  })
+
   test('refuses a feature name nothing matches, and lists the ones that exist', () => {
     const stages = discoverStages(dir())
     // The typo case. Silently building the full image is the failure this
