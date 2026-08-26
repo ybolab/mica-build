@@ -31,6 +31,27 @@ acceptable, composition wins).
   with nothing behind it. `mosd` and `rauc` are also feature stages in the
   shipped chain and were never on this list; they are left as they are, because
   this amendment carries out one decision and does not tidy around it.
+
+  CLARIFIED 2026-08-26, **by the user**, alongside the amendment above. **The
+  three are not a flat list.** For containers and mqtt, *"whether it is compiled
+  into the image"* and *"whether it is enabled on the system"* are **two
+  separate options**, and the system exposes runtime enablement independently of
+  build-time inclusion. The model, stated so it cannot be collapsed by a later
+  reader:
+
+  | | build-time stage (`--without`) | runtime enable switch |
+  | --- | --- | --- |
+  | `containers` | yes | **yes** |
+  | `mqtt` | yes | **yes** |
+  | `radios` | yes | no (board-declared: `BOARD_RADIOS`) |
+
+  **Build-time inclusion does not imply runtime enablement.** A feature stage
+  being in the image means the software is *there*, not that it is *on*. That
+  is not new with M5 — PLAN-012 built the container engine installed-and-INERT
+  with the switch driven from apid/mosd, and RFCT-104 added the MQTT master
+  switch with the broker shipping inert — but M5 is the change that could have
+  severed a switch from its feature, so it is stated here explicitly and
+  verified under "The two axes, verified" below.
 - Inline shell blobs extracted to `rootfs/scripts/`.
 - The `os/health/` byte-identical duplicates collapse into the overlay copy;
   their tests move to `os/tests/`.
@@ -106,6 +127,129 @@ here, and it is not a substitute for the part that cannot.
 **The task closes with clause 3 outstanding for cx3576 because the blocker is a
 runner, not the work.** Nothing in the chain is known to be wrong on cx3576; it
 is unobserved. M7 runs on hardware and is where that is answered.
+
+### The disposition of clause 3
+
+**Decided 2026-08-26 by the user, on L2's recommendation.** Both actors are
+named because both acted: L2 escalated the question and made the
+recommendation; the user took the decision. RFCT-111 closes **over an
+undischarged board-build clause**, on the **physical-runner constraint** — not
+on any judgement that cx3576 is fine.
+
+**This is a disposition, and it is none of the other three things this campaign
+does to a clause.** It is not an AMENDMENT: clause 3's text is unchanged and
+says exactly what it always said. It is not a SATISFACTION: the clause is not
+made true, and no measurement here makes it true. It is not a gate's call: a
+gate states what it measured, and the decision to close over a live clause was
+taken above it. The campaign's ledger now reads six amendments, one satisfaction
+(RFCT-110's clause 3, closed by the verify image pin) and this one disposition,
+and those are three different things that should not be read as one.
+
+**Precedent: RFCT-108, M2 close.** The same physical constraint — no
+`binfmt_misc`, no builder advertising `linux/arm64` — took an applied default
+there rather than blocking the milestone, and for the same stated reason: "the
+reason is a host capability, not an implementation shortfall." This is the
+campaign's **second** use of that rule, not a one-off, which is why it is cited
+rather than re-argued.
+
+**REVERTIBLE, and here is the trigger.** The first arm64-capable host to build
+and verify cx3576 through the chain settles clause 3 one way or the other. **A
+failure there REOPENS RFCT-111.** That sentence is what makes "revertible" mean
+something: without a named trigger it is only a softer way of saying closed. The
+set to drive on that host is the unverified list above — the firmware and
+hwinit install, `kernel-and-initramfs.sh`'s `modules.tar` arm, and
+`30-feature-radios` whole, which is also clause 2's missing case.
+
+## The two axes, verified
+
+Added **after the close**, because the clarification arrived after it. The
+result is clean, so nothing here reopens anything; had it not been, this would
+have gone back as a reopening of RFCT-111 rather than into this file.
+
+**Why this was M5's to check and not an aside.** The property predates the
+campaign — PLAN-012 shipped the container engine installed-and-inert with the
+switch driven from apid/mosd; RFCT-104 added the MQTT master switch with the
+broker shipping inert — but **M5 split the rootfs into per-stage Dockerfiles,
+which is precisely the change that could sever a switch from its feature.**
+
+### Axis (a), build-time: confirmed, not re-driven
+
+Gated by M5c and recorded in `os/rootfs/stages/README.md`, "The omit-a-stage
+negative test, run". Confirmed still recorded and still describing the shipped
+mechanism; deliberately not rebuilt.
+
+### Axis (b), runtime: measured on the real chain-built x64 image at this tree
+
+**Included** — the stages are in the chain and the software is there:
+
+| | bytes |
+| --- | --- |
+| `/usr/bin/podman` | 64,709,552 |
+| `/usr/bin/mos-mqtt-broker` | 7,616,112 |
+| `/usr/bin/mos-mqttd` | 6,454,280 |
+| `/usr/lib/systemd/system/mos-mqtt-broker.service` | 5,540 |
+| `/usr/lib/systemd/system/mos-mqttd.service` | 3,747 |
+
+**Not enabled** — in the same image:
+
+- no `.wants/podman*` anywhere under the enablement trees;
+- `/etc/systemd/system/multi-user.target.wants/mos-mqttd.service` — absent;
+- `/etc/systemd/system/multi-user.target.wants/mos-mqtt-broker.service` — absent;
+- no podman systemd unit of any name (only `podman-system-generator`, which is
+  required and excluded by name).
+
+**And the register still asserts it.** All four inertness checks **ran and
+passed** on that image — `RESULT: PASS (290/290 checks, 22 skipped)`, and none
+of the four is among the skips:
+
+    PASS  container-engine-no-units      the image contains no podman systemd unit of any name
+    PASS  container-engine-not-enabled   no podman unit carries an enablement symlink
+    PASS  mqttd-not-enabled              mqttd: the bridge is NOT enabled in the image
+    PASS  mqtt-broker-not-enabled        mqtt-broker: the broker is NOT enabled in the image
+
+The register states the model itself, in the one place it declines to require
+enablement: *"the enabled-at-boot assertion for mos-mqtt-broker.service
+mos-mqttd.service: these are started by mosd from the settings tree, not by the
+image, and their own checks assert the image does NOT enable them."*
+
+### Can those four actually fail? Three answers, because parity gives none
+
+M4g reached 0 unclaimed on both boards, so no conclusion the old oracle reached
+was dropped in the port. That does **not** say the oracle's own check could
+fail, and this campaign has found vacuous passes in code green for months. So:
+
+1. **Each is driven from the failing side by the register's own suite.**
+   `checks-engine.test.ts` and `checks-mqtt.test.ts`: **66 pass, 0 fail, 395
+   `expect()` calls.** A `podman.socket` written under `/usr/lib/systemd/system`
+   turns `container-engine-no-units` red and the message names it; the same for
+   `/usr/local/lib/systemd`, which is STATE-backed and writable on the device
+   and would otherwise be exempt; a `.wants` symlink turns
+   `container-engine-not-enabled` red.
+2. **The search spaces are real, not empty.** A "this set is empty" check over a
+   directory tree that does not exist is the classic vacuous pass. Measured on
+   the shipped root: the unit trees hold **202** `.service` files, and the
+   enablement trees hold **89** symlinks across **19** `.wants` directories. The
+   four checks pass because nothing among those is podman's or mqtt's — not
+   because there was nothing to look at.
+3. **Both known vacuity shapes are already defended, in code, with the reason.**
+   `container-engine-no-units` excludes `podman-system-generator` by name, and
+   that file **is** in the shipped image, so the exclusion is exercised on every
+   run and a positive control pins it. `mqttd-not-enabled` uses `lstat` and not
+   `-e` deliberately: a `.wants` symlink points at an absolute path that
+   resolves to nothing when ROOT is an unpacked tree, so `-e` "would call a
+   present-but-dangling symlink absent — passing this check on exactly the
+   image that failed it."
+
+### The boundary, stated rather than left to be inferred
+
+What is verified here is that **the IMAGE ships the feature inert** and that
+**the REGISTER asserts that inertness and can fail if it stops being true**.
+
+**Not verified: that flipping the switch on a booted device turns the feature
+on.** That is device-side runtime behaviour, which PLAN-014:220-223 excludes,
+and establishing it needs a boot test. The evidence above is the weaker claim
+and must not be read as the stronger one: nothing here shows mosd's
+`containers.enabled` or `mqtt.enabled` actually starting anything on hardware.
 
 ## ssh is a floor capability, not a feature
 
