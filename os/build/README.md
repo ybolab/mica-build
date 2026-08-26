@@ -204,11 +204,12 @@ sectors, and the suite re-runs the comparison rather than trusting the sentence.
 
 **The gate is byte-identity against the shell, and it is met.** Same prebuilt
 `_out/x64/` inputs, same board definition, shell assembler and TypeScript
-assembler, twice each:
+assembler — seven images across three trees (the port's, the final tree, and the
+tree after M5c's rootfs-chain rewrite merged), one hash:
 
 ```
-bdf340e93a553a02ef4c1774dcba78db20520b09fc6faf5c8c76e0cb94575a8f   bash os/mkimage-x64.sh         (×2)
-bdf340e93a553a02ef4c1774dcba78db20520b09fc6faf5c8c76e0cb94575a8f   run.sh --mkimage-x64           (×3, the last at the final tree)
+bdf340e93a553a02ef4c1774dcba78db20520b09fc6faf5c8c76e0cb94575a8f   bash os/mkimage-x64.sh         (×3)
+bdf340e93a553a02ef4c1774dcba78db20520b09fc6faf5c8c76e0cb94575a8f   run.sh --mkimage-x64           (×4)
 ```
 
 The prebuilt image sitting beside those inputs hashes something else
@@ -444,7 +445,7 @@ container route — and mounts the host's docker client (a static Go binary) and
 `/var/run/docker.sock` at their own paths, so the toolbox can still start
 *sibling* containers from in there. Both routes were run to completion: 199/199
 either way at M6a, 406/406 once M6b's assembler and M5b's stage driver both
-landed, 422/422 with M5c's stage selection, and **NNN/NNN** with M6c's x64
+landed, 422/422 with M5c's stage selection, and **543/543** with M6c's x64
 assembler on top.
 
 ```
@@ -486,7 +487,7 @@ src/mkimage-x64.ts         the x64 assembler
 src/mkimage-x64-cli.ts     its host half
 src/stages.ts              os/rootfs/stages/ -> a chain: order, tags, args, and what is declined
 src/stages-cli.ts          the only file here that runs docker buildx
-src/**/*.test.ts           NNN tests; every refusal has a positive control beside it
+src/**/*.test.ts           543 tests; every refusal has a positive control beside it
 ```
 
 `HARNESS.md` carries how each guard was driven from the failing side, both bash

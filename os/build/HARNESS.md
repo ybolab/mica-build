@@ -22,8 +22,9 @@ Both routes were run to completion on 2026-08-25, this host:
 | pinned bun container (`MOS_BUILD_CONTAINER=1`) | **199/199** | 99 s |
 
 M6b added the assembler and raised the count by **158**, to 358; M5b's stage
-driver merged alongside it, taking the package to **406/406**, and M5c's stage
-SELECTION added **16** more, for **422/422** in 2 m 44 s. The
+driver merged alongside it, taking the package to **406/406**; M5c's stage
+SELECTION added **16** more, for **422/422**; and M6c's x64 assembler added
+**121**, for **543/543** in 3 m 37 s. The
 suite assembles **seven** whole cx3576 images over fabricated inputs, which is
 the price of having one full assembly in it rather than only at the gate — a
 chain that runs end to end is the thing a table of unit refusals cannot assert.
@@ -614,15 +615,23 @@ bash os/build/run.sh --mkimage-x64
 sha256sum _out/x64/x64-mos-v2-*.img
 ```
 
-Result, 2026-08-26, this host — **five images, one hash**:
+Result, 2026-08-26, this host — **seven images, one hash**:
 
 ```
 bdf340e93a553a02ef4c1774dcba78db20520b09fc6faf5c8c76e0cb94575a8f  x64-mos-v2-1787708550.img  shell
 bdf340e93a553a02ef4c1774dcba78db20520b09fc6faf5c8c76e0cb94575a8f  x64-mos-v2-1787708613.img  shell
 bdf340e93a553a02ef4c1774dcba78db20520b09fc6faf5c8c76e0cb94575a8f  x64-mos-v2-1787709504.img  TypeScript
 bdf340e93a553a02ef4c1774dcba78db20520b09fc6faf5c8c76e0cb94575a8f  x64-mos-v2-1787709624.img  TypeScript
-bdf340e93a553a02ef4c1774dcba78db20520b09fc6faf5c8c76e0cb94575a8f  x64-mos-v2-1787711949.img  TypeScript, RE-RUN AT THE FINAL TREE
+bdf340e93a553a02ef4c1774dcba78db20520b09fc6faf5c8c76e0cb94575a8f  x64-mos-v2-1787711949.img  TypeScript, re-run at the final tree
+bdf340e93a553a02ef4c1774dcba78db20520b09fc6faf5c8c76e0cb94575a8f  x64-mos-v2-1787712511.img  shell,      MERGED TREE (M5c)
+bdf340e93a553a02ef4c1774dcba78db20520b09fc6faf5c8c76e0cb94575a8f  x64-mos-v2-1787712531.img  TypeScript, MERGED TREE (M5c)
 ```
+
+**Runs 6 and 7 are the same measurement re-taken after merging M5c**, which
+rewrote the rootfs stage chain into nine stages and replaced the `WITH_*` build
+arguments with `--without NAME` stage selection. None of that is read by the
+assembler, and the hash says so rather than the sentence saying so — which is the
+same reason M6b re-took its own gate after M4c and M5b landed.
 
 **The fifth is not ceremony.** Runs 3 and 4 were taken before `espSizeFaults` was
 deleted from the assembly path and before the boot-slot comparison was extracted
@@ -683,7 +692,7 @@ mapped against the x64 layout: `esp` at 1, `boot-a` at 65, `boot-b` at 161,
 | `bash os/mkimage-x64.sh` | ~70 s |
 | `bash os/build/run.sh --mkimage-x64` | ~27 s |
 | the whole `src/mkimage-x64.test.ts` file (three full assemblies, fabricated inputs) | ~70 s |
-| `make os-build-test`, the whole suite at 527 tests | ~4 m 30 s |
+| `make os-build-test`, the whole suite at 543 tests | ~3 m 37 s |
 
 ## Every x64 refusal, and the mutation that drives it red
 
