@@ -57,7 +57,7 @@
 
 import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { ARTIFACTS, pinCoverageFaults, type Artifact } from './smoke-register.ts'
+import { ARTIFACTS, pinCoverageFaults, unclaimedFaults, type Artifact } from './smoke-register.ts'
 import type { Pin } from './smoke-pins.ts'
 import { REPO_ROOT } from './paths.ts'
 
@@ -155,6 +155,46 @@ export function pinSource(file: string): string {
 export function versionTokens(line: string): string[] {
   return [...line.matchAll(/(?<![.0-9])[0-9]+(?:\.[0-9]+)+/g)].map(m => m[0])
 }
+
+/**
+ * THE COMMIT HALF: PRINTED BY M7b, ASSERTED SINCE M7d — and what had to be
+ * built in between.
+ *
+ * M7b measured that there was nothing to assert against, with a positive
+ * control on the search. `_out/<board>/factory-root.txt` carried ref, platform,
+ * target, archive, bytes, sha256 and source-date-epoch; `rootfs-stages.txt`
+ * per-stage content hashes; `rootfs-verity.env` verity parameters. A grep for
+ * `rev-parse|git describe|GIT_COMMIT|VCS_REF|SOURCE_COMMIT` across
+ * `os/rootfs/build-v2.sh` and all of `os/build/src/*.ts` -- 39 files --
+ * returned nothing, while the same grep shape hit `docs/plan/PLAN-014.md`
+ * twice, so the search worked and the absence was real. With no recorded build
+ * fact, M7b printed the reported line verbatim and asserted nothing about it.
+ * That was the correct half of the requirement to implement at the time.
+ *
+ * M7b ALSO REFUSED THE ALTERNATIVE BY NAME, and that refusal still stands:
+ * comparing the reported sha against `git rev-parse HEAD` at run time is
+ * trivially green on any freshly built tree. It asserts that somebody just
+ * built, not that the embedding works.
+ *
+ * M7d CLOSED THE GAP BY BUILDING THE MISSING FACT, not by weakening the
+ * comparison -- `os/rootfs/build-v2.sh` is not `mosd/` and was never excluded.
+ * `mosd/hack/build-target.sh` writes the commit it handed the compiler into
+ * `_out/mosd-build.txt`, build-v2.sh copies it to `_out/<board>/mosd-build.txt`
+ * beside the factory root, `readMosdBuildFact` reads it back and `judge`
+ * compares the two. See `BuildCommitFact`.
+ *
+ * THE PRINTED-ONLY STATE IS KEPT AS A BRANCH rather than deleted: when the
+ * record is absent -- a hand-assembled `_out/`, an image from before M7d -- the
+ * runner says so on its own first lines and the row says `commit was NOT
+ * asserted`. And the reported line is still carried verbatim into every version
+ * verdict (`[said: ...]`), because a commit the runner cannot check is still one
+ * a reader must be able to see.
+ *
+ * ONE MEASURED LIMIT, from M7b and unchanged: `mosd 0.1.0-rc.1 (abc1234)`
+ * yields the numeric head only, so a pre-release pin and output would go RED
+ * naming both sides -- visible rather than a silent pass. Neither crate takes a
+ * pre-release version today; if one does, `versionTokens` is where to look.
+ */
 
 /**
  * Whether a `--version` line reports EXACTLY this commit.
@@ -270,7 +310,13 @@ export function judge(artifact: Artifact, pin: Pin, outcome: ExecResult, build?:
   const line = firstLine(outcome.stdout)
   const tokens = versionTokens(line)
   if (tokens.includes(pin.expected)) {
-    const version = `exit 0, reports ${pin.expected} == ${pin.key}=${pin.recorded} in ${pinSource(pin.file)}`
+    // `[said: ...]` is M7b's, and it stays on EVERY version row rather than
+    // only the two that carry a commit: a runner that asserts a thing must
+    // still show what it read, and the rows that assert no commit are exactly
+    // the ones where the printed line is the only record of one.
+    const version =
+      `exit 0, reports ${pin.expected} == ${pin.key}=${pin.recorded} in ${pinSource(pin.file)} `
+      + `[said: ${JSON.stringify(line)}]`
     // THE SECOND HALF, for the two artifacts that carry a build commit. It is
     // asserted only against a RECORDED build fact, never against the working
     // tree's HEAD -- see BuildCommitFact for why that distinction is the whole
@@ -285,8 +331,8 @@ export function judge(artifact: Artifact, pin: Pin, outcome: ExecResult, build?:
         kind: 'version',
         verdict: 'pass',
         message:
-          `${version}. Its commit was NOT asserted: ${build?.source ?? 'no build record was supplied to this run'}. `
-          + `The line it printed was ${JSON.stringify(line)}.`,
+          `${version}. Its commit was NOT asserted: `
+          + `${build?.source ?? 'no build record was supplied to this run'}.`,
       }
     }
     if (reportsCommit(line, recorded)) {
@@ -361,6 +407,15 @@ export function conclude(results: readonly SmokeResult[], expected: number): Con
     unclaimed: results.filter(r => r.verdict === 'unclaimed').length,
     total: results.length,
   }
+
+  // THE NAMES, NOT JUST THE NUMBER. A category with a count and no members
+  // decays into background noise: "2 unclaimed" is a thing a reader stops
+  // seeing after the third run, and "mosd, apid" is a thing they can act on.
+  // It matters more than usual here because this run's steady state is
+  // non-zero -- the number is the part that will be habituated to, so the
+  // names go on the RESULT line itself and not only in the table above it.
+  const named = (verdict: Verdict): string =>
+    results.filter(r => r.verdict === verdict).map(r => r.name).join(', ')
   if (expected <= 0 || counts.total !== expected) {
     return {
       conclusion: 'FAIL',
@@ -377,7 +432,10 @@ export function conclude(results: readonly SmokeResult[], expected: number): Con
       conclusion: 'FAIL',
       exitCode: 1,
       counts,
-      line: `RESULT: FAIL (${counts.pass} pass, ${counts.fail} fail, ${counts.unclaimed} unclaimed, of ${counts.total})`,
+      line:
+        `RESULT: FAIL (${counts.pass} pass, ${counts.fail} fail, ${counts.unclaimed} unclaimed, of ${counts.total}). `
+        + `FAILED: ${named('fail')}.`
+        + (counts.unclaimed > 0 ? ` UNCLAIMED: ${named('unclaimed')}.` : ''),
     }
   }
   if (counts.unclaimed > 0) {
@@ -387,6 +445,7 @@ export function conclude(results: readonly SmokeResult[], expected: number): Con
       counts,
       line:
         `RESULT: INCOMPLETE (${counts.pass} pass, 0 fail, ${counts.unclaimed} unclaimed, of ${counts.total}). `
+        + `UNCLAIMED: ${named('unclaimed')}. `
         + `Nothing failed and not everything was asked. An unclaimed artifact is not a pass and is `
         + `not a skip: RFCT-113 requires a reported version from every one of them, and this run `
         + `exits non-zero so that a gate cannot be held by a summary with holes in it.`,
@@ -740,6 +799,14 @@ export interface SmokeRunOptions {
    * would be to weaken the coverage check for everybody.
    */
   readonly files?: readonly string[]
+  /**
+   * Which artifacts are authorised to be `unclaimed`.
+   *
+   * A parameter for the same reason `artifacts` and `files` are: the refusal
+   * has to be reachable from a test, and a guard that can only fire when the
+   * shipped register is wrong is a guard nobody has ever run.
+   */
+  readonly allowUnclaimed?: readonly string[]
   /** Supplied by the suite; the CLI builds a dockerExec. */
   readonly exec?: Exec
   /**
@@ -772,6 +839,19 @@ export interface SmokeRunOptions {
 export async function smokeRun(opts: SmokeRunOptions): Promise<{ results: SmokeResult[]; conclusion: Conclusion }> {
   const log = opts.log ?? ((l: string) => console.log(l))
   const artifacts = opts.artifacts ?? ARTIFACTS
+
+  // Who may go unasked, before what may go unexecuted. Both are questions about
+  // the register rather than about the image, and both are answered before a
+  // container starts -- a run that executed eleven things and then discovered
+  // its twelfth was silently excused has already produced the output somebody
+  // would quote.
+  const unclaimed = unclaimedFaults(artifacts, opts.allowUnclaimed)
+  if (unclaimed.length > 0) {
+    throw new Error(
+      `the smoke register marks artifacts unclaimed that nothing authorised, so nothing was executed:\n`
+      + unclaimed.map(f => `         ${f.file}: ${f.message}`).join('\n'),
+    )
+  }
 
   const faults = opts.files === undefined
     ? pinCoverageFaults(artifacts)

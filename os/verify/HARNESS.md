@@ -1154,3 +1154,141 @@ locked in; the left guard, which is load-bearing, stays.
 
 The register-vs-pins case asserts that **nothing was executed** — the fake `Exec`
 counts its calls and the count is 0 — rather than only that an error was thrown.
+
+### The unclaimed category cannot grow silently, and that is enforced twice
+
+`unclaimed` is the verdict that lets a run stay non-green without failing, and a
+category like that decays in one direction only: something loses its
+`--version`, somebody marks it unclaimed to get the pipeline moving, and the
+gate quietly stops asking. Nothing about the resulting run looks different — the
+summary already says INCOMPLETE, it just says it about three things instead of
+two.
+
+So the set is **declared** in `EXPECTED_UNCLAIMED`, `unclaimedFaults` refuses any
+run whose register disagrees with it, and `smokeRun` calls that **before a
+container starts**. Adding a third costs three edits in one diff — the register
+entry, the constant, and the lock in `smoke-register.test.ts`.
+
+**It is never inferred.** There is deliberately no code path that computes "this
+binary did not answer, so call it unclaimed". A binary that is asked for a
+version and does not give one is a **FAIL**. That is the difference between a
+regression and a category membership somebody chose.
+
+Both directions fail, including the good one: an artifact that *gains* a
+`--version` and is still listed in `EXPECTED_UNCLAIMED` refuses too, because the
+constant is the record of what is outstanding and a stale record understates the
+gap. When M7d's handlers land, mosd and apid move UNCLAIMED → PASS and the
+constant becomes empty — **which is what proves the fix landed**, and the reason
+this classification is a mechanism rather than a placeholder.
+
+**The names are on the RESULT line, not just the count**:
+
+    RESULT: INCOMPLETE (10 pass, 0 fail, 2 unclaimed, of 12). UNCLAIMED: mosd, apid. …
+
+A count alone habituates. This run's steady state is non-zero until M7d lands,
+so the number is precisely the part a reader stops seeing.
+
+### catatonit: the normalisation, stated
+
+The pin is `CATATONIT_VERSION=v0.2.1`; the binary says
+`tini version 0.2.1_catatonit`. Neither string contains the other, so the
+comparison takes two deliberate steps and exactly two:
+
+| side | step | result |
+|------|------|--------|
+| pin | `expectedFromRecorded` strips a leading `v` followed by a digit | `v0.2.1` → `0.2.1` |
+| output | `versionTokens` takes maximal digit-and-dot runs | `tini version 0.2.1_catatonit` → `["0.2.1"]` |
+
+Then `"0.2.1" === "0.2.1"` — **equality against an extracted token, never a
+substring test**. `_catatonit` is upstream's fork marker; it terminates the token
+rather than being trimmed by a rule written for this one artifact.
+
+**A loose `includes()` on the raw line would pass on almost anything**, and the
+suite proves it rather than asserting it: `"tini version 0.2.1_catatonit"`
+contains `0.2`, `2.1`, `0.2.1_cat` and `version 0.2.1`, and the test requires
+`judge` to go **red** on every one of those as a pin while the loose test goes
+green. The skew is caught in the other direction too — a `0.2.1` binary does not
+satisfy a `0.2.10` pin.
+
+Scope's **premise** is recorded as measured-false — "static, no `--version`
+contract" is not what the binary does. Its **instruction** is untouched, and so
+is the clause text. Recording that a stated fact is false is a measurement; a
+gate may make one.
+
+### The commit half — PRINTED, not asserted, and why that is the honest one
+
+M7d's handlers will report the git commit beside the version —
+`mosd 0.1.0 (abc1234)`, `-dirty` when the worktree was, `unknown` when absent.
+The requirement is that it be *asserted equal to the commit the artifact was
+built from **when that fact is available to the runner**, and merely printed
+otherwise.*
+
+**It is not available.** Measured, with a positive control on the search: no git
+provenance is recorded by the build at all. `factory-root.txt` carries ref,
+platform, target, archive, bytes, sha256 and source-date-epoch;
+`rootfs-stages.txt` carries per-stage content hashes; `rootfs-verity.env` carries
+verity parameters; `rootfs-report-v2.txt` is a package inventory. A grep for
+`rev-parse|git describe|GIT_COMMIT|VCS_REF|SOURCE_COMMIT` across
+`os/rootfs/build-v2.sh` and all of `os/build/src/*.ts` — 39 files — returns
+nothing, while the same grep shape hits `docs/plan/PLAN-014.md` twice.
+
+**So it is printed and nothing claims to have checked it.** The whole reported
+line is carried into the verdict message verbatim:
+
+    PASS  catatonit  …  reports 0.2.1 == CATATONIT_VERSION=v0.2.1  [said: "tini version 0.2.1_catatonit"]
+
+**The alternative is refused by name.** Comparing the reported sha against
+`git rev-parse HEAD` at run time would be trivially green on any freshly built
+tree: it would assert that somebody just built, not that the embedding works. A
+binary built three commits ago would go red for being stale rather than wrong,
+and one built from this commit would go green whether the handler embedded a real
+sha or echoed the environment. Closing the assertion needs a recorded build fact
+to exist first — a change to the **build**, not to the runner.
+
+The parser was **measured** against the coming shape rather than reasoned about,
+because reasoning is what put a redundant guard in it once already:
+
+| line | tokens |
+|------|--------|
+| `mosd 0.1.0 (abc1234)` | `["0.1.0"]` |
+| `mosd 0.1.0-dirty (abc1234-dirty)` | `["0.1.0"]` |
+| `apid 0.1.0 (unknown)` | `["0.1.0"]` |
+| `mosd 0.1.0 (0123456)` — all-digit sha | `["0.1.0"]` |
+| `mosd 0.10.0 (abc1234)` | `["0.10.0"]` |
+| `mosd 0.1.0-rc.1 (abc1234)` | `["0.1.0"]` — a **recorded limit** |
+
+The last is a boundary rather than a bug: a pre-release pin and a pre-release
+output would both carry the suffix, the token would be the numeric head only, and
+the run would go **red naming both sides**. Visible, not a silent pass.
+
+### Two more guards, and the one the mutation sweep caught
+
+Sweeping the new guards the same way found a hole immediately: with
+`unclaimedFaults` still correct but **no longer called by `smokeRun`**, the whole
+suite stayed green. Every case was testing the function; none was testing that
+the runner asks it. *A guard nothing calls is a guard nobody has run* — the same
+defect one level up from a guard nothing can drive red. The missing case is now
+there, and it asserts the call count is 0 with a positive control that moves it.
+
+| mutation | effect |
+|----------|--------|
+| `unclaimedFaults` always returns clean | red |
+| the RESULT line stops naming the unclaimed | red |
+| the FAIL line stops naming what failed | red |
+| the PASS message stops carrying the reported line | red |
+| `smokeRun` stops calling `unclaimedFaults` | red *(was green until the case above was written)* |
+
+### `grep` skips files it calls binary, so a grep sweep can be vacuous
+
+Two NUL bytes got into `smoke-register.ts` during editing —
+`actual.join('\0')` where `actual.join(' ')` was written. Behaviour was
+unaffected, since both sides of the comparison used the same separator, and the
+suite stayed green. What it *did* do was make `grep` classify the file as binary
+and **silently skip it**: the repository-relative path sweep run over the ten
+changed files had been blind to one of them and said nothing about it. Re-run
+with `grep -a`, the sweep found 47 distinct path references instead of 44.
+
+The byte is fixed and the sweep is binary-safe. The lesson is the general one:
+a sweep that reports "no findings" has to be able to say how much it looked at,
+because `grep` declining to read a file looks exactly like a file with nothing
+in it.

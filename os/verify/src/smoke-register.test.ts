@@ -10,7 +10,13 @@ import { afterAll, beforeAll, describe, expect, test } from 'bun:test'
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { REPO_ROOT } from './paths.ts'
-import { ARTIFACTS, pinCoverageFaults, type Artifact } from './smoke-register.ts'
+import {
+  ARTIFACTS,
+  EXPECTED_UNCLAIMED,
+  pinCoverageFaults,
+  unclaimedFaults,
+  type Artifact,
+} from './smoke-register.ts'
 import { PODMAN_VERSIONS_ENV, RAUC_VERSIONS_ENV, pinKeys, VERSIONS_ENV_FILES } from './smoke-pins.ts'
 
 let SCRATCH = ''
@@ -81,15 +87,21 @@ describe('the register names what RFCT-113 names', () => {
     }
   })
 
-  // WHAT THIS ASSERTION USED TO SAY, and why the change is the milestone.
+  // THE LOCK, AND THE EDIT IT WAS BUILT TO FORCE.
   //
-  // Until RFCT-113 M7d it read `expect(unclaimed.sort()).toEqual(['apid',
-  // 'mosd'])`, with the comment "asserted so that the day someone adds
-  // --version to mosd, this test fails and points at the register entry that
-  // should stop saying otherwise". That day was 2026-08-26: the user lifted
-  // PLAN-014's exclusion on `mosd/` Rust sources for exactly a `--version`
-  // handler, both binaries got one, and this test went RED exactly as M7b built
-  // it to. This is the edit it was pointing at.
+  // M7b wrote this as `expect(unclaimed.sort()).toEqual(['apid', 'mosd'])` and
+  // said what would happen next: "This is one of the three edits that adding a
+  // third unclaimed artifact costs -- the register entry, EXPECTED_UNCLAIMED,
+  // and this line ... When M7d's --version handlers land, mosd and apid move to
+  // PASS and this expectation becomes `[]`, which is what proves the fix
+  // landed."
+  //
+  // That is this diff. The user lifted PLAN-014's `mosd/` exclusion on
+  // 2026-08-26 for exactly a `--version` handler, both binaries got one, and
+  // all three moved together: the two register entries, EXPECTED_UNCLAIMED, and
+  // this line. The lock did its job in the direction it was hardest to get
+  // right -- the GOOD one -- because `unclaimedFaults` refuses a stale record
+  // even when the change it is stale about is a fix.
   test('every artifact is asked for a version, and none is unclaimed', () => {
     expect(ARTIFACTS.filter(a => a.contract.kind === 'unclaimed').map(a => a.name)).toEqual([])
     for (const a of ARTIFACTS) {
@@ -120,6 +132,115 @@ describe('the register names what RFCT-113 names', () => {
     const silent = ARTIFACTS.filter(a => a.embedsBuildCommit !== true)
     expect(silent.length).toBe(ARTIFACTS.length - 2)
     expect(silent.map(a => a.name)).not.toContain('mosd')
+  })
+})
+
+describe('unclaimedFaults -- the category that must not grow silently', () => {
+  /**
+   * A register with one unclaimed entry, for the cases the SHIPPED register can
+   * no longer reach.
+   *
+   * RFCT-113 M7d emptied EXPECTED_UNCLAIMED, so `unclaimedFaults()` over the
+   * shipped register now compares two empty sets -- and a green over two empty
+   * sets is exactly what an authorisation list that had quietly emptied ITSELF
+   * would produce. M7b's own vacuity control said as much while both sets were
+   * populated. So every direction below is driven from this fixture instead,
+   * where the search space is stated and non-empty.
+   */
+  const withUnclaimed = (name: string) =>
+    ARTIFACTS.map(a =>
+      a.name === name
+        ? { ...a, contract: { kind: 'unclaimed' as const, why: 'MEASURED: fabricated for this case' } }
+        : a)
+
+  test('the shipped register matches what EXPECTED_UNCLAIMED authorises', () => {
+    expect(unclaimedFaults()).toEqual([])
+    // AND WHAT THAT GREEN IS NOW A STATEMENT ABOUT, stated rather than left to
+    // be assumed: both sets are EMPTY, which is the post-M7d steady state and
+    // the strictest the guard can be -- nothing may go unasked at all.
+    expect(EXPECTED_UNCLAIMED.length).toBe(0)
+    expect(ARTIFACTS.filter(a => a.contract.kind === 'unclaimed').length).toBe(0)
+    // ...and the register it concluded that over is not itself empty.
+    expect(ARTIFACTS.length).toBe(SCOPE_ARTIFACTS.length)
+  })
+
+  // THE GREEN ABOVE IS NOT VACUOUS, because the same function over a populated
+  // pair still agrees, and over a mismatched pair still refuses. Without this,
+  // `unclaimedFaults` could have been replaced by `() => []` and every case in
+  // this block that follows would still pass on the shipped register.
+  test('over a POPULATED pair it still agrees, and a mismatched pair still refuses', () => {
+    const one = withUnclaimed('conmon')
+    expect(one.filter(a => a.contract.kind === 'unclaimed').map(a => a.name)).toEqual(['conmon'])
+    expect(unclaimedFaults(one, ['conmon'])).toEqual([])
+    expect(unclaimedFaults(one, ['crun']).length).toBe(1)
+  })
+
+  // THE DIRECTION THAT MATTERS: something new goes unasked.
+  test('a THIRD unclaimed artifact refuses the run, and says it is a FAIL not a category', () => {
+    const withRogue = ARTIFACTS.map(a =>
+      a.name === 'crun'
+        ? { ...a, contract: { kind: 'unclaimed' as const, why: 'it stopped answering one day' } }
+        : a)
+    // The mutation is a mutation: crun really was a version entry.
+    expect(ARTIFACTS.find(a => a.name === 'crun')!.contract.kind).toBe('version')
+    expect(withRogue.find(a => a.name === 'crun')!.contract.kind).toBe('unclaimed')
+
+    const faults = unclaimedFaults(withRogue)
+    expect(faults.length).toBe(1)
+    expect(faults[0]!.message).toContain('crun')
+    expect(faults[0]!.message).toMatch(/is a FAIL, not a category/)
+  })
+
+  // THE OTHER DIRECTION, which is the GOOD one and still fails: a stale
+  // authorisation record understates the gap.
+  //
+  // THIS IS THE CASE M7d ACTUALLY HIT. Merging M7b's lock into a tree whose
+  // handlers had already landed made the shipped register disagree with
+  // EXPECTED_UNCLAIMED in exactly this direction, and `unclaimedFaults` refused
+  // every smoke run until the constant was emptied -- nine red cases, from one
+  // stale list. The guard worked on the change it was hardest to get right.
+  //
+  // It is driven from the SHIPPED register against a stale authorisation now,
+  // rather than from a mutated register against the shipped one, because
+  // post-M7d nothing in the register is unclaimed to un-claim.
+  test('an artifact that GAINS a version contract also refuses, until the record is updated', () => {
+    // The premise is a premise: mosd really is asked for a version now.
+    expect(ARTIFACTS.find(a => a.name === 'mosd')!.contract.kind).toBe('version')
+
+    const faults = unclaimedFaults(ARTIFACTS, ['mosd'])
+    expect(faults.length).toBe(1)
+    expect(faults[0]!.message).toContain('mosd')
+    expect(faults[0]!.message).toMatch(/GOOD direction/)
+  })
+
+  test('and with the record updated too, it is clean -- which is what M7d landing looks like', () => {
+    // The exact pair the previous case refused, with the record caught up: the
+    // authorisation emptied to match a register that asks everything.
+    expect(ARTIFACTS.filter(a => a.contract.kind === 'unclaimed').length).toBe(0)
+    expect(unclaimedFaults(ARTIFACTS, [])).toEqual([])
+    // And the same pair with the stale entry still in it is NOT clean, so the
+    // line above is about the record having moved and not about `[]` being
+    // agreeable to everything.
+    expect(unclaimedFaults(ARTIFACTS, ['mosd', 'apid']).length).toBe(1)
+  })
+
+  test('nothing infers the category at runtime -- an unclaimed entry is a literal', () => {
+    // The requirement is that a binary which LOSES its --version becomes a
+    // FAIL rather than joining the category. That is a property of there being
+    // no inference path at all: `checkArtifact` reads `contract.kind` off the
+    // register and never writes it.
+    //
+    // M7b asserted this as a shape over the shipped register's unclaimed
+    // entries -- every one carries a hand-written `why` that no runtime path
+    // could produce. Post-M7d there are none, and a `for` loop that `continue`s
+    // over every element is a test that cannot fail. So the shipped set is
+    // asserted EMPTY, and the shape is asserted over the fixture instead.
+    expect(ARTIFACTS.filter(a => a.contract.kind === 'unclaimed')).toEqual([])
+    const one = withUnclaimed('conmon').filter(a => a.contract.kind === 'unclaimed')
+    expect(one.length).toBe(1)
+    for (const a of one) {
+      expect(a.contract.kind === 'unclaimed' ? a.contract.why : '').toContain('MEASURED')
+    }
   })
 })
 

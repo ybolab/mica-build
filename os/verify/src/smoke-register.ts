@@ -240,30 +240,61 @@ export const ARTIFACTS: readonly Artifact[] = [
     contract: { kind: 'version', argv: ['--version'] },
   },
   {
-    // CATATONIT IS A `version` ENTRY AND SCOPE SAYS "exec-only". Here is why
-    // that is a discharge of Scope rather than a departure from it, because it
-    // is the one place this register knowingly does MORE than the sentence
-    // above it asks.
+    // CATATONIT IS A `version` ENTRY AND SCOPE SAYS "exec-only". Ruled by the
+    // user on L2's recommendation: BOTH checks, Scope's PREMISE recorded as
+    // measured-false, and the clause text left exactly as written.
     //
-    // Scope's reason is stated: "catatonit (static, no --version contract)".
-    // MEASURED in the x64 factory root, that premise is false --
-    // `/usr/libexec/podman/catatonit --version` exits 0 and prints
-    // `tini version 0.2.1_catatonit` (catatonit is a fork of tini and keeps its
-    // banner), against CATATONIT_VERSION=v0.2.1.
+    // WHAT IS WRONG WITH SCOPE IS ITS PREMISE, NOT ITS INSTRUCTION, and the
+    // distinction is the whole reason this is a correction a gate may make
+    // rather than an amendment it may not. Scope's parenthesis reads "catatonit
+    // (static, no --version contract)". MEASURED in the x64 factory root on
+    // 2026-08-26: `/usr/libexec/podman/catatonit --version` exits 0 and prints
+    // `tini version 0.2.1_catatonit` -- catatonit is a fork of tini and keeps
+    // its banner. The contract exists. Recording that a stated fact is false is
+    // a measurement; rewriting the sentence built on it would be an amendment,
+    // and nothing here does the second.
     //
     // And the Acceptance clause points the other way from the Scope bullet.
     // "The version loop is closed: bumping a `versions.env` pin without
     // rebuilding the artifact turns the smoke run red" is FALSE for
     // CATATONIT_VERSION if nothing here reads it -- the pin would be a value
-    // with no reader, which is the same defect as a check with no subject.
+    // with no reader, which is the same defect class as a check that cannot
+    // fail.
     //
     // The exec-only conjunct is DISCHARGED, not dropped: a `version` contract
     // asserts exit 0 exactly as an `exec` one does, and asserts the output on
     // top. Scope says catatonit "gets an exec-only check", not "gets only an
-    // exec-only check". If upstream ever removes the banner this entry goes red
-    // with a message naming the output it got, which is a one-line register
-    // change and a visible one -- rather than a pin nobody would notice had
-    // stopped being checked.
+    // exec-only check".
+    //
+    // ═══ THE NORMALISATION, STATED, BECAUSE THIS IS WHERE IT COULD GO SOFT ═══
+    //
+    // The pin is `CATATONIT_VERSION=v0.2.1` and the binary says
+    // `tini version 0.2.1_catatonit`. Neither string contains the other, so the
+    // comparison needs two deliberate steps and it gets exactly two:
+    //
+    //   PIN SIDE     `expectedFromRecorded` strips a leading `v` that is
+    //                immediately followed by a digit: `v0.2.1` -> `0.2.1`.
+    //                It is the git TAG prefix and no `--version` output in this
+    //                image carries it.
+    //   OUTPUT SIDE  `versionTokens` takes MAXIMAL runs of digits-and-dots out
+    //                of the reported line: `tini version 0.2.1_catatonit` ->
+    //                exactly `["0.2.1"]`. The `_catatonit` suffix is upstream's
+    //                fork marker, it is not part of the version number, and it
+    //                terminates the token rather than being trimmed by a rule
+    //                written for this one artifact.
+    //
+    // Then `"0.2.1" === "0.2.1"` -- EQUALITY against an extracted token, never
+    // a substring test. A LOOSE `includes()` ON THE RAW LINE WOULD PASS ON
+    // ALMOST ANYTHING: `"tini version 0.2.1_catatonit".includes("0.2.1")` is
+    // true, and so is `.includes("0.2")`, and so is `.includes("2.1")`, and a
+    // pin of `0.2.10` would be satisfied by a `0.2.1` binary in the other
+    // direction. That is a version check that cannot fail, and
+    // `smoke.test.ts` drives THIS artifact from the failing side with a wrong
+    // pin rather than trusting the shape.
+    //
+    // If upstream ever removes the banner this entry goes red with a message
+    // naming the output it got -- a one-line register change and a visible one,
+    // rather than a pin nobody would notice had stopped being checked.
     name: 'catatonit',
     path: '/usr/libexec/podman/catatonit',
     pin: podman('CATATONIT_VERSION'),
@@ -271,10 +302,100 @@ export const ARTIFACTS: readonly Artifact[] = [
   },
 ]
 
+/**
+ * THE ONLY ARTIFACTS ALLOWED TO BE `unclaimed`, and the record of who allowed it.
+ *
+ * A SECOND PLACE TO EDIT, ON PURPOSE, and the one deliberate duplication in
+ * this file. Everything else here is written once precisely so it cannot drift;
+ * this is written twice precisely so it cannot MOVE without somebody deciding
+ * that it should.
+ *
+ * WHAT IT DEFENDS. `unclaimed` is the verdict that lets the run stay
+ * non-green without failing, and a category like that decays in one direction
+ * only: something loses its `--version`, somebody marks it unclaimed to get the
+ * pipeline moving, and the gate quietly stops asking. Nothing about the
+ * resulting run looks different -- the summary already says INCOMPLETE, it just
+ * says it about three things instead of two. So the set is DECLARED, and
+ * `pinCoverageFaults` refuses any run whose register disagrees with this list.
+ * Adding a third means editing the entry AND this constant AND the lock in
+ * smoke-register.test.ts: three edits, in one diff, that a reviewer reads.
+ *
+ * IT IS NEVER INFERRED. There is deliberately no code path that computes
+ * "this binary did not answer, so call it unclaimed" -- that is the runtime
+ * inference the classification exists to prevent, and it would turn a REGRESSION
+ * (a binary that lost its `--version`) into a category membership nobody chose.
+ * A binary that is asked for a version and does not give one is a FAIL.
+ *
+ * IT HELD apid AND mosd, AND IT IS NOW EMPTY -- which is the proof the fix
+ * landed, and the reason this classification is a mechanism rather than a
+ * placeholder. M7b wrote the constant with that outcome named in advance:
+ * "M7d writes those handlers. When they land, both names move from UNCLAIMED to
+ * PASS and this constant becomes empty."
+ *
+ * The user LIFTED PLAN-014's `mosd/` exclusion on 2026-08-26 for exactly one
+ * change -- a `--version` handler in `mosd/mosd/src/main.rs` and
+ * `mosd/apid/src/main.rs` that reports the crate version and exits 0 BEFORE any
+ * daemon initialisation, provisioning, bus connection or key generation. That
+ * ordering was the point: what M7b measured is not merely that the two could
+ * not answer, but that ASKING MUTATED -- mosd wrote a hostname and a seeded
+ * generation into /var/lib/mos, apid generated a TLS keypair and a session
+ * signing key. Re-measured after M7d landed: both answer in ~250ms with rc=0
+ * and /var/lib/mos is never created. The entries above carry the numbers.
+ *
+ * EMPTY IS NOT DEAD. `unclaimedFaults` still refuses any run whose register
+ * marks something unclaimed, and an empty authorisation makes that STRICTER
+ * rather than weaker: nothing may go unasked without this constant, a register
+ * entry and the lock in smoke-register.test.ts all moving in one diff. The
+ * green it now produces is over two empty sets, so smoke-register.test.ts
+ * drives both directions from fixtures rather than resting on it.
+ */
+export const EXPECTED_UNCLAIMED: readonly string[] = []
+
 /** A register/pin-file disagreement, in the words the runner refuses with. */
 export interface CoverageFault {
   readonly file: string
   readonly message: string
+}
+
+/**
+ * The register's `unclaimed` set against the list that authorises it.
+ *
+ * Separate from `pinCoverageFaults` because it is a different question -- that
+ * one asks whether the register and the pin files agree about which artifacts
+ * exist, this one asks whether anybody decided that an artifact may go
+ * unasked. Both are called by `smokeRun` before anything is executed.
+ */
+export function unclaimedFaults(
+  artifacts: readonly Artifact[] = ARTIFACTS,
+  allowed: readonly string[] = EXPECTED_UNCLAIMED,
+): CoverageFault[] {
+  const actual = artifacts.filter(a => a.contract.kind === 'unclaimed').map(a => a.name).sort()
+  const want = [...allowed].sort()
+  if (actual.join(' ') === want.join(' ')) return []
+
+  const added = actual.filter(n => !want.includes(n))
+  const removed = want.filter(n => !actual.includes(n))
+  const parts: string[] = []
+  if (added.length > 0) {
+    parts.push(
+      `${added.join(', ')} ${added.length === 1 ? 'is' : 'are'} marked unclaimed and NOT in `
+      + `EXPECTED_UNCLAIMED. An artifact may only go unasked if somebody decided it should: an `
+      + `unclaimed entry is the one verdict that keeps a run non-green without failing it, so a `
+      + `set that can grow on its own is a gate that can stop asking on its own. If this is `
+      + `deliberate, add the name to EXPECTED_UNCLAIMED and to the lock in `
+      + `smoke-register.test.ts, and record who decided. If it is a binary that LOST its `
+      + `--version, it is a FAIL, not a category.`,
+    )
+  }
+  if (removed.length > 0) {
+    parts.push(
+      `${removed.join(', ')} ${removed.length === 1 ? 'is' : 'are'} in EXPECTED_UNCLAIMED and no `
+      + `longer marked unclaimed. That is the GOOD direction -- it is what landing a --version `
+      + `handler looks like -- and it still fails here, because the constant is the record of what `
+      + `is outstanding and a stale record understates the gap. Remove the name and say so.`,
+    )
+  }
+  return [{ file: 'os/verify/src/smoke-register.ts', message: parts.join(' ') }]
 }
 
 /**
