@@ -150,6 +150,52 @@ describe('versionTokens -- one reader for ten different sentences', () => {
   test('several versions on one line are all offered', () => {
     expect(versionTokens('client 1.2.3, server 4.5.6')).toEqual(['1.2.3', '4.5.6'])
   })
+
+  // ═══ THE SHAPE M7d WILL EMIT — MEASURED, NOT REASONED ABOUT ═══
+  //
+  // M7d's mosd/apid `--version` handlers report the git commit alongside the
+  // crate version: `mosd <version> (<short-sha>)`, `-dirty` when the worktree
+  // was, `unknown` when the value is absent. Nothing here hard-codes a
+  // `name X.Y.Z` shape, so the parser should already take it -- but "should
+  // already" is exactly the reasoning that put a redundant right-hand guard in
+  // this function, so these are run rather than argued.
+  test('a version line carrying a git short-sha yields the version and not the sha', () => {
+    expect(versionTokens('mosd 0.1.0 (abc1234)')).toEqual(['0.1.0'])
+    expect(versionTokens('mosd 0.1.0-dirty (abc1234-dirty)')).toEqual(['0.1.0'])
+    expect(versionTokens('apid 0.1.0 (unknown)')).toEqual(['0.1.0'])
+  })
+
+  test('an ALL-DIGIT short sha is still not a version token', () => {
+    // The case that would break a looser reader: a sha can be seven digits.
+    // It has no dot, so it cannot form a token, and the version is unambiguous.
+    expect(versionTokens('mosd 0.1.0 (0123456)')).toEqual(['0.1.0'])
+    expect(versionTokens('mosd 0.1.0 (1234567-dirty)')).toEqual(['0.1.0'])
+  })
+
+  test('two-digit components survive the sha suffix', () => {
+    expect(versionTokens('mosd 0.10.0 (abc1234)')).toEqual(['0.10.0'])
+  })
+
+  // A MEASURED LIMIT, recorded rather than discovered later. If a crate ever
+  // takes a pre-release version the pin and the output would BOTH carry the
+  // suffix, the token would be the numeric head only, and this run would go
+  // RED naming both sides -- visible, not a silent pass. Stated so M7d knows
+  // the boundary without having to find it.
+  test('a pre-release suffix is NOT part of the token, and that is a red not a pass', () => {
+    expect(versionTokens('mosd 0.1.0-rc.1 (abc1234)')).toEqual(['0.1.0'])
+    const r = judge(versionArtifact(), pin('0.1.0-rc.1'), ok('mosd 0.1.0-rc.1 (abc1234)'))
+    expect(r.verdict).toBe('fail')
+    expect(r.message).toContain('expected 0.1.0-rc.1')
+  })
+
+  test('the reported line is carried into the PASS message, so a commit half is PRINTED', () => {
+    // The commit half is printed and never asserted -- see
+    // COMMIT_HALF_IS_PRINTED_NOT_ASSERTED in smoke.ts for which of the two this
+    // is and why comparing against `git rev-parse HEAD` would be vacuous.
+    const r = judge(versionArtifact(), pin('0.1.0'), ok('mosd 0.1.0 (abc1234)'))
+    expect(r.verdict).toBe('pass')
+    expect(r.message).toContain('mosd 0.1.0 (abc1234)')
+  })
 })
 
 describe('firstLine', () => {
@@ -288,6 +334,59 @@ describe('judge -- the exec-only and unclaimed contracts', () => {
   })
 })
 
+// ─── catatonit: the normalisation, driven from the failing side ─────────────
+
+describe('catatonit -- two normalisations, and a loose includes() would pass on anything', () => {
+  // The exact string measured in the x64 factory root, and the exact shipped
+  // pin. Both halves are real; neither is a plausible-looking stand-in.
+  const SAID = 'tini version 0.2.1_catatonit'
+  const catatonit = ARTIFACTS.find(a => a.name === 'catatonit')!
+
+  test('the shipped pin and the real output agree, through both normalisations', () => {
+    const p = catatonit.pin()
+    // PIN SIDE: the git tag prefix comes off.
+    expect(p.recorded).toBe('v0.2.1')
+    expect(p.expected).toBe('0.2.1')
+    // OUTPUT SIDE: `_catatonit` terminates the token, it is not trimmed by a
+    // rule written for this one artifact.
+    expect(versionTokens(SAID)).toEqual(['0.2.1'])
+    expect(judge(catatonit, p, ok(SAID)).verdict).toBe('pass')
+  })
+
+  // THE FAILING SIDE, which is what makes the line above evidence.
+  test('a wrong pin turns it RED -- so this is not a check that cannot fail', () => {
+    const r = judge(catatonit, { ...catatonit.pin(), recorded: 'v0.2.2', expected: '0.2.2' }, ok(SAID))
+    expect(r.verdict).toBe('fail')
+    expect(r.message).toContain('expected 0.2.2')
+    expect(r.message).toContain('0.2.1')
+  })
+
+  // WHY IT IS EQUALITY AGAINST AN EXTRACTED TOKEN AND NOT A SUBSTRING TEST.
+  // Every one of these `includes` is TRUE on the real output, so a runner built
+  // that way would accept four different wrong pins and one right one, and
+  // would look identical doing it.
+  test('a loose includes() on the raw line would accept pins that are wrong', () => {
+    for (const wrong of ['0.2', '2.1', '0.2.1_cat', 'version 0.2.1']) {
+      expect(SAID.includes(wrong)).toBe(true)          // the loose test passes...
+      const r = judge(catatonit, { ...catatonit.pin(), recorded: wrong, expected: wrong }, ok(SAID))
+      expect(r.verdict).toBe('fail')                    // ...and this one does not
+    }
+  })
+
+  test('and the skew in the other direction is caught too', () => {
+    // A 0.2.1 binary must not satisfy a 0.2.10 pin. Maximal munch is what makes
+    // this work; a substring test would get it backwards.
+    const r = judge(catatonit, { ...catatonit.pin(), recorded: 'v0.2.10', expected: '0.2.10' }, ok(SAID))
+    expect(r.verdict).toBe('fail')
+  })
+
+  test('exit 0 is still asserted, which is the exec-only conjunct Scope asks for', () => {
+    const r = judge(catatonit, catatonit.pin(), { status: 1, stdout: SAID, stderr: '' })
+    expect(r.verdict).toBe('fail')
+    expect(r.message).toContain('exited 1, expected 0')
+  })
+})
+
 // ─── THE VERSION LOOP, as a loop ────────────────────────────────────────────
 
 describe('the version loop closes: bump the pin, do not rebuild, run goes red', () => {
@@ -333,12 +432,16 @@ describe('the version loop closes: bump the pin, do not rebuild, run goes red', 
     ]
     const exec: Exec = async () => ok('x 1.2.3')
 
-    const green = await smokeRun({ board: 'x64', artifacts, exec, files: [file] })
+    // `allowUnclaimed: []` because this synthetic register has no unclaimed
+    // entries and the shipped authorisation list names two. That the guard
+    // fires here at all is the point of it: a register other than the shipped
+    // one has to say what it authorises, rather than inheriting an answer.
+    const green = await smokeRun({ board: 'x64', artifacts, exec, files: [file], allowUnclaimed: [] })
     expect(green.conclusion.conclusion).toBe('PASS')
     expect(green.conclusion.exitCode).toBe(0)
 
     writeFileSync(file, mutate(readFileSync(file, 'utf8'), 'v1.2.3', 'v9.9.9'))
-    const red = await smokeRun({ board: 'x64', artifacts, exec, files: [file] })
+    const red = await smokeRun({ board: 'x64', artifacts, exec, files: [file], allowUnclaimed: [] })
     expect(red.conclusion.conclusion).toBe('FAIL')
     expect(red.conclusion.exitCode).toBe(1)
     expect(red.conclusion.counts.fail).toBe(2)
@@ -578,6 +681,56 @@ describe('smokeRun over the real register', () => {
     const crun = run.results.find(r => r.name === 'crun')!
     expect(crun.verdict).toBe('fail')
     expect(crun.message).toMatch(/path does not exist in the factory root/)
+  })
+
+  // THE GUARD HAS TO BE CALLED, not merely to exist. Found by mutation: with
+  // `unclaimedFaults` still correct but no longer consulted by `smokeRun`, the
+  // whole suite stayed green -- every case was testing the function and none
+  // was testing that the runner asks it. A guard nothing calls is a guard
+  // nobody has run, which is the same defect one level up from a guard nothing
+  // can drive red.
+  test('an unauthorised unclaimed artifact refuses the RUN, and executes nothing', async () => {
+    let calls = 0
+    const counting: Exec = async argv => {
+      calls += 1
+      return honest(argv)
+    }
+    const withRogue = ARTIFACTS.map(a =>
+      a.name === 'conmon'
+        ? { ...a, contract: { kind: 'unclaimed' as const, why: 'MEASURED: fabricated for this case' } }
+        : a)
+    // The mutation is a mutation.
+    expect(ARTIFACTS.find(a => a.name === 'conmon')!.contract.kind).toBe('version')
+
+    await expect(smokeRun({ board: 'x64', artifacts: withRogue, exec: counting })).rejects.toThrow(
+      /marks artifacts unclaimed that nothing authorised, so nothing was executed/,
+    )
+    expect(calls).toBe(0)
+
+    // Positive control on the same counter: the shipped register runs.
+    await smokeRun({ board: 'x64', artifacts: ARTIFACTS, exec: counting })
+    expect(calls).toBeGreaterThan(0)
+  })
+
+  test('the RESULT line NAMES the unclaimed artifacts, not just their count', async () => {
+    const run = await smokeRun({ board: 'x64', exec: honest })
+    // Register order, not sorted: the table above prints the same order, and a
+    // summary that reordered its own rows would be one more thing to reconcile.
+    expect(run.conclusion.line).toContain('UNCLAIMED: mosd, apid')
+    // A count alone would satisfy a reader and nobody else.
+    expect(run.conclusion.line).toContain('2 unclaimed')
+  })
+
+  test('a FAIL line names what failed AND what stayed unclaimed', () => {
+    const results = [
+      { name: 'crun', path: '/usr/bin/crun', kind: 'version' as const, verdict: 'fail' as const, message: '' },
+      { name: 'mosd', path: '/usr/bin/mosd', kind: 'unclaimed' as const, verdict: 'unclaimed' as const, message: '' },
+      { name: 'rauc', path: '/usr/bin/rauc', kind: 'version' as const, verdict: 'pass' as const, message: '' },
+    ]
+    const c = conclude(results, 3)
+    expect(c.conclusion).toBe('FAIL')
+    expect(c.line).toContain('FAILED: crun')
+    expect(c.line).toContain('UNCLAIMED: mosd')
   })
 
   test('a register that disagrees with the pin files executes NOTHING', async () => {

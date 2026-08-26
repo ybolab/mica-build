@@ -41,7 +41,7 @@
 
 import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { ARTIFACTS, pinCoverageFaults, type Artifact } from './smoke-register.ts'
+import { ARTIFACTS, pinCoverageFaults, unclaimedFaults, type Artifact } from './smoke-register.ts'
 import type { Pin } from './smoke-pins.ts'
 import { REPO_ROOT } from './paths.ts'
 
@@ -140,6 +140,43 @@ export function versionTokens(line: string): string[] {
   return [...line.matchAll(/(?<![.0-9])[0-9]+(?:\.[0-9]+)+/g)].map(m => m[0])
 }
 
+/**
+ * THE COMMIT HALF: PRINTED, NOT ASSERTED — and which of the two that is.
+ *
+ * M7d's `--version` handlers will report the git commit alongside the crate
+ * version -- `mosd 0.1.0 (abc1234)`, `-dirty` when the worktree was, `unknown`
+ * when the value is absent. The requirement on the runner is that the commit be
+ * "asserted EQUAL TO the commit the artifact was actually built from WHEN THAT
+ * FACT IS AVAILABLE TO THE RUNNER, and merely printed otherwise".
+ *
+ * IT IS NOT AVAILABLE, so this runner PRINTS it and asserts nothing about it.
+ * Measured rather than assumed, with a positive control on the search: no git
+ * provenance is recorded by the build at all. `_out/<board>/factory-root.txt`
+ * carries ref, platform, target, archive, bytes, sha256 and source-date-epoch;
+ * `rootfs-stages.txt` carries per-stage content hashes; `rootfs-verity.env`
+ * carries verity parameters; `rootfs-report-v2.txt` is a package inventory. A
+ * grep for `rev-parse|git describe|GIT_COMMIT|VCS_REF|SOURCE_COMMIT` across
+ * `os/rootfs/build-v2.sh` and all of `os/build/src/*.ts` -- 39 files -- returns
+ * nothing, while the same grep shape hits `docs/plan/PLAN-014.md` twice, so the
+ * search worked and the absence is real.
+ *
+ * THE ALTERNATIVE IS REFUSED BY NAME. Comparing the reported sha against
+ * `git rev-parse HEAD` at run time would be trivially green on any freshly
+ * built tree: it would assert that somebody just built, not that the embedding
+ * works. A binary built three commits ago and never rebuilt would go red for
+ * being stale rather than for being wrong, and one built from this commit would
+ * go green whether the handler embedded a real sha or echoed the environment.
+ * That is a check whose subject is derived from the same source moments
+ * earlier, which is the shape this campaign keeps deleting.
+ *
+ * So the whole reported line is carried into the verdict message verbatim --
+ * `[said: "mosd 0.1.0 (abc1234)"]` -- where a reader and a log both see the
+ * commit, and nothing here claims to have checked it. Closing the assertion
+ * needs a recorded build fact to exist first; that is a change to the BUILD, not
+ * to this file.
+ */
+export const COMMIT_HALF_IS_PRINTED_NOT_ASSERTED = true
+
 /** The first non-empty line of stdout -- where all ten artifacts print it. */
 export function firstLine(stdout: string): string {
   for (const line of stdout.split('\n')) {
@@ -203,7 +240,9 @@ export function judge(artifact: Artifact, pin: Pin, outcome: ExecResult): SmokeR
       ...base,
       kind: 'version',
       verdict: 'pass',
-      message: `exit 0, reports ${pin.expected} == ${pin.key}=${pin.recorded} in ${pinSource(pin.file)}`,
+      message:
+        `exit 0, reports ${pin.expected} == ${pin.key}=${pin.recorded} in ${pinSource(pin.file)} `
+        + `[said: ${JSON.stringify(line)}]`,
     }
   }
   return {
@@ -257,6 +296,15 @@ export function conclude(results: readonly SmokeResult[], expected: number): Con
     unclaimed: results.filter(r => r.verdict === 'unclaimed').length,
     total: results.length,
   }
+
+  // THE NAMES, NOT JUST THE NUMBER. A category with a count and no members
+  // decays into background noise: "2 unclaimed" is a thing a reader stops
+  // seeing after the third run, and "mosd, apid" is a thing they can act on.
+  // It matters more than usual here because this run's steady state is
+  // non-zero -- the number is the part that will be habituated to, so the
+  // names go on the RESULT line itself and not only in the table above it.
+  const named = (verdict: Verdict): string =>
+    results.filter(r => r.verdict === verdict).map(r => r.name).join(', ')
   if (expected <= 0 || counts.total !== expected) {
     return {
       conclusion: 'FAIL',
@@ -273,7 +321,10 @@ export function conclude(results: readonly SmokeResult[], expected: number): Con
       conclusion: 'FAIL',
       exitCode: 1,
       counts,
-      line: `RESULT: FAIL (${counts.pass} pass, ${counts.fail} fail, ${counts.unclaimed} unclaimed, of ${counts.total})`,
+      line:
+        `RESULT: FAIL (${counts.pass} pass, ${counts.fail} fail, ${counts.unclaimed} unclaimed, of ${counts.total}). `
+        + `FAILED: ${named('fail')}.`
+        + (counts.unclaimed > 0 ? ` UNCLAIMED: ${named('unclaimed')}.` : ''),
     }
   }
   if (counts.unclaimed > 0) {
@@ -283,6 +334,7 @@ export function conclude(results: readonly SmokeResult[], expected: number): Con
       counts,
       line:
         `RESULT: INCOMPLETE (${counts.pass} pass, 0 fail, ${counts.unclaimed} unclaimed, of ${counts.total}). `
+        + `UNCLAIMED: ${named('unclaimed')}. `
         + `Nothing failed and not everything was asked. An unclaimed artifact is not a pass and is `
         + `not a skip: RFCT-113 requires a reported version from every one of them, and this run `
         + `exits non-zero so that a gate cannot be held by a summary with holes in it.`,
@@ -561,6 +613,14 @@ export interface SmokeRunOptions {
    * would be to weaken the coverage check for everybody.
    */
   readonly files?: readonly string[]
+  /**
+   * Which artifacts are authorised to be `unclaimed`.
+   *
+   * A parameter for the same reason `artifacts` and `files` are: the refusal
+   * has to be reachable from a test, and a guard that can only fire when the
+   * shipped register is wrong is a guard nobody has ever run.
+   */
+  readonly allowUnclaimed?: readonly string[]
   /** Supplied by the suite; the CLI builds a dockerExec. */
   readonly exec?: Exec
   /** Skip `docker load`; the suite has no archive to load. */
@@ -580,6 +640,19 @@ export interface SmokeRunOptions {
 export async function smokeRun(opts: SmokeRunOptions): Promise<{ results: SmokeResult[]; conclusion: Conclusion }> {
   const log = opts.log ?? ((l: string) => console.log(l))
   const artifacts = opts.artifacts ?? ARTIFACTS
+
+  // Who may go unasked, before what may go unexecuted. Both are questions about
+  // the register rather than about the image, and both are answered before a
+  // container starts -- a run that executed eleven things and then discovered
+  // its twelfth was silently excused has already produced the output somebody
+  // would quote.
+  const unclaimed = unclaimedFaults(artifacts, opts.allowUnclaimed)
+  if (unclaimed.length > 0) {
+    throw new Error(
+      `the smoke register marks artifacts unclaimed that nothing authorised, so nothing was executed:\n`
+      + unclaimed.map(f => `         ${f.file}: ${f.message}`).join('\n'),
+    )
+  }
 
   const faults = opts.files === undefined
     ? pinCoverageFaults(artifacts)
