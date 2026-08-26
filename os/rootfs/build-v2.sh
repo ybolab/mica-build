@@ -806,3 +806,35 @@ if [ "$total_mb" -gt "$SIZE_BUDGET_MB" ]; then
     exit 1
 fi
 echo "installed size: ${total_mb} MB (budget ${SIZE_BUDGET_MB} MB)"
+
+# ─── THE SMOKE RUN, AND IT IS PART OF THE BUILD ──────────────────────────────
+#
+# RFCT-113's FIRST acceptance clause says a wrong-arch, missing-soname or
+# version-skewed binary must "fail the build", and its purpose line says every
+# self-built binary is executed inside the base rootfs "before an image ships
+# it". That is this line. Until M7c nothing in the tree invoked the runner at
+# all -- no make target, no workflow, and every `smoke` in this file was a
+# comment, including the one above that states the risk exactly: "an image that
+# ships them unexecuted looks exactly like one whose smoke run passed."
+#
+# HERE RATHER THAN IN THE Makefile, and that is the whole reason it is one line
+# in one place. Two make targets run this script and so does the CI deep lane,
+# and anyone can run it directly; a step wired into the callers would be three
+# copies to keep in step and would be bypassed by the fourth. The root is not
+# handed to an assembler, to a bundle, or to a person, without its binaries
+# having been executed.
+#
+# NO SKIP AND NO OPT-OUT. A flag that turned this off would make "the build
+# passed" mean two things, and the one it would mean on the day somebody set the
+# flag is the one this milestone exists to end. `set -e` is what makes it a
+# gate: run.sh exits with the runner's own status, and a non-zero status here
+# ends the build before $OUT_DIR is handed on.
+#
+# IT ADDS NO DEPENDENCY THIS SCRIPT DID NOT ALREADY HAVE. run.sh --smoke needs
+# docker, which this script has needed since the first buildx line; and it needs
+# to EXECUTE the target platform, which for cx3576 means the same host binfmt
+# that the refusal at the top of this script already requires in order to build
+# at all. A host that can build this root can run what is in it.
+echo
+echo "=== smoke: executing the self-built binaries inside the root just packed ==="
+MOS_BOARD="$MOS_BOARD" bash "$REPO_ROOT/os/verify/run.sh" --smoke --board "$MOS_BOARD"

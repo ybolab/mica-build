@@ -737,7 +737,15 @@ export function declinedFeatures(text: string): string[] {
   )
 }
 
-async function capture(argv: readonly string[], timeoutMs: number): Promise<ExecResult> {
+/**
+ * Run one program with a budget, and hand back everything it did.
+ *
+ * Exported since RFCT-113 M7c so `src/smoke-negative.ts` drives `docker build`
+ * through the same seam the runner drives `docker run` through -- a second
+ * spawn helper would be a second set of decisions about timeouts and about what
+ * counts as output, agreeing with this one until one of them was edited.
+ */
+export async function capture(argv: readonly string[], timeoutMs: number): Promise<ExecResult> {
   const proc = Bun.spawn(argv as string[], { stdout: 'pipe', stderr: 'pipe', stdin: 'ignore' })
   // A BUDGET, NOT A COURTESY. `apid --version` starts an HTTPS server and never
   // returns -- measured, rc=124 against 25s -- so an unbounded wait here is a

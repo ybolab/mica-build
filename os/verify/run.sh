@@ -7,6 +7,7 @@
 #   bash os/verify/run.sh --lint         the board-definition schema lint instead
 #   bash os/verify/run.sh --verify       verify an assembled image against the contract
 #   bash os/verify/run.sh --smoke        execute the self-built artifacts in the factory root
+#   bash os/verify/run.sh --smoke-negative   break the root three ways, and require each red
 #
 # WHAT THIS PACKAGE IS. PLAN-014 M3: the bun+TypeScript foundation the rest of
 # os/ moves onto, in the shape test/apid-api already established -- bun.lock,
@@ -53,6 +54,7 @@ usage: bash os/verify/run.sh [--help] [bun-test-args...]
        bash os/verify/run.sh --lint [board.env ...]
        bash os/verify/run.sh --verify [--board NAME] [--image PATH]
        bash os/verify/run.sh --smoke [--board NAME]
+       bash os/verify/run.sh --smoke-negative [--board NAME]
 
 Installs the dev dependencies if they are missing, typechecks src/, then runs
 the suite. Any extra arguments are passed to `bun test` (a filename filter, for
@@ -81,6 +83,16 @@ needs DOCKER for the same reason --verify does and one stronger: the whole point
 is to run the shipped binaries, and they are built for the board rather than for
 this host. It refuses rather than skipping when the image is absent.
 
+With --smoke-negative FIRST, it runs RFCT-113's three negative tests: it builds
+three images from that board's factory root, each carrying one deliberately made
+defect -- a wrong-arch binary, a binary whose NEEDed library has been taken away,
+and a binary that reports a version other than its pin -- and requires the smoke
+run to go red on each, naming the right cause and no other artifact. Every
+mutation asserts its own before-and-after and fails the image BUILD rather than
+producing an unmutated image, so a case cannot pass without having made its
+defect. Same docker requirement as --smoke, for the same reason plus one: it
+builds images.
+
 A host with no bun runs the same steps in the bun container pinned by digest as
 IMAGE_BUN_1 in os/build-env/images.env. That route is taken automatically; it
 needs docker, and it is announced on the first line of output so a run is never
@@ -106,13 +118,14 @@ case "${1:-}" in
 --lint) MODE=lint; shift ;;
 --verify) MODE=verify; shift ;;
 --smoke) MODE=smoke; shift ;;
+--smoke-negative) MODE=smoke-negative; shift ;;
 esac
 
 # The two modes that drive docker themselves. Named once, because every place
 # below that used to test `[ "${MODE}" = verify ]` is asking this question and
 # not that one -- and a second spelling of the same condition is how --smoke
 # would come to mount a socket in one place and not in the other.
-needs_docker() { case "${MODE}" in verify | smoke) return 0 ;; *) return 1 ;; esac; }
+needs_docker() { case "${MODE}" in verify | smoke | smoke-negative) return 0 ;; *) return 1 ;; esac; }
 
 # ...and anywhere else either is a MISTAKE, refused rather than forwarded. Driven
 # from the failing side: `run.sh src/lint.test.ts --lint` handed --lint to
@@ -123,7 +136,7 @@ needs_docker() { case "${MODE}" in verify | smoke) return 0 ;; *) return 1 ;; es
 # it never reaches that parser, and `bun test --verify` is the same green about
 # the same wrong thing.
 for arg in "$@"; do
-    case "${arg}" in --lint | --verify | --smoke) ;; *) continue ;; esac
+    case "${arg}" in --lint | --verify | --smoke | --smoke-negative) ;; *) continue ;; esac
     echo "error: ${arg} has to be the FIRST argument; here it came after '$1'." >&2
     echo "       Anywhere else it would be forwarded to \`bun test\`, which ignores it and" >&2
     echo "       reports a green suite in answer to a request for something else." >&2
@@ -535,6 +548,18 @@ if [ "${MODE}" = smoke ]; then
     echo "os/verify: artifact smoke run"
     rc=0
     run_bun run src/smoke-cli.ts "$@" || rc=$?
+    exit "${rc}"
+fi
+
+# --- the negative tests ------------------------------------------------------
+# No vacuity guard here either, and at the same granularity: src/smoke-negative.ts
+# compares the number of cases it concluded against the number DECLARED, and
+# refuses an empty list outright -- `RESULT: PASS (3 of 3)` is invariant under a
+# case list somebody emptied.
+if [ "${MODE}" = smoke-negative ]; then
+    echo "os/verify: smoke-run negative tests"
+    rc=0
+    run_bun run src/smoke-negative-cli.ts "$@" || rc=$?
     exit "${rc}"
 fi
 
