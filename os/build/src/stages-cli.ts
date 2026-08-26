@@ -4,17 +4,16 @@
 //        --platform linux/amd64 --arg KEY=VALUE ...
 //   bash os/build/run.sh --build-rootfs --board x64 --plan   (decide, run nothing)
 //
-// os/rootfs/build-v2.sh stages the build context
-// -- it cross-builds mosd, renders the overlay, checks the repart definitions
-// against the layout and computes every verity parameter -- and then calls this
-// instead of running one `docker buildx build` over one Dockerfile.
+// os/rootfs/build-v2.sh stages the build context -- it cross-builds mosd,
+// renders the overlay, checks the repart definitions against the layout and
+// computes every verity parameter -- and then calls this instead of running one
+// `docker buildx build` over one Dockerfile.
 //
-// WHAT THIS ADDS OVER THAT ONE COMMAND, and it is only two things: it decides
-// the order and the tags (src/stages.ts, a pure function with its own tests),
-// and it refuses the two ways a chain fails that a single file cannot. The
-// build arguments, the platform, the context and the output directory all
-// arrive from the caller unchanged, because a driver that recomputed them would
-// be a second answer to a question build-v2.sh already answers.
+// This adds two things: it decides the order and the tags (src/stages.ts, a
+// pure function with its own tests), and it refuses the two ways a chain fails
+// that a single file cannot. The build arguments, the platform, the context and
+// the output directory arrive from the caller unchanged, because a driver that
+// recomputed them would be a second answer to a question build-v2.sh answers.
 
 import { existsSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
@@ -193,7 +192,7 @@ export function parseArgs(argv: readonly string[]): Options {
       `--dest is required: the terminal stage has to export somewhere. Use --plan to decide the chain without building it.\n\n${usage()}`,
     )
   }
-  // REFUSED HERE RATHER THAN DEFAULTED, and that is the whole point of the
+  // Refused here rather than defaulted, and that is the whole point of the
   // option. buildkit takes SOURCE_DATE_EPOCH from the environment; unset, it
   // does not complain, it stamps the wall clock into the image config and into
   // every entry of the exported layer. So an export with no epoch is not a
@@ -238,7 +237,7 @@ export function parseDriver(inspectOutput: string): string | undefined {
  * Whether a driver can resolve `FROM <local tag>`, and what to say when it
  * cannot.
  *
- * MEASURED, NOT READ. On this host, a docker-container builder handed a tag
+ * Measured, not read. On this host, a docker-container builder handed a tag
  * that is in the local image store answered
  *
  *   ERROR: failed to solve: mos-probe:a: failed to resolve source metadata for
@@ -246,13 +245,11 @@ export function parseDriver(inspectOutput: string): string | undefined {
  *   exist or may require authorization
  *
  * -- a message about Docker Hub, for an image that is right there, arriving
- * after however long the stage before it took. The same two files built on the
- * default `docker` driver chained fine. So this is decided up front and refused
- * by name, because that error is not a diagnosis anyone makes quickly.
- *
- * It bites on ONE case: os/rootfs/build-v2.sh falls back to a docker-container
+ * after however long the stage before it took; the same two files on the default
+ * `docker` driver chain fine. So it is decided up front and refused by name. It
+ * bites on one case: os/rootfs/build-v2.sh falls back to a docker-container
  * builder precisely when the current builder cannot reach the target platform,
- * which is an amd64 host building cx3576's arm64 with no host binfmt_misc.
+ * an amd64 host building cx3576's arm64 with no host binfmt_misc.
  */
 export function driverCanChain(driver: string | undefined): boolean {
   return driver === 'docker'

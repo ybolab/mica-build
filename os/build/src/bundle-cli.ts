@@ -1,31 +1,22 @@
 // The host half of os/update/bundle.sh: where the inputs are, which signing
 // material is used, what the output is called, and the -latest symlink.
 //
-// THE SEAM: epoch naming and the -latest symlink happen on the host side, in
-// this file; src/bundle.ts is everything below them. The seam is structural
-// rather than conventional, because nothing re-execs: buildBundle is called
-// in-process and the toolbox decides, per toolset, whether the TOOLS run here
-// or in the pinned container.
+// The seam is structural: epoch naming and the -latest symlink happen here,
+// src/bundle.ts is everything below them, and nothing re-execs -- buildBundle
+// runs in-process and the toolbox decides, per toolset, whether the tools run
+// here or in the pinned container. The epoch in the filename is the only
+// per-build variation and is computed here, once: bundle content must not
+// depend on when it was built, which is what makes the rebuild gate a hash.
 //
-// THE EPOCH IN THE FILENAME IS THE ONLY PER-BUILD VARIATION, and it is computed
-// here, once. The bundle CONTENT must not depend on when it was built -- that
-// is what makes the rebuild gate a hash -- so nothing downstream of this line is
-// allowed to see a clock.
-//
-// TWO THINGS THIS FILE RESOLVES THAT THE BUILD HALF THEN ONLY USES.
-//
-//   THE SIGNING MATERIAL. Caller-supplied CERT/KEY/KEYRING win and the dev keys
-//   are only the default; all three are resolved and checked HERE, before
-//   anything runs, so the failure names the file that is actually missing. An
-//   unset trio with no devkeys means `make os-devkeys`; a caller-supplied path
-//   that does not exist is the caller's typo; and neither may be silently
-//   overridden by a hardcoded assignment further down.
-//
-//   THE HOST'S ARCHITECTURE, NOT THE BOARD'S. The bundle is written on the
-//   build machine, so the rauc that writes it is a HOST binary -- while the
-//   image being bundled for may be a foreign board. Both come from
-//   os/update/rauc/versions.env, which is what makes their VERSIONS the same
-//   thing to compare.
+// Two things this file resolves that the build half only uses. The signing
+// material: caller-supplied CERT/KEY/KEYRING win, the dev keys are the default,
+// and all three are resolved and checked here so the failure names the file
+// that is missing -- an unset trio with no devkeys means `make os-devkeys`, a
+// caller-supplied path that does not exist is the caller's typo. And the host's
+// architecture, not the board's: the bundle is written on the build machine, so
+// the rauc writing it is a host binary while the image being bundled for may be
+// foreign. Both come from os/update/rauc/versions.env, which is what makes
+// their versions comparable.
 
 import { existsSync, lstatSync, mkdirSync, readFileSync, symlinkSync, unlinkSync } from 'node:fs'
 import { arch as osArch } from 'node:os'
@@ -103,7 +94,7 @@ export function requireCompatible(text: string, path: string): string {
 }
 
 /**
- * The board definition, refused by NAME rather than by ENOENT.
+ * The board definition, refused by name rather than by ENOENT.
  *
  * `MOS_BOARD=cx3567` is a typo away from a working invocation and the file it
  * would read is derived from it, so the sentence has to carry both -- the
@@ -127,7 +118,7 @@ export interface SigningMaterial {
 /**
  * CERT/KEY/KEYRING, resolved and checked before anything runs.
  *
- * The two failures get DIFFERENT sentences, and the difference is the whole
+ * The two failures get different sentences, and the difference is the whole
  * point: a path under the devkey directory is missing because nobody has run
  * `make os-devkeys`, and a path from the environment is missing because the
  * caller mistyped it. One sentence for both would send half the readers to the
