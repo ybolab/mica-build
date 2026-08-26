@@ -903,6 +903,330 @@ touch: setting times of '.../.mos-var-seeded': No such file or directory
 Forty steps into an assembly. It is two calls again, both in the container, where
 the shell has them.
 
+## THE BYTE-IDENTITY GATE: shell against TypeScript, the cx3576 bundle
+
+RFCT-112's third gate. Same board definition, same `_out/cx3576/` inputs, same
+`board/cx3576/out/kernel/`, same `os/update/rauc/.devkeys`, the shell bundle
+builder and the TypeScript one.
+
+```sh
+bash os/update/rauc/gen-dev-keys.sh                # the signing material
+MOS_BOARD=x64 bash os/update/rauc/build.sh         # the HOST's rauc: amd64
+bash os/update/rauc/render-config.sh               # system.conf is generated
+
+make os-bundle-cx3576                       # the oracle
+make os-bundle-cx3576                       # again -- it must reproduce ITSELF first
+bash os/build/run.sh --bundle               # the port
+```
+
+**THE COMPARISON IS THE PAYLOAD, NOT THE FILE, and the shell is what says so.**
+`verify_bundle` prints the digest of the squashfs at the head of the bundle and
+explains the rest in the same breath: "the bytes after it are not [a pure
+function of the inputs] — rauc salts the bundle's own verity hash tree at random
+and the CMS signature carries a signingTime attribute". Two correct builds of
+the same version therefore differ after the payload and must not differ inside
+it. Measured: the `hash` field `rauc info` reports moved on every one of the
+four runs below (`56112b4d…`, `a17d3ea1…`, `e9ed9dc5…`, …) while the payload
+digest did not.
+
+Result, 2026-08-26, this host:
+
+```
+114425856 bytes  d7506b6279e6f3643da8938d0be8a025abe01bb1ea10ad57abcd9ad753d86aea  shell
+114425856 bytes  d7506b6279e6f3643da8938d0be8a025abe01bb1ea10ad57abcd9ad753d86aea  shell, again
+114425856 bytes  d7506b6279e6f3643da8938d0be8a025abe01bb1ea10ad57abcd9ad753d86aea  TypeScript
+```
+
+And `rauc info` reports the same checksum for each image INSIDE the bundle,
+which is the same fact read a second way — by rauc rather than by `sha256sum`,
+and per slot class rather than over the whole payload:
+
+```
+rootfs.img  05b72468d04d35aca78f59072568f6e2ef9b17c4eab30e09e6413135f49b15ba   shell and TypeScript
+boot.vfat   caf90a14a5c8b2484084267df5246b82b8a889af41ac8c77efc4544f804c7623   shell and TypeScript
+```
+
+**The comparison was checked live.** One byte of `_out/cx3576/rootfs-verity.img`
+flipped at offset 4096 (`0342` → `001`, confirmed with `cmp -l`), both builders
+re-run over the mutated input, the byte restored and the file `cmp`-verified
+identical again:
+
+```
+114425856 bytes  782532ada1d2f50931c6b51b5b6f0cdccb148c74ac1a629d43bbf24440b489c9  shell,      one byte changed
+114425856 bytes  782532ada1d2f50931c6b51b5b6f0cdccb148c74ac1a629d43bbf24440b489c9  TypeScript, one byte changed
+```
+
+Three things at once: the gate can report a difference, the two implementations
+agree about the *changed* input as well as the unchanged one, and the difference
+is confined to the half that changed — `rauc info`'s `rootfs.img` checksum moved
+to `6c5afc49…` while `boot.vfat` stayed at `caf90a14…`.
+
+**The suite carries the same control in miniature** (`src/bundle.test.ts`, "THE
+PAYLOAD IS A PURE FUNCTION OF THE INPUTS" and "AND IT MOVES WHEN AN INPUT
+DOES"), over fabricated inputs and a self-signed pair, so a change that puts a
+clock back into the staging path is a red test rather than a hash somebody has
+to remember to compare.
+
+### The inputs, and what was checked about them before they were trusted
+
+`_out/cx3576/` and `board/cx3576/out/kernel/` were copied from `1w0jf032`'s
+worktree (same host, built 2026-08-25 12:34). They are the M5/BSP outputs and
+neither milestone is M6d's; what matters is that both builders get the *same*
+ones. **The prebuilt `mos-cx3576-*.raucb` sitting beside them was NOT used as an
+oracle** — M6b and M6c each nearly compared against an artefact that predated a
+determinism fix. What was checked instead:
+
+- `diff` of that tree's `os/update/bundle.sh` against this one's — **identical**,
+  so the oracle run here is the same program;
+- `RAUC_VERSION v1.13` in its `rootfs-report-v2.txt` against this tree's
+  `os/update/rauc/versions.env` (`RAUC_VERSION=v1.13`) — the bundle builder's own
+  cross-check would have refused them otherwise;
+- the rauc binary was **built here**, from this tree's pin, rather than copied
+  from any of the four worktrees that already had one.
+
+### Cost, measured
+
+| | |
+|---|---|
+| `make os-bundle-cx3576` (shell, container route) | ~45 s |
+| `bash os/build/run.sh --bundle` | ~22 s |
+| `src/bundle.test.ts` (six real bundles, fabricated inputs) | ~32 s |
+| `src/bundle-cli.test.ts` (pure) | ~22 ms |
+
+The port is roughly twice as fast, and the reason is structural rather than
+clever: the shell re-execs itself inside a container that runs `apt-get install`
+on every build, while the toolbox opens one session and `docker exec`s into it.
+
+## Every bundle refusal, and the mutation that drives it red
+
+`os/update/bundle.sh` carries **28** `echo "error:` sites. All are ported, as
+**29** refusals — the signing-material site has two different sentences and
+which one a reader gets decides whether they run `make os-devkeys` or go and
+look for their own typo — plus **2 that are new**, for **31** in total.
+
+**A byte-identity gate cannot see a dropped refusal.** A port that lost one
+produces identical bytes for every good input and passes the gate perfectly;
+what it stopped catching is a signed bundle that bricks a slot. Every negative
+below has a **positive control** beside it in the same file, and every mutation
+goes through a `mutate()` that throws when the replacement matched nothing.
+
+### the rauc version cross-check — `src/bundle.test.ts`
+
+Three of its four refusals are about the COMPARISON rather than about a
+mismatch, because each of them would otherwise make it pass by finding nothing.
+
+| driven | what it printed |
+|---|---|
+| the report file absent | "the image's RAUC version is unknown and a bundle built by an unknown-matching rauc is not one this can vouch for" |
+| a report with the `RAUC_VERSION` line deleted | "records no RAUC_VERSION … either way the comparison would pass by finding nothing" |
+| a build env carrying only `RAUC_SHA256` | "no RAUC_VERSION from /os/update/rauc/out-amd64/RAUC_VERSION.env … would pass by finding nothing" |
+| no build env path at all | the same sentence, with `<unset>` where the path goes |
+| `v1.13` in the image, `v1.8` here | "this rauc is v1.8, the image ships v1.13" — commit 9a43a59's case, which was found by failure |
+| `v1.130` against `v1.13` | refused: the comparison is a STRING, and it is the one place a numeric reading would say `1.8 > 1.13` |
+| **both halves agreeing** | "rauc v1.13 here, v1.13 in the image" — the control |
+| the report read with `=` and the build env read with a space | both find nothing: two files, two shapes, and reading either with the other's separator is the failure this exists to prevent |
+
+### the boot-attempts range, and THE EMPTY READ — `src/bundle.test.ts`
+
+| driven | what it printed |
+|---|---|
+| **the tree's own `boot.cmd`** | accepted, and the guard reports it SAW **4** credits, all `3`. Not "the target exited 0" — the count is what distinguishes a guard that compared four values from one that compared none |
+| `setenv BOOT_A_LEFT 10` | "boot-attempts value of 10 … must stay in 1..9" |
+| `BOOT_A_LEFT 3` → `0` | the same, "value of 0" — the other end of a range |
+| **every `BOOT_[AB]_LEFT <n>` renamed away** | "sets no BOOT_A_LEFT/BOOT_B_LEFT credit at all … would pass by finding nothing" |
+| an EMPTY boot.cmd | the same refusal — not "nothing wrong here" |
+| a credit inside a COMMENT | found: the shell's `grep -oE` is deliberately not anchored to `setenv`, and the port is not either |
+
+**The empty read is the one behavioural difference between the two.**
+`os/update/bundle.sh` reads the credits through `done < <(grep -oE … | awk …)`;
+with `boot.cmd` missing or carrying no credit, grep produces no stdout, the
+`while read` body never runs and the guard passes having compared nothing —
+before `mkimage` dies on the same path, which is how `os-bundle-cx3576` stayed
+broken through two merges earlier in this campaign. It can only ever turn a
+vacuous pass into a refusal.
+
+`os/mkimage-v2.sh`'s copy of the same guard has the same shape and is covered by
+accident: `checkBootCmdTokens` runs immediately after it and refuses a `boot.cmd`
+with no `rauc.slot=` in it. **The bundle path runs no such second guard** — it is
+the one place the hole is reachable, which is why the refusal is added there and
+not in `checkBootAttempts`, which both share.
+
+### the per-slot verity env — `src/bundle.test.ts`
+
+| driven | what it printed |
+|---|---|
+| `dm-mod.create=` replaced by `root=/dev/mmcblk0p5` | "carries no dm-mod.create=/dm-mod.waitfor= verity table for slot A" |
+| `dm-mod.waitfor=` replaced by `rootwait` | the SAME sentence — `os/mkimage-v2.sh` gives the two their own, `os/update/bundle.sh` does not, and each keeps its own words |
+| **slot B's CORRECT cmdline under slot A's GUID** | "does not reference PARTUUID … each slot must point dm-verity at its own rootfs partition". The mutation that matters most is not a malformed file: it is a correct file for the other slot. Both boot; one boots the wrong rootfs |
+| a `waitfor` naming the other slot's partition | "the wait must name the same partition the verity table uses" |
+| the root hash replaced with another 64 hex characters | "does not carry the root hash" |
+| **the SALT replaced inside the table** | "does not carry the salt" — the check `os/mkimage-v2.sh` does NOT have. The assembler compares the salt against the pin; the bundle builder additionally requires it in the table it is about to SIGN |
+| the GUID upper-cased throughout the cmdline | accepted — every identifier comparison folds case, because GPT tooling writes GUIDs uppercase and the kernel cmdline lowercase |
+| a cmdline carrying TWO `dm-mod.create=` tables | the LAST one wins, which is what sed's greedy leading wildcard yields |
+| **an unmutated slot-A and slot-B cmdline** | both accepted, each against its own GUID — the controls |
+
+### the verity facts, and the pinned salt — `src/bundle.test.ts`
+
+| driven | what it printed |
+|---|---|
+| `VERITY_ROOT_HASH` deleted | "VERITY_ROOT_HASH missing from … fix os/rootfs/build-v2.sh" |
+| a salt of 64 `f`s | "does not match the pinned VERITY_SALT" |
+| `VERITY_SALT` deleted entirely | "salt '' does not match" — an absent value does not compare equal to the pin |
+| a salt with LETTERS, upper-cased on one side | accepted |
+| **the file the rootfs build actually writes** | both facts read — the control |
+
+**A mutation that was not a mutation, caught here.** The case-folding row above
+was first written by upper-casing cx3576's own pinned salt. That salt is
+`0000…0001` — all digits — so `toUpperCase()` is the identity, the fixture was
+never broken, and the case would have passed by asserting that a guard stayed
+quiet about an input it had no reason to complain about. `mutate()` threw. It is
+the third instance of this shape in the campaign, after M6b's `String.replace`
+that changed only a comment and M6c's `str.replace` that matched nothing.
+
+### the grub branch — `src/bundle.test.ts`
+
+| driven | what it printed |
+|---|---|
+| **each of the 8 `VERITY_*` keys deleted, one at a time** | "`<KEY>` missing from … the installed slot would get an incomplete dm-verity table and GRUB would refuse to boot it", eight times. One case per key, not one for the family: a loop that reads seven of eight names correctly is exactly the drift this is here to catch |
+| `VERITY_ROOT_HASH=deadbeef` — present, and not a hash | "the cmdline fragment carries no root hash; every slot installed from this bundle would refuse to boot". NOT redundant with the row above: that one is about a MISSING value, this one about a present and unusable one |
+| an UPPERCASE root hash | the same refusal — GRUB's reader is the lowercase one |
+| **the file the rootfs build writes** | all eight rendered, in order, as `set MOS_*=…` — the control |
+
+### the manifest — `src/bundle.test.ts`
+
+| driven | what it printed |
+|---|---|
+| `compatible=@COMPATIBLE@` → `@COMPAT@` | "unrendered placeholder left in a manifest VALUE", and the offending line is listed |
+| `format=verity` → `format=plain` | "does not declare '[bundle] format=verity'" — rauc 1.8 has no `--bundle-format` flag, so a template edit could otherwise downgrade every bundle to the format `system.conf` refuses |
+| `format=verity` commented out | the same refusal |
+| **the shipped template's comment naming `@SLOTS@`** | accepted. The template DOCUMENTS the other template's placeholder by name, and a check over the raw bytes once rejected a correct manifest for saying what it does |
+| an INDENTED comment carrying a placeholder | accepted — what `[[:space:]]*` buys |
+| **the shipped template, rendered** | both checks pass, `[image.boot]` is spliced in and `@BOOT_IMAGES@` is gone — the control |
+| `a\nb` with no trailing newline | `a\nb\n`: awk's `print` supplies the record separator whether or not the file had one |
+| an empty file | no records, no blank line — `''.split('\n')` would have produced one |
+| `# see @BOOT_IMAGES@ below` | NOT a splice point, because awk's `$0 ==` is not a substring match |
+
+### the bundle read back — `src/bundle.test.ts`
+
+| driven | what it printed |
+|---|---|
+| a bundle whose compatible is `mos-x64` | "bundle compatible is 'mos-x64', expected 'mos-cx3576'" |
+| the compatible key ABSENT | "bundle compatible is 'null'" — the four characters `jq -r` prints, not an `undefined` that would compare its own way |
+| a version that is not the one asked for | "bundle version is '9.9.9', expected '0.0.0-dev'" |
+| **each slot class's filename wrong, in turn** | "bundle image for slot class 'rootfs' is 'wrong.img'", and the same for `boot` |
+| a bundle carrying NO boot image | "slot class 'boot' is ''" — the empty string is what `jq … | select(has($s))` prints when it matches nothing, and it is a third answer that is not a value |
+| `images` absent, or not an array | read as `''` rather than throwing its own way |
+| **the shape a real rauc prints** | accepted — the control |
+
+### the payload digest — `src/bundle.test.ts`
+
+| driven | what it printed |
+|---|---|
+| a file beginning `ELF\0` | "does not start with a squashfs superblock" |
+| a file beginning `nope` with a `bytes_used` of 2^40 | the SAME refusal — the magic is checked FIRST, because `head -c <huge>` is "the whole file" and not an error, so a length read out of something that is not a superblock would produce a digest for it |
+| `bytes_used` = 5000 | rounded up to 8192, which is the 4096 rauc pads to |
+| `bytes_used` = 8192 | left at 8192 — not rounded up again |
+| **one byte changed AFTER the payload** | the digest does not move. This is the whole reason the gate is the payload |
+| **one byte changed INSIDE it** | the digest moves — the control for the row above, without which a constant would satisfy it |
+
+### the host half — `src/bundle-cli.test.ts`
+
+| driven | what it printed |
+|---|---|
+| `MOS_BOARD=cx3567` | "boards/cx3567/board.env not found (MOS_BOARD=cx3567)". One transposition away from working, and an ENOENT names the path rather than the mistake |
+| versions `-1.2.3`, `.1`, `''`, `1.2.3/../../etc`, `1.2.3 4`, `1.2.3;rm`, `1.2.3$(x)`, `1.2.3\n4`, `1.2&3` | "is not a plain version string", nine times. It reaches a FILENAME by concatenation and a manifest by substitution |
+| a system.conf with no `compatible=` | "no compatible= in …" |
+| `compatible=` with an empty value | the same — declared-empty is not a value here |
+| `# compatible=mos-x64 is what x64 uses` | not read as one |
+| **each of the three key files missing from the devkey dir, in turn** | "signing material not found: …" naming that file, and `make os-devkeys` |
+| `CERT=/hsm/typo.pem` missing | "…supplied from the environment but this file does not exist", and NOT `make os-devkeys` — a different reader with a different fix |
+| `CERT=/keys-backup/c.pem` against `KEYDIR=/keys` | the environment sentence: `case "${keyfile}" in "${KEYDIR}"/*)` needs the slash, and `/keys-backup` is not under `/keys` |
+| **each rootfs-side input missing, in turn** | "not found; run 'MOS_BOARD=cx3576 bash os/rootfs/build-v2.sh' first" |
+| **each board-side input missing, in turn** | "build the BSP or set BOARD_DIR (currently: /bsp)" — a different action, so a different sentence |
+| both families missing | the rootfs-side sentence first, as the shell orders them |
+| `riscv64`, `armv7l`, `ppc64le`, `''` | "os/update/rauc/ builds amd64 and arm64" |
+| `x86_64`, `x64`, `aarch64`, `arm64` | accepted — `uname -m` and node's `os.arch()` spell these differently and both reach this function |
+| the shipped rauc absent | "out-amd64/rauc not found … built from source now, not installed from Debian" |
+| an arm64 host against an amd64 binary | "out-arm64/rauc not found" — the path is per-architecture |
+| **caller-supplied CERT/KEY/KEYRING, and a MIXED trio** | honoured per file, and not overridden. Both of the shell's branches used to reassign them; that is the defect the resolve-once shape removes |
+
+### the two refusals that are NOT in the shell
+
+| driven | what it printed |
+|---|---|
+| a `boot.cmd` with no credits (above) | the empty read |
+| `openBundleToolbox({ route: 'host' })` with a rauc on PATH that is not the shipped one | "took the HOST route, where its rauc would be … and not …" |
+
+The second is a hole in the provenance machinery M6a built, and it is closed at
+the bundle rather than in `src/toolbox.ts`. `carry` is a `docker cp`; the host
+route has no way to put a binary on PATH, so a bundle toolset that took it would
+still declare `provenance: 'shipped'` while `src/tools/rauc.ts` signed with
+whatever `rauc` resolved to first. Provenance is not a property of toolsets in
+general — rauc is the only tool that has one — so a blanket "a toolset with
+`carry` may not take the host route" would be a rule about something the toolbox
+does not model.
+
+## What M6d found in the code under test — reported, not fixed
+
+**`os/update/bundle.sh:294` substitutes with sed, which expands `&`.**
+
+```sh
+sed -e "s|@COMPATIBLE@|${BUNDLE_COMPATIBLE}|g" -e "s|@VERSION@|${BUNDLE_VERSION}|g"
+```
+
+An `&` in a sed replacement expands to the whole match. `BUNDLE_VERSION` cannot
+contain one — it is refused unless it matches `^[A-Za-z0-9][A-Za-z0-9._+-]*$`,
+and `src/bundle-cli.test.ts` drives exactly that character — but
+**`BUNDLE_COMPATIBLE` has no such guard**: it is read straight out of the
+rendered `system.conf`, which is rendered from `board.env`. A board declaring a
+compatible with an `&` in it would render a manifest whose `compatible=` line
+was not the string anybody wrote, and `verify_bundle`'s own comparison would
+then fail against a value it had itself corrupted. `src/bundle.ts` substitutes
+LITERALLY and says so at `renderManifest`; today's boards make the two agree.
+A decision for whoever owns the shell, alongside M4d's `:3765`/`:3899` shadow
+field disagreement and M4f's `:3331` two-line device count.
+
+**`os/update/bundle.sh` leaves nothing behind, and the port had to be made to.**
+The shell's `trap 'rm -rf "${workdir:-}"' EXIT` was read as housekeeping when
+the port was written and left out; `os/build/.work` reached **557 MiB after
+seven runs**, because the staging tree holds a copy of the rootfs slot image and
+of the kernel. Not a defect in the shell — a defect the shell had already
+solved, found by measuring the port against it.
+
+## What M6e needs to delete the shell
+
+- **`os/update/bundle.sh` is NOT deleted**, and neither are `os/mkimage-v2.sh`,
+  `os/mkimage-x64.sh` or `os/mkimage-common.sh`. All four are oracles at this
+  commit.
+- **`make os-bundle-cx3576` still runs `bash os/update/bundle.sh`** and was
+  re-measured green here. The TypeScript entry point is
+  `bash os/build/run.sh --bundle`; giving it the make target is M6e's call, not
+  a change to smuggle into a milestone whose gate is that nothing changed.
+- **`os/update/rauc/render-config.sh` is NOT ported and does not need to be.**
+  `src/bundle-cli.ts` runs `bash …/render-config.sh --check` as a subprocess,
+  exactly as the shell does. That script owns the rendered `system.conf`; it is
+  not one of the three RFCT-112 names.
+- **The x64 bundle branch is ported but NOT gated.** Both branches of
+  `bundle.sh` are in `src/bundle.ts` and the grub half's two refusals are driven
+  from the failing side, but no x64 bundle was built by either implementation:
+  RFCT-112's acceptance says "byte-identical bundles for cx3576", and this
+  worktree has no x64 rootfs to bundle. If M6e wants that comparison it needs an
+  `_out/x64/` carrying `rootfs-verity.{img,env}` and `boot/{vmlinuz,initrd.img}`.
+- **`bundleToolset()`'s tool list grew by five** — `mkfs.vfat`, `truncate`, `cp`,
+  `find`, `touch` — because the port drives them inside the container where the
+  shell drives them inside its own. The PACKAGE list is untouched and is still
+  `os/update/bundle.sh`'s, verbatim.
+- **`mkfs.vfat`'s `-i` is now optional in `src/tools/mtools.ts`.** The two
+  assemblers still pass it and are still checked for eight hex digits; the
+  bundle passes neither a volume id nor a slot label, because its boot payload
+  is installed into whichever slot is inactive and must not carry that slot's
+  FAT identity.
+- `docs/task/index.md` is still unchecked for RFCT-112, and `RFCT-112.md` is
+  still `in progress`. M6e closes both.
+- Re-run all three gates on the tree that ships. The recipes and values are
+  above: `f36bf809…` for the cx3576 image, `bdf340e9…` for x64, and
+  `d7506b62…` (114425856 bytes) for the cx3576 bundle payload.
+
 ## What M6d and M6e need from M6c
 
 **M6d (the bundle, `os/update/bundle.sh`):**
