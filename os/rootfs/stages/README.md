@@ -1,7 +1,7 @@
 # os/rootfs/stages — one Dockerfile per stage, chained by local image tags
 
 `Dockerfile.v2` was 1,827 lines, then 1,152 once RFCT-111 M5a moved its shell
-into `../scripts/`. It is now these four files. Read this before any of them.
+into `../scripts/`. It is now these nine files. Read this before any of them.
 
 ## The chain
 
@@ -9,7 +9,9 @@ Each file is built on its own, in numeric order, and each is written to a local
 image tag the next one starts `FROM`:
 
 ```
-10-base ──▶ 20-install ──▶ 30-40-unsplit ──▶ 90-pack ──▶ _out/<board>/
+10-base ──▶ 20-install ──▶ 30-feature-radios ──▶ 31-feature-containers ──▶
+            32-feature-rauc ──▶ 33-feature-mosd ──▶ 34-feature-mqtt ──▶
+            40-board ──▶ 90-pack ──▶ _out/<board>/
 ```
 
 Every stage after the first declares `ARG MOS_STAGE_PREV` with **no default**
@@ -33,25 +35,78 @@ it would be a stage that silently never runs.
 ## Why these numbers
 
 PLAN-014 M5's vocabulary is `10-base`, `20-install`, `30-feature-*`,
-`40-board`, `90-pack`. Three of those are here. `30-40-unsplit` is **not a
-stage**: it is the material `30-feature-*` and `40-board` are cut from, held in
-one file, under a number no plan uses, until M5c and M5d cut it. Its own header
-says what each of them takes. When both cuts have landed the file is empty and
-must be deleted.
+`40-board`, `90-pack`, and all of it is here. `30-40-unsplit` — the temporary
+file M5b held the middle of the chain in — was cut by M5c and is gone.
 
 | stage | what it is | scripts |
 |---|---|---|
 | `10-base` | the system-essential floor: package allowlist, TLS trust anchors, image profile, operator account, journald storage | 4 |
 | `20-install` | read-only-root wiring: the rendered overlay (fstab, `repart.d`, STATE/DATA binds, seed oneshots) and the image's network defaults | 2 |
-| `30-40-unsplit` | **temporary** — features and board work, awaiting M5c and M5d | 16 |
+| `30-feature-radios` | the radio userland, the packaged units mosd must be the only one driving, and the radio state mounts | 3 |
+| `31-feature-containers` | the container engine: runtime packages, seven self-built binaries, three assertions about the assembled root, the runtime exercise, the config-layer assertion | 4 + 1 inline |
+| `32-feature-rauc` | the update client and the assertion that it links no second TLS stack | 2 |
+| `33-feature-mosd` | mosd, apid, the MQTT bridge and broker: binaries, units, D-Bus policies | 1 |
+| `34-feature-mqtt` | the two pinned MQTT service accounts | 2 |
+| `40-board` | the kernel and its initramfs, grub-editenv, the AIC firmware, the per-board hwinit units | 4 |
 | `90-pack` | close the root (inventory, purge, report), then squashfs-zstd + dm-verity, then the export surface | 12 |
 
-## The one reordering, and why it was necessary
+**`3x-feature-*`, not five files numbered 30.** RFCT-111 writes the family as
+`30-feature-*`, and one number per feature is what the driver requires: files
+sharing a number are refused by name (`auditChain`), because which of them runs
+first would then be whatever order the directory was read in. The numbers are
+consecutive from 30 and their order is the order the RUNs had.
 
-The four files hold **exactly** the instructions `Dockerfile.v2` held — no `RUN`
-was merged, split, added or dropped, and the only new lines in the whole cut are
-the three `ARG MOS_STAGE_PREV`/`FROM ${MOS_STAGE_PREV}` chain links and
-`COPY --from=rootfs` becoming `COPY --from=closed`.
+**`rauc` is a feature stage with no caller-facing switch**, and that is written
+down rather than left to be noticed: no board declines the update client, so
+nothing passes `--without rauc`. The mechanism can, and its file says so.
+
+## Declining a feature: the stage IS the switch
+
+RFCT-111's actual deliverable, and it replaced two build arguments:
+
+```
+bash os/build/run.sh --build-rootfs --board x64 --dest _out/x64 --without containers
+```
+
+`WITH_CONTAINERS` reached the build as a build argument that **five** separate
+RUNs and scripts each tested, and `WITH_MOSD` as one that a sixth tested four
+times. Every copy was an independent chance to disagree with the others, and a
+build where one did would have installed the engine and skipped its assertions,
+or run the assertions against a root with no engine in it. The old comment asked
+readers to keep them in step: *"everything downstream keys off the same arg, so
+a board without the engine is not a board with half of one."* It is now a
+property of the chain — one decision, made once, before docker starts.
+
+Three things make it a mechanism rather than a flag:
+
+- **A name that matches no feature stage is refused**, with the list of the ones
+  that exist. `--without contaners` that matched nothing would build the FULL
+  image and exit 0, which is the shape of green this campaign keeps finding.
+- **A non-feature stage cannot be declined.** `--without base` is a request for
+  an image with no operator account and no trust anchors; the caller who typed
+  it did not mean that, and the refusal names the file.
+- **The arguments follow the stage.** `PODMAN_DIR` is declared only by
+  `31-feature-containers`, so a build that declines the feature and still passes
+  the argument is refused by `unusedArgs` — docker would merely warn, and a
+  warning scrolls past in a build this size.
+
+`WITH_CONTAINERS=0` / `WITH_MOSD=0` and `board/<name>/containers.env` are
+unchanged; `../build-v2.sh` translates them. What was replaced is the build
+*argument*, which is the copy that had to be threaded through six files.
+
+`_out/<board>/rootfs-stages.txt` records the declined set, and prints
+`# declined: (none ...)` when there is nothing to decline: an image built
+without a feature stage and an image whose feature stage did nothing are
+indistinguishable afterwards, so it is written down at the time.
+
+## The reorderings, and why each was necessary
+
+### M5b's, when the chain was cut out of the single file
+
+The four files it produced held **exactly** the instructions `Dockerfile.v2`
+held — no `RUN` was merged, split, added or dropped, and the only new lines in
+the whole cut were the three `ARG MOS_STAGE_PREV`/`FROM ${MOS_STAGE_PREV}` chain
+links and `COPY --from=rootfs` becoming `COPY --from=closed`.
 
 Six of them moved **earlier**, and nothing moved later:
 
@@ -75,6 +130,53 @@ that `RUN` records the x64 build that failed when it was not). The container
 feature straddled it the same way, through `podman-assert-config`. A feature
 split across the overlay cannot be one omittable stage. Putting the overlay
 before every feature is what makes the rest of M5 possible.
+
+### M5c's, when `30-40-unsplit` became the feature stages and `40-board`
+
+`30-40-unsplit`'s header said its order was `Dockerfile.v2`'s and that this was
+"NOT a claim that features must precede board work", and handed the decision to
+whoever cut it. M5c decided it: **the board work moved behind every feature.**
+
+Its seventeen RUNs, in the order that file had them, regrouped:
+
+| RUN, in `30-40-unsplit` order | now in |
+|---|---|
+| 1 `radios-packages` | `30-feature-radios` |
+| 2 the container runtime packages | `31-feature-containers` |
+| 3 `radios-mask-units` | `30-feature-radios` |
+| 4 `rauc-install`, 5 `rauc-assert-no-tls-stack` | `32-feature-rauc` |
+| 6 `podman-install`, 7 `podman-assert`, 8 `podman-exercise` | `31-feature-containers` |
+| 9 `grub-editenv-install`, 10 `kernel-and-initramfs`, 11 `firmware-install` | `40-board` |
+| 12 `radios-mounts` | `30-feature-radios` |
+| 13 `podman-assert-config` | `31-feature-containers` |
+| 14 `mosd-install` | `33-feature-mosd` |
+| 15 `account-mos-mqttd`, 16 `account-mos-mqtt-broker` | `34-feature-mqtt` |
+| 17 `hwinit-install` | `40-board` |
+
+Two RUNs moved **earlier** (12 and 13, which sat behind the board work because
+they need the overlay — and the overlay is now two stages ahead of every
+feature), and six moved **later** (4 and 5 behind the container work, 9–11
+behind all of it). Within each group the relative order is unchanged.
+
+**What decided it.** Both arrangements were available: pull 12 and 13 forward,
+or push 9–11 back. The numbers have to read in the order they run — PLAN-014
+fixed `30-feature-*` before `40-board` — so a `40-board` that ran first would be
+a file whose number lied about when it happened.
+
+**What it was checked against.** Nothing in the four board RUNs reads anything a
+feature stage writes: the kernel work reads `/usr/lib/modules` and the
+initramfs hooks, the firmware install moves files into `/usr/lib/firmware`,
+`grub-editenv-install` names its own `libdevmapper` dependency rather than
+depending on the `cryptsetup-bin` that arrives later (its own comment says why),
+and `hwinit-install` reads the staged board facts.
+
+**And the constraint that fixed the feature order.** The `apt` transactions
+still run in the order they ran before — radios, containers, `grub-editenv`,
+kernel — because `30-feature-radios` is deliberately ahead of
+`31-feature-containers`. That order decides the order entries land in dpkg's
+database and in the logs the pack stage carries into
+`/usr/share/factory/var/log`, so keeping it is what makes this cut a regrouping
+rather than a re-install.
 
 **It was measured, not argued.** A reordering can change the image, and the
 instrument is in `../README.md` under "Determinism, and what still deviates":
@@ -155,8 +257,8 @@ there. An `ARG` declared with no value is *unset* rather than empty, so a
 `set -u` on it fails inside the script exactly as it did inline. Each script
 names the arguments it reads in its header. Note that `ARG` is **per stage**,
 and now also per *file*: an argument a stage's `RUN`s read must be declared in
-that stage's file. `BOARD_RADIOS` is declared in `30-40-unsplit` and again in
-`90-pack` for that reason.
+that stage's file. `BOARD_RADIOS` is declared in `30-feature-radios` and again
+in `90-pack` for that reason.
 
 These scripts are POSIX `sh` under dash. **Do not add `set -o pipefail`**: dash
 has no such option, and several use `producer | grep -q`, a form that is correct

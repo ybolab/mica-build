@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Build the squashfs + dm-verity arm64 rootfs slot image for cx3576 (layout v2).
-# Usage: [BOARD_DIR=...] [WITH_MOSD=0|1] [WITH_CONTAINERS=0|1] [MOS_PROFILE=dev|prod] bash os/rootfs/build-v2.sh
+# Usage: [BOARD_DIR=...] [WITH_MOSD=0|1] [WITH_CONTAINERS=0|1] [MOS_PROFILE=dev|prod]
+#        [MOS_ROOTFS_WITHOUT="radios rauc mqtt ..."] bash os/rootfs/build-v2.sh
 #
 # There is deliberately NO ROOT_PASSWORD here. A v2 rootfs is a signed,
 # byte-identical squashfs, and the pack stage FAILS any
@@ -87,6 +88,32 @@ case "$WITH_CONTAINERS" in
     exit 1
     ;;
 esac
+# THE DECLINED FEATURES, as one list (RFCT-111).
+#
+# WITH_CONTAINERS and WITH_MOSD are the two historical spellings and they fold
+# into it here, so there is one answer to "is this feature in the image" and
+# every consumer below asks the same question. MOS_ROOTFS_WITHOUT is the general
+# form: a space-separated list of feature names, which is what makes the three
+# stages with no WITH_* history -- radios, rauc, mqtt -- reachable from the
+# shipping path at all. Without it the mechanism would exist and two of its five
+# subjects could only ever be exercised by calling the driver by hand, which is
+# the shape of switch this campaign keeps finding.
+#
+# A NAME NOTHING MATCHES IS NOT VALIDATED HERE, deliberately: the driver holds
+# the list of feature stages (it reads the directory) and refuses an unknown one
+# by name, with the features that do exist. A second copy of that list in this
+# file is the second table this repository keeps deleting.
+MOS_ROOTFS_WITHOUT=${MOS_ROOTFS_WITHOUT:-}
+WITHOUT_FEATURES=" ${MOS_ROOTFS_WITHOUT} "
+[ "$WITH_CONTAINERS" = "1" ] || WITHOUT_FEATURES="${WITHOUT_FEATURES}containers "
+[ "$WITH_MOSD" = "1" ] || WITHOUT_FEATURES="${WITHOUT_FEATURES}mosd "
+# `case` and not a substring test with [[ ]]: this file is bash, but the pattern
+# is the same one the POSIX scripts use and one spelling reads the same in both.
+declined() { case "$WITHOUT_FEATURES" in *" $1 "*) return 0 ;; *) return 1 ;; esac; }
+if [ -n "${MOS_ROOTFS_WITHOUT}" ]; then
+    echo "note: MOS_ROOTFS_WITHOUT declines:${MOS_ROOTFS_WITHOUT}"
+fi
+
 # Image profile baked into /usr/lib/mos/profile.conf. mosd reads it on first
 # boot and FAILS CLOSED to prod, so the value has to be exactly "dev" or "prod"
 # in lowercase; the Dockerfile rejects anything else. It no longer selects the
@@ -162,6 +189,9 @@ fi
 RAUC_STAGE="$OUT_DIR/rauc"
 rm -rf "$RAUC_STAGE"
 mkdir -p "$RAUC_STAGE"
+if declined rauc; then
+    echo "note: rauc declined; building rootfs without stages/32-feature-rauc"
+else
 RAUC_OUT="$REPO_ROOT/os/update/rauc/out-$MOS_ARCH"
 for f in rauc rauc.service rauc-service.sh de.pengutronix.rauc.conf de.pengutronix.rauc.service NEEDED.txt RAUC_VERSION.env; do
     if [ ! -f "$RAUC_OUT/$f" ]; then
@@ -173,16 +203,17 @@ for f in rauc rauc.service rauc-service.sh de.pengutronix.rauc.conf de.pengutron
     cp "$RAUC_OUT/$f" "$RAUC_STAGE/$f"
 done
 echo "rauc: staged $(sed -n 's/^RAUC_VERSION=//p' "$RAUC_STAGE/RAUC_VERSION.env") for $MOS_ARCH"
+fi
 
 PODMAN_STAGE="$OUT_DIR/podman"
 rm -rf "$PODMAN_STAGE"
 mkdir -p "$PODMAN_STAGE"
-if [ "$WITH_CONTAINERS" = "1" ]; then
+if ! declined containers; then
     PODMAN_OUT="$REPO_ROOT/os/podman/out-$MOS_ARCH"
     for b in podman quadlet crun conmon netavark aardvark-dns catatonit; do
         if [ ! -f "$PODMAN_OUT/$b" ]; then
             echo "error: $PODMAN_OUT/$b not found." >&2
-            echo "WITH_CONTAINERS=1 asks for a container engine and none has been built." >&2
+            echo "stages/31-feature-containers is in the chain, which asks for a container engine, and none has been built." >&2
             echo "Build it with 'MOS_ARCH=$MOS_ARCH make podman', or set WITH_CONTAINERS=0 for a board that declines the engine." >&2
             exit 1
         fi
@@ -204,7 +235,7 @@ fi
 MOSD_STAGE="$OUT_DIR/mosd"
 rm -rf "$MOSD_STAGE"
 mkdir -p "$MOSD_STAGE"
-if [ "$WITH_MOSD" = "1" ]; then
+if ! declined mosd; then
     bash "$REPO_ROOT/mosd/hack/build-target.sh" "$RUST_TARGET" "$ELF_ARCH"
     cp "$REPO_ROOT/mosd/target/$RUST_TARGET/release/mosd" "$MOSD_STAGE/mosd"
     cp "$REPO_ROOT/mosd/dist/mosd.service" "$MOSD_STAGE/mosd.service"
@@ -229,7 +260,7 @@ if [ "$WITH_MOSD" = "1" ]; then
     cp "$REPO_ROOT/mosd/broker/dist/mos-mqtt-broker.service" \
         "$MOSD_STAGE/mos-mqtt-broker.service"
 else
-    echo "note: WITH_MOSD=0; building rootfs without mosd"
+    echo "note: mosd declined; building rootfs without stages/33-feature-mosd"
 fi
 
 # Board hardware-init facts (confs consumed by the os/boards/cx3576/hwinit
@@ -524,16 +555,10 @@ done
 # with the argument's name in it rather than a value that quietly does nothing.
 SELECT_ARGS=()
 FEATURE_ARGS=()
-if [ "$WITH_CONTAINERS" = "1" ]; then
-    FEATURE_ARGS+=(--arg PODMAN_DIR="_out/$MOS_BOARD/podman")
-else
-    SELECT_ARGS+=(--without containers)
-fi
-if [ "$WITH_MOSD" = "1" ]; then
-    FEATURE_ARGS+=(--arg MOSD_DIR="_out/$MOS_BOARD/mosd")
-else
-    SELECT_ARGS+=(--without mosd)
-fi
+for f in $WITHOUT_FEATURES; do SELECT_ARGS+=(--without "$f"); done
+declined containers || FEATURE_ARGS+=(--arg PODMAN_DIR="_out/$MOS_BOARD/podman")
+declined mosd || FEATURE_ARGS+=(--arg MOSD_DIR="_out/$MOS_BOARD/mosd")
+declined rauc || FEATURE_ARGS+=(--arg RAUC_DIR="_out/$MOS_BOARD/rauc")
 
 # THE CHAIN, not one Dockerfile. os/build/run.sh --build-rootfs sequences
 # os/rootfs/stages/*.Dockerfile in numeric order, tagging each and handing it to
@@ -553,7 +578,6 @@ if ! bash "$REPO_ROOT/os/build/run.sh" --build-rootfs \
         --arg RAUC_BOOTLOADER="$RAUC_BOOTLOADER" \
         --arg BOARD_RADIOS="$BOARD_RADIOS" \
         --arg MODULES_TAR="_out/$MOS_BOARD/modules.tar" \
-        --arg RAUC_DIR="_out/$MOS_BOARD/rauc" \
         --arg BOARD_INIT_DIR="_out/$MOS_BOARD/init" \
         --arg OVERLAY_DIR="_out/$MOS_BOARD/overlay-v2" \
         ${SELECT_ARGS[@]+"${SELECT_ARGS[@]}"} \
