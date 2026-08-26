@@ -1,6 +1,6 @@
 // The container engine, the purge and the trust store driven from the failing side.
 //
-// PLAN-014 M4f (RFCT-110), RFCT-096. Every case asserts the check GREEN on the
+// Every case asserts the check GREEN on the
 // unmutated fixture, makes ONE edit, asserts RED, and asserts the message names
 // the thing. The edits are the shapes these failures actually took:
 //
@@ -8,8 +8,7 @@
 //     being disabled is not enough, and it is the reason the check asks for no
 //     podman unit of ANY name rather than for a mask list.
 //   - nft missing. It is reached by exec, so no NEEDED-soname check can see it,
-//     and it was absent from the image RFCT-101/102 shipped -- which passed
-//     every assertion the verifier then had.
+//     and an image can ship without it while passing every other assertion.
 //   - graphroot on /var. Containers work, and then one day the partition resets
 //     and every pulled image is gone, with no error anywhere.
 //   - the Quadlet mount STATICALLY ENABLED, which is the branch with teeth:

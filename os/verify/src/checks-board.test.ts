@@ -1,11 +1,10 @@
-// Batch 3 driven from the failing side -- and from the OTHER board.
+// The board-hardware families, driven from the failing side and from the OTHER
+// board.
 //
-// PLAN-014 M4d (RFCT-110), RFCT-096's rule: a ported check lands with the
-// fixture that fails it, because the parity harness cannot tell a check that
-// PASSES from one that CANNOT FAIL. Both report "agrees with the oracle"
-// against a healthy image and only a mutation separates them.
-//
-// ═══ WHAT IS DIFFERENT ABOUT THIS BATCH'S NEGATIVE SIDE ═══
+// Every check lands with the fixture that fails it, because the parity harness
+// cannot tell a check that PASSES from one that CANNOT FAIL: both report
+// "agrees with the oracle" against a healthy image, and only a mutation
+// separates them.
 //
 // Every family here has a THIRD direction -- the SKIP it takes on the board
 // without the hardware -- and a skip is not a pass. So each family is driven
@@ -13,8 +12,6 @@
 // board's tree, and SKIPPED on the board that declares it absent. A check that
 // answered `pass` where the oracle says `skip` is a divergence the parity run
 // would catch on a real image; these cases catch it on a host with none.
-//
-// ═══ THE HOLE THIS FILE EXISTS TO CLOSE ═══
 //
 // `status-led-absent` -- check_status_led's BOARD_HAS_STATUS_LED=0 branch --
 // had never been observed FAILING anywhere in this tree. It runs on x64's real

@@ -1,6 +1,6 @@
 // The register, and the two directions that keep it from falling behind.
 //
-// RFCT-113 M7b. `pinCoverageFaults` is the guard, and a guard is only worth the
+// `pinCoverageFaults` is the guard, and a guard is only worth the
 // run it can refuse -- so every case below drives it RED first and keeps the
 // green one beside it. The shipped register passing is the positive control and
 // on its own it proves nothing: a coverage check that never fires and a
@@ -34,7 +34,7 @@ function fixture(name: string, body: string): string {
 }
 
 /**
- * RFCT-113's Scope, transcribed once, HERE and not in the register.
+ * The artifact list, transcribed once, HERE and not in the register.
  *
  * This is the one place a list of names is written down on purpose, and it is
  * written in the TEST rather than in the code so that it is an independent
@@ -64,7 +64,7 @@ const SCOPE_ARTIFACTS = [
   'catatonit',
 ] as const
 
-describe('the register names what RFCT-113 names', () => {
+describe('the register names exactly the artifacts in scope', () => {
   test('every artifact in Scope is in the register, and nothing else is', () => {
     expect([...ARTIFACTS].map(a => a.name).sort()).toEqual([...SCOPE_ARTIFACTS].sort())
   })
@@ -89,19 +89,11 @@ describe('the register names what RFCT-113 names', () => {
 
   // THE LOCK, AND THE EDIT IT WAS BUILT TO FORCE.
   //
-  // M7b wrote this as `expect(unclaimed.sort()).toEqual(['apid', 'mosd'])` and
-  // said what would happen next: "This is one of the three edits that adding a
-  // third unclaimed artifact costs -- the register entry, EXPECTED_UNCLAIMED,
-  // and this line ... When M7d's --version handlers land, mosd and apid move to
-  // PASS and this expectation becomes `[]`, which is what proves the fix
-  // landed."
-  //
-  // That is this diff. The user lifted PLAN-014's `mosd/` exclusion on
-  // 2026-08-26 for exactly a `--version` handler, both binaries got one, and
-  // all three moved together: the two register entries, EXPECTED_UNCLAIMED, and
-  // this line. The lock did its job in the direction it was hardest to get
-  // right -- the GOOD one -- because `unclaimedFaults` refuses a stale record
-  // even when the change it is stale about is a fix.
+  // Every artifact answers `--version`, so the unclaimed list is empty. Adding
+  // an unclaimed artifact costs three edits that must move together -- the
+  // register entry, EXPECTED_UNCLAIMED, and this line -- because
+  // `unclaimedFaults` refuses a stale record in either direction, including
+  // when the change it is stale about is a fix.
   test('every artifact is asked for a version, and none is unclaimed', () => {
     expect(ARTIFACTS.filter(a => a.contract.kind === 'unclaimed').map(a => a.name)).toEqual([])
     for (const a of ARTIFACTS) {
@@ -140,11 +132,10 @@ describe('unclaimedFaults -- the category that must not grow silently', () => {
    * A register with one unclaimed entry, for the cases the SHIPPED register can
    * no longer reach.
    *
-   * RFCT-113 M7d emptied EXPECTED_UNCLAIMED, so `unclaimedFaults()` over the
-   * shipped register now compares two empty sets -- and a green over two empty
-   * sets is exactly what an authorisation list that had quietly emptied ITSELF
-   * would produce. M7b's own vacuity control said as much while both sets were
-   * populated. So every direction below is driven from this fixture instead,
+   * EXPECTED_UNCLAIMED is empty, so `unclaimedFaults()` over the shipped
+   * register compares two empty sets -- and a green over two empty sets is
+   * exactly what an authorisation list that had quietly emptied ITSELF would
+   * produce. So every direction below is driven from this fixture instead,
    * where the search space is stated and non-empty.
    */
   const withUnclaimed = (name: string) =>

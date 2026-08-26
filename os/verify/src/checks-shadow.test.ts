@@ -1,6 +1,6 @@
 // The shadow contract driven from the failing side.
 //
-// PLAN-014 M4d (RFCT-110), RFCT-096. The property is end-to-end -- the file PAM
+// The property is end-to-end -- the file PAM
 // opens is built in RAM on every boot from a template carrying no usable
 // credential -- and every case below breaks exactly one link in it, against a
 // fixture asserted green first.
@@ -277,7 +277,7 @@ describe('no baked credential', () => {
   })
 
   test('an EMPTY root field is PASSWORDLESS login and gets its own sentence', async () => {
-    // RFCT-024's rule: empty is not a locked marker. Only '!' (including '!!'
+    // Empty is not a locked marker. Only '!' (including '!!'
     // and '!'-prefixed forms that retain a hash) and '*' lock an account, and
     // pam_unix accepts any password -- including none -- for an empty field.
     const fx = await mutated('factory-shadow-root-locked', root =>
@@ -304,9 +304,8 @@ describe('no baked credential', () => {
   })
 
   test('a NON-root account with a usable hash is caught by the widened check', async () => {
-    // RFCT-024 scoped the rule to root because root was the only account;
-    // RFCT-039 added `mos`. A check that stayed root-shaped would have gone on
-    // passing with a shipped credential for the account an operator logs in as.
+    // The rule covers every account, not just root: a root-shaped check would
+    // pass with a shipped credential for the account an operator logs in as.
     const fx = await mutated('factory-shadow-accounts-locked', root =>
       rewrite(root, FACTORY, t => t.replace('mos:!:', 'mos:$2b$10$abcdefghijklmnopqrstuv:')))
     try {

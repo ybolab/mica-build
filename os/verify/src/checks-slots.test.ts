@@ -1,7 +1,7 @@
-// Batch 1b driven from the failing side.
+// The boot-slot filesystem checks, driven from the failing side.
 //
-// PLAN-014 M4b (RFCT-110), RFCT-096's rule: a ported check lands with the
-// mutation that fails it. These three read a filesystem rather than a table,
+// Every check lands with the mutation that fails it. These three read a
+// filesystem rather than a table,
 // so the fixture is a real FAT32 boot sector written into a real sparse file at
 // the offset the layout declares, plus a stubbed mtools answering what the two
 // mtools readers ask.

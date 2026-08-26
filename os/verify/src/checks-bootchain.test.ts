@@ -1,12 +1,11 @@
-// Batch 4b's boot chain, driven from the failing side: one mutation per check.
+// The boot chain, driven from the failing side: one mutation per check.
 //
-// PLAN-014 M4g (RFCT-110), RFCT-096's rule. Every case asserts the check GREEN
-// first and RED after exactly one edit, and asserts the message names the thing
-// that moved -- a check that goes red about BOOT-A when BOOT-B is the broken
-// slot sends a reader to the wrong partition, and the parity harness still
-// calls it a clean divergence.
+// Every case asserts the check GREEN first and RED after exactly one edit, and
+// asserts the message names the thing that moved -- a check that goes red about
+// BOOT-A when BOOT-B is the broken slot sends a reader to the wrong partition,
+// and the parity harness still calls it a clean divergence.
 //
-// THE BSP COMPARE IS DRIVEN IN BOTH DIRECTIONS HERE AND IN NEITHER IN THE FIELD.
+// The BSP compare is driven in both directions here and in neither in the field.
 // `board/cx3576/out/` is not populated in a checkout, so on the real image both
 // verifiers say `compare source not found` and the byte-compare's passing
 // direction is never taken. These cases take it: a temporary BOARD_DIR with a
@@ -349,9 +348,8 @@ describe('uboot-blob-matches-variant', () => {
   })
 
   test('RED, naming the path, when the BSP tree was never built', async () => {
-    // THE STATE A CHECKOUT IS IN. Expressed rather than repaired: PLAN-014
-    // puts board/ BSP builds outside this campaign, and populating the tree
-    // would turn eight of the oracle's own FAILs into passes.
+    // The state a checkout is in: board/ BSP builds are not run here, so the
+    // tree is unpopulated and the compare source is absent.
     const r = one(await drive(id, world({ poke: [[UBOOT_AT, UBOOT_BLOB]] })))
     expect(r.verdict).toBe('fail')
     expect(r.message).toContain('u-boot compare source not found')

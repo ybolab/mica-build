@@ -1,7 +1,7 @@
 // The board-definition walk, against both shipped boards and against
 // definitions edited to break each rule it enforces.
 //
-// PLAN-014 M4b (RFCT-110). The walk produces one half of every GPT geometry
+// The walk produces one half of every GPT geometry
 // check; the numbers below are asserted against the two REAL board
 // definitions, so a layout change that silently moves a partition fails here
 // before it reaches a parity run.

@@ -1,6 +1,6 @@
 // The D-Bus policy batch driven from the failing side.
 //
-// PLAN-014 M4f (RFCT-110), RFCT-096. Each case asserts the check GREEN on the
+// Each case asserts the check GREEN on the
 // unmutated fixture, makes ONE edit, asserts RED, and asserts the message names
 // the thing. The edits are the shapes the real mistake takes: a one-character
 // widening of own_prefix that reads in a diff like a simplification, a grant

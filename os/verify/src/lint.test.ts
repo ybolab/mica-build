@@ -1,25 +1,21 @@
 // Prove the board-definition schema lint rejects a broken board definition.
 //
-// WHY. A linter that has only ever been observed passing is not evidence, and
-// the shell predecessor proved the point about itself twice: its first version
-// printed FAIL lines and then reported "RESULT: PASS (0/0 checks)" because its
-// counters lived in a subshell that discarded them, and its forbidden-key check
-// could be defeated for four years by writing the forbidden key as empty.
+// A linter that has only ever been observed passing is not evidence: a lint
+// whose counters live in a subshell reports "RESULT: PASS (0/0 checks)" after
+// printing FAIL lines, and a forbidden-key check can be defeated by writing the
+// forbidden key as empty.
 //
 // Each case mutates a COPY of a real layout in one specific way and asserts
 // that the lint (a) fails and (b) says something that names the actual problem.
 // The second half matters: a verdict alone would be satisfied by a lint that
 // rejects everything, and the message is what an engineer reads.
 //
-// THE COPY IS DELIBERATELY NOT CALLED board.env. A rejection message should say
+// The copy is deliberately not called board.env: a rejection message should say
 // "candidate", not name a real board it is not.
 //
-// ---------------------------------------------------------------------------
-// THE CASES MARKED `shellPassed` ARE THE POINT OF THE PORT.
-//
-// Each was run against os/verify/lint.sh on 2026-08-25 and PASSED it. They are
-// the four holes the `${NAME:-}` idiom leaves, and they are why this port is
-// deliberately stricter than the thing it replaces rather than a translation of
+// The cases marked `shellPassed` are the four holes the `${NAME:-}` idiom
+// leaves -- it cannot tell DECLARED EMPTY from NOT DECLARED -- and they are why
+// this lint is stricter than the shell predecessor rather than a translation of
 // it. See the header of lint.ts.
 
 import { describe, expect, test } from 'bun:test'

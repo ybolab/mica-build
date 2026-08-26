@@ -1,6 +1,6 @@
-// Batch 1c driven from the failing side.
+// The RAUC configuration checks, driven from the failing side.
 //
-// PLAN-014 M4b (RFCT-110), RFCT-096's rule. The fixture is a packed root
+// The fixture is a packed root
 // carrying one file: the RAUC config each check reads. The BASELINE is the real
 // rendered `system.conf` from the shipped cx3576 and x64 overlays -- read off
 // disk rather than retyped, so a renderer change that these checks would newly

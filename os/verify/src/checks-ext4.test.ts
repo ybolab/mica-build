@@ -1,18 +1,18 @@
-// Batch 4b's ext4 family, driven from the failing side: one mutation per check.
+// The ext4 family, driven from the failing side: one mutation per check.
 //
-// PLAN-014 M4g (RFCT-110), RFCT-096's rule. Every case asserts the check GREEN
+// Every case asserts the check GREEN
 // against an unmutated transcript first and RED against a transcript that
 // differs in exactly one field, and asserts the MESSAGE names the tier -- a
 // check that goes red about `state` when `data` is the broken one sends a
 // reader to the wrong partition and the parity harness still calls it a clean
 // divergence.
 //
-// WHY TRANSCRIPTS AND NOT A REAL FILESYSTEM. `make os-verify-test` runs on a
-// host with no image and in CI inside the pinned bun container with no docker
-// under it, so a suite that needed a real ext4 would be a suite that skipped --
-// and a skip reports the same green as a pass. Every transcript below was
-// captured on 2026-08-26 from e2fsprogs 1.47.1 in the pinned alpine:3.21,
-// against the real cx3576 image and against deliberately malformed inputs.
+// Transcripts and not a real filesystem: `make os-verify-test` runs on a host
+// with no image, and in CI inside the pinned bun container with no docker under
+// it, so a suite that needed a real ext4 would be a suite that skipped -- and a
+// skip reports the same green as a pass. Every transcript below is captured
+// from e2fsprogs 1.47.1 in the pinned alpine:3.21, against the real cx3576
+// image and against deliberately malformed inputs.
 
 import { describe, expect, test } from 'bun:test'
 import { loadBoard } from './board.ts'

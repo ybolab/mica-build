@@ -1,8 +1,8 @@
 // What can be asserted about the three negative tests WITHOUT docker.
 //
-// RFCT-113 M7c. The cases themselves need a real image, a real container and a
-// real mutated binary -- that is the whole point of them, and `make
-// os-smoke-negative-test` is where they run. What lives here is everything that
+// The cases themselves need a real image, a real container and a real mutated
+// binary -- that is the whole point of them, and `make os-smoke-negative-test`
+// is where they run. What lives here is everything that
 // decides WHETHER THEY RUN AT ALL, because those decisions are exactly the ones
 // that fail silently: an empty case list, a case naming an artifact the register
 // does not have, a mutation body that is empty, a skew that is not a skew. Each
@@ -18,7 +18,7 @@ import { ARTIFACTS } from './smoke-register.ts'
 import { CASES, negativeRun, skewedFrom, versionSkewMutation, type NegativeCase } from './smoke-negative.ts'
 
 describe('the declared case list', () => {
-  test('RFCT-113 asks for three, and there are three, named', () => {
+  test('the case list declares three negative cases, and names them', () => {
     // The clause says "three negative tests" and names the three shapes. A list
     // that drifted to two would still print `RESULT: PASS (2 of 2)`.
     expect(CASES.map(c => c.name).sort()).toEqual(['missing-soname', 'version-skew', 'wrong-arch'])
