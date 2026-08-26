@@ -21,7 +21,7 @@ typecheck and the `run_bun` seam; only the last step differs, which is what
 keeps ONE place deciding how bun is invoked. `--lint`'s file arguments are made
 absolute before they are handed on, because `run_bun` cds into the package
 first. `--verify` is the one mode that cannot take the container route — see
-"The hole, measured rather than assumed" below.
+"The hole, measured — and then closed by a decision" below.
 
 ## The oracle is deleted — what that FREEZES, and who owns each one now
 
@@ -449,31 +449,64 @@ words, as the bun seam above, and the same `/tmp` quirk behind it.
 measured rather than argued: against ROOTFS-A of the real cx3576 image both
 produce `sha256:565af2a3…142b777`.
 
-### The hole, measured rather than assumed
+### The hole, measured — and then closed by a decision, not by this milestone
 
-`--parity` is the one mode that **cannot** take the pinned bun container, and
-`run.sh` refuses it there by name. The harness drives docker itself — to re-run
-`os/verify-image-v2.sh`, which re-execs into alpine on a tool-less host, and to
-read the image with the tools above. Inside the bun container that is
-docker-in-docker, and the pinned bun image has no docker client:
+`--verify` is the one mode that **cannot** take the plain pinned bun container.
+It drives docker itself: `src/tools.ts` reads the image with sgdisk, mtools,
+debugfs, unsquashfs and veritysetup out of `IMAGE_ALPINE_3_21`, which on a
+tool-less host is always. Inside the bun container that is docker-in-docker, and
+`IMAGE_BUN_1` has no docker client:
 
 ```
 $ docker run --rm oven/bun:1@sha256:5ff6… sh -c 'command -v docker || echo NO-DOCKER-CLI'
 NO-DOCKER-CLI
 ```
 
-— no `curl` in it either, so the daemon socket cannot be reached by hand. So a
-host with **neither** bun **nor** the image tools cannot yet run the full
-verifier, and RFCT-110's "tool-less-host container path verified for the full
-verifier, not just the lint" is **not satisfied by M4a**. Closing it is a
-decision M4a does not own: a bun image that also carries the
-gptfdisk/mtools/e2fsprogs/squashfs-tools/cryptsetup set (one image, two
-decisions), a docker client added to the bun pin, or the harness speaking the
-daemon's HTTP API over the socket from bun. Whichever it is, it is a new pin in
-`os/build-env/images.env`.
+— no `curl`, `wget`, `nc`, `python3` or `socat` in it either. M4e measured both
+sides of the seam in that container and both failed for that one cause:
+`createToolRuntime` refused with *"no docker to run the pinned ones in"*, and the
+shell verifier this package replaced died at its own `:185` with exit 127,
+`docker: command not found`. **Mounting the daemon socket changed neither** —
+what is missing is the CLIENT. So RFCT-110's "tool-less-host container path
+verified for the full verifier, not just the lint" was **not satisfied**, and it
+did not close itself when the oracle was deleted: the full verifier is now the
+register, and the register drives docker just as much.
 
-The suite and the lint are unaffected: both still run in the pinned bun
-container on a host with nothing but docker, and CI still takes that route.
+Three ways to close it were reported, each costed:
+
+| | closure | new pin | measured |
+|---|---|---|---|
+| a | a docker client added to the bun pin | yes | **sufficient** — the full verifier ran to completion on a tool-less host |
+| b | a bun image also carrying gptfdisk/mtools/e2fsprogs/squashfs-tools/cryptsetup | yes | one image, two decisions; also breaks "the tools that read an image come from the base that wrote it" |
+| c | the tool seam speaking the daemon's HTTP API over the socket from bun | **no** | available — bun in the pinned image reaches `/_ping` over `fetch(…, { unix: … })` and reads daemon 29.7.2 — but a rewrite of `tools.ts`'s process seam |
+
+**The user chose (a) on 2026-08-26.** `IMAGE_DOCKER_CLI_28` is recorded in
+`os/build-env/images.env` with what it costs, and `os/verify/Dockerfile` is the
+pinned bun image plus that client — a static binary, checked, which is what lets
+an alpine-built client run on a debian base. `run.sh` builds it on demand for
+`--verify` only, tagged with **both** input digests so a bumped pin cannot
+silently reuse the old image, and mounts the daemon socket.
+
+Re-measured on a genuinely bun-less host, through the pinned image rather than
+the bind-mount that simulated it:
+
+    env -i PATH=/usr/bin:/bin HOME=<empty>    (no bun, no image tools; docker only)
+    run.sh --verify --board x64     RESULT: PASS (290/290 checks, 22 skipped)  rc=0
+    make os-verify-cx3576-v2        RESULT: FAIL (387/395 checks, 3 skipped)   rc=1
+
+cx3576's eight FAILs are the BSP byte-compares a checkout cannot carry — correct,
+and the same eight the oracle failed. **The clause is satisfied, not amended.**
+
+**What it costs, said plainly.** Mounting `/var/run/docker.sock` into a container
+is a privilege grant, and no other target in this tree takes one. Nested
+containers are SIBLINGS on the host daemon rather than children — which is
+exactly why the identity mounts still resolve inside them, and equally why
+anything in that container can do anything the daemon can. It is confined to
+`--verify`, and a host with bun never takes the route.
+
+The suite and the lint are unaffected and deliberately unchanged: both still run
+in plain `IMAGE_BUN_1` on a host with nothing but docker, neither mounts the
+socket, and CI still takes that route on every push.
 
 ## Where the matcher runs out, measured
 
