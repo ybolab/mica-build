@@ -46,8 +46,10 @@ import {
   type GptPartition,
   type GptTable,
 } from './image.ts'
+import { FSTAB_CHECKS } from './checks-fstab.ts'
 import { GPT_CHECKS } from './checks-gpt.ts'
 import { RAUC_CHECKS } from './checks-rauc.ts'
+import { ROOT_CHECKS } from './checks-root.ts'
 import { SLOT_CHECKS } from './checks-slots.ts'
 import { ToolOutputError, type ToolRuntime } from './tools.ts'
 import type { CheckResult, RegisteredCheck, Verdict } from './parity.ts'
@@ -101,14 +103,17 @@ export interface CheckCase extends RegisteredCheck {
  * the GPT walk, the FAT slots, the packed root -- and because M4c and M4d add
  * to the register without touching what M4b landed.
  *
- * M4a left this EMPTY on purpose; M4b fills in batch 1 (GPT geometry, the boot
- * slots' filesystems, and the RAUC contract), and what is still unclaimed stays
- * `not-ported` rather than being rounded off to agreement.
+ * M4a left this EMPTY on purpose; M4b filled in batch 1 (GPT geometry, the boot
+ * slots' filesystems, and the RAUC contract) and M4c batch 2 (the packed root's
+ * content, /etc/fstab and where the custom UI root lands). What is still
+ * unclaimed stays `not-ported` rather than being rounded off to agreement.
  */
 export const CHECKS: readonly CheckCase[] = [
   ...GPT_CHECKS,
   ...SLOT_CHECKS,
   ...RAUC_CHECKS,
+  ...ROOT_CHECKS,
+  ...FSTAB_CHECKS,
 ]
 
 /**
