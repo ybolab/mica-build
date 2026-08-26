@@ -16,13 +16,12 @@
 //! stale drop-in is listening on the wrong port, or accepting an
 //! authentication method the operator has already turned off.
 //!
-//! **The device password no longer reaches PAM.** This reconciler used to hash
-//! `secrets/device-password` with bcrypt and write it into the root account's
-//! shadow entry, which made a fielded device carry a password that never
-//! expired. The secret file stays on STATE (no production code reads it back
-//! today), but the credential of record for shell access is now an SSH public
-//! key, or a transient password the operator sets explicitly through
-//! `crate::transient` and which the next boot clears.
+//! **The device password does not reach PAM.** The credential of record for
+//! shell access is an SSH public key, or a transient password the operator
+//! sets explicitly through `crate::transient` and which the next boot clears.
+//! `secrets/device-password` stays on STATE and no production code reads it
+//! back: a hash written into the root account's shadow entry would make a
+//! fielded device carry a password that never expires.
 //!
 //! **`PasswordAuthentication` is gated on that transient password.** The
 //! rendered value is the setting AND `transient::transient_password_active`:
@@ -535,8 +534,8 @@ mod tests {
         drop_in: PathBuf,
         /// Directory the per-account key files land in.
         keys_dir: PathBuf,
-        /// The `root` account's key file — the path the RFCT-034 goldens are
-        /// written against, unchanged.
+        /// The `root` account's key file — the path the goldens below are
+        /// written against.
         keys: PathBuf,
         /// The `mos` account's key file, holding the same bytes as `keys`.
         mos_keys: PathBuf,
@@ -583,7 +582,7 @@ mod tests {
         std::fs::metadata(path).unwrap().permissions().mode() & 0o7777
     }
 
-    // ---- R2: rendering ----------------------------------------------------
+    // ---- rendering --------------------------------------------------------
 
     #[test]
     fn empty_listen_addresses_emit_no_listen_address_directive() {
@@ -692,7 +691,7 @@ mod tests {
         }
     }
 
-    // ---- R3: unit state ---------------------------------------------------
+    // ---- unit state -------------------------------------------------------
 
     #[tokio::test]
     async fn disabled_to_enabled_enables_then_starts() {
@@ -933,7 +932,7 @@ mod tests {
         );
     }
 
-    // ---- the device password no longer reaches the shadow file ------------
+    // ---- the device password does not reach the shadow file ---------------
 
     #[tokio::test]
     async fn no_reconcile_writes_anything_into_the_shadow_file() {
@@ -1017,7 +1016,7 @@ mod tests {
         );
     }
 
-    // ---- R1: real keys, committed as test constants -----------------------
+    // ---- real keys, committed as test constants ---------------------------
     //
     // Generated with `ssh-keygen` purely for this test. Public keys are not
     // secrets, and these correspond to no device: the private halves were
@@ -1074,7 +1073,7 @@ mod tests {
         .unwrap();
     }
 
-    // ---- R7.1: golden renders --------------------------------------------
+    // ---- golden renders ---------------------------------------------------
 
     #[test]
     fn an_empty_list_renders_an_empty_file() {
@@ -1134,12 +1133,11 @@ mod tests {
         );
     }
 
-    // ---- R7.2: a real ssh-keygen key round-trips --------------------------
+    // ---- a real ssh-keygen key round-trips --------------------------------
 
-    /// Closes the gap RFCT-032 recorded: its spec forbade pasting key material,
-    /// so it could not prove that genuine `ssh-keygen` output survives the
-    /// parser and comes back out byte-identical. There is a rendered file to
-    /// compare against here, so it is proved here.
+    /// Genuine `ssh-keygen` output survives the parser and comes back out of
+    /// the render byte-identical — asserted against a rendered file rather
+    /// than against pasted key material.
     #[test]
     fn a_real_ssh_keygen_line_parses_canonicalises_and_renders_back_identically() {
         for line in [REAL_ED25519_LINE, REAL_RSA_LINE, REAL_ED25519_SECOND_LINE] {
@@ -1200,7 +1198,7 @@ mod tests {
         );
     }
 
-    // ---- R7.3: fingerprints agree with ssh-keygen -lf ---------------------
+    // ---- fingerprints agree with ssh-keygen -lf ---------------------------
 
     #[test]
     fn fingerprints_match_what_ssh_keygen_reports() {
@@ -1219,7 +1217,7 @@ mod tests {
         assert_eq!(fingerprint("ssh-ed25519 not!base64"), None);
     }
 
-    // ---- R7.4: validation failures leave the file untouched ---------------
+    // ---- validation failures leave the file untouched ---------------------
 
     /// Apply once with a good key so there is a rendered file to protect, then
     /// apply `bad` and assert the failure changed nothing.
@@ -1375,7 +1373,7 @@ mod tests {
         assert_eq!(std::fs::read_to_string(&paths.keys).unwrap(), "");
     }
 
-    // ---- R7.5: per-character hostile input in the comment -----------------
+    // ---- per-character hostile input in the comment -----------------------
 
     #[tokio::test]
     async fn each_control_character_in_a_comment_fails_and_changes_nothing() {
@@ -1420,7 +1418,7 @@ mod tests {
         );
     }
 
-    // ---- R7.6: PasswordAuthentication gating ------------------------------
+    // ---- PasswordAuthentication gating ------------------------------------
 
     #[tokio::test]
     async fn without_a_transient_password_password_authentication_is_off() {
@@ -1556,7 +1554,7 @@ mod tests {
         }
     }
 
-    // ---- R7.7: published state --------------------------------------------
+    // ---- published state --------------------------------------------------
 
     #[tokio::test]
     async fn published_state_carries_fingerprints_and_never_key_material() {
@@ -1611,7 +1609,7 @@ mod tests {
         assert_eq!(state["authorizedKeys"], json!([]));
     }
 
-    // ---- R7.8: permissions -------------------------------------------------
+    // ---- permissions ------------------------------------------------------
 
     #[tokio::test]
     async fn every_rendered_key_file_is_0600_in_a_0755_directory() {
@@ -1650,12 +1648,12 @@ mod tests {
         );
     }
 
-    // ---- RFCT-053: one key set, rendered for every managed login account ---
+    // ---- one key set, rendered for every managed login account ------------
     //
     // `AuthorizedKeysFile /etc/ssh/authorized_keys.d/%u` is expanded per login
     // user, so a file exists for each account mosd manages and all of them
-    // carry the same list. These tests hold the plural property; the RFCT-034
-    // goldens above still hold the `root` file byte-for-byte.
+    // carry the same list. These tests hold the plural property; the goldens
+    // above still hold the `root` file byte-for-byte.
 
     /// The central guard. One validated list, two files, identical bytes.
     #[tokio::test]
@@ -1754,7 +1752,7 @@ mod tests {
     }
 
     /// An empty list empties EVERY account file. Two empty files, not two
-    /// deletions and not one of each: the RFCT-034 rule, applied per account.
+    /// deletions and not one of each: the golden rule above, per account.
     #[tokio::test]
     async fn an_empty_list_empties_every_account_file_without_deleting_any() {
         let dir = tempfile::tempdir().unwrap();

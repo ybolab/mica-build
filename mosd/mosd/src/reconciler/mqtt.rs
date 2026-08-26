@@ -202,7 +202,7 @@ impl<C: UnitControl> MqttReconciler<C> {
     /// whole `mqtt` subtree, so an `Err` from a start makes the reconcile of
     /// `mqtt.enabled` itself depend on a unit being startable -- which in
     /// practice means depending on `mqtt.listen` being valid. That is the
-    /// coupling this reconciler was built not to have, and the module docs and
+    /// coupling this reconciler does not have, and the module docs and
     /// [`mosd_settings::MqttSettings`] both say so.
     ///
     /// The refusal is REACHABLE, not theoretical. `mos-mqtt-broker.service`
@@ -296,8 +296,9 @@ impl<C: UnitControl> MqttReconciler<C> {
             //
             // Broker only. The bridge carries no StartLimit override, so it
             // inherits systemd's 10-second default, which at its RestartSec=5
-            // fits about two attempts and is therefore unreachable -- the very
-            // gap the broker's 60-second interval was added to close.
+            // fits about two attempts and so cannot reach the limit at all.
+            // The broker's 60-second interval is what makes it reachable
+            // there.
             if active_state == FAILED_STATE {
                 self.reset_failed_or_warn(BROKER_UNIT).await;
             }
@@ -377,8 +378,8 @@ impl<C: UnitControl> Reconciler for MqttReconciler<C> {
             // refusal, and neither may skip a unit. An operator who widened the
             // bind made a decision; a daemon that answers it by quietly not
             // starting is a daemon whose reason for being down cannot be read
-            // anywhere. Coupling `listen`/`auth` to the master switch was
-            // proposed once and rejected -- see the doc comment on
+            // anywhere. `listen`/`auth` are deliberately not coupled to the
+            // master switch -- see the doc comment on
             // `mosd_settings::MqttSettings`.
             //
             // Returning `Err` here would be that same rejected coupling wearing
@@ -583,9 +584,9 @@ mod tests {
         );
     }
 
-    /// A gate here -- refusing to start a broker bound off-host with
-    /// authentication disabled -- was proposed and REJECTED. `mqtt.enabled` is
-    /// a master switch and nothing else; `listen` and `auth` are a separate
+    /// There is deliberately no gate here -- nothing refuses to start a
+    /// broker bound off-host with authentication disabled. `mqtt.enabled` is a
+    /// master switch and nothing else; `listen` and `auth` are a separate
     /// configuration that nothing may refuse to start on. The warning in
     /// `apply` is the whole of the response. Do not delete this test in order
     /// to add the gate.
@@ -830,11 +831,10 @@ mod tests {
     /// An unparseable address must NOT fail the reconcile. `apply` covers the
     /// whole `mqtt` subtree, so an `Err` raised over `listen` would fail the
     /// reconcile of `mqtt.enabled` itself -- making the master switch depend on
-    /// `listen` being valid, which is exactly the coupling that was proposed
-    /// and rejected. The broker is started, exits with its own parse error
-    /// naming the file and the value, and lands in `failed` where live state
-    /// reports it. Do not "fix" this into an `Err`; that re-introduces the
-    /// rejected coupling.
+    /// `listen` being valid, which is exactly the coupling this reconciler
+    /// refuses. The broker is started, exits with its own parse error naming
+    /// the file and the value, and lands in `failed` where live state reports
+    /// it. Do not "fix" this into an `Err`; that introduces the coupling.
     #[tokio::test]
     async fn an_address_that_cannot_parse_still_starts_both_units() {
         let dir = tempfile::tempdir().unwrap();
@@ -882,18 +882,16 @@ mod tests {
     /// entry named `mos-mqtt-broker.service` out of the bus item `apply`
     /// returns. **Changing this shape requires changing the pane.**
     ///
-    /// Asserting values alone would not have caught what actually happened:
-    /// the pane was written against a flat shape this reconciler has never
-    /// published, both sides passed their own tests, and the
-    /// off-host-without-authentication warning could not fire at all because
-    /// `auth.enabled` never arrived where the pane looked for it. An exact key
-    /// set is what makes a rename here fail in a place that names who else
-    /// cares.
+    /// The key SET is asserted and not only the values: a pane written against
+    /// a flat shape this reconciler does not publish passes its own tests while
+    /// its off-host-without-authentication warning can never fire, because
+    /// `auth.enabled` does not arrive where it looks for it. An exact key set
+    /// is what makes a rename here fail in a place that names who else cares.
     ///
     /// `mosd/apid/src/tests.rs` carries a verbatim copy of
     /// `live_state_names_both_units_and_the_config_path`'s expectation as its
-    /// fixture. Still two copies in two crates, but a named source makes the
-    /// copy auditable; the invented one was not.
+    /// fixture -- two copies in two crates, but with a named source, so the
+    /// copy is auditable.
     #[tokio::test]
     async fn the_published_shape_is_the_contract_with_the_apid_pane() {
         let dir = tempfile::tempdir().unwrap();
