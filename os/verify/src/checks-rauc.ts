@@ -1,28 +1,22 @@
 // Batch 1c: the RAUC slot contract, as `/etc/rauc/system.conf` states it.
 //
-// Six checks over one file in the packed root. The file is generated --
-// os/update/rauc/render-config.sh substitutes every GUID out of the board
-// definition -- so these are not "does the renderer work" assertions. They are
-// assertions about the file that SHIPPED, read back out of the squashfs the
-// device mounts, against the layout the GPT was written from. A renderer that
-// ran with one board's env and an assembler that ran with another's would
-// agree with each other and fail here.
+// Six checks over one generated file in the packed root -- os/update/rauc/
+// render-config.sh substitutes every GUID out of the board definition -- so
+// these assert the file that shipped, read back out of the squashfs the device
+// mounts, against the layout the GPT was written from. A renderer that ran with
+// one board's env and an assembler that ran with another's would agree with each
+// other and fail here.
 //
-// Why the SLOT devices are the interesting ones.
+// The slot devices are the interesting ones: a wrong GUID in `[slot.rootfs.0]`
+// installs an update over the running slot, nothing on the device notices until
+// the next boot, and there is no rollback left to take because the slot that
+// would have been rolled back to is the one overwritten. The shape check beside
+// it exists so the config cannot acquire a `/dev/mmcblk0pN` path later, a
+// partition number encoding a position in a table already renumbered once.
 //
-// A wrong GUID in `[slot.rootfs.0]` installs an update over the RUNNING slot.
-// Nothing on the device notices until the next boot, and there is no rollback
-// left to take -- the slot that would have been rolled back to is the one that
-// was overwritten. The shape check beside it exists so the config cannot
-// acquire a `/dev/mmcblk0pN` path later: a partition number encodes a position
-// in a table this campaign has already renumbered once.
-//
-// What is not here.
-//
-// `sq_regular /usr/bin/rauc`, `/etc/rauc/system.conf is a regular file` and the
-// baked-in-keyring check are packed-root CONTENT and belong to M4c's batch --
-// they are the same `sq_regular`/`check_dev_keyring` families that run over
-// forty other paths. The fw_printenv/fw_setenv pair and the ESP-versus-boot-slot
+// Not here: `sq_regular /usr/bin/rauc`, `/etc/rauc/system.conf is a regular
+// file` and the baked-in-keyring check are packed-root content and belong to
+// M4c's batch, and the fw_printenv/fw_setenv pair and the ESP-versus-boot-slot
 // assertion are gated on the bootloader and belong to M4d's.
 
 import { existsSync, readFileSync } from 'node:fs'

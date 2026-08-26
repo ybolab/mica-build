@@ -1,25 +1,23 @@
 // Where a self-built artifact's recorded version is read from, and nothing else.
 //
-// The version loop is closed here: bumping a `versions.env` pin without
-// rebuilding the artifact turns the smoke run red
-// -- and a loop is only closed if the two ends are the same file. So every
-// function here READS a pin out of the file that owns it, at run time, and
-// there is deliberately no literal version string anywhere in os/verify/.
+// The version loop is closed here -- bumping a `versions.env` pin without
+// rebuilding the artifact turns the smoke run red -- and a loop is only closed
+// if the two ends are the same file. So every function reads a pin out of the
+// file that owns it, at run time, and there is deliberately no literal version
+// string anywhere in os/verify/.
 //
-// The second list is the failure mode this file exists to avoid. This campaign
-// has deleted several: `TOOL_PACKAGES` pinned from a copy of an `apk add` line,
-// a hardcoded hwinit list that drifted and cost the image its stable MAC, a
-// `SHIPPED_BOARDS = ['cx3576', 'x64']` literal that made a third board
-// invisible to a lint reporting 26/26 PASS. Every one of them was green while
-// being wrong, because a copy agrees with itself. One list, two readers.
+// The second list is the failure mode this file exists to avoid: `TOOL_PACKAGES`
+// pinned from a copy of an `apk add` line, a hardcoded hwinit list that drifted
+// and cost the image its stable MAC, a `SHIPPED_BOARDS = ['cx3576', 'x64']`
+// literal that made a third board invisible to a lint reporting 26/26 PASS.
+// Every one was green while being wrong, because a copy agrees with itself.
 //
-// No parser is written here either, for the same reason at one level down.
-// `versions.env` is `KEY=value` with comments, which is exactly what
-// `board-env.ts` already reads as DATA rather than by sourcing it -- and that
-// parser refuses command substitution, backticks, parameter expansion and
-// unquoted metacharacters by name. A second `sed -n 's/^KEY=//p'` here would be
-// a second set of semantics for one file format, and the two would agree right
-// up until a value acquired a quote.
+// No parser is written here either. `versions.env` is `KEY=value` with comments,
+// exactly what `board-env.ts` already reads as data rather than by sourcing it,
+// and that parser refuses command substitution, backticks, parameter expansion
+// and unquoted metacharacters by name. A second `sed -n 's/^KEY=//p'` would be a
+// second set of semantics for one file format, agreeing right up until a value
+// acquired a quote.
 
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'

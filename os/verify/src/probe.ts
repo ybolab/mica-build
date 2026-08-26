@@ -2,23 +2,18 @@
 //
 //   bash os/verify/run.sh --parity --probe
 //
-// M4a. This is the instrument that answers "do the helpers work against BOTH
-// real images" without needing a single check to be ported -- and it is what
-// M4b will reach for first, because the fastest way to write a check is to see
-// what the helper already hands you.
+// A probe and not a check: it asserts nothing about the image and its output is
+// not a verdict. What it does assert is that each helper ran and produced
+// something of the shape it promises -- every helper here refuses rather than
+// returns empty when its tool did not do the work, so a probe line that prints
+// is a helper that worked. A step that cannot run says why, by name, and never
+// quietly drops out of the list, because a probe with a missing line and a probe
+// with a passing one look identical from outside.
 //
-// It is a PROBE and not a check: it asserts nothing about the image and its
-// output is not a verdict. What it does assert is that each helper ran and
-// produced something of the shape it promises -- and every helper here refuses
-// rather than returns empty when its tool did not do the work, so a probe line
-// that prints is a helper that worked. A step that cannot run says WHY, by
-// name; it never quietly drops out of the list, because a probe with a missing
-// line and a probe with a passing one look identical from outside.
-//
-// It walks the board definition's ROLES rather than partition names, so the
-// same code drives cx3576's eleven partitions (raw-blob loader, two uboot-env,
-// two FAT boot slots) and x64's nine (an ESP plus two FAT boot slots, no
-// loader, no environment) without a board branch.
+// It walks the board definition's roles rather than partition names, so the same
+// code drives cx3576's eleven partitions (raw-blob loader, two uboot-env, two
+// FAT boot slots) and x64's nine (an ESP plus two FAT boot slots, no loader, no
+// environment) without a board branch.
 
 import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'

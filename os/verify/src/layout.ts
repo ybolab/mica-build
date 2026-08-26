@@ -1,26 +1,21 @@
 // The partition table the board definition describes, walked the way
 // os/verify-image-v2.sh:1450-1516 walks it.
 //
-// This is one half of every GPT geometry check: the other half is the table
-// the IMAGE actually carries, read by `readGpt`. The two are produced by
-// different code from different inputs and only then compared -- which is the
-// property the oracle's own comment at :1450 insists on, and the reason the
-// hand-written chain it replaced (`rootfs_b_start_mib = ...; meta_start_mib =
-// ...`) was wrong: it restated the arithmetic the assembler had already done,
-// so a gap both agreed on would have passed.
+// One half of every GPT geometry check; the other half is the table the image
+// actually carries, read by `readGpt`. The two are produced by different code
+// from different inputs and only then compared, the property the oracle's own
+// comment at :1450 insists on and the reason the hand-written chain it replaced
+// (`rootfs_b_start_mib = ...; meta_start_mib = ...`) was wrong -- it restated
+// the arithmetic the assembler had already done, so a gap both agreed on passed.
 //
-// Size resolves in one order, and the order is the schema's.
-//
-// An explicit `_SIZE_SECTORS`, else `_SIZE_MIB`, else -- for a `verity-slot` --
-// the size read back out of the image, because a rootfs slot's size is
-// content-derived (`MOS_ROOTFS_SLOT_MIB` in the layout env) and declaring it
-// would be restating what the build computed.
-//
-// Start is where this stops being a lookup.
-//
-// A partition either declares a fixed start (`_START_SECTOR` or `_START_MIB`)
-// or it begins where the previous one ended. That is what a partition table
-// means, and walking it that way makes the packing itself the thing under test.
+// Size resolves in the schema's order: an explicit `_SIZE_SECTORS`, else
+// `_SIZE_MIB`, else -- for a `verity-slot` -- the size read back out of the
+// image, because a rootfs slot's size is content-derived
+// (`MOS_ROOTFS_SLOT_MIB` in the layout env) and declaring it would restate what
+// the build computed. Start is where this stops being a lookup: a partition
+// either declares a fixed start (`_START_SECTOR` or `_START_MIB`) or begins
+// where the previous one ended, which is what a partition table means and what
+// makes the packing itself the thing under test.
 
 import type { Board, Partition } from './board.ts'
 import { ToolOutputError } from './tools.ts'
