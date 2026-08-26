@@ -1,35 +1,19 @@
 //! MQTT reconciler: one master switch driving the broker and the bridge that
-//! needs it, and the broker's runtime configuration rendered from `mqtt`.
+//! needs it, and the broker's runtime config rendered from `mqtt`.
 //!
-//! Two system effects, in this order:
-//!
-//! 1. `/run/mos/mqtt-broker.toml` is rendered from `mqtt.listen` and
-//!    `mqtt.auth` — the three keys the `mos-mqtt-broker` binary parses.
-//! 2. `mos-mqtt-broker.service` and `mos-mqttd.service` are brought to the
-//!    state `mqtt.enabled` asks for.
-//!
-//! Configuration before service start, deliberately and for the same reason
-//! `sshd.rs` renders before it starts: a broker started against a stale config
-//! is listening on the wrong address, and nothing about that is visible from
-//! the unit's state.
-//!
-//! **The config is rendered whether or not the switch is on.** The file on
-//! disk then always describes what the switch *would* start, so turning it on
-//! takes effect on that reconcile rather than waiting for a second one. It
-//! lives on `/run`, so an unconditional render costs no flash write.
-//!
-//! **`mqtt.enabled` is a master switch and nothing else** (see
-//! [`mosd_settings::MqttSettings`]). False means neither unit runs. It
-//! validates nothing and depends on nothing below it: no combination of
-//! `listen` and `auth` makes it mean anything other than "run both" or "run
-//! neither".
-//!
-//! **Order is opposite on the way up and on the way down.** Starting: broker
-//! then bridge, because the bridge is a client of the broker and starting the
-//! client first buys nothing but a round of the bridge's own retry. Stopping:
-//! bridge then broker, because stopping the server out from under its client
-//! is how you get a client logging connection failures about a shutdown that
-//! was deliberate.
+//! `/run/mos/mqtt-broker.toml` is rendered from `mqtt.listen` and `mqtt.auth`
+//! (the three keys the `mos-mqtt-broker` binary parses), then
+//! `mos-mqtt-broker.service` and `mos-mqttd.service` are brought to the state
+//! `mqtt.enabled` asks for. Config before service start, as in `sshd.rs`: a
+//! broker on a stale config listens on the wrong address, and the unit's state
+//! does not show it. The render is unconditional and on `/run`, so the file
+//! always describes what the switch would start, at no flash cost.
+//! `mqtt.enabled` is a master switch and nothing else (see
+//! [`mosd_settings::MqttSettings`]): false means neither unit runs, and no
+//! combination of `listen` and `auth` changes that. Order reverses between up
+//! and down -- broker then bridge starting, the bridge being the broker's
+//! client; bridge then broker stopping, or the client logs connection failures
+//! about a deliberate shutdown.
 
 use std::path::PathBuf;
 
@@ -146,23 +130,17 @@ fn classify_listen_address(address: &str) -> ListenAddress {
 /// Render the broker config for `mqtt`.
 ///
 /// Pure and deterministic: the same settings always produce the same bytes, so
-/// a re-render can be compared against what is on disk to decide whether
-/// anything actually changed — which is what tells [`MqttReconciler::apply`]
+/// a re-render compared against what is on disk tells [`MqttReconciler::apply`]
 /// whether a running broker has to be restarted.
 ///
-/// Three keys and no more, and all three always present: the broker's parser
-/// requires exactly `listen_address`, `listen_port` and `auth_enabled`.
-/// `mqtt.enabled` is deliberately absent -- it decides whether the broker RUNS,
-/// which is a question about the unit and not one the broker process could act
-/// on after it has already been started.
-///
-/// **The address is written verbatim, whatever it says.** No default is
-/// substituted and no value is "corrected", not even one that cannot parse as
-/// an `IpAddr`: a config file that disagrees with the settings tree is worse
-/// than one the broker rejects loudly, because the operator then cannot tell
-/// why the device is listening somewhere they did not ask for. An address the
-/// broker cannot parse gets a WARN from [`MqttReconciler::apply`] and a failed
-/// unit, both of which name it.
+/// Three keys and no more, all always present: the broker's parser requires
+/// exactly `listen_address`, `listen_port` and `auth_enabled`. `mqtt.enabled`
+/// is deliberately absent, deciding whether the broker runs, which the process
+/// cannot act on once started. The address is written verbatim -- no default
+/// substituted, nothing corrected, not even a value that cannot parse as an
+/// `IpAddr` -- because a config file disagreeing with the settings tree is
+/// worse than one the broker rejects loudly. An unparseable address gets a
+/// WARN from `apply` and a failed unit, both of which name it.
 fn render_config(mqtt: &MqttSettings) -> String {
     let mut out = String::new();
     out.push_str(&format!("listen_address = \"{}\"\n", mqtt.listen.address));
@@ -197,32 +175,20 @@ impl<C: UnitControl> MqttReconciler<C> {
 
     /// Start `unit`, and on failure WARN instead of failing the reconcile.
     ///
-    /// **`mqtt.enabled` is a master switch, and a switch that cannot be turned
-    /// on is not a reason to fail everything it switches.** `apply` covers the
-    /// whole `mqtt` subtree, so an `Err` from a start makes the reconcile of
-    /// `mqtt.enabled` itself depend on a unit being startable -- which in
-    /// practice means depending on `mqtt.listen` being valid. That is the
-    /// coupling this reconciler does not have, and the module docs and
-    /// [`mosd_settings::MqttSettings`] both say so.
+    /// `apply` covers the whole `mqtt` subtree, so propagating a start failure
+    /// would couple `mqtt.enabled` to `mqtt.listen` being valid -- the coupling
+    /// this reconciler does not have (see [`mosd_settings::MqttSettings`]).
     ///
-    /// The refusal is REACHABLE. `mos-mqtt-broker.service` carries
-    /// `StartLimitIntervalSec=60` / `StartLimitBurst=5`, so a broker that
-    /// fails for a persistent reason -- an unparseable `mqtt.listen.address`,
-    /// which this reconciler renders verbatim and refuses to correct --
-    /// exhausts five attempts in about 25 seconds and systemd then rejects
-    /// every start job for the rest of that minute. Reconcilers run together,
-    /// so an unrelated settings write would fail on a broker in cool-off that
-    /// has nothing to do with the change being made.
-    ///
-    /// **Nothing is hidden by this.** The WARN names the unit and the error,
-    /// and the live state below publishes each unit's `activeState`, which the
-    /// apid MQTT pane renders as a failed broker pointing the operator at
-    /// `journalctl -u mos-mqtt-broker`. Report, do not gate.
-    ///
-    /// Start only. The stop and disable path keeps propagating its errors: a
-    /// unit that will not stop is not something a start limit causes, and
-    /// `mqtt.enabled = false` that silently left a broker listening is a
-    /// failure worth failing on.
+    /// The refusal is reachable: `mos-mqtt-broker.service` carries
+    /// `StartLimitIntervalSec=60` / `StartLimitBurst=5`, so a persistent failure
+    /// such as an unparseable `mqtt.listen.address` exhausts five attempts in
+    /// about 25 seconds and systemd rejects every start job for the rest of that
+    /// minute; reconcilers run together, so an unrelated write would fail on a
+    /// broker in cool-off. The WARN names the unit and the error, and the live
+    /// state publishes each unit's `activeState`, which the apid MQTT pane
+    /// renders pointing at `journalctl -u mos-mqtt-broker`. Start only: the stop
+    /// and disable path keeps propagating errors, because `mqtt.enabled = false`
+    /// that left a broker listening is worth failing on.
     async fn start_or_warn(&self, unit: &str) {
         if let Err(error) = self.control.start(unit).await {
             tracing::warn!(
@@ -256,15 +222,13 @@ impl<C: UnitControl> MqttReconciler<C> {
     /// Bring the broker up, restarting it when the config it is running
     /// against has been rewritten.
     ///
-    /// **`restart`, not `reload`.** The broker is rumqttd used as a library and
-    /// its unit carries no `ExecReload`; `systemd.rs` documents that `reload`
-    /// fails rather than falling back to a restart, which is the right
-    /// behaviour for a caller that chose reload deliberately for its
-    /// session-preserving property (sshd does) and the wrong call here — it
-    /// would turn every config change into an error and leave the broker
-    /// listening on the old address. A broker restart drops MQTT sessions, and
-    /// the bridge reconnects; that is a cost this unit can pay and sshd's
-    /// cannot.
+    /// `restart`, not `reload`. The broker is rumqttd used as a library and its
+    /// unit carries no `ExecReload`; `systemd.rs` documents that `reload` fails
+    /// rather than falling back to a restart, which is right for a caller that
+    /// chose reload for its session-preserving property (sshd does) and wrong
+    /// here -- it would turn every config change into an error and leave the
+    /// broker on the old address. A broker restart drops MQTT sessions and the
+    /// bridge reconnects: a cost this unit can pay and sshd's cannot.
     ///
     /// Reads before it writes, so a broker already in the target state and
     /// running against the current config gets no calls at all.
@@ -278,24 +242,20 @@ impl<C: UnitControl> MqttReconciler<C> {
                 self.control.restart(BROKER_UNIT).await?;
             }
         } else {
-            // A FAILED broker may be inside its start-limit window, and inside
-            // it systemd refuses start jobs outright. Clear the failure first,
-            // so an operator who has just corrected the address gets a broker
-            // that comes up on THIS apply -- rather than one that stays down
-            // until the minute expires and something else happens to trigger
-            // another reconcile, with nothing anywhere saying they have to save
-            // twice and wait.
+            // A failed broker may be inside its start-limit window, where
+            // systemd refuses start jobs outright. Clear the failure first, so
+            // an operator who has just corrected the address gets a broker that
+            // comes up on this apply rather than one that stays down until the
+            // minute expires.
             //
-            // Guarded on the state and not issued unconditionally. It would be
-            // harmless -- `reset-failed` on a healthy unit does nothing -- but
-            // a call log that shows it on every apply stops distinguishing the
+            // Guarded on the state rather than issued unconditionally: it would
+            // be harmless -- `reset-failed` on a healthy unit does nothing --
+            // but a call log showing it on every apply stops distinguishing the
             // broker that needed rescuing from the one that did not.
             //
             // Broker only. The bridge carries no StartLimit override, so it
             // inherits systemd's 10-second default, which at its RestartSec=5
-            // fits about two attempts and so cannot reach the limit at all.
-            // The broker's 60-second interval is what makes it reachable
-            // there.
+            // fits about two attempts and cannot reach the limit at all.
             if active_state == FAILED_STATE {
                 self.reset_failed_or_warn(BROKER_UNIT).await;
             }
@@ -371,20 +331,17 @@ impl<C: UnitControl> Reconciler for MqttReconciler<C> {
         let config_changed = self.apply_config(mqtt)?;
 
         if mqtt.enabled {
-            // WARNs, and deliberately NOT gates. Neither of these may become a
-            // refusal, and neither may skip a unit. An operator who widened the
-            // bind made a decision; a daemon that answers it by quietly not
-            // starting is a daemon whose reason for being down cannot be read
+            // WARNs, and deliberately not gates. Neither may become a refusal
+            // and neither may skip a unit: an operator who widened the bind
+            // made a decision, and a daemon that answers by quietly not
+            // starting is one whose reason for being down cannot be read
             // anywhere. `listen`/`auth` are deliberately not coupled to the
-            // master switch -- see the doc comment on
-            // `mosd_settings::MqttSettings`.
+            // master switch -- see `mosd_settings::MqttSettings`.
             //
-            // Returning `Err` here would be that same rejected coupling wearing
-            // a different hat: `apply` covers the WHOLE `mqtt` subtree, so an
-            // error raised over `listen` fails the reconcile of `mqtt.enabled`
-            // itself and makes the master switch depend on `listen` being
-            // valid. This is deliberately a different rule from
-            // `SshdReconciler`, which does reject an unparseable
+            // Returning `Err` would be that coupling again: `apply` covers the
+            // whole `mqtt` subtree, so an error raised over `listen` fails the
+            // reconcile of `mqtt.enabled` itself. Deliberately a different rule
+            // from `SshdReconciler`, which does reject an unparseable
             // `ListenAddress` -- sshd has one key, `access.ssh.enabled`, and no
             // separate switch to protect.
             match classify_listen_address(&mqtt.listen.address) {
@@ -874,21 +831,16 @@ mod tests {
     /// The exact published shape, asserted key by key, because the consumer
     /// is in another crate and cannot be seen from this file.
     ///
-    /// That consumer is `mosd/apid/src/routes.rs` -- the MQTT pane, which
-    /// reads `listen.address`, `listen.port`, `auth.enabled` and the `units`
-    /// entry named `mos-mqtt-broker.service` out of the bus item `apply`
-    /// returns. **Changing this shape requires changing the pane.**
-    ///
-    /// The key SET is asserted and not only the values: a pane written against
-    /// a flat shape this reconciler does not publish passes its own tests while
-    /// its off-host-without-authentication warning can never fire, because
-    /// `auth.enabled` does not arrive where it looks for it. An exact key set
-    /// is what makes a rename here fail in a place that names who else cares.
-    ///
-    /// `mosd/apid/src/tests.rs` carries a verbatim copy of
-    /// `live_state_names_both_units_and_the_config_path`'s expectation as its
-    /// fixture -- two copies in two crates, but with a named source, so the
-    /// copy is auditable.
+    /// That consumer is `mosd/apid/src/routes.rs` -- the MQTT pane, which reads
+    /// `listen.address`, `listen.port`, `auth.enabled` and the `units` entry
+    /// named `mos-mqtt-broker.service` out of the bus item `apply` returns.
+    /// Changing this shape requires changing the pane. The key set is asserted
+    /// and not only the values: a pane written against a flat shape this
+    /// reconciler does not publish passes its own tests while its
+    /// off-host-without-authentication warning can never fire, because
+    /// `auth.enabled` does not arrive where it looks for it.
+    /// `mosd/apid/src/tests.rs` carries a verbatim copy of this expectation as
+    /// its fixture -- two copies in two crates, but with a named source.
     #[tokio::test]
     async fn the_published_shape_is_the_contract_with_the_apid_pane() {
         let dir = tempfile::tempdir().unwrap();
