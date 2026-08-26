@@ -346,7 +346,8 @@ neither way is a failure, not a gap.
 container route — and mounts the host's docker client (a static Go binary) and
 `/var/run/docker.sock` at their own paths, so the toolbox can still start
 *sibling* containers from in there. Both routes were run to completion: 199/199
-either way at M6a, 358/358 at M6b.
+either way at M6a, and 406/406 once M6b's assembler and M5b's stage driver
+both landed.
 
 ```
 os/build: 1.4.0 at /srv/bkd/runtime/bun
@@ -381,7 +382,7 @@ src/boot-cx3576.ts         boot.cmd's guards and the per-slot verity env, both p
 src/pin-seeded-times.ts    the argument os/mkimage-common.sh exists to keep in one place
 src/mkimage-v2.ts          the cx3576 assembler
 src/mkimage-v2-cli.ts      the host half: where the inputs are, and the -latest symlink
-src/**/*.test.ts           358 tests; every refusal has a positive control beside it
+src/**/*.test.ts           406 tests; every refusal has a positive control beside it
 ```
 
 `HARNESS.md` carries how each guard was driven from the failing side, the bash
