@@ -93,6 +93,80 @@ IMAGE="${FROM_ARGS[1]#MOS_BUILD_RUST=}"
 CARGO_CACHE="${REPO_ROOT}/_out/cargo"
 mkdir -p "${CARGO_CACHE}/registry" "${CARGO_CACHE}/git"
 
+# ═══ THE COMMIT THE BINARIES REPORT, RESOLVED HERE AND PASSED IN ═════════════
+#
+# RFCT-113 M7d. mosd and apid answer `--version` with
+# `<name> <crate version> (<commit>)`, and the commit half cannot be discovered
+# by the code that prints it: MEASURED on 2026-08-26 inside
+# localhost/mos-build-rust, with the exact mount the build below uses --
+#
+#   docker run --rm -v "${REPO_ROOT}:/src" -w /src/mosd ... \
+#       -c "command -v git; git rev-parse HEAD"
+#     command -v git   -> /usr/bin/git
+#     git rev-parse    -> fatal: not a git repository:
+#                         /srv/mos/.git/worktrees/ifukam2z          (rc=128)
+#
+# -- git IS in the image, and the repository is still not a repository from
+# inside it, because this checkout is a git WORKTREE whose `.git` is a 41-byte
+# file naming a gitdir OUTSIDE the mount. A build.rs that shelled out to git
+# would fail there, or -- written the way build scripts usually are, tolerating
+# a missing git -- would embed nothing on every single build and look like it
+# worked. So the value is resolved on the HOST, where the repository is a
+# repository, and handed in as an environment variable.
+#
+# AN EMPTY VALUE IS NOT AN ERROR. `-e MOS_BUILD_COMMIT=` sets the variable to
+# the empty string, `option_env!` yields `Some("")`, and both crates report
+# `unknown` for it and still exit 0. A build outside a checkout must still
+# produce a binary that can answer the question, even if the answer is that
+# nobody recorded one.
+#
+# DIRTY IS MARKED, NEVER PASSED OFF AS THE CLEAN SHA. `git status --porcelain`
+# and not `git diff`: an untracked-but-not-ignored `.rs` file is compiled into
+# these binaries exactly like a modified one, so it makes the tree dirty here
+# too.
+#
+# THE CALLER MAY SUPPLY IT. An already-resolved MOS_BUILD_COMMIT in the
+# environment wins, which is how a build that knows its own provenance (a
+# release pipeline handed a commit, a rebuild of an exported tarball with no
+# .git at all) says so rather than being told it is `unknown`.
+if [ -z "${MOS_BUILD_COMMIT:-}" ]; then
+    MOS_BUILD_COMMIT=""
+    if command -v git >/dev/null 2>&1 &&
+        git -C "${REPO_ROOT}" rev-parse --git-dir >/dev/null 2>&1; then
+        MOS_BUILD_COMMIT="$(git -C "${REPO_ROOT}" rev-parse --short=12 HEAD 2>/dev/null || true)"
+        if [ -n "${MOS_BUILD_COMMIT}" ] &&
+            [ -n "$(git -C "${REPO_ROOT}" status --porcelain 2>/dev/null)" ]; then
+            MOS_BUILD_COMMIT="${MOS_BUILD_COMMIT}-dirty"
+        fi
+    fi
+fi
+if [ -n "${MOS_BUILD_COMMIT}" ]; then
+    echo "mosd: embedding build commit ${MOS_BUILD_COMMIT}"
+else
+    echo "mosd: no build commit could be resolved; mosd and apid will report unknown" >&2
+fi
+
+# THE RECORD THE SMOKE RUNNER READS, written beside the build rather than
+# inferred from it. `os/verify/src/smoke.ts` asserts the commit these binaries
+# REPORT against the commit this build EMBEDDED, and it has to take that second
+# value from somewhere that is not `git rev-parse HEAD` at run time -- which
+# would pass on any freshly built tree and assert only that somebody had just
+# rebuilt. os/rootfs/build-v2.sh copies this into _out/<board>/ beside the
+# factory root it goes into.
+#
+# TAB-SEPARATED `key<TAB>value` with `#` comments, the shape
+# os/build/src/stages.ts already writes for factory-root.txt, so one reader
+# reads both.
+MOSD_BUILD_RECORD="${REPO_ROOT}/_out/mosd-build.txt"
+{
+    echo "# What mosd/hack/build-target.sh built, and the commit it embedded in mosd and apid."
+    echo "# Written on every build. os/rootfs/build-v2.sh copies it into _out/<board>/."
+    echo "# An empty commit means none could be resolved; the binaries then report unknown."
+    printf 'target\t%s\n' "${TARGET}"
+    printf 'elf-arch\t%s\n' "${ELF_ARCH}"
+    printf 'commit\t%s\n' "${MOS_BUILD_COMMIT}"
+} >"${MOSD_BUILD_RECORD}"
+
 # THE REPOSITORY IS MOUNTED, NOT mosd/, AND THAT IS NOT A CONVENIENCE.
 # mosd/Cargo.toml's workspace members include `../update/sign` -- a crate that
 # lives OUTSIDE the directory this script's own path arithmetic calls the
@@ -140,6 +214,7 @@ docker run --rm \
     -v "${CARGO_CACHE}/git:/usr/local/cargo/git" \
     -w /src/mosd \
     -e "TARGET=${TARGET}" \
+    -e "MOS_BUILD_COMMIT=${MOS_BUILD_COMMIT}" \
     --entrypoint /bin/bash \
     "${IMAGE}" -c '
         set -euo pipefail
