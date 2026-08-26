@@ -274,8 +274,15 @@ async function main(): Promise<number> {
   }
 
   if (options.json !== undefined) {
-    await Bun.write(options.json, `${JSON.stringify(reports, null, 2)}\n`)
-    console.log(`os/verify: diff written to ${options.json}`)
+    // Reported as the ABSOLUTE path, always. run.sh absolutises this argument
+    // before bun ever sees it -- it is the only place the caller's cwd still
+    // exists, because run_bun cds into the package -- but a reader who invoked
+    // this file directly is owed the same. Echoing back the relative string is
+    // what made a diff written to the wrong directory invisible: the message
+    // named a path, the caller could not `cat` it, and nothing said why.
+    const at = resolve(process.cwd(), options.json)
+    await Bun.write(at, `${JSON.stringify(reports, null, 2)}\n`)
+    console.log(`os/verify: diff written to ${at}`)
   }
 
   // The summary a reader scrolls to. It leads with what is UNCLAIMED, because
