@@ -6,27 +6,24 @@
 // `check_ext_unit_dir` (:3450, :613). One of the four is a SKIP on a board
 // with no Bluetooth controller.
 //
-// Every one of these reads the tier and not a string: `/srv` is nowhere in this
-// file as the DATA path. The oracle reads the DATA mountpoint out of the fstab
-// row for DATA_GUID (:3934) so that a bind pointed at /mnt/state fails on the
-// tier rather than on a spelling -- STATE is 64 MiB of small precious identity
-// and a home directory is user data of unbounded size, so the two failures have
-// different repairs and only the tier distinguishes them. A check comparing
-// against the literal would pass an image whose fstab had moved DATA elsewhere.
+// Every one of these reads the tier and not a string: `/srv` is nowhere here as
+// the DATA path. The oracle reads the DATA mountpoint out of the fstab row for
+// DATA_GUID (:3934) so that a bind pointed at /mnt/state fails on the tier
+// rather than on a spelling -- STATE is 64 MiB of small precious identity and a
+// home directory is user data of unbounded size, so the two failures have
+// different repairs.
 //
 // Enablement is asserted separately every time, because a mount unit that is
 // present and not enabled leaves its target inside the read-only squashfs for
-// ever while every check that only looked for the file still passes. So each
-// check has its own "exists but is not enabled" branch rather than folding
-// presence and enablement into one test.
+// ever while a check that only looked for the file still passes. Each check
+// therefore has its own "exists but is not enabled" branch.
 //
 // The seed scripts are read, not run: `mos-seed-home` and `mos-seed-root` are
-// asserted by a static read of eleven lines of shell, because there is no
-// offline harness for either, so idempotence and non-clobbering are read rather
-// than exercised. The port reproduces that read, including its exact anchored
-// patterns, rather than substituting a smarter one -- a port that understood the
-// script better than the oracle does would diverge on the first script the
-// oracle misreads, and the divergence would be the port's.
+// asserted by a static read of eleven lines of shell, there being no offline
+// harness for either, so idempotence and non-clobbering are read rather than
+// exercised. The port reproduces that read including its exact anchored
+// patterns, because a port that understood the script better than the oracle
+// does would diverge on the first script the oracle misreads.
 
 import { lstatSync, readFileSync, readdirSync, statSync } from 'node:fs'
 import { join } from 'node:path'

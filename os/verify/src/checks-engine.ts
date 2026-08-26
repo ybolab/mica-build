@@ -10,22 +10,16 @@
 // `check_container_engine` opens with an early return -- `if [ ! -e podman ] &&
 // [ ! -e storage.conf ]` then `pass "this image carries no container engine at
 // all ..."` -- so a WITH_CONTAINERS=0 image prints one conclusion where a normal
-// image prints ten, and the oracle's own words for the other nine are "skipped
-// by identity rather than passing vacuously". The register cannot say "this
-// check does not exist on this image": a dedicated entry owning that one line
-// would report `unfired` on both shipped boards, which is exit 1, and the nine
-// suppressed checks have no shell line to compare against. So
-// `container-engine-installed` owns both sentences through a `pass` matcher
-// list, and the other nine answer `skipped()` when there is no engine, which on
-// a WITH_CONTAINERS=0 image would produce nine `orphan` rows. Neither shipped
-// board produces that shape -- both carry podman -- and it is written down
-// because a limitation nobody recorded is one the next batch rediscovers as a
-// bug.
+// image prints ten. A dedicated entry owning that one line would report `unfired`
+// on both shipped boards, which is exit 1, and the nine suppressed checks have
+// no shell line to compare against. So `container-engine-installed` owns both
+// sentences through a `pass` matcher list and the other nine answer `skipped()`,
+// which on a WITH_CONTAINERS=0 image would produce nine `orphan` rows. Neither
+// shipped board produces that shape; both carry podman.
 //
 // The unit search excludes *.wants/* on purpose, and the oracle says so: an
 // enablement symlink is the next check's subject and a dangling one can exist
-// with no unit file behind it. Two checks that both fire on one mutation say
-// less than two that each name a distinct way the engine could start.
+// with no unit file behind it.
 
 import { closeSync, lstatSync, openSync, readFileSync, readSync, readdirSync, statSync, type Stats } from 'node:fs'
 import { join } from 'node:path'
