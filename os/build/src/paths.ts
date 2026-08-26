@@ -1,11 +1,10 @@
 // Where this package sits, and the proof that it still does.
 //
 // The reasoning is os/verify/src/paths.ts's and the helper IS its function,
-// imported through verify-package.ts rather than copied. Counted `..`
-// arithmetic over directories always produces a path, so a stale count fails
-// later on a directory that is empty rather than absent; every ascent here is
-// therefore anchored on something that must be at the destination, and the
-// failure names the path it computed.
+// imported through verify-package.ts rather than copied. Counted `..` over
+// directories always produces a path, so a stale count fails later on an empty
+// directory rather than an absent one; every ascent here is anchored on
+// something that must be at the destination, and the failure names the path.
 //
 // Two anchors os/verify does not have: os/verify itself, because the board
 // model os/build stands on lives there (see verify-package.ts) and naming it
@@ -54,23 +53,18 @@ export function boardEnvPath(board: string): string {
 }
 
 /**
- * The boards this tree ships, in name order, read off the tree.
- *
- * Discovered rather than written down. os/verify/src/lint.ts keeps the same
- * list as a literal (`SHIPPED_BOARDS = ['cx3576', 'x64']`), and the difference
- * matters for what this package does with it: every geometry assertion here
- * iterates this list, so a board added to os/boards/ and not to a literal would
- * be a board that nothing in this package ever read -- and the suite would stay
- * green by having looked at less. A directory listing cannot fall behind the
- * directory.
- *
- * A `boards/<name>/` with no `board.env` in it is not a board and is skipped:
- * the definition file IS the board, which is also why boardNameForPath in
- * os/verify takes the name from the DIRECTORY.
- *
- * The caller must still refuse an empty answer -- see requireShippedBoards.
- * The directory is a parameter so that refusal is reachable from a test: a
- * guard that can only fire when os/boards/ is empty is a guard nobody has run.
+ * The boards this tree ships, in name order, read off the tree. Discovered
+ * rather than written down: os/verify/src/lint.ts keeps the same
+ * list as a literal (`SHIPPED_BOARDS = ['cx3576', 'x64']`), and every geometry
+ * assertion here iterates this list, so a board added to os/boards/ and not to
+ * a literal is a board nothing here ever read, with the suite green by having
+ * looked at less. A directory listing cannot fall behind the directory. A
+ * `boards/<name>/` with no `board.env` is not a board and is skipped: the
+ * definition file IS the board, which is why boardNameForPath in os/verify
+ * takes the name from the directory. The caller must still refuse an empty
+ * answer (requireShippedBoards); the directory is a parameter so that refusal
+ * is reachable from a test, a guard firing only on an empty os/boards/ being a
+ * guard nobody has run.
  */
 export function shippedBoards(dir: string = BOARDS_DIR): string[] {
   return readdirSync(dir, { withFileTypes: true })

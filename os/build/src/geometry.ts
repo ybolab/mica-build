@@ -1,50 +1,18 @@
 // The typed geometry of a board, in the shape an assembler asks questions in.
 //
-// WHAT THIS IS ON TOP OF. os/verify's board.ts already turns a board.env into
-// an ordered partition set with roles and numbers (see verify-package.ts for
-// why that model is imported and not copied). What it hands back are `number |
-// undefined` fields, which is right for a LINT: a lint wants to know what is
-// there, report what is not, and never stop at the first fault. An ASSEMBLER
-// asks a different question. It does not want to know whether BOOT_A declares a
-// start; it wants the sector to pass to sgdisk and the MiB to pass to dd, and
-// if the file cannot answer, the build is over. So this layer is the same data
-// with three changes, each of which is the difference between the two jobs:
+// os/verify's board.ts already turns a board.env into an ordered partition set
+// with roles and numbers (verify-package.ts says why that model is imported and
+// not copied), and hands back `number | undefined` fields. That is right for a
+// lint, which reports what is missing and never stops at the first fault; an
+// assembler wants the sector for sgdisk and the MiB for dd, or the build is over.
 //
-//   1. ONE NUMBER PER FACT, IN EVERY UNIT. A start is declared in MiB on one
-//      partition, in sectors on another and in both on a third -- cx3576 writes
-//      LOADER_START_SECTOR only, BOOT_A_START_MIB and _START_SECTOR and
-//      _OFFSET_BYTES, and x64 computes all three with $(( )). sgdisk wants
-//      sectors and dd wants MiB. Here a Placement carries all three, derived
-//      from whichever the file declared, against the board's OWN SECTOR_SIZE
-//      and MIB_BYTES rather than against 512 and 1048576 written down again.
-//
-//   2. BIGINT, NOT NUMBER. board.ts reads its integers with `Number(t)`, which
-//      is exact to 2^53 and silently not beyond it -- and board-env.ts
-//      evaluates `$(( ))` in BigInt precisely because "these are byte offsets;
-//      past 2^53 a double stops being exact, and a size that is silently one
-//      byte out is the class of defect this package exists to make visible."
-//      Every quantity here is re-read from the string board.ts parsed and kept
-//      as a bigint, so the arithmetic that produces a partition start has the
-//      same width as the arithmetic that produced the file.
-//
-//   3. REQUIRED MEANS THROWS. requireInt names the key AND the file. Under
-//      `set -u` the shell says "BOOT_A_START_MIB: unbound variable" and names
-//      neither, and every consumer that used `${X:-}` instead said nothing at
-//      all.
-//
-// WHAT THIS IS NOT. It does not assemble, and it does not decide whether a
-// board definition is CORRECT. The schema lint (os/verify/src/lint.ts) is the
-// one that says a board is wrong, and it already cross-checks a start declared
-// in two units. Where this file meets the same fact it is doing a different
-// thing: the lint REPORTS a contradiction, this refuses to USE one, because
-// there is no honest single number to hand an assembler when the file says two.
-//
-// It also stops short of the derived layout. os/mkimage-v2.sh computes the
-// rootfs slot size from the built rootfs image and chains rootfs-b, meta, state,
-// ephemeral and data starts off it; os/mkimage-x64.sh does the same with a
-// different chain. Those depend on inputs that do not exist until an assembly
-// is running, they differ per board, and they are under a byte-identity gate
-// that belongs to M6b and M6c. Writing them here would pre-empt it.
+// It does not assemble and does not decide whether a board definition is
+// correct: os/verify/src/lint.ts reports a contradiction, this refuses to use
+// one, because there is no honest single number to hand an assembler when the
+// file declares two. It stops short of the derived layout too -- the rootfs
+// slot size and the starts chained off it, differently in os/mkimage-v2.sh and
+// os/mkimage-x64.sh -- because those depend on inputs that do not exist until
+// an assembly runs and sit under a byte-identity gate.
 
 import { boardEnvPath } from './paths.ts'
 import { loadBoard, type Board, type Partition } from './verify-package.ts'
@@ -57,7 +25,17 @@ export interface GeometryFault {
   readonly reason: string
 }
 
-/** One offset or length, in all three units the board definitions use. */
+/**
+ * One offset or length, in all three units the board definitions use.
+ *
+ * A start is declared in MiB on one partition, in sectors on another and in
+ * both on a third: cx3576 writes LOADER_START_SECTOR only, and
+ * BOOT_A_START_MIB, _START_SECTOR and _OFFSET_BYTES; x64 computes all three
+ * with $(( )). sgdisk wants sectors and dd wants MiB, so a Placement carries
+ * all three, derived from whichever the file declared against the board's own
+ * SECTOR_SIZE and MIB_BYTES rather than against 512 and 1048576 written down
+ * again.
+ */
 export interface Placement {
   readonly bytes: bigint
   readonly sectors: bigint
@@ -171,9 +149,12 @@ const INTEGER = /^[+-]?[0-9]+$/
 /**
  * A board.env value read as a bigint.
  *
- * Re-read from the STRING rather than taken from board.ts's `number`, for the
- * reason in this file's header: `Number('9007199254740993')` is 9007199254740992
- * and says nothing about it.
+ * Re-read from the string rather than taken from board.ts's `number`, which
+ * comes from `Number(t)`: exact to 2^53 and silently not beyond it, so
+ * `Number('9007199254740993')` is 9007199254740992 and says nothing about it.
+ * board-env.ts evaluates `$(( ))` in BigInt because "these are byte offsets;
+ * past 2^53 a double stops being exact, and a size that is silently one byte
+ * out is the class of defect this package exists to make visible."
  */
 function parseInt64(raw: string): bigint | undefined {
   const t = raw.trim()
@@ -181,6 +162,9 @@ function parseInt64(raw: string): bigint | undefined {
   return BigInt(t)
 }
 
+// Required means throws, and the refusal names the key AND the file: under
+// `set -u` the shell says "BOOT_A_START_MIB: unbound variable" and names
+// neither, and a consumer using `${X:-}` says nothing at all.
 function missing(key: string, path: string, what: string): Error {
   return new Error(
     `${path} declares no ${key}, and ${what}. A board definition is the single source of truth for `
@@ -255,7 +239,7 @@ export function modelGeometry(board: Board): Geometry {
    * Normalise a start or a size that may be spelled in up to three units.
    *
    * Where two are declared they must agree. The schema lint reports that
-   * disagreement as a verdict about the FILE; this refuses to pick one of two
+   * disagreement as a verdict about the file; this refuses to pick one of two
    * contradictory numbers to hand an assembler, which is a different thing and
    * is why both exist.
    */
