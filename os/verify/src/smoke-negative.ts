@@ -2,28 +2,20 @@
 // version-skewed binary, each REALLY made and each required to turn the smoke
 // run red.
 //
-// These are not unit tests. smoke.ts is designed so that every verdict is
-// reachable from a fabricated `ExecResult`, which is what makes the red branches
-// runnable with no image, daemon or build -- but a fabricated result is a
-// statement the test wrote, and a test that writes `{status: 126}` and asserts
-// 126 is diagnosed as a wrong architecture has tested nothing about wrong
-// architectures. M7b's map said 126 meant "a wrong-architecture binary, or a
-// dynamic loader that could not resolve it"; measured, wrong-arch is 255, an
-// unresolvable loader is 127, and 126 is a mode bit. The suite was green
-// throughout, because the suite chose the numbers. So each case here makes the
-// defect in a real image, from the real factory root, with the real self-built
-// artifact, and drives the real `docker run` at it.
+// Not unit tests. smoke.ts reaches every verdict from a fabricated `ExecResult`,
+// which is what makes the red branches runnable with no image, daemon or build
+// -- but a fabricated result is a statement the test wrote. M7b's map said 126
+// meant "a wrong-architecture binary, or a dynamic loader that could not resolve
+// it"; measured, wrong-arch is 255, an unresolvable loader is 127, and 126 is a
+// mode bit, and the suite stayed green because it chose the numbers. So each
+// case here makes the defect in a real image, from the real factory root, with
+// the real self-built artifact, and drives the real `docker run` at it.
 //
 // Every mutation refuses to be a no-op: each Dockerfile asserts its own pre- and
 // post-state and exits non-zero if either is not what the mutation requires, so
-// a no-op fails the image build naming what it expected rather than producing a
-// green case that never reached the branch it claims to cover. Every case also
-// carries its positive control -- the same artifact through the unmutated root
-// in the same pass, required to pass -- because without one a case is satisfied
-// by any image that fails for any reason, including one where the base was never
-// loaded. And each case names the diagnosis it must NOT get, since a case
-// asserting only `verdict === 'fail'` would have been as green under M7b's map
-// as under this one.
+// a no-op fails the image build naming what it expected. Every case carries its
+// positive control, the same artifact through the unmutated root in the same
+// pass, and names the diagnosis it must NOT get.
 //
 // It does not build a rootfs: it reads the factory root the build exported,
 // exactly as the smoke runner does, and refuses when there is none, because a

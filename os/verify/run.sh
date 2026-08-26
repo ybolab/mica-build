@@ -9,18 +9,16 @@
 #   bash os/verify/run.sh --smoke        execute the self-built artifacts in the factory root
 #   bash os/verify/run.sh --smoke-negative   break the root three ways, and require each red
 #
-# The seam for the tool-less host. Exactly one function below decides how bun
-# is invoked -- run_bun -- and it has two routes: a bun binary on the host, or
-# the digest-pinned bun container recorded as IMAGE_BUN_1 in
-# os/build-env/images.env. Every caller passes an argv and reads an exit status
-# and cannot tell which route it got, which is what makes a host with no bun a
-# SUPPORTED host rather than a documented limitation.
+# The seam for the tool-less host: exactly one function below, run_bun, decides
+# how bun is invoked, with two routes -- a bun binary on the host, or the
+# digest-pinned bun container recorded as IMAGE_BUN_1 in os/build-env/images.env.
+# A caller passes an argv and reads an exit status and cannot tell which route it
+# got, which makes a host with no bun a supported host.
 #
-# Zero tests is a failure, and BUN does not agree. `bun test` exits 1 when no
-# test FILE matches its glob, but exits 0 when a file matches and declares no
-# tests -- "Ran 0 tests across 1 file", green. So the count is read out of the
-# run and a run that asserted nothing is turned red here. The same guard, at
-# the lint's own granularity, is in src/lint.ts.
+# Zero tests is a failure and bun does not agree: `bun test` exits 1 when no test
+# file matches its glob, but exits 0 when a file matches and declares no tests --
+# "Ran 0 tests across 1 file", green. So the count is read out of the run and a
+# run that asserted nothing is turned red here.
 set -euo pipefail
 
 # Anchored, not counted. `..` arithmetic always produces a path, so a file that

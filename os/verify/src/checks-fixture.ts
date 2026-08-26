@@ -1,24 +1,18 @@
 // A synthetic image, for driving a ported check RED.
 //
-// A check lands with the fixture that fails it, because nothing can tell a
-// check that passes from a check that cannot fail -- both report green against
-// a healthy image,
-// and only a mutation separates them.
+// A check lands with the fixture that fails it, because nothing can tell a check
+// that passes from a check that cannot fail: both report green against a healthy
+// image, and only a mutation separates them.
 //
-// Why a fake image and not a mutated real one.
-//
-// Both, actually: `os/verify/HARNESS.md` records an end-to-end run against a
-// real image edited on disk, which is what proves the whole pipeline reports
-// the failing direction. What that run CANNOT be is one mutation per check --
-// it is a 1.3 GB copy and a three-minute run each time, and half the mutations
-// (a partition that is not the last one, a table with a partition missing)
-// cannot be made with sgdisk without making three other checks red at the same
-// time, so the failure would not name one check.
-//
-// So each check is also driven here, against a table built in memory: one
-// mutation, one check, one named failure, no image and no container. The
-// baseline is asserted GREEN first in every case, because a fixture that fails
-// a check it did not mutate proves nothing about the mutation.
+// A fake image as well as a mutated real one. `os/verify/HARNESS.md` records an
+// end-to-end run against a real image edited on disk, which proves the whole
+// pipeline reports the failing direction; what it cannot be is one mutation per
+// check, being a 1.3 GB copy and a three-minute run each time, and half the
+// mutations (a partition that is not the last one, a table with a partition
+// missing) cannot be made with sgdisk without turning three other checks red at
+// once. So each check is also driven here against a table built in memory: one
+// mutation, one check, one named failure, no image and no container, with the
+// baseline asserted green first in every case.
 
 import {
   chmodSync,
