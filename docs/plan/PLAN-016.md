@@ -1,6 +1,7 @@
 # PLAN-016 apid OpenAPI phase 1: utoipa-generated spec, discovery endpoints, a read-only resource slice, and a breaking-change gate
 
-- **status**: approved
+- **status**: completed
+- **completedAt**: 2026-08-26 17:55
 - **createdAt**: 2026-08-26 14:10
 - **approvedAt**: 2026-08-26 14:20
 - **relatedTask**: RFCT-117 (M1), RFCT-118 (M2), RFCT-119 (M3), RFCT-120 (M4) — task files created by the executing workstream as each milestone starts
