@@ -8,7 +8,7 @@
 // ran with one board's env and an assembler that ran with another's would
 // agree with each other and fail here.
 //
-// WHY THE SLOT DEVICES ARE THE INTERESTING ONES.
+// Why the SLOT devices are the interesting ones.
 //
 // A wrong GUID in `[slot.rootfs.0]` installs an update over the RUNNING slot.
 // Nothing on the device notices until the next boot, and there is no rollback
@@ -17,7 +17,7 @@
 // acquire a `/dev/mmcblk0pN` path later: a partition number encodes a position
 // in a table this campaign has already renumbered once.
 //
-// WHAT IS NOT HERE.
+// What is not here.
 //
 // `sq_regular /usr/bin/rauc`, `/etc/rauc/system.conf is a regular file` and the
 // baked-in-keyring check are packed-root CONTENT and belong to M4c's batch --
@@ -126,7 +126,7 @@ export const RAUC_CHECKS: readonly CheckCase[] = [
   },
 
   {
-    // RENUMBERING SAFETY, asserted as a SHAPE over every slot rather than over
+    // Renumbering safety, asserted as a SHAPE over every slot rather than over
     // the four this layout has: the config cannot acquire a partition-number
     // path later without this going red, and it would go red for a slot group
     // nobody thought to name here.
@@ -220,7 +220,7 @@ export const RAUC_CHECKS: readonly CheckCase[] = [
   },
 
   {
-    // The BACKEND FOLLOWS THE LAYOUT, not a literal: cx3576 is uboot and x64 is
+    // The backend follows the layout, not a literal: cx3576 is uboot and x64 is
     // grub, and pinning this to either would make it fail on the correct
     // configuration of the other -- reported as a defect in the image rather
     // than as a check written for a single board.

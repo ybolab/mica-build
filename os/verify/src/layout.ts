@@ -1,4 +1,4 @@
-// The partition table the BOARD DEFINITION describes, walked the way
+// The partition table the board definition describes, walked the way
 // os/verify-image-v2.sh:1450-1516 walks it.
 //
 // This is one half of every GPT geometry check: the other half is the table
@@ -9,17 +9,17 @@
 // ...`) was wrong: it restated the arithmetic the assembler had already done,
 // so a gap both agreed on would have passed.
 //
-// SIZE RESOLVES IN ONE ORDER, AND THE ORDER IS THE SCHEMA'S.
+// Size resolves in one order, and the order is the schema's.
 //
 // An explicit `_SIZE_SECTORS`, else `_SIZE_MIB`, else -- for a `verity-slot` --
-// the size READ BACK OUT OF THE IMAGE, because a rootfs slot's size is
+// the size read back out of the image, because a rootfs slot's size is
 // content-derived (`MOS_ROOTFS_SLOT_MIB` in the layout env) and declaring it
 // would be restating what the build computed.
 //
-// START IS WHERE THIS STOPS BEING A LOOKUP.
+// Start is where this stops being a lookup.
 //
 // A partition either declares a fixed start (`_START_SECTOR` or `_START_MIB`)
-// or it BEGINS WHERE THE PREVIOUS ONE ENDED. That is what a partition table
+// or it begins where the previous one ended. That is what a partition table
 // means, and walking it that way makes the packing itself the thing under test.
 
 import type { Board, Partition } from './board.ts'
@@ -50,7 +50,7 @@ export interface LayoutWalk {
 }
 
 /**
- * A declared value read as an integer, refusing anything else BY NAME.
+ * A declared value read as an integer, refusing anything else by name.
  *
  * The board model's own `int()` records a fault and returns undefined, which
  * here would fall through to the next candidate in the size order and resolve a
@@ -104,7 +104,7 @@ function fixedStartOf(p: Partition, sectorsPerMib: number): number | undefined {
 /**
  * Walk one board definition into the table it describes.
  *
- * `slotSectors` is the verity-slot size READ FROM THE IMAGE. It is a parameter
+ * `slotSectors` is the verity-slot size read from the image. It is a parameter
  * rather than something this function fetches, so that a caller cannot
  * accidentally hand the same number to both sides of a comparison: the check
  * that asserts a rootfs slot's size against the layout floor takes it from

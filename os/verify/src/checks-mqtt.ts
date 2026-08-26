@@ -7,7 +7,7 @@
 // prose with a `mqttd: ` prefix, so it was not in batch 2a's `sq_regular`
 // family either. It fell between the two.
 //
-// WHAT THE FAMILY PROVES, AND WHY EACH HALF IS NEEDED.
+// What the family proves, and why each half is NEEDED.
 //
 // Every one of these is a defect the wiring actually had. The crate, the unit
 // and the protocol tests were all green while the bridge was absent from the
@@ -21,7 +21,7 @@
 // override, and the root is a read-only verity squashfs so nothing on the
 // device can remove it.
 //
-// WHY THE POLICY IS TAG-NORMALISED BEFORE IT IS READ.
+// Why the policy is tag-normalised before it is read.
 //
 // The shipped rules wrap their attributes across three lines, so a line-oriented
 // search for `send_member=` on a rule whose `send_destination=` is on the line
@@ -133,7 +133,7 @@ function accounts(root: string): Account[] {
 }
 
 /**
- * The policy file with comments removed and ONE XML TAG PER LINE.
+ * The policy file with comments removed and one XML tag per line.
  *
  * `dbus_policy_rules_only | tr '\n' ' ' | sed 's/</\n</g'` -- comments first,
  * because a commented-out rule must not become a rule when the tags are split.
@@ -474,7 +474,7 @@ const BROKER_CHECKS: readonly CheckCase[] = [
     // deliberately does not act on it: a broker enabled in the image would be
     // listening from early boot, before anything had consulted the switch.
     //
-    // THERE IS NO POLICY FILE IN THIS SET AND THAT IS NOT AN OMISSION. The
+    // There is no policy file in this set and that is not an omission. The
     // broker speaks no D-Bus at all -- it reads one file mosd renders into /run
     // and listens on a TCP socket -- so it has nothing to be granted.
     id: 'mqtt-broker-not-enabled',

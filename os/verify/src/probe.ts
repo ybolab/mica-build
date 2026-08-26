@@ -133,7 +133,7 @@ export async function probeImage(ctx: ImageContext, log: Log): Promise<void> {
         log(`   [unsquashfs]  ${label}: ${sample} extracted and present`)
       }
 
-      // AND THE OTHER DIRECTION, in the same breath. unsquashfs exits 0 for a
+      // And the other direction, in the same breath. unsquashfs exits 0 for a
       // path that is not in the archive and leaves an empty directory behind;
       // a probe that only ever showed the succeeding case would be showing a
       // helper that has never been observed refusing anything.
@@ -217,7 +217,7 @@ export async function probeImage(ctx: ImageContext, log: Log): Promise<void> {
           log(`   [fdtget]      ${dtb} is listed in ${bootA} and mcopy could not read it`)
           continue
         }
-        // BOTH DIRECTIONS, in the same breath, as the unsquashfs step does:
+        // Both directions, in the same breath, as the unsquashfs step does:
         // a node that IS there and a node that is not, so the probe is never
         // showing a helper that has only ever been observed succeeding.
         const red = await fdtGetResult(ctx.tools, local, '/leds/status-red', 'label')

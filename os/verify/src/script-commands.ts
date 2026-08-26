@@ -1,4 +1,4 @@
-// The command names a shell script invokes at COMMAND POSITION, and whether
+// The command names a shell script invokes at command position, and whether
 // each resolves inside the packed root.
 //
 // A transcription of `mos_script_commands` and `sq_resolves_cmd`, in their own
@@ -6,22 +6,22 @@
 // nine-stage text pipeline and putting them beside the check that uses them
 // would bury it.
 //
-// WHY A PIPELINE AND NOT A SHELL PARSER.
+// Why a pipeline and not a shell parser.
 //
 // Because that is what the oracle is, and the port has to agree with the oracle
 // -- including where the oracle is wrong. A real parser would find commands this
 // misses and miss commands this finds, and every one of those differences would
 // be a divergence attributable to the port rather than to the image.
 //
-// The extractor is DELIBERATELY CONSERVATIVE and the oracle says so: commands
+// The extractor is deliberately conservative and the oracle says so: commands
 // the scripts invoke through their own `run`/`have` wrappers -- busctl, rauc,
 // systemctl, curl, wget -- are NOT in this set and must not be. `mos-health`
 // uses `have X ||` precisely to mark curl and wget optional, and asserting those
 // exist would be asserting the wrong thing.
 //
-// THE ONE PLACE `sq_resolves_cmd` DIFFERS FROM EVERY OTHER PATH TEST HERE.
+// The one place `sq_resolves_cmd` differs from every other path test here.
 //
-// It chases symlinks WITHIN THE IMAGE: an absolute link target resolves against
+// It chases symlinks within the image: an absolute link target resolves against
 // ROOT and not against the host's `/`. Everywhere else in this harness `[ -f ]`
 // and `stat` follow a link the way the shell does, which for an absolute target
 // inside a container means the container's root. Here the oracle re-roots it by

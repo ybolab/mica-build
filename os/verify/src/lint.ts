@@ -1,6 +1,6 @@
 // The board-definition schema lint.
 //
-// WHY THIS EXISTS. A board is defined by its layout file, and the shared build
+// Why this exists. A board is defined by its layout file, and the shared build
 // and verification scripts read that definition rather than knowing any board's
 // shape. That only holds if the definition is complete and honest, and neither
 // is self-evident: a missing key makes a shared script fail somewhere far from
@@ -19,11 +19,11 @@
 // So this checks BOTH directions: every key a role requires is present, and no
 // key a role does not use is present. Only the second one would have caught it.
 //
-// WHAT THIS PORT CHANGES, AND WHY IT IS NOT A TRANSLATION
+// What this port changes, and why it is not a translation
 //
 // The predecessor was os/verify/lint.sh: it `source`d each board definition in
 // a subshell and read every key as `${NAME_KEY:-}`. That idiom cannot tell
-// DECLARED EMPTY from NOT DECLARED, and four holes measured on 2026-08-25 all
+// Declared empty from not declared, and four holes measured on 2026-08-25 all
 // come from exactly that:
 //
 //   1. `ROOTFS_A_FS_UUID=""` -- a forbidden key on a forbidden role -- PASSED.
@@ -44,14 +44,14 @@
 // `declared()` -- which answers PRESENCE without consulting the value -- rather
 // than testing the value for emptiness.
 //
-// THIS MAKES THE PORT STRICTER THAN ITS PREDECESSOR, deliberately. The
+// This makes the port stricter than its predecessor, deliberately. The
 // emptiness of a declaration is never taken as its absence, because on these
 // boards emptiness is a STATEMENT: x64 declares BOARD_FIRMWARE_FILES="" and
 // BOARD_HWINIT_CONFS="" on purpose -- a QEMU machine has no radio firmware and
 // no MAC to burn. A schema that reads those as "not declared" cannot tell a
 // board that said "none" from a board that forgot to say anything.
 //
-// THE MESSAGES ARE THE PRODUCT. A verdict tells a board engineer that something
+// The messages are the product. A verdict tells a board engineer that something
 // is wrong; the message is what tells them which line to edit. So absent and
 // empty get DIFFERENT sentences even where they share a verdict: the shell said
 // "declares no ESP_FAT_VOLUME_ID" for `ESP_FAT_VOLUME_ID=""`, which sends a
@@ -75,7 +75,7 @@ export const COMMON_KEYS = ['PARTNUM', 'LABEL', 'GUID', 'TYPECODE'] as const
  * Per role: the keys it REQUIRES, and the keys it FORBIDS.
  *
  * A key in neither list is unconstrained -- placement keys (_START_MIB,
- * _START_SECTOR, _SIZE_MIB, _OFFSET_BYTES) differ legitimately between a
+ * _START_SECTOR and _SIZE_MIB, _OFFSET_BYTES) differ legitimately between a
  * fixed-start partition and one whose offset is derived, and pinning them here
  * would encode the arrangement this file exists to stop encoding.
  *
@@ -262,7 +262,7 @@ function lintPartitionInner(r: Recorder, p: Partition): void {
     }
   }
 
-  // THE FORBIDDEN DIRECTION, and the one hole 1 was in. Presence is the claim.
+  // The forbidden direction, and the one hole 1 was in. Presence is the claim.
   // A key declared empty is still a key this role has no meaning for, and a
   // reader of the file cannot tell it from a value that has yet to be filled in.
   for (const key of schema.forbidden) {
@@ -542,13 +542,13 @@ export function lintFile(path: string): BoardLint {
 /**
  * Refuse a file that contributed no assertions at all.
  *
- * PER FILE, not just in total. When the x64 layout referenced a key that had
+ * Per file, not just in total. When the x64 layout referenced a key that had
  * been renamed, `set -u` killed the shell predecessor's subshell at the first
  * line, the board contributed ZERO assertions, and the run reported
  * `RESULT: PASS (1/1 checks)` from the OTHER board alone. A total that is not
  * zero cannot see that; a per-file count can.
  *
- * IT IS A BACKSTOP, AND EXPORTED SO THAT IT CAN BE TESTED AS ONE. No input can
+ * It is a backstop, and exported so that it can be tested as one. No input can
  * currently reach it through lintFile: lintBoard always contributes something,
  * because a board with no LAYOUT_PARTITIONS still fails on that, and a file the
  * parser refuses becomes a finding. It was proved unreachable by mutation --
@@ -580,7 +580,7 @@ export function lintPaths(paths: readonly string[]): LintRun {
 }
 
 /**
- * The default target: every board this tree ships, by name, READ OFF THE TREE.
+ * The default target: every board this tree ships, by name, read off the tree.
  *
  * This was a literal, and a board added under os/boards/ was therefore a board
  * the lint never opened -- while still reporting `RESULT: PASS (26/26 checks)`,

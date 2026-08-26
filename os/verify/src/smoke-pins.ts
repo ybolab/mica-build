@@ -1,19 +1,19 @@
-// Where a self-built artifact's RECORDED VERSION is read from, and nothing else.
+// Where a self-built artifact's recorded version is read from, and nothing else.
 //
-// THE VERSION LOOP IS CLOSED HERE: bumping a `versions.env` pin without
+// The version loop is closed here: bumping a `versions.env` pin without
 // rebuilding the artifact turns the smoke run red
-// -- and a loop is only closed if the two ends are the SAME FILE. So every
+// -- and a loop is only closed if the two ends are the same file. So every
 // function here READS a pin out of the file that owns it, at run time, and
 // there is deliberately no literal version string anywhere in os/verify/.
 //
-// THE SECOND LIST IS THE FAILURE MODE THIS FILE EXISTS TO AVOID. This campaign
+// The second list is the failure mode this file exists to avoid. This campaign
 // has deleted several: `TOOL_PACKAGES` pinned from a copy of an `apk add` line,
 // a hardcoded hwinit list that drifted and cost the image its stable MAC, a
 // `SHIPPED_BOARDS = ['cx3576', 'x64']` literal that made a third board
 // invisible to a lint reporting 26/26 PASS. Every one of them was green while
 // being wrong, because a copy agrees with itself. One list, two readers.
 //
-// NO PARSER IS WRITTEN HERE EITHER, for the same reason at one level down.
+// No parser is written here either, for the same reason at one level down.
 // `versions.env` is `KEY=value` with comments, which is exactly what
 // `board-env.ts` already reads as DATA rather than by sourcing it -- and that
 // parser refuses command substitution, backticks, parameter expansion and
@@ -62,7 +62,7 @@ export interface Pin {
 /**
  * Strip the `v` that a git TAG carries and a `--version` output does not.
  *
- * MEASURED, NOT ASSUMED, and the two spellings live side by side in ONE file:
+ * Measured, not assumed, and the two spellings live side by side in ONE file:
  * `os/podman/versions.env` writes `PODMAN_VERSION=v5.8.6` and
  * `CRUN_VERSION=1.29.1`, because the pins are upstream TAG names and upstream
  * does not agree with itself about the prefix. The binaries agree with each
@@ -92,7 +92,7 @@ export function readVersionsEnv(file: string): ReadonlyMap<string, string> {
 /**
  * Every version pin a `versions.env` declares, in file order.
  *
- * THIS IS THE DIRECTION THAT CATCHES A NEW ARTIFACT. The register in
+ * This is the direction that catches a new artifact. The register in
  * `smoke-register.ts` names the artifacts; this names the pins
  * the tree actually carries, and `smoke-register.test.ts` requires the second
  * set to be covered by the first. Without it, adding an eighth binary to
@@ -139,7 +139,7 @@ export function cratePath(crate: string): string {
 /**
  * The `version` of a Cargo manifest's `[package]` table, and only that one.
  *
- * WHY THIS IS NOT A ONE-LINE REGEX. `version = "..."` appears many times in a
+ * Why this is not a one-line regex. `version = "..."` appears many times in a
  * manifest and only the first table's is the crate's own: `mosd/apid/Cargo.toml`
  * has a `[dependencies]` section under it, and a workspace member inherits
  * `[workspace.package]` keys. A `/^version = "(.*)"/m` over the whole file finds

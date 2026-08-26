@@ -1,6 +1,6 @@
 // The image helpers, driven from the failing side of every tool they use.
 //
-// WHY A STUB RUNTIME AND NOT A REAL IMAGE. `make os-verify-test` runs on a host
+// Why a stub runtime and not a real image. `make os-verify-test` runs on a host
 // with no image built, and in CI inside the pinned bun container with no docker
 // under it. A suite that needed a 1.4 GiB image would be a suite that skipped,
 // and a skip reports the same green as a pass. So the tools' OUTPUT is the
@@ -13,7 +13,7 @@
 // exactly as it throws in production. A stub that decided for itself when to
 // throw would be testing the stub.
 //
-// WHAT THIS FILE IS FOR. Four of the five tools answer a question they could
+// What this file is for. Four of the five tools answer a question they could
 // not answer with something shaped like an answer -- sgdisk invents a partition
 // table, debugfs exits 0 having opened nothing, unsquashfs exits 0 having
 // extracted nothing, veritysetup uses one exit status for an answer and for a
@@ -56,10 +56,10 @@ import { REPO_ROOT } from './paths.ts'
 // A scratch directory under _out/, never /tmp: a bind mount of /tmp on this
 // host succeeds and delivers an empty directory, and these files are read back.
 //
-// _out/ IS CREATED, NOT ASSUMED, and that is the whole of this line's history.
+// _out/ is created, not assumed, and that is the whole of this line's history.
 // It is gitignored build output (.gitignore:4) and `mkdtempSync` does not
 // create its parent, so on a fresh worktree, a clean clone and CI this threw
-// ENOENT at MODULE SCOPE -- which aborts the file before a single test in it is
+// ENOENT at module scope -- which aborts the file before a single test in it is
 // declared. Measured on 2026-08-26 by moving _out/ aside: `make os-verify-test`
 // went from `PASS (373/373)` to `FAIL (332 passed of 333 run)`, i.e. the 40
 // tests in this file simply stopped existing. That is the failure mode this
@@ -68,7 +68,7 @@ import { REPO_ROOT } from './paths.ts'
 // only one of them ran this file. The floor was green only because something
 // earlier in the run happened to create _out/ first.
 //
-// CREATED AND REMOVED BY THE SAME CONDITION. It used to be made here, at module
+// Created and removed by the same condition. It used to be made here, at module
 // scope, and removed in `afterAll` -- and those are not the same condition. Under
 // a `-t` FILTER bun LOADS every file, so every file made its scratch, but only a
 // file with a MATCHING test runs its `afterAll`. So a filtered run made four and
@@ -167,7 +167,7 @@ const SGDISK_I2 = SGDISK_I1
   .replace(`'loader'`, `'uenv-a'`)
 
 /**
- * `sgdisk -p` on 64 MiB of zeros. Exit 0. A COMPLETE, WELL-FORMED FICTION.
+ * `sgdisk -p` on 64 MiB of zeros. Exit 0. A complete, well-formed fiction.
  *
  * The disk GUID here is one sgdisk made up: run twice on the same file it
  * printed 82861E6A-8EE5-47F2-A091-D96EFFDF5396 and then
@@ -708,7 +708,7 @@ describe('e2fsck -fn, whose exit status is the oracle\'s whole test', () => {
   })
 
   test('A TRUNCATED FILESYSTEM EXITS 0, and this reproduces that', async () => {
-    // THE VACUOUS PASS IN THE CODE UNDER TEST, asserted as its own case rather
+    // The vacuous PASS in the code under test, asserted as its own case rather
     // than repaired. e2fsck says the superblock or the partition table is
     // likely to be corrupt and then exits 0; os/verify-image-v2.sh:2342 sends
     // both streams to /dev/null and reads the status, so it concludes
@@ -810,7 +810,7 @@ describe('mcopy writing a file rather than a stdout string', () => {
 
   test('a file that landed is true, and the caller may read the BYTES', async () => {
     const dest = join(dir, 'rk3576-src.dtb')
-    // WHY THIS HELPER EXISTS: the runtime reads stdout as TEXT, so `mcopy ... -`
+    // Why this helper exists: the runtime reads stdout as TEXT, so `mcopy ... -`
     // turns every byte of a 290 KiB device tree that is not valid UTF-8 into
     // U+FFFD. mcopy writes the file itself instead.
     const rt = stub([['mcopy', { effect: () => writeFileSync(dest, Buffer.from([0xd0, 0x0d, 0xfe, 0xed])) }]])

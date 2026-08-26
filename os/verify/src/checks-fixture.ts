@@ -1,11 +1,11 @@
 // A synthetic image, for driving a ported check RED.
 //
 // A check lands with the fixture that fails it, because nothing can tell a
-// check that PASSES from a check that CANNOT FAIL -- both report green against
+// check that passes from a check that cannot fail -- both report green against
 // a healthy image,
 // and only a mutation separates them.
 //
-// WHY A FAKE IMAGE AND NOT A MUTATED REAL ONE.
+// Why a fake image and not a mutated real one.
 //
 // Both, actually: `os/verify/HARNESS.md` records an end-to-end run against a
 // real image edited on disk, which is what proves the whole pipeline reports
@@ -174,7 +174,7 @@ export function imageFixture(request: FixtureRequest): Fixture {
       return { image, offsetBytes: found.firstSector * gpt.sectorSize }
     },
     extract: async () => refuse('extracted partition payloads'),
-    // NAMED, EMPTY, and not a refusal. The layout-addressed families hand this
+    // Named, empty, and not a refusal. The layout-addressed families hand this
     // name to a TOOL and never read the bytes themselves -- the stub runtime
     // keys its transcript on the file name, which is the tier. So the fixture
     // supplies the name and nothing behind it: a check that did read the bytes
@@ -191,20 +191,20 @@ export function imageFixture(request: FixtureRequest): Fixture {
   return { ctx, dispose: () => rmSync(dir, { recursive: true, force: true }) }
 }
 
-// M4c: a synthetic PACKED ROOT, for the batch-2 checks
+// M4c: a synthetic packed root, for the batch-2 checks
 
 /**
  * A directory tree standing in for the unpacked read-only root, and a context
  * whose `unpackRoot` hands it back.
  *
- * WHY A BUILT TREE RATHER THAN A REAL ONE. The real root is 4,354 paths on
+ * Why a built tree rather than a real one. The real root is 4,354 paths on
  * cx3576 and 9,238 on x64, behind a 256 MiB extract and an unsquashfs in a
  * container; one mutation per check against that is a three-minute run each
  * time. `os/verify/HARNESS.md` records the end-to-end runs that prove the whole
  * pipeline reports the failing direction, and this is what makes ONE mutation
  * name ONE check.
  *
- * WHAT IS NOT INVENTED HERE. /etc/fstab is rendered from the SHIPPED template,
+ * What is not invented here. /etc/fstab is rendered from the SHIPPED template,
  * os/rootfs/overlay-v2/etc/fstab.in, with the board's own GUIDs -- the same
  * discipline os/tests/ui-location-test.sh:223-236 follows and for the same
  * reason: a fixture built from this file's idea of the table would test that
@@ -408,7 +408,7 @@ const PURGE_THRESHOLD = 100
  *
  * Nothing here is a stand-in: the units, the mount and the config keys are the
  * ones the checks read, in the shapes the shipped image has. The two things
- * DELIBERATELY ABSENT are the ones absence is the correct state for -- there is
+ * Deliberately absent are the ones absence is the correct state for -- there is
  * no /usr/share/containers/containers.conf (a second config layer podman would
  * merge before /etc, so an operator reading /etc would see half the settings)
  * and no local-fs.target.wants symlink for the Quadlet mount (a static
@@ -559,7 +559,7 @@ function enableEtcUnit(root: string, unit: string, target: string): void {
 /**
  * hostapd, wpa_supplicant, their unit templates and the STATE binds behind them.
  *
- * EVERY NAME HERE COMES FROM THE CONND CONTRACT, read out of `mosd/` by the same
+ * Every name here comes from the CONND contract, read out of `mosd/` by the same
  * function the checks read it with. That is the same trade `healthyGpt` makes
  * one layer up and for the same reason: the fixture's job is to be green until
  * it is MUTATED, so a baseline built from the contract is the baseline, and
@@ -620,7 +620,7 @@ function elfHeader(arch: string | undefined): Buffer {
 /**
  * What the ten small families read.
  *
- * BOARD-SHAPED THROUGHOUT, from the board's own declarations: the ELF machine
+ * Board-shaped throughout, from the board's own declarations: the ELF machine
  * follows MOS_ARCH, the bootloader helpers follow RAUC_BOOTLOADER, fw_env.config
  * addresses the two UENV partitions by the GUIDs and the size the board
  * declares, and the multiarch directory libcrypt lands in follows MOS_ARCH too.
@@ -689,7 +689,7 @@ function seedSystem(root: string, board: Board, file: WriteFile): void {
  * A /usr/lib/mos script with enough shape to exercise the command extractor, and
  * the binaries it names.
  *
- * SIXTEEN COMMANDS, because the check refuses fewer than ten: an extractor that
+ * Sixteen commands, because the check refuses fewer than ten: an extractor that
  * stopped seeing commands would make the presence test pass while proving
  * nothing, and the oracle guards that with a vacuity floor. A fixture sitting
  * below the floor could not tell a working extractor from a broken one.
@@ -923,7 +923,7 @@ function seedBoardShape(root: string, board: Board, file: WriteFile): void {
 
   for (const fw of firmware) file(fw)
   if (firmware.length > 0) {
-    // The module list is about THIS BOARD'S radio: the driver it must load, the
+    // The module list is about this board's radio: the driver it must load, the
     // BT core of the same combo chip, and the superseded driver it must not.
     // The comment line is deliberate -- the file may legitimately EXPLAIN the
     // drop, and a reader that did not strip comments would call that a defect.

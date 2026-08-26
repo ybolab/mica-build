@@ -7,7 +7,7 @@
 // /run/mos/shadow` is written inline, not through `sq_symlink`, so it carries
 // a parenthetical batch 2a's matcher would not have found.
 //
-// THE PROPERTY, END TO END.
+// The property, end to end.
 //
 // docs/design/access.md 4.2 supports exactly one credential on the console: a
 // TRANSIENT root password. On v2 the only path pam_unix will read for it is
@@ -16,7 +16,7 @@
 // before any unit starts, and mos-shadow-reconcile builds the file there from
 // /usr/share/factory/etc/shadow on every boot.
 //
-// That makes the password transient BY CONSTRUCTION rather than by protocol:
+// That makes the password transient by construction rather than by protocol:
 // the memory is gone at the next boot and nothing has to remember to clear it.
 // The previous design put the file on STATE and cleared it on the next boot
 // from a marker, which made "transient" a thing a oneshot had to SUCCEED at --
@@ -34,7 +34,7 @@
 //     loop reading its own destination is exactly how a password survives;
 //   * and the factory copy itself carries no usable hash for any account.
 //
-// TWO CHECKS DISAGREE ABOUT AN EMPTY PASSWORD FIELD, AND BOTH ARE PORTED.
+// Two checks disagree about an empty password field, and both are ported.
 //
 // `factory-shadow-locked` treats an EMPTY field as
 // locked -- its awk is `$2 !~ /^[!*]/ && $2 != ""`. `factory-shadow-accounts-
@@ -305,7 +305,7 @@ export const SHADOW_CHECKS: readonly CheckCase[] = [
   },
 
   {
-    // 0640 root:shadow, and it must SURVIVE PACKING -- which is why this reads
+    // 0640 root:shadow, and it must survive packing -- which is why this reads
     // the unpacked tree rather than the source overlay. squashfs carries the
     // mode and ownership; a build step that copied the file through something
     // that did not is invisible everywhere else.
@@ -593,7 +593,7 @@ export const SHADOW_CHECKS: readonly CheckCase[] = [
     //
     // TWO failure branches with two messages, because they are two different
     // defects with different repairs. EMPTY means the account accepts any
-    // password on this device. A USABLE HASH means a credential every device in
+    // password on this device. A usable hash means a credential every device in
     // the fleet shares. Reporting one as the other sends the fix the wrong way.
     id: 'factory-shadow-accounts-locked',
     shell: {

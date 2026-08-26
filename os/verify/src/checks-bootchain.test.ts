@@ -40,8 +40,8 @@ const SLOT = { cx3576: 524288, x64: 1048576 } as const
 
 // _out/, never /tmp: these files are read back through helpers that this host's
 // docker cannot see under /tmp, and the suite's other scratch lives there too.
-// CREATED AND REMOVED BY THE SAME CONDITION, which is what a `-t` filter broke.
-// `mkdtempSync` at MODULE SCOPE ran in every file bun LOADED, but `afterAll`
+// Created and removed by the same condition, which is what a `-t` filter broke.
+// `mkdtempSync` at module scope ran in every file bun LOADED, but `afterAll`
 // runs only in a file that has a MATCHING test -- so a filtered run created
 // four scratch directories and removed one, leaving exactly the `_out/verify-*`
 // drift image.test.ts's own comment says was fixed. Measured 2026-08-26:
@@ -528,7 +528,7 @@ describe('the status-LED device tree', () => {
   })
 
   test('RED when the GPIO FLAGS CELL is inverted, which nothing else catches', async () => {
-    // THE LOAD-BEARING ONE. Label and default-state still read exactly right;
+    // The load-bearing one. Label and default-state still read exactly right;
     // only the third cell of `gpios` says whether the line is active-low, and a
     // red indicator wired the other way is dark exactly when it should be lit.
     const fdt = { ...healthyFdt(), '/leds/status-red -t x gpios': '117 17 0' }
@@ -656,7 +656,7 @@ describe('the four partition numbers baked into boot.scr', () => {
   })
 
   test('RED on a script built before LOADER shifted every number by one', async () => {
-    // THE RENUMBERING ASSERTION. A stale value does not announce itself: U-Boot
+    // The renumbering assertion. A stale value does not announce itself: U-Boot
     // persists the boot-attempt decrement, then fails to find Image in a
     // partition that now holds something else, and the board is bricked until
     // it is re-flashed.

@@ -1,5 +1,5 @@
 // The parity harness: what the shell verifier concluded, what the TypeScript
-// port concluded, and where the two differ -- PER CHECK.
+// port concluded, and where the two differ -- per check.
 //
 // M4b..M4d port os/verify-image-v2.sh's checks in batches and M4e deletes it
 // at full parity; this file is the instrument all four are measured by.
@@ -7,11 +7,11 @@
 // other's results, and says -- by NAME, per check -- agree, diverge, or not
 // ported.
 //
-// WHY NOT A COUNT.
+// Why not a count.
 //
 // os/tests/ui-location-test.sh is this repository's reference for the
 // discipline and this file follows it deliberately: it names the assertions it
-// expects BY IDENTITY and diffs that set against the set that actually ran,
+// expects by identity and diffs that set against the set that actually ran,
 // because a count breaks whenever the suite is widened and "exit 0 with no FAIL
 // lines" is invariant under a run in which nothing executed at all. The same
 // two traps are live here and worse:
@@ -24,7 +24,7 @@
 //     count it vanishes into the noise; here a SKIP is a THIRD verdict that
 //     never equals a PASS, so pass-vs-skip is a divergence with a name.
 //
-// HOW A SHELL LINE GETS AN IDENTITY.
+// How a shell line gets an identity.
 //
 // os/verify-image-v2.sh prints `PASS: <prose>`, `FAIL: <prose>`, `SKIP: <prose>`
 // and nothing else -- measured on both boards' real images, 2026-08-25: every
@@ -47,7 +47,7 @@
 // oracle edited to make its readings easier to compare is not independent of
 // the thing it measures.
 //
-// WHAT "NOT PORTED" MUST LOOK LIKE.
+// What "not ported" must look like.
 //
 // At M4a the register is EMPTY, so every shell conclusion is unclaimed. That is
 // the expected state and the harness has to SAY it rather than report agreement
@@ -94,7 +94,7 @@ const VERDICT_PREFIX: ReadonlyMap<string, Verdict> = new Map([
 /**
  * Parse the shell verifier's stdout, and refuse a parse that does not add up.
  *
- * THE SELF-CONSISTENCY GUARD IS THE POINT. The verifier counts its own
+ * The self-consistency guard is the point. The verifier counts its own
  * conclusions in PASS_N/FAIL_N/SKIP_N and prints them in its last line. This
  * parser counts them again from the lines. If the two disagree, the parser has
  * missed conclusions -- a message with an embedded newline, an output format
@@ -183,7 +183,7 @@ export interface ShellMatcher {
   /**
    * A substring of the check's PASS line.
    *
-   * OPTIONAL SINCE M4d, and only for the one case that needs it: a check whose
+   * Optional since M4d, and only for the one case that needs it: a check whose
    * shell counterpart has no PASS line on any board it applies to. The oracle
    * has whole families that print N conclusions on the board with the hardware
    * and ONE `skip` on the board without -- the radio firmware set, the hwinit

@@ -9,24 +9,24 @@
 // read-only flag and of rauc.slot= on the board this project verifies first.
 // So the EXTRACTION is board-aware and the assertions are not.
 //
-// WHERE THE COMMAND LINE COMES FROM.
+// Where the command line comes from.
 //
 // U-Boot: the per-slot verity env file out of the slot's own FAT, which boot.scr
 // sources. One file, one line.
 //
 // GRUB: composed the way the bootloader composes it (:2129-2160). The ESP's
 // grub.cfg holds the board constants -- each slot's PARTUUID and the fixed
-// arguments -- and the SLOT'S OWN boot partition holds the values that change
+// arguments -- and the slot's own boot partition holds the values that change
 // with the build, in a `set MOS_*=` fragment. Neither half is the command line;
 // GRUB expands one into the other at boot, and so does this.
 //
 // Composing it rather than asserting the halves separately is the point:
-// everything downstream verifies the ROOT HASH THE KERNEL WILL BE GIVEN against
+// everything downstream verifies the root hash the kernel will be given against
 // the payload actually in that slot. A check that read the fragment alone would
 // pass on a grub.cfg that never referenced it, and a check that read grub.cfg
 // alone would pass on a slot whose cmdline.cfg was never installed.
 //
-// ANYTHING THE FRAGMENT DOES NOT DEFINE IS LEFT UNEXPANDED, so a missing fact
+// Anything the fragment does not define is left unexpanded, so a missing fact
 // shows up as a literal `${MOS_ROOT_HASH}` rather than as a silently empty
 // field -- which is what makes the verity table unparseable rather than wrong.
 
@@ -117,7 +117,7 @@ interface VerityFields {
  *
  *   rootfs,,,ro,0 <sectors> verity 1 <data> <hash> <dbs> <hbs> <blocks> <hash_start> <algo> <root> <salt>
  *
- * `$(NF-1)` and `$NF` for the hash and the salt -- POSITIONS FROM THE END, so a
+ * `$(NF-1)` and `$NF` for the hash and the salt -- positions from the end, so a
  * table with an extra trailing field silently yields the wrong two. Reproduced;
  * a reader that indexed from the front would disagree with the oracle on
  * exactly the malformed tables this is about.
@@ -171,7 +171,7 @@ function envFileGet(text: string, name: string): string {
 
 export const CMDLINE_CHECKS: readonly CheckCase[] = [
   {
-    // THE END-TO-END ASSERTION: the root hash the DEVICE WILL BE GIVEN, against
+    // The end-to-end assertion: the root hash the device will be given, against
     // the bytes actually in the slot. `veritysetup verify` walks the hash tree
     // in userspace -- no device-mapper target, no losetup, no mount.
     id: 'verity-payload-verifies',
@@ -205,7 +205,7 @@ export const CMDLINE_CHECKS: readonly CheckCase[] = [
   },
 
   {
-    // FACTORY ONLY: after an update ROOTFS-A may hold a different release than
+    // Factory only: after an update ROOTFS-A may hold a different release than
     // the rootfs-verity.env sitting in the local _out/ tree.
     id: 'verity-hash-vs-built',
     shell: {
@@ -448,8 +448,8 @@ const ESP_CHECKS: readonly CheckCase[] = [
   },
 
   {
-    // THE PER-SLOT RULE, from the other side. A per-slot file on
-    // the ESP is one that NO INSTALL CAN REPLACE: the ESP is in no slot group,
+    // The per-slot rule, from the other side. A per-slot file on
+    // the ESP is one that no install can replace: the ESP is in no slot group,
     // so it would be frozen at whatever was flashed while the rootfs it
     // describes moved on.
     id: 'esp-no-per-slot-file',

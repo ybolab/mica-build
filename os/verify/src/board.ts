@@ -1,13 +1,13 @@
 // The typed view of a board definition.
 //
-// WHAT THIS ADDS OVER THE PARSE. `board-env.ts` turns the file into a map of
+// What this adds over the parse. `board-env.ts` turns the file into a map of
 // strings, faithfully. This turns that map into the shape the rest of os/
 // actually reasons about: an ordered partition set, each entry's role and its
 // geometry, the bootloader backend, and the four lists a board declares. The
 // point is that a consumer stops spelling out `${BOOT_A_START_SECTOR:-}` and
 // starts asking a partition for its start sector.
 //
-// THE LINE THIS FILE DOES NOT CROSS. It never decides whether a board
+// The line this file does not cross. It never decides whether a board
 // definition is CORRECT. A missing LAYOUT_PARTITIONS, a role no checker knows,
 // a partition with no PARTNUM -- all of those are reported as absent or
 // unknown and handed on. The schema lint is a separate consumer of this model
@@ -21,7 +21,7 @@
 // board definition at all. The MODEL does not, because a board definition it
 // can read and disagrees with is exactly what a lint exists to report.
 //
-// DECLARED-EMPTY IS NOT ABSENT, and keeping the two apart is most of the value
+// Declared-empty is not absent, and keeping the two apart is most of the value
 // here. `BOARD_FIRMWARE_FILES=""` on x64 is a statement -- a QEMU machine has
 // no radio firmware -- and `BOARD_HWINIT_CONFS=""` likewise. Under the
 // `${X:-}` idiom every shell consumer uses, those are indistinguishable from a

@@ -26,7 +26,7 @@ export interface ExecResult {
 /**
  * Run one command inside the factory root.
  *
- * The argv is the ABSOLUTE PATH of the binary in the image followed by its
+ * The argv is the absolute path of the binary in the image followed by its
  * arguments -- not a shell line. The factory root is `FROM scratch` with no
  * ENTRYPOINT, no CMD and no PATH, so a bare `crun` would not resolve, and the
  * installed path is the thing under test anyway.

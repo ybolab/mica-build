@@ -2,7 +2,7 @@
 // version-skewed binary, each REALLY made and each required to turn the smoke
 // run red.
 //
-// WHY THESE ARE NOT UNIT TESTS.
+// Why these are not unit tests.
 //
 // smoke.ts's whole design is that every verdict is reachable from a FABRICATED
 // `ExecResult`, and that is right: it is what makes the red branches runnable
@@ -18,7 +18,7 @@
 // root, with the real self-built artifact -- and drives the real `docker run`
 // at it. What comes back is measured, not chosen.
 //
-// EVERY MUTATION REFUSES TO BE A NO-OP.
+// Every mutation refuses to be a NO-OP.
 //
 // Each Dockerfile asserts its own PRE-state and POST-state and exits non-zero if
 // either is not what the mutation requires. A no-op therefore fails the image
@@ -28,7 +28,7 @@
 // container: four subtasks in this campaign wrote a `String.replace` that
 // matched nothing and would have reported a passing branch never reached.
 //
-// EVERY CASE CARRIES ITS POSITIVE CONTROL.
+// Every case carries its positive control.
 //
 // The same artifact is run through the UNMUTATED root in the same pass and
 // required to pass. Without it, a case is satisfied by any image that fails for
@@ -38,7 +38,7 @@
 // because M7b's map sent them to the wrong one, and a case that only asserted
 // `verdict === 'fail'` would have been just as green then as now.
 //
-// WHAT THIS DOES NOT DO.
+// What this does not do.
 //
 // It does not build a rootfs. It reads the factory root the build already
 // exported, exactly as the smoke runner does, and refuses when there is none --
@@ -87,7 +87,7 @@ export interface NegativeCase {
   /**
     * The mutation, as the body of a Dockerfile whose FROM is the factory root.
     *
-    * IT IS HANDED THE PIN, so the version-skew case is not a special case
+    * It is handed the pin, so the version-skew case is not a special case
     * dispatched on the case's NAME. A name-keyed branch here would be a case
     * that silently stops being mutated the day somebody renames it -- and the
     * empty body that branch would then produce builds the UNMUTATED root, which
@@ -119,7 +119,7 @@ export function skewedFrom(version: string): string {
 }
 
 /**
- * THE THREE CASES.
+ * The three cases.
  *
  * Two of them break `crun` and one breaks `rauc`, and that is chosen rather than
  * incidental: both are self-built, both are dynamically linked against this
@@ -133,7 +133,7 @@ export const CASES: readonly NegativeCase[] = [
     name: 'wrong-arch',
     clause: 'a deliberately wrong-arch binary fails the build',
     artifact: 'crun',
-    // ONE BYTE. e_machine lives at offset 18 of every ELF header; 0x3E is
+    // One byte. e_machine lives at offset 18 of every ELF header; 0x3E is
     // x86-64 and 0xB7 is AArch64. The binary is otherwise the real, working,
     // self-built crun -- so what the kernel refuses is the architecture and
     // nothing else. This is the exact path a genuinely cross-built binary
@@ -198,14 +198,14 @@ export const CASES: readonly NegativeCase[] = [
     name: 'version-skew',
     clause: 'a deliberately version-skewed binary fails the build',
     artifact: 'crun',
-    // THE BINARY IS SKEWED, NOT THE PIN, and that is which half of the loop this
+    // The binary is skewed, not the pin, and that is which half of the loop this
     // case owns. The other half -- bump a pin without rebuilding -- is driven
     // end to end in smoke.test.ts. Moving the binary leaves the repository
     // alone: a negative test that edited a tracked versions.env would have to
     // put it back, and a test whose cleanup can fail is a test that can leave
     // the tree wrong.
     //
-    // The expected pre-state is READ FROM THE PIN by the caller and interpolated
+    // The expected pre-state is read from the pin by the caller and interpolated
     // here, so a legitimate version bump makes this mutation refuse by name
     // instead of quietly skewing from a stale constant.
     mutation: (a, pin) => versionSkewMutation(a, pin.expected, skewedFrom(pin.expected)),
@@ -234,7 +234,7 @@ export function versionSkewMutation(a: Artifact, expected: string, skewed: strin
 
 export interface CaseOutcome {
   readonly name: string
-  /** Did the NEGATIVE TEST hold? Not the artifact's verdict, which must be `fail`. */
+  /** Did the negative test hold? Not the artifact's verdict, which must be `fail`. */
   readonly held: boolean
   readonly lines: readonly string[]
 }
@@ -275,7 +275,7 @@ async function removeImage(tag: string): Promise<void> {
  * Drive one case: build the defect, run the artifact in it, and check the whole
  * run went red for that artifact and no other.
  *
- * FIVE THINGS ARE ASSERTED and each rules out a different way of passing
+ * Five things are asserted and each rules out a different way of passing
  * vacuously:
  *
  *   1. the image BUILT -- a mutation that changed nothing exits non-zero above;
@@ -391,7 +391,7 @@ export interface NegativeRun {
 /**
  * Every case, against the board's real factory root.
  *
- * THE VACUITY GUARD IS `conclude`'s, for `conclude`'s reason: a summary line is
+ * The vacuity guard is `conclude`'s, for `conclude`'s reason: a summary line is
  * invariant under a run that threw half its work away. `RESULT: PASS (3/3)`
  * reads identically whether three cases ran or the list was empty, so the count
  * is compared against the declared case list and an empty list is a failure
@@ -405,7 +405,7 @@ export async function negativeRun(opts: {
   const log = opts.log ?? ((l: string) => console.log(l))
   const cases = opts.cases ?? CASES
 
-  // THE VACUITY GUARD IS FIRST, BEFORE ANY IMAGE IS READ OR LOADED. `smokeRun`
+  // The vacuity guard is first, before any image is read or loaded. `smokeRun`
   // orders its own guards the same way and says why: a run that got as far as
   // loading a 250 MB archive and starting a container before discovering it had
   // nothing to do has already spent the time and already printed the header a

@@ -4,7 +4,7 @@
 // Eleven conclusions on each board, one of them a SKIP on x64. Everything here
 // reads the unpacked root and nothing else.
 //
-// WHY A POLICY PARSER AND NOT A grep.
+// Why a policy parser and not a grep.
 //
 // The oracle does not grep these files and says why, twice, in its own prose: a
 // D-Bus rule routinely spans several source lines, so a line-oriented reader
@@ -21,12 +21,12 @@
 //   stripComments   `dbus_policy_rules_only` (:661) -- an awk state machine over
 //                   `<!--` / `-->` that spans lines and PRESERVES line structure
 //   policyTags      `dbus_policy_tags` (:729) -- the same text reflowed to ONE
-//                   XML TAG PER LINE, which is what makes a per-line scoped/
+//                   XML tag per line, which is what makes a per-line scoped/
 //                   member judgement sound
 //   policyFacts     the big awk at :2989 -- rules collected per <policy> BLOCK,
 //                   because a rule's block is what decides who it applies to
 //
-// AND WHY THE BUS NAME IS READ, NEVER WRITTEN DOWN.
+// And why the bus name is read, never written down.
 //
 // `com.mos.mosd` appears nowhere in this file as the name being checked. The
 // oracle reads it out of mosd.service's `BusName=` (:2975) precisely so that a
@@ -114,7 +114,7 @@ export function stripXmlComments(text: string): string {
 }
 
 /**
- * `dbus_policy_tags` (:729): the rules, reflowed to ONE XML TAG PER LINE.
+ * `dbus_policy_tags` (:729): the rules, reflowed to one XML tag per line.
  *
  * `tr '\n' ' ' | sed 's|>|>\n|g'` then a trim and a whitespace collapse, then
  * `grep .` to drop what is left empty. The trailing newline `tr` produces
@@ -234,7 +234,7 @@ export interface SecondFile {
  *
  * The oracle walks /etc/dbus-1/system.d before /usr/share/dbus-1/system.d and
  * takes each directory's entries in shell-glob order, which is lexical; the
- * blessed file is excluded BY NAME rather than by directory, because a second
+ * blessed file is excluded by name rather than by directory, because a second
  * file in /usr/share is exactly as dangerous as one in /etc.
  *
  * A second file is not automatically a defect and the oracle is explicit about
@@ -525,7 +525,7 @@ const EXT_CHECKS: readonly CheckCase[] = [
   },
 
   {
-    // THE ONE-CHARACTER EDIT. own_prefix="com.mos" reads in a diff like a
+    // The one-character edit. own_prefix="com.mos" reads in a diff like a
     // simplification and actually grants ownership of com.mos.mosd to every
     // local uid -- with the root-only rules in com.mos.mosd.conf fully intact
     // and every mosd policy check above still passing, because none of them can

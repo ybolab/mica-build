@@ -3,11 +3,11 @@
 //
 // Os/verify-image-v2.sh reads a disk image with sgdisk, mtools at an offset,
 // debugfs/tune2fs over a dd-extracted partition, unsquashfs and a userspace
-// `veritysetup verify` -- and NOTHING ELSE: no loop mounts, no losetup, no
+// `veritysetup verify` -- and nothing else: no loop mounts, no losetup, no
 // device-mapper, no mount(8). The port keeps that toolset exactly, so this
 // file is about where the tools come from rather than which ones they are.
 //
-// TWO ROUTES, ONE SEAM -- the same shape os/verify/run.sh gave bun in M3, and
+// Two routes, one seam -- the same shape os/verify/run.sh gave bun in M3, and
 // for the same reason. A caller passes an argv and reads an exit status and
 // cannot tell which route answered, which is what makes a host without
 // gptfdisk a SUPPORTED host rather than a documented limitation. The container
@@ -18,7 +18,7 @@
 // squashfs that the assembler wrote, with tools out of the same base. Two
 // floating tags could drift apart between the write and the read.
 //
-// ONE CONTAINER PER RUNTIME, NOT ONE PER CALL. `docker run` costs ~200 ms and
+// One container per runtime, not one per call. `docker run` costs ~200 ms and
 // `apk add` costs seconds; the shell verifier pays both once because it
 // re-execs its WHOLE self inside. A port that made one container per tool call
 // would pay them per call, and M4b..M4d will make hundreds. So the container is
@@ -26,7 +26,7 @@
 // dispose() removes it, and so does an exit handler, because a leaked container
 // holding a read-only mount of the repository is a mess a later run inherits.
 //
-// A TOOL THAT FAILS IS NOT AN EMPTY STRING. The shell verifier ends nearly
+// A tool that fails is not an empty string. The shell verifier ends nearly
 // every capture in `|| true`, so a tool that could not run at all arrives at the
 // check as "", and the check then fails describing the VALUE rather than the
 // tool. That is survivable there because the check still goes red. It is not a
@@ -110,19 +110,19 @@ export interface ToolResult {
 /**
  * How many times the package install is attempted before it is believed.
  *
- * THE INDEX IS FETCHED OVER THE NETWORK AND APK LIES ABOUT LOSING IT. M6a
+ * The index is fetched over the network and APK lies about losing it. M6a
  * measured it on this host: 40 consecutive `apk add` runs in the pinned alpine,
  * 3 of them failed, and the failure reads
  *
  *     ERROR: unable to select packages:
  *       e2fsprogs (no such package):
  *
- * about a package that image unquestionably carries -- because the INDEX FETCH
+ * about a package that image unquestionably carries -- because the index fetch
  * failed and apk describes an empty index as an empty repository. (A fourth
  * shape appeared once: exit 6 naming a half-resolved e2fsprogs-libs, which is
  * the same fetch failing further along.)
  *
- * WHY A RETRY IS LEGITIMATE HERE AND A VERDICT RETRY IS NOT.
+ * Why a retry is legitimate here and a verdict retry is not.
  *
  * This package's rule is that an unreliable environment is itself a finding and
  * that a retry hiding one is a retry deciding the verdict. That rule is about a
@@ -241,7 +241,7 @@ export interface RuntimeRequest {
    * Host paths the tools must be able to READ. Mounted at their own path.
    *
    * Not `/w`, not `/work`. The two image assemblers mount a short name because
-   * they RUN A SCRIPT and construct their paths inside it; this runtime is a
+   * they run a script and construct their paths inside it; this runtime is a
    * TOOL handed paths from outside -- the image path comes from a caller's
    * argv or from paths.ts climbing import.meta.dir, and both are HOST absolute
    * paths. Under a short mount they would name nothing inside the container,
@@ -557,20 +557,20 @@ async function createContainerRuntime(
     return { ...r, argv }
   }
 
-  // THE MOUNT THAT SUCCEEDS AND CARRIES NOTHING. On this host a bind mount of
-  // anything under /tmp propagates as an EMPTY DIRECTORY rather than failing --
+  // The mount that succeeds and carries nothing. On this host a bind mount of
+  // anything under /tmp propagates as an empty directory rather than failing --
   // measured 2026-08-25 and recorded at os/verify/run.sh:217. Without a guard, a
   // helper would report "sgdisk: cannot open image.img" about a file the host
   // reads fine, and send the reader to look for a path they can `cat`.
   //
-  // EVERY PROBE HERE IS A PROBE FOR CONTENT, NOT FOR A PATH, and that
+  // Every probe here is a probe for content, not for a path, and that
   // distinction was found by driving it rather than reasoned about. The first
   // version asked `[ -e "$dir" ]` of each mounted directory -- and an empty
   // mount SATISFIES that: the directory is there inside the container, it just
   // carries nothing. Run with --work under /tmp it reported no problem at all.
   // A directory's existence is exactly the fact a broken bind mount preserves.
   //
-  // So: a read-only directory is proved by a WITNESS ENTRY taken from the host
+  // So: a read-only directory is proved by a witness entry taken from the host
   // listing, and the work directory -- which is written, and where every
   // extracted partition lands -- by a sentinel written here and read back
   // inside, compared byte for byte.

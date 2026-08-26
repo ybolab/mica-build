@@ -7,7 +7,7 @@
 // does not treat it as one -- every one of the oracle's conclusions comes out
 // `not-ported`, and the run's conclusion is INCOMPLETE.
 //
-// WHY THE MATCHER LIVES ON THE CHECK.
+// Why the matcher lives on the check.
 //
 // The obvious alternative is a table mapping ids to substrings, kept beside the
 // checks. It was rejected for the reason ui-location-test.sh gives for its own
@@ -17,7 +17,7 @@
 // agrees. Here the two cannot separate. A CheckCase with no `shell` matcher
 // does not typecheck; a matcher with no check is not a CheckCase.
 //
-// WHAT M4b ADDS, PER CHECK.
+// WHAT M4b adds, per check.
 //
 //   {
 //     id: 'gpt-disk-guid',
@@ -71,7 +71,7 @@ export type { CheckResult, Verdict }
 /**
  * What a check is handed. Everything here reads the image; nothing writes to it.
  *
- * The geometry comes from the GPT THE IMAGE ACTUALLY CARRIES, not from the
+ * The geometry comes from the GPT the image actually carries, not from the
  * board definition. That is deliberate: a check comparing the image to the
  * board definition must read the two independently, and a context that resolved
  * partitions through the board definition would hand a check the same number on
@@ -84,7 +84,7 @@ export interface ImageContext {
   /** A directory the helpers may write extracts into. Never the image's own. */
   readonly workDir: string
   /**
-   * Where this board's BUILD OUTPUTS are -- `_out/<board>`.
+   * Where this board's build outputs are -- `_out/<board>`.
    *
    * Two checks read a file the build produced beside the image rather than a
    * byte of the image itself: the verity parameter file and the rootfs report.
@@ -109,7 +109,7 @@ export interface ImageContext {
    * The seam the LAYOUT-addressed families need. `extract` above resolves a
    * partition through the GPT, which is right for everything that reads a
    * partition and wrong for the four ext4 tiers: os/verify-image-v2.sh:2309
-   * `dd`s them at `PART_START_MIB_x`, the offset the BOARD DEFINITION walks to,
+   * `dd`s them at `PART_START_MIB_x`, the offset the board definition walks to,
    * and a check that read them through the GPT would agree with a partition
    * that had moved. `gpt-partition-start` is the check that says the two agree.
    */
@@ -195,7 +195,7 @@ export function assertRegisterWellFormed(checks: readonly CheckCase[] = CHECKS):
     // matcher at all claims no line on any board, comes out `unfired`, and reads
     // exactly like a check whose matcher stopped matching. `pass` may be omitted
     // only by an entry that owns a SKIP instead -- never by one that owns nothing.
-    // An EMPTY LIST is the same fault wearing a different shape, which is why
+    // An empty list is the same fault wearing a different shape, which is why
     // this counts alternatives rather than asking whether the fields are set.
     if (alternatives.length === 0) {
       throw new ToolOutputError(
@@ -378,7 +378,7 @@ export function createImageContext(request: ContextRequest): ImageContext {
     return started
   }
 
-  // THE CACHE IS KEYED ON THE PAYLOAD'S CONTENT, and that is the whole point.
+  // The cache is keyed on the payload's content, and that is the whole point.
   //
   // Keyed on the slot's NAME -- `root-rootfs-a` -- and short-circuited on
   // `existsSync(dest)`, it would be wrong: `extract` beside it always reopens
@@ -391,7 +391,7 @@ export function createImageContext(request: ContextRequest): ImageContext {
   // every run and said so; a cache whose correctness depends on the caller
   // remembering to delete it is not a cache.
   //
-  // WHY KEYING AND NOT DROPPING THE SHORT-CIRCUIT. Dropping it does stop the
+  // Why keying and not dropping the short-circuit. Dropping it does stop the
   // silent wrong answer -- `squashfsExtract` refuses a `dest` that exists, by
   // name -- but it converts every re-run at one `--work` into a hard refusal,
   // so the only way to run twice is the `rm -rf` that was already the
@@ -399,7 +399,7 @@ export function createImageContext(request: ContextRequest): ImageContext {
   // bytes resolve to the same directory, different bytes cannot, and the key
   // cannot go stale because it IS the content. Nothing has to be invalidated.
   //
-  // WHY IT IS PUBLISHED BY RENAME. A run killed mid-unsquashfs leaves a PARTIAL
+  // Why it is published by rename. A run killed mid-unsquashfs leaves a PARTIAL
   // tree, and a partial tree at the right name is indistinguishable from a
   // complete one -- `existsSync` says yes to both, and "is X absent from the
   // image?" then passes for every path unsquashfs had not reached yet. That is

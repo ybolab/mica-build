@@ -87,7 +87,7 @@ describe('the register names exactly the artifacts in scope', () => {
     }
   })
 
-  // THE LOCK, AND THE EDIT IT WAS BUILT TO FORCE.
+  // The lock, and the edit it was built to force.
   //
   // Every artifact answers `--version`, so the unclaimed list is empty. Adding
   // an unclaimed artifact costs three edits that must move together -- the
@@ -107,7 +107,7 @@ describe('the register names exactly the artifacts in scope', () => {
     expect(ARTIFACTS.length).toBe(SCOPE_ARTIFACTS.length)
   })
 
-  // THE COMMIT HALF, and the set is stated here rather than derived from the
+  // The commit half, and the set is stated here rather than derived from the
   // register for the reason the whole SCOPE_ARTIFACTS list is: this is an
   // independent statement of what the scope amendment authorised. The user
   // lifted the exclusion for mosd/mosd/src/main.rs and mosd/apid/src/main.rs.
@@ -146,7 +146,7 @@ describe('unclaimedFaults -- the category that must not grow silently', () => {
 
   test('the shipped register matches what EXPECTED_UNCLAIMED authorises', () => {
     expect(unclaimedFaults()).toEqual([])
-    // AND WHAT THAT GREEN IS NOW A STATEMENT ABOUT, stated rather than left to
+    // And what that green is now a statement about, stated rather than left to
     // be assumed: both sets are EMPTY, which is the post-M7d steady state and
     // the strictest the guard can be -- nothing may go unasked at all.
     expect(EXPECTED_UNCLAIMED.length).toBe(0)
@@ -155,7 +155,7 @@ describe('unclaimedFaults -- the category that must not grow silently', () => {
     expect(ARTIFACTS.length).toBe(SCOPE_ARTIFACTS.length)
   })
 
-  // THE GREEN ABOVE IS NOT VACUOUS, because the same function over a populated
+  // The green above is not vacuous, because the same function over a populated
   // pair still agrees, and over a mismatched pair still refuses. Without this,
   // `unclaimedFaults` could have been replaced by `() => []` and every case in
   // this block that follows would still pass on the shipped register.
@@ -166,7 +166,7 @@ describe('unclaimedFaults -- the category that must not grow silently', () => {
     expect(unclaimedFaults(one, ['crun']).length).toBe(1)
   })
 
-  // THE DIRECTION THAT MATTERS: something new goes unasked.
+  // The direction that matters: something new goes unasked.
   test('a THIRD unclaimed artifact refuses the run, and says it is a FAIL not a category', () => {
     const withRogue = ARTIFACTS.map(a =>
       a.name === 'crun'
@@ -182,10 +182,10 @@ describe('unclaimedFaults -- the category that must not grow silently', () => {
     expect(faults[0]!.message).toMatch(/is a FAIL, not a category/)
   })
 
-  // THE OTHER DIRECTION, which is the GOOD one and still fails: a stale
+  // The other direction, which is the GOOD one and still fails: a stale
   // authorisation record understates the gap.
   //
-  // THIS IS THE CASE M7d ACTUALLY HIT. Merging M7b's lock into a tree whose
+  // This is the case M7d actually hit. Merging M7b's lock into a tree whose
   // handlers had already landed made the shipped register disagree with
   // EXPECTED_UNCLAIMED in exactly this direction, and `unclaimedFaults` refused
   // every smoke run until the constant was emptied -- nine red cases, from one
@@ -240,7 +240,7 @@ describe('pinCoverageFaults -- forward, and driven red', () => {
     expect(pinCoverageFaults()).toEqual([])
   })
 
-  // THE VACUITY CONTROL FOR THE LINE ABOVE. `[]` is what an empty search space
+  // The vacuity control for the line above. `[]` is what an empty search space
   // returns too, so the green is only evidence if the sets it compared were
   // populated. Measured here rather than assumed: this repository has shipped a
   // lint reporting 26/26 PASS while a whole board was invisible to it.

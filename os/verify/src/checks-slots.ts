@@ -7,7 +7,7 @@
 // family that fired twice and matched twice would say nothing about WHICH
 // slot.
 //
-// WHERE THE SLOTS COME FROM.
+// Where the SLOTS come from.
 //
 // From the LAYOUT's `<SLOT>_OFFSET_BYTES`, which is what the oracle uses
 // (:1769-1770). Not from the GPT's first sector, though both agree on a healthy
@@ -16,7 +16,7 @@
 // partition that had moved. The offset here is the layout's claim, and what is
 // under test is the filesystem at it.
 //
-// THE THREE FACTORY ASSERTIONS.
+// The three factory assertions.
 //
 // The FAT32 signature, the volume SERIAL and the volume LABEL. The last two are
 // factory-only and the oracle says why at :1796 and :1804: a RAUC-installed
@@ -152,7 +152,7 @@ export const SLOT_CHECKS: readonly CheckCase[] = [
     },
   },
 
-  // NOT PORTED: the required-file listing.
+  // Not ported: the required-file listing.
   //
   // `pass "${slot} contains ${f}"`, once per entry of BOOT_SLOT_REQUIRED_FILES
   // -- four per slot on cx3576, three on x64. Its identity is blocked by the

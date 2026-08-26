@@ -365,7 +365,7 @@ describe('ext4-fsck-clean', () => {
   })
 
   test('A TRUNCATED FILESYSTEM PASSES, because e2fsck exits 0 -- reproduced', async () => {
-    // THE VACUOUS PASS IN THE CODE UNDER TEST. e2fsck says the superblock or
+    // The vacuous PASS in the code under test. e2fsck says the superblock or
     // the partition table is likely to be corrupt and exits 0;
     // os/verify-image-v2.sh:2342 discards both streams and reads the status.
     // A port that read the report would answer FAIL where the oracle answers
@@ -453,7 +453,7 @@ describe('ephemeral-seeded', () => {
   })
 
   test('RED when the stamp is missing, even though the tree is seeded', async () => {
-    // THE POINT OF ASSERTING THE STAMP AND NOT THE TREE: mos-seed-var's
+    // The point of asserting the stamp and not the tree: mos-seed-var's
     // ConditionPathExists keys on exactly this path, so a seeded /var WITHOUT
     // the stamp still runs the seed on first boot and still races every unit
     // that writes /var.

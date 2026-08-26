@@ -1,11 +1,11 @@
 # syntax=docker/dockerfile:1@sha256:ecfaec9ed6d810b56388c508f4121597bfbba70d41a6dfeee4d8cad5f295fc32
 # check=skip=InvalidDefaultArgInFrom
-# The image os/verify runs the FULL VERIFIER in on a host that has no bun.
+# The image os/verify runs the full verifier in on a host that has no bun.
 #
 #   bash os/verify/run.sh --verify --board cx3576   (on a host with no bun)
 #   make os-verify-cx3576-v2
 #
-# NOT BUILT BY `make build-env`. That target builds the four mos-build-*
+# Not built by `make build-env`. That target builds the four mos-build-*
 # COMPILER images, and nothing in this repository runs it before running the
 # verifier -- .gitea/workflows/check.yml's os-verify job installs no bun and
 # runs no build-env, so an image this file produced there would be missing at
@@ -14,7 +14,7 @@
 # `--verify`. A host with bun never builds it; the suite and the lint never
 # build it.
 #
-# WHY THIS EXISTS. The full verifier has to run on a host with no bun, and
+# Why this exists. The full verifier has to run on a host with no bun, and
 # IMAGE_BUN_1 alone cannot carry it: os/verify drives docker itself --
 # src/tools.ts reads the image with sgdisk, mtools, debugfs, unsquashfs and
 # veritysetup out of IMAGE_ALPINE_3_21 -- and the pinned bun image carries no
@@ -23,14 +23,14 @@
 # os/build-env/images.env's IMAGE_DOCKER_CLI_28 block records the decision, what
 # it costs, and the alternative that was not chosen.
 #
-# TWO PINS, NO THIRD THING. Both FROMs are digests handed in as build arguments
+# Two pins, no third thing. Both FROMs are digests handed in as build arguments
 # by os/verify/run.sh, which resolves them through os/build-env/from.sh -- the
 # one resolver, which refuses a tag. Nothing is installed here: no apk, no apt,
 # no curl. This image is exactly the pinned bun image plus one file out of the
 # pinned client image, so "what did the verifier run on" is answerable from two
 # digests in one file rather than from a build log.
 #
-# THE CLIENT IS STATIC, which is what lets an alpine-built binary run on a
+# The client is static, which is what lets an alpine-built binary run on a
 # debian-based bun image. Checked rather than assumed -- `ldd` reports "Not a
 # valid dynamic program" -- and it matters, because a dynamically linked client
 # would need musl and this COPY would produce an image that fails at exec time

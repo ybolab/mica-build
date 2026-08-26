@@ -1,11 +1,11 @@
 // Batch 4b: the four ext4 storage tiers.
 //
 // `check_ext4` is called four times -- META,
-// STATE, EPHEMERAL, DATA -- and prints SIX conclusions each, plus one about
+// STATE, EPHEMERAL and DATA -- and prints six conclusions each, plus one about
 // EPHEMERAL's seed stamp: 25 conclusions per board, the largest single family
 // left unclaimed after batch 4a.
 //
-// WHERE THE PARTITION COMES FROM.
+// Where the partition comes from.
 //
 // `dd if=IMG bs=1M skip=${PART_START_MIB_x} count=${x_SIZE_MIB}` -- the LAYOUT's
 // offset, walked by `walkLayout` here exactly as :1491-1517 walks it, and NOT
@@ -20,12 +20,12 @@
 // a register entry being edited -- and, being `many`, it arrives as a new
 // (id, instance) pair rather than as a count that went up.
 //
-// THREE THINGS THE ORACLE CONCLUDES THAT ARE NOT WHAT THEY LOOK LIKE.
+// Three things the oracle concludes that are not what they look like.
 //
 // All three are REPRODUCED here and none is repaired. A port that hardened its
 // oracle would diverge from it, and the divergence would be the port's.
 //
-//  1. `e2fsck -fn` EXITS 0 ON A TRUNCATED FILESYSTEM. Measured 2026-08-26: an
+//  1. `e2fsck -fn` EXITS 0 on a truncated filesystem. Measured 2026-08-26: an
 //     8192-block filesystem in a 4096-block file makes e2fsck print "Either the
 //     superblock or the partition table is likely to be corrupt!", run all five
 //     passes, and exit 0. :2342 is `if e2fsck -fn "${img}" >/dev/null 2>&1`, so
@@ -34,7 +34,7 @@
 //     extract is `count=${size_mib}` at the layout's offset, so an image whose
 //     tail is short produces exactly that file. See `e2fsckClean` in image.ts.
 //
-//  2. `debugfs -R "ls -p /"` EXITS 0 ON A FILE THAT IS NOT EXT4, with empty
+//  2. `debugfs -R "ls -p /"` EXITS 0 on a file that is not EXT4, with empty
 //     stdout and "Filesystem not open" on stderr. :2358's `|| true` swallows
 //     the stderr, `entries` is empty -- and for META, STATE and DATA an empty
 //     listing is the PASSING direction. So `factory: meta is empty at build
@@ -243,7 +243,7 @@ export const EXT4_CHECKS: readonly CheckCase[] = [
     // orphan_file cannot be mounted by the 6.1 kernel these images are built
     // for, so its presence makes the partition unusable on the device.
     //
-    // A VACUOUS PASS LIVES HERE: on a partition tune2fs could not open there
+    // A vacuous PASS lives here: on a partition tune2fs could not open there
     // are no features at all, so `grep -w orphan_file` matches nothing and the
     // check passes. Reproduced -- the feature list comes from the same
     // `|| true` the label does.
@@ -301,7 +301,7 @@ export const EXT4_CHECKS: readonly CheckCase[] = [
   },
 
   {
-    // THE STATUS IS THE WHOLE TEST, and it is not the truth. See the header:
+    // The status is the whole test, and it is not the truth. See the header:
     // e2fsck exits 0 on a truncated filesystem after saying it is likely
     // corrupt. The oracle sends both streams to /dev/null; this keeps the
     // report and puts it in the FAILING message only, so the passing sentence
@@ -327,7 +327,7 @@ export const EXT4_CHECKS: readonly CheckCase[] = [
   },
 
   {
-    // WHAT A PARTITION SHOULD CONTAIN AT BUILD IS PER PARTITION (:2352). META,
+    // What a partition should contain at build is per partition (:2352). META,
     // STATE and DATA ship empty; EPHEMERAL ships SEEDED, because /var is
     // written by every early systemd unit and a filesystem filled on first boot
     // races all of them.
@@ -370,7 +370,7 @@ export const EXT4_CHECKS: readonly CheckCase[] = [
   },
 
   {
-    // EPHEMERAL SHIPS SEEDED, and the STAMP is what proves it (:2379-2397).
+    // EPHEMERAL ships seeded, and the STAMP is what proves it (:2379-2397).
     //
     // The stamp is asserted rather than the tree because mos-seed-var's
     // ConditionPathExists keys on exactly this path: a seeded tree WITHOUT the

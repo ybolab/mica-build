@@ -4,9 +4,9 @@
 //
 // Six families, one module, because every one of them reads either
 // `board/<board>/out/` or a file mcopy'd out of a boot slot, and three of them
-// share the FIVE SKIP LINES a grub board prints in their place.
+// share the five SKIP lines a grub board prints in their place.
 //
-// THE SKIPS ARE THE REASON THESE ARE TOGETHER.
+// The skips are the reason these are together.
 //
 // A shell line has exactly one owner. The oracle wraps whole groups in
 // `if is_uboot_board ... else skip "..."`, so ONE skip conclusion stands for as
@@ -23,9 +23,9 @@
 // exist on a board that prints none of their lines. M4d drew the same line for
 // the extlinux/no-initramfs pair and this follows it.
 //
-// THE BSP COMPARE, AND THE DECISION IT NEEDED.
+// The BSP compare, and the decision it NEEDED.
 //
-// `board/cx3576/out/` is NOT POPULATED in a checkout, so the oracle's own run
+// `board/cx3576/out/` is not populated in a checkout, so the oracle's own run
 // is `RESULT FAIL (387/395)` with eight conclusions reading `... compare source
 // not found`. That is not a defect in the image and it is not something this
 // batch may repair: PLAN-014's Scope section puts `board/` BSP builds outside
@@ -33,13 +33,13 @@
 // and populating the tree would turn eight of the oracle's FAILs into passes,
 // i.e. it would change the measurement rather than port it.
 //
-// SO THE PORT EXPRESSES THE ABSENCE, exactly as the oracle expresses it: it
+// So the port expresses the absence, exactly as the oracle expresses it: it
 // reads the same paths, and when the compare source is not there it FAILS with
 // the same sentence. Both directions have a fixture -- a byte-identical source,
 // a differing one, and no source at all -- so the passing direction is driven
 // even though no shipped tree reaches it.
 //
-// ONE cx3576 LITERAL IN THE ORACLE, RECORDED RATHER THAN COPIED.
+// ONE cx3576 literal in the oracle, recorded rather than copied.
 //
 // `BOARD_DIR="${BOARD_DIR:-${REPO_ROOT}/board/cx3576}"` (:28) and
 // `DTB_SRC="${BOARD_DIR}/out/kernel/rk3576-src.dtb"` (:1758) are board names
@@ -191,7 +191,7 @@ function rawBlobChecks(board: Board): CheckCase[] {
     },
 
     {
-      // THE PAIRING GUARD, and its passing direction is an INEQUALITY. The debug
+      // The pairing guard, and its passing direction is an INEQUALITY. The debug
       // variant boots and looks healthy, has CONFIG_ENV_IS_NOWHERE and no pinned
       // bootmeth order, and would make the A/B handshake silently never run.
       id: notDebugId,
@@ -242,7 +242,7 @@ function rawBlobChecks(board: Board): CheckCase[] {
     },
 
     {
-      // Containment in the LOADER PARTITION with room to spare. "Ends before
+      // Containment in the loader partition with room to spare. "Ends before
       // uenv-a" above is the byte-offset form of the same statement; this one is
       // expressed against the partition ENTRY, which is what actually protects
       // the bytes from systemd-repart's discard.
@@ -374,7 +374,7 @@ function bspCompareChecks(board: Board): CheckCase[] {
  *
  * The SCOPE is derived: `boardsWhere(hasLed)`, never a board name.
  *
- * THE GPIO FLAGS CELL IS THE LOAD-BEARING ONE. `default-state` alone reads green
+ * The GPIO flags cell is the load-bearing one. `default-state` alone reads green
  * while a red LED behaves backwards: status-red hangs off an active-low line
  * and status-blue off an active-high one, so a single inverted cell turns "lit
  * at boot" into "dark at boot" with every label and every default-state still
@@ -577,7 +577,7 @@ const BOOT_SCRIPT_CHECKS: readonly CheckCase[] = [
       const script = key(ctx.board, 'BOOT_SCRIPT_NAME')
       const file = await bootScript(ctx, SLOTS[0] as BootSlot)
       // `od -An -tx1 -N4 "${TMP}/scr-A" 2>/dev/null | tr -d ' \n' || true` -- an
-      // absent file is '' and a FAILED CHECK, not a dead run.
+      // absent file is '' and a failed check, not a dead run.
       const magic = file === undefined ? '' : uImageMagic(file)
       return [verdict('boot-scr-uimage-magic', magic === UIMAGE_MAGIC,
         magic === UIMAGE_MAGIC
@@ -706,7 +706,7 @@ const VERITY_ENV_CHECKS: readonly CheckCase[] = [
     // The two files are the same table over different partitions: rewriting A's
     // PARTUUID to B's must reproduce B's file exactly.
     //
-    // THE PRECONDITION IS THE ORACLE'S. `verity_env_ok` is set by the check
+    // The precondition is the oracle's. `verity_env_ok` is set by the check
     // above, and when it is 0 this one prints "could not be made" WITHOUT
     // comparing anything -- so the two entries are coupled, and this one
     // re-derives the same precondition rather than inventing its own.

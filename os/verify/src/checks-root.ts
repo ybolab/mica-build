@@ -6,7 +6,7 @@
 // the same matcher shape -- the conclusion's own `what` clause is the
 // substring both directions share.
 //
-// WHY THE ROOT IS UNPACKED ONCE.
+// Why the root is unpacked once.
 //
 // `ctx.unpackRoot()` unpacks the WHOLE archive -- 4,354 paths on cx3576, 9,238
 // on x64 -- and memoises it for the run, so the fifty-odd checks below pay for
@@ -16,7 +16,7 @@
 // tree. Every check in this file went through that one call, so the repair came
 // before the port did.
 //
-// WHAT IS NOT HERE.
+// What is not here.
 //
 // Everything the oracle guards with a board or profile condition -- the radio
 // firmware set, /etc/mos/<hwinit>.conf, the gadget and Bluetooth units, the
@@ -28,7 +28,7 @@
 // that was measured against both boards' real output rather than read off the
 // source.
 //
-// AND WHY NO MATCHER HERE IS ` contains `.
+// And why no matcher here is ` contains `.
 //
 // Measured on 2026-08-26 against both boards' real conclusion lists: the
 // substring ` contains ` claims 14 lines on cx3576 and 8 on x64. Ten of them
@@ -99,7 +99,7 @@ export function entry(root: string, path: string): Stats | undefined {
  * and not a link to one" -- which is what lstat reports directly. A symlink
  * pointing at a regular file fails both.
  *
- * BOARD-INVARIANT BY MEASUREMENT, not by reading the source. Every path here
+ * Board-invariant by measurement, not by reading the source. Every path here
  * produces the identical conclusion on cx3576 and on x64; the ones the oracle
  * guards with a board condition are M4d's and are not in this list.
  */
@@ -333,7 +333,7 @@ const ENABLED: readonly EnabledCase[] = [
 ]
 
 /**
- * The pass matcher carries the OPEN PAREN, and that is not decoration.
+ * The pass matcher carries the open paren, and that is not decoration.
  *
  * Measured: `mos-seed-home.service is enabled` and `mos-seed-root.service is
  * enabled` are real conclusions of a DIFFERENT check -- "is enabled and ordered
@@ -369,7 +369,7 @@ function enabledCheck(c: EnabledCase): CheckCase {
 
 const BUILTIN_PREFIX = '/builtin'
 const APID_BIN = '/usr/bin/apid'
-// A fragment of the escape page AS RENDERED, verbatim. Markup and
+// A fragment of the escape page as rendered, verbatim. Markup and
 // not a bare route constant: "/builtin/deactivate" alone would still be in the
 // binary after the pages moved out to an on-disk asset tree, which is the one
 // change this catches.
@@ -446,7 +446,7 @@ export const ROOT_CHECKS: readonly CheckCase[] = [
   ...ENABLED.map(enabledCheck),
 
   {
-    // THE PROPERTY IS "EXACTLY ONE", not a version. The oracle pinned 6.1.115
+    // The property is "EXACTLY ONE", not a version. The oracle pinned 6.1.115
     // once and the x64 image -- running Debian's 6.12.101+deb13-amd64, which is
     // correct for it -- failed for saying so. Two entries means a stale set
     // shipped beside the live one; none means the modules never made it in.
@@ -614,7 +614,7 @@ export const ROOT_CHECKS: readonly CheckCase[] = [
     // device flashed with this image. Absence is the shipped state; rauc
     // install fails closed until one is provisioned.
     //
-    // THE ENV ESCAPE IS PORTED TOO, and deliberately: MOS_EXPECT_DEV_KEYRING=1
+    // The ENV escape is ported too, and deliberately: MOS_EXPECT_DEV_KEYRING=1
     // turns the fail into a pass for a local development image. Leaving it out
     // would make this port stricter than the oracle on exactly the images
     // somebody sets it for.

@@ -1,13 +1,13 @@
 // Batch 1a: the GPT geometry.
 //
-// Every check here reads the table THE IMAGE CARRIES through `readGpt` and the
-// table THE BOARD DECLARES through `walkLayout`, and compares the two. The
+// Every check here reads the table the image carries through `readGpt` and the
+// table the board declares through `walkLayout`, and compares the two. The
 // context deliberately offers no route from a check to a board-resolved
 // partition table: a check comparing the image to the board definition has to
 // read the two independently, or it hands itself the same number on both
 // sides.
 //
-// THE ONE NUMBER THAT CROSSES.
+// The one number that crosses.
 //
 // A verity slot's size is content-derived, so the layout does not declare it --
 // `walkLayout` takes it as a parameter and everything downstream of the slots
@@ -118,7 +118,7 @@ export const GPT_CHECKS: readonly CheckCase[] = [
     },
   },
 
-  // NOT PORTED: the partition COUNT.
+  // Not ported: the partition COUNT.
   //
   // `pass "exactly ${EXPECT_PARTS} partitions"`. Its identity cannot be
   // expressed as a substring, and this was measured rather than guessed --
@@ -250,7 +250,7 @@ export const GPT_CHECKS: readonly CheckCase[] = [
   },
 
   {
-    // v2 sets NO GPT attribute bits anywhere: the ESP typecode alone makes a
+    // v2 sets no GPT attribute bits anywhere: the ESP typecode alone makes a
     // boot slot bootable to U-Boot, and the slot choice comes from the RAUC
     // BOOT_ORDER environment, never from a GPT flag.
     id: 'gpt-partition-attrs',
@@ -348,7 +348,7 @@ export const GPT_CHECKS: readonly CheckCase[] = [
       const dataPartnum = intKey(ctx.board, 'DATA_PARTNUM')
       const wantLast = (walk.totalSizeMib - walk.tailSlackMib) * walk.sectorsPerMib - 1
       const gotLast = gpt.partition(dataPartnum)?.lastSector
-      // Last BY START, from the walk -- the same reading the oracle takes, and
+      // Last by start, from the walk -- the same reading the oracle takes, and
       // not "the highest partition number": a table whose numbering and whose
       // order disagree is exactly the state this is here to catch.
       const lastRow = walk.rows.reduce((a, b) => (b.startSector > a.startSector ? b : a))

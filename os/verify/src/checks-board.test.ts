@@ -2,7 +2,7 @@
 // board.
 //
 // Every check lands with the fixture that fails it, because the parity harness
-// cannot tell a check that PASSES from one that CANNOT FAIL: both report
+// cannot tell a check that passes from one that cannot fail: both report
 // "agrees with the oracle" against a healthy image, and only a mutation
 // separates them.
 //
@@ -183,7 +183,7 @@ describe('check_status_led, BOARD_HAS_STATUS_LED=0 (x64)', () => {
   })
 
   test('the =0 branch FAILS when the image carries the unit anyway', async () => {
-    // THE DIRECTION THAT HAD NEVER RUN. os/verify-image-v2.sh:2716 claims
+    // The direction that had never run. os/verify-image-v2.sh:2716 claims
     // check_status_led "asserts the ABSENCE for those boards, so the two
     // together cover both directions" -- and until this case, the absence
     // assertion had only ever been observed agreeing.

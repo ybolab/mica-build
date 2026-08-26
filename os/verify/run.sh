@@ -9,14 +9,14 @@
 #   bash os/verify/run.sh --smoke        execute the self-built artifacts in the factory root
 #   bash os/verify/run.sh --smoke-negative   break the root three ways, and require each red
 #
-# THE SEAM FOR THE TOOL-LESS HOST. Exactly one function below decides how bun
+# The seam for the tool-less host. Exactly one function below decides how bun
 # is invoked -- run_bun -- and it has two routes: a bun binary on the host, or
 # the digest-pinned bun container recorded as IMAGE_BUN_1 in
 # os/build-env/images.env. Every caller passes an argv and reads an exit status
 # and cannot tell which route it got, which is what makes a host with no bun a
 # SUPPORTED host rather than a documented limitation.
 #
-# ZERO TESTS IS A FAILURE, AND BUN DOES NOT AGREE. `bun test` exits 1 when no
+# Zero tests is a failure, and BUN does not agree. `bun test` exits 1 when no
 # test FILE matches its glob, but exits 0 when a file matches and declares no
 # tests -- "Ran 0 tests across 1 file", green. So the count is read out of the
 # run and a run that asserted nothing is turned red here. The same guard, at
@@ -209,7 +209,7 @@ elif [ -z "${BUN}" ]; then
     fi
 fi
 
-# THE DOCKER-DRIVING MODES ON A BUN-LESS HOST.
+# The docker-driving modes on a bun-less host.
 #
 # --verify drives docker itself: src/tools.ts takes the pinned alpine whenever
 # the host lacks sgdisk/mtools/debugfs/unsquashfs/veritysetup, which on a
@@ -219,12 +219,12 @@ fi
 # missing is the CLIENT. So os/verify/Dockerfile is the pinned bun image plus
 # the client out of IMAGE_DOCKER_CLI_28.
 #
-# BUILT HERE AND NOT BY `make build-env`. That target builds the four
+# Built here and not by `make build-env`. That target builds the four
 # mos-build-* compiler images and nothing runs it before running the verifier;
 # an image produced there would be absent at exactly the moment it is needed.
 # One layer, so it costs a second after the two bases are local.
 #
-# THE TAG CARRIES BOTH INPUT DIGESTS. A fixed tag would let a bumped pin reuse
+# The tag carries both input digests. A fixed tag would let a bumped pin reuse
 # the image built from the OLD one, and a stale parent is invisible in the
 # output because everything the run reports is about the run. Bump either pin
 # and the tag changes, so there is nothing stale to find.
@@ -340,7 +340,7 @@ else
         WHY="${WHY}; + the docker client pinned as IMAGE_DOCKER_CLI_28"
     fi
 
-    # WHY THE REPOSITORY IS MOUNTED AT ITS OWN PATH, and not at /w or /work like
+    # Why the repository is mounted at its own path, and not at /w or /work like
     # the two image assemblers. Those containers RUN A SCRIPT and build their
     # paths inside; this one is a TOOL handed paths from outside. The lint's file
     # arguments were absolutised against the caller's cwd above, and paths.ts
@@ -353,7 +353,7 @@ else
     # routes, which is what makes the two runs comparable verdict for verdict.
     MOUNTS=(-v "${REPO_ROOT}:${REPO_ROOT}")
 
-    # THE DAEMON SOCKET, for --verify only, at its own path like everything else
+    # The daemon socket, for --verify only, at its own path like everything else
     # this seam mounts. src/tools.ts creates the alpine tool container through
     # it, so the containers it makes are SIBLINGS of this one on the host daemon
     # rather than children -- which is exactly why the identity mounts above
@@ -394,18 +394,18 @@ else
         done
     fi
 
-    # THE MOUNT THAT SUCCEEDS AND CARRIES NOTHING. On some hosts a bind mount
-    # of anything under /tmp propagates as an EMPTY DIRECTORY rather than
+    # The mount that succeeds and carries nothing. On some hosts a bind mount
+    # of anything under /tmp propagates as an empty directory rather than
     # failing: `docker run -v /tmp/d:/tmp/d ... cat /tmp/d/f` reports "No such
     # file or directory" for a file the host reads fine.
     #
-    # THIS GUARD BUYS THE CAUSE, NOT THE FAILURE. Without it the run still
+    # This guard buys the cause, not the failure. Without it the run still
     # fails and still exits 1 -- the lint's own existsSync says "<path> not
     # found", `bun test` over a vanished package says "No tests found!", and
     # `bun run src/lint-cli.ts` says "Module not found" -- but every one of
     # those sentences describes a file that is missing, and here the file is
     # not missing: the mount is empty. So every path the run depends on is
-    # asserted VISIBLE INSIDE THE CONTAINER first, and the refusal names the
+    # asserted visible inside the container first, and the refusal names the
     # mount. One container, ~260ms, and it carries the version too, so it costs
     # no extra start over the `bun --version` the host route prints.
     PREFLIGHT=("${HERE}/package.json" "${HERE}/src/lint-cli.ts")

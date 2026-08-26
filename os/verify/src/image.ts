@@ -328,7 +328,7 @@ export async function fatVolumeSerial(rt: ToolRuntime, slot: FatSlot): Promise<s
       + `"serial number:" line:\n${out.trim() || '(nothing)'}`,
     )
   }
-  // Spaces come out, and NOTHING ELSE does. os/verify-image-v2.sh:1796 pipes
+  // Spaces come out, and nothing else does. os/verify-image-v2.sh:1796 pipes
   // through `tr -d ' '` and no more, so a minfo that printed `C357-6003` would
   // make the oracle FAIL against a layout that declares `C3576003` -- and a
   // port that also stripped the dash would pass where the oracle fails, which
@@ -362,7 +362,7 @@ export async function fatReadFile(rt: ToolRuntime, slot: FatSlot, path: string):
 }
 
 /**
- * Copy one file out of the slot INTO A LOCAL PATH, and say whether it landed.
+ * Copy one file out of the slot into a local path, and say whether it landed.
  *
  * NOT `fatReadFile` plus a write. mcopy's `-` target sends the file to stdout and
  * this runtime reads stdout as TEXT -- fine for a `set MOS_*=` fragment, destructive
@@ -756,7 +756,7 @@ export interface FdtRead {
  *
  * An absence is an answer here and not a throw: os/verify-image-v2.sh:1923
  * writes `$(fdtget ... 2>/dev/null || true)` and compares the empty string
- * against the wanted value, so on this tool every refusal is a FAILED CHECK
+ * against the wanted value, so on this tool every refusal is a failed check
  * rather than a broken run, and that is what the port reproduces. What it does
  * NOT reproduce is the collapse -- `undefined` means libfdt said so, in its own
  * words, and a non-zero exit saying anything else still throws, so "the dtb is

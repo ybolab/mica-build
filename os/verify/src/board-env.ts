@@ -1,6 +1,6 @@
 // A board definition, read as DATA.
 //
-// WHY THIS FILE EXISTS AT ALL. `os/boards/<board>/board.env` is the single
+// Why this file exists at all. `os/boards/<board>/board.env` is the single
 // source of truth for a board, and every consumer so far has read it by
 // `source`-ing it. That works because the shell will evaluate anything --
 // which is the whole problem: sourcing a board definition executes it. A key
@@ -16,7 +16,7 @@
 // makes a shared script fail somewhere far from the omission (which is the
 // failure the retired os/verify/lint.sh recorded in its own header).
 //
-// WHAT IT ACCEPTS, and every one of these shapes is in a real board.env today:
+// What it accepts, and every one of these shapes is in a real board.env today:
 //
 //   KEY=value                     bare
 //   KEY="two words, and an ="     double quoted; expansions active
@@ -27,7 +27,7 @@
 //   KEY=""                        declared, and empty -- NOT the same as absent
 //   # a comment                   whole-line, or trailing after a value
 //
-// WHAT IT REFUSES, each with its own message naming the construct:
+// What it refuses, each with its own message naming the construct:
 // command substitution in either spelling, backticks, every parameter
 // expansion operator (`${X:-y}` and friends), the shell special parameters,
 // unquoted whitespace, unquoted metacharacters and globs, line continuations,
@@ -35,10 +35,10 @@
 // a key this file does not define, and anything in `$(( ))` outside integer
 // arithmetic.
 //
-// THE DEFAULT-VALUE REFUSAL IS THE SUBTLE ONE. `${RAUC_GRUBENV:-}` is the
+// The default-value refusal is the subtle one. `${RAUC_GRUBENV:-}` is the
 // idiom every consumer of these files uses, and it is exactly what makes a
 // shell reader unable to tell "declared empty" from "not declared". x64
-// declares BOARD_FIRMWARE_FILES="" and BOARD_HWINIT_CONFS="" ON PURPOSE -- the
+// declares BOARD_FIRMWARE_FILES="" and BOARD_HWINIT_CONFS="" on purpose -- the
 // emptiness is the statement -- and `${X:-}` renders that identical to a board
 // that forgot them. This parser keeps the two apart and refuses to let a
 // board.env itself paper over the difference.

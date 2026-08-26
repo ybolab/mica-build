@@ -4,7 +4,7 @@
 // six-way question the four tier checks cannot answer: which entry governs the
 // path apid reads.
 //
-// WHY UI_ROOT IS ASSERTED SEPARATELY AT ALL.
+// WHY UI_ROOT is asserted separately at all.
 //
 // The tier checks are about PARTITIONS. None of them would notice /srv/ui
 // moving off DATA -- onto STATE, where 64 MiB holds the settings tree and the
@@ -13,7 +13,7 @@
 // disappears. Both are silent on the device and neither is visible to a check
 // that only asks "is DATA mounted at /srv with growfs".
 //
-// ONE CHECK, SEVEN FIRINGS, AND WHY NOT SEVEN CHECKS.
+// One check, seven firings, and why not seven checks.
 //
 // `check_ui_location` has two paths. With no covering fstab entry it emits ONE
 // conclusion and returns; otherwise it emits SIX. Seven independent `one`
@@ -57,7 +57,7 @@ interface FstabEntry {
 /**
  * /etc/fstab as rows, comments dropped, fields split on whitespace.
  *
- * ABSENT IS AN EMPTY TABLE and not a throw, on the same reasoning as
+ * Absent is an empty table and not a throw, on the same reasoning as
  * checks-rauc.ts's system.conf: whether the packed root carries an /etc/fstab
  * is a fact about the image, and it is one the oracle answers with a FAIL on
  * every check here -- its awk redirects a missing file to /dev/null and the
@@ -195,7 +195,7 @@ function tierCheck(t: TierCase): CheckCase {
 // where UI_ROOT lands
 
 /**
- * The fstab row whose mountpoint is the LONGEST PREFIX of `path`.
+ * The fstab row whose mountpoint is the longest prefix of `path`.
  *
  * Derived rather than looked up, so moving UI_ROOT moves the check with it and
  * mounting something else over the path it sits under is noticed rather than
@@ -310,7 +310,7 @@ export const FSTAB_CHECKS: readonly CheckCase[] = [
 
       const row = coveringRow(rows, UI_ROOT)
       if (row === undefined) {
-        // THE EARLY RETURN, and the whole reason this check is `many`: one
+        // The early return, and the whole reason this check is `many`: one
         // conclusion instead of six, on both sides, rather than six silences.
         return [uiFiring(UI_NO_FILESYSTEM, false,
           `${UI_NO_FILESYSTEM}: no /etc/fstab entry covers ${UI_ROOT}, so it lands on the read-only `

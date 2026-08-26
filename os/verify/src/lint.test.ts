@@ -14,7 +14,7 @@
 // "candidate", not name a real board it is not.
 //
 // The cases marked `shellPassed` are the four holes the `${NAME:-}` idiom
-// leaves -- it cannot tell DECLARED EMPTY from NOT DECLARED -- and they are why
+// leaves -- it cannot tell declared empty from not declared -- and they are why
 // this lint is stricter than the shell predecessor rather than a translation of
 // it. See the header of lint.ts.
 
@@ -79,7 +79,7 @@ interface RejectCase {
 // --- the fourteen cases ported from os/verify/lint-test.sh -------------------
 
 const PORTED: readonly RejectCase[] = [
-  // THE CASE THIS LINTER WAS WRITTEN FOR. x64 carried BOOT_ATTEMPTS_DEFAULT=3
+  // The case this linter was written for. x64 carried BOOT_ATTEMPTS_DEFAULT=3
   // under a comment claiming grub's contract matches U-Boot's. It does not,
   // RAUC refuses the rendered configuration, and rauc.service exits 1.
   {
@@ -171,7 +171,7 @@ const PORTED: readonly RejectCase[] = [
   },
 ]
 
-// the axis the shell pair never tested: DECLARED EMPTY
+// the axis the shell pair never tested: declared empty
 //
 // `${NAME:-}` gives the same answer for a key that is absent and a key that is
 // declared empty, so every check the shell built on it has a spelling that
@@ -356,7 +356,7 @@ describe('the shipped layouts', () => {
     expect(run.passed).toBe(run.checks.length)
   })
 
-  // THE POSITIVE CONTROL FOR THE WHOLE STRICTNESS AXIS. x64 declares three
+  // The positive control for the whole strictness axis. x64 declares three
   // lists EMPTY on purpose -- a QEMU machine has no radio firmware, no MAC to
   // burn and no radios -- and the emptiness IS the statement. A port that
   // closed the empty-declaration hole by failing every empty declaration would
