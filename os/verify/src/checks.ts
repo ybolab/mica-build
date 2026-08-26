@@ -34,7 +34,8 @@
 // (RFCT-096). The harness cannot tell a check that passes from a check that
 // cannot fail; only a fixture that drives it red can.
 
-import { existsSync, mkdirSync } from 'node:fs'
+import { createHash } from 'node:crypto'
+import { closeSync, existsSync, mkdirSync, mkdtempSync, openSync, readSync, renameSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
 import type { Board } from './board.ts'
 import {
@@ -217,6 +218,40 @@ export interface ContextRequest {
   readonly workDir: string
 }
 
+/**
+ * A short content digest of a file, for naming a cache entry after what is IN it.
+ *
+ * Streamed in 4 MiB chunks rather than read whole: the payloads this names are
+ * whole partitions -- 256 MiB on cx3576, 512 MiB on x64 -- and reading one into
+ * a Buffer to hash it would cost more memory than every other thing this
+ * harness does put together.
+ *
+ * Sixteen hex characters, not all sixty-four. This is a cache key inside one
+ * work directory and not a signature: it names a directory a human reads in
+ * `ls`, the population it distinguishes is the handful of images one host
+ * builds, and 64 bits of SHA-256 is far past the point where two of them
+ * collide. Nothing here is a security claim -- an attacker who could choose the
+ * payload could also choose the image.
+ */
+function digestOf(file: string): string {
+  const hash = createHash('sha256')
+  const fd = openSync(file, 'r')
+  try {
+    const chunk = new Uint8Array(4 * 1024 * 1024)
+    let position = 0
+    for (;;) {
+      const got = readSync(fd, chunk, 0, chunk.length, position)
+      if (got === 0) break
+      hash.update(chunk.subarray(0, got))
+      position += got
+    }
+  }
+  finally {
+    closeSync(fd)
+  }
+  return hash.digest('hex').slice(0, 16)
+}
+
 export function createImageContext(request: ContextRequest): ImageContext {
   const { board, image, tools, workDir } = request
   mkdirSync(workDir, { recursive: true })
@@ -266,14 +301,59 @@ export function createImageContext(request: ContextRequest): ImageContext {
     return started
   }
 
+  // THE CACHE IS KEYED ON THE PAYLOAD'S CONTENT, and that is the whole point.
+  //
+  // It used to be keyed on the slot's NAME -- `root-rootfs-a` -- and short-
+  // circuited on `existsSync(dest)`. `extract` beside it always reopens its
+  // destination with 'w', so a second run at the same `--work` against a
+  // DIFFERENT image re-extracted the partition and then handed back the
+  // PREVIOUS image's unpacked root. The two runs described two different images
+  // and nothing anywhere complained: every packed-root check went on reading a
+  // tree that had nothing to do with the image named on the command line, and
+  // reported agreement about it. M4b avoided it by clearing _out/parity before
+  // every run and said so; a cache whose correctness depends on the caller
+  // remembering to delete it is not a cache.
+  //
+  // WHY KEYING AND NOT DROPPING THE SHORT-CIRCUIT. Dropping it does stop the
+  // silent wrong answer -- `squashfsExtract` refuses a `dest` that exists, by
+  // name -- but it converts every re-run at one `--work` into a hard refusal,
+  // so the only way to run twice is the `rm -rf` that was already the
+  // workaround. Keying on content keeps the reuse AND makes it sound: the same
+  // bytes resolve to the same directory, different bytes cannot, and the key
+  // cannot go stale because it IS the content. Nothing has to be invalidated.
+  //
+  // WHY IT IS PUBLISHED BY RENAME. A run killed mid-unsquashfs leaves a PARTIAL
+  // tree, and a partial tree at the right name is indistinguishable from a
+  // complete one -- `existsSync` says yes to both, and "is X absent from the
+  // image?" then passes for every path unsquashfs had not reached yet. That is
+  // the same defect one layer down, and this campaign has had two L3s SIGKILLed
+  // mid-run. So the unpack lands in a staging directory and is moved into place
+  // only once it has finished; a kill leaves `.unpack-*`, which is a name
+  // nothing reads.
   const unpackRoot = async (slot = 'rootfs-a'): Promise<string> => {
     const existing = roots.get(slot)
     if (existing !== undefined) return existing
     const started = (async () => {
       const payload = await extract(slot)
-      const dest = join(workDir, `root-${slot}`)
+      const dest = join(workDir, `root-${slot}-${digestOf(payload)}`)
       if (existsSync(dest)) return dest
-      return squashfsExtract(tools, payload, dest)
+      const staging = mkdtempSync(join(workDir, `.unpack-${slot}-`))
+      try {
+        await squashfsExtract(tools, payload, join(staging, 'root'))
+        try {
+          renameSync(join(staging, 'root'), dest)
+        }
+        catch (error) {
+          // Another unpack of the SAME payload won the race and published first.
+          // Its tree is this tree -- same content hash, same archive -- so the
+          // published one is taken rather than the rename being retried.
+          if (!existsSync(dest)) throw error
+        }
+      }
+      finally {
+        rmSync(staging, { recursive: true, force: true })
+      }
+      return dest
     })()
     roots.set(slot, started)
     return started
