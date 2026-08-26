@@ -18,10 +18,11 @@
 //! stdout — `APID_LISTENING https=<addr> http=<addr>` — and routes all
 //! tracing output to stderr.
 //!
-//! One argument is understood, and it is answered before any of the above
-//! happens: `--version` (or `-V`) prints `apid <crate version> (<build
-//! commit>)` and exits 0 without generating a certificate, a session key or a
-//! listener. See [`main`]. Anything else on the command line is ignored,
+//! Two arguments are understood, and both are answered before any of the
+//! above happens, without generating a certificate, a session key or a
+//! listener. See [`main`]. `--version` (or `-V`) prints `apid <crate version>
+//! (<build commit>)`; `--openapi` prints the OpenAPI document for the `/api`
+//! surface. Both exit 0. Anything else on the command line is ignored,
 //! exactly as it always has been.
 
 #![forbid(unsafe_code)]
@@ -32,6 +33,7 @@ mod auth;
 mod bundle;
 mod bus_client;
 mod config;
+mod openapi;
 mod persist;
 mod routes;
 mod session;
@@ -81,6 +83,14 @@ fn main() -> anyhow::Result<()> {
         println!("{}", version_line());
         return Ok(());
     }
+    // `--openapi`, answered from the same place and for the same reason: it
+    // is the committed `apid/openapi.json` regenerated, and a handler below
+    // initialisation would mint key material and bind ports to print a
+    // document that describes neither.
+    if wants_openapi(std::env::args().skip(1)) {
+        print!("{}", openapi::document_json());
+        return Ok(());
+    }
     serve()
 }
 
@@ -99,6 +109,14 @@ const UNKNOWN_COMMIT: &str = "unknown";
 fn wants_version(args: impl IntoIterator<Item = String>) -> bool {
     args.into_iter()
         .any(|arg| arg == "--version" || arg == "-V")
+}
+
+/// Whether an argv (argv[1..]) is asking for the OpenAPI document.
+///
+/// The long spelling only: there is no short flag to collide with, and the
+/// output is a file's worth of JSON that nobody types by accident.
+fn wants_openapi(args: impl IntoIterator<Item = String>) -> bool {
+    args.into_iter().any(|arg| arg == "--openapi")
 }
 
 /// The build commit, or [`UNKNOWN_COMMIT`], from whatever the build embedded.
@@ -218,7 +236,7 @@ async fn serve() -> anyhow::Result<()> {
 /// HTTP suite -- and RFCT-113 M7d opens this file and not that one.
 #[cfg(test)]
 mod version_tests {
-    use super::{UNKNOWN_COMMIT, commit_or_unknown, version_line, wants_version};
+    use super::{UNKNOWN_COMMIT, commit_or_unknown, version_line, wants_openapi, wants_version};
 
     fn argv(args: &[&str]) -> Vec<String> {
         args.iter().map(|s| (*s).to_string()).collect()
@@ -259,6 +277,33 @@ mod version_tests {
     #[test]
     fn the_flag_is_found_wherever_it_appears() {
         assert!(wants_version(argv(&["--state-dir", "/var/lib/mos", "-V"])));
+    }
+
+    /// The second flag, held to the same rule, and the two do not answer for
+    /// each other: `--openapi` reaching the version handler would print a
+    /// version line instead of the document a regeneration is asking for.
+    #[test]
+    fn the_openapi_flag_is_itself_and_nothing_else() {
+        assert!(wants_openapi(argv(&["--openapi"])));
+        assert!(wants_openapi(argv(&[
+            "--state-dir",
+            "/var/lib/mos",
+            "--openapi"
+        ])));
+        assert!(!wants_version(argv(&["--openapi"])));
+        assert!(!wants_openapi(argv(&["--version"])));
+        for args in [
+            vec![],
+            argv(&["--open-api"]),
+            argv(&["--openapi=1"]),
+            argv(&["openapi"]),
+            argv(&["-o"]),
+        ] {
+            assert!(
+                !wants_openapi(args.clone()),
+                "argv {args:?} is not --openapi and must reach the daemon unchanged"
+            );
+        }
     }
 
     /// ABSENT IS `unknown`, NEVER AN ERROR -- and empty counts as absent,

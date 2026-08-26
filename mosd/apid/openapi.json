@@ -1,0 +1,149 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "apid",
+    "description": "The appliance management API served over HTTPS on the device.",
+    "version": "v1"
+  },
+  "paths": {
+    "/api/v1/meta": {
+      "get": {
+        "tags": [
+          "discovery"
+        ],
+        "summary": "What the caller is talking to, in detail (§2.1).",
+        "description": "`settingsSchemaVersion` is read from `mosd_settings` and never copied: the\nnumber a client uses to decide whether it understands a settings body has\nexactly one source.",
+        "operationId": "api_v1_meta",
+        "responses": {
+          "200": {
+            "description": "What this daemon is and which schema it speaks",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiMeta"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No session cookie, or one that does not verify",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/versions": {
+      "get": {
+        "tags": [
+          "discovery"
+        ],
+        "summary": "The served set, unauthenticated (§2.1).",
+        "description": "It must be answerable before the caller holds a credential, which is why\nthe gate hands it off above its own `GetSettings` call: a factory-fresh\ndevice has no `access.webAdmin` and redirects everything else to `/setup`,\nand a UI that survived the update it is incompatible with has to be able\nto say so. The response carries the served set and nothing else — no\nhostname, no device id, no build string — because anyone who can reach the\nlistener can read it.",
+        "operationId": "api_versions",
+        "responses": {
+          "200": {
+            "description": "The major API versions this device serves",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiVersions"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "ApiError": {
+        "type": "object",
+        "description": "§2.4's envelope: the one shape every failure under `/api/` takes.",
+        "required": [
+          "error"
+        ],
+        "properties": {
+          "error": {
+            "$ref": "#/components/schemas/ApiErrorDetail"
+          }
+        }
+      },
+      "ApiErrorDetail": {
+        "type": "object",
+        "description": "The envelope's payload.\n\n`path` is absent. §2.4 defines it as the **settings dot-path** at fault,\nand neither an unmatched route nor a failed authentication names one.",
+        "required": [
+          "code",
+          "message",
+          "source"
+        ],
+        "properties": {
+          "code": {
+            "type": "string",
+            "description": "Stable machine token, from an open set: a client that does not\nrecognise it must fall back to the HTTP status class (§2.1)."
+          },
+          "message": {
+            "type": "string",
+            "description": "Human-readable, and not for matching on."
+          },
+          "source": {
+            "type": "string",
+            "description": "The side the failure came from."
+          }
+        }
+      },
+      "ApiMeta": {
+        "type": "object",
+        "description": "`GET /api/v1/meta` (§2.1's discovery table).",
+        "required": [
+          "api",
+          "settingsSchemaVersion",
+          "daemon"
+        ],
+        "properties": {
+          "api": {
+            "type": "string",
+            "description": "The API major version this route belongs to."
+          },
+          "daemon": {
+            "type": "string",
+            "description": "The daemon answering."
+          },
+          "settingsSchemaVersion": {
+            "type": "integer",
+            "format": "int32",
+            "description": "mosd's settings schema version: the shape of the tree on disk, which\nmoves independently of the API version and must never be conflated\nwith it.",
+            "minimum": 0
+          }
+        }
+      },
+      "ApiVersions": {
+        "type": "object",
+        "description": "`GET /api/versions` (§2.1's discovery table).",
+        "required": [
+          "versions",
+          "current"
+        ],
+        "properties": {
+          "current": {
+            "type": "string",
+            "description": "The member to use with no preference. Always a member of `versions`."
+          },
+          "versions": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Every major version served. A client tests **membership** in this set;\na client that reads only `current` concludes that a device it can talk\nto is one it cannot."
+          }
+        }
+      }
+    }
+  }
+}

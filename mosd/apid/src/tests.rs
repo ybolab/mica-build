@@ -1413,7 +1413,10 @@ fn header_value(response: &Response<axum::body::Body>, name: HeaderName) -> Stri
 ///
 /// The bundle really has them — `installed_files` lists them out of the
 /// installed tree — and the same router serves `/decoy.txt` from the same
-/// bundle, so the 404s below are the reservation and not an empty directory.
+/// bundle, so the answers below are the reservation and not an empty
+/// directory. `api/versions` shadows a route that now exists, so its
+/// assertion is that the declared handler answered rather than that nothing
+/// did.
 /// `each_guard_is_exercised_by_exactly_one_hostile_feature` in `assets::path`
 /// is the discipline this follows: the assertion has to distinguish the guard
 /// from its absence.
@@ -1446,10 +1449,18 @@ async fn a_bundle_cannot_shadow_the_reserved_api_subtree() {
     assert_eq!(response.status(), StatusCode::OK);
     assert_eq!(body_string(response).await, "the bundle is reachable");
 
-    for (path, bytes) in [
-        ("/api/versions", VERSIONS_BYTES),
-        ("/api/v1/settings", SETTINGS_BYTES),
-    ] {
+    // The declared route answers with its own document, not with the file the
+    // bundle put in its way.
+    let response = request(&router, "GET", "/api/versions", Some(&cookie), None).await;
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = body_string(response).await;
+    assert!(
+        !body.contains(VERSIONS_BYTES),
+        "/api/versions answered with the bundle's own bytes: {body}"
+    );
+    assert_eq!(body, VERSIONS_BODY);
+
+    for (path, bytes) in [("/api/v1/settings", SETTINGS_BYTES)] {
         let response = request(&router, "GET", path, Some(&cookie), Some(BROWSER_ACCEPT)).await;
         let status = response.status();
         let content_type = header_value(&response, CONTENT_TYPE);
@@ -1506,8 +1517,9 @@ async fn without_the_reservation_the_bundle_does_shadow_the_api() {
     );
 }
 
-/// The reservation covers the subtree, every method, and `/api/versions` in
-/// particular — which is deliberately *not* implemented in this phase.
+/// The reservation covers the subtree and every method, for every path §2.1
+/// does not declare. The two paths it does declare are asserted separately,
+/// below.
 #[tokio::test]
 async fn the_api_reservation_answers_every_shape_with_the_envelope() {
     let bundle = install_bundle(&[("index.html", "<!doctype html><title>custom</title>")]);
@@ -1517,7 +1529,8 @@ async fn the_api_reservation_answers_every_shape_with_the_envelope() {
     for (method, path) in [
         ("GET", "/api"),
         ("GET", "/api/"),
-        ("GET", "/api/versions"),
+        ("GET", "/api/v1"),
+        ("GET", "/api/versions/extra"),
         ("GET", "/api/v1/settings"),
         ("GET", "/api/v1/settings/network.eth0"),
         ("POST", "/api/v1/settings"),
@@ -1538,6 +1551,211 @@ async fn the_api_reservation_answers_every_shape_with_the_envelope() {
             serde_json::from_str(&body_string(response).await).expect("§2.4 envelope");
         assert_eq!(envelope["error"]["code"], "not_found", "{method} {path}");
     }
+}
+
+// ---------------------------------------------------------------------------
+// §2.1's two discovery endpoints, and what the rest of the reserved subtree
+// still answers now that two of its paths are declared.
+// ---------------------------------------------------------------------------
+
+/// The exact document §2.1's discovery table gives for the served set.
+const VERSIONS_BODY: &str = r#"{"versions":["v1"],"current":"v1"}"#;
+
+/// The exact document §2.1's discovery table gives for `/api/v1/meta`.
+///
+/// Built from `mosd_settings::SCHEMA_VERSION` rather than from a literal,
+/// which is the whole point of the field: a schema bump moves this expectation
+/// and the handler together, and a hand-copied number in either is what fails.
+fn meta_body() -> String {
+    format!(
+        r#"{{"api":"v1","settingsSchemaVersion":{},"daemon":"apid"}}"#,
+        mosd_settings::SCHEMA_VERSION
+    )
+}
+
+/// Both headers §4.3 asks of every `/api/` response, successes included.
+fn assert_api_headers(response: &Response<axum::body::Body>, context: &str) {
+    assert_eq!(
+        header_value(response, CONTENT_TYPE),
+        "application/json",
+        "{context}"
+    );
+    assert_eq!(
+        header_value(response, CACHE_CONTROL),
+        "no-store",
+        "{context}"
+    );
+}
+
+/// The `error` object of a §2.4 envelope.
+async fn envelope(response: Response<axum::body::Body>) -> serde_json::Value {
+    let body = body_string(response).await;
+    let parsed: serde_json::Value =
+        serde_json::from_str(&body).unwrap_or_else(|_| panic!("§2.4 envelope, got: {body}"));
+    parsed["error"].clone()
+}
+
+/// §2.1: unauthenticated, and the answer is the table's document exactly.
+#[tokio::test]
+async fn api_versions_answers_the_served_set_without_a_session() {
+    let (router, _) = test_app(configured_tree("hunter2secret"));
+
+    let response = get(&router, "/api/versions", None).await;
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_api_headers(&response, "/api/versions");
+    assert_eq!(body_string(response).await, VERSIONS_BODY);
+}
+
+/// The first of §2.1's two reasons the endpoint is unauthenticated: a
+/// factory-fresh device has no `access.webAdmin`, so the gate is in setup mode
+/// and sends everything else to `/setup`.
+#[tokio::test]
+async fn api_versions_answers_in_setup_mode() {
+    let (router, _) = test_app(unconfigured_tree());
+
+    // The control, so the 200 below is the hand-off and not a device that
+    // happened to be out of setup mode.
+    let redirected = get(&router, "/", None).await;
+    assert_eq!(redirected.status(), StatusCode::SEE_OTHER);
+    assert_eq!(location(&redirected), "/setup");
+
+    let response = get(&router, "/api/versions", None).await;
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(body_string(response).await, VERSIONS_BODY);
+}
+
+/// The hand-off is above the gate's `GetSettings("access")` call, so the
+/// question "which versions does this device serve?" is still answerable when
+/// mosd is not answering.
+#[tokio::test]
+async fn api_versions_answers_when_the_settings_call_fails() {
+    // A tree with no `access` subtree at all: the fake fails the read, which
+    // is the gate's mosd-unreachable branch.
+    let (router, _) = test_app(json!({}));
+
+    let failed = get(&router, "/", None).await;
+    assert_eq!(
+        failed.status(),
+        StatusCode::BAD_GATEWAY,
+        "the control: the gate's own bus call must be failing"
+    );
+
+    let response = get(&router, "/api/versions", None).await;
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(body_string(response).await, VERSIONS_BODY);
+}
+
+/// §2.1's second discovery endpoint, answered for a valid session.
+#[tokio::test]
+async fn api_v1_meta_answers_for_a_session() {
+    let (router, _) = test_app(configured_tree("hunter2secret"));
+    let cookie = login(&router, "hunter2secret").await;
+
+    let response = get(&router, "/api/v1/meta", Some(&cookie)).await;
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_api_headers(&response, "/api/v1/meta");
+    assert_eq!(body_string(response).await, meta_body());
+}
+
+/// §3.1's trap, refused: a client that follows the gate's redirect lands on
+/// `GET /login`, which answers **200 with HTML**, so a script reads the whole
+/// exchange as success. The answer is §2.4's envelope with the status that
+/// matches it.
+#[tokio::test]
+async fn api_v1_meta_without_a_session_is_401_and_the_envelope() {
+    let (router, _) = test_app(configured_tree("hunter2secret"));
+
+    let response = get(&router, "/api/v1/meta", None).await;
+    assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+    assert_api_headers(&response, "/api/v1/meta");
+    let error = envelope(response).await;
+    assert_eq!(error["code"], "not_authenticated");
+    assert_eq!(error["source"], "apid");
+    assert!(error["message"].is_string(), "§2.4 requires a message");
+    // §2.4 defines `path` as the settings dot-path at fault, and a request
+    // that failed to authenticate names none.
+    assert_eq!(error.get("path"), None);
+}
+
+/// Setup mode is the branch a path-prefix implementation breaks: no session
+/// can exist there, and the gate sends everything it still owns to `/setup`.
+#[tokio::test]
+async fn api_v1_meta_is_401_in_setup_mode_too() {
+    let (router, _) = test_app(unconfigured_tree());
+
+    let response = get(&router, "/api/v1/meta", None).await;
+    assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+    assert_api_headers(&response, "/api/v1/meta");
+    assert_eq!(envelope(response).await["code"], "not_authenticated");
+}
+
+/// The two declared paths are the only ones that changed. Every other path
+/// under `/api` keeps **both** of its answers: the subtree's own 404 with a
+/// session, and the gate's redirect without one, in either gate mode.
+#[tokio::test]
+async fn every_other_api_path_keeps_both_of_its_answers() {
+    const UNDECLARED: &str = "/api/v1/settings/hostname";
+
+    let (router, _) = test_app(configured_tree("hunter2secret"));
+    let cookie = login(&router, "hunter2secret").await;
+
+    // With a session: the reserved subtree's own envelope, byte for byte.
+    let response = get(&router, UNDECLARED, Some(&cookie)).await;
+    assert_eq!(response.status(), StatusCode::NOT_FOUND);
+    assert_api_headers(&response, UNDECLARED);
+    assert_eq!(
+        body_string(response).await,
+        json!({
+            "error": {
+                "code": "not_found",
+                "message": format!("no API route at {UNDECLARED}"),
+                "source": "apid",
+            }
+        })
+        .to_string()
+    );
+
+    // Without one: the gate's redirect to `/login`.
+    let redirected = get(&router, UNDECLARED, None).await;
+    assert_eq!(redirected.status(), StatusCode::SEE_OTHER);
+    assert_eq!(location(&redirected), "/login");
+
+    // And in setup mode, the gate's redirect to `/setup`.
+    let (fresh, _) = test_app(unconfigured_tree());
+    let redirected = get(&fresh, UNDECLARED, None).await;
+    assert_eq!(redirected.status(), StatusCode::SEE_OTHER);
+    assert_eq!(location(&redirected), "/setup");
+}
+
+/// `mosd/apid/openapi.json` is the bytes `apid --openapi` prints.
+///
+/// A local `cargo test` failure and not only a CI one: whoever changed a route
+/// is the person holding the command that regenerates the file.
+#[test]
+fn the_committed_openapi_document_is_the_generated_one() {
+    assert_eq!(
+        crate::openapi::document_json(),
+        include_str!("../openapi.json"),
+        "mosd/apid/openapi.json is stale; from mosd/, regenerate it with:\n    \
+         cargo run -p apid -- --openapi > apid/openapi.json"
+    );
+}
+
+/// The document describes the served surface, §3.1's outcome included: a
+/// client that reads only `openapi.json` has to be able to learn that
+/// `/api/v1/meta` can answer 401.
+#[test]
+fn the_openapi_document_covers_the_declared_routes() {
+    let document: serde_json::Value =
+        serde_json::from_str(&crate::openapi::document_json()).expect("the document is JSON");
+
+    assert!(
+        document["paths"]["/api/versions"]["get"]["responses"]["200"].is_object(),
+        "{document}"
+    );
+    let meta = &document["paths"]["/api/v1/meta"]["get"]["responses"];
+    assert!(meta["200"].is_object(), "{meta}");
+    assert!(meta["401"].is_object(), "{meta}");
 }
 
 /// §4.1 rules 2 and 3: a declared route wins structurally, and the bundle

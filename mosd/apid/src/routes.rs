@@ -18,16 +18,17 @@
 use std::net::IpAddr;
 use std::sync::Arc;
 
-use axum::Router;
-use axum::extract::{Form, OriginalUri, Query, Request, State};
-use axum::http::header::{CACHE_CONTROL, CONTENT_TYPE, HOST, LOCATION, SET_COOKIE};
+use axum::extract::{Form, FromRequestParts, OriginalUri, Query, Request, State};
+use axum::http::header::{CACHE_CONTROL, HOST, LOCATION, SET_COOKIE};
+use axum::http::request::Parts;
 use axum::http::{HeaderMap, StatusCode};
 use axum::middleware::{self, Next};
 use axum::response::{Html, IntoResponse, Redirect, Response};
 use axum::routing::{any, get, post};
+use axum::{Json, Router};
 use maud::{DOCTYPE, Markup, PreEscaped, html};
 use mosd_settings::{AuthorizedKey, SettingsError, parse_authorized_key, validate_authorized_keys};
-use serde_json::{Value, json};
+use serde_json::Value;
 use sha2::{Digest, Sha256};
 
 use crate::assets::mime::CacheClass;
@@ -173,15 +174,16 @@ pub fn app(state: AppState) -> Router {
         .route("/mqtt/enable", post(mqtt_enable))
         .route("/healthz", get(healthz))
         // §4.1 rule 1: the whole `/api/` prefix, its own not-found handler
-        // included. It 404s everything, `/api/versions` among them — §2's
-        // routes are a later phase and this reservation is what guarantees no
-        // bundle can occupy the prefix before they land.
+        // included. §2.1's two discovery routes are declared inside it and
+        // every other path under it 404s, so no bundle can occupy the prefix
+        // and no route under it can be reached by anything but a declaration
+        // here.
         //
         // The explicit `/api/` route is not redundant. `nest` claims `/api`,
         // `/api/x` and `/api/x/y`, and **not** `/api/` — measured, and the
         // difference is a request that begins `/api/` reaching the asset
         // router, which is exactly what rule 1 forbids.
-        .nest("/api", Router::new().fallback(api_not_found))
+        .nest(API, api_router())
         .route("/api/", any(api_not_found))
         // §4.1 rule 4.
         .fallback(serve::fallback)
@@ -193,27 +195,216 @@ pub fn app(state: AppState) -> Router {
 /// 404s inside `/api/` are the API's own").
 ///
 /// §2.4's envelope, which is what makes a mistyped path a machine-readable
-/// answer rather than an empty body. `path` is omitted: §2.4 defines it as the
-/// **settings dot-path** at fault and a request that matched no route has
-/// none. `Cache-Control: no-store` is §4.3's second row, which is every
-/// `/api/` response and not only the successful ones.
+/// answer rather than an empty body.
 async fn api_not_found(OriginalUri(uri): OriginalUri) -> Response {
-    (
+    api_response(
         StatusCode::NOT_FOUND,
-        [
-            (CONTENT_TYPE, "application/json"),
-            (CACHE_CONTROL, CacheClass::NoStore.header_value()),
-        ],
-        json!({
-            "error": {
-                "code": "not_found",
-                "message": format!("no API route at {}", uri.path()),
-                "source": "apid",
-            }
-        })
-        .to_string(),
+        ApiError::apid("not_found", format!("no API route at {}", uri.path())),
+    )
+}
+
+// ---------------------------------------------------------------------------
+// §2.1's API surface: the reserved subtree's declared routes, their bodies and
+// the session check that guards them.
+// ---------------------------------------------------------------------------
+
+/// The reserved prefix, and the paths §2.1 declares under it.
+///
+/// The leaves are the paths as the nested router sees them; the OpenAPI
+/// document composes them with the prefix through `context_path`, and
+/// [`is_declared_api_route`] composes them to get what the gate sees. One
+/// spelling each.
+const API: &str = "/api";
+const VERSIONS_PATH: &str = "/versions";
+const V1_META_PATH: &str = "/v1/meta";
+
+/// The major versions this build serves — §2.1's *served set*, which is an
+/// array because it can legitimately have more than one member.
+const SERVED_VERSIONS: [&str; 1] = ["v1"];
+
+/// The member of the served set a client with no preference should use.
+const CURRENT_VERSION: &str = "v1";
+
+/// The reserved `/api` subtree: §2.1's declared routes, and the not-found
+/// handler every other path under the prefix reaches.
+///
+/// Each route is declared here from the same constant its `utoipa::path`
+/// attribute documents it under, so the served path and the documented path
+/// are one string and cannot disagree.
+fn api_router() -> Router<AppState> {
+    Router::new()
+        .route(VERSIONS_PATH, get(api_versions))
+        .route(V1_META_PATH, get(api_v1_meta))
+        .fallback(api_not_found)
+}
+
+/// Whether `path` is one of the API routes that answers for itself.
+///
+/// The gate hands exactly these off. `/api/versions` is unauthenticated by
+/// design (§2.1) and `/api/v1/meta` answers §2.4's `not_authenticated`
+/// envelope rather than the gate's HTML redirect (§3.1). Every other path
+/// under the prefix is absent from this list and reaches the gate's own
+/// logic unchanged.
+fn is_declared_api_route(path: &str) -> bool {
+    path.strip_prefix(API)
+        .is_some_and(|leaf| leaf == VERSIONS_PATH || leaf == V1_META_PATH)
+}
+
+/// Every `/api/` response, in the one shape §4.3 gives them: JSON in both
+/// directions (§2.1), and `no-store` on every outcome rather than only on the
+/// failures.
+fn api_response(status: StatusCode, body: impl serde::Serialize) -> Response {
+    (
+        status,
+        [(CACHE_CONTROL, CacheClass::NoStore.header_value())],
+        Json(body),
     )
         .into_response()
+}
+
+/// §2.4's envelope: the one shape every failure under `/api/` takes.
+#[derive(serde::Serialize, utoipa::ToSchema)]
+pub(crate) struct ApiError {
+    error: ApiErrorDetail,
+}
+
+/// The envelope's payload.
+///
+/// `path` is absent. §2.4 defines it as the **settings dot-path** at fault,
+/// and neither an unmatched route nor a failed authentication names one.
+#[derive(serde::Serialize, utoipa::ToSchema)]
+pub(crate) struct ApiErrorDetail {
+    /// Stable machine token, from an open set: a client that does not
+    /// recognise it must fall back to the HTTP status class (§2.1).
+    code: &'static str,
+    /// Human-readable, and not for matching on.
+    message: String,
+    /// The side the failure came from.
+    source: &'static str,
+}
+
+impl ApiError {
+    /// An envelope for a failure apid raised itself.
+    fn apid(code: &'static str, message: String) -> Self {
+        Self {
+            error: ApiErrorDetail {
+                code,
+                message,
+                source: "apid",
+            },
+        }
+    }
+}
+
+/// `GET /api/versions` (§2.1's discovery table).
+#[derive(serde::Serialize, utoipa::ToSchema)]
+pub(crate) struct ApiVersions {
+    /// Every major version served. A client tests **membership** in this set;
+    /// a client that reads only `current` concludes that a device it can talk
+    /// to is one it cannot.
+    versions: Vec<&'static str>,
+    /// The member to use with no preference. Always a member of `versions`.
+    current: &'static str,
+}
+
+/// `GET /api/v1/meta` (§2.1's discovery table).
+#[derive(serde::Serialize, utoipa::ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct ApiMeta {
+    /// The API major version this route belongs to.
+    api: &'static str,
+    /// mosd's settings schema version: the shape of the tree on disk, which
+    /// moves independently of the API version and must never be conflated
+    /// with it.
+    settings_schema_version: u32,
+    /// The daemon answering.
+    daemon: &'static str,
+}
+
+/// The served set, unauthenticated (§2.1).
+///
+/// It must be answerable before the caller holds a credential, which is why
+/// the gate hands it off above its own `GetSettings` call: a factory-fresh
+/// device has no `access.webAdmin` and redirects everything else to `/setup`,
+/// and a UI that survived the update it is incompatible with has to be able
+/// to say so. The response carries the served set and nothing else — no
+/// hostname, no device id, no build string — because anyone who can reach the
+/// listener can read it.
+#[utoipa::path(
+    get,
+    path = VERSIONS_PATH,
+    context_path = API,
+    tag = "discovery",
+    responses((status = 200, description = "The major API versions this device serves", body = ApiVersions)),
+)]
+pub(crate) async fn api_versions() -> Response {
+    api_response(
+        StatusCode::OK,
+        ApiVersions {
+            versions: SERVED_VERSIONS.to_vec(),
+            current: CURRENT_VERSION,
+        },
+    )
+}
+
+/// What the caller is talking to, in detail (§2.1).
+///
+/// `settingsSchemaVersion` is read from `mosd_settings` and never copied: the
+/// number a client uses to decide whether it understands a settings body has
+/// exactly one source.
+#[utoipa::path(
+    get,
+    path = V1_META_PATH,
+    context_path = API,
+    tag = "discovery",
+    responses(
+        (status = 200, description = "What this daemon is and which schema it speaks", body = ApiMeta),
+        (status = 401, description = "No session cookie, or one that does not verify", body = ApiError),
+    ),
+)]
+pub(crate) async fn api_v1_meta(_session: ApiSession) -> Response {
+    api_response(
+        StatusCode::OK,
+        ApiMeta {
+            api: CURRENT_VERSION,
+            settings_schema_version: mosd_settings::SCHEMA_VERSION,
+            daemon: "apid",
+        },
+    )
+}
+
+/// Proof that the request carried a session cookie the store verifies.
+///
+/// An extractor and not middleware, and not the gate: it runs for exactly the
+/// handlers that name it, so the reserved subtree's not-found handler and
+/// `/api/versions` are untouched by it and no path-prefix test decides who is
+/// guarded.
+///
+/// Its rejection is §2.4's envelope with a 401, NOT the gate's redirect. A
+/// client that follows that redirect lands on `GET /login`, which answers 200
+/// with an HTML page, so a script reads the whole exchange as success (§3.1).
+pub(crate) struct ApiSession;
+
+impl FromRequestParts<AppState> for ApiSession {
+    type Rejection = Response;
+
+    async fn from_request_parts(
+        parts: &mut Parts,
+        state: &AppState,
+    ) -> Result<Self, Self::Rejection> {
+        if session::cookie_from_headers(&parts.headers)
+            .is_some_and(|value| state.sessions.verify(&value))
+        {
+            return Ok(Self);
+        }
+        Err(api_response(
+            StatusCode::UNAUTHORIZED,
+            ApiError::apid(
+                "not_authenticated",
+                "no session cookie, or one that does not verify".to_string(),
+            ),
+        ))
+    }
 }
 
 /// Redirect-only router served on the HTTP listener: 308 every request to
@@ -267,6 +458,8 @@ fn bus_error(err: &anyhow::Error) -> Response {
 /// Auth gate: routes every request into setup mode, login, or through.
 ///
 /// - `/healthz` always passes.
+/// - The declared `/api/` routes always pass: they answer for themselves, in
+///   §2.4's envelope rather than in HTML.
 /// - Setup mode (no admin password configured yet): only `/setup` passes,
 ///   everything else redirects there.
 /// - Normal mode: `/login` and `/setup` pass (the setup handlers answer 409
@@ -274,7 +467,7 @@ fn bus_error(err: &anyhow::Error) -> Response {
 ///   session cookie or redirects to `/login`.
 async fn gate(State(state): State<AppState>, request: Request, next: Next) -> Response {
     let path = request.uri().path();
-    if path == "/healthz" {
+    if path == "/healthz" || is_declared_api_route(path) {
         return next.run(request).await;
     }
 

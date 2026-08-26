@@ -44,6 +44,20 @@ url = "2"
 tough = { version = "=0.18.0", default-features = false }
 axum = "0.8"
 axum-server = { version = "0.7", default-features = false, features = ["tls-rustls-no-provider"] }
+# The OpenAPI document is generated from the handlers and committed as
+# `mosd/apid/openapi.json`, so the spec cannot describe a route the code does
+# not serve. Each route's path is one constant, read by the axum declaration
+# and by the `utoipa::path` attribute that documents it.
+#
+# `axum_extras` is deliberately off: it teaches the `path` macro to read axum's
+# `Path`/`Query` extractors, and no documented route takes a path or query
+# parameter.
+#
+# `utoipa-axum` is deliberately absent. It would collect the routes straight
+# out of the router, but it depends on `paste`, which carries an unmaintained
+# advisory (RUSTSEC-2024-0436) that `deny.toml` makes an error. `context_path`
+# composes the same document without it.
+utoipa = "5.5"
 rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12"] }
 rcgen = { version = "0.14", default-features = false, features = ["crypto", "pem", "ring"] }
 argon2 = "0.5"
