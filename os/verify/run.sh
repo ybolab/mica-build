@@ -131,6 +131,43 @@ if [ "${MODE}" = lint ]; then
     set -- ${ABS[@]+"${ABS[@]}"}
 fi
 
+# --parity's path arguments, for the same reason and one worse one.
+#
+# The lint's paths are READ, so resolving one against os/verify/ produces a
+# "not found" -- wrong, but visible. --json is WRITTEN, and it printed back the
+# relative string it was given, so the run reported writing a diff to a path the
+# caller could not cat. Measured on 2026-08-26 from the repository root with
+# `--parity --board x64 --json _out/m4c/jsontest/before.json`: the message named
+# _out/m4c/jsontest/before.json and the file was created one directory tree
+# over, under this package. M4b hit it and worked around it.
+#
+# NOT the loop above, which absolutises every bare argument: here the paths are
+# the VALUES of three options and `--board cx3576` is a bare argument too. So
+# only the element following one of the three path-taking options is touched,
+# and every other argument is passed through exactly as typed. There is no
+# `--opt=value` form to consider -- src/parity-cli.ts's parser reads values from
+# the next argv element and refuses an unknown option, so `--json=X` is already
+# an error naming itself.
+if [ "${MODE}" = parity ]; then
+    ABS=()
+    take_path=0
+    for arg in "$@"; do
+        if [ "${take_path}" = 1 ]; then
+            take_path=0
+            case "${arg}" in
+            /* | -*) ABS+=("${arg}") ;;
+            *) ABS+=("${PWD}/${arg}") ;;
+            esac
+            continue
+        fi
+        case "${arg}" in
+        --image | --json | --work) take_path=1 ;;
+        esac
+        ABS+=("${arg}")
+    done
+    set -- ${ABS[@]+"${ABS[@]}"}
+fi
+
 # --- how bun is invoked, and the only place that decides ---------------------
 # Two routes, one seam. A bun binary on the host, or the digest-pinned bun
 # container. The choice is made once, here, and announced.

@@ -448,10 +448,31 @@ run_verifier() {
 # have an apostrophe somewhere and the failure does not point back here.
 #
 # The baseline state is what the UNMUTATED fixture must produce. It is PASS for
-# everything except the no-covering-entry assertion, which only exists on
-# check_ui_location's early-return path and can therefore never PASS: on that
-# path the six that follow it do not run at all, and asserting them ABSENT is
-# how this file states that the early return is real.
+# every row except SEVEN, and each of those seven is ABSENT because it names a
+# BRANCH the healthy fixture does not take. Six of them can only ever be
+# observed FAILING and one only ever PASSING:
+#
+#   * ui-no-filesystem lives on check_ui_location's early-return path, so it can
+#     never PASS. On that path the six assertions after it do not run at all,
+#     and case 7 asserts those six ABSENT -- which is how this file states that
+#     the early return is real rather than merely believed.
+#   * ext-unit-absent, ext-unit-where, ext-unit-what and ext-unit-enabled are
+#     the four failing arms of the if/elif CHAIN described above. Exactly one
+#     arm of a chain runs; on a healthy fixture it is ext-unit-ok's.
+#   * led-unit-present is check_status_led's early-return failure. This file
+#     sources the real os/boards/cx3576/board.env (LAYOUT_ENV, above), which
+#     declares BOARD_HAS_STATUS_LED=1, and the baseline fixture carries the
+#     unit -- so the "declares BOARD_HAS_STATUS_LED=1 but ... is not in the
+#     image" arm is not reached. Case 12 drops the unit and expects it to fire.
+#   * container-absent is the opposite: a PASS-only message, on
+#     check_container_engine's WITH_CONTAINERS=0 arm. The baseline fixture ships
+#     podman, so that arm is not reached either; case 8k removes the engine and
+#     expects it, with the ten engine assertions behind it ABSENT.
+#
+# ABSENT is therefore an assertion in its own right and never a gap. A row that
+# vanished because its check stopped running looks exactly like a row that was
+# never expected -- which is the whole reason this file names its assertions by
+# identity instead of counting FAIL lines.
 ASSERTIONS='
 ui-off-data|catches a custom UI root moved off DATA||PASS
 ui-on-state|catches a custom UI root moved onto STATE||PASS

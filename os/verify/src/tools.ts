@@ -56,6 +56,12 @@ export const REQUIRED_TOOLS = [
   'mdir',
   'mcopy',
   'mlabel',
+  // minfo reads the FAT volume SERIAL, which mlabel does not report. It ships
+  // in the same `mtools` package as the other three, so the container route
+  // already had it -- but a tool the port drives and does not declare is a tool
+  // the HOST route would run without checking it is there, which is the one
+  // failure this list exists to stop.
+  'minfo',
   'debugfs',
   'tune2fs',
   'dumpe2fs',
