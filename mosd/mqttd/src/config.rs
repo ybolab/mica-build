@@ -59,7 +59,7 @@ impl Default for Timings {
 
 /// The bus name the bridge publishes for.
 ///
-/// One service today. PLAN-011 D5's registry is what turns this into a set,
+/// One service today. mosd's service registry is what turns this into a set,
 /// and when it does the change is here and in the runtime's subscription
 /// bookkeeping — the grammar already carries `<class>/<instance>` for exactly
 /// that reason.

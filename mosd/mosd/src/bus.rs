@@ -236,8 +236,8 @@ impl MosdService {
 
     /// Reboot the machine on behalf of `sender`.
     ///
-    /// Update-aware since RFCT-084: the slot status is read first, and a slot
-    /// that is installed-but-not-confirmed — a reboot into it burns one of its
+    /// Update-aware: the slot status is read first, and a slot that is
+    /// installed-but-not-confirmed — a reboot into it burns one of its
     /// boot attempts — is logged and recorded in the `power` live-state entry
     /// BEFORE the reboot fires. A warning, not a refusal: booting the new slot
     /// is exactly what the operator installing an update wants, and the

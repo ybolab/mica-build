@@ -306,7 +306,7 @@ mod tests {
             .to_string()
     }
 
-    // ---- R1: the marker path ----------------------------------------------
+    // ---- the marker path --------------------------------------------------
 
     #[test]
     fn the_marker_sits_beside_the_shadow_file_whatever_that_is() {
@@ -370,7 +370,7 @@ mod tests {
         );
     }
 
-    // ---- R2: what is rejected, and what is not ----------------------------
+    // ---- what is rejected, and what is not --------------------------------
 
     #[test]
     fn a_password_shorter_than_eight_bytes_is_rejected_and_eight_is_not() {
@@ -444,7 +444,7 @@ mod tests {
         }
     }
 
-    // ---- R2: the successful path ------------------------------------------
+    // ---- the successful path ----------------------------------------------
 
     #[test]
     fn the_shadow_hash_verifies_and_the_marker_repeats_it_exactly() {

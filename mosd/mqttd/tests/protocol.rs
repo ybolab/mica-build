@@ -27,13 +27,13 @@ use mos_mqttd::transport::Transport;
 const DEVICE: &str = "abc123";
 /// `com.mos.mosd`'s class (`docs/design/bus.md` §5).
 const CLASS: &str = "mosd";
-/// The bus name of an extension service under PLAN-011 D5's grammar, whose
+/// The bus name of an extension service under the extension grammar, whose
 /// class is its **fourth** dotted component.
 const EXTENSION_SERVICE: &str = "com.mos.ext.sensor.abc123";
 /// The class [`EXTENSION_SERVICE`] must publish under.
 const EXTENSION_CLASS: &str = "sensor";
 /// The extension namespace with no service under it — in the extension half
-/// of the namespace, but naming no class (PLAN-011 D5, RFCT-093).
+/// of the namespace, but naming no class.
 const EXTENSION_NAMESPACE: &str = "com.mos.ext";
 
 fn secs(seconds: u64) -> Duration {
@@ -629,7 +629,7 @@ async fn clears_owed_while_silent_are_paid_at_the_next_keepalive() {
 
 /// An extension publishes under its class, not under `ext`.
 ///
-/// PLAN-011 D5 gives an extension the name `com.mos.ext.<class>[.<suffix>]`,
+/// An extension carries the name `com.mos.ext.<class>[.<suffix>]`,
 /// so the class is the fourth component where a system service's is the
 /// third. Reading the third unconditionally — which is what this bridge did
 /// before `mos-busname` — puts every extension's items under the class `ext`,

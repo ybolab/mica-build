@@ -54,9 +54,9 @@ impl Default for Settings {
 
 /// Container engine policy, reconciled by `ContainerReconciler`.
 ///
-/// Named for the CAPABILITY, not the implementation (PLAN-012 D3): if the
-/// engine is ever replaced, this key, its bus item and its apid pane are
-/// unchanged and only the binaries move.
+/// Named for the CAPABILITY, not the implementation: if the engine is ever
+/// replaced, this key, its bus item and its apid pane are unchanged and only
+/// the binaries move.
 ///
 /// **Disabled by default, and false means nothing runs.** The engine is
 /// daemonless -- there is no socket and no service to leave stopped -- so what
@@ -65,8 +65,8 @@ impl Default for Settings {
 /// verity root, Quadlet finds nothing to parse, and no container unit exists
 /// to be started.
 ///
-/// The default is false because of what true costs, stated as PLAN-012 D5
-/// states it: mos does not build rootless, so containers run root-capable, and
+/// The default is false because of what true costs: mos does not build
+/// rootless, so containers run root-capable, and
 /// **turning this on grants root-equivalent capability to whatever can write a
 /// `.container` file into STATE.** That is the switch's whole purpose, not a
 /// side effect of it.

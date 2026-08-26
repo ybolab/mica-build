@@ -1,5 +1,5 @@
 //! Integration test: mosd's service registry against a REAL private session
-//! bus (PLAN-011 D5, `docs/design/bus.md` §5, §6).
+//! bus (`docs/design/bus.md` §5, §6).
 //!
 //! Every test here spawns a private `dbus-daemon --session` and the `mosd`
 //! binary, then claims `com.mos.*` names from this process with real zbus

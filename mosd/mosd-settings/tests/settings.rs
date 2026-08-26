@@ -459,8 +459,8 @@ fn v3_populated() -> Settings {
     }
 }
 
-/// R3.1: a real v2 document keeps every v2 value across the upgrade and gains
-/// the v3 subtrees at their documented defaults.
+/// A real v2 document keeps every v2 value across the upgrade and gains the
+/// v3 subtrees at their documented defaults.
 #[test]
 fn real_v2_document_survives_the_upgrade_to_v3() {
     let dir = tempfile::tempdir().unwrap();
@@ -519,8 +519,8 @@ fn real_v2_document_survives_the_upgrade_to_v3() {
     assert_eq!(settings.wifi.ap.grace_seconds, 60);
 }
 
-/// R3.2: v3 -> v2 -> v3 keeps every v2-representable value and resets the
-/// v3-only ones to their defaults.
+/// A v3 -> v2 -> v3 round trip keeps every v2-representable value and resets
+/// the v3-only ones to their defaults.
 #[test]
 fn v3_document_round_trips_down_to_v2_and_back() {
     let original = v3_populated();
@@ -548,7 +548,7 @@ fn v3_document_round_trips_down_to_v2_and_back() {
     assert_ne!(restored, original);
 }
 
-/// R3.3: rolling back to v2 removes exactly the v3-only keys and keeps
+/// Rolling back to v2 removes exactly the v3-only keys and keeps
 /// `access.webAdmin`.
 #[test]
 fn v3_document_migrates_down_to_v2_dropping_only_v3_keys() {
@@ -583,7 +583,7 @@ fn v3_document_migrates_down_to_v2_dropping_only_v3_keys() {
     assert!(!text.contains("shellEnabled"));
 }
 
-/// R3.4: `deny_unknown_fields` still rejects a typo inside a new subtree.
+/// `deny_unknown_fields` still rejects a typo inside a new subtree.
 #[test]
 fn v3_document_with_unknown_key_fails_to_load() {
     let dir = tempfile::tempdir().unwrap();
@@ -624,7 +624,7 @@ fn v3_document_with_unknown_key_fails_to_load() {
     assert!(Store::new(&path).load().unwrap().access.ssh.enabled);
 }
 
-/// R3.5: every new leaf is reachable through the dot-path API.
+/// Every new leaf is reachable through the dot-path API.
 #[test]
 fn dot_path_reaches_every_new_leaf() {
     let mut settings = Settings::default();
@@ -733,8 +733,8 @@ fn set_rejects_unknown_ap_mode_and_leaves_settings_unchanged() {
     assert_eq!(settings, before);
 }
 
-/// R3.6: the three-step registry still walks a v0 and a v1 document all the
-/// way to a valid v3 tree.
+/// The three-step registry still walks a v0 and a v1 document all the way
+/// to a valid v3 tree.
 #[test]
 fn v0_and_v1_documents_walk_all_the_way_to_v3() {
     let dir = tempfile::tempdir().unwrap();
@@ -796,7 +796,7 @@ fn key_line(key_type: &str) -> String {
 }
 
 /// A v3 document carrying an `access.ssh` table, which is the shape the
-/// upgrade actually meets on a device that has been through RFCT-021.
+/// upgrade meets on a device already carrying SSH settings.
 const V3_DOCUMENT: &str = concat!(
     "schema_version = 3\n",
     "hostname = \"edge-42\"\n\n",
@@ -809,7 +809,7 @@ const V3_DOCUMENT: &str = concat!(
     "listenAddresses = [\"10.0.0.7\"]\n",
 );
 
-/// R1: a freshly built tree carries the key, and it is empty.
+/// A freshly built tree carries the key, and it is empty.
 #[test]
 fn default_settings_serialise_an_empty_authorized_key_list_at_the_current_schema() {
     let settings = Settings::default();
@@ -836,7 +836,7 @@ fn default_settings_serialise_an_empty_authorized_key_list_at_the_current_schema
     assert!(settings.access.ssh.listen_addresses.is_empty());
 }
 
-/// R1: a v4 document with real keys survives a save/load round trip, and the
+/// A v4 document with real keys survives a save/load round trip, and the
 /// comment lives in its own field on disk.
 #[test]
 fn a_v4_document_round_trips_through_the_store() {
@@ -878,7 +878,7 @@ fn a_v4_document_round_trips_through_the_store() {
     assert_eq!(loaded.access.ssh.authorized_keys[1].comment, None);
 }
 
-/// R1: the list is reachable and writable through the dot-path API, and an
+/// The list is reachable and writable through the dot-path API, and an
 /// entry with an unknown field is refused like every other typed write.
 #[test]
 fn dot_path_reaches_the_authorized_key_list() {
@@ -925,7 +925,7 @@ fn dot_path_reaches_the_authorized_key_list() {
     assert_eq!(settings, before);
 }
 
-/// R1: the typed tree is a container, not a validator. It will hold a key that
+/// The typed tree is a container, not a validator. It will hold a key that
 /// `validate_authorized_keys` refuses, which is exactly why the callers must
 /// run the validator before rendering.
 #[test]
@@ -943,7 +943,7 @@ fn the_typed_tree_holds_what_the_validator_would_refuse() {
     ));
 }
 
-/// R2: a v3 document without the key gains an empty array, and `up` is
+/// A v3 document without the key gains an empty array, and `up` is
 /// idempotent over the result.
 #[test]
 fn v3_document_gains_an_empty_authorized_key_list_and_up_is_idempotent() {
@@ -983,8 +983,8 @@ fn v3_document_gains_an_empty_authorized_key_list_and_up_is_idempotent() {
     assert_eq!(doc["access"]["ssh"]["authorizedKeys"][0], key);
 }
 
-/// R2: `up` over a non-array value is an error naming the path and the type,
-/// not a silent overwrite of whatever the operator hand-edited in.
+/// `up` over a non-array value is an error naming the path and the type, not
+/// a silent overwrite of whatever the operator hand-edited in.
 #[test]
 fn v3_to_v4_up_refuses_a_non_array_authorized_key_value() {
     for (literal, type_name) in [
@@ -1010,7 +1010,7 @@ fn v3_to_v4_up_refuses_a_non_array_authorized_key_value() {
     }
 }
 
-/// R2: `down` removes the key, and a v3 -> v4 -> v3 round trip returns the
+/// `down` removes the key, and a v3 -> v4 -> v3 round trip returns the
 /// document it started from.
 #[test]
 fn v4_document_migrates_down_to_v3_and_round_trips() {
@@ -1047,7 +1047,7 @@ fn v4_document_migrates_down_to_v3_and_round_trips() {
     assert_eq!(doc, original);
 }
 
-/// R2: both directions cope with `access` or `access.ssh` being absent.
+/// Both directions cope with `access` or `access.ssh` being absent.
 #[test]
 fn v3_to_v4_handles_a_document_with_no_access_table() {
     // `up` creates the intermediate tables.
@@ -1084,8 +1084,8 @@ fn v3_to_v4_handles_a_document_with_no_access_table() {
     assert_eq!(doc["access"], before["access"]);
 }
 
-/// R2: the whole chain still walks, in both directions, with the new step on
-/// the end.
+/// The whole chain still walks, in both directions, with the new step on the
+/// end.
 #[test]
 fn the_full_chain_walks_from_v0_to_the_current_schema_and_back_to_v0() {
     let mut doc: toml::Table = "hostname = \"legacy\"".parse().unwrap();
@@ -1110,7 +1110,7 @@ fn the_full_chain_walks_from_v0_to_the_current_schema_and_back_to_v0() {
     assert_eq!(doc, original, "the walk down must undo the walk up");
 }
 
-/// R2: `Store::load` migrates a real v3 file on disk all the way to v4.
+/// `Store::load` migrates a real v3 file on disk all the way to v4.
 #[test]
 fn store_load_migrates_a_v3_file_to_v4() {
     let dir = tempfile::tempdir().unwrap();
@@ -1128,7 +1128,7 @@ fn store_load_migrates_a_v3_file_to_v4() {
     assert_eq!(settings.access.ssh.listen_addresses, vec!["10.0.0.7"]);
 }
 
-/// R3: the parser is reachable from the public API and enforces its rules
+/// The parser is reachable from the public API and enforces its rules
 /// there, so a consumer crate cannot get a weaker check by importing a
 /// different symbol.
 #[test]

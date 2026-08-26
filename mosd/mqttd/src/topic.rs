@@ -33,8 +33,8 @@ pub const HEARTBEAT: &str = "heartbeat";
 /// the two halves of the namespace put it in different places: it is the
 /// third component of a system name `com.mos.<class>[.<suffix>]` — `mosd` for
 /// the management core — and the fourth of an extension name
-/// `com.mos.ext.<class>[.<suffix>]` (PLAN-011 D5), so an extension publishes
-/// under its class and never under `ext`. [`class_of`] is that one rule.
+/// `com.mos.ext.<class>[.<suffix>]`, so an extension publishes under its
+/// class and never under `ext`. [`class_of`] is that one rule.
 /// `instance` is the service's `/DeviceInstance` (§6), `0` until a service
 /// publishes one.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -122,7 +122,7 @@ pub fn parse(topic: &str, address: &Address) -> Option<Request> {
 /// The `class` a `com.mos.*` bus name publishes under
 /// (`docs/design/bus.md` §5), or `None` when the name is not one: the third
 /// component of a system name `com.mos.<class>[.<suffix>]`, the fourth of an
-/// extension name `com.mos.ext.<class>[.<suffix>]` (PLAN-011 D5).
+/// extension name `com.mos.ext.<class>[.<suffix>]`.
 ///
 /// The rule itself lives in [`mos_busname`] and only there. mosd's service
 /// registry derives the same class from the same names, and a second copy

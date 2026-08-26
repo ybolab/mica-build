@@ -1,5 +1,5 @@
 //! The service registry: what mosd knows about every OTHER `com.mos.*`
-//! service on the bus (PLAN-011 D5, `docs/design/bus.md` §5 and §6).
+//! service on the bus (`docs/design/bus.md` §5 and §6).
 //!
 //! mosd subscribes to `org.freedesktop.DBus`'s `NameOwnerChanged` under
 //! `arg0namespace='com.mos'`, so the bus does the filtering and mosd is never
@@ -12,7 +12,7 @@
 //!
 //! A service that does not conform to §6 is published anyway, with a
 //! `conformance` object naming what is missing and exactly one `warn!` on the
-//! way in (PLAN-011 D5). Nothing here refuses, drops or panics on a
+//! way in. Nothing here refuses, drops or panics on a
 //! malformed service: the difference between best-effort and silently
 //! degraded is that the registry can say WHY a service publishes oddly, and
 //! an operator who cannot see that concludes the bridge is broken.
@@ -584,7 +584,7 @@ mod tests {
         assert_eq!(clean.to_json(), serde_json::json!({}));
     }
 
-    /// Every gap has a name, and the names are the ones PLAN-011 D5 requires.
+    /// Every gap has a name, and the names are the ones the bus contract uses.
     #[test]
     fn every_gap_names_itself() {
         let gaps = Conformance {
