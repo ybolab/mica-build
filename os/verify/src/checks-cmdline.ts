@@ -1,34 +1,26 @@
 // Batch 4b: the kernel command line, dm-verity, and the ESP's GRUB boot chain.
 //
-// Everything here asserts a property that is true of BOTH boards -- the verity
-// table exists and is read-only, dm-mod.waitfor is present, the root hash
-// matches the locally built rootfs, the payload actually verifies, and the
-// boot path names its slot. Only the SOURCE differs, and the oracle says why
-// at :2114: skipping these on a grub board would have been the easy move and
-// the wrong one, because it would drop real coverage of verity, of the
-// read-only flag and of rauc.slot= on the board this project verifies first.
-// So the EXTRACTION is board-aware and the assertions are not.
+// Every assertion here is true of both boards -- the verity table exists and is
+// read-only, dm-mod.waitfor is present, the root hash matches the locally built
+// rootfs, the payload verifies, and the boot path names its slot -- and only the
+// source differs. The oracle says why at :2114: skipping these on a grub board
+// would drop real coverage of verity, of the read-only flag and of rauc.slot= on
+// the board this project verifies first. So the extraction is board-aware and
+// the assertions are not.
 //
-// Where the command line comes from.
-//
-// U-Boot: the per-slot verity env file out of the slot's own FAT, which boot.scr
-// sources. One file, one line.
-//
-// GRUB: composed the way the bootloader composes it (:2129-2160). The ESP's
-// grub.cfg holds the board constants -- each slot's PARTUUID and the fixed
-// arguments -- and the slot's own boot partition holds the values that change
-// with the build, in a `set MOS_*=` fragment. Neither half is the command line;
-// GRUB expands one into the other at boot, and so does this.
-//
-// Composing it rather than asserting the halves separately is the point:
-// everything downstream verifies the root hash the kernel will be given against
-// the payload actually in that slot. A check that read the fragment alone would
-// pass on a grub.cfg that never referenced it, and a check that read grub.cfg
-// alone would pass on a slot whose cmdline.cfg was never installed.
-//
-// Anything the fragment does not define is left unexpanded, so a missing fact
-// shows up as a literal `${MOS_ROOT_HASH}` rather than as a silently empty
-// field -- which is what makes the verity table unparseable rather than wrong.
+// On U-Boot the command line is the per-slot verity env file out of the slot's
+// own FAT, which boot.scr sources: one file, one line. On GRUB it is composed
+// the way the bootloader composes it (:2129-2160) -- the ESP's grub.cfg holds
+// the board constants, each slot's PARTUUID and the fixed arguments, and the
+// slot's own boot partition holds the values that change with the build in a
+// `set MOS_*=` fragment. Composing it rather than asserting the halves
+// separately is the point, because everything downstream verifies the root hash
+// the kernel will be given against the payload actually in that slot: a check
+// reading the fragment alone would pass on a grub.cfg that never referenced it,
+// and one reading grub.cfg alone would pass on a slot whose cmdline.cfg was
+// never installed. Anything the fragment does not define is left unexpanded, so
+// a missing fact shows up as a literal `${MOS_ROOT_HASH}` rather than a silently
+// empty field, which makes the verity table unparseable rather than wrong.
 
 import { existsSync, readFileSync, statSync } from 'node:fs'
 import { join } from 'node:path'

@@ -4,30 +4,24 @@
 // six-way question the four tier checks cannot answer: which entry governs the
 // path apid reads.
 //
-// WHY UI_ROOT is asserted separately at all.
+// UI_ROOT is asserted separately because the tier checks are about partitions:
+// none would notice /srv/ui moving off DATA -- onto STATE, where 64 MiB holds
+// the settings tree and the sshd host keys and the first large bundle fills it,
+// or onto /var, which is wiped by design and has no growfs, so every installed
+// custom UI silently disappears. Both are silent on the device and invisible to
+// a check that only asks "is DATA mounted at /srv with growfs".
 //
-// The tier checks are about PARTITIONS. None of them would notice /srv/ui
-// moving off DATA -- onto STATE, where 64 MiB holds the settings tree and the
-// sshd host keys and the first large bundle fills it; or onto /var, which is
-// wiped by design and has no growfs, so every installed custom UI silently
-// disappears. Both are silent on the device and neither is visible to a check
-// that only asks "is DATA mounted at /srv with growfs".
-//
-// One check, seven firings, and why not seven checks.
-//
-// `check_ui_location` has two paths. With no covering fstab entry it emits ONE
-// conclusion and returns; otherwise it emits SIX. Seven independent `one`
-// checks could not model that -- on the early-return path six of them would
-// conclude nothing, the oracle would print nothing for them, and the harness
-// would report six `unfired` rows, which is exit 1 for a run that behaved
-// correctly. So this is a single `many` check whose instance is the assertion's
-// own clause, and the early return is one firing rather than six absences.
-// os/tests/ui-location-test.sh names the same seven identities for the same
-// reason and asserts the six ABSENT in its case 7.
-//
-// The matcher is `custom UI root`, measured at exactly six lines on each board.
-// It is the only substring common to all seven messages: five of them read
-// `catches a custom UI root ...` and the sixth reads `catches content baked
+// One check, seven firings. `check_ui_location` emits one conclusion and returns
+// when no fstab entry covers the path, and six otherwise. Seven independent
+// `one` checks could not model that: on the early-return path six would conclude
+// nothing, the oracle would print nothing for them, and the harness would report
+// six `unfired` rows -- exit 1 for a run that behaved correctly. So this is a
+// single `many` check whose instance is the assertion's own clause, and the
+// early return is one firing rather than six absences.
+// os/tests/ui-location-test.sh names the same seven identities and asserts the
+// six absent in its case 7. The matcher is `custom UI root`, measured at exactly
+// six lines on each board and the only substring common to all seven messages --
+// five read `catches a custom UI root ...` and the sixth `catches content baked
 // under the custom UI root`.
 
 import { existsSync, lstatSync, readdirSync, readFileSync, type Stats } from 'node:fs'
