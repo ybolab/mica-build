@@ -10,11 +10,14 @@ import { describe, expect, test } from 'bun:test'
 import { existsSync, readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import {
+  APK_ATTEMPTS,
+  apkExhaustedNote,
   chooseRoute,
   missingHostTools,
   mountDirs,
   mountFault,
   REQUIRED_TOOLS,
+  retryInstall,
   routeReason,
   runChecked,
   TOOL_IMAGE_KEY,
@@ -173,5 +176,124 @@ describe('runChecked is where a non-zero exit becomes a throw', () => {
 
   test('and a status that was not allowed still throws', async () => {
     await expect(runChecked(exec(2), ['veritysetup'], { allow: [1] })).rejects.toThrow(ToolError)
+  })
+})
+
+describe('the package install is retried, because apk lies about losing its index', () => {
+  // The rule this package lives by is that an unreliable environment is a
+  // FINDING and a retry that hides one decides the verdict. That rule is about
+  // a check's ANSWER; this is the setup, it fails ~7% of the time, and it
+  // MISREPORTS its own cause. So the retry is legitimate here -- and every case
+  // below exists to prove it hides nothing.
+
+  /** An install that fails `failures` times and then succeeds, counting calls. */
+  function flaky(failures: number): { attempt: () => Promise<ToolResult>, calls: () => number } {
+    let n = 0
+    return {
+      calls: () => n,
+      attempt: async (): Promise<ToolResult> => {
+        n += 1
+        return n <= failures
+          ? {
+              argv: ['apk', 'add', '-q', 'e2fsprogs'],
+              code: 1,
+              stdout: '',
+              stderr: 'ERROR: unable to select packages:\n  e2fsprogs (no such package):',
+            }
+          : { argv: ['apk', 'add', '-q', 'e2fsprogs'], code: 0, stdout: '', stderr: '' }
+      },
+    }
+  }
+
+  /** No real sleeping: the exhausted case would otherwise cost three seconds. */
+  const nopause = async (): Promise<void> => {}
+
+  test('a first-attempt success runs ONCE -- no needless retry, no sleep', async () => {
+    const f = flaky(0)
+    expect((await retryInstall(f.attempt, APK_ATTEMPTS, nopause)).code).toBe(0)
+    expect(f.calls()).toBe(1)
+  })
+
+  test('the measured failure -- two lost index fetches, then the install lands', async () => {
+    // M6a measured 3 failures in 40 consecutive runs. Two in a row is well past
+    // that and still recovers.
+    const f = flaky(2)
+    expect((await retryInstall(f.attempt, APK_ATTEMPTS, nopause)).code).toBe(0)
+    expect(f.calls()).toBe(3)
+  })
+
+  test('a package that GENUINELY does not exist fails every attempt and is reported', async () => {
+    // The half that keeps the retry honest. A real absence is not flaky, so it
+    // survives all three attempts and comes back as a failure -- the retry
+    // changes how long it takes to say so, never what it says.
+    const f = flaky(Number.MAX_SAFE_INTEGER)
+    const last = await retryInstall(f.attempt, APK_ATTEMPTS, nopause)
+    expect(last.code).toBe(1)
+    expect(f.calls()).toBe(APK_ATTEMPTS)
+    // ...and the LAST result is handed back, so the reader sees apk's own words.
+    expect(last.stderr).toContain('no such package')
+  })
+
+  test('the pause grows between attempts, and there is one fewer pause than attempt', async () => {
+    // Not decoration: a fetch that failed because the network was briefly gone
+    // is likelier to succeed after a second than after none, and pausing AFTER
+    // the last attempt would only slow the refusal down.
+    const waited: number[] = []
+    await retryInstall(flaky(Number.MAX_SAFE_INTEGER).attempt, APK_ATTEMPTS,
+      async (ms) => { waited.push(ms) })
+    expect(waited).toEqual([1000, 2000])
+  })
+
+  test('zero attempts is REFUSED, not reported as a silent success', async () => {
+    // A loop that runs no attempts has no result, and returning one anyway --
+    // or `undefined` for a caller to read as ok -- would turn a failed install
+    // into a container with no tools in it and a check blaming the image.
+    await expect(retryInstall(flaky(0).attempt, 0, nopause)).rejects.toThrow(/has no result to report/)
+  })
+
+  test('the refusal SAYS what apk\'s sentence actually means', async () => {
+    // The message fix, which is separate from the retry and would have been
+    // worth making on its own. apk's own sentence is specific, confident and
+    // points somewhere useless -- it blames a package the pinned image
+    // demonstrably carries -- so quoting it unqualified sends a reader to look
+    // for a packaging problem that is not there.
+    const note = apkExhaustedNote('alpine:3.21@sha256:dead', APK_ATTEMPTS)
+    expect(note).toContain('failed index FETCH')
+    expect(note).toContain('NOT evidence the named package is absent')
+    expect(note).toContain('alpine:3.21@sha256:dead')
+    expect(note).toContain(`attempts: ${APK_ATTEMPTS}`)
+  })
+
+  test('and the note reaches the reader, attached to the tool output', async () => {
+    // Asserted through ToolError rather than on the note alone: the note is
+    // useless if the throw path drops it, and that is exactly the kind of gap
+    // a test on the helper by itself would not see.
+    const err = new ToolError(
+      {
+        argv: ['apk', 'add', '-q', 'e2fsprogs'],
+        code: 1,
+        stdout: '',
+        stderr: 'ERROR: unable to select packages:\n  e2fsprogs (no such package):',
+      },
+      'installing the image tools into alpine:3.21',
+      apkExhaustedNote('alpine:3.21'),
+    )
+    expect(err.message).toContain('no such package')          // apk's words, kept
+    expect(err.message).toContain('failed index FETCH')        // ...and qualified
+    expect(err.message).toContain('3 attempts are')
+    expect(err).toBeInstanceOf(ToolError)
+    expect(err.code).toBe(1)
+  })
+
+  test('a ToolError with NO note is unchanged -- every other tool still reads as before', () => {
+    // The note is opt-in. sgdisk, debugfs, unsquashfs and veritysetup say what
+    // they mean, and appending anything to their refusals would be noise.
+    const err = new ToolError(
+      { argv: ['sgdisk', '-p', '/x.img'], code: 2, stdout: '', stderr: 'boom' },
+      'reading the GPT',
+    )
+    expect(err.message).toBe(
+      'reading the GPT: `sgdisk -p /x.img` exited 2\n  stderr: boom\n  stdout: (empty)',
+    )
   })
 })

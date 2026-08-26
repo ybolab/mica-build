@@ -68,7 +68,7 @@ import {
   type Board,
   type Partition,
 } from './board.ts'
-import { boardEnvPath } from './paths.ts'
+import { boardEnvPath, requireShippedBoards } from './paths.ts'
 
 /** Keys every partition carries, whatever its role. */
 export const COMMON_KEYS = ['PARTNUM', 'LABEL', 'GUID', 'TYPECODE'] as const
@@ -581,11 +581,19 @@ export function lintPaths(paths: readonly string[]): LintRun {
   return { boards, checks, passed, failed, ok: failed === 0 && checks.length > 0 }
 }
 
-/** The default target: every board this tree ships, by name. */
-export const SHIPPED_BOARDS = ['cx3576', 'x64'] as const
-
+/**
+ * The default target: every board this tree ships, by name, READ OFF THE TREE.
+ *
+ * This was a literal, and a board added under os/boards/ was therefore a board
+ * the lint never opened -- while still reporting `RESULT: PASS (26/26 checks)`,
+ * which is green by having looked at less. paths.ts:requireShippedBoards
+ * discovers them and refuses an empty answer; the refusal matters because an
+ * empty list makes this whole run vacuous, and formatRun's own "made no
+ * assertions at all" guard would then be the only thing standing between that
+ * and a green.
+ */
 export function shippedBoardPaths(): string[] {
-  return SHIPPED_BOARDS.map(b => boardEnvPath(b))
+  return requireShippedBoards().map(b => boardEnvPath(b))
 }
 
 /** Render a run the way the shell predecessor did, so a reader's eye is unchanged. */

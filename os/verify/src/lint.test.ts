@@ -35,9 +35,8 @@ import {
   requireAssertions,
   ROLE_SCHEMA,
   shippedBoardPaths,
-  SHIPPED_BOARDS,
 } from './lint.ts'
-import { boardEnvPath } from './paths.ts'
+import { boardEnvPath, requireShippedBoards } from './paths.ts'
 
 /** Write a mutated copy of a real board definition and hand its path to `fn`. */
 function withMutatedBoard<T>(board: string, edit: (text: string) => string, fn: (path: string) => T): T {
@@ -339,7 +338,7 @@ describe('a board definition that is not data', () => {
 // --- the other direction, without which a lint that rejects everything passes -
 
 describe('the shipped layouts', () => {
-  for (const board of SHIPPED_BOARDS) {
+  for (const board of requireShippedBoards()) {
     test(`accepts-${board}: the shipped layout passes`, () => {
       const one = lintFile(boardEnvPath(board))
       const failures = one.checks.filter(c => !c.ok).map(c => c.message)
