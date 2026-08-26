@@ -22,8 +22,8 @@ Both routes were run to completion on 2026-08-25, this host:
 | pinned bun container (`MOS_BUILD_CONTAINER=1`) | **199/199** | 99 s |
 
 M6b added the assembler and raised the count to **358**; the suite now assembles
-five whole cx3576 images over fabricated inputs, and costs 2 m 4 s on the host
-route. That is the price of one full assembly in the suite rather than only at
+**seven** whole cx3576 images over fabricated inputs, and costs 2 m 4 s on the
+host route. That is the price of one full assembly in the suite rather than only at
 the gate — a chain that runs end to end is the thing a table of unit refusals
 cannot assert.
 
@@ -361,7 +361,7 @@ assumed: `cmp` of the two `os/mkimage-v2.sh` files, which differ.
 | `bash os/mkimage-v2.sh`, container route | ~70 s |
 | `bash os/build/run.sh --mkimage-v2` | ~55 s |
 | `sha256sum` of one 1315 MiB image | ~4 s |
-| the whole `src/mkimage-v2.test.ts` file (four full assemblies, fabricated inputs) | ~45 s |
+| the whole `src/mkimage-v2.test.ts` file (seven full assemblies, fabricated inputs) | ~45 s |
 
 ## Every ported refusal, and the mutation that drives it red
 
