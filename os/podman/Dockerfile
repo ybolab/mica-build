@@ -1,5 +1,5 @@
 # syntax=docker/dockerfile:1@sha256:ecfaec9ed6d810b56388c508f4121597bfbba70d41a6dfeee4d8cad5f295fc32
-# PLAN-012 M1 — the container engine, built from upstream source for aarch64.
+# The container engine, built from upstream source for aarch64.
 #
 #   make podman   → os/podman/out/{podman,quadlet,crun,conmon,netavark,
 #                                  aardvark-dns,catatonit,SHA256SUMS}
@@ -52,18 +52,17 @@
 # invalidated stage re-installs from local .debs, plus compiled-output caches
 # for all three languages.
 #
-# RFCT-108 M2c DID NOT UNDO THAT. The four stages now start from four SHARED
-# images (mos-build-{base,c,go,rust}) instead of four upstream tags, which is a
-# change to where the language toolchain comes from and not to how many stages
-# there are. Each stage keeps its own apt list, holding exactly the -dev
-# packages its own components need, so the measurement above still describes
-# what a one-package edit costs: adding libsystemd-dev to the Go list
-# invalidates go-build and nothing else. The shared images carry compilers; they
-# carry no component's headers, and that boundary is what keeps them shared.
+# THE FOUR SHARED BUILDER IMAGES DO NOT UNDO THAT. The stages start from
+# mos-build-{base,c,go,rust}, which is where the language toolchain comes from
+# and not how many stages there are. Each stage keeps its own apt list, holding
+# exactly the -dev packages its own components need, so the measurement above
+# still describes what a one-package edit costs: adding libsystemd-dev to the
+# Go list invalidates go-build and nothing else. The shared images carry
+# compilers; they carry no component's headers, and that boundary is what keeps
+# them shared.
 
 # THE FOUR BUILDER IMAGES, INJECTED FROM os/build-env/images.env by
-# os/build-env/from.sh, which os/podman/build.sh calls. PLAN-014 decision 4 and
-# RFCT-108 M2c; what stood here until M2c was
+# os/build-env/from.sh, which os/podman/build.sh calls. Bare tags like
 #
 #     ARG BUILDER_IMAGE=debian:trixie-slim
 #     ARG GO_IMAGE=golang:1.25-trixie
@@ -131,26 +130,11 @@ COPY versions.lock /versions.env
 # it traded a few MB in a stage that never ships for `fatal: not a git
 # repository` in the middle of a compile.
 #
-# PENDING PRINTS THE HASH IT COMPUTED AND FAILS. There is no environment
-# variable that softens it, and until RFCT-108 M2c there was one:
-# MOS_PODMAN_STRICT defaulted to 0 and turned this into a warning.
-#
-# THE KNOB WAS REMOVED BECAUSE ITS JUSTIFICATION WAS NEVER IMPLEMENTED. The
-# comment here said MOS_PODMAN_STRICT=1 "is what CI sets, so an unhashed source
-# can reach a developer and never a release" -- and nothing in this repository
-# has ever set it: not .gitea/workflows/check.yml, not privileged.yml, not the
-# Makefile, not os/podman/build.sh, which passed through
-# ${MOS_PODMAN_STRICT:-0}. Measured by grep across the whole tree, M2c. So the
-# release path and the developer path were the same warning, and the sentence
-# describing the difference was the only place the difference existed.
-#
-# WHICH OF THE TWO WAS WRONG, the prose or the code: the code. os/podman/
-# versions.env's own bump instructions have always read "The build prints the
-# hash it computed and fails", os/build-env/images.env implements exactly that
-# and records why (M2a: an unpinned pin fails nothing downstream, so a warning
-# floats for as long as nobody reads a log), and a build that WARNS while its
-# documentation says it FAILS teaches a reader to stop believing the
-# documentation. The prose was the contract worth keeping; this now keeps it.
+# PENDING PRINTS THE HASH IT COMPUTED AND FAILS. There is deliberately no
+# environment variable that softens it into a warning. A strictness knob is
+# only meaningful if something sets it, and a build that WARNS while
+# os/podman/versions.env says it FAILS teaches a reader to stop believing the
+# documentation.
 #
 # What it costs is real and small: a bump is two runs instead of one. What it
 # buys is that `git log` can never contain a commit whose engine came from an
@@ -367,9 +351,9 @@ ARG BUILDTAGS="seccomp systemd libsubid containers_image_openpgp exclude_graphdr
 # unit fails at start with "no such file or directory" naming podman, which
 # looks like a broken install rather than a wrong compile-time constant.
 #
-# Debian passes the right PREFIX in its packaging, which is why the
-# apt-installed engine RFCT-101 shipped does not have this problem. Building
-# ourselves means owning the flag.
+# Debian passes the right PREFIX in its packaging, which is why an
+# apt-installed engine does not have this problem. Building ourselves means
+# owning the flag.
 ARG PODMAN_PREFIX=/usr
 RUN --mount=type=cache,target=/root/.cache/go-build \
     --mount=type=cache,target=/go/pkg/mod \

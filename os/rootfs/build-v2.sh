@@ -13,9 +13,7 @@
 # is set. See docs/design/access.md section 4.1.
 #
 # Outputs (all under _out/<board>/). The first four are consumed by the image
-# assembler -- os/build/src/mkimage-v2.ts and mkimage-x64.ts, which were
-# os/mkimage-v2.sh and os/mkimage-x64.sh until PLAN-014 M6e ported them at
-# byte-identity:
+# assembler -- os/build/src/mkimage-v2.ts and mkimage-x64.ts:
 #   rootfs-verity.img     squashfs-zstd with the verity hash tree appended,
 #                         padded to a whole MiB
 #   rootfs-verity.env     verity parameters, strict KEY=value
@@ -24,9 +22,9 @@
 #   rootfs-report-v2.txt  package list + installed size
 #   factory-root.oci      the packed root as an OCI image, in OCI-layout tar
 #                         form. NOT consumed by the assembler -- this is what
-#                         RFCT-113's smoke runner executes the self-built
-#                         binaries in, so that "it linked" and "it runs" stop
-#                         being the same claim. `docker load -i` it.
+#                         the smoke runner executes the self-built binaries in,
+#                         so that "it linked" and "it runs" stop being the same
+#                         claim. `docker load -i` it.
 #   factory-root.txt      what that archive is: ref, platform, size, sha256
 #   rootfs-stages.txt     the stage chain as built, and a `# declined:` line
 #   mosd-build.txt        the commit mosd and apid in this root were built from,
@@ -77,7 +75,7 @@ case "$WITH_MOSD" in
     ;;
 esac
 
-# PLAN-012: whether the container engine is in the image at all.
+# Whether the container engine is in the image at all.
 #
 # BOARD-LEVEL, because it is a board decision: the engine costs ~107 MB
 # installed and a board with a tighter rootfs slot, or no use for containers,
@@ -87,9 +85,9 @@ esac
 # An explicit WITH_CONTAINERS in the environment beats the board file, so a
 # one-off build can go either way without editing the board.
 #
-# This is the BUILD-time switch: is the engine present. The RUN-time switch —
-# `container.enabled` in the settings tree, driven from apid — is PLAN-012 M3
-# and is a different question: whether an engine that IS present may be used.
+# This is the BUILD-time switch: is the engine present. The RUN-time switch --
+# `container.enabled` in the settings tree, driven from apid -- is a different
+# question: whether an engine that IS present may be used.
 if [ -z "${WITH_CONTAINERS:-}" ] && [ -f "$BOARD_DIR/containers.env" ]; then
     # shellcheck disable=SC1091
     . "$BOARD_DIR/containers.env"
@@ -193,7 +191,7 @@ else
     cp "$MODULES_TAR" "$OUT_DIR/modules.tar"
 fi
 
-# The container engine, built from source by os/podman (PLAN-012 M1/M2).
+# The container engine, built from source by os/podman.
 # Staged like modules.tar and mosd. The directory is created either way and is
 # left EMPTY when the engine is declined -- nothing COPYs it then, because
 # stages/31-feature-containers is not in the chain, and the mkdir is here so
@@ -279,7 +277,7 @@ if ! declined mosd; then
     cp "$REPO_ROOT/mosd/dist/com.mos.ext.conf" "$MOSD_STAGE/com.mos.ext.conf"
     cp "$REPO_ROOT/mosd/target/$RUST_TARGET/release/apid" "$MOSD_STAGE/apid"
     cp "$REPO_ROOT/mosd/dist/apid.service" "$MOSD_STAGE/apid.service"
-    # The MQTT bridge (PLAN-011 M3/D6). Its unit lives in the crate rather than
+    # The MQTT bridge. Its unit lives in the crate rather than
     # mosd/dist because the crate is where it is maintained; its D-Bus grant
     # lives in mosd/dist beside the policy it is layered over.
     cp "$REPO_ROOT/mosd/target/$RUST_TARGET/release/mos-mqttd" \
@@ -301,13 +299,11 @@ fi
 
 # ==== THE BOARD'S OWN CONTENT, staged so that stages/40-board names no board ==
 #
-# RFCT-111 M5d. 40-board used to COPY two fixed cx3576 paths on every board --
-# five AIC8800D80 firmware files and the six hwinit oneshots -- and x64 staged
-# both and discarded them at runtime. A COPY cannot be gated on an ARG, so what
-# replaced the literals is what MODULES_TAR and BOARD_INIT_DIR already were: a
-# DIRECTORY this script fills from the board's own trees, empty when the board
-# declares nothing. The three below and modules.tar above are the whole set,
-# and they are together so that adding a board means filling directories rather
+# A COPY cannot be gated on an ARG, so a board's content reaches
+# stages/40-board as a DIRECTORY this script fills from the board's own trees,
+# empty when the board declares nothing. The three below and modules.tar above
+# are the whole set, and they are together so that adding a board means filling
+# directories rather
 # than editing a Dockerfile.
 
 # Radio firmware, filtered to what the board declares.
@@ -399,14 +395,14 @@ fi
 OVERLAY_SRC="$SCRIPT_DIR/overlay-v2"
 OVERLAY_STAGE="$OUT_DIR/overlay-v2"
 
-# The RAUC system.conf is rendered from os/update/rauc/system.conf.in and the layout
-# env by RFCT-014's renderer, which owns that template and its assertions (the
-# statusfile must not land on /var, the boot-attempts radix range, and the
-# fw_env.config structure). It is generated rather than committed: a rendered
-# artifact in git can drift from its template, and os/update/bundle.sh's --check can
-# only report that drift after the fact, not prevent it. Rendering it here, on
-# the build path that consumes it, makes the template the single source of
-# truth. The renderer writes into OVERLAY_SRC, so it must run before staging.
+# The RAUC system.conf is rendered from os/update/rauc/system.conf.in and the
+# layout env by os/update/rauc/render-config.sh, which owns that template and
+# its assertions (the statusfile must not land on /var, the boot-attempts radix
+# range, and the fw_env.config structure). It is generated rather than
+# committed: a rendered artifact in git can drift from its template, and a
+# --check can only report that drift after the fact, not prevent it. Rendering
+# it here, on the build path that consumes it, makes the template the single
+# source of truth. The renderer writes into OVERLAY_SRC, so it must run before staging.
 MOS_BOARD="$MOS_BOARD" bash "$REPO_ROOT/os/update/rauc/render-config.sh"
 
 rm -rf "$OVERLAY_STAGE"
@@ -447,9 +443,9 @@ fi
 # and os/update/rauc/gen-dev-keys.sh documents dropping the DEV CA exactly here for
 # local bundle testing. That workflow stays possible, but only when named:
 # MOS_EXPECT_DEV_KEYRING=1 is the same explicit-toggle shape as the verifier's
-# fixture hook (MOS_VERIFY_FIXTURE_ROOT, RFCT-077) — nothing in the build or CI
-# sets it, so a keyring cannot reach a release image by being forgotten in the
-# overlay. os/verify-image-v2.sh enforces the same contract on the packed root.
+# fixture hook (MOS_VERIFY_FIXTURE_ROOT) -- nothing in the build or CI sets it,
+# so a keyring cannot reach a release image by being forgotten in the overlay.
+# os/verify enforces the same contract on the packed root.
 if [ -e "$OVERLAY_STAGE/etc/rauc/keyring.pem" ]; then
     if [ "${MOS_EXPECT_DEV_KEYRING:-0}" = "1" ]; then
         echo "############################################################"
@@ -571,7 +567,7 @@ fi
 
 # THE BUILDER IS NAMED, AND IT HAS TO BE A `docker` DRIVER ONE.
 #
-# Since RFCT-111 this is a CHAIN: os/rootfs/stages/ holds one Dockerfile per
+# This is a CHAIN: os/rootfs/stages/ holds one Dockerfile per
 # stage, and every stage after the first opens `FROM ${MOS_STAGE_PREV}` -- a
 # local image tag the previous stage was written to. Resolving that needs a
 # builder whose driver can read the docker image store, and only the `docker`
@@ -817,13 +813,10 @@ echo "installed size: ${total_mb} MB (budget ${SIZE_BUDGET_MB} MB)"
 
 # ─── THE SMOKE RUN, AND IT IS PART OF THE BUILD ──────────────────────────────
 #
-# RFCT-113's FIRST acceptance clause says a wrong-arch, missing-soname or
-# version-skewed binary must "fail the build", and its purpose line says every
-# self-built binary is executed inside the base rootfs "before an image ships
-# it". That is this line. Until M7c nothing in the tree invoked the runner at
-# all -- no make target, no workflow, and every `smoke` in this file was a
-# comment, including the one above that states the risk exactly: "an image that
-# ships them unexecuted looks exactly like one whose smoke run passed."
+# A wrong-arch, missing-soname or version-skewed binary must FAIL THE BUILD,
+# and every self-built binary is executed inside the base rootfs before an
+# image ships it. That is this line: an image that ships them unexecuted looks
+# exactly like one whose smoke run passed.
 #
 # HERE RATHER THAN IN THE Makefile, and that is the whole reason it is one line
 # in one place. Two make targets run this script and so does the CI deep lane,
