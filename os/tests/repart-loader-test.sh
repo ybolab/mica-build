@@ -224,7 +224,7 @@ for IMAGE in "${IMAGES[@]}"; do
     def_n="$(mkdefs "${IMAGE}" "${work}/${defs_dir}")"
     echo "${tag}: ${def_n} linux-generic partitions -> ${def_n} repart definitions, the last one growing"
 
-    # --- positive: the image as built, stock repart, discard ENABLED ---------
+    # --- positive: the image as built, stock repart, discard ENABLED
     cp "${IMAGE}" "${work}/with-loader-${tag}.img"
     with="$(run_repart "with-loader-${tag}" "${defs_dir}")"
     if [ "${with}" = "${LOADER_MAGIC_HEX}" ]; then
@@ -243,7 +243,7 @@ for IMAGE in "${IMAGES[@]}"; do
         fail "${tag}: the repart run appears to have done nothing, so the positive result proves nothing: $(tail -n 5 "${work}/with-loader-${tag}.log" | tr '\n' ' ')"
     fi
 
-    # --- negative: the same image with ONLY the loader entry removed ---------
+    # --- negative: the same image with ONLY the loader entry removed
     # Not a different layout and not a different flag: one GPT entry deleted,
     # which is exactly the state this task changed. If the loader survives this,
     # the positive case above was protecting nothing.
@@ -360,7 +360,7 @@ else
     fi
 
     if [ "${shipped_n}" -gt 0 ]; then
-        # --- positive: the shipped set, on the real GPT, grown medium --------
+        # --- positive: the shipped set, on the real GPT, grown medium
         rc="$(run_repart_rc "grow-shipped" defs-shipped "${V2_IMAGE}")"
         data_after="$(part_sectors_of "${work}/grow-shipped.img" "${DATA_PARTNUM}")"
         if [ "${rc}" = "0" ]; then
@@ -380,7 +380,7 @@ else
             fail "the growing run destroyed LBA ${LOADER_START_SECTOR}"
         fi
 
-        # --- negative: the same set with the fix taken back out --------------
+        # --- negative: the same set with the fix taken back out
         # One directive removed from two files, which is exactly the state this
         # task changed. If DATA still grew, the fix above was protecting
         # nothing and the positive case proves nothing.
