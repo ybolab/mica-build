@@ -1,44 +1,30 @@
 // Batch 4b: the four ext4 storage tiers.
 //
-// `check_ext4` is called four times -- META, STATE, EPHEMERAL and DATA -- and
-// prints six conclusions each plus one about EPHEMERAL's seed stamp: 25
+// `check_ext4` is called once per tier -- META and STATE, EPHEMERAL and DATA --
+// and prints six conclusions each plus one about EPHEMERAL's seed stamp: 25
 // conclusions per board.
 //
 // The bytes come from `dd if=IMG bs=1M skip=${PART_START_MIB_x}
-// count=${x_SIZE_MIB}`, the LAYOUT's offset walked by `walkLayout` exactly as
-// :1491-1517 walks it, and NOT the GPT's first sector: both agree on a healthy
-// image, `gpt-partition-start` asserts which is right, and reading through the
-// GPT would make this family agree with a partition that had moved. The tier
-// order is the layout's too -- every `ext4`-role partition in LAYOUT_PARTITIONS
-// order, which on both shipped boards is meta, state, ephemeral, data -- so a
-// fifth tier is checked without a register entry being edited, arriving as a new
-// (id, instance) pair rather than as a count that went up.
+// count=${x_SIZE_MIB}` -- the layout's offset, walked by `walkLayout` exactly as
+// :1491-1517 walks it, and NOT the GPT's first sector, which
+// `gpt-partition-start` asserts separately. The tier order is the layout's too:
+// every `ext4`-role partition in LAYOUT_PARTITIONS order, which on both shipped
+// boards is meta, state, ephemeral, data, so a fifth tier arrives as a new
+// (id, instance) pair with no register entry edited.
 //
-// Three oracle conclusions are not what they look like, and all three are
-// reproduced rather than repaired, because a port that hardened its oracle would
-// diverge from it and the divergence would be the port's:
-//
-//  1. `e2fsck -fn` exits 0 on a truncated filesystem. Measured 2026-08-26, an
-//     8192-block filesystem in a 4096-block file makes e2fsck print "Either the
-//     superblock or the partition table is likely to be corrupt!", run all five
-//     passes and exit 0. :2342 is `if e2fsck -fn "${img}" >/dev/null 2>&1`, so
-//     the status alone decides and the conclusion is `e2fsck -fn on data is
-//     clean`. Reachable here, because the extract is `count=${size_mib}` at the
-//     layout's offset. See `e2fsckClean` in image.ts.
-//  2. `debugfs -R "ls -p /"` exits 0 on a file that is not ext4, with empty
-//     stdout and "Filesystem not open" on stderr; :2358's `|| true` swallows the
-//     stderr, `entries` is empty, and for META, STATE and DATA an empty listing
-//     is the passing direction -- so `factory: meta is empty at build (nothing
-//     but lost+found)` is concluded about a partition holding no filesystem.
-//     `debugfsEntriesOrNone` reproduces it.
-//  3. `tune2fs -l` and `dumpe2fs -h` are `|| true`, so a partition they cannot
-//     open reaches the label, UUID, feature and size checks as the empty string:
-//     four FAILs describing values rather than one refusal naming the tool.
-//     Reproduced by `ext4SuperOrNone`.
-//
-// So a tier that is not a filesystem produces, on both verifiers, four FAILs
-// (label, UUID, size, e2fsck) and two vacuous greens (no orphan_file, empty at
-// build). Both are asserted as their own cases and left for the oracle's owner.
+// Three oracle conclusions are reproduced rather than repaired. `e2fsck -fn`
+// exits 0 on a truncated filesystem -- measured 2026-08-26, an 8192-block
+// filesystem in a 4096-block file prints "Either the superblock or the partition
+// table is likely to be corrupt!", runs all five passes and exits 0, and :2342's
+// `if e2fsck -fn "${img}" >/dev/null 2>&1` lets the status alone decide; see
+// `e2fsckClean` in image.ts. `debugfs -R "ls -p /"` exits 0 on a file that is
+// not ext4 with empty stdout and "Filesystem not open" on stderr, which :2358's
+// `|| true` swallows, and an empty listing is the passing direction for META,
+// STATE and DATA; `debugfsEntriesOrNone` reproduces it. `tune2fs -l` and
+// `dumpe2fs -h` are `|| true`, so a partition they cannot open reaches the
+// label, UUID, feature and size checks as the empty string; `ext4SuperOrNone`
+// reproduces it. A tier that is not a filesystem therefore produces four FAILs
+// and two vacuous greens on both verifiers, asserted here as their own cases.
 
 import type { Board } from './board.ts'
 import type { CheckCase, ImageContext } from './checks.ts'

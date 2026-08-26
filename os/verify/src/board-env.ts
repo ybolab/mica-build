@@ -8,10 +8,8 @@
 //
 // So this parses the dialect the real board definitions are written in --
 // assignments, comments, quotes, `${NAME}`, `$((arithmetic))` -- and refuses
-// everything else that would have been shell, by name. The refusal is the point:
-// a parser that quietly skipped a line it did not understand would produce a
-// definition missing a key, and a missing key makes a shared script fail far
-// from the omission.
+// everything else that would have been shell, by name. A parser that quietly
+// skipped a line it did not understand would produce a definition missing a key.
 //
 // What it accepts, and every one of these shapes is in a real board.env today:
 //
@@ -31,13 +29,11 @@
 // a key this file does not define, and anything in `$(( ))` outside integer
 // arithmetic.
 //
-// The default-value refusal is the subtle one. `${RAUC_GRUBENV:-}` is the
-// idiom every consumer of these files uses, and it is exactly what makes a
-// shell reader unable to tell "declared empty" from "not declared". x64
-// declares BOARD_FIRMWARE_FILES="" and BOARD_HWINIT_CONFS="" on purpose -- the
-// emptiness is the statement -- and `${X:-}` renders that identical to a board
-// that forgot them. This parser keeps the two apart and refuses to let a
-// board.env itself paper over the difference.
+// The default-value refusal is the subtle one. `${RAUC_GRUBENV:-}` is the idiom
+// every consumer of these files uses and is exactly what makes a shell reader
+// unable to tell "declared empty" from "not declared": x64 declares
+// BOARD_FIRMWARE_FILES="" and BOARD_HWINIT_CONFS="" on purpose, and `${X:-}`
+// renders that identical to a board that forgot them.
 
 /** Where in the file something went wrong, and what was there. */
 export class BoardEnvError extends Error {
