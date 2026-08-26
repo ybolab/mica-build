@@ -1,53 +1,34 @@
 // /etc/shadow lives in RAM, and the image ships no usable credential.
 //
-// The second family no batch owned. Like the MQTT pair it is
-// board-UNCONDITIONAL -- 19 conclusions on each shipped board, measured
-// 2026-08-26 -- and like it, several of its conclusions have the SHAPE of a
-// batch-2a helper without being one: `/etc/shadow is a symlink to
-// /run/mos/shadow` is written inline, not through `sq_symlink`, so it carries
-// a parenthetical batch 2a's matcher would not have found.
-//
-// THE PROPERTY, END TO END.
+// Board-unconditional: 19 conclusions on each shipped board, measured
+// 2026-08-26. `/etc/shadow is a symlink to /run/mos/shadow` is written inline
+// rather than through `sq_symlink`, so it carries a parenthetical batch 2a's
+// matcher would not have found.
 //
 // docs/design/access.md 4.2 supports exactly one credential on the console: a
-// TRANSIENT root password. On v2 the only path pam_unix will read for it is
-// /etc/shadow, and that path is inside the dm-verity squashfs -- unwritable by
-// construction. So it is a SYMLINK onto /run, which systemd mounts as a tmpfs
-// before any unit starts, and mos-shadow-reconcile builds the file there from
-// /usr/share/factory/etc/shadow on every boot.
+// transient root password. The only path pam_unix reads it from on v2 is
+// /etc/shadow, which is inside the dm-verity squashfs and unwritable by
+// construction, so it is a symlink onto /run -- a tmpfs systemd mounts before
+// any unit starts -- and mos-shadow-reconcile builds the file there from
+// /usr/share/factory/etc/shadow on every boot. The password is therefore
+// transient by construction and not by protocol: the memory is gone at the next
+// boot and nothing has to remember to clear it.
 //
-// That makes the password transient BY CONSTRUCTION rather than by protocol:
-// the memory is gone at the next boot and nothing has to remember to clear it.
-// The previous design put the file on STATE and cleared it on the next boot
-// from a marker, which made "transient" a thing a oneshot had to SUCCEED at --
-// and a failed, masked or reordered oneshot left the password live on disk.
+// The checks prove that from the artifact: the link exists and names
+// /run/mos/shadow, and nothing in the image satisfies either end of it, or PAM
+// would read a file byte-identical on every device in the fleet; the reconciler
+// runs BEFORE every reader and each unit it orders against is in the image,
+// because systemd drops an ordering against an absent unit silently; it reads
+// the FACTORY copy and not the previous boot's; and the factory copy carries no
+// usable hash for any account.
 //
-// Every check below is one half of proving that from the artifact:
-//
-//   * the link exists and names /run/mos/shadow -- and nothing in the image can
-//     satisfy either end of it, or PAM would read a file byte-identical on
-//     every device in the fleet;
-//   * the reconciler runs BEFORE every reader, and each unit it orders against
-//     is actually in the image, because systemd drops an ordering against a
-//     unit that is not there SILENTLY;
-//   * it reads the FACTORY copy and not the previous boot's, because a build
-//     loop reading its own destination is exactly how a password survives;
-//   * and the factory copy itself carries no usable hash for any account.
-//
-// TWO CHECKS DISAGREE ABOUT AN EMPTY PASSWORD FIELD, AND BOTH ARE PORTED.
-//
-// `factory-shadow-locked` treats an EMPTY field as
-// locked -- its awk is `$2 !~ /^[!*]/ && $2 != ""`. `factory-shadow-accounts-
-// locked` (:3875-3899) treats it as the WORST case and says so: an empty field is
-// passwordless login, not a locked marker. The second is right and the first
-// would pass an image the second fails.
-//
-// Both are reproduced exactly as they are. A port that quietly hardened the
-// first would agree with the oracle on both shipped images and diverge on the
-// one image where the difference is the whole point -- and the divergence would
-// be the port's, discovered by nobody. It is recorded here and in the M4d
-// report as a finding about os/verify-image-v2.sh, which this batch does not
-// edit.
+// Two oracle checks disagree about an empty password field and both are ported
+// as they are. `factory-shadow-locked` treats an empty field as locked, its awk
+// being `$2 !~ /^[!*]/ && $2 != ""`; `factory-shadow-accounts-locked`
+// (:3875-3899) treats it as the worst case, passwordless login rather than a
+// locked marker. The second is right and the first would pass an image the
+// second fails. Recorded here and in the M4d report as a finding about
+// os/verify-image-v2.sh.
 
 import { readdirSync, readFileSync, readlinkSync } from 'node:fs'
 import { dirname, join } from 'node:path'
@@ -305,7 +286,7 @@ export const SHADOW_CHECKS: readonly CheckCase[] = [
   },
 
   {
-    // 0640 root:shadow, and it must SURVIVE PACKING -- which is why this reads
+    // 0640 root:shadow, and it must survive packing -- which is why this reads
     // the unpacked tree rather than the source overlay. squashfs carries the
     // mode and ownership; a build step that copied the file through something
     // that did not is invisible everywhere else.
@@ -593,7 +574,7 @@ export const SHADOW_CHECKS: readonly CheckCase[] = [
     //
     // TWO failure branches with two messages, because they are two different
     // defects with different repairs. EMPTY means the account accepts any
-    // password on this device. A USABLE HASH means a credential every device in
+    // password on this device. A usable hash means a credential every device in
     // the fleet shares. Reporting one as the other sends the fix the wrong way.
     id: 'factory-shadow-accounts-locked',
     shell: {

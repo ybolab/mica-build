@@ -76,10 +76,10 @@ function versionArtifact(name = 'thing', path = '/usr/bin/thing', p: () => Pin =
   return { name, path, pin: p, contract: { kind: 'version', argv: ['--version'] } }
 }
 
-// ─── the tokeniser ──────────────────────────────────────────────────────────
+// the tokeniser
 
 describe('versionTokens -- one reader for ten different sentences', () => {
-  // THE TEN REAL OUTPUTS, captured 2026-08-26 by running each binary inside the
+  // The ten real outputs, captured 2026-08-26 by running each binary inside the
   // x64 factory root built from this tree. These are the positive controls, and
   // they are measurements rather than guesses -- five of them are not in
   // /usr/bin, which is how the shapes came to be read off the real thing.
@@ -122,7 +122,7 @@ describe('versionTokens -- one reader for ten different sentences', () => {
     expect(versionTokens('thing v1.2.3')).toEqual(['1.2.3'])
   })
 
-  // THE CASE A RIGHT-HAND GUARD BROKE. The first version of versionTokens
+  // The case a right-hand guard broke. The first version of versionTokens
   // carried `(?![.0-9])`, which greed already made redundant -- and which
   // rejected a version at the end of a sentence, yielding no token at all and
   // turning a correct binary red. Locked in here so the guard cannot come back.
@@ -145,7 +145,7 @@ describe('versionTokens -- one reader for ten different sentences', () => {
   test('a line with no dotted number yields nothing, rather than something wrong', () => {
     expect(versionTokens('conmon version')).toEqual([])
     expect(versionTokens('')).toEqual([])
-    // RECORDED BEHAVIOUR, not an accident: a single-component version is not a
+    // Recorded behaviour, not an accident: a single-component version is not a
     // token. No pin in this tree is one; if one ever is, this run goes red with
     // "reports NO version at all" rather than passing by accident.
     expect(versionTokens('thing 5')).toEqual([])
@@ -177,7 +177,7 @@ describe('versionTokens -- one reader for ten different sentences', () => {
     expect(versionTokens('mosd 0.10.0 (abc1234)')).toEqual(['0.10.0'])
   })
 
-  // A MEASURED LIMIT, recorded rather than discovered later. If a crate ever
+  // A measured limit, recorded rather than discovered later. If a crate ever
   // takes a pre-release version the pin and the output would BOTH carry the
   // suffix, the token would be the numeric head only, and this run would go
   // RED naming both sides -- visible, not a silent pass. Stated so M7d knows
@@ -192,7 +192,7 @@ describe('versionTokens -- one reader for ten different sentences', () => {
   // M7b wrote this when the commit half was printed and never asserted. M7d
   // made it asserted -- see `BuildCommitFact` in smoke.ts for the recorded fact
   // that made that possible, and for why comparing against `git rev-parse HEAD`
-  // would still be vacuous. The case KEEPS ITS SUBJECT: the reported line is
+  // would still be vacuous. The case keeps its subject: the reported line is
   // carried verbatim into every version PASS message, including the ten rows
   // that assert no commit, where the printed line is the only record of one.
   test('the reported line is carried into the PASS message, whether or not a commit is asserted', () => {
@@ -205,7 +205,7 @@ describe('versionTokens -- one reader for ten different sentences', () => {
   })
 })
 
-// ─── the commit half ────────────────────────────────────────────────────────
+// the commit half
 
 describe('reportsCommit -- a token match, and the -dirty confusion it exists for', () => {
   const CLEAN = 'mosd 0.1.0 (00b674e9a628)'
@@ -216,7 +216,7 @@ describe('reportsCommit -- a token match, and the -dirty confusion it exists for
     expect(reportsCommit(DIRTY, '00b674e9a628-dirty')).toBe(true)
   })
 
-  // THE CASE THE GUARDS EXIST FOR, and the one a `String.includes` gets wrong.
+  // The case the guards exist for, and the one a `String.includes` gets wrong.
   // A binary built from a MODIFIED worktree must not report as agreeing with
   // the clean sha -- that is the entire purpose of the dirty marker, and a
   // substring test hands it straight back.
@@ -238,7 +238,7 @@ describe('reportsCommit -- a token match, and the -dirty confusion it exists for
     expect(reportsCommit('mosd 0.1.0 (unknown)', '00b674e9a628')).toBe(false)
   })
 
-  // AN EMPTY EXPECTATION MATCHES NOTHING, rather than everything. Without the
+  // An empty expectation matches nothing, rather than everything. Without the
   // guard, `new RegExp('')` matches every line and this becomes a check that
   // cannot fail -- the failure `readPin` refuses one level down in its own
   // words ("an empty value would make the comparison pass by finding nothing").
@@ -339,7 +339,7 @@ describe('readMosdBuildFact -- what the build recorded, never what HEAD says', (
     expect(readMosdBuildFact('x64', dir).commit).toBe('00b674e9a628-dirty')
   })
 
-  // AN EMPTY COMMIT IS "the build could not resolve one", which is a different
+  // An empty commit is "the build could not resolve one", which is a different
   // statement from "no record was written", and the two must not look alike:
   // one is an image built outside a checkout, the other is an image built
   // before this record existed.
@@ -353,7 +353,7 @@ describe('readMosdBuildFact -- what the build recorded, never what HEAD says', (
     expect(f.source).not.toMatch(/does not exist/)
   })
 
-  // A RECORD THAT EXISTS AND CANNOT BE READ IS A REFUSAL. Treating it as
+  // A record that exists and cannot be read is a refusal. Treating it as
   // "nothing recorded" would let a malformed file switch the assertion off.
   test('a record with no commit field is refused, naming the file and the writer', () => {
     const dir = join(scratch(), 'mosd-record-broken')
@@ -383,7 +383,7 @@ describe('pinSource', () => {
   })
 })
 
-// ─── judge ──────────────────────────────────────────────────────────────────
+// judge
 
 describe('judge -- the version contract', () => {
   test('exit 0 and the pinned version passes, and says where the pin came from', () => {
@@ -452,7 +452,7 @@ describe('judge -- the version contract', () => {
   })
 
   test('an absent path is also 127, and the two 127s are told apart by what came back', () => {
-    // THE POSITIVE CONTROL FOR THE CASE ABOVE. Same status, opposite diagnosis;
+    // The positive control for the case above. Same status, opposite diagnosis;
     // if `diagnose` keyed on the status alone this pair could not both pass.
     const r = judge(versionArtifact(), pin('1.2.3'), ABSENT_PATH)
     expect(r.verdict).toBe('fail')
@@ -575,16 +575,16 @@ describe('catatonit -- two normalisations, and a loose includes() would pass on 
 
   test('the shipped pin and the real output agree, through both normalisations', () => {
     const p = catatonit.pin()
-    // PIN SIDE: the git tag prefix comes off.
+    // Pin side: the git tag prefix comes off.
     expect(p.recorded).toBe('v0.2.1')
     expect(p.expected).toBe('0.2.1')
-    // OUTPUT SIDE: `_catatonit` terminates the token, it is not trimmed by a
+    // Output side: `_catatonit` terminates the token, it is not trimmed by a
     // rule written for this one artifact.
     expect(versionTokens(SAID)).toEqual(['0.2.1'])
     expect(judge(catatonit, p, ok(SAID)).verdict).toBe('pass')
   })
 
-  // THE FAILING SIDE, which is what makes the line above evidence.
+  // The failing side, which is what makes the line above evidence.
   test('a wrong pin turns it RED -- so this is not a check that cannot fail', () => {
     const r = judge(catatonit, { ...catatonit.pin(), recorded: 'v0.2.2', expected: '0.2.2' }, ok(SAID))
     expect(r.verdict).toBe('fail')
@@ -592,7 +592,7 @@ describe('catatonit -- two normalisations, and a loose includes() would pass on 
     expect(r.message).toContain('0.2.1')
   })
 
-  // WHY IT IS EQUALITY AGAINST AN EXTRACTED TOKEN AND NOT A SUBSTRING TEST.
+  // Why it is equality against an extracted token and not a substring test.
   // Every one of these `includes` is TRUE on the real output, so a runner built
   // that way would accept four different wrong pins and one right one, and
   // would look identical doing it.
@@ -618,7 +618,7 @@ describe('catatonit -- two normalisations, and a loose includes() would pass on 
   })
 })
 
-// ─── THE VERSION LOOP, as a loop ────────────────────────────────────────────
+// The version loop, as a loop
 
 describe('the version loop closes: bump the pin, do not rebuild, run goes red', () => {
   test('one fixture file, one unchanged binary, one edit -- and the verdict flips', async () => {
@@ -679,7 +679,7 @@ describe('the version loop closes: bump the pin, do not rebuild, run goes red', 
   })
 })
 
-// ─── conclude, and the vacuity guard ────────────────────────────────────────
+// conclude, and the vacuity guard
 
 describe('conclude', () => {
   const r = (verdict: SmokeResult['verdict']): SmokeResult =>
@@ -689,7 +689,7 @@ describe('conclude', () => {
     const c = conclude([r('pass'), r('pass')], 2)
     expect(c.conclusion).toBe('PASS')
     expect(c.exitCode).toBe(0)
-    // THE SAME FOUR NUMBERS THE OTHER TWO CONCLUSIONS PRINT, in the same order.
+    // The same four numbers the other two conclusions print, in the same order.
     // Until M7d this line read `(2/2 artifacts executed, version identity
     // asserted)` -- a second format for one summary, which left `0 unclaimed`
     // unstated on the only line most readers look at.
@@ -730,7 +730,7 @@ describe('conclude', () => {
       .toContain('RESULT: FAIL (1 pass, 1 fail, 0 unclaimed, of 2)')
   })
 
-  // THE VACUITY GUARDS. `RESULT: PASS (6/6)` is invariant under a run that
+  // The vacuity guards. `RESULT: PASS (6/6)` is invariant under a run that
   // threw half its work away, which is exactly how the shell lint this package
   // replaced reported PASS over zero checks.
   test('fewer conclusions than the register is a FAIL whatever the conclusions were', () => {
@@ -752,7 +752,7 @@ describe('conclude', () => {
   })
 })
 
-// ─── the image record ───────────────────────────────────────────────────────
+// the image record
 
 describe('parseFactoryRootRecord', () => {
   const GOOD = [
@@ -792,7 +792,7 @@ describe('parseFactoryRootRecord', () => {
     expect(() => parseFactoryRootRecord(mutate(GOOD, 'bytes\t250209280', 'bytes\t0'), '/x')).toThrow(/not a positive integer/)
   })
 
-  // THERE IS DELIBERATELY NO CASE HERE THAT READS THE REAL
+  // There is deliberately no case here that reads the real
   // `_out/x64/factory-root.txt`. It would pass on a host that had built an
   // image and take a silent no-op branch on one that had not -- and this suite
   // must run green with `_out/` absent, so the no-op branch is the one CI takes
@@ -833,7 +833,7 @@ describe('readFactoryRoot -- a missing image REFUSES rather than skipping', () =
   })
 })
 
-// ─── the declined-feature guard ─────────────────────────────────────────────
+// the declined-feature guard
 
 describe('declinedFeatures -- reading what the build left out, off its own manifest', () => {
   // The exact line os/build/src/stages.ts writes when nothing was declined,
@@ -860,7 +860,7 @@ describe('declinedFeatures -- reading what the build left out, off its own manif
   })
 })
 
-// ─── the preflight, and the arm64 wall ──────────────────────────────────────
+// the preflight, and the arm64 wall
 
 describe('preflight -- the positive control that runs before any conclusion', () => {
   test('a root that can execute /bin/true is accepted', async () => {
@@ -895,7 +895,7 @@ describe('preflight -- the positive control that runs before any conclusion', ()
   })
 })
 
-// ─── the argv the seam actually builds ──────────────────────────────────────
+// the argv the seam actually builds
 
 describe('dockerArgv', () => {
   test('runs the absolute path in the loaded ref, with no network and no leftover container', () => {
@@ -944,7 +944,7 @@ describe('smokeRun over the real register', () => {
     expect(run.results.find(r => r.name === 'crun')!.message).not.toContain('commit')
   })
 
-  // THE COMMIT HALF DRIVING THE WHOLE RUN RED. The binaries are unchanged; only
+  // The commit half driving the whole run red. The binaries are unchanged; only
   // the recorded build fact moves, which is the shape of the failure this
   // check exists for -- an image whose mosd is not from the build beside it.
   test('a build record naming a different commit takes the run to FAIL', async () => {
@@ -987,7 +987,7 @@ describe('smokeRun over the real register', () => {
     expect(crun.message).toMatch(/path does not exist in the factory root/)
   })
 
-  // THE GUARD HAS TO BE CALLED, not merely to exist. Found by mutation: with
+  // The guard has to be called, not merely to exist. Found by mutation: with
   // `unclaimedFaults` still correct but no longer consulted by `smokeRun`, the
   // whole suite stayed green -- every case was testing the function and none
   // was testing that the runner asks it. A guard nothing calls is a guard
@@ -1041,7 +1041,7 @@ describe('smokeRun over the real register', () => {
     expect(run.conclusion.line).toContain('1 unclaimed')
     expect(run.conclusion.conclusion).toBe('INCOMPLETE')
 
-    // AND THE SHIPPED REGISTER HAS NONE TO NAME, which is the state M7d put it
+    // And the shipped register has none to name, which is the state M7d put it
     // in and is asserted here rather than left implicit.
     const shipped = await smokeRun({ board: 'x64', exec: honest })
     expect(shipped.conclusion.line).toContain('0 unclaimed')

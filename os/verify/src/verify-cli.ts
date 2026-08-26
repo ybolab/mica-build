@@ -4,29 +4,23 @@
 //   bash os/verify/run.sh --verify --board x64 --image PATH
 //   bash os/verify/run.sh --verify --board x64 --probe
 //
-// This is what `make os-verify-cx3576-v2` runs: the only entry point that
-// verifies an assembled image against the contract.
+// What `make os-verify-cx3576-v2` runs, and orchestration only: the checks are
+// in checks.ts and the sixteen modules it composes, the tools are in tools.ts,
+// and nothing here decides anything about an image.
 //
-// ORCHESTRATION ONLY. The checks are in checks.ts and the sixteen modules it
-// composes; the tools are in tools.ts; nothing here decides anything about an
-// image. It reads the register, runs it, and prints.
-//
-// THE OUTPUT FORMAT IS A CONTRACT, not a presentation choice. One
-// `PASS:`/`FAIL:`/`SKIP:` line per conclusion and a final `RESULT:` line:
+// The output format is a contract, not a presentation choice: one
+// `PASS:`/`FAIL:`/`SKIP:` line per conclusion and a final `RESULT:` line.
 // test/apid-api's own harness describes its output as "the shape os/verify
-// prints", and docs/task/RFCT-039 and RFCT-054 quote `RESULT: PASS (n/n)`
-// lines as evidence. Changing how a verdict READS makes every one of those
-// records unreadable.
+// prints", and docs/task/RFCT-039 and RFCT-054 quote `RESULT: PASS (n/n)` lines
+// as evidence, so changing how a verdict reads makes those records unreadable.
 //
-// A SKIP IS NOT A PASS, and it must not be able to look like one: an
-// assertion that describes a bootloader only one board has is not a failure and
-// not a success, and the only wrong thing to do with it is to run it silently
-// or not at all. Both wrong outcomes produce the same green as a real pass.
-//
-// ZERO CONCLUSIONS IS A FAILURE. `RESULT: PASS (0/0 checks)` is what the shell
-// lint this package replaced printed when its counters died in a subshell, and
-// it is invariant under a run in which nothing executed. So an empty run is
-// turned red here, by count, the same way run.sh does it for `bun test`.
+// A SKIP is not a PASS and must not be able to look like one: an assertion about
+// a bootloader only one board has is neither a failure nor a success, and both
+// wrong outcomes -- running it silently, or not at all -- produce the same green
+// as a real pass. Zero conclusions is a failure for the same reason:
+// `RESULT: PASS (0/0 checks)` is what the shell lint this package replaced
+// printed when its counters died in a subshell, and it is invariant under a run
+// in which nothing executed, so an empty run is turned red here by count.
 
 import { existsSync, mkdirSync, readdirSync } from 'node:fs'
 import { isAbsolute, join, resolve } from 'node:path'
@@ -63,7 +57,7 @@ function usage(): string {
 /**
  * The board, or a message naming what this tree actually ships.
  *
- * NO DEFAULT BOARD. `MOS_BOARD` is honoured because the oracle's callers set it
+ * No default board. `MOS_BOARD` is honoured because the oracle's callers set it
  * and because `make os-verify-<board>-v2` is per board, but a bare run refuses
  * rather than falling back to cx3576. That fallback is the exact defect this
  * campaign has been removing: os/verify-image-v2.sh:28 defaulted BOARD_DIR to

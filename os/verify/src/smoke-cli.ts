@@ -4,14 +4,14 @@
 // shape `src/verify-cli.ts` already established for the image contract, so a
 // reader of one run knows how to read the other.
 //
-// THE ARGUMENT PARSER REFUSES WHAT IT DOES NOT KNOW, deliberately and for the
+// The argument parser refuses what it does not know, deliberately and for the
 // reason run.sh's "has to be the FIRST argument" refusal gives about `--lint`:
 // an unknown option that is accepted and ignored turns a request for one thing
 // into a green about another. There is no `--opt=value` form for the same
 // reason -- values come from the next argv element, so `--board=x64` is an
 // error that names itself rather than a board called `=x64`.
 //
-// CITED BY CONTENT AND NOT BY LINE NUMBER, which this file got wrong once: the
+// Cited by content and not by line number, which this file got wrong once: the
 // citation said `run.sh:98`, and adding `--smoke` to run.sh moved that refusal
 // to line 127. A reference that the referring change itself invalidates is the
 // reference rot this tree keeps having to repair.

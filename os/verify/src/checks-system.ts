@@ -14,35 +14,22 @@
 //   ssh.service's KillMode / ExecReload    :4525  2 / 2
 //   libcrypt and the crypt(3) format      :4572  3 / 3
 //
-// They are one module because splitting ten two-line families across ten files
-// would put more prose in headers than in checks, and because every one of them
-// is `packedRoot()` plus a read.
+// One module because every one is `packedRoot()` plus a read.
 //
-// WHAT IS READ OUT OF mosd/ HERE, AND WHY.
+// The profile key and default path are read out of `provisioning.rs` and the
+// crypt(3) prefix out of `transient.rs`, both the oracle's own reads: mosd fails
+// closed on a profile it cannot parse, so an image whose key had drifted would
+// self-provision to prod and disable its own sshd with every check still green.
+// Reading those sources is in scope under PLAN-014's Scope section -- "No change
+// to ... `mosd/` Rust sources" -- and nothing here writes to them.
 //
-// The profile KEY and default path come from `provisioning.rs`, and the crypt(3)
-// prefix from `transient.rs`. Both are the oracle's own reads and both exist for
-// the same reason as the connd contract: mosd FAILS CLOSED on a profile it
-// cannot parse, so an image whose key had drifted would self-provision to prod
-// and disable its own sshd with every check still green. Reading those sources
-// is in scope under PLAN-014's Scope section -- "No change to ... `mosd/` Rust
-// sources" -- and nothing here writes to them.
-//
-// AND ONE DEFECT IN THE CODE UNDER TEST, REPRODUCED RATHER THAN FIXED.
-//
+// One defect is reproduced rather than fixed:
 // `fwenv_lines="$(grep -cE '^/dev/' "${fwenv}" 2>/dev/null || echo 0)"` (:3331).
-// On a file that EXISTS and has no `^/dev/` line, `grep -c` prints `0` and exits
-// 1, so the `|| echo 0` fires as well and the variable becomes the two-line
-// string "0\n0" -- which the oracle then interpolates into a FAIL message,
-// putting a raw newline in the middle of a conclusion. `parseShellRun`'s
-// self-consistency guard would refuse that run, because the second half of the
-// message is a stdout line with no PASS/FAIL/SKIP prefix.
-//
-// It is reproduced here, exactly, and asserted as its own case. Neither shipped
-// image reaches it -- both have two device lines -- so nothing is on fire, and a
-// port that quietly emitted `0` would agree with the oracle on both shipped
-// images and diverge on the one image where the difference is the whole point.
-// Reported for M4e; not fixed here.
+// On a file that exists with no `^/dev/` line, `grep -c` prints `0` and exits 1,
+// so `|| echo 0` fires too and the variable becomes "0\n0" -- a raw newline in
+// the middle of a FAIL message, which `parseShellRun`'s self-consistency guard
+// would refuse. Neither shipped image reaches it; both have two device lines.
+// Reported for M4e.
 
 import { existsSync, lstatSync, readFileSync, readdirSync, readlinkSync, realpathSync, statSync, type Stats } from 'node:fs'
 import { join } from 'node:path'
@@ -69,9 +56,7 @@ const AK_EXPECT = '/etc/ssh/authorized_keys.d/%u'
 const SSH_UNIT = '/usr/lib/systemd/system/ssh.service'
 const MOS_HEALTH = '/usr/lib/mos/mos-health'
 
-// ---------------------------------------------------------------------------
 // readers
-// ---------------------------------------------------------------------------
 
 function text(root: string, path: string): string {
   try {
@@ -113,9 +98,7 @@ function modeOf(root: string, path: string): string {
   }
 }
 
-// ---------------------------------------------------------------------------
 // systemd-networkd, and the ELF architecture of the two daemons
-// ---------------------------------------------------------------------------
 
 const NETWORKD_CHECK: CheckCase = {
   // TWO ways a unit is enabled, and the second is not decoration: Debian's
@@ -151,7 +134,7 @@ const ELF_MACHINE: ReadonlyMap<string, string> = new Map([['arm64', 'b700'], ['a
  * one against MOS_ARCH, which catches a host-arch artefact shipping to a device.
  */
 function elfArchCheck(board: Board, path: string): CheckCase {
-  // ONE ENTRY PER (BOARD, PATH), generated from the board's own MOS_ARCH.
+  // One entry per (board, path), generated from the board's own MOS_ARCH.
   //
   // `${path} is a ` alone claims `${path} is a regular file` too -- both
   // binaries are in batch 2a's sq_regular list -- and `${path} is a ` cannot be
@@ -192,9 +175,7 @@ function elfArchCheck(board: Board, path: string): CheckCase {
   }
 }
 
-// ---------------------------------------------------------------------------
 // the bootloader's environment access from Linux
-// ---------------------------------------------------------------------------
 
 const BOOTENV_CHECKS: readonly CheckCase[] = [
   {
@@ -279,7 +260,7 @@ const BOOTENV_CHECKS: readonly CheckCase[] = [
     // TWO device lines is what marks the environment redundant to libubootenv;
     // with only one side configured, every read from the other fails its CRC.
     //
-    // THE COUNT IS THE ORACLE'S, INCLUDING ITS DEFECT. See the header: on a file
+    // The count is the oracle's, including its defect. See the header: on a file
     // that exists with no `^/dev/` line, `grep -c ... || echo 0` yields the
     // two-line string "0\n0", and the oracle interpolates it into the message.
     id: 'bootenv-fw-env-two-lines',
@@ -418,9 +399,7 @@ export function devLineCount(root: string, path: string): string {
   return n === 0 ? '0\n0' : String(n)
 }
 
-// ---------------------------------------------------------------------------
 // the health gate's two root-side conclusions
-// ---------------------------------------------------------------------------
 
 const HEALTH_CHECKS: readonly CheckCase[] = [
   {
@@ -485,18 +464,16 @@ const HEALTH_CHECKS: readonly CheckCase[] = [
   },
 ]
 
-// ---------------------------------------------------------------------------
 // systemd-repart definitions
-// ---------------------------------------------------------------------------
 
 const REPART_CHECKS: readonly CheckCase[] = [
   {
-    // repart pairs definitions with partitions by TYPE UUID in DISK ORDER, so
+    // repart pairs definitions with partitions by type UUID in disk order, so
     // the count must match the number of linux-generic partitions exactly: one
     // too few and the grow flag attaches to the wrong partition, one too many
     // and repart CREATES a partition nobody asked for.
     //
-    // The expected count is COUNTED IN THE IMAGE'S OWN GPT, which is what makes
+    // The expected count is counted in the image's own GPT, which is what makes
     // this an integration check rather than two hardcoded numbers agreeing with
     // each other -- and what proves the loader partition is invisible to repart,
     // since its distinct type keeps it out of the count.
@@ -524,7 +501,7 @@ const REPART_CHECKS: readonly CheckCase[] = [
   },
 
   {
-    // EXACTLY ONE definition may grow, and it must be DATA's. A Weight= on the
+    // Exactly one definition may grow, and it must be DATA's. A Weight= on the
     // ephemeral definition grows the partition that is wiped by design.
     id: 'repart-one-growing-definition',
     shell: {
@@ -654,9 +631,7 @@ function discardOverrides(root: string): string[] {
   return found.sort()
 }
 
-// ---------------------------------------------------------------------------
 // the AuthorizedKeysFile drop-in
-// ---------------------------------------------------------------------------
 
 /** `sed -n 's/^ *AuthorizedKeysFile +\(.*[^ ]\) *$/\1/p' | tail -n1`. */
 function authorizedKeysValue(root: string, path: string): string {
@@ -769,9 +744,7 @@ function lastValue(root: string, path: string, key: string): string {
   return values.at(-1) ?? ''
 }
 
-// ---------------------------------------------------------------------------
 // the image profile, and the SSH default it selects
-// ---------------------------------------------------------------------------
 
 export interface ProfileContract {
   readonly key: string
@@ -788,7 +761,7 @@ export function readProfileContract(): ProfileContract {
 
 const PROFILE_CHECKS: readonly CheckCase[] = [
   {
-    // mosd FAILS CLOSED on a missing profile: every image would self-provision
+    // mosd fails closed on a missing profile: every image would self-provision
     // to prod and disable its own sshd with every other check still green. So
     // the path and the key are READ from mosd rather than restated.
     id: 'profile-path-matches-mosd',
@@ -947,9 +920,7 @@ function sshWants(root: string): string[] {
   return found.sort()
 }
 
-// ---------------------------------------------------------------------------
 // ssh.service's inherited properties
-// ---------------------------------------------------------------------------
 
 interface SshUnitCase {
   readonly id: string
@@ -1029,9 +1000,7 @@ const SSH_UNIT_CHECKS: readonly CheckCase[] = [
   }),
 ]
 
-// ---------------------------------------------------------------------------
 // libcrypt, and the crypt(3) format mosd writes
-// ---------------------------------------------------------------------------
 
 const MULTIARCH: ReadonlyMap<string, string> = new Map([
   ['arm64', 'aarch64-linux-gnu'],
@@ -1201,9 +1170,7 @@ function printableRuns(bytes: Buffer): string[] {
   return out
 }
 
-// ---------------------------------------------------------------------------
 // every external binary the /usr/lib/mos boot scripts invoke
-// ---------------------------------------------------------------------------
 
 const BOOT_SCRIPT_COMMANDS: CheckCase = {
   // These scripts run at boot, as root, OUTSIDE any package's dependency graph,
@@ -1212,7 +1179,7 @@ const BOOT_SCRIPT_COMMANDS: CheckCase = {
   // Dockerfile installs coreutils explicitly -- it arrives with the base image
   // and would disappear without a word if the base were ever slimmed.
   //
-  // The VACUITY GUARD is half the check. If the extractor stops seeing commands,
+  // The vacuity guard is half the check. If the extractor stops seeing commands,
   // an empty set makes the presence test pass while proving nothing at all, so
   // fewer than ten extracted names is itself a failure.
   id: 'boot-scripts-commands-resolve',
@@ -1281,7 +1248,6 @@ function bootScriptCommands(root: string): string[] {
   return [...all].sort()
 }
 
-// ---------------------------------------------------------------------------
 
 export const SYSTEM_CHECKS: readonly CheckCase[] = [
   NETWORKD_CHECK,

@@ -3,37 +3,28 @@
 //
 // Os/verify-image-v2.sh reads a disk image with sgdisk, mtools at an offset,
 // debugfs/tune2fs over a dd-extracted partition, unsquashfs and a userspace
-// `veritysetup verify` -- and NOTHING ELSE: no loop mounts, no losetup, no
+// `veritysetup verify` -- and nothing else: no loop mounts, no losetup, no
 // device-mapper, no mount(8). The port keeps that toolset exactly, so this
 // file is about where the tools come from rather than which ones they are.
 //
-// TWO ROUTES, ONE SEAM -- the same shape os/verify/run.sh gave bun in M3, and
-// for the same reason. A caller passes an argv and reads an exit status and
-// cannot tell which route answered, which is what makes a host without
-// gptfdisk a SUPPORTED host rather than a documented limitation. The container
-// is the pinned IMAGE_ALPINE_3_21 -- the same key os/mkimage-v2.sh assembles
-// from and the same one the shell verifier re-execs into, resolved through the
-// one resolver, os/build-env/from.sh --ref. That is the point of a key rather
-// than a literal at both ends: this reads back a GPT, a FAT slot and a
-// squashfs that the assembler wrote, with tools out of the same base. Two
-// floating tags could drift apart between the write and the read.
+// Two routes, one seam: a caller passes an argv and reads an exit status and
+// cannot tell which answered, which makes a host without gptfdisk a supported
+// host. The container is the pinned IMAGE_ALPINE_3_21 -- the same key
+// os/mkimage-v2.sh assembles from and the shell verifier re-execs into, resolved
+// through os/build-env/from.sh --ref -- so this reads back a GPT, a FAT slot and
+// a squashfs with tools out of the same base the assembler used.
 //
-// ONE CONTAINER PER RUNTIME, NOT ONE PER CALL. `docker run` costs ~200 ms and
-// `apk add` costs seconds; the shell verifier pays both once because it
-// re-execs its WHOLE self inside. A port that made one container per tool call
-// would pay them per call, and M4b..M4d will make hundreds. So the container is
-// created once, prepared once, and every call is a `docker exec` into it.
+// One container per runtime, not one per call: `docker run` costs ~200 ms and
+// `apk add` costs seconds, and the port makes hundreds of calls. The container
+// is created once, prepared once, and every call is a `docker exec` into it.
 // dispose() removes it, and so does an exit handler, because a leaked container
 // holding a read-only mount of the repository is a mess a later run inherits.
 //
-// A TOOL THAT FAILS IS NOT AN EMPTY STRING. The shell verifier ends nearly
-// every capture in `|| true`, so a tool that could not run at all arrives at the
-// check as "", and the check then fails describing the VALUE rather than the
-// tool. That is survivable there because the check still goes red. It is not a
-// contract to reproduce: here a non-zero exit throws ToolError naming the tool,
-// the argv, the status and the stderr, and a caller that means to tolerate a
-// status says so with `allow`. The check decides what a failure means; the
-// helper never decides it by silence.
+// A tool that fails is not an empty string. The shell verifier ends nearly every
+// capture in `|| true`, so a tool that could not run arrives at the check as ""
+// and the check fails describing the value rather than the tool. Here a non-zero
+// exit throws ToolError naming the tool, the argv, the status and the stderr,
+// and a caller that means to tolerate a status says so with `allow`.
 
 import { existsSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
@@ -110,33 +101,22 @@ export interface ToolResult {
 /**
  * How many times the package install is attempted before it is believed.
  *
- * THE INDEX IS FETCHED OVER THE NETWORK AND APK LIES ABOUT LOSING IT. M6a
- * measured it on this host: 40 consecutive `apk add` runs in the pinned alpine,
- * 3 of them failed, and the failure reads
+ * The index is fetched over the network and apk lies about losing it. Measured
+ * on this host: 40 consecutive `apk add` runs in the pinned alpine, 3 of them
+ * failed, and the failure reads `ERROR: unable to select packages: e2fsprogs (no
+ * such package):` about a package that image unquestionably carries, because the
+ * index fetch failed and apk describes an empty index as an empty repository. A
+ * fourth shape appeared once: exit 6 naming a half-resolved e2fsprogs-libs, the
+ * same fetch failing further along.
  *
- *     ERROR: unable to select packages:
- *       e2fsprogs (no such package):
- *
- * about a package that image unquestionably carries -- because the INDEX FETCH
- * failed and apk describes an empty index as an empty repository. (A fourth
- * shape appeared once: exit 6 naming a half-resolved e2fsprogs-libs, which is
- * the same fetch failing further along.)
- *
- * WHY A RETRY IS LEGITIMATE HERE AND A VERDICT RETRY IS NOT.
- *
- * This package's rule is that an unreliable environment is itself a finding and
- * that a retry hiding one is a retry deciding the verdict. That rule is about a
- * check's ANSWER. This is not an answer: it is the setup, it fails ~7% of the
- * time, it MISREPORTS its own cause, and the header above notes that the port
- * batches make hundreds of these calls -- so at one attempt the network decides
- * whether a parity run is red, for a reason with nothing to do with the image.
- *
- * The distinction, stated once: a retry is legitimate when the underlying
- * failure is MISREPORTED and the retry preserves an honest message; it is
- * illegitimate when it turns a real signal into silence. A package that
- * genuinely is not in the repository fails identically every attempt, and the
- * refusal says how many were made -- so a reader is never told about one run
- * when there were three.
+ * A retry is legitimate when the underlying failure is misreported and the retry
+ * preserves an honest message; it is illegitimate when it turns a real signal
+ * into silence. This is the setup and not a check's answer: it fails ~7% of the
+ * time, it misreports its own cause, and the port batches make hundreds of these
+ * calls, so at one attempt the network decides whether a parity run is red for a
+ * reason with nothing to do with the image. A package that genuinely is not in
+ * the repository fails identically every attempt, and the refusal says how many
+ * were made, so a reader is never told about one run when there were three.
  */
 export const APK_ATTEMPTS = 3
 
@@ -241,7 +221,7 @@ export interface RuntimeRequest {
    * Host paths the tools must be able to READ. Mounted at their own path.
    *
    * Not `/w`, not `/work`. The two image assemblers mount a short name because
-   * they RUN A SCRIPT and construct their paths inside it; this runtime is a
+   * they run a script and construct their paths inside it; this runtime is a
    * TOOL handed paths from outside -- the image path comes from a caller's
    * argv or from paths.ts climbing import.meta.dir, and both are HOST absolute
    * paths. Under a short mount they would name nothing inside the container,
@@ -557,20 +537,20 @@ async function createContainerRuntime(
     return { ...r, argv }
   }
 
-  // THE MOUNT THAT SUCCEEDS AND CARRIES NOTHING. On this host a bind mount of
-  // anything under /tmp propagates as an EMPTY DIRECTORY rather than failing --
+  // The mount that succeeds and carries nothing. On this host a bind mount of
+  // anything under /tmp propagates as an empty directory rather than failing --
   // measured 2026-08-25 and recorded at os/verify/run.sh:217. Without a guard, a
   // helper would report "sgdisk: cannot open image.img" about a file the host
   // reads fine, and send the reader to look for a path they can `cat`.
   //
-  // EVERY PROBE HERE IS A PROBE FOR CONTENT, NOT FOR A PATH, and that
+  // Every probe here is a probe for content, not for a path, and that
   // distinction was found by driving it rather than reasoned about. The first
   // version asked `[ -e "$dir" ]` of each mounted directory -- and an empty
   // mount SATISFIES that: the directory is there inside the container, it just
   // carries nothing. Run with --work under /tmp it reported no problem at all.
   // A directory's existence is exactly the fact a broken bind mount preserves.
   //
-  // So: a read-only directory is proved by a WITNESS ENTRY taken from the host
+  // So: a read-only directory is proved by a witness entry taken from the host
   // listing, and the work directory -- which is written, and where every
   // extracted partition lands -- by a sentinel written here and read back
   // inside, compared byte for byte.

@@ -1,33 +1,27 @@
 // A board definition, read as DATA.
 //
-// WHY THIS FILE EXISTS AT ALL. `os/boards/<board>/board.env` is the single
-// source of truth for a board, and every consumer so far has read it by
-// `source`-ing it. That works because the shell will evaluate anything --
-// which is the whole problem: sourcing a board definition executes it. A key
+// `os/boards/<board>/board.env` is the single source of truth for a board and
+// every other consumer reads it by `source`-ing it, which executes it: a key
 // whose value is `$(rm -rf /)` is not a lint finding, it is a command that has
-// already run by the time any checker looks at the parsed result. The file is
-// data; nothing here ever hands it to a shell.
+// already run by the time a checker looks at the parsed result. Nothing here
+// ever hands the file to a shell.
 //
-// So this is a parser for the DIALECT the real board definitions are written
-// in -- assignments, comments, quotes, `${NAME}` and `$((arithmetic))` -- and
-// a refusal, by name, for everything else that would have been shell. The
-// refusal is the point. A parser that quietly skipped a line it did not
-// understand would produce a board definition missing a key, and a missing key
-// makes a shared script fail somewhere far from the omission (which is the
-// failure the retired os/verify/lint.sh recorded in its own header).
+// So this parses the dialect the real board definitions are written in --
+// assignments, comments, quotes, `${NAME}`, `$((arithmetic))` -- and refuses
+// everything else that would have been shell, by name. A parser that quietly
+// skipped a line it did not understand would produce a definition missing a key.
 //
-// WHAT IT ACCEPTS, and every one of these shapes is in a real board.env today:
+// What it accepts, and every one of these shapes is in a real board.env today:
 //
-//   KEY=value                     bare
-//   KEY="two words, and an ="     double quoted; expansions active
-//   KEY='literal $NOT_EXPANDED'   single quoted; nothing is
-//   KEY="${OTHER}"                a reference to a key declared ABOVE it
-//   KEY="lit ${OTHER} @SLOT@"     interpolation mixed with literal text
-//   KEY=$((A * B / C))            integer arithmetic over earlier keys
-//   KEY=""                        declared, and empty -- NOT the same as absent
-//   # a comment                   whole-line, or trailing after a value
+//   `KEY=value` bare; `KEY="two words, and an ="` double quoted, expansions
+//   active; `KEY='literal $NOT_EXPANDED'` single quoted, nothing is;
+//   `KEY="${OTHER}"` a reference to a key declared above it;
+//   `KEY="lit ${OTHER} @SLOT@"` interpolation mixed with literal text;
+//   `KEY=$((A * B / C))` integer arithmetic over earlier keys; `KEY=""`
+//   declared and empty, NOT the same as absent; `# a comment` whole-line or
+//   trailing after a value.
 //
-// WHAT IT REFUSES, each with its own message naming the construct:
+// What it refuses, each with its own message naming the construct:
 // command substitution in either spelling, backticks, every parameter
 // expansion operator (`${X:-y}` and friends), the shell special parameters,
 // unquoted whitespace, unquoted metacharacters and globs, line continuations,
@@ -35,13 +29,11 @@
 // a key this file does not define, and anything in `$(( ))` outside integer
 // arithmetic.
 //
-// THE DEFAULT-VALUE REFUSAL IS THE SUBTLE ONE. `${RAUC_GRUBENV:-}` is the
-// idiom every consumer of these files uses, and it is exactly what makes a
-// shell reader unable to tell "declared empty" from "not declared". x64
-// declares BOARD_FIRMWARE_FILES="" and BOARD_HWINIT_CONFS="" ON PURPOSE -- the
-// emptiness is the statement -- and `${X:-}` renders that identical to a board
-// that forgot them. This parser keeps the two apart and refuses to let a
-// board.env itself paper over the difference.
+// The default-value refusal is the subtle one. `${RAUC_GRUBENV:-}` is the idiom
+// every consumer of these files uses and is exactly what makes a shell reader
+// unable to tell "declared empty" from "not declared": x64 declares
+// BOARD_FIRMWARE_FILES="" and BOARD_HWINIT_CONFS="" on purpose, and `${X:-}`
+// renders that identical to a board that forgot them.
 
 /** Where in the file something went wrong, and what was there. */
 export class BoardEnvError extends Error {
@@ -163,7 +155,7 @@ class Parser {
     return { path: this.path, assignments, values, duplicates }
   }
 
-  // --- one assignment --------------------------------------------------------
+  // one assignment
 
   private assignment(defined: ReadonlyMap<string, string>): Assignment {
     const startLine = this.lineOf(this.i)
@@ -200,7 +192,7 @@ class Parser {
     return { key, value, raw, line: startLine }
   }
 
-  // --- a value, as a sequence of segments -----------------------------------
+  // a value, as a sequence of segments
 
   private value(defined: ReadonlyMap<string, string>, key: string): string {
     let out = ''
@@ -279,7 +271,7 @@ class Parser {
     }
   }
 
-  // --- $ ---------------------------------------------------------------------
+  // $
 
   private expansion(defined: ReadonlyMap<string, string>, key: string): string {
     const dollarAt = this.i
@@ -334,7 +326,7 @@ class Parser {
     return v
   }
 
-  // --- $(( )) ----------------------------------------------------------------
+  // $(( ))
 
   private arithmetic(defined: ReadonlyMap<string, string>, key: string): string {
     const openAt = this.i
@@ -362,7 +354,7 @@ class Parser {
     return value.toString()
   }
 
-  // --- scanning helpers ------------------------------------------------------
+  // scanning helpers
 
   private readName(): string {
     const from = this.i
@@ -421,7 +413,7 @@ function describe(c: string | undefined): string {
   return `\`${c}\``
 }
 
-// --- integer arithmetic, and nothing else ------------------------------------
+// integer arithmetic, and nothing else
 //
 // `$(( ))` in a shell is a small imperative language: it assigns, it
 // increments, it short-circuits, it indexes arrays. The board definitions use

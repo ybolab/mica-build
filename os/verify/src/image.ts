@@ -1,57 +1,17 @@
-// Reading a mos disk image without touching the host.
+// Reading a mos disk image without touching the host: os/verify-image-v2.sh's
+// toolset unchanged -- sgdisk for the GPT, mtools at an offset for the FAT boot
+// slots, a byte range read with debugfs/tune2fs for the ext4 partitions,
+// unsquashfs for the packed root, and `veritysetup verify`, which walks the hash
+// tree in USERSPACE and never creates a device-mapper target, never calls
+// losetup and never mounts anything. No host mutation, nothing that needs root.
 //
-// The typed helpers M4b..M4d port checks on top of. The toolset is
-// os/verify-image-v2.sh's, unchanged and deliberately so -- sgdisk for the
-// GPT, mtools at an offset for the FAT boot slots, a byte range extracted out
-// of the image and read with debugfs/tune2fs for the ext4 partitions,
-// unsquashfs for the packed root, and `veritysetup verify`, which walks the
-// hash tree in USERSPACE and never creates a device-mapper target, never calls
-// losetup and never mounts anything. No loop mounts, no host mutation, nothing
-// that needs root.
-//
-// WHAT THIS FILE IS REALLY ABOUT: TOOLS THAT SUCCEED AT NOTHING.
-//
-// Every helper below was driven against a malformed input before it was
-// written, on 2026-08-25 in the pinned alpine:3.21 with the package set the
-// shell verifier installs. Four of the five tools answer a question they could
-// not answer with something that reads exactly like an answer:
-//
-//   sgdisk -p FILE, on 64 MiB of zeros with no partition table at all:
-//       prints "Creating new GPT entries in memory.", INVENTS a random disk
-//       GUID, lists zero partitions, and EXITS 0. `sgdisk --verify` on the same
-//       file prints "No problems found." -- a green about a file that has no
-//       GPT. (os/verify-image-v2.sh:1397 greps that sentence out too, which is
-//       where the discriminator below comes from; it is the tool's own
-//       statement that it found none.)
-//
-//   debugfs -R "ls -p /" FILE, on a file that is not ext4:
-//       EXITS 0, prints NOTHING on stdout, and puts "Filesystem not open" on
-//       stderr. A caller reading the exit status gets an empty directory
-//       listing for a filesystem it never opened.
-//
-//   unsquashfs -d DEST ARCHIVE some/path/not/in/it:
-//       EXITS 0 and creates an empty DEST. A caller that then reads DEST/some
-//       /path finds nothing, and the reason it finds nothing is indistinguish-
-//       able from the file being empty in the image.
-//
-//   veritysetup verify ... :
-//       exits 1 BOTH for "Verification of root hash failed." -- which is a real
-//       answer, the failing direction of the check -- and for "Device X is not
-//       a valid VERITY device." -- which is not an answer at all. A helper that
-//       mapped status 1 to `false` would report a corrupt payload for a
-//       mis-computed offset.
-//
-// So no helper here decides anything by exit status alone. Each one knows what
-// its tool's output looks like when the tool actually did the work, and refuses
-// -- loudly, naming the tool and what it saw -- when it did not. The check
-// above decides what a failure MEANS; the helper never decides it by silence.
-// This is the same rule tools.ts states for ToolError, one layer up.
-//
-// The shell verifier ends nearly every capture in `|| true` and lets the
-// resulting empty string fail the check. That works there because the check
-// still goes red -- but it goes red describing a VALUE when the truth is that
-// the tool never ran, and this campaign has spent whole tasks on the difference
-// between those two sentences.
+// Four of the five tools answer a question they could not answer with something
+// that reads exactly like an answer, measured 2026-08-25 in the pinned
+// alpine:3.21 with the shell verifier's package set; each quirk is recorded at
+// its helper -- `SGDISK_INVENTED`, `debugfsRun`, `squashfsExtract`,
+// `verityVerify`. No helper decides by exit status alone: one blind to its
+// tool's did-the-work output refuses loudly and names it, the rule tools.ts
+// states for ToolError.
 
 import {
   closeSync,
@@ -70,22 +30,20 @@ import { ToolOutputError, type RunOptions, type ToolRuntime } from './tools.ts'
 /** mtools refuses a file whose size is not a whole number of sectors unless told. */
 const MTOOLS_ENV = ['env', 'MTOOLS_SKIP_CHECK=1'] as const
 
-// ---------------------------------------------------------------------------
-// byte ranges
-// ---------------------------------------------------------------------------
+// Byte ranges.
 
 /**
  * Copy `length` bytes at `offset` out of `image` into `dest`.
  *
- * WHY THIS IS NOT `dd`, when the scope says dd-extract. It is the same bytes:
+ * Not `dd`, though the scope says dd-extract, and the same bytes either way:
  * measured on 2026-08-25 against ROOTFS-A of the real cx3576 image, this
- * function and `dd bs=1M skip=146 count=256 conv=sparse` produced files with
- * the same sha256. What it is not is a container round trip and a second copy
- * of the offset arithmetic -- dd's skip/count are in BLOCKS, so every call site
- * divides by a block size, and a partition whose start is not a whole number of
- * MiB silently extracts from the wrong place. Here the unit is bytes because
- * the GPT's unit is sectors and the layout's is MiB, and one conversion in one
- * place is the whole point. Nothing is mutated: `image` is opened read-only.
+ * function and `dd bs=1M skip=146 count=256 conv=sparse` produced files with the
+ * same sha256. What it is not is a container round trip and a second copy of the
+ * offset arithmetic -- dd's skip/count are in BLOCKS, so every call site divides
+ * by a block size and a partition whose start is not a whole number of MiB
+ * silently extracts from the wrong place. Here the unit is bytes, because the
+ * GPT's unit is sectors and the layout's is MiB and one conversion in one place
+ * is the point. Nothing is mutated: `image` is opened read-only.
  */
 export function extractRange(image: string, offset: number, length: number, dest: string): string {
   requireWholeNumbers({ offset, length })
@@ -155,9 +113,7 @@ function requireWholeNumbers(values: Record<string, number>): void {
   }
 }
 
-// ---------------------------------------------------------------------------
-// 1. the GPT, with sgdisk
-// ---------------------------------------------------------------------------
+// 1. The GPT, with sgdisk.
 
 export interface GptPartition {
   readonly number: number
@@ -300,9 +256,7 @@ export async function sgdiskVerify(rt: ToolRuntime, image: string): Promise<Sgdi
   return { clean, output, complaints }
 }
 
-// ---------------------------------------------------------------------------
-// 2. the FAT boot slots, with mtools AT AN OFFSET
-// ---------------------------------------------------------------------------
+// 2. The FAT boot slots, with mtools at an offset.
 
 /** A FAT filesystem living at a byte offset inside a larger image. */
 export interface FatSlot {
@@ -374,7 +328,7 @@ export async function fatVolumeSerial(rt: ToolRuntime, slot: FatSlot): Promise<s
       + `"serial number:" line:\n${out.trim() || '(nothing)'}`,
     )
   }
-  // Spaces come out, and NOTHING ELSE does. os/verify-image-v2.sh:1796 pipes
+  // Spaces come out, and nothing else does. os/verify-image-v2.sh:1796 pipes
   // through `tr -d ' '` and no more, so a minfo that printed `C357-6003` would
   // make the oracle FAIL against a layout that declares `C3576003` -- and a
   // port that also stripped the dash would pass where the oracle fails, which
@@ -408,23 +362,18 @@ export async function fatReadFile(rt: ToolRuntime, slot: FatSlot, path: string):
 }
 
 /**
- * Copy one file out of the slot INTO A LOCAL PATH, and say whether it landed.
+ * Copy one file out of the slot into a local path, and say whether it landed.
  *
- * NOT `fatReadFile` plus a write. mcopy's `-` target sends the file to stdout,
- * and this runtime reads stdout as TEXT -- fine for a `set MOS_*=` fragment and
- * destructive for a 290 KiB device tree, where every byte that is not valid
- * UTF-8 comes back as U+FFFD. The device tree and the compiled boot script are
- * both read as BYTES by the checks below, so mcopy writes them itself, exactly
- * as os/verify-image-v2.sh:1899 and :2003 have it write them.
- *
- * `false` means the file is not in the slot -- mcopy exits 1 saying
- * `File "::/x" not found`, the one honest absence in the mtools set. Any other
- * non-zero exit throws, because "the slot could not be read at all" and "the
- * file is not in it" are different edits.
- *
- * The destination is checked AFTER the copy as well as before: mcopy exiting 0
- * having written nothing would otherwise leave the caller reading a file that
- * is not there, which is `unsquashfs -d`'s defect one directory along.
+ * NOT `fatReadFile` plus a write. mcopy's `-` target sends the file to stdout and
+ * this runtime reads stdout as TEXT -- fine for a `set MOS_*=` fragment, destructive
+ * for a 290 KiB device tree, where every byte that is not valid UTF-8 comes back as
+ * U+FFFD. The device tree and the compiled boot script are read as BYTES below, so
+ * mcopy writes them itself, as os/verify-image-v2.sh:1899 and :2003 have it write
+ * them. `false` means the file is not in the slot -- mcopy exits 1 saying
+ * `File "::/x" not found`, the one honest absence in the mtools set -- and any other
+ * non-zero exit throws, because "unreadable slot" and "file not in it" are different
+ * edits. The destination is checked after the copy as well as before: mcopy exiting 0
+ * having written nothing is `unsquashfs -d`'s defect one directory along.
  */
 export async function fatCopyOut(
   rt: ToolRuntime,
@@ -478,9 +427,7 @@ export async function fatTryReadFile(
   )
 }
 
-// ---------------------------------------------------------------------------
-// 3. the ext4 partitions, with tune2fs and debugfs over an extracted range
-// ---------------------------------------------------------------------------
+// 3. The ext4 partitions, with tune2fs and debugfs over an extracted range.
 
 /** e2fsprogs put their version banner on stderr and nothing else, when well. */
 const E2FS_BANNER = /^(debugfs|tune2fs|dumpe2fs|e2fsck) \d+\.\d+/
@@ -530,13 +477,13 @@ export async function ext4Super(rt: ToolRuntime, file: string): Promise<Ext4Supe
 /**
  * Run one debugfs command and hand back its stdout.
  *
- * THE STDERR RULE, and why it is the whole check. debugfs exits 0 whether or
- * not it opened the filesystem -- measured: `debugfs -R "ls -p /"` on a file
- * that is not ext4 exits 0 with empty stdout. What differs is stderr: on a
- * filesystem it opened, stderr is EXACTLY the one-line version banner; on one
- * it did not, the banner is followed by "...while trying to open FILE" and
- * "ls: Filesystem not open". So the rule is: one line of stderr, and it is the
- * banner. Any second line is a refusal, quoted.
+ * The stderr rule is the whole check. debugfs exits 0 whether or not it opened
+ * the filesystem -- measured: `debugfs -R "ls -p /"` on a file that is not ext4
+ * exits 0 with empty stdout. What differs is stderr: on a filesystem it opened,
+ * stderr is EXACTLY the one-line version banner; on one it did not, the banner
+ * is followed by "...while trying to open FILE" and "ls: Filesystem not open".
+ * So the rule is one line of stderr and it is the banner; any second line is a
+ * refusal, quoted.
  */
 export async function debugfsRun(rt: ToolRuntime, file: string, command: string): Promise<string> {
   const r = await rt.run(['debugfs', '-R', command, file], {
@@ -616,9 +563,7 @@ export async function ext4Stat(
   return fields
 }
 
-// ---------------------------------------------------------------------------
-// 4. the packed root, with unsquashfs
-// ---------------------------------------------------------------------------
+// 4. The packed root, with unsquashfs.
 
 export interface SquashfsSuper {
   readonly file: string
@@ -711,9 +656,7 @@ export async function squashfsList(rt: ToolRuntime, file: string): Promise<strin
   return paths
 }
 
-// ---------------------------------------------------------------------------
-// 5. dm-verity, in userspace
-// ---------------------------------------------------------------------------
+// 5. dm-verity, in userspace.
 
 export type VerityVerdict = 'verified' | 'mismatch'
 
@@ -731,12 +674,12 @@ export interface VerityRequest {
  * anything -- which is what makes it safe against a host, and it is the reason
  * the oracle chose it.
  *
- * BOTH ANSWERS EXIT 1, AND ONLY ONE OF THEM IS AN ANSWER. Measured:
- *   "Verification of root hash failed."          -> exit 1, the failing DIRECTION
- *   "Device X is not a valid VERITY device."     -> exit 1, the tool got nowhere
- * Mapping status 1 to `mismatch` would report a corrupt payload for a
- * mis-computed hash offset, and mis-computed offsets are the likeliest defect
- * in a port that is re-deriving them from a board definition.
+ * Both answers exit 1 and only one of them is an answer. Measured:
+ * "Verification of root hash failed." is exit 1 and the failing DIRECTION of the
+ * check; "Device X is not a valid VERITY device." is exit 1 and the tool getting
+ * nowhere. Mapping status 1 to `mismatch` would report a corrupt payload for a
+ * mis-computed hash offset, and mis-computed offsets are the likeliest defect in
+ * a port re-deriving them from a board definition.
  */
 export async function verityVerify(rt: ToolRuntime, req: VerityRequest): Promise<VerityVerdict> {
   requireWholeNumbers({ 'the verity hash offset': req.hashOffset })
@@ -762,52 +705,22 @@ export async function verityVerify(rt: ToolRuntime, req: VerityRequest): Promise
 }
 
 
-// ---------------------------------------------------------------------------
-// 6. the device tree, with fdtget
-// ---------------------------------------------------------------------------
+// 6. The device tree, with fdtget.
 //
-// DRIVEN FROM THE FAILING SIDE, 2026-08-26, in the pinned alpine:3.21 with the
-// package set the shell verifier installs. fdtget is the FIRST tool in this
-// file that refuses honestly on every input it cannot read -- and it still has
-// one shape that answers a question it could not answer:
-//
-//   fdtget ZEROS.bin /leds/status-red label   (64 MiB of zeros)
-//       exit 1, EMPTY stdout, `Error at '/leds/status-red': FDT_ERR_BADMAGIC`
-//       on stderr. Where sgdisk INVENTS a GPT on the same input, libfdt names
-//       the magic it did not find.
-//   fdtget EMPTY.bin ...                      exit 1, FDT_ERR_BADMAGIC
-//   fdtget nosuch.dtb ...                     exit 1, `Couldn't open blob from
-//                                             'nosuch.dtb': No such file or directory`
-//   fdtget T.dtb /leds/status-green label     exit 1, FDT_ERR_NOTFOUND
-//   fdtget T.dtb /leds/status-red nosuch      exit 1, FDT_ERR_NOTFOUND
-//
-//   fdtget -t x T.dtb /leds/status-red label  exit 0, `73 74 61 74 75 73 2d 72 65 64 0`
-//       ^^ THE ONE THAT ANSWERS ANYWAY. `-t x` on a STRING property does not
-//       refuse: it prints the string's BYTES as cells. So a device tree whose
-//       `gpios` had become a string would hand the oracle's
-//       `gpio_cells[2]` the third byte of that string -- a plausible-looking
-//       hexadecimal number -- rather than a refusal. It is REPRODUCED here and
-//       not refused, because os/verify-image-v2.sh:1941 reads exactly those
-//       cells and a helper that threw would fail where the oracle FAILS THE
-//       CHECK, which is a different row in the parity diff.
-//
-//   fdtget T.dtb /leds/status-red gpios       exit 0, `107 29 1`   (DECIMAL)
-//   fdtget -t x T.dtb /leds/status-red gpios  exit 0, `6b 1d 1`    (hex)
-//       The default radix is decimal and `-t x` is hexadecimal. The oracle
-//       passes `-t x` and compares against 0 and 1, which read the same in
-//       both -- so the flag is not decoration, it is the only thing that keeps
-//       a flags cell of 10 from being compared as sixteen.
-//
-// WHY AN ABSENCE IS AN ANSWER HERE AND NOT A THROW. os/verify-image-v2.sh:1923
-// writes `$(fdtget ... 2>/dev/null || true)` and compares the empty string
-// against the wanted value, so on this tool every refusal is a FAILED CHECK
-// rather than a broken run. That is the behaviour the port has to reproduce.
-// What it does NOT reproduce is the collapse: `undefined` here means libfdt
-// said so, in its own words, and a non-zero exit saying anything else still
-// throws -- so "the dtb is not there" and "fdtget is not installed" cannot
-// arrive at a check as the same value.
+// Driven from the failing side, 2026-08-26, in the pinned alpine:3.21 with the
+// package set the shell verifier installs. fdtget is the first tool in this file
+// that refuses honestly on nearly every input it cannot read; the two shapes
+// that answer anyway are recorded at `fdtGetCells`.
 
-/** libfdt's own refusals, exactly as fdtget spells them on stderr. */
+/**
+ * libfdt's own refusals, exactly as fdtget spells them on stderr.
+ *
+ * Measured: 64 MiB of zeros and an empty file both give exit 1, empty stdout and
+ * `Error at '<node>': FDT_ERR_BADMAGIC`; a missing file gives `Couldn't open
+ * blob from 'nosuch.dtb': No such file or directory`; a missing node and a
+ * missing property both give `FDT_ERR_NOTFOUND`. Where sgdisk INVENTS a GPT on
+ * the same zeros, libfdt names the magic it did not find.
+ */
 const FDT_REFUSAL = /FDT_ERR_[A-Z]+|Couldn't open blob from/
 
 /** `-t` as fdtget spells it: string, hex, signed and unsigned integer. */
@@ -838,7 +751,18 @@ export interface FdtRead {
   readonly refusal: string | undefined
 }
 
-/** `fdtGet`, with libfdt's refusal kept rather than dropped. */
+/**
+ * `fdtGet`, with libfdt's refusal kept rather than dropped.
+ *
+ * An absence is an answer here and not a throw: os/verify-image-v2.sh:1923
+ * writes `$(fdtget ... 2>/dev/null || true)` and compares the empty string
+ * against the wanted value, so on this tool every refusal is a failed check
+ * rather than a broken run, and that is what the port reproduces. What it does
+ * NOT reproduce is the collapse -- `undefined` means libfdt said so, in its own
+ * words, and a non-zero exit saying anything else still throws, so "the dtb is
+ * not there" and "fdtget is not installed" cannot arrive at a check as the same
+ * value.
+ */
 export async function fdtGetResult(
   rt: ToolRuntime,
   dtb: string,
@@ -874,8 +798,16 @@ export async function fdtGetResult(
 /**
  * `fdtget -t x`, split into cells the way the oracle's `read -r -a` splits it.
  *
- * Returns `[]` when libfdt refused, which is what `gpio_cells` becomes in the
- * shell -- an empty array whose `[2]` is unset, printed as `missing`.
+ * Returns `[]` when libfdt refused -- what `gpio_cells` becomes in the shell, an
+ * empty array whose `[2]` is unset and prints as `missing`. The default radix is
+ * decimal (`107 29 1`) and `-t x` is hexadecimal (`6b 1d 1`); the oracle passes
+ * `-t x` and compares against 0 and 1, which read the same in both, so the flag
+ * is what keeps a flags cell of 10 from being compared as sixteen. `-t x` on a
+ * STRING property does not refuse: it exits 0 and prints the string's bytes as
+ * cells, so a `gpios` that had become a string would hand `gpio_cells[2]` the
+ * third byte of it rather than a refusal. Reproduced and not refused, because
+ * os/verify-image-v2.sh:1941 reads exactly those cells and a helper that threw
+ * would fail where the oracle fails the check.
  */
 export async function fdtGetCells(
   rt: ToolRuntime,
@@ -888,50 +820,24 @@ export async function fdtGetCells(
   return value.trim().split(/\s+/).filter(c => c !== '')
 }
 
-// ---------------------------------------------------------------------------
-// 7. e2fsck -fn, whose exit status is the whole answer and is not the truth
-// ---------------------------------------------------------------------------
+// 7. e2fsck -fn, whose exit status is the whole answer and is not the truth.
 //
-// DRIVEN FROM THE FAILING SIDE, 2026-08-26, e2fsck 1.47.1 in the pinned alpine:
-//
-//   e2fsck -fn CLEAN.img                      exit 0, five passes, a summary
-//   e2fsck -fn ZEROS.img                      exit 8, "Bad magic number in super-block"
-//   e2fsck -fn EMPTY.img                      exit 8
-//   e2fsck -fn A-SQUASHFS                     exit 8
-//   e2fsck -fn A-DIRECTORY                    exit 8
-//   e2fsck -fn nosuch.img                     exit 8, "No such file or directory"
-//
-//   e2fsck -fn TRUNCATED.img                  exit 0  <-- AND IT SAYS OTHERWISE
-//       An 8192-block filesystem in a 4096-block file. e2fsck prints
-//
-//           The filesystem size (according to the superblock) is 8192 blocks
-//           The physical size of the device is 4096 blocks
-//           Either the superblock or the partition table is likely to be corrupt!
-//           Abort? no
-//
-//       ...and then runs all five passes and EXITS 0. os/verify-image-v2.sh:2342
-//       is `if e2fsck -fn "${img}" >/dev/null 2>&1`, so both of those streams go
-//       to /dev/null and the status alone decides: the oracle concludes
-//       `e2fsck -fn on data is clean` about a filesystem e2fsck has just said is
-//       likely corrupt. That branch is REACHABLE -- `check_ext4` extracts
-//       `count=${size_mib}` MiB at the layout's offset, so an image whose tail
-//       is short produces exactly this file.
-//
-//       IT IS REPRODUCED AND NOT REPAIRED. The verdict here is the STATUS, as
-//       the oracle reads it. What this helper adds is that the report is KEPT
-//       rather than sent to /dev/null, so the sentence exists somewhere a reader
-//       can find it -- and `E2fsckVerdict.report` is what a future check would
-//       be built on if the oracle's owner decides that sentence should be red.
-//
-// THE EXIT CODES ARE A BITMASK (e2fsck(8)): 1 errors corrected, 2 corrected and
-// reboot, 4 errors left UNCORRECTED, 8 operational error, 16 usage error, 32
-// cancelled, 128 shared-library error. Under `-n` nothing is ever corrected, so
-// 1 and 2 cannot arise -- they are allowed anyway because a status this helper
-// refused would be a run that died where the oracle printed a FAIL. 16 and 32
-// are NOT allowed: a usage error is this port's argv being wrong and a cancel
-// is a signal, and neither is a statement about the filesystem.
+// Driven from the failing side, 2026-08-26, e2fsck 1.47.1 in the pinned alpine:
+// a clean image exits 0 after five passes with a summary; zeros, an empty file,
+// a squashfs, a directory and a missing file all exit 8 ("Bad magic number in
+// super-block", "No such file or directory").
 
-/** The statuses e2fsck uses to describe a FILESYSTEM, as opposed to itself. */
+/**
+ * The statuses e2fsck uses to describe a FILESYSTEM, as opposed to itself.
+ *
+ * The exit codes are a bitmask (e2fsck(8)): 1 errors corrected, 2 corrected and
+ * reboot, 4 errors left UNCORRECTED, 8 operational error, 16 usage error, 32
+ * cancelled, 128 shared-library error. Under `-n` nothing is ever corrected, so
+ * 1 and 2 cannot arise; they are allowed anyway because a status this helper
+ * refused would be a run that died where the oracle printed a FAIL. 16 and 32
+ * are NOT allowed: a usage error is this port's argv being wrong and a cancel is
+ * a signal, and neither is a statement about the filesystem.
+ */
 export const E2FSCK_VERDICT_CODES = [0, 1, 2, 4, 8] as const
 
 export interface E2fsckVerdict {
@@ -942,7 +848,20 @@ export interface E2fsckVerdict {
   readonly report: readonly string[]
 }
 
-/** `e2fsck -fn FILE`, read the way os/verify-image-v2.sh:2342 reads it. */
+/**
+ * `e2fsck -fn FILE`, read the way os/verify-image-v2.sh:2342 reads it.
+ *
+ * A truncated image exits 0 and says otherwise: an 8192-block filesystem in a
+ * 4096-block file makes e2fsck print "The filesystem size (according to the
+ * superblock) is 8192 blocks", "The physical size of the device is 4096 blocks",
+ * "Either the superblock or the partition table is likely to be corrupt!" and
+ * "Abort? no", then run all five passes and exit 0. The oracle's line is
+ * `if e2fsck -fn "${img}" >/dev/null 2>&1`, so both streams go to /dev/null and the
+ * status alone decides -- and the branch is reachable, because `check_ext4` extracts
+ * `count=${size_mib}` MiB at the layout's offset and a short-tailed image produces
+ * exactly this file. Reproduced and not repaired: the verdict is the STATUS the
+ * oracle reads, and `E2fsckVerdict.report` keeps the sentence rather than dropping it.
+ */
 export async function e2fsckClean(rt: ToolRuntime, file: string): Promise<E2fsckVerdict> {
   const r = await rt.run(['e2fsck', '-fn', file], {
     context: `e2fsck -fn on ${file}`,
@@ -954,35 +873,11 @@ export async function e2fsckClean(rt: ToolRuntime, file: string): Promise<E2fsck
   return { clean: r.code === 0, code: r.code, report }
 }
 
-// ---------------------------------------------------------------------------
-// 8. the legacy uImage header, which needs no tool at all
-// ---------------------------------------------------------------------------
+// 8. The legacy uImage header, which needs no tool at all.
 //
 // `mkimage -T script` wraps a text script in a 64-byte big-endian header whose
 // first four bytes are 0x27051956. os/verify-image-v2.sh:2024 reads exactly
 // those four with `od -An -tx1 -N4 ... | tr -d ' \n'` and compares the string.
-//
-// DRIVEN FROM THE FAILING SIDE. There is no tool here to lie, so the failing
-// side is this reader's own:
-//
-//   a file that is not there        `od` prints nothing, `|| true` swallows the
-//                                   status, and the oracle compares '' -- so
-//                                   `uImageMagic` answers '' rather than
-//                                   throwing, and the check fails describing
-//                                   the value.
-//   a file SHORTER than four bytes  same: '' rather than a short read.
-//   a file shorter than 64 bytes    `readUImage` is undefined -- there is no
-//                                   header to read, and returning a struct of
-//                                   zeros would make `imageType` read as 0
-//                                   ("invalid") rather than as absent.
-//
-// WHAT THIS READER KNOWS AND THE ORACLE DOES NOT. The header also carries the
-// image TYPE, and `type=6` is what makes a uImage a SCRIPT. The oracle checks
-// the magic and nothing else, so a uImage of any other type -- a kernel, a
-// ramdisk -- carries the same four bytes and passes. That is recorded here and
-// exposed through `--probe`; it is NOT turned into a check, because a port that
-// hardened its oracle would diverge from it and the divergence would be the
-// port's.
 
 export const UIMAGE_MAGIC = '27051956'
 /** Where the payload starts: the header is exactly 64 bytes (image.h). */
@@ -1012,7 +907,9 @@ export interface UImageHeader {
  * '' is the value the oracle compares, and it is an ANSWER: a boot script that
  * was never written into the slot fails the magic check rather than killing the
  * run. Every other reader in this file refuses a short read; this one does not,
- * and the reason is that its caller's shell counterpart does not either.
+ * because its caller's shell counterpart does not either -- `od` prints nothing
+ * for a file that is not there or is shorter than four bytes, and `|| true`
+ * swallows the status.
  */
 export function uImageMagic(file: string): string {
   let fd: number
@@ -1033,7 +930,18 @@ export function uImageMagic(file: string): string {
   }
 }
 
-/** The whole 64-byte header, or undefined when the file is not long enough to hold one. */
+/**
+ * The whole 64-byte header, or undefined when the file is not long enough.
+ *
+ * A file shorter than 64 bytes has no header to read, and returning a struct of
+ * zeros would make `imageType` read as 0 ("invalid") rather than as absent. The
+ * header also carries the image TYPE, and `type=6` is what makes a uImage a
+ * SCRIPT; the oracle checks the magic and nothing else, so a uImage of any other
+ * type -- a kernel, a ramdisk -- carries the same four bytes and passes. That is
+ * recorded here and exposed through `--probe`, and deliberately not turned into
+ * a check: a port that hardened its oracle would diverge from it, and the
+ * divergence would be the port's.
+ */
 export function readUImage(file: string): UImageHeader | undefined {
   let size: number
   try {
@@ -1081,8 +989,6 @@ export function uImageText(file: string): string {
   }
   return bytes.toString('latin1').replace(/\0/g, '')
 }
-
-// ---------------------------------------------------------------------------
 
 /** True when SOMETHING is at `path`, dangling symlink included. */
 function extracted(path: string): boolean {

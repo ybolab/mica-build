@@ -4,7 +4,7 @@
 - **createdAt**: 2026-08-26 14:05
 - **approvedAt**: 2026-08-26 14:20
 - **relatedTask**: RFCT-114 (M1), RFCT-115 (M2), RFCT-116 (M3), RFCT-121 (M4), RFCT-122+ (M5) — task files created by the executing workstream as each milestone starts
-- **milestones**: M1 os/ + Makefile + board/ comments; M2 mosd/ (excluding mosd/apid/) comments; M3 test-script comments; M4 the citation checker (RFCT-092); M5 documentation rewrite; M6 form compression (RFCT-140..149 reserved)
+- **milestones**: M1 os/ + Makefile + board/ comments; M2 mosd/ (excluding mosd/apid/) comments; M3 test-script comments; M4 the citation checker (RFCT-092); M5 documentation rewrite; M6 form compression (RFCT-150..159 reserved)
 
 ## Context
 
@@ -229,5 +229,7 @@ constraints:
 Acceptance: all existing gates green; the metric re-run shows caps ~0,
 banners ~0 outside rule-2 exceptions, and 15+-line blocks reduced to single
 digits with each survivor named and justified in the task files. Task numbers
-RFCT-140..149 are reserved for this milestone so the concurrent docs
-workstream (RFCT-121..139) cannot collide.
+RFCT-150..159 are reserved for this milestone; the concurrent docs workstream
+owns everything through RFCT-149 (its section-10 triage consumed 129..141,
+past the range first reserved here — corrected before any M6 task file was
+created).
