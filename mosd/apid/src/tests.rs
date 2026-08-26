@@ -3748,3 +3748,102 @@ fn the_openapi_document_covers_the_resource_routes() {
         "the resource body's schema does not describe the redaction sentinel: {document}"
     );
 }
+
+/// §2.2's redaction rule, driven from the failing side: every field the
+/// denylist names, at every depth the tree puts one and inside the arrays the
+/// dot-path syntax cannot address, comes back as the sentinel.
+///
+/// The rule is fail-open — a secret-bearing field under a name not on the list
+/// is served — so this test is the mitigation §2.2 asks for. It walks the
+/// response rather than checking known locations, so a field added to the
+/// fixture is covered without editing an assertion here.
+#[tokio::test]
+async fn every_redacted_field_name_comes_back_redacted_from_the_settings_root() {
+    let (router, _) = test_app(secret_tree("hunter2secret"));
+    let cookie = login(&router, "hunter2secret").await;
+
+    // Two subtrees rather than one, because the whole-tree dot-path is `""`
+    // and this route family takes a non-empty one. Between them they hold all
+    // four names.
+    let mut found = Vec::new();
+    let mut bodies = String::new();
+    for path in ["/api/v1/settings/access", "/api/v1/settings/wifi"] {
+        let response = get(&router, path, Some(&cookie)).await;
+        assert_eq!(response.status(), StatusCode::OK, "{path}");
+        let body = body_string(response).await;
+        secret_fields(&serde_json::from_str(&body).unwrap(), &mut found);
+        bodies.push_str(&body);
+    }
+
+    let names: Vec<&str> = found.iter().map(|(name, _)| name.as_str()).collect();
+    for name in SECRET_FIELD_NAMES {
+        assert!(
+            names.contains(&name),
+            "the fixture no longer carries a `{name}` field, so this test does not cover it: {names:?}"
+        );
+    }
+    for (name, value) in &found {
+        assert_eq!(value, &json!(REDACTED), "`{name}` was served in the clear");
+    }
+    // The walk only sees fields it recognises. This sees the bytes.
+    for marker in PLAINTEXT_MARKERS {
+        assert!(
+            !bodies.contains(marker),
+            "`{marker}` reached the wire: {bodies}"
+        );
+    }
+}
+
+/// The same rule on the state root. §2.2 states it for the settings root only;
+/// this campaign extends it, because a denylist that covers one root while the
+/// other serves the same field names verbatim is a hole with a tested-looking
+/// lid.
+#[tokio::test]
+async fn the_state_root_is_redacted_by_the_same_rule() {
+    let (router, fake) = test_app(secret_tree("hunter2secret"));
+    fake.set_state_entry("wifiAp", secret_state_entry());
+    let cookie = login(&router, "hunter2secret").await;
+
+    let response = get(&router, "/api/v1/state/wifiAp", Some(&cookie)).await;
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = body_string(response).await;
+
+    let mut found = Vec::new();
+    secret_fields(&serde_json::from_str(&body).unwrap(), &mut found);
+    let names: Vec<&str> = found.iter().map(|(name, _)| name.as_str()).collect();
+    for name in SECRET_FIELD_NAMES {
+        assert!(names.contains(&name), "not covered: {name} in {names:?}");
+    }
+    for (name, value) in &found {
+        assert_eq!(value, &json!(REDACTED), "`{name}` was served in the clear");
+    }
+    for marker in PLAINTEXT_MARKERS {
+        assert!(!body.contains(marker), "`{marker}` reached the wire: {body}");
+    }
+}
+
+/// The structural walk keys on a field name, and a dot-path that names a
+/// secret field directly leaves no field name in the value: the response is
+/// the bare hash. So the requested path is redacted as well as the tree.
+#[tokio::test]
+async fn a_dot_path_that_names_a_secret_field_answers_the_sentinel() {
+    let (router, fake) = test_app(secret_tree("hunter2secret"));
+    fake.set_state_entry("wifiAp", secret_state_entry());
+    let cookie = login(&router, "hunter2secret").await;
+
+    for path in [
+        "/api/v1/settings/access.webAdmin.password_hash",
+        "/api/v1/settings/access.device.passwordHash",
+        "/api/v1/settings/wifi.ap.psk",
+        "/api/v1/state/wifiAp.psk",
+        "/api/v1/state/wifiAp.admin.passwordHash",
+    ] {
+        let response = get(&router, path, Some(&cookie)).await;
+        assert_eq!(response.status(), StatusCode::OK, "{path}");
+        assert_eq!(
+            body_string(response).await,
+            format!(r#""{REDACTED}""#),
+            "{path}"
+        );
+    }
+}
