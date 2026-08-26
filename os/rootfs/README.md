@@ -116,14 +116,19 @@ allowlist. Set `WITH_MOSD=0` to build the rootfs without mosd (default is on).
 
 ## Board hardware init
 
-Board-agnostic mechanism, filed under the only board that declares facts for
-it, in `os/boards/cx3576/hwinit/` (six best-effort units + scripts);
-board-specific facts (module names, sysfs paths, UART device, CAN
-defaults, MAC seed, gadget IDs) in conf files staged from `BOARD_DIR/init/`
-(falling back to the in-repo `board/cx3576/init/`) into `/etc/mos/`. Every unit
-is condition-gated on its conf file and never blocks, delays, or fails the
-boot; WiFi association / BT pairing stay with connd. The units are enabled via
-`multi-user.target.wants` symlinks like mosd.
+Board-agnostic mechanism, and since RFCT-111 M5d the CONTENT is filed per
+board too: the units and their scripts come from `os/boards/<board>/hwinit/`
+(six of each on cx3576; x64 has no such directory and stages an empty one), and
+the board-specific facts they read — module names, sysfs paths, UART device,
+CAN defaults, MAC seed, gadget IDs — come from conf files staged from
+`BOARD_DIR/init/`, falling back to the in-repo `board/<board>/init/`, into
+`/etc/mos/`. Both reach `stages/40-board` as staged directories
+(`BOARD_HWINIT_DIR`, `BOARD_INIT_DIR`) because a `COPY` cannot be gated on an
+`ARG`; until M5d the units were `COPY`d from `os/boards/cx3576/hwinit/` on every
+board, so x64 carried all six and ran none. Every unit is condition-gated on its
+conf file and never blocks, delays, or fails the boot; WiFi association / BT
+pairing stay with connd. The units are enabled via `multi-user.target.wants`
+symlinks like mosd.
 
 | Unit | Conf | Does |
 |---|---|---|
@@ -367,12 +372,12 @@ explained in `docs/design/ro-root.md`.
 
 ## Board hardware init — the enable list is enumerated, not restated
 
-`scripts/hwinit-install.sh` installs `hwinit-*`, `*.service` **and** `*.rules` from
-`os/boards/cx3576/hwinit/`, and derives the enable list by iterating the units
-that are actually present:
+`scripts/hwinit-install.sh` installs `hwinit-*`, `*.service` **and** `*.rules`
+from `os/boards/<board>/hwinit/` — staged into `BOARD_HWINIT_DIR` — and derives
+the enable list by iterating the board FACTS that are actually staged:
 
 ```
-for f in /tmp/hwinit/*.service; do u="$(basename "$f")"; ln -sf ... ; done
+for c in /tmp/board-init/*.conf; do n="$(basename "$c" .conf)"; ... ln -sf ... ; done
 ```
 
 This is not a style preference. The previous hardcoded
@@ -381,14 +386,24 @@ drifted behind the since-deleted v1 `Dockerfile` once already: when `mos-mac` an
 `mos-gadget` were added, both were *installed* by the existing globs but never
 *enabled*, and `60-mos-gadget-getty.rules` was not installed at all — so a v2
 image silently lost its stable MAC and its USB debug console with no error
-anywhere. Adding a unit to `os/boards/cx3576/hwinit/` is now sufficient; the
-build also asserts at least one unit was enabled, so a glob that matches nothing fails
-loudly.
+anywhere. Adding `hwinit-<n>` plus `mos-<n>.service` under
+`os/boards/<board>/hwinit/`, and an `<n>.conf` to the board, is sufficient.
 
-No board fact is restated in the v2 layer. Module names, sysfs paths, UART
-device and speed, CAN bitrate and FD flag, MAC seed and gadget IDs all live in
-`BOARD_INIT_DIR` and are staged verbatim into `/etc/mos`, where the units read
-them at runtime.
+**Both directions are asserted, and neither is a count.** A conf with no script
+is an unread board fact and fails by name; a `/usr/lib/mos/hwinit-<n>` with no
+`/etc/mos/<n>.conf` is a unit that can never run and fails by name. What is NOT
+asserted at build time is the third direction — a board that declares
+`BOARD_HWINIT_CONFS` and whose `init/` went missing stages no conf, installs no
+unit, and the two counts agree at zero. That predates M5d, since `BOARD_INIT_DIR`
+was already a staged directory, and `os/verify-image-v2.sh` holds it at image
+level: it compares the declared facts against the installed helpers.
+
+No board fact is restated in the v2 layer, and since M5d no board NAME is
+either. Module names, sysfs paths, UART device and speed, CAN bitrate and FD
+flag, MAC seed and gadget IDs all live in `BOARD_INIT_DIR` and are staged
+verbatim into `/etc/mos`, where the units read them at runtime;
+`stages/40-board` names no board at all, which `os/build/src/stages.test.ts`
+asserts over every stage file.
 
 ## RAUC system.conf is rendered, not committed
 

@@ -151,8 +151,10 @@ RUN --mount=type=bind,source=os/rootfs/scripts,target=/mos-scripts \
 # start with lib/, so it cannot be ADDed to / directly — extract to a temp dir
 # and copy into /usr/lib/modules. dep files are inside the tar; no depmod needed.
 #
-# On amd64 there is no vendor tree and no modules.tar: the QEMU image (os/qemu)
-# takes Debian's own linux-image-amd64, which brings its kernel, its initramfs
+# On amd64 there is no vendor tree and no modules.tar: the QEMU image that
+# os/tools/qemu-run.sh boots (this line named a directory os/qemu, which this
+# tree does not have -- re-anchored by M5d) takes Debian's own
+# linux-image-amd64, which brings its kernel, its initramfs
 # and its modules in one package. build-v2.sh stages an EMPTY-but-valid tar on
 # that path rather than making this COPY conditional -- a COPY cannot be gated,
 # and a missing context file is a build error a hundred lines from its cause.
