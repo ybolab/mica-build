@@ -47,7 +47,7 @@ file M5b held the middle of the chain in — was cut by M5c and is gone.
 | `32-feature-rauc` | the update client and the assertion that it links no second TLS stack | 2 |
 | `33-feature-mosd` | mosd, apid, the MQTT bridge and broker: binaries, units, D-Bus policies | 1 |
 | `34-feature-mqtt` | the two pinned MQTT service accounts | 2 |
-| `40-board` | the kernel and its initramfs, grub-editenv, the AIC firmware, the per-board hwinit units | 4 |
+| `40-board` | the kernel and its initramfs, grub-editenv, the firmware the board declares, the board's own hwinit units | 4 |
 | `90-pack` | close the root (inventory, purge, report), then squashfs-zstd + dm-verity, then the export surface | 12 |
 
 **`3x-feature-*`, not five files numbered 30.** RFCT-111 writes the family as
@@ -162,6 +162,126 @@ same sentence. `WITH_MOSD=0` has been an unbuildable configuration and nothing
 noticed, because nobody built it. Not repaired here: which of the two should
 give — the overlay's unconditional mount unit, or the directory's owner — is an
 image content decision.
+
+## Declining a board: there is nothing to decline
+
+RFCT-111 also asks that `40-board` be *"parameterised by `boards/<board>`"*, and
+M5d is that. It is the sibling of the section above and it came out the other
+way round: a feature is chosen by which STAGE FILE is built, a board by what
+that one stage file is HANDED.
+
+Until M5d the file named a board twice, and both were content decisions taken in
+a file every board builds:
+
+```
+COPY board/cx3576/rootfs/firmware/<five files>  /tmp/fw/
+COPY os/boards/cx3576/hwinit/                   /tmp/hwinit/
+```
+
+Both ran on **every** board. x64 staged 2 MB of AIC8800D80 firmware and six
+hardware-init oneshots into a QEMU image and discarded them at runtime —
+`firmware-install.sh` on `MOS_ARCH = amd64`, `hwinit-install.sh` by finding no
+board fact any of the units could read. The image came out right. What was wrong
+is where the decision lived.
+
+### The shape: a staged directory, not a `40-board` per board
+
+**A `COPY` cannot be gated on an `ARG`.** That is why the literals were there,
+and it is also what decides between the two available shapes: a board's content
+reaches a shared instruction as a *directory* whose contents the board chose,
+and an empty directory is how a board says "none of that here".
+
+**The pattern is not new here, which is why it was extended rather than
+invented.** `MODULES_TAR` has always been an empty-but-valid tar on amd64 for
+exactly this reason, and `BOARD_INIT_DIR` has always been documented as one that
+"may be an empty dir (boards without hw-init facts)". `BOARD_FIRMWARE_DIR` and
+`BOARD_HWINIT_DIR` are the same mechanism applied to the two `COPY`s that had
+not had it. `../build-v2.sh` fills all four in one block, from the board's own
+trees:
+
+| argument | filled from | empty when |
+|---|---|---|
+| `MODULES_TAR` | `$BOARD_DIR/out/kernel/modules.tar` | `MOS_ARCH=amd64` (an empty tar) |
+| `BOARD_FIRMWARE_DIR` | `$BOARD_DIR/rootfs/firmware`, filtered to `BOARD_FIRMWARE_FILES` | the board declares no firmware |
+| `BOARD_HWINIT_DIR` | `os/boards/<board>/hwinit` | the board has no such directory |
+| `BOARD_INIT_DIR` | `$BOARD_DIR/init` | the board declares no hardware facts |
+
+**The firmware is filtered, and by the board's own list.**
+`board/<b>/rootfs/firmware` is the vendor BSP drop — 33 files for cx3576, most
+of them other AIC parts (8800dc, 8800dw) and other silicon revisions — and only
+the confirmed runtime set may enter a signed root. That set is
+`BOARD_FIRMWARE_FILES` in `os/boards/<b>/board.env`, where it already was:
+`os/verify-image-v2.sh` has asserted the image against it since the x64 board
+arrived. The build reads the list the verifier reads, so the two cannot disagree
+about what the board carries, and a declared file the BSP does not contain is a
+build error naming both rather than a device whose driver finds no firmware.
+
+**The scripts stopped naming a board too.** `firmware-install.sh` lost its
+`MOS_ARCH = amd64` early exit — the board stages what it carries, so the
+question is what is here rather than which board it is on — and its hardcoded
+`test -f /usr/lib/firmware/fmacfw_8800d80_u02.bin` became the same assertion
+over `BOARD_FIRMWARE_FILES`. `hwinit-install.sh` gained `MOS_BOARD` and
+**branches on none of it**: it names `os/boards/<board>/hwinit` in its two
+diagnostics, which used to send every reader to `cx3576`'s directory whatever
+board they were building.
+
+### Why not a `40-board` per board
+
+It was the other shape available and it is worse in four ways:
+
+- **The stage list is the directory.** Two files numbered 40 are refused for
+  sharing a number; numbered 40 and 41 they both *build*, so every board would
+  run every other board's stage. Making the driver skip by board is a second
+  selection mechanism beside `--without`, keyed on something the driver is not
+  told today — it takes `--board` for the image *tags* only.
+- **It duplicates the reasoning, not just the instructions.**
+  `grub-editenv-install` is gated on the BOOTLOADER and not on the board, and
+  says so at length; the hwinit rationale is about a mechanism that is
+  board-agnostic. Both would exist once per board and drift — which is exactly
+  how the hardcoded hwinit list drifted behind the (since deleted) v1
+  Dockerfile, leaving `mos-mac` and `mos-gadget` installed but disabled, at the
+  cost of the image's stable MAC and its USB debug console, with no error
+  anywhere.
+- **It scales by copying.** Board three is a 170-line file again.
+- **It is one more Dockerfile per board** in `os/build-env`'s frontend-pin
+  check, which counts the files rather than a list.
+
+### What asserts it, and what it is worth
+
+`os/build/src/stages.test.ts` walks every stage file, strips the comments, and
+requires that **no instruction contains a board name** — with the board names
+read from `os/boards/` rather than listed, for the same reason the stage list is
+the directory. Comments are excluded deliberately: several stages explain
+themselves by naming the board a thing was found on, and prose that names a
+board is how the reasoning stays legible; what must not name one is an
+instruction, because that is where a board name decides what the image carries.
+The check is driven from the failing side beside it, with the exact `COPY` M5d
+removed, so its green is not the green of a subject that never occurs.
+
+**The change is one whose effect is visible only on the board this host cannot
+build.** x64 is the board that DISCARDED both of these, so on x64 the
+parameterisation is worth exactly one thing — that the image is unchanged — and
+that is what was measured (`../README.md`, RFCT-111 M5d): **7** differing
+entries of 9,241 against the control's first build and **6** against its second,
+with the control itself re-measured at **7** and the seventh identified as
+`apt/eipp.log.xz`'s `APT-ID` numbering. Nothing beyond the control, in either
+pairing.
+
+What x64 does show is the mechanism in the state the change is about:
+`firmware: this board declares none` and `hwinit: 0 board fact(s) declared,
+0 unit(s) installed and enabled`, from three staged directories that are empty.
+
+**The cx3576 half was not built and is not claimed.** `binfmt_misc` is not
+mounted on this host and no builder advertises `linux/arm64`. What WAS driven
+for cx3576 is the staging, which is where the parameterisation lives: pointed at
+the in-repo BSP, `build-v2.sh` selected exactly the five files
+`BOARD_FIRMWARE_FILES` declares out of the drop's 33, staged the thirteen
+`os/boards/cx3576/hwinit` files and the six confs, and then stopped at the arm64
+builder. The guards were driven from the failing side too, on x64 and by hand: a
+declared firmware file the BSP lacks, a declared path outside `/usr/lib/firmware`,
+a staged set smaller than the declared one, and a staged file whose name is not
+the declared one — four refusals, each naming both sides, against a positive
+control that installs the one declared file and nothing else.
 
 ## The reorderings, and why each was necessary
 

@@ -116,14 +116,19 @@ allowlist. Set `WITH_MOSD=0` to build the rootfs without mosd (default is on).
 
 ## Board hardware init
 
-Board-agnostic mechanism, filed under the only board that declares facts for
-it, in `os/boards/cx3576/hwinit/` (six best-effort units + scripts);
-board-specific facts (module names, sysfs paths, UART device, CAN
-defaults, MAC seed, gadget IDs) in conf files staged from `BOARD_DIR/init/`
-(falling back to the in-repo `board/cx3576/init/`) into `/etc/mos/`. Every unit
-is condition-gated on its conf file and never blocks, delays, or fails the
-boot; WiFi association / BT pairing stay with connd. The units are enabled via
-`multi-user.target.wants` symlinks like mosd.
+Board-agnostic mechanism, and since RFCT-111 M5d the CONTENT is filed per
+board too: the units and their scripts come from `os/boards/<board>/hwinit/`
+(six of each on cx3576; x64 has no such directory and stages an empty one), and
+the board-specific facts they read — module names, sysfs paths, UART device,
+CAN defaults, MAC seed, gadget IDs — come from conf files staged from
+`BOARD_DIR/init/`, falling back to the in-repo `board/<board>/init/`, into
+`/etc/mos/`. Both reach `stages/40-board` as staged directories
+(`BOARD_HWINIT_DIR`, `BOARD_INIT_DIR`) because a `COPY` cannot be gated on an
+`ARG`; until M5d the units were `COPY`d from `os/boards/cx3576/hwinit/` on every
+board, so x64 carried all six and ran none. Every unit is condition-gated on its
+conf file and never blocks, delays, or fails the boot; WiFi association / BT
+pairing stay with connd. The units are enabled via `multi-user.target.wants`
+symlinks like mosd.
 
 | Unit | Conf | Does |
 |---|---|---|
@@ -367,12 +372,12 @@ explained in `docs/design/ro-root.md`.
 
 ## Board hardware init — the enable list is enumerated, not restated
 
-`scripts/hwinit-install.sh` installs `hwinit-*`, `*.service` **and** `*.rules` from
-`os/boards/cx3576/hwinit/`, and derives the enable list by iterating the units
-that are actually present:
+`scripts/hwinit-install.sh` installs `hwinit-*`, `*.service` **and** `*.rules`
+from `os/boards/<board>/hwinit/` — staged into `BOARD_HWINIT_DIR` — and derives
+the enable list by iterating the board FACTS that are actually staged:
 
 ```
-for f in /tmp/hwinit/*.service; do u="$(basename "$f")"; ln -sf ... ; done
+for c in /tmp/board-init/*.conf; do n="$(basename "$c" .conf)"; ... ln -sf ... ; done
 ```
 
 This is not a style preference. The previous hardcoded
@@ -381,14 +386,24 @@ drifted behind the since-deleted v1 `Dockerfile` once already: when `mos-mac` an
 `mos-gadget` were added, both were *installed* by the existing globs but never
 *enabled*, and `60-mos-gadget-getty.rules` was not installed at all — so a v2
 image silently lost its stable MAC and its USB debug console with no error
-anywhere. Adding a unit to `os/boards/cx3576/hwinit/` is now sufficient; the
-build also asserts at least one unit was enabled, so a glob that matches nothing fails
-loudly.
+anywhere. Adding `hwinit-<n>` plus `mos-<n>.service` under
+`os/boards/<board>/hwinit/`, and an `<n>.conf` to the board, is sufficient.
 
-No board fact is restated in the v2 layer. Module names, sysfs paths, UART
-device and speed, CAN bitrate and FD flag, MAC seed and gadget IDs all live in
-`BOARD_INIT_DIR` and are staged verbatim into `/etc/mos`, where the units read
-them at runtime.
+**Both directions are asserted, and neither is a count.** A conf with no script
+is an unread board fact and fails by name; a `/usr/lib/mos/hwinit-<n>` with no
+`/etc/mos/<n>.conf` is a unit that can never run and fails by name. What is NOT
+asserted at build time is the third direction — a board that declares
+`BOARD_HWINIT_CONFS` and whose `init/` went missing stages no conf, installs no
+unit, and the two counts agree at zero. That predates M5d, since `BOARD_INIT_DIR`
+was already a staged directory, and `os/verify-image-v2.sh` holds it at image
+level: it compares the declared facts against the installed helpers.
+
+No board fact is restated in the v2 layer, and since M5d no board NAME is
+either. Module names, sysfs paths, UART device and speed, CAN bitrate and FD
+flag, MAC seed and gadget IDs all live in `BOARD_INIT_DIR` and are staged
+verbatim into `/etc/mos`, where the units read them at runtime;
+`stages/40-board` names no board at all, which `os/build/src/stages.test.ts`
+asserts over every stage file.
 
 ## RAUC system.conf is rendered, not committed
 
@@ -602,6 +617,95 @@ right reason and six that differ for a new one look the same in a list:
 The recipe is in `_out/gate/` of the M5c worktree — `chain-cold.sh` (one tree,
 one cold chain), `extract.sh` (M5b's, verbatim but for the root) and
 `compare.sh` — and it is meant to be re-run rather than cited.
+
+### RFCT-111 M5d: the board parameterisation, measured — and a SEVENTH entry
+
+`40-board`'s two fixed `cx3576` `COPY`s replaced by staged directories
+(`stages/README.md`, "Declining a board"). Every build below is cold, x64,
+**2026-08-26**, through the same driver, and every tree is a `git` checkout cut
+the same way — so the tree is the only difference between a control pair and a
+subject pair.
+
+| | entries |
+|---|---|
+| M5b's subject — the single file vs the four-stage chain | 14 |
+| M5c's subject — that chain vs the nine-stage chain | 6 |
+| **the control, RE-MEASURED here — the base tree against ITSELF, two cold builds 22 minutes apart** | **7** |
+| **M5d's subject vs the first control build** | **7** |
+| **M5d's subject vs the second control build** | **6** |
+| **beyond the control, in either pairing** | **0** |
+
+**The control is 7 today and was 6 for M5a, M5b and M5c.** The seventh is
+`/usr/share/factory/var/log/apt/eipp.log.xz` — apt's dump of the problem it
+handed its solver — and it is in the control, not in the change. It first showed
+up as a seventh entry against a subject build, which is exactly the shape of a
+regression, so it was measured rather than argued: a second cold build of the
+UNMODIFIED base tree reproduces it against the first, with the same signature.
+
+| | eipp.log.xz |
+|---|---|
+| decompressed size | 1,490 lines, identical on every side |
+| differing lines, control pair | 12 |
+| differing lines, subject pair | 12 |
+| what differs | `APT-ID:` and nothing else, in both pairs |
+| by how much | a constant **+4**, in both pairs |
+
+`APT-ID` is an index into apt's in-memory package cache, which spans every
+package the lists offer and not just the ones installed. Four more records in
+`deb.debian.org`'s index — the archive moved during the session — shifts every
+id by four and changes nothing about what is installed. `dpkg.log` proves that
+half directly: **byte-identical over all 694 operations** once timestamps are
+stripped, in the subject pair. And the third pairing settles it — the subject
+against the control's SECOND build, which fell on the same side of the archive
+move, is **6**, the pre-M5d set exactly.
+
+The rest of the differing set is the one this file has recorded since M5a:
+`/boot/initrd.img-*`, the four `/usr/share/factory/var/log` files and
+`aux-cache`. That is what an x64 build of this change should look like — x64 is
+the board that DISCARDED both of the things being parameterised, so a real
+difference would have meant the mechanism changed what a board carries.
+
+Driven past the entry count, because seven entries that differ for the right
+reason and seven that differ for a new one read identically in a list:
+
+- **`unsquashfs -lln` over all 9,241 entries differs on ONE line** in the
+  subject pair, and only in the initrd's SIZE (37,189,836 against 37,190,017
+  bytes). **The control pair also differs on exactly that one line** (37,189,836
+  against 37,190,044). Every mode, uid, gid and path on all three sides is
+  identical — which is the check that matters here, because a `COPY` that
+  changed what it stages would move a mode or a path before it moved a byte.
+- **`dpkg.log` with its timestamps stripped is byte-identical** — the same 694
+  operations in the same order. `grub-editenv-install` did not move, so the apt
+  order the feature stages are arranged to preserve is intact.
+- `alternatives.log` (2 lines) and `apt/history.log` (12 lines) are identical
+  once their own timestamps are removed.
+- **`apt/term.log` is 657 lines on both sides and differs on exactly THREE**,
+  which are the RSA/ECDSA/ED25519 host-key fingerprints `openssh-server`'s
+  postinst echoes as it generates them. The keys themselves are removed by
+  `stages/10-base` and are not in the image; only the console echo survives in
+  the log.
+- `/usr/lib/firmware` **does not exist** in any of the three packed roots, which
+  is the behaviour `firmware-install.sh` was written to keep: a board with no
+  radio gets no empty directory standing where firmware would be.
+
+**A DIFFERENCE THE GATE FOUND IN ITSELF, recorded because it is the kind that
+reads as a subject failure.** The first run of this gate reported 6 differing
+entries and then **24 differing lines in the `-lln` listing** — a mode
+difference, group-write set on `/etc`, `/usr`, `/usr/lib` and nine overlay
+files. Not the change: the control tree had been snapshotted with
+`git archive HEAD | tar -x`, which produced `664`/`775` where a checkout under
+`umask 022` gives `644`/`755`, and the overlay is `cp -a`'d from those files
+into the build context. The content diff could not see it — `diff -r` compares
+bytes, not modes — so the listing is what caught it. **A gate for a refactor has
+to be cut so that the two sides are the same KIND of thing**, and a tar
+extraction and a checkout are not.
+Fixed by cutting the control side with `git worktree add --detach` instead, so
+both sides are checkouts made the same way; the numbers above are that run.
+
+The recipe is in `_out/gate/` of the M5d worktree — `chain-cold.sh` (one tree,
+one cold chain, and the extra `--arg`s the subject's `40-board` declares passed
+by the caller, because the driver REFUSES an argument no stage declares),
+`extract.sh` and `compare.sh` — and it is meant to be re-run rather than cited.
 
 Also cold-build-dependent, and now closed: the byte layout used to depend on
 whichever `squashfs-tools` and `cryptsetup` came out of a floating
