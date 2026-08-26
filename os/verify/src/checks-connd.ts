@@ -9,33 +9,25 @@
 // out of `mosd/mosd/src/reconciler/` rather than restated here, exactly as the
 // oracle reads it. Reading those sources is in scope under PLAN-014's Scope
 // section -- "No change to ... `mosd/` Rust sources" -- while changing them is
-// not, and nothing here writes. A constant restated in two places drifts, and
-// this drift is invisible from the code side: a reconciler that renders into a
-// directory the image does not provide, or drives a unit the image does not
-// install, fails on the device and nowhere else.
+// not, and nothing here writes. A reconciler that renders into a directory the
+// image does not provide, or drives a unit the image does not install, fails on
+// the device and nowhere else.
 //
 // The extractor itself rotted once, which is why there is no fallback. The
 // oracle records it (:994): the sweep marker was read with a regex over
 // `file_name.contains("...")`, network.rs was refactored to an anchored
-// `is_mos_managed()` using starts_with/ends_with, the regex stopped matching and
-// the marker became "". Two things followed and both looked like results -- the
-// collision test `case "${n}" in *"${MOS_SWEEP}"*)` became `**` and matched
-// every filename, reporting eight image .network files as colliding with a sweep
-// that would never have touched them; and the nineteen assertions fell back to
-// hardcoded defaults through `${STA_UNIT:-wpa_supplicant@.service}` and passed,
-// comparing the image against the verifier's own restatement of a contract it
-// had just failed to read.
+// `is_mos_managed()`, the regex stopped matching and the marker became "". The
+// collision test `case "${n}" in *"${MOS_SWEEP}"*)` then became `**` and matched
+// every filename, and the nineteen assertions fell back through
+// `${STA_UNIT:-wpa_supplicant@.service}` and passed against the verifier's own
+// restatement of a contract it had failed to read.
 //
-// So there is no `?? 'wpa_supplicant@.service'` anywhere in this file: an unread
-// contract makes the group fail rather than substitute, the sweep is a prefix
-// matched with an anchor, and the `.network` suffix is asserted rather than
-// assumed, because a marker read out of a `starts_with` that had lost its
-// `ends_with` would describe a wider sweep than the code performs. The register
-// matchers are generated at module load for the same reason -- the entry
-// claiming `/usr/lib/systemd/system/wpa_supplicant@.service is a regular file`
-// is built from the contract, so when the read fails the generated matcher is
-// the same degenerate string the oracle prints and the two sides stay
-// comparable.
+// So there is no `?? 'wpa_supplicant@.service'` anywhere here: an unread contract
+// makes the group fail rather than substitute, the sweep is a prefix matched with
+// an anchor, and the `.network` suffix is asserted rather than assumed. The
+// register matchers are generated at module load for the same reason, so when
+// the read fails the generated matcher is the degenerate string the oracle
+// prints and the two sides stay comparable.
 
 import { existsSync, readdirSync, readFileSync, readlinkSync, statSync } from 'node:fs'
 import { join } from 'node:path'
