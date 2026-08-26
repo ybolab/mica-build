@@ -4,24 +4,6 @@
 > outside this repository; nothing under `board/` is changed by this document.
 > Written for PLAN-010 M4 (= PLAN-006 A/B updates on systemd), RFCT-018.
 
-> **CITATION NOTE, added 2026-08-26 (RFCT-113 M7c) — annotation, not a rewrite.**
-> This document cites `os/mkimage-v2.sh` and `os/verify-image-v2.sh`. Those scripts no
-> longer exist: PLAN-014 ported them into TypeScript and deleted them, each
-> gated on a measured equivalence rather than on review —
-> `os/verify-image-v2.sh` → `os/verify/` at **full verifier parity** (M4e,
-> `6eadc65`), and `os/mkimage-v2.sh` / `os/mkimage-x64.sh` / `os/update/bundle.sh`
-> → `os/build/` at **byte-identity** of the assembled image and of the bundle's
-> squashfs payload (M6e, `c55c7b0`).
->
-> **The citations are left as written**, including their line numbers, because
-> each records what was measured *in the file it names* — they are citations
-> into git history, and re-pointing a line number into a port would invent a
-> precision nobody checked. What to read instead:
-> `bash os/verify/run.sh --verify`, `bash os/build/run.sh --mkimage-v2` /
-> `--mkimage-x64` / `--bundle`. Nothing about the CONTENT of any assertion
-> below changed with the port.
-
-
 ## 0. Scope, status and evidence rules
 
 The user builds a **custom U-Boot based on mainline upstream** for CX3576-Z
@@ -46,15 +28,6 @@ has since landed, and RFCT-107 (PLAN-014 M1) moved it to its present path, so
 every generated file (defconfig fragment, `fw_env.config`, `boot.cmd`) **must
 be regenerated from `os/boards/cx3576/board.env`** so the two sides cannot
 drift.
-
-The v1 single-slot chain (`os/mkimage.sh`, `os/verify-image.sh`,
-`os/rootfs/build.sh`, `os/rootfs/Dockerfile`) still existed when this analysis
-was written, and §1.4, §5.3, §5.4 and §5.5 quote `os/mkimage.sh` by line as the
-baseline the v2 assembler had to match. RFCT-107 (PLAN-014 M1) **deleted** that
-chain. Every `os/mkimage.sh:NN` anchor below is therefore a citation into git
-history, not into the tree — verified when written, and not re-derivable by
-opening the file. What those anchors established is now carried by
-`os/mkimage-v2.sh` and asserted by `os/verify-image-v2.sh`.
 
 `CONFIG_SQUASHFS_XATTR` is out of scope here: L1 approved and applied it to
 `board/common/mos-required.fragment` directly. No action in this document.
@@ -140,8 +113,8 @@ files [V]. Putting the old names in a defconfig is silently ignored.
 ### 1.3 Boot flow today: bootstd, not `distro_bootcmd`
 
 `CONFIG_BOOTCOMMAND` is set by the Dockerfile to
-`"bootflow scan -lb; echo BOOT FAILED - entering rockusb; rockusb 0 mmc 0"`
-(`board/cx3576/uboot/Dockerfile:87`) [V], and the resulting config has [V]:
+`"setenv boot_targets; bootflow scan -lb; echo BOOT FAILED - entering rockusb; rockusb 0 mmc 0"`
+(`board/cx3576/uboot/Dockerfile:108`) [V], and the resulting config has [V]:
 
 ```
 CONFIG_BOOTSTD=y
@@ -186,10 +159,10 @@ slot, it wins and the A/B handshake is silently bypassed.** See §5.4.
 
 ### 1.4 Raw SPL + U-Boot placement
 
-`os/mkimage.sh:31` writes `u-boot-rockchip.bin` at sector 64 with
-`dd ... bs=512 seek=64` (`os/mkimage.sh:106`), and asserts it fits below the
-first partition (`os/mkimage.sh:52-56`) [V]. Inside that combined image, SPL
-loads U-Boot proper from `CONFIG_SYS_MMCSD_RAW_MODE_U_BOOT_SECTOR=0x4000`
+The assembler writes `u-boot-rockchip.bin` at `UBOOT_SEEK_SECTOR`, sector 64
+(`os/boards/cx3576/board.env:87`), with a `dd` whose block size is the sector
+size (`os/build/src/mkimage-v2.ts:426-429`) [V]. Inside that combined image,
+SPL loads U-Boot proper from `CONFIG_SYS_MMCSD_RAW_MODE_U_BOOT_SECTOR=0x4000`
 = sector 16384 = **8 MiB** [V].
 
 **No collision with layout v2**: the actual artifact
@@ -198,14 +171,14 @@ so written at sector 64 it occupies 0.031 MiB … 8.989 MiB, leaving 7.01 MiB of
 headroom before `uenv-a` at 16 MiB. The custom U-Boot must
 keep `CONFIG_SYS_MMCSD_RAW_MODE_U_BOOT_SECTOR` at or below sector `0x7000`
 (14 MiB) so that `u-boot.itb` still ends before 16 MiB; `0x4000` satisfies this
-with ~7 MiB of headroom. `os/mkimage-v2.sh` must keep the equivalent of the
-`os/mkimage.sh:52-56` fit assertion, now bounded by `UENV_A_OFFSET_BYTES`.
+with ~7 MiB of headroom. The assembler asserts the fit rather than trusting it:
+a U-Boot larger than `UBOOT_MAX_BYTES` — the span from sector 64 to `uenv-a`,
+`os/boards/cx3576/board.env:88` — fails the build
+(`os/build/src/mkimage-v2.ts:292-299`) [V].
 
-The v1 kernel command line for reference (`os/mkimage.sh:33`) [V]:
-
-```
-root=PARTLABEL=rootfs rw console=ttyFIQ0,1500000 earlycon=uart8250,mmio32,0x2ad40000 storagemedia=emmc net.ifnames=0 rootwait
-```
+The kernel command line is not the assembler's. `os/rootfs/build-v2.sh:786`
+composes one per rootfs slot from that slot's verity parameters and the board's
+`BOARD_CMDLINE_ARGS` (`os/boards/cx3576/board.env:345`) [V].
 
 ---
 
@@ -540,8 +513,8 @@ this bootmeth reads the counter with `env_get_ulong(..., 10, ...)`
 exhausted. It does **not** need U-Boot-resident logic: the "reset all counters
 and `reset`" behaviour of §4.2 keeps the device alive, and the actual rescue
 entry is the existing `PREBOOT` recovery-button path into rockusb
-(`board/cx3576/uboot/Dockerfile:86`) plus the `bootcmd` tail that enters rockusb
-when boot fails (`Dockerfile:87`) [V]. Both are already in the current tree and
+(`board/cx3576/uboot/Dockerfile:107`) plus the `bootcmd` tail that enters rockusb
+when boot fails (`Dockerfile:108`) [V]. Both are already in the current tree and
 must be preserved in the custom build — that is the rescue path, and it is
 U-Boot-resident for the right reason (it must work when no slot is readable).
 
@@ -692,14 +665,13 @@ reset
 (`u-boot/include/configs/rk3576_common.h:23-33`) [V]; `verityaddr=0x40f00000`
 sits in the gap between `pxefile_addr_r` and `kernel_addr_r`.
 
-The `Image` / `rk3576-src.dtb` filenames match what the v1 assembler already
-writes into the boot partition (`os/mkimage.sh:66-67`) [V].
+The `Image` / `rk3576-src.dtb` filenames match what the assembler stages into
+each boot partition (`os/build/src/mkimage-v2.ts:583-584`) [V].
 
 ### 5.4 Composition with `extlinux/extlinux.conf`
 
-The v1 assembler writes `boot/extlinux/extlinux.conf` into the boot partition
-(`os/mkimage.sh:65-75`) [V]. Per §1.3, extlinux is tried **before** `boot.scr`
-in both bootstd and `distro_bootcmd`. Therefore:
+Per §1.3, extlinux is tried **before** `boot.scr` in both bootstd and
+`distro_bootcmd`. Therefore:
 
 > **The v2 boot slots must not contain `extlinux/extlinux.conf`.** If they do,
 > U-Boot boots it directly and the entire A/B handshake — counter decrement,
@@ -754,8 +726,8 @@ in U-Boot, which is already set [V].
    with `<table>` built from that slot's verity metadata (§7.3). Slot A's file
    references PARTUUID `...0005`, slot B's references `...0006`.
 3. Not write `extlinux/extlinux.conf` into the v2 boot slots (§5.4).
-4. Apply the fixed mtime `@1577836800` to every file before `mcopy`, as
-   `os/mkimage.sh:76` already does [V].
+4. Apply the fixed mtime `@1577836800` to every staged file before the `mcopy`
+   that fills the slot (`os/build/src/mkimage-v2.ts:600-614`) [V].
 5. Zero-fill uenv-a/uenv-b so a freshly flashed device starts from the
    compiled-in default environment rather than stale bytes. (These were p1/p2
    when this section was written; they are **p2/p3** since the loader partition
@@ -938,9 +910,9 @@ All four questions answered against the actual vendor kernel tree
   (`linux/drivers/md/Kconfig:525-538`) [V] — "You'll need to activate the digests
   you're going to use in the cryptoapi configuration".
 - The board config already provides them built-in:
-  `CONFIG_CRYPTO_SHA256=y` (`board/cx3576/kernel/config/kernel-cx3576z.config:7503`),
-  `CONFIG_CRYPTO_SHA256_ARM64=y` (`:7567`),
-  `CONFIG_CRYPTO_SHA2_ARM64_CE=y` (`:7568`) [V]. Nothing is modular.
+  `CONFIG_CRYPTO_SHA256=y` (`board/cx3576/kernel/config/kernel-cx3576z.config:7494`),
+  `CONFIG_CRYPTO_SHA256_ARM64=y` (`:7558`),
+  `CONFIG_CRYPTO_SHA2_ARM64_CE=y` (`:7559`) [V]. Nothing is modular.
   No fragment change is needed today; if a future board's defconfig lacks
   `CRYPTO_SHA256=y` the failure is at runtime, not build time, so it is worth
   adding to `mos-required.fragment` when that file is next touched — noted, not

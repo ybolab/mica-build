@@ -1,8 +1,8 @@
 # RFCT-092 A mechanism that checks docs citations, because five of them rotted in two merges
 
-- **status**: pending
+- **status**: done
 - **priority**: P2
-- **owner**: (unclaimed)
+- **owner**: PLAN-015 M4
 - **createdAt**: 2026-08-21 21:10
 
 Roadmap item raised by PLAN-011 campaign 1, deliberately not folded into it.
