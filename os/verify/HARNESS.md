@@ -452,88 +452,120 @@ A verdict table alone is not enough, and the messages were compared too. Where
 both reject, four of the port's sentences are deliberately different — see
 "where it is stricter" in `README.md`.
 
-## What is still unclaimed, by family — the M4d inventory
+## What is still unclaimed, by family — the M4f inventory
 
-Measured 2026-08-26 against both boards' real images, at `ca993fe`. `make
+Measured 2026-08-26 against both boards' real images, at batch 4a's tip. `make
 os-verify-parity` says `INCOMPLETE` and exits 2, with **zero** diverging,
 ambiguous, orphaned, ts-silent or unfired rows on either board.
 
 | | cx3576 | x64 |
 |---|---|---|
 | oracle conclusions | 398 | 312 |
-| compared, and agreeing | 236 | 193 |
-| **UNCLAIMED** | **162** | **119** |
+| compared, and agreeing | 324 | 262 |
+| **UNCLAIMED** | **74** | **50** |
 
-Batches 1–3 have claimed 59% of cx3576's conclusions and 62% of x64's. What
-remains is 29 families. `(Ns)` marks how many of a family's unclaimed
-conclusions are SKIPs, which never equal a pass and so need a register entry of
-their own.
+Batches 1–4a have claimed 81% of cx3576's conclusions and 84% of x64's. **Group
+A is empty: every conclusion that reads only the unpacked root is ported.** What
+remains is thirteen families and every one of them reads image BYTES.
 
-**A. Reads only the unpacked root — no new tool binding, same shape as batches
-2a and 3.** 88 on cx3576, 69 on x64.
+`(Ns)` marks how many of a family's unclaimed conclusions are SKIPs, which never
+equal a pass and so need a register entry of their own.
 
-| family | cx3576 | x64 |
-|---|---|---|
-| the D-Bus policies (mosd, ext, bluez) | 11 | 11 (1s) |
-| the connd contract and the Wi-Fi userland | 20 | 2 (1s) |
-| the container engine | 10 | 10 |
-| /home, /root and the mos account | 10 | 10 |
-| the package-manager purge | 5 | 5 |
-| the bootloader environment tools | 5 | 4 (2s) |
-| the STATE-backed binds and the mount units | 4 | 4 (1s) |
-| the image profile | 4 | 4 |
-| systemd-repart definitions | 3 | 3 |
-| sshd's AuthorizedKeysFile | 3 | 3 |
-| libcrypt and the crypt(3) format | 3 | 3 |
-| the ELF architecture of the two daemons | 2 | 2 |
-| the networkd namespace | 2 | 2 |
-| ssh.service reload semantics | 2 | 2 |
-| the health gate's two root-side conclusions | 2 | 2 |
-| systemd-networkd is enabled | 1 | 1 |
-| the boot scripts' external commands | 1 | 1 |
-
-**B. Reads image BYTES, and three of these need a tool this harness does not yet
-drive.** 74 on cx3576, 50 on x64.
+### Group B — what batch 4b faces
 
 | family | cx3576 | x64 | needs |
 |---|---|---|---|
-| the four ext4 storage tiers | 25 | 25 | `e2fsck -fn` |
+| the four ext4 storage tiers | 25 | 25 | **`e2fsck -fn`** |
 | boot slot: the status-LED device tree | 12 | 2 (2s) | **`fdtget`** |
 | dm-verity and the kernel cmdline | 8 | 8 | — (`verityVerify` exists) |
-| boot.scr: the compiled boot script | 7 | 2 (2s) | uImage header parsing |
-| the raw pre-GPT U-Boot blob | 4 | 1 (1s) | — |
-| boot slot: the BSP artifact byte-compare | 4 | 0 | reads `board/<board>/out/` |
+| boot.scr: the compiled boot script | 7 | 2 (2s) | **a uImage header reader** |
+| boot slot: the BSP artifact byte-compare | 6 | 0 | reads `board/<board>/out/` |
+| the ESP and the GRUB boot chain | 2 (2s) | 5 | — |
 | the U-Boot verity env pair | 3 | 0 | — |
 | factory: the zero-filled regions | 3 | 1 (1s) | — |
-| the ESP and the GRUB boot chain | 2 (2s) | 5 | — |
-| file capabilities | 2 | 2 | xattr read in the container |
+| the raw pre-GPT U-Boot blob | 2 | 1 (1s) | — |
 | RAUC's `rauc.slot=` on the boot path | 2 | 2 | — |
-| GPT: the partition count | 1 | 1 | the anchored matcher above |
+| file capabilities | 2 | 2 | xattr read in the container |
+| GPT: the partition count | 1 | 1 | a per-board literal, see below |
 | image-shape: the default path is the -latest symlink | 1 | 1 | — |
 
-### Is a fourth batch needed?
+The classification is an ORDERED rule table over both boards' unclaimed lists,
+asserted to leave nothing unclassified and to sum to exactly 74 and 50. The
+order is load-bearing in two places, and both were re-derived rather than
+carried forward from M4d:
 
-**Yes, and realistically two.** Three porting batches was the campaign's
-estimate; batches 1–3 claimed 236 and 193 conclusions and left 162 and 119, so
-the remainder is roughly the size of batch 3 twice over. M4e cannot delete
-`os/verify-image-v2.sh` until it is zero, and a batch that tried to take all of
-group A and all of group B at once would land the tool bindings and the port
-that depends on them in one change.
+* `... compare source not found` is claimed by the BSP family BEFORE the
+  status-LED one, so `BOOT-A rk3576-src.dtb compare source not found` is a
+  missing build artefact and not a device-tree assertion. That moves two lines
+  M4d counted under the raw U-Boot blob into the BSP family: **6 / 2, not 4 / 4.**
+  The total is unchanged and so is the work — both families read
+  `board/<board>/out/`.
+* the U-Boot verity env PAIR is claimed before the dm-verity family, which
+  otherwise swallows it on the word `verity`.
 
-The split above is the recommended one, because it is the split by what a batch
-has to BUILD rather than by what the oracle happens to print next to what:
+### Two things a reader of this table needs to know
 
-* **batch 4a — group A.** 88 conclusions on cx3576 and 69 on x64, every one of
-  them `packedRoot()` plus a read. No new tool, no new context method. The
-  Wi-Fi family is the largest single piece and needs the connd contract read
-  out of the `mosd/` sources, which is what the oracle does (`:1030`) — reading
-  those sources is in scope; changing them is not.
-* **batch 4b — group B.** 74 and 50, and three tool bindings first: `fdtget`
-  (12 conclusions on cx3576 hang on it), `e2fsck -fn` (4 per board), and a
-  uImage header reader for `boot.scr`. `ext4Super`, `ext4List`, `ext4Stat`,
-  `debugfsRun` and `verityVerify` already exist in `src/image.ts`.
+**cx3576's oracle run is RESULT FAIL in a worktree with no BSP build**, and that
+is not a defect in the image. Eight of its conclusions are `... compare source
+not found: /board/out/...` and `u-boot is 0 bytes`, because `board/cx3576/out/`
+is unpopulated. All eight are group B, all eight are `not-ported`, and parity is
+unaffected — the two sides agree on everything they both decided.
 
-Then **M4e** deletes the oracle at exit 0.
+**`exactly ${EXPECT_PARTS} partitions` is still unclaimable by a shared
+substring.** M4b measured it and it has not changed: ` partitions` claims three
+lines on cx3576 and three on x64, `exactly ` claims thirteen and eight, and the
+only token left is the COUNT, which `os/verify-image-v2.sh:1408` deliberately
+stopped writing down. It is now claimable the way M4f claims the ELF
+architecture: **one entry per board, generated from that board's own partition
+count** (`exactly 11 partitions` / `exactly 9 partitions`), which is a
+derivation from `os/boards/` and not a literal. That is 1 conclusion per board
+and it is left with the rest of group B.
+
+### Is a fifth batch needed?
+
+**No.** Batch 4b is the last porting batch. It is 74 and 50 conclusions — about
+the size of batch 3 — and three tool bindings have to land FIRST, because
+nothing else can produce the conclusions that hang on them:
+
+* **`fdtget`** — 12 conclusions on cx3576 depend on it and on nothing else.
+* **`e2fsck -fn`** — 4 per board, inside the ext4 family.
+* **a uImage header reader** for `boot.scr` — 7 on cx3576.
+
+`ext4Super`, `ext4List`, `ext4Stat`, `debugfsRun` and `verityVerify` already
+exist in `src/image.ts`. Then **M4e** deletes the oracle at exit 0.
+
+## What batch 4a claimed, and the two shapes it could not express
+
+M4f ported all 88 group-A conclusions on cx3576 and all 69 on x64, in six
+modules: `checks-dbus.ts`, `checks-engine.ts`, `checks-home.ts`,
+`checks-connd.ts`, `checks-system.ts` and `script-commands.ts`. Two things it
+had to write down rather than work around:
+
+**`check_container_engine`'s early return cannot be expressed.** On a
+WITH_CONTAINERS=0 image it prints ONE conclusion where a normal image prints
+ten, and the oracle's own words for the other nine are "skipped BY IDENTITY".
+The register has no way to say "this check does not exist on this image": an
+entry owning that one line would report `unfired` on both shipped boards, and
+the nine suppressed checks have no shell line to be compared against whatever
+they answer. So `container-engine-installed` owns BOTH sentences and the other
+nine answer `skipped()`; on such an image the run would report nine `orphan`
+rows. Neither shipped board produces that shape.
+
+**One defect in the code under test, reproduced and asserted rather than fixed.**
+`os/verify-image-v2.sh:3331` reads
+
+    fwenv_lines="$(grep -cE '^/dev/' "${fwenv}" 2>/dev/null || echo 0)"
+
+and on a file that EXISTS with no `^/dev/` line, `grep -c` prints `0` **and**
+exits 1 — so the `|| echo 0` fires as well and the value is the two-line string
+`"0\n0"`, which the oracle interpolates into a FAIL message. The second half of
+that message is a stdout line with no PASS/FAIL/SKIP prefix, so
+`parseShellRun`'s self-consistency guard would refuse the whole run. Neither
+shipped image reaches it (both have two device lines), and the port reproduces
+it exactly: a port that emitted `0` would agree with the oracle on every image
+where the branch is not taken and diverge on the one image where the difference
+is the point. It is a decision for whoever owns the oracle, beside the
+`:3765`/`:3899` disagreement M4d recorded.
 
 ## What the suite covers
 

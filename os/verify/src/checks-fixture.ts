@@ -37,6 +37,8 @@ import type { Board } from './board.ts'
 import type { ImageContext } from './checks.ts'
 import type { FatSlot, GptPartition, GptTable } from './image.ts'
 import { walkLayout } from './layout.ts'
+import { CONTRACT, mountUnitFor } from './checks-connd.ts'
+import { cryptPrefixes, readProfileContract } from './checks-system.ts'
 import { OS_DIR } from './paths.ts'
 import type { ToolResult, ToolRuntime } from './tools.ts'
 import { ToolOutputError } from './tools.ts'
@@ -327,13 +329,418 @@ function seedHealthyRoot(root: string, board: Board): void {
   // --- apid, carrying the escape page's markup ---
   file('/usr/bin/apid', `ELF ...${verifierConst('BUILTIN_MARKUP')}... trailer\n`)
 
+  seedDbus(root, file)
+  seedEngine(root, board, file)
+  seedHomes(root, board, file)
+  seedConnd(root, board, file)
   seedShadow(root, file)
   seedMqtt(root, file)
   seedBoardShape(root, board, file)
+  // LAST: it prepends an ELF header to the two daemons seeded above and writes
+  // the ssh.service the shadow family also touches, so it has to see their
+  // final contents rather than be overwritten by them.
+  seedSystem(root, board, file)
 
   // Nothing at /builtin, nothing at /etc/rauc/keyring.pem, nothing under
   // /srv/ui: absence is the shipped state for all three, and seeding any of
   // them would make the fixture red before a test had mutated anything.
+}
+
+// ---------------------------------------------------------------------------
+// M4f: the D-Bus policies
+// ---------------------------------------------------------------------------
+
+/**
+ * The system bus, the mosd policy and the extension policy.
+ *
+ * The extension policy is seeded WITH the commentary the shipped file carries,
+ * and that is the point rather than realism for its own sake: com.mos.ext.conf
+ * documents its own widening hazard in prose that NAMES com.mos.mosd and shows
+ * `own_prefix="com.mos"` as the mistake. A reader that could not tell an XML
+ * comment from a rule reports the warning as an instance of the thing it warns
+ * about -- so the fixture has to contain the trap, or the tests would prove
+ * comment-stripping works on a file that needs none.
+ *
+ * com.mos.mosd.conf is seeded by `seedHealthyRoot` above, beside the sq_grep
+ * that reads it; the parse-level facts this batch asserts are mutations OF that
+ * file, so it stays in one place.
+ */
+function seedDbus(root: string, file: WriteFile): void {
+  file('/usr/lib/systemd/system/dbus.service', '[Unit]\n')
+  file('/usr/lib/systemd/system/dbus.socket', '[Unit]\n')
+  file('/usr/share/dbus-1/system.d/com.mos.ext.conf',
+    '<busconfig>\n'
+    + '  <!-- Extension point. Do NOT widen this to own_prefix="com.mos": that\n'
+    + '       would grant ownership of com.mos.mosd to every local uid. -->\n'
+    + '  <policy context="default">\n'
+    + '    <allow own_prefix="com.mos.ext"/>\n'
+    + '  </policy>\n'
+    + '</busconfig>\n')
+}
+
+// ---------------------------------------------------------------------------
+// M4f: the container engine, the purge, and the trust store
+// ---------------------------------------------------------------------------
+
+/**
+ * How many `copyright` files and CA certificates the fixture seeds.
+ *
+ * EXACTLY the oracle's threshold, on purpose. The real images carry 162 and 150,
+ * and a fixture that carried those numbers would need twenty-odd deletions
+ * before a check noticed -- so the mutation that drives it red would be a bulk
+ * edit rather than one edit, and it would not say where the boundary is. At the
+ * threshold, removing ONE file is the whole test.
+ */
+const PURGE_THRESHOLD = 100
+
+/**
+ * The engine installed and INERT, its configuration, and what the purge left.
+ *
+ * Nothing here is a stand-in: the units, the mount and the config keys are the
+ * ones the checks read, in the shapes the shipped image has. The two things
+ * DELIBERATELY ABSENT are the ones absence is the correct state for -- there is
+ * no /usr/share/containers/containers.conf (a second config layer podman would
+ * merge before /etc, so an operator reading /etc would see half the settings)
+ * and no local-fs.target.wants symlink for the Quadlet mount (a static
+ * enablement is what makes PLAN-012's switch gate nothing).
+ */
+function seedEngine(root: string, board: Board, file: WriteFile): void {
+  for (const b of [
+    '/usr/bin/podman', '/usr/bin/crun', '/usr/libexec/podman/conmon',
+    '/usr/libexec/podman/netavark', '/usr/libexec/podman/aardvark-dns',
+    '/usr/libexec/podman/catatonit', '/usr/libexec/podman/quadlet',
+    '/usr/lib/systemd/system-generators/podman-system-generator',
+    '/usr/sbin/nft',
+  ]) file(b)
+
+  // DLOPENed by name, so it is in no NEEDED list -- and the directory follows
+  // the board's architecture, which is why the check searches /usr/lib whole
+  // rather than naming a multiarch triplet.
+  file(`/usr/lib/${board.arch === 'amd64' ? 'x86_64' : 'aarch64'}-linux-gnu/libsystemd.so.0`)
+
+  file('/etc/containers/policy.json', '{"default":[{"type":"insecureAcceptAnything"}]}\n')
+  file('/etc/containers/registries.conf', 'unqualified-search-registries = ["docker.io"]\n')
+  file('/etc/containers/containers.conf',
+    '[engine]\nhelper_binaries_dir = ["/usr/libexec/podman"]\nlog_driver = "journald"\n')
+  // DATA, not /var: /var is the EPHEMERAL partition, 512 MiB and wiped by
+  // design, so images there are capped and then silently destroyed.
+  file('/etc/containers/storage.conf', '[storage]\ndriver = "overlay"\ngraphroot = "/srv/containers/storage"\n')
+
+  file('/etc/systemd/system/etc-containers-systemd.mount',
+    '[Mount]\nWhat=/mnt/state/quadlet\nWhere=/etc/containers/systemd\nType=none\nOptions=bind\n')
+
+  // The purge's positive half: the licences Debian ships to satisfy the
+  // redistribution terms of the GPL and everything else in the image.
+  for (let i = 0; i < PURGE_THRESHOLD; i += 1) {
+    file(`/usr/share/doc/pkg${String(i).padStart(3, '0')}/copyright`, 'Format: https://…\n')
+  }
+
+  // The trust store, GENERATED rather than shipped -- which is what fails when
+  // ca-certificates installs without its postinst having run.
+  file('/etc/ssl/certs/ca-certificates.crt',
+    `${Array.from({ length: PURGE_THRESHOLD }, (_v, i) =>
+      `-----BEGIN CERTIFICATE-----\ncert${i}\n-----END CERTIFICATE-----`).join('\n')}\n`)
+}
+
+// ---------------------------------------------------------------------------
+// M4f: /home, /root, the mos account, and the STATE binds
+// ---------------------------------------------------------------------------
+
+/**
+ * The two persistent homes, their seeds, and the binds that keep precious state
+ * off the discardable /var.
+ *
+ * The seed SCRIPTS are seeded in the shape the checks read them, which is a
+ * static read of a handful of anchored lines -- `mkdir /srv/root`,
+ * `chmod 0700 /srv/root`, `chown 0:0 /srv/root` at the start of a line and
+ * nothing else. That is deliberately the oracle's own reading rather than a
+ * plausible script: the check greps for those exact lines, so a fixture written
+ * to be realistic instead of to be READ would pass for the wrong reason.
+ *
+ * `/root` is chmod-ed and chown-ed because the mountpoint's own mode is asserted
+ * -- Debian ships it 0700 root:root and nothing guaranteed it stayed that way
+ * through the pack stage, and DATA is not verity-protected, so the mode is not
+ * implied by anything.
+ */
+function seedHomes(root: string, board: Board, file: WriteFile): void {
+  file('/bin/bash')
+
+  // /root's own mode, which is a separate fact from its existence.
+  chmodSync(join(root, '/root'), 0o700)
+  ownAsRoot(root, '/root', 0)
+
+  const mount = (unit: string, what: string, where: string): void => {
+    file(`/etc/systemd/system/${unit}`,
+      `[Mount]\nWhat=${what}\nWhere=${where}\nType=none\nOptions=bind\n[Install]\nWantedBy=local-fs.target\n`)
+    enableEtcUnit(root, unit, 'local-fs.target.wants')
+  }
+  mount('home.mount', '/srv/home', '/home')
+  mount('root.mount', '/srv/root', '/root')
+  mount('usr-local-lib-systemd-system.mount', '/mnt/state/systemd-units', '/usr/local/lib/systemd/system')
+  // var-lib-mos.mount is written by seedMqtt (the bridge's EnvironmentFile lives
+  // on it); enabling it is this family's business, and a unit installed and not
+  // enabled is precisely the failure both families exist to catch.
+  enableEtcUnit(root, 'var-lib-mos.mount', 'local-fs.target.wants')
+  if ((board.radios ?? []).includes('bluetooth')) {
+    mount('var-lib-bluetooth.mount', '/mnt/state/bluetooth', '/var/lib/bluetooth')
+  }
+
+  for (const [unit, before] of [
+    ['mos-seed-home.service', 'home.mount'],
+    ['mos-seed-root.service', 'root.mount'],
+  ] as const) {
+    file(`/etc/systemd/system/${unit}`,
+      `[Unit]\nBefore=${before}\n[Service]\nType=oneshot\nExecStart=/usr/lib/mos/${unit.replace('.service', '')}\n`)
+    enableEtcUnit(root, unit, 'local-fs.target.wants')
+  }
+
+  file('/usr/lib/mos/mos-seed-home',
+    '#!/bin/sh\n'
+    + '# The pair is PINNED, not resolved: the home on DATA outlives this rootfs.\n'
+    + 'MOS_UID=1000\n'
+    + 'MOS_GID=1000\n'
+    + '[ -d /srv/home/mos ] && exit 0\n'
+    + 'mkdir /srv/home/mos\n'
+    + 'chmod 0700 /srv/home/mos\n'
+    + 'chown "${MOS_UID}:${MOS_GID}" /srv/home/mos\n')
+
+  file('/usr/lib/mos/mos-seed-root',
+    '#!/bin/sh\n'
+    + '# Everything here is under /srv: /root before the bind is the verity root.\n'
+    + '[ -d /srv/root ] && exit 0\n'
+    + 'mkdir /srv/root\n'
+    + 'chmod 0700 /srv/root\n'
+    + 'chown 0:0 /srv/root\n')
+  chmodSync(join(root, '/usr/lib/mos/mos-seed-root'), 0o755)
+}
+
+/** The profile KEY mosd reads, out of mosd's own source. */
+function profileKeyFromMosd(): string {
+  const key = readProfileContract().key
+  if (key === '') {
+    throw new ToolOutputError(
+      'mosd/mosd/src/provisioning.rs no longer declares PROFILE_KEY. A fixture that wrote the key '
+      + 'down would keep passing while the image and mosd disagreed about it.',
+    )
+  }
+  return key
+}
+
+/** The one crypt(3) prefix transient.rs pins, for the fixture's libcrypt to carry. */
+function cryptPrefixFromMosd(): string {
+  const prefixes = cryptPrefixes()
+  if (prefixes.length !== 1) {
+    throw new ToolOutputError(
+      `mosd/mosd/src/transient.rs pins ${prefixes.length} crypt(3) prefixes; the fixture cannot make `
+      + `the libcrypt check green against an ambiguous source, and pinning one here would test this `
+      + `file's idea of the format rather than mosd's.`,
+    )
+  }
+  return prefixes[0] as string
+}
+
+/** A `*.wants` symlink for a unit that lives in /etc/systemd/system, not /usr/lib. */
+function enableEtcUnit(root: string, unit: string, target: string): void {
+  const dir = join(root, '/etc/systemd/system', target)
+  mkdirSync(dir, { recursive: true })
+  symlinkSync(`/etc/systemd/system/${unit}`, join(dir, unit))
+}
+
+// ---------------------------------------------------------------------------
+// M4f: the Wi-Fi userland, on the boards that declare a radio
+// ---------------------------------------------------------------------------
+
+/**
+ * hostapd, wpa_supplicant, their unit templates and the STATE binds behind them.
+ *
+ * EVERY NAME HERE COMES FROM THE CONND CONTRACT, read out of `mosd/` by the same
+ * function the checks read it with. That is the same trade `healthyGpt` makes
+ * one layer up and for the same reason: the fixture's job is to be green until
+ * it is MUTATED, so a baseline built from the contract is the baseline, and
+ * every assertion below comes from an edit to it. Writing `wpa_supplicant` down
+ * here instead would make the fixture stop tracking a rename in mosd while the
+ * checks followed it -- and the tests would then fail for a reason that is not
+ * about the image.
+ *
+ * The two ExecStart lines use DIFFERENT instance specifiers on purpose: the
+ * station's `%I` and the access point's `%i`, which is what both shipped images
+ * actually carry. A port that accepted only one of them would fail one of the
+ * two on a correct image, and only a fixture carrying both can show it does not.
+ */
+function seedConnd(root: string, board: Board, file: WriteFile): void {
+  if (!(board.radios ?? []).includes('wifi')) return
+  const c = CONTRACT
+
+  file('/usr/sbin/hostapd')
+  file('/usr/sbin/wpa_supplicant')
+  file(`/usr/lib/systemd/system/${c.staUnit}`,
+    `[Service]\nExecStart=/usr/sbin/wpa_supplicant -c ${c.staDir}/${c.staConf.replaceAll('{interface}', '%I')} -i %I\n`)
+  file(`/usr/lib/systemd/system/${c.apUnit}`,
+    `[Service]\nExecStart=/usr/sbin/hostapd ${c.apDir}/${c.apConf.replaceAll('{interface}', '%i')}\n`)
+
+  // The packages' own units, MASKED -- the only form that also blocks the D-Bus
+  // activation path wpasupplicant ships. Not merely disabled, and with no
+  // *.wants entry left behind by the postinst.
+  for (const u of ['hostapd.service', 'wpa_supplicant.service', 'dbus-fi.w1.wpa_supplicant1.service']) {
+    mkdirSync(join(root, '/etc/systemd/system'), { recursive: true })
+    symlinkSync('/dev/null', join(root, '/etc/systemd/system', u))
+  }
+
+  for (const where of [c.staDir, c.apDir]) {
+    const unit = mountUnitFor(where)
+    file(`/etc/systemd/system/${unit}`,
+      `[Mount]\nWhat=/mnt/state/${where.split('/').at(-1)}\nWhere=${where}\nType=none\nOptions=bind\n`)
+    enableEtcUnit(root, unit, 'local-fs.target.wants')
+  }
+
+  // Nothing at /usr/sbin/dnsmasq: the AP's DHCP server is systemd-networkd's own
+  // DHCPServer=yes, and a second one on the same link is a conflict.
+}
+
+// ---------------------------------------------------------------------------
+// M4f: the small root-side families -- networkd, the ELF headers, the
+// bootloader environment, repart, sshd, the profile and libcrypt
+// ---------------------------------------------------------------------------
+
+/** ELF magic, then padding, then `e_machine` as the 16-bit LE field at offset 18. */
+function elfHeader(arch: string | undefined): Buffer {
+  const head = Buffer.alloc(64)
+  head.write('\x7fELF', 0, 'latin1')
+  // Not a written-down pair of magic numbers on each side of the comparison:
+  // the CHECK reads MOS_ARCH out of the board and so does this, so a third
+  // architecture is a change in one place.
+  head.writeUInt16LE(arch === 'amd64' ? 0x3E : 0xB7, 18)
+  return head
+}
+
+/**
+ * What the ten small families read.
+ *
+ * BOARD-SHAPED THROUGHOUT, from the board's own declarations: the ELF machine
+ * follows MOS_ARCH, the bootloader helpers follow RAUC_BOOTLOADER, fw_env.config
+ * addresses the two UENV partitions by the GUIDs and the size the board
+ * declares, and the multiarch directory libcrypt lands in follows MOS_ARCH too.
+ * Pinning any of them would make `packedRootFixture(x64)` an arm64 tree with the
+ * wrong names -- which is the shape M4d found and removed.
+ */
+function seedSystem(root: string, board: Board, file: WriteFile): void {
+  enable(root, 'systemd-networkd.service')
+
+  for (const p of ['/usr/bin/mosd', '/usr/bin/apid']) {
+    const existing = readFileSync(join(root, p))
+    writeFileSync(join(root, p), Buffer.concat([elfHeader(board.arch), existing]))
+  }
+
+  if (board.bootloader === 'uboot') {
+    file('/usr/bin/fw_printenv')
+    // A SYMLINK, which is what trixie's libubootenv ships: one multi-call
+    // binary. The check accepts either spelling, and this is the one that would
+    // fail a naive "is a regular file" assertion.
+    symlinkSync('fw_printenv', join(root, '/usr/bin/fw_setenv'))
+    const size = Number(board.get('UENV_SIZE_BYTES') ?? 0)
+    const hex = `0x${size.toString(16)}`
+    file('/etc/fw_env.config',
+      ['UENV_A', 'UENV_B']
+        .map(k => `/dev/disk/by-partuuid/${(board.partition(k)?.guid ?? '').toLowerCase()}\t0x0\t${hex}`)
+        .join('\n') + '\n')
+  }
+  else {
+    file('/usr/bin/grub-editenv')
+  }
+
+  file('/usr/bin/curl')
+  seedBootScripts(root, file)
+
+  // One repart definition per linux-generic partition in the board's own walk,
+  // and exactly ONE of them growing. The count the check compares against comes
+  // from the GPT, so a fixture that wrote its own number would hand the check
+  // the same value on both sides of its own comparison.
+  for (const [i, name] of linuxGenericDefinitions(board).entries()) {
+    file(`/etc/repart.d/${name}`,
+      `[Partition]\nType=linux-generic\n${name === '80-data.conf' ? 'Weight=1000\n' : `Priority=${i}\n`}`)
+  }
+
+  file('/etc/ssh/sshd_config', 'Port 22\nPermitRootLogin prohibit-password\n')
+  file('/etc/ssh/sshd_config.d/05-mos-authorized-keys.conf',
+    'AuthorizedKeysFile /etc/ssh/authorized_keys.d/%u\n')
+  file('/etc/systemd/system/etc-ssh.mount',
+    '[Mount]\nWhat=/mnt/state/ssh\nWhere=/etc/ssh\nType=none\nOptions=bind\n')
+  enableEtcUnit(root, 'etc-ssh.mount', 'local-fs.target.wants')
+
+  // The profile: mode 0444, one lowercase value, and ssh.service NOT enabled.
+  file('/usr/lib/mos/profile.conf', `${profileKeyFromMosd()}=dev\n`)
+  chmodSync(join(root, '/usr/lib/mos/profile.conf'), 0o444)
+  file('/usr/lib/systemd/system/ssh.service',
+    '[Service]\nKillMode=process\nExecReload=/bin/kill -HUP $MAINPID\n')
+
+  // libcrypt, at the multiarch directory this board's MOS_ARCH selects, reached
+  // through the SONAME symlink the login stack loads -- and carrying the crypt(3)
+  // prefix transient.rs pins, read from transient.rs rather than typed here.
+  const triplet = board.arch === 'amd64' ? 'x86_64-linux-gnu' : 'aarch64-linux-gnu'
+  file(`/usr/lib/${triplet}/libcrypt.so.1.1.0`, `\x7fELF...${cryptPrefixFromMosd()}...\n`)
+  symlinkSync('libcrypt.so.1.1.0', join(root, `/usr/lib/${triplet}/libcrypt.so.1`))
+}
+
+/**
+ * A /usr/lib/mos script with enough shape to exercise the command extractor, and
+ * the binaries it names.
+ *
+ * SIXTEEN COMMANDS, because the check refuses fewer than ten: an extractor that
+ * stopped seeing commands would make the presence test pass while proving
+ * nothing, and the oracle guards that with a vacuity floor. A fixture sitting
+ * below the floor could not tell a working extractor from a broken one.
+ *
+ * The body is deliberately awkward in the ways the pipeline is about: a `case`
+ * block whose PATTERNS are not commands, a command substitution inside a
+ * double-quoted string, an escaped `#` in a message, a line continuation, a
+ * locally defined function, and a wrapper call. Each of those is a stage of the
+ * extractor and each has a case beside it.
+ */
+function seedBootScripts(root: string, file: WriteFile): void {
+  for (const c of [
+    'awk', 'cat', 'chmod', 'chown', 'cp', 'grep', 'head', 'mkdir',
+    'mktemp', 'mv', 'od', 'rm', 'sed', 'sleep', 'sync', 'tr',
+  ]) file(`/usr/bin/${c}`)
+
+  file('/usr/lib/mos/mos-health',
+    '#!/bin/sh\n'
+    + 'set -eu\n'
+    + '\n'
+    + 'have() { command -v "$1" >/dev/null 2>&1; }\n'
+    + 'probe() {\n'
+    + '    # a wrapper call: curl is OPTIONAL and must not be extracted\n'
+    + '    have curl || return 0\n'
+    + '}\n'
+    + '\n'
+    + 'tmp="$(mktemp -d)"\n'
+    + 'mkdir -p "${tmp}/work"\n'
+    + 'chmod 0700 "${tmp}"\n'
+    + 'chown 0:0 "${tmp}"\n'
+    + 'cat /proc/uptime | awk \'{ print $1 }\' >"${tmp}/uptime"\n'
+    + 'grep -q booted "${tmp}/uptime" || true\n'
+    + 'head -n1 "${tmp}/uptime" | tr -d \'\\n\' >"${tmp}/short"\n'
+    + 'sed -e \'s/x/y/\' "${tmp}/short" >"${tmp}/edited"\n'
+    + 'od -An -c "${tmp}/edited" >"${tmp}/dump"\n'
+    + 'cp "${tmp}/dump" "${tmp}/dump.bak"\n'
+    + 'mv "${tmp}/dump.bak" "${tmp}/dump.old"\n'
+    + 'printf \'%s\\n\' "state \\# ok" >"${tmp}/note"\n'
+    + 'case "${1:-status}" in\n'
+    + 'status)\n'
+    + '    probe\n'
+    + '    ;;\n'
+    + 'reset)\n'
+    + '    rm -rf "${tmp}/work"\n'
+    + '    ;;\n'
+    + 'esac\n'
+    + 'sleep 0 \\\n'
+    + '    && sync\n')
+}
+
+/** `80-data.conf` plus one definition per other linux-generic partition. */
+function linuxGenericDefinitions(board: Board): string[] {
+  const walk = walkLayout(board, Number(board.partition('ROOTFS_A')?.sizeSectors ?? 0))
+  const generic = walk.rows.filter(r => r.typecode.toLowerCase() === '0fc63daf-8483-4772-8e79-3d69d8477de4')
+  return generic.map((r, i) => (r.label.toLowerCase() === 'data' ? '80-data.conf' : `${10 + i}-${r.label}.conf`))
 }
 
 /** What `seedHealthyRoot` hands its helpers: write a file, making its parents. */
@@ -413,9 +820,18 @@ function seedShadow(root: string, file: WriteFile): void {
     + '  printf \'%s\\n\' "${line}" | awk -F: \'{ $2 = "!"; print }\'\n'
     + 'done <"$FACTORY"\n')
 
-  // ...and mos-seed-state, which must put NO shadow file on STATE.
+  // ...and mos-seed-state, which must put NO shadow file on STATE -- and which
+  // M4f also reads for the two connd render targets. The `for d in ...` loop is
+  // the shape the connd checks grep for, not decoration: the seed creates both
+  // directories from ONE loop, so the assertion is in two halves and either
+  // half alone would pass for a script that created the other twice.
   file('/usr/lib/mos/mos-seed-state',
-    '#!/bin/sh\nmkdir -p /mnt/state/mos /mnt/state/ssh /mnt/state/hostapd\n')
+    '#!/bin/sh\n'
+    + 'mkdir -p /mnt/state/mos /mnt/state/ssh\n'
+    + 'for d in wpa_supplicant hostapd; do\n'
+    + '    mkdir -p "/mnt/state/$d"\n'
+    + '    chmod 0700 "/mnt/state/$d"\n'
+    + 'done\n')
 }
 
 /**
@@ -539,6 +955,11 @@ function seedBoardShape(root: string, board: Board, file: WriteFile): void {
     // device in the fleet then advertises the same name.
     file('/etc/bluetooth/main.conf', '[General]\nAlwaysPairable = false\n')
     file('/usr/lib/systemd/system/bluetooth.service', '[Unit]\n')
+    // The VENDOR path, which is where trixie's bluez installs it. The oracle
+    // accepts /etc/dbus-1/system.d too, because dbus-daemon reads both and a
+    // correct bookworm image puts it there.
+    file('/usr/share/dbus-1/system.d/bluetooth.conf',
+      '<busconfig>\n  <policy user="root">\n    <allow own="org.bluez"/>\n  </policy>\n</busconfig>\n')
     enable(root, 'bluetooth.service', 'bluetooth.target.wants')
   }
 
