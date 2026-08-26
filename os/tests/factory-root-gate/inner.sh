@@ -1,0 +1,135 @@
+#!/bin/bash
+# The four comparisons. Runs INSIDE the pinned tool container; gate.sh starts it.
+#
+#   bash inner.sh <out-dir> <work-dir>
+#
+# THE QUESTION. os/rootfs/stages/90-pack.Dockerfile packs `pack`'s /rootfs into a
+# squashfs AND exports the same /rootfs as an OCI image. RFCT-113's smoke run
+# executes binaries in the second and the device ships the first, so if the two
+# are not one tree the smoke run is a check on something adjacent to the
+# artifact -- the exact shape of green this campaign keeps finding.
+#
+# WHY FOUR COMPARISONS AND NOT ONE. `diff -r` cannot see a mode, a uid or a gid;
+# a listing cannot see a byte; neither can see a file capability, which lives in
+# an xattr that has to survive a buildkit layer export to reach either side; and
+# none of the three can see a hardlink becoming two files. A COPY that changed
+# what it staged moves a mode or a path before it moves a byte.
+#
+# IT EXITS NON-ZERO ON ANY DIFFERENCE. An earlier draft printed
+# "METADATA: 3 differing rows" and exited 0, which is a report and not a gate.
+set -euo pipefail
+
+out="${1:?usage: inner.sh <out> <work>}"
+work="${2:?usage: inner.sh <out> <work>}"
+img="${out}/rootfs-verity.img"
+envf="${out}/rootfs-verity.env"
+oci="${out}/factory-root.oci"
+for f in "${img}" "${envf}" "${oci}"; do
+    [ -s "${f}" ] || { echo "error: ${f} is missing or empty" >&2; exit 1; }
+done
+rm -rf "${work}"; mkdir -p "${work}"
+differing=0
+
+# The image is squashfs + an appended verity hash tree + padding to a whole MiB.
+# Truncated to the size pack-verity.sh recorded, because unsquashfs handed the
+# padded file mostly copes, and mostly-coping is worse than failing.
+bytes="$(sed -n 's/^SQUASHFS_BYTES=//p' "${envf}" | tail -n1)"
+[ -n "${bytes}" ] || { echo "error: no SQUASHFS_BYTES in ${envf}" >&2; exit 1; }
+head -c "${bytes}" "${img}" > "${work}/rootfs.squashfs"
+
+echo "== extract =="
+unsquashfs -n -xattrs -d "${work}/sq" "${work}/rootfs.squashfs" > "${work}/unsquashfs.log" 2>&1
+echo "squashfs: $(tail -1 "${work}/unsquashfs.log")"
+
+mkdir -p "${work}/blobs" "${work}/ocix"
+tar -xf "${oci}" -C "${work}/blobs"
+layer=""
+n=0
+for blob in $(find "${work}/blobs/blobs" -type f | LC_ALL=C sort); do
+    if tar -tf "${blob}" >/dev/null 2>&1; then layer="${blob}"; n=$((n + 1)); fi
+done
+[ "${n}" -eq 1 ] || {
+    echo "error: expected exactly one layer blob in ${oci}, found ${n}. More than one means the" >&2
+    echo "       export gained a layer nobody asked for; none means this is reading the wrong" >&2
+    echo "       directory, and every listing below would then be empty and every diff green." >&2
+    exit 1
+}
+tar -xpf "${layer}" -C "${work}/ocix" --numeric-owner --xattrs --xattrs-include='*'
+echo "oci layer: ${layer##*/}"
+
+# Both sides are walked the SAME way, from the extracted trees, rather than from
+# two tools' own listing formats. The formats differ in ways that would have to
+# be normalised, and a normalisation is somewhere for a difference to be lost.
+# `-mindepth 1` excludes the root directory itself, which is why the count here
+# is one lower than `unsquashfs -lln`'s and than M5's table: 9,240 against 9,241.
+inventory() { ( cd "$1" && find . -mindepth 1 -printf '%M %U %G %P\n' | LC_ALL=C sort ); }
+caps() { ( cd "$1" && getcap -r . 2>/dev/null | LC_ALL=C sort ); }
+links() { ( cd "$1" && find . -type f -links +1 -printf '%n %P\n' | LC_ALL=C sort ); }
+
+echo
+echo "== metadata: mode, uid, gid, path, over every entry =="
+inventory "${work}/sq" > "${work}/sq.meta"
+inventory "${work}/ocix" > "${work}/oci.meta"
+echo "squashfs entries: $(wc -l < "${work}/sq.meta")"
+echo "oci entries:      $(wc -l < "${work}/oci.meta")"
+if diff -u "${work}/sq.meta" "${work}/oci.meta" > "${work}/meta.diff"; then
+    echo "METADATA: identical"
+else
+    echo "METADATA: $(grep -c '^[+-][^+-]' "${work}/meta.diff") differing rows -- ${work}/meta.diff"
+    head -20 "${work}/meta.diff"
+    differing=$((differing + 1))
+fi
+
+echo
+echo "== content =="
+# --no-dereference: /etc/shadow -> /run/mos/shadow is dangling by design, and
+# following it would compare nothing on both sides and call that agreement.
+if diff -r --no-dereference "${work}/sq" "${work}/ocix" > "${work}/content.diff" 2>&1; then
+    echo "CONTENT: identical"
+else
+    echo "CONTENT: $(wc -l < "${work}/content.diff") differing lines -- ${work}/content.diff"
+    head -20 "${work}/content.diff"
+    differing=$((differing + 1))
+fi
+
+echo
+echo "== file capabilities =="
+# Recorded rather than trusted: caps are xattrs, and an xattr a layer export
+# drops is a binary that silently loses a privilege it needs. On this root the
+# answer is ZERO on both sides, so this line means nothing on its own --
+# mutate.sh is what makes it a statement. os/verify says the same about the
+# packed image, and for the same reason.
+caps "${work}/sq" > "${work}/sq.caps"
+caps "${work}/ocix" > "${work}/oci.caps"
+echo "squashfs: $(wc -l < "${work}/sq.caps") entries; oci: $(wc -l < "${work}/oci.caps") entries"
+if diff -u "${work}/sq.caps" "${work}/oci.caps" > "${work}/caps.diff"; then
+    echo "CAPS: identical"
+else
+    echo "CAPS: differ -- ${work}/caps.diff"; cat "${work}/caps.diff"
+    differing=$((differing + 1))
+fi
+
+echo
+echo "== hardlinks =="
+# A link count is invisible to every check above: two files with identical mode,
+# owner and bytes are exactly what a broken hardlink looks like. It costs size,
+# and on a root where klibc ships one binary under many names it costs a lot.
+links "${work}/sq" > "${work}/sq.links"
+links "${work}/ocix" > "${work}/oci.links"
+echo "squashfs: $(wc -l < "${work}/sq.links") multiply-linked files; oci: $(wc -l < "${work}/oci.links")"
+if diff -u "${work}/sq.links" "${work}/oci.links" > "${work}/links.diff"; then
+    echo "HARDLINKS: identical"
+else
+    echo "HARDLINKS: differ -- ${work}/links.diff"; head -20 "${work}/links.diff"
+    differing=$((differing + 1))
+fi
+
+echo
+if [ "${differing}" -eq 0 ]; then
+    echo "FIDELITY: the exported OCI image is the tree that ships, on all four comparisons"
+else
+    echo "FIDELITY: ${differing} of 4 comparisons differ. The image RFCT-113's smoke run"
+    echo "          executes in is NOT the image the device ships, so nothing the smoke run"
+    echo "          reports is about the shipped artifact."
+    exit 1
+fi
