@@ -81,21 +81,45 @@ describe('the register names what RFCT-113 names', () => {
     }
   })
 
-  // The two that Scope names first are the two with no version contract, and
-  // that is a MEASURED property of the binaries rather than a gap here. It is
-  // asserted so that the day someone adds `--version` to mosd, this test fails
-  // and points at the register entry that should stop saying otherwise.
-  test('mosd and apid are unclaimed, and every other artifact is asked for a version', () => {
-    const unclaimed = ARTIFACTS.filter(a => a.contract.kind === 'unclaimed').map(a => a.name)
-    expect(unclaimed.sort()).toEqual(['apid', 'mosd'])
+  // WHAT THIS ASSERTION USED TO SAY, and why the change is the milestone.
+  //
+  // Until RFCT-113 M7d it read `expect(unclaimed.sort()).toEqual(['apid',
+  // 'mosd'])`, with the comment "asserted so that the day someone adds
+  // --version to mosd, this test fails and points at the register entry that
+  // should stop saying otherwise". That day was 2026-08-26: the user lifted
+  // PLAN-014's exclusion on `mosd/` Rust sources for exactly a `--version`
+  // handler, both binaries got one, and this test went RED exactly as M7b built
+  // it to. This is the edit it was pointing at.
+  test('every artifact is asked for a version, and none is unclaimed', () => {
+    expect(ARTIFACTS.filter(a => a.contract.kind === 'unclaimed').map(a => a.name)).toEqual([])
     for (const a of ARTIFACTS) {
-      if (a.contract.kind === 'unclaimed') {
-        expect(a.contract.why.length).toBeGreaterThan(80)
-        continue
-      }
       expect(a.contract.kind).toBe('version')
-      expect(a.contract.argv).toEqual(['--version'])
+      // `kind` is narrowed by the line above for the reader, not for tsc.
+      expect(a.contract.kind === 'version' ? a.contract.argv : null).toEqual(['--version'])
     }
+    // The vacuity control on the loop: `[]` is what an empty register would
+    // give too, and a register with nothing in it satisfies "none is unclaimed"
+    // perfectly.
+    expect(ARTIFACTS.length).toBe(SCOPE_ARTIFACTS.length)
+  })
+
+  // THE COMMIT HALF, and the set is stated here rather than derived from the
+  // register for the reason the whole SCOPE_ARTIFACTS list is: this is an
+  // independent statement of what the scope amendment authorised. The user
+  // lifted the exclusion for mosd/mosd/src/main.rs and mosd/apid/src/main.rs.
+  // mos-mqttd and mos-mqtt-broker are built by the same script from the same
+  // workspace and were NOT named, so they do not embed a commit -- and if a
+  // later change gives them one, this test is where that has to be argued for.
+  test('exactly the two files the amendment named embed a build commit', () => {
+    const embedding = ARTIFACTS.filter(a => a.embedsBuildCommit === true).map(a => a.name)
+    expect(embedding.sort()).toEqual(['apid', 'mosd'])
+
+    // ...and the other ten say nothing rather than `false`, which is the same
+    // thing to the runner. Asserted so a future entry cannot claim a commit by
+    // accident and go red against a record that says nothing about it.
+    const silent = ARTIFACTS.filter(a => a.embedsBuildCommit !== true)
+    expect(silent.length).toBe(ARTIFACTS.length - 2)
+    expect(silent.map(a => a.name)).not.toContain('mosd')
   })
 })
 

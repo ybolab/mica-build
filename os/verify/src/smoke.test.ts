@@ -32,9 +32,13 @@ import {
   pinSource,
   preflight,
   readFactoryRoot,
+  readMosdBuildFact,
+  reportsCommit,
   smokeRun,
   declinedFeatures,
   versionTokens,
+  MOSD_BUILD_RECORD_NAME,
+  type BuildCommitFact,
   type Exec,
   type ExecResult,
   type SmokeResult,
@@ -149,6 +153,166 @@ describe('versionTokens -- one reader for ten different sentences', () => {
 
   test('several versions on one line are all offered', () => {
     expect(versionTokens('client 1.2.3, server 4.5.6')).toEqual(['1.2.3', '4.5.6'])
+  })
+})
+
+// ─── the commit half ────────────────────────────────────────────────────────
+
+describe('reportsCommit -- a token match, and the -dirty confusion it exists for', () => {
+  const CLEAN = 'mosd 0.1.0 (00b674e9a628)'
+  const DIRTY = 'mosd 0.1.0 (00b674e9a628-dirty)'
+
+  test('the commit the build recorded is found in the line the binary printed', () => {
+    expect(reportsCommit(CLEAN, '00b674e9a628')).toBe(true)
+    expect(reportsCommit(DIRTY, '00b674e9a628-dirty')).toBe(true)
+  })
+
+  // THE CASE THE GUARDS EXIST FOR, and the one a `String.includes` gets wrong.
+  // A binary built from a MODIFIED worktree must not report as agreeing with
+  // the clean sha -- that is the entire purpose of the dirty marker, and a
+  // substring test hands it straight back.
+  test('a dirty binary does not satisfy a clean commit', () => {
+    expect(DIRTY.includes('00b674e9a628')).toBe(true) // the positive control on the trap
+    expect(reportsCommit(DIRTY, '00b674e9a628')).toBe(false)
+  })
+
+  test('a clean binary does not satisfy a dirty record either', () => {
+    expect(reportsCommit(CLEAN, '00b674e9a628-dirty')).toBe(false)
+  })
+
+  test('a token may not start or end inside a longer run', () => {
+    expect(reportsCommit('mosd 0.1.0 (00b674e9a6280)', '00b674e9a628')).toBe(false)
+    expect(reportsCommit('mosd 0.1.0 (a00b674e9a628)', '00b674e9a628')).toBe(false)
+  })
+
+  test('a binary that reports unknown satisfies no recorded commit', () => {
+    expect(reportsCommit('mosd 0.1.0 (unknown)', '00b674e9a628')).toBe(false)
+  })
+
+  // AN EMPTY EXPECTATION MATCHES NOTHING, rather than everything. Without the
+  // guard, `new RegExp('')` matches every line and this becomes a check that
+  // cannot fail -- the failure `readPin` refuses one level down in its own
+  // words ("an empty value would make the comparison pass by finding nothing").
+  test('an empty commit is not satisfied by any line at all', () => {
+    expect(reportsCommit(CLEAN, '')).toBe(false)
+    expect(reportsCommit('', '')).toBe(false)
+  })
+
+  // Regex metacharacters in the expectation are literal. A commit sha has none,
+  // but `-dirty` is appended by a shell and the value is not this code's to
+  // trust: an unescaped `.` would match any character and quietly widen the
+  // comparison.
+  test('the expectation is a literal, not a pattern', () => {
+    expect(reportsCommit('mosd 0.1.0 (aXb)', 'a.b')).toBe(false)
+    expect(reportsCommit('mosd 0.1.0 (a.b)', 'a.b')).toBe(true)
+  })
+})
+
+describe('judge -- the build commit, asserted only against a recorded fact', () => {
+  const mosd: Artifact = { ...versionArtifact('mosd', '/usr/bin/mosd', () => pin('0.1.0')), embedsBuildCommit: true }
+  const fact = (commit?: string): BuildCommitFact => ({ commit, source: '_out/x64/mosd-build.txt' })
+
+  test('the reported commit agreeing with the recorded one passes, and names both', () => {
+    const r = judge(mosd, pin('0.1.0'), ok('mosd 0.1.0 (00b674e9a628)'), fact('00b674e9a628'))
+    expect(r.verdict).toBe('pass')
+    expect(r.message).toContain('reports the commit 00b674e9a628')
+    expect(r.message).toContain('_out/x64/mosd-build.txt')
+  })
+
+  test('the reported commit disagreeing FAILS, even though the version is right', () => {
+    const r = judge(mosd, pin('0.1.0'), ok('mosd 0.1.0 (deadbeefcafe)'), fact('00b674e9a628'))
+    expect(r.verdict).toBe('fail')
+    expect(r.message).toContain('00b674e9a628')
+    expect(r.message).toContain('deadbeefcafe')
+    expect(r.message).toMatch(/not from the build that record describes/)
+  })
+
+  test('a binary reporting unknown against a recorded commit FAILS, and says why', () => {
+    const r = judge(mosd, pin('0.1.0'), ok('mosd 0.1.0 (unknown)'), fact('00b674e9a628'))
+    expect(r.verdict).toBe('fail')
+    expect(r.message).toMatch(/MOS_BUILD_COMMIT not passed in/)
+  })
+
+  // RFCT-113 M7d's instruction for an unavailable fact: print it, assert
+  // nothing. The distinction that matters is that the row does not read like a
+  // commit that was checked and agreed.
+  test('no recorded commit means the row PASSES and says the commit was not asserted', () => {
+    for (const f of [undefined, fact(undefined), fact('')]) {
+      const r = judge(mosd, pin('0.1.0'), ok('mosd 0.1.0 (00b674e9a628)'), f)
+      expect(r.verdict).toBe('pass')
+      expect(r.message).toContain('commit was NOT asserted')
+      expect(r.message).not.toContain('reports the commit')
+    }
+  })
+
+  test('an artifact that embeds no commit is not asked about one, whatever the fact says', () => {
+    const crun = versionArtifact('crun', '/usr/bin/crun', () => pin('1.29.1'))
+    const r = judge(crun, pin('1.29.1'), ok('crun version 1.29.1'), fact('00b674e9a628'))
+    expect(r.verdict).toBe('pass')
+    expect(r.message).not.toContain('commit')
+  })
+
+  // The commit half is reached only AFTER the version half. A binary with the
+  // wrong version and the right commit is still a failure about the version,
+  // and the message must not be about the commit instead.
+  test('a wrong version still fails as a version failure, commit or no commit', () => {
+    const r = judge(mosd, pin('0.1.0'), ok('mosd 9.9.9 (00b674e9a628)'), fact('00b674e9a628'))
+    expect(r.verdict).toBe('fail')
+    expect(r.message).toMatch(/pin was bumped without rebuilding the artifact/)
+  })
+})
+
+describe('readMosdBuildFact -- what the build recorded, never what HEAD says', () => {
+  test('an absent record is printed, not refused: no commit, and a source that says why', () => {
+    const dir = join(scratch(), 'no-mosd-record')
+    mkdirSync(dir, { recursive: true })
+    const f = readMosdBuildFact('x64', dir)
+    expect(f.commit).toBeUndefined()
+    expect(f.source).toMatch(/does not exist/)
+    expect(f.source).toMatch(/build-target\.sh/)
+  })
+
+  test('a record with a commit is read, and the commit is the value the build embedded', () => {
+    const dir = join(scratch(), 'mosd-record')
+    mkdirSync(dir, { recursive: true })
+    writeFileSync(
+      join(dir, MOSD_BUILD_RECORD_NAME),
+      '# a comment with no tab, which must not become a key\n'
+      + 'target\tx86_64-unknown-linux-gnu\nelf-arch\tx86-64\ncommit\t00b674e9a628\n',
+    )
+    const f = readMosdBuildFact('x64', dir)
+    expect(f.commit).toBe('00b674e9a628')
+  })
+
+  test('a dirty commit is read verbatim, marker and all', () => {
+    const dir = join(scratch(), 'mosd-record-dirty')
+    mkdirSync(dir, { recursive: true })
+    writeFileSync(join(dir, MOSD_BUILD_RECORD_NAME), 'commit\t00b674e9a628-dirty\n')
+    expect(readMosdBuildFact('x64', dir).commit).toBe('00b674e9a628-dirty')
+  })
+
+  // AN EMPTY COMMIT IS "the build could not resolve one", which is a different
+  // statement from "no record was written", and the two must not look alike:
+  // one is an image built outside a checkout, the other is an image built
+  // before this record existed.
+  test('an empty commit is not a commit, and says something different from an absent record', () => {
+    const dir = join(scratch(), 'mosd-record-empty')
+    mkdirSync(dir, { recursive: true })
+    writeFileSync(join(dir, MOSD_BUILD_RECORD_NAME), 'target\tx86_64-unknown-linux-gnu\ncommit\t\n')
+    const f = readMosdBuildFact('x64', dir)
+    expect(f.commit).toBeUndefined()
+    expect(f.source).toMatch(/records an EMPTY commit/)
+    expect(f.source).not.toMatch(/does not exist/)
+  })
+
+  // A RECORD THAT EXISTS AND CANNOT BE READ IS A REFUSAL. Treating it as
+  // "nothing recorded" would let a malformed file switch the assertion off.
+  test('a record with no commit field is refused, naming the file and the writer', () => {
+    const dir = join(scratch(), 'mosd-record-broken')
+    mkdirSync(dir, { recursive: true })
+    writeFileSync(join(dir, MOSD_BUILD_RECORD_NAME), 'target\tx86_64-unknown-linux-gnu\n')
+    expect(() => readMosdBuildFact('x64', dir)).toThrow(/carries no `commit` field/)
+    expect(() => readMosdBuildFact('x64', dir)).toThrow(/build-target\.sh writes one on every build/)
   })
 })
 
@@ -355,7 +519,11 @@ describe('conclude', () => {
     const c = conclude([r('pass'), r('pass')], 2)
     expect(c.conclusion).toBe('PASS')
     expect(c.exitCode).toBe(0)
-    expect(c.line).toContain('2/2')
+    // THE SAME FOUR NUMBERS THE OTHER TWO CONCLUSIONS PRINT, in the same order.
+    // Until M7d this line read `(2/2 artifacts executed, version identity
+    // asserted)` -- a second format for one summary, which left `0 unclaimed`
+    // unstated on the only line most readers look at.
+    expect(c.line).toBe('RESULT: PASS (2 pass, 0 fail, 0 unclaimed, of 2)')
   })
 
   test('one fail outranks everything else', () => {
@@ -558,14 +726,65 @@ describe('smokeRun over the real register', () => {
     return ok(`${artifact.name} ${artifact.pin().expected}`)
   }
 
-  test('the twelve shipped artifacts: ten pass, two unclaimed, and that is INCOMPLETE', async () => {
+  // UNTIL M7d THIS CASE READ "ten pass, two unclaimed, and that is INCOMPLETE",
+  // because mosd and apid had no `--version` to ask for. The user lifted
+  // PLAN-014's exclusion on `mosd/` Rust sources on 2026-08-26, both got one,
+  // and the register stopped calling them unclaimed. This is the same assertion
+  // over the new answer, not a weakened one: the count is still the register's
+  // full size and the conclusion is still driven from what every entry did.
+  test('the twelve shipped artifacts all answer, and that is PASS', async () => {
     const run = await smokeRun({ board: 'x64', exec: honest })
     expect(run.results.length).toBe(ARTIFACTS.length)
-    expect(run.conclusion.counts.pass).toBe(10)
+    expect(run.conclusion.counts.pass).toBe(12)
     expect(run.conclusion.counts.fail).toBe(0)
-    expect(run.conclusion.counts.unclaimed).toBe(2)
-    expect(run.conclusion.conclusion).toBe('INCOMPLETE')
-    expect(run.conclusion.exitCode).toBe(1)
+    expect(run.conclusion.counts.unclaimed).toBe(0)
+    expect(run.conclusion.conclusion).toBe('PASS')
+    expect(run.conclusion.exitCode).toBe(0)
+  })
+
+  // `honest` prints no commit, and no build fact was supplied, so the commit
+  // half of mosd's and apid's contract asserted NOTHING -- and the row says so
+  // rather than reading as a commit that was checked and agreed.
+  test('with no build record supplied, the commit is not asserted and the row says so', async () => {
+    const run = await smokeRun({ board: 'x64', exec: honest })
+    for (const name of ['mosd', 'apid']) {
+      const r = run.results.find(x => x.name === name)!
+      expect(r.verdict).toBe('pass')
+      expect(r.message).toContain('commit was NOT asserted')
+    }
+    // ...and the ten that embed no commit say nothing about one either way.
+    expect(run.results.find(r => r.name === 'crun')!.message).not.toContain('commit')
+  })
+
+  // THE COMMIT HALF DRIVING THE WHOLE RUN RED. The binaries are unchanged; only
+  // the recorded build fact moves, which is the shape of the failure this
+  // check exists for -- an image whose mosd is not from the build beside it.
+  test('a build record naming a different commit takes the run to FAIL', async () => {
+    const stamped: Exec = async argv => {
+      const artifact = ARTIFACTS.find(a => a.path === argv[0])
+      if (artifact === undefined) return { status: 127, stdout: '', stderr: 'no such file or directory' }
+      const suffix = artifact.embedsBuildCommit === true ? ' (aaaaaaaaaaaa)' : ''
+      return ok(`${artifact.name} ${artifact.pin().expected}${suffix}`)
+    }
+
+    const agreeing = await smokeRun({
+      board: 'x64',
+      exec: stamped,
+      buildCommit: { commit: 'aaaaaaaaaaaa', source: '_out/x64/mosd-build.txt' },
+    })
+    expect(agreeing.conclusion.conclusion).toBe('PASS')
+    expect(agreeing.results.find(r => r.name === 'mosd')!.message).toContain('reports the commit aaaaaaaaaaaa')
+
+    const disagreeing = await smokeRun({
+      board: 'x64',
+      exec: stamped,
+      buildCommit: { commit: 'bbbbbbbbbbbb', source: '_out/x64/mosd-build.txt' },
+    })
+    expect(disagreeing.conclusion.conclusion).toBe('FAIL')
+    // Exactly the two that embed one, not twelve.
+    expect(disagreeing.conclusion.counts.fail).toBe(2)
+    expect(disagreeing.results.filter(r => r.verdict === 'fail').map(r => r.name).sort())
+      .toEqual(['apid', 'mosd'])
   })
 
   test('one binary at the wrong path takes the run to FAIL', async () => {
