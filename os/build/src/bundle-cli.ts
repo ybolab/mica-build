@@ -1,13 +1,11 @@
 // The host half of os/update/bundle.sh: where the inputs are, which signing
 // material is used, what the output is called, and the -latest symlink.
 //
-// The shell splits at the same seam -- everything below `if [ "${1:-}" =
-// "--build" ]` is this file, and everything above it is src/bundle.ts -- and
-// the split is the same one for the same reason: epoch naming and the -latest
-// symlink always happen on the host side. Here the seam is structural rather
-// than conventional, because the build no longer re-execs anything: buildBundle
-// is called in-process and the toolbox decides, per toolset, whether the TOOLS
-// run here or in the pinned container.
+// THE SEAM: epoch naming and the -latest symlink happen on the host side, in
+// this file; src/bundle.ts is everything below them. The seam is structural
+// rather than conventional, because nothing re-execs: buildBundle is called
+// in-process and the toolbox decides, per toolset, whether the TOOLS run here
+// or in the pinned container.
 //
 // THE EPOCH IN THE FILENAME IS THE ONLY PER-BUILD VARIATION, and it is computed
 // here, once. The bundle CONTENT must not depend on when it was built -- that
@@ -21,8 +19,7 @@
 //   anything runs, so the failure names the file that is actually missing. An
 //   unset trio with no devkeys means `make os-devkeys`; a caller-supplied path
 //   that does not exist is the caller's typo; and neither may be silently
-//   overridden the way the hardcoded assignments in both of the shell's
-//   branches used to do.
+//   overridden by a hardcoded assignment further down.
 //
 //   THE HOST'S ARCHITECTURE, NOT THE BOARD'S. The bundle is written on the
 //   build machine, so the rauc that writes it is a HOST binary -- while the
@@ -282,8 +279,8 @@ export async function main(argv: readonly string[]): Promise<number> {
 
   // The shipped slot configuration must be current before anything is signed
   // against it: a stale system.conf means the bundle's compatible string or the
-  // slot GUIDs no longer describe the devices in the field. Left as a
-  // subprocess -- render-config.sh owns that file and is not M6d's to port.
+  // slot GUIDs do not describe the devices in the field. Left as a subprocess
+  // -- render-config.sh owns that file.
   const check = await $`bash ${RENDER_CONFIG_SH} --check`
     .env({ ...process.env, MOS_BOARD: options.board })
     .nothrow()

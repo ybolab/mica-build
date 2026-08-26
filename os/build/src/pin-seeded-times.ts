@@ -49,10 +49,9 @@
 // are wrapped in src/tools/e2fsprogs.ts, each with the right failure signal --
 // mke2fs by its exit status, dumpe2fs by its exit status plus a header this
 // parser must actually understand, debugfs by ITS STDERR. What is not wrapped,
-// and is here, is the free-inode-range parse and the atime/ctime generation:
-// that is the part os/mkimage-common.sh existed to keep in one place, and it
-// ported with its callers. M6c freed it and M6e deleted it, along with both
-// assemblers that sourced it; this file is now the only home that argument has.
+// and is here, is the free-inode-range parse and the atime/ctime generation.
+// Both assemblers need it and it must not be written twice, so this file is
+// its only home.
 
 import { rmSync, writeFileSync } from 'node:fs'
 import type { Toolbox } from './toolbox.ts'

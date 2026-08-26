@@ -223,10 +223,9 @@ export function gptSpecFor(geometry: Geometry, layout: DerivedLayout): GptSpec {
     // 0n is geometry.ts's "the board declared none"; see its note. x64 declares
     // 2048, so this is the board's number and not a default invented here.
     alignSectors: geometry.disk.alignSectors === 0n ? undefined : geometry.disk.alignSectors,
-    // os/mkimage-x64.sh passes no --clear. M6a measured --clear on a freshly
-    // truncated (all-zero) file to be byte-identical to omitting it, and this
-    // omits it anyway: the measurement says the two agree, and matching the
-    // shell costs nothing.
+    // No --clear. On a freshly truncated (all-zero) file --clear is
+    // byte-identical to omitting it, so omitting it is the cheaper of two
+    // equal answers.
     partitions: geometry.partitions.map(p => ({
       partnum: p.requireInt('PARTNUM'),
       startSector: startSectorsOf(geometry, p, layout),

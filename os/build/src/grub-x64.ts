@@ -10,11 +10,11 @@
 // fragment's bytes have to be correct for whichever slot the install targets, and
 // anything slot-specific in it would make one of the two wrong".
 //
-// The x64 image previously had two ESPs and no separate boot pair: RAUC installed
-// the payload into the inactive ESP, which boot.mount never mounted and the
-// embedded GRUB config never searched. Every update wrote the new kernel and the
-// new root hash where nothing reads them, left the read copy naming the old hash,
-// and rolled back on the next boot. It failed safe and could not succeed.
+// ONE ESP AND A BOOT PAIR, not two ESPs: with two, RAUC installs the payload
+// into the inactive ESP, which boot.mount never mounts and the embedded GRUB
+// config never searches. Every update then writes the new kernel and the new
+// root hash where nothing reads them, leaves the read copy naming the old
+// hash, and rolls back -- failing safe and never able to succeed.
 //
 // SO THE THREE GUARDS BELOW ARE ONE ARGUMENT IN THREE PARTS, and each is useless
 // without the others:

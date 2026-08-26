@@ -1,17 +1,15 @@
 // The host half of os/mkimage-v2.sh: where the inputs are, what the output is
 // called, and the -latest symlink.
 //
-// The shell splits at the same seam -- everything below `if [ "${1:-}" =
-// "--assemble" ]` is this file, and everything above it is src/mkimage-v2.ts --
-// and the split is the same one for the same reason: "epoch naming and the
-// -latest symlink always happen on the host side". Here the reason has become
-// structural rather than conventional, because the assembly no longer re-execs
-// anything: src/mkimage-v2.ts is called in-process and the toolbox decides,
-// per toolset, whether the TOOLS run here or in the pinned container.
+// THE SEAM: epoch naming and the -latest symlink happen on the host side, in
+// this file; src/mkimage-v2.ts is everything below them. The seam is
+// structural rather than conventional, because nothing re-execs:
+// src/mkimage-v2.ts is called in-process and the toolbox decides, per toolset,
+// whether the TOOLS run here or in the pinned container.
 //
 // THE EPOCH IN THE FILENAME IS THE ONLY PER-BUILD VARIATION, and it is computed
-// here, once, for the same reason the shell computes it here: the image CONTENT
-// must not depend on when it was assembled, so nothing downstream of this line
+// here, once: the image CONTENT must not depend on when it was assembled, so
+// nothing downstream of this line
 // is allowed to see a clock.
 
 import { existsSync, lstatSync, mkdirSync, symlinkSync, unlinkSync } from 'node:fs'

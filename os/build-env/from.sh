@@ -111,8 +111,8 @@ check_image_key() {
 # docker picks the right manifest, while `localhost/mos-build-c` is exactly the
 # one architecture `make build-env` last produced. A component build that asks
 # for the other one gets "no match for platform in manifest" pointing at a FROM
-# line that is correct, which is the same shape of misdirection M2b measured
-# when a docker-container builder tried to resolve a localhost tag. Asked here,
+# line that is correct -- the same shape of misdirection a docker-container
+# builder produces when it tries to resolve a localhost tag. Asked here,
 # it names the image, the two architectures and the command -- and because it is
 # a MEASUREMENT of the image rather than a rule about this host, it starts
 # passing on its own the day arm64 builder images exist.
