@@ -1,41 +1,12 @@
-// THE SEAM: how an external tool is run, and the only place in os/build that
+// The seam: how an external tool is run, and the only place in os/build that
 // decides.
 //
-// os/verify has one of these for bun (os/verify/run.sh's run_bun, two routes,
+// os/verify has one of these for bun (os/verify/run.sh's run_bun: two routes,
 // one function, callers that cannot tell which answered). This is the same
-// shape one level down, for the toolset the assemblers drive: sgdisk, mtools,
+// shape one level down, for the toolset the assemblers drive -- sgdisk, mtools,
 // dd, mkimage, veritysetup, e2fsprogs and rauc.
 //
-// WHY A ROUTE AT ALL. Both shell assemblers already have one. os/mkimage-v2.sh
-// probes the host with host_can_assemble() and falls back to an alpine
-// container; os/mkimage-x64.sh does not even probe -- its header says "no
-// sgdisk, no mtools and no grub-mkstandalone, and requiring them would make
-// [the build] a host-configuration problem". The container is the NORMAL route,
-// not a degraded one: the host this campaign runs on has none of sgdisk, mcopy,
-// mkimage or veritysetup, and the e2fsprogs it does have is 1.46.5 -- too old
-// for `-O ^orphan_file`, which is exactly why pin_seeded_times has always run
-// container-side. So a container-side step is not an afterthought here; it is
-// the case the design starts from, and the host route is the optimisation.
-//
-// ALL OF A TOOLSET OR NONE OF IT. The route is chosen per TOOLSET, never per
-// tool. Mixing would mean one image assembled by the host's mke2fs and the
-// host's sgdisk but the container's mcopy, and "which tool wrote these bytes"
-// would stop having an answer -- which is the whole property M6b and M6c are
-// gated on. host_can_assemble() is an && chain across seven binaries plus a
-// capability probe for the same reason.
-//
-// WHY A SESSION AND NOT A CONTAINER PER CALL. Measured on this host, 2026-08-25:
-// `docker run --rm <alpine> true` is ~320 ms and `docker exec <running> true` is
-// ~40 ms, and the apk that provides the toolset is ~1.3 s on top of every run.
-// An assembler makes tens of tool calls; a container per call would spend more
-// time starting containers than writing filesystems, and every call would
-// reinstall the toolset from the network. So a Toolbox is OPENED once -- image
-// resolved, container started, packages installed, every tool asserted present
-// -- and each call is a `docker exec` into it. That is also what makes the
-// container-side steps ordinary: pin_seeded_times' dumpe2fs and debugfs are two
-// more calls into the same session, not a second container with its own mounts.
-//
-// NOTHING HERE SWALLOWS A FAILURE. run() returns the exit status, stdout and
+// Nothing here swallows a failure. run() returns the exit status, stdout and
 // stderr, and decides nothing; must() throws a ToolError carrying all of it
 // plus the argv and the route. A tool whose failure signal is NOT its exit
 // status -- debugfs exits 0 and writes to stderr -- is handled by its own
@@ -44,6 +15,31 @@
 import { $ } from 'bun'
 import { randomUUID } from 'node:crypto'
 import { resolveImage } from './images.ts'
+
+// The container is the normal route, not a degraded one. Both shell assemblers
+// have a route already: os/mkimage-v2.sh probes the host with
+// host_can_assemble() and falls back to an alpine container; os/mkimage-x64.sh
+// does not even probe -- "no sgdisk, no mtools and no grub-mkstandalone, and
+// requiring them would make [the build] a host-configuration problem". This
+// host has none of sgdisk, mcopy, mkimage or veritysetup, and its e2fsprogs is
+// 1.46.5, too old for `-O ^orphan_file`, which is why pin_seeded_times runs
+// container-side. The host route is the optimisation.
+//
+// The route is chosen per toolset, never per tool. Mixing would mean an image
+// assembled by the host's mke2fs and sgdisk but the container's mcopy, and
+// "which tool wrote these bytes" would stop having an answer -- the property
+// the byte-identity gates rest on. host_can_assemble() is an && chain across
+// seven binaries plus a capability probe for the same reason.
+//
+// A toolbox is opened once -- image resolved, container started, packages
+// installed, every tool asserted present -- and each call is a `docker exec`
+// into it. Measured on this host, 2026-08-25: `docker run --rm <alpine> true`
+// is ~320 ms and `docker exec <running> true` ~40 ms, with the apk that
+// provides the toolset ~1.3 s on top of every run. An assembler makes tens of
+// calls, so a container per call would spend more time starting containers than
+// writing filesystems and would reinstall the toolset from the network each
+// time. It also makes container-side steps ordinary: pin_seeded_times' dumpe2fs
+// and debugfs are two more calls into the same session.
 
 export type RouteKind = 'host' | 'container'
 
@@ -75,8 +71,8 @@ export interface Toolset {
    * Where this toolset's tools came from, when that decides what it may DO.
    *
    * One tool uses it: rauc. A bundle is written by one rauc and installed by
-   * another on the device, and commit 9a43a59 records what happens when they
-   * are not the same build -- so src/tools/rauc.ts refuses a bundle-writing
+   * another on the device, and they are not compatible by accident -- so
+   * src/tools/rauc.ts refuses a bundle-writing
    * call unless this says 'shipped'. It lives on the toolset rather than being
    * inferred from `carry`, because "this binary is the one this tree built" is
    * a claim the toolset makes, not something a file path can prove.
@@ -139,17 +135,17 @@ function quoteForMessage(a: string): string {
 
 export interface OpenOptions {
   /**
-   * Host directories the container must see, each mounted AT ITS OWN PATH.
+   * Host directories the container must see, each mounted at its own path.
    *
    * Identity mounts, not /w or /work. os/verify/run.sh:189 states the rule --
-   * short names for containers that RUN A SCRIPT and build their paths inside,
+   * short names for containers that run a script and build their paths inside,
    * identity for containers handed paths from outside -- and every tool here is
    * the second kind: the caller passes absolute host paths and reads absolute
-   * host paths back out of the results. It matters twice over when bun is
-   * ITSELF in a container: a sibling container's -v is resolved by the daemon
-   * against the HOST filesystem, so a translated path would name the wrong
-   * thing, and a bind mount of a path the daemon cannot see does not fail --
-   * it succeeds and delivers an empty directory.
+   * host paths back out. It matters twice over when bun is itself in a
+   * container: a sibling container's -v is resolved by the daemon against the
+   * host filesystem, so a translated path would name the wrong thing, and a
+   * bind mount of a path the daemon cannot see succeeds and delivers an empty
+   * directory.
    */
   readonly mounts?: readonly string[]
   /** Force a route instead of measuring the host. Set by MOS_BUILD_TOOLBOX too. */
@@ -297,28 +293,23 @@ export class Toolbox {
               + `--no-install-recommends ${toolset.packages.join(' ')} >/dev/null`,
             ]
 
-        // RETRIED, BECAUSE THE INDEX IS FETCHED OVER THE NETWORK AND APK LIES
-        // ABOUT LOSING IT. Measured on this host, 2026-08-25: 40 consecutive
+        // Retried, because the index is fetched over the network and apk lies
+        // about losing it. Measured on this host, 2026-08-25: of 40 consecutive
         // `apk add --no-cache -q e2fsprogs e2fsprogs-extra` runs in the pinned
-        // alpine, 3 of them failed -- and the failure reads
+        // alpine, 3 failed, reading
         //
         //     ERROR: unable to select packages:
         //       e2fsprogs (no such package):
         //
         // about a package that is unquestionably in that image, because the
         // index fetch failed and apk describes an empty index as an empty
-        // repository. (A fourth shape was seen once: exit 6 naming a
-        // half-resolved e2fsprogs-libs, which is the same fetch failing further
-        // along.) At ~7% per install and eight toolbox opens in a suite run,
-        // that is a red run every other time for a reason that has nothing to
-        // do with what is under test -- which is the same objection this
-        // package makes to a 5-second default timeout.
-        //
-        // Three attempts, not one, and a package that genuinely does not exist
-        // fails identically three times -- so this hides no real failure, it
-        // only stops the network deciding the verdict. The refusal says how
-        // many attempts were made, so a reader is never told about one run when
-        // there were three.
+        // repository. A fourth shape appeared once: exit 6 naming a
+        // half-resolved e2fsprogs-libs, the same fetch failing further along.
+        // At ~7% per install and eight toolbox opens in a suite run, that is a
+        // red run every other time for a reason unrelated to what is under
+        // test. Three attempts, not one: a package that genuinely does not
+        // exist fails identically three times, so this hides no real failure,
+        // and the refusal says how many attempts were made.
         const attempts = 3
         let installed: ToolResult | undefined
         for (let attempt = 1; attempt <= attempts; attempt += 1) {
@@ -364,7 +355,7 @@ export class Toolbox {
         }
       }
 
-      // EVERY TOOL, ASSERTED. An apk or apt that reports success and provides
+      // Every tool, asserted. An apk or apt that reports success and provides
       // one binary fewer than asked is not hypothetical -- alpine splits
       // debugfs and dumpe2fs into e2fsprogs-extra, so `apk add e2fsprogs` alone
       // installs an e2fsprogs with no debugfs in it and says nothing. Without
