@@ -17,6 +17,12 @@
 //! After both listeners are bound the daemon prints exactly one line to
 //! stdout — `APID_LISTENING https=<addr> http=<addr>` — and routes all
 //! tracing output to stderr.
+//!
+//! One argument is understood, and it is answered before any of the above
+//! happens: `--version` (or `-V`) prints `apid <crate version> (<build
+//! commit>)` and exits 0 without generating a certificate, a session key or a
+//! listener. See [`main`]. Anything else on the command line is ignored,
+//! exactly as it always has been.
 
 #![forbid(unsafe_code)]
 
@@ -43,8 +49,93 @@ use tokio::signal::unix::{SignalKind, signal};
 
 use crate::settings_api::SettingsApi;
 
+fn main() -> anyhow::Result<()> {
+    // `--version`, ANSWERED AND RETURNED FROM HERE, above every line that makes
+    // this process a daemon. RFCT-113 M7d, and the same handler mosd carries;
+    // `mosd/mosd/src/main.rs` holds the long form of the shared reasoning.
+    //
+    // WHY THIS FILE WAS EDITABLE AT ALL: PLAN-014's Scope excludes `mosd/` Rust
+    // sources, and THE USER LIFTED THAT EXCLUSION ON 2026-08-26 for exactly
+    // this handler in exactly these two files, plus its build-time plumbing.
+    // The rest of the exclusion stands. mosd/mosd/src/main.rs records the
+    // amendment in full.
+    //
+    // The position is the requirement. Measured in the x64 factory root on
+    // 2026-08-26, before this handler existed: `/usr/bin/apid --version`
+    // ignored the flag, generated a self-signed certificate and a session
+    // signing key into /var/lib/mos/apid, bound 0.0.0.0:443 and 0.0.0.0:80,
+    // printed APID_LISTENING and NEVER EXITED -- rc=124 against a 20s budget.
+    // So a handler below initialisation would answer the question by minting
+    // key material and then hanging, and a smoke run that asked it would hang
+    // rather than go red.
+    //
+    // Hence a synchronous `main` with the async body moved into `serve`: the
+    // answer is given before the tokio runtime is built, before the ring crypto
+    // provider is installed, before `Config::from_env`, before the state dir
+    // exists and before any key is generated. There is nothing above it.
+    //
+    // AN UNRECOGNISED ARGV IS UNCHANGED, for the reason mosd's copy of this
+    // comment gives: apid is started by systemd with no arguments
+    // (mosd/dist/apid.service) and has always ignored what it was given.
+    if wants_version(std::env::args().skip(1)) {
+        println!("{}", version_line());
+        return Ok(());
+    }
+    serve()
+}
+
+/// What the commit is reported as when the build supplied none.
+///
+/// A VALUE AND NOT A FAILURE: a `--version` that exited non-zero because the
+/// plumbing did not reach it would turn "we do not know which commit" into
+/// "this binary is broken".
+const UNKNOWN_COMMIT: &str = "unknown";
+
+/// Whether an argv (argv[1..]) is asking for the version.
+///
+/// `-V` as well as `--version`, so the four binaries this repository ships
+/// answer one question one way: `mos-mqttd` and `mos-mqtt-broker` get the pair
+/// from clap's `#[command(version)]`. It is the same flag, not a second one.
+fn wants_version(args: impl IntoIterator<Item = String>) -> bool {
+    args.into_iter()
+        .any(|arg| arg == "--version" || arg == "-V")
+}
+
+/// The build commit, or [`UNKNOWN_COMMIT`], from whatever the build embedded.
+///
+/// Takes the embedded value as an argument so the absent case is reachable from
+/// a test in a binary that WAS built with a commit.
+fn commit_or_unknown(embedded: Option<&'static str>) -> &'static str {
+    match embedded {
+        Some(commit) if !commit.trim().is_empty() => commit,
+        _ => UNKNOWN_COMMIT,
+    }
+}
+
+/// The one line `--version` prints: `apid <version> (<commit>)`.
+///
+/// The version is `mosd/apid/Cargo.toml`'s `[package] version` by way of
+/// Cargo's own `CARGO_PKG_VERSION`, which is the same file
+/// `os/verify/src/smoke-pins.ts` reads to decide what this binary must report:
+/// one value, two readers, no copy.
+///
+/// The commit is `MOS_BUILD_COMMIT`, PASSED IN by `mosd/hack/build-target.sh`
+/// from the host. Not discovered here and no `build.rs`, because measured
+/// inside `localhost/mos-build-rust` with that build's own mount, `git
+/// rev-parse HEAD` exits 128 -- the checkout is a git worktree, so `/src/.git`
+/// points at a gitdir outside the mount. mosd's `version_line` records the
+/// measurement in full.
+fn version_line() -> String {
+    format!(
+        "{} {} ({})",
+        env!("CARGO_PKG_NAME"),
+        env!("CARGO_PKG_VERSION"),
+        commit_or_unknown(option_env!("MOS_BUILD_COMMIT")),
+    )
+}
+
 #[tokio::main]
-async fn main() -> anyhow::Result<()> {
+async fn serve() -> anyhow::Result<()> {
     tracing_subscriber::fmt()
         .with_writer(std::io::stderr)
         .init();
@@ -119,4 +210,102 @@ async fn main() -> anyhow::Result<()> {
         _ = tokio::signal::ctrl_c() => tracing::info!("SIGINT received, exiting"),
     }
     Ok(())
+}
+
+/// The `--version` handler, driven from the failing side.
+///
+/// A module of its own because `mod tests` is already `src/tests.rs` -- the
+/// HTTP suite -- and RFCT-113 M7d opens this file and not that one.
+#[cfg(test)]
+mod version_tests {
+    use super::{UNKNOWN_COMMIT, commit_or_unknown, version_line, wants_version};
+
+    fn argv(args: &[&str]) -> Vec<String> {
+        args.iter().map(|s| (*s).to_string()).collect()
+    }
+
+    /// The two spellings, and the positive control for the negatives below.
+    #[test]
+    fn both_spellings_of_the_one_flag_are_recognised() {
+        assert!(wants_version(argv(&["--version"])));
+        assert!(wants_version(argv(&["-V"])));
+    }
+
+    /// DRIVEN FROM THE FAILING SIDE. Every one of these must fall through into
+    /// the daemon. `-v` matters most: it is not this flag, and a loose match on
+    /// it would stop apid from ever binding a listener on a unit that passed it.
+    #[test]
+    fn nothing_else_is_this_flag() {
+        for args in [
+            vec![],
+            argv(&["--help"]),
+            argv(&["-h"]),
+            argv(&["-v"]),
+            argv(&["-VV"]),
+            argv(&["--versions"]),
+            argv(&["--version=1"]),
+            argv(&["version"]),
+            argv(&["--Version"]),
+            argv(&[""]),
+        ] {
+            assert!(
+                !wants_version(args.clone()),
+                "argv {args:?} is not --version and must reach the daemon unchanged"
+            );
+        }
+    }
+
+    /// It is asked of the whole argv, not only of the first element.
+    #[test]
+    fn the_flag_is_found_wherever_it_appears() {
+        assert!(wants_version(argv(&["--state-dir", "/var/lib/mos", "-V"])));
+    }
+
+    /// ABSENT IS `unknown`, NEVER AN ERROR -- and empty counts as absent,
+    /// because `-e MOS_BUILD_COMMIT=` sets the variable to exactly that.
+    #[test]
+    fn a_commit_the_build_did_not_supply_reports_unknown() {
+        assert_eq!(commit_or_unknown(None), UNKNOWN_COMMIT);
+        assert_eq!(commit_or_unknown(Some("")), UNKNOWN_COMMIT);
+        assert_eq!(commit_or_unknown(Some("   ")), UNKNOWN_COMMIT);
+    }
+
+    /// The positive control: a supplied value is passed through untouched,
+    /// `-dirty` suffix and all. A helper that returned `unknown` for everything
+    /// would satisfy the case above and nothing else.
+    #[test]
+    fn a_commit_the_build_did_supply_is_reported_verbatim() {
+        assert_eq!(commit_or_unknown(Some("00b674ec0ffe")), "00b674ec0ffe");
+        assert_eq!(
+            commit_or_unknown(Some("00b674ec0ffe-dirty")),
+            "00b674ec0ffe-dirty"
+        );
+    }
+
+    /// The shape, not the values.
+    ///
+    /// No assertion here that the version equals `mosd/apid/Cargo.toml`:
+    /// `CARGO_PKG_VERSION` IS that file, so the comparison would be a value
+    /// against itself. It is made from outside instead, by
+    /// `os/verify/src/smoke-pins.ts`, which parses the manifest independently.
+    #[test]
+    fn the_version_line_names_the_binary_the_version_and_the_commit() {
+        let line = version_line();
+        assert!(line.starts_with("apid "), "got {line:?}");
+        assert!(
+            line.contains(env!("CARGO_PKG_VERSION")),
+            "the crate version is missing from {line:?}"
+        );
+        let commit = line
+            .rsplit_once(" (")
+            .and_then(|(_, rest)| rest.strip_suffix(")"))
+            .unwrap_or_else(|| panic!("no parenthesised commit in {line:?}"));
+        assert!(!commit.is_empty(), "an empty commit in {line:?}");
+        assert!(
+            !commit.contains(char::is_whitespace),
+            "the commit must be one token, got {commit:?}"
+        );
+        // One line, so a smoke runner reading the first line reads all of it.
+        assert!(!line.contains('\n'), "got {line:?}");
+    }
 }

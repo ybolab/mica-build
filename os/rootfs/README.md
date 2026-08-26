@@ -1,44 +1,15 @@
-# os/rootfs — Debian systemd arm64 rootfs (cx3576, PLAN-010 M1)
+# os/rootfs — Debian systemd arm64 rootfs (cx3576)
 
-Builds a minimal Debian trixie + systemd root filesystem for the cx3576
-board as a minimally-sized, content-derived ext4 image, ready to be dd'd into
-the disk image by the assembly step.
+Builds a minimal Debian trixie + systemd root filesystem for the cx3576 board
+as a squashfs + dm-verity slot image, ready to be written into an A/B rootfs
+slot by the assembly step.
 
-## Sizing
-
-The pack stage computes the image size from content only (deterministic — no
-clock, no randomness):
-
-```
-size_mib = ceil(du_mib(/rootfs) * 115 / 100) + 48
-```
-
-The 15% headroom scales with content; the fixed 48 MiB margin covers ext4
-metadata (journal, inode tables, bitmaps) plus everything that must be written
-BEFORE systemd-repart + growfs expand the partition on first boot: journal
-replay, systemd first-boot machine-id and /var directories, and ssh host key
-generation. `os/verify-image.sh` asserts that at least 32 MiB of that margin
-survives packing as free space. The ext4 block size is pinned to 4 KiB
-(`mke2fs -b 4096`, matching the page size) so mke2fs's "small" profile cannot
-silently switch to 1 KiB blocks now that the filesystem is under 512 MiB.
-
-## Build
-
-```sh
-# needs board/cx3576/out/kernel/modules.tar (make -C board/cx3576 kernel),
-# or point BOARD_DIR at prebuilt BSP artifacts:
-BOARD_DIR=/srv/ai/mos/board/cx3576 bash os/rootfs/build.sh
-```
-
-Outputs to `_out/cx3576/`: `rootfs.img` (ext4, content-derived whole-MiB size)
-and `rootfs-report.txt` (package list + installed size; the build fails if the
-installed size exceeds 400 MB).
-
-On x86 hosts, arm64 emulation comes from binfmt
-(`docker run --privileged --rm tonistiigi/binfmt --install arm64`). If the
-current builder still lacks linux/arm64 (e.g. host binfmt registration is
-unavailable), build.sh automatically falls back to a docker-container builder
-named `mos-arm64`, whose buildkit image bundles its own QEMU emulators.
+The v1 single-slot chain this directory started as — `build.sh`, `Dockerfile`,
+and the `os/mkimage.sh` / `os/verify-image.sh` that consumed them — was deleted
+by RFCT-107 (PLAN-014 M1); git history is its archive. The sections up to
+"Layout v2" below describe the parts of the build that were never generation-
+specific: the package set, the config directories, the image profile, mosd and
+the board hardware-init layer.
 
 ## Package allowlist
 
@@ -99,17 +70,16 @@ Masked rather than disabled because `wpasupplicant` ships
 ### Config directories
 
 `/etc/wpa_supplicant` and `/etc/hostapd` are both mode **0700** — once a device
-is configured they hold pre-shared keys in the clear. On v1 the root is a
-writable ext4, so the directories are simply there. On v2 the root is a
-read-only dm-verity squashfs, so each is a STATE-backed bind
+is configured they hold pre-shared keys in the clear. The root is a read-only
+dm-verity squashfs, so each is a STATE-backed bind
 (`etc-wpa_supplicant.mount`, `etc-hostapd.mount`) exactly as `/etc/ssh` is; a
 reconciler rendering into a read-only path fails on device and nowhere else.
 
 ## Image profile (`/usr/lib/mos/profile.conf`)
 
-`MOS_PROFILE=dev` by default; `MOS_PROFILE=prod bash os/rootfs/build.sh` (or
-`build-v2.sh`) builds the production image from the same tree. The build rejects
-anything that is not exactly `dev` or `prod` in lowercase.
+`MOS_PROFILE=dev` by default; `MOS_PROFILE=prod bash os/rootfs/build-v2.sh`
+builds the production image from the same tree. The build rejects anything that
+is not exactly `dev` or `prod` in lowercase.
 
 mosd reads this file once, on first boot, to seed `access.ssh.enabled`, and it
 **fails closed**: a file that is missing, unreadable, misspelt or carrying an
@@ -117,13 +87,14 @@ unrecognised value all resolve to `prod`, which means SSH off. The comparison is
 case-sensitive, so `DEV` resolves to prod too. Every one of those mistakes
 produces an image where all the checks are green and the dev SSH path has simply
 disappeared, which is why the value is validated at build time and asserted
-again by `os/verify-image.sh` / `os/verify-image-v2.sh` against the packed
-artifact — including that `dev` implies `ssh.service` is enabled in the image
+again by the image verifier (`bash os/verify/run.sh --verify`, which was
+`os/verify-image-v2.sh` until PLAN-014 M4e ported it at full parity) against the
+packed artifact — including that `dev` implies `ssh.service` is enabled in the image
 and `prod` implies it is not.
 
 The file lives in `/usr/lib` and not `/etc` because it describes the *image*,
-not the device; on v2 that also puts it inside the read-only verity root, where
-a production device cannot be edited into a development one.
+not the device; that also puts it inside the read-only verity root, where a
+production device cannot be edited into a development one.
 
 ## mosd
 
@@ -146,13 +117,19 @@ allowlist. Set `WITH_MOSD=0` to build the rootfs without mosd (default is on).
 
 ## Board hardware init
 
-Generic, board-agnostic mechanism in `os/hwinit/` (six best-effort units +
-scripts); board-specific facts (module names, sysfs paths, UART device, CAN
-defaults, MAC seed, gadget IDs) in conf files staged from `BOARD_DIR/init/`
-(falling back to the in-repo `board/cx3576/init/`) into `/etc/mos/`. Every unit
-is condition-gated on its conf file and never blocks, delays, or fails the
-boot; WiFi association / BT pairing stay with connd. The units are enabled via
-`multi-user.target.wants` symlinks like mosd.
+Board-agnostic mechanism, and since RFCT-111 M5d the CONTENT is filed per
+board too: the units and their scripts come from `os/boards/<board>/hwinit/`
+(six of each on cx3576; x64 has no such directory and stages an empty one), and
+the board-specific facts they read — module names, sysfs paths, UART device,
+CAN defaults, MAC seed, gadget IDs — come from conf files staged from
+`BOARD_DIR/init/`, falling back to the in-repo `board/<board>/init/`, into
+`/etc/mos/`. Both reach `stages/40-board` as staged directories
+(`BOARD_HWINIT_DIR`, `BOARD_INIT_DIR`) because a `COPY` cannot be gated on an
+`ARG`; until M5d the units were `COPY`d from `os/boards/cx3576/hwinit/` on every
+board, so x64 carried all six and ran none. Every unit is condition-gated on its
+conf file and never blocks, delays, or fails the boot; WiFi association / BT
+pairing stay with connd. The units are enabled via `multi-user.target.wants`
+symlinks like mosd.
 
 | Unit | Conf | Does |
 |---|---|---|
@@ -184,86 +161,136 @@ The Bluetooth adapter name needs no unit of its own: bluez's hostname plugin
 is loaded by default and overrides `Name`, so the adapter follows the system
 hostname as long as `/etc/bluetooth/main.conf` does not pin one.
 
-## Dev profile — root login (v1 only)
-
-`ROOT_PASSWORD=... bash os/rootfs/build.sh` sets the root password and writes
-`PermitRootLogin yes`. **Dev only — never use for production images.** By
-default (unset), root stays locked and SSH root login is not enabled.
-
-This build arg exists **only on the v1 path**. `build-v2.sh` deliberately has
-no `ROOT_PASSWORD`: a v2 rootfs is a signed squashfs, byte-identical on every
-device, and its pack stage fails any build whose factory shadow carries a
-usable hash. See "Dev root access on v2" below.
-
-## First-boot growth
-
-The flashed image is packed minimally but lands on much larger media (cx3576
-eMMC: 116 GiB), so the rootfs grows to fill the disk automatically on first
-boot:
-
-- `/etc/repart.d/50-rootfs.conf` (`Type=linux-generic`) makes systemd-repart
-  grow partition 2 and relocate the backup GPT. The service is statically
-  enabled by the `systemd-repart` package and only activates when
-  `/etc/repart.d` is non-empty; unmatched partitions are never touched.
-- `/etc/fstab` mounts the rootfs with `x-systemd.growfs`, which emits a unit
-  running `systemd-growfs` (online ext4 grow).
-
-Both steps are systemd-native, idempotent (no-op when there is no free space),
-and cannot wedge boot. A growpart/cloud-guest-utils fallback was rejected as
-unnecessary since repart is part of systemd upstream.
-
-**"Zero extra packages" was true on bookworm and is not on trixie**, which is
-a fact worth stating rather than quietly editing: bookworm shipped
-`systemd-repart` inside the `systemd` package, trixie splits it into a package
-of its own. `os/rootfs/Dockerfile.v2` names it in the install list because of
-that, and `os/verify-image-v2.sh` asserts the enablement symlink. The failure
-if it were missing announces nothing — the device boots and DATA simply never
-grows past the 64 MiB the assembler creates.
-
-## Determinism deviation
-
-SSH host keys are generated at build time by the openssh-server postinst and
-baked into the image — acceptable for the dev profile, not for reproducible
-production builds.
-
 ---
 
 # Layout v2 — squashfs + dm-verity rootfs (PLAN-010 M4)
 
-`build-v2.sh` / `Dockerfile.v2` / `overlay-v2/` are a **sibling** of the v1 path
-above, not a replacement. v1 keeps building the writable single-slot ext4 root
-and is untouched; `make os-image-cx3576` and `make os-verify-cx3576` keep
-passing. Everything below applies only to v2.
+`build-v2.sh` / `stages/` / `scripts/` / `overlay-v2/` are the build. The
+design record is `docs/design/ro-root.md` — read it before changing anything
+here.
 
-The design record is `docs/design/ro-root.md` — read it before changing
-anything here.
+## The build is a chain: `stages/`
+
+There is no single `Dockerfile.v2` any more. `stages/` holds one Dockerfile per
+stage — `10-base`, `20-install`, five `30-feature-*`, `40-board`, `90-pack` —
+built in numeric order, each `FROM` the local image tag the previous one was
+written to. `build-v2.sh` still stages the context and computes every argument;
+sequencing is `os/build/run.sh --build-rootfs`.
+
+**A feature is a file, so declining one is leaving the file out.** RFCT-111
+replaced the `WITH_*` build arguments with stage selection: `--without
+containers` builds a chain with no `31-feature-containers` in it, and the
+driver refuses a name that matches no feature stage rather than silently
+building the full image. `WITH_CONTAINERS=0` and `WITH_MOSD=0` still work —
+`build-v2.sh` turns them into that flag — and `_out/<board>/rootfs-stages.txt`
+records which features were declined, because an image built without a feature
+stage and an image whose feature stage did nothing look identical afterwards.
+
+`stages/README.md` is the file to read first: what the chain is, which stage
+holds what, the one reordering the cut required and why, and the measurement
+that the builder must use the `docker` driver.
+
+## Where the shell is: `scripts/`
+
+The stage files hold almost no shell. Every `RUN` body longer than one command
+is a file in `scripts/`, reached by a bind mount that leaves nothing in the
+image:
+
+```dockerfile
+RUN --mount=type=bind,source=os/rootfs/scripts,target=/mos-scripts \
+    sh /mos-scripts/<name>.sh
+```
+
+Build arguments still arrive through the environment, the way they always did,
+so the scripts read `BOARD_RADIOS`, `MOS_ARCH`, `RAUC_BOOTLOADER` and the rest
+unchanged. `WITH_CONTAINERS` and `WITH_MOSD` are no longer among them: they were
+build arguments five scripts tested independently, and they are now the presence
+of `31-feature-containers` and `33-feature-mosd` in the chain. The package lists and the single-command `RUN`s stayed in the stage
+files: a stage's package set *is* the image, and a one-line `RUN` gains nothing
+from a hop. `ARG` is per stage and now also per *file*, so an argument a stage's
+`RUN`s read must be declared in that stage's file — `BOARD_RADIOS` is declared
+twice for that reason.
+
+`scripts/README.md` has the rest — why a mount and not a `COPY`, why these files
+must stay POSIX `sh`, and how to check that a change to one of them is the
+refactor it claims to be.
+
+RFCT-111 M5a did this, so that M5b could split the single file into one
+Dockerfile per stage: a stage boundary can only be drawn through shell that is
+addressable. M5b then did the split.
 
 ## Build
 
 ```sh
-# same prerequisites as v1
+# needs board/cx3576/out/kernel/modules.tar (make -C board/cx3576 kernel),
+# or point BOARD_DIR at prebuilt BSP artifacts:
 BOARD_DIR=/srv/ai/mos/board/cx3576 make os-rootfs-cx3576-v2   # rootfs only
 BOARD_DIR=/srv/ai/mos/board/cx3576 make os-image-cx3576-v2    # rootfs + full v2 image
 ```
 
-Outputs to `_out/cx3576/`, all consumed by `os/mkimage-v2.sh`:
+On x86 hosts, arm64 emulation comes from binfmt
+(`docker run --privileged --rm tonistiigi/binfmt --install arm64`), and since
+RFCT-111 M5b it is **required** for a cross build rather than optional.
 
-| File | Contents |
-|---|---|
-| `rootfs-verity.img` | squashfs-zstd with the dm-verity hash tree appended, padded to a whole MiB |
-| `rootfs-verity.env` | verity parameters as strict `KEY=value` |
-| `boot-cmdline-a.txt` / `-b.txt` | the full kernel `append` line for each slot |
-| `rootfs-report-v2.txt` | package list, installed size, setuid/setgid inventory, file capabilities |
+What stood here said `build-v2.sh` falls back to a docker-container builder
+whose buildkit image bundles QEMU, so host binfmt was not needed. That fallback
+is gone, and the reason is measured: the chain resolves `FROM ${MOS_STAGE_PREV}`
+against the **local docker image store**, and a `docker-container` builder
+cannot read it — handed a tag that is present it answers `pull access denied,
+repository does not exist`, about a registry. `build-v2.sh` now selects the
+`default` (docker-driver) builder and refuses up front, with the `binfmt`
+command, if it cannot reach the target platform. `stages/README.md` records the
+measurement; `.gitea/workflows/privileged.yml` relied on the old fallback and
+its note says so.
 
-Every layout constant is read from `os/layout/cx3576-v2.env`; none is duplicated
-in `build-v2.sh`, `Dockerfile.v2` or the overlay. The one thing that is *not* a
-layout constant is the board console/storage cmdline fragment
-(`console=ttyFIQ0,… earlycon=… net.ifnames=0`), carried over
-verbatim from v1's `APPEND` and kept in `build-v2.sh`.
+Outputs to `_out/<board>/`. The first four are consumed by the image assembler
+-- `os/build/src/mkimage-v2.ts` and `mkimage-x64.ts`, entered through
+`bash os/build/run.sh --mkimage-v2|--mkimage-x64`, which were `os/mkimage-v2.sh`
+and `os/mkimage-x64.sh` until PLAN-014 M6e ported them at byte-identity. The
+last three are **not**: they are read by RFCT-113's smoke runner, and nothing
+copies any of them into the image.
+
+| File | Read by | Contents |
+|---|---|---|
+| `rootfs-verity.img` | assembler | squashfs-zstd with the dm-verity hash tree appended, padded to a whole MiB |
+| `rootfs-verity.env` | assembler | verity parameters as strict `KEY=value` |
+| `boot-cmdline-a.txt` / `-b.txt` | assembler | the full kernel `append` line for each slot |
+| `rootfs-report-v2.txt` | a reader | package list, installed size, setuid/setgid inventory, file capabilities |
+| `factory-root.oci` | smoke runner | the packed root as an OCI-layout archive; `docker load -i` it |
+| `factory-root.txt` | smoke runner | what that archive is: `ref`, `platform`, `target`, `archive`, `bytes`, `sha256`, `source-date-epoch`, TAB-separated |
+| `rootfs-stages.txt` | smoke runner | the stage chain as built, and a `# declined:` line naming the feature stages left out -- or saying in parentheses that none were |
+| `mosd-build.txt` | smoke runner | **the commit `mosd` and `apid` in this root were built from** |
+
+### `mosd-build.txt`, and why it is a copy
+
+`mosd/hack/build-target.sh` writes `_out/mosd-build.txt` on every build --
+`target`, `elf-arch` and `commit`, TAB-separated, the same shape
+`factory-root.txt` uses so one reader reads both -- and `build-v2.sh` copies it
+into `_out/<board>/` beside the factory root. **It is not copied into the
+image.**
+
+Copied rather than read from the top-level path, because the top-level one
+describes *whatever was compiled most recently*: build cx3576 and then x64 and
+`_out/mosd-build.txt` says `aarch64-unknown-linux-gnu` while `_out/x64/` still
+holds x86-64 binaries. The per-board copy is what keeps the smoke runner
+comparing an image against the build that produced it.
+
+`build-v2.sh` **removes** it when `mosd` is declined, for the same reason it
+empties the staged `mosd/` directory: a record left by a previous build would
+describe binaries this image does not carry, and the smoke runner would then
+assert a commit against an artifact that is not there. Absent is a state it
+already handles -- it prints that nothing was asserted, and says so on its own
+first lines -- and stale is one nothing could catch.
+
+Every layout constant is read from `os/boards/cx3576/board.env`; none is duplicated
+in `build-v2.sh`, `stages/` or the overlay. The board console/storage
+cmdline fragment (`console=ttyFIQ0,… earlycon=… net.ifnames=0`) is a board fact
+too and lives there as `BOARD_CMDLINE_ARGS`, moved out of `build-v2.sh` when
+x64 became the second board to need a v2 image.
 
 ### The cmdline files are a contract
 
-`os/mkimage-v2.sh` does not re-derive the verity table: it lifts the
+The assembler does not re-derive the verity table: it lifts the
 `dm-mod.create="..."` and `dm-mod.waitfor=` fragments straight out of these two
 files with `sed` and writes them into each boot slot's `mos-verity.env`, next to
 the shared `boot.scr`. (The v2 slots carry no `extlinux.conf` — U-Boot tries
@@ -277,7 +304,7 @@ extlinux before `boot.scr`, which would bypass the RAUC A/B handshake.) So:
 - GUIDs are **lowercase** everywhere — cmdline and `fstab` alike — matching
   udev's `by-partuuid` symlinks, which libblkid formats lowercase. The kernel
   compares with `strncasecmp` and accepts either.
-  `os/mkimage-v2.sh` cross-checks the cmdline against the layout env's
+  The assembler cross-checks the cmdline against the layout env's
   uppercase `ROOTFS_x_GUID` case-insensitively (RFCT-020), so the two spellings
   coexist by design. Do not "reconcile" them by uppercasing the cmdline.
 
@@ -303,7 +330,7 @@ is a build error rather than a review finding. The verified inventory is in
 
 ## v2 package allowlist
 
-v1's list (systemd systemd-sysv systemd-resolved udev dbus kmod openssh-server
+The base list (systemd systemd-sysv systemd-resolved udev dbus kmod openssh-server
 iproute2 bluez rfkill wpasupplicant hostapd — the two connd packages, their
 masking and their config directories are documented under "Package allowlist"
 above and apply identically here) **plus**:
@@ -322,7 +349,7 @@ above and apply identically here) **plus**:
   slot good, and every update rolls back. 47 KB.
 - **`libubootenv-tool`** — provides `fw_printenv` / `fw_setenv`. RAUC's U-Boot
   backend needs it, and so does the first-boot machine-id oneshot (RFCT-015).
-- **`curl`** — the health gate's apid probe (`os/health/mos-health`) fetches
+- **`curl`** — the health gate's apid probe (`os/rootfs/overlay-v2/usr/lib/mos/mos-health`) fetches
   `https://127.0.0.1/healthz`. It prefers `curl`, falls back to `wget`, and
   SKIPs when neither is present. `rauc` links libcurl but does not ship the
   binary, so without this package the gate reported green while covering two of
@@ -330,8 +357,8 @@ above and apply identically here) **plus**:
   passes. One line to revert if the size budget is ever revisited.
 
 Deliberately **not** added: `squashfs-tools` and `cryptsetup-bin`. Packing the
-root is a build-stage job (they are installed in `Dockerfile.v2`'s pack stage
-only), and the kernel opens the verity device straight from `dm-mod.create=`
+root is a build-stage job (they are installed in `stages/90-pack.Dockerfile`'s
+pack stage only), and the kernel opens the verity device straight from `dm-mod.create=`
 with no userspace tool involved.
 
 Installed size: **217 MB against the 400 MB budget** (v1 is 204 MB). rauc,
@@ -374,44 +401,66 @@ sysfs). See `docs/design/ro-root.md` §6 for the one override that read-only
 growth target moved off the root, and what happens to `/etc/machine-id` are all
 explained in `docs/design/ro-root.md`.
 
-## Board hardware init — parity with v1 is enumerated, not restated
+## Board hardware init — the enable list is enumerated, not restated
 
-`Dockerfile.v2` installs `hwinit-*`, `*.service` **and** `*.rules` from
-`os/hwinit/`, and derives the enable list by iterating the units that are
-actually present:
+`scripts/hwinit-install.sh` installs `hwinit-*`, `*.service` **and** `*.rules`
+from `os/boards/<board>/hwinit/` — staged into `BOARD_HWINIT_DIR` — and derives
+the enable list by iterating the board FACTS that are actually staged:
 
 ```
-for f in /tmp/hwinit/*.service; do u="$(basename "$f")"; ln -sf ... ; done
+for c in /tmp/board-init/*.conf; do n="$(basename "$c" .conf)"; ... ln -sf ... ; done
 ```
 
 This is not a style preference. The previous hardcoded
 `for u in mos-modules mos-otg mos-can mos-bt` list is exactly how this file
-drifted behind the v1 `Dockerfile` once already: when `mos-mac` and
+drifted behind the since-deleted v1 `Dockerfile` once already: when `mos-mac` and
 `mos-gadget` were added, both were *installed* by the existing globs but never
 *enabled*, and `60-mos-gadget-getty.rules` was not installed at all — so a v2
 image silently lost its stable MAC and its USB debug console with no error
-anywhere. Adding a unit to `os/hwinit/` is now sufficient; the build also
-asserts at least one unit was enabled, so a glob that matches nothing fails
-loudly.
+anywhere. Adding `hwinit-<n>` plus `mos-<n>.service` under
+`os/boards/<board>/hwinit/`, and an `<n>.conf` to the board, is sufficient.
 
-No board fact is restated in the v2 layer. Module names, sysfs paths, UART
-device and speed, CAN bitrate and FD flag, MAC seed and gadget IDs all live in
-`BOARD_INIT_DIR` and are staged verbatim into `/etc/mos`, where the units read
-them at runtime.
+**Both directions are asserted, and neither is a count.** A conf with no script
+is an unread board fact and fails by name; a `/usr/lib/mos/hwinit-<n>` with no
+`/etc/mos/<n>.conf` is a unit that can never run and fails by name. What is NOT
+asserted at build time is the third direction — a board that declares
+`BOARD_HWINIT_CONFS` and whose `init/` went missing stages no conf, installs no
+unit, and the two counts agree at zero. That predates M5d, since `BOARD_INIT_DIR`
+was already a staged directory, and the image verifier (`os/verify/`) holds it at
+image level: it compares the declared facts against the installed helpers.
+
+No board fact is restated in the v2 layer, and since M5d no board NAME is
+either. Module names, sysfs paths, UART device and speed, CAN bitrate and FD
+flag, MAC seed and gadget IDs all live in `BOARD_INIT_DIR` and are staged
+verbatim into `/etc/mos`, where the units read them at runtime;
+`stages/40-board` names no board at all, which `os/build/src/stages.test.ts`
+asserts over every stage file.
 
 ## RAUC system.conf is rendered, not committed
 
 `os/rootfs/overlay-v2/etc/rauc/system.conf` is **generated** by
-`os/rauc/render-config.sh` (RFCT-014's renderer, which owns the template and
+`os/update/rauc/render-config.sh` (RFCT-014's renderer, which owns the template and
 its assertions) and is gitignored. `build-v2.sh` runs the renderer before
-staging the overlay, so the template plus `os/layout/cx3576-v2.env` are the
+staging the overlay, so the template plus `os/boards/cx3576/board.env` are the
 single source of truth and the rendered file cannot drift from them.
 
-`os/bundle.sh` still runs `render-config.sh --check`. It now guards a narrower
+The bundle builder still runs `render-config.sh --check` -- `os/build/src/bundle.ts`
+since PLAN-014 M6e deleted `os/update/bundle.sh` at byte-identity of the squashfs
+payload. It guards a narrower
 case — someone hand-editing the generated file after the last build — rather
 than committed-copy drift, which can no longer happen. Note that `bundle.sh`
 consumes `rootfs-verity.img` too, so `build-v2.sh` has necessarily run first
 and the file is present.
+
+## systemd-repart is a package of its own on trixie
+
+**"Zero extra packages" was true on bookworm and is not on trixie**, which is
+a fact worth stating rather than quietly editing: bookworm shipped
+`systemd-repart` inside the `systemd` package, trixie splits it into a package
+of its own. `os/rootfs/stages/10-base.Dockerfile` names it in the install list because of
+that, and the image verifier (`os/verify/`) asserts the enablement symlink. The failure
+if it were missing announces nothing — the device boots and DATA simply never
+grows past the 64 MiB the assembler creates.
 
 ## Storage tiers, and the /var contract
 
@@ -432,18 +481,16 @@ The rule is: **identity, credentials, pairings and update state never live on
 
 The DATA constants (`DATA_GUID`, `DATA_PARTNUM`, `DATA_FS_UUID`,
 `MOS_VAR_MIB`) are **required**: `build-v2.sh` fails if any is missing from
-`os/layout/cx3576-v2.env`. There is deliberately no fallback. A build that
+`os/boards/cx3576/board.env`. There is deliberately no fallback. A build that
 quietly emitted the superseded nine-partition arrangement — `/var` growing, no
 `/srv` — would pass every downstream check, which is precisely the class of
 silent-wrong-artifact this layout work exists to prevent.
 
 ## CJK guard
 
-The v2 pack stage runs the same CJK check as the v1 pack stage, over the same
-character ranges, extended with the v2-only mos-owned paths (the overlay's
-mount units, seed scripts, `repart.d` definitions, `fstab` and
-`fw_env.config`). Vendor packages ship translations and are deliberately not
-scanned.
+The pack stage runs a CJK check over the mos-owned paths — the overlay's mount
+units, seed scripts, `repart.d` definitions, `fstab` and `fw_env.config`.
+Vendor packages ship translations and are deliberately not scanned.
 
 ## Dev root access on v2
 
@@ -468,11 +515,341 @@ What a developer actually gets on v2:
 ## Determinism, and what still deviates
 
 Two cache-hot `make os-rootfs-cx3576-v2` runs produce a byte-identical
-`rootfs-verity.img`. Unlike v1, sshd host keys are **not** baked into the image
-— they would be a private key shared by every device and would change the verity
-root hash on every cold build; `mos-seed-state` generates them per device on
-first boot instead.
+`rootfs-verity.img`. sshd host keys are **not** baked into the image — they
+would be a private key shared by every device and would change the verity root
+hash on every cold build; `mos-seed-state` generates them per device on first
+boot instead.
 
-What still deviates on a cold build: the byte layout depends on the
-`squashfs-tools` and `cryptsetup` versions pulled from `debian:bookworm-slim` in
-the pack stage. Pinning that base image by digest is the follow-up.
+`cache-hot` is doing real work in that sentence and RFCT-111 measured how much.
+**A cold x64 build does not reproduce itself.** M5a took three cold builds; M5b
+took four more of the untouched single file — `1b3f5e50…`, `7aad6efd…`,
+`55cf38f3…`, `af841f4f…` — and every one of the seven produced a different
+`rootfs-verity.img` sha256. In every pairing the differing set was the same six
+of 9,241 entries:
+
+| Entry | Why it moves |
+|---|---|
+| `/boot/initrd.img-*` | `update-initramfs` does not compress reproducibly. The 961 files *inside* are identical between runs; only the container's bytes differ (three runs gave 37190070, 37189886 and 37189690 bytes) |
+| `/usr/share/factory/var/log/dpkg.log` | records the wall-clock time of each of its 694 operations. Strip the timestamps and two runs are byte-identical: same operations, same order |
+| `/usr/share/factory/var/log/apt/history.log`, `.../term.log` | same, `Start-Date`/`End-Date` |
+| `/usr/share/factory/var/log/alternatives.log` | same |
+| `/usr/share/factory/var/cache/ldconfig/aux-cache` | build-time cache |
+
+They survive because the package-manager purge takes `/var/lib/dpkg` and
+`/var/lib/apt` but not `/var/log`, and the pack stage then moves `/var` to
+`/usr/share/factory/var` whole. Removing them would change image content, which
+is outside PLAN-014's scope; this is recorded, not fixed.
+
+**What this means for a byte-identity gate.** Changing the build necessarily
+invalidates the layer cache, so "byte-identical before and after" cannot be
+measured cache-hot — and measured cold it fails for the six reasons above
+whether or not anything changed. A gate that compares sha256 across a build
+change is measuring the clock. The gate that works: extract both images and
+`diff -r --no-dereference` the trees, then check that the differing set is no
+larger than the control's, where the control is two cold builds of the
+*unmodified* file. `os/build/run.sh --build-rootfs --no-cache` exists so the
+subject side can be cold without pruning the daemon's cache out from under
+every other build on the machine.
+
+### A SEVENTH ENTRY THE SIX-ENTRY CONTROL CANNOT SEE: the build DATE
+
+M5b's control builds straddled midnight UTC and turned up an entry M5a's could
+not, because both of M5a's ran on one day. Two builds on **different days**
+also differ in
+
+| Entry | What differs |
+|---|---|
+| `/usr/share/factory/etc/shadow` | `systemd-network`, `messagebus`, `systemd-resolve` and `sshd` carry LAST-CHANGE `20690` on 2026-08-25 and `20691` on 2026-08-26 |
+| `/etc/shadow-` | the same four, plus `mos`'s own pre-`chage` row, which the backup keeps |
+
+This is the exact failure `chage -d 2020-01-01` exists to prevent, and the
+comments on the three mos accounts say so outright: *"useradd stamps TODAY into
+it, which would make the packed rootfs — and therefore its dm-verity root hash
+— differ on every build day for no content reason at all."* The pinning covers
+the three accounts this build creates. It does not cover the accounts Debian's
+own package postinsts create, and it does not cover the `-` backup files, which
+snapshot the state **before** `chage` ran.
+
+So the packed root, and its verity root hash, depend on the calendar day.
+Reported, not fixed: `/etc/shadow-` and `/etc/passwd-` are `useradd`'s
+pre-modification backups, unreadable and unwritable on a read-only verity root
+and read by nothing in the image, so removing them or pinning their dates is an
+image content change and outside PLAN-014's scope. A gate that must compare two
+builds should run them on the same day, or strip these two files.
+
+### RFCT-111 M5b: the stage split, measured
+
+The chain (`stages/`) against the single file it replaced, both built cold on
+one day, x64:
+
+| | entries |
+|---|---|
+| control — two cold builds of the unmodified single file | **6** |
+| subject — unmodified single file vs the chain | **14** |
+| beyond the control | **8**, every one in the account family |
+
+The eight are `/etc/passwd`, `/etc/group`, `/etc/gshadow`,
+`/usr/share/factory/etc/shadow` and the four `-` backups. They are the price of
+`account-mos.sh` moving into `10-base` while the two MQTT service accounts stay
+with the feature material, and they are semantically inert — which was proved
+rather than asserted:
+
+- the four live files are **identical as sets**; `mos` only changes line
+  position, and every uid, gid, shell, home and hash is unchanged.
+- the four `-` backups differ by **exactly one entry**: `useradd` snapshots the
+  file before each change, so the backup now holds the state before
+  `mos-mqtt-broker` (which includes `mos`) instead of the state before `mos`.
+- `unsquashfs -lln` over both images is identical for mode, uid, gid and path
+  on all 9,241 entries; the only size changes are these files and the initrd.
+
+**The reorder is not optional.** The floor's operator account cannot come after
+a feature's service accounts and still be the floor, so no arrangement of the
+stage vocabulary preserves that order. RFCT-111's acceptance anticipated this —
+"byte-identical **where achievable**; if apt-layer reordering makes that
+unattainable, the fallback gate is full verifier parity plus an explicitly
+anchored new-baseline commit". This is that anchor, and the parity half was run:
+`MOS_BOARD=x64 bash os/verify-image-v2.sh` on an image assembled from a
+chain-built rootfs reports **`RESULT: PASS (290/290 checks, 22 skipped)`**, the
+same count as before the split. *(That command is the one that was RUN, and it
+is left as written: the script it names was deleted by PLAN-014 M4e at full
+parity with `os/verify/`, so this is a citation into git history rather than a
+recipe. `bash os/verify/run.sh --verify --board x64` is the successor, and M4e
+reproduced both boards' summary counts exactly at the port's tip.)*
+
+### RFCT-111 M5c: the feature cut, measured
+
+`30-40-unsplit` cut into five `30-feature-*` stages and `40-board`, with the
+board work moved behind every feature. Both sides built cold on **2026-08-26**
+through the same driver with the same arguments — the only difference is the
+tree — and both extracted with the same `unsquashfs`:
+
+| | entries |
+|---|---|
+| control — two cold builds that changed nothing (M5a, and M5b again) | **6** |
+| M5b's subject — the single file vs the four-stage chain | 14 |
+| **M5c's subject — that chain vs the nine-stage chain** | **6** |
+| beyond the control | **0** |
+
+The differing set **is** the control's set, entry for entry:
+`/boot/initrd.img-*`, the four `/usr/share/factory/var/log` files and
+`aux-cache`. Nothing in the account family moved this time, which is the
+difference between M5c's reordering and M5b's: M5b had to lift `account-mos.sh`
+into the floor stage past two service accounts, and M5c moved no account-
+creating RUN across another one.
+
+Driven further than the entry count, because six entries that differ for the
+right reason and six that differ for a new one look the same in a list:
+
+- `unsquashfs -lln` over all **9,241** entries differs on **one line**, and only
+  in the initrd's SIZE (37,189,906 against 37,189,851 bytes). Every mode, uid,
+  gid, and path on both sides is identical.
+- `dpkg.log` with its timestamps stripped is **byte-identical**: the same 694
+  operations in the same order. That is the direct check on the ordering
+  constraint the cut was designed around — the `apt` transactions still run
+  radios, containers, `grub-editenv`, kernel.
+- `alternatives.log` is two lines and identical once `update-alternatives`' own
+  timestamp is removed; `apt/history.log` is identical once `Start-Date` and
+  `End-Date` are.
+
+The recipe is in `_out/gate/` of the M5c worktree — `chain-cold.sh` (one tree,
+one cold chain), `extract.sh` (M5b's, verbatim but for the root) and
+`compare.sh` — and it is meant to be re-run rather than cited.
+
+### RFCT-111 M5d: the board parameterisation, measured — and a SEVENTH entry
+
+`40-board`'s two fixed `cx3576` `COPY`s replaced by staged directories
+(`stages/README.md`, "Declining a board"). Every build below is cold, x64,
+**2026-08-26**, through the same driver, and every tree is a `git` checkout cut
+the same way — so the tree is the only difference between a control pair and a
+subject pair.
+
+| | entries |
+|---|---|
+| M5b's subject — the single file vs the four-stage chain | 14 |
+| M5c's subject — that chain vs the nine-stage chain | 6 |
+| **the control, RE-MEASURED here — the base tree against ITSELF, two cold builds 22 minutes apart** | **7** |
+| **M5d's subject vs the first control build** | **7** |
+| **M5d's subject vs the second control build** | **6** |
+| **beyond the control, in either pairing** | **0** |
+
+**The control is 7 today and was 6 for M5a, M5b and M5c.** The seventh is
+`/usr/share/factory/var/log/apt/eipp.log.xz` — apt's dump of the problem it
+handed its solver — and it is in the control, not in the change. It first showed
+up as a seventh entry against a subject build, which is exactly the shape of a
+regression, so it was measured rather than argued: a second cold build of the
+UNMODIFIED base tree reproduces it against the first, with the same signature.
+
+| | eipp.log.xz |
+|---|---|
+| decompressed size | 1,490 lines, identical on every side |
+| differing lines, control pair | 12 |
+| differing lines, subject pair | 12 |
+| what differs | `APT-ID:` and nothing else, in both pairs |
+| by how much | a constant **+4**, in both pairs |
+
+`APT-ID` is an index into apt's in-memory package cache, which spans every
+package the lists offer and not just the ones installed. Four more records in
+`deb.debian.org`'s index — the archive moved during the session — shifts every
+id by four and changes nothing about what is installed. `dpkg.log` proves that
+half directly: **byte-identical over all 694 operations** once timestamps are
+stripped, in the subject pair. And the third pairing settles it — the subject
+against the control's SECOND build, which fell on the same side of the archive
+move, is **6**, the pre-M5d set exactly.
+
+The rest of the differing set is the one this file has recorded since M5a:
+`/boot/initrd.img-*`, the four `/usr/share/factory/var/log` files and
+`aux-cache`. That is what an x64 build of this change should look like — x64 is
+the board that DISCARDED both of the things being parameterised, so a real
+difference would have meant the mechanism changed what a board carries.
+
+Driven past the entry count, because seven entries that differ for the right
+reason and seven that differ for a new one read identically in a list:
+
+- **`unsquashfs -lln` over all 9,241 entries differs on ONE line** in the
+  subject pair, and only in the initrd's SIZE (37,189,836 against 37,190,017
+  bytes). **The control pair also differs on exactly that one line** (37,189,836
+  against 37,190,044). Every mode, uid, gid and path on all three sides is
+  identical — which is the check that matters here, because a `COPY` that
+  changed what it stages would move a mode or a path before it moved a byte.
+- **`dpkg.log` with its timestamps stripped is byte-identical** — the same 694
+  operations in the same order. `grub-editenv-install` did not move, so the apt
+  order the feature stages are arranged to preserve is intact.
+- `alternatives.log` (2 lines) and `apt/history.log` (12 lines) are identical
+  once their own timestamps are removed.
+- **`apt/term.log` is 657 lines on both sides and differs on exactly THREE**,
+  which are the RSA/ECDSA/ED25519 host-key fingerprints `openssh-server`'s
+  postinst echoes as it generates them. The keys themselves are removed by
+  `stages/10-base` and are not in the image; only the console echo survives in
+  the log.
+- `/usr/lib/firmware` **does not exist** in any of the three packed roots, which
+  is the behaviour `firmware-install.sh` was written to keep: a board with no
+  radio gets no empty directory standing where firmware would be.
+
+**A DIFFERENCE THE GATE FOUND IN ITSELF, recorded because it is the kind that
+reads as a subject failure.** The first run of this gate reported 6 differing
+entries and then **24 differing lines in the `-lln` listing** — a mode
+difference, group-write set on `/etc`, `/usr`, `/usr/lib` and nine overlay
+files. Not the change: the control tree had been snapshotted with
+`git archive HEAD | tar -x`, which produced `664`/`775` where a checkout under
+`umask 022` gives `644`/`755`, and the overlay is `cp -a`'d from those files
+into the build context. The content diff could not see it — `diff -r` compares
+bytes, not modes — so the listing is what caught it. **A gate for a refactor has
+to be cut so that the two sides are the same KIND of thing**, and a tar
+extraction and a checkout are not.
+Fixed by cutting the control side with `git worktree add --detach` instead, so
+both sides are checkouts made the same way; the numbers above are that run.
+
+The recipe is in `_out/gate/` of the M5d worktree — `chain-cold.sh` (one tree,
+one cold chain, and the extra `--arg`s the subject's `40-board` declares passed
+by the caller, because the driver REFUSES an argument no stage declares),
+`extract.sh` and `compare.sh` — and it is meant to be re-run rather than cited.
+
+Also cold-build-dependent, and now closed: the byte layout used to depend on
+whichever `squashfs-tools` and `cryptsetup` came out of a floating
+`debian:bookworm-slim` in the pack stage. RFCT-108 (PLAN-014 M2) pins that base
+by digest through `os/build-env/images.env`, so the pack tools are a decision
+rather than a build date.
+
+### RFCT-111 M5e: the milestone gate — and the number that is NOT zero
+
+The three sections above each gate one STEP of the cut against the step before
+it. This one gates **the whole of M5**: the nine-stage chain at the tree that
+ships, against the tree as it stood the commit before the cut (`66bb0b8`'s parent —
+the last tree with no `os/rootfs/stages/` in it, built from `Dockerfile.v2`
+alone). Cold, x64, **2026-08-26**, both sides cut with
+`git worktree add --detach`, both on the `default` buildx builder.
+
+**Each side ran its OWN `os/rootfs/build-v2.sh`, unmodified.** The two drivers
+are not the same program — the pre-M5 one calls `docker buildx build` over one
+Dockerfile, the M5 one calls `os/build/run.sh --build-rootfs` over nine — and
+neither takes `--no-cache`. M5c and M5d handled that by re-listing the argument
+set `build-v2.sh` computes into a `chain-cold.sh`; that works, and the
+transcription is a second variable between two sides whose whole claim is that
+there is only one. Here `--no-cache` is injected instead by a `docker` shim on
+`PATH` at exactly two Dockerfile shapes — `os/rootfs/Dockerfile.v2` and
+`os/rootfs/stages/*.Dockerfile`; the first was the single-file build this
+measurement compared against, and M5 deleted it once the chain replaced it — so the staged inputs (mosd, podman, rauc)
+build warm and identically on both sides and nothing about the argument set is
+retyped. Coldness is then MEASURED rather than assumed: BuildKit prints `CACHED`
+on every step it reuses, and across all three builds the only `CACHED` lines are
+the digest-pinned base-image resolves. Not one `RUN` was reused.
+
+| | entries, of 9,241 |
+|---|---|
+| the control — the pre-M5 tree against ITSELF, two cold builds 7 minutes apart | **6** |
+| the subject — the pre-M5 tree against the nine-stage chain | **14** |
+| **beyond the control** | **8** |
+
+**Eight, and not zero, and it is the recorded outcome rather than a
+regression.** All eight are the account family — `/etc/passwd`, `/etc/group`,
+`/etc/gshadow`, `usr/share/factory/etc/shadow` and the four `-` backups — and
+all eight are one account at a different LINE POSITION. `account-mos.sh` moved
+into `10-base` when the chain was cut (`stages/README.md` tables it), while the
+two MQTT service accounts stayed with the feature material in
+`34-feature-mqtt`, so the `mos` operator is now created before them and used to
+be created after. Measured rather than reasoned: the four live files are
+**identical as SETS** (`sort` and `diff` agree), same uid, same gid, same
+fields; the four `-` backups differ by exactly one entry each, because `useradd`
+snapshots the file before each change and the change it snapshots is a different
+one. Nothing resolves differently — `/etc/passwd` is not order-sensitive — and
+RFCT-111's acceptance clause names this case: byte-identity "where achievable",
+and otherwise "full verifier parity plus an explicitly anchored new-baseline
+commit". **That fallback has two halves and both are owed.** The parity is
+section 3 of this gate: `RESULT: PASS (290/290 checks, 22 skipped)`, 0 FAIL, on
+an image assembled from a chain-built rootfs. The anchored new-baseline commit
+is `docs/task/RFCT-111.md`, section "The M5 baseline" — which enumerates the
+eight entries, states how wide the allowance is and what a later gate must
+compare against instead of `84c12f4`. This gate first recorded only the parity
+half, which is half a discharge and reads like a whole one.
+
+**The seventh control entry of M5d is gone, which is what M5d predicted.**
+`apt/eipp.log.xz` is byte-identical on both pairings today, so the control is
+**6** again — the number M5a, M5b and M5c measured. A control that was 6, then
+7, then 6 is a property of the day and of `deb.debian.org`'s index, exactly as
+M5d recorded it, and not of any tree.
+
+Driven past the entry count, because eight entries that differ for the right
+reason and eight that differ for a new one read identically in a list:
+
+- **`unsquashfs -lln` over all 9,241 entries: 0 differing rows on BOTH
+  pairings**, comparing mode, uid/gid and path with size and mtime excluded and
+  re-sorted on that triple. Every mtime in both listings is the pinned
+  `2020-01-01 00:00`. The listing's only differences are SIZES: the initrd on
+  both pairings (gzip, and the control moves it too), and `/etc/passwd-`,
+  `/etc/group-`, `/etc/gshadow-` on the subject pairing — the same one account.
+  The comparison was driven from the failing side before it was believed: one
+  mode bit, one gid and one renamed path each register, and the unmutated pair
+  is 0.
+- **`dpkg.log` with its timestamps stripped is byte-identical over all 694
+  operations, on BOTH pairings.** That is the direct check on the ordering the
+  feature stages are arranged to preserve, and it is intact across the entire
+  milestone — not just across M5d.
+- `apt/history.log` differs on 16 lines, every one a `Start-Date` or `End-Date`.
+  `alternatives.log` differs on 4, which are one `update-alternatives --install`
+  of `mt` with a different timestamp on each side.
+- **`apt/term.log` differs on 22 lines: 16 are `Log started`/`Log ended`, and
+  6 are the RSA/ECDSA/ED25519 host-key fingerprints `openssh-server`'s postinst
+  echoes** — three per side. Those six appear in the CONTROL pairing as well, so
+  they are the day and not the change; the keys themselves are removed by
+  `stages/10-base` and are not in the image.
+- `/usr/lib/firmware` does not exist in any of the three packed roots, and
+  `/etc/shadow` is a symlink to `/run/mos/shadow` on both sides, which is why it
+  is absent from the differing set while the factory copy is in it.
+
+**Measured a fourth time, at the exact commit that ships.** The subject build
+above is the tree as M5d left it. The tree this file is in adds three comment
+lines to build inputs (`build-v2.sh` and `40-board.Dockerfile`, the BSP file
+count), which are not instructions but are still context bytes, so the whole
+pairing was re-run against it rather than argued about: **the same 14 entries,
+the same list, and 0 differing `-lln` rows** on mode, uid/gid and path, with
+`dpkg.log` byte-identical over the same 694 operations.
+
+That gives a second control, and an independent one: the two M5 trees against
+EACH OTHER — cold, comment-only apart — differ on **6** entries, which is the
+control set exactly. So the eight extra entries in the table above are the
+pre-M5 tree against an M5 tree, and nothing else in the session produced them.
+
+The recipe is in `_out/gate/` of the M5e worktree — `cold.sh` (one tree, one
+cold build, through that tree's own driver), `bin/docker` (the shim, with its
+decision driven from both sides), `extract.sh`, `compare.sh` and `lines.sh` (the
+per-log accounting above) — and it is meant to be re-run rather than cited.

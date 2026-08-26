@@ -20,6 +20,24 @@
 > **superseded** in §4.2 rather than deleted. The `.zh.md` sibling has not been
 > updated and is stale.
 
+> **CITATION NOTE, added 2026-08-26 (RFCT-113 M7c) — annotation, not a rewrite.**
+> This document cites `os/mkimage-v2.sh`. Those scripts no
+> longer exist: PLAN-014 ported them into TypeScript and deleted them, each
+> gated on a measured equivalence rather than on review —
+> `os/verify-image-v2.sh` → `os/verify/` at **full verifier parity** (M4e,
+> `6eadc65`), and `os/mkimage-v2.sh` / `os/mkimage-x64.sh` / `os/update/bundle.sh`
+> → `os/build/` at **byte-identity** of the assembled image and of the bundle's
+> squashfs payload (M6e, `c55c7b0`).
+>
+> **The citations are left as written**, including their line numbers, because
+> each records what was measured *in the file it names* — they are citations
+> into git history, and re-pointing a line number into a port would invent a
+> precision nobody checked. What to read instead:
+> `bash os/verify/run.sh --verify`, `bash os/build/run.sh --mkimage-v2` /
+> `--mkimage-x64` / `--bundle`. Nothing about the CONTENT of any assertion
+> below changed with the port.
+
+
 ## 0. How to read the status markers
 
 Every section below that describes a **mechanism** carries one of:
@@ -221,7 +239,7 @@ clear) and `mosd/apid/src/routes.rs` (the operator-facing pane).
 **The default state of a device is: SSH off, root with no password, no keys.**
 Both image profiles. Neither profile seeds `access.ssh.enabled` true
 (`Profile::ssh_enabled_default` returns `false` for both), and neither image
-ships `ssh.service` enabled (`os/rootfs/Dockerfile.v2` removes the
+ships `ssh.service` enabled (`os/rootfs/scripts/network-and-ssh-units.sh` removes the
 `multi-user.target.wants` symlink and asserts it is gone). Getting in requires
 an authenticated admin action through apid, over the network the appliance is
 already on.
@@ -349,10 +367,10 @@ Decision 2026-08-17: prod ships SSH. **Two** profiles ship today, selected at
 build time and recorded in the image.
 
 `/usr/lib/mos/profile.conf` carries `MOS_PROFILE=dev` or `MOS_PROFILE=prod`,
-mode 0444, written by `os/rootfs/build.sh` / `build-v2.sh`. It is under
-`/usr/lib` and not `/etc` because it describes the *image* rather than the
-device — and on v2 that also puts it inside the read-only verity root, where
-a production device cannot be edited into a development one.
+mode 0444, written by `os/rootfs/build-v2.sh`. It is under `/usr/lib` and not
+`/etc` because it describes the *image* rather than the device — and that also
+puts it inside the read-only verity root, where a production device cannot be
+edited into a development one.
 
 **Both profiles now seed `access.ssh.enabled = false`**, and neither image ships
 `ssh.service` enabled; both image verifiers assert the disabled state. The
@@ -365,7 +383,7 @@ resolves to `prod` too. The build rejects any `MOS_PROFILE` value that is not
 exactly `dev` or `prod` in lowercase.
 
 The `ROOT_PASSWORD` build arg is **v1-only** and is not selected by the profile
-on v2: `os/rootfs/build-v2.sh` and `Dockerfile.v2` carry no such plumbing,
+on v2: `os/rootfs/build-v2.sh` and `os/rootfs/stages/` carry no such plumbing,
 because the v2 pack stage unconditionally fails any build whose factory shadow
 holds a usable hash — for every account and on both profiles — and both
 verifiers assert the same about the packed artifact. A baked v2 root credential
@@ -492,7 +510,7 @@ An operator who loses the webAdmin password **and** every authorized key has
 - **The serial console is present and reachable, and offers no way in.** Be
   precise about this: systemd's getty-generator **does** spawn
   `serial-getty@ttyFIQ0` from the kernel `console=` parameter on both profiles
-  (`os/rootfs/Dockerfile.v2` records exactly this, and ships no getty unit of
+  (`os/rootfs/stages/10-base.Dockerfile` records exactly this, and ships no getty unit of
   its own). A login prompt appears. It has no account that will accept a
   credential — root is locked and every other account is locked by
   `mos-shadow-reconcile`.

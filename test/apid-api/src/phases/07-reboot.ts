@@ -8,7 +8,7 @@
  * serial line. Only after that does it accept that the port going quiet means
  * "the guest went down" rather than "something moved in the network".
  *
- * `-no-reboot`, and why this phase ends where it does. os/qemu-run.sh:167
+ * `-no-reboot`, and why this phase ends where it does. os/tools/qemu-run.sh:167
  * passes `-no-reboot`, so a guest-initiated reboot makes QEMU EXIT instead of
  * resetting. That file belongs to the image line and is not edited here. The
  * harness works with the flag: it boots a SECOND time from the SAME disk
@@ -83,7 +83,7 @@ const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout
 
 /**
  * mos keeps journald at `Storage=volatile` because /var is the EPHEMERAL
- * partition, so a guest's journal dies with the guest and `os/qemu-journal.sh`
+ * partition, so a guest's journal dies with the guest and `os/tools/qemu-journal.sh`
  * cannot work. The harness captures the serial console to a file instead and
  * passes its path as APID_CONSOLE, with
  * `systemd.journald.forward_to_console=1` on the kernel command line so the
@@ -823,7 +823,7 @@ const phase: Phase = {
     );
 
     report.note(
-      "    07 ends here by design. os/qemu-run.sh:167 passes -no-reboot, so QEMU EXITS " +
+      "    07 ends here by design. os/tools/qemu-run.sh:167 passes -no-reboot, so QEMU EXITS " +
         "rather than resets; the harness boots the same disk a second time and runs " +
         "07b-postreboot in a new suite process. Waiting for the machine here would be " +
         "waiting on a process that has not been started yet.",

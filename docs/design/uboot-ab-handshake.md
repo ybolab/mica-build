@@ -4,6 +4,24 @@
 > outside this repository; nothing under `board/` is changed by this document.
 > Written for PLAN-010 M4 (= PLAN-006 A/B updates on systemd), RFCT-018.
 
+> **CITATION NOTE, added 2026-08-26 (RFCT-113 M7c) — annotation, not a rewrite.**
+> This document cites `os/mkimage-v2.sh` and `os/verify-image-v2.sh`. Those scripts no
+> longer exist: PLAN-014 ported them into TypeScript and deleted them, each
+> gated on a measured equivalence rather than on review —
+> `os/verify-image-v2.sh` → `os/verify/` at **full verifier parity** (M4e,
+> `6eadc65`), and `os/mkimage-v2.sh` / `os/mkimage-x64.sh` / `os/update/bundle.sh`
+> → `os/build/` at **byte-identity** of the assembled image and of the bundle's
+> squashfs payload (M6e, `c55c7b0`).
+>
+> **The citations are left as written**, including their line numbers, because
+> each records what was measured *in the file it names* — they are citations
+> into git history, and re-pointing a line number into a port would invent a
+> precision nobody checked. What to read instead:
+> `bash os/verify/run.sh --verify`, `bash os/build/run.sh --mkimage-v2` /
+> `--mkimage-x64` / `--bundle`. Nothing about the CONTENT of any assertion
+> below changed with the port.
+
+
 ## 0. Scope, status and evidence rules
 
 The user builds a **custom U-Boot based on mainline upstream** for CX3576-Z
@@ -21,12 +39,22 @@ Evidence convention used throughout:
   `6.1.115` [V]), fetched read-only.
 - **[U]** UNVERIFIED — cannot be established without a board build or hardware.
 
-`os/layout/cx3576-v2.env` (RFCT-020) had **not** landed when this analysis was
-written against branch base `fd6233f`; `ls os/layout/` → no such directory [V].
-Every constant below is therefore quoted from the campaign layout-v2 table. The
-file has since landed with RFCT-020, so every generated file (defconfig
-fragment, `fw_env.config`, `boot.cmd`) **must be regenerated from
-`os/layout/cx3576-v2.env`** so the two sides cannot drift.
+The board definition (RFCT-020) had **not** landed when this analysis was
+written against branch base `fd6233f`; no directory in the tree held it [V].
+Every constant below is therefore quoted from the campaign layout-v2 table. It
+has since landed, and RFCT-107 (PLAN-014 M1) moved it to its present path, so
+every generated file (defconfig fragment, `fw_env.config`, `boot.cmd`) **must
+be regenerated from `os/boards/cx3576/board.env`** so the two sides cannot
+drift.
+
+The v1 single-slot chain (`os/mkimage.sh`, `os/verify-image.sh`,
+`os/rootfs/build.sh`, `os/rootfs/Dockerfile`) still existed when this analysis
+was written, and §1.4, §5.3, §5.4 and §5.5 quote `os/mkimage.sh` by line as the
+baseline the v2 assembler had to match. RFCT-107 (PLAN-014 M1) **deleted** that
+chain. Every `os/mkimage.sh:NN` anchor below is therefore a citation into git
+history, not into the tree — verified when written, and not re-derivable by
+opening the file. What those anchors established is now carried by
+`os/mkimage-v2.sh` and asserted by `os/verify-image-v2.sh`.
 
 `CONFIG_SQUASHFS_XATTR` is out of scope here: L1 approved and applied it to
 `board/common/mos-required.fragment` directly. No action in this document.
@@ -283,7 +311,7 @@ slot re-selected.
 ### 3.2 Defconfig fragment (paste into the custom defconfig)
 
 Verified symbol names and semantics against `v2026.07`. Regenerate the three
-hex values from `os/layout/cx3576-v2.env`, which has since landed with
+hex values from `os/boards/cx3576/board.env`, which has since landed with
 RFCT-020, whenever the layout changes.
 
 ```
@@ -346,7 +374,7 @@ Notes, each with its evidence:
 
 ```
 # /etc/fw_env.config — U-Boot environment access from Linux.
-# Generated from os/layout/cx3576-v2.env; do not hand-edit.
+# Generated from os/boards/cx3576/board.env; do not hand-edit.
 # Two device lines == redundant environment; both copies must be listed.
 #
 # Device name     Device offset   Env. size
@@ -523,10 +551,11 @@ Slot-agnostic: the running copy may boot either slot. Per-slot verity parameters
 are *not* baked in — they are imported from the chosen slot's boot partition
 (§7.3), so the script is byte-identical in both boot partitions.
 
-**This block is synced to the shipped `os/boot/cx3576-boot.cmd`**, which is what
-`os/mkimage-v2.sh` compiles into `boot.scr`. It now differs from the version
-first published here in **two** places. Both were defects that made every update
-revert silently, and both are recorded in the shipped script's provenance header:
+**This block is synced to the shipped `os/boards/cx3576/boot.cmd`**, which is
+what `os/mkimage-v2.sh` compiles into `boot.scr`. It now differs from the
+version first published here in **two** places. Both were defects that made
+every update revert silently, and both are recorded in the shipped script's
+provenance header:
 
 1. **The slot-suffixed verity env.** The script sets `slotsuffix` alongside
    `bootslot` and loads `mos-verity-${slotsuffix}.env`, falling back to the
@@ -1014,7 +1043,7 @@ unit would suppress the symptom; instead the loader area is now a real GPT
 partition (`loader`, p1, LBA 64, 32704 sectors, type
 `8DA63339-0007-60C0-C436-083AC8230908`). First-boot TRIM stays enabled and the
 final state carries **no `--discard=no` anywhere** — protection comes from the
-partition entry existing. `os/repart-loader-test.sh` proves both directions with
+partition entry existing. `os/tests/repart-loader-test.sh` proves both directions with
 a real `systemd-repart` on a real image: the image as built keeps LBA 64, and the
 same image with only that one GPT entry deleted loses it.
 
@@ -1189,7 +1218,7 @@ ones that blocked M4 entirely; all three are resolved by `8b24f9d`.
    name or device path, so the other two routes have nothing to work with.
    Verified against rauc 1.8: without it, `rauc status` reports *"Did not find
    booted slot (matching '/dev/dm-0')"*, `mark-good` is never reached, and every
-   installed slot rolls back. Shipped in `os/boot/cx3576-boot.cmd`.
+   installed slot rolls back. Shipped in `os/boards/cx3576/boot.cmd`.
 
 Dependencies this creates on other subtasks, for scheduling:
 

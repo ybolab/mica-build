@@ -1,4 +1,4 @@
-# syntax=docker/dockerfile:1
+# syntax=docker/dockerfile:1@sha256:ecfaec9ed6d810b56388c508f4121597bfbba70d41a6dfeee4d8cad5f295fc32
 # Build U-Boot v2026.07 with RK3576 DDR v1.12 and BL31 v1.24.
 # Recovery enters RockUSB; failed boot falls back to RockUSB.
 #
@@ -7,7 +7,23 @@
 #   make uboot-mos  (--target artifact-mos) mos A/B variant: persistent redundant
 #     env + boot.scr contract (docs/design/uboot-ab-handshake.md); pairs with the
 #     v2 image only — its env offsets fall inside the v1 boot partition.
-FROM --platform=$BUILDPLATFORM ubuntu:24.04 AS build
+# THE BUILDER IMAGE, INJECTED FROM os/build-env/images.env by
+# os/build-env/from.sh, which board/cx3576/Makefile calls. RFCT-108 M2c; what
+# stood on the FROM line below was the bare tag `ubuntu:24.04`, which Canonical
+# repoints on every point release -- so the answer to "which toolchain produced
+# this artefact" was the date of the build.
+#
+# STILL UBUNTU, AND NOT RESTRUCTURED. RFCT-108 draws that boundary explicitly:
+# the BSP builders "get digest pins only". This cross-compiles a vendor tree
+# against gcc-aarch64-linux-gnu, python3-pyelftools, swig and
+# device-tree-compiler at the versions that tree was tested with; moving it onto
+# mos-build-c would be a BSP rebuilt under a toolchain nobody has booted on the
+# hardware, which is a different milestone from pinning what it already runs on.
+#
+# NO DEFAULT: without a value docker refuses before any stage runs, which is
+# loud; with one it would build green against an image nobody chose.
+ARG MOS_IMAGE_UBUNTU_2404
+FROM --platform=$BUILDPLATFORM ${MOS_IMAGE_UBUNTU_2404} AS build
 
 ARG DEBIAN_FRONTEND=noninteractive
 RUN apt-get update && apt-get install -y --no-install-recommends \

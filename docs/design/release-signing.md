@@ -1,7 +1,7 @@
 # Release signing: the production key ceremonies
 
-> **Status:** runbook. RFCT-083 made the tooling accept real keys — `os/bundle.sh`
-> honours caller CERT/KEY/KEYRING, `mos-sign verify` demands an out-of-band root,
+> **Status:** runbook. RFCT-083 made the tooling accept real keys — the bundle
+> builder honours caller CERT/KEY/KEYRING, `mos-sign verify` demands an out-of-band root,
 > rollback publication is gated — and then named the remaining step plainly:
 > *owning* production keys is an operational act, not a code change. This
 > document is that act, written down before it is performed, so that when it is
@@ -13,6 +13,24 @@
 > `docs/README.md`: whether the `*.zh.md` translations are kept current is a
 > decision parked with the user (`docs/task/RFCT-045.md`), and a translation of
 > a live runbook that drifted from it would be worse than none.
+
+> **CITATION NOTE, added 2026-08-26 (RFCT-113 M7c) — annotation, not a rewrite.**
+> This document cites `os/verify-image-v2.sh`. Those scripts no
+> longer exist: PLAN-014 ported them into TypeScript and deleted them, each
+> gated on a measured equivalence rather than on review —
+> `os/verify-image-v2.sh` → `os/verify/` at **full verifier parity** (M4e,
+> `6eadc65`), and `os/mkimage-v2.sh` / `os/mkimage-x64.sh` / `os/update/bundle.sh`
+> → `os/build/` at **byte-identity** of the assembled image and of the bundle's
+> squashfs payload (M6e, `c55c7b0`).
+>
+> **The citations are left as written**, including their line numbers, because
+> each records what was measured *in the file it names* — they are citations
+> into git history, and re-pointing a line number into a port would invent a
+> precision nobody checked. What to read instead:
+> `bash os/verify/run.sh --verify`, `bash os/build/run.sh --mkimage-v2` /
+> `--mkimage-x64` / `--bundle`. Nothing about the CONTENT of any assertion
+> below changed with the port.
+
 
 ## 0. How to read this document
 
@@ -37,7 +55,7 @@ prevent:
    its sha256, length and dm-verity root hash. The `root` key is offline
    material; `targets`/`snapshot`/`timestamp` are online release-host keys.
    See `update/README.md` for the phase-1 scope.
-2. **The RAUC CMS signature** (`os/bundle.sh`, `rauc bundle`): an X.509
+2. **The RAUC CMS signature** (`os/build/src/bundle.ts`, `rauc bundle`): an X.509
    signer certificate, chained to a CA whose certificate is the device-side
    keyring, signs the bundle payload itself. This is what
    `/etc/rauc/system.conf` verifies at install time.
@@ -170,7 +188,7 @@ building it. **[not implemented]**, and dated.
 
 ### 2.1 The offline CA ceremony
 
-This mirrors `os/rauc/gen-dev-keys.sh` step for step — the dev script is the
+This mirrors `os/update/rauc/gen-dev-keys.sh` step for step — the dev script is the
 tested shape, and deviating from a tested shape in a ceremony is how typos
 become fleet incidents — with the three choices that distinguish production:
 a real subject, real validity horizons, and offline custody. Same machine
@@ -221,9 +239,9 @@ two years. `signer.key.pem` and `signer.cert.pem` go to the release signing
 host. `ca.cert.pem` is public: it is the keyring, and its sha256 goes in the
 ceremony minutes next to root.json's.
 
-`rauc bundle` takes PEM file paths; there is no HSM/PKCS#11 wiring in
-`os/bundle.sh` today, so the signer key is a file on the release host and the
-host's hygiene is part of the trust model. Worth saying rather than implying.
+`rauc bundle` takes PEM file paths; there is no HSM/PKCS#11 wiring in the bundle
+builder today, so the signer key is a file on the release host and the host's
+hygiene is part of the trust model. Worth saying rather than implying.
 
 ### 2.2 Signer reissue
 
@@ -250,7 +268,7 @@ post-RFCT-083:
   root. Both are waivable only by `MOS_EXPECT_DEV_KEYRING=1`, which warns
   unmissably and exists for exactly one case: a local dev image installing
   locally signed bundles, on a bench, never shipped
-  (`os/rauc/gen-dev-keys.sh`'s closing instructions). The ui-location
+  (`os/update/rauc/gen-dev-keys.sh`'s closing instructions). The ui-location
   harness proves both directions of that gate.
 - Therefore a production image, as buildable today, cannot install any
   bundle: RAUC has no keyring to verify against. The refusal is correct —
@@ -288,7 +306,7 @@ MOS_PROFILE=prod make os-rootfs-cx3576-v2
 CERT=/path/to/signer.cert.pem \
 KEY=/path/to/signer.key.pem \
 KEYRING=/path/to/ca.cert.pem \
-    bash os/bundle.sh 1.2.3
+    bash os/build/run.sh --bundle 1.2.3
 
 # 3. Publish into the TUF repository with the online keys. The verity root
 #    hash is the bundle's own (verity-format) root hash as `rauc info`

@@ -30,6 +30,12 @@
 //!   calls on whichever bus `MOSD_BUS` already named and the daemon is already
 //!   connected to, and it writes only to the in-RAM live-state tree. It
 //!   touches no file, no unit and no host state at all.
+//!
+//! One argument is understood, and it is answered before any of the above is
+//! read: `--version` (or `-V`) prints `mosd <crate version> (<build commit>)`
+//! and exits 0 without provisioning, connecting to a bus or writing a file.
+//! See [`main`]. Anything else on the command line is ignored, exactly as it
+//! always has been.
 
 #![forbid(unsafe_code)]
 
@@ -53,8 +59,135 @@ use mosd_settings::Store;
 use serde_json::Value;
 use tokio::signal::unix::{SignalKind, signal};
 
+fn main() -> anyhow::Result<()> {
+    // `--version`, ANSWERED AND RETURNED FROM HERE, above every line that
+    // makes this process a daemon. RFCT-113 M7d.
+    //
+    // ═══ WHY THIS FILE WAS EDITABLE AT ALL ═══
+    //
+    // PLAN-014's Scope excludes `mosd/` Rust sources and reaffirms the
+    // exclusion further down, and RFCT-113 M7b found this exact gap and
+    // DECLINED to close it for that reason -- its smoke-register entry for
+    // mosd read "FINDING IS IN SCOPE, ACTING IS NOT".
+    //
+    // THE USER LIFTED THAT EXCLUSION ON 2026-08-26, for exactly this and
+    // nothing else: a `--version` (or equivalent argv) handler in
+    // mosd/mosd/src/main.rs and mosd/apid/src/main.rs that reports the crate
+    // version and exits 0 BEFORE any daemon initialisation, provisioning, bus
+    // connection or key generation, plus its build-time plumbing. The rest of
+    // the exclusion stands: everything else in `mosd/`, board/ BSP content,
+    // test/apid-api beyond the one line already amended, and device-side
+    // runtime behaviour. Landing this carries out that decision; it is not
+    // this milestone's judgement about where the boundary is.
+    //
+    // The position is the requirement, not a tidiness preference. Measured in
+    // the x64 factory root on 2026-08-26, before this handler existed:
+    // `/usr/bin/mosd --version` ignored the flag, ran first-boot provisioning
+    // -- writing /var/lib/mos/settings.toml and /var/lib/mos/secrets/ -- and
+    // then exited 1 on the absent system bus. So a handler placed after
+    // initialisation would report the right version and still MUTATE the
+    // machine that asked it a question, which is the whole of what this is for.
+    //
+    // Hence a synchronous `main` with the async body moved into `serve`: the
+    // answer is given before the tokio runtime is built, before the subscriber
+    // is installed, before any environment variable is read and before the
+    // settings store is opened. There is nothing above it to get in front of.
+    //
+    // AN UNRECOGNISED ARGV IS UNCHANGED. mosd is started by systemd with no
+    // arguments (mosd/dist/mosd.service) and has always ignored whatever it was
+    // given; refusing an unknown flag here would be a new way for this unit to
+    // fail on a device, which is device-side runtime behaviour and is not what
+    // was opened. Only the version flag is intercepted; everything else falls
+    // through into exactly the daemon that ran before.
+    if wants_version(std::env::args().skip(1)) {
+        println!("{}", version_line());
+        return Ok(());
+    }
+    serve()
+}
+
+/// What the commit is reported as when the build supplied none.
+///
+/// A VALUE AND NOT A FAILURE. `option_env!` yields `None` whenever the binary
+/// was built without `MOS_BUILD_COMMIT` in the environment -- `cargo build` by
+/// hand, an editor's check-on-save, a future build path that has not been
+/// taught to pass it -- and a `--version` that exited non-zero in that case
+/// would turn "we do not know which commit" into "this binary is broken". The
+/// smoke runner reads the same distinction from the other side: it asserts the
+/// commit only when the build recorded one.
+const UNKNOWN_COMMIT: &str = "unknown";
+
+/// Whether an argv (argv[1..]) is asking for the version.
+///
+/// `-V` as well as `--version`, because `mos-mqttd` and `mos-mqtt-broker`
+/// answer both -- clap's `#[command(version)]` gives them the pair -- and four
+/// binaries out of one repository that disagree about the spelling of one
+/// question is a thing an operator has to look up. It is the same flag, not a
+/// second one.
+///
+/// A pure function over an iterator rather than a read of `std::env::args`
+/// inside `main`, so the tests below can drive it from the failing side without
+/// a process to spawn.
+fn wants_version(args: impl IntoIterator<Item = String>) -> bool {
+    args.into_iter()
+        .any(|arg| arg == "--version" || arg == "-V")
+}
+
+/// The build commit, or [`UNKNOWN_COMMIT`], from whatever the build embedded.
+///
+/// Takes the embedded value as an argument rather than reading `option_env!`
+/// itself: the absent case is then reachable from a test in a binary that WAS
+/// built with a commit, which is the only build any of these tests ever run in.
+fn commit_or_unknown(embedded: Option<&'static str>) -> &'static str {
+    match embedded {
+        Some(commit) if !commit.trim().is_empty() => commit,
+        _ => UNKNOWN_COMMIT,
+    }
+}
+
+/// The one line `--version` prints: `mosd <version> (<commit>)`.
+///
+/// BOTH HALVES COME FROM THE BUILD, and neither is written down here. The
+/// version is `mosd/mosd/Cargo.toml`'s `[package] version`, via Cargo's own
+/// `CARGO_PKG_VERSION` -- the same file `os/verify/src/smoke-pins.ts` reads to
+/// decide what this binary must report, so the two ends of that comparison are
+/// one value with two readers rather than a copy.
+///
+/// The commit is `MOS_BUILD_COMMIT`, PASSED IN by `mosd/hack/build-target.sh`,
+/// which resolves it on the HOST. It is deliberately not discovered here, and
+/// there is deliberately no `build.rs` that shells out to git, because MEASURED
+/// on 2026-08-26 inside `localhost/mos-build-rust` with the exact mount that
+/// build uses (`-v <repo>:/src -w /src/mosd`):
+///
+/// ```text
+/// $ command -v git          -> /usr/bin/git        (git IS there)
+/// $ git rev-parse HEAD      -> fatal: not a git repository:
+///                              /srv/mos/.git/worktrees/ifukam2z   (rc=128)
+/// ```
+///
+/// The checkout is a git WORKTREE, so `/src/.git` is a 41-byte file pointing at
+/// a gitdir outside the mount. A build script that ran git in there would fail
+/// -- or, written to tolerate failure the way build scripts usually are, would
+/// silently embed nothing on every build. Passing the value in has neither
+/// failure mode.
+///
+/// A commit sha is deterministic per commit, so embedding it does not cost
+/// reproducibility the way a wall-clock stamp would: two builds of one commit
+/// still agree. What it does cost is byte-identity ACROSS commits -- mosd and
+/// apid now differ after ANY commit, including a docs-only one, where before
+/// this an unrelated commit left them byte-identical. Anything that compares
+/// these two binaries across commits gains a permanent expected difference.
+fn version_line() -> String {
+    format!(
+        "{} {} ({})",
+        env!("CARGO_PKG_NAME"),
+        env!("CARGO_PKG_VERSION"),
+        commit_or_unknown(option_env!("MOS_BUILD_COMMIT")),
+    )
+}
+
 #[tokio::main]
-async fn main() -> anyhow::Result<()> {
+async fn serve() -> anyhow::Result<()> {
     // INFO by default, not ERROR.
     //
     // `tracing_subscriber::fmt::init()` reads RUST_LOG and falls back to ERROR
@@ -271,7 +404,99 @@ fn service_scan_enabled(dry_run: bool, scan_override: Option<&str>) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::service_scan_enabled;
+    use super::{UNKNOWN_COMMIT, commit_or_unknown, service_scan_enabled, version_line, wants_version};
+
+    fn argv(args: &[&str]) -> Vec<String> {
+        args.iter().map(|s| (*s).to_string()).collect()
+    }
+
+    /// The two spellings, and the positive control for the negatives below.
+    #[test]
+    fn both_spellings_of_the_one_flag_are_recognised() {
+        assert!(wants_version(argv(&["--version"])));
+        assert!(wants_version(argv(&["-V"])));
+    }
+
+    /// DRIVEN FROM THE FAILING SIDE. Every one of these must fall through into
+    /// the daemon, and `-v` is the one that matters most: it is the spelling an
+    /// operator reaches for, it is NOT this flag, and a loose match on it would
+    /// silently stop mosd from starting on any unit that passed it.
+    #[test]
+    fn nothing_else_is_this_flag() {
+        for args in [
+            vec![],
+            argv(&["--help"]),
+            argv(&["-h"]),
+            argv(&["-v"]),
+            argv(&["-VV"]),
+            argv(&["--versions"]),
+            argv(&["--version=1"]),
+            argv(&["version"]),
+            argv(&["--Version"]),
+            argv(&[""]),
+        ] {
+            assert!(
+                !wants_version(args.clone()),
+                "argv {args:?} is not --version and must reach the daemon unchanged"
+            );
+        }
+    }
+
+    /// It is asked of the whole argv, not only of the first element -- the same
+    /// place clap answers it for `mos-mqttd` and `mos-mqtt-broker`.
+    #[test]
+    fn the_flag_is_found_wherever_it_appears() {
+        assert!(wants_version(argv(&["--config", "/etc/x.toml", "--version"])));
+    }
+
+    /// ABSENT IS `unknown`, NEVER AN ERROR -- and empty counts as absent,
+    /// because `-e MOS_BUILD_COMMIT=` sets the variable to exactly that.
+    #[test]
+    fn a_commit_the_build_did_not_supply_reports_unknown() {
+        assert_eq!(commit_or_unknown(None), UNKNOWN_COMMIT);
+        assert_eq!(commit_or_unknown(Some("")), UNKNOWN_COMMIT);
+        assert_eq!(commit_or_unknown(Some("   ")), UNKNOWN_COMMIT);
+    }
+
+    /// The positive control for the case above: a supplied value is passed
+    /// through untouched, `-dirty` suffix and all. A helper that returned
+    /// `unknown` for everything would satisfy the test above and nothing else.
+    #[test]
+    fn a_commit_the_build_did_supply_is_reported_verbatim() {
+        assert_eq!(commit_or_unknown(Some("00b674ec0ffe")), "00b674ec0ffe");
+        assert_eq!(
+            commit_or_unknown(Some("00b674ec0ffe-dirty")),
+            "00b674ec0ffe-dirty"
+        );
+    }
+
+    /// The shape, not the values.
+    ///
+    /// There is deliberately no assertion here that the version equals
+    /// `mosd/mosd/Cargo.toml`: `CARGO_PKG_VERSION` IS that file, so comparing
+    /// the two here would compare a value with itself. The real comparison is
+    /// made from outside, by `os/verify/src/smoke-pins.ts`, which parses the
+    /// manifest independently and requires this binary to report what it says.
+    #[test]
+    fn the_version_line_names_the_binary_the_version_and_the_commit() {
+        let line = version_line();
+        assert!(line.starts_with("mosd "), "got {line:?}");
+        assert!(
+            line.contains(env!("CARGO_PKG_VERSION")),
+            "the crate version is missing from {line:?}"
+        );
+        let commit = line
+            .rsplit_once(" (")
+            .and_then(|(_, rest)| rest.strip_suffix(")"))
+            .unwrap_or_else(|| panic!("no parenthesised commit in {line:?}"));
+        assert!(!commit.is_empty(), "an empty commit in {line:?}");
+        assert!(
+            !commit.contains(char::is_whitespace),
+            "the commit must be one token, got {commit:?}"
+        );
+        // One line, so a smoke runner reading the first line reads all of it.
+        assert!(!line.contains('\n'), "got {line:?}");
+    }
 
     /// The pin on the asymmetry: in production `MOSD_SCAN` is inert. Before
     /// this gate was narrowed, `MOSD_SCAN=0` — or any typo — switched the

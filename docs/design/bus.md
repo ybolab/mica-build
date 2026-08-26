@@ -32,6 +32,24 @@
 > their absence, and checking a contract is not the same as meeting it. Later
 > tasks keep flipping markers section by section, with paths.
 
+> **CITATION NOTE, added 2026-08-26 (RFCT-113 M7c) — annotation, not a rewrite.**
+> This document cites `os/verify-image-v2.sh` and `os/tests/ui-location-test.sh`. Those scripts no
+> longer exist: PLAN-014 ported them into TypeScript and deleted them, each
+> gated on a measured equivalence rather than on review —
+> `os/verify-image-v2.sh` → `os/verify/` at **full verifier parity** (M4e,
+> `6eadc65`), and `os/mkimage-v2.sh` / `os/mkimage-x64.sh` / `os/update/bundle.sh`
+> → `os/build/` at **byte-identity** of the assembled image and of the bundle's
+> squashfs payload (M6e, `c55c7b0`).
+>
+> **The citations are left as written**, including their line numbers, because
+> each records what was measured *in the file it names* — they are citations
+> into git history, and re-pointing a line number into a port would invent a
+> precision nobody checked. What to read instead:
+> `bash os/verify/run.sh --verify`, `bash os/build/run.sh --mkimage-v2` /
+> `--mkimage-x64` / `--bundle`. Nothing about the CONTENT of any assertion
+> below changed with the port.
+
+
 ## 0. How to read this document
 
 **Status markers.** The discipline is `docs/design/api.md` §0's, which is in
@@ -522,15 +540,17 @@ now, so each statement names where it lives:
 
 M3 shipped the crate, the unit file and fourteen protocol tests, and shipped
 them nowhere: nothing installed `mos-mqttd` into the image. The wiring is
-`os/rootfs/build-v2.sh` (staging), `os/rootfs/Dockerfile.v2` (install and
+`os/rootfs/build-v2.sh` (staging), `os/rootfs/scripts/mosd-install.sh` (install and
 enable) and `mosd/hack/build-aarch64.sh` (cross-build), and it is asserted by
-`check_mqttd` in `os/verify-image-v2.sh`, driven offline by
-`os/ui-location-test.sh`. Three properties are worth stating here rather than
+the MQTT bridge checks in `os/verify/src/checks-mqtt.ts`, driven offline from
+fixtures by `checks-mqtt.test.ts`. (Both were `check_mqttd` in
+`os/verify-image-v2.sh` and `os/tests/ui-location-test.sh` until RFCT-110 M4e
+ported them and deleted those two files.) Three properties are worth stating here rather than
 leaving in the unit, because each was a defect the wiring exposed and none of
 them is visible from the code side.
 
 - **[implemented]** The bridge runs as the **static system account
-  `mos-mqttd`** (uid/gid pinned to 990 in `os/rootfs/Dockerfile.v2`), not
+  `mos-mqttd`** (uid/gid pinned to 990 in `os/rootfs/scripts/account-mos-mqttd.sh`), not
   under `DynamicUser=yes` as M3's unit did. `com.mos.mosd` is a root-only bus
   name, so a non-root bridge needs an explicit grant, and `<policy user=>`
   resolves its user when dbus-daemon reads the file at startup — before any
@@ -585,20 +605,20 @@ against a broker that was not in the image. RFCT-104 put one there and gave the
 pair a switch.
 
 - **[implemented]** A broker **is** in the image: `/usr/bin/mos-mqtt-broker`,
-  installed by `os/rootfs/Dockerfile.v2` from `mosd/broker/`, which is rumqttd
+  installed by `os/rootfs/scripts/mosd-install.sh` from `mosd/broker/`, which is rumqttd
   0.20 used as a **library** with `default-features = false`. It runs as the
   static system account `mos-mqtt-broker` (uid = gid = 969, created in the same
   Dockerfile), for the reason the bridge's account is static but not the same
   one: the broker reads a credentials file on STATE, and a uid allocated at
   start names nobody on the next boot.
-- **[implemented]** It ships **inert**. `os/rootfs/Dockerfile.v2` installs
+- **[implemented]** It ships **inert**. `os/rootfs/scripts/mosd-install.sh` installs
   `mos-mqtt-broker.service` and deliberately does not create the
   `multi-user.target.wants` symlink, so nothing starts it at boot;
   `mosd/broker/dist/mos-mqtt-broker.service` keeps its `[Install]` section
   anyway, so `systemctl enable` stays meaningful to anyone debugging. The image
-  assertion is `check_mqtt_broker` in `os/verify-image-v2.sh`, driven offline
-  from fixtures by `os/ui-location-test.sh` — including the fixture that creates
-  the symlink and requires the check to fail.
+  assertion is the broker family in `os/verify/src/checks-mqtt.ts`, driven
+  offline from fixtures by `checks-mqtt.test.ts` — including the fixture that
+  creates the symlink and requires the check to fail.
 - **[implemented]** `mqtt.enabled` starts it. `MqttReconciler`
   (`mosd/mosd/src/reconciler/mqtt.rs`, `name()` and `subtree()` both `"mqtt"`)
   enables and starts `mos-mqtt-broker.service` and then `mos-mqttd.service` on

@@ -1,6 +1,6 @@
 # /etc/fstab — mos layout v2 (read-only squashfs + dm-verity root).
 #
-# Rendered from os/layout/cx3576-v2.env by os/rootfs/build-v2.sh; the at-sign
+# Rendered from os/boards/cx3576/board.env by os/rootfs/build-v2.sh; the at-sign
 # placeholders are partition GUIDs from that file. Never edit this on device:
 # the whole tree is on a verity-protected read-only squashfs.
 #

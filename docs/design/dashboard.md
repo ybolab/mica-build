@@ -21,6 +21,28 @@
 > **Status markers** below follow `docs/design/access.md` §0 — `[implemented]`,
 > `[partial]`, `[not implemented]`, and `[decided]` for a settled question.
 
+> **CITATION NOTE, added 2026-08-26 (RFCT-113 M7c) — annotation, not a rewrite.**
+> This document cites `os/verify-image-v2.sh`, `os/verify-image.sh` and `os/update/bundle.sh`. Those scripts no
+> longer exist: PLAN-014 ported them into TypeScript and deleted them, each
+> gated on a measured equivalence rather than on review —
+> `os/verify-image-v2.sh` → `os/verify/` at **full verifier parity** (M4e,
+> `6eadc65`), and `os/mkimage-v2.sh` / `os/mkimage-x64.sh` / `os/update/bundle.sh`
+> → `os/build/` at **byte-identity** of the assembled image and of the bundle's
+> squashfs payload (M6e, `c55c7b0`).
+>
+> **The citations are left as written**, including their line numbers, because
+> each records what was measured *in the file it names* — they are citations
+> into git history, and re-pointing a line number into a port would invent a
+> precision nobody checked. What to read instead:
+> `bash os/verify/run.sh --verify`, `bash os/build/run.sh --mkimage-v2` /
+> `--mkimage-x64` / `--bundle`. Nothing about the CONTENT of any assertion
+> below changed with the port.
+>
+> `os/verify-image.sh` is older still: it went with the v1 single-slot chain
+> (`ebd4e8c`), which has no successor because it has no replacement — v1 is
+> retired, not ported.
+
+
 This document proposes turning the mos management UI from a set of forms into a
 dashboard. It proposes no code, no route handlers, no markup, and no rendering
 or live-update technology. Where a proposal only works under some technology
@@ -342,10 +364,11 @@ better mechanism and then hid it.**
 - **Feed: none of it exists on the bus.** **(b) needs new mosd work**, across
   four gap-table rows:
   - **row 1** — which slot is running. The two-slot model is fully specified
-    (`os/rauc/system.conf.in:75-95`, partition GUIDs at
-    `os/layout/cx3576-v2.env:209-219`), but there is no bus mechanism: a UI would
-    have to subprocess `rauc status --output-format=shell`, and `apid` cannot,
-    because it never spawns a process (`mosd/apid/src/settings_api.rs:10-12`,
+    (`os/update/rauc/system.conf.in:75-95`, partition GUIDs at
+    `os/boards/cx3576/board.env:209-219`), but there is no bus mechanism: a UI
+    would have to subprocess `rauc status --output-format=shell`, and `apid`
+    cannot, because it never spawns a process
+    (`mosd/apid/src/settings_api.rs:10-12`,
     which states *"mosd owns every system action: apid never spawns a process and
     never talks to systemd itself"*).
   - **row 2** — boot attempt credits. `BOOT_A_LEFT` / `BOOT_B_LEFT` in the
@@ -353,7 +376,7 @@ better mechanism and then hid it.**
     reachable only via `fw_printenv`, and that file's own comment at `:23-25`
     warns there is **no cross-process locking** between the two existing writers.
   - **row 3** — RAUC status and last install result, kept on the META partition
-    (`os/rauc/system.conf.in:14-34`).
+    (`os/update/rauc/system.conf.in:14-34`).
   - **row 5** — the boot health gate's verdict and whether the slot was
     confirmed (shared with section 2.3).
 - **Why it earns the first screen, and why this specific field.** mos's A/B
@@ -814,8 +837,8 @@ RFCT-046's.
 |---|---|---|---|---|
 | 1 | 2.5, 3.2 Update page | Which slot is running, and the version in each | **row 1** | A bus method returning RAUC slot status. `grep -rci rauc mosd/mosd/src/` returns **0 across all 12 files**; `apid` cannot subprocess (`mosd/apid/src/settings_api.rs:10-12`), so this must live in `mosd`. The parse already exists in shell at `os/rootfs/overlay-v2/usr/lib/mos/mos-health:72-104` |
 | 2 | 2.5, 2.7 | Boot attempt credits remaining | **row 2** | Read `BOOT_A_LEFT`/`BOOT_B_LEFT` from the redundant U-Boot environment (`os/rootfs/overlay-v2/etc/fw_env.config.in:27-29`). Carries a real hazard the file itself records at `:23-25`: **no cross-process locking** between the two existing writers |
-| 3 | 2.5, 3.2 Update page | RAUC status and last install result | **row 3** | Same bus surface as item 1; the status file is on META by design (`os/rauc/system.conf.in:14-34`) |
-| 4 | 2.5, 3.2 Update page | Installing a bundle at all | **row 4** | The largest single item. Signed verity-format bundles are already **built** and signature-verified against `/etc/rauc/keyring.pem` with `plain` format refused (`os/bundle.sh:1-22`, `os/rauc/system.conf.in:50-62`), but there is **no upload route, no file-receiving handler** (`Multipart` appears nowhere in `mosd/apid/`) and **no `rauc install` caller anywhere in `mosd/`**. Needs a bus method, a place to put the bundle, and a progress surface |
+| 3 | 2.5, 3.2 Update page | RAUC status and last install result | **row 3** | Same bus surface as item 1; the status file is on META by design (`os/update/rauc/system.conf.in:14-34`) |
+| 4 | 2.5, 3.2 Update page | Installing a bundle at all | **row 4** | The largest single item. Signed verity-format bundles are already **built** and signature-verified against `/etc/rauc/keyring.pem` with `plain` format refused (`os/update/bundle.sh:1-22`, `os/update/rauc/system.conf.in:50-62`), but there is **no upload route, no file-receiving handler** (`Multipart` appears nowhere in `mosd/apid/`) and **no `rauc install` caller anywhere in `mosd/`**. Needs a bus method, a place to put the bundle, and a progress surface |
 | 5 | 2.3, 2.5 | The boot health gate's verdict; whether the running slot is confirmed | **row 5** | The gate exists and runs `rauc status mark-good` (`os/rootfs/overlay-v2/usr/lib/mos/mos-health:111-207`); its verdict goes to the journal (`:17-18`). Needs the gate to report through `ReportHealth` (or a richer equivalent) instead of only journalling. **This is the item where mos is furthest ahead of Venus and least able to show it** — see 4.2 |
 | 6 | 2.4, 3.4.1 | Observed IP address, lease, gateway, DNS in use, carrier state | **row 14** | `mosd` must **query** networkd. It already talks to `org.freedesktop.network1` for exactly one thing, `Manager.Reload` (`mosd/mosd/src/reconciler/network.rs:36-43`); it issues no `Get`, no property read and no link enumeration. This is the highest-value item on the list by operator demand |
 | 7 | 2.6 | Filesystem usage per tier | **row 11** | A `statvfs` read plus a bus surface for it. The read is trivial; the surface does not exist. `/srv`, the only tier that grows (`docs/design/ro-root.md:363-368`), has **no reporting of any kind** today |
@@ -860,7 +883,7 @@ proposal exist to protect a mos advantage rather than to close a mos gap.
 2. **Bundle signing.** mos builds signed verity-format bundles and configures
    RAUC to refuse `plain` format outright, so *"a bundle whose payload is only
    hashed at install time can never be installed on a device"*
-   (`os/rauc/system.conf.in:50-62`, bundles built by `os/bundle.sh:1-22`). Venus
+   (`os/update/rauc/system.conf.in:50-62`, bundles built by `os/update/bundle.sh:1-22`). Venus
    ships **no image signature on firmware** — swupdate built without
    `CONFIG_SIGNED_IMAGES` or any hash or encryption option in every machine
    defconfig read, leaving update authenticity resting on HTTPS transport for the
@@ -1743,7 +1766,8 @@ sibling document.
    `SetSettings`.** The file's own comment at `:4` called this a *"Dev skeleton
    posture: root owns the name, everyone may talk to it."* It was the shipped
    file — `os/rootfs/build.sh:38` copies it into the image staging directory
-   (carried from `mos-ui-inventory.md` section 3.6).
+   (carried from `mos-ui-inventory.md` section 3.6). *`os/rootfs/build.sh` was
+   the v1 stager, deleted by RFCT-107; `build-v2.sh` stages the same file.*
 
    > **[re-anchored]** — RFCT-058, campaign `apid`. **This is fact 2, and it is
    > the fact the rest of §6 reasons from, so it is dated here once and
@@ -1796,7 +1820,7 @@ sibling document.
    `mosd/apid/src/bus_client.rs:9-20` declares `get_settings`, `set_settings`,
    `get_state`, `reboot`, `power_off` and **no signal member**. `apid` does
    **not** call `ReportHealth` — that is the boot health gate's
-   (`os/health/mos-health:45-50`). The `sshweb` campaign adds a sixth call; it
+   (`os/rootfs/overlay-v2/usr/lib/mos/mos-health:45-50`). The `sshweb` campaign adds a sixth call; it
    is not in this tree.
 4. **`apid` binds `0.0.0.0:443` and `0.0.0.0:80` by default**, both
    env-overridable (`mosd/apid/src/config.rs:34-37`). The HTTP listener exists
@@ -1839,7 +1863,7 @@ settings and state trees directly instead of over D-Bus.
 | **One systemd unit** | `mosd/dist/apid.service`, 13 lines, plus its enablement symlink and the four verifier assertions that pin it (`os/verify-image-v2.sh:922-929`) |
 | **One StateDirectory** | `/var/lib/mos/apid` (`apid.service:10`, default at `config.rs:38-40`), holding `cert.pem`, `key.pem`, `session.key` (`tls.rs:48-49`, `:85-86`). Note it does not disappear — it moves, and on already-deployed devices it has to be migrated or orphaned (7.4) |
 | **One settings parse** | **This saving does not exist.** `apid` never reads `settings.toml`: grepping `mosd/apid/src/` for `settings.toml`, `DEFAULT_PATH` and `mosd-settings` returns nothing, and `mosd/apid/Cargo.toml:11-28` does not depend on `mosd-settings`. `apid`'s entire configuration is four environment variables (`config.rs:33-45`). Recorded because it was offered as a saving and is not one |
-| **One crate and one binary in the image** | `mosd/apid/src/` is **2301 lines across 9 files**, of which `tests.rs` is 591 and `routes.rs` is 916, plus 359 lines of `tests/e2e.rs`. `mosd/mosd/src/` is **7401 lines**. The image drops one ELF at `/usr/bin/apid` (installed by `os/rootfs/Dockerfile.v2:282-288`); **binary size not measured** — no `cargo` was run |
+| **One crate and one binary in the image** | `mosd/apid/src/` is **2301 lines across 9 files**, of which `tests.rs` is 591 and `routes.rs` is 916, plus 359 lines of `tests/e2e.rs`. `mosd/mosd/src/` is **7401 lines**. The image drops one ELF at `/usr/bin/apid` (installed by `os/rootfs/scripts/mosd-install.sh`); **binary size not measured** — no `cargo` was run |
 
 **The dependency graph moves rather than shrinks.** `mosd/mosd/Cargo.toml:11-23`
 declares 12 dependencies; `mosd/apid/Cargo.toml:11-28` declares 16. The
@@ -1883,7 +1907,7 @@ There is also a fact that shrinks the round-trip saving on its own terms:
 `GetState("")` and `GetSettings("")` **already return the whole tree**
 (`mosd/mosd/src/bus.rs:160-164`, `:197-202`; `""` is documented as the whole
 tree in `mos-ui-inventory.md` section 4, and the boot health gate exercises it
-in production — `os/health/mos-health:155-156` calls
+in production — `os/rootfs/overlay-v2/usr/lib/mos/mos-health:155-156` calls
 `com.mos.mosd1 GetState s ""` and treats success as proof that `mosd` is
 answering). So a dashboard render *can already* be two round trips rather than
 ten, today, with no new mechanism. It would transfer the entire tree to do it —
@@ -1949,9 +1973,9 @@ merging:
   `apply_all()` (`mosd/mosd/src/main.rs:92`, `bus.rs:114-121`), which records
   only *reconciler* outputs. `health.*` is written **only** by `ReportHealth`
   callers (`bus.rs:209-229`), and there is exactly one: the boot health gate
-  (`os/health/mos-health:45-50`, `:194`, `:197`), which is a `Type=oneshot` with
+  (`os/rootfs/overlay-v2/usr/lib/mos/mos-health:45-50`, `:194`, `:197`), which is a `Type=oneshot` with
   `Restart=no` ordered `After=multi-user.target`
-  (`os/health/mos-health.service:9`, `:16-23`). **So after a mid-life restart,
+  (`os/rootfs/overlay-v2/usr/lib/systemd/system/mos-health.service:9`, `:16-23`). **So after a mid-life restart,
   `health.var` is gone until the next boot** — and section 2.3's health tile is
   built on it. Today a `apid` crash cannot cause that; after a merge it can.
 - **A `mosd` startup failure would leave nothing to serve the error page.**
@@ -2060,7 +2084,7 @@ a project rather than as a cleanup.
     rule, exposing the internal port in the URL bar. Fixing that is a code
     change, so the "no code change" advantage of this route is false.
   - **It breaks the boot health gate unless loopback is also covered.**
-    `os/health/mos-health:168` probes `https://127.0.0.1/healthz` — port 443,
+    `os/rootfs/overlay-v2/usr/lib/mos/mos-health:168` probes `https://127.0.0.1/healthz` — port 443,
     hardcoded. Redirecting loopback traffic needs an `OUTPUT`-chain rule, not
     just `PREROUTING`. A silent break here is a gate that stops probing `apid`
     while still reporting OK, which `os/verify-image-v2.sh:1184-1200` already
@@ -2098,7 +2122,7 @@ does.** `apid` does two unusual things: it reads `/proc/uptime`
 | `RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6` | **yes** | `AF_UNIX` for `/run/dbus/system_bus_socket`, the two INET families for the listeners |
 | `ProtectHome=`, `ProtectKernelTunables=`, `ProtectKernelModules=`, `ProtectControlGroups=`, `RestrictSUIDSGID=`, `SystemCallFilter=@system-service` | **expected yes** | Nothing in `mosd/apid/src/` touches any of these surfaces; **not tested** |
 | `MemoryDenyWriteExecute=yes` | **expected yes, verify** | `rustls`/`ring` are ahead-of-time compiled with no JIT, but this is the directive most likely to break something subtly. **[inference; not tested]** |
-| `DynamicUser=yes` | **not recommended** | It gives the StateDirectory a private path and an unstable uid, and `/var/lib/mos` is a bind mount from the STATE partition that must survive A/B updates (`os/rootfs/overlay-v2/etc/systemd/system/var-lib-mos.mount:3`, `:10`). A static system user created in the rootfs is the right shape; creating it is rootfs work (`os/rootfs/Dockerfile.v2`), outside the crate |
+| `DynamicUser=yes` | **not recommended** | It gives the StateDirectory a private path and an unstable uid, and `/var/lib/mos` is a bind mount from the STATE partition that must survive A/B updates (`os/rootfs/overlay-v2/etc/systemd/system/var-lib-mos.mount:3`, `:10`). A static system user created in the rootfs is the right shape; creating it is rootfs work (`os/rootfs/scripts/account-mos.sh`), outside the crate |
 
 **(d) The concrete security gain nothing else provides.** Today root-`apid` can
 open `/var/lib/mos/secrets/device-password` and `.../ap-psk` — mode `0600` in a
@@ -2121,7 +2145,7 @@ simple —
 (<https://dbus.freedesktop.org/doc/dbus-daemon.1.html>, fetched and read). A
 default-deny plus a `user="<apid user>"` allow for exactly the five members of
 fact 3, plus a root allow for `ReportHealth` and `GetState` (the health gate's
-two calls — `os/health/mos-health:47-48` and `:155-156`), is expressible today.
+two calls — `os/rootfs/overlay-v2/usr/lib/mos/mos-health:47-48` and `:155-156`), is expressible today.
 
 **Two limits that must be stated, because they bound how much this buys:**
 
@@ -2177,7 +2201,7 @@ than the framing suggests, and saying so is the honest starting point:
   `json_path_get` (`:197-202`), with `""` meaning the whole tree
   (`mos-ui-inventory.md` section 4). This is not theoretical — the boot health
   gate calls `GetState s ""` in production and treats a successful reply as
-  proof of life (`os/health/mos-health:155-156`).
+  proof of life (`os/rootfs/overlay-v2/usr/lib/mos/mos-health:155-156`).
 - **Segment-wise path overlap: already works.** `paths_overlap` (`bus.rs:24-39`)
   matches in either direction with the root matching everything, which is what
   makes `SetSettings("network.eth0.dhcp")` re-run the reconciler whose subtree
@@ -2374,7 +2398,7 @@ Five reasons, each traceable above:
 
 1. **Section 7 removes option 1's main premise.** `com.mos.mosd1` has a real
    second consumer today — `mos-health` calls `ReportHealth`
-   (`os/health/mos-health:47-48`) and `GetState`
+   (`os/rootfs/overlay-v2/usr/lib/mos/mos-health:47-48`) and `GetState`
    (`:155-156`). So the interface must keep existing and keep being served, and
    a merge does not delete the bus: **it deletes one consumer.** ~~The remaining
    consumer keeps the open-policy problem (fact 2) alive in full.~~ Option 1's
@@ -2518,15 +2542,15 @@ here in its correct form.** No fix is proposed; the point is that it cannot be
 lost or closed as invalid.
 
 1. **The boot-path writer-versus-writer hazard IS handled. Do not re-report
-   it.** `os/health/mos-health.service:10-13` carries `After=mos-machine-id.service`
+   it.** `os/rootfs/overlay-v2/usr/lib/systemd/system/mos-health.service:10-13` carries `After=mos-machine-id.service`
    with a comment naming this exact interlock: *"U-Boot environment writer
    interlock: mos-machine-id owns `machine_id`, RAUC (invoked from here by
    mark-good) owns BOOT_ORDER/BOOT_x_LEFT. Ordering keeps the two writers
    strictly sequential."* The other writer states the same split from its own
-   side — `os/health/mos-machine-id:15-18`: *"this unit owns `machine_id` and
+   side — `os/rootfs/overlay-v2/usr/lib/mos/mos-machine-id:15-18`: *"this unit owns `machine_id` and
    nothing else. `BOOT_ORDER` and `BOOT_x_LEFT` belong to RAUC. The two writers
    are never concurrent."* RAUC's write happens through `rauc status mark-good`
-   at `os/health/mos-health:203-207`.
+   at `os/rootfs/overlay-v2/usr/lib/mos/mos-health:203-207`.
 2. **What the interlock is, and what it is not.**
    `os/rootfs/overlay-v2/etc/fw_env.config.in:23-25` still records the
    underlying property: *"Two writers exist for this environment (RAUC slot
@@ -2536,10 +2560,10 @@ lost or closed as invalid.
    outside that window. There is no lock.
 3. **The window is narrower than it looks, which is why testing misses it.**
    `mos-machine-id` exits early when a valid `machine_id` is already set
-   (`os/health/mos-machine-id:43-47`), and the value lives in the U-Boot
+   (`os/rootfs/overlay-v2/usr/lib/mos/mos-machine-id:43-47`), and the value lives in the U-Boot
    environment, so it survives an update (`:2-9`, and the unit is additionally
    gated off by `ConditionKernelCommandLine=!systemd.machine_id`,
-   `os/health/mos-machine-id.service:5`). **So the two-writer boot is the first
+   `os/rootfs/overlay-v2/usr/lib/systemd/system/mos-machine-id.service:5`). **So the two-writer boot is the first
    boot of a freshly flashed device, not the first boot after an update.**
    Anyone testing the update path finds nothing and concludes there is nothing
    to find.
@@ -2577,7 +2601,7 @@ lost or closed as invalid.
    behave differently in practice.
 5. **The high-port-plus-redirect costs (6.3.1a)** — the `Location` port bug and
    the loopback `OUTPUT`-chain requirement — are read out of
-   `mosd/apid/src/main.rs:80-83` and `os/health/mos-health:168` plus standard
+   `mosd/apid/src/main.rs:80-83` and `os/rootfs/overlay-v2/usr/lib/mos/mos-health:168` plus standard
    netfilter behaviour. Neither was tested.
 6. **`mosd` "runs as root" is an inference from the absence of `User=`** in
    `mosd/dist/mosd.service`, exactly as it is for `apid` (fact 1). The set of
@@ -2604,29 +2628,31 @@ against the answer in 7.3.
 | Consumer | Calls | Cited | Status |
 |---|---|---|---|
 | **`apid`** | `GetSettings`, `SetSettings`, `GetState`, `Reboot`, `PowerOff` | `mosd/apid/src/bus_client.rs:9-20` | in tree |
-| **`mos-health`, the boot health gate** | **`ReportHealth`** and **`GetState`** | `os/health/mos-health:45-50` (the `report_health` helper, calling `busctl ... com.mos.mosd1 ReportHealth sss`), invoked at `:194` and `:197`; and `:151-160`, which calls `busctl ... com.mos.mosd1 GetState s ""` as probe b and **fails the gate** if `mosd` does not answer | in tree, shipped, and load-bearing |
+| **`mos-health`, the boot health gate** | **`ReportHealth`** and **`GetState`** | `os/rootfs/overlay-v2/usr/lib/mos/mos-health:45-50` (the `report_health` helper, calling `busctl ... com.mos.mosd1 ReportHealth sss`), invoked at `:194` and `:197`; and `:151-160`, which calls `busctl ... com.mos.mosd1 GetState s ""` as probe b and **fails the gate** if `mosd` does not answer | in tree, shipped, and load-bearing |
 
 `mos-health` is a **real second consumer today**, and it is not incidental:
 
 - It is not a Rust caller linking `mosd`'s types — it is a POSIX shell script
-  invoking `busctl` (`os/health/mos-health:47-48`, `:155-156`). It consumes
+  invoking `busctl` (`os/rootfs/overlay-v2/usr/lib/mos/mos-health:47-48`, `:155-156`). It consumes
   `com.mos.mosd1` as a *wire* interface, member names and signature included.
 - Probe b is **fatal**: `fail "mosd did not answer com.mos.mosd1.GetState on the
   system bus"` (`mos-health:159`). A gate failure means `rauc status mark-good`
   at `:203-207` never runs, so **the booted A/B slot is never confirmed**, and
   the U-Boot boot-credit counter performs a rollback instead
-  (`os/health/mos-health.service:21-23`: *"The gate is advisory. On failure it
+  (`os/rootfs/overlay-v2/usr/lib/systemd/system/mos-health.service:21-23`: *"The gate is advisory. On failure it
   does nothing: the U-Boot BOOT_x_LEFT counter performs the rollback"*). Breaking
   `com.mos.mosd1` therefore does not produce a broken UI — it produces a device
   that rolls back its own updates.
-- It ships in two byte-identical copies, `os/health/mos-health` and
-  `os/rootfs/overlay-v2/usr/lib/mos/mos-health` (verified identical by `diff`;
-  staged by `os/health/sync-overlay.sh:13`), and `os/health/test.sh` exists to
-  fail if they drift (`sync-overlay.sh:4-5`).
+- It used to ship in two byte-identical copies, `os/rootfs/overlay-v2/usr/lib/mos/mos-health` and
+  `os/rootfs/overlay-v2/usr/lib/mos/mos-health`, hand-staged between each other
+  and watched by five `cmp` checks in `os/tests/health-test.sh`. **RFCT-111
+  (PLAN-014 M5) deleted the `os/health/` copy and its stager.** There is one
+  copy, the overlay one, which is the one the image build installs; the drift
+  those checks watched for is not detected now, it is impossible.
 
 `apid` also has a second, non-bus relationship to the gate that matters for
 section 8: probe c fetches `https://127.0.0.1/healthz`
-(`os/health/mos-health:162-181`), and `os/verify-image-v2.sh:1184-1200` asserts
+(`os/rootfs/overlay-v2/usr/lib/mos/mos-health:162-181`), and `os/verify-image-v2.sh:1184-1200` asserts
 that an HTTP client is present in the image so that probe cannot silently
 degrade to `SKIP`. So `apid`'s HTTPS listener is *also* part of the boot gate's
 contract, on port 443 specifically.
@@ -2782,10 +2808,10 @@ it. Under options 2 and 3 it is live, so it is costed here.
 | **Crate and binary name** | `mosd/webd/Cargo.toml:2` (`name = "webd"`); workspace member list `mosd/Cargo.toml:3`; the directory `mosd/webd/`; cross-build script `mosd/hack/build-aarch64.sh:9` (`-p mosd -p webd`) and `:11` | Mechanical |
 | **systemd unit** | `mosd/dist/webd.service` (13 lines, the file itself); ordering reference in `os/rootfs/overlay-v2/etc/systemd/system/var-lib-mos.mount:10` (`Before=mosd.service webd.service`) and its comment at `:3` | The unit is also what option 2 rewrites — see 7.4.2 |
 | **D-Bus policy** | **zero cost today** — `mosd/dist/com.mos.mosd.conf` does not contain the string `webd` (verified: `grep -c webd` returns 0). It is a ~~12-line~~ **73-line** file whose only identity is `root` — see the staleness note below | **But under option 2 the policy gains a `user="<webd user>"` rule (6.3.2), at which point this becomes a rename surface.** Ordering matters |
-| **Image verifier assertions** | v2: `os/verify-image-v2.sh:922-929` — four assertions plus `sq_enabled webd.service`; and `:1184-1200`, the health-probe block that names `webd` in both its `pass` and `fail` strings. v1: `os/verify-image.sh:603-628` — seven assertions on the binary, the ELF architecture, two unit lines and the enablement symlink | Two verifiers, not one |
+| **Image verifier assertions** | v2: `os/verify-image-v2.sh:922-929` — four assertions plus `sq_enabled webd.service`; and `:1184-1200`, the health-probe block that names `webd` in both its `pass` and `fail` strings. v1: `os/verify-image.sh:603-628` — seven assertions on the binary, the ELF architecture, two unit lines and the enablement symlink | Two verifiers when measured; **one since RFCT-107 deleted the v1 chain** |
 | **`StateDirectory` and deployed data** | `mosd/dist/webd.service:10` (`StateDirectory=mos/webd`); default `WEBD_STATE_DIR=/var/lib/mos/webd` at `mosd/webd/src/config.rs:38-40`; documented at `mosd/webd/src/main.rs:12-13` | See 7.4.2 — this is the only item with a cost on **already-deployed** devices |
-| **Image / build wiring** | `os/rootfs/build-v2.sh:73-74` and `os/rootfs/build.sh:39-40` (stage the binary and the unit); `os/rootfs/Dockerfile.v2:282-288` (install binary, unit and enablement symlink) and `:377`; `os/rootfs/Dockerfile:211-217` and `:289` | **The `Makefile` is not affected**: `grep -c webd Makefile` returns 0. Its 70 lines only route to the scripts above. Recorded because it is commonly assumed otherwise |
-| **Health gate** | `os/health/mos-health:162-181` (probe c: `unit_present webd.service`, `https://127.0.0.1/healthz`), plus the byte-identical overlay copy `os/rootfs/overlay-v2/usr/lib/mos/mos-health` and its stager `os/health/sync-overlay.sh:13`; and `os/health/test.sh` | Two copies that `os/health/test.sh` exists to keep in sync |
+| **Image / build wiring** | `os/rootfs/build-v2.sh:73-74` and `os/rootfs/build.sh:39-40` (stage the binary and the unit); `os/rootfs/scripts/mosd-install.sh` (install binary, unit and enablement symlink); `os/rootfs/Dockerfile:211-217` and `:289`. **The `build.sh` / `Dockerfile` half is gone since RFCT-107** | **The `Makefile` is not affected**: `grep -c webd Makefile` returns 0. Its 70 lines only route to the scripts above. Recorded because it is commonly assumed otherwise |
+| **Health gate** | `os/rootfs/overlay-v2/usr/lib/mos/mos-health:162-181` (probe c: `unit_present webd.service`, `https://127.0.0.1/healthz`); and `os/tests/health-test.sh` | One file since RFCT-111 collapsed the `os/health/` duplicate into the overlay copy |
 | **Settings schema** | **No persisted key changes.** The only `webd` strings under `mosd/mosd-settings/` are doc comments — `src/model.rs:51`, `:65` and `src/migration.rs:121`, `:126` (*"v1 -> v2: adds the webd-owned `access` subtree"*). No serde rename, no key, no TOML field. **So a rename needs no settings migration** | The single most reassuring finding here |
 | **Docs** | 54 files, **of which 10 are `*.zh.md`**: `docs/architecture.zh.md`, `docs/README.zh.md`, `docs/design/{access,boards,display,mosd,provisioning,remote-management}.zh.md`, `docs/research/{init-strategy,os-comparison}.zh.md` | The Chinese copies are translations that will silently contradict the English after a rename. They are outside this campaign's scope and were not edited |
 
@@ -2883,9 +2909,15 @@ only part of the rename that a fielded device notices.**
 > is correct as written and is not softened: because the rename went first, the
 > unit (`mosd/dist/apid.service`, the renamed file), **both** image verifiers
 > (`os/verify-image-v2.sh`, `os/verify-image.sh`) and the **two** `mos-health`
-> copies (`os/health/mos-health` and the overlay copy) **will be edited a second
+> copies (`os/rootfs/overlay-v2/usr/lib/mos/mos-health` and the overlay copy) **will be edited a second
 > time** if and when option 2 is built. Bundling would have been roughly half
 > the work; sequencing was chosen anyway, and this is what it costs.
+>
+> *RFCT-107 (PLAN-014 M1) has since deleted the v1 chain, so
+> `os/verify-image.sh` is no longer one of the files that second edit would
+> touch. The cost is one verifier, not two; nothing else in the argument
+> changes. RFCT-111 (PLAN-014 M5) has since collapsed the two `mos-health`
+> copies into the overlay one, so that second edit is one file too.*
 
 **Recommendation: do not rename as a standalone change. Rename only if and when
 the option-2 unit rewrite happens, in the same change.**
@@ -3011,7 +3043,7 @@ instead, this phase is replaced by the merge plus the four conditions listed at
 the end of 6.6.
 
 **Scope.**
-1. A static system user created in the rootfs (`os/rootfs/Dockerfile.v2`), a
+1. A static system user created in the rootfs (`os/rootfs/scripts/account-mos.sh`), a
    rewritten `mosd/dist/apid.service` carrying `User=`,
    `AmbientCapabilities=CAP_NET_BIND_SERVICE`, a matching
    `CapabilityBoundingSet=`, and the sandboxing set of 6.3.1c.
@@ -3036,7 +3068,7 @@ changes.
   and `ProtectSystem=`; and the policy file no longer contains a bare
   `<allow send_destination="com.mos.mosd"/>` in the `default` context.
 - **The honest end-to-end test is the boot health gate itself.** Probe c
-  (`os/health/mos-health:162-181`) fetches `https://127.0.0.1/healthz` on port
+  (`os/rootfs/overlay-v2/usr/lib/mos/mos-health:162-181`) fetches `https://127.0.0.1/healthz` on port
   443; probe b (`:151-160`) calls `com.mos.mosd1 GetState` over `busctl` as
   root. If the capability change broke the port bind, probe c fails. If the
   allowlist was written wrong, probe b fails. Both fail the gate loudly. That is
@@ -3086,9 +3118,9 @@ chosen by operator demand and by which items unblock others, not by size.
 |---|---|---|---|---|
 | **4a** | **Observed network** — `mosd` queries `org.freedesktop.network1` for addresses, leases, gateway, DNS in use and carrier state. It already talks to that service for exactly one thing, `Manager.Reload` (`mosd/mosd/src/reconciler/network.rs:36-43`), and issues no `Get` and no link enumeration | **14** | Section 2.4 half B; the *condition* on section 3.4.1's Network nav row; the "what is my IP address?" question section 2.9 names as one of the two an operator asks first | A live-state read that returns a lease for a DHCP interface and an explicit no-lease state for one without — the distinction `mos-ui-inventory.md` section 6.3 records as currently impossible |
 | **4b** | **Storage per tier** — a `statvfs` read across the four tiers of `os/rootfs/overlay-v2/etc/fstab.in:11-27` and a bus surface for it | **11** | Section 2.6 | `/srv` reports a figure at all — today it has **no reporting of any kind** (section 4.1 item 7). Cheapest item in phase 4; do it early for that reason alone |
-| **4c** | **Slot state, RAUC status, and the gate's verdict** — a bus method returning slot status; `mos-health` reporting its own verdict through `ReportHealth` or a richer equivalent instead of only journalling (`os/health/mos-health:17-18`) | **1, 3, 5** | Section 2.5's slot half; section 2.3 part (iii); **and section 2.10's power-page warning (row 10)**, which is a dependency rather than a new primitive | `rauc status mark-good` having run is readable over the bus. Note `grep -rci rauc mosd/mosd/src/` returns **0 across all 12 files** today, so this is new surface, not a wiring change |
+| **4c** | **Slot state, RAUC status, and the gate's verdict** — a bus method returning slot status; `mos-health` reporting its own verdict through `ReportHealth` or a richer equivalent instead of only journalling (`os/rootfs/overlay-v2/usr/lib/mos/mos-health:17-18`) | **1, 3, 5** | Section 2.5's slot half; section 2.3 part (iii); **and section 2.10's power-page warning (row 10)**, which is a dependency rather than a new primitive | `rauc status mark-good` having run is readable over the bus. Note `grep -rci rauc mosd/mosd/src/` returns **0 across all 12 files** today, so this is new surface, not a wiring change |
 | **4d** | **Boot attempt credits** — reading `BOOT_A_LEFT`/`BOOT_B_LEFT` from the redundant U-Boot environment (`os/rootfs/overlay-v2/etc/fw_env.config.in:27-29`) | **2** | The credits half of section 2.5, and the two-tile cross-read section 2.7 describes (short uptime plus falling credits = a slot failing its health gate) | **Gated on section 6.7.** A polling dashboard is a reader racing a writer ordered against nothing, and `fw_env.config.in:23-25` records that libubootenv gives no cross-process locking. **Do not start 4d until 6.7 item 4 has an answer.** It is deliberately last among the read items for this reason |
-| **4e** | **Install a bundle, with progress** — an upload path, a place to put the bundle, a `rauc install` caller, and a progress surface. Today: no upload route, `Multipart` appears nowhere under `mosd/`, and no `rauc install` caller anywhere in `mosd/` | **4** | The update page of section 3.2; section 5.9's 2-second update-page refresh and its two specified degraded forms | The largest single item (section 4.1 item 4). Section 4.2 item 2's constraint is binding: mos refuses `plain`-format bundles by configuration (`os/rauc/system.conf.in:50-62`), and **no "install this file anyway" affordance may be added** |
+| **4e** | **Install a bundle, with progress** — an upload path, a place to put the bundle, a `rauc install` caller, and a progress surface. Today: no upload route, `Multipart` appears nowhere under `mosd/`, and no `rauc install` caller anywhere in `mosd/` | **4** | The update page of section 3.2; section 5.9's 2-second update-page refresh and its two specified degraded forms | The largest single item (section 4.1 item 4). Section 4.2 item 2's constraint is binding: mos refuses `plain`-format bundles by configuration (`os/update/rauc/system.conf.in:50-62`), and **no "install this file anyway" affordance may be added** |
 | **4f** | **Observed hostname**; and the **redaction policy** that must precede any diagnostics export | **13**; and section 4.1 item 10 (not a gap row) | Section 2.2's caveat; section 3.2's Diagnostics page | Diagnostics is mechanically buildable today — `GetState("")` and `GetSettings("")` already return whole trees (`bus.rs:160-164`, `:197-202`) — which is exactly why the **policy** must land first. Section 3.2: shipping an export before the redaction rule *"is how a support channel becomes a disclosure channel"* |
 
 **One sequencing note that is not obvious.** 4c must precede 4d, not because of
@@ -3105,7 +3137,7 @@ ship in the same change as 4c rather than waiting for the full update page.
 ### 8.3 Unverified / gaps for sections 7 and 8
 
 1. **The consumer set in 7.1 is what is in *this tree*.** It was established by
-   `grep -rln apid` and by reading `os/health/mos-health`; a consumer that
+   `grep -rln apid` and by reading `os/rootfs/overlay-v2/usr/lib/mos/mos-health`; a consumer that
    exists only on a deployed device, in an operator's script, or on the
    unread `sshweb` branch would not appear. 7.2 records that fact 2 makes such
    consumers possible without mos knowing.

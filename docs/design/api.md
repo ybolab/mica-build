@@ -9,6 +9,27 @@
 > and are written by sibling tasks; section 1 is not a proposal at all — it is
 > the measured surface those sections must be derived from.
 
+> **CITATION NOTE, added 2026-08-26 (RFCT-113 M7c) — annotation, not a rewrite.**
+> This document cites `os/verify-image-v2.sh` and `os/tests/ui-location-test.sh`. Those scripts no
+> longer exist: PLAN-014 ported them into TypeScript and deleted them, each
+> gated on a measured equivalence rather than on review —
+> `os/verify-image-v2.sh` → `os/verify/` at **full verifier parity** (M4e,
+> `6eadc65`), and `os/mkimage-v2.sh` / `os/mkimage-x64.sh` / `os/update/bundle.sh`
+> → `os/build/` at **byte-identity** of the assembled image and of the bundle's
+> squashfs payload (M6e, `c55c7b0`).
+>
+> **The citations are left as written**, including their line numbers, because
+> each records what was measured *in the file it names* — they are citations
+> into git history, and re-pointing a line number into a port would invent a
+> precision nobody checked. What to read instead:
+> `bash os/verify/run.sh --verify`, `bash os/build/run.sh --mkimage-v2` /
+> `--mkimage-x64` / `--bundle`. Nothing about the CONTENT of any assertion
+> below changed with the port.
+>
+> `os/tests/ui-location-test.sh` went with the shell verifier at M4e; its
+> register is now part of `os/verify/`'s.
+
+
 ## 0. How to read this document
 
 **Status markers.** The discipline is `docs/design/access.md` section 0's;
@@ -2080,7 +2101,7 @@ entry that could ever succeed in rewriting it"*
 write there does not fail a permission check, it fails a cryptographic one. And
 the slot is replaced **wholesale** by an A/B update: RAUC installs the entire
 `rootfs.img` into the raw `rootfs-a`/`rootfs-b` slot
-(`os/rauc/system.conf.in:75-85`, `os/rauc/manifest.raucm.in:21-22`), so anything
+(`os/update/rauc/system.conf.in:75-85`, `os/update/rauc/manifest.raucm.in:21-22`), so anything
 written into a rootfs would be gone at the next update even if writing it were
 possible.
 
@@ -2097,7 +2118,7 @@ are still eight. The image side is asserted rather than assumed:
 `os/verify-image-v2.sh`'s `check_ui_location` (`:254`) fixes `/srv/ui` as the root
 (`:210`) and chains to the packed-mountpoint check, and every one of those
 assertions is driven against an input in which its fact is false by
-`os/ui-location-test.sh`.
+`os/verify/src/checks-fstab.test.ts`.
 
 **The path is `/srv/ui/`.**
 
@@ -2124,7 +2145,7 @@ target: it is the one persistent tier already reachable without a unit.
 Two facts the image already guarantees and that this depends on:
 
 - The `/srv` mountpoint exists in the read-only root
-  (`os/rootfs/Dockerfile.v2:255`), and the verifier asserts every fstab and bind
+  (`os/rootfs/scripts/overlay-install.sh`), and the verifier asserts every fstab and bind
   mountpoint exists (`os/verify-image-v2.sh:1277-1281`).
 - DATA is the only partition `systemd-repart` grows and the only one carrying
   `x-systemd.growfs` (`os/rootfs/overlay-v2/etc/fstab.in:16`), so a bundle root
@@ -2308,7 +2329,7 @@ it: `startup::discover` re-reads the pointer on every start and answers "no
 bundle" when it is absent. Rows 1 and 2 rest on configuration this campaign did
 not change and which is cited in the table itself. **No row's persistence is
 exercised on hardware**, and the A/B and factory-reset columns rest on reading
-`os/rauc/system.conf.in` rather than on a test — §4's note governs.
+`os/update/rauc/system.conf.in` rather than on a test — §4's note governs.
 
 Same framing, same columns and same honesty as `docs/design/access.md` §10.4
 (`docs/design/access.md:500-508`); this table extends that vocabulary rather
@@ -2316,7 +2337,7 @@ than introducing a second one.
 
 | What | Reboot | A/B update | Factory reset |
 |---|---|---|---|
-| **Custom UI bundles and the `current` pointer** (`/srv/ui`, DATA) | **yes** | **yes** — RAUC writes only the raw `rootfs` slot and the vfat `boot` slot (`os/rauc/system.conf.in:75-95`) and never touches DATA | **no**. Not implemented today (`docs/design/access.md:318-335`); a whole-disk reflash is the closest real operation, and it replaces DATA with the image's fresh filesystem — with §9.2's precision applying unchanged: blocks beyond the flashed extent are **unreachable, not erased** (`docs/design/access.md:454-459`) |
+| **Custom UI bundles and the `current` pointer** (`/srv/ui`, DATA) | **yes** | **yes** — RAUC writes only the raw `rootfs` slot and the vfat `boot` slot (`os/update/rauc/system.conf.in:75-95`) and never touches DATA | **no**. Not implemented today (`docs/design/access.md:318-335`); a whole-disk reflash is the closest real operation, and it replaces DATA with the image's fresh filesystem — with §9.2's precision applying unchanged: blocks beyond the flashed extent are **unreachable, not erased** (`docs/design/access.md:454-459`) |
 | **The built-in UI** (compiled into `/usr/bin/apid`, inside the verity squashfs) | **yes** | **replaced, which is the point** — the new slot carries the new image's built-in UI, and there is no state to migrate because there is no state | **yes** — a reflash writes an image that contains it. This is the one row a factory reset **restores** rather than destroys, and that asymmetry is the whole of section 6 |
 | **The active/inactive choice alone** (`current` removed, bundles kept on disk) | **yes** | **yes** | **no** — the pointer is on DATA with the bundles it points at |
 
@@ -2514,7 +2535,7 @@ form is unchanged and is asserted on the image rather than assumed:
 `os/verify-image-v2.sh`'s `check_builtin_ui` (`:341`) requires the deactivate
 form's rendered markup (`:231`) to be present in `/usr/bin/apid`, which is the
 compiled-into-the-binary property checked as an on-image fact rather than as a
-crate test, and `os/ui-location-test.sh` drives that assertion against an input
+crate test, and `os/verify/src/checks-root.test.ts` drives that assertion against an input
 in which it is false.
 
 **Where it lives in the image: it is not a directory of files.** At `86cd669`
@@ -2530,7 +2551,7 @@ stylesheet is a `&str` constant emitted into each `<head>`
 and no non-Rust file in the crate other than its manifest.
 
 **How it gets there.** `os/rootfs/build-v2.sh:75-76` copies the cross-built
-`apid` binary and its unit into the build context; `os/rootfs/Dockerfile.v2:294`
+`apid` binary and its unit into the build context; `os/rootfs/scripts/mosd-install.sh`
 installs the binary as `/usr/bin/apid` mode `0755`, `:295` installs the unit,
 and `:297-299` enables it by symlink and **asserts the symlink exists**. The
 binary is then part of the tree that `os/rootfs/build-v2.sh` packs into the
@@ -2602,7 +2623,7 @@ read-only root ships **nothing** at or under `/builtin`, so the prefix has not
 grown a second, separately-built on-disk half; and the deactivate form's
 rendered markup (`:231`) is present in `/usr/bin/apid`, which is true if and
 only if the pane is compiled into the binary. Both are guard-fired against a
-mutated input by `os/ui-location-test.sh`.
+mutated input by `os/verify/src/checks-root.test.ts`.
 
 The deactivate control is **POST only** — no `GET` handler exists — so no
 prefetch, crawler or mis-clicked link can deactivate a working custom UI.
@@ -2708,7 +2729,7 @@ file, or of a design document, and each is cited as such.
 The marker refers to the split itself, which exists: two units
 (`mosd/dist/mosd.service:8` → `/usr/bin/mosd`, `mosd/dist/apid.service:8` →
 `/usr/bin/apid`), two binaries installed separately by the image
-(`os/rootfs/Dockerfile.v2:285` and `:294`), ordered `After=network.target
+(`os/rootfs/scripts/mosd-install.sh`), ordered `After=network.target
 mosd.service` (`mosd/dist/apid.service:3`). What this subsection adds is the
 argument, not a mechanism.
 
@@ -2800,8 +2821,8 @@ an absence measured four ways is a fact about the device, not a proposal.
 |---|---|---|---|---|
 | **The API upload path** | **no** — `grep -rn Multipart mosd/` returns nothing; §5.3's transport is proposed and 10.2 routes the request that drives it to §2.3/§3 | would, by construction | §3.2's bearer token, or an authenticated session (§3.2's bootstrap) | nothing exists to sign against — see 7.3 |
 | **SSH** | **yes**, but **off by default on both image profiles** (`mosd/mosd-settings/src/model.rs:110-112`; `docs/design/access.md:212-218`), enabled only by an authenticated admin action through apid | **yes** — a shell writes the directory directly, with no involvement from apid at all | an authorized key, **every one of which is a root key** (`docs/design/access.md:225-230`; the pane says so and a test asserts the sentence, `mosd/webd/src/routes.rs:937-944`) | n/a |
-| **A RAUC bundle** | **yes**, as an update mechanism | **no.** RAUC declares four slots — `rootfs.0`, `rootfs.1`, `boot.0`, `boot.1` (`os/rauc/system.conf.in:75`, `:81`, `:87`, `:92`). DATA is not among them, and the survives-what table records the same from the other side (`docs/design/access.md:504`; §5.4) | n/a | **yes** — CMS, verified by `rauc` against `/etc/rauc/keyring.pem`, `plain` format refused (`os/rauc/system.conf.in:50-62`) |
-| **A factory image** | **yes**, but it ships DATA **empty.** `grep -n "data\.img" os/mkimage-v2.sh` returns exactly two lines: `:378` creates it with `mkext4`, which is only `truncate` plus `mke2fs` and populates nothing, and `:450` `dd`s it into the image. Nothing mounts it and nothing copies into it — the `mcopy` at `:238` stages the boot vfat, not DATA. 10.2 records the consequence from the verifier's side: an assertion about `/srv/ui` *"becomes owed only if the image ever ships something under `/srv/ui`"* | not today; it would need new work in the image pipeline | n/a | the image is not signed; the **bundle** built from it is |
+| **A RAUC bundle** | **yes**, as an update mechanism | **no.** RAUC declares four slots — `rootfs.0`, `rootfs.1`, `boot.0`, `boot.1` (`os/update/rauc/system.conf.in:75`, `:81`, `:87`, `:92`). DATA is not among them, and the survives-what table records the same from the other side (`docs/design/access.md:504`; §5.4) | n/a | **yes** — CMS, verified by `rauc` against `/etc/rauc/keyring.pem`, `plain` format refused (`os/update/rauc/system.conf.in:50-62`) |
+| **A factory image** | **yes**, but it ships DATA **empty.** `grep -n dataImg os/build/src/mkimage-v2.ts` returns exactly three lines: `:380` names the path, `:410` builds it with `makeExt4` — whose optional `seedDir` argument is **not passed**, so it is only `truncate` plus `mke2fs` and populates nothing — and `:439` `dd`s it into the image. Nothing mounts it and nothing copies into it. (This cited `os/mkimage-v2.sh:378`/`:450` until PLAN-014 M6e deleted that file; the two line numbers had already drifted to `:439`/`:511` before it went, which is the argument for citing a symbol rather than a line.) 10.2 records the consequence from the verifier's side: an assertion about `/srv/ui` *"becomes owed only if the image ever ships something under `/srv/ui`"* | not today; it would need new work in the image pipeline | n/a | the image is not signed; the **bundle** built from it is |
 | **The serial console** | **yes** — a getty spawns on both profiles | **no.** It *"has no account that will accept a credential"* (`docs/design/access.md:413-427`) | none that works | n/a |
 
 **The count that matters.** Of five candidate channels, exactly **one reaches
@@ -2861,16 +2882,16 @@ come from reading them rather than from their names.
 
 **RAUC's CMS bundle signature.** Bundles are signed at build time by
 `rauc bundle` with the material `make os-devkeys` generates (`Makefile:53-54` →
-`os/rauc/gen-dev-keys.sh`): an OpenSSL CA plus a signer certificate, explicitly
+`os/update/rauc/gen-dev-keys.sh`): an OpenSSL CA plus a signer certificate, explicitly
 **development-only**, gitignored, and carrying a banner that says so
-(`os/rauc/gen-dev-keys.sh:2-3`, `:8-10`). On device, verification is `rauc`'s,
+(`os/update/rauc/gen-dev-keys.sh:2-3`, `:8-10`). On device, verification is `rauc`'s,
 against `/etc/rauc/keyring.pem`, with `plain`-format bundles refused by
-configuration (`os/rauc/system.conf.in:50-62`). Three reasons it does not
+configuration (`os/update/rauc/system.conf.in:50-62`). Three reasons it does not
 transfer:
 
 1. **The trust anchor does not exist on any device.** The keyring is *"NOT
    shipped by this task and NOT in git"*, and *"until one is installed,
-   `rauc install` on device fails closed"* (`os/rauc/system.conf.in:56-61`). The
+   `rauc install` on device fails closed"* (`os/update/rauc/system.conf.in:56-61`). The
    image verifier asserts only the **path**, and records why in as many words:
    *"the keyring itself is deliberately not shipped"*
    (`os/verify-image-v2.sh:1043-1047`). A UI-bundle verifier would need an anchor
@@ -2971,7 +2992,7 @@ The argument in full, as three claims that can each be checked:
 checkable.**
 
 1. **A production keyring is provisioned on devices.**
-   `os/rauc/system.conf.in:56-61` records that this is out of scope and that
+   `os/update/rauc/system.conf.in:56-61` records that this is out of scope and that
    `rauc install` fails closed until it happens. The moment it does, a trust
    anchor and an anchor-provisioning process both exist, and the marginal cost
    of a second verifier collapses. Check: `test -f /etc/rauc/keyring.pem` on a
@@ -3062,7 +3083,7 @@ to move.
 built-in UI that §6.2 says ships inside verity IS today's maud pages.** §6.2
 measures exactly that — *"At `86cd669` the built-in UI is **compiled into the
 `webd` binary**"* — and identifies how it gets inside the verity squashfs
-(`os/rootfs/build-v2.sh:75-76`, `os/rootfs/Dockerfile.v2:294`). No second
+(`os/rootfs/build-v2.sh:75-76`, `os/rootfs/scripts/mosd-install.sh`). No second
 artifact is proposed anywhere in §6 and none is needed. What this section adds
 is not a new artifact; it is **where those pages are reachable, and when they
 move**.
@@ -3527,15 +3548,15 @@ surface an operator can watch. What 4e adds beyond phase 5 is **mosd** work — 
 bus method and a `rauc install` caller, neither of which exists — plus a staging
 location constrained by size: a bundle staged for `rauc install` is ~72 MiB
 (`docs/task/RFCT-054.md:37-38`) against a 64 MiB STATE
-(`os/layout/cx3576-v2.env:260`), so it must stage on DATA — the same tier §5.2
-chose for `/srv/ui`, for the same reason, and it is the only partition carrying
-`x-systemd.growfs` (`os/rootfs/overlay-v2/etc/fstab.in:16`).
+(`os/boards/cx3576/board.env:260`), so it must stage on DATA — the same tier
+§5.2 chose for `/srv/ui`, for the same reason, and it is the only partition
+carrying `x-systemd.growfs` (`os/rootfs/overlay-v2/etc/fstab.in:16`).
 
 **One asymmetry between this phase and phase 5 that makes §7 concrete rather
 than abstract.** The update-upload path **is** signature-checked and the
 UI-upload path is not. `rauc` verifies the CMS signature against
 `/etc/rauc/keyring.pem` and mos refuses `plain`-format bundles by configuration
-(`os/rauc/system.conf.in:50-62`), and dashboard.md's own row states the
+(`os/update/rauc/system.conf.in:50-62`), and dashboard.md's own row states the
 constraint that goes with it: *"**no "install this file anyway" affordance may
 be added**"* (`docs/design/dashboard.md:2722`). The asymmetry is correct, and it
 is what §7's recommendation actually says: **mos requires a signature on the
@@ -3546,7 +3567,7 @@ specific place, and it is drawn here so a later reader does not generalise it.
 
 **One prerequisite outside this document's scope, named rather than assumed
 away.** No keyring is shipped and none is in git
-(`os/rauc/system.conf.in:56-61`, `os/verify-image-v2.sh:1043-1047`), so until
+(`os/update/rauc/system.conf.in:56-61`, `os/verify-image-v2.sh:1043-1047`), so until
 production keyring provisioning happens, `rauc install` **fails closed** and
 this phase's acceptance cannot be demonstrated on a shipped image at all.
 Routed in 10.3.
@@ -3998,8 +4019,9 @@ changes
   `check_ui_location` (`:254`) and `check_builtin_ui` (`:341`) were added for
   that, pinning `/srv/ui` as the root and §6.3's prefix and deactivate form as
   facts about `/usr/bin/apid`; every one of them is driven against an input in
-  which its fact is false by `os/ui-location-test.sh`, because an assertion
-  nobody has seen fail is consistent with an assertion that cannot fail. The
+  which its fact is false by `os/verify/src/checks-fstab.test.ts` and
+  `checks-root.test.ts`, because an assertion nobody has seen fail is
+  consistent with an assertion that cannot fail. The
   original conditional — an assertion becomes owed if the image ever ships
   something under `/srv/ui` — is still open, and the image still ships
   nothing there.
@@ -4295,7 +4317,7 @@ because it says what it is measured at where it is read.
    §10.1 item 7 already routes to §10.4's survives-what table. That file is
    owned by a parallel campaign and is cited, not changed.
 
-10. **`os/rauc/system.conf.in` — production keyring provisioning blocks §8.2
+10. **`os/update/rauc/system.conf.in` — production keyring provisioning blocks §8.2
     phase 6's acceptance.** *"until one is installed, `rauc install` on device
     fails closed"* (`:56-61`), and the verifier asserts only the path, recording
     that the keyring *"is deliberately not shipped"*
@@ -4497,7 +4519,7 @@ captured console, never by its status code alone.
    `/../../etc/passwd` probe read as a traversal test. Closing it needs a
    bundle seeded at `/srv/ui` on **DATA**; the available seeding tool writes
    **STATE** only.
-2. **The reboot is two boots off one disk.** `os/qemu-run.sh` passes
+2. **The reboot is two boots off one disk.** `os/tools/qemu-run.sh` passes
    `-no-reboot`, so a guest-initiated reboot makes QEMU exit rather than reset.
    The second boot still comes up through firmware, GRUB and the grubenv the
    reboot wrote; what is not exercised is QEMU's own reset. The second boot has

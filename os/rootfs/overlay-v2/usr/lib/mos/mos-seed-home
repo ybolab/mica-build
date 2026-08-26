@@ -26,8 +26,8 @@
 # on-disk contract. Resolving the name here would make the owner whatever the
 # running image's /etc/passwd says today; if a later image resolved `mos`
 # differently, every file already in the home would belong to a uid that no
-# longer exists -- and nothing would report an error. Both Dockerfiles create
-# the account with these same explicit ids, and both verifiers assert them.
+# longer exists -- and nothing would report an error. The Dockerfile creates
+# the account with these same explicit ids, and the verifier asserts them.
 set -eu
 
 MOS_UID=1000

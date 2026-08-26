@@ -1,6 +1,6 @@
 # Board metadata — CX3576-Z (Rockchip RK3576).
 # Not consumed by any build today: the v2 pipeline (os/mkimage-v2.sh,
-# os/bundle.sh) hardcodes what it needs. This file is the board's
+# os/update/bundle.sh) hardcodes what it needs. This file is the board's
 # human-readable contract until a build step reads it.
 name: cx3576
 arch: arm64
@@ -28,7 +28,7 @@ display:
 # Build outputs; paths relative to board/cx3576/. Descriptive metadata only:
 # nothing consumes board.yaml today — the Talos image phase this section used
 # to feed was retired by PLAN-010, and the current v2 pipeline (os/mkimage-v2.sh,
-# os/bundle.sh) hardcodes the artifact paths it pulls. Kept as the human-readable
+# os/update/bundle.sh) hardcodes the artifact paths it pulls. Kept as the human-readable
 # record of what this board's Makefile produces.
 artifacts:
   kernel:

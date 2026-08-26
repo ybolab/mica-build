@@ -1,0 +1,35 @@
+# manifest.raucm — TEMPLATE, rendered by os/update/bundle.sh.
+#
+# One bundle installs both members of a slot group: the raw squashfs+verity
+# rootfs image and the FAT32 boot slot payload (kernel, dtb, boot.scr, the
+# per-slot verity env files). The compatible string is taken from the rendered
+# os/rootfs/overlay-v2/etc/rauc/system.conf, so a bundle can never claim a
+# compatible the device does not use.
+
+[update]
+compatible=@COMPATIBLE@
+version=@VERSION@
+description=mos A/B update bundle for @COMPATIBLE@
+
+[bundle]
+# rauc 1.8 (Debian bookworm) has no --bundle-format flag; the format is
+# declared here. verity means the payload carries its own dm-verity hash tree,
+# so the installer verifies every block as it reads it instead of hashing the
+# whole bundle up front — and it is the only format system.conf accepts.
+format=verity
+
+# The image set is rendered per board by os/update/bundle.sh: the rootfs half is the
+# same everywhere, the boot half is one FAT image on a U-Boot board and three
+# files on a grub board. See @SLOTS@ in os/update/rauc/system.conf.in for why.
+[image.rootfs]
+filename=rootfs.img
+# adaptive=block-hash-index
+#   DEFERRED (PLAN-006 Part G). Adaptive/delta installs let RAUC fetch over
+#   HTTP ranges only the blocks that differ from the running slot. Enabling it
+#   costs a per-bundle block hash index and a streaming install path that
+#   nothing on the device drives yet: today an operator runs `rauc install` on
+#   a local file, and no mos component invokes RAUC at all (mosd carries no
+#   RAUC code). Turn it on together with the streaming updater, not before, so the
+#   bundle format and the client that consumes it change in one step.
+
+@BOOT_IMAGES@

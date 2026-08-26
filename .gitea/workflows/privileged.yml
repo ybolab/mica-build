@@ -14,12 +14,22 @@
 #     refuses to run otherwise -- its whole point is dropping to uid 65534.
 #   - a docker daemon reachable by the job user, with `--privileged`
 #     containers permitted (os-repart-test attaches loop devices) and
-#     `docker buildx` available (the BSP builds are buildx builds; linux/arm64
-#     emulation is NOT required on the host -- os/rootfs/build-v2.sh creates a
-#     docker-container builder with bundled QEMU when the host builder lacks
-#     the platform).
+#     `docker buildx` available (the BSP builds are buildx builds).
+#   - linux/arm64 emulation ON THE HOST, for the cx3576 lane:
+#       docker run --privileged --rm tonistiigi/binfmt --install arm64
+#     This line USED TO SAY the opposite -- that host emulation was not
+#     required, because os/rootfs/build-v2.sh created a docker-container
+#     builder with bundled QEMU when the host builder lacked the platform.
+#     RFCT-111 (PLAN-014 M5b) made the rootfs a CHAIN of one Dockerfile per
+#     stage, each `FROM` the local image tag the previous one was written to,
+#     and a docker-container builder cannot resolve a local tag -- measured, it
+#     reports "pull access denied" about a registry for an image that is
+#     present. build-v2.sh now uses the `default` docker-driver builder and
+#     refuses up front, naming the binfmt command, if it cannot reach the
+#     platform. NOT VERIFIED ON A RUNNER: no arm64-capable host was available
+#     to RFCT-111 M5b, so this is the requirement as analysed, not as observed.
 #   - the daemon must be able to bind-mount paths the job writes (the
-#     mkimage-v2 selftest points TMPDIR into the workspace for exactly this;
+#     os/build suite points TMPDIR into the workspace for exactly this;
 #     a rootless daemon in a different mount namespace fails its visible-
 #     workspace preflight, loudly).
 #   - disk: ~10 GiB free for the fast lane; budget >= 50 GiB for the deep lane
@@ -65,8 +75,8 @@ concurrency:
 
 jobs:
   # The two excluded suites that need no BSP artifacts: the dbus policy test
-  # stands up its own bus, and the mkimage-v2 selftest fabricates synthetic
-  # fixtures for every input the real pipeline would build. Every push and PR.
+  # stands up its own bus, and the os/build suite fabricates synthetic fixtures
+  # for every input the real pipeline would build. Every push and PR.
   #
   # Not a duplicate of check.yml's dbus-daemon step: the standard lane
   # provisions dbus-daemon so the mosd Rust suites can run PRIVATE SESSION
@@ -111,17 +121,23 @@ jobs:
           [ "$(id -u)" -eq 0 ] || SUDO="sudo"
           $SUDO make os-dbus-policy-test
 
-      # The v2 assembler against synthetic fixtures: byte-identical
-      # reassembly, the full GPT contract, and the guards' negative
-      # directions. Needs docker (the tool container) and a workspace the
-      # daemon can bind-mount, which is why TMPDIR points into the checkout
-      # instead of a possibly-private /tmp -- the script's own preflight
-      # rejects an invisible workspace and prints this exact remedy.
-      - name: os/mkimage-v2-selftest.sh
+      # BOTH assemblers against synthetic fixtures: byte-identical reassembly,
+      # the full GPT contract, and every guard's negative direction.
+      #
+      # This step ran os/tests/mkimage-v2-selftest.sh until PLAN-014 M6e
+      # (RFCT-112) deleted the shell assemblers and the two selftests that
+      # drove them. It is REPOINTED rather than removed because os-build-test
+      # was not in any workflow: dropping the step would have taken every
+      # assembler assertion out of CI, which is the opposite of what deleting
+      # a suite at parity is supposed to mean. It covers the x64 assembler and
+      # the bundle builder too, which the old step did not.
+      #
+      # Needs docker (the tool containers). No BSP, no built image, no root.
+      - name: make os-build-test
         run: |
           set -euo pipefail
           mkdir -p _out/tmp
-          TMPDIR="$PWD/_out/tmp" bash os/mkimage-v2-selftest.sh
+          TMPDIR="$PWD/_out/tmp" make os-build-test
 
   # The full pipeline: BSP kernel and U-Boot, the v2 image, its verification,
   # a signed (dev-key) bundle, and os-repart-test against the image just
@@ -154,7 +170,18 @@ jobs:
           $SUDO true || { echo "runner is neither root nor passwordless-sudo" >&2; exit 1; }
           docker info >/dev/null || { echo "no reachable docker daemon" >&2; exit 1; }
           docker buildx version >/dev/null || { echo "docker buildx is not available" >&2; exit 1; }
-          docker run --rm --privileged alpine:3.21 sh -c 'test -e /dev/loop-control && losetup -f >/dev/null' \
+          # The probe's base comes from os/build-env/images.env like every other
+          # image in this tree. It runs after actions/checkout, so the resolver
+          # is on disk; that ordering is what makes a key usable here at all.
+          #
+          # AND IT IS A PREFLIGHT OF THE PIN ITSELF, which is worth having this
+          # early. If images.env carries a PENDING, a tag where a digest belongs
+          # or a malformed digest, this step fails in seconds with from.sh's own
+          # message -- rather than the pipeline spending hours on the kernel and
+          # U-Boot builds and then failing in the assembler, which is the
+          # same defect reported from the far end of the long pole.
+          PROBE_IMAGE="$(bash os/build-env/from.sh --ref IMAGE_ALPINE_3_21)"
+          docker run --rm --privileged "${PROBE_IMAGE}" sh -c 'test -e /dev/loop-control && losetup -f >/dev/null' \
             || { echo "the daemon refuses --privileged containers or has no loop devices" >&2; exit 1; }
 
       - name: Install suite dependencies
@@ -175,14 +202,38 @@ jobs:
       - name: make cx3576-uboot-mos
         run: make cx3576-uboot-mos
 
-      # rootfs (squashfs + dm-verity, built for linux/arm64 -- build-v2.sh
-      # provisions its own emulating builder when the host lacks the
-      # platform) and the eleven-partition A/B image around it.
+      # rootfs (squashfs + dm-verity, built for linux/arm64 -- this needs host
+      # binfmt since RFCT-111 M5b; see the preflight note at the top of this
+      # file for what changed and why) and the eleven-partition A/B image
+      # around it.
       - name: make os-image-cx3576-v2
         run: make os-image-cx3576-v2
 
       - name: make os-verify-cx3576-v2
         run: make os-verify-cx3576-v2
+
+      # RFCT-113 M7c. THE SMOKE RUN ITSELF IS NOT A STEP HERE, deliberately:
+      # os/rootfs/build-v2.sh runs it as its last step under `set -e`, so the
+      # step above that builds the image has already executed every self-built
+      # binary inside the root it packed. A second invocation here would report
+      # the same green twice and would read like the only thing running it.
+      #
+      # These two are what build-v2.sh does NOT do. The gate compares the OCI
+      # export against the squashfs the device ships -- the assumption every
+      # smoke result rests on, and nothing else checks it. The negative tests
+      # break that root three ways and require the runner to notice; they are a
+      # check on the checker, and running them on every rootfs build would put
+      # three deliberate defects in front of every image.
+      #
+      # Both need the arm64 emulation this lane's label already promises: they
+      # EXECUTE what is in an arm64 root. Neither has been run on cx3576 by
+      # anybody -- see RFCT-113's disposition -- and this lane is where that
+      # first happens.
+      - name: make os-factory-root-gate
+        run: MOS_BOARD=cx3576 make os-factory-root-gate
+
+      - name: make os-smoke-negative-test
+        run: MOS_BOARD=cx3576 make os-smoke-negative-test
 
       # Development signing material for the bundle build. Dev keys,
       # deliberately: this lane proves the pipeline, and production signing is
