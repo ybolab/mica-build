@@ -179,7 +179,7 @@ if [ "${MODE}" = verify ]; then
     set -- ${ABS[@]+"${ABS[@]}"}
 fi
 
-# --- how bun is invoked, and the only place that decides ---------------------
+# how bun is invoked, and the only place that decides
 # Two routes, one seam. A bun binary on the host, or the digest-pinned bun
 # container. The choice is made once, here, and announced.
 ROUTE=host
@@ -448,7 +448,7 @@ else
     echo "os/verify: ${BUN_VERSION} at ${BUN}"
 fi
 
-# --- dependencies ------------------------------------------------------------
+# dependencies
 # `bun test` needs none of this -- bun:test and the node: builtins are in the
 # runtime, measured on 2026-08-25 by running the suite with node_modules moved
 # aside. `tsc` does. So an install failure is reported as an install failure
@@ -462,7 +462,7 @@ if [ ! -d "${HERE}/node_modules" ]; then
     }
 fi
 
-# --- typecheck ---------------------------------------------------------------
+# typecheck
 echo "os/verify: typecheck"
 run_bun run typecheck
 
@@ -479,7 +479,7 @@ if [ "${MODE}" = lint ]; then
     exit "${rc}"
 fi
 
-# --- the image verifier ------------------------------------------------------
+# the image verifier
 # No vacuity guard here either, and for the lint's reason rather than the
 # suite's: src/verify-cli.ts carries its own, at a granularity this script
 # cannot see. A run in which the register concluded NOTHING is turned red there,
@@ -492,7 +492,7 @@ if [ "${MODE}" = verify ]; then
     exit "${rc}"
 fi
 
-# --- the smoke runner --------------------------------------------------------
+# the smoke runner
 # No vacuity guard here either, and at a granularity this script cannot see:
 # src/smoke.ts's `conclude` refuses a run whose conclusion count is not the
 # register's size, and refuses an EMPTY register outright. A summary line is
@@ -506,7 +506,7 @@ if [ "${MODE}" = smoke ]; then
     exit "${rc}"
 fi
 
-# --- the negative tests ------------------------------------------------------
+# the negative tests
 # No vacuity guard here either, and at the same granularity: src/smoke-negative.ts
 # compares the number of cases it concluded against the number DECLARED, and
 # refuses an empty list outright -- `RESULT: PASS (3 of 3)` is invariant under a

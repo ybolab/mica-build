@@ -124,11 +124,10 @@ export const GPT_CHECKS: readonly CheckCase[] = [
   // expressed as a substring, and this was measured rather than guessed --
   // every candidate, counted against both boards' real conclusions:
   //
-  //   ` partitions`   cx3576 3, x64 3   the count, the image-size line, and
-  //                                     one uenv line per board
-  //   `exactly `      cx3576 13, x64 8  `p1 ... ends exactly where uenv-a
-  //                                     begins`, `contains exactly one
-  //                                     kernel's modules`, and ten more
+  //   ` partitions`  cx3576 3, x64 3   the count, the image-size line, and
+  //       one uenv line per board
+  //   `exactly `     cx3576 13, x64 8  `p1 ... ends exactly where uenv-a
+  //       begins`, `contains exactly one kernel's modules`, and ten more
   //
   // Nothing else in the sentence is board-independent: the only tokens are
   // `exactly`, the count, and `partitions`, and the count is the one thing the

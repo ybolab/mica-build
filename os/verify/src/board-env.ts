@@ -18,14 +18,13 @@
 //
 // What it accepts, and every one of these shapes is in a real board.env today:
 //
-//   KEY=value                     bare
-//   KEY="two words, and an ="     double quoted; expansions active
-//   KEY='literal $NOT_EXPANDED'   single quoted; nothing is
-//   KEY="${OTHER}"                a reference to a key declared ABOVE it
-//   KEY="lit ${OTHER} @SLOT@"     interpolation mixed with literal text
-//   KEY=$((A * B / C))            integer arithmetic over earlier keys
-//   KEY=""                        declared, and empty -- NOT the same as absent
-//   # a comment                   whole-line, or trailing after a value
+//   `KEY=value` bare; `KEY="two words, and an ="` double quoted, expansions
+//   active; `KEY='literal $NOT_EXPANDED'` single quoted, nothing is;
+//   `KEY="${OTHER}"` a reference to a key declared above it;
+//   `KEY="lit ${OTHER} @SLOT@"` interpolation mixed with literal text;
+//   `KEY=$((A * B / C))` integer arithmetic over earlier keys; `KEY=""`
+//   declared and empty, NOT the same as absent; `# a comment` whole-line or
+//   trailing after a value.
 //
 // What it refuses, each with its own message naming the construct:
 // command substitution in either spelling, backticks, every parameter
