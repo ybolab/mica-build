@@ -1,61 +1,38 @@
 // The board-definition schema lint.
 //
-// Why this exists. A board is defined by its layout file, and the shared build
-// and verification scripts read that definition rather than knowing any board's
-// shape. That only holds if the definition is complete and honest, and neither
-// is self-evident: a missing key makes a shared script fail somewhere far from
-// the omission, and a key a board CANNOT honour reads as a policy nobody
-// implements.
+// A board is defined by its layout file and the shared build and verification
+// scripts read that definition rather than knowing any board's shape, which only
+// holds if the definition is complete and honest. So both directions are
+// checked: every key a role requires is present, and no key a role does not use
+// is present. The second is the one that has fired. os/boards/x64/board.env
+// declared BOOT_ATTEMPTS_DEFAULT=3 under a comment asserting grub keeps attempt
+// counters "where U-Boot keeps them in its redundant environment; the CONTRACT
+// is identical". It does not: RAUC's grub backend has no attempt counter and
+// refuses a configuration that sets one, so the image built, shipped, booted,
+// and rauc.service exited 1 with "Configuring boot attempts is valid for uboot
+// or barebox only", taking the health gate and the status indicator with it.
 //
-// The second failure is the one that has actually happened. os/boards/x64/board.env
-// declared BOOT_ATTEMPTS_DEFAULT=3 under a comment asserting that grub keeps
-// attempt counters "where U-Boot keeps them in its redundant environment; the
-// CONTRACT is identical". It is not: RAUC's grub backend has no attempt counter
-// and REFUSES a configuration that sets one. Nothing in the tree objected. The
-// image built, shipped, booted, and rauc.service exited 1 with "Configuring
-// boot attempts is valid for uboot or barebox only", taking the health gate and
-// the status indicator down with it.
+// The predecessor, os/verify/lint.sh, `source`d each definition in a subshell
+// and read every key as `${NAME_KEY:-}`, an idiom that cannot tell declared
+// empty from not declared. Four holes measured on 2026-08-25 come from exactly
+// that: `ROOTFS_A_FS_UUID=""` passed as a forbidden key on a forbidden role
+// where the non-empty spelling was rejected, because `[ -z "${val}" ] &&
+// continue` skipped it; `BOOT_ATTEMPTS_DEFAULT=""` on the grub board passed by
+// the same route; `LAYOUT_PARTITIONS=" "` passed, reporting "0 partitions,
+// numbered 1..0, no gaps and no duplicates" and emitting a pass that satisfied
+// the vacuity guard; and a board declaring no MOS_ARCH passed when MOS_ARCH was
+// exported in the caller's environment, because `source` reads the process
+// environment. The last is closed one layer down -- board-env.ts parses instead
+// of sourcing and never consults process.env -- and the first three here, by
+// asking `declared()`, which answers presence without consulting the value.
 //
-// So this checks BOTH directions: every key a role requires is present, and no
-// key a role does not use is present. Only the second one would have caught it.
-//
-// What this port changes, and why it is not a translation
-//
-// The predecessor was os/verify/lint.sh: it `source`d each board definition in
-// a subshell and read every key as `${NAME_KEY:-}`. That idiom cannot tell
-// Declared empty from not declared, and four holes measured on 2026-08-25 all
-// come from exactly that:
-//
-//   1. `ROOTFS_A_FS_UUID=""` -- a forbidden key on a forbidden role -- PASSED.
-//      The non-empty spelling of the same line was rejected. `[ -z "${val}" ]
-//      && continue` skipped it, so the forbidden direction could be defeated by
-//      writing the claim as empty.
-//   2. `BOOT_ATTEMPTS_DEFAULT=""` on the grub board PASSED, by the same route.
-//      That is the check this linter was written for.
-//   3. `LAYOUT_PARTITIONS=" "` PASSED, reporting "0 partitions, numbered 1..0,
-//      no gaps and no duplicates" -- and emitting a pass, so the vacuity guard
-//      was satisfied by a board that declared no partitions at all.
-//   4. A board declaring no MOS_ARCH PASSED when MOS_ARCH was exported in the
-//      caller's environment, because `source` reads the process environment and
-//      `${MOS_ARCH:-}` cannot see where the value came from.
-//
-// Hole 4 is closed one layer down: board-env.ts parses instead of sourcing and
-// never consults process.env. Holes 1-3 are closed here, by asking
-// `declared()` -- which answers PRESENCE without consulting the value -- rather
-// than testing the value for emptiness.
-//
-// This makes the port stricter than its predecessor, deliberately. The
-// emptiness of a declaration is never taken as its absence, because on these
-// boards emptiness is a STATEMENT: x64 declares BOARD_FIRMWARE_FILES="" and
-// BOARD_HWINIT_CONFS="" on purpose -- a QEMU machine has no radio firmware and
-// no MAC to burn. A schema that reads those as "not declared" cannot tell a
-// board that said "none" from a board that forgot to say anything.
-//
-// The messages are the product. A verdict tells a board engineer that something
-// is wrong; the message is what tells them which line to edit. So absent and
-// empty get DIFFERENT sentences even where they share a verdict: the shell said
-// "declares no ESP_FAT_VOLUME_ID" for `ESP_FAT_VOLUME_ID=""`, which sends a
-// reader looking for a line that is already there.
+// That makes this stricter than its predecessor, deliberately: emptiness is
+// never taken as absence, because on these boards emptiness is a statement --
+// x64 declares BOARD_FIRMWARE_FILES="" and BOARD_HWINIT_CONFS="" on purpose,
+// a QEMU machine having no radio firmware and no MAC to burn. The messages are
+// the product: absent and empty get different sentences even where they share a
+// verdict, because "declares no ESP_FAT_VOLUME_ID" about a file containing
+// `ESP_FAT_VOLUME_ID=""` sends a reader looking for a line already there.
 
 import { BoardEnvError } from './board-env.ts'
 import {

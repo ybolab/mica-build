@@ -2,61 +2,42 @@
 //
 // Every family here is guarded in the oracle by a condition read out of the
 // board definition -- `is_uboot_board`, `board_has_radio`, `board_has_hwinit`,
-// `BOARD_HAS_STATUS_LED`, `BOARD_FIRMWARE_FILES` -- so on one board it
-// concludes and on the other it SKIPS. That is the whole difficulty of this
-// batch and it shows up in three places.
+// `BOARD_HAS_STATUS_LED`, `BOARD_FIRMWARE_FILES` -- so on one board it concludes
+// and on the other it SKIPS. Three consequences.
 //
-// 1. A SKIP is a third verdict.
+// A skip is a third verdict. `parity.ts` never defaults `shell.skip` to
+// `shell.pass` and nothing here supplies one that would; measured on both
+// boards' real output on 2026-08-26, 3 SKIP conclusions on cx3576 and 22 on x64.
+// A skip matcher falling back to its pass matcher would claim the SKIP line, be
+// handed a `pass`, and compare green for a family that never executed. So a
+// family that skips carries an explicit `skip` matcher and answers `skipped()`.
 //
-// `parity.ts` never defaults `shell.skip` to `shell.pass`, and this file never
-// supplies one that would. Measured on both boards' real output on 2026-08-26:
-// 3 SKIP conclusions on cx3576 and 22 on x64. A check whose skip matcher fell
-// back to its pass matcher would claim the SKIP line, be handed a `pass` from
-// the port, and compare as though the oracle had run it -- green for a family
-// that never executed. So a family that skips is registered with an explicit
-// `skip` matcher, and the TypeScript side answers with `skipped()`.
-//
-// 2. The board lists are derived, never written down.
-//
-// `boards:` takes literal names, and a two-name literal written out here would
-// mean a board added to `os/boards/` is a board the gate never opens. The
-// lists are computed at module load from the shipped definitions themselves:
-// `uBootBoards()` is every board whose `RAUC_BOOTLOADER` is uboot, `ledBoards()`
-// every board declaring `BOARD_HAS_STATUS_LED=1`, and so on. A third board
+// The board lists are derived, never written down: `uBootBoards()` is every
+// board whose `RAUC_BOOTLOADER` is uboot, `ledBoards()` every board declaring
+// `BOARD_HAS_STATUS_LED=1`, and so on, computed at module load. A third board
 // dropped into `os/boards/` is covered by whichever families its own definition
-// selects, and by none of the others, with nothing here edited.
+// selects, with nothing here edited.
 //
-// 3. ONE `one` check per path, never a `many` over a loose substring.
+// One `one` check per path, never a `many` over a loose substring. The radio
+// firmware set, the hwinit confs, `btattach` and the status-LED files are all
+// `sq_regular` calls, so a `many` check registering ` is a regular file` would
+// also claim the twenty-six board-invariant paths of batch 2a and make all of
+// them `ambiguous`. The same holds for ` contains `: `BOOT-A contains Image`
+// names one line, ` contains ` names fourteen on cx3576. So each path gets its
+// own check generated from the board's own declaration, with the path in its
+// matcher, and the boot-slot listing is generated per (board, slot, file) out of
+// `BOOT_SLOT_REQUIRED_FILES` with `@SLOT@` substituted as the oracle does
+// (:1838).
 //
-// The radio firmware set, the hwinit confs, `btattach` and the status-LED files
-// are all `sq_regular` calls, so their conclusions read `<path> is a regular
-// file` -- exactly like the twenty-six board-invariant paths in batch 2a. A
-// `many` check here registering ` is a regular file` would claim all of those
-// too and make the whole of batch 2a `ambiguous`, and batch 2a could not repair
-// it by having landed first. So each path gets its own check, generated from
-// the board's own declaration, and its matcher carries the path.
-//
-// The same reasoning applies to ` contains `. `BOOT-A contains Image` names
-// ONE line; ` contains ` names fourteen on
-// cx3576. The boot-slot listing below is generated one check per (board, slot,
-// file) out of `BOOT_SLOT_REQUIRED_FILES`, with `@SLOT@` substituted the way the
-// oracle substitutes it (:1838), so the collision never arises.
-//
-// And where a group skips as one line.
-//
-// Several families print N conclusions on the board that has the hardware and
-// ONE skip on the board that does not -- five firmware paths against one `the
-// board radio-firmware set (...)`. One shell line can have exactly one owner;
-// two checks claiming it is `ambiguous` and exit 1. So the group's skip gets a
-// dedicated register entry, `<family>-skipped`, scoped by `boards:` to the
-// boards where the group is skipped, and the per-item checks are scoped to the
-// boards where it runs. The two scopes are complements of one derived
-// predicate, so they cannot drift apart or overlap.
-//
-// A `-skipped` check has no failing direction against an image, and neither
-// does the oracle's `skip` -- what it asserts is the DERIVATION, and that is
-// what its tests drive: a board definition declaring the feature must leave the
-// skip list, and one declaring it empty must be in it.
+// Where a group skips as one line, the skip gets a dedicated `<family>-skipped`
+// entry: several families print N conclusions on the board with the hardware and
+// one skip on the board without, and one shell line can have exactly one owner
+// (two claimants is `ambiguous` and exit 1). The `-skipped` entry is scoped by
+// `boards:` to where the group skips and the per-item checks to where it runs;
+// the two scopes are complements of one derived predicate, so they cannot drift
+// apart or overlap. A `-skipped` check has no failing direction against an
+// image, and neither does the oracle's `skip` -- what it asserts is the
+// derivation, which is what its tests drive.
 
 import { existsSync, readdirSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'

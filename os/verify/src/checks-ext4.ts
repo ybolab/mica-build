@@ -1,57 +1,44 @@
 // Batch 4b: the four ext4 storage tiers.
 //
-// `check_ext4` is called four times -- META,
-// STATE, EPHEMERAL and DATA -- and prints six conclusions each, plus one about
-// EPHEMERAL's seed stamp: 25 conclusions per board, the largest single family
-// left unclaimed after batch 4a.
+// `check_ext4` is called four times -- META, STATE, EPHEMERAL and DATA -- and
+// prints six conclusions each plus one about EPHEMERAL's seed stamp: 25
+// conclusions per board.
 //
-// Where the partition comes from.
-//
-// `dd if=IMG bs=1M skip=${PART_START_MIB_x} count=${x_SIZE_MIB}` -- the LAYOUT's
-// offset, walked by `walkLayout` here exactly as :1491-1517 walks it, and NOT
-// the GPT's first sector. Both agree on a healthy image; which one is right is
-// asserted by `gpt-partition-start`, and reading these bytes through the GPT
-// would make this family agree with a partition that had moved.
-//
-// The ORDER of the tiers is the layout's too. The oracle names them in four
-// literal call sites; here they are every `ext4`-role partition in
-// LAYOUT_PARTITIONS order, which on both shipped boards is exactly meta, state,
-// ephemeral, data. A fifth tier added to a board definition is checked without
-// a register entry being edited -- and, being `many`, it arrives as a new
+// The bytes come from `dd if=IMG bs=1M skip=${PART_START_MIB_x}
+// count=${x_SIZE_MIB}`, the LAYOUT's offset walked by `walkLayout` exactly as
+// :1491-1517 walks it, and NOT the GPT's first sector: both agree on a healthy
+// image, `gpt-partition-start` asserts which is right, and reading through the
+// GPT would make this family agree with a partition that had moved. The tier
+// order is the layout's too -- every `ext4`-role partition in LAYOUT_PARTITIONS
+// order, which on both shipped boards is meta, state, ephemeral, data -- so a
+// fifth tier is checked without a register entry being edited, arriving as a new
 // (id, instance) pair rather than as a count that went up.
 //
-// Three things the oracle concludes that are not what they look like.
+// Three oracle conclusions are not what they look like, and all three are
+// reproduced rather than repaired, because a port that hardened its oracle would
+// diverge from it and the divergence would be the port's:
 //
-// All three are REPRODUCED here and none is repaired. A port that hardened its
-// oracle would diverge from it, and the divergence would be the port's.
-//
-//  1. `e2fsck -fn` EXITS 0 on a truncated filesystem. Measured 2026-08-26: an
+//  1. `e2fsck -fn` exits 0 on a truncated filesystem. Measured 2026-08-26, an
 //     8192-block filesystem in a 4096-block file makes e2fsck print "Either the
 //     superblock or the partition table is likely to be corrupt!", run all five
-//     passes, and exit 0. :2342 is `if e2fsck -fn "${img}" >/dev/null 2>&1`, so
-//     both streams are discarded and the status alone decides -- and the
-//     conclusion is `e2fsck -fn on data is clean`. The branch is reachable: this
-//     extract is `count=${size_mib}` at the layout's offset, so an image whose
-//     tail is short produces exactly that file. See `e2fsckClean` in image.ts.
-//
-//  2. `debugfs -R "ls -p /"` EXITS 0 on a file that is not EXT4, with empty
-//     stdout and "Filesystem not open" on stderr. :2358's `|| true` swallows
-//     the stderr, `entries` is empty -- and for META, STATE and DATA an empty
-//     listing is the PASSING direction. So `factory: meta is empty at build
-//     (nothing but lost+found)` is what the oracle concludes about a partition
-//     that holds no filesystem at all. `debugfsEntriesOrNone` below reproduces
-//     it and says so.
-//
+//     passes and exit 0. :2342 is `if e2fsck -fn "${img}" >/dev/null 2>&1`, so
+//     the status alone decides and the conclusion is `e2fsck -fn on data is
+//     clean`. Reachable here, because the extract is `count=${size_mib}` at the
+//     layout's offset. See `e2fsckClean` in image.ts.
+//  2. `debugfs -R "ls -p /"` exits 0 on a file that is not ext4, with empty
+//     stdout and "Filesystem not open" on stderr; :2358's `|| true` swallows the
+//     stderr, `entries` is empty, and for META, STATE and DATA an empty listing
+//     is the passing direction -- so `factory: meta is empty at build (nothing
+//     but lost+found)` is concluded about a partition holding no filesystem.
+//     `debugfsEntriesOrNone` reproduces it.
 //  3. `tune2fs -l` and `dumpe2fs -h` are `|| true`, so a partition they cannot
-//     open arrives at the label, UUID, feature and size checks as the empty
-//     string -- four FAILs describing values rather than one refusal naming the
-//     tool. Reproduced by `ext4SuperOrNone`.
+//     open reaches the label, UUID, feature and size checks as the empty string:
+//     four FAILs describing values rather than one refusal naming the tool.
+//     Reproduced by `ext4SuperOrNone`.
 //
-// The result is that a tier which is not a filesystem at all produces, on both
-// verifiers, four FAILs (label, UUID, size, e2fsck), one PASS (no orphan_file --
-// there are no features to have it) and one PASS (empty at build). Two of those
-// six greens are vacuous. They are recorded, asserted as their own cases, and
-// left for whoever owns the oracle.
+// So a tier that is not a filesystem produces, on both verifiers, four FAILs
+// (label, UUID, size, e2fsck) and two vacuous greens (no orphan_file, empty at
+// build). Both are asserted as their own cases and left for the oracle's owner.
 
 import type { Board } from './board.ts'
 import type { CheckCase, ImageContext } from './checks.ts'

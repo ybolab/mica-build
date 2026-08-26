@@ -2,53 +2,42 @@
 // status-LED device tree, the compiled boot script, the verity env pair, and
 // the regions that must ship zero-filled.
 //
-// Six families, one module, because every one of them reads either
-// `board/<board>/out/` or a file mcopy'd out of a boot slot, and three of them
-// share the five SKIP lines a grub board prints in their place.
+// Six families in one module, because every one reads either `board/<board>/out/`
+// or a file mcopy'd out of a boot slot, and three share the five SKIP lines a
+// grub board prints in their place.
 //
-// The skips are the reason these are together.
+// The skips are the reason they are together. A shell line has exactly one
+// owner, and the oracle wraps whole groups in
+// `if is_uboot_board ... else skip "..."`, so one skip conclusion stands for as
+// many as nine checks: :1750 the raw pre-GPT loader area (four), :2096 the
+// boot.scr assertions (nine, script plus verity env), :2277 the boot.scr
+// root-argument pair (two), :2299 the zero-filled U-Boot env pair (two), :1951
+// the status-LED device tree (six, once per slot). So in each group one entry
+// applies to every board and owns the skip, and the rest are scoped by
+// `boardsWhere(isUBoot)` or `hasLed` and do not exist on a board that prints
+// none of their lines.
 //
-// A shell line has exactly one owner. The oracle wraps whole groups in
-// `if is_uboot_board ... else skip "..."`, so ONE skip conclusion stands for as
-// many as nine checks:
+// The BSP compare is a decision, not an oversight. `board/cx3576/out/` is not
+// populated in a checkout, so the oracle's own run is `RESULT FAIL (387/395)`
+// with eight conclusions reading `... compare source not found`. PLAN-014's
+// Scope section puts `board/` BSP builds outside this campaign -- "No change to
+// ... `board/` BSP builds (digest pins only)" -- and populating the tree would
+// turn eight of the oracle's FAILs into passes, changing the measurement rather
+// than porting it. So the port expresses the absence exactly as the oracle does:
+// same paths, same sentence when the compare source is not there. Both
+// directions have a fixture -- byte-identical source, differing source, no
+// source -- so the passing direction is driven even though no shipped tree
+// reaches it.
 //
-//   :1750  the raw pre-GPT loader area          <- four checks
-//   :2096  the boot.scr assertions              <- nine (script + verity env)
-//   :2277  the boot.scr root-argument ...       <- two
-//   :2299  the zero-filled U-Boot env pair      <- two
-//   :1951  <slot>: the status-LED device-tree   <- six, twice (once per slot)
-//
-// So in each group ONE entry applies to every board and owns the skip, and the
-// rest are scoped by `boardsWhere(isUBoot)` (or `hasLed`) and simply do not
-// exist on a board that prints none of their lines. M4d drew the same line for
-// the extlinux/no-initramfs pair and this follows it.
-//
-// The BSP compare, and the decision it NEEDED.
-//
-// `board/cx3576/out/` is not populated in a checkout, so the oracle's own run
-// is `RESULT FAIL (387/395)` with eight conclusions reading `... compare source
-// not found`. That is not a defect in the image and it is not something this
-// batch may repair: PLAN-014's Scope section puts `board/` BSP builds outside
-// this campaign -- "No change to ... `board/` BSP builds (digest pins only)" --
-// and populating the tree would turn eight of the oracle's FAILs into passes,
-// i.e. it would change the measurement rather than port it.
-//
-// So the port expresses the absence, exactly as the oracle expresses it: it
-// reads the same paths, and when the compare source is not there it FAILS with
-// the same sentence. Both directions have a fixture -- a byte-identical source,
-// a differing one, and no source at all -- so the passing direction is driven
-// even though no shipped tree reaches it.
-//
-// ONE cx3576 literal in the oracle, recorded rather than copied.
-//
+// One cx3576 literal in the oracle is recorded rather than copied.
 // `BOARD_DIR="${BOARD_DIR:-${REPO_ROOT}/board/cx3576}"` (:28) and
-// `DTB_SRC="${BOARD_DIR}/out/kernel/rk3576-src.dtb"` (:1758) are board names
-// written into a script that is otherwise entirely board-derived. On the one
-// U-Boot board this tree ships the two agree, so this port derives both -- the
-// directory from the board's own name, the artefact names from that board's own
-// BOOT_SLOT_REQUIRED_FILES -- and a SECOND U-Boot board would be compared
-// against its own BSP here and against cx3576's there. That divergence would be
-// the oracle's; it is reported for M4e rather than reproduced.
+// `DTB_SRC="${BOARD_DIR}/out/kernel/rk3576-src.dtb"` (:1758) are board names in
+// an otherwise board-derived script. On the one U-Boot board this tree ships the
+// two agree, so this port derives both -- the directory from the board's own
+// name, the artefact names from that board's BOOT_SLOT_REQUIRED_FILES -- and a
+// second U-Boot board would be compared against its own BSP here and against
+// cx3576's there. That divergence is the oracle's, reported for M4e rather than
+// reproduced.
 
 import { existsSync, statSync } from 'node:fs'
 import { join } from 'node:path'
