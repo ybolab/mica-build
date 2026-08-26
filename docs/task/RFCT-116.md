@@ -450,7 +450,7 @@ Both bun suites were re-run after the final code commit.
 | docs index | `bash docs/verify-index.sh` | `384/384 PASS`, rc=0 |
 | apid harness | `bash test/apid-api/run.sh --dry-run` | refuses at its image precondition, rc=1 - **identical at `main`**, see below |
 | `bash -n` | every `.sh` touched (14 files) | all rc=0 |
-| Rust | `cargo fmt` / `cargo test` | **NOT RUN - no cargo or usable rustfmt on this host.** See below. |
+| Rust | `mosd/hack/check.sh`'s five lines, driven in a container | **all rc=0**: rustfmt clean over 66 files, clippy `-D warnings` clean, `cargo test --workspace` **593 passed / 0 failed** across 22 binaries, doc-tests ok, `cargo deny` ok. See below. |
 | shellcheck | container, same 14 files, vs `main` | 9 findings, **identical set**, rc=123 both sides |
 
 **The container route is what CI takes and is what these numbers are.** The
@@ -517,35 +517,88 @@ The same command against a detached `main` worktree with the same directory
 created prints the identical three lines. The scratch directory was removed
 afterwards.
 
-### The four `mosd/` string edits could not be gate-run here
+### The Rust gate WAS driven, contrary to this record's first draft
 
-They were made rustfmt-neutral by construction instead.
+**Correction.** An earlier version of this file said the Rust gate could not be
+run here and asked L2 to run `mosd/hack/check.sh` before merging. That was
+wrong, and it was wrong in the direction that matters -- it asked someone else
+to verify something verifiable. All five of `check.sh`'s lines have now been
+driven green on this host.
 
-There is no cargo on this host, and `mosd/hack/check.sh` cannot run. The only
-complete Rust toolchain under `/srv/mos-rust-tools` is `rust96`;
-`/srv/mos-rust-tools/bin/rustfmt` fails with
-`error while loading shared libraries: librustc_driver-28a98848f7a7c026.so`,
-and no such library exists on this host. So `cargo fmt --check` was **not run**,
-and this record does not claim it was.
+**Why the first attempt failed, and what the route is.** There is no cargo on
+the host, and `/srv/mos-rust-tools/bin/rustfmt` dies with
+`error while loading shared libraries: librustc_driver-28a98848f7a7c026.so`.
+That library is not on the host filesystem -- but it **is** inside
+`localhost/mos-build-rust` at `/opt/rust/lib`, which is that binary's partner
+toolchain. Mounting the host binary into the pinned image pairs them:
 
-What was done instead, since the repo does gate on rustfmt (`4f0937e`):
+    docker run --rm -v "$PWD:/src:ro" \
+      -v /srv/mos-rust-tools/bin/rustfmt:/usr/local/bin/rustfmt:ro \
+      -w /src --entrypoint /bin/bash localhost/mos-build-rust -c '
+        export LD_LIBRARY_PATH=/opt/rust/lib
+        rustfmt --edition 2024 --check <files>'
 
-- There is **no `rustfmt.toml` or `.rustfmt.toml`** anywhere in the tree, so
-  rustfmt runs at its defaults: `max_width = 100` and `format_strings = false`.
-  With `format_strings` off, rustfmt does not reflow string literal contents or
-  their manual `\`-continuation wrapping.
-- Every line this milestone added to a `.rs` file was measured: the widest is
-  **94 columns**, and the seven changed lines are 54, 65, 74, 89, 90, 91 and 94.
-  All are inside string literals; no code structure, indentation, argument list
-  or line break outside a literal was touched. The full four-file diff is seven
-  `-`/`+` pairs of string-continuation lines and nothing else.
-- The joined literal values were computed and read back, because a `\` at
-  end of line strips the newline *and* the following leading whitespace: all
-  three multi-line messages concatenate with correct single spacing.
+    rustfmt 1.9.0-stable (88d9e12ae1 2026-08-18), against rustc 1.98.0
 
-This is a construction argument, not a measurement. **L2 should run
-`mosd/hack/check.sh` on a host with cargo before merging**, and that is the one
-gate in this task file that a reader should not take on trust.
+The same mount trick works for `cargo-clippy`, `clippy-driver` and `cargo-deny`.
+`cargo fmt` and `cargo nextest` are the two subcommands the image genuinely does
+not have (`error: no such command: fmt`), so `rustfmt --check` was driven over
+an explicit file list and `cargo test` stood in for `cargo nextest run` -- the
+same tests, a different runner.
+
+| `check.sh` line | how it was driven | result |
+|---|---|---|
+| `cargo fmt --all --check` | `rustfmt --edition 2024 --check` over all 66 `.rs` files under `mosd/` | **rc=0, no output** |
+| `cargo clippy --workspace --all-targets --locked -- -D warnings` | host `cargo-clippy` + `clippy-driver`, image `/opt/rust/lib` | **rc=0** |
+| `cargo nextest run --workspace --locked` | `cargo test --workspace --locked` | **593 passed, 0 failed**, 22 binaries, rc=0 |
+| `cargo test --doc --workspace --locked` | as written | **rc=0** |
+| `cargo deny check licenses bans advisories` | host `cargo-deny` | **advisories ok, bans ok, licenses ok**, rc=0 |
+
+**`--edition 2024` is required** and getting it wrong is a trap: the workspace
+is `edition = "2024"` (`mosd/Cargo.toml:6`), and rustfmt at its default 2021
+reports spurious import-ordering diffs in `busname/src/lib.rs` and
+`mqttd/tests/protocol.rs` plus two `let chains are only allowed in Rust 2024`
+errors in `sshd.rs`. Those are artifacts of the wrong edition, not findings.
+
+**The tests this milestone's four string edits live in were each driven
+individually, and pass:**
+
+- `mos_busname` lib unit tests -- **8 passed**, including
+  `the_bare_extension_namespace_is_never_system_origin`, whose assertion message
+  this milestone rewrote.
+- `mqttd` `tests/protocol.rs` -- **14 passed**, including
+  `a_bus_name_with_no_class_yields_no_address_and_no_invented_class`.
+- `mosd` unit tests -- **280 passed**, including
+  `a_shadow_file_that_is_missing_or_broken_does_not_stop_the_reconcile`, whose
+  `expect()` string this milestone rewrote.
+- `mosd` `tests/scan.rs` -- **7 passed**, including
+  `the_bare_extension_namespace_has_no_class_and_is_not_system`.
+
+**One environmental obstacle, named rather than absorbed.** The first full run
+came back `CARGO_TEST_RC=101` on `mosd/tests/bus.rs`, and `tests/scan.rs` never
+ran at all because cargo stops at the first failing target. The cause was not
+this milestone: `localhost/mos-build-rust` ships no `dbus-daemon`, and both
+files **refuse rather than skip** --
+
+    dbus-daemon was not found at /usr/bin/dbus-daemon or on PATH. This test
+    asserts real bus behaviour over a private session bus and MUST NOT skip
+
+which is precisely the MUST-KEEP safety invariant PLAN-015 protects, doing its
+job. `bus.rs` is M2's file and this subtask never touched it. Adding
+`dbus-daemon` to a throwaway layer on top of the pinned image turns both green:
+`bus.rs` 1 passed, `scan.rs` 7 passed, and the full workspace **rc=0**. The
+throwaway image is not committed and nothing in the tree references it.
+
+Before it was measured, the result was also argued from construction, and the
+argument still holds: there is **no `rustfmt.toml`** in the tree, so rustfmt
+runs at `max_width = 100` and `format_strings = false`; with `format_strings`
+off it does not reflow string literal contents or their manual
+`\`-continuation wrapping. The seven added `.rs` lines measure 54, 65, 74, 89,
+90, 91 and 94 columns, all inside string literals, and the whole four-file diff
+is seven `-`/`+` pairs of string-continuation lines and nothing else. The joined
+literal values were computed and read back, because a `\` at end of line strips
+the newline *and* the following leading whitespace: all three multi-line
+messages concatenate with correct single spacing.
 
 ### Not run here, and why
 
@@ -564,10 +617,11 @@ gate in this task file that a reader should not take on trust.
   image; **not run**. Same gate.
 - `os/tests/quadlet-doc-test.sh` needs the arm64 Quadlet generator under
   emulation; **not run**. Same gate.
-- `mosd/hack/check.sh` runs cargo on a host that has none; **not attempted**,
-  and it is the one file in scope this milestone did not modify at all. It is
-  also the gate that would cover the four `mosd/` string edits, so L2 should
-  run it on a host with cargo before merging.
+- `mosd/hack/check.sh` prepends `$HOME/.cargo/bin` and runs cargo on a host
+  that has none, so it was **not run as written** -- and it is the one file in
+  scope this milestone did not modify at all. Every line it runs was driven
+  through the container route instead, all rc=0; see "The Rust gate WAS driven"
+  above for the commands and the numbers.
 - `mosd/hack/build-target.sh` needs a full cross build; **not run**. `bash -n`
   and shellcheck are its gate, and its only executable change is the one
   tabulated error string.
