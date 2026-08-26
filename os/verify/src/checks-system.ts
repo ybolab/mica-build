@@ -14,35 +14,29 @@
 //   ssh.service's KillMode / ExecReload    :4525  2 / 2
 //   libcrypt and the crypt(3) format      :4572  3 / 3
 //
-// They are one module because splitting ten two-line families across ten files
-// would put more prose in headers than in checks, and because every one of them
-// is `packedRoot()` plus a read.
+// One module because every one of them is `packedRoot()` plus a read, and
+// splitting ten two-line families across ten files would put more prose in
+// headers than in checks.
 //
-// What is read out of mosd/ here, and why.
-//
-// The profile KEY and default path come from `provisioning.rs`, and the crypt(3)
-// prefix from `transient.rs`. Both are the oracle's own reads and both exist for
-// the same reason as the connd contract: mosd fails closed on a profile it
-// cannot parse, so an image whose key had drifted would self-provision to prod
-// and disable its own sshd with every check still green. Reading those sources
-// is in scope under PLAN-014's Scope section -- "No change to ... `mosd/` Rust
+// The profile key and default path are read out of `provisioning.rs` and the
+// crypt(3) prefix out of `transient.rs`, both the oracle's own reads and both
+// for the connd contract's reason: mosd fails closed on a profile it cannot
+// parse, so an image whose key had drifted would self-provision to prod and
+// disable its own sshd with every check still green. Reading those sources is in
+// scope under PLAN-014's Scope section -- "No change to ... `mosd/` Rust
 // sources" -- and nothing here writes to them.
 //
-// And one defect in the code under test, reproduced rather than fixed.
-//
+// One defect in the code under test is reproduced rather than fixed:
 // `fwenv_lines="$(grep -cE '^/dev/' "${fwenv}" 2>/dev/null || echo 0)"` (:3331).
-// On a file that EXISTS and has no `^/dev/` line, `grep -c` prints `0` and exits
-// 1, so the `|| echo 0` fires as well and the variable becomes the two-line
-// string "0\n0" -- which the oracle then interpolates into a FAIL message,
-// putting a raw newline in the middle of a conclusion. `parseShellRun`'s
-// self-consistency guard would refuse that run, because the second half of the
-// message is a stdout line with no PASS/FAIL/SKIP prefix.
-//
-// It is reproduced here, exactly, and asserted as its own case. Neither shipped
-// image reaches it -- both have two device lines -- so nothing is on fire, and a
-// port that quietly emitted `0` would agree with the oracle on both shipped
-// images and diverge on the one image where the difference is the whole point.
-// Reported for M4e; not fixed here.
+// On a file that exists and has no `^/dev/` line, `grep -c` prints `0` and exits
+// 1, so the `|| echo 0` fires too and the variable becomes the two-line string
+// "0\n0", which the oracle interpolates into a FAIL message, putting a raw
+// newline in the middle of a conclusion; `parseShellRun`'s self-consistency
+// guard would refuse that run, because the second half is a stdout line with no
+// PASS/FAIL/SKIP prefix. Neither shipped image reaches it -- both have two
+// device lines -- and a port that quietly emitted `0` would agree with the
+// oracle on both shipped images and diverge on the one image where the
+// difference is the whole point. Reported for M4e; not fixed here.
 
 import { existsSync, lstatSync, readFileSync, readdirSync, readlinkSync, realpathSync, statSync, type Stats } from 'node:fs'
 import { join } from 'node:path'

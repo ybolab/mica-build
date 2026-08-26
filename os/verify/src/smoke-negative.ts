@@ -2,48 +2,32 @@
 // version-skewed binary, each REALLY made and each required to turn the smoke
 // run red.
 //
-// Why these are not unit tests.
-//
-// smoke.ts's whole design is that every verdict is reachable from a FABRICATED
-// `ExecResult`, and that is right: it is what makes the red branches runnable
-// with no image, no daemon and no build. But a fabricated result is a statement
-// the test wrote, and a test that writes `{status: 126}` and then asserts that
+// These are not unit tests. smoke.ts is designed so that every verdict is
+// reachable from a fabricated `ExecResult`, which is what makes the red branches
+// runnable with no image, daemon or build -- but a fabricated result is a
+// statement the test wrote, and a test that writes `{status: 126}` and asserts
 // 126 is diagnosed as a wrong architecture has tested nothing about wrong
-// architectures. M7b's diagnosis map said 126 meant "a wrong-architecture
-// binary, or a dynamic loader that could not resolve it"; measured, wrong-arch
-// is 255 and an unresolvable loader is 127, and 126 is a mode bit. The suite was
-// green throughout, because the suite chose the numbers.
+// architectures. M7b's map said 126 meant "a wrong-architecture binary, or a
+// dynamic loader that could not resolve it"; measured, wrong-arch is 255, an
+// unresolvable loader is 127, and 126 is a mode bit. The suite was green
+// throughout, because the suite chose the numbers. So each case here makes the
+// defect in a real image, from the real factory root, with the real self-built
+// artifact, and drives the real `docker run` at it.
 //
-// So each case here MAKES the defect -- in a real image, from the real factory
-// root, with the real self-built artifact -- and drives the real `docker run`
-// at it. What comes back is measured, not chosen.
+// Every mutation refuses to be a no-op: each Dockerfile asserts its own pre- and
+// post-state and exits non-zero if either is not what the mutation requires, so
+// a no-op fails the image build naming what it expected rather than producing a
+// green case that never reached the branch it claims to cover. Every case also
+// carries its positive control -- the same artifact through the unmutated root
+// in the same pass, required to pass -- because without one a case is satisfied
+// by any image that fails for any reason, including one where the base was never
+// loaded. And each case names the diagnosis it must NOT get, since a case
+// asserting only `verdict === 'fail'` would have been as green under M7b's map
+// as under this one.
 //
-// Every mutation refuses to be a NO-OP.
-//
-// Each Dockerfile asserts its own PRE-state and POST-state and exits non-zero if
-// either is not what the mutation requires. A no-op therefore fails the image
-// BUILD -- loudly, naming what it expected -- rather than producing a green case
-// that never reached the branch it claims to cover. That is this repository's
-// `mutate()` helper discipline, expressed in the only medium available inside a
-// container: four subtasks in this campaign wrote a `String.replace` that
-// matched nothing and would have reported a passing branch never reached.
-//
-// Every case carries its positive control.
-//
-// The same artifact is run through the UNMUTATED root in the same pass and
-// required to pass. Without it, a case is satisfied by any image that fails for
-// any reason -- including one where the base was never loaded.
-//
-// And each case names the diagnosis it must NOT get. Two of the three exist
-// because M7b's map sent them to the wrong one, and a case that only asserted
-// `verdict === 'fail'` would have been just as green then as now.
-//
-// What this does not do.
-//
-// It does not build a rootfs. It reads the factory root the build already
-// exported, exactly as the smoke runner does, and refuses when there is none --
-// the same refusal and for the same reason: a skip reports the same green as a
-// pass.
+// It does not build a rootfs: it reads the factory root the build exported,
+// exactly as the smoke runner does, and refuses when there is none, because a
+// skip reports the same green as a pass.
 
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
