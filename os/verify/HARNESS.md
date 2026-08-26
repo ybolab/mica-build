@@ -273,6 +273,49 @@ change to the instrument, so M4b measured it and left it, the way M4a left the
 "beyond the oracle" flag. Until then the two families stay `not-ported` — which
 is the state this harness exists to describe rather than round off.
 
+**The second of the two is resolved, and it needed no instrument change.** M4d
+registers ONE `one` check per (board, slot, required file), generated at module
+load from each board's `BOOT_SLOT_REQUIRED_FILES` with `@SLOT@` substituted the
+way `os/verify-image-v2.sh:1838` substitutes it. The matcher is then
+`BOOT-A contains Image` — one line, on one board — and the four
+`contains no …` conclusions are separate checks with their own prose. A regex
+would have worked; a longer substring works too, and it does not widen what a
+matcher may be. The FIRST is still open: the only token left really is the
+partition count.
+
+### What M4d did change, and why
+
+Two widenings, both to `ShellMatcher`, both forced by a shape the register
+could not otherwise express:
+
+* **`pass` became OPTIONAL.** Several families print N conclusions on the board
+  that has the hardware and ONE `skip` on the board that does not — five
+  firmware paths against one `the board radio-firmware set (…)`. A shell line
+  can have exactly one owner, so that skip needs a register entry of its own,
+  and such an entry genuinely has no PASS line on any board it applies to.
+  `assertRegisterWellFormed` gained the other half: a check registering **no**
+  matcher at all is refused, because it would report `unfired` forever and read
+  exactly like a matcher that had gone stale.
+* **`fail` may be a LIST.** The oracle's PASS branches say one thing; its FAIL
+  branches FORK. `check_status_led`'s three failure sentences, and the
+  reconciler-ordering check's three, share no substring that is not also in
+  some other check's line — `mos-status-led.service ` is in the overlay
+  family's failures too. One loose matcher covering all three is how a check
+  claims a neighbour's conclusion; three exact ones cannot. Each element is
+  still a plain substring, and the claim is still "exactly one registered check
+  matches this line": a list widens what ONE check answers for, never what two
+  may share.
+
+### Where the matcher still runs out
+
+One shape remains unexpressible and is recorded rather than worked around: a
+matcher list makes a check able to claim several DIFFERENT sentences, but every
+sentence must still be a contiguous substring. A failure branch whose only
+commonality with its siblings is a word that also appears in a neighbouring
+check's line cannot be claimed at all without making that neighbour
+`ambiguous`. M4d hit this once, in the shadow family, and resolved it with a
+three-element list rather than a looser matcher.
+
 ## The parity harness, and why it is not a count
 
 `src/parity.ts` diffs `os/verify-image-v2.sh`'s conclusions against the check
@@ -409,6 +452,89 @@ A verdict table alone is not enough, and the messages were compared too. Where
 both reject, four of the port's sentences are deliberately different — see
 "where it is stricter" in `README.md`.
 
+## What is still unclaimed, by family — the M4d inventory
+
+Measured 2026-08-26 against both boards' real images, at `ca993fe`. `make
+os-verify-parity` says `INCOMPLETE` and exits 2, with **zero** diverging,
+ambiguous, orphaned, ts-silent or unfired rows on either board.
+
+| | cx3576 | x64 |
+|---|---|---|
+| oracle conclusions | 398 | 312 |
+| compared, and agreeing | 236 | 193 |
+| **UNCLAIMED** | **162** | **119** |
+
+Batches 1–3 have claimed 59% of cx3576's conclusions and 62% of x64's. What
+remains is 29 families. `(Ns)` marks how many of a family's unclaimed
+conclusions are SKIPs, which never equal a pass and so need a register entry of
+their own.
+
+**A. Reads only the unpacked root — no new tool binding, same shape as batches
+2a and 3.** 88 on cx3576, 69 on x64.
+
+| family | cx3576 | x64 |
+|---|---|---|
+| the D-Bus policies (mosd, ext, bluez) | 11 | 11 (1s) |
+| the connd contract and the Wi-Fi userland | 20 | 2 (1s) |
+| the container engine | 10 | 10 |
+| /home, /root and the mos account | 10 | 10 |
+| the package-manager purge | 5 | 5 |
+| the bootloader environment tools | 5 | 4 (2s) |
+| the STATE-backed binds and the mount units | 4 | 4 (1s) |
+| the image profile | 4 | 4 |
+| systemd-repart definitions | 3 | 3 |
+| sshd's AuthorizedKeysFile | 3 | 3 |
+| libcrypt and the crypt(3) format | 3 | 3 |
+| the ELF architecture of the two daemons | 2 | 2 |
+| the networkd namespace | 2 | 2 |
+| ssh.service reload semantics | 2 | 2 |
+| the health gate's two root-side conclusions | 2 | 2 |
+| systemd-networkd is enabled | 1 | 1 |
+| the boot scripts' external commands | 1 | 1 |
+
+**B. Reads image BYTES, and three of these need a tool this harness does not yet
+drive.** 74 on cx3576, 50 on x64.
+
+| family | cx3576 | x64 | needs |
+|---|---|---|---|
+| the four ext4 storage tiers | 25 | 25 | `e2fsck -fn` |
+| boot slot: the status-LED device tree | 12 | 2 (2s) | **`fdtget`** |
+| dm-verity and the kernel cmdline | 8 | 8 | — (`verityVerify` exists) |
+| boot.scr: the compiled boot script | 7 | 2 (2s) | uImage header parsing |
+| the raw pre-GPT U-Boot blob | 4 | 1 (1s) | — |
+| boot slot: the BSP artifact byte-compare | 4 | 0 | reads `board/<board>/out/` |
+| the U-Boot verity env pair | 3 | 0 | — |
+| factory: the zero-filled regions | 3 | 1 (1s) | — |
+| the ESP and the GRUB boot chain | 2 (2s) | 5 | — |
+| file capabilities | 2 | 2 | xattr read in the container |
+| RAUC's `rauc.slot=` on the boot path | 2 | 2 | — |
+| GPT: the partition count | 1 | 1 | the anchored matcher above |
+| image-shape: the default path is the -latest symlink | 1 | 1 | — |
+
+### Is a fourth batch needed?
+
+**Yes, and realistically two.** Three porting batches was the campaign's
+estimate; batches 1–3 claimed 236 and 193 conclusions and left 162 and 119, so
+the remainder is roughly the size of batch 3 twice over. M4e cannot delete
+`os/verify-image-v2.sh` until it is zero, and a batch that tried to take all of
+group A and all of group B at once would land the tool bindings and the port
+that depends on them in one change.
+
+The split above is the recommended one, because it is the split by what a batch
+has to BUILD rather than by what the oracle happens to print next to what:
+
+* **batch 4a — group A.** 88 conclusions on cx3576 and 69 on x64, every one of
+  them `packedRoot()` plus a read. No new tool, no new context method. The
+  Wi-Fi family is the largest single piece and needs the connd contract read
+  out of the `mosd/` sources, which is what the oracle does (`:1030`) — reading
+  those sources is in scope; changing them is not.
+* **batch 4b — group B.** 74 and 50, and three tool bindings first: `fdtget`
+  (12 conclusions on cx3576 hang on it), `e2fsck -fn` (4 per board), and a
+  uImage header reader for `boot.scr`. `ext4Super`, `ext4List`, `ext4Stat`,
+  `debugfsRun` and `verityVerify` already exist in `src/image.ts`.
+
+Then **M4e** deletes the oracle at exit 0.
+
 ## What the suite covers
 
 | file | what it proves |
@@ -417,6 +543,9 @@ both reject, four of the port's sentences are deliberately different — see
 | `src/board.test.ts` | the model against **both** shipped boards: cx3576's 11 partitions, raw loader, redundant U-Boot environment, radios and hwinit confs; x64's 9, no loader, GRUB with no attempt counters, and the lists it declares **empty on purpose**. Plus a real board definition with a `$(...)` injected, which must be refused by name |
 | `src/lint.test.ts` | the board-definition schema lint: lint-test.sh's fourteen cases ported, eleven empty-declaration cases it never had, three that are not data, both shipped layouts accepted — and the positive control that x64's three deliberately empty lists are still a statement rather than a fault |
 | `src/paths.test.ts` | the ascents, at the count used and at the counts on either side |
+| `src/checks-board.test.ts` | batch 3's board-conditional families, each driven three ways — green on the board with the hardware, RED on a mutation of it, and SKIPPED on the board that declares it absent. Includes the first run ever made of `check_status_led`'s `BOARD_HAS_STATUS_LED=0` branch in its FAILING direction |
+| `src/checks-mqtt.test.ts` | the MQTT bridge and broker: present, startable, and INERT — plus the D-Bus policy read with its attributes wrapped across lines and a rule commented out, which is how the oracle first mis-read the real file |
+| `src/checks-shadow.test.ts` | the transient-password contract end to end, and the recorded disagreement between the oracle's two locked-field checks about an EMPTY password field |
 
 A model exercised only on fixtures its author wrote is a model of its author's
 expectations. Anything that passes on cx3576 alone is half tested.

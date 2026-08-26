@@ -72,8 +72,14 @@ export async function packedRoot(ctx: ImageContext): Promise<string> {
   return root
 }
 
-/** `lstat`, or undefined. Never follows a link: what is AT the path is the question. */
-function entry(root: string, path: string): Stats | undefined {
+/**
+ * `lstat`, or undefined. Never follows a link: what is AT the path is the question.
+ *
+ * Exported for M4d: the board-conditional families read the same tree through
+ * the same predicate, and a second spelling of "a regular file and not a link
+ * to one" beside this one is how two batches come to disagree about a path.
+ */
+export function entry(root: string, path: string): Stats | undefined {
   try {
     return lstatSync(join(root, path))
   }
@@ -271,8 +277,8 @@ function grepCheck(c: GrepCase): CheckCase {
  * -- are statically enabled by a symlink the VENDOR ships and asserting only
  * /etc would fail on a correctly enabled unit.
  */
-const ETC_UNITS = ['/etc/systemd/system'] as const
-const ANY_UNITS = ['/etc/systemd/system', '/usr/lib/systemd/system'] as const
+export const ETC_UNITS = ['/etc/systemd/system'] as const
+export const ANY_UNITS = ['/etc/systemd/system', '/usr/lib/systemd/system'] as const
 
 /**
  * The first `*.wants/<unit>` under any of `trees`, as a root-relative path.
@@ -282,7 +288,7 @@ const ANY_UNITS = ['/etc/systemd/system', '/usr/lib/systemd/system'] as const
  * unit enabled from a different target produces the same message on both sides
  * rather than a divergence about which of two true paths to name.
  */
-function wantsLink(root: string, trees: readonly string[], unit: string): string | undefined {
+export function wantsLink(root: string, trees: readonly string[], unit: string): string | undefined {
   const found: string[] = []
   const walk = (dir: string): void => {
     let entries: string[]
