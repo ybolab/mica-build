@@ -1,19 +1,17 @@
 /**
  * The proof that this suite can fail.
  *
- * A check only ever observed passing is not evidence here, the shape
+ * A check only ever observed passing is not evidence here -- the shape
  * `os/verify-image-v2.sh`, `docs-verify-test` and `os-layout-lint-test`
- * establish. So every assertion helper, the cookie jar, the redirect refusal,
- * the verbatim writer and the phase runner are driven against wrong inputs,
- * each required to have failed with its own message, with positive controls
- * alongside because a helper hardwired to always fail
- * satisfies the negatives alone. The peer is a stub HTTP server on loopback
- * over `node:net`, needing no network, docker, QEMU or image and carrying no
- * private key, so `inspectCertificate()` is exercised against apid in phase 01
- * instead -- a stated limit, taken over a TLS key that would be a secret-scan
- * alarm and an expiry cliff.
+ * establish. Every assertion helper, the cookie jar, the redirect refusal, the
+ * verbatim writer and the phase runner are driven against wrong inputs and each
+ * must fail with its own message, with positive controls alongside because a
+ * helper hardwired to fail satisfies the negatives alone. It needs no network,
+ * docker, QEMU or image: the peer is a stub HTTP server on loopback over
+ * `node:net`, carrying no private key, so `inspectCertificate()` is exercised
+ * against apid in phase 01 instead -- a stated limit, taken over a TLS key that
+ * would be a secret-scan alarm and an expiry cliff.
  */
-
 import * as net from "node:net";
 
 import {
