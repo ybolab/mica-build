@@ -11,7 +11,8 @@ image tag the next one starts `FROM`:
 ```
 10-base ──▶ 20-install ──▶ 30-feature-radios ──▶ 31-feature-containers ──▶
             32-feature-rauc ──▶ 33-feature-mosd ──▶ 34-feature-mqtt ──▶
-            40-board ──▶ 90-pack ──▶ _out/<board>/
+            40-board ──▶ 90-pack ──┬─▶ artifact     ──▶ _out/<board>/
+                                   └─▶ factory-root ──▶ _out/<board>/factory-root.oci
 ```
 
 Every stage after the first declares `ARG MOS_STAGE_PREV` with **no default**
@@ -31,6 +32,119 @@ driver lives" below.
 file; removing one is removing a file. A list kept somewhere else is the second
 table this repository keeps deleting — and a stage added without being added to
 it would be a stage that silently never runs.
+
+## The terminal stage has two export surfaces
+
+`90-pack` is built twice, against one cache, for two different kinds of output:
+
+| target | output | who reads it |
+| --- | --- | --- |
+| `artifact` | `--output type=local` into `_out/<board>/` | the image assembler: `rootfs-verity.img`, the verity env, the boot pair, the factory `/var` |
+| `factory-root` | `--output type=oci` to `_out/<board>/factory-root.oci` | RFCT-113's smoke runner, which `docker load`s it and executes the self-built binaries inside |
+
+**Two invocations and not two `--output` flags**, because buildkit exports one
+target per build. The second is deliberately built **without** `--no-cache`
+even when the chain was built with it: `--no-cache` exists for the determinism
+gate, where the chain must not be a replay — and this invocation *must* be a
+replay, of the run that finished seconds ago. Cold, it would rebuild all nine
+stages and export a **different** root from the one the assembler was just
+handed, with nothing in either artifact to say which of the two was
+smoke-tested.
+
+**`factory-root` is `pack`'s `/rootfs`, not `closed`.** `closed` is the same
+root three edits earlier — it still has a populated `/var` and a real
+`/etc/shadow`, because the tree surgery and the shadow relocation happen in
+`pack`. Exporting `closed` would be cheaper (it is already an image, already on
+the target platform) and would smoke-test binaries in a tree that never ships.
+`/rootfs` at the point of the export is the byte-for-byte input to
+`mksquashfs`.
+
+**The factory `/var` this stage already exported is not this.**
+`_out/<board>/factory-var` is 93 entries of `/usr/share/factory/var` — the seed
+`mkfs.ext4 -d` writes into EPHEMERAL at assembly (RFCT-106). It is a *subtree
+of* the factory root, at a path inside it, and about 0.08% of its size.
+
+### What makes the OCI export reproduce — measured 2026-08-26, x64
+
+Every number below is from the real 250,209,280-byte export of the x64 root,
+not from a reduced case. Two of the three flags are load-bearing and **one is
+not**; which is which is the whole reason to write them down.
+
+| | what it pins | measured without it |
+| --- | --- | --- |
+| `SOURCE_DATE_EPOCH` (environment, not a flag) | the image config's `created` | two exports of ONE already-built root: `e4ac0c42…` and `2c98780c…` — **differ** |
+| `rewrite-timestamp=true` on the output | every layer entry's mtime | two **cold** rebuilds of the pack stage: `044a7457…` and `f41e9a21…` — **differ** |
+| `--provenance=false --sbom=false` | no attestation manifests | identical archive — **not load-bearing** for `type=oci` on buildx 0.32.2 |
+
+With the epoch and `rewrite-timestamp`, four exports agreed byte-for-byte —
+two from a warm cache and two from a cold rebuild of the whole pack stage, all
+`6e036711ce306cd2e2689091aa41a64866aaab1254dc8cdba2197e0135495ba1`. Same input
+root, same archive, whether or not the layer was rebuilt.
+
+**`rewrite-timestamp` is the one a convenient experiment gets wrong.** From a
+warm cache the layer's mtimes come out of the cache, so both runs agree with or
+without it — it changes the bytes but not the agreement. It only becomes
+load-bearing when the layer is genuinely rebuilt, which is exactly the case two
+independent builds are, and exactly the case a quick check does not exercise.
+It also cannot be combined with `--load`: buildkit refuses it alongside
+`unpack`, so the export cannot both reproduce and land straight in the image
+store. It reproduces, and `docker load -i` is the reader's step.
+
+**`--provenance=false --sbom=false` is kept although it changed nothing.** The
+attestation manifest was real — it was observed on a `--load`, which is where
+this was first looked at — and buildx has moved its provenance default between
+versions before. Two flags is a cheap way not to depend on an exporter default
+that is not ours to set. It is recorded as *not* currently load-bearing so that
+nobody later cites it as the thing that fixed the reproducibility.
+
+`SOURCE_DATE_EPOCH` is read from the **environment**, so a missing or malformed
+value is not an error — it is the wall clock, silently.
+`os/build/src/stages-cli.ts` refuses a `--source-date-epoch` that is not a
+count of seconds for that reason, including the `@1577836800` spelling
+`board.env` uses for `touch`.
+
+### The export is the same tree as the image that ships — measured
+
+`90-pack` packs `pack`'s `/rootfs` into the squashfs and exports the same
+`/rootfs` as the OCI image. That they are one tree is the whole basis for a
+smoke run in one saying anything about the other, so it was compared rather
+than assumed — the squashfs unpacked and the OCI layer unpacked, four ways:
+
+| comparison | x64, 2026-08-26 |
+| --- | --- |
+| entries | **9,240 on both** (9,241 counting the root directory, which is how `unsquashfs -lln` counts and where M5's figure comes from) |
+| mode, uid, gid, path over every entry | **identical** |
+| content, `diff -r --no-dereference` | **identical** |
+| file capabilities | identical — and **0 entries on both sides** |
+| hardlinks (`%n` per multiply-linked file) | **6 on both**, identical |
+
+`--no-dereference` because `/etc/shadow` is a dangling symlink to
+`/run/mos/shadow` by design; followed, it would compare nothing on both sides
+and report agreement.
+
+**All five were driven from the failing side**, because four of them had only
+ever been seen agreeing and the capability line had *nothing at all* behind it.
+Applied to the OCI side alone and then reverted: a single mode bit
+(`0755→0700`), a single gid (`0→42`), a renamed path, a single byte at offset
+64, `cap_net_raw+ep` added to one binary, and one hardlink
+(`usr/lib/klibc/bin/gunzip` ↔ `gzip`) broken into two files. Each turned its
+comparison red and each went silent again on revert. Without the capability
+mutation that row was an empty file compared with an empty file.
+
+### Adding the export changed nothing that ships — measured
+
+Built `--target artifact` from the pre-M7 `90-pack` and from this one against
+the same cache: `rootfs-verity.img` came out
+`9a8484f9c19c4001ee35b818970d8e89fa99184fc8fd675d3b22859b068c4ed0` from both,
+and from the shipped build. A third build with one extra file staged into
+`/rootfs` before the squash gave `6a65e311…`, so the comparison can see a change
+to the artifact DAG and did not see this one. `factory-root` is a leaf nothing
+starts `FROM`, and the header comments it adds are comments.
+
+**`rewrite-timestamp` cannot be combined with loading.** buildkit refuses it
+alongside `unpack`, which is what `--load` does. So the export cannot both
+reproduce and land straight in the image store; it reproduces, and
+`docker load -i _out/<board>/factory-root.oci` is the reader's step.
 
 ## Why these numbers
 

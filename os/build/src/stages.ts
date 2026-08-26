@@ -523,19 +523,28 @@ const EPOCH_SECONDS = /^\d+$/
  * consume -- two roots per build, differing for the reasons os/rootfs/README.md
  * records, with nothing to say which one was smoke-tested.
  *
- * THE THREE FLAGS THAT MAKE IT REPRODUCE, each measured on this host rather
- * than read:
- *   SOURCE_DATE_EPOCH   pins the image config's `created`. Without it two cold
- *                       builds differ in the config alone.
- *   rewrite-timestamp   pins the LAYER's mtimes. SOURCE_DATE_EPOCH does NOT do
- *                       this on its own -- two cold builds one second apart
- *                       gave layer diffIDs differing only in every entry's
- *                       timestamp, and the config was already identical. This
- *                       is why the epoch is not enough and why the pair is
- *                       passed together.
- *   --provenance/--sbom Attestations carry their own build timestamps and turn
- *                       the export into a manifest LIST. Off.
- * With all three, two cold builds of one tree gave a byte-identical archive.
+ * WHAT MAKES IT REPRODUCE, measured on the real 250 MB export of the x64 root
+ * rather than reasoned about. Two of these are load-bearing and one is not,
+ * and saying which is which is the point of writing them down:
+ *
+ *   SOURCE_DATE_EPOCH   Load-bearing. Pins the image config's `created`.
+ *                       Without it, two exports of ONE already-built root gave
+ *                       two different archives.
+ *   rewrite-timestamp   Load-bearing, but ONLY when the layer is genuinely
+ *                       rebuilt -- which is the case that matters and the one
+ *                       a convenient experiment misses. Two cold rebuilds of
+ *                       the pack stage without it: two different archives.
+ *                       With it: byte-identical, and equal to the warm build's.
+ *                       From a WARM cache it changes the bytes but both runs
+ *                       still agree, so measuring it warm would have "proved"
+ *                       it unnecessary.
+ *   --provenance/--sbom NOT load-bearing here, and kept anyway. Omitting them
+ *                       gave the identical archive: buildx 0.32.2 adds no
+ *                       attestation to a `type=oci` export. It does add one to
+ *                       a `--load`, which is where this was first seen, and the
+ *                       default has moved between buildx versions before. Two
+ *                       flags is a cheap way not to depend on an exporter
+ *                       default that is not ours to set.
  *
  * `rewrite-timestamp` CONFLICTS WITH LOADING. buildkit refuses
  * `rewrite-timestamp` together with `unpack`, which is what `--load` does -- so
