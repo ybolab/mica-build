@@ -1,46 +1,40 @@
-// The DERIVED layout of an x64 image: how big the rootfs slot is, and where
+// The derived layout of an x64 image: how big the rootfs slot is, and where
 // everything after it starts.
 //
-// BESIDE src/layout-cx3576.ts, NOT A `case` INSIDE IT. The two boards agree on
-// the IDEA -- a rootfs slot sized from the built payload, with everything after
-// it chained off that size -- and on almost nothing about the arithmetic that
-// implements it or the partition set it places. Three differences, each of which
-// changes a number or a behaviour rather than a spelling:
-//
-//   1. THE HEADROOM IS APPLIED IN BYTES, NOT IN MiB. os/mkimage-x64.sh:117 is
-//        slot_mib=$(( (rootfs_bytes * PCT / 100 + MIB_BYTES - 1) / MIB_BYTES ))
-//      -- percentage first, on the byte count, THEN the ceiling to MiB. cx3576's
-//      is `(payload_mib * pct + 99) / 100`: the ceiling to MiB happens first and
-//      the percentage is applied to a whole number of MiB. Those are not the same
-//      function. They agree whenever the payload is a whole MiB (which is what
-//      os/mkimage-v2.sh REFUSES to proceed without and os/mkimage-x64.sh never
-//      checks) and they diverge otherwise -- see the table in layout-x64.test.ts,
-//      which drives both spellings over the same payloads and shows where: they
-//      agree on all 2048 whole-MiB payloads and disagree on thousands of others.
-//
-//   2. THERE IS NO PINNED MODE. os/mkimage-v2.sh captures
-//      `${MOS_ROOTFS_SLOT_MIB+set}` BEFORE sourcing the board file, precisely so
-//      an environment pin selects the frozen-geometry mode. os/mkimage-x64.sh
-//      does not: it sources os/boards/x64/board.env at line 74 and reads
-//      MOS_ROOTFS_SLOT_MIB at line 119, so the board's 512 has already
-//      overwritten anything the environment said. x64 has exactly one mode, the
-//      floor, and this file has one too. Adding a pinned mode here would give the
-//      x64 release path a behaviour the shell it is gated against has never had,
-//      inside the milestone whose whole job is to prove nothing changed.
-//
-//   3. THE ALIGNMENT IS THE BOARD'S 2048 AND EVERY START IS ALREADY ON IT.
-//      cx3576 must pass `-a 1` or sgdisk relocates its sector-64 loader; x64's
-//      first partition starts at 1 MiB and there is no loader partition at all.
-//      See gptSpecFor below for what is passed and what was measured.
-//
-// PURE, AND THAT IS THE POINT -- the reasoning is layout-cx3576.ts's and it holds
-// here for the same reason. The arithmetic that decides where DATA starts is what
-// a byte-identity gate is really comparing, and an arithmetic bug reachable only
-// by assembling a 1.9 GiB image is a bug found by diffing 1.9 GiB. Nothing below
-// touches a disk, a container or a tool.
+// Beside src/layout-cx3576.ts, not a `case` inside it. The two boards agree on
+// the idea -- a rootfs slot sized from the built payload, everything after it
+// chained off that size -- and on almost nothing about the arithmetic or the
+// partition set. Pure for layout-cx3576.ts's reason: the arithmetic that
+// decides where DATA starts is what a byte-identity gate really compares, and a
+// bug reachable only by assembling a 1.9 GiB image is found by diffing 1.9 GiB.
+// Nothing below touches a disk, a container or a tool.
 
 import type { Geometry, PlacedPartition } from './geometry.ts'
 import type { GptSpec } from './tools/sgdisk.ts'
+
+// Three differences from cx3576, each changing a number or a behaviour rather
+// than a spelling:
+//
+//   1. The headroom is applied in bytes, not in MiB. os/mkimage-x64.sh:117 is
+//        slot_mib=$(( (rootfs_bytes * PCT / 100 + MIB_BYTES - 1) / MIB_BYTES ))
+//      -- percentage first on the byte count, then the ceiling to MiB. cx3576's
+//      is `(payload_mib * pct + 99) / 100`, ceiling first. Those are not the
+//      same function: they agree whenever the payload is a whole MiB (which
+//      os/mkimage-v2.sh refuses to proceed without and os/mkimage-x64.sh never
+//      checks) and diverge otherwise -- layout-x64.test.ts drives both
+//      spellings over the same payloads, agreeing on all 2048 whole-MiB ones
+//      and disagreeing on thousands of others.
+//   2. There is no pinned mode. os/mkimage-v2.sh captures
+//      `${MOS_ROOTFS_SLOT_MIB+set}` before sourcing the board file so an
+//      environment pin selects the frozen-geometry mode; os/mkimage-x64.sh
+//      sources os/boards/x64/board.env at line 74 and reads
+//      MOS_ROOTFS_SLOT_MIB at line 119, by which point the board's 512 has
+//      overwritten anything the environment said. x64 has one mode, the floor,
+//      and so does this file.
+//   3. The alignment is the board's 2048 and every start is already on it.
+//      cx3576 must pass `-a 1` or sgdisk relocates its sector-64 loader; x64's
+//      first partition starts at 1 MiB and there is no loader partition at all.
+//      See gptSpecFor below for what is passed and what was measured.
 
 export interface SlotDecision {
   readonly slotMib: bigint
@@ -61,7 +55,7 @@ export interface SlotDecision {
  * step by step rather than as one expression because each step truncates, and a
  * rearrangement that looks equivalent in algebra is not equivalent in integers.
  *
- * @param payloadBytes the size of rootfs-verity.img, in bytes. NOT in MiB: the
+ * @param payloadBytes the size of rootfs-verity.img, in bytes, NOT in MiB: the
  *   shell reads `stat -c%s` and multiplies the byte count by the percentage, so
  *   a port that rounded to MiB first would agree on every whole-MiB payload and
  *   quietly disagree on the rest.
@@ -192,29 +186,25 @@ function startSectorsOf(geometry: Geometry, p: PlacedPartition, layout: DerivedL
 /**
  * The whole GPT, as one spec, in LAYOUT_PARTITIONS order.
  *
- * ORDER IS READ OFF THE BOARD, not written here -- os/mkimage-x64.sh:421-458
- * spells nine --new flags in a fixed sequence, which is a second copy of
- * LAYOUT_PARTITIONS that nothing checks. A partition added to the board file and
- * forgotten in the assembler is a partition sgdisk never writes, and the shell
- * has no way to notice.
+ * Order is read off the board, not written here -- os/mkimage-x64.sh:421-458
+ * spells nine --new flags in a fixed sequence, a second copy of
+ * LAYOUT_PARTITIONS that nothing checks. A partition added to the board file
+ * and forgotten in the assembler is one sgdisk never writes.
  *
- * THE ALIGNMENT is passed explicitly -- the board's GPT_ALIGN_SECTORS, which
- * x64 declares as 2048 -- rather than left to sgdisk's default, which is the
- * same number. The two are byte-identical (mkimage-x64.test.ts writes both
- * tables with a real sgdisk over the real x64 geometry and compares the
- * bytes); spelling it out is what keeps the board the single source of truth
- * for its own geometry. GPT_ALIGN_SECTORS=2048 sits
- * in os/boards/x64/board.env today, and an assembler that ignored it would keep
- * agreeing with the file only for as long as the file kept agreeing with
+ * The alignment is passed explicitly -- the board's GPT_ALIGN_SECTORS, 2048 --
+ * rather than left to sgdisk's default, which is the same number. The two are
+ * byte-identical (mkimage-x64.test.ts writes both tables with a real sgdisk
+ * over the real x64 geometry and compares the bytes); spelling it out keeps the
+ * board the single source of truth for its own geometry, since an assembler
+ * that ignored it would agree with the file only while the file agreed with
  * sgdisk's built-in default.
  *
- * There is no loader read-back here and that absence is deliberate rather than
- * an omission: cx3576 needs one because its loader starts at sector 64 and
- * sgdisk silently relocates a non-2048-aligned start. Every x64 start is a whole
- * MiB, which is 2048 sectors, so no start here is relocatable -- and
- * checkPartitionsLanded in src/mkimage-x64.ts reads the assembled table back
- * anyway, because "no start here is relocatable" is a claim about the board file
- * and not about the table sgdisk wrote.
+ * There is no loader read-back here, deliberately: cx3576 needs one because its
+ * loader starts at sector 64 and sgdisk silently relocates a non-2048-aligned
+ * start, while every x64 start is a whole MiB, which is 2048 sectors. Even so,
+ * checkPartitionsLanded in src/mkimage-x64.ts reads the assembled table back,
+ * because "no start here is relocatable" is a claim about the board file and
+ * not about the table sgdisk wrote.
  */
 export function gptSpecFor(geometry: Geometry, layout: DerivedLayout): GptSpec {
   return {

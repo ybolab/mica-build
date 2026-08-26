@@ -4,11 +4,11 @@
 // control beside it -- see src/bundle.test.ts's header for why a table of
 // refusals without controls is satisfied by a function that refuses everything.
 //
-// EVERY GUARD HERE IS REACHABLE WITHOUT BREAKING THE TREE. The three that read
+// Every guard here is reachable without breaking the tree. The three that read
 // the filesystem -- the board definition, the signing material, the required
-// inputs -- take their `exists` as a parameter for that reason. A guard that
-// can only fire when os/update/rauc/.devkeys has been deleted is a guard nobody
-// has run, and M3a and M3b each shipped one of those.
+// inputs -- take their `exists` as a parameter for that reason: a guard that can
+// only fire when os/update/rauc/.devkeys has been deleted is a guard nobody has
+// run.
 
 import { describe, expect, test } from 'bun:test'
 import { existsSync, readFileSync } from 'node:fs'
@@ -40,7 +40,7 @@ function only(...paths: string[]): (p: string) => boolean {
   return p => set.has(p)
 }
 
-// --- G1: the board definition -----------------------------------------------
+// G1: the board definition.
 
 describe('the board definition is refused by NAME, not by ENOENT', () => {
   test('POSITIVE CONTROL: every board this tree ships is accepted', () => {
@@ -61,7 +61,7 @@ describe('the board definition is refused by NAME, not by ENOENT', () => {
   })
 })
 
-// --- G23: the version string -------------------------------------------------
+// G23: the version string.
 
 describe('the version string reaches a filename and a manifest, so it is checked', () => {
   test('POSITIVE CONTROL: the shapes a release actually uses are accepted', () => {
@@ -97,7 +97,7 @@ describe('the version string reaches a filename and a manifest, so it is checked
   })
 })
 
-// --- G24: the compatible string ----------------------------------------------
+// G24: the compatible string.
 
 describe('the compatible string, read out of the rendered system.conf', () => {
   test('POSITIVE CONTROL: the shipped system.conf yields one, when it is rendered', () => {
@@ -133,7 +133,7 @@ describe('the compatible string, read out of the rendered system.conf', () => {
   })
 })
 
-// --- G25, G26: the signing material ------------------------------------------
+// G25, G26: the signing material.
 
 describe('CERT/KEY/KEYRING are resolved and checked before anything runs', () => {
   test('POSITIVE CONTROL: with no environment, the three devkey paths are the defaults', () => {
@@ -191,7 +191,7 @@ describe('CERT/KEY/KEYRING are resolved and checked before anything runs', () =>
   })
 })
 
-// --- G27, G28: the inputs ----------------------------------------------------
+// G27, G28: the inputs.
 
 describe('the two families of missing input get different sentences', () => {
   const rootfsSide = ['/out/rootfs-verity.img', '/out/rootfs-verity.env']
@@ -237,7 +237,7 @@ describe('the two families of missing input get different sentences', () => {
   })
 })
 
-// --- G29: the build host's architecture --------------------------------------
+// G29: the build host's architecture.
 
 describe('the HOST\'s architecture, not the board\'s', () => {
   test('POSITIVE CONTROL: both spellings of both architectures are accepted', () => {
@@ -263,7 +263,7 @@ describe('the HOST\'s architecture, not the board\'s', () => {
   })
 })
 
-// --- G30: the rauc this tree built -------------------------------------------
+// G30: the rauc this tree built.
 
 describe('the rauc that writes the bundle is the one this tree built', () => {
   test('POSITIVE CONTROL: a binary that is there is returned, with its path', () => {
@@ -285,7 +285,7 @@ describe('the rauc that writes the bundle is the one this tree built', () => {
   })
 })
 
-// --- the argument parser -----------------------------------------------------
+// The argument parser.
 
 describe('the arguments, and the defaults they fall back to', () => {
   test('POSITIVE CONTROL: no arguments and no environment is the shipping invocation', () => {

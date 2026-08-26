@@ -1,31 +1,26 @@
 //! The asset router: `docs/design/api.md` §4.1 rule 4, §4.2 and §4.3's
 //! application.
 //!
-//! Two entry points, and the split between them is §4.1's:
+//! [`fallback`] is mounted as the router's fallback, which is what makes §4.1's
+//! precedence structural: axum matches declared routes before it consults a
+//! fallback, so a bundle shipping a file at `api/v1/settings` or at `healthz`
+//! cannot capture either — not because anything here checks the prefix, but
+//! because this function is never called for a path the router matched. Nothing
+//! below re-derives that rule, and nothing below may: "a rule enforced by the
+//! dispatch mechanism is worth more than a rule enforced by a check somebody
+//! can forget to write" (§4.1). [`root`] is `GET /`, §4.1's single declared
+//! exception: the active bundle's `index.html` when a bundle is active and its
+//! index is readable, and the built-in UI otherwise.
 //!
-//! - [`fallback`] is mounted as the *router's* fallback, which is what makes
-//!   §4.1's precedence structural. axum matches declared routes before it
-//!   consults a fallback, so a bundle shipping a file at `api/v1/settings` or
-//!   at `healthz` cannot capture either — not because anything here checks the
-//!   prefix, but because this function is never called for a path the router
-//!   matched. Nothing below re-derives that rule, and nothing below may:
-//!   *"a rule enforced by the dispatch mechanism is worth more than a rule
-//!   enforced by a check somebody can forget to write"* (§4.1).
-//! - [`root`] is `GET /`, §4.1's single declared exception: the active
-//!   bundle's `index.html` when a bundle is active and its index is readable,
-//!   and the built-in UI otherwise.
-//!
-//! [`fallback`] answers §4.2's five conditions in order. Condition 1 is the
-//! mounting above and costs no code; condition 2 is the method check;
-//! conditions 3 and 4 are [`offers_html`] and [`ends_in_a_route_segment`];
-//! condition 5 is whether [`serve_index`] produced anything. When it did not,
-//! the answer is the **built-in UI** — §6.1 classes 1, 2 and 4 are not errors
-//! and are not logged as any.
-//!
-//! §4.3 is applied rather than re-decided: [`super::mime::content_type`] and
-//! [`super::mime::cache_class`] answer the headers, `nosniff` goes on every
-//! response this module builds, and every HTML document — the bundle's index,
-//! the SPA fallback and the built-in UI alike — is `no-store`.
+//! [`fallback`] answers §4.2's five conditions in order — condition 1 is the
+//! mounting above and costs no code, 2 is the method check, 3 and 4 are
+//! [`offers_html`] and [`ends_in_a_route_segment`], 5 is whether
+//! [`serve_index`] produced anything. When it did not, the answer is the
+//! built-in UI: §6.1 classes 1, 2 and 4 are not errors and are not logged as
+//! any. §4.3 is applied rather than re-decided: [`super::mime::content_type`]
+//! and [`super::mime::cache_class`] answer the headers, `nosniff` goes on every
+//! response this module builds, and every HTML document — bundle index, SPA
+//! fallback and built-in UI alike — is `no-store`.
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -196,23 +191,19 @@ async fn built_in(state: &AppState) -> Response {
 
 /// §4.2 condition 3: the client asked for HTML.
 ///
-/// The header must offer `text/html` **explicitly**, as `text/html` or as
-/// `text/*`. A `*/*` does not count, and neither does an absent `Accept`.
-///
-/// That is the reading §4.2's acceptance property forces. The property is
-/// *"a request that a developer expected to be JSON never returns HTML with a
-/// 200"*, and the request that reaches this function expecting JSON is
-/// commonly a `fetch()` that set no `Accept` at all — the default is `*/*`.
-/// Counting `*/*` as an offer of HTML hands exactly that request a 200 and an
-/// HTML body, which is the failure §4.2 exists to prevent; a `*/*` client has
-/// not separated a navigation from a data call, which §4.2 names as this
-/// condition's whole job.
+/// The header must offer `text/html` explicitly, as `text/html` or as `text/*`.
+/// A `*/*` does not count, and neither does an absent `Accept`. That is what
+/// §4.2's acceptance property forces — "a request that a developer expected to
+/// be JSON never returns HTML with a 200" — because the request reaching here
+/// expecting JSON is commonly a `fetch()` that set no `Accept` at all, whose
+/// default is `*/*`. Counting `*/*` as an offer of HTML hands exactly that
+/// request a 200 and an HTML body.
 ///
 /// The cost, stated: `curl https://<device>/settings/network` gets a 404 where
 /// a browser at the same URL gets the application. Browsers always send an
-/// explicit `text/html` on a navigation, so no navigation is affected, and
-/// `GET /` is a declared route with no `Accept` condition at all — so the
-/// device root still answers a bare `curl` with the bundle's index.
+/// explicit `text/html` on a navigation, so no navigation is affected, and `GET
+/// /` is a declared route with no `Accept` condition, so the device root still
+/// answers a bare `curl` with the bundle's index.
 fn offers_html(accept: Option<&str>) -> bool {
     accept.is_some_and(|accept| {
         accept.split(',').any(|range| {

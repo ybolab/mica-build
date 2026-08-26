@@ -1,20 +1,16 @@
 // The toolsets, one per container the shell runs today, transcribed rather
 // than tidied.
 //
-// EVERY PACKAGE LIST HERE IS A COPY OF A LINE IN THE SHELL, deliberately
-// unchanged. M6b, M6c and M6d are gated on producing BYTE-IDENTICAL images and
-// bundles against those scripts, and which package provided mkfs.vfat or
-// mksquashfs is exactly the kind of thing that decides bytes -- see the note in
-// os/mkimage-x64.sh about BOOTX64.EFI being only as reproducible as the
-// grub-efi-amd64-bin in its container. So the lists are not merged, not sorted
-// and not deduplicated across toolsets: the two assemblers deliberately use
-// DIFFERENT base images (alpine for cx3576, debian for x64) and unifying them
-// would be a change to the shipped bytes made in the milestone that is supposed
-// to prove nothing changed.
+// Every package list here is a copy of a line in the shell, deliberately
+// unchanged: the byte-identity gate compares images and bundles against those
+// scripts, and which package provided mkfs.vfat or mksquashfs is exactly the
+// kind of thing that decides bytes -- os/mkimage-x64.sh notes that BOOTX64.EFI
+// is only as reproducible as the grub-efi-amd64-bin in its container. So the
+// lists are not merged, not sorted and not deduplicated across toolsets: the
+// two assemblers deliberately use different base images (alpine for cx3576,
+// debian for x64), and unifying them would change the shipped bytes.
 //
-// EVERY IMAGE IS AN images.env KEY, never a literal reference. R6's sweep
-// removed the last floating tag from the shipping path; os/build starts with
-// none.
+// Every image is an images.env key, never a literal reference.
 
 import { existsSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
@@ -107,22 +103,19 @@ export const X64_ASSEMBLY: Toolset = {
   manager: 'apt',
   packages: ['gdisk', 'dosfstools', 'mtools', 'e2fsprogs', 'grub-efi-amd64-bin', 'grub-common'],
   // grub-editenv sits beside grub-mkstandalone because os/mkimage-x64.sh runs
-  // BOTH and they come from different packages -- grub-mkstandalone from
-  // grub-common and the EFI target from grub-efi-amd64-bin -- so "grub is
-  // installed" is not one fact. A grubenv that was never created is a 0-byte
-  // file, which the size guard catches; a grub-editenv that is absent is
-  // "command not found" attributed to whichever step ran first.
+  // both, from different packages -- grub-mkstandalone from grub-common, the
+  // EFI target from grub-efi-amd64-bin -- so "grub is installed" is not one
+  // fact. A grubenv never created is a 0-byte file the size guard catches; an
+  // absent grub-editenv is "command not found" against whichever step ran first.
   //
-  // cp, find and touch are asserted for the same reason they are in
-  // CX3576_ASSEMBLY, but note that the two assemblers stage DIFFERENT things in
-  // the container. os/mkimage-x64.sh runs `cp -a` of the factory /var ON THE
-  // HOST (line 161, outside its docker run) and runs `cp`, `find ... -exec
-  // touch` and the seed stamp INSIDE; os/mkimage-v2.sh runs all of it inside.
-  // src/mkimage-x64.ts keeps each on the side its own shell has it, because
-  // `cp -a` is `--preserve=all` -- which includes xattrs -- mke2fs -d copies
-  // xattrs into the image, and this campaign's host runs SELinux while neither
-  // container does. Moving that one step would change EPHEMERAL's bytes, and
-  // the only thing that would report it is the byte-identity gate.
+  // cp, find and touch are asserted for the reason they are in CX3576_ASSEMBLY,
+  // but the two assemblers stage different things: os/mkimage-x64.sh runs
+  // `cp -a` of the factory /var on the host (line 161, outside its docker run)
+  // and `cp`, `find ... -exec touch` and the seed stamp inside; os/mkimage-v2.sh
+  // runs all of it inside. src/mkimage-x64.ts keeps each on its own shell's side
+  // because `cp -a` is `--preserve=all`, xattrs included, mke2fs -d copies
+  // xattrs into the image, and this host runs SELinux while neither container
+  // does; moving that step changes EPHEMERAL's bytes, caught only by that gate.
   tools: [
     'sgdisk', 'mkfs.vfat', 'mcopy', 'mmd', 'mdir', 'minfo', 'mke2fs', 'dumpe2fs', 'debugfs',
     'grub-mkstandalone', 'grub-editenv', 'dd', 'truncate', 'cp', 'find', 'touch',
@@ -174,15 +167,13 @@ export function shippedRaucPath(arch: string): string {
  * 'shipped'  the binary os/update/rauc/build.sh produced from pinned source.
  * 'distro'   whatever the base image's package manager supplies.
  *
- * The distinction is load-bearing, not documentation. Commit 9a43a59 ("the
- * rauc that builds a bundle must be the rauc that installs it") records the
- * failure: bundle.sh built in bookworm -- rauc 1.8 -- while the image ran 1.13,
- * and 1.8 refused the x64 slot model the first time it was asked to read it. "A
- * format difference would not have announced itself so kindly." So a bundle is
- * written only by a rauc this tree built; src/tools/rauc.ts refuses a
- * bundle-writing call on a distro toolset, by name. Reading a bundle is
- * different -- `rauc info` on a distro rauc tells you what a distro rauc thinks,
- * which is a fair question -- so that side is allowed.
+ * The distinction is load-bearing: the rauc that builds a bundle must be the
+ * rauc that installs it. A bundle built in bookworm (rauc 1.8) for an image
+ * running 1.13 fails -- 1.8 refuses the x64 slot model the first time it is
+ * asked to read it, and "A format difference would not have announced itself so
+ * kindly." So a bundle is written only by a rauc this tree built, and
+ * src/tools/rauc.ts refuses a bundle-writing call on a distro toolset by name.
+ * Reading is allowed on either: `rauc info` on a distro rauc is a fair question.
  */
 export type RaucProvenance = 'shipped' | 'distro'
 
@@ -244,12 +235,11 @@ export function bundleToolset(options: BundleToolsetOptions = {}): Toolset & { p
 /**
  * A bundle toolset whose rauc is the base image's package.
  *
- * EXISTS SO THE rauc WRAPPER CAN BE DRIVEN AGAINST A REAL rauc IN A CLEAN
- * CHECKOUT, where the self-built binary under os/update/rauc has not been
- * produced yet. It is a real
- * rauc and it answers `--version` and `info` truthfully. It is not the rauc
- * that ships, it is marked so, and src/tools/rauc.ts refuses to write a bundle
- * with it -- see RaucProvenance.
+ * Exists so the rauc wrapper can be driven against a real rauc in a clean
+ * checkout, where the self-built binary under os/update/rauc has not been
+ * produced. It is a real rauc and answers `--version` and `info` truthfully.
+ * It is not the rauc that ships, it is marked so, and src/tools/rauc.ts refuses
+ * to write a bundle with it -- see RaucProvenance.
  */
 export function distroRaucToolset(): Toolset & { provenance: RaucProvenance } {
   return {

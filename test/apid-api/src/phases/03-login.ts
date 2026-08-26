@@ -3,11 +3,11 @@
  *
  * Phase 02 got a session by completing setup. That is a one-shot path: it can
  * never be exercised again on this device. /login is the path an operator
- * actually uses, it is a DIFFERENT handler, and it mints its own cookie -- so
+ * actually uses, it is a different handler, and it mints its own cookie -- so
  * the name and the five attributes phase 02 asserted are asserted again here,
- * one check each, against this handler's output instead. A divergence
- * between the two handlers is precisely the kind of thing a suite that only
- * checked "did I get a session?" would never see.
+ * one check each, against this handler's output instead. A divergence between
+ * the two handlers is what a suite that only checked "did I get a session?"
+ * would never see.
  *
  * This phase also leaves the login guard clean for phase 06, and says so.
  */
@@ -17,7 +17,7 @@ import type { Phase } from "../runner.ts";
 
 const SESSION_COOKIE = "apid_session";
 
-/** The same list phase 02 asserts against the SETUP handler's cookie. */
+/** The same list phase 02 asserts against the setup handler's cookie. */
 const SESSION_COOKIE_ATTRIBUTES: readonly string[] = [
   "Path=/",
   "HttpOnly",
@@ -28,7 +28,7 @@ const SESSION_COOKIE_ATTRIBUTES: readonly string[] = [
 
 /**
  * mosd/apid/src/auth.rs: BACKOFF_BASE = 1s, BACKOFF_MAX = 300s, and the window
- * after n consecutive failures is 1s * 2^(n-1), capped. Exactly ONE failed
+ * after n consecutive failures is 1s * 2^(n-1), capped. Exactly one failed
  * attempt is made below, so the window this phase has to outlast is 1s.
  */
 const BACKOFF_BASE_MS = 1_000;
@@ -50,7 +50,7 @@ const phase: Phase = {
   async run(ctx) {
     const { client, report, config } = ctx;
 
-    // Read the session BEFORE logging out: step 2 replays this exact value by
+    // Read the session before logging out: step 2 replays this exact value by
     // hand and step 6 requires the new session to differ from it.
     const previousSession = client.jar.get(SESSION_COOKIE)?.value;
     report.check(
@@ -73,7 +73,7 @@ const phase: Phase = {
       "the logout response clears the session cookie with Max-Age=0 on the same Path",
     );
 
-    // A jar that merely overwrote the value would leave the NAME present, and
+    // A jar that merely overwrote the value would leave the name present, and
     // every later "we are logged out" assertion would pass while asserting
     // nothing. Max-Age=0 is a deletion, and the jar has to treat it as one.
     report.check(
@@ -85,9 +85,9 @@ const phase: Phase = {
       ].join("\n"),
     );
 
-    // -- 2. the old session is dead SERVER-side ------------------------------
+    // -- 2. the old session is dead server-side ------------------------------
     //
-    // The check above only proves the CLIENT forgot the cookie, which any
+    // The check above only proves the client forgot the cookie, which any
     // logout that did nothing at all would also satisfy. `logout` calls
     // `state.sessions.remove`, so the session id must no longer be honoured
     // even when it is presented deliberately. Replayed by hand, with the jar
@@ -115,7 +115,7 @@ const phase: Phase = {
       );
     }
 
-    // -- 3. the gate on a CONFIGURED device ----------------------------------
+    // -- 3. the gate on a configured device ----------------------------------
     //
     // /login, not /setup. Phase 01 watched this same request go to /setup; the
     // difference is the admin password hash phase 02 wrote, and it is the
@@ -135,38 +135,20 @@ const phase: Phase = {
     const wrong = await client.post("/login", {
       password: `${config.adminPassword}-wrong`,
     });
-    // MEASURED 2026-08-24 against the live x64 guest, and the reason the first
-    // real run of this suite was red: the window must be timed from HERE, when
-    // the 401 came back, and NOT from `attemptedAt` above.
+    // The window is timed from here, when the 401 came back, and not from
+    // `attemptedAt` above. Measured 2026-08-24 against the live x64 guest: one
+    // POST on a TCG guest takes over a second end to end, so an anchor at
+    // `attemptedAt + BACKOFF_BASE` has already passed by the time the 401
+    // arrives, the wait collapses to its bare margin, and the correct password
+    // meets a guard that is still armed.
     //
-    // THIS IS THE MIRROR IMAGE OF 821a63a ("the e2e backoff assertion was racing
-    // argon2, not the clock"). That commit fixed a Rust e2e test that expected a
-    // 429 and got a 303 because the round trip OUTRAN the window. This expected
-    // a 303 and got a 429 because the round trip outran the window the other
-    // way: the phase gave itself a 1s budget for work whose cost nothing in the
-    // phase bounds, and on a TCG guest that one POST took over a second end to
-    // end -- so `attemptedAt + BACKOFF_BASE` had already passed by the time the
-    // 401 arrived, the wait collapsed to its bare margin, and the correct
-    // password met a guard that was still armed.
-    //
-    // The anchor below is correct BY THE DAEMON'S OWN CONTRACT, not by luck.
-    // mosd/apid/src/auth.rs:118 `confirm_failure` re-arms the window AFTER
-    // verification returns, and says why in its own doc comment: "this only
-    // moves the window's start from admission time to outcome time. Without it
-    // the verification's own duration would eat into the wait -- argon2 costs a
-    // meaningful fraction of the one-second base window by design." So
-    // `locked_until` is set immediately before the 401 is serialised, which is
-    // at or before the instant this client receives it. Anchoring here puts the
-    // whole argon2 cost on the correct side of the measurement, and the margin
-    // then only has to cover response transit and timer scheduling -- not a
-    // password hash whose cost is deliberately unbounded.
-    //
-    // 821a63a's own remedy was to DRIVE THE RUN UP (four failures, an eight
-    // second window) so the window dwarfs any round trip. That works here too,
-    // and is deliberately NOT done: with the anchor corrected, the argon2 race
-    // it defends against cannot occur in this phase, and the eight seconds
-    // would be spent on every boot. 06-backoff already measures the driven-up
-    // curve, so nothing is lost by keeping this one at a single failure.
+    // The anchor is correct by the daemon's own contract, not by luck.
+    // mosd/apid/src/auth.rs:118 `confirm_failure` re-arms the window after
+    // verification returns: "this only moves the window's start from admission
+    // time to outcome time. Without it the verification's own duration would eat
+    // into the wait -- argon2 costs a meaningful fraction of the one-second base
+    // window by design." So `locked_until` is set immediately before the 401 is
+    // serialised, and the margin need only cover transit and timer scheduling.
     const failedAt = Date.now();
     const wrongTookMs = failedAt - attemptedAt;
     report.expectStatus(wrong, 401, "POST /login with the wrong password is answered 401");
@@ -181,12 +163,13 @@ const phase: Phase = {
 
     // -- 5. ...and the correct one, once the guard disarms -------------------
     //
-    // THE TIMING TRAP. That one failure armed the login guard, and the guard is
-    // GLOBAL rather than per-client: for BACKOFF_BASE * 2^(failures-1) = 1s it
-    // refuses the CORRECT password too, with 429. So the correct attempt is
-    // held until the window has demonstrably passed. Exactly one failure was
-    // made above precisely to keep that window at one second; four would make
-    // it eight, and the suite would be waiting on its own throttle.
+    // The timing trap: that one failure armed the login guard, and the guard is
+    // global rather than per-client -- for BACKOFF_BASE * 2^(failures-1) = 1s it
+    // refuses the correct password too, with 429. So the correct attempt is held
+    // until the window has demonstrably passed. Exactly one failure is made
+    // above to keep that window at one second; four would make it eight and the
+    // suite would be waiting on its own throttle. Driving the run up is what
+    // 06-backoff does, and it measures the driven-up curve there.
     const armedUntil = failedAt + BACKOFF_BASE_MS;
     const waitMs = Math.max(0, armedUntil - Date.now()) + BACKOFF_MARGIN_MS;
     await sleep(waitMs);
@@ -213,7 +196,7 @@ const phase: Phase = {
     );
     report.expectHeader(good, "location", "/", "the accepted login redirects to /");
 
-    // The same name and attributes phase 02 asserted, against the OTHER handler.
+    // The same name and attributes phase 02 asserted, against the other handler.
     const line = good.setCookie[0];
     const cookie = line === undefined ? undefined : parseSetCookie(line);
     report.check(
@@ -250,7 +233,7 @@ const phase: Phase = {
 
     // -- 7. the redirect leads somewhere real --------------------------------
     //
-    // GUARDED, because `follow` throws on a response carrying no Location and a
+    // Guarded, because `follow` throws on a response carrying no Location and a
     // phase that throws stops reporting. Measured 2026-08-24: when the login
     // above came back 429, this line raised RedirectWithoutLocationError, the
     // runner caught it as "03-login threw instead of reporting", and the three
@@ -279,7 +262,7 @@ const phase: Phase = {
     //
     // A successful login resets the consecutive-failure run to zero, so the
     // guard is disarmed and its counter is at 0 -- not at the 1 that step 4
-    // put there. Phase 06 therefore inherits a CLEAN guard and can compute the
+    // put there. Phase 06 therefore inherits a clean guard and can compute the
     // windows it measures from a known starting point; if this phase ever
     // stopped ending on a success, 06's first window would be 2s instead of 1s
     // and its failure would read as a backoff defect rather than as this.
@@ -302,9 +285,7 @@ const phase: Phase = {
   },
 };
 
-// ---------------------------------------------------------------------------
 // helpers
-// ---------------------------------------------------------------------------
 
 function sleep(ms: number): Promise<void> {
   return new Promise<void>((resolve) => {

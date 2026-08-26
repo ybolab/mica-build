@@ -1,22 +1,17 @@
 // dd: raw placement.
 //
-// FAILURE SIGNAL. Its exit status -- and dd is the tool that shows why this
-// layer refuses to guess: on SUCCESS, dd writes its summary to STDERR. A
-// wrapper that read "stderr is not empty" as failure would fail every correct
-// run of it, and a wrapper that read "stderr is empty" as success would pass
-// every failed run of debugfs (which is the opposite case, in e2fsprogs.ts).
-// Each tool's signal is its own, which is why toolbox.run() interprets nothing.
+// Failure signal: the exit status. On success dd writes its summary to stderr,
+// so a wrapper reading "stderr is not empty" as failure fails every correct run
+// of it, and one reading "stderr is empty" as success passes every failed
+// debugfs run (the opposite case, in e2fsprogs.ts). Each tool's signal is its
+// own, which is why toolbox.run() interprets nothing. `status=none` silences
+// the summary and both assemblers pass it; it is a parameter rather than a
+// default, because a silenced dd is harder to debug.
 //
-// `status=none` silences that summary, and both assemblers pass it. It is a
-// parameter here rather than a default: a silenced dd is harder to debug, and
-// the default should not be the quiet one.
-//
-// WHAT IS NOT HERE: reading bytes back out of an image. os/mkimage-v2.sh does
-// `dd ... | od -An -tx1 -N4` to check the loader magic, and there is no reason
-// to spend a container on that -- the image is a FILE ON THE HOST, so a caller
-// reads it with node:fs, exactly. Routing binary through `docker exec` would
-// also mean routing it through a text stream, which is a corruption waiting for
-// the first byte that is not valid UTF-8.
+// Reading bytes back out of an image is not here: os/mkimage-v2.sh checks the
+// loader magic with `dd ... | od -An -tx1 -N4`, the image is a file on the host
+// so a caller reads it with node:fs, and `docker exec` would route binary
+// through a text stream that corrupts at the first non-UTF-8 byte.
 
 import type { Toolbox, ToolResult } from '../toolbox.ts'
 

@@ -1,25 +1,19 @@
 // The image helpers, driven from the failing side of every tool they use.
 //
-// WHY A STUB RUNTIME AND NOT A REAL IMAGE. `make os-verify-test` runs on a host
-// with no image built, and in CI inside the pinned bun container with no docker
-// under it. A suite that needed a 1.4 GiB image would be a suite that skipped,
-// and a skip reports the same green as a pass. So the tools' OUTPUT is the
-// fixture: every transcript below was captured on 2026-08-25 from the real
-// tools in the pinned alpine:3.21, against the real cx3576 image and against
-// deliberately malformed inputs, and pasted here verbatim. The helper under
-// test cannot tell the difference, which is the point.
-//
+// A stub runtime and not a real image: `make os-verify-test` runs on a host with
+// no image built, and in CI inside the pinned bun container with no docker under
+// it, and a suite that needed a 1.4 GiB image would be a suite that skipped. So
+// the tools' output is the fixture -- every transcript below was captured
+// 2026-08-25 from the real tools in the pinned alpine:3.21, against the real
+// cx3576 image and against deliberately malformed inputs, and pasted verbatim.
 // The stub shares tools.ts's own runChecked, so a non-zero exit throws here
-// exactly as it throws in production. A stub that decided for itself when to
-// throw would be testing the stub.
+// exactly as it throws in production.
 //
-// WHAT THIS FILE IS FOR. Four of the five tools answer a question they could
-// not answer with something shaped like an answer -- sgdisk invents a partition
-// table, debugfs exits 0 having opened nothing, unsquashfs exits 0 having
-// extracted nothing, veritysetup uses one exit status for an answer and for a
-// failure. Every one of those is driven below and every one must be refused. A
-// helper that has only ever been observed succeeding is indistinguishable from
-// a helper that cannot fail.
+// Four of the five tools answer a question they could not answer with something
+// shaped like an answer -- sgdisk invents a partition table, debugfs exits 0
+// having opened nothing, unsquashfs exits 0 having extracted nothing,
+// veritysetup uses one exit status for an answer and for a failure -- and every
+// one is driven below and must be refused.
 
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test'
 import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
@@ -56,26 +50,21 @@ import { REPO_ROOT } from './paths.ts'
 // A scratch directory under _out/, never /tmp: a bind mount of /tmp on this
 // host succeeds and delivers an empty directory, and these files are read back.
 //
-// _out/ IS CREATED, NOT ASSUMED, and that is the whole of this line's history.
-// It is gitignored build output (.gitignore:4) and `mkdtempSync` does not
-// create its parent, so on a fresh worktree, a clean clone and CI this threw
-// ENOENT at MODULE SCOPE -- which aborts the file before a single test in it is
-// declared. Measured on 2026-08-26 by moving _out/ aside: `make os-verify-test`
-// went from `PASS (373/373)` to `FAIL (332 passed of 333 run)`, i.e. the 40
-// tests in this file simply stopped existing. That is the failure mode this
-// package keeps finding in other people's checkers -- a ratio cannot see the
-// tests that were never declared, so 373/373 and 333/333 are equally green and
-// only one of them ran this file. The floor was green only because something
-// earlier in the run happened to create _out/ first.
+// _out/ is created, not assumed: it is gitignored build output (.gitignore:4)
+// and `mkdtempSync` does not create its parent, so on a fresh worktree, a clean
+// clone and CI this threw ENOENT at module scope, aborting the file before a
+// single test in it was declared. Measured 2026-08-26 by moving _out/ aside,
+// `make os-verify-test` went from `PASS (373/373)` to `FAIL (332 passed of 333
+// run)` -- a ratio cannot see the tests that were never declared, so 373/373 and
+// 333/333 are equally green and only one of them ran this file.
 //
-// CREATED AND REMOVED BY THE SAME CONDITION. It used to be made here, at module
-// scope, and removed in `afterAll` -- and those are not the same condition. Under
-// a `-t` FILTER bun LOADS every file, so every file made its scratch, but only a
-// file with a MATCHING test runs its `afterAll`. So a filtered run made four and
-// removed one, leaving exactly the `_out/verify-*` drift the paragraph below says
-// was fixed. Measured 2026-08-26: `run.sh -t 'the partition count'` left
-// verify-bootchain-*, verify-cmdline-* and verify-test-* behind; an UNFILTERED
-// run was clean, which is why it survived every floor this campaign ran.
+// Created and removed by the same condition. Made at module scope and removed in
+// `afterAll` those are not the same condition: under a `-t` filter bun loads
+// every file, so every file made its scratch, but only a file with a matching
+// test runs its `afterAll`. Measured 2026-08-26, `run.sh -t 'the partition
+// count'` left verify-bootchain-*, verify-cmdline-* and verify-test-* behind
+// while an unfiltered run was clean, which is why it survived every floor this
+// campaign ran.
 //
 // `process.on('exit')` does NOT close it -- driven on bun 1.4.0, the handler
 // never fires under the test runner, filtered or not. A top-level `beforeAll`
@@ -132,7 +121,7 @@ function stub(replies: ReadonlyArray<readonly [string, Reply]>): ToolRuntime {
   }
 }
 
-// ── real transcripts ───────────────────────────────────────────────────────
+// real transcripts
 
 /** `sgdisk -p` on the real cx3576 image, trimmed to five partitions. */
 const SGDISK_P = `Disk /x.img: 2693120 sectors, 1.3 GiB
@@ -167,7 +156,7 @@ const SGDISK_I2 = SGDISK_I1
   .replace(`'loader'`, `'uenv-a'`)
 
 /**
- * `sgdisk -p` on 64 MiB of zeros. Exit 0. A COMPLETE, WELL-FORMED FICTION.
+ * `sgdisk -p` on 64 MiB of zeros. Exit 0. A complete, well-formed fiction.
  *
  * The disk GUID here is one sgdisk made up: run twice on the same file it
  * printed 82861E6A-8EE5-47F2-A091-D96EFFDF5396 and then
@@ -231,7 +220,7 @@ Compression zstd
 Block size 131072
 `
 
-// ── sgdisk ─────────────────────────────────────────────────────────────────
+// sgdisk
 
 describe('readGpt reads a real table, and refuses an invented one', () => {
   const good = stub([
@@ -315,7 +304,7 @@ describe('sgdiskVerify does not take "No problems found" as the verdict', () => 
   })
 })
 
-// ── mtools ─────────────────────────────────────────────────────────────────
+// mtools
 
 describe('mtools reads the FAT in place, at an offset', () => {
   const slot = { image: '/x.img', offsetBytes: 18874368 }
@@ -368,7 +357,7 @@ describe('mtools reads the FAT in place, at an offset', () => {
   })
 })
 
-// ── ext4 ───────────────────────────────────────────────────────────────────
+// ext4
 
 describe('tune2fs and debugfs, where the exit status is not the answer', () => {
   const ext4 = stub([
@@ -436,7 +425,7 @@ describe('tune2fs and debugfs, where the exit status is not the answer', () => {
   })
 })
 
-// ── squashfs ───────────────────────────────────────────────────────────────
+// squashfs
 
 describe('unsquashfs, which exits 0 having extracted nothing', () => {
   const sq = stub([
@@ -502,7 +491,7 @@ describe('unsquashfs, which exits 0 having extracted nothing', () => {
   })
 })
 
-// ── dm-verity ──────────────────────────────────────────────────────────────
+// dm-verity
 
 describe('veritysetup, where exit 1 means two different things', () => {
   const HASH = '776ffaf3c23c995829e39e443ef46e0b2ea5dd40d8a0ba9aa8849dfb9335f49f'
@@ -536,7 +525,7 @@ describe('veritysetup, where exit 1 means two different things', () => {
   })
 })
 
-// ── byte ranges ────────────────────────────────────────────────────────────
+// byte ranges
 
 describe('extractRange and readBytes need no tool, and refuse a short read', () => {
   // In a hook, not at describe scope: a describe BODY runs while bun is merely
@@ -573,7 +562,7 @@ describe('extractRange and readBytes need no tool, and refuse a short read', () 
   })
 })
 
-// ── fdtget ─────────────────────────────────────────────────────────────────
+// fdtget
 
 /**
  * Every transcript below was captured on 2026-08-26 in the pinned alpine:3.21
@@ -654,7 +643,7 @@ describe('fdtget refuses honestly, except in the one place it does not', () => {
   })
 })
 
-// ── e2fsck ─────────────────────────────────────────────────────────────────
+// e2fsck
 
 const E2FSCK_CLEAN = `e2fsck 1.47.1 (20-May-2024)
 Pass 1: Checking inodes, blocks, and sizes
@@ -708,7 +697,7 @@ describe('e2fsck -fn, whose exit status is the oracle\'s whole test', () => {
   })
 
   test('A TRUNCATED FILESYSTEM EXITS 0, and this reproduces that', async () => {
-    // THE VACUOUS PASS IN THE CODE UNDER TEST, asserted as its own case rather
+    // The vacuous PASS in the code under test, asserted as its own case rather
     // than repaired. e2fsck says the superblock or the partition table is
     // likely to be corrupt and then exits 0; os/verify-image-v2.sh:2342 sends
     // both streams to /dev/null and reads the status, so it concludes
@@ -729,7 +718,7 @@ describe('e2fsck -fn, whose exit status is the oracle\'s whole test', () => {
   })
 })
 
-// ── the legacy uImage header ───────────────────────────────────────────────
+// the legacy uImage header
 
 describe('the uImage header reader, which has no tool to lie for it', () => {
   /** The first 64 bytes of the real cx3576 boot.scr, captured 2026-08-26. */
@@ -810,7 +799,7 @@ describe('mcopy writing a file rather than a stdout string', () => {
 
   test('a file that landed is true, and the caller may read the BYTES', async () => {
     const dest = join(dir, 'rk3576-src.dtb')
-    // WHY THIS HELPER EXISTS: the runtime reads stdout as TEXT, so `mcopy ... -`
+    // Why this helper exists: the runtime reads stdout as TEXT, so `mcopy ... -`
     // turns every byte of a 290 KiB device tree that is not valid UTF-8 into
     // U+FFFD. mcopy writes the file itself instead.
     const rt = stub([['mcopy', { effect: () => writeFileSync(dest, Buffer.from([0xd0, 0x0d, 0xfe, 0xed])) }]])

@@ -5,30 +5,27 @@
 #   make build-env   -> localhost/mos-build-base
 #
 # The image name, the digest it is built from and the versions it asserts are
-# all values in os/build-env/images.env; nothing in this file names any of them,
-# so "which environment did this build run in" is answerable from the tree.
-#
-# WHAT IS IN IT, AND WHY SO LITTLE. ca-certificates, git, file, binutils, xz --
+# all values in os/build-env/images.env; nothing in this file names any of
+# them, so "which environment did this build run in" is answerable from the
+# tree.
+
+# What is in it, and why so little: ca-certificates, git, file, binutils, xz --
 # the things a builder needs whatever language it is building. Compilers,
 # language runtimes and their headers are NOT here; they belong to
-# mos-build-{c,go,rust}, each with its own apt list.
-#
-# That split is measured, not aesthetic. One shared builder makes the apt work
-# happen once and costs the cache: adding a single package to the merged list
-# invalidates it for every component behind it, about 42 minutes of
-# recompilation under emulation,
+# mos-build-{c,go,rust}, each with its own apt list. That split is measured,
+# not aesthetic. One shared builder makes the apt work happen once and costs
+# the cache: adding a single package to the merged list invalidates it for
+# every component behind it, about 42 minutes of recompilation under emulation,
 # because one dependency list is one cache key for five unrelated compilers.
 # Kept apart, a Go-only package edit rebuilds the Go image and nothing else.
-#
-# WHY IT ASSERTS INSTEAD OF INSTALLING AND HOPING. The digest in images.env
-# pins this image's base filesystem. It does not pin the apt archive: the
+
+# It asserts instead of installing and hoping. The digest in images.env pins
+# this image's base filesystem; it does not pin the apt archive, because the
 # `apt-get install` below resolves against live deb.debian.org and returns
-# whatever trixie holds on the day it runs. So "the packages were requested" and
-# "the floor is there" are different claims, and only the second one is what
+# whatever trixie holds on the day it runs. So "the packages were requested"
+# and "the floor is there" are different claims, and only the second is what
 # every image above this one is entitled to assume. The assert stage makes the
-# second claim, inside the image, and fails the build when it is false. Every
-# builder image asserts its own toolchain version internally; this is that rule
-# applied to the image whose toolchain is the floor itself.
+# second claim, inside the image, and fails the build when it is false.
 
 # No default, and the `check=skip` above is what that costs. A default would
 # mean a driver that failed to pass the argument still builds -- from a floating
@@ -66,11 +63,11 @@ COPY images.lock /etc/mos-build/images.env
 # invalidation is a full re-download. Same arrangement, and the same reasoning,
 # as every stage in os/podman/Dockerfile.
 #
-# NOTE ON WHAT THE CACHE MEANS HERE: BuildKit keys this RUN on the command
-# text, not on what the archive returned, so a cached layer keeps yesterday's
-# package versions until something above it changes. For a build environment
-# that is the wanted behaviour -- it is stability, not staleness -- and bumping
-# the digest in images.env is what deliberately invalidates it.
+# What the cache means here: BuildKit keys this RUN on the command text, not on
+# what the archive returned, so a cached layer keeps yesterday's package
+# versions until something above it changes. For a build environment that is
+# the wanted behaviour -- stability, not staleness -- and bumping the digest in
+# images.env is what deliberately invalidates it.
 RUN --mount=type=cache,target=/var/cache/apt,id=apt-cache-mos-build-base,sharing=locked \
     --mount=type=cache,target=/var/lib/apt/lists,id=apt-lists-mos-build-base,sharing=locked \
     rm -f /etc/apt/apt.conf.d/docker-clean && \
@@ -82,30 +79,31 @@ RUN --mount=type=cache,target=/var/cache/apt,id=apt-cache-mos-build-base,sharing
         xz-utils
 
 # The floor, asserted from inside the image that promises it.
-#
+
 # TARGETARCH is checked first because everything after it is only meaningful
 # once the image is the architecture it was asked for. A builder without the
 # emulator for the requested platform does not fail -- it quietly produces a
 # host-architecture image, and every version below would pass on it.
 # os/update/rauc/build.sh refuses an unset MOS_ARCH for the same reason: a
 # cross build that silently became a native one is discovered on the device.
-#
-# Versions are compared as MINIMUMS with sort -V, not matched exactly. The
+
+# Versions are compared as minimums with sort -V, not matched exactly. The
 # digest does not pin the apt archive (see above), so an exact match would go
 # red on the next trixie point release and teach whoever hits it to widen the
 # check until it means nothing. A minimum still catches the two directions that
 # are real: a package that vanished, and a package that went backwards.
-#
+
 # binutils is asked for by five of its programs rather than one. It is a
-# COLLECTION, and the failure this guards against is a slimmed or substituted
+# collection, and the failure this guards against is a slimmed or substituted
 # package where `strip` is present and `readelf` is not -- which passes a
 # one-program check and then breaks whichever builder above needed the missing
 # one, at a distance from the cause.
-#
-# ca-certificates is asserted by the bundle FILE, not by dpkg: the package can
-# be installed with an empty or unregenerated /etc/ssl/certs/ca-certificates.crt,
-# and an empty bundle fails every TLS fetch in every image built on top of this
-# one with an error that names the remote host and never the cause.
+
+# ca-certificates is asserted by the bundle file, not by dpkg: the package can
+# be installed with an empty or unregenerated
+# /etc/ssl/certs/ca-certificates.crt, and an empty bundle fails every TLS fetch
+# in every image built on top of this one with an error that names the remote
+# host and never the cause.
 ARG MOS_BASE_IMAGE
 ARG TARGETARCH
 RUN set -eu; \

@@ -1,6 +1,7 @@
 # /etc/rauc/system.conf — RAUC slot model for mos on cx3576 (layout v2).
 #
-# TEMPLATE. The shipped file is rendered by os/update/rauc/render-config.sh into
+# This is a template. The shipped file is rendered by
+# os/update/rauc/render-config.sh into
 # os/rootfs/overlay-v2/etc/rauc/system.conf, which the overlay mechanism
 # copies to /etc/rauc/system.conf. Never hand-edit the rendered file: every
 # GUID and every attempt count below is substituted from
@@ -12,53 +13,50 @@ compatible=@COMPATIBLE@
 bootloader=@BOOTLOADER@
 @BOOTLOADER_EXTRA@
 
-# Slot status lives on the META partition, and explicitly NOT on /var.
-#
-# /var is DISCARDABLE by design: its contract is that wiping it costs nothing.
-# RAUC's status file is update state — which slot was installed, at what
-# version, and whether it has been marked good — and losing it in the middle of
-# an update is precisely the failure the A/B design exists to prevent. The
-# standing rule is that identity, credentials, pairings and update state never
-# live on /var.
-#
+# Slot status lives on the META partition, and explicitly NOT on /var. /var is
+# discardable by design: its contract is that wiping it costs nothing. RAUC's
+# status file is update state -- which slot was installed, at what version, and
+# whether it has been marked good -- and losing it in the middle of an update
+# is precisely the failure the A/B design exists to prevent. The standing rule
+# is that identity, credentials, pairings and update state never live on /var.
+
 # META over STATE: META is the partition for update metadata, while STATE holds
 # machine identity and configuration (ssh host keys, hostname, /var/lib/mos).
 # Keeping update bookkeeping out of STATE means a factory reset of identity and
 # a reset of update history stay separable, and it keeps the writer set of each
-# partition small. Note that nothing boot-critical is at stake either way: the
-# authority for which slot boots is BOOT_ORDER in the redundant U-Boot
-# environment, not this file, so a lost status file costs history, not a boot.
-#
-# The mount point is not restated here — the renderer reads it out of
+# partition small. Nothing boot-critical is at stake either way: the authority
+# for which slot boots is BOOT_ORDER in the redundant U-Boot environment, not
+# this file, so a lost status file costs history, not a boot. The mount point
+# is not restated here -- the renderer reads it out of
 # os/rootfs/overlay-v2/etc/fstab.in, keyed on the META partition GUID, so
 # remounting META moves the status file with it.
 statusfile=@STATUSFILE@
 
 # Boot credits: RAUC writes these into BOOT_A_LEFT / BOOT_B_LEFT via fw_setenv.
 #
-# U-BOOT AND BAREBOX ONLY, and the two lines below are therefore rendered
-# EMPTY on a grub board. RAUC refuses to load a configuration that sets them
-# with bootloader=grub — "Configuring boot attempts is valid for uboot or
-# barebox only (not for grub)" — and refusing means the daemon does not start
-# at all, which takes the health gate and the status indicator down with it.
-# Observed exactly that way on the x64 image, by booting it.
-#
-# What grub has instead is a ONE-SHOT try, not a count: os/boards/x64/grub.cfg
+# U-Boot and barebox only, so the two lines below are rendered empty on a grub
+# board. RAUC refuses to load a configuration that sets them with
+# bootloader=grub -- "Configuring boot attempts is valid for uboot or barebox
+# only (not for grub)" -- and refusing means the daemon does not start at all,
+# which takes the health gate and the status indicator down with it. Observed
+# exactly that way on the x64 image, by booting it.
+
+# What grub has instead is a one-shot try, not a count: os/boards/x64/grub.cfg
 # keeps ORDER, <slot>_OK and <slot>_TRY in grubenv, so a slot gets a single
-# attempt that the health gate either confirms or does not. The A/B ORDERING
-# and the rollback are the same contract on both boards; the NUMBER of
-# attempts before falling back is not, and only U-Boot can express it.
-#
-# HARD RANGE, declared as BOOT_ATTEMPTS_MIN..BOOT_ATTEMPTS_MAX in the board's
-# layout file — a correctness constraint, not a style preference. The numbers
-# are named rather than interpolated here so that a board with no attempt
-# counter can decline to declare them at all. RAUC writes the counter with "%x" and
-# reads it back base 16 (rauc/src/bootloaders/uboot.c:213,152); U-Boot's
-# `setexpr` is hexadecimal (cmd/setexpr.c:119,439) but `test -gt` parses
-# decimal (cmd/test.c:168-173). The two radices agree only for single digits,
-# so raising this to, say, 16 would decrement the counter correctly and
-# compare it wrongly: rollback would silently stop working. The renderer
-# enforces the range from the layout; see
+# attempt that the health gate either confirms or does not. The A/B ordering
+# and the rollback are the same contract on both boards; the number of attempts
+# before falling back is not, and only U-Boot can express it.
+
+# The range is a hard one, declared as BOOT_ATTEMPTS_MIN..BOOT_ATTEMPTS_MAX in
+# the board's layout file -- a correctness constraint, not a style preference.
+# The numbers are named rather than interpolated here so that a board with no
+# attempt counter can decline to declare them at all. RAUC writes the counter
+# with "%x" and reads it back base 16
+# (rauc/src/bootloaders/uboot.c:213,152); U-Boot's `setexpr` is hexadecimal
+# (cmd/setexpr.c:119,439) but `test -gt` parses decimal (cmd/test.c:168-173).
+# The two radices agree only for single digits, so raising this to, say, 16
+# would decrement the counter correctly and compare it wrongly: rollback would
+# silently stop working. The renderer enforces the range from the layout; see
 # docs/design/uboot-ab-handshake.md section 4.1.
 @BOOT_ATTEMPTS_LINE@
 @BOOT_ATTEMPTS_PRIMARY_LINE@
@@ -69,7 +67,7 @@ statusfile=@STATUSFILE@
 bundle-formats=verity
 
 [keyring]
-# Bundle signatures are verified against this CMS keyring. It is NOT shipped by
+# Bundle signatures are verified against this CMS keyring. It is not shipped by
 # this task and NOT in git: a development keyring would be a trusted signer on
 # every device. `make os-devkeys` writes os/update/rauc/.devkeys/ca.cert.pem, which a
 # developer can drop in at os/rootfs/overlay-v2/etc/rauc/keyring.pem (that path
@@ -77,12 +75,10 @@ bundle-formats=verity
 # one is installed, `rauc install` on device fails closed.
 path=/etc/rauc/keyring.pem
 
-# --- slot groups -----------------------------------------------------------
-#
-# One group per A/B side: the rootfs slot carries the bootname the U-Boot
-# backend flips, the boot slot hangs off it as a child so kernel+dtb and the
-# root filesystem are installed and rolled back as one unit.
-#
+# Slot groups. One group per A/B side: the rootfs slot carries the bootname the
+# U-Boot backend flips, and the boot slot hangs off it as a child so kernel+dtb
+# and the root filesystem are installed and rolled back as one unit.
+
 # Devices are named by partition GUID, never by /dev/mmcblkNpM: the GUIDs are
 # layout constants, the disk node name is not. The symlinks under
 # /dev/disk/by-partuuid/ come from libblkid, which formats GUIDs in lowercase,
@@ -90,19 +86,15 @@ path=/etc/rauc/keyring.pem
 
 # The slot sections themselves are rendered per board by
 # os/update/rauc/render-config.sh, because the shape of the boot half genuinely
-# differs between the two bootloaders and pretending otherwise is what broke
-# x64:
-#
-#   uboot  — a per-slot BOOT PARTITION. U-Boot reads BOOT_ORDER from its own
-#            environment and then loads boot.scr from the partition it picked,
-#            so the inactive boot partition really is the one the next boot
-#            will read.
-#   grub   — per-slot FILES on the single ESP. UEFI firmware picks the ESP, not
-#            the device, so a second ESP is one nothing can select; the kernel,
-#            the initrd and the per-slot kernel command line (which carries
-#            that slot's dm-verity root hash) are installed as `file` slots
-#            onto the ESP the firmware actually boots.
-#
+# differs between the two bootloaders:
+#   uboot -- a per-slot boot partition. U-Boot reads BOOT_ORDER from its own
+#     environment and then loads boot.scr from the partition it picked, so the
+#     inactive boot partition really is the one the next boot will read.
+#   grub -- per-slot files on the single ESP. UEFI firmware picks the ESP, not
+#     the device, so a second ESP is one nothing can select; the kernel, the
+#     initrd and the per-slot kernel command line (which carries that slot's
+#     dm-verity root hash) are installed as `file` slots onto the ESP the
+#     firmware actually boots.
 # Both shapes parent the boot half to the rootfs slot, so a slot's kernel and
 # its root filesystem are installed and rolled back as one unit.
 @SLOTS@

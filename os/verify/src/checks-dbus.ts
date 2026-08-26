@@ -4,35 +4,25 @@
 // Eleven conclusions on each board, one of them a SKIP on x64. Everything here
 // reads the unpacked root and nothing else.
 //
-// WHY A POLICY PARSER AND NOT A grep.
+// A policy parser and not a grep. A D-Bus rule routinely spans several source
+// lines, so a line-oriented reader sees the bus name and the member on different
+// lines and concludes the grant names no member -- the dangerous direction,
+// because it turns a correctly scoped grant into a reported hazard whose obvious
+// repair is to stop scoping it. And com.mos.ext.conf documents its own widening
+// hazard in prose that names com.mos.mosd, so a reader that could not tell an
+// XML comment from a rule would report the warning as an instance of the thing
+// it warns about. So both of the oracle's readers are ported as readers:
+// `stripComments` is `dbus_policy_rules_only` (:661), an awk state machine over
+// `<!--`/`-->` that spans lines and preserves line structure; `policyTags` is
+// `dbus_policy_tags` (:729), the same text reflowed to one XML tag per line,
+// which is what makes a per-line scoped/member judgement sound; `policyFacts` is
+// the awk at :2989, rules collected per <policy> block, because a rule's block
+// decides who it applies to.
 //
-// The oracle does not grep these files and says why, twice, in its own prose: a
-// D-Bus rule routinely spans several source lines, so a line-oriented reader
-// sees the bus name and the member on different lines and concludes the grant
-// names no member -- which is the DANGEROUS direction, because it turns a
-// correctly scoped grant into a reported hazard and the obvious repair is to
-// stop scoping it. And com.mos.ext.conf documents its own widening hazard in
-// prose that NAMES com.mos.mosd, so a reader that could not tell an XML comment
-// from a rule would report the warning as an instance of the thing it warns
-// about, and the obvious repair there is to delete the warning.
-//
-// So both of the oracle's readers are ported as readers:
-//
-//   stripComments   `dbus_policy_rules_only` (:661) -- an awk state machine over
-//                   `<!--` / `-->` that spans lines and PRESERVES line structure
-//   policyTags      `dbus_policy_tags` (:729) -- the same text reflowed to ONE
-//                   XML TAG PER LINE, which is what makes a per-line scoped/
-//                   member judgement sound
-//   policyFacts     the big awk at :2989 -- rules collected per <policy> BLOCK,
-//                   because a rule's block is what decides who it applies to
-//
-// AND WHY THE BUS NAME IS READ, NEVER WRITTEN DOWN.
-//
-// `com.mos.mosd` appears nowhere in this file as the name being checked. The
-// oracle reads it out of mosd.service's `BusName=` (:2975) precisely so that a
-// policy for a name nothing owns fails rather than sails through -- the
-// existence-versus-function trap. Restating it here would put the constant back
-// in two places, which is the drift the oracle went out of its way to remove.
+// The bus name is read, never written down. `com.mos.mosd` appears nowhere here
+// as the name being checked: the oracle reads it out of mosd.service's
+// `BusName=` (:2975) so that a policy for a name nothing owns fails rather than
+// sails through. Restating it would put the constant back in two places.
 
 import { readFileSync, readdirSync, statSync } from 'node:fs'
 import { join } from 'node:path'
@@ -48,9 +38,7 @@ const EXT_POLICY_PATH = '/usr/share/dbus-1/system.d/com.mos.ext.conf'
 const MOSD_UNIT = '/usr/lib/systemd/system/mosd.service'
 const POLICY_DIRS = ['/etc/dbus-1/system.d', '/usr/share/dbus-1/system.d'] as const
 
-// ---------------------------------------------------------------------------
 // reading a file the way the oracle's shell reads one
-// ---------------------------------------------------------------------------
 
 /** `cat "${ROOT}${path}" 2>/dev/null || true` -- the empty string when absent. */
 function readOrEmpty(root: string, path: string): string {
@@ -116,7 +104,7 @@ export function stripXmlComments(text: string): string {
 }
 
 /**
- * `dbus_policy_tags` (:729): the rules, reflowed to ONE XML TAG PER LINE.
+ * `dbus_policy_tags` (:729): the rules, reflowed to one XML tag per line.
  *
  * `tr '\n' ' ' | sed 's|>|>\n|g'` then a trim and a whitespace collapse, then
  * `grep .` to drop what is left empty. The trailing newline `tr` produces
@@ -131,9 +119,7 @@ export function policyTags(text: string): string[] {
     .filter(s => s !== '')
 }
 
-// ---------------------------------------------------------------------------
 // the mosd policy, parsed per <policy> BLOCK
-// ---------------------------------------------------------------------------
 
 export interface PolicyFacts {
   /** `<allow>` rules in a default-context block naming the bus in either direction. */
@@ -225,9 +211,7 @@ export function mosdBusName(root: string): string {
   return lines.at(-1) ?? ''
 }
 
-// ---------------------------------------------------------------------------
 // the second-policy-file search
-// ---------------------------------------------------------------------------
 
 export interface SecondFile {
   readonly path: string
@@ -240,7 +224,7 @@ export interface SecondFile {
  *
  * The oracle walks /etc/dbus-1/system.d before /usr/share/dbus-1/system.d and
  * takes each directory's entries in shell-glob order, which is lexical; the
- * blessed file is excluded BY NAME rather than by directory, because a second
+ * blessed file is excluded by name rather than by directory, because a second
  * file in /usr/share is exactly as dangerous as one in /etc.
  *
  * A second file is not automatically a defect and the oracle is explicit about
@@ -288,9 +272,7 @@ export function secondPolicyFiles(root: string, bus: string): SecondFile[] {
   return found
 }
 
-// ---------------------------------------------------------------------------
 // the checks
-// ---------------------------------------------------------------------------
 
 const MOSD_CHECKS: readonly CheckCase[] = [
   {
@@ -472,9 +454,7 @@ const MOSD_CHECKS: readonly CheckCase[] = [
   },
 ]
 
-// ---------------------------------------------------------------------------
 // check_ext_policy
-// ---------------------------------------------------------------------------
 
 const EXT_GRANT_RE = /allow own_prefix="com\.mos\.ext"/
 const EXT_WIDE_RE = /own_prefix="com\.mos"/
@@ -535,7 +515,7 @@ const EXT_CHECKS: readonly CheckCase[] = [
   },
 
   {
-    // THE ONE-CHARACTER EDIT. own_prefix="com.mos" reads in a diff like a
+    // The one-character edit. own_prefix="com.mos" reads in a diff like a
     // simplification and actually grants ownership of com.mos.mosd to every
     // local uid -- with the root-only rules in com.mos.mosd.conf fully intact
     // and every mosd policy check above still passing, because none of them can
@@ -596,9 +576,7 @@ const EXT_CHECKS: readonly CheckCase[] = [
   },
 ]
 
-// ---------------------------------------------------------------------------
 // bluez's policy -- os/verify-image-v2.sh:3183. Board-conditional.
-// ---------------------------------------------------------------------------
 
 const hasBluetooth = (board: Board): boolean => hasRadio(board, 'bluetooth')
 

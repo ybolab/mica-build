@@ -52,21 +52,19 @@ const BASE64_ALPHABET: &[u8; 64] =
 
 /// Parse one authorized-key line into its canonical form.
 ///
-/// Accepts exactly `<type> <blob>` or `<type> <blob> <comment>`, with one
-/// ASCII space between fields. There is deliberately no support for the
-/// `options` field OpenSSH allows in front of the type: `command=`,
-/// `environment=` and friends are a remote-code-execution surface, and phase 1
-/// has no feature that needs them, so a line that does not begin with a known
-/// key type is rejected outright — including a `#` comment line.
-///
-/// On success `key` holds `"<type> <blob>"` with the comment stripped, so the
-/// same key pasted under two different labels compares equal.
+/// Accepts exactly `<type> <blob>` or `<type> <blob> <comment>`, one ASCII
+/// space between fields. There is deliberately no support for the `options`
+/// field OpenSSH allows in front of the type: `command=`, `environment=` and
+/// friends are a remote-code-execution surface, so a line not beginning with a
+/// known key type is rejected outright, including a `#` comment line. On
+/// success `key` holds `"<type> <blob>"` with the comment stripped, so the same
+/// key pasted under two labels compares equal.
 ///
 /// # Errors
 ///
-/// Returns [`SettingsError::Validation`] naming the offending field, and the
-/// byte offset within it where that applies. The rejected input is never
-/// echoed back into the message.
+/// Returns [`SettingsError::Validation`] naming the offending field and the
+/// byte offset within it. The rejected input is never echoed back into the
+/// message.
 pub fn parse_authorized_key(line: &str) -> Result<AuthorizedKey, SettingsError> {
     check_line_shape(line)?;
 

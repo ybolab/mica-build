@@ -1,26 +1,17 @@
 // rauc: the update bundle.
 //
-// FAILURE SIGNAL. Its exit status -- and one refusal that comes BEFORE rauc
-// runs at all, which is the interesting part of this file.
-//
-// THE RAUC THAT BUILDS A BUNDLE MUST BE THE RAUC THAT INSTALLS IT. Commit
-// 9a43a59 records the failure: os/bundle.sh built in a bookworm container --
-// rauc 1.8 -- while the image ran Debian 13's 1.13, and "1.8 refused the x64
-// slot model outright the first time it was asked to read it. A format
-// difference would not have announced itself so kindly." Both halves now come
-// from os/update/rauc/, built from a pinned source, and os/update/bundle.sh
-// compares the version it is running against the one the rootfs report
-// recorded before it writes anything.
-//
-// So a bundle-writing call here refuses a toolset whose rauc came from a
-// distribution package, by name, before any bytes exist. Reading a bundle is
-// allowed on either -- `rauc info` on a distro rauc tells you what a distro
-// rauc thinks of a bundle, which is a fair question and is how this wrapper is
-// exercised in a checkout where the self-built binary has not been produced.
-//
-// WHAT IS NOT HERE. The manifest, the staging tree, the placeholder rendering
-// and the version cross-check against the rootfs report: all of that is
-// os/update/bundle.sh's, and it ports in M6d. This is the tool.
+// Failure signal: the exit status, plus one refusal that comes before rauc runs
+// at all. The rauc that builds a bundle MUST be the rauc that installs it: a
+// bundle built in a bookworm container (rauc 1.8) for an image running Debian
+// 13's 1.13 fails -- "1.8 refused the x64 slot model outright the first time it
+// was asked to read it. A format difference would not have announced itself so
+// kindly." Both halves come from os/update/rauc/, built from a pinned source,
+// and os/update/bundle.sh compares the version it runs against the one the
+// rootfs report recorded before writing anything. So bundle() refuses a toolset
+// whose rauc came from a distribution package, by name, before any bytes exist;
+// info() is allowed on either, which is how this wrapper is exercised where no
+// self-built binary exists. The manifest, staging tree, placeholder rendering
+// and version cross-check are os/update/bundle.sh's, not this file's.
 
 import type { Toolbox, ToolResult } from '../toolbox.ts'
 import { ToolError } from '../toolbox.ts'

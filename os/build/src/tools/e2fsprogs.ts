@@ -1,56 +1,33 @@
 // mke2fs, dumpe2fs and debugfs: the ext4 filesystems, and the timestamps in them.
 //
-// FAILURE SIGNALS, and they are not the same one:
-//
-//   mke2fs    exit status.
-//   dumpe2fs  exit status, plus a header this parser must actually understand
-//             -- a field it cannot read is refused rather than defaulted.
-//   debugfs   ITS STDERR, mostly -- and the detail matters here, so it was
-//             MEASURED rather than taken from the comment that describes it.
-//             debugfs 1.47.1, `-w -f <cmds> <img>`, on 2026-08-25:
-//
-//               valid commands, real filesystem     rc 0, banner only
-//               UNKNOWN command (`sif_renamed`)     rc 1, "Command not found"
-//               bad ARGUMENT (`sif <999999>`)       rc 0, "File not found ..."
-//               image is not a filesystem           rc 0, "Bad magic number"
-//               image is not there at all           rc 0, "No such file ..."
-//               command file is not there           rc 1, "No such file ..."
-//               command file is EMPTY               rc 0, banner only
-//
-//             So neither signal alone is the verdict: three failure shapes exit
-//             0 and two exit 1, and both are read below.
-//             os/mkimage-common.sh gives the reason for reading stderr as "a
-//             rename of `sif` [would] turn this into a no-op that still reports
-//             success" -- that example does NOT hold for this debugfs, which
-//             exits 1 on an unknown command. The argument is right and the
-//             example is not; the shapes that really are silent are a bad
-//             ARGUMENT and an image that cannot be opened. The empty-command-
-//             file row is the one neither signal carries, and it is refused.
-//
-// That is three tools in one toolset with three different answers to "did it
-// work", which is why toolbox.run() interprets none of them.
-//
-// WHY THIS IS THE CONTAINER-SIDE CASE. The layouts ask for `-O ^orphan_file`,
-// which needs e2fsprogs >= 1.47; this campaign's host carries 1.46.5. So
-// everything in this file runs in the toolbox's container on this machine, and
-// os/mkimage-x64.sh's header says the same of its own host: "It runs INSIDE the
-// container, because the host cannot: mke2fs 1.46.5, no sgdisk, no mcopy." The
-// toolbox measures that with a probe rather than assuming it either way.
-//
-// WHAT IS DELIBERATELY NOT HERE: pin_seeded_times(). That function is not a
-// utility, it is an ARGUMENT -- which of an inode's four timestamps are the
-// producer's data and which are the assembler's noise, why the inode set must
-// come from the bitmap rather than from a walk of the source tree, and why
-// debugfs's stderr rather than its exit status is the failure signal. It lives
-// in os/mkimage-common.sh so that its two callers cannot drift, and it ports
-// WITH those callers in M6b and M6c, not separately and not early. What this
-// file provides is the three primitives it is built out of, each with its own
-// signal handled correctly, so that the port is a translation rather than a
-// rediscovery.
+// Three tools with three answers to "did it work", which is why toolbox.run()
+// interprets none of them: mke2fs by exit status; dumpe2fs by exit status plus
+// a header this parser understands (an unreadable field is refused, not
+// defaulted); debugfs mostly by its stderr, measured below. All of it runs in
+// the toolbox's container: the layouts ask for `-O ^orphan_file`, which needs
+// e2fsprogs >= 1.47, and this host carries 1.46.5 -- os/mkimage-x64.sh says the
+// same of its own host ("It runs INSIDE the container, because the host cannot:
+// mke2fs 1.46.5, no sgdisk, no mcopy"). The timestamp-pinning pass is
+// deliberately not here: which of an inode's four timestamps are noise, why the
+// inode set comes from the bitmap rather than a walk of the source tree, and
+// why debugfs's stderr is the failure signal are one argument and one module;
+// this file provides its three primitives.
 
 import { existsSync, readFileSync } from 'node:fs'
 import type { Toolbox, ToolResult } from '../toolbox.ts'
 import { ToolError } from '../toolbox.ts'
+
+// debugfs's two signals, measured on 1.47.1, `-w -f <cmds> <img>`, 2026-08-25:
+//
+//   rc 0, banner only:  valid commands on a real filesystem; empty command file
+//   rc 0, with text:    bad argument ("File not found"); image is not a
+//     filesystem ("Bad magic number"); image is not there ("No such file")
+//   rc 1:               unknown command ("Command not found"); command file is
+//     not there ("No such file")
+//
+// Three failure shapes exit 0 and two exit 1, so neither signal alone is the
+// verdict and both are read below; the empty command file is the row neither
+// signal carries, and debugfsApply refuses it.
 
 export interface Mke2fsSpec {
   readonly image: string
@@ -196,27 +173,24 @@ export async function dumpe2fsFull(tb: Toolbox, image: string): Promise<string> 
 /**
  * Run a debugfs command script against a filesystem, in place.
  *
- * THE STDERR IS THE VERDICT. debugfs exits 0 even when an individual command
- * inside it failed, so its exit status cannot be the signal; everything on
- * stderr but the version banner is an error. os/mkimage-common.sh:
- *
- *     errs="$(debugfs -w -f "${cmds}" "${img}" 2>&1 >/dev/null | grep -v '^debugfs [0-9]' || true)"
- *
- * and its comment on why the stream is read rather than silenced: "Silencing
- * the stream instead would let a rename of `sif` turn this into a no-op that
- * still reports success."
+ * The stderr is the verdict: debugfs exits 0 even when an individual command
+ * inside it failed, so everything on stderr but the version banner is an error.
+ * os/mkimage-common.sh reads the stream rather than silencing it, because
+ * "Silencing the stream instead would let a rename of `sif` turn this into a
+ * no-op that still reports success" -- which does not hold for debugfs 1.47.1,
+ * exiting 1 on an unknown command, though the argument does.
  *
  * @param commandsFile a path -- debugfs's `-f`, which is how the shell hands it
  *   a script too. Both sides of the container boundary see the same path.
  */
 export async function debugfsApply(tb: Toolbox, image: string, commandsFile: string): Promise<ToolResult> {
-  // A COMMAND FILE WITH NOTHING IN IT EXITS 0 WITH A CLEAN STDERR -- measured,
-  // and it is the one failure neither signal carries. pin_seeded_times builds
-  // this file by parsing dumpe2fs's free-inode ranges, so an empty one is
-  // exactly what a parse that understood nothing would produce: the pass runs,
-  // pins no timestamps, reports success, and EPHEMERAL quietly stops rebuilding
-  // byte-identically. That function cross-checks its own count upstream of
-  // here; this is the same refusal at the tool, for every other caller.
+  // A command file with nothing in it exits 0 with a clean stderr -- measured,
+  // and the one failure neither signal carries. pin_seeded_times builds this
+  // file by parsing dumpe2fs's free-inode ranges, so an empty one is what a
+  // parse that understood nothing produces: the pass runs, pins no timestamps,
+  // reports success, and EPHEMERAL quietly stops rebuilding byte-identically.
+  // That function cross-checks its own count upstream; this is the same refusal
+  // at the tool, for every other caller.
   const script = existsSync(commandsFile) ? readFileSync(commandsFile, 'utf8') : undefined
   if (script !== undefined && script.split('\n').every(l => l.trim() === '')) {
     throw new Error(

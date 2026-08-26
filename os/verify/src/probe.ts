@@ -2,23 +2,18 @@
 //
 //   bash os/verify/run.sh --parity --probe
 //
-// M4a. This is the instrument that answers "do the helpers work against BOTH
-// real images" without needing a single check to be ported -- and it is what
-// M4b will reach for first, because the fastest way to write a check is to see
-// what the helper already hands you.
+// A probe and not a check: it asserts nothing about the image and its output is
+// not a verdict. What it does assert is that each helper ran and produced
+// something of the shape it promises -- every helper here refuses rather than
+// returns empty when its tool did not do the work, so a probe line that prints
+// is a helper that worked. A step that cannot run says why, by name, and never
+// quietly drops out of the list, because a probe with a missing line and a probe
+// with a passing one look identical from outside.
 //
-// It is a PROBE and not a check: it asserts nothing about the image and its
-// output is not a verdict. What it does assert is that each helper ran and
-// produced something of the shape it promises -- and every helper here refuses
-// rather than returns empty when its tool did not do the work, so a probe line
-// that prints is a helper that worked. A step that cannot run says WHY, by
-// name; it never quietly drops out of the list, because a probe with a missing
-// line and a probe with a passing one look identical from outside.
-//
-// It walks the board definition's ROLES rather than partition names, so the
-// same code drives cx3576's eleven partitions (raw-blob loader, two uboot-env,
-// two FAT boot slots) and x64's nine (an ESP plus two FAT boot slots, no
-// loader, no environment) without a board branch.
+// It walks the board definition's roles rather than partition names, so the same
+// code drives cx3576's eleven partitions (raw-blob loader, two uboot-env, two
+// FAT boot slots) and x64's nine (an ESP plus two FAT boot slots, no loader, no
+// environment) without a board branch.
 
 import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
@@ -62,7 +57,7 @@ export async function probeImage(ctx: ImageContext, log: Log): Promise<void> {
   log(`── probe: ${ctx.board.name} ── ${ctx.image}`)
   log(`   tools: ${ctx.tools.announce}`)
 
-  // 1. sgdisk -----------------------------------------------------------------
+  // 1. sgdisk
   const gpt = await ctx.gpt()
   log(`   [sgdisk]      ${gpt.partitions.length} partitions, sector ${gpt.sectorSize} B,`
     + ` disk GUID ${gpt.diskGuid}, ${gpt.totalSectors} sectors`)
@@ -74,7 +69,7 @@ export async function probeImage(ctx: ImageContext, log: Log): Promise<void> {
   const verdict = await sgdiskVerify(ctx.tools, ctx.image)
   log(`   [sgdisk]      --verify: ${verdict.clean ? 'no problems' : `complaints: ${verdict.complaints.join(' | ')}`}`)
 
-  // 2. mtools, at an offset ---------------------------------------------------
+  // 2. mtools, at an offset
   for (const part of ctx.board.partitions.filter(p => p.role === 'esp')) {
     const label = part.label
     if (label === undefined) continue
@@ -88,7 +83,7 @@ export async function probeImage(ctx: ImageContext, log: Log): Promise<void> {
     })
   }
 
-  // 3. dd-extract + tune2fs/debugfs -------------------------------------------
+  // 3. dd-extract + tune2fs/debugfs
   for (const part of ctx.board.partitions.filter(p => p.role === 'ext4')) {
     const label = part.label
     if (label === undefined) continue
@@ -110,7 +105,7 @@ export async function probeImage(ctx: ImageContext, log: Log): Promise<void> {
     })
   }
 
-  // 4/5. unsquashfs and veritysetup, over the verity slot ---------------------
+  // 4/5. unsquashfs and veritysetup, over the verity slot
   for (const part of ctx.board.partitions.filter(p => p.role === 'verity-slot')) {
     const label = part.label
     if (label === undefined) continue
@@ -133,7 +128,7 @@ export async function probeImage(ctx: ImageContext, log: Log): Promise<void> {
         log(`   [unsquashfs]  ${label}: ${sample} extracted and present`)
       }
 
-      // AND THE OTHER DIRECTION, in the same breath. unsquashfs exits 0 for a
+      // And the other direction, in the same breath. unsquashfs exits 0 for a
       // path that is not in the archive and leaves an empty directory behind;
       // a probe that only ever showed the succeeding case would be showing a
       // helper that has never been observed refusing anything.
@@ -217,7 +212,7 @@ export async function probeImage(ctx: ImageContext, log: Log): Promise<void> {
           log(`   [fdtget]      ${dtb} is listed in ${bootA} and mcopy could not read it`)
           continue
         }
-        // BOTH DIRECTIONS, in the same breath, as the unsquashfs step does:
+        // Both directions, in the same breath, as the unsquashfs step does:
         // a node that IS there and a node that is not, so the probe is never
         // showing a helper that has only ever been observed succeeding.
         const red = await fdtGetResult(ctx.tools, local, '/leds/status-red', 'label')

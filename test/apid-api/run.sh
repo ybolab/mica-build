@@ -1,51 +1,15 @@
 #!/usr/bin/env bash
-# Boot the x64 image with apid reachable from outside it, and run the API
-# suite against the running daemon.
+# Boot the x64 image with apid reachable from outside it, and run the API suite
+# against the running daemon.
 #
 #   bash test/apid-api/run.sh
 #   bash test/apid-api/run.sh --dry-run
 #
-# Every other check in this repository reads apid's source, its binary, or the
-# image that ships it. This one talks to it, over a real socket, to a daemon on
-# a machine that came up through OVMF, GRUB and its own unit ordering -- so it
-# is the only place where a route that exists in routes.rs but is unreachable in
-# the running daemon looks different from one that works.
-#
-# It builds nothing: the image is an input. A harness that quietly rebuilt would
-# turn a check into a forty-minute build and would be testing the tree rather
-# than the artefact somebody meant to test, so a missing image is refused by
-# name, with the two commands that make it.
-#
-# Three doors sit between here and apid, and every one of them fails as
-# "connection refused" with nothing to say which door was shut:
-#
-#   1. QEMU's user-mode `hostfwd` binds inside the container running QEMU.
-#   2. That container must publish the port, which os/tools/qemu-run.sh does.
-#   3. `-p 127.0.0.1:...` publishes on the docker host's loopback. This script
-#      runs inside a container; that loopback is not ours and there is no route
-#      to it. A containerised session sits on its own docker network while a
-#      plain `docker run` lands on the default bridge, with nothing between
-#      them.
-#
-# So the guest's address is the QEMU container's own address on a network this
-# script shares with it, and that network is discovered rather than named here:
-# the script reads its own eth0 address and asks each docker network whether it
-# holds it. Hardcoding a network name would work on one host and nowhere else,
-# and `hostname` is the container's short id about as often as it is a name.
-#
-# The console is the only journal. mos keeps journald at Storage=volatile
-# because /var is the ephemeral partition, so a guest's log dies with the guest,
-# and os/tools/qemu-journal.sh is committed as known-broken for that reason and
-# is not called here. Instead every boot is captured to a file under _out/,
-# MOS_QEMU_APPEND puts journald on the serial line, and apid's own
-# `APID_LISTENING` line becomes a readiness signal that can be waited on.
-# Dropping that append deletes the signal the wait depends on.
-#
-# One run directory, shared: os/tools/qemu-run.sh's RUN_DIR is the single fixed
-# path _out/x64/.qemu, and the x64 verification line uses it too. Two runs at
-# once clobber each other's disk.img, so this script refuses to start while
-# another container holds it. The path cannot be moved from here, because
-# os/tools/qemu-run.sh belongs to the image line and is not ours to edit.
+# This is the only check here that talks to apid over a real socket, on a
+# machine that came up through OVMF, GRUB and its own unit ordering, so a route
+# that exists in routes.rs but is unreachable in the running daemon looks
+# different from one that works. It builds nothing: the image is an input, and a
+# missing one is refused by name with the two commands that make it.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -62,12 +26,18 @@ IMG="${OUT_DIR}/${IMAGE_LATEST_NAME:?os/boards/x64/board.env did not define IMAG
 RUN_DIR="${OUT_DIR}/.qemu"
 ART_DIR="${OUT_DIR}/apid-api"
 
-# Resolved once, and used for every comparison against a docker mount source.
-# `docker inspect` reports the path it was given, not the path it resolved, so a
-# run directory reached through a symlink -- a git worktree pointing _out at the
-# checkout that built the image is the ordinary case -- slips past a string
-# comparison, and the guard below would wave through the collision it exists to
-# stop.
+# `RUN_DIR` is os/tools/qemu-run.sh's single fixed path and the x64 verification
+# line uses it too, so two runs at once clobber each other's disk.img and this
+# script refuses to start while another container holds it. It cannot be moved
+# from here: os/tools/qemu-run.sh belongs to the image line and is not ours to
+# edit.
+#
+# `RUN_DIR_REAL` is resolved once and used for every comparison against a docker
+# mount source. `docker inspect` reports the path it was given, not the path it
+# resolved, so a run directory reached through a symlink -- a git worktree
+# pointing _out at the checkout that built the image is the ordinary case --
+# slips past a string comparison, and the guard below would wave through the
+# collision it exists to stop.
 RUN_DIR_REAL="$(readlink -f "${RUN_DIR}")"
 OUT_REAL="$(readlink -f "${REPO_ROOT}/_out")"
 
@@ -134,12 +104,12 @@ fail() { CHECKS_FAILED=$((CHECKS_FAILED + 1)); echo "FAIL: $*"; }
 note() { echo "note: $*"; }
 
 # --- docker observation -----------------------------------------------------
-# Every template below is deliberately free of Go template VARIABLES. `range`
-# over a map with no variable binds the dot to the VALUE, which is all these
+# Every template below is deliberately free of Go template variables. `range`
+# over a map with no variable binds the dot to the value, which is all these
 # need, and it keeps the format strings free of `$` -- which inside a shell
 # script would otherwise mean a shellcheck suppression on every one of them.
 
-# Running containers whose bind mounts RESOLVE to the shared run directory.
+# Running containers whose bind mounts resolve to the shared run directory.
 # Prints `<short-id> <name>` per holder, nothing when there are none.
 run_dir_holders() {
     local ids id src resolved name mounts
@@ -160,7 +130,7 @@ run_dir_holders() {
 }
 
 # This container's own address, then the docker network that holds it. Two
-# steps, because the second is what makes the answer an OBSERVATION: the
+# steps, because the second is what makes the answer an observation: the
 # network is whichever one lists our address, so a session moved to a different
 # network keeps working, and a session on none of them is told why rather than
 # left to fail later at connect time with a bare refusal.
@@ -183,7 +153,7 @@ network_holding() {
     return 1
 }
 
-# A container's address on the discovered network, looked up BY NAME because
+# A container's address on the discovered network, looked up by name because
 # the map key in `docker network inspect` is the container id and reading a map
 # key needs a template variable. The name is stable for the life of the
 # container. os/tools/qemu-run.sh sets none, so it is docker's random name -- which is
@@ -199,11 +169,11 @@ address_on_network() {
 }
 
 # --- teardown ---------------------------------------------------------------
-# Idempotent, and run from BOTH the normal path and the EXIT trap, so the last
+# Idempotent, and run from both the normal path and the EXIT trap, so the last
 # line of stdout is always the RESULT rather than a teardown note that arrived
 # after it. An argument error and a failure nine minutes into a boot therefore
 # leave the same amount behind: nothing running, and every console log still on
-# disk. The logs ARE the evidence and are never removed; the 4 GiB disk is not
+# disk. The logs are the evidence and are never removed; the 4 GiB disk is not
 # evidence, and is removed unless asked for.
 QEMU_CID=""
 QEMU_PID=""
@@ -222,7 +192,7 @@ teardown() {
     elif [ "${PREPARED}" -eq 1 ]; then
         # The container came up but was never identified -- the run that would
         # otherwise leave one behind holding the shared directory. Anything
-        # holding it NOW is ours: the precondition proved nothing held it when
+        # holding it now is ours: the precondition proved nothing held it when
         # this run started.
         while read -r id _; do
             [ -n "${id}" ] || continue
@@ -273,15 +243,27 @@ fi
 pass "no competing run: nothing binds ${RUN_DIR_REAL}"
 
 if [ ! -f "${SCRIPT_DIR}/src/main.ts" ]; then
-    # Said HERE rather than left to the container, because inside it the same
-    # situation prints `Module not found` -- which on this host is ALSO what a
-    # bind mount that did not propagate looks like, and telling those two apart
-    # cost a measured afternoon. Not fatal at this point: the boot half of the
-    # harness is still worth running and is still checkable without the suite.
+    # Said here rather than left to the container: inside it the same situation
+    # prints `Module not found`, which on this host is also what a bind mount
+    # that did not propagate looks like. Not fatal at this point -- the boot
+    # half of the harness is still worth running and is still checkable without
+    # the suite.
     note "test/apid-api/src/main.ts does not exist yet; the suite step will FAIL loudly rather than be skipped quietly"
 fi
 
 # --- 2. discover the network by observation ---------------------------------
+# Three doors sit between here and apid and each fails as "connection refused"
+# with nothing to say which was shut: QEMU's user-mode `hostfwd` binds inside
+# the container running QEMU; that container must publish the port, which
+# os/tools/qemu-run.sh does; and `-p 127.0.0.1:...` publishes on the docker
+# host's loopback, which is not this container's and has no route to it -- a
+# containerised session sits on its own docker network while a plain
+# `docker run` lands on the default bridge. So the guest's address is the QEMU
+# container's own address on a network this script shares with it, discovered
+# rather than named: the script reads its own eth0 address and asks each docker
+# network whether it holds it. Hardcoding a network name would work on one host
+# and nowhere else, and `hostname` is the container's short id about as often as
+# it is a name.
 MY_IP="$(own_address)"
 if [ -z "${MY_IP}" ]; then
     fail "could not read this container's own eth0 address; without it the docker network holding this session cannot be identified, and the guest then has no address that is reachable from here"
@@ -294,9 +276,16 @@ fi
 pass "docker network discovered by observation: ${NET} (this container is ${MY_IP})"
 
 mkdir -p "${ART_DIR}"
+# The console is the only journal. mos keeps journald at Storage=volatile
+# because /var is the ephemeral partition, so a guest's log dies with the guest,
+# and os/tools/qemu-journal.sh is committed as known-broken for that reason and
+# is not called here. Instead every boot is captured to a file here,
+# MOS_QEMU_APPEND puts journald on the serial line, and apid's own
+# `APID_LISTENING` line becomes a readiness signal that can be waited on.
+# Dropping that append deletes the signal the wait depends on.
 CONSOLE1="${ART_DIR}/console-boot1.log"
 CONSOLE2="${ART_DIR}/console-boot2.log"
-# The path the SUITE is given has to resolve inside the bun container, which
+# The path the suite is given has to resolve inside the bun container, which
 # mounts the repository root at /w. _out is bound over the top of it a second
 # time so that a checkout whose _out is a symlink -- a worktree borrowing the
 # artefacts of the checkout that built them -- does not hand the suite a
@@ -337,7 +326,7 @@ trap 'teardown' EXIT
 # --- 3. boot ----------------------------------------------------------------
 # --prepare-only makes the disk copy, grows it so systemd-repart has somewhere
 # to extend into, and applies MOS_QEMU_APPEND to the copy's grub.cfg. It boots
-# nothing. Every boot after it REUSES that disk, which is what makes two boots
+# nothing. Every boot after it reuses that disk, which is what makes two boots
 # off one disk state possible at all -- and what lets the reboot in phase 07 be
 # observed as a change to the disk rather than as a fresh machine.
 #
@@ -380,9 +369,9 @@ launch_boot() {
 # --- 4. find the guest ------------------------------------------------------
 # Two conditions, held apart because they fail for different reasons and the
 # message has to say which. os/tools/qemu-run.sh starts its container with `--rm` and
-# no `--name`, so the only handle on it is the bind mount -- and the SAME mount
+# no `--name`, so the only handle on it is the bind mount -- and the same mount
 # is held for a moment by the short-lived mtools container that writes the
-# kernel append into the ESP, which is NOT on the discovered network. Requiring
+# kernel append into the ESP, which is not on the discovered network. Requiring
 # an address on that network is what tells the two apart; matching on the mount
 # alone latches onto the wrong container and then reports "no address on that
 # network" about a container that was never going to have one.
@@ -431,22 +420,12 @@ find_guest() {
 # Both signals, because either alone is a different claim: APID_LISTENING says
 # the daemon reached the point in its own start-up where it binds, and a 200
 # from /healthz says the three doors between here and that socket are open.
-#
 # /healthz is the probe because it is the only route the auth gate lets through
-# unauthenticated. Anything else answers a redirect to /setup on a device that
-# has never been set up, and a redirect is not evidence that the daemon is
-# serving. Redirects are not followed here either: apid's :80 -> :443 redirect
-# names the guest's port 443, which is not followable through a port forward,
-# and a client that follows it blindly hangs in a way that reads as apid being
-# down.
-#
-# The probe runs in the bun image ON THE DISCOVERED NETWORK -- the suite's own
-# runtime over the suite's own path -- so a green wait is evidence about the
-# thing that is about to run rather than about this shell's networking. apid's
-# certificate is self-signed, so verification is switched off EXPLICITLY, and
-# only here: measured 2026-08-24, bun rejects that certificate by default with
-# "self signed certificate", which is the right default and the reason the
-# opt-out is written down rather than inherited from an environment variable.
+# unauthenticated: anything else answers a redirect to /setup on a device never
+# set up, and a redirect is not evidence that the daemon is serving. Redirects
+# are not followed either -- apid's :80 -> :443 redirect names the guest's port
+# 443, which is not followable through a port forward, and a client following it
+# blindly hangs in a way that reads as apid being down.
 # shellcheck disable=SC2016  # this is JavaScript: ${process.env.H} and the
 # backtick template are for bun to expand, not the shell. Substituting them
 # here would bake this run's values into a string that is then evaluated in a
@@ -464,6 +443,13 @@ console.log(JSON.stringify(out));
 process.exit(out.status === 200 ? 0 : 1);
 '
 
+# The probe runs in the bun image on the discovered network -- the suite's own
+# runtime over the suite's own path -- so a green wait is evidence about the
+# thing that is about to run rather than about this shell's networking. apid's
+# certificate is self-signed, so verification is switched off explicitly and
+# only here: measured 2026-08-24, bun rejects that certificate by default with
+# "self signed certificate", which is the right default and the reason the
+# opt-out is written down rather than inherited from an environment variable.
 probe_healthz() {
     docker run --rm --network "${NET}" \
         -e H="$1" -e P="${HTTPS_PORT}" \
@@ -474,10 +460,10 @@ console_tail_line() {
     tail -n 1 "$1" 2>/dev/null | tr -d '\r' | tr -dc '[:print:]' | cut -c1-100
 }
 
-# The console log is APPENDED TO across a reboot: the second boot of a guest
-# that reset in place writes into the SAME file, under the first boot's
+# The console log is appended to across a reboot: the second boot of a guest
+# that reset in place writes into the same file, under the first boot's
 # APID_LISTENING line. A whole-file grep therefore answers "apid is listening"
-# using a line the PREVIOUS boot wrote -- measured 2026-08-24, where it declared
+# using a line the previous boot wrote -- measured 2026-08-24, where it declared
 # the guest ready 0s after a reboot that had just taken it down, and then spent
 # its whole deadline waiting for a /healthz that could not come.
 #
@@ -538,22 +524,19 @@ wait_for_apid() {
 }
 
 # --- 6. run the suite -------------------------------------------------------
-# The REPOSITORY ROOT is mounted, never a temporary directory. Measured
-# 2026-08-24: a /tmp bind does NOT propagate to the docker daemon on this host
-# -- it is a sibling-container arrangement, so our /tmp is ours and the
-# daemon's is the daemon's. The container then sees an EMPTY directory and says
-# `Module not found`, which reads like a bug in the suite and is not.
+# The repository root is mounted, never a temporary directory: measured
+# 2026-08-24, a /tmp bind does not propagate to the docker daemon on this host,
+# which is a sibling-container arrangement, so the container sees an empty
+# directory and says `Module not found` -- which reads like a bug in the suite
+# and is not.
 #
-# APID_NEGATIVE and APID_HANDOFF are FORWARDED when the caller set them, and
+# APID_NEGATIVE and APID_HANDOFF are forwarded when the caller set them and
 # omitted entirely when it did not, so an unset knob keeps the suite's own
-# default rather than being overridden with an empty string.
-#
-# APID_NEGATIVE is the reason this matters: it is how a live run is made to go
-# RED on demand, which is the other half of proving the suite works -- the
-# selftest proves the machinery can fail offline, and this proves it can fail
-# against the actual guest. Without the forward, `APID_NEGATIVE=... make
-# os-apid-api-test` would run green and look like the inversion had been
-# applied, which is precisely the false negative the knob exists to rule out.
+# default rather than being overridden with an empty string. APID_NEGATIVE is
+# how a live run is made to go red on demand: the selftest proves the machinery
+# can fail offline, and this proves it can fail against the actual guest.
+# Without the forward, `APID_NEGATIVE=... make os-apid-api-test` runs green and
+# looks like the inversion had been applied.
 SUITE_RC=0
 suite_passthrough() {
     local -n out="$1"
@@ -588,7 +571,7 @@ run_suite() {
     rc="${PIPESTATUS[0]}"
     set -e
     # The suite's own PASS/FAIL lines are folded into this run's totals, so the
-    # final RESULT counts ASSERTIONS and not scripts. An exit code with no FAIL
+    # final RESULT counts assertions and not scripts. An exit code with no FAIL
     # line behind it is recorded as its own failure: a suite that died before
     # asserting anything must not be able to leave a clean report.
     p="$(grep -c '^PASS:' "${log}" 2>/dev/null || true)"
@@ -615,32 +598,27 @@ run_suite boot1 "${GUEST_IP}" "console-boot1.log" "${PHASES}"
 
 # --- 7. the second boot -----------------------------------------------------
 # os/tools/qemu-run.sh:167 passes `-no-reboot`, so a guest-initiated reboot makes
-# QEMU EXIT rather than reset. That file belongs to the image line and is not
-# ours to change, so the harness works WITH the flag: phase 07 posts
-# /power/reboot, QEMU exits, and that exit IS the evidence the guest asked for
-# a reset. The second boot reuses the same disk.img and comes up through
-# firmware, GRUB and the grubenv the reboot just wrote.
+# QEMU exit rather than reset. That file belongs to the image line and is not
+# ours to change, so the harness works with the flag: phase 07 posts
+# /power/reboot, QEMU exits, and that exit is the evidence the guest asked for a
+# reset. The second boot reuses the same disk.img and comes up through firmware,
+# GRUB and the grubenv the reboot just wrote.
 #
-# Which of the two happened is decided BY LOOKING -- is the QEMU container
-# still running -- and never by assuming. If a future os/tools/qemu-run.sh drops
-# `-no-reboot`, the guest resets in place, the container is still there, and
-# the right move is to wait for apid to come back on the SAME container rather
-# than to start a second one against a disk something is already booting.
-#
-# WHICH SHAPE HAPPENED IS NOT DECIDABLE IMMEDIATELY. Phase 07 returns as soon as
-# the HTTPS port stops answering, which is well before QEMU has finished tearing
-# itself down: measured 2026-08-24, `docker inspect` still reported the
-# container RUNNING at that instant, this branch concluded "the guest reset in
-# place", and the run then waited out its whole deadline for apid on a container
-# that had exited seconds later. A single observation of a state that is
-# actively changing is not an observation of which shape this is.
-#
-# So the container is given a bounded grace period to exit. Still running at the
-# end of it IS the reset-in-place shape; exiting during it is the -no-reboot
-# shape. The grace is generous relative to how long a QEMU teardown takes and
-# short relative to a boot, so it costs nothing in the ordinary case.
+# If a future os/tools/qemu-run.sh drops `-no-reboot` the guest resets in place
+# and the container is still there, so the wait must go to that same container
+# rather than start a second one against a disk something is already booting.
+# Which shape happened is therefore decided by looking, never by assuming.
 QEMU_EXIT_GRACE="${MOS_APID_QEMU_EXIT_GRACE:-90}"
 
+# Not decidable immediately: phase 07 returns as soon as the HTTPS port stops
+# answering, well before QEMU has finished tearing itself down. Measured
+# 2026-08-24, `docker inspect` still reported the container running at that
+# instant, this branch concluded "the guest reset in place", and the run then
+# waited out its whole deadline for apid on a container that had exited seconds
+# later. So the container is given a bounded grace period to exit: still running
+# at the end of it is the reset-in-place shape, exiting during it is the
+# -no-reboot shape. The grace is generous relative to a QEMU teardown and short
+# relative to a boot, so it costs nothing in the ordinary case.
 qemu_still_running_after_grace() {
     local waited=0
     while [ "${waited}" -lt "${QEMU_EXIT_GRACE}" ]; do
@@ -654,22 +632,19 @@ qemu_still_running_after_grace() {
     return 0
 }
 
-#
-# AND FIRST: DID PHASE 07 ACTUALLY POST A REBOOT? A second boot only means
+# And first: did phase 07 actually post a reboot? A second boot only means
 # something if the first one ended in one. 07 writes its handoff immediately
 # after the confirmed POST, so that file existing and being newer than this run
-# is the signal -- and its absence is what a run where 07 was skipped looks
-# like, which happens whenever an earlier phase fails.
-#
-# Without this check such a run waits out the full readiness deadline on a guest
-# that never rebooted: the console has no new apid line to find, because apid
-# never restarted, and every post-reboot assertion then runs against a machine
-# that has not rebooted.
+# is the signal, and its absence is what a run where 07 was skipped looks like
+# -- which happens whenever an earlier phase fails. Without this check such a
+# run waits out the full readiness deadline on a guest that never rebooted: apid
+# never restarted, so the console has no new apid line to find, and every
+# post-reboot assertion runs against a machine that has not rebooted.
 HANDOFF_FILE="${ART_DIR}/handoff-07-reboot.json"
 
 reboot_was_posted() {
     [ -f "${HANDOFF_FILE}" ] || return 1
-    # Newer than the disk we prepared for THIS run, so a handoff left behind by
+    # Newer than the disk we prepared for this run, so a handoff left behind by
     # an earlier run cannot vouch for this one.
     [ "${HANDOFF_FILE}" -nt "${RUN_DIR}/disk.img" ] || return 1
     return 0
@@ -685,7 +660,7 @@ if [ "${BOOT2}" = "1" ] && ! reboot_was_posted; then
 fi
 
 if [ "${BOOT2}" = "1" ]; then
-    # Anchored here, BEFORE anything waits: the second boot appends to the same
+    # Anchored here, before anything waits: the second boot appends to the same
     # console file when the guest resets in place, and boot 1's APID_LISTENING
     # line is already in it.
     CONSOLE1_AFTER_REBOOT="$(console_size "${CONSOLE1}")"
@@ -707,12 +682,12 @@ if [ "${BOOT2}" = "1" ]; then
 fi
 
 # --- 8. one machine-readable result for the whole run -----------------------
-# The envelope is this harness's; what each boot wrote is embedded VERBATIM and
+# The envelope is this harness's; what each boot wrote is embedded verbatim and
 # is not reinterpreted here. The suite owns the shape of its own file, and a
 # merger that reached inside it would have to be changed in step with it -- and
 # would silently produce zeros on the day it was not.
 MERGED="${ART_DIR}/result.json"
-# The IMAGE IDENTITY goes in the envelope, because a result file that does not
+# The image identity goes in the envelope, because a result file that does not
 # say which artefact it covered is a result file that cannot be trusted a week
 # later. `x64-mos-v2-latest.img` is a symlink and its target changes under it
 # every time somebody builds; the resolved name and the mtime are what pin a run

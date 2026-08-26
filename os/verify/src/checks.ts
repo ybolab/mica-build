@@ -7,31 +7,19 @@
 // does not treat it as one -- every one of the oracle's conclusions comes out
 // `not-ported`, and the run's conclusion is INCOMPLETE.
 //
-// WHY THE MATCHER LIVES ON THE CHECK.
+// The matcher lives on the check rather than in a table of ids kept beside them,
+// for the reason ui-location-test.sh gives for its own register being one
+// structure rather than two: a port and its identity that live in different
+// places drift, and the drift is invisible -- a check whose matcher stopped
+// matching reports the same "no divergence" as a check that agrees. Here the two
+// cannot separate: a CheckCase with no `shell` matcher does not typecheck, and a
+// matcher with no check is not a CheckCase.
 //
-// The obvious alternative is a table mapping ids to substrings, kept beside the
-// checks. It was rejected for the reason ui-location-test.sh gives for its own
-// register being one structure rather than two: a port and its identity that
-// live in different places drift, and the drift is invisible -- a check whose
-// matcher stopped matching reports the same "no divergence" as a check that
-// agrees. Here the two cannot separate. A CheckCase with no `shell` matcher
-// does not typecheck; a matcher with no check is not a CheckCase.
-//
-// WHAT M4b ADDS, PER CHECK.
-//
-//   {
-//     id: 'gpt-disk-guid',
-//     shell: { pass: 'disk GUID is' },          // eq_ci prints "X is Y" / "X is 'Z', expected Y"
-//     run: async (ctx) => {
-//       const gpt = await ctx.gpt()
-//       const want = ctx.board.get('DISK_GUID') ?? ''
-//       return [eq('gpt-disk-guid', gpt.diskGuid, want, `disk GUID is ${want}`)]
-//     },
-//   }
-//
-// and, in the same change, its negative test -- a port without one is not
-// done. The harness cannot tell a check that passes from a check that
-// cannot fail; only a fixture that drives it red can.
+// Each entry carries an `id`, a `shell` matcher (`{ pass: 'disk GUID is' }` for
+// an `eq_ci` that prints "X is Y" one way and "X is 'Z', expected Y" the other),
+// and a `run` that returns the port's conclusions -- and, in the same change,
+// its negative test. The harness cannot tell a check that passes from a check
+// that cannot fail; only a fixture that drives it red can.
 
 import { createHash } from 'node:crypto'
 import { closeSync, existsSync, mkdirSync, mkdtempSync, openSync, readSync, renameSync, rmSync } from 'node:fs'
@@ -71,7 +59,7 @@ export type { CheckResult, Verdict }
 /**
  * What a check is handed. Everything here reads the image; nothing writes to it.
  *
- * The geometry comes from the GPT THE IMAGE ACTUALLY CARRIES, not from the
+ * The geometry comes from the GPT the image actually carries, not from the
  * board definition. That is deliberate: a check comparing the image to the
  * board definition must read the two independently, and a context that resolved
  * partitions through the board definition would hand a check the same number on
@@ -84,7 +72,7 @@ export interface ImageContext {
   /** A directory the helpers may write extracts into. Never the image's own. */
   readonly workDir: string
   /**
-   * Where this board's BUILD OUTPUTS are -- `_out/<board>`.
+   * Where this board's build outputs are -- `_out/<board>`.
    *
    * Two checks read a file the build produced beside the image rather than a
    * byte of the image itself: the verity parameter file and the rootfs report.
@@ -109,7 +97,7 @@ export interface ImageContext {
    * The seam the LAYOUT-addressed families need. `extract` above resolves a
    * partition through the GPT, which is right for everything that reads a
    * partition and wrong for the four ext4 tiers: os/verify-image-v2.sh:2309
-   * `dd`s them at `PART_START_MIB_x`, the offset the BOARD DEFINITION walks to,
+   * `dd`s them at `PART_START_MIB_x`, the offset the board definition walks to,
    * and a check that read them through the GPT would agree with a partition
    * that had moved. `gpt-partition-start` is the check that says the two agree.
    */
@@ -195,7 +183,7 @@ export function assertRegisterWellFormed(checks: readonly CheckCase[] = CHECKS):
     // matcher at all claims no line on any board, comes out `unfired`, and reads
     // exactly like a check whose matcher stopped matching. `pass` may be omitted
     // only by an entry that owns a SKIP instead -- never by one that owns nothing.
-    // An EMPTY LIST is the same fault wearing a different shape, which is why
+    // An empty list is the same fault wearing a different shape, which is why
     // this counts alternatives rather than asking whether the fields are set.
     if (alternatives.length === 0) {
       throw new ToolOutputError(
@@ -274,9 +262,7 @@ export async function runChecks(ctx: ImageContext, checks: readonly CheckCase[] 
   return { results, failures }
 }
 
-// ---------------------------------------------------------------------------
 // building the context
-// ---------------------------------------------------------------------------
 
 export interface ContextRequest {
   readonly board: Board
@@ -380,28 +366,22 @@ export function createImageContext(request: ContextRequest): ImageContext {
     return started
   }
 
-  // THE CACHE IS KEYED ON THE PAYLOAD'S CONTENT, and that is the whole point.
+  // The cache is keyed on the payload's content, and that is the whole point.
+  // Keyed on the slot's name -- `root-rootfs-a` -- and short-circuited on
+  // `existsSync(dest)` it would be wrong, because `extract` beside it always
+  // reopens its destination with 'w': a second run at the same `--work` against
+  // a different image re-extracts the partition and then hands back the previous
+  // image's unpacked root, so every packed-root check reads a tree unrelated to
+  // the image named on the command line and reports agreement about it. A cache
+  // whose correctness depends on the caller remembering to delete it is not a
+  // cache. Dropping the short-circuit instead does stop the silent wrong answer
+  // -- `squashfsExtract` refuses a `dest` that exists, by name -- but converts
+  // every re-run at one `--work` into a hard refusal. Keying on content keeps
+  // the reuse and makes it sound: the same bytes resolve to the same directory,
+  // different bytes cannot, and the key cannot go stale because it IS the
+  // content.
   //
-  // Keyed on the slot's NAME -- `root-rootfs-a` -- and short-circuited on
-  // `existsSync(dest)`, it would be wrong: `extract` beside it always reopens
-  // its destination with 'w', so a second run at the same `--work` against a
-  // DIFFERENT image re-extracts the partition and then hands back the PREVIOUS
-  // image's unpacked root. The two runs would describe two different images
-  // with nothing anywhere complaining: every packed-root check would go on
-  // reading a tree that had nothing to do with the image named on the command
-  // line, and report agreement about it. Clearing _out/parity before
-  // every run and said so; a cache whose correctness depends on the caller
-  // remembering to delete it is not a cache.
-  //
-  // WHY KEYING AND NOT DROPPING THE SHORT-CIRCUIT. Dropping it does stop the
-  // silent wrong answer -- `squashfsExtract` refuses a `dest` that exists, by
-  // name -- but it converts every re-run at one `--work` into a hard refusal,
-  // so the only way to run twice is the `rm -rf` that was already the
-  // workaround. Keying on content keeps the reuse AND makes it sound: the same
-  // bytes resolve to the same directory, different bytes cannot, and the key
-  // cannot go stale because it IS the content. Nothing has to be invalidated.
-  //
-  // WHY IT IS PUBLISHED BY RENAME. A run killed mid-unsquashfs leaves a PARTIAL
+  // Why it is published by rename. A run killed mid-unsquashfs leaves a PARTIAL
   // tree, and a partial tree at the right name is indistinguishable from a
   // complete one -- `existsSync` says yes to both, and "is X absent from the
   // image?" then passes for every path unsquashfs had not reached yet. That is

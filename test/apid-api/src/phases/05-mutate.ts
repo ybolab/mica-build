@@ -1,35 +1,16 @@
 /**
- * Phase 05 -- mutation, asserted BY ITS EFFECT ON THE DEVICE.
+ * Phase 05 -- mutation, asserted by its effect on the device.
  *
- * This is the phase the whole suite exists for. Every other phase can be
- * satisfied by apid answering correctly about itself; this one cannot. A form
- * post here travels apid -> the system bus -> mosd -> a reconciler -> the
- * device, and only the far end of that chain is worth asserting on. Posting
- * /hostname and getting a 303 proves that a handler returned. It does not
- * prove the hostname changed, and a suite that checked only status codes would
- * pass on a device that never acted on the post.
- *
- * So every mutation below is observed at least twice, and never only by its
- * status code:
- *
- *   - THROUGH THE BUS. The GET pane for each route renders what mosd holds in
- *     settings, read back over the system bus. A pane that renders the new
- *     value proves the write round-tripped apid -> bus -> mosd, which a status
- *     code cannot.
- *   - ON THE DEVICE. mosd's reconcilers and systemd log to the journal, and the
- *     guest boots with `systemd.journald.forward_to_console=1`, so those lines
- *     land on the captured QEMU console. `src/console.ts` marks the log before
- *     each post and searches only what was written afterwards, which is what
- *     makes a matching line evidence about THIS post rather than about the
- *     boot. This is the only observation in the suite that an in-process test
- *     of apid's Router could not make at all.
- *   - ACROSS A REBOOT, for the hostname: the target is left in `ctx.state` and
- *     07b-postreboot asserts the rebooted machine still has it. That is the
- *     strongest of the three, and this phase only sets it up.
- *
- * Two hard prohibitions, both about not destroying the thing being measured:
- * this phase never posts a static network address (see `networkNoOp`), and it
- * never posts to /power/* -- 07 owns taking the guest down.
+ * A 303 proves only that a handler returned, so every mutation is observed at
+ * least twice and never only by its status code: through the bus, where the GET
+ * pane renders what mosd holds in settings; and on the device, where reconciler
+ * and systemd journal lines reach the captured QEMU console (the guest boots
+ * with `systemd.journald.forward_to_console=1`, and `src/console.ts` marks the
+ * log before each post, so a match is evidence about this post and not the
+ * boot). The hostname is asserted a third time across a reboot, left in
+ * `ctx.state` for 07b-postreboot. This phase never posts a static network
+ * address (see `networkNoOp`) and never posts to /power/* -- 07 owns taking the
+ * guest down.
  */
 
 import { createHash } from "node:crypto";
@@ -79,14 +60,14 @@ const TEST_PUBLIC_KEY = `${TEST_KEY_TYPE} ${TEST_KEY_BLOB} ${TEST_KEY_COMMENT}`;
 const TRANSIENT_PASSWORD = "mos-e2e-transient-Zq7Kx3-pw";
 
 // Timeouts. A TCG guest reconciles slowly, so these are generous; each is the
-// window the check NAMES in its own text, so a pass never overstates itself.
+// window the check names in its own text, so a pass never overstates itself.
 const PANE_TIMEOUT_MS = 15_000;
 const HOSTNAME_CONSOLE_TIMEOUT_MS = 30_000;
 const CONTAINER_CONSOLE_TIMEOUT_MS = 90_000;
 const SSH_CONSOLE_TIMEOUT_MS = 45_000;
 const AUDIT_CONSOLE_TIMEOUT_MS = 30_000;
 const LINK_TIMEOUT_MS = 30_000;
-/** Let the reconciler finish talking before an ABSENCE is asserted over its window. */
+/** Let the reconciler finish talking before an absence is asserted over its window. */
 const SETTLE_MS = 3_000;
 
 const phase: Phase = {
@@ -122,9 +103,7 @@ const phase: Phase = {
 
 export default phase;
 
-// ---------------------------------------------------------------------------
-// 5.1 hostname -- the flagship
-// ---------------------------------------------------------------------------
+// 5.1 hostname
 
 async function mutateHostname(ctx: PhaseContext, log: ConsoleLog): Promise<void> {
   const { report, client, config } = ctx;
@@ -132,14 +111,14 @@ async function mutateHostname(ctx: PhaseContext, log: ConsoleLog): Promise<void>
   report.note("");
   report.note("  5.1 hostname: the bus read-back, the running hostname, and what survives a reboot");
 
-  // The mark is taken BEFORE the post. Everything asserted about the console
-  // below is asserted about bytes written after this point, so a hostname line
-  // from the boot cannot satisfy it.
+  // The mark is taken before the post, so everything asserted about the
+  // console below is asserted about bytes written after this point and a
+  // hostname line from the boot cannot satisfy it.
   const marker = log.mark(`POST /hostname hostname=${target}`);
   const posted = await client.post("/hostname", { hostname: target });
   report.expectStatus(posted, 303, `POST /hostname (hostname=${target}) is accepted with 303`);
 
-  // (a) THROUGH THE BUS. /hostname renders the value mosd holds in settings,
+  // (a) Through the bus. /hostname renders the value mosd holds in settings,
   // read back over the system bus -- not a value apid kept in memory for the
   // duration of one request. A pane that renders the target is evidence the
   // write reached mosd and came back. Polled, because the pane is rendered from
@@ -159,24 +138,17 @@ async function mutateHostname(ctx: PhaseContext, log: ConsoleLog): Promise<void>
     },
   );
 
-  // (b) ON THE DEVICE. mosd's hostname reconciler writes /etc/hostname AND
+  // (b) On the device. mosd's hostname reconciler writes /etc/hostname and
   // calls org.freedesktop.hostname1.SetHostname(name, false) to change the
-  // RUNNING hostname; hostnamed logs that, and journald forwards it to the
-  // console. Every candidate below REQUIRES the new hostname to appear in the
-  // line, so a match is evidence about this rename and not about hostname
-  // machinery in general.
-  //
-  // PROMOTED FROM A SKIP. This was `observeConsoleLine` -- absence reported as
-  // SKIP -- because systemd-hostnamed's phrasing varies between versions and
-  // had not been measured from outside the guest. The live run of 2026-08-24
-  // measured it: on this image systemd writes
+  // running hostname; hostnamed logs that, and journald forwards it to the
+  // console. Measured on the live run of 2026-08-24, this image writes
   //
   //     systemd[1]: Hostname set to <mos-e2e-renamed>
   //
-  // (the same shape it uses at boot, `Hostname set to <mos>.`), so absence is
-  // now a real FAILURE rather than an unobserved effect. The name is required
-  // inside the line, so a match is evidence about THIS rename and not about
-  // hostname machinery in general.
+  // (the shape it also uses at boot, `Hostname set to <mos>.`), so absence is a
+  // failure rather than an unobserved effect. Every candidate requires the new
+  // hostname inside the line, so a match is evidence about this rename and not
+  // about hostname machinery in general.
   const name = escapeForPattern(target);
   await expectConsoleLine(
     ctx.report,
@@ -190,11 +162,10 @@ async function mutateHostname(ctx: PhaseContext, log: ConsoleLog): Promise<void>
     },
   );
 
-  // (c) IT PERSISTS -- and this is the STRONGEST of the three, because it is
-  // the only one that cannot be satisfied by anything held in memory: a bus
-  // reply survives nothing, a console line survives nothing, but a hostname
-  // read back after a reboot must have reached the disk. This phase only sets
-  // that up; 07b-postreboot is where it is proved.
+  // (c) It persists. This is the only one of the three that cannot be
+  // satisfied by anything held in memory: a hostname read back after a reboot
+  // must have reached the disk. This phase only sets that up; 07b-postreboot
+  // is where it is proved.
   ctx.state.set(HOSTNAME_TARGET_STATE_KEY, target);
   report.check(
     ctx.state.get(HOSTNAME_TARGET_STATE_KEY) === target,
@@ -204,10 +175,10 @@ async function mutateHostname(ctx: PhaseContext, log: ConsoleLog): Promise<void>
       `actual:   ${JSON.stringify(ctx.state.get(HOSTNAME_TARGET_STATE_KEY))}`,
   );
 
-  // A refused write that partially applied would be a serious defect: the
-  // device would be left carrying a name the API said it would not accept. So
-  // the refusal is asserted, and then the PREVIOUS value is re-read over the
-  // bus to prove nothing of the rejected one landed.
+  // A refused write that partially applied would leave the device carrying a
+  // name the API said it would not accept. So the refusal is asserted, and
+  // then the previous value is re-read over the bus to prove nothing of the
+  // rejected one landed.
   const refused = await client.post("/hostname", { hostname: INVALID_HOSTNAME });
   report.expectStatus(
     refused,
@@ -231,16 +202,14 @@ async function mutateHostname(ctx: PhaseContext, log: ConsoleLog): Promise<void>
   );
 }
 
-// ---------------------------------------------------------------------------
 // 5.2 containers -- the Quadlet bind, exercised in both directions
-// ---------------------------------------------------------------------------
 
 async function mutateContainers(ctx: PhaseContext, log: ConsoleLog): Promise<void> {
   const { report, client } = ctx;
   report.note("");
   report.note("  5.2 containers: the Quadlet bind mount, on and then off again");
 
-  // Read the switch BEFORE posting. If it is already on, mosd has nothing to
+  // Read the switch before posting. If it is already on, mosd has nothing to
   // reconcile and no reconciler lines are expected -- so the console checks
   // below say so and SKIP, rather than going red about a device that was
   // already in the requested state. `assumes` says it arrives off.
@@ -257,7 +226,7 @@ async function mutateContainers(ctx: PhaseContext, log: ConsoleLog): Promise<voi
   const on = await client.post("/containers/enable", { enabled: checkbox(true) });
   report.expectStatus(on, 303, "POST /containers/enable (enabled checked) is accepted with 303");
 
-  // (a) THROUGH THE BUS: the pane renders mosd's own view of the switch.
+  // (a) Through the bus: the pane renders mosd's own view of the switch.
   await expectPane(
     ctx,
     `(a) bus read-back: GET /containers shows the switch enabled within ${PANE_TIMEOUT_MS}ms`,
@@ -265,15 +234,12 @@ async function mutateContainers(ctx: PhaseContext, log: ConsoleLog): Promise<voi
     (html) => switchVerdict(html, "enabled", true),
   );
 
-  // (b) ON THE DEVICE, and this is the best evidence in the whole suite: the
-  // effect of this switch is that mosd mounts etc-containers-systemd.mount,
-  // binding /etc/containers/systemd out of STATE so Quadlet has a directory to
-  // read. Nothing about that is visible over HTTP, and an in-process test of
-  // apid's Router could not reach it at all.
-  //
-  // These two patterns are FAILURES when absent, not skips, because the wording
-  // was measured: mosd/mosd/src/reconciler/container.rs emits them from
-  // `tracing::info!` and they are quoted verbatim here.
+  // (b) On the device: this switch makes mosd mount
+  // etc-containers-systemd.mount, binding /etc/containers/systemd out of STATE
+  // so Quadlet has a directory to read. Nothing about that is visible over
+  // HTTP. Both patterns are failures when absent, not skips, because the
+  // wording was measured: mosd/mosd/src/reconciler/container.rs emits them
+  // from `tracing::info!` and they are quoted verbatim here.
   const consoleOn = async (pattern: RegExp, what: string): Promise<void> => {
     if (noOpOn !== undefined) {
       report.skip(what, noOpOn);
@@ -292,7 +258,7 @@ async function mutateContainers(ctx: PhaseContext, log: ConsoleLog): Promise<voi
     "(b) device effect: mosd's container reconciler logged `container: starting the bind`",
   );
   // Any line naming the unit: systemd's own message wording (unit id versus
-  // unit description) varies by version, but the unit NAME appearing in the
+  // unit description) varies by version, but the unit name appearing in the
   // window after the post is the mount actually being acted on.
   await consoleOn(
     /etc-containers-systemd\.mount/,
@@ -303,7 +269,7 @@ async function mutateContainers(ctx: PhaseContext, log: ConsoleLog): Promise<voi
   // was never tested -- and turning it back off is also what leaves the device
   // in the state the next phase assumes.
   const offMark = log.mark("POST /containers/enable with the checkbox omitted (unchecked)");
-  // An unticked checkbox sends NOTHING -- not "off", not "". Omitting the field
+  // An unticked checkbox sends nothing -- not "off", not "". Omitting the field
   // entirely is what a browser does, and what apid's Option<String> expects.
   const off = await client.post("/containers/enable", { enabled: UNCHECKED });
   report.expectStatus(
@@ -317,9 +283,7 @@ async function mutateContainers(ctx: PhaseContext, log: ConsoleLog): Promise<voi
     "/containers",
     (html) => switchVerdict(html, "enabled", false),
   );
-  // PROMOTED FROM A SKIP, and the measurement corrected an assumption on the
-  // way. This was three candidate wordings reported as SKIP on absence. The
-  // live run of 2026-08-24 showed the window actually contains, in order:
+  // Measured on the live run of 2026-08-24, the window contains, in order:
   //
   //     mosd:    container: turn_on begin
   //     mosd:    container: starting the bind
@@ -329,16 +293,10 @@ async function mutateContainers(ctx: PhaseContext, log: ConsoleLog): Promise<voi
   //     systemd: etc-containers-systemd.mount: Deactivated successfully.
   //     systemd: Unmounted etc-containers-systemd.mount - Quadlet unit ...
   //
-  // So of the three old candidates, the systemd one WOULD have matched
-  // (`Unmounting etc-containers-systemd.mount`) and the loose "any line naming
-  // the mount" one certainly did. The one that is simply wrong is the FIRST:
-  // mosd emits NO `container: turn_off` line at all. Its reconciler logs
-  // `container: turn_on begin` on the way up and nothing symmetrical coming
-  // down, so a pattern waiting for one would wait forever.
-  //
-  // The line below is the unambiguous one -- it names the unit and says the
-  // deactivation SUCCEEDED, where `Unmounting` only says it was attempted --
-  // and it is now required rather than merely hoped for.
+  // mosd emits no `container: turn_off` line -- its reconciler logs
+  // `container: turn_on begin` on the way up and nothing coming down -- so a
+  // pattern waiting for one waits forever. The line below names the unit and
+  // says the deactivation succeeded; `Unmounting` only says it was attempted.
   await expectConsoleLine(
     report,
     log,
@@ -352,9 +310,7 @@ async function mutateContainers(ctx: PhaseContext, log: ConsoleLog): Promise<voi
   );
 }
 
-// ---------------------------------------------------------------------------
 // 5.3 / 5.4 ssh -- the unit, the key pair of writes, and the audited password
-// ---------------------------------------------------------------------------
 
 async function mutateSsh(ctx: PhaseContext, log: ConsoleLog): Promise<void> {
   const { report, client } = ctx;
@@ -374,7 +330,7 @@ async function mutateSsh(ctx: PhaseContext, log: ConsoleLog): Promise<void> {
   const enabled = await client.post("/ssh/enable", { enabled: checkbox(true) });
   report.expectStatus(enabled, 303, "POST /ssh/enable (enabled checked) is accepted with 303");
 
-  // (a) THROUGH THE BUS.
+  // (a) Through the bus.
   await expectPane(
     ctx,
     `(a) bus read-back: GET /ssh shows SSH enabled within ${PANE_TIMEOUT_MS}ms`,
@@ -382,11 +338,11 @@ async function mutateSsh(ctx: PhaseContext, log: ConsoleLog): Promise<void> {
     (html) => switchVerdict(html, "enabled", true),
   );
 
-  // (b) ON THE DEVICE. mosd drives ssh.service -- Debian's unit name; this
+  // (b) On the device. mosd drives ssh.service -- Debian's unit name; this
   // image ships no unit of its own -- so systemd starting that unit is the
   // device acting, logged by PID 1 and by sshd itself rather than by apid.
   // The pattern is a union of the wordings systemd and sshd use (the unit id
-  // appears in modern systemd messages, the unit DESCRIPTION in older ones),
+  // appears in modern systemd messages, the unit description in older ones),
   // and sshd's own "Server listening ... port 22" line, which is the strongest
   // of the three because it means the daemon is actually accepting.
   const sshStarted = new RegExp(
@@ -411,7 +367,7 @@ async function mutateSsh(ctx: PhaseContext, log: ConsoleLog): Promise<void> {
     );
   }
 
-  // Add, then remove. The pair is what proves the WRITE path: a pane that
+  // Add, then remove. The pair is what proves the write path: a pane that
   // renders a key proves only that something can render, but a key that
   // appears after an add and is gone after a remove has been through mosd's
   // authorized-keys writer in both directions.
@@ -431,7 +387,7 @@ async function mutateSsh(ctx: PhaseContext, log: ConsoleLog): Promise<void> {
           `appears; ${describePane(html, "SHA256")}`,
   );
 
-  // The fingerprint is computed HERE from the key that was posted -- sha256 of
+  // The fingerprint is computed here from the key that was posted -- sha256 of
   // the wire blob, base64, unpadded, which is what ssh-keygen -l prints -- so
   // this compares the pane against an independently derived value rather than
   // against whatever the pane happens to contain.
@@ -487,9 +443,8 @@ async function mutateSsh(ctx: PhaseContext, log: ConsoleLog): Promise<void> {
 
   await sshTransientPassword(ctx, log);
 
-  // Leave SSH DISABLED. The phase should not hand the next phase a device in a
-  // state it did not ask for: 06-backoff, 07-reboot and 08-poweroff all assume
-  // the shipped state, and a device left with a listening sshd and a transient
+  // Leave SSH disabled. 06-backoff, 07-reboot and 08-poweroff all assume the
+  // shipped state, and a device left with a listening sshd and a transient
   // password is not that. The re-read is also the reverse-direction evidence
   // for this switch.
   const disableMark = log.mark("POST /ssh/enable with the checkbox omitted (unchecked)");
@@ -505,8 +460,8 @@ async function mutateSsh(ctx: PhaseContext, log: ConsoleLog): Promise<void> {
     "/ssh",
     (html) => switchVerdict(html, "enabled", false),
   );
-  // PROMOTED FROM A SKIP. Measured on the live run of 2026-08-24: turning the
-  // switch off produces all three of
+  // Measured on the live run of 2026-08-24, turning the switch off produces
+  // all three of
   //
   //     Stopping ssh.service - OpenBSD Secure Shell server...
   //     ssh.service: Deactivated successfully
@@ -528,24 +483,21 @@ async function mutateSsh(ctx: PhaseContext, log: ConsoleLog): Promise<void> {
   );
 }
 
-// ---------------------------------------------------------------------------
 // 5.4 the transient SSH password -- audit as the observation
-// ---------------------------------------------------------------------------
 
 async function sshTransientPassword(ctx: PhaseContext, log: ConsoleLog): Promise<void> {
   const { report, client } = ctx;
   report.note("");
   report.note("  5.4 ssh transient password: audited, and the password itself never logged");
 
-  // The effect of this write is a shadow entry, which is not observable over
-  // HTTP at all -- there is no route that renders it, and there should not be.
-  // What IS observable is the audit trail, mirrored to the journal and so to
-  // the console. That makes the audit line the only device-effect evidence
-  // available for this mutation.
+  // The effect of this write is a shadow entry, which no route renders and
+  // none should. What is observable is the audit trail, mirrored to the
+  // journal and so to the console, which makes the audit line the only
+  // device-effect evidence available for this mutation.
   const marker = log.mark("POST /ssh/password (the transient SSH password)");
   const posted = await client.post("/ssh/password", {
     password: TRANSIENT_PASSWORD,
-    // The confirm field is a checkbox whose VALUE is the confirm token; sending
+    // The confirm field is a checkbox whose value is the confirm token; sending
     // "on" would be a ticked box with the wrong value, which is not consent.
     confirm: checkbox(true, SSH_PASSWORD_CONFIRM),
   });
@@ -555,24 +507,18 @@ async function sshTransientPassword(ctx: PhaseContext, log: ConsoleLog): Promise
     "POST /ssh/password (password + confirm=set-transient-password) is accepted with 303",
   );
 
-  // STILL A SKIP, and this is the one of the four that could NOT be promoted on
-  // the live run of 2026-08-24 -- because the operation it observes never
-  // happened. POST /ssh/password answered 502 on that run:
+  // Still a skip: the operation it observes does not happen. POST /ssh/password
+  // answered 502 on the run of 2026-08-24:
   //
   //   apid: mosd call failed error=org.freedesktop.DBus.Error.Failed:
   //     set transient root password: record the transient marker:
   //     create /etc/.transient-root-password.mosd-tmp: Read-only file system
   //
   // mosd writes its marker's temp file straight into /etc, which is read-only
-  // on this image, so the transient password is never set and there is no audit
-  // event to word a pattern from. That is a defect in the daemon, reported and
-  // deliberately NOT worked around here. Until it is fixed, absence stays a
-  // SKIP with the window pasted -- inventing a pattern for an event the device
-  // does not emit would be guessing, and asserting one that never matches would
-  // turn a daemon defect into a permanent red in the wrong place.
-  //
-  // The check ABOVE (the 502) is where that defect is reported. This one is
-  // downstream of it.
+  // on this image, so the transient password is never set and there is no
+  // audit event to word a pattern from. That daemon defect is reported by the
+  // 502 check above; until it is fixed, absence stays a SKIP with the window
+  // pasted rather than asserting a pattern the device never emits.
   await observeConsoleLine(
     report,
     log,
@@ -590,15 +536,14 @@ async function sshTransientPassword(ctx: PhaseContext, log: ConsoleLog): Promise
   );
 
   // Give the reconciler and the audit mirror a moment to finish writing before
-  // asserting what is NOT in the window: an absence asserted over a window that
+  // asserting what is not in the window: an absence asserted over a window that
   // closes too early is an absence that was never really tested.
   await settle(SETTLE_MS);
 
-  // And this assertion is worth more than the one above. A password that leaks
-  // into the journal is a real security defect, and it is exactly the kind that
-  // ships unnoticed: every functional check still passes with the secret in the
-  // log. `expectConsoleAbsent` refuses to pass over an EMPTY window, so a quiet
-  // console reports SKIP rather than a vacuous green.
+  // A password that leaks into the journal is a security defect that ships
+  // unnoticed, because every functional check still passes with the secret in
+  // the log. `expectConsoleAbsent` refuses to pass over an empty window, so a
+  // quiet console reports SKIP rather than a vacuous green.
   expectConsoleAbsent(
     report,
     log,
@@ -609,32 +554,21 @@ async function sshTransientPassword(ctx: PhaseContext, log: ConsoleLog): Promise
   );
 }
 
-// ---------------------------------------------------------------------------
 // 5.5 network -- a no-op round trip, and a hard prohibition
-// ---------------------------------------------------------------------------
 
 /**
- * Post the interface's CURRENT configuration back unchanged.
+ * Post the interface's current configuration back unchanged.
  *
- * ####################################################################
- * # POSTING A STATIC ADDRESS FROM THIS SUITE IS FORBIDDEN.           #
- * #                                                                  #
- * # The guest is reached over eth0 by DHCP (10.0.2.15/24) through    #
- * # QEMU's hostfwd. Setting a static address reconfigures the very   #
- * # interface every other assertion in this suite travels over: the  #
- * # forward drops mid-run, every later phase times out, and the      #
- * # failure looks exactly like apid crashing. The suite would then   #
- * # be reporting on its own damage.                                  #
- * #                                                                  #
- * # A static-address change IS worth testing -- from a harness that  #
- * # can reach the guest another way (a serial console driver, or a   #
- * # second NIC), and that can put the interface back. Not from here. #
- * ####################################################################
- *
- * What is left is still a real assertion: a no-op round trip proves the network
- * reconciler applied a configuration equal to the running one WITHOUT dropping
- * the link -- which is a thing reconcilers get wrong by tearing down and
- * rebuilding unconditionally.
+ * Posting a static address from this suite is forbidden. The guest is reached
+ * over eth0 by DHCP (10.0.2.15/24) through QEMU's hostfwd, so a static address
+ * reconfigures the very interface every other assertion travels over: the
+ * forward drops mid-run, every later phase times out, and the failure looks
+ * exactly like apid crashing. That change is worth testing from a harness that
+ * can reach the guest another way (a serial console driver, or a second NIC)
+ * and can put the interface back -- not from here. A no-op round trip is still
+ * a real assertion: it proves the network reconciler applied a configuration
+ * equal to the running one without dropping the link, which reconcilers get
+ * wrong by tearing down and rebuilding unconditionally.
  */
 async function networkNoOp(ctx: PhaseContext, log: ConsoleLog): Promise<void> {
   const { report, client } = ctx;
@@ -650,27 +584,22 @@ async function networkNoOp(ctx: PhaseContext, log: ConsoleLog): Promise<void> {
     return;
   }
 
-  // Read ONE form, not the pane. The /network pane renders a form PER
-  // CONFIGURED INTERFACE and then an "Add interface" fieldset, all carrying
+  // Read one form, not the pane. The /network pane renders a form per
+  // configured interface and then an "Add interface" fieldset, all carrying
   // fields with the same names. Reading `iface` pane-wide and `dhcp` pane-wide
   // would take the two from different forms and post a body no browser would
-  // ever have submitted -- which, on this route, means posting one interface's
-  // name with another one's addressing.
+  // ever have submitted -- on this route, one interface's name with another
+  // one's addressing.
   const forms = interfaceForms(pane.body);
   if (forms.length === 0) {
-    // A freshly provisioned mos device has NO mosd-managed interface at all:
-    // /network renders the "Add interface" fieldset and nothing above it,
-    // because the link the suite is talking over is brought up by
-    // systemd-networkd's own defaults rather than by anything in mosd's
-    // settings.
-    //
-    // There is then no no-op round trip to make -- with nothing configured,
-    // posting `dhcp=on` would CREATE configuration rather than post existing
-    // configuration back unchanged, and posting a static address from this
-    // suite is forbidden outright -- so the round trip is skipped with the
-    // pane's actual contents as the reason. What is still asserted is that the
-    // pane renders at all, which does not depend on how the device is
-    // configured.
+    // A freshly provisioned mos device has no mosd-managed interface: /network
+    // renders the "Add interface" fieldset and nothing above it, because the
+    // link the suite is talking over is brought up by systemd-networkd's own
+    // defaults rather than by mosd's settings. There is then no no-op round
+    // trip to make -- posting `dhcp=on` would create configuration rather than
+    // post existing configuration back unchanged, and a static address is
+    // forbidden outright -- so it is skipped with the pane's actual contents as
+    // the reason. What is still asserted is that the pane renders at all.
     report.check(
       pane.body.includes("Add interface"),
       "GET /network renders the interface pane (the 'Add interface' fieldset)",
@@ -712,8 +641,8 @@ async function networkNoOp(ctx: PhaseContext, log: ConsoleLog): Promise<void> {
   const form = forms[0];
   if (form === undefined) return;
   if (!form.dhcp) {
-    // The form says this interface is NOT on DHCP. Posting dhcp=on would then
-    // be a CHANGE, not a no-op, and posting the static address back is
+    // The form says this interface is not on DHCP. Posting dhcp=on would then
+    // be a change, not a no-op, and posting the static address back is
     // forbidden -- so there is no honest post to make, and this is a skip.
     report.skip(
       "the /network round trip leaves the link up",
@@ -725,7 +654,7 @@ async function networkNoOp(ctx: PhaseContext, log: ConsoleLog): Promise<void> {
     return;
   }
 
-  // Every field comes from that ONE form, so the body is exactly what a browser
+  // Every field comes from that one form, so the body is exactly what a browser
   // would submit if a user opened the page and pressed save without touching
   // anything.
   const iface = form.iface;
@@ -743,7 +672,7 @@ async function networkNoOp(ctx: PhaseContext, log: ConsoleLog): Promise<void> {
     `POST /network (iface=${iface}, dhcp checked, addresses unchanged) is accepted with 303`,
   );
 
-  // THE device-effect assertion for this mutation: the link is still up
+  // The device-effect assertion for this mutation: the link is still up
   // afterwards. /healthz is the only route the auth gate lets through
   // unauthenticated, so this is a pure liveness probe -- cookies withheld
   // deliberately, so a session problem cannot be mistaken for a link problem.
@@ -783,21 +712,19 @@ async function networkNoOp(ctx: PhaseContext, log: ConsoleLog): Promise<void> {
     },
   );
 
-  // There is deliberately no console ASSERTION here: a no-op reconcile may
+  // There is deliberately no console assertion here: a no-op reconcile may
   // legitimately log nothing at all, so no line's absence would mean anything.
   // The console is used above only to explain a failure, never to produce one.
 }
 
-// ---------------------------------------------------------------------------
 // helpers: polling a pane, reading a pane
-// ---------------------------------------------------------------------------
 
 /**
  * Poll a GET route until `holds` accepts what it renders.
  *
  * Polled rather than read once because these panes are rendered from mosd's
  * settings over the system bus, and a reconciler on a TCG guest is not
- * instantaneous. `holds` returns true, or the REASON it does not hold -- that
+ * instantaneous. `holds` returns true, or the reason it does not hold -- that
  * reason is thrown so it lands in the reporter's `last:` line, which is what
  * makes a red here say what the pane actually rendered instead of "false".
  */
@@ -862,9 +789,7 @@ function settle(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-// ---------------------------------------------------------------------------
 // helpers: the SSH key
-// ---------------------------------------------------------------------------
 
 /**
  * `SHA256:<unpadded base64 of the sha256 of the wire blob>` -- what
@@ -885,14 +810,9 @@ function fingerprintsIn(html: string): string[] {
   return [...found];
 }
 
-// ---------------------------------------------------------------------------
-// helpers: minimal HTML reading
-//
-// Enough to read a form field back, and no more. Nothing here parses HTML
-// properly, and nothing here needs to: every value this phase asserts on is an
-// attribute of an <input>, <select> or <option> whose NAME is fixed by apid's
-// handler structs.
-// ---------------------------------------------------------------------------
+// helpers: minimal HTML reading. Nothing here parses HTML properly and nothing
+// needs to: every value this phase asserts on is an attribute of an <input>,
+// <select> or <option> whose name is fixed by apid's handler structs.
 
 const TAG_ATTRIBUTE = /([A-Za-z_:][-A-Za-z0-9_:.]*)(?:\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'>]+)))?/g;
 
@@ -936,7 +856,7 @@ function inputValue(html: string, name: string): string | undefined {
 function checkboxChecked(html: string, name: string): boolean | undefined {
   const named = inputsNamed(html, name);
   if (named.length === 0) return undefined;
-  // Same reason: read the CHECKBOX, not a hidden field that happens to share
+  // Same reason: read the checkbox, not a hidden field that happens to share
   // its name, or the switch would read as "off" on a pane that renders one.
   const box =
     named.find((attributes) => (attributes.get("type") ?? "").toLowerCase() === "checkbox") ??
@@ -954,7 +874,7 @@ interface InterfaceForm {
 }
 
 /**
- * Every form on the /network pane that configures an interface that EXISTS.
+ * Every form on the /network pane that configures an interface that exists.
  *
  * The pane renders one form per configured interface plus an "Add interface"
  * fieldset, and all of them carry fields named iface/dhcp/address/gateway/dns.
@@ -985,9 +905,9 @@ function interfaceForms(html: string): InterfaceForm[] {
 /**
  * The interface the /network pane is currently configuring.
  *
- * Three renderings are accepted because apid's pane was not read from this
- * side: a <select> with a selected <option>, a checked radio, or a plain input.
- * If none of them names an interface, the caller SKIPS rather than guessing.
+ * Three renderings are accepted: a <select> with a selected <option>, a checked
+ * radio, or a plain input. If none of them names an interface, the caller skips
+ * rather than guessing.
  */
 function readIface(html: string): string | undefined {
   const selected = selectedOption(html, "iface");

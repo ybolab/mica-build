@@ -1,34 +1,17 @@
 /**
  * The far side of a real restart.
  *
- * Every assertion here is about state that had to survive a power cycle, and
- * none of it can be faked by a test that never took the machine down: the
- * session table was in RAM and is gone, the login guard's counters were on disk
- * and are not, and the hostname came back through firmware, GRUB and a fresh
- * systemd.
- *
- * Where things live, because getting this wrong turns an assertion into a
- * coincidence. `/var/lib/mos` is a bind mount onto the STATE partition
- * (os/rootfs/overlay-v2/etc/systemd/system/var-lib-mos.mount, whose own comment
- * says /var lives on EPHEMERAL and is redirected rather than moved). So:
- *
- *   - `session.key` PERSISTS. The pre-reboot cookie is NOT voided by a
- *     regenerated signing key, and this phase does not claim it is.
- *   - `login_guard.json` PERSISTS. That is what makes the backoff assertion
- *     below a real test of docs/design/access.md section 6 rather than a
- *     hopeful one.
- *   - `state.sessions` is an IN-RAM table. The old cookie is refused because
- *     its id is simply not in that table any more -- which is the reason this
- *     phase asserts, and the reason it states.
- *
- * If the boot-2 console ever shows apid REGENERATING cert.pem or session.key,
- * that is a finding: it would mean STATE did not mount and
- * `RequiresMountsFor=/var/lib/mos` did not hold. It is reported, never fixed.
- *
- * This phase runs in a SECOND suite process against a second boot of the same
- * disk, so `ctx.state` from boot 1 is gone. Everything it needs comes from the
- * JSON handoff 07 wrote. A missing handoff is a SKIP with a stated reason: a
- * phase that cannot make its assertions must not read as one that made them.
+ * `/var/lib/mos` is a bind mount onto the STATE partition
+ * (os/rootfs/overlay-v2/etc/systemd/system/var-lib-mos.mount; /var itself is
+ * EPHEMERAL and is redirected rather than moved), so `session.key` persists --
+ * a regenerated signing key does not void the pre-reboot cookie -- and so does
+ * `login_guard.json`, which makes the backoff assertion a real test of
+ * docs/design/access.md section 6.
+ * `state.sessions` is in RAM, so the old cookie is refused because its id is no
+ * longer in it. apid regenerating cert.pem or session.key on the boot-2 console
+ * is a finding -- STATE did not mount and `RequiresMountsFor=/var/lib/mos` did
+ * not hold -- reported, never fixed. This phase runs in a second suite process,
+ * so everything comes from 07's JSON handoff; a missing one is a stated SKIP.
  */
 
 import { Client, type HttpResponse } from "../client.ts";
@@ -354,7 +337,7 @@ const phase: Phase = {
       // 05 did not run in the first boot, so the device was never renamed.
       // "the hostname 05 set survived the restart" is then a claim about an
       // event that did not happen, and the only honest verdict is SKIP -- a red
-      // here would be this phase reporting the SHAPE OF THE RUN as a defect in
+      // here would be this phase reporting the shape of the run as a defect in
       // the device. This is reachable whenever APID_PHASES leaves 05 out.
       report.skip(
         ASSERTIONS[4],

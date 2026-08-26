@@ -1,6 +1,6 @@
-# mos-required kernel options — the board-independent Talos runtime baseline,
-# shared by every board (board/common/, referenced as buildx named context
-# `mos-common`). Board kernels merge this BEFORE olddefconfig and assert every
+# mos-required kernel options — the board-independent runtime baseline, shared
+# by every board (board/common/, referenced as the buildx named context
+# `mos-common`). Board kernels merge this before olddefconfig and assert every
 # =y line against the final .config. dm-verity no-initramfs boot cannot load
 # modules, so these must be built-in =y, never =m. Board-specific requirements
 # (storage controller, etc.) belong in the board's own config, not here.
@@ -14,11 +14,11 @@ CONFIG_SQUASHFS_ZSTD=y
 CONFIG_SQUASHFS_XATTR=y
 CONFIG_OVERLAY_FS=y
 
-# machined early boot fsopen()s these pseudo filesystems unconditionally
-# (internal/pkg/mount/v3/helpers.go in the talos repo); a missing one causes
-# "early boot failed: openfs failed" and a reboot loop (seen on hardware
-# 2026-08-17: hugetlbfs). SELinux is permissive by default (DEVELOP=y);
-# machined decides enforcing per machine config.
+# Inherited from the baseline PLAN-010 line 53 records as "machined-era options
+# (harmless) + WireGuard", and retained deliberately: nothing in the shipping
+# image requires them. A missing hugetlbfs put the board in a reboot loop on
+# hardware (2026-08-17). SELinux is permissive: CONFIG_SECURITY_SELINUX_DEVELOP=y
+# and no shipping process changes that.
 CONFIG_HUGETLBFS=y
 CONFIG_HUGETLB_PAGE=y
 # tracefs has NO Kconfig symbol of its own — fs/tracefs is built by

@@ -1,45 +1,25 @@
 // Batch 2a: what the packed read-only root CONTAINS.
 //
-// The largest family in the oracle and the flattest: `sq_regular`,
-// `sq_symlink`, `sq_grep` and the two unit-enablement helpers are one-line
-// assertions over the squashfs the device actually mounts, and all four have
-// the same matcher shape -- the conclusion's own `what` clause is the
-// substring both directions share.
+// `sq_regular`, `sq_symlink`, `sq_grep` and the two unit-enablement helpers are
+// one-line assertions over the squashfs the device mounts, all sharing one
+// matcher shape: the conclusion's own `what` clause.
 //
-// WHY THE ROOT IS UNPACKED ONCE.
+// `ctx.unpackRoot()` unpacks the whole archive -- 4,354 paths on cx3576, 9,238
+// on x64 -- once per run, keyed on the payload's content, which is what makes it
+// safe to run twice at one `--work`: keyed on the slot's name it handed the
+// second run the first image's tree.
 //
-// `ctx.unpackRoot()` unpacks the WHOLE archive -- 4,354 paths on cx3576, 9,238
-// on x64 -- and memoises it for the run, so the fifty-odd checks below pay for
-// one unsquashfs between them. Since M4c that cache is keyed on the payload's
-// content, which is what makes it safe to run twice at one `--work`: it used to
-// be keyed on the slot's name and would hand the second run the FIRST image's
-// tree. Every check in this file went through that one call, so the repair came
-// before the port did.
+// A check lands here only if it produces the same conclusion text on both
+// shipped boards, measured against their real output rather than read off the
+// source; everything the oracle guards with a board or profile condition is
+// M4d's, because it needs a `boards:` list and a SKIP rather than a silence.
 //
-// WHAT IS NOT HERE.
-//
-// Everything the oracle guards with a board or profile condition -- the radio
-// firmware set, /etc/mos/<hwinit>.conf, the gadget and Bluetooth units, the
-// status indicator, fw_printenv/grub-editenv, hostapd/wpa_supplicant. Those
-// fire on one board and not the other, so their register entries need a
-// `boards:` list and their absence needs to be a SKIP rather than a silence.
-// They are M4d's. The rule this file follows is: a check lands here only if it
-// produces the SAME conclusion text on both shipped boards, which is a fact
-// that was measured against both boards' real output rather than read off the
-// source.
-//
-// AND WHY NO MATCHER HERE IS ` contains `.
-//
-// Measured on 2026-08-26 against both boards' real conclusion lists: the
-// substring ` contains ` claims 14 lines on cx3576 and 8 on x64. Ten of them
-// are `BOOT-A contains Image`-shaped, which is M4d's boot-slot listing, and
-// four of those are U-Boot-only. `ShellMatcher` takes a substring and not a
-// regex, so whichever batch registered ` contains ` first would make the
-// other's lines `ambiguous` -- and M4d cannot repair that by landing later.
-// This file needs exactly one of those lines, the kernel-modules one, and
-// claims it by a substring long enough to name it alone:
-// `/usr/lib/modules contains exactly one kernel's modules`. The rest are left
-// unclaimed, on purpose.
+// No matcher here is ` contains `. Measured 2026-08-26 against both boards' real
+// conclusion lists, that substring claims 14 lines on cx3576 and 8 on x64, ten
+// of them M4d's `BOOT-A contains Image`-shaped boot-slot listing; `ShellMatcher`
+// takes a substring and not a regex, so whichever batch registered it first
+// would make the other's lines `ambiguous`. The one line this file needs is
+// claimed by `/usr/lib/modules contains exactly one kernel's modules`.
 
 import { existsSync, lstatSync, readdirSync, readFileSync, readlinkSync, type Stats } from 'node:fs'
 import { basename, dirname, join } from 'node:path'
@@ -88,9 +68,7 @@ export function entry(root: string, path: string): Stats | undefined {
   }
 }
 
-// ---------------------------------------------------------------------------
 // sq_regular
-// ---------------------------------------------------------------------------
 
 /**
  * The paths the oracle asserts on EVERY board, in its own order.
@@ -101,7 +79,7 @@ export function entry(root: string, path: string): Stats | undefined {
  * and not a link to one" -- which is what lstat reports directly. A symlink
  * pointing at a regular file fails both.
  *
- * BOARD-INVARIANT BY MEASUREMENT, not by reading the source. Every path here
+ * Board-invariant by measurement, not by reading the source. Every path here
  * produces the identical conclusion on cx3576 and on x64; the ones the oracle
  * guards with a board condition are M4d's and are not in this list.
  */
@@ -163,9 +141,7 @@ function regularFileCheck(path: string): CheckCase {
   }
 }
 
-// ---------------------------------------------------------------------------
 // sq_grep
-// ---------------------------------------------------------------------------
 
 interface GrepCase {
   readonly id: string
@@ -265,9 +241,7 @@ function grepCheck(c: GrepCase): CheckCase {
   }
 }
 
-// ---------------------------------------------------------------------------
 // sq_enabled / sq_enabled_any
-// ---------------------------------------------------------------------------
 
 /**
  * The trees a `*.wants` symlink may live in.
@@ -339,7 +313,7 @@ const ENABLED: readonly EnabledCase[] = [
 ]
 
 /**
- * The pass matcher carries the OPEN PAREN, and that is not decoration.
+ * The pass matcher carries the open paren, and that is not decoration.
  *
  * Measured: `mos-seed-home.service is enabled` and `mos-seed-root.service is
  * enabled` are real conclusions of a DIFFERENT check -- "is enabled and ordered
@@ -371,13 +345,11 @@ function enabledCheck(c: EnabledCase): CheckCase {
   }
 }
 
-// ---------------------------------------------------------------------------
 // the rest, one at a time
-// ---------------------------------------------------------------------------
 
 const BUILTIN_PREFIX = '/builtin'
 const APID_BIN = '/usr/bin/apid'
-// A fragment of the escape page AS RENDERED, verbatim. Markup and
+// A fragment of the escape page as rendered, verbatim. Markup and
 // not a bare route constant: "/builtin/deactivate" alone would still be in the
 // binary after the pages moved out to an on-disk asset tree, which is the one
 // change this catches.
@@ -454,7 +426,7 @@ export const ROOT_CHECKS: readonly CheckCase[] = [
   ...ENABLED.map(enabledCheck),
 
   {
-    // THE PROPERTY IS "EXACTLY ONE", not a version. The oracle pinned 6.1.115
+    // The property is "EXACTLY ONE", not a version. The oracle pinned 6.1.115
     // once and the x64 image -- running Debian's 6.12.101+deb13-amd64, which is
     // correct for it -- failed for saying so. Two entries means a stale set
     // shipped beside the live one; none means the modules never made it in.
@@ -622,7 +594,7 @@ export const ROOT_CHECKS: readonly CheckCase[] = [
     // device flashed with this image. Absence is the shipped state; rauc
     // install fails closed until one is provisioned.
     //
-    // THE ENV ESCAPE IS PORTED TOO, and deliberately: MOS_EXPECT_DEV_KEYRING=1
+    // The ENV escape is ported too, and deliberately: MOS_EXPECT_DEV_KEYRING=1
     // turns the fail into a pass for a local development image. Leaving it out
     // would make this port stricter than the oracle on exactly the images
     // somebody sets it for.
