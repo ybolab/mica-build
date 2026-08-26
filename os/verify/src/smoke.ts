@@ -117,13 +117,27 @@ export function pinSource(file: string): string {
  *
  * MAXIMAL MUNCH IS THE POINT, not an implementation detail. `1.29.10` must not
  * satisfy a pin of `1.29.1`, so the run of digits and dots is taken whole and
- * compared whole. The guards keep the same property at both ends: a token may
- * not be preceded or followed by a digit or a dot. `_` is deliberately allowed
- * on the right, because catatonit prints `0.2.1_catatonit` and that IS its
- * version, whereas `1.29.10` is a different one.
+ * compared whole. That property comes from the GREEDY quantifier, not from a
+ * guard: after `[0-9]+(?:\.[0-9]+)+` has matched, the next character cannot be
+ * a digit, because it would already have been consumed.
+ *
+ * THERE IS DELIBERATELY NO RIGHT-HAND GUARD, and the first version of this
+ * function had one. `(?![.0-9])` was written to stop `1.29.10` satisfying
+ * `1.29.1` -- which greed already does -- and it was found to be redundant by
+ * mutation: removing it changed no test. What it DID change was a trailing dot.
+ * On `crun version 1.29.1.` the guard rejects the greedy match, backtracking
+ * finds nothing shorter that satisfies it either, and the line yields NO TOKEN
+ * -- which this runner reports as "reports NO version at all" and turns RED for
+ * a binary that printed exactly the right version and ended its sentence with a
+ * full stop. A guard that cannot fire on the case it was written for and can
+ * fire on a case nobody considered is worse than no guard.
+ *
+ * The LEFT guard stays, and it is load-bearing: without it a token can start in
+ * the middle of a longer run, so `11.29.1` would offer `1.29.1` and a
+ * version-skewed binary would report as agreeing with its pin.
  */
 export function versionTokens(line: string): string[] {
-  return [...line.matchAll(/(?<![.0-9])[0-9]+(?:\.[0-9]+)+(?![.0-9])/g)].map(m => m[0])
+  return [...line.matchAll(/(?<![.0-9])[0-9]+(?:\.[0-9]+)+/g)].map(m => m[0])
 }
 
 /** The first non-empty line of stdout -- where all ten artifacts print it. */
@@ -331,9 +345,19 @@ export function parseFactoryRootRecord(text: string, path: string): FactoryRootR
   return { ref: need('ref'), platform: need('platform'), archive: need('archive'), sha256: need('sha256'), bytes }
 }
 
-/** Where the two files live for a board. */
-export function factoryRootPaths(board: string): { readonly record: string; readonly archive: string } {
-  const dir = outDir(board)
+/**
+ * Where the two files live for a board.
+ *
+ * `dir` is a parameter for `shippedBoards(dir)`'s reason: the refusal below has
+ * to be REACHABLE from a test, and a guard that can only fire on a host that
+ * has never built an image is a guard whose behaviour depends on the host it
+ * runs on -- green here, red there, for reasons that are nothing to do with the
+ * code.
+ */
+export function factoryRootPaths(
+  board: string,
+  dir: string = outDir(board),
+): { readonly record: string; readonly archive: string } {
   return { record: join(dir, 'factory-root.txt'), archive: join(dir, 'factory-root.oci') }
 }
 
@@ -346,8 +370,11 @@ export function factoryRootPaths(board: string): { readonly record: string; read
  * would report the same green on a tree that had never built an image as on one
  * whose artifacts all passed.
  */
-export function readFactoryRoot(board: string): FactoryRootRecord & { readonly archivePath: string } {
-  const { record, archive } = factoryRootPaths(board)
+export function readFactoryRoot(
+  board: string,
+  dir: string = outDir(board),
+): FactoryRootRecord & { readonly archivePath: string } {
+  const { record, archive } = factoryRootPaths(board, dir)
   if (!existsSync(record) || !existsSync(archive)) {
     throw new Error(
       `${board}: ${existsSync(record) ? archive : record} does not exist.\n`
@@ -445,30 +472,47 @@ export async function preflight(exec: Exec, platform: string): Promise<void> {
   )
 }
 
+/**
+ * The exact command one invocation becomes.
+ *
+ * Separated from `dockerExec` so the suite can assert the argv WITHOUT a
+ * daemon: `--network none` and `--rm` are decisions, and a decision that only
+ * exists inside a function nothing can observe is a decision nobody can check
+ * has survived an edit.
+ */
+export function dockerArgv(ref: string, argv: readonly string[]): string[] {
+  return [
+    'docker',
+    'run',
+    '--rm',
+    // NO NETWORK. `podman --version` needs none, and a smoke runner that could
+    // reach a registry is a smoke runner whose result could depend on one. It
+    // also keeps apid-shaped binaries -- anything that binds a port -- from
+    // reaching the host's network if a later register entry runs one.
+    '--network',
+    'none',
+    ref,
+    ...argv,
+  ]
+}
+
 /** The real seam: one container per invocation, inside the loaded factory root. */
 export function dockerExec(ref: string, timeoutMs: number = EXEC_TIMEOUT_MS): Exec {
-  return argv =>
-    capture(
-      [
-        'docker',
-        'run',
-        '--rm',
-        // NO NETWORK. `podman --version` needs none, and a smoke runner that
-        // could reach a registry is a smoke runner whose result could depend on
-        // one. It also keeps apid-shaped binaries -- anything that binds a port
-        // -- from reaching the host's network if a later register entry runs one.
-        '--network',
-        'none',
-        ref,
-        ...argv,
-      ],
-      timeoutMs,
-    )
+  return argv => capture(dockerArgv(ref, argv), timeoutMs)
 }
 
 export interface SmokeRunOptions {
   readonly board: string
   readonly artifacts?: readonly Artifact[]
+  /**
+   * Which `versions.env` files coverage is checked against.
+   *
+   * A parameter for the same reason `artifacts` is: a suite that drove a
+   * two-artifact register against the SHIPPED pin files would get ten coverage
+   * faults about artifacts it was not testing, and the only way out of that
+   * would be to weaken the coverage check for everybody.
+   */
+  readonly files?: readonly string[]
   /** Supplied by the suite; the CLI builds a dockerExec. */
   readonly exec?: Exec
   /** Skip `docker load`; the suite has no archive to load. */
@@ -489,7 +533,9 @@ export async function smokeRun(opts: SmokeRunOptions): Promise<{ results: SmokeR
   const log = opts.log ?? ((l: string) => console.log(l))
   const artifacts = opts.artifacts ?? ARTIFACTS
 
-  const faults = pinCoverageFaults(artifacts)
+  const faults = opts.files === undefined
+    ? pinCoverageFaults(artifacts)
+    : pinCoverageFaults(artifacts, opts.files)
   if (faults.length > 0) {
     const lines = faults.map(f => `         ${f.file}: ${f.message}`).join('\n')
     throw new Error(
