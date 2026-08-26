@@ -4,7 +4,7 @@
 - **createdAt**: 2026-08-26 14:05
 - **approvedAt**: 2026-08-26 14:20
 - **relatedTask**: RFCT-114 (M1), RFCT-115 (M2), RFCT-116 (M3), RFCT-121 (M4), RFCT-122+ (M5) — task files created by the executing workstream as each milestone starts
-- **milestones**: M1 os/ + Makefile + board/ comments; M2 mosd/ (excluding mosd/apid/) comments; M3 test-script comments; M4 the citation checker (RFCT-092); M5 documentation rewrite
+- **milestones**: M1 os/ + Makefile + board/ comments; M2 mosd/ (excluding mosd/apid/) comments; M3 test-script comments; M4 the citation checker (RFCT-092); M5 documentation rewrite; M6 form compression (RFCT-140..149 reserved)
 
 ## Context
 
@@ -193,3 +193,41 @@ goes.
 - **Out**: `docs/task/`, `docs/plan/`, `.zh.md` files, `mosd/apid/`
   (PLAN-016), `talos/`, any change to executable behaviour, formatting of
   code the plan does not name.
+
+## M6: form compression (added 2026-08-26, user-approved)
+
+M1-M3 removed history and task-ID stamps but under-applied the "rewrite C5-C7
+survivors into 1-3-line present-tense statements" rule on files whose content
+is largely MUST-KEEP: the constraints stayed (correct) in essay form with the
+original typography (not correct). Measured on main after the M1-M3 merges:
+across source files (ts/rs/sh/env/Dockerfile/Makefile/conf/toml/yaml/in,
+excluding docs/ and talos/), 489 comment lines carry multi-word ALL-CAPS
+emphasis runs, 309 are banner separators, and 305 contiguous comment blocks
+run 15+ lines (longest 74). 127 files score over threshold
+(score = 2*caps + banners + 5*essay_blocks >= 8); worst: os/verify/src/smoke.ts,
+os/rootfs/stages/90-pack.Dockerfile, os/verify/src/image.ts,
+os/build-env/images.env, os/podman/Dockerfile, os/rootfs/build-v2.sh,
+os/build/src/bundle.ts, os/build-env/build.sh,
+test/apid-api/src/phases/04-readonly.ts and 05-mutate.ts.
+
+Rules, additive to the triage rule; form-only, content-lossless for
+constraints:
+
+1. Multi-word ALL-CAPS emphasis becomes sentence case. Single-word emphasis
+   (NOT, NEVER, MUST) may stay.
+2. Decorative banner separators are deleted; where a section break is needed,
+   one short plain-text header line. Short labelled markers that mirror an
+   existing sibling-script convention (docs/verify-index.sh style) are not
+   banners.
+3. Contiguous comment blocks target <= 8 lines. Essays are rewritten to
+   compact present-tense statements; every constraint, measured fact and tool
+   quirk survives; rhetoric, counterfactuals and repetition do not.
+4. The MUST-KEEP list remains binding; comment-only diffs proven by
+   stripped-comment comparison, with the same string-literal exception rules
+   as M3 (none expected in this pass).
+
+Acceptance: all existing gates green; the metric re-run shows caps ~0,
+banners ~0 outside rule-2 exceptions, and 15+-line blocks reduced to single
+digits with each survivor named and justified in the task files. Task numbers
+RFCT-140..149 are reserved for this milestone so the concurrent docs
+workstream (RFCT-121..139) cannot collide.
