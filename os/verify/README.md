@@ -375,8 +375,36 @@ is a green that has quietly stopped asking two of the eleven artifacts for a
 version, and this tree has deleted several checks for exactly that.
 
 ```
-RESULT: INCOMPLETE (10 pass, 0 fail, 2 unclaimed, of 12)
+RESULT: INCOMPLETE (10 pass, 0 fail, 2 unclaimed, of 12). UNCLAIMED: mosd, apid. …
 ```
+
+The **names** are on the RESULT line and not only the count: this run's steady
+state is non-zero until M7d's `--version` handlers land, so the number is exactly
+the part a reader stops seeing.
+
+The category **cannot grow silently**. `EXPECTED_UNCLAIMED` declares who is
+allowed to go unasked, `unclaimedFaults` refuses any run whose register disagrees
+with it, and adding a third artifact costs three edits in one diff. Nothing
+infers the category at runtime — a binary that *loses* its `--version` is a
+**FAIL**, not a new member. Both directions fail, including the good one: when
+M7d lands, mosd and apid move UNCLAIMED → PASS and the constant empties, which is
+what proves the fix landed.
+
+### The commit half is printed, not asserted
+
+M7d's handlers will report the git commit beside the version —
+`mosd 0.1.0 (abc1234)`. No git provenance is recorded anywhere by the build
+(measured, with a positive control on the search), so there is no build fact to
+compare against and the runner **prints** the reported line verbatim rather than
+asserting anything about the sha:
+
+```
+PASS  catatonit  …  == CATATONIT_VERSION=v0.2.1  [said: "tini version 0.2.1_catatonit"]
+```
+
+Comparing against `git rev-parse HEAD` at run time is refused by name: it would
+be trivially green on any freshly built tree, asserting that somebody just built
+rather than that the embedding works.
 
 ### It refuses rather than skipping, in four places
 
