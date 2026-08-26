@@ -31,6 +31,27 @@ acceptable, composition wins).
   with nothing behind it. `mosd` and `rauc` are also feature stages in the
   shipped chain and were never on this list; they are left as they are, because
   this amendment carries out one decision and does not tidy around it.
+
+  CLARIFIED 2026-08-26, **by the user**, alongside the amendment above. **The
+  three are not a flat list.** For containers and mqtt, *"whether it is compiled
+  into the image"* and *"whether it is enabled on the system"* are **two
+  separate options**, and the system exposes runtime enablement independently of
+  build-time inclusion. The model, stated so it cannot be collapsed by a later
+  reader:
+
+  | | build-time stage (`--without`) | runtime enable switch |
+  | --- | --- | --- |
+  | `containers` | yes | **yes** |
+  | `mqtt` | yes | **yes** |
+  | `radios` | yes | no (board-declared: `BOARD_RADIOS`) |
+
+  **Build-time inclusion does not imply runtime enablement.** A feature stage
+  being in the image means the software is *there*, not that it is *on*. That
+  is not new with M5 — PLAN-012 built the container engine installed-and-INERT
+  with the switch driven from apid/mosd, and RFCT-104 added the MQTT master
+  switch with the broker shipping inert — but M5 is the change that could have
+  severed a switch from its feature, so it is stated here explicitly rather
+  than left implicit.
 - Inline shell blobs extracted to `rootfs/scripts/`.
 - The `os/health/` byte-identical duplicates collapse into the overlay copy;
   their tests move to `os/tests/`.
@@ -106,6 +127,38 @@ here, and it is not a substitute for the part that cannot.
 **The task closes with clause 3 outstanding for cx3576 because the blocker is a
 runner, not the work.** Nothing in the chain is known to be wrong on cx3576; it
 is unobserved. M7 runs on hardware and is where that is answered.
+
+### The disposition of clause 3
+
+**Decided 2026-08-26 by the user, on L2's recommendation.** Both actors are
+named because both acted: L2 escalated the question and made the
+recommendation; the user took the decision. RFCT-111 closes **over an
+undischarged board-build clause**, on the **physical-runner constraint** — not
+on any judgement that cx3576 is fine.
+
+**This is a disposition, and it is none of the other three things this campaign
+does to a clause.** It is not an AMENDMENT: clause 3's text is unchanged and
+says exactly what it always said. It is not a SATISFACTION: the clause is not
+made true, and no measurement here makes it true. It is not a gate's call: a
+gate states what it measured, and the decision to close over a live clause was
+taken above it. The campaign's ledger now reads six amendments, one satisfaction
+(RFCT-110's clause 3, closed by the verify image pin) and this one disposition,
+and those are three different things that should not be read as one.
+
+**Precedent: RFCT-108, M2 close.** The same physical constraint — no
+`binfmt_misc`, no builder advertising `linux/arm64` — took an applied default
+there rather than blocking the milestone, and for the same stated reason: "the
+reason is a host capability, not an implementation shortfall." This is the
+campaign's **second** use of that rule, not a one-off, which is why it is cited
+rather than re-argued.
+
+**REVERTIBLE, and here is the trigger.** The first arm64-capable host to build
+and verify cx3576 through the chain settles clause 3 one way or the other. **A
+failure there REOPENS RFCT-111.** That sentence is what makes "revertible" mean
+something: without a named trigger it is only a softer way of saying closed. The
+set to drive on that host is the unverified list above — the firmware and
+hwinit install, `kernel-and-initramfs.sh`'s `modules.tar` arm, and
+`30-feature-radios` whole, which is also clause 2's missing case.
 
 ## ssh is a floor capability, not a feature
 
