@@ -410,25 +410,94 @@ describe('judge -- the version contract', () => {
     expect(r.message).toContain('NO version at all')
   })
 
-  // THE THREE EXIT STATUSES GET THREE DIAGNOSES, because they are three
-  // different defects and a single message would let one be read as another.
-  test('127 is diagnosed as a path this register or an install script got wrong', () => {
-    const r = judge(versionArtifact(), pin('1.2.3'), { status: 127, stdout: '', stderr: 'no such file or directory' })
+  // EVERY DIAGNOSIS, AGAINST THE STATUS AND TEXT THAT WERE MEASURED PRODUCING IT.
+  //
+  // RFCT-113 M7c. These cases used to assert the OLD map -- 126 for wrong-arch
+  // and for an unresolvable loader, 127 for a missing path -- and they passed,
+  // because a fabricated `ExecResult` lets the test choose the status whose
+  // diagnosis it then asserts. Two of the three were wrong about the real
+  // world; `diagnose`'s comment carries the measurement, and
+  // src/smoke-negative.ts drives all three through a real container so that
+  // this table can never again agree with itself and with nothing else.
+  //
+  // The literals below are the MEASURED first lines, verbatim, not paraphrases.
+  const WRONG_ARCH = { status: 255, stdout: '', stderr: 'exec /usr/bin/crun: exec format error\n' }
+  const MISSING_SONAME = {
+    status: 127,
+    stdout: '',
+    stderr: '/usr/bin/rauc: error while loading shared libraries: libjson-glib-1.0.so.0: '
+      + 'cannot open shared object file: No such file or directory\n',
+  }
+  const ABSENT_PATH = {
+    status: 127,
+    stdout: '',
+    stderr: 'docker: Error response from daemon: ... exec: "/usr/bin/nope": stat /usr/bin/nope: '
+      + 'no such file or directory.\n',
+  }
+  const NOT_EXECUTABLE = {
+    status: 126,
+    stdout: '',
+    stderr: 'docker: Error response from daemon: ... exec: "/usr/bin/crun": permission denied.\n',
+  }
+
+  test('a wrong-arch binary is ENOEXEC at 255, and is NOT reported as the program refusing', () => {
+    const r = judge(versionArtifact(), pin('1.2.3'), WRONG_ARCH)
+    expect(r.verdict).toBe('fail')
+    expect(r.message).toMatch(/could not be executed AT ALL/)
+    expect(r.message).toMatch(/ENOEXEC/)
+    // The regression this replaced: 255 fell through to the catch-all.
+    expect(r.message).not.toMatch(/the program ran and refused/)
+  })
+
+  test('a missing soname is 127 and is NOT reported as a missing path', () => {
+    const r = judge(versionArtifact(), pin('1.2.3'), MISSING_SONAME)
+    expect(r.verdict).toBe('fail')
+    expect(r.message).toMatch(/dynamic loader could not resolve it/)
+    // The regression this replaced: it shares 127 with the case below, and the
+    // old map sent it to that one -- a reader was told to go and look at the
+    // register or the install script for a path that is present.
+    expect(r.message).not.toMatch(/path does not exist/)
+  })
+
+  test('an absent path is also 127, and the two 127s are told apart by what came back', () => {
+    // THE POSITIVE CONTROL FOR THE CASE ABOVE. Same status, opposite diagnosis;
+    // if `diagnose` keyed on the status alone this pair could not both pass.
+    const r = judge(versionArtifact(), pin('1.2.3'), ABSENT_PATH)
     expect(r.verdict).toBe('fail')
     expect(r.message).toMatch(/path does not exist in the factory root/)
+    expect(r.message).not.toMatch(/dynamic loader/)
   })
 
-  test('126 is diagnosed as a wrong architecture or an unresolvable loader', () => {
-    const r = judge(versionArtifact(), pin('1.2.3'), { status: 126, stdout: '', stderr: 'exec format error' })
+  test('126 is a mode bit, and says so rather than naming an architecture', () => {
+    const r = judge(versionArtifact(), pin('1.2.3'), NOT_EXECUTABLE)
     expect(r.verdict).toBe('fail')
-    expect(r.message).toMatch(/wrong-architecture binary, or a dynamic loader/)
+    expect(r.message).toMatch(/no\s+executable bit/)
+    expect(r.message).toMatch(/90-pack/)
+    expect(r.message).not.toMatch(/wrong-architecture/)
   })
 
-  test('any other non-zero status is the program refusing, and is not confused with the two above', () => {
+  test('any other non-zero status is the program refusing, and is not confused with the rest', () => {
     const r = judge(versionArtifact(), pin('1.2.3'), { status: 1, stdout: '', stderr: 'nope' })
     expect(r.verdict).toBe('fail')
     expect(r.message).toMatch(/the program ran and refused/)
-    expect(r.message).not.toMatch(/wrong-architecture/)
+    expect(r.message).not.toMatch(/wrong-architecture|dynamic loader|executable bit/)
+  })
+
+  test('255 with no recognised text says so rather than inventing a cause', () => {
+    const r = judge(versionArtifact(), pin('1.2.3'), { status: 255, stdout: '', stderr: 'docker: something else' })
+    expect(r.message).toMatch(/could not be started on this path at all/)
+    expect(r.message).toMatch(/read the stderr/)
+  })
+
+  test('the text outranks the status, in both directions', () => {
+    // ld.so's sentence is what identifies a missing soname, not 127: the same
+    // sentence arriving with any other status must reach the same conclusion,
+    // because a runner that believed the number over the message would go back
+    // to being right only about the cases somebody happened to fabricate.
+    expect(judge(versionArtifact(), pin('1.2.3'), { ...MISSING_SONAME, status: 1 }).message)
+      .toMatch(/dynamic loader could not resolve it/)
+    expect(judge(versionArtifact(), pin('1.2.3'), { ...WRONG_ARCH, status: 126 }).message)
+      .toMatch(/ENOEXEC/)
   })
 
   test('a non-zero status is a failure even when the output DOES carry the right version', () => {
