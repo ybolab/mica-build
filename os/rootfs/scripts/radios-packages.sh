@@ -2,7 +2,7 @@
 # Install the radio userland the board declares, and nothing for a board that
 # declares none.
 #
-# Called from os/rootfs/stages/30-40-unsplit.Dockerfile, where the reasoning lives.
+# Called from os/rootfs/stages/30-feature-radios.Dockerfile, where the reasoning lives.
 # Build arguments read from the environment: BOARD_RADIOS.
 
 set -eu

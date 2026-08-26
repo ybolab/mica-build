@@ -1,7 +1,7 @@
 #!/bin/sh
 # Install the AIC8800D80 firmware on the board that has the radio, and on no other.
 #
-# Called from os/rootfs/stages/30-40-unsplit.Dockerfile, where the reasoning lives.
+# Called from os/rootfs/stages/40-board.Dockerfile, where the reasoning lives.
 # Build arguments read from the environment: MOS_ARCH.
 
 set -eu

@@ -16,9 +16,11 @@ import {
   buildArgv,
   DEFAULT_TERMINAL_TARGET,
   discoverStages,
+  featureOf,
   planChain,
   PREV_ARG,
   readStageFile,
+  selectStages,
   stageManifest,
   StageChainError,
   STAGES_DIR,
@@ -344,6 +346,120 @@ describe('buildArgv', () => {
   })
 })
 
+describe('selectStages -- RFCT-111 stage selection, which replaced the WITH_* args', () => {
+  // The four-feature shape the shipped chain has, in miniature. Every case
+  // below is driven from this one directory so that "it dropped the right file"
+  // and "it left the rest alone" are the same assertion.
+  const dir = () =>
+    scratch({
+      '10-base.Dockerfile': FIRST,
+      '30-feature-radios.Dockerfile': LINK,
+      '31-feature-containers.Dockerfile': LINK,
+      '33-feature-mosd.Dockerfile': LINK,
+      '40-board.Dockerfile': LINK,
+      '90-pack.Dockerfile': TERMINAL,
+    })
+
+  test('featureOf names the feature, and only for a feature stage', () => {
+    const stages = discoverStages(dir())
+    expect(stages.map((s) => featureOf(s))).toEqual([
+      undefined,
+      'radios',
+      'containers',
+      'mosd',
+      undefined,
+      undefined,
+    ])
+  })
+
+  test('drops exactly the named feature and keeps the chain in order', () => {
+    const stages = discoverStages(dir())
+    expect(selectStages(stages, ['containers']).map((s) => s.name)).toEqual([
+      '10-base',
+      '30-feature-radios',
+      '33-feature-mosd',
+      '40-board',
+      '90-pack',
+    ])
+  })
+
+  test('drops several at once, and the result is still a chain auditChain accepts', () => {
+    const stages = discoverStages(dir())
+    const kept = selectStages(stages, ['containers', 'mosd', 'radios'])
+    expect(kept.map((s) => s.name)).toEqual(['10-base', '40-board', '90-pack'])
+    expect(auditChain(kept, DEFAULT_TERMINAL_TARGET)).toEqual([])
+  })
+
+  test('the empty selection is the whole chain, and is the same array content', () => {
+    const stages = discoverStages(dir())
+    expect(selectStages(stages, []).map((s) => s.name)).toEqual(stages.map((s) => s.name))
+  })
+
+  // THE CONTROL FOR EVERY CASE ABOVE. Without it, a selectStages that dropped
+  // nothing at all would satisfy the "still a chain" tests and the plan would
+  // quietly build the FULL image for every --without anyone typed.
+  test('a feature that was NOT named is still built', () => {
+    const stages = discoverStages(dir())
+    const kept = selectStages(stages, ['containers'])
+    expect(kept.map((s) => s.name)).toContain('30-feature-radios')
+    expect(kept.map((s) => s.name)).toContain('33-feature-mosd')
+  })
+
+  test('refuses a feature name nothing matches, and lists the ones that exist', () => {
+    const stages = discoverStages(dir())
+    // The typo case. Silently building the full image is the failure this
+    // refusal exists for: `--without contaners` would otherwise exit 0 with an
+    // engine in the image and a caller who believes there is none.
+    expect(() => selectStages(stages, ['contaners'])).toThrow(
+      /no stage here is named <number>-feature-contaners/,
+    )
+    expect(() => selectStages(stages, ['contaners'])).toThrow(
+      /The features are: containers, mosd, radios/,
+    )
+  })
+
+  test('refuses to decline a stage that is not a feature, by its file name', () => {
+    const stages = discoverStages(dir())
+    expect(() => selectStages(stages, ['board'])).toThrow(
+      /'board', which is 40-board\.Dockerfile -- not a feature stage/,
+    )
+    expect(() => selectStages(stages, ['10-base'])).toThrow(/not a feature stage/)
+    expect(() => selectStages(stages, ['90-pack'])).toThrow(/not a feature stage/)
+  })
+
+  test('reports every bad name in one refusal, not just the first', () => {
+    const stages = discoverStages(dir())
+    try {
+      selectStages(stages, ['contaners', 'board'])
+      throw new Error('selectStages accepted two bad names')
+    }
+    catch (e) {
+      expect(e).toBeInstanceOf(StageChainError)
+      expect((e as StageChainError).faults).toHaveLength(2)
+    }
+  })
+
+  // The consequence a caller actually feels: the arguments the dropped stage
+  // declared become arguments no stage declares, and planChain refuses them.
+  // That is not a nuisance -- it is what stops a build from passing PODMAN_DIR
+  // into a chain with no container stage and believing it took effect.
+  test('an argument only the dropped stage declared is then refused by planChain', () => {
+    const stages = discoverStages(
+      scratch({
+        '10-base.Dockerfile': FIRST,
+        '31-feature-containers.Dockerfile': `ARG ${PREV_ARG}\nFROM \${${PREV_ARG}}\nARG PODMAN_DIR\n`,
+        '90-pack.Dockerfile': TERMINAL,
+      }),
+    )
+    expect(unusedArgs(stages, { PODMAN_DIR: 'x' })).toEqual([])
+    const kept = selectStages(stages, ['containers'])
+    expect(unusedArgs(kept, { PODMAN_DIR: 'x' })).toEqual(['PODMAN_DIR'])
+    expect(() => planChain(kept, { board: 'x64', supplied: { PODMAN_DIR: 'x' } })).toThrow(
+      /PODMAN_DIR, which no stage declares/,
+    )
+  })
+})
+
 describe('stageManifest', () => {
   test('records every stage, in order, with its content hash', () => {
     const stages = discoverStages(
@@ -355,6 +471,26 @@ describe('stageManifest', () => {
     expect(rows).toHaveLength(2)
     expect(rows[0]).toBe(`10-base\t${stages[0]!.sha256}\tmos-rootfs-stage:x64-10-base`)
     expect(rows[1]).toBe(`90-pack\t${stages[1]!.sha256}\t(exported)`)
+  })
+
+  // A build that declined a feature and a build that had none to decline must
+  // not produce the same record. The image cannot tell them apart afterwards --
+  // that is the whole reason the manifest exists -- so the line is written in
+  // both cases and says which one it is.
+  test('names the declined features, and says so explicitly when there are none', () => {
+    const stages = discoverStages(
+      scratch({ '10-base.Dockerfile': `ARG T\nFROM \${T}\n`, '90-pack.Dockerfile': TERMINAL }),
+    )
+    const builds = planChain(stages, { board: 'x64', supplied: { T: 'x' } })
+    expect(stageManifest(builds, stages)).toContain('# declined: (none')
+    expect(stageManifest(builds, stages, ['containers', 'mosd'])).toContain(
+      '# declined: containers mosd',
+    )
+    // Sorted, so two builds that declined the same set produce the same file
+    // whatever order the flags were typed in.
+    expect(stageManifest(builds, stages, ['mosd', 'containers'])).toContain(
+      '# declined: containers mosd',
+    )
   })
 })
 
@@ -454,6 +590,22 @@ describe('parseArgs', () => {
   test('an unknown option is refused', () => {
     expect(() => parseArgs(['--board', 'x64', '--plan', '--nope'])).toThrow(/unknown option/)
   })
+
+  test('--without collects feature names, and is repeatable', () => {
+    expect(parseArgs(['--board', 'x64', '--plan']).without).toEqual([])
+    expect(
+      parseArgs(['--board', 'x64', '--plan', '--without', 'containers', '--without', 'mosd'])
+        .without,
+    ).toEqual(['containers', 'mosd'])
+  })
+
+  test('--without refuses to swallow the next flag as its value', () => {
+    // `--without --plan` taking '--plan' as a feature name would decline
+    // nothing (no stage is called that) and then not plan either.
+    expect(() => parseArgs(['--board', 'x64', '--without', '--plan'])).toThrow(
+      /--without needs a value/,
+    )
+  })
 })
 
 describe('the chain this tree actually ships', () => {
@@ -488,6 +640,44 @@ describe('the chain this tree actually ships', () => {
     // base image at all -- a stage that does not name one cannot be built
     // against the wrong one.
     expect(withBase.map((s) => s.name)).toEqual(['10-base', '90-pack'])
+  })
+
+  test('the feature stages are the four RFCT-111 names, and they run before the board', () => {
+    // The vocabulary PLAN-014 M5 fixed, asserted against the directory rather
+    // than against a list -- there is no list. `rauc` is a fifth feature stage
+    // with no caller-facing switch; its own header says why.
+    const features = stages.filter((s) => featureOf(s) !== undefined)
+    expect(features.map((s) => featureOf(s))).toEqual([
+      'radios',
+      'containers',
+      'rauc',
+      'mosd',
+      'mqtt',
+    ])
+    const board = stages.findIndex((s) => s.name === '40-board')
+    expect(board).toBeGreaterThan(stages.indexOf(features[features.length - 1]!))
+  })
+
+  test('no stage declares WITH_CONTAINERS or WITH_MOSD any more', () => {
+    // RFCT-111's actual deliverable: the WITH_* build args are replaced by
+    // stage selection. A stage that still declared one would be a second switch
+    // beside the one the driver operates, and the two could disagree.
+    const stray = stages.flatMap((s) =>
+      s.declaredArgs.filter((a) => a.startsWith('WITH_')).map((a) => `${s.name}:${a}`),
+    )
+    expect(stray).toEqual([])
+  })
+
+  test('every feature stage in the shipped chain can actually be declined', () => {
+    // Driven, not assumed: dropping each one in turn leaves a directory that is
+    // still a chain. A feature stage the chain cannot survive without is a
+    // stage in name only, and this is what makes `--without` a mechanism rather
+    // than a flag.
+    for (const f of stages.filter((s) => featureOf(s) !== undefined)) {
+      const kept = selectStages(stages, [featureOf(f)!])
+      expect(kept.map((s) => s.name)).not.toContain(f.name)
+      expect(auditChain(kept, DEFAULT_TERMINAL_TARGET)).toEqual([])
+    }
   })
 
   test('BOARD_RADIOS is declared in every file whose RUNs read it', () => {

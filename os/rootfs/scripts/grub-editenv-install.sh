@@ -1,7 +1,7 @@
 #!/bin/sh
 # Take grub-editenv out of its package for boards RAUC drives through grub.
 #
-# Called from os/rootfs/stages/30-40-unsplit.Dockerfile, where the reasoning lives.
+# Called from os/rootfs/stages/40-board.Dockerfile, where the reasoning lives.
 # Build arguments read from the environment: RAUC_BOOTLOADER.
 
 set -eu

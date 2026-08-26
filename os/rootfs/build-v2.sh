@@ -54,6 +54,13 @@ OUT_DIR="$REPO_ROOT/_out/${MOS_BOARD}"
 # BOARD_CMDLINE_ARGS is: it protects a rootfs slot, and the slots differ.
 SIZE_BUDGET_MB="${SIZE_BUDGET_MB_OVERRIDE:-}"
 WITH_MOSD=${WITH_MOSD:-1}
+case "$WITH_MOSD" in
+0 | 1) ;;
+*)
+    echo "error: WITH_MOSD is '$WITH_MOSD'; it must be exactly 0 or 1. It selects whether stages/33-feature-mosd is in the chain, and anything else here would be read as 'not 1' and silently build an image with no management daemon" >&2
+    exit 1
+    ;;
+esac
 
 # PLAN-012: whether the container engine is in the image at all.
 #
@@ -76,7 +83,7 @@ WITH_CONTAINERS=${WITH_CONTAINERS:-1}
 case "$WITH_CONTAINERS" in
 0 | 1) ;;
 *)
-    echo "error: WITH_CONTAINERS is '$WITH_CONTAINERS'; it must be exactly 0 or 1. Any other value would be read as 0 by the Dockerfile's comparison and the engine would silently not ship" >&2
+    echo "error: WITH_CONTAINERS is '$WITH_CONTAINERS'; it must be exactly 0 or 1. It selects whether stages/31-feature-containers is in the chain, and anything else here would be read as 'not 1' and the engine would silently not ship" >&2
     exit 1
     ;;
 esac
@@ -138,8 +145,11 @@ else
 fi
 
 # The container engine, built from source by os/podman (PLAN-012 M1/M2).
-# Staged like modules.tar and mosd; the directory always exists (empty when
-# WITH_CONTAINERS=0) so the Dockerfile COPY works on both paths.
+# Staged like modules.tar and mosd. The directory is created either way and is
+# left EMPTY when the engine is declined -- nothing COPYs it then, because
+# stages/31-feature-containers is not in the chain, and the mkdir is here so
+# that a stale directory from a previous WITH_CONTAINERS=1 build cannot be
+# picked up by the next one.
 #
 # NOT built on demand here. `make podman` compiles four Go/Rust/C trees and
 # takes tens of minutes; running it implicitly from a rootfs build would make
@@ -187,8 +197,10 @@ if [ "$WITH_CONTAINERS" = "1" ]; then
 fi
 
 # mosd: cross-build and stage into the context like modules.tar. The staged
-# directory always exists (empty when WITH_MOSD=0) so the Dockerfile COPY works
-# on both paths.
+# directory is created either way and is left EMPTY when mosd is declined --
+# stages/33-feature-mosd is then not in the chain and nothing COPYs it. The
+# rm -rf is what keeps a previous WITH_MOSD=1 build's binaries from being
+# copied into an image that asked for none.
 MOSD_STAGE="$OUT_DIR/mosd"
 rm -rf "$MOSD_STAGE"
 mkdir -p "$MOSD_STAGE"
@@ -494,6 +506,35 @@ for a in "${FROM_ARGS[@]}"; do
     case "$a" in --build-arg) DRIVER_FROM_ARGS+=(--arg) ;; *) DRIVER_FROM_ARGS+=("$a") ;; esac
 done
 
+# STAGE SELECTION, which is what replaced the WITH_* build arguments (RFCT-111).
+#
+# WITH_CONTAINERS and WITH_MOSD are still the caller's spelling -- the
+# environment variable, and board/<name>/containers.env -- and they still mean
+# exactly what they meant. What changed is what this script does with them: a 0
+# used to travel into the build as `--build-arg WITH_CONTAINERS=0`, where five
+# separate RUNs and scripts each tested it, and now it names a stage the driver
+# does not build. There is one decision instead of five copies of one.
+#
+# THE STAGED DIRECTORY'S ARGUMENT GOES WITH THE STAGE, and the driver enforces
+# that rather than trusting this list: an --arg no stage declares is REFUSED
+# (os/build/src/stages.ts, unusedArgs), because docker only warns about an
+# unused --build-arg and a warning scrolls past in a build this size. So
+# PODMAN_DIR is passed exactly when 31-feature-containers is in the chain and
+# MOSD_DIR exactly when 33-feature-mosd is, and getting that wrong is a refusal
+# with the argument's name in it rather than a value that quietly does nothing.
+SELECT_ARGS=()
+FEATURE_ARGS=()
+if [ "$WITH_CONTAINERS" = "1" ]; then
+    FEATURE_ARGS+=(--arg PODMAN_DIR="_out/$MOS_BOARD/podman")
+else
+    SELECT_ARGS+=(--without containers)
+fi
+if [ "$WITH_MOSD" = "1" ]; then
+    FEATURE_ARGS+=(--arg MOSD_DIR="_out/$MOS_BOARD/mosd")
+else
+    SELECT_ARGS+=(--without mosd)
+fi
+
 # THE CHAIN, not one Dockerfile. os/build/run.sh --build-rootfs sequences
 # os/rootfs/stages/*.Dockerfile in numeric order, tagging each and handing it to
 # the next; everything above this line -- the staged context, the layout checks,
@@ -512,13 +553,11 @@ if ! bash "$REPO_ROOT/os/build/run.sh" --build-rootfs \
         --arg RAUC_BOOTLOADER="$RAUC_BOOTLOADER" \
         --arg BOARD_RADIOS="$BOARD_RADIOS" \
         --arg MODULES_TAR="_out/$MOS_BOARD/modules.tar" \
-        --arg MOSD_DIR="_out/$MOS_BOARD/mosd" \
-        --arg PODMAN_DIR="_out/$MOS_BOARD/podman" \
         --arg RAUC_DIR="_out/$MOS_BOARD/rauc" \
         --arg BOARD_INIT_DIR="_out/$MOS_BOARD/init" \
         --arg OVERLAY_DIR="_out/$MOS_BOARD/overlay-v2" \
-        --arg WITH_MOSD="$WITH_MOSD" \
-        --arg WITH_CONTAINERS="$WITH_CONTAINERS" \
+        ${SELECT_ARGS[@]+"${SELECT_ARGS[@]}"} \
+        ${FEATURE_ARGS[@]+"${FEATURE_ARGS[@]}"} \
         --arg MOS_PROFILE="$MOS_PROFILE" \
         --arg VERITY_SALT="$VERITY_SALT" \
         --arg VERITY_UUID="$VERITY_UUID" \

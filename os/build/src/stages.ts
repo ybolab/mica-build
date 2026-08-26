@@ -150,6 +150,67 @@ export function discoverStages(dir: string = STAGES_DIR): StageFile[] {
   return stages
 }
 
+// `31-feature-containers` -> `containers`. A stage whose name matches this is
+// one a build may DECLINE; every other stage is the floor, the read-only-root
+// wiring, the board or the pack, and declining any of those is not a smaller
+// image, it is a broken one.
+const FEATURE_NAME = /^\d+-feature-([A-Za-z0-9][A-Za-z0-9-]*)$/
+
+/** The feature a stage names, or undefined if it is not a feature stage. */
+export function featureOf(stage: StageFile): string | undefined {
+  return FEATURE_NAME.exec(stage.name)?.[1]
+}
+
+/**
+ * The chain with named features left out -- RFCT-111's "stage selection".
+ *
+ * This is what replaced `--build-arg WITH_CONTAINERS=0`. The difference is not
+ * spelling. A WITH_* argument reached the build, and every RUN and script that
+ * cared had to test it: five copies for the container engine, four for mosd,
+ * each an independent chance to disagree with the others and build an image
+ * with the engine installed and its assertions skipped. Here the decision is
+ * made once, before docker is started, and a declined feature is a file that is
+ * not built -- so there is nothing left inside the stage that can be wrong
+ * about which way the switch went.
+ *
+ * IT REFUSES A NAME IT CANNOT FIND, and that is the point of the function
+ * rather than a nicety. `--without contaners` that silently matched nothing
+ * would build the FULL image and report success, which is the exact shape of
+ * green PLAN-014 keeps finding: a switch observed only in the position that
+ * changes nothing. It also refuses to drop a non-feature stage, because
+ * `--without base` is a request for an image with no operator account and no
+ * trust anchors, and the caller who typed it did not mean that.
+ */
+export function selectStages(
+  stages: readonly StageFile[],
+  without: readonly string[],
+): StageFile[] {
+  const faults: StageFault[] = []
+  const features = new Map<string, StageFile>()
+  for (const s of stages) {
+    const f = featureOf(s)
+    if (f) features.set(f, s)
+  }
+  const known = [...features.keys()].sort()
+  const drop = new Set<string>()
+  for (const name of without) {
+    const hit = features.get(name)
+    if (hit) {
+      drop.add(hit.name)
+      continue
+    }
+    const other = stages.find((s) => s.name === name || s.name.endsWith(`-${name}`))
+    faults.push({
+      path: STAGES_DIR,
+      message: other
+        ? `was asked to leave out '${name}', which is ${basename(other.path)} -- not a feature stage. Only <number>-feature-<name> stages may be declined; the rest are the floor, the read-only-root wiring, the board and the pack, and a chain missing one of those does not build a smaller image, it builds a broken one`
+        : `was asked to leave out the feature '${name}' and no stage here is named <number>-feature-${name}. The features are: ${known.length > 0 ? known.join(', ') : '(none)'}. A name that matched nothing would build the FULL image and exit 0, so it is refused instead`,
+    })
+  }
+  if (faults.length > 0) throw new StageChainError(faults)
+  return stages.filter((s) => !drop.has(s.name))
+}
+
 /**
  * Everything that makes an ordered list of files a buildable chain.
  *
@@ -355,10 +416,22 @@ export function buildArgv(
  * is not derivable from the output afterwards -- an image built without a
  * feature stage looks like an image whose feature stage did nothing -- so it is
  * written down at the time.
+ *
+ * THE DECLINED FEATURES ARE RECORDED TOO, and that half is the one M5c's stage
+ * selection made necessary. A `# declined:` line naming nothing is not the same
+ * statement as no line at all: the first says the build was asked for every
+ * feature, the second says nobody wrote it down. Both are printed, always, so
+ * an image with no container engine says why on its own manifest rather than
+ * leaving a reader to notice a missing binary and guess.
  */
-export function stageManifest(builds: readonly StageBuild[], stages: readonly StageFile[]): string {
+export function stageManifest(
+  builds: readonly StageBuild[],
+  stages: readonly StageFile[],
+  declined: readonly string[] = [],
+): string {
   const lines = [
     '# os/rootfs stage chain, as built. One line per stage, in build order.',
+    `# declined: ${declined.length > 0 ? [...declined].sort().join(' ') : '(none -- every feature stage in the directory was built)'}`,
     '# name\tcontent-hash\ttag',
   ]
   builds.forEach((b, i) => {

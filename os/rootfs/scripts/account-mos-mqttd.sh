@@ -1,7 +1,7 @@
 #!/bin/sh
 # Create the pinned mos-mqttd service account (uid/gid 970).
 #
-# Called from os/rootfs/stages/30-40-unsplit.Dockerfile, where the reasoning lives.
+# Called from os/rootfs/stages/34-feature-mqtt.Dockerfile, where the reasoning lives.
 
 set -eu
 if awk -F: '$3 == 970 || $1 == "mos-mqttd"' /etc/passwd | grep -q .; then
