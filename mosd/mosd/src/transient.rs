@@ -85,7 +85,7 @@ pub fn production_shadow_path() -> PathBuf {
 /// alternate path — `mos-seed-state`'s `/mnt/state/mos/shadow`, or a test's
 /// temporary file — gets the marker that belongs to it.
 ///
-/// THE SYMLINK IS RESOLVED FIRST, and that is the whole point of this function
+/// The symlink is resolved first, and that is the whole point of this function
 /// not being one line. `Path::with_file_name` is LEXICAL: it rewrites the last
 /// component of the string and resolves nothing. On the v2 image
 /// `/etc/shadow` is a symlink onto STATE, so writing the shadow file follows
@@ -95,10 +95,9 @@ pub fn production_shadow_path() -> PathBuf {
 /// and apid answers `502 Bad Gateway`: the transient SSH root password, which
 /// is the documented way back into a locked-out device, does not work at all.
 ///
-/// Found from outside by the apid API suite on a booted x64 image (RFCT-105).
-/// No unit test could see it: this function's own test asserted three paths
-/// that were already resolved, and the ONE path production passes — the
-/// `/etc/shadow` symlink — was not among them.
+/// A test over already-resolved paths cannot see any of that; the one path
+/// production passes is the `/etc/shadow` symlink, so a test has to pass one
+/// too.
 ///
 /// `canonicalize` needs the path to exist. When it does not — a test's
 /// not-yet-created temporary file, a caller probing before first boot — the
@@ -263,11 +262,8 @@ pub(crate) fn write_atomically(
     mode: u32,
     owner: Option<(u32, u32)>,
 ) -> Result<()> {
-    // One implementation, in crate::fswrite. This was the third copy of the
-    // temp-and-rename dance in mosd; the AP reconciler had another and the
-    // hostname reconciler needed a variant where rename cannot work at all.
-    // They differed only in this one taking an owner -- which is exactly why
-    // three copies were easy to keep: they looked the same.
+    // One implementation of the temp-and-rename dance, in crate::fswrite. This
+    // is the variant that also restores an owner.
     crate::fswrite::write_config_owned(path, contents, mode, owner)
 }
 
@@ -310,7 +306,7 @@ mod tests {
             .to_string()
     }
 
-    // ---- R1: the marker path ----------------------------------------------
+    // ---- the marker path --------------------------------------------------
 
     #[test]
     fn the_marker_sits_beside_the_shadow_file_whatever_that_is() {
@@ -330,16 +326,15 @@ mod tests {
         );
     }
 
-    /// THE CASE PRODUCTION ACTUALLY PASSES, and the one the three above miss.
+    /// The case production passes, and the one the three above miss.
     ///
     /// Every path in the test above is already resolved. The only path mosd
     /// ever hands this function on a device is `/etc/shadow`, which on the v2
     /// image is a SYMLINK onto STATE -- and `Path::with_file_name` is lexical,
-    /// so the marker used to land in the literal `/etc/`, a read-only
-    /// dm-verity squashfs. mosd failed with `os error 30`, apid answered 502,
-    /// and the transient SSH root password -- the documented way back into a
-    /// locked-out device -- did not work at all. Found from outside by the
-    /// apid API suite on a booted image (RFCT-105); no unit test could see it.
+    /// so a marker resolved lexically lands in the literal `/etc/`, a
+    /// read-only dm-verity squashfs: mosd fails with `os error 30`, apid
+    /// answers 502, and the transient SSH root password -- the documented way
+    /// back into a locked-out device -- does not work at all.
     ///
     /// The assertion is that the marker follows the LINK TARGET's directory,
     /// not the link's own.
@@ -375,7 +370,7 @@ mod tests {
         );
     }
 
-    // ---- R2: what is rejected, and what is not ----------------------------
+    // ---- what is rejected, and what is not --------------------------------
 
     #[test]
     fn a_password_shorter_than_eight_bytes_is_rejected_and_eight_is_not() {
@@ -449,7 +444,7 @@ mod tests {
         }
     }
 
-    // ---- R2: the successful path ------------------------------------------
+    // ---- the successful path ----------------------------------------------
 
     #[test]
     fn the_shadow_hash_verifies_and_the_marker_repeats_it_exactly() {

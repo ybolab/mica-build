@@ -1,5 +1,5 @@
 //! Integration test: mosd's service registry against a REAL private session
-//! bus (PLAN-011 D5, `docs/design/bus.md` §5, §6).
+//! bus (`docs/design/bus.md` §5, §6).
 //!
 //! Every test here spawns a private `dbus-daemon --session` and the `mosd`
 //! binary, then claims `com.mos.*` names from this process with real zbus
@@ -10,12 +10,9 @@
 //!
 //! # This test does not skip
 //!
-//! `tests/bus.rs` returns `Ok(())` when `dbus-daemon` is missing. That
-//! behaviour is deliberately NOT copied: the previous campaign found a stale
-//! e2e test that had never once run in CI because it skipped itself into a
-//! green tick, and a test that reports success while asserting nothing is
-//! worse than no test at all. [`dbus_daemon`] panics instead, naming the
-//! tool it could not find.
+//! A test that skips itself into a green tick when `dbus-daemon` is missing
+//! reports success while asserting nothing, which is worse than no test at
+//! all. [`dbus_daemon`] panics instead, naming the tool it could not find.
 
 use std::collections::HashMap;
 use std::io::{BufRead, BufReader};

@@ -701,7 +701,7 @@ mod tests {
         }
     }
 
-    // ---- R1: rendering ----------------------------------------------------
+    // ---- rendering --------------------------------------------------------
 
     #[test]
     fn multi_network_render_matches_the_golden_file() {
@@ -921,7 +921,7 @@ mod tests {
         );
     }
 
-    // ---- R1/R2: what apply writes -----------------------------------------
+    // ---- what apply writes ------------------------------------------------
 
     #[tokio::test]
     async fn apply_writes_the_golden_config_at_0600_creating_its_directory() {
@@ -1065,7 +1065,7 @@ mod tests {
         );
     }
 
-    // ---- R2/R3: unit lifecycle and convergence ----------------------------
+    // ---- unit lifecycle and convergence -----------------------------------
 
     #[tokio::test]
     async fn disabled_to_enabled_enables_then_starts() {
@@ -1253,7 +1253,7 @@ mod tests {
         );
     }
 
-    // ---- R5: enabled with nothing to join ---------------------------------
+    // ---- enabled with nothing to join -------------------------------------
 
     #[tokio::test]
     async fn enabled_with_no_networks_stays_down_and_reports_idle() {
@@ -1290,7 +1290,7 @@ mod tests {
         assert!(!paths.networkd().exists());
     }
 
-    // ---- R4: secret hygiene -----------------------------------------------
+    // ---- secret hygiene ---------------------------------------------------
 
     #[tokio::test]
     async fn the_psk_reaches_the_config_file_and_nothing_else() {

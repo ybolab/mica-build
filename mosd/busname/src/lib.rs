@@ -1,6 +1,5 @@
 //! `mos-busname` — the one rule that turns a `com.mos.*` bus name into the
-//! `<class>` the rest of the system keys off (`docs/design/bus.md` §5,
-//! PLAN-011 D5).
+//! `<class>` the rest of the system keys off (`docs/design/bus.md` §5).
 //!
 //! Two grammars share one namespace:
 //!
@@ -12,10 +11,8 @@
 //! So the class is the **third** dotted component of a system name and the
 //! **fourth** of an extension name. A reader that takes the third component
 //! unconditionally publishes `com.mos.ext.sensor.abc123` under the class
-//! `ext`, which is the defect PLAN-011 M5 names; the MQTT bridge and mosd's
-//! service registry both have to make that distinction, and two copies of it
-//! would be two rules that can drift. Hence one crate, depended on rather
-//! than restated.
+//! `ext`. The MQTT bridge and mosd's service registry both have to make that
+//! distinction, so it lives here once, depended on rather than restated.
 //!
 //! The bare namespace `com.mos.ext` is a case of its own: extension origin
 //! with **no class**. It is measurably ownable by an unprivileged uid, so
@@ -58,10 +55,10 @@ pub enum Origin {
     /// image, governed by the D-Bus policy's default `<deny own="*"/>`.
     System,
     /// `com.mos.ext[.<class>[.<suffix>]]` — a name the `com.mos.ext` grant
-    /// makes ownable (PLAN-011 D5), which is a **measured** property of the
-    /// name and not an inference: the default `<deny own="*"/>` refuses
-    /// `com.mos.other`, and only the grant lets anything here be owned at
-    /// all. Says nothing about who owns it or whether they are trusted.
+    /// makes ownable, which is a **measured** property of the name and not an
+    /// inference: the default `<deny own="*"/>` refuses `com.mos.other`, and
+    /// only the grant lets anything here be owned at all. Says nothing about
+    /// who owns it or whether they are trusted.
     Extension,
 }
 
@@ -116,8 +113,7 @@ pub struct BusName<'a> {
 ///   unprivileged uid (65534) requesting the bare name is OWNED. Calling it
 ///   system-origin would let any unprivileged third party present itself to
 ///   operators, to the dashboard and to the MQTT bridge **as the system**.
-///   That is origin spoofing, and it is worse than the wrong-class defect
-///   PLAN-011 D5 names as the thing to test for.
+///   That is origin spoofing.
 /// - **Not a bare `None` either**, because there are two true things to say
 ///   about this name and a `None` discards one of them. That it is *in the
 ///   extension namespace* is the measured fact above — the same measurement
@@ -128,14 +124,11 @@ pub struct BusName<'a> {
 ///   one — `ext`, or an empty segment — would put a service on the bridge
 ///   under a class nobody chose.
 ///
-/// Two callers read this rule, the MQTT bridge and mosd's service registry.
-/// Under a bare `None` each would have to answer "is this a `com.mos.` name I
-/// should care about?" for itself, and two independent answers to one
-/// question is how they drift. `class: None` decides it once, here: the
-/// bridge refuses to address a service it cannot name a class for, and the
-/// registry's conformance gap falls out of the type instead of being
-/// re-derived from the prefix by hand. Recording that gap is the registry's
-/// job and not this crate's.
+/// The MQTT bridge and mosd's service registry both read this rule, and
+/// `class: None` decides it for them once: the bridge refuses to address a
+/// service it cannot name a class for, and the registry's conformance gap
+/// falls out of the type instead of being re-derived from the prefix by hand.
+/// Recording that gap is the registry's job and not this crate's.
 ///
 /// ```
 /// use mos_busname::{Origin, parse};

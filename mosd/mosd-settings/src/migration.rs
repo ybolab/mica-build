@@ -279,7 +279,7 @@ fn child_table<'doc>(
     }
 }
 
-/// v4 -> v5: adds the `container` subtree carrying PLAN-012's engine switch.
+/// v4 -> v5: adds the `container` subtree carrying the engine switch.
 ///
 /// `up` stamps `schema_version = 5` and adds `container.enabled = false` when
 /// absent. False, not true, and not "whatever the device was doing": a

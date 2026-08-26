@@ -950,7 +950,7 @@ mod tests {
         }
     }
 
-    // ---- R1: rendering ----------------------------------------------------
+    // ---- rendering --------------------------------------------------------
 
     #[test]
     fn the_render_matches_the_golden_file() {
@@ -1165,7 +1165,7 @@ mod tests {
         }
     }
 
-    // ---- R4: derived SSID -------------------------------------------------
+    // ---- derived SSID -----------------------------------------------------
 
     #[test]
     fn the_derived_ssid_is_stable_and_distinct_per_device() {
@@ -1236,7 +1236,7 @@ mod tests {
         assert!(reconciler.control.calls().is_empty());
     }
 
-    // ---- R1: where the key comes from -------------------------------------
+    // ---- where the key comes from -----------------------------------------
 
     #[tokio::test]
     async fn an_absent_key_comes_from_the_per_device_state_secret() {
@@ -1297,7 +1297,7 @@ mod tests {
         assert!(reconciler.control.calls().is_empty());
     }
 
-    // ---- R2: address and DHCP pool ----------------------------------------
+    // ---- address and DHCP pool --------------------------------------------
 
     #[test]
     fn the_dhcp_pool_is_derived_from_the_access_point_address() {
@@ -1396,7 +1396,7 @@ mod tests {
         );
     }
 
-    // ---- R1/R2: what apply writes -----------------------------------------
+    // ---- what apply writes ------------------------------------------------
 
     #[tokio::test]
     async fn apply_writes_the_golden_config_at_0600_creating_its_directory() {
@@ -1474,7 +1474,7 @@ mod tests {
         assert_eq!(reconciler.reloader.calls(), vec!["reload".to_string()]);
     }
 
-    // ---- R3: surviving the network reconciler's sweep ---------------------
+    // ---- surviving the network reconciler's sweep -------------------------
 
     #[tokio::test]
     async fn the_rendered_networkd_unit_survives_the_network_reconcilers_sweep() {
@@ -1540,7 +1540,7 @@ mod tests {
         assert!(paths.network_dir.join("90-wifi-ap-wlan1.network").exists());
     }
 
-    // ---- R2: unit lifecycle and convergence -------------------------------
+    // ---- unit lifecycle and convergence -----------------------------------
 
     #[tokio::test]
     async fn off_to_always_enables_then_starts_and_back_to_off_stops_then_disables() {
@@ -1747,7 +1747,7 @@ mod tests {
         );
     }
 
-    // ---- R5: the single-radio conflict ------------------------------------
+    // ---- the single-radio conflict ----------------------------------------
 
     #[tokio::test]
     async fn an_access_point_on_the_station_s_radio_reports_conflict_and_touches_nothing() {
@@ -1867,7 +1867,7 @@ mod tests {
         );
     }
 
-    // ---- R7: secret hygiene -----------------------------------------------
+    // ---- secret hygiene ---------------------------------------------------
 
     #[tokio::test]
     async fn the_key_reaches_the_config_file_and_nothing_else() {

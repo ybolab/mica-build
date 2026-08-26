@@ -196,7 +196,7 @@ pub fn booted_slot(slots: &[SlotStatus]) -> Option<&SlotStatus> {
 /// mark-good — is NOT visible here. Confirmation lives in the U-Boot attempt
 /// counters, and RAUC's `boot-status` reads them only as exhausted-or-not.
 /// Closing that window needs the health gate to report its confirmation into
-/// mosd, which is an `os/` change and is recorded as deferred in RFCT-084.
+/// mosd, which is an `os/` change and is not made here.
 pub fn pending_not_confirmed(slots: &[SlotStatus], primary: Option<&str>) -> bool {
     match (booted_slot(slots), primary) {
         (Some(booted), Some(primary)) => booted.name != primary,

@@ -7,14 +7,11 @@
 //! # This test does not skip
 //!
 //! `dbus-daemon` is a hard requirement, not an optional extra: without it
-//! not one assertion below can be made. Until this commit the test printed
-//! `skipping bus_roundtrip` and returned `Ok(())` when the binary was
-//! missing, i.e. it reported green while asserting nothing. That is the same
-//! defect a previous campaign found in `mosd/apid/tests/e2e.rs`, where a
-//! genuinely broken assertion sat undetected because every host that had run
-//! it happened to have `dbus-daemon` installed
-//! (`docs/task/RFCT-089.md:107`). [`dbus_daemon`] panics instead, naming the
-//! tool it could not find, the same way `tests/scan.rs` does.
+//! not one assertion below can be made. A test that printed
+//! `skipping bus_roundtrip` and returned `Ok(())` when the binary is missing
+//! would report green while asserting nothing. [`dbus_daemon`] panics
+//! instead, naming the tool it could not find, the same way `tests/scan.rs`
+//! does.
 //!
 //! CI provisions the dependency rather than opting out of the suite. The
 //! `rust` job in `.gitea/workflows/check.yml` runs `mosd/hack/check.sh`,
@@ -301,7 +298,7 @@ async fn bus_roundtrip() -> anyhow::Result<()> {
     assert!(proxy.set_settings("hostname", "not json").await.is_err());
     assert!(proxy.set_settings("schema_version", "2").await.is_err());
 
-    // Update orchestration (RFCT-084), against the dry-run RAUC client — the
+    // Update orchestration, against the dry-run RAUC client — the
     // same guarantee as the power methods above: MOSD_DRY_RUN=1 means the
     // production client was never constructed, so nothing here can install a
     // bundle on, or mark a slot of, the build host.
