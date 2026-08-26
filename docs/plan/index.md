@@ -44,4 +44,4 @@ Each plan is a single line linking to its detail file. All detailed information 
 - [-] [**PLAN-011 Device bus v2 - com.mos.* item tree, actions as items, and extension service lifecycle**](PLAN-011.md) `2026-08-21`
 - [ ] [**PLAN-012 Container engine - a self-built static Podman, off by default, switched from apid**](PLAN-012.md) `2026-08-23`
 - [ ] [**PLAN-013 The x64/QEMU verification vehicle - a whole-system check, an apid API suite, and the cx3576 back-port**](PLAN-013.md) `2026-08-24`
-- [-] [**PLAN-014 os/ restructure - board isolation, per-stage rootfs Dockerfiles, pinned build environments, and the TS build/verify toolchain**](PLAN-014.md) `2026-08-25`
+- [x] [**PLAN-014 os/ restructure - board isolation, per-stage rootfs Dockerfiles, pinned build environments, and the TS build/verify toolchain**](PLAN-014.md) `2026-08-25`
