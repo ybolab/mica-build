@@ -21,6 +21,12 @@ Both routes were run to completion on 2026-08-25, this host:
 | host bun (`/srv/bkd/runtime/bun`) | **199/199** | 107 s |
 | pinned bun container (`MOS_BUILD_CONTAINER=1`) | **199/199** | 99 s |
 
+M6b added the assembler and raised the count to **358**; the suite now assembles
+five whole cx3576 images over fabricated inputs, and costs 2 m 4 s on the host
+route. That is the price of one full assembly in the suite rather than only at
+the gate — a chain that runs end to end is the thing a table of unit refusals
+cannot assert.
+
 Per-operation, which is where the design decisions came from:
 
 | | |
@@ -288,6 +294,319 @@ Every toolset is opened and every tool in it is asked to answer, including
 that will, and a package list that is wrong should be wrong now. The
 `e2fsprogs`-without-`e2fsprogs-extra` gap is driven as a negative, with the
 correct package list as its positive control.
+
+## THE BYTE-IDENTITY GATE: shell against TypeScript, cx3576
+
+RFCT-112's gate. Same board definition, same prebuilt `_out/cx3576/` inputs, the
+shell assembler and the TypeScript one, twice each.
+
+```sh
+cp -al /path/to/prebuilt/_out/cx3576 _out/cx3576        # preserving mtimes
+cp -al /path/to/prebuilt/board/cx3576/out board/cx3576/out
+
+bash os/mkimage-v2.sh                       # the oracle
+bash os/mkimage-v2.sh                       # again -- it must reproduce ITSELF first
+bash os/build/run.sh --mkimage-v2           # the port
+bash os/build/run.sh --mkimage-v2
+
+sha256sum _out/cx3576/cx3576-mos-v2-*.img
+```
+
+Result, 2026-08-26, this host — **four images, one hash**:
+
+```
+f36bf80993583f6b9d097531a8efcd086e9aaaeabc014a367d7543582ecd8bce  cx3576-mos-v2-1787704793.img  shell
+f36bf80993583f6b9d097531a8efcd086e9aaaeabc014a367d7543582ecd8bce  cx3576-mos-v2-1787704868.img  shell
+f36bf80993583f6b9d097531a8efcd086e9aaaeabc014a367d7543582ecd8bce  cx3576-mos-v2-1787705464.img  TypeScript
+f36bf80993583f6b9d097531a8efcd086e9aaaeabc014a367d7543582ecd8bce  cx3576-mos-v2-1787705541.img  TypeScript
+```
+
+**A hash is the right comparison here and nowhere else in this campaign.** M5's
+content-diff rule exists because the rootfs *build* does not reproduce itself.
+Assembly does — R2/R4 made it so and `make os-mkimage-v2-test` asserts exactly
+that — so the first two lines above are not ceremony: they are what makes the
+last two evidence. Two assemblers over identical inputs must give identical
+bytes, and if the oracle did not agree with itself there would be nothing to
+compare against.
+
+**The comparison was checked live.** The suite carries the control
+(`src/mkimage-v2.test.ts`, "a changed input changes the bytes"): one different
+U-Boot blob, everything else equal, and the images compare unequal. Without it,
+"byte-identical" could be a comparison that always passes.
+
+**Had they differed**, the report would have been the differing MiB blocks rather
+than the fact of a difference:
+
+```sh
+cmp -l shell.img ts.img | awk '{printf "%d\n", int(($1-1)/1048576)}' | uniq -c
+```
+
+which names the MiB offsets that moved; mapping those against the layout
+(`loader` at 0, `boot-a` at 18, `rootfs-a` at 146, `ephemeral` at 738 …) says
+*which structure* moved rather than that something did.
+
+### The one input difference that had to be found first
+
+The prebuilt `_out/cx3576/` used here was produced from an **older commit** —
+before `pin_seeded_times` existed — so the image sitting beside those inputs
+hashes differently (`5412f708…`) and is **not** a valid oracle. The four hashes
+above are all from *this* tree's assembler over those inputs. Checked, not
+assumed: `cmp` of the two `os/mkimage-v2.sh` files, which differ.
+
+### Cost, measured
+
+| | |
+|---|---|
+| `bash os/mkimage-v2.sh`, container route | ~70 s |
+| `bash os/build/run.sh --mkimage-v2` | ~55 s |
+| `sha256sum` of one 1315 MiB image | ~4 s |
+| the whole `src/mkimage-v2.test.ts` file (four full assemblies, fabricated inputs) | ~45 s |
+
+## Every ported refusal, and the mutation that drives it red
+
+`os/mkimage-v2.sh` carries **34** `echo "error:` sites. All are ported; the
+table names where each is driven from the failing side. **A byte-identity gate
+cannot see a dropped refusal** — a port that lost one produces identical bytes
+for every good input and passes the gate perfectly, and what it stopped catching
+is a board that needs re-flashing.
+
+Every negative below has a **positive control** beside it in the same file: the
+tree's own `boot.cmd`, the tree's own board definition, or the same input
+unmutated. Without that, a guard that refused everything would satisfy the whole
+table.
+
+### slot-pin strict mode — `src/layout-cx3576.test.ts`, `src/mkimage-v2.test.ts`
+
+| driven | what it printed |
+|---|---|
+| pin `0`, `-16`, `256.5`, `256M`, `' 256'`, `abc`, `+256`, `0256` | "is not a positive whole number of MiB", eight times |
+| `MOS_ROOTFS_SLOT_MIB=` (set, empty) | the same — supplied-and-empty is a release build whose pin got lost, not a dev build |
+| a 300 MiB payload against `--pin 256` | "300 MiB — 44 MiB too large", "frozen for every device already flashed", "shrink the rootfs instead" |
+| **the same payload UNPINNED** | assembles; floor mode grows the slot to 384 MiB. The control that makes the row above a statement about the MODE |
+| a pin equal to the board's own default (`256`) | still `mode: 'pinned'`, while unpinned is `mode: 'floor'` — selected by PRESENCE, never by value |
+
+### boot-attempts range — `src/boot-cx3576.test.ts`
+
+| driven | what it printed |
+|---|---|
+| `setenv BOOT_A_LEFT 10` | "sets a boot-attempts value of 10; RAUC writes this counter in hex and U-Boot compares it in decimal, so it must stay in 1..9" |
+| `setenv BOOT_B_LEFT 0` | the same, "value of 0" |
+| `1` and `9` | accepted — the boundaries themselves, so the range is a range |
+| `BOOT_ATTEMPTS_MAX=5` on the board | "must stay in 1..5" — the range comes from the board, not from a literal |
+| the tree's own file | four credits found, all `3`. Four, not two: the exhausted-both-slots recovery block resets both, and the shell greps the whole file for the same reason |
+
+### stale partition number (THE RENUMBERING GUARD) — `src/boot-cx3576.test.ts`
+
+| driven | what it printed |
+|---|---|
+| `bootpart` 4→5 for slot A | "sets 'bootpart' to '5' for slot A, but the layout puts that partition at p4" |
+| `bootpart` 5→6 for slot B | the same, p5 |
+| `rootpart` 6→7 for slot A | the same, p6 |
+| `rootpart` 7→8 for slot B | the same, p7 |
+| `setenv bootpart` renamed away entirely | "sets 'bootpart' to 'nothing' for slot A" — not a comparison against `undefined` |
+| `BOOT_A_PARTNUM=99` on the board | "the layout puts that partition at p99" — the expected numbers come from the layout |
+| all four, through a whole assembly | the build stops before anything is written |
+
+The scan's shape is driven too: it latches on `setenv bootslot <slot>` and takes
+the FIRST following assignment, never unlatches, and ignores leading whitespace —
+transcribed rather than tidied, because a scan that read a different line would
+agree with the shell on today's file and disagree on the next one.
+
+### loader content — `src/mkimage-v2.test.ts`
+
+| driven | what it printed |
+|---|---|
+| a blob whose first bytes are not `RKNS` | "starts with '33333333', not the Rockchip idbloader magic '524b4e53' ('RKNS'); the RK3576 BootROM would not recognise it at sector 64" |
+| a blob one byte over `UBOOT_MAX_BYTES` | "does not fit between sector 64 and uenv-a at 16 MiB" |
+| a blob **exactly** `UBOOT_MAX_BYTES` | assembles — the control that makes the row above `>` and not `>=` |
+| a 2 MiB image of zeros, read at sector 64 | "the first bytes of the loader partition are '00000000', not the idbloader magic '524b4e53'" |
+| the same image with the blob dd'd in, read at sector **2048** | refused — it reads at the start sector it is GIVEN, so a relocated partition points at nothing |
+| a file with two bytes in it | "has only 2 byte(s) at offset 0, and 4 were read" — a short read is not a wrong magic |
+
+### the uboot-mos-only rule — `src/mkimage-v2.test.ts`
+
+| driven | what it printed |
+|---|---|
+| `uboot-mos` absent | "build it with 'make -C board/cx3576 uboot-mos'", "is NOT a substitute", "CONFIG_ENV_IS_NOWHERE", "silently never run the RAUC A/B handshake" |
+| `uboot-mos` byte-identical to the debug build | "is byte-identical to the debug build at …", quoting the env offsets the real variant carries, and "do not copy or symlink the other variant into place" |
+| **no debug build present at all** | assembles. The control: its absence disables nothing else, and without this the guard could be "always refuses" |
+| through the CLI, with no `uboot-mos` on disk | the same sentence, plus "note: BOARD_DIR is currently …" |
+
+### the five RFCT-112 names, and the twenty-nine others
+
+RFCT-112 lists five guards. The script carries **thirty-four refusals**, and the
+rest are ported and driven too:
+
+| refusal | driven in |
+|---|---|
+| `board.env` not found | `mkimage-v2-cli.test.ts` — refused by name |
+| `boot.cmd` not found | `mkimage-v2.test.ts` |
+| verity env filenames are not `<base>-a.env`/`<base>-b.env` | `boot-cx3576.test.ts`, both sides, plus a renamed base that stays consistent |
+| `rauc.slot=${bootslot}` missing from `boot.cmd` | `boot-cx3576.test.ts` — **`replaceAll`**, because the token appears in a comment too and a replace that changed only the comment is a negative test that is not negative |
+| the per-slot verity env load missing | `boot-cx3576.test.ts`, and the pattern it looks for is derived from the board |
+| no `dm-mod.create=` | `boot-cx3576.test.ts` |
+| no `dm-mod.waitfor=` | `boot-cx3576.test.ts`, and through a whole assembly |
+| the table does not name this slot's PARTUUID | `boot-cx3576.test.ts`, and slot B pointed at rootfs-a through an assembly |
+| the `waitfor` names a different partition from the table | `boot-cx3576.test.ts` |
+| the table carries a different root hash | `boot-cx3576.test.ts` |
+| `FACTORY_VAR` absent / a file / without `lib/` | `mkimage-v2.test.ts`, all three |
+| kernel, dtb, rootfs-verity.img/.env, both cmdlines absent | `mkimage-v2.test.ts`, five cases, each asserting the sentence that says what MAKES it |
+| the three loader identities | `layout-cx3576.test.ts` individually and all three at once; `mkimage-v2.test.ts` through an assembly |
+| payload not a whole-MiB multiple / zero bytes | `mkimage-v2.test.ts` |
+| `VERITY_ROOT_HASH` missing | `mkimage-v2.test.ts` |
+| salt not the pinned one | `mkimage-v2.test.ts`, with an UPPERCASE salt as the case-folding control |
+| `sgdisk --verify` reporting problems | `src/tools/sgdisk.test.ts` (M6a) — both shapes, including problem text with exit 0 |
+| the assembled loader partition moved | below — the alignment proof |
+| the rootfs input / BSP input messages | `mkimage-v2-cli.test.ts`, asserting they are DIFFERENT sentences |
+
+Two are covered at the wrapper rather than through the assembler, and are marked
+as such above: `sgdisk --verify`'s two failure shapes (M6a drove both) and the
+board-file-absent refusal (`loadBoard`'s, one layer down).
+
+## THE LOADER-ALIGNMENT PROOF
+
+The one difference between the two shell assemblers that M6a measured **not** to
+be cosmetic. Driven against a real sgdisk in `src/mkimage-v2.test.ts`, over the
+real cx3576 geometry on a sparse 1315 MiB file:
+
+| alignment | what sgdisk did | what caught it |
+|---|---|---|
+| `-a 1` (the board's) | loader at **64**, 32704 sectors | — it is correct |
+| **omitted** | loader at **2048**. Exit **0**. `sgdisk --verify` says "No problems found" | the read-back: "the assembled loader partition is 30720 sectors at 2048, expected 32704 at 64" |
+| `-a 2048` | the same silent relocation | the same read-back |
+| `-a 4096` | uenv-b moves into boot-a; sgdisk **refuses the table**, exit 4, saves nothing | `writeGpt`'s own `must()` |
+
+**The three do not fail alike, and that is recorded rather than smoothed over.**
+A check written only against silent relocation would be right about what it
+caught and wrong about what it thought it was catching.
+
+The size half is driven separately (a partition starting at 64 and 1000 sectors
+long is refused), because a check that looked only at the start would pass a
+loader partition that begins in the right place and stops before the bootloader
+ends.
+
+And in the finished image: `out.loaderStartSector === 64n`,
+`out.loaderSizeSectors === 32704n`, and the four bytes at byte 32768 are
+`524b4e53`.
+
+## The derived layout against bash, payload for payload
+
+The slot arithmetic and the whole start chain, against a shell that reads the
+same `board.env`. Like the geometry oracle, **deliberately not in the suite**: it
+sources a board definition.
+
+```sh
+cat > /tmp/slot-oracle.sh <<'SH'
+#!/usr/bin/env bash
+set -euo pipefail
+. os/boards/cx3576/board.env
+for verity_mib in 1 10 12 13 51 80 94 204 205 206 400 408 409 410 500 1000; do
+  slot_mib=$(((verity_mib * ROOTFS_SLOT_HEADROOM_PCT + 99) / 100))
+  slot_mib=$(((slot_mib + ROOTFS_SLOT_ALIGN_MIB - 1) / ROOTFS_SLOT_ALIGN_MIB * ROOTFS_SLOT_ALIGN_MIB))
+  if [ "${slot_mib}" -lt "${MOS_ROOTFS_SLOT_MIB}" ]; then slot_mib="${MOS_ROOTFS_SLOT_MIB}"; fi
+  rootfs_b=$((ROOTFS_A_START_MIB + slot_mib)); meta=$((rootfs_b + slot_mib))
+  state=$((meta + META_SIZE_MIB)); eph=$((state + STATE_SIZE_MIB)); data=$((eph + MOS_VAR_MIB))
+  total=$((data + DATA_SIZE_MIB + IMAGE_TAIL_SLACK_MIB))
+  printf '%s slot=%s rootfs_b=%s meta=%s state=%s eph=%s data=%s total=%s\n' \
+    "$verity_mib" "$slot_mib" "$rootfs_b" "$meta" "$state" "$eph" "$data" "$total"
+done
+SH
+
+cat > /tmp/slot-ts.ts <<'TS'
+const { loadGeometry } = await import(`${process.cwd()}/os/build/src/geometry.ts`)
+const { decideSlot, deriveLayout } = await import(`${process.cwd()}/os/build/src/layout-cx3576.ts`)
+const g = loadGeometry('cx3576')
+for (const v of [1n,10n,12n,13n,51n,80n,94n,204n,205n,206n,400n,408n,409n,410n,500n,1000n]) {
+  const s = decideSlot(g, v, undefined, 'x').slotMib
+  const l = deriveLayout(g, s)
+  console.log(`${v} slot=${s} rootfs_b=${l.rootfsBStartMib} meta=${l.metaStartMib} `
+    + `state=${l.stateStartMib} eph=${l.ephemeralStartMib} data=${l.dataStartMib} total=${l.totalSizeMib}`)
+}
+TS
+
+bash /tmp/slot-oracle.sh > /tmp/slot-sh.txt
+bun run /tmp/slot-ts.ts   > /tmp/slot-ts.txt
+diff -u /tmp/slot-sh.txt /tmp/slot-ts.txt && echo "agrees on $(wc -l < /tmp/slot-sh.txt) payload sizes"
+```
+
+Result, 2026-08-26: **agrees on all 16 payload sizes**, slot and full chain.
+
+**Checked live**, because an oracle that agrees for the wrong reason is the
+failure this tree keeps finding in its own checkers. Dropping the `+ 99` from the
+shell side — turning the ceiling into a floor — diverges at 205 MiB (256 against
+272) and at 410 MiB:
+
+```sh
+sed 's/+ 99) \/ 100/) \/ 100/' /tmp/slot-oracle.sh > /tmp/slot-oracle-floor.sh
+bash /tmp/slot-oracle-floor.sh | diff - /tmp/slot-ts.txt   # must differ
+```
+
+## pin_seeded_times, and the two halves of its claim
+
+`src/pin-seeded-times.test.ts`, against real filesystems in the toolbox.
+
+**The claim**: two 16 MiB ext4 filesystems seeded from trees that differ only in
+atime and ctime come out byte-identical after the pass. **And differ without
+it** — the half that stops a pass which does nothing from satisfying the first.
+
+The two trees are made to differ **deterministically**, by `touch -a` on one of
+them: that sets atime and, because no syscall sets ctime, bumps ctime as well.
+Waiting for a wall clock to tick between two copies would test this on a machine
+slow enough and nothing on a machine that is not.
+
+| driven | result |
+|---|---|
+| the two seeded images, before the pass | `cmp` exit 1 |
+| the two seeded images, after it | `cmp` exit 0 |
+| every in-use inode, after the pass | atime and ctime both `1577836800`; mtime still `1000000000` |
+| inode 2 (the root directory), after the pass | **unchanged** — the pass starts at `First inode`, so mke2fs's own reserved inodes are left as mke2fs wrote them |
+| a listing truncated after its first group | "says N inodes are in use from 11 up, but parsing dumpe2fs's free-inode ranges found M" |
+| a listing whose ranges the parse cannot read (`12-abc`) | refused by token, not skipped |
+| an unindented `Free inodes: 21` (the SUPERBLOCK total) | not read as a group — and the control, indented, DOES change the answer |
+| an empty command file | `debugfsApply` refuses it — the one shape neither of debugfs's signals carries |
+
+### Measured while porting, and it corrects a guess I had made
+
+`mke2fs -d` with `E2FSPROGS_FAKE_TIME` set, on a source file touched to
+`@1000000000`, alpine 3.21:
+
+```
+ctime:  0x6a8e3b33  the SOURCE's ctime -- the fake time does not reach it
+atime:  0x3b9aca00  the SOURCE's atime (1000000000)
+mtime:  0x3b9aca00  the SOURCE's mtime
+crtime: 0x5e0be100  mke2fs's own invention -- and the fake time DOES pin this
+```
+
+exactly as `os/mkimage-common.sh` describes. But `lost+found` — inode 11, which
+mke2fs creates itself — gets the fake time in all four, so **sampling the first
+in-use inode finds the pass already done and proves nothing**. The test asserts
+over every in-use inode, and requires at least one to have differed beforehand.
+
+Without `E2FSPROGS_FAKE_TIME`, atime came back as the wall clock rather than the
+source's — because reading the source to make the copy is itself what bumps it
+under relatime, which is the second half of that file's argument, observed.
+
+## What M6c and M6d need from M6b
+
+- `src/layout-cx3576.ts` is **cx3576's** chain, and x64's is a different one.
+  Make `layout-x64.ts` beside it rather than a `case` inside this one: the two
+  boards agree on the slot-sizing IDEA and on nothing about the order of what
+  follows.
+- **`os/mkimage-common.sh` is still live** and must not be deleted or
+  restructured: `os/mkimage-x64.sh` sources it, by a path it COPIES into its work
+  directory as `/w/mkimage-common.sh`. `src/pin-seeded-times.ts` is the ported
+  argument; when M6c lands, the shell file goes with the shell assembler.
+- `pinSeededTimes(tb, image, fileMtime)` is board-neutral already — it takes a
+  path and a `touch -d` spelling and nothing else.
+- The toolbox's `cx3576-assembly` toolset now declares `cp`, `find` and `touch`
+  as well. `x64-assembly` does not yet, and M6c will want them for the same
+  reason: `cp -a` is `--preserve=all`, `mke2fs -d` copies xattrs, and a host with
+  SELinux stages different bytes from a container without it.
+- `run.sh --mkimage-v2` is the mode pattern to copy for `--mkimage-x64` and
+  `--bundle`, including the refusal when the flag is not first.
+- **The gate needs the oracle to reproduce ITSELF first.** Run the shell twice
+  before comparing. It costs 70 seconds and it is what turns a matching hash into
+  evidence.
 
 ## What M6b needs from here
 

@@ -5,14 +5,16 @@ toolset the image assemblers drive: sgdisk, mtools, dd, mkimage, veritysetup,
 e2fsprogs and rauc. No runtime dependencies: `typescript` and `@types/bun` are
 dev-only, and `bun test` needs neither.
 
-This is PLAN-014's M6a (RFCT-112), in the shape `os/verify` established in M3 —
-`bun.lock`, `package.json`, `tsconfig.json`, `run.sh`, `src/`. Nothing here runs
-on the device. The image ships no bun.
+…and, since M6b, **the cx3576 image assembler** that drives them.
 
-**No assembly happens here.** `os/mkimage-v2.sh` (cx3576), `os/mkimage-x64.sh`
-(x64) and `os/update/bundle.sh` are ported in M6b, M6c and M6d, under the
-byte-identity gate; M6e is the gate that deletes the shell. This milestone opens
-the package with the two things all three need and nothing else.
+This is PLAN-014's M6a and M6b (RFCT-112), in the shape `os/verify` established
+in M3 — `bun.lock`, `package.json`, `tsconfig.json`, `run.sh`, `src/`. Nothing
+here runs on the device. The image ships no bun.
+
+`os/mkimage-x64.sh` (x64) and `os/update/bundle.sh` are ported in M6c and M6d,
+under the same gate; M6e is the gate that deletes the shell. **`os/mkimage-v2.sh`
+is still here and is not to be edited**: it is the oracle the port is measured
+against, and it stops being one the moment the two are changed together.
 
 ## Where the board model comes from, and why it is not here
 
@@ -79,17 +81,121 @@ here is re-read from the string and kept as a `bigint`.
 Under `set -u` a shell says `BOOT_A_START_MIB: unbound variable` and names
 neither; every consumer that used `${X:-}` instead said nothing at all.
 
-What it does **not** do: the derived layout. `os/mkimage-v2.sh` computes the
-rootfs slot size from the built rootfs and chains rootfs-b, meta, state,
-ephemeral and data off it; `os/mkimage-x64.sh` does the same with a different
-chain. Those depend on inputs that do not exist until an assembly is running,
-they differ per board, and they are under a byte-identity gate that belongs to
-M6b and M6c.
+What it does **not** do: the derived layout. That is `src/layout-cx3576.ts`,
+below. It depends on the rootfs that was actually built and it differs per board,
+so `os/mkimage-x64.sh`'s chain will be its own file in M6c rather than a `case`
+in this one.
 
 Both shipped boards read clean — 0 geometry faults, 0 model faults — and the
 per-board assertions are spelled out with the values copied from the files.
 **Anything that passes on cx3576 alone is half tested**: M3a's parser passed
 cx3576 141/141 while x64 was wholly unreadable.
+
+## The cx3576 assembler
+
+`src/mkimage-v2.ts`, with `src/layout-cx3576.ts`, `src/boot-cx3576.ts` and
+`src/pin-seeded-times.ts` under it and `src/mkimage-v2-cli.ts` over it.
+
+**The gate is byte-identity against the shell, and it is met.** Same prebuilt
+`_out/cx3576/` inputs, same board definition, shell assembler and TypeScript
+assembler, twice each:
+
+```
+f36bf80993583f6b9d097531a8efcd086e9aaaeabc014a367d7543582ecd8bce   bash os/mkimage-v2.sh          (×2)
+f36bf80993583f6b9d097531a8efcd086e9aaaeabc014a367d7543582ecd8bce   run.sh --mkimage-v2            (×2)
+```
+
+`HARNESS.md` carries the recipe, the vacuity control and what a differing MiB
+block would have been reported as. The comparison is a **hash**, and this is the
+one place in the campaign where that is right: assembly is byte-reproducible with
+itself — R2/R4 made it so and `make os-mkimage-v2-test` asserts exactly that — so
+two assemblers over identical inputs must give identical bytes. M5's
+content-diff rule exists because the *rootfs build* does not reproduce itself.
+
+**A gate cannot see a dropped refusal**, which is why the tests matter more than
+the hash. A port that quietly lost the boot-attempts range still produces
+identical bytes for every good input and passes perfectly; what it stopped
+catching is a board that needs re-flashing. So all thirty-four of the shell's
+refusals are ported, and each is driven from the failing side — `HARNESS.md`
+names the mutation for every one.
+
+### The derived layout
+
+`src/layout-cx3576.ts`. Two modes, and **the mode is selected by whether
+`MOS_ROOTFS_SLOT_MIB` was supplied at all, never by its value** — the shell
+captures `${MOS_ROOTFS_SLOT_MIB+set}` before sourcing the layout precisely so a
+release that pins the same number as the built-in default still gets the strict
+mode. A port that compared values would agree on every number and disagree about
+which mode a release build is in, and the mode is what decides whether an
+oversized rootfs is a build failure or a silently bigger image no flashed device
+can take an update for.
+
+| | |
+|---|---|
+| **pinned** | the geometry is FROZEN at the pin; an oversized rootfs is a build failure, by how much |
+| **floor** | `max(floor, alignUp(ceil(payload × 125 / 100), 16))`, and the slot grows with the content |
+
+Everything in that file is **pure**. The arithmetic decides where DATA starts,
+and one MiB out produces an image that assembles, verifies, boots and cannot take
+an update on a device flashed with the other number — a bug that, reached only
+through an assembly, is found by diffing 1.3 GiB. Reached from a test it is
+driven in milliseconds at a payload one MiB under a pin, one MiB over it, and
+exactly on the alignment boundary. It agrees with `bash` on 16 payload sizes for
+the slot **and the whole start chain**, and that comparison was checked live.
+
+### `-a ${GPT_ALIGN_SECTORS}`, the one difference that is not cosmetic
+
+M6a measured every flag-order and unit difference between the two shell
+assemblers to be byte-identical, and found exactly one that is not: **`-a 1`
+where a start is sector 64.** Without it sgdisk relocates that start to sector
+2048, silently, exit 0 — and cx3576's loader is at sector 64.
+
+`os/boards/cx3576/board.env` spells out what happens next: systemd-repart
+"discards every region of the disk that no partition entry covers", on the first
+boot while growing DATA, so "the device boots once and comes up in maskrom on the
+next power-on". An image in that state passes every structural check and boots on
+a bench.
+
+So the assembler **reads the loader back out of the finished table** and asserts
+its start, its length and the four bytes at its first sector. Asking sgdisk for a
+layout proves nothing about the layout. Driven red three ways — alignment
+omitted, `-a 2048`, `-a 4096` — and the three do not fail alike, which is
+recorded rather than smoothed over.
+
+### `pin_seeded_times`
+
+`src/pin-seeded-times.ts`. It ports **with the assembler**, not with the
+wrappers, because it is not a utility — it is the argument `os/mkimage-common.sh`
+exists to keep in one place: which of an inode's four timestamps are the
+producer's data and which are the assembler's noise, why the inode set has to
+come from the bitmap rather than from a walk of the source tree, and why
+debugfs's stderr rather than its exit status is the failure signal. The three
+primitives it stands on are wrapped in `src/tools/e2fsprogs.ts`; the free-inode
+parse and the atime/ctime generation are here.
+
+`os/mkimage-common.sh` is **not deleted**: `os/mkimage-x64.sh` still sources it,
+and M6c is the port that frees it.
+
+Two claims, both asserted: two filesystems whose seeds differ only in atime and
+ctime come out byte-identical after the pass — **and differ without it**, which
+is the half that stops a pass that does nothing from satisfying the first.
+
+### What the port changed on purpose, and what it did not
+
+Every decision that reaches the output bytes is transcribed rather than improved:
+the same pinned alpine, the same apk package list, `cp -a` and `find … -exec
+touch` run **inside** that container where the shell runs them, and mcopy is
+handed the staged files in the order a C-locale glob produces them.
+
+`cp -a` is the one worth stating. It is `--preserve=all`, which includes
+**xattrs**; `mke2fs -d` copies xattrs into the image; and this campaign's host
+runs SELinux while the alpine container does not. Staging on the host would have
+written security labels into EPHEMERAL that the shell's image does not carry, and
+the only thing that would have reported it is the gate.
+
+The one spelling that did change: sizes go to sgdisk in sectors throughout, where
+the shell mixes `+NS` and `+NM`. M6a measured those byte-identical at 512-byte
+sectors, and the suite re-runs the comparison rather than trusting the sentence.
 
 ## The toolbox: how an external tool is run
 
@@ -215,7 +321,15 @@ make os-build-test          # the whole suite
 bash os/build/run.sh        # the same thing
 bash os/build/run.sh --help
 bash os/build/run.sh src/geometry.test.ts   # extra arguments go to `bun test`
+
+bash os/build/run.sh --mkimage-v2           # assemble the cx3576 image
+bash os/build/run.sh --mkimage-v2 --help
 ```
+
+`--mkimage-v2` is a **mode**, recognised only in first position: anywhere else it
+would be forwarded to `bun test`, which ignores an unknown flag and reports a
+green suite in answer to a request to assemble an image. That is `os/verify/run.sh`'s
+rule, driven there from the failing side.
 
 `run.sh` finds bun — on the host, or failing that in the container pinned as
 `IMAGE_BUN_1` — installs the dev dependencies if `node_modules/` is absent,
@@ -231,8 +345,8 @@ neither way is a failure, not a gap.
 **bun is not required on the host.** Without one, `run.sh` takes the pinned-bun
 container route — and mounts the host's docker client (a static Go binary) and
 `/var/run/docker.sock` at their own paths, so the toolbox can still start
-*sibling* containers from in there. Both routes were run to completion:
-199/199 either way.
+*sibling* containers from in there. Both routes were run to completion: 199/199
+either way at M6a, 358/358 at M6b.
 
 ```
 os/build: 1.4.0 at /srv/bkd/runtime/bun
@@ -262,7 +376,12 @@ src/tools/mkimage.ts       the U-Boot boot script
 src/tools/e2fsprogs.ts     mke2fs, dumpe2fs, debugfs
 src/tools/veritysetup.ts   the dm-verity hash tree
 src/tools/rauc.ts          the update bundle
-src/**/*.test.ts           199 tests; every refusal has a positive control beside it
+src/layout-cx3576.ts       the DERIVED layout: slot sizing, and the chain down to DATA
+src/boot-cx3576.ts         boot.cmd's guards and the per-slot verity env, both pure
+src/pin-seeded-times.ts    the argument os/mkimage-common.sh exists to keep in one place
+src/mkimage-v2.ts          the cx3576 assembler
+src/mkimage-v2-cli.ts      the host half: where the inputs are, and the -latest symlink
+src/**/*.test.ts           358 tests; every refusal has a positive control beside it
 ```
 
 `HARNESS.md` carries how each guard was driven from the failing side, the bash
