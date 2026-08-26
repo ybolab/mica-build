@@ -23,19 +23,15 @@
 //!   production the scan is constructed unconditionally and the variable is
 //!   ignored, whatever it holds. No value of it disables anything.
 //!
-//!   The hook exists because dry-run switches off the one thing
-//!   `tests/scan.rs` has to exercise, and a registry that is only ever run
-//!   unobserved is a registry nobody has measured. It widens nothing that
-//!   dry-run protects: the scan is passive, it adds a match rule and read-only
-//!   calls on whichever bus `MOSD_BUS` already named and the daemon is already
-//!   connected to, and it writes only to the in-RAM live-state tree. It
-//!   touches no file, no unit and no host state at all.
+//!   The scan is passive — a match rule and read-only calls on whichever bus
+//!   `MOSD_BUS` already named, writing only the in-RAM live-state tree — so
+//!   lifting dry-run's suppression over it touches no file, no unit and no
+//!   host state.
 //!
 //! One argument is understood, and it is answered before any of the above is
 //! read: `--version` (or `-V`) prints `mosd <crate version> (<build commit>)`
 //! and exits 0 without provisioning, connecting to a bus or writing a file.
-//! See [`main`]. Anything else on the command line is ignored, exactly as it
-//! always has been.
+//! See [`main`]. Anything else on the command line is ignored.
 
 #![forbid(unsafe_code)]
 
@@ -60,45 +56,20 @@ use serde_json::Value;
 use tokio::signal::unix::{SignalKind, signal};
 
 fn main() -> anyhow::Result<()> {
-    // `--version`, ANSWERED AND RETURNED FROM HERE, above every line that
-    // makes this process a daemon. RFCT-113 M7d.
+    // `--version` is answered and returned from here, above every line that
+    // makes this process a daemon. The position is the requirement: a handler
+    // placed after initialisation would report the right version and still
+    // MUTATE the machine that asked it a question -- first-boot provisioning
+    // writes /var/lib/mos/settings.toml and /var/lib/mos/secrets/ before the
+    // daemon ever reaches the bus. Hence a synchronous `main` with the async
+    // body in `serve`: the answer is given before the tokio runtime is built,
+    // before the subscriber is installed, before any environment variable is
+    // read and before the settings store is opened.
     //
-    // ═══ WHY THIS FILE WAS EDITABLE AT ALL ═══
-    //
-    // PLAN-014's Scope excludes `mosd/` Rust sources and reaffirms the
-    // exclusion further down, and RFCT-113 M7b found this exact gap and
-    // DECLINED to close it for that reason -- its smoke-register entry for
-    // mosd read "FINDING IS IN SCOPE, ACTING IS NOT".
-    //
-    // THE USER LIFTED THAT EXCLUSION ON 2026-08-26, for exactly this and
-    // nothing else: a `--version` (or equivalent argv) handler in
-    // mosd/mosd/src/main.rs and mosd/apid/src/main.rs that reports the crate
-    // version and exits 0 BEFORE any daemon initialisation, provisioning, bus
-    // connection or key generation, plus its build-time plumbing. The rest of
-    // the exclusion stands: everything else in `mosd/`, board/ BSP content,
-    // test/apid-api beyond the one line already amended, and device-side
-    // runtime behaviour. Landing this carries out that decision; it is not
-    // this milestone's judgement about where the boundary is.
-    //
-    // The position is the requirement, not a tidiness preference. Measured in
-    // the x64 factory root on 2026-08-26, before this handler existed:
-    // `/usr/bin/mosd --version` ignored the flag, ran first-boot provisioning
-    // -- writing /var/lib/mos/settings.toml and /var/lib/mos/secrets/ -- and
-    // then exited 1 on the absent system bus. So a handler placed after
-    // initialisation would report the right version and still MUTATE the
-    // machine that asked it a question, which is the whole of what this is for.
-    //
-    // Hence a synchronous `main` with the async body moved into `serve`: the
-    // answer is given before the tokio runtime is built, before the subscriber
-    // is installed, before any environment variable is read and before the
-    // settings store is opened. There is nothing above it to get in front of.
-    //
-    // AN UNRECOGNISED ARGV IS UNCHANGED. mosd is started by systemd with no
-    // arguments (mosd/dist/mosd.service) and has always ignored whatever it was
-    // given; refusing an unknown flag here would be a new way for this unit to
-    // fail on a device, which is device-side runtime behaviour and is not what
-    // was opened. Only the version flag is intercepted; everything else falls
-    // through into exactly the daemon that ran before.
+    // Only the version flag is intercepted. mosd is started by systemd with no
+    // arguments (mosd/dist/mosd.service) and ignores whatever else it is given;
+    // refusing an unknown flag here would be a new way for this unit to fail on
+    // a device.
     if wants_version(std::env::args().skip(1)) {
         println!("{}", version_line());
         return Ok(());
@@ -108,22 +79,19 @@ fn main() -> anyhow::Result<()> {
 
 /// What the commit is reported as when the build supplied none.
 ///
-/// A VALUE AND NOT A FAILURE. `option_env!` yields `None` whenever the binary
-/// was built without `MOS_BUILD_COMMIT` in the environment -- `cargo build` by
-/// hand, an editor's check-on-save, a future build path that has not been
-/// taught to pass it -- and a `--version` that exited non-zero in that case
-/// would turn "we do not know which commit" into "this binary is broken". The
-/// smoke runner reads the same distinction from the other side: it asserts the
-/// commit only when the build recorded one.
+/// An absent commit is a value, not a failure. `option_env!` yields `None`
+/// whenever the binary was built without `MOS_BUILD_COMMIT` in the environment
+/// -- `cargo build` by hand, an editor's check-on-save -- and a `--version`
+/// that exited non-zero there would turn "we do not know which commit" into
+/// "this binary is broken". The smoke runner reads the same distinction from
+/// the other side: it asserts the commit only when the build recorded one.
 const UNKNOWN_COMMIT: &str = "unknown";
 
 /// Whether an argv (argv[1..]) is asking for the version.
 ///
-/// `-V` as well as `--version`, because `mos-mqttd` and `mos-mqtt-broker`
-/// answer both -- clap's `#[command(version)]` gives them the pair -- and four
-/// binaries out of one repository that disagree about the spelling of one
-/// question is a thing an operator has to look up. It is the same flag, not a
-/// second one.
+/// `-V` as well as `--version`: `mos-mqttd` and `mos-mqtt-broker` answer both
+/// through clap's `#[command(version)]`, and the four binaries out of this one
+/// repository spell the one question the same way.
 ///
 /// A pure function over an iterator rather than a read of `std::env::args`
 /// inside `main`, so the tests below can drive it from the failing side without
@@ -147,36 +115,26 @@ fn commit_or_unknown(embedded: Option<&'static str>) -> &'static str {
 
 /// The one line `--version` prints: `mosd <version> (<commit>)`.
 ///
-/// BOTH HALVES COME FROM THE BUILD, and neither is written down here. The
+/// Both halves come from the build, and neither is written down here. The
 /// version is `mosd/mosd/Cargo.toml`'s `[package] version`, via Cargo's own
 /// `CARGO_PKG_VERSION` -- the same file `os/verify/src/smoke-pins.ts` reads to
 /// decide what this binary must report, so the two ends of that comparison are
 /// one value with two readers rather than a copy.
 ///
-/// The commit is `MOS_BUILD_COMMIT`, PASSED IN by `mosd/hack/build-target.sh`,
+/// The commit is `MOS_BUILD_COMMIT`, passed in by `mosd/hack/build-target.sh`,
 /// which resolves it on the HOST. It is deliberately not discovered here, and
-/// there is deliberately no `build.rs` that shells out to git, because MEASURED
-/// on 2026-08-26 inside `localhost/mos-build-rust` with the exact mount that
-/// build uses (`-v <repo>:/src -w /src/mosd`):
-///
-/// ```text
-/// $ command -v git          -> /usr/bin/git        (git IS there)
-/// $ git rev-parse HEAD      -> fatal: not a git repository:
-///                              /srv/mos/.git/worktrees/ifukam2z   (rc=128)
-/// ```
-///
-/// The checkout is a git WORKTREE, so `/src/.git` is a 41-byte file pointing at
-/// a gitdir outside the mount. A build script that ran git in there would fail
-/// -- or, written to tolerate failure the way build scripts usually are, would
-/// silently embed nothing on every build. Passing the value in has neither
-/// failure mode.
+/// there is deliberately no `build.rs` that shells out to git: the checkout is
+/// a git WORKTREE, so `/src/.git` under the build mount is a 41-byte file
+/// pointing at a gitdir outside it, and `git rev-parse HEAD` in there fails
+/// with `fatal: not a git repository` (rc=128). A build script written to
+/// tolerate that failure would silently embed nothing on every build.
 ///
 /// A commit sha is deterministic per commit, so embedding it does not cost
 /// reproducibility the way a wall-clock stamp would: two builds of one commit
 /// still agree. What it does cost is byte-identity ACROSS commits -- mosd and
-/// apid now differ after ANY commit, including a docs-only one, where before
-/// this an unrelated commit left them byte-identical. Anything that compares
-/// these two binaries across commits gains a permanent expected difference.
+/// apid differ after ANY commit, including a docs-only one. Anything that
+/// compares these two binaries across commits carries a permanent expected
+/// difference.
 fn version_line() -> String {
     format!(
         "{} {} ({})",
@@ -192,9 +150,8 @@ async fn serve() -> anyhow::Result<()> {
     //
     // `tracing_subscriber::fmt::init()` reads RUST_LOG and falls back to ERROR
     // when it is unset, which on a device means mosd records what FAILED and
-    // never what it did. Every reconciler apply, every settings write and every
-    // unit it drives were invisible; a QEMU boot investigating why a container
-    // never started had a daemon that had been silent for the whole run.
+    // never what it did -- every reconciler apply, every settings write and
+    // every unit it drives invisible.
     //
     // RUST_LOG still wins, so a noisy debug session is one variable away.
     tracing_subscriber::fmt()
@@ -504,9 +461,9 @@ mod tests {
         assert!(!line.contains('\n'), "got {line:?}");
     }
 
-    /// The pin on the asymmetry: in production `MOSD_SCAN` is inert. Before
-    /// this gate was narrowed, `MOSD_SCAN=0` — or any typo — switched the
-    /// service registry off on a real device.
+    /// The pin on the asymmetry: in production `MOSD_SCAN` is inert. A gate
+    /// that read the variable symmetrically would let `MOSD_SCAN=0` — or any
+    /// typo — switch the service registry off on a real device.
     #[test]
     fn production_ignores_mosd_scan_entirely() {
         for value in [
@@ -525,8 +482,8 @@ mod tests {
         }
     }
 
-    /// Requirement 5, as `tests/scan.rs::dry_run_constructs_no_scan` pins it
-    /// end to end: dry-run on its own constructs no scan.
+    /// Dry-run on its own constructs no scan, as
+    /// `tests/scan.rs::dry_run_constructs_no_scan` pins it end to end.
     #[test]
     fn dry_run_alone_constructs_no_scan() {
         for value in [None, Some("0"), Some(""), Some("true"), Some("yes")] {
@@ -538,7 +495,7 @@ mod tests {
         }
     }
 
-    /// Requirement 7's hook: the one combination that turns the scan back on.
+    /// The one combination that turns the scan back on.
     #[test]
     fn dry_run_plus_mosd_scan_one_constructs_the_scan() {
         assert!(service_scan_enabled(true, Some("1")));
