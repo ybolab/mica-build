@@ -1580,7 +1580,11 @@ fn assert_api_headers(response: &Response<axum::body::Body>, context: &str) {
         "application/json",
         "{context}"
     );
-    assert_eq!(header_value(response, CACHE_CONTROL), "no-store", "{context}");
+    assert_eq!(
+        header_value(response, CACHE_CONTROL),
+        "no-store",
+        "{context}"
+    );
 }
 
 /// The `error` object of a §2.4 envelope.

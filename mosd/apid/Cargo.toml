@@ -28,7 +28,6 @@ tokio = { workspace = true, features = ["signal", "net"] }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
 utoipa = { workspace = true }
-utoipa-axum = { workspace = true }
 zbus = { workspace = true }
 
 [dev-dependencies]
