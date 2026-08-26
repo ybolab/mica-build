@@ -3552,3 +3552,199 @@ fn every_mutating_route_is_covered_by_the_authentication_tests() {
         "these mutating routes are not in ALL_MUTATIONS, so no test asserts they reject an unauthenticated request: {missing:?}"
     );
 }
+
+// ---------------------------------------------------------------------------
+// §2.2's two read-only resource roots.
+// ---------------------------------------------------------------------------
+
+/// A tree in the shape §2.2's inventory describes, carrying every one of the
+/// four redacted field names — at three depths and inside an array — so a walk
+/// over the responses below proves the denylist covers all of them.
+///
+/// The admin hash is a real one so `login` works against this tree; every
+/// other secret is a marker string, which is what the "no plaintext survived"
+/// assertions look for.
+fn secret_tree(password: &str) -> serde_json::Value {
+    json!({
+        "hostname": "mos",
+        "network": {},
+        "access": {
+            "webAdmin": { "password_hash": auth::hash_password(password).unwrap() },
+            "device": { "passwordHash": "device-plaintext-marker" },
+            "ssh": {
+                "enabled": true,
+                "authorizedKeys": [
+                    { "comment": "laptop", "hash": "keyhash-plaintext-marker" },
+                ],
+            },
+        },
+        "wifi": {
+            "ap": { "ssid": "mos-ap", "psk": "ap-plaintext-marker" },
+            "client": {
+                "networks": [
+                    { "ssid": "home", "psk": "home-plaintext-marker" },
+                    {
+                        "ssid": "work",
+                        "psk": "work-plaintext-marker",
+                        "extra": { "hash": "deep-plaintext-marker" },
+                    },
+                ],
+            },
+        },
+    })
+}
+
+/// The live-state entry the state tests read, carrying all four names too:
+/// §2.2 states the redaction rule for the settings root, and this campaign
+/// extends it to the state root, so the state root is held to the same proof.
+fn secret_state_entry() -> serde_json::Value {
+    json!({
+        "psk": "state-ap-plaintext-marker",
+        "peers": [
+            { "ssid": "home", "psk": "state-peer-plaintext-marker" },
+            { "id": "laptop", "hash": "state-hash-plaintext-marker" },
+        ],
+        "admin": {
+            "passwordHash": "state-camel-plaintext-marker",
+            "nested": { "password_hash": "state-snake-plaintext-marker" },
+        },
+    })
+}
+
+/// Every marker string [`secret_tree`] and [`secret_state_entry`] plant.
+const PLAINTEXT_MARKERS: [&str; 9] = [
+    "device-plaintext-marker",
+    "keyhash-plaintext-marker",
+    "ap-plaintext-marker",
+    "home-plaintext-marker",
+    "work-plaintext-marker",
+    "deep-plaintext-marker",
+    "state-ap-plaintext-marker",
+    "state-peer-plaintext-marker",
+    "state-hash-plaintext-marker",
+];
+
+/// The four field names §2.2's redaction rule names.
+const SECRET_FIELD_NAMES: [&str; 4] = ["psk", "passwordHash", "password_hash", "hash"];
+
+/// The sentinel a redacted field carries.
+const REDACTED: &str = "<redacted>";
+
+/// Collect every secret-bearing field in `value` — at any depth, inside arrays
+/// included — as `(name, value)` pairs.
+///
+/// Written independently of the redactor under test: it walks the *response*,
+/// so a redactor that missed a branch is caught by the value it left behind
+/// rather than by agreeing with itself.
+fn secret_fields(value: &serde_json::Value, found: &mut Vec<(String, serde_json::Value)>) {
+    match value {
+        serde_json::Value::Object(fields) => {
+            for (name, child) in fields {
+                if SECRET_FIELD_NAMES.contains(&name.as_str()) {
+                    found.push((name.clone(), child.clone()));
+                } else {
+                    secret_fields(child, found);
+                }
+            }
+        }
+        serde_json::Value::Array(items) => {
+            for item in items {
+                secret_fields(item, found);
+            }
+        }
+        _ => {}
+    }
+}
+
+/// §2.2: the dot-path IS the resource identifier, so the body is exactly what
+/// `GetSettings("<dot-path>")` returns.
+#[tokio::test]
+async fn the_settings_root_answers_the_dot_paths_value_for_a_session() {
+    let (router, _) = test_app(secret_tree("hunter2secret"));
+    let cookie = login(&router, "hunter2secret").await;
+
+    let response = get(&router, "/api/v1/settings/hostname", Some(&cookie)).await;
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_api_headers(&response, "/api/v1/settings/hostname");
+    assert_eq!(body_string(response).await, r#""mos""#);
+
+    // A subtree, and a scalar reached through one: the passthrough has no
+    // shape of its own to impose.
+    let response = get(&router, "/api/v1/settings/access.ssh", Some(&cookie)).await;
+    assert_eq!(response.status(), StatusCode::OK);
+    let value: serde_json::Value = serde_json::from_str(&body_string(response).await).unwrap();
+    assert_eq!(value["enabled"], json!(true));
+
+    let response = get(&router, "/api/v1/settings/access.ssh.enabled", Some(&cookie)).await;
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(body_string(response).await, "true");
+}
+
+/// The second root, which is a different tree in mosd and so a different route
+/// here (§2.2): untyped, in memory, and written only from inside mosd.
+#[tokio::test]
+async fn the_state_root_answers_the_dot_paths_value_for_a_session() {
+    let (router, fake) = test_app(secret_tree("hunter2secret"));
+    fake.set_state_entry("hostname", json!({ "applied": "mos" }));
+    let cookie = login(&router, "hunter2secret").await;
+
+    let response = get(&router, "/api/v1/state/hostname", Some(&cookie)).await;
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_api_headers(&response, "/api/v1/state/hostname");
+    assert_eq!(body_string(response).await, r#"{"applied":"mos"}"#);
+
+    let response = get(&router, "/api/v1/state/hostname.applied", Some(&cookie)).await;
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(body_string(response).await, r#""mos""#);
+}
+
+/// The two roots are separate: a settings dot-path is not a state dot-path,
+/// and the routes do not fall back to each other.
+#[tokio::test]
+async fn the_two_roots_do_not_answer_for_each_other() {
+    let (router, fake) = test_app(secret_tree("hunter2secret"));
+    fake.set_state_entry("hostname", json!({ "applied": "mos" }));
+    let cookie = login(&router, "hunter2secret").await;
+
+    // `hostname` exists in both, with different values.
+    let settings = get(&router, "/api/v1/settings/hostname", Some(&cookie)).await;
+    let state = get(&router, "/api/v1/state/hostname", Some(&cookie)).await;
+    assert_ne!(
+        body_string(settings).await,
+        body_string(state).await,
+        "one root answered for the other"
+    );
+
+    // `network` exists only in the settings tree, so the state root must fail
+    // rather than serve the settings value.
+    let response = get(&router, "/api/v1/state/network", Some(&cookie)).await;
+    assert_ne!(response.status(), StatusCode::OK);
+}
+
+/// The document describes the served surface: a client reading only
+/// `openapi.json` has to learn both families and every outcome they have.
+#[test]
+fn the_openapi_document_covers_the_resource_routes() {
+    let document: serde_json::Value =
+        serde_json::from_str(&crate::openapi::document_json()).expect("the document is JSON");
+
+    for path in ["/api/v1/settings/{path}", "/api/v1/state/{path}"] {
+        let responses = &document["paths"][path]["get"]["responses"];
+        for status in ["200", "401", "422", "500", "503"] {
+            assert!(
+                responses[status].is_object(),
+                "{path} is missing its {status}: {document}"
+            );
+        }
+    }
+
+    // §2.2's sentinel is a value a client can receive, so the schema of the
+    // body has to say so; a client that has not been told treats
+    // `"<redacted>"` as the credential.
+    assert!(
+        document["components"]["schemas"]["ResourceValue"]["description"]
+            .as_str()
+            .is_some_and(|text| text.contains(REDACTED)),
+        "the resource body's schema does not describe the redaction sentinel: {document}"
+    );
+}
