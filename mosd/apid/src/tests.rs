@@ -3847,3 +3847,203 @@ async fn a_dot_path_that_names_a_secret_field_answers_the_sentinel() {
         );
     }
 }
+
+/// A `zbus::Error::MethodError` naming `name`, with `message` as the body mosd
+/// sent back.
+///
+/// Constructed rather than provoked: `FakeSettings` returns plain `anyhow`
+/// errors, which are §2.4's `mosd_unreachable` fallback row and cannot reach
+/// the other three.
+fn method_error(name: &'static str, message: &str) -> zbus::Error {
+    let reply_to = zbus::message::Message::method_call("/com/mos/mosd", "GetSettings")
+        .expect("a well-formed method call")
+        .build(&())
+        .expect("an empty body serialises");
+    let name = zbus::names::ErrorName::try_from(name).expect("a well-formed fdo error name");
+    zbus::Error::MethodError(name.into(), Some(message.to_string()), reply_to)
+}
+
+/// A [`SettingsApi`] whose resource reads fail with the error the test chose.
+///
+/// `access` and the whole tree still read, because that is what the gate and
+/// `login_submit` need to get a session as far as a route that fails.
+struct FailingSettings {
+    tree: serde_json::Value,
+    /// The fdo error name mosd answered with, or `None` for a failure that
+    /// never reached mosd at all.
+    fdo_name: Option<&'static str>,
+}
+
+impl FailingSettings {
+    fn error(&self) -> anyhow::Error {
+        match self.fdo_name {
+            Some(name) => method_error(name, MOSD_MESSAGE).into(),
+            None => anyhow::anyhow!("no connection to mosd"),
+        }
+    }
+}
+
+/// The text mosd is pretending to have sent, which §2.4 requires apid to carry
+/// through untouched.
+const MOSD_MESSAGE: &str = "invalid settings value at `network.eth0.100`: unknown field `100`";
+
+#[async_trait::async_trait]
+impl SettingsApi for FailingSettings {
+    async fn get_settings(&self, path: &str) -> anyhow::Result<serde_json::Value> {
+        if path.is_empty() || path == "access" {
+            return Ok(if path.is_empty() {
+                self.tree.clone()
+            } else {
+                self.tree["access"].clone()
+            });
+        }
+        Err(self.error())
+    }
+
+    async fn set_settings(&self, _path: &str, _value: &serde_json::Value) -> anyhow::Result<()> {
+        unreachable!("the resource routes are read-only")
+    }
+
+    async fn get_state(&self, _path: &str) -> anyhow::Result<serde_json::Value> {
+        Err(self.error())
+    }
+
+    async fn reboot(&self) -> anyhow::Result<()> {
+        unreachable!("the resource routes are read-only")
+    }
+
+    async fn power_off(&self) -> anyhow::Result<()> {
+        unreachable!("the resource routes are read-only")
+    }
+
+    async fn set_transient_root_password(&self, _password: &str) -> anyhow::Result<()> {
+        unreachable!("the resource routes are read-only")
+    }
+}
+
+/// A router whose resource reads fail the way `fdo_name` says, plus a session
+/// cookie for it.
+async fn failing_app(fdo_name: Option<&'static str>) -> (Router, String) {
+    let api = Arc::new(FailingSettings {
+        tree: configured_tree("hunter2secret"),
+        fdo_name,
+    });
+    let router = app(AppState::new(api, SIGNING_KEY));
+    let cookie = login(&router, "hunter2secret").await;
+    (router, cookie)
+}
+
+/// The premise the classification rests on: `err.into()` in `bus_client.rs`
+/// converts a `zbus::Error` to `anyhow::Error` through the blanket `From`,
+/// which STORES the concrete error rather than flattening it, so the fdo name
+/// is still there to be recovered. If this ever stops holding, every row of
+/// §2.4's table below collapses into the fallback and the tests would say so
+/// one at a time; this says it once, in the one sentence it depends on.
+#[test]
+fn the_zbus_error_survives_the_conversion_to_anyhow() {
+    let err: anyhow::Error = method_error("org.freedesktop.DBus.Error.InvalidArgs", "boom").into();
+    let recovered = err
+        .downcast_ref::<zbus::Error>()
+        .expect("the conversion kept the zbus error");
+    match recovered {
+        zbus::Error::MethodError(name, message, _) => {
+            assert_eq!(name.as_str(), "org.freedesktop.DBus.Error.InvalidArgs");
+            assert_eq!(message.as_deref(), Some("boom"));
+        }
+        other => panic!("the variant changed: {other:?}"),
+    }
+}
+
+/// §2.4's table, row by row: mosd classifies, apid translates the
+/// classification, and mosd's message is carried through verbatim.
+#[tokio::test]
+async fn each_fdo_error_name_gets_its_own_envelope() {
+    for (fdo_name, code, status) in [
+        (
+            "org.freedesktop.DBus.Error.InvalidArgs",
+            "settings_rejected",
+            StatusCode::UNPROCESSABLE_ENTITY,
+        ),
+        (
+            "org.freedesktop.DBus.Error.IOError",
+            "settings_io",
+            StatusCode::INTERNAL_SERVER_ERROR,
+        ),
+        (
+            "org.freedesktop.DBus.Error.Failed",
+            "mosd_failed",
+            StatusCode::INTERNAL_SERVER_ERROR,
+        ),
+    ] {
+        for path in ["/api/v1/settings/wifi.ap", "/api/v1/state/wifiAp"] {
+            let (router, cookie) = failing_app(Some(fdo_name)).await;
+            let response = get(&router, path, Some(&cookie)).await;
+            assert_eq!(response.status(), status, "{fdo_name} at {path}");
+            assert_api_headers(&response, path);
+            assert_eq!(
+                response.headers().get(axum::http::header::RETRY_AFTER),
+                None,
+                "only the unreachable class carries Retry-After: {fdo_name}"
+            );
+            let error = envelope(response).await;
+            assert_eq!(error["code"], code, "{fdo_name}");
+            assert_eq!(error["source"], "mosd", "{fdo_name}");
+            // §2.4: apid substituting its own phrasing would hide every
+            // message mosd learns to produce.
+            assert_eq!(error["message"], MOSD_MESSAGE, "{fdo_name}");
+            // §2.4's optional member, which these routes DO name.
+            assert_eq!(
+                error["path"],
+                json!(path.rsplit('/').next().unwrap()),
+                "{fdo_name}"
+            );
+        }
+    }
+}
+
+/// The fallback row, and the only one whose `source` is apid: the call could
+/// not be made at all, which is a statement about this server rather than
+/// about the request. 503, because apid itself is up and answering.
+#[tokio::test]
+async fn an_unreachable_mosd_is_503_with_retry_after() {
+    // No `MethodError` at all, and a `MethodError` under a name §2.4's table
+    // does not list: both are the fallback.
+    for fdo_name in [None, Some("org.freedesktop.DBus.Error.UnknownObject")] {
+        for path in ["/api/v1/settings/wifi.ap", "/api/v1/state/wifiAp"] {
+            let (router, cookie) = failing_app(fdo_name).await;
+            let response = get(&router, path, Some(&cookie)).await;
+            assert_eq!(
+                response.status(),
+                StatusCode::SERVICE_UNAVAILABLE,
+                "{fdo_name:?} at {path}"
+            );
+            assert_api_headers(&response, path);
+            assert_eq!(
+                header_value(&response, axum::http::header::RETRY_AFTER),
+                "5",
+                "{fdo_name:?} at {path}"
+            );
+            let error = envelope(response).await;
+            assert_eq!(error["code"], "mosd_unreachable");
+            assert_eq!(error["source"], "apid");
+            assert!(error["message"].is_string());
+        }
+    }
+}
+
+/// A dot-path that does not exist answers **422 `settings_rejected`, not 404**,
+/// and the reading is deliberate. It reaches mosd, which rejects it with
+/// `InvalidArgs`, and §2.4's table is exhaustive on the fdo error name. The
+/// table's `not_found` row covers unknown ROUTES and collection items, and
+/// collections are out of phase 1 — a route that does exist, given a path mosd
+/// refused, is a rejection and reports as one.
+#[tokio::test]
+async fn a_dot_path_that_does_not_exist_is_422_and_not_404() {
+    let (router, cookie) = failing_app(Some("org.freedesktop.DBus.Error.InvalidArgs")).await;
+
+    let response = get(&router, "/api/v1/settings/no.such.path", Some(&cookie)).await;
+    assert_eq!(response.status(), StatusCode::UNPROCESSABLE_ENTITY);
+    let error = envelope(response).await;
+    assert_eq!(error["code"], "settings_rejected");
+    assert_eq!(error["path"], json!("no.such.path"));
+}
