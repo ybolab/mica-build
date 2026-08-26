@@ -219,10 +219,11 @@ export function verityCmdlineFields(cmdline: string): { create: string, waitfor:
  * One slot's mos-verity-<slot>.env, lifted out of that slot's kernel cmdline.
  *
  * The verity table is NOT re-derived here: it is taken from the cmdline the
- * rootfs producer already emits, so exactly one place computes it. What this
- * does instead is refuse a cmdline that does not describe THIS slot -- five
- * ways, each producing a slot that boots the wrong rootfs or does not boot at
- * all, and none of which the assembler could synthesise its way out of.
+ * rootfs producer already emits, so there is exactly one place that computes it.
+ * What this does instead is refuse a cmdline that does not describe THIS slot --
+ * five ways, each of which produces a slot that boots the wrong rootfs or does
+ * not boot at all, and none of which the assembler could synthesise its way out
+ * of.
  */
 export function verityEnvFor(options: {
   cmdline: string
