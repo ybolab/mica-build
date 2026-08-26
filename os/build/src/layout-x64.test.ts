@@ -19,7 +19,7 @@ import { $ } from 'bun'
 import { readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { loadGeometry, loadGeometryFromPath } from './geometry.ts'
-import { decideSlot, deriveLayout, ESP_MIN_MIB, espSizeFaults, gptSpecFor, placementMib } from './layout-x64.ts'
+import { decideSlot, deriveLayout, gptSpecFor, placementMib } from './layout-x64.ts'
 import { boardEnvPath, makeWorkDir } from './paths.ts'
 import { writeGptArgs } from './tools/sgdisk.ts'
 
@@ -405,34 +405,6 @@ describe('the GPT is read off the board, not written out a second time', () => {
       // META_SIZE_MIB is also a chain input, so the throw may come from either
       // side; both are refusals and neither is a silently placed partition.
       expect(() => gptSpecFor(gm, deriveLayout(gm, 512n))).toThrow()
-    } finally {
-      m.cleanup()
-    }
-  })
-})
-
-describe('the ESP is big enough to be a FAT32 at all -- as a board question', () => {
-  test('the shipped board passes, which is the positive control', () => {
-    expect(espSizeFaults(g)).toEqual([])
-    expect(g.requirePartition('ESP').requireInt('SIZE_MIB')).toBeGreaterThanOrEqual(ESP_MIN_MIB)
-  })
-
-  test('32 MiB is refused, and 32 is the size that shipped and would not boot', () => {
-    const m = mutated('ESP_SIZE_MIB=32')
-    try {
-      const faults = espSizeFaults(loadGeometryFromPath(m.path))
-      expect(faults.length).toBe(1)
-      expect(faults[0]).toMatch(/below the 33 MiB measured floor/)
-      expect(faults[0]).toMatch(/mkfs\.vfat -F 32 does not refuse a smaller one/)
-    } finally {
-      m.cleanup()
-    }
-  })
-
-  test('33 MiB -- the measured floor itself -- passes, so the comparison is >= and not >', () => {
-    const m = mutated('ESP_SIZE_MIB=33')
-    try {
-      expect(espSizeFaults(loadGeometryFromPath(m.path))).toEqual([])
     } finally {
       m.cleanup()
     }

@@ -15,7 +15,8 @@
 //      function. They agree whenever the payload is a whole MiB (which is what
 //      os/mkimage-v2.sh REFUSES to proceed without and os/mkimage-x64.sh never
 //      checks) and they diverge otherwise -- see the table in layout-x64.test.ts,
-//      which drives both spellings over the same payloads and shows where.
+//      which drives both spellings over the same payloads and shows where: they
+//      agree on all 2048 whole-MiB payloads and disagree on thousands of others.
 //
 //   2. THERE IS NO PINNED MODE. os/mkimage-v2.sh captures
 //      `${MOS_ROOTFS_SLOT_MIB+set}` BEFORE sourcing the board file, precisely so
@@ -153,43 +154,6 @@ export function deriveLayout(geometry: Geometry, slotMib: bigint): DerivedLayout
   }
 }
 
-/**
- * THE ESP IS BIG ENOUGH TO BE A FAT32 AT ALL -- as a LAYOUT question.
- *
- * Separate from the cluster-count read-back in src/mkimage-x64.ts, and the two
- * are not the same check. This one is about the board definition and can be
- * answered before anything is formatted; that one is about the filesystem
- * mkfs.vfat actually wrote and is the one os/mkimage-x64.sh:263 performs. Both
- * exist because the FAT type is a function of cluster count and mkfs.vfat does
- * not enforce it: "at 32 MiB it produced an image mtools read happily, mdir
- * listed, the verifier passed -- and OVMF left the ESP out of its filesystem
- * list entirely and dropped to the UEFI shell."
- *
- * 33 MiB is the MEASURED floor at 512-byte sectors and is recorded as such in
- * that script and in os/boards/x64/board.env. It is deliberately NOT recomputed
- * from cluster arithmetic here: the cluster count depends on the sectors-per-
- * cluster mkfs.vfat chooses, which is mkfs.vfat's decision and not a number this
- * layout can derive. So this is a cheap board-level floor and the read-back is
- * the real check -- which is why the read-back is not replaced by it.
- */
-export const ESP_MIN_MIB = 33n
-
-/** Faults in the board's own ESP declaration, collected rather than thrown at the first. */
-export function espSizeFaults(geometry: Geometry): string[] {
-  const faults: string[] = []
-  const esp = geometry.requirePartition('ESP')
-  const sizeMib = esp.requireInt('SIZE_MIB')
-  if (sizeMib < ESP_MIN_MIB) {
-    faults.push(
-      `ESP_SIZE_MIB=${sizeMib} in ${geometry.path} is below the ${ESP_MIN_MIB} MiB measured floor for a `
-      + `real FAT32. mkfs.vfat -F 32 does not refuse a smaller one: it writes a FAT32 boot sector over `
-      + `too few clusters, exits 0, and the firmware -- which computes the type the way the FAT `
-      + `specification does -- leaves the ESP out of its device list entirely.`,
-    )
-  }
-  return faults
-}
-
 /** The size, in sectors, that a partition takes in the GPT this assembler writes. */
 function sizeSectorsOf(geometry: Geometry, p: PlacedPartition, slotMib: bigint): bigint {
   if (p.name === 'ROOTFS_A' || p.name === 'ROOTFS_B') return geometry.mibToSectors(slotMib)
@@ -238,7 +202,7 @@ function startSectorsOf(geometry: Geometry, p: PlacedPartition, layout: DerivedL
  * this passes the board's GPT_ALIGN_SECTORS, which x64 declares as 2048 -- the
  * same number sgdisk defaults to. That is a deliberate difference in SPELLING
  * and it was MEASURED rather than assumed to be a difference in nothing (see
- * layout-x64.test.ts, which writes both tables with a real sgdisk over the real
+ * mkimage-x64.test.ts, which writes both tables with a real sgdisk over the real
  * x64 geometry and compares the bytes). The reason for spelling it is that a
  * board is the single source of truth for its board: GPT_ALIGN_SECTORS=2048 sits
  * in os/boards/x64/board.env today, and an assembler that ignored it would keep

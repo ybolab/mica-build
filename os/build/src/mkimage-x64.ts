@@ -48,7 +48,7 @@
 // 2048` is passed, where the shell writes `+NM` and passes no alignment at all.
 // M6a measured `+131072S` and `+64M` byte-identical at 512-byte sectors and the
 // flag orders byte-identical; the alignment is x64's own GPT_ALIGN_SECTORS and
-// the same number sgdisk defaults to, which src/layout-x64.test.ts re-measures
+// the same number sgdisk defaults to, which src/mkimage-x64.test.ts re-measures
 // against a real sgdisk rather than asserting in prose. See gptSpecFor.
 //
 // DETERMINISM. The controls are board.env's -- fixed GPT GUIDs, fixed FAT volume
@@ -65,7 +65,7 @@ import { dirname, join, resolve } from 'node:path'
 import { $ } from 'bun'
 import { loadGeometry, type Geometry } from './geometry.ts'
 import { cmdlineFacts, earlyCfg, GRUB_MODULES, renderGrubCfg, verityFactsFrom, type VerityFacts } from './grub-x64.ts'
-import { decideSlot, deriveLayout, espSizeFaults, gptSpecFor, placementMib, type DerivedLayout, type SlotDecision } from './layout-x64.ts'
+import { decideSlot, deriveLayout, gptSpecFor, placementMib, type DerivedLayout, type SlotDecision } from './layout-x64.ts'
 import { BOARDS_DIR, makeWorkDir, REPO_ROOT } from './paths.ts'
 import { pinSeededTimes } from './pin-seeded-times.ts'
 import { Toolbox } from './toolbox.ts'
@@ -263,20 +263,49 @@ export function strayEspEntries(entries: readonly string[], slotFileNames: reado
 }
 
 /**
+ * THE TWO BOOT SLOTS DIFFER ONLY IN THEIR FILESYSTEM IDENTITY.
+ *
+ * Both start life with the same contents: an image whose B side was empty would
+ * have nothing to fall back TO on the first bad update, so "B is populated" is a
+ * property of the shipped image and not of the first install.
+ *
+ * A separate function because nothing a caller can pass to the assembly makes the
+ * two listings differ -- both slots are written by the same three mcopy calls
+ * from the same three files -- so inline this could only ever be observed NOT
+ * firing, which is the shape this tree has shipped twice and found by mutation.
+ * Given the two listings it is drivable in microseconds, from both sides.
+ */
+export function bootSlotFault(aList: readonly string[], bList: readonly string[]): string | undefined {
+  if (aList.join('\n') === bList.join('\n')) return undefined
+  return `the two boot slots do not carry the same files\n`
+    + `  boot-a: ${aList.join(' ') || '(nothing)'}\n`
+    + `  boot-b: ${bList.join(' ') || '(nothing)'}`
+}
+
+/**
  * THE PARTITIONS LANDED WHERE THEY WERE ASKED TO -- read back out of the
  * ASSEMBLED TABLE, not compared against the request.
  *
  * x64 has no loader partition and every start it declares is a whole MiB, which
- * is 2048 sectors, so none of them is relocatable by sgdisk's alignment. That is
- * a statement about the BOARD FILE. This is a statement about the table sgdisk
- * actually wrote, and the two are not the same claim -- which is exactly the
- * lesson src/mkimage-v2.ts records for cx3576, where asking sgdisk for a layout
- * proved nothing about the layout.
+ * is 2048 sectors, so no start is relocatable by the alignment this assembler
+ * PASSES. That is a statement about the board file and the flag. This is a
+ * statement about the table sgdisk actually wrote, and the two are not the same
+ * claim -- which is exactly the lesson src/mkimage-v2.ts records for cx3576,
+ * where asking sgdisk for a layout proved nothing about the layout.
  *
- * It earns its keep here for one more reason: this assembler passes `-a 2048`
- * where os/mkimage-x64.sh passes no alignment at all. That difference is measured
- * to be no difference, and this is what keeps it measured on every run rather
- * than on the day it was measured.
+ * AND ON THIS BOARD A WRONG ALIGNMENT DOES NOT ANNOUNCE ITSELF. Measured
+ * (src/mkimage-x64.test.ts): `-a 4096` over the real x64 geometry moves the ESP
+ * from sector 2048 to 4096, prints "Information: Moved requested sector", and
+ * EXITS 0. That is not what M6b found on cx3576, where the same flag makes sgdisk
+ * refuse the table with exit 4 -- the relocation there would push uenv-b into
+ * boot-a and there is no room. So the two boards' third alignment case is a
+ * different failure, the shape depends on the geometry rather than on the flag,
+ * and on x64 this read-back is the only thing that would report it.
+ *
+ * It earns its keep for one more reason: this assembler passes `-a 2048` where
+ * os/mkimage-x64.sh passes no alignment at all. That difference is measured to be
+ * no difference, and this keeps it measured on every run rather than on the day
+ * it was measured.
  *
  * Every mismatch is collected rather than thrown at the first: nine drifting
  * partitions should produce nine lines.
@@ -327,9 +356,6 @@ export async function assembleX64(
       + geometry.faults.map(f => `  ${f.key}=${JSON.stringify(f.value)} ${f.reason}`).join('\n'),
     )
   }
-  const espFaults = espSizeFaults(geometry)
-  if (espFaults.length > 0) throw new Error(espFaults.join('\n'))
-
   const grubCfgIn = inputs.grubCfgIn ?? join(BOARDS_DIR, BOARD, 'grub.cfg')
 
   // --- the five inputs, before anything is created.
@@ -508,15 +534,8 @@ export async function assembleX64(
     const bootB = await makeBootSlot(tb, 'BOOT_B')
 
     // --- the two slots must differ ONLY in their filesystem identity.
-    const aList = await listFat(tb, bootA)
-    const bList = await listFat(tb, bootB)
-    if (aList.join('\n') !== bList.join('\n')) {
-      throw new Error(
-        `the two boot slots do not carry the same files\n`
-        + `  boot-a: ${aList.join(' ')}\n`
-        + `  boot-b: ${bList.join(' ')}`,
-      )
-    }
+    const slotFault = bootSlotFault(await listFat(tb, bootA), await listFat(tb, bootB))
+    if (slotFault !== undefined) throw new Error(slotFault)
 
     // --- EPHEMERAL SHIPS ALREADY SEEDED (RFCT-106). /var is a mount of this
     // filesystem and mounting an EMPTY one over the image's /var hides the tree
