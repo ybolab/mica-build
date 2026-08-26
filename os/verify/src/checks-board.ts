@@ -94,7 +94,7 @@ const isUBoot = (board: Board): boolean => board.bootloader === 'uboot'
 const hasRadio = (board: Board, kind: string): boolean => (board.radios ?? []).includes(kind)
 /** `board_has_hwinit` (:247). */
 const hasHwinit = (board: Board, fact: string): boolean => (board.hwinitConfs ?? []).includes(fact)
-/** `[ -n "${BOARD_FIRMWARE_FILES}" ]` (:2489). Declared-empty is not absent. */
+/** `[ -n "${BOARD_FIRMWARE_FILES}" ]` (:2488). Declared-empty is not absent. */
 const hasFirmware = (board: Board): boolean => (board.firmwareFiles ?? []).length > 0
 /** `[ "${BOARD_HAS_STATUS_LED}" = "1" ]` (:2720). A string compare, as the oracle spells it. */
 const hasLed = (board: Board): boolean => board.hasStatusLed === '1'
@@ -359,7 +359,7 @@ function loaderSkipMessage(board: Board): string {
 }
 
 // ---------------------------------------------------------------------------
-// what a boot slot must contain -- os/verify-image-v2.sh:1836-1846, 1868-1881
+// what a boot slot must contain -- os/verify-image-v2.sh:1839-1845, 1864-1874
 // ---------------------------------------------------------------------------
 
 /** The two slots, by the display names the oracle's messages use (:1963). */
@@ -518,7 +518,7 @@ const SLOT_LISTING_CHECKS: readonly CheckCase[] = [
   },
 ]
 
-/** The oracle's own `else` sentence at :1889. */
+/** The oracle's own `else` sentence at :1892. */
 function uBootSlotSkipMessage(board: Board, slot: string): string {
   return `${slot}: the extlinux, no-initramfs and Image/dtb assertions `
     + `(bootloader=${board.get('RAUC_BOOTLOADER') ?? ''}). extlinux is a U-Boot boot framework; a `
@@ -527,7 +527,7 @@ function uBootSlotSkipMessage(board: Board, slot: string): string {
 }
 
 // ---------------------------------------------------------------------------
-// the radio -- firmware set (:2489-2494) and module list (:2558-2570)
+// the radio -- firmware set (:2488-2494) and module list (:2559-2570)
 // ---------------------------------------------------------------------------
 
 function radioFirmwareChecks(board: Board): CheckCase[] {
@@ -1112,7 +1112,7 @@ const LED_CHECKS: readonly CheckCase[] = [
  * instant where both LEDs are off and the board reads as dead. Nothing else can
  * catch that -- either order is valid shell and passes every syntax check.
  *
- * Region-scoped by line, exactly as the oracle's awk is (:2775-2780): the
+ * Region-scoped by line, exactly as the oracle's awk is (:2773-2778): the
  * branch label opens the region and the next bare `;;` closes it, so a write in
  * the other branch cannot satisfy this one.
  */

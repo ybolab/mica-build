@@ -322,8 +322,8 @@ describe('no baked credential', () => {
   })
 
   test('THE TWO LOCKED CHECKS DISAGREE ABOUT AN EMPTY FIELD, and both are the oracle', async () => {
-    // os/verify-image-v2.sh:3782 treats an empty password field as locked (its
-    // awk is `$2 !~ /^[!*]/ && $2 != ""`); :3897 treats it as passwordless
+    // os/verify-image-v2.sh:3765 treats an empty password field as locked (its
+    // awk is `$2 !~ /^[!*]/ && $2 != ""`); :3875-3899 treats it as passwordless
     // login and fails. The second is right. Both are ported AS THEY ARE: a port
     // that hardened the first would agree with the oracle on both shipped
     // images and diverge on the one image where the difference is the point --
