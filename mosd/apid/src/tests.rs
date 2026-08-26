@@ -1723,6 +1723,37 @@ async fn every_other_api_path_keeps_both_of_its_answers() {
     assert_eq!(location(&redirected), "/setup");
 }
 
+/// `mosd/apid/openapi.json` is the bytes `apid --openapi` prints.
+///
+/// A local `cargo test` failure and not only a CI one: whoever changed a route
+/// is the person holding the command that regenerates the file.
+#[test]
+fn the_committed_openapi_document_is_the_generated_one() {
+    assert_eq!(
+        crate::openapi::document_json(),
+        include_str!("../openapi.json"),
+        "mosd/apid/openapi.json is stale; from mosd/, regenerate it with:\n    \
+         cargo run -p apid -- --openapi > apid/openapi.json"
+    );
+}
+
+/// The document describes the served surface, §3.1's outcome included: a
+/// client that reads only `openapi.json` has to be able to learn that
+/// `/api/v1/meta` can answer 401.
+#[test]
+fn the_openapi_document_covers_the_declared_routes() {
+    let document: serde_json::Value =
+        serde_json::from_str(&crate::openapi::document_json()).expect("the document is JSON");
+
+    assert!(
+        document["paths"]["/api/versions"]["get"]["responses"]["200"].is_object(),
+        "{document}"
+    );
+    let meta = &document["paths"]["/api/v1/meta"]["get"]["responses"];
+    assert!(meta["200"].is_object(), "{meta}");
+    assert!(meta["401"].is_object(), "{meta}");
+}
+
 /// §4.1 rules 2 and 3: a declared route wins structurally, and the bundle
 /// files of the same name are never consulted.
 #[tokio::test]
