@@ -59,9 +59,8 @@ const TRIGGER: u32 = 1;
 ///
 /// The return code *is* the dispatch result, and any code but [`SET_OK`] is
 /// a failure. It carries no reason — mosd logs why locally and never sends it
-/// back — so it becomes an error here, which is what the `Reboot`/`PowerOff`
-/// methods used to return, and reaches the caller's existing failure path
-/// unchanged. The code is reported verbatim rather than interpreted: apid has
+/// back — so it becomes an error here and reaches the caller's failure path.
+/// The code is reported verbatim rather than interpreted: apid has
 /// no decision to make that distinguishing two failures would change.
 async fn trigger(connection: &zbus::Connection, path: &str) -> anyhow::Result<()> {
     let item = ItemProxy::new(connection, path).await?;

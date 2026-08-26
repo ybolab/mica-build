@@ -1,0 +1,49 @@
+//! The OpenAPI document describing apid's `/api` surface.
+//!
+//! Generated from the handlers rather than written beside them, and committed
+//! as `mosd/apid/openapi.json`. `--openapi` prints it and a test asserts the
+//! committed copy is exactly what this module produces, so the spec cannot
+//! describe a route the code does not serve or miss one it does.
+
+use utoipa::OpenApi;
+
+/// The document: its identity, and every route declared under `/api`.
+///
+/// `version` is the API major version §2.1 puts in the path segment, not
+/// apid's package version. This document describes the HTTP contract, and the
+/// contract is what `/api/versions` names.
+///
+/// The listed handlers carry their own `utoipa::path` attributes, and the
+/// schemas of the bodies they name are collected from them; there is no second
+/// list here to keep in step with the first.
+#[derive(OpenApi)]
+#[openapi(
+    info(
+        title = "apid",
+        version = "v1",
+        description = "The appliance management API served over HTTPS on the device."
+    ),
+    paths(
+        crate::routes::api_versions,
+        crate::routes::api_v1_meta,
+        crate::routes::api_v1_settings,
+        crate::routes::api_v1_state
+    )
+)]
+struct ApiDoc;
+
+/// The document as the exact bytes `--openapi` prints and `openapi.json`
+/// holds: pretty-printed, with one trailing newline.
+pub fn document_json() -> String {
+    let mut document = ApiDoc::openapi();
+    // The crates declare no `license`, so the derive fills the object in from
+    // the empty `CARGO_PKG_LICENSE`. A licence object whose only required
+    // field is the empty string states nothing; there is no licence to name,
+    // so there is no object.
+    document.info.license = None;
+    let mut json = document
+        .to_pretty_json()
+        .expect("a document of derived schemas serialises");
+    json.push('\n');
+    json
+}

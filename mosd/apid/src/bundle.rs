@@ -20,17 +20,9 @@
 //! shipped state of every device and §6.1's first failure class. The root is
 //! created lazily on first activation and never at start-up.
 
-// Phase-4 landed the two consumers this module was written ahead of: the asset
-// router (`assets::serve`) and the start-up re-check (`startup::discover`). The
-// blanket module-level `allow(dead_code)` they needed is therefore gone, so any
-// NEW unreachable entry point here is a warning again.
-//
-// What the blanket allow was hiding when it was removed is §5.3's status read —
-// `Store::status` and the `Installed` tree it returns. That surface is complete
-// and tested, and it has no caller because no route exposes "what is installed
-// right now?" to an operator; §8.2's API phase is where it gets one. The allows
-// are therefore per-item and carry that reason, so the gap is visible in the
-// source instead of being absorbed by a file-wide suppression.
+// There is no module-level `allow(dead_code)`: an unreachable entry point here
+// is a warning. The `allow`s below are per-item and carry their reason, so a
+// gap is visible in the source rather than absorbed by a file-wide suppression.
 
 use std::collections::BTreeSet;
 use std::fmt;

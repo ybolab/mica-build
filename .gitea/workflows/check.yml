@@ -140,6 +140,119 @@ jobs:
       - name: mosd/hack/check.sh
         run: bash mosd/hack/check.sh
 
+      # The gate above already runs the in-tree test that compares the
+      # committed document against the generated one, so this step catches no
+      # drift that test misses. What it adds is the `--openapi` FLAG PATH: the
+      # argv handling in `main()`, above daemon initialisation, which the test
+      # bypasses by calling the generator function directly. A flag that
+      # stopped printing the document, or started reaching for the bus before
+      # it did, leaves that test green and the documented regeneration command
+      # broken.
+      #
+      # `mosd/hack/check.sh` cds into `mosd/`; this step runs from the
+      # repository root, hence `--manifest-path`.
+      - name: The committed OpenAPI document is what the shipped flag prints
+        run: |
+          set -euo pipefail
+          tmp=$(mktemp -d)
+          trap 'rm -rf "$tmp"' EXIT
+          cargo run --locked --manifest-path mosd/Cargo.toml -p apid -- --openapi \
+            >"$tmp/openapi.json"
+          diff -u mosd/apid/openapi.json "$tmp/openapi.json" || {
+            echo "error: mosd/apid/openapi.json is not what apid --openapi prints." >&2
+            echo "       Regenerate it from mosd/:" >&2
+            echo "         cargo run -p apid -- --openapi > apid/openapi.json" >&2
+            exit 1
+          }
+          echo "mosd/apid/openapi.json matches apid --openapi"
+
+      # docs/design/api.md §2.1's breaking-vs-additive lists made mechanical:
+      # the committed spec is compared against the base branch's copy, and any
+      # change oasdiff rates at ERR fails the job. Additive changes -- a new
+      # route, a new response field, a new optional request field -- are
+      # reported and pass.
+      #
+      # ERR is the threshold, and two of oasdiff's default levels are raised
+      # to reach it so that the threshold matches §2.1 rather than approximating
+      # it. Raising the THRESHOLD to WARN instead would not do: it would still
+      # miss the INFO-rated one, and it would fail changes §2.1 calls additive.
+      #
+      # One §2.1 item stays unmechanised, and it is not a promotion away:
+      # "changing which `error.code` an existing failure emits". `code` is
+      # `type: string` with no enum -- the token is a runtime value, invisible
+      # to a schema diff -- so the apid route tests that assert each envelope
+      # are what hold it, not this step.
+      #
+      # The base ref is fetched here at depth 1 rather than by setting
+      # `fetch-depth: 0` on this job's checkout: one ref at one commit is all
+      # the diff reads, and deepening the clone would pay for the whole
+      # history on every run of this job.
+      #
+      # Both skips PRINT. A push has no base to diff against, and a base
+      # branch older than the spec has nothing to diff; a step that exits 0
+      # without a word is indistinguishable from one that checked.
+      #
+      # oasdiff is a standalone Go binary, pinned by version and sha256 like
+      # the cargo tools above, and executed with --version to say what ran.
+      - name: No breaking API change against the base branch (pinned oasdiff)
+        run: |
+          set -euo pipefail
+
+          base="${{ github.base_ref }}"
+          if [ -z "$base" ]; then
+            echo "skipped: no base branch on a ${{ github.event_name }} event, so there is"
+            echo "         no committed spec to diff mosd/apid/openapi.json against."
+            exit 0
+          fi
+
+          git fetch --depth=1 origin "$base"
+          if ! git cat-file -e FETCH_HEAD:mosd/apid/openapi.json 2>/dev/null; then
+            echo "skipped: ${base} carries no mosd/apid/openapi.json, so every path in this"
+            echo "         spec is new and nothing can have been broken."
+            exit 0
+          fi
+
+          tmp=$(mktemp -d)
+          trap 'rm -rf "$tmp"' EXIT
+
+          oasdiff_ver=1.29.1
+          oasdiff_sha=541f7c66c933495fceef24eaf5c48aa66c19069f366f7bd0a60a6a4820c5e533
+          curl -sSfL -o "$tmp/oasdiff.tar.gz" \
+            "https://github.com/oasdiff/oasdiff/releases/download/v${oasdiff_ver}/oasdiff_${oasdiff_ver}_linux_amd64.tar.gz"
+          echo "${oasdiff_sha}  $tmp/oasdiff.tar.gz" | sha256sum -c -
+          tar xzf "$tmp/oasdiff.tar.gz" -C "$tmp" oasdiff
+          chmod 0755 "$tmp/oasdiff"
+          "$tmp/oasdiff" --version
+
+          # The severity file is space-separated `<check-id> <level>` and takes
+          # no comment lines, so the reason each id is promoted is here:
+          #
+          # response-optional-property-removed  §2.1 "removing a response
+          #   field" -- field, not required field. oasdiff rates the optional
+          #   case WARN.
+          # response-non-success-status-removed  §2.1's failure clause: a
+          #   documented failure outcome disappearing is the schema-visible
+          #   half of changing which error.code a failure emits. oasdiff rates
+          #   it INFO.
+          #
+          # Nothing else is promoted. The response-side rules oasdiff already
+          # rates ERR cover the rest of §2.1, and promoting more would fail
+          # changes §2.1 calls additive.
+          cat >"$tmp/severity.txt" <<'SEVERITY'
+          response-optional-property-removed err
+          response-non-success-status-removed err
+          SEVERITY
+
+          git show FETCH_HEAD:mosd/apid/openapi.json >"$tmp/base-openapi.json"
+          echo "base: ${base} at $(git rev-parse --short FETCH_HEAD)"
+          "$tmp/oasdiff" breaking "$tmp/base-openapi.json" mosd/apid/openapi.json \
+            --fail-on ERR --color never --severity-levels "$tmp/severity.txt" || {
+            echo "error: the changes above are breaking under docs/design/api.md §2.1." >&2
+            echo "       A correct v1 client can be broken by them, so they need a new" >&2
+            echo "       version path rather than an edit to this one." >&2
+            exit 1
+          }
+
   # The suites that need neither root nor docker. Each one fails loudly when it
   # cannot run rather than skipping, so a missing dependency here surfaces as a
   # red job and not as a quiet pass.

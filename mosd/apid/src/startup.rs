@@ -5,40 +5,25 @@
 //! and calls an activate operation, or apid picks up a staged directory."*
 //! There is no upload route here and no archive dependency; that is phase 5.
 //!
-//! **The constraint outranks the feature, so it is stated first.** §6.1:
-//!
-//! > Bundle discovery and evaluation must happen after the listeners bind and
-//! > after `APID_LISTENING` is printed, and every possible outcome must be a
-//! > state the daemon holds, never an error it returns. A bundle must not be
-//! > able to stop apid from listening.
-//!
-//! The reason is mechanical. `main` propagates every earlier start-up step
-//! with `?` — `config::Config::from_env()?`, `tls::ensure_state_dir(...)`,
-//! `tls::load_or_generate_certificate(...)?`,
-//! `tls::load_or_generate_session_key(...)?` — all *before* the listeners
-//! bind, and the unit is `Restart=on-failure` (`mosd/dist/apid.service:9`).
-//! A start-up error is therefore a crash loop with no listener bound, which is
-//! precisely the failure §6 exists to prevent.
-//!
-//! So nothing in this module returns an error, and nothing in it may `?`,
-//! `unwrap`, `expect` or panic its way out. Every outcome — an unreadable
-//! disk, a garbage manifest, an absent `/srv/ui` — is logged and becomes a
-//! [`BundleState`]. [`discover`] adds one more layer of the same property:
-//! the work runs on the blocking pool, so even a panic raised *below* this
-//! module arrives as a [`JoinError`](tokio::task::JoinError) and becomes a
-//! state rather than an unwind through `main`.
+//! Nothing in this module returns an error, and nothing in it may `?`,
+//! `unwrap`, `expect` or panic its way out. §6.1 requires discovery to run
+//! after the listeners bind and after `APID_LISTENING` is printed, and every
+//! outcome — an unreadable disk, a garbage manifest, an absent `/srv/ui` — to
+//! be a [`BundleState`] the daemon holds. `main` propagates every earlier
+//! start-up step with `?` and the unit is `Restart=on-failure`
+//! (`mosd/dist/apid.service:9`), so an error out of here is a crash loop with
+//! no listener bound.
 //!
 //! Two of §6.1's five classes are detected here, and both are detected at
 //! start-up rather than per request:
 //!
 //! - **Class 3**, a malformed or half-written bundle: the digest recorded at
-//!   activation, re-checked. §6.1 states the cost honestly and this module
-//!   does not silently improve on it — *"a corruption introduced mid-life is
-//!   detected at the next restart, not immediately."*
+//!   activation, re-checked. §6.1 states the cost — *"a corruption introduced
+//!   mid-life is detected at the next restart, not immediately."*
 //! - **Class 5**, a UI that renders and cannot talk to any API version apid
-//!   serves. The relation is **set intersection** and the trigger is an
-//!   **empty** intersection and nothing else — never equality with the served
-//!   set's `current` member. A bundle that matches only the outgoing major
+//!   serves. The relation is set intersection and the trigger is an empty
+//!   intersection and nothing else — never equality with the served set's
+//!   `current` member. A bundle that matches only the outgoing major
 //!   stays active, which is what §2.1's dual-major recommendation exists for.
 //!
 //! Classes 1, 2 and 4 belong to the asset router, which sees them per request
@@ -66,8 +51,8 @@ pub const SERVED_API_VERSIONS: &[&str] = &["v1"];
 /// §2.1's `current`: the member a client with no preference should use.
 ///
 /// Always a member of [`SERVED_API_VERSIONS`] — §2.1 requires it and a test
-/// asserts it. **§6.1's check does not compare against this value**; it is
-/// logged so that a deactivation can be read back, and read by nothing else.
+/// asserts it. §6.1's check does not compare against this value; it is logged
+/// so that a deactivation can be read back, and read by nothing else.
 pub const CURRENT_API_VERSION: &str = "v1";
 
 /// Why start-up removed the active pointer. Both are §6.1 deactivations and
@@ -109,7 +94,7 @@ impl fmt::Display for Reason {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum BundleState {
     /// No custom bundle is active. §6.1 class 1: the shipped state of every
-    /// device, and **not an error**.
+    /// device, and not an error.
     BuiltIn,
     /// A bundle is active and survived both re-checks.
     Active {
@@ -171,7 +156,7 @@ impl fmt::Display for BundleState {
 
 /// `main`'s entry point, and the whole of §6.1's start-up half.
 ///
-/// Called **after** the listeners bind and after `APID_LISTENING` is printed.
+/// Called after the listeners bind and after `APID_LISTENING` is printed.
 /// It takes no `Result` out and it takes no `Result` back in: the return type
 /// has no error variant, so `main` cannot propagate one by accident.
 ///
@@ -375,7 +360,7 @@ mod tests {
     /// `current` for [`DUAL`]. The outgoing major is `v1`.
     const DUAL_CURRENT: &str = "v2";
 
-    // -- fixtures ----------------------------------------------------------
+    // Fixtures.
 
     fn store() -> (tempfile::TempDir, Store) {
         fresh()
@@ -428,7 +413,7 @@ mod tests {
             .expect("activation must succeed");
     }
 
-    // -- log capture -------------------------------------------------------
+    // Log capture.
 
     #[derive(Clone, Default)]
     struct Capture(Arc<Mutex<Vec<u8>>>);
@@ -482,7 +467,7 @@ mod tests {
         store.active_generation().expect("active generation")
     }
 
-    // -- the served-set constant ------------------------------------------
+    // The served-set constant.
 
     /// §2.1 fixes the shape of the served set: an array, with `current` always
     /// a member. Declared by identity and diffed, never counted.
@@ -545,7 +530,7 @@ mod tests {
         assert_eq!(active(&keeper), Some(1));
     }
 
-    // -- §6.1 class 5 ------------------------------------------------------
+    // §6.1 class 5.
 
     /// A non-empty intersection is not a deactivation trigger, however partial.
     #[test]
@@ -586,10 +571,9 @@ mod tests {
         );
     }
 
-    /// **The single most important negative test in this task.** §2.1
-    /// recommends serving the outgoing major alongside the new one for one
-    /// image generation, and §6.1 says an escape hatch that fires on the wrong
-    /// condition is worse than one that does not exist. A bundle that matches
+    /// §2.1 recommends serving the outgoing major alongside the new one for
+    /// one image generation, and §6.1 says an escape hatch that fires on the
+    /// wrong condition is worse than one that does not exist. A bundle that matches
     /// only the outgoing major must stay active — equality against `current`
     /// would remove exactly the bundles the recommendation exists to protect.
     #[test]
@@ -701,7 +685,7 @@ mod tests {
         );
     }
 
-    // -- §6.1 class 3 ------------------------------------------------------
+    // §6.1 class 3.
 
     /// Class 3's second reachable cause: "an operator writing into `/srv/ui`
     /// over a root shell". Detected at the next restart -- which is this
@@ -733,7 +717,7 @@ mod tests {
         assert!(store.bundle_dir(1).is_dir());
     }
 
-    // -- §6.1 class 1 ------------------------------------------------------
+    // §6.1 class 1.
 
     /// "This is not an error -- it is the shipped state of every device, and
     /// it must not be logged as one." Asserted in both directions: the state
@@ -760,7 +744,7 @@ mod tests {
         );
     }
 
-    // -- §8.2 phase 4's local install path ---------------------------------
+    // §8.2 phase 4's local install path.
 
     /// "an operator places a tree on the device and calls an activate
     /// operation, **or apid picks up a staged directory**."
@@ -807,7 +791,7 @@ mod tests {
         assert_eq!(active(&store), Some(1));
     }
 
-    // -- the constraint ----------------------------------------------------
+    // The constraint.
 
     /// Build one hostile store per name. Every one of these is a state the
     /// daemon must hold; none of them may be an error it returns.
@@ -911,8 +895,7 @@ mod tests {
         cases
     }
 
-    /// **§6.3's actual safety claim, and the test it is worth exactly as much
-    /// as: a bad bundle cannot take the listener down.**
+    /// §6.3's safety claim: a bad bundle cannot take the listener down.
     ///
     /// Every hostile store below is run through the real entry point. The
     /// assertion is a named set — which roots returned normally, diffed

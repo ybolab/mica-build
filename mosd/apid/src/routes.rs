@@ -18,16 +18,17 @@
 use std::net::IpAddr;
 use std::sync::Arc;
 
-use axum::Router;
-use axum::extract::{Form, OriginalUri, Query, Request, State};
-use axum::http::header::{CACHE_CONTROL, CONTENT_TYPE, HOST, LOCATION, SET_COOKIE};
-use axum::http::{HeaderMap, StatusCode};
+use axum::extract::{Form, FromRequestParts, OriginalUri, Path, Query, Request, State};
+use axum::http::header::{CACHE_CONTROL, HOST, LOCATION, RETRY_AFTER, SET_COOKIE};
+use axum::http::request::Parts;
+use axum::http::{HeaderMap, HeaderValue, StatusCode};
 use axum::middleware::{self, Next};
 use axum::response::{Html, IntoResponse, Redirect, Response};
 use axum::routing::{any, get, post};
+use axum::{Json, Router};
 use maud::{DOCTYPE, Markup, PreEscaped, html};
 use mosd_settings::{AuthorizedKey, SettingsError, parse_authorized_key, validate_authorized_keys};
-use serde_json::{Value, json};
+use serde_json::Value;
 use sha2::{Digest, Sha256};
 
 use crate::assets::mime::CacheClass;
@@ -35,6 +36,7 @@ use crate::assets::serve;
 use crate::audit::{Audit, Source};
 use crate::auth::{self, GuardStore};
 use crate::bundle::Store;
+use crate::redact;
 use crate::session::{self, SessionStore};
 use crate::settings_api::SettingsApi;
 
@@ -125,15 +127,15 @@ pub fn app(state: AppState) -> Router {
         // prefix, and nothing may: §4.1 asks for a rule the dispatch mechanism
         // enforces rather than one somebody can forget to write.
         //
-        // The nest claims the **whole** subtree — `/builtin/index.html` and
+        // The nest claims the whole subtree — `/builtin/index.html` and
         // `/builtin/assets/app.js` included — which is what §6.3 means by
         // burning a path prefix permanently. A prefix reserved for only some
         // of its paths is not reserved.
         //
-        // The two spellings split across the nest boundary, and the split is
-        // the same asymmetry RFCT-074 measured under `/api`: the nest claims
-        // `/builtin` (the nested router sees `/`) and **not** `/builtin/`, so
-        // the trailing-slash spelling is declared outside it. Both must reach
+        // The two spellings split across the nest boundary, the same asymmetry
+        // `/api` has: the nest claims `/builtin` (the nested router sees `/`)
+        // and not `/builtin/`, so the trailing-slash spelling is declared
+        // outside it. Both must reach
         // the pane; an operator recovering a device should not have to get the
         // slash right, and the spelling the design document writes is the one
         // with it.
@@ -173,15 +175,16 @@ pub fn app(state: AppState) -> Router {
         .route("/mqtt/enable", post(mqtt_enable))
         .route("/healthz", get(healthz))
         // §4.1 rule 1: the whole `/api/` prefix, its own not-found handler
-        // included. It 404s everything, `/api/versions` among them — §2's
-        // routes are a later phase and this reservation is what guarantees no
-        // bundle can occupy the prefix before they land.
+        // included. §2.1's two discovery routes are declared inside it and
+        // every other path under it 404s, so no bundle can occupy the prefix
+        // and no route under it can be reached by anything but a declaration
+        // here.
         //
         // The explicit `/api/` route is not redundant. `nest` claims `/api`,
-        // `/api/x` and `/api/x/y`, and **not** `/api/` — measured, and the
-        // difference is a request that begins `/api/` reaching the asset
-        // router, which is exactly what rule 1 forbids.
-        .nest("/api", Router::new().fallback(api_not_found))
+        // `/api/x` and `/api/x/y`, and not `/api/`; the difference is a
+        // request that begins `/api/` reaching the asset router, which is
+        // exactly what rule 1 forbids.
+        .nest(API, api_router())
         .route("/api/", any(api_not_found))
         // §4.1 rule 4.
         .fallback(serve::fallback)
@@ -193,27 +196,419 @@ pub fn app(state: AppState) -> Router {
 /// 404s inside `/api/` are the API's own").
 ///
 /// §2.4's envelope, which is what makes a mistyped path a machine-readable
-/// answer rather than an empty body. `path` is omitted: §2.4 defines it as the
-/// **settings dot-path** at fault and a request that matched no route has
-/// none. `Cache-Control: no-store` is §4.3's second row, which is every
-/// `/api/` response and not only the successful ones.
+/// answer rather than an empty body.
 async fn api_not_found(OriginalUri(uri): OriginalUri) -> Response {
-    (
+    api_response(
         StatusCode::NOT_FOUND,
-        [
-            (CONTENT_TYPE, "application/json"),
-            (CACHE_CONTROL, CacheClass::NoStore.header_value()),
-        ],
-        json!({
-            "error": {
-                "code": "not_found",
-                "message": format!("no API route at {}", uri.path()),
-                "source": "apid",
-            }
-        })
-        .to_string(),
+        ApiError::apid("not_found", format!("no API route at {}", uri.path())),
+    )
+}
+
+// §2.1's API surface: the reserved subtree's declared routes, their bodies
+// and the session check that guards them.
+
+/// The reserved prefix, and the paths §2.1 declares under it.
+///
+/// The leaves are the paths as the nested router sees them; the OpenAPI
+/// document composes them with the prefix through `context_path`, and
+/// [`is_declared_api_route`] composes them to get what the gate sees. One
+/// spelling each.
+const API: &str = "/api";
+const VERSIONS_PATH: &str = "/versions";
+const V1_META_PATH: &str = "/v1/meta";
+
+/// §2.2's two read-only roots, in the three spellings they need.
+///
+/// The prefix is the shared one and the only one the gate predicate tests. The
+/// other two exist because axum names a wildcard segment `{*path}` and OpenAPI
+/// names a template parameter `{path}`, so the served path and the documented
+/// path cannot be the same string; `the_resource_path_spellings_agree` holds
+/// them to the prefix so they cannot drift apart.
+const V1_SETTINGS_PREFIX: &str = "/v1/settings/";
+const V1_SETTINGS_ROUTE: &str = "/v1/settings/{*path}";
+const V1_SETTINGS_DOC: &str = "/v1/settings/{path}";
+const V1_STATE_PREFIX: &str = "/v1/state/";
+const V1_STATE_ROUTE: &str = "/v1/state/{*path}";
+const V1_STATE_DOC: &str = "/v1/state/{path}";
+
+/// Each root's three spellings as one tuple, for the test that holds them
+/// together.
+#[cfg(test)]
+pub(crate) const SETTINGS_SPELLINGS: (&str, &str, &str) =
+    (V1_SETTINGS_PREFIX, V1_SETTINGS_ROUTE, V1_SETTINGS_DOC);
+#[cfg(test)]
+pub(crate) const STATE_SPELLINGS: (&str, &str, &str) =
+    (V1_STATE_PREFIX, V1_STATE_ROUTE, V1_STATE_DOC);
+
+/// The fdo error names mosd maps its `SettingsError` onto, and the three rows
+/// of §2.4's table that name one.
+const FDO_INVALID_ARGS: &str = "org.freedesktop.DBus.Error.InvalidArgs";
+const FDO_IO_ERROR: &str = "org.freedesktop.DBus.Error.IOError";
+const FDO_FAILED: &str = "org.freedesktop.DBus.Error.Failed";
+
+/// §2.4's `Retry-After` on the one class that carries it.
+const RETRY_AFTER_SECONDS: &str = "5";
+
+/// The major versions this build serves — §2.1's *served set*, which is an
+/// array because it can legitimately have more than one member.
+const SERVED_VERSIONS: [&str; 1] = ["v1"];
+
+/// The member of the served set a client with no preference should use.
+const CURRENT_VERSION: &str = "v1";
+
+/// The reserved `/api` subtree: §2.1's declared routes, and the not-found
+/// handler every other path under the prefix reaches.
+///
+/// Each route is declared here from the same constant its `utoipa::path`
+/// attribute documents it under, so the served path and the documented path
+/// are one string and cannot disagree.
+fn api_router() -> Router<AppState> {
+    Router::new()
+        .route(VERSIONS_PATH, get(api_versions))
+        .route(V1_META_PATH, get(api_v1_meta))
+        .route(V1_SETTINGS_ROUTE, get(api_v1_settings))
+        .route(V1_STATE_ROUTE, get(api_v1_state))
+        .fallback(api_not_found)
+}
+
+/// Whether `path` is one of the API routes that answers for itself.
+///
+/// The gate hands exactly these off. `/api/versions` is unauthenticated by
+/// design (§2.1) and `/api/v1/meta` answers §2.4's `not_authenticated`
+/// envelope rather than the gate's HTML redirect (§3.1). Every other path
+/// under the prefix is absent from this list and reaches the gate's own
+/// logic unchanged.
+fn is_declared_api_route(path: &str) -> bool {
+    path.strip_prefix(API).is_some_and(|leaf| {
+        leaf == VERSIONS_PATH || leaf == V1_META_PATH || resource_dot_path(leaf).is_some()
+    })
+}
+
+/// The dot-path a leaf names, when the leaf is one of §2.2's two roots.
+///
+/// A root prefix with nothing after it names none. axum's `{*path}` wildcard
+/// matches at least one character, so `/api/v1/settings` and
+/// `/api/v1/settings/` reach the subtree's not-found handler, and this
+/// predicate must hand off exactly what the router serves: a path the gate
+/// releases to a route that does not exist would answer a 404 where an
+/// unauthenticated caller is redirected.
+fn resource_dot_path(leaf: &str) -> Option<&str> {
+    let dot_path = leaf
+        .strip_prefix(V1_SETTINGS_PREFIX)
+        .or_else(|| leaf.strip_prefix(V1_STATE_PREFIX))?;
+    (!dot_path.is_empty()).then_some(dot_path)
+}
+
+/// Every `/api/` response, in the one shape §4.3 gives them: JSON in both
+/// directions (§2.1), and `no-store` on every outcome rather than only on the
+/// failures.
+fn api_response(status: StatusCode, body: impl serde::Serialize) -> Response {
+    (
+        status,
+        [(CACHE_CONTROL, CacheClass::NoStore.header_value())],
+        Json(body),
     )
         .into_response()
+}
+
+/// §2.4's envelope: the one shape every failure under `/api/` takes.
+#[derive(serde::Serialize, utoipa::ToSchema)]
+pub(crate) struct ApiError {
+    error: ApiErrorDetail,
+}
+
+/// The envelope's payload.
+#[derive(serde::Serialize, utoipa::ToSchema)]
+pub(crate) struct ApiErrorDetail {
+    /// Stable machine token, from an open set: a client that does not
+    /// recognise it must fall back to the HTTP status class (§2.1).
+    code: &'static str,
+    /// Human-readable, and not for matching on.
+    message: String,
+    /// The side the failure came from.
+    source: &'static str,
+    /// The settings dot-path at fault (§2.4), when the failure names one.
+    ///
+    /// Optional, and omitted rather than sent empty: an unmatched route and a
+    /// failed authentication name no dot-path, and a member present with a
+    /// meaningless value is worse than an absent one.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    path: Option<String>,
+}
+
+impl ApiError {
+    /// An envelope for a failure apid raised itself.
+    fn apid(code: &'static str, message: String) -> Self {
+        Self::new(code, message, "apid")
+    }
+
+    /// An envelope for a failure mosd raised, carrying mosd's own message.
+    fn mosd(code: &'static str, message: String) -> Self {
+        Self::new(code, message, "mosd")
+    }
+
+    fn new(code: &'static str, message: String, source: &'static str) -> Self {
+        Self {
+            error: ApiErrorDetail {
+                code,
+                message,
+                source,
+                path: None,
+            },
+        }
+    }
+
+    /// The same envelope, naming the settings dot-path at fault.
+    fn at(mut self, path: &str) -> Self {
+        self.error.path = Some(path.to_string());
+        self
+    }
+}
+
+/// `GET /api/versions` (§2.1's discovery table).
+#[derive(serde::Serialize, utoipa::ToSchema)]
+pub(crate) struct ApiVersions {
+    /// Every major version served. A client tests **membership** in this set;
+    /// a client that reads only `current` concludes that a device it can talk
+    /// to is one it cannot.
+    versions: Vec<&'static str>,
+    /// The member to use with no preference. Always a member of `versions`.
+    current: &'static str,
+}
+
+/// `GET /api/v1/meta` (§2.1's discovery table).
+#[derive(serde::Serialize, utoipa::ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct ApiMeta {
+    /// The API major version this route belongs to.
+    api: &'static str,
+    /// mosd's settings schema version: the shape of the tree on disk, which
+    /// moves independently of the API version and must never be conflated
+    /// with it.
+    settings_schema_version: u32,
+    /// The daemon answering.
+    daemon: &'static str,
+}
+
+/// The served set, unauthenticated (§2.1).
+///
+/// It must be answerable before the caller holds a credential, which is why
+/// the gate hands it off above its own `GetSettings` call: a factory-fresh
+/// device has no `access.webAdmin` and redirects everything else to `/setup`,
+/// and a UI that survived the update it is incompatible with has to be able
+/// to say so. The response carries the served set and nothing else — no
+/// hostname, no device id, no build string — because anyone who can reach the
+/// listener can read it.
+#[utoipa::path(
+    get,
+    path = VERSIONS_PATH,
+    context_path = API,
+    tag = "discovery",
+    responses((status = 200, description = "The major API versions this device serves", body = ApiVersions)),
+)]
+pub(crate) async fn api_versions() -> Response {
+    api_response(
+        StatusCode::OK,
+        ApiVersions {
+            versions: SERVED_VERSIONS.to_vec(),
+            current: CURRENT_VERSION,
+        },
+    )
+}
+
+/// What the caller is talking to, in detail (§2.1).
+///
+/// `settingsSchemaVersion` is read from `mosd_settings` and never copied: the
+/// number a client uses to decide whether it understands a settings body has
+/// exactly one source.
+#[utoipa::path(
+    get,
+    path = V1_META_PATH,
+    context_path = API,
+    tag = "discovery",
+    responses(
+        (status = 200, description = "What this daemon is and which schema it speaks", body = ApiMeta),
+        (status = 401, description = "No session cookie, or one that does not verify", body = ApiError),
+    ),
+)]
+pub(crate) async fn api_v1_meta(_session: ApiSession) -> Response {
+    api_response(
+        StatusCode::OK,
+        ApiMeta {
+            api: CURRENT_VERSION,
+            settings_schema_version: mosd_settings::SCHEMA_VERSION,
+            daemon: "apid",
+        },
+    )
+}
+
+/// The body of a resource `GET`: the value at the dot-path, as mosd holds it.
+///
+/// Any JSON value, because a dot-path names a subtree, an array or a scalar
+/// and §2.2's passthrough imposes no shape of its own. The string
+/// `"<redacted>"` is a value a client can receive anywhere inside it: every
+/// field named `psk`, `passwordHash`, `password_hash` or `hash`, at any depth
+/// and inside arrays, carries that sentinel instead of its value, and so does
+/// the whole body when the dot-path names one of those fields directly. It is
+/// read-only — writing it back would destroy the credential — and phase 1
+/// serves no write route to write it with.
+#[derive(serde::Serialize, utoipa::ToSchema)]
+#[serde(transparent)]
+pub(crate) struct ResourceValue(Value);
+
+/// The settings tree at a dot-path (§2.2).
+///
+/// The dot-path IS the resource identifier: this answers exactly what
+/// `GetSettings("<dot-path>")` returns, redacted. There is no second model
+/// beside `mosd-settings`, so there is nothing for one to drift from.
+#[utoipa::path(
+    get,
+    path = V1_SETTINGS_DOC,
+    context_path = API,
+    tag = "resources",
+    params(("path" = String, Path, description = "The settings dot-path, verbatim: `hostname`, `access.ssh`, `wifi.ap`")),
+    responses(
+        (status = 200, description = "The value at the dot-path, redacted", body = ResourceValue),
+        (status = 401, description = "No session cookie, or one that does not verify", body = ApiError),
+        (status = 422, description = "mosd rejected the dot-path (`settings_rejected`), which is also the answer for a dot-path that does not exist", body = ApiError),
+        (status = 500, description = "mosd failed to answer (`settings_io`, `mosd_failed`)", body = ApiError),
+        (status = 503, description = "The call to mosd could not be made (`mosd_unreachable`); carries `Retry-After`", body = ApiError),
+    ),
+)]
+pub(crate) async fn api_v1_settings(
+    _session: ApiSession,
+    State(state): State<AppState>,
+    Path(path): Path<String>,
+) -> Response {
+    resource_response(state.api.get_settings(&path).await, &path)
+}
+
+/// The live-state tree at a dot-path (§2.2).
+///
+/// A separate root and not a corner of the settings one, because mosd holds
+/// two trees with different types, different mutability and different
+/// lifetimes. `GET` only: there is no `SetState` on the bus to expose.
+#[utoipa::path(
+    get,
+    path = V1_STATE_DOC,
+    context_path = API,
+    tag = "resources",
+    params(("path" = String, Path, description = "The live-state dot-path, verbatim: `hostname`, `network`, `power`")),
+    responses(
+        (status = 200, description = "The value at the dot-path, redacted", body = ResourceValue),
+        (status = 401, description = "No session cookie, or one that does not verify", body = ApiError),
+        (status = 422, description = "mosd rejected the dot-path (`settings_rejected`), which is also the answer for a dot-path that does not exist", body = ApiError),
+        (status = 500, description = "mosd failed to answer (`settings_io`, `mosd_failed`)", body = ApiError),
+        (status = 503, description = "The call to mosd could not be made (`mosd_unreachable`); carries `Retry-After`", body = ApiError),
+    ),
+)]
+pub(crate) async fn api_v1_state(
+    _session: ApiSession,
+    State(state): State<AppState>,
+    Path(path): Path<String>,
+) -> Response {
+    resource_response(state.api.get_state(&path).await, &path)
+}
+
+/// One answer shape for both roots: the value redacted, or §2.4's envelope
+/// classified from what mosd said.
+fn resource_response(value: anyhow::Result<Value>, path: &str) -> Response {
+    match value {
+        Ok(value) => api_response(StatusCode::OK, ResourceValue(redact::redact(value, path))),
+        Err(err) => bus_api_error(&err, path),
+    }
+}
+
+/// §2.4's table, applied to a failed mosd call.
+///
+/// The classification is translated and the message is not. mosd maps its
+/// `SettingsError` onto three fdo error names and zbus carries the name back,
+/// so the distinction exists all the way to here and only apid can lose it;
+/// the message is mosd's own words because no phrasing apid could pre-write
+/// would say which field was wrong.
+///
+/// The concrete `zbus::Error` is recovered by downcast: `bus_client.rs`
+/// converts with `err.into()`, and that conversion stores the error rather
+/// than flattening it, so the name is readable here.
+fn bus_api_error(err: &anyhow::Error, path: &str) -> Response {
+    tracing::warn!(error = %err, path, "mosd call failed");
+    let (status, error) = match err.downcast_ref::<zbus::Error>() {
+        Some(zbus::Error::MethodError(name, message, _)) => {
+            // An fdo error with no message is still a classification; the name
+            // is the most specific thing left to say.
+            let message = message.clone().unwrap_or_else(|| name.to_string());
+            match name.as_str() {
+                FDO_INVALID_ARGS => (
+                    StatusCode::UNPROCESSABLE_ENTITY,
+                    ApiError::mosd("settings_rejected", message),
+                ),
+                FDO_IO_ERROR => (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    ApiError::mosd("settings_io", message),
+                ),
+                FDO_FAILED => (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    ApiError::mosd("mosd_failed", message),
+                ),
+                _ => mosd_unreachable(err),
+            }
+        }
+        _ => mosd_unreachable(err),
+    };
+    let mut response = api_response(status, error.at(path));
+    // §2.4 gives `Retry-After` to exactly one class, and 503 is that class:
+    // apid is up and answering, and the proxy cache is dropped after a failed
+    // call so the next request reconnects.
+    if status == StatusCode::SERVICE_UNAVAILABLE {
+        response
+            .headers_mut()
+            .insert(RETRY_AFTER, HeaderValue::from_static(RETRY_AFTER_SECONDS));
+    }
+    response
+}
+
+/// §2.4's last row, which is exhaustive over everything the three above do not
+/// name: the call could not be made at all. `source` is apid because this is a
+/// statement about this server rather than about the request.
+fn mosd_unreachable(err: &anyhow::Error) -> (StatusCode, ApiError) {
+    (
+        StatusCode::SERVICE_UNAVAILABLE,
+        ApiError::apid("mosd_unreachable", format!("{err:#}")),
+    )
+}
+
+/// Proof that the request carried a session cookie the store verifies.
+///
+/// An extractor and not middleware, and not the gate: it runs for exactly the
+/// handlers that name it, so the reserved subtree's not-found handler and
+/// `/api/versions` are untouched by it and no path-prefix test decides who is
+/// guarded.
+///
+/// Its rejection is §2.4's envelope with a 401 and not the gate's redirect. A
+/// client that follows that redirect lands on `GET /login`, which answers 200
+/// with an HTML page, so a script reads the whole exchange as success (§3.1).
+pub(crate) struct ApiSession;
+
+impl FromRequestParts<AppState> for ApiSession {
+    type Rejection = Response;
+
+    async fn from_request_parts(
+        parts: &mut Parts,
+        state: &AppState,
+    ) -> Result<Self, Self::Rejection> {
+        if session::cookie_from_headers(&parts.headers)
+            .is_some_and(|value| state.sessions.verify(&value))
+        {
+            return Ok(Self);
+        }
+        Err(api_response(
+            StatusCode::UNAUTHORIZED,
+            ApiError::apid(
+                "not_authenticated",
+                "no session cookie, or one that does not verify".to_string(),
+            ),
+        ))
+    }
 }
 
 /// Redirect-only router served on the HTTP listener: 308 every request to
@@ -267,6 +662,8 @@ fn bus_error(err: &anyhow::Error) -> Response {
 /// Auth gate: routes every request into setup mode, login, or through.
 ///
 /// - `/healthz` always passes.
+/// - The declared `/api/` routes always pass: they answer for themselves, in
+///   §2.4's envelope rather than in HTML.
 /// - Setup mode (no admin password configured yet): only `/setup` passes,
 ///   everything else redirects there.
 /// - Normal mode: `/login` and `/setup` pass (the setup handlers answer 409
@@ -274,30 +671,30 @@ fn bus_error(err: &anyhow::Error) -> Response {
 ///   session cookie or redirects to `/login`.
 async fn gate(State(state): State<AppState>, request: Request, next: Next) -> Response {
     let path = request.uri().path();
-    if path == "/healthz" {
+    if path == "/healthz" || is_declared_api_route(path) {
         return next.run(request).await;
     }
 
-    // The session check comes BEFORE the bus call, and the ordering is the
+    // The session check comes before the bus call, and the ordering is the
     // point rather than a detail.
     //
     // It is sound because a live session already implies the device is out of
     // setup mode. A session is minted in exactly two places: `login_submit`,
     // which mints one only after `password_hash` returned `Some` and verified
     // against it, and `setup_submit`, which mints one only after the
-    // `access.webAdmin` write that CREATES the hash has succeeded. There is no
+    // `access.webAdmin` write that creates the hash has succeeded. There is no
     // route that removes a hash, so "session verifies" cannot coexist with
-    // "no admin password is configured". If an unset-password operation is
-    // ever added, it has to clear the session table in the same step, and this
-    // short-circuit is what it would be invalidating.
+    // "no admin password is configured". An unset-password operation, if one
+    // is ever added, has to clear the session table in the same step, or it
+    // invalidates this short-circuit.
     //
-    // It buys two things. The gate is layered onto every route, so an
-    // authenticated page load used to cost one system-bus round trip per
-    // request -- fine for one server-rendered pane, not fine once a custom UI
-    // bundle (§4) serves dozens of static assets per page, none of which need
-    // mosd at all. And it means a static asset still serves while mosd is
-    // down, which is the same reasoning §6.1 applies to a broken bundle: a
-    // failure in one part must not take the surface that reports it with it.
+    // It buys two things. The gate is layered onto every route, so without it
+    // an authenticated page load costs one system-bus round trip per request
+    // -- fine for one server-rendered pane, not fine once a custom UI bundle
+    // (§4) serves dozens of static assets per page, none of which need mosd at
+    // all. And it means a static asset still serves while mosd is down, which
+    // is the same reasoning §6.1 applies to a broken bundle: a failure in one
+    // part must not take the surface that reports it with it.
     if session::cookie_from_headers(request.headers())
         .is_some_and(|value| state.sessions.verify(&value))
     {
@@ -400,9 +797,7 @@ struct SavedQuery {
     saved: Option<String>,
 }
 
-// ---------------------------------------------------------------------------
 // Validation
-// ---------------------------------------------------------------------------
 
 const HOSTNAME_RULES: &str =
     "Hostname must be 1-63 letters, digits or hyphens and must not start or end with a hyphen.";
@@ -481,9 +876,7 @@ fn iface_settings_value(dhcp: bool, address: &str, gateway: &str, dns: &str) -> 
     serde_json::json!({ "dhcp": false, "static": static_ })
 }
 
-// ---------------------------------------------------------------------------
 // Setup wizard
-// ---------------------------------------------------------------------------
 
 #[derive(serde::Deserialize)]
 struct SetupForm {
@@ -668,9 +1061,7 @@ async fn setup_submit(
         .into_response()
 }
 
-// ---------------------------------------------------------------------------
 // Login / logout
-// ---------------------------------------------------------------------------
 
 #[derive(serde::Deserialize)]
 struct LoginForm {
@@ -682,8 +1073,9 @@ struct LoginForm {
 /// It names §6.3's prefix, because it is the first built-in page an operator
 /// with a broken custom UI reaches: the gate bounces every unauthenticated
 /// request here, whatever the bundle is doing. The nav on every authenticated
-/// pane covers the other half. See F2 in `docs/task/RFCT-075.md` for why the
-/// 502 page §6.3 actually cites is the wrong surface for this.
+/// pane covers the other half. The 502 page §6.3 cites is the wrong surface
+/// for this: it is reached only when a mosd call fails, which a broken bundle
+/// does not cause.
 async fn login_form() -> Html<String> {
     page(
         "Sign in",
@@ -787,9 +1179,7 @@ async fn logout(
         .into_response()
 }
 
-// ---------------------------------------------------------------------------
 // Status pane
-// ---------------------------------------------------------------------------
 
 /// Seconds from the first field of `/proc/uptime` contents.
 fn parse_uptime(contents: &str) -> Option<u64> {
@@ -821,7 +1211,7 @@ fn pretty(value: &Value) -> String {
 
 /// The status pane's body, shared by `/`'s built-in branch and §6.3's escape.
 ///
-/// It reads mosd and `/proc/uptime` and **nothing under `/srv/ui`**. That is
+/// It reads mosd and `/proc/uptime` and nothing under `/srv/ui`. That is
 /// the property §6.3 rests candidate (A) on — *"the built-in handlers do not
 /// read `/srv/ui` at all, so no bundle state — absent, corrupt, unreadable,
 /// wrong version — can affect them"* — and it is why §6.1's five classes do not
@@ -872,10 +1262,8 @@ pub(crate) async fn home(State(state): State<AppState>) -> Html<String> {
     pane("Status", status_body(&state).await)
 }
 
-// ---------------------------------------------------------------------------
 // §6.3's escape: the built-in UI at a reserved prefix, and the control that
-// deactivates a custom UI
-// ---------------------------------------------------------------------------
+// deactivates a custom UI.
 
 /// §6.3 candidate (A)'s prefix, without its trailing slash.
 ///
@@ -902,7 +1290,7 @@ const BUILTIN_DEACTIVATE: &str = "/builtin/deactivate";
 /// (B) together are what §6.3 chooses: (A) alone is *"a way in, not a way
 /// out"*, and (B) alone *"presupposes the access that may be broken"*. One
 /// documented action reaches this page whatever went wrong, and one click on it
-/// deactivates the bundle — so **the operator never has to diagnose anything**,
+/// deactivates the bundle, so the operator never has to diagnose anything,
 /// which is the test §6.3 opens with.
 async fn builtin_home(State(state): State<AppState>) -> Html<String> {
     let status = status_body(&state).await;
@@ -917,7 +1305,7 @@ async fn builtin_home(State(state): State<AppState>) -> Html<String> {
 
 /// Candidate (B), rendered unconditionally.
 ///
-/// The control is **not** shown only when a bundle looks active. Deciding that
+/// The control is not shown only when a bundle looks active. Deciding that
 /// would mean reading `/srv/ui` from the one handler whose value is that it
 /// never does, and an operator who found the button missing would be back to
 /// diagnosing why — which is exactly the failure §6.3's opening test names.
@@ -1035,9 +1423,7 @@ async fn builtin_not_found(OriginalUri(uri): OriginalUri) -> Response {
         .into_response()
 }
 
-// ---------------------------------------------------------------------------
 // Network pane
-// ---------------------------------------------------------------------------
 
 #[derive(serde::Deserialize)]
 struct NetworkForm {
@@ -1153,9 +1539,7 @@ async fn network_submit(State(state): State<AppState>, Form(form): Form<NetworkF
     Redirect::to("/network?saved=1").into_response()
 }
 
-// ---------------------------------------------------------------------------
 // Hostname pane
-// ---------------------------------------------------------------------------
 
 #[derive(serde::Deserialize)]
 struct HostnameForm {
@@ -1187,9 +1571,7 @@ async fn hostname_form(State(state): State<AppState>, Query(query): Query<SavedQ
     }
 }
 
-// ---------------------------------------------------------------------------
 // Power pane
-// ---------------------------------------------------------------------------
 
 /// A power action the pane can request of mosd.
 #[derive(Clone, Copy)]
@@ -1301,7 +1683,7 @@ fn power_submit(state: &AppState, action: PowerAction, confirm: &str, source: &s
         )
             .into_response();
     }
-    // Recorded BEFORE the request is dispatched, and the sink fsyncs each
+    // Recorded before the request is dispatched, and the sink fsyncs each
     // line: the two audited actions here are the ones immediately followed by
     // the machine going down, so a line written after the call could be the
     // line that never reaches the disk.
@@ -1341,9 +1723,7 @@ async fn power_poweroff(
     power_submit(&state, PowerAction::PowerOff, &form.confirm, &source)
 }
 
-// ---------------------------------------------------------------------------
 // Hostname submit
-// ---------------------------------------------------------------------------
 
 async fn hostname_submit(
     State(state): State<AppState>,
@@ -1367,9 +1747,7 @@ async fn hostname_submit(
     Redirect::to("/hostname?saved=1").into_response()
 }
 
-// ---------------------------------------------------------------------------
 // SSH pane
-// ---------------------------------------------------------------------------
 
 /// Settings dot-path of the stored authorized-key list.
 const SSH_KEYS_PATH: &str = "access.ssh.authorizedKeys";
@@ -1394,7 +1772,7 @@ const MIN_TRANSIENT_PASSWORD_BYTES: usize = 8;
 ///
 /// The 72 is not arbitrary, and it is deliberately tighter than mosd's own
 /// bound: the transient password is hashed with bcrypt, and bcrypt reads only
-/// the FIRST 72 BYTES of its input and silently ignores the rest. Accepting a
+/// the first 72 bytes of its input and silently ignores the rest. Accepting a
 /// 100-character password would therefore mean the first 72 characters of it
 /// also unlock the device — the operator would be running on a shorter secret
 /// than the one they typed and believe in. Refusing the input is the only way
@@ -1405,7 +1783,7 @@ const MAX_TRANSIENT_PASSWORD_BYTES: usize = 72;
 /// OpenSSH fingerprint of a canonical `<type> <blob>` key line.
 ///
 /// `SHA256:` followed by the unpadded base64 of the SHA-256 digest of the
-/// **decoded** blob — the string `ssh-keygen -lf` prints, and the same value
+/// decoded blob — the string `ssh-keygen -lf` prints, and the same value
 /// mosd's sshd reconciler publishes. It is recomputed here rather than read
 /// from the published state because the pane has to map the fingerprint an
 /// operator clicks back onto the stored entry a removal rewrites, and the
@@ -1433,8 +1811,8 @@ fn key_error_message(err: &SettingsError) -> String {
 
 /// Read the stored key list out of the `access.ssh` subtree.
 ///
-/// An absent list is an empty list, but a list that is *present and
-/// unreadable* is an error rather than an empty list: treating it as empty
+/// An absent list is an empty list, but a list that is present and unreadable
+/// is an error rather than an empty list: treating it as empty
 /// would let an add or a remove overwrite keys the operator cannot see.
 fn parse_key_list(ssh: &Value) -> anyhow::Result<Vec<AuthorizedKey>> {
     match ssh.get("authorizedKeys") {
@@ -1719,10 +2097,10 @@ async fn load_container_view(app: &AppState) -> anyhow::Result<ContainerView> {
     })
 }
 
-/// The consequence of switching this on, in the terms PLAN-012 D5 requires.
+/// The consequence of switching this on, stated specifically.
 ///
-/// D5: *"the apid pane must say so in those terms -- not as a generic warning,
-/// but as the specific consequence"*. mos does not build rootless, so there is
+/// The pane must say so *"not as a generic warning, but as the specific
+/// consequence"*. mos does not build rootless, so there is
 /// no user-namespace boundary between a container and the device: a container
 /// runs with root's capabilities. Saying "containers may be a security risk"
 /// would be true, useless, and would let an operator agree with it without
@@ -1822,9 +2200,7 @@ async fn containers_enable(
     Redirect::to("/containers?saved=1").into_response()
 }
 
-// ---------------------------------------------------------------------------
-// RFCT-104: the MQTT pane
-// ---------------------------------------------------------------------------
+// The MQTT pane
 
 /// The two units mosd's mqtt reconciler drives, named here because the pane
 /// selects their published state out of the `units` array by name.
@@ -1839,7 +2215,7 @@ const MQTT_BRIDGE_UNIT: &str = "mos-mqttd.service";
 /// Everything the MQTT pane renders, gathered before any markup is built.
 ///
 /// The live state this reads is published by mosd's mqtt reconciler
-/// (`mosd/mosd/src/reconciler/mqtt.rs`) and is **nested**, not flat:
+/// (`mosd/mosd/src/reconciler/mqtt.rs`) and is nested, not flat:
 /// `listen.address`, `listen.port`, `auth.enabled`, and a `units` array of one
 /// object per unit the reconciler drives. The pane adapts to that shape rather
 /// than the reconciler flattening itself for the pane, because:
@@ -1849,19 +2225,13 @@ const MQTT_BRIDGE_UNIT: &str = "mos-mqttd.service";
 ///   predict without opening either file;
 /// * it is published as bus items, where `/mqtt/listen/address` is the
 ///   idiomatic path shape;
-/// * `units` has to be an array: the reconciler drives two units and there is
-///   no flat encoding of that. The pane reads a nested array either way, and
-///   flat scalars sitting beside it would be the worst of both.
-///
-/// That last point is not a preference. A flat `activeState` cannot say whose
-/// state it is, and the question "the broker's or the bridge's?" has no answer
-/// in the key -- only in whatever the reconciler happened to mean, which the
-/// pane cannot check. Reporting both halves flat would take a second key, then
-/// a third and a fourth for their unit-file states, invented anew each time
-/// the reconciler grows a unit. Every entry of `units` carries its own `unit`,
-/// `activeState` and `unitFileState`, so the broker is the entry named
-/// `mos-mqtt-broker.service` and the bridge is the one named
-/// `mos-mqttd.service`, and neither needs a key of its own.
+/// * `units` has to be an array: the reconciler drives two units, and a flat
+///   `activeState` cannot say whose state it is. Every entry carries its own
+///   `unit`, `activeState` and `unitFileState`, so the broker is the entry
+///   named `mos-mqtt-broker.service` and the bridge the one named
+///   `mos-mqttd.service`, and neither needs a key of its own; reporting both
+///   halves flat would take a new pair of keys each time the reconciler grows
+///   a unit.
 ///
 /// Every field is optional here: a key the reconciler has not published
 /// renders as "unknown" and never as a default, because a listen address on
@@ -1871,9 +2241,8 @@ const MQTT_BRIDGE_UNIT: &str = "mos-mqttd.service";
 /// holds the two ends of this together. What does is a pair of tests: the
 /// reconciler asserts its exact published key set and names this file as the
 /// consumer, and this crate's fixture is a verbatim copy of the reconciler's
-/// own expectation. The two ends disagreed once -- flat here, nested there --
-/// and stayed green for exactly as long as each side only tested itself
-/// against a shape it had invented.
+/// own expectation. Without that pair each side tests itself against a shape
+/// it invented, and both stay green while disagreeing.
 struct MqttView {
     /// `mqtt.enabled` -- what the operator asked for.
     enabled: bool,
@@ -1934,7 +2303,7 @@ impl MqttView {
     /// This is how a listen address the broker cannot use reaches the
     /// operator. Nothing rejects such a value -- not the reconciler, not this
     /// pane -- because rejecting it would make the master switch depend on
-    /// `listen` being valid, which is the conflation RFCT-104 rejected. The
+    /// `listen` being valid, and the two are separate settings. The
     /// broker takes the value, fails to parse it and exits, and the only
     /// evidence is the unit state. A pane that showed "enabled" and stopped
     /// there would be reporting the operator's request back to them as though
@@ -1958,8 +2327,8 @@ impl MqttView {
     /// broker fails to start on one it cannot parse, and guessing would put a
     /// security claim on the page that nothing measured.
     ///
-    /// This drives a warning and nothing else. Refusing to save on it is the
-    /// coupling RFCT-104 rejected; see [`MQTT_SEPARATE_CONFIG_NOTICE`].
+    /// This drives a warning and nothing else; refusing to save on it would
+    /// couple the switch to the listener. See [`MQTT_SEPARATE_CONFIG_NOTICE`].
     fn off_host_unauthenticated(&self) -> bool {
         let Some(address) = self
             .text(&["listen", "address"])
@@ -2004,10 +2373,10 @@ const MQTT_UPDATE_NOTICE: &str = "Updating to this image stops the MQTT bridge u
 
 /// Why nothing on this page refuses to save.
 ///
-/// Coupling the listener to the switch -- refuse to enable MQTT unless the
-/// bind is loopback or authentication is on -- was proposed once and rejected.
-/// The pane is where an operator would otherwise assume the switch checks
-/// them, so the pane is where it says that it does not.
+/// The switch does not couple to the listener: it never refuses to enable
+/// MQTT because the bind is not loopback or authentication is off. The pane is
+/// where an operator would otherwise assume the switch checks them, so the
+/// pane is where it says that it does not.
 const MQTT_SEPARATE_CONFIG_NOTICE: &str = "The listen address, the port and authentication are configured separately from this switch, and this switch does not validate them. No combination of them makes it refuse to save, and none of them makes the broker refuse to start: a broker open to a trusted segment is a configuration an operator is allowed to choose, so mos warns about it rather than preventing it.";
 
 /// The exposure, stated as what it lets a stranger do.
@@ -2015,7 +2384,7 @@ const MQTT_OPEN_LISTENER_WARNING: &str = "This broker accepts unauthenticated co
 
 /// A failed broker, and where the reason is.
 ///
-/// The pane cannot say WHY it failed -- it has a unit state and not the
+/// The pane cannot say why it failed -- it has a unit state and not the
 /// journal -- so it says where the reason is instead of guessing at one. The
 /// commonest cause is a listen address that is not an IP address, because the
 /// broker binds an interface and does not resolve names, but naming that as
@@ -2174,7 +2543,7 @@ async fn ssh_password(
     if let Err(err) = app.api.set_transient_root_password(&form.password).await {
         return bus_error(&err);
     }
-    // The event carries WHO opened a password channel and from where — and
+    // The event carries who opened a password channel and from where — and
     // deliberately nothing about the password itself.
     app.audit.record("transient-password", "set", &source);
     Redirect::to("/ssh?saved=1").into_response()

@@ -1,50 +1,40 @@
 //! `docs/design/api.md` §6.1's five failure classes, enumerated end to end,
 //! with coverage asserted (§8.2 phase 4 acceptance 1).
 //!
-//! §6.3 opens with the test the whole of §6 exists to pass:
+//! §8.2 phase 4: for each of §6.1's five classes, navigating to the reserved
+//! prefix reaches a working UI and one control there deactivates the bundle.
+//! *"The operator diagnoses nothing."*
 //!
-//! > **There is one documented action whose outcome does not depend on why the
-//! > custom UI failed.** If the operator has to know the cause in order to
-//! > choose the action, the mechanism has already failed.
-//!
-//! §8.2 phase 4 makes it concrete: for **each** of §6.1's five classes,
-//! navigating to the reserved prefix reaches a working UI and one control
-//! there deactivates the bundle. *"The operator diagnoses nothing."*
-//!
-//! **What this module adds, and what it deliberately does not.**
 //! `super::the_escape_answers_identically_whatever_the_bundle_store_holds`
-//! states §6.3 as an **invariance** over bundle-store states, which is
-//! stronger than any enumeration: an invariance holds for states nobody
-//! enumerated, including ones a future change invents. Nothing here restates
-//! it. What is missing from an invariance is that each of §6.1's five
-//! *specific* failure modes can be **constructed at all**, that the escape
-//! works from each, and — the part that makes a count mean anything — that the
+//! already states §6.3 as an invariance over bundle-store states, which is
+//! stronger than any enumeration, and nothing here restates it. What an
+//! invariance does not say is that each of §6.1's five specific failure modes
+//! can be constructed at all, that the escape works from each, and that the
 //! suite knows it exercised all five. That is this module.
 //!
-//! **Two rules govern the shape, and they are the same rule seen twice.**
+//! Two rules govern the shape:
 //!
-//! 1. *"5 passed"* and *"3 passed, 2 never ran"* are the same number. A suite
-//!    cut short does not fail loudly; it tests fewer classes and reports green
-//!    on the ones it reached, so a bare pass count is invariant across the
-//!    defect it is supposed to detect. So the facts are declared **by
-//!    identity**, the set that actually ran is observed, the two are diffed,
-//!    and a failure names what is missing and what is unexpected.
+//! 1. *"5 passed"* and *"3 passed, 2 never ran"* are the same number, so a
+//!    bare pass count is invariant across the defect it is supposed to detect.
+//!    The facts are declared by identity, the set that actually ran is
+//!    observed, the two are diffed, and a failure names what is missing and
+//!    what is unexpected.
 //!    `crate::startup::tests::no_hostile_store_can_stop_start_up` is the model.
-//! 2. Several classes produce the same observable — the built-in UI. If every
-//!    class asserted only *"the built-in UI answered"*, a suite in which class
-//!    3's construction silently failed and fell through to class 1's state
-//!    would still pass. So each fact asserts the **distinct state the
-//!    mechanism reports for that class** — the digest mismatch, the empty
-//!    intersection with both sets named, the absent index, the file that will
-//!    not open, the named "no custom bundle is active" answer — and the
-//!    evidence strings are asserted pairwise distinct.
+//! 2. Several classes produce the same observable — the built-in UI — so a
+//!    suite asserting only *"the built-in UI answered"* would pass with class
+//!    3's construction silently failing and falling through to class 1's
+//!    state. Each fact asserts the distinct state the mechanism reports for
+//!    that class — the digest mismatch, the empty intersection with both sets
+//!    named, the absent index, the file that will not open, the named "no
+//!    custom bundle is active" answer — and the evidence strings are asserted
+//!    pairwise distinct.
 //!    `crate::assets::path::tests::each_guard_is_exercised_by_exactly_one_hostile_feature`
 //!    is the model.
 //!
-//! Which layer each class is detected at is §6.1's own table and is not
-//! re-decided here: classes 1, 2 and 4 are the asset router's, per request;
-//! classes 3 and 5 are start-up's, and are driven through
-//! [`crate::startup::discover`] — the entry point `main` calls.
+//! Which layer each class is detected at is §6.1's own table: classes 1, 2 and
+//! 4 are the asset router's, per request; classes 3 and 5 are start-up's, and
+//! are driven through [`crate::startup::discover`], the entry point `main`
+//! calls.
 
 use std::collections::BTreeSet;
 use std::fs;
@@ -67,9 +57,7 @@ const CUSTOM_INDEX: &str = "<!doctype html><title>custom</title>";
 const ASSET: (&str, &str) = ("assets/app.a1b2c3.js", "//broken-asset");
 const SIBLING: (&str, &str) = ("assets/other.d4e5f6.js", "//sibling-asset");
 
-// ---------------------------------------------------------------------------
 // Fixtures
-// ---------------------------------------------------------------------------
 
 /// One demonstrated fact, carried by the name the coverage diff reports.
 struct Fact {
@@ -106,29 +94,27 @@ fn install_declaring(files: &[(&str, &str)], served: &[&str]) -> TempDir {
 /// Make `path` an entry the asset router's `open` will refuse, and return the
 /// name of the construction that actually took effect.
 ///
-/// §6.1 class 4 names `EACCES` and `EIO`. `EACCES` is a **permission** answer,
-/// and this suite has to exercise class 4 whether or not the test runner can
-/// override permissions: a process holding `CAP_DAC_OVERRIDE` — root, which is
-/// how `mosd/hack/check.sh` is commonly run — reads a `0o000` file straight
-/// through, so a mode-only fixture would quietly test nothing there. That is
-/// rule 1 of this module's header one level down: a fixture that silently did
-/// not fire is indistinguishable from one that did.
+/// §6.1 class 4 names `EACCES` and `EIO`, and this suite has to exercise it
+/// whether or not the test runner can override permissions: a process holding
+/// `CAP_DAC_OVERRIDE` — root, which is how `mosd/hack/check.sh` is commonly
+/// run — reads a `0o000` file straight through, so a mode-only fixture would
+/// quietly test nothing there. A fixture that silently did not fire is
+/// indistinguishable from one that did.
 ///
-/// So the mode is set, the construction is **verified with the same call the
-/// mechanism makes**, and if it did not take effect the entry is replaced by a
+/// So the mode is set, the construction is verified with the same call the
+/// mechanism makes, and if it did not take effect the entry is replaced by a
 /// UNIX socket, which no uid can open for reading (`ENXIO`). The name is
 /// returned and travels into the fact's evidence, so the record says which one
 /// ran rather than implying `EACCES` either way.
 ///
-/// The socket construction is honest about one narrowing, stated because it
-/// changes which arm of `assets::serve::respond` answers. For the **index**
-/// the arm is the same either way: `serve_index` resolves the path and
-/// `serve_file`'s `fs::read` fails. For an **inner asset** `serve.rs` gates on
-/// `file.is_file()`, which a socket is not, so under a permission-overriding
-/// runner the 404 comes from the not-a-regular-file miss rather than from a
-/// failed `open`. The **observable** §6.1 specifies — 404 for that asset and
-/// nothing else changed — is identical, and it is the observable this suite
-/// asserts.
+/// The socket construction narrows one thing, stated because it changes which
+/// arm of `assets::serve::respond` answers. For the index the arm is the same
+/// either way: `serve_index` resolves the path and `serve_file`'s `fs::read`
+/// fails. For an inner asset `serve.rs` gates on `file.is_file()`, which a
+/// socket is not, so under a permission-overriding runner the 404 comes from
+/// the not-a-regular-file miss rather than from a failed `open`. The
+/// observable §6.1 specifies — 404 for that asset and nothing else changed —
+/// is identical, and it is the observable this suite asserts.
 fn will_not_open(path: &Path) -> &'static str {
     fs::set_permissions(path, fs::Permissions::from_mode(0o000)).expect("chmod 000");
     if fs::read(path).is_err() {
@@ -173,9 +159,7 @@ async fn page(router: &Router, path: &str, cookie: &str, fact: &str) -> String {
     body_string(response).await
 }
 
-// ---------------------------------------------------------------------------
 // The one documented action, performed identically for every class
-// ---------------------------------------------------------------------------
 
 /// §8.2 phase 4 acceptance 1, carried out: *navigate to
 /// `https://<device>/builtin/`, and use the one control there.*
@@ -234,9 +218,7 @@ async fn one_documented_action(router: &Router, store: &Store, cookie: &str, fac
     );
 }
 
-// ---------------------------------------------------------------------------
 // §6.1 class 1 — no bundle installed
-// ---------------------------------------------------------------------------
 
 const FACT_1: &str = "class 1: no bundle installed, `current` absent";
 
@@ -279,9 +261,7 @@ async fn class_1_no_bundle_installed() -> Fact {
     }
 }
 
-// ---------------------------------------------------------------------------
 // §6.1 class 2 — no `index.html`, or an index that is a directory
-// ---------------------------------------------------------------------------
 
 const FACT_2_ABSENT: &str = "class 2: a bundle whose `index.html` is absent";
 const FACT_2_DIRECTORY: &str = "class 2: a bundle whose `index.html` is a directory";
@@ -357,9 +337,7 @@ async fn class_2(fact: &'static str, break_index: fn(&Path)) -> Fact {
     }
 }
 
-// ---------------------------------------------------------------------------
 // §6.1 class 3 — a malformed or half-written bundle
-// ---------------------------------------------------------------------------
 
 const FACT_3: &str = "class 3: a malformed or half-written bundle, digest mismatch";
 
@@ -412,9 +390,7 @@ async fn class_3_digest_mismatch() -> Fact {
     }
 }
 
-// ---------------------------------------------------------------------------
 // §6.1 class 4 — files that will not open, in both directions
-// ---------------------------------------------------------------------------
 
 const FACT_4_INDEX: &str = "class 4: an unreadable `index.html` falls back to the built-in UI";
 const FACT_4_ASSET: &str = "class 4: an unreadable inner asset is 404 and nothing else changes";
@@ -536,9 +512,7 @@ async fn class_4_unreadable_inner_asset() -> Fact {
     }
 }
 
-// ---------------------------------------------------------------------------
 // §6.1 class 5 — renders perfectly, cannot talk to any API version served
-// ---------------------------------------------------------------------------
 
 const FACT_5: &str = "class 5: the declared range and the served set have no member in common";
 
@@ -634,9 +608,7 @@ async fn class_5_no_common_api_version() -> Fact {
     }
 }
 
-// ---------------------------------------------------------------------------
 // The suite, and the coverage assertion that makes its count mean anything
-// ---------------------------------------------------------------------------
 
 /// Every fact this suite must demonstrate, declared by identity.
 ///
@@ -719,10 +691,10 @@ async fn every_one_of_6_1s_five_classes_reaches_the_escape_and_is_deactivated_fr
 /// will trust it."*
 ///
 /// A bundle declaring `["v0", "v1"]` intersects the served set in `v1` and
-/// **stays active** through the real entry point. That rules out a check
-/// written as set equality, or as "declared must be a subset of served".
+/// stays active through the real entry point. That rules out a check written
+/// as set equality, or as "declared must be a subset of served".
 ///
-/// **What this layer cannot rule out, stated rather than faked.** §2.1's
+/// One case this layer cannot rule out. §2.1's
 /// dual-major case — a bundle matching only a served member that is *not*
 /// `current` — needs a served set with more than one member, and this binary's
 /// is `["v1"]` (`startup::SERVED_API_VERSIONS`). `startup::evaluate` takes the

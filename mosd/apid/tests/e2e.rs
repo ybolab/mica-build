@@ -253,35 +253,31 @@ async fn web_flow_end_to_end() -> anyhow::Result<()> {
     assert_eq!(response.status(), StatusCode::OK);
     assert_eq!(response.text().await?, "ok");
 
-    // The login curve, RFCT-081 §5, over the real listener. A wrong password
-    // is answered 401 and costs a backoff window (`access.md` §3.3's
-    // `backoffBase`, one second, doubling per consecutive failure); every
-    // attempt inside that window is refused 429 without being checked -- the
-    // CORRECT password included, which is the point of the rule. The guard is
-    // one global counter rather than one per client, so a second connection
-    // does not step around it either. `apid::tests::
-    // the_first_failure_arms_the_backoff_window` pins the same curve as a
-    // unit test: if that 429 ever turns back into a 303 here, the guard has
-    // regressed, so do not "fix" this sequence by dropping the wait.
-    // THE RUN IS DRIVEN UP FIRST, so the window under test is eight seconds
-    // rather than `backoffBase`'s one.
+    // The login curve over the real listener. A wrong password is answered
+    // 401 and costs a backoff window (`access.md` §3.3's `backoffBase`, one
+    // second, doubling per consecutive failure); every attempt inside that
+    // window is refused 429 without being checked -- the correct password
+    // included, which is the point of the rule. The guard is one global
+    // counter rather than one per client, so a second connection does not step
+    // around it either. `apid::tests::the_first_failure_arms_the_backoff_window`
+    // pins the same curve as a unit test; a 429 here turning back into a 303
+    // means the guard has regressed, so do not "fix" this sequence by dropping
+    // the wait.
     //
-    // The assertion below needs the window still to be armed when the NEXT
-    // request arrives, and between the two there is a full HTTPS round trip
-    // with an argon2 verification inside it — argon2 is expensive on purpose.
-    // At the base step that is a one-second budget for work whose cost is not
-    // bounded by anything this test controls, and under parallel-suite load it
-    // is not enough: observed 1.49 s between the arming request and the next
-    // one, so the window had lapsed and the expected 429 arrived as a 303.
+    // The run is driven up first, so the window under test is eight seconds
+    // rather than `backoffBase`'s one. The assertion below needs the window
+    // still armed when the next request arrives, and between the two there is
+    // a full HTTPS round trip with an argon2 verification inside it — argon2
+    // is expensive on purpose. At the base step that is a one-second budget
+    // for work whose cost nothing in this test bounds, and under
+    // parallel-suite load a round trip of 1.5 s lapses the window, so the
+    // expected 429 arrives as a 303. Four consecutive failures arm eight
+    // seconds, five times the worst round trip seen. Do not "fix" this by
+    // dropping the loop and going back to one failure; the sequence below is
+    // what makes the 429 assertion deterministic rather than a race against
+    // argon2.
     //
-    // The property is unchanged — an attempt inside an armed window is refused
-    // unchecked — and it does not depend on WHICH step of the curve is armed.
-    // Four consecutive failures arm eight seconds, which is five times the
-    // worst round trip seen. Do not "fix" this by dropping the loop and going
-    // back to one failure; the sequence below is what makes the 429 assertion
-    // deterministic rather than a race against argon2.
-    //
-    // A refused attempt is turned away BEFORE it is charged, so a 429 does not
+    // A refused attempt is turned away before it is charged, so a 429 does not
     // advance the run — only an admitted-and-failed attempt (401) does. That
     // is why this polls for 401 rather than sleeping: it is the same reasoning
     // as the ride-it-out loop further down, and it means the loop measures the
