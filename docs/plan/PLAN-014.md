@@ -306,10 +306,11 @@ All seven milestone records (RFCT-107..RFCT-113) read `completed`. What follows
 is the part of the campaign that is **not** recoverable from the diff: the one
 clause that closed the gap the campaign opened on, the two it did **not**
 discharge and what reopens them, the ledger of how every clause outcome was
-reached and by whom, what was never verified, and what was deleted and against
-which measurement. It is deliberately not a summary of what was built — the
-milestone records and the `HARNESS.md` / `README.md` files under `os/build/`,
-`os/verify/` and `os/rootfs/stages/` carry that.
+reached and by whom, what was never verified, what was deleted and against which
+measurement, and one finding left open on purpose. It is deliberately not a
+summary of what was built — the milestone records and the `HARNESS.md` /
+`README.md` files under `os/build/`, `os/verify/` and `os/rootfs/stages/` carry
+that.
 
 ### The gap that closed: RFCT-113 clause 1, on its LITERAL reading
 
@@ -584,6 +585,66 @@ refuse**. `os/verify/HARNESS.md` records every defect the deletion froze, marked
 SHIPS or GONE — including two that were expected to leave with the file and did
 not, because their reproductions live in the port.
 
+### An open finding this campaign leaves in `docs/verify-index.sh`
+
+**Left open deliberately, on the user's instruction, and written down instead.**
+It is docs tooling rather than `os/`, and adding a check plus its negative tests
+at a campaign close is how a scope grows a tail. What follows is what is
+unchecked, why the suite stays green anyway, and what a fix would have to assert
+— including the trap a naive fix falls into. **A future task should start here,
+not from the assumption that `make docs-verify` covers the indexes.**
+
+**1. `docs/plan/` is not a section of the check at all.** `docs/verify-index.sh`
+declares three sections in its own header — `docs/design/*.md` and
+`docs/research/*.md` against `docs/README.md`, and `docs/task/RFCT-*.md` against
+`docs/task/index.md` — and `docs/plan/` is none of them. It is not in the script
+and not in `docs/verify-index-test.sh` either; `grep -in plan` over both returns
+nothing. So for plans, **all three properties the script establishes elsewhere
+are simply absent**: a new `PLAN-NNN.md` that nobody indexes passes, an index row
+pointing at a plan that no longer exists passes, and a duplicated plan row — the
+two-row append conflict that `docs-verify-test` exists to make reachable for
+tasks — passes. `docs/README.md` does carry a `plan/` directory bullet, but
+`check_readme_dir` is only ever called for `design` and `research`, so that
+bullet is never read.
+
+**2. No index in this repository has its marker compared to the record's own
+`status` field.** The plan index's markers (`[ ]` `[-]` `[x]` `[~]`) and each
+plan's `- **status**:` line are two statements of the same fact, kept in step by
+hand and by nothing else. **This plan was the proof.** For the interval between
+the commit that set `status: completed` and the commit that set the marker,
+`docs/plan/index.md` said PLAN-014 was still being implemented while PLAN-014
+said it was finished — and `make docs-verify` reported `375/375 PASS`, `rc=0`,
+across both commits. The disagreement was caught by a person reading the two
+files, which is exactly the thing this campaign spent seven milestones replacing
+with measurements.
+
+**3. What a fix would have to assert — and the trap in it.** The three properties
+plan/ is missing, in the shape the other sections already use: forward (every
+`docs/plan/PLAN-*.md` has a row), reverse (every row resolves to a file), and
+once-each (no name carries two rows). Then the marker/status agreement, for the
+task index as well as the plan index.
+
+> **The trap, measured rather than predicted.** A copy of the task section's
+> logic **fails on a clean tree**. `docs/plan/index.md`'s own *Format* example is
+> `- [ ] [**PLAN-001 Short plan title**](PLAN-001.md)` — it illustrates the row
+> shape using a **real filename**, so `PLAN-001.md` matches twice and the
+> once-each assertion reports a duplicate that does not exist. Fifteen matches,
+> fourteen plans. The task section dodges this only by accident of wording: its
+> example says `PREFIX-001.md`, which matches no file and, for the `RFCT-`
+> pattern the script greps, no row either. **Any fix has to exclude the Format
+> example — or change it — and its negative test has to prove the exclusion did
+> not also blind the check to a real duplicate**, which is the same hole
+> `docs-verify-test` was written for.
+
+> **And marker/status is not a lookup table.** The statuses in use across the
+> fourteen plans are not a closed set: `completed`, `implementing`, `in
+> progress`, `draft`, `proposal`, `rejected (superseded by PLAN-006)`, and
+> `partially implemented — executed on the systemd base as PLAN-010 M4`. Whether
+> `in progress` and `implementing` are one state, whether `draft` and `proposal`
+> are, and what a trailing parenthetical does to a comparison, are decisions
+> someone has to take before a check can be written. Taking them inside a
+> closing commit is what this note exists to avoid.
+
 ### The floor at close
 
 Re-run in full at this commit — after merging M7c's `d11a9f9`, which landed a
@@ -639,3 +700,19 @@ above, which this commit does not change.
   were closed over. It is a **fourth** kind of clause outcome — a gate deciding
   which sense of its own clause applies — and is not counted in the ledger's six
   amendments, one satisfaction, two dispositions.
+- 2026-08-26 11:35: **`docs/plan/index.md:47` set `[-]` → `[x]`**, on the user's
+  instruction — one character, that line only, per the index's own rule that only
+  the checkbox marker changes. The bullet above, which says the marker is still
+  `[-]`, is **left standing rather than corrected**: it was true when written, and
+  this campaign's own amendment 2 (RFCT-107, the live-reference / historical-citation
+  distinction) is the reason a dated statement does not get edited into agreement
+  with a later tree.
+- 2026-08-26 11:35: **The `docs-verify` gap recorded and NOT closed**, on the
+  user's instruction — see "An open finding this campaign leaves in
+  `docs/verify-index.sh`" above. It grew on inspection: the marker/`status`
+  disagreement was the half that was known, but `docs/plan/` turns out not to be
+  a section of the check at all, so plans have none of the forward, reverse or
+  once-each properties tasks have. The write-up carries the measurement that a
+  naive fix **fails on a clean tree**, because the plan index's own Format example
+  uses a real filename. Closing it here would have been a scope tail on a closing
+  commit; it is a task of its own.
