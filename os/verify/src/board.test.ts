@@ -345,3 +345,96 @@ describe('the path arithmetic that found these files', () => {
     expect(readFileSync(boardEnvPath('x64'), 'utf8')).toContain('LAYOUT_BOARD=x64')
   })
 })
+
+describe('a number too large to read exactly is a FAULT, not a rounded value', () => {
+  // board-env.ts:431-434 evaluates `$(( ))` in BigInt and says why: "a size that
+  // is silently one byte out is the class of defect this whole package exists
+  // to make visible". `int()` did not hold up its end -- it handed back
+  // `Number(t)` regardless, so a value past 2^53 came back rounded with
+  // `faults` EMPTY. Inexact, and silent about it, in the one place whose job is
+  // to be neither.
+
+  /**
+   * Retype STATE_SIZE_MIB, and REFUSE an edit that changed nothing.
+   *
+   * Written after a first draft of this file mutated a key x64 does not declare
+   * (`ROOTFS_A_SIZE_SECTORS`): the replace matched no text, the board modelled
+   * cleanly, and four tests failed for a reason that had nothing to do with
+   * what they were testing. A mutation that does not reach the thing under test
+   * is a test reporting on a run that never happened.
+   */
+  function withSize<T>(value: string, fn: (board: ReturnType<typeof loadBoard>) => T): T {
+    return withMutatedBoard('x64', (t) => {
+      const out = t.replace(/^STATE_SIZE_MIB=.*$/m, `STATE_SIZE_MIB=${value}`)
+      if (out === t) throw new Error('the STATE_SIZE_MIB mutation matched nothing in x64/board.env')
+      return out
+    }, p => fn(loadBoard(p)))
+  }
+
+  test('2^53 + 1 is refused, and the fault says what it WOULD have come back as', () => {
+    withSize('9007199254740993', (board) => {
+      // Not rounded to ...992 and passed off as the declared value.
+      expect(board.partition('STATE')!.sizeMib).toBeUndefined()
+      expect(board.faults.map(f => f.key)).toEqual(['STATE_SIZE_MIB'])
+      expect(board.faults[0]!.value).toBe('9007199254740993')
+      expect(board.faults[0]!.reason).toContain('too large to read exactly as a double')
+      // The rounded value is NAMED, because "too large" without it leaves a
+      // reader unable to see how far off the silent answer would have been.
+      expect(board.faults[0]!.reason).toContain('9007199254740992')
+    })
+  })
+
+  test('the boundary is exact: 2^53 - 1 models, 2^53 does not', () => {
+    withSize('9007199254740991', (board) => {
+      expect(board.partition('STATE')!.sizeMib).toBe(9007199254740991)
+      expect(board.faults).toEqual([])
+    })
+    withSize('9007199254740992', (board) => {
+      // Refused although it round-trips. Its NEIGHBOURS do not, and a board one
+      // increment away from silent inexactness is not one to be quiet about.
+      expect(board.partition('STATE')!.sizeMib).toBeUndefined()
+      expect(board.faults.length).toBe(1)
+    })
+  })
+
+  test('the NEGATIVE side of the range is refused too', () => {
+    withSize('-9007199254740993', (board) => {
+      expect(board.partition('STATE')!.sizeMib).toBeUndefined()
+      expect(board.faults[0]!.reason).toContain('-9007199254740992')
+    })
+  })
+
+  test('the fault is DISTINGUISHABLE from "that is not a number at all"', () => {
+    // Two different mistakes with two different repairs: one is a typo in the
+    // value, the other is a value the reader cannot carry. A shared message
+    // would send a reader hunting for a typo in a digit string that has none.
+    withSize('9007199254740993', (board) => {
+      expect(board.faults[0]!.reason).not.toContain('is read as a number here, and it is not one')
+    })
+    withSize('sixty-four', (board) => {
+      expect(board.faults[0]!.reason).toContain('is read as a number here, and it is not one')
+      expect(board.faults[0]!.reason).not.toContain('too large to read exactly')
+    })
+  })
+
+  test('the model reads to the END -- one unusable value does not stop the other eight', () => {
+    withSize('9007199254740993', (board) => {
+      expect(board.partitions.length).toBe(9)
+      expect(board.partition('DATA')!.sizeMib).toBe(64)
+    })
+  })
+
+  test('and the shipped boards carry no such value, so this changes nothing for them', () => {
+    // The defect was silence, not a live wrong number: real sizes are ~10^2 and
+    // real sector counts ~10^6, well inside the range. Asserted so a future
+    // board.env that DID cross the line is caught here first.
+    for (const b of [cx3576, x64]) {
+      expect(b.faults).toEqual([])
+      for (const part of b.partitions) {
+        for (const v of [part.sizeSectors, part.startSector, part.offsetBytes, part.sizeMib]) {
+          if (v !== undefined) expect(Number.isSafeInteger(v)).toBe(true)
+        }
+      }
+    }
+  })
+})

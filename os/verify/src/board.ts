@@ -117,6 +117,27 @@ export function modelBoard(env: BoardEnvFile, name: string): Board {
   const get = (key: string): string | undefined => env.values.get(key)
   const declared = (key: string): boolean => env.values.has(key)
 
+  // A key typed as a number here is read as a `number`, and a `number` is a
+  // DOUBLE. Past 2^53 that stops being exact -- which is the same reason
+  // board-env.ts:431-434 evaluates `$(( ))` in BigInt and says so: "a size that
+  // is silently one byte out is the class of defect this whole package exists
+  // to make visible". This function used to hand back `Number(t)` regardless,
+  // so `ROOTFS_A_SIZE_SECTORS=9007199254740993` read back as ...992 with
+  // `faults` EMPTY -- inexact, and silent about it, in the one place whose job
+  // is to be neither.
+  //
+  // A FAULT, not a BigInt. Widening the type would ripple through walkLayout,
+  // every GPT comparison and image.ts's sector arithmetic -- a change to the
+  // instrument, mid-migration, for a value no shipped board is within eleven
+  // orders of magnitude of. What was actually wrong is that the loss was
+  // SILENT, and `faults` is this file's existing word for "declared as a number
+  // and not usable as one": it is never thrown and never dropped, and
+  // lint.ts:499-503 prints one line per fault before anything derived from it.
+  //
+  // The boundary is `Number.isSafeInteger`, so a value at exactly 2^53 is
+  // refused too. It round-trips, but its neighbours do not, and a board one
+  // increment away from silent inexactness is not a board this package should
+  // be quiet about.
   const int = (key: string): number | undefined => {
     const v = env.values.get(key)
     if (v === undefined) return undefined
@@ -125,7 +146,18 @@ export function modelBoard(env: BoardEnvFile, name: string): Board {
       faults.push({ key, value: v, reason: 'is read as a number here, and it is not one' })
       return undefined
     }
-    return Number(t)
+    const n = Number(t)
+    if (!Number.isSafeInteger(n)) {
+      faults.push({
+        key,
+        value: v,
+        reason: `is a whole number too large to read exactly as a double (it would come back as `
+          + `${BigInt(t) < 0n ? '-' : ''}${n.toLocaleString('en-US', { useGrouping: false })}); `
+          + `values here must be within ±(2^53 - 1)`,
+      })
+      return undefined
+    }
+    return n
   }
 
   // A list is whitespace-separated, which is how every shell consumer already
