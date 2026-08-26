@@ -78,7 +78,16 @@ export const CX3576_ASSEMBLY: Toolset = {
   imageKey: 'IMAGE_ALPINE_3_21',
   manager: 'apk',
   packages: ['bash', 'coreutils', 'sgdisk', 'dosfstools', 'mtools', 'e2fsprogs', 'e2fsprogs-extra', 'u-boot-tools'],
-  tools: ['sgdisk', 'mkfs.vfat', 'mcopy', 'mdir', 'minfo', 'mke2fs', 'dumpe2fs', 'debugfs', 'mkimage', 'dd', 'truncate'],
+  // cp, find and touch are asserted alongside the rest because os/mkimage-v2.sh
+  // runs all three INSIDE this container -- `cp -a` to stage the factory /var,
+  // `find ... -exec touch -h -d` to pin the staged boot files -- and the port
+  // keeps them there rather than doing that work on the host. That is not
+  // fastidiousness: `cp -a` is `--preserve=all`, which includes XATTRS, mke2fs
+  // -d copies xattrs into the image, and this campaign's host runs SELinux while
+  // the alpine container does not. Staging on the host would have put security
+  // labels into EPHEMERAL that the shell's image does not carry, and the only
+  // thing that would have reported it is the byte-identity gate.
+  tools: ['sgdisk', 'mkfs.vfat', 'mcopy', 'mdir', 'minfo', 'mke2fs', 'dumpe2fs', 'debugfs', 'mkimage', 'dd', 'truncate', 'cp', 'find', 'touch'],
   hostProbe: mke2fsCanWriteTheseLayouts,
 }
 

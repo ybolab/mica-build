@@ -61,6 +61,7 @@ usage() {
     cat <<'USAGE'
 usage: bash os/build/run.sh [--help] [bun-test-args...]
        bash os/build/run.sh --build-rootfs [driver-args...]
+       bash os/build/run.sh --mkimage-v2 [assembler-args...]
 
 Installs the dev dependencies if they are missing, typechecks src/, then runs
 the suite. Any extra arguments are passed to `bun test` (a filename filter, for
@@ -72,6 +73,11 @@ image tag the previous one was written to. os/rootfs/build-v2.sh calls it with
 the build arguments it computed; try --build-rootfs --help. Same install, same
 typecheck, same bun; only the last step differs. The flag has to come first so
 that it can never be mistaken for a `bun test` filter.
+
+With --mkimage-v2 FIRST, it assembles the cx3576 image instead -- the
+TypeScript port of os/mkimage-v2.sh (PLAN-014 M6b). Its remaining arguments are
+the assembler's own; try --mkimage-v2 --help. The same first-position rule
+applies, for the same reason.
 
 The suite drives the real external toolset -- sgdisk, mtools, dd, mkimage,
 veritysetup, e2fsprogs and rauc. Each of those runs on the host when the host
@@ -87,20 +93,35 @@ environment:
 USAGE
 }
 
-# --build-rootfs is a MODE, not a filter, so it is recognised only in first
-# position. os/verify/run.sh learned this from the failing side: a mode flag
-# forwarded to `bun test` is ignored by it, and the suite then reports a green
-# that is about something else entirely.
+# --build-rootfs and --mkimage-v2 are MODES, not filters, so each is recognised
+# only in first position. os/verify/run.sh learned this from the failing side: a
+# mode flag forwarded to `bun test` is ignored by it -- an unknown option does
+# not stop the run -- and the suite then reports a green that is about something
+# else entirely. A request to build a rootfs, or to assemble an image, answered
+# by a passing test suite.
+#
+# Two modes rather than one, and they stay two: they arrived from different
+# milestones (M5b and M6b) and share only the preamble above and run_bun below.
+# Nothing about either is a version of the other.
 MODE=suite
 case "${1:-}" in
 --help | -h) usage; exit 0 ;;
 --build-rootfs) MODE=build-rootfs; shift ;;
+--mkimage-v2) MODE=mkimage-v2; shift ;;
 esac
 for arg in "$@"; do
     case "${arg}" in --build-rootfs) ;; *) continue ;; esac
     echo "error: --build-rootfs has to be the FIRST argument; here it came after '$1'." >&2
     echo "       Anywhere else it would be forwarded to \`bun test\`, which ignores it and" >&2
     echo "       reports a green suite in answer to a request for something else." >&2
+    exit 1
+done
+
+for arg in "$@"; do
+    case "${arg}" in --mkimage-v2) ;; *) continue ;; esac
+    echo "error: --mkimage-v2 has to be the FIRST argument; here it came after '$1'." >&2
+    echo "       Anywhere else it would be forwarded to \`bun test\`, which ignores it and reports" >&2
+    echo "       a green suite in answer to a request to assemble an image." >&2
     exit 1
 done
 
@@ -317,6 +338,25 @@ if [ "${MODE}" = build-rootfs ]; then
     echo "os/build: os/rootfs stage chain"
     rc=0
     run_bun run src/stages-cli.ts "$@" || rc=$?
+    exit "${rc}"
+fi
+
+# --- the assembler -----------------------------------------------------------
+# No vacuity guard here either, and for its own reason: this mode produces a
+# FILE, and src/mkimage-v2.ts reads the loader back out of it before it will
+# rename it into place. There is no shape of "ran and asserted nothing"
+# available -- the failure a count guards against elsewhere is a suite that
+# declared no tests, and this declares no tests at all.
+#
+# And no container-route refusal, unlike --build-rootfs above: this mode needs
+# docker, which run.sh already asserts for every mode, but not `docker buildx`.
+# The toolbox starts sibling containers through the mounted client and socket,
+# which is exactly what the pinned bun image is given. Widening that refusal to
+# cover both modes would refuse a run that works.
+if [ "${MODE}" = mkimage-v2 ]; then
+    echo "os/build: assembling the cx3576 image"
+    rc=0
+    run_bun run src/mkimage-v2-cli.ts "$@" || rc=$?
     exit "${rc}"
 fi
 
