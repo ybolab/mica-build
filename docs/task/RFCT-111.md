@@ -1,10 +1,11 @@
 # RFCT-111 PLAN-014 M5: the rootfs build split into one Dockerfile per stage, driven from TS
 
-- **status**: in progress
+- **status**: completed
 - **priority**: P1
 - **owner**: ai-agent
 - **createdAt**: 2026-08-25 10:50
 - **claimedAt**: 2026-08-25 22:05
+- **completedAt**: 2026-08-26 07:10
 - **plan**: PLAN-014 (M5)
 
 Split the 1,798-line `Dockerfile.v2` into the `rootfs/stages/` chain — one
@@ -15,10 +16,21 @@ acceptable, composition wins).
 ## Scope
 
 - `stages/10-base` (system-essential floor), `20-install` (seed units,
-  repart.d), `30-feature-*` (containers, mqtt, radios, ssh — one per
+  repart.d), `30-feature-*` (**containers, mqtt, radios** — one per
   switchable feature, replacing `WITH_*` args with stage selection),
   `40-board` (board overlay + firmware from `boards/<b>`), `90-pack`
   (squashfs+verity, determinism normalisation).
+
+  AMENDED 2026-08-26, at M5 close, **by the user**. The list read
+  "containers, mqtt, radios, ssh". **ssh is removed from it** — not because it
+  is unimportant, but because it is not optional. The user's decision, in their
+  own words: *"ssh belongs in base, it is core."* The reason it could not stay
+  on this list is recorded under "ssh is a floor capability, not a feature"
+  below, and it is a measurement rather than a preference: an ssh-less chain
+  cannot be built at all, so a `30-feature-ssh` stage would have been a switch
+  with nothing behind it. `mosd` and `rauc` are also feature stages in the
+  shipped chain and were never on this list; they are left as they are, because
+  this amendment carries out one decision and does not tidy around it.
 - Inline shell blobs extracted to `rootfs/scripts/`.
 - The `os/health/` byte-identical duplicates collapse into the overlay copy;
   their tests move to `os/tests/`.
@@ -37,6 +49,129 @@ acceptable, composition wins).
 ## Dependencies
 
 - After RFCT-108 (pinned bases) and RFCT-109 (driver foundation).
+
+## What is discharged at close, and what is not
+
+M5 closes **2026-08-26**, on the user's decision on the ssh clause. The three
+acceptance clauses do not all close the same way, and a `completed` status that
+implied they did would be the kind of green this campaign keeps finding.
+
+**Clause 1 — byte-identity, or the fallback.** Discharged, in both halves.
+Byte-identity is not achievable and the clause anticipates that, so the fallback
+applies: **full verifier parity** — `RESULT: PASS (290/290 checks, 22 skipped)`,
+0 FAIL, x64, on an image assembled from a chain-built rootfs — **plus the
+anchored new-baseline commit**, which is "The M5 baseline" below. The clause was
+not amended; it contains its own fallback branch, so this discharges it.
+
+**Clause 2 — the omit-a-stage negative test.** Discharged, and recorded in
+`os/rootfs/stages/README.md`, "The omit-a-stage negative test, run": declining
+`containers` and declining `mqtt` each turn that feature's assertions red
+through the shipping path, compared as an identity diff of the verifier's
+PASS/FAIL/SKIP lines rather than as a count. **Two limits stated rather than
+absorbed.** The `radios` case is not exercisable on x64 — the board declares no
+radio, so the stage contributes nothing and omitting it turns nothing red; that
+branch is cx3576's. And the evidence was taken through
+`os/verify-image-v2.sh`, which **M4e has since deleted** at full parity with the
+TypeScript port, so that table is now a citation into git history and is
+annotated as such where it lives.
+
+**Clause 3 — "both boards build and verify green through the chain."** Not
+discharged for cx3576, and this is the honest statement of it rather than an
+amendment. x64 builds and verifies green through the chain, repeatedly and at
+the tree that ships. **cx3576 has never been built through the chain on any host
+available to this campaign.** `binfmt_misc` is not mounted here and no builder
+advertises `linux/arm64`, and since M5b the chain cannot use the QEMU-bundled
+`docker-container` builder that used to close that gap — the cost the user
+accepted, recorded under PLAN-014's risks. Driven at close:
+`make os-verify-cx3576-v2` exits 1 before running a single check, with
+*"`_out/cx3576/cx3576-mos-v2-latest.img` is not there … A verifier that carried
+on would report on nothing."*
+
+What that leaves unverified for cx3576, carried forward from the M5e gate rather
+than quietly dropped:
+
+- that an image built through the new path carries the five firmware files and
+  the six hwinit units — the `COPY`, the install and the assertions in
+  `40-board` are unexercised on the only board where they do anything;
+- `kernel-and-initramfs.sh`'s `modules.tar` arm;
+- `30-feature-radios` whole, and with it clause 2's `radios` case.
+
+What **was** driven for cx3576 is the staging, which is where M5d's
+parameterisation lives: pointed at the in-repo BSP, `build-v2.sh` selects the
+five files `BOARD_FIRMWARE_FILES` declares out of the drop's 32, stages the
+thirteen `os/boards/cx3576/hwinit` files and the six confs, and then stops at
+the builder check. That is a real measurement of the part that can be measured
+here, and it is not a substitute for the part that cannot.
+
+**The task closes with clause 3 outstanding for cx3576 because the blocker is a
+runner, not the work.** Nothing in the chain is known to be wrong on cx3576; it
+is unobserved. M7 runs on hardware and is where that is answered.
+
+## ssh is a floor capability, not a feature
+
+Decided **2026-08-26 by the user**, on the M5c finding that M5d did not reopen
+and M5e re-confirmed. A gate does not amend its own acceptance clauses on its
+own judgement; it carries out a decision made above it, and this section is
+that. What follows is the evidence as re-measured at this commit — after M4e
+deleted `os/verify-image-v2.sh`, so nothing here cites a file that no longer
+exists.
+
+**ssh is installed by the floor, not by a feature.**
+
+| what | where |
+| --- | --- |
+| the `openssh-server` package | `os/rootfs/stages/10-base.Dockerfile:133` |
+| the host-key removal (`rm -f /etc/ssh/ssh_host_*`) | `os/rootfs/stages/10-base.Dockerfile:207` |
+| the units (`network-and-ssh-units.sh`) | `os/rootfs/stages/20-install.Dockerfile:41` |
+
+**The purge is itself a contract that ssh survives.**
+`os/rootfs/scripts/package-manager-purge.sh:48` keeps, by name:
+
+```
+for kept in bash sh ls cp mv rm sed awk grep find systemctl sshd ssh scp curl ip; do
+```
+
+`sshd`, `ssh` and `scp` are in that list. The purge runs in `90-pack`, at the
+end of every chain, on every board — so a chain that had not installed ssh
+would not merely ship without it, it would fail the purge's own keep-list. **An
+ssh-less chain cannot be built.** That is what makes ssh unlike containers,
+mqtt and radios: each of those three can be declined and the image still packs.
+
+**The image contract depends on ssh being present.**
+`os/verify/src/checks-shadow.ts:119` lists `ssh.service` in `BEFORE_PAIRS` —
+"the units the reconciler must be ordered before, **each with the file that must
+exist**" — so the verifier requires `/usr/lib/systemd/system/ssh.service` in
+every image. `os/verify/src/checks-system.ts:69` names the same unit, and its
+`profile-ssh-not-enabled` check (`:880`) asserts that the image ships it
+**not enabled**, on either profile. The two assertions need each other: the
+enablement check has nothing to judge if the unit is absent, and it is
+`checks-shadow.ts` that makes absence a failure.
+
+**And the setting would have had nothing behind it.** `access.ssh.enabled`
+is seeded false by both image profiles (`docs/design/access.md:357`) and
+toggled at runtime by mosd — `docs/design/api.md:178`,
+`SetSettings("access.ssh.enabled", …)`. A setting that enables a daemon the
+image may not carry is a switch wired to nothing, and the failure mode is
+silent: the operator ticks the box and no sshd starts.
+
+**What the amendment protects.** Had `30-feature-ssh` been built to make the
+clause pass, "every mos image carries sshd" would have stopped being a contract
+and become an accident of which stages a given build happened to include. The
+three-feature list says the opposite, and says it where the driver enforces it
+rather than only here. Driven at this commit:
+
+```
+$ bash os/build/run.sh --build-rootfs --board x64 --without ssh ...
+error: os/rootfs/stages is not a chain that can be built:
+    was asked to leave out the feature 'ssh' and no stage here is named
+    <number>-feature-ssh. The features are: containers, mosd, mqtt, radios,
+    rauc. A name that matched nothing would build the FULL image and exit 0,
+    so it is refused instead
+```
+
+rc=1, and nothing was built. ssh is absent from the driver's list because there
+is no `30-feature-ssh` for it to name — which is this amendment, stated by the
+mechanism instead of by a document.
 
 ## The M5 baseline
 
