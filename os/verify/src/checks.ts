@@ -37,6 +37,7 @@
 import { createHash } from 'node:crypto'
 import { closeSync, existsSync, mkdirSync, mkdtempSync, openSync, readSync, renameSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
+import { REPO_ROOT } from './paths.ts'
 import type { Board } from './board.ts'
 import {
   extractRange,
@@ -48,6 +49,7 @@ import {
 } from './image.ts'
 import { BOARD_CHECKS } from './checks-board.ts'
 import { BOOTCHAIN_CHECKS } from './checks-bootchain.ts'
+import { CMDLINE_CHECKS_ALL } from './checks-cmdline.ts'
 import { CONND_CHECKS } from './checks-connd.ts'
 import { DBUS_CHECKS } from './checks-dbus.ts'
 import { ENGINE_CHECKS_ALL } from './checks-engine.ts'
@@ -81,6 +83,19 @@ export interface ImageContext {
   readonly tools: ToolRuntime
   /** A directory the helpers may write extracts into. Never the image's own. */
   readonly workDir: string
+  /**
+   * Where this board's BUILD OUTPUTS are -- `_out/<board>`.
+   *
+   * Two checks read a file the build produced beside the image rather than a
+   * byte of the image itself: the verity parameter file
+   * (os/verify-image-v2.sh:2205) and the rootfs report (:4272). The oracle
+   * spells both `${REPO_ROOT}/_out/${MOS_BOARD}/...`, and so does
+   * `createImageContext` -- this is a seam, not a second convention. It exists
+   * because a suite that read the real `_out/` would pass on a host that had
+   * built an image and fail on one that had not, and a skip reports the same
+   * green as a pass.
+   */
+  readonly outDir: string
   /** The partition table, read once. */
   gpt: () => Promise<GptTable>
   /** A partition by GPT name (`boot-a`) or number. Throws when there is none. */
@@ -146,6 +161,7 @@ export const CHECKS: readonly CheckCase[] = [
   ...SYSTEM_CHECKS,
   ...EXT4_CHECKS,
   ...BOOTCHAIN_CHECKS,
+  ...CMDLINE_CHECKS_ALL,
 ]
 
 /**
@@ -267,6 +283,8 @@ export interface ContextRequest {
   readonly image: string
   readonly tools: ToolRuntime
   readonly workDir: string
+  /** Defaults to `_out/<board>`, which is where the oracle looks. */
+  readonly outDir?: string
 }
 
 /**
@@ -305,6 +323,7 @@ function digestOf(file: string): string {
 
 export function createImageContext(request: ContextRequest): ImageContext {
   const { board, image, tools, workDir } = request
+  const outDir = request.outDir ?? join(REPO_ROOT, '_out', board.name)
   mkdirSync(workDir, { recursive: true })
 
   let gptOnce: Promise<GptTable> | undefined
@@ -419,5 +438,5 @@ export function createImageContext(request: ContextRequest): ImageContext {
     return started
   }
 
-  return { board, image, tools, workDir, gpt, partition, fatSlot, extract, extractAt, unpackRoot }
+  return { board, image, tools, workDir, outDir, gpt, partition, fatSlot, extract, extractAt, unpackRoot }
 }

@@ -103,6 +103,7 @@ function rootFixture(board: typeof cx3576, conf: string | undefined): { ctx: Ima
     image: join(dir, 'fixture.img'),
     tools: NO_TOOLS,
     workDir: dir,
+    outDir: dir,
     gpt: async () => refuse('partition table'),
     partition: async () => refuse('partition table'),
     fatSlot: async () => refuse('FAT slot'),

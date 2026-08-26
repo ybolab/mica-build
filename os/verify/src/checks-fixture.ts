@@ -157,6 +157,7 @@ export function imageFixture(request: FixtureRequest): Fixture {
     image,
     tools,
     workDir: dir,
+    outDir: dir,
     gpt: async () => gpt,
     partition: async (nameOrNumber: string | number) => {
       const found = typeof nameOrNumber === 'number'
@@ -1035,6 +1036,7 @@ export function packedRootFixture(board: Board): RootFixture {
     image: join(dir, '(no image)'),
     tools: NO_TOOLS,
     workDir: dir,
+    outDir: dir,
     gpt: async () => refuse('partition table'),
     partition: async () => refuse('partition table'),
     fatSlot: async () => refuse('FAT slots'),

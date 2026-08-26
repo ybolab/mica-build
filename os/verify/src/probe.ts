@@ -42,7 +42,6 @@ import {
   uImageMagic,
   verityVerify,
 } from './image.ts'
-import { REPO_ROOT } from './paths.ts'
 
 type Log = (line: string) => void
 
@@ -158,7 +157,7 @@ export async function probeImage(ctx: ImageContext, log: Log): Promise<void> {
     // two agree is one of the things M4b ports. A probe that re-derived it
     // would be a second implementation of that check, in a file that asserts
     // nothing.
-    const paramFile = join(REPO_ROOT, '_out', ctx.board.name, 'rootfs-verity.env')
+    const paramFile = join(ctx.outDir, 'rootfs-verity.env')
     if (!existsSync(paramFile)) {
       log(`   [veritysetup] NOT RUN: ${paramFile} is not there, so this probe has no root hash to`)
       log(`                 verify ${label} against. Produce it with os/rootfs/build-v2.sh.`)

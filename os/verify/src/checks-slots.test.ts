@@ -125,6 +125,7 @@ function slotFixture(
     image,
     tools: mtoolsFor(slots),
     workDir: dir,
+    outDir: dir,
     gpt: async () => gpt,
     partition: async () => refuse('partition lookup'),
     fatSlot: async () => refuse('GPT-derived FAT slot -- these checks take the offset from the layout'),

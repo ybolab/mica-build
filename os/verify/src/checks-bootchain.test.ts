@@ -216,6 +216,7 @@ function fixture(world: World): { ctx: ImageContext, dispose: () => void } {
     image,
     tools: tools(world, offsets),
     workDir: dir,
+    outDir: dir,
     gpt: async () => gpt,
     partition: async () => refuse('partition lookup'),
     fatSlot: async () => refuse('GPT-derived FAT slot -- these checks take the offset from the layout'),
