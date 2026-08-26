@@ -54,16 +54,15 @@ fn backoff_for(failures: u32) -> Duration {
 /// password, so per-client tracking buys nothing against an online guesser,
 /// who would rotate source addresses anyway.
 ///
-/// Two properties are load-bearing, and both were absent from the fixed
-/// five-failures/30-seconds rule this replaces:
+/// Two properties are load-bearing:
 ///
-/// - **The counter survives an expired window.** Clearing `failures` when the
-///   window lapses is what makes a flat rule flat: an attacker waits the
-///   window out, and the next run starts from zero, so the cost per guess
-///   never rises. Only [`LoginGuard::record_success`] resets the run, so
-///   guessing gets monotonically more expensive — from 14400 guesses a day
-///   under the old rule to under 300 once the cap is reached.
-/// - **The curve never becomes permanent.** §6 pairs its `lockoutThreshold`
+/// - The counter survives an expired window. Clearing `failures` when the
+///   window lapses would make the rule flat: an attacker waits the window out,
+///   the next run starts from zero, and the cost per guess never rises. Only
+///   [`LoginGuard::record_success`] resets the run, so guessing gets
+///   monotonically more expensive — under 300 guesses a day once the cap is
+///   reached.
+/// - The curve never becomes permanent. §6 pairs its `lockoutThreshold`
 ///   with "releasable only with physical presence", and apid has no presence
 ///   check to release one with. On an appliance whose only management surface
 ///   is this daemon, arming a threshold nothing can clear would let an
@@ -230,9 +229,8 @@ impl GuardStore {
     /// Infallible by design, and the failure direction is chosen per case: an
     /// absent file is first boot; an unreadable or unparsable one starts a
     /// clean slate with a loud log rather than refusing to start — corruption
-    /// of a rate-limiter file must degrade to the in-RAM guard RFCT-083
-    /// shipped, never to a daemon that will not serve or a lock that will not
-    /// lift.
+    /// of a rate-limiter file must degrade to the in-RAM guard, never to a
+    /// daemon that will not serve or a lock that will not lift.
     pub fn load(path: PathBuf) -> Self {
         let guard = match std::fs::read(&path) {
             Ok(bytes) => match serde_json::from_slice::<PersistedGuard>(&bytes) {
@@ -317,9 +315,7 @@ impl GuardStore {
 mod tests {
     use super::*;
 
-    // -----------------------------------------------------------------------
     // GuardStore: access.md §6's "a power cycle must not reset the clock"
-    // -----------------------------------------------------------------------
     // The LoginGuard tests above are about the CURVE. These are about the
     // curve SURVIVING, which is the property §6 actually asks for and the one
     // an in-RAM counter satisfies vacuously.
@@ -332,28 +328,23 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("login_guard.json");
 
-        // SEEDED WITH A RUN, so the armed window is 16 seconds rather than
-        // BACKOFF_BASE's one.
+        // Seeded with a run, so the armed window is 16 seconds rather than
+        // BACKOFF_BASE's one. The property under test is "an armed window
+        // survives a restart" and it does not depend on which step of the
+        // curve is armed, but arming the first step races the format's own
+        // resolution: the write and the read below are two filesystem
+        // round-trips, and `PersistedGuard` carries the deadline as whole UNIX
+        // seconds — `to_persisted` writes `now_unix() +
+        // remaining.as_secs().max(1)` and `from_persisted` subtracts a
+        // freshly-read `now_unix()`, so the two truncations do not cancel. A
+        // write and a read landing on opposite sides of one second boundary
+        // reduce a one-second window to zero. Sixteen seconds absorbs both the
+        // truncation and any load this suite can generate; the one-second step
+        // itself is covered without a clock by
+        // `backoff_doubles_from_the_base_and_stops_at_the_cap`.
         //
-        // The property under test is "an armed window survives a restart",
-        // and it does not depend on which step of the curve is armed. Arming
-        // the FIRST step made this test race its own constant: the write and
-        // the read below are two filesystem round-trips, and `PersistedGuard`
-        // carries the deadline as whole UNIX seconds — `to_persisted` writes
-        // `now_unix() + remaining.as_secs().max(1)` and `from_persisted`
-        // subtracts a freshly-read `now_unix()`, so the two truncations do not
-        // cancel. A write and a read landing on opposite sides of one second
-        // boundary reduce a one-second window to zero, and the test then fails
-        // for a reason that is nothing to do with persistence. It failed twice
-        // in one afternoon under parallel-suite load and passes 3/3 in
-        // isolation.
-        //
-        // Sixteen seconds absorbs both the truncation and any load this suite
-        // can generate. The one-second step itself is covered, without a
-        // clock, by `backoff_doubles_from_the_base_and_stops_at_the_cap`.
-        //
-        // The truncation is a real if minor property of the on-disk format —
-        // a restart inside the first second can drop that step's window while
+        // The truncation is a real if minor property of the on-disk format — a
+        // restart inside the first second can drop that step's window while
         // keeping the failure count — and it is recorded rather than fixed
         // here, because this test's job is the round trip, not the resolution.
         std::fs::write(
@@ -578,7 +569,7 @@ mod tests {
         let mut guard = LoginGuard::default();
         assert!(guard.check());
         guard.record_failure();
-        // The old rule allowed four free guesses before any cost at all.
+        // One failure, and the next attempt is already refused.
         assert!(!guard.check());
     }
 

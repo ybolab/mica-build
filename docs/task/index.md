@@ -139,3 +139,4 @@ Each task is a single line linking to its detail file. All detailed information 
 - [x] [**RFCT-117 PLAN-016 M1: the utoipa scaffold, the two discovery endpoints and a committed spec**](RFCT-117.md) `P1`
 - [x] [**RFCT-118 PLAN-016 M2: the read-only settings and state roots, redacted, under one error envelope**](RFCT-118.md) `P1`
 - [x] [**RFCT-119 PLAN-016 M3: the spec-identity check and the oasdiff breaking-change gate**](RFCT-119.md) `P1`
+- [x] [**RFCT-120 PLAN-016 M4: comment simplification inside mosd/apid**](RFCT-120.md) `P1`

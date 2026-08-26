@@ -2,7 +2,7 @@
 //!
 //! The route tests in the parent module stop at the [`SettingsApi`] trait, and
 //! `docs/design/bus.md` §7's switch — from the `com.mos.mosd1`
-//! `Reboot`/`PowerOff` METHODS to a write on the `/Actions/<verb>` ITEMS —
+//! `Reboot`/`PowerOff` methods to a write on the `/Actions/<verb>` items —
 //! happens below that trait, inside `bus_client`. No fake implementing the
 //! trait can see which of the two apid used. The end-to-end test cannot see it
 //! either: mosd logs the request and records it in live state before the power
@@ -11,7 +11,7 @@
 //! outside.
 //!
 //! So this module puts a fake mosd on a private `dbus-daemon --session` — the
-//! same harness `tests/e2e.rs` uses, and never the host's bus — serving BOTH
+//! same harness `tests/e2e.rs` uses, and never the host's bus — serving both
 //! surfaces at once under the real well-known name, and drives the real router
 //! through the real [`BusSettings`]. The methods are served rather than
 //! omitted on purpose: a call recorded against them says "the switch did not

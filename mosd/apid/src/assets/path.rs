@@ -243,9 +243,10 @@ mod tests {
     ///
     /// The rows are deliberately *not* the compound strings §4.4 lists.
     /// `/%252e%252e%2fetc%2fpasswd` trips rules 1, 2 and 3 at once, so deleting
-    /// any two of them leaves the test passing — which is the regression
-    /// RFCT-034 recorded. Each row below carries exactly one hostile feature,
-    /// so the assertion on its variant is an assertion about one guard.
+    /// any two of them leaves the test passing, which is the regression this
+    /// table exists to catch. Each row below carries exactly one hostile
+    /// feature, so the assertion on its variant is an assertion about one
+    /// guard.
     #[test]
     fn each_guard_is_exercised_by_exactly_one_hostile_feature() {
         let f = fixture();

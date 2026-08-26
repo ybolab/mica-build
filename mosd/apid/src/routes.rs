@@ -127,15 +127,15 @@ pub fn app(state: AppState) -> Router {
         // prefix, and nothing may: §4.1 asks for a rule the dispatch mechanism
         // enforces rather than one somebody can forget to write.
         //
-        // The nest claims the **whole** subtree — `/builtin/index.html` and
+        // The nest claims the whole subtree — `/builtin/index.html` and
         // `/builtin/assets/app.js` included — which is what §6.3 means by
         // burning a path prefix permanently. A prefix reserved for only some
         // of its paths is not reserved.
         //
-        // The two spellings split across the nest boundary, and the split is
-        // the same asymmetry RFCT-074 measured under `/api`: the nest claims
-        // `/builtin` (the nested router sees `/`) and **not** `/builtin/`, so
-        // the trailing-slash spelling is declared outside it. Both must reach
+        // The two spellings split across the nest boundary, the same asymmetry
+        // `/api` has: the nest claims `/builtin` (the nested router sees `/`)
+        // and not `/builtin/`, so the trailing-slash spelling is declared
+        // outside it. Both must reach
         // the pane; an operator recovering a device should not have to get the
         // slash right, and the spelling the design document writes is the one
         // with it.
@@ -181,9 +181,9 @@ pub fn app(state: AppState) -> Router {
         // here.
         //
         // The explicit `/api/` route is not redundant. `nest` claims `/api`,
-        // `/api/x` and `/api/x/y`, and **not** `/api/` — measured, and the
-        // difference is a request that begins `/api/` reaching the asset
-        // router, which is exactly what rule 1 forbids.
+        // `/api/x` and `/api/x/y`, and not `/api/`; the difference is a
+        // request that begins `/api/` reaching the asset router, which is
+        // exactly what rule 1 forbids.
         .nest(API, api_router())
         .route("/api/", any(api_not_found))
         // §4.1 rule 4.
@@ -204,10 +204,8 @@ async fn api_not_found(OriginalUri(uri): OriginalUri) -> Response {
     )
 }
 
-// ---------------------------------------------------------------------------
-// §2.1's API surface: the reserved subtree's declared routes, their bodies and
-// the session check that guards them.
-// ---------------------------------------------------------------------------
+// §2.1's API surface: the reserved subtree's declared routes, their bodies
+// and the session check that guards them.
 
 /// The reserved prefix, and the paths §2.1 declares under it.
 ///
@@ -293,7 +291,7 @@ fn is_declared_api_route(path: &str) -> bool {
 /// `/api/v1/settings/` reach the subtree's not-found handler, and this
 /// predicate must hand off exactly what the router serves: a path the gate
 /// releases to a route that does not exist would answer a 404 where an
-/// unauthenticated caller has always been redirected.
+/// unauthenticated caller is redirected.
 fn resource_dot_path(leaf: &str) -> Option<&str> {
     let dot_path = leaf
         .strip_prefix(V1_SETTINGS_PREFIX)
@@ -523,16 +521,15 @@ fn resource_response(value: anyhow::Result<Value>, path: &str) -> Response {
 
 /// §2.4's table, applied to a failed mosd call.
 ///
-/// The classification is TRANSLATED and the message is NOT. mosd maps its
+/// The classification is translated and the message is not. mosd maps its
 /// `SettingsError` onto three fdo error names and zbus carries the name back,
 /// so the distinction exists all the way to here and only apid can lose it;
 /// the message is mosd's own words because no phrasing apid could pre-write
 /// would say which field was wrong.
 ///
 /// The concrete `zbus::Error` is recovered by downcast: `bus_client.rs`
-/// converts with `err.into()`, and that conversion STORES the error rather
-/// than flattening it, so nothing there has to change for the name to be
-/// readable here.
+/// converts with `err.into()`, and that conversion stores the error rather
+/// than flattening it, so the name is readable here.
 fn bus_api_error(err: &anyhow::Error, path: &str) -> Response {
     tracing::warn!(error = %err, path, "mosd call failed");
     let (status, error) = match err.downcast_ref::<zbus::Error>() {
@@ -587,7 +584,7 @@ fn mosd_unreachable(err: &anyhow::Error) -> (StatusCode, ApiError) {
 /// `/api/versions` are untouched by it and no path-prefix test decides who is
 /// guarded.
 ///
-/// Its rejection is §2.4's envelope with a 401, NOT the gate's redirect. A
+/// Its rejection is §2.4's envelope with a 401 and not the gate's redirect. A
 /// client that follows that redirect lands on `GET /login`, which answers 200
 /// with an HTML page, so a script reads the whole exchange as success (§3.1).
 pub(crate) struct ApiSession;
@@ -678,26 +675,26 @@ async fn gate(State(state): State<AppState>, request: Request, next: Next) -> Re
         return next.run(request).await;
     }
 
-    // The session check comes BEFORE the bus call, and the ordering is the
+    // The session check comes before the bus call, and the ordering is the
     // point rather than a detail.
     //
     // It is sound because a live session already implies the device is out of
     // setup mode. A session is minted in exactly two places: `login_submit`,
     // which mints one only after `password_hash` returned `Some` and verified
     // against it, and `setup_submit`, which mints one only after the
-    // `access.webAdmin` write that CREATES the hash has succeeded. There is no
+    // `access.webAdmin` write that creates the hash has succeeded. There is no
     // route that removes a hash, so "session verifies" cannot coexist with
-    // "no admin password is configured". If an unset-password operation is
-    // ever added, it has to clear the session table in the same step, and this
-    // short-circuit is what it would be invalidating.
+    // "no admin password is configured". An unset-password operation, if one
+    // is ever added, has to clear the session table in the same step, or it
+    // invalidates this short-circuit.
     //
-    // It buys two things. The gate is layered onto every route, so an
-    // authenticated page load used to cost one system-bus round trip per
-    // request -- fine for one server-rendered pane, not fine once a custom UI
-    // bundle (§4) serves dozens of static assets per page, none of which need
-    // mosd at all. And it means a static asset still serves while mosd is
-    // down, which is the same reasoning §6.1 applies to a broken bundle: a
-    // failure in one part must not take the surface that reports it with it.
+    // It buys two things. The gate is layered onto every route, so without it
+    // an authenticated page load costs one system-bus round trip per request
+    // -- fine for one server-rendered pane, not fine once a custom UI bundle
+    // (§4) serves dozens of static assets per page, none of which need mosd at
+    // all. And it means a static asset still serves while mosd is down, which
+    // is the same reasoning §6.1 applies to a broken bundle: a failure in one
+    // part must not take the surface that reports it with it.
     if session::cookie_from_headers(request.headers())
         .is_some_and(|value| state.sessions.verify(&value))
     {
@@ -800,9 +797,7 @@ struct SavedQuery {
     saved: Option<String>,
 }
 
-// ---------------------------------------------------------------------------
 // Validation
-// ---------------------------------------------------------------------------
 
 const HOSTNAME_RULES: &str =
     "Hostname must be 1-63 letters, digits or hyphens and must not start or end with a hyphen.";
@@ -881,9 +876,7 @@ fn iface_settings_value(dhcp: bool, address: &str, gateway: &str, dns: &str) -> 
     serde_json::json!({ "dhcp": false, "static": static_ })
 }
 
-// ---------------------------------------------------------------------------
 // Setup wizard
-// ---------------------------------------------------------------------------
 
 #[derive(serde::Deserialize)]
 struct SetupForm {
@@ -1068,9 +1061,7 @@ async fn setup_submit(
         .into_response()
 }
 
-// ---------------------------------------------------------------------------
 // Login / logout
-// ---------------------------------------------------------------------------
 
 #[derive(serde::Deserialize)]
 struct LoginForm {
@@ -1082,8 +1073,9 @@ struct LoginForm {
 /// It names §6.3's prefix, because it is the first built-in page an operator
 /// with a broken custom UI reaches: the gate bounces every unauthenticated
 /// request here, whatever the bundle is doing. The nav on every authenticated
-/// pane covers the other half. See F2 in `docs/task/RFCT-075.md` for why the
-/// 502 page §6.3 actually cites is the wrong surface for this.
+/// pane covers the other half. The 502 page §6.3 cites is the wrong surface
+/// for this: it is reached only when a mosd call fails, which a broken bundle
+/// does not cause.
 async fn login_form() -> Html<String> {
     page(
         "Sign in",
@@ -1187,9 +1179,7 @@ async fn logout(
         .into_response()
 }
 
-// ---------------------------------------------------------------------------
 // Status pane
-// ---------------------------------------------------------------------------
 
 /// Seconds from the first field of `/proc/uptime` contents.
 fn parse_uptime(contents: &str) -> Option<u64> {
@@ -1221,7 +1211,7 @@ fn pretty(value: &Value) -> String {
 
 /// The status pane's body, shared by `/`'s built-in branch and §6.3's escape.
 ///
-/// It reads mosd and `/proc/uptime` and **nothing under `/srv/ui`**. That is
+/// It reads mosd and `/proc/uptime` and nothing under `/srv/ui`. That is
 /// the property §6.3 rests candidate (A) on — *"the built-in handlers do not
 /// read `/srv/ui` at all, so no bundle state — absent, corrupt, unreadable,
 /// wrong version — can affect them"* — and it is why §6.1's five classes do not
@@ -1272,10 +1262,8 @@ pub(crate) async fn home(State(state): State<AppState>) -> Html<String> {
     pane("Status", status_body(&state).await)
 }
 
-// ---------------------------------------------------------------------------
 // §6.3's escape: the built-in UI at a reserved prefix, and the control that
-// deactivates a custom UI
-// ---------------------------------------------------------------------------
+// deactivates a custom UI.
 
 /// §6.3 candidate (A)'s prefix, without its trailing slash.
 ///
@@ -1302,7 +1290,7 @@ const BUILTIN_DEACTIVATE: &str = "/builtin/deactivate";
 /// (B) together are what §6.3 chooses: (A) alone is *"a way in, not a way
 /// out"*, and (B) alone *"presupposes the access that may be broken"*. One
 /// documented action reaches this page whatever went wrong, and one click on it
-/// deactivates the bundle — so **the operator never has to diagnose anything**,
+/// deactivates the bundle, so the operator never has to diagnose anything,
 /// which is the test §6.3 opens with.
 async fn builtin_home(State(state): State<AppState>) -> Html<String> {
     let status = status_body(&state).await;
@@ -1317,7 +1305,7 @@ async fn builtin_home(State(state): State<AppState>) -> Html<String> {
 
 /// Candidate (B), rendered unconditionally.
 ///
-/// The control is **not** shown only when a bundle looks active. Deciding that
+/// The control is not shown only when a bundle looks active. Deciding that
 /// would mean reading `/srv/ui` from the one handler whose value is that it
 /// never does, and an operator who found the button missing would be back to
 /// diagnosing why — which is exactly the failure §6.3's opening test names.
@@ -1435,9 +1423,7 @@ async fn builtin_not_found(OriginalUri(uri): OriginalUri) -> Response {
         .into_response()
 }
 
-// ---------------------------------------------------------------------------
 // Network pane
-// ---------------------------------------------------------------------------
 
 #[derive(serde::Deserialize)]
 struct NetworkForm {
@@ -1553,9 +1539,7 @@ async fn network_submit(State(state): State<AppState>, Form(form): Form<NetworkF
     Redirect::to("/network?saved=1").into_response()
 }
 
-// ---------------------------------------------------------------------------
 // Hostname pane
-// ---------------------------------------------------------------------------
 
 #[derive(serde::Deserialize)]
 struct HostnameForm {
@@ -1587,9 +1571,7 @@ async fn hostname_form(State(state): State<AppState>, Query(query): Query<SavedQ
     }
 }
 
-// ---------------------------------------------------------------------------
 // Power pane
-// ---------------------------------------------------------------------------
 
 /// A power action the pane can request of mosd.
 #[derive(Clone, Copy)]
@@ -1701,7 +1683,7 @@ fn power_submit(state: &AppState, action: PowerAction, confirm: &str, source: &s
         )
             .into_response();
     }
-    // Recorded BEFORE the request is dispatched, and the sink fsyncs each
+    // Recorded before the request is dispatched, and the sink fsyncs each
     // line: the two audited actions here are the ones immediately followed by
     // the machine going down, so a line written after the call could be the
     // line that never reaches the disk.
@@ -1741,9 +1723,7 @@ async fn power_poweroff(
     power_submit(&state, PowerAction::PowerOff, &form.confirm, &source)
 }
 
-// ---------------------------------------------------------------------------
 // Hostname submit
-// ---------------------------------------------------------------------------
 
 async fn hostname_submit(
     State(state): State<AppState>,
@@ -1767,9 +1747,7 @@ async fn hostname_submit(
     Redirect::to("/hostname?saved=1").into_response()
 }
 
-// ---------------------------------------------------------------------------
 // SSH pane
-// ---------------------------------------------------------------------------
 
 /// Settings dot-path of the stored authorized-key list.
 const SSH_KEYS_PATH: &str = "access.ssh.authorizedKeys";
@@ -1794,7 +1772,7 @@ const MIN_TRANSIENT_PASSWORD_BYTES: usize = 8;
 ///
 /// The 72 is not arbitrary, and it is deliberately tighter than mosd's own
 /// bound: the transient password is hashed with bcrypt, and bcrypt reads only
-/// the FIRST 72 BYTES of its input and silently ignores the rest. Accepting a
+/// the first 72 bytes of its input and silently ignores the rest. Accepting a
 /// 100-character password would therefore mean the first 72 characters of it
 /// also unlock the device — the operator would be running on a shorter secret
 /// than the one they typed and believe in. Refusing the input is the only way
@@ -1805,7 +1783,7 @@ const MAX_TRANSIENT_PASSWORD_BYTES: usize = 72;
 /// OpenSSH fingerprint of a canonical `<type> <blob>` key line.
 ///
 /// `SHA256:` followed by the unpadded base64 of the SHA-256 digest of the
-/// **decoded** blob — the string `ssh-keygen -lf` prints, and the same value
+/// decoded blob — the string `ssh-keygen -lf` prints, and the same value
 /// mosd's sshd reconciler publishes. It is recomputed here rather than read
 /// from the published state because the pane has to map the fingerprint an
 /// operator clicks back onto the stored entry a removal rewrites, and the
@@ -1833,8 +1811,8 @@ fn key_error_message(err: &SettingsError) -> String {
 
 /// Read the stored key list out of the `access.ssh` subtree.
 ///
-/// An absent list is an empty list, but a list that is *present and
-/// unreadable* is an error rather than an empty list: treating it as empty
+/// An absent list is an empty list, but a list that is present and unreadable
+/// is an error rather than an empty list: treating it as empty
 /// would let an add or a remove overwrite keys the operator cannot see.
 fn parse_key_list(ssh: &Value) -> anyhow::Result<Vec<AuthorizedKey>> {
     match ssh.get("authorizedKeys") {
@@ -2119,10 +2097,10 @@ async fn load_container_view(app: &AppState) -> anyhow::Result<ContainerView> {
     })
 }
 
-/// The consequence of switching this on, in the terms PLAN-012 D5 requires.
+/// The consequence of switching this on, stated specifically.
 ///
-/// D5: *"the apid pane must say so in those terms -- not as a generic warning,
-/// but as the specific consequence"*. mos does not build rootless, so there is
+/// The pane must say so *"not as a generic warning, but as the specific
+/// consequence"*. mos does not build rootless, so there is
 /// no user-namespace boundary between a container and the device: a container
 /// runs with root's capabilities. Saying "containers may be a security risk"
 /// would be true, useless, and would let an operator agree with it without
@@ -2222,9 +2200,7 @@ async fn containers_enable(
     Redirect::to("/containers?saved=1").into_response()
 }
 
-// ---------------------------------------------------------------------------
-// RFCT-104: the MQTT pane
-// ---------------------------------------------------------------------------
+// The MQTT pane
 
 /// The two units mosd's mqtt reconciler drives, named here because the pane
 /// selects their published state out of the `units` array by name.
@@ -2239,7 +2215,7 @@ const MQTT_BRIDGE_UNIT: &str = "mos-mqttd.service";
 /// Everything the MQTT pane renders, gathered before any markup is built.
 ///
 /// The live state this reads is published by mosd's mqtt reconciler
-/// (`mosd/mosd/src/reconciler/mqtt.rs`) and is **nested**, not flat:
+/// (`mosd/mosd/src/reconciler/mqtt.rs`) and is nested, not flat:
 /// `listen.address`, `listen.port`, `auth.enabled`, and a `units` array of one
 /// object per unit the reconciler drives. The pane adapts to that shape rather
 /// than the reconciler flattening itself for the pane, because:
@@ -2249,19 +2225,13 @@ const MQTT_BRIDGE_UNIT: &str = "mos-mqttd.service";
 ///   predict without opening either file;
 /// * it is published as bus items, where `/mqtt/listen/address` is the
 ///   idiomatic path shape;
-/// * `units` has to be an array: the reconciler drives two units and there is
-///   no flat encoding of that. The pane reads a nested array either way, and
-///   flat scalars sitting beside it would be the worst of both.
-///
-/// That last point is not a preference. A flat `activeState` cannot say whose
-/// state it is, and the question "the broker's or the bridge's?" has no answer
-/// in the key -- only in whatever the reconciler happened to mean, which the
-/// pane cannot check. Reporting both halves flat would take a second key, then
-/// a third and a fourth for their unit-file states, invented anew each time
-/// the reconciler grows a unit. Every entry of `units` carries its own `unit`,
-/// `activeState` and `unitFileState`, so the broker is the entry named
-/// `mos-mqtt-broker.service` and the bridge is the one named
-/// `mos-mqttd.service`, and neither needs a key of its own.
+/// * `units` has to be an array: the reconciler drives two units, and a flat
+///   `activeState` cannot say whose state it is. Every entry carries its own
+///   `unit`, `activeState` and `unitFileState`, so the broker is the entry
+///   named `mos-mqtt-broker.service` and the bridge the one named
+///   `mos-mqttd.service`, and neither needs a key of its own; reporting both
+///   halves flat would take a new pair of keys each time the reconciler grows
+///   a unit.
 ///
 /// Every field is optional here: a key the reconciler has not published
 /// renders as "unknown" and never as a default, because a listen address on
@@ -2271,9 +2241,8 @@ const MQTT_BRIDGE_UNIT: &str = "mos-mqttd.service";
 /// holds the two ends of this together. What does is a pair of tests: the
 /// reconciler asserts its exact published key set and names this file as the
 /// consumer, and this crate's fixture is a verbatim copy of the reconciler's
-/// own expectation. The two ends disagreed once -- flat here, nested there --
-/// and stayed green for exactly as long as each side only tested itself
-/// against a shape it had invented.
+/// own expectation. Without that pair each side tests itself against a shape
+/// it invented, and both stay green while disagreeing.
 struct MqttView {
     /// `mqtt.enabled` -- what the operator asked for.
     enabled: bool,
@@ -2334,7 +2303,7 @@ impl MqttView {
     /// This is how a listen address the broker cannot use reaches the
     /// operator. Nothing rejects such a value -- not the reconciler, not this
     /// pane -- because rejecting it would make the master switch depend on
-    /// `listen` being valid, which is the conflation RFCT-104 rejected. The
+    /// `listen` being valid, and the two are separate settings. The
     /// broker takes the value, fails to parse it and exits, and the only
     /// evidence is the unit state. A pane that showed "enabled" and stopped
     /// there would be reporting the operator's request back to them as though
@@ -2358,8 +2327,8 @@ impl MqttView {
     /// broker fails to start on one it cannot parse, and guessing would put a
     /// security claim on the page that nothing measured.
     ///
-    /// This drives a warning and nothing else. Refusing to save on it is the
-    /// coupling RFCT-104 rejected; see [`MQTT_SEPARATE_CONFIG_NOTICE`].
+    /// This drives a warning and nothing else; refusing to save on it would
+    /// couple the switch to the listener. See [`MQTT_SEPARATE_CONFIG_NOTICE`].
     fn off_host_unauthenticated(&self) -> bool {
         let Some(address) = self
             .text(&["listen", "address"])
@@ -2404,10 +2373,10 @@ const MQTT_UPDATE_NOTICE: &str = "Updating to this image stops the MQTT bridge u
 
 /// Why nothing on this page refuses to save.
 ///
-/// Coupling the listener to the switch -- refuse to enable MQTT unless the
-/// bind is loopback or authentication is on -- was proposed once and rejected.
-/// The pane is where an operator would otherwise assume the switch checks
-/// them, so the pane is where it says that it does not.
+/// The switch does not couple to the listener: it never refuses to enable
+/// MQTT because the bind is not loopback or authentication is off. The pane is
+/// where an operator would otherwise assume the switch checks them, so the
+/// pane is where it says that it does not.
 const MQTT_SEPARATE_CONFIG_NOTICE: &str = "The listen address, the port and authentication are configured separately from this switch, and this switch does not validate them. No combination of them makes it refuse to save, and none of them makes the broker refuse to start: a broker open to a trusted segment is a configuration an operator is allowed to choose, so mos warns about it rather than preventing it.";
 
 /// The exposure, stated as what it lets a stranger do.
@@ -2415,7 +2384,7 @@ const MQTT_OPEN_LISTENER_WARNING: &str = "This broker accepts unauthenticated co
 
 /// A failed broker, and where the reason is.
 ///
-/// The pane cannot say WHY it failed -- it has a unit state and not the
+/// The pane cannot say why it failed -- it has a unit state and not the
 /// journal -- so it says where the reason is instead of guessing at one. The
 /// commonest cause is a listen address that is not an IP address, because the
 /// broker binds an interface and does not resolve names, but naming that as
@@ -2574,7 +2543,7 @@ async fn ssh_password(
     if let Err(err) = app.api.set_transient_root_password(&form.password).await {
         return bus_error(&err);
     }
-    // The event carries WHO opened a password channel and from where — and
+    // The event carries who opened a password channel and from where — and
     // deliberately nothing about the password itself.
     app.audit.record("transient-password", "set", &source);
     Redirect::to("/ssh?saved=1").into_response()
