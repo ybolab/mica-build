@@ -717,11 +717,10 @@ rather than a build date.
 
 The three sections above each gate one STEP of the cut against the step before
 it. This one gates **the whole of M5**: the nine-stage chain at the tree that
-ships, against the tree as it stood the commit before the cut
-(`66bb0b8`'s parent — the last tree with no `os/rootfs/stages/` in it, built
-from `Dockerfile.v2` alone). Cold, x64,
-**2026-08-26**, both sides cut with `git worktree add --detach`, both on the
-`default` buildx builder.
+ships, against the tree as it stood the commit before the cut (`66bb0b8`'s parent —
+the last tree with no `os/rootfs/stages/` in it, built from `Dockerfile.v2`
+alone). Cold, x64, **2026-08-26**, both sides cut with
+`git worktree add --detach`, both on the `default` buildx builder.
 
 **Each side ran its OWN `os/rootfs/build-v2.sh`, unmodified.** The two drivers
 are not the same program — the pre-M5 one calls `docker buildx build` over one
