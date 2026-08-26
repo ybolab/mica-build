@@ -260,14 +260,28 @@ removed, so its green is not the green of a subject that never occurs.
 
 **The change is one whose effect is visible only on the board this host cannot
 build.** x64 is the board that DISCARDED both of these, so on x64 the
-parameterisation is worth exactly one thing — that the image is unchanged —
-and that is what was measured (`../README.md`, RFCT-111 M5d: **6** differing
-entries of 9,241, the control's own set). What x64 does show is the mechanism
-in the state the change is about: `firmware: this board declares none` and
-`hwinit: 0 board fact(s) declared, 0 unit(s) installed and enabled`, from three
-staged directories that are empty. The cx3576 side is structurally correct by
-inspection and by its own staging run, and **was not built**: `binfmt_misc` is
-not mounted on this host and no builder advertises `linux/arm64`.
+parameterisation is worth exactly one thing — that the image is unchanged — and
+that is what was measured (`../README.md`, RFCT-111 M5d): **7** differing
+entries of 9,241 against the control's first build and **6** against its second,
+with the control itself re-measured at **7** and the seventh identified as
+`apt/eipp.log.xz`'s `APT-ID` numbering. Nothing beyond the control, in either
+pairing.
+
+What x64 does show is the mechanism in the state the change is about:
+`firmware: this board declares none` and `hwinit: 0 board fact(s) declared,
+0 unit(s) installed and enabled`, from three staged directories that are empty.
+
+**The cx3576 half was not built and is not claimed.** `binfmt_misc` is not
+mounted on this host and no builder advertises `linux/arm64`. What WAS driven
+for cx3576 is the staging, which is where the parameterisation lives: pointed at
+the in-repo BSP, `build-v2.sh` selected exactly the five files
+`BOARD_FIRMWARE_FILES` declares out of the drop's 33, staged the thirteen
+`os/boards/cx3576/hwinit` files and the six confs, and then stopped at the arm64
+builder. The guards were driven from the failing side too, on x64 and by hand: a
+declared firmware file the BSP lacks, a declared path outside `/usr/lib/firmware`,
+a staged set smaller than the declared one, and a staged file whose name is not
+the declared one — four refusals, each naming both sides, against a positive
+control that installs the one declared file and nothing else.
 
 ## The reorderings, and why each was necessary
 

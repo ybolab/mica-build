@@ -618,45 +618,75 @@ The recipe is in `_out/gate/` of the M5c worktree — `chain-cold.sh` (one tree,
 one cold chain), `extract.sh` (M5b's, verbatim but for the root) and
 `compare.sh` — and it is meant to be re-run rather than cited.
 
-### RFCT-111 M5d: the board parameterisation, measured
+### RFCT-111 M5d: the board parameterisation, measured — and a SEVENTH entry
 
 `40-board`'s two fixed `cx3576` `COPY`s replaced by staged directories
-(`../rootfs/stages/README.md`, "Declining a board"). Both sides built cold on
-**2026-08-26**, x64, through the same driver — the tree is the only difference —
-and both extracted with the same `unsquashfs`:
+(`stages/README.md`, "Declining a board"). Every build below is cold, x64,
+**2026-08-26**, through the same driver, and every tree is a `git` checkout cut
+the same way — so the tree is the only difference between a control pair and a
+subject pair.
 
 | | entries |
 |---|---|
-| control — two cold builds that changed nothing (M5a, and M5b again) | 6 |
 | M5b's subject — the single file vs the four-stage chain | 14 |
 | M5c's subject — that chain vs the nine-stage chain | 6 |
-| **M5d's subject — literal board paths vs staged board directories** | **6** |
-| beyond the control | **0** |
+| **the control, RE-MEASURED here — the base tree against ITSELF, two cold builds 22 minutes apart** | **7** |
+| **M5d's subject vs the first control build** | **7** |
+| **M5d's subject vs the second control build** | **6** |
+| **beyond the control, in either pairing** | **0** |
 
-The differing set **is** the control's set, entry for entry:
+**The control is 7 today and was 6 for M5a, M5b and M5c.** The seventh is
+`/usr/share/factory/var/log/apt/eipp.log.xz` — apt's dump of the problem it
+handed its solver — and it is in the control, not in the change. It first showed
+up as a seventh entry against a subject build, which is exactly the shape of a
+regression, so it was measured rather than argued: a second cold build of the
+UNMODIFIED base tree reproduces it against the first, with the same signature.
+
+| | eipp.log.xz |
+|---|---|
+| decompressed size | 1,490 lines, identical on every side |
+| differing lines, control pair | 12 |
+| differing lines, subject pair | 12 |
+| what differs | `APT-ID:` and nothing else, in both pairs |
+| by how much | a constant **+4**, in both pairs |
+
+`APT-ID` is an index into apt's in-memory package cache, which spans every
+package the lists offer and not just the ones installed. Four more records in
+`deb.debian.org`'s index — the archive moved during the session — shifts every
+id by four and changes nothing about what is installed. `dpkg.log` proves that
+half directly: **byte-identical over all 694 operations** once timestamps are
+stripped, in the subject pair. And the third pairing settles it — the subject
+against the control's SECOND build, which fell on the same side of the archive
+move, is **6**, the pre-M5d set exactly.
+
+The rest of the differing set is the one this file has recorded since M5a:
 `/boot/initrd.img-*`, the four `/usr/share/factory/var/log` files and
-`aux-cache`. That is what an x64 build of this change should look like: x64 is
-the board that DISCARDED both of the things being parameterised, so a difference
-would have meant the mechanism changed what the board carries.
+`aux-cache`. That is what an x64 build of this change should look like — x64 is
+the board that DISCARDED both of the things being parameterised, so a real
+difference would have meant the mechanism changed what a board carries.
 
-Driven past the entry count:
+Driven past the entry count, because seven entries that differ for the right
+reason and seven that differ for a new one read identically in a list:
 
-- **`unsquashfs -lln` over all 9,241 entries differs on ONE line**, and only in
-  the initrd's SIZE (37,189,836 against 37,189,967 bytes). Every mode, uid, gid
-  and path on both sides is identical.
+- **`unsquashfs -lln` over all 9,241 entries differs on ONE line** in the
+  subject pair, and only in the initrd's SIZE (37,189,836 against 37,190,017
+  bytes). **The control pair also differs on exactly that one line** (37,189,836
+  against 37,190,044). Every mode, uid, gid and path on all three sides is
+  identical — which is the check that matters here, because a `COPY` that
+  changed what it stages would move a mode or a path before it moved a byte.
 - **`dpkg.log` with its timestamps stripped is byte-identical** — the same 694
   operations in the same order. `grub-editenv-install` did not move, so the apt
-  order the feature stages are arranged to preserve is unchanged.
+  order the feature stages are arranged to preserve is intact.
 - `alternatives.log` (2 lines) and `apt/history.log` (12 lines) are identical
   once their own timestamps are removed.
 - **`apt/term.log` is 657 lines on both sides and differs on exactly THREE**,
   which are the RSA/ECDSA/ED25519 host-key fingerprints `openssh-server`'s
   postinst echoes as it generates them. The keys themselves are removed by
   `stages/10-base` and are not in the image; only the console echo survives in
-  the log. Present in the control for the same reason.
-- `/usr/lib/firmware` **does not exist** in either packed root, which is the
-  behaviour `firmware-install.sh` was written to keep: a board with no radio
-  gets no empty directory standing where firmware would be.
+  the log.
+- `/usr/lib/firmware` **does not exist** in any of the three packed roots, which
+  is the behaviour `firmware-install.sh` was written to keep: a board with no
+  radio gets no empty directory standing where firmware would be.
 
 **A DIFFERENCE THE GATE FOUND IN ITSELF, recorded because it is the kind that
 reads as a subject failure.** The first run of this gate reported 6 differing
@@ -666,8 +696,9 @@ files. Not the change: the control tree had been snapshotted with
 `git archive HEAD | tar -x`, which produced `664`/`775` where a checkout under
 `umask 022` gives `644`/`755`, and the overlay is `cp -a`'d from those files
 into the build context. The content diff could not see it — `diff -r` compares
-bytes, not modes — so the listing is what caught it, and it is the second time
-in this campaign that going past the entry count has been the thing that paid.
+bytes, not modes — so the listing is what caught it. **A gate for a refactor has
+to be cut so that the two sides are the same KIND of thing**, and a tar
+extraction and a checkout are not.
 Fixed by cutting the control side with `git worktree add --detach` instead, so
 both sides are checkouts made the same way; the numbers above are that run.
 
