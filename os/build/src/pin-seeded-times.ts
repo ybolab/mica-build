@@ -138,6 +138,30 @@ export function timeCommands(inodes: readonly bigint[], fileMtime: string): stri
 }
 
 /**
+ * The cross-check, as its own function so the refusal is REACHABLE.
+ *
+ * `want` comes from the superblock and `got` from the group listing, and they
+ * are two independent readings of the same filesystem. Nothing a caller can pass
+ * to pinSeededTimes makes a real dumpe2fs disagree with itself, so a guard left
+ * inline there could only ever be observed NOT firing -- which this tree has
+ * twice shipped and found by mutation (os/verify/run.sh's count line, M3a's and
+ * M3b's vacuity guards). Split out, it is driven with the numbers a real
+ * filesystem produced and a listing truncated the way a changed dumpe2fs would
+ * truncate it.
+ */
+export function refuseUnlessCountsAgree(image: string, want: bigint, got: bigint, firstInode: bigint): void {
+  if (got === want) return
+  throw new Error(
+    `the inode bitmap of ${image} says ${want} inodes are in use from ${firstInode} up, but parsing `
+    + `dumpe2fs's free-inode ranges found ${got}; refusing to pin timestamps against a listing this `
+    + `code no longer understands.\n`
+    + `A parse that understood nothing produces an empty command file, which debugfs runs, does `
+    + `nothing with, and exits 0 on -- so this count is the only thing standing between a silent `
+    + `no-op and a byte-identity check that passes for the wrong reason.`,
+  )
+}
+
+/**
  * Rewrite every in-use inode's atime and ctime, and refuse a listing this no
  * longer understands.
  *
@@ -151,17 +175,8 @@ export async function pinSeededTimes(tb: Toolbox, image: string, fileMtime: stri
 
   const listing = await dumpe2fsFull(tb, image)
   const used = inUseInodes(listing, header.firstInode, header.inodeCount)
+  refuseUnlessCountsAgree(image, want, BigInt(used.length), header.firstInode)
   const got = BigInt(used.length)
-  if (got !== want) {
-    throw new Error(
-      `the inode bitmap of ${image} says ${want} inodes are in use from ${header.firstInode} up, but `
-      + `parsing dumpe2fs's free-inode ranges found ${got}; refusing to pin timestamps against a `
-      + `listing this code no longer understands.\n`
-      + `A parse that understood nothing produces an empty command file, which debugfs runs, does `
-      + `nothing with, and exits 0 on -- so this count is the only thing standing between a silent `
-      + `no-op and a byte-identity check that passes for the wrong reason.`,
-    )
-  }
 
   // `${img}.times`, exactly as the shell writes it. The image is on a path the
   // toolbox mounts by identity, so the same name resolves on both sides of the
