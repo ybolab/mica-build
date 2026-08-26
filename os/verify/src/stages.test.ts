@@ -310,6 +310,16 @@ describe('buildArgv', () => {
     )
   })
 
+  test('--no-cache comes first, before the builder, and is absent by default', () => {
+    const [first] = planChain(discoverStages(dir()), {
+      board: 'x64',
+      supplied: { TRIXIE: 'x' },
+    })
+    const cold = buildArgv(first!, { context: '/r', platform: 'p', noCache: true })
+    expect(cold.slice(0, 3)).toEqual(['buildx', 'build', '--no-cache'])
+    expect(buildArgv(first!, { context: '/r', platform: 'p' })).not.toContain('--no-cache')
+  })
+
   test('a builder name is passed through when given, and absent when not', () => {
     const [first] = planChain(discoverStages(dir()), {
       board: 'x64',
@@ -411,6 +421,11 @@ describe('parseArgs', () => {
   test('a real build with no --dest is refused; a plan without one is not', () => {
     expect(() => parseArgs(['--board', 'x64'])).toThrow(/--dest is required/)
     expect(parseArgs(['--board', 'x64', '--plan']).planOnly).toBe(true)
+  })
+
+  test('--no-cache is off unless asked for', () => {
+    expect(parseArgs(['--board', 'x64', '--plan']).noCache).toBe(false)
+    expect(parseArgs(['--board', 'x64', '--plan', '--no-cache']).noCache).toBe(true)
   })
 
   test('an unknown option is refused', () => {

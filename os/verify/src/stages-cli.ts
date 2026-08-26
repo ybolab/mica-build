@@ -44,6 +44,7 @@ interface Options {
   stagesDir: string
   terminalTarget: string
   planOnly: boolean
+  noCache: boolean
   args: Record<string, string>
 }
 
@@ -65,6 +66,8 @@ function usage(): string {
     '  --arg KEY=VALUE  a build argument, repeatable. Each is passed only to the',
     '                   stages that DECLARE it; one no stage declares is refused',
     '  --plan           print the chain and the exact command lines, run nothing',
+    '  --no-cache       build every stage from scratch. For the determinism gate:',
+    '                   a chain replayed out of cache is not a cold build',
   ].join('\n')
 }
 
@@ -82,6 +85,7 @@ export function parseArgs(argv: readonly string[]): Options {
     stagesDir: STAGES_DIR,
     terminalTarget: DEFAULT_TERMINAL_TARGET,
     planOnly: false,
+    noCache: false,
     args: {},
   }
   // An option whose value is the NEXT FLAG is the mistake that silently
@@ -126,6 +130,9 @@ export function parseArgs(argv: readonly string[]): Options {
         break
       case '--plan':
         o.planOnly = true
+        break
+      case '--no-cache':
+        o.noCache = true
         break
       case '--arg': {
         const kv = value(a, argv[++i])
@@ -262,6 +269,7 @@ export async function main(argv: readonly string[]): Promise<number> {
           builder: opts.builder,
           dest: opts.dest ?? '<dest>',
           terminalTarget: opts.terminalTarget,
+          noCache: opts.noCache,
         }).join(' ')}`,
       )
     }
@@ -292,6 +300,7 @@ export async function main(argv: readonly string[]): Promise<number> {
           builder: opts.builder,
           dest: opts.dest,
           terminalTarget: opts.terminalTarget,
+          noCache: opts.noCache,
         }),
       ],
       `stage ${b.name}`,

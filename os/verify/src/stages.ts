@@ -301,9 +301,21 @@ export function buildArgv(
     readonly builder?: string
     readonly dest?: string
     readonly terminalTarget?: string
+    /**
+     * Build every stage from scratch, reading no layer cache.
+     *
+     * This exists for the GATE, not for convenience. os/rootfs/README.md's
+     * determinism gate compares a chain build against a control of two COLD
+     * builds -- and a chain whose stages came out of cache is not a cold build,
+     * it is a replay of whichever run filled the cache. Without a flag the only
+     * way to be cold is to prune the daemon's cache, which on a shared machine
+     * takes every other build's cache with it.
+     */
+    readonly noCache?: boolean
   },
 ): string[] {
   const argv = ['buildx', 'build']
+  if (opts.noCache) argv.push('--no-cache')
   if (opts.builder) argv.push('--builder', opts.builder)
   argv.push('--platform', opts.platform, '-f', build.path)
   if (build.prevTag) argv.push('--build-arg', `${PREV_ARG}=${build.prevTag}`)

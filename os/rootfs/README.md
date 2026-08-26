@@ -462,10 +462,11 @@ hash on every cold build; `mos-seed-state` generates them per device on first
 boot instead.
 
 `cache-hot` is doing real work in that sentence and RFCT-111 measured how much.
-**A cold x64 build does not reproduce itself.** Three cold builds — two of one
-unmodified single-file `Dockerfile.v2`, one of another — produced three
-different `rootfs-verity.img` sha256s, and in every pairing the differing set
-was the same six of 9,241 entries:
+**A cold x64 build does not reproduce itself.** M5a took three cold builds; M5b
+took four more of the untouched single file — `1b3f5e50…`, `7aad6efd…`,
+`55cf38f3…`, `af841f4f…` — and every one of the seven produced a different
+`rootfs-verity.img` sha256. In every pairing the differing set was the same six
+of 9,241 entries:
 
 | Entry | Why it moves |
 |---|---|
@@ -480,14 +481,77 @@ They survive because the package-manager purge takes `/var/lib/dpkg` and
 `/usr/share/factory/var` whole. Removing them would change image content, which
 is outside PLAN-014's scope; this is recorded, not fixed.
 
-**What this means for a byte-identity gate.** Changing the Dockerfile
-necessarily invalidates the layer cache, so "byte-identical before and after"
-cannot be measured cache-hot — and measured cold it fails for the six reasons
-above whether or not anything changed. A gate that compares sha256 across a
-build change is measuring the clock. The gate that works is the one RFCT-111
-used: extract both images and `diff -r` the trees, then check that the differing
-set is no larger than the control's, where the control is two cold builds of the
-*unmodified* file.
+**What this means for a byte-identity gate.** Changing the build necessarily
+invalidates the layer cache, so "byte-identical before and after" cannot be
+measured cache-hot — and measured cold it fails for the six reasons above
+whether or not anything changed. A gate that compares sha256 across a build
+change is measuring the clock. The gate that works: extract both images and
+`diff -r --no-dereference` the trees, then check that the differing set is no
+larger than the control's, where the control is two cold builds of the
+*unmodified* file. `os/verify/run.sh --build-rootfs --no-cache` exists so the
+subject side can be cold without pruning the daemon's cache out from under
+every other build on the machine.
+
+### A SEVENTH ENTRY THE SIX-ENTRY CONTROL CANNOT SEE: the build DATE
+
+M5b's control builds straddled midnight UTC and turned up an entry M5a's could
+not, because both of M5a's ran on one day. Two builds on **different days**
+also differ in
+
+| Entry | What differs |
+|---|---|
+| `/usr/share/factory/etc/shadow` | `systemd-network`, `messagebus`, `systemd-resolve` and `sshd` carry LAST-CHANGE `20690` on 2026-08-25 and `20691` on 2026-08-26 |
+| `/etc/shadow-` | the same four, plus `mos`'s own pre-`chage` row, which the backup keeps |
+
+This is the exact failure `chage -d 2020-01-01` exists to prevent, and the
+comments on the three mos accounts say so outright: *"useradd stamps TODAY into
+it, which would make the packed rootfs — and therefore its dm-verity root hash
+— differ on every build day for no content reason at all."* The pinning covers
+the three accounts this build creates. It does not cover the accounts Debian's
+own package postinsts create, and it does not cover the `-` backup files, which
+snapshot the state **before** `chage` ran.
+
+So the packed root, and its verity root hash, depend on the calendar day.
+Reported, not fixed: `/etc/shadow-` and `/etc/passwd-` are `useradd`'s
+pre-modification backups, unreadable and unwritable on a read-only verity root
+and read by nothing in the image, so removing them or pinning their dates is an
+image content change and outside PLAN-014's scope. A gate that must compare two
+builds should run them on the same day, or strip these two files.
+
+### RFCT-111 M5b: the stage split, measured
+
+The chain (`stages/`) against the single file it replaced, both built cold on
+one day, x64:
+
+| | entries |
+|---|---|
+| control — two cold builds of the unmodified single file | **6** |
+| subject — unmodified single file vs the chain | **14** |
+| beyond the control | **8**, every one in the account family |
+
+The eight are `/etc/passwd`, `/etc/group`, `/etc/gshadow`,
+`/usr/share/factory/etc/shadow` and the four `-` backups. They are the price of
+`account-mos.sh` moving into `10-base` while the two MQTT service accounts stay
+with the feature material, and they are semantically inert — which was proved
+rather than asserted:
+
+- the four live files are **identical as sets**; `mos` only changes line
+  position, and every uid, gid, shell, home and hash is unchanged.
+- the four `-` backups differ by **exactly one entry**: `useradd` snapshots the
+  file before each change, so the backup now holds the state before
+  `mos-mqtt-broker` (which includes `mos`) instead of the state before `mos`.
+- `unsquashfs -lln` over both images is identical for mode, uid, gid and path
+  on all 9,241 entries; the only size changes are these files and the initrd.
+
+**The reorder is not optional.** The floor's operator account cannot come after
+a feature's service accounts and still be the floor, so no arrangement of the
+stage vocabulary preserves that order. RFCT-111's acceptance anticipated this —
+"byte-identical **where achievable**; if apt-layer reordering makes that
+unattainable, the fallback gate is full verifier parity plus an explicitly
+anchored new-baseline commit". This is that anchor, and the parity half was run:
+`MOS_BOARD=x64 bash os/verify-image-v2.sh` on an image assembled from a
+chain-built rootfs reports **`RESULT: PASS (290/290 checks, 22 skipped)`**, the
+same count as before the split.
 
 Also cold-build-dependent, and now closed: the byte layout used to depend on
 whichever `squashfs-tools` and `cryptsetup` came out of a floating
