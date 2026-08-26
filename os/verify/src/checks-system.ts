@@ -44,7 +44,7 @@
 // images and diverge on the one image where the difference is the whole point.
 // Reported for M4e; not fixed here.
 
-import { existsSync, readFileSync, readdirSync, readlinkSync, realpathSync, statSync, type Stats } from 'node:fs'
+import { existsSync, lstatSync, readFileSync, readdirSync, readlinkSync, realpathSync, statSync, type Stats } from 'node:fs'
 import { join } from 'node:path'
 import type { Board } from './board.ts'
 import { boardsWhere, isUBoot, SHIPPED } from './board-scope.ts'
@@ -929,8 +929,14 @@ function sshWants(root: string): string[] {
     }
     for (const name of names) {
       const full = join(dir, name)
-      const st = entry('', full)
-      if (st === undefined) continue
+      // lstat, never stat: `find` reports the LINK, and a *.wants entry IS one.
+      let st: Stats
+      try {
+        st = lstatSync(full)
+      }
+      catch {
+        continue
+      }
       if ((name === 'ssh.service' || name === 'sshd.service') && /\.wants\//.test(full)) {
         found.push(full.slice(root.length))
       }
