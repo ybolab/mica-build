@@ -4,33 +4,21 @@
 #   bash os/build/run.sh                 install if needed, typecheck, then test
 #   bash os/build/run.sh --help
 #   bash os/build/run.sh src/geometry.test.ts   extra arguments go to `bun test`
-#
+set -euo pipefail
+
 # The TypeScript build driver behind the two disk assemblers and the bundle
 # builder, in the same shape as os/verify -- bun.lock, package.json,
-# tsconfig.json, run.sh, src/.
-#
-# A second script rather than os/verify/run.sh parameterised. The two overlap --
-# both find a bun, both typecheck, both refuse a suite that asserted nothing --
-# and the rule about duplication is that two copies which must agree about the
-# same input are the thing to remove. These two agree about nothing observable:
-# each finds a working bun for its own package, and there is no input on which
-# one could be right and the other wrong. What they must not duplicate is the
-# pin -- which bun -- and they do not: both ask os/build-env/from.sh for
-# IMAGE_BUN_1 and neither re-validates it.
-#
-# Where they genuinely differ is not cosmetic. os/verify needs bun and nothing
-# else; os/build drives sgdisk, mtools, mkimage, veritysetup, e2fsprogs and
-# rauc, and on a host with none of them (this one has none of the first four)
-# the toolbox runs them in a pinned container -- so os/build needs a docker
-# client wherever bun ends up running, including inside the pinned bun container
-# itself. That is what the extra mounts below are for.
-#
-# Zero tests is a failure and bun does not agree. Measured with bun 1.4.0:
-# `bun test` exits 1 when no test file matches its glob, but exits 0 when a file
-# matches and declares no tests -- "Ran 0 tests across 1 file", green. The guard
-# at the bottom of this file is driven from the failing side by mutation before
-# it is trusted: see HARNESS.md.
-set -euo pipefail
+# tsconfig.json, run.sh, src/. A second script rather than os/verify/run.sh
+# parameterised: the two overlap, but they agree about nothing observable, each
+# finding a working bun for its own package, and what they must not duplicate is
+# the pin -- which they do not, both asking os/build-env/from.sh for IMAGE_BUN_1
+# and neither re-validating it. Where they genuinely differ is not cosmetic:
+# os/verify needs bun and nothing else, while os/build drives sgdisk, mtools,
+# mkimage, veritysetup, e2fsprogs and rauc, and on a host with none of them
+# (this one has none of the first four) the toolbox runs them in a pinned
+# container -- so os/build needs a docker client wherever bun ends up running,
+# including inside the pinned bun container itself. That is what the extra
+# mounts below are for.
 
 # Anchored, not counted -- src/paths.ts states the reasoning for the TypeScript
 # side and it is the same here. os/verify is in the list because this package
@@ -289,20 +277,19 @@ else
 fi
 
 # The one mode the container route cannot carry, and not for the reason
-# os/verify's --parity cannot: that image has no docker client at all, and this
-# one is given the client and the daemon socket precisely so its toolbox can
-# start sibling containers. What it is not given is `docker buildx`, which is a
-# CLI plugin rather than a subcommand -- it lives in /usr/lib/docker/cli-plugins
-# on this host and that directory is not mounted. Driven, not assumed: with the
-# client and socket mounted and MOS_BUILD_DOCKER set, the container answers
+# os/verify's --parity cannot: that image has no docker client at all, while
+# this one is given the client and the daemon socket so its toolbox can start
+# sibling containers. What it is not given is `docker buildx`, a CLI plugin
+# rather than a subcommand -- it lives in /usr/lib/docker/cli-plugins on this
+# host and that directory is not mounted. Driven, not assumed: with the client
+# and socket mounted and MOS_BUILD_DOCKER set, the container answers
 #
 #   docker: unknown command: docker buildx
 #
-# Mounting the plugin directory too would close it, and that is a decision
-# rather than a line: it puts a second host binary inside the pinned image, and
-# the pin exists so that what runs is a recorded value. Left open and named,
-# because --build-rootfs is reached from os/rootfs/build-v2.sh, which needs
-# docker on the host anyway -- so what this asks for on top is bun.
+# Mounting the plugin directory would close it, at the cost of a second host
+# binary inside the pinned image, and the pin exists so that what runs is a
+# recorded value. Left open and named, because --build-rootfs is reached from
+# os/rootfs/build-v2.sh, which needs docker on the host anyway.
 if [ "${MODE}" = build-rootfs ] && [ "${ROUTE}" = container ]; then
     echo "error: --build-rootfs needs a bun on THIS host, and there is none (${WHY})." >&2
     echo "       The suite runs in the pinned bun container; this mode cannot, because it drives" >&2
@@ -406,8 +393,8 @@ fi
 # It needs one thing the assemblers do not, and the failure is named by the
 # builder rather than here: the rauc binary os/update/rauc/build.sh produces for
 # THIS HOST's architecture. A bundle is written by one rauc and installed by
-# another on the device, and commit 9a43a59 records what happens when they are
-# not the same build.
+# another on the device, and nothing about the format makes them compatible by
+# accident.
 if [ "${MODE}" = bundle ]; then
     echo "os/build: building the RAUC update bundle"
     rc=0
@@ -415,7 +402,11 @@ if [ "${MODE}" = bundle ]; then
     exit "${rc}"
 fi
 
-# --- the suite, and the guard against a run that asserted nothing ------------
+# The suite, and the guard against a run that asserted nothing. Zero tests is a
+# failure and bun does not agree: measured with bun 1.4.0, `bun test` exits 1
+# when no test file matches its glob but exits 0 when a file matches and
+# declares no tests -- "Ran 0 tests across 1 file", green. The guard below is
+# driven from the failing side by mutation before it is trusted: see HARNESS.md.
 OUT="$(mktemp)"
 trap 'rm -f "${OUT}"' EXIT
 
