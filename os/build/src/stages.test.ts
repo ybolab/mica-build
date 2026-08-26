@@ -7,9 +7,9 @@
 // checker stops being able to notice.
 
 import { describe, expect, test } from 'bun:test'
-import { mkdtempSync, writeFileSync, mkdirSync, rmSync } from 'node:fs'
+import { mkdtempSync, readdirSync, readFileSync, writeFileSync, mkdirSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { basename, join } from 'node:path'
 
 import {
   auditChain,
@@ -28,6 +28,7 @@ import {
   type StageFile,
 } from './stages.ts'
 import { parseArgs, parseDriver, driverCanChain, dockerBin } from './stages-cli.ts'
+import { BOARDS_DIR } from './paths.ts'
 
 // A scratch directory of stage files. Under the repository's own _out/ rather
 // than /tmp: a bind mount of /tmp on this host propagates as an EMPTY directory
@@ -713,5 +714,64 @@ describe('the chain this tree actually ships', () => {
     // radios" on a board that has them.
     const declaring = stages.filter((s) => s.declaredArgs.includes('BOARD_RADIOS'))
     expect(declaring.length).toBeGreaterThanOrEqual(2)
+  })
+
+  // RFCT-111 M5d's deliverable, asserted rather than claimed: `40-board`
+  // parameterised by the board instead of naming one.
+  //
+  // THE BOARD NAMES ARE THE DIRECTORY, os/boards/, for the same reason the
+  // stage list is: a board added to the tree but not to a list here would be a
+  // board this check cannot see, and it would pass for that reason alone.
+  //
+  // COMMENTS ARE EXCLUDED ON PURPOSE. Several stages explain themselves by
+  // naming the board a thing was found on -- 10-base's "TRUE OF cx3576 AND
+  // FALSE OF x64", 30-feature-radios pointing at where a board's overlay keeps
+  // its radio mounts -- and prose that names a board is how the reasoning stays
+  // legible. What must not name one is an INSTRUCTION, because that is where a
+  // board name decides what the image carries.
+  const boardNames = readdirSync(BOARDS_DIR, { withFileTypes: true })
+    .filter((e) => e.isDirectory())
+    .map((e) => e.name)
+
+  // `COPY board/cx3576/rootfs/firmware/...` must be seen; `# ... on cx3576 ...`
+  // must not. Docker line continuations mean an instruction can span lines, so
+  // this keeps every non-comment line rather than trying to reassemble them.
+  const instructionLines = (text: string): string[] =>
+    text.split('\n').filter((l) => !l.trimStart().startsWith('#') && l.trim().length > 0)
+
+  const namesABoard = (text: string): string[] =>
+    instructionLines(text).flatMap((l) =>
+      boardNames.filter((b) => l.includes(b)).map((b) => `${b}: ${l.trim()}`),
+    )
+
+  test('no stage INSTRUCTION names a board', () => {
+    expect(boardNames.length).toBeGreaterThanOrEqual(2)
+    const offences = stages.flatMap((s) =>
+      namesABoard(readFileSync(s.path, 'utf8')).map((o) => `${basename(s.path)} -- ${o}`),
+    )
+    expect(offences).toEqual([])
+  })
+
+  test('...and the check can see one, so the green above is not vacuous', () => {
+    // Driven from the failing side with the exact instruction M5d removed. A
+    // check whose subject never occurs passes on an empty tree, which is the
+    // shape of green this campaign keeps finding.
+    const before = [
+      '# COPY board/cx3576/rootfs/firmware/fmacfw_8800d80_u02.bin /tmp/fw/',
+      'COPY os/boards/cx3576/hwinit/ /tmp/hwinit/',
+    ].join('\n')
+    expect(namesABoard(before)).toEqual(['cx3576: COPY os/boards/cx3576/hwinit/ /tmp/hwinit/'])
+  })
+
+  test('40-board takes both of its board directories as arguments', () => {
+    // The shape M5d chose, and the one thing about it a reader cannot infer
+    // from the absence above: the firmware and the hwinit units arrive as
+    // STAGED DIRECTORIES, the way BOARD_INIT_DIR and MODULES_TAR already did,
+    // because a COPY cannot be gated on an ARG. A 40-board that stopped
+    // declaring one of these would have gone back to a fixed path.
+    const board = stages.find((s) => s.name === '40-board')!
+    for (const a of ['BOARD_FIRMWARE_DIR', 'BOARD_HWINIT_DIR', 'BOARD_INIT_DIR', 'MODULES_TAR']) {
+      expect(board.declaredArgs).toContain(a)
+    }
   })
 })
