@@ -420,8 +420,10 @@ export const EXT4_CHECKS: readonly CheckCase[] = [
  * both and quietly make every tier the empty-at-build one -- which passes on
  * three tiers and fails on the fourth, i.e. it would look like a defect in the
  * image. A layout-partition ROLE would be the honest place for this if a board
- * ever needed to spell it differently; that is a change to `os/boards/`, and
- * PLAN-014:220-223 puts board definitions' content outside this task.
+ * ever needed to spell it differently; that is a change to `os/boards/` that
+ * changes what the image mounts, and PLAN-014's Scope section puts that outside
+ * this task -- "No change to device-side runtime behaviour, image content
+ * contracts (outside explicitly anchored baselines)".
  */
 function isVarTier(_board: Board, layoutName: string): boolean {
   return layoutName === 'EPHEMERAL'

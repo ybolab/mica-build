@@ -9,8 +9,9 @@
 //
 // Every path, prefix and unit name the Wi-Fi assertions compare against is READ
 // out of `mosd/mosd/src/reconciler/` rather than restated here, exactly as the
-// oracle reads it. Reading those sources is in scope under PLAN-014:220-223;
-// changing them is not, and nothing here writes.
+// oracle reads it. Reading those sources is in scope under PLAN-014's Scope
+// section -- "No change to ... `mosd/` Rust sources" -- while changing them is
+// not, and nothing here writes.
 //
 // A constant restated in two places drifts, and THIS drift is invisible from the
 // code side: a reconciler that renders into a directory the image does not

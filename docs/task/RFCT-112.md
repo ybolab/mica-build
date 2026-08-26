@@ -122,10 +122,10 @@ target passing with nothing behind it is worse than no target.
 M6e first recorded this as shipping. **L2 ruled that it is M6's own to fix, and
 the ruling is right.** `os/build/src/bundle.ts` was created by M6d (`eee58ca`,
 tests in `020d003`) and `git log --follow` returns only those two commits, so no
-other subtask owns it; PLAN-014:220-223 excludes device-side runtime behaviour,
-image content contracts, `board/`, `mosd/` and `test/apid-api`, none of which is
-`os/build/src/`; and the spec's record-not-fix instruction was about the
-*shell's* defect, where fixing a file about to be deleted is pointless.
+other subtask owns it; PLAN-014's **Scope** section excludes device-side runtime
+behaviour, image content contracts, `board/`, `mosd/` and `test/apid-api`, none
+of which is `os/build/src/`; and the spec's record-not-fix instruction was about
+the *shell's* defect, where fixing a file about to be deleted is pointless.
 
 `sed` expands `&`; JavaScript expands `$&`, `` $` ``, `$'`, `$$` and `$n` in a
 replacement string, and `replaceAll` is not exempt. The port had fixed `&` and
@@ -179,7 +179,8 @@ confirmed MOOT because M4e deleted that file.
 ### Left alone deliberately
 
 `test/apid-api/run.sh` carries a remedy naming the deleted `os/mkimage-x64.sh`.
-It was repointed and then **reverted**: PLAN-014's scope (`docs/plan/PLAN-014.md`
-:220-223) excludes `test/apid-api`. Same for the two `board/*/board.yaml`
-citations, under the same sentence's `board/` exclusion. Finding is in scope;
-acting is not. Both are stale and neither is this task's to change.
+It was repointed and then **reverted**: PLAN-014's **Scope** section excludes
+`test/apid-api` — *"No change to … `mosd/` Rust sources, or `test/apid-api`"*.
+Same for the two `board/*/board.yaml` citations, under the same sentence's
+`board/` exclusion. Finding is in scope; acting is not. Both are stale and
+neither is this task's to change.
