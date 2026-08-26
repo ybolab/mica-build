@@ -93,13 +93,11 @@ chmod 0755 /mnt/state/quadlet
 
 # NO SHADOW FILE IS SEEDED HERE, deliberately. /etc/shadow is a symlink to
 # /run/mos/shadow and mos-shadow-reconcile.service builds it in RAM on every
-# boot. This script used to run that same reconciler against
-# /mnt/state/mos/shadow so the file would exist on STATE before anything read
-# it; that line is gone because the only credential mos supports on the console
-# is a TRANSIENT root password, and a credential file on a partition that
-# survives reboots cannot be transient by construction -- only by a protocol
-# that something has to remember to run. Seeding it here would put a shadow
-# file back on persistent storage where nothing reads it and nothing clears it.
+# boot. The only credential mos supports on the console is a TRANSIENT root
+# password, and a credential file on a partition that survives reboots cannot
+# be transient by construction -- only by a protocol something has to remember
+# to run. Seeding one here would put a shadow file on persistent storage where
+# nothing reads it and nothing clears it.
 
 for t in rsa ecdsa ed25519; do
     key="/mnt/state/ssh/ssh_host_${t}_key"

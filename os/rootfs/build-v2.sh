@@ -128,7 +128,7 @@ fi
 
 # Image profile baked into /usr/lib/mos/profile.conf. mosd reads it on first
 # boot and FAILS CLOSED to prod, so the value has to be exactly "dev" or "prod"
-# in lowercase; the Dockerfile rejects anything else. It no longer selects the
+# in lowercase; the Dockerfile rejects anything else. It does NOT select the
 # access.ssh.enabled seed: both profiles seed SSH OFF and neither image ships
 # ssh.service enabled, so the profile currently changes nothing that is seeded.
 MOS_PROFILE=${MOS_PROFILE:-dev}
@@ -141,10 +141,8 @@ fi
 . "$LAYOUT_ENV"
 
 # Board console facts. These describe a board's serial console, not its
-# partition layout -- and the comment here used to say "if a second board ever
-# needs a v2 image they move into a per-board file". x64 is that second board,
-# so they moved: each os/boards/<board>/board.env now carries its own
-# BOARD_CMDLINE_ARGS, and this refuses a layout that forgot to.
+# partition layout, so each os/boards/<board>/board.env carries its own
+# BOARD_CMDLINE_ARGS and this refuses a layout that forgot to.
 SIZE_BUDGET_MB="${SIZE_BUDGET_MB:-${BOARD_SIZE_BUDGET_MB:-}}"
 if [ -z "$SIZE_BUDGET_MB" ]; then
     echo "error: $LAYOUT_ENV sets no BOARD_SIZE_BUDGET_MB. Without a budget the root can grow past its slot and the first sign would be an image that does not fit" >&2
@@ -418,10 +416,10 @@ cp -a "$OVERLAY_SRC/." "$OVERLAY_STAGE/"
 # place, so a change to it cannot reach one board and miss the other.
 # The status indicator is a BOARD FILE, not a shared one with an exception.
 #
-# It used to live in overlay-v2 and be deleted here for boards that declare no
-# LED. Adding a file and then removing it is a worse statement than never
-# adding it: the shared overlay claimed every board has an indicator, and the
-# truth lived in a conditional somewhere else. os/boards/cx3576/overlay/ now
+# It is NOT in overlay-v2 and deleted here for boards that declare no LED:
+# adding a file and then removing it is a worse statement than never adding it,
+# because the shared overlay would claim every board has an indicator and the
+# truth would live in a conditional somewhere else. os/boards/cx3576/overlay/
 # carries mos-status-led, its unit and its wants symlink, so the file's
 # LOCATION is the fact. A board with an indicator ships one by having one.
 #
@@ -641,12 +639,11 @@ done
 
 # STAGE SELECTION, which is what replaced the WITH_* build arguments.
 #
-# WITH_CONTAINERS and WITH_MOSD are still the caller's spelling -- the
-# environment variable, and board/<name>/containers.env -- and they still mean
-# exactly what they meant. What changed is what this script does with them: a 0
-# used to travel into the build as `--build-arg WITH_CONTAINERS=0`, where five
-# separate RUNs and scripts each tested it, and now it names a stage the driver
-# does not build. There is one decision instead of five copies of one.
+# WITH_CONTAINERS and WITH_MOSD are the caller's spelling -- the environment
+# variable, and board/<name>/containers.env. A 0 names a stage the driver does
+# NOT build, rather than travelling into the build as a `--build-arg` that five
+# separate RUNs and scripts each have to test. One decision instead of five
+# copies of one.
 #
 # THE STAGED DIRECTORY'S ARGUMENT GOES WITH THE STAGE, and the driver enforces
 # that rather than trusting this list: an --arg no stage declares is REFUSED

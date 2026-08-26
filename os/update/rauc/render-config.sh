@@ -256,8 +256,8 @@ SLOTS
 # -- U-Boot from its own environment, the first-stage GRUB on the ESP from
 # grubenv -- and that is not visible here.
 #
-# The x64 board used to declare its two ESPs as the boot pair. RAUC installed
-# into the inactive one, which nothing mounts and the firmware never boots.
+# x64's boot pair is NOT its two ESPs: RAUC would install into the inactive
+# one, which nothing mounts and the firmware never boots.
 SLOTS_TEXT="$(
     rootfs_slots
     cat <<SLOTS

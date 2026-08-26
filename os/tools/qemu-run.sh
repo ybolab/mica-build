@@ -100,11 +100,11 @@ else
         echo "note: virtual disk is ${DISK_MIB} MiB for a ${img_mib} MiB image, so systemd-repart has room to extend DATA"
 fi
 
-# Applied on BOTH paths, reused disk included. It used to sit inside the
-# "grow the disk" branch, which only runs when the disk is fresh -- so every
-# run that reused a seeded disk silently booted without the debugging
-# arguments it was told to add, and mosd's journal never reached the console.
-# Two investigations were spent on a daemon that looked silent and was not.
+# Applied on BOTH paths, reused disk included. Inside the "grow the disk"
+# branch it would only run when the disk is fresh, so every run that reused a
+# seeded disk would silently boot without the debugging arguments it was told
+# to add and mosd's journal would never reach the console -- a daemon that
+# looks silent and is not.
 # MOS_QEMU_APPEND adds kernel arguments to the DISK COPY, by rewriting the
 # grub.cfg in its ESP. The shipped image is untouched, and the boot still goes
 # through GRUB reading its own configuration -- so this is a debugging knob,

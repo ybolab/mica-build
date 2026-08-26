@@ -81,10 +81,10 @@
 # which is a loud failure; with a default it would build green against an image
 # nobody chose. Build this through `make podman`.
 #
-# THE SWITCHOVER IS A TOOLCHAIN BUMP AS WELL AS AN IMAGE SWAP. golang:1.25 was a
-# Go line upstream no longer supports; mos-build-go is 1.26.7 and mos-build-rust
-# is 1.98.0 against the old rust:1.90. podman, netavark and aardvark-dns were
-# re-proven under both, not merely rebuilt -- see os/podman/README.md.
+# THE TOOLCHAIN IS THE BUILDER IMAGES', NOT AN UPSTREAM LANGUAGE IMAGE'S:
+# mos-build-go is Go 1.26.7 and mos-build-rust is Rust 1.98.0, both pinned by
+# sha256 in os/build-env/images.env. os/podman/README.md records what was
+# checked under them beyond "it built".
 ARG MOS_BUILD_BASE
 ARG MOS_BUILD_C
 ARG MOS_BUILD_GO
@@ -244,8 +244,8 @@ RUN --mount=type=cache,target=/ccache,id=ccache-c \
 # Rust: netavark and aardvark-dns
 # ---------------------------------------------------------------------------
 # mos-build-rust, which is Rust 1.98.0 from the tarball images.env pins by
-# sha256, against the rust:1.90-trixie tag that stood here before M2c. netavark
-# and aardvark-dns compile and their test suites are not what this stage runs,
+# sha256. netavark and aardvark-dns compile and their test suites are not what
+# this stage runs,
 # so "it built" is the whole claim -- os/podman/README.md records what was
 # checked beyond that.
 #
@@ -288,9 +288,8 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry,id=cargo-registry \
 # ---------------------------------------------------------------------------
 # Go: podman and its Quadlet generator
 # ---------------------------------------------------------------------------
-# mos-build-go, which is Go 1.26.7 from the tarball images.env pins by sha256,
-# against the golang:1.25-trixie tag that stood here before M2c -- a line Go no
-# longer supports.
+# mos-build-go, which is Go 1.26.7 from the tarball images.env pins by
+# sha256.
 #
 # build-essential IS STILL INSTALLED HERE, and that is not an oversight:
 # mos-build-go deliberately carries no C compiler. podman needs one because

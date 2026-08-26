@@ -4,20 +4,14 @@
 # Called from os/rootfs/stages/33-feature-mosd.Dockerfile, where the reasoning lives.
 # Build arguments read from the environment: none.
 #
-# EVERY FILE IS REQUIRED.
-# Each of the four blocks below used to open with
-#
-#   if [ "$WITH_MOSD" = "1" ] && [ -f /tmp/mosd/<binary> ]; then
-#
-# and both halves are gone, for different reasons. WITH_MOSD is now the presence
-# of the stage: a build that does not want mosd does not build the file that
-# calls this, so reaching this line means mosd was asked for. The `[ -f ]` half
-# was a SILENT SKIP -- it was there because build-v2.sh staged an empty
-# directory when WITH_MOSD=0, and it also swallowed a MOSD_DIR pointing at the
-# wrong place and a cross-build that produced three binaries out of four,
-# yielding an image that builds green, boots, and has no management daemon at
-# all. The list below is what the stage asks for, and a missing member is a
-# build failure naming the file, the way podman-install.sh already refused.
+# EVERY FILE IS REQUIRED, and there is no `[ -f ]` guard on any of them.
+# Whether mosd is wanted is the presence of the STAGE: a build that does not
+# want it does not build the file that calls this, so reaching this line means
+# mosd was asked for. A per-file existence test here would be a SILENT SKIP --
+# it would swallow a MOSD_DIR pointing at the wrong place, or a cross-build
+# that produced three binaries out of four, and yield an image that builds
+# green, boots, and has no management daemon at all. The list below is what the
+# stage asks for, and a missing member is a build failure naming the file.
 
 set -eu
 for f in mosd mosd.service com.mos.mosd.conf com.mos.ext.conf \
