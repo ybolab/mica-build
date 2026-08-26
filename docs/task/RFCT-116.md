@@ -34,18 +34,21 @@ strings - the one permitted non-comment edit class, each change tabulated below.
 
 ## Acceptance
 
-- `git diff bkd/fxykktxe...HEAD` over the area is comment/whitespace-only plus
-  the tabulated string changes and the two `docs/task/` files. **Verified** by
-  filtering the whole diff to non-comment lines; the result is exactly the
-  table below and nothing else.
+- `git diff c03bd09...HEAD` (the `bkd/fxykktxe` head this branch was cut from,
+  before L2 merged round 1 back into it) over the area is comment/whitespace-only
+  plus the tabulated string changes and the two `docs/task/` files. **Verified**
+  by filtering the whole diff to non-comment lines; the result is exactly the
+  tables below and nothing else. 72 files, none outside scope.
 - Every MUST-KEEP item that lives in this area survives; anything reworded is
   quoted before and after below.
 - All gates green.
 
 ## What changed, in numbers
 
-66 files, **+555 / -812**: a net reduction of 257 lines over the area, in
-8 commits. Plus `docs/task/RFCT-116.md` and one row in `docs/task/index.md`.
+70 files, **+562 / -819**: a net reduction of 257 lines over the area, in
+10 commits. Plus `docs/task/RFCT-116.md` and one row in `docs/task/index.md`.
+The four `mosd/` `.rs` files account for 7 changed lines of that total; the
+rest is the comment sweep.
 
 | file | before | after |
 |---|---|---|
