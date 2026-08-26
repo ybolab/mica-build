@@ -348,7 +348,7 @@ explicitly:
 
 ## Gate results
 
-Run from the worktree root at `4d6f4f5`.
+Run from the worktree root at `38a6a7c`.
 
 | gate | command | result |
 |---|---|---|
