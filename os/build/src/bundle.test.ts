@@ -1,24 +1,22 @@
 // The bundle builder, driven from the failing side.
 //
-// EVERY REFUSAL IN src/bundle.ts HAS A CASE HERE, AND EVERY CASE HAS A POSITIVE
-// CONTROL BESIDE IT. Without the control a guard that refused EVERYTHING would
-// satisfy the whole table: the assertion "this input is refused" is worth
-// nothing until "this input is accepted" has been asserted about the same
-// function, one edit away.
+// Every refusal in src/bundle.ts has a case here, and every case has a positive
+// control beside it: without the control, a guard that refused everything would
+// satisfy the whole table, because "this input is refused" is worth nothing
+// until "this input is accepted" has been asserted about the same function.
 //
-// AND EVERY MUTATION IS CHECKED TO BE A MUTATION. `mutate` below throws when a
+// Every mutation is checked to be a mutation. `mutate` below throws when a
 // replacement matched nothing, because a negative test whose input was never
-// broken is a test that passes for the wrong reason -- M6b shipped a
-// `String.replace` that changed only a comment and M6c a `str.replace` that
-// silently matched nothing, and both were caught this way rather than by
-// reading.
+// broken passes for the wrong reason -- a `String.replace` that changes only a
+// comment, or one that silently matches nothing, is caught this way rather than
+// by reading.
 //
-// THE FIXTURES ARE DERIVED, NOT WRITTEN DOWN. The cmdlines are built out of
+// The fixtures are derived, not written down. The cmdlines are built out of
 // os/boards/cx3576/board.env's own ROOTFS_A_GUID/ROOTFS_B_GUID and VERITY_SALT,
-// the boot.cmd mutated below is the SHIPPED one, and the manifest template is
+// the boot.cmd mutated below is the shipped one, and the manifest template is
 // os/update/rauc/manifest.raucm.in itself. A fixture restating a value the tree
-// already declares is a second copy to drift, and the guards here exist
-// precisely to catch drift.
+// already declares is a second copy to drift, and these guards exist to catch
+// drift.
 
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test'
 import { existsSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
@@ -75,7 +73,7 @@ function mutate(text: string, from: string | RegExp, to: string): string {
   return out
 }
 
-// --- fixtures, derived from the tree ----------------------------------------
+// Fixtures, derived from the tree.
 
 const ROOT_HASH = '776ffaf3c23c995829e39e443ef46e0b2ea5dd40d8a0ba9aa8849dfb9335f49f'
 const SALT = cx3576.veritySalt
@@ -121,7 +119,7 @@ function verityEnvArgs(overrides: Partial<Parameters<typeof bundleVerityEnvText>
   }
 }
 
-// --- the readers -------------------------------------------------------------
+// The readers.
 
 describe('the env-file readers answer the way the shell\'s sed answers', () => {
   test('envFileGet takes the LAST assignment, as `| tail -n1` does', () => {
@@ -155,7 +153,7 @@ describe('the env-file readers answer the way the shell\'s sed answers', () => {
   })
 })
 
-// --- G2..G5: the rauc version comparison -------------------------------------
+// G2..G5: the rauc version comparison.
 
 describe('THE RAUC THAT BUILDS A BUNDLE MUST BE THE RAUC THAT INSTALLS IT', () => {
   const ok = {
@@ -203,7 +201,7 @@ describe('THE RAUC THAT BUILDS A BUNDLE MUST BE THE RAUC THAT INSTALLS IT', () =
   })
 })
 
-// --- G6, G6b: the boot-attempt credits ---------------------------------------
+// G6, G6b: the boot-attempt credits.
 
 describe('the boot-attempts range guard, and the empty read that made it vacuous', () => {
   test('POSITIVE CONTROL: the SHIPPED boot.cmd passes, and the guard SAW credits', () => {
@@ -246,7 +244,7 @@ describe('the boot-attempts range guard, and the empty read that made it vacuous
   })
 })
 
-// --- G7, G8: the verity facts ------------------------------------------------
+// G7, G8: the verity facts.
 
 describe('the root hash and salt are READ, and the salt is checked against the pin', () => {
   test('POSITIVE CONTROL: a well-formed rootfs-verity.env yields both', () => {
@@ -284,7 +282,7 @@ describe('the root hash and salt are READ, and the salt is checked against the p
   })
 })
 
-// --- G9..G13: one slot's verity env ------------------------------------------
+// G9..G13: one slot's verity env.
 
 describe('a slot\'s mos-verity-<slot>.env, and the five cmdlines it refuses', () => {
   test('POSITIVE CONTROL: a correct slot-A cmdline yields the verity_args line', () => {
@@ -361,7 +359,7 @@ describe('a slot\'s mos-verity-<slot>.env, and the five cmdlines it refuses', ()
   })
 })
 
-// --- G14, G15: the grub cmdline fragment -------------------------------------
+// G14, G15: the grub cmdline fragment.
 
 describe('a grub board\'s slot cmdline fragment', () => {
   test('POSITIVE CONTROL: every pair is rendered, in order, as `set NAME=value`', () => {
@@ -405,7 +403,7 @@ describe('a grub board\'s slot cmdline fragment', () => {
   })
 })
 
-// --- G16, G17: the manifest --------------------------------------------------
+// G16, G17: the manifest.
 
 describe('the manifest is spliced by LINE, then substituted', () => {
   test('POSITIVE CONTROL: the SHIPPED template renders and passes both checks', () => {
@@ -417,7 +415,7 @@ describe('the manifest is spliced by LINE, then substituted', () => {
     expect(rendered).toContain('[image.rootfs]')
   })
 
-  // THE $-EXPANSION CLASS, DRIVEN FROM THE FAILING SIDE.
+  // The $-expansion class, driven from the failing side.
   //
   // os/update/bundle.sh:289 substituted with `sed`, where an `&` in the
   // replacement expands to the whole match; BUNDLE_COMPATIBLE has no guard
@@ -518,7 +516,7 @@ describe('the manifest is spliced by LINE, then substituted', () => {
   })
 })
 
-// --- G18..G20: reading the bundle back ---------------------------------------
+// G18..G20: reading the bundle back.
 
 describe('the bundle read back through rauc, compared against what was asked for', () => {
   const info = {
@@ -581,7 +579,7 @@ describe('the bundle read back through rauc, compared against what was asked for
   })
 })
 
-// --- G21: the payload digest -------------------------------------------------
+// G21: the payload digest.
 
 describe('the payload digest, the bundle\'s identity', () => {
   let work = ''
@@ -704,18 +702,18 @@ describe('the mount set is derived from the inputs, and nests nothing', () => {
   })
 })
 
-// --- the whole path, against a real rauc -------------------------------------
+// The whole path, against a real rauc.
 
 /**
  * The toolset the end-to-end case below runs in.
  *
- * ITS `provenance` MARK IS A DECLARATION THIS TEST MAKES ABOUT ITS OWN
- * CONTAINER, and it is 'shipped' so that the assembly can be driven in a clean
+ * Its `provenance` mark is a declaration this test makes about its own
+ * container, and it is 'shipped' so that the assembly can be driven in a clean
  * checkout where os/update/rauc/out-amd64/rauc has not been built. That is the
  * same freedom rauc.test.ts takes in the other direction, where it declares its
  * container's packaged rauc 'distro'. Nothing about a fixture bundle ships.
  *
- * WHAT IS BEING TESTED HERE IS THE ASSEMBLY, NOT THE PROVENANCE. The provenance
+ * What is being tested here is the assembly, not the provenance. The provenance
  * rule -- that a bundle is written only by the rauc this tree built -- is
  * asserted three times elsewhere and none of them uses this toolset: in
  * rauc.test.ts against a toolset marked 'distro' and against one marked with

@@ -1,18 +1,17 @@
 // The x64 derived layout: the slot sizing and the start chain, driven at the
 // sizes an off-by-one lives at, and against bash.
 //
-// EVERY TEST HERE IS PURE, and that is the argument for the module being pure.
-// The arithmetic below decides where DATA starts; one MiB out produces an image
-// that assembles, verifies, boots, and cannot take an update on a device flashed
-// with the other number. Reached only through an assembly it would be a bug found
-// by diffing 1.9 GiB; reached here it is driven in milliseconds at payload sizes
-// no real rootfs has had.
+// Every test here is pure, which is the argument for the module being pure. The
+// arithmetic below decides where DATA starts; one MiB out produces an image that
+// assembles, verifies, boots, and cannot take an update on a device flashed with
+// the other number. Reached only through an assembly it is a bug found by
+// diffing 1.9 GiB; reached here it is driven at payload sizes no rootfs has had.
 //
-// AND ONE THING THESE TESTS ARE FOR THAT layout-cx3576.test.ts IS NOT: proving
-// that the two boards' slot arithmetic really is two arithmetics. The claim in
-// src/layout-x64.ts's header -- that x64 applies its headroom to a BYTE count
-// where cx3576 applies it to a MiB count, and that this is a difference in
-// numbers rather than in spelling -- is measured below rather than asserted.
+// One thing these tests are for that layout-cx3576.test.ts is not: proving that
+// the two boards' slot arithmetic really is two arithmetics. The claim in
+// src/layout-x64.ts's header -- that x64 applies its headroom to a byte count
+// where cx3576 applies it to a MiB count, a difference in numbers rather than in
+// spelling -- is measured below rather than asserted.
 
 import { describe, expect, test } from 'bun:test'
 import { $ } from 'bun'

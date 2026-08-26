@@ -1,25 +1,25 @@
-// The assembler, driven over FABRICATED inputs -- and every refusal driven from
+// The assembler, driven over fabricated inputs -- and every refusal driven from
 // the failing side.
 //
-// FABRICATED, LIKE os/tests/mkimage-v2-selftest.sh's, AND FOR ITS REASON. A test
-// that read _out/cx3576/ would be a test that cannot run on a fresh clone, and
-// producing those inputs costs a ~40-minute emulated arm64 rootfs build to
-// exercise an assembler that does not care what is inside the payload it places.
-// The four properties this assembler actually reads off its inputs are their
-// SIZE, their first four bytes, the KEY=value lines of one env file and the
-// verity table on the cmdlines -- all of which a fixture can carry honestly.
+// Fabricated like os/tests/mkimage-v2-selftest.sh's, and for its reason: a test
+// that read _out/cx3576/ could not run on a fresh clone, and producing those
+// inputs costs a ~40-minute emulated arm64 rootfs build to exercise an assembler
+// that does not care what is inside the payload it places. The four properties
+// this assembler reads off its inputs are their size, their first four bytes,
+// the KEY=value lines of one env file and the verity table on the cmdlines --
+// all of which a fixture can carry honestly.
 //
-// THE BYTE-IDENTITY GATE IS NOT HERE. It is shell-against-TypeScript over the
+// The byte-identity gate is not here. It is shell-against-TypeScript over the
 // real _out/cx3576/ inputs, it takes minutes and 1.3 GiB, and os/build/HARNESS.md
-// carries the recipe and the two hashes. What IS here is everything that gate
-// cannot see: a gate compares bytes for a GOOD input, and a port that quietly
+// carries the recipe and the two hashes. What is here is everything that gate
+// cannot see: a gate compares bytes for a good input, and a port that quietly
 // dropped a refusal produces identical bytes for every good input and passes it
-// perfectly. What it stopped catching is a board that needs re-flashing.
+// perfectly. What it stops catching is a board that needs re-flashing.
 //
-// Slot A's cmdline is written with LOWERCASE PARTUUIDs and slot B's with
-// UPPERCASE, deliberately: the real producer emits lowercase (udev and libblkid
+// Slot A's cmdline is written with lowercase PARTUUIDs and slot B's with
+// uppercase, deliberately: the real producer emits lowercase (udev and libblkid
 // spell by-partuuid names that way) and the layout is uppercase, and a literal
-// comparison between them once refused a correct build. Both must be accepted.
+// comparison between them refuses a correct build. Both must be accepted.
 
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test'
 import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs'
@@ -173,7 +173,7 @@ describe('the fixture is what these tests say it is', () => {
   })
 })
 
-// --- THE REFUSALS ------------------------------------------------------------
+// The refusals.
 
 describe('the factory /var', () => {
   test('absent is refused, naming the producer to run', async () => {
@@ -395,7 +395,7 @@ describe('the inputs a build cannot start without', () => {
   }
 })
 
-// --- THE ALIGNMENT, WHICH IS THE ONE THAT IS NOT COSMETIC --------------------
+// The alignment, which is the one that is not cosmetic.
 
 describe('THE LOADER LANDS AT SECTOR 64, checked against the written table', () => {
   const layout = deriveLayout(g, 256n)
@@ -502,7 +502,7 @@ describe('THE LOADER LANDS AT SECTOR 64, checked against the written table', () 
   })
 })
 
-// --- THE WHOLE THING ---------------------------------------------------------
+// The whole thing.
 
 describe('a whole assembly, and what is actually in it', () => {
   let out: Awaited<ReturnType<typeof assembleCx3576>>
