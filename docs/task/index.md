@@ -136,4 +136,4 @@ Each task is a single line linking to its detail file. All detailed information 
 - [x] [**RFCT-111 PLAN-014 M5: the rootfs build split into one Dockerfile per stage, driven from TS**](RFCT-111.md) `P1`
 - [x] [**RFCT-112 PLAN-014 M6: the assemblers ported to TS under the byte-identity gate**](RFCT-112.md) `P1`
 - [x] [**RFCT-113 PLAN-014 M7: built artifacts smoke-run on the base rootfs**](RFCT-113.md) `P1`
-- [-] [**RFCT-114 PLAN-015 M1: function-oriented comments in os/, Makefile and board/**](RFCT-114.md) `P2`
+- [x] [**RFCT-114 PLAN-015 M1: function-oriented comments in os/, Makefile and board/**](RFCT-114.md) `P2`
