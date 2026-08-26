@@ -1,10 +1,8 @@
 # syntax=docker/dockerfile:1@sha256:ecfaec9ed6d810b56388c508f4121597bfbba70d41a6dfeee4d8cad5f295fc32
-# =============================================================================
-# stages/90-pack — close the root, then pack it: squashfs-zstd + dm-verity
+# stages/90-pack -- close the root, then pack it: squashfs-zstd + dm-verity.
 #
 # THE LAST LINK IN THE CHAIN; stages/README.md says what the chain is. This is
-# the only stage file with more than one FROM of its own, and the reason is
-# worth stating rather than discovering.
+# the only stage file with more than one FROM of its own.
 #
 # FOUR STAGES IN ONE FILE, AND WHY.
 #
@@ -21,7 +19,7 @@
 #                 executes anything from it, and so does not want emulation.
 #   artifact      FROM scratch, the export surface the driver writes out.
 #   factory-root  FROM scratch, on the TARGET platform: the packed root ITSELF
-#                 as an OCI image, so RFCT-113's smoke runner can execute the
+#                 as an OCI image, so the smoke runner can execute the
 #                 self-built binaries in the root that ships them. TWO EXPORT
 #                 SURFACES, not one, because they are different kinds of thing:
 #                 `artifact` is files the assembler consumes, `factory-root` is
@@ -29,12 +27,10 @@
 #                 per invocation. The driver builds this one second, off the
 #                 cache the first filled.
 #
-# The alternative was a fourth stage FILE between 40-board and this one, for
-# `closed` alone. It was not taken: closing the root and packing it are one
-# operation with one output, nothing else can run between them, and a stage
+# `closed` is not a stage file of its own: closing the root and packing it are
+# one operation with one output, nothing else can run between them, and a stage
 # boundary that nothing can ever be inserted at is a file that only costs a
 # reader a hop.
-# =============================================================================
 
 # THE LINK BACK UP THE CHAIN. MOS_STAGE_PREV is the local image tag the
 # previous stage was written to; the driver passes it and refuses to build a
@@ -44,10 +40,10 @@
 # MOS_IMAGE_DEBIAN_BOOKWORM is this file's own base, injected from
 # os/build-env/images.env by os/build-env/from.sh exactly as stages/10-base's
 # trixie key is, and declared here because the `pack` FROM below is the only
-# line in the chain that consumes it. RFCT-108 M2c pinned it: the byte layout
-# of the packed image used to depend on whichever squashfs-tools and cryptsetup
-# came out of a floating `debian:bookworm-slim`, so the pack tools are now a
-# decision rather than a build date. No default, for the reason 10-base gives.
+# line in the chain that consumes it. It is pinned because the byte layout of
+# the packed image depends on which squashfs-tools and cryptsetup pack it, so
+# the pack tools are a decision rather than a build date. No default, for the
+# reason 10-base gives.
 ARG MOS_STAGE_PREV
 ARG MOS_IMAGE_DEBIAN_BOOKWORM
 
@@ -66,14 +62,11 @@ RUN dpkg-query -W -f='${Package}\t${Installed-Size}\n' > /rootfs-report.pkgs
 #
 # The bundle format and the slot model are a contract between two programs that
 # never meet: rauc on a build machine writes the bundle, rauc on the device
-# installs it. Nothing made them the same version. os/update/bundle.sh built in a
-# bookworm container (1.8) while the image ran Debian 13's (1.13) -- and 1.8
-# would have refused this board's slot model outright had anyone asked it,
-# which is how the mismatch was found: not by a check, by a failure.
+# installs it, and nothing else makes them the same version. A bundle builder
+# on rauc 1.8 refuses this board's slot model outright.
 #
 # /rootfs-report.rauc is written where rauc is INSTALLED, further up, from the
-# version os/update/rauc/ pinned. It used to be `dpkg-query -W rauc` here; there is no
-# rauc package any more.
+# version os/update/rauc/ pinned; there is no rauc package to query.
 
 # ---------------------------------------------------------------------------
 # Remove package management from the packed root
@@ -95,30 +88,21 @@ RUN dpkg-query -W -f='${Package}\t${Installed-Size}\n' > /rootfs-report.pkgs
 #     They are removed here too — a script whose interpreter is gone is a trap,
 #     not a leftover.
 #
-#     TWO OF THESE CHECKS WERE KEYED TO BOOKWORM AND THE TRIXIE UPGRADE FOUND
-#     IT: the licence assertion named `gcc-12-base/copyright` (trixie ships
-#     gcc-14) and the purge list named `perl5.36.0` (trixie ships 5.40). Both
-#     now test the PROPERTY -- a copyright count, a version glob -- rather than
-#     a package that happened to be in one release. A check pinned to a version
-#     of the thing it is checking fails on the upgrade it exists to survive.
+#     THE CHECKS TEST A PROPERTY, NOT A PACKAGE NAME -- a copyright count, a
+#     version glob -- because a check pinned to a version of the thing it is
+#     checking fails on the upgrade it exists to survive.
 #
-#     THE apt AND dpkg TIMERS WERE FOUND BY BOOTING x64, and they were in the
-#     SHIPPED arm64 image too. Removing /usr/bin/apt does not remove
+#     THE apt AND dpkg TIMERS GO TOO. Removing /usr/bin/apt does not remove
 #     apt-daily.timer, apt-daily-upgrade.timer or dpkg-db-backup.timer, and all
 #     three are enabled by their packages into
 #     /etc/systemd/system/timers.target.wants. On a device with no package
-#     manager they fire daily and fail daily. Nothing in the image was wrong
-#     enough to notice -- it took a console log from a board that had never
-#     been booted before.
+#     manager they fire daily and fail daily, and nothing else in the image is
+#     wrong enough to notice.
 #
-#     linux-base's FOUR HELPERS WERE FOUND THE SAME WAY, ON A DIFFERENT
-#     ARCHITECTURE. They arrive with linux-base, which x64 pulls in through
-#     linux-image-amd64 and cx3576 never installs, so the first amd64 build
-#     failed here. The whole set was enumerated at once rather than one build
-#     at a time -- the mistake this comment already records is surveying
-#     partially and reading the result as complete.
+#     linux-base's FOUR HELPERS arrive with linux-base, which x64 pulls in
+#     through linux-image-amd64 and cx3576 never installs.
 #
-#     Callers measured, not assumed, and they are NOT all the same:
+#     Their callers are NOT all the same:
 #       linux-check-removal, linux-run-hooks, linux-update-symlinks
 #           called only from the kernel package's preinst/postinst/prerm/postrm
 #       linux-version
@@ -131,12 +115,9 @@ RUN dpkg-query -W -f='${Package}\t${Installed-Size}\n' > /rootfs-report.pkgs
 #     rootfs. A tool that appears to regenerate it would produce a file nothing
 #     reads.
 #
-#     THE /usr/sbin SET WAS FOUND BY THE CHECK BELOW, NOT BY THE SURVEY. The
-#     survey that preceded this step listed the /usr/bin ones and was truncated
-#     before it reached /usr/sbin; the list was read as complete. The build then
-#     failed here and named all six. Recorded because the surveying mistake is
-#     the likely one to repeat, and because it is the reason the check is a
-#     build failure rather than a warning.
+#     The dangling-interpreter check below is a BUILD FAILURE and not a
+#     warning, because it is what enumerates the /usr/sbin set a hand survey
+#     misses.
 #
 #     adduser and deluser are safe to remove for a second, independent reason:
 #     /etc/passwd is inside the read-only verity root (only /etc/shadow is
@@ -148,9 +129,9 @@ RUN dpkg-query -W -f='${Package}\t${Installed-Size}\n' > /rootfs-report.pkgs
 #
 # /usr/share/doc IS KEPT, deliberately, and this is where the usual "slim
 # image" recipe goes wrong. It is 2.75 MB, of which 2.06 MB is 159 `copyright`
-# files — the licence texts Debian ships to satisfy the redistribution terms of
-# the GPL and friends. Deleting the directory would save 0.69 MB of changelogs
-# and breach those terms to do it.
+# files -- the licence texts Debian ships to satisfy the redistribution terms
+# of the GPL and friends. Deleting the directory would save 0.69 MB of
+# changelogs and breach those terms to do it.
 #
 # coreutils and openssh-client are also kept, by decision rather than by
 # oversight: coreutils is 17.6 MB and busybox would save most of it, but every
@@ -180,11 +161,9 @@ FROM --platform=$BUILDPLATFORM ${MOS_IMAGE_DEBIAN_BOOKWORM} AS pack
 # ARG IS PER-STAGE. BOARD_RADIOS is declared again here because the pack stage
 # asserts properties of the assembled root that depend on it -- which board
 # state directories are precious, and therefore which mount units must exist.
-# Declared once in an earlier stage file, it expands EMPTY here, and under
-# `set -u`
-# that is a build failure rather than a wrong answer. This one failed loudly;
-# the dangerous version of the same mistake is a check that silently reads an
-# empty value as "no radios" on a board that has them.
+# Declared only in an earlier stage file it would expand EMPTY here, which
+# under `set -u` is a build failure rather than a check that silently reads "no
+# radios" on a board that has them.
 ARG BOARD_RADIOS=""
 RUN apt-get update && apt-get install -y --no-install-recommends \
         squashfs-tools cryptsetup-bin libcap2-bin \
@@ -193,10 +172,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 COPY --from=closed / /rootfs/
 
 # Guard the mos-owned files against CJK text (repo rule: code and docs are
-# English). Same mechanism and same character ranges as the v1 pack stage, with
-# the v2-only paths added: the overlay's mount units, seed scripts, repart.d
-# definitions and fw_env.config. Only our own paths are scanned; vendor
-# packages ship translations and are none of our business.
+# English). The scanned set is the overlay's mount units, seed scripts,
+# repart.d definitions and fw_env.config. Only our own paths are scanned;
+# vendor packages ship translations and are none of our business.
 RUN --mount=type=bind,source=os/rootfs/scripts,target=/mos-scripts \
     sh /mos-scripts/pack-cjk-guard.sh
 
@@ -205,7 +183,7 @@ RUN --mount=type=bind,source=os/rootfs/scripts,target=/mos-scripts \
 #  - /etc/resolv.conf -> /run, the only writable place with / read-only.
 #  - /etc/machine-id must EXIST and be empty: systemd cannot write it on a
 #    read-only /etc, and falls back to bind-mounting a transient id from /run
-#    over it. RFCT-018's U-Boot passes systemd.machine_id= to make it stable.
+#    over it. U-Boot passes systemd.machine_id= to make it stable.
 #  - /var becomes an empty mountpoint for EPHEMERAL; the built tree moves to
 #    /usr/share/factory/var, from where mos-seed-var restores it on first boot.
 #  - EXCEPT /var/tmp, which is created in that mountpoint on purpose.
@@ -226,8 +204,7 @@ RUN --mount=type=bind,source=os/rootfs/scripts,target=/mos-scripts \
 #    registry.
 #
 #    Created HERE and not with the other mountpoints above: this mkdir replaces
-#    /var wholesale, so anything an earlier stage put there is gone. The first
-#    attempt at this fix did exactly that and changed nothing.
+#    /var wholesale, so anything an earlier stage put there is gone.
 RUN --mount=type=bind,source=os/rootfs/scripts,target=/mos-scripts \
     sh /mos-scripts/pack-tree-surgery.sh
 
@@ -241,23 +218,22 @@ RUN --mount=type=bind,source=os/rootfs/scripts,target=/mos-scripts \
 RUN --mount=type=bind,source=os/rootfs/scripts,target=/mos-scripts \
     sh /mos-scripts/pack-assert-var-disposable.sh
 
-# PLAN-011 D5's writable unit directory. Deliberately NOT folded into the loop
-# above: that loop is about /var being disposable and ends by requiring a
-# /usr/share/factory template, which is right for /var/lib/mos and wrong here --
-# there is no factory content for this directory and, by design, no seed copy at
-# all. Bending the loop to skip its last step for one member would make the loop
-# say less about the members it was written for.
+# The writable unit directory for third-party extensions. Deliberately NOT
+# folded into the loop above: that loop is about /var being disposable and ends
+# by requiring a /usr/share/factory template, which is right for /var/lib/mos
+# and wrong here -- there is no factory content for this directory and, by
+# design, no seed copy at all.
 #
 # What this defends is different too. The bind is what makes a third-party unit
-# survive a reboot; its mountpoint cannot be created at runtime on a verity root,
-# so a missing directory here is a mount unit that FAILS AT BOOT rather than a
-# feature that quietly does nothing.
+# survive a reboot; its mountpoint cannot be created at runtime on a verity
+# root, so a missing directory here is a mount unit that FAILS AT BOOT rather
+# than a feature that quietly does nothing.
 RUN --mount=type=bind,source=os/rootfs/scripts,target=/mos-scripts \
     sh /mos-scripts/pack-assert-extension-dir.sh
 
-# /etc/shadow moves onto STATE. PLAN-010 M5 gives every device its own root
-# password, and pam_unix reads it from /etc/shadow -- which on v2 sits on the
-# dm-verity squashfs, where nothing can ever write it. The only writable paths
+# /etc/shadow moves onto STATE. Every device gets its own root password, and
+# pam_unix reads it from /etc/shadow -- which on v2 sits on the dm-verity
+# squashfs, where nothing can ever write it. The only writable paths
 # under /etc are the /etc/hostname and /etc/ssh binds, and a bind-mounted FILE
 # cannot be replaced by rename, which is how mosd writes a credential safely.
 # So the file ships as a SYMLINK into /var/lib/mos, the bind target of
@@ -284,15 +260,12 @@ RUN --mount=type=bind,source=os/rootfs/scripts,target=/mos-scripts \
 # hash baked into a rootfs that is byte-identical across the entire fleet.
 #
 # The locked-password test runs over EVERY account in /etc/passwd, not just
-# root. RFCT-024 wrote the rule -- an empty field is not a locked marker, it is
-# passwordless -- when root was the only account there was to write it about.
-# RFCT-039 adds `mos` as the second, so scoping the test to root would have let
-# the rule quietly stop covering the case it exists for, and would leave the
-# third account exposed all over again. root keeps its own dedicated case
-# above it because a baked root credential is the single most likely way a
-# hash reaches this file (v1 still has a ROOT_PASSWORD build arg; v2 does not,
-# and this assertion is what keeps it that way); the loop below is the class,
-# not the instance.
+# root: an empty field is not a locked marker, it is passwordless, and scoping
+# the test to root would leave every other account exposed. root keeps its own
+# dedicated case above it because a baked root credential is the single most
+# likely way a hash reaches this file, and this assertion is what keeps the
+# tree free of a ROOT_PASSWORD build arg; the loop below is the class, not the
+# instance.
 #
 # The two failure modes get two messages on purpose. They are different
 # defects: an EMPTY field means the account accepts any password, while a
@@ -330,7 +303,7 @@ ARG VERITY_HASH_ALGO=sha256
 ARG VERITY_DATA_BLOCK_SIZE=4096
 ARG VERITY_HASH_BLOCK_SIZE=4096
 
-# Step 1 — squash. Every knob that would otherwise vary between builds is
+# Step 1 -- squash. Every knob that would otherwise vary between builds is
 # pinned:
 #   -processors 1         multi-threaded mksquashfs is NOT byte-reproducible
 #   -mkfs-time/-all-time  no wall clock in the superblock or in any inode
@@ -351,16 +324,16 @@ ARG VERITY_HASH_BLOCK_SIZE=4096
 RUN --mount=type=bind,source=os/rootfs/scripts,target=/mos-scripts \
     sh /mos-scripts/pack-squashfs.sh
 
-# Step 2 — ownership/mode gate. mksquashfs is supposed to carry the source
-# tree's uid/gid through untouched, and -all-root used to break exactly that.
-# Diff the packed image's setuid/setgid inventory against the source inventory
+# Step 2 -- ownership/mode gate. mksquashfs must carry the source tree's
+# uid/gid through untouched, and -all-root is exactly what breaks that. Diff
+# the packed image's setuid/setgid inventory against the source inventory
 # captured before packing, and fail the build on ANY difference, so this class
 # of bug is a build error instead of something a reviewer has to spot.
 # -lln prints numeric ids, matching how privileged-src.txt was written.
 RUN --mount=type=bind,source=os/rootfs/scripts,target=/mos-scripts \
     sh /mos-scripts/pack-assert-privileged.sh
 
-# Step 3 — dm-verity. veritysetup gets the pinned salt and a pinned UUID: both
+# Step 3 -- dm-verity. veritysetup gets the pinned salt and a pinned UUID: both
 # default to random values, and the UUID lands in the verity superblock at the
 # hash offset, so leaving it unset alone would make the image differ on every
 # run. The hash tree is appended to the squashfs in the same file via
@@ -388,22 +361,20 @@ RUN --mount=type=bind,source=os/rootfs/scripts,target=/mos-scripts \
     sh /mos-scripts/pack-export-boot.sh
 
 # The factory /var tree, exported so the image assembler can SEED THE EPHEMERAL
-# FILESYSTEM AT ASSEMBLY (RFCT-106) instead of copying it out on first boot.
+# FILESYSTEM AT ASSEMBLY instead of copying it out on first boot.
 #
-# Seeding at runtime meant mos-seed-var ran at the same moment as every other
-# unit that writes /var. Debian 13's systemd ships
+# Seeding at runtime puts mos-seed-var at the same moment as every other unit
+# that writes /var. Debian 13's systemd ships
 # systemd-networkd-persistent-storage.service, which creates
-# /var/lib/systemd/network as soon as /var appears; the two raced, and losing
-# it failed the seed, which failed var-lib-mos.mount, which failed mosd, apid
-# and the health gate -- a first boot that looks like a device that will not
-# come up. Ordering against that one unit is a list to keep current.
+# /var/lib/systemd/network as soon as /var appears; the two race, and losing
+# the race fails the seed, which fails var-lib-mos.mount, which fails mosd,
+# apid and the health gate -- a first boot that looks like a device that will
+# not come up. Ordering against that one unit is a list to keep current.
 #
 # A filesystem that is ALREADY seeded when it is first mounted has nothing to
 # race. mos-seed-var stays for the path where EPHEMERAL has been wiped, and its
-# ConditionPathExists on the stamp means it does not run otherwise.
-#
-# 390 KB and 93 entries, measured on the x64 image: this costs nothing to
-# carry through the build.
+# ConditionPathExists on the stamp means it does not run otherwise. The tree is
+# 390 KB and 93 entries, so carrying it through the build costs nothing.
 RUN --mount=type=bind,source=os/rootfs/scripts,target=/mos-scripts \
     sh /mos-scripts/pack-export-factory-var.sh
 
@@ -415,17 +386,16 @@ COPY --from=pack /out/rootfs-report-v2.txt /
 COPY --from=pack /out/boot/ /boot/
 
 # ---------------------------------------------------------------------------
-# The factory root as an OCI image (RFCT-113 M7)
+# The factory root as an OCI image
 # ---------------------------------------------------------------------------
-# WHY THIS EXISTS. Eleven artifacts in this image are built by this repository --
-# mosd, apid, mos-mqttd, mos-mqtt-broker, rauc, podman, quadlet, crun, conmon,
-# netavark, aardvark-dns -- and until now the last thing done to any of them was
-# to LINK them. "It linked" and "it runs" are different claims, and the second
-# was first made on a device: a wrong-architecture binary, a missing soname, or a
-# version that does not match the pin in versions.env all survive to first boot.
-# RFCT-113 executes each of them before the image ships, and an executor needs a
-# root to execute them IN. This is that root, in the one form a container runtime
-# can be handed directly.
+# WHY THIS EXISTS. Eleven artifacts in this image are built by this repository
+# -- mosd, apid, mos-mqttd, mos-mqtt-broker, rauc, podman, quadlet, crun,
+# conmon, netavark, aardvark-dns -- and "it linked" and "it runs" are different
+# claims: a wrong-architecture binary, a missing soname, or a version that does
+# not match the pin in versions.env all survive to first boot. The smoke runner
+# executes each of them before the image ships, and an executor needs a root to
+# execute them IN. This is that root, in the one form a container runtime can
+# be handed directly.
 #
 # WHY /rootfs FROM `pack`, AND NOT `closed`. `closed` is the cheaper answer: it
 # is already an image, already on the target platform, and exporting it costs a
@@ -445,12 +415,11 @@ COPY --from=pack /out/boot/ /boot/
 # the wrong tree and an easy mistake to inherit.
 #
 # PLATFORM, AND WHY THE EXPORT ITSELF NEEDS NO EMULATION. There is no
-# `--platform` flag here, so the stage is built for TARGETPLATFORM and the image
-# DECLARES the board's architecture -- which is what makes `docker run` reach for
-# binfmt/qemu-user on an arm64 image, per RFCT-113's scope. Nothing in this
-# stage EXECUTES anything from the root, so producing it does not: measured on
-# an amd64 host with binfmt_misc unmounted, `--platform linux/arm64` produced an
-# `{"architecture":"arm64","os":"linux"}` OCI image with no emulation present.
-# Building the arm64 root is still gated on emulation; exporting one is not.
+# `--platform` flag here, so the stage is built for TARGETPLATFORM and the
+# image DECLARES the board's architecture -- which is what makes `docker run`
+# reach for binfmt/qemu-user on an arm64 image. Nothing in this stage EXECUTES
+# anything from the root, so producing it needs no emulation even with
+# binfmt_misc unmounted. Building the arm64 root is still gated on emulation;
+# exporting one is not.
 FROM scratch AS factory-root
 COPY --from=pack /rootfs/ /
