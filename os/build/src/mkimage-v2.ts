@@ -61,7 +61,7 @@ import { dd, truncate } from './tools/dd.ts'
 import { mke2fs } from './tools/e2fsprogs.ts'
 import { makeBootScript } from './tools/mkimage.ts'
 import { mcopy, mkfsVfat } from './tools/mtools.ts'
-import { readPartition, verifyGpt, writeGpt } from './tools/sgdisk.ts'
+import { readPartition, verifyGpt, writeGpt, type GptPartitionInfo } from './tools/sgdisk.ts'
 
 /** The board this assembler is for. One board, like the script it replaces. */
 export const BOARD = 'cx3576'
@@ -447,16 +447,7 @@ export async function assembleCx3576(
     // move a requested start sector, so asserting what we asked for proves
     // nothing; this asserts what is actually there.
     const got = await readPartition(tb, imgTmp, loaderPartnum);
-    const wantStart = loader.requireInt('START_SECTOR')
-    const wantSize = loader.requireInt('SIZE_SECTORS')
-    if (got.firstSector !== wantStart || got.sizeSectors !== wantSize) {
-      throw new Error(
-        `the assembled ${loaderLabel} partition is ${got.sizeSectors} sectors at ${got.firstSector}, `
-        + `expected ${wantSize} at ${wantStart}. sgdisk relocates a non-2048-aligned start unless `
-        + `-a ${geometry.disk.alignSectors} is passed, and a relocated loader partition no longer `
-        + `covers the bootloader.`,
-      )
-    }
+    checkLoaderLanded(geometry, got)
     const gotMagic = magicHexAt(imgTmp, geometry.sectorsToBytes(got.firstSector))
     if (gotMagic !== loaderMagic) {
       throw new Error(
@@ -485,6 +476,41 @@ export async function assembleCx3576(
     if (ownToolbox) await tb.close()
     rmSync(workDir, { recursive: true, force: true })
   }
+}
+
+/**
+ * THE LOADER LANDED WHERE IT WAS ASKED TO -- checked against the ASSEMBLED
+ * TABLE, not against the request.
+ *
+ * This is the one place in the port where a difference between the two shell
+ * assemblers turned out not to be cosmetic. M6a measured every flag-order and
+ * unit difference between os/mkimage-v2.sh and os/mkimage-x64.sh to be
+ * byte-identical, and found exactly one that is not: `-a 1` where a start is
+ * sector 64. Without it sgdisk RELOCATES that start to sector 2048, SILENTLY,
+ * and exits 0.
+ *
+ * cx3576's loader is at sector 64. A relocated loader partition no longer covers
+ * the bootloader, and os/boards/cx3576/board.env spells out what happens next:
+ * systemd-repart "discards every region of the disk that no partition entry
+ * covers", on the very first boot while growing DATA, so "the device boots once
+ * and comes up in maskrom on the next power-on". An image in that state passes
+ * every structural check there is and boots on a test bench.
+ *
+ * Which is why this compares what sgdisk WROTE rather than what it was TOLD, and
+ * why it is a separate function: it has to be drivable from the failing side
+ * against a real table written by a real sgdisk with the alignment left out.
+ */
+export function checkLoaderLanded(geometry: Geometry, got: GptPartitionInfo): void {
+  const loader = geometry.requirePartition('LOADER')
+  const wantStart = loader.requireInt('START_SECTOR')
+  const wantSize = loader.requireInt('SIZE_SECTORS')
+  if (got.firstSector === wantStart && got.sizeSectors === wantSize) return
+  throw new Error(
+    `the assembled ${loader.require('LABEL')} partition is ${got.sizeSectors} sectors at `
+    + `${got.firstSector}, expected ${wantSize} at ${wantStart}. sgdisk relocates a non-2048-aligned `
+    + `start unless -a ${geometry.disk.alignSectors} is passed, and a relocated loader partition no `
+    + `longer covers the bootloader.`,
+  )
 }
 
 function requireStartMib(geometry: Geometry, name: string): bigint {
