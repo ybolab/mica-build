@@ -164,3 +164,4 @@ Each task is a single line linking to its detail file. All detailed information 
 - [ ] [**RFCT-139 No production RAUC keyring is provisioned, so rauc install fails closed on every shipped device**](RFCT-139.md) `P2`
 - [ ] [**RFCT-140 One outage is reported two ways: the API answers 503 and the HTML pages answer 502**](RFCT-140.md) `P2`
 - [ ] [**RFCT-141 The static-asset traversal guards have no over-the-wire coverage, because no device under test has a bundle**](RFCT-141.md) `P2`
+- [x] [**RFCT-143 PLAN-015 M5: boards.md and display.md lose the claims that describe a build that does not exist**](RFCT-143.md) `P2`
