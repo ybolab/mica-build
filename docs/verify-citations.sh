@@ -51,6 +51,10 @@
 # mechanical validates a claim about a commit, and moving citations to symbol
 # anchors would not change that. Those claims stay a human responsibility, and a
 # green run here does not mean the citations are handled.
+#
+# A citation whose first path segment is not a repo-root directory --
+# `talos/hack/...` -- is SKIPPED as outside this tree, never failed. A path that
+# once existed here is indistinguishable from one that never did.
 set -euo pipefail
 
 cd "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -237,6 +241,7 @@ echo "  content failures:       $FAIL_CONTENT"
 echo "  in-scope citations carrying a quote: $N_QUOTED"
 echo "  in-scope citations carrying no quote, resolution checked only: $N_NOQUOTE"
 echo "  not checked here, and not checkable: a provenance claim such as \"measured at <commit>\" is validated against no file at all, so a green run here does not mean the citations are handled"
+echo "  not distinguished: a skipped-as-outside path that once existed in this tree reads the same as one that never did"
 
 TOTAL_FAIL=$((FAIL_RESOLVE + FAIL_CONTENT))
 if [ "$ADVISORY" -eq 1 ]; then

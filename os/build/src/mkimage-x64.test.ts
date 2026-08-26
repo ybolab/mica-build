@@ -9,13 +9,11 @@
 // directory has a lib/ in it -- all of which a fixture carries honestly, at no
 // cost.
 //
-// The byte-identity gate is not here. It is shell-against-TypeScript over the
-// real _out/x64/ inputs, it takes a minute and 1.9 GiB, and os/build/HARNESS.md
-// carries the recipe and the four hashes. What is here is everything that gate
-// cannot see: a gate compares bytes for a good input, so a port that quietly
-// dropped a refusal produces identical bytes for every good input and passes it
-// perfectly. os/tests/mkimage-x64-selftest.sh says the same about itself, naming
-// the ESP cluster-count floor as exactly that kind of loss.
+// This file compares no bytes. It covers what a byte comparison cannot see: a
+// comparison is green for a good input, so an assembler that quietly dropped a
+// refusal produces identical bytes for every good input and passes it perfectly.
+// os/tests/mkimage-x64-selftest.sh says the same about itself, naming the ESP
+// cluster-count floor as exactly that kind of loss.
 //
 // One measurement is here because it is a claim this port makes: `-a 2048` where
 // os/mkimage-x64.sh passes no alignment at all. That is the only spelling this

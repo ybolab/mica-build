@@ -274,7 +274,7 @@ jobs:
       - name: Both document indexes agree with the tree, in both directions
         run: make docs-verify docs-verify-test
 
-      - name: Docs citations resolve and their quotes still match (advisory)
+      - name: Docs citations resolve and their quotes still match
         run: make docs-verify-citations docs-verify-citations-test
 
       - name: Health gate, machine-id oneshot, and their overlay copies

@@ -196,8 +196,8 @@ that shape, and several `docs/task/` records quote `RESULT:` lines as evidence.
 
 It needs **docker** on a host without `sgdisk`/`mtools`/`debugfs`/`unsquashfs`/
 `veritysetup`: the tools come out of the pinned `IMAGE_ALPINE_3_21`. It cannot
-run inside the pinned bun container — see `HARNESS.md`'s "The hole, measured
-rather than assumed".
+run inside the pinned bun container — see `HARNESS.md`, "Why --verify runs in
+an image of its own".
 
 ## The smoke runner — "it linked", "it runs" and "it is the version we decided"
 
@@ -313,8 +313,7 @@ They are **not** unit tests, and could not be. Everything else here is driven
 from a fabricated `ExecResult`, which is what makes the red branches runnable
 without a daemon — but a fabricated result is a statement the test wrote, and an
 exit-status map can be green throughout while being wrong about both of the
-shapes this clause names. See `HARNESS.md`, "The exit-status diagnosis,
-measured".
+shapes this clause names. See `HARNESS.md`, "What a non-zero exit means".
 
 Five things are asserted per case, each ruling out a different way of passing
 vacuously: the image built (**a mutation that changed nothing fails the image
