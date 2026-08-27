@@ -2,7 +2,7 @@
 
 - **status**: completed — all four M1 behaviours landed, both checkers and both self-tests green
 - **priority**: P2
-- **owner**: ai-agent
+- **owner**: bkd/qw0msnp2
 - **createdAt**: 2026-08-27
 - **claimedAt**: 2026-08-27
 - **completedAt**: 2026-08-27
