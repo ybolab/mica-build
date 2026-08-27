@@ -1,8 +1,8 @@
 # RFCT-134 The admin password can be set exactly once and no operation anywhere changes it
 
-- **status**: pending
+- **status**: in progress
 - **priority**: P1
-- **owner**: (unclaimed)
+- **owner**: ai-agent
 - **createdAt**: 2026-08-26
 
 `access.webAdmin.password_hash` is written by one line in the whole tree:

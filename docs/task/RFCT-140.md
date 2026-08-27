@@ -1,8 +1,8 @@
 # RFCT-140 One outage is reported two ways: the API answers 503 and the HTML pages answer 502
 
-- **status**: pending
+- **status**: in progress
 - **priority**: P2
-- **owner**: (unclaimed)
+- **owner**: ai-agent
 - **createdAt**: 2026-08-26
 
 When mosd cannot be reached, apid answers with two different statuses

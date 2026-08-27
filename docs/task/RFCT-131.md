@@ -1,8 +1,8 @@
 # RFCT-131 /healthz answers ok before checking anything, and two documents read it as a statement about the appliance
 
-- **status**: pending
+- **status**: in progress
 - **priority**: P2
-- **owner**: (unclaimed)
+- **owner**: ai-agent
 - **createdAt**: 2026-08-26
 
 The handler is two lines and performs no check:
