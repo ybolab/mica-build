@@ -15,7 +15,7 @@
 // caller-supplied path that does not exist is the caller's typo. And the host's
 // architecture, not the board's: the rauc writing the bundle is a host binary
 // while the image bundled for may be foreign, and both come from
-// os/update/rauc/versions.env, which makes their versions comparable.
+// os/pkgs/rauc/versions.env, which makes their versions comparable.
 
 import { existsSync, lstatSync, mkdirSync, readFileSync, symlinkSync, unlinkSync } from 'node:fs'
 import { arch as osArch } from 'node:os'
@@ -49,7 +49,7 @@ and board/<board>/out/ exactly as they do there.
   --board-dir DIR  the BSP tree (default: os/boards/<board>/bsp, or BOARD_DIR)
 
 environment:
-  CERT KEY KEYRING     real signing material, instead of os/update/rauc/.devkeys
+  CERT KEY KEYRING     real signing material, instead of os/pkgs/rauc/.devkeys
   MOS_BUILD_TOOLBOX    host|container -- force the route the tools run on
 `
 
@@ -148,7 +148,7 @@ export function resolveSigningMaterial(
 }
 
 /**
- * The build HOST's architecture, in the spelling os/update/rauc/ builds for.
+ * The build HOST's architecture, in the spelling os/pkgs/rauc/ builds for.
  *
  * A parameter rather than a call to os.arch(), so the refusal is REACHABLE:
  * every machine this campaign runs on is one of the two, and a guard that can
@@ -158,7 +158,7 @@ export function hostArchFor(machine: string): string {
   if (machine === 'x64' || machine === 'x86_64') return 'amd64'
   if (machine === 'arm64' || machine === 'aarch64') return 'arm64'
   throw new Error(
-    `unsupported build host architecture ${machine}; os/update/rauc/ builds amd64 and arm64`,
+    `unsupported build host architecture ${machine}; os/pkgs/rauc/ builds amd64 and arm64`,
   )
 }
 
@@ -166,7 +166,7 @@ export function hostArchFor(machine: string): string {
  * The rauc this tree built for the build host, refusing its absence by name.
  *
  * Not "rauc is missing" -- RAUC is built from source here rather than installed
- * from Debian, and os/update/rauc/versions.env records why: the distribution
+ * from Debian, and os/pkgs/rauc/versions.env records why: the distribution
  * builds it with streaming on, which links libcurl-gnutls and drags GnuTLS,
  * p11-kit, GMP, Nettle and Kerberos into a signed image for an install path
  * this project defers.
@@ -176,8 +176,8 @@ export function requireHostRauc(arch: string, exists: (p: string) => boolean = e
   if (!exists(bin)) {
     throw new Error(
       `${bin} not found. RAUC is built from source now, not installed from Debian `
-      + `(os/update/rauc/versions.env says why); build it with 'MOS_BOARD=x64 bash `
-      + `os/update/rauc/build.sh' for an amd64 host, or 'make os-rauc' for the board's own arch`,
+      + `(os/pkgs/rauc/versions.env says why); build it with 'MOS_BOARD=x64 bash `
+      + `os/pkgs/rauc/build.sh' for an amd64 host, or 'make os-rauc' for the board's own arch`,
     )
   }
   return bin
@@ -320,7 +320,7 @@ export async function main(argv: readonly string[]): Promise<number> {
     rootfsVerityImg,
     rootfsVerityEnv,
     rootfsReport: join(outDir, 'rootfs-report-v2.txt'),
-    raucBuildEnv: join(OS_DIR, 'update', 'rauc', `out-${arch}`, 'RAUC_VERSION.env'),
+    raucBuildEnv: join(OS_DIR, 'pkgs', 'rauc', `out-${arch}`, 'RAUC_VERSION.env'),
     bootCmdlineA: uboot ? bootCmdlineA : undefined,
     bootCmdlineB: uboot ? bootCmdlineB : undefined,
     cert: signing.cert,

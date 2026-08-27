@@ -821,7 +821,7 @@ mismatch, because each of them would otherwise make it pass by finding nothing.
 |---|---|
 | the report file absent | "the image's RAUC version is unknown and a bundle built by an unknown-matching rauc is not one this can vouch for" |
 | a report with the `RAUC_VERSION` line deleted | "records no RAUC_VERSION … either way the comparison would pass by finding nothing" |
-| a build env carrying only `RAUC_SHA256` | "no RAUC_VERSION from /os/update/rauc/out-amd64/RAUC_VERSION.env … would pass by finding nothing" |
+| a build env carrying only `RAUC_SHA256` | "no RAUC_VERSION from /os/pkgs/rauc/out-amd64/RAUC_VERSION.env … would pass by finding nothing" |
 | no build env path at all | the same sentence, with `<unset>` where the path goes |
 | `v1.13` in the image, `v1.8` here | "this rauc is v1.8, the image ships v1.13" |
 | `v1.130` against `v1.13` | refused: the comparison is a STRING, and it is the one place a numeric reading would say `1.8 > 1.13` |
@@ -939,7 +939,7 @@ that a guard stayed quiet about an input it had no reason to complain about.
 | **each rootfs-side input missing, in turn** | "not found; run 'MOS_BOARD=cx3576 bash os/rootfs/build-v2.sh' first" |
 | **each board-side input missing, in turn** | "build the BSP or set BOARD_DIR (currently: /bsp)" — a different action, so a different sentence |
 | both families missing | the rootfs-side sentence first |
-| `riscv64`, `armv7l`, `ppc64le`, `''` | "os/update/rauc/ builds amd64 and arm64" |
+| `riscv64`, `armv7l`, `ppc64le`, `''` | "os/pkgs/rauc/ builds amd64 and arm64" |
 | `x86_64`, `x64`, `aarch64`, `arm64` | accepted — `uname -m` and node's `os.arch()` spell these differently and both reach this function |
 | the shipped rauc absent | "out-amd64/rauc not found … built from source now, not installed from Debian" |
 | an arm64 host against an amd64 binary | "out-arm64/rauc not found" — the path is per-architecture |

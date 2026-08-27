@@ -70,13 +70,13 @@ FROM --platform=$TARGETPLATFORM ${MOS_IMAGE_DEBIAN_TRIXIE} AS rootfs
 # components while still reporting green.
 
 # RAUC is not installed from Debian. It is built from upstream source by
-# os/update/rauc/ and installed further down the chain by
+# os/pkgs/rauc/ and installed further down the chain by
 # stages/32-feature-rauc, because Debian builds it with -Dstreaming=true and
 # that links libcurl-gnutls: rauc would be the only consumer of libcurl-gnutls
 # in the whole packed root, and it would bring GnuTLS, p11-kit, GMP, Nettle and
 # the Kerberos libraries with it -- a second TLS stack, in an image whose own
 # daemons use rustls on purpose, for a streaming install path
-# os/update/rauc/manifest.raucm.in records as deferred. glib, json-glib and
+# os/pkgs/rauc/manifest.raucm.in records as deferred. glib, json-glib and
 # libfdisk are named explicitly below because nothing else pulls them in: they
 # are what the self-built rauc links, and each is in the image for rauc alone.
 

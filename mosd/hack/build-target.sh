@@ -59,7 +59,7 @@ IMAGE="${FROM_ARGS[1]#MOS_BUILD_RUST=}"
 # The cargo caches are repo-local bind mounts, not docker volumes and not
 # $HOME/.cargo: `make clean` and `rm -rf _out` then mean what they say, and the
 # host carries no Rust state at all. CARGO_HOME=/usr/local/cargo is the image's
-# own setting, the same path os/podman/Dockerfile's cargo cache mounts use, so
+# own setting, the same path os/pkgs/podman/Dockerfile's cargo cache mounts use, so
 # the two Rust builds here warm the same directory layout without sharing the
 # cache itself.
 CARGO_CACHE="${REPO_ROOT}/_out/cargo"
@@ -183,7 +183,7 @@ docker run --rm \
 # exec time on the device, one binary later than a wholly wrong-arch build.
 #
 # It runs in a second container, not the build one and not the host, the same
-# separation os/podman/build.sh and os/update/rauc/build.sh draw: the build
+# separation os/pkgs/podman/build.sh and os/pkgs/rauc/build.sh draw: the build
 # asserts what it built, this asserts what landed in the directory
 # os/rootfs/build-v2.sh is about to copy from, so an export that dropped a file
 # or a mount that wrote somewhere unexpected is caught. On the host it would

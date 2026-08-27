@@ -10,7 +10,7 @@ found="$(find /etc/systemd /usr/lib/systemd /usr/local/lib/systemd \
               -name 'podman*' -not -name 'podman-system-generator' \
               2>/dev/null || true)"
 [ -z "${found}" ] ||
-    { echo "error: the image contains podman systemd units, which os/podman is not supposed to install: ${found}. The engine must be inert because nothing starts it, not because something masks it" >&2; exit 1; }
+    { echo "error: the image contains podman systemd units, which os/pkgs/podman is not supposed to install: ${found}. The engine must be inert because nothing starts it, not because something masks it" >&2; exit 1; }
 missing=""
 for b in /usr/bin/podman /usr/bin/crun /usr/libexec/podman/quadlet \
          /usr/libexec/podman/conmon /usr/libexec/podman/netavark \
@@ -20,7 +20,7 @@ for b in /usr/bin/podman /usr/bin/crun /usr/libexec/podman/quadlet \
     done
 done
 [ -z "${missing}" ] ||
-    { echo "error: the loader cannot resolve these libraries in the assembled root:${missing}. Each is an exec-time failure on the device. Add the runtime package to the apt list in stages/31-feature-containers.Dockerfile, or drop the os/podman build tag that pulls the dependency" >&2; exit 1; }
+    { echo "error: the loader cannot resolve these libraries in the assembled root:${missing}. Each is an exec-time failure on the device. Add the runtime package to the apt list in stages/31-feature-containers.Dockerfile, or drop the os/pkgs/podman build tag that pulls the dependency" >&2; exit 1; }
 ldd /usr/libexec/podman/catatonit 2>&1 | grep -q 'not a dynamic executable' ||
     { echo "error: catatonit is dynamically linked. It is copied INTO containers as their init, where the libc is whatever the container ships" >&2; exit 1; }
 ls /usr/lib/*/libsystemd.so.0 >/dev/null 2>&1 ||

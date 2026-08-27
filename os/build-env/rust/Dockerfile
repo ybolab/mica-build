@@ -33,7 +33,7 @@ ARG MOS_BASE_IMAGE
 FROM ${MOS_BASE_IMAGE} AS fetch
 
 # Filtered to this image's RUST_ keys only -- see os/build-env/images.env on the
-# prefix convention and os/podman/Dockerfile on what a shared cache key costs.
+# prefix convention and os/pkgs/podman/Dockerfile on what a shared cache key costs.
 COPY images.lock /etc/mos-build/images.env
 
 RUN --mount=type=cache,target=/var/cache/apt,id=apt-cache-mos-build-rust-fetch,sharing=locked \
@@ -45,7 +45,7 @@ RUN --mount=type=cache,target=/var/cache/apt,id=apt-cache-mos-build-rust-fetch,s
 # flow is mos-build-go's: set a hash to PENDING, run `make build-env`, this
 # stage prints the sha256 it computed and fails, paste it in. No environment
 # variable softens it; os/build-env/images.env says why this file is stricter
-# than os/podman/Dockerfile on that one point.
+# than os/pkgs/podman/Dockerfile on that one point.
 
 # xz and not gz: upstream publishes both and the .xz is roughly half the bytes.
 # mos-build-base already promises xz-utils and asserts a floor on it, so this
@@ -166,7 +166,7 @@ RUN --mount=type=cache,target=/var/cache/apt,id=apt-cache-mos-build-rust,sharing
     apt-get update; \
     apt-get install -y --no-install-recommends gcc libc6-dev ${cross}
 
-# CARGO_HOME=/usr/local/cargo is not a preference: os/podman/Dockerfile's rust
+# CARGO_HOME=/usr/local/cargo is not a preference: os/pkgs/podman/Dockerfile's rust
 # stage already mounts /usr/local/cargo/registry and /usr/local/cargo/git as
 # named caches, and it measured what losing them costs -- netavark 23m58s and
 # aardvark-dns 8m05s of recompilation, "almost all of it the shared dependency

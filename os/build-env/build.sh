@@ -6,7 +6,7 @@
 #   MOS_BUILD_PLATFORM=linux/arm64 ...  builds for another architecture
 #
 # A driver script rather than a `docker buildx build` line in the Makefile, for
-# the reason os/podman/build.sh gives: the builder selection and the lock
+# the reason os/pkgs/podman/build.sh gives: the builder selection and the lock
 # derivation below are real logic, and a Makefile recipe that grew them would
 # grow their bugs a second time. This is also where the pins are enforced -- a
 # digest reaches `FROM` only after this script has agreed it is a digest.
@@ -81,7 +81,7 @@ PLATFORM_ARCH="${MOS_BUILD_PLATFORM#linux/}"
 
 # Read the pins.
 # Comments and blank lines out, nothing else touched -- the same derivation
-# os/podman/build.sh and os/update/rauc/build.sh use, so images.lock and
+# os/pkgs/podman/build.sh and os/pkgs/rauc/build.sh use, so images.lock and
 # versions.lock mean the same thing to a reader of either.
 STRIPPED="$(sed -e 's/[[:space:]]*#.*$//' -e '/^[[:space:]]*$/d' "${IMAGES_ENV}")"
 [ -n "${STRIPPED}" ] || {
@@ -105,7 +105,7 @@ mapfile -t KEYS < <(printf '%s\n' "${STRIPPED}" | sed -n 's/^\([A-Za-z_][A-Za-z0
 # nothing reads yet is the worst kind: it sits in the tree looking recorded,
 # green in every build, until the day something reads it. os/build-env/images.env
 # explains why there is no environment variable that downgrades this to a
-# warning, and how it differs from os/podman/versions.env on that one point.
+# warning, and how it differs from os/pkgs/podman/versions.env on that one point.
 resolve_digest() {
     # `imagetools inspect` prints the index digest first, then one per platform.
     # The whole output is captured before anything reads it: a `| head` here
@@ -328,7 +328,7 @@ check_dockerfile_frontends
 # The builder that can reach the chosen platform.
 
 # The `default` builder is named explicitly for a native build, and that is the
-# one place this differs from os/podman/build.sh and os/rootfs/build-v2.sh,
+# one place this differs from os/pkgs/podman/build.sh and os/rootfs/build-v2.sh,
 # which pass no --builder at all and inherit whatever `docker buildx use` last
 # selected. This family cannot inherit it: three of the four images are FROM
 # localhost/mos-build-base, a tag that exists only in the local docker image
@@ -357,7 +357,7 @@ if [ "${MOS_BUILD_PLATFORM}" != "${HOST_PLATFORM}" ]; then
     # already bought: the per-architecture toolchain hashes do NOT need a cross
     # build to be recorded (resolve_sha256 above computes them on the host), and
     # no target in this repository cross-builds the builder images. What
-    # os/podman/build.sh cross-builds is the podman components, FROM upstream
+    # os/pkgs/podman/build.sh cross-builds is the podman components, FROM upstream
     # references a container builder can resolve.
     for row in "${IMAGES[@]}"; do
         from_key="${row##*:}"
@@ -442,7 +442,7 @@ for row in "${IMAGES[@]}"; do
 
     # The filtered lock: this image's own keys and nothing else, so that a pin
     # added for another image does not invalidate this one's layers. The
-    # 42-minute measurement behind that is in os/podman/Dockerfile.
+    # 42-minute measurement behind that is in os/pkgs/podman/Dockerfile.
     : >"${LOCK}"
     IFS=',' read -r -a pfx <<<"${prefixes}"
     for p in "${pfx[@]}"; do
@@ -471,7 +471,7 @@ for row in "${IMAGES[@]}"; do
 
     # The image asserted its floor while it was being built. This asserts what
     # LANDED in the local image store, which is a different claim: the same
-    # separation os/podman/build.sh and os/update/rauc/build.sh draw between the
+    # separation os/pkgs/podman/build.sh and os/pkgs/rauc/build.sh draw between the
     # verify stage and the exported tree. A cache hit that served an older layer,
     # or a --load that tagged nothing, is invisible to the first check.
     id="$(docker image inspect --format '{{.Id}}' "${TAG}" 2>/dev/null || true)"

@@ -1,5 +1,5 @@
 # syntax=docker/dockerfile:1@sha256:ecfaec9ed6d810b56388c508f4121597bfbba70d41a6dfeee4d8cad5f295fc32
-# stages/32-feature-rauc -- the update client: five files off os/update/rauc's
+# stages/32-feature-rauc -- the update client: five files off os/pkgs/rauc's
 # build, and the assertion that the binary in this root links no second TLS
 # stack.
 
@@ -24,7 +24,7 @@
 ARG MOS_STAGE_PREV
 FROM ${MOS_STAGE_PREV}
 
-# RAUC, built from upstream by os/update/rauc/ (os/update/rauc/versions.env
+# RAUC, built from upstream by os/pkgs/rauc/ (os/pkgs/rauc/versions.env
 # says why it is not the Debian package). Five files, and all five are on the
 # activation path: the binary, the unit, the script the D-Bus service file
 # Execs, the bus policy and the activation file itself. Debian splits these

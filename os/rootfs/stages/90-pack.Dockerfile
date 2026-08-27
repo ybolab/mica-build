@@ -58,7 +58,7 @@ RUN dpkg-query -W -f='${Package}\t${Installed-Size}\n' > /rootfs-report.pkgs
 # on rauc 1.8 refuses this board's slot model outright.
 #
 # /rootfs-report.rauc is written where rauc is INSTALLED, further up, from the
-# version os/update/rauc/ pinned; there is no rauc package to query.
+# version os/pkgs/rauc/ pinned; there is no rauc package to query.
 
 # Remove package management from the packed root. Nothing can install a
 # package on this device: the root is a read-only dm-verity squashfs and

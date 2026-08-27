@@ -24,7 +24,7 @@
 # for a container.
 
 # A script rather than `$(grep ... images.env)` at each call site, because
-# there are eight call sites -- os/podman/build.sh, os/update/rauc/build.sh,
+# there are eight call sites -- os/pkgs/podman/build.sh, os/pkgs/rauc/build.sh,
 # os/rootfs/build-v2.sh, os/tests/handshake-test/run.sh,
 # mosd/hack/build-target.sh and four os/boards/cx3576/bsp make recipes -- and the check
 # that a value is a digest and not a tag is the entire point of the exercise. A

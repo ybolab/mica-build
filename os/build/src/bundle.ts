@@ -3,7 +3,7 @@
 // One bundle carries one image per slot class of the RAUC slot group --
 // `rootfs.img`, the raw squashfs+dm-verity slot image, and `boot.vfat`, the
 // filesystem written raw into whichever boot slot is inactive -- rendered
-// against os/update/rauc/manifest.raucm.in and signed with the development key
+// against os/pkgs/rauc/manifest.raucm.in and signed with the development key
 // unless CERT/KEY/KEYRING name real material.
 //
 // The epoch is in the filename only. Bundle content is a function of the inputs
@@ -76,17 +76,17 @@ export const ROOTFS_PRODUCER = 'os/rootfs/build-v2.sh'
  */
 export const BUNDLE_BOOT_FAT_LABEL = 'BOOT'
 
-/** os/update/rauc/manifest.raucm.in. */
-export const MANIFEST_IN: string = join(OS_DIR, 'update', 'rauc', 'manifest.raucm.in')
+/** os/pkgs/rauc/manifest.raucm.in. */
+export const MANIFEST_IN: string = join(OS_DIR, 'pkgs', 'rauc', 'manifest.raucm.in')
 
 /** The system.conf the image actually ships -- rendered, not committed. */
 export const SYSTEM_CONF: string = join(OS_DIR, 'rootfs', 'overlay-v2', 'etc', 'rauc', 'system.conf')
 
-/** os/update/rauc/.devkeys -- the development signing material, gitignored. */
-export const DEVKEY_DIR: string = join(OS_DIR, 'update', 'rauc', '.devkeys')
+/** os/pkgs/rauc/.devkeys -- the development signing material, gitignored. */
+export const DEVKEY_DIR: string = join(OS_DIR, 'pkgs', 'rauc', '.devkeys')
 
-/** os/update/rauc/render-config.sh, which owns the shipped slot configuration. */
-export const RENDER_CONFIG_SH: string = join(OS_DIR, 'update', 'rauc', 'render-config.sh')
+/** os/pkgs/rauc/render-config.sh, which owns the shipped slot configuration. */
+export const RENDER_CONFIG_SH: string = join(OS_DIR, 'pkgs', 'rauc', 'render-config.sh')
 
 // The readers, each exactly as blunt as the shell's.
 
@@ -119,7 +119,7 @@ export function raucVersionInReport(text: string): string {
 }
 
 /**
- * The RAUC version os/update/rauc/build.sh recorded beside the binary.
+ * The RAUC version os/pkgs/rauc/build.sh recorded beside the binary.
  *
  * `sed -n 's/^RAUC_VERSION=//p'` with NO `tail -n1`, so a file assigning it
  * twice yields both lines joined -- which then compares unequal to the report
@@ -145,7 +145,7 @@ export interface RaucMatchInputs {
  * The rauc that builds a bundle MUST be the rauc that installs it. A bundle
  * built in a bookworm container (rauc 1.8) and installed by an image's Debian
  * 13 rauc (1.13) fails: 1.8 refuses the x64 slot model outright the first time
- * it is asked to read it. Both halves come from os/update/rauc/, so agreeing is
+ * it is asked to read it. Both halves come from os/pkgs/rauc/, so agreeing is
  * normal -- but they are built at different times, and an image flashed before
  * a version bump with a bundle built after it is the case nothing else notices.
  * Three of the four refusals are about the comparison itself rather than a
@@ -180,7 +180,7 @@ export function assertRaucMatchesImage(inputs: RaucMatchInputs): string {
     throw new Error(
       `this rauc is ${have}, the image ships ${want}. A bundle written by one version and installed `
       + `by another is a format and slot-model contract nobody checked. Both come from `
-      + `os/update/rauc/versions.env now, so this means the image predates a version bump: rebuild `
+      + `os/pkgs/rauc/versions.env now, so this means the image predates a version bump: rebuild `
       + `the rootfs`,
     )
   }
@@ -457,7 +457,7 @@ export function renderManifest(options: {
  *
  * Comment lines are excluded from the placeholder scan, for the shell's
  * reason: manifest.raucm.in documents the other template's placeholder by name
- * ("See @SLOTS@ in os/update/rauc/system.conf.in for why"), and a check over
+ * ("See @SLOTS@ in os/pkgs/rauc/system.conf.in for why"), and a check over
  * the raw bytes rejects a correct manifest for saying what it does. The listing
  * of offenders applies the same exclusion the same blunt way, over the `N:line`
  * form grep -n produces, so a reader comparing the two implementations sees the
@@ -602,7 +602,7 @@ export interface BundleInputs {
   readonly rootfsVerityImg: string
   readonly rootfsVerityEnv: string
   readonly rootfsReport: string
-  /** os/update/rauc/out-<arch>/RAUC_VERSION.env -- the other half of the version check. */
+  /** os/pkgs/rauc/out-<arch>/RAUC_VERSION.env -- the other half of the version check. */
   readonly raucBuildEnv: string
   /** U-Boot boards only. */
   readonly bootCmdlineA?: string
@@ -698,8 +698,8 @@ export async function openBundleToolbox(options: {
     await tb.close()
     throw new Error(
       `the bundle toolset took the HOST route, where its rauc would be ${found || '(nothing on PATH)'} `
-      + `and not ${options.raucBin}, which is the binary os/update/rauc/build.sh produced from the `
-      + `version pinned in os/update/rauc/versions.env. The toolset declares provenance 'shipped' and `
+      + `and not ${options.raucBin}, which is the binary os/pkgs/rauc/build.sh produced from the `
+      + `version pinned in os/pkgs/rauc/versions.env. The toolset declares provenance 'shipped' and `
       + `src/tools/rauc.ts writes a bundle only under that claim; on the host route there is nothing `
       + `to carry the binary in, so the claim would be about a different rauc. Commit 9a43a59 records `
       + `a bundle built by rauc 1.8 that the device's 1.13 refused. Set MOS_BUILD_TOOLBOX=container, `

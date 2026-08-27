@@ -32,7 +32,7 @@ FROM ${MOS_BASE_IMAGE} AS fetch
 # Filtered to this image's GO_ keys only, so a pin added for Rust or for M2c's
 # ubuntu BSP does not invalidate this download. os/build-env/images.env carries
 # the prefix convention that makes the filter possible, and
-# os/podman/Dockerfile carries the 42-minute measurement that makes it worth
+# os/pkgs/podman/Dockerfile carries the 42-minute measurement that makes it worth
 # having.
 COPY images.lock /etc/mos-build/images.env
 
@@ -49,7 +49,7 @@ RUN --mount=type=cache,target=/var/cache/apt,id=apt-cache-mos-build-go-fetch,sha
 # this stage downloads the tarball, prints the sha256 it computed, and fails.
 # Paste the value into images.env and run again. There is no environment
 # variable that softens it -- images.env says why this file is stricter than
-# os/podman/Dockerfile on that one point.
+# os/pkgs/podman/Dockerfile on that one point.
 
 # The download is cached and the verification is not. A cache mount is not part
 # of the image layer, so a re-run after pasting the hash does not re-download
@@ -118,7 +118,7 @@ COPY --from=fetch /opt/go /opt/go
 # happen quietly.
 
 # GOPATH=/go matches what every consumer of the official image already assumes,
-# so the cache mounts in os/podman/Dockerfile (/go/pkg/mod,
+# so the cache mounts in os/pkgs/podman/Dockerfile (/go/pkg/mod,
 # /root/.cache/go-build) keep working without being re-derived.
 ENV GOROOT=/opt/go \
     GOPATH=/go \

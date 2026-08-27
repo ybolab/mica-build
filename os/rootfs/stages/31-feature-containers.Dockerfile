@@ -35,7 +35,7 @@ FROM ${MOS_STAGE_PREV}
 
 # Inert by construction, not by masking. Upstream's system units live in
 # podman's contrib/ tree and are installed by `make install.systemd`, which
-# os/podman does not run. The units are not masked -- they are absent, and the
+# os/pkgs/podman does not run. The units are not masked -- they are absent, and the
 # assertion below is that no unit named podman* exists anywhere in the image.
 # That fails on any podman unit at all, whatever its name, where a mask list
 # could only fail if podman's known unit set changed.
@@ -52,7 +52,7 @@ FROM ${MOS_STAGE_PREV}
 #     not carry.
 
 # No engine packages here. This list installs what the engine links and execs;
-# the seven binaries themselves come from os/podman, built from pinned upstream
+# the seven binaries themselves come from os/pkgs/podman, built from pinned upstream
 # source, and are copied in below. Every package is derived from podman
 # v5.8.6's own source rather than from what `apt-get install podman` pulls.
 
@@ -89,7 +89,7 @@ FROM ${MOS_STAGE_PREV}
 # lose container logs rather than fail loudly. systemd is in the base image so
 # the library is present; the assertion below is that it stays present.
 
-# libgpgme11t64 is not needed because os/podman builds with the
+# libgpgme11t64 is not needed because os/pkgs/podman builds with the
 # `containers_image_openpgp` tag, which replaces gpgme with a pure-Go
 # implementation; libyajl2 goes with crun. This is a separate apt transaction
 # from stages/10-base's allowlist -- reaching this line already means the

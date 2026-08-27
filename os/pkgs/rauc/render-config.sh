@@ -2,8 +2,8 @@
 # Renders the RAUC system configuration from the layout-v2 constants, and
 # asserts that the U-Boot environment access file agrees with the GPT.
 #
-#   bash os/update/rauc/render-config.sh          render the overlay file
-#   bash os/update/rauc/render-config.sh --check  verify the rendered file is current
+#   bash os/pkgs/rauc/render-config.sh          render the overlay file
+#   bash os/pkgs/rauc/render-config.sh --check  verify the rendered file is current
 
 # Output: os/rootfs/overlay-v2/etc/rauc/system.conf, which the overlay
 # mechanism copies into the image at /etc/rauc/system.conf. The rendered file
@@ -240,13 +240,13 @@ rootfs_slots() {
 device=/dev/disk/by-partuuid/$(lower "${ROOTFS_A_GUID}")
 type=raw
 bootname=A
-# adaptive=block-hash-index — DEFERRED, see os/update/rauc/manifest.raucm.in.
+# adaptive=block-hash-index — DEFERRED, see os/pkgs/rauc/manifest.raucm.in.
 
 [slot.rootfs.1]
 device=/dev/disk/by-partuuid/$(lower "${ROOTFS_B_GUID}")
 type=raw
 bootname=B
-# adaptive=block-hash-index — DEFERRED, see os/update/rauc/manifest.raucm.in.
+# adaptive=block-hash-index — DEFERRED, see os/pkgs/rauc/manifest.raucm.in.
 SLOTS
 }
 
@@ -349,11 +349,11 @@ if [ "${MODE}" = "check" ]; then
     # render step they have not run yet.
     if [ ! -f "${SYSTEM_CONF_OUT}" ]; then
         echo "error: ${SYSTEM_CONF_OUT} has not been rendered yet (it is generated, not committed)." >&2
-        echo "Run 'bash os/update/rauc/render-config.sh' — os/rootfs/build-v2.sh does this automatically before staging the overlay." >&2
+        echo "Run 'bash os/pkgs/rauc/render-config.sh' — os/rootfs/build-v2.sh does this automatically before staging the overlay." >&2
         exit 1
     fi
     if ! diff -u "${SYSTEM_CONF_OUT}" "${rendered}"; then
-        echo "error: ${SYSTEM_CONF_OUT} is stale; re-run 'bash os/update/rauc/render-config.sh'" >&2
+        echo "error: ${SYSTEM_CONF_OUT} is stale; re-run 'bash os/pkgs/rauc/render-config.sh'" >&2
         exit 1
     fi
     echo "rauc config current: ${SYSTEM_CONF_OUT}"

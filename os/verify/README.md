@@ -228,8 +228,8 @@ with `--rm --network none`.
 ### One list, two readers
 
 No version string is written down in this package. Every pin is read, at run
-time, out of the file that owns it: `os/podman/versions.env`,
-`os/update/rauc/versions.env`, and `mosd/<crate>/Cargo.toml` for the four
+time, out of the file that owns it: `os/pkgs/podman/versions.env`,
+`os/pkgs/rauc/versions.env`, and `mosd/<crate>/Cargo.toml` for the four
 binaries this repository writes. That is the whole of what makes the third
 acceptance clause true — *bumping a pin without rebuilding the artifact turns
 the smoke run red* — and it is the reason the register carries identity (which

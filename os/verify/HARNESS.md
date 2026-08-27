@@ -708,9 +708,9 @@ measuring them gets both wrong.
 Bumping a `versions.env` pin without rebuilding the artifact turns the run red,
 naming both sides:
 
-    # os/podman/versions.env: CRUN_VERSION=1.29.1  ->  1.29.2   (nothing rebuilt)
+    # os/pkgs/podman/versions.env: CRUN_VERSION=1.29.1  ->  1.29.2   (nothing rebuilt)
     $ bash os/verify/run.sh --smoke --board x64
-    FAIL  crun  /usr/bin/crun  exit 0 but reports 1.29.1, and os/podman/versions.env pins
+    FAIL  crun  /usr/bin/crun  exit 0 but reports 1.29.1, and os/pkgs/podman/versions.env pins
                 CRUN_VERSION=1.29.2 (expected 1.29.2). Its --version line was
                 "crun version 1.29.1". Either the pin was bumped without rebuilding the
                 artifact, or the artifact was built from something other than the pin.

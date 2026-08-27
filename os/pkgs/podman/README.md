@@ -1,12 +1,12 @@
-# `os/podman` — the container engine, built from source
+# `os/pkgs/podman` — the container engine, built from source
 
 Produces seven binaries for `MOS_ARCH` (arm64 by default) into
-`os/podman/out-<arch>/`. Same arrangement as `os/boards/cx3576/bsp/kernel/`: builder
+`os/pkgs/podman/out-<arch>/`. Same arrangement as `os/boards/cx3576/bsp/kernel/`: builder
 stages, then a `FROM scratch AS artifact` that `-o` exports. The output
 directory follows the architecture so an arm64 and an amd64 set can coexist.
 
 ```
-make podman          # → os/podman/out-$MOS_ARCH/
+make podman          # → os/pkgs/podman/out-$MOS_ARCH/
 ```
 
 | Binary | What it is |
@@ -74,7 +74,7 @@ the same reason `mos-build-go` carries no C compiler and the Go stage installs
 
 Building for **arm64 needs an arm64 builder family**, because a `localhost/` tag
 carries exactly one architecture where a `name:tag@sha256:` digest is a
-multi-architecture index. `os/podman/build.sh` refuses the mismatch by name.
+multi-architecture index. `os/pkgs/podman/build.sh` refuses the mismatch by name.
 
 ## Why build it, when trixie ships a working one
 

@@ -391,7 +391,7 @@ fi
 # buildx`, so the container route carries it.
 #
 # It needs one thing the assemblers do not, and the failure is named by the
-# builder rather than here: the rauc binary os/update/rauc/build.sh produces for
+# builder rather than here: the rauc binary os/pkgs/rauc/build.sh produces for
 # THIS HOST's architecture. A bundle is written by one rauc and installed by
 # another on the device, and nothing about the format makes them compatible by
 # accident.
