@@ -1,6 +1,6 @@
 # RFCT-076 Start-up bundle discovery and the compatibility re-check
 
-- **status**: complete — bundle discovery runs after the listeners bind and after `APID_LISTENING` is printed, returns no error to `main`, and §6.1's class-3 and class-5 re-checks are wired to §2.1's served set
+- **status**: completed — bundle discovery runs after the listeners bind and after `APID_LISTENING` is printed, returns no error to `main`, and §6.1's class-3 and class-5 re-checks are wired to §2.1's served set
 - **priority**: P1
 - **owner**: ai-agent
 - **createdAt**: 2026-08-20 17:20

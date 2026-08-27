@@ -362,3 +362,5 @@ RESULT: PASS (29/29 files clean, 29 scanned)
   split: usage above `set -euo pipefail`, the package rationale below it, and
   the "zero tests is a failure" measurement moved down to the guard it
   describes. Both of that file's 15+-line blocks are gone.
+
+<!-- dated-record: a measurement record frozen at its commit; its citations name the tree as it was then (pre-PLAN-019 layout, pre-rewrite design documents); exempt from docs/verify-citations.sh (RFCT-172) -->

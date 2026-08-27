@@ -1,6 +1,6 @@
 # RFCT-057 Closing audit of the `apid` rename: completeness, consistency, assertion accounting, index closure
 
-- **status**: implementation complete — all mandatory project checks green,
+- **status**: completed — implementation complete, all mandatory project checks green,
   including `make docs-verify`, which passes for the first time in this campaign
 - **priority**: P1
 - **owner**: ai-agent
@@ -388,3 +388,5 @@ prove the campaign's end state rather than only its own delta.
 - **`README.md` line 16 remains ambiguous** (carry-in 2b). It is reported above
   with the exact fix that would close it; making it was outside this task's
   authority.
+
+<!-- dated-record: a measurement record frozen at its commit; its citations name the tree as it was then (pre-PLAN-019 layout, pre-rewrite design documents); exempt from docs/verify-citations.sh (RFCT-172) -->

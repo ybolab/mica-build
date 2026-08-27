@@ -1,6 +1,6 @@
 # RFCT-080 Close the duplicate-row hole in the index verifier, and sweep the `sort -u` shape
 
-- **status**: complete — three duplicate assertions added, each proved to fail with its own message; nine `sort -u` sites judged, none changed
+- **status**: completed — three duplicate assertions added, each proved to fail with its own message; nine `sort -u` sites judged, none changed
 - **priority**: P1
 - **owner**: ai-agent
 - **createdAt**: 2026-08-20 15:20
@@ -344,3 +344,5 @@ root, A/B, `rauc install`, and apid. This task moves neither position.
 - **`docs/plan/` and `docs/architecture.md`.** Neither index covers them, and
   extending the verifier's reach is a different task from making its existing
   reach sound.
+
+<!-- dated-record: a measurement record frozen at its commit; its citations name the tree as it was then (pre-PLAN-019 layout, pre-rewrite design documents); exempt from docs/verify-citations.sh (RFCT-172) -->

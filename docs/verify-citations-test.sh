@@ -49,12 +49,14 @@ pass() { PASS_N=$((PASS_N + 1)); echo "PASS: $*"; }
 fail() { FAIL_N=$((FAIL_N + 1)); echo "FAIL: $*"; }
 
 # The fixture tree. Two documents in scope, one cited source file of exactly
-# ten lines, and one directory that exists at the root so that `mosd/...` is in
-# scope while `u-boot/...` is not.
+# ten lines, one directory that exists at the root so that `mosd/...` is in
+# scope while `u-boot/...` is not, and a census baseline naming that one
+# segment with its exact count as the floor.
 #
-# The baseline document holds seven citations: two in scope carrying a quote,
-# one in scope carrying none, two host-and-port pairs, one upstream tree, and
-# one bare filename. Every case below mutates that.
+# The baseline document holds eight citations: three in scope carrying a quote
+# -- two with the quote before the citation, one with the quote directly after
+# it -- one in scope carrying none, two host-and-port pairs, one upstream
+# tree, and one bare filename. Every case below mutates that.
 new_fixture() {
     local dir="$1" n
     rm -rf "${dir}"
@@ -94,6 +96,9 @@ talks to systemd itself"* (`mosd/apid/src/settings_api.rs:2-4`).
 The session cookie carries `Path=/; HttpOnly; Secure`
 (`mosd/apid/src/settings_api.rs:8`).
 
+Cited first and quoted after: `mosd/apid/src/settings_api.rs:5`
+`pub trait SettingsApi` sits directly after its citation.
+
 The trait is declared at `mosd/apid/src/settings_api.rs:5`, and this sentence
 quotes nothing of it.
 
@@ -103,6 +108,11 @@ The board firmware reads its environment from (`u-boot/env/mmc.c:118`).
 
 The handler lives at `routes.rs:95-105` in the file named above.
 MD
+
+    cat >"${dir}/docs/verify-citations-baseline.txt" <<'TXT'
+# Fixture census floors: every in-scope citation here starts with mosd/.
+mosd 4
+TXT
 }
 
 # Appends a paragraph to the fixture document.
@@ -139,15 +149,16 @@ run_checker() {
     bash "${FIX}/docs/verify-citations.sh" "$@" >"${WORK}/out" 2>&1 || RC=$?
 }
 
-# The positive control.
+# The positive control. $2 states the expected pass ratio, `4/4`, because a
+# case that rewrites the document changes how many citations are in scope.
 expect_all_pass() {
-    local name="$1" got_fail
+    local name="$1" want="$2" got_fail
     run_checker
     got_fail="$(grep -c '^  FAIL ' "${WORK}/out" || true)"
-    if [ "${RC}" -eq 0 ] && [ "${got_fail}" -eq 0 ] && grep -q ': 3/3 PASS$' "${WORK}/out"; then
-        pass "${name}: 3/3, no failures, exit 0"
+    if [ "${RC}" -eq 0 ] && [ "${got_fail}" -eq 0 ] && grep -q ": ${want} PASS$" "${WORK}/out"; then
+        pass "${name}: ${want}, no failures, exit 0"
     else
-        fail "${name}: expected a clean 3/3 PASS and exit 0, got ${got_fail} failure(s) / exit ${RC}"
+        fail "${name}: expected a clean ${want} PASS and exit 0, got ${got_fail} failure(s) / exit ${RC}"
         sed 's/^/    | /' "${WORK}/out"
     fi
 }
@@ -201,21 +212,28 @@ echo
 # broken in some way that has nothing to do with the mutation.
 FIX="${WORK}/baseline"
 new_fixture "${FIX}"
-expect_all_pass "baseline: two quoted citations that still match, one unquoted, three skipped"
+expect_all_pass "baseline: three quoted citations that still match, one unquoted, three skipped" "4/4"
 
 # --- 1. the report names every category, with its count ----------------------
 # The failure mode this whole check exists to prevent is a green report that
 # never examined part of its input. The counts are asserted against a fixture
-# whose contents are known exactly.
+# whose contents are known exactly. The by-document no-quote lines are the
+# census RFCT-173 will ratchet, so their exact shape is pinned here.
 expect_report "the report counts what it skipped, by reason, and what it never examined" \
     "documents scanned:      2" \
-    "citations found:        7" \
-    "in scope:               3" \
+    "exempted as dated records, citations not checked: 0" \
+    "citations found:        8" \
+    "in scope:               4" \
+    "in scope, first segment mosd/: 4" \
     "skipped, path is outside this repository's tree: 1" \
     "skipped, bare filename with no directory to resolve against: 1" \
     "skipped, a host and a port rather than a citation: 2" \
-    "in-scope citations carrying a quote: 2" \
+    "census failures:        0" \
+    "in-scope citations carrying a quote: 3" \
     "in-scope citations carrying no quote, resolution checked only: 1" \
+    "no quote, by document: docs/architecture.md 0" \
+    "no quote, by document: docs/design/fixture.md 1" \
+    "near-miss: no quote armed, but a quoted span sits 1-3 words away: 0" \
     "a provenance claim such as \"measured at <commit>\" is validated against no file at all"
 
 # --- 2. the categories print even when nothing fell into them ----------------
@@ -229,6 +247,10 @@ cat >"${FIX}/docs/design/fixture.md" <<'MD'
 The trait is declared at `mosd/apid/src/settings_api.rs:5`, and this sentence
 quotes nothing of it.
 MD
+cat >"${FIX}/docs/verify-citations-baseline.txt" <<'TXT'
+# One citation left in this fixture, so the floor drops with it.
+mosd 1
+TXT
 run_checker
 expect_report "a document with nothing skipped still prints all three skipped categories" \
     "skipped, path is outside this repository's tree: 0" \
@@ -321,6 +343,10 @@ and never talks to systemd itself"*
 The session cookie carries `Path=/; HttpOnly; Secure`
 (`mosd/apid/src/settings_api.rs:8`).
 
+Cited first and quoted after:
+`mosd/apid/src/settings_api.rs:5`
+*`pub trait **SettingsApi**`* sits after, rewrapped and bolded too.
+
 The trait is declared at `mosd/apid/src/settings_api.rs:5`, and this sentence
 quotes nothing of it.
 
@@ -330,7 +356,7 @@ The board firmware reads its environment from (`u-boot/env/mmc.c:118`).
 
 The handler lives at `routes.rs:95-105` in the file named above.
 MD
-expect_all_pass "a quotation rewrapped and bolded, cited unchanged"
+expect_all_pass "a quotation rewrapped and bolded, cited unchanged, in both orders" "4/4"
 
 # --- 13. a host and a port is skipped, not resolved --------------------------
 # If the pair were treated as a citation it would fail to resolve, so a clean
@@ -342,6 +368,9 @@ cat >"${FIX}/docs/design/fixture.md" <<'MD'
 
 The plain listener binds `0.0.0.0:80` and the TLS listener binds `0.0.0.0:443`.
 MD
+cat >"${FIX}/docs/verify-citations-baseline.txt" <<'TXT'
+# Nothing is in scope in this fixture, so no segment carries a floor.
+TXT
 run_checker
 if [ "${RC}" -eq 0 ] && grep -q 'a host and a port rather than a citation: 2' "${WORK}/out" \
    && grep -q 'in scope:               0' "${WORK}/out"; then
@@ -360,6 +389,9 @@ cat >"${FIX}/docs/design/fixture.md" <<'MD'
 The board firmware reads its environment (`u-boot/env/mmc.c:118`), and the
 server is `axum-0.8.9/src/routing/mod.rs:212`.
 MD
+cat >"${FIX}/docs/verify-citations-baseline.txt" <<'TXT'
+# Nothing is in scope in this fixture, so no segment carries a floor.
+TXT
 run_checker
 if [ "${RC}" -eq 0 ] && grep -q "outside this repository's tree: 2" "${WORK}/out" \
    && grep -q 'in scope:               0' "${WORK}/out"; then
@@ -380,6 +412,132 @@ if [ "${RC}" -eq 0 ] \
     pass "--advisory: the failure is still reported, the run still says it is advisory, exit 0"
 else
     fail "--advisory: expected the failure reported and exit 0, got exit ${RC}"
+    sed 's/^/    | /' "${WORK}/out"
+fi
+
+# --- 16. content: a misquote that FOLLOWS its citation -----------------------
+# The RFCT-163 ordering: before the forward rule this pairing never armed, so
+# a wrong quote after its citation was resolution-checked only and green.
+FIX="${WORK}/quote-after-citation-misquote"
+new_fixture "${FIX}"
+add_para "${FIX}" 'The cookie line (`mosd/apid/src/settings_api.rs:8`) *`Path=/; HttpOnly; Wrong`* is quoted after its citation.'
+expect_fail "a misquote that follows its citation, the ordering that never armed before" 1 \
+    'quotes "Path=/; HttpOnly; Wrong", and that text is not at `mosd/apid/src/settings_api.rs:8`'
+
+# --- 17. a chained citation after a citation is still not a quote ------------
+# The forward rule inherits the backward rule's exclusion: `a:1` `a:2` is a
+# chain, not a quotation, so both stay unquoted and the run stays green.
+FIX="${WORK}/chained-forward"
+new_fixture "${FIX}"
+add_para "${FIX}" 'The trait spans `mosd/apid/src/settings_api.rs:5` `mosd/apid/src/settings_api.rs:6` as a pair of unquoted citations.'
+run_checker
+if [ "${RC}" -eq 0 ] && grep -q ': 6/6 PASS$' "${WORK}/out" \
+   && grep -qF 'no quote, by document: docs/design/fixture.md 3' "${WORK}/out"; then
+    pass "a chained citation directly after a citation is not a quote: both unquoted, 6/6, exit 0"
+else
+    fail "a chained citation directly after a citation: expected 6/6 with 3 unquoted in fixture.md, got exit ${RC}"
+    sed 's/^/    | /' "${WORK}/out"
+fi
+
+# --- 18. the interposed-word boundary: N=0 arms, 1-3 words is a near-miss ----
+# The zero-tolerance decision, proved at its edges: one interposed word (the
+# RFCT-155 "around" case) does not arm the content check even on a WRONG
+# quote -- the run stays green -- but the demotion is counted, at one word and
+# at three; at four words the span is no longer a near-miss.
+FIX="${WORK}/near-miss-boundary"
+new_fixture "${FIX}"
+add_para "${FIX}" 'The flags are `Path=/; HttpOnly; Wrong` around (`mosd/apid/src/settings_api.rs:8`).'
+add_para "${FIX}" 'The flags are `Path=/; HttpOnly; Wrong` three words before (`mosd/apid/src/settings_api.rs:8`).'
+add_para "${FIX}" 'The flags are `Path=/; HttpOnly; Wrong` set four words before (`mosd/apid/src/settings_api.rs:8`).'
+run_checker
+if [ "${RC}" -eq 0 ] && [ "$(grep -c '^  FAIL ' "${WORK}/out" || true)" -eq 0 ] \
+   && grep -q ': 7/7 PASS$' "${WORK}/out" \
+   && grep -qF 'near-miss: no quote armed, but a quoted span sits 1-3 words away: 2' "${WORK}/out"; then
+    pass "one interposed word demotes a wrong quote to green, and 1-3 words count as near-miss while 4 do not"
+else
+    fail "the interposed-word boundary: expected 7/7, exit 0 and a near-miss count of 2, got exit ${RC}"
+    sed 's/^/    | /' "${WORK}/out"
+fi
+
+# --- 19. census: the cited tree's root directory vanishes --------------------
+# The RFCT-167 class. Deleting mosd/ reclassifies every citation into it as
+# skipped-outside; without the census the run prints 0/0 PASS and exits 0.
+FIX="${WORK}/segment-vanishes"
+new_fixture "${FIX}"
+rm -rf "${FIX}/mosd"
+expect_fail "the cited root directory deleted: every citation leaves scope, and the census fails" 1 \
+    'segment mosd has 0 in-scope citations, and docs/verify-citations-baseline.txt names it with floor 4'
+
+# --- 20. census: one citation removed while the floor stands -----------------
+FIX="${WORK}/segment-below-floor"
+new_fixture "${FIX}"
+must_replace "${FIX}" docs/design/fixture.md 'declared at `mosd/apid/src/settings_api.rs:5`' 'declared in the fixture source'
+expect_fail "a segment count dropping below its committed floor" 1 \
+    'segment mosd has 3 in-scope citations, below its floor 4 in docs/verify-citations-baseline.txt; lower the floor in the same commit'
+
+# --- 21. widened scope: a stale citation in a task document fails -------------
+# The RFCT-159 finding-a class. Before the widening, docs/task was scanned by
+# no gate and this citation would have read green by omission.
+FIX="${WORK}/task-doc-stale"
+new_fixture "${FIX}"
+mkdir -p "${FIX}/docs/task"
+cat >"${FIX}/docs/task/RFCT-999.md" <<'MD'
+# RFCT-999 Fixture task record
+
+The helper this record leans on lives at `mosd/apid/src/gone.rs:3`, and this
+sentence quotes nothing of it.
+MD
+expect_fail "a stale citation in a non-exempt task document" 1 \
+    'docs/task/RFCT-999.md:3 cites `mosd/apid/src/gone.rs:3`, and mosd/apid/src/gone.rs does not exist'
+
+# --- 22. the dated-record marker exempts the document, and the census says so -
+# The SAME document and the SAME stale citation as case 21; the only change is
+# the marker. The run must go green, and "left alone" must be evidenced: the
+# exemption count and the per-file census line are asserted verbatim.
+FIX="${WORK}/task-doc-exempt"
+new_fixture "${FIX}"
+mkdir -p "${FIX}/docs/task"
+cat >"${FIX}/docs/task/RFCT-999.md" <<'MD'
+# RFCT-999 Fixture task record
+
+The helper this record leans on lives at `mosd/apid/src/gone.rs:3`, and this
+sentence quotes nothing of it.
+
+<!-- dated-record: fixture worklist frozen at a past commit -->
+MD
+run_checker
+if [ "${RC}" -eq 0 ] && [ "$(grep -c '^  FAIL ' "${WORK}/out" || true)" -eq 0 ] \
+   && grep -q ': 4/4 PASS$' "${WORK}/out" \
+   && grep -qF 'documents scanned:      3' "${WORK}/out" \
+   && grep -qF 'exempted as dated records, citations not checked: 1' "${WORK}/out" \
+   && grep -qF 'dated record: docs/task/RFCT-999.md' "${WORK}/out"; then
+    pass "the marker exempts the stale document, 4/4 green, and the census names the file"
+else
+    fail "the marker on the stale document: expected 4/4, exit 0 and a census naming docs/task/RFCT-999.md, got exit ${RC}"
+    sed 's/^/    | /' "${WORK}/out"
+fi
+
+# --- 23. no silent exemptions: a marker on any scanned file prints ------------
+# The marker exempts whichever file carries it, including one nobody classified
+# as dated -- here the design fixture document. The census must name it anyway:
+# review reads the census, so an exemption that printed nothing would be the
+# silent left-alone this mechanism exists to prevent. The baseline is emptied
+# because the marked document held every in-scope citation.
+FIX="${WORK}/marker-outside-dated-list"
+new_fixture "${FIX}"
+printf '\n%s\n' '<!-- dated-record: a marker nobody put on the dated list -->' \
+    >>"${FIX}/docs/design/fixture.md"
+cat >"${FIX}/docs/verify-citations-baseline.txt" <<'TXT'
+# The only citing document is exempted in this fixture, so no floor is named.
+TXT
+run_checker
+if [ "${RC}" -eq 0 ] \
+   && grep -qF 'in scope:               0' "${WORK}/out" \
+   && grep -qF 'exempted as dated records, citations not checked: 1' "${WORK}/out" \
+   && grep -qF 'dated record: docs/design/fixture.md' "${WORK}/out"; then
+    pass "a marker on a file outside the dated list still prints in the census"
+else
+    fail "a marker outside the dated list: expected exit 0 and a census naming docs/design/fixture.md, got exit ${RC}"
     sed 's/^/    | /' "${WORK}/out"
 fi
 

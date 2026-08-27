@@ -1,6 +1,6 @@
 # RFCT-041 Venus OS access and firmware-update UX study
 
-- **status**: research complete — reference document, no code
+- **status**: completed — research complete, reference document, no code
 - **priority**: P2
 - **owner**: ai-agent
 - **createdAt**: 2026-08-19 10:17
@@ -21,7 +21,7 @@ Venus is the right comparison for this specifically because it shares the
 structural properties mos has: a read-only rootfs, a dual-rootfs updater, a
 locked-down default network posture, and a vendor support channel — all driven
 from a settings tree rather than from `/etc`
-(`docs/research/venus-os-access.md:16-19`).
+(`docs/research/venus-os-access.md:17-20`).
 
 Like its companion, this is **description, not proposal**.
 

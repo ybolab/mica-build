@@ -1,6 +1,6 @@
 # RFCT-042 mos web/UI current-state inventory, measured
 
-- **status**: research complete — inventory, no code
+- **status**: completed — research complete, inventory, no code
 - **priority**: P1
 - **owner**: ai-agent
 - **createdAt**: 2026-08-19 10:17
@@ -39,5 +39,5 @@ can tell drift from error.
 
 `docs/design/dashboard.md` sections 1-4 (RFCT-043) are built directly on this
 inventory — section 1 "Problem and current state"
-(`docs/design/dashboard.md:45`) is where it lands. Sections 5-8 (RFCT-044,
+(`docs/design/dashboard.md:61`) is where it lands. Sections 5-8 (RFCT-044,
 RFCT-046) cite it for the baseline they cost their options against.

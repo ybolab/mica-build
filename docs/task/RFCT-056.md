@@ -1,6 +1,6 @@
 # RFCT-056 Documentation for the `apid` rename and the keep-two-processes decision
 
-- **status**: implementation complete — documentation only; no code, no image
+- **status**: completed — implementation complete, documentation only; no code, no image
   content and no verifier was touched, so nothing on a device is claimed
 - **priority**: P1
 - **owner**: ai-agent
@@ -240,3 +240,5 @@ translated into them.
   names the premise as dead instead.
 - **The option-2 hardening remains undecided and unscheduled** — recorded in
   §6's marker and §8's Phase 2 marker, not resolved here.
+
+<!-- dated-record: a frozen worklist or exhibit of what was measured then; re-pointing its citations would falsify the record; exempt from docs/verify-citations.sh (RFCT-172) -->

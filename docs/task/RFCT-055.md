@@ -1,6 +1,6 @@
 # RFCT-055 rename webd to apid: crate, binary, unit, StateDirectory, image, verifiers, health gate
 
-- **status**: implementation complete — all mandatory project checks green
+- **status**: completed — implementation complete, all mandatory project checks green
   except `make docs-verify`, which fails only on this record's deliberately
   absent index entry (see "Checks" below)
 - **priority**: P1

@@ -1,6 +1,6 @@
 # RFCT-091 PLAN-011 M3: mos-mqttd, the MQTT data-publishing bridge
 
-- **status**: complete — `mos-mqttd` ships the mos-native grammar over the
+- **status**: completed — `mos-mqttd` ships the mos-native grammar over the
   M1/M2 item tree; the protocol is a pure state machine tested against an
   in-memory transport double, and four limits are recorded rather than hidden
 - **priority**: P1

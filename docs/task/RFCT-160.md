@@ -287,3 +287,5 @@ directory.
   `os/update/rauc/build.sh:63` together with the `localhost/mos-build-*` stages
   behind it, not a host that cannot build arm64; resolving it is `os/update`
   work outside this campaign.
+
+<!-- dated-record: a measurement record frozen at its commit; its citations name the tree as it was then (pre-PLAN-019 layout, pre-rewrite design documents); exempt from docs/verify-citations.sh (RFCT-172) -->

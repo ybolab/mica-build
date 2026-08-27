@@ -1,6 +1,6 @@
 # RFCT-068 Anchor mos-ui-inventory.md as a measurement at a time
 
-- **status**: complete — the document is anchored, not re-measured and not superseded; the decision between those three is the substance of this record
+- **status**: completed — the document is anchored, not re-measured and not superseded; the decision between those three is the substance of this record
 - **priority**: P1
 - **owner**: ai-agent
 - **createdAt**: 2026-08-19 15:54

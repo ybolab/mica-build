@@ -1,6 +1,6 @@
 # RFCT-011 Minimal image sizing + board hardware init (cx3576)
 
-- **status**: implementation complete — pending user hardware acceptance
+- **status**: completed — implementation complete, pending user hardware acceptance
 - **priority**: P1
 - **owner**: ai-agent
 - **createdAt**: 2026-08-18 01:59

@@ -1,6 +1,6 @@
 # RFCT-016 update/sign: TUF (tough) signing skeleton
 
-- **status**: implementation complete
+- **status**: completed — implementation complete
 - **priority**: P1
 - **owner**: ai-agent
 - **createdAt**: 2026-08-18 03:39

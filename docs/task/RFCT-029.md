@@ -1,6 +1,6 @@
 # RFCT-029 /etc/shadow on STATE (symlink, factory copy, boot reconcile, verifier proof)
 
-- **status**: implementation complete — both verifiers green, on-device behaviour is the user's acceptance
+- **status**: completed — implementation complete, both verifiers green, on-device behaviour is the user's acceptance
 - **priority**: P1
 - **owner**: ai-agent
 - **createdAt**: 2026-08-19 00:23

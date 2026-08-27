@@ -1,6 +1,6 @@
 # RFCT-098 The connd contract read rotted, and nineteen assertions went green on the fallback
 
-- **status**: implementation complete — `bash os/ui-location-test.sh` green (39/39 cases), full image chain green; two of the image verifier's three standing failures were this one defect
+- **status**: completed — implementation complete, `bash os/ui-location-test.sh` green (39/39 cases), full image chain green; two of the image verifier's three standing failures were this one defect
 - **priority**: P1
 - **owner**: ai-agent
 - **createdAt**: 2026-08-23 02:40

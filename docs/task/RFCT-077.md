@@ -1,6 +1,6 @@
 # RFCT-077 Verifier assertions for the built-in prefix, fixture-mode widening, and the SIGPIPE sweep
 
-- **status**: complete — two image assertions added and guard-fired, fixture mode widened to the check it delegates to, the count-based control replaced by a per-fact identity diff, 105 SIGPIPE sites fixed structurally
+- **status**: completed — two image assertions added and guard-fired, fixture mode widened to the check it delegates to, the count-based control replaced by a per-fact identity diff, 105 SIGPIPE sites fixed structurally
 - **priority**: P1
 - **owner**: ai-agent
 - **createdAt**: 2026-08-20 16:45
@@ -422,3 +422,5 @@ rendering page on a running appliance is a different claim and is not made here.
   the two surviving hypotheses are recorded above instead.
 - **`docs/design/api.md`.** The two §6.2 mismatches are findings above, not
   edits.
+
+<!-- dated-record: a measurement record frozen at its commit; its citations name the tree as it was then (pre-PLAN-019 layout, pre-rewrite design documents); exempt from docs/verify-citations.sh (RFCT-172) -->

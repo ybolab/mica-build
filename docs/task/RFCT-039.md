@@ -1,6 +1,6 @@
 # RFCT-039 A persistent `/home` on DATA, and the `mos` account that owns it
 
-- **status**: implementation complete — `bash mosd/hack/check.sh` (298 tests),
+- **status**: completed — implementation complete, `bash mosd/hack/check.sh` (298 tests),
   `make os-shadow-test`, `make os-dbus-policy-test`, `make os-health-test`,
   `make os-repart-test` and both image builds with both profiles and both
   verifiers all green; no on-device claim is made

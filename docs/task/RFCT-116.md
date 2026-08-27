@@ -625,3 +625,5 @@ messages concatenate with correct single spacing.
 - `mosd/hack/build-target.sh` needs a full cross build; **not run**. `bash -n`
   and shellcheck are its gate, and its only executable change is the one
   tabulated error string.
+
+<!-- dated-record: a measurement record frozen at its commit; its citations name the tree as it was then (pre-PLAN-019 layout, pre-rewrite design documents); exempt from docs/verify-citations.sh (RFCT-172) -->
