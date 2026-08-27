@@ -2,98 +2,134 @@
 
 > English | [中文](remote-management.zh.md)
 >
-> Who talks to the device, over what, with which trust. Decision record for
-> keeping Talos `apid` (upstream machine API) alongside `apid` (the mos product
-> HTTPS daemon — it serves the API, and the dashboard is one client of it).
+> Who reaches the device, over what, with which trust — as the tree stands
+> today, plus the one requirement stated here and designed nowhere. The
+> `.zh.md` sibling was written against the retired framing and is stale.
 >
-> **Naming convention for this document, because the name now collides.** Bare
-> **`apid`** below means the mos product daemon. The upstream Talos machine API
-> daemon is written **Talos `apid`** everywhere it appears. No sentence uses the
-> bare name for both.
->
-> **[not implemented] — status of this document: awaiting a rewrite, not
-> retirement.** Two separable things live here and only one of them died.
->
-> - **The MECHANISM is dead.** Talos `apid`, `talosctl`, mutual TLS to gRPC
->   :50000, `trustd`, and the claim that both frontends are *"thin frontends
->   over `/run/machined.sock`"* all belonged to the Talos base that systemd +
->   mosd replaced. **None of it exists in the tree**: there is no
->   `machined`, no `machined.sock` and no Talos `apid` anywhere in this
->   repository.
-> - **The MODEL is alive, wanted, and undesigned.** A reverse-connected
->   management channel — the device dialling out so it is reachable from behind
->   NAT — and the fleet-management story survive Plan B completely intact. The
->   user asked for that model and it was **not withdrawn**. And there is **no
->   replacement design for it anywhere in the tree today**: nothing under
->   `docs/design/` covers remote reachability or fleet management on the
->   systemd + mosd architecture.
->
-> So this document is **not obsolete and must not be retired**. The requirement
-> it carries is still live and currently has no design. What it needs is a
-> rewrite against the current architecture. Recording that gap is the whole
-> point of this marker; no replacement is sketched here.
+> **Naming convention for this document, because the name collided.** Bare
+> **`apid`** below means the mos product daemon: the HTTPS management daemon
+> that serves the API, with the dashboard as one client of it. The upstream
+> Talos machine API daemon, written **Talos `apid`** in older material, is not
+> part of this system and exists nowhere in this repository; no sentence below
+> uses the bare name for both.
 
-## 1. Two frontends, one machined
+## 0. How to read the status markers
 
-| | `apid` (product) | Talos `apid` + talosctl |
-|---|---|---|
-| Audience | end user / device owner | operators, automation, future fleet plane |
-| Protocol | HTTPS + session auth (first-run setup) | gRPC :50000, mutual TLS (talosconfig) |
-| Scope | setup wizard, status, network, updates UI | full machine API: apply-config, upgrade, logs, events, reset |
-| Maintenance | ours | **upstream Talos** (the decisive argument for keeping it) |
-| Default | on | **off** (or bound to management subnets); enabled per deployment |
+Markers follow `docs/design/access.md` section 0: **[implemented]** is *"code
+exists and is named, by path"* (`docs/design/access.md:27`), **[not
+implemented]** is *"deliberately, no code at all. Prose only"*
+(`docs/design/access.md:29`). This section carries neither
+(`docs/design/access.md:45-46`).
 
-Both are thin frontends over `/run/machined.sock`; neither owns state. trustd
-stays disabled (inter-node trust has no single-appliance role); the appliance's
-Talos `apid` uses locally-issued PKI (controlplane-style), decided and tested
-in the rebase campaign.
+## 1. What reaches the device today — **[implemented]**
 
-## 2. Reaching devices behind NAT
+**apid, on the LAN, over HTTPS.** It is the *"mos API daemon (serves the web
+dashboard)"* (`mosd/dist/apid.service:2`), started as `/usr/bin/apid`
+(`mosd/dist/apid.service:14`) after mosd — `After=network.target mosd.service`
+(`mosd/dist/apid.service:3-4`). It binds an HTTPS listener and a
+*"Redirect-only HTTP listen address"* (`mosd/apid/src/config.rs:19`),
+defaulting to `unwrap_or_else(|_| "0.0.0.0:443".to_string())`
+(`mosd/apid/src/config.rs:34-35`) and `unwrap_or_else(|_| "0.0.0.0:80".to_string())`
+(`mosd/apid/src/config.rs:36-37`). No second protocol, no third port.
 
-Upstream answer adopted as the planned fleet path: **SideroLink** — the device
-dials out a WireGuard tunnel to a management endpoint; Talos `apid` becomes
-reachable through the tunnel (the mechanism underlying Omni; protocol and
-config types are in-tree). Topologically equivalent to balena's VPN dial-back, but
-upstream-maintained.
+**One gate in front of everything.** `app` is *"The HTTPS application router"*
+(`mosd/apid/src/routes.rs:105`) and its outermost layer is the auth gate
+(`mosd/apid/src/routes.rs:187`), which *"routes every request into setup mode,
+login, or through"* (`mosd/apid/src/routes.rs:658`) on a session cookie minted
+at first-run setup or at login. `/healthz` and the declared API routes are the
+only exemptions; they *"answer for themselves"*
+(`mosd/apid/src/routes.rs:661-662`).
 
-Beyond API reach, the siderolink protocol also carries device→server event
-streaming and kernel log push — management and telemetry share one
-device-initiated tunnel. In fleet profiles Talos `apid` is bound to the tunnel
-interface only (invisible on the LAN); consumer deployments configure neither.
+**The JSON API under `/api` is read-only.** The router reserves the prefix and
+*"every other path under it 404s"* (`mosd/apid/src/routes.rs:175-176`); every
+route inside is a GET — `get(api_v1_settings)` (`mosd/apid/src/routes.rs:265`)
+and `get(api_v1_state)` (`mosd/apid/src/routes.rs:266`), beside version
+discovery and metadata. `docs/design/api.md` section 1 records the whole of
+*"The surface as it exists today"* (`docs/design/api.md:67`).
 
-Not scheduled yet; prerequisite decisions when it lands: management endpoint
-hosting, device enrollment (join tokens vs pre-provisioned), and how ECU
-version manifests (PLAN-006 phase 2 director) share that channel.
+**apid owns no state; it is a client of mosd** over D-Bus — its one backend
+choice is *"Which message bus to reach"* (`mosd/apid/src/config.rs:5`) mosd on,
+carrying one interface *"for the settings, state and transient-password calls"*
+(`mosd/apid/src/bus_client.rs:3-4`) and another for the power actions. mosd
+holds the tree (`BusName=com.mos.mosd`, `mosd/dist/mosd.service:11`); *"apid
+never spawns a process and never talks to systemd itself"*
+(`mosd/apid/src/settings_api.rs:10-12`).
+
+**SSH and the console are access channels, not management ones**, and both are
+shut: SSH ships *"off by default on both"* profiles
+(`docs/design/access.md:68`), the tty3 shell has *"no reconciler consuming it"*
+(`docs/design/access.md:69`), the serial console has *"no account that will
+accept a credential"* (`docs/design/access.md:70`).
+
+**That is the whole list.** There is **no device-initiated management channel
+and no fleet plane in this tree**: nothing dials out, nothing enrolls a device,
+no component holds more than one device. Every path in is inbound, on the LAN.
+
+## 2. Reaching devices behind NAT, and managing a fleet — **[not implemented]**
+
+A device sits behind NAT on somebody else's network. It must be reachable for
+support, and a fleet of them must be manageable, **without an inbound port**:
+an appliance whose owner has to forward a port has no support story, and one
+that forwards a port carries an attack surface its owner did not choose. That
+forces a device-initiated channel — the device dials out and management rides
+back down the connection the device opened.
+
+**The requirement is live and has no design.** Nothing under `docs/design/`
+covers remote reachability or fleet management; section 1 is the whole of what
+the tree does. This section records the gap and does not close it. Three
+decisions any future design settles first, each constraining the others:
+
+- **Where the management endpoint is hosted, and who runs it** — a service with
+  an availability story and a compromise story of its own, and no existence
+  today.
+- **How a device enrolls**, and what revoking an enrollment does. mosd already
+  mints per-device identity at first boot — *"A device instead gives itself an
+  identity and its credentials here, at first boot, from the system CSPRNG"*
+  (`mosd/mosd/src/identity.rs:6-7`) — so enrollment has something to bind to.
+- **How update targeting shares the channel.** Per-device targeting and
+  management want the same device-initiated connection; decided separately they
+  produce two.
 
 ## 3. Update control flow
 
-Day-1 (phase 1): the device pulls — updater checks the static Uptane repo per
-`UpdateConfig` policy; `apid` offers manual check/apply; lockbox covers offline.
-No management server exists, so there is nothing to operate or compromise
-server-side beyond static content hosting.
+**What holds today — [implemented].** Installation is local and mosd owns it:
+`InstallUpdate(bundle_path)` (`docs/design/mosd.md:317`) hands a bundle already
+on the device to RAUC, against *"the A/B update design this implements"*
+(`docs/design/ro-root.md:7-8`). The boot health gate confirms the new slot and
+*"probes systemd, mosd and apid first"* (`docs/design/mosd.md:333`); an
+unconfirmed slot spends boot credits until *"a slot that cannot complete a boot
+is guaranteed to exhaust its credits"*
+(`docs/design/uboot-ab-handshake.md:434-435`) and the bootloader falls back.
 
-Fleet stage (phase 2): director repo adds per-device targeting; Talos `apid`
-plus SideroLink adds imperative reach (trigger upgrade, fetch logs). The product
-`apid` remains the local fallback at every stage.
+**What does not exist — [not implemented].** No on-device pull: the device-side
+verifier is built and tested on the host, and *"nothing ships it to a device
+yet"* (`update/README.md:12`). apid declares no update route
+(`mosd/apid/src/routes.rs:113-188`), so it offers no local check/apply button
+either; earlier text here claiming one described a surface that is not there.
 
-**Talos `apid` as the remote upgrade entry (decision 2026-08-17).** The
-`MachineService.Upgrade` RPC is kept as a *trigger into* the PLAN-006 updater
-state machine, never a bypass of it:
-
-- RPC parameter semantics change from "installer container image" to "update
-  target/version"; the updater still runs full TUF metadata verification and
-  hash pinning before RAUC touches a slot. A compromised management endpoint
-  cannot produce an installable payload (TUF online keys cannot sign bundles).
-- Three triggers, one trust path: policy pull (`UpdateConfig`), remote trigger
-  (Upgrade RPC over SideroLink), local trigger (`apid` button / lockbox) — all
-  converge on the same updater state machine, health gate, and rollback.
+**The constraint on any future trigger.** Whatever triggers an update — a
+policy pull, a remote trigger over section 2's channel, a local one — converges
+on the one update path with its verification, health gate and rollback. A
+trigger is a way *into* that path, never a bypass of it: an endpoint that could
+hand a device an installable payload directly would make compromise of the
+endpoint equal to compromise of every device it reaches.
 
 ## 4. Security posture
 
-- Talos `apid` off by default ⇒ consumer deployments expose only `apid` (the
-  product daemon) on the LAN.
-- talosconfig client certs are operator credentials — never provisioned onto
-  end-user devices' owners.
-- SideroLink tunnels originate device-side; no inbound port on the device.
-- All three planes (`apid` session, Talos `apid` mTLS, SideroLink WG) are
-  independent credential domains; compromise of one does not grant another.
+**Exposed today — [implemented].** apid on the LAN, behind section 1's session
+gate, is the entire inbound management surface.
+
+**Not exposed today — [implemented], as an absence the build asserts.** No
+other inbound management port, no outbound management connection, and **no
+operator credential provisioned onto a device**. A signed rootfs is
+byte-identical on every unit, so a credential baked into one would be *"a
+fleet-wide shared secret"* (`os/rootfs/scripts/pack-assert-shadow-chain.sh:26`)
+— the pack step fails the build over that, and the reasoning binds any future
+fleet credential too.
+
+**The invariant a future channel must hold — [not implemented].** Each plane is
+an independent credential domain; compromise of one grants nothing in another.
+An apid session is not an enrollment credential, an enrollment credential is
+not a root shell, and an endpoint holding a fleet's channel credentials must
+not thereby hold the keys that authorise an image — the update trust anchor is
+already *"a separate key hierarchy"* (`update/README.md:44-45`) and stays one.
