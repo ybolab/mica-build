@@ -742,16 +742,16 @@ the contract above.
    not. This divergence is deliberate, and harmonising the two in either
    direction breaks something.** `tree::redact` strips every key named
    `password_hash`, `passwordHash`, `psk` or `hash` at any depth
-   (`mosd/mosd/src/tree.rs:43`) and every projection passes through it
-   (`mosd/mosd/src/tree.rs:217`), so no `GetValue` reply and no `ItemsChanged`
+   (`os/pkgs/mosd/mosd/src/tree.rs:43`) and every projection passes through it
+   (`os/pkgs/mosd/mosd/src/tree.rs:217`), so no `GetValue` reply and no `ItemsChanged`
    payload can carry a secret (§8). `GetSettings` applies no redaction at all —
-   it returns the requested subtree verbatim (`mosd/mosd/src/bus.rs:249-253`).
+   it returns the requested subtree verbatim (`os/pkgs/mosd/mosd/src/bus.rs:249-253`).
    The façade redacts because it is the surface that leaves the device: the M3
    MQTT bridge publishes from the item tree (§8), so a secret that reached an
    item would reach a broker. `GetSettings` **cannot** redact, because apid
    authenticates against a value it reads through it — `login_submit` calls
-   `get_settings("access")` (`mosd/apid/src/routes.rs:1118`) and lifts
-   `webAdmin.password_hash` out of the reply (`mosd/apid/src/routes.rs:1122`,
+   `get_settings("access")` (`os/pkgs/mosd/apid/src/routes.rs:1118`) and lifts
+   `webAdmin.password_hash` out of the reply (`os/pkgs/mosd/apid/src/routes.rs:1122`,
    helper at `:637-643`) to verify the submitted password against the stored
    argon2id hash. Redacting that key from `GetSettings` would harden nothing
    reachable from the bus — the façade already covers that surface — and would
