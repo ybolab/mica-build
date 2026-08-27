@@ -804,7 +804,7 @@ mod tests {
     /// directory: a key drawn anywhere else would be a real private key on the
     /// machine running the tests.
     fn keystore_in(dir: &std::path::Path) -> Keystore {
-        Keystore::new(dir.join("secrets/networkd"), None)
+        Keystore::under(dir, None)
     }
 
     /// A reconciler in `dir` whose reload and device deletions share one call
@@ -1213,7 +1213,7 @@ mod tests {
                  [WireGuard]\nPrivateKeyFile={}\nListenPort=51820\n\n\
                  [WireGuardPeer]\nPublicKey={}\nAllowedIPs=10.8.0.0/24\n\
                  Endpoint=vpn.example.net:51820\nPersistentKeepalive=25\n",
-                dir.path().join("secrets/networkd/wg-wg0.key").display(),
+                dir.path().join("networkd-secrets/wg-wg0.key").display(),
                 peer_key(1),
             )
         );
@@ -1268,7 +1268,7 @@ mod tests {
         let first = reconciler.apply(&settings).await.unwrap();
         let second = reconciler.apply(&settings).await.unwrap();
 
-        let key_file = dir.path().join("secrets/networkd/wg-wg0.key");
+        let key_file = dir.path().join("networkd-secrets/wg-wg0.key");
         let private_key = std::fs::read_to_string(&key_file).unwrap();
         let public_key = first["wg0"]["publicKey"].as_str().unwrap().to_string();
         // Lazy, and exactly once: the second pass finds the key it drew.
@@ -1363,7 +1363,7 @@ mod tests {
         // The key outlives the entry: re-declaring wg0 keeps the identity the
         // far end already trusts, and the file is unreachable to everything
         // but networkd meanwhile.
-        assert!(dir.path().join("secrets/networkd/wg-wg0.key").exists());
+        assert!(dir.path().join("networkd-secrets/wg-wg0.key").exists());
     }
 
     #[tokio::test]
@@ -1470,7 +1470,7 @@ mod tests {
         let settings = settings_with(&[("wg0", wireguard_iface(Some(51820), vec![peer(1)]))]);
         let before = reconciler.apply(&settings).await.unwrap();
         let old_private_key =
-            std::fs::read_to_string(dir.path().join("secrets/networkd/wg-wg0.key")).unwrap();
+            std::fs::read_to_string(dir.path().join("networkd-secrets/wg-wg0.key")).unwrap();
         let rotation = KeyRotation::new(
             keystore_in(dir.path()),
             MockLink {
@@ -1496,10 +1496,10 @@ mod tests {
         assert_eq!(after["wg0"]["publicKey"], public_key);
         // The old private key is gone from disk; there is no history beside it.
         let new_private_key =
-            std::fs::read_to_string(dir.path().join("secrets/networkd/wg-wg0.key")).unwrap();
+            std::fs::read_to_string(dir.path().join("networkd-secrets/wg-wg0.key")).unwrap();
         assert_ne!(new_private_key, old_private_key);
         assert_eq!(
-            std::fs::read_dir(dir.path().join("secrets/networkd"))
+            std::fs::read_dir(dir.path().join("networkd-secrets"))
                 .unwrap()
                 .count(),
             1
@@ -1527,7 +1527,7 @@ mod tests {
             "{err}"
         );
         let private_key =
-            std::fs::read_to_string(dir.path().join("secrets/networkd/wg-wg0.key")).unwrap();
+            std::fs::read_to_string(dir.path().join("networkd-secrets/wg-wg0.key")).unwrap();
         assert!(!format!("{err:#}").contains(private_key.trim()), "{err:#}");
     }
 
@@ -1563,7 +1563,7 @@ mod tests {
         let settings = settings_with(&[("wg0", wireguard_iface(Some(51820), vec![peer(1)]))]);
         reconciler.apply(&settings).await.unwrap();
         let private_key =
-            std::fs::read_to_string(dir.path().join("secrets/networkd/wg-wg0.key")).unwrap();
+            std::fs::read_to_string(dir.path().join("networkd-secrets/wg-wg0.key")).unwrap();
 
         let logs = LogCapture::default();
         let subscriber = tracing_subscriber::fmt()

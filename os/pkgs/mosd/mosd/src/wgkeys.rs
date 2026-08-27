@@ -35,9 +35,14 @@ use x25519_dalek::{PublicKey, StaticSecret};
 
 /// Sub-directory of the state directory holding the key files networkd reads.
 ///
-/// A sibling of `secrets/` rather than a file in it: that directory is 0700, so
-/// a group-readable file inside it would be a file the group cannot reach.
-const NETWORKD_SECRETS_DIR: &str = "secrets/networkd";
+/// A sibling of `secrets/` rather than anything under it, and the name says so
+/// because the path is load-bearing. Traversal needs execute on every
+/// component, `identity::ensure_secrets_dir` pins `secrets/` to 0700 on every
+/// pass, and it pins it unconditionally — so a key anywhere below that
+/// directory is a key the `systemd-network` user cannot reach whatever this
+/// module sets on its own directory and file. One component under the state
+/// directory, created and moded here, is the whole path.
+const NETWORKD_SECRETS_DIR: &str = "networkd-secrets";
 
 /// Mode of the key directory: owner plus group, no world.
 const KEY_DIR_MODE: u32 = 0o750;
@@ -69,16 +74,23 @@ pub struct Keystore {
 }
 
 impl Keystore {
-    /// A key store writing into `dir`, chowning what it writes to `group`.
+    /// A key store under `state_dir`, chowning what it writes to `group`.
+    ///
+    /// The directory is always `state_dir` joined with
+    /// [`NETWORKD_SECRETS_DIR`] and never a path a caller composed, so there is
+    /// no way to build a store whose keys sit somewhere untraversable.
     ///
     /// `group` is `None` when there is no group to give the files to, which
     /// leaves them `root:root` at 0640 — tighter than intended, never laxer.
     #[must_use]
-    pub fn new(dir: PathBuf, group: Option<u32>) -> Self {
-        Self { dir, group }
+    pub fn under(state_dir: &Path, group: Option<u32>) -> Self {
+        Self {
+            dir: state_dir.join(NETWORKD_SECRETS_DIR),
+            group,
+        }
     }
 
-    /// The production store: `<state_dir>/secrets/networkd`, group
+    /// The production store: `<state_dir>/networkd-secrets`, group
     /// [`KEY_GROUP`] as the host's group database spells it.
     ///
     /// A missing `systemd-network` group leaves the files root-owned rather
@@ -90,10 +102,7 @@ impl Keystore {
     /// assigns to the kernel-and-image milestone.
     #[must_use]
     pub fn production(state_dir: &Path) -> Self {
-        Self::new(
-            state_dir.join(NETWORKD_SECRETS_DIR),
-            lookup_group(Path::new(GROUP_FILE), KEY_GROUP),
-        )
+        Self::under(state_dir, lookup_group(Path::new(GROUP_FILE), KEY_GROUP))
     }
 
     /// Path of `iface`'s private-key file, which is what the rendered
@@ -311,7 +320,7 @@ mod tests {
     /// Every test in this module works in a temporary directory: a key drawn
     /// anywhere else would be a real key on the machine running the tests.
     fn keystore_in(dir: &Path) -> Keystore {
-        Keystore::new(dir.join("secrets/networkd"), None)
+        Keystore::under(dir, None)
     }
 
     /// The stored key file's contents. Test-only, and deliberately not a method
@@ -344,7 +353,7 @@ mod tests {
 
         store.ensure("wg0").unwrap();
 
-        let dir_mode = fs::metadata(dir.path().join("secrets/networkd"))
+        let dir_mode = fs::metadata(dir.path().join("networkd-secrets"))
             .unwrap()
             .permissions()
             .mode();
@@ -361,7 +370,7 @@ mod tests {
     fn a_pre_existing_directory_is_tightened_before_a_key_lands_in_it() {
         let dir = tempfile::tempdir().unwrap();
         let store = keystore_in(dir.path());
-        let key_dir = dir.path().join("secrets/networkd");
+        let key_dir = dir.path().join("networkd-secrets");
         fs::create_dir_all(&key_dir).unwrap();
         fs::set_permissions(&key_dir, Permissions::from_mode(0o777)).unwrap();
 
@@ -383,13 +392,13 @@ mod tests {
         else {
             return;
         };
-        let store = Keystore::new(dir.path().join("secrets/networkd"), Some(group));
+        let store = Keystore::under(dir.path(), Some(group));
 
         store.ensure("wg0").unwrap();
 
         assert_eq!(fs::metadata(store.key_path("wg0")).unwrap().gid(), group);
         assert_eq!(
-            fs::metadata(dir.path().join("secrets/networkd"))
+            fs::metadata(dir.path().join("networkd-secrets"))
                 .unwrap()
                 .gid(),
             group
@@ -410,7 +419,7 @@ mod tests {
         // history kept beside it.
         assert_ne!(stored_key(&store, "wg0"), first_stored);
         assert_eq!(
-            fs::read_dir(dir.path().join("secrets/networkd"))
+            fs::read_dir(dir.path().join("networkd-secrets"))
                 .unwrap()
                 .count(),
             1
@@ -480,6 +489,47 @@ mod tests {
         assert!(!is_key(&BASE64.encode([7u8; KEY_LEN + 1])));
         assert!(!is_key("not base64 at all"));
         assert!(!is_key(""));
+    }
+
+    #[test]
+    fn no_component_of_a_key_path_is_traversable_only_by_root() {
+        let dir = tempfile::tempdir().unwrap();
+        // The parent this store has to live beside on a real device, at the
+        // mode `identity::ensure_secrets_dir` pins it to on every pass.
+        let secrets = dir.path().join("secrets");
+        fs::create_dir_all(&secrets).unwrap();
+        fs::set_permissions(&secrets, Permissions::from_mode(0o700)).unwrap();
+        let store = Keystore::under(dir.path(), None);
+
+        store.ensure("wg0").unwrap();
+
+        let key_path = store.key_path("wg0");
+        // Reaching a file needs execute on every directory above it, so a key
+        // under the 0700 secrets directory would be unreachable to
+        // systemd-network whatever mode this module put on its own directory
+        // and file. The mode assertions cannot see that; this can.
+        assert!(!key_path.starts_with(&secrets), "{}", key_path.display());
+        assert!(
+            fs::read_dir(&secrets).unwrap().next().is_none(),
+            "the key store must create nothing under the 0700 secrets directory"
+        );
+        let created: Vec<_> = key_path
+            .ancestors()
+            .skip(1)
+            .take_while(|path| *path != dir.path())
+            .collect();
+        // One directory, created and moded here: an intermediate component
+        // would be one nothing in this module sets a mode on.
+        assert_eq!(created.len(), 1, "{created:?}");
+        for path in created {
+            let mode = fs::metadata(path).unwrap().permissions().mode();
+            assert_eq!(
+                mode & 0o050,
+                0o050,
+                "{} is not readable and traversable by its group",
+                path.display()
+            );
+        }
     }
 
     #[test]

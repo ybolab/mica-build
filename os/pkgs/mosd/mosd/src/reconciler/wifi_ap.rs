@@ -1485,7 +1485,7 @@ mod tests {
             NoDelete,
             // No tunnel in this test's tree, so no key is ever drawn; the
             // directory is inside the same temporary tree either way.
-            Keystore::new(paths.state_dir.join("secrets/networkd"), None),
+            Keystore::under(&paths.state_dir, None),
         )
         .apply(&Settings::default())
         .await

@@ -1196,7 +1196,7 @@ mod tests {
             serde_json::json!({}),
         )
         .with_wireguard(Arc::new(crate::reconciler::network::KeyRotation::new(
-            crate::wgkeys::Keystore::new(dir.path().join("secrets/networkd"), None),
+            crate::wgkeys::Keystore::under(dir.path(), None),
             crate::reconciler::network::NoDelete,
         )));
         (service, dir)
@@ -1220,7 +1220,7 @@ mod tests {
             first, second,
             "a rotation that returns the same key rotated nothing"
         );
-        let key_file = dir.path().join("secrets/networkd/wg-wg0.key");
+        let key_file = dir.path().join("networkd-secrets/wg-wg0.key");
         let private_key = std::fs::read_to_string(&key_file).expect("key file");
         // The tree holds no key field to write into, and the rotation writes
         // none: what a client reads over `GetSettings` is what it read before.
