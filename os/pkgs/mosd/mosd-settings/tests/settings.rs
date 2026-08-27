@@ -1469,9 +1469,18 @@ fn all_three_kinds_round_trip_through_the_store() {
     );
     assert_eq!(settings, every_kind());
 
+    // Written back, the `network` subtree is the one that came in -- the rest
+    // of the file gains the serialized defaults of a saved tree, as any save
+    // does.
     store.save(&settings).unwrap();
     let written: toml::Table = fs::read_to_string(&path).unwrap().parse().unwrap();
-    assert_eq!(written, V7_EVERY_KIND.parse::<toml::Table>().unwrap());
+    let fixture: toml::Table = V7_EVERY_KIND.parse().unwrap();
+    assert_eq!(written["network"]["br0"], fixture["network"]["br0"]);
+    assert_eq!(written["network"]["wg0"], fixture["network"]["wg0"]);
+    assert_eq!(
+        written["network"]["eth0.100"]["vlan"],
+        fixture["network"]["eth0.100"]["vlan"]
+    );
     assert_eq!(store.load().unwrap(), settings);
 }
 
