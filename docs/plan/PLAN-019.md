@@ -4,7 +4,7 @@
 - **createdAt**: 2026-08-27 09:15
 - **approvedAt**: 2026-08-27 09:15
 - **relatedTask**: RFCT-165..179 reserved
-- **milestones**: M1 target-layout design, user-gated; M2 podman + rauc into os/pkgs/; M3 mos-sign into os/pkgs/; M4 mosd into os/pkgs/; M5 tree-wide reference sweep and closeout
+- **milestones**: M1 target-layout design, user-gated; M2 podman + rauc into os/pkgs/; M3 update/sign becomes os/pkgs/rauc-sign, standalone; M4 mosd into os/pkgs/; M5 tree-wide reference sweep and closeout
 
 ## Context
 
@@ -52,6 +52,15 @@ Measured consumer surface:
 4. docs/task and docs/plan remain history; dated records keep their old
    paths. The live-vs-dated citation split recorded in RFCT-159 finding (a)
    governs which docs/task references may move.
+5. *(User-set, 2026-08-27.)* `update/sign` lands as `os/pkgs/rauc-sign`, not
+   mos-sign: the crate signs and verifies RAUC bundles — it is RAUC's trust
+   tooling, not a mos-branded tool and not part of mosd. It is EXTRACTED from
+   the mosd workspace: own `[workspace]` Cargo.toml and lock, own gate run in
+   CI, and `mosd/Cargo.toml`'s member list drops it. Whether the binary
+   names (`mos-sign`, `mos-update-verify`) follow the rename is an M1 design
+   question — the proposal must inventory every consumer of those names
+   (docs/design/release-signing.md, the key-ceremony runbook, scripts, CI)
+   and recommend with costs.
 
 ## Proposal
 
@@ -61,8 +70,10 @@ Measured consumer surface:
   this plan file (amendment), not moved files. USER GATE.
 - **M2 (RFCT-166)** podman + rauc -> os/pkgs/{podman,rauc}: git mv, code
   consumers, gitignore, Makefile; bun suites + both docs gates green.
-- **M3 (RFCT-167)** mos-sign -> os/pkgs/mos-sign: git mv, workspace member
-  path, update/README folded in, top-level update/ removed; cargo gates green.
+- **M3 (RFCT-167)** update/sign -> os/pkgs/rauc-sign per Decisions item 5:
+  git mv, workspace EXTRACTION (own Cargo.toml/lock, mosd member list
+  shrinks, CI gains the second cargo gate), update/README folded in,
+  top-level update/ removed; both cargo workspaces green independently.
 - **M4 (RFCT-168)** mosd -> os/pkgs/mosd: git mv, workspace root move, CI
   rust job, rootfs stage COPY paths, test/apid-api references,
   mosd/hack/build-target.sh self-references; full gate set green (cargo
