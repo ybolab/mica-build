@@ -21,11 +21,11 @@
 # standalone `rust-` tarball ships std for its own host triple only, so an
 # image built from it alone can compile for exactly one target -- and the
 # target this project actually ships to is the other one:
-# mosd/hack/build-aarch64.sh cross-builds the device binaries, and
-# mosd/.cargo/config.toml already names `aarch64-linux-gnu-gcc` as their
+# os/pkgs/mosd/hack/build-aarch64.sh cross-builds the device binaries, and
+# os/pkgs/mosd/.cargo/config.toml already names `aarch64-linux-gnu-gcc` as their
 # linker. So this image also installs the cross std, pinned by its own sha256,
 # and the matching Debian cross linker, and then proves the combination by
-# linking a binary for the other architecture. mosd/hack/build-target.sh runs
+# linking a binary for the other architecture. os/pkgs/mosd/hack/build-target.sh runs
 # inside this image, and an image that could not cross-compile would be a
 # handoff that cannot be taken.
 ARG MOS_BASE_IMAGE
@@ -54,7 +54,7 @@ RUN --mount=type=cache,target=/var/cache/apt,id=apt-cache-mos-build-rust-fetch,s
 # install.sh is asked for exactly three components. The combined tarball also
 # carries rust-docs, rust-analysis, clippy and rustfmt; none is needed to run
 # `cargo build --release --locked`, which is the whole of what
-# mosd/hack/build-target.sh does, and each is tens of megabytes in an image
+# os/pkgs/mosd/hack/build-target.sh does, and each is tens of megabytes in an image
 # every build pulls. Naming the components explicitly rather than taking the
 # default also means a component upstream renames fails here, by name, instead
 # of silently not being installed.
@@ -173,10 +173,10 @@ RUN --mount=type=cache,target=/var/cache/apt,id=apt-cache-mos-build-rust,sharing
 # tree, every time any stage above was invalidated". Keeping the path means
 # M2c's switchover changes the image and not the cache mounts.
 #
-# CARGO_TARGET_<TRIPLE>_LINKER covers both directions. mosd/.cargo/config.toml
+# CARGO_TARGET_<TRIPLE>_LINKER covers both directions. os/pkgs/mosd/.cargo/config.toml
 # names the aarch64 linker for builds run from that tree; this covers the
 # amd64-from-arm64 direction that file does not, and covers any consumer built
-# outside mosd/. Set as env rather than written into a config.toml so that a
+# outside os/pkgs/mosd/. Set as env rather than written into a config.toml so that a
 # consumer's own .cargo/config.toml still wins -- an image should supply a
 # default, not overrule the tree it is compiling.
 ENV RUSTUP_HOME=/nonexistent \
@@ -259,7 +259,7 @@ RUN set -eu; \
         *) say "error: cargo --target ${otriple} produced '${gotelf}', which is not a ${otherelf} ELF; this image cannot cross-build for the architecture the other board ships" ;; \
         esac; \
     else \
-        say "error: cargo --target ${otriple} failed, so mosd/hack/build-target.sh could not run in this image -- which is the one job RFCT-108 M2c gives it: $(tail -n5 "${d}/cross.log" | tr '\n' ' ')"; \
+        say "error: cargo --target ${otriple} failed, so os/pkgs/mosd/hack/build-target.sh could not run in this image -- which is the one job RFCT-108 M2c gives it: $(tail -n5 "${d}/cross.log" | tr '\n' ' ')"; \
     fi; \
     rm -rf "${d}"; \
     [ "${fail}" = 0 ] || { echo "mos-build-rust: the toolchain this image promises is not what it contains; see the errors above" >&2; exit 1; }; \

@@ -56,7 +56,7 @@ export interface SmokeResult {
  * A pin's file, relative to the repository root.
  *
  * NOT `basename`: four of the twelve read a `Cargo.toml`, and
- * `mosd/mqttd/Cargo.toml` and `mosd/broker/Cargo.toml` are different files with
+ * `os/pkgs/mosd/mqttd/Cargo.toml` and `os/pkgs/mosd/broker/Cargo.toml` are different files with
  * the same last component, so a row saying "in Cargo.toml" would not tell a
  * reader which one to edit. Absolute paths carry a worktree prefix that differs
  * per checkout and turns every line into noise.
@@ -97,7 +97,7 @@ export function versionTokens(line: string): string[] {
 /**
  * The commit half of the version contract.
  *
- * `mosd/hack/build-target.sh` writes the commit it handed the compiler into
+ * `os/pkgs/mosd/hack/build-target.sh` writes the commit it handed the compiler into
  * `_out/mosd-build.txt`, build-v2.sh copies it to `_out/<board>/mosd-build.txt`,
  * `readMosdBuildFact` reads it back and `judge` compares the two; see
  * `BuildCommitFact`. The printed-only state is a branch, not a deletion: with no
@@ -142,7 +142,7 @@ export function firstLine(stdout: string): string {
  * The expectation is a build fact, never `git rev-parse HEAD`: comparing the
  * reported sha against HEAD at run time passes on any freshly built tree and
  * asserts only that somebody had just rebuilt, never that the embedding works.
- * `mosd/hack/build-target.sh` writes the commit it handed the compiler into
+ * `os/pkgs/mosd/hack/build-target.sh` writes the commit it handed the compiler into
  * `_out/mosd-build.txt`, `os/rootfs/build-v2.sh` carries it into `_out/<board>/`
  * beside the factory root, and this is what the runner reads back. `commit` is
  * optional because the fact may genuinely not be there -- a hand-assembled
@@ -426,7 +426,7 @@ export function outDir(board: string): string {
  * Read a `key<TAB>value` record as data.
  *
  * Tab-separated, exactly as `ociRecord` in os/build/src/stages.ts writes it and
- * as `mosd/hack/build-target.sh` writes `_out/mosd-build.txt`, parsed rather
+ * as `os/pkgs/mosd/hack/build-target.sh` writes `_out/mosd-build.txt`, parsed rather
  * than sourced. Comment lines are skipped by having no tab, which is why
  * `# Load it with: docker load -i ...` cannot become a key -- a reader that
  * split on whitespace would have made one. One reader for both records, because
@@ -517,7 +517,7 @@ export const MOSD_BUILD_RECORD_NAME = 'mosd-build.txt'
 /**
  * The commit the mosd and apid in this board's factory root were built from.
  *
- * Read out of the record `mosd/hack/build-target.sh` wrote and
+ * Read out of the record `os/pkgs/mosd/hack/build-target.sh` wrote and
  * `os/rootfs/build-v2.sh` copied in beside the image -- NOT out of the working
  * tree. See [`BuildCommitFact`]. Absent is not a refusal here, unlike the
  * factory root itself: the record is younger than images that may still be
@@ -535,7 +535,7 @@ export function readMosdBuildFact(board: string, dir: string = outDir(board)): B
     return {
       source:
         `${shown} does not exist, so no commit was recorded for this image. It is written by `
-        + `mosd/hack/build-target.sh on every build and copied here by os/rootfs/build-v2.sh; `
+        + `os/pkgs/mosd/hack/build-target.sh on every build and copied here by os/rootfs/build-v2.sh; `
         + `rebuild the board to have the commit asserted rather than printed`,
     }
   }
@@ -543,7 +543,7 @@ export function readMosdBuildFact(board: string, dir: string = outDir(board)): B
   const commit = kv.get('commit')
   if (commit === undefined) {
     throw new Error(
-      `${path} carries no \`commit\` field. mosd/hack/build-target.sh writes one on every build -- `
+      `${path} carries no \`commit\` field. os/pkgs/mosd/hack/build-target.sh writes one on every build -- `
       + `empty when it could not resolve a commit -- so a record without the key was written by `
       + `something else. Reading that as "nothing was recorded" would switch off the commit half of `
       + `mosd's and apid's version check without saying so.`,

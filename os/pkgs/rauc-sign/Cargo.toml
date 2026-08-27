@@ -25,18 +25,18 @@ tempfile = { workspace = true }
 # This crate is its own cargo workspace, of exactly one member. It used to be a
 # member of the mosd workspace named through `workspace = "../../mosd"`, which
 # was already the awkward case -- cargo only auto-discovers a workspace root in
-# a parent directory, and mosd/ never was one. After PLAN-019 the two trees are
+# a parent directory, and os/pkgs/mosd/ never was one. After PLAN-019 the two trees are
 # siblings under os/pkgs/ and neither contains the other, so the reach is gone
 # rather than merely redirected.
 #
 # The cost of standing alone is that every `workspace = true` above now resolves
 # here, and the cost of that is this file restating ten dependency versions the
 # mosd workspace also states. That duplication is deliberate: the two graphs are
-# genuinely separate -- mosd/Cargo.lock does not contain `tough` or `url` at all
+# genuinely separate -- os/pkgs/mosd/Cargo.lock does not contain `tough` or `url` at all
 # -- and a shared table would tie a build-host signing tool's resolution to a
 # device daemon's.
 #
-# The consequence to remember: `cargo clippy --workspace` run from mosd/ no
+# The consequence to remember: `cargo clippy --workspace` run from os/pkgs/mosd/ no
 # longer reaches this crate. .github/workflows/check.yml runs a second gate for
 # it, and that step is the only thing that checks this code on push.
 [workspace]

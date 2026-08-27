@@ -375,8 +375,8 @@ describe('firstLine', () => {
 
 describe('pinSource', () => {
   test('is repo-relative, so four Cargo.toml rows are four different files', () => {
-    expect(pinSource(join(REPO_ROOT, 'mosd', 'mqttd', 'Cargo.toml'))).toBe('mosd/mqttd/Cargo.toml')
-    expect(pinSource(join(REPO_ROOT, 'mosd', 'broker', 'Cargo.toml'))).toBe('mosd/broker/Cargo.toml')
+    expect(pinSource(join(REPO_ROOT, 'os', 'pkgs', 'mosd', 'mqttd', 'Cargo.toml'))).toBe('os/pkgs/mosd/mqttd/Cargo.toml')
+    expect(pinSource(join(REPO_ROOT, 'os', 'pkgs', 'mosd', 'broker', 'Cargo.toml'))).toBe('os/pkgs/mosd/broker/Cargo.toml')
   })
   test('leaves a path outside the repository alone rather than mangling it', () => {
     expect(pinSource('/elsewhere/versions.env')).toBe('/elsewhere/versions.env')

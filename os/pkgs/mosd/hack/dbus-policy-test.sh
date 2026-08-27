@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
-# Live-bus tests for the shipped D-Bus policies: mosd/dist/com.mos.mosd.conf
-# (sections 0-3) and mosd/dist/com.mos.ext.conf (section 5).
+# Live-bus tests for the shipped D-Bus policies: os/pkgs/mosd/dist/com.mos.mosd.conf
+# (sections 0-3) and os/pkgs/mosd/dist/com.mos.ext.conf (section 5).
 #
-#   bash mosd/hack/dbus-policy-test.sh
+#   bash os/pkgs/mosd/hack/dbus-policy-test.sh
 #
 # The policies claim com.mos.mosd is reachable only by root and that extensions
 # may own com.mos.ext.* and nothing else. Reading the XML back proves nothing
@@ -26,8 +26,8 @@
 set -euo pipefail
 
 HERE=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
-REPO_ROOT=$(cd "${HERE}/../.." && pwd)
-POLICY="${REPO_ROOT}/mosd/dist/com.mos.mosd.conf"
+REPO_ROOT=$(cd "${HERE}/../../../.." && pwd)
+POLICY="${REPO_ROOT}/os/pkgs/mosd/dist/com.mos.mosd.conf"
 NAME=com.mos.mosd
 
 [ -f "${POLICY}" ] || { echo "no ${POLICY} to test" >&2; exit 1; }
@@ -504,7 +504,7 @@ check "non-root OWN of ${NAME} is refused" \
 # than assuming it.
 #
 # The grant under test is a scaffolding fragment written into ${WORK};
-# mosd/dist/com.mos.ext.conf is neither read nor created here, because what
+# os/pkgs/mosd/dist/com.mos.ext.conf is neither read nor created here, because what
 # own_prefix means has to be established independent of anything mos ships. It
 # gets its own dbus-daemon rather than a second <include> on the bus above:
 # there com.mos.mosd is already owned by a root connection and the shipped
@@ -518,7 +518,7 @@ MEASURE_CONF="${WORK}/measure-bus.conf"
 EXT_FRAGMENT="${WORK}/own-prefix-scaffold.conf"
 
 # The single stanza under test. Scaffolding, written into ${WORK}: nothing under
-# mosd/dist/ is involved and none is created.
+# os/pkgs/mosd/dist/ is involved and none is created.
 cat >"${EXT_FRAGMENT}" <<XML
 <!DOCTYPE busconfig PUBLIC "-//freedesktop//DTD D-BUS Bus Configuration 1.0//EN"
  "http://www.freedesktop.org/standards/dbus/1.0/busconfig.dtd">
@@ -621,7 +621,7 @@ check "own_prefix matches the bare prefix itself: com.mos.ext is OWNED" "OWNED" 
 # case -- there would be nothing left asserting the default is closed.
 check "a name outside the prefix is still refused (org.example.thing)" \
     "${DENIED}" "$(measure_own org.example.thing)"
-# --- 5. the shipped extension policy, mosd/dist/com.mos.ext.conf -------------
+# --- 5. the shipped extension policy, os/pkgs/mosd/dist/com.mos.ext.conf -------------
 # Sections 0-3 test com.mos.mosd.conf; this section tests the other shipped
 # policy file, on its own dbus-daemon.
 #
@@ -637,7 +637,7 @@ check "a name outside the prefix is still refused (org.example.thing)" \
 # refused would pass unchanged against a policy file that granted nothing at
 # all, which is the most likely way this file breaks: a typo in the prefix costs
 # every extension its bus name and denies nothing that was not already denied.
-EXT_POLICY="${REPO_ROOT}/mosd/dist/com.mos.ext.conf"
+EXT_POLICY="${REPO_ROOT}/os/pkgs/mosd/dist/com.mos.ext.conf"
 [ -f "${EXT_POLICY}" ] || { echo "no ${EXT_POLICY} to test" >&2; exit 1; }
 
 EXT_SOCK="${WORK}/ext-bus.sock"
@@ -728,7 +728,7 @@ check "ext: nobody CANNOT own com.mos.extra (own_prefix needs a '.' separator)" 
     "$(as_nobody own "${EXT_SOCK}" com.mos.extra)"
 
 
-# --- 6. the MQTT bridge's grant, mosd/dist/mos-mqttd.conf --------------------
+# --- 6. the MQTT bridge's grant, os/pkgs/mosd/dist/mos-mqttd.conf --------------------
 # The bridge is a non-root client of a root-only name. Sections 1-2 establish
 # that com.mos.mosd.conf refuses every non-root uid outright; this section is
 # about the file that punches three members through that refusal and must punch
@@ -749,7 +749,7 @@ check "ext: nobody CANNOT own com.mos.extra (own_prefix needs a '.' separator)" 
 # username is asserted separately. That the image creates mos-mqttd, and that
 # the unit runs as it, is the image verifier's half of the pair (`bash
 # os/verify/run.sh --verify`).
-MQTTD_POLICY="${REPO_ROOT}/mosd/dist/mos-mqttd.conf"
+MQTTD_POLICY="${REPO_ROOT}/os/pkgs/mosd/dist/mos-mqttd.conf"
 [ -f "${MQTTD_POLICY}" ] || { echo "no ${MQTTD_POLICY} to test" >&2; exit 1; }
 
 MQTTD_USER=mos-mqttd

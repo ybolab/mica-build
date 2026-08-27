@@ -229,7 +229,7 @@ with `--rm --network none`.
 
 No version string is written down in this package. Every pin is read, at run
 time, out of the file that owns it: `os/pkgs/podman/versions.env`,
-`os/pkgs/rauc/versions.env`, and `mosd/<crate>/Cargo.toml` for the four
+`os/pkgs/rauc/versions.env`, and `os/pkgs/mosd/<crate>/Cargo.toml` for the four
 binaries this repository writes. That is the whole of what makes the third
 acceptance clause true — *bumping a pin without rebuilding the artifact turns
 the smoke run red* — and it is the reason the register carries identity (which
@@ -261,7 +261,7 @@ and is left behind in the constant fails too.
 `mosd` and `apid` print `<name> <version> (<commit>)`. Comparing that commit
 against `git rev-parse HEAD` at run time is refused by name: it would be
 trivially green on any freshly built tree, asserting that somebody just built
-rather than that the embedding works. `mosd/hack/build-target.sh` writes the
+rather than that the embedding works. `os/pkgs/mosd/hack/build-target.sh` writes the
 commit it handed the compiler into a build fact instead, and the runner compares
 the reported line against **that**. Where the build recorded no commit there is
 nothing to compare, and the row says `commit was NOT asserted` rather than

@@ -154,7 +154,7 @@ describe('readCratePackageVersion -- and why it tracks the TOML table', () => {
       const pin = readCratePackageVersion(cratePath(crate))
       expect(pin.key).toBe('package.version')
       expect(pin.recorded).toMatch(/^[0-9]/)
-      expect(pin.file).toContain(join('mosd', crate))
+      expect(pin.file).toContain(join('os', 'pkgs', 'mosd', crate))
     }
   })
 

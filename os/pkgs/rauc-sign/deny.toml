@@ -1,6 +1,6 @@
 # cargo-deny 0.19.x configuration for the rauc-sign workspace.
 #
-# Deliberately SMALLER than mosd/deny.toml, and the difference is the point.
+# Deliberately SMALLER than os/pkgs/mosd/deny.toml, and the difference is the point.
 # That file carries two exceptions, and neither one reaches this crate:
 #
 #   - the CC0-1.0 allowance exists for tiny-keccak, reached through

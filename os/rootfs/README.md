@@ -95,7 +95,7 @@ production device cannot be edited into a development one.
 ## mosd
 
 The mos management daemon is cross-built on the host
-(`mosd/hack/build-aarch64.sh`, rust target `aarch64-unknown-linux-gnu` linked
+(`os/pkgs/mosd/hack/build-aarch64.sh`, rust target `aarch64-unknown-linux-gnu` linked
 with `aarch64-linux-gnu-gcc`) and installed into the rootfs:
 
 - `/usr/bin/mosd` — aarch64 release binary
@@ -249,7 +249,7 @@ image.
 
 ### `mosd-build.txt`, and why it is a copy
 
-`mosd/hack/build-target.sh` writes `_out/mosd-build.txt` on every build --
+`os/pkgs/mosd/hack/build-target.sh` writes `_out/mosd-build.txt` on every build --
 `target`, `elf-arch` and `commit`, TAB-separated, the same shape
 `factory-root.txt` uses so one reader reads both -- and `build-v2.sh` copies it
 into `_out/<board>/` beside the factory root. **It is not copied into the

@@ -15,9 +15,9 @@ device's settings and drives systemd to match them.
 | Layer | What it is | Where |
 |---|---|---|
 | OS core | Debian trixie with systemd as PID 1, packed into a squashfs with a dm-verity hash tree over it | `os/rootfs/` |
-| Management plane | `mosd` — a settings tree, reconcilers that drive units, and a D-Bus surface | `mosd/mosd/`, `docs/design/mosd.md` |
-| API | `apid` — the HTTPS daemon; the dashboard is one client of the API it serves | `mosd/apid/`, `docs/design/api.md` |
-| Telemetry | `mos-mqttd` bridges the item tree to MQTT; `mos-mqtt-broker` is the on-device broker | `mosd/mqttd/`, `mosd/broker/` |
+| Management plane | `mosd` — a settings tree, reconcilers that drive units, and a D-Bus surface | `os/pkgs/mosd/mosd/`, `docs/design/mosd.md` |
+| API | `apid` — the HTTPS daemon; the dashboard is one client of the API it serves | `os/pkgs/mosd/apid/`, `docs/design/api.md` |
+| Telemetry | `mos-mqttd` bridges the item tree to MQTT; `mos-mqtt-broker` is the on-device broker | `os/pkgs/mosd/mqttd/`, `os/pkgs/mosd/broker/` |
 | A/B installer | RAUC, with a U-Boot `BOOT_ORDER` handshake on cx3576 and GRUB on x64 | `os/update/rauc/`, `docs/design/uboot-ab-handshake.md` |
 | Update trust | TUF metadata pinning a CMS-signed RAUC bundle | `os/pkgs/rauc-sign/`, `docs/design/release-signing.md` |
 | BSP artifacts | per-board buildkit Dockerfiles producing kernel, device tree and bootloader | `board/`, `docs/design/boards.md` |
@@ -43,19 +43,19 @@ device's settings and drives systemd to match them.
   (`docs/design/connd.md`).
 - **`mosd`** owns the settings tree persisted on STATE, exports it over the
   system bus as `com.mos.mosd`, and runs one reconciler per concern in
-  `mosd/mosd/src/reconciler/`. Its unit is `Type=dbus` (`mosd/dist/mosd.service`).
+  `os/pkgs/mosd/mosd/src/reconciler/`. Its unit is `Type=dbus` (`os/pkgs/mosd/dist/mosd.service`).
 - **`apid`** terminates TLS, authenticates the operator, and reads and writes
   device state by calling mosd over that bus; its TLS material, login-backoff
   counters and audit ring live under `/var/lib/mos/apid`
-  (`mosd/dist/apid.service`). The dashboard is one of its clients, and
-  `mosd/apid/openapi.json` is generated from the handlers.
+  (`os/pkgs/mosd/dist/apid.service`). The dashboard is one of its clients, and
+  `os/pkgs/mosd/apid/openapi.json` is generated from the handlers.
 - **Networking** is mosd's `wifi.client` and `wifi.ap` subtrees, reconciled
   into wpa_supplicant, hostapd and systemd-networkd units. The design is
   recorded under the name `connd`; the concern is a pair of reconcilers, not a
   process (`docs/design/connd.md`).
 - **`mos-mqttd`** publishes the item tree to a broker and applies writes back
   through mosd; `mos-mqtt-broker` is the local broker, built from `rumqttd` as
-  a library rather than shipped as a third daemon (`mosd/Cargo.toml`).
+  a library rather than shipped as a third daemon (`os/pkgs/mosd/Cargo.toml`).
 - **Containers** run through podman with the Quadlet generator. While the
   `container.enabled` switch is false — the default — `/etc/containers/systemd`
   is not mounted and no container unit exists (`docs/design/containers.md`).
@@ -139,8 +139,9 @@ mos/
 │   ├── verify/    TypeScript: the board model, and the checks an assembled image must pass
 │   ├── boards/    one board.env per board — the partition geometry and every layout constant
 │   ├── update/    RAUC packaging: system.conf and the manifest templates
-│   └── tests/     shell suites over the built image; podman/ pins the engine
-├── mosd/          Rust workspace: mosd, apid, mos-mqttd, mos-mqtt-broker, mosd-settings
+│   ├── tests/     shell suites over the built image; podman/ pins the engine
+│   └── pkgs/      compiled components, incl. mosd/ — the Rust workspace: mosd, apid,
+│                  mos-mqttd, mos-mqtt-broker, mosd-settings
 ├── board/         BSP per board: kernel, U-Boot and firmware Dockerfiles
 ├── extensions/    reserved for optional sysext layers; nothing is built from it
 ├── test/          the apid API suite, run against a booted image in QEMU

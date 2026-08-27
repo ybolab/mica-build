@@ -521,7 +521,7 @@ function profileKeyFromMosd(): string {
   const key = readProfileContract().key
   if (key === '') {
     throw new ToolOutputError(
-      'mosd/mosd/src/provisioning.rs no longer declares PROFILE_KEY. A fixture that wrote the key '
+      'os/pkgs/mosd/mosd/src/provisioning.rs no longer declares PROFILE_KEY. A fixture that wrote the key '
       + 'down would keep passing while the image and mosd disagreed about it.',
     )
   }
@@ -533,7 +533,7 @@ function cryptPrefixFromMosd(): string {
   const prefixes = cryptPrefixes()
   if (prefixes.length !== 1) {
     throw new ToolOutputError(
-      `mosd/mosd/src/transient.rs pins ${prefixes.length} crypt(3) prefixes; the fixture cannot make `
+      `os/pkgs/mosd/mosd/src/transient.rs pins ${prefixes.length} crypt(3) prefixes; the fixture cannot make `
       + `the libcrypt check green against an ambiguous source, and pinning one here would test this `
       + `file's idea of the format rather than mosd's.`,
     )
@@ -553,7 +553,7 @@ function enableEtcUnit(root: string, unit: string, target: string): void {
 /**
  * hostapd, wpa_supplicant, their unit templates and the STATE binds behind them.
  *
- * Every name here comes from the CONND contract, read out of `mosd/` by the same
+ * Every name here comes from the CONND contract, read out of `os/pkgs/mosd/` by the same
  * function the checks read it with. That is the same trade `healthyGpt` makes
  * one layer up and for the same reason: the fixture's job is to be green until
  * it is MUTATED, so a baseline built from the contract is the baseline, and

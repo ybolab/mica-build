@@ -110,7 +110,7 @@ describe('the register names exactly the artifacts in scope', () => {
   // The commit half, and the set is stated here rather than derived from the
   // register for the reason the whole SCOPE_ARTIFACTS list is: this is an
   // independent statement of what the scope amendment authorised. The user
-  // lifted the exclusion for mosd/mosd/src/main.rs and mosd/apid/src/main.rs.
+  // lifted the exclusion for os/pkgs/mosd/mosd/src/main.rs and os/pkgs/mosd/apid/src/main.rs.
   // mos-mqttd and mos-mqtt-broker are built by the same script from the same
   // workspace and were NOT named, so they do not embed a commit -- and if a
   // later change gives them one, this test is where that has to be argued for.

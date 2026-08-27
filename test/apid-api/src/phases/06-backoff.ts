@@ -1,7 +1,7 @@
 /**
  * The login backoff, measured from outside the process it protects.
  *
- * mosd/apid/src/auth.rs sets BACKOFF_BASE = 1s and BACKOFF_MAX = 300s, and the
+ * os/pkgs/mosd/apid/src/auth.rs sets BACKOFF_BASE = 1s and BACKOFF_MAX = 300s, and the
  * window after N consecutive failures is `1s * 2^(N-1)`, capped. Two properties
  * of that design cannot be shown from inside apid: the throttle is enforced
  * across a genuinely new TCP connection, not a kept-alive one a handler-level
@@ -17,9 +17,9 @@ import { Client, type HttpResponse } from "../client.ts";
 import type { Phase, PhaseContext } from "../runner.ts";
 import type { Reporter } from "../report.ts";
 
-/** mosd/apid/src/auth.rs: BACKOFF_BASE. */
+/** os/pkgs/mosd/apid/src/auth.rs: BACKOFF_BASE. */
 export const BACKOFF_BASE_MS = 1_000;
-/** mosd/apid/src/auth.rs: BACKOFF_MAX. */
+/** os/pkgs/mosd/apid/src/auth.rs: BACKOFF_MAX. */
 export const BACKOFF_MAX_MS = 300_000;
 
 /** `ctx.state` key under which this phase leaves what 07 must persist. */
