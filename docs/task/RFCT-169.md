@@ -157,29 +157,63 @@ One further edit belongs to the same class and is named for it:
 `os/pkgs/mosd/`, which is the wrong workspace after M3. It now names
 `os/pkgs/rauc-sign/`.
 
-## Declined: removing the dead `tough` pin
+## Withdrawn: removing the dead `tough` pin
 
 M5's spec asked for `os/pkgs/mosd/Cargo.toml:42-44` to be deleted once (a) was
-rewritten — the pin is dead, no member declares it and it has left the lock.
-It was **not** removed, for two reasons measured here.
+rewritten — the pin is dead, no member declares it, and it has left the lock.
+It was queried before acting and the licence was then **withdrawn**, on two
+independent grounds. `os/pkgs/mosd/Cargo.toml` is byte-identical in this
+milestone.
 
-1. `docs/design/dashboard.md:938-941` makes a substantive claim about the mosd
-   workspace's crypto posture and cites `os/pkgs/mosd/Cargo.toml:42-43` **with a
-   quoted fragment** — the "tough 0.18 is the last release whose crypto backend
-   is `ring`" comment. Deleting those lines turns that citation red and falsifies
-   the paragraph. Repairing it would mean repointing a claim about *the mosd
-   workspace* at *rauc-sign's* manifest, which is a prose judgment M5's licence
-   does not cover.
-2. Eleven further citations into that file target lines ≥ 45 and would all shift
-   by three: `api.md:132 :135 :136 :154 :155 :156 :708 :2008` and
-   `dashboard.md:932 :934 :936`.
+**Ground 1 — out of scope.** PLAN-019's Scope section lists "Cargo dependency
+changes" under **Out**. Deleting an entry from `[workspace.dependencies]` is
+exactly that, whether or not anything still consumes it. Amendment 2 item 7
+scopes M5's licence to falsified *prose statements*, not to manifests, and a
+milestone spec has no authority to widen the plan's own Scope.
 
-PLAN-019's own acceptance for M5 also reads "no Cargo change". The two
-directions of the spec contradict each other here; the tree settles it. After
-(a), no live document cites the dead pin *as rauc-sign's dependency* — only
-`dashboard.md` cites it, for a comment that remains true as written. The pin is
-recorded below as a follow-up rather than removed under a licence that does not
-stretch to its consequences.
+**Ground 2 — it would silently mispoint citations.** This was measured, not
+argued: the three lines were deleted in a throwaway edit, the gate was run, and
+the manifest was restored byte-identically.
+
+The pin is **three** lines — `:42-43` comment, `:44` the dependency — so every
+line below shifts *up* by three and each citation at line N resolves to what
+used to be at N+3:
+
+| citation | today | after the deletion it would read |
+| --- | --- | --- |
+| `:45` | `axum = "0.8"` | `` # `mosd/apid/openapi.json`, so the spec cannot describe a route the code does `` |
+| `:46` | `axum-server = { ... }` | `# not serve. Each route's path is one constant, read by the axum declaration` |
+| `:61` | `rustls = { ... }` | `bcrypt = "0.19"` |
+| `:62` | `rcgen = { ... }` | `rand = "0.8"` |
+| `:66` | `maud = "0.27"` | `tower = { version = "0.5", features = ["util"] }` |
+| `:69` | `tower = { ... }` | `# rumqttc without default features is TCP-only: no TLS, and every remaining` |
+
+Fifteen citation occurrences point at those six lines or at the `tough` block
+itself. Under the deletion the gate reports:
+
+```
+docs/verify-citations.sh: 4 FAILED, 898 passed
+  in scope: 902     resolution failures: 0     content failures: 4
+```
+
+**The in-scope count holds at 902 and no citation is orphaned.** Only the four
+carrying quoted fragments go red — `api.md:708`, `dashboard.md:932`, `:934`, and
+`dashboard.md:941`, which cites the `tough` block itself. The other **eleven
+pass silently while naming the wrong dependency**.
+
+That is the finding worth carrying: this campaign's binding acceptance is the
+in-scope count held constant, and **that acceptance is blind to this class**. A
+count-based check catches a vanishing first path segment (RFCT-167's six) and a
+content check catches a moved quoted fragment; an unquoted citation into a file
+whose *interior* shifted is caught by neither. It is the same shape as
+`smoke-pins.test.ts:157`'s weakened assertion — green, and asserting the wrong
+thing.
+
+M3 deferred this deliberately and gave that reason. M3 was right.
+
+After (a), no live document cites the dead pin *as rauc-sign's dependency*.
+`dashboard.md:941` is the only citation into the `tough` block, and the comment
+it quotes remains true as written.
 
 ## The five sweeps
 
@@ -268,9 +302,44 @@ here: 17 bare-`mosd` occurrences across the three stages files, and 3
 - **`docs/design/uboot-ab-handshake.md:4`, `:17`, `:110`** still say `board/`.
   `:110` is upstream NXP's own `board/*.env` and is correct; `:4` and `:17` are
   PLAN-018 rot in a file P1 does not name.
+### Follow-up: the dead `tough` pin needs its own plan
+
+`tough` is declared at `os/pkgs/mosd/Cargo.toml:42-44`. **No workspace member
+declares it**, and it has left `os/pkgs/mosd/Cargo.lock` entirely. Removing it
+is a correct future change. It is not a small one, and it does not belong to
+this campaign, for two reasons:
+
+1. It is a **Cargo dependency change**, which PLAN-019's Scope puts under
+   **Out**. It needs a plan that owns that decision.
+2. **Six citations must be repointed with content verification in the same
+   commit**, because deleting three lines shifts the manifest's interior up by
+   three. The six, named here so the next person does not rediscover this the
+   hard way:
+
+   | line | what it holds today | cited by |
+   | --- | --- | --- |
+   | `:45` | `axum = "0.8"` | `api.md:135` |
+   | `:46` | `axum-server = { ... }` | `api.md:136`, `api.md:155`, `dashboard.md:934` |
+   | `:61` | `rustls = { ... }` | `api.md:154`, `api.md:2008`, `dashboard.md:932` |
+   | `:62` | `rcgen = { ... }` | `api.md:156`, `dashboard.md:936` |
+   | `:66` | `maud = "0.27"` | `api.md:132` |
+   | `:69` | `tower = { ... }` | `api.md:708` |
+
+   Plus `dashboard.md:941`, which cites the `tough` block itself at `:42-43`
+   with a quoted fragment and would be orphaned outright — and whose paragraph
+   claims the *mosd workspace* enforces a pure-Rust crypto posture *in that
+   comment*, so it needs a prose decision, not a repoint.
+
+   **Do not trust the gate to catch this.** Measured above: the deletion leaves
+   the in-scope count at 902 with zero resolution failures, four content
+   failures, and **eleven citations passing silently while naming the wrong
+   dependency**. Re-derive each target by locating its content, the way
+   RFCT-167 re-derived its six.
+
 - **`os/pkgs/mosd/Cargo.toml:41`** — `url = "2"` may be dead in that workspace
   too; `os/pkgs/rauc-sign/Cargo.toml:35` asserts the mosd lock "does not contain
-  `tough` or `url` at all". Not measured here; named with the `tough` pin.
+  `tough` or `url` at all". Not measured here; named with the `tough` pin, and
+  it belongs in the same future plan.
 
 ### Environment, not the tree
 

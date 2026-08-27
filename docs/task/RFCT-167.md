@@ -119,8 +119,9 @@ on it, and one is functional:
 - `os/pkgs/mosd/Cargo.toml:42-44` still pins `tough = "=0.18.0"` although no
   member declares it and it has left the lock. Not removed here: `api.md:3462`
   cited those exact lines, and deleting them would have shifted every line below
-  under a citation. Carried to M5, which found a second reason to leave it —
-  see RFCT-169.
+  under a citation. M5 was licensed to remove it, queried that licence, and the
+  licence was withdrawn — this deferral was correct. RFCT-169 records the
+  measured consequences and the six citations a future plan must repoint.
 - `os/pkgs/mosd/hack/build-target.sh:123-128` justified mounting the repository
   rather than the workspace by appealing to the member this milestone deletes.
   The decision stands on the reproducibility argument already in the same file;
