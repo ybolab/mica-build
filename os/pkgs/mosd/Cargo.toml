@@ -38,6 +38,15 @@ chrono = { version = "0.4", default-features = false, features = ["clock", "serd
 clap = { version = "4", features = ["derive"] }
 hex = "0.4"
 ring = "0.17"
+# WireGuard key handling. base64 is the wire and file format of every key
+# (`PrivateKeyFile=` and `PublicKey=`); 0.22 is a version the dependency graph
+# already resolves, so the direct dependency adds no crate to the image.
+base64 = "0.22"
+# The public half of a WireGuard private key, derived in process. Pinned
+# exactly, the way `tough` is: a key-derivation dependency is one whose version
+# bump is read before it is taken, not one that floats. Pure Rust, so it links
+# no C; the images ship no `wireguard-tools` to shell out to instead.
+x25519-dalek = { version = "=3.0.0", features = ["static_secrets"] }
 url = "2"
 # tough 0.18 is the last release whose crypto backend is `ring`; 0.19+ hard-depend
 # on aws-lc-rs, which builds C (AWS-LC). See docs/task/RFCT-016.md.

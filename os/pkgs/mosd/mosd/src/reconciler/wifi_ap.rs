@@ -788,6 +788,7 @@ mod tests {
     use super::super::network::{NetworkReconciler, NoDelete};
     use super::super::systemd::mock::MockUnitControl;
     use super::*;
+    use crate::wgkeys::Keystore;
 
     /// Golden render of [`lab_ap`] with an explicit SSID and key.
     const GOLDEN_CONFIG: &str = "# Managed by mosd from wifi.ap. Do not edit.\n\
@@ -1478,10 +1479,17 @@ mod tests {
         // itself render. Sharing a directory with it means this reconciler's
         // unit has to be outside that pattern, and running the real thing over
         // the same directory is the only check that says so.
-        NetworkReconciler::new(paths.network_dir.clone(), MockReload::new(), NoDelete)
-            .apply(&Settings::default())
-            .await
-            .unwrap();
+        NetworkReconciler::new(
+            paths.network_dir.clone(),
+            MockReload::new(),
+            NoDelete,
+            // No tunnel in this test's tree, so no key is ever drawn; the
+            // directory is inside the same temporary tree either way.
+            Keystore::under(&paths.state_dir, None),
+        )
+        .apply(&Settings::default())
+        .await
+        .unwrap();
 
         assert!(
             paths.networkd().exists(),

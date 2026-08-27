@@ -102,7 +102,7 @@ entry's foreign blocks and otherwise leaves the entry as inert as it is today.
 All of it sits in the reconciler rather than in apid for the reason the address
 validation next to it already gives: *"apid validates the address on its write
 path, but the settings file is writable without apid, so the boundary must hold
-here"* (`os/pkgs/mosd/mosd/src/reconciler/network.rs:198-200`). The readable
+here"* (`os/pkgs/mosd/mosd/src/reconciler/network.rs:294-296`). The readable
 form error apid shows for the same rules is M6's, and it is an echo, not the
 boundary.
 

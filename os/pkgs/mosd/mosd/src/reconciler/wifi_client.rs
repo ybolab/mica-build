@@ -539,6 +539,7 @@ mod tests {
     use super::super::network::{NetworkReconciler, NoDelete};
     use super::super::systemd::mock::MockUnitControl;
     use super::*;
+    use crate::wgkeys::Keystore;
 
     /// Golden render of [`multi_network_client`].
     const GOLDEN_MULTI: &str = "# Managed by mosd from wifi.client. Do not edit.\n\
@@ -1017,10 +1018,17 @@ mod tests {
         // The network reconciler deletes every `*-mos-*.network` it did not
         // itself render. Sharing a directory with it means the station's unit
         // has to be outside that pattern, and this is the check that says so.
-        NetworkReconciler::new(paths.network_dir.clone(), MockReload::new(), NoDelete)
-            .apply(&Settings::default())
-            .await
-            .unwrap();
+        NetworkReconciler::new(
+            paths.network_dir.clone(),
+            MockReload::new(),
+            NoDelete,
+            // No tunnel in this test's tree, so no key is ever drawn; the
+            // directory is inside the same temporary tree either way.
+            Keystore::under(dir.path(), None),
+        )
+        .apply(&Settings::default())
+        .await
+        .unwrap();
 
         assert!(
             paths.networkd().exists(),

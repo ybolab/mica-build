@@ -317,10 +317,10 @@ apid never spawns a process and never talks to systemd itself"*
 interface `com.mos.mosd1`, the well-known service name `com.mos.mosd`, and the
 object path `/com/mos/mosd` (`os/pkgs/mosd/apid/src/bus_client.rs:15-19`). mosd's side
 declares the same three: `pub const BUS_NAME: &str = "com.mos.mosd";`
-(`os/pkgs/mosd/mosd/src/bus.rs:25`),
+(`os/pkgs/mosd/mosd/src/bus.rs:26`),
 `pub const OBJECT_PATH: &str = "/com/mos/mosd";`
-(`os/pkgs/mosd/mosd/src/bus.rs:27`) and the interface attribute, which carries
-`name = "com.mos.mosd1"` (`os/pkgs/mosd/mosd/src/bus.rs:510`).
+(`os/pkgs/mosd/mosd/src/bus.rs:28`) and the interface attribute, which carries
+`name = "com.mos.mosd1"` (`os/pkgs/mosd/mosd/src/bus.rs:543`).
 Which bus is chosen is configuration: **`APID_BUS`** selects system (the
 default) or session — the variable was `WEBD_BUS` when this section was first
 written and the daemon's rename carried it — and the match that reads it is
@@ -349,7 +349,7 @@ changed at all: five proxy methods, no new interface, no new object path.
 **What apid does not call, and cannot receive.** `com.mos.mosd1` now serves
 **eleven** methods, and apid's proxy declares four of them. The seven it does
 not declare are `ReportHealth` — `async fn report_health`
-(`os/pkgs/mosd/mosd/src/bus.rs:550`) — and `ForgetService` (`:621`), `Reboot` (`:635`),
+(`os/pkgs/mosd/mosd/src/bus.rs:583`) — and `ForgetService` (`:621`), `Reboot` (`:635`),
 `PowerOff` (`:643`), `InstallUpdate` (`:654`), `GetUpdateState` (`:670`) and
 `MarkUpdate` (`:680`). Two of those are worth
 naming precisely. `ReportHealth`'s caller in the tree is the boot health gate,
@@ -599,7 +599,7 @@ each reachable at its own dot-path.
 builds a candidate, calls `Settings::set` — which deserializes the whole root
 into a candidate `Self`, `serde_json::from_value(root)`
 (`os/pkgs/mosd/mosd-settings/src/model.rs:614`) — and only then calls
-`self.store.save(&candidate)?;` (`os/pkgs/mosd/mosd/src/bus.rs:434`), so a malformed
+`self.store.save(&candidate)?;` (`os/pkgs/mosd/mosd/src/bus.rs:467`), so a malformed
 write mutates nothing. Second, **the dot-path syntax has no array indexing**:
 the model comment says a list is *"Written as a whole JSON array through the
 dot-path API"* (`os/pkgs/mosd/mosd-settings/src/model.rs:311`), which is exactly why
@@ -610,11 +610,11 @@ list back through `write_key_list` (`os/pkgs/mosd/apid/src/routes.rs:1886-1899`)
 **Which reconcilers a write re-runs.** `SetSettings` re-applies every reconciler
 whose subtree overlaps the written path —
 `if paths_overlap(path, reconciler.subtree()) {`
-(`os/pkgs/mosd/mosd/src/bus.rs:438`) — where overlap is segment-wise prefix in either
+(`os/pkgs/mosd/mosd/src/bus.rs:471`) — where overlap is segment-wise prefix in either
 direction and the root matches everything, *"True when `a` and `b` overlap by
 dot segments in either direction: one path is a segment-wise prefix of the
 other. The root path (`""` or `"."`) matches everything"*
-(`os/pkgs/mosd/mosd/src/bus.rs:29-31`), implemented at `os/pkgs/mosd/mosd/src/bus.rs:32-47`.
+(`os/pkgs/mosd/mosd/src/bus.rs:30-32`), implemented at `os/pkgs/mosd/mosd/src/bus.rs:32-47`.
 **Seven** reconcilers are registered in production —
 `os/pkgs/mosd/mosd/src/reconciler/mod.rs:28-40` — two more than the five recorded at
 `86cd669`, with these name/subtree pairs:
@@ -637,17 +637,17 @@ reports "which reconcilers a write will re-run" has to read `subtree()` rather
 than assume it equals the settings key.
 
 **The live-state tree.** It is a plain `serde_json::Value`, not a typed model —
-`state: Value,` (`os/pkgs/mosd/mosd/src/bus.rs:53`) — and `GetState` returns the
+`state: Value,` (`os/pkgs/mosd/mosd/src/bus.rs:54`) — and `GetState` returns the
 subtree at a dot-path or `InvalidArgs`
-(`os/pkgs/mosd/mosd/src/bus.rs:538-543`). Four kinds of thing write into it, and that
+(`os/pkgs/mosd/mosd/src/bus.rs:571-576`). Four kinds of thing write into it, and that
 set is the entire read surface an API can expose:
 
 1. **One key per reconciler**, named by `name()` above, holding that
    reconciler's applied result, or `{"error": "..."}` when it failed —
    `record(&mut inner.state, reconciler.name(), result);`
-   (`os/pkgs/mosd/mosd/src/bus.rs:440`), the failure branch at
+   (`os/pkgs/mosd/mosd/src/bus.rs:473`), the failure branch at
    `serde_json::json!({ "error": err.to_string() })`
-   (`os/pkgs/mosd/mosd/src/bus.rs:469`).
+   (`os/pkgs/mosd/mosd/src/bus.rs:502`).
 2. **`power`** — `{last_action, requested_by}`, recorded *before* the action so
    the record survives the machine going down
    (`os/pkgs/mosd/mosd/src/bus.rs:190-192`, and *"Always called BEFORE the action: once
@@ -656,13 +656,13 @@ set is the entire read surface an API can expose:
    two when there is one (`os/pkgs/mosd/mosd/src/bus.rs:193-195`).
 3. **`health.<component>`** — `{status, detail}`, written by the `ReportHealth`
    method — `serde_json::json!({ "status": status, "detail": detail }),`
-   (`os/pkgs/mosd/mosd/src/bus.rs:589`) — with the component count capped
+   (`os/pkgs/mosd/mosd/src/bus.rs:622`) — with the component count capped
    (`os/pkgs/mosd/mosd/src/bus.rs:581-586`).
 4. **`dry_run`** — present only under
    `std::env::var("MOSD_DRY_RUN").is_ok_and(|value| value == "1")`
-   (`os/pkgs/mosd/mosd/src/main.rs:138`), inserted at
+   (`os/pkgs/mosd/mosd/src/main.rs:139`), inserted at
    `state.insert("dry_run".to_string(), Value::Bool(true));`
-   (`os/pkgs/mosd/mosd/src/main.rs:221`), in which case no reconcilers are
+   (`os/pkgs/mosd/mosd/src/main.rs:222`), in which case no reconcilers are
    registered at all (`os/pkgs/mosd/mosd/src/main.rs:187-190`) and the power control is
    a stub (`os/pkgs/mosd/mosd/src/main.rs:194`).
 
@@ -705,7 +705,7 @@ in the same four positions so the change is legible rather than overwritten.
    `os/pkgs/mosd/apid/Cargo.toml:11-31` and contains no `tower-http`; `tower` itself
    appears only under `[dev-dependencies]` (`os/pkgs/mosd/apid/Cargo.toml:33-36`), and
    the workspace pins it with only the `util` feature —
-   `tower = { version = "0.5", features = ["util"] }` (`os/pkgs/mosd/Cargo.toml:69`) —
+   `tower = { version = "0.5", features = ["util"] }` (`os/pkgs/mosd/Cargo.toml:78`) —
    which carries no file-serving service. The conclusion drawn from it does
    not survive: apid serves files through code it owns,
    `mod assets;` (`os/pkgs/mosd/apid/src/main.rs:29`), whose three modules are
@@ -1146,9 +1146,9 @@ disagreement is named and the choice is costed.
 
 | Root | Backed by | Methods | Why it is separate |
 |---|---|---|---|
-| `/api/v1/settings/<dot-path>` | the typed `Settings` tree (`os/pkgs/mosd/mosd-settings/src/model.rs:16`) via `GetSettings` and `SetSettings` — `get_settings` (`os/pkgs/mosd/mosd/src/bus.rs:513`) and `set_settings` (`:522`) | `GET`, `PUT` | typed, validated, persisted to `/var/lib/mos/settings.toml` (`os/pkgs/mosd/mosd-settings/src/store.rs:67`), survives reboot and A/B update (`docs/design/access.md:555`) |
-| `/api/v1/state/<dot-path>` | the live-state tree via `GetState` — `get_state` (`os/pkgs/mosd/mosd/src/bus.rs:538`) | `GET` only | an untyped `Value` (`os/pkgs/mosd/mosd/src/bus.rs:53`), in memory, written only from inside mosd by the four writers section 1.5 names |
-| `/api/v1/actions/<verb>` | the `/Actions/reboot` and `/Actions/poweroff` items (`os/pkgs/mosd/mosd/src/actions.rs:46-47`), and `SetTransientRootPassword` — `set_transient_root_password` (`os/pkgs/mosd/mosd/src/bus.rs:703`) | `POST` only | not state at all — see §2.3 |
+| `/api/v1/settings/<dot-path>` | the typed `Settings` tree (`os/pkgs/mosd/mosd-settings/src/model.rs:16`) via `GetSettings` and `SetSettings` — `get_settings` (`os/pkgs/mosd/mosd/src/bus.rs:546`) and `set_settings` (`:522`) | `GET`, `PUT` | typed, validated, persisted to `/var/lib/mos/settings.toml` (`os/pkgs/mosd/mosd-settings/src/store.rs:67`), survives reboot and A/B update (`docs/design/access.md:555`) |
+| `/api/v1/state/<dot-path>` | the live-state tree via `GetState` — `get_state` (`os/pkgs/mosd/mosd/src/bus.rs:571`) | `GET` only | an untyped `Value` (`os/pkgs/mosd/mosd/src/bus.rs:54`), in memory, written only from inside mosd by the four writers section 1.5 names |
+| `/api/v1/actions/<verb>` | the `/Actions/reboot` and `/Actions/poweroff` items (`os/pkgs/mosd/mosd/src/actions.rs:46-47`), and `SetTransientRootPassword` — `set_transient_root_password` (`os/pkgs/mosd/mosd/src/bus.rs:736`) | `POST` only | not state at all — see §2.3 |
 
 The split is mosd's, not a stylistic preference. The two trees have different
 types (`settings: Settings` and `state: Value`, `os/pkgs/mosd/mosd/src/bus.rs:52-53`),
@@ -1232,7 +1232,7 @@ up believing access was withdrawn while the key still grants root."*
 /api/v1/ssh/authorized-keys/{fingerprint}`. A client using the first can produce
 a list the second would have rejected. The floor is the same either way, because
 both end at `SetSettings` → `Settings::set` → `store.save`
-(`os/pkgs/mosd/mosd/src/bus.rs:430-435`), and the collection route additionally runs
+(`os/pkgs/mosd/mosd/src/bus.rs:463-468`), and the collection route additionally runs
 `validate_authorized_keys` first — the same validator mosd runs before rendering
 the file (`os/pkgs/mosd/apid/src/routes.rs:1887-1889`). So the difference is the quality
 of the error message, not whether a bad list can be written. That is an
@@ -1273,14 +1273,14 @@ destroy the credential.
 | WiFi AP | `GET`/`PUT /api/v1/settings/wifi.ap` | `WifiApSettings` (`model.rs:343-373`) | `psk` redacted on read; `mode` is `off`/`provisioning`/`always` (`:391-402`) |
 | SSH enable state and policy | `GET`/`PUT /api/v1/settings/access.ssh`, `.../access.ssh.enabled` | `SshSettings` (`model.rs:171-204`) | default `enabled: false` (`:206-209`) |
 | SSH keys | the authorized-keys collection above | `access.ssh.authorizedKeys` | **every key is a root key** (`docs/design/access.md` §4.1, `os/pkgs/mosd/apid/src/routes.rs:1764`); the API response must carry that sentence in a `notice` field for the same reason the pane must carry it |
-| Transient root password | `POST /api/v1/actions/transient-root-password` | `set_transient_root_password` (`os/pkgs/mosd/mosd/src/bus.rs:703`) | an action, not a setting — see §2.3 |
+| Transient root password | `POST /api/v1/actions/transient-root-password` | `set_transient_root_password` (`os/pkgs/mosd/mosd/src/bus.rs:736`) | an action, not a setting — see §2.3 |
 | Web admin credential | `GET /api/v1/settings/access.webAdmin` (redacted), `PUT` refused | `WebAdminSettings` (`model.rs:163-169`) | see §3.2 for why the API does not offer a password change in phase 1 |
 | Console | `GET`/`PUT /api/v1/settings/access.console` | `ConsoleSettings` (`model.rs:235-243`) | only the `debug` image ships the shell at all (`model.rs:239-240`) |
 | Power | `POST /api/v1/actions/reboot`, `.../poweroff` | the `/Actions/reboot`/`/Actions/poweroff` items (`os/pkgs/mosd/mosd/src/actions.rs:46-47`) | actions — see §2.3 |
 | Reconciler results | `GET /api/v1/state/<name>` for `hostname`, `network`, `sshd`, `wifiClient`, `wifiAp`, `container`, `mqtt` | one key per reconciler (`os/pkgs/mosd/mosd/src/bus.rs:437-441`, `:453-455`) | an entry is either the applied result or `{"error": "..."}`; the API passes both through unchanged |
-| Last power request | `GET /api/v1/state/power` | the keys `last_action` and `requested_by` (`os/pkgs/mosd/mosd/src/bus.rs:190-192`) | recorded *before* the action, so it survives the machine going down |
+| Last power request | `GET /api/v1/state/power` | the keys `last_action` and `requested_by` (`os/pkgs/mosd/mosd/src/bus.rs:223-225`) | recorded *before* the action, so it survives the machine going down |
 | Health | `GET /api/v1/state/health` and `GET /api/v1/health` | the `health` subtree, one key per component (`os/pkgs/mosd/mosd/src/bus.rs:587-590`) | the two are different questions — see §2.4 |
-| Dry-run marker | `GET /api/v1/state/dry_run` | set from `std::env::var("MOSD_DRY_RUN")` (`os/pkgs/mosd/mosd/src/main.rs:138`) and inserted at `os/pkgs/mosd/mosd/src/main.rs:221` | in that mode no reconcilers are registered at all (`os/pkgs/mosd/mosd/src/main.rs:187-190`), so every other state key is absent |
+| Dry-run marker | `GET /api/v1/state/dry_run` | set from `std::env::var("MOSD_DRY_RUN")` (`os/pkgs/mosd/mosd/src/main.rs:139`) and inserted at `os/pkgs/mosd/mosd/src/main.rs:221` | in that mode no reconcilers are registered at all (`os/pkgs/mosd/mosd/src/main.rs:187-190`), so every other state key is absent |
 
 **Where the settings tree and a sensible REST resource genuinely disagree, and
 what was chosen.** Three cases, all decided toward the tree:
@@ -1512,9 +1512,9 @@ Content-Type: application/json
 | `not_found` | 404 | apid | unknown route, or a collection item that does not exist |
 | `request_invalid` | 400 | apid | the body is not JSON, or not the shape the route takes |
 | `validation_failed` | 422 | apid | apid's own validators rejected it: `valid_hostname` (`routes.rs:830-839`), `validate_iface` (`routes.rs:841-851`), `validate_transient_password` (`routes.rs:2494-2509`), `parse_authorized_key` (`routes.rs:2549`) |
-| `settings_rejected` | 422 | mosd | mosd answered fdo `InvalidArgs` (`os/pkgs/mosd/mosd/src/bus.rs:489-491`, `:529`, `:541`) |
-| `settings_io` | 500 | mosd | mosd answered `IOError` (`os/pkgs/mosd/mosd/src/bus.rs:492`) |
-| `mosd_failed` | 500 | mosd | mosd answered `Failed` (`os/pkgs/mosd/mosd/src/bus.rs:493-495`, `:507`) |
+| `settings_rejected` | 422 | mosd | mosd answered fdo `InvalidArgs` (`os/pkgs/mosd/mosd/src/bus.rs:522-524`, `:529`, `:541`) |
+| `settings_io` | 500 | mosd | mosd answered `IOError` (`os/pkgs/mosd/mosd/src/bus.rs:525`) |
+| `mosd_failed` | 500 | mosd | mosd answered `Failed` (`os/pkgs/mosd/mosd/src/bus.rs:526-528`, `:507`) |
 | `mosd_unreachable` | **503** | apid | the call could not be made at all |
 
 **The question that matters: does the API surface mosd's errors or translate
@@ -1545,7 +1545,7 @@ sites named above — one change, in one file. Sequencing it is §8's.
 **Why translate rather than pass the fdo error through.** Passing it through
 means the client has to know D-Bus to use an HTTP API, and it means the wire
 format of the API is set by a dependency of a dependency. Worse, the messages
-are anyhow chains built by mosd with `{err:#}` (`os/pkgs/mosd/mosd/src/bus.rs:507`).
+are anyhow chains built by mosd with `{err:#}` (`os/pkgs/mosd/mosd/src/bus.rs:540`).
 mosd carries a contract that one of them — the transient-password path — never
 echoes the password (`os/pkgs/mosd/mosd/src/bus.rs:500-507`, restated in
 `os/pkgs/mosd/apid/src/settings_api.rs:26-30`),
@@ -3301,7 +3301,7 @@ provisioning as a hard failure on purpose, and the code says why in as many
 words: *"Hard failure on purpose: an unwritable STATE means no device identity
 and no device credential, so there is no usable device to serve. A loud exit is
 better than a daemon that quietly serves an unprovisioned tree the operator
-cannot log in to."* (`os/pkgs/mosd/mosd/src/main.rs:173-176`, with the `?` at `:183`).
+cannot log in to."* (`os/pkgs/mosd/mosd/src/main.rs:174-177`, with the `?` at `:183`).
 A single-process design would make that exit take the UI with it: a provisioning
 failure would leave a device with no diagnostic surface at all, reachable only
 by serial console. Two processes are what keep the exit loud and the device
@@ -3754,7 +3754,7 @@ so.
 the fdo error name into a typed error, and teaches the HTML handlers to stop
 rendering `bus_error` (`os/pkgs/mosd/apid/src/routes.rs:648-659`) for a value mosd
 merely rejected. Optionally in the same phase, mosd's `to_fdo`
-(`os/pkgs/mosd/mosd/src/bus.rs:487-497`) stops collapsing `NotFound`, `ReadOnly` and
+(`os/pkgs/mosd/mosd/src/bus.rs:520-530`) stops collapsing `NotFound`, `ReadOnly` and
 `Validation` (`os/pkgs/mosd/mosd-settings/src/error.rs:7-31`) into one
 `InvalidArgs`.
 
@@ -4210,7 +4210,7 @@ instances, not a generality.**
 
 - **Splitting mosd's `to_fdo`.** `NotFound`, `ReadOnly` and
   `Validation` (`os/pkgs/mosd/mosd-settings/src/error.rs:7-31`) to stop collapsing into
-  one `InvalidArgs` (`os/pkgs/mosd/mosd/src/bus.rs:487-497`). §2.4 emits a single
+  one `InvalidArgs` (`os/pkgs/mosd/mosd/src/bus.rs:520-530`). §2.4 emits a single
   `settings_rejected` for all three as a result, and §2.1 makes *"changing which
   `error.code` an existing failure emits"* a major-version bump. So after v1
   ships, this improvement costs a `v2`.

@@ -89,7 +89,7 @@ one 7-line inline stylesheet at `routes.rs:147-154` whose own doc comment says
 *"Inline stylesheet shared by every page; no external assets."*
 
 `mosd` offers an **eleven-method, one-signal** bus surface on `com.mos.mosd1`
-(`os/pkgs/mosd/mosd/src/bus.rs:510`): `GetSettings`, `SetSettings`, `GetState`,
+(`os/pkgs/mosd/mosd/src/bus.rs:543`): `GetSettings`, `SetSettings`, `GetState`,
 `ReportHealth`, `ForgetService`, `Reboot`, `PowerOff`, `InstallUpdate`,
 `GetUpdateState`, `MarkUpdate`, `SetTransientRootPassword`, and the
 `SettingsChanged` signal. `apid`'s own proxy declares four of those methods and
@@ -213,7 +213,7 @@ call returning the data — or **(b) needs new mosd work**, with the
   reconciler is recorded as `{"error": "<message>"}` under its own live-state key
   rather than disappearing (`os/pkgs/mosd/mosd/src/bus.rs:461-471`). (ii)
   `GetState("health")`, written by `report_health`
-  (`os/pkgs/mosd/mosd/src/bus.rs:550`). (iii) does not exist.
+  (`os/pkgs/mosd/mosd/src/bus.rs:583`). (iii) does not exist.
 - **Availability: mixed, and the split is the point.**
   - (i) is **(a) available today** — gap-table **row 18**, UI-work-only. `apid`
     calls `GetState` for exactly one path and treats any object as opaque JSON
@@ -257,13 +257,13 @@ provide. It is designed around that.
 - **The problem, stated exactly.** The live-state `network` subtree holds
   **configured** data — per interface, the unit file the reconciler wrote and
   the DHCP flag it wrote it from, built as
-  `json!({ "file": file_name, "dhcp": cfg.dhcp })`
-  (`os/pkgs/mosd/mosd/src/reconciler/network.rs:459-463`). There is no address,
+  `json!({ "file": file_name, "dhcp": cfg.dhcp, "kind": kind_name(cfg.kind), })`
+  (`os/pkgs/mosd/mosd/src/reconciler/network.rs:660-664`). There is no address,
   no lease, no gateway, no route, no DNS server actually in use and no carrier
   state anywhere in mos (`mos-ui-inventory.md` section 6.3). A DHCP interface
   that got no lease is **indistinguishable in this tree from one that did**.
   `mosd` does talk to `org.freedesktop.network1`, but for exactly one thing —
-  `Manager.Reload` (`os/pkgs/mosd/mosd/src/reconciler/network.rs:24-25`); it issues no
+  `Manager.Reload` (`os/pkgs/mosd/mosd/src/reconciler/network.rs:32-33`); it issues no
   `Get`, no property read and no link enumeration. Gap-table **row 14**.
 - **How this proposal handles it: the tile is split in two, and the halves are
   labelled differently.** **[proposal]**
@@ -788,7 +788,7 @@ section 8's.
 | 3 | 2.5, 3.2 Update page | RAUC status and last install result | **row 3** | Same bus surface as item 1; the status file is on META by design (`os/pkgs/rauc/system.conf.in:14-34`) |
 | 4 | 2.5, 3.2 Update page | Installing a bundle at all | **row 4** | The largest single item. Signed verity-format bundles are already **built** and signature-verified against `/etc/rauc/keyring.pem` with `plain` format refused (`os/build/src/bundle.ts:1-7`, `os/pkgs/rauc/system.conf.in:66-69`), but there is **no upload route, no file-receiving handler** (`Multipart` appears nowhere in `mosd/apid/`) and **no `rauc install` caller anywhere in `mosd/`**. Needs a bus method, a place to put the bundle, and a progress surface |
 | 5 | 2.3, 2.5 | The boot health gate's verdict; whether the running slot is confirmed | **row 5** | The gate exists and runs `rauc status mark-good` (`os/rootfs/overlay-v2/usr/lib/mos/mos-health:256-261`); its verdict goes to the journal (`:17-18`). Needs the gate to report through `ReportHealth` (or a richer equivalent) instead of only journalling. **This is the item where mos is furthest ahead of Venus and least able to show it** — see 4.2 |
-| 6 | 2.4, 3.4.1 | Observed IP address, lease, gateway, DNS in use, carrier state | **row 14** | `mosd` must **query** networkd. It already talks to `org.freedesktop.network1` for exactly one thing, `Manager.Reload` (`os/pkgs/mosd/mosd/src/reconciler/network.rs:24-25`); it issues no `Get`, no property read and no link enumeration. This is the highest-value item on the list by operator demand |
+| 6 | 2.4, 3.4.1 | Observed IP address, lease, gateway, DNS in use, carrier state | **row 14** | `mosd` must **query** networkd. It already talks to `org.freedesktop.network1` for exactly one thing, `Manager.Reload` (`os/pkgs/mosd/mosd/src/reconciler/network.rs:32-33`); it issues no `Get`, no property read and no link enumeration. This is the highest-value item on the list by operator demand |
 | 7 | 2.6 | Filesystem usage per tier | **row 11** | A `statvfs` read plus a bus surface for it. The read is trivial; the surface does not exist. `/srv`, the only tier that grows (`docs/design/ro-root.md:363-368`), has **no reporting of any kind** today |
 | 8 | 2.2, 3.4.1 | Observed hostname as opposed to configured | **row 13** | A read-back from hostnamed. There is no `GetHostname` call anywhere; the live-state key echoes the configured value (`os/pkgs/mosd/mosd/src/reconciler/hostname.rs:64`) |
 | 9 | 2.5, 2.10 | The power page warning that a reboot burns a boot attempt | **row 10** | No new bus primitive beyond item 1 and item 5 — it is a *dependency* the power pane does not have. Recorded at `docs/design/mosd.md:217-220` and `docs/plan/PLAN-010.md:502-503` as a deliberate M5 omission |
@@ -929,16 +929,16 @@ today.
 #### 5.1.2 TLS and the crypto posture — and what a new crate is checked against
 
 - `rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12"] }`
-  (`os/pkgs/mosd/Cargo.toml:61`), provider installed explicitly at
+  (`os/pkgs/mosd/Cargo.toml:70`), provider installed explicitly at
   `os/pkgs/mosd/apid/src/main.rs:46-48`; `axum-server` takes
-  `tls-rustls-no-provider` (`os/pkgs/mosd/Cargo.toml:46`), which is why that install is
+  `tls-rustls-no-provider` (`os/pkgs/mosd/Cargo.toml:55`), which is why that install is
   mandatory rather than decorative. `rcgen` is likewise pinned to the `ring`
   backend (`os/pkgs/mosd/Cargo.toml:62`).
 - The workspace **actively enforces a pure-Rust crypto posture**, and does so in
   a comment rather than by accident: `tough` is pinned to `=0.18.0` with the
   note *"tough 0.18 is the last release whose crypto backend is `ring`; 0.19+
   hard-depend on aws-lc-rs, which builds C (AWS-LC). See docs/task/RFCT-016.md."*
-  (`os/pkgs/mosd/Cargo.toml:42-43`).
+  (`os/pkgs/mosd/Cargo.toml:51-52`).
 - Licence gate: `os/pkgs/mosd/deny.toml:3-14` allows Apache-2.0, MIT, BSD-2-Clause,
   BSD-3-Clause, ISC, Unicode-3.0, Zlib and nothing else; `[bans]
   multiple-versions = "warn"` (`deny.toml:16-17`).
@@ -989,7 +989,7 @@ every option below:
    workspace pin is `zbus = { version = "5", default-features = false, features = ["tokio"] }`
    (`os/pkgs/mosd/Cargo.toml:28`).
 2. **All of `mosd`'s settings and live state sit behind one `tokio::sync::Mutex`.**
-   `MosdService` holds an `inner: Arc<Mutex<Inner>>` (`os/pkgs/mosd/mosd/src/bus.rs:76`),
+   `MosdService` holds an `inner: Arc<Mutex<Inner>>` (`os/pkgs/mosd/mosd/src/bus.rs:77`),
    whose own doc comment says *"Mutable trees guarded by one lock so settings
    writes and live-state updates stay consistent"* (`bus.rs:49-50`).
    `get_settings` takes it at `bus.rs:514`, `get_state` at `:539`,
@@ -1001,7 +1001,7 @@ every option below:
    Read out of that: **while a reconciler is applying, every dashboard read
    blocks.** How long that is depends on the reconciler — the network reconciler
    calls `Manager.Reload` on `org.freedesktop.network1`
-   (`os/pkgs/mosd/mosd/src/reconciler/network.rs:24-25`), the sshd reconciler drives a
+   (`os/pkgs/mosd/mosd/src/reconciler/network.rs:32-33`), the sshd reconciler drives a
    systemd unit (`os/pkgs/mosd/mosd/src/reconciler/sshd.rs:386-404`). This is not a
    defect to fix here; it is a **hard budget on how often a dashboard may poll**,
    and it applies identically to all four options, because all four ultimately
@@ -1194,7 +1194,7 @@ A long-lived `text/event-stream` response, consumed by the browser's built-in
 - **C4 — `mosd` work. This is where the option collapses, and it is the decisive
   finding of this section.** SSE is a *push* transport, and push requires
   something to push. `mosd` emits **exactly one signal**, `SettingsChanged`
-  (`os/pkgs/mosd/mosd/src/bus.rs:531-533`, declared at `:727-732`) — and it fires on
+  (`os/pkgs/mosd/mosd/src/bus.rs:564-566`, declared at `:727-732`) — and it fires on
   **settings** writes. For **live state** — the IP address of section 2.4, the
   storage figures of 2.6, the slot state of 2.5, install progress — there is **no
   signal of any kind**. `record` mutates the live-state tree in place
@@ -1772,7 +1772,7 @@ chosen by operator demand and by which items unblock others, not by size.
 
 | | Scope | Gap rows | Unblocks | Verified by |
 |---|---|---|---|---|
-| **4a** | **Observed network** — `mosd` queries `org.freedesktop.network1` for addresses, leases, gateway, DNS in use and carrier state. It already talks to that service for exactly one thing, `Manager.Reload` (`os/pkgs/mosd/mosd/src/reconciler/network.rs:24-25`), and issues no `Get` and no link enumeration | **14** | Section 2.4 half B; the *condition* on section 3.4.1's Network nav row; the "what is my IP address?" question section 2.9 names as one of the two an operator asks first | A live-state read that returns a lease for a DHCP interface and an explicit no-lease state for one without — the distinction `mos-ui-inventory.md` section 6.3 records as currently impossible |
+| **4a** | **Observed network** — `mosd` queries `org.freedesktop.network1` for addresses, leases, gateway, DNS in use and carrier state. It already talks to that service for exactly one thing, `Manager.Reload` (`os/pkgs/mosd/mosd/src/reconciler/network.rs:32-33`), and issues no `Get` and no link enumeration | **14** | Section 2.4 half B; the *condition* on section 3.4.1's Network nav row; the "what is my IP address?" question section 2.9 names as one of the two an operator asks first | A live-state read that returns a lease for a DHCP interface and an explicit no-lease state for one without — the distinction `mos-ui-inventory.md` section 6.3 records as currently impossible |
 | **4b** | **Storage per tier** — a `statvfs` read across the four tiers of `os/rootfs/overlay-v2/etc/fstab.in:11-27` and a bus surface for it | **11** | Section 2.6 | `/srv` reports a figure at all — today it has **no reporting of any kind** (section 4.1 item 7). Cheapest item in phase 4; do it early for that reason alone |
 | **4c** | **Slot state, RAUC status, and the gate's verdict** — a bus method returning slot status; `mos-health` reporting its own verdict through `ReportHealth` or a richer equivalent instead of only journalling (`os/rootfs/overlay-v2/usr/lib/mos/mos-health:17-18`) | **1, 3, 5** | Section 2.5's slot half; section 2.3 part (iii); **and section 2.10's power-page warning (row 10)**, which is a dependency rather than a new primitive | `rauc status mark-good` having run is readable over the bus. Note `grep -rci rauc mosd/mosd/src/` returns **0 across all 12 files** today, so this is new surface, not a wiring change |
 | **4d** | **Boot attempt credits** — reading `BOOT_A_LEFT`/`BOOT_B_LEFT` from the redundant U-Boot environment (`os/rootfs/overlay-v2/etc/fw_env.config.in:27-29`) | **2** | The credits half of section 2.5, and the two-tile cross-read section 2.7 describes (short uptime plus falling credits = a slot failing its health gate) | **Gated on an unsolved read hazard.** A polling dashboard is a reader racing a writer that is ordered against nothing: the boot-time systemd ordering between `mos-machine-id` and RAUC is not a lock, and `os/rootfs/overlay-v2/etc/fw_env.config.in:23-25` records that libubootenv gives no cross-process locking. **Do not start 4d until reading that environment concurrently with a writer has an answer.** It is deliberately last among the read items for this reason |
