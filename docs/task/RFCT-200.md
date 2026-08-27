@@ -2,7 +2,7 @@
 
 - **status**: review — design complete, awaiting user ratification (the PLAN-022 M1 gate)
 - **priority**: P1
-- **owner**: ai-agent
+- **owner**: bkd/dpbhjzx5
 - **createdAt**: 2026-08-27
 - **plan**: PLAN-022 (M1)
 - **supersedes, once ratified**: the apid-side framing of RFCT-135 (that file is history and is not edited)
