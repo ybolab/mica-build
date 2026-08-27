@@ -26,7 +26,7 @@ there being no function that returns one.
 
 | file | change |
 | --- | --- |
-| `os/pkgs/mosd/mosd/src/wgkeys.rs` | new: the keystore — `Keystore`, lazy generation, atomic group-readable writes, public-key derivation, key and group parsing; ten tests |
+| `os/pkgs/mosd/mosd/src/wgkeys.rs` | new: the keystore — `Keystore`, lazy generation, atomic group-readable writes, public-key derivation, key and group parsing; eleven tests |
 | `os/pkgs/mosd/mosd/src/reconciler/network.rs` | `render_wireguard`, `render_netdev` extended, `validate_wireguard`, `is_host_port`, the wireguard block rule, `kind` and `publicKey` in live state, `WireguardRotate` and `KeyRotation`; twelve tests |
 | `os/pkgs/mosd/mosd/src/bus.rs` | `RotateWireguardKey`, the `NoRotation` default, `with_wireguard`; three tests |
 | `os/pkgs/mosd/mosd/src/main.rs`, `reconciler/mod.rs` | the module, and the production rotation attached outside dry run |
@@ -35,25 +35,40 @@ there being no function that returns one.
 
 ## The keystore
 
-One file per interface at `<state>/secrets/networkd/wg-<iface>.key`, holding
-the base64 private key `PrivateKeyFile=` wants. The directory is a sibling of
-the one the device password and the AP PSK live in rather than a place inside
-it, and the reason is arithmetic: those secrets are read by root, so their
-directory is `0o700` (`os/pkgs/mosd/mosd/src/identity.rs:46`), and a
-group-readable file inside a directory the group cannot traverse is a file the
-group cannot read. So `"secrets/networkd"`
-(`os/pkgs/mosd/mosd/src/wgkeys.rs:40`) at `0o750`
-(`os/pkgs/mosd/mosd/src/wgkeys.rs:43`), files at `0o640`
-(`os/pkgs/mosd/mosd/src/wgkeys.rs:46`), both owned `root:systemd-network` —
+One file per interface at `<state>/networkd-secrets/wg-<iface>.key`, holding
+the base64 private key `PrivateKeyFile=` wants: `"networkd-secrets"`
+(`os/pkgs/mosd/mosd/src/wgkeys.rs:45`) at `0o750`
+(`os/pkgs/mosd/mosd/src/wgkeys.rs:48`), files at `0o640`
+(`os/pkgs/mosd/mosd/src/wgkeys.rs:51`), both owned `root:systemd-network` —
 the ratified pattern, and the one systemd.netdev(5) documents. Import
 credentials stay parked where PLAN-022 Amendment 1 put them: they are the
 fallback if the on-image check fails, and nothing here forecloses them.
+
+**The one deviation from the ratified text, and why it is forced.** PLAN-022
+Amendment 1 and RFCT-200 section 4 spell the directory `secrets/networkd/` — a
+sub-directory of the one the device password and the AP PSK live in. That
+spelling cannot work, and the measurement is in the tree the design cites for
+everything else: reaching a file needs execute on every directory above it, and
+`identity::ensure_secrets_dir` pins `secrets/` to `SECRETS_DIR_MODE`, which is
+`0o700` (`os/pkgs/mosd/mosd/src/identity.rs:46`), on every pass and
+unconditionally — *"a directory left behind by an older or interrupted run gets
+tightened"* (`os/pkgs/mosd/mosd/src/identity.rs:268-271`). So a key file
+anywhere below `secrets/` is a file the `systemd-network` user cannot reach
+whatever mode this module puts on its own directory and on the key, and
+`PrivateKeyFile=` would be `EACCES` on every real image with every mode
+assertion still green. The FILE PATTERN the amendment ratified is kept exactly
+— 0750 directory, 0640 file, both `root:systemd-network`, atomic writes — and
+only the PATH SPELLING is corrected, to a true sibling one component under the
+state directory. This is a deviation from ratified text, recorded here rather
+than made quietly: an amendment that says `secrets/networkd/` and a tree that
+pins `secrets/` to 0700 cannot both be satisfied, and the mode contract is the
+half that carries the security property.
 
 The write is `identity.rs`'s, quoted rather than reinvented: `fn write_secret`
 (`os/pkgs/mosd/mosd/src/identity.rs:282`) opens a temp file beside the target,
 pins the mode on it, writes, fsyncs, renames and fsyncs the directory. The one
 addition is the group, set on the open handle before the rename —
-`fchown(&file, None, Some(group))` (`os/pkgs/mosd/mosd/src/wgkeys.rs:176`) —
+`fchown(&file, None, Some(group))` (`os/pkgs/mosd/mosd/src/wgkeys.rs:185`) —
 for the same reason the mode is: the key is never reachable under its final
 name owned by a wider group than it will end up with.
 
@@ -93,7 +108,7 @@ Name=wg0
 Kind=wireguard
 
 [WireGuard]
-PrivateKeyFile=/var/lib/mos/secrets/networkd/wg-wg0.key
+PrivateKeyFile=/var/lib/mos/networkd-secrets/wg-wg0.key
 ListenPort=51820
 
 [WireGuardPeer]
@@ -112,7 +127,7 @@ a deleted one, both through `ip link del` before the reload.
 
 Every peer value is parsed rather than filtered, the discipline the address
 validation next to it already applies: a public key must decode to exactly 32
-bytes — `decode_key(value).is_some()` (`os/pkgs/mosd/mosd/src/wgkeys.rs:281`)
+bytes — `decode_key(value).is_some()` (`os/pkgs/mosd/mosd/src/wgkeys.rs:290`)
 — an allowed IP must parse as an address or CIDR, and an endpoint must parse as
 `host:port` with a bracketed
 IPv6 literal or a DNS-charset host. A newline in any of the three would
@@ -172,7 +187,7 @@ The readers — the pane, the OpenAPI document — stay M6's.
 
 ## The tests
 
-Twenty-six written and twenty-five added: ten in the keystore's own module,
+Twenty-seven written and twenty-six added: eleven in the keystore's own module,
 thirteen in the reconciler's, three on the bus, against M4's
 `leaves_a_wireguard_entry_inert`, which is gone because the tunnel it asserted
 was inert is the thing this milestone renders. The hygiene ones are the point
@@ -182,6 +197,7 @@ of the milestone.
 | --- | --- |
 | `generates_a_key_lazily_and_then_reuses_it` | one key per interface, drawn once, never rotated by a reconcile |
 | `the_key_directory_is_0750_and_the_key_file_0640` | the mode assertions section 4 asks for |
+| `no_component_of_a_key_path_is_traversable_only_by_root` | the property the mode assertions cannot see: a 0700 `secrets/` is planted beside the store, and the key path avoids it, creates nothing under it, and every component it does create is group-readable and traversable |
 | `a_pre_existing_directory_is_tightened_before_a_key_lands_in_it` | a 0777 directory from an older run is fixed before it holds a key |
 | `the_key_file_and_its_directory_take_the_group_they_are_given` | the chown actually happens, against a real non-zero gid |
 | `rotation_replaces_the_key_and_its_public_half` | new key, new public half, no second file left behind, mode still 0640 |
@@ -265,12 +281,12 @@ of them in `network.rs` that any document names by line.
 
 | gate | result |
 | --- | --- |
-| `bash os/pkgs/mosd/hack/check.sh` | `Summary [ 49.278s] 655 tests run: 655 passed, 0 skipped`, doctests ok, `advisories ok, bans ok, licenses ok`, `ALL CHECKS PASSED` |
+| `bash os/pkgs/mosd/hack/check.sh` | `Summary [ 44.982s] 656 tests run: 656 passed, 0 skipped`, doctests ok, `advisories ok, bans ok, licenses ok`, `ALL CHECKS PASSED` |
 | `bash os/pkgs/rauc-sign/hack/check.sh` | `15 tests run: 15 passed`, `ALL CHECKS PASSED` |
-| `bash docs/verify-citations.sh` | `1256/1256 PASS`, RFCT-204 at 0 unquoted citations |
+| `bash docs/verify-citations.sh` | `1257/1257 PASS`, RFCT-204 at 0 unquoted citations |
 | `bash docs/verify-index.sh` | `720/720 PASS` |
 
-The suite went from 630 tests to 655, the twenty-five this milestone adds; the
+The suite went from 630 tests to 656, the twenty-six this milestone adds; the
 merged branch arrived green at 630 and both docs gates arrived green, so every
 red in between was this milestone's own and is accounted for above. `cargo
 deny` is green with the new crates: `x25519-dalek`, `curve25519-dalek` and
