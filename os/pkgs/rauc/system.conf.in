@@ -81,6 +81,24 @@ bundle-formats=verity
 # developer can drop in at os/rootfs/overlay-v2/etc/rauc/keyring.pem (that path
 # is gitignored). Production keyring provisioning is out of scope here; until
 # one is installed, `rauc install` on device fails closed.
+#
+# The provisioning path on a shipped device (RFCT-139): what RAUC reads is
+# exactly the path= below, in the rendered /etc/rauc/system.conf — the image
+# verifier's rauc-keyring-path check asserts the rendered config names this
+# path, and packed-no-dev-keyring asserts the shipped root carries nothing
+# there. /etc is a read-only squashfs on device, so an owner cannot simply
+# write the file: a production keyring must arrive through a provisioning
+# channel and live on storage that survives an A/B update, reaching this path
+# the way /etc/ssh does — a STATE-backed seed plus bind mount
+# (os/rootfs/overlay-v2/usr/lib/mos/mos-seed-state). No such bind or channel
+# exists yet, deliberately: which channel delivers the file (STATE/META
+# provisioning file, factory step, first-boot enrolment) and who holds,
+# rotates and revokes the signing CA are open product decisions for the
+# device's owner — recorded in docs/design/release-signing.md section 2.3,
+# never defaulted here. Whether a keyring provisioned at this path is then
+# honoured end to end (rauc install verifying against it) is observable only
+# on a booted device; until one exists that last step stays documented, not
+# tested.
 path=/etc/rauc/keyring.pem
 
 # Slot groups. One group per A/B side: the rootfs slot carries the bootname the
