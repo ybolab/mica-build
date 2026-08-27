@@ -66,15 +66,20 @@ the screen at an application UI (served by an app container) instead of apid.
 
 ## 5. Board requirements (extends boards.md §4)
 
-Boards advertising `display` in `board.yaml features` must provide:
+`os/boards/<board>/board.env` carries no display capability key, so no board
+advertises the feature today. A board whose product has an HDMI output must
+provide:
 
 - kernel: DRM/KMS `=y` for the SoC display pipe + HDMI encoder; GPU driver
   (cx3576/RK3576: Mali via mainline panfrost, or the vendor blob driver as
   fallback — decided during board bring-up); `CONFIG_DRM_FBDEV_EMULATION`
   already asserted.
 - GPU firmware/userland into the kiosk extension (not base rootfs).
-- `board.yaml` gains a `display:` section (output, default rotation) consumed
-  by DisplayConfig defaults.
+- Output and default rotation, which are a comment in the board definition and
+  not yet a key: "Display defaults, recorded rather than declared: the output is
+  hdmi and the default rotation is 0"
+  (`os/boards/cx3576/board.env:487-488`). DisplayConfig therefore has no
+  board-supplied default, and gains one when a key does.
 
 ## 6. Security notes
 

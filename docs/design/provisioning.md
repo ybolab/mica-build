@@ -6,23 +6,13 @@
 > network can be assumed. Approved 2026-08-17. Companion to access.md §7 and
 > connd.md.
 >
-> **Base change (PLAN-010 M5, 2026-08-19).** Layer 1 is **shipped**, in mosd on
-> the systemd base rather than in machined under COSI — §2 is rewritten to what
-> ships. The three-layer model and the security invariants are unchanged. §3 is
-> new and is the single authoritative statement of the credential model. The
-> `.zh.md` sibling has not been updated and is stale.
->
-> **Model change (campaign `sshweb`, 2026-08-19).** SSH access no longer uses
-> the device password at all: see `docs/design/access.md` §4. The device
-> credential is still minted at first boot and still on STATE, and it now
-> authenticates **nothing** — §3.6 states this and every §3 subsection that
-> described it as a login credential is corrected in place.
+> The `.zh.md` sibling has not been updated since 2026-08-19 and is stale.
 
 ## 1. The break from upstream
 
-Upstream Talos metal boots without config into maintenance mode and waits for
-config over the network — a data-center assumption. A mos appliance must reach
-a fully working state with zero external input. Three layers:
+A mos appliance must reach a fully working state with **zero external input**,
+unlike a data-center machine that may boot without config and wait for one over
+the network. Three layers:
 
 ## 2. Layer 1 — first-boot self-provisioning (shipped)
 
@@ -301,30 +291,17 @@ credentialled configuration; changing that configuration today is apid over the
 LAN (channel 4), which M3 delivered, or the AP captive portal's *transport*
 (connd.md §4) without the portal itself. Channels 1, 2 and 5 do not exist.
 
-The "machined API" the original text named is replaced by mosd's D-Bus surface
-(`com.mos.mosd1`); the invariant it was expressing — every channel converges on
-one validated write path, none of them edits a file behind the daemon's back —
-is unchanged and is what `docs/design/mosd.md` §3 describes.
+The invariant across all five: every channel converges on one validated write
+path — mosd's D-Bus surface (`com.mos.mosd1`) — and none of them edits a file
+behind the daemon's back. That is what `docs/design/mosd.md` §3 describes.
 
-## 5. Layer 3 — bring-up interim — RETIRED
+## 5. Layer 3 — bring-up interim — does not exist
 
-Layer 3 embedded a static machine config, carrying a committed throwaway CA,
-into cx3576 dev images via the Talos imager's embedded-config mechanism, gated
-by `BSP_VARIANT=cx3576`.
-
-**Its stated retirement criterion was "deleted in the same campaign that
-delivers Layer 1", and Layer 1 shipped in PLAN-010 M5.** The mechanism retired
-with the Talos base rather than by deletion: the systemd image pipeline
-(`os/**`) has no embedded-config mechanism, no `/usr/local/etc/talos`, and no
-committed CA. The talos repository is reference-only and archived
-(PLAN-010 "Out of scope / retired").
-
-The CI check the original text asked for — assert the embedded config directory
-is absent from production profiles — is therefore **not needed and not
-implemented**; there is no directory to assert against. What replaces it is
-narrower and is implemented: both image verifiers assert that the shipped
-`/etc/shadow` carries no usable root password, so no fleet-wide credential can
-reach an artifact.
+**The image pipeline (`os/**`) has no embedded-config mechanism and no
+committed CA**, so there is no embedded-config directory for a CI check to
+assert is absent. What the image verifiers assert instead is narrower and is
+implemented: the shipped `/etc/shadow` carries no usable root password, so no
+fleet-wide credential can reach an artifact.
 
 ## 6. Security invariants
 
