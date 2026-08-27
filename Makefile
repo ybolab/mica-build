@@ -43,7 +43,7 @@ help:
 	@echo "  docs-verify-test    prove the index assertions actually fail on a duplicated row or entry"
 	@echo "  docs-verify-citations      assert every design-document citation resolves and still quotes its source"
 	@echo "  docs-verify-citations-test prove the citation assertions actually fail on a moved line or a changed quote"
-	@echo "  podman              build the container engine from source into os/podman/out-\$$MOS_ARCH"
+	@echo "  podman              build the container engine from source into os/pkgs/podman/out-\$$MOS_ARCH"
 	@echo "  build-env           build the pinned builder images localhost/mos-build-{base,c,go,rust}"
 	@echo "  os-quadlet-doc-test run docs/design/containers.md's examples through Quadlet"
 	@echo "  cx3576-<t>          delegate target <t> to os/boards/cx3576/bsp (uboot|kernel|rootfs|image|clean)"
@@ -131,7 +131,7 @@ os-bundle-cx3576:
 	bash os/build/run.sh --bundle
 
 os-devkeys:
-	bash os/update/rauc/gen-dev-keys.sh
+	bash os/pkgs/rauc/gen-dev-keys.sh
 
 os-health-test:
 	bash os/tests/health-test.sh
@@ -144,14 +144,14 @@ os-shadow-test:
 	bash os/tests/shadow-reconcile-test.sh
 
 # Stands up a real dbus-daemon whose configuration <include>s the SHIPPED
-# mosd/dist/com.mos.mosd.conf, owns com.mos.mosd from a root connection, and
+# os/pkgs/mosd/dist/com.mos.mosd.conf, owns com.mos.mosd from a root connection, and
 # drives root and non-root clients at it. Reading the XML back would only prove
 # the file says the right thing; this proves dbus-daemon acts on it. Both
 # directions of every guard — a refusal-only suite passes just as well against a
 # policy that denies root too. Needs root (it drops to uid 65534 with setpriv)
 # and fails loudly when it cannot run rather than skipping.
 os-dbus-policy-test:
-	bash mosd/hack/dbus-policy-test.sh
+	bash os/pkgs/mosd/hack/dbus-policy-test.sh
 
 # Behavioural check on first-boot growth: a real systemd-repart, with discard
 # enabled, over a copy of each assembled image on a loop device. It proves two
@@ -217,14 +217,14 @@ os-build-test:
 	bash os/build/run.sh
 
 # RAUC, built from upstream source instead of installed from Debian. The reason
-# is recorded in os/update/rauc/versions.env: the distribution builds it with
+# is recorded in os/pkgs/rauc/versions.env: the distribution builds it with
 # streaming on, that links libcurl-gnutls, and rauc is the ONLY consumer of that
 # library in the whole packed root -- it would bring GnuTLS, p11-kit, GMP,
 # Nettle and Kerberos into a signed image for an install path this project
 # defers. Built here it links libc, libcrypto, libfdisk, glib and json-glib, all
 # of which the image already carries.
 os-rauc:
-	MOS_BOARD=$(or $(MOS_BOARD),cx3576) bash os/update/rauc/build.sh
+	MOS_BOARD=$(or $(MOS_BOARD),cx3576) bash os/pkgs/rauc/build.sh
 
 # Every shell script that enables pipefail, checked for an early-exiting reader
 # on the right of a pipe. `producer | grep -q PATTERN` inverts its own answer
@@ -282,9 +282,9 @@ os-quadlet-doc-test:
 # Same arrangement as the board artifact builds -- a Dockerfile whose last stage
 # is FROM scratch, exported with -o. Dynamically linked against the image's
 # glibc except catatonit, which is copied into containers and must not depend on
-# this image's libc; os/podman/README.md has the reasoning.
+# this image's libc; os/pkgs/podman/README.md has the reasoning.
 podman:
-	bash os/podman/build.sh
+	bash os/pkgs/podman/build.sh
 
 # The builder image every component build stands on, built from a base pinned by
 # DIGEST in os/build-env/images.env rather than by a tag upstream repoints

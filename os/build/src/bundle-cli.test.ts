@@ -7,7 +7,7 @@
 // Every guard here is reachable without breaking the tree. The three that read
 // the filesystem -- the board definition, the signing material, the required
 // inputs -- take their `exists` as a parameter for that reason: a guard that can
-// only fire when os/update/rauc/.devkeys has been deleted is a guard nobody has
+// only fire when os/pkgs/rauc/.devkeys has been deleted is a guard nobody has
 // run.
 
 import { describe, expect, test } from 'bun:test'
@@ -249,9 +249,9 @@ describe('the HOST\'s architecture, not the board\'s', () => {
     expect(hostArchFor('arm64')).toBe('arm64')
   })
 
-  test('anything else is refused, naming what os/update/rauc/ actually builds', () => {
+  test('anything else is refused, naming what os/pkgs/rauc/ actually builds', () => {
     for (const m of ['riscv64', 'armv7l', 'ppc64le', '']) {
-      expect(() => hostArchFor(m)).toThrow(/os\/update\/rauc\/ builds amd64 and arm64/)
+      expect(() => hostArchFor(m)).toThrow(/os\/pkgs\/rauc\/ builds amd64 and arm64/)
     }
   })
 
@@ -272,7 +272,7 @@ describe('the rauc that writes the bundle is the one this tree built', () => {
 
   test('its absence names the build, not "rauc is missing"', () => {
     // RAUC is built from source here rather than installed from Debian, and
-    // os/update/rauc/versions.env records why -- the distribution build links
+    // os/pkgs/rauc/versions.env records why -- the distribution build links
     // libcurl-gnutls and drags GnuTLS, p11-kit, GMP, Nettle and Kerberos into a
     // signed image for an install path this project defers.
     expect(() => requireHostRauc('amd64', only())).toThrow(/out-amd64\/rauc not found/)

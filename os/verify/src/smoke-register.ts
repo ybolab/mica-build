@@ -5,7 +5,7 @@
 // every `pin` is a function that reads the value from the file that owns it at
 // run time (smoke-pins.ts), and `pinCoverageFaults` checks the set in both
 // directions from the smoke runner itself, so an eighth binary added to
-// `os/podman/` cannot leave this register reporting a full green over seven of
+// `os/pkgs/podman/` cannot leave this register reporting a full green over seven of
 // eight.
 //
 // The installed paths are measured. Five of the seven container binaries are NOT
@@ -76,12 +76,12 @@ const crate = (name: string) => () => readCratePackageVersion(cratePath(name))
 export const ARTIFACTS: readonly Artifact[] = [
   // The four this repository writes in Rust. Their recorded version is the
   // `[package] version` of the crate that builds them, the only place this tree
-  // records one: there is no `mosd/versions.env`, because a pin file exists to
+  // records one: there is no `os/pkgs/mosd/versions.env`, because a pin file exists to
   // fix an UPSTREAM version and these have no upstream.
   {
     // mosd and apid answer `--version` before any daemon initialisation --
     // provisioning, bus connection, key generation -- because asking a daemon
-    // for its version must not MUTATE. mosd/mosd/src/main.rs answers from a
+    // for its version must not MUTATE. os/pkgs/mosd/mosd/src/main.rs answers from a
     // synchronous `main`, before the tokio runtime, the subscriber, the settings
     // store and provisioning, so this invocation reports, exits 0 and leaves
     // nothing behind. `/usr/bin/mosd` with no argv still provisions (secrets/,
@@ -119,7 +119,7 @@ export const ARTIFACTS: readonly Artifact[] = [
     contract: { kind: 'version', argv: ['--version'] },
   },
 
-  // RAUC, built from source by os/update/rauc/.
+  // RAUC, built from source by os/pkgs/rauc/.
   {
     name: 'rauc',
     path: '/usr/bin/rauc',
@@ -127,7 +127,7 @@ export const ARTIFACTS: readonly Artifact[] = [
     contract: { kind: 'version', argv: ['--version'] },
   },
 
-  // The container engine, built from source by os/podman/.
+  // The container engine, built from source by os/pkgs/podman/.
   {
     name: 'podman',
     path: '/usr/bin/podman',

@@ -1,6 +1,6 @@
 # The gates this repository already defines, executed on every push.
 #
-# It runs `mosd/hack/check.sh` and the `make` targets rather than restating
+# It runs `os/pkgs/mosd/hack/check.sh` and the `make` targets rather than restating
 # what they do. That is deliberate and it is the whole design: a workflow that
 # spelled out `cargo clippy -- -D warnings` here would be a second copy of the
 # gate definition, free to drift from the one a developer runs locally, and the
@@ -43,8 +43,8 @@ jobs:
       # install its own build deps must go red here, not green later.
       #
       # `dbus-daemon` is a TEST dependency, listed here for the same reason as
-      # the compiler. Three suites in the nextest run below -- mosd/tests/bus.rs,
-      # mosd/tests/scan.rs and mosd/tests/tree.rs -- stand up a private
+      # the compiler. Three suites in the nextest run below -- os/pkgs/mosd/mosd/tests/bus.rs,
+      # os/pkgs/mosd/mosd/tests/scan.rs and os/pkgs/mosd/mosd/tests/tree.rs -- stand up a private
       # `dbus-daemon --session`, and scan.rs and bus.rs panic by name rather
       # than skip when it is absent. Provisioning it is what makes those suites
       # actually run here; without it they would either go red (scan.rs, bus.rs)
@@ -74,18 +74,40 @@ jobs:
           [ -n "$address" ] || { echo "dbus-daemon printed no session address" >&2; exit 1; }
           echo "session bus address: $address"
 
-      # Pinned to the workspace manifest rather than to a literal: the MSRV
-      # lives in mosd/Cargo.toml, and a second copy here could disagree with it.
+      # Pinned to the workspace manifests rather than to a literal: the MSRV
+      # lives in each Cargo.toml, and a second copy here could disagree with it.
       # Reading it back is also the only thing that makes `rust-version` an
       # enforced claim rather than documentation.
-      - name: Resolve the toolchain from the workspace MSRV
+      #
+      # There are TWO manifests since PLAN-019 M3 split rauc-sign into its own
+      # workspace, and this job installs ONE toolchain. So the two MSRVs are not
+      # merely read, they are required to AGREE: taking the higher of the two
+      # would silently let a crate claim an MSRV this job never actually proves,
+      # and taking the first would let the other drift unnoticed. If they should
+      # ever legitimately differ, that is the point at which this job needs two
+      # toolchains, and this check is what says so.
+      - name: Resolve the toolchain from the workspace MSRVs
         id: msrv
         run: |
           set -euo pipefail
-          version=$(sed -n 's/^rust-version *= *"\([^"]*\)".*/\1/p' mosd/Cargo.toml | head -1)
-          [ -n "$version" ] || { echo "no rust-version in mosd/Cargo.toml" >&2; exit 1; }
-          echo "version=$version" >>"$GITHUB_OUTPUT"
-          echo "workspace MSRV: $version"
+          read_msrv() {
+            local v
+            v=$(sed -n 's/^rust-version *= *"\([^"]*\)".*/\1/p' "$1" | head -1)
+            [ -n "$v" ] || { echo "no rust-version in $1" >&2; exit 1; }
+            echo "$v"
+          }
+          mosd_msrv=$(read_msrv os/pkgs/mosd/Cargo.toml)
+          sign_msrv=$(read_msrv os/pkgs/rauc-sign/Cargo.toml)
+          [ "$mosd_msrv" = "$sign_msrv" ] || {
+            echo "error: the two workspaces disagree about the MSRV." >&2
+            echo "       os/pkgs/mosd/Cargo.toml:         $mosd_msrv" >&2
+            echo "       os/pkgs/rauc-sign/Cargo.toml:    $sign_msrv" >&2
+            echo "       This job installs one toolchain and runs both gates on it, so it" >&2
+            echo "       cannot honour two MSRVs. Reconcile them, or split this job." >&2
+            exit 1
+          }
+          echo "version=$mosd_msrv" >>"$GITHUB_OUTPUT"
+          echo "workspace MSRV (both manifests agree): $mosd_msrv"
 
       # `--component` is repeated once per component: rustup-init treats one
       # flag with two space-separated words as a component literally named
@@ -135,10 +157,20 @@ jobs:
           cargo deny --version
           cargo nextest --version
 
-      # The gate itself. Nothing above this line asserts anything about the
+      # The gates themselves. Nothing above this line asserts anything about the
       # code; nothing below it is a check this file invented.
-      - name: mosd/hack/check.sh
-        run: bash mosd/hack/check.sh
+      - name: os/pkgs/mosd/hack/check.sh
+        run: bash os/pkgs/mosd/hack/check.sh
+
+      # The SECOND cargo workspace, and the reason it needs its own step: until
+      # PLAN-019 M3, this crate was a member of the mosd workspace, reached by a
+      # `../` entry in os/pkgs/mosd/Cargo.toml's members list, so the `--workspace` flags
+      # inside the script above covered it. The extraction ended that. A `--workspace`
+      # that no longer spans a crate does not complain -- it simply checks less
+      # and still exits 0 -- so without this step the crate would ship
+      # unchecked with this whole job still green.
+      - name: os/pkgs/rauc-sign/hack/check.sh
+        run: bash os/pkgs/rauc-sign/hack/check.sh
 
       # The gate above already runs the in-tree test that compares the
       # committed document against the generated one, so this step catches no
@@ -149,22 +181,22 @@ jobs:
       # it did, leaves that test green and the documented regeneration command
       # broken.
       #
-      # `mosd/hack/check.sh` cds into `mosd/`; this step runs from the
+      # `os/pkgs/mosd/hack/check.sh` cds into `os/pkgs/mosd/`; this step runs from the
       # repository root, hence `--manifest-path`.
       - name: The committed OpenAPI document is what the shipped flag prints
         run: |
           set -euo pipefail
           tmp=$(mktemp -d)
           trap 'rm -rf "$tmp"' EXIT
-          cargo run --locked --manifest-path mosd/Cargo.toml -p apid -- --openapi \
+          cargo run --locked --manifest-path os/pkgs/mosd/Cargo.toml -p apid -- --openapi \
             >"$tmp/openapi.json"
-          diff -u mosd/apid/openapi.json "$tmp/openapi.json" || {
-            echo "error: mosd/apid/openapi.json is not what apid --openapi prints." >&2
-            echo "       Regenerate it from mosd/:" >&2
+          diff -u os/pkgs/mosd/apid/openapi.json "$tmp/openapi.json" || {
+            echo "error: os/pkgs/mosd/apid/openapi.json is not what apid --openapi prints." >&2
+            echo "       Regenerate it from os/pkgs/mosd/:" >&2
             echo "         cargo run -p apid -- --openapi > apid/openapi.json" >&2
             exit 1
           }
-          echo "mosd/apid/openapi.json matches apid --openapi"
+          echo "os/pkgs/mosd/apid/openapi.json matches apid --openapi"
 
       # docs/design/api.md §2.1's breaking-vs-additive lists made mechanical:
       # the committed spec is compared against the base branch's copy, and any
@@ -201,13 +233,13 @@ jobs:
           base="${{ github.base_ref }}"
           if [ -z "$base" ]; then
             echo "skipped: no base branch on a ${{ github.event_name }} event, so there is"
-            echo "         no committed spec to diff mosd/apid/openapi.json against."
+            echo "         no committed spec to diff os/pkgs/mosd/apid/openapi.json against."
             exit 0
           fi
 
           git fetch --depth=1 origin "$base"
-          if ! git cat-file -e FETCH_HEAD:mosd/apid/openapi.json 2>/dev/null; then
-            echo "skipped: ${base} carries no mosd/apid/openapi.json, so every path in this"
+          if ! git cat-file -e FETCH_HEAD:os/pkgs/mosd/apid/openapi.json 2>/dev/null; then
+            echo "skipped: ${base} carries no os/pkgs/mosd/apid/openapi.json, so every path in this"
             echo "         spec is new and nothing can have been broken."
             exit 0
           fi
@@ -243,9 +275,9 @@ jobs:
           response-non-success-status-removed err
           SEVERITY
 
-          git show FETCH_HEAD:mosd/apid/openapi.json >"$tmp/base-openapi.json"
+          git show FETCH_HEAD:os/pkgs/mosd/apid/openapi.json >"$tmp/base-openapi.json"
           echo "base: ${base} at $(git rev-parse --short FETCH_HEAD)"
-          "$tmp/oasdiff" breaking "$tmp/base-openapi.json" mosd/apid/openapi.json \
+          "$tmp/oasdiff" breaking "$tmp/base-openapi.json" os/pkgs/mosd/apid/openapi.json \
             --fail-on ERR --color never --severity-levels "$tmp/severity.txt" || {
             echo "error: the changes above are breaking under docs/design/api.md §2.1." >&2
             echo "       A correct v1 client can be broken by them, so they need a new" >&2

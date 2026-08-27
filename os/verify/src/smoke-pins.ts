@@ -28,10 +28,10 @@ import { OS_DIR, REPO_ROOT } from './paths.ts'
  * The container engine's pins -- podman, quadlet, crun, conmon, netavark,
  * aardvark-dns, catatonit.
  */
-export const PODMAN_VERSIONS_ENV: string = join(OS_DIR, 'podman', 'versions.env')
+export const PODMAN_VERSIONS_ENV: string = join(OS_DIR, 'pkgs', 'podman', 'versions.env')
 
 /** RAUC's pin, in its own file because RAUC is built by its own directory. */
-export const RAUC_VERSIONS_ENV: string = join(OS_DIR, 'update', 'rauc', 'versions.env')
+export const RAUC_VERSIONS_ENV: string = join(OS_DIR, 'pkgs', 'rauc', 'versions.env')
 
 /** Every `versions.env` a pin is read out of, so coverage can be asserted over all of them. */
 export const VERSIONS_ENV_FILES: readonly string[] = [PODMAN_VERSIONS_ENV, RAUC_VERSIONS_ENV]
@@ -61,7 +61,7 @@ export interface Pin {
  * Strip the `v` that a git TAG carries and a `--version` output does not.
  *
  * Measured, not assumed, and the two spellings live side by side in ONE file:
- * `os/podman/versions.env` writes `PODMAN_VERSION=v5.8.6` and
+ * `os/pkgs/podman/versions.env` writes `PODMAN_VERSION=v5.8.6` and
  * `CRUN_VERSION=1.29.1`, because the pins are upstream TAG names and upstream
  * does not agree with itself about the prefix. The binaries agree with each
  * other instead -- `podman version 5.8.6` and `crun version 1.29.1` both print
@@ -94,7 +94,7 @@ export function readVersionsEnv(file: string): ReadonlyMap<string, string> {
  * `smoke-register.ts` names the artifacts; this names the pins
  * the tree actually carries, and `smoke-register.test.ts` requires the second
  * set to be covered by the first. Without it, adding an eighth binary to
- * `os/podman/` -- with its pin, its hash and its install line -- would leave the
+ * `os/pkgs/podman/` -- with its pin, its hash and its install line -- would leave the
  * smoke runner reporting a full green over seven, and a run that got greener by
  * looking at less is the exact defect this package exists to make visible in
  * other people's checkers.
@@ -129,16 +129,16 @@ export function readPin(file: string, key: string): Pin {
   return { recorded, expected: expectedFromRecorded(recorded), file, key }
 }
 
-/** `mosd/<crate>/Cargo.toml` -- the four device binaries this repository writes. */
+/** `os/pkgs/mosd/<crate>/Cargo.toml` -- the four device binaries this repository writes. */
 export function cratePath(crate: string): string {
-  return join(REPO_ROOT, 'mosd', crate, 'Cargo.toml')
+  return join(REPO_ROOT, 'os', 'pkgs', 'mosd', crate, 'Cargo.toml')
 }
 
 /**
  * The `version` of a Cargo manifest's `[package]` table, and only that one.
  *
  * Why this is not a one-line regex. `version = "..."` appears many times in a
- * manifest and only the first table's is the crate's own: `mosd/apid/Cargo.toml`
+ * manifest and only the first table's is the crate's own: `os/pkgs/mosd/apid/Cargo.toml`
  * has a `[dependencies]` section under it, and a workspace member inherits
  * `[workspace.package]` keys. A `/^version = "(.*)"/m` over the whole file finds
  * whichever came first in the byte order, which is the crate's today and a

@@ -1,10 +1,11 @@
 # PLAN-019 os/pkgs consolidation, and a directory-structure pass over the tree
 
-- **status**: approved
+- **status**: completed
 - **createdAt**: 2026-08-27 09:15
 - **approvedAt**: 2026-08-27 09:15
+- **completedAt**: 2026-08-27
 - **relatedTask**: RFCT-165..179 reserved
-- **milestones**: M1 target-layout design, user-gated; M2 podman + rauc into os/pkgs/; M3 update/sign becomes os/pkgs/rauc-sign, standalone; M4 mosd into os/pkgs/; M5 tree-wide reference sweep and closeout
+- **milestones**: M1 target-layout design, user-gated [x]; M2 podman + rauc into os/pkgs/ [x]; M3 update/sign becomes os/pkgs/rauc-sign, standalone [x]; M4 mosd into os/pkgs/ [x]; M5 tree-wide reference sweep and closeout [x]
 
 ## Context
 
@@ -70,21 +71,21 @@ Measured consumer surface:
 
 ## Proposal
 
-- **M1 (RFCT-165)** the layout design: target tree, migration table,
+- **M1 (RFCT-165)** **[completed]** the layout design: target tree, migration table,
   consumer inventory re-measured at HEAD, and the list of any additional
   restructure proposals with rationale each. Output is a proposal section in
   this plan file (amendment), not moved files. USER GATE.
-- **M2 (RFCT-166)** podman + rauc -> os/pkgs/{podman,rauc}: git mv, code
+- **M2 (RFCT-166)** **[completed]** podman + rauc -> os/pkgs/{podman,rauc}: git mv, code
   consumers, gitignore, Makefile; bun suites + both docs gates green.
-- **M3 (RFCT-167)** update/sign -> os/pkgs/rauc-sign per Decisions item 5:
+- **M3 (RFCT-167)** **[completed]** update/sign -> os/pkgs/rauc-sign per Decisions item 5:
   git mv, workspace EXTRACTION (own Cargo.toml/lock, mosd member list
   shrinks, CI gains the second cargo gate), update/README folded in,
   top-level update/ removed; both cargo workspaces green independently.
-- **M4 (RFCT-168)** mosd -> os/pkgs/mosd: git mv, workspace root move, CI
+- **M4 (RFCT-168)** **[completed]** mosd -> os/pkgs/mosd: git mv, workspace root move, CI
   rust job, rootfs stage COPY paths, test/apid-api references,
   mosd/hack/build-target.sh self-references; full gate set green (cargo
   fmt/clippy/test in the pinned image, both bun suites, both docs gates).
-- **M5 (RFCT-169)** tree-wide reference sweep: docs/design citation prefix
+- **M5 (RFCT-169)** **[completed]** tree-wide reference sweep: docs/design citation prefix
   rewrites under the gating checker, docs/README, architecture.md, any
   ratified extras from M1; old-path grep zero outside history and the
   ratified exclusions; closeout.

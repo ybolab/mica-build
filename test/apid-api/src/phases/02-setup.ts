@@ -22,7 +22,7 @@ const SESSION_COOKIE = "apid_session";
 
 /**
  * The attributes of the cookie apid mints, verbatim from
- * mosd/apid/src/session.rs:102-104:
+ * os/pkgs/mosd/apid/src/session.rs:102-104:
  *
  *     apid_session=<id>.<hmac>; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=86400
  *

@@ -5,7 +5,7 @@
 // bundle built in a bookworm container (rauc 1.8) for an image running Debian
 // 13's 1.13 fails -- "1.8 refused the x64 slot model outright the first time it
 // was asked to read it. A format difference would not have announced itself so
-// kindly." Both halves come from os/update/rauc/, built from a pinned source,
+// kindly." Both halves come from os/pkgs/rauc/, built from a pinned source,
 // and os/update/bundle.sh compares the version it runs against the one the
 // rootfs report recorded before writing anything. So bundle() refuses a toolset
 // whose rauc came from a distribution package, by name, before any bytes exist;
@@ -78,8 +78,8 @@ export async function bundle(tb: RaucToolbox, spec: BundleSpec): Promise<ToolRes
       + `A bundle is written by one rauc and installed by another on the device, and nothing about the `
       + `format makes them compatible by accident: commit 9a43a59 records a bundle built by rauc 1.8 `
       + `that the device's 1.13 refused, found by failure rather than by a check. The bundle toolset `
-      + `carries the binary os/update/rauc/build.sh produced from the version pinned in `
-      + `os/update/rauc/versions.env; build it with \`make os-rauc\`.`,
+      + `carries the binary os/pkgs/rauc/build.sh produced from the version pinned in `
+      + `os/pkgs/rauc/versions.env; build it with \`make os-rauc\`.`,
     )
   }
   return tb.must(bundleArgs(spec), { note: `rauc could not build the bundle ${spec.output}` })

@@ -24,36 +24,36 @@ implemented]** is *"deliberately, no code at all. Prose only"*
 ## 1. What reaches the device today — **[implemented]**
 
 **apid, on the LAN, over HTTPS.** It is the *"mos API daemon (serves the web
-dashboard)"* (`mosd/dist/apid.service:2`), started as `/usr/bin/apid`
-(`mosd/dist/apid.service:14`) after mosd — `After=network.target mosd.service`
-(`mosd/dist/apid.service:3-4`). It binds an HTTPS listener and a
-*"Redirect-only HTTP listen address"* (`mosd/apid/src/config.rs:19`),
+dashboard)"* (`os/pkgs/mosd/dist/apid.service:2`), started as `/usr/bin/apid`
+(`os/pkgs/mosd/dist/apid.service:14`) after mosd — `After=network.target mosd.service`
+(`os/pkgs/mosd/dist/apid.service:3-4`). It binds an HTTPS listener and a
+*"Redirect-only HTTP listen address"* (`os/pkgs/mosd/apid/src/config.rs:19`),
 defaulting to `unwrap_or_else(|_| "0.0.0.0:443".to_string())`
-(`mosd/apid/src/config.rs:34-35`) and `unwrap_or_else(|_| "0.0.0.0:80".to_string())`
-(`mosd/apid/src/config.rs:36-37`). No second protocol, no third port.
+(`os/pkgs/mosd/apid/src/config.rs:34-35`) and `unwrap_or_else(|_| "0.0.0.0:80".to_string())`
+(`os/pkgs/mosd/apid/src/config.rs:36-37`). No second protocol, no third port.
 
 **One gate in front of everything.** `app` is *"The HTTPS application router"*
-(`mosd/apid/src/routes.rs:105`) and its outermost layer is the auth gate
-(`mosd/apid/src/routes.rs:187`), which *"routes every request into setup mode,
-login, or through"* (`mosd/apid/src/routes.rs:658`) on a session cookie minted
+(`os/pkgs/mosd/apid/src/routes.rs:105`) and its outermost layer is the auth gate
+(`os/pkgs/mosd/apid/src/routes.rs:187`), which *"routes every request into setup mode,
+login, or through"* (`os/pkgs/mosd/apid/src/routes.rs:658`) on a session cookie minted
 at first-run setup or at login. `/healthz` and the declared API routes are the
 only exemptions; they *"answer for themselves"*
-(`mosd/apid/src/routes.rs:661-662`).
+(`os/pkgs/mosd/apid/src/routes.rs:661-662`).
 
 **The JSON API under `/api` is read-only.** The router reserves the prefix and
-*"every other path under it 404s"* (`mosd/apid/src/routes.rs:175-176`); every
-route inside is a GET — `get(api_v1_settings)` (`mosd/apid/src/routes.rs:265`)
-and `get(api_v1_state)` (`mosd/apid/src/routes.rs:266`), beside version
+*"every other path under it 404s"* (`os/pkgs/mosd/apid/src/routes.rs:175-176`); every
+route inside is a GET — `get(api_v1_settings)` (`os/pkgs/mosd/apid/src/routes.rs:265`)
+and `get(api_v1_state)` (`os/pkgs/mosd/apid/src/routes.rs:266`), beside version
 discovery and metadata. `docs/design/api.md` section 1 records the whole of
 *"The surface as it exists today"* (`docs/design/api.md:96`).
 
 **apid owns no state; it is a client of mosd** over D-Bus — its one backend
-choice is *"Which message bus to reach"* (`mosd/apid/src/config.rs:5`) mosd on,
+choice is *"Which message bus to reach"* (`os/pkgs/mosd/apid/src/config.rs:5`) mosd on,
 carrying one interface *"for the settings, state and transient-password calls"*
-(`mosd/apid/src/bus_client.rs:3-4`) and another for the power actions. mosd
-holds the tree (`BusName=com.mos.mosd`, `mosd/dist/mosd.service:11`); *"apid
+(`os/pkgs/mosd/apid/src/bus_client.rs:3-4`) and another for the power actions. mosd
+holds the tree (`BusName=com.mos.mosd`, `os/pkgs/mosd/dist/mosd.service:11`); *"apid
 never spawns a process and never talks to systemd itself"*
-(`mosd/apid/src/settings_api.rs:10-12`).
+(`os/pkgs/mosd/apid/src/settings_api.rs:10-12`).
 
 **SSH and the console are access channels, not management ones**, and both are
 shut: SSH ships *"off by default on both"* profiles
@@ -85,7 +85,7 @@ decisions any future design settles first, each constraining the others:
 - **How a device enrolls**, and what revoking an enrollment does. mosd already
   mints per-device identity at first boot — *"A device instead gives itself an
   identity and its credentials here, at first boot, from the system CSPRNG"*
-  (`mosd/mosd/src/identity.rs:6-7`) — so enrollment has something to bind to.
+  (`os/pkgs/mosd/mosd/src/identity.rs:6-7`) — so enrollment has something to bind to.
 - **How update targeting shares the channel.** Per-device targeting and
   management want the same device-initiated connection; decided separately they
   produce two.
@@ -103,8 +103,8 @@ is guaranteed to exhaust its credits"*
 
 **What does not exist — [not implemented].** No on-device pull: the device-side
 verifier is built and tested on the host, and *"nothing ships it to a device
-yet"* (`update/README.md:12`). apid declares no update route
-(`mosd/apid/src/routes.rs:113-188`), so it offers no local check/apply button
+yet"* (`os/pkgs/rauc-sign/README.md:12`). apid declares no update route
+(`os/pkgs/mosd/apid/src/routes.rs:113-188`), so it offers no local check/apply button
 either; earlier text here claiming one described a surface that is not there.
 
 **The constraint on any future trigger.** Whatever triggers an update — a
@@ -132,4 +132,4 @@ an independent credential domain; compromise of one grants nothing in another.
 An apid session is not an enrollment credential, an enrollment credential is
 not a root shell, and an endpoint holding a fleet's channel credentials must
 not thereby hold the keys that authorise an image — the update trust anchor is
-already *"a separate key hierarchy"* (`update/README.md:44-45`) and stays one.
+already *"a separate key hierarchy"* (`os/pkgs/rauc-sign/README.md:51-52`) and stays one.

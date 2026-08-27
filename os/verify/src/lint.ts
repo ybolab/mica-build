@@ -302,7 +302,7 @@ function lintStartUnits(r: Recorder, b: Board, p: Partition): void {
  * This is the check that would have caught the x64 layout before it reached a
  * device -- and the one hole 2 was in: `BOOT_ATTEMPTS_DEFAULT=""` on the grub
  * board passed the shell predecessor, because an empty value read as an absent
- * key. Measured against the real consumer: os/update/rauc/render-config.sh:137
+ * key. Measured against the real consumer: os/pkgs/rauc/render-config.sh:137
  * also reads `${BOOT_ATTEMPTS_DEFAULT:-}` and so tolerates the empty spelling
  * today, which makes this a schema failure rather than a device failure. It is
  * still a failure: the key's presence is a claim about a capability grub does

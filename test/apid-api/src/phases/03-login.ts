@@ -27,7 +27,7 @@ const SESSION_COOKIE_ATTRIBUTES: readonly string[] = [
 ];
 
 /**
- * mosd/apid/src/auth.rs: BACKOFF_BASE = 1s, BACKOFF_MAX = 300s, and the window
+ * os/pkgs/mosd/apid/src/auth.rs: BACKOFF_BASE = 1s, BACKOFF_MAX = 300s, and the window
  * after n consecutive failures is 1s * 2^(n-1), capped. Exactly one failed
  * attempt is made below, so the window this phase has to outlast is 1s.
  */
@@ -143,7 +143,7 @@ const phase: Phase = {
     // meets a guard that is still armed.
     //
     // The anchor is correct by the daemon's own contract, not by luck.
-    // mosd/apid/src/auth.rs:118 `confirm_failure` re-arms the window after
+    // os/pkgs/mosd/apid/src/auth.rs:118 `confirm_failure` re-arms the window after
     // verification returns: "this only moves the window's start from admission
     // time to outcome time. Without it the verification's own duration would eat
     // into the wait -- argon2 costs a meaningful fraction of the one-second base

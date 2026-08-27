@@ -10,7 +10,7 @@
 // The positive controls are the shipped files. Every negative case below is a
 // fabricated fixture, and a suite of nothing but fabricated fixtures proves
 // only that the reader handles files nobody has. So each group also reads the
-// REAL os/podman/versions.env, os/update/rauc/versions.env and crate manifests,
+// REAL os/pkgs/podman/versions.env, os/pkgs/rauc/versions.env and crate manifests,
 // and asserts the search space is non-empty before concluding anything about
 // what is in it.
 
@@ -154,7 +154,7 @@ describe('readCratePackageVersion -- and why it tracks the TOML table', () => {
       const pin = readCratePackageVersion(cratePath(crate))
       expect(pin.key).toBe('package.version')
       expect(pin.recorded).toMatch(/^[0-9]/)
-      expect(pin.file).toContain(join('mosd', crate))
+      expect(pin.file).toContain(join('os', 'pkgs', 'mosd', crate))
     }
   })
 

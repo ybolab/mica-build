@@ -181,3 +181,8 @@ Each task is a single line linking to its detail file. All detailed information 
 - [x] [**RFCT-157 PLAN-017 M3: boards.md and display.md re-measured against os/build and os/boards**](RFCT-157.md) `P2`
 - [x] [**RFCT-158 PLAN-017 M4: the provenance lines in access.md, connd.md and provisioning.md**](RFCT-158.md) `P2`
 - [x] [**RFCT-159 PLAN-017: the five task records, the five index rows and the plan's status**](RFCT-159.md) `P2`
+- [x] [**RFCT-165 PLAN-019 M1: the os/pkgs target layout, designed before it is executed**](RFCT-165.md) `P2`
+- [x] [**RFCT-166 PLAN-019 M2: podman and rauc move under os/pkgs/**](RFCT-166.md) `P2`
+- [x] [**RFCT-167 PLAN-019 M3: update/sign becomes os/pkgs/rauc-sign, its own workspace**](RFCT-167.md) `P2`
+- [x] [**RFCT-168 PLAN-019 M4: mosd/ moves to os/pkgs/mosd/, every consumer repointed**](RFCT-168.md) `P2`
+- [x] [**RFCT-169 PLAN-019 M5: the tree-wide reference sweep and the campaign closeout**](RFCT-169.md) `P2`

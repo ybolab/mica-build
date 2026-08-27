@@ -95,7 +95,7 @@ production device cannot be edited into a development one.
 ## mosd
 
 The mos management daemon is cross-built on the host
-(`mosd/hack/build-aarch64.sh`, rust target `aarch64-unknown-linux-gnu` linked
+(`os/pkgs/mosd/hack/build-aarch64.sh`, rust target `aarch64-unknown-linux-gnu` linked
 with `aarch64-linux-gnu-gcc`) and installed into the rootfs:
 
 - `/usr/bin/mosd` — aarch64 release binary
@@ -249,7 +249,7 @@ image.
 
 ### `mosd-build.txt`, and why it is a copy
 
-`mosd/hack/build-target.sh` writes `_out/mosd-build.txt` on every build --
+`os/pkgs/mosd/hack/build-target.sh` writes `_out/mosd-build.txt` on every build --
 `target`, `elf-arch` and `commit`, TAB-separated, the same shape
 `factory-root.txt` uses so one reader reads both -- and `build-v2.sh` copies it
 into `_out/<board>/` beside the factory root. **It is not copied into the
@@ -361,7 +361,7 @@ from the layout env so the shipped image carries no placeholder:
 | Path | Purpose |
 |---|---|
 | `etc/fstab.in` | `/srv` from DATA (`noatime,x-systemd.growfs`), `/mnt/state` from STATE, `/mnt/meta` from META, `/var` from EPHEMERAL (`noatime`, **no** growfs), tmpfs `/tmp` — all keyed on lowercased `PARTUUID=` |
-| `etc/fw_env.config.in` | the redundant U-Boot env pair, addressed by partition GUID. The single `fw_env.config` source in the tree; `os/update/rauc/render-config.sh` asserts its structure rather than shipping a competing file |
+| `etc/fw_env.config.in` | the redundant U-Boot env pair, addressed by partition GUID. The single `fw_env.config` source in the tree; `os/pkgs/rauc/render-config.sh` asserts its structure rather than shipping a competing file |
 | `etc/repart.d/*.conf` | eight definitions in disk order; only `80-data.conf` grows. The two `uenv` placeholders carry `SizeMinBytes=0`: repart will not claim an existing partition below the definition's minimum, which defaults to 10 MiB, and the uenv pair is 64 KiB — without it the whole run aborts with *"Can't fit requested partitions into available free space"* and `/srv` never grows |
 | `etc/tmpfiles.d/mos-var.conf` | age policies for `/var/tmp` and `/var/cache` — `/var` is a fixed-size partition |
 | `etc/systemd/system/mos-seed-var.service` | first-boot restore of `/var` from `/usr/share/factory/var` |
@@ -421,7 +421,7 @@ units read them at runtime; `stages/40-board` names no board at all, which
 ## RAUC system.conf is rendered, not committed
 
 `os/rootfs/overlay-v2/etc/rauc/system.conf` is **generated** by
-`os/update/rauc/render-config.sh`, which owns the template and its assertions,
+`os/pkgs/rauc/render-config.sh`, which owns the template and its assertions,
 and is gitignored. `build-v2.sh` runs the renderer before
 staging the overlay, so the template plus `os/boards/cx3576/board.env` are the
 single source of truth and the rendered file cannot drift from them.

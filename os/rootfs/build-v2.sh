@@ -185,7 +185,7 @@ else
     cp "$MODULES_TAR" "$OUT_DIR/modules.tar"
 fi
 
-# The container engine, built from source by os/podman, staged like
+# The container engine, built from source by os/pkgs/podman, staged like
 # modules.tar and mosd. The directory is created either way and left empty when
 # the engine is declined -- nothing COPYs it then, because
 # stages/31-feature-containers is not in the chain, and the mkdir is here so a
@@ -194,7 +194,7 @@ fi
 # Go/Rust/C trees and takes tens of minutes, so it is a separate target and the
 # absence of its output is an error carrying the command to run.
 
-# RAUC, built from upstream source by os/update/rauc/build.sh. Staged like
+# RAUC, built from upstream source by os/pkgs/rauc/build.sh. Staged like
 # podman and like mosd: the Dockerfile COPYs a directory under _out, never a
 # path outside the build context.
 RAUC_STAGE="$OUT_DIR/rauc"
@@ -203,11 +203,11 @@ mkdir -p "$RAUC_STAGE"
 if declined rauc; then
     echo "note: rauc declined; building rootfs without stages/32-feature-rauc"
 else
-RAUC_OUT="$REPO_ROOT/os/update/rauc/out-$MOS_ARCH"
+RAUC_OUT="$REPO_ROOT/os/pkgs/rauc/out-$MOS_ARCH"
 for f in rauc rauc.service rauc-service.sh de.pengutronix.rauc.conf de.pengutronix.rauc.service NEEDED.txt RAUC_VERSION.env; do
     if [ ! -f "$RAUC_OUT/$f" ]; then
         echo "error: $RAUC_OUT/$f not found." >&2
-        echo "RAUC is built from source now, not installed from Debian (os/update/rauc/versions.env says why)." >&2
+        echo "RAUC is built from source now, not installed from Debian (os/pkgs/rauc/versions.env says why)." >&2
         echo "Build it with 'MOS_BOARD=$MOS_BOARD make os-rauc'." >&2
         exit 1
     fi
@@ -220,7 +220,7 @@ PODMAN_STAGE="$OUT_DIR/podman"
 rm -rf "$PODMAN_STAGE"
 mkdir -p "$PODMAN_STAGE"
 if ! declined containers; then
-    PODMAN_OUT="$REPO_ROOT/os/podman/out-$MOS_ARCH"
+    PODMAN_OUT="$REPO_ROOT/os/pkgs/podman/out-$MOS_ARCH"
     for b in podman quadlet crun conmon netavark aardvark-dns catatonit; do
         if [ ! -f "$PODMAN_OUT/$b" ]; then
             echo "error: $PODMAN_OUT/$b not found." >&2
@@ -253,7 +253,7 @@ mkdir -p "$MOSD_STAGE"
 # could catch.
 rm -f "$OUT_DIR/mosd-build.txt"
 if ! declined mosd; then
-    bash "$REPO_ROOT/mosd/hack/build-target.sh" "$RUST_TARGET" "$ELF_ARCH"
+    bash "$REPO_ROOT/os/pkgs/mosd/hack/build-target.sh" "$RUST_TARGET" "$ELF_ARCH"
     # The commit that build embedded in mosd and apid, carried into this board's
     # output directory beside the factory root the two binaries end up in.
     # The smoke runner asserts what they REPORT against what was
@@ -262,27 +262,27 @@ if ! declined mosd; then
     # embedding works at all. Copied rather than re-derived, so the value the
     # runner compares against is the one the compiler was actually handed.
     cp "$REPO_ROOT/_out/mosd-build.txt" "$OUT_DIR/mosd-build.txt"
-    cp "$REPO_ROOT/mosd/target/$RUST_TARGET/release/mosd" "$MOSD_STAGE/mosd"
-    cp "$REPO_ROOT/mosd/dist/mosd.service" "$MOSD_STAGE/mosd.service"
-    cp "$REPO_ROOT/mosd/dist/com.mos.mosd.conf" "$MOSD_STAGE/com.mos.mosd.conf"
-    cp "$REPO_ROOT/mosd/dist/com.mos.ext.conf" "$MOSD_STAGE/com.mos.ext.conf"
-    cp "$REPO_ROOT/mosd/target/$RUST_TARGET/release/apid" "$MOSD_STAGE/apid"
-    cp "$REPO_ROOT/mosd/dist/apid.service" "$MOSD_STAGE/apid.service"
+    cp "$REPO_ROOT/os/pkgs/mosd/target/$RUST_TARGET/release/mosd" "$MOSD_STAGE/mosd"
+    cp "$REPO_ROOT/os/pkgs/mosd/dist/mosd.service" "$MOSD_STAGE/mosd.service"
+    cp "$REPO_ROOT/os/pkgs/mosd/dist/com.mos.mosd.conf" "$MOSD_STAGE/com.mos.mosd.conf"
+    cp "$REPO_ROOT/os/pkgs/mosd/dist/com.mos.ext.conf" "$MOSD_STAGE/com.mos.ext.conf"
+    cp "$REPO_ROOT/os/pkgs/mosd/target/$RUST_TARGET/release/apid" "$MOSD_STAGE/apid"
+    cp "$REPO_ROOT/os/pkgs/mosd/dist/apid.service" "$MOSD_STAGE/apid.service"
     # The MQTT bridge. Its unit lives in the crate rather than
-    # mosd/dist because the crate is where it is maintained; its D-Bus grant
-    # lives in mosd/dist beside the policy it is layered over.
-    cp "$REPO_ROOT/mosd/target/$RUST_TARGET/release/mos-mqttd" \
+    # os/pkgs/mosd/dist because the crate is where it is maintained; its D-Bus grant
+    # lives in os/pkgs/mosd/dist beside the policy it is layered over.
+    cp "$REPO_ROOT/os/pkgs/mosd/target/$RUST_TARGET/release/mos-mqttd" \
         "$MOSD_STAGE/mos-mqttd"
-    cp "$REPO_ROOT/mosd/mqttd/dist/mos-mqttd.service" "$MOSD_STAGE/mos-mqttd.service"
-    cp "$REPO_ROOT/mosd/dist/mos-mqttd.conf" "$MOSD_STAGE/mos-mqttd.conf"
+    cp "$REPO_ROOT/os/pkgs/mosd/mqttd/dist/mos-mqttd.service" "$MOSD_STAGE/mos-mqttd.service"
+    cp "$REPO_ROOT/os/pkgs/mosd/dist/mos-mqttd.conf" "$MOSD_STAGE/mos-mqttd.conf"
     # The broker the bridge above connects to. No D-Bus grant to
     # stage beside it: it is not a bus client, it only listens on TCP. Its
     # config is not staged either -- mosd renders /run/mos/mqtt-broker.toml at
     # runtime, because a file baked into an immutable root would be the same
     # listen address on every device flashed with this image.
-    cp "$REPO_ROOT/mosd/target/$RUST_TARGET/release/mos-mqtt-broker" \
+    cp "$REPO_ROOT/os/pkgs/mosd/target/$RUST_TARGET/release/mos-mqtt-broker" \
         "$MOSD_STAGE/mos-mqtt-broker"
-    cp "$REPO_ROOT/mosd/broker/dist/mos-mqtt-broker.service" \
+    cp "$REPO_ROOT/os/pkgs/mosd/broker/dist/mos-mqtt-broker.service" \
         "$MOSD_STAGE/mos-mqtt-broker.service"
 else
     echo "note: mosd declined; building rootfs without stages/33-feature-mosd"
@@ -385,15 +385,15 @@ fi
 OVERLAY_SRC="$SCRIPT_DIR/overlay-v2"
 OVERLAY_STAGE="$OUT_DIR/overlay-v2"
 
-# The RAUC system.conf is rendered from os/update/rauc/system.conf.in and the
-# layout env by os/update/rauc/render-config.sh, which owns that template and
+# The RAUC system.conf is rendered from os/pkgs/rauc/system.conf.in and the
+# layout env by os/pkgs/rauc/render-config.sh, which owns that template and
 # its assertions (the statusfile must not land on /var, the boot-attempts radix
 # range, and the fw_env.config structure). It is generated rather than
 # committed: a rendered artifact in git can drift from its template, and a
 # --check can only report that drift after the fact, not prevent it. Rendering
 # it here, on the build path that consumes it, makes the template the single
 # source of truth. The renderer writes into OVERLAY_SRC, so it must run before staging.
-MOS_BOARD="$MOS_BOARD" bash "$REPO_ROOT/os/update/rauc/render-config.sh"
+MOS_BOARD="$MOS_BOARD" bash "$REPO_ROOT/os/pkgs/rauc/render-config.sh"
 
 rm -rf "$OVERLAY_STAGE"
 mkdir -p "$OVERLAY_STAGE"
@@ -420,13 +420,13 @@ if [ -d "$BOARD_OVERLAY_SRC" ]; then
     echo "overlay: layered $(find "$BOARD_OVERLAY_SRC" -type f | wc -l) board-specific file(s) from boards/$MOS_BOARD/overlay"
 fi
 if [ ! -s "$OVERLAY_STAGE/etc/rauc/system.conf" ]; then
-    echo "error: os/update/rauc/render-config.sh produced no system.conf to stage" >&2
+    echo "error: os/pkgs/rauc/render-config.sh produced no system.conf to stage" >&2
     exit 1
 fi
 
 # A RAUC keyring inside the overlay ships in the signed read-only root, where
 # it makes every device flashed with this image trust whatever that CA signs —
-# and os/update/rauc/gen-dev-keys.sh documents dropping the DEV CA exactly here for
+# and os/pkgs/rauc/gen-dev-keys.sh documents dropping the DEV CA exactly here for
 # local bundle testing. That workflow stays possible, but only when named:
 # MOS_EXPECT_DEV_KEYRING=1 is the same explicit-toggle shape as the verifier's
 # fixture hook (MOS_VERIFY_FIXTURE_ROOT) -- nothing in the build or CI sets it,
@@ -595,7 +595,7 @@ trap 'rm -f "$log"' EXIT
 # before a forty-minute build starts rather than at the FROM line that consumes
 # them. NO --arch: both are IMAGE_ keys, which images.env pins as MULTI-
 # ARCHITECTURE index digests precisely so that a cross build picks the right
-# manifest -- the check os/podman/build.sh needs is about localhost tags, which
+# manifest -- the check os/pkgs/podman/build.sh needs is about localhost tags, which
 # carry exactly one architecture, and this file uses none.
 mapfile -t FROM_ARGS < <("$REPO_ROOT/os/build-env/from.sh" \
     MOS_IMAGE_DEBIAN_TRIXIE=IMAGE_DEBIAN_TRIXIE \

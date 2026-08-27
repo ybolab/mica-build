@@ -1,6 +1,6 @@
 // Batch 1c: the RAUC slot contract, as `/etc/rauc/system.conf` states it.
 //
-// Six checks over one generated file in the packed root -- os/update/rauc/
+// Six checks over one generated file in the packed root -- os/pkgs/rauc/
 // render-config.sh substitutes every GUID out of the board definition -- so
 // these assert the file that shipped, read back out of the squashfs the device
 // mounts, against the layout the GPT was written from. A renderer that ran with

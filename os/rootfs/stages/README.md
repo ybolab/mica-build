@@ -181,7 +181,7 @@ Debian tree gives an `{"architecture":"arm64","os":"linux"}` OCI image carrying
 digest.
 
 **What that does not cover.** Building the cx3576 root does need emulation:
-`MOS_BOARD=cx3576 bash os/update/rauc/build.sh` stops at *"the 'default' buildx
+`MOS_BOARD=cx3576 bash os/pkgs/rauc/build.sh` stops at *"the 'default' buildx
 builder does not offer linux/arm64 on this host"* before the chain is reached at
 all, and the BSP `modules.tar` has to be present too. So nothing here says
 anything about cx3576's content, its size, or whether anything in it runs —
