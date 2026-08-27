@@ -2,7 +2,7 @@
 
 - **status**: completed
 - **priority**: P2
-- **owner**: ai-agent
+- **owner**: bkd/nlijystw
 - **createdAt**: 2026-08-26
 - **completedAt**: 2026-08-27
 

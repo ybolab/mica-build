@@ -4,7 +4,7 @@
   M1/M2 item tree; the protocol is a pure state machine tested against an
   in-memory transport double, and four limits are recorded rather than hidden
 - **priority**: P1
-- **owner**: ai-agent (BKD campaign, dispatched by L1 0yncfnol)
+- **owner**: (bkd campaign)
 - **createdAt**: 2026-08-21 14:58
 - **claimedAt**: 2026-08-21 14:58
 - **completedAt**: 2026-08-21 21:23

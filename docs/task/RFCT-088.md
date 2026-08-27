@@ -3,7 +3,7 @@
 - **status**: completed — the device-side TUF verifier and mos-update-verify, 8 client tests, 15/15 green
 - **completedAt**: 2026-08-23 04:55
 - **priority**: P1
-- **owner**: ai-agent
+- **owner**: (bkd campaign)
 - **createdAt**: 2026-08-21 10:25
 - **claimedAt**: 2026-08-21 10:25
 

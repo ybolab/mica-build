@@ -3,7 +3,7 @@
 - **status**: completed — InstallUpdate/GetUpdateState/MarkUpdate on the bus, install off the service lock, Reboot warns on an unconfirmed slot; mosd 249/249
 - **completedAt**: 2026-08-23 05:20
 - **priority**: P1
-- **owner**: ai-agent
+- **owner**: (bkd campaign)
 - **createdAt**: 2026-08-21 10:25
 - **claimedAt**: 2026-08-21 10:25
 

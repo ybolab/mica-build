@@ -2,7 +2,7 @@
 
 - **status**: completed — implementation complete, both deliverables shipped; the CI lane is inert until a `privileged`-labelled runner is registered, which the file itself discloses
 - **priority**: P1
-- **owner**: ai-agent
+- **owner**: (bkd campaign)
 - **createdAt**: 2026-08-21 10:25
 - **claimedAt**: 2026-08-21 10:25
 

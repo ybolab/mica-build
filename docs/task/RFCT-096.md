@@ -2,7 +2,7 @@
 
 - **status**: completed
 - **priority**: P1
-- **owner**: ai-agent
+- **owner**: bkd/nd6nhwv6
 - **createdAt**: 2026-08-22 21:05
 
 Measured by PLAN-011 M5's T11, and it undermines the acceptance criterion this

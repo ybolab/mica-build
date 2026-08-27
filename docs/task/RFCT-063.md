@@ -2,7 +2,7 @@
 
 - **status**: completed — section 1 is measured and settled; sections 2-9 were left as stubs for sibling tasks
 - **priority**: P1
-- **owner**: ai-agent
+- **owner**: (bkd campaign)
 - **createdAt**: 2026-08-19 15:27
 - **claimedAt**: 2026-08-19 15:28
 - **completedAt**: 2026-08-19 15:50

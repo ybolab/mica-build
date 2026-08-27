@@ -3,7 +3,7 @@
 - **status**: completed — implementation complete, documentation only; no code, no image
   content and no verifier was touched, so nothing on a device is claimed
 - **priority**: P1
-- **owner**: ai-agent
+- **owner**: (bkd campaign)
 - **createdAt**: 2026-08-19 15:20
 - **claimedAt**: 2026-08-19 15:20
 - **completedAt**: 2026-08-19 16:40

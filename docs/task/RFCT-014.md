@@ -2,7 +2,7 @@
 
 - **status**: completed — implementation complete, pending hardware acceptance
 - **priority**: P1
-- **owner**: ai-agent
+- **owner**: (bkd campaign)
 - **createdAt**: 2026-08-18 03:39
 - **claimedAt**: 2026-08-18 03:39
 - **completedAt**: -

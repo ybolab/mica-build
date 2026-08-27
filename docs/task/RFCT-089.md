@@ -2,7 +2,7 @@
 
 - **status**: completed — the bus contract and the read-only `com.mos.Item1` façade both landed; M2 owns the write path
 - **priority**: P1
-- **owner**: ai-agent (BKD campaign, dispatched by L1 0yncfnol)
+- **owner**: (bkd campaign)
 - **createdAt**: 2026-08-21 14:58
 - **claimedAt**: 2026-08-21 14:58
 - **completedAt**: 2026-08-21 19:49

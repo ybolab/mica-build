@@ -2,7 +2,7 @@
 
 - **status**: completed
 - **priority**: P2
-- **owner**: ai-agent
+- **owner**: bkd/nd6nhwv6
 - **createdAt**: 2026-08-22 17:10
 
 Raised by PLAN-011 M5 (RFCT-093), deliberately not fixed there.

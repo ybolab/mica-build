@@ -2,7 +2,7 @@
 
 - **status**: completed — `mosd/apid/src/bundle.rs` implements api.md §5.2 and §5.3 with 27 tests; four findings reported rather than designed around
 - **priority**: P1
-- **owner**: ai-agent
+- **owner**: (bkd campaign)
 - **createdAt**: 2026-08-20 14:27
 - **completedAt**: 2026-08-20 16:05
 

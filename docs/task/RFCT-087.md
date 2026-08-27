@@ -3,7 +3,7 @@
 - **status**: completed — FEASIBLE; the shipped boot.cmd runs byte-unmodified under sandbox, harness 72/72 PASS, offline after first build
 - **completedAt**: 2026-08-23 07:35
 - **priority**: P1
-- **owner**: ai-agent
+- **owner**: (bkd campaign)
 - **createdAt**: 2026-08-21 10:25
 - **claimedAt**: 2026-08-21 10:25
 

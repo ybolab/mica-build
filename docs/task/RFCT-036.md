@@ -5,7 +5,7 @@
   verifiers, `make os-health-test` and `make os-repart-test` all green; no
   on-device sshd behaviour is claimed
 - **priority**: P1
-- **owner**: ai-agent
+- **owner**: (bkd campaign)
 - **createdAt**: 2026-08-19 09:39
 - **claimedAt**: 2026-08-19 09:39
 - **completedAt**: 2026-08-19 13:05

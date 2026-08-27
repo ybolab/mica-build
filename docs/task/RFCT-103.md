@@ -2,7 +2,7 @@
 
 - **status**: completed — implementation complete, image verify 381/381, `os/ui-location-test.sh` 59/59 cases, mosd workspace 517/517, `os/quadlet-doc-test.sh` 12/12, `docs-verify` 342/342
 - **priority**: P1
-- **owner**: ai-agent
+- **owner**: (bkd campaign)
 - **createdAt**: 2026-08-23 18:00
 - **claimedAt**: 2026-08-23 18:00
 

@@ -2,7 +2,7 @@
 
 - **status**: completed — sections 4, 5, 6 and 10.2 proposed; the traversal rules and the fallback are specified to the point of being testable
 - **priority**: P1
-- **owner**: ai-agent
+- **owner**: (bkd campaign)
 - **createdAt**: 2026-08-19 15:27
 - **claimedAt**: 2026-08-19 15:28
 - **completedAt**: 2026-08-19 16:12

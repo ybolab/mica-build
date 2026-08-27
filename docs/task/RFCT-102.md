@@ -2,7 +2,7 @@
 
 - **status**: completed — implementation complete, image verify 376/376, `os/ui-location-test.sh` 54/54 cases, `check.sh` 506/506
 - **priority**: P1
-- **owner**: ai-agent
+- **owner**: (bkd campaign)
 - **createdAt**: 2026-08-23 14:20
 - **claimedAt**: 2026-08-23 14:20
 

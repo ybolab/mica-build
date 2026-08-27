@@ -2,7 +2,7 @@
 
 - **status**: completed — `docs/design/api.md` §4.3 and §4.4 implemented as pure functions with a per-guard test suite; three findings reported rather than designed around
 - **priority**: P1
-- **owner**: ai-agent
+- **owner**: (bkd campaign)
 - **createdAt**: 2026-08-20 14:27
 - **claimedAt**: 2026-08-20 14:34
 - **completedAt**: 2026-08-20 15:36

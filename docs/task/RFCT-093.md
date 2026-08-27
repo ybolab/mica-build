@@ -2,7 +2,7 @@
 
 - **status**: completed
 - **priority**: P1
-- **owner**: ai-agent (BKD campaign 2, dispatched by L1 0yncfnol)
+- **owner**: (bkd campaign)
 - **createdAt**: 2026-08-22 09:40
 - **claimedAt**: 2026-08-22 09:40
 - **completedAt**: 2026-08-22

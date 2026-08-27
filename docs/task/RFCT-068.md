@@ -2,7 +2,7 @@
 
 - **status**: completed — the document is anchored, not re-measured and not superseded; the decision between those three is the substance of this record
 - **priority**: P1
-- **owner**: ai-agent
+- **owner**: (bkd campaign)
 - **createdAt**: 2026-08-19 15:54
 - **claimedAt**: 2026-08-19 15:55
 - **completedAt**: 2026-08-19 16:04

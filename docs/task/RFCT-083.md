@@ -2,7 +2,7 @@
 
 - **status**: completed — 30 findings fixed across 56 files, three recorded as no-action, seven named as roadmap
 - **priority**: P1
-- **owner**: ai-agent
+- **owner**: (bkd campaign)
 - **createdAt**: 2026-08-21 06:10
 - **claimedAt**: 2026-08-21 06:10
 - **completedAt**: 2026-08-21 08:20
