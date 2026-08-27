@@ -20,7 +20,12 @@ REPO_ROOT="$(cd "${SCRIPT_DIR}/../../.." && pwd)"
 MOS_BOARD="${MOS_BOARD:-cx3576}"
 LAYOUT_ENV="${REPO_ROOT}/os/boards/${MOS_BOARD}/board.env"
 OVERLAY="${REPO_ROOT}/os/rootfs/overlay-v2"
-SYSTEM_CONF_IN="${SCRIPT_DIR}/system.conf.in"
+# Overridable so a test can drive the renderer against a deliberately-broken
+# template; every real invocation uses the tree's own files. The override
+# currently has no caller. It is kept because it is the only way to reach the
+# renderer's refusal branches without editing a committed template, and a knob
+# with no caller is visible here whereas a deleted one is not.
+SYSTEM_CONF_IN="${SYSTEM_CONF_IN:-${SCRIPT_DIR}/system.conf.in}"
 SYSTEM_CONF_OUT="${SYSTEM_CONF_OUT:-${OVERLAY}/etc/rauc/system.conf}"
 FSTAB_IN="${OVERLAY}/etc/fstab.in"
 FW_ENV_IN="${OVERLAY}/etc/fw_env.config.in"
