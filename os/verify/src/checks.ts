@@ -96,7 +96,7 @@ export interface ImageContext {
    *
    * The seam the LAYOUT-addressed families need. `extract` above resolves a
    * partition through the GPT, which is right for everything that reads a
-   * partition and wrong for the four ext4 tiers: os/verify-image-v2.sh:2309
+   * partition and wrong for the four ext4 tiers: os/verify-image-v2.sh:2309 (deleted: PLAN-014)
    * `dd`s them at `PART_START_MIB_x`, the offset the board definition walks to,
    * and a check that read them through the GPT would agree with a partition
    * that had moved. `gpt-partition-start` is the check that says the two agree.

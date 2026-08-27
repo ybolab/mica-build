@@ -263,7 +263,7 @@ describe('every failure is reported, and none is swallowed', () => {
   })
 
   test('verifyGpt ALSO fails on problem text with exit 0, which is its other shape', async () => {
-    // os/mkimage-v2.sh: "Both failure shapes -- nonzero exit AND problem text
+    // os/mkimage-v2.sh (deleted: PLAN-014): "Both failure shapes -- nonzero exit AND problem text
     // with exit 0 -- must reach the same friendly error." The second shape is
     // the one an exit-status check misses, so it is produced for real: a valid
     // table, and then a disk shrunk underneath it. Overlapping partitions do

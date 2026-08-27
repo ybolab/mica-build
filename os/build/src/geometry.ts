@@ -9,7 +9,7 @@
 // correct: os/verify/src/lint.ts reports a contradiction, this refuses to use
 // one, because there is no honest single number to hand an assembler when the
 // file declares two. It stops short of the derived layout too -- the rootfs
-// slot size and the starts chained off it, differently in os/mkimage-v2.sh and
+// slot size and the starts chained off it, differently in os/mkimage-v2.sh (deleted: PLAN-014) and
 // os/mkimage-x64.sh -- because those depend on inputs that do not exist until
 // an assembly runs and sit under a byte-identity gate.
 
@@ -341,7 +341,7 @@ export function modelGeometry(board: Board): Geometry {
       fakeTime: req('E2FSPROGS_FAKE_TIME', 'without it mke2fs stamps the current time into every superblock'),
       fileMtime,
       // `@1577836800` is the `touch -d` spelling; mkimage wants the bare
-      // number in SOURCE_DATE_EPOCH. os/mkimage-v2.sh writes
+      // number in SOURCE_DATE_EPOCH. os/mkimage-v2.sh (deleted: PLAN-014) writes
       // `SOURCE_DATE_EPOCH="${FILE_MTIME#@}"` at the call; deriving it once
       // here is the same derivation with one place to be wrong.
       sourceDateEpoch: fileMtime.startsWith('@') ? fileMtime.slice(1) : fileMtime,

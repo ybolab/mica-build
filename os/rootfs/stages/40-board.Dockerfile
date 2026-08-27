@@ -18,7 +18,7 @@
 #   RAUC_BOOTLOADER        whether grub-editenv is needed at all
 # plus two directories os/rootfs/build-v2.sh stages from the board's own trees,
 # either of which may legitimately be empty: BOARD_FIRMWARE_DIR
-# (board/<b>/rootfs/firmware, filtered to BOARD_FIRMWARE_FILES) and
+# (os/boards/<b>/bsp/rootfs/firmware, filtered to BOARD_FIRMWARE_FILES) and
 # BOARD_HWINIT_DIR (os/boards/<b>/hwinit).
 
 # The board work runs after the features because the stage numbers have to read
@@ -95,7 +95,7 @@ RUN --mount=type=bind,source=os/rootfs/scripts,target=/mos-scripts \
 # not this one's.
 
 # Which files is the board's decision, not this file's.
-# board/<b>/rootfs/firmware is the vendor BSP drop: 32 files, most of them for
+# os/boards/<b>/bsp/rootfs/firmware is the vendor BSP drop: 32 files, most of them for
 # other AIC parts (8800dc, 8800dw) and other silicon revisions. Only the
 # confirmed U02 runtime set may enter a signed root, and that set is
 # BOARD_FIRMWARE_FILES in os/boards/<b>/board.env. os/verify asserts the image
@@ -121,7 +121,7 @@ RUN --mount=type=bind,source=os/rootfs/scripts,target=/mos-scripts \
 # directory, plus the per-board facts they read, staged into /etc/mos. The
 # mechanism is board-agnostic -- nothing below names a board, and neither does
 # the content. os/boards/<board>/hwinit is staged into BOARD_HWINIT_DIR the way
-# board/<board>/init is staged into BOARD_INIT_DIR, and a board with no hwinit
+# os/boards/<board>/bsp/init is staged into BOARD_INIT_DIR, and a board with no hwinit
 # directory stages an empty one.
 
 # Both directories may be empty, and on x64 both are. Every unit is
@@ -141,7 +141,7 @@ RUN --mount=type=bind,source=os/rootfs/scripts,target=/mos-scripts \
 # An hwinit directory that went missing stages an empty one, and a board that
 # declares any fact at all then hits the first assertion in the loop below ("a
 # board fact that no hwinit script reads"), by name. The other half -- a board
-# that declares BOARD_HWINIT_CONFS and whose board/<board>/init went missing --
+# that declares BOARD_HWINIT_CONFS and whose os/boards/<board>/bsp/init went missing --
 # stages no conf, installs no unit, and the two counts agree at zero; os/verify
 # holds that at image level, comparing declared facts against installed
 # helpers. A build-time copy of the verifier's equality would be the second

@@ -1,4 +1,4 @@
-# manifest.raucm — TEMPLATE, rendered by os/update/bundle.sh.
+# manifest.raucm — TEMPLATE, rendered by os/build/src/bundle.ts.
 #
 # One bundle installs both members of a slot group: the raw squashfs+verity
 # rootfs image and the FAT32 boot slot payload (kernel, dtb, boot.scr, the
@@ -18,7 +18,7 @@ description=mos A/B update bundle for @COMPATIBLE@
 # whole bundle up front — and it is the only format system.conf accepts.
 format=verity
 
-# The image set is rendered per board by os/update/bundle.sh: the rootfs half is the
+# The image set is rendered per board by os/build/src/bundle.ts: the rootfs half is the
 # same everywhere, the boot half is one FAT image on a U-Boot board and three
 # files on a grub board. See @SLOTS@ in os/pkgs/rauc/system.conf.in for why.
 [image.rootfs]

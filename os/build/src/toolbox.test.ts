@@ -57,7 +57,7 @@ describe('the route is measured, and both of them happen here', () => {
 
   test('the host probe is a capability question, not a presence one', async () => {
     // mke2fs IS on this host's PATH and still cannot write these layouts: 1.46.5
-    // has no `-O ^orphan_file`. os/mkimage-v2.sh's host_can_assemble() probes
+    // has no `-O ^orphan_file`. os/mkimage-v2.sh's (deleted: PLAN-014) host_can_assemble() probes
     // for the same reason -- "older host tools silently cannot, so probe
     // instead of guessing".
     // Asserted as the RULE, not as this machine: the suite runs on a host with

@@ -198,4 +198,5 @@ its record's head fails naming both sides (RFCT-171).
 - [x] [**RFCT-172 PLAN-020 M3: citation scanning widened to docs/task and docs/research, with the dated-record exemption**](RFCT-172.md) `P2`
 - [x] [**RFCT-173 PLAN-020 M4: the self-test fixture repoints to os/pkgs, and the unquoted count becomes a ratchet**](RFCT-173.md) `P2`
 - [x] [**RFCT-180 PLAN-021 M1: the quick-fix batch**](RFCT-180.md) `P2`
+- [x] [**RFCT-190 PLAN-021 M3a: the os tree ghost-reference sweep — provenance and board tokens**](RFCT-190.md) `P2`
 - [x] [**RFCT-191 PLAN-021 M3b: docs ghost sweep, recorded residuals, owner sweep and gate repairs**](RFCT-191.md) `P2`

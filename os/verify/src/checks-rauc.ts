@@ -48,7 +48,7 @@ async function systemConf(ctx: ImageContext): Promise<string> {
  * One key out of one `[slot.<name>]` section.
  *
  * The section ends at the next line beginning `[`, and the first matching key
- * wins -- os/verify-image-v2.sh:2819-2825's awk, in the same order, because a
+ * wins -- os/verify-image-v2.sh:2819-2825's (deleted: PLAN-014) awk, in the same order, because a
  * reader that took the LAST match would answer with a different section's value
  * for a config whose sections are not closed the way it expects.
  */

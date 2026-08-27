@@ -113,7 +113,7 @@ describe('against the real veritysetup', () => {
   test('a payload with ONE byte changed does not verify -- and that is a verdict, not a throw', async () => {
     // The distinction matters for the caller: a payload that fails to verify is
     // something the verifier REPORTS, and a veritysetup that could not run at
-    // all is an error. os/verify-image-v2.sh reports the first as a fail line.
+    // all is an error. os/verify-image-v2.sh (deleted: PLAN-014) reports the first as a fail line.
     const p = makePayload('t.img')
     const hash = await format(tb, spec(p))
     const fd = openSync(p, 'r+')

@@ -13,7 +13,7 @@
 # afterwards.
 
 # The caller-facing spelling is unchanged: `WITH_CONTAINERS=0 bash
-# os/rootfs/build-v2.sh` and board/<name>/containers.env still work, and
+# os/rootfs/build-v2.sh` and os/boards/<name>/bsp/containers.env still work, and
 # build-v2.sh turns them into `--without containers`.
 
 # `podman-assert-config` is last in this file because it asserts what the

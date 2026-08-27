@@ -158,7 +158,7 @@ describe('against the real rauc', () => {
     // would read a bundle unverified without one. It does not: `rauc info`
     // exits 1 with "No keyring file or directory provided". That is the safer
     // behaviour and it is recorded here rather than in a comment, because M6d
-    // will thread a keyring through os/update/bundle.sh's verify_bundle and
+    // will thread a keyring through os/update/bundle.sh's (deleted: PLAN-014) verify_bundle and
     // should not have to discover it by failure.
     let err: ToolError | undefined
     try { await info(tb, { bundle: bundlePath }) } catch (e) { err = e as ToolError }

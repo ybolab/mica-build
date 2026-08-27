@@ -118,7 +118,7 @@ their scripts come from `os/boards/<board>/hwinit/` (six of each on cx3576; x64
 has no such directory and stages an empty one), and the board-specific facts
 they read — module names, sysfs paths, UART device, CAN defaults, MAC seed,
 gadget IDs — come from conf files staged from `BOARD_DIR/init/`, falling back to
-the in-repo `board/<board>/init/`, into `/etc/mos/`. Both reach
+the in-repo `os/boards/<board>/bsp/init/`, into `/etc/mos/`. Both reach
 `stages/40-board` as staged directories (`BOARD_HWINIT_DIR`, `BOARD_INIT_DIR`)
 because a `COPY` cannot be gated on an `ARG`. Every unit is condition-gated on
 its conf file and never blocks, delays, or fails the boot; WiFi association / BT
