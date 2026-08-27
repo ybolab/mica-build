@@ -32,10 +32,11 @@ typed `BTreeMap<String, IfaceSettings>`. `IfaceSettings` carries
 `#[serde(deny_unknown_fields)]` and exactly two fields, `dhcp: bool` and an
 optional `static` block (`os/pkgs/mosd/mosd-settings/src/model.rs:405-413`);
 `StaticConfig` is `address` (CIDR), optional `gateway`, and `dns`
-(`os/pkgs/mosd/mosd-settings/src/model.rs:416-427`). There is no interface
+(`os/pkgs/mosd/mosd-settings/src/model.rs:562-574`). There is no interface
 type, no parent/child relation, and no tunnel anywhere in the model.
 
-Writes go through `Settings::set` (`os/pkgs/mosd/mosd-settings/src/model.rs:454-475`):
+Writes go through `Settings::set` — `pub fn set(&mut self, path: &str, value: Value)`
+(`os/pkgs/mosd/mosd-settings/src/model.rs:602`):
 the path is split, the JSON tree is patched, and the whole candidate is
 re-deserialized into `Settings` — `deny_unknown_fields` everywhere makes that
 the validation step (`os/pkgs/mosd/mosd-settings/src/model.rs:465-469`).
@@ -78,16 +79,17 @@ it"* (`docs/task/RFCT-135.md:28-29`).
 ### 1.3 apid: forms and write path
 
 The `/network` pane is `.route("/network", get(network_form).post(network_submit))`
-(`os/pkgs/mosd/apid/src/routes.rs:152`). `valid_iface_name` accepts 1–15 bytes
+(`os/pkgs/mosd/apid/src/routes.rs:155`). `valid_iface_name` accepts 1–15 bytes
 of alphanumerics plus `.`, `_`, `-` (`os/pkgs/mosd/apid/src/routes.rs:799-804`),
 and the pane's error text advertises the dot
 (`os/pkgs/mosd/apid/src/routes.rs:843`). `network_submit` builds the value
 (`os/pkgs/mosd/apid/src/routes.rs:853-870`) and writes it as a dot-path,
-`set_settings(&format!("network.{iface}"), &value)`
-(`os/pkgs/mosd/apid/src/routes.rs:1527`), over D-Bus:
+`set_settings(&format!("network.{iface}"), &value)` (measured at `4580dfb` in
+`os/pkgs/mosd/apid/src/routes.rs`, where the composition was unconditional;
+RFCT-201 has since moved it into `iface_settings_path`), over D-Bus:
 `fn set_settings(&self, path: &str, value_json: &str)` on `com.mos.mosd`
-(`os/pkgs/mosd/apid/src/bus_client.rs:21-24`). The read-only API mirrors the
-same dot-path at `GET /api/v1/settings/{*path}` (`docs/design/api.md:1094-1100`).
+(`os/pkgs/mosd/apid/src/bus_client.rs:15-22`). The read-only API mirrors the
+same dot-path at `GET /api/v1/settings/{*path}` (`docs/design/api.md:230`).
 
 ### 1.4 mosd: reconcile
 
@@ -117,8 +119,9 @@ file is editable by anything that can write STATE"*
 ### 1.5 The images
 
 systemd-networkd is present and enabled on **every** image of **both** boards:
-the shared install stage runs `os/rootfs/scripts/network-and-ssh-units.sh`
-(`os/rootfs/stages/20-install.Dockerfile:38`), which writes the image default
+the shared install stage bind-mounts `os/rootfs/scripts` and runs
+`sh /mos-scripts/network-and-ssh-units.sh`
+(`os/rootfs/stages/20-install.Dockerfile:37-38`), which writes the image default
 `80-dhcp.network`, runs `systemctl enable systemd-networkd systemd-resolved`,
 force-creates the `multi-user.target.wants` symlinks and asserts them
 (`os/rootfs/scripts/network-and-ssh-units.sh:6-21`). The base package set
@@ -142,7 +145,7 @@ validates against the typed tree and saves TOML atomically
 `50-mos-<iface>.network`, sweeps, reloads networkd
 (`os/pkgs/mosd/mosd/src/reconciler/network.rs:440-500`) → the apply result is
 recorded in the live-state tree per reconciler name and served over D-Bus and
-`GET /api/v1/state/network` (`docs/design/api.md:1280`).
+`GET /api/v1/state/network` (`docs/design/api.md:1337`).
 
 ---
 
@@ -155,7 +158,8 @@ segment is either *bare* (as today: no `.`, no `"`) or *double-quoted*, in
 which `.` is literal: `network."eth0.100".dhcp`. Reads and writes share one
 segment lexer in `mosd-settings` (`split_path`, `json_path_get`); apid's
 writers quote any segment that contains a dot when composing paths such as
-`network.{iface}` (`os/pkgs/mosd/apid/src/routes.rs:1527`); paths the daemon
+`format!("network.{}", quote_path_segment(iface))`
+(`os/pkgs/mosd/apid/src/routes.rs:857`); paths the daemon
 emits (validation errors, the `SettingsChanged` signal) use the canonical
 spelling — quoted only when required.
 
@@ -195,10 +199,10 @@ impossible in a key rather than merely unaddressable.
 `BTreeMap<String, _>` accepts any key — so quoting changes *addressability*,
 not validation. The value at the quoted key is still deserialized into
 `IfaceSettings` under `deny_unknown_fields`
-(`os/pkgs/mosd/mosd-settings/src/model.rs:405-413`), so `network."eth0.100"`
+(`os/pkgs/mosd/mosd-settings/src/model.rs:440-442`), so `network."eth0.100"`
 must hold a valid interface body, and the whole-candidate re-deserialization
-in `Settings::set` (`os/pkgs/mosd/mosd-settings/src/model.rs:465-469`) is
-untouched. The failure mode RFCT-135 describes — a *key* misread as a *field*
+in `Settings::set` — `serde_json::from_value(root)`
+(`os/pkgs/mosd/mosd-settings/src/model.rs:614`) — is untouched. The failure mode RFCT-135 describes — a *key* misread as a *field*
 — becomes unrepresentable, because the quoted segment never reaches the struct
 namespace.
 
@@ -537,7 +541,7 @@ and `wireguard` from every `network` entry; **remove entirely** every entry
 whose `kind` was not physical. Precedent and reasoning are v3→v2's: keeping
 keys v6 cannot deserialize would leave a document `deny_unknown_fields`
 refuses, while *"dropping them costs nothing v2 could have acted on"*
-(`os/pkgs/mosd/mosd-settings/src/migration.rs:162-167`) — a v6 reconciler
+(`os/pkgs/mosd/mosd-settings/src/migration.rs:164-169`) — a v6 reconciler
 given a stub named `wg0` would render a `.network` matching no device, a lie
 in unit form. Key files (`wg-*.key`) are left on STATE: 0640 in a root-owned
 directory, reused on the next upgrade, same posture as an interrupted
