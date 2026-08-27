@@ -181,3 +181,4 @@ Each task is a single line linking to its detail file. All detailed information 
 - [x] [**RFCT-157 PLAN-017 M3: boards.md and display.md re-measured against os/build and os/boards**](RFCT-157.md) `P2`
 - [x] [**RFCT-158 PLAN-017 M4: the provenance lines in access.md, connd.md and provisioning.md**](RFCT-158.md) `P2`
 - [x] [**RFCT-159 PLAN-017: the five task records, the five index rows and the plan's status**](RFCT-159.md) `P2`
+- [-] [**RFCT-165 PLAN-019 M1: the os/pkgs target layout, designed before it is executed**](RFCT-165.md) `P2`
