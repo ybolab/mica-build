@@ -172,9 +172,11 @@ The readers — the pane, the OpenAPI document — stay M6's.
 
 ## The tests
 
-Twenty-five added: ten in the keystore's own module, twelve in the
-reconciler's, three on the bus. The hygiene ones are the point of the
-milestone.
+Twenty-six written and twenty-five added: ten in the keystore's own module,
+thirteen in the reconciler's, three on the bus, against M4's
+`leaves_a_wireguard_entry_inert`, which is gone because the tunnel it asserted
+was inert is the thing this milestone renders. The hygiene ones are the point
+of the milestone.
 
 | test | what it pins |
 | --- | --- |
