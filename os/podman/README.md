@@ -1,7 +1,7 @@
 # `os/podman` — the container engine, built from source
 
 Produces seven binaries for `MOS_ARCH` (arm64 by default) into
-`os/podman/out-<arch>/`. Same arrangement as `board/cx3576/kernel/`: builder
+`os/podman/out-<arch>/`. Same arrangement as `os/boards/cx3576/bsp/kernel/`: builder
 stages, then a `FROM scratch AS artifact` that `-o` exports. The output
 directory follows the architecture so an arm64 and an amd64 set can coexist.
 

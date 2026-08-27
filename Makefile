@@ -46,7 +46,7 @@ help:
 	@echo "  podman              build the container engine from source into os/podman/out-\$$MOS_ARCH"
 	@echo "  build-env           build the pinned builder images localhost/mos-build-{base,c,go,rust}"
 	@echo "  os-quadlet-doc-test run docs/design/containers.md's examples through Quadlet"
-	@echo "  cx3576-<t>          delegate target <t> to board/cx3576 (uboot|kernel|rootfs|image|clean)"
+	@echo "  cx3576-<t>          delegate target <t> to os/boards/cx3576/bsp (uboot|kernel|rootfs|image|clean)"
 
 # `make os` is retired. It keeps a recipe rather than being deleted for the
 # reason x64-% has one: with neither a recipe nor a rule, `make os` prints
@@ -315,10 +315,10 @@ build-env:
 	bash os/build-env/build.sh
 
 cx3576-%:
-	$(MAKE) -C board/cx3576 $*
+	$(MAKE) -C os/boards/cx3576/bsp $*
 
 x64-%:
-	@echo "x64 has no BSP build; use the talos image pipeline (board/x64/README.md)" && false
+	@echo "x64 has no BSP build; assemble its image with: bash os/build/run.sh --mkimage-x64 (board definition: os/boards/x64/board.env)" && false
 
 # The apid API suite: boot the x64 image in QEMU with apid's port forwarded,
 # wait for the daemon to answer, and drive it over a real socket. It is the

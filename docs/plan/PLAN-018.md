@@ -1,10 +1,11 @@
 # PLAN-018 Board consolidation: board/ moves under os/boards/, one definition per board
 
-- **status**: approved
+- **status**: completed
+- **completedAt**: 2026-08-27
 - **approvedAt**: 2026-08-26 22:05
 - **createdAt**: 2026-08-26 21:55
 - **relatedTask**: RFCT-160..169 reserved
-- **milestones**: M1 the move and the path rewrites, byte-identical artifacts; M2 board.yaml retired into board.env and boards.md; M3 x64 cleanup and the stale Makefile line; M4 docs path sweep under the gating checker
+- **milestones**: M1 **complete 2026-08-27** (RFCT-160) — the move and the path rewrites, every consumer repointed; M2 **complete 2026-08-27** (RFCT-161) — board.yaml retired into board.env comments, both files deleted; M3 **complete 2026-08-27** (RFCT-162) — x64 cleanup and the stale Makefile line, `board/` gone; M4 **complete 2026-08-27** (RFCT-163) — docs path sweep, `bash docs/verify-citations.sh` 642/642 with zero unresolved citations, against M1's Amendment 1 acceptance rather than a whole-tree sweep
 
 ## Context
 

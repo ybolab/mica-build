@@ -3,7 +3,7 @@
 > English | [中文](boards.zh.md)
 >
 > How a board joins mos: what it must produce, what the OS build consumes, and
-> the hard assertions between them. Reference implementation: `board/cx3576`.
+> the hard assertions between them. Reference implementation: `os/boards/cx3576/bsp`.
 
 ## 1. Separation rule
 
@@ -29,7 +29,7 @@ board/<name>/
 └── rootfs/             # optional demo/smoke-test rootfs (NOT the product)
 ```
 
-Boards with an upstream-supported boot chain (e.g. `board/x64`, UEFI) carry
+Boards with an upstream-supported boot chain (e.g. `os/boards/x64`, UEFI) carry
 only `board.yaml` + README — firmware boots them, and the kernel is Debian's
 own `linux-image-amd64`, installed by the rootfs stage chain.
 
@@ -56,7 +56,7 @@ assert (grep on the final .config, fail the build otherwise):
 - Runtime: cgroup v2 set, containerd/netfilter prerequisites (the docker set
   already asserted in cx3576's Dockerfile), seccomp.
 - Shared baseline fragment: maintained once for all boards at
-  `board/common/mos-required.fragment` (buildx named context `mos-common`),
+  `os/boards/common/mos-required.fragment` (buildx named context `mos-common`),
   merged before olddefconfig — the source of truth for the list above plus the
   pseudo filesystems and security options it also asserts (hugetlbfs, tracing,
   SELinux + LSM boot list). Board-specific requirements stay in the board's own

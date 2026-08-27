@@ -477,7 +477,7 @@ would be right about today's file and wrong about the next one.
 
 | driven | what it prints |
 |---|---|
-| `uboot-mos` absent | "build it with 'make -C board/cx3576 uboot-mos'", "is NOT a substitute", "CONFIG_ENV_IS_NOWHERE", "silently never run the RAUC A/B handshake" |
+| `uboot-mos` absent | "build it with 'make -C os/boards/cx3576/bsp uboot-mos'", "is NOT a substitute", "CONFIG_ENV_IS_NOWHERE", "silently never run the RAUC A/B handshake" |
 | `uboot-mos` byte-identical to the debug build | "is byte-identical to the debug build at …", quoting the env offsets the real variant carries, and "do not copy or symlink the other variant into place" |
 | **no debug build present at all** | assembles. The control: its absence disables nothing else, and without this the guard could be "always refuses" |
 | through the CLI, with no `uboot-mos` on disk | the same sentence, plus "note: BOARD_DIR is currently …" |

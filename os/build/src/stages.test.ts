@@ -953,7 +953,7 @@ describe('the chain this tree actually ships', () => {
     .filter((e) => e.isDirectory())
     .map((e) => e.name)
 
-  // `COPY board/cx3576/rootfs/firmware/...` must be seen; `# ... on cx3576 ...`
+  // `COPY os/boards/cx3576/bsp/rootfs/firmware/...` must be seen; `# ... on cx3576 ...`
   // must not. Docker line continuations mean an instruction can span lines, so
   // this keeps every non-comment line rather than trying to reassemble them.
   const instructionLines = (text: string): string[] =>
@@ -977,7 +977,7 @@ describe('the chain this tree actually ships', () => {
     // check whose subject never occurs passes on an empty tree, which is the
     // shape of green this campaign keeps finding.
     const before = [
-      '# COPY board/cx3576/rootfs/firmware/fmacfw_8800d80_u02.bin /tmp/fw/',
+      '# COPY os/boards/cx3576/bsp/rootfs/firmware/fmacfw_8800d80_u02.bin /tmp/fw/',
       'COPY os/boards/cx3576/hwinit/ /tmp/hwinit/',
     ].join('\n')
     expect(namesABoard(before)).toEqual(['cx3576: COPY os/boards/cx3576/hwinit/ /tmp/hwinit/'])

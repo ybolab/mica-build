@@ -194,7 +194,7 @@ On a host with nothing but docker:
     make os-verify-cx3576-v2        RESULT: FAIL (387/395 checks, 3 skipped)   rc=1
 
 cx3576's eight FAILs are the BSP byte-compares whose source tree a checkout does
-not carry: `board/cx3576/out/` is not populated by a clone, so eight conclusions
+not carry: `os/boards/cx3576/bsp/out/` is not populated by a clone, so eight conclusions
 read `… compare source not found: /board/out/…` and `u-boot is 0 bytes`. The
 verifier **expresses that absence rather than populating the tree**: a
 populated `board/` would turn those eight FAILs into passes, which changes the

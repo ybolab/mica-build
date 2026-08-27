@@ -9,7 +9,7 @@
 # engineer than no indicator at all.
 #
 # Upstream expresses the same semantics for the Alpine v1 demo as an OpenRC
-# service (board/cx3576/rootfs/alpine/rootfs/etc/init.d/status-led). There is
+# service (os/boards/cx3576/bsp/rootfs/alpine/rootfs/etc/init.d/status-led). There is
 # no upstream systemd rootfs and therefore no unit to port: the semantics are
 # taken from there, the expression is this repository's own.
 #
