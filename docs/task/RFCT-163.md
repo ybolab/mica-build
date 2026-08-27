@@ -271,3 +271,5 @@ unrunnable because `os/update/rauc/build.sh:63` pins `--builder default` while
 its `FROM localhost/mos-build-*` stages need that image family reachable from
 whichever builder runs them. Both facts are recorded as pointers; neither was
 acted on.
+
+<!-- dated-record: a frozen worklist or exhibit of what was measured then; re-pointing its citations would falsify the record; exempt from docs/verify-citations.sh (RFCT-172) -->

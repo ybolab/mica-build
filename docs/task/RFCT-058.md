@@ -1,6 +1,6 @@
 # RFCT-058 Re-anchor dashboard.md's D-Bus policy claims to RFCT-048, state the citation rule, correct the README `talos/` line
 
-- **status**: implementation complete — `make docs-verify` green (136/136),
+- **status**: completed — implementation complete, `make docs-verify` green (136/136),
   `bash mosd/hack/check.sh` green
 - **priority**: P1
 - **owner**: ai-agent
@@ -282,7 +282,7 @@ are dismissed on an **inertness** basis instead: **no build step reads the root
 returns exactly three hits (ugrep), and **none of them is the root README**:
 `Makefile:28` and `Makefile:100` name **`board/x64/README.md`** inside `@echo`
 strings, and `Makefile:88` is a **comment** about `docs/README.md`. The docs gate
-itself reads `docs/README.md` (`docs/verify-index.sh:26`), not the root file.
+itself reads `docs/README.md` (`docs/verify-index.sh:42`), not the root file.
 The root `README.md` is documentation that nothing in the build consumes, so the
 image builds, both verifiers and the health/shadow/dbus/repart/bundle gates are
 **unreachable from this diff**, not merely unlikely to be affected.

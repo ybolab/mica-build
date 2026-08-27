@@ -486,3 +486,5 @@ its own task record. Two defects found in code under test — the CI preconditio
 and the visibility-guard comment — were in code this change itself introduced,
 and were fixed here rather than recorded, which is the opposite case to M3b's
 findings in `lint.sh`.
+
+<!-- dated-record: a measurement record frozen at its commit; its citations name the tree as it was then (pre-PLAN-019 layout, pre-rewrite design documents); exempt from docs/verify-citations.sh (RFCT-172) -->

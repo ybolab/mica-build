@@ -1,8 +1,9 @@
 # PLAN-020 Gate hardening: close the eight measured silent spaces
 
-- **status**: approved
+- **status**: completed
 - **createdAt**: 2026-08-27 17:05
 - **approvedAt**: 2026-08-27 17:05
+- **completedAt**: 2026-08-27
 - **relatedTask**: RFCT-170..179 reserved
 - **milestones**: M1 citation-checker upgrades; M2 index-checker upgrades; M3 scope widening; M4 self-test repoint (P4) and closeout
 

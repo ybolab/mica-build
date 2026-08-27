@@ -14,6 +14,22 @@
 # catches a rename: a forward-only check passes happily on an index full of
 # entries pointing at files that no longer exist.
 #
+# docs/README.md's per-entry DESCRIPTION bullets are NOT asserted against the
+# documents they describe, DELIBERATELY (PLAN-020 M2 "space 3", decided in
+# docs/task/RFCT-171.md). There is no shared token to assert: the bullets and
+# the documents' first headings are independently written prose -- the README
+# says "connd.md -- unified connectivity service: WiFi STA/AP, Bluetooth,
+# CAN" while connd.md's own H1 says "Design: connd -- WiFi station and access
+# point on the systemd/mosd base" -- and zero of the 21 indexed design/
+# research files carry a bullet equal to their heading under any punctuation
+# or case normalization. An equality contract would mean rewriting one side
+# tree-wide, content edits in settled documents that M2's scope forbids; and
+# a keyword-overlap heuristic goes green exactly where the one measured lying
+# bullet lives, because "WiFi" appears in both the wrong bullet and the true
+# heading (RFCT-159 finding d, the connd case). A check that cannot fail on
+# the defect it was built for is not a check, so membership stays mechanical
+# here and description truth stays a review concern.
+#
 # `*.zh.md` is excluded DELIBERATELY, and this is not an oversight to be
 # "fixed" later. Whether the existing Chinese translations are kept current is
 # a decision parked with the user and unresolved (see the rules paragraph in
@@ -134,6 +150,42 @@ for entry in $(grep -oE '\(RFCT-[^)]+\.md\)' "$TASK_INDEX" | tr -d '()' | sort -
         fail "$TASK_INDEX carries $n rows for '$entry'; that record's status now lives in two places that can disagree, and a merge that kept both sides of an append is how it got there"
     fi
 done
+
+# checkbox <-> status: a row's marker and its record's status line are two
+# independent records of the same fact, and nothing compared them (RFCT-144's
+# finding), so a row ticked `[x]` over a file that says `pending` presented an
+# open defect as finished work indefinitely. The contract lives next to the
+# Status Markers table in docs/task/index.md: the status line is
+# `- **status**: <head>` or `- **status**: <head> — <free detail>`, head is
+# exactly one of pending `[ ]`, in progress `[-]`, completed `[x]`,
+# closed `[~]`. A record with no such line, or a non-canonical head, FAILS --
+# that is the vocabulary gate holding, not a shape to be tolerated.
+while IFS='|' read -r marker entry; do
+    # a row whose record does not exist already failed the reverse check
+    [ -e "docs/task/$entry" ] || continue
+    status_line=$(grep -m1 '^- \*\*status\*\*: ' "docs/task/$entry" || true)
+    if [ -z "$status_line" ]; then
+        fail "docs/task/$entry has no parseable status line: expected '- **status**: <head>' with head one of pending|in progress|completed|closed"
+        continue
+    fi
+    status_head=${status_line#"- **status**: "}
+    status_head=${status_head%% — *}
+    case "$status_head" in
+        pending)       want=" " ;;
+        "in progress") want="-" ;;
+        completed)     want="x" ;;
+        closed)        want="~" ;;
+        *)
+            fail "docs/task/$entry status head '$status_head' is not one of pending|in progress|completed|closed"
+            continue
+            ;;
+    esac
+    if [ "$marker" = "$want" ]; then
+        ok
+    else
+        fail "$TASK_INDEX marks '$entry' '[$marker]' but docs/task/$entry says status head '$status_head', which maps to '[$want]'"
+    fi
+done < <(sed -n 's/^- \[\(.\)\] \[\*\*.*\](\(RFCT-[^)]*\.md\)).*/\1|\2/p' "$TASK_INDEX")
 
 # --- verdict ---------------------------------------------------------------
 if [ "$FAIL" -ne 0 ]; then

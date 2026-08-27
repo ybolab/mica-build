@@ -1,6 +1,6 @@
 # RFCT-053 sshd reconciler: render authorized keys for every managed login account
 
-- **status**: implementation complete — `bash mosd/hack/check.sh` green, 305
+- **status**: completed — implementation complete, `bash mosd/hack/check.sh` green, 305
   tests; no on-device sshd behaviour is claimed
 - **priority**: P1
 - **owner**: ai-agent

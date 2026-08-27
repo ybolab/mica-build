@@ -1,6 +1,6 @@
 # RFCT-010 webd v1 on the mosd bus (PLAN-010 M3)
 
-- **status**: implementation complete — pending user hardware acceptance
+- **status**: completed — implementation complete, pending user hardware acceptance
 - **priority**: P1
 - **owner**: ai-agent
 - **createdAt**: 2026-08-18 01:59

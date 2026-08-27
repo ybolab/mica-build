@@ -1,6 +1,6 @@
 # RFCT-100 Move the packed root from Debian 12 to Debian 13, and unpin the checks that were pinned to 12
 
-- **status**: implementation complete — image verify 371/371, `os/ui-location-test.sh` 43/43, `mosd/hack/check.sh` 506/506
+- **status**: completed — implementation complete, image verify 371/371, `os/ui-location-test.sh` 43/43, `mosd/hack/check.sh` 506/506
 - **priority**: P1
 - **owner**: ai-agent
 - **createdAt**: 2026-08-23 11:10

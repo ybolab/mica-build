@@ -1,6 +1,6 @@
 # RFCT-027 Image + verifier integration for the M5 access, provisioning and connd features
 
-- **status**: implementation complete — both verifiers green, on-device behaviour is the user's acceptance
+- **status**: completed — implementation complete, both verifiers green, on-device behaviour is the user's acceptance
 - **priority**: P1
 - **owner**: ai-agent
 - **createdAt**: 2026-08-19 00:23

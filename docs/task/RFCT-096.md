@@ -72,3 +72,5 @@ correct package is `dbus-daemon`, verified by T11 on 22.04, 24.04 and 26.04.
 Related: [[RFCT-092]] (a citation nothing checks), [[RFCT-094]] (a warning that
 always fires), [[RFCT-095]] (an assertion that cannot fail). This is the same
 family: a signal that cannot carry the information its reader assumes it does.
+
+<!-- dated-record: a measurement record frozen at its commit; its citations name the tree as it was then (pre-PLAN-019 layout, pre-rewrite design documents); exempt from docs/verify-citations.sh (RFCT-172) -->

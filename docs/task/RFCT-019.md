@@ -1,6 +1,6 @@
 # RFCT-019 PMA documentation finalize for PLAN-010 M4
 
-- **status**: implementation complete (re-opened once for the integration-defect catch-up, closed again)
+- **status**: completed — implementation complete (re-opened once for the integration-defect catch-up, closed again)
 - **priority**: P1
 - **owner**: ai-agent
 - **createdAt**: 2026-08-18 03:39

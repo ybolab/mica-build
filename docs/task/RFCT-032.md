@@ -1,6 +1,6 @@
 # RFCT-032 Settings schema v4: access.ssh.authorizedKeys and the key parser
 
-- **status**: implementation complete
+- **status**: completed — implementation complete
 - **priority**: P1
 - **owner**: ai-agent
 - **createdAt**: 2026-08-19 09:39

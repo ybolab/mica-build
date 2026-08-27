@@ -1,6 +1,6 @@
 # RFCT-044 Dashboard technology posture and live-value transport
 
-- **status**: proposal complete — the technology decision is the user's, and open
+- **status**: completed — proposal complete, the technology decision is the user's, and open
 - **priority**: P1
 - **owner**: ai-agent
 - **createdAt**: 2026-08-19 10:17
@@ -81,3 +81,5 @@ so the recommendation here is unaffected by the process decision
 ## Status of the decision
 
 Proposal. The user decides.
+
+<!-- dated-record: a measurement record frozen at its commit; its citations name the tree as it was then (pre-PLAN-019 layout, pre-rewrite design documents); exempt from docs/verify-citations.sh (RFCT-172) -->

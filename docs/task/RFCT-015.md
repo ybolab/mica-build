@@ -1,6 +1,6 @@
 # RFCT-015 Health gate + machine-id oneshot (PLAN-010 M4)
 
-- **status**: implementation complete (reworked after the RAUC parse defect) —
+- **status**: completed — implementation complete (reworked after the RAUC parse defect) —
   pending user hardware acceptance
 - **priority**: P1
 - **owner**: ai-agent

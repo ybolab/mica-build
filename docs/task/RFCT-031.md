@@ -1,5 +1,7 @@
 # RFCT-031 — the Rockchip loader area becomes a real GPT partition
 
+- **status**: completed
+
 Campaign `l1-o7ee8v0o-20260819002321-m5` (PLAN-010 M5). Branch `bkd/2y3696lc`,
 merged by L2 into `bkd/tnljob83`.
 

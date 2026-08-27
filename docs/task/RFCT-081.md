@@ -1,6 +1,6 @@
 # RFCT-081 Close the repository audit: a CI gate, a no-op build target, an unreferenced 12 MB asset, two stale suppressions, and the apid login curve
 
-- **status**: complete — eight findings, seven changed, one recorded as no-action
+- **status**: completed — eight findings, seven changed, one recorded as no-action
 - **priority**: P1
 - **owner**: ai-agent
 - **createdAt**: 2026-08-21 03:05

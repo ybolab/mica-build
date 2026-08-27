@@ -1,6 +1,6 @@
 # RFCT-103 PLAN-012 M1–M4: build the engine from source, replace the distribution's configuration, and give the switch something to switch
 
-- **status**: implementation complete — image verify 381/381, `os/ui-location-test.sh` 59/59 cases, mosd workspace 517/517, `os/quadlet-doc-test.sh` 12/12, `docs-verify` 342/342
+- **status**: completed — implementation complete, image verify 381/381, `os/ui-location-test.sh` 59/59 cases, mosd workspace 517/517, `os/quadlet-doc-test.sh` 12/12, `docs-verify` 342/342
 - **priority**: P1
 - **owner**: ai-agent
 - **createdAt**: 2026-08-23 18:00

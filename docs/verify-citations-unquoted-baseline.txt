@@ -1,0 +1,44 @@
+# Per-document ceilings for unquoted citations, read by
+# docs/verify-citations.sh (PLAN-020 class 1, the RFCT-173 ratchet).
+# Format: <document> <ceiling>. A scanned document whose unquoted count
+# EXCEEDS its row fails the run; a document with no row has a ceiling of 0.
+# Update procedure: when a document's unquoted count drops, lower its row --
+# or delete it at zero -- in the same commit; when a new unquoted citation is
+# genuinely wanted, raise the row in the same commit so the diff shows the
+# decision. Ceilings are the measured counts, exact, not slack.
+docs/design/api.md 439
+docs/design/boards.md 2
+docs/design/bus.md 5
+docs/design/dashboard.md 83
+docs/design/remote-management.md 5
+docs/design/uboot-ab-handshake.md 12
+docs/task/RFCT-040.md 4
+docs/task/RFCT-042.md 1
+docs/task/RFCT-043.md 5
+docs/task/RFCT-045.md 1
+docs/task/RFCT-058.md 1
+docs/task/RFCT-064.md 3
+docs/task/RFCT-066.md 3
+docs/task/RFCT-068.md 7
+docs/task/RFCT-069.md 3
+docs/task/RFCT-093.md 1
+docs/task/RFCT-105.md 3
+docs/task/RFCT-111.md 8
+docs/task/RFCT-138.md 1
+docs/task/RFCT-139.md 1
+docs/task/RFCT-141.md 1
+docs/task/RFCT-142.md 3
+docs/task/RFCT-150.md 72
+docs/task/RFCT-153.md 4
+docs/task/RFCT-155.md 3
+docs/task/RFCT-157.md 2
+docs/task/RFCT-159.md 17
+docs/task/RFCT-162.md 8
+docs/task/RFCT-166.md 1
+docs/task/RFCT-167.md 2
+docs/task/RFCT-168.md 3
+docs/task/RFCT-169.md 19
+docs/task/RFCT-170.md 4
+docs/task/RFCT-172.md 21
+docs/research/venus-os-access.md 6
+docs/research/venus-os-ui.md 9

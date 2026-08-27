@@ -1,6 +1,6 @@
 # RFCT-065 Static hosting, the custom-UI lifecycle, and the safety fallback
 
-- **status**: complete — sections 4, 5, 6 and 10.2 proposed; the traversal rules and the fallback are specified to the point of being testable
+- **status**: completed — sections 4, 5, 6 and 10.2 proposed; the traversal rules and the fallback are specified to the point of being testable
 - **priority**: P1
 - **owner**: ai-agent
 - **createdAt**: 2026-08-19 15:27
@@ -139,3 +139,5 @@ Sections 0 and 1 not edited. `docs/design/access.md` and
 `docs/design/dashboard.md` cited and never edited.
 
 No product code changed.
+
+<!-- dated-record: a measurement record frozen at its commit; its citations name the tree as it was then (pre-PLAN-019 layout, pre-rewrite design documents); exempt from docs/verify-citations.sh (RFCT-172) -->

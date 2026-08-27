@@ -1,6 +1,6 @@
 # RFCT-018 U-Boot A/B handshake contract for a custom mainline U-Boot
 
-- **status**: analysis complete — contract published, user implements outside this repo
+- **status**: completed — analysis complete, contract published, user implements outside this repo
 - **priority**: P0 (PLAN-010 M4 critical path)
 - **owner**: ai-agent
 - **createdAt**: 2026-08-18 03:39

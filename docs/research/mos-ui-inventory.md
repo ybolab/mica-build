@@ -730,3 +730,5 @@ work from the nine that need a new bus surface. The absence of any JavaScript is
 worth treating as a measured starting position rather than a constraint or a
 virtue: it is what makes every current interaction a form POST plus a redirect,
 and it is why nothing in the system can display a value that changes on its own.
+
+<!-- dated-record: an inventory measured at 86cd669, already classified dated by RFCT-165; it cites paths HEAD no longer has; exempt from docs/verify-citations.sh (RFCT-172) -->

@@ -12,12 +12,19 @@ Each task is a single line linking to its detail file. All detailed information 
 
 ### Status Markers
 
-| Marker | Meaning |
-|--------|---------|
-| `[ ]`  | Pending |
-| `[-]`  | In progress |
-| `[x]`  | Completed |
-| `[~]`  | Closed / Won't do |
+| Marker | Meaning | Record status head |
+|--------|---------|--------------------|
+| `[ ]`  | Pending | `pending` |
+| `[-]`  | In progress | `in progress` |
+| `[x]`  | Completed | `completed` |
+| `[~]`  | Closed / Won't do | `closed` |
+
+Each record's front matter carries a status line of the shape
+`- **status**: <head>` or `- **status**: <head> — <free detail>`, where
+`<head>` is exactly one of the four heads above and the detail after ` — ` is
+free text. `docs/verify-index.sh` enforces the pair: a record with no such
+line or a non-canonical head fails, and a row whose checkbox does not match
+its record's head fails naming both sides (RFCT-171).
 
 ### Priority: P0 (blocking) > P1 (high) > P2 (medium) > P3 (low)
 
@@ -39,18 +46,18 @@ Each task is a single line linking to its detail file. All detailed information 
 - [x] [**RFCT-006 cx3576 board bring-up (B1: BSP readiness)**](RFCT-006.md) `P1`
 - [-] [**RFCT-007 cx3576 flashing: rockusb loader-mode descriptor + RK update.img packaging**](RFCT-007.md) `P2`
 - [-] [**RFCT-008 PLAN-010 M1 - systemd rootfs prototype image for cx3576**](RFCT-008.md) `P1`
-- [-] [**RFCT-009 mosd skeleton (Rust management plane, PLAN-010 M2)**](RFCT-009.md) `P1`
-- [-] [**RFCT-010 webd v1 on the mosd bus (PLAN-010 M3)**](RFCT-010.md) `P1`
-- [-] [**RFCT-011 Minimal image sizing + board hardware init (cx3576)**](RFCT-011.md) `P1`
-- [-] [**RFCT-012 Adopt the verified Alpine board rootfs and port its hardware facts to os/rootfs**](RFCT-012.md) `P1`
-- [-] [**RFCT-013 squashfs+dm-verity rootfs pack + RO root wiring (cx3576 layout v2)**](RFCT-013.md) `P1`
-- [-] [**RFCT-014 RAUC integration: system.conf, bundle build, dev signing keys**](RFCT-014.md) `P1`
-- [-] [**RFCT-015 Health gate + machine-id oneshot (PLAN-010 M4)**](RFCT-015.md) `P1`
+- [x] [**RFCT-009 mosd skeleton (Rust management plane, PLAN-010 M2)**](RFCT-009.md) `P1`
+- [x] [**RFCT-010 webd v1 on the mosd bus (PLAN-010 M3)**](RFCT-010.md) `P1`
+- [x] [**RFCT-011 Minimal image sizing + board hardware init (cx3576)**](RFCT-011.md) `P1`
+- [x] [**RFCT-012 Adopt the verified Alpine board rootfs and port its hardware facts to os/rootfs**](RFCT-012.md) `P1`
+- [x] [**RFCT-013 squashfs+dm-verity rootfs pack + RO root wiring (cx3576 layout v2)**](RFCT-013.md) `P1`
+- [x] [**RFCT-014 RAUC integration: system.conf, bundle build, dev signing keys**](RFCT-014.md) `P1`
+- [x] [**RFCT-015 Health gate + machine-id oneshot (PLAN-010 M4)**](RFCT-015.md) `P1`
 - [x] [**RFCT-016 update/sign: TUF (tough) signing skeleton**](RFCT-016.md) `P1`
 - [x] [**RFCT-017 Image contract verification for layout v2 (cx3576)**](RFCT-017.md) `P1`
 - [x] [**RFCT-018 U-Boot A/B handshake contract for a custom mainline U-Boot**](RFCT-018.md) `P0`
 - [x] [**RFCT-019 PMA documentation finalize for PLAN-010 M4**](RFCT-019.md) `P1`
-- [-] [**RFCT-020 Partition layout v2 constants + mkimage v2 mode (cx3576)**](RFCT-020.md) `P1`
+- [x] [**RFCT-020 Partition layout v2 constants + mkimage v2 mode (cx3576)**](RFCT-020.md) `P1`
 - [x] [**RFCT-021 Settings schema v3 - access, provisioning and wifi subtrees**](RFCT-021.md) `P1`
 - [x] [**RFCT-022 On-device identity and per-device credential generation**](RFCT-022.md) `P1`
 - [x] [**RFCT-023 sshd gating reconciler - drop-in render, unit state and root password**](RFCT-023.md) `P1`
@@ -186,3 +193,7 @@ Each task is a single line linking to its detail file. All detailed information 
 - [x] [**RFCT-167 PLAN-019 M3: update/sign becomes os/pkgs/rauc-sign, its own workspace**](RFCT-167.md) `P2`
 - [x] [**RFCT-168 PLAN-019 M4: mosd/ moves to os/pkgs/mosd/, every consumer repointed**](RFCT-168.md) `P2`
 - [x] [**RFCT-169 PLAN-019 M5: the tree-wide reference sweep and the campaign closeout**](RFCT-169.md) `P2`
+- [x] [**RFCT-170 PLAN-020 M1: the citation checker arms both orders, counts its demotions, and holds a census**](RFCT-170.md) `P2`
+- [x] [**RFCT-171 PLAN-020 M2: the index checkbox is compared with the record's status head, after the vocabulary is unified**](RFCT-171.md) `P2`
+- [x] [**RFCT-172 PLAN-020 M3: citation scanning widened to docs/task and docs/research, with the dated-record exemption**](RFCT-172.md) `P2`
+- [x] [**RFCT-173 PLAN-020 M4: the self-test fixture repoints to os/pkgs, and the unquoted count becomes a ratchet**](RFCT-173.md) `P2`
