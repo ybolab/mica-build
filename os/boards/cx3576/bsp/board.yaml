@@ -25,7 +25,7 @@ display:
   output: hdmi
   rotation: 0
 
-# Build outputs; paths relative to board/cx3576/. Descriptive metadata only:
+# Build outputs; paths relative to os/boards/cx3576/bsp/. Descriptive metadata only:
 # nothing consumes board.yaml -- the v2 pipeline in os/build/ hardcodes the
 # artifact paths it pulls. Kept as the human-readable record of what this
 # board's Makefile produces.

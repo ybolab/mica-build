@@ -212,10 +212,10 @@ refactor it claims to be.
 ## Build
 
 ```sh
-# needs board/cx3576/out/kernel/modules.tar (make -C board/cx3576 kernel),
+# needs os/boards/cx3576/bsp/out/kernel/modules.tar (make -C os/boards/cx3576/bsp kernel),
 # or point BOARD_DIR at prebuilt BSP artifacts:
-BOARD_DIR=/srv/ai/mos/board/cx3576 make os-rootfs-cx3576-v2   # rootfs only
-BOARD_DIR=/srv/ai/mos/board/cx3576 make os-image-cx3576-v2    # rootfs + full v2 image
+BOARD_DIR=/srv/ai/mos/os/boards/cx3576/bsp make os-rootfs-cx3576-v2   # rootfs only
+BOARD_DIR=/srv/ai/mos/os/boards/cx3576/bsp make os-image-cx3576-v2    # rootfs + full v2 image
 ```
 
 On x86 hosts, arm64 emulation comes from binfmt

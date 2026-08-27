@@ -9,7 +9,7 @@
 #     v2 image only — its env offsets fall inside the v1 boot partition.
 
 # The builder image is injected from os/build-env/images.env by
-# os/build-env/from.sh, which board/cx3576/Makefile calls. A bare tag like
+# os/build-env/from.sh, which os/boards/cx3576/bsp/Makefile calls. A bare tag like
 # `ubuntu:24.04` is one Canonical repoints on every point release, so the answer
 # to "which toolchain produced this artefact" would be the date of the build.
 # Ubuntu and not mos-build-c: the BSP builders get digest pins only, because

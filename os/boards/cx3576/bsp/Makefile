@@ -26,7 +26,7 @@ SHA256 := $(shell command -v sha256sum >/dev/null 2>&1 && echo sha256sum || echo
 # fails the assignment, the `&&` short-circuits, and make stops with the message
 # from.sh printed. The one cost is that the value is computed per target, which
 # is a file read.
-FROM_SH := ../../os/build-env/from.sh
+FROM_SH := ../../../../os/build-env/from.sh
 UBUNTU_ARG := MOS_IMAGE_UBUNTU_2404=IMAGE_UBUNTU_2404
 ALPINE_ARG := MOS_IMAGE_ALPINE_3_24_1=IMAGE_ALPINE_3_24_1
 
@@ -50,7 +50,7 @@ uboot-mos:
 
 kernel:
 	IMG="$$(bash $(FROM_SH) $(UBUNTU_ARG))" && \
-	docker buildx build --build-context mos-common=../common -f kernel/Dockerfile $$IMG \
+	docker buildx build --build-context mos-common=../../common -f kernel/Dockerfile $$IMG \
 	  $(if $(KERNEL_COMMIT),--build-arg KERNEL_COMMIT=$(KERNEL_COMMIT)) \
 	  $(if $(KERNEL_EXPECT),--build-arg KERNEL_EXPECT=$(KERNEL_EXPECT)) \
 	  -o out/kernel .

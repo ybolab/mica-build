@@ -2,7 +2,7 @@
 # Build Linux 6.1.115, modules, and the CX3576-Z device tree.
 
 # The builder image is injected from os/build-env/images.env by
-# os/build-env/from.sh, which board/cx3576/Makefile calls. A bare tag like
+# os/build-env/from.sh, which os/boards/cx3576/bsp/Makefile calls. A bare tag like
 # `ubuntu:24.04` is one Canonical repoints on every point release, so the answer
 # to "which toolchain produced this artefact" would be the date of the build.
 # Ubuntu and not mos-build-c: the BSP builders get digest pins only, because
@@ -46,8 +46,8 @@ RUN set -e; \
     done
 
 COPY kernel/config/kernel-cx3576z.config /ksrc/.config
-# Shared mos runtime baseline from board/common/ — requires the named build
-# context: docker buildx build --build-context mos-common=../common ...
+# Shared mos runtime baseline from os/boards/common/ — requires the named build
+# context: docker buildx build --build-context mos-common=../../common ...
 # (wired in the board Makefile; a bare build without it fails here, loudly).
 COPY --from=mos-common mos-required.fragment /mos-required.fragment
 
