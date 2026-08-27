@@ -16,7 +16,8 @@
 //! through the real [`BusSettings`]. The methods are served rather than
 //! omitted on purpose: a call recorded against them says "the switch did not
 //! happen", where an unserved method would only say "something on the bus is
-//! wrong". Skips gracefully when `dbus-daemon` is not installed, as e2e does.
+//! wrong". A missing `dbus-daemon` panics rather than skips, as e2e does: a
+//! run that returned early would report green while asserting nothing.
 
 use std::io::{BufRead, BufReader};
 use std::path::PathBuf;
@@ -65,16 +66,31 @@ impl Drop for ChildGuard {
     }
 }
 
-/// Locate `dbus-daemon`: `/usr/bin/dbus-daemon` first, then `$PATH`.
-fn find_dbus_daemon() -> Option<PathBuf> {
+/// Locate `dbus-daemon` (`/usr/bin/dbus-daemon` first, then `$PATH`), or
+/// FAIL — never skip.
+///
+/// A missing bus daemon means these tests cannot assert what they exist to
+/// assert, and the only honest outcome for a test that cannot run is a red
+/// one. See the module docs.
+fn dbus_daemon() -> PathBuf {
     let fixed = PathBuf::from("/usr/bin/dbus-daemon");
     if fixed.exists() {
-        return Some(fixed);
+        return fixed;
     }
-    let path = std::env::var_os("PATH")?;
-    std::env::split_paths(&path)
-        .map(|dir| dir.join("dbus-daemon"))
-        .find(|candidate| candidate.exists())
+    let found = std::env::var_os("PATH").and_then(|path| {
+        std::env::split_paths(&path)
+            .map(|dir| dir.join("dbus-daemon"))
+            .find(|candidate| candidate.exists())
+    });
+    found.unwrap_or_else(|| {
+        panic!(
+            "dbus-daemon was not found at /usr/bin/dbus-daemon or on PATH. This test asserts \
+             real bus behaviour over a private session bus and MUST NOT skip: install it \
+             (Debian/Ubuntu: the `dbus-daemon` package -- note that `dbus-bin` ships \
+             dbus-send and dbus-monitor but NOT the daemon itself; Fedora: `dbus-daemon`) \
+             and run it again."
+        )
+    })
 }
 
 /// What the fake mosd was asked to do, in call order, and what was written.
@@ -223,10 +239,10 @@ impl Fake {
     }
 }
 
-/// Start a private session bus with a fake mosd on it, or `None` when
-/// `dbus-daemon` is not installed.
-async fn fake(code: i32) -> Option<Fake> {
-    let dbus_daemon = find_dbus_daemon()?;
+/// Start a private session bus with a fake mosd on it. Panics when
+/// `dbus-daemon` is not installed rather than skipping — see the module docs.
+async fn fake(code: i32) -> Fake {
+    let dbus_daemon = dbus_daemon();
 
     // Private session bus; never the host system or session bus.
     let mut child = Command::new(dbus_daemon)
@@ -284,31 +300,18 @@ async fn fake(code: i32) -> Option<Fake> {
         .await
         .expect("client connection to the private bus");
 
-    Some(Fake {
+    Fake {
         connection,
         recorder,
         code,
         _server: server,
         _bus: bus,
-    })
-}
-
-/// Every test needs the daemon; this keeps the skip to one line each.
-macro_rules! fake_or_skip {
-    ($code:expr) => {
-        match fake($code).await {
-            Some(fake) => fake,
-            None => {
-                eprintln!("skipping: dbus-daemon not found");
-                return;
-            }
-        }
-    };
+    }
 }
 
 #[tokio::test]
 async fn a_confirmed_reboot_post_writes_the_reboot_action_item() {
-    let fake = fake_or_skip!(0);
+    let fake = fake(0).await;
     let router = fake.router().await;
     let cookie = login(&router, PASSWORD).await;
 
@@ -324,7 +327,7 @@ async fn a_confirmed_reboot_post_writes_the_reboot_action_item() {
 
 #[tokio::test]
 async fn a_confirmed_power_off_post_writes_the_poweroff_action_item() {
-    let fake = fake_or_skip!(0);
+    let fake = fake(0).await;
     let router = fake.router().await;
     let cookie = login(&router, PASSWORD).await;
 
@@ -354,7 +357,7 @@ async fn a_confirmed_power_off_post_writes_the_poweroff_action_item() {
 /// trigger, a code coming back and nothing rebooting.
 #[tokio::test]
 async fn each_verb_writes_only_its_own_item_with_a_value_mosd_can_hold() {
-    let fake = fake_or_skip!(0);
+    let fake = fake(0).await;
     let api = fake.client().await;
 
     api.reboot().await.expect("reboot dispatched");
@@ -386,7 +389,7 @@ async fn each_verb_writes_only_its_own_item_with_a_value_mosd_can_hold() {
 /// success.
 #[tokio::test]
 async fn only_a_zero_dispatch_code_is_success() {
-    let fake = fake_or_skip!(0);
+    let fake = fake(0).await;
     fake.client().await.reboot().await.expect("0 is dispatched");
 
     for code in [-1, -2, -3, -4, -5, -6, -99, i32::MIN, 1, i32::MAX] {
