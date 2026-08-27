@@ -334,9 +334,10 @@ allowedIps = ["10.8.0.0/24"]
             "no entry is dropped by the strip: v6 keeps them all, as stubs"
         );
         for (name, entry) in network {
-            let stub: V6Iface = entry.clone().try_into().unwrap_or_else(|err| {
-                panic!("{name} is not a body v6 could deserialize: {err}")
-            });
+            let stub: V6Iface = entry
+                .clone()
+                .try_into()
+                .unwrap_or_else(|err| panic!("{name} is not a body v6 could deserialize: {err}"));
             // What v6 can still act on survives; the peer's public key, the
             // VLAN id and the bridge port list are gone with their blocks.
             assert_eq!(stub.dhcp, name == "eth0" || name == "br0");

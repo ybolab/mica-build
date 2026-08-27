@@ -1360,6 +1360,13 @@ endpoint = "vpn.example.net:51820"
 persistentKeepalive = 25
 "#;
 
+/// A key only a schema AFTER v7 could carry, appended to the fixture above to
+/// make it a genuine rollback document rather than a re-stamped one.
+const V8_ONLY_KEY: &str = r#"
+[network.wg0.wireguard.obfuscation]
+mode = "none"
+"#;
+
 /// The tree the constant above describes, typed.
 fn every_kind() -> Settings {
     Settings {
@@ -1456,7 +1463,10 @@ fn all_three_kinds_round_trip_through_the_store() {
     let store = Store::new(&path);
 
     let (settings, report) = store.load_with_report().unwrap();
-    assert!(report.is_none(), "a current-schema document is not a rollback");
+    assert!(
+        report.is_none(),
+        "a current-schema document is not a rollback"
+    );
     assert_eq!(settings, every_kind());
 
     store.save(&settings).unwrap();
@@ -1576,11 +1586,7 @@ fn a_newer_document_keeps_every_v7_interface_kind() {
     assert_eq!(SCHEMA_VERSION + 1, 8, "the fixture stamp must stay ahead");
     fs::write(
         &path,
-        V7_EVERY_KIND.replace("schema_version = 7", "schema_version = 8")
-            + "
-[network.wg0.wireguard.obfuscation]
-mode = "none"
-",
+        V7_EVERY_KIND.replace("schema_version = 7", "schema_version = 8") + V8_ONLY_KEY,
     )
     .unwrap();
 
