@@ -160,7 +160,7 @@ slot, it wins and the A/B handshake is silently bypassed.** See §5.4.
 ### 1.4 Raw SPL + U-Boot placement
 
 The assembler writes `u-boot-rockchip.bin` at `UBOOT_SEEK_SECTOR`, sector 64
-(`os/boards/cx3576/board.env:87`), with a `dd` whose block size is the sector
+(`os/boards/cx3576/board.env:92`), with a `dd` whose block size is the sector
 size (`os/build/src/mkimage-v2.ts:426-429`) [V]. Inside that combined image,
 SPL loads U-Boot proper from `CONFIG_SYS_MMCSD_RAW_MODE_U_BOOT_SECTOR=0x4000`
 = sector 16384 = **8 MiB** [V].
@@ -173,12 +173,12 @@ keep `CONFIG_SYS_MMCSD_RAW_MODE_U_BOOT_SECTOR` at or below sector `0x7000`
 (14 MiB) so that `u-boot.itb` still ends before 16 MiB; `0x4000` satisfies this
 with ~7 MiB of headroom. The assembler asserts the fit rather than trusting it:
 a U-Boot larger than `UBOOT_MAX_BYTES` — the span from sector 64 to `uenv-a`,
-`os/boards/cx3576/board.env:88` — fails the build
+`os/boards/cx3576/board.env:93` — fails the build
 (`os/build/src/mkimage-v2.ts:292-299`) [V].
 
 The kernel command line is not the assembler's. `os/rootfs/build-v2.sh:786`
 composes one per rootfs slot from that slot's verity parameters and the board's
-`BOARD_CMDLINE_ARGS` (`os/boards/cx3576/board.env:344`) [V].
+`BOARD_CMDLINE_ARGS` (`os/boards/cx3576/board.env:349`) [V].
 
 ---
 
@@ -207,7 +207,7 @@ What `generic-rk3576_defconfig` at `v2026.07` provides [V]
   `MMC_DW_ROCKCHIP` for SD (lines 33-38).
 - **Serial**: `CONFIG_DEBUG_UART_BASE=0x2AD40000`, `CONFIG_BAUDRATE=1500000`,
   `CONFIG_SYS_NS16550_MEM32=y` (lines 8, 40, 42) — matches
-  `os/boards/cx3576/bsp/board.yaml:6-7` `console: ttyFIQ0,1500000` /
+  `os/boards/cx3576/board.env:349` `console: ttyFIQ0,1500000` /
   `earlycon=...0x2ad40000` [V].
 - **USB**: DWC3 host + gadget, `CONFIG_USB_FUNCTION_ROCKUSB=y` (lines 44-49).
 - **DM / distro boot**: full driver model; bootstd with extlinux, script and EFI
