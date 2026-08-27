@@ -12,12 +12,19 @@ Each task is a single line linking to its detail file. All detailed information 
 
 ### Status Markers
 
-| Marker | Meaning |
-|--------|---------|
-| `[ ]`  | Pending |
-| `[-]`  | In progress |
-| `[x]`  | Completed |
-| `[~]`  | Closed / Won't do |
+| Marker | Meaning | Record status head |
+|--------|---------|--------------------|
+| `[ ]`  | Pending | `pending` |
+| `[-]`  | In progress | `in progress` |
+| `[x]`  | Completed | `completed` |
+| `[~]`  | Closed / Won't do | `closed` |
+
+Each record's front matter carries a status line of the shape
+`- **status**: <head>` or `- **status**: <head> — <free detail>`, where
+`<head>` is exactly one of the four heads above and the detail after ` — ` is
+free text. `docs/verify-index.sh` enforces the pair: a record with no such
+line or a non-canonical head fails, and a row whose checkbox does not match
+its record's head fails naming both sides (RFCT-171).
 
 ### Priority: P0 (blocking) > P1 (high) > P2 (medium) > P3 (low)
 
