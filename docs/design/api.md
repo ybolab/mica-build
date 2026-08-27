@@ -360,16 +360,18 @@ the same place — *"a power action triggered here is logged and recorded under
 the same caller name as one called through `Reboot`/`PowerOff`"*
 (`os/pkgs/mosd/mosd/src/tree.rs:487-490`).
 
-mosd also emits two signals, and apid subscribes to neither.
+mosd also emits two signals, and apid subscribes to one.
 `SettingsChanged(path, value_json)` fires after every successful settings write
-(`os/pkgs/mosd/mosd/src/bus.rs:531-533`, declared at `:727-728`); `ItemsChanged` fires
-once per accumulated batch of item-tree changes, declared on `com.mos.Item1`
-(`os/pkgs/mosd/mosd/src/tree.rs:431`, `:441-442`), served at the service root, which is
-`pub const ROOT_PATH: &str = "/";` (`os/pkgs/mosd/mosd/src/tree.rs:35`). The proxy
-declares **no** `#[zbus(signal)]` member for either — the whole of
-`os/pkgs/mosd/apid/src/bus_client.rs:15-36` is six method declarations and two proxy
-attributes — so apid has no push notification of a settings change from any
-source, including itself.
+(`os/pkgs/mosd/mosd/src/bus.rs:531-533`, declared at `:727-728`), and the proxy declares
+the matching `#[zbus(signal)]` member: a dedicated watcher task subscribes on
+its own connection and feeds the auth gate's cache of the `access` subtree,
+invalidating it on every change that can touch `access`
+(`os/pkgs/mosd/apid/src/bus_client.rs`). That is apid's push notification of a
+settings change, and its consumer is internal — no change-stream API is served
+(§8.3 item 2). `ItemsChanged` fires once per accumulated batch of item-tree
+changes, declared on `com.mos.Item1` (`os/pkgs/mosd/mosd/src/tree.rs:431`, `:441-442`),
+served at the service root, which is `pub const ROOT_PATH: &str = "/";`
+(`os/pkgs/mosd/mosd/src/tree.rs:35`); apid still declares no member for it.
 
 **Shape of the client.** All handler code depends on the `SettingsApi` trait
 (`os/pkgs/mosd/apid/src/settings_api.rs:13-31`), not on zbus, which is what lets the
@@ -4200,11 +4202,13 @@ absence is a decision rather than an oversight.
    `Instant` throughout (`os/pkgs/mosd/apid/src/session.rs:10`, `:53`, `:72`), which is
    monotonic and cannot express a deadline surviving a reboot (§3.2). It is not
    phased because the prerequisite is not scheduled anywhere.
-2. **A `SettingsChanged` subscription, and any change-stream API.** mosd emits
-   the signal (`os/pkgs/mosd/mosd/src/bus.rs:212-214`, `:292-297`) and the proxy
-   declares no `#[zbus(signal)]` member (`os/pkgs/mosd/apid/src/bus_client.rs:20-25`).
-   `docs/design/dashboard.md` §8 phase 3 already claims it for the UI side, and
-   this document does not schedule work another campaign's phasing owns.
+2. **A change-stream API.** The `SettingsChanged` subscription itself now
+   exists — the proxy declares the `#[zbus(signal)]` member and a watcher
+   feeds the auth gate's access cache with it (§1.3) — but no route serves
+   the events onward: a client that wants to know a setting moved still
+   polls. `docs/design/dashboard.md` §8 phase 3 already claims the change
+   stream for the UI side, and this document does not schedule work another
+   campaign's phasing owns.
 3. **Scopes on API tokens.** §3.2 states there are none in phase 1 and that
    inventing them means the per-method D-Bus allowlist
    `os/pkgs/mosd/dist/com.mos.mosd.conf:48-61` deliberately deferred. Adding a phase

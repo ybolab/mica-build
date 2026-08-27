@@ -33,6 +33,7 @@ use crate::assets::mime::CacheClass;
 use crate::assets::serve;
 use crate::audit::{Audit, Source};
 use crate::auth::{self, GuardStore};
+use crate::access_cache::AccessCache;
 use crate::bundle::Store;
 use crate::redact;
 use crate::session::{self, SessionStore};
@@ -46,6 +47,10 @@ pub struct AppState {
     guard: Arc<GuardStore>,
     audit: Arc<Audit>,
     bundles: Arc<Store>,
+    /// The gate's cache of the `access` subtree, kept honest by the
+    /// `SettingsChanged` watcher (`bus_client::watch_settings_changed`) and
+    /// by the two handlers that write under `access` themselves.
+    access_cache: Arc<AccessCache>,
 }
 
 impl AppState {
@@ -66,7 +71,15 @@ impl AppState {
             guard: Arc::new(GuardStore::ephemeral()),
             audit: Arc::new(Audit::journal_only()),
             bundles: Arc::new(Store::at_default()),
+            access_cache: Arc::new(AccessCache::new()),
         }
+    }
+
+    /// The gate's access cache, for `main.rs` to hand to the
+    /// `SettingsChanged` watcher, and for the tests that drive its
+    /// subscription state by hand.
+    pub(crate) fn access_cache(&self) -> &Arc<AccessCache> {
+        &self.access_cache
     }
 
     /// Root the backoff counter and the audit ring in `state_dir`

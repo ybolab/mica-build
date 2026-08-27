@@ -5,10 +5,17 @@
 //! actions, which are items under `/Actions/` rather than methods
 //! (`docs/design/bus.md` §7).
 
+use std::future::poll_fn;
+use std::pin::pin;
+use std::sync::Arc;
+use std::time::Duration;
+
 use serde_json::Value;
 use tokio::sync::Mutex;
+use zbus::export::futures_core::Stream;
 use zbus::zvariant;
 
+use crate::access_cache::{self, AccessCache};
 use crate::config::BusKind;
 use crate::settings_api::SettingsApi;
 
@@ -22,6 +29,13 @@ trait Mosd {
     fn set_settings(&self, path: &str, value_json: &str) -> zbus::Result<()>;
     fn get_state(&self, path: &str) -> zbus::Result<String>;
     fn set_transient_root_password(&self, password: &str) -> zbus::Result<()>;
+    /// Emitted by mosd after every successful settings write, with the
+    /// changed dot-path and its new JSON-encoded value. The subscriber
+    /// ([`watch_settings_changed`]) feeds the auth gate's access cache: the
+    /// events invalidate it, which is what makes caching anything read from
+    /// mosd sound at all.
+    #[zbus(signal)]
+    fn settings_changed(&self, path: &str, value_json: &str) -> zbus::Result<()>;
 }
 
 /// `com.mos.Item1` on one item object path. Only the write half is used here:
@@ -70,6 +84,63 @@ async fn trigger(connection: &zbus::Connection, path: &str) -> anyhow::Result<()
             "mosd did not dispatch the action at `{path}`: SetValue returned {code}"
         )),
     }
+}
+
+/// How long to wait after a lapsed `SettingsChanged` subscription before
+/// dialling again. Short, because while it runs the gate pays a bus round
+/// trip per unauthenticated request — the fallback is correct, just costly.
+const RESUBSCRIBE_DELAY: Duration = Duration::from_secs(1);
+
+/// Keep `cache` honest against mosd's `SettingsChanged` for the daemon's
+/// lifetime: subscribe, mark the cache synchronised while the stream is
+/// live, and on any lapse drop it back to direct reads and dial again.
+///
+/// Spawned once by `main.rs`. It holds its own connection rather than
+/// sharing [`BusSettings`]'s: the client drops its proxy cache on every
+/// failed call, and a signal stream must not die because an unrelated
+/// request hit an error.
+pub async fn watch_settings_changed(bus: BusKind, cache: Arc<AccessCache>) {
+    loop {
+        let result = async {
+            let connection = match bus {
+                BusKind::System => zbus::Connection::system().await,
+                BusKind::Session => zbus::Connection::session().await,
+            }?;
+            watch_connection(&connection, &cache).await
+        }
+        .await;
+        // Unreachable on Ok: the pump only returns by failing. Matched
+        // anyway so a future refactor cannot silently turn "stream ended"
+        // into "stop watching".
+        if let Err(err) = result {
+            tracing::warn!(error = %err, "SettingsChanged subscription lapsed");
+        }
+        cache.lapsed();
+        tokio::time::sleep(RESUBSCRIBE_DELAY).await;
+    }
+}
+
+/// Pump one `SettingsChanged` subscription on `connection` until the stream
+/// ends, invalidating `cache` on every change that can touch `access`.
+///
+/// The cache is marked synchronised only AFTER the subscription is
+/// established, so no event can fall between the two; the caller owns
+/// marking the lapse, whatever way this returns.
+pub(crate) async fn watch_connection(
+    connection: &zbus::Connection,
+    cache: &AccessCache,
+) -> anyhow::Result<()> {
+    let proxy = MosdProxy::new(connection).await?;
+    let stream = proxy.receive_settings_changed().await?;
+    cache.subscribed();
+    let mut stream = pin!(stream);
+    while let Some(signal) = poll_fn(|cx| stream.as_mut().poll_next(cx)).await {
+        let args = signal.args()?;
+        if access_cache::touches_access(args.path()) {
+            cache.invalidate();
+        }
+    }
+    anyhow::bail!("the SettingsChanged stream ended")
 }
 
 /// Lazily-connected mosd client. The proxy is built on first use and cached;

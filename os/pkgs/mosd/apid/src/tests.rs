@@ -1,12 +1,13 @@
 //! Route-level tests driving the router directly with the fake settings
 //! backend; no network or bus daemon involved.
 //!
-//! The one exception is [`power_bus`], which drives the router through the
-//! real D-Bus client against a fake mosd on a private bus, because what it
-//! asserts lives below the fake backend's trait.
+//! The exceptions are [`power_bus`] and [`settings_signal`], which drive the
+//! real D-Bus client against a fake mosd on a private bus, because what they
+//! assert lives below the fake backend's trait.
 
 mod broken_classes;
 mod power_bus;
+mod settings_signal;
 
 use std::path::Path;
 use std::sync::Arc;

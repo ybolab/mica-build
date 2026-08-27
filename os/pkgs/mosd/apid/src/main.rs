@@ -26,6 +26,7 @@
 
 #![forbid(unsafe_code)]
 
+mod access_cache;
 mod assets;
 mod audit;
 mod auth;
@@ -158,6 +159,13 @@ async fn serve() -> anyhow::Result<()> {
     // the TLS material, so the backoff counter and the audit ring go there
     // too: one STATE-backed directory, one set of permissions to reason about.
     let state = routes::AppState::new(api, signing_key).with_persistence(&config.state_dir);
+    // The SettingsChanged watcher that keeps the gate's access cache honest;
+    // until it reports a live subscription the gate reads the bus directly,
+    // so a mosd that is not up yet costs latency, never staleness.
+    tokio::spawn(bus_client::watch_settings_changed(
+        config.bus,
+        state.access_cache().clone(),
+    ));
 
     let https_listener = std::net::TcpListener::bind(&config.https_addr)
         .with_context(|| format!("bind https listener on {}", config.https_addr))?;
