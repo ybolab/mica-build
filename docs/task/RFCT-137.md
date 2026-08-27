@@ -2,7 +2,7 @@
 
 - **status**: completed
 - **priority**: P2
-- **owner**: ai-agent
+- **owner**: bkd/1n7prrif
 - **createdAt**: 2026-08-26
 
 `mosd/dist/apid.service:28-39` carries a substantial sandbox: `NoNewPrivileges`,

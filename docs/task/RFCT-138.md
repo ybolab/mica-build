@@ -2,7 +2,7 @@
 
 - **status**: completed
 - **priority**: P2
-- **owner**: ai-agent
+- **owner**: bkd/1n7prrif
 - **createdAt**: 2026-08-26
 
 `mosd/deny.toml` is 45 lines. Forty of them are the `[licenses]` allowlist. The
