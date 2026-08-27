@@ -1,10 +1,11 @@
 # PLAN-021 The defect and debt batch: sixteen filed tasks, the quick fixes, and the ghost sweeps
 
-- **status**: approved
+- **status**: completed
 - **createdAt**: 2026-08-27 17:05
 - **approvedAt**: 2026-08-27 17:05
+- **completedAt**: 2026-08-28
 - **relatedTask**: claims RFCT-094, 096, 129..134, 136..142; new tasks RFCT-180..199 reserved
-- **milestones**: M1 the one-line and small fixes; M2 apid/mosd filed defects; M3 the ghost-reference sweeps; M4 closeout
+- **milestones**: M1 the one-line and small fixes (done); M2 apid/mosd filed defects (done); M3 the ghost-reference sweeps (done); M4 closeout (done)
 
 ## Context
 

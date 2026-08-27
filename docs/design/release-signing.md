@@ -155,8 +155,8 @@ What this means operationally, today: a compromised online key ends the
 repository's lineage. The recovery is a fresh ceremony (§1.1–1.5), a new
 trust anchor distributed out of band, and devices re-anchored by whatever
 mechanism ships trust anchors to devices — which is the RFCT-088 workstream's
-territory (`docs/task/RFCT-088.md`, in flight in parallel with this
-document). Until rotation tooling exists, the root key's protection (§1.5)
+territory (`docs/task/RFCT-088.md`, **completed 2026-08-23**). Until
+rotation tooling exists, the root key's protection (§1.5)
 and the online keys' host hygiene are carrying the weight that rotation
 would; this is the single strongest argument for scheduling that tooling.
 
