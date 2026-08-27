@@ -45,7 +45,7 @@ only exemptions; they *"answer for themselves"*
 route inside is a GET — `get(api_v1_settings)` (`mosd/apid/src/routes.rs:265`)
 and `get(api_v1_state)` (`mosd/apid/src/routes.rs:266`), beside version
 discovery and metadata. `docs/design/api.md` section 1 records the whole of
-*"The surface as it exists today"* (`docs/design/api.md:67`).
+*"The surface as it exists today"* (`docs/design/api.md:96`).
 
 **apid owns no state; it is a client of mosd** over D-Bus — its one backend
 choice is *"Which message bus to reach"* (`mosd/apid/src/config.rs:5`) mosd on,
