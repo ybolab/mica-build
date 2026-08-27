@@ -221,6 +221,7 @@ expect_all_pass "baseline: three quoted citations that still match, one unquoted
 # census RFCT-173 will ratchet, so their exact shape is pinned here.
 expect_report "the report counts what it skipped, by reason, and what it never examined" \
     "documents scanned:      2" \
+    "exempted as dated records, citations not checked: 0" \
     "citations found:        8" \
     "in scope:               4" \
     "in scope, first segment mosd/: 4" \
@@ -473,6 +474,72 @@ new_fixture "${FIX}"
 must_replace "${FIX}" docs/design/fixture.md 'declared at `mosd/apid/src/settings_api.rs:5`' 'declared in the fixture source'
 expect_fail "a segment count dropping below its committed floor" 1 \
     'segment mosd has 3 in-scope citations, below its floor 4 in docs/verify-citations-baseline.txt; lower the floor in the same commit'
+
+# --- 21. widened scope: a stale citation in a task document fails -------------
+# The RFCT-159 finding-a class. Before the widening, docs/task was scanned by
+# no gate and this citation would have read green by omission.
+FIX="${WORK}/task-doc-stale"
+new_fixture "${FIX}"
+mkdir -p "${FIX}/docs/task"
+cat >"${FIX}/docs/task/RFCT-999.md" <<'MD'
+# RFCT-999 Fixture task record
+
+The helper this record leans on lives at `mosd/apid/src/gone.rs:3`, and this
+sentence quotes nothing of it.
+MD
+expect_fail "a stale citation in a non-exempt task document" 1 \
+    'docs/task/RFCT-999.md:3 cites `mosd/apid/src/gone.rs:3`, and mosd/apid/src/gone.rs does not exist'
+
+# --- 22. the dated-record marker exempts the document, and the census says so -
+# The SAME document and the SAME stale citation as case 21; the only change is
+# the marker. The run must go green, and "left alone" must be evidenced: the
+# exemption count and the per-file census line are asserted verbatim.
+FIX="${WORK}/task-doc-exempt"
+new_fixture "${FIX}"
+mkdir -p "${FIX}/docs/task"
+cat >"${FIX}/docs/task/RFCT-999.md" <<'MD'
+# RFCT-999 Fixture task record
+
+The helper this record leans on lives at `mosd/apid/src/gone.rs:3`, and this
+sentence quotes nothing of it.
+
+<!-- dated-record: fixture worklist frozen at a past commit -->
+MD
+run_checker
+if [ "${RC}" -eq 0 ] && [ "$(grep -c '^  FAIL ' "${WORK}/out" || true)" -eq 0 ] \
+   && grep -q ': 4/4 PASS$' "${WORK}/out" \
+   && grep -qF 'documents scanned:      3' "${WORK}/out" \
+   && grep -qF 'exempted as dated records, citations not checked: 1' "${WORK}/out" \
+   && grep -qF 'dated record: docs/task/RFCT-999.md' "${WORK}/out"; then
+    pass "the marker exempts the stale document, 4/4 green, and the census names the file"
+else
+    fail "the marker on the stale document: expected 4/4, exit 0 and a census naming docs/task/RFCT-999.md, got exit ${RC}"
+    sed 's/^/    | /' "${WORK}/out"
+fi
+
+# --- 23. no silent exemptions: a marker on any scanned file prints ------------
+# The marker exempts whichever file carries it, including one nobody classified
+# as dated -- here the design fixture document. The census must name it anyway:
+# review reads the census, so an exemption that printed nothing would be the
+# silent left-alone this mechanism exists to prevent. The baseline is emptied
+# because the marked document held every in-scope citation.
+FIX="${WORK}/marker-outside-dated-list"
+new_fixture "${FIX}"
+printf '\n%s\n' '<!-- dated-record: a marker nobody put on the dated list -->' \
+    >>"${FIX}/docs/design/fixture.md"
+cat >"${FIX}/docs/verify-citations-baseline.txt" <<'TXT'
+# The only citing document is exempted in this fixture, so no floor is named.
+TXT
+run_checker
+if [ "${RC}" -eq 0 ] \
+   && grep -qF 'in scope:               0' "${WORK}/out" \
+   && grep -qF 'exempted as dated records, citations not checked: 1' "${WORK}/out" \
+   && grep -qF 'dated record: docs/design/fixture.md' "${WORK}/out"; then
+    pass "a marker on a file outside the dated list still prints in the census"
+else
+    fail "a marker outside the dated list: expected exit 0 and a census naming docs/design/fixture.md, got exit ${RC}"
+    sed 's/^/    | /' "${WORK}/out"
+fi
 
 echo
 total=$((PASS_N + FAIL_N))
