@@ -318,6 +318,17 @@ async fn network_post_writes_static_variant() {
     );
 }
 
+/// A dotted interface name (the RFCT-135 VLAN case) is written as a quoted
+/// segment, so the daemon sees one key and not two.
+#[tokio::test]
+async fn network_post_quotes_a_dotted_iface_name() {
+    let (router, fake) = test_app(configured_tree("hunter2secret"));
+    let cookie = login(&router, "hunter2secret").await;
+    let response = post_form(&router, "/network", "iface=eth0.100&dhcp=on", Some(&cookie)).await;
+    assert_eq!(response.status(), StatusCode::SEE_OTHER);
+    assert_eq!(fake.set_paths(), vec![r#"network."eth0.100""#.to_string()]);
+}
+
 #[tokio::test]
 async fn network_post_rejects_bad_iface_name_and_cidr() {
     let (router, fake) = test_app(configured_tree("hunter2secret"));

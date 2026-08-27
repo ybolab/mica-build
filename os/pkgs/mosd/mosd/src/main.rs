@@ -39,6 +39,7 @@ mod reconciler;
 mod scan;
 mod transient;
 mod tree;
+mod wgkeys;
 
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -237,6 +238,9 @@ async fn serve() -> anyhow::Result<()> {
     // place that knows this daemon runs on a real device.
     if !dry_run {
         service = service.with_rauc(Arc::new(rauc::Rauc::new()));
+        // Same reasoning again: the rotation writes a private key onto STATE
+        // and deletes a kernel device, so a dry-run daemon is never given one.
+        service = service.with_wireguard(Arc::new(reconciler::network::KeyRotation::production()));
     }
     if let Some(registry) = &registry {
         service = service.with_service_registry(Arc::clone(registry));
