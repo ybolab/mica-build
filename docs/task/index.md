@@ -186,4 +186,4 @@ Each task is a single line linking to its detail file. All detailed information 
 - [x] [**RFCT-167 PLAN-019 M3: update/sign becomes os/pkgs/rauc-sign, its own workspace**](RFCT-167.md) `P2`
 - [x] [**RFCT-168 PLAN-019 M4: mosd/ moves to os/pkgs/mosd/, every consumer repointed**](RFCT-168.md) `P2`
 - [x] [**RFCT-169 PLAN-019 M5: the tree-wide reference sweep and the campaign closeout**](RFCT-169.md) `P2`
-- [ ] [**RFCT-180 PLAN-021 M1: the quick-fix batch**](RFCT-180.md) `P2`
+- [x] [**RFCT-180 PLAN-021 M1: the quick-fix batch**](RFCT-180.md) `P2`
