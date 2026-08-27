@@ -49,7 +49,7 @@ const UBOOT_BOARDS = boardsWhere(isUBoot)
 const NOT_UBOOT_BOARDS = boardsWhere(b => !isUBoot(b))
 const GRUB_BOARDS = boardsWhere(isGrub)
 
-const MOSD_SRC = join(REPO_ROOT, 'mosd', 'mosd', 'src')
+const MOSD_SRC = join(REPO_ROOT, 'os', 'pkgs', 'mosd', 'mosd', 'src')
 const PROFILE_FILE = '/usr/lib/mos/profile.conf'
 const SSHD_DROPIN = '/etc/ssh/sshd_config.d/05-mos-authorized-keys.conf'
 const AK_EXPECT = '/etc/ssh/authorized_keys.d/%u'

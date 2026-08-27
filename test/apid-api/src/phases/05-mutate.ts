@@ -238,7 +238,7 @@ async function mutateContainers(ctx: PhaseContext, log: ConsoleLog): Promise<voi
   // etc-containers-systemd.mount, binding /etc/containers/systemd out of STATE
   // so Quadlet has a directory to read. Nothing about that is visible over
   // HTTP. Both patterns are failures when absent, not skips, because the
-  // wording was measured: mosd/mosd/src/reconciler/container.rs emits them
+  // wording was measured: os/pkgs/mosd/mosd/src/reconciler/container.rs emits them
   // from `tracing::info!` and they are quoted verbatim here.
   const consoleOn = async (pattern: RegExp, what: string): Promise<void> => {
     if (noOpOn !== undefined) {

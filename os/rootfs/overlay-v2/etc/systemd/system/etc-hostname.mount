@@ -1,6 +1,6 @@
 [Unit]
 Description=Hostname from the STATE partition
-# mosd's hostname reconciler (mosd/mosd/src/reconciler/hostname.rs) calls
+# mosd's hostname reconciler (os/pkgs/mosd/mosd/src/reconciler/hostname.rs) calls
 # SetStaticHostname on org.freedesktop.hostname1, and systemd-hostnamed
 # implements that by writing /etc/hostname. /etc is on the read-only squashfs,
 # so without this bind the call fails EROFS and "set the hostname" in the web

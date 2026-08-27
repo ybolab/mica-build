@@ -101,7 +101,7 @@ export function parseSetCookie(raw: string): ParsedCookie | undefined {
  * A cookie jar that honours deletion.
  *
  * apid clears the session with the same cookie carrying `Max-Age=0`
- * (mosd/apid/src/session.rs, `clear_cookie`). A jar that merely overwrote the
+ * (os/pkgs/mosd/apid/src/session.rs, `clear_cookie`). A jar that merely overwrote the
  * value would leave the name present and make the logout assertion pass while
  * asserting nothing -- so `Max-Age` <= 0 removes the entry outright. `Expires`
  * in the past is honoured too; apid does not use it, but a browser does and

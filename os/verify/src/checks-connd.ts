@@ -6,7 +6,7 @@
 // board (:1066, :4441).
 //
 // Every path, prefix and unit name the Wi-Fi assertions compare against is read
-// out of `mosd/mosd/src/reconciler/` rather than restated here, exactly as the
+// out of `os/pkgs/mosd/mosd/src/reconciler/` rather than restated here, exactly as the
 // oracle reads it. Reading those sources is in scope under PLAN-014's Scope
 // section -- "No change to ... `mosd/` Rust sources" -- while changing them is
 // not, and nothing here writes. A reconciler that renders into a directory the
@@ -50,7 +50,7 @@ import { skipped, verdict } from './verdict.ts'
  * `os/tests/ui-location-test.sh` is its one caller.
  */
 export const RECONCILER_DIR: string = process.env['MOS_VERIFY_RECONCILER_DIR']
-  ?? join(REPO_ROOT, 'mosd', 'mosd', 'src', 'reconciler')
+  ?? join(REPO_ROOT, 'os', 'pkgs', 'mosd', 'mosd', 'src', 'reconciler')
 
 export interface ConndContract {
   readonly staDir: string

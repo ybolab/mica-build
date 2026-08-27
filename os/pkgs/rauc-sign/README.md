@@ -199,7 +199,7 @@ the mandatory `--state` file.
 
 ## Checks
 
-This crate is **its own cargo workspace**, so `mosd/hack/check.sh` does not
+This crate is **its own cargo workspace**, so `os/pkgs/mosd/hack/check.sh` does not
 cover it — that script's `--workspace` flags stop at the mosd members. The gate
 for this code is its twin, next to the crate:
 

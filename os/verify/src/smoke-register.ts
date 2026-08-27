@@ -76,12 +76,12 @@ const crate = (name: string) => () => readCratePackageVersion(cratePath(name))
 export const ARTIFACTS: readonly Artifact[] = [
   // The four this repository writes in Rust. Their recorded version is the
   // `[package] version` of the crate that builds them, the only place this tree
-  // records one: there is no `mosd/versions.env`, because a pin file exists to
+  // records one: there is no `os/pkgs/mosd/versions.env`, because a pin file exists to
   // fix an UPSTREAM version and these have no upstream.
   {
     // mosd and apid answer `--version` before any daemon initialisation --
     // provisioning, bus connection, key generation -- because asking a daemon
-    // for its version must not MUTATE. mosd/mosd/src/main.rs answers from a
+    // for its version must not MUTATE. os/pkgs/mosd/mosd/src/main.rs answers from a
     // synchronous `main`, before the tokio runtime, the subscriber, the settings
     // store and provisioning, so this invocation reports, exits 0 and leaves
     // nothing behind. `/usr/bin/mosd` with no argv still provisions (secrets/,

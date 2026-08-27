@@ -6,7 +6,7 @@ runtime dependencies**: a client that follows redirects, manages cookies
 invisibly and normalises request targets would hide the exact behaviours this
 suite exists to observe.
 
-Nothing here modifies `mosd/`. Any apid defect this suite finds is **reported,
+Nothing here modifies `os/pkgs/mosd/`. Any apid defect this suite finds is **reported,
 never fixed from inside the test tree**.
 
 ## One boot, phased, ordered

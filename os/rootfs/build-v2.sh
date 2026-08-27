@@ -253,7 +253,7 @@ mkdir -p "$MOSD_STAGE"
 # could catch.
 rm -f "$OUT_DIR/mosd-build.txt"
 if ! declined mosd; then
-    bash "$REPO_ROOT/mosd/hack/build-target.sh" "$RUST_TARGET" "$ELF_ARCH"
+    bash "$REPO_ROOT/os/pkgs/mosd/hack/build-target.sh" "$RUST_TARGET" "$ELF_ARCH"
     # The commit that build embedded in mosd and apid, carried into this board's
     # output directory beside the factory root the two binaries end up in.
     # The smoke runner asserts what they REPORT against what was
@@ -262,27 +262,27 @@ if ! declined mosd; then
     # embedding works at all. Copied rather than re-derived, so the value the
     # runner compares against is the one the compiler was actually handed.
     cp "$REPO_ROOT/_out/mosd-build.txt" "$OUT_DIR/mosd-build.txt"
-    cp "$REPO_ROOT/mosd/target/$RUST_TARGET/release/mosd" "$MOSD_STAGE/mosd"
-    cp "$REPO_ROOT/mosd/dist/mosd.service" "$MOSD_STAGE/mosd.service"
-    cp "$REPO_ROOT/mosd/dist/com.mos.mosd.conf" "$MOSD_STAGE/com.mos.mosd.conf"
-    cp "$REPO_ROOT/mosd/dist/com.mos.ext.conf" "$MOSD_STAGE/com.mos.ext.conf"
-    cp "$REPO_ROOT/mosd/target/$RUST_TARGET/release/apid" "$MOSD_STAGE/apid"
-    cp "$REPO_ROOT/mosd/dist/apid.service" "$MOSD_STAGE/apid.service"
+    cp "$REPO_ROOT/os/pkgs/mosd/target/$RUST_TARGET/release/mosd" "$MOSD_STAGE/mosd"
+    cp "$REPO_ROOT/os/pkgs/mosd/dist/mosd.service" "$MOSD_STAGE/mosd.service"
+    cp "$REPO_ROOT/os/pkgs/mosd/dist/com.mos.mosd.conf" "$MOSD_STAGE/com.mos.mosd.conf"
+    cp "$REPO_ROOT/os/pkgs/mosd/dist/com.mos.ext.conf" "$MOSD_STAGE/com.mos.ext.conf"
+    cp "$REPO_ROOT/os/pkgs/mosd/target/$RUST_TARGET/release/apid" "$MOSD_STAGE/apid"
+    cp "$REPO_ROOT/os/pkgs/mosd/dist/apid.service" "$MOSD_STAGE/apid.service"
     # The MQTT bridge. Its unit lives in the crate rather than
-    # mosd/dist because the crate is where it is maintained; its D-Bus grant
-    # lives in mosd/dist beside the policy it is layered over.
-    cp "$REPO_ROOT/mosd/target/$RUST_TARGET/release/mos-mqttd" \
+    # os/pkgs/mosd/dist because the crate is where it is maintained; its D-Bus grant
+    # lives in os/pkgs/mosd/dist beside the policy it is layered over.
+    cp "$REPO_ROOT/os/pkgs/mosd/target/$RUST_TARGET/release/mos-mqttd" \
         "$MOSD_STAGE/mos-mqttd"
-    cp "$REPO_ROOT/mosd/mqttd/dist/mos-mqttd.service" "$MOSD_STAGE/mos-mqttd.service"
-    cp "$REPO_ROOT/mosd/dist/mos-mqttd.conf" "$MOSD_STAGE/mos-mqttd.conf"
+    cp "$REPO_ROOT/os/pkgs/mosd/mqttd/dist/mos-mqttd.service" "$MOSD_STAGE/mos-mqttd.service"
+    cp "$REPO_ROOT/os/pkgs/mosd/dist/mos-mqttd.conf" "$MOSD_STAGE/mos-mqttd.conf"
     # The broker the bridge above connects to. No D-Bus grant to
     # stage beside it: it is not a bus client, it only listens on TCP. Its
     # config is not staged either -- mosd renders /run/mos/mqtt-broker.toml at
     # runtime, because a file baked into an immutable root would be the same
     # listen address on every device flashed with this image.
-    cp "$REPO_ROOT/mosd/target/$RUST_TARGET/release/mos-mqtt-broker" \
+    cp "$REPO_ROOT/os/pkgs/mosd/target/$RUST_TARGET/release/mos-mqtt-broker" \
         "$MOSD_STAGE/mos-mqtt-broker"
-    cp "$REPO_ROOT/mosd/broker/dist/mos-mqtt-broker.service" \
+    cp "$REPO_ROOT/os/pkgs/mosd/broker/dist/mos-mqtt-broker.service" \
         "$MOSD_STAGE/mos-mqtt-broker.service"
 else
     echo "note: mosd declined; building rootfs without stages/33-feature-mosd"

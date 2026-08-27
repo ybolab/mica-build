@@ -2,9 +2,9 @@
 # Cross-build mosd, apid, mos-mqttd and mos-mqtt-broker for one Rust target
 # and verify the ELF.
 #
-#   bash mosd/hack/build-target.sh <rust-target> <elf-arch-substring>
-#   bash mosd/hack/build-target.sh aarch64-unknown-linux-gnu aarch64
-#   bash mosd/hack/build-target.sh x86_64-unknown-linux-gnu  x86-64
+#   bash os/pkgs/mosd/hack/build-target.sh <rust-target> <elf-arch-substring>
+#   bash os/pkgs/mosd/hack/build-target.sh aarch64-unknown-linux-gnu aarch64
+#   bash os/pkgs/mosd/hack/build-target.sh x86_64-unknown-linux-gnu  x86-64
 #
 # The compiler is localhost/mos-build-rust's, not the host's, so docker is the
 # one thing the host needs: no rustup, no cross linker, no target std. What
@@ -12,18 +12,18 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 WORKSPACE="$(pwd)"
-REPO_ROOT="$(cd "${WORKSPACE}/.." && pwd)"
+REPO_ROOT="$(cd "${WORKSPACE}/../../.." && pwd)"
 FROM_SH="${REPO_ROOT}/os/build-env/from.sh"
 
 TARGET="${1:?usage: build-target.sh <rust-target> <elf-arch>}"
 ELF_ARCH="${2:?usage: build-target.sh <rust-target> <elf-arch>}"
 
-# os/rootfs/build-v2.sh, mosd/hack/build-aarch64.sh and a hand invocation all
+# os/rootfs/build-v2.sh, os/pkgs/mosd/hack/build-aarch64.sh and a hand invocation all
 # reach this file, and a relative path resolves against whichever is the caller,
 # so both roots are derived from $0.
 for p in "${WORKSPACE}/Cargo.toml" "${FROM_SH}"; do
     [ -e "${p}" ] || {
-        echo "error: ${p} does not exist. mosd/hack/build-target.sh derives the workspace as its own directory's parent and the repository as the level above that; if this file moved, that arithmetic moved with it" >&2
+        echo "error: ${p} does not exist. os/pkgs/mosd/hack/build-target.sh derives the workspace as its own directory's parent and the repository as three levels above that; if this file moved, that arithmetic moved with it" >&2
         exit 1
     }
 done
@@ -105,14 +105,14 @@ fi
 #
 # This copy describes the last build for any target, which is why the runner
 # reads the per-board copy instead: an x64 rootfs build followed by
-# `bash mosd/hack/build-aarch64.sh` leaves this file saying
+# `bash os/pkgs/mosd/hack/build-aarch64.sh` leaves this file saying
 # target=aarch64-unknown-linux-gnu while _out/x64/ still holds x86_64 binaries.
 #
 # Tab-separated `key<TAB>value` with `#` comments, the shape
 # os/build/src/stages.ts writes for factory-root.txt, so one reader reads both.
 MOSD_BUILD_RECORD="${REPO_ROOT}/_out/mosd-build.txt"
 {
-    echo "# What mosd/hack/build-target.sh built, and the commit it embedded in mosd and apid."
+    echo "# What os/pkgs/mosd/hack/build-target.sh built, and the commit it embedded in mosd and apid."
     echo "# Written on every build. os/rootfs/build-v2.sh copies it into _out/<board>/."
     echo "# An empty commit means none could be resolved; the binaries then report unknown."
     printf 'target\t%s\n' "${TARGET}"
@@ -120,11 +120,11 @@ MOSD_BUILD_RECORD="${REPO_ROOT}/_out/mosd-build.txt"
     printf 'commit\t%s\n' "${MOS_BUILD_COMMIT}"
 } >"${MOSD_BUILD_RECORD}"
 
-# The repository is mounted, not mosd/. That used to be forced: mosd/Cargo.toml
-# listed one workspace member outside this directory, and mounting mosd/ alone
+# The repository is mounted, not os/pkgs/mosd/. That used to be forced: os/pkgs/mosd/Cargo.toml
+# listed one workspace member outside this directory, and mounting os/pkgs/mosd/ alone
 # made cargo fail on a manifest it could not see. PLAN-019 M3 extracted that
 # crate into its own workspace under os/pkgs/, so no member reaches outside
-# mosd/ any more and that reason is gone.
+# os/pkgs/mosd/ any more and that reason is gone.
 #
 # The decision is unchanged, because the reason below always carried it on its
 # own and now carries it alone: at the fixed path /src, because rustc records
@@ -135,7 +135,7 @@ MOSD_BUILD_RECORD="${REPO_ROOT}/_out/mosd-build.txt"
 #
 # The loop below is DORMANT, not dead: the members list has no `../` entry today,
 # so it iterates zero times. It is kept because it is the general form -- the
-# next member added outside mosd/ fails with a sentence rather than with a
+# next member added outside os/pkgs/mosd/ fails with a sentence rather than with a
 # missing-file error that names the file and not the cause.
 while IFS= read -r m; do
     [ -n "${m}" ] || continue
@@ -147,7 +147,7 @@ while IFS= read -r m; do
     case "${abs}" in
     "${REPO_ROOT}"/*) ;;
     *)
-        echo "error: mosd/Cargo.toml lists the workspace member '${m}', which resolves outside ${REPO_ROOT}. This build mounts the repository into the container and nothing above it, so cargo would report that member as a missing Cargo.toml rather than as a member the container cannot see" >&2
+        echo "error: os/pkgs/mosd/Cargo.toml lists the workspace member '${m}', which resolves outside ${REPO_ROOT}. This build mounts the repository into the container and nothing above it, so cargo would report that member as a missing Cargo.toml rather than as a member the container cannot see" >&2
         exit 1
         ;;
     esac
@@ -160,7 +160,7 @@ docker run --rm \
     -v "${REPO_ROOT}:/src" \
     -v "${CARGO_CACHE}/registry:/usr/local/cargo/registry" \
     -v "${CARGO_CACHE}/git:/usr/local/cargo/git" \
-    -w /src/mosd \
+    -w /src/os/pkgs/mosd \
     -e "TARGET=${TARGET}" \
     -e "MOS_BUILD_COMMIT=${MOS_BUILD_COMMIT}" \
     --entrypoint /bin/bash \
