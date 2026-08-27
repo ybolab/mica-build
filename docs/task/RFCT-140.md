@@ -1,6 +1,6 @@
 # RFCT-140 One outage is reported two ways: the API answers 503 and the HTML pages answer 502
 
-- **status**: in progress
+- **status**: completed
 - **priority**: P2
 - **owner**: bkd/xexc9k2h
 - **createdAt**: 2026-08-26
@@ -23,3 +23,21 @@ monitoring already matches on.
 The cost is that an appliance under one fault emits two status codes, and
 anything watching from outside has to learn both. Closing it is the built-in
 UI's half of a change the API has already made.
+
+## Resolution
+
+`bus_error` — the one page every HTML form handler renders for a failed
+mosd call — now answers **503 Service Unavailable with `Retry-After: 5`**
+(`os/pkgs/mosd/apid/src/routes.rs:655-670`), the same status and the same
+header the API path answers for the same condition
+(`mosd_unreachable`, `:570-574`, header at `:558-563`). One outage now
+reports one way on both surfaces. The page body is unchanged.
+
+Tests (commit `054bceb`): the one assertion of the old 502 control
+(`api_versions_answers_when_the_settings_call_fails`) moved to 503, and a
+new test pins 503 + `Retry-After` on the HTML surface
+(`an_unreachable_mosd_is_503_with_retry_after_on_the_html_panes_too`).
+`test/apid-api` needed no change: no phase asserts the old 502 — the two
+"502" hits in `05-mutate.ts` are comments describing a 2026-08-24 run,
+not assertions. api.md §2.4's passage that recorded the divergence as an
+open cost now records it closed.
