@@ -1,6 +1,7 @@
 # PLAN-015 Function-oriented comments: strip history from code, tests, and docs
 
-- **status**: approved
+- **status**: completed
+- **completedAt**: 2026-08-26 21:40
 - **createdAt**: 2026-08-26 14:05
 - **approvedAt**: 2026-08-26 14:20
 - **relatedTask**: RFCT-114 (M1), RFCT-115 (M2), RFCT-116 (M3), RFCT-121 (M4), RFCT-122+ (M5) — task files created by the executing workstream as each milestone starts

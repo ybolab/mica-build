@@ -2,7 +2,7 @@
 
 - **status**: completed
 - **priority**: P1
-- **owner**: ai-agent
+- **owner**: bkd/x9gmepqb
 - **createdAt**: 2026-08-26 16:05
 - **claimedAt**: 2026-08-26 16:05
 - **completedAt**: 2026-08-26 17:05
