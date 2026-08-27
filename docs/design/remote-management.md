@@ -33,17 +33,17 @@ defaulting to `unwrap_or_else(|_| "0.0.0.0:443".to_string())`
 (`os/pkgs/mosd/apid/src/config.rs:36-37`). No second protocol, no third port.
 
 **One gate in front of everything.** `app` is *"The HTTPS application router"*
-(`os/pkgs/mosd/apid/src/routes.rs:105`) and its outermost layer is the auth gate
-(`os/pkgs/mosd/apid/src/routes.rs:187`), which *"routes every request into setup mode,
-login, or through"* (`os/pkgs/mosd/apid/src/routes.rs:658`) on a session cookie minted
+(`os/pkgs/mosd/apid/src/routes.rs:108`) and its outermost layer is the auth gate
+(`os/pkgs/mosd/apid/src/routes.rs:190`), which *"routes every request into setup mode,
+login, or through"* (`os/pkgs/mosd/apid/src/routes.rs:661`) on a session cookie minted
 at first-run setup or at login. `/healthz` and the declared API routes are the
 only exemptions; they *"answer for themselves"*
-(`os/pkgs/mosd/apid/src/routes.rs:661-662`).
+(`os/pkgs/mosd/apid/src/routes.rs:664-665`).
 
 **The JSON API under `/api` is read-only.** The router reserves the prefix and
-*"every other path under it 404s"* (`os/pkgs/mosd/apid/src/routes.rs:175-176`); every
-route inside is a GET — `get(api_v1_settings)` (`os/pkgs/mosd/apid/src/routes.rs:265`)
-and `get(api_v1_state)` (`os/pkgs/mosd/apid/src/routes.rs:266`), beside version
+*"every other path under it 404s"* (`os/pkgs/mosd/apid/src/routes.rs:178-179`); every
+route inside is a GET — `get(api_v1_settings)` (`os/pkgs/mosd/apid/src/routes.rs:268`)
+and `get(api_v1_state)` (`os/pkgs/mosd/apid/src/routes.rs:269`), beside version
 discovery and metadata. `docs/design/api.md` section 1 records the whole of
 *"The surface as it exists today"* (`docs/design/api.md:96`).
 
@@ -104,7 +104,7 @@ is guaranteed to exhaust its credits"*
 **What does not exist — [not implemented].** No on-device pull: the device-side
 verifier is built and tested on the host, and *"nothing ships it to a device
 yet"* (`os/pkgs/rauc-sign/README.md:12`). apid declares no update route
-(`os/pkgs/mosd/apid/src/routes.rs:113-188`), so it offers no local check/apply button
+(`os/pkgs/mosd/apid/src/routes.rs:116-191`), so it offers no local check/apply button
 either; earlier text here claiming one described a surface that is not there.
 
 **The constraint on any future trigger.** Whatever triggers an update — a

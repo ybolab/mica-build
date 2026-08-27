@@ -27,5 +27,5 @@ pub use model::{
     ProvisioningSettings, ProvisioningState, SCHEMA_VERSION, Settings, SshSettings, StaticConfig,
     WebAdminSettings, WifiApSettings, WifiClientSettings, WifiNetwork, WifiSettings,
 };
-pub use path::json_path_get;
+pub use path::{json_path_get, quote_path_segment};
 pub use store::{DEFAULT_PATH, RollbackReport, Store};
