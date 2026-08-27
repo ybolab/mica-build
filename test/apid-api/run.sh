@@ -38,7 +38,14 @@ ART_DIR="${OUT_DIR}/apid-api"
 # pointing _out at the checkout that built the image is the ordinary case --
 # slips past a string comparison, and the guard below would wave through the
 # collision it exists to stop.
-RUN_DIR_REAL="$(readlink -f "${RUN_DIR}")"
+# `readlink -f` demands every component but the last, so a checkout with no
+# ${OUT_DIR} at all -- nothing was ever built here -- used to die right on this
+# assignment under `set -e`, as a bare exit 1 with no output. Refuse with a
+# sentence instead; the image check further down never gets a chance to.
+if ! RUN_DIR_REAL="$(readlink -f "${RUN_DIR}")"; then
+    echo "FAIL: ${OUT_DIR} does not exist, so there is no image to boot; this harness builds nothing. Build it: MOS_BOARD=x64 bash os/rootfs/build-v2.sh && bash os/build/run.sh --mkimage-x64" >&2
+    exit 1
+fi
 OUT_REAL="$(readlink -f "${REPO_ROOT}/_out")"
 
 # Ports: the same names os/tools/qemu-run.sh reads, so a caller sets them once and
@@ -221,7 +228,7 @@ finish() {
 note "repository ${REPO_ROOT}"
 
 if [ ! -e "${IMG}" ]; then
-    fail "image ${IMG##*/} is missing; this harness builds nothing. Build it: MOS_BOARD=x64 bash os/rootfs/build-v2.sh && bash os/mkimage-x64.sh"
+    fail "image ${IMG##*/} is missing; this harness builds nothing. Build it: MOS_BOARD=x64 bash os/rootfs/build-v2.sh && bash os/build/run.sh --mkimage-x64"
     finish
 fi
 pass "image present: ${IMG##*/} -> $(basename "$(readlink -f "${IMG}")")"
