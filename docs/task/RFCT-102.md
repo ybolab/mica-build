@@ -1,6 +1,6 @@
 # RFCT-102 Make the container engine actually usable: storage off the wipeable partition, a board switch, and a build that runs it
 
-- **status**: implementation complete — image verify 376/376, `os/ui-location-test.sh` 54/54 cases, `check.sh` 506/506
+- **status**: completed — implementation complete, image verify 376/376, `os/ui-location-test.sh` 54/54 cases, `check.sh` 506/506
 - **priority**: P1
 - **owner**: ai-agent
 - **createdAt**: 2026-08-23 14:20

@@ -1,6 +1,6 @@
 # RFCT-087 An offline U-Boot A/B handshake harness on the sandbox build (spike)
 
-- **status**: complete — FEASIBLE; the shipped boot.cmd runs byte-unmodified under sandbox, harness 72/72 PASS, offline after first build
+- **status**: completed — FEASIBLE; the shipped boot.cmd runs byte-unmodified under sandbox, harness 72/72 PASS, offline after first build
 - **completedAt**: 2026-08-23 07:35
 - **priority**: P1
 - **owner**: ai-agent

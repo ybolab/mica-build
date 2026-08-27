@@ -72,7 +72,7 @@ one grep, and it recurred at M4.
 
 ## Reported, not acted on
 
-- `os/update/rauc/build.sh:63` pins `--builder default` while its
+- `os/pkgs/rauc/build.sh:63` pins `--builder default` while its
   `FROM localhost/mos-build-*` stages need that image family reachable from
   whichever builder runs them, so the rootfs/rauc chain is unrunnable on this
   host. Carried forward from RFCT-163; not this milestone's defect.

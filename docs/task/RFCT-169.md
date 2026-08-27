@@ -135,9 +135,9 @@ declaration and the comment recording that `cargo clippy --workspace` from
 
 **(b) The dead `tough` pin — NOT removed. See "Declined" below.**
 
-**(c) `api.md:3559`.** A pre-existing mis-citation: it claimed
-`os/pkgs/rauc-sign/README.md:32` "names the on-device Uptane client as out of
-phase 1", and `:32` reads "over HTTP range requests." M3 repointed it faithfully
+**(c) `api.md:3559`.** A pre-existing mis-citation: it claimed the README
+"names the on-device Uptane client as out of phase 1", while
+`os/pkgs/rauc-sign/README.md:32` reads "over HTTP range requests." M3 repointed it faithfully
 to the same content rather than to the line that would make the sentence true,
 because choosing a different referent is a prose judgment. Repointed to `:9-12`,
 the device-side bullet, which places `rauc-verify` in phase 2 and records that

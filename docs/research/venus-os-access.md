@@ -267,8 +267,8 @@ from the sources read (see §7).
   replacement, which is precisely the behaviour Venus does **not** have
   (root-access page §4.2, quoted in §2.7). The toggle is the borrowed part; the
   credential lifetime is the opposite.
-- mos's META lockdown bit is one-way and *"factory reset (STATE/EPHEMERAL wipe)
-  deliberately does NOT clear it"* (`docs/design/access.md:199-202`). Venus's
+- mos's META lockdown bit is one-way and *"factory reset deliberately does NOT
+  clear it"* (`docs/design/access.md:310-313`). Venus's
   stated policy is the direct inverse: *"we as Victron Energy always want an
   end-user with physical access to the device to be able to gain access to the
   device again after he has himself accidentally locked out"* [DOC]
@@ -355,8 +355,8 @@ own UI to a logged-in VRM user.
 
 ### 3.3 Compared to `docs/design/remote-management.md`
 
-mos plans SideroLink — a device-dialled WireGuard tunnel with *"no inbound port
-on the device"* (`docs/design/remote-management.md:68`). Venus reaches the same
+mos plans SideroLink — a device-dialled WireGuard tunnel managing the fleet
+*"without an inbound port"* (`docs/design/remote-management.md:71`). Venus reaches the same
 topology with reverse SSH over 22/80/443, and additionally publishes the
 rendezvous endpoint back into the device UI (§3.1) — which mos's design does not
 currently describe an equivalent of.

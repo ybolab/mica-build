@@ -193,3 +193,5 @@ only)"*.
 than kept able to refuse. `os/verify/HARNESS.md` records every defect the
 deletion froze, marked SHIPS or GONE — including two that were expected to leave
 with the file and did not, because their reproductions live in the port.
+
+<!-- dated-record: a measurement record frozen at its commit; its citations name the tree as it was then (pre-PLAN-019 layout, pre-rewrite design documents); exempt from docs/verify-citations.sh (RFCT-172) -->

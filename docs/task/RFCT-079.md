@@ -1,6 +1,6 @@
 # RFCT-079 Status markers per subsection, the §10.3 register entry, and the final consistency pass
 
-- **status**: complete — §§4, 5 and 6 marked per subsection with the code named by path, the §0 marker divergence registered at §10.3 item 15 with the preamble bound to its period, the hardware position said once, and 44 pre-rename citations re-pointed and re-measured
+- **status**: completed — §§4, 5 and 6 marked per subsection with the code named by path, the §0 marker divergence registered at §10.3 item 15 with the preamble bound to its period, the hardware position said once, and 44 pre-rename citations re-pointed and re-measured
 - **priority**: P1
 - **owner**: ai-agent
 - **createdAt**: 2026-08-20 22:15
@@ -275,3 +275,5 @@ Touched: `docs/design/api.md`, `docs/task/RFCT-079.md` (new),
 the `Makefile`, `docs/design/access.md`, `docs/design/dashboard.md`,
 `docs/design/ro-root.md`, `docs/README.md` (no row is owed — it indexes
 `design/` and `research/`, and this task adds neither).
+
+<!-- dated-record: a measurement record frozen at its commit; its citations name the tree as it was then (pre-PLAN-019 layout, pre-rewrite design documents); exempt from docs/verify-citations.sh (RFCT-172) -->

@@ -20,7 +20,7 @@ apart is boot-time systemd ordering, not a lock: the machine-id oneshot runs
 `After=local-fs.target` and is deliberately ordered before no target at all
 (`os/rootfs/overlay-v2/usr/lib/systemd/system/mos-machine-id.service:6-8`),
 and RAUC writes `BOOT_A_LEFT`/`BOOT_B_LEFT` through `fw_setenv` as part of slot
-marking (`os/update/rauc/system.conf.in:35`). Ordering that holds during boot
+marking (`os/pkgs/rauc/system.conf.in:35`). Ordering that holds during boot
 says nothing about two processes that meet afterwards.
 
 A dashboard that polls `BOOT_A_LEFT`/`BOOT_B_LEFT` is a reader with no

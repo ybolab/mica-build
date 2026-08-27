@@ -1,6 +1,6 @@
 # RFCT-084 mosd update orchestration: RAUC install and confirm over the bus, update state, and a Reboot that knows about an unconfirmed slot
 
-- **status**: complete — InstallUpdate/GetUpdateState/MarkUpdate on the bus, install off the service lock, Reboot warns on an unconfirmed slot; mosd 249/249
+- **status**: completed — InstallUpdate/GetUpdateState/MarkUpdate on the bus, install off the service lock, Reboot warns on an unconfirmed slot; mosd 249/249
 - **completedAt**: 2026-08-23 05:20
 - **priority**: P1
 - **owner**: ai-agent

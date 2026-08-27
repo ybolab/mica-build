@@ -6,7 +6,7 @@
 - **createdAt**: 2026-08-26
 - **completedAt**: 2026-08-27
 
-`os/update/rauc/system.conf.in:71-78` points RAUC's CMS keyring at
+`os/pkgs/rauc/system.conf.in:71-78` points RAUC's CMS keyring at
 `/etc/rauc/keyring.pem` and states what is there instead: *"Production keyring
 provisioning is out of scope here; until one is installed, `rauc install` on
 device fails closed."* The development keyring is deliberately not in git, and
@@ -14,7 +14,7 @@ device fails closed."* The development keyring is deliberately not in git, and
 ships no keyring at all.
 
 The image verifier agrees and asserts the absence rather than the presence:
-`packed-no-dev-keyring` (`os/verify/src/checks-root.ts:629-633`) exists to
+`packed-no-dev-keyring` (`os/verify/src/checks-root.ts:601-620`) exists to
 catch a development keyring baked into the signed root, because a keyring
 inside the read-only root is a trusted signer on every device.
 

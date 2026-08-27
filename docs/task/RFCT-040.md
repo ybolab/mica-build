@@ -1,6 +1,6 @@
 # RFCT-040 Venus OS web UI and information architecture study
 
-- **status**: research complete — reference document, no code
+- **status**: completed — research complete, reference document, no code
 - **priority**: P2
 - **owner**: ai-agent
 - **createdAt**: 2026-08-19 10:17

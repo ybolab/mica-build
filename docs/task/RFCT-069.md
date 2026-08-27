@@ -1,6 +1,6 @@
 # RFCT-069 Resolve the auth/CSRF and version-set contradictions; the migration finding as a dead-control instance
 
-- **status**: complete — both contradictions resolved; one supplied citation was found not to hold and was corrected against the plan documents; one finding was corrected **upward** by execution
+- **status**: completed — both contradictions resolved; one supplied citation was found not to hold and was corrected against the plan documents; one finding was corrected **upward** by execution
 - **priority**: P1
 - **owner**: ai-agent
 - **createdAt**: 2026-08-19 16:41

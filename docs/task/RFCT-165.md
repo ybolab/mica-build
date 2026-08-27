@@ -1,6 +1,6 @@
 # RFCT-165 PLAN-019 M1: the os/pkgs target layout, designed before it is executed
 
-- **status**: in-progress
+- **status**: completed
 - **priority**: P2
 - **owner**: ai-agent
 - **createdAt**: 2026-08-27
@@ -1004,3 +1004,5 @@ so one new record plus one new row adds one check to each:
 `git status --porcelain` lists exactly two paths: ` M docs/task/index.md` and
 `?? docs/task/RFCT-165.md`. Nothing else in the tree was touched; no `git mv`
 was run, and `os/pkgs/` does not exist yet.
+
+<!-- dated-record: a measurement record frozen at its commit; its citations name the tree as it was then (pre-PLAN-019 layout, pre-rewrite design documents); exempt from docs/verify-citations.sh (RFCT-172) -->

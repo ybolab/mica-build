@@ -129,7 +129,7 @@ one `@echo` string, a deleted README and two docs files, and no file under
 
 No image or rootfs build was attempted: none of these gates needs one, and the
 rootfs/rauc chain is unrunnable on this host for a narrow reason outside this
-campaign (`os/update/rauc/build.sh:63` pins `--builder default`, and its
+campaign (`os/pkgs/rauc/build.sh:63` pins `--builder default`, and its
 `FROM localhost/mos-build-*` stages need that image family reachable from
 whichever builder runs them). Note that arm64 image builds themselves do work
 here, via the `mos-arm64` docker-container builder -- `docker buildx inspect`

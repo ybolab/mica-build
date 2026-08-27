@@ -184,3 +184,5 @@ It was repointed and then **reverted**: PLAN-014's **Scope** section excludes
 Same for the two `board/*/board.yaml` citations, under the same sentence's
 `board/` exclusion. Finding is in scope; acting is not. Both are stale and
 neither is this task's to change.
+
+<!-- dated-record: a measurement record frozen at its commit; its citations name the tree as it was then (pre-PLAN-019 layout, pre-rewrite design documents); exempt from docs/verify-citations.sh (RFCT-172) -->

@@ -1,6 +1,6 @@
 # RFCT-035 webd SSH pane: keys, transient password, effective state
 
-- **status**: implementation complete — `bash mosd/hack/check.sh` green; no
+- **status**: completed — implementation complete, `bash mosd/hack/check.sh` green; no
   on-device SSH behaviour is claimed
 - **priority**: P1
 - **owner**: ai-agent

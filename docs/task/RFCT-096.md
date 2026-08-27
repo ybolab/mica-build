@@ -111,3 +111,5 @@ gate is green with `dbus-daemon` installed.
 lint or `check.sh`-level guard that could catch a fourth silently-skipping
 test being added, and having `check.sh` print what it provisioned). That is
 gate hardening and belongs to PLAN-020's scope, not this task.
+
+<!-- dated-record: a measurement record frozen at its commit; its citations name the tree as it was then (pre-PLAN-019 layout, pre-rewrite design documents); exempt from docs/verify-citations.sh (RFCT-172) -->

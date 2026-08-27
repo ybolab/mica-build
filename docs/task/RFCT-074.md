@@ -1,6 +1,6 @@
 # RFCT-074 The asset router: routing precedence, the reserved /api/ subtree, SPA fallback
 
-- **status**: complete — the asset router is mounted as the HTTPS router's fallback, `/api/` is reserved with §2.4's envelope, §4.2's five conditions each have a test, and `assets/mod.rs` no longer carries `#![allow(dead_code)]`
+- **status**: completed — the asset router is mounted as the HTTPS router's fallback, `/api/` is reserved with §2.4's envelope, §4.2's five conditions each have a test, and `assets/mod.rs` no longer carries `#![allow(dead_code)]`
 - **priority**: P1
 - **owner**: ai-agent
 - **createdAt**: 2026-08-20 15:20

@@ -51,3 +51,5 @@ units separately. What was narrowed is the two overstated readings
 `docs/plan/PLAN-005.md:149` is deliberately untouched: plan documents are
 history, and the historical `healthGate` sentence there stands corrected
 by the design documents above.
+
+<!-- dated-record: a frozen worklist or exhibit of what was measured then; re-pointing its citations would falsify the record; exempt from docs/verify-citations.sh (RFCT-172) -->

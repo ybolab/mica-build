@@ -1,6 +1,6 @@
 # RFCT-067 PMA records, the task index, and the final consistency pass
 
-- **status**: complete — seven records written and indexed; the consistency pass found one live inconsistency, which is reported with an owner rather than fixed
+- **status**: completed — seven records written and indexed; the consistency pass found one live inconsistency, which is reported with an owner rather than fixed
 - **priority**: P1
 - **owner**: ai-agent
 - **createdAt**: 2026-08-19 15:27
@@ -219,3 +219,5 @@ used to reproduce RFCT-069's `36 passed; 0 failed` left the worktree clean and
 committed nothing.
 
 No product code changed.
+
+<!-- dated-record: a measurement record frozen at its commit; its citations name the tree as it was then (pre-PLAN-019 layout, pre-rewrite design documents); exempt from docs/verify-citations.sh (RFCT-172) -->

@@ -1,6 +1,6 @@
 # RFCT-043 Dashboard landing screen and information architecture
 
-- **status**: proposal complete — the design decision is the user's, and open
+- **status**: completed — proposal complete, the design decision is the user's, and open
 - **priority**: P1
 - **owner**: ai-agent
 - **createdAt**: 2026-08-19 10:17

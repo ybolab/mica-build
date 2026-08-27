@@ -1,6 +1,6 @@
 # RFCT-095 The com.mos.ext policy assertions cannot fail, and hoisting them needs a different shape
 
-- **status**: closed by PLAN-011 M5 (RFCT-093), 2026-08-22 — kept, not deleted; see Resolution
+- **status**: completed — closed by PLAN-011 M5 (RFCT-093), 2026-08-22, kept, not deleted; see Resolution
 - **priority**: P2
 - **owner**: (was unclaimed; closed in campaign)
 - **createdAt**: 2026-08-22 18:05
@@ -96,3 +96,5 @@ header says "every mosd policy check above still passing", which after the hoist
 is true of execution order but misleading on the page. Rewording moved prose is
 what MOVE-not-CHANGE forbids and would have broken the byte-identity proof, so
 it needs a deliberate one-line follow-up rather than an opportunistic fix.
+
+<!-- dated-record: a measurement record frozen at its commit; its citations name the tree as it was then (pre-PLAN-019 layout, pre-rewrite design documents); exempt from docs/verify-citations.sh (RFCT-172) -->

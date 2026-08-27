@@ -1,6 +1,6 @@
 # RFCT-047 sshd reconciler: reload on config change, not restart
 
-- **status**: implementation complete — `bash mosd/hack/check.sh` green at 280
+- **status**: completed — implementation complete, `bash mosd/hack/check.sh` green at 280
   tests; no on-device sshd behaviour is claimed
 - **priority**: P1
 - **owner**: ai-agent
