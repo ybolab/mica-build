@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1@sha256:ecfaec9ed6d810b56388c508f4121597bfbba70d41a6dfeee4d8cad5f295fc32
 # U-Boot sandbox build for the offline A/B handshake harness.
 #
-# Same source pin as board/cx3576/uboot/Dockerfile (v2026.07 commit): the
+# Same source pin as os/boards/cx3576/bsp/uboot/Dockerfile (v2026.07 commit): the
 # harness must exercise the same U-Boot generation the board runs, only built
 # for the host (sandbox_defconfig) so the shipped boot.scr can be executed
 # without hardware. Network is needed once, for this build; every run of the
@@ -12,7 +12,7 @@
 # same key the BSP builders use, deliberately: the claim above is about the
 # source pin, and it is weaker than it reads if the two builds do not also
 # stand on the same builder -- a sandbox U-Boot compiled by a different gcc
-# than board/cx3576/uboot's is a different program being asserted about. No
+# than os/boards/cx3576/bsp/uboot's is a different program being asserted about. No
 # default: without a value docker refuses before any stage runs.
 ARG MOS_IMAGE_UBUNTU_2404
 FROM ${MOS_IMAGE_UBUNTU_2404} AS src
@@ -26,7 +26,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         mtools dosfstools gdisk \
     && rm -rf /var/lib/apt/lists/*
 
-# Identical pin to board/cx3576/uboot/Dockerfile.
+# Identical pin to os/boards/cx3576/bsp/uboot/Dockerfile.
 ARG UBOOT_REPO=https://github.com/u-boot/u-boot.git
 ARG UBOOT_COMMIT=ece349ade2973e220f524ce59e59711cc919263f
 RUN git init -q /uboot && \
@@ -36,7 +36,7 @@ RUN git init -q /uboot && \
     test "$(git -C /uboot rev-parse HEAD)" = "${UBOOT_COMMIT}"
 
 # Sandbox build carrying the board's env contract
-# (board/cx3576/uboot/Dockerfile --target artifact-mos): redundant env pair at
+# (os/boards/cx3576/bsp/uboot/Dockerfile --target artifact-mos): redundant env pair at
 # the same absolute eMMC offsets, uenv-a 0x1000000 / uenv-b 0x1100000, 64 KiB
 # each, on mmc device 0 -- here a host file, because the sandbox mmc driver
 # mmaps the DT `filename` property MAP_SHARED (drivers/mmc/sandbox_mmc.c,

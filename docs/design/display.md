@@ -53,7 +53,7 @@ the screen at an application UI (served by an app container) instead of apid.
 ## 4. Boot experience & tty policy
 
 - Boot splash: U-Boot shows the board splash (cx3576's master is
-  `board/cx3576/rootfs/assets/splash.png`), kernel keeps `quiet` fbcon off the
+  `os/boards/cx3576/bsp/rootfs/assets/splash.png`), kernel keeps `quiet` fbcon off the
   HDMI in prod; kiosk takes DRM master when the service starts. Target: no text
   ever flashes on a customer screen.
   - The master is a **source asset with no consumer yet**: no build step reads

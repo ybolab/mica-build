@@ -27,12 +27,12 @@ mos/
 The image is **v2**: an A/B layout with a squashfs + dm-verity read-only root,
 RAUC updates and a U-Boot `BOOT_ORDER` handshake. Build and check it with
 `make os-image-cx3576-v2`, `make os-verify-cx3576-v2` and
-`make os-bundle-cx3576`, paired with the U-Boot that `make -C board/cx3576
+`make os-bundle-cx3576`, paired with the U-Boot that `make -C os/boards/cx3576/bsp
 uboot-mos` builds. See `docs/design/uboot-ab-handshake.md`.
 
-Each board directory carries a `board.yaml` metadata file describing the board;
-no build step consumes it yet, because the image scripts hardcode their artifact
-paths.
+Each board directory carries a `board.env` file describing the board as plain
+`KEY=value` lines — partition layout, console and boot facts. It is the single
+source of truth the image, rootfs, RAUC and verify steps all read.
 
 ## Architecture
 

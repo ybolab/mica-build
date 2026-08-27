@@ -1,10 +1,11 @@
 # PLAN-018 Board consolidation: board/ moves under os/boards/, one definition per board
 
-- **status**: approved
+- **status**: completed
+- **completedAt**: 2026-08-27
 - **approvedAt**: 2026-08-26 22:05
 - **createdAt**: 2026-08-26 21:55
 - **relatedTask**: RFCT-160..169 reserved
-- **milestones**: M1 the move and the path rewrites, byte-identical artifacts; M2 board.yaml retired into board.env and boards.md; M3 x64 cleanup and the stale Makefile line; M4 docs path sweep under the gating checker
+- **milestones**: M1 **complete 2026-08-27** (RFCT-160) — the move and the path rewrites, every consumer repointed; M2 **complete 2026-08-27** (RFCT-161) — board.yaml retired into board.env comments, both files deleted; M3 **complete 2026-08-27** (RFCT-162) — x64 cleanup and the stale Makefile line, `board/` gone; M4 **complete 2026-08-27** (RFCT-163) — docs path sweep, `bash docs/verify-citations.sh` 642/642 with zero unresolved citations, against M1's Amendment 1 acceptance rather than a whole-tree sweep
 
 ## Context
 
@@ -39,7 +40,11 @@ board/ paths, docs/design/bsp-cx3576-sync.md. No .gitea reference.
   prebuilt artifacts at the new path; byte-identity of any rebuilt artifact is
   NOT required (BSP builds are not reproducible) — instead the tree carries no
   reference to the old path (`git grep 'board/cx3576\|board/common'` empty
-  outside docs/task history).
+  outside docs/task history). *(Amendment 1, 2026-08-26, ratified at M2:
+  `*.zh.md` files are excluded from this criterion. The translations are
+  known-stale wholesale and move only on explicit user request; their seven
+  old-path references are evidenced as counted-and-unchanged in RFCT-163's
+  report rather than silently exempted.)*
 - **M2 (RFCT-161)** board.yaml retired: still-true human facts (kernel
   source/dtb, wifi SKUs, display defaults) fold into board.env comments or
   docs/design/boards.md; both board.yaml files deleted.

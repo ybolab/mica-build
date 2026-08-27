@@ -26,7 +26,7 @@
 # A script rather than `$(grep ... images.env)` at each call site, because
 # there are eight call sites -- os/podman/build.sh, os/update/rauc/build.sh,
 # os/rootfs/build-v2.sh, os/tests/handshake-test/run.sh,
-# mosd/hack/build-target.sh and four board/cx3576 make recipes -- and the check
+# mosd/hack/build-target.sh and four os/boards/cx3576/bsp make recipes -- and the check
 # that a value is a digest and not a tag is the entire point of the exercise. A
 # grep at each call site is eight copies of that check, of which seven
 # eventually stop being it. os/build-env/build.sh calls this too, with --check.
@@ -46,7 +46,7 @@ set -euo pipefail
 # Path arithmetic, proved rather than assumed -- os/build-env/build.sh derives
 # REPO_ROOT the same way and for the same reason (os-bundle-cx3576 spent two
 # merges broken on a relative path that resolved against the caller's cwd).
-# This one is called from board/cx3576/Makefile, whose cwd is two directories
+# This one is called from os/boards/cx3576/bsp/Makefile, whose cwd is four directories
 # further down, so "the caller is at the repository root" is not merely
 # something not to depend on: it is false at four of the eight call sites.
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"

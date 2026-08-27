@@ -313,7 +313,7 @@ better mechanism and then hid it.**
   four gap-table rows:
   - **row 1** — which slot is running. The two-slot model is fully specified
     (`os/update/rauc/system.conf.in:75-95`, partition GUIDs at
-    `os/boards/cx3576/board.env:209-219`), but there is no bus mechanism: a UI
+    `os/boards/cx3576/board.env:214-224`), but there is no bus mechanism: a UI
     would have to subprocess `rauc status --output-format=shell`, and `apid`
     cannot, because it never spawns a process
     (`mosd/apid/src/settings_api.rs:10-12`,

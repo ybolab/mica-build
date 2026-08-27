@@ -14,7 +14,7 @@
 // once per slot). So in each group one entry applies to every board and owns the
 // skip, and the rest are scoped by `boardsWhere(isUBoot)` or `hasLed`.
 //
-// `board/cx3576/out/` is not populated in a checkout, so the oracle's own run is
+// `os/boards/cx3576/bsp/out/` is not populated in a checkout, so the oracle's own run is
 // `RESULT FAIL (387/395)` with eight conclusions reading `... compare source not
 // found`. PLAN-014's Scope section puts `board/` BSP builds outside this
 // campaign -- "No change to ... `board/` BSP builds (digest pins only)" -- so
@@ -22,12 +22,9 @@
 // sentence. Fixtures drive all three directions (byte-identical source,
 // differing source, no source).
 //
-// `BOARD_DIR="${BOARD_DIR:-${REPO_ROOT}/board/cx3576}"` (:28) and
-// `DTB_SRC="${BOARD_DIR}/out/kernel/rk3576-src.dtb"` (:1758) are the oracle's
-// only cx3576 literals; this port derives both -- the directory from the board's
-// own name, the artefact names from its BOOT_SLOT_REQUIRED_FILES -- so a second
-// U-Boot board would be compared against its own BSP here and cx3576's there.
-// That divergence is the oracle's, reported for M4e rather than reproduced.
+// Nothing here carries a cx3576 literal: the BSP directory is derived from the
+// board's own name and the artefact names from its BOOT_SLOT_REQUIRED_FILES, so
+// a second U-Boot board is compared against its own BSP rather than cx3576's.
 
 import { existsSync, statSync } from 'node:fs'
 import { join } from 'node:path'
@@ -61,13 +58,13 @@ const NOT_LED = boardsWhere(b => !hasLed(b))
  *
  * The environment variable first, because that is how the oracle's own
  * container re-exec supplies it (`-e BOARD_DIR=/board`, :185) and a run made
- * that way must read the same tree. Otherwise `board/<board>/`, derived from
+ * that way must read the same tree. Otherwise `os/boards/<board>/bsp/`, derived from
  * the board's name; see the header for the literal the oracle defaults to.
  */
 function boardDir(board: Board): string {
   const fromEnv = process.env['BOARD_DIR']
   if (fromEnv !== undefined && fromEnv.trim() !== '') return fromEnv
-  return join(REPO_ROOT, 'board', board.name)
+  return join(REPO_ROOT, 'os', 'boards', board.name, 'bsp')
 }
 
 function key(board: Board, name: string): string {
@@ -158,7 +155,7 @@ function rawBlobChecks(board: Board): CheckCase[] {
         if (size === 0) {
           return [verdict(matchesId, false,
             `u-boot compare source not found: ${src} (build it with `
-            + `'make -C board/${ctx.board.name} ${variant}')`)]
+            + `'make -C os/boards/${ctx.board.name}/bsp ${variant}')`)]
         }
         const ok = bytesEqual(ctx.image, offset, src)
         return [verdict(matchesId, ok,
@@ -345,7 +342,7 @@ function bspCompareChecks(board: Board): CheckCase[] {
  * to derive it from: `os/boards/cx3576/board.env` declares
  * `BOARD_HAS_STATUS_LED=1` and nothing about polarity. The same three facts per
  * LED are asserted in three places in this tree -- here, at
- * `board/cx3576/kernel/Dockerfile:134-139`, and in the .dts the kernel build
+ * `os/boards/cx3576/bsp/kernel/Dockerfile:134-139`, and in the .dts the kernel build
  * compiles -- and the last two are `board/` BSP files that PLAN-014's Scope
  * section puts outside this campaign ("No change to ... `board/` BSP builds
  * (digest pins only)"), so reading them would be a dependency on a tree this

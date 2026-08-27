@@ -30,7 +30,7 @@ be regenerated from `os/boards/cx3576/board.env`** so the two sides cannot
 drift.
 
 `CONFIG_SQUASHFS_XATTR` is out of scope here: L1 approved and applied it to
-`board/common/mos-required.fragment` directly. No action in this document.
+`os/boards/common/mos-required.fragment` directly. No action in this document.
 
 Layout-v2 constants this document depends on:
 
@@ -51,7 +51,7 @@ Layout-v2 constants this document depends on:
 ### 1.1 Correction to the premise: the current tree is already mainline
 
 The campaign brief describes the current U-Boot as a "vendor Rockchip" tree.
-It is not. `board/cx3576/uboot/Dockerfile:34` clones
+It is not. `os/boards/cx3576/bsp/uboot/Dockerfile:34` clones
 `https://github.com/u-boot/u-boot.git` at `ARG UBOOT_REF=v2026.07`
 (`Dockerfile:33`) and builds `generic-rk3576_defconfig` (`Dockerfile:43,47`)
 [V]. The only vendor content is:
@@ -114,7 +114,7 @@ files [V]. Putting the old names in a defconfig is silently ignored.
 
 `CONFIG_BOOTCOMMAND` is set by the Dockerfile to
 `"setenv boot_targets; bootflow scan -lb; echo BOOT FAILED - entering rockusb; rockusb 0 mmc 0"`
-(`board/cx3576/uboot/Dockerfile:107`) [V], and the resulting config has [V]:
+(`os/boards/cx3576/bsp/uboot/Dockerfile:107`) [V], and the resulting config has [V]:
 
 ```
 CONFIG_BOOTSTD=y
@@ -160,25 +160,25 @@ slot, it wins and the A/B handshake is silently bypassed.** See §5.4.
 ### 1.4 Raw SPL + U-Boot placement
 
 The assembler writes `u-boot-rockchip.bin` at `UBOOT_SEEK_SECTOR`, sector 64
-(`os/boards/cx3576/board.env:87`), with a `dd` whose block size is the sector
+(`os/boards/cx3576/board.env:92`), with a `dd` whose block size is the sector
 size (`os/build/src/mkimage-v2.ts:426-429`) [V]. Inside that combined image,
 SPL loads U-Boot proper from `CONFIG_SYS_MMCSD_RAW_MODE_U_BOOT_SECTOR=0x4000`
 = sector 16384 = **8 MiB** [V].
 
 **No collision with layout v2**: the actual artifact
-`board/cx3576/out/uboot/u-boot-rockchip.bin` is 9 393 152 bytes (8.96 MiB) [V],
+`os/boards/cx3576/bsp/out/uboot/u-boot-rockchip.bin` is 9 393 152 bytes (8.96 MiB) [V],
 so written at sector 64 it occupies 0.031 MiB … 8.989 MiB, leaving 7.01 MiB of
 headroom before `uenv-a` at 16 MiB. The custom U-Boot must
 keep `CONFIG_SYS_MMCSD_RAW_MODE_U_BOOT_SECTOR` at or below sector `0x7000`
 (14 MiB) so that `u-boot.itb` still ends before 16 MiB; `0x4000` satisfies this
 with ~7 MiB of headroom. The assembler asserts the fit rather than trusting it:
 a U-Boot larger than `UBOOT_MAX_BYTES` — the span from sector 64 to `uenv-a`,
-`os/boards/cx3576/board.env:88` — fails the build
+`os/boards/cx3576/board.env:93` — fails the build
 (`os/build/src/mkimage-v2.ts:292-299`) [V].
 
 The kernel command line is not the assembler's. `os/rootfs/build-v2.sh:786`
 composes one per rootfs slot from that slot's verity parameters and the board's
-`BOARD_CMDLINE_ARGS` (`os/boards/cx3576/board.env:344`) [V].
+`BOARD_CMDLINE_ARGS` (`os/boards/cx3576/board.env:349`) [V].
 
 ---
 
@@ -207,7 +207,7 @@ What `generic-rk3576_defconfig` at `v2026.07` provides [V]
   `MMC_DW_ROCKCHIP` for SD (lines 33-38).
 - **Serial**: `CONFIG_DEBUG_UART_BASE=0x2AD40000`, `CONFIG_BAUDRATE=1500000`,
   `CONFIG_SYS_NS16550_MEM32=y` (lines 8, 40, 42) — matches
-  `board/cx3576/board.yaml:6-7` `console: ttyFIQ0,1500000` /
+  `os/boards/cx3576/board.env:349` `console=ttyFIQ0,1500000` /
   `earlycon=...0x2ad40000` [V].
 - **USB**: DWC3 host + gadget, `CONFIG_USB_FUNCTION_ROCKUSB=y` (lines 44-49).
 - **DM / distro boot**: full driver model; bootstd with extlinux, script and EFI
@@ -224,7 +224,7 @@ Known gaps / vendor-only pieces, i.e. what mainline does **not** give you:
    (`u-boot/doc/board/rockchip/rockchip.rst:306-312`) [V]. Mainline has no
    open TPL for RK3576. The current Dockerfile already pins DDR `v1.12` /
    BL31 `v1.24` with a comment that armbian reports `v1.09+` failing to boot on
-   some RK3576 boards (`board/cx3576/uboot/Dockerfile:8-11`) [V] — **keep these
+   some RK3576 boards (`os/boards/cx3576/bsp/uboot/Dockerfile:8-11`) [V] — **keep these
    exact blob versions**; this is the highest-risk item in the whole pivot.
 2. **The recovery button does not work out of the box.** Mainline's
    `rockchip-saradc` fails to probe without a `vdd` supply, and the generic
@@ -513,7 +513,7 @@ this bootmeth reads the counter with `env_get_ulong(..., 10, ...)`
 exhausted. It does **not** need U-Boot-resident logic: the "reset all counters
 and `reset`" behaviour of §4.2 keeps the device alive, and the actual rescue
 entry is the existing `PREBOOT` recovery-button path into rockusb
-(`board/cx3576/uboot/Dockerfile:107`) plus the `bootcmd` tail that enters rockusb
+(`os/boards/cx3576/bsp/uboot/Dockerfile:107`) plus the `bootcmd` tail that enters rockusb
 when boot fails (`Dockerfile:108`) [V]. Both are already in the current tree and
 must be preserved in the custom build — that is the rescue path, and it is
 U-Boot-resident for the right reason (it must work when no slot is readable).
@@ -864,7 +864,7 @@ All four questions answered against the actual vendor kernel tree
 - `DM_INIT` is `bool` and `depends on BLK_DEV_DM=y`
   (`linux/drivers/md/Kconfig:501-503`) [V] — it *cannot* be modular, and it
   cannot be enabled unless device-mapper itself is built in. Both are asserted
-  by `board/common/mos-required.fragment:7-8` [V].
+  by `os/boards/common/mos-required.fragment:7-8` [V].
 - `dm_init_init()` is registered with `late_initcall()`
   (`linux/drivers/md/dm-init.c:319`) [V]. `late_initcall` runs inside
   `do_basic_setup()`, which completes before `prepare_namespace()` mounts the
@@ -910,7 +910,7 @@ All four questions answered against the actual vendor kernel tree
   (`linux/drivers/md/Kconfig:525-538`) [V] — "You'll need to activate the digests
   you're going to use in the cryptoapi configuration".
 - The board config already provides them built-in:
-  `CONFIG_CRYPTO_SHA256=y` (`board/cx3576/kernel/config/kernel-cx3576z.config:7494`),
+  `CONFIG_CRYPTO_SHA256=y` (`os/boards/cx3576/bsp/kernel/config/kernel-cx3576z.config:7494`),
   `CONFIG_CRYPTO_SHA256_ARM64=y` (`:7558`),
   `CONFIG_CRYPTO_SHA2_ARM64_CE=y` (`:7559`) [V]. Nothing is modular.
   No fragment change is needed today; if a future board's defconfig lacks
@@ -1087,7 +1087,7 @@ Ordered by how badly each could sink the approach.
 
 1. **DDR/BL31 blob provenance (highest).** Mainline has no open TPL for RK3576;
    the boot chain depends on `rkbin` binaries whose versions are pinned by a
-   comment describing empirical breakage (`board/cx3576/uboot/Dockerfile:8-11`)
+   comment describing empirical breakage (`os/boards/cx3576/bsp/uboot/Dockerfile:8-11`)
    [V]. A custom tree must pin `UBOOT_REF`, `DDR_BLOB` and `BL31_BLOB` together
    and treat any bump as a hardware-test-gated change. If a mainline SPL change
    ever breaks compatibility with DDR `v1.12`, the board stops booting entirely
@@ -1126,8 +1126,8 @@ Ordered by how badly each could sink the approach.
 
 > **Status update — items 1-3 are RESOLVED.** The user landed a second U-Boot
 > variant as commit `8b24f9d` ("board(cx3576): add uboot-mos A/B variant
-> alongside the debug build"). `make -C board/cx3576 uboot-mos` builds into
-> `board/cx3576/out/uboot-mos/` and implements this contract: the redundant
+> alongside the debug build"). `make -C os/boards/cx3576/bsp uboot-mos` builds into
+> `os/boards/cx3576/bsp/out/uboot-mos/` and implements this contract: the redundant
 > environment pair at `0x1000000` / `0x1100000`, `setexpr` / `source` /
 > `importenv` / `fs_generic` / `fat` / `booti` / `part`, `LEGACY_IMAGE_FORMAT`,
 > `HUSH_PARSER`, `bootmeth order` pinned to `script`, and the rockusb rescue
@@ -1135,7 +1135,7 @@ Ordered by how badly each could sink the approach.
 > reasoning the variant was built against and the record of why each item is
 > required.
 >
-> The existing `make -C board/cx3576 uboot` debug variant is unchanged and pairs
+> The existing `make -C os/boards/cx3576/bsp uboot` debug variant is unchanged and pairs
 > with the **v1** image. The two are not interchangeable in either direction and
 > neither mistake announces itself: `uboot-mos` on a v1 image corrupts the boot
 > FAT partition on the first `saveenv` (v1's boot partition starts at 16 MiB,

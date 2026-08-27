@@ -23,11 +23,11 @@ const USAGE = `usage: bash os/build/run.sh --mkimage-v2 [--out-dir DIR] [--board
 
 Assembles the flashable cx3576 A/B GPT disk image -- the TypeScript port of
 os/mkimage-v2.sh (PLAN-014 M6b, RFCT-112). Inputs come from _out/${BOARD}/ and
-board/${BOARD}/out/ exactly as they do there.
+os/boards/${BOARD}/bsp/out/ exactly as they do there.
 
   --out-dir DIR    where the rootfs-side inputs are and the image is written
                    (default: _out/${BOARD})
-  --board-dir DIR  the BSP tree (default: board/${BOARD}, or BOARD_DIR)
+  --board-dir DIR  the BSP tree (default: os/boards/${BOARD}/bsp, or BOARD_DIR)
 
 environment:
   MOS_ROOTFS_SLOT_MIB  supplied AT ALL selects the frozen-geometry mode; its
@@ -42,7 +42,7 @@ export interface CliOptions {
 
 export function parseArgs(argv: readonly string[], env: Record<string, string | undefined>): CliOptions {
   let outDir = join(REPO_ROOT, '_out', BOARD)
-  let boardDir = env.BOARD_DIR ?? join(REPO_ROOT, 'board', BOARD)
+  let boardDir = env.BOARD_DIR ?? join(REPO_ROOT, 'os', 'boards', BOARD, 'bsp')
   for (let i = 0; i < argv.length; i += 1) {
     const a = argv[i]
     const next = argv[i + 1]

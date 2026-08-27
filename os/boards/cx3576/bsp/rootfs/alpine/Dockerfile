@@ -10,7 +10,7 @@
 # =============================================================================
 
 # THE TWO BASE IMAGES, INJECTED FROM os/build-env/images.env by
-# os/build-env/from.sh, which board/cx3576/Makefile calls. That is the one
+# os/build-env/from.sh, which os/boards/cx3576/bsp/Makefile calls. That is the one
 # place answering "what does this repository build on"; a pin written beside
 # its own FROM is a pin only that FROM's author reads.
 #

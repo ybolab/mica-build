@@ -60,10 +60,11 @@ function usage(): string {
  * No default board. `MOS_BOARD` is honoured because the oracle's callers set it
  * and because `make os-verify-<board>-v2` is per board, but a bare run refuses
  * rather than falling back to cx3576. That fallback is the exact defect this
- * campaign has been removing: os/verify-image-v2.sh:28 defaulted BOARD_DIR to
- * `board/cx3576` in an otherwise board-derived script, and the container
- * re-exec's missing `-e MOS_BOARD` once checked an x64 image against cx3576's
- * eleven-partition GPT and reported 191 failures that were all the harness's.
+ * campaign has been removing: the retired shell verifier this module replaced
+ * defaulted BOARD_DIR to the cx3576 BSP in an otherwise board-derived script,
+ * and the container re-exec's missing `-e MOS_BOARD` once checked an x64 image
+ * against cx3576's eleven-partition GPT and reported 191 failures that were all
+ * the harness's.
  */
 function boardOrRefuse(name: string): Board {
   const shipped = readdirSync(BOARDS_DIR).sort().join(', ')

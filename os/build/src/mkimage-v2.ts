@@ -134,7 +134,7 @@ export function envFileGet(path: string, key: string): string {
  */
 export function ubootMissingError(path: string, debugVariantDir: string): Error {
   return new Error(
-    `${path} not found; build it with 'make -C board/${BOARD} uboot-mos'.\n`
+    `${path} not found; build it with 'make -C os/boards/${BOARD}/bsp uboot-mos'.\n`
     + `The v1 blob under out/${debugVariantDir}/ is NOT a substitute. It is the debug variant: `
     + `CONFIG_ENV_IS_NOWHERE (no persistent environment at all) and no pinned bootmeth order, so a v2 `
     + `image built with it would boot, look healthy, and silently never run the RAUC A/B handshake -- `
@@ -267,7 +267,7 @@ export async function assembleCx3576(
         + `${geometry.requirePartition('UENV_B').require('OFFSET_BYTES')}, setexpr, bootmeth order `
         + `pinned to script. The debug build has none of that and the A/B handshake would silently `
         + `never run.\n`
-        + `Rebuild it with 'make -C board/${BOARD} uboot-mos'; do not copy or symlink the other `
+        + `Rebuild it with 'make -C os/boards/${BOARD}/bsp uboot-mos'; do not copy or symlink the other `
         + `variant into place.`,
       )
     }
