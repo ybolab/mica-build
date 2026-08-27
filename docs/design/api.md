@@ -1418,6 +1418,21 @@ knowable over the connection that asked.
   not expose it either: its caller is the boot health gate, a root-local process
   that already has the bus, and turning it into an HTTP write would let any token
   holder forge a component's health status.
+- **The `/srv/ui` bundle store** (`os/pkgs/mosd/apid/src/bundle.rs`). The store is
+  complete — layout, validation, atomic activation, deactivation, generation
+  tracking and a status read — and it stays route-less **deliberately**, not as
+  an oversight, until two decisions are taken. First, the archive format for
+  the upload transport: the obvious tar and zip candidates split exactly along
+  the no-C-dependency line `deny.toml`'s bans list now enforces
+  (docs/task/RFCT-138.md). Second, authorisation: the only credential in the
+  crate today is the single webAdmin password, and an operation that installs
+  content served from the management origin needs its own answer, not that
+  default. Until both exist, installation stays out of band — write into
+  `/srv/ui`, restart apid — and `Store::status` keeps its
+  `#[allow(dead_code)]`: it hashes the whole tree, so the read endpoint that
+  eventually calls it must not run per request, which is why the asset router
+  reads `active_generation()` instead. The deferral is recorded in
+  docs/task/RFCT-136.md.
 
 **One behaviour change the API should make, named because it is a change.**
 `ssh_key_remove` answers **422** when the identifier matches nothing
