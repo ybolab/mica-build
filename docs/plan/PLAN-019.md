@@ -100,7 +100,14 @@ Measured consumer surface:
   SKIPPED — rc=0 with a lower in-scope count, not red. M2 was protected only
   because `os/` survives its move. The binding acceptance for M4 and M5 is
   therefore the exact in-scope COUNT held constant, with a per-first-segment
-  census before and after; rc alone proves nothing for this class.)*
+  census before and after; rc alone proves nothing for this class. Second
+  correction, measured at M5: the count criterion is necessary and NOT
+  sufficient — it proves no citation left the corpus, not that the survivors
+  still name what they claim. An UNQUOTED citation into a file whose interior
+  shifted is caught by neither the count nor the content check (measured:
+  deleting three Cargo.toml lines left the count at 902 and turned 4 of 15
+  affected citations red while 11 passed naming the wrong lines). Targets
+  must be re-derived by content, not trusted to the gate.)*
   Prefix rewrites must not touch line numbers.
 - The pinned-image gate recipes (mount at /src, -w /src/mosd) change with
   M4; RFCT-168 must update mosd/hack scripts and record the new invocation.
