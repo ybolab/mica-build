@@ -5,9 +5,11 @@
 > HTTP API, and that the human interface become one client of that API rather
 > than the only way in, so a site can replace it without forking the daemon.
 > The audience is whoever builds or replaces the mos management UI, and whoever
-> has to script the appliance without a browser. Sections 2-9 are the proposal;
-> section 1 is not a proposal at all — it is the measured surface those
-> sections must be derived from.
+> has to script the appliance without a browser. Section 1 is not a proposal at
+> all — it is the measured surface the rest must be derived from — and parts of
+> sections 2 and 3 have since stopped being proposals too: a first read-only
+> slice of the API is served, and the subsections that describe it are marked
+> **[implemented]** and measured rather than argued for.
 
 ## 0. How to read this document
 
@@ -33,28 +35,45 @@ of the section that needs them.
 access.md's reason for the discipline applies here unchanged: *"dead code has a
 compiler, a test run and a grep-for-callers that can surface it; a security
 control that exists only as prose has no mechanism that will ever notice it is
-absent"* (`docs/design/access.md:37-40`). This document is mostly **[proposed]**,
-and marking it so is the point — a reader must be able to tell section 1 (which
-can be checked against the tree) from sections 2-9 (which cannot, because there
-is nothing to check yet). Section 0 carries no marker: it describes no
-mechanism, which is the same exemption access.md states for its own unmarked
-sections (`docs/design/access.md:63-64`).
+absent"* (`docs/design/access.md:37-40`). The marker is therefore attached to
+the **section**, not to the document: a section marked **[implemented]** names
+code that exists and can be checked against the tree, and a section marked
+**[proposed]** names code that does not exist and cannot be. Reading the
+document by that rule is the point of the rule. It is no longer safe to read
+section 1 as the checkable part and sections 2-9 as the unfalsifiable
+remainder: `mosd/apid/openapi.json` now records a served API surface, the
+handlers behind it are in `mosd/apid/src/routes.rs`, and sections 2 and 3
+consequently carry markers **per subsection** — 2.1, 2.2 and 2.4 describe
+something that partly ships and say so with citations, while 2.3 and 3.2
+describe something that does not. A subsection's marker, and the measured
+paragraph under it, are what tell the two apart. Section 0 carries no marker:
+it describes no mechanism, which is the same exemption access.md states for
+its own unmarked sections — *"Sections without a marker (§1, §7, §9's
+reasoning, §11) state principles, preferences or history rather than a
+mechanism"* (`docs/design/access.md:45-46`).
 
-**The commit this document was measured at.** Every factual claim in section 1
-was read out of the tree at commit
-`86cd669fa71889577f7e1ab1fab0e0e09a463dcf`, this branch's merge base with
-`main`, and the citations under those claims are that commit's unless the
-sentence around them says otherwise. Line numbers drift, and a citation whose
-file was renamed or whose quoted text moved has been re-pointed at the current
-tree rather than left dangling. A reader on a later tree should re-measure
-before trusting a line number; for anything pinned to `86cd669`,
-`git show 86cd669:<path>` settles a disagreement.
+**The tree this document was measured at.** Sections 1, 2 and 3 were last
+re-measured against this branch's tree at commit
+`f7cb5bad59530fbbc81d93267ac0d1b209652828`, and everything section 1 asserts
+and everything the implemented/deferred annotations in sections 2 and 3 assert
+was read out of `mosd/apid/openapi.json` and `mosd/apid/src/` at that commit,
+not at the `86cd669` this document was originally written against. Sections
+4-9 have not been re-measured here and their citations are older. Line numbers
+drift, and a `path:line` that resolves is not a `path:line` that is right: a
+citation can survive a refactor by landing on unrelated code, which is exactly
+what happened to section 1.2's route table between `86cd669` and this
+re-measure. A reader on a later tree should re-measure before trusting a line
+number; `git show <commit>:<path>` settles a disagreement about what a commit
+held.
 
 **What this document settles.** Section 1 settles what exists, so that no later
-section invents a surface mos does not have. Sections 2-9 propose the API, the
+section invents a surface mos does not have. Sections 2-9 cover the API, the
 programmatic authentication, static hosting, where a custom UI lives, the safety
 escape back to a built-in UI, trust, phasing, and what the whole direction
-forecloses.
+forecloses. Where one of them has since been built, the subsection says what
+was built and cites it; where it has not, the proposal stands unchanged and is
+marked **[proposed]**. A proposal is not deleted because it is unimplemented,
+and an implementation is not left labelled as a proposal.
 
 **What this document does not settle.** It does not re-open anything
 `docs/design/dashboard.md` decided (see section 1.7): not the live-value
