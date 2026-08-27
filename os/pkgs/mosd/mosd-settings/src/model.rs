@@ -412,6 +412,41 @@ pub struct IfaceSettings {
     pub static_: Option<StaticConfig>,
 }
 
+/// Linux `IFNAMSIZ` minus the terminator: the longest name an interface can
+/// actually have.
+const MAX_IFACE_NAME_LEN: usize = 15;
+
+/// Refuse a `network` map key the kernel could not name an interface.
+///
+/// The charset is the network reconciler's own
+/// (`mosd/src/reconciler/network.rs`, the security boundary for a settings
+/// file anything with STATE write access can edit); repeating it here makes a
+/// key the renderer would refuse unwritable through the tree in the first
+/// place, and makes a key carrying `"` — the one key the path syntax cannot
+/// spell — structurally impossible rather than merely unaddressable.
+fn validate_network_key(iface: &str) -> Result<(), String> {
+    if iface.is_empty() {
+        return Err("network interface name is empty".to_string());
+    }
+    if iface.len() > MAX_IFACE_NAME_LEN {
+        return Err(format!(
+            "network interface {iface:?} is longer than {MAX_IFACE_NAME_LEN} characters"
+        ));
+    }
+    if iface == "." || iface == ".." {
+        return Err(format!("network interface {iface:?} is not a name"));
+    }
+    if !iface
+        .bytes()
+        .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'-' | b'_' | b':'))
+    {
+        return Err(format!(
+            "network interface {iface:?} contains a character an interface name cannot have"
+        ));
+    }
+    Ok(())
+}
+
 /// Static addressing for a single interface.
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -450,7 +485,8 @@ impl Settings {
     ///
     /// Returns [`SettingsError::ReadOnly`] for writes that would change
     /// `schema_version`, [`SettingsError::NotFound`] for malformed paths, and
-    /// [`SettingsError::Validation`] when the value does not fit the tree.
+    /// [`SettingsError::Validation`] when the value does not fit the tree or
+    /// the write introduces a `network` key that is not an interface name.
     pub fn set(&mut self, path: &str, value: Value) -> Result<(), SettingsError> {
         let mut root = self.to_json()?;
         if path.is_empty() || path == "." {
@@ -469,6 +505,18 @@ impl Settings {
             })?;
         if candidate.schema_version != self.schema_version {
             return Err(SettingsError::ReadOnly("schema_version".to_string()));
+        }
+        // Key-charset validation is a property of the write, not of the tree:
+        // a document that already loads keeps loading, so an entry this write
+        // does not touch is left alone even if a hand edit spelled it badly.
+        for (iface, settings) in &candidate.network {
+            if self.network.get(iface) == Some(settings) {
+                continue;
+            }
+            validate_network_key(iface).map_err(|message| SettingsError::Validation {
+                path: path.to_string(),
+                message,
+            })?;
         }
         *self = candidate;
         Ok(())

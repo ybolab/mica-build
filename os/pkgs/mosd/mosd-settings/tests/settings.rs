@@ -1312,3 +1312,150 @@ extra = "nested"
     assert_eq!(report.dropped_keys, vec!["extra".to_string()]);
     assert!(!report.defaulted);
 }
+
+// --- Quoted path segments --------------------------------------------------
+
+/// The RFCT-135 reproduction as a fixture: the write of a VLAN-named entry
+/// used to fail with `unknown field \`100\`` because the dot-path split the
+/// key into two segments. Quoted, it lands on the key `eth0.100`, and every
+/// layer — get, set of a leaf inside it, TOML persistence, reload — spells it
+/// the same way.
+#[test]
+fn a_quoted_segment_round_trips_a_dotted_interface_key() {
+    let mut settings = Settings::default();
+    settings
+        .set(
+            r#"network."eth0.100""#,
+            json!({"dhcp": false, "static": {"address": "192.168.100.2/24", "dns": []}}),
+        )
+        .unwrap();
+    assert_eq!(
+        settings.network.keys().collect::<Vec<_>>(),
+        vec!["eth0.100"]
+    );
+    assert_eq!(
+        settings
+            .get(r#"network."eth0.100".static.address"#)
+            .unwrap(),
+        json!("192.168.100.2/24")
+    );
+
+    settings
+        .set(r#"network."eth0.100".dhcp"#, json!(true))
+        .unwrap();
+    assert!(settings.network["eth0.100"].dhcp);
+
+    let dir = tempfile::tempdir().unwrap();
+    let store = Store::new(dir.path().join("settings.toml"));
+    store.save(&settings).unwrap();
+    let text = fs::read_to_string(dir.path().join("settings.toml")).unwrap();
+    assert!(
+        text.contains(r#"[network."eth0.100"]"#),
+        "persistence spells the key in the same syntax: {text}"
+    );
+    assert_eq!(store.load().unwrap(), settings);
+}
+
+/// The unquoted spelling still means what it always meant: two segments, so
+/// `100` is looked up as a field of `IfaceSettings`.
+#[test]
+fn an_unquoted_dotted_key_is_still_a_field_of_the_interface() {
+    let mut settings = Settings::default();
+    let err = settings.set("network.eth0.100", json!({"dhcp": true}));
+    assert!(
+        matches!(&err, Err(SettingsError::Validation { message, .. }) if message.contains("unknown field `100`")),
+        "{err:?}"
+    );
+    assert!(settings.network.is_empty());
+    assert!(matches!(
+        settings.get("network.eth0.100"),
+        Err(SettingsError::NotFound(_))
+    ));
+}
+
+/// Quoting is a grammar, not a string search: a segment is quoted whole or
+/// not at all, and anything else is a malformed path rather than a key.
+#[test]
+fn malformed_quoting_is_a_path_error_on_both_sides() {
+    let tree = json!({"network": {"eth0.100": {"dhcp": true}, "\"odd\"": 1}});
+    assert_eq!(
+        json_path_get(&tree, r#"network."eth0.100".dhcp"#),
+        Some(&json!(true))
+    );
+    for path in [
+        r#"network."eth0.100"#,   // unterminated
+        r#"network."eth0.100"x"#, // trailing text after the closing quote
+        r#"network.eth"0.100""#,  // a quote inside a bare segment
+        r#"network."""#,          // an empty quoted segment
+        r#"network.""#,           // a lone quote
+    ] {
+        assert_eq!(json_path_get(&tree, path), None, "{path}");
+        let mut settings = Settings::default();
+        assert!(
+            matches!(
+                settings.set(path, json!(true)),
+                Err(SettingsError::NotFound(_))
+            ),
+            "{path}"
+        );
+    }
+}
+
+/// A `network` key the reconciler would refuse never reaches the tree: the
+/// write is rejected, including the one key the path syntax cannot spell.
+#[test]
+fn set_rejects_a_network_key_that_is_not_an_interface_name() {
+    let mut settings = Settings::default();
+    for key in [
+        "eth0 100",
+        "eth0/100",
+        "waytoolongiface016",
+        ".",
+        "..",
+        "eth\"0",
+    ] {
+        let path = format!("network.\"{key}\"");
+        let err = settings.set(&path, json!({"dhcp": true}));
+        assert!(
+            matches!(
+                err,
+                Err(SettingsError::Validation { .. }) | Err(SettingsError::NotFound(_))
+            ),
+            "{key}: {err:?}"
+        );
+    }
+    assert!(settings.network.is_empty());
+    settings
+        .set(r#"network."eth0.100""#, json!({"dhcp": true}))
+        .unwrap();
+    settings
+        .set("network.br-lan:0", json!({"dhcp": true}))
+        .unwrap();
+}
+
+/// The rule is a property of the write, not of the tree: a key that a hand
+/// edit put there before the rule existed still loads, and still does not
+/// stand between an operator and an unrelated write.
+#[test]
+fn a_key_that_predates_the_rule_does_not_block_other_writes() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("settings.toml");
+    fs::write(
+        &path,
+        format!("schema_version = {SCHEMA_VERSION}\nhostname = \"mos\"\n\n[network.\"eth0 100\"]\ndhcp = true\n"),
+    )
+    .unwrap();
+    let store = Store::new(path);
+    let mut settings = store.load().unwrap();
+    assert!(settings.network.contains_key("eth0 100"));
+
+    settings.set("hostname", json!("edge-1")).unwrap();
+    assert_eq!(settings.hostname, "edge-1");
+    assert!(settings.network.contains_key("eth0 100"));
+
+    // Touching that entry is a write, and the write is refused.
+    assert!(matches!(
+        settings.set(r#"network."eth0 100".dhcp"#, json!(false)),
+        Err(SettingsError::Validation { .. })
+    ));
+}
