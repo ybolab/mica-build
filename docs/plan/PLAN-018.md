@@ -39,7 +39,11 @@ board/ paths, docs/design/bsp-cx3576-sync.md. No .gitea reference.
   prebuilt artifacts at the new path; byte-identity of any rebuilt artifact is
   NOT required (BSP builds are not reproducible) — instead the tree carries no
   reference to the old path (`git grep 'board/cx3576\|board/common'` empty
-  outside docs/task history).
+  outside docs/task history). *(Amendment 1, 2026-08-26, ratified at M2:
+  `*.zh.md` files are excluded from this criterion. The translations are
+  known-stale wholesale and move only on explicit user request; their seven
+  old-path references are evidenced as counted-and-unchanged in RFCT-163's
+  report rather than silently exempted.)*
 - **M2 (RFCT-161)** board.yaml retired: still-true human facts (kernel
   source/dtb, wifi SKUs, display defaults) fold into board.env comments or
   docs/design/boards.md; both board.yaml files deleted.
