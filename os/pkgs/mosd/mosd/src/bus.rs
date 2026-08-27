@@ -590,9 +590,13 @@ impl MosdService {
         value_json: &str,
     ) -> Result<(), SettingsFault> {
         let value: Value = serde_json::from_str(value_json).map_err(|err| {
-            SettingsFault::Fdo(fdo::Error::InvalidArgs(format!("invalid JSON value: {err}")))
+            SettingsFault::Fdo(fdo::Error::InvalidArgs(format!(
+                "invalid JSON value: {err}"
+            )))
         })?;
-        self.write_setting(path, value).await.map_err(to_bus_error)?;
+        self.write_setting(path, value)
+            .await
+            .map_err(to_bus_error)?;
         Self::settings_changed(&emitter, path, value_json)
             .await
             .map_err(|err| {
@@ -1195,7 +1199,10 @@ mod tests {
         let whole = service.get_state("").await.expect("whole tree");
         let whole: serde_json::Value = serde_json::from_str(&whole).expect("json");
         let grafted = whole["uptime"].as_u64().expect("uptime in the whole tree");
-        assert!(grafted >= direct, "uptime went backwards: {grafted} < {direct}");
+        assert!(
+            grafted >= direct,
+            "uptime went backwards: {grafted} < {direct}"
+        );
 
         let (_settings, state) = service.trees().await;
         assert!(

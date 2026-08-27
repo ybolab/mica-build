@@ -187,7 +187,9 @@ async fn bus_roundtrip() -> anyhow::Result<()> {
     let uptime = proxy.get_state("uptime").await?;
     let uptime: u64 = serde_json::from_str(&uptime)?;
     assert!(
-        state["uptime"].as_u64().is_some_and(|whole| uptime >= whole),
+        state["uptime"]
+            .as_u64()
+            .is_some_and(|whole| uptime >= whole),
         "the whole tree must carry uptime, no newer than a later read: {state}"
     );
 
