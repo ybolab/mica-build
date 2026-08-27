@@ -91,9 +91,16 @@ Measured consumer surface:
 
 ## Risks
 
-- The mosd move relocates the tree most cited by gated documents; the
-  checker converts every missed citation into a red CI, which is the safety
-  net working. Prefix rewrites must not touch line numbers.
+- The mosd move relocates the tree most cited by gated documents.
+  *(Corrected at M3, 2026-08-27: the checker is NOT a safety net for a
+  whole-tree move whose top-level first segment vanishes. Its scope rule
+  keeps a citation in scope only while the first path segment exists at the
+  repo root, so a missed `mosd/...` citation after the move is silently
+  SKIPPED — rc=0 with a lower in-scope count, not red. M2 was protected only
+  because `os/` survives its move. The binding acceptance for M4 and M5 is
+  therefore the exact in-scope COUNT held constant, with a per-first-segment
+  census before and after; rc alone proves nothing for this class.)*
+  Prefix rewrites must not touch line numbers.
 - The pinned-image gate recipes (mount at /src, -w /src/mosd) change with
   M4; RFCT-168 must update mosd/hack scripts and record the new invocation.
 - Anything running from an old worktree after M4 will look for mosd/ at the
