@@ -290,3 +290,5 @@ writable root and served from the binary, unshadowable by construction rather
 than by dispatch order — is **not** part of this task. The prefix does not exist
 in the tree yet; it is created by a later L3 and asserted by RFCT-077. Nothing
 here stubs it or asserts against an invented prefix.
+
+<!-- dated-record: a measurement record frozen at its commit; its citations name the tree as it was then (pre-PLAN-019 layout, pre-rewrite design documents); exempt from docs/verify-citations.sh (RFCT-172) -->

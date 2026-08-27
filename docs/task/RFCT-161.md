@@ -185,3 +185,5 @@ metadata file describing the board". It is now false. `README.md` is not in
 this task's file scope and is not in the citation checker's scope; the sentence
 belongs to PLAN-018 M4's docs path sweep. Same for the `board.yaml` prose in
 `docs/design/boards.md`, `docs/design/display.md` and the `*.zh.md` siblings.
+
+<!-- dated-record: a measurement record frozen at its commit; its citations name the tree as it was then (pre-PLAN-019 layout, pre-rewrite design documents); exempt from docs/verify-citations.sh (RFCT-172) -->

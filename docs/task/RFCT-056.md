@@ -240,3 +240,5 @@ translated into them.
   names the premise as dead instead.
 - **The option-2 hardening remains undecided and unscheduled** — recorded in
   §6's marker and §8's Phase 2 marker, not resolved here.
+
+<!-- dated-record: a frozen worklist or exhibit of what was measured then; re-pointing its citations would falsify the record; exempt from docs/verify-citations.sh (RFCT-172) -->

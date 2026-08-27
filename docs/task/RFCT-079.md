@@ -275,3 +275,5 @@ Touched: `docs/design/api.md`, `docs/task/RFCT-079.md` (new),
 the `Makefile`, `docs/design/access.md`, `docs/design/dashboard.md`,
 `docs/design/ro-root.md`, `docs/README.md` (no row is owed — it indexes
 `design/` and `research/`, and this task adds neither).
+
+<!-- dated-record: a measurement record frozen at its commit; its citations name the tree as it was then (pre-PLAN-019 layout, pre-rewrite design documents); exempt from docs/verify-citations.sh (RFCT-172) -->

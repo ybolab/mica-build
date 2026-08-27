@@ -299,3 +299,5 @@ and `docs/plan/PLAN-014.md` — this record and its plan, the two documents the
 campaign was writing as it measured, each of which names the v1 chain it deleted.
 Excluding those two gives exactly 43 and 5. Every other number the gate recorded
 stands as it wrote it.
+
+<!-- dated-record: a measurement record frozen at its commit; its citations name the tree as it was then (pre-PLAN-019 layout, pre-rewrite design documents); exempt from docs/verify-citations.sh (RFCT-172) -->

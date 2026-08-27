@@ -265,3 +265,5 @@ run. That is asserted by the `git diff --name-only` above, not assumed.
 - It does not alter what any prior task record claimed; RFCT-057's 58-file
   figure is quoted as written and the live figure is given separately.
 - It does not rewrite any analysis, and it does not touch the `Makefile`.
+
+<!-- dated-record: a frozen worklist or exhibit of what was measured then; re-pointing its citations would falsify the record; exempt from docs/verify-citations.sh (RFCT-172) -->
