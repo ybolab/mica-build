@@ -2,7 +2,15 @@
 //! `apid`, driven over HTTPS/HTTP with a real client.
 //!
 //! Everything lives in tempdirs on ephemeral ports; `MOSD_DRY_RUN=1` keeps
-//! the host untouched. Skips gracefully when `dbus-daemon` is not installed.
+//! the host untouched.
+//!
+//! # This test does not skip
+//!
+//! `dbus-daemon` is a hard requirement, not an optional extra: a run that
+//! returned early when the binary is missing would report green while
+//! asserting nothing. [`dbus_daemon`] panics instead, naming the tool it
+//! could not find, exactly as `mosd/tests/bus.rs` does; CI provisions the
+//! `dbus-daemon` package alongside the other build dependencies.
 
 use std::io::{BufRead, BufReader};
 use std::path::PathBuf;
@@ -23,16 +31,31 @@ impl Drop for ChildGuard {
     }
 }
 
-/// Locate `dbus-daemon`: `/usr/bin/dbus-daemon` first, then `$PATH`.
-fn find_dbus_daemon() -> Option<PathBuf> {
+/// Locate `dbus-daemon` (`/usr/bin/dbus-daemon` first, then `$PATH`), or
+/// FAIL — never skip.
+///
+/// A missing bus daemon means this test cannot assert what it exists to
+/// assert, and the only honest outcome for a test that cannot run is a red
+/// one. See the module docs.
+fn dbus_daemon() -> PathBuf {
     let fixed = PathBuf::from("/usr/bin/dbus-daemon");
     if fixed.exists() {
-        return Some(fixed);
+        return fixed;
     }
-    let path = std::env::var_os("PATH")?;
-    std::env::split_paths(&path)
-        .map(|dir| dir.join("dbus-daemon"))
-        .find(|candidate| candidate.exists())
+    let found = std::env::var_os("PATH").and_then(|path| {
+        std::env::split_paths(&path)
+            .map(|dir| dir.join("dbus-daemon"))
+            .find(|candidate| candidate.exists())
+    });
+    found.unwrap_or_else(|| {
+        panic!(
+            "dbus-daemon was not found at /usr/bin/dbus-daemon or on PATH. This test asserts \
+             real bus behaviour over a private session bus and MUST NOT skip: install it \
+             (Debian/Ubuntu: the `dbus-daemon` package -- note that `dbus-bin` ships \
+             dbus-send and dbus-monitor but NOT the daemon itself; Fedora: `dbus-daemon`) \
+             and run it again."
+        )
+    })
 }
 
 /// Locate the `mosd` binary: `MOSD_BIN` override first, otherwise next to
@@ -119,10 +142,7 @@ async fn post_login(
 
 #[tokio::test(flavor = "multi_thread")]
 async fn web_flow_end_to_end() -> anyhow::Result<()> {
-    let Some(dbus_daemon) = find_dbus_daemon() else {
-        eprintln!("skipping web_flow_end_to_end: dbus-daemon not found");
-        return Ok(());
-    };
+    let dbus_daemon = dbus_daemon();
     let mosd_bin = find_mosd()?;
 
     // Private session bus; never the host system bus.

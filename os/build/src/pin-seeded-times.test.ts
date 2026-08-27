@@ -41,7 +41,7 @@ beforeAll(async () => {
 afterAll(async () => {
   await tb?.close()
   if (dir !== undefined) rmSync(dir, { recursive: true, force: true })
-})
+}, OPEN_TIMEOUT_MS)
 
 /** A fabricated /var-shaped seed: a handful of files, a directory, a symlink. */
 function makeSeed(name: string): string {

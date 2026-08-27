@@ -73,7 +73,7 @@ HTTP surface: no nested router, no fallback, no static-asset route
 
 The operator's whole menu is **four links plus a logout button** —
 `Status` (`/`), `Network` (`/network`), `Hostname` (`/hostname`),
-`Power` (`/power`) — rendered by `shell()` at `os/pkgs/mosd/apid/src/routes.rs:168-178`
+`Power` (`/power`) — rendered by `shell()` at `os/pkgs/mosd/apid/src/routes.rs:169-179`
 (`mos-ui-inventory.md` section 2.2).
 
 Of those, three are editors and one is a status page. The status page, `/`,
@@ -100,7 +100,7 @@ reach `mosd` through the `com.mos.Item1` façade instead (`:33-35`).
 
 Ten routes, four nav links, every state change a form POST followed by a 302
 and a full page re-render, and **one single `GetState` call in the entire UI** —
-`GetState("network")` at `os/pkgs/mosd/apid/src/routes.rs:568`, whose result is rendered
+`GetState("network")` at `os/pkgs/mosd/apid/src/routes.rs:578`, whose result is rendered
 as an opaque JSON dump (`mos-ui-inventory.md` sections 2, 3.2, 4). The `?saved=1`
 query marker at `routes.rs:206-209` exists precisely because a redirect is the
 only way the application has to say "that worked". The consequence, stated as
@@ -184,7 +184,7 @@ call returning the data — or **(b) needs new mosd work**, with the
 - **Shows:** the configured hostname; the device identity (`deviceId`); the
   provisioning state (`pending` / `complete`).
 - **Feed:** `GetSettings("hostname")` — already called at
-  `os/pkgs/mosd/apid/src/routes.rs:567`; `GetSettings("provisioning")`, which returns
+  `os/pkgs/mosd/apid/src/routes.rs:577`; `GetSettings("provisioning")`, which returns
   `state`, `deviceId` and `seededGeneration`
   (`os/pkgs/mosd/mosd-settings/src/model.rs:269-277`).
 - **Availability: (a) available today.** `GetSettings("provisioning")` works
@@ -402,7 +402,7 @@ better mechanism and then hid it.**
 - **Shows:** time since boot, and — once section 2.5's feed exists — whether
   that boot was the first on the current slot version.
 - **Feed:** `/proc/uptime`, read by `apid` itself at
-  `os/pkgs/mosd/apid/src/routes.rs:569-571`, parsed at `:539-546`, formatted at
+  `os/pkgs/mosd/apid/src/routes.rs:579-581`, parsed at `:539-546`, formatted at
   `:549-560`, rendered on `/` at `:580-583`.
 - **Availability: (a) available today** — gap-table **row 12**, answered via a
   side channel. Recorded honestly: this is **the one place `apid` touches the
@@ -831,7 +831,7 @@ proposal exist to protect a mos advantage rather than to close a mos gap.
 2. **Bundle signing.** mos builds signed verity-format bundles and configures
    RAUC to refuse `plain` format outright, so *"a bundle whose payload is only
    hashed at install time can never be installed on a device"*
-   (`os/pkgs/rauc/system.conf.in:64-66`, bundles built by `os/build/src/bundle.ts:1-7`). Venus
+   (`os/pkgs/rauc/system.conf.in:72-74`, bundles built by `os/build/src/bundle.ts:1-7`). Venus
    ships **no image signature on firmware** — swupdate built without
    `CONFIG_SIGNED_IMAGES` or any hash or encryption option in every machine
    defconfig read, leaving update authenticity resting on HTTPS transport for the
@@ -915,7 +915,7 @@ compression in this stack comes from `tower_http::compression`, and the crate is
 not present. Every byte counted in section 5.3 is therefore an uncompressed byte
 on the wire.
 
-The single stylesheet is a `const STYLE` at `os/pkgs/mosd/apid/src/routes.rs:147-154`,
+The single stylesheet is a `const STYLE` at `os/pkgs/mosd/apid/src/routes.rs:147-155`,
 emitted into a `<style>` element at `routes.rs:165` through `PreEscaped`.
 Measured on this branch: **484 bytes** of CSS after line continuations are
 resolved. This matters below only because it is the existing, working precedent
@@ -1057,7 +1057,7 @@ answer for all four; it is 5.10.
 ### 5.3 Option A — full-page refresh
 
 `<meta http-equiv="refresh" content="15">` emitted into the `<head>` by the
-`shell()` helper (`os/pkgs/mosd/apid/src/routes.rs:736-748`) on pages that opt in.
+`shell()` helper (`os/pkgs/mosd/apid/src/routes.rs:750-763`) on pages that opt in.
 
 - **C1 — bytes.** ~45 bytes of markup, once. Per update: the **entire page,
   uncompressed**. Estimate for the seven-tile dashboard of section 2, based on
@@ -1267,7 +1267,7 @@ A long-lived `text/event-stream` response, consumed by the browser's built-in
 
 **The security cost that decides it.** `mos-ui-inventory.md` section 3.4 records
 that **there is no CSRF token anywhere in `apid`**; the only cross-site
-mitigation is `SameSite=Lax` (`os/pkgs/mosd/apid/src/session.rs:103`) plus POST-only
+mitigation is `SameSite=Lax` (`os/pkgs/mosd/apid/src/session.rs:121`) plus POST-only
 destructive routes with a confirmation field (`routes.rs:49-53`, `:820`).
 `SameSite` cookie semantics do not cover the WebSocket handshake, so a writable
 WebSocket endpoint — one that reaches the reboot and power-off members behind
@@ -1775,7 +1775,7 @@ chosen by operator demand and by which items unblock others, not by size.
 | **4a** | **Observed network** — `mosd` queries `org.freedesktop.network1` for addresses, leases, gateway, DNS in use and carrier state. It already talks to that service for exactly one thing, `Manager.Reload` (`os/pkgs/mosd/mosd/src/reconciler/network.rs:24-25`), and issues no `Get` and no link enumeration | **14** | Section 2.4 half B; the *condition* on section 3.4.1's Network nav row; the "what is my IP address?" question section 2.9 names as one of the two an operator asks first | A live-state read that returns a lease for a DHCP interface and an explicit no-lease state for one without — the distinction `mos-ui-inventory.md` section 6.3 records as currently impossible |
 | **4b** | **Storage per tier** — a `statvfs` read across the four tiers of `os/rootfs/overlay-v2/etc/fstab.in:11-27` and a bus surface for it | **11** | Section 2.6 | `/srv` reports a figure at all — today it has **no reporting of any kind** (section 4.1 item 7). Cheapest item in phase 4; do it early for that reason alone |
 | **4c** | **Slot state, RAUC status, and the gate's verdict** — a bus method returning slot status; `mos-health` reporting its own verdict through `ReportHealth` or a richer equivalent instead of only journalling (`os/rootfs/overlay-v2/usr/lib/mos/mos-health:17-18`) | **1, 3, 5** | Section 2.5's slot half; section 2.3 part (iii); **and section 2.10's power-page warning (row 10)**, which is a dependency rather than a new primitive | `rauc status mark-good` having run is readable over the bus. Note `grep -rci rauc mosd/mosd/src/` returns **0 across all 12 files** today, so this is new surface, not a wiring change |
-| **4d** | **Boot attempt credits** — reading `BOOT_A_LEFT`/`BOOT_B_LEFT` from the redundant U-Boot environment (`os/rootfs/overlay-v2/etc/fw_env.config.in:27-29`) | **2** | The credits half of section 2.5, and the two-tile cross-read section 2.7 describes (short uptime plus falling credits = a slot failing its health gate) | **Gated on an unsolved read hazard.** A polling dashboard is a reader racing a writer that is ordered against nothing: the boot-time systemd ordering between `mos-machine-id` and RAUC is not a lock, and `os/rootfs/overlay-v2/etc/fw_env.config.in:23-25` records that libubootenv gives no cross-process locking. **Do not start 4d until reading that environment concurrently with a writer has an answer.** It is deliberately last among the read items for this reason |
+| **4d** | **Boot attempt credits** — reading `BOOT_A_LEFT`/`BOOT_B_LEFT` from the redundant U-Boot environment (`os/rootfs/overlay-v2/etc/fw_env.config.in:49-51`) | **2** | The credits half of section 2.5, and the two-tile cross-read section 2.7 describes (short uptime plus falling credits = a slot failing its health gate) | **Gated on the RFCT-142 serialisation rule, no longer on an open question.** The read hazard has an answer: every access goes through `fw_printenv`/`fw_setenv`, and the shipped libubootenv takes `flock(LOCK_EX)` on `/var/lock/fw_printenv.lock` across the whole read or read-modify-write, so a poll cannot land mid-write. The rule and its two caveats — the lock is silently skipped while `/var/lock` is absent, so the polling service keeps `DefaultDependencies=yes`; the lock never spans a check-then-set, so `BOOT_A_LEFT`/`BOOT_B_LEFT` stay RAUC-owned and 4d is read-only — are recorded at `os/rootfs/overlay-v2/etc/fw_env.config.in:23-47`. **4d starts only as an exec of `fw_printenv` under that rule** — never a private libubootenv link, never a raw read of the UENV partitions. It is deliberately last among the read items because it touches the one store RAUC also writes |
 | **4e** | **Install a bundle, with progress** — an upload path, a place to put the bundle, a `rauc install` caller, and a progress surface. Today: no upload route, `Multipart` appears nowhere under `mosd/`, and no `rauc install` caller anywhere in `mosd/` | **4** | The update page of section 3.2; section 5.9's 2-second update-page refresh and its two specified degraded forms | The largest single item (section 4.1 item 4). Section 4.2 item 2's constraint is binding: mos refuses `plain`-format bundles by configuration (`os/pkgs/rauc/system.conf.in:50-62`), and **no "install this file anyway" affordance may be added** |
 | **4f** | **Observed hostname**; and the **redaction policy** that must precede any diagnostics export | **13**; and section 4.1 item 10 (not a gap row) | Section 2.2's caveat; section 3.2's Diagnostics page | Diagnostics is mechanically buildable today — `GetState("")` and `GetSettings("")` already return whole trees (`bus.rs:160-164`, `:197-202`) — which is exactly why the **policy** must land first. Section 3.2: shipping an export before the redaction rule *"is how a support channel becomes a disclosure channel"* |
 

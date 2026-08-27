@@ -24,7 +24,7 @@ use tokio::sync::watch;
 use zbus::fdo;
 use zbus::message::Header;
 use zbus::object_server::{InterfaceRef, ObjectServer, SignalEmitter};
-use zbus::zvariant::Value;
+use zbus::zvariant::{ObjectPath, Value};
 
 use crate::actions::{Action, Actions};
 use crate::bus::{MosdService, sender_of};
@@ -520,10 +520,18 @@ async fn sync_objects(
     for (path, leaf) in batch {
         if leaf.is_some() {
             // A settings key can be any string, and most strings are not valid
-            // D-Bus object path elements (`network.br-lan` is the realistic
-            // case). Such an item still reads through `GetItems`; it just has
-            // no object of its own, which is loud here and nowhere else.
-            if let Err(err) = server
+            // D-Bus object path elements — `network.br-lan`, and every bus
+            // name in the service registry (`docs/design/bus.md` §11 item 2).
+            // Such an item still reads through `GetItems`; it just has no
+            // object of its own. That is the expected, per-boot-normal case,
+            // so it logs at DEBUG; a path that IS a valid object path and
+            // still fails to register is a real fault and keeps its WARN.
+            if ObjectPath::try_from(path.as_str()).is_err() {
+                tracing::debug!(
+                    path,
+                    "key is not a valid D-Bus path element; the item reads through GetItems without an object of its own"
+                );
+            } else if let Err(err) = server
                 .at(
                     path.as_str(),
                     Item::new(service.clone(), Arc::clone(actions), path.clone()),

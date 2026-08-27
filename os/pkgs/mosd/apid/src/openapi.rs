@@ -27,7 +27,8 @@ use utoipa::OpenApi;
         crate::routes::api_versions,
         crate::routes::api_v1_meta,
         crate::routes::api_v1_settings,
-        crate::routes::api_v1_state
+        crate::routes::api_v1_state,
+        crate::routes::api_v1_change_password
     )
 )]
 struct ApiDoc;
