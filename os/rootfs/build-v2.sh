@@ -619,7 +619,7 @@ done
 
 # Stage selection, which is what replaced the WITH_* build arguments.
 # WITH_CONTAINERS and WITH_MOSD are the caller's spelling -- the environment
-# variable, and board/<name>/containers.env. A 0 names a stage the driver does
+# variable, and os/boards/<name>/bsp/containers.env. A 0 names a stage the driver does
 # NOT build, rather than travelling into the build as a `--build-arg` that five
 # separate RUNs and scripts each have to test. One decision instead of five
 # copies of one.
