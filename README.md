@@ -13,13 +13,13 @@ Wi-Fi reconcilers drive the wpa_supplicant and hostapd userland the image ships.
 ```
 mos/
 ├── docs/            project docs: PMA plans (docs/plan/), tasks (docs/task/), designs (docs/design/)
-├── os/              systemd OS build: rootfs, image assembly, verification, boot, RAUC, layout
+├── os/              systemd OS build: rootfs, image assembly, verification, boot, RAUC, layout;
+│                    os/pkgs/ holds the compiled components, incl. TUF release signing
 ├── mosd/            Rust workspace: mosd (management plane), apid, and the MQTT broker
 ├── board/           one directory per supported board, plus common/ fragments
 │   ├── cx3576/      CX3576-Z (Rockchip RK3576, arm64): U-Boot, kernel, firmware, Alpine demo
 │   └── x64/         generic x86_64 UEFI platform (QEMU/CI baseline, no BSP build)
 ├── extensions/      the optional-layer slot; see extensions/README.md
-├── update/          TUF release signing and device-side verification (`mos-sign`, `mos-update-verify`)
 ├── test/            the apid HTTP API suite (test/apid-api)
 └── Makefile         top-level routing; run `make help` for the full target list
 ```

@@ -1,32 +1,39 @@
-# update
+# rauc-sign
 
-Update trust tooling (PLAN-006 Part A/L). One crate, `sign/`, carries both
+Update trust tooling (PLAN-006 Part A/L). This one crate carries both
 halves of the TUF trust model because they share one metadata format:
 
-- the **release side** (`mos-sign`, phase 1): runs on a build host, never on a
+- the **release side** (`rauc-sign`, phase 1): runs on a build host, never on a
   device, and its output is static content — a directory that any HTTP server
   or object store can serve unchanged;
-- the **device side** (`mos-update-verify`, phase 2, first half): verifies a
+- the **device side** (`rauc-verify`, phase 2, first half): verifies a
   LOCAL copy of that directory from a pinned trusted root, with persistent
   rollback protection. It exists and is exercised offline by the test suite;
   nothing ships it to a device yet (see the provisioning section below).
 
 ## Contents
 
-- `sign/` — the `mos-sign` crate, two binaries:
-  - `mos-sign` — the TUF signing tool (phase 1, RFCT-016). Creates and
-    maintains the static TUF repository that pins RAUC bundles.
-  - `mos-update-verify` — the device-side metadata and target verifier
-    (phase 2 first half, RFCT-088). Walks the metadata from a pinned root and
-    prints a verified local target path for an installer to consume.
-- `lockbox/` — planned: offline update bundle builder (USB/SD "lockbox"
-  carrying the same bundle plus full metadata).
+Two binaries, both from cargo's auto-discovery — there is no `[[bin]]` section,
+so each binary's name is the thing that declares it:
+
+- `rauc-sign` — the TUF signing tool (phase 1, RFCT-016). Creates and
+  maintains the static TUF repository that pins RAUC bundles. Named by the
+  package, with `src/main.rs`.
+- `rauc-verify` — the device-side metadata and target verifier
+  (phase 2 first half, RFCT-088). Walks the metadata from a pinned root and
+  prints a verified local target path for an installer to consume. Named by
+  its own filename, `src/bin/rauc-verify.rs`.
+
+Two neighbours that are deliberately not here:
+
+- an offline update bundle builder (the USB/SD "lockbox" carrying the same
+  bundle plus full metadata) is planned and unwritten;
 - delta needs no tooling: RAUC adaptive updates work against the plain bundle
   over HTTP range requests.
 
-## Phase-1 scope of `mos-sign`
+## Phase-1 scope of `rauc-sign`
 
-`mos-sign` implements the repository half of the trust model in PLAN-006 Part
+`rauc-sign` implements the repository half of the trust model in PLAN-006 Part
 A: the four TUF top-level roles (`root`, `targets`, `snapshot`, `timestamp`),
 a sign/verify roundtrip, and target metadata that pins each RAUC bundle's
 sha256, length and dm-verity root hash.
@@ -44,12 +51,12 @@ Explicitly out of scope for the whole crate, still:
 - RAUC's own CMS bundle signature, which is a separate key hierarchy applied
   by `rauc bundle` at build time.
 
-The verity root hash is passed to `mos-sign add` as an argument. The tool never
+The verity root hash is passed to `rauc-sign add` as an argument. The tool never
 shells out to `rauc`, so it has no dependency on the image pipeline.
 
 ## Phase 2, first half: the device-side verifier
 
-`mos-update-verify` is the client the phase-1 attacker tests were modelled
+`rauc-verify` is the client the phase-1 attacker tests were modelled
 against. It performs the TUF client walk over a local repository directory —
 root chain from the pinned trusted root, then timestamp → snapshot → targets —
 enforcing per-role signature thresholds, expiries, version pins, and metadata
@@ -68,12 +75,12 @@ any other exit means not verified with a one-line reason on stderr:
 
 ```sh
 # verify the metadata walk; records/enforces per-role versions in the state file
-mos-update-verify --repo <dir> --root <pinned root.json> --state <state.json>
+rauc-verify --repo <dir> --root <pinned root.json> --state <state.json>
 # OK root v1 targets v2 snapshot v2 timestamp v2
 
 # additionally verify one target's bytes (sha256 + length) and print its
 # verified local path, ready to hand to an installer
-mos-update-verify --repo <dir> --root <pinned root.json> --state <state.json> \
+rauc-verify --repo <dir> --root <pinned root.json> --state <state.json> \
   --target update-1.0.0.raucb
 # <dir>/targets/<sha256>.update-1.0.0.raucb
 ```
@@ -110,7 +117,7 @@ to be made deliberately, not defaulted. Candidate paths, none implemented:
   come from somewhere (factory default or physical ceremony), and the import
   path is an attack surface that must enforce the chain rule strictly.
 
-Until one of these is chosen and built, `mos-update-verify` is a tool a test
+Until one of these is chosen and built, `rauc-verify` is a tool a test
 (or a person with a shell) points at a directory — that is the whole truth of
 its deployment status.
 
@@ -144,10 +151,10 @@ metadata and a pinned root, never a `.pk8`.
 Generate throwaway development keys:
 
 ```sh
-cargo run -p mos-sign -- gen-dev-keys          # writes update/sign/.devkeys/
+cargo run -p rauc-sign -- gen-dev-keys          # writes os/pkgs/rauc-sign/.devkeys/
 ```
 
-`update/sign/.devkeys/` is gitignored and `gen-dev-keys` refuses to overwrite an
+`os/pkgs/rauc-sign/.devkeys/` is gitignored and `gen-dev-keys` refuses to overwrite an
 existing key. No key, certificate or seed is ever committed to this repository,
 and the tests generate their own keys into a temporary directory at runtime.
 
@@ -155,7 +162,7 @@ and the tests generate their own keys into a temporary directory at runtime.
 
 ```sh
 # one-time repository creation (needs the offline root key)
-cargo run -p mos-sign -- init \
+cargo run -p rauc-sign -- init \
   --repo _out/tuf \
   --root-expires 2027-01-01T00:00:00Z \
   --targets-expires 2027-01-01T00:00:00Z \
@@ -163,7 +170,7 @@ cargo run -p mos-sign -- init \
   --timestamp-expires 2026-09-01T00:00:00Z
 
 # publish a release bundle (online keys only)
-cargo run -p mos-sign -- add \
+cargo run -p rauc-sign -- add \
   --repo _out/tuf \
   --target _out/cx3576/update-1.0.0.raucb \
   --verity-root-hash <64 hex chars from the RAUC bundle> \
@@ -171,14 +178,14 @@ cargo run -p mos-sign -- add \
   --targets-expires ... --snapshot-expires ... --timestamp-expires ...
 
 # refresh timestamp/snapshot before they expire (online keys only)
-cargo run -p mos-sign -- sign --repo _out/tuf \
+cargo run -p rauc-sign -- sign --repo _out/tuf \
   --targets-expires ... --snapshot-expires ... --timestamp-expires ... [--timestamp-version N]
 
 # release-side offline verification against a trusted root
-cargo run -p mos-sign -- verify --repo _out/tuf --root <trusted root.json> [--datastore _out/tuf-trusted]
+cargo run -p rauc-sign -- verify --repo _out/tuf --root <trusted root.json> [--datastore _out/tuf-trusted]
 
 # device-side verification (pinned root + persistent version state)
-cargo run -p mos-sign --bin mos-update-verify -- \
+cargo run -p rauc-sign --bin rauc-verify -- \
   --repo _out/tuf --root <pinned root.json> --state _out/uptane-state.json \
   [--target update-1.0.0.raucb]
 ```
@@ -186,20 +193,25 @@ cargo run -p mos-sign --bin mos-update-verify -- \
 All expiration instants are explicit RFC 3339 arguments. Nothing derives an
 expiration from the wall clock, so a release is reproducible and tests are
 deterministic. `--root-expires` exists only on `init`, because `root.json` is the
-one role the online path never re-signs. `mos-sign verify --datastore` persists
+one role the online path never re-signs. `rauc-sign verify --datastore` persists
 the last trusted metadata for the release side; the device side's equivalent is
 the mandatory `--state` file.
 
 ## Checks
 
-The `mos-sign` crate is a member of the `mosd/` cargo workspace, so it is
-covered by the single project gate:
+This crate is **its own cargo workspace**, so `mosd/hack/check.sh` does not
+cover it — that script's `--workspace` flags stop at the mosd members. The gate
+for this code is its twin, next to the crate:
 
 ```sh
-bash mosd/hack/check.sh
+bash os/pkgs/rauc-sign/hack/check.sh
 ```
 
+Same five checks in the same order, against this workspace's own `Cargo.lock`
+and `deny.toml`. `.github/workflows/check.yml` runs both scripts, and the
+second one is the only thing on that job that checks this code.
+
 The device-side client is tested against the same in-repo fixture the signer
-tests use (`update/sign/tests/`): the honest publish sequence verifies, and a
+tests use (`os/pkgs/rauc-sign/tests/`): the honest publish sequence verifies, and a
 published rollback, a tampered target, a tampered-metadata edit, expired
 metadata, and an unmet root threshold are each rejected.

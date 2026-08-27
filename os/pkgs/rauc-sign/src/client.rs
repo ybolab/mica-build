@@ -26,7 +26,7 @@
 //!   file path is returned, which is what an installer wants to hand to RAUC.
 //!
 //! Transport — how metadata and the pinned root reach the device — is
-//! deliberately absent; see `update/README.md` for the provisioning story.
+//! deliberately absent; see this crate's README for the provisioning story.
 
 use std::collections::BTreeMap;
 use std::fs;

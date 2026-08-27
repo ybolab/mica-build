@@ -64,7 +64,7 @@ pub fn sources(dir: &Path, roles: &[&str]) -> Result<Vec<Box<dyn KeySource>>> {
             let path = key_path(dir, role);
             if !path.is_file() {
                 bail!(
-                    "missing {role} key at {}; run `mos-sign gen-dev-keys`",
+                    "missing {role} key at {}; run `rauc-sign gen-dev-keys`",
                     path.display()
                 );
             }
