@@ -34,6 +34,14 @@ statusfile=@STATUSFILE@
 
 # Boot credits: RAUC writes these into BOOT_A_LEFT / BOOT_B_LEFT via fw_setenv.
 #
+# Concurrency: fw_setenv self-serialises -- libubootenv takes flock(LOCK_EX)
+# on /var/lock/fw_printenv.lock for the whole read-modify-write, so slot
+# marking, the machine-id oneshot and any boot-credit poll never interleave.
+# The rule and the two caveats it stands on are recorded in
+# os/rootfs/overlay-v2/etc/fw_env.config.in. Ownership under that rule: RAUC
+# is the only writer of BOOT_ORDER and BOOT_A_LEFT/BOOT_B_LEFT; machine_id
+# has its own owner; everything else reads.
+#
 # U-Boot and barebox only, so the two lines below are rendered empty on a grub
 # board. RAUC refuses to load a configuration that sets them with
 # bootloader=grub -- "Configuring boot attempts is valid for uboot or barebox

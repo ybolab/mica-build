@@ -3441,7 +3441,7 @@ transfer:
 1. **The trust anchor does not exist on any device.** The keyring is *"NOT
    shipped by this task and NOT in git"*, and *"until
    one is installed, `rauc install` on device fails closed"*
-   (`os/pkgs/rauc/system.conf.in:72-77`). The
+   (`os/pkgs/rauc/system.conf.in:78-83`). The
    image verifier asserts only that no keyring is baked into the packed root,
    and records why in as many words: *"Absence is the shipped state; rauc
    install fails closed until one is provisioned"*
