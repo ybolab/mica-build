@@ -207,7 +207,7 @@ What `generic-rk3576_defconfig` at `v2026.07` provides [V]
   `MMC_DW_ROCKCHIP` for SD (lines 33-38).
 - **Serial**: `CONFIG_DEBUG_UART_BASE=0x2AD40000`, `CONFIG_BAUDRATE=1500000`,
   `CONFIG_SYS_NS16550_MEM32=y` (lines 8, 40, 42) — matches
-  `os/boards/cx3576/board.env:349` `console: ttyFIQ0,1500000` /
+  `os/boards/cx3576/board.env:349` `console=ttyFIQ0,1500000` /
   `earlycon=...0x2ad40000` [V].
 - **USB**: DWC3 host + gadget, `CONFIG_USB_FUNCTION_ROCKUSB=y` (lines 44-49).
 - **DM / distro boot**: full driver model; bootstd with extlinux, script and EFI
