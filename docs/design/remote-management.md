@@ -16,10 +16,10 @@
 ## 0. How to read the status markers
 
 Markers follow `docs/design/access.md` section 0: **[implemented]** is *"code
-exists and is named, by path"* (`docs/design/access.md:27`), **[not
+exists and is named, by path"* (`docs/design/access.md:15`), **[not
 implemented]** is *"deliberately, no code at all. Prose only"*
-(`docs/design/access.md:29`). This section carries neither
-(`docs/design/access.md:45-46`).
+(`docs/design/access.md:17`). This section carries neither
+(`docs/design/access.md:33-34`).
 
 ## 1. What reaches the device today — **[implemented]**
 
@@ -57,9 +57,9 @@ never spawns a process and never talks to systemd itself"*
 
 **SSH and the console are access channels, not management ones**, and both are
 shut: SSH ships *"off by default on both"* profiles
-(`docs/design/access.md:68`), the tty3 shell has *"no reconciler consuming it"*
-(`docs/design/access.md:69`), the serial console has *"no account that will
-accept a credential"* (`docs/design/access.md:70`).
+(`docs/design/access.md:55`), the tty3 shell has *"no reconciler consuming it"*
+(`docs/design/access.md:56`), the serial console has *"no account that will
+accept a credential"* (`docs/design/access.md:57`).
 
 **That is the whole list.** There is **no device-initiated management channel
 and no fleet plane in this tree**: nothing dials out, nothing enrolls a device,
