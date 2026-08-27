@@ -1,7 +1,7 @@
 // rauc, against a real rauc, driven from the failing side.
 //
 // WHICH rauc, AND WHY IT MATTERS THAT THIS SAYS SO. The rauc that ships is
-// built from pinned source by os/update/rauc/build.sh, and in a clean checkout
+// built from pinned source by os/pkgs/rauc/build.sh, and in a clean checkout
 // it does not exist yet. So the wrapper is exercised here against the base
 // image's PACKAGED rauc -- a real rauc, which answers --version and reads a
 // bundle truthfully -- and that toolset is marked `provenance: 'distro'`.
@@ -46,7 +46,7 @@ beforeAll(async () => {
   tb = await Toolbox.open(RAUC_TEST, { mounts: [REPO_ROOT], cwd: work })
 
   // A self-signed pair and a one-image bundle, built ONCE so that info() has
-  // something real to read. os/update/rauc/gen-dev-keys.sh does the same for
+  // something real to read. os/pkgs/rauc/gen-dev-keys.sh does the same for
   // the shipping path; nothing here touches that material.
   const cert = join(work, 'signer.cert.pem')
   const key = join(work, 'signer.key.pem')

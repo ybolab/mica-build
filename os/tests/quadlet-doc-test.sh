@@ -8,7 +8,7 @@
 # drops one, renames a section, and the examples go on looking correct to every
 # reader, because nothing in a markdown file can fail. So the examples are
 # extracted from the document and run through the real generator -- the arm64
-# binary in os/podman/out-arm64, under emulation, the one the device runs.
+# binary in os/pkgs/podman/out-arm64, under emulation, the one the device runs.
 
 # The marker is an HTML comment, `<!-- quadlet: NAME -->`, immediately before
 # the fenced block. Invisible when the document is rendered, unambiguous to
@@ -20,7 +20,7 @@ set -euo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${HERE}/../.." && pwd)"
 DOC="${REPO_ROOT}/docs/design/containers.md"
-QUADLET="${MOS_QUADLET_BIN:-${REPO_ROOT}/os/podman/out-arm64/quadlet}"
+QUADLET="${MOS_QUADLET_BIN:-${REPO_ROOT}/os/pkgs/podman/out-arm64/quadlet}"
 
 [ -f "${DOC}" ] || { echo "error: ${DOC} not found" >&2; exit 1; }
 [ -f "${QUADLET}" ] || {
@@ -76,7 +76,7 @@ fi
 
 # --- run the real generator
 # In a container, because the binary is aarch64 and this host is not. Same
-# builder selection as os/podman/build.sh: buildx's docker-container driver
+# builder selection as os/pkgs/podman/build.sh: buildx's docker-container driver
 # bundles QEMU, so no host binfmt registration is needed.
 BUILDER_ARGS=()
 if [ -z "${BUILDX_BUILDER:-}" ] && ! docker buildx inspect 2>/dev/null | grep -c 'linux/arm64' >/dev/null; then
@@ -96,7 +96,7 @@ cp "${QUADLET}" "${WORK}/quadlet"
 # is refused rather than falling back to something.
 
 # It matters for this test specifically because what runs in the container is
-# the quadlet binary out of os/podman/out-arm64, generating systemd units that
+# the quadlet binary out of os/pkgs/podman/out-arm64, generating systemd units that
 # are then asserted against docs/design/containers.md. It is dynamically
 # linked, so the base decides the glibc it loads against, and a base that
 # drifted would surface as a documentation test failing about unit content.
@@ -105,7 +105,7 @@ mapfile -t FROM_ARGS < <(bash "${REPO_ROOT}/os/build-env/from.sh" \
 # mapfile cannot fail, so its status says nothing about the process inside the
 # substitution; an empty array is what a refusal looks like from here, and an
 # empty array would build with no --build-arg and no FROM at all. Same check,
-# and for the same reason, as os/podman/build.sh's.
+# and for the same reason, as os/pkgs/podman/build.sh's.
 [ "${#FROM_ARGS[@]}" -eq 2 ] || {
     echo "error: os/build-env/from.sh did not yield the base image (see its message above); this build would have run with an empty FROM" >&2
     exit 1

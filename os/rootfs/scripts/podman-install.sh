@@ -11,7 +11,7 @@
 set -eu
 for b in podman quadlet crun conmon netavark aardvark-dns catatonit; do
     if [ ! -f "/tmp/podman/${b}" ]; then
-        echo "error: ${b} is not in the staged os/podman output. This chain includes stages/31-feature-containers, which asks for an engine, and no engine was built; run 'make podman' first, or leave the stage out with --without containers. Continuing would produce an image that boots, reports itself healthy, and cannot run a container" >&2; exit 1
+        echo "error: ${b} is not in the staged os/pkgs/podman output. This chain includes stages/31-feature-containers, which asks for an engine, and no engine was built; run 'make podman' first, or leave the stage out with --without containers. Continuing would produce an image that boots, reports itself healthy, and cannot run a container" >&2; exit 1
     fi
 done
 install -d -m0755 /usr/libexec/podman

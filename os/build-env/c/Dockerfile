@@ -10,7 +10,7 @@
 # or a floor.
 
 # It is a separate image rather than more packages in mos-build-base because
-# os/podman/Dockerfile tried the merged list and recorded the bill: adding one
+# os/pkgs/podman/Dockerfile tried the merged list and recorded the bill: adding one
 # package to a shared apt list invalidated the cache for five unrelated
 # compilers, about 42 minutes of recompilation under emulation. Kept apart,
 # adding a C library here rebuilds this image and leaves Go and Rust alone.
@@ -18,7 +18,7 @@
 
 # What is in it is the language toolchain -- compiler, linker driver, the three
 # build drivers a C project might use, and ccache in front of the compiler.
-# Component-specific -dev packages are NOT here: os/podman/Dockerfile's C stage
+# Component-specific -dev packages are NOT here: os/pkgs/podman/Dockerfile's C stage
 # needs libseccomp-dev, libcap-dev, libjson-c-dev, libyajl-dev, libglib2.0-dev
 # and libsystemd-dev, and none of those is a fact about C -- they are facts
 # about crun and conmon. They belong in a stage that is FROM mos-build-c with
@@ -27,7 +27,7 @@
 
 # Native only, deliberately. This image carries no cross toolchain because the
 # C components in this tree are built under emulation at the target platform --
-# os/podman/build.sh passes --platform and lets buildkit's qemu do it -- so a
+# os/pkgs/podman/build.sh passes --platform and lets buildkit's qemu do it -- so a
 # cross gcc here would be weight nothing invokes. mos-build-rust is the
 # opposite case and says why in its own header; the asymmetry is between what
 # the two ecosystems make cheap, not between two opinions.
@@ -39,7 +39,7 @@ FROM ${MOS_BASE_IMAGE} AS final
 # comments and blank lines, and filters it to this image's own C_ keys. Prose
 # added to images.env therefore does not invalidate this layer, and a pin added
 # for Go or Rust does not either -- both measured elsewhere in this tree, both
-# in os/podman/Dockerfile's header.
+# in os/pkgs/podman/Dockerfile's header.
 #
 # It lands on /etc/mos-build/images.env, overwriting the parent's copy of the
 # same path. That is intended: the parent's BASE_ keys are already spent -- they
@@ -70,7 +70,7 @@ RUN --mount=type=cache,target=/var/cache/apt,id=apt-cache-mos-build-c,sharing=lo
         ccache \
         python3
 
-# ccache in front of the real compilers, as os/podman/Dockerfile's C stage does
+# ccache in front of the real compilers, as os/pkgs/podman/Dockerfile's C stage does
 # and for the reason it measured: the C components had no compiled-object cache
 # while the Go stage had two, so any change upstream paid a full crun recompile
 # -- about 10 minutes under emulation -- to rebuild bytes identical to the

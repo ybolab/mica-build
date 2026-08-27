@@ -2,6 +2,6 @@
 # out of it is the filtered lock os/build-env/build.sh writes there. Everything
 # else is excluded by default rather than by enumeration -- an allow-list
 # cannot be outgrown by a file somebody adds later, and this is the same shape
-# os/update/rauc/Dockerfile.dockerignore uses.
+# os/pkgs/rauc/Dockerfile.dockerignore uses.
 *
 !images.lock

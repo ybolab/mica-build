@@ -1,6 +1,6 @@
 // The smoke runner: execute every self-built artifact inside the root that ships
-// it and require the version it reports to be the one os/podman/versions.env,
-// os/update/rauc/versions.env or the crate manifest pins. Execution and version
+// it and require the version it reports to be the one os/pkgs/podman/versions.env,
+// os/pkgs/rauc/versions.env or the crate manifest pins. Execution and version
 // identity, not behaviour; the QEMU boot tests and the ldd/NEEDED checks keep
 // functional coverage. Everything below takes an `Exec`, so the suite reaches
 // every verdict from the failing side with fabricated output and no image,

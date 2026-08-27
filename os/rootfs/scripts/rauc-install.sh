@@ -5,7 +5,7 @@
 
 set -eu
 for f in rauc rauc.service rauc-service.sh de.pengutronix.rauc.conf de.pengutronix.rauc.service; do
-    [ -f "/tmp/rauc/${f}" ] || { echo "error: ${f} is not in the staged os/update/rauc output; run 'make os-rauc' first. An image without it boots, reports itself healthy, and cannot install an update" >&2; exit 1; }
+    [ -f "/tmp/rauc/${f}" ] || { echo "error: ${f} is not in the staged os/pkgs/rauc output; run 'make os-rauc' first. An image without it boots, reports itself healthy, and cannot install an update" >&2; exit 1; }
 done
 install -m0755 /tmp/rauc/rauc            /usr/bin/rauc
 install -d -m0755 /usr/libexec

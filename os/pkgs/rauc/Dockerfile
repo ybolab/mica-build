@@ -1,23 +1,23 @@
 # syntax=docker/dockerfile:1@sha256:ecfaec9ed6d810b56388c508f4121597bfbba70d41a6dfeee4d8cad5f295fc32
 # RAUC, built from upstream source without the network and streaming modes.
 #
-#   make os-rauc -> os/update/rauc/out-<arch>/: rauc, rauc.service,
+#   make os-rauc -> os/pkgs/rauc/out-<arch>/: rauc, rauc.service,
 #   de.pengutronix.rauc.conf, de.pengutronix.rauc.service, NEEDED.txt,
 #   SHA256SUMS
 #
-# Same shape as os/podman/Dockerfile: builder stages, then a scratch stage that
+# Same shape as os/pkgs/podman/Dockerfile: builder stages, then a scratch stage that
 # `-o` exports. Nothing here installs into a rootfs;
 # os/rootfs/scripts/rauc-install.sh copies the output in.
 
-# Why, in short (os/update/rauc/versions.env has it in full): Debian builds
+# Why, in short (os/pkgs/rauc/versions.env has it in full): Debian builds
 # rauc with streaming on, that links libcurl-gnutls, and rauc was the only
 # thing in the whole packed root that used it. Turning it off removes a second
 # TLS stack from a signed image; it does not remove a feature this project
 # ships, because the streaming install path is deferred in
-# os/update/rauc/manifest.raucm.in.
+# os/pkgs/rauc/manifest.raucm.in.
 
 # The two builder images, injected from os/build-env/images.env by
-# os/build-env/from.sh, which os/update/rauc/build.sh calls. A bare
+# os/build-env/from.sh, which os/pkgs/rauc/build.sh calls. A bare
 # `FROM debian:trixie-slim` is a tag upstream repoints whenever it rebuilds, so
 # "which toolchain built the rauc on this device" would be answerable only from
 # a build log. No defaults: without a value docker refuses with "base name
@@ -48,9 +48,9 @@ RUN set -eu; . /versions.env; \
     got="$(git -C /src/rauc archive --format=tar "${RAUC_VERSION}" | sha256sum | cut -d' ' -f1)"; \
     if [ "${RAUC_SHA256}" = "PENDING" ]; then \
         echo "HASH rauc ${RAUC_VERSION} ${got}"; \
-        echo "error: rauc is pinned to ${RAUC_VERSION} with no hash. Record RAUC_SHA256=${got} in os/update/rauc/versions.env and run again; until then this build would compile whatever the tag points at today, which is a different fact from the source this tree agreed to ship" >&2; exit 1; \
+        echo "error: rauc is pinned to ${RAUC_VERSION} with no hash. Record RAUC_SHA256=${got} in os/pkgs/rauc/versions.env and run again; until then this build would compile whatever the tag points at today, which is a different fact from the source this tree agreed to ship" >&2; exit 1; \
     elif [ "${RAUC_SHA256}" != "${got}" ]; then \
-        echo "error: rauc ${RAUC_VERSION} hashes to ${got}, but os/update/rauc/versions.env pins ${RAUC_SHA256}. Either the tag was moved upstream or the pin is stale; do not paste the new hash in without finding out which" >&2; exit 1; \
+        echo "error: rauc ${RAUC_VERSION} hashes to ${got}, but os/pkgs/rauc/versions.env pins ${RAUC_SHA256}. Either the tag was moved upstream or the pin is stale; do not paste the new hash in without finding out which" >&2; exit 1; \
     else \
         echo "ok rauc ${RAUC_VERSION} ${got}"; \
     fi; \
@@ -61,7 +61,7 @@ RUN set -eu; . /versions.env; \
 # their versions from inside itself. What stays in this apt list is what is
 # about RAUC rather than about C: meson and ninja are rauc's build system, and
 # the five -dev packages are the libraries rauc links. That boundary is the one
-# os/podman/Dockerfile measured at ~42 minutes: a component's headers in a
+# os/pkgs/podman/Dockerfile measured at ~42 minutes: a component's headers in a
 # shared image put them in every other component's cache key.
 FROM ${MOS_BUILD_C} AS build
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -111,7 +111,7 @@ RUN set -eu; \
     if grep -qiE 'curl|gnutls|nettle|krb5' /staging/NEEDED.txt; then \
         echo "error: the built rauc links a network/TLS library it must not:" >&2; \
         grep -iE 'curl|gnutls|nettle|krb5' /staging/NEEDED.txt >&2; \
-        echo "That is the whole reason this build exists (os/update/rauc/versions.env)." >&2; exit 1; \
+        echo "That is the whole reason this build exists (os/pkgs/rauc/versions.env)." >&2; exit 1; \
     fi; \
     echo "rauc NEEDED:"; sed 's/^/  /' /staging/NEEDED.txt
 

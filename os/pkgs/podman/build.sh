@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # Build the container engine from upstream source into seven aarch64 binaries.
 #
-#   bash os/podman/build.sh
-#   → os/podman/out/{podman,quadlet,crun,conmon,netavark,aardvark-dns,catatonit}
+#   bash os/pkgs/podman/build.sh
+#   → os/pkgs/podman/out/{podman,quadlet,crun,conmon,netavark,aardvark-dns,catatonit}
 #
 # A script rather than a bare `docker buildx build` in the Makefile, for one
 # reason: the builder selection below. The first run of this build failed with
@@ -13,14 +13,14 @@
 set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-# Two levels up, proved rather than assumed: os/build-env/from.sh is reached
+# Three levels up, proved rather than assumed: os/build-env/from.sh is reached
 # through it, and a relative path here would resolve against whatever directory
 # the caller happened to be in. os-bundle-cx3576 spent two merges broken on
 # exactly that.
-REPO_ROOT="$(cd "${HERE}/../.." && pwd)"
+REPO_ROOT="$(cd "${HERE}/../../.." && pwd)"
 FROM_SH="${REPO_ROOT}/os/build-env/from.sh"
 [ -f "${FROM_SH}" ] || {
-    echo "error: ${FROM_SH} does not exist. os/podman/build.sh derives REPO_ROOT as two levels above itself; if this file moved, that arithmetic moved with it" >&2
+    echo "error: ${FROM_SH} does not exist. os/pkgs/podman/build.sh derives REPO_ROOT as three levels above itself; if this file moved, that arithmetic moved with it" >&2
     exit 1
 }
 
@@ -70,7 +70,7 @@ BUILDER_ARGS=(--builder default)
 # exists for this one mistake and caught this line.
 default_platforms="$(docker buildx inspect default 2>/dev/null || true)"
 if ! printf '%s\n' "${default_platforms}" | grep -c "linux/${MOS_ARCH}" >/dev/null; then
-    echo "error: the 'default' buildx builder does not offer linux/${MOS_ARCH} on this host, and it is the only builder that can be used here: every stage of os/podman/Dockerfile is FROM a localhost/mos-build-* tag, which lives in the local docker image store, and a docker-container builder treats 'localhost/' as a registry hostname. Register the emulator on the HOST -- docker run --privileged --rm tonistiigi/binfmt --install ${MOS_ARCH} -- so that the default builder can reach it; a docker-container builder would not help" >&2
+    echo "error: the 'default' buildx builder does not offer linux/${MOS_ARCH} on this host, and it is the only builder that can be used here: every stage of os/pkgs/podman/Dockerfile is FROM a localhost/mos-build-* tag, which lives in the local docker image store, and a docker-container builder treats 'localhost/' as a registry hostname. Register the emulator on the HOST -- docker run --privileged --rm tonistiigi/binfmt --install ${MOS_ARCH} -- so that the default builder can reach it; a docker-container builder would not help" >&2
     exit 1
 fi
 
@@ -80,7 +80,7 @@ fi
 #
 #   * It checked the PREVIOUS image. The binaries built here go into the NEXT
 #     one, whose package list this build has not seen.
-#   * It was a cycle. os/rootfs/build-v2.sh now stages os/podman/out, so the
+#   * It was a cycle. os/rootfs/build-v2.sh now stages os/pkgs/podman/out, so the
 #     rootfs needed the engine and the engine's check needed the rootfs; a
 #     clean checkout could build neither.
 #
@@ -101,7 +101,7 @@ if [ ! -s "${HERE}/versions.lock" ]; then
 fi
 
 # The four builder images, resolved out of os/build-env/images.env before
-# anything is deleted or built. os/podman/Dockerfile declares them with no
+# anything is deleted or built. os/pkgs/podman/Dockerfile declares them with no
 # defaults, so a missing one is refused here by name -- with the command that
 # makes it -- rather than by docker, which reports a missing localhost tag as a
 # failed pull from a registry called `localhost`.

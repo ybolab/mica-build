@@ -156,15 +156,15 @@ export const COREUTILS: Toolset = {
   tools: ['dd', 'truncate'],
 }
 
-/** Where os/update/rauc/build.sh leaves the rauc this tree ships, per architecture. */
+/** Where os/pkgs/rauc/build.sh leaves the rauc this tree ships, per architecture. */
 export function shippedRaucPath(arch: string): string {
-  return join(OS_DIR, 'update', 'rauc', `out-${arch}`, 'rauc')
+  return join(OS_DIR, 'pkgs', 'rauc', `out-${arch}`, 'rauc')
 }
 
 /**
  * Where the rauc in a bundle toolset came from, and what it is allowed to do.
  *
- * 'shipped'  the binary os/update/rauc/build.sh produced from pinned source.
+ * 'shipped'  the binary os/pkgs/rauc/build.sh produced from pinned source.
  * 'distro'   whatever the base image's package manager supplies.
  *
  * The distinction is load-bearing: the rauc that builds a bundle must be the
@@ -178,7 +178,7 @@ export function shippedRaucPath(arch: string): string {
 export type RaucProvenance = 'shipped' | 'distro'
 
 export interface BundleToolsetOptions {
-  /** The rauc binary to carry in. Defaults to os/update/rauc/out-<arch>/rauc. */
+  /** The rauc binary to carry in. Defaults to os/pkgs/rauc/out-<arch>/rauc. */
   readonly raucBin?: string
   readonly arch?: string
 }
@@ -202,8 +202,8 @@ export function bundleToolset(options: BundleToolsetOptions = {}): Toolset & { p
   if (!existsSync(bin)) {
     throw new Error(
       `${bin} does not exist, so there is no rauc to build a bundle with. It is produced by `
-      + `\`MOS_BOARD=<board> make os-rauc\` (os/update/rauc/build.sh), from the version pinned in `
-      + `os/update/rauc/versions.env. The distribution's rauc is deliberately not a substitute: `
+      + `\`MOS_BOARD=<board> make os-rauc\` (os/pkgs/rauc/build.sh), from the version pinned in `
+      + `os/pkgs/rauc/versions.env. The distribution's rauc is deliberately not a substitute: `
       + `commit 9a43a59 records a bundle built by rauc 1.8 that the device's 1.13 refused.`,
     )
   }
@@ -236,7 +236,7 @@ export function bundleToolset(options: BundleToolsetOptions = {}): Toolset & { p
  * A bundle toolset whose rauc is the base image's package.
  *
  * Exists so the rauc wrapper can be driven against a real rauc in a clean
- * checkout, where the self-built binary under os/update/rauc has not been
+ * checkout, where the self-built binary under os/pkgs/rauc has not been
  * produced. It is a real rauc and answers `--version` and `info` truthfully.
  * It is not the rauc that ships, it is marked so, and src/tools/rauc.ts refuses
  * to write a bundle with it -- see RaucProvenance.

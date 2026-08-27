@@ -11,7 +11,7 @@
 // The fixtures are derived, not written down. The cmdlines are built out of
 // os/boards/cx3576/board.env's own ROOTFS_A_GUID/ROOTFS_B_GUID and VERITY_SALT,
 // the boot.cmd mutated below is the shipped one, and the manifest template is
-// os/update/rauc/manifest.raucm.in itself. A fixture restating a value the tree
+// os/pkgs/rauc/manifest.raucm.in itself. A fixture restating a value the tree
 // already declares is a second copy to drift, and these guards exist to catch
 // drift.
 
@@ -156,7 +156,7 @@ describe('THE RAUC THAT BUILDS A BUNDLE MUST BE THE RAUC THAT INSTALLS IT', () =
   const ok = {
     reportPath: '/out/rootfs-report-v2.txt',
     reportText: 'coreutils\t21046\nRAUC_VERSION v1.13\n',
-    buildEnvPath: '/os/update/rauc/out-amd64/RAUC_VERSION.env',
+    buildEnvPath: '/os/pkgs/rauc/out-amd64/RAUC_VERSION.env',
     buildEnvText: 'RAUC_VERSION=v1.13\nRAUC_SHA256=372828c2\n',
   }
 
@@ -177,7 +177,7 @@ describe('THE RAUC THAT BUILDS A BUNDLE MUST BE THE RAUC THAT INSTALLS IT', () =
 
   test('a build env that records NO version is refused, and names the path it read', () => {
     expect(() => assertRaucMatchesImage({ ...ok, buildEnvText: 'RAUC_SHA256=372828c2\n' }))
-      .toThrow(/no RAUC_VERSION from \/os\/update\/rauc\/out-amd64\/RAUC_VERSION\.env/)
+      .toThrow(/no RAUC_VERSION from \/os\/pkgs\/rauc\/out-amd64\/RAUC_VERSION\.env/)
   })
 
   test('an ABSENT build env is the same refusal, with <unset> when there is no path either', () => {
@@ -671,7 +671,7 @@ describe('the mount set is derived from the inputs, and nests nothing', () => {
     rootfsVerityImg: join(REPO_ROOT, '_out/cx3576/rootfs-verity.img'),
     rootfsVerityEnv: join(REPO_ROOT, '_out/cx3576/rootfs-verity.env'),
     rootfsReport: join(REPO_ROOT, '_out/cx3576/rootfs-report-v2.txt'),
-    raucBuildEnv: join(REPO_ROOT, 'os/update/rauc/out-amd64/RAUC_VERSION.env'),
+    raucBuildEnv: join(REPO_ROOT, 'os/pkgs/rauc/out-amd64/RAUC_VERSION.env'),
     cert: '/secrets/signer.cert.pem',
     key: '/secrets/signer.key.pem',
     keyring: '/secrets/ca.cert.pem',
@@ -704,7 +704,7 @@ describe('the mount set is derived from the inputs, and nests nothing', () => {
 /**
  * The toolset the end-to-end case below runs in. Its `provenance` mark is a declaration this test makes about its own
  * container, and it is 'shipped' so that the assembly can be driven in a clean
- * checkout where os/update/rauc/out-amd64/rauc has not been built. That is the
+ * checkout where os/pkgs/rauc/out-amd64/rauc has not been built. That is the
  * same freedom rauc.test.ts takes in the other direction, where it declares its
  * container's packaged rauc 'distro'. Nothing about a fixture bundle ships.
  *

@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # Generates the DEVELOPMENT-ONLY CMS signing material RAUC bundles are signed
-# with, into os/update/rauc/.devkeys/ (gitignored).
+# with, into os/pkgs/rauc/.devkeys/ (gitignored).
 #
-#   bash os/update/rauc/gen-dev-keys.sh            generate if absent, otherwise no-op
-#   bash os/update/rauc/gen-dev-keys.sh --force    regenerate, replacing what is there
+#   bash os/pkgs/rauc/gen-dev-keys.sh            generate if absent, otherwise no-op
+#   bash os/pkgs/rauc/gen-dev-keys.sh --force    regenerate, replacing what is there
 #
 # Nothing this script writes may ever be committed: the directory is in
 # .gitignore and every file lands with restrictive modes. A committed signing

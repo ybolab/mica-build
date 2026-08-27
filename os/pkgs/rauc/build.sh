@@ -1,21 +1,21 @@
 #!/usr/bin/env bash
 # Build RAUC from upstream source for one architecture.
 #
-#   MOS_BOARD=x64 bash os/update/rauc/build.sh      → os/update/rauc/out-amd64/
-#   MOS_BOARD=cx3576 bash os/update/rauc/build.sh   → os/update/rauc/out-arm64/
+#   MOS_BOARD=x64 bash os/pkgs/rauc/build.sh      → os/pkgs/rauc/out-amd64/
+#   MOS_BOARD=cx3576 bash os/pkgs/rauc/build.sh   → os/pkgs/rauc/out-arm64/
 #
-# Same driver shape as os/podman/build.sh, and for the same reason: the
+# Same driver shape as os/pkgs/podman/build.sh, and for the same reason: the
 # Dockerfile's last stage is FROM scratch and `-o` exports it, so nothing here
 # writes into a rootfs. os/rootfs/scripts/rauc-install.sh copies the result in.
 #
-# Why the build exists at all: os/update/rauc/versions.env.
+# Why the build exists at all: os/pkgs/rauc/versions.env.
 set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${HERE}/../../.." && pwd)"
 FROM_SH="${REPO_ROOT}/os/build-env/from.sh"
 [ -f "${FROM_SH}" ] || {
-    echo "error: ${FROM_SH} does not exist. os/update/rauc/build.sh derives REPO_ROOT as three levels above itself; if this file moved, that arithmetic moved with it" >&2
+    echo "error: ${FROM_SH} does not exist. os/pkgs/rauc/build.sh derives REPO_ROOT as three levels above itself; if this file moved, that arithmetic moved with it" >&2
     exit 1
 }
 MOS_BOARD="${MOS_BOARD:-cx3576}"
@@ -70,7 +70,7 @@ BUILDER_ARGS=(--builder default)
 # exists for this one mistake and caught this line.
 default_platforms="$(docker buildx inspect default 2>/dev/null || true)"
 if ! printf '%s\n' "${default_platforms}" | grep -c "linux/${MOS_ARCH}" >/dev/null; then
-    echo "error: the 'default' buildx builder does not offer linux/${MOS_ARCH} on this host, and it is the only builder that can be used here: every stage of os/update/rauc/Dockerfile is FROM a localhost/mos-build-* tag, which lives in the local docker image store, and a docker-container builder treats 'localhost/' as a registry hostname. Register the emulator on the HOST -- docker run --privileged --rm tonistiigi/binfmt --install ${MOS_ARCH} -- so that the default builder can reach it; a docker-container builder would not help" >&2
+    echo "error: the 'default' buildx builder does not offer linux/${MOS_ARCH} on this host, and it is the only builder that can be used here: every stage of os/pkgs/rauc/Dockerfile is FROM a localhost/mos-build-* tag, which lives in the local docker image store, and a docker-container builder treats 'localhost/' as a registry hostname. Register the emulator on the HOST -- docker run --privileged --rm tonistiigi/binfmt --install ${MOS_ARCH} -- so that the default builder can reach it; a docker-container builder would not help" >&2
     exit 1
 fi
 
@@ -114,7 +114,7 @@ if [ -n "${missing}" ]; then
     exit 1
 fi
 if grep -ciE 'curl|gnutls' "${OUT}/NEEDED.txt" >/dev/null; then
-    echo "error: the exported rauc links curl or GnuTLS; see os/update/rauc/versions.env for why that is the one thing this build must not do" >&2
+    echo "error: the exported rauc links curl or GnuTLS; see os/pkgs/rauc/versions.env for why that is the one thing this build must not do" >&2
     cat "${OUT}/NEEDED.txt" >&2
     exit 1
 fi

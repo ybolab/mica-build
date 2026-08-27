@@ -45,7 +45,7 @@ FROM ${MOS_BASE_IMAGE} AS base
 # comments and blank lines, and filters it to this image's own keys. Two
 # separate reasons, both measured elsewhere in this tree.
 #
-# Stripping comments, because os/podman/Dockerfile measured the alternative:
+# Stripping comments, because os/pkgs/podman/Dockerfile measured the alternative:
 # adding a paragraph of prose to versions.env -- no version and no hash changed
 # -- invalidated the COPY and with it every stage below, a two-hour recompile to
 # record a rationale. A cache key should be the inputs, not the commentary about
@@ -61,7 +61,7 @@ COPY images.lock /etc/mos-build/images.env
 # keep the downloaded .debs -- the stock configuration deletes them in the same
 # layer, so without it the mount caches nothing and re-provisioning after an
 # invalidation is a full re-download. Same arrangement, and the same reasoning,
-# as every stage in os/podman/Dockerfile.
+# as every stage in os/pkgs/podman/Dockerfile.
 #
 # What the cache means here: BuildKit keys this RUN on the command text, not on
 # what the archive returned, so a cached layer keeps yesterday's package
@@ -84,7 +84,7 @@ RUN --mount=type=cache,target=/var/cache/apt,id=apt-cache-mos-build-base,sharing
 # once the image is the architecture it was asked for. A builder without the
 # emulator for the requested platform does not fail -- it quietly produces a
 # host-architecture image, and every version below would pass on it.
-# os/update/rauc/build.sh refuses an unset MOS_ARCH for the same reason: a
+# os/pkgs/rauc/build.sh refuses an unset MOS_ARCH for the same reason: a
 # cross build that silently became a native one is discovered on the device.
 
 # Versions are compared as minimums with sort -V, not matched exactly. The

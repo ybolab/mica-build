@@ -82,7 +82,7 @@ Per PLAN-006 Part E: `CONFIG_BOOTCOUNT_LIMIT`, redundant env
 rescue path (cx3576: recovery-key → rockusb, boot-failure → rockusb fallback).
 The boot script and RAUC `system.conf` are generated from one source — the
 board definition, since "the template plus os/boards/cx3576/board.env are the
-single source of truth" (`os/update/rauc/render-config.sh:10-11`) — to prevent
+single source of truth" (`os/pkgs/rauc/render-config.sh:10-11`) — to prevent
 drift.
 
 ## 6. Kernel support policy
