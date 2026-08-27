@@ -117,6 +117,16 @@ rather than touched.
 | `MOS_VERIFY_CONTAINER=1 make os-verify-test` | 0 |
 | `MOS_BUILD_CONTAINER=1 make os-build-test` | 0 |
 
+`os-build-test` needed a second run. The first exited 1 on a hook, not on an
+assertion: `(fail) (unnamed) [5001.38ms] ^ a beforeEach/afterEach hook timed out`
+in `os/build/src/pin-seeded-times.test.ts`, whose `afterAll` tears down a
+container (`os/build/src/pin-seeded-times.test.ts:41`) against bun's 5 s default.
+Every one of that file's own assertions passed in both runs, and the second run
+was `689 pass / 0 fail`. Nothing in this diff is reachable from it -- the diff is
+one `@echo` string, a deleted README and two docs files, and no file under
+`os/build/src/` names `board/`. Reported as a flaky teardown, not fixed:
+`os/**` is out of scope.
+
 No image or rootfs build was attempted: none of these gates needs one, and the
 rootfs/rauc chain is unrunnable on this host for a narrow reason outside this
 campaign (`os/update/rauc/build.sh:63` pins `--builder default`, and its
