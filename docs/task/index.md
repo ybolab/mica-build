@@ -200,3 +200,4 @@ its record's head fails naming both sides (RFCT-171).
 - [-] [**RFCT-200 PLAN-022 M1: native networking design - VLAN, bridge, WireGuard**](RFCT-200.md) `P1`
 - [x] [**RFCT-201 PLAN-022 M2: quoted-segment path syntax**](RFCT-201.md) `P1`
 - [x] [**RFCT-202 PLAN-022 M3: schema v7 - interface kinds**](RFCT-202.md) `P1`
+- [x] [**RFCT-203 PLAN-022 M4: VLAN and bridge reconcile**](RFCT-203.md) `P1`
