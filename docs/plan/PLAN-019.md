@@ -58,10 +58,9 @@ Measured consumer surface:
    the mosd workspace: own `[workspace]` Cargo.toml and lock, own gate run in
    CI, and `mosd/Cargo.toml`'s member list drops it. The binary names FOLLOW the
    rename (user ruling, 2026-08-27): naming stays unified with the crate —
-   `mos-sign` and `mos-update-verify` become the rauc-sign family (exact
-   spellings settled in M1's proposal, default `rauc-sign` /
-   `rauc-sign-verify`, chosen so neither collides with rauc's own binary
-   names). M1 still inventories every consumer of the old names
+   `mos-sign` and `mos-update-verify` become the rauc-sign family (user-settled,
+   2026-08-27: `rauc-sign` / `rauc-verify` — upstream RAUC ships a single
+   `rauc` binary, so no collision exists). M1 still inventories every consumer of the old names
    (docs/design/release-signing.md, the key-ceremony runbook, scripts, CI)
    so the rename lands in one movement.
 
