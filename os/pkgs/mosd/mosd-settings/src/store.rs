@@ -252,3 +252,104 @@ impl Store {
         Ok(())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A v6 `network` entry, exactly as the rolled-back-to binary declares it:
+    /// `dhcp`, an optional `static` block, and `deny_unknown_fields`. It is
+    /// spelled out here rather than imported because the type it mirrors no
+    /// longer exists in this crate — v7 is what [`Settings`] now is — and the
+    /// question this test asks is what the *old* struct would accept.
+    #[derive(serde::Deserialize)]
+    #[serde(deny_unknown_fields)]
+    struct V6Iface {
+        dhcp: bool,
+        #[serde(rename = "static", default)]
+        static_: Option<toml::Table>,
+    }
+
+    /// The A/B rollback shape: a v7 tree of all three new kinds, read by a v6
+    /// binary that has no migration for it.
+    ///
+    /// [`Store::load_newer`] strips the keys serde names, by name, everywhere,
+    /// until the document parses. Against v6's `IfaceSettings` those names are
+    /// `kind`, `vlan`, `bridge` and `wireguard`, and this asserts the fixed
+    /// point of stripping them: every entry survives as a *physical stub* — a
+    /// body v6 deserializes — rather than the whole document failing to load.
+    /// The stub's rendered `.network` matches no device (its `.netdev` lived in
+    /// `/run` and is gone at reboot), so the device falls back to the image
+    /// default on its physical NICs: degraded to the pre-v7 feature set, and
+    /// still reachable, which is the whole point of the tolerant path.
+    #[test]
+    fn a_v7_tree_strips_down_to_v6_physical_stubs() {
+        let mut doc: toml::Table = r#"
+schema_version = 7
+hostname = "rolled-back"
+
+[network.eth0]
+dhcp = true
+
+[network."eth0.100"]
+kind = "vlan"
+dhcp = false
+
+[network."eth0.100".static]
+address = "192.168.100.2/24"
+
+[network."eth0.100".vlan]
+parent = "eth0"
+id = 100
+
+[network.br0]
+kind = "bridge"
+dhcp = true
+
+[network.br0.bridge]
+ports = ["eth1", "eth2"]
+
+[network.wg0]
+kind = "wireguard"
+dhcp = false
+
+[network.wg0.wireguard]
+listenPort = 51820
+
+[[network.wg0.wireguard.peers]]
+publicKey = "AI9C8xytM2fi+RUcnV5RvMnSq4ZQffgDZ37h0vc0AU8="
+allowedIps = ["10.8.0.0/24"]
+"#
+        .parse()
+        .unwrap();
+
+        for key in ["kind", "vlan", "bridge", "wireguard"] {
+            assert!(strip_key(&mut doc, key), "{key} was not there to strip");
+        }
+
+        let network = doc["network"].as_table().unwrap();
+        assert_eq!(
+            network.keys().collect::<Vec<_>>(),
+            vec!["br0", "eth0", "eth0.100", "wg0"],
+            "no entry is dropped by the strip: v6 keeps them all, as stubs"
+        );
+        for (name, entry) in network {
+            let stub: V6Iface = entry.clone().try_into().unwrap_or_else(|err| {
+                panic!("{name} is not a body v6 could deserialize: {err}")
+            });
+            // What v6 can still act on survives; the peer's public key, the
+            // VLAN id and the bridge port list are gone with their blocks.
+            assert_eq!(stub.dhcp, name == "eth0" || name == "br0");
+            assert_eq!(stub.static_.is_some(), name == "eth0.100");
+        }
+        let text = toml::to_string(&doc).unwrap();
+        for gone in ["publicKey", "listenPort", "ports", "parent"] {
+            assert!(!text.contains(gone), "{gone} survived the strip: {text}");
+        }
+
+        // A second pass has nothing left to take.
+        for key in ["kind", "vlan", "bridge", "wireguard"] {
+            assert!(!strip_key(&mut doc, key));
+        }
+    }
+}

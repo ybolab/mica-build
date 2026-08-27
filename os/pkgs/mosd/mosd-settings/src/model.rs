@@ -1,4 +1,4 @@
-//! Typed settings tree (schema v6) and its dot-path accessors.
+//! Typed settings tree (schema v7) and its dot-path accessors.
 
 use std::collections::BTreeMap;
 
@@ -8,9 +8,9 @@ use crate::error::SettingsError;
 use crate::path::{json_path_get, json_path_set, split_path};
 
 /// Current settings schema version written by this crate.
-pub const SCHEMA_VERSION: u32 = 6;
+pub const SCHEMA_VERSION: u32 = 7;
 
-/// Persistent mosd settings tree (schema v6).
+/// Persistent mosd settings tree (schema v7).
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Settings {
@@ -401,15 +401,127 @@ pub enum ApMode {
     Always,
 }
 
+/// What kind of link a `network` entry describes.
+///
+/// Absent means [`IfaceKind::Physical`], and a physical entry never serializes
+/// the field: a v6 tree of physical interfaces and its v7 form differ by the
+/// schema version integer alone, which is what makes the v6 -> v7 bump
+/// additive and the A/B rollback survivable.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum IfaceKind {
+    /// A NIC the kernel already has.
+    #[default]
+    Physical,
+    /// An 802.1Q VLAN on top of another declared entry.
+    Vlan,
+    /// A software bridge over other declared entries.
+    Bridge,
+    /// A WireGuard tunnel.
+    Wireguard,
+}
+
+impl IfaceKind {
+    /// Whether this is the default kind, the one that is never written out.
+    fn is_physical(&self) -> bool {
+        matches!(self, Self::Physical)
+    }
+}
+
 /// Network configuration for a single interface.
-#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+///
+/// `kind` selects which of the three optional blocks is meaningful; the block
+/// is authoritative, not the interface name (`eth0.100` is a convention, not a
+/// declaration). Cross-field consistency — that `kind = "vlan"` carries a
+/// `vlan` block and no other, that a bridge port declares no addressing of its
+/// own, that a `parent` or a `port` names a declared entry — is enforced in the
+/// network reconciler, where the security boundary for a file anything with
+/// STATE write access can edit already sits.
+#[derive(Debug, Clone, Default, PartialEq, serde::Serialize, serde::Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct IfaceSettings {
+    /// What kind of link this is; absent means physical.
+    #[serde(default, skip_serializing_if = "IfaceKind::is_physical")]
+    pub kind: IfaceKind,
     /// Whether the interface acquires its address via DHCP.
     pub dhcp: bool,
     /// Static addressing, used when `dhcp` is false.
     #[serde(rename = "static", default, skip_serializing_if = "Option::is_none")]
     pub static_: Option<StaticConfig>,
+    /// VLAN parameters, for `kind = "vlan"`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub vlan: Option<VlanConfig>,
+    /// Bridge parameters, for `kind = "bridge"`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub bridge: Option<BridgeConfig>,
+    /// WireGuard parameters, for `kind = "wireguard"`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub wireguard: Option<WireguardConfig>,
+}
+
+/// The 802.1Q parameters of a VLAN interface.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct VlanConfig {
+    /// Name of the `network` entry this VLAN sits on.
+    pub parent: String,
+    /// 802.1Q VLAN id.
+    pub id: u16,
+}
+
+/// The parameters of a software bridge.
+#[derive(Debug, Clone, PartialEq, Eq, Default, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct BridgeConfig {
+    /// Names of the `network` entries enslaved to this bridge.
+    #[serde(default)]
+    pub ports: Vec<String>,
+}
+
+/// The parameters of a WireGuard tunnel.
+///
+/// There is no private-key field here and there never will be: this subtree is
+/// served over the bus and over `GET /api/v1/settings/...`, so a key in it is a
+/// key published to every client. The private key lives in a mode-0640 file on
+/// STATE and only its public half is ever surfaced. Peer pre-shared keys are
+/// out of this schema revision for the same reason — shipping no secret field
+/// beats shipping one more redaction obligation.
+#[derive(Debug, Clone, PartialEq, Eq, Default, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct WireguardConfig {
+    /// UDP port to listen on. Absent lets the kernel pick one, which is what a
+    /// client that only ever initiates wants.
+    #[serde(
+        rename = "listenPort",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub listen_port: Option<u16>,
+    /// The far ends of the tunnel.
+    #[serde(default)]
+    pub peers: Vec<WireguardPeer>,
+}
+
+/// One far end of a WireGuard tunnel.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct WireguardPeer {
+    /// The peer's base64 X25519 public key.
+    #[serde(rename = "publicKey")]
+    pub public_key: String,
+    /// CIDRs routed to this peer.
+    #[serde(rename = "allowedIps", default)]
+    pub allowed_ips: Vec<String>,
+    /// `host:port` to send to, for a peer this end initiates to.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub endpoint: Option<String>,
+    /// Keepalive interval in seconds, for a peer behind NAT.
+    #[serde(
+        rename = "persistentKeepalive",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub persistent_keepalive: Option<u16>,
 }
 
 /// Linux `IFNAMSIZ` minus the terminator: the longest name an interface can

@@ -79,6 +79,7 @@ impl Default for MigrationRegistry {
             Box::new(MigrateV3ToV4),
             Box::new(MigrateV4ToV5),
             Box::new(MigrateV5ToV6),
+            Box::new(MigrateV6ToV7),
         ])
     }
 }
@@ -386,6 +387,65 @@ impl Migration for MigrateV5ToV6 {
     }
 }
 
+/// v6 -> v7: interface kinds — VLAN, bridge and WireGuard.
+///
+/// `up` stamps `schema_version = 7` and does nothing else, and that is the
+/// whole migration. Every field v7 adds to a `network` entry — `kind` and the
+/// `vlan`, `bridge` and `wireguard` blocks — is defaulted and skipped on
+/// serialization, so a v6 document of physical interfaces and its v7 form
+/// differ by the version integer alone. The v7 key-charset rule on `network`
+/// keys is a property of the write path, not of the document, so no existing
+/// loadable tree is rejected here either.
+///
+/// `down` stamps `schema_version = 6`, removes `kind` and the three blocks
+/// from every entry, and **removes entirely** every entry whose `kind` was not
+/// physical. Dropping those entries is [`MigrateV2ToV3::down`]'s trade, twice
+/// over. v6's `IfaceSettings` carries `deny_unknown_fields`, so a leftover
+/// `vlan` block makes the whole document unloadable — hostname, credential and
+/// all. And a v6 reconciler handed a bare `wg0` entry it can no longer explain
+/// would render a `.network` unit matching no device: the settings tree would
+/// claim a tunnel the device has no code to create. A stripped stub is not a
+/// degraded tunnel, it is a lie in unit form, so the entry goes.
+///
+/// The private key files (`wg-*.key`) are left on STATE, unreferenced: 0640 in
+/// a root-owned directory, reused if the device rolls forward again, the same
+/// posture as a secret whose first-boot write was interrupted.
+pub struct MigrateV6ToV7;
+
+impl Migration for MigrateV6ToV7 {
+    fn target_version(&self) -> u32 {
+        7
+    }
+
+    fn up(&self, doc: &mut toml::Table) -> Result<(), SettingsError> {
+        doc.insert("schema_version".to_string(), toml::Value::Integer(7));
+        Ok(())
+    }
+
+    /// Strip v7 back out of `network`, entries and all. A document with no
+    /// `network` table, or one that is not a table, is left untouched.
+    fn down(&self, doc: &mut toml::Table) -> Result<(), SettingsError> {
+        doc.insert("schema_version".to_string(), toml::Value::Integer(6));
+        if let Some(toml::Value::Table(network)) = doc.get_mut("network") {
+            network.retain(|_, entry| {
+                let kind = entry
+                    .as_table()
+                    .and_then(|iface| iface.get("kind"))
+                    .and_then(toml::Value::as_str);
+                matches!(kind, None | Some("physical"))
+            });
+            for (_, entry) in network.iter_mut() {
+                if let toml::Value::Table(iface) = entry {
+                    for key in ["kind", "vlan", "bridge", "wireguard"] {
+                        iface.remove(key);
+                    }
+                }
+            }
+        }
+        Ok(())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -516,6 +576,158 @@ enabled = true
         assert_eq!(doc["schema_version"], toml::Value::Integer(6));
 
         migrate(&mut doc, 6, 5).unwrap();
+        assert_eq!(doc, original);
+    }
+
+    /// A v6 document as a fielded device carries it: physical interfaces only,
+    /// because v6 has no other kind to spell.
+    fn v6_document() -> toml::Table {
+        toml::from_str(
+            r#"
+schema_version = 6
+hostname = "cx3576"
+
+[network.eth0]
+dhcp = true
+
+[network.eth1]
+dhcp = false
+
+[network.eth1.static]
+address = "10.0.0.7/24"
+gateway = "10.0.0.1"
+dns = ["10.0.0.1"]
+
+[container]
+enabled = true
+
+[mqtt]
+enabled = false
+"#,
+        )
+        .unwrap()
+    }
+
+    /// A v7 document of the shape section 2.2 of the design specifies: one
+    /// physical entry and one of each new kind.
+    fn v7_document_with_every_kind() -> toml::Table {
+        toml::from_str(
+            r#"
+schema_version = 7
+hostname = "cx3576"
+
+[network.eth0]
+dhcp = true
+
+[network."eth0.100"]
+kind = "vlan"
+dhcp = false
+
+[network."eth0.100".static]
+address = "192.168.100.2/24"
+
+[network."eth0.100".vlan]
+parent = "eth0"
+id = 100
+
+[network.br0]
+kind = "bridge"
+dhcp = true
+
+[network.br0.bridge]
+ports = ["eth1", "eth2"]
+
+[network.wg0]
+kind = "wireguard"
+dhcp = false
+
+[network.wg0.wireguard]
+listenPort = 51820
+
+[[network.wg0.wireguard.peers]]
+publicKey = "AI9C8xytM2fi+RUcnV5RvMnSq4ZQffgDZ37h0vc0AU8="
+allowedIps = ["10.8.0.0/24"]
+"#,
+        )
+        .unwrap()
+    }
+
+    /// The whole of `up`: the version integer moves and not one other byte
+    /// does. This is the property the A/B rollback story rests on — a v6 tree
+    /// of physical interfaces IS its own v7 form — so it is asserted over the
+    /// serialized document, not field by field.
+    #[test]
+    fn a_v6_document_gains_the_version_stamp_and_nothing_else() {
+        let original = v6_document();
+        let mut doc = original.clone();
+
+        MigrateV6ToV7.up(&mut doc).unwrap();
+
+        assert_eq!(doc["schema_version"], toml::Value::Integer(7));
+        let before = toml::to_string(&original).unwrap();
+        let after = toml::to_string(&doc).unwrap();
+        assert_eq!(
+            after.replace("schema_version = 7", "schema_version = 6"),
+            before,
+            "up must differ from its input by the version integer alone"
+        );
+
+        // And `up` over its own output changes nothing.
+        let once = doc.clone();
+        MigrateV6ToV7.up(&mut doc).unwrap();
+        assert_eq!(doc, once);
+    }
+
+    /// `down` takes the non-physical entries with it. Keeping them as stubs
+    /// would leave v6 rendering `.network` units for devices no v6 code
+    /// creates; keeping their blocks would leave a document v6's
+    /// `deny_unknown_fields` refuses outright.
+    #[test]
+    fn v7_migrates_down_dropping_every_non_physical_entry() {
+        let mut doc = v7_document_with_every_kind();
+
+        MigrateV6ToV7.down(&mut doc).unwrap();
+
+        assert_eq!(doc["schema_version"], toml::Value::Integer(6));
+        let network = doc["network"].as_table().unwrap();
+        assert_eq!(network.keys().collect::<Vec<_>>(), vec!["eth0"]);
+        let eth0 = network["eth0"].as_table().unwrap();
+        assert_eq!(eth0["dhcp"], toml::Value::Boolean(true));
+        for key in ["kind", "vlan", "bridge", "wireguard"] {
+            assert!(!eth0.contains_key(key), "{eth0:?}");
+        }
+        assert_eq!(doc["hostname"], toml::Value::String("cx3576".to_string()));
+    }
+
+    /// An explicit `kind = "physical"` is a v7 spelling of a v6 entry, so the
+    /// entry stays and only the key goes.
+    #[test]
+    fn v7_down_keeps_an_explicitly_physical_entry_and_strips_its_kind() {
+        let mut doc = v6_document();
+        doc.insert("schema_version".to_string(), toml::Value::Integer(7));
+        doc["network"]["eth0"]
+            .as_table_mut()
+            .unwrap()
+            .insert("kind".to_string(), toml::Value::String("physical".into()));
+
+        MigrateV6ToV7.down(&mut doc).unwrap();
+
+        let network = doc["network"].as_table().unwrap();
+        assert_eq!(network.keys().collect::<Vec<_>>(), vec!["eth0", "eth1"]);
+        assert!(!network["eth0"].as_table().unwrap().contains_key("kind"));
+    }
+
+    /// v6 -> v7 -> v6 returns the document it started from, because `up` added
+    /// nothing for `down` to have to guess at.
+    #[test]
+    fn a_v6_document_round_trips_up_to_v7_and_back() {
+        let original = v6_document();
+        let mut doc = original.clone();
+
+        migrate(&mut doc, 6, 7).unwrap();
+        assert_eq!(doc["schema_version"], toml::Value::Integer(7));
+
+        migrate(&mut doc, 7, 6).unwrap();
         assert_eq!(doc, original);
     }
 }

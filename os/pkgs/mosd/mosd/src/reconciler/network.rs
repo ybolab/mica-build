@@ -274,7 +274,7 @@ mod tests {
     fn dhcp_iface() -> IfaceSettings {
         IfaceSettings {
             dhcp: true,
-            static_: None,
+            ..IfaceSettings::default()
         }
     }
 
@@ -286,6 +286,7 @@ mod tests {
                 gateway: Some("192.168.1.1".to_string()),
                 dns: vec!["1.1.1.1".to_string(), "9.9.9.9".to_string()],
             }),
+            ..IfaceSettings::default()
         }
     }
 
@@ -331,7 +332,7 @@ mod tests {
             "eth2",
             IfaceSettings {
                 dhcp: false,
-                static_: None,
+                ..IfaceSettings::default()
             },
         )]);
 
