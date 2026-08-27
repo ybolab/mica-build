@@ -308,3 +308,34 @@ and the once-each duplicate-row check) across four records.
 
 `.zh.md` files: untouched. Amendment 2 item 4 recorded that Decisions item 3's
 `.zh.md` licence would go unexercised in this campaign; it has.
+
+### The gate set, and where each one ran
+
+Every run below was produced from this worktree; the working directory was
+recorded into each log before the command, because a green `rc` proves nothing
+about *which* tree was green.
+
+| gate | result |
+| --- | --- |
+| `os/verify` suite, `MOS_VERIFY_CONTAINER=1` | PASS 1066/1066 |
+| `os/build` suite, `MOS_BUILD_CONTAINER=1` | PASS 689/689, no re-run needed |
+| mosd workspace: fmt, clippy, nextest, doctests, deny | all rc=0, 600/600 tests |
+| rauc-sign workspace: fmt, clippy, nextest, doctests, deny | all rc=0 |
+
+The cargo runs use the recipe RFCT-165 section G ratified — repository at the
+fixed path `/src`, `-w /src/os/pkgs/<workspace>`, `localhost/mos-build-rust`,
+with the full explicit `PATH` and `LD_LIBRARY_PATH=/opt/rust/lib`. `cargo-nextest`
+0.9.133 is bind-mounted from the artifact `check.yml` pins, sha256 verified; the
+image carries none, and `cargo test` is not a substitute — it surfaces a false
+apid failure from a shared-tracing-subscriber race.
+
+`dbus-daemon` is absent from `localhost/mos-build-rust` and
+`os/pkgs/mosd/mosd/tests/bus.rs:65` panics by name rather than skipping. It was
+installed into the container for the run, which is what `check.yml` provisions
+on its runner and for the same stated reason. Without it the suite is red on an
+environment gap, not on the tree.
+
+`cargo deny` reports `advisories ok, bans ok, licenses ok` for both workspaces.
+It also emits 23 `duplicate` warnings in the mosd workspace and 3 in rauc-sign
+(thiserror 1.0.69 vs 2.0.20 among them). Warnings under `multiple-versions =
+"warn"`, pre-existing, and untouched by this campaign.
