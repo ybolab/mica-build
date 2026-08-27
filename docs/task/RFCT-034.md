@@ -1,6 +1,6 @@
 # RFCT-034 sshd reconciler: authorized keys, AuthorizedKeysFile, password gating
 
-- **status**: implementation complete — `bash mosd/hack/check.sh` and
+- **status**: completed — implementation complete, `bash mosd/hack/check.sh` and
   `make os-shadow-test` both green; on-device sshd behaviour is NOT claimed
 - **priority**: P1
 - **owner**: ai-agent

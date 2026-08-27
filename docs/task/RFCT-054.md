@@ -1,6 +1,6 @@
 # RFCT-054 A persistent `/root` on DATA
 
-- **status**: implementation complete — `bash mosd/hack/check.sh` (305 tests),
+- **status**: completed — implementation complete, `bash mosd/hack/check.sh` (305 tests),
   `make os-shadow-test`, `make os-dbus-policy-test`, `make os-health-test`,
   `make os-repart-test` and both image builds with both profiles and both
   verifiers all green; no on-device claim is made

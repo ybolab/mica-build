@@ -258,7 +258,7 @@ provide. It is designed around that.
   **configured** data — per interface, the unit file the reconciler wrote and
   the DHCP flag it wrote it from, built as
   `json!({ "file": file_name, "dhcp": cfg.dhcp })`
-  (`os/pkgs/mosd/mosd/src/reconciler/network.rs:215-219`). There is no address,
+  (`os/pkgs/mosd/mosd/src/reconciler/network.rs:459-463`). There is no address,
   no lease, no gateway, no route, no DNS server actually in use and no carrier
   state anywhere in mos (`mos-ui-inventory.md` section 6.3). A DHCP interface
   that got no lease is **indistinguishable in this tree from one that did**.

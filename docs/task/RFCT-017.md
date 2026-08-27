@@ -1,6 +1,6 @@
 # RFCT-017 Image contract verification for layout v2 (cx3576)
 
-- **status**: implementation complete — verifier RED on two REPORTED image defects (not verifier bugs)
+- **status**: completed — implementation complete, verifier RED on two REPORTED image defects (not verifier bugs)
 - **priority**: P1
 - **owner**: ai-agent
 - **createdAt**: 2026-08-18 03:39

@@ -1,6 +1,6 @@
 # RFCT-063 Current API/UI surface inventory and the api.md skeleton
 
-- **status**: complete — section 1 is measured and settled; sections 2-9 were left as stubs for sibling tasks
+- **status**: completed — section 1 is measured and settled; sections 2-9 were left as stubs for sibling tasks
 - **priority**: P1
 - **owner**: ai-agent
 - **createdAt**: 2026-08-19 15:27
@@ -130,3 +130,5 @@ check** that tells a reader which world they are in (`test -d mosd/apid`,
 coming.
 
 No product code changed.
+
+<!-- dated-record: a measurement record frozen at its commit; its citations name the tree as it was then (pre-PLAN-019 layout, pre-rewrite design documents); exempt from docs/verify-citations.sh (RFCT-172) -->

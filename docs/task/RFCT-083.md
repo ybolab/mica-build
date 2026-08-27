@@ -1,6 +1,6 @@
 # RFCT-083 Close the second repository audit: trust-chain gaps, inverted crash-safety ordering, and the half-fixed patch-loop bug
 
-- **status**: complete — 30 findings fixed across 56 files, three recorded as no-action, seven named as roadmap
+- **status**: completed — 30 findings fixed across 56 files, three recorded as no-action, seven named as roadmap
 - **priority**: P1
 - **owner**: ai-agent
 - **createdAt**: 2026-08-21 06:10

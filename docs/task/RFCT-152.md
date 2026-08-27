@@ -477,3 +477,5 @@ rc=1 on both sides. None introduced, none removed. The SC2066 error in
    `# adaptive=block-hash-index — DEFERRED, ...` from inside a `cat <<SLOTS`
    heredoc. Those `#` lines are rendered output, not comments, and the stripper
    cannot tell the difference -- so they were left exactly as they are.
+
+<!-- dated-record: a measurement record frozen at its commit; its citations name the tree as it was then (pre-PLAN-019 layout, pre-rewrite design documents); exempt from docs/verify-citations.sh (RFCT-172) -->

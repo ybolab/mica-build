@@ -29,3 +29,5 @@ that line with mosd crash-looping passes it.
 
 Both readings want narrowing to what the endpoint actually proves. Neither
 document is otherwise wrong; the sentence is.
+
+<!-- dated-record: a frozen worklist or exhibit of what was measured then; re-pointing its citations would falsify the record; exempt from docs/verify-citations.sh (RFCT-172) -->

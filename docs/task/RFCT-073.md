@@ -1,6 +1,6 @@
 # RFCT-073 Assert the custom-UI location as an on-image fact, and negative-test every assertion
 
-- **status**: complete — six assertions added to the v2 verifier, each proved to fail against a mutated input, with its own message
+- **status**: completed — six assertions added to the v2 verifier, each proved to fail against a mutated input, with its own message
 - **priority**: P1
 - **owner**: ai-agent
 - **createdAt**: 2026-08-20 14:27
@@ -290,3 +290,5 @@ writable root and served from the binary, unshadowable by construction rather
 than by dispatch order — is **not** part of this task. The prefix does not exist
 in the tree yet; it is created by a later L3 and asserted by RFCT-077. Nothing
 here stubs it or asserts against an invented prefix.
+
+<!-- dated-record: a measurement record frozen at its commit; its citations name the tree as it was then (pre-PLAN-019 layout, pre-rewrite design documents); exempt from docs/verify-citations.sh (RFCT-172) -->

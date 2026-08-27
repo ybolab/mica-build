@@ -70,7 +70,7 @@ literally, and nothing here is blocked on M3.
 name: empty, longer than 15 bytes (`IFNAMSIZ` minus the terminator), `.` or
 `..`, or carrying anything but ASCII alphanumerics and `. - _ :`. The charset
 is the network reconciler's own (`validate_iface_name`,
-`os/pkgs/mosd/mosd/src/reconciler/network.rs:95-115`), repeated rather than
+`os/pkgs/mosd/mosd/src/reconciler/network.rs:154-174`), repeated rather than
 widened: a key the renderer would refuse should not be writable through the
 tree, and repeating it also makes the one key this grammar cannot spell — a
 key containing `"` — structurally impossible rather than merely

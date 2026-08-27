@@ -468,3 +468,5 @@ and several sit in files other tasks are live in.
 By contrast the `FROM` scope IS complete: all 33 `FROM` lines across the twelve
 Dockerfiles are a build-arg variable, `scratch`, or an earlier stage. Not one
 names an image literally.
+
+<!-- dated-record: a measurement record frozen at its commit; its citations name the tree as it was then (pre-PLAN-019 layout, pre-rewrite design documents); exempt from docs/verify-citations.sh (RFCT-172) -->

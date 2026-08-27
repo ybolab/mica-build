@@ -1,6 +1,6 @@
 # RFCT-045 Consolidation, PMA records, and a build-enforced index check
 
-- **status**: implementation complete — `make docs-verify` green, six negative tests demonstrated
+- **status**: completed — implementation complete, `make docs-verify` green, six negative tests demonstrated
 - **priority**: P1
 - **owner**: ai-agent
 - **createdAt**: 2026-08-19 10:17

@@ -1,6 +1,6 @@
 # RFCT-048 D-Bus policy: com.mos.mosd is root-only, and a live-bus test that proves it
 
-- **status**: implementation complete — `bash mosd/hack/check.sh`,
+- **status**: completed — implementation complete, `bash mosd/hack/check.sh`,
   `make os-shadow-test`, `make os-dbus-policy-test` and both image builds with
   both profiles and both verifiers all green; no on-device claim is made
 - **priority**: P1

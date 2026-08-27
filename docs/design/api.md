@@ -622,7 +622,7 @@ other. The root path (`""` or `"."`) matches everything"*
 | Reconciler `name()` | `subtree()` | Declared at |
 |---|---|---|
 | `hostname` | `hostname` | `os/pkgs/mosd/mosd/src/reconciler/hostname.rs:126-132` |
-| `network` | `network` | `os/pkgs/mosd/mosd/src/reconciler/network.rs:196-202` |
+| `network` | `network` | `os/pkgs/mosd/mosd/src/reconciler/network.rs:432-438` |
 | `sshd` | `access.ssh` | `os/pkgs/mosd/mosd/src/reconciler/sshd.rs:371-377` |
 | `wifiClient` | `wifi.client` | `os/pkgs/mosd/mosd/src/reconciler/wifi_client.rs:463-469` |
 | `wifiAp` | `wifi` | `os/pkgs/mosd/mosd/src/reconciler/wifi_ap.rs:680-694` |

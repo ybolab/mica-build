@@ -1,6 +1,6 @@
 # RFCT-071 The /srv/ui bundle store: layout, validation, atomic activation, deactivate, status read
 
-- **status**: complete — `mosd/apid/src/bundle.rs` implements api.md §5.2 and §5.3 with 27 tests; four findings reported rather than designed around
+- **status**: completed — `mosd/apid/src/bundle.rs` implements api.md §5.2 and §5.3 with 27 tests; four findings reported rather than designed around
 - **priority**: P1
 - **owner**: ai-agent
 - **createdAt**: 2026-08-20 14:27
