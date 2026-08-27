@@ -77,7 +77,17 @@ docs/verify-index.sh: 495/495 PASS              rc=0
 
 $ MOS_VERIFY_CONTAINER=1 make os-verify-test
 RESULT: PASS (1066/1066 tests)                  rc=0
+
+$ MOS_BUILD_CONTAINER=1 make os-build-test
+RESULT: PASS (689/689 tests)   [564.33s]        rc=0
 ```
+
+`os-build-test` is not strictly this subtask's gate -- the only code touched
+here is two comment blocks under `os/verify`, which `os-verify-test` covers --
+but it was run because M4's acceptance names it. It needs about ten minutes;
+a first attempt was cut off by a ten-minute cap mid-run, with every test to
+that point passing, and the full re-run above is the result. The
+`pin-seeded-times.test.ts` teardown flake RFCT-162 recorded did not appear.
 
 ### The old-path grep
 
