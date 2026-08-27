@@ -1454,16 +1454,6 @@ pub(crate) async fn api_v1_change_password(
 
 // Status pane
 
-/// Seconds from the first field of `/proc/uptime` contents.
-fn parse_uptime(contents: &str) -> Option<u64> {
-    let secs: f64 = contents.split_whitespace().next()?.parse().ok()?;
-    if secs.is_finite() && secs >= 0.0 {
-        Some(secs as u64)
-    } else {
-        None
-    }
-}
-
 /// `"3d 4h 12m"`-style rendering, dropping leading zero units.
 fn humanize_uptime(secs: u64) -> String {
     let days = secs / 86_400;
@@ -1484,18 +1474,26 @@ fn pretty(value: &Value) -> String {
 
 /// The status pane's body, shared by `/`'s built-in branch and §6.3's escape.
 ///
-/// It reads mosd and `/proc/uptime` and nothing under `/srv/ui`. That is
+/// It reads mosd and nothing under `/srv/ui`. That is
 /// the property §6.3 rests candidate (A) on — *"the built-in handlers do not
 /// read `/srv/ui` at all, so no bundle state — absent, corrupt, unreadable,
 /// wrong version — can affect them"* — and it is why §6.1's five classes do not
 /// need enumerating here: a handler that never consults the bundle store cannot
 /// branch on which class occurred.
+///
+/// Uptime comes through `get_state` like every other system fact — mosd
+/// serves it fresh at read time — and not from a `/proc` reader here, which
+/// would contradict the crate's own rule that mosd owns every system fact
+/// (`settings_api.rs`).
 async fn status_body(state: &AppState) -> Markup {
     let hostname = state.api.get_settings("hostname").await;
     let network = state.api.get_state("network").await;
-    let uptime = std::fs::read_to_string("/proc/uptime")
+    let uptime = state
+        .api
+        .get_state("uptime")
+        .await
         .ok()
-        .and_then(|contents| parse_uptime(&contents));
+        .and_then(|value| value.as_u64());
     html! {
         h2 { "System" }
         @match &hostname {

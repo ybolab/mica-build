@@ -244,13 +244,30 @@ async fn status_page_renders_hostname_and_network_state() {
         "network",
         json!({ "eth0": { "file": "50-mos-eth0.network", "dhcp": true } }),
     );
+    fake.set_state_entry("uptime", json!(90_061));
     let cookie = login(&router, "hunter2secret").await;
     let response = get(&router, "/", Some(&cookie)).await;
     assert_eq!(response.status(), StatusCode::OK);
     let body = body_string(response).await;
     assert!(body.contains("statusbox"), "hostname missing: {body}");
     assert!(body.contains("eth0"), "network state missing: {body}");
-    assert!(body.contains("Uptime"), "uptime missing: {body}");
+    // 90 061 s = 1d 1h 1m 1s: the pane renders mosd's number, humanized.
+    assert!(body.contains("Uptime: 1d 1h 1m"), "uptime missing: {body}");
+}
+
+/// Uptime reaches the pane from mosd's live-state tree and from nowhere else:
+/// a backend with no `uptime` state renders the unavailable notice, where a
+/// handler that still read `/proc/uptime` for itself would render a real
+/// number on any Linux host.
+#[tokio::test]
+async fn uptime_is_read_from_mosd_state_and_not_from_proc() {
+    let (router, _fake) = test_app(configured_tree("hunter2secret"));
+    let cookie = login(&router, "hunter2secret").await;
+    let response = get(&router, "/", Some(&cookie)).await;
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = body_string(response).await;
+    assert!(body.contains("Uptime unavailable."), "{body}");
+    assert!(!body.contains("<p>Uptime: "), "{body}");
 }
 
 #[tokio::test]
@@ -1362,6 +1379,9 @@ fn installed_files(root: &Path) -> Vec<String> {
 /// The router as shipped, with the bundle store rooted at `bundle_root`.
 fn test_app_serving(tree: serde_json::Value, bundle_root: &Path) -> Router {
     let fake = Arc::new(FakeSettings::new(tree));
+    // A fixed uptime, so the status pane renders its uptime line (which
+    // `without_the_uptime_line` requires) from the fake like everything else.
+    fake.set_state_entry("uptime", json!(90_061));
     app(AppState::new(fake, SIGNING_KEY).with_bundle_root(bundle_root))
 }
 

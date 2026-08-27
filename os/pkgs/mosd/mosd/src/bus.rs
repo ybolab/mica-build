@@ -549,6 +549,17 @@ fn to_bus_error(err: SettingsError) -> SettingsFault {
     }
 }
 
+/// Whole seconds since boot, from the first field of `/proc/uptime`.
+///
+/// `None` on an unreadable or malformed file — a soft failure rather than a
+/// panic, because `GetState` must keep answering for every other fact when
+/// this one is missing.
+fn read_uptime_seconds() -> Option<u64> {
+    let contents = std::fs::read_to_string("/proc/uptime").ok()?;
+    let secs: f64 = contents.split_whitespace().next()?.parse().ok()?;
+    (secs.is_finite() && secs >= 0.0).then_some(secs as u64)
+}
+
 /// Map a transient-password failure onto a D-Bus error.
 ///
 /// Always `Failed`: the caller cannot distinguish a rejected password from an
@@ -591,8 +602,27 @@ impl MosdService {
     }
 
     /// JSON-encoded live-state subtree at dot-path `path` (`""` = whole tree).
+    ///
+    /// `uptime` — whole seconds since boot, a bare JSON number at the top
+    /// level — is computed here, at read time, and grafted onto the served
+    /// view. Reading it per call is what keeps a cached seconds-counter from
+    /// ever being served stale; grafting rather than storing keeps the stored
+    /// tree reserved for pushed facts, so a read never manufactures a change
+    /// edge for the item façade ([`crate::tree`]) to project.
     async fn get_state(&self, path: &str) -> fdo::Result<String> {
+        if path == "uptime" {
+            let secs = read_uptime_seconds()
+                .ok_or_else(|| fdo::Error::Failed("read /proc/uptime".to_string()))?;
+            return Ok(Value::from(secs).to_string());
+        }
         let inner = self.inner.lock().await;
+        if path.is_empty() {
+            let mut root = inner.state.clone();
+            if let (Some(secs), Some(map)) = (read_uptime_seconds(), root.as_object_mut()) {
+                map.insert("uptime".to_string(), Value::from(secs));
+            }
+            return Ok(root.to_string());
+        }
         let value = json_path_get(&inner.state, path)
             .ok_or_else(|| fdo::Error::InvalidArgs(format!("state path not found: `{path}`")))?;
         Ok(value.to_string())
@@ -1150,6 +1180,28 @@ mod tests {
         service.request_power_off(":1.1").await.expect("power off");
 
         assert_eq!(service.get_settings("").await.expect("settings"), before);
+    }
+
+    /// The uptime graft: `GetState` serves whole seconds since boot at
+    /// `uptime` and inside the whole tree, computed at read time, while the
+    /// stored tree — what the item façade projects — stays untouched by the
+    /// read.
+    #[tokio::test]
+    async fn get_state_serves_uptime_without_storing_it() {
+        let (service, _calls, _dir) = service_with_mock();
+
+        let direct = service.get_state("uptime").await.expect("uptime");
+        let direct: u64 = serde_json::from_str(&direct).expect("a bare JSON number");
+        let whole = service.get_state("").await.expect("whole tree");
+        let whole: serde_json::Value = serde_json::from_str(&whole).expect("json");
+        let grafted = whole["uptime"].as_u64().expect("uptime in the whole tree");
+        assert!(grafted >= direct, "uptime went backwards: {grafted} < {direct}");
+
+        let (_settings, state) = service.trees().await;
+        assert!(
+            state.get("uptime").is_none(),
+            "a read must not write the stored tree: {state}"
+        );
     }
 
     /// Every `SettingsError` variant, against the error name it must travel

@@ -181,6 +181,16 @@ async fn bus_roundtrip() -> anyhow::Result<()> {
     let state: serde_json::Value = serde_json::from_str(&state)?;
     assert_eq!(state["dry_run"], true);
 
+    // Uptime is a live-state fact served over the bus: a bare JSON number of
+    // whole seconds at `uptime`, present in the whole tree too, so apid needs
+    // no `/proc` reader of its own.
+    let uptime = proxy.get_state("uptime").await?;
+    let uptime: u64 = serde_json::from_str(&uptime)?;
+    assert!(
+        state["uptime"].as_u64().is_some_and(|whole| uptime >= whole),
+        "the whole tree must carry uptime, no newer than a later read: {state}"
+    );
+
     // ReportHealth: the health gate's /var pressure report lands in the
     // live-state tree and reads back through the existing GetState call.
     proxy

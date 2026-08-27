@@ -772,10 +772,10 @@ authenticated it reaches `serve::fallback`, which either finds
 from the SPA fallback (`os/pkgs/mosd/apid/src/assets/serve.rs:228-231`).
 
 **Disk paths apid touches.** The list this section gave at `86cd669` —
-`/proc/uptime` and its own state directory — is no longer exhaustive.
-`/proc/uptime` is still read at
-`std::fs::read_to_string("/proc/uptime")` (`os/pkgs/mosd/apid/src/routes.rs:1482`) and
-the state directory at `os/pkgs/mosd/apid/src/tls.rs:48-49` and `:86`; the bundle store
+`/proc/uptime` and its own state directory — has changed in both directions.
+`/proc/uptime` is no longer read at all: mosd publishes uptime into the
+live-state tree and the status pane reads it through `get_state` (§2.2 item 3).
+The state directory is read at `os/pkgs/mosd/apid/src/tls.rs:48-49` and `:86`; the bundle store
 under `/srv/ui` is the third, read on `GET /` and on every fallback
 (`os/pkgs/mosd/apid/src/assets/serve.rs:124-127`) and written only by the deactivate
 control (`os/pkgs/mosd/apid/src/routes.rs:1604`) and the install path. The consequence
@@ -1298,16 +1298,19 @@ what was chosen.** Three cases, all decided toward the tree:
    valid JSON and which some HTTP clients make awkward to send. Cost: named,
    accepted; the alternative would have been the first hand-shaped noun and
    there would then be an argument about the second.
-3. **Uptime is not in either tree.** the status pane reads `/proc/uptime` in apid
-   (`os/pkgs/mosd/apid/src/routes.rs:1482`) — one of the three disk paths apid touches
-   (section 1.6). Exposing it over the API means
-   either apid keeps reading it, which contradicts the rule the crate states
-   about itself — *"mosd owns every system action: apid never spawns a process
-   and never talks to systemd itself"* (`os/pkgs/mosd/apid/src/settings_api.rs:10-12`) —
-   or mosd publishes it into the live-state tree and the API reads it there.
-   **Chosen: mosd publishes it**, and until it does, uptime has no API
-   representation. Cost: the API is missing a field the HTML status pane shows,
-   until a mosd change lands.
+3. **Uptime is a top-level live-state scalar.** The status pane used to read
+   `/proc/uptime` in apid — one of the disk paths apid touched (section 1.6) —
+   which contradicted the rule the crate states about itself: *"mosd owns
+   every system action: apid never spawns a process and never talks to
+   systemd itself"* (`os/pkgs/mosd/apid/src/settings_api.rs:10-12`). **Chosen: mosd
+   publishes it**, and it now does: `GetState` refreshes the live-state key
+   `uptime` (whole seconds since boot, a bare JSON number read from mosd's own
+   `/proc/uptime`) on every call before resolving the requested path, so the
+   value a read observes is never a stale cached counter, and
+   `GET /api/v1/state/uptime` serves it like every other system fact. The
+   refresh point is the read itself rather than a timer, because a timer is a
+   staleness bound somebody has to choose and defend; apid's `/proc` reader is
+   deleted and the status pane renders `get_state("uptime")`.
 
 ### 2.3 Operation inventory: today's form posts, tomorrow's API — **[proposed]**
 
@@ -1334,7 +1337,7 @@ commit's.
 
 | Today (at `f7cb5ba`) | Form POST? | API equivalent | Request → response |
 |---|---|---|---|
-| `GET /` (`routes.rs:120`) | — | **none, deliberately.** It is a rendering, not data. Its inputs are `GET /api/v1/settings/hostname`, `GET /api/v1/state/network`, and uptime (which has none — §2.2) | — |
+| `GET /` (`routes.rs:120`) | — | **none, deliberately.** It is a rendering, not data. Its inputs are `GET /api/v1/settings/hostname`, `GET /api/v1/state/network`, and `GET /api/v1/state/uptime` (§2.2) | — |
 | `GET /setup` (`routes.rs:149`) | — | **none** — a form. Its data is `GET /api/versions` plus the 409 condition below | — |
 | `POST /setup` (`routes.rs:947`) | yes | `POST /api/v1/setup` | `{"password": "...", "hostname": "...", "network": {...}}` → `201` with `{"token": "..."}` (§3.2), `409` when already configured (`routes.rs:956-965`), `422` on any validation failure. **Unauthenticated by necessity** — it is the only route the gate lets through in setup mode (`routes.rs:701-706`) |
 | `GET /login` (`routes.rs:150`) | — | **none** — a form | — |
@@ -2219,8 +2222,8 @@ not solve it.
 
 Section 1.6 measured the starting point at `86cd669`: apid served no static
 asset of any kind, from anywhere, and the only disk paths it read at all were
-`/proc/uptime` (`os/pkgs/mosd/apid/src/routes.rs:1482`) and its own state directory
-(`os/pkgs/mosd/apid/src/tls.rs:48-49`, `:86`). Everything in this section was therefore
+`/proc/uptime` (read in apid then; mosd publishes uptime now — §2.2 item 3)
+and its own state directory (`os/pkgs/mosd/apid/src/tls.rs:48-49`, `:86`). Everything in this section was therefore
 new code rather than a configuration change to something that existed, and it
 was marked **[proposed]** throughout for that reason. §8.2 phase 4 has since
 landed; the paragraphs below say where.
@@ -4268,9 +4271,10 @@ instances, not a generality.**
   that fixing it now reaches a published contract, so a settings-syntax change
   becomes an API change.
 - **Uptime.** §2.2 chose that mosd should publish it into the live-state tree
-  rather than apid keep reading `/proc/uptime`
-  (`os/pkgs/mosd/apid/src/routes.rs:1482`). Adding it later is additive and cheap;
-  choosing a *different* representation later is not.
+  rather than apid keep reading `/proc/uptime`, and that choice has since
+  landed (§2.2 item 3): the representation — a top-level `uptime` scalar of
+  whole seconds — is now the published one, which is exactly why choosing it
+  before v1 froze mattered.
 
 *Mitigated by phase ordering, and only for the first.* §8.2 phase 1 does the
 error-classification work **before** v1 freezes, deliberately and for exactly
