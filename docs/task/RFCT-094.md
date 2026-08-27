@@ -1,8 +1,8 @@
 # RFCT-094 Dotted keys have no item object, and M5 makes that certain rather than theoretical
 
-- **status**: pending
+- **status**: in progress
 - **priority**: P2
-- **owner**: (unclaimed)
+- **owner**: ai-agent
 - **createdAt**: 2026-08-22 17:10
 
 Raised by PLAN-011 M5 (RFCT-093), deliberately not fixed there.

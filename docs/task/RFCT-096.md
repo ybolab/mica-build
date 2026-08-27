@@ -1,8 +1,8 @@
 # RFCT-096 "0 skipped" does not mean nothing was skipped, and three test files still exploit that
 
-- **status**: pending
+- **status**: in progress
 - **priority**: P1
-- **owner**: (unclaimed)
+- **owner**: ai-agent
 - **createdAt**: 2026-08-22 21:05
 
 Measured by PLAN-011 M5's T11, and it undermines the acceptance criterion this
