@@ -536,7 +536,7 @@ mod tests {
 
     use mosd_settings::WifiSettings;
 
-    use super::super::network::NetworkReconciler;
+    use super::super::network::{NetworkReconciler, NoDelete};
     use super::super::systemd::mock::MockUnitControl;
     use super::*;
 
@@ -1017,7 +1017,7 @@ mod tests {
         // The network reconciler deletes every `*-mos-*.network` it did not
         // itself render. Sharing a directory with it means the station's unit
         // has to be outside that pattern, and this is the check that says so.
-        NetworkReconciler::new(paths.network_dir.clone(), MockReload::new())
+        NetworkReconciler::new(paths.network_dir.clone(), MockReload::new(), NoDelete)
             .apply(&Settings::default())
             .await
             .unwrap();

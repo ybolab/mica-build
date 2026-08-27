@@ -785,7 +785,7 @@ mod tests {
 
     use mosd_settings::{ProvisioningSettings, WifiClientSettings, WifiSettings};
 
-    use super::super::network::NetworkReconciler;
+    use super::super::network::{NetworkReconciler, NoDelete};
     use super::super::systemd::mock::MockUnitControl;
     use super::*;
 
@@ -1478,7 +1478,7 @@ mod tests {
         // itself render. Sharing a directory with it means this reconciler's
         // unit has to be outside that pattern, and running the real thing over
         // the same directory is the only check that says so.
-        NetworkReconciler::new(paths.network_dir.clone(), MockReload::new())
+        NetworkReconciler::new(paths.network_dir.clone(), MockReload::new(), NoDelete)
             .apply(&Settings::default())
             .await
             .unwrap();
