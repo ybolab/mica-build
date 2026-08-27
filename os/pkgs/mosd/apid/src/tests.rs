@@ -4405,3 +4405,142 @@ async fn the_api_password_change_rejects_a_malformed_body_with_the_envelope() {
     assert_eq!(error["source"], "apid");
     assert!(fake.set_paths().is_empty());
 }
+
+// RFCT-132 / RFCT-133: the gate's cache of the `access` subtree.
+//
+// The subscription itself — the proxy's `#[zbus(signal)]` member feeding the
+// cache over a real bus — is exercised in `tests/settings_signal.rs`. Here
+// the cache's route-level contract is driven through the real router, with
+// the subscription state set by hand where a watcher would set it.
+
+/// The lockout rule at the route level: with no live subscription every
+/// unauthenticated request reads the bus — the pre-cache behaviour, and the
+/// fallback the rule demands; with one, the first request fills the cache and
+/// the rest are served from it; an invalidation forces exactly one re-read;
+/// a lapse falls all the way back to direct reads.
+#[tokio::test]
+async fn the_gate_serves_access_from_the_cache_only_while_subscribed() {
+    let fake = Arc::new(FakeSettings::new(configured_tree("hunter2secret")));
+    let state = AppState::new(fake.clone(), SIGNING_KEY);
+    let cache = state.access_cache().clone();
+    let router = app(state);
+
+    get(&router, "/login", None).await;
+    get(&router, "/login", None).await;
+    assert_eq!(
+        fake.settings_reads("access"),
+        2,
+        "no subscription: every request must read the bus"
+    );
+
+    cache.subscribed();
+    get(&router, "/login", None).await;
+    get(&router, "/login", None).await;
+    get(&router, "/login", None).await;
+    assert_eq!(
+        fake.settings_reads("access"),
+        3,
+        "subscribed: one fill, then cache hits"
+    );
+
+    // What the watcher does on a SettingsChanged that touches `access`.
+    cache.invalidate();
+    get(&router, "/login", None).await;
+    get(&router, "/login", None).await;
+    assert_eq!(
+        fake.settings_reads("access"),
+        4,
+        "a change costs exactly one re-read"
+    );
+
+    cache.lapsed();
+    get(&router, "/login", None).await;
+    get(&router, "/login", None).await;
+    assert_eq!(
+        fake.settings_reads("access"),
+        6,
+        "a lapsed subscription must fall back to direct reads"
+    );
+}
+
+/// The password change against the cache — the sequence RFCT-132 names as
+/// the hard case, made real by the change-password route: the flow itself
+/// verifies against the bus even while the cache is primed, its write drops
+/// the cached snapshot without waiting for the `SettingsChanged` round trip,
+/// and the next unauthenticated request re-reads and observes the
+/// post-change tree.
+#[tokio::test]
+async fn a_password_change_neither_reads_nor_leaves_a_stale_access_snapshot() {
+    let fake = Arc::new(FakeSettings::new(configured_tree("hunter2secret")));
+    let state = AppState::new(fake.clone(), SIGNING_KEY);
+    let cache = state.access_cache().clone();
+    let router = app(state);
+    let cookie = login(&router, "hunter2secret").await;
+
+    cache.subscribed();
+    get(&router, "/login", None).await;
+    let primed = cache.get().expect("the gate's read must fill the cache");
+    let reads_before = fake.settings_reads("access");
+
+    let response = post_json(
+        &router,
+        "/api/v1/actions/change-password",
+        r#"{"currentPassword":"hunter2secret","newPassword":"brand-new-secret"}"#,
+        Some(&cookie),
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::NO_CONTENT);
+    assert!(
+        fake.settings_reads("access") > reads_before,
+        "the change flow must verify against the bus, never the gate's cache"
+    );
+    assert_eq!(
+        cache.get(),
+        None,
+        "the write must drop the cached snapshot before any signal arrives"
+    );
+
+    get(&router, "/login", None).await;
+    let refilled = cache.get().expect("the next gate read must refill");
+    assert_ne!(
+        refilled, primed,
+        "the refill must observe the post-change credential"
+    );
+    login(&router, "brand-new-secret").await;
+}
+
+/// Completing setup IS the setup-mode decision changing under the gate — the
+/// exact decision the cache must never serve stale. The wizard's
+/// `access.webAdmin` write drops the cache, so the next unauthenticated
+/// request re-reads and redirects to `/login`, not back into `/setup`.
+#[tokio::test]
+async fn completing_setup_drops_the_cached_setup_mode_decision() {
+    let fake = Arc::new(FakeSettings::new(unconfigured_tree()));
+    let state = AppState::new(fake.clone(), SIGNING_KEY);
+    let cache = state.access_cache().clone();
+    let router = app(state);
+
+    cache.subscribed();
+    let response = get(&router, "/", None).await;
+    assert_eq!(location(&response), "/setup");
+    assert!(
+        cache.get().is_some(),
+        "the setup-mode read must have filled the cache"
+    );
+
+    let response = post_form(
+        &router,
+        "/setup",
+        "password=hunter2secret&confirm=hunter2secret",
+        None,
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::SEE_OTHER);
+
+    let response = get(&router, "/", None).await;
+    assert_eq!(
+        location(&response),
+        "/login",
+        "the gate must not answer setup mode from the pre-write snapshot"
+    );
+}

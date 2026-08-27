@@ -2203,16 +2203,20 @@ anywhere in the crate — `grep -ni csrf mosd/apid/src/*.rs` returns nothing at
   cross-site attacker they add nothing, and the form path holds because
   `SameSite=Lax` holds.
 
-**One denial-of-service note, narrowed since it was written.** This paragraph
-said the gate calls `GetSettings("access")` on **every** request before
-deciding anything, so an unauthenticated flood costs one D-Bus round trip per
-request against the single lock mosd holds over both trees
+**One denial-of-service note, narrowed twice since it was written.** This
+paragraph said the gate calls `GetSettings("access")` on **every** request
+before deciding anything, so an unauthenticated flood costs one D-Bus round
+trip per request against the single lock mosd holds over both trees
 (`os/pkgs/mosd/mosd/src/bus.rs:51-54`, `:514-516`). At `f7cb5ba` the bus call is paid
 only by a request **without** a valid session cookie
 (`os/pkgs/mosd/apid/src/routes.rs:705-711`), so an authenticated flood no longer
-reaches mosd through the gate — but the unauthenticated flood this note is
-about is exactly the case that still does, and it is now the only case, which
-makes the note narrower and not weaker. `GET /api/versions` is cheaper still:
+reaches mosd through the gate. The unauthenticated path has since been
+narrowed too: while the `SettingsChanged` subscription is live (§1.3), the
+gate serves the `access` subtree from an in-process cache and pays the bus
+round trip only to refill after a change; only when the subscription is not
+live — mosd down, stream lapsed — does every unauthenticated request still
+reach mosd, which is the deliberate fail-fresh fallback and not a cost that
+can be removed. `GET /api/versions` is cheaper still:
 the gate hands it off above the bus call entirely
 (`os/pkgs/mosd/apid/src/routes.rs:684`) and its handler makes no mosd call
 (`os/pkgs/mosd/apid/src/routes.rs:415-423`), so it is an unauthenticated route that
@@ -4414,16 +4418,20 @@ tokens instead of one password — and gained no **authority** granularity at al
 Those are different axes and this document only moved one of them.
 
 **11. A denial-of-service surface that already exists acquires attractive
-targets.** The gate calls `GetSettings("access")` on **every** request before
-deciding anything, including unauthenticated ones
-(`os/pkgs/mosd/apid/src/routes.rs:718`), against the single lock mosd holds over both
-trees (`os/pkgs/mosd/mosd/src/bus.rs:51-53`). An unauthenticated flood already costs one
-D-Bus round trip per request; an API is a thing scripts hammer by design, and
-§3.2 makes that cost structural by *depending* on the read being there.
+targets.** The gate used to call `GetSettings("access")` on every
+unauthenticated request, against the single lock mosd holds over both trees
+(`os/pkgs/mosd/mosd/src/bus.rs:51-53`); an API is a thing scripts hammer by design,
+and §3.2 makes the read structural by *depending* on it being there.
 
-*Accepted.* The dependency is worth naming twice: the same call that makes the
-token check free is the one that makes the flood expensive, so caching it
-requires `SettingsChanged` and is not a local change.
+*Mitigated since, exactly the way the acceptance note predicted.* This item
+was accepted with *"caching it requires `SettingsChanged` and is not a local
+change"* — and that is the change that landed: the proxy subscribes to
+`SettingsChanged` (§1.3) and the gate serves `access` from an in-process
+cache while the subscription is live, invalidated on every relevant change
+and on apid's own access writes, falling back to the per-request read
+whenever freshness is in any doubt (§3.3's narrowed note has the details).
+An unauthenticated flood now contends with mosd's lock only while that
+fallback is active.
 
 **What this does not foreclose, stated because a price list with no floor is
 not trustworthy either.** It does not reopen `docs/design/dashboard.md` §6.6's

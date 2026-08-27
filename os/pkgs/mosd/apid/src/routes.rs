@@ -735,9 +735,23 @@ async fn gate(State(state): State<AppState>, request: Request, next: Next) -> Re
         return next.run(request).await;
     }
 
-    let access = match state.api.get_settings("access").await {
-        Ok(value) => value,
-        Err(err) => return bus_error(&err),
+    // The unauthenticated path's read, served from the cache when — and only
+    // when — the SettingsChanged subscription is live (`access_cache`'s
+    // lockout rule). The generation is snapshotted BEFORE the direct read so
+    // a change signalled while the read was in flight discards the fill
+    // rather than caching a possibly-pre-change snapshot.
+    let access = match state.access_cache.get() {
+        Some(value) => value,
+        None => {
+            let generation = state.access_cache.generation();
+            match state.api.get_settings("access").await {
+                Ok(value) => {
+                    state.access_cache.fill(generation, value.clone());
+                    value
+                }
+                Err(err) => return bus_error(&err),
+            }
+        }
     };
     if password_hash(&access).is_none() {
         if path == "/setup" {
@@ -1060,6 +1074,10 @@ async fn setup_submit(
     if let Err(err) = state.api.set_settings("access.webAdmin", &value).await {
         return bus_error(&err);
     }
+    // The device just left setup mode, and the gate must not keep believing
+    // otherwise from a cached pre-write snapshot: drop the cache now rather
+    // than waiting for the SettingsChanged round trip.
+    state.access_cache.invalidate();
     // Recorded once the admin password exists, which is the moment the device
     // leaves setup mode; the optional hostname/network writes below are
     // ordinary settings edits, not access-control events.
@@ -1302,6 +1320,11 @@ async fn change_password(
     if let Err(err) = state.api.set_settings("access.webAdmin", &value).await {
         return Err(PasswordChangeError::Bus(err));
     }
+    // apid knows its own access write happened, so the gate's cache is
+    // dropped here rather than waiting for the SettingsChanged round trip:
+    // the next unauthenticated request re-reads and cannot be answered from
+    // a pre-change snapshot.
+    state.access_cache.invalidate();
     // The write happened; every other session goes with the old credential.
     // No cookie on the request keeps nothing, which errs closed.
     state
