@@ -1,8 +1,8 @@
 # RFCT-139 No production RAUC keyring is provisioned, so rauc install fails closed on every shipped device
 
-- **status**: pending
+- **status**: in progress
 - **priority**: P2
-- **owner**: (unclaimed)
+- **owner**: ai-agent
 - **createdAt**: 2026-08-26
 
 `os/update/rauc/system.conf.in:71-78` points RAUC's CMS keyring at

@@ -1,8 +1,8 @@
 # RFCT-142 Reading the U-Boot boot credits races a writer that no lock orders
 
-- **status**: pending
+- **status**: in progress
 - **priority**: P1
-- **owner**: (unclaimed)
+- **owner**: ai-agent
 - **createdAt**: 2026-08-26
 
 Two processes write the redundant U-Boot environment, and the file that
