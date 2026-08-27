@@ -162,8 +162,18 @@
               }
             }
           },
+          "404": {
+            "description": "The dot-path does not exist (`settings_not_found`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
           "422": {
-            "description": "mosd rejected the dot-path (`settings_rejected`), which is also the answer for a dot-path that does not exist",
+            "description": "mosd rejected the dot-path (`settings_rejected`)",
             "content": {
               "application/json": {
                 "schema": {

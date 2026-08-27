@@ -3978,6 +3978,16 @@ fn the_zbus_error_survives_the_conversion_to_anyhow() {
 async fn each_fdo_error_name_gets_its_own_envelope() {
     for (fdo_name, code, status) in [
         (
+            "com.mos.mosd1.Error.NotFound",
+            "settings_not_found",
+            StatusCode::NOT_FOUND,
+        ),
+        (
+            "com.mos.mosd1.Error.ReadOnly",
+            "settings_read_only",
+            StatusCode::CONFLICT,
+        ),
+        (
             "org.freedesktop.DBus.Error.InvalidArgs",
             "settings_rejected",
             StatusCode::UNPROCESSABLE_ENTITY,
@@ -4066,16 +4076,21 @@ async fn an_unreachable_mosd_is_503_with_retry_after_on_the_html_panes_too() {
     assert!(body.contains("The management daemon is unavailable."));
 }
 
-/// A dot-path that does not exist answers **422 `settings_rejected`, not 404**,
-/// and the reading is deliberate. It reaches mosd, which rejects it with
-/// `InvalidArgs`, and §2.4's table is exhaustive on the fdo error name. The
-/// table's `not_found` row covers unknown ROUTES and collection items, and
-/// collections are out of phase 1 — a route that does exist, given a path mosd
-/// refused, is a rejection and reports as one.
+/// A dot-path that does not exist answers **404 `settings_not_found`**, no
+/// longer 422: mosd names `SettingsError::NotFound` with its own error name
+/// (`com.mos.mosd1.Error.NotFound`), so a missing path and a bad value stop
+/// sharing a code. The 422 assertion beside it is the control: a rejection
+/// that IS a rejection still reports as one.
 #[tokio::test]
-async fn a_dot_path_that_does_not_exist_is_422_and_not_404() {
-    let (router, cookie) = failing_app(Some("org.freedesktop.DBus.Error.InvalidArgs")).await;
+async fn a_dot_path_that_does_not_exist_is_404_and_a_rejection_stays_422() {
+    let (router, cookie) = failing_app(Some("com.mos.mosd1.Error.NotFound")).await;
+    let response = get(&router, "/api/v1/settings/no.such.path", Some(&cookie)).await;
+    assert_eq!(response.status(), StatusCode::NOT_FOUND);
+    let error = envelope(response).await;
+    assert_eq!(error["code"], "settings_not_found");
+    assert_eq!(error["path"], json!("no.such.path"));
 
+    let (router, cookie) = failing_app(Some("org.freedesktop.DBus.Error.InvalidArgs")).await;
     let response = get(&router, "/api/v1/settings/no.such.path", Some(&cookie)).await;
     assert_eq!(response.status(), StatusCode::UNPROCESSABLE_ENTITY);
     let error = envelope(response).await;

@@ -1469,10 +1469,13 @@ one class: `const RETRY_AFTER_SECONDS: &str = "5";`
 translate the classification, pass mosd's message through verbatim, always say
 which side it came from — ships as `bus_api_error`
 (`os/pkgs/mosd/apid/src/routes.rs:539-573`), which matches on the concrete
-`zbus::Error::MethodError` before the conversion flattens it and maps the three
-fdo names declared at `os/pkgs/mosd/apid/src/routes.rs:247-249`. The source states the
-rule in the same words this section chose: *"The classification is translated
-and the message is not"* (`os/pkgs/mosd/apid/src/routes.rs:530`).
+`zbus::Error::MethodError` before the conversion flattens it and maps the five
+error names declared at `os/pkgs/mosd/apid/src/routes.rs:247-249` — two
+interface-scoped (`com.mos.mosd1.Error.NotFound`, `com.mos.mosd1.Error.ReadOnly`,
+coined by mosd because the fdo vocabulary cannot separate a missing dot-path or
+a read-only one from a bad value) and three standard fdo names. The source
+states the rule in the same words this section chose: *"The classification is
+translated and the message is not"* (`os/pkgs/mosd/apid/src/routes.rs:530`).
 
 **The envelope, field by field against what ships.** Four differences, each a
 finding rather than a thing to quietly align:
@@ -1489,10 +1492,15 @@ finding rather than a thing to quietly align:
 
 **The code table against what ships.** Six of the eight codes below exist; two
 do not, and the reason is the same in both cases — nothing under `/api` takes a
-request body.
+request body. Two further codes ship that this section did not propose,
+because they came from splitting `settings_rejected`: `settings_not_found` and
+`settings_read_only`, added additively when mosd stopped collapsing
+`NotFound`, `ReadOnly` and `Validation` into one `InvalidArgs`.
 
 | `code` | Ships? | Where |
 |---|---|---|
+| `settings_not_found` | **yes**, 404 | `os/pkgs/mosd/apid/src/routes.rs:552-555`, on `com.mos.mosd1.Error.NotFound` |
+| `settings_read_only` | **yes**, 409 | `os/pkgs/mosd/apid/src/routes.rs:556-559`, on `com.mos.mosd1.Error.ReadOnly` |
 | `not_authenticated` | **yes**, with a different credential | `os/pkgs/mosd/apid/src/routes.rs:613`. It is raised by the session-cookie extractor (`os/pkgs/mosd/apid/src/routes.rs:610-616`), not by a bearer token: §3.2's token does not exist, so the shipped 401 means *"no session cookie, or one that does not verify"* (`os/pkgs/mosd/apid/src/routes.rs:614`) |
 | `not_found` | **yes** | `os/pkgs/mosd/apid/src/routes.rs:200`, from the reserved subtree's fallback |
 | `request_invalid` | **no** | no route accepts a body, so no body can be malformed |
@@ -1544,6 +1552,8 @@ Content-Type: application/json
 | `request_invalid` | 400 | apid | the body is not JSON, or not the shape the route takes |
 | `validation_failed` | 422 | apid | apid's own validators rejected it: `valid_hostname` (`routes.rs:830-839`), `validate_iface` (`routes.rs:841-851`), `validate_transient_password` (`routes.rs:2494-2509`), `parse_authorized_key` (`routes.rs:2549`), and the change-password floor |
 | `wrong_password` | 403 | apid | the current password in a change-password request does not verify; the session is valid, the credential is not |
+| `settings_not_found` | 404 | mosd | the dot-path does not resolve: mosd answered `com.mos.mosd1.Error.NotFound` |
+| `settings_read_only` | 409 | mosd | the dot-path exists and rejects writes: mosd answered `com.mos.mosd1.Error.ReadOnly` |
 | `settings_rejected` | 422 | mosd | mosd answered fdo `InvalidArgs` (`os/pkgs/mosd/mosd/src/bus.rs:489-491`, `:529`, `:541`) |
 | `settings_io` | 500 | mosd | mosd answered `IOError` (`os/pkgs/mosd/mosd/src/bus.rs:492`) |
 | `mosd_failed` | 500 | mosd | mosd answered `Failed` (`os/pkgs/mosd/mosd/src/bus.rs:493-495`, `:507`) |
@@ -3788,7 +3798,11 @@ rendering `bus_error` (`os/pkgs/mosd/apid/src/routes.rs:655-670`) for a value mo
 merely rejected. Optionally in the same phase, mosd's `to_fdo`
 (`os/pkgs/mosd/mosd/src/bus.rs:487-497`) stops collapsing `NotFound`, `ReadOnly` and
 `Validation` (`os/pkgs/mosd/mosd-settings/src/error.rs:7-31`) into one
-`InvalidArgs`.
+`InvalidArgs`. That option has since been exercised, before v1 froze: the
+mapping (now `to_bus_error`) names `NotFound` and `ReadOnly` with the
+interface-scoped error names `com.mos.mosd1.Error.NotFound` and
+`com.mos.mosd1.Error.ReadOnly`, and §2.4's table carries `settings_not_found`
+(404) and `settings_read_only` (409) beside `settings_rejected`.
 
 **What an operator can do that they could not before.** Submit an invalid CIDR
 on `/network` and be told **why**. Today `network_submit` returns `bus_error` when
@@ -4242,10 +4256,11 @@ instances, not a generality.**
 
 - **Splitting mosd's `to_fdo`.** `NotFound`, `ReadOnly` and
   `Validation` (`os/pkgs/mosd/mosd-settings/src/error.rs:7-31`) to stop collapsing into
-  one `InvalidArgs` (`os/pkgs/mosd/mosd/src/bus.rs:487-497`). §2.4 emits a single
+  one `InvalidArgs` (`os/pkgs/mosd/mosd/src/bus.rs:487-497`). §2.4 emitted a single
   `settings_rejected` for all three as a result, and §2.1 makes *"changing which
   `error.code` an existing failure emits"* a major-version bump. So after v1
-  ships, this improvement costs a `v2`.
+  ships, this improvement costs a `v2` — which is why the split landed before
+  the freeze (§8.2 phase 1, §2.4).
 - **The VLAN dot-path limit.** `valid_iface_name` permits `.`
   (`os/pkgs/mosd/apid/src/routes.rs:821-826`) while `split_path` splits on it
   unconditionally (`os/pkgs/mosd/mosd-settings/src/path.rs:26-32`), so `network.eth0.100`

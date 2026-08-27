@@ -72,6 +72,17 @@ fn dbus_daemon() -> PathBuf {
     })
 }
 
+/// The D-Bus error name a failed call travelled under.
+///
+/// A panic on any other variant: these assertions are about the name on the
+/// wire, and a connection-level failure would be a different test failing.
+fn error_name(err: &zbus::Error) -> &str {
+    match err {
+        zbus::Error::MethodError(name, _, _) => name.as_str(),
+        other => panic!("expected a method error with a name, got {other:?}"),
+    }
+}
+
 #[zbus::proxy(
     interface = "com.mos.mosd1",
     default_service = "com.mos.mosd",
@@ -294,9 +305,27 @@ async fn bus_roundtrip() -> anyhow::Result<()> {
         "the password reached settings.toml:\n{persisted}"
     );
 
-    assert!(proxy.get_settings("no.such.path").await.is_err());
+    // Three distinct failures travel under three distinct error names, so a
+    // caller can separate a missing path, a read-only path and a bad value
+    // without parsing message prose. The names are spelled out here rather
+    // than imported: they are the bus contract, and a test that borrowed the
+    // constant from the code under test would follow it wherever it moved.
+    let err = proxy
+        .get_settings("no.such.path")
+        .await
+        .expect_err("a missing dot-path must be an error");
+    assert_eq!(error_name(&err), "com.mos.mosd1.Error.NotFound");
+    let err = proxy
+        .set_settings("schema_version", "2")
+        .await
+        .expect_err("a read-only dot-path must refuse the write");
+    assert_eq!(error_name(&err), "com.mos.mosd1.Error.ReadOnly");
+    let err = proxy
+        .set_settings("hostname", "42")
+        .await
+        .expect_err("a value the typed tree rejects must be an error");
+    assert_eq!(error_name(&err), "org.freedesktop.DBus.Error.InvalidArgs");
     assert!(proxy.set_settings("hostname", "not json").await.is_err());
-    assert!(proxy.set_settings("schema_version", "2").await.is_err());
 
     // Update orchestration, against the dry-run RAUC client — the
     // same guarantee as the power methods above: MOSD_DRY_RUN=1 means the
