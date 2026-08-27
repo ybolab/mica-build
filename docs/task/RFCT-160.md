@@ -187,18 +187,31 @@ contradicting it: this kernel namespaces `binfmt_misc`, so an emulator
 registered inside a container is invisible to the host mount, and a
 docker-container builder carries the emulation while the host's view stays bare.
 
-One measured caveat, so the pointer below is not read as a one-liner:
 `docker buildx inspect mos-arm64` on 2026-08-27 reports
-`Platforms: linux/amd64, linux/amd64/v2, linux/amd64/v3, linux/386`, so the
-arm64 registration is not live in that builder at the moment and would have to
-be re-established before a run.
+`Platforms: linux/amd64, linux/amd64/v2, linux/amd64/v3, linux/386`. On this
+host that line under-reports and must not be read as a capability list: it names
+advertised platforms. The builder's buildkit image bundles QEMU and registers
+the emulator inside the builder container, which is the same reason the host
+mount looks bare. A direct build settles it -- measured by L2 on 2026-08-27,
+against a Dockerfile of `FROM alpine:3.21` and `RUN uname -m > /arch`:
+
+```
+$ BUILDX_BUILDER=mos-arm64 docker buildx build --platform linux/arm64 \
+    -f <tmp>/Dockerfile --output type=local,dest=<tmp>/out <tmp>
+rc=0
+$ cat <tmp>/out/arch
+aarch64
+```
+
+`mos-arm64` builds `linux/arm64` today.
 
 The blocker that survives the correction is narrower than a host capability, and
 stays true: `os/update/rauc/build.sh:63` pins `--builder default`, and the
 `FROM localhost/mos-build-*` stages of `os/update/rauc/Dockerfile` need that
 image family present in whichever builder runs them -- a docker-container
 builder resolves `localhost/` as a registry hostname, which is why the recipe
-pins the builder at all.
+pins the builder at all. So pointing the recipe at `mos-arm64` instead does not
+make the chain run either.
 
 Unpinning `--builder default` is `os/update` work and belongs to neither this
 task nor this campaign. It is recorded here as a pointer and was not acted on:
@@ -270,6 +283,7 @@ directory.
   `images.env`, `from.sh` and `build-v2.sh`, in files whose prose otherwise
   holds 80.
 - The full `make os-rootfs-cx3576-v2` chain has not been run to completion here
-  and stays outstanding on an arm64-capable path. The narrow blocker is the
-  `--builder default` pin at `os/update/rauc/build.sh:63`, not a host that
-  cannot build arm64; unpinning it is `os/update` work outside this campaign.
+  and stays outstanding. The narrow blocker is the `--builder default` pin at
+  `os/update/rauc/build.sh:63` together with the `localhost/mos-build-*` stages
+  behind it, not a host that cannot build arm64; resolving it is `os/update`
+  work outside this campaign.
