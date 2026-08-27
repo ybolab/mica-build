@@ -541,8 +541,8 @@ alongside it. The first slice of that API is now served and does exactly this:
 hands back what mosd returns (section 1.2), so the model below is the API's
 model and not a translation of it.
 
-**Schema version.** `SCHEMA_VERSION` is **6**, declared as
-`pub const SCHEMA_VERSION: u32 = 6;` (`os/pkgs/mosd/mosd-settings/src/model.rs:11`) and
+**Schema version.** `SCHEMA_VERSION` is **7**, declared as
+`pub const SCHEMA_VERSION: u32 = 7;` (`os/pkgs/mosd/mosd-settings/src/model.rs:11`) and
 stamped into every default tree, `schema_version: SCHEMA_VERSION,`
 (`os/pkgs/mosd/mosd-settings/src/model.rs:43`). It was **4** when this section was
 first written; the number moves and the API must never hard-code it, which is
@@ -550,13 +550,13 @@ why `GET /api/v1/meta` reads it from `mosd_settings::SCHEMA_VERSION` at request
 time (`os/pkgs/mosd/apid/src/routes.rs:438`) rather than copying it. It is **read-only
 through the write path**: a write whose first path segment is `schema_version`
 is rejected, `if segments[0] == "schema_version" {`
-(`os/pkgs/mosd/mosd-settings/src/model.rs:496`), and a whole-tree write that would
+(`os/pkgs/mosd/mosd-settings/src/model.rs:608`), and a whole-tree write that would
 change it is rejected too, `if candidate.schema_version != self.schema_version {`
-(`os/pkgs/mosd/mosd-settings/src/model.rs:506`). Documents are migrated forward and
+(`os/pkgs/mosd/mosd-settings/src/model.rs:618`). Documents are migrated forward and
 backward through a registered chain
 (`os/pkgs/mosd/mosd-settings/src/migration.rs:46-57`, public entry point at
 `pub fn migrate(doc: &mut toml::Table, from: u32, to: u32) -> Result<(), SettingsError> {`
-(`os/pkgs/mosd/mosd-settings/src/migration.rs:91`)).
+(`os/pkgs/mosd/mosd-settings/src/migration.rs:92`)).
 
 **Persistence.** TOML at
 `pub const DEFAULT_PATH: &str = "/var/lib/mos/settings.toml";`
@@ -568,7 +568,7 @@ fsync it, rename it over the target, then fsync the directory"*
 `#[serde(deny_unknown_fields)]` (for example
 `os/pkgs/mosd/mosd-settings/src/model.rs:15`, `:69`, `:95`, `:112`, `:139`, `:147`,
 `:165`, `:176`, `:226`, `:237`, `:252`, `:268`, `:293`, `:303`, `:328`,
-`:345`, `:406`, `:417`), so an unknown key fails the load rather than being
+`:345`, `:441`, `:529`), so an unknown key fails the load rather than being
 silently dropped.
 
 **The settings subtrees, from `pub struct Settings {`
@@ -598,7 +598,7 @@ each reachable at its own dot-path.
 **validated against the typed tree before it is persisted**: `SetSettings`
 builds a candidate, calls `Settings::set` — which deserializes the whole root
 into a candidate `Self`, `serde_json::from_value(root)`
-(`os/pkgs/mosd/mosd-settings/src/model.rs:502`) — and only then calls
+(`os/pkgs/mosd/mosd-settings/src/model.rs:614`) — and only then calls
 `self.store.save(&candidate)?;` (`os/pkgs/mosd/mosd/src/bus.rs:434`), so a malformed
 write mutates nothing. Second, **the dot-path syntax has no array indexing**:
 the model comment says a list is *"Written as a whole JSON array through the
@@ -846,7 +846,7 @@ follows is a reading of a snapshot and not a defect in it.
    `GetState("sshd")` is at `os/pkgs/mosd/apid/src/routes.rs:1865`,
    `GetState("container")` at `:2079` and `GetState("mqtt")` at `:2337`.
 5. **Schema version "3"** (`docs/research/mos-ui-inventory.md:397`) is now
-   **6** — `pub const SCHEMA_VERSION: u32 = 6;`
+   **7** — `pub const SCHEMA_VERSION: u32 = 7;`
    (`os/pkgs/mosd/mosd-settings/src/model.rs:11`). It was 4 when this section was
    written, which is the second time this one row has gone stale and is the
    reason section 2.1 must serve the number rather than document it.
@@ -1023,8 +1023,8 @@ this paragraph was written). **It is not the API version and the two must never
 be conflated.** The schema version is the shape of the tree on disk
 (`os/pkgs/mosd/mosd-settings/src/store.rs:67`), moved by a registered migration chain
 (`os/pkgs/mosd/mosd-settings/src/migration.rs:46-57`, entry point at
-`os/pkgs/mosd/mosd-settings/src/migration.rs:91`) and read-only through the write path
-(`os/pkgs/mosd/mosd-settings/src/model.rs:496-497`, `:470-472`). The shipped handler
+`os/pkgs/mosd/mosd-settings/src/migration.rs:92`) and read-only through the write path
+(`os/pkgs/mosd/mosd-settings/src/model.rs:608-609`, `:582-584`). The shipped handler
 does exactly what this paragraph asks — the doc comment on it says
 *"`settingsSchemaVersion` is read from `mosd_settings` and never copied: the
 number a client uses to decide whether it understands a settings body has
@@ -1192,7 +1192,7 @@ capable as the bus, including the bus's limits:
   lose one of the two writes, with no mechanism that notices.
 - **Whole-subtree writes are all-or-nothing.** `Settings::set` deserializes the
   entire root into `Settings` after the write and rejects the result if it does
-  not fit (`os/pkgs/mosd/mosd-settings/src/model.rs:501-505`), and every struct carries
+  not fit (`os/pkgs/mosd/mosd-settings/src/model.rs:613-617`), and every struct carries
   `#[serde(deny_unknown_fields)]`, so a `PUT` of a subtree with one extra key
   fails the whole write. That is a good property — it is also a surprising one
   for a client that expected a merge.
@@ -1202,7 +1202,7 @@ capable as the bus, including the bus's limits:
   splits on `.` unconditionally (`os/pkgs/mosd/mosd-settings/src/path.rs:59-88`), so
   `network.eth0.100` — a VLAN sub-interface — lands as a field named `100`
   inside `IfaceSettings` and is rejected by `deny_unknown_fields`
-  (`os/pkgs/mosd/mosd-settings/src/model.rs:405-413`). Running `Settings::set` against a
+  (`os/pkgs/mosd/mosd-settings/src/model.rs:440-460`). Running `Settings::set` against a
   default tree with that path returns `Validation { path: "network.eth0.100",
   message: "unknown field `100`, expected `dhcp` or `static`" }`. This is a
   **pre-existing** limit of the dot-path model, not one the API introduces — the
@@ -1562,7 +1562,7 @@ message too — replacing mosd's text with apid's own phrasing per code — then
 every message mosd learns to produce is invisible until apid is taught it. The
 "unknown field `100`, expected `dhcp` or `static`" string in the example above
 comes from serde, through `SettingsError::Validation`
-(`os/pkgs/mosd/mosd-settings/src/model.rs:501-505`),
+(`os/pkgs/mosd/mosd-settings/src/model.rs:613-617`),
 and no phrasing apid could have pre-written would have told the caller which
 field was wrong. A client debugging a rejected write would be reduced to
 guessing. That is the failure mode, and it is why `message` is passed through.
@@ -1574,7 +1574,7 @@ guessing. That is the failure mode, and it is why `message` is passed through.
    caller can fix it locally, and the write definitely did not happen.
    `source: "mosd"` means mosd's typed tree rejected it; the write also did not
    happen (`Settings::set` is documented as leaving settings unchanged on error,
-   `os/pkgs/mosd/mosd-settings/src/model.rs:481-482`, and `store.save` runs only after
+   `os/pkgs/mosd/mosd-settings/src/model.rs:593-594`, and `store.save` runs only after
    the candidate validates, `os/pkgs/mosd/mosd/src/bus.rs:432-434`), but the rule that
    rejected it is not one apid knows. Both are 422. Knowing which is which is
    what tells a client whether re-reading this document will help.
@@ -3850,8 +3850,8 @@ below are the run's actual output.
    succeeds and rewrites `schema_version` to `3` — which is what made the wrong
    answer plausible. It is reachable only from an explicit caller with
    `from > to`, and **the only such callers in the tree are tests**
-   (`os/pkgs/mosd/mosd-settings/tests/settings.rs:241`, `:277`, `:506`, `:536`, `:996`,
-   `:1011`, `:1081`). `os/pkgs/mosd/mosd-settings/src/store.rs:68` is the sole
+   (`os/pkgs/mosd/mosd-settings/tests/settings.rs:243`, `:279`, `:510`, `:540`, `:1000`,
+   `:1015`, `:1085`). `os/pkgs/mosd/mosd-settings/src/store.rs:68` is the sole
    production caller of `migrate` and it can only ever walk **upward**.
 
 **What follows, corrected.** An A/B rollback into a phase-1 slot after a token

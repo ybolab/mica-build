@@ -271,7 +271,7 @@ provide. It is designed around that.
     (DHCP or static) and, for static, the configured address, gateway and DNS.
     `GetSettings("network")` returns exactly that per interface: a `dhcp` flag
     and, when it is false, a `static` block carrying `address`, `gateway` and
-    `dns` (`os/pkgs/mosd/mosd-settings/src/model.rs:451-471`).
+    `dns` (`os/pkgs/mosd/mosd-settings/src/model.rs:563-583`).
     Rendered under a heading that says *configured*, in the same visual register
     the rest of the UI uses for settings (section 3.3).
   - **Half B — "Observed" — (b) needs new mosd work, gap-table row 14.** Until
