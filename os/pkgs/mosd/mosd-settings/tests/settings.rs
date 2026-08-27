@@ -5,12 +5,13 @@ use std::fs;
 use serde_json::json;
 
 use mosd_settings::{
-    AccessSettings, ApMode, AuthorizedKey, ConsoleSettings, ContainerSettings, DEFAULT_PATH,
-    DeviceCredentialSettings, IfaceSettings, MigrateV0ToV1, MigrateV3ToV4, Migration,
-    MigrationRegistry, MqttAuthSettings, MqttListenSettings, MqttSettings, ProvisioningSettings,
-    ProvisioningState, SCHEMA_VERSION, Settings, SettingsError, SshSettings, StaticConfig, Store,
-    WebAdminSettings, WifiApSettings, WifiClientSettings, WifiNetwork, WifiSettings,
-    encode_base64_nopad, json_path_get, migrate, parse_authorized_key, validate_authorized_keys,
+    AccessSettings, ApMode, AuthorizedKey, BridgeConfig, ConsoleSettings, ContainerSettings,
+    DEFAULT_PATH, DeviceCredentialSettings, IfaceKind, IfaceSettings, MigrateV0ToV1, MigrateV3ToV4,
+    Migration, MigrationRegistry, MqttAuthSettings, MqttListenSettings, MqttSettings,
+    ProvisioningSettings, ProvisioningState, SCHEMA_VERSION, Settings, SettingsError, SshSettings,
+    StaticConfig, Store, VlanConfig, WebAdminSettings, WifiApSettings, WifiClientSettings,
+    WifiNetwork, WifiSettings, WireguardConfig, WireguardPeer, encode_base64_nopad, json_path_get,
+    migrate, parse_authorized_key, validate_authorized_keys,
 };
 
 fn populated() -> Settings {
@@ -24,13 +25,14 @@ fn populated() -> Settings {
                 gateway: Some("192.168.1.1".to_string()),
                 dns: vec!["1.1.1.1".to_string(), "9.9.9.9".to_string()],
             }),
+            ..IfaceSettings::default()
         },
     );
     settings.network.insert(
         "wlan0".to_string(),
         IfaceSettings {
             dhcp: true,
-            static_: None,
+            ..IfaceSettings::default()
         },
     );
     settings
@@ -133,7 +135,7 @@ fn set_scalar_and_create_intermediate_entries() {
         settings.network["eth0"],
         IfaceSettings {
             dhcp: true,
-            static_: None
+            ..IfaceSettings::default()
         }
     );
 
@@ -388,6 +390,7 @@ fn v3_populated() -> Settings {
                     gateway: Some("10.0.0.1".to_string()),
                     dns: vec!["10.0.0.1".to_string(), "1.1.1.1".to_string()],
                 }),
+                ..IfaceSettings::default()
             },
         )]
         .into_iter()
@@ -481,6 +484,7 @@ fn real_v2_document_survives_the_upgrade_to_v3() {
                 gateway: Some("10.0.0.1".to_string()),
                 dns: vec!["10.0.0.1".to_string(), "1.1.1.1".to_string()],
             }),
+            ..IfaceSettings::default()
         }
     );
     assert_eq!(settings.network.len(), 1);
@@ -1169,14 +1173,15 @@ fn the_public_parser_accepts_a_real_key_and_refuses_an_options_line() {
 /// `access.apiTokens`) and a version stamp one ahead of ours.
 ///
 /// A document from a build one schema AHEAD of this one -- the A/B rollback
-/// path. Its version tracks SCHEMA_VERSION + 1 and has had to move twice, to 6
-/// when the container switch landed and to 7 for the mqtt switch: left behind,
-/// it stops being "newer", the strip path stops running, and the test goes on
-/// passing while asserting nothing about rollback. Hence the assertion below
-/// that the stamp really is ahead of us.
+/// path. Its version tracks SCHEMA_VERSION + 1 and has had to move three
+/// times, to 6 when the container switch landed, to 7 for the mqtt switch and
+/// to 8 for the interface kinds: left behind, it stops being "newer", the
+/// strip path stops running, and the test goes on passing while asserting
+/// nothing about rollback. Hence the assertion below that the stamp really is
+/// ahead of us.
 fn newer_additive_document() -> String {
-    assert_eq!(SCHEMA_VERSION + 1, 7, "the fixture stamp must stay ahead");
-    r#"schema_version = 7
+    assert_eq!(SCHEMA_VERSION + 1, 8, "the fixture stamp must stay ahead");
+    r#"schema_version = 8
 hostname = "rolled-back"
 
 [network.eth0]
@@ -1294,7 +1299,7 @@ fn stripping_is_recursive_and_drops_same_named_keys_everywhere() {
     // both go, and the report records the name once per strip pass.
     fs::write(
         &path,
-        r#"schema_version = 7
+        r#"schema_version = 8
 hostname = "h"
 extra = "top"
 
@@ -1311,6 +1316,296 @@ extra = "nested"
     let report = report.expect("report");
     assert_eq!(report.dropped_keys, vec!["extra".to_string()]);
     assert!(!report.defaulted);
+}
+
+// --- Interface kinds (schema v7) -------------------------------------------
+
+/// A v7 document carrying one entry of every kind, spelled the way section 2.2
+/// of the design spells it.
+const V7_EVERY_KIND: &str = r#"schema_version = 7
+hostname = "edge-1"
+
+[network.eth0]
+dhcp = true
+
+[network."eth0.100"]
+kind = "vlan"
+dhcp = false
+
+[network."eth0.100".static]
+address = "192.168.100.2/24"
+
+[network."eth0.100".vlan]
+parent = "eth0"
+id = 100
+
+[network.br0]
+kind = "bridge"
+dhcp = true
+
+[network.br0.bridge]
+ports = ["eth1", "eth2"]
+
+[network.wg0]
+kind = "wireguard"
+dhcp = false
+
+[network.wg0.wireguard]
+listenPort = 51820
+
+[[network.wg0.wireguard.peers]]
+publicKey = "AI9C8xytM2fi+RUcnV5RvMnSq4ZQffgDZ37h0vc0AU8="
+allowedIps = ["10.8.0.0/24"]
+endpoint = "vpn.example.net:51820"
+persistentKeepalive = 25
+"#;
+
+/// A key only a schema AFTER v7 could carry, appended to the fixture above to
+/// make it a genuine rollback document rather than a re-stamped one.
+const V8_ONLY_KEY: &str = r#"
+[network.wg0.wireguard.obfuscation]
+mode = "none"
+"#;
+
+/// The tree the constant above describes, typed.
+fn every_kind() -> Settings {
+    Settings {
+        hostname: "edge-1".to_string(),
+        network: [
+            (
+                "eth0".to_string(),
+                IfaceSettings {
+                    dhcp: true,
+                    ..IfaceSettings::default()
+                },
+            ),
+            (
+                "eth0.100".to_string(),
+                IfaceSettings {
+                    kind: IfaceKind::Vlan,
+                    dhcp: false,
+                    static_: Some(StaticConfig {
+                        address: "192.168.100.2/24".to_string(),
+                        gateway: None,
+                        dns: Vec::new(),
+                    }),
+                    vlan: Some(VlanConfig {
+                        parent: "eth0".to_string(),
+                        id: 100,
+                    }),
+                    ..IfaceSettings::default()
+                },
+            ),
+            (
+                "br0".to_string(),
+                IfaceSettings {
+                    kind: IfaceKind::Bridge,
+                    dhcp: true,
+                    bridge: Some(BridgeConfig {
+                        ports: vec!["eth1".to_string(), "eth2".to_string()],
+                    }),
+                    ..IfaceSettings::default()
+                },
+            ),
+            (
+                "wg0".to_string(),
+                IfaceSettings {
+                    kind: IfaceKind::Wireguard,
+                    dhcp: false,
+                    wireguard: Some(WireguardConfig {
+                        listen_port: Some(51820),
+                        peers: vec![WireguardPeer {
+                            public_key: WG_PEER_PUBLIC_KEY.to_string(),
+                            allowed_ips: vec!["10.8.0.0/24".to_string()],
+                            endpoint: Some("vpn.example.net:51820".to_string()),
+                            persistent_keepalive: Some(25),
+                        }],
+                    }),
+                    ..IfaceSettings::default()
+                },
+            ),
+        ]
+        .into_iter()
+        .collect(),
+        ..Settings::default()
+    }
+}
+
+const WG_PEER_PUBLIC_KEY: &str = "AI9C8xytM2fi+RUcnV5RvMnSq4ZQffgDZ37h0vc0AU8=";
+
+/// A tree of physical interfaces serializes exactly as v6 wrote it: no `kind`,
+/// no empty blocks. This is what makes the v6 -> v7 bump additive, so it is
+/// asserted on the bytes rather than inferred from the attributes.
+#[test]
+fn a_physical_tree_carries_no_trace_of_the_new_fields() {
+    let text = toml::to_string(&populated()).unwrap();
+
+    for key in ["kind", "vlan", "bridge", "wireguard"] {
+        assert!(!text.contains(key), "{key} was written out: {text}");
+    }
+    assert_eq!(
+        text.parse::<toml::Table>().unwrap()["schema_version"],
+        toml::Value::Integer(i64::from(SCHEMA_VERSION))
+    );
+    // And an absent `kind` reads back as physical.
+    let parsed: Settings = toml::from_str(&text).unwrap();
+    assert_eq!(parsed.network["eth0"].kind, IfaceKind::Physical);
+    assert_eq!(parsed, populated());
+}
+
+/// Every kind round-trips through the store: written, read back typed, and
+/// spelled on disk the way the design spells it.
+#[test]
+fn all_three_kinds_round_trip_through_the_store() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("settings.toml");
+    fs::write(&path, V7_EVERY_KIND).unwrap();
+    let store = Store::new(&path);
+
+    let (settings, report) = store.load_with_report().unwrap();
+    assert!(
+        report.is_none(),
+        "a current-schema document is not a rollback"
+    );
+    assert_eq!(settings, every_kind());
+
+    // Written back, the `network` subtree is the one that came in -- the rest
+    // of the file gains the serialized defaults of a saved tree, as any save
+    // does.
+    store.save(&settings).unwrap();
+    let written: toml::Table = fs::read_to_string(&path).unwrap().parse().unwrap();
+    let fixture: toml::Table = V7_EVERY_KIND.parse().unwrap();
+    assert_eq!(written["network"]["br0"], fixture["network"]["br0"]);
+    assert_eq!(written["network"]["wg0"], fixture["network"]["wg0"]);
+    assert_eq!(
+        written["network"]["eth0.100"]["vlan"],
+        fixture["network"]["eth0.100"]["vlan"]
+    );
+    assert_eq!(store.load().unwrap(), settings);
+}
+
+/// The dot-path accessor reaches into each new block, quoted segment and all.
+#[test]
+fn dot_paths_reach_the_new_interface_blocks() {
+    let settings = every_kind();
+
+    // A physical entry does not serialize `kind` at all, so there is no node
+    // at that path: absent IS physical, and the accessor says so rather than
+    // inventing a default the file does not carry.
+    assert!(matches!(
+        settings.get("network.eth0.kind"),
+        Err(SettingsError::NotFound(_))
+    ));
+    assert_eq!(
+        settings.get(r#"network."eth0.100".kind"#).unwrap(),
+        json!("vlan")
+    );
+    assert_eq!(
+        settings.get(r#"network."eth0.100".vlan.parent"#).unwrap(),
+        json!("eth0")
+    );
+    assert_eq!(
+        settings.get(r#"network."eth0.100".vlan.id"#).unwrap(),
+        json!(100)
+    );
+    assert_eq!(
+        settings.get("network.br0.bridge.ports").unwrap(),
+        json!(["eth1", "eth2"])
+    );
+    assert_eq!(
+        settings.get("network.wg0.wireguard.listenPort").unwrap(),
+        json!(51820)
+    );
+    assert_eq!(
+        settings.get("network.wg0.wireguard.peers").unwrap(),
+        json!([{
+            "publicKey": WG_PEER_PUBLIC_KEY,
+            "allowedIps": ["10.8.0.0/24"],
+            "endpoint": "vpn.example.net:51820",
+            "persistentKeepalive": 25,
+        }])
+    );
+}
+
+/// A whole VLAN entry can be written through `set`, and an unknown key inside
+/// a block is still refused: `deny_unknown_fields` survives the extension,
+/// which is the reason the schema carries a `kind` field instead of a
+/// serde-tagged enum.
+#[test]
+fn set_writes_a_vlan_entry_and_still_refuses_an_unknown_key() {
+    let mut settings = Settings::default();
+    settings
+        .set(
+            r#"network."eth0.100""#,
+            json!({
+                "kind": "vlan",
+                "dhcp": false,
+                "vlan": {"parent": "eth0", "id": 100},
+            }),
+        )
+        .unwrap();
+    assert_eq!(
+        settings.network["eth0.100"],
+        IfaceSettings {
+            kind: IfaceKind::Vlan,
+            dhcp: false,
+            vlan: Some(VlanConfig {
+                parent: "eth0".to_string(),
+                id: 100,
+            }),
+            ..IfaceSettings::default()
+        }
+    );
+
+    let before = settings.clone();
+    let err = settings
+        .set(r#"network."eth0.100".vlan.protocol"#, json!("802.1ad"))
+        .unwrap_err();
+    assert!(matches!(err, SettingsError::Validation { .. }), "{err:?}");
+    assert_eq!(settings, before);
+
+    // And a kind the schema does not name is a validation error, not a silent
+    // fallback to physical.
+    let err = settings
+        .set(r#"network."eth0.100".kind"#, json!("macvlan"))
+        .unwrap_err();
+    assert!(matches!(err, SettingsError::Validation { .. }), "{err:?}");
+    assert_eq!(settings, before);
+}
+
+/// **There is no private-key field in this schema.** The absence is the
+/// mechanism — a field here is a value published to every bus client — so it
+/// is asserted, not assumed.
+#[test]
+fn the_wireguard_subtree_holds_no_secret() {
+    let text = toml::to_string(&every_kind()).unwrap();
+    for secret in ["privateKey", "private_key", "presharedKey", "presharedkey"] {
+        assert!(!text.contains(secret), "{secret} is in the tree: {text}");
+    }
+}
+
+/// The A/B rollback path, read from the other side: a document one schema
+/// AHEAD that still carries the v7 kinds. The unknown key goes; every v7
+/// interface — VLAN, bridge and WireGuard, blocks and peers included — is kept
+/// intact, because the strip is by name and takes only what serde named.
+#[test]
+fn a_newer_document_keeps_every_v7_interface_kind() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("settings.toml");
+    assert_eq!(SCHEMA_VERSION + 1, 8, "the fixture stamp must stay ahead");
+    fs::write(
+        &path,
+        V7_EVERY_KIND.replace("schema_version = 7", "schema_version = 8") + V8_ONLY_KEY,
+    )
+    .unwrap();
+
+    let (settings, report) = Store::new(&path).load_with_report().unwrap();
+
+    let report = report.expect("a newer document must produce a report");
+    assert_eq!(report.from, SCHEMA_VERSION + 1);
+    assert_eq!(report.dropped_keys, vec!["obfuscation".to_string()]);
+    assert!(!report.defaulted);
+    assert_eq!(settings, every_kind());
 }
 
 // --- Quoted path segments --------------------------------------------------
