@@ -7,11 +7,31 @@
 #
 #   bash docs/verify-citations.sh [--advisory]   (or: make docs-verify-citations)
 #
-# Scope. The documents scanned are docs/design/*.md excluding *.zh.md, plus
-# docs/architecture.md. `*.zh.md` is excluded for the same reason
-# docs/verify-index.sh excludes it: whether the Chinese translations are kept
-# current is a question parked with the user, so a translated sibling must not
-# fail a check here while that is unresolved.
+# Scope. The documents scanned are docs/design/*.md, docs/task/*.md and
+# docs/research/*.md, each excluding *.zh.md, plus docs/architecture.md.
+# `*.zh.md` is excluded for the same reason docs/verify-index.sh excludes it:
+# whether the Chinese translations are kept current is a question parked with
+# the user, so a translated sibling must not fail a check here while that is
+# unresolved. docs/task and docs/research entered scope with RFCT-172: their
+# citations were scanned by no gate at all (RFCT-159 finding a measured 77
+# stale ones), which is a silent space, not a policy.
+#
+# Dated records. Some documents in the widened scope are frozen records of a
+# past measurement -- a worklist pinned at a commit, an inventory of a tree
+# that has since moved. Their citations name where things WERE, and re-pointing
+# them at today's tree would falsify the record (RFCT-159 finding a;
+# RFCT-079's rule: dated claims bind to their period). Such a document declares
+# itself with a marker line anywhere in its body:
+#
+#   <!-- dated-record: <what is frozen, and at what point> -->
+#
+# A marked document is exempt from both checks, and the exemption is never
+# silent: the summary counts the exempted documents and names each one, one
+# line per file, so "left alone" is evidenced in every run, and the marker is a
+# committed, diffable decision in the exempted file itself (the PLAN-018
+# Amendment-1 pattern). The marker exempts whichever scanned file carries it --
+# a marker on a file nobody classified as dated still prints in the census, so
+# review reads the census rather than trusting silence.
 #
 # A citation is a backticked token of the form `path:line` or `path:line-line`.
 # It is in scope only when its path contains a `/` and its first segment names a
@@ -113,6 +133,8 @@ N_NEARMISS=0
 N_SKIP_HOSTPORT=0
 N_SKIP_BARE=0
 N_SKIP_OUTSIDE=0
+N_DATED=0
+DATED_DOCS=()
 declare -A SEG_COUNT=()
 declare -A NOQUOTE_BY_DOC=()
 
@@ -302,10 +324,23 @@ for doc in docs/design/*.md; do
     DOCS+=("$doc")
 done
 DOCS+=(docs/architecture.md)
+# The widened scope (RFCT-172). The existence guard is for the self-test's
+# fixture trees, which may build only docs/design; a real tree missing either
+# directory would already have failed docs/verify-index.sh.
+for doc in docs/task/*.md docs/research/*.md; do
+    case "$doc" in *.zh.md) continue ;; esac
+    [ -e "$doc" ] || continue
+    DOCS+=("$doc")
+done
 
 for doc in "${DOCS[@]}"; do
     [ -f "$doc" ] || { echo "error: $doc not found" >&2; exit 1; }
     N_DOCS=$((N_DOCS + 1))
+    if grep -q '^<!-- dated-record:' "$doc"; then
+        N_DATED=$((N_DATED + 1))
+        DATED_DOCS+=("$doc")
+        continue
+    fi
     NOQUOTE_BY_DOC[$doc]=0
     while IFS=$'\t' read -r dline path first last tok qkind near quote; do
         N_FOUND=$((N_FOUND + 1))
@@ -388,8 +423,12 @@ while read -r seg floor _rest; do
 done < "$BASELINE"
 
 # --- summary ---------------------------------------------------------------
-echo "docs/verify-citations.sh: docs/design/*.md excluding *.zh.md, plus docs/architecture.md"
+echo "docs/verify-citations.sh: docs/design/*.md, docs/task/*.md and docs/research/*.md excluding *.zh.md, plus docs/architecture.md"
 echo "  documents scanned:      $N_DOCS"
+echo "  exempted as dated records, citations not checked: $N_DATED"
+for doc in "${DATED_DOCS[@]}"; do
+    echo "  dated record: $doc"
+done
 echo "  citations found:        $N_FOUND"
 echo "  in scope:               $N_INSCOPE"
 for seg in $(printf '%s\n' "${!SEG_COUNT[@]}" | sort); do
@@ -404,6 +443,8 @@ echo "  census failures:        $FAIL_CENSUS"
 echo "  in-scope citations carrying a quote: $N_QUOTED"
 echo "  in-scope citations carrying no quote, resolution checked only: $N_NOQUOTE"
 for doc in "${DOCS[@]}"; do
+    # a dated record never entered the count, so it has no line here
+    [ -n "${NOQUOTE_BY_DOC[$doc]+x}" ] || continue
     echo "  no quote, by document: $doc ${NOQUOTE_BY_DOC[$doc]}"
 done
 echo "  near-miss: no quote armed, but a quoted span sits 1-3 words away: $N_NEARMISS"
