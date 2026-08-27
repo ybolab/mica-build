@@ -1,8 +1,8 @@
 # RFCT-129 apid reads /proc/uptime itself, against its own rule that mosd owns every system fact
 
-- **status**: pending
+- **status**: in progress
 - **priority**: P2
-- **owner**: (unclaimed)
+- **owner**: bkd/0fibgdbm
 - **createdAt**: 2026-08-26
 
 `GET /` reads `/proc/uptime` from inside apid

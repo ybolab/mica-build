@@ -1,8 +1,8 @@
 # RFCT-130 Three distinct settings failures reach the API as one error code, so a missing path and a bad value are indistinguishable
 
-- **status**: pending
+- **status**: in progress
 - **priority**: P2
-- **owner**: (unclaimed)
+- **owner**: bkd/0fibgdbm
 - **createdAt**: 2026-08-26
 
 `to_fdo` maps `SettingsError::NotFound`, `SettingsError::ReadOnly` and

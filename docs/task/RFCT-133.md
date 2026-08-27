@@ -1,8 +1,8 @@
 # RFCT-133 mosd emits SettingsChanged and apid's proxy cannot receive it
 
-- **status**: pending
+- **status**: in progress
 - **priority**: P2
-- **owner**: (unclaimed)
+- **owner**: bkd/0fibgdbm
 - **createdAt**: 2026-08-26
 
 mosd emits `SettingsChanged(path, value_json)` after every successful

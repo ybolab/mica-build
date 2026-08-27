@@ -1,8 +1,8 @@
 # RFCT-132 Every unauthenticated request costs a D-Bus round trip against the one lock mosd holds over both trees
 
-- **status**: pending
+- **status**: in progress
 - **priority**: P2
-- **owner**: (unclaimed)
+- **owner**: bkd/0fibgdbm
 - **createdAt**: 2026-08-26
 
 The auth gate short-circuits on a valid session cookie before it talks to the
