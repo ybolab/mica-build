@@ -3668,8 +3668,9 @@ Items (iv) and (v) are already shipped — `mosd/apid/src/routes.rs:1563`, `:172
 they are the only built-in-UI work any phase below schedules.
 
 **One contradiction between sibling sections, named here and reconciled here
-rather than by editing either.** §2.1 says *"The nineteen existing paths
-(section 1.2) keep their method, their path and their behaviour unchanged"*.
+rather than by editing either.** §2.1 says *"existing HTML paths (section 1.2)
+keep their method, their path and their behaviour unchanged"* — nineteen of
+them when that sentence was written, twenty-six at `f7cb5ba`.
 §4.1 says the built-in status pane at `GET /` *"moves under section 6.3's
 reserved prefix"*, and that the other legacy pane paths stay reserved *"until
 the phasing in section 8 moves each pane onto the API and deletes its route"*.
