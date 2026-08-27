@@ -3,7 +3,10 @@
 mod container;
 mod hostname;
 mod mqtt;
-mod network;
+/// Visible to the daemon rather than to this module alone: the WireGuard key
+/// rotation the bus surfaces ([`network::WireguardRotate`]) is this
+/// reconciler's mechanism reached from outside a reconcile.
+pub mod network;
 mod sshd;
 mod systemd;
 mod wifi_ap;

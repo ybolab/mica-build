@@ -18,6 +18,7 @@ use zbus::object_server::SignalEmitter;
 use crate::power::PowerControl;
 use crate::rauc::{self, RaucClient};
 use crate::reconciler::Reconciler;
+use crate::reconciler::network::WireguardRotate;
 use crate::scan::Registry;
 use crate::transient;
 
@@ -85,6 +86,26 @@ pub struct MosdService {
     /// `None` when no scan was constructed (dry run), which is the one state
     /// in which `ForgetService` has nothing to act on.
     registry: Option<Arc<Registry>>,
+    /// The WireGuard key rotation `RotateWireguardKey` calls through.
+    ///
+    /// Defaults to [`NoRotation`], which draws no key at all: a daemon that
+    /// was never handed a rotation is one running against no STATE partition,
+    /// and the honest answer there is that there is nowhere to put a key.
+    wireguard: Arc<dyn WireguardRotate>,
+}
+
+/// The rotation a daemon with no key store has: none.
+///
+/// The dry-run shape [`rauc::DryRunRauc`] and [`crate::power::DryRunPower`]
+/// both take — a default that cannot touch the host, so only `main.rs`, which
+/// alone knows the daemon is running on a device, can attach one that can.
+struct NoRotation;
+
+#[async_trait::async_trait]
+impl WireguardRotate for NoRotation {
+    async fn rotate_key(&self, _iface: &str) -> anyhow::Result<String> {
+        Err(anyhow::anyhow!("this daemon has no WireGuard key store"))
+    }
 }
 
 impl MosdService {
@@ -112,7 +133,19 @@ impl MosdService {
             inner: Arc::new(Mutex::new(Inner { settings, state })),
             changed: watch::channel(0).0,
             registry: None,
+            wireguard: Arc::new(NoRotation),
         }
+    }
+
+    /// Attach the WireGuard key rotation.
+    ///
+    /// A builder step for the same reason [`Self::with_rauc`] is: the default
+    /// touches nothing, and a test that has no state directory must not be
+    /// able to draw a key into one.
+    #[must_use]
+    pub fn with_wireguard(mut self, wireguard: Arc<dyn WireguardRotate>) -> Self {
+        self.wireguard = wireguard;
+        self
     }
 
     /// Attach the update installer client.
@@ -722,6 +755,51 @@ impl MosdService {
         Ok(())
     }
 
+    /// Draw a new private key for the WireGuard interface `iface` and return
+    /// its new public key.
+    ///
+    /// Deliberately not a setting, for the reason
+    /// [`Self::set_transient_root_password`] is not one: a key that reached
+    /// the settings tree would be persisted in a file served over
+    /// `GetSettings`. It is not a setting in the other direction either — the
+    /// tree holds no key to change — so nothing is written there, and no
+    /// [`SettingsChanged`](Self::settings_changed) is emitted.
+    ///
+    /// The reconcilers are re-run afterwards so the tunnel's unit is
+    /// re-rendered and networkd builds the device back around the key now on
+    /// disk; the new public key reaches the live-state tree on that pass.
+    async fn rotate_wireguard_key(&self, iface: &str) -> fdo::Result<String> {
+        // Under the same lock every mutating method takes: two unserialized
+        // rotations of one interface would each write a key and each delete
+        // the device, and the public key one of them returned would be the
+        // half of a private key the other had already replaced.
+        let inner = self.inner.lock().await;
+        match inner.settings.network.get(iface) {
+            Some(cfg) if cfg.kind == mosd_settings::IfaceKind::Wireguard => {}
+            Some(_) => {
+                return Err(fdo::Error::InvalidArgs(format!(
+                    "network.{iface} is not a WireGuard interface"
+                )));
+            }
+            None => {
+                return Err(fdo::Error::InvalidArgs(format!(
+                    "network.{iface} is not a declared network entry"
+                )));
+            }
+        }
+        let public_key = self
+            .wireguard
+            .rotate_key(iface)
+            .await
+            // The anyhow chain names paths and never key material: the key
+            // store's errors are written that way, and this adds no value of
+            // its own to them.
+            .map_err(|err| fdo::Error::Failed(format!("rotate wireguard key: {err:#}")))?;
+        drop(inner);
+        self.apply_all().await;
+        Ok(public_key)
+    }
+
     /// Emitted after a successful `SetSettings` with the changed dot-path and
     /// its new JSON-encoded value.
     #[zbus(signal)]
@@ -1083,6 +1161,124 @@ mod tests {
         assert_eq!(last["slot"], "booted");
         assert_eq!(last["slot_name"], "rootfs.9");
         assert_eq!(last["requested_by"], ":1.2");
+    }
+
+    /// A service whose settings declare one WireGuard tunnel, with a rotation
+    /// writing into the same throwaway directory.
+    ///
+    /// No reconcilers: this exercises the bus method's own contract, and the
+    /// reconcile it triggers is the network reconciler's own tests' subject.
+    fn service_with_wireguard() -> (MosdService, tempfile::TempDir) {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let mut settings = mosd_settings::Settings::default();
+        settings.network.insert(
+            "wg0".to_string(),
+            mosd_settings::IfaceSettings {
+                kind: mosd_settings::IfaceKind::Wireguard,
+                wireguard: Some(mosd_settings::WireguardConfig::default()),
+                ..mosd_settings::IfaceSettings::default()
+            },
+        );
+        settings.network.insert(
+            "eth0".to_string(),
+            mosd_settings::IfaceSettings {
+                dhcp: true,
+                ..mosd_settings::IfaceSettings::default()
+            },
+        );
+        let service = MosdService::new(
+            mosd_settings::Store::new(dir.path().join("settings.toml")),
+            settings,
+            Vec::new(),
+            Box::new(MockPower {
+                calls: Arc::new(Mutex::new(Vec::new())),
+            }),
+            dir.path().join("shadow"),
+            serde_json::json!({}),
+        )
+        .with_wireguard(Arc::new(crate::reconciler::network::KeyRotation::new(
+            crate::wgkeys::Keystore::new(dir.path().join("secrets/networkd"), None),
+            crate::reconciler::network::NoDelete,
+        )));
+        (service, dir)
+    }
+
+    #[tokio::test]
+    async fn a_rotation_returns_the_new_public_key_and_writes_no_key_into_the_tree() {
+        let (service, dir) = service_with_wireguard();
+        let before = service.get_settings("").await.expect("settings");
+
+        let first = service
+            .rotate_wireguard_key("wg0")
+            .await
+            .expect("rotate wireguard key");
+        let second = service
+            .rotate_wireguard_key("wg0")
+            .await
+            .expect("rotate wireguard key");
+
+        assert_ne!(
+            first, second,
+            "a rotation that returns the same key rotated nothing"
+        );
+        let key_file = dir.path().join("secrets/networkd/wg-wg0.key");
+        let private_key = std::fs::read_to_string(&key_file).expect("key file");
+        // The tree holds no key field to write into, and the rotation writes
+        // none: what a client reads over `GetSettings` is what it read before.
+        assert_eq!(service.get_settings("").await.expect("settings"), before);
+        assert!(!before.contains(private_key.trim()), "{before}");
+        assert!(!second.contains(private_key.trim()));
+        // And nothing was persisted: a rotation is not a settings write.
+        assert!(!dir.path().join("settings.toml").exists());
+    }
+
+    #[tokio::test]
+    async fn a_rotation_refuses_an_interface_that_is_not_a_tunnel() {
+        let (service, dir) = service_with_wireguard();
+
+        let not_a_tunnel = service.rotate_wireguard_key("eth0").await.unwrap_err();
+        let not_declared = service.rotate_wireguard_key("wg9").await.unwrap_err();
+
+        assert!(
+            not_a_tunnel
+                .to_string()
+                .contains("is not a WireGuard interface"),
+            "{not_a_tunnel}"
+        );
+        assert!(
+            not_declared
+                .to_string()
+                .contains("is not a declared network entry"),
+            "{not_declared}"
+        );
+        // Refused before the key store is reached, so no key was drawn for an
+        // interface that has no business having one.
+        assert!(!dir.path().join("secrets").exists());
+    }
+
+    #[tokio::test]
+    async fn a_daemon_with_no_key_store_rotates_nothing() {
+        let (service, _calls, dir) = service_with_mock();
+        let mut settings = mosd_settings::Settings::default();
+        settings.network.insert(
+            "wg0".to_string(),
+            mosd_settings::IfaceSettings {
+                kind: mosd_settings::IfaceKind::Wireguard,
+                wireguard: Some(mosd_settings::WireguardConfig::default()),
+                ..mosd_settings::IfaceSettings::default()
+            },
+        );
+        service
+            .write_setting("network", serde_json::to_value(&settings.network).unwrap())
+            .await
+            .expect("declare the tunnel");
+
+        let err = service.rotate_wireguard_key("wg0").await.unwrap_err();
+
+        // The dry-run default: a daemon that was never handed a key store has
+        // nowhere to put a key, and says so instead of inventing a place.
+        assert!(err.to_string().contains("no WireGuard key store"), "{err}");
+        assert!(!dir.path().join("secrets").exists());
     }
 
     #[tokio::test]

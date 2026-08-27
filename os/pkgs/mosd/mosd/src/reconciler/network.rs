@@ -2,17 +2,25 @@
 //! networkd.
 
 use std::collections::{BTreeMap, BTreeSet};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
-use mosd_settings::{IfaceKind, IfaceSettings, Settings};
+use mosd_settings::{IfaceKind, IfaceSettings, Settings, WireguardConfig};
 use serde_json::json;
 
 use super::Reconciler;
+use crate::wgkeys::Keystore;
 
 /// Directory networkd reads runtime unit files from.
 const DEFAULT_NETWORK_DIR: &str = "/run/systemd/network";
 /// Environment variable overriding the networkd unit directory.
 const NETWORK_DIR_ENV: &str = "MOSD_NETWORK_DIR";
+/// Environment variable naming the settings file, whose directory is the
+/// STATE-backed directory the WireGuard keys live under.
+///
+/// The same variable the access-point reconciler reads for the same reason: a
+/// test that redirects it redirects the secrets with it, and never writes a key
+/// into the host's `/var/lib/mos`.
+const SETTINGS_PATH_ENV: &str = "MOSD_SETTINGS_PATH";
 
 /// Asks the network stack to pick up freshly rendered unit files.
 #[async_trait::async_trait]
@@ -106,29 +114,117 @@ pub struct NetworkReconciler<R: NetworkReload, D: LinkDelete> {
     target_dir: PathBuf,
     reloader: R,
     deleter: D,
+    keys: Keystore,
 }
 
 impl<R: NetworkReload, D: LinkDelete> NetworkReconciler<R, D> {
     /// Create a network reconciler rendering units into `target_dir`,
-    /// reloading through `reloader` and tearing devices down through
-    /// `deleter`.
-    pub fn new(target_dir: PathBuf, reloader: R, deleter: D) -> Self {
+    /// reloading through `reloader`, tearing devices down through `deleter`
+    /// and taking WireGuard keys from `keys`.
+    ///
+    /// The key store is a parameter rather than a default for the same reason
+    /// the other three are, only more so: a default would be a real path on
+    /// the host, and a test that reconciled a tunnel against it would draw a
+    /// real private key onto the machine running the tests.
+    pub fn new(target_dir: PathBuf, reloader: R, deleter: D, keys: Keystore) -> Self {
         Self {
             target_dir,
             reloader,
             deleter,
+            keys,
         }
     }
 }
 
 impl NetworkReconciler<Networkd, IpLink> {
     /// Production reconciler: target directory from `MOSD_NETWORK_DIR` if
-    /// set, else the networkd runtime directory.
+    /// set, else the networkd runtime directory; keys under the directory of
+    /// [`SETTINGS_PATH_ENV`].
     pub fn production() -> Self {
         let dir = std::env::var(NETWORK_DIR_ENV)
             .map(PathBuf::from)
             .unwrap_or_else(|_| PathBuf::from(DEFAULT_NETWORK_DIR));
-        Self::new(dir, Networkd, IpLink)
+        Self::new(dir, Networkd, IpLink, production_keystore())
+    }
+}
+
+/// The production key store: WireGuard keys under the directory holding the
+/// settings file, which is the STATE-backed directory on a device.
+///
+/// Shared by the reconciler and by [`KeyRotation`], so the two cannot end up
+/// reading and writing different key files.
+fn production_keystore() -> Keystore {
+    let state_dir = std::env::var(SETTINGS_PATH_ENV)
+        .ok()
+        .and_then(|path| {
+            Path::new(&path)
+                .parent()
+                .filter(|parent| !parent.as_os_str().is_empty())
+                .map(Path::to_path_buf)
+        })
+        .unwrap_or_else(|| PathBuf::from(crate::identity::DEFAULT_STATE_DIR));
+    Keystore::production(&state_dir)
+}
+
+/// Drawing a WireGuard interface a new private key.
+///
+/// A rotation is not a settings write — there is no key field in the settings
+/// tree to write — so it is its own operation rather than a value the tree
+/// carries, and this is the port the bus method calls through.
+#[async_trait::async_trait]
+pub trait WireguardRotate: Send + Sync {
+    /// Replace `iface`'s private key and return the new public key.
+    async fn rotate_key(&self, iface: &str) -> anyhow::Result<String>;
+}
+
+/// The rotation this daemon performs: a new key in the key store, and the
+/// device holding the old one deleted.
+pub struct KeyRotation<D: LinkDelete> {
+    keys: Keystore,
+    deleter: D,
+}
+
+impl<D: LinkDelete> KeyRotation<D> {
+    /// Rotate keys in `keys`, deleting devices through `deleter`.
+    pub fn new(keys: Keystore, deleter: D) -> Self {
+        Self { keys, deleter }
+    }
+}
+
+impl KeyRotation<IpLink> {
+    /// Production rotation, against the same key store the production
+    /// reconciler renders from.
+    pub fn production() -> Self {
+        Self::new(production_keystore(), IpLink)
+    }
+}
+
+#[async_trait::async_trait]
+impl<D: LinkDelete> WireguardRotate for KeyRotation<D> {
+    /// Write a new private key, then delete the device carrying the old one.
+    ///
+    /// networkd reads `PrivateKeyFile=` when it creates the device and never
+    /// again, so a rotation that only rewrote the file would change what the
+    /// public key says without changing what the tunnel uses. The reconcile
+    /// the caller runs next re-renders the unit and reloads, and networkd
+    /// builds the device back with the key now on disk.
+    ///
+    /// A failed delete is an error here, unlike in the reconciler's sweep: the
+    /// key on disk and the key in the kernel have diverged, and the caller is
+    /// about to be handed a public key whose private half the tunnel is not
+    /// using yet.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when `iface` is not a name, when the key cannot be
+    /// written, or when the device cannot be deleted.
+    async fn rotate_key(&self, iface: &str) -> anyhow::Result<String> {
+        // The name reaches a file path and a command argument, exactly as it
+        // does on the render path.
+        validate_iface_name(iface)?;
+        let public_key = self.keys.rotate(iface)?;
+        self.deleter.delete_link(iface).await?;
+        Ok(public_key)
     }
 }
 
@@ -237,10 +333,11 @@ fn kind_name(kind: IfaceKind) -> &'static str {
 ///
 /// A block belonging to another kind is a statement about the link that the
 /// render would silently ignore, and a kind with no block of its own is a link
-/// with no parameters; both are refused rather than papered over. The rule
-/// that a `wireguard` entry must CARRY its block belongs with the code that
-/// renders the tunnel: this milestone renders none, so a wireguard entry is
-/// inert here exactly as it is today, and only its foreign blocks are refused.
+/// with no parameters; both are refused rather than papered over. The rule for
+/// a `wireguard` entry waited for the code that renders the tunnel, and now
+/// that the tunnel is rendered it is the same rule as the other two: the block
+/// carries the peers, and a tunnel with no peers block is a link that could
+/// never carry a packet.
 fn validate_kind_blocks(iface: &str, cfg: &IfaceSettings) -> anyhow::Result<()> {
     let kind = kind_name(cfg.kind);
     let own = (!matches!(cfg.kind, IfaceKind::Physical)).then_some(kind);
@@ -258,12 +355,80 @@ fn validate_kind_blocks(iface: &str, cfg: &IfaceSettings) -> anyhow::Result<()> 
     let missing = match cfg.kind {
         IfaceKind::Vlan => cfg.vlan.is_none(),
         IfaceKind::Bridge => cfg.bridge.is_none(),
-        IfaceKind::Physical | IfaceKind::Wireguard => false,
+        IfaceKind::Wireguard => cfg.wireguard.is_none(),
+        IfaceKind::Physical => false,
     };
     if missing {
         return Err(anyhow::anyhow!(
             "network.{iface} is kind {kind} but carries no {kind} block"
         ));
+    }
+    Ok(())
+}
+
+/// True when `value` is the `host:port` a peer's `endpoint` has to be.
+///
+/// Same discipline as [`is_ip_or_cidr`]: the value lands verbatim on an
+/// `Endpoint=` line, so it is parsed rather than filtered. A bracketed host is
+/// read as the IPv6 literal networkd requires there, and an unbracketed one as
+/// a DNS name, whose charset excludes every character that could start a new
+/// directive.
+fn is_host_port(value: &str) -> bool {
+    let Some((host, port)) = value.rsplit_once(':') else {
+        return false;
+    };
+    if port.parse::<u16>().is_err() {
+        return false;
+    }
+    if let Some(inner) = host
+        .strip_prefix('[')
+        .and_then(|rest| rest.strip_suffix(']'))
+    {
+        return inner.parse::<std::net::Ipv6Addr>().is_ok();
+    }
+    !host.is_empty()
+        && host
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'-' | b'_'))
+}
+
+/// Refuse a tunnel whose peers the renderer must not see.
+///
+/// Every peer value is re-validated by parse-and-re-render, the injection
+/// discipline [`validate_static`] already applies to addresses: a public key
+/// must decode to exactly 32 bytes, an allowed IP must parse as an address or
+/// CIDR, and an endpoint must parse as `host:port`.
+///
+/// A rejected peer is named by its index and never by its key. A public key is
+/// public, but an operator who pasted a private key into the field would find
+/// it in a bus error and in the journal, and a peer's position identifies it
+/// just as well.
+///
+/// # Errors
+///
+/// Returns an error when a peer's public key, allowed IPs or endpoint could not
+/// be what they claim to be.
+fn validate_wireguard(iface: &str, cfg: &WireguardConfig) -> anyhow::Result<()> {
+    for (index, peer) in cfg.peers.iter().enumerate() {
+        if !crate::wgkeys::is_key(&peer.public_key) {
+            return Err(anyhow::anyhow!(
+                "network.{iface} peer {index} has a public key that is not a WireGuard key"
+            ));
+        }
+        for allowed in &peer.allowed_ips {
+            if !is_ip_or_cidr(allowed) {
+                return Err(anyhow::anyhow!(
+                    "network.{iface} peer {index} allowed IP {allowed:?} is not an IP address or CIDR"
+                ));
+            }
+        }
+        if let Some(endpoint) = &peer.endpoint
+            && !is_host_port(endpoint)
+        {
+            return Err(anyhow::anyhow!(
+                "network.{iface} peer {index} endpoint {endpoint:?} is not host:port"
+            ));
+        }
     }
     Ok(())
 }
@@ -293,6 +458,9 @@ fn validate_network(network: &BTreeMap<String, IfaceSettings>) -> anyhow::Result
             validate_static(iface, static_cfg)?;
         }
         validate_kind_blocks(iface, cfg)?;
+        if let Some(wireguard) = &cfg.wireguard {
+            validate_wireguard(iface, wireguard)?;
+        }
     }
     // Which bridge claimed each port, so the second claim on one port is an
     // error rather than a race between two `Bridge=` lines for the same file.
@@ -357,19 +525,52 @@ fn vlan_children(network: &BTreeMap<String, IfaceSettings>) -> BTreeMap<&str, Ve
     children
 }
 
+/// Render the `[WireGuard]` and `[WireGuardPeer]` sections of a tunnel's
+/// netdev.
+///
+/// `PrivateKeyFile=` names the key rather than carrying it: the unit file lives
+/// in networkd's runtime directory, which is world-readable, and the key file
+/// it points at is not.
+fn render_wireguard(cfg: &WireguardConfig, key_path: &Path) -> String {
+    let mut out = format!("\n[WireGuard]\nPrivateKeyFile={}\n", key_path.display());
+    if let Some(port) = cfg.listen_port {
+        out.push_str(&format!("ListenPort={port}\n"));
+    }
+    for peer in &cfg.peers {
+        out.push_str(&format!(
+            "\n[WireGuardPeer]\nPublicKey={}\n",
+            peer.public_key
+        ));
+        if !peer.allowed_ips.is_empty() {
+            out.push_str(&format!("AllowedIPs={}\n", peer.allowed_ips.join(",")));
+        }
+        if let Some(endpoint) = &peer.endpoint {
+            out.push_str(&format!("Endpoint={endpoint}\n"));
+        }
+        if let Some(keepalive) = peer.persistent_keepalive {
+            out.push_str(&format!("PersistentKeepalive={keepalive}\n"));
+        }
+    }
+    out
+}
+
 /// Render the `.netdev` unit that creates `iface`, for a kind that needs one.
 ///
-/// `None` for a physical entry, whose device the kernel already has, and for a
-/// wireguard entry, whose unit carries a key path this milestone has nowhere
-/// to get: rendering half a tunnel would claim a link that cannot come up, so
-/// the entry stays inert until the milestone that owns the keystore.
-fn render_netdev(iface: &str, cfg: &IfaceSettings) -> Option<String> {
-    match (cfg.kind, &cfg.vlan) {
-        (IfaceKind::Vlan, Some(vlan)) => Some(format!(
+/// `None` for a physical entry, whose device the kernel already has. A
+/// wireguard entry's unit names its key file in `keys`, which is a path the
+/// store answers for whether or not a key has been drawn yet — the key itself
+/// is drawn on the way past in [`NetworkReconciler::apply`].
+fn render_netdev(iface: &str, cfg: &IfaceSettings, keys: &Keystore) -> Option<String> {
+    match (cfg.kind, &cfg.vlan, &cfg.wireguard) {
+        (IfaceKind::Vlan, Some(vlan), _) => Some(format!(
             "[NetDev]\nName={iface}\nKind=vlan\n\n[VLAN]\nId={}\n",
             vlan.id
         )),
-        (IfaceKind::Bridge, _) => Some(format!("[NetDev]\nName={iface}\nKind=bridge\n")),
+        (IfaceKind::Bridge, _, _) => Some(format!("[NetDev]\nName={iface}\nKind=bridge\n")),
+        (IfaceKind::Wireguard, _, Some(wireguard)) => Some(format!(
+            "[NetDev]\nName={iface}\nKind=wireguard\n{}",
+            render_wireguard(wireguard, &keys.key_path(iface))
+        )),
         _ => None,
     }
 }
@@ -456,12 +657,21 @@ impl<R: NetworkReload, D: LinkDelete> Reconciler for NetworkReconciler<R, D> {
                 children.get(iface.as_str()).map_or(&[][..], Vec::as_slice),
             );
             std::fs::write(self.target_dir.join(&file_name), unit)?;
-            state.insert(
-                iface.clone(),
-                json!({ "file": file_name, "dhcp": cfg.dhcp }),
-            );
+            let mut entry = json!({
+                "file": file_name,
+                "dhcp": cfg.dhcp,
+                "kind": kind_name(cfg.kind),
+            });
+            if matches!(cfg.kind, IfaceKind::Wireguard) {
+                // Lazily, on the first pass that sees the tunnel: a key file
+                // that is already there is kept, so this generates exactly
+                // once per interface. Only the public half is published — it
+                // is what the far end needs, and it is public by definition.
+                entry["publicKey"] = json!(self.keys.ensure(iface)?);
+            }
+            state.insert(iface.clone(), entry);
             rendered.insert(file_name);
-            if let Some(netdev) = render_netdev(iface, cfg) {
+            if let Some(netdev) = render_netdev(iface, cfg, &self.keys) {
                 let netdev_name = format!("50-mos-{iface}.netdev");
                 let path = self.target_dir.join(&netdev_name);
                 if std::fs::read_to_string(&path).is_ok_and(|previous| previous != netdev) {
@@ -504,7 +714,7 @@ impl<R: NetworkReload, D: LinkDelete> Reconciler for NetworkReconciler<R, D> {
 mod tests {
     use std::sync::{Arc, Mutex};
 
-    use mosd_settings::{BridgeConfig, StaticConfig, VlanConfig};
+    use mosd_settings::{BridgeConfig, StaticConfig, VlanConfig, WireguardPeer};
 
     use super::*;
 
@@ -546,6 +756,57 @@ mod tests {
         }
     }
 
+    /// A [`LinkDelete`] that records the request and then fails it, for the
+    /// path where a delete cannot be done.
+    struct FailingLink {
+        calls: Arc<Mutex<Vec<String>>>,
+    }
+
+    #[async_trait::async_trait]
+    impl LinkDelete for FailingLink {
+        async fn delete_link(&self, iface: &str) -> anyhow::Result<()> {
+            self.calls.lock().unwrap().push(format!("del {iface}"));
+            Err(anyhow::anyhow!("ip link del dev {iface} failed: no device"))
+        }
+    }
+
+    /// The captured output of a tracing subscriber, so a test can assert what
+    /// this reconciler did and did not write to the journal.
+    #[derive(Clone, Default)]
+    struct LogCapture(Arc<Mutex<Vec<u8>>>);
+
+    impl LogCapture {
+        fn text(&self) -> String {
+            String::from_utf8(self.0.lock().unwrap().clone()).expect("utf8 log")
+        }
+    }
+
+    impl std::io::Write for LogCapture {
+        fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+            self.0.lock().unwrap().extend_from_slice(buf);
+            Ok(buf.len())
+        }
+
+        fn flush(&mut self) -> std::io::Result<()> {
+            Ok(())
+        }
+    }
+
+    impl tracing_subscriber::fmt::MakeWriter<'_> for LogCapture {
+        type Writer = Self;
+
+        fn make_writer(&self) -> Self::Writer {
+            self.clone()
+        }
+    }
+
+    /// A key store under `dir`, which every test in this module is a temporary
+    /// directory: a key drawn anywhere else would be a real private key on the
+    /// machine running the tests.
+    fn keystore_in(dir: &std::path::Path) -> Keystore {
+        Keystore::new(dir.join("secrets/networkd"), None)
+    }
+
     /// A reconciler in `dir` whose reload and device deletions share one call
     /// log, so their order is part of what a test can assert.
     fn reconciler_in(
@@ -563,8 +824,41 @@ mod tests {
             MockLink {
                 calls: Arc::clone(&calls),
             },
+            keystore_in(dir),
         );
         (reconciler, calls)
+    }
+
+    /// A tunnel entry with `peers`, addressed statically the way a WireGuard
+    /// client is.
+    fn wireguard_iface(listen_port: Option<u16>, peers: Vec<WireguardPeer>) -> IfaceSettings {
+        IfaceSettings {
+            kind: IfaceKind::Wireguard,
+            dhcp: false,
+            static_: Some(StaticConfig {
+                address: "10.8.0.2/24".to_string(),
+                gateway: None,
+                dns: Vec::new(),
+            }),
+            wireguard: Some(WireguardConfig { listen_port, peers }),
+            ..IfaceSettings::default()
+        }
+    }
+
+    /// A peer's public key: 32 bytes of a fixed pattern in base64, so the
+    /// golden units are stable and no key is drawn to write a test with.
+    fn peer_key(byte: u8) -> String {
+        use base64::Engine as _;
+        base64::engine::general_purpose::STANDARD.encode([byte; 32])
+    }
+
+    fn peer(byte: u8) -> WireguardPeer {
+        WireguardPeer {
+            public_key: peer_key(byte),
+            allowed_ips: vec!["10.8.0.0/24".to_string()],
+            endpoint: Some("vpn.example.net:51820".to_string()),
+            persistent_keepalive: Some(25),
+        }
     }
 
     fn vlan_iface(parent: &str, id: u16) -> IfaceSettings {
@@ -690,8 +984,8 @@ mod tests {
         assert_eq!(
             state,
             json!({
-                "eth0": { "file": "50-mos-eth0.network", "dhcp": true },
-                "eth1": { "file": "50-mos-eth1.network", "dhcp": false },
+                "eth0": { "file": "50-mos-eth0.network", "dhcp": true, "kind": "physical" },
+                "eth1": { "file": "50-mos-eth1.network", "dhcp": false, "kind": "physical" },
             })
         );
         assert_eq!(*calls.lock().unwrap(), vec!["reload".to_string()]);
@@ -903,7 +1197,177 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn leaves_a_wireguard_entry_inert() {
+    async fn renders_a_wireguard_netdev_naming_its_key_file_and_its_peers() {
+        let dir = tempfile::tempdir().unwrap();
+        let (reconciler, calls) = reconciler_in(dir.path());
+        let settings = settings_with(&[("wg0", wireguard_iface(Some(51820), vec![peer(1)]))]);
+
+        reconciler.apply(&settings).await.unwrap();
+
+        let netdev = std::fs::read_to_string(dir.path().join("50-mos-wg0.netdev")).unwrap();
+        let unit = std::fs::read_to_string(dir.path().join("50-mos-wg0.network")).unwrap();
+        assert_eq!(
+            netdev,
+            format!(
+                "[NetDev]\nName=wg0\nKind=wireguard\n\n\
+                 [WireGuard]\nPrivateKeyFile={}\nListenPort=51820\n\n\
+                 [WireGuardPeer]\nPublicKey={}\nAllowedIPs=10.8.0.0/24\n\
+                 Endpoint=vpn.example.net:51820\nPersistentKeepalive=25\n",
+                dir.path().join("secrets/networkd/wg-wg0.key").display(),
+                peer_key(1),
+            )
+        );
+        // The addressing side of a tunnel is the same `.network` every other
+        // kind gets.
+        assert_eq!(
+            unit,
+            "[Match]\nName=wg0\n\n[Network]\nAddress=10.8.0.2/24\n"
+        );
+        // A device that did not exist before is not deleted on the way in.
+        assert_eq!(*calls.lock().unwrap(), vec!["reload".to_string()]);
+    }
+
+    #[tokio::test]
+    async fn renders_a_tunnel_that_only_initiates_without_a_listen_port() {
+        let dir = tempfile::tempdir().unwrap();
+        let (reconciler, _calls) = reconciler_in(dir.path());
+        let settings = settings_with(&[(
+            "wg0",
+            wireguard_iface(
+                None,
+                vec![WireguardPeer {
+                    public_key: peer_key(2),
+                    allowed_ips: vec!["10.8.0.0/24".to_string(), "fd00::/64".to_string()],
+                    endpoint: None,
+                    persistent_keepalive: None,
+                }],
+            ),
+        )]);
+
+        reconciler.apply(&settings).await.unwrap();
+
+        let netdev = std::fs::read_to_string(dir.path().join("50-mos-wg0.netdev")).unwrap();
+        // Absent optionals render no line at all: an empty `ListenPort=` would
+        // be a port, and networkd picking one is what a client wants.
+        assert!(!netdev.contains("ListenPort"), "{netdev}");
+        assert!(!netdev.contains("Endpoint"), "{netdev}");
+        assert!(!netdev.contains("PersistentKeepalive"), "{netdev}");
+        // Several allowed IPs are one comma-separated directive.
+        assert!(
+            netdev.contains("AllowedIPs=10.8.0.0/24,fd00::/64\n"),
+            "{netdev}"
+        );
+    }
+
+    #[tokio::test]
+    async fn generates_the_key_once_and_publishes_only_its_public_half() {
+        let dir = tempfile::tempdir().unwrap();
+        let (reconciler, _calls) = reconciler_in(dir.path());
+        let settings = settings_with(&[("wg0", wireguard_iface(Some(51820), vec![peer(1)]))]);
+
+        let first = reconciler.apply(&settings).await.unwrap();
+        let second = reconciler.apply(&settings).await.unwrap();
+
+        let key_file = dir.path().join("secrets/networkd/wg-wg0.key");
+        let private_key = std::fs::read_to_string(&key_file).unwrap();
+        let public_key = first["wg0"]["publicKey"].as_str().unwrap().to_string();
+        // Lazy, and exactly once: the second pass finds the key it drew.
+        assert_eq!(first, second);
+        assert_eq!(std::fs::read_to_string(&key_file).unwrap(), private_key);
+        assert_eq!(
+            first,
+            json!({
+                "wg0": {
+                    "file": "50-mos-wg0.network",
+                    "dhcp": false,
+                    "kind": "wireguard",
+                    "publicKey": public_key,
+                }
+            })
+        );
+        // The leak canary: the private key is in exactly one place, and the
+        // tree served over the bus is not it. Nor is any rendered unit -- they
+        // name the key file, they do not carry it.
+        let state = serde_json::to_string(&first).unwrap();
+        assert!(!state.contains(private_key.trim()), "{state}");
+        for entry in std::fs::read_dir(dir.path()).unwrap() {
+            let path = entry.unwrap().path();
+            if path.is_file() {
+                let rendered = std::fs::read_to_string(&path).unwrap();
+                assert!(
+                    !rendered.contains(private_key.trim()),
+                    "{} carries the private key",
+                    path.display()
+                );
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn live_state_names_the_kind_of_every_entry() {
+        let dir = tempfile::tempdir().unwrap();
+        let (reconciler, _calls) = reconciler_in(dir.path());
+        let settings = settings_with(&[
+            ("br0", bridge_iface(&["eth1"])),
+            ("eth0", dhcp_iface()),
+            ("eth0.100", vlan_iface("eth0", 100)),
+            ("eth1", port_iface()),
+        ]);
+
+        let state = reconciler.apply(&settings).await.unwrap();
+
+        // The reader of this field is the pane, which is a later milestone;
+        // the writer is here, beside the public key it sits next to.
+        assert_eq!(state["br0"]["kind"], "bridge");
+        assert_eq!(state["eth0"]["kind"], "physical");
+        assert_eq!(state["eth0.100"]["kind"], "vlan");
+        assert_eq!(state["eth1"]["kind"], "physical");
+        // A physical entry has no public key to publish.
+        assert!(state["eth0"].get("publicKey").is_none());
+    }
+
+    #[tokio::test]
+    async fn recreates_a_tunnel_whose_peers_changed_and_tears_down_a_removed_one() {
+        let dir = tempfile::tempdir().unwrap();
+        let (reconciler, calls) = reconciler_in(dir.path());
+        reconciler
+            .apply(&settings_with(&[(
+                "wg0",
+                wireguard_iface(Some(51820), vec![peer(1)]),
+            )]))
+            .await
+            .unwrap();
+
+        reconciler
+            .apply(&settings_with(&[(
+                "wg0",
+                wireguard_iface(Some(51820), vec![peer(1), peer(2)]),
+            )]))
+            .await
+            .unwrap();
+        reconciler.apply(&Settings::default()).await.unwrap();
+
+        assert!(!dir.path().join("50-mos-wg0.netdev").exists());
+        // A changed netdev is a recreated device, and a swept one is a deleted
+        // device: a tunnel joins the same mechanism the VLAN uses.
+        assert_eq!(
+            *calls.lock().unwrap(),
+            vec![
+                "reload".to_string(),
+                "del wg0".to_string(),
+                "reload".to_string(),
+                "del wg0".to_string(),
+                "reload".to_string(),
+            ]
+        );
+        // The key outlives the entry: re-declaring wg0 keeps the identity the
+        // far end already trusts, and the file is unreachable to everything
+        // but networkd meanwhile.
+        assert!(dir.path().join("secrets/networkd/wg-wg0.key").exists());
+    }
+
+    #[tokio::test]
+    async fn rejects_a_wireguard_entry_that_carries_no_wireguard_block() {
         let dir = tempfile::tempdir().unwrap();
         let (reconciler, calls) = reconciler_in(dir.path());
         let settings = settings_with(&[(
@@ -911,22 +1375,215 @@ mod tests {
             IfaceSettings {
                 kind: IfaceKind::Wireguard,
                 dhcp: false,
-                wireguard: Some(mosd_settings::WireguardConfig::default()),
                 ..IfaceSettings::default()
             },
         )]);
 
-        reconciler.apply(&settings).await.unwrap();
+        let err = reconciler.apply(&settings).await.unwrap_err();
 
-        // The tunnel's unit carries a private-key path this milestone has
-        // nowhere to get, so the entry renders exactly what a v7 entry renders
-        // today: a `.network` matching a device nothing creates yet.
-        assert!(!dir.path().join("50-mos-wg0.netdev").exists());
-        assert_eq!(
-            std::fs::read_to_string(dir.path().join("50-mos-wg0.network")).unwrap(),
-            "[Match]\nName=wg0\n\n[Network]\n"
+        // The rule M4 left to the milestone that renders the tunnel: the block
+        // carries the peers, so an entry without one is a link that could
+        // never carry a packet.
+        assert!(
+            err.to_string().contains("carries no wireguard block"),
+            "{err}"
         );
-        assert_eq!(*calls.lock().unwrap(), vec!["reload".to_string()]);
+        assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 0);
+        assert!(calls.lock().unwrap().is_empty());
+    }
+
+    #[tokio::test]
+    async fn rejects_a_peer_whose_public_key_is_not_a_key() {
+        let dir = tempfile::tempdir().unwrap();
+        let (reconciler, _calls) = reconciler_in(dir.path());
+        let mut broken = peer(1);
+        // A newline here would land verbatim on the PublicKey= line, where it
+        // starts a new networkd directive.
+        broken.public_key = "AAAA\nEndpoint=10.0.0.1:1".to_string();
+        let settings = settings_with(&[("wg0", wireguard_iface(None, vec![broken]))]);
+
+        let err = reconciler.apply(&settings).await.unwrap_err();
+
+        assert!(
+            err.to_string()
+                .contains("peer 0 has a public key that is not a WireGuard key"),
+            "{err}"
+        );
+        // The peer is named by its index, never by the value: a private key
+        // pasted into this field must not come back out in an error.
+        assert!(!err.to_string().contains("AAAA"), "{err}");
+        assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 0);
+    }
+
+    #[tokio::test]
+    async fn rejects_a_peer_allowed_ip_and_endpoint_that_are_not_what_they_claim() {
+        let dir = tempfile::tempdir().unwrap();
+        let (reconciler, _calls) = reconciler_in(dir.path());
+        let mut bad_ip = peer(1);
+        bad_ip.allowed_ips = vec!["10.8.0.0/33".to_string()];
+        let mut bad_endpoint = peer(1);
+        bad_endpoint.endpoint = Some("vpn.example.net:51820\nPublicKey=x".to_string());
+
+        let ip_err = reconciler
+            .apply(&settings_with(&[(
+                "wg0",
+                wireguard_iface(None, vec![bad_ip]),
+            )]))
+            .await
+            .unwrap_err();
+        let endpoint_err = reconciler
+            .apply(&settings_with(&[(
+                "wg0",
+                wireguard_iface(None, vec![bad_endpoint]),
+            )]))
+            .await
+            .unwrap_err();
+
+        assert!(
+            ip_err.to_string().contains("is not an IP address or CIDR"),
+            "{ip_err}"
+        );
+        assert!(
+            endpoint_err.to_string().contains("is not host:port"),
+            "{endpoint_err}"
+        );
+        assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 0);
+    }
+
+    #[test]
+    fn an_endpoint_is_a_host_and_a_port_or_it_is_nothing() {
+        assert!(is_host_port("vpn.example.net:51820"));
+        assert!(is_host_port("10.0.0.1:51820"));
+        assert!(is_host_port("[fd00::1]:51820"));
+        assert!(!is_host_port("vpn.example.net"));
+        assert!(!is_host_port("vpn.example.net:"));
+        assert!(!is_host_port("vpn.example.net:70000"));
+        assert!(!is_host_port(":51820"));
+        assert!(!is_host_port("fd00::1:51820"));
+        assert!(!is_host_port("vpn example.net:51820"));
+    }
+
+    #[tokio::test]
+    async fn rotation_draws_a_new_key_deletes_the_device_and_never_logs_the_key() {
+        let dir = tempfile::tempdir().unwrap();
+        let (reconciler, calls) = reconciler_in(dir.path());
+        let settings = settings_with(&[("wg0", wireguard_iface(Some(51820), vec![peer(1)]))]);
+        let before = reconciler.apply(&settings).await.unwrap();
+        let old_private_key =
+            std::fs::read_to_string(dir.path().join("secrets/networkd/wg-wg0.key")).unwrap();
+        let rotation = KeyRotation::new(
+            keystore_in(dir.path()),
+            MockLink {
+                calls: Arc::clone(&calls),
+            },
+        );
+
+        let public_key = rotation.rotate_key("wg0").await.unwrap();
+        let after = reconciler.apply(&settings).await.unwrap();
+
+        // networkd reads the key when it creates the device, so the device
+        // holding the old key is deleted and the reconcile that follows builds
+        // it back around the new one.
+        assert_eq!(
+            *calls.lock().unwrap(),
+            vec![
+                "reload".to_string(),
+                "del wg0".to_string(),
+                "reload".to_string(),
+            ]
+        );
+        assert_ne!(public_key, before["wg0"]["publicKey"].as_str().unwrap());
+        assert_eq!(after["wg0"]["publicKey"], public_key);
+        // The old private key is gone from disk; there is no history beside it.
+        let new_private_key =
+            std::fs::read_to_string(dir.path().join("secrets/networkd/wg-wg0.key")).unwrap();
+        assert_ne!(new_private_key, old_private_key);
+        assert_eq!(
+            std::fs::read_dir(dir.path().join("secrets/networkd"))
+                .unwrap()
+                .count(),
+            1
+        );
+    }
+
+    #[tokio::test]
+    async fn a_rotation_that_cannot_delete_the_device_is_an_error_that_names_no_key() {
+        let dir = tempfile::tempdir().unwrap();
+        let calls = Arc::new(Mutex::new(Vec::new()));
+        let rotation = KeyRotation::new(
+            keystore_in(dir.path()),
+            FailingLink {
+                calls: Arc::clone(&calls),
+            },
+        );
+
+        let err = rotation.rotate_key("wg0").await.unwrap_err();
+
+        // Unlike the sweep's best-effort delete, this one is fatal: the key on
+        // disk and the key in the kernel have diverged, and the caller would
+        // otherwise be handed a public key the tunnel is not using.
+        assert!(
+            err.to_string().contains("ip link del dev wg0 failed"),
+            "{err}"
+        );
+        let private_key =
+            std::fs::read_to_string(dir.path().join("secrets/networkd/wg-wg0.key")).unwrap();
+        assert!(!format!("{err:#}").contains(private_key.trim()), "{err:#}");
+    }
+
+    #[tokio::test]
+    async fn a_rotation_refuses_a_name_that_would_escape_the_key_directory() {
+        let dir = tempfile::tempdir().unwrap();
+        let rotation = KeyRotation::new(keystore_in(dir.path()), NoDelete);
+
+        let err = rotation.rotate_key("../evil").await.unwrap_err();
+
+        // The name reaches a file path and a command argument here exactly as
+        // it does on the render path, so it is checked here too.
+        assert!(err.to_string().contains("interface"), "{err}");
+        assert!(!dir.path().join("secrets").exists());
+    }
+
+    #[tokio::test]
+    async fn the_only_log_line_a_tunnel_can_produce_carries_no_key() {
+        let dir = tempfile::tempdir().unwrap();
+        let calls = Arc::new(Mutex::new(Vec::new()));
+        // A deleter that fails is the one path in this reconciler that logs at
+        // all, and a tunnel being torn down is when it fires.
+        let reconciler = NetworkReconciler::new(
+            dir.path().to_path_buf(),
+            MockReload {
+                calls: Arc::clone(&calls),
+            },
+            FailingLink {
+                calls: Arc::clone(&calls),
+            },
+            keystore_in(dir.path()),
+        );
+        let settings = settings_with(&[("wg0", wireguard_iface(Some(51820), vec![peer(1)]))]);
+        reconciler.apply(&settings).await.unwrap();
+        let private_key =
+            std::fs::read_to_string(dir.path().join("secrets/networkd/wg-wg0.key")).unwrap();
+
+        let logs = LogCapture::default();
+        let subscriber = tracing_subscriber::fmt()
+            .with_writer(logs.clone())
+            .without_time()
+            .finish();
+        let guard = tracing::subscriber::set_default(subscriber);
+        reconciler.apply(&Settings::default()).await.unwrap();
+        drop(guard);
+
+        let captured = logs.text();
+        assert!(
+            captured.contains("could not delete network device"),
+            "{captured}"
+        );
+        assert!(!captured.contains(private_key.trim()), "{captured}");
+        // The tear-down is reported and the apply still converges, which is
+        // the property that keeps one dead device from failing every other
+        // interface.
+        assert!(captured.contains("wg0"), "{captured}");
     }
 
     #[tokio::test]
