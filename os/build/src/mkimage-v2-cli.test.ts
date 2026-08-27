@@ -21,10 +21,10 @@ import { loadBoard } from './verify-package.ts'
 const g = loadGeometry('cx3576')
 
 describe('the arguments', () => {
-  test('the defaults are _out/cx3576 and board/cx3576', () => {
+  test('the defaults are _out/cx3576 and os/boards/cx3576/bsp', () => {
     expect(parseArgs([], {})).toEqual({
       outDir: join(REPO_ROOT, '_out', 'cx3576'),
-      boardDir: join(REPO_ROOT, 'board', 'cx3576'),
+      boardDir: join(REPO_ROOT, 'os', 'boards', 'cx3576', 'bsp'),
     })
   })
 
@@ -89,7 +89,7 @@ describe('the two families of missing input', () => {
       writeFileSync(join(board, 'out', 'kernel', 'Image'), '')
       writeFileSync(join(board, 'out', 'kernel', 'rk3576-src.dtb'), '')
       await expect(main(['--out-dir', out, '--board-dir', board]))
-        .rejects.toThrow(/build it with 'make -C board\/cx3576 uboot-mos'/)
+        .rejects.toThrow(/build it with 'make -C os\/boards\/cx3576\/bsp uboot-mos'/)
     } finally { e.cleanup() }
   })
 

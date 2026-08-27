@@ -62,7 +62,7 @@ x64)
 esac
 DOCKER_PLATFORM="linux/${MOS_ARCH}"
 LAYOUT_ENV="$REPO_ROOT/os/boards/${MOS_BOARD}/board.env"
-BOARD_DIR=${BOARD_DIR:-"$REPO_ROOT/board/${MOS_BOARD}"}
+BOARD_DIR=${BOARD_DIR:-"$REPO_ROOT/os/boards/${MOS_BOARD}/bsp"}
 OUT_DIR="$REPO_ROOT/_out/${MOS_BOARD}"
 # Installed-size budget. A per-board fact for the same reason
 # BOARD_CMDLINE_ARGS is: it protects a rootfs slot, and the slots differ.
@@ -178,8 +178,8 @@ else
     MODULES_TAR="$BOARD_DIR/out/kernel/modules.tar"
     if [ ! -f "$MODULES_TAR" ]; then
         echo "error: $MODULES_TAR not found." >&2
-        echo "Build it with 'make -C board/$MOS_BOARD kernel' or point BOARD_DIR at" >&2
-        echo "prebuilt BSP artifacts, e.g. BOARD_DIR=/srv/ai/mos/board/cx3576" >&2
+        echo "Build it with 'make -C os/boards/$MOS_BOARD/bsp kernel' or point BOARD_DIR at" >&2
+        echo "prebuilt BSP artifacts, e.g. BOARD_DIR=/srv/ai/mos/os/boards/cx3576/bsp" >&2
         exit 1
     fi
     cp "$MODULES_TAR" "$OUT_DIR/modules.tar"
@@ -298,7 +298,7 @@ fi
 
 # Radio firmware, filtered to what the board declares.
 #
-# NOT the whole BSP drop. board/<b>/rootfs/firmware is the vendor tarball --
+# NOT the whole BSP drop. os/boards/<b>/bsp/rootfs/firmware is the vendor tarball --
 # 32 files for cx3576, most of them other AIC parts (8800dc, 8800dw) and other
 # silicon revisions -- and only the confirmed runtime set may enter a signed
 # root. BOARD_FIRMWARE_FILES in os/boards/<b>/board.env is that set and already
@@ -325,7 +325,7 @@ for fw in ${BOARD_FIRMWARE_FILES}; do
     if [ ! -f "$fw_src" ]; then
         echo "error: $LAYOUT_ENV declares $fw and $fw_src does not exist." >&2
         echo "Firmware is a BSP artefact like modules.tar; point BOARD_DIR at a tree that has it," >&2
-        echo "e.g. BOARD_DIR=/srv/ai/mos/board/$MOS_BOARD" >&2
+        echo "e.g. BOARD_DIR=/srv/ai/mos/os/boards/$MOS_BOARD/bsp" >&2
         exit 1
     fi
     cp "$fw_src" "$FW_STAGE/${fw##*/}"
@@ -372,8 +372,8 @@ mkdir -p "$INIT_STAGE"
 # documents as supported ("BOARD_INIT_DIR may be an empty dir").
 if [ -d "$BOARD_DIR/init" ]; then
     cp -a "$BOARD_DIR/init/." "$INIT_STAGE/"
-elif [ -d "$REPO_ROOT/board/$MOS_BOARD/init" ]; then
-    cp -a "$REPO_ROOT/board/$MOS_BOARD/init/." "$INIT_STAGE/"
+elif [ -d "$REPO_ROOT/os/boards/$MOS_BOARD/bsp/init" ]; then
+    cp -a "$REPO_ROOT/os/boards/$MOS_BOARD/bsp/init/." "$INIT_STAGE/"
 fi
 
 # Read-only root wiring. The overlay tree is copied into the build context with

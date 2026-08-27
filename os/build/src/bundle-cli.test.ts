@@ -293,7 +293,7 @@ describe('the arguments, and the defaults they fall back to', () => {
       board: DEFAULT_BOARD,
       version: '0.0.0-dev',
       outDir: join(REPO_ROOT, '_out', DEFAULT_BOARD),
-      boardDir: join(REPO_ROOT, 'board', DEFAULT_BOARD),
+      boardDir: join(REPO_ROOT, 'os', 'boards', DEFAULT_BOARD, 'bsp'),
     })
   })
 
@@ -315,7 +315,7 @@ describe('the arguments, and the defaults they fall back to', () => {
     const o = parseArgs([], { MOS_BOARD: 'x64' })
     expect(o.board).toBe('x64')
     expect(o.outDir).toBe(join(REPO_ROOT, '_out', 'x64'))
-    expect(o.boardDir).toBe(join(REPO_ROOT, 'board', 'x64'))
+    expect(o.boardDir).toBe(join(REPO_ROOT, 'os', 'boards', 'x64', 'bsp'))
   })
 
   test('--board beats MOS_BOARD, and is not read as a version', () => {

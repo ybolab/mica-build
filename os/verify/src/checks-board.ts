@@ -364,7 +364,7 @@ const SLOT_LISTING_CHECKS: readonly CheckCase[] = [
     // no-initramfs check below is scoped to the U-Boot boards. The Image/dtb
     // byte-compare against the local BSP tree is NOT ported (see the inventory
     // in the M4d report); it is left unclaimed rather than folded in here,
-    // because a check that reads `board/<board>/out/` is a different kind of
+    // because a check that reads `os/boards/<board>/bsp/out/` is a different kind of
     // check from one that reads the image.
     id: 'boot-slot-no-extlinux',
     cardinality: 'many',

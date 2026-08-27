@@ -1,5 +1,5 @@
 # mos-required kernel options — the board-independent runtime baseline, shared
-# by every board (board/common/, referenced as the buildx named context
+# by every board (os/boards/common/, referenced as the buildx named context
 # `mos-common`). Board kernels merge this before olddefconfig and assert every
 # =y line against the final .config. dm-verity no-initramfs boot cannot load
 # modules, so these must be built-in =y, never =m. Board-specific requirements
