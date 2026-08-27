@@ -196,3 +196,4 @@ its record's head fails naming both sides (RFCT-171).
 - [x] [**RFCT-170 PLAN-020 M1: the citation checker arms both orders, counts its demotions, and holds a census**](RFCT-170.md) `P2`
 - [x] [**RFCT-171 PLAN-020 M2: the index checkbox is compared with the record's status head, after the vocabulary is unified**](RFCT-171.md) `P2`
 - [x] [**RFCT-172 PLAN-020 M3: citation scanning widened to docs/task and docs/research, with the dated-record exemption**](RFCT-172.md) `P2`
+- [x] [**RFCT-173 PLAN-020 M4: the self-test fixture repoints to os/pkgs, and the unquoted count becomes a ratchet**](RFCT-173.md) `P2`

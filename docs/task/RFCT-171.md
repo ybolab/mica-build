@@ -2,7 +2,7 @@
 
 - **status**: completed — checkbox-vs-status gate live at 680/680, vocabulary swept tree-wide with no information loss, README description contract decided against with the reasons recorded
 - **priority**: P2
-- **owner**: PLAN-020 M2
+- **owner**: bkd/rank4f60
 - **createdAt**: 2026-08-27
 
 PLAN-020's Context items 2 and 3, both measured before this plan existed:

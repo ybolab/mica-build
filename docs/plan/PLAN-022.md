@@ -38,3 +38,25 @@ wireguard/bridge/vlan on both boards must be measured, not assumed
 
 - **In (M1)**: reading everything; writing only its task file.
 - **Out**: all implementation, pending the gate.
+
+## Amendment 1 — M1 design ratified (user, 2026-08-27)
+
+The design in docs/task/RFCT-200.md (workstream branch) is ratified as
+written, with the three gate questions answered:
+
+1. Peer pre-shared keys stay OUT of schema v7 — every secret field is a
+   standing redaction obligation; PSK support is an additive later change.
+2. The private-key file pattern is ratified: `secrets/networkd/` 0750
+   `root:systemd-network`, key files 0640, atomic writes. systemd import
+   credentials are the fallback ONLY if the M2 on-image check shows the
+   systemd-network user cannot read the file.
+3. Minimal surface confirmed: no STP, no VLAN egress/ingress maps, no
+   per-peer routing metrics in v7 — all reachable later as additive optional
+   fields under api.md section 2.1's rules.
+
+Milestones M2..M8 as proposed in RFCT-200 section 8 (RFCT-201..207;
+RFCT-208/209 reserved for findings) are the plan of record. Additional
+condition: task-file owner fields use the executing issue id
+(`bkd/<issue-id>`), never an agent name — RFCT-200.md's own owner line is
+corrected before its branch merges; the tree-wide `ai-agent` sweep (121
+files) is routed to PLAN-021 M3.

@@ -97,6 +97,20 @@
 # The baseline file is required: a missing baseline is an error, not an empty
 # set of floors.
 #
+# The ratchet. Class 1 -- an unquoted citation that resolves but names the
+# wrong line (RFCT-128's worked example) -- is not mechanisable without a
+# quote, so it is held by policy instead:
+# docs/verify-citations-unquoted-baseline.txt commits a per-document CEILING
+# on the unquoted count, and a document whose count EXCEEDS its row FAILS the
+# run. A document with no row has a ceiling of 0, so new documents start
+# fully quoted. Dated records are exempt exactly as they are from the checks
+# themselves. Update procedure: when a document's unquoted count drops, lower
+# its row -- or delete it at zero -- in the SAME commit, so the ratchet only
+# ever tightens; when a new unquoted citation is genuinely wanted, raising
+# the row in the same commit is the explicit, reviewable override. The file
+# is required, like the census baseline: a missing file is an error, not an
+# empty set of ceilings.
+#
 # What this cannot check, permanently, by this design and by every alternative.
 # A provenance claim -- "measured at <commit>", "as of 2026-08-19" -- is
 # validated against no file at all. This check reads the working tree; nothing
@@ -120,10 +134,12 @@ esac
 [ "$#" -le 1 ] || { echo "usage: bash docs/verify-citations.sh [--advisory]" >&2; exit 2; }
 
 BASELINE=docs/verify-citations-baseline.txt
+UNQUOTED_BASELINE=docs/verify-citations-unquoted-baseline.txt
 
 FAIL_RESOLVE=0
 FAIL_CONTENT=0
 FAIL_CENSUS=0
+FAIL_RATCHET=0
 N_DOCS=0
 N_FOUND=0
 N_INSCOPE=0
@@ -141,6 +157,7 @@ declare -A NOQUOTE_BY_DOC=()
 fail_resolve() { echo "  FAIL $*" >&2; FAIL_RESOLVE=$((FAIL_RESOLVE + 1)); }
 fail_content() { echo "  FAIL $*" >&2; FAIL_CONTENT=$((FAIL_CONTENT + 1)); }
 fail_census()  { echo "  FAIL $*" >&2; FAIL_CENSUS=$((FAIL_CENSUS + 1)); }
+fail_ratchet() { echo "  FAIL $*" >&2; FAIL_RATCHET=$((FAIL_RATCHET + 1)); }
 
 # Every citation token in the document named by $1, one per line, tab
 # separated: citing line, path, first line, last line, the token as written,
@@ -422,6 +439,30 @@ while read -r seg floor _rest; do
     fi
 done < "$BASELINE"
 
+# --- the per-document unquoted counts against their committed ceilings -------
+if [ ! -f "$UNQUOTED_BASELINE" ]; then
+    echo "error: $UNQUOTED_BASELINE not found; the unquoted ratchet has no ceilings to check against" >&2
+    exit 1
+fi
+declare -A UNQ_CEIL=()
+while read -r bdoc ceil _rest; do
+    case "$bdoc" in ''|'#'*) continue ;; esac
+    case "$ceil" in
+        ''|*[!0-9]*)
+            echo "error: $UNQUOTED_BASELINE names $bdoc with ceiling '$ceil', which is not a number" >&2
+            exit 1 ;;
+    esac
+    UNQ_CEIL[$bdoc]=$ceil
+done < "$UNQUOTED_BASELINE"
+for doc in "${DOCS[@]}"; do
+    # a dated record never entered the count, so the ratchet never reads it
+    [ -n "${NOQUOTE_BY_DOC[$doc]+x}" ] || continue
+    ceil=${UNQ_CEIL[$doc]:-0}
+    if [ "${NOQUOTE_BY_DOC[$doc]}" -gt "$ceil" ]; then
+        fail_ratchet "$doc has ${NOQUOTE_BY_DOC[$doc]} unquoted citations, above its ceiling $ceil in $UNQUOTED_BASELINE; quote the new citation, or raise the ceiling in the same commit so the diff shows the decision"
+    fi
+done
+
 # --- summary ---------------------------------------------------------------
 echo "docs/verify-citations.sh: docs/design/*.md, docs/task/*.md and docs/research/*.md excluding *.zh.md, plus docs/architecture.md"
 echo "  documents scanned:      $N_DOCS"
@@ -440,6 +481,7 @@ echo "  skipped, a host and a port rather than a citation: $N_SKIP_HOSTPORT"
 echo "  resolution failures:    $FAIL_RESOLVE"
 echo "  content failures:       $FAIL_CONTENT"
 echo "  census failures:        $FAIL_CENSUS"
+echo "  ratchet failures:       $FAIL_RATCHET"
 echo "  in-scope citations carrying a quote: $N_QUOTED"
 echo "  in-scope citations carrying no quote, resolution checked only: $N_NOQUOTE"
 for doc in "${DOCS[@]}"; do
@@ -451,13 +493,13 @@ echo "  near-miss: no quote armed, but a quoted span sits 1-3 words away: $N_NEA
 echo "  not checked here, and not checkable: a provenance claim such as \"measured at <commit>\" is validated against no file at all, so a green run here does not mean the citations are handled"
 echo "  not distinguished: a skipped-as-outside path that once existed in this tree reads the same as one that never did"
 
-TOTAL_FAIL=$((FAIL_RESOLVE + FAIL_CONTENT + FAIL_CENSUS))
+TOTAL_FAIL=$((FAIL_RESOLVE + FAIL_CONTENT + FAIL_CENSUS + FAIL_RATCHET))
 if [ "$ADVISORY" -eq 1 ]; then
     echo "docs/verify-citations.sh: advisory run, exit 0 whatever the counts above say"
     exit 0
 fi
 if [ "$TOTAL_FAIL" -ne 0 ]; then
-    echo "docs/verify-citations.sh: $TOTAL_FAIL FAILED ($FAIL_RESOLVE resolution, $FAIL_CONTENT content, $FAIL_CENSUS census), $((N_INSCOPE - FAIL_RESOLVE - FAIL_CONTENT)) citations passed" >&2
+    echo "docs/verify-citations.sh: $TOTAL_FAIL FAILED ($FAIL_RESOLVE resolution, $FAIL_CONTENT content, $FAIL_CENSUS census, $FAIL_RATCHET ratchet), $((N_INSCOPE - FAIL_RESOLVE - FAIL_CONTENT)) citations passed" >&2
     exit 1
 fi
 echo "docs/verify-citations.sh: $N_INSCOPE/$N_INSCOPE PASS"
