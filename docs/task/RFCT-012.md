@@ -1,6 +1,6 @@
 # RFCT-012 Adopt the verified Alpine board rootfs and port its hardware facts to os/rootfs
 
-- **status**: implementation complete — pending user hardware acceptance
+- **status**: completed — implementation complete, pending user hardware acceptance
 - **priority**: P1
 - **owner**: ai-agent
 - **createdAt**: 2026-08-18 04:10

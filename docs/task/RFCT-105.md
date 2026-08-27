@@ -1,6 +1,6 @@
 # RFCT-105 An over-the-wire suite for apid: nine phases against one boot, and effects observed on the device
 
-- **status**: done. The suite is merged — `test/apid-api/`, 23 files, 8726
+- **status**: completed — The suite is merged — `test/apid-api/`, 23 files, 8726
   lines, offline selftest `RESULT: PASS (37/37 checks)` under bun 1.4.0 — and
   **the measurement has now been taken**. `make os-apid-api-test` runs against
   a booted x64 image and ends `RESULT: FAIL (231/232 checks)`. The single FAIL

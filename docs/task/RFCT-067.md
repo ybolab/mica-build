@@ -1,6 +1,6 @@
 # RFCT-067 PMA records, the task index, and the final consistency pass
 
-- **status**: complete — seven records written and indexed; the consistency pass found one live inconsistency, which is reported with an owner rather than fixed
+- **status**: completed — seven records written and indexed; the consistency pass found one live inconsistency, which is reported with an owner rather than fixed
 - **priority**: P1
 - **owner**: ai-agent
 - **createdAt**: 2026-08-19 15:27

@@ -1,6 +1,6 @@
 # RFCT-037 Access-model documentation, implementation-status markers, and the dead-control demotion
 
-- **status**: implementation complete — `bash docs/verify-index.sh` (0 FAILED)
+- **status**: completed — implementation complete, `bash docs/verify-index.sh` (0 FAILED)
   and `bash mosd/hack/check.sh` both green; no on-device behaviour is claimed
 - **priority**: P1
 - **owner**: ai-agent

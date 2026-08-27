@@ -1,6 +1,6 @@
 # RFCT-044 Dashboard technology posture and live-value transport
 
-- **status**: proposal complete — the technology decision is the user's, and open
+- **status**: completed — proposal complete, the technology decision is the user's, and open
 - **priority**: P1
 - **owner**: ai-agent
 - **createdAt**: 2026-08-19 10:17

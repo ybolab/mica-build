@@ -1,6 +1,6 @@
 # RFCT-095 The com.mos.ext policy assertions cannot fail, and hoisting them needs a different shape
 
-- **status**: closed by PLAN-011 M5 (RFCT-093), 2026-08-22 — kept, not deleted; see Resolution
+- **status**: completed — closed by PLAN-011 M5 (RFCT-093), 2026-08-22, kept, not deleted; see Resolution
 - **priority**: P2
 - **owner**: (was unclaimed; closed in campaign)
 - **createdAt**: 2026-08-22 18:05

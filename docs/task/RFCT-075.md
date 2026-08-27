@@ -1,6 +1,6 @@
 # RFCT-075 The built-in UI at a reserved prefix, and the escape
 
-- **status**: complete — the built-in UI is reachable unconditionally at `/builtin/`, the whole subtree is reserved structurally, the pane carries a control that performs §5.3's deactivate, and the shadowing guard is fired in both directions as a standing test
+- **status**: completed — the built-in UI is reachable unconditionally at `/builtin/`, the whole subtree is reserved structurally, the pane carries a control that performs §5.3's deactivate, and the shadowing guard is fired in both directions as a standing test
 - **priority**: P1
 - **owner**: ai-agent
 - **createdAt**: 2026-08-20 17:20

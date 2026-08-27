@@ -1,6 +1,6 @@
 # RFCT-085 access.md §6 made real in apid: persistent backoff counters and a bounded audit trail
 
-- **status**: complete — finished across two sessions (56f2848 base + this finishing pass); apid 150/150
+- **status**: completed — finished across two sessions (56f2848 base + this finishing pass); apid 150/150
 - **completedAt**: 2026-08-23 05:22 — implementation done and gates green (`cargo fmt`, `clippy -p apid -D warnings`, `nextest -p apid` 150/150, `docs-verify`); on-device acceptance and campaign close outstanding
 - **priority**: P1
 - **owner**: ai-agent

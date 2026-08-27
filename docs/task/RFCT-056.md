@@ -1,6 +1,6 @@
 # RFCT-056 Documentation for the `apid` rename and the keep-two-processes decision
 
-- **status**: implementation complete — documentation only; no code, no image
+- **status**: completed — implementation complete, documentation only; no code, no image
   content and no verifier was touched, so nothing on a device is claimed
 - **priority**: P1
 - **owner**: ai-agent

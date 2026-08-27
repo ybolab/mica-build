@@ -1,6 +1,6 @@
 # RFCT-090 PLAN-011 M2: writable items and /Actions/*, apid power pane on action items
 
-- **status**: complete — the write path, both action items and apid's power pane landed; HTTP is unchanged and the D3 fork is resolved in writing
+- **status**: completed — the write path, both action items and apid's power pane landed; HTTP is unchanged and the D3 fork is resolved in writing
 - **priority**: P1
 - **owner**: ai-agent (BKD campaign, dispatched by L1 0yncfnol)
 - **createdAt**: 2026-08-21 14:58

@@ -1,6 +1,6 @@
 # RFCT-014 RAUC integration: system.conf, bundle build, dev signing keys
 
-- **status**: implementation complete — pending hardware acceptance
+- **status**: completed — implementation complete, pending hardware acceptance
 - **priority**: P1
 - **owner**: ai-agent
 - **createdAt**: 2026-08-18 03:39

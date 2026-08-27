@@ -1,6 +1,6 @@
 # RFCT-066 Trust, migration and phasing, and what API-first forecloses
 
-- **status**: complete — the signing recommendation, the six phases and eleven foreclosures are written; two contradictions it found were routed rather than fixed, and closed later by RFCT-069
+- **status**: completed — the signing recommendation, the six phases and eleven foreclosures are written; two contradictions it found were routed rather than fixed, and closed later by RFCT-069
 - **priority**: P1
 - **owner**: ai-agent
 - **createdAt**: 2026-08-19 15:27

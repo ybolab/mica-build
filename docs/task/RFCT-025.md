@@ -1,6 +1,6 @@
 # RFCT-025 WiFi station reconciler in mosd (wpa_supplicant, uplink only)
 
-- **status**: implementation complete
+- **status**: completed — implementation complete
 - **priority**: P1
 - **owner**: ai-agent
 - **createdAt**: 2026-08-19 00:23

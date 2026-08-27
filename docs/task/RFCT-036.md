@@ -1,6 +1,6 @@
 # RFCT-036 Image and verifier integration: profile default flip, static-enable removal, seven assertions
 
-- **status**: implementation complete — `bash mosd/hack/check.sh`,
+- **status**: completed — implementation complete, `bash mosd/hack/check.sh`,
   `make os-shadow-test`, both image builds with both profiles and both
   verifiers, `make os-health-test` and `make os-repart-test` all green; no
   on-device sshd behaviour is claimed

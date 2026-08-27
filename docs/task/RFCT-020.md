@@ -1,6 +1,6 @@
 # RFCT-020 Partition layout v2 constants + mkimage v2 mode (cx3576)
 
-- **status**: implementation complete
+- **status**: completed — implementation complete
 - **priority**: P1
 - **owner**: ai-agent
 - **createdAt**: 2026-08-18 03:39
