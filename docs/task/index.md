@@ -187,3 +187,4 @@ Each task is a single line linking to its detail file. All detailed information 
 - [x] [**RFCT-168 PLAN-019 M4: mosd/ moves to os/pkgs/mosd/, every consumer repointed**](RFCT-168.md) `P2`
 - [x] [**RFCT-169 PLAN-019 M5: the tree-wide reference sweep and the campaign closeout**](RFCT-169.md) `P2`
 - [-] [**RFCT-200 PLAN-022 M1: native networking design - VLAN, bridge, WireGuard**](RFCT-200.md) `P1`
+- [x] [**RFCT-201 PLAN-022 M2: quoted-segment path syntax**](RFCT-201.md) `P1`
