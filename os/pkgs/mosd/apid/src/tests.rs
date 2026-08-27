@@ -4178,7 +4178,10 @@ async fn the_password_pane_rejects_a_wrong_current_password() {
         fake.set_paths()
     );
     // The acting session is untouched by a refusal.
-    assert_eq!(get(&router, "/", Some(&cookie)).await.status(), StatusCode::OK);
+    assert_eq!(
+        get(&router, "/", Some(&cookie)).await.status(),
+        StatusCode::OK
+    );
     // And the old password still logs in.
     let _ = login(&router, "hunter2secret").await;
 }
@@ -4289,7 +4292,10 @@ async fn the_api_password_change_succeeds_and_drops_the_other_sessions() {
         .get_settings("access.webAdmin.password_hash")
         .await
         .unwrap();
-    assert!(auth::verify_password(stored.as_str().unwrap(), "newsecret9"));
+    assert!(auth::verify_password(
+        stored.as_str().unwrap(),
+        "newsecret9"
+    ));
 
     assert_eq!(
         get(&router, "/", Some(&acting)).await.status(),

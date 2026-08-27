@@ -1341,9 +1341,7 @@ async fn password_submit(
             .into_response(),
         Err(PasswordChangeError::TooShort) => (
             StatusCode::BAD_REQUEST,
-            password_page(Some(error_box(
-                "Password must be at least 8 characters.",
-            ))),
+            password_page(Some(error_box("Password must be at least 8 characters."))),
         )
             .into_response(),
         Err(PasswordChangeError::Hashing(err)) => {
