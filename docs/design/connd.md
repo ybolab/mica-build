@@ -1,46 +1,38 @@
 # Design: connd — WiFi station and access point on the systemd/mosd base
 
-> Status: describes what PLAN-010 M5 actually shipped (2026-08-19).
-> Supersedes the *mechanism* of PLAN-008 Parts A, C and F; the *model* of
-> PLAN-008 Parts B and D survives. Companion to mosd.md, access.md and
-> provisioning.md.
+> WiFi station and access point on the systemd/mosd base. Companion to
+> mosd.md, access.md and provisioning.md.
 >
 > No `.zh.md` translation exists for this document.
 
-## 1. What changed from PLAN-008, and what did not
+## 1. What ships
 
-PLAN-008 was written for the Talos/COSI base. It proposed **one Go service**
-(`connd`) inside the machined multi-call binary, watching COSI spec resources,
-**supervising wpa_supplicant and hostapd as child processes**, and shipping
-those C daemons in a `connectivity` system extension.
+**There is no `connd` process.** The name is retained for the *concern*, not
+for a process, and nothing in the image is called connd.
 
-None of that mechanism survives the move to systemd. There is no separate
-`connd` process at all.
+The concern is carried by:
 
-| PLAN-008 | What shipped |
-|---|---|
-| `WifiConfig` / `AccessPointConfig` COSI documents | mosd settings subtrees `wifi.client` and `wifi.ap` (schema v3) |
-| a Go `connd` service under machined | two mosd reconcilers, `wifi_client.rs` and `wifi_ap.rs` |
-| connd supervises the daemons as child processes | **systemd owns the unit lifecycles**; mosd only drives units over the system bus |
-| `connectivity` system extension | `wpasupplicant` and `hostapd` in the base rootfs package allowlist |
-| hostapd + a separate DHCP daemon | hostapd + **systemd-networkd's built-in `DHCPServer=yes`**; no dnsmasq |
-| COSI status resources | mosd's live-state tree, served over D-Bus to apid |
+- **two mosd reconcilers**, `wifi_client.rs` and `wifi_ap.rs`, driven from the
+  mosd settings subtrees `wifi.client` and `wifi.ap` (schema v3);
+- **systemd**, which owns the unit lifecycles — mosd never supervises a daemon
+  as a child process, it only drives units over the system bus;
+- **`wpasupplicant` and `hostapd`** from the base rootfs package allowlist,
+  not from a separate system extension;
+- **systemd-networkd's built-in `DHCPServer=yes`** beside hostapd, so the AP
+  needs no dnsmasq and no separate DHCP daemon;
+- **mosd's live-state tree**, served over D-Bus to apid, as the only status
+  surface.
 
-What survives unchanged is the part worth keeping: a declarative list of known
-networks with priorities, an AP with `off` / `provisioning` / `always` modes,
-one owner for the single-radio question, and the rule that no fleet-wide
-credential may exist.
+The model those parts implement: a declarative list of known networks with
+priorities, an AP with `off` / `provisioning` / `always` modes, one owner for
+the single-radio question, and the rule that **no fleet-wide credential may
+exist**.
 
-The name "connd" is retained for the *concern*, not for a process. Nothing in
-the image is called connd.
-
-**CAN and Bluetooth were NOT absorbed.** PLAN-008 Part A put them in the same
-service. They stay with the existing board hwinit units (`hwinit-can`,
-`hwinit-bt`), which are already read-only-root safe and already work. Folding
-them into mosd would have been a rewrite of something that is not broken, for
-no benefit that M5 needed. PLAN-008 Part E's boundary table is amended
-accordingly: `wifi.client` / `wifi.ap` are mosd's; CAN and BT are the board
-layer's.
+**CAN and Bluetooth are not mosd's.** They stay with the board hwinit units
+(`hwinit-can`, `hwinit-bt`), which are already read-only-root safe and already
+work; folding them into mosd would rewrite something that is not broken for no
+benefit. The boundary is therefore: `wifi.client` / `wifi.ap` are mosd's, CAN
+and BT are the board layer's.
 
 ## 2. Settings model
 

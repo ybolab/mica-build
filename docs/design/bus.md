@@ -399,12 +399,14 @@ without it. The switch sits **below** the `SettingsApi` trait and
 gate and the `202 Accepted` are byte-for-byte what they were. The
 `com.mos.mosd1` `Reboot` and `PowerOff` methods are **still served** and are
 neither deprecated nor removed (§1.2); apid simply no longer calls them.
-`docs/design/api.md` §10.3 records the same resolution from the API side.
+`docs/task/RFCT-090.md` §"The D3 fork, resolved in writing" records the
+same resolution from the API side; api.md's §10 register, where it was first
+written, was deleted whole (RFCT-122).
 
 ## 8. Structural redaction is a bus-level contract [implemented]
 
 **[implemented]** The rule `docs/design/api.md` states for `/api/v1/settings/`
-(around `docs/design/api.md:789`) applies to the bus itself: **the value of
+(around `docs/design/api.md:1251`) applies to the bus itself: **the value of
 any key named `password_hash`, `passwordHash`, `psk`, or `hash` — anywhere in
 the tree, at any depth — never appears on the bus.** Not in `GetItems`, not
 in `ItemsChanged`, not through `GetValue`. The redaction is **structural** (a
