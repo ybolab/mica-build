@@ -58,7 +58,7 @@
             }
           },
           "422": {
-            "description": "The new password is shorter than 8 characters (`password_rejected`)",
+            "description": "The new password is shorter than 8 characters (`validation_failed`)",
             "content": {
               "application/json": {
                 "schema": {

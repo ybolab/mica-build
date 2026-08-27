@@ -4300,7 +4300,7 @@ async fn the_api_password_change_succeeds_and_drops_the_other_sessions() {
     assert_eq!(location(&evicted), "/login");
 }
 
-/// A new password under eight characters is refused with `password_rejected`,
+/// A new password under eight characters is refused with `validation_failed`,
 /// the same floor the setup wizard enforces.
 #[tokio::test]
 async fn the_api_password_change_rejects_a_short_new_password() {
@@ -4316,7 +4316,7 @@ async fn the_api_password_change_rejects_a_short_new_password() {
     .await;
     assert_eq!(response.status(), StatusCode::UNPROCESSABLE_ENTITY);
     let error = envelope(response).await;
-    assert_eq!(error["code"], "password_rejected");
+    assert_eq!(error["code"], "validation_failed");
     assert!(fake.set_paths().is_empty());
 }
 

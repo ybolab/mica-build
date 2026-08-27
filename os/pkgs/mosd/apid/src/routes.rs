@@ -1378,7 +1378,7 @@ pub(crate) struct ChangePasswordRequest {
         (status = 400, description = "The body is not JSON, or not this shape (`request_invalid`)", body = ApiError),
         (status = 401, description = "No session cookie, or one that does not verify", body = ApiError),
         (status = 403, description = "The current password does not verify (`wrong_password`)", body = ApiError),
-        (status = 422, description = "The new password is shorter than 8 characters (`password_rejected`)", body = ApiError),
+        (status = 422, description = "The new password is shorter than 8 characters (`validation_failed`)", body = ApiError),
         (status = 500, description = "Hashing failed (`hashing_failed`), or mosd failed to answer (`settings_io`, `mosd_failed`)", body = ApiError),
         (status = 503, description = "The call to mosd could not be made (`mosd_unreachable`); carries `Retry-After`", body = ApiError),
     ),
@@ -1425,7 +1425,7 @@ pub(crate) async fn api_v1_change_password(
         Err(PasswordChangeError::TooShort) => api_response(
             StatusCode::UNPROCESSABLE_ENTITY,
             ApiError::apid(
-                "password_rejected",
+                "validation_failed",
                 "the new password must be at least 8 characters".to_string(),
             ),
         ),
