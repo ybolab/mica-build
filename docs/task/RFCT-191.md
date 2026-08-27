@@ -1,9 +1,10 @@
 # RFCT-191 PLAN-021 M3b: docs ghost sweep, recorded residuals, owner sweep and gate repairs
 
-- **status**: in progress
+- **status**: completed — ghost re-measures, owner sweep (131 files), gates 9+15 red -> 1 reserved red
 - **priority**: P2
 - **owner**: bkd/xvc66w1c
 - **createdAt**: 2026-08-27
+- **completedAt**: 2026-08-27
 - **plan**: PLAN-021 (M3)
 
 PLAN-021 M3 plus the L1 scope additions: the ghost re-measures deferred from
@@ -56,3 +57,28 @@ carrying a specific id or a milestone owner stay. Owner lines only.
 ## 5. Nothing else
 
 No drive-by prose edits outside the named packages.
+
+## Resolution
+
+All five packages landed, one commit each. The eight "no rauc references"
+measurements re-measured: RFCT-084's update-orchestration surface exists
+(`rauc.rs`, `bus.rs`, `main.rs`; `InstallUpdate`/`GetUpdateState`/
+`MarkUpdate`, `mos-health` reporting through `ReportHealth`), so each
+sentence now states the 180-matches result and what remains parked (the
+upload route — `Multipart` still appears nowhere under `os/pkgs/mosd/`).
+All design-doc edits were kept line-count-neutral so no external citation
+anchors shifted. uboot-ab-handshake.md `board/` references repointed with
+a dated note; the README connd bullet describes what ships; the seven
+stale `.zh.md` path-token forms (11 occurrences) follow their English
+counterparts token-only. t5's residuals: dashboard rows re-anchored to
+`fw_env.config.in:49-51`/`:23-47` and reworded to the RFCT-142 rule; 2.7
+and the 5.x scope note record the RFCT-129 uptime path; release-signing
+2.3 records RFCT-088's completion (2026-08-23). Owner sweep: 131 files,
+owner lines only. Gate repairs: 15 index checkboxes synced (704/704
+PASS); all seven ratchet files quoted down to or below their ceilings
+with no ceiling raised; RFCT-140:31 re-derived to `routes.rs:682-697`.
+Citations gate: 9 FAILED -> 1 FAILED, the single survivor being
+RFCT-139.md:70 (`api.md:3444`), reserved for the closeout subtask by
+ruling. Residue noted, not touched (outside the named packages):
+release-signing.md §1.6 still says RFCT-088 is "in flight in parallel
+with this document".
