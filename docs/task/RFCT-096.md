@@ -1,6 +1,6 @@
 # RFCT-096 "0 skipped" does not mean nothing was skipped, and three test files still exploit that
 
-- **status**: in progress
+- **status**: completed
 - **priority**: P1
 - **owner**: ai-agent
 - **createdAt**: 2026-08-22 21:05
@@ -72,3 +72,42 @@ correct package is `dbus-daemon`, verified by T11 on 22.04, 24.04 and 26.04.
 Related: [[RFCT-092]] (a citation nothing checks), [[RFCT-094]] (a warning that
 always fires), [[RFCT-095]] (an assertion that cannot fail). This is the same
 family: a signal that cannot carry the information its reader assumes it does.
+
+## Resolution
+
+All three remaining sites now apply T11's answer for `bus.rs`: a test that
+cannot do its work **fails**, loudly, naming the missing tool — never a silent
+pass and never a skip. CI must provision `dbus-daemon` regardless, because
+`mosd/src/scan.rs` already panics bare without it; failing makes an existing
+contract visible rather than imposing a new demand.
+
+- `mosd/mosd/tests/tree.rs` — `find_dbus_daemon() -> Option<PathBuf>` replaced
+  by a panicking `dbus_daemon() -> PathBuf` (the same function, message
+  included, that `tests/bus.rs` carries, down to the `dbus-bin`-is-not-enough
+  trap this task recorded); `start()` now returns `Result<Harness>` and the
+  five `let Some(harness) = start().await? else { return Ok(()); }` sites are
+  plain `let harness = start().await?;`.
+- `mosd/apid/tests/e2e.rs` — same replacement; the
+  `eprintln!("skipping ..."); return Ok(())` path is gone.
+- `mosd/apid/src/tests/power_bus.rs` — the `?`-propagation spelling:
+  `fake()` returned `Option<Fake>` via `find_dbus_daemon()?`, and a
+  `fake_or_skip!` macro turned `None` into a silent green in four tests. Both
+  are gone: `fake()` returns `Fake` and absence panics through the same named
+  message.
+
+RED demonstrated before green: with the change and **without** installing
+`dbus-daemon` in the container, `cargo nextest run -p mosd --test tree -E
+'test(a_burst_of_changes_coalesces_into_one_items_changed)'` now fails —
+
+    FAIL [ 0.007s] (1/1) mosd::tree a_burst_of_changes_coalesces_into_one_items_changed
+    panicked at mosd/tests/tree.rs:64:9:
+    dbus-daemon was not found at /usr/bin/dbus-daemon or on PATH. This test
+    asserts real bus behaviour over a private session bus and MUST NOT skip ...
+
+— where before the change the same run reported it passed. The full workspace
+gate is green with `dbus-daemon` installed.
+
+**Explicitly not done here**: the open question about a GATE-SIDE check (a
+lint or `check.sh`-level guard that could catch a fourth silently-skipping
+test being added, and having `check.sh` print what it provisioned). That is
+gate hardening and belongs to PLAN-020's scope, not this task.
