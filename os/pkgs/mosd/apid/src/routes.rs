@@ -652,11 +652,15 @@ fn password_hash(access: &Value) -> Option<&str> {
         .and_then(Value::as_str)
 }
 
-/// 502 page for failed mosd calls.
+/// 503 page for failed mosd calls, with `Retry-After` — the same status and
+/// header the API path answers for the same condition (`mosd_unreachable`):
+/// the failure is this server declining to serve, not a malformed answer from
+/// an upstream, so one outage reports one way on both surfaces.
 fn bus_error(err: &anyhow::Error) -> Response {
     tracing::warn!(error = %err, "mosd call failed");
     (
-        StatusCode::BAD_GATEWAY,
+        StatusCode::SERVICE_UNAVAILABLE,
+        [(RETRY_AFTER, HeaderValue::from_static(RETRY_AFTER_SECONDS))],
         page(
             "Error",
             html! { p { "The management daemon is unavailable." } },
@@ -1077,9 +1081,9 @@ struct LoginForm {
 /// It names §6.3's prefix, because it is the first built-in page an operator
 /// with a broken custom UI reaches: the gate bounces every unauthenticated
 /// request here, whatever the bundle is doing. The nav on every authenticated
-/// pane covers the other half. The 502 page §6.3 cites is the wrong surface
-/// for this: it is reached only when a mosd call fails, which a broken bundle
-/// does not cause.
+/// pane covers the other half. The mosd-unavailable page §6.3 cites is the
+/// wrong surface for this: it is reached only when a mosd call fails, which a
+/// broken bundle does not cause.
 async fn login_form() -> Html<String> {
     page(
         "Sign in",

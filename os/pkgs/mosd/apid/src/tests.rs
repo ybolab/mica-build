@@ -1631,7 +1631,7 @@ async fn api_versions_answers_when_the_settings_call_fails() {
     let failed = get(&router, "/", None).await;
     assert_eq!(
         failed.status(),
-        StatusCode::BAD_GATEWAY,
+        StatusCode::SERVICE_UNAVAILABLE,
         "the control: the gate's own bus call must be failing"
     );
 
@@ -2613,7 +2613,7 @@ async fn the_built_in_panes_reachable_beside_an_active_bundle_are_named() {
     }
 
     // The full settings tree and the published `sshd` state, so that every
-    // pane in the expected set really renders: a pane that 502s for want of a
+    // pane in the expected set really renders: a pane that 503s for want of a
     // fixture would drop out of the observed set and read as a routing result.
     let fake = Arc::new(FakeSettings::new(ssh_tree(json!([]))));
     fake.set_state_entry("sshd", sshd_state(false, false, false));
@@ -2649,8 +2649,8 @@ async fn the_built_in_panes_reachable_beside_an_active_bundle_are_named() {
 /// §6.3's stated cost — *"(A) only helps an operator who knows the URL"* —
 /// closed on the built-in surfaces that lead to it, named by identity.
 ///
-/// The 502 page §6.3 cites is not among them: it is reached only when a mosd
-/// call fails, which a broken bundle does not cause.
+/// The mosd-unavailable page §6.3 cites is not among them: it is reached only
+/// when a mosd call fails, which a broken bundle does not cause.
 #[tokio::test]
 async fn the_escape_path_is_named_on_the_surfaces_that_lead_to_it() {
     let bundle = bundle_shadowing_the_prefix();
@@ -3159,7 +3159,7 @@ async fn the_mqtt_pane_says_listen_and_auth_are_not_validated_by_the_switch() {
 #[tokio::test]
 async fn the_mqtt_pane_renders_before_mosd_has_published_any_state() {
     // No `set_state_entry`, so `get_state("mqtt")` fails -- which is the state
-    // of a device that has just booted. The pane has to render anyway: a 502
+    // of a device that has just booted. The pane has to render anyway: a 503
     // here would mean the switch cannot be turned on until something else has
     // already turned it on.
     for enabled in [false, true] {
@@ -4047,6 +4047,23 @@ async fn an_unreachable_mosd_is_503_with_retry_after() {
             assert!(error["message"].is_string());
         }
     }
+}
+
+/// The HTML half of the same condition: a pane whose mosd call fails answers
+/// **503 with `Retry-After`**, exactly like the API path above, so one outage
+/// no longer reports as 502 on one surface and 503 on the other.
+#[tokio::test]
+async fn an_unreachable_mosd_is_503_with_retry_after_on_the_html_panes_too() {
+    let (router, cookie) = failing_app(None).await;
+
+    let response = get(&router, "/hostname", Some(&cookie)).await;
+    assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
+    assert_eq!(
+        header_value(&response, axum::http::header::RETRY_AFTER),
+        "5"
+    );
+    let body = body_string(response).await;
+    assert!(body.contains("The management daemon is unavailable."));
 }
 
 /// A dot-path that does not exist answers **422 `settings_rejected`, not 404**,

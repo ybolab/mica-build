@@ -1525,8 +1525,8 @@ The reason is what the HTML path does today, which is neither. It **flattens**:
 `BusSettings` converts every `zbus::Error` to `anyhow::Error` with `err.into()`
 (`os/pkgs/mosd/apid/src/bus_client.rs:153-162`, and the same shape at `:164-173`, `:175-187`,
 `:197-206`), and every form handler renders one page for the result — `bus_error`,
-HTTP **502**, body *"The management daemon is unavailable."*
-(`os/pkgs/mosd/apid/src/routes.rs:646-656`, message at `os/pkgs/mosd/apid/src/routes.rs:652`). So a settings value mosd
+HTTP **503** with `Retry-After`, body *"The management daemon is unavailable."*
+(`os/pkgs/mosd/apid/src/routes.rs:655-670`, message at `os/pkgs/mosd/apid/src/routes.rs:666`). So a settings value mosd
 rejected as invalid is reported to the operator as the daemon being down:
 `network_submit` returns `bus_error` when the settings write fails
 (`os/pkgs/mosd/apid/src/routes.rs:1525-1531`), and `write_key_list` does the same
@@ -1584,11 +1584,11 @@ guessing. That is the failure mode, and it is why `message` is passed through.
    true: the proxy is dropped after any failed call so the next request
    reconnects (`os/pkgs/mosd/apid/src/bus_client.rs:75-78`, `:116-119`). **This shipped**:
    `mosd_unreachable` answers 503 (`os/pkgs/mosd/apid/src/routes.rs:570-574`) with
-   `Retry-After` attached (`os/pkgs/mosd/apid/src/routes.rs:558-563`). The cost is
-   named and is now real rather than predicted: the HTML path still returns 502
-   for the same underlying failure (`os/pkgs/mosd/apid/src/routes.rs:646-656`), so until §8 changes both, one appliance
-   reports one outage two ways. Changing only the API is the wrong half of that
-   trade and this section says so.
+   `Retry-After` attached (`os/pkgs/mosd/apid/src/routes.rs:558-563`). The cost this
+   paragraph once named — the HTML path answering 502 for the same underlying
+   failure — is closed: `bus_error` answers **503 with `Retry-After` too**
+   (`os/pkgs/mosd/apid/src/routes.rs:655-670`), so one appliance reports one
+   outage one way on both surfaces.
 3. **mosd down entirely, distinguished from "everything is fine".** This is the
    case that must not be got wrong, because apid surviving a dead mosd is an
    existing design property, stated in the crate: *"mosd not being up yet
