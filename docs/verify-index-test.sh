@@ -210,6 +210,38 @@ rm "${FIX}/docs/design/api.md"
 expect_fail "a README entry whose document a rename deleted" 1 \
     "indexes 'api.md' under design/, but docs/design/api.md does not exist"
 
+# --- 6. the checkbox-vs-status assertions (RFCT-171) --------------------------
+# The direction that matters is a row ticked `[x]` over a record that still
+# says `pending`: that presents an open defect as finished work, and a
+# finished-looking row is one nobody opens again (RFCT-144). Each mutation
+# below is verified to have landed, for the same reason duplicate_line checks
+# its own work: a mutation that silently changed nothing makes the case pass
+# for free.
+FIX="${WORK}/checkbox-over-pending"
+new_fixture "${FIX}"
+grep -q '^- \[ \] \[\*\*RFCT-094 ' "${FIX}/docs/task/index.md" || {
+    echo "error: no pending RFCT-094 row in the fixture index to tick" >&2; exit 1; }
+sed -i 's/^- \[ \] \[\*\*RFCT-094 /- [x] [**RFCT-094 /' "${FIX}/docs/task/index.md"
+expect_fail "a row ticked [x] over a record whose status head is pending" 1 \
+    "marks 'RFCT-094.md' '[x]'" \
+    "status head 'pending', which maps to '[ ]'"
+
+FIX="${WORK}/non-canonical-head"
+new_fixture "${FIX}"
+grep -q '^- \*\*status\*\*: pending$' "${FIX}/docs/task/RFCT-094.md" || {
+    echo "error: RFCT-094.md does not carry the bare pending head to mutate" >&2; exit 1; }
+sed -i 's/^- \*\*status\*\*: pending$/- **status**: Pending review/' "${FIX}/docs/task/RFCT-094.md"
+expect_fail "a status line with a non-canonical head" 1 \
+    "docs/task/RFCT-094.md status head 'Pending review' is not one of pending|in progress|completed|closed"
+
+FIX="${WORK}/no-status-line"
+new_fixture "${FIX}"
+grep -q '^- \*\*status\*\*: ' "${FIX}/docs/task/RFCT-094.md" || {
+    echo "error: RFCT-094.md has no status line to delete" >&2; exit 1; }
+sed -i '/^- \*\*status\*\*: /d' "${FIX}/docs/task/RFCT-094.md"
+expect_fail "a record whose status line was deleted outright" 1 \
+    "docs/task/RFCT-094.md has no parseable status line"
+
 echo
 total=$((PASS_N + FAIL_N))
 if [ "${FAIL_N}" -eq 0 ]; then
