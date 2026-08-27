@@ -56,7 +56,10 @@ fail() { FAIL_N=$((FAIL_N + 1)); echo "FAIL: $*"; }
 # The baseline document holds eight citations: three in scope carrying a quote
 # -- two with the quote before the citation, one with the quote directly after
 # it -- one in scope carrying none, two host-and-port pairs, one upstream
-# tree, and one bare filename. Every case below mutates that.
+# tree, and one bare filename. Every case below mutates that. The
+# unquoted-ratchet baseline pins the fixture document at a ceiling of 4 rather
+# than its count of 1, because the chained (case 17) and near-miss (case 18)
+# mutations push the count to 3 and 4 and must stay green.
 new_fixture() {
     local dir="$1" n
     rm -rf "${dir}"
@@ -112,6 +115,12 @@ MD
     cat >"${dir}/docs/verify-citations-baseline.txt" <<'TXT'
 # Fixture census floors: every in-scope citation here starts with os/.
 os 4
+TXT
+
+    cat >"${dir}/docs/verify-citations-unquoted-baseline.txt" <<'TXT'
+# Fixture unquoted ceilings: fixture.md carries one unquoted citation; see
+# the fixture comment for why the ceiling sits at 4.
+docs/design/fixture.md 4
 TXT
 }
 
@@ -229,6 +238,7 @@ expect_report "the report counts what it skipped, by reason, and what it never e
     "skipped, bare filename with no directory to resolve against: 1" \
     "skipped, a host and a port rather than a citation: 2" \
     "census failures:        0" \
+    "ratchet failures:       0" \
     "in-scope citations carrying a quote: 3" \
     "in-scope citations carrying no quote, resolution checked only: 1" \
     "no quote, by document: docs/architecture.md 0" \
@@ -540,6 +550,47 @@ else
     fail "a marker outside the dated list: expected exit 0 and a census naming docs/design/fixture.md, got exit ${RC}"
     sed 's/^/    | /' "${WORK}/out"
 fi
+
+# --- 24. ratchet: a document above its unquoted ceiling -----------------------
+# Class 1 held by policy. The mutation lowers the fixture's committed ceiling
+# under the document's one unquoted citation -- the same diff shape as a new
+# unquoted citation landing in a document already at its ceiling.
+FIX="${WORK}/ratchet-exceeded"
+new_fixture "${FIX}"
+cat >"${FIX}/docs/verify-citations-unquoted-baseline.txt" <<'TXT'
+# The fixture document is pinned below its real count of 1.
+docs/design/fixture.md 0
+TXT
+expect_fail "a document exceeding its unquoted ceiling" 1 \
+    'docs/design/fixture.md has 1 unquoted citations, above its ceiling 0 in docs/verify-citations-unquoted-baseline.txt; quote the new citation, or raise the ceiling in the same commit'
+
+# --- 25. ratchet: a new document with no baseline row starts at 0 -------------
+# The citation resolves, so no other check can catch it; only the default
+# ceiling of 0 makes a new document start fully quoted.
+FIX="${WORK}/ratchet-new-doc"
+new_fixture "${FIX}"
+mkdir -p "${FIX}/docs/task"
+cat >"${FIX}/docs/task/RFCT-999.md" <<'MD'
+# RFCT-999 Fixture task record
+
+The trait is declared at `os/pkgs/mosd/apid/src/settings_api.rs:5`, and this
+record quotes nothing of it.
+MD
+expect_fail "a new document with no baseline row gets ceiling 0" 1 \
+    'docs/task/RFCT-999.md has 1 unquoted citations, above its ceiling 0 in docs/verify-citations-unquoted-baseline.txt'
+
+# --- 26. ratchet: a decrease passes under an unchanged ceiling ----------------
+# The ratchet is one-directional. The unquoted citation is removed (the same
+# mutation as case 20) and the census floor is lowered with it, the sanctioned
+# same-commit edit; the ratchet row stays at 4 and the run stays green.
+FIX="${WORK}/ratchet-decrease"
+new_fixture "${FIX}"
+must_replace "${FIX}" docs/design/fixture.md 'declared at `os/pkgs/mosd/apid/src/settings_api.rs:5`' 'declared in the fixture source'
+cat >"${FIX}/docs/verify-citations-baseline.txt" <<'TXT'
+# The floor drops with the removed citation, the sanctioned same-commit edit.
+os 3
+TXT
+expect_all_pass "an unquoted count dropping below its ceiling" "3/3"
 
 echo
 total=$((PASS_N + FAIL_N))
