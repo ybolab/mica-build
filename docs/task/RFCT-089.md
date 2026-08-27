@@ -1,6 +1,6 @@
 # RFCT-089 PLAN-011 M1: bus contract design doc and the read-only com.mos.Item1 tree facade
 
-- **status**: complete — the bus contract and the read-only `com.mos.Item1` façade both landed; M2 owns the write path
+- **status**: completed — the bus contract and the read-only `com.mos.Item1` façade both landed; M2 owns the write path
 - **priority**: P1
 - **owner**: ai-agent (BKD campaign, dispatched by L1 0yncfnol)
 - **createdAt**: 2026-08-21 14:58

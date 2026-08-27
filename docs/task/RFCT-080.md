@@ -1,6 +1,6 @@
 # RFCT-080 Close the duplicate-row hole in the index verifier, and sweep the `sort -u` shape
 
-- **status**: complete — three duplicate assertions added, each proved to fail with its own message; nine `sort -u` sites judged, none changed
+- **status**: completed — three duplicate assertions added, each proved to fail with its own message; nine `sort -u` sites judged, none changed
 - **priority**: P1
 - **owner**: ai-agent
 - **createdAt**: 2026-08-20 15:20

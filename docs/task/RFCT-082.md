@@ -1,6 +1,6 @@
 # RFCT-082 Reach the unreachable rollback path, and stop the stale documentation lying quietly
 
-- **status**: complete — the tolerant load is product code with five tests; four documents record decisions; seven translations carry staleness banners
+- **status**: completed — the tolerant load is product code with five tests; four documents record decisions; seven translations carry staleness banners
 - **priority**: P0
 - **owner**: ai-agent
 - **createdAt**: 2026-08-21 04:40

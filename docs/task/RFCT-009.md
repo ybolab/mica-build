@@ -1,6 +1,6 @@
 # RFCT-009 mosd skeleton (Rust management plane, PLAN-010 M2)
 
-- **status**: implementation complete — pending user hardware acceptance
+- **status**: completed — implementation complete, pending user hardware acceptance
 - **priority**: P1
 - **owner**: ai-agent
 - **createdAt**: 2026-08-18 01:16

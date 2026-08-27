@@ -1,6 +1,6 @@
 # RFCT-063 Current API/UI surface inventory and the api.md skeleton
 
-- **status**: complete — section 1 is measured and settled; sections 2-9 were left as stubs for sibling tasks
+- **status**: completed — section 1 is measured and settled; sections 2-9 were left as stubs for sibling tasks
 - **priority**: P1
 - **owner**: ai-agent
 - **createdAt**: 2026-08-19 15:27

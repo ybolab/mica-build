@@ -1,6 +1,6 @@
 # RFCT-042 mos web/UI current-state inventory, measured
 
-- **status**: research complete — inventory, no code
+- **status**: completed — research complete, inventory, no code
 - **priority**: P1
 - **owner**: ai-agent
 - **createdAt**: 2026-08-19 10:17

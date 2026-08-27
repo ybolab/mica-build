@@ -1,6 +1,6 @@
 # RFCT-093 PLAN-011 M5: extension enablement — writable unit directory, the com.mos.ext namespace, and the bus scan
 
-- **status**: done
+- **status**: completed
 - **priority**: P1
 - **owner**: ai-agent (BKD campaign 2, dispatched by L1 0yncfnol)
 - **createdAt**: 2026-08-22 09:40

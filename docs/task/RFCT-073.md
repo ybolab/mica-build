@@ -1,6 +1,6 @@
 # RFCT-073 Assert the custom-UI location as an on-image fact, and negative-test every assertion
 
-- **status**: complete — six assertions added to the v2 verifier, each proved to fail against a mutated input, with its own message
+- **status**: completed — six assertions added to the v2 verifier, each proved to fail against a mutated input, with its own message
 - **priority**: P1
 - **owner**: ai-agent
 - **createdAt**: 2026-08-20 14:27

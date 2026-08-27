@@ -1,6 +1,6 @@
 # RFCT-038 mos-shadow-reconcile: newline-safe append
 
-- **status**: implementation complete — `make os-shadow-test` (220 passed,
+- **status**: completed — implementation complete, `make os-shadow-test` (220 passed,
   0 failed) and `bash mosd/hack/check.sh` both green; no on-device behaviour
   is claimed
 - **priority**: P2

@@ -1,6 +1,6 @@
 # RFCT-144 PLAN-015 M5: the task index and the task files disagree about what is finished
 
-- **status**: done
+- **status**: completed
 - **priority**: P2
 - **owner**: PLAN-015 M5
 - **createdAt**: 2026-08-26

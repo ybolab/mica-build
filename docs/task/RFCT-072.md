@@ -1,6 +1,6 @@
 # RFCT-072 Asset path resolution and content classification: traversal, MIME allowlist, caching posture
 
-- **status**: complete — `docs/design/api.md` §4.3 and §4.4 implemented as pure functions with a per-guard test suite; three findings reported rather than designed around
+- **status**: completed — `docs/design/api.md` §4.3 and §4.4 implemented as pure functions with a per-guard test suite; three findings reported rather than designed around
 - **priority**: P1
 - **owner**: ai-agent
 - **createdAt**: 2026-08-20 14:27

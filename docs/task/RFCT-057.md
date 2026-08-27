@@ -1,6 +1,6 @@
 # RFCT-057 Closing audit of the `apid` rename: completeness, consistency, assertion accounting, index closure
 
-- **status**: implementation complete — all mandatory project checks green,
+- **status**: completed — implementation complete, all mandatory project checks green,
   including `make docs-verify`, which passes for the first time in this campaign
 - **priority**: P1
 - **owner**: ai-agent

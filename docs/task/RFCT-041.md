@@ -1,6 +1,6 @@
 # RFCT-041 Venus OS access and firmware-update UX study
 
-- **status**: research complete — reference document, no code
+- **status**: completed — research complete, reference document, no code
 - **priority**: P2
 - **owner**: ai-agent
 - **createdAt**: 2026-08-19 10:17

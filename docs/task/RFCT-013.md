@@ -1,6 +1,6 @@
 # RFCT-013 squashfs+dm-verity rootfs pack + RO root wiring (cx3576 layout v2)
 
-- **status**: implementation complete — pending user hardware acceptance
+- **status**: completed — implementation complete, pending user hardware acceptance
 - **priority**: P1
 - **owner**: ai-agent
 - **createdAt**: 2026-08-18 03:39
