@@ -149,6 +149,7 @@ pub fn app(state: AppState) -> Router {
         .route("/setup", get(setup_form).post(setup_submit))
         .route("/login", get(login_form).post(login_submit))
         .route("/logout", post(logout))
+        .route("/password", get(password_form).post(password_submit))
         .route("/network", get(network_form).post(network_submit))
         .route("/hostname", get(hostname_form).post(hostname_submit))
         .route("/power", get(power_form))
@@ -213,6 +214,11 @@ const API: &str = "/api";
 const VERSIONS_PATH: &str = "/versions";
 const V1_META_PATH: &str = "/v1/meta";
 
+/// §2.3's actions namespace, with its one shipped verb. A password change is
+/// an operation and not a resource — the namespace is named `actions`
+/// precisely so no reader expects a `GET` to work there.
+const V1_CHANGE_PASSWORD_PATH: &str = "/v1/actions/change-password";
+
 /// §2.2's two read-only roots, in the three spellings they need.
 ///
 /// The prefix is the shared one and the only one the gate predicate tests. The
@@ -264,6 +270,7 @@ fn api_router() -> Router<AppState> {
         .route(V1_META_PATH, get(api_v1_meta))
         .route(V1_SETTINGS_ROUTE, get(api_v1_settings))
         .route(V1_STATE_ROUTE, get(api_v1_state))
+        .route(V1_CHANGE_PASSWORD_PATH, post(api_v1_change_password))
         .fallback(api_not_found)
 }
 
@@ -276,7 +283,10 @@ fn api_router() -> Router<AppState> {
 /// logic unchanged.
 fn is_declared_api_route(path: &str) -> bool {
     path.strip_prefix(API).is_some_and(|leaf| {
-        leaf == VERSIONS_PATH || leaf == V1_META_PATH || resource_dot_path(leaf).is_some()
+        leaf == VERSIONS_PATH
+            || leaf == V1_META_PATH
+            || leaf == V1_CHANGE_PASSWORD_PATH
+            || resource_dot_path(leaf).is_some()
     })
 }
 
@@ -743,6 +753,7 @@ fn shell(title: &str, nav: bool, body: Markup) -> Html<String> {
                         a href="/" { "Status" }
                         a href="/network" { "Network" }
                         a href="/hostname" { "Hostname" }
+                        a href="/password" { "Password" }
                         a href="/power" { "Power" }
                         a href="/ssh" { "SSH" }
                         a href="/containers" { "Containers" }
@@ -1170,6 +1181,259 @@ async fn logout(
         Redirect::to("/login"),
     )
         .into_response()
+}
+
+// Password change
+
+/// The change-password form fields.
+#[derive(serde::Deserialize)]
+struct PasswordForm {
+    current: String,
+    password: String,
+    confirm: String,
+}
+
+/// Why one password-change attempt failed, before either surface words it.
+///
+/// One outcome set for both surfaces: the HTML pane and the API route differ
+/// in how they answer, not in what can happen.
+enum PasswordChangeError {
+    /// The current password did not verify; nothing was written.
+    WrongCurrent,
+    /// The new password is under the same floor the setup wizard enforces;
+    /// nothing was written.
+    TooShort,
+    /// Hashing the new password failed.
+    Hashing(anyhow::Error),
+    /// A mosd call failed.
+    Bus(anyhow::Error),
+}
+
+/// Verify the current admin password, write the new hash through the settings
+/// tree, and drop every session except the acting one.
+///
+/// The current password is demanded even though the caller holds a session: a
+/// session is a browser artifact that outlives the moment the password was
+/// typed, and an unattended browser must not be enough to rotate the sole
+/// credential on the management surface.
+///
+/// The invalidation and the write belong in one step. The gate's
+/// short-circuit comment says an unset-password operation "has to clear the
+/// session table in the same step", and replacing the hash is the same
+/// reasoning: a session minted under the old credential proves possession of
+/// nothing any more. The acting session is the one exception — it just proved
+/// possession of the current password — or the operator would be signed out
+/// by their own success.
+async fn change_password(
+    state: &AppState,
+    source: &str,
+    acting_session: Option<&str>,
+    current: &str,
+    new: &str,
+) -> Result<(), PasswordChangeError> {
+    if new.len() < 8 {
+        return Err(PasswordChangeError::TooShort);
+    }
+    let access = match state.api.get_settings("access").await {
+        Ok(value) => value,
+        Err(err) => return Err(PasswordChangeError::Bus(err)),
+    };
+    let Some(hash) = password_hash(&access) else {
+        // Unreachable through either surface: both sit behind a verified
+        // session, and no session can coexist with an unset password (see
+        // `gate`). Refusing is still better than writing a first hash from a
+        // route whose contract is rotation.
+        return Err(PasswordChangeError::Bus(anyhow::anyhow!(
+            "no admin password is configured"
+        )));
+    };
+    // Off the async workers for the same reason login verification is:
+    // argon2id costs real CPU per call, by design. A panic in the closure
+    // surfaces as a failed verification: closed, never open.
+    let hash = hash.to_string();
+    let password = current.to_string();
+    let verified = tokio::task::spawn_blocking(move || auth::verify_password(&hash, &password))
+        .await
+        .unwrap_or_else(|err| {
+            tracing::error!(error = %err, "password verification task failed");
+            false
+        });
+    if !verified {
+        state.audit.record("password", "wrong-password", source);
+        return Err(PasswordChangeError::WrongCurrent);
+    }
+    let password = new.to_string();
+    let hash = tokio::task::spawn_blocking(move || auth::hash_password(&password))
+        .await
+        .unwrap_or_else(|err| Err(anyhow::anyhow!("password hashing task: {err}")))
+        .map_err(PasswordChangeError::Hashing)?;
+    let value = serde_json::json!({ "password_hash": hash });
+    if let Err(err) = state.api.set_settings("access.webAdmin", &value).await {
+        return Err(PasswordChangeError::Bus(err));
+    }
+    // The write happened; every other session goes with the old credential.
+    // No cookie on the request keeps nothing, which errs closed.
+    state
+        .sessions
+        .remove_all_except(acting_session.unwrap_or(""));
+    state.audit.record("password", "changed", source);
+    Ok(())
+}
+
+fn password_page(banner: Option<Markup>) -> Html<String> {
+    pane(
+        "Password",
+        html! {
+            @if let Some(banner) = banner { (banner) }
+            p { "Changing the admin password signs every other session out. The session making the change stays signed in." }
+            form method="post" action="/password" {
+                fieldset {
+                    legend { "Change the admin password" }
+                    p { label { "Current password" } " "
+                        input type="password" name="current" required; }
+                    p { label { "New password (at least 8 characters)" } " "
+                        input type="password" name="password" required minlength="8"; }
+                    p { label { "Confirm new password" } " "
+                        input type="password" name="confirm" required minlength="8"; }
+                }
+                p { button type="submit" { "Change password" } }
+            }
+        },
+    )
+}
+
+async fn password_form(Query(query): Query<SavedQuery>) -> Html<String> {
+    password_page(query.saved.is_some().then(saved_banner))
+}
+
+async fn password_submit(
+    State(state): State<AppState>,
+    Source(source): Source,
+    headers: HeaderMap,
+    Form(form): Form<PasswordForm>,
+) -> Response {
+    if form.password != form.confirm {
+        return (
+            StatusCode::BAD_REQUEST,
+            password_page(Some(error_box("Passwords do not match."))),
+        )
+            .into_response();
+    }
+    let acting = session::cookie_from_headers(&headers);
+    match change_password(
+        &state,
+        &source,
+        acting.as_deref(),
+        &form.current,
+        &form.password,
+    )
+    .await
+    {
+        Ok(()) => Redirect::to("/password?saved=1").into_response(),
+        Err(PasswordChangeError::WrongCurrent) => (
+            StatusCode::UNAUTHORIZED,
+            password_page(Some(error_box("Wrong current password."))),
+        )
+            .into_response(),
+        Err(PasswordChangeError::TooShort) => (
+            StatusCode::BAD_REQUEST,
+            password_page(Some(error_box(
+                "Password must be at least 8 characters.",
+            ))),
+        )
+            .into_response(),
+        Err(PasswordChangeError::Hashing(err)) => {
+            tracing::error!(error = %err, "password hashing failed");
+            StatusCode::INTERNAL_SERVER_ERROR.into_response()
+        }
+        Err(PasswordChangeError::Bus(err)) => bus_error(&err),
+    }
+}
+
+/// `POST /api/v1/actions/change-password` request body.
+#[derive(serde::Deserialize, utoipa::ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct ChangePasswordRequest {
+    /// The password being replaced, verified before anything is written.
+    current_password: String,
+    /// The replacement; at least 8 characters.
+    new_password: String,
+}
+
+/// The same operation as `POST /password`, answering §2.4's envelope instead
+/// of HTML. 204 on success: the outcome is the state change, and there is
+/// nothing to say about it that the status does not.
+#[utoipa::path(
+    post,
+    path = V1_CHANGE_PASSWORD_PATH,
+    context_path = API,
+    tag = "actions",
+    request_body = ChangePasswordRequest,
+    responses(
+        (status = 204, description = "The password was changed; every session except the calling one was dropped"),
+        (status = 400, description = "The body is not JSON, or not this shape (`request_invalid`)", body = ApiError),
+        (status = 401, description = "No session cookie, or one that does not verify", body = ApiError),
+        (status = 403, description = "The current password does not verify (`wrong_password`)", body = ApiError),
+        (status = 422, description = "The new password is shorter than 8 characters (`password_rejected`)", body = ApiError),
+        (status = 500, description = "Hashing failed (`hashing_failed`), or mosd failed to answer (`settings_io`, `mosd_failed`)", body = ApiError),
+        (status = 503, description = "The call to mosd could not be made (`mosd_unreachable`); carries `Retry-After`", body = ApiError),
+    ),
+)]
+pub(crate) async fn api_v1_change_password(
+    _session: ApiSession,
+    State(state): State<AppState>,
+    Source(source): Source,
+    headers: HeaderMap,
+    body: Result<Json<ChangePasswordRequest>, axum::extract::rejection::JsonRejection>,
+) -> Response {
+    let Json(request) = match body {
+        Ok(body) => body,
+        // §2.4's envelope rather than axum's plain-text rejection.
+        Err(rejection) => {
+            return api_response(
+                StatusCode::BAD_REQUEST,
+                ApiError::apid("request_invalid", rejection.body_text()),
+            );
+        }
+    };
+    let acting = session::cookie_from_headers(&headers);
+    match change_password(
+        &state,
+        &source,
+        acting.as_deref(),
+        &request.current_password,
+        &request.new_password,
+    )
+    .await
+    {
+        Ok(()) => (
+            StatusCode::NO_CONTENT,
+            [(CACHE_CONTROL, CacheClass::NoStore.header_value())],
+        )
+            .into_response(),
+        Err(PasswordChangeError::WrongCurrent) => api_response(
+            StatusCode::FORBIDDEN,
+            ApiError::apid(
+                "wrong_password",
+                "the current password does not verify".to_string(),
+            ),
+        ),
+        Err(PasswordChangeError::TooShort) => api_response(
+            StatusCode::UNPROCESSABLE_ENTITY,
+            ApiError::apid(
+                "password_rejected",
+                "the new password must be at least 8 characters".to_string(),
+            ),
+        ),
+        Err(PasswordChangeError::Hashing(err)) => {
+            tracing::error!(error = %err, "password hashing failed");
+            api_response(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                ApiError::apid("hashing_failed", format!("{err:#}")),
+            )
+        }
+        Err(PasswordChangeError::Bus(err)) => bus_api_error(&err, "access.webAdmin"),
+    }
 }
 
 // Status pane

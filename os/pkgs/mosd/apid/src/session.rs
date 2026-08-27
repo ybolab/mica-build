@@ -87,6 +87,24 @@ impl SessionStore {
         }
     }
 
+    /// Drop every session except the one named by `value`.
+    ///
+    /// The password-change path calls this: every other session was minted
+    /// under the old credential, and the one performing the change is the one
+    /// proof of possession the new credential has. A `value` that does not
+    /// verify keeps nothing, which errs closed.
+    pub fn remove_all_except(&self, value: &str) {
+        let keep = self.verify_signature(value);
+        let mut sessions = self
+            .sessions
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        match keep {
+            Some(id) => sessions.retain(|key, _| *key == id),
+            None => sessions.clear(),
+        }
+    }
+
     /// Drop the session named by `value`, if any.
     pub fn remove(&self, value: &str) {
         if let Some(id) = self.verify_signature(value) {
@@ -153,6 +171,20 @@ mod tests {
 
         store.remove(&value);
         assert!(!store.verify(&value));
+    }
+
+    #[test]
+    fn remove_all_except_keeps_only_the_named_session() {
+        let store = SessionStore::new([1u8; 32]);
+        let kept = store.create();
+        let dropped = store.create();
+        store.remove_all_except(&kept);
+        assert!(store.verify(&kept));
+        assert!(!store.verify(&dropped));
+
+        // A value that does not verify keeps nothing.
+        store.remove_all_except("not-a-cookie");
+        assert!(!store.verify(&kept));
     }
 
     #[test]

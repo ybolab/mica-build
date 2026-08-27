@@ -720,8 +720,12 @@ async fn stored_key_list(fake: &FakeSettings) -> serde_json::Value {
 /// that is missing here. Without that, adding a route and forgetting this list
 /// leaves exactly one unauthenticated write path and every existing test still
 /// green -- the list would describe the routes someone remembered.
-const ALL_MUTATIONS: [(&str, &str); 10] = [
+const ALL_MUTATIONS: [(&str, &str); 11] = [
     ("/ssh/enable", "enabled=on"),
+    (
+        "/password",
+        "current=hunter2secret&password=newsecret9&confirm=newsecret9",
+    ),
     (
         "/ssh/password",
         "confirm=set-transient-password&password=hunter2secret",
@@ -4111,4 +4115,234 @@ fn the_resource_path_spellings_agree() {
         assert_eq!(route, format!("{prefix}{{*path}}"));
         assert_eq!(doc, format!("{prefix}{{path}}"));
     }
+}
+
+// RFCT-134: the admin password can be changed after setup, on both surfaces.
+
+/// POST a JSON body, the shape the API's one write route takes.
+async fn post_json(
+    router: &Router,
+    path: &str,
+    body: &str,
+    cookie: Option<&str>,
+) -> Response<axum::body::Body> {
+    let mut builder = Request::builder()
+        .method("POST")
+        .uri(path)
+        .header(CONTENT_TYPE, "application/json");
+    if let Some(cookie) = cookie {
+        builder = builder.header(COOKIE, format!("apid_session={cookie}"));
+    }
+    send(router, builder.body(Body::from(body.to_string())).unwrap()).await
+}
+
+/// A wrong current password writes nothing and the old credential stands.
+///
+/// The current password is demanded even though the caller holds a session: a
+/// session is a browser artifact that outlives the moment of typing, and an
+/// unattended browser must not be enough to rotate the one credential on the
+/// management surface.
+#[tokio::test]
+async fn the_password_pane_rejects_a_wrong_current_password() {
+    let (router, fake) = test_app(configured_tree("hunter2secret"));
+    let cookie = login(&router, "hunter2secret").await;
+
+    let response = post_form(
+        &router,
+        "/password",
+        "current=not-the-password&password=newsecret9&confirm=newsecret9",
+        Some(&cookie),
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+    assert!(
+        fake.set_paths().is_empty(),
+        "a refused change must write nothing, got {:?}",
+        fake.set_paths()
+    );
+    // The acting session is untouched by a refusal.
+    assert_eq!(get(&router, "/", Some(&cookie)).await.status(), StatusCode::OK);
+    // And the old password still logs in.
+    let _ = login(&router, "hunter2secret").await;
+}
+
+/// The decided semantics, end to end: the new hash lands in the settings
+/// tree, every other session is invalidated, and the acting session survives.
+#[tokio::test]
+async fn the_password_pane_changes_the_password_and_keeps_the_acting_session() {
+    let (router, fake) = test_app(configured_tree("hunter2secret"));
+    let other = login(&router, "hunter2secret").await;
+    let acting = login(&router, "hunter2secret").await;
+
+    let response = post_form(
+        &router,
+        "/password",
+        "current=hunter2secret&password=newsecret9&confirm=newsecret9",
+        Some(&acting),
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::SEE_OTHER);
+    assert_eq!(location(&response), "/password?saved=1");
+    assert_eq!(fake.set_paths(), vec!["access.webAdmin"]);
+
+    // The stored hash is a new one and verifies the new password.
+    let stored = fake
+        .get_settings("access.webAdmin.password_hash")
+        .await
+        .unwrap();
+    let stored = stored.as_str().unwrap();
+    assert!(stored.starts_with("$argon2id$"));
+    assert!(auth::verify_password(stored, "newsecret9"));
+
+    // The acting session survives its own change; the other session is gone.
+    assert_eq!(
+        get(&router, "/", Some(&acting)).await.status(),
+        StatusCode::OK
+    );
+    let evicted = get(&router, "/", Some(&other)).await;
+    assert_eq!(evicted.status(), StatusCode::SEE_OTHER);
+    assert_eq!(location(&evicted), "/login");
+
+    // The new password logs in (first, so the success resets the login
+    // guard), and the old one no longer does.
+    let _ = login(&router, "newsecret9").await;
+    let old = post_form(&router, "/login", "password=hunter2secret", None).await;
+    assert_eq!(old.status(), StatusCode::UNAUTHORIZED);
+}
+
+/// A mismatched confirmation is refused before the current password is even
+/// looked at, in the same shape as the setup wizard's refusal.
+#[tokio::test]
+async fn the_password_pane_rejects_a_mismatched_confirmation() {
+    let (router, fake) = test_app(configured_tree("hunter2secret"));
+    let cookie = login(&router, "hunter2secret").await;
+
+    let response = post_form(
+        &router,
+        "/password",
+        "current=hunter2secret&password=newsecret9&confirm=different1",
+        Some(&cookie),
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    assert!(fake.set_paths().is_empty());
+}
+
+/// The API half of the same refusal: §2.4's envelope, `wrong_password`, and
+/// nothing written.
+#[tokio::test]
+async fn the_api_password_change_rejects_a_wrong_current_password() {
+    let (router, fake) = test_app(configured_tree("hunter2secret"));
+    let cookie = login(&router, "hunter2secret").await;
+
+    let response = post_json(
+        &router,
+        "/api/v1/actions/change-password",
+        r#"{"currentPassword":"not-the-password","newPassword":"newsecret9"}"#,
+        Some(&cookie),
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::FORBIDDEN);
+    assert_api_headers(&response, "/api/v1/actions/change-password");
+    let error = envelope(response).await;
+    assert_eq!(error["code"], "wrong_password");
+    assert_eq!(error["source"], "apid");
+    assert!(fake.set_paths().is_empty());
+}
+
+/// The API half of the success: 204, the hash written, the other session
+/// dropped, the calling session kept.
+#[tokio::test]
+async fn the_api_password_change_succeeds_and_drops_the_other_sessions() {
+    let (router, fake) = test_app(configured_tree("hunter2secret"));
+    let other = login(&router, "hunter2secret").await;
+    let acting = login(&router, "hunter2secret").await;
+
+    let response = post_json(
+        &router,
+        "/api/v1/actions/change-password",
+        r#"{"currentPassword":"hunter2secret","newPassword":"newsecret9"}"#,
+        Some(&acting),
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::NO_CONTENT);
+    assert_eq!(fake.set_paths(), vec!["access.webAdmin"]);
+
+    let stored = fake
+        .get_settings("access.webAdmin.password_hash")
+        .await
+        .unwrap();
+    assert!(auth::verify_password(stored.as_str().unwrap(), "newsecret9"));
+
+    assert_eq!(
+        get(&router, "/", Some(&acting)).await.status(),
+        StatusCode::OK
+    );
+    let evicted = get(&router, "/", Some(&other)).await;
+    assert_eq!(evicted.status(), StatusCode::SEE_OTHER);
+    assert_eq!(location(&evicted), "/login");
+}
+
+/// A new password under eight characters is refused with `password_rejected`,
+/// the same floor the setup wizard enforces.
+#[tokio::test]
+async fn the_api_password_change_rejects_a_short_new_password() {
+    let (router, fake) = test_app(configured_tree("hunter2secret"));
+    let cookie = login(&router, "hunter2secret").await;
+
+    let response = post_json(
+        &router,
+        "/api/v1/actions/change-password",
+        r#"{"currentPassword":"hunter2secret","newPassword":"short"}"#,
+        Some(&cookie),
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::UNPROCESSABLE_ENTITY);
+    let error = envelope(response).await;
+    assert_eq!(error["code"], "password_rejected");
+    assert!(fake.set_paths().is_empty());
+}
+
+/// §3.1's trap, held for the one write route: unauthenticated is §2.4's 401
+/// envelope in both gate modes, never a redirect a script reads as success.
+#[tokio::test]
+async fn the_api_password_change_is_401_without_a_session_in_both_gate_modes() {
+    let (configured, _) = test_app(configured_tree("hunter2secret"));
+    let (fresh, _) = test_app(unconfigured_tree());
+
+    for (mode, router) in [("configured", &configured), ("setup mode", &fresh)] {
+        let response = post_json(
+            router,
+            "/api/v1/actions/change-password",
+            r#"{"currentPassword":"hunter2secret","newPassword":"newsecret9"}"#,
+            None,
+        )
+        .await;
+        assert_eq!(response.status(), StatusCode::UNAUTHORIZED, "{mode}");
+        assert_eq!(response.headers().get(LOCATION), None, "{mode}");
+        let error = envelope(response).await;
+        assert_eq!(error["code"], "not_authenticated", "{mode}");
+    }
+}
+
+/// A body that is not the declared shape answers §2.4's envelope rather than
+/// axum's plain-text rejection.
+#[tokio::test]
+async fn the_api_password_change_rejects_a_malformed_body_with_the_envelope() {
+    let (router, fake) = test_app(configured_tree("hunter2secret"));
+    let cookie = login(&router, "hunter2secret").await;
+
+    let response = post_json(
+        &router,
+        "/api/v1/actions/change-password",
+        r#"{"currentPassword":"hunter2secret"}"#,
+        Some(&cookie),
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    assert_api_headers(&response, "/api/v1/actions/change-password");
+    let error = envelope(response).await;
+    assert_eq!(error["code"], "request_invalid");
+    assert_eq!(error["source"], "apid");
+    assert!(fake.set_paths().is_empty());
 }
