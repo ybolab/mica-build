@@ -138,3 +138,12 @@ Execution order per section H: M2 and M3 may run concurrently (serialise on
 the root .gitignore if the coordinator prefers zero conflicts); M3 strictly
 before M4; M4 and M2 strictly before M5. mosd/target/ (4.2G) moves by hand
 at M4 integration.
+
+*Execution refinement (coordinator, ratified 2026-08-27):* M2 was serialised
+before M3 on a measured conflict (their .gitignore hunks sit within one
+merge-context window), and each move carries its own gated-citation rewrites
+— M2 the 18 `os/update/rauc` citations, M4 the 708 `mosd/` ones — so every
+milestone lands with docs/verify-citations.sh green and no deliberate red
+interval exists between M4 and M5. M5's remit is P1, the enumerated prose
+licence, the deliberate datastore rename, the :3466 exclusion, the
+tree-wide old-path proof, and the closeout.
