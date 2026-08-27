@@ -36,7 +36,7 @@ Where a subsection proposed a mechanism and only part of that mechanism has
 since been built, **both** markers appear on its heading, naming which half is
 which — access.md's own §0 sets that precedent, *"a section can be
 **[decided]** and **[not implemented]** at the same time, and where it is, both
-markers appear"* (`docs/design/access.md:32-33`). It is not `[partial]` under
+markers appear"* (`docs/design/access.md:20-21`). It is not `[partial]` under
 another name: `[partial]` would label the subsection as a whole and leave a
 reader to work out which sentences are safe, and the point of a marker here is
 that a reader never has to. Every such subsection opens with a **What ships**
@@ -45,7 +45,7 @@ paragraph that draws the line with citations.
 access.md's reason for the discipline applies here unchanged: *"dead code has a
 compiler, a test run and a grep-for-callers that can surface it; a security
 control that exists only as prose has no mechanism that will ever notice it is
-absent"* (`docs/design/access.md:37-40`). The marker is therefore attached to
+absent"* (`docs/design/access.md:25-28`). The marker is therefore attached to
 the **section**, not to the document: a section marked **[implemented]** names
 code that exists and can be checked against the tree, and a section marked
 **[proposed]** names code that does not exist and cannot be. Reading the
@@ -60,7 +60,7 @@ paragraph under it, are what tell the two apart. Section 0 carries no marker:
 it describes no mechanism, which is the same exemption access.md states for
 its own unmarked sections — *"Sections without a marker (§1, §7, §9's
 reasoning, §11) state principles, preferences or history rather than a
-mechanism"* (`docs/design/access.md:45-46`).
+mechanism"* (`docs/design/access.md:33-34`).
 
 **The tree this document was measured at.** Sections 1, 2 and 3 were last
 re-measured against this branch's tree at commit
@@ -676,18 +676,18 @@ where that widening is argued for.
 
 **Vocabulary this document inherits from `access.md`.** Sections 4-6 need three
 things already settled there and must not restate them differently: the status
-markers (`docs/design/access.md:23-33`), the **eight bind mounts** the image
+markers (`docs/design/access.md:11-21`), the **eight bind mounts** the image
 ships and their STATE/DATA tiers — *"The image ships **eight** binds today"*
-(`docs/design/access.md:546`), tabulated at `docs/design/access.md:550-559` —
+(`docs/design/access.md:530`), tabulated at `docs/design/access.md:534-543` —
 and the **survives-what table** for reboot, A/B update and factory reset
-(`docs/design/access.md:569-575`). Two of its rows bear directly on section 5:
+(`docs/design/access.md:553-559`). Two of its rows bear directly on section 5:
 `/home`, `/root` and `/srv` are DATA and survive both a reboot and an A/B
 update because RAUC writes only ROOTFS and BOOT
-(`docs/design/access.md:572`), while arbitrary `/etc` edits survive nothing
+(`docs/design/access.md:556`), while arbitrary `/etc` edits survive nothing
 because `/` is a verity squashfs outside the eight bind points
-(`docs/design/access.md:573`). The governing rule for section 5 is stated as a
+(`docs/design/access.md:557`). The governing rule for section 5 is stated as a
 section heading: *"An unmodelled setting is an unsupported setting"*
-(`docs/design/access.md:535`), argued at `docs/design/access.md:537-541`.
+(`docs/design/access.md:519`), argued at `docs/design/access.md:521-525`.
 
 
 ### 1.6 Static assets today
@@ -1036,7 +1036,7 @@ that writes settings-shaped bodies (§2.2) needs both.
 this document requires a UI to be able to detect that it cannot talk to the API
 version it found. That check has to run *before* the UI has a credential: a UI
 installed on DATA survives the A/B update that replaced apid
-(`docs/design/access.md:572`), and on a factory-fresh device there is no
+(`docs/design/access.md:556`), and on a factory-fresh device there is no
 `access.webAdmin` at all (`mosd/mosd-settings/src/model.rs:149-151`), so the
 gate is in setup mode and redirects everything except `/setup`
 (`mosd/apid/src/routes.rs:701-706`). An authenticated probe cannot answer the
@@ -1059,8 +1059,8 @@ build string.
 honest starting point is that **there is no apid patch release independent of an
 image update.** The binary is `ExecStart=/usr/bin/apid`
 (`mosd/dist/apid.service:14`), and `/` is a verity-protected squashfs
-(`docs/design/access.md:537-541`); RAUC writes only the ROOTFS and BOOT slots
-(`docs/design/access.md:563-565`). Every
+(`docs/design/access.md:521-525`); RAUC writes only the ROOTFS and BOOT slots
+(`docs/design/access.md:547-549`). Every
 change to apid therefore arrives as an A/B image update, and "patch release"
 can only mean "an image in which apid changed additively". With that said, two
 promises, and they are not the same promise:
@@ -1075,7 +1075,7 @@ promises, and they are not the same promise:
   generation.** The reason is specific to this appliance: the UI that a version
   bump breaks is installed on DATA and *survived* the update that broke it,
   and the operator's route to fixing it may be
-  that same UI (`docs/design/access.md:572`). The cost is two route trees in one binary, two sets of handlers
+  that same UI (`docs/design/access.md:556`). The cost is two route trees in one binary, two sets of handlers
   that must both keep behaving, and a deprecation the project has to actually
   execute rather than carry forever. Sequencing that is §8's, not this
   section's; what this section records is the consequence of *not* doing it — a
@@ -1146,7 +1146,7 @@ disagreement is named and the choice is costed.
 
 | Root | Backed by | Methods | Why it is separate |
 |---|---|---|---|
-| `/api/v1/settings/<dot-path>` | the typed `Settings` tree (`mosd/mosd-settings/src/model.rs:16`) via `GetSettings` and `SetSettings` — `get_settings` (`mosd/mosd/src/bus.rs:513`) and `set_settings` (`:522`) | `GET`, `PUT` | typed, validated, persisted to `/var/lib/mos/settings.toml` (`mosd/mosd-settings/src/store.rs:67`), survives reboot and A/B update (`docs/design/access.md:571`) |
+| `/api/v1/settings/<dot-path>` | the typed `Settings` tree (`mosd/mosd-settings/src/model.rs:16`) via `GetSettings` and `SetSettings` — `get_settings` (`mosd/mosd/src/bus.rs:513`) and `set_settings` (`:522`) | `GET`, `PUT` | typed, validated, persisted to `/var/lib/mos/settings.toml` (`mosd/mosd-settings/src/store.rs:67`), survives reboot and A/B update (`docs/design/access.md:555`) |
 | `/api/v1/state/<dot-path>` | the live-state tree via `GetState` — `get_state` (`mosd/mosd/src/bus.rs:538`) | `GET` only | an untyped `Value` (`mosd/mosd/src/bus.rs:53`), in memory, written only from inside mosd by the four writers section 1.5 names |
 | `/api/v1/actions/<verb>` | the `/Actions/reboot` and `/Actions/poweroff` items (`mosd/mosd/src/actions.rs:46-47`), and `SetTransientRootPassword` — `set_transient_root_password` (`mosd/mosd/src/bus.rs:703`) | `POST` only | not state at all — see §2.3 |
 
@@ -1174,7 +1174,7 @@ it is a second model that has to be kept in sync with `model.rs` by hand. Every
 field added to `Settings` is invisible over the API until someone also adds it
 to the resource layer, and a field that is invisible over the API is, by this
 project's own rule, unsupported: *"An unmodelled setting is an unsupported
-setting"* (`docs/design/access.md:535`). Hand-shaped nouns reproduce exactly
+setting"* (`docs/design/access.md:519`). Hand-shaped nouns reproduce exactly
 that failure one layer up, where nothing — no compiler, no
 `deny_unknown_fields` (`mosd/mosd-settings/src/model.rs:15`, `:69`, `:95`, and
 fifteen more) — will ever notice the omission. The passthrough cannot drift, because
@@ -1708,7 +1708,7 @@ code at `f7cb5ba`.
    Sessions live in a `HashMap` in memory (`mosd/apid/src/session.rs:32`) and the
    module says so: *"an apid restart logs everyone out"*
    (`mosd/apid/src/session.rs:5-6`). Since apid ships inside the verity rootfs
-   (`mosd/dist/apid.service:14`, `docs/design/access.md:537-541`), **every A/B
+   (`mosd/dist/apid.service:14`, `docs/design/access.md:521-525`), **every A/B
    image update invalidates every session**. A cron job's credential expires
    whenever the fleet is updated, and per item 1 the job's next run gets a 200
    and an HTML page.
@@ -1810,15 +1810,15 @@ tier is chosen rather than inherited:
 1. **It is the tier that matches the credential's required lifetime.** The
    settings tree is `/var/lib/mos/settings.toml`
    (`mosd/mosd-settings/src/store.rs:67`), mounted from `/mnt/state/mos` by
-   `var-lib-mos.mount` — **STATE** (`docs/design/access.md:489`). Per the
+   `var-lib-mos.mount` — **STATE** (`docs/design/access.md:473`). Per the
    survives-what table it survives a reboot and an A/B update and does not
-   survive a whole-disk reflash (`docs/design/access.md:504`). That is exactly
+   survive a whole-disk reflash (`docs/design/access.md:488`). That is exactly
    right for an API token: a script must keep working across an image update
    (item 3 of §3.1 is the bug being fixed), and a decommissioning reflash must
    take the credential with it.
 2. **DATA would be the wrong tier, and specifically worse.** `/home`, `/root`
    and `/srv` also survive a reboot and an A/B update
-   (`docs/design/access.md:505`), so on lifetime alone they would do. But the
+   (`docs/design/access.md:489`), so on lifetime alone they would do. But the
    same row records that on a reflash DATA is *"replaced by the image's fresh
    DATA filesystem — but see §9.2: blocks beyond the flashed extent are
    *unreachable*, not erased"*. A credential whose bytes may physically remain
@@ -1826,7 +1826,7 @@ tier is chosen rather than inherited:
    wrong tier for a credential, and this is the reason to say so out loud rather
    than default to STATE by habit.
 3. **Anything else is unmodelled state.** *"An unmodelled setting is an
-   unsupported setting"* (`docs/design/access.md:535`). apid's own state
+   unsupported setting"* (`docs/design/access.md:519`). apid's own state
    directory `/var/lib/mos/apid` (`mosd/apid/src/config.rs:38-40`,
    `mosd/dist/apid.service:16`) is on the same STATE bind and would satisfy
    reason 1 — but a credential granting full management access that mosd does not
@@ -2536,7 +2536,7 @@ file read **as root**, and the reachable set includes at least:
 - **`/var/lib/mos/shadow`**, which is what `/etc/shadow` is a symlink to
   (`docs/design/ro-root.md:270-289`).
 - **`/etc/ssh/`** — the sshd host private keys, bound from STATE
-  (`docs/design/access.md:485`).
+  (`docs/design/access.md:469`).
 - **apid's own state directory**, `/var/lib/mos/apid` by default
   (`mosd/apid/src/config.rs:38-40`): the TLS private key, mode `0o600`
   (`mosd/apid/src/tls.rs:37`, called from `:78`), and **`session.key`**, the 32-byte HMAC
@@ -2700,10 +2700,10 @@ asserts that entry by mountpoint and options, requiring
 *"DATA is the growth target"* (`os/verify/src/checks-fstab.ts:124-128`).
 
 So `docs/design/access.md` §10.2's mechanism — *"one mount unit plus one
-verifier assertion"* (`docs/design/access.md:545`) — applies here at **half
+verifier assertion"* (`docs/design/access.md:529`) — applies here at **half
 strength: no mount unit is needed, and the verifier assertion that would have
 accompanied it already exists**. The image ships **eight** binds
-(`docs/design/access.md:481-492`); this proposal adds a ninth to **none** of
+(`docs/design/access.md:465-476`); this proposal adds a ninth to **none** of
 them. That is the whole reason `/srv` was chosen over inventing a new bind
 target: it is the one persistent tier already reachable without a unit.
 
@@ -2896,12 +2896,12 @@ exercised on hardware**, and the A/B and factory-reset columns rest on reading
 `os/update/rauc/system.conf.in` rather than on a test — §4's note governs.
 
 Same framing, same columns and same honesty as `docs/design/access.md` §10.4
-(`docs/design/access.md:500-508`); this table extends that vocabulary rather
+(`docs/design/access.md:484-492`); this table extends that vocabulary rather
 than introducing a second one.
 
 | What | Reboot | A/B update | Factory reset |
 |---|---|---|---|
-| **Custom UI bundles and the `current` pointer** (`/srv/ui`, DATA) | **yes** | **yes** — RAUC writes only the raw `rootfs` slot and the vfat `boot` slot (`os/update/rauc/system.conf.in:75-95`) and never touches DATA | **no**. Not implemented today (`docs/design/access.md:318-335`); a whole-disk reflash is the closest real operation, and it replaces DATA with the image's fresh filesystem — with §9.2's precision applying unchanged: blocks beyond the flashed extent are **unreachable, not erased** (`docs/design/access.md:454-459`) |
+| **Custom UI bundles and the `current` pointer** (`/srv/ui`, DATA) | **yes** | **yes** — RAUC writes only the raw `rootfs` slot and the vfat `boot` slot (`os/update/rauc/system.conf.in:75-95`) and never touches DATA | **no**. Not implemented today (`docs/design/access.md:302-319`); a whole-disk reflash is the closest real operation, and it replaces DATA with the image's fresh filesystem — with §9.2's precision applying unchanged: blocks beyond the flashed extent are **unreachable, not erased** (`docs/design/access.md:438-443`) |
 | **The built-in UI** (compiled into `/usr/bin/apid`, inside the verity squashfs) | **yes** | **replaced, which is the point** — the new slot carries the new image's built-in UI, and there is no state to migrate because there is no state | **yes** — a reflash writes an image that contains it. This is the one row a factory reset **restores** rather than destroys, and that asymmetry is the whole of section 6 |
 | **The active/inactive choice alone** (`current` removed, bundles kept on disk) | **yes** | **yes** | **no** — the pointer is on DATA with the bundles it points at |
 
@@ -3270,12 +3270,12 @@ because a comfortable one here would be worthless:
   `docs/design/access.md` §9.1 is blunt about what that is worth.** SSH is off
   by default (`mosd/mosd-settings/src/model.rs:108-112`, `enabled: false`), root
   is passwordless-locked, and the serial console does spawn a getty that has *no
-  account which will accept a credential* (`docs/design/access.md:415-427`). An
+  account which will accept a credential* (`docs/design/access.md:399-411`). An
   operator who enabled SSH and installed a key **before** the failure can
   `rm /srv/ui/current` and restart apid — that is a real path, and it is exactly
   as available as SSH was, which is: only if it was arranged in advance. An
   operator who did not is in §9.1's position, and the only remedy is a
-  whole-disk reflash (`docs/design/access.md:437-459`) — which also clears the
+  whole-disk reflash (`docs/design/access.md:421-443`) — which also clears the
   bundle, because DATA is replaced.
 - **The honest summary: this design does not add a new way to be locked out,
   and it does not remove the existing one.** §9.1's lockout is unchanged by
@@ -3369,10 +3369,10 @@ an absence measured four ways is a fact about the device, not a proposal.
 | Channel | Exists at `86cd669`? | Reaches `/srv/ui`? | Credential | Signed? |
 |---|---|---|---|---|
 | **The API upload path** | **no** — `grep -rn Multipart mosd/` returns nothing; §5.3's transport is proposed and the request that drives it belongs to §2.3/§3 | would, by construction | §3.2's bearer token, or an authenticated session (§3.2's bootstrap) | nothing exists to sign against — see 7.3 |
-| **SSH** | **yes**, but **off by default on both image profiles** (`mosd/mosd-settings/src/model.rs:110-112`; `docs/design/access.md:212-218`), enabled only by an authenticated admin action through apid | **yes** — a shell writes the directory directly, with no involvement from apid at all | an authorized key, **every one of which is a root key** (`docs/design/access.md:225-230`; the pane says so and a test asserts the sentence, `mosd/apid/src/routes.rs:1762`, `mosd/apid/src/tests.rs:797`) | n/a |
-| **A RAUC bundle** | **yes**, as an update mechanism | **no.** RAUC declares four slots — `rootfs.0` (`os/update/rauc/render-config.sh:239`), `rootfs.1` (`:245`), `boot.0` (`:265`) and `boot.1` (`:270`). DATA is not among them, and the survives-what table records the same from the other side (`docs/design/access.md:504`; §5.4) | n/a | **yes** — CMS, verified by `rauc` against `/etc/rauc/keyring.pem`, `plain` format refused (`os/update/rauc/system.conf.in:66-69`, `:78`) |
+| **SSH** | **yes**, but **off by default on both image profiles** (`mosd/mosd-settings/src/model.rs:110-112`; `docs/design/access.md:196-202`), enabled only by an authenticated admin action through apid | **yes** — a shell writes the directory directly, with no involvement from apid at all | an authorized key, **every one of which is a root key** (`docs/design/access.md:209-214`; the pane says so and a test asserts the sentence, `mosd/apid/src/routes.rs:1762`, `mosd/apid/src/tests.rs:797`) | n/a |
+| **A RAUC bundle** | **yes**, as an update mechanism | **no.** RAUC declares four slots — `rootfs.0` (`os/update/rauc/render-config.sh:239`), `rootfs.1` (`:245`), `boot.0` (`:265`) and `boot.1` (`:270`). DATA is not among them, and the survives-what table records the same from the other side (`docs/design/access.md:488`; §5.4) | n/a | **yes** — CMS, verified by `rauc` against `/etc/rauc/keyring.pem`, `plain` format refused (`os/update/rauc/system.conf.in:66-69`, `:78`) |
 | **A factory image** | **yes**, but it ships DATA **empty.** `grep -n dataImg os/build/src/mkimage-v2.ts` returns exactly three lines: `:378` names the path, `:408` builds it with `makeExt4` — whose optional `seedDir` argument is **not passed**, so it is only `truncate` plus `mke2fs` and populates nothing — and `:437` `dd`s it into the image. Nothing mounts it and nothing copies into it. From the verifier's side the consequence is that an assertion about `/srv/ui` becomes owed only if the image ever ships something under `/srv/ui` | not today; it would need new work in the image pipeline | n/a | the image is not signed; the **bundle** built from it is |
-| **The serial console** | **yes** — a getty spawns on both profiles | **no.** It *"has no account that will accept a credential"* (`docs/design/access.md:70`) | none that works | n/a |
+| **The serial console** | **yes** — a getty spawns on both profiles | **no.** It *"has no account that will accept a credential"* (`docs/design/access.md:57`) | none that works | n/a |
 
 **The count that matters.** Of five candidate channels, exactly **one reaches
 `/srv/ui` on a shipped device today, and it is root**. A RAUC bundle
@@ -3387,7 +3387,7 @@ question in this section is about that one row.
 `docs/design/access.md` §4.1 states it without qualification: *"Every authorized
 key is a root key"*, and `mos` is *"a persistent working directory and a non-root
 default shell, **not a lesser privilege level**"*
-(`docs/design/access.md:232-233`). apid runs as root — the unit sets no `User=` line
+(`docs/design/access.md:216-217`). apid runs as root — the unit sets no `User=` line
 (`mosd/dist/apid.service:1-42`), and the D-Bus policy records the same fact from
 the other side (`mosd/dist/com.mos.mosd.conf:12-14`), with root allowed to own,
 send and receive (`:68-72`).
@@ -3575,7 +3575,7 @@ re-litigated from zero.** If it is adopted:
   unchanged: the settings tree on STATE, which means a schema bump and a
   migration (§8.2 phase 2 shows the shape), not a file dropped into `/etc` —
   *"An unmodelled setting is an unsupported setting"*
-  (`docs/design/access.md:535`).
+  (`docs/design/access.md:519`).
 - **Code and dependency.** A signature verifier inside a root-privileged,
   network-facing daemon, plus whatever crate carries it. `mosd/deny.toml` bans no
   C-building crate and `mosd/hack/check.sh:9` checks only licenses, bans and
@@ -3703,7 +3703,7 @@ activates a bundle.
 
 Six phases. The shape of the table is `docs/design/access.md` §8's — Phase /
 Scope / Campaign / Status — so that this project's design documents can be read
-side by side (`docs/design/access.md:401-410`).
+side by side (`docs/design/access.md:385-394`).
 
 **The test each phase had to pass to be a phase:** *shippable on its own*, which
 this document reads strictly — an operator must be able to do something after it
@@ -4062,7 +4062,7 @@ in force — bearer token or authenticated session, no signature.
 
 **What an operator can do that they could not before.** Install a UI on a device
 with SSH off. That is every device by default, on both image profiles
-(`mosd/mosd-settings/src/model.rs:110-112`, `docs/design/access.md:212-218`), so
+(`mosd/mosd-settings/src/model.rs:110-112`, `docs/design/access.md:196-202`), so
 this phase is what turns phase 4 from a capability for people with shells into a
 product feature.
 

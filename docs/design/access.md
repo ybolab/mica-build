@@ -6,19 +6,7 @@
 > auditable, lockable, and absent from production images. Companion to
 > architecture.md §5.
 >
-> **Base change (PLAN-010 M5, 2026-08-19).** This document was written for the
-> Talos/COSI base. The **model** below survives intact — channels, phases,
-> layered disablement, brute-force accounting, provisioning paths. The
-> **mechanism** does not: there is no `DebugAccessConfig` document, no COSI
-> controller, and no Go sshd in a machined multi-call binary.
->
-> **Model change (campaign `sshweb`, 2026-08-19).** Phase 1 no longer
-> authenticates with a per-device password. SSH is **off by default** and root
-> has **no password by default**, in **both** image profiles; persistent access
-> is by **SSH public key**; an operator-set root password is **transient** and
-> vanishes on the next boot. The M5 per-device-password model is recorded as
-> **superseded** in §4.2 rather than deleted. The `.zh.md` sibling has not been
-> updated and is stale.
+> The `.zh.md` sibling has not been updated since 2026-08-19 and is stale.
 
 ## 0. How to read the status markers
 
@@ -48,9 +36,8 @@ preferences or history rather than a mechanism.
 ## 1. Principles
 
 - Access channels are **first-class services under the model layer**
-  (settings subtree → reconciler → service), never side doors around it. This
-  was "config document → COSI controller → service" on the Talos base; the
-  shape is the same and the executor is now mosd over systemd.
+  (settings subtree → reconciler → service), never side doors around it. The
+  executor is mosd over systemd.
 - **Provisioning and debugging are different problems.** A weak-auth,
   resource-whitelisted wizard covers "no network on site"; a strong-auth full
   shell covers deep debugging. One almighty shell for both inevitably drags
@@ -71,14 +58,11 @@ preferences or history rather than a mechanism.
 | Rescue (all-slots-failed FIT entry) | chroot repair environment | physical access (cmdline / boot failure) | **not implemented** |
 | Factory (rockusb / SoC loader mode) | full reflash | physical access | hardware-level; see §9.2 |
 
-**Superseded mechanism.** The original design had the SSH server implemented in
-Go (`x/crypto/ssh` + pty) inside the machined multi-call binary, reading its
-policy from COSI — no OpenSSH, no separate C daemon. On the systemd base that
-is not what ships: the image carries **OpenSSH**, and mosd renders a drop-in and
-drives `ssh.service` (§3). The argument the Go sshd was making — one policy
-source, no config-file drift — is preserved by mosd owning the only file that
-configures sshd, not by replacing sshd. busybox is likewise not shipped; the
-debug profile uses the base image's shell.
+**One policy source.** The image carries **OpenSSH**, and mosd renders the only
+drop-in that configures it and drives `ssh.service` (§3). That ownership is what
+keeps sshd's policy in one place: there is no second, operator-edited
+`sshd_config` for the settings tree to drift against. busybox is not shipped;
+the debug profile uses the base image's shell.
 
 ## 3. Configuration model — **[implemented]**
 
