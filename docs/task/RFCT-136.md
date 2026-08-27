@@ -1,8 +1,8 @@
 # RFCT-136 The custom-UI bundle store is complete and no HTTP route reaches it
 
-- **status**: pending
+- **status**: in progress
 - **priority**: P2
-- **owner**: (unclaimed)
+- **owner**: ai-agent
 - **createdAt**: 2026-08-26
 
 `mosd/apid/src/bundle.rs` implements the `/srv/ui` store in full: layout,

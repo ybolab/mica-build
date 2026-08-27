@@ -1,8 +1,8 @@
 # RFCT-141 The static-asset traversal guards have no over-the-wire coverage, because no device under test has a bundle
 
-- **status**: pending
+- **status**: in progress
 - **priority**: P2
-- **owner**: (unclaimed)
+- **owner**: ai-agent
 - **createdAt**: 2026-08-26
 
 `test/apid-api/` talks to apid over the network on a booted image and covers

@@ -1,8 +1,8 @@
 # RFCT-138 The workspace's no-C-dependency posture is a comment, and cargo-deny is configured to enforce nothing
 
-- **status**: pending
+- **status**: in progress
 - **priority**: P2
-- **owner**: (unclaimed)
+- **owner**: ai-agent
 - **createdAt**: 2026-08-26
 
 `mosd/deny.toml` is 45 lines. Forty of them are the `[licenses]` allowlist. The

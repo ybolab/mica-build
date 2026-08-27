@@ -1,8 +1,8 @@
 # RFCT-137 apid's unit sandboxes almost everything except the filesystem it serves files out of
 
-- **status**: pending
+- **status**: in progress
 - **priority**: P2
-- **owner**: (unclaimed)
+- **owner**: ai-agent
 - **createdAt**: 2026-08-26
 
 `mosd/dist/apid.service:28-39` carries a substantial sandbox: `NoNewPrivileges`,
