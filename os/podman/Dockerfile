@@ -4,7 +4,7 @@
 #   make podman -> os/podman/out/: podman, quadlet, crun, conmon, netavark,
 #   aardvark-dns, catatonit, SHA256SUMS
 #
-# Same shape as board/cx3576/kernel/Dockerfile: builder stages, then a final
+# Same shape as os/boards/cx3576/bsp/kernel/Dockerfile: builder stages, then a final
 # scratch stage that `-o` exports. Nothing here installs into a rootfs;
 # os/rootfs/build-v2.sh stages the output as it stages modules.tar and mosd.
 

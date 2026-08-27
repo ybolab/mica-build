@@ -46,7 +46,7 @@ and board/<board>/out/ exactly as they do there.
   --board B        the board to bundle for (default: ${DEFAULT_BOARD}, or MOS_BOARD)
   --out-dir DIR    where the rootfs-side inputs are and the bundle is written
                    (default: _out/<board>)
-  --board-dir DIR  the BSP tree (default: board/<board>, or BOARD_DIR)
+  --board-dir DIR  the BSP tree (default: os/boards/<board>/bsp, or BOARD_DIR)
 
 environment:
   CERT KEY KEYRING     real signing material, instead of os/update/rauc/.devkeys
@@ -253,7 +253,7 @@ export function parseArgs(argv: readonly string[], env: Record<string, string | 
     board: chosen,
     version: checkVersion(version ?? env.MOS_BUNDLE_VERSION ?? '0.0.0-dev'),
     outDir: outDir ?? join(REPO_ROOT, '_out', chosen),
-    boardDir: boardDir ?? env.BOARD_DIR ?? join(REPO_ROOT, 'board', chosen),
+    boardDir: boardDir ?? env.BOARD_DIR ?? join(REPO_ROOT, 'os', 'boards', chosen, 'bsp'),
   }
 }
 

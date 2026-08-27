@@ -21,10 +21,10 @@ import { loadBoard } from './verify-package.ts'
 const g = loadGeometry('cx3576')
 
 describe('the arguments', () => {
-  test('the defaults are _out/cx3576 and board/cx3576', () => {
+  test('the defaults are _out/cx3576 and os/boards/cx3576/bsp', () => {
     expect(parseArgs([], {})).toEqual({
       outDir: join(REPO_ROOT, '_out', 'cx3576'),
-      boardDir: join(REPO_ROOT, 'board', 'cx3576'),
+      boardDir: join(REPO_ROOT, 'os', 'boards', 'cx3576', 'bsp'),
     })
   })
 

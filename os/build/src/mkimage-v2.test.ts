@@ -196,7 +196,7 @@ describe('THE UBOOT-MOS-ONLY RULE', () => {
       throw new Error('unreachable')
     } catch (e) {
       const s = String(e)
-      expect(s).toContain("build it with 'make -C board/cx3576 uboot-mos'")
+      expect(s).toContain("build it with 'make -C os/boards/cx3576/bsp uboot-mos'")
       expect(s).toContain('is NOT a substitute')
       expect(s).toContain('CONFIG_ENV_IS_NOWHERE')
       expect(s).toContain('silently never run the RAUC A/B handshake')

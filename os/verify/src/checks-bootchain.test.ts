@@ -6,7 +6,7 @@
 // and the parity harness still calls it a clean divergence.
 //
 // The BSP compare is driven in both directions here and in neither in the field.
-// `board/cx3576/out/` is not populated in a checkout, so on the real image both
+// `os/boards/cx3576/bsp/out/` is not populated in a checkout, so on the real image both
 // verifiers say `compare source not found` and the byte-compare's passing
 // direction is never taken. These cases take it: a temporary BOARD_DIR with a
 // matching artefact, one with a differing artefact, and one with none.
