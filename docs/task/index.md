@@ -173,3 +173,4 @@ Each task is a single line linking to its detail file. All detailed information 
 - [x] [**RFCT-153 PLAN-015 M6: form compression in test/, mosd/ and board/**](RFCT-153.md) `P2`
 - [x] [**RFCT-154 PLAN-015 M6: the index rows, the metric re-run and the aggregate survivor record**](RFCT-154.md) `P2`
 - [x] [**RFCT-160 PLAN-018 M1: board/ moves under os/boards/, every consumer repointed**](RFCT-160.md) `P2`
+- [x] [**RFCT-161 PLAN-018 M2: board.yaml retired into board.env comments**](RFCT-161.md) `P2`
