@@ -318,7 +318,7 @@ cx3576-%:
 	$(MAKE) -C os/boards/cx3576/bsp $*
 
 x64-%:
-	@echo "x64 has no BSP build; use the talos image pipeline (board/x64/README.md)" && false
+	@echo "x64 has no BSP build; assemble its image with: bash os/build/run.sh --mkimage-x64 (board definition: os/boards/x64/board.env)" && false
 
 # The apid API suite: boot the x64 image in QEMU with apid's port forwarded,
 # wait for the daemon to answer, and drive it over a real socket. It is the
