@@ -40,5 +40,6 @@ docs/task/RFCT-168.md 3
 docs/task/RFCT-169.md 19
 docs/task/RFCT-170.md 4
 docs/task/RFCT-172.md 21
+docs/task/RFCT-190.md 10
 docs/research/venus-os-access.md 6
 docs/research/venus-os-ui.md 9
