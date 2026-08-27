@@ -156,7 +156,7 @@ stage list is the directory, so adding a stage is adding a file
 ## 7. Boards
 
 - **`cx3576`** — CX3576-Z, Rockchip RK3576, arm64. Vendor kernel tree, mainline
-  U-Boot built in `board/cx3576/uboot/`, WiFi and Bluetooth. Its RAUC bootloader
+  U-Boot built in `os/boards/cx3576/bsp/uboot/`, WiFi and Bluetooth. Its RAUC bootloader
   backend is `uboot`, so this is the board the `BOOT_ORDER` handshake is for.
 - **`x64`** — generic UEFI x86_64, the QEMU and CI baseline. No BSP build:
   firmware boots it, so there is nothing to compile. Its bootloader backend is
@@ -164,7 +164,7 @@ stage list is the directory, so adding a stage is adding a file
 
 A board produces artifacts and the OS build consumes artifacts; neither side
 reaches into the other's build. Kernel configs must satisfy the shared
-assertion set in `board/common/mos-required.fragment` (`docs/design/boards.md`).
+assertion set in `os/boards/common/mos-required.fragment` (`docs/design/boards.md`).
 
 ## 8. Where to read next
 

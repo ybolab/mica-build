@@ -77,7 +77,7 @@ vendor tree (`armbian/linux-rockchip`, branch `rk-6.1-rkr5.1`, 6.1.115) and out
 of the built `Image`:
 
 1. **`CONFIG_DM_INIT=y` is asserted at kernel build time.**
-   `board/common/mos-required.fragment` already pins `CONFIG_BLK_DEV_DM=y`,
+   `os/boards/common/mos-required.fragment` already pins `CONFIG_BLK_DEV_DM=y`,
    `CONFIG_DM_INIT=y`, `CONFIG_DM_VERITY=y`, `CONFIG_SQUASHFS=y`,
    `CONFIG_SQUASHFS_ZSTD=y`. `drivers/md/dm-init.c` appears in the built Image's
    string table.
@@ -197,7 +197,7 @@ console=ttyFIQ0,1500000 earlycon=uart8250,mmio32,0x2ad40000 storagemedia=emmc ne
 ## 3. squashfs xattrs
 
 `CONFIG_SQUASHFS_XATTR` has been approved by L1 and applied to
-`board/common/mos-required.fragment` on master, with the kernel artifact
+`os/boards/common/mos-required.fragment` on master, with the kernel artifact
 rebuild running on the L1 side. Squashfs xattr support is therefore assumed
 present and no workaround for dropped file capabilities is implemented.
 

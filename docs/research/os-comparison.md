@@ -165,7 +165,7 @@ becoming a distribution, and §3's Photon row is what that costs.
 **The conclusion that holds, and the principle behind it.** Independence is
 bought per-component, not per-distribution, and mos has already bought it
 where it matters: the kernel and U-Boot are built from pinned sources in
-`board/cx3576/`, the management plane is our own Rust, and PLAN-012's
+`os/boards/cx3576/bsp/`, the management plane is our own Rust, and PLAN-012's
 container engine is statically linked and therefore base-independent by
 construction. What remains on Debian — glibc, coreutils, systemd, bluez,
 wpa_supplicant, openssh — is precisely the set with the least differentiation
