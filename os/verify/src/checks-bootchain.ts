@@ -22,12 +22,9 @@
 // sentence. Fixtures drive all three directions (byte-identical source,
 // differing source, no source).
 //
-// `BOARD_DIR="${BOARD_DIR:-${REPO_ROOT}/os/boards/cx3576/bsp}"` (:28) and
-// `DTB_SRC="${BOARD_DIR}/out/kernel/rk3576-src.dtb"` (:1758) are the oracle's
-// only cx3576 literals; this port derives both -- the directory from the board's
-// own name, the artefact names from its BOOT_SLOT_REQUIRED_FILES -- so a second
-// U-Boot board would be compared against its own BSP here and cx3576's there.
-// That divergence is the oracle's, reported for M4e rather than reproduced.
+// Nothing here carries a cx3576 literal: the BSP directory is derived from the
+// board's own name and the artefact names from its BOOT_SLOT_REQUIRED_FILES, so
+// a second U-Boot board is compared against its own BSP rather than cx3576's.
 
 import { existsSync, statSync } from 'node:fs'
 import { join } from 'node:path'

@@ -30,7 +30,7 @@ be regenerated from `os/boards/cx3576/board.env`** so the two sides cannot
 drift.
 
 `CONFIG_SQUASHFS_XATTR` is out of scope here: L1 approved and applied it to
-`board/common/mos-required.fragment` directly. No action in this document.
+`os/boards/common/mos-required.fragment` directly. No action in this document.
 
 Layout-v2 constants this document depends on:
 
@@ -166,7 +166,7 @@ SPL loads U-Boot proper from `CONFIG_SYS_MMCSD_RAW_MODE_U_BOOT_SECTOR=0x4000`
 = sector 16384 = **8 MiB** [V].
 
 **No collision with layout v2**: the actual artifact
-`board/cx3576/out/uboot/u-boot-rockchip.bin` is 9 393 152 bytes (8.96 MiB) [V],
+`os/boards/cx3576/bsp/out/uboot/u-boot-rockchip.bin` is 9 393 152 bytes (8.96 MiB) [V],
 so written at sector 64 it occupies 0.031 MiB … 8.989 MiB, leaving 7.01 MiB of
 headroom before `uenv-a` at 16 MiB. The custom U-Boot must
 keep `CONFIG_SYS_MMCSD_RAW_MODE_U_BOOT_SECTOR` at or below sector `0x7000`
@@ -207,7 +207,7 @@ What `generic-rk3576_defconfig` at `v2026.07` provides [V]
   `MMC_DW_ROCKCHIP` for SD (lines 33-38).
 - **Serial**: `CONFIG_DEBUG_UART_BASE=0x2AD40000`, `CONFIG_BAUDRATE=1500000`,
   `CONFIG_SYS_NS16550_MEM32=y` (lines 8, 40, 42) — matches
-  `os/boards/cx3576/board.env:349` `console: ttyFIQ0,1500000` /
+  `os/boards/cx3576/board.env:349` `console=ttyFIQ0,1500000` /
   `earlycon=...0x2ad40000` [V].
 - **USB**: DWC3 host + gadget, `CONFIG_USB_FUNCTION_ROCKUSB=y` (lines 44-49).
 - **DM / distro boot**: full driver model; bootstd with extlinux, script and EFI
@@ -1126,8 +1126,8 @@ Ordered by how badly each could sink the approach.
 
 > **Status update — items 1-3 are RESOLVED.** The user landed a second U-Boot
 > variant as commit `8b24f9d` ("board(cx3576): add uboot-mos A/B variant
-> alongside the debug build"). `make -C board/cx3576 uboot-mos` builds into
-> `board/cx3576/out/uboot-mos/` and implements this contract: the redundant
+> alongside the debug build"). `make -C os/boards/cx3576/bsp uboot-mos` builds into
+> `os/boards/cx3576/bsp/out/uboot-mos/` and implements this contract: the redundant
 > environment pair at `0x1000000` / `0x1100000`, `setexpr` / `source` /
 > `importenv` / `fs_generic` / `fat` / `booti` / `part`, `LEGACY_IMAGE_FORMAT`,
 > `HUSH_PARSER`, `bootmeth order` pinned to `script`, and the rockusb rescue
@@ -1135,7 +1135,7 @@ Ordered by how badly each could sink the approach.
 > reasoning the variant was built against and the record of why each item is
 > required.
 >
-> The existing `make -C board/cx3576 uboot` debug variant is unchanged and pairs
+> The existing `make -C os/boards/cx3576/bsp uboot` debug variant is unchanged and pairs
 > with the **v1** image. The two are not interchangeable in either direction and
 > neither mistake announces itself: `uboot-mos` on a v1 image corrupts the boot
 > FAT partition on the first `saveenv` (v1's boot partition starts at 16 MiB,
