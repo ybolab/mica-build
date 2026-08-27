@@ -96,3 +96,5 @@ header says "every mosd policy check above still passing", which after the hoist
 is true of execution order but misleading on the page. Rewording moved prose is
 what MOVE-not-CHANGE forbids and would have broken the byte-identity proof, so
 it needs a deliberate one-line follow-up rather than an opportunistic fix.
+
+<!-- dated-record: a measurement record frozen at its commit; its citations name the tree as it was then (pre-PLAN-019 layout, pre-rewrite design documents); exempt from docs/verify-citations.sh (RFCT-172) -->

@@ -219,3 +219,5 @@ used to reproduce RFCT-069's `36 passed; 0 failed` left the worktree clean and
 committed nothing.
 
 No product code changed.
+
+<!-- dated-record: a measurement record frozen at its commit; its citations name the tree as it was then (pre-PLAN-019 layout, pre-rewrite design documents); exempt from docs/verify-citations.sh (RFCT-172) -->

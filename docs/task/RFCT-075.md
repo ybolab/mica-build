@@ -413,3 +413,5 @@ host. **A packed image verified on a host is not a booted device.** No assertion
 here observes `/builtin/` fetched over TLS from a device, `/srv/ui/current`
 removed on a mounted DATA partition, or the deactivation surviving a real
 reboot.
+
+<!-- dated-record: a measurement record frozen at its commit; its citations name the tree as it was then (pre-PLAN-019 layout, pre-rewrite design documents); exempt from docs/verify-citations.sh (RFCT-172) -->

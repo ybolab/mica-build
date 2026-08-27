@@ -131,3 +131,5 @@ neither can turn a run red: `docs/design/remote-management.md` cited a deleted
 `docs/architecture.md` notice, and `docs/design/provisioning.md` cited
 `talos/hack/cx3576/dev-config/config.yaml`, a path the checker skips as outside
 this tree rather than failing.
+
+<!-- dated-record: a frozen worklist or exhibit of what was measured then; re-pointing its citations would falsify the record; exempt from docs/verify-citations.sh (RFCT-172) -->

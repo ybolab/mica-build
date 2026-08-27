@@ -139,3 +139,5 @@ Sections 0 and 1 not edited. `docs/design/access.md` and
 `docs/design/dashboard.md` cited and never edited.
 
 No product code changed.
+
+<!-- dated-record: a measurement record frozen at its commit; its citations name the tree as it was then (pre-PLAN-019 layout, pre-rewrite design documents); exempt from docs/verify-citations.sh (RFCT-172) -->

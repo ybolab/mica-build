@@ -422,3 +422,5 @@ rendering page on a running appliance is a different claim and is not made here.
   the two surviving hypotheses are recorded above instead.
 - **`docs/design/api.md`.** The two §6.2 mismatches are findings above, not
   edits.
+
+<!-- dated-record: a measurement record frozen at its commit; its citations name the tree as it was then (pre-PLAN-019 layout, pre-rewrite design documents); exempt from docs/verify-citations.sh (RFCT-172) -->

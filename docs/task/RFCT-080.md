@@ -344,3 +344,5 @@ root, A/B, `rauc install`, and apid. This task moves neither position.
 - **`docs/plan/` and `docs/architecture.md`.** Neither index covers them, and
   extending the verifier's reach is a different task from making its existing
   reach sound.
+
+<!-- dated-record: a measurement record frozen at its commit; its citations name the tree as it was then (pre-PLAN-019 layout, pre-rewrite design documents); exempt from docs/verify-citations.sh (RFCT-172) -->

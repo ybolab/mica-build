@@ -536,3 +536,5 @@ attempt -- so no re-run was needed.
    future milestone wants the tree-wide block count down rather than the
    per-file score, the threshold is the wrong selector for it -- these 54 blocks
    are 28% of the 190 that remain and no subtask in M6 could reach any of them.
+
+<!-- dated-record: a measurement record frozen at its commit; its citations name the tree as it was then (pre-PLAN-019 layout, pre-rewrite design documents); exempt from docs/verify-citations.sh (RFCT-172) -->

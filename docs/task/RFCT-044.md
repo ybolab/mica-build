@@ -81,3 +81,5 @@ so the recommendation here is unaffected by the process decision
 ## Status of the decision
 
 Proposal. The user decides.
+
+<!-- dated-record: a measurement record frozen at its commit; its citations name the tree as it was then (pre-PLAN-019 layout, pre-rewrite design documents); exempt from docs/verify-citations.sh (RFCT-172) -->

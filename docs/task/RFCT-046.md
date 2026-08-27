@@ -152,3 +152,5 @@ it changes a count, that is said in line
 | merge `webd` into `mosd` | **no — harden instead (option 2 + 3a/3b)** | **open, the user's** |
 | rename `webd` | not standalone; bundle with the option-2 unit rewrite | **open, the user's** |
 | option 3's action verb (c) | defer | open |
+
+<!-- dated-record: a measurement record frozen at its commit; its citations name the tree as it was then (pre-PLAN-019 layout, pre-rewrite design documents); exempt from docs/verify-citations.sh (RFCT-172) -->
