@@ -513,8 +513,7 @@ mod tests {
         Address=192.168.1.10/24\nGateway=192.168.1.1\nDNS=1.1.1.1\nDNS=9.9.9.9\n";
     const GOLDEN_EMPTY: &str = "[Match]\nName=eth2\n\n[Network]\n";
     const GOLDEN_VLAN_NETDEV: &str = "[NetDev]\nName=eth0.100\nKind=vlan\n\n[VLAN]\nId=100\n";
-    const GOLDEN_VLAN_PARENT: &str =
-        "[Match]\nName=eth0\n\n[Network]\nDHCP=yes\nVLAN=eth0.100\n";
+    const GOLDEN_VLAN_PARENT: &str = "[Match]\nName=eth0\n\n[Network]\nDHCP=yes\nVLAN=eth0.100\n";
     const GOLDEN_VLAN_CHILD: &str =
         "[Match]\nName=eth0.100\n\n[Network]\nAddress=192.168.100.2/24\n";
     const GOLDEN_BRIDGE_NETDEV: &str = "[NetDev]\nName=br0\nKind=bridge\n";
@@ -788,8 +787,7 @@ mod tests {
     async fn renders_a_bridge_netdev_and_gives_its_port_only_the_master() {
         let dir = tempfile::tempdir().unwrap();
         let (reconciler, _calls) = reconciler_in(dir.path());
-        let settings =
-            settings_with(&[("br0", bridge_iface(&["eth1"])), ("eth1", port_iface())]);
+        let settings = settings_with(&[("br0", bridge_iface(&["eth1"])), ("eth1", port_iface())]);
 
         reconciler.apply(&settings).await.unwrap();
 
@@ -1017,8 +1015,7 @@ mod tests {
     async fn rejects_a_bridge_port_that_carries_its_own_addressing() {
         let dir = tempfile::tempdir().unwrap();
         let (reconciler, _calls) = reconciler_in(dir.path());
-        let settings =
-            settings_with(&[("br0", bridge_iface(&["eth1"])), ("eth1", static_iface())]);
+        let settings = settings_with(&[("br0", bridge_iface(&["eth1"])), ("eth1", static_iface())]);
 
         let err = reconciler.apply(&settings).await.unwrap_err();
 
