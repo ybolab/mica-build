@@ -1,6 +1,6 @@
 # RFCT-058 Re-anchor dashboard.md's D-Bus policy claims to RFCT-048, state the citation rule, correct the README `talos/` line
 
-- **status**: implementation complete — `make docs-verify` green (136/136),
+- **status**: completed — implementation complete, `make docs-verify` green (136/136),
   `bash mosd/hack/check.sh` green
 - **priority**: P1
 - **owner**: ai-agent

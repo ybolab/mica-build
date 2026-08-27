@@ -1,6 +1,6 @@
 # RFCT-046 Dashboard process architecture, external contract, rename, and phasing
 
-- **status**: proposal complete — the process decision and the rename decision are the user's, and both are open
+- **status**: completed — proposal complete, the process decision and the rename decision are the user's, and both are open
 - **priority**: P1
 - **owner**: ai-agent
 - **createdAt**: 2026-08-19 10:17

@@ -1,6 +1,6 @@
 # RFCT-128 PLAN-015 M5: citations repaired against the checker, and the check made to gate
 
-- **status**: done
+- **status**: completed
 - **priority**: P2
 - **owner**: PLAN-015 (M5)
 - **createdAt**: 2026-08-26

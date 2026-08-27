@@ -1,6 +1,6 @@
 # RFCT-088 Uptane phase 2, first half: the device-side metadata verifier and the trust anchor provisioning story
 
-- **status**: complete — the device-side TUF verifier and mos-update-verify, 8 client tests, 15/15 green
+- **status**: completed — the device-side TUF verifier and mos-update-verify, 8 client tests, 15/15 green
 - **completedAt**: 2026-08-23 04:55
 - **priority**: P1
 - **owner**: ai-agent

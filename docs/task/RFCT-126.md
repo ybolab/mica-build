@@ -1,6 +1,6 @@
 # RFCT-126 PLAN-015 M5: README sweep, root and extensions and the two TS suites
 
-- **status**: done
+- **status**: completed
 - **priority**: P2
 - **owner**: PLAN-015 M5
 - **createdAt**: 2026-08-26

@@ -1,6 +1,6 @@
 # RFCT-165 PLAN-019 M1: the os/pkgs target layout, designed before it is executed
 
-- **status**: in-progress
+- **status**: completed
 - **priority**: P2
 - **owner**: ai-agent
 - **createdAt**: 2026-08-27

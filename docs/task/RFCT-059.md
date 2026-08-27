@@ -1,6 +1,6 @@
 # RFCT-059 Direction-2 audit of the apid rename: every new `apid` must be a place that should have been renamed
 
-- **status**: implementation complete — `make docs-verify` green (140/140),
+- **status**: completed — implementation complete, `make docs-verify` green (140/140),
   diff confined to `docs/`
 - **priority**: P1
 - **owner**: ai-agent

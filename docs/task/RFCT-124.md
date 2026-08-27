@@ -1,6 +1,6 @@
 # RFCT-124 PLAN-015 M5: the remaining design-doc banners, and architecture.md rewritten to the system that ships
 
-- **status**: done
+- **status**: completed
 - **priority**: P2
 - **owner**: PLAN-015 M5
 - **createdAt**: 2026-08-26

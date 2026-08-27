@@ -1,6 +1,6 @@
 # RFCT-092 A mechanism that checks docs citations, because five of them rotted in two merges
 
-- **status**: done
+- **status**: completed
 - **priority**: P2
 - **owner**: PLAN-015 M4
 - **createdAt**: 2026-08-21 21:10

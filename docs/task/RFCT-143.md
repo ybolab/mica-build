@@ -1,6 +1,6 @@
 # RFCT-143 PLAN-015 M5: boards.md and display.md lose the claims that describe a build that does not exist
 
-- **status**: done
+- **status**: completed
 - **priority**: P2
 - **owner**: PLAN-015 M5
 - **createdAt**: 2026-08-26

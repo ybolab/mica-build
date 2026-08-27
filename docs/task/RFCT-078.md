@@ -1,6 +1,6 @@
 # RFCT-078 The five broken-classes behavioural suite, with coverage asserted
 
-- **status**: complete — each of §6.1's five failure classes is constructed end to end, the one documented action reaches a working UI from every one of them and the control there deactivates the bundle, each class asserts a distinct state the mechanism reported, and the set of classes that ran is diffed against the set declared
+- **status**: completed — each of §6.1's five failure classes is constructed end to end, the one documented action reaches a working UI from every one of them and the control there deactivates the bundle, each class asserts a distinct state the mechanism reported, and the set of classes that ran is diffed against the set declared
 - **priority**: P1
 - **owner**: ai-agent
 - **createdAt**: 2026-08-20 20:10
