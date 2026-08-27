@@ -25,7 +25,10 @@ use axum::response::{Html, IntoResponse, Redirect, Response};
 use axum::routing::{any, get, post};
 use axum::{Json, Router};
 use maud::{DOCTYPE, Markup, PreEscaped, html};
-use mosd_settings::{AuthorizedKey, SettingsError, parse_authorized_key, validate_authorized_keys};
+use mosd_settings::{
+    AuthorizedKey, SettingsError, parse_authorized_key, quote_path_segment,
+    validate_authorized_keys,
+};
 use serde_json::Value;
 use sha2::{Digest, Sha256};
 
@@ -848,6 +851,12 @@ fn validate_iface(iface: &str, dhcp: bool, address: &str) -> Result<(), &'static
     Ok(())
 }
 
+/// The settings path of `iface`'s entry, with the name quoted when it carries
+/// a dot: a VLAN named `eth0.100` is `network."eth0.100"`, not three segments.
+fn iface_settings_path(iface: &str) -> String {
+    format!("network.{}", quote_path_segment(iface))
+}
+
 /// JSON stored at `network.<iface>`: `{"dhcp": true}` or a static block with
 /// `gateway` omitted when empty and `dns` always present (empty list ok).
 fn iface_settings_value(dhcp: bool, address: &str, gateway: &str, dns: &str) -> Value {
@@ -1040,7 +1049,7 @@ async fn setup_submit(
         let value = iface_settings_value(dhcp, address, form.gateway.trim(), &form.dns);
         if let Err(err) = state
             .api
-            .set_settings(&format!("network.{iface}"), &value)
+            .set_settings(&iface_settings_path(iface), &value)
             .await
         {
             return bus_error(&err);
@@ -1524,7 +1533,7 @@ async fn network_submit(State(state): State<AppState>, Form(form): Form<NetworkF
     let value = iface_settings_value(dhcp, address, form.gateway.trim(), &form.dns);
     if let Err(err) = state
         .api
-        .set_settings(&format!("network.{iface}"), &value)
+        .set_settings(&iface_settings_path(iface), &value)
         .await
     {
         return bus_error(&err);
