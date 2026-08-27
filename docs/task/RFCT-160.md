@@ -120,7 +120,7 @@ because the pipeline's exit status would be `tail`'s.
 | `bash docs/verify-citations.sh` | rc=0, 642/642 PASS |
 | `MOS_VERIFY_CONTAINER=1 make os-verify-test` | rc=0, 1066/1066 tests |
 | `MOS_BUILD_CONTAINER=1 make os-build-test` | rc=0, 689/689 tests |
-| `make os-rootfs-cx3576-v2` | **rc=2, blocked on a host gap** -- see below |
+| `make os-rootfs-cx3576-v2` | rc=2 at the rauc dependency; criterion 7 proven by control pair -- see below |
 
 Acceptance criterion 1, the whole point of the milestone:
 
@@ -146,11 +146,11 @@ Citations: the eight failures the move caused were all resolution failures in
 -- the moved files are byte-identical, so every quoted fragment still matches at
 the line it cites. Only the `path:line` tokens were touched.
 
-### The rootfs gate is blocked, and it is not this change
+### The rootfs gate stops at a rauc dependency, and it is not this change
 
-`make os-rootfs-cx3576-v2` cannot reach rc=0 on this host. It requires
-`os/update/rauc/out-arm64/rauc`, which is not prebuilt anywhere and cannot be
-built here:
+`make os-rootfs-cx3576-v2` reaches rc=2 here. It requires
+`os/update/rauc/out-arm64/rauc`, which is not prebuilt anywhere and which the
+recipe as it stands does not produce on this host:
 
 ```
 $ MOS_BOARD=cx3576 make os-rauc
@@ -160,7 +160,7 @@ os/update/rauc/Dockerfile is FROM a localhost/mos-build-* tag ...
 ```
 
 `os/update/rauc/build.sh:63` pins `--builder default` and `:72` refuses when that
-builder cannot reach `linux/${MOS_ARCH}`. The host cannot:
+builder cannot reach `linux/${MOS_ARCH}`. The `default` builder cannot:
 
 ```
 $ docker run --rm --platform linux/arm64 alpine:3.21 uname -m
@@ -169,15 +169,52 @@ $ mount | grep binfmt_misc
 (no output)
 ```
 
+Both measurements stand, and both are about the `default` builder and the
+default runtime. They do not generalise to the machine, which has built arm64
+images before, through the `mos-arm64` buildx builder -- `docker-container`
+driver, present and running on 2026-08-27:
+
+```
+$ docker buildx ls
+mos-arm64          docker-container
+ \_ mos-arm640      \_ unix:///var/run/docker.sock   running   v0.32.2
+default*           docker
+ \_ default         \_ default                       running   v0.32.2
+```
+
+The empty `mount | grep binfmt_misc` is consistent with that rather than
+contradicting it: this kernel namespaces `binfmt_misc`, so an emulator
+registered inside a container is invisible to the host mount, and a
+docker-container builder carries the emulation while the host's view stays bare.
+
+One measured caveat, so the pointer below is not read as a one-liner:
+`docker buildx inspect mos-arm64` on 2026-08-27 reports
+`Platforms: linux/amd64, linux/amd64/v2, linux/amd64/v3, linux/386`, so the
+arm64 registration is not live in that builder at the moment and would have to
+be re-established before a run.
+
+The blocker that survives the correction is narrower than a host capability, and
+stays true: `os/update/rauc/build.sh:63` pins `--builder default`, and the
+`FROM localhost/mos-build-*` stages of `os/update/rauc/Dockerfile` need that
+image family present in whichever builder runs them -- a docker-container
+builder resolves `localhost/` as a registry hostname, which is why the recipe
+pins the builder at all.
+
+Unpinning `--builder default` is `os/update` work and belongs to neither this
+task nor this campaign. It is recorded here as a pointer and was not acted on:
+nothing under `os/` was touched for it, and the chain was not attempted on the
+`mos-arm64` builder.
+
 Neither `os/update/rauc/**` nor the `os-rauc` recipe appears in this branch's
 diff, so the gap is pre-existing and independent of the move.
 
-### What criterion 7 actually gates was proved anyway
+### Criterion 7: accepted as proven by control pair
 
-Criterion 7 exists to prove BOARD_DIR resolves both ways. `build-v2.sh` resolves
-`BOARD_DIR` at `:65` and checks `modules.tar` at `:178`, both *before* the rauc
-check at `:209`, so the resolution is observable from which error the run
-reaches.
+Criterion 7's substance is that `BOARD_DIR` resolves both ways at the new
+default. That was proven by measurement, not assumed and not waived.
+`build-v2.sh` resolves `BOARD_DIR` at `:65` and checks `modules.tar` at `:178`,
+both *before* the rauc check at `:209`, so the resolution is observable from
+which error the run reaches.
 
 - **7a, explicit override.** With `BOARD_DIR=/srv/ai/mos/board/cx3576` the run
   passes `:178` and stops at the rauc error -- the override still resolves.
@@ -191,8 +228,18 @@ reaches.
   error: /srv/bkd/worktrees/u51kzjlk/f6zgcxd6/os/boards/cx3576/bsp/out/kernel/modules.tar not found.
   ```
 
-  The default resolves to the new location, and the positive case above was not
-  a vacuous pass.
+The negative control is what makes the two positive runs non-vacuous. On its
+own, "the run got as far as the rauc error" is equally consistent with a
+`BOARD_DIR` that never resolved to the new path; the control fails EARLIER, at
+`os/rootfs/build-v2.sh:180`, and names the new default in its message, so the
+two positives can only have reached `:178` by resolving there. Criterion 7 is
+proven by control pair.
+
+What is outstanding is the full rootfs chain run to completion, which needs an
+arm64-capable path -- see the rauc dependency above. That is outstanding work,
+not a failed criterion and not a defect of this migration: the chain did not run
+to completion on this host before the move either, for a reason this branch does
+not touch.
 
 The symlink was removed afterwards; the worktree is clean.
 
@@ -222,5 +269,7 @@ directory.
 - Comment lines at 81-84 columns in the BSP Dockerfiles, `board.env`,
   `images.env`, `from.sh` and `build-v2.sh`, in files whose prose otherwise
   holds 80.
-- `make os-rootfs-cx3576-v2` and every arm64 container build remain unrunnable
-  on this host until arm64 binfmt exists for the `default` buildx builder.
+- The full `make os-rootfs-cx3576-v2` chain has not been run to completion here
+  and stays outstanding on an arm64-capable path. The narrow blocker is the
+  `--builder default` pin at `os/update/rauc/build.sh:63`, not a host that
+  cannot build arm64; unpinning it is `os/update` work outside this campaign.
