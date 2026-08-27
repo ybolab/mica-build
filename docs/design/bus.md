@@ -399,7 +399,9 @@ without it. The switch sits **below** the `SettingsApi` trait and
 gate and the `202 Accepted` are byte-for-byte what they were. The
 `com.mos.mosd1` `Reboot` and `PowerOff` methods are **still served** and are
 neither deprecated nor removed (§1.2); apid simply no longer calls them.
-`docs/design/api.md` §10.3 records the same resolution from the API side.
+`docs/task/RFCT-090.md` §"The D3 fork, resolved in writing" records the
+same resolution from the API side; api.md's §10 register, where it was first
+written, was deleted whole (RFCT-122).
 
 ## 8. Structural redaction is a bus-level contract [implemented]
 
