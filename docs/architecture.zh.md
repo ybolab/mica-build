@@ -27,7 +27,7 @@
 | OS 核心（rootfs、PID 1、声明式运行时） | **Talos fork**（`talos/`） | COSI controller 收敛、不可变 squashfs rootfs、单二进制 Go 用户态 |
 | 升级安全 | **Uptane/TUF** | 角色分离签名、离线 root 密钥、防回滚/防冻结（Torizon 已验证） |
 | A/B 槽安装器 | **RAUC**（仅 CLI） | 量产验证的槽写入、U-Boot 握手、adaptive（差分）流式安装 |
-| BSP 产物 | 每板独立的 buildkit Dockerfile（`board/`） | 厂商 kernel/U-Boot 钉版容器化；OS 构建链中不出现 Yocto |
+| BSP 产物 | 每板独立的 buildkit Dockerfile（`os/boards/`） | 厂商 kernel/U-Boot 钉版容器化；OS 构建链中不出现 Yocto |
 | 现场工程模式 | 参照 balenaOS / Venus OS | 离线配网、SD/USB 升级、dev/prod 双变体 |
 
 ## 2. 运行时组件全景
@@ -115,9 +115,9 @@ mos/                 本仓库：文档、板卡、extensions、升级工具、M
 
 ## 7. 板卡
 
-- `board/cx3576` — CX3576-Z（RK3576，arm64）：厂商 6.1.115 内核树、mainline
+- `os/boards/cx3576` — CX3576-Z（RK3576，arm64）：厂商 6.1.115 内核树、mainline
   U-Boot、WiFi/BT/CAN。第一个硬件目标。
-- `board/x64` — 通用 UEFI x86_64：无 BSP 构建，上游 Talos 引导链；QEMU/CI
+- `os/boards/x64` — 通用 UEFI x86_64：无 BSP 构建，上游 Talos 引导链；QEMU/CI
   基线（"x64 绿而 cx3576 红 ⇒ 板级问题"）。
 
 BSP 契约（design/boards.md）：板卡产出 artifacts（kernel Image + modules +

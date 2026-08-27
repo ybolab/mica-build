@@ -4152,16 +4152,16 @@ is the phase whose scope changes, and nothing earlier is affected.
 
 **The parked item, located and quoted rather than paraphrased.** It is phase
 **4e** of `docs/design/dashboard.md` §8.2: *"**Install a bundle, with progress**
-— an upload path, a place to put the bundle, a `rauc install` caller, and a
-progress surface. Today: no upload route, `Multipart` appears nowhere under
-`mosd/`, and no `rauc install` caller anywhere in `mosd/`"*
+— an upload path and a place to put the bundle. The caller and progress surface
+exist (RFCT-084): `InstallUpdate` hands a bundle path to RAUC's D-Bus
+`InstallBundle`, `GetUpdateState` reads progress back. Today: no upload route"*
 (`docs/design/dashboard.md:1779`). It is gap row **4**, restated at
 `docs/design/dashboard.md:789` and originally measured at
 `docs/research/mos-ui-inventory.md:584`.
 
-**Re-measured at `86cd669`, its three "today" claims all still hold:**
-`grep -rn Multipart mosd/` returns nothing, and `grep -rci rauc mosd/mosd/src/`
-returns `0` for every one of the six files in that directory.
+**Re-measured at `d9c5c9e`, one of the original three "today" claims holds:**
+`grep -rn Multipart os/pkgs/mosd/` returns nothing; the caller and progress
+claims are dated — RFCT-084 built both — leaving the upload path alone parked.
 
 **It belongs after phase 5, and the reason is mechanical rather than a
 preference.** Phase 5 builds three of the four things 4e needs and they are the
