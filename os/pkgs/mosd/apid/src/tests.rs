@@ -2707,10 +2707,19 @@ fn audit_events(lines: &[serde_json::Value]) -> Vec<(String, String)> {
         .collect()
 }
 
-/// §6's login trail: success, logout, wrong password and the throttle all
-/// leave lines — and none of those lines carries password material, which is
-/// asserted against the raw bytes rather than the parsed fields so a secret
-/// hiding in an unexpected field would still fail the test.
+/// §6's login trail: success, logout and failed logins all leave lines — and
+/// none of those lines carries password material, which is asserted against
+/// the raw bytes rather than the parsed fields so a secret hiding in an
+/// unexpected field would still fail the test.
+///
+/// A failed login answers 401 or 429 depending on the login guard's clock,
+/// not only on this test's ordering: `LoginGuard::begin_attempt` charges the
+/// attempt at admission and `confirm_failure` re-arms a real-time window
+/// (`BACKOFF_BASE`, one second) from the outcome, so a run descheduled across
+/// that window sees the second wrong attempt admitted (401) where an
+/// unloaded run sees it refused (429). The curve itself has its own tests in
+/// `auth.rs`; this test is about the audit trail, so it accepts either
+/// status and asserts the audit line matches the status actually answered.
 #[tokio::test]
 async fn the_audit_trail_records_the_login_lifecycle_and_never_the_password() {
     let dir = TempDir::new().unwrap();
@@ -2723,22 +2732,22 @@ async fn the_audit_trail_records_the_login_lifecycle_and_never_the_password() {
             .status(),
         StatusCode::SEE_OTHER
     );
-    let wrong = post_form(&router, "/login", "password=not-the-password", None).await;
-    assert_eq!(wrong.status(), StatusCode::UNAUTHORIZED);
-    // The failure armed a one-second window; this attempt lands inside it.
-    let throttled = post_form(&router, "/login", "password=not-the-password", None).await;
-    assert_eq!(throttled.status(), StatusCode::TOO_MANY_REQUESTS);
+    let mut expected = vec![
+        ("login".to_string(), "success".to_string()),
+        ("logout".to_string(), "ok".to_string()),
+    ];
+    for _ in 0..2 {
+        let wrong = post_form(&router, "/login", "password=not-the-password", None).await;
+        let outcome = match wrong.status() {
+            StatusCode::UNAUTHORIZED => "wrong-password",
+            StatusCode::TOO_MANY_REQUESTS => "throttled",
+            other => panic!("a wrong login must answer 401 or 429, not {other}"),
+        };
+        expected.push(("login".to_string(), outcome.to_string()));
+    }
 
     let lines = audit_lines(dir.path());
-    assert_eq!(
-        audit_events(&lines),
-        [
-            ("login".to_string(), "success".to_string()),
-            ("logout".to_string(), "ok".to_string()),
-            ("login".to_string(), "wrong-password".to_string()),
-            ("login".to_string(), "throttled".to_string()),
-        ]
-    );
+    assert_eq!(audit_events(&lines), expected);
     // `oneshot` drives the router with no connection, so the ConnectInfo
     // extension is absent — and that must degrade to a marker, never to a
     // rejected login (audit wiring must not be what makes a login fail).
