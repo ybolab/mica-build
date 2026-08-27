@@ -26,7 +26,7 @@
 #
 # Only shell builtins are used. These scripts run at boot outside any package's
 # dependency graph, and every external command named here would become an
-# undeclared dependency of the image (os/verify-image-v2.sh enumerates them).
+# undeclared dependency of the image (the os/verify suite enumerates them).
 set -u
 
 RED=/sys/class/leds/status-red/brightness

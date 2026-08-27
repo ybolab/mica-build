@@ -367,7 +367,7 @@ describe('ext4-fsck-clean', () => {
   test('A TRUNCATED FILESYSTEM PASSES, because e2fsck exits 0 -- reproduced', async () => {
     // The vacuous PASS in the code under test. e2fsck says the superblock or
     // the partition table is likely to be corrupt and exits 0;
-    // os/verify-image-v2.sh:2342 discards both streams and reads the status.
+    // os/verify-image-v2.sh:2342 (deleted: PLAN-014) discards both streams and reads the status.
     // A port that read the report would answer FAIL where the oracle answers
     // PASS, and the divergence would be the port's. Asserted as its own case so
     // that removing the reproduction has to remove the record of it too.

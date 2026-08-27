@@ -1,5 +1,5 @@
 // The partition table the board definition describes, walked the way
-// os/verify-image-v2.sh:1450-1516 walks it.
+// os/verify-image-v2.sh:1450-1516 (deleted: PLAN-014) walks it.
 //
 // One half of every GPT geometry check; the other half is the table the image
 // actually carries, read by `readGpt`. The two are produced by different code

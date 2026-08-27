@@ -84,7 +84,7 @@ describe('the tool set and the image it comes from', () => {
   })
 
   // GONE WITH THE ORACLE, as this test itself said it would be: it read the
-  // `apk add` line out of os/verify-image-v2.sh and required TOOL_PACKAGES to
+  // `apk add` line out of os/verify-image-v2.sh (deleted: PLAN-014) and required TOOL_PACKAGES to
   // equal it, so that a parity divergence could never be a package difference.
   // There is no second tool list left to agree with -- TOOL_PACKAGES is now the
   // only statement of what the verifier installs, and a test that compared it

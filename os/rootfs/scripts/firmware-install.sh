@@ -47,7 +47,7 @@ rmdir /tmp/fw
 # What this replaces is `test -f /usr/lib/firmware/fmacfw_8800d80_u02.bin`: the
 # same assertion with one board's answer written into a file every board runs.
 # BOARD_FIRMWARE_FILES holds the INSTALLED paths, which is what makes it usable
-# here and is also how os/verify-image-v2.sh reads it -- one list, two readers.
+# here and is also how the os/verify suite reads it -- one list, two readers.
 for f in ${BOARD_FIRMWARE_FILES}; do
     [ -f "$f" ] || {
         echo "error: the board declares $f in BOARD_FIRMWARE_FILES and it is not on the root after the install. BOARD_FIRMWARE_FILES holds installed paths under /usr/lib/firmware; a declared path that is somewhere else is a radio whose driver finds no firmware on the device" >&2
