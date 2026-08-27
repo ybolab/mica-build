@@ -12,7 +12,7 @@ User decision (2026-08-27), growing out of RFCT-135: the network form
 accepting `eth0.100` and then failing on deny_unknown_fields is not a
 validation bug to patch but a missing feature surface. The device is to
 support native networking: VLAN interfaces, bridges, and WireGuard, managed
-like everything else (settings tree -> mosd reconciler -> apid форм/API).
+like everything else (settings tree -> mosd reconciler -> apid forms/API).
 
 Known constraints from the tree: the settings model is deny_unknown_fields
 with a dot-path API whose VLAN collision is documented in api.md section 2.2;
