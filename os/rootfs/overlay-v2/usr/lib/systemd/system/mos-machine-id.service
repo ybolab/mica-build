@@ -6,6 +6,12 @@ ConditionKernelCommandLine=!systemd.machine_id
 After=local-fs.target
 # Deliberately not Before= any target: writing the U-Boot env touches storage
 # and must never hold up boot.
+# Concurrency with RAUC's slot marking is not boot ordering alone any more:
+# fw_printenv/fw_setenv flock /var/lock/fw_printenv.lock for every access (the
+# rule and its caveats: /etc/fw_env.config). That lock is silently SKIPPED
+# when /var/lock does not exist yet, and systemd-tmpfiles recreates it each
+# boot at sysinit -- so this unit must keep DefaultDependencies=yes; the
+# implicit After=sysinit.target is what makes the lock real before ExecStart.
 
 [Service]
 Type=oneshot
