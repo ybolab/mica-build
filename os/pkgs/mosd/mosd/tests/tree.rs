@@ -125,8 +125,7 @@ impl Harness {
         if let Some(reader) = self.log_reader.take() {
             let _ = reader.join();
         }
-        let log = self.mosd_log.lock().expect("log lock").clone();
-        log
+        self.mosd_log.lock().expect("log lock").clone()
     }
 }
 
