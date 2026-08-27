@@ -47,5 +47,5 @@ Each plan is a single line linking to its detail file. All detailed information 
 - [x] [**PLAN-014 os/ restructure - board isolation, per-stage rootfs Dockerfiles, pinned build environments, and the TS build/verify toolchain**](PLAN-014.md) `2026-08-25`
 - [x] [**PLAN-015 Function-oriented comments - strip history from code, tests, and docs**](PLAN-015.md) `2026-08-26`
 - [x] [**PLAN-016 apid OpenAPI phase 1 - utoipa spec, discovery endpoints, read-only slice, breaking-change gate**](PLAN-016.md) `2026-08-26`
-- [-] [**PLAN-017 Docs reconciliation - api.md measured against the served OpenAPI surface, Talos framing retired**](PLAN-017.md) `2026-08-26`
+- [x] [**PLAN-017 Docs reconciliation - api.md measured against the served OpenAPI surface, Talos framing retired**](PLAN-017.md) `2026-08-26`
 - [x] [**PLAN-018 Board consolidation - board/ moves under os/boards/, one definition per board**](PLAN-018.md) `2026-08-26`
