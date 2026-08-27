@@ -8,7 +8,7 @@
 // entire defence, and one only ever observed working is not evidence that it
 // still can. Pure, each is driven from the failing side against doctored text.
 //
-// The case rule, stated once here as os/mkimage-v2.sh states it once there: GPT
+// The case rule, stated once here as os/mkimage-v2.sh (deleted: PLAN-014) states it once there: GPT
 // tooling -- sgdisk, and therefore os/boards/cx3576/board.env -- writes GUIDs
 // uppercase, while udev and libblkid write the /dev/disk/by-partuuid/ names
 // lowercase, the form a kernel cmdline has to use. Both denote the same GUID,
@@ -58,7 +58,7 @@ export function checkBootAttempts(geometry: Geometry, bootCmd: string, path: str
  * The three names that must be the same derivation of one base.
  *
  * The per-slot names, the pattern boot.scr builds at runtime and the pattern
- * os/update/bundle.sh writes are three copies of one string; any of them
+ * os/build/src/bundle.ts writes are three copies of one string; any of them
  * drifting means an updated slot silently fails to boot. Tied together here
  * rather than trusted three times.
  */
@@ -162,7 +162,7 @@ export function checkPartitionNumbers(geometry: Geometry, bootCmd: string, path:
   }
 }
 
-/** Every boot.cmd guard, in the order os/mkimage-v2.sh applies them. */
+/** Every boot.cmd guard, in the order os/mkimage-v2.sh (deleted: PLAN-014) applies them. */
 export function checkBootCmd(geometry: Geometry, bootCmd: string, path: string): void {
   checkBootAttempts(geometry, bootCmd, path)
   checkBootCmdTokens(geometry, bootCmd, path)
@@ -201,7 +201,7 @@ export interface VerityEnv {
  *
  * Separate from the guards that read them, because two scripts read the same
  * two tokens out of the same two files and must agree about what they say:
- * os/mkimage-v2.sh's mkverityenv() and os/update/bundle.sh's
+ * os/mkimage-v2.sh's (deleted: PLAN-014) mkverityenv() and os/update/bundle.sh's
  * write_verity_env(). They refuse differently -- the assembler gives
  * dm-mod.create= and dm-mod.waitfor= a sentence each, the bundle builder rolls
  * them into one and additionally requires the pinned salt -- so the refusals

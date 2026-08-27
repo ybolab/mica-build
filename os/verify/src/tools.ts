@@ -10,7 +10,7 @@
 // Two routes, one seam: a caller passes an argv and reads an exit status and
 // cannot tell which answered, which makes a host without gptfdisk a supported
 // host. The container is the pinned IMAGE_ALPINE_3_21 -- the same key
-// os/mkimage-v2.sh assembles from and the shell verifier re-execs into, resolved
+// os/mkimage-v2.sh (deleted: PLAN-014) assembles from and the shell verifier re-execs into, resolved
 // through os/build-env/from.sh --ref -- so this reads back a GPT, a FAT slot and
 // a squashfs with tools out of the same base the assembler used.
 //

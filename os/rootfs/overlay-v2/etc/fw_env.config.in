@@ -18,7 +18,7 @@
 #
 # The environment addressed here exists on a v2 device — the image carries the
 # uboot-mos variant, which has the redundant pair at UENV_A/B_OFFSET_BYTES, and
-# os/mkimage-v2.sh refuses to assemble a v2 image around the debug variant.
+# os/build/src/mkimage-v2.ts refuses to assemble a v2 image around the debug variant.
 #
 # Two writers exist for this environment (RAUC slot marking and the first-boot
 # machine-id oneshot), and the dashboard's boot-credit poll will add a reader

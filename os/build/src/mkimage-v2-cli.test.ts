@@ -1,6 +1,6 @@
 // The host half: where the inputs are, and the two families of missing one.
 //
-// os/mkimage-v2.sh gives a missing rootfs input and a missing BSP input
+// os/mkimage-v2.sh (deleted: PLAN-014) gives a missing rootfs input and a missing BSP input
 // DIFFERENT sentences, and the difference is the whole value of the check: one
 // is produced by a script you can run in a minute, the other by a BSP build or a
 // BOARD_DIR pointed somewhere else. Collapsing them into "not found" would be a
