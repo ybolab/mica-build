@@ -103,7 +103,7 @@ is guaranteed to exhaust its credits"*
 
 **What does not exist — [not implemented].** No on-device pull: the device-side
 verifier is built and tested on the host, and *"nothing ships it to a device
-yet"* (`update/README.md:12`). apid declares no update route
+yet"* (`os/pkgs/rauc-sign/README.md:12`). apid declares no update route
 (`mosd/apid/src/routes.rs:113-188`), so it offers no local check/apply button
 either; earlier text here claiming one described a surface that is not there.
 
@@ -132,4 +132,4 @@ an independent credential domain; compromise of one grants nothing in another.
 An apid session is not an enrollment credential, an enrollment credential is
 not a root shell, and an endpoint holding a fleet's channel credentials must
 not thereby hold the keys that authorise an image — the update trust anchor is
-already *"a separate key hierarchy"* (`update/README.md:44-45`) and stays one.
+already *"a separate key hierarchy"* (`os/pkgs/rauc-sign/README.md:51-52`) and stays one.

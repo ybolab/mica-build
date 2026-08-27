@@ -1,4 +1,4 @@
-//! `mos-update-verify` — device-side TUF metadata and target verifier
+//! `rauc-verify` — device-side TUF metadata and target verifier
 //! (PLAN-006 phase 2, first half).
 //!
 //! Scriptable contract: exit 0 means verified; any other exit means not
@@ -10,11 +10,11 @@ use std::path::PathBuf;
 use std::process::ExitCode;
 
 use clap::Parser;
-use mos_sign::client;
+use rauc_sign::client;
 
 #[derive(Debug, Parser)]
 #[command(
-    name = "mos-update-verify",
+    name = "rauc-verify",
     about = "Verify a local mos TUF repository from a pinned trusted root"
 )]
 struct Cli {
@@ -22,7 +22,7 @@ struct Cli {
     #[arg(long)]
     repo: PathBuf,
     /// Pinned trusted root metadata, provisioned out of band. Required for
-    /// the same reason `mos-sign verify` requires it: checking a repository
+    /// the same reason `rauc-sign verify` requires it: checking a repository
     /// against its own metadata/root.json proves only internal consistency.
     #[arg(long)]
     root: PathBuf,
@@ -62,7 +62,7 @@ async fn main() -> ExitCode {
         }
         Err(err) => {
             // One line, alternate format: the whole context chain colon-joined.
-            eprintln!("mos-update-verify: {err:#}");
+            eprintln!("rauc-verify: {err:#}");
             ExitCode::FAILURE
         }
     }

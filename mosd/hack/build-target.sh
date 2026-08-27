@@ -120,19 +120,23 @@ MOSD_BUILD_RECORD="${REPO_ROOT}/_out/mosd-build.txt"
     printf 'commit\t%s\n' "${MOS_BUILD_COMMIT}"
 } >"${MOSD_BUILD_RECORD}"
 
-# The repository is mounted, not mosd/: mosd/Cargo.toml's workspace members
-# include `../update/sign`, a crate outside the directory this script's own path
-# arithmetic calls the workspace, and mounting mosd/ alone makes cargo fail with
+# The repository is mounted, not mosd/. That used to be forced: mosd/Cargo.toml
+# listed one workspace member outside this directory, and mounting mosd/ alone
+# made cargo fail on a manifest it could not see. PLAN-019 M3 extracted that
+# crate into its own workspace under os/pkgs/, so no member reaches outside
+# mosd/ any more and that reason is gone.
 #
-#   error: failed to load manifest for workspace member `/src/../update/sign`
-#   Caused by: No such file or directory (os error 2)
-#
-# which names the file and not the cause. The check below is the general form, so
-# the next member added outside mosd/ fails with a sentence instead of a missing
-# file. At the fixed path /src, because rustc records the paths it is given:
+# The decision is unchanged, because the reason below always carried it on its
+# own and now carries it alone: at the fixed path /src, because rustc records
+# the paths it is given:
 # mounting the checkout where it happens to live would make the output depend on
 # the directory the repository was cloned into -- two machines, same commit,
 # different binaries, for a reason that is not about the source.
+#
+# The loop below is DORMANT, not dead: the members list has no `../` entry today,
+# so it iterates zero times. It is kept because it is the general form -- the
+# next member added outside mosd/ fails with a sentence rather than with a
+# missing-file error that names the file and not the cause.
 while IFS= read -r m; do
     [ -n "${m}" ] || continue
     case "${m}" in

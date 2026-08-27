@@ -19,7 +19,7 @@ device's settings and drives systemd to match them.
 | API | `apid` — the HTTPS daemon; the dashboard is one client of the API it serves | `mosd/apid/`, `docs/design/api.md` |
 | Telemetry | `mos-mqttd` bridges the item tree to MQTT; `mos-mqtt-broker` is the on-device broker | `mosd/mqttd/`, `mosd/broker/` |
 | A/B installer | RAUC, with a U-Boot `BOOT_ORDER` handshake on cx3576 and GRUB on x64 | `os/update/rauc/`, `docs/design/uboot-ab-handshake.md` |
-| Update trust | TUF metadata pinning a CMS-signed RAUC bundle | `update/sign/`, `docs/design/release-signing.md` |
+| Update trust | TUF metadata pinning a CMS-signed RAUC bundle | `os/pkgs/rauc-sign/`, `docs/design/release-signing.md` |
 | BSP artifacts | per-board buildkit Dockerfiles producing kernel, device tree and bootloader | `board/`, `docs/design/boards.md` |
 | Workloads | podman plus the Quadlet systemd generator, off by default | `os/podman/`, `docs/design/containers.md` |
 
@@ -101,8 +101,8 @@ TUF metadata -> four ed25519 role keys, root offline; pins the bundle's sha256,
 A release is signed twice by two unrelated hierarchies, and the separation is
 the point: a TUF online key cannot sign a bundle and the bundle key cannot sign
 metadata. Ceremonies, key custody and rotation are
-`docs/design/release-signing.md`; `mos-sign` signs and `mos-update-verify`
-verifies, both in `update/sign/`.
+`docs/design/release-signing.md`; `rauc-sign` signs and `rauc-verify`
+verifies, both in `os/pkgs/rauc-sign/`.
 
 Two gaps are recorded rather than assumed: nothing in the build signs SPL or
 U-Boot, and no production keyring ships in the image
@@ -142,7 +142,6 @@ mos/
 │   └── tests/     shell suites over the built image; podman/ pins the engine
 ├── mosd/          Rust workspace: mosd, apid, mos-mqttd, mos-mqtt-broker, mosd-settings
 ├── board/         BSP per board: kernel, U-Boot and firmware Dockerfiles
-├── update/        release trust tooling: mos-sign and mos-update-verify
 ├── extensions/    reserved for optional sysext layers; nothing is built from it
 ├── test/          the apid API suite, run against a booted image in QEMU
 └── Makefile       top-level routing; `make help` lists every target

@@ -15,11 +15,12 @@ workspaces built in the pinned image from `os/build-env/`.
 
 `rauc-sign/` is the member that stretches the rule. It is half build-host
 tool, half shipped component: the release half "runs on a build host, never on
-a device" (`update/README.md:6-7`), while the device half verifies on the device
+a device" (`rauc-sign/README.md:6-7`), while the device half verifies on the device
 (`:9`). It lives here because it is source this repository compiles, and
 because the alternative — splitting one crate across two trees over which
 binary runs where — buys nothing.
 
-`rauc-sign/` and `mosd/` arrive at PLAN-019 M3 and M4. Naming them now is
-correct: this file states the parent's rule, not its current contents, and a
-rule written only after the fact is a description rather than a constraint.
+`rauc-sign/` arrived at PLAN-019 M3; `mosd/` arrives at M4. Naming the second
+one before it lands is correct: this file states the parent's rule, not its
+current contents, and a rule written only after the fact is a description
+rather than a constraint.

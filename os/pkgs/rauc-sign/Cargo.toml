@@ -1,0 +1,69 @@
+[package]
+name = "rauc-sign"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+anyhow = { workspace = true }
+chrono = { workspace = true }
+clap = { workspace = true }
+hex = { workspace = true }
+ring = { workspace = true }
+serde_json = { workspace = true }
+tokio = { workspace = true }
+tough = { workspace = true }
+url = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }
+
+# This crate is its own cargo workspace, of exactly one member. It used to be a
+# member of the mosd workspace named through `workspace = "../../mosd"`, which
+# was already the awkward case -- cargo only auto-discovers a workspace root in
+# a parent directory, and mosd/ never was one. After PLAN-019 the two trees are
+# siblings under os/pkgs/ and neither contains the other, so the reach is gone
+# rather than merely redirected.
+#
+# The cost of standing alone is that every `workspace = true` above now resolves
+# here, and the cost of that is this file restating ten dependency versions the
+# mosd workspace also states. That duplication is deliberate: the two graphs are
+# genuinely separate -- mosd/Cargo.lock does not contain `tough` or `url` at all
+# -- and a shared table would tie a build-host signing tool's resolution to a
+# device daemon's.
+#
+# The consequence to remember: `cargo clippy --workspace` run from mosd/ no
+# longer reaches this crate. .github/workflows/check.yml runs a second gate for
+# it, and that step is the only thing that checks this code on push.
+[workspace]
+resolver = "3"
+members = ["."]
+
+[workspace.package]
+edition = "2024"
+rust-version = "1.96"
+publish = false
+
+[workspace.lints.rust]
+unsafe_code = "forbid"
+
+[workspace.lints.clippy]
+all = { level = "warn", priority = -1 }
+
+[workspace.dependencies]
+anyhow = "1"
+chrono = { version = "0.4", default-features = false, features = ["clock", "serde", "std"] }
+clap = { version = "4", features = ["derive"] }
+hex = "0.4"
+ring = "0.17"
+serde_json = "1"
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "process"] }
+url = "2"
+# tough 0.18 is the last release whose crypto backend is `ring`; 0.19+ hard-depend
+# on aws-lc-rs, which builds C (AWS-LC). See docs/task/RFCT-016.md.
+tough = { version = "=0.18.0", default-features = false }
+tempfile = "3"

@@ -3462,12 +3462,12 @@ transfer:
 same cargo workspace (`mosd/Cargo.toml:3`) built on `tough` pinned at `=0.18.0`
 (`mosd/Cargo.toml:42-44`). It is **build-host tooling**: it *"runs on a build
 host, never on a device, and its output is static content"*
-(`update/README.md:6-7`). It is not installed into the image at all —
+(`os/pkgs/rauc-sign/README.md:6-7`). It is not installed into the image at all —
 `grep -rn "mos-sign\|update/sign" os/` returns nothing at `86cd669`. And its
 README names the missing half without being asked: the **on-device Uptane
 client** is named as *"Explicitly out of scope for the whole crate"*
-(`update/README.md:34`). Its own README also records that RAUC's CMS signature
-*"is a separate key hierarchy"* (`update/README.md:44`), so the two bodies of
+(`os/pkgs/rauc-sign/README.md:41`). Its own README also records that RAUC's CMS signature
+*"is a separate key hierarchy"* (`os/pkgs/rauc-sign/README.md:51`), so the two bodies of
 machinery do not compose with each
 other either.
 
@@ -3556,7 +3556,7 @@ checkable.**
    holding and a signature starts buying a real difference. Note the cost of
    that path: scopes need the per-method D-Bus allowlist that
    `mosd/dist/com.mos.mosd.conf:48-61` deliberately deferred.
-4. **The on-device Uptane client is implemented.** `update/README.md:25` names
+4. **The on-device Uptane client is implemented.** `os/pkgs/rauc-sign/README.md:32` names
    it as explicitly out of phase 1. Once a device verifies TUF metadata for one
    artifact class, extending it to a second is incremental rather than novel.
 

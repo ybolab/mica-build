@@ -14,9 +14,9 @@ use std::num::NonZeroU64;
 use std::path::PathBuf;
 
 use common::{Fixture, at, read_json, valid_expirations};
-use mos_sign::client;
-use mos_sign::keys;
-use mos_sign::repo;
+use rauc_sign::client;
+use rauc_sign::keys;
+use rauc_sign::repo;
 use ring::rand::SystemRandom;
 use tough::editor::signed::SignedRole;
 use tough::schema::{KeyHolder, RoleType, Root, Signed};

@@ -1,20 +1,20 @@
-//! `mos-sign` — release-side TUF repository tool for mos (PLAN-006 phase 1).
+//! `rauc-sign` — release-side TUF repository tool for mos (PLAN-006 phase 1).
 
 use std::path::PathBuf;
 
 use anyhow::{Context, Result};
 use chrono::{DateTime, Utc};
 use clap::{Args, Parser, Subcommand};
-use mos_sign::keys;
-use mos_sign::repo::{self, Expirations};
+use rauc_sign::keys;
+use rauc_sign::repo::{self, Expirations};
 
 /// Default location for generated development keys. Gitignored; never populated
 /// with anything that goes near a production release.
-const DEFAULT_KEYS_DIR: &str = "update/sign/.devkeys";
+const DEFAULT_KEYS_DIR: &str = "os/pkgs/rauc-sign/.devkeys";
 
 #[derive(Debug, Parser)]
 #[command(
-    name = "mos-sign",
+    name = "rauc-sign",
     about = "Sign and verify the mos TUF update repository"
 )]
 struct Cli {

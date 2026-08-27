@@ -2,9 +2,9 @@
 //!
 //! Two halves share this crate because they share one metadata format:
 //!
-//! - [`repo`] + the `mos-sign` binary: the release side (phase 1). Produces and
+//! - [`repo`] + the `rauc-sign` binary: the release side (phase 1). Produces and
 //!   maintains the static TUF repository on a build host, never on a device.
-//! - [`client`] + the `mos-update-verify` binary: the device side (phase 2,
+//! - [`client`] + the `rauc-verify` binary: the device side (phase 2,
 //!   first half). Verifies a LOCAL copy of that repository against a pinned
 //!   trusted root and a persistent per-role version state.
 //!

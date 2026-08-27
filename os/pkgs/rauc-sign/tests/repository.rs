@@ -8,8 +8,8 @@ mod common;
 use std::fs;
 
 use common::{Fixture, VERITY_ROOT_HASH, at, read_json, root_expiry, valid_expirations};
-use mos_sign::keys;
-use mos_sign::repo;
+use rauc_sign::keys;
+use rauc_sign::repo;
 use tempfile::TempDir;
 
 /// Release-side offline verification of the fixture repository.

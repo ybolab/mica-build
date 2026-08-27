@@ -74,18 +74,40 @@ jobs:
           [ -n "$address" ] || { echo "dbus-daemon printed no session address" >&2; exit 1; }
           echo "session bus address: $address"
 
-      # Pinned to the workspace manifest rather than to a literal: the MSRV
-      # lives in mosd/Cargo.toml, and a second copy here could disagree with it.
+      # Pinned to the workspace manifests rather than to a literal: the MSRV
+      # lives in each Cargo.toml, and a second copy here could disagree with it.
       # Reading it back is also the only thing that makes `rust-version` an
       # enforced claim rather than documentation.
-      - name: Resolve the toolchain from the workspace MSRV
+      #
+      # There are TWO manifests since PLAN-019 M3 split rauc-sign into its own
+      # workspace, and this job installs ONE toolchain. So the two MSRVs are not
+      # merely read, they are required to AGREE: taking the higher of the two
+      # would silently let a crate claim an MSRV this job never actually proves,
+      # and taking the first would let the other drift unnoticed. If they should
+      # ever legitimately differ, that is the point at which this job needs two
+      # toolchains, and this check is what says so.
+      - name: Resolve the toolchain from the workspace MSRVs
         id: msrv
         run: |
           set -euo pipefail
-          version=$(sed -n 's/^rust-version *= *"\([^"]*\)".*/\1/p' mosd/Cargo.toml | head -1)
-          [ -n "$version" ] || { echo "no rust-version in mosd/Cargo.toml" >&2; exit 1; }
-          echo "version=$version" >>"$GITHUB_OUTPUT"
-          echo "workspace MSRV: $version"
+          read_msrv() {
+            local v
+            v=$(sed -n 's/^rust-version *= *"\([^"]*\)".*/\1/p' "$1" | head -1)
+            [ -n "$v" ] || { echo "no rust-version in $1" >&2; exit 1; }
+            echo "$v"
+          }
+          mosd_msrv=$(read_msrv mosd/Cargo.toml)
+          sign_msrv=$(read_msrv os/pkgs/rauc-sign/Cargo.toml)
+          [ "$mosd_msrv" = "$sign_msrv" ] || {
+            echo "error: the two workspaces disagree about the MSRV." >&2
+            echo "       mosd/Cargo.toml:                 $mosd_msrv" >&2
+            echo "       os/pkgs/rauc-sign/Cargo.toml:    $sign_msrv" >&2
+            echo "       This job installs one toolchain and runs both gates on it, so it" >&2
+            echo "       cannot honour two MSRVs. Reconcile them, or split this job." >&2
+            exit 1
+          }
+          echo "version=$mosd_msrv" >>"$GITHUB_OUTPUT"
+          echo "workspace MSRV (both manifests agree): $mosd_msrv"
 
       # `--component` is repeated once per component: rustup-init treats one
       # flag with two space-separated words as a component literally named
@@ -135,10 +157,20 @@ jobs:
           cargo deny --version
           cargo nextest --version
 
-      # The gate itself. Nothing above this line asserts anything about the
+      # The gates themselves. Nothing above this line asserts anything about the
       # code; nothing below it is a check this file invented.
       - name: mosd/hack/check.sh
         run: bash mosd/hack/check.sh
+
+      # The SECOND cargo workspace, and the reason it needs its own step: until
+      # PLAN-019 M3, this crate was a member of the mosd workspace, reached by a
+      # `../` entry in mosd/Cargo.toml's members list, so the `--workspace` flags
+      # inside the script above covered it. The extraction ended that. A `--workspace`
+      # that no longer spans a crate does not complain -- it simply checks less
+      # and still exits 0 -- so without this step the crate would ship
+      # unchecked with this whole job still green.
+      - name: os/pkgs/rauc-sign/hack/check.sh
+        run: bash os/pkgs/rauc-sign/hack/check.sh
 
       # The gate above already runs the in-tree test that compares the
       # committed document against the generated one, so this step catches no

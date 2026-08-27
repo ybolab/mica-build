@@ -10,8 +10,8 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use chrono::{DateTime, Utc};
-use mos_sign::keys;
-use mos_sign::repo::{self, Expirations};
+use rauc_sign::keys;
+use rauc_sign::repo::{self, Expirations};
 use tempfile::TempDir;
 
 /// A verity root hash shaped like the real thing; the tool records it verbatim.
