@@ -401,16 +401,16 @@ better mechanism and then hid it.**
 
 - **Shows:** time since boot, and — once section 2.5's feed exists — whether
   that boot was the first on the current slot version.
-- **Feed:** `/proc/uptime`, read by `apid` itself at
-  `os/pkgs/mosd/apid/src/routes.rs:606-608`, parsed at `:558-565`, formatted at
-  `:549-560`, rendered on `/` at `:580-583`.
-- **Availability: (a) available today** — gap-table **row 12**, answered via a
-  side channel. Recorded honestly: this is **the one place `apid` touches the
-  filesystem for data rather than going through the bus**, a documented
-  exception to the layering asserted at `os/pkgs/mosd/apid/src/settings_api.rs:10-12`.
-  Uptime is not in the live-state tree at all (`mos-ui-inventory.md` section 6.3).
-  This proposal does not resolve that exception; it notes that a dashboard adding
-  more `/proc` reads would widen it, and that the place to decide is the
+- **Feed:** mosd's live-state `uptime` key, read over the bus via `get_state`
+  (`os/pkgs/mosd/apid/src/routes.rs:1520-1540`); mosd itself reads
+  `/proc/uptime` (`os/pkgs/mosd/mosd/src/bus.rs:552-558`). RFCT-129 landed this.
+- **Availability: (a) available today** — gap-table **row 12**, no longer via a
+  side channel. The old `/proc/uptime`-in-`apid` exception to the layering
+  asserted at `os/pkgs/mosd/apid/src/settings_api.rs:10-12` is closed: RFCT-129
+  moved the read into `mosd` and `apid` gets uptime through the bus like every
+  other system fact, so uptime now sits in the live-state tree.
+  This proposal notes that a dashboard adding
+  `/proc` reads to `apid` would reopen it, and that the place to decide is the
   `mosd`/`apid` boundary rather than this document.
 - **Why it earns the first screen:** it is the cheapest possible detector of an
   unplanned reboot, and — paired with section 2.5 — the difference between "this
@@ -1697,9 +1697,9 @@ scheduled.
 1. A static system user created in the rootfs (`os/rootfs/scripts/account-mos.sh`), a
    rewritten `os/pkgs/mosd/dist/apid.service` carrying `User=`,
    `AmbientCapabilities=CAP_NET_BIND_SERVICE`, a matching
-   `CapabilityBoundingSet=`, and a sandboxing set checked against the two
-   unusual things `apid` does — it reads `/proc/uptime` and it needs the
-   system bus.
+   `CapabilityBoundingSet=`, and a sandboxing set checked against the one
+   unusual thing `apid` still does — it needs the system bus (the
+   `/proc/uptime` read moved into `mosd`, RFCT-129).
 2. A `user="apid"` block in `os/pkgs/mosd/dist/com.mos.mosd.conf`. The policy is
    already default-deny in both directions with root allowed
    (`os/pkgs/mosd/dist/com.mos.mosd.conf:69-79`), and the file sketches the block to add
