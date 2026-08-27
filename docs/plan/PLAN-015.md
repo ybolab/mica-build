@@ -4,7 +4,7 @@
 - **createdAt**: 2026-08-26 14:05
 - **approvedAt**: 2026-08-26 14:20
 - **relatedTask**: RFCT-114 (M1), RFCT-115 (M2), RFCT-116 (M3), RFCT-121 (M4), RFCT-122+ (M5) — task files created by the executing workstream as each milestone starts
-- **milestones**: M1 os/ + Makefile + board/ comments; M2 mosd/ (excluding mosd/apid/) comments; M3 test-script comments; M4 the citation checker (RFCT-092); M5 documentation rewrite; M6 form compression (RFCT-150..159 reserved)
+- **milestones**: M1 os/ + Makefile + board/ comments; M2 mosd/ (excluding mosd/apid/) comments; M3 test-script comments; M4 **complete 2026-08-26** (RFCT-121) — the citation checker RFCT-092 asked for ships as `docs/verify-citations.sh`, with 16 negative-test cases and a `make` target; M5 **complete 2026-08-26** (RFCT-122..128, RFCT-143) — the documentation rewrite, and `bash docs/verify-citations.sh` exits 0 over the tree so the check gates rather than advises; M6 form compression (RFCT-150..159 reserved)
 
 ## Context
 

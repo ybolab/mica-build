@@ -16,7 +16,8 @@ BOARDS := cx3576 x64
 	os-shadow-test os-dbus-policy-test os-repart-test \
 	os-uboot-handshake-test \
 	os-layout-lint os-layout-lint-test os-verify-test os-build-test \
-	docs-verify docs-verify-test build-env
+	docs-verify docs-verify-test \
+	docs-verify-citations docs-verify-citations-test build-env
 
 help:
 	@echo "mos build targets:"
@@ -40,6 +41,8 @@ help:
 	@echo "  os-build-test       run the os/build bun+TypeScript suite: board geometry and the toolset wrappers (docker)"
 	@echo "  docs-verify         assert both document indexes agree with the tree, in both directions"
 	@echo "  docs-verify-test    prove the index assertions actually fail on a duplicated row or entry"
+	@echo "  docs-verify-citations      assert every design-document citation resolves and still quotes its source"
+	@echo "  docs-verify-citations-test prove the citation assertions actually fail on a moved line or a changed quote"
 	@echo "  podman              build the container engine from source into os/podman/out-\$$MOS_ARCH"
 	@echo "  build-env           build the pinned builder images localhost/mos-build-{base,c,go,rust}"
 	@echo "  os-quadlet-doc-test run docs/design/containers.md's examples through Quadlet"
@@ -247,6 +250,27 @@ docs-verify:
 # when it cannot run rather than skipping.
 docs-verify-test:
 	bash docs/verify-index-test.sh
+
+# Every `path:line` citation in the English design documents, checked twice: the
+# path resolves and the lines exist, and where the citing text quotes its
+# source, the quote is still at the lines it cites. Resolution alone is not
+# enough -- a quotation whose source was renamed underneath it still resolves,
+# and reads as a statement the source contradicts. This gates: a citation that
+# does not resolve, or a quote no longer at the lines it cites, fails the build.
+# A provenance claim -- "measured at <commit>" -- is validated against no file at
+# all, here or anywhere, and stays a human responsibility; so is a citation whose
+# line still resolves while the text it names has moved.
+docs-verify-citations:
+	bash docs/verify-citations.sh
+
+# Negative tests for the target above. Each assertion is driven against a
+# fixture where its fact is false and required to fail with its own message,
+# and the report's skipped counts are asserted as output -- a check that drops
+# a category quietly reads green while part of its input was never opened.
+# Needs no root and no network, and it fails loudly when it cannot run rather
+# than skipping.
+docs-verify-citations-test:
+	bash docs/verify-citations-test.sh
 
 # Every example in docs/design/containers.md, fed to the aarch64 Quadlet
 # generator the image ships. A configuration example nothing executes is a claim

@@ -4,12 +4,6 @@
 >
 > A dedicated product UI on the HDMI output — status panel, setup wizard,
 > and application UI on an attached screen, with optional touch/USB input.
->
-> **Daemon rename (campaign `apid`, 2026-08-19, RFCT-056).** The HTTPS management
-> daemon formerly called `webd` is now `apid` — it is the API daemon, and the
-> dashboard is one of the things it serves. Only the name changed here; the
-> mechanism this document describes is unaffected. See
-> `docs/design/dashboard.md` §7.4.
 
 ## 1. Principle: one UI codebase
 
@@ -31,8 +25,8 @@ board graphics stack (BSP: kernel DRM + HDMI + GPU driver/firmware)
 
 - **`kiosk` system extension**: cage + WPE WebKit (+ mesa/GPU userland). Heavy
   C stack, therefore an extension per image profile — headless deployments
-  simply omit it; base rootfs is untouched. Runs as an extension service under
-  machined supervision.
+  simply omit it; base rootfs is untouched. Runs as a systemd unit, like every other
+  service on the device.
 - WPE WebKit is the embedded-first choice (smaller than Chromium, upstream
   WPE/cage pairing is standard kiosk practice). Chromium `--kiosk` is the
   fallback if a needed web feature is missing.
@@ -64,11 +58,7 @@ the screen at an application UI (served by an app container) instead of apid.
   ever flashes on a customer screen.
   - The master is a **source asset with no consumer yet**: no build step reads
     it, and U-Boot's splash path wants BMP, so the conversion belongs to phase 1
-    below. It is 1920x1080 16-bit RGB, and it is a PNG rather than the 12 MB
-    uncompressed P6 PPM it used to be — same pixels, verified byte for byte, at
-    76 KB instead of two thirds of the repository.
-- Upstream Talos dashboard stays disabled (`talos.dashboard.disabled`,
-  PLAN-007 decision) — kiosk replaces it as the local presence.
+    below. It is a 76 KB PNG, 1920x1080 at 16 bits per channel.
 - Console channels (access.md): wizard tty2 / debug shell tty3 live on
   **serial**; VT switching from the kiosk is disabled in prod images.
 - Kiosk crash policy: restart with backoff; after N failures fall back to a

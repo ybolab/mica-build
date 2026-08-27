@@ -9,12 +9,10 @@
 // the KEY=value lines of one env file and the verity table on the cmdlines --
 // all of which a fixture can carry honestly.
 //
-// The byte-identity gate is not here. It is shell-against-TypeScript over the
-// real _out/cx3576/ inputs, it takes minutes and 1.3 GiB, and os/build/HARNESS.md
-// carries the recipe and the two hashes. What is here is everything that gate
-// cannot see: a gate compares bytes for a good input, and a port that quietly
-// dropped a refusal produces identical bytes for every good input and passes it
-// perfectly. What it stops catching is a board that needs re-flashing.
+// This file compares no bytes. It covers what a byte comparison cannot see: a
+// comparison is green for a good input, and an assembler that quietly dropped a
+// refusal produces identical bytes for every good input and passes it perfectly.
+// What it stops catching is a board that needs re-flashing.
 //
 // Slot A's cmdline is written with lowercase PARTUUIDs and slot B's with
 // uppercase, deliberately: the real producer emits lowercase (udev and libblkid
