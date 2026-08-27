@@ -94,7 +94,7 @@ same dot-path at `GET /api/v1/settings/{*path}` (`docs/design/api.md:230`).
 ### 1.4 mosd: reconcile
 
 `write_setting` is *"The ONE settings-write path inside the daemon"*
-(`os/pkgs/mosd/mosd/src/bus.rs:420`): validate against the typed tree, persist
+(`os/pkgs/mosd/mosd/src/bus.rs:453`): validate against the typed tree, persist
 atomically (`os/pkgs/mosd/mosd-settings/src/store.rs:238-253` — temp file,
 fsync, rename, directory fsync), then re-apply every reconciler whose subtree
 overlaps the written path (`os/pkgs/mosd/mosd/src/bus.rs:430-446`,
@@ -106,13 +106,13 @@ The network reconciler renders **systemd-networkd** units — *"renders
 systemd-networkd `.network` units and reloads networkd"*
 (`os/pkgs/mosd/mosd/src/reconciler/network.rs:1-2`) — one
 `50-mos-<iface>.network` per map entry into `/run/systemd/network`
-(`os/pkgs/mosd/mosd/src/reconciler/network.rs:13`, `:451-458`), sweeps stale
+(`os/pkgs/mosd/mosd/src/reconciler/network.rs:14`, `:451-458`), sweeps stale
 units it owns by exact prefix (`:190-192`, `:221-230`), and reloads via the
 `org.freedesktop.network1` `Manager.Reload` D-Bus call (`:33-45`). It is not
 `ip`/netlink; there is no direct interface manipulation anywhere in the daemon.
 The reconciler treats itself as the security boundary because *"The settings
 file is editable by anything that can write STATE"*
-(`os/pkgs/mosd/mosd/src/reconciler/network.rs:142-146`), re-validating names
+(`os/pkgs/mosd/mosd/src/reconciler/network.rs:238-242`), re-validating names
 (IFNAMSIZ 15, `os/pkgs/mosd/mosd/src/reconciler/network.rs:137`) and addresses
 (`os/pkgs/mosd/mosd/src/reconciler/network.rs:194-200`) independently of apid.
 
@@ -267,7 +267,7 @@ three; a bridge port must not carry `dhcp`/`static` of its own — is enforced
 in the reconciler, where the tree's security boundary already sits and for the
 already-recorded reason: *"apid validates the address on its write path, but
 the settings file is writable without apid, so the boundary must hold here"*
-(`os/pkgs/mosd/mosd/src/reconciler/network.rs:198-200`). apid enforces the
+(`os/pkgs/mosd/mosd/src/reconciler/network.rs:294-296`). apid enforces the
 same rules earlier for a readable form error.
 
 **Naming rules.** The map key **is** the kernel interface name, exactly as
