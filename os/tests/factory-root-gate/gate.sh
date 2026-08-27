@@ -4,7 +4,7 @@
 #   bash os/tests/factory-root-gate/gate.sh _out/x64
 #
 # `make os-factory-root-gate` runs this, and so does the deep lane in
-# .gitea/workflows/privileged.yml -- the only place it can run on cx3576. The
+# .github/workflows/privileged.yml -- the only place it can run on cx3576. The
 # invariant it checks is the one every smoke-run result rests on, and nothing
 # else checks it. README.md here carries the reasoning in full.
 #

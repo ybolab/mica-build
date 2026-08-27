@@ -125,7 +125,7 @@ process writing to one redirected file does not. The lines are the same lines.
 
 ### Where the container pin is exercised
 
-`.gitea/workflows/check.yml`'s `os-verify` job installs **no bun**, so the
+`.github/workflows/check.yml`'s `os-verify` job installs **no bun**, so the
 runner takes the container route on every push. The job asserts that it did — it
 greps the announce line for the reference `from.sh` resolves — because the
 suite's exit status proves the tests ran, not which bun ran them. Forced onto a

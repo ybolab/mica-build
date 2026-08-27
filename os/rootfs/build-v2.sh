@@ -564,7 +564,7 @@ fi
 # docker-container builder when the current one could not reach the target
 # platform -- its buildkit image bundles QEMU, so an amd64 host could build
 # cx3576's arm64 with no host binfmt at all, and
-# .gitea/workflows/privileged.yml relies on exactly that. That route cannot
+# .github/workflows/privileged.yml relies on exactly that. That route cannot
 # carry a chain, so a cross build now needs host binfmt_misc, and this says so
 # with the command rather than failing later inside buildkit.
 BUILDER_ARGS=()

@@ -491,7 +491,7 @@ something that arrangement exists to keep:
 
 - **cx3576 CI waits on runner binfmt.** It cannot build arm64 until the runner
   provides `binfmt_misc`; there is no arrangement of builders on a host without
-  it that produces a cx3576 image. `.gitea/workflows/privileged.yml` states the
+  it that produces a cx3576 image. `.github/workflows/privileged.yml` states the
   requirement in its preflight header and marks it as analysed rather than
   observed: no arm64-capable runner has run it.
 - **No registry in the build path.** Holding the stage tags in a local registry

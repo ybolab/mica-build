@@ -271,7 +271,7 @@ production device, and says so rather than gesturing at one.
 On the release host, with the online TUF keys (§1.5) and the RAUC signer
 (§2.1) in place, `_out/cx3576/` populated by the v2 rootfs build and the BSP
 kernel present (the privileged CI lane's deep job,
-`.gitea/workflows/privileged.yml`, runs this same chain with dev keys —
+`.github/workflows/privileged.yml`, runs this same chain with dev keys —
 production signing is deliberately **not** a CI step; see §4):
 
 ```sh
