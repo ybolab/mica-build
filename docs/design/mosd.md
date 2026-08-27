@@ -301,7 +301,7 @@ when the machine goes down mid-call.
 
 **Update orchestration (RFCT-084).** The three update members speak to RAUC
 (`de.pengutronix.rauc.Installer`) through a `RaucClient` trait
-(`mosd/mosd/src/rauc.rs`) with the same shape as the power control: lazy
+(`os/pkgs/mosd/mosd/src/rauc.rs`) with the same shape as the power control: lazy
 per-call bus connection in production, a dry-run client that never touches the
 host (constructed under `MOSD_DRY_RUN=1`, so no test can install a bundle on
 the build host), and a recording mock for the bus-layer unit tests. Like the
@@ -355,7 +355,7 @@ likewise recorded there as deferred.
 
 ### 5.5 Verification status
 
-Everything above is verified locally: `bash mosd/hack/check.sh` is green
+Everything above is verified locally: `bash os/pkgs/mosd/hack/check.sh` is green
 (203 tests, measured 2026-08-19; the RFCT-084 additions were measured
 crate-scoped on 2026-08-23 — `cargo nextest run -p mosd` green, including a
 private-bus test that drives the production RAUC call path against a fake

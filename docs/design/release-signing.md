@@ -1,7 +1,7 @@
 # Release signing: the production key ceremonies
 
 > **Status:** runbook. RFCT-083 made the tooling accept real keys — the bundle
-> builder honours caller CERT/KEY/KEYRING, `mos-sign verify` demands an out-of-band root,
+> builder honours caller CERT/KEY/KEYRING, `rauc-sign verify` demands an out-of-band root,
 > rollback publication is gated — and then named the remaining step plainly:
 > *owning* production keys is an operational act, not a code change. This
 > document is that act, written down before it is performed, so that when it is
@@ -32,11 +32,11 @@ own, because a runbook's sections are neither `[implemented]` code nor
 hierarchies, and conflating them is the first mistake this document exists to
 prevent:
 
-1. **The TUF repository** (`update/sign`, `mos-sign`): four ed25519 role keys
+1. **The TUF repository** (`os/pkgs/rauc-sign`, `rauc-sign`): four ed25519 role keys
    sign the metadata that tells a device *which* bundle is current, pinning
    its sha256, length and dm-verity root hash. The `root` key is offline
    material; `targets`/`snapshot`/`timestamp` are online release-host keys.
-   See `update/README.md` for the phase-1 scope.
+   See `os/pkgs/rauc-sign/README.md` for the phase-1 scope.
 2. **The RAUC CMS signature** (`os/build/src/bundle.ts`, `rauc bundle`): an X.509
    signer certificate, chained to a CA whose certificate is the device-side
    keyring, signs the bundle payload itself. This is what
@@ -52,26 +52,27 @@ allows, and nothing below ever merges them.
 
 On an **offline machine**: no network interfaces up, an OS booted from known
 media, and a filesystem that will not outlive the ceremony except for the key
-media deliberately written. `mos-sign` is a static-enough Rust binary; build
-it beforehand (`cargo build --release -p mos-sign` in the `mosd/` workspace)
+media deliberately written. `rauc-sign` is a static-enough Rust binary; build
+it beforehand (`cargo build --release -p rauc-sign` in the `os/pkgs/rauc-sign/`
+workspace)
 and carry the binary and this repository checkout to the machine.
 
 ### 1.2 Key generation
 
 ```sh
-mos-sign gen-dev-keys --keys-dir /ceremony/keys
+rauc-sign gen-dev-keys --keys-dir /ceremony/keys
 ```
 
 The name says `dev` because the *default* directory is the gitignored
 development location; the generator itself is the production generator — one
 fresh ed25519 key per role (`root.pk8`, `targets.pk8`, `snapshot.pk8`,
 `timestamp.pk8`, raw PKCS#8, mode 0600), refusing to overwrite anything that
-exists, so a stale key cannot be silently replaced (`update/sign/src/keys.rs`).
+exists, so a stale key cannot be silently replaced (`os/pkgs/rauc-sign/src/keys.rs`).
 
 ### 1.3 Repository initialization, and the threshold decision
 
 ```sh
-mos-sign init \
+rauc-sign init \
   --repo /ceremony/tuf \
   --keys-dir /ceremony/keys \
   --threshold 1 \
@@ -82,16 +83,16 @@ mos-sign init \
 ```
 
 `init` is the only command that loads `root.pk8`; `add` and `sign` load only
-the three online keys. All expirations are explicit — nothing in `mos-sign`
+the three online keys. All expirations are explicit — nothing in `rauc-sign`
 reads the wall clock, so the ceremony's output is reproducible and can be
 re-derived to check the media.
 
 `--threshold` applies to every role, and today it must be `1`:
-`mos-sign` holds exactly one key per role, and since RFCT-083 a threshold
+`rauc-sign` holds exactly one key per role, and since RFCT-083 a threshold
 above a role's key count is rejected at `init` rather than producing metadata
 no set of signatures can ever satisfy. Multi-key roles, delegated targets and
 hardware-backed key stores are explicitly out of phase 1
-(`update/README.md`); when a threshold above 1 becomes possible, this section
+(`os/pkgs/rauc-sign/README.md`); when a threshold above 1 becomes possible, this section
 gets rewritten around it — until then, writing "use 3-of-5" here would be a
 procedure the tooling cannot execute.
 
@@ -111,7 +112,7 @@ stale metadata goes visibly expired within two weeks. The `sign` command
 refreshes the three online roles between releases:
 
 ```sh
-mos-sign sign --repo <repo> --keys-dir <online-keys> \
+rauc-sign sign --repo <repo> --keys-dir <online-keys> \
   --targets-expires ... --snapshot-expires ... --timestamp-expires ...
 ```
 
@@ -132,7 +133,7 @@ incident to be recorded, not a convenience.
   on media that is wiped afterwards.
 - `metadata/1.root.json` (and its `root.json` alias) is the **public** trust
   anchor. Record its sha256 in the ceremony minutes; distribute the file out
-  of band. Every later `mos-sign verify --root <this file>` is anchored to
+  of band. Every later `rauc-sign verify --root <this file>` is anchored to
   it. `--root` is required — the tool has no default and never reads the
   repository's own `root.json` as an anchor — but it does not detect an
   operator pointing `--root` back into the repository being verified, so
@@ -145,8 +146,8 @@ incident to be recorded, not a convenience.
 
 TUF rotates the root by publishing `<n+1>.root.json` signed by **both** the
 old and the new root keys, so existing clients can walk to the new anchor.
-`mos-sign` has no command that produces such a file — root key rotation is
-explicitly out of phase 1 (`update/README.md`) — and revoking a compromised
+`rauc-sign` has no command that produces such a file — root key rotation is
+explicitly out of phase 1 (`os/pkgs/rauc-sign/README.md`) — and revoking a compromised
 *online* key is the same missing operation, because the replacement key must
 be introduced by a new root.json.
 
@@ -170,7 +171,7 @@ building it. **[not implemented]**, and dated.
 
 ### 2.1 The offline CA ceremony
 
-This mirrors `os/update/rauc/gen-dev-keys.sh` step for step — the dev script is the
+This mirrors `os/pkgs/rauc/gen-dev-keys.sh` step for step — the dev script is the
 tested shape, and deviating from a tested shape in a ceremony is how typos
 become fleet incidents — with the three choices that distinguish production:
 a real subject, real validity horizons, and offline custody. Same machine
@@ -250,7 +251,7 @@ post-RFCT-083:
   root. Both are waivable only by `MOS_EXPECT_DEV_KEYRING=1`, which warns
   unmissably and exists for exactly one case: a local dev image installing
   locally signed bundles, on a bench, never shipped
-  (`os/update/rauc/gen-dev-keys.sh`'s closing instructions). The ui-location
+  (`os/pkgs/rauc/gen-dev-keys.sh`'s closing instructions). The ui-location
   harness proves both directions of that gate.
 - Therefore a production image, as buildable today, cannot install any
   bundle: RAUC has no keyring to verify against. The refusal is correct —
@@ -292,9 +293,9 @@ KEYRING=/path/to/ca.cert.pem \
 
 # 3. Publish into the TUF repository with the online keys. The verity root
 #    hash is the bundle's own (verity-format) root hash as `rauc info`
-#    reports it -- mos-sign never shells out to rauc, so it is supplied
+#    reports it -- rauc-sign never shells out to rauc, so it is supplied
 #    explicitly and deliberately.
-mos-sign add \
+rauc-sign add \
   --repo <repo> --keys-dir <online-keys> \
   --target _out/cx3576/mos-cx3576-<epoch>.raucb \
   --verity-root-hash <64 hex> \
@@ -305,10 +306,10 @@ mos-sign add \
 #    trust anchor from 1.5 -- never against the repository's own root.json
 #    (1.5). --datastore persists trusted metadata so the
 #    NEXT release's verify also proves no rollback happened between them.
-mos-sign verify --repo <repo> --root /trusted/root.json --datastore /var/lib/mos-sign/trusted
+rauc-sign verify --repo <repo> --root /trusted/root.json --datastore /var/lib/rauc-sign/trusted
 ```
 
-Then publish `<repo>` as static content (`update/README.md`'s layout). The
+Then publish `<repo>` as static content (`os/pkgs/rauc-sign/README.md`'s layout). The
 offline "lockbox" bundle path is planned and not implemented
 (`update/lockbox/`); when it exists it consumes the same signed artifacts.
 

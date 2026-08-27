@@ -18,10 +18,10 @@ device's settings and drives systemd to match them.
 | Management plane | `mosd` — a settings tree, reconcilers that drive units, and a D-Bus surface | `os/pkgs/mosd/mosd/`, `docs/design/mosd.md` |
 | API | `apid` — the HTTPS daemon; the dashboard is one client of the API it serves | `os/pkgs/mosd/apid/`, `docs/design/api.md` |
 | Telemetry | `mos-mqttd` bridges the item tree to MQTT; `mos-mqtt-broker` is the on-device broker | `os/pkgs/mosd/mqttd/`, `os/pkgs/mosd/broker/` |
-| A/B installer | RAUC, with a U-Boot `BOOT_ORDER` handshake on cx3576 and GRUB on x64 | `os/update/rauc/`, `docs/design/uboot-ab-handshake.md` |
+| A/B installer | RAUC, with a U-Boot `BOOT_ORDER` handshake on cx3576 and GRUB on x64 | `os/pkgs/rauc/`, `docs/design/uboot-ab-handshake.md` |
 | Update trust | TUF metadata pinning a CMS-signed RAUC bundle | `os/pkgs/rauc-sign/`, `docs/design/release-signing.md` |
-| BSP artifacts | per-board buildkit Dockerfiles producing kernel, device tree and bootloader | `board/`, `docs/design/boards.md` |
-| Workloads | podman plus the Quadlet systemd generator, off by default | `os/podman/`, `docs/design/containers.md` |
+| BSP artifacts | per-board buildkit Dockerfiles producing kernel, device tree and bootloader | `os/boards/`, `docs/design/boards.md` |
+| Workloads | podman plus the Quadlet systemd generator, off by default | `os/pkgs/podman/`, `docs/design/containers.md` |
 
 ## 2. Component inventory (runtime)
 
@@ -106,7 +106,7 @@ verifies, both in `os/pkgs/rauc-sign/`.
 
 Two gaps are recorded rather than assumed: nothing in the build signs SPL or
 U-Boot, and no production keyring ships in the image
-(`docs/design/uboot-ab-handshake.md` §9, `os/update/rauc/system.conf.in`).
+(`docs/design/uboot-ab-handshake.md` §9, `os/pkgs/rauc/system.conf.in`).
 
 ## 5. Access model
 
@@ -134,15 +134,19 @@ is designed, and marked not implemented (`docs/design/access.md` §5.2).
 mos/
 ├── docs/          plans (docs/plan/), tasks (docs/task/), design records (docs/design/)
 ├── os/            the OS build
-│   ├── rootfs/    the root filesystem: stage Dockerfiles under stages/, plus build-v2.sh
+│   ├── boards/    one board.env per board — the partition geometry and every layout
+│   │              constant — plus that board's BSP: kernel, U-Boot and firmware
 │   ├── build/     TypeScript: the image assemblers, the bundle builder, the toolset wrappers
-│   ├── verify/    TypeScript: the board model, and the checks an assembled image must pass
-│   ├── boards/    one board.env per board — the partition geometry and every layout constant
-│   ├── update/    RAUC packaging: system.conf and the manifest templates
-│   ├── tests/     shell suites over the built image; podman/ pins the engine
-│   └── pkgs/      compiled components, incl. mosd/ — the Rust workspace: mosd, apid,
-│                  mos-mqttd, mos-mqtt-broker, mosd-settings
-├── board/         BSP per board: kernel, U-Boot and firmware Dockerfiles
+│   ├── build-env/ the pinned builder images every component build is FROM
+│   ├── pkgs/      source this repository compiles into a shipped artefact:
+│   │              podman/ (the container engine), rauc/ (the RAUC binary, its slot
+│   │              config and the manifest templates), rauc-sign/ (TUF release trust
+│   │              tooling, its own cargo workspace) and mosd/ — the Rust workspace:
+│   │              mosd, apid, mos-mqttd, mos-mqtt-broker, mosd-settings
+│   ├── rootfs/    the root filesystem: stage Dockerfiles under stages/, plus build-v2.sh
+│   ├── tests/     shell suites over the built image
+│   ├── tools/     three QEMU helper scripts
+│   └── verify/    TypeScript: the board model, and the checks an assembled image must pass
 ├── extensions/    reserved for optional sysext layers; nothing is built from it
 ├── test/          the apid API suite, run against a booted image in QEMU
 └── Makefile       top-level routing; `make help` lists every target

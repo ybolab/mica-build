@@ -51,8 +51,8 @@ code that exists and can be checked against the tree, and a section marked
 **[proposed]** names code that does not exist and cannot be. Reading the
 document by that rule is the point of the rule. It is no longer safe to read
 section 1 as the checkable part and sections 2-9 as the unfalsifiable
-remainder: `mosd/apid/openapi.json` now records a served API surface, the
-handlers behind it are in `mosd/apid/src/routes.rs`, and sections 2 and 3
+remainder: `os/pkgs/mosd/apid/openapi.json` now records a served API surface, the
+handlers behind it are in `os/pkgs/mosd/apid/src/routes.rs`, and sections 2 and 3
 consequently carry markers **per subsection** — 2.1, 2.2 and 2.4 describe
 something that partly ships and say so with citations, while 2.3 and 3.2
 describe something that does not. A subsection's marker, and the measured
@@ -142,8 +142,8 @@ JavaScript: `grep -ci '<script\|javascript' mosd/apid/src/routes.rs` returns
 `os/pkgs/mosd/apid/src/routes.rs:727`, injected into the page head as
 `style { (PreEscaped(STYLE)) }` (`os/pkgs/mosd/apid/src/routes.rs:738`). The crate
 contains no non-Rust file but its manifest and the generated OpenAPI document
-(`find mosd/apid -type f ! -name '*.rs'` returns `mosd/apid/openapi.json` and
-`mosd/apid/Cargo.toml`), so there is no bundler input, no `package.json`, and
+(`find os/pkgs/mosd/apid -type f ! -name '*.rs'` returns `os/pkgs/mosd/apid/openapi.json` and
+`os/pkgs/mosd/apid/Cargo.toml`), so there is no bundler input, no `package.json`, and
 nothing for a build chain to consume. What a **bundle** installed under
 `/srv/ui` may contain is a different question, settled in sections 4 and 5:
 apid ships no JavaScript, and since the asset router landed it will serve
@@ -166,7 +166,7 @@ does not offer, is not free — it is a change to the posture recorded here.
 
 ### 1.2 The route table as shipped
 
-There are **two** routers in `mosd/apid/src/routes.rs`, and the HTTPS one now
+There are **two** routers in `os/pkgs/mosd/apid/src/routes.rs`, and the HTTPS one now
 has a nested router inside it.
 
 The **HTTPS application router** is `app()`, whose declaration opens at
@@ -218,7 +218,7 @@ therefore covers the fallback too.
 nested under the prefix `const API: &str = "/api";`
 (`os/pkgs/mosd/apid/src/routes.rs:212`). Each route is declared from the same constant
 its `utoipa::path` attribute documents it under, which is why
-`mosd/apid/openapi.json` cannot describe a path the router does not serve:
+`os/pkgs/mosd/apid/openapi.json` cannot describe a path the router does not serve:
 *"Each route is declared here from the same constant its `utoipa::path`
 attribute documents it under, so the served path and the documented path are
 one string and cannot disagree"* (`os/pkgs/mosd/apid/src/routes.rs:258-260`).
@@ -286,7 +286,7 @@ mis-clicked link cannot power the appliance off"*
 the bundle deactivation control (`os/pkgs/mosd/apid/src/routes.rs:142-144`). And there
 is still no CSRF token anywhere in the crate: `grep -ni csrf mosd/apid/src/*.rs`
 returns nothing at `f7cb5ba`, exit status 1, and `grep -rni csrf
-mosd/apid/src/` returns nothing either. The mitigations that exist are the
+os/pkgs/mosd/apid/src/` returns nothing either. The mitigations that exist are the
 `SameSite=Lax` cookie attribute (section 1.4) and the per-action confirm token
 on power (`os/pkgs/mosd/apid/src/routes.rs:1667`) and on the transient password
 (`os/pkgs/mosd/apid/src/routes.rs:2520`).
@@ -529,7 +529,7 @@ the private key written mode `0o600` (`os/pkgs/mosd/apid/src/tls.rs:37`, called 
 (`os/pkgs/mosd/apid/src/config.rs:38-40`), and is provided by systemd as
 `StateDirectory=mos/apid` (`os/pkgs/mosd/dist/apid.service:16`). There is no ACME
 client, no certificate rotation, and no way to install an operator-supplied
-certificate in `mosd/apid/src/tls.rs`.
+certificate in `os/pkgs/mosd/apid/src/tls.rs`.
 
 ### 1.5 The model the API must be derived from: mosd's settings and state
 
@@ -709,20 +709,20 @@ in the same four positions so the change is legible rather than overwritten.
    which carries no file-serving service. The conclusion drawn from it does
    not survive: apid serves files through code it owns,
    `mod assets;` (`os/pkgs/mosd/apid/src/main.rs:29`), whose three modules are
-   `mosd/apid/src/assets/serve.rs`, `mosd/apid/src/assets/path.rs` and
-   `mosd/apid/src/assets/mime.rs`.
+   `os/pkgs/mosd/apid/src/assets/serve.rs`, `os/pkgs/mosd/apid/src/assets/path.rs` and
+   `os/pkgs/mosd/apid/src/assets/mime.rs`.
 2. **A file-serving service is constructed, as the router's fallback.**
-   `grep -n "ServeDir\|ServeFile" mosd/apid/src/*.rs` still returns nothing —
+   `grep -n "ServeDir\|ServeFile" os/pkgs/mosd/apid/src/*.rs` still returns nothing —
    there is no `nest_service` and no `fallback_service` — but the HTTPS router
    now ends in `.fallback(serve::fallback)` (`os/pkgs/mosd/apid/src/routes.rs:186`),
    and that fallback reads files off disk:
    `let body = fs::read(file).ok()?;`
    (`os/pkgs/mosd/apid/src/assets/serve.rs:158`), typed and cached by
-   `mosd/apid/src/assets/mime.rs` and path-checked by
+   `os/pkgs/mosd/apid/src/assets/mime.rs` and path-checked by
    `pub fn resolve(request_path: &str, bundle_root: &Path) -> Result<PathBuf, Rejection> {`
    (`os/pkgs/mosd/apid/src/assets/path.rs:94`).
 3. **Nothing is embedded in the binary, and that is still deliberate.**
-   `grep -n "include_str!\|include_bytes!" mosd/apid/src/*.rs` no longer
+   `grep -n "include_str!\|include_bytes!" os/pkgs/mosd/apid/src/*.rs` no longer
    returns nothing, but neither hit is an asset: `os/pkgs/mosd/apid/src/routes.rs:10`
    is the module doc **stating** the rule — *"no `include_str!`, no
    `include_bytes!`, no asset directory"* — and
@@ -733,10 +733,10 @@ in the same four positions so the change is legible rather than overwritten.
    `/usr/bin/apid`, so *"an artifact that is bytes in the binary is behind
    that protection and an artifact that is files on disk would not be"*.
 4. **The crate still ships no asset of its own; the assets come from
-   `/srv/ui`.** `find mosd/apid -type f ! -name '*.rs'` returns
-   `mosd/apid/Cargo.toml` and `mosd/apid/openapi.json` and nothing else, and
-   `find mosd/apid -type d` returns `mosd/apid`, `mosd/apid/src`,
-   `mosd/apid/src/assets`, `mosd/apid/src/tests` and `mosd/apid/tests` — no
+   `/srv/ui`.** `find os/pkgs/mosd/apid -type f ! -name '*.rs'` returns
+   `os/pkgs/mosd/apid/Cargo.toml` and `os/pkgs/mosd/apid/openapi.json` and nothing else, and
+   `find os/pkgs/mosd/apid -type d` returns `os/pkgs/mosd/apid`, `os/pkgs/mosd/apid/src`,
+   `os/pkgs/mosd/apid/src/assets`, `os/pkgs/mosd/apid/src/tests` and `os/pkgs/mosd/apid/tests` — no
    `assets/`, `static/` or `public/` directory of servable files. What is
    served comes from the bundle store rooted at
    `pub const DEFAULT_ROOT: &str = "/srv/ui";`
@@ -868,7 +868,7 @@ forward.
 
 ## 2. The API surface — **[implemented]** in part, **[proposed]** for the rest
 
-A first read-only slice of this section exists. `mosd/apid/openapi.json`
+A first read-only slice of this section exists. `os/pkgs/mosd/apid/openapi.json`
 declares `"openapi": "3.1.0"` (`os/pkgs/mosd/apid/openapi.json:2`) for a document
 titled `"title": "apid"` (`os/pkgs/mosd/apid/openapi.json:4`) at
 `"version": "v1"` (`os/pkgs/mosd/apid/openapi.json:6`), and it declares **exactly four
@@ -1107,7 +1107,7 @@ for, with no second model beside it. The live-state root is the same shape,
 mosd's value and not a wrapper around it.
 
 **Redaction ships, and it ships wider than this section proposed.** The
-structural redactor is `mosd/apid/src/redact.rs`, its denylist is
+structural redactor is `os/pkgs/mosd/apid/src/redact.rs`, its denylist is
 `const SECRET_FIELDS: [&str; 4] = ["psk", "passwordHash", "password_hash", "hash"];`
 (`os/pkgs/mosd/apid/src/redact.rs:25`) — the same four field names named below — and
 the sentinel is `pub const REDACTED: &str = "<redacted>";`
@@ -1137,7 +1137,7 @@ credential — and phase 1 serves no write route to write it with"*
 exposes the whole live-state tree to any authenticated caller, which is wider
 than the HTML panes read (section 1.5).
 
-Derived from `mosd/mosd-settings/src/model.rs` and `mosd/mosd/src/bus.rs`,
+Derived from `os/pkgs/mosd/mosd-settings/src/model.rs` and `os/pkgs/mosd/mosd/src/bus.rs`,
 re-measured at `f7cb5ba`. Nothing here invents a model alongside mosd's; where
 the settings tree and a sensible REST resource genuinely disagree, the
 disagreement is named and the choice is costed.
@@ -1446,7 +1446,7 @@ and the message is not"* (`os/pkgs/mosd/apid/src/routes.rs:520`).
 **The envelope, field by field against what ships.** Four differences, each a
 finding rather than a thing to quietly align:
 
-| Field | Proposed below | In `mosd/apid/openapi.json` | Difference |
+| Field | Proposed below | In `os/pkgs/mosd/apid/openapi.json` | Difference |
 |---|---|---|---|
 | `error` | the only top-level member | `"required": [ "error" ]` (`os/pkgs/mosd/apid/openapi.json:215-217`) | none |
 | `code` | *"stable machine token; an OPEN set"* | `"type": "string"` (`os/pkgs/mosd/apid/openapi.json:233-234`), required (`:227-231`) | none in shape. The **open set** is stated only in the description (`os/pkgs/mosd/apid/openapi.json:235`); nothing in the schema expresses it, so a generated client learns the rule only if a human reads the prose |
@@ -1963,7 +1963,7 @@ derive from it.**
   no-JavaScript browser client by `docs/design/dashboard.md`'s own decision
   (`docs/design/dashboard.md:1275-1276`), which has no use for a bearer token.
 - **Coexisting means two credentials at one privilege level** — and there is
-  only one privilege level, because apid runs as root (`mosd/dist/apid.service`
+  only one privilege level, because apid runs as root (`os/pkgs/mosd/dist/apid.service`
   sets no `User=`, `:1-13`; `os/pkgs/mosd/dist/com.mos.mosd.conf:12-14` records the same
   from the other side) and every route it serves is behind the same gate
   (`os/pkgs/mosd/apid/src/routes.rs:191`). A token can do everything the operator can do
@@ -2217,12 +2217,12 @@ claim is made anywhere in this section"* stays true.
 
 ### 4.1 Routing between API and assets — **[implemented]**
 
-**Implemented at `mosd/apid/src/routes.rs`** — `app` (`:88-161`), whose
+**Implemented at `os/pkgs/mosd/apid/src/routes.rs`** — `app` (`:88-161`), whose
 *declaration order* is this subsection's precedence rule: `/` (`:95`), the
 reserved `/builtin` subtree (`:115-125`), the fifteen legacy declarations
 (`:126-145`), the reserved `/api` subtree (`:155-156`), and rule 4's
 `.fallback(serve::fallback)` (`:158`). The asset side is
-`mosd/apid/src/assets/serve.rs` (`root` and `fallback`). Nothing re-checks a
+`os/pkgs/mosd/apid/src/assets/serve.rs` (`root` and `fallback`). Nothing re-checks a
 prefix: no handler under `assets/` reads one, which is the property this
 subsection asked for rather than a coincidence of the implementation.
 
@@ -2316,11 +2316,11 @@ those thirteen paths. That shrinkage is section 8's to schedule.
 
 ### 4.2 SPA fallback — **[implemented]**
 
-**Implemented at `mosd/apid/src/assets/serve.rs`** — `fallback` and `respond`,
+**Implemented at `os/pkgs/mosd/apid/src/assets/serve.rs`** — `fallback` and `respond`,
 with condition 1 costing no code (it is 4.1's mounting), condition 2 the method
 check, conditions 3 and 4 the `offers_html` and `ends_in_a_route_segment`
 predicates, and condition 5 whether `serve_index` produced anything. Each
-condition has its own test in `mosd/apid/src/tests.rs`.
+condition has its own test in `os/pkgs/mosd/apid/src/tests.rs`.
 
 **Condition 3 is implemented strictly, and the cost is stated rather than
 hidden.** *"The request's `Accept` header must offer `text/html`"* is read as
@@ -2383,11 +2383,11 @@ condition, and it is the test that keeps 4.2 from silently regressing.
 
 ### 4.3 MIME and caching — **[implemented]**
 
-**Implemented at `mosd/apid/src/assets/mime.rs`** — the fixed extension
+**Implemented at `os/pkgs/mosd/apid/src/assets/mime.rs`** — the fixed extension
 allowlist (`.wasm` and `.webmanifest` in it from the start, `:58-59`), the
 `octet-stream` fallback, `nosniff`, and the three cache classes with their
 header values (`:83-132`). The headers are attached to every response the asset
-router builds by `asset_response` in `mosd/apid/src/assets/serve.rs`, and the
+router builds by `asset_response` in `os/pkgs/mosd/apid/src/assets/serve.rs`, and the
 `/api/` subtree's own 404 carries `no-store` from the same enum
 (`os/pkgs/mosd/apid/src/routes.rs:176`). The immutable class is read per request from
 the served tree's `mos-ui.json` (`serve.rs`, `immutable_dir`), because the
@@ -2487,12 +2487,12 @@ it disagrees with the browser and tells the operator where to look.
 
 ### 4.4 Path traversal — **[implemented]**
 
-**Implemented at `mosd/apid/src/assets/path.rs`** — `resolve`, a pure function
+**Implemented at `os/pkgs/mosd/apid/src/assets/path.rs`** — `resolve`, a pure function
 from a request target and an already-resolved bundle root, performing rules 1-5
 in order, with one test per guard and the five requests §8.2 phase 4 acceptance
 2 names among them. The **primary** defence rule 5 chooses — install-time
 rejection of any entry that is not a regular file or a directory — is
-`validate_tree` in `mosd/apid/src/bundle.rs` (§5.3 requirement 2). No `unsafe`
+`validate_tree` in `os/pkgs/mosd/apid/src/bundle.rs` (§5.3 requirement 2). No `unsafe`
 was added and no dependency was added; `#![forbid(unsafe_code)]` is still at
 `os/pkgs/mosd/apid/src/main.rs:21`.
 
@@ -2519,7 +2519,7 @@ Only a plain miss is eligible for §4.2's fallback
 request the rules rejected can never come back as `200 text/html`.
 
 **What a successful traversal reaches, first, because it sets the stakes.**
-apid runs as **root** — `mosd/dist/apid.service` sets no `User=` line
+apid runs as **root** — `os/pkgs/mosd/dist/apid.service` sets no `User=` line
 (`os/pkgs/mosd/dist/apid.service:1-42`). Its `[Service]` section sandboxes the daemon
 in the directions a root network listener can afford, `PrivateTmp=` and
 `ProtectHome=` among them (`os/pkgs/mosd/dist/apid.service:24-39`), but there is no
@@ -2670,7 +2670,7 @@ possible.
 
 ### 5.2 The location, and the bind — **[implemented]**
 
-**Implemented at `mosd/apid/src/bundle.rs`** — `DEFAULT_ROOT` is `/srv/ui`
+**Implemented at `os/pkgs/mosd/apid/src/bundle.rs`** — `DEFAULT_ROOT` is `/srv/ui`
 (`:42`), the layout beneath it is `bundles/<generation>/`, `current`,
 `records/`, `.staging-<generation>/` and `.trash-<generation>/`, and the modes
 are `DIR_MODE` `0755` and `FILE_MODE` `0644` (`:53`, `:55`), applied to the root and
@@ -2755,7 +2755,7 @@ directories beneath it, `0644` for files.**
 
 ### 5.3 Install and removal — **[implemented]**
 
-**Implemented at `mosd/apid/src/bundle.rs`** — `Store::activate` performs the
+**Implemented at `os/pkgs/mosd/apid/src/bundle.rs`** — `Store::activate` performs the
 five steps in this subsection's order (`:475`), `validate_tree` enforces the
 three requirements a bundle has, `deactivate` (`:531`) and `delete` (`:552`)
 are the two operations this subsection refuses to conflate, `prune` (`:582`)
@@ -2809,7 +2809,7 @@ The **transport** form is an archive, because a browser upload is one request
 carrying one file; the **installed** form is the directory. The archive is a
 wire format and nothing on disk keeps it. Which archive format is a dependency
 question rather than a design question — `os/pkgs/mosd/hack/check.sh:9` runs
-`cargo deny check licenses bans advisories` and `mosd/deny.toml` contains no ban
+`cargo deny check licenses bans advisories` and `os/pkgs/mosd/deny.toml` contains no ban
 on crates that build C, so the workspace's pure-Rust posture is upheld by
 **convention and review**, not by a gate: the only mechanical record of it is
 the `tough` pin comment (`os/pkgs/mosd/Cargo.toml:33-35`). The choice is therefore
@@ -2885,7 +2885,7 @@ specified here**.
 
 ### 5.4 Survives-what — **[implemented]**
 
-**Implemented at `mosd/apid/src/bundle.rs` and `mosd/apid/src/startup.rs`** for
+**Implemented at `os/pkgs/mosd/apid/src/bundle.rs` and `os/pkgs/mosd/apid/src/startup.rs`** for
 the row that is load-bearing. The third row's mechanism is the `current`
 symlink under `/srv/ui` on DATA — created by `Store::point_current_at`, removed
 by `Store::deactivate` — and it survives a restart because nothing re-creates
@@ -2893,7 +2893,7 @@ it: `startup::discover` re-reads the pointer on every start and answers "no
 bundle" when it is absent. Rows 1 and 2 rest on configuration this campaign did
 not change and which is cited in the table itself. **No row's persistence is
 exercised on hardware**, and the A/B and factory-reset columns rest on reading
-`os/update/rauc/system.conf.in` rather than on a test — §4's note governs.
+`os/pkgs/rauc/system.conf.in` rather than on a test — §4's note governs.
 
 Same framing, same columns and same honesty as `docs/design/access.md` §10.4
 (`docs/design/access.md:484-492`); this table extends that vocabulary rather
@@ -2943,14 +2943,14 @@ mechanism and then ask what happens when it fails.
 
 **Implemented across two layers, which is this subsection's own "detected
 when" column.** Classes 1, 2 and 4 are the asset router's, per request, in
-`mosd/apid/src/assets/serve.rs` — `active_root` answers class 1, `serve_index`
+`os/pkgs/mosd/apid/src/assets/serve.rs` — `active_root` answers class 1, `serve_index`
 answers class 2 and class 4's index half with the built-in UI, and class 4's
 inner-asset half is a 404 for that file and nothing else. Classes 3 and 5 are
-start-up's, in `mosd/apid/src/startup.rs` — `recheck` re-checks the digest
+start-up's, in `os/pkgs/mosd/apid/src/startup.rs` — `recheck` re-checks the digest
 recorded at activation and evaluates the declared range against
 `SERVED_API_VERSIONS` as a **set intersection**, deactivating only on an empty
 one and logging the declared range and the served set together. All five
-classes are constructed end to end in `mosd/apid/src/tests/broken_classes.rs`,
+classes are constructed end to end in `os/pkgs/mosd/apid/src/tests/broken_classes.rs`,
 each asserting a distinct state the mechanism reported so that no class can
 pass for another's reason, with the set of classes that ran diffed against the
 set declared.
@@ -3092,7 +3092,7 @@ built-in UI — a fallback at a reserved path — did not exist; the artifact an
 the protection described below already did at `86cd669`, and each is cited.
 **The role now exists.** The built-in UI is what the asset router answers with
 whenever a bundle cannot be served — `built_in` in
-`mosd/apid/src/assets/serve.rs`, reached from `root`, from §4.2's condition 5
+`os/pkgs/mosd/apid/src/assets/serve.rs`, reached from `root`, from §4.2's condition 5
 and from §6.1 classes 1, 2 and 4 — and it is reachable unconditionally at
 §6.3's reserved prefix, `builtin_home` in `os/pkgs/mosd/apid/src/routes.rs:802`. Its
 form is unchanged and is asserted on the image rather than assumed:
@@ -3104,7 +3104,7 @@ in which it is false.
 
 **Where it lives in the image: it is not a directory of files.** The built-in
 UI is **compiled into the `apid` binary**. The pages are `maud` `html!` macro
-expansions in `mosd/apid/src/routes.rs` (the macro is imported at `:29` and
+expansions in `os/pkgs/mosd/apid/src/routes.rs` (the macro is imported at `:29` and
 used by every page handler), and the only
 stylesheet is a `&str` constant emitted into the page head
 (`os/pkgs/mosd/apid/src/routes.rs:741-746`), described in the source as
@@ -3168,7 +3168,7 @@ mechanism behind it.
 
 ### 6.3 The deterministic way to reach it — **[implemented]**
 
-**Implemented at `mosd/apid/src/routes.rs`** — candidate (A) is
+**Implemented at `os/pkgs/mosd/apid/src/routes.rs`** — candidate (A) is
 `.nest(BUILTIN, …)` at `:115-125`, which claims the **whole** `/builtin`
 subtree, its own not-found handler included, and is unshadowable for exactly
 the structural reason `/api/` is; candidate (B) is the deactivate control the
@@ -3179,7 +3179,7 @@ and **not** `/builtin/`, so the trailing-slash spelling — the one this documen
 writes — is declared outside the nest at `:125`. An operator recovering a
 device should not have to get the slash right. The escape is driven from every
 one of §6.1's five classes, identically and without diagnosis, by
-`mosd/apid/src/tests/broken_classes.rs`, and the shadowing guard is fired in
+`os/pkgs/mosd/apid/src/tests/broken_classes.rs`, and the shadowing guard is fired in
 both directions as a standing test. On the image, `os/verify-image-v2.sh`'s
 `check_builtin_ui` (`:341`) asserts two facts the escape depends on: the packed
 read-only root ships **nothing** at or under `/builtin`, so the prefix has not
@@ -3368,7 +3368,7 @@ an absence measured four ways is a fact about the device, not a proposal.
 
 | Channel | Exists at `86cd669`? | Reaches `/srv/ui`? | Credential | Signed? |
 |---|---|---|---|---|
-| **The API upload path** | **no** — `grep -rn Multipart mosd/` returns nothing; §5.3's transport is proposed and the request that drives it belongs to §2.3/§3 | would, by construction | §3.2's bearer token, or an authenticated session (§3.2's bootstrap) | nothing exists to sign against — see 7.3 |
+| **The API upload path** | **no** — `grep -rn Multipart os/pkgs/mosd/` returns nothing; §5.3's transport is proposed and the request that drives it belongs to §2.3/§3 | would, by construction | §3.2's bearer token, or an authenticated session (§3.2's bootstrap) | nothing exists to sign against — see 7.3 |
 | **SSH** | **yes**, but **off by default on both image profiles** (`os/pkgs/mosd/mosd-settings/src/model.rs:110-112`; `docs/design/access.md:196-202`), enabled only by an authenticated admin action through apid | **yes** — a shell writes the directory directly, with no involvement from apid at all | an authorized key, **every one of which is a root key** (`docs/design/access.md:209-214`; the pane says so and a test asserts the sentence, `os/pkgs/mosd/apid/src/routes.rs:1762`, `os/pkgs/mosd/apid/src/tests.rs:797`) | n/a |
 | **A RAUC bundle** | **yes**, as an update mechanism | **no.** RAUC declares four slots — `rootfs.0` (`os/pkgs/rauc/render-config.sh:239`), `rootfs.1` (`:245`), `boot.0` (`:265`) and `boot.1` (`:270`). DATA is not among them, and the survives-what table records the same from the other side (`docs/design/access.md:488`; §5.4) | n/a | **yes** — CMS, verified by `rauc` against `/etc/rauc/keyring.pem`, `plain` format refused (`os/pkgs/rauc/system.conf.in:66-69`, `:78`) |
 | **A factory image** | **yes**, but it ships DATA **empty.** `grep -n dataImg os/build/src/mkimage-v2.ts` returns exactly three lines: `:378` names the path, `:408` builds it with `makeExt4` — whose optional `seedDir` argument is **not passed**, so it is only `truncate` plus `mke2fs` and populates nothing — and `:437` `dd`s it into the image. Nothing mounts it and nothing copies into it. From the verifier's side the consequence is that an assertion about `/srv/ui` becomes owed only if the image ever ships something under `/srv/ui` | not today; it would need new work in the image pipeline | n/a | the image is not signed; the **bundle** built from it is |
@@ -3431,7 +3431,7 @@ come from reading them rather than from their names.
 
 **RAUC's CMS bundle signature.** Bundles are signed at build time by
 `rauc bundle` with the material `make os-devkeys` generates (`Makefile:53-54` →
-`os/update/rauc/gen-dev-keys.sh`): an OpenSSL CA plus a signer certificate, explicitly
+`os/pkgs/rauc/gen-dev-keys.sh`): an OpenSSL CA plus a signer certificate, explicitly
 **development-only**, gitignored, and carrying a banner that says so
 (`os/pkgs/rauc/gen-dev-keys.sh:2-3`, `:8-10`). On device, verification is `rauc`'s,
 against `/etc/rauc/keyring.pem`, with `plain`-format bundles refused by
@@ -3458,9 +3458,12 @@ transfer:
    authorises a kernel and rootfs replacement makes the two operations equally
    trusted, which is backwards.
 
-**The TUF skeleton (`update/sign`, RFCT-016).** `mos-sign` is a member of the
-same cargo workspace (`os/pkgs/mosd/Cargo.toml:3`) built on `tough` pinned at `=0.18.0`
-(`os/pkgs/mosd/Cargo.toml:42-44`). It is **build-host tooling**: it *"runs on a build
+**The TUF skeleton (`os/pkgs/rauc-sign`, RFCT-016).** `rauc-sign` is its own
+cargo workspace of exactly one member, extracted from the mosd workspace by
+PLAN-019 M3, so the two dependency graphs are separate and `cargo clippy
+--workspace` run from `os/pkgs/mosd/` no longer reaches this crate
+(`os/pkgs/rauc-sign/Cargo.toml:39-44`). It is built on `tough` pinned at
+`=0.18.0` (`os/pkgs/rauc-sign/Cargo.toml:66-68`). It is **build-host tooling**: it *"runs on a build
 host, never on a device, and its output is static content"*
 (`os/pkgs/rauc-sign/README.md:6-7`). It is not installed into the image at all —
 `grep -rn "mos-sign\|update/sign" os/` returns nothing at `86cd669`. And its
@@ -3556,8 +3559,9 @@ checkable.**
    holding and a signature starts buying a real difference. Note the cost of
    that path: scopes need the per-method D-Bus allowlist that
    `os/pkgs/mosd/dist/com.mos.mosd.conf:48-61` deliberately deferred.
-4. **The on-device Uptane client is implemented.** `os/pkgs/rauc-sign/README.md:32` names
-   it as explicitly out of phase 1. Once a device verifies TUF metadata for one
+4. **The on-device Uptane client is implemented.** `os/pkgs/rauc-sign/README.md:9-12`
+   puts the device side in phase 2 and records that nothing ships it to a device
+   yet. Once a device verifies TUF metadata for one
    artifact class, extending it to a second is incremental rather than novel.
 
 **And what signing would cost, priced now so that the decision is not
@@ -3577,7 +3581,7 @@ re-litigated from zero.** If it is adopted:
   *"An unmodelled setting is an unsupported setting"*
   (`docs/design/access.md:519`).
 - **Code and dependency.** A signature verifier inside a root-privileged,
-  network-facing daemon, plus whatever crate carries it. `mosd/deny.toml` bans no
+  network-facing daemon, plus whatever crate carries it. `os/pkgs/mosd/deny.toml` bans no
   C-building crate and `os/pkgs/mosd/hack/check.sh:9` checks only licenses, bans and
   advisories, so the workspace's pure-Rust posture would be upheld by
   review rather than by a gate at exactly the moment it mattered most.
@@ -3611,14 +3615,14 @@ the daemon in the directions that cost nothing to a root network listener —
 the upload handler can write, and dm-verity does not help, because §4.4 already
 established that verity protects integrity and not confidentiality and a write
 outside `/` is not a write to `/`. The fix belongs in
-`mosd/dist/apid.service`, and **this section endorses it as the concrete
+`os/pkgs/mosd/dist/apid.service`, and **this section endorses it as the concrete
 substitute for signing** — it is cheaper, it needs no key material, and it bounds a real
 class of bugs rather than attesting an authorship nobody disputes.
 
 **Recommendation, restated in one line, because a section like this must end
 with an answer and not with a survey: do not sign UI bundles in phase 1;
 authorise the upload with §3.2's token, spend the effort on `ProtectSystem=`
-and `ReadWritePaths=` in `mosd/dist/apid.service`, and revisit the moment any
+and `ReadWritePaths=` in `os/pkgs/mosd/dist/apid.service`, and revisit the moment any
 one of the four triggers above becomes true.**
 
 ## 8. Migration and phasing — **[proposed]**
@@ -4012,20 +4016,20 @@ feature, delivered without a single new network-reachable write path.
 **How the four acceptances were met, and by what.** Recorded because an
 acceptance is worth what its evidence is worth:
 
-1. Met by `mosd/apid/src/tests/broken_classes.rs`: each of §6.1's five classes
+1. Met by `os/pkgs/mosd/apid/src/tests/broken_classes.rs`: each of §6.1's five classes
    is constructed end to end, the one navigation to `/builtin/` reaches a
    working UI from every one of them, the control there deactivates the bundle,
    each class asserts a **distinct** state the mechanism reported so none can
    pass for another's reason, and the set of classes that ran is diffed against
    the set declared. Class 4's `EACCES` arm needs a non-root runner and was run
    under `setpriv`; the repository's own checks run as root.
-2. Met by `mosd/apid/src/assets/path.rs`'s per-guard suite, in this repository
+2. Met by `os/pkgs/mosd/apid/src/assets/path.rs`'s per-guard suite, in this repository
    and not in a dependency's. `/%252e%252e%2fetc%2fpasswd` is a 404 by an
    explicit rejection rather than by a miss — see §4.4's two rejections beyond
    the five rules.
 3. Met at the **header** level only: the three cache classes and `nosniff` are
    asserted on every asset response
-   (`mosd/apid/src/assets/mime.rs`, `mosd/apid/src/tests.rs`). No browser was
+   (`os/pkgs/mosd/apid/src/assets/mime.rs`, `os/pkgs/mosd/apid/src/tests.rs`). No browser was
    driven, so what is proved is that the headers the criterion rests on are the
    ones sent.
 4. Met by re-evaluating an activated bundle against a **different** served set —
@@ -4056,7 +4060,7 @@ any of them is a bug in front of people who could have caused it by hand.
 
 **What ships.** The request that drives §5.3: a file-receiving authenticated
 route (no multipart handler exists anywhere in the crate — `grep -rn Multipart
-mosd/` returns nothing at `86cd669`), the archive-format dependency §5.3
+os/pkgs/mosd/` returns nothing at `86cd669`), the archive-format dependency §5.3
 declines to settle, a bound on upload size, and §7's authorisation decision
 in force — bearer token or authenticated session, no signature.
 
@@ -4174,7 +4178,7 @@ dot-path the resource identifier verbatim, and rejects hand-shaped REST nouns
 for a good reason — a second model drifts and nothing notices. The cost of the
 choice it made instead is that `access.ssh.authorizedKeys` is now a **public
 path in an HTTP contract**, and renaming or restructuring anything in
-`mosd/mosd-settings/src/model.rs` is a breaking change to that contract. The
+`os/pkgs/mosd/mosd-settings/src/model.rs` is a breaking change to that contract. The
 on-disk tree has a mechanism for exactly this — `SCHEMA_VERSION` and a
 registered migration chain that walks both directions
 (`os/pkgs/mosd/mosd-settings/src/model.rs:11`, `os/pkgs/mosd/mosd-settings/src/migration.rs:46-57`,

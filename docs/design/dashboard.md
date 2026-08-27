@@ -188,7 +188,7 @@ call returning the data — or **(b) needs new mosd work**, with the
   `state`, `deviceId` and `seededGeneration`
   (`os/pkgs/mosd/mosd-settings/src/model.rs:269-277`).
 - **Availability: (a) available today.** `GetSettings("provisioning")` works
-  today and `mosd/apid/src/` contains zero references to it — gap-table
+  today and `os/pkgs/mosd/apid/src/` contains zero references to it — gap-table
   **row 8**, classified UI-work-only. Identity is a *setting*, not live state,
   and is therefore reachable (`mos-ui-inventory.md` section 6.3).
 - **Why it earns the first screen:** an operator with more than one appliance,
@@ -435,7 +435,7 @@ better mechanism and then hid it.**
   the PSK (`os/pkgs/mosd/mosd/src/reconciler/wifi_client.rs:515-521`).
 - **Availability: (a) available today** — gap-table **rows 15, 7 and 6**
   respectively, all three classified by `mos-ui-inventory.md` section 7.1 as
-  needing only UI work. `mosd/apid/src/` contains **zero** references to any of
+  needing only UI work. `os/pkgs/mosd/apid/src/` contains **zero** references to any of
   these paths. Note that row 15 (SSH) is **in flight on the `sshweb` branch**
   (`mos-ui-inventory.md` section 8); anyone building this tile after that merge
   must re-measure section 2's route inventory first, as that section instructs.
@@ -922,7 +922,7 @@ resolved. This matters below only because it is the existing, working precedent
 for *shipping browser-side text as a Rust string constant rather than as a build
 artefact* — it is what option B would have to imitate.
 
-`Multipart` and `http-equiv` appear nowhere under `mosd/` (grepped on this
+`Multipart` and `http-equiv` appear nowhere under `os/pkgs/mosd/` (grepped on this
 branch: 0 matches each), so there is no file-upload path and no auto-refresh
 today.
 
@@ -944,7 +944,7 @@ today.
   multiple-versions = "warn"` (`deny.toml:16-17`).
 
 **So "does this option need a new crate?" is answered below by three tests, in
-this order:** is it already in `mosd/Cargo.lock`; does it build C or pull
+this order:** is it already in `os/pkgs/mosd/Cargo.lock`; does it build C or pull
 `aws-lc-rs`; is its licence on the `deny.toml` allow-list. A crate that fails any
 of these is a cost, not a detail.
 
@@ -978,13 +978,13 @@ observed on a running appliance (see 5.13).
 #### 5.1.4 The bus surface, and the single mutex behind it
 
 `mos-ui-inventory.md` section 4 gives the six-method, one-signal surface.
-Two properties read directly from `mosd/mosd/src/bus.rs` on this branch bound
+Two properties read directly from `os/pkgs/mosd/mosd/src/bus.rs` on this branch bound
 every option below:
 
 1. **`apid` does not subscribe to `SettingsChanged`.** Its zbus proxy declares
    five methods and no signal member (`os/pkgs/mosd/apid/src/bus_client.rs:9-20`).
    Adding a `#[zbus(signal)]` member needs **no new crate**: `zbus` 5.19.0 is
-   already in the tree and already pulls `futures-core` (`mosd/Cargo.lock`, zbus
+   already in the tree and already pulls `futures-core` (`os/pkgs/mosd/Cargo.lock`, zbus
    entry at `:2906-2931`), and signal streams are part of the proxy macro. The
    workspace pin is `zbus = { version = "5", default-features = false, features = ["tokio"] }`
    (`os/pkgs/mosd/Cargo.toml:28`).
@@ -1028,7 +1028,7 @@ sections 1-4.
 
 - The post-submit redirect is **303 See Other**, not 302. `Redirect::to` uses
   `StatusCode::SEE_OTHER` (`axum-0.8.9/src/response/redirect.rs:26-38`), and
-  `mosd/apid/src/tests.rs` asserts `StatusCode::SEE_OTHER` at 20 call sites
+  `os/pkgs/mosd/apid/src/tests.rs` asserts `StatusCode::SEE_OTHER` at 20 call sites
   (for example `:41`, `:174`, `:394`, `:587`). `mos-ui-inventory.md` section 3.2
   and section 1.2 of this document describe the pattern as "302"; the pattern —
   POST/Redirect/GET — is the same either way, and 303 is the more correct of the
@@ -1044,7 +1044,7 @@ order, so the four are comparable rather than merely described.
 | | Criterion | What is being measured |
 |---|---|---|
 | **C1** | **Bytes shipped to the browser** | Bytes beyond the HTML that would ship anyway, plus bytes re-shipped per update. Uncompressed, because `tower-http` is absent (5.1.1) |
-| **C2** | **New crates** | Named, and checked against `mosd/Cargo.toml`, `mosd/Cargo.lock` and `mosd/deny.toml` by the three tests in 5.1.2 |
+| **C2** | **New crates** | Named, and checked against `os/pkgs/mosd/Cargo.toml`, `os/pkgs/mosd/Cargo.lock` and `os/pkgs/mosd/deny.toml` by the three tests in 5.1.2 |
 | **C3** | **JavaScript disabled** | What an operator with scripting off, or a text browser, or a hardened kiosk profile, still gets |
 | **C4** | **`mosd`-side work** | New bus method? New signal? Does it need `SettingsChanged` (`bus.rs:249-254`), which exists and is unsubscribed (`bus_client.rs:9-20`)? |
 | **C5** | **`mosd` down** | Today: lazy connect, cache dropped on error, per-request 502 pages, never a `apid` crash (`os/pkgs/mosd/apid/src/bus_client.rs:22-25`, `:41-58`; `bus_error` at `routes.rs:95-105`). What does the option do to that? |
@@ -1182,11 +1182,11 @@ A long-lived `text/event-stream` response, consumed by the browser's built-in
   (`axum-0.8.9/src/response/sse.rs:36-48`) — all already non-optional `axum`
   dependencies. To construct a stream, `apid` would add **`futures-util`** as a
   direct dependency; it is already resolved in the tree at **0.3.34**
-  (`mosd/Cargo.lock`), licence `MIT OR Apache-2.0` (read from the local registry
+  (`os/pkgs/mosd/Cargo.lock`), licence `MIT OR Apache-2.0` (read from the local registry
   copy of `futures-util-0.3.34/Cargo.toml`), which is on the `deny.toml`
   allow-list (`deny.toml:6-14`). Pure Rust, no C. **So option C adds one line to
-  `mosd/apid/Cargo.toml` and zero crates to the compiled graph.** (`tokio-stream`
-  would be the more ergonomic choice and **is not** in `mosd/Cargo.lock` — that
+  `os/pkgs/mosd/apid/Cargo.toml` and zero crates to the compiled graph.** (`tokio-stream`
+  would be the more ergonomic choice and **is not** in `os/pkgs/mosd/Cargo.lock` — that
   one is a genuine new crate and is not needed.)
 - **C3 — JavaScript disabled.** Nothing updates. `EventSource` is a scripting
   API; there is no markup-level SSE consumer. Identical degraded story to option
@@ -1249,7 +1249,7 @@ A long-lived `text/event-stream` response, consumed by the browser's built-in
   `axum`'s `ws` feature is
   `["dep:hyper", "tokio", "dep:tokio-tungstenite", "dep:sha1", "dep:base64"]`
   (`axum-0.8.9/Cargo.toml:133-139`), with `tokio-tungstenite` at 0.29.0
-  (`axum-0.8.9/Cargo.toml:264-266`). Checked against `mosd/Cargo.lock` on this
+  (`axum-0.8.9/Cargo.toml:264-266`). Checked against `os/pkgs/mosd/Cargo.lock` on this
   branch: **`tokio-tungstenite` — absent. `tungstenite` — absent. `sha1` —
   absent.** (`base64` is present, at two versions.) `tungstenite` in turn pulls
   its own dependency set. All are pure Rust and all are `MIT`/`Apache-2.0`-family
@@ -1576,9 +1576,9 @@ admitted gap.
    this section are the 484-byte inline stylesheet (5.1.1) and Venus's
    15,793,432-byte compressed WASM payload (`venus-os-ui.md` section 2.3, not
    re-measured here).
-4. **Crate resolution was read from `mosd/Cargo.lock` and from the local
+4. **Crate resolution was read from `os/pkgs/mosd/Cargo.lock` and from the local
    registry copies of published crates**, not from a resolved build graph. In
-   particular, `mosd/Cargo.lock` includes entries for optional dependencies in
+   particular, `os/pkgs/mosd/Cargo.lock` includes entries for optional dependencies in
    some cases, so "absent from the lock" is a stronger signal than "present in
    the lock". The three crates named as new in option D — `tokio-tungstenite`,
    `tungstenite`, `sha1` — are **absent**, which is the direction that matters.
@@ -1672,7 +1672,7 @@ re-measured against the route inventory after that merge, as
 
 **Verification.**
 - Handler tests against the in-memory `SettingsApi` fake, following the existing
-  pattern — `mosd/apid/src/tests.rs` is 591 lines of exactly this shape.
+  pattern — `os/pkgs/mosd/apid/src/tests.rs` is 591 lines of exactly this shape.
 - Three specific behaviours are worth pinning as tests because they are the ones
   a refactor silently loses: a reconciler whose live-state entry is
   `{"error": ...}` renders in the error register and **not** as raw JSON
@@ -1695,12 +1695,12 @@ scheduled.
 
 **Scope.**
 1. A static system user created in the rootfs (`os/rootfs/scripts/account-mos.sh`), a
-   rewritten `mosd/dist/apid.service` carrying `User=`,
+   rewritten `os/pkgs/mosd/dist/apid.service` carrying `User=`,
    `AmbientCapabilities=CAP_NET_BIND_SERVICE`, a matching
    `CapabilityBoundingSet=`, and a sandboxing set checked against the two
    unusual things `apid` does — it reads `/proc/uptime` and it needs the
    system bus.
-2. A `user="apid"` block in `mosd/dist/com.mos.mosd.conf`. The policy is
+2. A `user="apid"` block in `os/pkgs/mosd/dist/com.mos.mosd.conf`. The policy is
    already default-deny in both directions with root allowed
    (`os/pkgs/mosd/dist/com.mos.mosd.conf:69-79`), and the file sketches the block to add
    at its `EXTENSION POINT` comment; the per-member narrowing beyond it is what
