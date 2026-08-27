@@ -2,7 +2,7 @@
 
 - **status**: completed — two image assertions added and guard-fired, fixture mode widened to the check it delegates to, the count-based control replaced by a per-fact identity diff, 105 SIGPIPE sites fixed structurally
 - **priority**: P1
-- **owner**: ai-agent
+- **owner**: (bkd campaign)
 - **createdAt**: 2026-08-20 16:45
 - **claimedAt**: 2026-08-20 16:49
 - **completedAt**: 2026-08-20 17:15

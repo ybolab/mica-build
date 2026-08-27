@@ -2,7 +2,7 @@
 
 - **status**: completed — the surface and the token mechanism are proposed; two internal contradictions it left were resolved later by RFCT-069
 - **priority**: P1
-- **owner**: ai-agent
+- **owner**: (bkd campaign)
 - **createdAt**: 2026-08-19 15:27
 - **claimedAt**: 2026-08-19 15:28
 - **completedAt**: 2026-08-19 16:12

@@ -2,14 +2,14 @@
 
 - **status**: completed
 - **priority**: P2
-- **owner**: ai-agent
+- **owner**: bkd/nlijystw
 - **createdAt**: 2026-08-26
 - **completedAt**: 2026-08-27
 
-`os/pkgs/rauc/system.conf.in:71-78` points RAUC's CMS keyring at
-`/etc/rauc/keyring.pem` and states what is there instead: *"Production keyring
+`os/pkgs/rauc/system.conf.in`'s `[keyring]` section points RAUC's CMS keyring
+at `/etc/rauc/keyring.pem` and states what is there instead: *"Production keyring
 provisioning is out of scope here; until one is installed, `rauc install` on
-device fails closed."* The development keyring is deliberately not in git, and
+device fails closed."* (`os/pkgs/rauc/system.conf.in:82-83`) The development keyring is deliberately not in git, and
 `os/rootfs/overlay-v2/etc/rauc/keyring.pem` is gitignored, so a built image
 ships no keyring at all.
 

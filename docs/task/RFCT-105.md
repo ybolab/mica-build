@@ -10,7 +10,7 @@
   building this; it is recorded in full below and deliberately **not fixed
   here**, because `mosd/` was read-only for this campaign
 - **priority**: P1
-- **owner**: ai-agent
+- **owner**: (bkd campaign)
 - **createdAt**: 2026-08-24 08:04
 - **claimedAt**: 2026-08-24 08:04
 

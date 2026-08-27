@@ -123,9 +123,9 @@ its record's head fails naming both sides (RFCT-171).
 - [x] [**RFCT-091 PLAN-011 M3: mos-mqttd, the MQTT data-publishing bridge**](RFCT-091.md) `P1`
 - [x] [**RFCT-092 A mechanism that checks docs citations, because five of them rotted in two merges**](RFCT-092.md) `P2`
 - [x] [**RFCT-093 PLAN-011 M5: extension enablement — writable unit directory, the com.mos.ext namespace, and the bus scan**](RFCT-093.md) `P1`
-- [ ] [**RFCT-094 Dotted keys have no item object, and M5 makes that certain rather than theoretical**](RFCT-094.md) `P2`
+- [x] [**RFCT-094 Dotted keys have no item object, and M5 makes that certain rather than theoretical**](RFCT-094.md) `P2`
 - [x] [**RFCT-095 The com.mos.ext policy assertions cannot fail, and hoisting them needs a different shape**](RFCT-095.md) `P2`
-- [ ] [**RFCT-096 "0 skipped" does not mean nothing was skipped, and three test files still exploit that**](RFCT-096.md) `P1`
+- [x] [**RFCT-096 "0 skipped" does not mean nothing was skipped, and three test files still exploit that**](RFCT-096.md) `P1`
 - [x] [**RFCT-097 Wire mos-mqttd into the image, which is where three of its defects were**](RFCT-097.md) `P1`
 - [x] [**RFCT-098 The connd contract read rotted, and nineteen assertions went green on the fallback**](RFCT-098.md) `P1`
 - [x] [**RFCT-099 Remove package management from the packed root, and keep the licence texts**](RFCT-099.md) `P2`
@@ -158,20 +158,20 @@ its record's head fails naming both sides (RFCT-171).
 - [x] [**RFCT-126 PLAN-015 M5: README sweep, root and extensions and the two TS suites**](RFCT-126.md) `P2`
 - [x] [**RFCT-127 PLAN-015 M5: README sweep, the rootfs tree and the container engine**](RFCT-127.md) `P2`
 - [x] [**RFCT-128 PLAN-015 M5: citations repaired against the checker, and the check made to gate**](RFCT-128.md) `P2`
-- [ ] [**RFCT-129 apid reads /proc/uptime itself, against its own rule that mosd owns every system fact**](RFCT-129.md) `P2`
-- [ ] [**RFCT-130 Three distinct settings failures reach the API as one error code, so a missing path and a bad value are indistinguishable**](RFCT-130.md) `P2`
-- [ ] [**RFCT-131 /healthz answers ok before checking anything, and two documents read it as a statement about the appliance**](RFCT-131.md) `P2`
-- [ ] [**RFCT-132 Every unauthenticated request costs a D-Bus round trip against the one lock mosd holds over both trees**](RFCT-132.md) `P2`
-- [ ] [**RFCT-133 mosd emits SettingsChanged and apid's proxy cannot receive it**](RFCT-133.md) `P2`
-- [ ] [**RFCT-134 The admin password can be set exactly once and no operation anywhere changes it**](RFCT-134.md) `P1`
+- [x] [**RFCT-129 apid reads /proc/uptime itself, against its own rule that mosd owns every system fact**](RFCT-129.md) `P2`
+- [x] [**RFCT-130 Three distinct settings failures reach the API as one error code, so a missing path and a bad value are indistinguishable**](RFCT-130.md) `P2`
+- [x] [**RFCT-131 /healthz answers ok before checking anything, and two documents read it as a statement about the appliance**](RFCT-131.md) `P2`
+- [x] [**RFCT-132 Every unauthenticated request costs a D-Bus round trip against the one lock mosd holds over both trees**](RFCT-132.md) `P2`
+- [x] [**RFCT-133 mosd emits SettingsChanged and apid's proxy cannot receive it**](RFCT-133.md) `P2`
+- [x] [**RFCT-134 The admin password can be set exactly once and no operation anywhere changes it**](RFCT-134.md) `P1`
 - [ ] [**RFCT-135 The network form accepts a VLAN interface name that the settings path syntax then rejects**](RFCT-135.md) `P1`
-- [ ] [**RFCT-136 The custom-UI bundle store is complete and no HTTP route reaches it**](RFCT-136.md) `P2`
-- [ ] [**RFCT-137 apid's unit sandboxes almost everything except the filesystem it serves files out of**](RFCT-137.md) `P2`
-- [ ] [**RFCT-138 The workspace's no-C-dependency posture is a comment, and cargo-deny is configured to enforce nothing**](RFCT-138.md) `P2`
-- [ ] [**RFCT-139 No production RAUC keyring is provisioned, so rauc install fails closed on every shipped device**](RFCT-139.md) `P2`
-- [ ] [**RFCT-140 One outage is reported two ways: the API answers 503 and the HTML pages answer 502**](RFCT-140.md) `P2`
-- [ ] [**RFCT-141 The static-asset traversal guards have no over-the-wire coverage, because no device under test has a bundle**](RFCT-141.md) `P2`
-- [ ] [**RFCT-142 Reading the U-Boot boot credits races a writer that no lock orders**](RFCT-142.md) `P1`
+- [x] [**RFCT-136 The custom-UI bundle store is complete and no HTTP route reaches it**](RFCT-136.md) `P2`
+- [x] [**RFCT-137 apid's unit sandboxes almost everything except the filesystem it serves files out of**](RFCT-137.md) `P2`
+- [x] [**RFCT-138 The workspace's no-C-dependency posture is a comment, and cargo-deny is configured to enforce nothing**](RFCT-138.md) `P2`
+- [x] [**RFCT-139 No production RAUC keyring is provisioned, so rauc install fails closed on every shipped device**](RFCT-139.md) `P2`
+- [x] [**RFCT-140 One outage is reported two ways: the API answers 503 and the HTML pages answer 502**](RFCT-140.md) `P2`
+- [x] [**RFCT-141 The static-asset traversal guards have no over-the-wire coverage, because no device under test has a bundle**](RFCT-141.md) `P2`
+- [x] [**RFCT-142 Reading the U-Boot boot credits races a writer that no lock orders**](RFCT-142.md) `P1`
 - [x] [**RFCT-143 PLAN-015 M5: boards.md and display.md lose the claims that describe a build that does not exist**](RFCT-143.md) `P2`
 - [x] [**RFCT-144 PLAN-015 M5: the task index and the task files disagree about what is finished**](RFCT-144.md) `P2`
 - [x] [**RFCT-150 PLAN-015 M6: form compression in os/verify**](RFCT-150.md) `P2`
@@ -198,3 +198,4 @@ its record's head fails naming both sides (RFCT-171).
 - [x] [**RFCT-172 PLAN-020 M3: citation scanning widened to docs/task and docs/research, with the dated-record exemption**](RFCT-172.md) `P2`
 - [x] [**RFCT-173 PLAN-020 M4: the self-test fixture repoints to os/pkgs, and the unquoted count becomes a ratchet**](RFCT-173.md) `P2`
 - [x] [**RFCT-180 PLAN-021 M1: the quick-fix batch**](RFCT-180.md) `P2`
+- [x] [**RFCT-191 PLAN-021 M3b: docs ghost sweep, recorded residuals, owner sweep and gate repairs**](RFCT-191.md) `P2`

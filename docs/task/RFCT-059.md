@@ -3,7 +3,7 @@
 - **status**: completed — implementation complete, `make docs-verify` green (140/140),
   diff confined to `docs/`
 - **priority**: P1
-- **owner**: ai-agent
+- **owner**: (bkd campaign)
 - **createdAt**: 2026-08-19 18:45
 - **claimedAt**: 2026-08-19 18:45
 - **completedAt**: 2026-08-19 19:40

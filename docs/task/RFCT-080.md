@@ -2,7 +2,7 @@
 
 - **status**: completed — three duplicate assertions added, each proved to fail with its own message; nine `sort -u` sites judged, none changed
 - **priority**: P1
-- **owner**: ai-agent
+- **owner**: (bkd campaign)
 - **createdAt**: 2026-08-20 15:20
 - **claimedAt**: 2026-08-20 15:22
 - **completedAt**: 2026-08-20 16:05

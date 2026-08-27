@@ -2,7 +2,7 @@
 
 - **status**: completed — six assertions added to the v2 verifier, each proved to fail against a mutated input, with its own message
 - **priority**: P1
-- **owner**: ai-agent
+- **owner**: (bkd campaign)
 - **createdAt**: 2026-08-20 14:27
 - **claimedAt**: 2026-08-20 14:30
 - **completedAt**: 2026-08-20 15:10

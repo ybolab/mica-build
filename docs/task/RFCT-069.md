@@ -2,7 +2,7 @@
 
 - **status**: completed — both contradictions resolved; one supplied citation was found not to hold and was corrected against the plan documents; one finding was corrected **upward** by execution
 - **priority**: P1
-- **owner**: ai-agent
+- **owner**: (bkd campaign)
 - **createdAt**: 2026-08-19 16:41
 - **claimedAt**: 2026-08-19 16:42
 - **completedAt**: 2026-08-19 17:00

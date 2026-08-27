@@ -27,8 +27,8 @@ is a lockout.
 
 ## Resolution
 
-**The cache** (`os/pkgs/mosd/apid/src/access_cache.rs`, wired into the gate
-at `os/pkgs/mosd/apid/src/routes.rs:738-756`): the unauthenticated path
+**The cache** (`os/pkgs/mosd/apid/src/access_cache.rs`, wired into the gate:
+`state.access_cache.get()` `os/pkgs/mosd/apid/src/routes.rs:738-756`): the unauthenticated path
 serves `access` from memory while [[RFCT-133]]'s subscription is live, so
 unauthenticated traffic stops contending with settings writes on mosd's
 single mutex.

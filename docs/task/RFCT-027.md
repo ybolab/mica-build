@@ -2,7 +2,7 @@
 
 - **status**: completed — implementation complete, both verifiers green, on-device behaviour is the user's acceptance
 - **priority**: P1
-- **owner**: ai-agent
+- **owner**: (bkd campaign)
 - **createdAt**: 2026-08-19 00:23
 - **claimedAt**: 2026-08-19 03:30
 - **completedAt**: 2026-08-19 04:55

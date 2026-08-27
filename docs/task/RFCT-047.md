@@ -3,7 +3,7 @@
 - **status**: completed — implementation complete, `bash mosd/hack/check.sh` green at 280
   tests; no on-device sshd behaviour is claimed
 - **priority**: P1
-- **owner**: ai-agent
+- **owner**: (bkd campaign)
 - **createdAt**: 2026-08-19 09:39
 - **claimedAt**: 2026-08-19 09:39
 - **completedAt**: 2026-08-19 09:39

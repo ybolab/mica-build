@@ -115,10 +115,10 @@ channel (uptime), **7 needing only UI work** because the bus call already exists
 and returns the data (rows 6, 7, 8, 15, 16, 17, 18 and the metadata half of
 row 9), and **9 needing new mosd work** because no mechanism reaches the data
 from the bus at all (rows 1, 2, 3, 4, 5, 11, 13, 14 and the plaintext half of
-row 9). The sharpest of these is that the A/B update subsystem is the largest
-thing M4 built and `mosd` contains literally zero lines referencing it —
-`grep -rci rauc mosd/mosd/src/` returns 0 across all 12 source files
-(`mos-ui-inventory.md` section 7, row 1).
+row 9). The sharpest of these was the A/B update subsystem — the largest thing
+M4 built, with zero `mosd` lines referencing it when `mos-ui-inventory.md` section
+7 row 1 measured it. That is dated: re-measured, `grep -rci rauc os/pkgs/mosd/mosd/src/`
+finds 180 matches across 3 of 21 source files — RFCT-084's update-orchestration surface.
 
 ### 1.3 What a dashboard has to change about that
 
@@ -401,16 +401,16 @@ better mechanism and then hid it.**
 
 - **Shows:** time since boot, and — once section 2.5's feed exists — whether
   that boot was the first on the current slot version.
-- **Feed:** `/proc/uptime`, read by `apid` itself at
-  `os/pkgs/mosd/apid/src/routes.rs:606-608`, parsed at `:558-565`, formatted at
-  `:549-560`, rendered on `/` at `:580-583`.
-- **Availability: (a) available today** — gap-table **row 12**, answered via a
-  side channel. Recorded honestly: this is **the one place `apid` touches the
-  filesystem for data rather than going through the bus**, a documented
-  exception to the layering asserted at `os/pkgs/mosd/apid/src/settings_api.rs:10-12`.
-  Uptime is not in the live-state tree at all (`mos-ui-inventory.md` section 6.3).
-  This proposal does not resolve that exception; it notes that a dashboard adding
-  more `/proc` reads would widen it, and that the place to decide is the
+- **Feed:** mosd's live-state `uptime` key, read over the bus via `get_state`
+  (`os/pkgs/mosd/apid/src/routes.rs:1520-1540`); mosd itself reads
+  `/proc/uptime` (`os/pkgs/mosd/mosd/src/bus.rs:552-558`). RFCT-129 landed this.
+- **Availability: (a) available today** — gap-table **row 12**, no longer via a
+  side channel. The old `/proc/uptime`-in-`apid` exception to the layering
+  asserted at `os/pkgs/mosd/apid/src/settings_api.rs:10-12` is closed: RFCT-129
+  moved the read into `mosd` and `apid` gets uptime through the bus like every
+  other system fact, so uptime now sits in the live-state tree.
+  This proposal notes that a dashboard adding
+  `/proc` reads to `apid` would reopen it, and that the place to decide is the
   `mosd`/`apid` boundary rather than this document.
 - **Why it earns the first screen:** it is the cheapest possible detector of an
   unplanned reboot, and — paired with section 2.5 — the difference between "this
@@ -783,10 +783,10 @@ section 8's.
 
 | # | Proposed in | What is missing | Gap row | `mosd` work required |
 |---|---|---|---|---|
-| 1 | 2.5, 3.2 Update page | Which slot is running, and the version in each | **row 1** | A bus method returning RAUC slot status. `grep -rci rauc mosd/mosd/src/` returns **0 across all 12 files**; `apid` cannot subprocess (`os/pkgs/mosd/apid/src/settings_api.rs:10-12`), so this must live in `mosd`. The parse already exists in shell at `os/rootfs/overlay-v2/usr/lib/mos/mos-health:72-104` |
-| 2 | 2.5, 2.7 | Boot attempt credits remaining | **row 2** | Read `BOOT_A_LEFT`/`BOOT_B_LEFT` from the redundant U-Boot environment (`os/rootfs/overlay-v2/etc/fw_env.config.in:27-29`). Carries a real hazard the file itself records at `:23-25`: **no cross-process locking** between the two existing writers |
+| 1 | 2.5, 3.2 Update page | Which slot is running, and the version in each | **row 1** | A bus method returning RAUC slot status — **built since this was measured**: `GetUpdateState` answers per-slot status over the bus (RFCT-084), and the dated `grep -rci rauc mosd/mosd/src/` 0-count re-measures at 180 across 3 of 21 files in `os/pkgs/mosd/mosd/src/`. `apid` cannot subprocess (`os/pkgs/mosd/apid/src/settings_api.rs:10-12`), so it lives in `mosd`. The parse also exists in shell at `os/rootfs/overlay-v2/usr/lib/mos/mos-health:72-104` |
+| 2 | 2.5, 2.7 | Boot attempt credits remaining | **row 2** | Read `BOOT_A_LEFT`/`BOOT_B_LEFT` from the redundant U-Boot environment (`os/rootfs/overlay-v2/etc/fw_env.config.in:49-51`). The read hazard is answered by the RFCT-142 rule the file records at `:23-47`: all access via `fw_printenv`/`fw_setenv` under libubootenv's flock, one writer per variable — the credits stay RAUC-owned and this reader polls only |
 | 3 | 2.5, 3.2 Update page | RAUC status and last install result | **row 3** | Same bus surface as item 1; the status file is on META by design (`os/pkgs/rauc/system.conf.in:14-34`) |
-| 4 | 2.5, 3.2 Update page | Installing a bundle at all | **row 4** | The largest single item. Signed verity-format bundles are already **built** and signature-verified against `/etc/rauc/keyring.pem` with `plain` format refused (`os/build/src/bundle.ts:1-7`, `os/pkgs/rauc/system.conf.in:66-69`), but there is **no upload route, no file-receiving handler** (`Multipart` appears nowhere in `mosd/apid/`) and **no `rauc install` caller anywhere in `mosd/`**. Needs a bus method, a place to put the bundle, and a progress surface |
+| 4 | 2.5, 3.2 Update page | Installing a bundle at all | **row 4** | The largest single item. Signed verity-format bundles are already **built** and signature-verified against `/etc/rauc/keyring.pem` with `plain` format refused (`os/build/src/bundle.ts:1-7`, `os/pkgs/rauc/system.conf.in:66-69`), but there is still **no upload route, no file-receiving handler** (`Multipart` appears nowhere in `os/pkgs/mosd/apid/`, re-measured on this tree). The caller half is dated: `InstallUpdate` now hands an on-device bundle path to RAUC's D-Bus `InstallBundle`, with progress read back through `GetUpdateState` (RFCT-084). Still needs the upload path and a place to put the bundle |
 | 5 | 2.3, 2.5 | The boot health gate's verdict; whether the running slot is confirmed | **row 5** | The gate exists and runs `rauc status mark-good` (`os/rootfs/overlay-v2/usr/lib/mos/mos-health:256-261`); its verdict goes to the journal (`:17-18`). Needs the gate to report through `ReportHealth` (or a richer equivalent) instead of only journalling. **This is the item where mos is furthest ahead of Venus and least able to show it** — see 4.2 |
 | 6 | 2.4, 3.4.1 | Observed IP address, lease, gateway, DNS in use, carrier state | **row 14** | `mosd` must **query** networkd. It already talks to `org.freedesktop.network1` for exactly one thing, `Manager.Reload` (`os/pkgs/mosd/mosd/src/reconciler/network.rs:24-25`); it issues no `Get`, no property read and no link enumeration. This is the highest-value item on the list by operator demand |
 | 7 | 2.6 | Filesystem usage per tier | **row 11** | A `statvfs` read plus a bus surface for it. The read is trivial; the surface does not exist. `/srv`, the only tier that grows (`docs/design/ro-root.md:363-368`), has **no reporting of any kind** today |
@@ -1368,13 +1368,13 @@ page cannot show well"*, borrowing from Venus's practice of publishing real
 percentage progress from the installer's own progress socket rather than guessing
 (`venus-os-access.md` section 5.4 and section 6 item 5, cited via section 2.5).
 
-**The first thing to say is that this tile cannot be built at all today, for
+**The first thing to say is that this tile still cannot be built today, for
 reasons that have nothing to do with transport.** Gap row 4: there is no upload
-route, no file-receiving handler (`Multipart` appears nowhere under `mosd/`,
-re-grepped on this branch), and no `rauc install` caller anywhere in `mosd/`
-(`mos-ui-inventory.md` section 7 row 4; carried in section 4.1 item 4 of this
-document). There is no progress to display because there is no install. **The
-transport is not this tile's blocker and choosing SSE would not unblock it.**
+route and no file-receiving handler (`Multipart` appears nowhere under
+`os/pkgs/mosd/`, re-measured on this tree). The install caller half is dated:
+`InstallUpdate` hands a bundle path to RAUC over D-Bus and `GetUpdateState`
+reads progress back (RFCT-084) — but with no upload route, no bundle arrives.
+**The transport is not this tile's blocker and choosing SSE would not unblock it.**
 
 **Under the recommendation, once row 4 exists** — **[proposal]**:
 
@@ -1697,9 +1697,9 @@ scheduled.
 1. A static system user created in the rootfs (`os/rootfs/scripts/account-mos.sh`), a
    rewritten `os/pkgs/mosd/dist/apid.service` carrying `User=`,
    `AmbientCapabilities=CAP_NET_BIND_SERVICE`, a matching
-   `CapabilityBoundingSet=`, and a sandboxing set checked against the two
-   unusual things `apid` does — it reads `/proc/uptime` and it needs the
-   system bus.
+   `CapabilityBoundingSet=`, and a sandboxing set checked against the one
+   unusual thing `apid` still does — it needs the system bus (the
+   `/proc/uptime` read moved into `mosd`, RFCT-129).
 2. A `user="apid"` block in `os/pkgs/mosd/dist/com.mos.mosd.conf`. The policy is
    already default-deny in both directions with root allowed
    (`os/pkgs/mosd/dist/com.mos.mosd.conf:69-79`), and the file sketches the block to add
@@ -1774,9 +1774,9 @@ chosen by operator demand and by which items unblock others, not by size.
 |---|---|---|---|---|
 | **4a** | **Observed network** — `mosd` queries `org.freedesktop.network1` for addresses, leases, gateway, DNS in use and carrier state. It already talks to that service for exactly one thing, `Manager.Reload` (`os/pkgs/mosd/mosd/src/reconciler/network.rs:24-25`), and issues no `Get` and no link enumeration | **14** | Section 2.4 half B; the *condition* on section 3.4.1's Network nav row; the "what is my IP address?" question section 2.9 names as one of the two an operator asks first | A live-state read that returns a lease for a DHCP interface and an explicit no-lease state for one without — the distinction `mos-ui-inventory.md` section 6.3 records as currently impossible |
 | **4b** | **Storage per tier** — a `statvfs` read across the four tiers of `os/rootfs/overlay-v2/etc/fstab.in:11-27` and a bus surface for it | **11** | Section 2.6 | `/srv` reports a figure at all — today it has **no reporting of any kind** (section 4.1 item 7). Cheapest item in phase 4; do it early for that reason alone |
-| **4c** | **Slot state, RAUC status, and the gate's verdict** — a bus method returning slot status; `mos-health` reporting its own verdict through `ReportHealth` or a richer equivalent instead of only journalling (`os/rootfs/overlay-v2/usr/lib/mos/mos-health:17-18`) | **1, 3, 5** | Section 2.5's slot half; section 2.3 part (iii); **and section 2.10's power-page warning (row 10)**, which is a dependency rather than a new primitive | `rauc status mark-good` having run is readable over the bus. Note `grep -rci rauc mosd/mosd/src/` returns **0 across all 12 files** today, so this is new surface, not a wiring change |
+| **4c** | **Slot state, RAUC status, and the gate's verdict** — a bus method returning slot status; `mos-health` reporting its own verdict through `ReportHealth` or a richer equivalent instead of only journalling (`os/rootfs/overlay-v2/usr/lib/mos/mos-health:17-18`) | **1, 3, 5** | Section 2.5's slot half; section 2.3 part (iii); **and section 2.10's power-page warning (row 10)**, which is a dependency rather than a new primitive | `rauc status mark-good` having run is readable over the bus. The dated "0 across all 12 files" rauc measurement re-measures at 180 across 3 of 21 files in `os/pkgs/mosd/mosd/src/`: `GetUpdateState` answers slot status with the pending-not-confirmed flag, and `mos-health` now reports its verdict through `ReportHealth` (RFCT-084) — this row is largely built, wiring remains |
 | **4d** | **Boot attempt credits** — reading `BOOT_A_LEFT`/`BOOT_B_LEFT` from the redundant U-Boot environment (`os/rootfs/overlay-v2/etc/fw_env.config.in:49-51`) | **2** | The credits half of section 2.5, and the two-tile cross-read section 2.7 describes (short uptime plus falling credits = a slot failing its health gate) | **Gated on the RFCT-142 serialisation rule, no longer on an open question.** The read hazard has an answer: every access goes through `fw_printenv`/`fw_setenv`, and the shipped libubootenv takes `flock(LOCK_EX)` on `/var/lock/fw_printenv.lock` across the whole read or read-modify-write, so a poll cannot land mid-write. The rule and its two caveats — the lock is silently skipped while `/var/lock` is absent, so the polling service keeps `DefaultDependencies=yes`; the lock never spans a check-then-set, so `BOOT_A_LEFT`/`BOOT_B_LEFT` stay RAUC-owned and 4d is read-only — are recorded at `os/rootfs/overlay-v2/etc/fw_env.config.in:23-47`. **4d starts only as an exec of `fw_printenv` under that rule** — never a private libubootenv link, never a raw read of the UENV partitions. It is deliberately last among the read items because it touches the one store RAUC also writes |
-| **4e** | **Install a bundle, with progress** — an upload path, a place to put the bundle, a `rauc install` caller, and a progress surface. Today: no upload route, `Multipart` appears nowhere under `mosd/`, and no `rauc install` caller anywhere in `mosd/` | **4** | The update page of section 3.2; section 5.9's 2-second update-page refresh and its two specified degraded forms | The largest single item (section 4.1 item 4). Section 4.2 item 2's constraint is binding: mos refuses `plain`-format bundles by configuration (`os/pkgs/rauc/system.conf.in:50-62`), and **no "install this file anyway" affordance may be added** |
+| **4e** | **Install a bundle, with progress** — an upload path and a place to put the bundle. The caller and progress surface exist (RFCT-084): `InstallUpdate` hands a bundle path to RAUC's D-Bus `InstallBundle`, `GetUpdateState` reads progress back. Today: no upload route — `Multipart` appears nowhere under `os/pkgs/mosd/`, re-measured on this tree | **4** | The update page of section 3.2; section 5.9's 2-second update-page refresh and its two specified degraded forms | The largest single item (section 4.1 item 4). Section 4.2 item 2's constraint is binding: mos refuses `plain`-format bundles by configuration (`os/pkgs/rauc/system.conf.in:50-62`), and **no "install this file anyway" affordance may be added** |
 | **4f** | **Observed hostname**; and the **redaction policy** that must precede any diagnostics export | **13**; and section 4.1 item 10 (not a gap row) | Section 2.2's caveat; section 3.2's Diagnostics page | Diagnostics is mechanically buildable today — `GetState("")` and `GetSettings("")` already return whole trees (`bus.rs:160-164`, `:197-202`) — which is exactly why the **policy** must land first. Section 3.2: shipping an export before the redaction rule *"is how a support channel becomes a disclosure channel"* |
 
 **One sequencing note that is not obvious.** 4c must precede 4d, not because of

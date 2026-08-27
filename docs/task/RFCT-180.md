@@ -2,7 +2,7 @@
 
 - **status**: completed
 - **priority**: P2
-- **owner**: ai-agent
+- **owner**: bkd/xw8o4454
 - **createdAt**: 2026-08-27
 - **claimedAt**: 2026-08-27
 - **completedAt**: 2026-08-27
@@ -13,7 +13,8 @@ numbers RFCT-180..184 are reserved for this batch; one file covers it).
 
 ## Scope
 
-1. `os/build/src/pin-seeded-times.test.ts:41` — the `afterAll` gains
+1. `afterAll(async () => {`
+   (`os/build/src/pin-seeded-times.test.ts:41`) — the `afterAll` gains
    `beforeAll`'s `OPEN_TIMEOUT_MS` (known flake: closing the toolbox times
    out under the default hook timeout).
 2. `os/pkgs/mosd/apid/src/tests.rs`
@@ -23,8 +24,9 @@ numbers RFCT-180..184 are reserved for this batch; one file covers it).
 3. `test/apid-api/run.sh` — the refusal message's dead build instruction
    (`os/mkimage-x64.sh`, deleted) replaced with the live command, and the
    silent exit-1 when `_out/x64` is missing made loud.
-4. `os/verify/src/checks.test.ts:26` — the vacuous
-   `toBeGreaterThanOrEqual(0)` made real (`toBeGreaterThan(0)`).
+4. `expect(CHECKS.length).toBeGreaterThan(0)`
+   (`os/verify/src/checks.test.ts:26`) — the vacuous
+   `toBeGreaterThanOrEqual(0)` made real.
 5. Dead code, deadness verified per site before deleting:
    (a) `os/verify/src/parity.ts` `ParityInputError`'s unused export;
    (b) `os/pkgs/rauc/render-config.sh` `SYSTEM_CONF_IN` override knob with
@@ -67,9 +69,9 @@ Fixes 1-4 landed as specified:
   stays.
 - **5b — WITHDRAWN, knob left in place.** The `SYSTEM_CONF_IN` knob is dead
   as claimed (no caller sets it anywhere in the tree), but deleting its six
-  lines shifts `render-config.sh`'s interior up by five, and
-  `docs/design/api.md:3373` cites `render-config.sh:239` with the quoted
-  fragment "rootfs.0" — measured: `docs/verify-citations.sh` goes
+  lines shifts `render-config.sh`'s interior up by five, and `rootfs.0`
+  (`docs/design/api.md:3424`, since renumbered from `:3373`) is quoted there
+  against `render-config.sh:239` — measured: `docs/verify-citations.sh` goes
   1 FAILED / 901 passed under the deletion. `api.md` is outside this task's
   file scope, so the deletion cannot ride with the repoint it requires
   (RFCT-169's withdrawn `tough`-pin deletion is the precedent for exactly

@@ -261,10 +261,10 @@ post-RFCT-083:
 The affirmative half — placing `ca.cert.pem` on the device through a
 provisioning-time channel (META partition, factory step, or first-boot
 enrolment) rather than baking it into the signed root — is the trust-anchor
-provisioning story RFCT-088 is designing **in parallel with this document**
-(`docs/task/RFCT-088.md`), together with the TUF root anchor from §1.5,
+provisioning story RFCT-088 designed — **completed 2026-08-23**
+(`docs/task/RFCT-088.md`) — together with the TUF root anchor from §1.5,
 which has the same shape and should ship through the same channel. Until
-that lands, this runbook produces a CA whose keyring has no road to a
+provisioning ships, this runbook produces a CA whose keyring has no road to a
 production device, and says so rather than gesturing at one.
 
 What is pinned down today, so the eventual decision has a fixed place to

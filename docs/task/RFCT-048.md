@@ -4,7 +4,7 @@
   `make os-shadow-test`, `make os-dbus-policy-test` and both image builds with
   both profiles and both verifiers all green; no on-device claim is made
 - **priority**: P1
-- **owner**: ai-agent
+- **owner**: (bkd campaign)
 - **createdAt**: 2026-08-19 11:52
 - **claimedAt**: 2026-08-19 11:52
 - **completedAt**: 2026-08-19 14:40

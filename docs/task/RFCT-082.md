@@ -2,7 +2,7 @@
 
 - **status**: completed — the tolerant load is product code with five tests; four documents record decisions; seven translations carry staleness banners
 - **priority**: P0
-- **owner**: ai-agent
+- **owner**: (bkd campaign)
 - **createdAt**: 2026-08-21 04:40
 - **claimedAt**: 2026-08-21 04:45
 - **completedAt**: 2026-08-21 05:30

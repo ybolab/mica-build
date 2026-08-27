@@ -2,7 +2,7 @@
 
 - **status**: completed — the signing recommendation, the six phases and eleven foreclosures are written; two contradictions it found were routed rather than fixed, and closed later by RFCT-069
 - **priority**: P1
-- **owner**: ai-agent
+- **owner**: (bkd campaign)
 - **createdAt**: 2026-08-19 15:27
 - **claimedAt**: 2026-08-19 15:28
 - **completedAt**: 2026-08-19 16:40
