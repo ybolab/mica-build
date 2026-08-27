@@ -108,3 +108,33 @@ Measured consumer surface:
 - **Out**: behavioural changes of any kind, Cargo dependency changes,
   board.env values, docs/task and docs/plan history rewrites, prose edits
   beyond path tokens.
+
+## Amendment 2 — the ratified layout (user, 2026-08-27)
+
+M1's design (docs/task/RFCT-165.md on the workstream branch) is ratified as
+written, with all seven gate questions answered:
+
+1. Target tree and migration rows 1-12: ratified, including os/pkgs/'s
+   organising rule — "a child of os/pkgs/ holds source this repository
+   compiles into a shipped artefact" — with rauc-sign named as the member
+   that stretches it (half build-host tool, half shipped component).
+2. P1 adopted into M5 (repair the two live tree blocks that still draw the
+   deleted board/); P2 adopted into M2 (os/pkgs/README.md stating the rule,
+   migration row 13).
+3. P3 (test/apid-api relocation) deferred to its own plan; P4 (checker
+   self-test fixture paths) deferred past campaign close; P5 rejected.
+4. docs/research/ is dated history; Decisions item 3's .zh.md licence goes
+   unexercised in this campaign (the only two candidate lines are research).
+5. release-signing.md:308's example datastore path renames with the binary
+   (/var/lib/rauc-sign/trusted); M5 records the choice as deliberate.
+6. api.md:3466 (the 86cd669 provenance grep) is excluded from the sweep:
+   leave it, or re-run the grep at HEAD and restate — never rewrite the
+   quoted command's strings.
+7. M5 holds a NARROW prose licence limited to statements these moves
+   themselves falsify, enumerated in its spec: api.md:3461-3462 (workspace
+   membership) and any sibling the spec names explicitly. Nothing else.
+
+Execution order per section H: M2 and M3 may run concurrently (serialise on
+the root .gitignore if the coordinator prefers zero conflicts); M3 strictly
+before M4; M4 and M2 strictly before M5. mosd/target/ (4.2G) moves by hand
+at M4 integration.
