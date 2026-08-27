@@ -758,12 +758,11 @@ impl MosdService {
     /// Draw a new private key for the WireGuard interface `iface` and return
     /// its new public key.
     ///
-    /// Deliberately not a setting, for the reason
-    /// [`Self::set_transient_root_password`] is not one: a key that reached
-    /// the settings tree would be persisted in a file served over
-    /// `GetSettings`. It is not a setting in the other direction either — the
-    /// tree holds no key to change — so nothing is written there, and no
-    /// [`SettingsChanged`](Self::settings_changed) is emitted.
+    /// Deliberately not a setting, for the reason a transient root password is
+    /// not one: a key that reached the settings tree would be persisted and
+    /// served back out of it. It is not a setting in the other direction
+    /// either — the tree holds no key to change — so nothing is written there,
+    /// and no [`SettingsChanged`](Self::settings_changed) is emitted.
     ///
     /// The reconcilers are re-run afterwards so the tunnel's unit is
     /// re-rendered and networkd builds the device back around the key now on
