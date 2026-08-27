@@ -29,14 +29,14 @@ lands, the built-in UI and the API are not answering from the same source.
 recorded.** Path: top-level `uptime`, a bare JSON number of whole seconds
 since boot. Refresh point: computed at `GetState` time — mosd reads its own
 `/proc/uptime` inside the call and grafts the number onto the served view
-(the direct `uptime` read and the whole-tree read both carry it,
-`os/pkgs/mosd/mosd/src/bus.rs:616-635`), so no cached seconds-counter exists
+(the direct read and the whole-tree read both call
+`read_uptime_seconds()` `os/pkgs/mosd/mosd/src/bus.rs:616-635`), so no cached seconds-counter exists
 anywhere to go stale. Grafted rather than stored: the stored tree stays
 reserved for pushed facts, so a read never manufactures a change edge for the
 item façade's diff stream, and `GetItems` is unchanged.
 
-apid's status pane reads `get_state("uptime")` like every other system fact
-(`os/pkgs/mosd/apid/src/routes.rs:1524-1532`); the `/proc/uptime` reader and
+apid's status pane reads uptime like every other system fact —
+`get_state("uptime")` (`os/pkgs/mosd/apid/src/routes.rs:1524-1532`); the `/proc/uptime` reader and
 its parser are deleted, closing the contradiction with the crate's own rule
 (`settings_api.rs:10-12`). `GET /api/v1/state/uptime` now serves the field
 the pane shows, from the same source.

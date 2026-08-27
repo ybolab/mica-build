@@ -17,9 +17,9 @@ configures access to it says what protects them from each other:
 
 at `os/rootfs/overlay-v2/etc/fw_env.config.in:23-25`. What keeps those two
 apart is boot-time systemd ordering, not a lock: the machine-id oneshot runs
-`After=local-fs.target` and is deliberately ordered before no target at all
+`After=local-fs.target` and is *"Deliberately not Before= any target"*
 (`os/rootfs/overlay-v2/usr/lib/systemd/system/mos-machine-id.service:6-8`),
-and RAUC writes `BOOT_A_LEFT`/`BOOT_B_LEFT` through `fw_setenv` as part of slot
+and *"RAUC writes these into BOOT_A_LEFT / BOOT_B_LEFT via fw_setenv"* as slot
 marking (`os/pkgs/rauc/system.conf.in:35`). Ordering that holds during boot
 says nothing about two processes that meet afterwards.
 
@@ -48,15 +48,15 @@ serialisation rule is: every access to the redundant environment goes through
 `fw_printenv`/`fw_setenv`, which serialise themselves; nothing may read the
 UENV partitions directly. Both existing writers already comply — the
 machine-id oneshot calls the tools (`os/rootfs/overlay-v2/usr/lib/mos/mos-machine-id:43,52`),
-and RAUC's uboot backend execs them (recorded at
-`os/rootfs/stages/40-board.Dockerfile:50` and cited from `rauc`'s own
+and RAUC's uboot backend execs them (recorded — *"the uboot backend execs
+fw_setenv"* (`os/rootfs/stages/40-board.Dockerfile:50`) — and cited from `rauc`'s own
 `uboot.c` in `os/pkgs/rauc/system.conf.in`) — so implementing the rule for
 today's writers is proving the lock exists and pinning the rule where every
 future reader/writer will look.
 
 What was verified, all on the exact pinned base image
-(`debian:trixie-slim@sha256:d7e12182...`, the digest in
-`os/build-env/images.env:52`, which installs `libubootenv-tool 0.3.5-0.1+b2`):
+(`debian:trixie-slim@sha256:d7e12182...`, the digest at `IMAGE_DEBIAN_TRIXIE`
+(`os/build-env/images.env:52`), which installs `libubootenv-tool 0.3.5-0.1+b2`):
 
 - **The lock is real and covers reads.** strace of `fw_setenv` and of
   `fw_printenv` both show
@@ -85,9 +85,9 @@ What was verified, all on the exact pinned base image
 
 What changed:
 
-- `os/rootfs/overlay-v2/etc/fw_env.config.in:23-47` — the hazard paragraph
-  replaced by the rule, its evidence and both caveats (device lines moved to
-  `:49-51`).
+- *"The serialisation rule (RFCT-142)"* `os/rootfs/overlay-v2/etc/fw_env.config.in:23-47`
+  — the hazard paragraph replaced by the rule, its evidence and both caveats
+  (device lines moved to `:49-51`).
 - `os/rootfs/overlay-v2/usr/lib/systemd/system/mos-machine-id.service` —
   comment: ordering is no longer the only protection; the unit must keep
   `DefaultDependencies=yes` for the lock to be real. No functional change.

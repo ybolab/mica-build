@@ -32,13 +32,13 @@ and `com.mos.mosd1.Error.ReadOnly`, replied by a `SettingsFault` type with a
 hand-written `zbus::DBusError` impl (the derive's passthrough variant would
 have flattened every wrapped fdo name to `org.freedesktop.zbus.Error`);
 `Validation` keeps `InvalidArgs`, `Io` keeps `IOError`, `Parse`/`Migration`
-keep `Failed`, delegated to `fdo::Error` so those replies are byte-identical
+keep `Failed`, delegated to fdo so its "replies stay byte-identical"
 (`os/pkgs/mosd/mosd/src/bus.rs:490-549`). `mosd-settings/src/error.rs` did not
 need changing.
 
 **apid side.** `bus_api_error` gains the two arms: 404 `settings_not_found`
-and 409 `settings_read_only`; `settings_rejected` (422) now means a rejected
-value only (`os/pkgs/mosd/apid/src/routes.rs:558-581`). `GetState`'s own
+and 409 `settings_read_only`; 422 now means a rejected value only —
+`ApiError::mosd("settings_rejected", message)` (`os/pkgs/mosd/apid/src/routes.rs:558-581`). `GetState`'s own
 not-found stays `InvalidArgs`/422 — it is not raised through the settings
 error mapping and was out of this task's scope.
 

@@ -37,7 +37,7 @@ Password change shipped end to end, on both surfaces, additive only.
 carries the CURRENT password and it is verified before the new hash is
 written via the settings tree (`SetSettings("access.webAdmin", ...)`, the
 same write shape as `setup_submit`); success invalidates ALL sessions
-EXCEPT the one performing the change (`SessionStore::remove_all_except`,
+EXCEPT the one performing the change (`pub fn remove_all_except`
 `os/pkgs/mosd/apid/src/session.rs:96` — a `retain` on the session map that
 task text pointed at). Both outcomes are audited (`password` /
 `wrong-password` or `changed`); the password itself is never logged.
@@ -57,7 +57,7 @@ task text pointed at). Both outcomes are audited (`password` /
   `is_declared_api_route` so unauthenticated callers get the 401 envelope,
   never the gate's redirect.
 
-Both handlers call one helper (`change_password`,
+Both handlers call one helper (`change_password`
 `os/pkgs/mosd/apid/src/routes.rs:1231-1285`), so the two surfaces cannot
 diverge in semantics.
 
