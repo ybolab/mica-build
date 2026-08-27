@@ -483,17 +483,81 @@ pub(crate) fn sender_of<'a>(header: &'a Header<'a>) -> &'a str {
     header.sender().map_or("(unknown)", |name| name.as_str())
 }
 
-/// Map settings errors onto standard D-Bus error names.
-fn to_fdo(err: SettingsError) -> fdo::Error {
-    match err {
-        SettingsError::NotFound(_)
-        | SettingsError::ReadOnly(_)
-        | SettingsError::Validation { .. } => fdo::Error::InvalidArgs(err.to_string()),
-        SettingsError::Io(_) => fdo::Error::IOError(err.to_string()),
-        SettingsError::Parse(_) | SettingsError::Migration(_) => {
-            fdo::Error::Failed(err.to_string())
+/// D-Bus error name for a settings dot-path that does not resolve.
+pub const NOT_FOUND_ERROR: &str = "com.mos.mosd1.Error.NotFound";
+/// D-Bus error name for a settings dot-path that exists but rejects writes.
+pub const READ_ONLY_ERROR: &str = "com.mos.mosd1.Error.ReadOnly";
+
+/// Reply error of the settings methods.
+///
+/// `NotFound` and `ReadOnly` carry interface-scoped error names, because the
+/// standard fdo vocabulary has no name that separates "the dot-path does not
+/// exist" and "the dot-path rejects writes" from "the value is bad" — mapping
+/// all three onto `InvalidArgs` destroyed the distinction at the bus boundary
+/// and left apid answering one HTTP status for three conditions. Every other
+/// failure keeps the standard fdo name it always had, delegated to
+/// [`fdo::Error`] so its replies stay byte-identical.
+#[derive(Debug)]
+enum SettingsFault {
+    /// [`NOT_FOUND_ERROR`], from [`SettingsError::NotFound`].
+    NotFound(String),
+    /// [`READ_ONLY_ERROR`], from [`SettingsError::ReadOnly`].
+    ReadOnly(String),
+    /// Everything else, under its standard fdo name.
+    Fdo(fdo::Error),
+}
+
+impl zbus::DBusError for SettingsFault {
+    fn name(&self) -> zbus::names::ErrorName<'_> {
+        match self {
+            Self::NotFound(_) => zbus::names::ErrorName::from_static_str_unchecked(NOT_FOUND_ERROR),
+            Self::ReadOnly(_) => zbus::names::ErrorName::from_static_str_unchecked(READ_ONLY_ERROR),
+            Self::Fdo(err) => err.name(),
         }
     }
+
+    fn description(&self) -> Option<&str> {
+        match self {
+            Self::NotFound(message) | Self::ReadOnly(message) => Some(message),
+            Self::Fdo(err) => err.description(),
+        }
+    }
+
+    fn create_reply(&self, call: &Header<'_>) -> zbus::Result<zbus::message::Message> {
+        match self {
+            Self::Fdo(err) => err.create_reply(call),
+            // The reply body is the description string, the same single-`s`
+            // shape every fdo error reply carries.
+            _ => zbus::message::Message::error(call, self.name())?
+                .build(&self.description().unwrap_or_default()),
+        }
+    }
+}
+
+/// Map settings errors onto D-Bus error names.
+fn to_bus_error(err: SettingsError) -> SettingsFault {
+    match err {
+        SettingsError::NotFound(_) => SettingsFault::NotFound(err.to_string()),
+        SettingsError::ReadOnly(_) => SettingsFault::ReadOnly(err.to_string()),
+        SettingsError::Validation { .. } => {
+            SettingsFault::Fdo(fdo::Error::InvalidArgs(err.to_string()))
+        }
+        SettingsError::Io(_) => SettingsFault::Fdo(fdo::Error::IOError(err.to_string())),
+        SettingsError::Parse(_) | SettingsError::Migration(_) => {
+            SettingsFault::Fdo(fdo::Error::Failed(err.to_string()))
+        }
+    }
+}
+
+/// Whole seconds since boot, from the first field of `/proc/uptime`.
+///
+/// `None` on an unreadable or malformed file — a soft failure rather than a
+/// panic, because `GetState` must keep answering for every other fact when
+/// this one is missing.
+fn read_uptime_seconds() -> Option<u64> {
+    let contents = std::fs::read_to_string("/proc/uptime").ok()?;
+    let secs: f64 = contents.split_whitespace().next()?.parse().ok()?;
+    (secs.is_finite() && secs >= 0.0).then_some(secs as u64)
 }
 
 /// Map a transient-password failure onto a D-Bus error.
@@ -510,9 +574,9 @@ fn transient_to_fdo(err: anyhow::Error) -> fdo::Error {
 #[zbus::interface(name = "com.mos.mosd1")]
 impl MosdService {
     /// JSON-encoded settings value at dot-path `path` (`""` = whole tree).
-    async fn get_settings(&self, path: &str) -> fdo::Result<String> {
+    async fn get_settings(&self, path: &str) -> Result<String, SettingsFault> {
         let inner = self.inner.lock().await;
-        let value = inner.settings.get(path).map_err(to_fdo)?;
+        let value = inner.settings.get(path).map_err(to_bus_error)?;
         Ok(value.to_string())
     }
 
@@ -524,19 +588,45 @@ impl MosdService {
         #[zbus(signal_emitter)] emitter: SignalEmitter<'_>,
         path: &str,
         value_json: &str,
-    ) -> fdo::Result<()> {
-        let value: Value = serde_json::from_str(value_json)
-            .map_err(|err| fdo::Error::InvalidArgs(format!("invalid JSON value: {err}")))?;
-        self.write_setting(path, value).await.map_err(to_fdo)?;
+    ) -> Result<(), SettingsFault> {
+        let value: Value = serde_json::from_str(value_json).map_err(|err| {
+            SettingsFault::Fdo(fdo::Error::InvalidArgs(format!(
+                "invalid JSON value: {err}"
+            )))
+        })?;
+        self.write_setting(path, value)
+            .await
+            .map_err(to_bus_error)?;
         Self::settings_changed(&emitter, path, value_json)
             .await
-            .map_err(|err| fdo::Error::Failed(format!("emit SettingsChanged: {err}")))?;
+            .map_err(|err| {
+                SettingsFault::Fdo(fdo::Error::Failed(format!("emit SettingsChanged: {err}")))
+            })?;
         Ok(())
     }
 
     /// JSON-encoded live-state subtree at dot-path `path` (`""` = whole tree).
+    ///
+    /// `uptime` — whole seconds since boot, a bare JSON number at the top
+    /// level — is computed here, at read time, and grafted onto the served
+    /// view. Reading it per call is what keeps a cached seconds-counter from
+    /// ever being served stale; grafting rather than storing keeps the stored
+    /// tree reserved for pushed facts, so a read never manufactures a change
+    /// edge for the item façade ([`crate::tree`]) to project.
     async fn get_state(&self, path: &str) -> fdo::Result<String> {
+        if path == "uptime" {
+            let secs = read_uptime_seconds()
+                .ok_or_else(|| fdo::Error::Failed("read /proc/uptime".to_string()))?;
+            return Ok(Value::from(secs).to_string());
+        }
         let inner = self.inner.lock().await;
+        if path.is_empty() {
+            let mut root = inner.state.clone();
+            if let (Some(secs), Some(map)) = (read_uptime_seconds(), root.as_object_mut()) {
+                map.insert("uptime".to_string(), Value::from(secs));
+            }
+            return Ok(root.to_string());
+        }
         let value = json_path_get(&inner.state, path)
             .ok_or_else(|| fdo::Error::InvalidArgs(format!("state path not found: `{path}`")))?;
         Ok(value.to_string())
@@ -1094,6 +1184,79 @@ mod tests {
         service.request_power_off(":1.1").await.expect("power off");
 
         assert_eq!(service.get_settings("").await.expect("settings"), before);
+    }
+
+    /// The uptime graft: `GetState` serves whole seconds since boot at
+    /// `uptime` and inside the whole tree, computed at read time, while the
+    /// stored tree — what the item façade projects — stays untouched by the
+    /// read.
+    #[tokio::test]
+    async fn get_state_serves_uptime_without_storing_it() {
+        let (service, _calls, _dir) = service_with_mock();
+
+        let direct = service.get_state("uptime").await.expect("uptime");
+        let direct: u64 = serde_json::from_str(&direct).expect("a bare JSON number");
+        let whole = service.get_state("").await.expect("whole tree");
+        let whole: serde_json::Value = serde_json::from_str(&whole).expect("json");
+        let grafted = whole["uptime"].as_u64().expect("uptime in the whole tree");
+        assert!(
+            grafted >= direct,
+            "uptime went backwards: {grafted} < {direct}"
+        );
+
+        let (_settings, state) = service.trees().await;
+        assert!(
+            state.get("uptime").is_none(),
+            "a read must not write the stored tree: {state}"
+        );
+    }
+
+    /// Every `SettingsError` variant, against the error name it must travel
+    /// under: the two conditions the fdo vocabulary cannot separate get
+    /// interface-scoped names, everything else keeps its standard fdo name.
+    #[test]
+    fn each_settings_failure_travels_under_its_own_error_name() {
+        use mosd_settings::SettingsError;
+        use zbus::DBusError as _;
+
+        for (err, name) in [
+            (
+                SettingsError::NotFound("a.path".into()),
+                "com.mos.mosd1.Error.NotFound",
+            ),
+            (
+                SettingsError::ReadOnly("a.path".into()),
+                "com.mos.mosd1.Error.ReadOnly",
+            ),
+            (
+                SettingsError::Validation {
+                    path: "a.path".into(),
+                    message: "bad".into(),
+                },
+                "org.freedesktop.DBus.Error.InvalidArgs",
+            ),
+            (
+                SettingsError::Io(std::io::Error::other("disk")),
+                "org.freedesktop.DBus.Error.IOError",
+            ),
+            (
+                SettingsError::Parse("mangled".into()),
+                "org.freedesktop.DBus.Error.Failed",
+            ),
+            (
+                SettingsError::Migration("stuck".into()),
+                "org.freedesktop.DBus.Error.Failed",
+            ),
+        ] {
+            let message = err.to_string();
+            let fault = super::to_bus_error(err);
+            assert_eq!(fault.name().as_str(), name);
+            assert_eq!(
+                fault.description(),
+                Some(message.as_str()),
+                "the description must stay mosd's own words ({name})"
+            );
+        }
     }
 
     #[tokio::test]

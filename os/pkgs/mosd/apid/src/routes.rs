@@ -29,6 +29,7 @@ use mosd_settings::{AuthorizedKey, SettingsError, parse_authorized_key, validate
 use serde_json::Value;
 use sha2::{Digest, Sha256};
 
+use crate::access_cache::AccessCache;
 use crate::assets::mime::CacheClass;
 use crate::assets::serve;
 use crate::audit::{Audit, Source};
@@ -46,6 +47,10 @@ pub struct AppState {
     guard: Arc<GuardStore>,
     audit: Arc<Audit>,
     bundles: Arc<Store>,
+    /// The gate's cache of the `access` subtree, kept honest by the
+    /// `SettingsChanged` watcher (`bus_client::watch_settings_changed`) and
+    /// by the two handlers that write under `access` themselves.
+    access_cache: Arc<AccessCache>,
 }
 
 impl AppState {
@@ -66,7 +71,15 @@ impl AppState {
             guard: Arc::new(GuardStore::ephemeral()),
             audit: Arc::new(Audit::journal_only()),
             bundles: Arc::new(Store::at_default()),
+            access_cache: Arc::new(AccessCache::new()),
         }
+    }
+
+    /// The gate's access cache, for `main.rs` to hand to the
+    /// `SettingsChanged` watcher, and for the tests that drive its
+    /// subscription state by hand.
+    pub(crate) fn access_cache(&self) -> &Arc<AccessCache> {
+        &self.access_cache
     }
 
     /// Root the backoff counter and the audit ring in `state_dir`
@@ -242,8 +255,13 @@ pub(crate) const SETTINGS_SPELLINGS: (&str, &str, &str) =
 pub(crate) const STATE_SPELLINGS: (&str, &str, &str) =
     (V1_STATE_PREFIX, V1_STATE_ROUTE, V1_STATE_DOC);
 
-/// The fdo error names mosd maps its `SettingsError` onto, and the three rows
-/// of §2.4's table that name one.
+/// The error names mosd maps its `SettingsError` onto, and the five rows of
+/// §2.4's table that name one. The first two are interface-scoped: the fdo
+/// vocabulary has no name that separates a missing dot-path or a read-only
+/// one from a bad value, so mosd coins its own for those and keeps the
+/// standard names for everything else.
+const MOSD_NOT_FOUND: &str = "com.mos.mosd1.Error.NotFound";
+const MOSD_READ_ONLY: &str = "com.mos.mosd1.Error.ReadOnly";
 const FDO_INVALID_ARGS: &str = "org.freedesktop.DBus.Error.InvalidArgs";
 const FDO_IO_ERROR: &str = "org.freedesktop.DBus.Error.IOError";
 const FDO_FAILED: &str = "org.freedesktop.DBus.Error.Failed";
@@ -476,7 +494,8 @@ pub(crate) struct ResourceValue(Value);
     responses(
         (status = 200, description = "The value at the dot-path, redacted", body = ResourceValue),
         (status = 401, description = "No session cookie, or one that does not verify", body = ApiError),
-        (status = 422, description = "mosd rejected the dot-path (`settings_rejected`), which is also the answer for a dot-path that does not exist", body = ApiError),
+        (status = 404, description = "The dot-path does not exist (`settings_not_found`)", body = ApiError),
+        (status = 422, description = "mosd rejected the dot-path (`settings_rejected`)", body = ApiError),
         (status = 500, description = "mosd failed to answer (`settings_io`, `mosd_failed`)", body = ApiError),
         (status = 503, description = "The call to mosd could not be made (`mosd_unreachable`); carries `Retry-After`", body = ApiError),
     ),
@@ -528,10 +547,10 @@ fn resource_response(value: anyhow::Result<Value>, path: &str) -> Response {
 /// §2.4's table, applied to a failed mosd call.
 ///
 /// The classification is translated and the message is not. mosd maps its
-/// `SettingsError` onto three fdo error names and zbus carries the name back,
-/// so the distinction exists all the way to here and only apid can lose it;
-/// the message is mosd's own words because no phrasing apid could pre-write
-/// would say which field was wrong.
+/// `SettingsError` onto five error names — two interface-scoped, three fdo —
+/// and zbus carries the name back, so the distinction exists all the way to
+/// here and only apid can lose it; the message is mosd's own words because no
+/// phrasing apid could pre-write would say which field was wrong.
 ///
 /// The concrete `zbus::Error` is recovered by downcast: `bus_client.rs`
 /// converts with `err.into()`, and that conversion stores the error rather
@@ -544,6 +563,14 @@ fn bus_api_error(err: &anyhow::Error, path: &str) -> Response {
             // is the most specific thing left to say.
             let message = message.clone().unwrap_or_else(|| name.to_string());
             match name.as_str() {
+                MOSD_NOT_FOUND => (
+                    StatusCode::NOT_FOUND,
+                    ApiError::mosd("settings_not_found", message),
+                ),
+                MOSD_READ_ONLY => (
+                    StatusCode::CONFLICT,
+                    ApiError::mosd("settings_read_only", message),
+                ),
                 FDO_INVALID_ARGS => (
                     StatusCode::UNPROCESSABLE_ENTITY,
                     ApiError::mosd("settings_rejected", message),
@@ -708,9 +735,23 @@ async fn gate(State(state): State<AppState>, request: Request, next: Next) -> Re
         return next.run(request).await;
     }
 
-    let access = match state.api.get_settings("access").await {
-        Ok(value) => value,
-        Err(err) => return bus_error(&err),
+    // The unauthenticated path's read, served from the cache when — and only
+    // when — the SettingsChanged subscription is live (`access_cache`'s
+    // lockout rule). The generation is snapshotted BEFORE the direct read so
+    // a change signalled while the read was in flight discards the fill
+    // rather than caching a possibly-pre-change snapshot.
+    let access = match state.access_cache.get() {
+        Some(value) => value,
+        None => {
+            let generation = state.access_cache.generation();
+            match state.api.get_settings("access").await {
+                Ok(value) => {
+                    state.access_cache.fill(generation, value.clone());
+                    value
+                }
+                Err(err) => return bus_error(&err),
+            }
+        }
     };
     if password_hash(&access).is_none() {
         if path == "/setup" {
@@ -1033,6 +1074,10 @@ async fn setup_submit(
     if let Err(err) = state.api.set_settings("access.webAdmin", &value).await {
         return bus_error(&err);
     }
+    // The device just left setup mode, and the gate must not keep believing
+    // otherwise from a cached pre-write snapshot: drop the cache now rather
+    // than waiting for the SettingsChanged round trip.
+    state.access_cache.invalidate();
     // Recorded once the admin password exists, which is the moment the device
     // leaves setup mode; the optional hostname/network writes below are
     // ordinary settings edits, not access-control events.
@@ -1275,6 +1320,11 @@ async fn change_password(
     if let Err(err) = state.api.set_settings("access.webAdmin", &value).await {
         return Err(PasswordChangeError::Bus(err));
     }
+    // apid knows its own access write happened, so the gate's cache is
+    // dropped here rather than waiting for the SettingsChanged round trip:
+    // the next unauthenticated request re-reads and cannot be answered from
+    // a pre-change snapshot.
+    state.access_cache.invalidate();
     // The write happened; every other session goes with the old credential.
     // No cookie on the request keeps nothing, which errs closed.
     state
@@ -1440,16 +1490,6 @@ pub(crate) async fn api_v1_change_password(
 
 // Status pane
 
-/// Seconds from the first field of `/proc/uptime` contents.
-fn parse_uptime(contents: &str) -> Option<u64> {
-    let secs: f64 = contents.split_whitespace().next()?.parse().ok()?;
-    if secs.is_finite() && secs >= 0.0 {
-        Some(secs as u64)
-    } else {
-        None
-    }
-}
-
 /// `"3d 4h 12m"`-style rendering, dropping leading zero units.
 fn humanize_uptime(secs: u64) -> String {
     let days = secs / 86_400;
@@ -1470,18 +1510,26 @@ fn pretty(value: &Value) -> String {
 
 /// The status pane's body, shared by `/`'s built-in branch and §6.3's escape.
 ///
-/// It reads mosd and `/proc/uptime` and nothing under `/srv/ui`. That is
+/// It reads mosd and nothing under `/srv/ui`. That is
 /// the property §6.3 rests candidate (A) on — *"the built-in handlers do not
 /// read `/srv/ui` at all, so no bundle state — absent, corrupt, unreadable,
 /// wrong version — can affect them"* — and it is why §6.1's five classes do not
 /// need enumerating here: a handler that never consults the bundle store cannot
 /// branch on which class occurred.
+///
+/// Uptime comes through `get_state` like every other system fact — mosd
+/// serves it fresh at read time — and not from a `/proc` reader here, which
+/// would contradict the crate's own rule that mosd owns every system fact
+/// (`settings_api.rs`).
 async fn status_body(state: &AppState) -> Markup {
     let hostname = state.api.get_settings("hostname").await;
     let network = state.api.get_state("network").await;
-    let uptime = std::fs::read_to_string("/proc/uptime")
+    let uptime = state
+        .api
+        .get_state("uptime")
+        .await
         .ok()
-        .and_then(|contents| parse_uptime(&contents));
+        .and_then(|value| value.as_u64());
     html! {
         h2 { "System" }
         @match &hostname {

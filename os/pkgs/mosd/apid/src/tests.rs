@@ -1,12 +1,13 @@
 //! Route-level tests driving the router directly with the fake settings
 //! backend; no network or bus daemon involved.
 //!
-//! The one exception is [`power_bus`], which drives the router through the
-//! real D-Bus client against a fake mosd on a private bus, because what it
-//! asserts lives below the fake backend's trait.
+//! The exceptions are [`power_bus`] and [`settings_signal`], which drive the
+//! real D-Bus client against a fake mosd on a private bus, because what they
+//! assert lives below the fake backend's trait.
 
 mod broken_classes;
 mod power_bus;
+mod settings_signal;
 
 use std::path::Path;
 use std::sync::Arc;
@@ -244,13 +245,30 @@ async fn status_page_renders_hostname_and_network_state() {
         "network",
         json!({ "eth0": { "file": "50-mos-eth0.network", "dhcp": true } }),
     );
+    fake.set_state_entry("uptime", json!(90_061));
     let cookie = login(&router, "hunter2secret").await;
     let response = get(&router, "/", Some(&cookie)).await;
     assert_eq!(response.status(), StatusCode::OK);
     let body = body_string(response).await;
     assert!(body.contains("statusbox"), "hostname missing: {body}");
     assert!(body.contains("eth0"), "network state missing: {body}");
-    assert!(body.contains("Uptime"), "uptime missing: {body}");
+    // 90 061 s = 1d 1h 1m 1s: the pane renders mosd's number, humanized.
+    assert!(body.contains("Uptime: 1d 1h 1m"), "uptime missing: {body}");
+}
+
+/// Uptime reaches the pane from mosd's live-state tree and from nowhere else:
+/// a backend with no `uptime` state renders the unavailable notice, where a
+/// handler that still read `/proc/uptime` for itself would render a real
+/// number on any Linux host.
+#[tokio::test]
+async fn uptime_is_read_from_mosd_state_and_not_from_proc() {
+    let (router, _fake) = test_app(configured_tree("hunter2secret"));
+    let cookie = login(&router, "hunter2secret").await;
+    let response = get(&router, "/", Some(&cookie)).await;
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = body_string(response).await;
+    assert!(body.contains("Uptime unavailable."), "{body}");
+    assert!(!body.contains("<p>Uptime: "), "{body}");
 }
 
 #[tokio::test]
@@ -1362,6 +1380,9 @@ fn installed_files(root: &Path) -> Vec<String> {
 /// The router as shipped, with the bundle store rooted at `bundle_root`.
 fn test_app_serving(tree: serde_json::Value, bundle_root: &Path) -> Router {
     let fake = Arc::new(FakeSettings::new(tree));
+    // A fixed uptime, so the status pane renders its uptime line (which
+    // `without_the_uptime_line` requires) from the fake like everything else.
+    fake.set_state_entry("uptime", json!(90_061));
     app(AppState::new(fake, SIGNING_KEY).with_bundle_root(bundle_root))
 }
 
@@ -3978,6 +3999,16 @@ fn the_zbus_error_survives_the_conversion_to_anyhow() {
 async fn each_fdo_error_name_gets_its_own_envelope() {
     for (fdo_name, code, status) in [
         (
+            "com.mos.mosd1.Error.NotFound",
+            "settings_not_found",
+            StatusCode::NOT_FOUND,
+        ),
+        (
+            "com.mos.mosd1.Error.ReadOnly",
+            "settings_read_only",
+            StatusCode::CONFLICT,
+        ),
+        (
             "org.freedesktop.DBus.Error.InvalidArgs",
             "settings_rejected",
             StatusCode::UNPROCESSABLE_ENTITY,
@@ -4066,16 +4097,21 @@ async fn an_unreachable_mosd_is_503_with_retry_after_on_the_html_panes_too() {
     assert!(body.contains("The management daemon is unavailable."));
 }
 
-/// A dot-path that does not exist answers **422 `settings_rejected`, not 404**,
-/// and the reading is deliberate. It reaches mosd, which rejects it with
-/// `InvalidArgs`, and §2.4's table is exhaustive on the fdo error name. The
-/// table's `not_found` row covers unknown ROUTES and collection items, and
-/// collections are out of phase 1 — a route that does exist, given a path mosd
-/// refused, is a rejection and reports as one.
+/// A dot-path that does not exist answers **404 `settings_not_found`**, no
+/// longer 422: mosd names `SettingsError::NotFound` with its own error name
+/// (`com.mos.mosd1.Error.NotFound`), so a missing path and a bad value stop
+/// sharing a code. The 422 assertion beside it is the control: a rejection
+/// that IS a rejection still reports as one.
 #[tokio::test]
-async fn a_dot_path_that_does_not_exist_is_422_and_not_404() {
-    let (router, cookie) = failing_app(Some("org.freedesktop.DBus.Error.InvalidArgs")).await;
+async fn a_dot_path_that_does_not_exist_is_404_and_a_rejection_stays_422() {
+    let (router, cookie) = failing_app(Some("com.mos.mosd1.Error.NotFound")).await;
+    let response = get(&router, "/api/v1/settings/no.such.path", Some(&cookie)).await;
+    assert_eq!(response.status(), StatusCode::NOT_FOUND);
+    let error = envelope(response).await;
+    assert_eq!(error["code"], "settings_not_found");
+    assert_eq!(error["path"], json!("no.such.path"));
 
+    let (router, cookie) = failing_app(Some("org.freedesktop.DBus.Error.InvalidArgs")).await;
     let response = get(&router, "/api/v1/settings/no.such.path", Some(&cookie)).await;
     assert_eq!(response.status(), StatusCode::UNPROCESSABLE_ENTITY);
     let error = envelope(response).await;
@@ -4368,4 +4404,143 @@ async fn the_api_password_change_rejects_a_malformed_body_with_the_envelope() {
     assert_eq!(error["code"], "request_invalid");
     assert_eq!(error["source"], "apid");
     assert!(fake.set_paths().is_empty());
+}
+
+// RFCT-132 / RFCT-133: the gate's cache of the `access` subtree.
+//
+// The subscription itself — the proxy's `#[zbus(signal)]` member feeding the
+// cache over a real bus — is exercised in `tests/settings_signal.rs`. Here
+// the cache's route-level contract is driven through the real router, with
+// the subscription state set by hand where a watcher would set it.
+
+/// The lockout rule at the route level: with no live subscription every
+/// unauthenticated request reads the bus — the pre-cache behaviour, and the
+/// fallback the rule demands; with one, the first request fills the cache and
+/// the rest are served from it; an invalidation forces exactly one re-read;
+/// a lapse falls all the way back to direct reads.
+#[tokio::test]
+async fn the_gate_serves_access_from_the_cache_only_while_subscribed() {
+    let fake = Arc::new(FakeSettings::new(configured_tree("hunter2secret")));
+    let state = AppState::new(fake.clone(), SIGNING_KEY);
+    let cache = state.access_cache().clone();
+    let router = app(state);
+
+    get(&router, "/login", None).await;
+    get(&router, "/login", None).await;
+    assert_eq!(
+        fake.settings_reads("access"),
+        2,
+        "no subscription: every request must read the bus"
+    );
+
+    cache.subscribed();
+    get(&router, "/login", None).await;
+    get(&router, "/login", None).await;
+    get(&router, "/login", None).await;
+    assert_eq!(
+        fake.settings_reads("access"),
+        3,
+        "subscribed: one fill, then cache hits"
+    );
+
+    // What the watcher does on a SettingsChanged that touches `access`.
+    cache.invalidate();
+    get(&router, "/login", None).await;
+    get(&router, "/login", None).await;
+    assert_eq!(
+        fake.settings_reads("access"),
+        4,
+        "a change costs exactly one re-read"
+    );
+
+    cache.lapsed();
+    get(&router, "/login", None).await;
+    get(&router, "/login", None).await;
+    assert_eq!(
+        fake.settings_reads("access"),
+        6,
+        "a lapsed subscription must fall back to direct reads"
+    );
+}
+
+/// The password change against the cache — the sequence RFCT-132 names as
+/// the hard case, made real by the change-password route: the flow itself
+/// verifies against the bus even while the cache is primed, its write drops
+/// the cached snapshot without waiting for the `SettingsChanged` round trip,
+/// and the next unauthenticated request re-reads and observes the
+/// post-change tree.
+#[tokio::test]
+async fn a_password_change_neither_reads_nor_leaves_a_stale_access_snapshot() {
+    let fake = Arc::new(FakeSettings::new(configured_tree("hunter2secret")));
+    let state = AppState::new(fake.clone(), SIGNING_KEY);
+    let cache = state.access_cache().clone();
+    let router = app(state);
+    let cookie = login(&router, "hunter2secret").await;
+
+    cache.subscribed();
+    get(&router, "/login", None).await;
+    let primed = cache.get().expect("the gate's read must fill the cache");
+    let reads_before = fake.settings_reads("access");
+
+    let response = post_json(
+        &router,
+        "/api/v1/actions/change-password",
+        r#"{"currentPassword":"hunter2secret","newPassword":"brand-new-secret"}"#,
+        Some(&cookie),
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::NO_CONTENT);
+    assert!(
+        fake.settings_reads("access") > reads_before,
+        "the change flow must verify against the bus, never the gate's cache"
+    );
+    assert_eq!(
+        cache.get(),
+        None,
+        "the write must drop the cached snapshot before any signal arrives"
+    );
+
+    get(&router, "/login", None).await;
+    let refilled = cache.get().expect("the next gate read must refill");
+    assert_ne!(
+        refilled, primed,
+        "the refill must observe the post-change credential"
+    );
+    login(&router, "brand-new-secret").await;
+}
+
+/// Completing setup IS the setup-mode decision changing under the gate — the
+/// exact decision the cache must never serve stale. The wizard's
+/// `access.webAdmin` write drops the cache, so the next unauthenticated
+/// request re-reads and redirects to `/login`, not back into `/setup`.
+#[tokio::test]
+async fn completing_setup_drops_the_cached_setup_mode_decision() {
+    let fake = Arc::new(FakeSettings::new(unconfigured_tree()));
+    let state = AppState::new(fake.clone(), SIGNING_KEY);
+    let cache = state.access_cache().clone();
+    let router = app(state);
+
+    cache.subscribed();
+    let response = get(&router, "/", None).await;
+    assert_eq!(location(&response), "/setup");
+    assert!(
+        cache.get().is_some(),
+        "the setup-mode read must have filled the cache"
+    );
+
+    let response = post_form(
+        &router,
+        "/setup",
+        "password=hunter2secret&confirm=hunter2secret",
+        None,
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::SEE_OTHER);
+
+    let response = get(&router, "/", None).await;
+    assert_eq!(
+        location(&response),
+        "/login",
+        "the gate must not answer setup mode from the pre-write snapshot"
+    );
 }

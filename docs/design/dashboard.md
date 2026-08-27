@@ -66,14 +66,14 @@ Summarised from `mos-ui-inventory.md` sections 2 and 3, with its citations
 carried through.
 
 `apid` is one Rust crate serving **ten routes on the HTTPS listener**, built in
-a single function (`os/pkgs/mosd/apid/src/routes.rs:40-57`), plus a catch-all 308
+a single function (`os/pkgs/mosd/apid/src/routes.rs:41-62`), plus a catch-all 308
 redirect router on the HTTP listener (`routes.rs:61-65`). That is the entire
 HTTP surface: no nested router, no fallback, no static-asset route
 (`mos-ui-inventory.md` section 2).
 
 The operator's whole menu is **four links plus a logout button** —
 `Status` (`/`), `Network` (`/network`), `Hostname` (`/hostname`),
-`Power` (`/power`) — rendered by `shell()` at `os/pkgs/mosd/apid/src/routes.rs:169-179`
+`Power` (`/power`) — rendered by `shell()` at `os/pkgs/mosd/apid/src/routes.rs:182-192`
 (`mos-ui-inventory.md` section 2.2).
 
 Of those, three are editors and one is a status page. The status page, `/`,
@@ -89,18 +89,18 @@ one 7-line inline stylesheet at `routes.rs:147-154` whose own doc comment says
 *"Inline stylesheet shared by every page; no external assets."*
 
 `mosd` offers an **eleven-method, one-signal** bus surface on `com.mos.mosd1`
-(`os/pkgs/mosd/mosd/src/bus.rs:510`): `GetSettings`, `SetSettings`, `GetState`,
+(`os/pkgs/mosd/mosd/src/bus.rs:574`): `GetSettings`, `SetSettings`, `GetState`,
 `ReportHealth`, `ForgetService`, `Reboot`, `PowerOff`, `InstallUpdate`,
 `GetUpdateState`, `MarkUpdate`, `SetTransientRootPassword`, and the
 `SettingsChanged` signal. `apid`'s own proxy declares four of those methods and
-no signal member (`os/pkgs/mosd/apid/src/bus_client.rs:21-24`); reboot and power-off
+no signal member (`os/pkgs/mosd/apid/src/bus_client.rs:28-31`); reboot and power-off
 reach `mosd` through the `com.mos.Item1` façade instead (`:33-35`).
 
 ### 1.2 The shape of the problem, in one paragraph
 
 Ten routes, four nav links, every state change a form POST followed by a 302
 and a full page re-render, and **one single `GetState` call in the entire UI** —
-`GetState("network")` at `os/pkgs/mosd/apid/src/routes.rs:578`, whose result is rendered
+`GetState("network")` at `os/pkgs/mosd/apid/src/routes.rs:605`, whose result is rendered
 as an opaque JSON dump (`mos-ui-inventory.md` sections 2, 3.2, 4). The `?saved=1`
 query marker at `routes.rs:206-209` exists precisely because a redirect is the
 only way the application has to say "that worked". The consequence, stated as
@@ -184,7 +184,7 @@ call returning the data — or **(b) needs new mosd work**, with the
 - **Shows:** the configured hostname; the device identity (`deviceId`); the
   provisioning state (`pending` / `complete`).
 - **Feed:** `GetSettings("hostname")` — already called at
-  `os/pkgs/mosd/apid/src/routes.rs:577`; `GetSettings("provisioning")`, which returns
+  `os/pkgs/mosd/apid/src/routes.rs:604`; `GetSettings("provisioning")`, which returns
   `state`, `deviceId` and `seededGeneration`
   (`os/pkgs/mosd/mosd-settings/src/model.rs:269-277`).
 - **Availability: (a) available today.** `GetSettings("provisioning")` works
@@ -213,7 +213,7 @@ call returning the data — or **(b) needs new mosd work**, with the
   reconciler is recorded as `{"error": "<message>"}` under its own live-state key
   rather than disappearing (`os/pkgs/mosd/mosd/src/bus.rs:461-471`). (ii)
   `GetState("health")`, written by `report_health`
-  (`os/pkgs/mosd/mosd/src/bus.rs:550`). (iii) does not exist.
+  (`os/pkgs/mosd/mosd/src/bus.rs:640`). (iii) does not exist.
 - **Availability: mixed, and the split is the point.**
   - (i) is **(a) available today** — gap-table **row 18**, UI-work-only. `apid`
     calls `GetState` for exactly one path and treats any object as opaque JSON
@@ -402,7 +402,7 @@ better mechanism and then hid it.**
 - **Shows:** time since boot, and — once section 2.5's feed exists — whether
   that boot was the first on the current slot version.
 - **Feed:** `/proc/uptime`, read by `apid` itself at
-  `os/pkgs/mosd/apid/src/routes.rs:579-581`, parsed at `:539-546`, formatted at
+  `os/pkgs/mosd/apid/src/routes.rs:606-608`, parsed at `:558-565`, formatted at
   `:549-560`, rendered on `/` at `:580-583`.
 - **Availability: (a) available today** — gap-table **row 12**, answered via a
   side channel. Recorded honestly: this is **the one place `apid` touches the
@@ -492,7 +492,7 @@ names the reason, and where it belongs instead. **[proposal]**
   consequence is the wrong order of operations. The existing safety properties
   stay as they are: POST-only with no `GET` handler, so a browser prefetch or a
   mis-clicked link cannot power the appliance off (`routes.rs:49-51`, pinned by a
-  test at `os/pkgs/mosd/apid/src/tests.rs:563`), plus a required confirmation token.
+  test at `os/pkgs/mosd/apid/src/tests.rs:581`), plus a required confirmation token.
 - **No raw JSON.** The current `/` renders the network subtree as
   pretty-printed JSON inside a `<pre>` (`routes.rs:587-596`). That is the
   artefact this proposal exists to remove, not a component to reuse. A full-tree
@@ -805,7 +805,7 @@ One further item is out of this document's scope but should not be lost.
 `SettingsChanged` is emitted after every successful write
 (`os/pkgs/mosd/mosd/src/bus.rs:249-254`, emitted at `:190-192`) and nothing subscribes:
 `apid`'s proxy declares five methods and no signal member
-(`os/pkgs/mosd/apid/src/bus_client.rs:9-20`), and with zero JavaScript there is no
+(`os/pkgs/mosd/apid/src/bus_client.rs:14-27`), and with zero JavaScript there is no
 transport to push it over either (gap row 16). Whether a dashboard should
 consume it is a live-update-technology question and therefore section 5's, not
 this section's.
@@ -915,7 +915,7 @@ compression in this stack comes from `tower_http::compression`, and the crate is
 not present. Every byte counted in section 5.3 is therefore an uncompressed byte
 on the wire.
 
-The single stylesheet is a `const STYLE` at `os/pkgs/mosd/apid/src/routes.rs:147-155`,
+The single stylesheet is a `const STYLE` at `os/pkgs/mosd/apid/src/routes.rs:160-168`,
 emitted into a `<style>` element at `routes.rs:165` through `PreEscaped`.
 Measured on this branch: **484 bytes** of CSS after line continuations are
 resolved. This matters below only because it is the existing, working precedent
@@ -930,7 +930,7 @@ today.
 
 - `rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12"] }`
   (`os/pkgs/mosd/Cargo.toml:61`), provider installed explicitly at
-  `os/pkgs/mosd/apid/src/main.rs:46-48`; `axum-server` takes
+  `os/pkgs/mosd/apid/src/main.rs:47-49`; `axum-server` takes
   `tls-rustls-no-provider` (`os/pkgs/mosd/Cargo.toml:46`), which is why that install is
   mandatory rather than decorative. `rcgen` is likewise pinned to the `ring`
   backend (`os/pkgs/mosd/Cargo.toml:62`).
@@ -982,7 +982,7 @@ Two properties read directly from `os/pkgs/mosd/mosd/src/bus.rs` on this branch 
 every option below:
 
 1. **`apid` does not subscribe to `SettingsChanged`.** Its zbus proxy declares
-   five methods and no signal member (`os/pkgs/mosd/apid/src/bus_client.rs:9-20`).
+   five methods and no signal member (`os/pkgs/mosd/apid/src/bus_client.rs:14-27`).
    Adding a `#[zbus(signal)]` member needs **no new crate**: `zbus` 5.19.0 is
    already in the tree and already pulls `futures-core` (`os/pkgs/mosd/Cargo.lock`, zbus
    entry at `:2906-2931`), and signal streams are part of the proxy macro. The
@@ -1009,7 +1009,7 @@ every option below:
    section against high-frequency polling of any kind.
 
    One further load fact, already noted in section 3.4.1: the auth gate calls
-   `GetSettings("access")` on **every** request (`os/pkgs/mosd/apid/src/routes.rs:120`),
+   `GetSettings("access")` on **every** request (`os/pkgs/mosd/apid/src/routes.rs:133`),
    so every browser request costs at least one bus round trip before a tile is
    read.
 
@@ -1033,7 +1033,7 @@ sections 1-4.
   and section 1.2 of this document describe the pattern as "302"; the pattern —
   POST/Redirect/GET — is the same either way, and 303 is the more correct of the
   two for a form submit. Sections 1-4 are left as written.
-- The HTTP-listener redirect is 308 (`os/pkgs/mosd/apid/src/routes.rs:61-65` and its doc
+- The HTTP-listener redirect is 308 (`os/pkgs/mosd/apid/src/routes.rs:66-70` and its doc
   comment at `:59-60`); that one is stated correctly throughout.
 
 ### 5.2 The criteria
@@ -1047,7 +1047,7 @@ order, so the four are comparable rather than merely described.
 | **C2** | **New crates** | Named, and checked against `os/pkgs/mosd/Cargo.toml`, `os/pkgs/mosd/Cargo.lock` and `os/pkgs/mosd/deny.toml` by the three tests in 5.1.2 |
 | **C3** | **JavaScript disabled** | What an operator with scripting off, or a text browser, or a hardened kiosk profile, still gets |
 | **C4** | **`mosd`-side work** | New bus method? New signal? Does it need `SettingsChanged` (`bus.rs:249-254`), which exists and is unsubscribed (`bus_client.rs:9-20`)? |
-| **C5** | **`mosd` down** | Today: lazy connect, cache dropped on error, per-request 502 pages, never a `apid` crash (`os/pkgs/mosd/apid/src/bus_client.rs:22-25`, `:41-58`; `bus_error` at `routes.rs:95-105`). What does the option do to that? |
+| **C5** | **`mosd` down** | Today: lazy connect, cache dropped on error, per-request 502 pages, never a `apid` crash (`os/pkgs/mosd/apid/src/bus_client.rs:29-39`, `:55-72`; `bus_error` at `routes.rs:95-105`). What does the option do to that? |
 | **C6** | **Operator-visible latency** | Worst-case delay between a value changing on the box and the operator seeing it |
 
 A seventh consideration — interaction with the existing form-POST + 303 +
@@ -1057,7 +1057,7 @@ answer for all four; it is 5.10.
 ### 5.3 Option A — full-page refresh
 
 `<meta http-equiv="refresh" content="15">` emitted into the `<head>` by the
-`shell()` helper (`os/pkgs/mosd/apid/src/routes.rs:750-763`) on pages that opt in.
+`shell()` helper (`os/pkgs/mosd/apid/src/routes.rs:791-804`) on pages that opt in.
 
 - **C1 — bytes.** ~45 bytes of markup, once. Per update: the **entire page,
   uncompressed**. Estimate for the seven-tile dashboard of section 2, based on
@@ -1194,7 +1194,7 @@ A long-lived `text/event-stream` response, consumed by the browser's built-in
 - **C4 — `mosd` work. This is where the option collapses, and it is the decisive
   finding of this section.** SSE is a *push* transport, and push requires
   something to push. `mosd` emits **exactly one signal**, `SettingsChanged`
-  (`os/pkgs/mosd/mosd/src/bus.rs:531-533`, declared at `:727-732`) — and it fires on
+  (`os/pkgs/mosd/mosd/src/bus.rs:600-604`, declared at `:817-822`) — and it fires on
   **settings** writes. For **live state** — the IP address of section 2.4, the
   storage figures of 2.6, the slot state of 2.5, install progress — there is **no
   signal of any kind**. `record` mutates the live-state tree in place
@@ -1461,7 +1461,7 @@ Two mechanical points, verified:
   `axum-0.8.9/src/response/redirect.rs:26-38`), so a refreshing dashboard reached
   after a submit re-renders normally with no resubmission prompt.
 - The power routes are POST-only with no GET handler (`routes.rs:49-53`, pinned
-  by `os/pkgs/mosd/apid/src/tests.rs:563`). A `meta refresh` issues a GET and therefore
+  by `os/pkgs/mosd/apid/src/tests.rs:581`). A `meta refresh` issues a GET and therefore
   **cannot** trigger a power action even if one were somehow placed on a
   refreshing page. Section 2.10's exclusion of power buttons from the landing
   screen stands on its own reasoning; this is an independent second layer, and it
@@ -1705,7 +1705,7 @@ scheduled.
    (`os/pkgs/mosd/dist/com.mos.mosd.conf:69-79`), and the file sketches the block to add
    at its `EXTENSION POINT` comment; the per-member narrowing beyond it is what
    that same comment defers, with reasons. The members `apid` needs are the four
-   its proxy declares (`os/pkgs/mosd/apid/src/bus_client.rs:21-24`), and `ReportHealth`
+   its proxy declares (`os/pkgs/mosd/apid/src/bus_client.rs:28-31`), and `ReportHealth`
    and `GetState` stay with root — the health gate's two calls.
 
 **`mosd` prerequisites: none — this phase closes no gap-table row.** It is
@@ -1759,7 +1759,7 @@ as unclosable from `apid`'s side (*"`record` writes no timestamp and no
 generation"*).
 
 **Verification.** `mosd` unit tests in the existing `bus.rs` test module
-(`os/pkgs/mosd/mosd/src/bus.rs:735-736`): a multi-path read returning a per-path error
+(`os/pkgs/mosd/mosd/src/bus.rs:825-826`): a multi-path read returning a per-path error
 for one absent path while succeeding on the rest; a `SetSettings` against a
 failing reconciler returning the failure in its reply rather than `Ok(())`. On
 the `apid` side, a handler test that a failed apply renders in the error
