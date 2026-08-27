@@ -352,7 +352,7 @@ needs a bundle seeded at `/srv/ui` on **DATA**, and `os/qemu-seed-state.sh`
 writes **STATE** only. It is a different task.
 
 **2. `-no-reboot`, so the reboot is two boots off one disk.**
-`os/qemu-run.sh:167` passes `-no-reboot`, so a guest-initiated reboot makes QEMU
+`os/tools/qemu-run.sh:179` passes `-no-reboot`, so a guest-initiated reboot makes QEMU
 **exit** rather than reset. The harness works with the flag rather than around
 it: `--prepare-only`, then boot 1 (`MOS_QEMU_REUSE_DISK=1`) for phases 01→07
 where QEMU's exit *is* the evidence the guest asked for a reset, then boot 2 on

@@ -21,7 +21,7 @@ Venus is the right comparison for this specifically because it shares the
 structural properties mos has: a read-only rootfs, a dual-rootfs updater, a
 locked-down default network posture, and a vendor support channel — all driven
 from a settings tree rather than from `/etc`
-(`docs/research/venus-os-access.md:16-19`).
+(`docs/research/venus-os-access.md:17-20`).
 
 Like its companion, this is **description, not proposal**.
 

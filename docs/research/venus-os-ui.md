@@ -679,7 +679,7 @@ is proposed here.
    an alarm is active (§4.1, §6). *Why it earns its place:* it is the only
    channel by which the device tells the operator something without being
    asked. *Plausible for mos:* mosd has `ReportHealth`
-   (`docs/design/mosd.md:192`) but no notification model and no UI surface for
+   (`docs/design/mosd.md:269`) but no notification model and no UI surface for
    one.
 
 4. **Config-versus-reality drift is raised as a user-visible warning.**
@@ -691,7 +691,7 @@ is proposed here.
    it turns "the setting says one thing and the system is another" from an
    invisible failure into a UI event. *Plausible for mos:* mosd's reconcilers
    already produce named outcomes including `conflict` and `plaintext-missing`
-   (`docs/design/mosd.md:173-176`), so the detection exists and only the surface
+   (`docs/design/mosd.md:250-252`), so the detection exists and only the surface
    is missing.
 
 5. **Per-row access levels with hide-not-disable semantics.** Four levels, and
