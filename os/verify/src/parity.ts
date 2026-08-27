@@ -47,7 +47,7 @@ export interface ShellRun {
   readonly summary: ShellSummary
 }
 
-export class ParityInputError extends Error {
+class ParityInputError extends Error {
   constructor(message: string) {
     super(message)
     this.name = 'ParityInputError'
