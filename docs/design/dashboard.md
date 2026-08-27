@@ -73,7 +73,7 @@ HTTP surface: no nested router, no fallback, no static-asset route
 
 The operator's whole menu is **four links plus a logout button** —
 `Status` (`/`), `Network` (`/network`), `Hostname` (`/hostname`),
-`Power` (`/power`) — rendered by `shell()` at `os/pkgs/mosd/apid/src/routes.rs:168-178`
+`Power` (`/power`) — rendered by `shell()` at `os/pkgs/mosd/apid/src/routes.rs:169-179`
 (`mos-ui-inventory.md` section 2.2).
 
 Of those, three are editors and one is a status page. The status page, `/`,
@@ -100,7 +100,7 @@ reach `mosd` through the `com.mos.Item1` façade instead (`:33-35`).
 
 Ten routes, four nav links, every state change a form POST followed by a 302
 and a full page re-render, and **one single `GetState` call in the entire UI** —
-`GetState("network")` at `os/pkgs/mosd/apid/src/routes.rs:568`, whose result is rendered
+`GetState("network")` at `os/pkgs/mosd/apid/src/routes.rs:578`, whose result is rendered
 as an opaque JSON dump (`mos-ui-inventory.md` sections 2, 3.2, 4). The `?saved=1`
 query marker at `routes.rs:206-209` exists precisely because a redirect is the
 only way the application has to say "that worked". The consequence, stated as
@@ -184,7 +184,7 @@ call returning the data — or **(b) needs new mosd work**, with the
 - **Shows:** the configured hostname; the device identity (`deviceId`); the
   provisioning state (`pending` / `complete`).
 - **Feed:** `GetSettings("hostname")` — already called at
-  `os/pkgs/mosd/apid/src/routes.rs:567`; `GetSettings("provisioning")`, which returns
+  `os/pkgs/mosd/apid/src/routes.rs:577`; `GetSettings("provisioning")`, which returns
   `state`, `deviceId` and `seededGeneration`
   (`os/pkgs/mosd/mosd-settings/src/model.rs:269-277`).
 - **Availability: (a) available today.** `GetSettings("provisioning")` works
@@ -402,7 +402,7 @@ better mechanism and then hid it.**
 - **Shows:** time since boot, and — once section 2.5's feed exists — whether
   that boot was the first on the current slot version.
 - **Feed:** `/proc/uptime`, read by `apid` itself at
-  `os/pkgs/mosd/apid/src/routes.rs:569-571`, parsed at `:539-546`, formatted at
+  `os/pkgs/mosd/apid/src/routes.rs:579-581`, parsed at `:539-546`, formatted at
   `:549-560`, rendered on `/` at `:580-583`.
 - **Availability: (a) available today** — gap-table **row 12**, answered via a
   side channel. Recorded honestly: this is **the one place `apid` touches the
@@ -915,7 +915,7 @@ compression in this stack comes from `tower_http::compression`, and the crate is
 not present. Every byte counted in section 5.3 is therefore an uncompressed byte
 on the wire.
 
-The single stylesheet is a `const STYLE` at `os/pkgs/mosd/apid/src/routes.rs:147-154`,
+The single stylesheet is a `const STYLE` at `os/pkgs/mosd/apid/src/routes.rs:147-155`,
 emitted into a `<style>` element at `routes.rs:165` through `PreEscaped`.
 Measured on this branch: **484 bytes** of CSS after line continuations are
 resolved. This matters below only because it is the existing, working precedent
@@ -1057,7 +1057,7 @@ answer for all four; it is 5.10.
 ### 5.3 Option A — full-page refresh
 
 `<meta http-equiv="refresh" content="15">` emitted into the `<head>` by the
-`shell()` helper (`os/pkgs/mosd/apid/src/routes.rs:736-748`) on pages that opt in.
+`shell()` helper (`os/pkgs/mosd/apid/src/routes.rs:750-763`) on pages that opt in.
 
 - **C1 — bytes.** ~45 bytes of markup, once. Per update: the **entire page,
   uncompressed**. Estimate for the seven-tile dashboard of section 2, based on
@@ -1267,7 +1267,7 @@ A long-lived `text/event-stream` response, consumed by the browser's built-in
 
 **The security cost that decides it.** `mos-ui-inventory.md` section 3.4 records
 that **there is no CSRF token anywhere in `apid`**; the only cross-site
-mitigation is `SameSite=Lax` (`os/pkgs/mosd/apid/src/session.rs:103`) plus POST-only
+mitigation is `SameSite=Lax` (`os/pkgs/mosd/apid/src/session.rs:121`) plus POST-only
 destructive routes with a confirmation field (`routes.rs:49-53`, `:820`).
 `SameSite` cookie semantics do not cover the WebSocket handshake, so a writable
 WebSocket endpoint — one that reaches the reboot and power-off members behind
