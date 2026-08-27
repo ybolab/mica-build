@@ -56,11 +56,14 @@ Measured consumer surface:
    mos-sign: the crate signs and verifies RAUC bundles — it is RAUC's trust
    tooling, not a mos-branded tool and not part of mosd. It is EXTRACTED from
    the mosd workspace: own `[workspace]` Cargo.toml and lock, own gate run in
-   CI, and `mosd/Cargo.toml`'s member list drops it. Whether the binary
-   names (`mos-sign`, `mos-update-verify`) follow the rename is an M1 design
-   question — the proposal must inventory every consumer of those names
+   CI, and `mosd/Cargo.toml`'s member list drops it. The binary names FOLLOW the
+   rename (user ruling, 2026-08-27): naming stays unified with the crate —
+   `mos-sign` and `mos-update-verify` become the rauc-sign family (exact
+   spellings settled in M1's proposal, default `rauc-sign` /
+   `rauc-sign-verify`, chosen so neither collides with rauc's own binary
+   names). M1 still inventories every consumer of the old names
    (docs/design/release-signing.md, the key-ceremony runbook, scripts, CI)
-   and recommend with costs.
+   so the rename lands in one movement.
 
 ## Proposal
 
