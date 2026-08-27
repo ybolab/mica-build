@@ -62,7 +62,11 @@ Measured consumer surface:
    2026-08-27: `rauc-sign` / `rauc-verify` — upstream RAUC ships a single
    `rauc` binary, so no collision exists). M1 still inventories every consumer of the old names
    (docs/design/release-signing.md, the key-ceremony runbook, scripts, CI)
-   so the rename lands in one movement.
+   so the rename lands in one movement. Merging the
+   two binaries into one program was considered and declined (user,
+   2026-08-27): sign handles production keys on a release host, verify ships
+   in the device image — one binary would put signing code on every device.
+   One crate, two thin binaries stays the shape.
 
 ## Proposal
 
