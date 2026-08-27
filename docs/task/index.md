@@ -1,6 +1,6 @@
 # NAS Appliance Refactor - Task List
 
-> Updated: 2026-08-25
+> Updated: 2026-08-27
 
 ## Usage
 
@@ -176,3 +176,8 @@ Each task is a single line linking to its detail file. All detailed information 
 - [x] [**RFCT-161 PLAN-018 M2: board.yaml retired into board.env comments**](RFCT-161.md) `P2`
 - [x] [**RFCT-162 PLAN-018 M3: board/x64 deleted, the stale x64 Makefile line corrected, board/ gone**](RFCT-162.md) `P2`
 - [x] [**RFCT-163 PLAN-018 M4: documentation path citations follow the move**](RFCT-163.md) `P2`
+- [x] [**RFCT-155 PLAN-017 M1: api.md reconciled against openapi.json and HEAD**](RFCT-155.md) `P2`
+- [x] [**RFCT-156 PLAN-017 M2: remote-management.md rewritten present-tense for the mos daemon set**](RFCT-156.md) `P2`
+- [x] [**RFCT-157 PLAN-017 M3: boards.md and display.md re-measured against os/build and os/boards**](RFCT-157.md) `P2`
+- [x] [**RFCT-158 PLAN-017 M4: the provenance lines in access.md, connd.md and provisioning.md**](RFCT-158.md) `P2`
+- [x] [**RFCT-159 PLAN-017: the five task records, the five index rows and the plan's status**](RFCT-159.md) `P2`
