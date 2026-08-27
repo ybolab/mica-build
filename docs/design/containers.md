@@ -25,7 +25,7 @@ rather than sitting here looking correct.
 | `aardvark-dns` | `/usr/libexec/podman/aardvark-dns` | container-to-container name resolution |
 | `catatonit` | `/usr/libexec/podman/catatonit` | container init, for `--init` |
 
-Versions are pinned in `os/podman/versions.env` and built from upstream source,
+Versions are pinned in `os/pkgs/podman/versions.env` and built from upstream source,
 not taken from Debian. `podman --version` on the device is the authority.
 
 There is **no `podman.socket` and no `podman.service`**. The REST API is not

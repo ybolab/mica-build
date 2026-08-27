@@ -382,7 +382,7 @@ any tool other than mosd, never matches a marker and therefore survives. That
 distinction is the whole reason a marker exists instead of "lock root on every
 boot". (RFCT-083 removed the v2 `ROOT_PASSWORD` build argument this paragraph
 used as its example: the pack-stage assertion had always rejected the hash it
-would bake, so the flow was advertised but unbuildable.) See `docs/design/access.md` §4.1 and `mosd/mosd/src/transient.rs`.
+would bake, so the flow was advertised but unbuildable.) See `docs/design/access.md` §4.1 and `os/pkgs/mosd/mosd/src/transient.rs`.
 
 The marker is resolved **beside** the shadow file rather than at a fixed path,
 because that file is `/mnt/state/mos/shadow` before `var-lib-mos.mount` is up
@@ -455,7 +455,7 @@ Two operations follow from that table:
   as if freshly flashed: new host keys, new machine-id, default hostname.
   **Nothing implements it.** No unit, script or bus method performs a factory
   reset; the only mention in code is a doc comment in
-  `mosd/mosd/src/provisioning.rs` explaining why wiping STATE *would* return the
+  `os/pkgs/mosd/mosd/src/provisioning.rs` explaining why wiping STATE *would* return the
   device to first boot. The nearest real operation is a whole-disk reflash,
   which replaces META, STATE and DATA with the image's fresh filesystems — see
   `docs/design/access.md` §9.2, including why "cleared" there means unreachable
@@ -764,8 +764,8 @@ respect this.
 partitions by GUID (`/dev/disk/by-partuuid/…`, offset 0, size 64 KiB) rather
 than at a hardcoded `/dev/mmcblk0` offset: the GUIDs are layout constants, the
 disk name is not. It is the single `fw_env.config` source in the tree — RFCT-014
-deliberately did not create a competing `os/update/rauc/fw_env.config.in` and instead
-**asserts this file's structure** in `os/update/rauc/render-config.sh`: exactly two
+deliberately did not create a competing `os/pkgs/rauc/fw_env.config.in` and instead
+**asserts this file's structure** in `os/pkgs/rauc/render-config.sh`: exactly two
 device lines (which is what marks the environment redundant to libubootenv),
 each matching its UENV GUID case-insensitively at offset 0 with size
 `UENV_SIZE_BYTES`, and the partition starts cross-checked against
@@ -822,7 +822,7 @@ yet.
 ### Correction: hostname was not a latent gap
 
 An earlier revision of this document claimed "nothing in mos sets the hostname
-today". That was wrong. `mosd/mosd/src/reconciler/hostname.rs` is a merged M2
+today". That was wrong. `os/pkgs/mosd/mosd/src/reconciler/hostname.rs` is a merged M2
 reconciler that calls `SetStaticHostname` on `org.freedesktop.hostname1`, and
 `systemd-hostnamed` implements that by writing `/etc/hostname`. It is reachable
 from the M3 first-run wizard, so on a read-only `/etc` "set the hostname in the

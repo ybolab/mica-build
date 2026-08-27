@@ -66,9 +66,9 @@ the debug profile uses the base image's shell.
 
 ## 3. Configuration model — **[implemented]**
 
-Implemented by `mosd/mosd-settings/src/model.rs` (the tree),
-`mosd/mosd/src/reconciler/sshd.rs` (the reconciler) and
-`mosd/mosd/src/transient.rs` (the transient password).
+Implemented by `os/pkgs/mosd/mosd-settings/src/model.rs` (the tree),
+`os/pkgs/mosd/mosd/src/reconciler/sshd.rs` (the reconciler) and
+`os/pkgs/mosd/mosd/src/transient.rs` (the transient password).
 
 ### 3.1 As shipped
 
@@ -193,10 +193,10 @@ lockdown: false                # one-way; see §5
 
 ### 4.1 Phase 1 as shipped — **[implemented]**
 
-Implemented by `mosd/mosd/src/reconciler/sshd.rs` (keys),
-`mosd/mosd/src/transient.rs` and `mosd/mosd/src/bus.rs` (the transient
+Implemented by `os/pkgs/mosd/mosd/src/reconciler/sshd.rs` (keys),
+`os/pkgs/mosd/mosd/src/transient.rs` and `os/pkgs/mosd/mosd/src/bus.rs` (the transient
 password), `os/rootfs/overlay-v2/usr/lib/mos/mos-shadow-reconcile` (the boot
-clear) and `mosd/apid/src/routes.rs` (the operator-facing pane).
+clear) and `os/pkgs/mosd/apid/src/routes.rs` (the operator-facing pane).
 
 **The default state of a device is: SSH off, root with no password, no keys.**
 Both image profiles. Neither profile seeds `access.ssh.enabled` true
@@ -303,7 +303,7 @@ keeping every other account locked; it is not permanent architecture.
 ### 5.1 Runtime — **[implemented]**
 
 `enabled: false` → the reconciler stops and runtime-disables `ssh.service`
-(`mosd/mosd/src/reconciler/sshd.rs`). Reversible, and the default.
+(`os/pkgs/mosd/mosd/src/reconciler/sshd.rs`). Reversible, and the default.
 
 ### 5.2 META lockdown — **[not implemented]**
 
@@ -318,7 +318,7 @@ bit, nothing that reads one, and no reset that preserves one.
 
 **And factory reset itself is not implemented either.** Nothing in the tree
 performs one. The only mention in code is a doc comment in
-`mosd/mosd/src/provisioning.rs` explaining why wiping STATE *would* return the
+`os/pkgs/mosd/mosd/src/provisioning.rs` explaining why wiping STATE *would* return the
 device to first boot. So this paragraph describes a reset nobody can invoke,
 preserving a bit nobody can set — which is precisely why §0's marker discipline
 exists. Whether the lockdown is built at all is an open product decision.
@@ -368,7 +368,7 @@ Four intents were stated here. Two now have code and tests; two do not, and
 saying which is which is the point of this section.
 
 **[implemented] Failure counters and backoff state persist across a restart.**
-`GuardStore` (`mosd/apid/src/auth.rs`) wraps the in-RAM `LoginGuard` and
+`GuardStore` (`os/pkgs/mosd/apid/src/auth.rs`) wraps the in-RAM `LoginGuard` and
 writes the consecutive-failure run and the window deadline to
 `login_guard.json` on every mutation, atomically and 0600. A refused attempt
 mutates nothing and therefore writes nothing — without that check an
@@ -384,7 +384,7 @@ on a device whose META partition no daemon currently writes at runtime. What
 §6 actually asks for is that a power cycle not reset the clock, and STATE
 satisfies that: it survives reboot and A/B update alike.
 
-The directory is 0700 (`StateDirectoryMode=0700` in `mosd/dist/apid.service`;
+The directory is 0700 (`StateDirectoryMode=0700` in `os/pkgs/mosd/dist/apid.service`;
 apid's own `ensure_state_dir` uses the same mode when it creates the path
 itself), every file in it is 0600, and the unit orders itself after the STATE
 mount with `RequiresMountsFor=/var/lib/mos` — counters written to a tmpfs
@@ -399,7 +399,7 @@ lockout: the failure direction here has to be open, because the alternative is
 an appliance no operator can reach.
 
 **[implemented] A bounded persistent audit trail.** `Audit`
-(`mosd/apid/src/audit.rs`) appends one JSONL line per audited event — RFC 3339
+(`os/pkgs/mosd/apid/src/audit.rs`) appends one JSONL line per audited event — RFC 3339
 UTC timestamp, event, outcome, source address — into a two-file ring capped at
 ~512 KiB total, mirrored to the journal so the volatile log tells the same
 story. Lines are fsynced individually, because the two most consequential
