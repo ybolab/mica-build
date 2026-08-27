@@ -121,7 +121,9 @@ x64 builds none and takes Debian's with a verity initramfs. Board intake tiers:
    `os/build/src/stages-cli.ts`, which "decides the order and the tags"
    (`os/build/src/stages-cli.ts:9-10`)), image assembled by
    `bash os/build/run.sh --mkimage-v2` or `--mkimage-x64`, green against
-   `bash os/verify/run.sh --verify --board <name>`, then apid healthz on hardware.
+   `bash os/verify/run.sh --verify --board <name>`, then apid liveness on
+   hardware — `/healthz`, which proves only that the apid process is listening,
+   not that mosd or any other service on the board is healthy.
 6. Power-cut rig run before the board is called supported.
 
 ## 8. Current boards
