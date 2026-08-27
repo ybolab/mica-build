@@ -6,7 +6,7 @@
 #   make os-verify-cx3576-v2
 #
 # Not built by `make build-env`, which builds the four mos-build-* compiler
-# images: .gitea/workflows/check.yml's os-verify job installs no bun and runs no
+# images: .github/workflows/check.yml's os-verify job installs no bun and runs no
 # build-env, so an image produced there would be missing at exactly the moment it
 # is needed. os/verify/run.sh builds this on demand instead, once, and only when
 # it has both to take the container route and to run `--verify`.

@@ -371,7 +371,7 @@ both is refused.
 
 `make os-layout-lint` needs bun like the suite does, so the container route is
 what keeps a board definition checkable on a host that has only docker, rather
-than a convenience. `.gitea/workflows/check.yml` installs no bun for exactly
+than a convenience. `.github/workflows/check.yml` installs no bun for exactly
 this reason: the runner takes the container route, so the pin is exercised on
 every push. See `HARNESS.md` for the mount, which is an identity mount and not
 a `/w`, and why.

@@ -14,7 +14,7 @@
 //! does.
 //!
 //! CI provisions the dependency rather than opting out of the suite. The
-//! `rust` job in `.gitea/workflows/check.yml` runs `mosd/hack/check.sh`,
+//! `rust` job in `.github/workflows/check.yml` runs `mosd/hack/check.sh`,
 //! whose `cargo nextest run --workspace` includes this file, and that job
 //! installs the `dbus-daemon` package alongside the other build
 //! dependencies. A runner that cannot supply it therefore goes red at the

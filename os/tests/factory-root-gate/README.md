@@ -7,7 +7,7 @@ stage, so nothing about their agreement is structural; a smoke run inside a
 *different* tree is a measurement of something that never boots.
 
 `make os-factory-root-gate` is the target (docker-requiring, like
-`os-verify-cx3576-v2`), and the deep lane of `.gitea/workflows/privileged.yml`
+`os-verify-cx3576-v2`), and the deep lane of `.github/workflows/privileged.yml`
 is the step, which is the only place it can run on cx3576.
 
 It needs a matched pair — `factory-root.oci` and `rootfs-verity.img` from one
