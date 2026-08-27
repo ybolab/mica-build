@@ -70,7 +70,7 @@ Four facts in one run:
 
 So a hand-edited `settings.toml` carrying `[network."eth0.100"]` loads and
 reconciles **today** — the reconciler's own validator accepts `.` in a name
-(`os/pkgs/mosd/mosd/src/reconciler/network.rs:107-114`) — and the only broken
+(`os/pkgs/mosd/mosd/src/reconciler/network.rs:166-173`) — and the only broken
 layer is the path syntax. That is RFCT-135's conclusion, now measured: *"it is
 the settings dot-path syntax, and the same limit blocks any key with a dot in
 it"* (`docs/task/RFCT-135.md:28-29`).
@@ -104,15 +104,15 @@ The network reconciler renders **systemd-networkd** units — *"renders
 systemd-networkd `.network` units and reloads networkd"*
 (`os/pkgs/mosd/mosd/src/reconciler/network.rs:1-2`) — one
 `50-mos-<iface>.network` per map entry into `/run/systemd/network`
-(`os/pkgs/mosd/mosd/src/reconciler/network.rs:13`, `:213-214`), sweeps stale
+(`os/pkgs/mosd/mosd/src/reconciler/network.rs:13`, `:451-458`), sweeps stale
 units it owns by exact prefix (`:190-192`, `:221-230`), and reloads via the
 `org.freedesktop.network1` `Manager.Reload` D-Bus call (`:33-45`). It is not
 `ip`/netlink; there is no direct interface manipulation anywhere in the daemon.
 The reconciler treats itself as the security boundary because *"The settings
 file is editable by anything that can write STATE"*
-(`os/pkgs/mosd/mosd/src/reconciler/network.rs:83-87`), re-validating names
-(IFNAMSIZ 15, `os/pkgs/mosd/mosd/src/reconciler/network.rs:78`) and addresses
-(`os/pkgs/mosd/mosd/src/reconciler/network.rs:135-141`) independently of apid.
+(`os/pkgs/mosd/mosd/src/reconciler/network.rs:142-146`), re-validating names
+(IFNAMSIZ 15, `os/pkgs/mosd/mosd/src/reconciler/network.rs:137`) and addresses
+(`os/pkgs/mosd/mosd/src/reconciler/network.rs:194-200`) independently of apid.
 
 ### 1.5 The images
 
@@ -140,7 +140,7 @@ validates against the typed tree and saves TOML atomically
 (`os/pkgs/mosd/mosd/src/bus.rs:430-435`) → overlapping reconcilers re-apply
 (`:437-441`) → `NetworkReconciler::apply` re-validates, renders
 `50-mos-<iface>.network`, sweeps, reloads networkd
-(`os/pkgs/mosd/mosd/src/reconciler/network.rs:204-233`) → the apply result is
+(`os/pkgs/mosd/mosd/src/reconciler/network.rs:440-500`) → the apply result is
 recorded in the live-state tree per reconciler name and served over D-Bus and
 `GET /api/v1/state/network` (`docs/design/api.md:1280`).
 
@@ -185,7 +185,7 @@ Why this spelling and not another:
 bare segment beginning with `"` changes meaning. Measured mitigation: no
 validated writer can produce such a key — apid rejects it
 (`os/pkgs/mosd/apid/src/routes.rs:799-804`), the reconciler rejects it
-(`os/pkgs/mosd/mosd/src/reconciler/network.rs:107-114`) — so only a whole-tree
+(`os/pkgs/mosd/mosd/src/reconciler/network.rs:166-173`) — so only a whole-tree
 root write or a hand edit could. Schema v7 (§7) adds model-level validation:
 a `network` map key must be a valid interface name (non-empty, ≤15 bytes,
 alphanumerics plus `. - _ :`), making the quote character structurally
@@ -263,12 +263,12 @@ three; a bridge port must not carry `dhcp`/`static` of its own — is enforced
 in the reconciler, where the tree's security boundary already sits and for the
 already-recorded reason: *"apid validates the address on its write path, but
 the settings file is writable without apid, so the boundary must hold here"*
-(`os/pkgs/mosd/mosd/src/reconciler/network.rs:139-141`). apid enforces the
+(`os/pkgs/mosd/mosd/src/reconciler/network.rs:198-200`). apid enforces the
 same rules earlier for a readable form error.
 
 **Naming rules.** The map key **is** the kernel interface name, exactly as
 today (`render_unit` interpolates it into `Name=`,
-`os/pkgs/mosd/mosd/src/reconciler/network.rs:167-168`). `parent.id` as a VLAN
+`os/pkgs/mosd/mosd/src/reconciler/network.rs:383-384`). `parent.id` as a VLAN
 name (`eth0.100`) is convention, not requirement — the name is free within
 IFNAMSIZ and the reconciler's charset (`:95-116`); the `vlan` block, not the
 name, is authoritative for parent and id. A VLAN's `parent` and every bridge
@@ -277,7 +277,7 @@ otherwise (fail-closed, consistent with `:209` running validation before any
 I/O). The wifi radios stay out of `network.*`: `wifi.client`/`wifi.ap` keep
 their own reconcilers and their own `90-*` networkd namespace
 (`os/pkgs/mosd/mosd/src/reconciler/wifi_ap.rs:70`), and the existing
-sweep-prefix separation (`os/pkgs/mosd/mosd/src/reconciler/network.rs:184-192`)
+sweep-prefix separation (`os/pkgs/mosd/mosd/src/reconciler/network.rs:408-417`)
 is unchanged.
 
 ---
@@ -301,12 +301,12 @@ network reconciler.** Evidence:
   racing the first — networkd still owns every link its units match — and it
   discards the declarative render-sweep-reload model whose convergence
   properties the tree already tests
-  (`os/pkgs/mosd/mosd/src/reconciler/network.rs:369-397`). It would also pull
+  (`os/pkgs/mosd/mosd/src/reconciler/network.rs:702-730`). It would also pull
   WireGuard key handling into hand-rolled netlink code, the worst place for it.
 
 **Mechanics.** For an entry with `kind != physical` the reconciler renders a
 `50-mos-<iface>.netdev` beside the `.network` it already renders, and the
-stale-file sweep (`os/pkgs/mosd/mosd/src/reconciler/network.rs:221-230`)
+stale-file sweep (`os/pkgs/mosd/mosd/src/reconciler/network.rs:475-487`)
 extends to the `.netdev` extension under the same `50-mos-` prefix. Kind
 specifics:
 
@@ -321,7 +321,7 @@ specifics:
   `PrivateKeyFile=<secrets path>` (§4), `ListenPort=`, and one `[WireGuardPeer]`
   per peer. Every peer value is re-validated by parse-and-re-render, the
   injection discipline the renderer already applies to addresses
-  (`os/pkgs/mosd/mosd/src/reconciler/network.rs:136-139`): base64-decode the
+  (`os/pkgs/mosd/mosd/src/reconciler/network.rs:195-198`): base64-decode the
   public key to exactly 32 bytes, parse `allowedIps` as CIDRs, parse
   `endpoint` as host:port.
 
