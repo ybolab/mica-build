@@ -2,7 +2,7 @@
 
 - **status**: in progress
 - **priority**: P2
-- **owner**: ai-agent
+- **owner**: bkd/xexc9k2h
 - **createdAt**: 2026-08-26
 
 The handler is two lines and performs no check:
