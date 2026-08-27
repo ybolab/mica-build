@@ -20,6 +20,7 @@ use std::io::{BufRead, BufReader};
 use std::path::PathBuf;
 use std::pin::pin;
 use std::process::{Child, Command, Stdio};
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use zbus::export::futures_core::Stream;
@@ -106,9 +107,27 @@ struct Harness {
     /// The daemon's settings file, so a test can read back what was persisted
     /// rather than only what the daemon reports.
     settings_path: PathBuf,
-    _mosd: ChildGuard,
+    /// Everything the daemon logged so far (tracing writes to stdout),
+    /// drained on a helper thread so the pipe can never fill and block it.
+    mosd_log: Arc<Mutex<String>>,
+    log_reader: Option<std::thread::JoinHandle<()>>,
+    mosd: ChildGuard,
     _bus: ChildGuard,
     _dir: tempfile::TempDir,
+}
+
+impl Harness {
+    /// Kill the daemon and return everything it logged, for a test that
+    /// asserts about the log itself.
+    fn stop_and_collect_log(mut self) -> String {
+        let _ = self.mosd.0.kill();
+        let _ = self.mosd.0.wait();
+        if let Some(reader) = self.log_reader.take() {
+            let _ = reader.join();
+        }
+        let log = self.mosd_log.lock().expect("log lock").clone();
+        log
+    }
 }
 
 /// Settings tree every test seeds: secrets under every redacted key name the
@@ -155,15 +174,28 @@ async fn start() -> anyhow::Result<Harness> {
     std::fs::write(&shadow_path, "root:!:19000:0:99999:7:::\n")?;
     // MOSD_DRY_RUN=1 is a hard safety requirement: production reconcilers
     // must never be constructed in tests.
-    let mosd_guard = ChildGuard(
-        Command::new(env!("CARGO_BIN_EXE_mosd"))
-            .env("DBUS_SESSION_BUS_ADDRESS", &address)
-            .env("MOSD_BUS", "session")
-            .env("MOSD_DRY_RUN", "1")
-            .env("MOSD_SETTINGS_PATH", &settings_path)
-            .env("MOSD_SHADOW_PATH", &shadow_path)
-            .spawn()?,
-    );
+    let mut mosd_child = Command::new(env!("CARGO_BIN_EXE_mosd"))
+        .env("DBUS_SESSION_BUS_ADDRESS", &address)
+        .env("MOSD_BUS", "session")
+        .env("MOSD_DRY_RUN", "1")
+        .env("MOSD_SETTINGS_PATH", &settings_path)
+        .env("MOSD_SHADOW_PATH", &shadow_path)
+        .stdout(Stdio::piped())
+        .spawn()?;
+    let mosd_stdout = mosd_child.stdout.take().expect("piped stdout");
+    let mosd_guard = ChildGuard(mosd_child);
+    let mosd_log = Arc::new(Mutex::new(String::new()));
+    let log_reader = {
+        let log = Arc::clone(&mosd_log);
+        std::thread::spawn(move || {
+            for line in BufReader::new(mosd_stdout).lines() {
+                let Ok(line) = line else { break };
+                let mut log = log.lock().expect("log lock");
+                log.push_str(&line);
+                log.push('\n');
+            }
+        })
+    };
 
     let connection = zbus::connection::Builder::address(address.as_str())?
         .build()
@@ -171,7 +203,9 @@ async fn start() -> anyhow::Result<Harness> {
     Ok(Harness {
         connection,
         settings_path,
-        _mosd: mosd_guard,
+        mosd_log,
+        log_reader: Some(log_reader),
+        mosd: mosd_guard,
         _bus: bus_guard,
         _dir: dir,
     })
@@ -612,6 +646,55 @@ async fn an_action_item_triggers_and_forces_itself_back_to_zero() -> anyhow::Res
     assert!(
         !persisted.contains("Actions") && !persisted.contains("reboot"),
         "an action must persist nothing, got:\n{persisted}"
+    );
+    Ok(())
+}
+
+/// A key that is not a valid D-Bus path element — realistically an interface
+/// named with a dash, and every bus name in the service registry — gets no
+/// item object, and that is EXPECTED (`docs/design/bus.md` §11 item 2): it
+/// must not cost a WARN, because a warning that fires during correct
+/// operation warns nobody. `sync_objects` logs the expected case at DEBUG and
+/// keeps WARN for a registration failure at a path that IS valid.
+///
+/// Asserted against the daemon's own log, captured off its stdout: the key
+/// still syncs — it arrives in `ItemsChanged` and reads back through
+/// `GetItems` — and no "no item object" WARN is emitted for it.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_dotted_key_syncs_through_get_items_without_a_warn() -> anyhow::Result<()> {
+    let harness = start().await?;
+    let item_proxy = ItemProxy::new(&harness.connection).await?;
+    let mosd_proxy = MosdProxy::new(&harness.connection).await?;
+    wait_items(&item_proxy).await?;
+
+    // `br-lan` has no spelling as a D-Bus path element (the dash), so the
+    // leaf below it is exactly the recorded limit's case.
+    let mut changed = item_proxy.receive_items_changed().await?;
+    mosd_proxy
+        .set_settings("network.br-lan", r#"{"dhcp":true}"#)
+        .await?;
+    let payload = next_items(&mut changed).await;
+    assert!(
+        payload.contains_key("/network/br-lan/dhcp"),
+        "the key must still change through ItemsChanged: {payload:?}"
+    );
+    let items = item_proxy.get_items().await?;
+    assert!(
+        items.contains_key("/network/br-lan/dhcp"),
+        "the key must still read through GetItems"
+    );
+
+    // The signal above proves sync_objects already ran for this batch — it
+    // registers objects before the emit — so the log is complete once the
+    // daemon stops.
+    let log = harness.stop_and_collect_log();
+    assert!(
+        log.contains("serving"),
+        "log capture must have seen the daemon start, got:\n{log}"
+    );
+    assert!(
+        !log.contains("no item object"),
+        "an expected unaddressable key must not WARN:\n{log}"
     );
     Ok(())
 }
