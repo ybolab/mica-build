@@ -49,7 +49,7 @@ pass() { PASS_N=$((PASS_N + 1)); echo "PASS: $*"; }
 fail() { FAIL_N=$((FAIL_N + 1)); echo "FAIL: $*"; }
 
 # The fixture tree. Two documents in scope, one cited source file of exactly
-# ten lines, one directory that exists at the root so that `mosd/...` is in
+# ten lines, one directory that exists at the root so that `os/...` is in
 # scope while `u-boot/...` is not, and a census baseline naming that one
 # segment with its exact count as the floor.
 #
@@ -60,10 +60,10 @@ fail() { FAIL_N=$((FAIL_N + 1)); echo "FAIL: $*"; }
 new_fixture() {
     local dir="$1" n
     rm -rf "${dir}"
-    mkdir -p "${dir}/docs/design" "${dir}/mosd/apid/src"
+    mkdir -p "${dir}/docs/design" "${dir}/os/pkgs/mosd/apid/src"
     cp "${CHECKER}" "${dir}/docs/verify-citations.sh"
 
-    cat >"${dir}/mosd/apid/src/settings_api.rs" <<'RS'
+    cat >"${dir}/os/pkgs/mosd/apid/src/settings_api.rs" <<'RS'
 //! Fixture source for the citation checker tests.
 /// The power actions are here rather than executed locally because mosd owns
 /// every system action: apid never spawns a process and never talks to
@@ -75,7 +75,7 @@ const COOKIE: &str = "Path=/; HttpOnly; Secure";
 
 // end of fixture
 RS
-    n=$(awk 'END { print NR }' "${dir}/mosd/apid/src/settings_api.rs")
+    n=$(awk 'END { print NR }' "${dir}/os/pkgs/mosd/apid/src/settings_api.rs")
     [ "${n}" -eq 10 ] || {
         echo "error: the fixture source is ${n} lines, and every line assertion below is written for 10" >&2
         exit 1
@@ -91,15 +91,15 @@ MD
 # Fixture
 
 The trait doc states it as a rule: *"apid never spawns a process and never
-talks to systemd itself"* (`mosd/apid/src/settings_api.rs:2-4`).
+talks to systemd itself"* (`os/pkgs/mosd/apid/src/settings_api.rs:2-4`).
 
 The session cookie carries `Path=/; HttpOnly; Secure`
-(`mosd/apid/src/settings_api.rs:8`).
+(`os/pkgs/mosd/apid/src/settings_api.rs:8`).
 
-Cited first and quoted after: `mosd/apid/src/settings_api.rs:5`
+Cited first and quoted after: `os/pkgs/mosd/apid/src/settings_api.rs:5`
 `pub trait SettingsApi` sits directly after its citation.
 
-The trait is declared at `mosd/apid/src/settings_api.rs:5`, and this sentence
+The trait is declared at `os/pkgs/mosd/apid/src/settings_api.rs:5`, and this sentence
 quotes nothing of it.
 
 The plain listener binds `0.0.0.0:80` and the TLS listener binds `0.0.0.0:443`.
@@ -110,8 +110,8 @@ The handler lives at `routes.rs:95-105` in the file named above.
 MD
 
     cat >"${dir}/docs/verify-citations-baseline.txt" <<'TXT'
-# Fixture census floors: every in-scope citation here starts with mosd/.
-mosd 4
+# Fixture census floors: every in-scope citation here starts with os/.
+os 4
 TXT
 }
 
@@ -224,7 +224,7 @@ expect_report "the report counts what it skipped, by reason, and what it never e
     "exempted as dated records, citations not checked: 0" \
     "citations found:        8" \
     "in scope:               4" \
-    "in scope, first segment mosd/: 4" \
+    "in scope, first segment os/: 4" \
     "skipped, path is outside this repository's tree: 1" \
     "skipped, bare filename with no directory to resolve against: 1" \
     "skipped, a host and a port rather than a citation: 2" \
@@ -244,12 +244,12 @@ new_fixture "${FIX}"
 cat >"${FIX}/docs/design/fixture.md" <<'MD'
 # Fixture
 
-The trait is declared at `mosd/apid/src/settings_api.rs:5`, and this sentence
+The trait is declared at `os/pkgs/mosd/apid/src/settings_api.rs:5`, and this sentence
 quotes nothing of it.
 MD
 cat >"${FIX}/docs/verify-citations-baseline.txt" <<'TXT'
 # One citation left in this fixture, so the floor drops with it.
-mosd 1
+os 1
 TXT
 run_checker
 expect_report "a document with nothing skipped still prints all three skipped categories" \
@@ -260,47 +260,47 @@ expect_report "a document with nothing skipped still prints all three skipped ca
 # --- 3. resolution: a path that is not there ---------------------------------
 FIX="${WORK}/missing-path"
 new_fixture "${FIX}"
-add_para "${FIX}" 'The helper lives at `mosd/apid/src/gone.rs:3` and nothing quotes it.'
+add_para "${FIX}" 'The helper lives at `os/pkgs/mosd/apid/src/gone.rs:3` and nothing quotes it.'
 expect_fail "a citation into a file no longer in the tree" 1 \
-    'cites `mosd/apid/src/gone.rs:3`, and mosd/apid/src/gone.rs does not exist'
+    'cites `os/pkgs/mosd/apid/src/gone.rs:3`, and os/pkgs/mosd/apid/src/gone.rs does not exist'
 
 # --- 4. resolution: a path that resolves to a directory ----------------------
 FIX="${WORK}/not-a-file"
 new_fixture "${FIX}"
-mkdir -p "${FIX}/mosd/apid/src/tools"
-add_para "${FIX}" 'The toolset sits at `mosd/apid/src/tools:3` in the tree.'
+mkdir -p "${FIX}/os/pkgs/mosd/apid/src/tools"
+add_para "${FIX}" 'The toolset sits at `os/pkgs/mosd/apid/src/tools:3` in the tree.'
 expect_fail "a citation whose path is a directory" 1 \
-    'cites `mosd/apid/src/tools:3`, and mosd/apid/src/tools is not a regular file'
+    'cites `os/pkgs/mosd/apid/src/tools:3`, and os/pkgs/mosd/apid/src/tools is not a regular file'
 
 # --- 5. resolution: a line past the end of the file --------------------------
 # The cited paragraph quotes nothing, so this also proves check 1 runs on a
 # citation that check 2 will never look at.
 FIX="${WORK}/past-eof"
 new_fixture "${FIX}"
-add_para "${FIX}" 'The tail is at `mosd/apid/src/settings_api.rs:99`, unquoted.'
+add_para "${FIX}" 'The tail is at `os/pkgs/mosd/apid/src/settings_api.rs:99`, unquoted.'
 expect_fail "an unquoted citation past the end of the cited file" 1 \
-    'cites `mosd/apid/src/settings_api.rs:99`, and mosd/apid/src/settings_api.rs has 10 lines'
+    'cites `os/pkgs/mosd/apid/src/settings_api.rs:99`, and os/pkgs/mosd/apid/src/settings_api.rs has 10 lines'
 
 # --- 6. resolution: a range whose far end is past the end --------------------
 FIX="${WORK}/range-past-eof"
 new_fixture "${FIX}"
-add_para "${FIX}" 'The block runs `mosd/apid/src/settings_api.rs:5-40` here.'
+add_para "${FIX}" 'The block runs `os/pkgs/mosd/apid/src/settings_api.rs:5-40` here.'
 expect_fail "a range that starts inside the file and ends past it" 1 \
-    'cites `mosd/apid/src/settings_api.rs:5-40`, and mosd/apid/src/settings_api.rs has 10 lines'
+    'cites `os/pkgs/mosd/apid/src/settings_api.rs:5-40`, and os/pkgs/mosd/apid/src/settings_api.rs has 10 lines'
 
 # --- 7. resolution: line zero ------------------------------------------------
 FIX="${WORK}/line-zero"
 new_fixture "${FIX}"
-add_para "${FIX}" 'The head is at `mosd/apid/src/settings_api.rs:0` here.'
+add_para "${FIX}" 'The head is at `os/pkgs/mosd/apid/src/settings_api.rs:0` here.'
 expect_fail "a citation of line zero" 1 \
-    'cites `mosd/apid/src/settings_api.rs:0`, and line numbers start at 1'
+    'cites `os/pkgs/mosd/apid/src/settings_api.rs:0`, and line numbers start at 1'
 
 # --- 8. resolution: a negative line ------------------------------------------
 FIX="${WORK}/line-negative"
 new_fixture "${FIX}"
-add_para "${FIX}" 'The head is at `mosd/apid/src/settings_api.rs:-3` here.'
+add_para "${FIX}" 'The head is at `os/pkgs/mosd/apid/src/settings_api.rs:-3` here.'
 expect_fail "a citation of a negative line" 1 \
-    'cites `mosd/apid/src/settings_api.rs:-3`, and line numbers start at 1'
+    'cites `os/pkgs/mosd/apid/src/settings_api.rs:-3`, and line numbers start at 1'
 
 # --- 9. content: the citing document renames what it quotes ------------------
 # The case that decides resolution-only against content-matching. The path
@@ -310,21 +310,21 @@ FIX="${WORK}/quote-renamed-in-doc"
 new_fixture "${FIX}"
 must_replace "${FIX}" docs/design/fixture.md "apid never spawns" "webd never spawns"
 expect_fail "a quotation whose daemon name the document changed" 1 \
-    'quotes "webd never spawns a process and never talks to systemd itself", and that text is not at `mosd/apid/src/settings_api.rs:2-4`'
+    'quotes "webd never spawns a process and never talks to systemd itself", and that text is not at `os/pkgs/mosd/apid/src/settings_api.rs:2-4`'
 
 # --- 10. content: the source moves out from under the quotation --------------
 FIX="${WORK}/quote-renamed-in-source"
 new_fixture "${FIX}"
-must_replace "${FIX}" mosd/apid/src/settings_api.rs "apid never spawns" "webd never spawns"
+must_replace "${FIX}" os/pkgs/mosd/apid/src/settings_api.rs "apid never spawns" "webd never spawns"
 expect_fail "a quotation the source renamed underneath it" 1 \
-    'quotes "apid never spawns a process and never talks to systemd itself", and that text is not at `mosd/apid/src/settings_api.rs:2-4`'
+    'quotes "apid never spawns a process and never talks to systemd itself", and that text is not at `os/pkgs/mosd/apid/src/settings_api.rs:2-4`'
 
 # --- 11. content: a quoted code span the source no longer carries ------------
 FIX="${WORK}/code-span-drift"
 new_fixture "${FIX}"
-must_replace "${FIX}" mosd/apid/src/settings_api.rs "Path=/; HttpOnly; Secure" "Path=/; HttpOnly"
+must_replace "${FIX}" os/pkgs/mosd/apid/src/settings_api.rs "Path=/; HttpOnly; Secure" "Path=/; HttpOnly"
 expect_fail "a quoted code span the source has shortened" 1 \
-    'quotes "Path=/; HttpOnly; Secure", and that text is not at `mosd/apid/src/settings_api.rs:8`'
+    'quotes "Path=/; HttpOnly; Secure", and that text is not at `os/pkgs/mosd/apid/src/settings_api.rs:8`'
 
 # --- 12. content: the comparison survives a reflow and an emphasis -----------
 # The control for the normalisation. The quotation is rewrapped at different
@@ -338,16 +338,16 @@ cat >"${FIX}/docs/design/fixture.md" <<'MD'
 The trait doc states it as a rule:
 *"apid **never** spawns a process
 and never talks to systemd itself"*
-(`mosd/apid/src/settings_api.rs:2-4`).
+(`os/pkgs/mosd/apid/src/settings_api.rs:2-4`).
 
 The session cookie carries `Path=/; HttpOnly; Secure`
-(`mosd/apid/src/settings_api.rs:8`).
+(`os/pkgs/mosd/apid/src/settings_api.rs:8`).
 
 Cited first and quoted after:
-`mosd/apid/src/settings_api.rs:5`
+`os/pkgs/mosd/apid/src/settings_api.rs:5`
 *`pub trait **SettingsApi**`* sits after, rewrapped and bolded too.
 
-The trait is declared at `mosd/apid/src/settings_api.rs:5`, and this sentence
+The trait is declared at `os/pkgs/mosd/apid/src/settings_api.rs:5`, and this sentence
 quotes nothing of it.
 
 The plain listener binds `0.0.0.0:80` and the TLS listener binds `0.0.0.0:443`.
@@ -404,10 +404,10 @@ fi
 # --- 15. --advisory reports the same failures and exits 0 --------------------
 FIX="${WORK}/advisory"
 new_fixture "${FIX}"
-add_para "${FIX}" 'The helper lives at `mosd/apid/src/gone.rs:3` and nothing quotes it.'
+add_para "${FIX}" 'The helper lives at `os/pkgs/mosd/apid/src/gone.rs:3` and nothing quotes it.'
 run_checker --advisory
 if [ "${RC}" -eq 0 ] \
-   && grep -q '^  FAIL .*mosd/apid/src/gone.rs does not exist' "${WORK}/out" \
+   && grep -q '^  FAIL .*os/pkgs/mosd/apid/src/gone.rs does not exist' "${WORK}/out" \
    && grep -q 'advisory run' "${WORK}/out"; then
     pass "--advisory: the failure is still reported, the run still says it is advisory, exit 0"
 else
@@ -420,16 +420,16 @@ fi
 # a wrong quote after its citation was resolution-checked only and green.
 FIX="${WORK}/quote-after-citation-misquote"
 new_fixture "${FIX}"
-add_para "${FIX}" 'The cookie line (`mosd/apid/src/settings_api.rs:8`) *`Path=/; HttpOnly; Wrong`* is quoted after its citation.'
+add_para "${FIX}" 'The cookie line (`os/pkgs/mosd/apid/src/settings_api.rs:8`) *`Path=/; HttpOnly; Wrong`* is quoted after its citation.'
 expect_fail "a misquote that follows its citation, the ordering that never armed before" 1 \
-    'quotes "Path=/; HttpOnly; Wrong", and that text is not at `mosd/apid/src/settings_api.rs:8`'
+    'quotes "Path=/; HttpOnly; Wrong", and that text is not at `os/pkgs/mosd/apid/src/settings_api.rs:8`'
 
 # --- 17. a chained citation after a citation is still not a quote ------------
 # The forward rule inherits the backward rule's exclusion: `a:1` `a:2` is a
 # chain, not a quotation, so both stay unquoted and the run stays green.
 FIX="${WORK}/chained-forward"
 new_fixture "${FIX}"
-add_para "${FIX}" 'The trait spans `mosd/apid/src/settings_api.rs:5` `mosd/apid/src/settings_api.rs:6` as a pair of unquoted citations.'
+add_para "${FIX}" 'The trait spans `os/pkgs/mosd/apid/src/settings_api.rs:5` `os/pkgs/mosd/apid/src/settings_api.rs:6` as a pair of unquoted citations.'
 run_checker
 if [ "${RC}" -eq 0 ] && grep -q ': 6/6 PASS$' "${WORK}/out" \
    && grep -qF 'no quote, by document: docs/design/fixture.md 3' "${WORK}/out"; then
@@ -446,9 +446,9 @@ fi
 # at three; at four words the span is no longer a near-miss.
 FIX="${WORK}/near-miss-boundary"
 new_fixture "${FIX}"
-add_para "${FIX}" 'The flags are `Path=/; HttpOnly; Wrong` around (`mosd/apid/src/settings_api.rs:8`).'
-add_para "${FIX}" 'The flags are `Path=/; HttpOnly; Wrong` three words before (`mosd/apid/src/settings_api.rs:8`).'
-add_para "${FIX}" 'The flags are `Path=/; HttpOnly; Wrong` set four words before (`mosd/apid/src/settings_api.rs:8`).'
+add_para "${FIX}" 'The flags are `Path=/; HttpOnly; Wrong` around (`os/pkgs/mosd/apid/src/settings_api.rs:8`).'
+add_para "${FIX}" 'The flags are `Path=/; HttpOnly; Wrong` three words before (`os/pkgs/mosd/apid/src/settings_api.rs:8`).'
+add_para "${FIX}" 'The flags are `Path=/; HttpOnly; Wrong` set four words before (`os/pkgs/mosd/apid/src/settings_api.rs:8`).'
 run_checker
 if [ "${RC}" -eq 0 ] && [ "$(grep -c '^  FAIL ' "${WORK}/out" || true)" -eq 0 ] \
    && grep -q ': 7/7 PASS$' "${WORK}/out" \
@@ -460,20 +460,20 @@ else
 fi
 
 # --- 19. census: the cited tree's root directory vanishes --------------------
-# The RFCT-167 class. Deleting mosd/ reclassifies every citation into it as
+# The RFCT-167 class. Deleting os/ reclassifies every citation into it as
 # skipped-outside; without the census the run prints 0/0 PASS and exits 0.
 FIX="${WORK}/segment-vanishes"
 new_fixture "${FIX}"
-rm -rf "${FIX}/mosd"
+rm -rf "${FIX}/os"
 expect_fail "the cited root directory deleted: every citation leaves scope, and the census fails" 1 \
-    'segment mosd has 0 in-scope citations, and docs/verify-citations-baseline.txt names it with floor 4'
+    'segment os has 0 in-scope citations, and docs/verify-citations-baseline.txt names it with floor 4'
 
 # --- 20. census: one citation removed while the floor stands -----------------
 FIX="${WORK}/segment-below-floor"
 new_fixture "${FIX}"
-must_replace "${FIX}" docs/design/fixture.md 'declared at `mosd/apid/src/settings_api.rs:5`' 'declared in the fixture source'
+must_replace "${FIX}" docs/design/fixture.md 'declared at `os/pkgs/mosd/apid/src/settings_api.rs:5`' 'declared in the fixture source'
 expect_fail "a segment count dropping below its committed floor" 1 \
-    'segment mosd has 3 in-scope citations, below its floor 4 in docs/verify-citations-baseline.txt; lower the floor in the same commit'
+    'segment os has 3 in-scope citations, below its floor 4 in docs/verify-citations-baseline.txt; lower the floor in the same commit'
 
 # --- 21. widened scope: a stale citation in a task document fails -------------
 # The RFCT-159 finding-a class. Before the widening, docs/task was scanned by
@@ -484,11 +484,11 @@ mkdir -p "${FIX}/docs/task"
 cat >"${FIX}/docs/task/RFCT-999.md" <<'MD'
 # RFCT-999 Fixture task record
 
-The helper this record leans on lives at `mosd/apid/src/gone.rs:3`, and this
+The helper this record leans on lives at `os/pkgs/mosd/apid/src/gone.rs:3`, and this
 sentence quotes nothing of it.
 MD
 expect_fail "a stale citation in a non-exempt task document" 1 \
-    'docs/task/RFCT-999.md:3 cites `mosd/apid/src/gone.rs:3`, and mosd/apid/src/gone.rs does not exist'
+    'docs/task/RFCT-999.md:3 cites `os/pkgs/mosd/apid/src/gone.rs:3`, and os/pkgs/mosd/apid/src/gone.rs does not exist'
 
 # --- 22. the dated-record marker exempts the document, and the census says so -
 # The SAME document and the SAME stale citation as case 21; the only change is
@@ -500,7 +500,7 @@ mkdir -p "${FIX}/docs/task"
 cat >"${FIX}/docs/task/RFCT-999.md" <<'MD'
 # RFCT-999 Fixture task record
 
-The helper this record leans on lives at `mosd/apid/src/gone.rs:3`, and this
+The helper this record leans on lives at `os/pkgs/mosd/apid/src/gone.rs:3`, and this
 sentence quotes nothing of it.
 
 <!-- dated-record: fixture worklist frozen at a past commit -->
