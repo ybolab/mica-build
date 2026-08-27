@@ -197,7 +197,7 @@ its record's head fails naming both sides (RFCT-171).
 - [x] [**RFCT-171 PLAN-020 M2: the index checkbox is compared with the record's status head, after the vocabulary is unified**](RFCT-171.md) `P2`
 - [x] [**RFCT-172 PLAN-020 M3: citation scanning widened to docs/task and docs/research, with the dated-record exemption**](RFCT-172.md) `P2`
 - [x] [**RFCT-173 PLAN-020 M4: the self-test fixture repoints to os/pkgs, and the unquoted count becomes a ratchet**](RFCT-173.md) `P2`
-- [-] [**RFCT-200 PLAN-022 M1: native networking design - VLAN, bridge, WireGuard**](RFCT-200.md) `P1`
+- [x] [**RFCT-200 PLAN-022 M1: native networking design - VLAN, bridge, WireGuard**](RFCT-200.md) `P1`
 - [x] [**RFCT-201 PLAN-022 M2: quoted-segment path syntax**](RFCT-201.md) `P1`
 - [x] [**RFCT-202 PLAN-022 M3: schema v7 - interface kinds**](RFCT-202.md) `P1`
 - [x] [**RFCT-203 PLAN-022 M4: VLAN and bridge reconcile**](RFCT-203.md) `P1`

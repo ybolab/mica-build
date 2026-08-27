@@ -1,6 +1,6 @@
 # RFCT-200 PLAN-022 M1: native networking design — VLAN, bridge, WireGuard
 
-- **status**: review — design complete, awaiting user ratification (the PLAN-022 M1 gate)
+- **status**: completed — design ratified by the user as PLAN-022 Amendment 1 (on main), which cleared the PLAN-022 M1 gate; M2-M4 are built on it
 - **priority**: P1
 - **owner**: bkd/dpbhjzx5
 - **createdAt**: 2026-08-27
