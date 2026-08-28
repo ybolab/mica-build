@@ -5,13 +5,14 @@ use std::fs;
 use serde_json::json;
 
 use mosd_settings::{
-    AccessSettings, ApMode, AuthorizedKey, BridgeConfig, ConsoleSettings, ContainerSettings,
-    DEFAULT_PATH, DeviceCredentialSettings, IfaceKind, IfaceSettings, MigrateV0ToV1, MigrateV3ToV4,
-    Migration, MigrationRegistry, MqttAuthSettings, MqttListenSettings, MqttSettings,
-    ProvisioningSettings, ProvisioningState, SCHEMA_VERSION, Settings, SettingsError, SshSettings,
-    StaticConfig, Store, VlanConfig, WebAdminSettings, WifiApSettings, WifiClientSettings,
-    WifiNetwork, WifiSettings, WireguardConfig, WireguardPeer, encode_base64_nopad, json_path_get,
-    migrate, parse_authorized_key, validate_authorized_keys,
+    AccessSettings, ApMode, ApiToken, AuthorizedKey, BridgeConfig, ConsoleSettings,
+    ContainerSettings, DEFAULT_PATH, DeviceCredentialSettings, IfaceKind, IfaceSettings,
+    MigrateV0ToV1, MigrateV3ToV4, Migration, MigrationRegistry, MqttAuthSettings,
+    MqttListenSettings, MqttSettings, ProvisioningSettings, ProvisioningState, SCHEMA_VERSION,
+    Settings, SettingsError, SshSettings, StaticConfig, Store, VlanConfig, WebAdminSettings,
+    WifiApSettings, WifiClientSettings, WifiNetwork, WifiSettings, WireguardConfig, WireguardPeer,
+    encode_base64_nopad, json_path_get, migrate, parse_authorized_key, validate_api_tokens,
+    validate_authorized_keys,
 };
 
 fn populated() -> Settings {
@@ -414,6 +415,7 @@ fn v3_populated() -> Settings {
                 password_hash: Some("$argon2id$v=19$m=19456,t=2,p=1$ZGV2$ZGV2aGFzaA".to_string()),
                 generation: 4,
             },
+            api_tokens: Vec::new(),
         },
         provisioning: ProvisioningSettings {
             state: ProvisioningState::Complete,
@@ -1169,19 +1171,24 @@ fn the_public_parser_accepts_a_real_key_and_refuses_an_options_line() {
 // semantics are the ones docs/design/mosd.md §5.2 already prices: keys the
 // newer schema added are dropped; a reshaped document costs every setting.
 
-/// Today's tree plus a key this schema does not know (§3.2's proposed
-/// `access.apiTokens`) and a version stamp one ahead of ours.
+/// Today's tree plus a key this schema does not know (an `expiresAt` on an
+/// API token, which §3.2 refuses to add while the device has no trusted wall
+/// clock) and a version stamp one ahead of ours.
 ///
 /// A document from a build one schema AHEAD of this one -- the A/B rollback
-/// path. Its version tracks SCHEMA_VERSION + 1 and has had to move three
-/// times, to 6 when the container switch landed, to 7 for the mqtt switch and
-/// to 8 for the interface kinds: left behind, it stops being "newer", the
-/// strip path stops running, and the test goes on passing while asserting
-/// nothing about rollback. Hence the assertion below that the stamp really is
-/// ahead of us.
+/// path. Its version tracks SCHEMA_VERSION + 1 and has had to move four times,
+/// to 6 when the container switch landed, to 7 for the mqtt switch, to 8 for
+/// the interface kinds and to 9 for the API token list: left behind, it stops
+/// being "newer", the strip path stops running, and the test goes on passing
+/// while asserting nothing about rollback. Hence the assertion below that the
+/// stamp really is ahead of us.
+///
+/// The unknown key moved with it. It used to be `access.apiTokens` itself,
+/// which this schema now knows, so the fixture would have asserted nothing:
+/// the whole subtree would have loaded rather than been stripped.
 fn newer_additive_document() -> String {
-    assert_eq!(SCHEMA_VERSION + 1, 8, "the fixture stamp must stay ahead");
-    r#"schema_version = 8
+    assert_eq!(SCHEMA_VERSION + 1, 9, "the fixture stamp must stay ahead");
+    r#"schema_version = 9
 hostname = "rolled-back"
 
 [network.eth0]
@@ -1191,8 +1198,11 @@ dhcp = true
 password_hash = "$argon2id$fake"
 
 [[access.apiTokens]]
+id = "3f2a9c41"
 name = "ci"
-hash = "sha256:beef"
+hash = "0000000000000000000000000000000000000000000000000000000000000001"
+created = 1700000000
+expiresAt = 1800000000
 "#
     .to_string()
 }
@@ -1215,10 +1225,17 @@ fn newer_additive_document_loads_with_unknown_keys_dropped() {
         "$argon2id$fake"
     );
 
+    // The token list is a key this schema DOES know, so it survives whole --
+    // only the field a newer schema added to its entries is stripped.
+    assert_eq!(settings.access.api_tokens.len(), 1);
+    assert_eq!(settings.access.api_tokens[0].id, "3f2a9c41");
+    assert_eq!(settings.access.api_tokens[0].created, 1_700_000_000);
+    validate_api_tokens(&settings.access.api_tokens).unwrap();
+
     // The report names what rollback cost, for mosd to log.
     let report = report.expect("a newer document must produce a report");
     assert_eq!(report.from, SCHEMA_VERSION + 1);
-    assert_eq!(report.dropped_keys, vec!["apiTokens".to_string()]);
+    assert_eq!(report.dropped_keys, vec!["expiresAt".to_string()]);
     assert!(!report.defaulted);
 }
 
@@ -1280,12 +1297,15 @@ fn tolerated_document_saves_back_at_this_schema_version() {
     assert!(report.is_some());
     store.save(&settings).unwrap();
 
-    // The persisted file is now a clean v4 document: reloading is the normal
-    // path (no report), and the v5-only key is gone from disk — mosd.md
-    // §5.2's "rolling forward again restores the defaults, not the values".
+    // The persisted file is now a clean document at this schema: reloading is
+    // the normal path (no report), and the newer schema's key is gone from
+    // disk — mosd.md §5.2's "rolling forward again restores the defaults, not
+    // the values". The token list itself stays: this schema knows it, so only
+    // the `expiresAt` a newer schema added to its entries was stripped.
     let text = fs::read_to_string(&path).unwrap();
     assert!(text.contains(&format!("schema_version = {SCHEMA_VERSION}")));
-    assert!(!text.contains("apiTokens"));
+    assert!(!text.contains("expiresAt"));
+    assert!(text.contains("[[access.apiTokens]]"));
     let (reloaded, report) = store.load_with_report().unwrap();
     assert_eq!(reloaded, settings);
     assert!(report.is_none());
@@ -1296,10 +1316,12 @@ fn stripping_is_recursive_and_drops_same_named_keys_everywhere() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("settings.toml");
     // The same unknown key at two depths. The strip is by name, everywhere:
-    // both go, and the report records the name once per strip pass.
+    // both go, and the report records the name once per strip pass. The stamp
+    // has to stay one ahead of us or the tolerant path never runs.
+    assert_eq!(SCHEMA_VERSION + 1, 9, "the fixture stamp must stay ahead");
     fs::write(
         &path,
-        r#"schema_version = 8
+        r#"schema_version = 9
 hostname = "h"
 extra = "top"
 
@@ -1360,9 +1382,9 @@ endpoint = "vpn.example.net:51820"
 persistentKeepalive = 25
 "#;
 
-/// A key only a schema AFTER v7 could carry, appended to the fixture above to
+/// A key only a schema AFTER v8 could carry, appended to the fixture above to
 /// make it a genuine rollback document rather than a re-stamped one.
-const V8_ONLY_KEY: &str = r#"
+const V9_ONLY_KEY: &str = r#"
 [network.wg0.wireguard.obfuscation]
 mode = "none"
 "#;
@@ -1465,7 +1487,7 @@ fn all_three_kinds_round_trip_through_the_store() {
     let (settings, report) = store.load_with_report().unwrap();
     assert!(
         report.is_none(),
-        "a current-schema document is not a rollback"
+        "a document at or below this schema is migrated up, not rolled back"
     );
     assert_eq!(settings, every_kind());
 
@@ -1592,10 +1614,10 @@ fn the_wireguard_subtree_holds_no_secret() {
 fn a_newer_document_keeps_every_v7_interface_kind() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("settings.toml");
-    assert_eq!(SCHEMA_VERSION + 1, 8, "the fixture stamp must stay ahead");
+    assert_eq!(SCHEMA_VERSION + 1, 9, "the fixture stamp must stay ahead");
     fs::write(
         &path,
-        V7_EVERY_KIND.replace("schema_version = 7", "schema_version = 8") + V8_ONLY_KEY,
+        V7_EVERY_KIND.replace("schema_version = 7", "schema_version = 9") + V9_ONLY_KEY,
     )
     .unwrap();
 
@@ -1753,4 +1775,178 @@ fn a_key_that_predates_the_rule_does_not_block_other_writes() {
         settings.set(r#"network."eth0 100".dhcp"#, json!(false)),
         Err(SettingsError::Validation { .. })
     ));
+}
+
+// --- Bearer API tokens (schema v8) -----------------------------------------
+
+/// One well-formed token, spelled the way §3.2 spells it.
+fn api_token(id: &str, name: &str, digest: char) -> ApiToken {
+    ApiToken {
+        id: id.to_string(),
+        name: name.to_string(),
+        hash: digest.to_string().repeat(64),
+        created: 1_700_000_000,
+    }
+}
+
+/// The list round-trips through the store: written to TOML as an array of
+/// tables under `access`, read back typed, and byte-stable across a re-save.
+#[test]
+fn the_token_list_round_trips_through_the_store() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("settings.toml");
+    let store = Store::new(&path);
+
+    let mut settings = Settings::default();
+    settings.access.api_tokens = vec![
+        api_token("3f2a9c41", "ci-deploy", 'a'),
+        api_token("9d4ec7b0", "backup runner", 'b'),
+    ];
+    validate_api_tokens(&settings.access.api_tokens).unwrap();
+    store.save(&settings).unwrap();
+
+    let text = fs::read_to_string(&path).unwrap();
+    assert!(text.contains("[[access.apiTokens]]"), "{text}");
+    assert!(text.contains(r#"id = "3f2a9c41""#), "{text}");
+    assert!(text.contains("created = 1700000000"), "{text}");
+
+    let (loaded, report) = store.load_with_report().unwrap();
+    assert!(report.is_none());
+    assert_eq!(loaded, settings);
+
+    // Order is the list's own and is not sorted underneath the caller: the id
+    // is the identity, but the order is what a listing shows.
+    assert_eq!(loaded.access.api_tokens[0].id, "3f2a9c41");
+    assert_eq!(loaded.access.api_tokens[1].name, "backup runner");
+
+    store.save(&loaded).unwrap();
+    assert_eq!(fs::read_to_string(&path).unwrap(), text);
+}
+
+/// A settings file written before this schema existed still loads, and loads
+/// with an empty list rather than failing on the missing key. That is the
+/// whole cost of the additive bump.
+#[test]
+fn a_document_without_the_token_key_still_loads() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("settings.toml");
+    fs::write(
+        &path,
+        r#"schema_version = 7
+hostname = "mos"
+
+[network]
+
+[access.webAdmin]
+password_hash = "$argon2id$fake"
+"#,
+    )
+    .unwrap();
+
+    let (settings, report) = Store::new(&path).load_with_report().unwrap();
+
+    assert!(report.is_none(), "migrating up is not a rollback");
+    assert_eq!(settings.schema_version, SCHEMA_VERSION);
+    assert!(settings.access.api_tokens.is_empty());
+    assert_eq!(
+        settings.access.web_admin.unwrap().password_hash,
+        "$argon2id$fake"
+    );
+}
+
+/// Mint and revoke are read-modify-write of the whole array, because the
+/// dot-path syntax has no array indexing. Both halves go through `set`, which
+/// is the call apid makes.
+#[test]
+fn mint_and_revoke_are_whole_array_writes_through_the_dot_path() {
+    let mut settings = Settings::default();
+
+    let minted = vec![api_token("3f2a9c41", "ci-deploy", 'a')];
+    settings
+        .set("access.apiTokens", serde_json::to_value(&minted).unwrap())
+        .unwrap();
+    assert_eq!(settings.access.api_tokens, minted);
+
+    let both = vec![
+        api_token("3f2a9c41", "ci-deploy", 'a'),
+        api_token("9d4ec7b0", "backup", 'b'),
+    ];
+    settings
+        .set("access.apiTokens", serde_json::to_value(&both).unwrap())
+        .unwrap();
+    assert_eq!(settings.access.api_tokens.len(), 2);
+
+    // Revocation is the same write with the entry removed, keyed on the id.
+    let kept: Vec<ApiToken> = settings
+        .access
+        .api_tokens
+        .iter()
+        .filter(|token| token.id != "3f2a9c41")
+        .cloned()
+        .collect();
+    settings
+        .set("access.apiTokens", serde_json::to_value(&kept).unwrap())
+        .unwrap();
+    assert_eq!(settings.access.api_tokens.len(), 1);
+    assert_eq!(settings.access.api_tokens[0].id, "9d4ec7b0");
+}
+
+/// The read-side shape apid sees: `GetSettings("access")` carries the list,
+/// digests and all, which is exactly why `hash` is on the redaction denylist.
+#[test]
+fn the_access_subtree_carries_the_token_list_verbatim() {
+    let mut settings = Settings::default();
+    settings.access.api_tokens = vec![api_token("3f2a9c41", "ci-deploy", 'a')];
+
+    let access = settings.get("access").unwrap();
+    let entry = &access["apiTokens"].as_array().unwrap()[0];
+
+    assert_eq!(entry["id"], json!("3f2a9c41"));
+    assert_eq!(entry["hash"], json!("a".repeat(64)));
+    assert!(entry.get("token").is_none(), "a plaintext field exists");
+    assert!(entry.get("secret").is_none(), "a plaintext field exists");
+}
+
+/// A tree that carries a token still carries no plaintext anywhere: the entry
+/// is a digest, a label, an id and a clock reading.
+#[test]
+fn a_stored_token_is_a_digest_and_nothing_else() {
+    let mut settings = Settings::default();
+    settings.access.api_tokens = vec![api_token("3f2a9c41", "ci-deploy", 'a')];
+
+    let text = toml::to_string(&settings).unwrap();
+    let entry: toml::Table = text.parse::<toml::Table>().unwrap()["access"]["apiTokens"]
+        .as_array()
+        .unwrap()[0]
+        .as_table()
+        .unwrap()
+        .clone();
+    let mut keys: Vec<&str> = entry.keys().map(String::as_str).collect();
+    keys.sort_unstable();
+    assert_eq!(keys, ["created", "hash", "id", "name"]);
+}
+
+/// The validator is reachable from outside the crate and refuses the three
+/// shapes the model must not hold. The exhaustive cases live in the unit
+/// tests; this asserts the export.
+#[test]
+fn the_token_validator_is_public_and_refuses_a_broken_list() {
+    validate_api_tokens(&[]).unwrap();
+    validate_api_tokens(&[api_token("3f2a9c41", "ci", 'a')]).unwrap();
+
+    let duplicate_id = [
+        api_token("3f2a9c41", "ci", 'a'),
+        api_token("3f2a9c41", "cd", 'b'),
+    ];
+    assert!(validate_api_tokens(&duplicate_id).is_err());
+
+    let duplicate_hash = [
+        api_token("3f2a9c41", "ci", 'a'),
+        api_token("9d4ec7b0", "cd", 'a'),
+    ];
+    assert!(validate_api_tokens(&duplicate_hash).is_err());
+
+    let mut malformed = api_token("3f2a9c41", "ci", 'a');
+    malformed.hash = "sha256:beef".to_string();
+    assert!(validate_api_tokens(&[malformed]).is_err());
 }

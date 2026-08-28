@@ -38,7 +38,7 @@
             }
           },
           "401": {
-            "description": "No session cookie, or one that does not verify",
+            "description": "No accepted credential: neither a bearer API token this device holds nor a session cookie that verifies (`not_authenticated`)",
             "content": {
               "application/json": {
                 "schema": {
@@ -49,6 +49,16 @@
           },
           "403": {
             "description": "The current password does not verify (`wrong_password`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "405": {
+            "description": "A method this route does not serve (`method_not_allowed`); carries `Allow`",
             "content": {
               "application/json": {
                 "schema": {
@@ -90,13 +100,166 @@
         }
       }
     },
+    "/api/v1/actions/poweroff": {
+      "post": {
+        "tags": [
+          "actions"
+        ],
+        "summary": "Power the appliance off (§2.1's action family).",
+        "operationId": "api_v1_poweroff",
+        "responses": {
+          "202": {
+            "description": "The power-off was accepted and dispatched; the call to mosd is not awaited, so completion is not reported over this connection"
+          },
+          "401": {
+            "description": "No accepted credential: neither a bearer API token this device holds nor a session cookie that verifies (`not_authenticated`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "405": {
+            "description": "A method this route does not serve (`method_not_allowed`); carries `Allow`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/actions/reboot": {
+      "post": {
+        "tags": [
+          "actions"
+        ],
+        "summary": "Reboot the appliance (§2.1's action family).",
+        "operationId": "api_v1_reboot",
+        "responses": {
+          "202": {
+            "description": "The reboot was accepted and dispatched; the call to mosd is not awaited, so completion is not reported over this connection"
+          },
+          "401": {
+            "description": "No accepted credential: neither a bearer API token this device holds nor a session cookie that verifies (`not_authenticated`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "405": {
+            "description": "A method this route does not serve (`method_not_allowed`); carries `Allow`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/actions/transient-root-password": {
+      "post": {
+        "tags": [
+          "actions"
+        ],
+        "summary": "Set a transient root password (§2.1's action family).",
+        "description": "The password must be 8 to 72 bytes and must contain no NUL, no newline and\nno carriage return. 72 is bcrypt's own limit: a longer password would be\nsilently shortened to its first 72 bytes, so it is refused rather than\naccepted as something other than what was sent.\n\nA rejection states the bound it broke and never repeats the password back.\nThe password is written into no setting, is never logged, and lasts until\nthe next reboot.\n\n204 and not the 202 the two power verbs answer: this awaits the call, so a\ncaller that gets a 204 has a password channel that is actually open.\n\nProse and not intra-doc links, deliberately, for the reason the rotate-key\nroute above states: `utoipa` copies this comment into the published\ndocument, where a link would put an apid symbol name in front of every\nclient. The implementation notes those links would carry are in the body:\nthe bounds are checked by the same function the form path calls rather than\nby a second copy, and the rejection cannot echo the password because none of\nthat function's three messages interpolates it.",
+        "operationId": "api_v1_transient_root_password",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TransientRootPasswordRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "The transient root password is set; it lasts until the next reboot and is written into no setting"
+          },
+          "400": {
+            "description": "The body is not JSON, or not this shape (`request_invalid`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No accepted credential: neither a bearer API token this device holds nor a session cookie that verifies (`not_authenticated`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "405": {
+            "description": "A method this route does not serve (`method_not_allowed`); carries `Allow`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "The password is shorter than 8 bytes, longer than 72, or contains a NUL, newline or carriage return (`validation_failed`); the message states the bound and never the password",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "mosd failed to set it (`mosd_failed`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The call to mosd could not be made (`mosd_unreachable`); carries `Retry-After`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/actions/wireguard/{iface}/rotate-key": {
       "post": {
         "tags": [
           "actions"
         ],
         "summary": "Rotate a WireGuard interface's private key (§2.1's action family).",
-        "description": "An action and not a settings write, because there is no setting to write:\nthe key lives in a mode-0640 file on STATE that the settings tree does not\ndescribe. mosd draws the new key, deletes the device holding the old one and\nreconciles, so a caller that gets a 200 has a tunnel running on the key\nwhose public half it was just handed.\n\n`iface` is passed to mosd unexamined. mosd owns the rule — the name must be\na declared `network` entry of kind `wireguard` — and it raises `InvalidArgs`\nfor anything else, which is classified as the same 422 a rejected settings\npath gets. A second copy of that rule here could disagree with the first.\n\nProse and not an intra-doc link to the classifier, deliberately: `utoipa`\ncopies this comment into the published document, where a link would put an\napid symbol name in front of every client.",
+        "description": "An action and not a settings write, because there is no setting to write:\nthe key lives in a mode-0640 file on STATE that the settings tree does not\ndescribe. mosd draws the new key, deletes the device holding the old one and\nreconciles, so a caller that gets a 200 has a tunnel running on the key\nwhose public half it was just handed.\n\n`iface` is passed to mosd unexamined. mosd owns the rule — the name must be\na declared `network` entry of kind `wireguard` — and it raises the error\nname for whichever half of that rule failed. A second copy of that rule\nhere could disagree with the first.\n\n**Those two halves used to share one error name, and this route answered\n422 for both.** An interface that is not a declared entry names nothing,\nwhich is the condition the settings and state reads beside it already\nanswer 404 for; an entry of the wrong kind is a bad argument, which really\nis a 422. mosd collapsed them into one `InvalidArgs` and apid had nothing\nleft to tell them apart with (`docs/task/RFCT-210.md` section 2.4). The\ncorrection is entirely in mosd: it now raises its interface-scoped\nnot-found name for the undeclared entry, and the classifier below — which\nalready mapped that name to 404 and `InvalidArgs` to 422 — was not touched.\nThe document gained a response; no apid logic changed.\n\nProse and not an intra-doc link to the classifier, deliberately: `utoipa`\ncopies this comment into the published document, where a link would put an\napid symbol name in front of every client.",
         "operationId": "api_v1_wireguard_rotate",
         "parameters": [
           {
@@ -121,7 +284,27 @@
             }
           },
           "401": {
-            "description": "No session cookie, or one that does not verify",
+            "description": "No accepted credential: neither a bearer API token this device holds nor a session cookie that verifies (`not_authenticated`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The name is not a declared `network` entry (`settings_not_found`); the URL names no interface to rotate",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "405": {
+            "description": "A method this route does not serve (`method_not_allowed`); carries `Allow`",
             "content": {
               "application/json": {
                 "schema": {
@@ -131,7 +314,7 @@
             }
           },
           "422": {
-            "description": "mosd refused the interface (`settings_rejected`): not a declared network entry, or not a WireGuard one",
+            "description": "The entry exists and is not a WireGuard one (`settings_rejected`)",
             "content": {
               "application/json": {
                 "schema": {
@@ -163,6 +346,48 @@
         }
       }
     },
+    "/api/v1/health": {
+      "get": {
+        "tags": [
+          "diagnostics"
+        ],
+        "summary": "Whether this appliance is manageable (§2.4 case 3).",
+        "description": "**200 in both states, and that is the whole point of the route.** A dead\nmosd is reported in the body and never as a status code: a 503 here would be\nindistinguishable from this endpoint itself being down, which is the\nconfusion the route exists to remove. The client rule §2.4 states is\ntherefore exact — `/healthz` answers \"is apid's listener up\", this answers\n\"is this appliance manageable\", and neither implies the other.\n\nmosd is decided by **one real bus call**, never by a cached flag. That rules\nout `access_cache` specifically: the cache exists so the auth gate can skip\na per-request `GetSettings(\"access\")`, it is filled from a `SettingsChanged`\nsubscription, and it answers from apid's own memory. A health route served\nfrom it would report `mosd: \"ok\"` for as long as the last fill survived,\nwhich is precisely the failure — a monitor seeing a healthy device — that\n§2.4 case 3 was written to prevent.\n\nThe call is `GetState(\"uptime\")` rather than §2.4's suggested\n`GetSettings(\"\")`, and the swap is a deviation recorded in\n`docs/task/RFCT-212.md` §3. It is still one call, which is what the section\nasks for; it is cheaper than the call the section named, which is the reason\nthat section gave for naming it — mosd answers with a bare integer instead\nof serialising the entire settings tree, password hash included, onto the\nbus for a liveness ping; and it is the one call that also yields\n`checkedAt`, so the alternative was two round trips to answer one question.\n\nAuthenticated, like every other `/api/v1/` route. The unauthenticated\nlistener-liveness question already has an answer at `/healthz`.",
+        "operationId": "api_v1_health",
+        "responses": {
+          "200": {
+            "description": "Whether this appliance is manageable. **200 in both states**: a dead mosd is reported as `mosd: \"unreachable\"` in the body, never as a status code",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiHealth"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No accepted credential: neither a bearer API token this device holds nor a session cookie that verifies (`not_authenticated`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "405": {
+            "description": "A method this route does not serve (`method_not_allowed`); carries `Allow`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/meta": {
       "get": {
         "tags": [
@@ -183,7 +408,599 @@
             }
           },
           "401": {
-            "description": "No session cookie, or one that does not verify",
+            "description": "No accepted credential: neither a bearer API token this device holds nor a session cookie that verifies (`not_authenticated`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "405": {
+            "description": "A method this route does not serve (`method_not_allowed`); carries `Allow`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/network": {
+      "put": {
+        "tags": [
+          "resources"
+        ],
+        "summary": "Replace the whole interface map, validated as one tree.",
+        "description": "This is the route that gives back what refusing the passthrough took away.\nSection 2.2 kept the settings passthrough for atomic whole-list\nreplacement; this provides that atomicity **and** the validation the\npassthrough does not, which is the trade the departure was argued on.\n\nIt is the only way to make two entries legal in one step. Adding a bridge\nand its ports one at a time through `PUT /api/v1/network/{iface}` means\nordering the ports first, because a bridge naming a port that is not yet\ndeclared is refused; a client that has the whole map can send it and not\ncare.\n\nProse and not an intra-doc link, deliberately: `utoipa` copies this comment\ninto the published document, where a link would put an apid symbol name in\nfront of every client.",
+        "operationId": "api_v1_network_write",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": {
+                  "$ref": "#/components/schemas/NetworkInterface"
+                },
+                "propertyNames": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "The map was replaced; the reconciler has re-rendered every unit from it"
+          },
+          "400": {
+            "description": "The body is not JSON (`request_invalid`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No accepted credential: neither a bearer API token this device holds nor a session cookie that verifies (`not_authenticated`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "405": {
+            "description": "A method this route does not serve (`method_not_allowed`); carries `Allow`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "The body is not a map of interfaces, a key is not an interface name, or a relational rule refuses it -- a VLAN parent or a bridge port that is not a declared entry, a bridge port carrying addressing, a port claimed twice (`validation_failed`); or mosd rejected the write (`settings_rejected`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "mosd failed to write (`settings_io`, `mosd_failed`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The call to mosd could not be made (`mosd_unreachable`); carries `Retry-After`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/network/{iface}": {
+      "put": {
+        "tags": [
+          "resources"
+        ],
+        "summary": "Declare or replace one interface, validated against the whole map.",
+        "description": "**A `PUT` replaces the entry entirely**, which includes a tunnel's peer\nlist: a body with no `wireguard` block on an interface that had one leaves\nit with none. That is what `PUT` means, and it is the cost section 2.3\nnames for the departure -- *\"a client that wants to flip one boolean on one\ninterface now sends the whole entry\"*. The pane behaves differently\n(`network_submit` carries the stored peers across a save) because a form\nposts the fields it renders and cannot say anything about the ones it does\nnot; a client that built a JSON body said exactly what it meant.\n\n`iface` is an identifier that may legitimately not exist yet -- this route\ncreates it -- so there is no 404 here. A name outside the interface charset\nis 422, which is section 2.4's malformed half.",
+        "operationId": "api_v1_network_iface_write",
+        "parameters": [
+          {
+            "name": "iface",
+            "in": "path",
+            "description": "The interface to declare or replace: `eth0`, or `eth0.100` for a VLAN. Created when it does not exist",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NetworkInterface"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "The entry was written; the reconciler has re-rendered its units"
+          },
+          "400": {
+            "description": "The body is not JSON (`request_invalid`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No accepted credential: neither a bearer API token this device holds nor a session cookie that verifies (`not_authenticated`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "405": {
+            "description": "A method this route does not serve (`method_not_allowed`); carries `Allow`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "The name is not an interface name, the body is not an interface, or a relational rule refuses the resulting map (`validation_failed`); or mosd rejected the write (`settings_rejected`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "The stored map holds an entry this build cannot read (`settings_invalid`), or mosd failed (`settings_io`, `mosd_failed`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The call to mosd could not be made (`mosd_unreachable`); carries `Retry-After`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "resources"
+        ],
+        "summary": "Remove one interface, with the rest of the map re-validated without it.",
+        "description": "The re-validation is the point and not a formality: removing `eth1` while\n`br0` lists it as a port leaves a bridge naming an entry that no longer\nexists, which is one of the four relational rules, so it is refused at 422\nwith the rule's own sentence and nothing is written. Remove the port from\nthe bridge first.\n\nThe whole map is rewritten because the dot-path syntax has no delete: a\n`SetSettings` writes a value at a path, and the only way to say \"this key\nis gone\" is to send the map without it. **Two concurrent removals lose\none**, the same read-modify-write cost every collection in this file\nrecords.",
+        "operationId": "api_v1_network_iface_remove",
+        "parameters": [
+          {
+            "name": "iface",
+            "in": "path",
+            "description": "The declared interface to remove",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "The entry was removed; the reconciler has swept its units"
+          },
+          "401": {
+            "description": "No accepted credential: neither a bearer API token this device holds nor a session cookie that verifies (`not_authenticated`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No `network` entry has that name (`settings_not_found`). Well-formed and absent, which is a different answer from malformed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "405": {
+            "description": "A method this route does not serve (`method_not_allowed`); carries `Allow`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "The name is not an interface name, or removing the entry breaks a relational rule -- a bridge still lists it as a port, a VLAN still names it as a parent (`validation_failed`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "The stored map holds an entry this build cannot read (`settings_invalid`), or mosd failed (`settings_io`, `mosd_failed`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The call to mosd could not be made (`mosd_unreachable`); carries `Retry-After`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/network/{iface}/peers": {
+      "get": {
+        "tags": [
+          "resources"
+        ],
+        "summary": "Every far end configured on one tunnel.",
+        "operationId": "api_v1_peers_list",
+        "parameters": [
+          {
+            "name": "iface",
+            "in": "path",
+            "description": "A declared `network` entry of kind `wireguard`",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The stored peers, in stored order, each with the public key that is its `DELETE` path segment",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/WireguardPeerEntry"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No accepted credential: neither a bearer API token this device holds nor a session cookie that verifies (`not_authenticated`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No `network` entry has that name (`settings_not_found`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "405": {
+            "description": "A method this route does not serve (`method_not_allowed`); carries `Allow`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "The name is not an interface name, or the entry is not a WireGuard one (`validation_failed`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "The stored map holds an entry this build cannot read (`settings_invalid`), or mosd failed to answer (`settings_io`, `mosd_failed`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The call to mosd could not be made (`mosd_unreachable`); carries `Retry-After`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "resources"
+        ],
+        "summary": "Add one far end to a tunnel.",
+        "description": "**404 before anything is written, when `{iface}` is not a declared entry.**\nThat is this route's reason for existing in the shape it has, and\n`docs/task/RFCT-210.md` section 2.4's sweep is why: the pane's equivalent\nsucceeds on an undeclared interface and grows a broken `network` entry.\nFixed structurally rather than with a guard -- the interface has to be read\nanyway, to know whether it is a tunnel and what peers it already has.\n\nA duplicate public key is **409 `peer_exists`**, which is the ratified error\ncontract's third clause and no longer a choice between precedents: an\nabsent identifier is 404, a malformed one is 422, and a duplicate is 409\nwith a per-collection code. A duplicate is a conflict with the collection's\ncurrent state, and that is what 409 means. It also happens to be the only\nanswer that keeps this route coherent with the item route beside it: the\npublic key **is** this collection's identity -- it is the `DELETE` path\nsegment -- so a second entry under one key would leave no answer to which\nof the two a `DELETE` names.",
+        "operationId": "api_v1_peers_add",
+        "parameters": [
+          {
+            "name": "iface",
+            "in": "path",
+            "description": "A declared `network` entry of kind `wireguard`",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WireguardPeerEntry"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "The peer was added; the body carries it back",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WireguardPeerEntry"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The body is not JSON (`request_invalid`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No accepted credential: neither a bearer API token this device holds nor a session cookie that verifies (`not_authenticated`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No `network` entry has that name (`settings_not_found`); nothing is written",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "405": {
+            "description": "A method this route does not serve (`method_not_allowed`); carries `Allow`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "A stored peer already carries that public key (`peer_exists`); the key is this collection's identity, so the entry is not replaced silently",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "The name is not an interface name, the entry is not a WireGuard one, or the peer is one the reconciler would refuse -- a public key that is not 32 bytes of base64, an allowed IP that is not a CIDR, an endpoint that is not `host:port` (`validation_failed`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "The stored map holds an entry this build cannot read (`settings_invalid`), or mosd failed to write (`settings_io`, `mosd_failed`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The call to mosd could not be made (`mosd_unreachable`); carries `Retry-After`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/network/{iface}/peers/{publicKey}": {
+      "delete": {
+        "tags": [
+          "resources"
+        ],
+        "summary": "Remove one far end, identified by its public key.",
+        "description": "Section 2.4's rule with both halves live. A string that is not 32 bytes of\nbase64 could never be a WireGuard public key and is **422**; a well-formed\nkey that no stored peer carries is **404**, from the one shared not-found\nhelper every item route in this file reaches for.\n\nThe pane answers 422 for the second condition -- *\"No peer of this tunnel\nhas that public key; the list may have changed since the page was loaded.\"*\n-- and that split stays, for the reason section 2.4 gives about the SSH\npane: a form's body is a re-rendered page no consumer reads a status from,\nand its message asks for a re-submit. Its paired test is\n`the_network_pane_answers_422_where_the_peer_route_answers_404`.",
+        "operationId": "api_v1_peers_remove",
+        "parameters": [
+          {
+            "name": "iface",
+            "in": "path",
+            "description": "A declared `network` entry of kind `wireguard`",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "publicKey",
+            "in": "path",
+            "description": "The peer's public key, as `GET /api/v1/network/{iface}/peers` returns it: 32 bytes in padded base64. Its alphabet contains `/` and `+`, so a key carrying either is percent-encoded",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "The peer was removed; the reconciler has re-rendered the tunnel without it"
+          },
+          "401": {
+            "description": "No accepted credential: neither a bearer API token this device holds nor a session cookie that verifies (`not_authenticated`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No `network` entry has that name, or no peer of it carries that key (`settings_not_found`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "405": {
+            "description": "A method this route does not serve (`method_not_allowed`); carries `Allow`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "The interface name is not one, the entry is not a WireGuard one, or the path segment is not a WireGuard public key at all (`validation_failed`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "The stored map holds an entry this build cannot read (`settings_invalid`), or mosd failed to write (`settings_io`, `mosd_failed`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The call to mosd could not be made (`mosd_unreachable`); carries `Retry-After`",
             "content": {
               "application/json": {
                 "schema": {
@@ -226,7 +1043,7 @@
             }
           },
           "401": {
-            "description": "No session cookie, or one that does not verify",
+            "description": "No accepted credential: neither a bearer API token this device holds nor a session cookie that verifies (`not_authenticated`)",
             "content": {
               "application/json": {
                 "schema": {
@@ -237,6 +1054,16 @@
           },
           "404": {
             "description": "The dot-path does not exist (`settings_not_found`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "405": {
+            "description": "A method this route does not serve (`method_not_allowed`); carries `Allow`",
             "content": {
               "application/json": {
                 "schema": {
@@ -257,6 +1084,367 @@
           },
           "500": {
             "description": "mosd failed to answer (`settings_io`, `mosd_failed`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The call to mosd could not be made (`mosd_unreachable`); carries `Retry-After`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "resources"
+        ],
+        "summary": "Write one scalar setting (`docs/task/RFCT-210.md` §2.2's raw dot-path\n`PUT`).",
+        "description": "Four dot-paths and no others: `hostname`, `access.ssh.enabled`,\n`container.enabled` and `mqtt.enabled`. `204` and no body on success,\nbecause the value the caller sent is the value that was written and echoing\nit back would only invite a client to believe the echo over its own `GET`.\n\nBearer **or** cookie, like every route on the two resource roots: PLAN-023\nAmendment 1's ruling is about the token routes specifically, not about new\nroutes in general, so this one is dual-credential exactly as the shipped\nreads are.\n\nProse and not intra-doc links, for the reason the rotate route already\nrecords: `utoipa` copies this comment into the published document, where a\nlink would put an apid symbol name in front of every client.",
+        "operationId": "api_v1_settings_write",
+        "parameters": [
+          {
+            "name": "path",
+            "in": "path",
+            "description": "The settings dot-path to write: `hostname`, `access.ssh.enabled`, `container.enabled` or `mqtt.enabled`",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SettingsWrite"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "The value was written: mosd has persisted it and re-applied the reconcilers whose subtree overlaps the path"
+          },
+          "400": {
+            "description": "The body is not JSON (`request_invalid`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No accepted credential: neither a bearer API token this device holds nor a session cookie that verifies (`not_authenticated`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The dot-path names no root the settings schema has (`settings_not_found`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "405": {
+            "description": "A method this route does not serve (`method_not_allowed`); carries `Allow`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "A dot-path that exists and that this route does not write (`settings_read_only`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "The body carries the redaction sentinel, or is the wrong shape for this setting, or the dot-path is malformed (`validation_failed`); or mosd rejected the write (`settings_rejected`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "mosd failed to write (`settings_io`, `mosd_failed`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The call to mosd could not be made (`mosd_unreachable`); carries `Retry-After`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/ssh/authorized-keys": {
+      "get": {
+        "tags": [
+          "resources"
+        ],
+        "summary": "Every authorized key this device holds, with the fingerprint that removes\neach one.",
+        "operationId": "api_v1_ssh_keys_list",
+        "responses": {
+          "200": {
+            "description": "The stored keys, each with the fingerprint that is its `DELETE` path segment, and the notice every client of this collection is told",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthorizedKeyList"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No accepted credential: neither a bearer API token this device holds nor a session cookie that verifies (`not_authenticated`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "405": {
+            "description": "A method this route does not serve (`method_not_allowed`); carries `Allow`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "The stored list could not be read as a key list (`settings_invalid`), or mosd failed to answer (`settings_io`, `mosd_failed`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The call to mosd could not be made (`mosd_unreachable`); carries `Retry-After`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "resources"
+        ],
+        "summary": "Authorize one SSH public key.",
+        "description": "The line is handed to `parse_authorized_key` exactly as submitted, which is\nthe same call the pane makes and for the same reason nothing is trimmed\nfirst: a leading or trailing space is one of the things that parser exists\nto reject, and trimming here would accept a line mosd would not.\n\n**Every authorized key is a root key**, which is why the answer carries\n`notice` and not only the entry. `AuthorizedKeysFile` is `%u`-expanded over\none shared list, so a key added by a caller who expected to be granting an\nunprivileged shell grants root.",
+        "operationId": "api_v1_ssh_keys_add",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AddAuthorizedKeyRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "The key was authorized; the body carries it canonicalised, with its fingerprint and the notice",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AddedAuthorizedKey"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The body is not JSON, or not this shape (`request_invalid`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No accepted credential: neither a bearer API token this device holds nor a session cookie that verifies (`not_authenticated`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "405": {
+            "description": "A method this route does not serve (`method_not_allowed`); carries `Allow`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "A stored key already carries that public key (`key_exists`), or the device already holds the maximum number of keys (`key_limit_reached`); the collection's current state is what refuses the request, not the body",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "The line is not an authorized key, or the resulting list is one the sshd reconciler would refuse (`validation_failed`); or mosd rejected the write (`settings_rejected`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "The stored list could not be read as a key list (`settings_invalid`), or mosd failed to write (`settings_io`, `mosd_failed`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The call to mosd could not be made (`mosd_unreachable`); carries `Retry-After`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/ssh/authorized-keys/{fingerprint}": {
+      "delete": {
+        "tags": [
+          "resources"
+        ],
+        "summary": "Remove one authorized key, identified by its fingerprint.",
+        "description": "**The fingerprint and nothing else**, unlike [`ssh_key_remove`], which also\naccepts the exact canonical key text. That difference is the reason the two\nsurfaces answer differently, and `docs/task/RFCT-210.md` section 2.4 spends\na paragraph on it: on the form the submitted string is as likely mistyped\nas absent, which is the re-submit condition 422 means there; here the\nidentifier is a path segment with one interpretation, and a segment that\nnames no key means this URL names no resource.\n\nSo an unmatched fingerprint is **404** here and 422 on the pane, on the same\ncondition, deliberately. The paired tests\n`an_absent_key_fingerprint_is_404_where_the_pane_is_422` and\n`the_ssh_pane_answers_422_where_the_api_answers_404` name each other so the\nsplit cannot be read as drift.",
+        "operationId": "api_v1_ssh_keys_remove",
+        "parameters": [
+          {
+            "name": "fingerprint",
+            "in": "path",
+            "description": "The key's fingerprint, as `GET /api/v1/ssh/authorized-keys` returns it: `SHA256:` and 43 base64 characters. Its alphabet contains `/`, so a fingerprint carrying one is percent-encoded",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "The key was removed; the reconciler has re-rendered the authorized-keys file without it"
+          },
+          "401": {
+            "description": "No accepted credential: neither a bearer API token this device holds nor a session cookie that verifies (`not_authenticated`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No stored key has that fingerprint (`settings_not_found`). Well-formed and absent, which is a different answer from malformed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "405": {
+            "description": "A method this route does not serve (`method_not_allowed`); carries `Allow`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "The path segment is not a fingerprint at all (`validation_failed`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "The stored list could not be read as a key list (`settings_invalid`), or mosd failed to write (`settings_io`, `mosd_failed`)",
             "content": {
               "application/json": {
                 "schema": {
@@ -309,7 +1497,7 @@
             }
           },
           "401": {
-            "description": "No session cookie, or one that does not verify",
+            "description": "No accepted credential: neither a bearer API token this device holds nor a session cookie that verifies (`not_authenticated`)",
             "content": {
               "application/json": {
                 "schema": {
@@ -320,6 +1508,16 @@
           },
           "404": {
             "description": "The dot-path does not resolve (`settings_not_found`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "405": {
+            "description": "A method this route does not serve (`method_not_allowed`); carries `Allow`",
             "content": {
               "application/json": {
                 "schema": {
@@ -361,6 +1559,496 @@
         }
       }
     },
+    "/api/v1/tokens": {
+      "get": {
+        "tags": [
+          "tokens"
+        ],
+        "summary": "Every token this device holds, without the halves that are secrets (§3.2).",
+        "operationId": "api_v1_tokens_list",
+        "responses": {
+          "200": {
+            "description": "The stored tokens: `id`, `name` and `created`, never the digest and never the plaintext",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ApiTokenSummary"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No bearer API token, or one this device does not hold (`not_authenticated`). A session cookie is not a credential on this route",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "405": {
+            "description": "A method this route does not serve (`method_not_allowed`); carries `Allow`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "The stored list could not be read as a token list (`settings_invalid`), or mosd failed to answer (`settings_io`, `mosd_failed`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The call to mosd could not be made (`mosd_unreachable`); carries `Retry-After`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "tokens"
+        ],
+        "summary": "Mint a token (§3.2).",
+        "description": "**A bearer token is the only credential this route takes**, and the\nbootstrap is a path rather than an exception: the first token is minted\nthrough `POST /builtin/tokens`, a form post outside the `v1` contract.\nLeaving the mint here and letting it take a cookie was considered and\nrejected by name in §3.2, because it would put a permanent-credential\nfactory inside the one surface §3.3 makes its strongest statement about.",
+        "operationId": "api_v1_tokens_mint",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MintTokenRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "The token was created; the body carries the plaintext, which is not recoverable afterwards",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MintedToken"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The body is not JSON, or not this shape (`request_invalid`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No bearer API token, or one this device does not hold (`not_authenticated`). A session cookie is not a credential on this route",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "405": {
+            "description": "A method this route does not serve (`method_not_allowed`); carries `Allow`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The device already holds the maximum number of tokens (`token_limit_reached`); revoke one first",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "The name is empty, over 256 bytes, or holds a control character (`validation_failed`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "The stored list could not be read as a token list (`settings_invalid`), no free id was drawn (`mint_failed`), or mosd failed to answer (`settings_io`, `mosd_failed`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The call to mosd could not be made (`mosd_unreachable`); carries `Retry-After`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/tokens/{id}": {
+      "delete": {
+        "tags": [
+          "tokens"
+        ],
+        "summary": "Revoke one token, identified by its id (§3.2).",
+        "description": "Identity is the id and never a list position, for the reason the SSH key\npane records about fingerprints: an index is meaningful only against the\nlist the caller last read, and a concurrent mint slides it onto a different\nentry. Revocation takes effect on the next request, because the token set is\nread per request from the `access` subtree.",
+        "operationId": "api_v1_tokens_revoke",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "The token id, as `POST /api/v1/tokens` returned it: 1 to 64 lowercase hex characters",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "The token was revoked; it stops being accepted on the next request"
+          },
+          "401": {
+            "description": "No bearer API token, or one this device does not hold (`not_authenticated`). A session cookie is not a credential on this route",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No stored token carries that id (`settings_not_found`). Well-formed and absent, which is a different answer from malformed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "405": {
+            "description": "A method this route does not serve (`method_not_allowed`); carries `Allow`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "The id is not a token id at all (`validation_failed`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "The stored list could not be read as a token list (`settings_invalid`), or mosd failed to answer (`settings_io`, `mosd_failed`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The call to mosd could not be made (`mosd_unreachable`); carries `Retry-After`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/wifi/client/networks": {
+      "get": {
+        "tags": [
+          "resources"
+        ],
+        "summary": "Every WiFi network this device knows, with each pre-shared key redacted.",
+        "operationId": "api_v1_wifi_networks_list",
+        "responses": {
+          "200": {
+            "description": "The stored networks, in stored order, each `psk` replaced by `\"<redacted>\"`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/WifiNetworkEntry"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No accepted credential: neither a bearer API token this device holds nor a session cookie that verifies (`not_authenticated`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "405": {
+            "description": "A method this route does not serve (`method_not_allowed`); carries `Allow`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "The stored list could not be read as a network list (`settings_invalid`), or mosd failed to answer (`settings_io`, `mosd_failed`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The call to mosd could not be made (`mosd_unreachable`); carries `Retry-After`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "resources"
+        ],
+        "summary": "Add one known WiFi network.",
+        "description": "**This collection has no pane.** It exists in the settings model and is\nreachable today only by editing the settings file on STATE, so this route is\nits first management surface. There is therefore no form-path behaviour for\nit to be consistent with, and no paired 422/404 test to write beside its\nitem route -- unlike the SSH keys, where both exist and the split is\ndeliberate.\n\nThe redaction sentinel is checked **before** anything else, which matters\nmore here than it did on the scalar write route that landed the rule: this\nis the collection with a redacted field. A client that read this list,\nedited `hidden` and posted an entry back hands over `\"<redacted>\"` as the\n`psk`, and storing it would replace a working key with ten literal\ncharacters.",
+        "operationId": "api_v1_wifi_networks_add",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WifiNetworkEntry"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "The network was stored; the body carries it back with its `psk` redacted",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WifiNetworkEntry"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The body is not JSON (`request_invalid`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No accepted credential: neither a bearer API token this device holds nor a session cookie that verifies (`not_authenticated`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "405": {
+            "description": "A method this route does not serve (`method_not_allowed`); carries `Allow`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "A stored network already carries that SSID (`ssid_exists`); the SSID is this collection's identity, so the entry is not replaced silently",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "The body carries the redaction sentinel, is not a network the settings model holds, or carries a `psk` outside IEEE 802.11i's 8..63 characters that is not a 64-digit hex PMK either (`validation_failed`); or mosd rejected the write (`settings_rejected`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "The stored list could not be read as a network list (`settings_invalid`), or mosd failed to write (`settings_io`, `mosd_failed`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The call to mosd could not be made (`mosd_unreachable`); carries `Retry-After`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/wifi/client/networks/{ssid}": {
+      "delete": {
+        "tags": [
+          "resources"
+        ],
+        "summary": "Forget one known WiFi network, identified by its SSID.",
+        "description": "Section 2.4's rule holds here with its 422 half **vacant**, and that is the\nrule applied rather than an exception to it. An SSID has no grammar: it is\nan operator-chosen name, and every non-empty single path segment spells a\npossible one. So there is no malformed identifier for this route to answer\n422 about, and everything that names no stored network is 404 -- which is\nexactly what the rule asks for. Inventing a length bound here to\nmanufacture a 422 would be a second opinion about a model that has none, and\nit would answer 422 for a network a hand-edited settings file really holds.",
+        "operationId": "api_v1_wifi_networks_remove",
+        "parameters": [
+          {
+            "name": "ssid",
+            "in": "path",
+            "description": "The network name, as `GET /api/v1/wifi/client/networks` returns it",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "The network was forgotten; the station reconciler has re-rendered its configuration without it"
+          },
+          "401": {
+            "description": "No accepted credential: neither a bearer API token this device holds nor a session cookie that verifies (`not_authenticated`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No stored network carries that SSID (`settings_not_found`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "405": {
+            "description": "A method this route does not serve (`method_not_allowed`); carries `Allow`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "The stored list could not be read as a network list (`settings_invalid`), or mosd failed to write (`settings_io`, `mosd_failed`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The call to mosd could not be made (`mosd_unreachable`); carries `Retry-After`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/versions": {
       "get": {
         "tags": [
@@ -379,6 +2067,16 @@
                 }
               }
             }
+          },
+          "405": {
+            "description": "A method this route does not serve (`method_not_allowed`); carries `Allow`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
           }
         }
       }
@@ -386,6 +2084,37 @@
   },
   "components": {
     "schemas": {
+      "AddAuthorizedKeyRequest": {
+        "type": "object",
+        "description": "`POST /api/v1/ssh/authorized-keys` request body.",
+        "required": [
+          "key"
+        ],
+        "properties": {
+          "key": {
+            "type": "string",
+            "description": "One authorized-key line, `<type> <blob>` with an optional trailing\ncomment: exactly what the pane's field takes, handed to exactly the\nsame parser."
+          }
+        }
+      },
+      "AddedAuthorizedKey": {
+        "type": "object",
+        "description": "`POST /api/v1/ssh/authorized-keys` response body.",
+        "required": [
+          "key",
+          "notice"
+        ],
+        "properties": {
+          "key": {
+            "$ref": "#/components/schemas/AuthorizedKeyEntry",
+            "description": "The entry as it was stored, canonicalised by the parser, carrying the\nfingerprint that is now its `DELETE` path segment."
+          },
+          "notice": {
+            "type": "string",
+            "description": "The same sentence the listing carries."
+          }
+        }
+      },
       "ApiError": {
         "type": "object",
         "description": "§2.4's envelope: the one shape every failure under `/api/` takes.",
@@ -428,6 +2157,40 @@
           }
         }
       },
+      "ApiHealth": {
+        "type": "object",
+        "description": "`GET /api/v1/health` (§2.4 case 3).\n\nTwo members always, and the other two by outcome: `checkedAt` on the\nreachable answer and `detail` on the unreachable one, each omitted rather\nthan sent null. That is the rule the error envelope's own optional member\nalready follows, and for the same reason: a member present with a\nmeaningless value is worse than an absent one.",
+        "required": [
+          "apid",
+          "mosd"
+        ],
+        "properties": {
+          "apid": {
+            "type": "string",
+            "description": "Always `\"ok\"`. A request that got a body at all was served by an apid\nthat is up, so there is no second value this member could take; it is\non the wire so that a client reads one document rather than inferring\nhalf of it from the fact that a response arrived."
+          },
+          "checkedAt": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "description": "Whole seconds since boot, at the moment the probe answered.\n\nA number and not a timestamp string. There is no trusted wall clock in\nthis crate — §3.2's expiry paragraph is the argument, and `SessionStore`\nis the evidence, monotonic `Instant` throughout — so the only honest\nstamp is the appliance's own uptime, which is exactly what\n`GET /api/v1/state/uptime` already serves and is spelled the same way\nthere: a bare JSON number of whole seconds.",
+            "minimum": 0
+          },
+          "detail": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Why the probe did not complete, in the words of whatever refused it."
+          },
+          "mosd": {
+            "type": "string",
+            "description": "`\"ok\"` when the probe below completed, `\"unreachable\"` when it did not.\nTwo values and no third: §2.4 case 3 defines exactly these two shapes,\nand a health answer that needs a taxonomy is not one a monitor can act\non."
+          }
+        }
+      },
       "ApiMeta": {
         "type": "object",
         "description": "`GET /api/v1/meta` (§2.1's discovery table).",
@@ -453,6 +2216,31 @@
           }
         }
       },
+      "ApiTokenSummary": {
+        "type": "object",
+        "description": "One row of `GET /api/v1/tokens` (§3.2).\n\nThree members and not four: the digest is not on this wire and neither is\nthe plaintext, which exists in exactly one response and never again.",
+        "required": [
+          "id",
+          "name",
+          "created"
+        ],
+        "properties": {
+          "created": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Seconds since the UNIX epoch as the device clock read them at the mint.\n\n**A label, never a deadline.** No unit on this image syncs a clock, so\nthe reading may be wrong by any amount and 0 means the clock was unset.\nTokens do not expire; revocation is the whole lifecycle (§3.2).",
+            "minimum": 0
+          },
+          "id": {
+            "type": "string",
+            "description": "The token's stable identity, which is also its `DELETE` path segment.\nNot secret: it is a lookup key, and §3.2 puts it on the wire for that."
+          },
+          "name": {
+            "type": "string",
+            "description": "The operator's label, the only thing that tells one token from another."
+          }
+        }
+      },
       "ApiVersions": {
         "type": "object",
         "description": "`GET /api/versions` (§2.1's discovery table).",
@@ -474,6 +2262,70 @@
           }
         }
       },
+      "AuthorizedKeyEntry": {
+        "type": "object",
+        "description": "One row of `GET /api/v1/ssh/authorized-keys`.",
+        "required": [
+          "key"
+        ],
+        "properties": {
+          "comment": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The operator's label, absent when the key was stored without one."
+          },
+          "fingerprint": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "This entry's `DELETE` path segment: `SHA256:` followed by the unpadded\nbase64 of the SHA-256 digest of the decoded blob, which is the string\n`ssh-keygen -lf` prints.\n\n`null` for a stored line whose blob does not decode. Nothing this route\nwrites can be in that state -- `parse_authorized_key` refuses it -- but\nthe settings file is an editable file on STATE, so a list read back is\nnot necessarily a list this API wrote."
+          },
+          "key": {
+            "type": "string",
+            "description": "Canonical `<type> <blob>` key text, with the comment in its own field\n-- what the parser stored, and not what was submitted."
+          }
+        }
+      },
+      "AuthorizedKeyList": {
+        "type": "object",
+        "description": "`GET /api/v1/ssh/authorized-keys` response body.\n\nAn object and not a bare array, because of `notice`: the sentence is a\nproperty of the collection rather than of any entry, and\n`docs/task/RFCT-210.md` section 2.5 requires it on the listing **and** on\nthe add. A client that only ever adds keys must still be told what a key\ngrants.",
+        "required": [
+          "keys",
+          "notice"
+        ],
+        "properties": {
+          "keys": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AuthorizedKeyEntry"
+            },
+            "description": "Every stored key, in stored order."
+          },
+          "notice": {
+            "type": "string",
+            "description": "Why a key added here is not a key with limited access."
+          }
+        }
+      },
+      "BridgeParameters": {
+        "type": "object",
+        "description": "The parameters of a software bridge.",
+        "required": [
+          "ports"
+        ],
+        "properties": {
+          "ports": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Names of the `network` entries enslaved to this bridge. **Each must be\na declared entry, must carry no addressing of its own, and must not be\na port of another bridge**; a body breaking any of those is refused at\n422 with the rule's own sentence."
+          }
+        }
+      },
       "ChangePasswordRequest": {
         "type": "object",
         "description": "`POST /api/v1/actions/change-password` request body.",
@@ -492,8 +2344,263 @@
           }
         }
       },
+      "MintTokenRequest": {
+        "type": "object",
+        "description": "`POST /api/v1/tokens` request body.",
+        "required": [
+          "name"
+        ],
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "The label the new token is listed under."
+          }
+        }
+      },
+      "MintedToken": {
+        "type": "object",
+        "description": "`POST /api/v1/tokens` response body: the one place a plaintext token\nappears.",
+        "required": [
+          "id",
+          "name",
+          "token"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "The new token's identity, for a later `DELETE`."
+          },
+          "name": {
+            "type": "string",
+            "description": "The label as it was submitted."
+          },
+          "token": {
+            "type": "string",
+            "description": "The whole token, `mos_<id>_<secret>`.\n\n**It appears here and nowhere else, ever.** Only the SHA-256 digest is\nstored, so a token that is lost is replaced and never recovered -- the\nposture `access.device` already takes."
+          }
+        }
+      },
+      "NetworkInterface": {
+        "type": "object",
+        "description": "One `network` entry, as the document describes it.",
+        "required": [
+          "kind",
+          "dhcp"
+        ],
+        "properties": {
+          "bridge": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/BridgeParameters",
+                "description": "Bridge parameters, for `kind = \"bridge\"`."
+              }
+            ]
+          },
+          "dhcp": {
+            "type": "boolean",
+            "description": "Whether the interface acquires its address via DHCP."
+          },
+          "kind": {
+            "type": "string",
+            "description": "`physical`, `vlan`, `bridge` or `wireguard`. Absent means `physical`.\n\nThe block below is authoritative and the interface name is not:\n`eth0.100` is a convention, not a declaration."
+          },
+          "static": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/StaticAddressing",
+                "description": "Static addressing, used when `dhcp` is false. Absent is an interface\nwith no addressing at all, which is what a bridge port must be."
+              }
+            ]
+          },
+          "vlan": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/VlanParameters",
+                "description": "VLAN parameters, for `kind = \"vlan\"`."
+              }
+            ]
+          },
+          "wireguard": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/WireguardParameters",
+                "description": "WireGuard parameters, for `kind = \"wireguard\"`."
+              }
+            ]
+          }
+        }
+      },
       "ResourceValue": {
-        "description": "The body of a resource `GET`: the value at the dot-path, as mosd holds it.\n\nAny JSON value, because a dot-path names a subtree, an array or a scalar\nand §2.2's passthrough imposes no shape of its own. The string\n`\"<redacted>\"` is a value a client can receive anywhere inside it: every\nfield named `psk`, `passwordHash`, `password_hash`, `hash` or `privateKey`,\nat any depth\nand inside arrays, carries that sentinel instead of its value, and so does\nthe whole body when the dot-path names one of those fields directly. It is\nread-only — writing it back would destroy the credential — and phase 1\nserves no write route to write it with. `privateKey` is on the same list;\nno shipped schema has such a field, and the entry is the fail-closed guard\nfor the day one appears."
+        "description": "The body of a resource `GET`: the value at the dot-path, as mosd holds it.\n\nAny JSON value, because a dot-path names a subtree, an array or a scalar\nand §2.2's passthrough imposes no shape of its own. The string\n`\"<redacted>\"` is a value a client can receive anywhere inside it: every\nfield named `psk`, `passwordHash`, `password_hash`, `hash` or `privateKey`,\nat any depth\nand inside arrays, carries that sentinel instead of its value, and so does\nthe whole body when the dot-path names one of those fields directly. It is\nread-only — writing it back would destroy the credential — and the write\nroute refuses any body that carries it, at 422, rather than storing it.\n`privateKey` is on the same list;\nno shipped schema has such a field, and the entry is the fail-closed guard\nfor the day one appears."
+      },
+      "SettingsWrite": {
+        "description": "The body of a settings `PUT`: the value to write, and nothing around it.\n\nA bare JSON value, the same shape `GET` answers, so a client reads and\nwrites one document and not two. The schema is wide because the dot-path\ndecides what is acceptable and OpenAPI has no way to say that; what is\nactually accepted is narrow — a JSON string for `hostname`, `true` or\n`false` for the three switches — and the route is what says so, per\ndot-path, in a 422."
+      },
+      "StaticAddressing": {
+        "type": "object",
+        "description": "`static` addressing, as the document describes it.\n\nThese four structs exist for `openapi.json` and are never deserialized\nfrom: the routes below parse into `mosd_settings`' own types, which are the\nvalidator mosd runs. `the_network_schema_matches_the_settings_model` holds\neach one against the model field for field, so a field added to the schema\ncannot go undocumented here.",
+        "required": [
+          "address",
+          "dns"
+        ],
+        "properties": {
+          "address": {
+            "type": "string",
+            "description": "Interface address in CIDR notation, e.g. `192.168.1.10/24`."
+          },
+          "dns": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "DNS server addresses."
+          },
+          "gateway": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Default gateway address; absent for a link with no route of its own."
+          }
+        }
+      },
+      "TransientRootPasswordRequest": {
+        "type": "object",
+        "description": "`POST /api/v1/actions/transient-root-password` request body.",
+        "required": [
+          "password"
+        ],
+        "properties": {
+          "password": {
+            "type": "string",
+            "description": "The password to open the channel with: 8 to 72 bytes, and no NUL,\nnewline or carriage return."
+          }
+        }
+      },
+      "VlanParameters": {
+        "type": "object",
+        "description": "The 802.1Q parameters of a VLAN interface.",
+        "required": [
+          "parent",
+          "id"
+        ],
+        "properties": {
+          "id": {
+            "type": "integer",
+            "format": "int32",
+            "description": "802.1Q VLAN id.",
+            "minimum": 0
+          },
+          "parent": {
+            "type": "string",
+            "description": "Name of the `network` entry this VLAN sits on. **It must be a declared\nentry**; a body naming one that is not is refused at 422."
+          }
+        }
+      },
+      "WifiNetworkEntry": {
+        "type": "object",
+        "description": "One known WiFi network, in both directions.\n\nThe route's body is built from and validated against\n`mosd_settings::WifiNetwork` itself, and this struct is what describes that\nshape to a client reading only `openapi.json`;\n`the_wifi_schema_matches_the_settings_model` holds the two together so a\nfield added to the model cannot go undocumented here.\n\n`psk` means different things in the two directions, and that is the\nredaction rule rather than an inconsistency. On the way **in** it is the\npre-shared key. On the way **out** it is `\"<redacted>\"` whenever a key is\nstored, because it is one of the field names section 2.2's structural\nredactor covers -- and a body carrying that sentinel back is refused at 422\nrather than written, which is the whole reason the sentinel is checked\nbefore anything else.",
+        "required": [
+          "ssid",
+          "hidden",
+          "priority"
+        ],
+        "properties": {
+          "hidden": {
+            "type": "boolean",
+            "description": "Whether the network hides its SSID."
+          },
+          "priority": {
+            "type": "integer",
+            "format": "int32",
+            "description": "Selection preference; higher wins."
+          },
+          "psk": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The pre-shared key; absent for an open network, `\"<redacted>\"` on\nevery read of a network that has one."
+          },
+          "ssid": {
+            "type": "string",
+            "description": "The network name, which is also this entry's `DELETE` path segment."
+          }
+        }
+      },
+      "WireguardParameters": {
+        "type": "object",
+        "description": "The parameters of a WireGuard tunnel.\n\nThere is no private-key member and there never will be: this subtree is\nserved over `GET /api/v1/settings/network`, so a key in it is a key\npublished to every client. The private key lives in a mode-0640 file on the\ndevice and only its public half is surfaced, through\n`GET /api/v1/state/network` and the rotate action.",
+        "required": [
+          "peers"
+        ],
+        "properties": {
+          "listenPort": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "description": "UDP port to listen on; absent lets the kernel pick one.",
+            "minimum": 0
+          },
+          "peers": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/WireguardPeerEntry"
+            },
+            "description": "The far ends of the tunnel. A `PUT` of this interface replaces them;\nthe peer collection route edits them one at a time."
+          }
+        }
+      },
+      "WireguardPeerEntry": {
+        "type": "object",
+        "description": "One far end of a WireGuard tunnel, in both directions.",
+        "required": [
+          "publicKey",
+          "allowedIps"
+        ],
+        "properties": {
+          "allowedIps": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "CIDRs routed to this peer."
+          },
+          "endpoint": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "`host:port` to send to, for a peer this end initiates to."
+          },
+          "persistentKeepalive": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "description": "Keepalive interval in seconds, for a peer behind NAT.",
+            "minimum": 0
+          },
+          "publicKey": {
+            "type": "string",
+            "description": "The peer's X25519 public key: 32 bytes in padded base64. It is also\nthis entry's `DELETE` path segment, and its alphabet contains `/`, so a\nkey carrying one is percent-encoded there."
+          }
+        }
       },
       "WireguardRotation": {
         "type": "object",

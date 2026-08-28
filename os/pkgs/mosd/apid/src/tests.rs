@@ -15,7 +15,8 @@ use std::sync::Arc;
 use axum::Router;
 use axum::body::Body;
 use axum::http::header::{
-    ACCEPT, ALLOW, CACHE_CONTROL, CONTENT_TYPE, COOKIE, LOCATION, SET_COOKIE,
+    ACCEPT, ALLOW, AUTHORIZATION, CACHE_CONTROL, CONTENT_TYPE, COOKIE, LOCATION, RETRY_AFTER,
+    SET_COOKIE,
 };
 use axum::http::{HeaderName, Request, Response, StatusCode};
 use serde_json::json;
@@ -711,6 +712,27 @@ fn ssh_tree(keys: serde_json::Value) -> serde_json::Value {
 /// The stored form of one parsed key: comment split out of the key text.
 fn stored_key(line: &str) -> serde_json::Value {
     json!({ "key": canonical(line), "comment": comment_of(line) })
+}
+
+/// One of an unbounded family of distinct, structurally real ed25519 key lines.
+///
+/// Derived from the committed fixture by overwriting the last byte of its
+/// 32-byte public key, so every line parses, declares `ssh-ed25519` inside its
+/// blob the way `parse_authorized_key` requires, and differs from every other.
+/// A cap test needs distinct keys specifically: repeating one fixture would
+/// meet the duplicate rule long before the bound.
+///
+/// The private halves were never generated, so none of these authorises
+/// anything anywhere.
+fn generated_key_line(index: u8) -> String {
+    let blob = REAL_ED25519_LINE
+        .split(' ')
+        .nth(1)
+        .expect("the fixture is `<type> <blob> <comment>`");
+    let mut bytes = mosd_settings::decode_base64(blob).expect("the fixture blob decodes");
+    let last = bytes.len() - 1;
+    bytes[last] = index;
+    format!("ssh-ed25519 {}", mosd_settings::encode_base64_nopad(&bytes))
 }
 
 /// Published sshd state carrying the three flags the pane reads.
@@ -1561,10 +1583,21 @@ async fn the_api_reservation_answers_every_shape_with_the_envelope() {
         ("GET", "/api/v1"),
         ("GET", "/api/versions/extra"),
         ("GET", "/api/v1/settings"),
-        ("GET", "/api/v1/actions/reboot"),
-        ("GET", "/api/v1/wifi/client/networks"),
+        // `/api/v1/actions/reboot` was here until PLAN-023 M7 declared it, and
+        // its prefix and trailing-slash spelling take its place for the reason
+        // the WiFi collection's did: neither is a route this router serves, so
+        // both must still reach the reservation rather than the three action
+        // routes beside them.
+        ("GET", "/api/v1/actions"),
+        ("GET", "/api/v1/actions/"),
+        // `/api/v1/wifi/client/networks` was here until PLAN-023 M5 declared
+        // it. Its prefix and its trailing-slash spelling took its place, and
+        // they are the more useful cases: neither is a route this router
+        // serves, so both must still reach the reservation rather than the
+        // collection beside them.
+        ("GET", "/api/v1/wifi/client"),
+        ("GET", "/api/v1/wifi/client/networks/"),
         ("POST", "/api/v1/settings"),
-        ("DELETE", "/api/v1/tokens/1"),
     ] {
         let response = request(&router, method, path, Some(&cookie), Some(BROWSER_ACCEPT)).await;
         assert_eq!(
@@ -1729,9 +1762,17 @@ async fn api_v1_meta_is_401_in_setup_mode_too() {
 /// to a route that does not exist instead of being redirected.
 #[tokio::test]
 async fn every_other_api_path_keeps_both_of_its_answers() {
-    const UNDECLARED: [&str; 6] = [
-        "/api/v1/actions/reboot",
-        "/api/v1/ssh/authorized-keys",
+    // `/api/v1/ssh/authorized-keys` left this list when PLAN-023 M5 declared
+    // it: it is now a served collection, and the test that holds its answers
+    // is `the_ssh_key_collection_lists_adds_and_removes`.
+    //
+    // `/api/v1/actions/reboot` left it the same way when PLAN-023 M7 declared
+    // it. A `GET` on it is now a declared route answering 405 rather than an
+    // undeclared path answering 404, which is the whole of what M7 changed
+    // about it; the tests that hold its answers are
+    // `a_wrong_method_on_a_declared_api_route_answers_the_envelope` for the
+    // 405 and `the_power_routes_answer_202_like_the_form_path` for the POST.
+    const UNDECLARED: [&str; 4] = [
         "/api/v1/settings",
         "/api/v1/settings/",
         "/api/v1/state",
@@ -3626,6 +3667,17 @@ fn secret_tree(password: &str) -> serde_json::Value {
                     { "comment": "laptop", "hash": "keyhash-plaintext-marker" },
                 ],
             },
+            // The one settings field that really is named `hash`: a bearer
+            // token digest, inside an array, under the subtree the auth gate
+            // reads on every request.
+            "apiTokens": [
+                {
+                    "id": "3f2a9c41",
+                    "name": "ci-deploy",
+                    "hash": "token-digest-plaintext-marker",
+                    "created": 1_700_000_000,
+                },
+            ],
         },
         "wifi": {
             "ap": { "ssid": "mos-ap", "psk": "ap-plaintext-marker" },
@@ -3662,7 +3714,8 @@ fn secret_state_entry() -> serde_json::Value {
 }
 
 /// Every marker string [`secret_tree`] and [`secret_state_entry`] plant.
-const PLAINTEXT_MARKERS: [&str; 11] = [
+const PLAINTEXT_MARKERS: [&str; 12] = [
+    "token-digest-plaintext-marker",
     "wg-plaintext-marker",
     "state-private-plaintext-marker",
     "device-plaintext-marker",
@@ -3856,6 +3909,70 @@ async fn every_redacted_field_name_comes_back_redacted_from_the_settings_root() 
     }
 }
 
+/// A settings read of `access` never carries a token digest.
+///
+/// The general rule is asserted above by walking every field name on the
+/// denylist. This one names the field that made the rule load-bearing rather
+/// than precautionary: `access.apiTokens[].hash` is the first field of the
+/// settings schema actually named `hash`, it holds a credential digest, and it
+/// sits in the subtree the auth gate reads on every single request -- so a
+/// regression here is a digest served to every authenticated caller and to
+/// every future bearer-token holder.
+///
+/// The subtree and the entry and the field are all asserted, because the three
+/// break differently: a denylist entry removed, a walk that stops at an array,
+/// and a dot-path that names the field directly and so has no field name left
+/// to key on.
+#[tokio::test]
+async fn a_settings_read_of_access_never_carries_a_token_digest() {
+    let (router, _) = test_app(secret_tree("hunter2secret"));
+    let cookie = login(&router, "hunter2secret").await;
+
+    // The subtree the gate reads.
+    let response = get(&router, "/api/v1/settings/access", Some(&cookie)).await;
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = body_string(response).await;
+    assert!(
+        !body.contains("token-digest-plaintext-marker"),
+        "a token digest reached the wire: {body}"
+    );
+
+    // The entry is still served -- the id, the name and the clock reading are
+    // what `GET /api/v1/tokens` lists -- so this is redaction and not removal.
+    let value: serde_json::Value = serde_json::from_str(&body).unwrap();
+    let entry = &value["apiTokens"][0];
+    assert_eq!(entry["id"], json!("3f2a9c41"));
+    assert_eq!(entry["name"], json!("ci-deploy"));
+    assert_eq!(entry["created"], json!(1_700_000_000));
+    assert_eq!(entry["hash"], json!(REDACTED));
+
+    // The array on its own, which is the walk's array branch with nothing
+    // above it to have caught the field first.
+    let response = get(&router, "/api/v1/settings/access.apiTokens", Some(&cookie)).await;
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = body_string(response).await;
+    assert!(
+        !body.contains("token-digest-plaintext-marker"),
+        "the token array served the digest: {body}"
+    );
+
+    // There is no dot-path that reaches one entry: the syntax has no array
+    // indexing, which is why the denylist is by field name and not by path.
+    let response = get(
+        &router,
+        "/api/v1/settings/access.apiTokens.0.hash",
+        Some(&cookie),
+    )
+    .await;
+    let status = response.status();
+    assert_ne!(
+        status,
+        StatusCode::OK,
+        "an indexed dot-path resolved: {}",
+        body_string(response).await
+    );
+}
+
 /// The same rule on the state root. §2.2 states it for the settings root only;
 /// this campaign extends it, because a denylist that covers one root while the
 /// other serves the same field names verbatim is a hole with a tested-looking
@@ -3967,24 +4084,33 @@ impl SettingsApi for FailingSettings {
         Err(self.error())
     }
 
+    /// The settings root stopped being read-only with PLAN-023 M4, and this
+    /// fixture answers the write the same way it answers a read: §2.4's
+    /// classification is exactly what the write route has to inherit.
     async fn set_settings(&self, _path: &str, _value: &serde_json::Value) -> anyhow::Result<()> {
-        unreachable!("the resource routes are read-only")
+        Err(self.error())
     }
 
     async fn get_state(&self, _path: &str) -> anyhow::Result<serde_json::Value> {
         Err(self.error())
     }
 
+    /// PLAN-023 M7 gave these three a route each, so they answer the failure
+    /// rather than panicking. `reboot` and `power_off` are called from a
+    /// detached task whose result only reaches a log, so what they return
+    /// changes no response; an `unreachable!` in them would abort that task
+    /// instead, which is a panic in a fixture rather than a failed assertion in
+    /// a test.
     async fn reboot(&self) -> anyhow::Result<()> {
-        unreachable!("the resource routes are read-only")
+        Err(self.error())
     }
 
     async fn power_off(&self) -> anyhow::Result<()> {
-        unreachable!("the resource routes are read-only")
+        Err(self.error())
     }
 
     async fn set_transient_root_password(&self, _password: &str) -> anyhow::Result<()> {
-        unreachable!("the resource routes are read-only")
+        Err(self.error())
     }
 
     /// The one write this fixture *does* answer, because §2.4's classification
@@ -5080,6 +5206,48 @@ async fn a_dotted_tunnel_name_is_quoted_on_the_peer_path() {
     );
 }
 
+/// `docs/task/RFCT-210.md` section 2.4's sweep, settled by running it: the
+/// pane's peer-add for an interface that is **not a declared network entry**
+/// neither refuses nor 404s -- it succeeds, and writes a `network.wg9` entry
+/// of the default kind carrying a WireGuard block.
+///
+/// That finding was recorded there explicitly as a reading of the write path
+/// and *not* as an observed run, and this is the run. The chain it names:
+/// `stored_peers` answers an empty list rather than an error for an unknown
+/// interface, `write_peers` writes straight to the peer list's own dot-path,
+/// `validate_peers` never looks at the interface, and the settings setter
+/// creates missing intermediates by documented contract.
+///
+/// The pane is left as it is -- M6 fixes this structurally on the API side,
+/// where `POST /api/v1/network/{iface}/peers` answers 404 before anything is
+/// written. Its paired test is
+/// `the_api_peer_add_refuses_an_undeclared_interface_where_the_pane_writes_one`.
+#[tokio::test]
+async fn the_pane_peer_add_writes_a_broken_entry_for_an_undeclared_interface() {
+    let (router, fake, cookie) = kinds_app().await;
+
+    let response = post_form(
+        &router,
+        "/network/peers/add",
+        &format!("iface=wg9&publicKey={}", PEER_KEY.replace('=', "%3D")),
+        Some(&cookie),
+    )
+    .await;
+
+    // Not 422, not 404: the redirect a successful save gives.
+    assert_eq!(response.status(), StatusCode::SEE_OTHER);
+    assert_eq!(location(&response), "/network?saved=1");
+    assert_eq!(
+        fake.set_paths(),
+        vec!["network.wg9.wireguard.peers".to_string()]
+    );
+    // And what is now in the tree is the broken entry the finding describes:
+    // no `kind`, so physical by default, carrying a WireGuard block.
+    let entry = fake.get_settings("network.wg9").await.unwrap();
+    assert_eq!(entry.get("kind"), None, "{entry}");
+    assert_eq!(entry["wireguard"]["peers"][0]["publicKey"], json!(PEER_KEY));
+}
+
 /// A peer the reconciler would refuse is refused here first, and the refusal
 /// never echoes the key.
 ///
@@ -5218,6 +5386,16 @@ async fn a_rotation_writes_nothing_to_the_settings_tree() {
 #[tokio::test]
 async fn the_rotate_routes_failures_take_the_shared_envelope() {
     for (fdo_name, code, status) in [
+        // PLAN-023 M6's correction, on the apid side: **no apid logic
+        // changed**. mosd split its one `InvalidArgs` into a not-found for an
+        // undeclared entry and an `InvalidArgs` for one of the wrong kind, and
+        // the classifier below already mapped both names. This row is the
+        // proof that it did.
+        (
+            Some("com.mos.mosd1.Error.NotFound"),
+            "settings_not_found",
+            StatusCode::NOT_FOUND,
+        ),
         (
             Some("org.freedesktop.DBus.Error.InvalidArgs"),
             "settings_rejected",
@@ -5347,7 +5525,10 @@ fn the_openapi_document_covers_the_rotate_route() {
 
     let responses =
         &document["paths"]["/api/v1/actions/wireguard/{iface}/rotate-key"]["post"]["responses"];
-    for status in ["200", "401", "422", "500", "503"] {
+    // 404 arrived with PLAN-023 M6: an interface that is not a declared entry
+    // names nothing, which is what every other read on this API already
+    // answered 404 for.
+    for status in ["200", "401", "404", "422", "500", "503"] {
         assert!(
             responses[status].is_object(),
             "the rotate route is missing its {status}: {document}"
@@ -5435,4 +5616,3897 @@ async fn the_state_route_serves_the_kind_and_the_public_key() {
             "{name} carries a private key: {entry}"
         );
     }
+}
+
+// RFCT-212: `GET /api/v1/health` (§2.4 case 3) and §2.4's envelope on a method
+// a declared `/api/` route does not serve.
+
+/// A tree with an admin password, and a live-state tree carrying the `uptime`
+/// key mosd serves at read time.
+fn health_app(uptime: u64) -> (Router, Arc<FakeSettings>) {
+    let (router, fake) = test_app(configured_tree("hunter2secret"));
+    fake.set_state_entry("uptime", json!(uptime));
+    (router, fake)
+}
+
+/// §2.4 case 3's first shape, exactly: `apid` ok, `mosd` ok, and `checkedAt`
+/// carrying the appliance's uptime.
+///
+/// `checkedAt` is asserted as a JSON **number**, which is the decision
+/// `docs/task/RFCT-212.md` §3 records: there is no trusted wall clock in this
+/// crate, and the one clock there is — `GET /api/v1/state/uptime` — is a bare
+/// count of whole seconds. A health answer stamped any other way would be
+/// stamped with a clock this appliance does not have.
+#[tokio::test]
+async fn health_reports_a_reachable_mosd_and_stamps_the_answer_with_uptime() {
+    let (router, _) = health_app(90_061);
+    let cookie = login(&router, "hunter2secret").await;
+
+    let response = get(&router, "/api/v1/health", Some(&cookie)).await;
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_api_headers(&response, "/api/v1/health");
+    let body: serde_json::Value = serde_json::from_str(&body_string(response).await).unwrap();
+    assert_eq!(body["apid"], json!("ok"));
+    assert_eq!(body["mosd"], json!("ok"));
+    assert_eq!(body["checkedAt"], json!(90_061));
+    // Omitted rather than nulled on the reachable answer, the rule the
+    // envelope's own optional member already follows.
+    assert!(body.get("detail").is_none(), "{body}");
+}
+
+/// The case the route exists for: mosd is dead and the answer is still **200**.
+///
+/// A 503 here would be indistinguishable from the endpoint itself being down,
+/// which is the confusion §2.4 case 3 says the route removes. The fixture is
+/// the discriminating one: `FailingSettings` answers `GetSettings("access")` —
+/// so the gate is satisfied, a session mints, and the access cache is warm —
+/// and fails every state read. A health route reading a cached flag instead of
+/// the bus would report `ok` here.
+#[tokio::test]
+async fn health_reports_an_unreachable_mosd_and_still_answers_200() {
+    let (router, cookie) = failing_app(None).await;
+
+    let response = get(&router, "/api/v1/health", Some(&cookie)).await;
+    assert_eq!(
+        response.status(),
+        StatusCode::OK,
+        "a dead mosd is reported in the body, never as a status code"
+    );
+    assert_api_headers(&response, "/api/v1/health");
+    assert_eq!(response.headers().get(RETRY_AFTER), None);
+    let body: serde_json::Value = serde_json::from_str(&body_string(response).await).unwrap();
+    assert_eq!(body["apid"], json!("ok"));
+    assert_eq!(body["mosd"], json!("unreachable"));
+    assert!(
+        body["detail"].as_str().is_some_and(|d| !d.is_empty()),
+        "the unreachable answer must say why: {body}"
+    );
+    assert!(body.get("checkedAt").is_none(), "{body}");
+}
+
+/// The probe is a live bus call and not a flag: move the appliance's uptime and
+/// the next answer moves with it, in the same router and the same session.
+#[tokio::test]
+async fn health_reads_the_bus_on_every_request() {
+    let (router, fake) = health_app(10);
+    let cookie = login(&router, "hunter2secret").await;
+
+    let first = get(&router, "/api/v1/health", Some(&cookie)).await;
+    let first: serde_json::Value = serde_json::from_str(&body_string(first).await).unwrap();
+    assert_eq!(first["checkedAt"], json!(10));
+
+    fake.set_state_entry("uptime", json!(4_711));
+    let second = get(&router, "/api/v1/health", Some(&cookie)).await;
+    let second: serde_json::Value = serde_json::from_str(&body_string(second).await).unwrap();
+    assert_eq!(
+        second["checkedAt"],
+        json!(4_711),
+        "a second request must have made its own call"
+    );
+
+    // And it is the state tree it reads, not the settings tree the gate's
+    // cache holds.
+    assert_eq!(fake.settings_reads("uptime"), 0);
+}
+
+/// Authenticated like every other `/api/v1/` route, and its refusal is §2.4's
+/// envelope rather than the gate's HTML redirect (§3.1).
+#[tokio::test]
+async fn health_without_a_session_is_the_envelope_and_not_a_redirect() {
+    let (router, _) = health_app(90_061);
+
+    let response = get(&router, "/api/v1/health", None).await;
+    assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+    assert_eq!(response.headers().get(LOCATION), None);
+    assert_api_headers(&response, "/api/v1/health anonymous");
+    assert_eq!(envelope(response).await["code"], "not_authenticated");
+}
+
+/// `/healthz` is unchanged by any of this, and this test is the pin.
+///
+/// The boot health gate probes exactly this path, unauthenticated, and treats
+/// any non-2xx as a failed boot (`os/rootfs/overlay-v2/usr/lib/mos/mos-health`),
+/// so its path, its exemption, its status, its literal body and the fact that
+/// it is not JSON are all load-bearing. §2.4 case 3 is explicit that `/healthz`
+/// cannot be fixed and that the API adds a second endpoint instead — the two
+/// answer different questions.
+#[tokio::test]
+async fn healthz_is_untouched_by_the_health_route() {
+    let (router, _) = health_app(90_061);
+
+    let response = get(&router, "/healthz", None).await;
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(
+        header_value(&response, CONTENT_TYPE),
+        "text/plain; charset=utf-8"
+    );
+    assert_eq!(body_string(response).await, "ok");
+
+    // Still `ok` with mosd dead, which is the property §2.4 case 3 calls the
+    // trap and answers with a second route rather than by changing this one.
+    let (failing, _) = failing_app(None).await;
+    let response = get(&failing, "/healthz", None).await;
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(body_string(response).await, "ok");
+}
+
+/// Every declared `/api/` route, on a method it does not serve: §2.4's
+/// envelope, 405, and an `Allow` header naming what the route does serve.
+///
+/// The expectation names the `Allow` value per route rather than deriving it,
+/// so a route that quietly gained or lost a method fails here.
+#[tokio::test]
+async fn a_wrong_method_on_a_declared_api_route_answers_the_envelope() {
+    let (router, fake) = health_app(90_061);
+    fake.set_state_entry(
+        "network",
+        json!({ "wg0": { "kind": "wireguard", "publicKey": "k" } }),
+    );
+    let cookie = login(&router, "hunter2secret").await;
+
+    for (method, path, allow) in [
+        ("POST", "/api/versions", "GET,HEAD"),
+        ("POST", "/api/v1/meta", "GET,HEAD"),
+        ("DELETE", "/api/v1/health", "GET,HEAD"),
+        ("POST", "/api/v1/settings/hostname", "GET,HEAD,PUT"),
+        ("PUT", "/api/v1/state/uptime", "GET,HEAD"),
+        ("GET", "/api/v1/actions/change-password", "POST"),
+        ("GET", "/api/v1/actions/wireguard/wg0/rotate-key", "POST"),
+        // M7's three verbs. `GET` on each of them is the assertion that no
+        // `GET` handler is declared: the HTML router refuses the same thing
+        // deliberately so a browser prefetch, a crawler or a mis-clicked link
+        // cannot power the appliance off, and `actions` is named `actions` so
+        // no reader expects a `GET` to work there. Asserted here rather than in
+        // a test of their own so the `Allow` value is checked by the same
+        // per-route expectation every other declared route is checked by.
+        ("GET", "/api/v1/actions/reboot", "POST"),
+        ("GET", "/api/v1/actions/poweroff", "POST"),
+        ("GET", "/api/v1/actions/transient-root-password", "POST"),
+        ("PUT", "/api/v1/tokens", "GET,HEAD,POST"),
+        ("GET", "/api/v1/tokens/deadbeef", "DELETE"),
+    ] {
+        let response = request(&router, method, path, Some(&cookie), Some(BROWSER_ACCEPT)).await;
+        assert_eq!(
+            response.status(),
+            StatusCode::METHOD_NOT_ALLOWED,
+            "{method} {path}"
+        );
+        assert_eq!(header_value(&response, ALLOW), allow, "{method} {path}");
+        assert_api_headers(&response, &format!("{method} {path}"));
+        let error = envelope(response).await;
+        assert_eq!(error["code"], "method_not_allowed", "{method} {path}");
+        // apid, not mosd: the router refused this before any bus call.
+        assert_eq!(error["source"], "apid", "{method} {path}");
+        assert!(
+            error["message"].is_string(),
+            "{method} {path}: §2.4 requires a message"
+        );
+        // A wrong method names no settings dot-path, so the optional member is
+        // absent rather than empty.
+        assert!(error.get("path").is_none(), "{method} {path}: {error}");
+    }
+}
+
+/// The 405 is the router's answer and not an authenticated one, which is what
+/// the shipped tree already did: `is_declared_api_route` tests the path and not
+/// the method, so the gate hands a wrong-method request off exactly as it hands
+/// off a right one. Recorded because it is a property, not an accident.
+#[tokio::test]
+async fn the_405_envelope_does_not_depend_on_a_session() {
+    let (router, _) = health_app(90_061);
+
+    let response = request(&router, "POST", "/api/v1/meta", None, None).await;
+    assert_eq!(response.status(), StatusCode::METHOD_NOT_ALLOWED);
+    assert_eq!(response.headers().get(LOCATION), None);
+    assert_eq!(header_value(&response, ALLOW), "GET,HEAD");
+    assert_eq!(envelope(response).await["code"], "method_not_allowed");
+}
+
+/// The asset router's 405 is outside `/api/` and is not unified with the one
+/// above: `docs/design/api.md` §4.2 condition 2 gives it a bare body, its own
+/// `Allow: GET, HEAD` and no `Content-Type` at all, and §2.4's envelope is a
+/// promise about `/api/v1/` routes only.
+///
+/// Asserted here as a contrast — the same method against both routers in one
+/// test — so that a later attempt to give the whole server one 405 fails with
+/// the distinction printed rather than silently widening a promise.
+#[tokio::test]
+async fn the_asset_router_405_is_not_the_api_envelope() {
+    let bundle = install_bundle(&[("index.html", "<!doctype html><title>custom</title>")]);
+    let router = test_app_serving(configured_tree("hunter2secret"), bundle.path());
+    let cookie = login(&router, "hunter2secret").await;
+
+    let asset = request(&router, "POST", "/settings/network", Some(&cookie), None).await;
+    assert_eq!(asset.status(), StatusCode::METHOD_NOT_ALLOWED);
+    assert_eq!(header_value(&asset, ALLOW), "GET, HEAD");
+    assert!(asset.headers().get(CONTENT_TYPE).is_none());
+    assert_eq!(body_string(asset).await, "");
+
+    let api = request(&router, "POST", "/api/v1/meta", Some(&cookie), None).await;
+    assert_eq!(api.status(), StatusCode::METHOD_NOT_ALLOWED);
+    assert_eq!(header_value(&api, CONTENT_TYPE), "application/json");
+    assert_eq!(envelope(api).await["code"], "method_not_allowed");
+}
+
+/// The reserved subtree's own 404 is untouched by the 405: a path the API does
+/// not declare is still `not_found`, on every method, health-adjacent spellings
+/// included.
+#[tokio::test]
+async fn the_api_fallback_404_survives_the_405() {
+    let (router, _) = health_app(90_061);
+    let cookie = login(&router, "hunter2secret").await;
+
+    for (method, path) in [
+        ("GET", "/api/v1/health/extra"),
+        ("POST", "/api/v1/health/extra"),
+        ("GET", "/api/v1/healthz"),
+        ("DELETE", "/api/v1/nope"),
+        ("POST", "/api/nope"),
+    ] {
+        let response = request(&router, method, path, Some(&cookie), Some(BROWSER_ACCEPT)).await;
+        assert_eq!(response.status(), StatusCode::NOT_FOUND, "{method} {path}");
+        assert_eq!(response.headers().get(ALLOW), None, "{method} {path}");
+        assert_eq!(
+            envelope(response).await["code"],
+            "not_found",
+            "{method} {path}"
+        );
+    }
+}
+
+/// The document describes the route and the outcome this milestone adds: a
+/// client reading only `openapi.json` has to be able to learn both.
+#[test]
+fn the_openapi_document_covers_health_and_the_405() {
+    let document: serde_json::Value =
+        serde_json::from_str(&crate::openapi::document_json()).expect("the document is JSON");
+
+    let health = &document["paths"]["/api/v1/health"]["get"]["responses"];
+    assert!(health["200"].is_object(), "{health}");
+    assert!(health["401"].is_object(), "{health}");
+    assert!(health["405"].is_object(), "{health}");
+
+    let schema = &document["components"]["schemas"]["ApiHealth"];
+    let required = schema["required"].as_array().expect("required members");
+    for member in ["apid", "mosd"] {
+        assert!(
+            required.iter().any(|name| name == member),
+            "{member} is always on the wire: {schema}"
+        );
+    }
+    for member in ["checkedAt", "detail"] {
+        assert!(
+            !required.iter().any(|name| name == member),
+            "{member} is outcome-dependent and must be optional: {schema}"
+        );
+    }
+
+    // Every declared path now documents the 405 it can answer.
+    let paths = document["paths"].as_object().expect("paths");
+    for (path, item) in paths {
+        for (method, operation) in item.as_object().expect("an operation map") {
+            assert!(
+                operation["responses"]["405"].is_object(),
+                "{method} {path} answers a 405 it does not document"
+            );
+        }
+    }
+}
+
+// RFCT-213: §3.2's bearer token — the credential, the three `/api/v1/tokens`
+// routes, and the bootstrap pane under §6.3's reserved prefix.
+
+/// A stored entry and the plaintext that opens it, both derived from `index`
+/// so two calls differ in every field identity is keyed on.
+///
+/// Built here rather than minted, because a test that needs a full list needs
+/// 32 of them and the mint is one of the things under test.
+fn seeded_token(index: usize) -> (serde_json::Value, String) {
+    let id = format!("{index:08x}");
+    let secret = format!("{index:064x}");
+    (
+        json!({
+            "id": id,
+            "name": format!("seeded-{index}"),
+            "hash": crate::token::digest(&secret),
+            "created": 1,
+        }),
+        format!("mos_{id}_{secret}"),
+    )
+}
+
+/// A configured tree holding `count` usable tokens, with their plaintexts.
+fn token_tree(password: &str, count: usize) -> (serde_json::Value, Vec<String>) {
+    let (entries, wires): (Vec<_>, Vec<_>) = (0..count).map(seeded_token).unzip();
+    let mut tree = configured_tree(password);
+    tree["access"]["apiTokens"] = json!(entries);
+    (tree, wires)
+}
+
+/// A request carrying a bearer token and **no cookie**, which is what makes
+/// every assertion below about the token rather than about the session.
+async fn bearer(
+    router: &Router,
+    method: &str,
+    path: &str,
+    token: &str,
+) -> Response<axum::body::Body> {
+    let builder = Request::builder()
+        .method(method)
+        .uri(path)
+        .header(AUTHORIZATION, format!("Bearer {token}"));
+    send(router, builder.body(Body::empty()).unwrap()).await
+}
+
+/// A JSON body carrying a bearer token and no cookie.
+async fn bearer_json(
+    router: &Router,
+    method: &str,
+    path: &str,
+    token: &str,
+    body: &str,
+) -> Response<axum::body::Body> {
+    let builder = Request::builder()
+        .method(method)
+        .uri(path)
+        .header(CONTENT_TYPE, "application/json")
+        .header(AUTHORIZATION, format!("Bearer {token}"));
+    send(router, builder.body(Body::from(body.to_string())).unwrap()).await
+}
+
+/// Mint through §3.2's bootstrap and return the plaintext.
+///
+/// The pane is the only mint a browser can reach, so this is also the path a
+/// first token has to come down: every bearer assertion below that starts from
+/// a session starts here.
+async fn mint_via_pane(router: &Router, cookie: &str, name: &str) -> String {
+    let response = post_form(
+        router,
+        "/builtin/tokens",
+        &format!("name={name}"),
+        Some(cookie),
+    )
+    .await;
+    assert_eq!(
+        response.status(),
+        StatusCode::OK,
+        "the mint pane answers 200"
+    );
+    let body = body_string(response).await;
+    let rest = body
+        .split_once("<pre>")
+        .unwrap_or_else(|| panic!("the plaintext is displayed once, in a <pre>: {body}"))
+        .1;
+    rest.split_once("</pre>")
+        .expect("a closed <pre>")
+        .0
+        .to_string()
+}
+
+/// The pane's sentence, ratified by `docs/task/RFCT-210.md` §3 and asserted
+/// byte for byte.
+///
+/// Token revocation on a password change stays out — a password change would
+/// otherwise destroy N credentials the operator cannot see, with no
+/// confirmation and no undo — so the pane has to say so. A paraphrase would
+/// quietly drop the containment advice, which is the part of it that matters,
+/// so the assertion is verbatim rather than on keywords.
+#[tokio::test]
+async fn the_password_pane_carries_the_ratified_token_sentence() {
+    const SENTENCE: &str = "API tokens are not affected. Changing this password signs other browsers out, but every API token keeps working. If you are changing this password because you think someone else has access, revoke your API tokens as well, and check the SSH authorized keys — every one of them is a root key.";
+
+    let (router, _) = test_app(configured_tree("hunter2secret"));
+    let cookie = login(&router, "hunter2secret").await;
+
+    let body = body_string(get(&router, "/password", Some(&cookie)).await).await;
+    assert!(
+        body.contains(SENTENCE),
+        "the pane must carry it verbatim: {body}"
+    );
+}
+
+/// The bootstrap end to end: a browser session mints, the plaintext appears
+/// once, the tree keeps only a digest, and the token then authenticates the
+/// API on its own.
+#[tokio::test]
+async fn the_bootstrap_pane_mints_a_token_that_authenticates_the_api() {
+    let (router, fake) = test_app(configured_tree("hunter2secret"));
+    let cookie = login(&router, "hunter2secret").await;
+
+    let wire = mint_via_pane(&router, &cookie, "ci-deploy").await;
+
+    // The write is the whole array at the collection's dot-path: the dot-path
+    // syntax has no array indexing.
+    assert_eq!(fake.set_paths(), vec!["access.apiTokens".to_string()]);
+    let stored = fake.get_settings("access.apiTokens").await.unwrap();
+    let entry = &stored[0];
+    assert_eq!(entry["name"], json!("ci-deploy"));
+    assert_eq!(
+        entry["hash"],
+        json!(crate::token::digest(wire.rsplit('_').next().unwrap()))
+    );
+    // Only the digest is stored. The plaintext is in one response and nowhere
+    // else, ever.
+    assert!(!stored.to_string().contains(&wire), "{stored}");
+
+    // The token is a credential on its own: no cookie on this request.
+    let response = bearer(&router, "GET", "/api/v1/meta", &wire).await;
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(body_string(response).await, meta_body());
+}
+
+/// Amendment 1's dual-credential ruling, on the routes it names: every route
+/// that shipped before the token takes either credential, and neither of them
+/// stopped working.
+#[tokio::test]
+async fn every_shipped_api_route_takes_a_bearer_or_the_cookie() {
+    let (tree, wires) = token_tree("hunter2secret", 1);
+    let (router, fake) = test_app(tree);
+    fake.set_state_entry("uptime", json!(42));
+    let cookie = login(&router, "hunter2secret").await;
+
+    for path in [
+        "/api/v1/meta",
+        "/api/v1/health",
+        "/api/v1/settings/hostname",
+        "/api/v1/state/uptime",
+    ] {
+        assert_eq!(
+            bearer(&router, "GET", path, &wires[0]).await.status(),
+            StatusCode::OK,
+            "{path} must accept a bearer token"
+        );
+        assert_eq!(
+            get(&router, path, Some(&cookie)).await.status(),
+            StatusCode::OK,
+            "{path} must keep accepting the session cookie"
+        );
+    }
+
+    // The one shipped write, which the amendment names beside the four reads.
+    let response = bearer_json(
+        &router,
+        "POST",
+        "/api/v1/actions/change-password",
+        &wires[0],
+        r#"{"currentPassword":"hunter2secret","newPassword":"newsecret9"}"#,
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::NO_CONTENT);
+}
+
+/// The boundary inside Amendment 1: the three token routes take a bearer and
+/// nothing else, and a session cookie presented to any of them is a 401.
+///
+/// §3.2 rejects the cookie-accepting mint by name, because it would put a
+/// permanent-credential factory inside the surface §3.3 makes its strongest
+/// statement about. The amendment preserves the credentials of routes that
+/// already shipped, and these had not.
+#[tokio::test]
+async fn the_token_routes_refuse_a_session_cookie() {
+    let (tree, wires) = token_tree("hunter2secret", 1);
+    let (router, fake) = test_app(tree);
+    let cookie = login(&router, "hunter2secret").await;
+
+    for (method, path, body) in [
+        ("GET", "/api/v1/tokens", None),
+        ("POST", "/api/v1/tokens", Some(r#"{"name":"ci"}"#)),
+        ("DELETE", "/api/v1/tokens/00000000", None),
+    ] {
+        let response = match body {
+            Some(body) => post_json(&router, path, body, Some(&cookie)).await,
+            None => request(&router, method, path, Some(&cookie), None).await,
+        };
+        assert_eq!(
+            response.status(),
+            StatusCode::UNAUTHORIZED,
+            "{method} {path} must refuse a cookie"
+        );
+        // §2.4's envelope and not the gate's HTML redirect.
+        assert_eq!(response.headers().get(LOCATION), None, "{method} {path}");
+        assert_eq!(
+            envelope(response).await["code"],
+            "not_authenticated",
+            "{method} {path}"
+        );
+    }
+    assert!(
+        fake.set_paths().is_empty(),
+        "a refused request must write nothing: {:?}",
+        fake.set_paths()
+    );
+
+    // The same three, with the bearer they do accept.
+    assert_eq!(
+        bearer(&router, "GET", "/api/v1/tokens", &wires[0])
+            .await
+            .status(),
+        StatusCode::OK
+    );
+}
+
+/// The three routes as a lifecycle: mint, list, revoke, and the revoked token
+/// stops being accepted on the next request.
+#[tokio::test]
+async fn the_api_mints_lists_and_revokes() {
+    let (tree, wires) = token_tree("hunter2secret", 1);
+    let (router, _) = test_app(tree);
+
+    let response = bearer_json(
+        &router,
+        "POST",
+        "/api/v1/tokens",
+        &wires[0],
+        r#"{"name":"ci-deploy"}"#,
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::CREATED);
+    assert_api_headers(&response, "POST /api/v1/tokens");
+    let minted: serde_json::Value =
+        serde_json::from_str(&body_string(response).await).expect("a JSON body");
+    let wire = minted["token"].as_str().expect("the plaintext").to_string();
+    let id = minted["id"].as_str().expect("the id").to_string();
+    assert_eq!(minted["name"], json!("ci-deploy"));
+    assert!(crate::token::parse(&wire).is_some(), "{wire}");
+
+    // The listing carries identity and never a secret — neither the digest
+    // that is stored nor the plaintext that is not.
+    let response = bearer(&router, "GET", "/api/v1/tokens", &wire).await;
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = body_string(response).await;
+    assert!(
+        !body.contains(&wire),
+        "the plaintext reached a listing: {body}"
+    );
+    assert!(
+        !body.contains("hash"),
+        "the digest reached a listing: {body}"
+    );
+    let listed: serde_json::Value = serde_json::from_str(&body).unwrap();
+    let names: Vec<&str> = listed
+        .as_array()
+        .expect("an array")
+        .iter()
+        .map(|row| row["name"].as_str().unwrap())
+        .collect();
+    assert_eq!(names, vec!["seeded-0", "ci-deploy"]);
+
+    // Revocation takes effect on the next request.
+    let response = bearer(&router, "DELETE", &format!("/api/v1/tokens/{id}"), &wire).await;
+    assert_eq!(response.status(), StatusCode::NO_CONTENT);
+    assert_eq!(
+        bearer(&router, "GET", "/api/v1/tokens", &wire)
+            .await
+            .status(),
+        StatusCode::UNAUTHORIZED,
+        "a revoked token must stop working"
+    );
+    assert_eq!(
+        bearer(&router, "GET", "/api/v1/tokens", &wires[0])
+            .await
+            .status(),
+        StatusCode::OK,
+        "revoking one token must not revoke another"
+    );
+}
+
+/// The cap is answered at the route, in the caller's terms.
+///
+/// The store makes a full list a hard refusal, so without a check here the
+/// caller meets it as a failed write — a 500 about mosd — instead of an answer
+/// about the request. 409 and not 422: the body is well formed and what refuses
+/// it is the collection's state.
+#[tokio::test]
+async fn a_full_token_list_refuses_the_mint_at_the_route() {
+    let (tree, wires) = token_tree("hunter2secret", mosd_settings::MAX_TOKENS);
+    let (router, fake) = test_app(tree);
+
+    let response = bearer_json(
+        &router,
+        "POST",
+        "/api/v1/tokens",
+        &wires[0],
+        r#"{"name":"one-too-many"}"#,
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::CONFLICT);
+    let error = envelope(response).await;
+    assert_eq!(error["code"], "token_limit_reached");
+    assert_eq!(error["source"], "apid");
+    assert_eq!(error["path"], json!("access.apiTokens"));
+    assert!(
+        error["message"].as_str().unwrap().contains("32"),
+        "the message names the cap: {error}"
+    );
+    assert!(
+        fake.set_paths().is_empty(),
+        "a refused mint must write nothing: {:?}",
+        fake.set_paths()
+    );
+
+    // The pane refuses it too, and says so where the operator is looking.
+    let cookie = login(&router, "hunter2secret").await;
+    let response = post_form(
+        &router,
+        "/builtin/tokens",
+        "name=one-too-many",
+        Some(&cookie),
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::UNPROCESSABLE_ENTITY);
+    assert!(body_string(response).await.contains("maximum of 32"));
+    assert!(fake.set_paths().is_empty());
+}
+
+/// A name the store would refuse is refused at the route, as a 422 about the
+/// body rather than as a failed write.
+#[tokio::test]
+async fn a_name_the_store_refuses_is_a_422() {
+    let (tree, wires) = token_tree("hunter2secret", 1);
+    let (router, fake) = test_app(tree);
+
+    for body in [r#"{"name":""}"#, r#"{"name":"ci\ndeploy"}"#] {
+        let response = bearer_json(&router, "POST", "/api/v1/tokens", &wires[0], body).await;
+        assert_eq!(
+            response.status(),
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "{body}"
+        );
+        assert_eq!(
+            envelope(response).await["code"],
+            "validation_failed",
+            "{body}"
+        );
+    }
+    // And a body that is not this shape at all is a 400, not a 422.
+    let response = bearer_json(&router, "POST", "/api/v1/tokens", &wires[0], "{}").await;
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    assert_eq!(envelope(response).await["code"], "request_invalid");
+
+    assert!(fake.set_paths().is_empty(), "{:?}", fake.set_paths());
+}
+
+/// The collection error contract (`docs/task/RFCT-210.md` §2.4): a well-formed
+/// identifier that names nothing is **404**, and 422 is reserved for an
+/// identifier that is not well formed at all.
+///
+/// Paired with `the_builtin_revoke_pane_answers_422_where_the_api_answers_404`,
+/// which asserts the HTML surface's deliberately different answer to the same
+/// condition.
+#[tokio::test]
+async fn an_absent_token_id_is_404_and_a_malformed_one_is_422() {
+    let (tree, wires) = token_tree("hunter2secret", 1);
+    let (router, fake) = test_app(tree);
+
+    // Well formed, and no entry carries it.
+    let response = bearer(&router, "DELETE", "/api/v1/tokens/deadbeef", &wires[0]).await;
+    assert_eq!(response.status(), StatusCode::NOT_FOUND);
+    let error = envelope(response).await;
+    assert_eq!(error["code"], "settings_not_found");
+    assert_eq!(error["source"], "apid");
+    assert_eq!(error["path"], json!("access.apiTokens"));
+
+    // Not an identifier at all: well formed and absent is a different answer
+    // from not well formed, and they must not share a status.
+    for path in ["/api/v1/tokens/NOTHEX", "/api/v1/tokens/ci-deploy"] {
+        let response = bearer(&router, "DELETE", path, &wires[0]).await;
+        assert_eq!(
+            response.status(),
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "{path}"
+        );
+        assert_eq!(
+            envelope(response).await["code"],
+            "validation_failed",
+            "{path}"
+        );
+    }
+
+    // The empty spelling is not this route -- measured, and not assumed from
+    // the rotate action, whose empty `{iface}` segment is interior rather than
+    // trailing and IS served. `/api/v1/tokens/` reaches the reserved subtree's
+    // own not-found handler, so `token_id` must not release it to the gate: a
+    // path the gate released to a route that does not exist would answer a 404
+    // where an unauthenticated caller is supposed to be redirected.
+    let cookie = login(&router, "hunter2secret").await;
+    let response = request(&router, "DELETE", "/api/v1/tokens/", Some(&cookie), None).await;
+    assert_eq!(response.status(), StatusCode::NOT_FOUND);
+    assert_eq!(envelope(response).await["code"], "not_found");
+
+    let response = bearer(&router, "DELETE", "/api/v1/tokens/", &wires[0]).await;
+    assert_eq!(response.status(), StatusCode::SEE_OTHER);
+    assert_eq!(location(&response), "/login");
+
+    assert!(fake.set_paths().is_empty(), "{:?}", fake.set_paths());
+}
+
+/// The HTML half of the split recorded in `docs/task/RFCT-210.md` §2.4: the
+/// pane answers **422** where `DELETE /api/v1/tokens/{id}` answers **404**, on
+/// the same condition.
+///
+/// The pane's body is a re-rendered page, no consumer on that surface reads the
+/// status, and the condition really is the re-submit-the-form one — the list
+/// may have changed since the page was loaded. Paired with
+/// `an_absent_token_id_is_404_and_a_malformed_one_is_422`.
+#[tokio::test]
+async fn the_builtin_revoke_pane_answers_422_where_the_api_answers_404() {
+    let (tree, wires) = token_tree("hunter2secret", 1);
+    let (router, fake) = test_app(tree);
+    let cookie = login(&router, "hunter2secret").await;
+
+    let html = post_form(
+        &router,
+        "/builtin/tokens/revoke",
+        "id=deadbeef",
+        Some(&cookie),
+    )
+    .await;
+    let api = bearer(&router, "DELETE", "/api/v1/tokens/deadbeef", &wires[0]).await;
+
+    assert_eq!(html.status(), StatusCode::UNPROCESSABLE_ENTITY);
+    assert_eq!(api.status(), StatusCode::NOT_FOUND);
+    assert!(body_string(html).await.contains("reload it and try again"));
+    assert!(fake.set_paths().is_empty(), "{:?}", fake.set_paths());
+}
+
+/// The pane revokes, which is §8.1's capability (iii) in full: an operator
+/// holding only a browser can drop a leaked token without first holding
+/// another one.
+#[tokio::test]
+async fn the_builtin_pane_lists_and_revokes_without_a_token() {
+    let (tree, wires) = token_tree("hunter2secret", 2);
+    let (router, _) = test_app(tree);
+    let cookie = login(&router, "hunter2secret").await;
+
+    // The pane lists identity and never a secret.
+    let body = body_string(get(&router, "/builtin/", Some(&cookie)).await).await;
+    assert!(
+        body.contains("seeded-0") && body.contains("seeded-1"),
+        "{body}"
+    );
+    assert!(!body.contains(&wires[0]), "a plaintext reached the pane");
+    assert!(!body.contains(&crate::token::digest(wires[0].rsplit('_').next().unwrap())));
+
+    let response = post_form(
+        &router,
+        "/builtin/tokens/revoke",
+        "id=00000000",
+        Some(&cookie),
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::OK);
+    assert!(body_string(response).await.contains("has been revoked"));
+
+    assert_eq!(
+        bearer(&router, "GET", "/api/v1/meta", &wires[0])
+            .await
+            .status(),
+        StatusCode::UNAUTHORIZED,
+        "the revoked token stops working on the next request"
+    );
+    assert_eq!(
+        bearer(&router, "GET", "/api/v1/meta", &wires[1])
+            .await
+            .status(),
+        StatusCode::OK
+    );
+}
+
+/// **No GET form of the mint exists, and none may ever be added.**
+///
+/// `SameSite=Lax` withholds the session cookie from a cross-site form POST and
+/// permits it on a top-level cross-site GET navigation, so a GET mint would be
+/// a permanent-credential factory reachable from any link an operator clicks.
+/// The assertion is that neither `/builtin` route answers a GET at all, and
+/// that nothing was written when one was tried.
+#[tokio::test]
+async fn no_get_reaches_the_bootstrap_mint_or_its_revoke() {
+    let (router, fake) = test_app(configured_tree("hunter2secret"));
+    let cookie = login(&router, "hunter2secret").await;
+
+    for path in ["/builtin/tokens", "/builtin/tokens/revoke"] {
+        let response = get(&router, path, Some(&cookie)).await;
+        assert_eq!(
+            response.status(),
+            StatusCode::METHOD_NOT_ALLOWED,
+            "GET {path} must not be served"
+        );
+        assert_eq!(header_value(&response, ALLOW), "POST", "{path}");
+    }
+    assert!(
+        fake.set_paths().is_empty(),
+        "a GET must write nothing: {:?}",
+        fake.set_paths()
+    );
+}
+
+/// **Bearer verification is not rate limited, and must not be.**
+///
+/// 256 bits of `OsRng` is not guessable online, and the login backoff is a
+/// single global counter (`auth::GuardStore`), so a shared counter on the token
+/// path would let anyone holding a bad token lock out every script *and* every
+/// login on the appliance. The assertion is both halves: a good token still
+/// works after a long run of bad ones, and the password path's counter was
+/// never touched by them.
+#[tokio::test]
+async fn a_run_of_bad_bearer_tokens_locks_nobody_out() {
+    let (tree, wires) = token_tree("hunter2secret", 1);
+    let (router, _) = test_app(tree);
+
+    for index in 0..50 {
+        // Both misses, alternating: the stored id with the wrong secret, and
+        // an id nothing carries. The first is the one a lookup alone would
+        // pass, so it has to be in the run.
+        let forged = if index % 2 == 0 {
+            format!("mos_00000000_{index:063x}f")
+        } else {
+            format!("mos_ffffffff_{index:064x}")
+        };
+        assert_eq!(
+            bearer(&router, "GET", "/api/v1/meta", &forged)
+                .await
+                .status(),
+            StatusCode::UNAUTHORIZED,
+            "attempt {index}"
+        );
+    }
+
+    assert_eq!(
+        bearer(&router, "GET", "/api/v1/meta", &wires[0])
+            .await
+            .status(),
+        StatusCode::OK,
+        "a valid token must not be locked out by other tokens' failures"
+    );
+    // The login guard is global; if the token path armed it, this would be a
+    // 429 rather than a redirect.
+    let response = post_form(&router, "/login", "password=hunter2secret", None).await;
+    assert_eq!(response.status(), StatusCode::SEE_OTHER);
+}
+
+/// The published document describes the routes this milestone adds, and
+/// describes them as the code serves them.
+#[test]
+fn the_openapi_document_covers_the_token_routes() {
+    let document: serde_json::Value =
+        serde_json::from_str(&crate::openapi::document_json()).expect("the document is JSON");
+
+    let collection = &document["paths"]["/api/v1/tokens"];
+    for (method, statuses) in [
+        ("get", vec!["200", "401"]),
+        ("post", vec!["201", "400", "401", "409", "422"]),
+    ] {
+        for status in statuses {
+            assert!(
+                collection[method]["responses"][status].is_object(),
+                "{method} /api/v1/tokens must document {status}: {collection}"
+            );
+        }
+    }
+
+    let item = &document["paths"]["/api/v1/tokens/{id}"]["delete"]["responses"];
+    for status in ["204", "401", "404", "422"] {
+        assert!(
+            item[status].is_object(),
+            "DELETE must document {status}: {item}"
+        );
+    }
+
+    // The listing's row carries identity and never a secret, in the document
+    // as well as on the wire.
+    let summary = &document["components"]["schemas"]["ApiTokenSummary"]["properties"];
+    let members: Vec<&str> = summary
+        .as_object()
+        .expect("properties")
+        .keys()
+        .map(String::as_str)
+        .collect();
+    assert_eq!(members, vec!["created", "id", "name"], "{summary}");
+
+    // The plaintext is a member of the mint's response and of nothing else.
+    let minted = &document["components"]["schemas"]["MintedToken"]["properties"];
+    assert!(minted["token"].is_object(), "{minted}");
+}
+
+// PLAN-023 M4 (`docs/task/RFCT-240.md`): the four scalar settings writes, the
+// redaction-sentinel refusal, and the write-refusal list.
+
+/// `PUT` a JSON body with a session cookie -- the second of the two
+/// credentials this route takes.
+async fn put_json(
+    router: &Router,
+    path: &str,
+    body: &str,
+    cookie: Option<&str>,
+) -> Response<axum::body::Body> {
+    let mut builder = Request::builder()
+        .method("PUT")
+        .uri(path)
+        .header(CONTENT_TYPE, "application/json");
+    if let Some(cookie) = cookie {
+        builder = builder.header(COOKIE, format!("apid_session={cookie}"));
+    }
+    send(router, builder.body(Body::from(body.to_string())).unwrap()).await
+}
+
+/// A tree with all four writable paths already present, so a write is a change
+/// of value and never a creation -- the creation case is what the refusal list
+/// exists to prevent, and it must not be smuggled into the happy path.
+fn writable_tree(password: &str) -> serde_json::Value {
+    let mut tree = configured_tree(password);
+    tree["access"]["ssh"] = json!({ "enabled": false });
+    tree["container"] = json!({ "enabled": false });
+    tree["mqtt"] = json!({ "enabled": false });
+    tree
+}
+
+/// The four dot-paths `docs/task/RFCT-210.md` §2.2 admits, each written and
+/// each read back through the route that answers for it.
+///
+/// 204 and an empty body: the value the caller sent is the value that was
+/// written, so there is nothing for a response body to add that a `GET` does
+/// not already say.
+#[tokio::test]
+async fn the_write_route_writes_the_four_scalar_settings() {
+    let (router, fake) = test_app(writable_tree("hunter2secret"));
+    let cookie = login(&router, "hunter2secret").await;
+
+    for (path, body) in [
+        ("hostname", r#""router7""#),
+        ("access.ssh.enabled", "true"),
+        ("container.enabled", "true"),
+        ("mqtt.enabled", "true"),
+    ] {
+        let url = format!("/api/v1/settings/{path}");
+        let response = put_json(&router, &url, body, Some(&cookie)).await;
+        assert_eq!(response.status(), StatusCode::NO_CONTENT, "{path}");
+        assert_eq!(header_value(&response, CACHE_CONTROL), "no-store", "{path}");
+        assert_eq!(body_string(response).await, "", "{path} answers no body");
+
+        let read = get(&router, &url, Some(&cookie)).await;
+        assert_eq!(read.status(), StatusCode::OK, "{path}");
+        assert_eq!(
+            body_string(read).await,
+            body,
+            "{path} reads back as written"
+        );
+    }
+
+    assert_eq!(
+        fake.set_paths(),
+        vec![
+            "hostname",
+            "access.ssh.enabled",
+            "container.enabled",
+            "mqtt.enabled"
+        ],
+        "one bus write per request, at the dot-path the URL named"
+    );
+}
+
+/// §2.2's round trip, driven exactly as the client that motivates the rule
+/// would drive it: read a subtree, hand it back, and find the credential
+/// intact rather than replaced by the sentinel.
+///
+/// *"A redacted field is **read-only through the API**: a `PUT` whose body
+/// contains `"<redacted>"` is rejected at 422 rather than written, because
+/// writing the sentinel would silently destroy the credential."*
+/// (`docs/design/api.md:1292-1295`) Without the refusal this test's `PUT`
+/// succeeds and `access.webAdmin.password_hash` becomes the literal string
+/// `<redacted>`, which no password verifies against and no operator can undo.
+#[tokio::test]
+async fn a_write_carrying_the_redaction_sentinel_is_refused_and_writes_nothing() {
+    let (router, fake) = test_app(secret_tree("hunter2secret"));
+    let cookie = login(&router, "hunter2secret").await;
+
+    // The exact bytes a client would have read, sentinels and all.
+    let read = get(&router, "/api/v1/settings/access", Some(&cookie)).await;
+    assert_eq!(read.status(), StatusCode::OK);
+    let redacted = body_string(read).await;
+    assert!(
+        redacted.contains(REDACTED),
+        "the fixture must carry a redacted field: {redacted}"
+    );
+
+    let response = put_json(&router, "/api/v1/settings/access", &redacted, Some(&cookie)).await;
+    assert_eq!(response.status(), StatusCode::UNPROCESSABLE_ENTITY);
+    assert_api_headers(&response, "the sentinel refusal");
+    let error = envelope(response).await;
+    assert_eq!(error["code"], "validation_failed");
+    assert_eq!(error["source"], "apid");
+    assert_eq!(error["path"], json!("access"));
+    assert!(
+        error["message"]
+            .as_str()
+            .is_some_and(|text| text.contains(REDACTED)),
+        "the message has to name what it refused: {error}"
+    );
+
+    // Nothing reached the bus, and the credential the sentinel stood for still
+    // verifies -- which is the whole of what this rule protects.
+    assert!(fake.set_paths().is_empty(), "{:?}", fake.set_paths());
+    assert!(
+        !login(&router, "hunter2secret").await.is_empty(),
+        "the admin hash must still be the hash"
+    );
+
+    // The same rule on an allowlisted path, where the sentinel is the whole
+    // body rather than a field inside one: a client that read
+    // `access.webAdmin.password_hash` got a bare `"<redacted>"` string back.
+    let response = put_json(
+        &router,
+        "/api/v1/settings/hostname",
+        &format!("\"{REDACTED}\""),
+        Some(&cookie),
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::UNPROCESSABLE_ENTITY);
+    assert_eq!(envelope(response).await["code"], "validation_failed");
+    assert!(fake.set_paths().is_empty());
+}
+
+/// The refusal list: a dot-path the schema has and this route does not write
+/// is **409 `settings_read_only`**, answered before any bus call.
+///
+/// 409 and not 422 for the reason §2.4 already spends it on and the mint route
+/// already uses: the body is well formed and nothing about it is wrong, and
+/// what refuses it is the state of the surface.
+#[tokio::test]
+async fn every_dot_path_outside_the_allowlist_is_refused_with_409() {
+    let (router, fake) = test_app(writable_tree("hunter2secret"));
+    let cookie = login(&router, "hunter2secret").await;
+
+    for path in [
+        "schema_version",
+        "network",
+        "network.eth0",
+        "network.eth0.dhcp",
+        "access",
+        "access.ssh",
+        "access.ssh.authorizedKeys",
+        "access.webAdmin.password_hash",
+        "provisioning",
+        "wifi",
+        "wifi.client.networks",
+        "container",
+        "mqtt",
+        "mqtt.listen.port",
+        // `.` is the whole tree, not a malformed path: `Settings::set`
+        // documents `""` and `"."` as replacing the root, so it is a real path
+        // this route refuses rather than one it cannot parse.
+        ".",
+    ] {
+        let response = put_json(
+            &router,
+            &format!("/api/v1/settings/{path}"),
+            "true",
+            Some(&cookie),
+        )
+        .await;
+        assert_eq!(response.status(), StatusCode::CONFLICT, "{path}");
+        assert_api_headers(&response, path);
+        let error = envelope(response).await;
+        assert_eq!(error["code"], "settings_read_only", "{path}");
+        assert_eq!(error["source"], "apid", "{path}");
+        assert_eq!(error["path"], json!(path), "{path}");
+    }
+
+    assert!(
+        fake.set_paths().is_empty(),
+        "a refused write must reach no bus call, got {:?}",
+        fake.set_paths()
+    );
+}
+
+/// Two refusals carry a message the general one cannot, and both are asserted
+/// because both are the reason the path is refused rather than decoration.
+#[tokio::test]
+async fn the_two_named_refusals_say_why_rather_than_only_that() {
+    let (router, _) = test_app(writable_tree("hunter2secret"));
+    let cookie = login(&router, "hunter2secret").await;
+
+    // `schema_version` is read-only in the tree itself, not merely here: no
+    // later milestone widens this route to cover it.
+    let response = put_json(
+        &router,
+        "/api/v1/settings/schema_version",
+        "9",
+        Some(&cookie),
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::CONFLICT);
+    let message = envelope(response).await["message"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    assert!(
+        message.contains("read-only in the settings tree itself"),
+        "{message}"
+    );
+
+    // `network` names the typed route that owns it, because a raw write here
+    // creates an entry of the default kind rather than refusing an interface
+    // the device does not have (`docs/task/RFCT-210.md` §2.4).
+    let response = put_json(
+        &router,
+        "/api/v1/settings/network.wg9",
+        r#"{"dhcp": true}"#,
+        Some(&cookie),
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::CONFLICT);
+    let message = envelope(response).await["message"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    assert!(
+        message.contains("PUT /api/v1/network/{iface}"),
+        "the refusal must name the route that does own it: {message}"
+    );
+}
+
+/// §2.4's rule, on the write route: **well-formed but absent is 404, not
+/// well-formed is 422**, and they must not share a status.
+///
+/// "Absent" is decided on the first segment, and that is a statement about
+/// writes. A write may legitimately create the leaf it names -- `Settings::set`
+/// creates missing intermediates -- so a missing leaf is not an absent
+/// resource; a top-level key the typed schema has no field for is, because no
+/// write can ever make the tree deserialize with one.
+#[tokio::test]
+async fn an_absent_root_is_404_and_a_malformed_path_is_422() {
+    let (router, fake) = test_app(writable_tree("hunter2secret"));
+    let cookie = login(&router, "hunter2secret").await;
+
+    for path in ["hostnam", "netwrok.eth0", "acess.ssh.enabled", "sshd"] {
+        let response = put_json(
+            &router,
+            &format!("/api/v1/settings/{path}"),
+            "true",
+            Some(&cookie),
+        )
+        .await;
+        assert_eq!(response.status(), StatusCode::NOT_FOUND, "{path}");
+        let error = envelope(response).await;
+        assert_eq!(error["code"], "settings_not_found", "{path}");
+        assert!(
+            error["message"]
+                .as_str()
+                .is_some_and(|text| text.contains(path)),
+            "{path}: {error}"
+        );
+    }
+
+    for path in [
+        "access..ssh",
+        "access.\"ssh",
+        "access.\"ssh\"x",
+        "hostname.",
+    ] {
+        let response = put_json(
+            &router,
+            &format!("/api/v1/settings/{path}"),
+            "true",
+            Some(&cookie),
+        )
+        .await;
+        assert_eq!(
+            response.status(),
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "{path}"
+        );
+        let error = envelope(response).await;
+        assert_eq!(error["code"], "validation_failed", "{path}");
+    }
+
+    assert!(fake.set_paths().is_empty(), "{:?}", fake.set_paths());
+}
+
+/// The eight top-level keys the write route's not-found rule is derived from.
+///
+/// `is_settings_root` reads them out of `Settings::default()` rather than
+/// carrying a list, so this asserts the derivation rather than a copy of it: a
+/// field added to `Settings` changes this expectation and the route together,
+/// and a `#[serde(skip_serializing_if)]` on a top-level field -- which would
+/// drop a real root out of the default tree and turn its 409 into a 404 --
+/// fails here.
+#[test]
+fn the_settings_schema_has_the_eight_roots_the_write_route_knows() {
+    let tree = serde_json::to_value(mosd_settings::Settings::default()).unwrap();
+    let mut keys: Vec<&str> = tree
+        .as_object()
+        .expect("the settings tree is an object")
+        .keys()
+        .map(String::as_str)
+        .collect();
+    keys.sort_unstable();
+    assert_eq!(
+        keys,
+        [
+            "access",
+            "container",
+            "hostname",
+            "mqtt",
+            "network",
+            "provisioning",
+            "schema_version",
+            "wifi",
+        ]
+    );
+}
+
+/// Each writable path's value has one shape, and a body of the wrong shape is
+/// a 422 that names the shape rather than a write of whatever arrived.
+///
+/// The hostname sentence is `HOSTNAME_RULES`, the same string the form pane
+/// puts in its error box: one rule, one wording, two surfaces.
+#[tokio::test]
+async fn a_body_of_the_wrong_shape_is_refused_and_not_written() {
+    let (router, fake) = test_app(writable_tree("hunter2secret"));
+    let cookie = login(&router, "hunter2secret").await;
+
+    for (path, body, expected) in [
+        ("hostname", "true", "text"),
+        ("hostname", "7", "text"),
+        ("hostname", r#"["a"]"#, "text"),
+        ("hostname", r#""-nope-""#, "hyphen"),
+        ("hostname", r#""""#, "1-63"),
+        ("hostname", r#""has space""#, "1-63"),
+        ("access.ssh.enabled", r#""yes""#, "switch"),
+        ("container.enabled", "1", "switch"),
+        ("mqtt.enabled", "null", "switch"),
+    ] {
+        let response = put_json(
+            &router,
+            &format!("/api/v1/settings/{path}"),
+            body,
+            Some(&cookie),
+        )
+        .await;
+        assert_eq!(
+            response.status(),
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "{path} <- {body}"
+        );
+        let error = envelope(response).await;
+        assert_eq!(error["code"], "validation_failed", "{path} <- {body}");
+        assert_eq!(error["path"], json!(path), "{path} <- {body}");
+        assert!(
+            error["message"]
+                .as_str()
+                .is_some_and(|text| text.contains(expected)),
+            "{path} <- {body}: {error}"
+        );
+    }
+
+    // Not JSON at all is 400 and not 422: the request never became a value to
+    // validate. Same classification the mint route gives the same condition.
+    let response = put_json(
+        &router,
+        "/api/v1/settings/hostname",
+        "router7",
+        Some(&cookie),
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    assert_eq!(envelope(response).await["code"], "request_invalid");
+
+    // A body with no `Content-Type: application/json` is the same refusal.
+    let response = send(
+        &router,
+        Request::builder()
+            .method("PUT")
+            .uri("/api/v1/settings/hostname")
+            .header(COOKIE, format!("apid_session={cookie}"))
+            .body(Body::from(r#""router7""#))
+            .unwrap(),
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    assert_eq!(envelope(response).await["code"], "request_invalid");
+
+    assert!(
+        fake.set_paths().is_empty(),
+        "a refused write must write nothing, got {:?}",
+        fake.set_paths()
+    );
+}
+
+/// The credential: bearer **or** cookie, which is PLAN-023 Amendment 1's
+/// ruling applied to a new route. The bearer-only rule is about the token
+/// routes specifically, so this route matches the shipped reads instead.
+#[tokio::test]
+async fn the_write_route_takes_a_bearer_and_a_cookie_and_refuses_neither_silently() {
+    let (router, fake) = test_app(writable_tree("hunter2secret"));
+    let cookie = login(&router, "hunter2secret").await;
+    let token = mint_via_pane(&router, &cookie, "ci").await;
+
+    let response = bearer_json(
+        &router,
+        "PUT",
+        "/api/v1/settings/hostname",
+        &token,
+        r#""from-bearer""#,
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::NO_CONTENT);
+    assert!(fake.set_paths().contains(&"hostname".to_string()));
+
+    // No credential at all: §2.4's envelope and never the gate's redirect, in
+    // both gate modes -- §3.1's trap, which a write route inherits and which
+    // inheriting is not the same as asserting.
+    let (fresh, _) = test_app(unconfigured_tree());
+    for (mode, router) in [("configured", &router), ("setup mode", &fresh)] {
+        let response = put_json(router, "/api/v1/settings/hostname", r#""x""#, None).await;
+        assert_eq!(response.status(), StatusCode::UNAUTHORIZED, "{mode}");
+        assert_eq!(response.headers().get(LOCATION), None, "{mode}");
+        assert_api_headers(&response, mode);
+        assert_eq!(
+            envelope(response).await["code"],
+            "not_authenticated",
+            "{mode}"
+        );
+    }
+}
+
+/// A write mosd refuses is classified by §2.4's table exactly as a read is:
+/// the route adds no second opinion, and mosd's own message comes through.
+#[tokio::test]
+async fn a_write_mosd_refuses_carries_mosds_classification() {
+    for (fdo_name, code, status) in [
+        (
+            "org.freedesktop.DBus.Error.InvalidArgs",
+            "settings_rejected",
+            StatusCode::UNPROCESSABLE_ENTITY,
+        ),
+        (
+            "com.mos.mosd1.Error.ReadOnly",
+            "settings_read_only",
+            StatusCode::CONFLICT,
+        ),
+        (
+            "org.freedesktop.DBus.Error.IOError",
+            "settings_io",
+            StatusCode::INTERNAL_SERVER_ERROR,
+        ),
+    ] {
+        let (router, cookie) = failing_app(Some(fdo_name)).await;
+        let response = put_json(
+            &router,
+            "/api/v1/settings/hostname",
+            r#""router7""#,
+            Some(&cookie),
+        )
+        .await;
+        assert_eq!(response.status(), status, "{fdo_name}");
+        let error = envelope(response).await;
+        assert_eq!(error["code"], code, "{fdo_name}");
+        assert_eq!(error["source"], "mosd", "{fdo_name}");
+        assert_eq!(error["message"], MOSD_MESSAGE, "{fdo_name}");
+        assert_eq!(error["path"], json!("hostname"), "{fdo_name}");
+    }
+}
+
+/// The document describes the served surface: a client reading only
+/// `openapi.json` has to learn the write route, every outcome it has, and that
+/// its body is a bare JSON value.
+#[test]
+fn the_openapi_document_covers_the_settings_write() {
+    let document: serde_json::Value =
+        serde_json::from_str(&crate::openapi::document_json()).expect("the document is JSON");
+
+    let write = &document["paths"]["/api/v1/settings/{path}"]["put"];
+    for status in [
+        "204", "400", "401", "404", "405", "409", "422", "500", "503",
+    ] {
+        assert!(
+            write["responses"][status].is_object(),
+            "the settings write must document {status}: {write}"
+        );
+    }
+    assert_eq!(
+        write["requestBody"]["content"]["application/json"]["schema"]["$ref"],
+        "#/components/schemas/SettingsWrite",
+        "{write}"
+    );
+
+    // The read is unchanged by the write sharing its path.
+    assert!(
+        document["paths"]["/api/v1/settings/{path}"]["get"]["responses"]["200"].is_object(),
+        "{document}"
+    );
+}
+
+// PLAN-023 M5 (`docs/task/RFCT-241.md`): the two array collections that already
+// exist in the settings tree -- the SSH authorized keys, identified by
+// fingerprint, and the WiFi station's known networks, identified by SSID.
+
+/// The whole body as JSON, for the collection routes that answer a document
+/// rather than §2.4's envelope.
+async fn body_json(response: Response<axum::body::Body>) -> serde_json::Value {
+    let body = body_string(response).await;
+    serde_json::from_str(&body).unwrap_or_else(|_| panic!("a JSON body, got: {body}"))
+}
+
+/// The sentence `docs/task/RFCT-210.md` section 2.5 requires on the listing and
+/// on the add, spelled out here rather than read from the constant: a test that
+/// compares the code against itself cannot notice the sentence being reworded.
+const ROOT_KEY_NOTICE_TEXT: &str = "Every authorized key is a root key.";
+
+/// The SSH collection's dot-path, as every envelope it raises names it.
+const SSH_KEYS_DOT_PATH: &str = "access.ssh.authorizedKeys";
+
+/// The WiFi collection's dot-path.
+const WIFI_NETWORKS_DOT_PATH: &str = "wifi.client.networks";
+
+/// The item route of one stored key.
+fn ssh_key_url(fingerprint: &str) -> String {
+    format!(
+        "/api/v1/ssh/authorized-keys/{}",
+        fingerprint.replace('/', "%2F")
+    )
+}
+
+/// A configured tree carrying a `wifi.client` subtree holding `networks`.
+///
+/// The subtree is present even when the list is empty, which is what a real
+/// tree looks like: `WifiClientSettings::networks` carries no
+/// `skip_serializing_if`, so mosd's serialization of the typed tree always has
+/// it.
+fn wifi_tree(networks: serde_json::Value) -> serde_json::Value {
+    let mut tree = configured_tree("hunter2secret");
+    tree["wifi"] = json!({
+        "client": { "enabled": false, "interface": "wlan0", "networks": networks },
+        "ap": { "mode": "off", "channel": 6 },
+    });
+    tree
+}
+
+/// The stored network list, as JSON.
+async fn stored_network_list(fake: &FakeSettings) -> serde_json::Value {
+    fake.get_settings(WIFI_NETWORKS_DOT_PATH).await.unwrap()
+}
+
+/// The collection end to end: an empty listing, an add, a listing that shows
+/// it, and a removal addressed by the fingerprint the add returned.
+///
+/// The fingerprint is the whole handle: it is what `GET` publishes, what
+/// `DELETE` takes, and it is checked against a value that came out of
+/// `ssh-keygen` rather than against apid's own arithmetic.
+#[tokio::test]
+async fn the_ssh_key_collection_lists_adds_and_removes() {
+    let (router, fake) = test_app(ssh_tree(json!([])));
+    let cookie = login(&router, "hunter2secret").await;
+
+    let empty = get(&router, "/api/v1/ssh/authorized-keys", Some(&cookie)).await;
+    assert_eq!(empty.status(), StatusCode::OK);
+    let empty = body_json(empty).await;
+    assert_eq!(empty["keys"], json!([]));
+
+    let added = post_json(
+        &router,
+        "/api/v1/ssh/authorized-keys",
+        &json!({ "key": REAL_ED25519_LINE }).to_string(),
+        Some(&cookie),
+    )
+    .await;
+    assert_eq!(added.status(), StatusCode::CREATED);
+    let added = body_json(added).await;
+    // Canonicalised by the parser: the comment is lifted out of `key` so the
+    // same key pasted under two labels is one key.
+    assert_eq!(added["key"]["key"], json!(canonical(REAL_ED25519_LINE)));
+    assert_eq!(
+        added["key"]["comment"],
+        json!(comment_of(REAL_ED25519_LINE))
+    );
+    assert_eq!(added["key"]["fingerprint"], json!(REAL_ED25519_FINGERPRINT));
+    assert_eq!(
+        stored_key_list(&fake).await,
+        json!([stored_key(REAL_ED25519_LINE)])
+    );
+    assert_eq!(fake.set_paths(), vec![SSH_KEYS_DOT_PATH]);
+
+    let listed = body_json(get(&router, "/api/v1/ssh/authorized-keys", Some(&cookie)).await).await;
+    assert_eq!(listed["keys"].as_array().unwrap().len(), 1);
+    assert_eq!(
+        listed["keys"][0]["fingerprint"],
+        json!(REAL_ED25519_FINGERPRINT)
+    );
+
+    let removed = request(
+        &router,
+        "DELETE",
+        &ssh_key_url(REAL_ED25519_FINGERPRINT),
+        Some(&cookie),
+        None,
+    )
+    .await;
+    assert_eq!(removed.status(), StatusCode::NO_CONTENT);
+    assert_eq!(stored_key_list(&fake).await, json!([]));
+}
+
+/// The notice is on **both** answers, which is what section 2.5 asks for: a
+/// client that only ever adds keys is still told that a key added here logs in
+/// as root.
+#[tokio::test]
+async fn the_root_key_notice_is_on_the_listing_and_on_the_add() {
+    let (router, _) = test_app(ssh_tree(json!([])));
+    let cookie = login(&router, "hunter2secret").await;
+
+    let listed = body_json(get(&router, "/api/v1/ssh/authorized-keys", Some(&cookie)).await).await;
+    assert_eq!(listed["notice"], json!(ROOT_KEY_NOTICE_TEXT));
+
+    let added = post_json(
+        &router,
+        "/api/v1/ssh/authorized-keys",
+        &json!({ "key": REAL_ED25519_LINE }).to_string(),
+        Some(&cookie),
+    )
+    .await;
+    assert_eq!(
+        body_json(added).await["notice"],
+        json!(ROOT_KEY_NOTICE_TEXT)
+    );
+}
+
+/// The add runs the parser the pane runs, and refuses the same lines: both
+/// surfaces reach `parse_authorized_key`, so a line one accepts is a line the
+/// other accepts and a line mosd would reject reaches neither.
+///
+/// The two answers differ in shape and not in verdict -- the API's envelope
+/// carries the parser's own message, the pane re-renders itself around it.
+#[tokio::test]
+async fn the_key_add_runs_the_same_parser_the_pane_runs() {
+    let (router, fake) = test_app(ssh_tree(json!([])));
+    let cookie = login(&router, "hunter2secret").await;
+
+    for line in [
+        // An options field in front of the type: the remote-code-execution
+        // surface the parser exists to refuse.
+        r#"command="rm -rf /" ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIL99V7xPTOP3jZjnbVPM7xC+ckwzkOQPalUpsvtPzYo8"#,
+        // A type the whitelist does not carry.
+        "ssh-dss AAAAC3NzaC1lZDI1NTE5AAAAIL99V7xPTOP3jZjnbVPM7xC+ckwzkOQPalUpsvtPzYo8",
+        // A blob that does not decode.
+        "ssh-ed25519 not-base64!!",
+        "",
+    ] {
+        let response = post_json(
+            &router,
+            "/api/v1/ssh/authorized-keys",
+            &json!({ "key": line }).to_string(),
+            Some(&cookie),
+        )
+        .await;
+        assert_eq!(
+            response.status(),
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "{line:?}"
+        );
+        let error = envelope(response).await;
+        assert_eq!(error["code"], "validation_failed", "{line:?}");
+        assert_eq!(error["source"], "apid", "{line:?}");
+        assert_eq!(error["path"], json!(SSH_KEYS_DOT_PATH), "{line:?}");
+
+        // The pane refuses it too, and neither surface wrote anything.
+        let pane = post_form(
+            &router,
+            "/ssh/keys/add",
+            &format!("key={}", urlencode(line)),
+            Some(&cookie),
+        )
+        .await;
+        assert_eq!(pane.status(), StatusCode::UNPROCESSABLE_ENTITY, "{line:?}");
+    }
+    assert!(fake.set_paths().is_empty(), "{:?}", fake.set_paths());
+}
+
+/// A key already stored is refused at **409 `key_exists`**.
+///
+/// **This assertion was 422 when M5 shipped it, and the change is a correction
+/// rather than a weakening.** M5 answered 422 because the duplicate check lives
+/// inside `validate_authorized_keys` and the only ways out were exporting a
+/// private constant or matching the validator's words; it declined both and
+/// took the validator's own message. PLAN-023 M6's error-contract ruling gives
+/// the contract a third clause -- absent is 404, malformed is 422, **duplicate
+/// is 409 with a per-collection code** -- and picks the export. This route now
+/// decides the duplicate itself, before the validator runs, so the status is
+/// stronger than it was and not looser: 422 was one answer for a malformed key
+/// and a duplicate alike, and these are now two.
+///
+/// `validate_authorized_keys` still runs on the rewritten list and still
+/// refuses a duplicate. It has to: the settings file is writable without apid,
+/// and the reconciler is the boundary. What changed is which of the two answers
+/// first, not whether the rule exists in one place.
+///
+/// The duplicate is submitted under a different comment, which is the case the
+/// canonical `key` field exists for: two operators pasting one key under two
+/// labels must not end up with two entries granting the same access. That is
+/// also why the route compares the parsed `key` and not the submitted line --
+/// the identity `validate_authorized_keys` itself uses.
+#[tokio::test]
+async fn a_duplicate_key_is_409_and_the_stored_list_is_unchanged() {
+    let (router, fake) = test_app(ssh_tree(json!([stored_key(REAL_ED25519_LINE)])));
+    let cookie = login(&router, "hunter2secret").await;
+
+    let relabelled = format!("{} someone-else", canonical(REAL_ED25519_LINE));
+    let response = post_json(
+        &router,
+        "/api/v1/ssh/authorized-keys",
+        &json!({ "key": relabelled }).to_string(),
+        Some(&cookie),
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::CONFLICT);
+    let error = envelope(response).await;
+    assert_eq!(error["code"], "key_exists");
+    assert_eq!(error["source"], "apid");
+    assert_eq!(error["path"], json!(SSH_KEYS_DOT_PATH));
+    // The message must not be the validator's -- this route decided the answer
+    // and did not recover it from a sentence.
+    assert!(
+        !error["message"].as_str().unwrap().contains("entry 0"),
+        "the refusal echoed the validator's wording: {error}"
+    );
+    assert!(fake.set_paths().is_empty(), "{:?}", fake.set_paths());
+    assert_eq!(
+        stored_key_list(&fake).await,
+        json!([stored_key(REAL_ED25519_LINE)])
+    );
+
+    // And a malformed key is still 422, which is the distinction the third
+    // clause buys: one status no longer covers two conditions.
+    let response = post_json(
+        &router,
+        "/api/v1/ssh/authorized-keys",
+        &json!({ "key": "ssh-ed25519 not-base64" }).to_string(),
+        Some(&cookie),
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::UNPROCESSABLE_ENTITY);
+    assert_eq!(envelope(response).await["code"], "validation_failed");
+}
+
+/// The 32-key cap is **409 `key_limit_reached`**, answered from the exported
+/// bound exactly as the token mint answers its own from `MAX_TOKENS`.
+///
+/// The export is the one the ruling picked, and this is the other thing it
+/// buys: without a readable bound, a full list reaches the caller either as the
+/// shared validator's 422 -- indistinguishable from a malformed key -- or as a
+/// failed write, a 500 about mosd, for a request that was never going to be
+/// accepted.
+#[tokio::test]
+async fn a_full_key_list_is_409_and_names_the_bound() {
+    let full: Vec<serde_json::Value> = (0..mosd_settings::MAX_KEYS)
+        .map(|index| json!({ "key": generated_key_line(index as u8) }))
+        .collect();
+    let (router, fake) = test_app(ssh_tree(json!(full)));
+    let cookie = login(&router, "hunter2secret").await;
+
+    // A key no stored entry carries, so the duplicate rule above cannot be what
+    // answers: the two 409s must be told apart by their code.
+    let response = post_json(
+        &router,
+        "/api/v1/ssh/authorized-keys",
+        &json!({ "key": generated_key_line(mosd_settings::MAX_KEYS as u8) }).to_string(),
+        Some(&cookie),
+    )
+    .await;
+
+    assert_eq!(response.status(), StatusCode::CONFLICT);
+    let error = envelope(response).await;
+    assert_eq!(error["code"], "key_limit_reached");
+    assert!(
+        error["message"]
+            .as_str()
+            .unwrap()
+            .contains(&mosd_settings::MAX_KEYS.to_string()),
+        "the refusal must name the bound: {error}"
+    );
+    assert!(fake.set_paths().is_empty(), "{:?}", fake.set_paths());
+}
+
+/// Section 2.4's rule on the SSH item route: a well-formed fingerprint that
+/// matches no key is **404**, and a string that is not a fingerprint at all is
+/// **422**.
+///
+/// Paired with `the_ssh_pane_answers_422_where_the_api_answers_404`, which
+/// asserts the HTML surface's deliberately different answer to the first of
+/// those two conditions.
+#[tokio::test]
+async fn an_absent_key_fingerprint_is_404_where_the_pane_is_422() {
+    let (router, fake) = test_app(ssh_tree(json!([stored_key(REAL_ED25519_LINE)])));
+    let cookie = login(&router, "hunter2secret").await;
+
+    // Well formed -- it is a real fingerprint of a real key -- and no stored
+    // entry carries it.
+    let response = request(
+        &router,
+        "DELETE",
+        &ssh_key_url(REAL_ED25519_SECOND_FINGERPRINT),
+        Some(&cookie),
+        None,
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::NOT_FOUND);
+    let error = envelope(response).await;
+    assert_eq!(error["code"], "settings_not_found");
+    assert_eq!(error["source"], "apid");
+    assert_eq!(error["path"], json!(SSH_KEYS_DOT_PATH));
+
+    // Not an identifier at all. The last of these is the canonical key text,
+    // which the pane accepts as an identifier and this route does not: on a
+    // path segment there is one interpretation, and it is the fingerprint.
+    for identifier in [
+        "SHA256:tooshort",
+        "HrgN3GLi6Mop2uSRjgOoxImM8zRkFmgqCKoeGD9QOaM",
+        "SHA1:HrgN3GLi6Mop2uSRjgOoxImM8zRkFmgqCKoeGD9QOa",
+        &canonical(REAL_ED25519_LINE).replace(' ', "%20"),
+    ] {
+        let response = request(
+            &router,
+            "DELETE",
+            &ssh_key_url(identifier),
+            Some(&cookie),
+            None,
+        )
+        .await;
+        assert_eq!(
+            response.status(),
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "{identifier}"
+        );
+        assert_eq!(
+            envelope(response).await["code"],
+            "validation_failed",
+            "{identifier}"
+        );
+    }
+
+    assert!(fake.set_paths().is_empty(), "{:?}", fake.set_paths());
+    assert_eq!(
+        stored_key_list(&fake).await,
+        json!([stored_key(REAL_ED25519_LINE)])
+    );
+}
+
+/// The HTML half of the split recorded in `docs/task/RFCT-210.md` section 2.4:
+/// the pane answers **422** where `DELETE /api/v1/ssh/authorized-keys/
+/// {fingerprint}` answers **404**, on the same condition.
+///
+/// It is not drift. The pane's identifier is a submitted string that may be a
+/// fingerprint *or* the exact key text, so a value matching nothing is as
+/// likely mistyped as absent -- the re-submit-the-form condition 422 means
+/// there -- and its body is a re-rendered page no consumer reads a status
+/// from. On the API the identifier is a path segment with one interpretation.
+/// Paired with `an_absent_key_fingerprint_is_404_where_the_pane_is_422`.
+#[tokio::test]
+async fn the_ssh_pane_answers_422_where_the_api_answers_404() {
+    let (router, fake) = test_app(ssh_tree(json!([stored_key(REAL_ED25519_LINE)])));
+    let cookie = login(&router, "hunter2secret").await;
+
+    let html = post_form(
+        &router,
+        "/ssh/keys/remove",
+        &format!("identifier={}", urlencode(REAL_ED25519_SECOND_FINGERPRINT)),
+        Some(&cookie),
+    )
+    .await;
+    let api = request(
+        &router,
+        "DELETE",
+        &ssh_key_url(REAL_ED25519_SECOND_FINGERPRINT),
+        Some(&cookie),
+        None,
+    )
+    .await;
+
+    assert_eq!(html.status(), StatusCode::UNPROCESSABLE_ENTITY);
+    assert_eq!(api.status(), StatusCode::NOT_FOUND);
+    assert!(body_string(html).await.contains("reload it and try again"));
+    assert!(fake.set_paths().is_empty(), "{:?}", fake.set_paths());
+}
+
+/// A fingerprint's base64 alphabet contains `/`, so the identifier of a real
+/// RSA key is two path segments unless it is percent-encoded. Measured rather
+/// than assumed: `%2F` is three characters at match time, so the route matches
+/// one segment, and axum decodes it back to a `/` before the handler sees it.
+///
+/// The gate's predicate has to agree, which is the other half of this: it reads
+/// the raw path, sees no separator, and hands the request off.
+#[tokio::test]
+async fn a_fingerprint_carrying_a_slash_is_addressable_percent_encoded() {
+    assert!(
+        REAL_RSA_FINGERPRINT.contains('/'),
+        "this test is about the `/`, and the fixture no longer has one"
+    );
+    let (router, fake) = test_app(ssh_tree(json!([
+        stored_key(REAL_RSA_LINE),
+        stored_key(REAL_ED25519_LINE),
+    ])));
+    let cookie = login(&router, "hunter2secret").await;
+
+    let response = request(
+        &router,
+        "DELETE",
+        &ssh_key_url(REAL_RSA_FINGERPRINT),
+        Some(&cookie),
+        None,
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::NO_CONTENT);
+    assert_eq!(
+        stored_key_list(&fake).await,
+        json!([stored_key(REAL_ED25519_LINE)]),
+        "the RSA key and only the RSA key was removed"
+    );
+
+    // Unencoded, the same fingerprint is two segments and names no route at
+    // all -- which is the reserved subtree's own not-found answer and not this
+    // collection's 404.
+    let raw = format!("/api/v1/ssh/authorized-keys/{REAL_RSA_FINGERPRINT}");
+    let response = request(&router, "DELETE", &raw, Some(&cookie), None).await;
+    assert_eq!(response.status(), StatusCode::NOT_FOUND);
+    assert_eq!(envelope(response).await["code"], "not_found");
+}
+
+/// The WiFi collection end to end. **It has no pane**, so this is the first
+/// management surface the list has ever had: it exists in the settings model
+/// and was reachable only by editing the settings file on STATE.
+#[tokio::test]
+async fn the_wifi_network_collection_lists_adds_and_removes() {
+    let (router, fake) = test_app(wifi_tree(json!([])));
+    let cookie = login(&router, "hunter2secret").await;
+
+    let empty = get(&router, "/api/v1/wifi/client/networks", Some(&cookie)).await;
+    assert_eq!(empty.status(), StatusCode::OK);
+    assert_eq!(body_json(empty).await, json!([]));
+
+    let added = post_json(
+        &router,
+        "/api/v1/wifi/client/networks",
+        &json!({ "ssid": "roastery", "psk": "hunter2hunter2", "hidden": true, "priority": 7 })
+            .to_string(),
+        Some(&cookie),
+    )
+    .await;
+    assert_eq!(added.status(), StatusCode::CREATED);
+    assert_eq!(
+        body_json(added).await,
+        json!({ "ssid": "roastery", "psk": REDACTED, "hidden": true, "priority": 7 })
+    );
+    assert_eq!(fake.set_paths(), vec![WIFI_NETWORKS_DOT_PATH]);
+    // The stored value is the real key; only what leaves the device is
+    // substituted.
+    assert_eq!(
+        stored_network_list(&fake).await[0]["psk"],
+        json!("hunter2hunter2")
+    );
+
+    // An open network: `psk` is absent rather than null, which is the model's
+    // own shape.
+    let open = post_json(
+        &router,
+        "/api/v1/wifi/client/networks",
+        &json!({ "ssid": "cafe-guest" }).to_string(),
+        Some(&cookie),
+    )
+    .await;
+    assert_eq!(open.status(), StatusCode::CREATED);
+    assert_eq!(
+        body_json(open).await,
+        json!({ "ssid": "cafe-guest", "hidden": false, "priority": 0 })
+    );
+
+    let removed = request(
+        &router,
+        "DELETE",
+        "/api/v1/wifi/client/networks/roastery",
+        Some(&cookie),
+        None,
+    )
+    .await;
+    assert_eq!(removed.status(), StatusCode::NO_CONTENT);
+    let left = body_json(get(&router, "/api/v1/wifi/client/networks", Some(&cookie)).await).await;
+    assert_eq!(
+        left,
+        json!([{ "ssid": "cafe-guest", "hidden": false, "priority": 0 }])
+    );
+}
+
+/// A key written through `POST` is redacted on the next `GET`, and the
+/// redaction is section 2.2's structural one rather than a rule this route
+/// keeps for itself.
+#[tokio::test]
+async fn a_posted_psk_is_redacted_on_the_next_read() {
+    let (router, fake) = test_app(wifi_tree(json!([])));
+    let cookie = login(&router, "hunter2secret").await;
+
+    let response = post_json(
+        &router,
+        "/api/v1/wifi/client/networks",
+        &json!({ "ssid": "roastery", "psk": "hunter2hunter2" }).to_string(),
+        Some(&cookie),
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::CREATED);
+
+    let listed = get(&router, "/api/v1/wifi/client/networks", Some(&cookie)).await;
+    let body = body_string(listed).await;
+    assert!(
+        !body.contains("hunter2hunter2"),
+        "the stored key left the device: {body}"
+    );
+    let listed: serde_json::Value = serde_json::from_str(&body).unwrap();
+    assert_eq!(listed[0]["psk"], json!(REDACTED));
+
+    // The same list read through the settings root is redacted too, which is
+    // what makes this one list with one rule and not two surfaces with two.
+    let through_settings = get(
+        &router,
+        "/api/v1/settings/wifi.client.networks",
+        Some(&cookie),
+    )
+    .await;
+    assert_eq!(body_json(through_settings).await[0]["psk"], json!(REDACTED));
+    assert_eq!(
+        stored_network_list(&fake).await[0]["psk"],
+        json!("hunter2hunter2")
+    );
+}
+
+/// The round trip that would destroy a working key: read the list, change one
+/// field, post the entry back. What comes back carries `"<redacted>"` in
+/// `psk`, and storing it would replace the key with ten literal characters.
+///
+/// The sentinel is checked before the body is even read as a network, which is
+/// the ordering the scalar write route landed and the reason it landed it: the
+/// caller is answered about the thing it actually got wrong.
+#[tokio::test]
+async fn posting_a_redacted_psk_back_is_refused_and_the_stored_key_survives() {
+    let (router, fake) = test_app(wifi_tree(json!([
+        { "ssid": "roastery", "psk": "hunter2hunter2", "hidden": false, "priority": 0 },
+    ])));
+    let cookie = login(&router, "hunter2secret").await;
+
+    // Exactly what a client that read the collection holds.
+    let listed = body_json(get(&router, "/api/v1/wifi/client/networks", Some(&cookie)).await).await;
+    let mut edited = listed[0].clone();
+    edited["ssid"] = json!("roastery-5g");
+    edited["hidden"] = json!(true);
+    assert_eq!(edited["psk"], json!(REDACTED));
+
+    let response = post_json(
+        &router,
+        "/api/v1/wifi/client/networks",
+        &edited.to_string(),
+        Some(&cookie),
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::UNPROCESSABLE_ENTITY);
+    let error = envelope(response).await;
+    assert_eq!(error["code"], "validation_failed");
+    assert_eq!(error["source"], "apid");
+    assert_eq!(error["path"], json!(WIFI_NETWORKS_DOT_PATH));
+
+    assert!(fake.set_paths().is_empty(), "{:?}", fake.set_paths());
+    assert_eq!(
+        stored_network_list(&fake).await,
+        json!([{ "ssid": "roastery", "psk": "hunter2hunter2", "hidden": false, "priority": 0 }]),
+        "the real key must survive the refusal"
+    );
+}
+
+/// The SSID is this collection's identity, so a second entry under one SSID is
+/// refused rather than appended: with two, a `DELETE` would have no answer to
+/// which of them it names.
+///
+/// 409 and not 422, for the reason the token mint's `token_limit_reached` is a
+/// 409: the body is well formed and nothing about it is wrong, and what refuses
+/// it is the collection's current state.
+#[tokio::test]
+async fn a_second_network_under_one_ssid_is_refused() {
+    let (router, fake) = test_app(wifi_tree(json!([
+        { "ssid": "roastery", "psk": "hunter2hunter2", "hidden": false, "priority": 0 },
+    ])));
+    let cookie = login(&router, "hunter2secret").await;
+
+    let response = post_json(
+        &router,
+        "/api/v1/wifi/client/networks",
+        &json!({ "ssid": "roastery", "psk": "adifferentkey" }).to_string(),
+        Some(&cookie),
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::CONFLICT);
+    let error = envelope(response).await;
+    assert_eq!(error["code"], "ssid_exists");
+    assert_eq!(error["path"], json!(WIFI_NETWORKS_DOT_PATH));
+    assert!(
+        !body_string(get(&router, "/api/v1/wifi/client/networks", Some(&cookie)).await)
+            .await
+            .contains("adifferentkey")
+    );
+    assert!(fake.set_paths().is_empty(), "{:?}", fake.set_paths());
+}
+
+/// A body that is not a network is 422, and the validator is the settings
+/// model's own deserializer -- which is what mosd's `Settings::set` validates
+/// with, so a body this route accepts is one the store accepts.
+#[tokio::test]
+async fn a_body_that_is_not_a_network_is_422() {
+    let (router, fake) = test_app(wifi_tree(json!([])));
+    let cookie = login(&router, "hunter2secret").await;
+
+    for body in [
+        // No `ssid`: the one field with no default.
+        r#"{"psk":"hunter2hunter2"}"#,
+        // A field the model does not carry; `deny_unknown_fields` is what
+        // catches a typo before it becomes a silently ignored setting.
+        r#"{"ssid":"roastery","hiden":true}"#,
+        // Wrong types.
+        r#"{"ssid":7}"#,
+        r#"{"ssid":"roastery","priority":"high"}"#,
+        // An array where an object belongs.
+        r#"[{"ssid":"roastery"}]"#,
+    ] {
+        let response =
+            post_json(&router, "/api/v1/wifi/client/networks", body, Some(&cookie)).await;
+        assert_eq!(
+            response.status(),
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "{body}"
+        );
+        assert_eq!(
+            envelope(response).await["code"],
+            "validation_failed",
+            "{body}"
+        );
+    }
+
+    // Not JSON at all is 400 and not 422: the request could not be read, which
+    // is a different failure from one that was read and refused.
+    let response = post_json(
+        &router,
+        "/api/v1/wifi/client/networks",
+        "{not json",
+        Some(&cookie),
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    assert_eq!(envelope(response).await["code"], "request_invalid");
+
+    assert!(fake.set_paths().is_empty(), "{:?}", fake.set_paths());
+}
+
+/// Section 2.4's rule on the WiFi item route, with its 422 half **vacant**.
+///
+/// An SSID has no grammar -- every non-empty single path segment spells a
+/// possible one -- so there is no malformed identifier to answer 422 about and
+/// everything absent is 404. That is the rule applied, not an exception to it.
+///
+/// **There is no paired pane test here, and the absence is the point.** The
+/// SSH keys have one (`the_ssh_pane_answers_422_where_the_api_answers_404`)
+/// because both surfaces exist and answer differently on purpose. This
+/// collection has no HTML pane at all, so there is no form-path behaviour for
+/// it to agree or disagree with.
+#[tokio::test]
+async fn an_absent_ssid_is_404_and_this_collection_has_no_pane_to_disagree_with() {
+    let (router, fake) = test_app(wifi_tree(json!([
+        { "ssid": "roastery", "psk": "hunter2hunter2", "hidden": false, "priority": 0 },
+    ])));
+    let cookie = login(&router, "hunter2secret").await;
+
+    for ssid in ["cafe-guest", "roastery-5g", "%20", "SHA256:not-an-ssid"] {
+        let response = request(
+            &router,
+            "DELETE",
+            &format!("/api/v1/wifi/client/networks/{ssid}"),
+            Some(&cookie),
+            None,
+        )
+        .await;
+        assert_eq!(response.status(), StatusCode::NOT_FOUND, "{ssid}");
+        let error = envelope(response).await;
+        assert_eq!(error["code"], "settings_not_found", "{ssid}");
+        assert_eq!(error["source"], "apid", "{ssid}");
+        assert_eq!(error["path"], json!(WIFI_NETWORKS_DOT_PATH), "{ssid}");
+    }
+
+    // No pane serves this list -- the assertion behind the paragraph above, so
+    // it cannot quietly stop being true. Read out of the router's own source,
+    // for the reason `every_mutating_route_is_covered_by_the_authentication_tests`
+    // reads it: a hand-listed set of paths to probe would describe the panes
+    // somebody remembered.
+    let html_wifi_routes: Vec<&str> = include_str!("routes.rs")
+        .lines()
+        .map(str::trim)
+        .filter(|line| line.starts_with(".route(\"/wifi"))
+        .collect();
+    assert!(
+        html_wifi_routes.is_empty(),
+        "this collection now has a pane, so the paragraph above is stale and a paired 422/404 test is owed: {html_wifi_routes:?}"
+    );
+
+    assert!(fake.set_paths().is_empty(), "{:?}", fake.set_paths());
+}
+
+/// Both collections take a bearer token **and** a session cookie, and neither
+/// takes nothing.
+///
+/// PLAN-023 Amendment 1's bearer-only ruling is about the token routes
+/// specifically -- the credential factory -- and not about new routes in
+/// general, so these are dual-credential exactly as the shipped reads are.
+#[tokio::test]
+async fn the_two_collections_take_a_cookie_or_a_bearer_and_401_without_either() {
+    let mut tree = ssh_tree(json!([]));
+    tree["wifi"] = wifi_tree(json!([]))["wifi"].clone();
+    let (entries, wires): (Vec<_>, Vec<_>) = (0..1).map(seeded_token).unzip();
+    tree["access"]["apiTokens"] = json!(entries);
+
+    let (router, _) = test_app(tree);
+    let cookie = login(&router, "hunter2secret").await;
+
+    for path in [
+        "/api/v1/ssh/authorized-keys",
+        "/api/v1/wifi/client/networks",
+    ] {
+        assert_eq!(
+            get(&router, path, Some(&cookie)).await.status(),
+            StatusCode::OK,
+            "cookie: {path}"
+        );
+        assert_eq!(
+            bearer(&router, "GET", path, &wires[0]).await.status(),
+            StatusCode::OK,
+            "bearer: {path}"
+        );
+        // Neither credential: section 2.4's envelope at 401 and **not** the
+        // gate's redirect. These are declared API routes, so the gate hands
+        // them off and `ApiSession` answers -- a client that followed a
+        // redirect would land on `GET /login`, which is a 200 with an HTML
+        // page, and read the whole exchange as success.
+        let anonymous = get(&router, path, None).await;
+        assert_eq!(
+            anonymous.status(),
+            StatusCode::UNAUTHORIZED,
+            "anonymous: {path}"
+        );
+        assert_eq!(
+            envelope(anonymous).await["code"],
+            "not_authenticated",
+            "{path}"
+        );
+    }
+}
+
+/// The document describes the served surface: a client reading only
+/// `openapi.json` has to learn both collections, every outcome each route has,
+/// and that the SSH listing carries a `notice`.
+#[test]
+fn the_openapi_document_covers_the_two_collections() {
+    let document: serde_json::Value =
+        serde_json::from_str(&crate::openapi::document_json()).expect("the document is JSON");
+
+    for (path, method, statuses) in [
+        (
+            "/api/v1/ssh/authorized-keys",
+            "get",
+            vec!["200", "401", "405", "500", "503"],
+        ),
+        (
+            "/api/v1/ssh/authorized-keys",
+            "post",
+            vec!["201", "400", "401", "405", "409", "422", "500", "503"],
+        ),
+        (
+            "/api/v1/ssh/authorized-keys/{fingerprint}",
+            "delete",
+            vec!["204", "401", "404", "405", "422", "500", "503"],
+        ),
+        (
+            "/api/v1/wifi/client/networks",
+            "get",
+            vec!["200", "401", "405", "500", "503"],
+        ),
+        (
+            "/api/v1/wifi/client/networks",
+            "post",
+            vec!["201", "400", "401", "405", "409", "422", "500", "503"],
+        ),
+        (
+            "/api/v1/wifi/client/networks/{ssid}",
+            "delete",
+            vec!["204", "401", "404", "405", "500", "503"],
+        ),
+    ] {
+        let operation = &document["paths"][path][method];
+        assert!(operation.is_object(), "{method} {path} is undocumented");
+        for status in statuses {
+            assert!(
+                operation["responses"][status].is_object(),
+                "{method} {path} must document {status}: {operation}"
+            );
+        }
+    }
+
+    // The notice is a documented member and not an undeclared extra, on both
+    // answers that carry it.
+    let schemas = &document["components"]["schemas"];
+    assert!(schemas["AuthorizedKeyList"]["properties"]["notice"].is_object());
+    assert!(schemas["AddedAuthorizedKey"]["properties"]["notice"].is_object());
+    // The WiFi item route documents no 422: its identifier has no grammar, so
+    // there is no malformed spelling to answer one for.
+    assert!(
+        document["paths"]["/api/v1/wifi/client/networks/{ssid}"]["delete"]["responses"]["422"]
+            .is_null()
+    );
+}
+
+/// The documented WiFi entry is the settings model's own shape.
+///
+/// The route deserializes into `mosd_settings::WifiNetwork` and answers a
+/// redacted serialization of it, so `WifiNetworkEntry` is a description of
+/// that type rather than a second definition of it. Without this, a field
+/// added to the model would be served and undocumented.
+#[test]
+fn the_wifi_schema_matches_the_settings_model() {
+    let document: serde_json::Value =
+        serde_json::from_str(&crate::openapi::document_json()).expect("the document is JSON");
+    let mut documented: Vec<String> =
+        document["components"]["schemas"]["WifiNetworkEntry"]["properties"]
+            .as_object()
+            .expect("WifiNetworkEntry is an object schema")
+            .keys()
+            .cloned()
+            .collect();
+
+    // Every field present: `psk` is the one the model omits when it is absent.
+    let model = serde_json::to_value(mosd_settings::WifiNetwork {
+        ssid: "roastery".to_string(),
+        psk: Some("hunter2hunter2".to_string()),
+        hidden: true,
+        priority: 7,
+    })
+    .expect("a network serializes");
+    let mut fields: Vec<String> = model
+        .as_object()
+        .expect("a network is an object")
+        .keys()
+        .cloned()
+        .collect();
+    fields.sort();
+    documented.sort();
+    assert_eq!(
+        documented, fields,
+        "the documented WiFi entry has drifted from `mosd_settings::WifiNetwork`"
+    );
+}
+
+// PLAN-023 M6 (`docs/task/RFCT-242.md`): the network cluster typed, the
+// WireGuard peer collection, and the rotate-key 404.
+
+/// The API path of one interface.
+const NETWORK_MAP_PATH: &str = "/api/v1/network";
+
+/// The `network` dot-path every envelope about the whole map names.
+const NETWORK_DOT_PATH: &str = "network";
+
+fn iface_url(iface: &str) -> String {
+    format!("{NETWORK_MAP_PATH}/{}", urlencode(iface))
+}
+
+fn peers_url(iface: &str) -> String {
+    format!("{}/peers", iface_url(iface))
+}
+
+fn peer_url(iface: &str, public_key: &str) -> String {
+    format!("{}/{}", peers_url(iface), urlencode(public_key))
+}
+
+/// The stored map, read back through the fake.
+async fn stored_network_map(fake: &FakeSettings) -> serde_json::Value {
+    fake.get_settings(NETWORK_DOT_PATH).await.unwrap()
+}
+
+/// A syntactically valid X25519 public key whose base64 spelling carries a
+/// `/`, which the standard alphabet really does contain.
+///
+/// Its private half was never generated -- it is 32 copies of one byte -- so
+/// it authorises nothing anywhere.
+const SLASHED_PEER_KEY: &str = "Pz8/Pz8/Pz8/Pz8/Pz8/Pz8/Pz8/Pz8/Pz8/Pz8/Pz8=";
+
+/// The four relational rules, each with its own route-level test, because the
+/// whole reason this cluster is typed rather than a dot-path passthrough is
+/// that these rules exist and a passthrough runs none of them
+/// (`docs/task/RFCT-210.md` section 2.3 item (i)).
+///
+/// Each asserts the same three things: **422**, the rule's own sentence in the
+/// message, and the stored tree unchanged. The last one is what separates this
+/// from the shipped passthrough, which answers 204 and leaves the device's
+/// networking broken with the only evidence in a later state read.
+#[tokio::test]
+async fn a_vlan_parent_that_is_not_declared_is_422_and_writes_nothing() {
+    let (router, fake, cookie) = kinds_app().await;
+    let before = stored_network_map(&fake).await;
+
+    let response = put_json(
+        &router,
+        &iface_url("vlan9"),
+        &json!({ "kind": "vlan", "dhcp": true, "vlan": { "parent": "eth9", "id": 9 } }).to_string(),
+        Some(&cookie),
+    )
+    .await;
+
+    assert_eq!(response.status(), StatusCode::UNPROCESSABLE_ENTITY);
+    assert_api_headers(&response, "vlan parent");
+    let error = envelope(response).await;
+    assert_eq!(error["code"], "validation_failed");
+    assert_eq!(error["source"], "apid");
+    assert_eq!(error["path"], json!("network.vlan9"));
+    assert!(
+        error["message"]
+            .as_str()
+            .unwrap()
+            .contains("has VLAN parent \"eth9\", which is not a declared network entry"),
+        "{error}"
+    );
+    assert!(fake.set_paths().is_empty(), "{:?}", fake.set_paths());
+    assert_eq!(stored_network_map(&fake).await, before);
+}
+
+/// Rule two. This is the exact submission `docs/task/RFCT-210.md` section 2.3
+/// names as the concrete failure a bare passthrough produces: a bridge naming
+/// a port that does not exist, which a `PUT` to
+/// `/api/v1/settings/network.br9` would have answered 204 to.
+#[tokio::test]
+async fn a_bridge_port_that_is_not_declared_is_422_and_writes_nothing() {
+    let (router, fake, cookie) = kinds_app().await;
+    let before = stored_network_map(&fake).await;
+
+    let response = put_json(
+        &router,
+        &iface_url("br9"),
+        &json!({ "kind": "bridge", "dhcp": true, "bridge": { "ports": ["eth9"] } }).to_string(),
+        Some(&cookie),
+    )
+    .await;
+
+    assert_eq!(response.status(), StatusCode::UNPROCESSABLE_ENTITY);
+    let error = envelope(response).await;
+    assert_eq!(error["code"], "validation_failed");
+    assert!(
+        error["message"]
+            .as_str()
+            .unwrap()
+            .contains("has bridge port \"eth9\", which is not a declared network entry"),
+        "{error}"
+    );
+    assert!(fake.set_paths().is_empty(), "{:?}", fake.set_paths());
+    assert_eq!(stored_network_map(&fake).await, before);
+}
+
+/// Rule three, and it is the one no check confined to the entry being written
+/// could ever see: what is refused here is an edit to `eth1`, and what refuses
+/// it is `br0`, a different entry that claims `eth1` as a port.
+#[tokio::test]
+async fn a_bridge_port_that_carries_addressing_is_422_and_writes_nothing() {
+    let (router, fake, cookie) = kinds_app().await;
+    let before = stored_network_map(&fake).await;
+
+    let response = put_json(
+        &router,
+        &iface_url("eth1"),
+        &json!({ "dhcp": true }).to_string(),
+        Some(&cookie),
+    )
+    .await;
+
+    assert_eq!(response.status(), StatusCode::UNPROCESSABLE_ENTITY);
+    let error = envelope(response).await;
+    assert!(
+        error["message"].as_str().unwrap().contains(
+            "network.eth1 is a port of bridge br0 and must not carry addressing of its own"
+        ),
+        "{error}"
+    );
+    assert!(fake.set_paths().is_empty(), "{:?}", fake.set_paths());
+    assert_eq!(stored_network_map(&fake).await, before);
+}
+
+/// Rule four. `br0` already claims `eth1`; a second bridge claiming it is a
+/// race between two `Bridge=` lines for one file, and it is refused.
+#[tokio::test]
+async fn a_port_claimed_by_two_bridges_is_422_and_writes_nothing() {
+    let (router, fake, cookie) = kinds_app().await;
+    let before = stored_network_map(&fake).await;
+
+    let response = put_json(
+        &router,
+        &iface_url("br1"),
+        &json!({ "kind": "bridge", "dhcp": true, "bridge": { "ports": ["eth1"] } }).to_string(),
+        Some(&cookie),
+    )
+    .await;
+
+    assert_eq!(response.status(), StatusCode::UNPROCESSABLE_ENTITY);
+    let error = envelope(response).await;
+    assert!(
+        error["message"]
+            .as_str()
+            .unwrap()
+            .contains("is claimed as a port by both bridge"),
+        "{error}"
+    );
+    assert!(fake.set_paths().is_empty(), "{:?}", fake.set_paths());
+    assert_eq!(stored_network_map(&fake).await, before);
+}
+
+/// The happy path: declare an interface that did not exist, replace one that
+/// did, and remove one.
+#[tokio::test]
+async fn the_interface_route_declares_replaces_and_removes() {
+    let (router, fake, cookie) = kinds_app().await;
+
+    // Declared: `eth2` is not in the stored map, and a `PUT` creates it.
+    let response = put_json(
+        &router,
+        &iface_url("eth2"),
+        &json!({ "dhcp": false, "static": { "address": "10.0.0.9/24", "dns": ["1.1.1.1"] } })
+            .to_string(),
+        Some(&cookie),
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::NO_CONTENT);
+    assert_eq!(header_value(&response, CACHE_CONTROL), "no-store");
+    assert!(body_string(response).await.is_empty());
+    assert_eq!(fake.set_paths(), vec!["network.eth2".to_string()]);
+    assert_eq!(
+        fake.get_settings("network.eth2").await.unwrap(),
+        json!({ "dhcp": false, "static": { "address": "10.0.0.9/24", "dns": ["1.1.1.1"] } })
+    );
+
+    // Replaced whole: the second body has no `static`, and the stored entry
+    // has none afterwards. A `PUT` is the entry, not a patch of it.
+    let response = put_json(
+        &router,
+        &iface_url("eth2"),
+        &json!({ "dhcp": true }).to_string(),
+        Some(&cookie),
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::NO_CONTENT);
+    assert_eq!(
+        fake.get_settings("network.eth2").await.unwrap(),
+        json!({ "dhcp": true })
+    );
+
+    // Removed: the whole map is rewritten without it, because the dot-path
+    // syntax has no delete.
+    let response = request(&router, "DELETE", &iface_url("eth2"), Some(&cookie), None).await;
+    assert_eq!(response.status(), StatusCode::NO_CONTENT);
+    assert_eq!(
+        fake.set_paths().last().map(String::as_str),
+        Some(NETWORK_DOT_PATH)
+    );
+    let map = stored_network_map(&fake).await;
+    assert!(map.get("eth2").is_none(), "{map}");
+    // And nothing else went with it.
+    for kept in ["eth0", "eth1", "eth0.100", "br0", "wg0"] {
+        assert!(map.get(kept).is_some(), "{kept} was dropped: {map}");
+    }
+}
+
+/// A removal is re-validated against the map it leaves behind, which is the
+/// half a delete-by-dot-path could not do at all.
+#[tokio::test]
+async fn removing_a_port_a_bridge_still_lists_is_refused() {
+    let (router, fake, cookie) = kinds_app().await;
+    let before = stored_network_map(&fake).await;
+
+    let response = request(&router, "DELETE", &iface_url("eth1"), Some(&cookie), None).await;
+
+    assert_eq!(response.status(), StatusCode::UNPROCESSABLE_ENTITY);
+    let error = envelope(response).await;
+    assert!(
+        error["message"]
+            .as_str()
+            .unwrap()
+            .contains("has bridge port \"eth1\", which is not a declared network entry"),
+        "{error}"
+    );
+    assert!(fake.set_paths().is_empty(), "{:?}", fake.set_paths());
+    assert_eq!(stored_network_map(&fake).await, before);
+
+    // Removing the bridge first makes the port removable, which is the order
+    // the message asks for.
+    assert_eq!(
+        request(&router, "DELETE", &iface_url("br0"), Some(&cookie), None)
+            .await
+            .status(),
+        StatusCode::NO_CONTENT
+    );
+    assert_eq!(
+        request(&router, "DELETE", &iface_url("eth1"), Some(&cookie), None)
+            .await
+            .status(),
+        StatusCode::NO_CONTENT
+    );
+}
+
+/// Section 2.4's rule on the interface item route: absent is 404, malformed is
+/// 422, and they are not the same answer.
+///
+/// There is no 404 on the `PUT`, deliberately: that route's job is to create
+/// the entry it names, so an absent one is not an absent resource.
+#[tokio::test]
+async fn an_absent_interface_is_404_and_a_malformed_name_is_422() {
+    let (router, fake, cookie) = kinds_app().await;
+
+    let response = request(&router, "DELETE", &iface_url("eth9"), Some(&cookie), None).await;
+    assert_eq!(response.status(), StatusCode::NOT_FOUND);
+    assert_api_headers(&response, "absent interface");
+    let error = envelope(response).await;
+    assert_eq!(error["code"], "settings_not_found");
+    assert_eq!(error["source"], "apid");
+    assert_eq!(error["path"], json!(NETWORK_DOT_PATH));
+
+    // Not a name any interface could have: sixteen characters is one past
+    // `IFNAMSIZ` minus the terminator, and `/` is not in the charset (it
+    // reaches the route percent-encoded, so it is one segment).
+    for bad in ["waytoolongiface016", "bad%2Fname"] {
+        for method in ["PUT", "DELETE"] {
+            let path = format!("{NETWORK_MAP_PATH}/{bad}");
+            let response = if method == "PUT" {
+                put_json(&router, &path, "{\"dhcp\":true}", Some(&cookie)).await
+            } else {
+                request(&router, method, &path, Some(&cookie), None).await
+            };
+            assert_eq!(
+                response.status(),
+                StatusCode::UNPROCESSABLE_ENTITY,
+                "{method} {bad}"
+            );
+            assert_eq!(
+                envelope(response).await["code"],
+                "validation_failed",
+                "{method} {bad}"
+            );
+        }
+    }
+    assert!(fake.set_paths().is_empty(), "{:?}", fake.set_paths());
+}
+
+/// The whole map, replaced in one request and validated as one tree.
+///
+/// This is what section 2.3 says the typed route gives back in exchange for
+/// refusing the passthrough: atomic whole-list replacement, which the
+/// passthrough had, **and** the relational validation, which it did not. The
+/// second half of this test is the case the item route cannot express at all —
+/// a bridge and its port declared together, where sending the bridge first
+/// would be refused.
+#[tokio::test]
+async fn the_whole_map_put_replaces_atomically_and_validates_relationally() {
+    let (router, fake, cookie) = kinds_app().await;
+    let before = stored_network_map(&fake).await;
+
+    // Refused as one tree: `br9` names a port that this very body does not
+    // declare either.
+    let response = put_json(
+        &router,
+        NETWORK_MAP_PATH,
+        &json!({
+            "eth0": { "dhcp": true },
+            "br9": { "kind": "bridge", "dhcp": true, "bridge": { "ports": ["eth7"] } },
+        })
+        .to_string(),
+        Some(&cookie),
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::UNPROCESSABLE_ENTITY);
+    assert_eq!(envelope(response).await["code"], "validation_failed");
+    assert!(fake.set_paths().is_empty(), "{:?}", fake.set_paths());
+    assert_eq!(stored_network_map(&fake).await, before);
+
+    // Accepted as one tree: the same bridge, with its port declared in the
+    // same body. Neither entry is legal without the other.
+    let response = put_json(
+        &router,
+        NETWORK_MAP_PATH,
+        &json!({
+            "eth7": { "dhcp": false },
+            "br9": { "kind": "bridge", "dhcp": true, "bridge": { "ports": ["eth7"] } },
+        })
+        .to_string(),
+        Some(&cookie),
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::NO_CONTENT);
+    assert_eq!(fake.set_paths(), vec![NETWORK_DOT_PATH.to_string()]);
+    // Replaced and not merged: every entry the old map had is gone.
+    let map = stored_network_map(&fake).await;
+    assert_eq!(
+        map.as_object().unwrap().keys().collect::<Vec<_>>(),
+        vec!["br9", "eth7"],
+        "{map}"
+    );
+
+    // A key that is not an interface name is 422, and it names the key.
+    let response = put_json(
+        &router,
+        NETWORK_MAP_PATH,
+        &json!({ "waytoolongiface016": { "dhcp": true } }).to_string(),
+        Some(&cookie),
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::UNPROCESSABLE_ENTITY);
+    assert_eq!(envelope(response).await["code"], "validation_failed");
+
+    // A body that is not a map of interfaces at all is 422; a body that is not
+    // JSON is 400.
+    for (body, status) in [
+        ("[]", StatusCode::UNPROCESSABLE_ENTITY),
+        (
+            "{\"eth0\":{\"nosuchfield\":1}}",
+            StatusCode::UNPROCESSABLE_ENTITY,
+        ),
+        ("{", StatusCode::BAD_REQUEST),
+    ] {
+        let response = put_json(&router, NETWORK_MAP_PATH, body, Some(&cookie)).await;
+        assert_eq!(response.status(), status, "{body}");
+    }
+}
+
+/// A dotted interface name round-trips through the quoted path segment, so the
+/// daemon sees one key and not two (M6 acceptance).
+#[tokio::test]
+async fn a_dotted_interface_name_round_trips_through_the_quoted_path_segment() {
+    let (router, fake, cookie) = kinds_app().await;
+
+    let response = put_json(
+        &router,
+        &iface_url("eth0.100"),
+        &json!({ "kind": "vlan", "dhcp": true, "vlan": { "parent": "eth0", "id": 100 } })
+            .to_string(),
+        Some(&cookie),
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::NO_CONTENT);
+    assert_eq!(fake.set_paths(), vec![r#"network."eth0.100""#.to_string()]);
+
+    // And the envelope quotes it too, because that is the dot-path an operator
+    // would type at the settings route.
+    let (router, _, cookie) = kinds_app().await;
+    let response = put_json(
+        &router,
+        &iface_url("wg.9"),
+        &json!({ "kind": "vlan", "dhcp": true, "vlan": { "parent": "nope", "id": 1 } }).to_string(),
+        Some(&cookie),
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::UNPROCESSABLE_ENTITY);
+    assert_eq!(envelope(response).await["path"], json!(r#"network."wg.9""#));
+}
+
+/// M4's refusal, verified rather than duplicated: a raw settings write under
+/// `network` is 409 and names the typed routes this milestone added.
+#[tokio::test]
+async fn the_settings_passthrough_under_network_is_409_and_names_the_typed_route() {
+    let (router, fake, cookie) = kinds_app().await;
+
+    for path in [
+        "/api/v1/settings/network",
+        "/api/v1/settings/network.br0",
+        "/api/v1/settings/network.br0.bridge.ports",
+    ] {
+        let response = put_json(&router, path, "{\"dhcp\":true}", Some(&cookie)).await;
+        assert_eq!(response.status(), StatusCode::CONFLICT, "{path}");
+        let error = envelope(response).await;
+        assert_eq!(error["code"], "settings_read_only", "{path}");
+        assert!(
+            error["message"]
+                .as_str()
+                .unwrap()
+                .contains("/api/v1/network"),
+            "{path} did not name the typed route: {error}"
+        );
+    }
+    assert!(fake.set_paths().is_empty(), "{:?}", fake.set_paths());
+}
+
+/// The peer collection end to end: list, add, remove.
+#[tokio::test]
+async fn the_peer_collection_lists_adds_and_removes() {
+    let (router, fake, cookie) = kinds_app().await;
+
+    let response = get(&router, &peers_url("wg0"), Some(&cookie)).await;
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_api_headers(&response, "peer listing");
+    let listed: serde_json::Value = serde_json::from_str(&body_string(response).await).unwrap();
+    assert_eq!(listed.as_array().unwrap().len(), 1, "{listed}");
+    assert_eq!(listed[0]["publicKey"], json!(PEER_KEY));
+    assert_eq!(listed[0]["allowedIps"], json!(["10.8.0.0/24"]));
+
+    let response = post_json(
+        &router,
+        &peers_url("wg0"),
+        &json!({
+            "publicKey": OTHER_PEER_KEY,
+            "allowedIps": ["10.8.1.0/24"],
+            "endpoint": "vpn2.example.net:51820",
+            "persistentKeepalive": 25,
+        })
+        .to_string(),
+        Some(&cookie),
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::CREATED);
+    let echoed: serde_json::Value = serde_json::from_str(&body_string(response).await).unwrap();
+    assert_eq!(echoed["publicKey"], json!(OTHER_PEER_KEY));
+    assert_eq!(echoed["persistentKeepalive"], json!(25));
+    // Only the peer list was written, not the whole entry.
+    assert_eq!(
+        fake.set_paths(),
+        vec!["network.wg0.wireguard.peers".to_string()]
+    );
+
+    let response = request(
+        &router,
+        "DELETE",
+        &peer_url("wg0", OTHER_PEER_KEY),
+        Some(&cookie),
+        None,
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::NO_CONTENT);
+    let peers = fake
+        .get_settings("network.wg0.wireguard.peers")
+        .await
+        .unwrap();
+    assert_eq!(peers.as_array().unwrap().len(), 1, "{peers}");
+    assert_eq!(peers[0]["publicKey"], json!(PEER_KEY));
+}
+
+/// `docs/task/RFCT-210.md` section 2.4's sweep, discharged: the typed route
+/// answers **404 before anything is written** for the interface the pane
+/// silently creates a broken entry for.
+///
+/// Paired with `the_pane_peer_add_writes_a_broken_entry_for_an_undeclared_interface`,
+/// which runs the pane's behaviour and confirms the finding was right. The
+/// split between them is the whole reason this milestone typed the route
+/// instead of adding a guard to the old one.
+#[tokio::test]
+async fn the_api_peer_add_refuses_an_undeclared_interface_where_the_pane_writes_one() {
+    let (router, fake, cookie) = kinds_app().await;
+
+    let response = post_json(
+        &router,
+        &peers_url("wg9"),
+        &json!({ "publicKey": PEER_KEY }).to_string(),
+        Some(&cookie),
+    )
+    .await;
+
+    assert_eq!(response.status(), StatusCode::NOT_FOUND);
+    assert_api_headers(&response, "peer add on an undeclared interface");
+    let error = envelope(response).await;
+    assert_eq!(error["code"], "settings_not_found");
+    assert_eq!(error["path"], json!(NETWORK_DOT_PATH));
+    // Nothing was written, which is the half the pane gets wrong: no write at
+    // all, and therefore no `network.wg9` of the default kind.
+    assert!(fake.set_paths().is_empty(), "{:?}", fake.set_paths());
+    assert!(
+        stored_network_map(&fake).await.get("wg9").is_none(),
+        "an undeclared interface was created"
+    );
+
+    // The same 404 on the other two operations of the collection.
+    assert_eq!(
+        get(&router, &peers_url("wg9"), Some(&cookie))
+            .await
+            .status(),
+        StatusCode::NOT_FOUND
+    );
+    assert_eq!(
+        request(
+            &router,
+            "DELETE",
+            &peer_url("wg9", PEER_KEY),
+            Some(&cookie),
+            None
+        )
+        .await
+        .status(),
+        StatusCode::NOT_FOUND
+    );
+    assert!(fake.set_paths().is_empty(), "{:?}", fake.set_paths());
+}
+
+/// A declared entry of the wrong kind is **422** and not 404, which is the
+/// same split mosd's rotate-key now makes: the URL names a real entry, and
+/// what is wrong is the argument.
+#[tokio::test]
+async fn peers_on_an_interface_that_is_not_a_tunnel_are_422() {
+    let (router, fake, cookie) = kinds_app().await;
+
+    for (method, path) in [
+        ("GET", peers_url("eth0")),
+        ("DELETE", peer_url("eth0", PEER_KEY)),
+    ] {
+        let response = request(&router, method, &path, Some(&cookie), None).await;
+        assert_eq!(
+            response.status(),
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "{path}"
+        );
+        let error = envelope(response).await;
+        assert_eq!(error["code"], "validation_failed", "{path}");
+        assert!(
+            error["message"]
+                .as_str()
+                .unwrap()
+                .contains("is not a WireGuard interface"),
+            "{error}"
+        );
+    }
+
+    let response = post_json(
+        &router,
+        &peers_url("eth0"),
+        &json!({ "publicKey": PEER_KEY }).to_string(),
+        Some(&cookie),
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::UNPROCESSABLE_ENTITY);
+    assert!(fake.set_paths().is_empty(), "{:?}", fake.set_paths());
+}
+
+/// A duplicate public key is **409 `peer_exists`**, following the WiFi
+/// collection's `ssid_exists` and not the SSH collection's 422.
+///
+/// The reason is the identity: the public key is this collection's `DELETE`
+/// path segment, so two entries under one key would leave no answer to which
+/// one a `DELETE` names -- the argument the WiFi route's 409 makes about an
+/// SSID. The SSH 422 is the *shared validator's* own message, inherited rather
+/// than decided, and no validator on either side of the bus refuses a
+/// duplicate peer. `docs/task/RFCT-242.md` flags this as an open contract
+/// question: the ratified rule covers absent and malformed and says nothing
+/// about duplicate.
+#[tokio::test]
+async fn a_duplicate_peer_is_409_and_writes_nothing() {
+    let (router, fake, cookie) = kinds_app().await;
+    let before = stored_network_map(&fake).await;
+
+    let response = post_json(
+        &router,
+        &peers_url("wg0"),
+        &json!({ "publicKey": PEER_KEY, "allowedIps": ["10.9.0.0/24"] }).to_string(),
+        Some(&cookie),
+    )
+    .await;
+
+    assert_eq!(response.status(), StatusCode::CONFLICT);
+    let error = envelope(response).await;
+    assert_eq!(error["code"], "peer_exists");
+    assert_eq!(error["path"], json!("network.wg0.wireguard.peers"));
+    assert!(fake.set_paths().is_empty(), "{:?}", fake.set_paths());
+    assert_eq!(stored_network_map(&fake).await, before);
+}
+
+/// Section 2.4's rule on the peer item route, with both halves live.
+#[tokio::test]
+async fn an_absent_peer_key_is_404_and_a_malformed_one_is_422() {
+    let (router, fake, cookie) = kinds_app().await;
+
+    // Well formed -- it is 32 bytes of base64 -- and no stored peer has it.
+    let response = request(
+        &router,
+        "DELETE",
+        &peer_url("wg0", OTHER_PEER_KEY),
+        Some(&cookie),
+        None,
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::NOT_FOUND);
+    let error = envelope(response).await;
+    assert_eq!(error["code"], "settings_not_found");
+    assert_eq!(error["path"], json!("network.wg0.wireguard.peers"));
+
+    // Not a public key at all, and could never be one.
+    for identifier in ["nope", "AAAA", &"A".repeat(44), &"!".repeat(44)] {
+        let response = request(
+            &router,
+            "DELETE",
+            &peer_url("wg0", identifier),
+            Some(&cookie),
+            None,
+        )
+        .await;
+        assert_eq!(
+            response.status(),
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "{identifier}"
+        );
+        assert_eq!(
+            envelope(response).await["code"],
+            "validation_failed",
+            "{identifier}"
+        );
+    }
+    assert!(fake.set_paths().is_empty(), "{:?}", fake.set_paths());
+}
+
+/// The API answers **404** where the pane answers 422, on the same condition.
+///
+/// Paired with `an_absent_peer_key_is_404_and_a_malformed_one_is_422` above
+/// and kept for the reason `docs/task/RFCT-210.md` section 2.4 gives about the
+/// SSH pane: a form's body is a re-rendered page no consumer reads a status
+/// from, and its message asks for a re-submit.
+#[tokio::test]
+async fn the_network_pane_answers_422_where_the_peer_route_answers_404() {
+    let (router, fake, cookie) = kinds_app().await;
+
+    let response = post_form(
+        &router,
+        "/network/peers/remove",
+        &format!("iface=wg0&publicKey={}", urlencode(OTHER_PEER_KEY)),
+        Some(&cookie),
+    )
+    .await;
+
+    assert_eq!(response.status(), StatusCode::UNPROCESSABLE_ENTITY);
+    assert!(
+        body_string(response)
+            .await
+            .contains("No peer of this tunnel has that public key"),
+        "the pane re-renders with its own sentence"
+    );
+    assert!(fake.set_paths().is_empty(), "{:?}", fake.set_paths());
+}
+
+/// A public key carrying a `/` is addressable, percent-encoded.
+///
+/// The base64 alphabet a WireGuard key uses is the standard one, not the
+/// URL-safe variant, so a real key can contain `/` and `+`. Sent as `%2F` it
+/// is three characters at match time, so the router still matches one segment
+/// and axum decodes it back before the handler sees it. Sent unencoded it is
+/// two segments and reaches the reserved subtree's own not-found, which is a
+/// different answer from this collection's 404.
+#[tokio::test]
+async fn a_peer_key_carrying_a_slash_is_addressable_percent_encoded() {
+    let mut tree = kinds_tree("hunter2secret");
+    tree["network"]["wg0"]["wireguard"]["peers"] = json!([{ "publicKey": SLASHED_PEER_KEY }]);
+    let (router, fake) = test_app(tree);
+    let cookie = login(&router, "hunter2secret").await;
+
+    assert!(SLASHED_PEER_KEY.contains('/'), "the fixture must carry one");
+    let response = request(
+        &router,
+        "DELETE",
+        &peer_url("wg0", SLASHED_PEER_KEY),
+        Some(&cookie),
+        None,
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::NO_CONTENT);
+    assert_eq!(
+        fake.get_settings("network.wg0.wireguard.peers")
+            .await
+            .unwrap(),
+        json!([])
+    );
+
+    // Unencoded, the same key is two segments and is not this route.
+    let response = request(
+        &router,
+        "DELETE",
+        &format!("{}/{SLASHED_PEER_KEY}", peers_url("wg0")),
+        Some(&cookie),
+        None,
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::NOT_FOUND);
+    assert_eq!(envelope(response).await["code"], "not_found");
+}
+
+/// A peer the reconciler would refuse is refused here first, and the refusal
+/// never echoes the key -- the property the reconciler's index-only rule
+/// exists for, now that the message reaches an HTTP client.
+#[tokio::test]
+async fn the_peer_add_runs_the_same_validator_the_reconciler_runs() {
+    const PASTED_SECRET: &str = "OOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOO";
+    let (router, fake, cookie) = kinds_app().await;
+
+    for (body, fragment) in [
+        (
+            json!({ "publicKey": PASTED_SECRET }),
+            "is not a WireGuard key",
+        ),
+        (
+            json!({ "publicKey": OTHER_PEER_KEY, "allowedIps": ["not-a-cidr"] }),
+            "is not an IP address or CIDR",
+        ),
+        (
+            json!({ "publicKey": OTHER_PEER_KEY, "endpoint": "no-port" }),
+            "is not host:port",
+        ),
+    ] {
+        let response =
+            post_json(&router, &peers_url("wg0"), &body.to_string(), Some(&cookie)).await;
+        assert_eq!(
+            response.status(),
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "{body}"
+        );
+        let error = envelope(response).await;
+        assert!(
+            error["message"].as_str().unwrap().contains(fragment),
+            "{body} did not explain itself: {error}"
+        );
+        assert!(
+            !error["message"].as_str().unwrap().contains(PASTED_SECRET),
+            "the refusal echoed the value: {error}"
+        );
+    }
+
+    // A body that is not a peer at all is 422; one that is not JSON is 400.
+    for (body, status) in [
+        ("{\"nosuchfield\":1}", StatusCode::UNPROCESSABLE_ENTITY),
+        ("{", StatusCode::BAD_REQUEST),
+    ] {
+        let response = post_json(&router, &peers_url("wg0"), body, Some(&cookie)).await;
+        assert_eq!(response.status(), status, "{body}");
+    }
+    assert!(fake.set_paths().is_empty(), "{:?}", fake.set_paths());
+}
+
+/// An entry this build cannot read stops every route in the cluster, rather
+/// than being silently dropped.
+///
+/// The pane can afford to skip one and name it in the page; these routes
+/// cannot. Two of them rewrite the whole map, so a dropped entry is a deleted
+/// interface, and all of them validate relationally, so an invisible entry
+/// turns a legal bridge port into a 422.
+#[tokio::test]
+async fn an_unreadable_network_entry_stops_every_route_in_the_cluster() {
+    let mut tree = kinds_tree("hunter2secret");
+    tree["network"]["mangled"] = json!("not an interface");
+    let (router, fake) = test_app(tree);
+    let cookie = login(&router, "hunter2secret").await;
+
+    for (method, path) in [
+        ("PUT", iface_url("eth0")),
+        ("DELETE", iface_url("eth0")),
+        ("GET", peers_url("wg0")),
+    ] {
+        let response = if method == "PUT" {
+            put_json(&router, &path, "{\"dhcp\":true}", Some(&cookie)).await
+        } else {
+            request(&router, method, &path, Some(&cookie), None).await
+        };
+        assert_eq!(
+            response.status(),
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "{method} {path}"
+        );
+        let error = envelope(response).await;
+        assert_eq!(error["code"], "settings_invalid", "{method} {path}");
+        assert!(
+            error["message"].as_str().unwrap().contains("mangled"),
+            "the envelope must name the entry: {error}"
+        );
+    }
+    assert!(fake.set_paths().is_empty(), "{:?}", fake.set_paths());
+
+    // The whole-map `PUT` is the exception, and deliberately: it does not read
+    // the stored map at all, because the map it sends is the map that ends up
+    // stored. It is also the only way out of this state through the API.
+    let response = put_json(
+        &router,
+        NETWORK_MAP_PATH,
+        &json!({ "eth0": { "dhcp": true } }).to_string(),
+        Some(&cookie),
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::NO_CONTENT);
+}
+
+/// Amendment 1's reading, on M6's four routes: a bearer **or** a cookie, and
+/// section 2.4's envelope at 401 with neither -- never the gate's redirect.
+#[tokio::test]
+async fn the_network_cluster_takes_a_cookie_or_a_bearer_and_401_without_either() {
+    let mut tree = kinds_tree("hunter2secret");
+    let (entries, wires): (Vec<_>, Vec<_>) = (0..1).map(seeded_token).unzip();
+    tree["access"]["apiTokens"] = json!(entries);
+    let (router, _) = test_app(tree);
+    let cookie = login(&router, "hunter2secret").await;
+
+    let peers = peers_url("wg0");
+    for path in [peers.as_str()] {
+        assert_eq!(
+            get(&router, path, Some(&cookie)).await.status(),
+            StatusCode::OK,
+            "cookie: {path}"
+        );
+        assert_eq!(
+            bearer(&router, "GET", path, &wires[0]).await.status(),
+            StatusCode::OK,
+            "bearer: {path}"
+        );
+    }
+
+    // The write routes with a bearer and no cookie.
+    assert_eq!(
+        bearer_json(
+            &router,
+            "PUT",
+            &iface_url("eth2"),
+            &wires[0],
+            "{\"dhcp\":true}"
+        )
+        .await
+        .status(),
+        StatusCode::NO_CONTENT
+    );
+    assert_eq!(
+        bearer(&router, "DELETE", &iface_url("eth2"), &wires[0])
+            .await
+            .status(),
+        StatusCode::NO_CONTENT
+    );
+
+    // Neither credential, on every route of the cluster.
+    for (method, path) in [
+        ("PUT", NETWORK_MAP_PATH.to_string()),
+        ("PUT", iface_url("eth0")),
+        ("DELETE", iface_url("eth0")),
+        ("GET", peers_url("wg0")),
+        ("POST", peers_url("wg0")),
+        ("DELETE", peer_url("wg0", PEER_KEY)),
+    ] {
+        let response = request(&router, method, &path, None, None).await;
+        assert_eq!(
+            response.status(),
+            StatusCode::UNAUTHORIZED,
+            "{method} {path}"
+        );
+        assert_eq!(
+            response.headers().get(LOCATION),
+            None,
+            "{method} {path} answered a redirect, which a script reads as success"
+        );
+        assert_eq!(
+            envelope(response).await["code"],
+            "not_authenticated",
+            "{method} {path}"
+        );
+    }
+}
+
+/// The gate hands off exactly what the router serves under this prefix, and
+/// nothing else.
+///
+/// The two precedents this cluster's predicate applies, asserted rather than
+/// asserted-about: a **trailing** empty identifier is the collection path with
+/// a slash and reaches the reservation, and a `{iface}` in the **middle** may
+/// be empty because axum really matches zero characters there.
+#[tokio::test]
+async fn the_network_paths_the_router_does_not_serve_reach_the_reservation() {
+    let (router, _, cookie) = kinds_app().await;
+
+    for (method, path) in [
+        ("GET", "/api/v1/network/"),
+        ("DELETE", "/api/v1/network/"),
+        ("DELETE", "/api/v1/network/wg0/peers/"),
+        ("GET", "/api/v1/network/wg0/peers/extra/deep"),
+        ("GET", "/api/v1/network/wg0/notpeers"),
+    ] {
+        let response = request(&router, method, path, Some(&cookie), None).await;
+        assert_eq!(response.status(), StatusCode::NOT_FOUND, "{method} {path}");
+        assert_eq!(
+            envelope(response).await["code"],
+            "not_found",
+            "{method} {path}"
+        );
+    }
+
+    // The empty interface in the middle IS a route, so an unauthenticated call
+    // gets section 2.4's envelope and not the gate's redirect -- the same
+    // property the rotate action already has.
+    let (fresh, _) = test_app(kinds_tree("hunter2secret"));
+    let response = request(&fresh, "GET", "/api/v1/network//peers", None, None).await;
+    assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+    assert_eq!(response.headers().get(LOCATION), None);
+    assert_eq!(envelope(response).await["code"], "not_authenticated");
+}
+
+/// The document describes every operation this milestone adds, with every
+/// outcome each has: a client reading only `openapi.json` has to learn them.
+#[test]
+fn the_openapi_document_covers_the_network_cluster() {
+    let document: serde_json::Value =
+        serde_json::from_str(&crate::openapi::document_json()).expect("the document is JSON");
+    let paths = &document["paths"];
+
+    for (path, method, statuses) in [
+        (
+            "/api/v1/network",
+            "put",
+            vec!["204", "400", "401", "422", "500", "503", "405"],
+        ),
+        (
+            "/api/v1/network/{iface}",
+            "put",
+            vec!["204", "400", "401", "422", "500", "503", "405"],
+        ),
+        (
+            "/api/v1/network/{iface}",
+            "delete",
+            vec!["204", "401", "404", "422", "500", "503", "405"],
+        ),
+        (
+            "/api/v1/network/{iface}/peers",
+            "get",
+            vec!["200", "401", "404", "422", "500", "503", "405"],
+        ),
+        (
+            "/api/v1/network/{iface}/peers",
+            "post",
+            vec![
+                "201", "400", "401", "404", "409", "422", "500", "503", "405",
+            ],
+        ),
+        (
+            "/api/v1/network/{iface}/peers/{publicKey}",
+            "delete",
+            vec!["204", "401", "404", "422", "500", "503", "405"],
+        ),
+    ] {
+        for status in statuses {
+            assert!(
+                paths[path][method]["responses"][status].is_object(),
+                "{method} {path} is missing its {status}"
+            );
+        }
+    }
+
+    // No `GET` on the map or on one interface: this milestone adds writes, and
+    // the reads are `GET /api/v1/settings/network`. A documented route that
+    // does not exist is a contract nothing serves.
+    assert!(paths["/api/v1/network"]["get"].is_null(), "{document}");
+    assert!(
+        paths["/api/v1/network/{iface}"]["get"].is_null(),
+        "{document}"
+    );
+
+    // And the rotate route gained its 404, which is the whole of the apid-side
+    // change for that correction.
+    assert!(
+        paths["/api/v1/actions/wireguard/{iface}/rotate-key"]["post"]["responses"]["404"]
+            .is_object(),
+        "{document}"
+    );
+}
+
+/// The documented interface schema against `mosd_settings::IfaceSettings`
+/// itself, field for field, so a field added to the model cannot go
+/// undocumented here.
+///
+/// Four schemas and not one, because the model is four structs; each is
+/// compared against a fully-populated instance, since every optional field is
+/// `skip_serializing_if` and an absent one would make the comparison vacuous.
+#[test]
+fn the_network_schema_matches_the_settings_model() {
+    let document: serde_json::Value =
+        serde_json::from_str(&crate::openapi::document_json()).expect("the document is JSON");
+
+    let peer = mosd_settings::WireguardPeer {
+        public_key: PEER_KEY.to_string(),
+        allowed_ips: vec!["10.8.0.0/24".to_string()],
+        endpoint: Some("vpn.example.net:51820".to_string()),
+        persistent_keepalive: Some(25),
+    };
+    let iface = mosd_settings::IfaceSettings {
+        kind: mosd_settings::IfaceKind::Wireguard,
+        dhcp: false,
+        static_: Some(mosd_settings::StaticConfig {
+            address: "10.8.0.2/24".to_string(),
+            gateway: Some("10.8.0.1".to_string()),
+            dns: vec!["1.1.1.1".to_string()],
+        }),
+        vlan: Some(mosd_settings::VlanConfig {
+            parent: "eth0".to_string(),
+            id: 100,
+        }),
+        bridge: Some(mosd_settings::BridgeConfig {
+            ports: vec!["eth1".to_string()],
+        }),
+        wireguard: Some(mosd_settings::WireguardConfig {
+            listen_port: Some(51820),
+            peers: vec![peer.clone()],
+        }),
+    };
+
+    for (schema, model) in [
+        ("NetworkInterface", serde_json::to_value(&iface).unwrap()),
+        (
+            "StaticAddressing",
+            serde_json::to_value(iface.static_.clone().unwrap()).unwrap(),
+        ),
+        (
+            "VlanParameters",
+            serde_json::to_value(iface.vlan.clone().unwrap()).unwrap(),
+        ),
+        (
+            "BridgeParameters",
+            serde_json::to_value(iface.bridge.clone().unwrap()).unwrap(),
+        ),
+        (
+            "WireguardParameters",
+            serde_json::to_value(iface.wireguard.clone().unwrap()).unwrap(),
+        ),
+        ("WireguardPeerEntry", serde_json::to_value(&peer).unwrap()),
+    ] {
+        let mut documented: Vec<String> = document["components"]["schemas"][schema]["properties"]
+            .as_object()
+            .unwrap_or_else(|| panic!("{schema} is an object schema"))
+            .keys()
+            .cloned()
+            .collect();
+        let mut fields: Vec<String> = model
+            .as_object()
+            .unwrap_or_else(|| panic!("{schema}'s model is an object"))
+            .keys()
+            .cloned()
+            .collect();
+        documented.sort();
+        fields.sort();
+        assert_eq!(
+            documented, fields,
+            "the documented {schema} has drifted from the settings model"
+        );
+    }
+}
+
+/// The lifted pre-shared key bound, run by the WiFi route for the first time.
+///
+/// `docs/task/RFCT-241.md` recorded that M5 could not check it: the bound lived
+/// inside a private function of the `mosd` binary crate's station reconciler,
+/// so a key outside IEEE 802.11i's range was accepted, stored, and refused
+/// later by the renderer with the error visible only in live state. M6 lifted
+/// it into `mosd-settings` and the reconciler calls the lifted copy, so this is
+/// the same rule and not a second one.
+#[tokio::test]
+async fn a_psk_outside_the_lifted_bounds_is_refused_by_the_wifi_route() {
+    let (router, fake) = test_app(wifi_tree(json!([])));
+    let cookie = login(&router, "hunter2secret").await;
+
+    for psk in ["short07", &"x".repeat(64)] {
+        let response = post_json(
+            &router,
+            "/api/v1/wifi/client/networks",
+            &json!({ "ssid": "roastery", "psk": psk }).to_string(),
+            Some(&cookie),
+        )
+        .await;
+        assert_eq!(
+            response.status(),
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "{} characters",
+            psk.len()
+        );
+        let error = envelope(response).await;
+        assert_eq!(error["code"], "validation_failed");
+        assert!(
+            error["message"].as_str().unwrap().contains("8 to 63"),
+            "{error}"
+        );
+        // The message never names the length observed: a length is a fact
+        // about a secret, and this string reaches an HTTP client.
+        assert!(
+            !error["message"].as_str().unwrap().contains(psk),
+            "the refusal echoed the key: {error}"
+        );
+    }
+    assert!(fake.set_paths().is_empty(), "{:?}", fake.set_paths());
+
+    // And the two admissible shapes still store: a passphrase in range, and a
+    // 64-digit hex PMK, which the bound does not apply to.
+    for (ssid, psk) in [("roastery", "hunter2hunter2"), ("lab", &"a".repeat(64))] {
+        let response = post_json(
+            &router,
+            "/api/v1/wifi/client/networks",
+            &json!({ "ssid": ssid, "psk": psk }).to_string(),
+            Some(&cookie),
+        )
+        .await;
+        assert_eq!(response.status(), StatusCode::CREATED, "{ssid}");
+    }
+}
+
+/// The collection identifier contract's third clause, held across **every**
+/// collection at once: a duplicate is **409**, with a per-collection code.
+///
+/// One test over all three rather than three that happen to agree. The clause
+/// exists because the two shipped answers had diverged — M5's SSH route
+/// answered 422 and its WiFi route answered 409 for the same class of condition
+/// — and what stops a fourth collection from picking a fourth answer is a test
+/// that fails when one of them drifts, not three tests that would each keep
+/// passing on their own. `docs/design/api.md` section 2.4 carries the clause.
+///
+/// The codes are asserted individually and are deliberately **not** one shared
+/// constant: the clause says *a per-collection code*, so a client can tell
+/// which collection refused it without parsing a path.
+#[tokio::test]
+async fn every_collection_answers_409_for_a_duplicate() {
+    let mut tree = kinds_tree("hunter2secret");
+    tree["access"]["ssh"] =
+        ssh_tree(json!([stored_key(REAL_ED25519_LINE)]))["access"]["ssh"].clone();
+    tree["wifi"] = wifi_tree(json!([
+        { "ssid": "roastery", "psk": "hunter2hunter2", "hidden": false, "priority": 0 },
+    ]))["wifi"]
+        .clone();
+    let (router, fake) = test_app(tree);
+    let cookie = login(&router, "hunter2secret").await;
+
+    for (path, body, code) in [
+        (
+            "/api/v1/ssh/authorized-keys",
+            json!({ "key": format!("{} relabelled", canonical(REAL_ED25519_LINE)) }),
+            "key_exists",
+        ),
+        (
+            "/api/v1/wifi/client/networks",
+            json!({ "ssid": "roastery", "psk": "adifferentkey" }),
+            "ssid_exists",
+        ),
+        (
+            "/api/v1/network/wg0/peers",
+            json!({ "publicKey": PEER_KEY }),
+            "peer_exists",
+        ),
+    ] {
+        let response = post_json(&router, path, &body.to_string(), Some(&cookie)).await;
+        assert_eq!(response.status(), StatusCode::CONFLICT, "{path}");
+        assert_api_headers(&response, path);
+        let error = envelope(response).await;
+        assert_eq!(error["code"], code, "{path}");
+        assert_eq!(error["source"], "apid", "{path}");
+    }
+    // Not one of them wrote: a refused duplicate leaves the collection alone.
+    assert!(fake.set_paths().is_empty(), "{:?}", fake.set_paths());
+}
+
+// PLAN-023 M7: the three actions. No state to `GET` and no idempotency to
+// promise, so every assertion below is about the status code, the call that
+// did or did not reach mosd, and what the response body does not contain.
+
+const REBOOT_PATH: &str = "/api/v1/actions/reboot";
+const POWEROFF_PATH: &str = "/api/v1/actions/poweroff";
+const TRANSIENT_PATH: &str = "/api/v1/actions/transient-root-password";
+
+/// **202 and not 204**, on both verbs, with the bus call reaching mosd after
+/// the response was built.
+///
+/// The status is the milestone's first acceptance criterion: the call is
+/// spawned on a detached task, so the response goes out before the machine goes
+/// down and whether the action completed is not knowable over the connection
+/// that asked. `await_power_calls` is what proves the dispatch is detached
+/// rather than awaited — a handler that awaited the call would already have the
+/// entry when the response arrived, and would have no reason to answer 202.
+///
+/// Asserted against the form path in the same test rather than trusted from the
+/// design: both surfaces answer the same code because both go through one
+/// dispatch, and a change to one of them fails here.
+#[tokio::test]
+async fn the_power_routes_answer_202_like_the_form_path() {
+    for (path, expected) in [(REBOOT_PATH, "reboot"), (POWEROFF_PATH, "power_off")] {
+        let (router, fake) = test_app(configured_tree("hunter2secret"));
+        let cookie = login(&router, "hunter2secret").await;
+
+        let response = post_json(&router, path, "", Some(&cookie)).await;
+        assert_eq!(response.status(), StatusCode::ACCEPTED, "{path}");
+        assert_eq!(header_value(&response, CACHE_CONTROL), "no-store", "{path}");
+        assert_eq!(
+            body_string(response).await,
+            "",
+            "{path}: 202 carries no body"
+        );
+        assert_eq!(
+            fake.await_power_calls(1).await,
+            vec![expected.to_string()],
+            "{path}"
+        );
+        assert!(fake.set_paths().is_empty(), "{path} writes no settings");
+    }
+
+    // The form path answers the same code, measured here and not assumed.
+    let (router, _) = test_app(configured_tree("hunter2secret"));
+    let cookie = login(&router, "hunter2secret").await;
+    let form = post_form(&router, "/power/reboot", "confirm=reboot", Some(&cookie)).await;
+    assert_eq!(form.status(), StatusCode::ACCEPTED);
+}
+
+/// **The confirmation token is not carried over, and the form still demands
+/// it.**
+///
+/// `PowerAction::confirm_token` and `TRANSIENT_CONFIRM_TOKEN` are compile-time
+/// constants, not secrets and not per-session; they stop a mis-click on a
+/// rendered page, and there is no mis-click on a `POST` a script constructed.
+/// So the API takes none — an empty body is enough — while the form path is
+/// unchanged. The asymmetry is deliberate, and this test is what stops a later
+/// reading from "harmonising" either half into the other.
+#[tokio::test]
+async fn the_action_routes_require_no_confirmation_token() {
+    let (router, fake) = test_app(ssh_tree(json!([])));
+    let cookie = login(&router, "hunter2secret").await;
+
+    // No token, and no field carrying one: accepted.
+    assert_eq!(
+        post_json(&router, REBOOT_PATH, "", Some(&cookie))
+            .await
+            .status(),
+        StatusCode::ACCEPTED
+    );
+    assert_eq!(
+        post_json(
+            &router,
+            TRANSIENT_PATH,
+            &json!({ "password": "hunter2secret" }).to_string(),
+            Some(&cookie),
+        )
+        .await
+        .status(),
+        StatusCode::NO_CONTENT
+    );
+    assert_eq!(fake.transient_password_calls(), 1);
+
+    // The form path is untouched by that reduction: the same request without
+    // the token is still refused there.
+    let refused = post_form(
+        &router,
+        "/ssh/password",
+        "password=hunter2secret",
+        Some(&cookie),
+    )
+    .await;
+    assert_eq!(refused.status(), StatusCode::UNPROCESSABLE_ENTITY);
+    let refused = post_form(&router, "/power/reboot", "", Some(&cookie)).await;
+    assert_eq!(refused.status(), StatusCode::UNPROCESSABLE_ENTITY);
+}
+
+/// The transient password reaches mosd, is written into no setting, and is
+/// nowhere in the tree afterwards — the API half of the property the form path
+/// already holds.
+#[tokio::test]
+async fn the_transient_password_route_sets_it_and_writes_no_setting() {
+    const PASSWORD: &str = "correct horse battery";
+
+    let (router, fake) = test_app(ssh_tree(json!([])));
+    let cookie = login(&router, "hunter2secret").await;
+
+    let response = post_json(
+        &router,
+        TRANSIENT_PATH,
+        &json!({ "password": PASSWORD }).to_string(),
+        Some(&cookie),
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::NO_CONTENT);
+    assert_eq!(header_value(&response, CACHE_CONTROL), "no-store");
+    assert_eq!(body_string(response).await, "");
+    assert_eq!(fake.transient_password_calls(), 1);
+
+    assert!(
+        fake.set_paths().is_empty(),
+        "a transient password must write no setting, got {:?}",
+        fake.set_paths()
+    );
+    let tree = fake.get_settings("").await.unwrap().to_string();
+    assert!(
+        !tree.contains(PASSWORD),
+        "the password must not appear in the settings tree"
+    );
+}
+
+/// **The same byte bounds as the form path, because it is the same function.**
+///
+/// `validate_transient_password` is called by both surfaces, so this asserts
+/// the boundaries in both directions and then asserts the form path agrees on
+/// the very same inputs. Two copies of the rule could disagree; one cannot, and
+/// this is the test that would fail if a second copy ever appeared.
+///
+/// 72 is bcrypt's limit, which is why the upper bound exists at all: a longer
+/// password would be silently shortened to its first 72 bytes.
+#[tokio::test]
+async fn the_transient_password_route_enforces_the_form_paths_byte_bounds() {
+    let (router, fake) = test_app(ssh_tree(json!([])));
+    let cookie = login(&router, "hunter2secret").await;
+
+    for (password, accepted) in [
+        ("a".repeat(7), false),
+        ("a".repeat(8), true),
+        ("a".repeat(72), true),
+        ("a".repeat(73), false),
+        ("hunter2\0secret".to_string(), false),
+        ("hunter2\nsecret".to_string(), false),
+        ("hunter2\rsecret".to_string(), false),
+    ] {
+        let before = fake.transient_password_calls();
+        let response = post_json(
+            &router,
+            TRANSIENT_PATH,
+            &json!({ "password": password }).to_string(),
+            Some(&cookie),
+        )
+        .await;
+        let context = format!("{} bytes", password.len());
+        if accepted {
+            assert_eq!(response.status(), StatusCode::NO_CONTENT, "{context}");
+            assert_eq!(fake.transient_password_calls(), before + 1, "{context}");
+        } else {
+            assert_eq!(
+                response.status(),
+                StatusCode::UNPROCESSABLE_ENTITY,
+                "{context}"
+            );
+            assert_api_headers(&response, &context);
+            let error = envelope(response).await;
+            assert_eq!(error["code"], "validation_failed", "{context}");
+            // apid's own validator refused it, so the envelope says apid and
+            // names no dot-path: nothing under `settings` was at fault.
+            assert_eq!(error["source"], "apid", "{context}");
+            assert!(error.get("path").is_none(), "{context}: {error}");
+            assert_eq!(fake.transient_password_calls(), before, "{context}");
+        }
+
+        // The form path draws the boundary in the same place, on the same
+        // input: one rule, two surfaces.
+        let form = post_form(
+            &router,
+            "/ssh/password",
+            &format!(
+                "confirm=set-transient-password&password={}",
+                urlencode(&password)
+            ),
+            Some(&cookie),
+        )
+        .await;
+        let expected = if accepted {
+            StatusCode::SEE_OTHER
+        } else {
+            StatusCode::UNPROCESSABLE_ENTITY
+        };
+        assert_eq!(form.status(), expected, "form path: {context}");
+    }
+}
+
+/// **A rejected password never appears in the response.**
+///
+/// The validator's three messages state the bound, the reason for the bound, or
+/// the forbidden bytes, and none of them interpolates the password — so the
+/// message can be passed through verbatim. This asserts the property the
+/// milestone requires rather than the mechanism that provides it: the whole
+/// response, headers and body, is searched for the value that was sent.
+///
+/// The passwords below are distinctive strings rather than runs of one
+/// character, so a substring match cannot pass by accident.
+#[tokio::test]
+async fn a_rejected_transient_password_is_never_echoed() {
+    let (router, _) = test_app(ssh_tree(json!([])));
+    let cookie = login(&router, "hunter2secret").await;
+
+    for password in [
+        "shortpw",
+        "quagga-vestibule-marzipan-cornice-thimble-quixotic-basalt-lantern-ferrule",
+        "quagga\nvestibule",
+    ] {
+        let response = post_json(
+            &router,
+            TRANSIENT_PATH,
+            &json!({ "password": password }).to_string(),
+            Some(&cookie),
+        )
+        .await;
+        assert_eq!(
+            response.status(),
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "{password}"
+        );
+        let headers = format!("{:?}", response.headers());
+        let body = body_string(response).await;
+        assert!(!body.contains(password), "the body echoed it: {body}");
+        assert!(!headers.contains(password), "a header echoed it: {headers}");
+        // Nor a distinctive fragment of it: a truncated echo is still an echo.
+        for fragment in ["quagga", "shortpw"] {
+            if password.contains(fragment) {
+                assert!(
+                    !body.contains(fragment),
+                    "the body echoed `{fragment}`: {body}"
+                );
+            }
+        }
+        // It is still a usable §2.4 envelope: the caller has to learn what the
+        // rule was without being told what it sent. Every one of the
+        // validator's messages names the subject and the rule and nothing else,
+        // which is exactly why the message can be passed through verbatim.
+        let error: serde_json::Value = serde_json::from_str(&body).expect("§2.4 envelope");
+        let message = error["error"]["message"].as_str().unwrap();
+        assert!(
+            message.starts_with("Password must"),
+            "{password}: {message}"
+        );
+    }
+}
+
+/// A body that is not this shape is §2.4's `request_invalid` at 400, and the
+/// rejection text describes the shape rather than the value — so a malformed
+/// body carrying a password does not put it in the response either.
+#[tokio::test]
+async fn a_malformed_transient_password_body_is_refused_at_400() {
+    let (router, fake) = test_app(ssh_tree(json!([])));
+    let cookie = login(&router, "hunter2secret").await;
+
+    for body in [
+        "not json at all",
+        r#"{"password": 7}"#,
+        r#"{"passphrase": "hunter2secret"}"#,
+        "{}",
+    ] {
+        let response = post_json(&router, TRANSIENT_PATH, body, Some(&cookie)).await;
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST, "{body}");
+        assert_api_headers(&response, body);
+        let error = envelope(response).await;
+        assert_eq!(error["code"], "request_invalid", "{body}");
+        assert_eq!(error["source"], "apid", "{body}");
+    }
+    assert_eq!(fake.transient_password_calls(), 0);
+    assert!(fake.set_paths().is_empty());
+}
+
+/// All three take a bearer token, per Amendment 1's dual-credential reading:
+/// `ApiSession`, so a cookie works too and the bearer is what a script uses.
+#[tokio::test]
+async fn the_action_routes_take_a_bearer_token() {
+    let (tree, _) = token_tree("hunter2secret", 0);
+    let (router, fake) = test_app(tree);
+    let cookie = login(&router, "hunter2secret").await;
+    let token = mint_via_pane(&router, &cookie, "deploy").await;
+
+    let response = bearer_json(
+        &router,
+        "POST",
+        TRANSIENT_PATH,
+        &token,
+        r#"{"password":"hunter2secret"}"#,
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::NO_CONTENT);
+    assert_eq!(fake.transient_password_calls(), 1);
+
+    let response = bearer(&router, "POST", REBOOT_PATH, &token).await;
+    assert_eq!(response.status(), StatusCode::ACCEPTED);
+    assert_eq!(fake.await_power_calls(1).await, vec!["reboot".to_string()]);
+}
+
+/// No credential, no action. The 401 is §2.4's envelope and the machine stays
+/// up: this is the one route family where a missing check is unrecoverable.
+#[tokio::test]
+async fn an_unauthenticated_action_post_is_refused_and_does_not_act() {
+    for path in [REBOOT_PATH, POWEROFF_PATH, TRANSIENT_PATH] {
+        let (router, fake) = test_app(ssh_tree(json!([])));
+        let response = post_json(&router, path, r#"{"password":"hunter2secret"}"#, None).await;
+        assert_eq!(response.status(), StatusCode::UNAUTHORIZED, "{path}");
+        assert_api_headers(&response, path);
+        assert_eq!(
+            envelope(response).await["code"],
+            "not_authenticated",
+            "{path}"
+        );
+        // Two calls' worth of deadline, then assert nothing arrived.
+        assert!(
+            fake.await_power_calls(1).await.is_empty(),
+            "{path} acted without a credential"
+        );
+        assert_eq!(fake.transient_password_calls(), 0, "{path}");
+    }
+}
+
+/// A failed transient-password call is §2.4's envelope with **no `path`
+/// member**: the route writes no setting, so there is no dot-path at fault.
+///
+/// This is the clause that made `bus_api_error` take an `Option`. Asserted
+/// because the alternative — passing a plausible-looking dot-path such as
+/// `access.ssh` — would name something that was not at fault, and an empty
+/// string would put `"path": ""` on the wire.
+#[tokio::test]
+async fn a_failed_transient_password_names_no_dot_path() {
+    let (router, cookie) = failing_app(Some("org.freedesktop.DBus.Error.Failed")).await;
+
+    let response = post_json(
+        &router,
+        TRANSIENT_PATH,
+        &json!({ "password": "hunter2secret" }).to_string(),
+        Some(&cookie),
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::INTERNAL_SERVER_ERROR);
+    assert_api_headers(&response, TRANSIENT_PATH);
+    let error = envelope(response).await;
+    assert_eq!(error["code"], "mosd_failed");
+    assert_eq!(error["source"], "mosd");
+    assert!(error.get("path").is_none(), "{error}");
+
+    // A route that does name one still names it: the member is optional, not
+    // removed. Same fixture, same failure, same classifier — the only
+    // difference is that this one has a dot-path at fault.
+    let response = put_json(
+        &router,
+        "/api/v1/settings/hostname",
+        r#""mos""#,
+        Some(&cookie),
+    )
+    .await;
+    assert_eq!(envelope(response).await["path"], "hostname");
+}
+
+/// The document describes all three, each `POST`-only: a documented `GET`
+/// would be a contract for a route that does not exist, and on these three
+/// paths it would be a contract to power the appliance off by following a link.
+#[test]
+fn the_openapi_document_covers_the_three_actions() {
+    let document: serde_json::Value =
+        serde_json::from_str(&crate::openapi::document_json()).expect("the document is JSON");
+
+    for (path, statuses) in [
+        (REBOOT_PATH, ["202", "401", "405"].as_slice()),
+        (POWEROFF_PATH, ["202", "401", "405"].as_slice()),
+        (
+            TRANSIENT_PATH,
+            ["204", "400", "401", "422", "500", "503", "405"].as_slice(),
+        ),
+    ] {
+        let route = &document["paths"][path];
+        assert!(route["post"].is_object(), "{path} is missing its POST");
+        for status in statuses {
+            assert!(
+                route["post"]["responses"][status].is_object(),
+                "{path} is missing its {status}: {document}"
+            );
+        }
+        for method in ["get", "head", "put", "delete", "patch"] {
+            assert!(
+                route[method].is_null(),
+                "{path} must declare no {method}: {document}"
+            );
+        }
+    }
+
+    // The one request body among the three carries exactly one member.
+    let properties =
+        &document["components"]["schemas"]["TransientRootPasswordRequest"]["properties"];
+    assert_eq!(
+        properties.as_object().unwrap().keys().collect::<Vec<_>>(),
+        vec!["password"],
+        "{document}"
+    );
 }

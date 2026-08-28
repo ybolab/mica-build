@@ -30,6 +30,13 @@ pub const REDACTED: &str = "<redacted>";
 /// this entry redacts nothing. It is the fail-closed half of that rule: the day
 /// a field of that name appears anywhere in either tree, it is already covered,
 /// rather than being served in the clear until somebody remembers this file.
+///
+/// `hash` was on the list before any settings field carried that name, and it
+/// is the case that proves the paragraph above. `access.apiTokens[].hash` is
+/// now a real field of the settings schema -- the SHA-256 digest of a bearer
+/// token -- and it arrived already covered, because `GetSettings("access")`
+/// returns the subtree verbatim and the mint pane would otherwise have shipped
+/// a digest to every authenticated reader before anyone thought to look here.
 const SECRET_FIELDS: [&str; 5] = ["psk", "passwordHash", "password_hash", "hash", "privateKey"];
 
 /// Whether a field named `name` is redacted.
@@ -70,5 +77,36 @@ fn walk(value: Value) -> Value {
         ),
         Value::Array(items) => Value::Array(items.into_iter().map(walk).collect()),
         other => other,
+    }
+}
+
+/// Whether `value` carries [`REDACTED`] anywhere inside it.
+///
+/// The structural mirror of [`walk`], and it exists for one round trip §2.2
+/// names: *"A redacted field is **read-only through the API**: a `PUT` whose
+/// body contains `"<redacted>"` is rejected at 422 rather than written,
+/// because writing the sentinel would silently destroy the credential."*
+/// (`docs/design/api.md:1292-1295`) A client that reads a subtree, edits one
+/// field and writes the whole thing back is not doing anything unusual; what
+/// it hands back is the redacted view, and without this check the write
+/// succeeds and the password hash on the device becomes the literal string
+/// `<redacted>`.
+///
+/// Strings at any depth and inside arrays, because that is exactly where
+/// [`walk`] puts the sentinel. Field *names* are not examined: a read
+/// substitutes values and never renames a field, so a key that happens to
+/// spell the sentinel did not come from one.
+///
+/// The cost is named rather than hidden: an operator who genuinely wants a
+/// setting whose value is the ten characters `<redacted>` cannot write it
+/// through this route. No such setting exists in the schema — every field it
+/// would reach is a hostname or a boolean — and the alternative is a rule that
+/// cannot tell the destructive case from the deliberate one.
+pub fn carries_sentinel(value: &Value) -> bool {
+    match value {
+        Value::String(text) => text == REDACTED,
+        Value::Object(fields) => fields.values().any(carries_sentinel),
+        Value::Array(items) => items.iter().any(carries_sentinel),
+        _ => false,
     }
 }
