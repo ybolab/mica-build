@@ -1,6 +1,6 @@
 # RFCT-243 PLAN-023 M7: the reboot, poweroff and transient-root-password actions
 
-- **status**: completed — the three action verbs ship (202 on the power pair, 204 on the transient password), no `GET` is declared for any of them, the transient-password bounds are the form path's own function and its rejection never echoes the password; the auth gate's declared-route list is fixed and `GET /api/v1/state/{path}` is reconciled to carry both main's 404 and the campaign's 405; 823/823, 1559/1559 citations, 784/784 index, oasdiff RC=0 against main's tip and both other bases
+- **status**: completed — the three action verbs ship (202 on the power pair, 204 on the transient password), no `GET` is declared for any of them, the transient-password bounds are the form path's own function and its rejection never echoes the password; the auth gate's declared-route list is fixed, and `GET /api/v1/state/{path}` carries both main's 404 and the campaign's 405 by adopting RFCT-214's resolution rather than authoring a second one; re-synced onto `bkd/vu5b6kk0` at `823476a` with all fifteen conflicts in citation documents and none in code; 823/823 (813 + 10), 1657/1657 citations, 847/847 index, oasdiff RC=0 against main's tip
 - **priority**: P1
 - **owner**: bkd/08bzo6cs
 - **createdAt**: 2026-08-28
@@ -158,13 +158,24 @@ the same fixture and the same classifier still names `hostname`.
 
 ## 5. Gate results
 
+All four re-run on the **merged** tree (section 7b), not before it.
+
 | Gate | Result |
 |---|---|
-| `bash docs/verify-citations.sh` | `1559/1559 PASS`, RC=0 |
-| `bash docs/verify-index.sh` | `784/784 PASS`, RC=0 |
-| `bash os/pkgs/mosd/hack/check.sh`, unmodified, in the amd64 builder | `Summary [  96.021s] 823 tests run: 823 passed, 0 skipped`; `advisories ok, bans ok, licenses ok`; `ALL CHECKS PASSED` |
-| `oasdiff breaking … --fail-on ERR --severity-levels …` vs the pre-M7 spec | `No breaking changes to report`, RC=0 |
-| the same, vs `main` tip `77a3278` and vs `fd7fbb0` | `No breaking changes to report`, RC=0 — see section 7 |
+| `bash docs/verify-citations.sh` | `1657/1657 PASS`, RC=0 |
+| `bash docs/verify-index.sh` | `847/847 PASS`, RC=0 |
+| `bash os/pkgs/mosd/hack/check.sh`, unmodified, in the amd64 builder | `Summary [  68.188s] 823 tests run: 823 passed, 0 skipped`; `advisories ok, bans ok, licenses ok`; `ALL CHECKS PASSED` |
+| `oasdiff breaking … --fail-on ERR --severity-levels …` vs `main` tip `77a3278` | `No breaking changes to report`, **RC=0** |
+| the same, vs `bkd/vu5b6kk0` at `823476a` | `No breaking changes to report`, **RC=0** |
+
+`1657/1657` is L2's own citation figure, which is the check that the re-sync
+neither lost nor invented a citation. `847/847` is L2's `843/843` plus the four
+index entries this record adds.
+
+**RC=0 against `main`'s tip is the check that matters**, because it is what
+proves `GET /api/v1/state/{path}` still carries `main`'s 404 after the merge. It
+reported RC=1 with `[response-non-success-status-removed]` on that exact route
+before section 7's reconciliation, and does not now.
 
 The gate script ran unmodified. Two things sit around it and neither touches it:
 `dbus` is installed in the container first, without which the bus round-trip
@@ -173,20 +184,34 @@ result from it was believed.
 
 ## 5b. Test arithmetic
 
-Counting both `#[tokio::test]` and `#[tokio::test(flavor = "multi_thread")]`,
-plus plain `#[test]`, with `target/` excluded:
+Restated against the **merged** tree. The re-sync brought the campaign's
+merge-down down onto this branch, which moved the baseline: `d606deb` measured
+**812** and `bkd/vu5b6kk0` at `823476a` measures **813**. Both numbers are
+measured here, not relayed.
 
 | | `#[tokio::test]` | `multi_thread` | `#[test]` | total |
 |---|---|---|---|---|
-| starting tree | 396 | 18 | 398 | **812** |
-| final tree | 406 | 18 | 399 | **823** |
+| `d606deb`, the original base | 396 | 18 | 398 | **812** |
+| `bkd/vu5b6kk0` at `823476a` | 397 | 18 | 398 | **813** |
+| this merged tree | 406 | 18 | 399 | **823** |
 
-**812 + 10 + 1 = 823.** Ten are this milestone's own; the eleventh,
-`a_state_dot_path_that_does_not_resolve_is_404_not_422`, is `main`'s test for
-its own fix, carried across with the section 7 reconciliation rather than
-written here.
+**813 + 10 = 823.** The ten are this milestone's own.
 
-The ten, each asserted by name against the run log:
+**A correction to the attribution of the +1.** The merge-down's extra test is
+`a_state_dot_path_that_does_not_resolve_is_404_not_422` — `main`'s own test from
+`20d4d3d`. It is **not**
+`a_dot_path_that_does_not_exist_is_404_and_a_rejection_stays_422`, which was
+already present at `d606deb` and is therefore inside the 812. Measured both
+ways: that name greps 1 at `d606deb`, and the state-route name greps 0 there.
+
+This also confirms the reconciliation composed rather than duplicated. Section 7
+carried `a_state_dot_path_that_does_not_resolve_is_404_not_422` across by hand
+before the merge-down landed; the merge then brought the same test from the
+other direction, and the merged tree has **one** copy, not two — `grep -oE
+"^async fn ..." | sort | uniq -d` over the merged `tests.rs` reports no
+duplicates at all.
+
+The ten, each confirmed PASS by name in the merged-tree run log:
 
 | Test | What it holds |
 |---|---|
@@ -201,8 +226,8 @@ The ten, each asserted by name against the run log:
 | `a_failed_transient_password_names_no_dot_path` | section 4's `Option`, both directions |
 | `the_openapi_document_covers_the_three_actions` | `POST` only; no `get`/`head`/`put`/`delete`/`patch` declared |
 
-**No test was renamed.** Three existing tests changed their data and none
-changed its name or weakened an assertion:
+**No test was renamed.** Four existing tests changed their data and none changed
+its name or weakened an assertion:
 `a_wrong_method_on_a_declared_api_route_answers_the_envelope` gained the three
 `GET` rows that are section 2.2's assertion;
 `every_other_api_path_keeps_both_of_its_answers` and
@@ -214,57 +239,82 @@ for `InvalidArgs`.
 
 ## 6. Citations
 
-Re-anchored in their own commits, numbers only. The pre-image was verified
-gate-green **first** — 1559/1559 and 780/780 at the merge base — so every old
-line was right before any of them was classified.
+Numbers only, in their own commits. This task ran citation passes against **two
+different bases**, and the distinction is the whole content of this section.
 
-**No constant offset.** Measured net from the pre-image to the final tree, the
-code edits produced **twelve distinct shift bands** in `routes.rs` (+8, +20,
-+23, +24, +50, +51, +57, +64, +77, +129, +146, +231), three in `openapi.json`
-(+0, +153, +163) and one in `tests.rs` (+12). A single offset would have been
-wrong for every citation outside one band.
+### Before the re-sync: mapped from `d606deb`
+
+The pre-image was verified gate-green first — 1559/1559 and 780/780 — so every
+old line was right before any of them was classified. Nine to twelve distinct
+shift bands in `routes.rs`; no constant offset. Five were resolved by hand,
+including two that changed a **quotation** rather than a number, because
+section 7's reconciliation deleted the one-line state handler they quoted.
+
+### After the re-sync: mapped from `bkd/vu5b6kk0`, deliberately
+
+The merge brought RFCT-214's corpus-wide census down. **RFCT-214's numbers are
+the base and mine are the delta, not the other way round**, and the asymmetry is
+the reason: RFCT-214 **content-re-derived** its bare-form citations from the
+construct each piece of prose actually names, because those were never valid and
+no pre-image map can recover them. A mechanical pass of mine, mapped from
+`d606deb`, would have silently overwritten exactly that work. My own shifts are
+recoverable by mapping; its re-derivations are not. So the resolution is not
+symmetric, and taking the L2 side first is what preserves the irrecoverable
+half.
+
+Concretely: every one of the fifteen conflicted documents was resolved to the
+L2 side, and then the map from `bkd/vu5b6kk0` to this merged tree — which **is**
+the M7 delta and nothing else — was applied once over the whole corpus.
+
+**317 full-form citations rewritten**, in eleven distinct bands: `routes.rs`
++8, +20, +23, +29, +36, +118, +203; `openapi.json` +0, +153; `tests.rs` +12,
++18. Three needed hand resolution, all in `bus_api_error`, whose signature
+section 4 changed: `api.md`'s `settings_read_only` and `mosd_failed` rows and
+`RFCT-130.md`'s rejection row. Each was resolved by mapping the endpoints that
+are byte-identical and placing the two that are not — the signature line and the
+`tracing::warn!` beside it — on the same statements in their new position.
+
+### The trap this pass hit, and how it was caught
+
+Fifteen documents conflicted; **eight more auto-merged**. Those eight came out
+of the merge holding **my** pre-merge numbers, and a pass that treats the whole
+corpus as "L2's numbers" will map an already-mine number a second time. That is
+a double application, and it is invisible: the result is a plausible number
+pointing at the wrong line.
+
+The docs gate caught exactly one instance — `RFCT-209.md` quoting *"is stale;
+from mosd/, regenerate it with"* against a line that no longer held it — and one
+instance is enough to condemn the method rather than the instance. The fix was
+not to patch that citation: all twenty-three citation-bearing documents, the
+fifteen conflicted **and** the eight auto-merged, were reset to
+`bkd/vu5b6kk0`'s exact text and the map applied once. A citation rewritten
+twice cannot be distinguished from one rewritten correctly by reading it, so
+the only safe form is one derivation from one base.
+
+That the count came back to **1657/1657 — L2's own figure — is the check that
+nothing was lost or gained** in the reset.
+
+### Counts
 
 | Form | Count | Treatment |
 |---|---|---|
-| Full `path:line` and `path:line-line` into the four changed files | 379 | 73 unchanged, **306 rewritten** |
-| Bare `` `:NNN` `` continuations with a `routes.rs` antecedent | 155 | left in place — RFCT-214's by census |
+| Full form, rewritten in the re-sync pass | 317 | mapped from `bkd/vu5b6kk0`, byte-identical at both endpoints |
+| Full form, hand-resolved in the re-sync pass | 3 | `bus_api_error`'s changed signature |
+| Bare `` `:NNN` `` with a full `routes.rs` antecedent | 184 | left in place — RFCT-214's by census |
+| Bare `` `:NNN` `` with a full `openapi.json` antecedent | 1 | same |
 
-Every mechanical mapping was verified **byte-identical at both endpoints**
-against the pre-image, and accepted only where the cited endpoints sat in
-unchanged blocks. Five citations could not be mapped mechanically and were
-resolved by hand:
+**Bare continuations, re-measured on the merged tree as asked.** The population
+grew from 155 to **184** with a `routes.rs` antecedent, because RFCT-214
+corrected and added to it. Of those, **125 point at lines this task's M7 delta
+moves**, plus **1** with an `openapi.json` antecedent — **126 in total**, where
+the pre-merge figure was 104. The old number is superseded; this is the one to
+carry forward. They are left in place because PLAN-023 gives that census to
+RFCT-214, and the docs gate does not check the continuation form, which is
+precisely why the number is stated rather than assumed to be zero.
 
-| Citation | Why it could not be mapped | Resolved to |
-|---|---|---|
-| `docs/design/api.md` `routes.rs:5382-5395` | The range straddled a split: the spawn block moved into `dispatch_power_action` while the response construction stayed behind | `power_accepted` — the API route's own dispatch-then-202, which is what the sentence describes |
-| `docs/design/api.md` `routes.rs:2952-2994` | The cited start line is `bus_api_error`'s signature, whose text this task changed | the function's new bounds |
-| `docs/task/RFCT-130.md` `routes.rs:2952-2975` | Same start line | the same arms, re-bounded |
-| `docs/design/api.md` `routes.rs:1226` (twice) | Both **quoted** the old one-line state handler, `resource_response(state.api.get_state(&path).await, &path)`. Section 7's reconciliation replaced that line, and the quoted text now exists nowhere | the `get_state` read at `:1227` and the terminal `None` arm at `:1253`, each quoted as it now reads |
-
-The last two are the only places this task changed a **quotation** rather than a
-number, and it changed them because the quoted source line ceased to exist. A
-citation whose quote is false is worse than one whose number is stale: the
-number can be checked mechanically and the quote reads as evidence.
-
-Rewrites were applied in **one simultaneous pass per document**, by character
-offset rather than by string replacement, so a citation rewritten to a value
-could not be rescanned by the rule whose old value is that same number. The map
-was widened to `.md` files as well as `.rs` and `.json`; no document gained or
-lost a section, so no `.md`-into-`.md` citation moved.
-
-Four passes were needed, each after a real line shift: the M7 routes, then
-`cargo fmt` (the gate runs `rustfmt --check`, so the formatting is the gate's
-and not a preference), then the two path-census test edits, then section 7's
-state-route reconciliation. The counts above are the **net** result, measured
-pre-image to final tree, not the sum of the passes.
-
-**The bare continuations were left alone, per PLAN-023's ruling that RFCT-214
-owns that census.** Of the 155 with a full `os/pkgs/mosd/apid/src/routes.rs`
-antecedent, **103 point at lines this task moved**, plus **one** with an
-`openapi.json` antecedent — 104 in total. They are recorded here rather than
-silently left, because the count is what RFCT-214 needs to size its work. The
-docs gate does not check the continuation form, so it stays green either way,
-which is precisely why the number is stated rather than assumed to be zero.
+Rewrites were applied in **one simultaneous pass per document, by character
+offset** rather than by string replacement, so a citation rewritten to a value
+could not be rescanned by the rule whose old value is that same number.
 
 ## 7. The state route: base drift, and the resolution this tree carries
 
@@ -335,6 +385,28 @@ rotate-key route.** So on this tree the state route's apid-side name-reading
 could be replaced by the same mosd-side split. It is not done here: a route
 reconciliation is not the place to also redesign the mechanism, and doing it
 inside a conflict resolution would make the resolution unreviewable.
+
+## 7b. The re-sync merge
+
+`bkd/vu5b6kk0` moved from `d606deb` to `823476a` while this task ran, carrying
+RFCT-214's census and the whole main merge-down (PLAN-024 and PLAN-025).
+`git merge bkd/vu5b6kk0` produced **fifteen conflicts, and all fifteen are
+citation documents** — `api.md`, `bus.md`, `dashboard.md`,
+`remote-management.md` and eleven task records.
+
+**`routes.rs`, `openapi.json`, `tests.rs` and `docs/task/index.md` auto-merged
+with no conflict at all.** That is the direct consequence of section 7's
+decision to *adopt* RFCT-214's `/state` resolution rather than author a second
+one: both branches carried byte-identical text for that route, so git had
+nothing to arbitrate. An independent re-derivation of the same behaviour would
+have conflicted here, and a conflict in a handler body is materially harder to
+resolve correctly than a conflict in a line number.
+
+The merged `/state` route was checked against L2's byte for byte after the merge
+and is identical; its response set is the union — 200, 401, **404**, 422, 500,
+503, **405**. `openapi.json` was **regenerated** on the merged tree rather than
+trusted from the auto-merge, and the regeneration produced no diff, which is the
+evidence the auto-merge was already right.
 
 ## 8. Out of scope, untouched
 
