@@ -592,9 +592,9 @@ pub(crate) async fn api_v1_meta(_session: ApiSession) -> Response {
 ///
 /// Two members always, and the other two by outcome: `checkedAt` on the
 /// reachable answer and `detail` on the unreachable one, each omitted rather
-/// than sent null — the rule [`ApiErrorDetail::path`] already follows, and for
-/// the same reason: a member present with a meaningless value is worse than an
-/// absent one.
+/// than sent null. That is the rule the error envelope's own optional member
+/// already follows, and for the same reason: a member present with a
+/// meaningless value is worse than an absent one.
 #[derive(serde::Serialize, utoipa::ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct ApiHealth {
