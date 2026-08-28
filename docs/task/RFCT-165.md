@@ -434,7 +434,7 @@ sites. Everything else on the list below is a *reference*.
 | `README.md:22` | `` ├── update/          TUF release signing … (`mos-sign`, `mos-update-verify`) `` | live tree block |
 | `docs/architecture.md:104` | `` `mos-sign` signs and `mos-update-verify` `` | live prose |
 | `docs/architecture.md:145` | `` ├── update/        release trust tooling: mos-sign and mos-update-verify `` | live tree block |
-| `docs/design/api.md:3580` | `` (`update/sign`, RFCT-016). `mos-sign` is a member of the `` | live design doc; also a factual claim the extraction falsifies |
+| `docs/design/api.md:3792` | `` (`update/sign`, RFCT-016). `mos-sign` is a member of the `` | live design doc; also a factual claim the extraction falsifies |
 | `docs/design/release-signing.md` — 14 lines | `:4 :35 :55 :56 :62 :74 :85 :90 :114 :135 :148 :295 :297 :308` | live runbook; every one is a command a human types |
 | `update/README.md` — 21 lines | `:6 :9 :16 :17 :19 :27 :29 :47 :52 :71 :76 :113 :147 :158 :166 :174 :178 :181 :189 :195` (14 `mos-sign`, 7 `mos-update-verify`) | folded into `os/pkgs/rauc-sign/README.md` at M3; rewritten in the same movement |
 
@@ -448,7 +448,7 @@ Two entries on that list deserve individual attention:
   it with the binary so the runbook stays internally consistent; but M5 should
   record that it did so deliberately, because a blind `sed s/mos-sign/rauc-sign/`
   would change it silently and a reviewer could not tell which happened.
-- `docs/design/api.md:3588` reads
+- `docs/design/api.md:3800` reads
   ``grep -rn "mos-sign\|update/sign" os/ returns nothing at `86cd669` ``.
   This is a **provenance claim about a specific historical commit**. Rewriting
   the strings inside it would make the sentence assert something that was never

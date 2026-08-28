@@ -35,7 +35,7 @@ authenticates nothing). A reader who needs to know *why* those documents changed
 comes here. Those citations are the current text of those documents, not a
 re-verification of the code beneath them —
 `docs/design/api.md` §1.7 closes by recording that the §9 table was not
-re-verified at `86cd669` (`docs/design/api.md:519-520`). §10's list of what this
+re-verified at `86cd669` (`docs/design/api.md:642-643`). §10's list of what this
 measurement never verified is likewise still true of this measurement.
 
 **How it has gone stale — six drifts.** These are carried across from

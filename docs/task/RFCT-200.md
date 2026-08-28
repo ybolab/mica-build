@@ -60,7 +60,7 @@ GET network.eth0.100 -> Err(NotFound("network.eth0.100"))
 Four facts in one run:
 
 1. The dot-path write of a VLAN name fails exactly as RFCT-135 and
-   `docs/design/api.md:1218-1247` describe.
+   `docs/design/api.md:1397-1426` describe.
 2. **The persistence layer already spells the key correctly**: serializing a
    tree that structurally contains the key `eth0.100` writes
    `[network."eth0.100"]` — TOML quoted-key syntax, produced by the `toml`
@@ -145,7 +145,7 @@ validates against the typed tree and saves TOML atomically
 `50-mos-<iface>.network`, sweeps, reloads networkd
 (`os/pkgs/mosd/mosd/src/reconciler/network.rs:440-500`) → the apply result is
 recorded in the live-state tree per reconciler name and served over D-Bus and
-`GET /api/v1/state/network` (`docs/design/api.md:1377`).
+`GET /api/v1/state/network` (`docs/design/api.md:1556`).
 
 ---
 
@@ -510,7 +510,7 @@ silent failure. os/verify gains an assertion so the check cannot rot.
 
 ## 6. API surface classification
 
-Rules applied, quoted from `docs/design/api.md:984-990`: breaking is
+Rules applied, quoted from `docs/design/api.md:1156-1162`: breaking is
 *"removing a route; removing a response field; narrowing a field's type or its
 accepted value set; adding a required request field; changing the success
 status code of an existing outcome; changing which `error.code` (§2.4) an
@@ -521,8 +521,8 @@ open"*.
 
 | Addition | Class | Which rule |
 |---|---|---|
-| `kind`, `vlan`, `bridge`, `wireguard` fields in `IfaceSettings` bodies | additive | new *optional* request field; new response field (`docs/design/api.md:988-990`) |
-| `kind` values as an enum in responses | additive | open-enum rule; clients must ignore unknowns (`docs/design/api.md:992-995`) |
+| `kind`, `vlan`, `bridge`, `wireguard` fields in `IfaceSettings` bodies | additive | new *optional* request field; new response field (`docs/design/api.md:1160-1162`) |
+| `kind` values as an enum in responses | additive | open-enum rule; clients must ignore unknowns (`docs/design/api.md:1164-1167`) |
 | Quoted-segment path syntax under `/api/v1/settings/{*path}` | additive, one stated edge | no route, method, status or field changes; a previously-failing path starts succeeding. The edge — a segment beginning with `"` is reinterpreted — narrows nothing any validated writer could produce (§2.1), and v7's key validation closes the hand-edit hole |
 | `publicKey`, `kind`, netdev file name in `GET /api/v1/state/network` entries | additive | new response field |
 | `POST /api/v1/actions/wireguard/{iface}/rotate-key` | additive | new route |
@@ -530,7 +530,7 @@ open"*.
 | `privateKey` joining the redaction denylist | additive | no shipped response carries such a field to remove |
 
 Nothing on the breaking list is touched; **no `/api/v2` is required.** This
-also discharges the debt api.md records at `docs/design/api.md:4414-4424`
+also discharges the debt api.md records at `docs/design/api.md:4626-4636`
 — the dot-path fix reaches the published contract as an additive change, not
 a versioned one.
 

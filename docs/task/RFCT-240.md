@@ -97,7 +97,7 @@ asserts the admin password still logs in.
 **422**, because `docs/design/api.md` section 2.2 states it:
 *"a `PUT` whose body contains `"<redacted>"` is rejected at 422 rather than
 written, because writing the sentinel would silently destroy the credential"*
-(`docs/design/api.md:1296-1299`).
+(`docs/design/api.md:1475-1478`).
 
 **`validation_failed`**, from the existing set rather than a new token.
 Section 2.4's `code` is an open set whose contract is that an unrecognised
@@ -253,7 +253,7 @@ was restated; see section 7.
    import at all.
 5. `docs/design/api.md` section 2.3's *"There is no
    `POST` and no `PUT` anywhere under `/api`"*
-   (`docs/design/api.md:1361-1362`). The `PUT` half is now false. Section 2.3
+   (`docs/design/api.md:1540-1541`). The `PUT` half is now false. Section 2.3
    is the M1 design's own input and its whole table is a dated measurement this
    campaign supersedes milestone by milestone; correcting one clause of it here
    would leave the twenty rows around it saying the opposite.

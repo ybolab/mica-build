@@ -25,7 +25,7 @@ laid. Sixteen stub lines consumed, verified at merge.
 
 | section | line | subject |
 | --- | --- | --- |
-| 4.1 | `docs/design/api.md:2337` | Routing between API and assets |
+| 4.1 | `docs/design/api.md:2549` | Routing between API and assets |
 | 4.2 | `:2368` | SPA fallback |
 | 4.3 | `:2435` | MIME and caching |
 | 4.4 | `:1765` | Path traversal |
@@ -57,7 +57,7 @@ security-relevant half and is decided explicitly: `application/octet-stream`
 **together with** `nosniff`. The alternative — `mime_guess`, which is what
 `tower_http`'s `ServeDir` uses — is rejected with its reasoning stated: a fixed
 table means the unknown-extension behaviour is *"a decision rather than a
-default"* (`docs/design/api.md:1726-1729`).
+default"* (`docs/design/api.md:1938-1941`).
 
 **`/srv/ui/`, which needs no ninth bind — and that is the point.** `/srv` is
 DATA's own mountpoint rather than a redirect, so a custom bundle needs no new
@@ -83,7 +83,7 @@ explicit rules, because the obvious shortcut does not hold:
   (`mosd/Cargo.lock:2368-2379`).
 - `ServeDir` performs **no canonicalisation** — a grep of
   `tower-http-0.6.11/src/services/fs/serve_dir/` returns no match
-  (`docs/design/api.md:2710-2712`).
+  (`docs/design/api.md:2922-2924`).
 
 So bundle symlinks are closed **at install time** (reject non-regular entries)
 **plus** canonicalise-and-assert at serve time. And if `tower-http` is ever
@@ -103,7 +103,7 @@ runs.
 **Five failure classes, and the fifth is not visible in the filesystem.** The
 first four are — a missing bundle, a bad unpack, a filesystem error, an empty
 directory. The fifth is a UI that **renders perfectly and cannot talk to the API
-it found** (`docs/design/api.md:3101`). No file check detects it. That class is
+it found** (`docs/design/api.md:3313`). No file check detects it. That class is
 the reason §6.3 requires a reserved prefix the asset router cannot shadow as the
 way *in*, and pointer removal as the way *out* — a mechanism that works when
 nothing on disk looks wrong.
