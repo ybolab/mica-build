@@ -29,7 +29,7 @@ UI's half of a change the API has already made.
 `bus_error` — the one page every HTML form handler renders for a failed
 mosd call — now answers **503 Service Unavailable with `Retry-After: 5`**:
 the *"503 page for failed mosd calls, with `Retry-After`"*
-(`os/pkgs/mosd/apid/src/routes.rs:3265-3280`), the same status and the same
+(`os/pkgs/mosd/apid/src/routes.rs:3244-3259`), the same status and the same
 header the API path answers for the same condition
 (`mosd_unreachable`, `:3028`, header at `:3017-3021`). One outage now
 reports one way on both surfaces. The page body is unchanged.

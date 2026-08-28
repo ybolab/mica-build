@@ -22,10 +22,10 @@ differs from section 2.3's, both are given.
 
 ### 1.1 How this was measured, and why the old table could not be trusted
 
-Section 2.3's table (`docs/design/api.md:1348`) states its own provenance:
+Section 2.3's table (`docs/design/api.md:1352`) states its own provenance:
 *"Input is section 1.2's route table, re-measured at `f7cb5ba`. One row per
 method+path that exists today; the line numbers in the first column are this
-commit's."* (`docs/design/api.md:1367-1369`) Two things have happened to it since.
+commit's."* (`docs/design/api.md:1371-1373`) Two things have happened to it since.
 
 **It went stale.** Its first column cites lines in the bare form
 `routes.rs:947`, with no directory segment. That form is outside
@@ -35,8 +35,8 @@ in the prose and has no base to resolve against"*
 (`docs/verify-citations.sh:40-41`). So no
 gate has ever checked those twenty numbers, and they have drifted by as much as
 1078 lines. `POST /setup` is cited at `routes.rs:947`; its handler is at
-`os/pkgs/mosd/apid/src/routes.rs:3865`. `POST /ssh/password` is cited at
-`routes.rs:2515`; it is at `os/pkgs/mosd/apid/src/routes.rs:6722`.
+`os/pkgs/mosd/apid/src/routes.rs:3844`. `POST /ssh/password` is cited at
+`routes.rs:2515`; it is at `os/pkgs/mosd/apid/src/routes.rs:6701`.
 
 **It was never complete, and not only because the surface grew.** PLAN-021 added
 the password pane and `POST /api/v1/actions/change-password`; PLAN-022 added the
@@ -52,8 +52,8 @@ consequence of six months of growth.
 
 The measurement method used here: read the HTTPS router at
 `os/pkgs/mosd/apid/src/routes.rs:139-230`, the API sub-router at
-`os/pkgs/mosd/apid/src/routes.rs:414-496` and the HTTP-listener router
-(`os/pkgs/mosd/apid/src/routes.rs:3232-3235`); resolve every path constant
+`os/pkgs/mosd/apid/src/routes.rs:414-497` and the HTTP-listener router
+(`os/pkgs/mosd/apid/src/routes.rs:3211-3214`); resolve every path constant
 (`os/pkgs/mosd/apid/src/routes.rs:253-320`, `:2442-2451`); one row per
 method+path the router actually declares, with both the declaration line and the
 handler line, because the old table mixed the two silently.
@@ -156,8 +156,8 @@ there, so they are named rather than left as a silent gap.
 
 **Two stale prose citations in section 2.3, for the record.** The bullet on
 `POST /setup` cites the gate's setup-mode exemption as `routes.rs:701-706`; at
-HEAD it is `os/pkgs/mosd/apid/src/routes.rs:3331-3336`. The confirmation-token
-paragraph cites `os/pkgs/mosd/apid/src/routes.rs:5792`, which at HEAD is inside
+HEAD it is `os/pkgs/mosd/apid/src/routes.rs:3310-3315`. The confirmation-token
+paragraph cites `os/pkgs/mosd/apid/src/routes.rs:5771`, which at HEAD is inside
 `power_form`, not the confirmation check. Both are section 2.3's to fix, and
 `docs/design/api.md` is out of this task's write scope; they are recorded here
 so the M4+ author does not re-derive them.
@@ -169,10 +169,10 @@ so the M4+ author does not re-derive them.
 Section 2.3 proposes settings writes (`PUT /api/v1/settings/<dot-path>`),
 collection resources, and actions (`POST /api/v1/actions/<verb>`). Section 2.2
 already gives the rule that separates the first two: *"Identity is never a list
-index."* (`docs/design/api.md:1254`) — a collection is needed exactly when an
+index."* (`docs/design/api.md:1258`) — a collection is needed exactly when an
 item's identity is not a path position. And it gives the rule that separates
 actions from both: an action is a verb *"with no state to `GET` and no
-idempotency to promise"* (`docs/design/api.md:1394-1395`).
+idempotency to promise"* (`docs/design/api.md:1398-1399`).
 
 That is enough to classify most rows, and it is **not** enough for the network
 tree. The measurement that decides that case is in section 2.3 below.
@@ -191,7 +191,7 @@ because it renames a directory on DATA, not a settings node.
 shape, and the second states the test explicitly:
 *"An action and not a settings write, because there is no setting to write: the
 key lives in a mode-0640 file on STATE that the settings tree does not
-describe."* (`os/pkgs/mosd/apid/src/routes.rs:1290-1293`)
+describe."* (`os/pkgs/mosd/apid/src/routes.rs:1291-1294`)
 
 **Collection resources, 3.** SSH authorized keys (rows 25, 26), backed by
 `authorized_keys` (`os/pkgs/mosd/mosd-settings/src/model.rs:224`); WiFi client
@@ -203,9 +203,9 @@ have a natural identity that is not a position: fingerprint, `ssid`, and the
 peer's `public_key` respectively. The peer routes are the strongest case of the
 three, because the code already refuses index identity on the same reasoning
 apid applied to keys: `network_peer_remove` matches on `public_key`
-(`os/pkgs/mosd/apid/src/routes.rs:5617-5644`) and answers
+(`os/pkgs/mosd/apid/src/routes.rs:5596-5623`) and answers
 *"No peer of this tunnel has that public key; the list may have changed since the page was loaded."*
-(`os/pkgs/mosd/apid/src/routes.rs:5632`) rather than succeeding silently.
+(`os/pkgs/mosd/apid/src/routes.rs:5611`) rather than succeeding silently.
 
 **Raw dot-path `PUT`, 4 rows and no more.** Rows 18 (`hostname`), 23
 (`access.ssh.enabled`), 28 (`container.enabled`) and 30 (`mqtt.enabled`). These
@@ -224,11 +224,11 @@ Three, and they are what the milestone plan has to be built around.
 measurable.** The pane's handler validates the whole candidate tree before it
 writes: it builds `candidate` from the loaded view plus the one edited entry and
 runs `validate_entries(&candidate)`
-(`os/pkgs/mosd/apid/src/routes.rs:5561-5565`), rejecting the submission with a
+(`os/pkgs/mosd/apid/src/routes.rs:5540-5544`), rejecting the submission with a
 readable error. The comment says why it must be the tree and not the entry:
 *"The candidate tree, not the one entry: every relational rule below is about
-two entries at once."* (`os/pkgs/mosd/apid/src/routes.rs:5559-5560`) The rules
-`validate_entries` enforces (`os/pkgs/mosd/apid/src/routes.rs:3720-3758`) are a
+two entries at once."* (`os/pkgs/mosd/apid/src/routes.rs:5538-5539`) The rules
+`validate_entries` enforces (`os/pkgs/mosd/apid/src/routes.rs:3699-3737`) are a
 VLAN's parent naming a declared entry, a bridge port naming a declared entry, a
 bridge port carrying no addressing of its own, and no port claimed by two
 bridges.
@@ -265,7 +265,7 @@ candidate tree exactly as the pane does, answering 422 with mosd's own message.
 `PUT /api/v1/settings/network...` answers 409 `settings_read_only` and names the
 typed route. This is the one place this design departs from section 2.2's
 "the passthrough route must **not** be removed" rule
-(`docs/design/api.md:1273-1275`), and the departure is argued, not assumed:
+(`docs/design/api.md:1277-1279`), and the departure is argued, not assumed:
 section 2.2's reason for keeping the passthrough is atomic whole-list
 replacement, and `PUT /api/v1/network` (the whole map, validated) provides that
 atomicity while the passthrough does not provide the validation. The cost is
@@ -275,14 +275,14 @@ whole entry.
 **(ii) `POST /setup` — an unauthenticated write that is not a settings write.**
 It writes three subtrees in one request — `access.webAdmin`, then optionally
 the hostname and one interface entry, at
-`os/pkgs/mosd/apid/src/routes.rs:3933-3972` — and it is the only route the
+`os/pkgs/mosd/apid/src/routes.rs:3912-3951` — and it is the only route the
 gate lets through in setup mode
-(`os/pkgs/mosd/apid/src/routes.rs:3331-3336`). It is not a settings write (three
+(`os/pkgs/mosd/apid/src/routes.rs:3310-3315`). It is not a settings write (three
 paths), not a collection, and calling it an action understates that it is the
 device's one unauthenticated write. It also has a partial-failure mode that is
 already live: the password is written and the audit event recorded before the
 hostname and network writes are attempted
-(`os/pkgs/mosd/apid/src/routes.rs:3936-3972`), so a mosd failure halfway leaves
+(`os/pkgs/mosd/apid/src/routes.rs:3915-3951`), so a mosd failure halfway leaves
 the device out of setup mode with no hostname. Proposal: its own route,
 `POST /api/v1/setup`, `201` with the minted credential, `409` when already
 configured, and the partial-failure behaviour **documented rather than fixed**
@@ -304,10 +304,10 @@ row this design adds, not the section 6 prose where it lives today.
 
 Folded in from a sibling workstream's measurement. The paragraph it comes from
 is `docs/design/api.md`'s section 2.3 closing note, re-anchored at this HEAD to
-`docs/design/api.md:1489-1493`: it records that `ssh_key_remove` answers 422
+`docs/design/api.md:1493-1497`: it records that `ssh_key_remove` answers 422
 when the identifier matches nothing and argues that for a `DELETE` on a
 collection resource *"that is a **404** — the identified item does not exist."*
-(`docs/design/api.md:1492-1493`) That paragraph's own two citations are accurate
+(`docs/design/api.md:1496-1497`) That paragraph's own two citations are accurate
 at this HEAD and were not re-anchored. This belongs here rather than in part
 (a), because it is the collection shape's error contract and SSH keys are the
 precedent every other collection route in section 2.4 below is modelled on.
@@ -317,20 +317,20 @@ inventory, and what it answers when the identifier names nothing:
 
 | Operation | Identifier | Answer today | Produced at |
 |---|---|---|---|
-| `POST /ssh/keys/remove` | fingerprint **or** exact canonical key text | 422, HTML pane | `os/pkgs/mosd/apid/src/routes.rs:6882-6887` |
-| `POST /network/peers/remove` | peer public key | 422, HTML pane | `os/pkgs/mosd/apid/src/routes.rs:5629-5635` |
-| `POST /api/v1/actions/wireguard/{iface}/rotate-key` | `iface`, a path segment | **422 `settings_rejected`**, API envelope | `os/pkgs/mosd/mosd/src/bus.rs:884-888` → `os/pkgs/mosd/apid/src/routes.rs:3053-3056` |
-| `POST /network/peers/add` | `iface` | **neither — it succeeds**; see below | `os/pkgs/mosd/apid/src/routes.rs:5340-5344` |
-| `GET /api/v1/settings/{path}` | the dot-path | **404 `settings_not_found`** | `os/pkgs/mosd/apid/src/routes.rs:3045-3048` |
-| `GET /api/v1/state/{path}` | the dot-path | **404 `settings_not_found`** | `os/pkgs/mosd/apid/src/routes.rs:3045-3048` |
+| `POST /ssh/keys/remove` | fingerprint **or** exact canonical key text | 422, HTML pane | `os/pkgs/mosd/apid/src/routes.rs:6861-6866` |
+| `POST /network/peers/remove` | peer public key | 422, HTML pane | `os/pkgs/mosd/apid/src/routes.rs:5608-5614` |
+| `POST /api/v1/actions/wireguard/{iface}/rotate-key` | `iface`, a path segment | **422 `settings_rejected`**, API envelope | `os/pkgs/mosd/mosd/src/bus.rs:884-888` → `os/pkgs/mosd/apid/src/routes.rs:3054-3057` |
+| `POST /network/peers/add` | `iface` | **neither — it succeeds**; see below | `os/pkgs/mosd/apid/src/routes.rs:5319-5323` |
+| `GET /api/v1/settings/{path}` | the dot-path | **404 `settings_not_found`** | `os/pkgs/mosd/apid/src/routes.rs:3046-3049` |
+| `GET /api/v1/state/{path}` | the dot-path | **404 `settings_not_found`** | `os/pkgs/mosd/apid/src/routes.rs:3046-3049` |
 
 Two things fall out of that table that the routed item does not anticipate.
 
 **First: the 422 on the HTML rows is not a decision about not-found at all.** It
 is the pane's single error shape for every cause. `network_error`'s whole
 contract is *"Re-render the pane with `message` in an error box, at 422."*
-(`os/pkgs/mosd/apid/src/routes.rs:5347`), and `ssh_error`
-(`os/pkgs/mosd/apid/src/routes.rs:6100-6109`) is the same function for the SSH
+(`os/pkgs/mosd/apid/src/routes.rs:5326`), and `ssh_error`
+(`os/pkgs/mosd/apid/src/routes.rs:6079-6088`) is the same function for the SSH
 pane. A malformed key, a duplicate peer and a missing identifier all reach it
 and all come back 422. No code on either pane distinguishes them, so "the HTML
 path answers 422 for not-found" is true only in the sense that it answers 422
@@ -346,7 +346,7 @@ a WireGuard interface"* (`os/pkgs/mosd/mosd/src/bus.rs:871-873`), where the entr
 exists and has the wrong kind, which really is a 422; and *"network.{iface} is
 not a declared network entry"* (`os/pkgs/mosd/mosd/src/bus.rs:885-887`), which is
 a 404. Both are `InvalidArgs`, and apid maps `InvalidArgs` onto
-`StatusCode::UNPROCESSABLE_ENTITY` (`os/pkgs/mosd/apid/src/routes.rs:3053-3056`)
+`StatusCode::UNPROCESSABLE_ENTITY` (`os/pkgs/mosd/apid/src/routes.rs:3054-3057`)
 with no way to tell them apart. The published document does not declare 404 for
 that route at all — its response set is 200, 401, 422, 500 and 503
 (`os/pkgs/mosd/apid/openapi.json:256-348`). So the 422-where-404-is-meant pattern
@@ -372,7 +372,7 @@ Every route it binds:
   shipped route, not a new one.** Discharging the rule here means splitting
   mosd's single `InvalidArgs` into a `NotFound` for the undeclared entry and an
   `InvalidArgs` for the wrong kind, which apid already maps to 404 and 422
-  respectively (`os/pkgs/mosd/apid/src/routes.rs:3045-3056`) with no apid change
+  respectively (`os/pkgs/mosd/apid/src/routes.rs:3046-3057`) with no apid change
   at all. It is a mosd change plus an OpenAPI response addition, and it is
   additive to the document. Sequence it with M6, which is the milestone that
   already touches the network cluster.
@@ -381,7 +381,7 @@ Every route it binds:
 
 **Recommendation: the HTML form path stays at 422; only the API answers 404.**
 The design document already says *"The HTML path is not changed by this
-document."* (`docs/design/api.md:1493`) This ratifies that, for three reasons it
+document."* (`docs/design/api.md:1497`) This ratifies that, for three reasons it
 does not give:
 
 1. **The HTML path has no way to express 404 usefully.** Its response body is
@@ -391,10 +391,10 @@ does not give:
    Changing it buys a more correct number that nothing observes.
 2. **The HTML condition really is different.** `ssh_key_remove` accepts a
    fingerprint **or** the exact canonical key text as its identifier
-   (`os/pkgs/mosd/apid/src/routes.rs:6878-6881`), so a submitted string that
+   (`os/pkgs/mosd/apid/src/routes.rs:6857-6860`), so a submitted string that
    matches nothing is as likely to be mistyped as absent — and the message says
    exactly that: *"The list may have changed since this page was loaded; reload
-   it and try again."* (`os/pkgs/mosd/apid/src/routes.rs:6885`) That is a
+   it and try again."* (`os/pkgs/mosd/apid/src/routes.rs:6864`) That is a
    re-submit-the-form condition, which is what 422 means on a form post. On the
    API the identifier is a path segment with one interpretation: this URL names
    no resource.
@@ -440,9 +440,9 @@ than folded in silently.
 neither 422 nor 404. It succeeds, and it creates a broken entry.** The chain,
 step by step: `stored_peers` returns an empty list rather than an error for an
 unknown interface (`unwrap_or_default()`,
-`os/pkgs/mosd/apid/src/routes.rs:5340-5344`); `write_peers` then validates and
+`os/pkgs/mosd/apid/src/routes.rs:5319-5323`); `write_peers` then validates and
 writes straight to the peer list's own dot-path
-(`os/pkgs/mosd/apid/src/routes.rs:5650-5653`); and the settings setter creates
+(`os/pkgs/mosd/apid/src/routes.rs:5629-5632`); and the settings setter creates
 missing intermediates by documented and tested behaviour — its own contract says
 *"Missing intermediate map entries are created (e.g. setting
 `network.eth1.dhcp` creates `eth1`)"*
@@ -450,7 +450,7 @@ missing intermediates by documented and tested behaviour — its own contract sa
 `set_scalar_and_create_intermediate_entries`
 (`os/pkgs/mosd/mosd-settings/tests/settings.rs:128-141`) proves that step on a
 `network` key specifically. `validate_peers`
-(`os/pkgs/mosd/apid/src/routes.rs:3711-3734`) checks each peer's public key,
+(`os/pkgs/mosd/apid/src/routes.rs:3690-3713`) checks each peer's public key,
 allowed IPs and endpoint syntax, and never looks at the interface. So adding a
 peer to `wg9` on a device that has no `wg9` writes a `network.wg9` entry of the
 **default** kind — physical — carrying a WireGuard block, which the reconciler
@@ -473,7 +473,7 @@ PLAN-023 and are not re-planned here.
 **M4 — the scalar settings writes.** `PUT /api/v1/settings/<dot-path>` for
 `hostname`, `access.ssh.enabled`, `container.enabled`, `mqtt.enabled`, plus the
 `"<redacted>"`-body 422 rule section 2.2 requires
-(`docs/design/api.md:1291-1294`) and a write-refusal list. Acceptance: a `PUT`
+(`docs/design/api.md:1295-1298`) and a write-refusal list. Acceptance: a `PUT`
 of a bare JSON string to `/api/v1/settings/hostname` returns 204 and
 `GET /api/v1/state/hostname` shows the applied result; a `PUT` to
 `/api/v1/settings/schema_version` returns 409 `settings_read_only`; a `PUT`
@@ -487,12 +487,12 @@ reports the change as additive.
 `GET`/`POST /api/v1/wifi/client/networks`,
 `DELETE /api/v1/wifi/client/networks/{ssid}`. Acceptance: section 2.4's rule holds on
 both — a `DELETE` on an identifier that matches nothing returns **404**, not the
-422 the HTML path gives (`os/pkgs/mosd/apid/src/routes.rs:6882-6887`), a
+422 the HTML path gives (`os/pkgs/mosd/apid/src/routes.rs:6861-6866`), a
 malformed identifier still returns 422, the not-found answer comes from the one
 shared helper section 2.4 requires, and the paired HTML/API tests that name each
 other both exist; every `POST` runs the same validator mosd runs; the
 `notice` field carrying *"Every authorized key is a root key."*
-(`os/pkgs/mosd/apid/src/routes.rs:5962`) is present on both the `GET` and the
+(`os/pkgs/mosd/apid/src/routes.rs:5941`) is present on both the `GET` and the
 `POST` response; a psk written through `POST /api/v1/wifi/client/networks` is
 redacted on the next `GET`.
 
@@ -508,14 +508,14 @@ before anything is written (section 2.4's sweep); mosd's rotate-key
 `InvalidArgs` is split so an undeclared entry becomes a `NotFound` and the
 route's 404 is added to the published document; an interface name containing a
 `.` round-trips through the quoted
-path segment (`os/pkgs/mosd/apid/src/routes.rs:3513-3515`).
+path segment (`os/pkgs/mosd/apid/src/routes.rs:3492-3494`).
 
 **M7 — the actions.** `POST /api/v1/actions/reboot`, `.../poweroff`,
 `.../transient-root-password`. Acceptance: reboot and poweroff answer **202**
 before the bus call completes, matching the form path
-(`os/pkgs/mosd/apid/src/routes.rs:5841-5926`); no `GET` handler is declared for
+(`os/pkgs/mosd/apid/src/routes.rs:5820-5905`); no `GET` handler is declared for
 any of the three; the transient-password route enforces the same byte bounds as the form path's validator at
-`os/pkgs/mosd/apid/src/routes.rs:6701-6716`, and
+`os/pkgs/mosd/apid/src/routes.rs:6680-6695`, and
 its rejection message never echoes the password; the constant confirmation token
 is **not** required, per section 2.3's decision.
 
@@ -544,27 +544,27 @@ first-boot provisioning and not by an operator.
 
 **(1) Section 2.3 parks the question.** Its password bullet ends:
 *"The token question this bullet parked is still §3.2's: no tokens ship yet, so
-there is nothing to revoke."* (`docs/design/api.md:1466-1467`)
+there is nothing to revoke."* (`docs/design/api.md:1470-1471`)
 
 **(2) Section 3.2 decides it, the other way, as a property with an
 obligation.** *"**Changing the admin password does not revoke any token.** That
-is deliberate"* (`docs/design/api.md:2132-2133`), with the reason
+is deliberate"* (`docs/design/api.md:2163-2164`), with the reason
 *"a human rotating their own password must not break every script"*
-(`docs/design/api.md:2133-2134`) and the obligation
-*"The UI's password pane has to say so."* (`docs/design/api.md:2134-2135`) Section 9
+(`docs/design/api.md:2164-2165`) and the obligation
+*"The UI's password pane has to say so."* (`docs/design/api.md:2165-2166`) Section 9
 treats it as settled and reasons from it
-(`docs/design/api.md:4489`).
+(`docs/design/api.md:4520`).
 
 **(3) The shipped code already revokes the adjacent thing.** The
 `change_password` helper ends with
 `.remove_all_except(acting_session.unwrap_or(""));`
-(`os/pkgs/mosd/apid/src/routes.rs:4512`), and `SessionStore` documents the
+(`os/pkgs/mosd/apid/src/routes.rs:4491`), and `SessionStore` documents the
 rule: *"Drop every session except the one named by `value`."*
 (`os/pkgs/mosd/apid/src/session.rs:90`) with the reason
 *"every other session was minted under the old credential"*
 (`os/pkgs/mosd/apid/src/session.rs:92-93`). The pane already states it:
 *"Changing the admin password signs every other session out."*
-(`os/pkgs/mosd/apid/src/routes.rs:4535`)
+(`os/pkgs/mosd/apid/src/routes.rs:4514`)
 
 ### 3.2 The conflict, stated precisely
 
@@ -585,7 +585,7 @@ opposite treatment from arguments that would each apply to the other: a script
 is as inconvenienced by a dead token as a second browser tab is by a dead
 session, and a stolen session is exactly as dangerous as a stolen token
 (section 3.2: *"A token can do everything the operator can do over the API."*,
-`docs/design/api.md:2130-2131`). Whichever way this resolves, the asymmetry has
+`docs/design/api.md:2161-2162`). Whichever way this resolves, the asymmetry has
 to be argued rather than inherited.
 
 ### 3.3 Recommendation
@@ -601,28 +601,28 @@ would destroy N credentials the operator cannot see at the moment they act — t
 password pane does not list tokens and cannot, since it is a different resource
 — with no confirmation, no count, and no undo, because tokens are shown once at
 mint and never again (section 3.2: *"never the hash, never the plaintext"*,
-`docs/design/api.md:2083`). An operator doing routine hygiene would silently
+`docs/design/api.md:2114`). An operator doing routine hygiene would silently
 kill production automation. Sessions are different in exactly the way that
 matters: a dead session costs a re-login, and the operator holds the credential
 that fixes it.
 
 The cost of keeping it, stated plainly: **"I changed my password" is not a
 containment action**, and that is section 3.2's own wording
-(`docs/design/api.md:2134-2135`).
+(`docs/design/api.md:2165-2166`).
 
 **What an operator who believes a password change contains a breach actually has
 to do.** Six steps, in this order, and every one of them is a separate
 operation:
 
 1. Change the admin password. This drops every other **session**
-   (`os/pkgs/mosd/apid/src/routes.rs:4510-4512`) and no token.
+   (`os/pkgs/mosd/apid/src/routes.rs:4489-4491`) and no token.
 2. `GET /api/v1/tokens`, then `DELETE /api/v1/tokens/{id}` **for every id
    returned** — including ones they do not recognise, which is the point.
-   Revocation takes effect on the next request (`docs/design/api.md:2084-2086`).
+   Revocation takes effect on the next request (`docs/design/api.md:2115-2117`).
    Neither route exists yet; M2 ships them.
 3. `GET /api/v1/settings/access.ssh` and remove every authorized key that is not
    theirs. Every key is a root key
-   (`os/pkgs/mosd/apid/src/routes.rs:5962`), so a password rotation that skips
+   (`os/pkgs/mosd/apid/src/routes.rs:5941`), so a password rotation that skips
    this step contains nothing.
 4. Reboot, or otherwise clear a transient root password. It is not in the
    settings tree and no read will show it; it *"lives until the next boot"*
@@ -630,13 +630,13 @@ operation:
 5. Check `/srv/ui/current`. Section 7.4 already requires this of any revocation
    runbook, because a bundle installed with a stolen credential survives the
    credential's revocation and survives an A/B update
-   (`docs/design/api.md:3681-3689`).
+   (`docs/design/api.md:3712-3720`).
 6. Accept that step 2's list is the only inventory that exists. Nothing on the
    device records which credential served which request — section 3.3 records
    that absence — so "was this token used?" is unanswerable.
 
 **What the password pane must therefore say.** The pane today says one sentence
-(`os/pkgs/mosd/apid/src/routes.rs:4535`). It needs a second, and this is the
+(`os/pkgs/mosd/apid/src/routes.rs:4514`). It needs a second, and this is the
 proposed text for M2 to ship and for M2's acceptance to assert verbatim:
 
 > API tokens are not affected. Changing this password signs other browsers out,
@@ -701,7 +701,7 @@ deliberately"* (`docs/design/release-signing.md:291-292`).
 
 **One thing that is not in scope of this memo, and should not be confused with
 it.** `docs/design/api.md` section 7.4 already recommends **not** signing UI
-bundles in phase 1 (`docs/design/api.md:3644-3647`), and this memo does not
+bundles in phase 1 (`docs/design/api.md:3675-3678`), and this memo does not
 reopen that. What follows is about the **release** signing keys — the ones that
 authorise a kernel and rootfs replacement.
 
@@ -820,7 +820,7 @@ risk.
 
 Section 2.4 was folded in after the first pass, routed from a sibling
 workstream; its citations were measured at the same HEAD as everything else and
-the `docs/design/api.md:1489-1493` anchor was re-derived rather than trusted.
+the `docs/design/api.md:1493-1497` anchor was re-derived rather than trusted.
 
 This task wrote `docs/task/RFCT-210.md`, one row in `docs/task/index.md`, and
 one ceiling row in `docs/verify-citations-unquoted-baseline.txt` (the update

@@ -38,7 +38,7 @@
             }
           },
           "401": {
-            "description": "No accepted credential: neither a bearer API token this device holds nor a session cookie that verifies (`not_authenticated`)",
+            "description": "No bearer API token, or one this device does not hold (`not_authenticated`). A session cookie is not a credential on this route",
             "content": {
               "application/json": {
                 "schema": {
@@ -112,7 +112,7 @@
             "description": "The power-off was accepted and dispatched; the call to mosd is not awaited, so completion is not reported over this connection"
           },
           "401": {
-            "description": "No accepted credential: neither a bearer API token this device holds nor a session cookie that verifies (`not_authenticated`)",
+            "description": "No bearer API token, or one this device does not hold (`not_authenticated`). A session cookie is not a credential on this route",
             "content": {
               "application/json": {
                 "schema": {
@@ -146,7 +146,7 @@
             "description": "The reboot was accepted and dispatched; the call to mosd is not awaited, so completion is not reported over this connection"
           },
           "401": {
-            "description": "No accepted credential: neither a bearer API token this device holds nor a session cookie that verifies (`not_authenticated`)",
+            "description": "No bearer API token, or one this device does not hold (`not_authenticated`). A session cookie is not a credential on this route",
             "content": {
               "application/json": {
                 "schema": {
@@ -201,7 +201,7 @@
             }
           },
           "401": {
-            "description": "No accepted credential: neither a bearer API token this device holds nor a session cookie that verifies (`not_authenticated`)",
+            "description": "No bearer API token, or one this device does not hold (`not_authenticated`). A session cookie is not a credential on this route",
             "content": {
               "application/json": {
                 "schema": {
@@ -284,7 +284,7 @@
             }
           },
           "401": {
-            "description": "No accepted credential: neither a bearer API token this device holds nor a session cookie that verifies (`not_authenticated`)",
+            "description": "No bearer API token, or one this device does not hold (`not_authenticated`). A session cookie is not a credential on this route",
             "content": {
               "application/json": {
                 "schema": {
@@ -366,7 +366,7 @@
             }
           },
           "401": {
-            "description": "No accepted credential: neither a bearer API token this device holds nor a session cookie that verifies (`not_authenticated`)",
+            "description": "No bearer API token, or one this device does not hold (`not_authenticated`). A session cookie is not a credential on this route",
             "content": {
               "application/json": {
                 "schema": {
@@ -408,7 +408,7 @@
             }
           },
           "401": {
-            "description": "No accepted credential: neither a bearer API token this device holds nor a session cookie that verifies (`not_authenticated`)",
+            "description": "No bearer API token, or one this device does not hold (`not_authenticated`). A session cookie is not a credential on this route",
             "content": {
               "application/json": {
                 "schema": {
@@ -469,7 +469,7 @@
             }
           },
           "401": {
-            "description": "No accepted credential: neither a bearer API token this device holds nor a session cookie that verifies (`not_authenticated`)",
+            "description": "No bearer API token, or one this device does not hold (`not_authenticated`). A session cookie is not a credential on this route",
             "content": {
               "application/json": {
                 "schema": {
@@ -565,7 +565,7 @@
             }
           },
           "401": {
-            "description": "No accepted credential: neither a bearer API token this device holds nor a session cookie that verifies (`not_authenticated`)",
+            "description": "No bearer API token, or one this device does not hold (`not_authenticated`). A session cookie is not a credential on this route",
             "content": {
               "application/json": {
                 "schema": {
@@ -639,7 +639,7 @@
             "description": "The entry was removed; the reconciler has swept its units"
           },
           "401": {
-            "description": "No accepted credential: neither a bearer API token this device holds nor a session cookie that verifies (`not_authenticated`)",
+            "description": "No bearer API token, or one this device does not hold (`not_authenticated`). A session cookie is not a credential on this route",
             "content": {
               "application/json": {
                 "schema": {
@@ -734,7 +734,7 @@
             }
           },
           "401": {
-            "description": "No accepted credential: neither a bearer API token this device holds nor a session cookie that verifies (`not_authenticated`)",
+            "description": "No bearer API token, or one this device does not hold (`not_authenticated`). A session cookie is not a credential on this route",
             "content": {
               "application/json": {
                 "schema": {
@@ -845,7 +845,7 @@
             }
           },
           "401": {
-            "description": "No accepted credential: neither a bearer API token this device holds nor a session cookie that verifies (`not_authenticated`)",
+            "description": "No bearer API token, or one this device does not hold (`not_authenticated`). A session cookie is not a credential on this route",
             "content": {
               "application/json": {
                 "schema": {
@@ -950,7 +950,7 @@
             "description": "The peer was removed; the reconciler has re-rendered the tunnel without it"
           },
           "401": {
-            "description": "No accepted credential: neither a bearer API token this device holds nor a session cookie that verifies (`not_authenticated`)",
+            "description": "No bearer API token, or one this device does not hold (`not_authenticated`). A session cookie is not a credential on this route",
             "content": {
               "application/json": {
                 "schema": {
@@ -1043,7 +1043,7 @@
             }
           },
           "401": {
-            "description": "No accepted credential: neither a bearer API token this device holds nor a session cookie that verifies (`not_authenticated`)",
+            "description": "No bearer API token, or one this device does not hold (`not_authenticated`). A session cookie is not a credential on this route",
             "content": {
               "application/json": {
                 "schema": {
@@ -1147,7 +1147,7 @@
             }
           },
           "401": {
-            "description": "No accepted credential: neither a bearer API token this device holds nor a session cookie that verifies (`not_authenticated`)",
+            "description": "No bearer API token, or one this device does not hold (`not_authenticated`). A session cookie is not a credential on this route",
             "content": {
               "application/json": {
                 "schema": {
@@ -1330,7 +1330,7 @@
             }
           },
           "401": {
-            "description": "No accepted credential: neither a bearer API token this device holds nor a session cookie that verifies (`not_authenticated`)",
+            "description": "No bearer API token, or one this device does not hold (`not_authenticated`). A session cookie is not a credential on this route",
             "content": {
               "application/json": {
                 "schema": {
@@ -1410,7 +1410,7 @@
             }
           },
           "401": {
-            "description": "No accepted credential: neither a bearer API token this device holds nor a session cookie that verifies (`not_authenticated`)",
+            "description": "No bearer API token, or one this device does not hold (`not_authenticated`). A session cookie is not a credential on this route",
             "content": {
               "application/json": {
                 "schema": {
@@ -1496,7 +1496,7 @@
             "description": "The key was removed; the reconciler has re-rendered the authorized-keys file without it"
           },
           "401": {
-            "description": "No accepted credential: neither a bearer API token this device holds nor a session cookie that verifies (`not_authenticated`)",
+            "description": "No bearer API token, or one this device does not hold (`not_authenticated`). A session cookie is not a credential on this route",
             "content": {
               "application/json": {
                 "schema": {
@@ -1589,7 +1589,7 @@
             }
           },
           "401": {
-            "description": "No accepted credential: neither a bearer API token this device holds nor a session cookie that verifies (`not_authenticated`)",
+            "description": "No bearer API token, or one this device does not hold (`not_authenticated`). A session cookie is not a credential on this route",
             "content": {
               "application/json": {
                 "schema": {
@@ -1923,7 +1923,7 @@
             }
           },
           "401": {
-            "description": "No accepted credential: neither a bearer API token this device holds nor a session cookie that verifies (`not_authenticated`)",
+            "description": "No bearer API token, or one this device does not hold (`not_authenticated`). A session cookie is not a credential on this route",
             "content": {
               "application/json": {
                 "schema": {
@@ -2003,7 +2003,7 @@
             }
           },
           "401": {
-            "description": "No accepted credential: neither a bearer API token this device holds nor a session cookie that verifies (`not_authenticated`)",
+            "description": "No bearer API token, or one this device does not hold (`not_authenticated`). A session cookie is not a credential on this route",
             "content": {
               "application/json": {
                 "schema": {
@@ -2089,7 +2089,7 @@
             "description": "The network was forgotten; the station reconciler has re-rendered its configuration without it"
           },
           "401": {
-            "description": "No accepted credential: neither a bearer API token this device holds nor a session cookie that verifies (`not_authenticated`)",
+            "description": "No bearer API token, or one this device does not hold (`not_authenticated`). A session cookie is not a credential on this route",
             "content": {
               "application/json": {
                 "schema": {

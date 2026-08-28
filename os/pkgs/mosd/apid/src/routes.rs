@@ -429,11 +429,12 @@ fn api_router() -> Router<AppState> {
             get(api_v1_tokens_list).post(api_v1_tokens_mint),
         )
         .route(V1_TOKEN_ROUTE, delete(api_v1_tokens_revoke))
-        // M5's two array collections. `ApiSession` and not `ApiBearer`, unlike
-        // the three token routes above: PLAN-023 Amendment 1's bearer-only
-        // ruling is about the credential factory specifically, so a resource
-        // route added later takes both credentials exactly as the shipped
-        // reads do.
+        // M5's two array collections. They took `ApiSession` when they
+        // shipped -- Amendment 1's bearer-only ruling was about the credential
+        // factory specifically, so a resource route added later took both
+        // credentials exactly as the shipped reads did. M9 withdrew the cookie
+        // from this whole surface, so they take `ApiBearer` with everything
+        // else now.
         .route(
             V1_SSH_KEYS_PATH,
             get(api_v1_ssh_keys_list).post(api_v1_ssh_keys_add),
@@ -480,7 +481,7 @@ fn api_router() -> Router<AppState> {
         // no credential extractor. It is not an exception the gate makes: the
         // gate lets every declared `/api/` route through and each answers for
         // itself, so what makes this one unauthenticated is the absence of
-        // `ApiSession`/`ApiBearer` in its signature and nothing else. `post`
+        // `ApiBearer` in its signature and nothing else. `post`
         // only, for the reason the actions above are: there is no state here
         // to `GET` and nothing that follows a link may configure a device.
         .route(V1_SETUP_PATH, post(api_v1_setup))
@@ -796,11 +797,11 @@ pub(crate) async fn api_versions() -> Response {
     tag = "discovery",
     responses(
         (status = 200, description = "What this daemon is and which schema it speaks", body = ApiMeta),
-        (status = 401, description = "No accepted credential: neither a bearer API token this device holds nor a session cookie that verifies (`not_authenticated`)", body = ApiError),
+        (status = 401, description = "No bearer API token, or one this device does not hold (`not_authenticated`). A session cookie is not a credential on this route", body = ApiError),
         (status = 405, description = "A method this route does not serve (`method_not_allowed`); carries `Allow`", body = ApiError),
     ),
 )]
-pub(crate) async fn api_v1_meta(_session: ApiSession) -> Response {
+pub(crate) async fn api_v1_meta(_bearer: ApiBearer) -> Response {
     api_response(
         StatusCode::OK,
         ApiMeta {
@@ -881,11 +882,11 @@ pub(crate) struct ApiHealth {
     tag = "diagnostics",
     responses(
         (status = 200, description = "Whether this appliance is manageable. **200 in both states**: a dead mosd is reported as `mosd: \"unreachable\"` in the body, never as a status code", body = ApiHealth),
-        (status = 401, description = "No accepted credential: neither a bearer API token this device holds nor a session cookie that verifies (`not_authenticated`)", body = ApiError),
+        (status = 401, description = "No bearer API token, or one this device does not hold (`not_authenticated`). A session cookie is not a credential on this route", body = ApiError),
         (status = 405, description = "A method this route does not serve (`method_not_allowed`); carries `Allow`", body = ApiError),
     ),
 )]
-pub(crate) async fn api_v1_health(_session: ApiSession, State(state): State<AppState>) -> Response {
+pub(crate) async fn api_v1_health(_bearer: ApiBearer, State(state): State<AppState>) -> Response {
     let (mosd, checked_at, detail) = match state.api.get_state(HEALTH_PROBE_PATH).await {
         // Any answer that is not the number of seconds mosd documents is
         // classified with the failures rather than reported as health. `ok`
@@ -945,7 +946,7 @@ pub(crate) struct ResourceValue(Value);
     params(("path" = String, Path, description = "The settings dot-path, verbatim: `hostname`, `access.ssh`, `wifi.ap`")),
     responses(
         (status = 200, description = "The value at the dot-path, redacted", body = ResourceValue),
-        (status = 401, description = "No accepted credential: neither a bearer API token this device holds nor a session cookie that verifies (`not_authenticated`)", body = ApiError),
+        (status = 401, description = "No bearer API token, or one this device does not hold (`not_authenticated`). A session cookie is not a credential on this route", body = ApiError),
         (status = 404, description = "The dot-path does not exist (`settings_not_found`)", body = ApiError),
         (status = 422, description = "mosd rejected the dot-path (`settings_rejected`)", body = ApiError),
         (status = 500, description = "mosd failed to answer (`settings_io`, `mosd_failed`)", body = ApiError),
@@ -954,7 +955,7 @@ pub(crate) struct ResourceValue(Value);
     ),
 )]
 pub(crate) async fn api_v1_settings(
-    _session: ApiSession,
+    _bearer: ApiBearer,
     State(state): State<AppState>,
     Path(path): Path<String>,
 ) -> Response {
@@ -1149,7 +1150,7 @@ pub(crate) struct SettingsWrite(Value);
     responses(
         (status = 204, description = "The value was written: mosd has persisted it and re-applied the reconcilers whose subtree overlaps the path"),
         (status = 400, description = "The body is not JSON (`request_invalid`)", body = ApiError),
-        (status = 401, description = "No accepted credential: neither a bearer API token this device holds nor a session cookie that verifies (`not_authenticated`)", body = ApiError),
+        (status = 401, description = "No bearer API token, or one this device does not hold (`not_authenticated`). A session cookie is not a credential on this route", body = ApiError),
         (status = 404, description = "The dot-path names no root the settings schema has (`settings_not_found`)", body = ApiError),
         (status = 409, description = "A dot-path that exists and that this route does not write (`settings_read_only`)", body = ApiError),
         (status = 422, description = "The body carries the redaction sentinel, or is the wrong shape for this setting, or the dot-path is malformed (`validation_failed`); or mosd rejected the write (`settings_rejected`)", body = ApiError),
@@ -1159,7 +1160,7 @@ pub(crate) struct SettingsWrite(Value);
     ),
 )]
 pub(crate) async fn api_v1_settings_write(
-    _session: ApiSession,
+    _bearer: ApiBearer,
     State(state): State<AppState>,
     Path(path): Path<String>,
     body: Result<Json<SettingsWrite>, axum::extract::rejection::JsonRejection>,
@@ -1229,7 +1230,7 @@ pub(crate) async fn api_v1_settings_write(
     params(("path" = String, Path, description = "The live-state dot-path, verbatim: `hostname`, `network`, `power`")),
     responses(
         (status = 200, description = "The value at the dot-path, redacted", body = ResourceValue),
-        (status = 401, description = "No accepted credential: neither a bearer API token this device holds nor a session cookie that verifies (`not_authenticated`)", body = ApiError),
+        (status = 401, description = "No bearer API token, or one this device does not hold (`not_authenticated`). A session cookie is not a credential on this route", body = ApiError),
         (status = 404, description = "The dot-path does not resolve (`settings_not_found`)", body = ApiError),
         (status = 422, description = "mosd rejected the dot-path (`settings_rejected`); a dot-path that does not resolve is the 404 above", body = ApiError),
         (status = 500, description = "mosd failed to answer (`settings_io`, `mosd_failed`)", body = ApiError),
@@ -1238,7 +1239,7 @@ pub(crate) async fn api_v1_settings_write(
     ),
 )]
 pub(crate) async fn api_v1_state(
-    _session: ApiSession,
+    _bearer: ApiBearer,
     State(state): State<AppState>,
     Path(path): Path<String>,
 ) -> Response {
@@ -1320,7 +1321,7 @@ pub(crate) struct WireguardRotation {
     params(("iface" = String, Path, description = "The `network` entry to rotate, which must be one of kind `wireguard`: `wg0`")),
     responses(
         (status = 200, description = "A new key was drawn; the body carries its public half", body = WireguardRotation),
-        (status = 401, description = "No accepted credential: neither a bearer API token this device holds nor a session cookie that verifies (`not_authenticated`)", body = ApiError),
+        (status = 401, description = "No bearer API token, or one this device does not hold (`not_authenticated`). A session cookie is not a credential on this route", body = ApiError),
         (status = 404, description = "The name is not a declared `network` entry (`settings_not_found`); the URL names no interface to rotate", body = ApiError),
         (status = 422, description = "The entry exists and is not a WireGuard one (`settings_rejected`)", body = ApiError),
         (status = 500, description = "mosd failed to rotate (`settings_io`, `mosd_failed`)", body = ApiError),
@@ -1329,7 +1330,7 @@ pub(crate) struct WireguardRotation {
     ),
 )]
 pub(crate) async fn api_v1_wireguard_rotate(
-    _session: ApiSession,
+    _bearer: ApiBearer,
     State(state): State<AppState>,
     Path(iface): Path<String>,
 ) -> Response {
@@ -1860,14 +1861,14 @@ async fn api_write_keys(state: &AppState, keys: &[AuthorizedKey]) -> Result<(), 
     tag = "resources",
     responses(
         (status = 200, description = "The stored keys, each with the fingerprint that is its `DELETE` path segment, and the notice every client of this collection is told", body = AuthorizedKeyList),
-        (status = 401, description = "No accepted credential: neither a bearer API token this device holds nor a session cookie that verifies (`not_authenticated`)", body = ApiError),
+        (status = 401, description = "No bearer API token, or one this device does not hold (`not_authenticated`). A session cookie is not a credential on this route", body = ApiError),
         (status = 500, description = "The stored list could not be read as a key list (`settings_invalid`), or mosd failed to answer (`settings_io`, `mosd_failed`)", body = ApiError),
         (status = 503, description = "The call to mosd could not be made (`mosd_unreachable`); carries `Retry-After`", body = ApiError),
         (status = 405, description = "A method this route does not serve (`method_not_allowed`); carries `Allow`", body = ApiError),
     ),
 )]
 pub(crate) async fn api_v1_ssh_keys_list(
-    _session: ApiSession,
+    _bearer: ApiBearer,
     State(state): State<AppState>,
 ) -> Response {
     match api_stored_keys(&state).await {
@@ -1902,7 +1903,7 @@ pub(crate) async fn api_v1_ssh_keys_list(
     responses(
         (status = 201, description = "The key was authorized; the body carries it canonicalised, with its fingerprint and the notice", body = AddedAuthorizedKey),
         (status = 400, description = "The body is not JSON, or not this shape (`request_invalid`)", body = ApiError),
-        (status = 401, description = "No accepted credential: neither a bearer API token this device holds nor a session cookie that verifies (`not_authenticated`)", body = ApiError),
+        (status = 401, description = "No bearer API token, or one this device does not hold (`not_authenticated`). A session cookie is not a credential on this route", body = ApiError),
         (status = 409, description = "A stored key already carries that public key (`key_exists`), or the device already holds the maximum number of keys (`key_limit_reached`); the collection's current state is what refuses the request, not the body", body = ApiError),
         (status = 422, description = "The line is not an authorized key, or the resulting list is one the sshd reconciler would refuse (`validation_failed`); or mosd rejected the write (`settings_rejected`)", body = ApiError),
         (status = 500, description = "The stored list could not be read as a key list (`settings_invalid`), or mosd failed to write (`settings_io`, `mosd_failed`)", body = ApiError),
@@ -1911,7 +1912,7 @@ pub(crate) async fn api_v1_ssh_keys_list(
     ),
 )]
 pub(crate) async fn api_v1_ssh_keys_add(
-    _session: ApiSession,
+    _bearer: ApiBearer,
     State(state): State<AppState>,
     body: Result<Json<AddAuthorizedKeyRequest>, axum::extract::rejection::JsonRejection>,
 ) -> Response {
@@ -2011,7 +2012,7 @@ pub(crate) async fn api_v1_ssh_keys_add(
     params(("fingerprint" = String, Path, description = "The key's fingerprint, as `GET /api/v1/ssh/authorized-keys` returns it: `SHA256:` and 43 base64 characters. Its alphabet contains `/`, so a fingerprint carrying one is percent-encoded")),
     responses(
         (status = 204, description = "The key was removed; the reconciler has re-rendered the authorized-keys file without it"),
-        (status = 401, description = "No accepted credential: neither a bearer API token this device holds nor a session cookie that verifies (`not_authenticated`)", body = ApiError),
+        (status = 401, description = "No bearer API token, or one this device does not hold (`not_authenticated`). A session cookie is not a credential on this route", body = ApiError),
         (status = 404, description = "No stored key has that fingerprint (`settings_not_found`). Well-formed and absent, which is a different answer from malformed", body = ApiError),
         (status = 422, description = "The path segment is not a fingerprint at all (`validation_failed`)", body = ApiError),
         (status = 500, description = "The stored list could not be read as a key list (`settings_invalid`), or mosd failed to write (`settings_io`, `mosd_failed`)", body = ApiError),
@@ -2020,7 +2021,7 @@ pub(crate) async fn api_v1_ssh_keys_add(
     ),
 )]
 pub(crate) async fn api_v1_ssh_keys_remove(
-    _session: ApiSession,
+    _bearer: ApiBearer,
     State(state): State<AppState>,
     Path(fingerprint): Path<String>,
 ) -> Response {
@@ -2113,14 +2114,14 @@ async fn write_networks(state: &AppState, networks: &[WifiNetwork]) -> Result<()
     tag = "resources",
     responses(
         (status = 200, description = "The stored networks, in stored order, each `psk` replaced by `\"<redacted>\"`", body = Vec<WifiNetworkEntry>),
-        (status = 401, description = "No accepted credential: neither a bearer API token this device holds nor a session cookie that verifies (`not_authenticated`)", body = ApiError),
+        (status = 401, description = "No bearer API token, or one this device does not hold (`not_authenticated`). A session cookie is not a credential on this route", body = ApiError),
         (status = 500, description = "The stored list could not be read as a network list (`settings_invalid`), or mosd failed to answer (`settings_io`, `mosd_failed`)", body = ApiError),
         (status = 503, description = "The call to mosd could not be made (`mosd_unreachable`); carries `Retry-After`", body = ApiError),
         (status = 405, description = "A method this route does not serve (`method_not_allowed`); carries `Allow`", body = ApiError),
     ),
 )]
 pub(crate) async fn api_v1_wifi_networks_list(
-    _session: ApiSession,
+    _bearer: ApiBearer,
     State(state): State<AppState>,
 ) -> Response {
     match stored_networks(&state).await {
@@ -2162,7 +2163,7 @@ pub(crate) async fn api_v1_wifi_networks_list(
     responses(
         (status = 201, description = "The network was stored; the body carries it back with its `psk` redacted", body = WifiNetworkEntry),
         (status = 400, description = "The body is not JSON (`request_invalid`)", body = ApiError),
-        (status = 401, description = "No accepted credential: neither a bearer API token this device holds nor a session cookie that verifies (`not_authenticated`)", body = ApiError),
+        (status = 401, description = "No bearer API token, or one this device does not hold (`not_authenticated`). A session cookie is not a credential on this route", body = ApiError),
         (status = 409, description = "A stored network already carries that SSID (`ssid_exists`); the SSID is this collection's identity, so the entry is not replaced silently", body = ApiError),
         (status = 422, description = "The body carries the redaction sentinel, is not a network the settings model holds, or carries a `psk` outside IEEE 802.11i's 8..63 characters that is not a 64-digit hex PMK either (`validation_failed`); or mosd rejected the write (`settings_rejected`)", body = ApiError),
         (status = 500, description = "The stored list could not be read as a network list (`settings_invalid`), or mosd failed to write (`settings_io`, `mosd_failed`)", body = ApiError),
@@ -2171,7 +2172,7 @@ pub(crate) async fn api_v1_wifi_networks_list(
     ),
 )]
 pub(crate) async fn api_v1_wifi_networks_add(
-    _session: ApiSession,
+    _bearer: ApiBearer,
     State(state): State<AppState>,
     body: Result<Json<Value>, axum::extract::rejection::JsonRejection>,
 ) -> Response {
@@ -2285,7 +2286,7 @@ pub(crate) async fn api_v1_wifi_networks_add(
     params(("ssid" = String, Path, description = "The network name, as `GET /api/v1/wifi/client/networks` returns it")),
     responses(
         (status = 204, description = "The network was forgotten; the station reconciler has re-rendered its configuration without it"),
-        (status = 401, description = "No accepted credential: neither a bearer API token this device holds nor a session cookie that verifies (`not_authenticated`)", body = ApiError),
+        (status = 401, description = "No bearer API token, or one this device does not hold (`not_authenticated`). A session cookie is not a credential on this route", body = ApiError),
         (status = 404, description = "No stored network carries that SSID (`settings_not_found`)", body = ApiError),
         (status = 500, description = "The stored list could not be read as a network list (`settings_invalid`), or mosd failed to write (`settings_io`, `mosd_failed`)", body = ApiError),
         (status = 503, description = "The call to mosd could not be made (`mosd_unreachable`); carries `Retry-After`", body = ApiError),
@@ -2293,7 +2294,7 @@ pub(crate) async fn api_v1_wifi_networks_add(
     ),
 )]
 pub(crate) async fn api_v1_wifi_networks_remove(
-    _session: ApiSession,
+    _bearer: ApiBearer,
     State(state): State<AppState>,
     Path(ssid): Path<String>,
 ) -> Response {
@@ -2590,7 +2591,7 @@ fn json_body<T: serde::de::DeserializeOwned>(
     responses(
         (status = 204, description = "The map was replaced; the reconciler has re-rendered every unit from it"),
         (status = 400, description = "The body is not JSON (`request_invalid`)", body = ApiError),
-        (status = 401, description = "No accepted credential: neither a bearer API token this device holds nor a session cookie that verifies (`not_authenticated`)", body = ApiError),
+        (status = 401, description = "No bearer API token, or one this device does not hold (`not_authenticated`). A session cookie is not a credential on this route", body = ApiError),
         (status = 422, description = "The body is not a map of interfaces, a key is not an interface name, or a relational rule refuses it -- a VLAN parent or a bridge port that is not a declared entry, a bridge port carrying addressing, a port claimed twice (`validation_failed`); or mosd rejected the write (`settings_rejected`)", body = ApiError),
         (status = 500, description = "mosd failed to write (`settings_io`, `mosd_failed`)", body = ApiError),
         (status = 503, description = "The call to mosd could not be made (`mosd_unreachable`); carries `Retry-After`", body = ApiError),
@@ -2598,7 +2599,7 @@ fn json_body<T: serde::de::DeserializeOwned>(
     ),
 )]
 pub(crate) async fn api_v1_network_write(
-    _session: ApiSession,
+    _bearer: ApiBearer,
     State(state): State<AppState>,
     body: Result<Json<Value>, axum::extract::rejection::JsonRejection>,
 ) -> Response {
@@ -2651,7 +2652,7 @@ pub(crate) async fn api_v1_network_write(
     responses(
         (status = 204, description = "The entry was written; the reconciler has re-rendered its units"),
         (status = 400, description = "The body is not JSON (`request_invalid`)", body = ApiError),
-        (status = 401, description = "No accepted credential: neither a bearer API token this device holds nor a session cookie that verifies (`not_authenticated`)", body = ApiError),
+        (status = 401, description = "No bearer API token, or one this device does not hold (`not_authenticated`). A session cookie is not a credential on this route", body = ApiError),
         (status = 422, description = "The name is not an interface name, the body is not an interface, or a relational rule refuses the resulting map (`validation_failed`); or mosd rejected the write (`settings_rejected`)", body = ApiError),
         (status = 500, description = "The stored map holds an entry this build cannot read (`settings_invalid`), or mosd failed (`settings_io`, `mosd_failed`)", body = ApiError),
         (status = 503, description = "The call to mosd could not be made (`mosd_unreachable`); carries `Retry-After`", body = ApiError),
@@ -2659,7 +2660,7 @@ pub(crate) async fn api_v1_network_write(
     ),
 )]
 pub(crate) async fn api_v1_network_iface_write(
-    _session: ApiSession,
+    _bearer: ApiBearer,
     State(state): State<AppState>,
     Path(iface): Path<String>,
     body: Result<Json<Value>, axum::extract::rejection::JsonRejection>,
@@ -2713,7 +2714,7 @@ pub(crate) async fn api_v1_network_iface_write(
     params(("iface" = String, Path, description = "The declared interface to remove")),
     responses(
         (status = 204, description = "The entry was removed; the reconciler has swept its units"),
-        (status = 401, description = "No accepted credential: neither a bearer API token this device holds nor a session cookie that verifies (`not_authenticated`)", body = ApiError),
+        (status = 401, description = "No bearer API token, or one this device does not hold (`not_authenticated`). A session cookie is not a credential on this route", body = ApiError),
         (status = 404, description = "No `network` entry has that name (`settings_not_found`). Well-formed and absent, which is a different answer from malformed", body = ApiError),
         (status = 422, description = "The name is not an interface name, or removing the entry breaks a relational rule -- a bridge still lists it as a port, a VLAN still names it as a parent (`validation_failed`)", body = ApiError),
         (status = 500, description = "The stored map holds an entry this build cannot read (`settings_invalid`), or mosd failed (`settings_io`, `mosd_failed`)", body = ApiError),
@@ -2722,7 +2723,7 @@ pub(crate) async fn api_v1_network_iface_write(
     ),
 )]
 pub(crate) async fn api_v1_network_iface_remove(
-    _session: ApiSession,
+    _bearer: ApiBearer,
     State(state): State<AppState>,
     Path(iface): Path<String>,
 ) -> Response {
@@ -2832,7 +2833,7 @@ async fn api_write_peers(
     params(("iface" = String, Path, description = "A declared `network` entry of kind `wireguard`")),
     responses(
         (status = 200, description = "The stored peers, in stored order, each with the public key that is its `DELETE` path segment", body = Vec<WireguardPeerEntry>),
-        (status = 401, description = "No accepted credential: neither a bearer API token this device holds nor a session cookie that verifies (`not_authenticated`)", body = ApiError),
+        (status = 401, description = "No bearer API token, or one this device does not hold (`not_authenticated`). A session cookie is not a credential on this route", body = ApiError),
         (status = 404, description = "No `network` entry has that name (`settings_not_found`)", body = ApiError),
         (status = 422, description = "The name is not an interface name, or the entry is not a WireGuard one (`validation_failed`)", body = ApiError),
         (status = 500, description = "The stored map holds an entry this build cannot read (`settings_invalid`), or mosd failed to answer (`settings_io`, `mosd_failed`)", body = ApiError),
@@ -2841,7 +2842,7 @@ async fn api_write_peers(
     ),
 )]
 pub(crate) async fn api_v1_peers_list(
-    _session: ApiSession,
+    _bearer: ApiBearer,
     State(state): State<AppState>,
     Path(iface): Path<String>,
 ) -> Response {
@@ -2888,7 +2889,7 @@ pub(crate) async fn api_v1_peers_list(
     responses(
         (status = 201, description = "The peer was added; the body carries it back", body = WireguardPeerEntry),
         (status = 400, description = "The body is not JSON (`request_invalid`)", body = ApiError),
-        (status = 401, description = "No accepted credential: neither a bearer API token this device holds nor a session cookie that verifies (`not_authenticated`)", body = ApiError),
+        (status = 401, description = "No bearer API token, or one this device does not hold (`not_authenticated`). A session cookie is not a credential on this route", body = ApiError),
         (status = 404, description = "No `network` entry has that name (`settings_not_found`); nothing is written", body = ApiError),
         (status = 409, description = "A stored peer already carries that public key (`peer_exists`); the key is this collection's identity, so the entry is not replaced silently", body = ApiError),
         (status = 422, description = "The name is not an interface name, the entry is not a WireGuard one, or the peer is one the reconciler would refuse -- a public key that is not 32 bytes of base64, an allowed IP that is not a CIDR, an endpoint that is not `host:port` (`validation_failed`)", body = ApiError),
@@ -2898,7 +2899,7 @@ pub(crate) async fn api_v1_peers_list(
     ),
 )]
 pub(crate) async fn api_v1_peers_add(
-    _session: ApiSession,
+    _bearer: ApiBearer,
     State(state): State<AppState>,
     Path(iface): Path<String>,
     body: Result<Json<Value>, axum::extract::rejection::JsonRejection>,
@@ -2967,7 +2968,7 @@ pub(crate) async fn api_v1_peers_add(
     ),
     responses(
         (status = 204, description = "The peer was removed; the reconciler has re-rendered the tunnel without it"),
-        (status = 401, description = "No accepted credential: neither a bearer API token this device holds nor a session cookie that verifies (`not_authenticated`)", body = ApiError),
+        (status = 401, description = "No bearer API token, or one this device does not hold (`not_authenticated`). A session cookie is not a credential on this route", body = ApiError),
         (status = 404, description = "No `network` entry has that name, or no peer of it carries that key (`settings_not_found`)", body = ApiError),
         (status = 422, description = "The interface name is not one, the entry is not a WireGuard one, or the path segment is not a WireGuard public key at all (`validation_failed`)", body = ApiError),
         (status = 500, description = "The stored map holds an entry this build cannot read (`settings_invalid`), or mosd failed to write (`settings_io`, `mosd_failed`)", body = ApiError),
@@ -2976,7 +2977,7 @@ pub(crate) async fn api_v1_peers_add(
     ),
 )]
 pub(crate) async fn api_v1_peers_remove(
-    _session: ApiSession,
+    _bearer: ApiBearer,
     State(state): State<AppState>,
     Path((iface, public_key)): Path<(String, String)>,
 ) -> Response {
@@ -3096,23 +3097,36 @@ fn mosd_unreachable(err: &anyhow::Error) -> (StatusCode, ApiError) {
     )
 }
 
-/// Proof that the request carried a credential these routes accept.
+/// Proof that the request carried a bearer API token, and the only credential
+/// extractor `/api/v1/` has.
 ///
-/// **Two of them, by PLAN-023 Amendment 1's ruling (option 1,
-/// dual-credential):** a bearer API token, or the browser session cookie every
-/// route naming this extractor already shipped accepting. The bearer is what
-/// §3.1 asks for; the cookie stays because removing it here would break a
-/// client that exists, and this milestone is additive. A later named milestone
-/// removes the cookie, and §3.2's "only accepted credential" sentence is true
-/// from that milestone rather than from this one.
+/// **The one extractor, since PLAN-023 M9 (RFCT-245).** It began as the
+/// stricter of two: Amendment 1 ruled option 1, dual-credential, so `ApiSession`
+/// took a bearer *or* the browser session cookie every route naming it had
+/// already shipped accepting, while the token routes -- which had not shipped --
+/// took this one. That made §3.2's "only accepted credential" sentence false for
+/// a bounded, in-plan window. M9 is the named milestone Amendment 1 scheduled to
+/// close it: the cookie's acceptance is gone from `/api/v1/`, every route that
+/// named `ApiSession` names this instead, and the two types collapsed into one
+/// because after the cutover they proved the same thing. §3.2's dated note
+/// records the window.
 ///
-/// The type keeps its name through that change of meaning, deliberately: the
-/// name is quoted by `docs/design/api.md` §1.2, §2.4 and §3.1, which the
-/// cutover milestone rewrites as one piece. Renaming it here would leave the
-/// document quoting a symbol that is gone while still describing cookie-only
-/// authentication.
+/// The boundary Amendment 1 drew inside itself, and the reason it was not a
+/// contradiction of it: the amendment preserved the credentials of routes that
+/// **already shipped**, and the three token routes had not. §3.2 rejects a
+/// cookie-accepting mint by name, because it would put a permanent-credential
+/// factory inside the one surface §3.3 makes its strongest statement about, and
+/// there is no back-compatibility argument for a route that does not exist yet.
 ///
-/// [`ApiBearer`] is the stricter sibling, and the token routes take that one.
+/// The bootstrap is a path rather than an exception, and the cutover did not
+/// touch it: an operator holding only a browser mints their first token at
+/// `POST /builtin/tokens` and revokes at `POST /builtin/tokens/revoke`, neither
+/// of which is an `/api/v1/` route, and both of which the gate guards with the
+/// session cookie exactly as before. Without them no first token could exist.
+///
+/// `POST /api/v1/setup` names no credential extractor at all and still does:
+/// M8 made it the device's one unauthenticated write and the cutover does not
+/// change that.
 ///
 /// An extractor and not middleware, and not the gate: it runs for exactly the
 /// handlers that name it, so the reserved subtree's not-found handler and
@@ -3122,43 +3136,8 @@ fn mosd_unreachable(err: &anyhow::Error) -> (StatusCode, ApiError) {
 /// Its rejection is §2.4's envelope with a 401 and not the gate's redirect. A
 /// client that follows that redirect lands on `GET /login`, which answers 200
 /// with an HTML page, so a script reads the whole exchange as success (§3.1).
-pub(crate) struct ApiSession;
-
-impl FromRequestParts<AppState> for ApiSession {
-    type Rejection = Response;
-
-    async fn from_request_parts(
-        parts: &mut Parts,
-        state: &AppState,
-    ) -> Result<Self, Self::Rejection> {
-        // The cookie first, because it costs no bus call: the bearer check
-        // needs the `access` subtree and this one needs nothing.
-        if session::cookie_from_headers(&parts.headers)
-            .is_some_and(|value| state.sessions.verify(&value))
-        {
-            return Ok(Self);
-        }
-        if bearer_is_stored(state, &parts.headers).await {
-            return Ok(Self);
-        }
-        Err(not_authenticated(
-            "no session cookie, or one that does not verify, and no bearer API token this device holds",
-        ))
-    }
-}
-
-/// Proof that the request carried a bearer API token, and not merely a session.
-///
-/// The boundary drawn inside Amendment 1, and the reason it is not a
-/// contradiction of it: the amendment preserves the credentials of routes that
-/// **already shipped**, and the three token routes had not. §3.2 rejects a
-/// cookie-accepting mint by name, because it would put a permanent-credential
-/// factory inside the one surface §3.3 makes its strongest statement about, and
-/// there is no back-compatibility argument for a route that does not exist yet.
-///
-/// The bootstrap is a path rather than an exception: an operator holding only a
-/// browser mints their first token at `POST /builtin/tokens` and revokes at
-/// `POST /builtin/tokens/revoke`, neither of which is an `/api/v1/` route.
+/// A cookie presented here is that 401 and not a 303: a script gets something
+/// it can parse.
 pub(crate) struct ApiBearer;
 
 impl FromRequestParts<AppState> for ApiBearer {
@@ -4618,7 +4597,7 @@ pub(crate) struct ChangePasswordRequest {
     responses(
         (status = 204, description = "The password was changed; every session except the calling one was dropped"),
         (status = 400, description = "The body is not JSON, or not this shape (`request_invalid`)", body = ApiError),
-        (status = 401, description = "No accepted credential: neither a bearer API token this device holds nor a session cookie that verifies (`not_authenticated`)", body = ApiError),
+        (status = 401, description = "No bearer API token, or one this device does not hold (`not_authenticated`). A session cookie is not a credential on this route", body = ApiError),
         (status = 403, description = "The current password does not verify (`wrong_password`)", body = ApiError),
         (status = 422, description = "The new password is shorter than 8 characters (`validation_failed`)", body = ApiError),
         (status = 500, description = "Hashing failed (`hashing_failed`), or mosd failed to answer (`settings_io`, `mosd_failed`)", body = ApiError),
@@ -4627,7 +4606,7 @@ pub(crate) struct ChangePasswordRequest {
     ),
 )]
 pub(crate) async fn api_v1_change_password(
-    _session: ApiSession,
+    _bearer: ApiBearer,
     State(state): State<AppState>,
     Source(source): Source,
     headers: HeaderMap,
@@ -5891,12 +5870,12 @@ fn power_accepted(state: &AppState, action: PowerAction, source: &str) -> Respon
     tag = "actions",
     responses(
         (status = 202, description = "The reboot was accepted and dispatched; the call to mosd is not awaited, so completion is not reported over this connection"),
-        (status = 401, description = "No accepted credential: neither a bearer API token this device holds nor a session cookie that verifies (`not_authenticated`)", body = ApiError),
+        (status = 401, description = "No bearer API token, or one this device does not hold (`not_authenticated`). A session cookie is not a credential on this route", body = ApiError),
         (status = 405, description = "A method this route does not serve (`method_not_allowed`); carries `Allow`", body = ApiError),
     ),
 )]
 pub(crate) async fn api_v1_reboot(
-    _session: ApiSession,
+    _bearer: ApiBearer,
     State(state): State<AppState>,
     Source(source): Source,
 ) -> Response {
@@ -5911,12 +5890,12 @@ pub(crate) async fn api_v1_reboot(
     tag = "actions",
     responses(
         (status = 202, description = "The power-off was accepted and dispatched; the call to mosd is not awaited, so completion is not reported over this connection"),
-        (status = 401, description = "No accepted credential: neither a bearer API token this device holds nor a session cookie that verifies (`not_authenticated`)", body = ApiError),
+        (status = 401, description = "No bearer API token, or one this device does not hold (`not_authenticated`). A session cookie is not a credential on this route", body = ApiError),
         (status = 405, description = "A method this route does not serve (`method_not_allowed`); carries `Allow`", body = ApiError),
     ),
 )]
 pub(crate) async fn api_v1_poweroff(
-    _session: ApiSession,
+    _bearer: ApiBearer,
     State(state): State<AppState>,
     Source(source): Source,
 ) -> Response {
@@ -6782,7 +6761,7 @@ pub(crate) struct TransientRootPasswordRequest {
     responses(
         (status = 204, description = "The transient root password is set; it lasts until the next reboot and is written into no setting"),
         (status = 400, description = "The body is not JSON, or not this shape (`request_invalid`)", body = ApiError),
-        (status = 401, description = "No accepted credential: neither a bearer API token this device holds nor a session cookie that verifies (`not_authenticated`)", body = ApiError),
+        (status = 401, description = "No bearer API token, or one this device does not hold (`not_authenticated`). A session cookie is not a credential on this route", body = ApiError),
         (status = 422, description = "The password is shorter than 8 bytes, longer than 72, or contains a NUL, newline or carriage return (`validation_failed`); the message states the bound and never the password", body = ApiError),
         (status = 500, description = "mosd failed to set it (`mosd_failed`)", body = ApiError),
         (status = 503, description = "The call to mosd could not be made (`mosd_unreachable`); carries `Retry-After`", body = ApiError),
@@ -6790,7 +6769,7 @@ pub(crate) struct TransientRootPasswordRequest {
     ),
 )]
 pub(crate) async fn api_v1_transient_root_password(
-    _session: ApiSession,
+    _bearer: ApiBearer,
     State(app): State<AppState>,
     Source(source): Source,
     body: Result<Json<TransientRootPasswordRequest>, axum::extract::rejection::JsonRejection>,

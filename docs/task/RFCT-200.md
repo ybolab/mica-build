@@ -60,7 +60,7 @@ GET network.eth0.100 -> Err(NotFound("network.eth0.100"))
 Four facts in one run:
 
 1. The dot-path write of a VLAN name fails exactly as RFCT-135 and
-   `docs/design/api.md:1214-1243` describe.
+   `docs/design/api.md:1218-1247` describe.
 2. **The persistence layer already spells the key correctly**: serializing a
    tree that structurally contains the key `eth0.100` writes
    `[network."eth0.100"]` — TOML quoted-key syntax, produced by the `toml`
@@ -80,10 +80,10 @@ it"* (`docs/task/RFCT-135.md:28-29`).
 
 The `/network` pane is `.route("/network", get(network_form).post(network_submit))`
 (`os/pkgs/mosd/apid/src/routes.rs:188`). `valid_iface_name` accepts 1–15 bytes
-of alphanumerics plus `.`, `_`, `-` (`os/pkgs/mosd/apid/src/routes.rs:3424-3453`),
+of alphanumerics plus `.`, `_`, `-` (`os/pkgs/mosd/apid/src/routes.rs:3403-3432`),
 and the pane's error text advertises the dot
-(`os/pkgs/mosd/apid/src/routes.rs:3464`). `network_submit` builds the value
-(`os/pkgs/mosd/apid/src/routes.rs:3482-3498`) and writes it as a dot-path,
+(`os/pkgs/mosd/apid/src/routes.rs:3443`). `network_submit` builds the value
+(`os/pkgs/mosd/apid/src/routes.rs:3461-3477`) and writes it as a dot-path,
 `set_settings(&format!("network.{iface}"), &value)` (measured at `4580dfb` in
 `os/pkgs/mosd/apid/src/routes.rs`, where the composition was unconditional;
 RFCT-201 has since moved it into `iface_settings_path`), over D-Bus:
@@ -136,7 +136,7 @@ design may depend on the radio userland.
 
 ### 1.6 Data-flow narrative
 
-Form input (`NetworkForm`, `os/pkgs/mosd/apid/src/routes.rs:5123-5180`) →
+Form input (`NetworkForm`, `os/pkgs/mosd/apid/src/routes.rs:5102-5159`) →
 apid validation (`:5153-5163`) → D-Bus `SetSettings("network.<iface>", json)`
 (`:5169`, `os/pkgs/mosd/apid/src/bus_client.rs:29`) → `write_setting`
 validates against the typed tree and saves TOML atomically
@@ -145,7 +145,7 @@ validates against the typed tree and saves TOML atomically
 `50-mos-<iface>.network`, sweeps, reloads networkd
 (`os/pkgs/mosd/mosd/src/reconciler/network.rs:440-500`) → the apply result is
 recorded in the live-state tree per reconciler name and served over D-Bus and
-`GET /api/v1/state/network` (`docs/design/api.md:1373`).
+`GET /api/v1/state/network` (`docs/design/api.md:1377`).
 
 ---
 
@@ -159,7 +159,7 @@ which `.` is literal: `network."eth0.100".dhcp`. Reads and writes share one
 segment lexer in `mosd-settings` (`split_path`, `json_path_get`); apid's
 writers quote any segment that contains a dot when composing paths such as
 `format!("network.{}", quote_path_segment(iface))`
-(`os/pkgs/mosd/apid/src/routes.rs:3514`); paths the daemon
+(`os/pkgs/mosd/apid/src/routes.rs:3493`); paths the daemon
 emits (validation errors, the `SettingsChanged` signal) use the canonical
 spelling — quoted only when required.
 
@@ -188,7 +188,7 @@ Why this spelling and not another:
 **Grammar edge, stated.** A key containing `"` becomes inexpressible, and a
 bare segment beginning with `"` changes meaning. Measured mitigation: no
 validated writer can produce such a key — apid rejects it
-(`os/pkgs/mosd/apid/src/routes.rs:3396-3401`), the reconciler rejects it
+(`os/pkgs/mosd/apid/src/routes.rs:3375-3380`), the reconciler rejects it
 (`os/pkgs/mosd/mosd/src/reconciler/network.rs:166-173`) — so only a whole-tree
 root write or a hand edit could. Schema v7 (§7) adds model-level validation:
 a `network` map key must be a valid interface name (non-empty, ≤15 bytes,
@@ -510,7 +510,7 @@ silent failure. os/verify gains an assertion so the check cannot rot.
 
 ## 6. API surface classification
 
-Rules applied, quoted from `docs/design/api.md:980-986`: breaking is
+Rules applied, quoted from `docs/design/api.md:984-990`: breaking is
 *"removing a route; removing a response field; narrowing a field's type or its
 accepted value set; adding a required request field; changing the success
 status code of an existing outcome; changing which `error.code` (§2.4) an
@@ -521,8 +521,8 @@ open"*.
 
 | Addition | Class | Which rule |
 |---|---|---|
-| `kind`, `vlan`, `bridge`, `wireguard` fields in `IfaceSettings` bodies | additive | new *optional* request field; new response field (`docs/design/api.md:984-986`) |
-| `kind` values as an enum in responses | additive | open-enum rule; clients must ignore unknowns (`docs/design/api.md:988-991`) |
+| `kind`, `vlan`, `bridge`, `wireguard` fields in `IfaceSettings` bodies | additive | new *optional* request field; new response field (`docs/design/api.md:988-990`) |
+| `kind` values as an enum in responses | additive | open-enum rule; clients must ignore unknowns (`docs/design/api.md:992-995`) |
 | Quoted-segment path syntax under `/api/v1/settings/{*path}` | additive, one stated edge | no route, method, status or field changes; a previously-failing path starts succeeding. The edge — a segment beginning with `"` is reinterpreted — narrows nothing any validated writer could produce (§2.1), and v7's key validation closes the hand-edit hole |
 | `publicKey`, `kind`, netdev file name in `GET /api/v1/state/network` entries | additive | new response field |
 | `POST /api/v1/actions/wireguard/{iface}/rotate-key` | additive | new route |
@@ -530,7 +530,7 @@ open"*.
 | `privateKey` joining the redaction denylist | additive | no shipped response carries such a field to remove |
 
 Nothing on the breaking list is touched; **no `/api/v2` is required.** This
-also discharges the debt api.md records at `docs/design/api.md:4383-4393`
+also discharges the debt api.md records at `docs/design/api.md:4414-4424`
 — the dot-path fix reaches the published contract as an additive change, not
 a versioned one.
 

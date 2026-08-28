@@ -34,7 +34,7 @@ Resolution, and why each way round:
   404 `settings_not_found` row from PLAN-025 M3a. Taking either side alone would
   have made the document disagree with the merged handler, which still answers
   `ApiError::mosd("settings_not_found", message).at(&path)`
-  (`os/pkgs/mosd/apid/src/routes.rs:1269`) on an unresolved dot-path — and the
+  (`os/pkgs/mosd/apid/src/routes.rs:1270`) on an unresolved dot-path — and the
   auto-merged `openapi.json` had already landed on exactly that union,
   so either side alone would also have desynchronised the two.
 - Every other hunk: resolved to `bkd/vu5b6kk0` with `-X theirs`, then
@@ -61,8 +61,8 @@ later superseded by RFCT-214, as the note below records:
 
 | citation | why the map could not answer it |
 |---|---|
-| *"resource_response(value, &path)"* (`docs/design/api.md:674`) | `main` replaced the state handler's one-line tail with a `let value = …` and a match, so the quoted call text changed as well as its line |
-| *"resource_response(value, &path)"* (`docs/design/api.md:1105`) | the same call, quoted a second time in section 2.2 |
+| *"resource_response(value, &path)"* (`docs/design/api.md:678`) | `main` replaced the state handler's one-line tail with a `let value = …` and a match, so the quoted call text changed as well as its line |
+| *"resource_response(value, &path)"* (`docs/design/api.md:1109`) | the same call, quoted a second time in section 2.2 |
 | *"pub const SCHEMA_VERSION: u32 = 8;"* (`docs/design/mosd.md:433`) | RFCT-232's dated note quoted the constant at 7, and the campaign branch's M2-part-1 bump made it 8 |
 | the same quote in `docs/task/RFCT-232.md` | the same problem, in the record that made the note |
 
@@ -103,7 +103,7 @@ That is not a shortcut, it is the only door. The three `/api/v1/tokens` routes
 take `ApiBearer`, which refuses a session outright — *"this route accepts a
 bearer API token only; a session cookie is not a credential here, and a browser
 mints its first token at POST /builtin/tokens"*
-(`os/pkgs/mosd/apid/src/routes.rs:3175`) — so the first token cannot be minted
+(`os/pkgs/mosd/apid/src/routes.rs:3154`) — so the first token cannot be minted
 with a token.
 
 Every request after that mint is issued from a **second `Client`**, constructed
@@ -144,7 +144,7 @@ back across the reboot.
 Item 5's fingerprint carries a `/`, deliberately, and is sent percent-encoded —
 the spelling apid's own route tests use in `ssh_key_url`:
 `fingerprint.replace('/', "%2F")`
-(`os/pkgs/mosd/apid/src/tests.rs:7072`). Sent raw it would split the segment
+(`os/pkgs/mosd/apid/src/tests.rs:7229`). Sent raw it would split the segment
 and the resulting 404 would read as "apid forgot the key".
 
 ### 2.3 What it leaves behind

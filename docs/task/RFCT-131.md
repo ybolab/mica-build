@@ -33,7 +33,7 @@ document is otherwise wrong; the sentence is.
 ## Resolution
 
 No code change, by design: `/healthz` stays the two-line liveness probe
-(`os/pkgs/mosd/apid/src/routes.rs:904-906`), exempt from the gate, because
+(`os/pkgs/mosd/apid/src/routes.rs:905-907`), exempt from the gate, because
 the boot health gate depends on exactly that behaviour and checks failed
 units separately. What was narrowed is the two overstated readings
 (commit `b6a1400`):

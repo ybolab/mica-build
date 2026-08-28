@@ -110,10 +110,10 @@ mechanically instead of by judgement.
 ## What this task did NOT settle, and said so
 
 - **`dashboard.md`'s section 9 contradiction table was not re-verified.** §1.7
-  closes by recording that explicitly (`docs/design/api.md:515-516`): the table
+  closes by recording that explicitly (`docs/design/api.md:519-520`): the table
   is cited, not carried forward. RFCT-068 later relied on that sentence.
 - **The six ways `docs/research/mos-ui-inventory.md` has gone stale** were
-  named (§1.7, `docs/design/api.md:488-510`) but **not corrected in that file** —
+  named (§1.7, `docs/design/api.md:492-514`) but **not corrected in that file** —
   it belongs to no task here. RFCT-068 was created mid-campaign to close it.
 - **No hardware claim.** Nothing in the document has been run on a device; every
   statement about current behaviour is a reading of source

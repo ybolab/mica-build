@@ -128,7 +128,7 @@ better fit for a daemonless engine, and it is what the code documents.
 - The apid pane: `.route("/containers", get(containers_form))`
   (`os/pkgs/mosd/apid/src/routes.rs:191`), with route tests that assert the
   written path — `vec!["container.enabled"]`
-  (`os/pkgs/mosd/apid/src/tests.rs:2975`).
+  (`os/pkgs/mosd/apid/src/tests.rs:2976`).
 
 **Where it diverged, and this one has teeth.** D3 says the switch is
 "an MQTT-addressable path for free" (`docs/plan/PLAN-012.md:169`) because
@@ -216,7 +216,7 @@ called not optional.
 - **D5** (root mode; rootless not built) — **implemented**. The consequence is
   stated in the pane in the operator's own terms:
   "Containers on this device run as root."
-  (`os/pkgs/mosd/apid/src/routes.rs:3243`). The four rootless-only binaries are
+  (`os/pkgs/mosd/apid/src/routes.rs:3222`). The four rootless-only binaries are
   absent from the built set, whose whole contents are
   `sha256sum podman quadlet crun conmon catatonit netavark aardvark-dns`
   (`os/pkgs/podman/Dockerfile:333`).
