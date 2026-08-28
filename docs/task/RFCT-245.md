@@ -165,7 +165,67 @@ the run log:
 | `the_network_cluster_takes_a_bearer_and_401_without_one` | PASS |
 | `the_api_password_change_succeeds_and_drops_every_browser_session` | PASS |
 
-## 5. One finding, reported and not fixed
+## 5. The final bearer run — the evidence M9 stands on
+
+RFCT-246 built `test/apid-api`'s `05d-bearer` and ran it 37/37, 376/376 across
+two boots — but against an image built **before** M7's actions and M8's setup
+route existed, and of course before this cutover. M9 was gated behind a run
+that includes them, so the image was rebuilt from this tree and the suite run
+against it.
+
+    x64-mos-v2-1787939109.img   1.9 GiB, built 2026-08-28 17:45 from this branch
+
+    boot 1  phases 01-transport .. 07-reboot     RESULT: PASS (345/345 checks)
+    boot 2  phases 07b-postreboot, 08-poweroff   RESULT: PASS ( 17/17  checks)
+    ---------------------------------------------------------------------------
+    total                                        RESULT: PASS (378/378 checks)
+    SUITE EXIT rc=0        FAIL lines in the whole log: 0
+
+`05d-bearer` itself: **37/37**, the same figure RFCT-246 measured, now on an
+image that has M7's actions, M8's `POST /api/v1/setup` and M9's cutover in it.
+Its own summary line is the one M9 is about:
+
+    PASS: a request carrying NO credential is 401, and not the gate's 303 to /login
+
+378 against RFCT-246's 376 is **+2**, and the two are named: the mint
+`05b-wireguard` now performs for itself.
+
+    PASS: POST /builtin/tokens with the session cookie mints this phase's bearer (M9: /api/v1/ takes no cookie)
+    PASS: the mint page carries the plaintext, which appears in this one response and never again
+
+### The one harness change, and it is the harness rather than the daemon
+
+`05b-wireguard` drove four `/api/v1/` reads and the rotate action on the session
+cookie 05-mutate leaves in the jar. After the cutover that cookie is not a
+credential there, so the phase mints its own bearer at `POST /builtin/tokens`
+— the bootstrap, which is not an `/api/v1/` route and still takes the cookie —
+and sends it thereafter. It mints rather than borrowing 05d's because 05d runs
+**after** it, and a phase depending on a later one would invert the runner's
+order.
+
+Two assertions in it were NOT changed, deliberately:
+
+- the anonymous rotate still sends no credential at all and still asserts 401.
+  Giving it one would delete the assertion M9 exists to make.
+- the 5b.6 loop keeps both surfaces in one list and picks the credential per
+  path. The claim is that NO surface serves a private key; two loops would let
+  one of them quietly stop being checked.
+
+`04-readonly` and `05d-bearer` needed nothing. `04-readonly` presents the cookie
+only to UNDECLARED paths, which the gate answers and which the cutover does not
+touch. `05d-bearer` was written for this milestone — its own header says the
+phase *"may not"* lean on the cookie *"because after that cutover the cookie is
+gone"* — and it uses a second `Client` whose jar is structurally empty.
+
+Build prerequisites, recorded because the first two attempts failed on them and
+the third did not: `os/pkgs/rauc` and `os/pkgs/podman` must be built first
+(`MOS_ARCH=amd64`), and `MOS_BUILD_CONTAINER=1` must **not** be set for
+`os/rootfs/build-v2.sh` — that mode refuses `--build-rootfs`, because the
+rootfs build drives `docker buildx`, which is a CLI plugin the pinned container
+does not carry. RFCT-235's podman wall is the arm64 cross-build and does not
+reach an x64 host build.
+
+## 6. One finding, reported and not fixed
 
 **A bearer-only client that asks for an UNDECLARED path under `/api/` is
 redirected to `/login`.** The gate's whole credential test is
@@ -186,7 +246,7 @@ Harmonising the gate is out of scope for M9 (which is the write surface's
 credential, not the gate's) and is left for whoever takes the surrounding
 cleanup, beside the CIDR gap M8 measured and deliberately left open.
 
-## 6. The merge RFCT-246 could not make
+## 7. The merge RFCT-246 could not make
 
 RFCT-246's task became unstartable in BKD, so M9 carried its branch in. Five
 files conflicted, all citation/index, none in code.
