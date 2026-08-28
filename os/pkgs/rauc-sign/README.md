@@ -42,9 +42,10 @@ Explicitly out of scope for the whole crate, still:
 
 - the Uptane director/image repository split — this is a single image
   repository;
-- delegated targets roles, root key rotation, and hardware-backed key stores
-  (the client inherits tough's root-chain walk, but the signer cannot yet
-  produce a rotation, so the chain is depth one in practice);
+- delegated targets roles and hardware-backed key stores;
+- replacing a compromised *online* role key: `rotate-root` carries the
+  `targets`, `snapshot` and `timestamp` bindings forward unchanged, so a
+  different online key can still only be introduced by a fresh repository;
 - transport: nothing here fetches metadata over a network, on either side;
 - mosd's install orchestration (RAUC install/confirm) — named as roadmap by
   RFCT-083;
@@ -53,6 +54,34 @@ Explicitly out of scope for the whole crate, still:
 
 The verity root hash is passed to `rauc-sign add` as an argument. The tool never
 shells out to `rauc`, so it has no dependency on the image pipeline.
+
+## The root ceremonies
+
+`root.json` expires, and republishing it is two commands, not one, because it
+is two ceremonies with different consequences:
+
+- `rotate-root` hands the root role to a **new** key and revokes the outgoing
+  one. The published `<n+1>.root.json` is signed by both keys — TUF's
+  cross-sign — so a device pinned to the outgoing anchor walks itself forward
+  to the new one with nothing shipped to it. The outgoing key is pruned from
+  the new root's key list rather than left listed and unbound.
+- `refresh-root` republishes with the **same** key at a later expiration. The
+  trust anchor does not change hands, so there is nothing to distribute.
+
+Rotating to the key that already holds the role is refused, and names
+`refresh-root`; `refresh-root` cannot introduce a key. Neither ceremony is
+reachable by mistyping the other.
+
+Neither reads an online key: no top-level role's metadata pins `root.json`, so
+`targets`, `snapshot` and `timestamp` keep their signatures and are refreshed
+afterwards by `sign` on the release host. Both verify the anchor they are
+handed before building on it, and both check the result the way a client will —
+a threshold of the outgoing root's keys and a threshold of the new root's own —
+before anything is written. Neither will overwrite an already-published
+`<n>.root.json`.
+
+The operator-facing procedure — media, minutes, key disposition, distribution —
+is section 1.6 of `docs/design/release-signing.md`.
 
 ## Phase 2, first half: the device-side verifier
 
@@ -99,10 +128,12 @@ to be made deliberately, not defaulted. Candidate paths, none implemented:
 - **Image-baked** `/usr/share/mos/uptane/root.json` **[not implemented]** —
   the root ships inside the (dm-verity protected, RAUC-signed) OS image.
   Simplest and the strongest binding: the root is exactly as trustworthy as
-  the image that carries it, and a root rotation rides an ordinary OS update.
-  Tradeoff: rotating the TUF root *requires* shipping an image through the
-  RAUC channel, so the TUF hierarchy cannot outlive a compromise of the image
-  signing path — the two hierarchies stand or fall together.
+  the image that carries it. The baked anchor does not have to be replaced to
+  follow a rotation — the device walks the cross-signed root chain forward from
+  whatever version it holds — so an image update is needed only to re-anchor a
+  device whose chain has been broken. Tradeoff: first trust, and that recovery,
+  ride the RAUC channel, so the TUF hierarchy cannot outlive a compromise of
+  the image signing path — the two hierarchies stand or fall together.
 - **Provisioning file** on STATE/META, written at factory or first-boot
   provisioning **[not implemented]** — decouples the trust anchor from the
   image, allowing per-fleet or per-customer roots. Tradeoff: the provisioning
@@ -143,16 +174,21 @@ be pointed at fixed URLs and so `root.json` can be shipped as the trusted root.
 Four ed25519 keys, one per role, stored as raw PKCS#8 documents named
 `<role>.pk8`.
 
-`root` is an **offline** key. It signs `root.json` at `init` time and is not
-needed afterwards: `add` and `sign` only load the `targets`, `snapshot` and
-`timestamp` keys. The device side handles public material only: it reads
+`root` is an **offline** key. It signs `root.json` at `init` time and at the
+ceremonies that republish it (`rotate-root`, `refresh-root`); `add` and `sign`
+only load the `targets`, `snapshot` and `timestamp` keys. The device side handles public material only: it reads
 metadata and a pinned root, never a `.pk8`.
 
 Generate throwaway development keys:
 
 ```sh
 cargo run -p rauc-sign -- gen-dev-keys          # writes os/pkgs/rauc-sign/.devkeys/
+cargo run -p rauc-sign -- gen-dev-keys --keys-dir <dir> --role root
 ```
+
+`--role` is repeatable and defaults to all four. A rotation ceremony wants
+`--role root` on its own, so no unused copy of an online key is written to the
+media it will seal.
 
 `os/pkgs/rauc-sign/.devkeys/` is gitignored and `gen-dev-keys` refuses to overwrite an
 existing key. No key, certificate or seed is ever committed to this repository,
@@ -181,6 +217,15 @@ cargo run -p rauc-sign -- add \
 cargo run -p rauc-sign -- sign --repo _out/tuf \
   --targets-expires ... --snapshot-expires ... --timestamp-expires ... [--timestamp-version N]
 
+# hand the root role to a new key (offline key only; both keys sign the result)
+cargo run -p rauc-sign -- rotate-root \
+  --repo _out/tuf --keys-dir <current keys> --new-keys-dir <incoming key> \
+  --root-expires 2028-01-01T00:00:00Z
+
+# re-sign root at its annual expiry with the same key (offline key only)
+cargo run -p rauc-sign -- refresh-root \
+  --repo _out/tuf --keys-dir <current keys> --root-expires 2028-01-01T00:00:00Z
+
 # release-side offline verification against a trusted root
 cargo run -p rauc-sign -- verify --repo _out/tuf --root <trusted root.json> [--datastore _out/tuf-trusted]
 
@@ -192,8 +237,8 @@ cargo run -p rauc-sign --bin rauc-verify -- \
 
 All expiration instants are explicit RFC 3339 arguments. Nothing derives an
 expiration from the wall clock, so a release is reproducible and tests are
-deterministic. `--root-expires` exists only on `init`, because `root.json` is the
-one role the online path never re-signs. `rauc-sign verify --datastore` persists
+deterministic. `--root-expires` is on `init` and on the two root ceremonies, and nowhere else,
+because `root.json` is the one role the online path never re-signs. `rauc-sign verify --datastore` persists
 the last trusted metadata for the release side; the device side's equivalent is
 the mandatory `--state` file.
 
@@ -215,3 +260,13 @@ The device-side client is tested against the same in-repo fixture the signer
 tests use (`os/pkgs/rauc-sign/tests/`): the honest publish sequence verifies, and a
 published rollback, a tampered target, a tampered-metadata edit, expired
 metadata, and an unmet root threshold are each rejected.
+
+The root ceremonies have their own suite, not split along the signer/device
+line, because the property being tested is that a device pinned to the
+*outgoing* anchor reaches the incoming one — which the signer half alone proves
+nothing about. Both directions of the overlap window, releases published after
+a rotation verifying from either anchor, and six refusals: a rotation the
+outgoing key did not sign (accepted by the new anchor, refused by the old), a
+broken outgoing signature, a withdrawn rotation as a root rollback across a
+restart, rotating to the incumbent key, rewriting a published root version, and
+rotating from an anchor its own keys do not sign.
