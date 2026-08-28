@@ -10103,3 +10103,65 @@ fn the_openapi_document_covers_the_setup_route() {
         "{document}"
     );
 }
+
+/// The wizard's CIDR bound runs on this route, and on no other route under the
+/// prefix — the second divergence this milestone records rather than hides.
+///
+/// `valid_cidr` has one caller, `validate_iface`, whose own two callers are
+/// both HTML form handlers. So the rule is live on the wizard and reachable
+/// from nowhere under `/api/v1/`: `PUT /api/v1/network/{iface}` takes an
+/// address the kernel cannot parse and answers 204. That is M6's shipped
+/// behaviour and this test records it rather than changing it; closing it is a
+/// change to that cluster's routes, not to this one.
+///
+/// This route calls the rule because the harm is different here. A device being
+/// configured for the first time over the API has no other way in, so an
+/// unparseable address is the unreachable box section 2.3 item (ii) is about.
+#[tokio::test]
+async fn the_setup_route_runs_the_wizards_cidr_bound_where_the_network_routes_do_not() {
+    let entry =
+        json!({ "kind": "physical", "dhcp": false, "static": { "address": "192.168.1.10" } });
+
+    let (router, fake) = test_app(unconfigured_tree());
+    let body = json!({ "password": "first-boot-pw", "network": { "eth0": entry } }).to_string();
+    let response = post_json(&router, SETUP_PATH, &body, None).await;
+    assert_eq!(response.status(), StatusCode::UNPROCESSABLE_ENTITY);
+    let error = envelope(response).await;
+    assert_eq!(error["code"], "validation_failed");
+    assert_eq!(error["path"], "network");
+    assert!(
+        error["message"]
+            .as_str()
+            .unwrap()
+            .contains("IPv4 CIDR notation"),
+        "the message is the wizard's own: {error}"
+    );
+    assert_nothing_written(&fake, "a setup request with an address that is not a CIDR");
+    assert!(in_setup_mode(&router).await);
+
+    // The wizard refuses the same address at the form.
+    let form = post_form(
+        &router,
+        "/setup",
+        "password=first-boot-pw&confirm=first-boot-pw&iface=eth0&address=192.168.1.10",
+        None,
+    )
+    .await;
+    assert_eq!(form.status(), StatusCode::UNPROCESSABLE_ENTITY);
+
+    // And M6's typed route does not, which is the divergence: same bytes, 204.
+    let (configured, _) = test_app(configured_tree("hunter2secret"));
+    let cookie = login(&configured, "hunter2secret").await;
+    let put = put_json(
+        &configured,
+        "/api/v1/network/eth0",
+        &entry.to_string(),
+        Some(&cookie),
+    )
+    .await;
+    assert_eq!(
+        put.status(),
+        StatusCode::NO_CONTENT,
+        "recorded, not fixed: PLAN-023 M6's route runs no CIDR check"
+    );
+}

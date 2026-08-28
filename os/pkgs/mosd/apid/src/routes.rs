@@ -4083,7 +4083,7 @@ const SETUP_TOKEN_NAME: &str = "first-run setup";
         (status = 201, description = "The device is configured; the body carries a newly minted API token, which is not recoverable afterwards", body = SetupToken),
         (status = 400, description = "The body is not JSON (`request_invalid`)", body = ApiError),
         (status = 409, description = "The device already has an admin password, so it is not in setup mode (`already_configured`). Change the password with `POST /api/v1/actions/change-password`", body = ApiError),
-        (status = 422, description = "The body is not this shape, the password is under 8 bytes, the hostname is not a hostname, a `network` key is not an interface name, or a relational rule refuses the resulting map (`validation_failed`); or mosd rejected a write (`settings_rejected`). Nothing is written on any of them", body = ApiError),
+        (status = 422, description = "The body is not this shape, the password is under 8 bytes, the hostname is not a hostname, a `network` key is not an interface name, a static address is not IPv4 CIDR notation, or a relational rule refuses the resulting map -- a VLAN parent or a bridge port that is not a declared entry, a bridge port carrying addressing, a port claimed twice (`validation_failed`); or mosd rejected a write (`settings_rejected`). Nothing is written on any of them", body = ApiError),
         (status = 500, description = "Hashing the password failed (`hash_failed`), the stored token list could not be read (`settings_invalid`), no free token id was drawn (`mint_failed`), or mosd failed to write (`settings_io`, `mosd_failed`)", body = ApiError),
         (status = 503, description = "The call to mosd could not be made (`mosd_unreachable`); carries `Retry-After`", body = ApiError),
         (status = 405, description = "A method this route does not serve (`method_not_allowed`); carries `Allow`", body = ApiError),
@@ -4154,9 +4154,31 @@ pub(crate) async fn api_v1_setup(
     let candidate = match request.network.as_ref() {
         None => None,
         Some(submitted) => {
-            for iface in submitted.keys() {
+            for (iface, cfg) in submitted {
                 if let Err(response) = check_iface_name(iface, NETWORK_SETTINGS_PATH) {
                     return *response;
+                }
+                // The rest of the wizard's entry validator, called and not
+                // copied. Its name branch cannot fire here -- `check_iface_name`
+                // above tests the same predicate -- so the only message it can
+                // produce is the CIDR one, which is a rule that lives in a
+                // function whose only two callers are HTML form handlers and is
+                // therefore run by no route under `/api/v1/`. Called here
+                // because a factory-fresh device configured with an address the
+                // kernel cannot parse is exactly the unreachable box this
+                // milestone exists to prevent. That M6's network routes do not
+                // call it is a finding recorded in `docs/task/RFCT-244.md`, not
+                // something this route may fix on their behalf.
+                let address = cfg
+                    .static_
+                    .as_ref()
+                    .map_or("", |static_| static_.address.as_str());
+                if let Err(message) = validate_iface(iface, cfg.dhcp, address) {
+                    return api_response(
+                        StatusCode::UNPROCESSABLE_ENTITY,
+                        ApiError::apid("validation_failed", message.to_string())
+                            .at(NETWORK_SETTINGS_PATH),
+                    );
                 }
             }
             let mut candidate = match api_network_entries(&state).await {

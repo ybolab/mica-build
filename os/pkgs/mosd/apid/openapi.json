@@ -1279,7 +1279,7 @@
             }
           },
           "422": {
-            "description": "The body is not this shape, the password is under 8 bytes, the hostname is not a hostname, a `network` key is not an interface name, or a relational rule refuses the resulting map (`validation_failed`); or mosd rejected a write (`settings_rejected`). Nothing is written on any of them",
+            "description": "The body is not this shape, the password is under 8 bytes, the hostname is not a hostname, a `network` key is not an interface name, a static address is not IPv4 CIDR notation, or a relational rule refuses the resulting map -- a VLAN parent or a bridge port that is not a declared entry, a bridge port carrying addressing, a port claimed twice (`validation_failed`); or mosd rejected a write (`settings_rejected`). Nothing is written on any of them",
             "content": {
               "application/json": {
                 "schema": {
