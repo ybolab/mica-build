@@ -144,7 +144,7 @@ back across the reboot.
 Item 5's fingerprint carries a `/`, deliberately, and is sent percent-encoded —
 the spelling apid's own route tests use in `ssh_key_url`:
 `fingerprint.replace('/', "%2F")`
-(`os/pkgs/mosd/apid/src/tests.rs:7327`). Sent raw it would split the segment
+(`os/pkgs/mosd/apid/src/tests.rs:7334`). Sent raw it would split the segment
 and the resulting 404 would read as "apid forgot the key".
 
 ### 2.3 What it leaves behind

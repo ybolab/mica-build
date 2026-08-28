@@ -128,7 +128,7 @@ better fit for a daemonless engine, and it is what the code documents.
 - The apid pane: `.route("/containers", get(containers_form))`
   (`os/pkgs/mosd/apid/src/routes.rs:191`), with route tests that assert the
   written path — `vec!["container.enabled"]`
-  (`os/pkgs/mosd/apid/src/tests.rs:3074`).
+  (`os/pkgs/mosd/apid/src/tests.rs:3081`).
 
 **Where it diverged, and this one has teeth.** D3 says the switch is
 "an MQTT-addressable path for free" (`docs/plan/PLAN-012.md:169`) because

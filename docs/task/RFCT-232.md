@@ -137,14 +137,14 @@ After:
 ```
 
 The last line of that run is the control: `a_dot_path_that_does_not_exist_is_404_and_a_rejection_stays_422`
-(`os/pkgs/mosd/apid/src/tests.rs:4391`) is the settings route's existing
+(`os/pkgs/mosd/apid/src/tests.rs:4398`) is the settings route's existing
 assertion that a rejection is still 422, and it passed unchanged.
 
 **One existing test had to change, and it is the interesting one.**
 `each_fdo_error_name_gets_its_own_envelope` walks §2.4's five rows against
 **both** resource routes with one expected status per row, which is exactly the
 assumption this fix breaks: `assert_eq!(response.status(), status, "{fdo_name} at {path}");`
-(`os/pkgs/mosd/apid/src/tests.rs:4311`) failed with *"left: 404"* against
+(`os/pkgs/mosd/apid/src/tests.rs:4318`) failed with *"left: 404"* against
 *"right: 422"* at `/api/v1/state/wifiAp`. The row is now route-dependent in the
 loop, with the reason stated where the override is, and the other four rows and
 the whole settings column are untouched. That failure is the evidence the change

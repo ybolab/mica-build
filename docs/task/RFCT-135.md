@@ -101,7 +101,7 @@ no `"` — so a name carrying one is refused **before** the path builder, on the
 form (422, page re-rendered) and on `PUT /api/v1/network/{iface}` (422), with
 no write attempted. Asserted by
 `network_post_refuses_a_quote_in_an_iface_name`
-(`os/pkgs/mosd/apid/src/tests.rs:402-432`); the store refuses `eth"0` from
+(`os/pkgs/mosd/apid/src/tests.rs:406-439`); the store refuses `eth"0` from
 below in
 `set_rejects_a_network_key_that_is_not_an_interface_name`
 (`os/pkgs/mosd/mosd-settings/tests/settings.rs:1723-1751`).
@@ -109,7 +109,7 @@ below in
 A `.` that is not a VLAN spelling is treated the same way, because the rule is
 about the character and not the convention:
 `network_post_quotes_any_dotted_name_not_only_a_vlan`
-(`os/pkgs/mosd/apid/src/tests.rs:434-447`).
+(`os/pkgs/mosd/apid/src/tests.rs:441-454`).
 
 ### The reproduction, now carried by tests
 
@@ -123,13 +123,13 @@ passed. The fake now splits with the store's own grammar —
 end-to-end assertion possible:
 
 - `network_post_quotes_a_dotted_iface_name`
-  (`os/pkgs/mosd/apid/src/tests.rs:340-372`) — POST `iface=eth0.100&dhcp=on`,
+  (`os/pkgs/mosd/apid/src/tests.rs:340-374`) — POST `iface=eth0.100&dhcp=on`,
   303 to `/network?saved=1`, write path `network."eth0.100"`, the stored
   `network` map exactly `{"eth0.100": {"dhcp": true}}`, the value addressable
   at `network."eth0.100".dhcp`, and the pane re-rendering the entry it just
   wrote.
 - `the_dotted_iface_path_apid_builds_is_accepted_by_the_settings_model`
-  (`os/pkgs/mosd/apid/src/tests.rs:374-400`) — the string apid actually builds,
+  (`os/pkgs/mosd/apid/src/tests.rs:376-404`) — the string apid actually builds,
   driven into the real `mosd_settings::Settings`: it lands on the one key
   `eth0.100`, and the unquoted spelling this task filed still fails with
   ``unknown field `100` ``.
