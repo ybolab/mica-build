@@ -419,21 +419,26 @@ async function assertRotation(ctx: PhaseContext, before: string | undefined): Pr
     [`expected: 405`, `actual:   ${viaGet.status}${describe(viaGet)}`].join("\n"),
   );
 
-  // An interface that is not a tunnel: mosd owns the rule and raises
-  // InvalidArgs, which apid classifies as 422 `settings_rejected`.
-  const notATunnel = await client.post(
+  // An interface that is not DECLARED AT ALL is 404, since PLAN-023 M6 split
+  // mosd's rotate-key error: `docs/task/RFCT-242.md` section 1 rules that on
+  // this route *"404 added: an undeclared entry. 422 now means only 'exists and
+  // is not a tunnel'"*. This phase was written against a tree that predated
+  // that split and asserted 422 here, so the two conditions had one status
+  // between them and an absent entry was indistinguishable from a wrong-kinded
+  // one -- which is the distinction the correction exists to make.
+  const undeclared = await client.post(
     "/api/v1/actions/wireguard/no-such-iface/rotate-key",
     {},
   );
   report.expectStatus(
-    notATunnel,
-    422,
-    "rotating an interface that is not a declared WireGuard entry is 422",
+    undeclared,
+    404,
+    "rotating an interface that is not a declared network entry at all is 404",
   );
   report.expectJson(
-    notATunnel,
-    { error: { code: "settings_rejected", source: "mosd", path: "network.no-such-iface" } },
-    "the refusal carries §2.4's envelope: settings_rejected, from mosd, naming the dot-path at fault",
+    undeclared,
+    { error: { code: "settings_not_found", source: "mosd", path: "network.no-such-iface" } },
+    "the refusal carries §2.4's envelope: settings_not_found, from mosd, naming the dot-path at fault",
     { subset: true },
   );
 
