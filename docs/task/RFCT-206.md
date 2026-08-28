@@ -129,6 +129,23 @@ One incidental fact worth recording for M8: the kernel is
 (`docs/task/RFCT-200.md:474`). Both checks derive the release from the image
 rather than pinning it, so neither is affected; the stale number is prose.
 
+**Measured on the booted guest**, phase 05c's own PASS lines for the kernel half:
+
+```text
+PASS: the running kernel resolves the 8021q module -- modprobe -n 8021q resolved
+PASS: the running kernel resolves the bridge module -- modprobe -n bridge resolved
+PASS: the running kernel resolves the wireguard module -- modprobe -n wireguard resolved
+PASS: the kernel creates a VLAN device on a declared parent -- 3: eth0.4094@eth0: <BROADCAST,MULTICAST> mtu 1500 qdisc noop state DOWN mode DEFAULT group default qlen 1000\    link/ether 52:54:00:12:34:56
+PASS: the kernel creates a bridge device -- 4: m7br0: <BROADCAST,MULTICAST> mtu 1500 qdisc noop state DOWN mode DEFAULT group default qlen 1000\    link/ether c6:49:d2:b6:eb:ce brd ff:ff:ff:ff:ff:ff
+PASS: the kernel creates a WireGuard device -- 5: m7wg0: <POINTOPOINT,NOARP> mtu 1420 qdisc noop state DOWN mode DEFAULT group default qlen 1000\    link/none
+```
+
+The guest's own kernel log records the three subsystems coming up as those
+`ip link add`s ask for them — `8021q: 802.1Q VLAN Support v1.8`, `bridge:
+filtering via arp/ip/ip6tables is no longer available by default` and
+`wireguard: WireGuard 1.0.0 loaded` — which is the module set the offline check
+in section 2 could only say was PRESENT actually being loaded.
+
 ## 3. The booted-image smoke, and where it lives
 
 `os/verify` has four modes and **none of them boots anything** — `--lint` reads
@@ -170,6 +187,31 @@ to the account systemd-networkd runs as and lets the kernel answer.
 Both directions are asserted. The negative is not decoration: if
 `systemd-network` could read `secrets/`, the amendment's premise would be false
 and the path correction this milestone verifies would have been unnecessary.
+
+**Measured on the booted guest**, phase 05c's own PASS lines:
+
+```text
+PASS: the image carries the systemd-network account mosd chowns key files to -- uid=998(systemd-network) gid=998(systemd-network) groups=998(systemd-network)
+PASS: the systemd-network USER can read a 0640 root:systemd-network key under <state>/networkd-secrets/ -- run as that user, not inferred from mode bits -- systemd-network read /var/lib/mos/networkd-secrets/m7-probe.key (mode 640 root:systemd-network); every path component is traversable by that user
+PASS: the same user CANNOT read <state>/secrets/, which is why the key store is a sibling of it and not a directory under it
+```
+
+And on the SECOND boot, where mosd has provisioned for real, the subject is no
+longer a fixture. The key `wg-e2e` caused mosd to generate in boot 1 is read by
+the same user, and the `secrets/` refusing it is mosd's own directory:
+
+```text
+M7-SMOKE: keystore-real-readable PASS systemd-network read the key mosd generated at /var/lib/mos/networkd-secrets/wg-wg-e2e.key (mode 640 root:systemd-network)
+M7-SMOKE: secrets-unreadable PASS systemd-network cannot read /var/lib/mos/secrets/device-password (dir mode 700 root:root, the directory mosd provisioned)
+```
+
+That is RFCT-204's handoff discharged against M5's actual output rather than
+against a lookalike. Phase 05c runs on the first boot, so the line it ASSERTS is
+the fixture one and `keystore-real-readable` is honestly SKIPPED there; adding
+`05c-kernel-net` to `MOS_APID_BOOT2_PHASES` would make the stronger pair an
+assertion too, and is left as a stated improvement rather than taken now,
+because it changes the phase list every other assertion in this run was measured
+against.
 
 ## 5. Findings — defects found, and what was done with each
 
@@ -362,7 +404,7 @@ failure, and it ran.
 | --- | --- |
 | `bash os/pkgs/mosd/hack/check.sh` | `Summary [ 52.823s] 681 tests run: 681 passed, 0 skipped`, `advisories ok, bans ok, licenses ok`, `ALL CHECKS PASSED` |
 | `bash os/pkgs/rauc-sign/hack/check.sh` | `Summary [ 0.254s] 15 tests run: 15 passed, 0 skipped`, `ALL CHECKS PASSED` |
-| `bash docs/verify-citations.sh` | (see below) |
+| `bash docs/verify-citations.sh` | `1315/1315 PASS`, RFCT-206 at 0 unquoted citations |
 | `bash docs/verify-index.sh` | `728/728 PASS` |
 | `bash os/verify/run.sh` (the suite) | `RESULT: PASS (1080/1080 tests)` |
 | `bash os/verify/run.sh --verify --board x64` | `RESULT: PASS (292/292 checks, 22 skipped)`, both new checks green |
@@ -370,7 +412,7 @@ failure, and it ran.
 | x64 image build | green — `_out/x64/x64-mos-v2-latest.img` |
 | cx3576 kernel build | green, fragment assertion passed |
 | cx3576 image build | **blocked** — no host arm64 binfmt; section 7 |
-| `make os-apid-api-test` | (see below) |
+| `make os-apid-api-test` | `RESULT: PASS (329/329 checks)` — boot 1 `PASS (299/299)`, boot 2 `PASS (17/17)`, 9 skipped |
 
 ## 9. Out of scope, and untouched
 
