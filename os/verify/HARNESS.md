@@ -496,6 +496,7 @@ plainly here because unreachable code with a passing test reads as live.
 | `src/checks-bootchain.test.ts` | the U-Boot chain, including the BSP byte-compare's PASSING direction, which no shipped tree reaches; and a `mutate()` helper that refuses an edit which changed nothing |
 | `src/checks-cmdline.test.ts` | one set of conclusions over TWO readers — a U-Boot verity env and a GRUB command line composed from `grub.cfg` and the slot's own fragment — with nearly every case run against both |
 | `src/checks-shape.test.ts` | the partition count as a per-board derivation, and the capability pair including the environment probe that keeps it from passing for the wrong reason |
+| `src/checks-freshness.test.ts` | that an image is dated by ITS OWN board's artefacts: both failing directions, the vacuous-green case turned into a skip, and the cross-board tree PLAN-013 M1.1 reported, asserted in both directions so a check that simply never looked at the other board could not satisfy it |
 
 A model exercised only on fixtures its author wrote is a model of its author's
 expectations. Anything that passes on cx3576 alone is half tested.
@@ -831,3 +832,57 @@ thrown.
 with a nothing-unclaimed control beside them. A guard whose removal changes no
 test is not a guard: `conclude` filing an unasked artifact under `pass` has to
 turn something red, and the conclusion alone does not move under that mutation.
+
+## 12. Is the image the one this tree would build?
+
+Nothing else in the register asks that. Every other check reads the image and
+compares it against the board definition or against itself, and every one of
+them passes as happily on an image built four commits ago — so a green run is a
+statement about *some* image, in the present tense, and nothing in it says
+which. `src/checks-freshness.ts` is the one check that dates the image, and it
+dates it against **that board's own** artefacts:
+
+| input | derived from |
+|---|---|
+| `_out/<board>/rootfs-verity.img` | `ctx.outDir`, which is the board under test |
+| `os/pkgs/podman/out-<arch>/podman` | that board's own `MOS_ARCH` |
+
+mtime, not a hash: the inputs are a squashfs and a directory of binaries, and
+what is being caught is "you forgot to re-run the build".
+
+**Every direction is a named result.** An input newer than the image is a
+`FAIL:` naming which one; no input present at all is a `SKIP:`, because zero
+comparisons made is the shape a green takes when it asserted nothing;
+`MOS_VERIFY_ALLOW_STALE=1` — for a downloaded release image, whose source is not
+this tree — is a second `SKIP:` that says so. Absent inputs are named in the
+message in every direction, so a run that compared one input does not read like
+a run that compared two.
+
+### Why it is a check and not a preflight
+
+It was a preflight once, and that is exactly how it was lost. The shell
+verifier this package replaced carried the same guard in its prologue: it
+printed `error:` on **stderr** and exited 1 before the first check ran. The
+per-check parity gate that governed the port compared **conclusions** —
+`src/parity.ts`'s `parseShellRun` ingests `PASS:`/`FAIL:`/`SKIP:` lines and the
+`RESULT:` line and nothing else — so a preflight that publishes no conclusion
+could not appear as a row, could not diverge, and could not even be counted
+`unclaimed`. The port reached full parity with the guard absent, and no gate in
+this tree noticed for two months. RFCT-225 is that finding; this section is
+where it is written down.
+
+Rebuilt as a register entry, its absence would now show up the way any other
+check's would.
+
+### The cross-board case, which is the point
+
+`PLAN-013` M1.1 raised a defect in the original: its two inputs were written
+down as the literals `_out/cx3576/rootfs-verity.img` and
+`os/podman/out-arm64/podman`, so an x64 run's freshness was decided by arm64
+artefacts — it passed a stale x64 image and refused a fresh one whenever the
+arm64 tree happened to be newer. A board-agnostic mtime comparison is the bug,
+not the fix, so `src/checks-freshness.test.ts` plants that tree: x64's own
+inputs older than the image, cx3576's and arm64's newer. The x64 run must pass.
+The **control** runs the same tree as cx3576 and requires red — without it, a
+check that simply never looked at the other board would satisfy the first case
+for a reason nobody asked for.
