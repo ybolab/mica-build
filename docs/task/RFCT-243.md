@@ -170,6 +170,47 @@ The gate script ran unmodified. Two things sit around it and neither touches it:
 test exits 100, and the builder image was confirmed to report `amd64` before any
 result from it was believed.
 
+## 5b. Test arithmetic
+
+Counting both `#[tokio::test]` and `#[tokio::test(flavor = "multi_thread")]`,
+plus plain `#[test]`, with `target/` excluded:
+
+| | `#[tokio::test]` | `multi_thread` | `#[test]` | total |
+|---|---|---|---|---|
+| starting tree | 396 | 18 | 398 | **812** |
+| final tree | 406 | 18 | 399 | **823** |
+
+**812 + 10 + 1 = 823.** Ten are this milestone's own; the eleventh,
+`a_state_dot_path_that_does_not_resolve_is_404_not_422`, is `main`'s test for
+its own fix, carried across with the section 7 reconciliation rather than
+written here.
+
+The ten, each asserted by name against the run log:
+
+| Test | What it holds |
+|---|---|
+| `the_power_routes_answer_202_like_the_form_path` | 202 on both verbs, the bus call arriving after the response, and the form path answering the same code |
+| `the_action_routes_require_no_confirmation_token` | the API takes none and the form path still demands one |
+| `the_transient_password_route_sets_it_and_writes_no_setting` | 204, one bus call, nothing in the settings tree |
+| `the_transient_password_route_enforces_the_form_paths_byte_bounds` | 7/8/72/73 bytes and the three forbidden bytes, through **both** surfaces |
+| `a_rejected_transient_password_is_never_echoed` | no echo in body or headers, and not a fragment either |
+| `a_malformed_transient_password_body_is_refused_at_400` | `request_invalid`, nothing written |
+| `the_action_routes_take_a_bearer_token` | Amendment 1's dual-credential reading |
+| `an_unauthenticated_action_post_is_refused_and_does_not_act` | 401 envelope, and the machine stays up |
+| `a_failed_transient_password_names_no_dot_path` | section 4's `Option`, both directions |
+| `the_openapi_document_covers_the_three_actions` | `POST` only; no `get`/`head`/`put`/`delete`/`patch` declared |
+
+**No test was renamed.** Three existing tests changed their data and none
+changed its name or weakened an assertion:
+`a_wrong_method_on_a_declared_api_route_answers_the_envelope` gained the three
+`GET` rows that are section 2.2's assertion;
+`every_other_api_path_keeps_both_of_its_answers` and
+`the_api_reservation_answers_every_shape_with_the_envelope` each dropped
+`/api/v1/actions/reboot` from a list of paths the API does **not** declare, on
+the precedent each already recorded for the collection that left it at M5; and
+`each_fdo_error_name_gets_its_own_envelope` took `main`'s route-dependent branch
+for `InvalidArgs`.
+
 ## 6. Citations
 
 Re-anchored in their own commits, numbers only. The pre-image was verified
