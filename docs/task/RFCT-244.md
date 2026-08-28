@@ -1,6 +1,6 @@
 # RFCT-244 PLAN-023 M8: POST /api/v1/setup
 
-- **status**: completed — `POST /api/v1/setup` ships unauthenticated, 201 with a token minted through M2's own routine, 409 on the wizard's own condition, and 422 on every rule with **nothing written**; the wizard's CIDR bound was found to be reachable from no `/api/v1/` route and is called here and recorded for the rest; the password floor is lifted to one constant; 836/836 (823 + 13), 1708/1708 citations, 851/851 index, oasdiff RC=0 against both bases
+- **status**: completed — `POST /api/v1/setup` ships unauthenticated, 201 with a token minted through M2's own routine, 409 on the wizard's own condition, and 422 on every rule with **nothing written**; the wizard's CIDR bound was found to be reachable from no `/api/v1/` route and is called here and recorded for the rest; the password floor is lifted to one constant; 836/836 (823 + 13), 1708/1708 citations, 851/851 index, oasdiff RC=0 against both bases; section 11 records the addendum merge of RFCT-246, after which the figures are 836/836, 1714/1714 and 855/855
 - **priority**: P1
 - **owner**: bkd/ncq7hlys
 - **createdAt**: 2026-08-28
@@ -471,3 +471,107 @@ measured here**; it is not a correction of M7's, and the two are not comparable.
 - The HTML form path's bus-level partial failure, for the reason section 3.3
   gives.
 - `POST /builtin/deactivate` (section 2.3 item iii), still deferred.
+
+## 11. Addendum: carrying RFCT-246 across the merge
+
+Added after this record was first closed, at L2's instruction. RFCT-246
+(`bkd/x4agijkt`) had become unstartable in BKD and could not perform its own
+final merge, so this task carried its finished branch across. **Nothing under
+`test/apid-api/**` was authored, edited or re-run here**; the suite was not
+rebuilt, which is owed to M9.
+
+### 11.1 The merges
+
+`git merge bkd/vu5b6kk0` **fast-forwarded** — L2 had already merged this task's
+M8 work as `6d94d72`, so the base for everything below is L2's tip *including*
+M8, and there were no shifts of this task's own left to re-apply.
+
+`git merge bkd/x4agijkt` then conflicted in five files. `test/apid-api/**` did
+**not** conflict, and its result is byte-identical to RFCT-246's branch —
+`git diff bkd/x4agijkt HEAD -- test/apid-api/` is empty.
+
+| Conflict | Resolution |
+|---|---|
+| `docs/task/index.md` | all rows kept, one per line, ascending: 240, 241, 242, 243, 244, 246 |
+| `docs/design/api.md`, `docs/task/RFCT-200.md`, `docs/task/RFCT-210.md`, `docs/task/RFCT-242.md` | L2's text as the base, then section 11.2 |
+
+### 11.2 A finding: the asymmetry rule points the other way here
+
+The standing rule is *take the L2 side for every citation document, then
+re-apply only the shifts your own changes introduce*, and its stated reason is
+that L2 carries **content re-derivations** that no pre-image map can recover.
+
+On this merge the polarity is reversed, and it is measurable. RFCT-246's branch
+carries **no `os/` change at all** — `os/pkgs/mosd/apid/src/routes.rs` is
+byte-identical between its base `823476a` and its tip — so **every** citation
+number it changed is a content re-derivation and **none** is a shift. There was
+nothing for a map to recover. Applied literally, the rule would have discarded
+all 41 of them.
+
+The clearest instance, and the reason this is a finding rather than a
+preference. Stated as a measurement of past trees, so the numbers below are
+deliberately not written as resolvable citations. At `823476a`
+`docs/design/api.md` named `redirect_app()` and cited lines 3140-3144 of
+`routes.rs`, while `pub fn redirect_app` sat at line 3168 of that same tree: the
+citation named one construct and pointed at another. RFCT-246 corrected it to
+3168-3172. L2's own pass, being mechanical, faithfully carried the wrong number
+forward to 3204-3208, which at L2's tip `6d94d72` is the middle of the bearer
+check — `return false;` and the comment above
+`token::verify(&parse_tokens(&access).unwrap_or_default(), presented)`
+(`os/pkgs/mosd/apid/src/routes.rs:3190`). Both numbers are gate-green, because
+the interposed word in *"`redirect_app()` at …"* demotes the pair to
+resolution-only; only one is right. In this tree the citation reads 3232-3236
+and points at the function.
+
+So the four documents were resolved as **L2's text, plus RFCT-246's 41
+re-derivations carried across the same mechanical map**. That is not authoring:
+each anchor is RFCT-246's own measurement, transposed from the tree it was
+measured on to this one.
+
+### 11.3 The citation pass
+
+One commit, numbers only, and **two bases** — because two different documents'
+text came from two different branches, and mapping either from the other's base
+is the double-application M7 recorded:
+
+| Set | Base | Result |
+|---|---|---|
+| (A) `docs/task/RFCT-246.md`, every citation | `bkd/x4agijkt` | 3 remapped, 3 unmoved |
+| (B) the 41 re-derivations in the four documents | `bkd/x4agijkt` | 41 carried |
+| (C) every other document's citations into `test/apid-api/**` | `6d94d72` | 14 checked, **0 moved** |
+
+The two bases cite disjoint file sets — (A) and (B) rewrite citations into
+`os/`, (C) into `test/` — so no citation is mapped twice. **Zero hand
+resolutions and zero refusals**; every rewrite had both endpoints inside an
+unchanged block with byte-identical text at each. Nine distinct bands, no
+constant offset: `routes.rs` +41, +57, +64, +88, +402, +415, +484, +569 and
+`tests.rs` +34.
+
+(C) is stated as a measurement rather than assumed: RFCT-246 edits
+`test/apid-api/run.sh`, `README.md`, `src/main.ts` and `05b-wireguard.ts`, and
+fourteen citations across the corpus point into those files. None of them moved.
+
+**Bare `` `:NNN` `` continuations: RFCT-246 changed none** — its 41 rewrites are
+all full-form — so RFCT-214's census is untouched by this merge, and the figures
+in section 9 stand.
+
+Re-deriving both passes from the merge commit reproduces this tree byte for
+byte, which is the check that nothing was mapped twice.
+
+### 11.4 Gates after the addendum
+
+| Gate | Result |
+|---|---|
+| `bash docs/verify-citations.sh` | `1714/1714 PASS`, RC=0 |
+| `bash docs/verify-index.sh` | `855/855 PASS`, RC=0 |
+| `bash os/pkgs/mosd/hack/check.sh`, unmodified, amd64 | `836 tests run: 836 passed`; `ALL CHECKS PASSED` |
+| `oasdiff` vs `main` `77a3278` / vs L2 `6d94d72` / vs `bkd/x4agijkt` | RC=0, RC=0, RC=0; **"No changes detected"** against L2 |
+
+The Rust count is unchanged at **836** because RFCT-246's deliverable is
+TypeScript. `bkd/x4agijkt` measures 813 on its own, which is its stale base
+(`823476a`, pre-M7/M8) and not a regression.
+
+**Not done, deliberately**: the `test/apid-api` suite was not rebuilt or re-run.
+RFCT-246's 37/37 and 376/376 were measured against an image built before
+`POST /api/v1/setup` existed; the re-run against the completed write surface is
+M9's, and L2 is tracking it there.
