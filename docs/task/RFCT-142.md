@@ -100,7 +100,7 @@ What changed:
 Checks: `bash os/pkgs/rauc/render-config.sh --check`,
 `bash docs/verify-citations.sh`, `bash docs/verify-index.sh` all green;
 `mos-machine-id.service` re-read carefully (comment-only change,
-`systemd-analyze verify` unavailable). Known residue: `docs/design/dashboard.md:787`
+`systemd-analyze verify` unavailable). Known residue: `docs/design/dashboard.md:798`
 (section 5 gap table, outside this task's edit scope) still describes the
 hazard as unanswered; its `:23-25`/`:27-29` shorthands still resolve
 mechanically.

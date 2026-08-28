@@ -93,7 +93,7 @@ one that no drift list would catch.
 - **No re-verification of §9's contradiction table.** The header is explicit
   that those citations are *"the current text of those documents, not a
   re-verification of the code beneath them"*, and points at `api.md` §1.7's
-  matching statement (`docs/design/api.md:515-516`).
+  matching statement (`docs/design/api.md:517-518`).
 - **§10's list of what the measurement never verified** is left standing as
   still true of that measurement.
 

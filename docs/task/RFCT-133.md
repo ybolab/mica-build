@@ -38,7 +38,7 @@ invokes.
 **The decision: a cache, not a broadcast channel.** The proxy declares the
 `#[zbus(signal)] settings_changed(path, value_json)` member, and the
 subscriber does something with every event: `watch_settings_changed`
-(`os/pkgs/mosd/apid/src/bus_client.rs:102-152`) pumps the stream for the
+(`os/pkgs/mosd/apid/src/bus_client.rs:103-153`) pumps the stream for the
 daemon's lifetime and feeds RFCT-132's access cache — subscription live
 marks it synchronised, a change whose dot-path can touch `access`
 (segment-wise overlap) invalidates it, and any lapse drops it back to

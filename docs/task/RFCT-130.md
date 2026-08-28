@@ -33,12 +33,12 @@ hand-written `zbus::DBusError` impl (the derive's passthrough variant would
 have flattened every wrapped fdo name to `org.freedesktop.zbus.Error`);
 `Validation` keeps `InvalidArgs`, `Io` keeps `IOError`, `Parse`/`Migration`
 keep `Failed`, delegated to fdo so its "replies stay byte-identical"
-(`os/pkgs/mosd/mosd/src/bus.rs:490-549`). `mosd-settings/src/error.rs` did not
+(`os/pkgs/mosd/mosd/src/bus.rs:523-582`). `mosd-settings/src/error.rs` did not
 need changing.
 
 **apid side.** `bus_api_error` gains the two arms: 404 `settings_not_found`
 and 409 `settings_read_only`; 422 now means a rejected value only —
-`ApiError::mosd("settings_rejected", message)` (`os/pkgs/mosd/apid/src/routes.rs:558-581`). `GetState`'s own
+`ApiError::mosd("settings_rejected", message)` (`os/pkgs/mosd/apid/src/routes.rs:665-688`). `GetState`'s own
 not-found stays `InvalidArgs`/422 — it is not raised through the settings
 error mapping and was out of this task's scope.
 

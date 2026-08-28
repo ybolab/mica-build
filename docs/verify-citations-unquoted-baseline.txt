@@ -9,7 +9,7 @@
 docs/design/api.md 435
 docs/design/boards.md 2
 docs/design/bus.md 5
-docs/design/dashboard.md 81
+docs/design/dashboard.md 80
 docs/design/remote-management.md 5
 docs/design/uboot-ab-handshake.md 12
 docs/task/RFCT-040.md 4

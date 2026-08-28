@@ -472,7 +472,7 @@ Fifteen blocks left the 15+ class entirely, including all five in `image.ts`
 | `os/verify/src/script-commands.ts:1` | 24 | the pipeline-not-parser rule, the wrapper commands deliberately excluded, and the re-rooting difference |
 | `os/verify/src/verify-cli.ts:1` | 23 | the output-format contract (MUST-KEEP class 7) plus the SKIP-is-not-PASS and zero-conclusions rules |
 | `os/verify/src/smoke.ts:160` | 23 | the measured five-row `docker run` exit-status table (255/127/126/127/own status) with its stderr text |
-| `os/verify/src/checks.ts:369` | 23 | the content-keyed cache rule and the publish-by-rename rule, both with the defect each prevents |
+| `os/verify/src/checks.ts:371` | 23 | the content-keyed cache rule and the publish-by-rename rule, both with the defect each prevents |
 | `os/verify/src/checks-gpt.ts:121` | 23 | the measured substring census (` partitions` 3/3, `exactly ` 13/8) the matcher choice rests on |
 | `os/verify/src/checks-cmdline.ts:1` | 23 | the U-Boot and GRUB command-line composition, both sources named, plus the leave-unexpanded rule |
 | `os/verify/src/smoke-negative.ts:1` | 22 | the measured 255/127/126 correction to M7b's map, plus the no-op and positive-control rules |
@@ -516,7 +516,7 @@ Fifteen blocks left the 15+ class entirely, including all five in `image.ts`
 | `os/verify/src/checks-fixture.ts:451` | 16 | fixture contract: what the synthetic image asserts and which mutation drives which check red |
 | `os/verify/src/smoke-pins.test.ts:1` | 15 | the failing side of the pin normalisation |
 | `os/verify/src/parity.ts:171` | 15 | the self-consistency guard and the identity assignment it depends on |
-| `os/verify/src/checks.ts:276` | 15 | a register invariant stated at the code that holds it |
+| `os/verify/src/checks.ts:278` | 15 | a register invariant stated at the code that holds it |
 | `os/verify/src/checks-fixture.ts:682` | 15 | fixture contract: what the synthetic image asserts and which mutation drives which check red |
 | `os/verify/src/checks-fixture.ts:359` | 15 | fixture contract: what the synthetic image asserts and which mutation drives which check red |
 | `os/verify/src/checks-fixture.ts:1` | 15 | fixture contract: what the synthetic image asserts and which mutation drives which check red |

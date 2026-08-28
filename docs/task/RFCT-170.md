@@ -61,7 +61,7 @@ single-token class is itself dominated by coincidence: the commonest
 separators are a bare comma (52 pairs) and a table `|` (14) against 12 for
 the genuinely quoting "at".
 
-- genuine quote-citation pairs: `` `axum = "0.8"` at `os/pkgs/mosd/Cargo.toml:45` ``,
+- genuine quote-citation pairs: `` `axum = "0.8"` at `os/pkgs/mosd/Cargo.toml:54` ``,
   RFCT-155's own `` "/api/v1/settings/" around `api.md:1251` `` at
   `docs/design/bus.md:409`;
 - prose coincidences: adjacent table cells separated by `|` (the reconciler
