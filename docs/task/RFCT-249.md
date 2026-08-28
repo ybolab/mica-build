@@ -127,38 +127,90 @@ the predicate, which the milestone's own design constraint forbids.
 
 So the implemented rule is the renderer's predicate itself, unmodified, moved to
 where a write surface can run it. The plan's phrase is read as naming the two
-characters that motivated the item, not as bounding the fix.
+characters that motivated the item, not as bounding the fix. L1 ruled the same
+way while this was in flight, and the predicate was re-verified against
+`wifi_client.rs` at this HEAD rather than taken from the ruling.
 
-Nothing legitimate is lost by the wider reading. IEEE 802.11i's own passphrase
-alphabet is ASCII 32 to 126 — precisely the printable range — so the only
-characters this refuses that the standard allows are `"` and `\`, and those are
-the two the plan already names.
+### 3.2 A finding: the two character classes are near-identical, not identical
 
-### 3.2 The escape hatch was considered and not taken
+L1's ruling asks this record to state that the renderer's character class **is**
+the WPA passphrase character class, which would make PLAN-026's escape hatch
+inapplicable rather than merely unopened. The ruling also says that a reading of
+the standard which contradicts it is a finding to report rather than an
+assertion to make. This is that report: **the two classes are not identical.**
+They agree on the printable range and differ on exactly two of its 95 code
+points — and those two are precisely the ones the milestone is about.
 
-PLAN-026 offers one: if legitimate WPA passphrases genuinely require `"` or `\`
-**and** wpa_supplicant has an escaping form the renderer could use instead, stop
-and report rather than tighten.
+IEEE 802.11i-2004 Annex H.4.1, carried forward as IEEE 802.11-2020 Annex J.4.1,
+defines a pass-phrase as a sequence of 8 to 63 ASCII-encoded characters, each
+"in the range of 32 to 126 (decimal), inclusive". The exclusion list is empty.
+`"` is 34 and `\` is 92, so the standard admits both.
 
-The first half holds — 802.11i's alphabet includes both characters, so a
-passphrase using them is legal in the standard even though it cannot be written
-into this configuration file. The second half could **not** be established here,
-and that is stated as a limit rather than as a finding: wpa_supplicant is not
-vendored in this tree. `grep -rn "wpa_supplicant" --include="*.c" --include="*.h"`
-matches nothing; it arrives as an Alpine package
-(`os/boards/cx3576/bsp/rootfs/alpine/Dockerfile:31`), so its `psk=` parser is not
-available to measure against. The renderer's own doc comment already records
+The repository's own record says the same thing in three places, and not one of
+them attributes the two exclusions to the standard:
+
+| What the code says | Where | What it attributes it to |
+|---|---|---|
+| `IEEE 802.11i's shortest WPA2 passphrase` / `IEEE 802.11i's longest` | `os/pkgs/mosd/mosd-settings/src/model.rs:411` and `os/pkgs/mosd/mosd-settings/src/model.rs:414` | Only the **length** band is the standard's |
+| `the quote that would close the string and the backslash that some wpa_supplicant string forms treat as an escape` | `os/pkgs/mosd/mosd-settings/src/model.rs:420-421`, lifted from the renderer by this task | The **file format**, not the standard |
+| `a handful of legal SSIDs take the hex form and stay just as correct` | `os/pkgs/mosd/mosd/src/reconciler/wifi_ap.rs:272-273` | The repo already calls a value carrying these two characters **legal** |
+
+So the tightening does refuse two characters a client could legitimately have
+chosen. What makes that cost nothing is a different fact from the one the ruling
+gives, and it is stronger:
+
+**A passphrase carrying `"` or `\` never worked on this device.** Before this
+change it was accepted at the route and stored, and then the station reconcile
+failed — `apply` returns an error, no configuration file is written at all, and
+no supplicant control call is made. That is asserted, not inferred, by
+`an_unrenderable_key_fails_before_anything_is_written_or_started`
+(`os/pkgs/mosd/mosd/src/reconciler/wifi_client.rs:1394`), which checks
+`assert!(!paths.config.exists());`. One such key therefore stalled the whole
+station subtree, every other configured network included, with the error visible
+only in live state.
+
+That test's key carries a newline as well as a quote, and the claim here is
+about a **quote-only** key, so the step across is worth stating rather than
+assuming: the two take the same path. `encode_psk` has exactly one gate for
+either of them — the single `if !is_quotable(psk) {` branch — and `is_quotable`
+is one `all(..)` over the bytes, so a quote alone and a quote-with-newline reach
+the identical `Err`, and `apply` cannot distinguish them. The new tests added by
+this task pin the quote-only case directly at both levels: the unit test and the
+route test each drive `has"quote1`, which carries no newline and no other
+excluded byte.
+
+This change removes no working configuration. It converts a silent, total and
+misattributed failure into an immediate 422 that names the character class and
+nothing else. That is the whole of the milestone's value, and it survives the
+classes not being identical.
+
+### 3.3 The escape hatch: still not taken, and for the second condition
+
+PLAN-026 opens the hatch only when **both** hold: legitimate WPA passphrases
+require `"` or `\`, **and** wpa_supplicant has an escaping form the renderer
+could use instead.
+
+Given section 3.2, the first condition is closer to met than the ruling assumes
+— the standard permits both characters, so a client could legitimately have
+chosen one. The hatch nonetheless stays shut, on the **second** condition, which
+could not be established here and is recorded as a limit rather than as a
+finding: wpa_supplicant is not vendored in this tree.
+`grep -rn "wpa_supplicant" --include="*.c" --include="*.h"` matches nothing; it
+arrives as an Alpine package
+(`os/boards/cx3576/bsp/rootfs/alpine/Dockerfile:31`), so its `psk=` parser is
+not available to measure against. The station renderer's own doc comment records
 what it believes — that an SSID has wpa_supplicant's unquoted hex form to fall
 back on and a passphrase has none, because bare hex on a `psk=` line means a raw
-PMK and not a passphrase.
+PMK and not a passphrase — and that belief is consistent with everything
+measurable here, but it is a belief in this tree and not a measurement of the
+parser.
 
-Both conditions are required by the plan's wording, and only one is established,
-so the hatch does not open. The direction taken is also the reversible one: a
-refusal at the write surface is a 422 a client sees immediately, where the
-status quo was a stored key that failed silently on the reconciler. If a
-supplicant-side escaping form is later measured to exist, widening one predicate
-in `mosd-settings` re-admits the two characters at both surfaces at once —
-which is the property the lift bought.
+Both conditions are required and only one is arguably met, so the hatch does not
+open. The direction taken is also the reversible one: if a supplicant-side
+escaping form is later measured to exist, widening one predicate in
+`mosd-settings` re-admits the two characters at both surfaces at once — which is
+the property the lift bought. That is the residue this milestone leaves, and it
+is a narrow one: two code points, on a path that has never carried them.
 
 ## 4. Tests
 
@@ -181,11 +233,19 @@ string reaches an HTTP client.
 
 ## 5. Documentation
 
-`docs/design/api.md:266`, the `POST /api/v1/wifi/client/networks` row, in the
-place that already cites the validator. No new section was invented. The row's
-outcome cell now states what the 422 admits: a 64-digit hex PMK, or an IEEE
-802.11i passphrase of 8 to 63 characters the station renderer can carry —
-printable ASCII, no quote and no backslash — citing `is_wpa_quotable`.
+The anchor was re-confirmed against the **pre-change** document before anything
+was written there, because after the edit the grep can no longer fail:
+`git show c5f7e96:docs/design/api.md` into a scratch file, then
+`grep -n "passphrase\|PMK"` over it — no output, exit 1. `grep -n
+"validate_wifi_psk"` over the same file returned exactly **one** line, 266, the
+`POST /api/v1/wifi/client/networks` row. So the row is the only place in the
+document that names the validator, and it is the right home; no new section was
+invented and none was needed.
+
+The row's outcome cell now states what the 422 admits: a 64-digit hex PMK, or an
+IEEE 802.11i passphrase of 8 to 63 characters the station renderer can carry —
+printable ASCII, no quote and no backslash — citing `is_wpa_quotable`
+(`os/pkgs/mosd/mosd-settings/src/model.rs:432`).
 
 ## 6. A residue this created and paid off in the same branch
 
@@ -225,9 +285,20 @@ not fixed: `wifi_ap.rs` is outside this task's file list.
 
 ## 8. Gates
 
+All four run in this task's own worktree, `/srv/bkd/worktrees/u51kzjlk/23at5xui`,
+and the Rust gate's container mounts that path and no other
+(`-v /srv/bkd/worktrees/u51kzjlk/23at5xui:/work`). The shared checkout at
+`/srv/ai/mos` was never checked out, edited, mounted or measured from; a verdict
+taken there would be void, and none of these is.
+
 | Gate | Result |
 |---|---|
-| `bash docs/verify-citations.sh` | `docs/verify-citations.sh: 2171/2171 PASS` — 2170 at main plus the one citation this task added |
+| `bash docs/verify-citations.sh` | GATE_CITATIONS |
 | `bash docs/verify-index.sh` | GATE_INDEX |
-| `bash hack/check.sh` in `localhost/mos-build-rust:amd64` | GATE_RUST |
-| `oasdiff breaking` against main's tip | GATE_OASDIFF |
+| `bash hack/check.sh` in `localhost/mos-build-rust:amd64` | `Summary [ 252.204s] 838 tests run: 838 passed (2 slow), 0 skipped`, then `advisories ok, bans ok, licenses ok` and **`ALL CHECKS PASSED`**. `dbus` installed in-container first, or the bus round-trip goes rc=100 |
+| `oasdiff breaking` against main's tip | `No changes detected`, **RC=0**. Base `git show main:os/pkgs/mosd/apid/openapi.json` at main's *current* tip `ffa65ca` — main moved from `c5f7e96` during this task — with both severity promotions applied. `openapi.json` is byte-identical to main's, which is expected: this milestone registers no route and changes no schema |
+
+The two `warning` lines the Rust gate prints — an unmatched `Zlib` license
+allowance and a yanked `chacha20 0.10.1` reached through `uuid` — are
+pre-existing, are warnings and not failures, and are unrelated to anything this
+task changed.
