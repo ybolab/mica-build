@@ -61,8 +61,8 @@ later superseded by RFCT-214, as the note below records:
 
 | citation | why the map could not answer it |
 |---|---|
-| *"resource_response(value, &path)"* (`docs/design/api.md:674`) | `main` replaced the state handler's one-line tail with a `let value = …` and a match, so the quoted call text changed as well as its line |
-| *"resource_response(value, &path)"* (`docs/design/api.md:1105`) | the same call, quoted a second time in section 2.2 |
+| *"resource_response(value, &path)"* (`docs/design/api.md:678`) | `main` replaced the state handler's one-line tail with a `let value = …` and a match, so the quoted call text changed as well as its line |
+| *"resource_response(value, &path)"* (`docs/design/api.md:1109`) | the same call, quoted a second time in section 2.2 |
 | *"pub const SCHEMA_VERSION: u32 = 8;"* (`docs/design/mosd.md:433`) | RFCT-232's dated note quoted the constant at 7, and the campaign branch's M2-part-1 bump made it 8 |
 | the same quote in `docs/task/RFCT-232.md` | the same problem, in the record that made the note |
 

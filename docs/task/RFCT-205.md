@@ -191,9 +191,9 @@ Every addition is additive under `docs/design/api.md` §2.1, as RFCT-200 section
 
 | addition | class | rule |
 | --- | --- | --- |
-| `POST /api/v1/actions/wireguard/{iface}/rotate-key` | additive | *"a new route"* (`docs/design/api.md:984`) |
+| `POST /api/v1/actions/wireguard/{iface}/rotate-key` | additive | *"a new route"* (`docs/design/api.md:988`) |
 | `WireguardRotation` and its `publicKey` member | additive | new response field on a route that did not exist |
-| `kind` / `publicKey` reaching clients through the state passthrough | additive | *"a new response field"* (`docs/design/api.md:984`) |
+| `kind` / `publicKey` reaching clients through the state passthrough | additive | *"a new response field"* (`docs/design/api.md:988`) |
 | `kind`, `vlan`, `bridge`, `wireguard` in the pane's form bodies | additive | the panes are HTML forms, not an `/api/` contract; the settings bodies they write were classified additive by RFCT-200 section 6 |
 | `privateKey` on the redaction denylist | additive | no shipped response carries such a field to remove |
 

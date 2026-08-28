@@ -454,12 +454,16 @@ directory, generated on first start with mode `.mode(0o600)`
 (`os/pkgs/mosd/apid/src/session.rs:130`), the scan at
 `os/pkgs/mosd/apid/src/session.rs:131-140` — and verifies signature-then-liveness
 (`os/pkgs/mosd/apid/src/session.rs:64-88`). There is no `Authorization` header path, no
-API key, and no token of any kind in the crate. That is still true after the
-`/api` subtree landed, and it is the fact section 3.2 is written against: the
-four API routes are guarded by the **same session cookie** as the HTML panes,
-through the `ApiSession` extractor (`os/pkgs/mosd/apid/src/routes.rs:3098-3134`), which
-tests `session::cookie_from_headers(&parts.headers)`
-(`os/pkgs/mosd/apid/src/routes.rs:3136`) and nothing else.
+API key, and no token of any kind in the crate. That was true when this
+section was written, and PLAN-023 has since made it false in both halves: M2
+added the bearer token, and **M9 (RFCT-245, 2026-08-28) withdrew the cookie
+from `/api/v1/` entirely**. The `/api/v1/` routes are now guarded by the
+`ApiBearer` extractor — `pub(crate) struct ApiBearer;`
+(`os/pkgs/mosd/apid/src/routes.rs:3141`) — whose whole test is
+`if bearer_is_stored(state, &parts.headers).await {`
+(`os/pkgs/mosd/apid/src/routes.rs:3150`) and nothing else. The session cookie still
+authenticates the HTML panes, and §3.2's dated note records the window in
+which both credentials were accepted.
 
 **The gate.** One middleware, layered over the whole HTTPS router with
 `.layer(middleware::from_fn_with_state(state.clone(), gate))`
@@ -1540,7 +1544,7 @@ section's envelope.
 |---|---|---|
 | `settings_not_found` | **yes**, 404 | `os/pkgs/mosd/apid/src/routes.rs:3025-3028`, on `com.mos.mosd1.Error.NotFound` |
 | `settings_read_only` | **yes**, 409 | `os/pkgs/mosd/apid/src/routes.rs:3029-3038`, on `com.mos.mosd1.Error.ReadOnly` |
-| `not_authenticated` | **yes**, with a different credential | `os/pkgs/mosd/apid/src/routes.rs:3156`. It is raised by the session-cookie extractor (`os/pkgs/mosd/apid/src/routes.rs:3130-3132`), not by a bearer token: §3.2's token does not exist, so the shipped 401 means *"no session cookie, or one that does not verify"* (`os/pkgs/mosd/apid/src/routes.rs:3145`) |
+| `not_authenticated` | **yes** | `os/pkgs/mosd/apid/src/routes.rs:3160`. Raised by the bearer extractor (`os/pkgs/mosd/apid/src/routes.rs:3143-3157`), and since M9 (RFCT-245) by nothing else: the 401 means *"this route accepts a bearer API token only; a session cookie is not a credential here, and a browser mints its first token at POST /builtin/tokens"* (`os/pkgs/mosd/apid/src/routes.rs:3154`) |
 | `not_found` | **yes** | `os/pkgs/mosd/apid/src/routes.rs:240`, from the reserved subtree's fallback |
 | `request_invalid` | **no** | no route accepts a body, so no body can be malformed |
 | `validation_failed` | **no** | no route runs apid's own validators; the four named below are reachable only from the HTML form handlers |
@@ -1799,12 +1803,12 @@ proposal and remain unbuilt.
 for.** The four `/api` routes exist and three of them are guarded, and the
 credential is the **browser session cookie** — the very mechanism §3.1
 enumerates seven objections to. The guard is an extractor rather than
-middleware, `pub(crate) struct ApiSession;` (`os/pkgs/mosd/apid/src/routes.rs:3125`),
-whose whole test is
-`session::cookie_from_headers(&parts.headers)` verified against the store
-(`os/pkgs/mosd/apid/src/routes.rs:3136-3137`); its rejection is §2.4's envelope with a
+middleware, `pub(crate) struct ApiBearer;` (`os/pkgs/mosd/apid/src/routes.rs:3141`),
+whose whole test since M9 (RFCT-245) is
+`if bearer_is_stored(state, &parts.headers).await {`
+(`os/pkgs/mosd/apid/src/routes.rs:3150`); its rejection is §2.4's envelope with a
 401 rather than the gate's HTML redirect
-(`os/pkgs/mosd/apid/src/routes.rs:3144-3146`). The gate hands the declared `/api` routes
+(`os/pkgs/mosd/apid/src/routes.rs:3153-3155`). The gate hands the declared `/api` routes
 off to it with `is_declared_api_route(path)`
 (`os/pkgs/mosd/apid/src/routes.rs:3273`, predicate at `:503-520`). There is no bearer
 token, no `Authorization` header path and no second credential anywhere in the

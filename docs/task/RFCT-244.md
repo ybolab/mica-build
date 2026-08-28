@@ -19,7 +19,7 @@ branch's HEAD; nothing is relayed.
 
 The body is `{"password": "...", "hostname": "...", "network": {...}}`, which is
 the shape section 2.3's conversion row spells, `201` with
-`{"token": "..."}` (`docs/design/api.md:1375`). `hostname` and `network` are
+`{"token": "..."}` (`docs/design/api.md:1379`). `hostname` and `network` are
 both optional; only
 `password` is required.
 
@@ -49,7 +49,7 @@ instruction and is also what keeps the two credentials one shape.
 
 Section 3.2 is why a token is minted here where the browser wizard mints none:
 *"a caller who drove first-run setup over the API demonstrably wants API access
-— but the browser wizard does not"* (`docs/design/api.md:2069-2071`). The token
+— but the browser wizard does not"* (`docs/design/api.md:2073-2075`). The token
 is labelled `const SETUP_TOKEN_NAME: &str = "first-run setup";`
 (`os/pkgs/mosd/apid/src/routes.rs:4014`) rather than
 from a request field, because the body has no name member and inventing one
@@ -260,7 +260,7 @@ subtree and name it. This route writes three, and a malformed body is not about
 any one of them, so the parameter is now `path: Option<&str>,`
 (`os/pkgs/mosd/apid/src/routes.rs:2549`) — which is what section 2.4 already says
 the member is: *"present only when the failure names a dot-path"*
-(`docs/design/api.md:1527`). The three M6 call sites pass `Some(...)` and their
+(`docs/design/api.md:1531`). The three M6 call sites pass `Some(...)` and their
 behaviour is unchanged.
 
 ## 6. The error contract, against section 2.4's table

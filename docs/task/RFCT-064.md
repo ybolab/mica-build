@@ -25,7 +25,7 @@ laid. Ten stub lines consumed, verified at merge.
 
 | section | line | subject |
 | --- | --- | --- |
-| 2.1 | `docs/design/api.md:528` | Versioning and path shape |
+| 2.1 | `docs/design/api.md:532` | Versioning and path shape |
 | 2.2 | `:673` | Resource model, derived from mosd's two trees plus an actions namespace |
 | 2.3 | `:847` | Operation inventory: today's form posts, tomorrow's API |
 | 2.4 | `:943` | Error shape |
@@ -39,7 +39,7 @@ laid. Ten stub lines consumed, verified at merge.
 **Path-segment versioning under `/api/v1`, with an unauthenticated
 `GET /api/versions` probe.** The probe is unauthenticated deliberately, and the
 cost is stated rather than hidden: anyone who can reach port 443 learns which
-API versions the appliance serves (`docs/design/api.md:632-636`). It is accepted
+API versions the appliance serves (`docs/design/api.md:636-640`). It is accepted
 because `/healthz` already answers the literal `ok` unauthenticated to the same
 caller, so the probe discloses a strictly smaller fact than what already ships.
 
@@ -62,7 +62,7 @@ the shape it must land in.
 
 **One credential: a long-lived, revocable bearer token in `Authorization`,
 stored hashed at `access.apiTokens` on STATE.** Nothing else — no cookie, no
-custom header, no signature, no timestamp (`docs/design/api.md:1198`). It is
+custom header, no signature, no timestamp (`docs/design/api.md:1202`). It is
 hashed with SHA-256 rather than argon2id, and the asymmetry is argued rather
 than assumed: argon2id guards a human-chosen password
 (`mosd/webd/src/auth.rs:13-19`), while a token is 256 bits of `OsRng`, for which

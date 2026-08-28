@@ -97,7 +97,7 @@ asserts the admin password still logs in.
 **422**, because `docs/design/api.md` section 2.2 states it:
 *"a `PUT` whose body contains `"<redacted>"` is rejected at 422 rather than
 written, because writing the sentinel would silently destroy the credential"*
-(`docs/design/api.md:1292-1295`).
+(`docs/design/api.md:1296-1299`).
 
 **`validation_failed`**, from the existing set rather than a new token.
 Section 2.4's `code` is an open set whose contract is that an unrecognised
@@ -206,8 +206,11 @@ Everything else gets one sentence naming the four paths this route writes.
 
 ## 4. Auth
 
-Bearer **or** cookie, matching `pub(crate) struct ApiSession;`
-(`os/pkgs/mosd/apid/src/routes.rs:3125`) after M2. PLAN-023 Amendment 1's
+Bearer **or** cookie, matching the `ApiSession` extractor as it stood after M2.
+(That type no longer exists: M9 (RFCT-245) withdrew the cookie from `/api/v1/`
+and collapsed it into `pub(crate) struct ApiBearer;`
+(`os/pkgs/mosd/apid/src/routes.rs:3141`). The decision this section records was
+M4's and is left as it was written.) PLAN-023 Amendment 1's
 bearer-only rule is about the token routes specifically — a permanent-credential
 factory must not sit behind a browser session — not about new routes in
 general. A write route that took only a bearer would make the shipped panes'
@@ -250,7 +253,7 @@ was restated; see section 7.
    import at all.
 5. `docs/design/api.md` section 2.3's *"There is no
    `POST` and no `PUT` anywhere under `/api`"*
-   (`docs/design/api.md:1357-1358`). The `PUT` half is now false. Section 2.3
+   (`docs/design/api.md:1361-1362`). The `PUT` half is now false. Section 2.3
    is the M1 design's own input and its whole table is a dated measurement this
    campaign supersedes milestone by milestone; correcting one clause of it here
    would leave the twenty rows around it saying the opposite.
