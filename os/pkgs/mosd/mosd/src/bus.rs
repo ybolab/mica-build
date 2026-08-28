@@ -857,7 +857,7 @@ impl MosdService {
     /// The reconcilers are re-run afterwards so the tunnel's unit is
     /// re-rendered and networkd builds the device back around the key now on
     /// disk; the new public key reaches the live-state tree on that pass.
-    async fn rotate_wireguard_key(&self, iface: &str) -> fdo::Result<String> {
+    async fn rotate_wireguard_key(&self, iface: &str) -> Result<String, SettingsFault> {
         // Under the same lock every mutating method takes: two unserialized
         // rotations of one interface would each write a key and each delete
         // the device, and the public key one of them returned would be the
@@ -865,13 +865,24 @@ impl MosdService {
         let inner = self.inner.lock().await;
         match inner.settings.network.get(iface) {
             Some(cfg) if cfg.kind == mosd_settings::IfaceKind::Wireguard => {}
+            // The entry exists and its kind is wrong: a bad argument, and the
+            // 422 apid already answers for one.
             Some(_) => {
-                return Err(fdo::Error::InvalidArgs(format!(
+                return Err(SettingsFault::Fdo(fdo::Error::InvalidArgs(format!(
                     "network.{iface} is not a WireGuard interface"
-                )));
+                ))));
             }
+            // The entry does not exist: the path names nothing, which is the
+            // condition every other read on this bus already raises
+            // [`NOT_FOUND_ERROR`] for and which apid already maps to 404.
+            // These two travelled under one error name until PLAN-023 M6, and
+            // that is why the shipped rotate-key route answered 422 where the
+            // settings and state reads beside it answered 404 for the same
+            // class of condition (`docs/task/RFCT-210.md` section 2.4). The
+            // split is here rather than in apid because apid had nothing left
+            // to tell them apart with.
             None => {
-                return Err(fdo::Error::InvalidArgs(format!(
+                return Err(SettingsFault::NotFound(format!(
                     "network.{iface} is not a declared network entry"
                 )));
             }
@@ -883,7 +894,11 @@ impl MosdService {
             // The anyhow chain names paths and never key material: the key
             // store's errors are written that way, and this adds no value of
             // its own to them.
-            .map_err(|err| fdo::Error::Failed(format!("rotate wireguard key: {err:#}")))?;
+            .map_err(|err| {
+                SettingsFault::Fdo(fdo::Error::Failed(format!(
+                    "rotate wireguard key: {err:#}"
+                )))
+            })?;
         drop(inner);
         self.apply_all().await;
         Ok(public_key)
@@ -1321,24 +1336,40 @@ mod tests {
         assert!(!dir.path().join("settings.toml").exists());
     }
 
+    /// The two refusals, and the error name each one travels under.
+    ///
+    /// **The names are the assertion, not decoration** (PLAN-023 M6). Both
+    /// conditions were `InvalidArgs` until this split, so apid answered 422 for
+    /// an interface that does not exist — where every other read on the API
+    /// answers 404 for a path that names nothing
+    /// (`docs/task/RFCT-210.md` section 2.4). apid needed no change: it
+    /// already maps [`NOT_FOUND_ERROR`] to 404 and `InvalidArgs` to 422, and
+    /// had only been handed one of them.
     #[tokio::test]
     async fn a_rotation_refuses_an_interface_that_is_not_a_tunnel() {
+        use zbus::DBusError as _;
         let (service, dir) = service_with_wireguard();
 
         let not_a_tunnel = service.rotate_wireguard_key("eth0").await.unwrap_err();
         let not_declared = service.rotate_wireguard_key("wg9").await.unwrap_err();
 
-        assert!(
-            not_a_tunnel
-                .to_string()
-                .contains("is not a WireGuard interface"),
-            "{not_a_tunnel}"
+        let message = not_a_tunnel.description().unwrap_or_default();
+        assert!(message.contains("is not a WireGuard interface"), "{message}");
+        assert_eq!(
+            not_a_tunnel.name().as_str(),
+            "org.freedesktop.DBus.Error.InvalidArgs",
+            "an entry of the wrong kind is a bad argument: {message}"
         );
+
+        let message = not_declared.description().unwrap_or_default();
         assert!(
-            not_declared
-                .to_string()
-                .contains("is not a declared network entry"),
-            "{not_declared}"
+            message.contains("is not a declared network entry"),
+            "{message}"
+        );
+        assert_eq!(
+            not_declared.name().as_str(),
+            NOT_FOUND_ERROR,
+            "an undeclared entry names nothing, which is a 404 and not a 422: {message}"
         );
         // Refused before the key store is reached, so no key was drawn for an
         // interface that has no business having one.
@@ -1366,7 +1397,8 @@ mod tests {
 
         // The dry-run default: a daemon that was never handed a key store has
         // nowhere to put a key, and says so instead of inventing a place.
-        assert!(err.to_string().contains("no WireGuard key store"), "{err}");
+        let message = zbus::DBusError::description(&err).unwrap_or_default();
+        assert!(message.contains("no WireGuard key store"), "{message}");
         assert!(!dir.path().join("secrets").exists());
     }
 
