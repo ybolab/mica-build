@@ -43,10 +43,10 @@ member here and there will not be one"*
 The `/network` pane was a `dhcp`/`address`/`gateway`/`dns` form per interface
 over untyped JSON. It now parses the subtree into `mosd_settings` types, one entry at a time —
 `fn parse_network(network: &Value) -> (NetworkEntries, Vec<String>)`
-(`os/pkgs/mosd/apid/src/routes.rs:5270`) and renders a kind control plus the
+(`os/pkgs/mosd/apid/src/routes.rs:5292`) and renders a kind control plus the
 parameters of all four kinds, filled in from the stored entry —
 `fn kind_fields(kind: IfaceKind, cfg: Option<&IfaceSettings>) -> Markup`
-(`os/pkgs/mosd/apid/src/routes.rs:5370`). Four groups are rendered at once
+(`os/pkgs/mosd/apid/src/routes.rs:5392`). Four groups are rendered at once
 rather than one per selected kind, because this pane ships no JavaScript and a
 group that only appeared after a reload could not be filled in on the same
 visit; the handler reads only the group the submitted kind names, which makes
@@ -60,9 +60,9 @@ one: an add form and a per-entry remove control, posting to
 `/network/peers/add` and `/network/peers/remove`, keyed by the peer's public key
 the way a stored SSH key is keyed by its fingerprint, in
 `fn peers_markup(iface: &str, wireguard: Option<&WireguardConfig>) -> Markup`
-(`os/pkgs/mosd/apid/src/routes.rs:5425`). Those two routes write the peer list
+(`os/pkgs/mosd/apid/src/routes.rs:5447`). Those two routes write the peer list
 at its own dot-path, `fn peers_settings_path(iface: &str) -> String`
-(`os/pkgs/mosd/apid/src/routes.rs:5339`); the interface
+(`os/pkgs/mosd/apid/src/routes.rs:5361`); the interface
 form writes the whole entry and carries the stored peers forward, because a
 save that dropped them would disconnect every far end and report *"Settings
 saved."*
@@ -158,10 +158,10 @@ reconciler could produce, and the test set grew a third subtree to read it from.
 The two fields M5 publishes are read in both places M6 owns. The pane renders
 the kind, the unit file name and, for a tunnel, the public key —
 `fn live_state_markup(view: &NetworkView, iface: &str) -> Markup`
-(`os/pkgs/mosd/apid/src/routes.rs:5406`), and says what is *not* there: *"The
+(`os/pkgs/mosd/apid/src/routes.rs:5428`), and says what is *not* there: *"The
 private half is on this device in a file only systemd-networkd can read. It is
 never shown here, never in the API, and there is no route that returns one."*
-(`os/pkgs/mosd/apid/src/routes.rs:5416`). The JSON surface needed no code —
+(`os/pkgs/mosd/apid/src/routes.rs:5438`). The JSON surface needed no code —
 `GET /api/v1/state/network` is a passthrough of what mosd published,
 `entry["publicKey"] = json!(self.keys.ensure(iface)?);`
 (`os/pkgs/mosd/mosd/src/reconciler/network.rs:670`) — so what M6 adds there is

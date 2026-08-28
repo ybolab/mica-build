@@ -61,7 +61,7 @@ the whole argument:
    the entry — *"every rule here is about two entries at once"*
    (`os/pkgs/mosd/apid/src/routes.rs:3744-3747`). The pane already runs it over
    *"The candidate tree, not the one entry"*
-   (`os/pkgs/mosd/apid/src/routes.rs:5537-5543`).
+   (`os/pkgs/mosd/apid/src/routes.rs:5559-5565`).
 2. **mosd's own copy is in the reconciler**, `validate_network`
    (`os/pkgs/mosd/mosd/src/reconciler/network.rs:454-499`), which is the
    boundary for a settings file anything with STATE write access can edit.
@@ -185,10 +185,10 @@ Run alone at the commit that introduced it, before any other M6 code existed:
 
 Every step of the chain the design named is therefore real: `stored_peers`
 answers an empty list rather than an error for an unknown interface, by
-`unwrap_or_default()` (`os/pkgs/mosd/apid/src/routes.rs:5315-5322`);
+`unwrap_or_default()` (`os/pkgs/mosd/apid/src/routes.rs:5337-5344`);
 `write_peers` writes straight to the peer list's own dot-path,
 `.set_settings(&peers_settings_path(iface), &value)`
-(`os/pkgs/mosd/apid/src/routes.rs:5628-5631`); `validate_peers` never looks at
+(`os/pkgs/mosd/apid/src/routes.rs:5650-5653`); `validate_peers` never looks at
 the interface, only at
 `for (index, peer) in peers.iter().enumerate()`
 (`os/pkgs/mosd/apid/src/routes.rs:3711-3734`); and the setter creates them by

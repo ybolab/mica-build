@@ -36,7 +36,7 @@ in the prose and has no base to resolve against"*
 gate has ever checked those twenty numbers, and they have drifted by as much as
 1078 lines. `POST /setup` is cited at `routes.rs:947`; its handler is at
 `os/pkgs/mosd/apid/src/routes.rs:3837`. `POST /ssh/password` is cited at
-`routes.rs:2515`; it is at `os/pkgs/mosd/apid/src/routes.rs:6672`.
+`routes.rs:2515`; it is at `os/pkgs/mosd/apid/src/routes.rs:6694`.
 
 **It was never complete, and not only because the surface grew.** PLAN-021 added
 the password pane and `POST /api/v1/actions/change-password`; PLAN-022 added the
@@ -157,7 +157,7 @@ there, so they are named rather than left as a silent gap.
 **Two stale prose citations in section 2.3, for the record.** The bullet on
 `POST /setup` cites the gate's setup-mode exemption as `routes.rs:701-706`; at
 HEAD it is `os/pkgs/mosd/apid/src/routes.rs:3303-3308`. The confirmation-token
-paragraph cites `os/pkgs/mosd/apid/src/routes.rs:5742`, which at HEAD is inside
+paragraph cites `os/pkgs/mosd/apid/src/routes.rs:5764`, which at HEAD is inside
 `power_form`, not the confirmation check. Both are section 2.3's to fix, and
 `docs/design/api.md` is out of this task's write scope; they are recorded here
 so the M4+ author does not re-derive them.
@@ -203,9 +203,9 @@ have a natural identity that is not a position: fingerprint, `ssid`, and the
 peer's `public_key` respectively. The peer routes are the strongest case of the
 three, because the code already refuses index identity on the same reasoning
 apid applied to keys: `network_peer_remove` matches on `public_key`
-(`os/pkgs/mosd/apid/src/routes.rs:5567-5594`) and answers
+(`os/pkgs/mosd/apid/src/routes.rs:5589-5616`) and answers
 *"No peer of this tunnel has that public key; the list may have changed since the page was loaded."*
-(`os/pkgs/mosd/apid/src/routes.rs:5610`) rather than succeeding silently.
+(`os/pkgs/mosd/apid/src/routes.rs:5632`) rather than succeeding silently.
 
 **Raw dot-path `PUT`, 4 rows and no more.** Rows 18 (`hostname`), 23
 (`access.ssh.enabled`), 28 (`container.enabled`) and 30 (`mqtt.enabled`). These
@@ -224,10 +224,10 @@ Three, and they are what the milestone plan has to be built around.
 measurable.** The pane's handler validates the whole candidate tree before it
 writes: it builds `candidate` from the loaded view plus the one edited entry and
 runs `validate_entries(&candidate)`
-(`os/pkgs/mosd/apid/src/routes.rs:5539-5543`), rejecting the submission with a
+(`os/pkgs/mosd/apid/src/routes.rs:5561-5565`), rejecting the submission with a
 readable error. The comment says why it must be the tree and not the entry:
 *"The candidate tree, not the one entry: every relational rule below is about
-two entries at once."* (`os/pkgs/mosd/apid/src/routes.rs:5537-5538`) The rules
+two entries at once."* (`os/pkgs/mosd/apid/src/routes.rs:5559-5560`) The rules
 `validate_entries` enforces (`os/pkgs/mosd/apid/src/routes.rs:3720-3758`) are a
 VLAN's parent naming a declared entry, a bridge port naming a declared entry, a
 bridge port carrying no addressing of its own, and no port claimed by two
@@ -317,10 +317,10 @@ inventory, and what it answers when the identifier names nothing:
 
 | Operation | Identifier | Answer today | Produced at |
 |---|---|---|---|
-| `POST /ssh/keys/remove` | fingerprint **or** exact canonical key text | 422, HTML pane | `os/pkgs/mosd/apid/src/routes.rs:6832-6837` |
-| `POST /network/peers/remove` | peer public key | 422, HTML pane | `os/pkgs/mosd/apid/src/routes.rs:5579-5585` |
+| `POST /ssh/keys/remove` | fingerprint **or** exact canonical key text | 422, HTML pane | `os/pkgs/mosd/apid/src/routes.rs:6854-6859` |
+| `POST /network/peers/remove` | peer public key | 422, HTML pane | `os/pkgs/mosd/apid/src/routes.rs:5601-5607` |
 | `POST /api/v1/actions/wireguard/{iface}/rotate-key` | `iface`, a path segment | **422 `settings_rejected`**, API envelope | `os/pkgs/mosd/mosd/src/bus.rs:884-888` → `os/pkgs/mosd/apid/src/routes.rs:3019-3022` |
-| `POST /network/peers/add` | `iface` | **neither — it succeeds**; see below | `os/pkgs/mosd/apid/src/routes.rs:5290-5294` |
+| `POST /network/peers/add` | `iface` | **neither — it succeeds**; see below | `os/pkgs/mosd/apid/src/routes.rs:5312-5316` |
 | `GET /api/v1/settings/{path}` | the dot-path | **404 `settings_not_found`** | `os/pkgs/mosd/apid/src/routes.rs:3011-3014` |
 | `GET /api/v1/state/{path}` | the dot-path | **404 `settings_not_found`** | `os/pkgs/mosd/apid/src/routes.rs:3011-3014` |
 
@@ -329,8 +329,8 @@ Two things fall out of that table that the routed item does not anticipate.
 **First: the 422 on the HTML rows is not a decision about not-found at all.** It
 is the pane's single error shape for every cause. `network_error`'s whole
 contract is *"Re-render the pane with `message` in an error box, at 422."*
-(`os/pkgs/mosd/apid/src/routes.rs:5325`), and `ssh_error`
-(`os/pkgs/mosd/apid/src/routes.rs:6078-6087`) is the same function for the SSH
+(`os/pkgs/mosd/apid/src/routes.rs:5347`), and `ssh_error`
+(`os/pkgs/mosd/apid/src/routes.rs:6100-6109`) is the same function for the SSH
 pane. A malformed key, a duplicate peer and a missing identifier all reach it
 and all come back 422. No code on either pane distinguishes them, so "the HTML
 path answers 422 for not-found" is true only in the sense that it answers 422
@@ -391,10 +391,10 @@ does not give:
    Changing it buys a more correct number that nothing observes.
 2. **The HTML condition really is different.** `ssh_key_remove` accepts a
    fingerprint **or** the exact canonical key text as its identifier
-   (`os/pkgs/mosd/apid/src/routes.rs:6828-6831`), so a submitted string that
+   (`os/pkgs/mosd/apid/src/routes.rs:6850-6853`), so a submitted string that
    matches nothing is as likely to be mistyped as absent — and the message says
    exactly that: *"The list may have changed since this page was loaded; reload
-   it and try again."* (`os/pkgs/mosd/apid/src/routes.rs:6863`) That is a
+   it and try again."* (`os/pkgs/mosd/apid/src/routes.rs:6885`) That is a
    re-submit-the-form condition, which is what 422 means on a form post. On the
    API the identifier is a path segment with one interpretation: this URL names
    no resource.
@@ -440,9 +440,9 @@ than folded in silently.
 neither 422 nor 404. It succeeds, and it creates a broken entry.** The chain,
 step by step: `stored_peers` returns an empty list rather than an error for an
 unknown interface (`unwrap_or_default()`,
-`os/pkgs/mosd/apid/src/routes.rs:5290-5294`); `write_peers` then validates and
+`os/pkgs/mosd/apid/src/routes.rs:5312-5316`); `write_peers` then validates and
 writes straight to the peer list's own dot-path
-(`os/pkgs/mosd/apid/src/routes.rs:5600-5603`); and the settings setter creates
+(`os/pkgs/mosd/apid/src/routes.rs:5622-5625`); and the settings setter creates
 missing intermediates by documented and tested behaviour — its own contract says
 *"Missing intermediate map entries are created (e.g. setting
 `network.eth1.dhcp` creates `eth1`)"*
@@ -487,12 +487,12 @@ reports the change as additive.
 `GET`/`POST /api/v1/wifi/client/networks`,
 `DELETE /api/v1/wifi/client/networks/{ssid}`. Acceptance: section 2.4's rule holds on
 both — a `DELETE` on an identifier that matches nothing returns **404**, not the
-422 the HTML path gives (`os/pkgs/mosd/apid/src/routes.rs:6832-6837`), a
+422 the HTML path gives (`os/pkgs/mosd/apid/src/routes.rs:6854-6859`), a
 malformed identifier still returns 422, the not-found answer comes from the one
 shared helper section 2.4 requires, and the paired HTML/API tests that name each
 other both exist; every `POST` runs the same validator mosd runs; the
 `notice` field carrying *"Every authorized key is a root key."*
-(`os/pkgs/mosd/apid/src/routes.rs:5940`) is present on both the `GET` and the
+(`os/pkgs/mosd/apid/src/routes.rs:5962`) is present on both the `GET` and the
 `POST` response; a psk written through `POST /api/v1/wifi/client/networks` is
 redacted on the next `GET`.
 
@@ -513,9 +513,9 @@ path segment (`os/pkgs/mosd/apid/src/routes.rs:3485-3487`).
 **M7 — the actions.** `POST /api/v1/actions/reboot`, `.../poweroff`,
 `.../transient-root-password`. Acceptance: reboot and poweroff answer **202**
 before the bus call completes, matching the form path
-(`os/pkgs/mosd/apid/src/routes.rs:5778-5812`); no `GET` handler is declared for
+(`os/pkgs/mosd/apid/src/routes.rs:5800-5834`); no `GET` handler is declared for
 any of the three; the transient-password route enforces the same byte bounds as the form path's validator at
-`os/pkgs/mosd/apid/src/routes.rs:6651-6666`, and
+`os/pkgs/mosd/apid/src/routes.rs:6673-6688`, and
 its rejection message never echoes the password; the constant confirmation token
 is **not** required, per section 2.3's decision.
 
@@ -558,13 +558,13 @@ treats it as settled and reasons from it
 **(3) The shipped code already revokes the adjacent thing.** The
 `change_password` helper ends with
 `.remove_all_except(acting_session.unwrap_or(""));`
-(`os/pkgs/mosd/apid/src/routes.rs:4490`), and `SessionStore` documents the
+(`os/pkgs/mosd/apid/src/routes.rs:4512`), and `SessionStore` documents the
 rule: *"Drop every session except the one named by `value`."*
 (`os/pkgs/mosd/apid/src/session.rs:90`) with the reason
 *"every other session was minted under the old credential"*
 (`os/pkgs/mosd/apid/src/session.rs:92-93`). The pane already states it:
 *"Changing the admin password signs every other session out."*
-(`os/pkgs/mosd/apid/src/routes.rs:4513`)
+(`os/pkgs/mosd/apid/src/routes.rs:4535`)
 
 ### 3.2 The conflict, stated precisely
 
@@ -615,14 +615,14 @@ to do.** Six steps, in this order, and every one of them is a separate
 operation:
 
 1. Change the admin password. This drops every other **session**
-   (`os/pkgs/mosd/apid/src/routes.rs:4460-4462`) and no token.
+   (`os/pkgs/mosd/apid/src/routes.rs:4482-4484`) and no token.
 2. `GET /api/v1/tokens`, then `DELETE /api/v1/tokens/{id}` **for every id
    returned** — including ones they do not recognise, which is the point.
    Revocation takes effect on the next request (`docs/design/api.md:2084-2086`).
    Neither route exists yet; M2 ships them.
 3. `GET /api/v1/settings/access.ssh` and remove every authorized key that is not
    theirs. Every key is a root key
-   (`os/pkgs/mosd/apid/src/routes.rs:5912`), so a password rotation that skips
+   (`os/pkgs/mosd/apid/src/routes.rs:5934`), so a password rotation that skips
    this step contains nothing.
 4. Reboot, or otherwise clear a transient root password. It is not in the
    settings tree and no read will show it; it *"lives until the next boot"*
@@ -636,7 +636,7 @@ operation:
    that absence — so "was this token used?" is unanswerable.
 
 **What the password pane must therefore say.** The pane today says one sentence
-(`os/pkgs/mosd/apid/src/routes.rs:4485`). It needs a second, and this is the
+(`os/pkgs/mosd/apid/src/routes.rs:4507`). It needs a second, and this is the
 proposed text for M2 to ship and for M2's acceptance to assert verbatim:
 
 > API tokens are not affected. Changing this password signs other browsers out,

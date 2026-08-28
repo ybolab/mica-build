@@ -45,7 +45,7 @@ construction.
 
 **The hostname is not trimmed, and the form path trims.** `hostname_submit`
 trims -- `let hostname = form.hostname.trim();`
-(`os/pkgs/mosd/apid/src/routes.rs:5910`) -- because a browser sends whatever
+(`os/pkgs/mosd/apid/src/routes.rs:5932`) -- because a browser sends whatever
 was typed into a text input; a client that built a JSON string
 chose its bytes, and writing something other than what it sent is the worse
 answer. `" mos "` is a 422 here and a successful `mos` there. Recorded as a
@@ -57,7 +57,7 @@ for anything under `access`: *"the whole tree, `access` itself, or anything
 under it"* (`os/pkgs/mosd/apid/src/access_cache.rs:35-37`). That is what the
 `access.ssh` form path already relies on, whose whole write is
 `.set_settings("access.ssh.enabled", &Value::Bool(enabled))`
-(`os/pkgs/mosd/apid/src/routes.rs:6216`). The token routes invalidate by
+(`os/pkgs/mosd/apid/src/routes.rs:6238`). The token routes invalidate by
 hand because a revocation has to bite on the very next request; nothing this
 route writes is a credential.
 

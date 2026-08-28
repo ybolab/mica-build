@@ -346,7 +346,7 @@ The `/mqtt` image-skew guard is deleted and its own stated remedy applied —
 *"the image now serves /mqtt; add it to PANES and /mqtt/enable to POST_ONLY in
 04-readonly, then update this guard."* The pane's marker is the notice `mqtt_page` renders unconditionally,
 *"p { b { (MQTT_UPDATE_NOTICE) } }"*
-(`os/pkgs/mosd/apid/src/routes.rs:6588`), rather than the switch text that moves
+(`os/pkgs/mosd/apid/src/routes.rs:6610`), rather than the switch text that moves
 with the setting.
 
 ## 7. cx3576 — what ran, and what a hardware pass must still do

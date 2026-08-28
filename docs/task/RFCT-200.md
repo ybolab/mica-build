@@ -136,7 +136,7 @@ design may depend on the radio userland.
 
 ### 1.6 Data-flow narrative
 
-Form input (`NetworkForm`, `os/pkgs/mosd/apid/src/routes.rs:5101-5158`) →
+Form input (`NetworkForm`, `os/pkgs/mosd/apid/src/routes.rs:5123-5180`) →
 apid validation (`:5153-5163`) → D-Bus `SetSettings("network.<iface>", json)`
 (`:5169`, `os/pkgs/mosd/apid/src/bus_client.rs:29`) → `write_setting`
 validates against the typed tree and saves TOML atomically
