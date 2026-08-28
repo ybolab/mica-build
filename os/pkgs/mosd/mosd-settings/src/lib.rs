@@ -16,7 +16,7 @@ mod store;
 
 pub use api_token::{MAX_TOKENS, is_api_token_id, validate_api_tokens};
 pub use authorized_key::{
-    decode_base64, encode_base64_nopad, parse_authorized_key, validate_authorized_keys,
+    MAX_KEYS, decode_base64, encode_base64_nopad, parse_authorized_key, validate_authorized_keys,
 };
 pub use error::SettingsError;
 pub use migration::{

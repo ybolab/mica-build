@@ -27,7 +27,7 @@ bearer **or** cookie.
 
 | Dot-path | Body | Success |
 |---|---|---|
-| `hostname` | a JSON string accepted by `fn valid_hostname(name: &str) -> bool {` (`os/pkgs/mosd/apid/src/routes.rs:3331`) | `204` |
+| `hostname` | a JSON string accepted by `fn valid_hostname(name: &str) -> bool {` (`os/pkgs/mosd/apid/src/routes.rs:3366`) | `204` |
 | `access.ssh.enabled` | `true` or `false` | `204` |
 | `container.enabled` | `true` or `false` | `204` |
 | `mqtt.enabled` | `true` or `false` | `204` |
@@ -45,7 +45,7 @@ construction.
 
 **The hostname is not trimmed, and the form path trims.** `hostname_submit`
 trims -- `let hostname = form.hostname.trim();`
-(`os/pkgs/mosd/apid/src/routes.rs:5385`) -- because a browser sends whatever
+(`os/pkgs/mosd/apid/src/routes.rs:5420`) -- because a browser sends whatever
 was typed into a text input; a client that built a JSON string
 chose its bytes, and writing something other than what it sent is the worse
 answer. `" mos "` is a 422 here and a successful `mos` there. Recorded as a
@@ -57,7 +57,7 @@ for anything under `access`: *"the whole tree, `access` itself, or anything
 under it"* (`os/pkgs/mosd/apid/src/access_cache.rs:35-37`). That is what the
 `access.ssh` form path already relies on, whose whole write is
 `.set_settings("access.ssh.enabled", &Value::Bool(enabled))`
-(`os/pkgs/mosd/apid/src/routes.rs:5691`). The token routes invalidate by
+(`os/pkgs/mosd/apid/src/routes.rs:5726`). The token routes invalidate by
 hand because a revocation has to bite on the very next request; nothing this
 route writes is a credential.
 
@@ -207,7 +207,7 @@ Everything else gets one sentence naming the four paths this route writes.
 ## 4. Auth
 
 Bearer **or** cookie, matching `pub(crate) struct ApiSession;`
-(`os/pkgs/mosd/apid/src/routes.rs:2998`) after M2. PLAN-023 Amendment 1's
+(`os/pkgs/mosd/apid/src/routes.rs:3033`) after M2. PLAN-023 Amendment 1's
 bearer-only rule is about the token routes specifically — a permanent-credential
 factory must not sit behind a browser session — not about new routes in
 general. A write route that took only a bearer would make the shipped panes'

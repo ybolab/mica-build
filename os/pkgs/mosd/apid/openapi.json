@@ -647,7 +647,7 @@
           "resources"
         ],
         "summary": "Add one far end to a tunnel.",
-        "description": "**404 before anything is written, when `{iface}` is not a declared entry.**\nThat is this route's reason for existing in the shape it has, and\n`docs/task/RFCT-210.md` section 2.4's sweep is why: the pane's equivalent\nsucceeds on an undeclared interface and grows a broken `network` entry.\nFixed structurally rather than with a guard -- the interface has to be read\nanyway, to know whether it is a tunnel and what peers it already has.\n\nA duplicate public key is **409 `peer_exists`**, following the WiFi\ncollection's `ssid_exists` and not the SSH collection's 422. The two\nprecedents are both shipped and this is the third instance; the reason to\nfollow this one is that the public key **is** this collection's identity --\nit is the `DELETE` path segment -- so a second entry under one key would\nleave no answer to which of the two a `DELETE` names, which is exactly the\nargument the WiFi route's 409 makes about an SSID. The SSH collection's 422\nis not available here even in principle: it is the *shared validator's* own\nmessage, inherited rather than decided, and no validator on either side of\nthe bus refuses a duplicate peer -- `validate_wireguard` checks each peer\nand never compares two. `docs/task/RFCT-242.md` flags the gap this sits in:\nthe ratified error contract covers absent and malformed and says nothing\nabout duplicate.",
+        "description": "**404 before anything is written, when `{iface}` is not a declared entry.**\nThat is this route's reason for existing in the shape it has, and\n`docs/task/RFCT-210.md` section 2.4's sweep is why: the pane's equivalent\nsucceeds on an undeclared interface and grows a broken `network` entry.\nFixed structurally rather than with a guard -- the interface has to be read\nanyway, to know whether it is a tunnel and what peers it already has.\n\nA duplicate public key is **409 `peer_exists`**, which is the ratified error\ncontract's third clause and no longer a choice between precedents: an\nabsent identifier is 404, a malformed one is 422, and a duplicate is 409\nwith a per-collection code. A duplicate is a conflict with the collection's\ncurrent state, and that is what 409 means. It also happens to be the only\nanswer that keeps this route coherent with the item route beside it: the\npublic key **is** this collection's identity -- it is the `DELETE` path\nsegment -- so a second entry under one key would leave no answer to which\nof the two a `DELETE` names.",
         "operationId": "api_v1_peers_add",
         "parameters": [
           {
@@ -1184,8 +1184,18 @@
               }
             }
           },
+          "409": {
+            "description": "A stored key already carries that public key (`key_exists`), or the device already holds the maximum number of keys (`key_limit_reached`); the collection's current state is what refuses the request, not the body",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
           "422": {
-            "description": "The line is not an authorized key, or the resulting list is one the sshd reconciler would refuse -- a duplicate key, or more keys than the tree holds (`validation_failed`); or mosd rejected the write (`settings_rejected`)",
+            "description": "The line is not an authorized key, or the resulting list is one the sshd reconciler would refuse (`validation_failed`); or mosd rejected the write (`settings_rejected`)",
             "content": {
               "application/json": {
                 "schema": {
