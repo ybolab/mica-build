@@ -1,4 +1,4 @@
-// Reading a mos disk image without touching the host: os/verify-image-v2.sh's
+// Reading a mos disk image without touching the host: os/verify-image-v2.sh's (deleted: PLAN-014)
 // toolset unchanged -- sgdisk for the GPT, mtools at an offset for the FAT boot
 // slots, a byte range read with debugfs/tune2fs for the ext4 partitions,
 // unsquashfs for the packed root, and `veritysetup verify`, which walks the hash
@@ -170,7 +170,7 @@ export async function readGpt(rt: ToolRuntime, image: string): Promise<GptTable>
   const diskGuid = strAfter(table, /^Disk identifier \(GUID\): (\S+)$/m, 'Disk identifier (GUID)', image)
 
   // The numbered rows of `sgdisk -p`'s table, which is the ONLY statement of
-  // how many partitions there are. os/verify-image-v2.sh:1418 counts the same
+  // how many partitions there are. os/verify-image-v2.sh:1418 (deleted: PLAN-014) counts the same
   // rows with the same shape.
   const numbers = [...table.matchAll(/^\s+(\d+)\s+\d+\s+\d+\s/gm)].map(m => Number(m[1]))
   if (numbers.length === 0) {
@@ -228,7 +228,7 @@ export interface SgdiskVerdict {
 }
 
 /**
- * `sgdisk --verify`, with the same reading os/verify-image-v2.sh:1394 gives it.
+ * `sgdisk --verify`, with the same reading os/verify-image-v2.sh:1394 (deleted: PLAN-014) gives it.
  *
  * "No problems found." alone is not the verdict: sgdisk says that about a file
  * with no GPT at all. The invented-table sentence is refused by `sgdisk()`
@@ -310,7 +310,7 @@ export async function fatVolumeLabel(rt: ToolRuntime, slot: FatSlot): Promise<st
  *
  * Not the label. `mlabel` reads the label, which an operator chose; the serial
  * is the four bytes mkfs.vfat wrote, and the two answer different questions --
- * os/verify-image-v2.sh:1795 and :1805 ask both, separately, and a factory
+ * os/verify-image-v2.sh:1795 and :1805 (deleted: PLAN-014) ask both, separately, and a factory
  * image has to satisfy both.
  *
  * A slot with no serial is refused rather than returned as the empty string:
@@ -328,7 +328,7 @@ export async function fatVolumeSerial(rt: ToolRuntime, slot: FatSlot): Promise<s
       + `"serial number:" line:\n${out.trim() || '(nothing)'}`,
     )
   }
-  // Spaces come out, and nothing else does. os/verify-image-v2.sh:1796 pipes
+  // Spaces come out, and nothing else does. os/verify-image-v2.sh:1796 (deleted: PLAN-014) pipes
   // through `tr -d ' '` and no more, so a minfo that printed `C357-6003` would
   // make the oracle FAIL against a layout that declares `C3576003` -- and a
   // port that also stripped the dash would pass where the oracle fails, which
@@ -368,7 +368,7 @@ export async function fatReadFile(rt: ToolRuntime, slot: FatSlot, path: string):
  * this runtime reads stdout as TEXT -- fine for a `set MOS_*=` fragment, destructive
  * for a 290 KiB device tree, where every byte that is not valid UTF-8 comes back as
  * U+FFFD. The device tree and the compiled boot script are read as BYTES below, so
- * mcopy writes them itself, as os/verify-image-v2.sh:1899 and :2003 have it write
+ * mcopy writes them itself, as os/verify-image-v2.sh:1899 and :2003 (deleted: PLAN-014) have it write
  * them. `false` means the file is not in the slot -- mcopy exits 1 saying
  * `File "::/x" not found`, the one honest absence in the mtools set -- and any other
  * non-zero exit throws, because "unreadable slot" and "file not in it" are different
@@ -754,7 +754,7 @@ export interface FdtRead {
 /**
  * `fdtGet`, with libfdt's refusal kept rather than dropped.
  *
- * An absence is an answer here and not a throw: os/verify-image-v2.sh:1923
+ * An absence is an answer here and not a throw: os/verify-image-v2.sh:1923 (deleted: PLAN-014)
  * writes `$(fdtget ... 2>/dev/null || true)` and compares the empty string
  * against the wanted value, so on this tool every refusal is a failed check
  * rather than a broken run, and that is what the port reproduces. What it does
@@ -806,7 +806,7 @@ export async function fdtGetResult(
  * STRING property does not refuse: it exits 0 and prints the string's bytes as
  * cells, so a `gpios` that had become a string would hand `gpio_cells[2]` the
  * third byte of it rather than a refusal. Reproduced and not refused, because
- * os/verify-image-v2.sh:1941 reads exactly those cells and a helper that threw
+ * os/verify-image-v2.sh:1941 (deleted: PLAN-014) reads exactly those cells and a helper that threw
  * would fail where the oracle fails the check.
  */
 export async function fdtGetCells(
@@ -849,7 +849,7 @@ export interface E2fsckVerdict {
 }
 
 /**
- * `e2fsck -fn FILE`, read the way os/verify-image-v2.sh:2342 reads it.
+ * `e2fsck -fn FILE`, read the way os/verify-image-v2.sh:2342 (deleted: PLAN-014) reads it.
  *
  * A truncated image exits 0 and says otherwise: an 8192-block filesystem in a
  * 4096-block file makes e2fsck print "The filesystem size (according to the
@@ -876,7 +876,7 @@ export async function e2fsckClean(rt: ToolRuntime, file: string): Promise<E2fsck
 // 8. The legacy uImage header, which needs no tool at all.
 //
 // `mkimage -T script` wraps a text script in a 64-byte big-endian header whose
-// first four bytes are 0x27051956. os/verify-image-v2.sh:2024 reads exactly
+// first four bytes are 0x27051956. os/verify-image-v2.sh:2024 (deleted: PLAN-014) reads exactly
 // those four with `od -An -tx1 -N4 ... | tr -d ' \n'` and compares the string.
 
 export const UIMAGE_MAGIC = '27051956'
@@ -973,7 +973,7 @@ export function readUImage(file: string): UImageHeader | undefined {
 /**
  * The whole file with its NUL bytes removed -- `tr -d '\0' < FILE`.
  *
- * NOT the payload from offset 64. os/verify-image-v2.sh:2039 strips NULs from
+ * NOT the payload from offset 64. os/verify-image-v2.sh:2039 (deleted: PLAN-014) strips NULs from
  * the ENTIRE file, header included, and then awks over the result; the header's
  * remaining bytes never look like `setenv`, so the parse works. A reader that
  * started at 64 would be a better reader and a different one, and the four

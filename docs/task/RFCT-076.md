@@ -2,7 +2,7 @@
 
 - **status**: completed — bundle discovery runs after the listeners bind and after `APID_LISTENING` is printed, returns no error to `main`, and §6.1's class-3 and class-5 re-checks are wired to §2.1's served set
 - **priority**: P1
-- **owner**: ai-agent
+- **owner**: (bkd campaign)
 - **createdAt**: 2026-08-20 17:20
 - **claimedAt**: 2026-08-20 17:20
 - **completedAt**: 2026-08-20 18:40

@@ -32,6 +32,15 @@ allow = [
 
 [bans]
 multiple-versions = "warn"
+# The workspace's no-C-dependency posture, enforced by the gate rather than
+# by a comment. docs/design/dashboard.md §5.1.2 records the decision: the
+# crypto backend is ring, pure Rust; `tough` is pinned to `=0.18.0` in
+# Cargo.toml because 0.19+ hard-depends on aws-lc-rs, which builds C
+# (AWS-LC). See docs/task/RFCT-016.md and docs/task/RFCT-138.md.
+deny = [
+    { crate = "aws-lc-rs", reason = "builds C (AWS-LC); the workspace's crypto backend is ring, pure Rust" },
+    { crate = "tough@>=0.19.0", reason = "0.19+ hard-depends on aws-lc-rs; 0.18 is the last ring-backed release" },
+]
 
 [advisories]
 # Vulnerabilities are errors by default in the version-2 schema;

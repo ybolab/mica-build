@@ -137,7 +137,7 @@ machined、coredump、nspawn——只能省 **0.54 MB**，因为 trixie 早已�
 它的价目表。
 
 **成立的结论，以及它背后的原则。** 独立性是**按组件**买的，不是按发行版买的，
-而 mos 已经在要紧的地方买到了：内核与 U-Boot 在 `board/cx3576/` 下从钉死的源码
+而 mos 已经在要紧的地方买到了：内核与 U-Boot 在 `os/boards/cx3576/bsp/` 下从钉死的源码
 构建，管理面是我们自己的 Rust，PLAN-012 的容器引擎静态链接因而在构造上就与基座
 无关。留在 Debian 上的那些——glibc、coreutils、systemd、bluez、wpa_supplicant、
 openssh——恰恰是差异化价值最低、而最需要别人来做安全响应的一组。

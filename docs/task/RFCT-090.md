@@ -2,7 +2,7 @@
 
 - **status**: completed — the write path, both action items and apid's power pane landed; HTTP is unchanged and the D3 fork is resolved in writing
 - **priority**: P1
-- **owner**: ai-agent (BKD campaign, dispatched by L1 0yncfnol)
+- **owner**: (bkd campaign)
 - **createdAt**: 2026-08-21 14:58
 - **claimedAt**: 2026-08-21 14:58
 - **completedAt**: 2026-08-21 20:58

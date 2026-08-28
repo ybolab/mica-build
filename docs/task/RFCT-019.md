@@ -2,7 +2,7 @@
 
 - **status**: completed — implementation complete (re-opened once for the integration-defect catch-up, closed again)
 - **priority**: P1
-- **owner**: ai-agent
+- **owner**: (bkd campaign)
 - **createdAt**: 2026-08-18 03:39
 - **claimedAt**: 2026-08-18 03:39
 - **completedAt**: 2026-08-18

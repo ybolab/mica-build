@@ -2,7 +2,7 @@
 
 - **status**: completed — implementation complete, mosd workspace 578/578 with `hack/check.sh` ALL CHECKS PASSED (fmt, clippy `-D warnings`, nextest, doctests, cargo-deny), `os/ui-location-test.sh` 64/64 cases, `os/health/test.sh` 62/62, `docs-verify` 348/348; **no assembled image was built or booted in this campaign**, so the broker has never been started on a real system and the reconciler has never driven real systemd
 - **priority**: P1
-- **owner**: ai-agent
+- **owner**: (bkd campaign)
 - **createdAt**: 2026-08-24 08:04
 - **claimedAt**: 2026-08-24 08:04
 

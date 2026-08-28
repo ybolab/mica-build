@@ -43,6 +43,7 @@ pub trait SettingsApi: Send + Sync {
 pub struct FakeSettings {
     tree: std::sync::Mutex<Value>,
     state: std::sync::Mutex<Value>,
+    get_log: std::sync::Mutex<Vec<String>>,
     set_log: std::sync::Mutex<Vec<String>>,
     power_log: std::sync::Mutex<Vec<String>>,
     /// Interfaces passed to `rotate_wireguard_key`, in call order, each
@@ -66,11 +67,23 @@ impl FakeSettings {
         Self {
             tree: std::sync::Mutex::new(tree),
             state: std::sync::Mutex::new(Value::Object(serde_json::Map::new())),
+            get_log: std::sync::Mutex::new(Vec::new()),
             set_log: std::sync::Mutex::new(Vec::new()),
             power_log: std::sync::Mutex::new(Vec::new()),
             transient_password_calls: std::sync::Mutex::new(0),
             rotations: std::sync::Mutex::new(Vec::new()),
         }
+    }
+
+    /// How many `get_settings` calls asked for exactly `path`; what the
+    /// access-cache tests count to tell a cache hit from a bus read.
+    pub fn settings_reads(&self, path: &str) -> usize {
+        self.get_log
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|read| read.as_str() == path)
+            .count()
     }
 
     /// Rotations requested, as `(iface, public key answered)`, in call order.
@@ -137,6 +150,7 @@ fn fake_get(root: &Value, path: &str) -> anyhow::Result<Value> {
 #[async_trait::async_trait]
 impl SettingsApi for FakeSettings {
     async fn get_settings(&self, path: &str) -> anyhow::Result<Value> {
+        self.get_log.lock().unwrap().push(path.to_string());
         fake_get(&self.tree.lock().unwrap(), path)
     }
 

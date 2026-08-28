@@ -1,7 +1,7 @@
 # Design: U-Boot A/B Handshake — Contract for a Custom Mainline U-Boot
 
 > Specification the custom U-Boot is built against. The U-Boot tree itself lives
-> outside this repository; nothing under `board/` is changed by this document.
+> outside this repository; nothing under `os/boards/` (formerly `board/`, moved by PLAN-018) is changed by this document.
 > Written for PLAN-010 M4 (= PLAN-006 A/B updates on systemd), RFCT-018.
 
 ## 0. Scope, status and evidence rules
@@ -14,7 +14,7 @@ bootloader backend, `/etc/fw_env.config` and the dm-verity boot path all agree.
 Evidence convention used throughout:
 
 - **[V]** verified in this environment, with the file and line it came from.
-  Paths starting `board/` or `os/` are this repository; paths starting
+  Paths starting `os/` are this repository (`board/` paths are dated: PLAN-018 moved that tree under `os/boards/`); paths starting
   `u-boot/` are the upstream tree at tag `v2026.07`, cloned read-only into a
   scratch directory for this analysis; paths starting `linux/` are
   `armbian/linux-rockchip` branch `rk-6.1-rkr5.1` (`Makefile` reports

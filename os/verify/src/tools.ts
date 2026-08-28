@@ -1,7 +1,7 @@
 // The seam that decides HOW an image-inspection tool is invoked, and the only
 // place that decides it.
 //
-// Os/verify-image-v2.sh reads a disk image with sgdisk, mtools at an offset,
+// Os/verify-image-v2.sh (deleted: PLAN-014) reads a disk image with sgdisk, mtools at an offset,
 // debugfs/tune2fs over a dd-extracted partition, unsquashfs and a userspace
 // `veritysetup verify` -- and nothing else: no loop mounts, no losetup, no
 // device-mapper, no mount(8). The port keeps that toolset exactly, so this
@@ -10,7 +10,7 @@
 // Two routes, one seam: a caller passes an argv and reads an exit status and
 // cannot tell which answered, which makes a host without gptfdisk a supported
 // host. The container is the pinned IMAGE_ALPINE_3_21 -- the same key
-// os/mkimage-v2.sh assembles from and the shell verifier re-execs into, resolved
+// os/mkimage-v2.sh (deleted: PLAN-014) assembles from and the shell verifier re-execs into, resolved
 // through os/build-env/from.sh --ref -- so this reads back a GPT, a FAT slot and
 // a squashfs with tools out of the same base the assembler used.
 //
@@ -36,7 +36,7 @@ export const TOOL_IMAGE_KEY = 'IMAGE_ALPINE_3_21'
 /**
  * The tools this package drives, and the ones the host route must all have.
  *
- * The same set os/verify-image-v2.sh:121 requires, minus the ones no helper
+ * The same set os/verify-image-v2.sh:121 (deleted: PLAN-014) requires, minus the ones no helper
  * here calls yet. It is stated rather than read out of that script on purpose:
  * the script is deleted at M4e, and a derivation whose source is scheduled for
  * deletion is a dependency with a fuse in it.
@@ -77,7 +77,7 @@ export const REQUIRED_TOOLS = [
 /**
  * The Alpine packages that carry them.
  *
- * Byte-for-byte the list at os/verify-image-v2.sh:187, for the same reason the
+ * Byte-for-byte the list at os/verify-image-v2.sh:187 (deleted: PLAN-014), for the same reason the
  * image key is shared: the container the port reads an image in must be the
  * container the oracle read it in, or a parity divergence could be a package
  * difference rather than a check difference.

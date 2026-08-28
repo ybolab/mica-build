@@ -2,7 +2,7 @@
 
 - **status**: completed — eight findings, seven changed, one recorded as no-action
 - **priority**: P1
-- **owner**: ai-agent
+- **owner**: (bkd campaign)
 - **createdAt**: 2026-08-21 03:05
 - **claimedAt**: 2026-08-21 03:10
 - **completedAt**: 2026-08-21 04:05

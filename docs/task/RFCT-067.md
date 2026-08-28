@@ -2,7 +2,7 @@
 
 - **status**: completed — seven records written and indexed; the consistency pass found one live inconsistency, which is reported with an owner rather than fixed
 - **priority**: P1
-- **owner**: ai-agent
+- **owner**: (bkd campaign)
 - **createdAt**: 2026-08-19 15:27
 - **claimedAt**: 2026-08-19 17:02
 - **completedAt**: 2026-08-19 17:20

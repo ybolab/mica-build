@@ -348,7 +348,7 @@ describe('uboot-blob-matches-variant', () => {
   })
 
   test('RED, naming the path, when the BSP tree was never built', async () => {
-    // The state a checkout is in: board/ BSP builds are not run here, so the
+    // The state a checkout is in: os/boards/<b>/bsp builds are not run here, so the
     // tree is unpopulated and the compare source is absent.
     const r = one(await drive(id, world({ poke: [[UBOOT_AT, UBOOT_BLOB]] })))
     expect(r.verdict).toBe('fail')

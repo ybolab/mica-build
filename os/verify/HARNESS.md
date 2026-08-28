@@ -195,9 +195,9 @@ On a host with nothing but docker:
 
 cx3576's eight FAILs are the BSP byte-compares whose source tree a checkout does
 not carry: `os/boards/cx3576/bsp/out/` is not populated by a clone, so eight conclusions
-read `… compare source not found: /board/out/…` and `u-boot is 0 bytes`. The
+read `… compare source not found: …/os/boards/cx3576/bsp/out/…` and `u-boot is 0 bytes`. The
 verifier **expresses that absence rather than populating the tree**: a
-populated `board/` would turn those eight FAILs into passes, which changes the
+populated `os/boards/<b>/bsp/out/` would turn those eight FAILs into passes, which changes the
 measurement rather than making it. Both directions have fixtures, so the
 byte-compare's passing side is driven even though no shipped tree takes it.
 
@@ -509,7 +509,7 @@ from the board's own name and the artefact names from that board's
 polarities (`status-red:on:1:active-low`, `status-blue:off:0:active-high`),
 which have nowhere board-side to be derived from —
 `os/boards/cx3576/board.env` declares `BOARD_HAS_STATUS_LED=1` and nothing about
-polarity, and the two other statements of those facts live in `board/` — the
+polarity, and the two other statements of those facts live in `os/boards/cx3576/bsp/` — the
 dts the kernel build compiles, and that build's Dockerfile — which this package
 does not read, because depending on a BSP tree a checkout does not carry would
 make every run of it conditional on one. The SCOPE is still derived

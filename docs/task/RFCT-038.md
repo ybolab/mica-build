@@ -4,7 +4,7 @@
   0 failed) and `bash mosd/hack/check.sh` both green; no on-device behaviour
   is claimed
 - **priority**: P2
-- **owner**: ai-agent
+- **owner**: (bkd campaign)
 - **createdAt**: 2026-08-19 09:39
 - **claimedAt**: 2026-08-19 09:39
 - **completedAt**: 2026-08-19 10:55

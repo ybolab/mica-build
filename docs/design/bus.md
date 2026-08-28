@@ -406,7 +406,7 @@ written, was deleted whole (RFCT-122).
 ## 8. Structural redaction is a bus-level contract [implemented]
 
 **[implemented]** The rule `docs/design/api.md` states for `/api/v1/settings/`
-(around `docs/design/api.md:1280`) applies to the bus itself: **the value of
+(around `docs/design/api.md:1282`) applies to the bus itself: **the value of
 any key named `password_hash`, `passwordHash`, `psk`, or `hash` — anywhere in
 the tree, at any depth — never appears on the bus.** Not in `GetItems`, not
 in `ItemsChanged`, not through `GetValue`. The redaction is **structural** (a
@@ -708,15 +708,23 @@ the contract above.
    not when it wrote — and is asserted in both directions.
 
 2. **[implemented]** **A settings key that is not a valid D-Bus object-path
-   element gets no item object.** The realistic case is `network.br-lan`: a
-   D-Bus path element admits `[A-Za-z0-9_]` only, so the hyphen has no
-   spelling. Such a key is **not lost** — it still reads through `GetItems`,
-   it still changes through `ItemsChanged`, and it is still writable through
-   `SetSettings` — it is only unaddressable as an object, so `GetValue` and
-   `SetValue` cannot reach it. mosd logs a `WARN` when it happens, so the
-   condition is visible on the device rather than inferred from a missing
-   object. This is §4's dot-path limit's sibling one layer down, and the bus
-   adds no escape syntax for either.
+   element gets no item object, and that is handled and expected, not open.**
+   The realistic cases are `network.br-lan` — a D-Bus path element admits
+   `[A-Za-z0-9_]` only, so the hyphen has no spelling — and, since M5, every
+   entry of the service registry, which is keyed by bus name and a bus name
+   always contains dots. Such a key is **not lost** — it still reads through
+   `GetItems`, it still changes through `ItemsChanged`, and it is still
+   writable through `SetSettings` — it is only unaddressable as an object, so
+   `GetValue` and `SetValue` cannot reach it. Because the registry makes the
+   condition certain at every boot rather than possible, it is logged as the
+   expected case it is: `sync_objects` records a key that cannot be a path
+   element at DEBUG and keeps `WARN` for a registration failure at a path
+   that IS valid — a warning that fires during correct operation warns
+   nobody (RFCT-094). Asserted against the daemon's own log by
+   `os/pkgs/mosd/mosd/tests/tree.rs::a_dotted_key_syncs_through_get_items_without_a_warn`.
+   The tree keeps refusing such keys rather than escaping them; this is §4's
+   dot-path limit's sibling one layer down, and the bus adds no escape syntax
+   for either.
 
 3. **[implemented]** **A reconciler's live-state key can shadow a settings
    top-level key, and the projection is ambiguous at that path.** The two
@@ -745,13 +753,13 @@ the contract above.
    (`os/pkgs/mosd/mosd/src/tree.rs:43`) and every projection passes through it
    (`os/pkgs/mosd/mosd/src/tree.rs:217`), so no `GetValue` reply and no `ItemsChanged`
    payload can carry a secret (§8). `GetSettings` applies no redaction at all —
-   it returns the requested subtree verbatim (`os/pkgs/mosd/mosd/src/bus.rs:249-253`).
+   it returns the requested subtree verbatim (`os/pkgs/mosd/mosd/src/bus.rs:282-286`).
    The façade redacts because it is the surface that leaves the device: the M3
    MQTT bridge publishes from the item tree (§8), so a secret that reached an
    item would reach a broker. `GetSettings` **cannot** redact, because apid
    authenticates against a value it reads through it — `login_submit` calls
-   `get_settings("access")` (`os/pkgs/mosd/apid/src/routes.rs:1497`) and lifts
-   `webAdmin.password_hash` out of the reply (`os/pkgs/mosd/apid/src/routes.rs:1501`,
+   `get_settings("access")` (`os/pkgs/mosd/apid/src/routes.rs:1555`) and lifts
+   `webAdmin.password_hash` out of the reply (`os/pkgs/mosd/apid/src/routes.rs:1559`,
    helper at `:637-643`) to verify the submitted password against the stored
    argon2id hash. Redacting that key from `GetSettings` would harden nothing
    reachable from the bus — the façade already covers that surface — and would

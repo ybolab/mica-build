@@ -8,7 +8,7 @@
 // the summary and both assemblers pass it; it is a parameter rather than a
 // default, because a silenced dd is harder to debug.
 //
-// Reading bytes back out of an image is not here: os/mkimage-v2.sh checks the
+// Reading bytes back out of an image is not here: os/mkimage-v2.sh (deleted: PLAN-014) checks the
 // loader magic with `dd ... | od -An -tx1 -N4`, the image is a file on the host
 // so a caller reads it with node:fs, and `docker exec` would route binary
 // through a text stream that corrupts at the first non-UTF-8 byte.
@@ -27,7 +27,7 @@ export interface DdSpec {
   /** `count=`, in blocks of blockSize. */
   readonly countBlocks?: bigint
   /**
-   * `conv=`. NOT defaulted, and not normalised across callers: os/mkimage-v2.sh
+   * `conv=`. NOT defaulted, and not normalised across callers: os/mkimage-v2.sh (deleted: PLAN-014)
    * uses `notrunc,sparse` and os/mkimage-x64.sh uses `notrunc`. They agree on
    * the bytes for a target that is already zero -- v2's comment says so -- but
    * which one a call passes is that call's decision, taken where the reason is.

@@ -111,7 +111,7 @@ describe('the verity env filenames are one derivation, not three copies', () => 
 
   test('a slot name that is not <base>-<slot>.env is refused', () => {
     // The per-slot names, the pattern boot.scr builds at runtime and the pattern
-    // os/update/bundle.sh writes must all be the same derivation; any of the
+    // os/update/bundle.sh (deleted: PLAN-014) writes must all be the same derivation; any of the
     // three drifting means an updated slot silently fails to boot.
     const m = mutatedBoard('BOOT_VERITY_ENV_A_NAME=mos-verity-slot-a.env')
     try {

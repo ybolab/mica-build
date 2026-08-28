@@ -1,8 +1,8 @@
 # RFCT-138 The workspace's no-C-dependency posture is a comment, and cargo-deny is configured to enforce nothing
 
-- **status**: pending
+- **status**: completed
 - **priority**: P2
-- **owner**: (unclaimed)
+- **owner**: bkd/1n7prrif
 - **createdAt**: 2026-08-26
 
 `mosd/deny.toml` is 45 lines. Forty of them are the `[licenses]` allowlist. The
@@ -33,3 +33,31 @@ split along exactly this line.
 What is owed is a `[bans] deny = [...]` list naming the C-building crates the
 project has already decided against, so the next one is refused by the gate
 rather than by memory.
+
+## Resolution
+
+`deny.toml`'s `[bans]` now carries a `deny` list with the two crates the
+recorded decision names:
+
+- `aws-lc-rs` (any version) — builds C (AWS-LC); the workspace's crypto
+  backend is ring, pure Rust.
+- `tough@>=0.19.0` — 0.19+ hard-depends on aws-lc-rs; the `=0.18.0` pin in
+  `Cargo.toml` stays, and the ban is what refuses un-pinning it.
+
+`multiple-versions = "warn"` is unchanged. The gate (`hack/check.sh` runs
+`cargo deny check licenses bans advisories`, cargo-deny 0.19.5) stays green on
+the real graph: `cargo deny check bans` → `bans ok`.
+
+Refusal was demonstrated against a scratch copy of the workspace with
+`aws-lc-rs = "1"` appended to `apid/Cargo.toml`:
+
+```
+error[banned]: crate 'aws-lc-rs = 1.18.0' is explicitly banned
+   ┌─ /scratch/deny.toml:41:16
+   │
+41 │     { crate = "aws-lc-rs", reason = "builds C (AWS-LC); ..." },
+   │                banned here
+```
+
+exit code 2. The resolved graph also showed exactly the regression the posture
+exists to block: `aws-lc-sys v0.44.0` pulling `cc` and `cmake`.

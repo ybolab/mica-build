@@ -2,7 +2,7 @@
 
 - **status**: completed — analysis complete, contract published, user implements outside this repo
 - **priority**: P0 (PLAN-010 M4 critical path)
-- **owner**: ai-agent
+- **owner**: (bkd campaign)
 - **createdAt**: 2026-08-18 03:39
 - **claimedAt**: 2026-08-18 03:39
 - **completedAt**: 2026-08-18 04:20

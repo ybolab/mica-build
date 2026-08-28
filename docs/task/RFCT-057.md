@@ -3,7 +3,7 @@
 - **status**: completed — implementation complete, all mandatory project checks green,
   including `make docs-verify`, which passes for the first time in this campaign
 - **priority**: P1
-- **owner**: ai-agent
+- **owner**: (bkd campaign)
 - **createdAt**: 2026-08-19 17:00
 - **claimedAt**: 2026-08-19 17:00
 - **completedAt**: 2026-08-19 17:40

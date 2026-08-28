@@ -6,12 +6,12 @@
 // 13's 1.13 fails -- "1.8 refused the x64 slot model outright the first time it
 // was asked to read it. A format difference would not have announced itself so
 // kindly." Both halves come from os/pkgs/rauc/, built from a pinned source,
-// and os/update/bundle.sh compares the version it runs against the one the
+// and os/update/bundle.sh (deleted: PLAN-014) compares the version it runs against the one the
 // rootfs report recorded before writing anything. So bundle() refuses a toolset
 // whose rauc came from a distribution package, by name, before any bytes exist;
 // info() is allowed on either, which is how this wrapper is exercised where no
 // self-built binary exists. The manifest, staging tree, placeholder rendering
-// and version cross-check are os/update/bundle.sh's, not this file's.
+// and version cross-check are os/update/bundle.sh's (deleted: PLAN-014), not this file's.
 
 import type { Toolbox, ToolResult } from '../toolbox.ts'
 import { ToolError } from '../toolbox.ts'
@@ -51,7 +51,7 @@ export interface BundleSpec {
   /**
    * `--mksquashfs-args`. rauc drives mksquashfs itself, and without these it
    * stamps the payload with the wall clock, the build container's uid map and a
-   * thread count. os/update/bundle.sh passes exactly this shape.
+   * thread count. os/update/bundle.sh (deleted: PLAN-014) passes exactly this shape.
    */
   readonly mksquashfsArgs?: string
 }
@@ -94,10 +94,10 @@ export interface InfoSpec {
    * `rauc info` with no keyring exits 1 with "No keyring file or directory
    * provided" rather than reading the bundle unverified. It stays optional here
    * only so that behaviour can be demonstrated from a test; every real caller
-   * passes one, and os/update/bundle.sh's verify_bundle does.
+   * passes one, and os/update/bundle.sh's (deleted: PLAN-014) verify_bundle does.
    */
   readonly keyring?: string
-  /** `--conf`. os/update/bundle.sh loads the system.conf the image ships. */
+  /** `--conf`. os/update/bundle.sh (deleted: PLAN-014) loads the system.conf the image ships. */
   readonly conf?: string
 }
 
@@ -116,7 +116,7 @@ export function infoArgs(spec: InfoSpec): string[] {
  * Read a bundle back, as parsed JSON.
  *
  * Allowed on any provenance: this reads, it does not produce. Reading a bundle
- * back through rauc with signature verification on is how os/update/bundle.sh
+ * back through rauc with signature verification on is how os/update/bundle.sh (deleted: PLAN-014)
  * proves what it wrote is installable.
  */
 export async function info(tb: RaucToolbox, spec: InfoSpec): Promise<Record<string, unknown>> {

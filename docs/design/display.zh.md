@@ -50,7 +50,7 @@ kiosk:
 ## 4. 启动体验与 tty 策略
 
 - 开机画面：U-Boot 显示板卡 splash（cx3576 的母版是
-  `board/cx3576/rootfs/assets/splash.png`），prod 内核 `quiet`
+  `os/boards/cx3576/bsp/rootfs/assets/splash.png`），prod 内核 `quiet`
   且 fbcon 不上 HDMI；kiosk 服务启动时接管 DRM master。目标：客户屏幕上
   永远不闪过文本。
   - 该母版**目前没有消费方**：没有任何构建步骤读它，而 U-Boot 的 splash 通路要

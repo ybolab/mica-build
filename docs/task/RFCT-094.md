@@ -1,8 +1,8 @@
 # RFCT-094 Dotted keys have no item object, and M5 makes that certain rather than theoretical
 
-- **status**: pending
+- **status**: completed
 - **priority**: P2
-- **owner**: (unclaimed)
+- **owner**: bkd/nd6nhwv6
 - **createdAt**: 2026-08-22 17:10
 
 Raised by PLAN-011 M5 (RFCT-093), deliberately not fixed there.
@@ -43,3 +43,36 @@ Open questions for whoever claims this, none of them settled here:
 
 Related: `docs/design/bus.md` §11, RFCT-093 (M5's registry), RFCT-091 (the
 bridge that consumes the tree).
+
+## Resolution
+
+Decision (made here): **the tree keeps refusing dotted keys as item objects —
+no path escaping, no synthetic child level** — and `sync_objects` now tells
+the two failure kinds apart. A key that cannot be a D-Bus path element (the
+expected case: `network.br-lan`, every bus-name-keyed registry entry) is
+detected up front via `ObjectPath::try_from` and logged at **DEBUG**; **WARN**
+remains for a registration failure at a path that IS valid, which is a real
+fault. Nothing is lost either way: the key still reads through `GetItems`,
+changes through `ItemsChanged`, and writes through `SetSettings`.
+
+Answers to the open questions, in order:
+
+- No object paths for dotted keys: escaping would add a second spelling for
+  every path and an escape syntax §4 deliberately refused one layer up.
+- Yes, the two cases are distinguished, and the expected one logs at DEBUG
+  (not silence: the condition stays discoverable on a device with RUST_LOG).
+- Consumers were not audited here; `GetItems`/`GetState` remain the contract
+  for such keys, exactly as §11 item 2 records.
+
+Asserted as observable behaviour by
+`mosd/mosd/tests/tree.rs::a_dotted_key_syncs_through_get_items_without_a_warn`:
+the harness now captures the daemon's log off its stdout, writes
+`network.br-lan`, asserts the leaf arrives in `ItemsChanged` and reads back
+through `GetItems`, and asserts no "no item object" WARN was emitted. Run
+against the pre-fix `sync_objects` the test fails on exactly that WARN
+(`WARN mosd::tree: no item object for this path
+path="/network/br-lan/dhcp"`), so it pins the branch, not a tautology.
+
+`docs/design/bus.md` §11 item 2 is updated: the limit is recorded as
+handled-and-expected rather than open, with the registry case named and the
+test cited.

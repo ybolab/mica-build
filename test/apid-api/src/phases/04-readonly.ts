@@ -43,25 +43,21 @@ interface Pane {
 }
 
 /**
- * The six declared, session-gated GET panes and the string identifying each.
+ * The declared, session-gated GET panes and the string identifying each.
  *
- * `/` uses `Network state`: `status_body` emits that `h2` unconditionally,
- * before any branch on whether mosd answered, so it survives a device whose bus
- * calls all fail, and `>Network</a>` does not contain it. `/network` uses the
- * unconditional "Add interface" legend, because the per-interface forms are
- * conditional on there being interfaces (the empty branch is `p { "No
- * interfaces configured." }`). `/power` uses its one unconditional opening
- * sentence rather than the confirm tokens its forms carry, which would couple a
- * read-only phase to a control it must never submit. `/hostname` is handled
- * below: its marker is the current hostname, which cannot be hardcoded, so the
- * assertion is that the field is present and non-empty.
+ * `/` is NOT here: the harness seeds a UI bundle (see section 3), so `/` is
+ * §4.1's one exception and serves the active bundle's `index.html` rather
+ * than a pane. Section 3 asserts it against the fixture byte for byte.
+ * `/network` uses the unconditional "Add interface" legend, because the
+ * per-interface forms are conditional on there being interfaces (the empty
+ * branch is `p { "No interfaces configured." }`). `/power` uses its one
+ * unconditional opening sentence rather than the confirm tokens its forms
+ * carry, which would couple a read-only phase to a control it must never
+ * submit. `/hostname` is handled below: its marker is the current hostname,
+ * which cannot be hardcoded, so the assertion is that the field is present
+ * and non-empty.
  */
 const PANES: readonly Pane[] = [
-  {
-    path: "/",
-    marker: "Network state",
-    markerName: 'the Status pane\'s "Network state" heading',
-  },
   {
     path: "/network",
     marker: "Add interface",
@@ -139,78 +135,104 @@ interface FallbackRow {
    */
   readonly withAny: 404;
   /**
-   * Which of §4.2's conditions decides this row, quoted in the check text.
-   * `ends_in_a_route_segment()` rejects a `%` exactly as it rejects a `.`,
-   * because a surviving `%` may decode to one, so the `%2f` rows are each one
-   * segment containing `%` rather than a traversal.
+   * What decides this row, quoted in the check text. With the harness's
+   * bundle active, `asset_path::resolve` runs FIRST: a §4.4 guard firing is a
+   * 404 for both columns (`eligible_for_fallback` is false for every guard),
+   * and only a well-formed miss (`Rejection::NotFound`) falls through to
+   * §4.2's conditions 3-5.
    */
   readonly because: string;
 }
 
 /**
- * The fallback contract, both columns, in the shape `serve::respond` produces
- * it on a bundle-less device. Each row's `because` names the deciding §4.2
- * condition; `/no-such-route` is the control proving the `Accept` column does
- * work rather than everything being 404.
+ * The fallback and traversal contract, both columns, in the shape
+ * `serve::respond` produces it with the harness's bundle active.
  *
- * This table does not test api.md §4.4's traversal guards. `serve::respond()`
- * calls `asset_path::resolve()` -- which holds the dot-segment, residual-escape,
- * NUL and escaped-separator rejections and the canonicalised-root containment
- * assertion -- only inside `if let Some(root) = active_root(..)`, so with no
- * bundle active at `/srv/ui` not one line of §4.4 executes; the 404s come from
- * §4.2 conditions 3 and 4 instead. Reaching §4.4 needs an active bundle on the
- * DATA partition at `/srv/ui`, and the seeding tool writes STATE only.
+ * run.sh seeds `test/apid-api/fixture/ui-bundle` into DATA at
+ * `/srv/ui/.staging-1` before the first boot and apid's start-up activates
+ * it, so `active_root(..)` is `Some` and `asset_path::resolve()` -- the
+ * function holding the dot-segment, residual-escape, NUL and
+ * escaped-separator rejections and the canonicalised-root containment
+ * assertion -- executes for every row here. Before that fixture existed the
+ * phase said so in this comment's place: with no bundle at `/srv/ui` not one
+ * line of §4.4 runs and the 404s all come from §4.2 conditions 3 and 4.
+ *
+ * The distinguishing row is `/../../etc/passwd` under `text/html`: bundle-less
+ * it was 200 (the SPA fallback -- nothing ever touched a filesystem), and a
+ * regression that skipped the guards would make it 200 again (the bundle's
+ * index via condition 5). 404 here is over-the-wire proof the `..` rejection
+ * fired. The anchor assertions before the table prove the bundle is active,
+ * without which every 404 below would prove nothing.
  */
 const FALLBACK_ROWS: readonly FallbackRow[] = [
   {
     target: "/../../etc/passwd",
-    withHtml: 200,
+    withHtml: 404,
     withAny: 404,
     because:
-      "last segment 'passwd' is a route segment, so text/html reaches §4.2 condition 5 (the SPA fallback) and */* is refused by condition 3",
+      "resolve() rejects the '..' components (ParentDir), no guard rejection is eligible for the fallback -- bundle-less this was 200, so this 404 IS the guard executing",
   },
   {
     target: "/%2e%2e%2fetc%2fpasswd",
     withHtml: 404,
     withAny: 404,
-    because: "the whole target is one segment containing '%', so §4.2 condition 4 refuses it",
+    because:
+      "decodes once to '/../etc/passwd', so the dot-segment rejection (ParentDir) fires on the decoded form",
   },
   {
     target: "/%252e%252e%2fetc%2fpasswd",
     withHtml: 404,
     withAny: 404,
-    because: "double-encoded, still one segment containing '%', still condition 4",
+    because:
+      "double-encoded: a '%' survives the single decode pass, so the residual-escape rejection fires rather than a second decode",
   },
   {
     target: "/x%00y",
     withHtml: 404,
     withAny: 404,
-    because: "an encoded NUL is a '%' in the last segment, so condition 4 refuses it",
+    because: "decodes to a NUL byte, which rule 4 rejects explicitly (Nul)",
   },
   {
     target: "/no-such-route",
     withHtml: 200,
     withAny: 404,
-    because: "an ordinary SPA route: condition 5 under text/html, condition 3 under */*",
+    because:
+      "a well-formed miss (NotFound) is the ONE rejection eligible for the fallback: condition 5 serves the bundle's index under text/html, condition 3 refuses */*",
   },
   {
     target: "/no-such-asset.js",
     withHtml: 404,
     withAny: 404,
-    because: "the last segment carries a '.', so condition 4 reads it as a filename",
+    because:
+      "a well-formed miss, but the last segment carries a '.', so §4.2 condition 4 reads it as a filename",
   },
 ];
 
 /**
- * Signs that a passwd file reached the client.
+ * Signs that the appliance's real passwd file reached the client.
  *
- * These are asserted absent from the 200 that `/../../etc/passwd` returns.
- * That body should be the built-in Status pane, which reads mosd and
- * `/proc/uptime` and nothing else, so none of these can appear in it
- * legitimately. If one does, the 200 has stopped being the SPA fallback and
- * become a file, which the status code alone would not say.
+ * Asserted absent from every 200 this section observes -- the bundle root,
+ * the SPA fallback and the in-bundle `etc/passwd` decoy. The fixture is
+ * written to contain none of these strings, so one appearing means a real
+ * file escaped the bundle root, which the status code alone would not say.
  */
 const PASSWD_SIGNS: readonly string[] = ["root:", "/bin/", ":x:0:0:"];
+
+// The fixture the harness seeds, read from the same tree run.sh seeds it
+// from, so the expected bodies below cannot drift from what is on the disk.
+// Read lazily inside the phase: an unreadable fixture must fail the phase
+// with its path in the line, not kill the whole suite at import time.
+
+/** Root of the seeded bundle fixture, relative to this file. */
+const FIXTURE_ROOT = new URL("../../fixture/ui-bundle/", import.meta.url);
+
+async function fixtureText(relative: string): Promise<string | undefined> {
+  try {
+    return await Bun.file(new URL(relative, FIXTURE_ROOT)).text();
+  } catch {
+    return undefined;
+  }
+}
 
 // 4. The POST-only guards
 
@@ -301,11 +323,13 @@ const phase: Phase = {
   assumes:
     "phase 03 left a VALID SESSION in the client's jar and the device out of setup mode, " +
     "so the gate admits these requests rather than redirecting them to /login or /setup; " +
-    "and that NO custom UI bundle is active at /srv/ui, which docs/design/api.md §5.2 " +
-    "calls the shipped state of every device. The bundle-less assumption is not incidental: " +
-    "with a bundle active, `/` would serve the bundle's index instead of the Status pane and " +
-    "the fallback rows below would be decided by asset_path::resolve rather than by §4.2's " +
-    "conditions, so every assertion in sections 1 and 3 would be asserting a different contract.",
+    "and that run.sh seeded test/apid-api/fixture/ui-bundle into DATA at /srv/ui/.staging-1 " +
+    "before the first boot, so apid's start-up activated it and a custom UI bundle IS active. " +
+    "The bundle is not incidental: with one active, `/` serves the bundle's index and the " +
+    "fallback rows are decided by asset_path::resolve -- the function holding §4.4's traversal " +
+    "guards -- before §4.2's conditions, which is the entire point (RFCT-141): bundle-less, " +
+    "not one line of the guard set executes over the wire. Section 3 asserts the bundle is " +
+    "active before trusting any traversal row.",
 
   async run(ctx: PhaseContext) {
     const { client, report } = ctx;
@@ -534,11 +558,100 @@ async function assertApiSubtree(ctx: PhaseContext, anonymous: Client): Promise<v
 async function assertFallbackAndTraversal(ctx: PhaseContext): Promise<void> {
   const { client, report } = ctx;
   report.note(
-    "  -- 3. the static-asset fallback (§4.2). NOT §4.4's guards: with no bundle",
+    "  -- 3. the fallback AND §4.4's traversal guards: the seeded bundle makes",
   );
   report.note(
-    "        active, asset_path::resolve is never called and no guard executes.",
+    "        asset_path::resolve execute for every probe below (RFCT-141).",
   );
+
+  // The anchors, before any traversal row is trusted. Every guard rejection
+  // is a 404, and a bundle-less device also answers most of these rows 404 --
+  // via §4.2's conditions, with the guards never executing. So first prove
+  // the bundle is active, by the two observations only an active bundle can
+  // produce: `/` serving the fixture's index byte for byte, and an in-bundle
+  // asset coming back byte for byte. After these, a 404 from a hostile row is
+  // evidence about the guards and not about an empty /srv/ui.
+  const expectedIndex = await fixtureText("index.html");
+  const expectedAsset = await fixtureText("assets/app.js");
+  const expectedDecoy = await fixtureText("etc/passwd");
+  report.check(
+    expectedIndex !== undefined && expectedAsset !== undefined && expectedDecoy !== undefined,
+    "the fixture at test/apid-api/fixture/ui-bundle is readable from inside the suite container",
+    [
+      `expected: index.html, assets/app.js and etc/passwd under ${FIXTURE_ROOT.pathname}`,
+      `actual:   ${[
+        expectedIndex === undefined ? "index.html unreadable" : undefined,
+        expectedAsset === undefined ? "assets/app.js unreadable" : undefined,
+        expectedDecoy === undefined ? "etc/passwd unreadable" : undefined,
+      ]
+        .filter((part) => part !== undefined)
+        .join(", ")}`,
+    ].join("\n"),
+  );
+
+  const root = await client.get("/");
+  report.expectStatus(root, 200, "GET / answers 200");
+  report.expectHeaderMatches(root, "content-type", HTML_CONTENT_TYPE, "GET / is typed as HTML");
+  report.check(
+    expectedIndex !== undefined && root.body === expectedIndex,
+    "GET / serves the ACTIVE BUNDLE's index.html byte for byte -- the seeded fixture was activated at start-up, so §4.4's guards are live for every row below",
+    [
+      `expected: the exact content of test/apid-api/fixture/ui-bundle/index.html`,
+      `actual:   ${describeBody(root)}`,
+      ``,
+      `A Status pane here means NO bundle is active: either run.sh's DATA seeding`,
+      `step did not run, or apid's start-up refused the staged tree (the console`,
+      `log would carry the refusal). Every traversal 404 below would then be`,
+      `§4.2's conditions answering, not the guards, and this phase says so here`,
+      `rather than printing green rows about code that never ran.`,
+    ].join("\n"),
+  );
+
+  const asset = await client.raw("/assets/app.js", { headers: { Accept: "*/*" } });
+  report.expectStatus(
+    asset,
+    200,
+    "GET /assets/app.js -> 200: asset_path::resolve's happy path serves an in-bundle file (the same function whose guards the rows below probe)",
+  );
+  report.check(
+    expectedAsset !== undefined && asset.body === expectedAsset,
+    "GET /assets/app.js returns the fixture's asset byte for byte",
+    [
+      `expected: the exact content of test/apid-api/fixture/ui-bundle/assets/app.js`,
+      `actual:   ${describeBody(asset)}`,
+    ].join("\n"),
+  );
+
+  // The decoy: rule 3 observed over the wire. `/etc/passwd` decodes to an
+  // absolute-looking path; resolve() strips the leading separators and joins
+  // the remaining components under the bundle root, so it must land on the
+  // bundle's own `etc/passwd` and never on the appliance's. A body equal to
+  // the fixture file is the join-not-concatenate semantics; a body carrying
+  // any PASSWD_SIGNS entry is the escape the guards exist to stop.
+  const decoy = await client.raw("/etc/passwd", { headers: { Accept: "*/*" } });
+  report.expectStatus(
+    decoy,
+    200,
+    "GET /etc/passwd -> 200: the absolute-looking path resolves INSIDE the bundle, to its etc/passwd decoy (rule 3: leading separators stripped, components joined)",
+  );
+  report.check(
+    expectedDecoy !== undefined && decoy.body === expectedDecoy,
+    "GET /etc/passwd returns the bundle's decoy byte for byte, not the appliance's passwd",
+    [
+      `expected: the exact content of test/apid-api/fixture/ui-bundle/etc/passwd`,
+      `actual:   ${describeBody(decoy)}`,
+    ].join("\n"),
+  );
+  for (const sign of PASSWD_SIGNS) {
+    report.check(
+      !decoy.body.includes(sign),
+      `the /etc/passwd body carries no ${JSON.stringify(sign)} -- no real passwd file escaped the bundle root`,
+      [
+        `expected: no ${JSON.stringify(sign)} anywhere in the body`,
+        `actual:   it is present in ${describeBody(decoy)}`,
+      ].join("\n"),
+    );
+  }
 
   for (const row of FALLBACK_ROWS) {
     // raw() for both columns. fetch() rewrites `..` and `%2e%2e` before the
@@ -565,11 +678,24 @@ async function assertFallbackAndTraversal(ctx: PhaseContext): Promise<void> {
         HTML_CONTENT_TYPE,
         `GET ${row.target} with Accept: text/html is typed as HTML`,
       );
-      report.expectBodyContains(
-        html,
-        "Network state",
-        `GET ${row.target} with Accept: text/html serves the BUILT-IN Status pane -- the SPA fallback, reached without touching the filesystem`,
+      report.check(
+        expectedIndex !== undefined && html.body === expectedIndex,
+        `GET ${row.target} with Accept: text/html serves the ACTIVE BUNDLE's index byte for byte -- §4.2 condition 5's SPA fallback, reached only because resolve() answered NotFound`,
+        [
+          `expected: the exact content of test/apid-api/fixture/ui-bundle/index.html`,
+          `actual:   ${describeBody(html)}`,
+        ].join("\n"),
       );
+      for (const sign of PASSWD_SIGNS) {
+        report.check(
+          !html.body.includes(sign),
+          `the 200 from ${row.target} carries no ${JSON.stringify(sign)} -- it is the SPA fallback and not a file that escaped the root`,
+          [
+            `expected: no ${JSON.stringify(sign)} anywhere in the body`,
+            `actual:   it is present in ${describeBody(html)}`,
+          ].join("\n"),
+        );
+      }
     }
 
     // Every 404 in this table is empty-bodied by construction: serve.rs's
@@ -591,26 +717,6 @@ async function assertFallbackAndTraversal(ctx: PhaseContext): Promise<void> {
         ].join("\n"),
       );
     }
-  }
-
-  // The assertion that would actually catch a traversal.
-  //
-  // `/../../etc/passwd` answering 200 is correct: `active_root` is `None`, so
-  // no path was ever resolved against a filesystem, and §4.2 condition 5 hands
-  // back the built-in UI. The status code alone cannot tell that apart from a
-  // 200 carrying /etc/passwd. This can, and it is the check worth having.
-  const traversal = await client.raw("/../../etc/passwd", {
-    headers: { Accept: "text/html" },
-  });
-  for (const sign of PASSWD_SIGNS) {
-    report.check(
-      !traversal.body.includes(sign),
-      `the 200 from /../../etc/passwd is the SPA fallback and not a passwd file: its body contains no ${JSON.stringify(sign)}`,
-      [
-        `expected: no ${JSON.stringify(sign)} anywhere in the body`,
-        `actual:   it is present in ${describeBody(traversal)}`,
-      ].join("\n"),
-    );
   }
 
   // §4.2 condition 2: the method is checked before the Accept header, before
@@ -707,16 +813,16 @@ async function assertBuiltin(ctx: PhaseContext, anonymous: Client): Promise<void
     );
   }
 
-  // ...and the shared marker above is a marker, not something every pane has:
-  // `/` renders `pane("Status", status_body(..))` with no escape section,
-  // deliberately -- `/` is conditional and stays conditional, and the escape
-  // control belongs on the unconditional path. Without this line, "both
-  // spellings render the same pane" would be satisfied by both of them
-  // rendering any Status pane at all.
+  // ...and the shared marker above stays a marker for /builtin alone. With
+  // the harness's bundle active, `/` serves the bundle's index (section 3
+  // asserted that byte for byte), so this line now checks the fixture's
+  // hygiene: an index carrying the escape-control string would let a broken
+  // /builtin pass the "same pane" assertion above by accident. The escape
+  // control belongs on the unconditional path and nowhere else.
   const root = await client.get("/");
   report.check(
     !root.body.includes(BUILTIN_MARKER),
-    `GET / does NOT render the escape control, so ${JSON.stringify(BUILTIN_MARKER)} identifies /builtin specifically and not "any Status pane"`,
+    `GET / does NOT carry the escape control, so ${JSON.stringify(BUILTIN_MARKER)} identifies /builtin specifically`,
     [
       `expected: the escape section on /builtin only`,
       `actual:   / also carries ${JSON.stringify(BUILTIN_MARKER)}, so the marker above proves nothing`,

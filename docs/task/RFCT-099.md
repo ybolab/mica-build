@@ -2,7 +2,7 @@
 
 - **status**: completed — implementation complete, image verify 371/371, `os/ui-location-test.sh` 43/43 cases; rootfs 227 MB → 203 MB
 - **priority**: P2
-- **owner**: ai-agent
+- **owner**: (bkd campaign)
 - **createdAt**: 2026-08-23 09:40
 - **claimedAt**: 2026-08-23 09:40
 

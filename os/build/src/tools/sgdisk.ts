@@ -3,7 +3,7 @@
 // Failure signal: the exit status, plus one exception the shell already carries
 // -- `sgdisk --verify` prints problems and still exits 0, so verifyGpt requires
 // exit 0 AND the sentence ("Both failure shapes -- nonzero exit AND problem
-// text with exit 0 -- must reach the same friendly error", os/mkimage-v2.sh).
+// text with exit 0 -- must reach the same friendly error", os/mkimage-v2.sh; deleted: PLAN-014).
 //
 // sgdisk also relocates silently: a requested start that is not a multiple of
 // the alignment is moved, with a success exit. Measured 2026-08-25,
@@ -28,7 +28,7 @@ export interface GptPartitionSpec {
 /**
  * One argv shape for both assemblers, because the difference was measured.
  *
- * os/mkimage-v2.sh passes `--clear`, `-a 1` and `+NS` sizes in the order
+ * os/mkimage-v2.sh (deleted: PLAN-014) passes `--clear`, `-a 1` and `+NS` sizes in the order
  * new/change-name/typecode/partition-guid; os/mkimage-x64.sh passes no
  * --clear, no -a, `+NM` sizes, in the order
  * new/typecode/partition-guid/change-name. Measured 2026-08-25 with sgdisk
@@ -121,7 +121,7 @@ export async function writeGpt(tb: Toolbox, image: string, spec: GptSpec): Promi
 /**
  * `sgdisk --verify`, with BOTH of its failure shapes reaching the same refusal.
  *
- * A nonzero exit, and problem text with exit 0. os/mkimage-v2.sh's guard is the
+ * A nonzero exit, and problem text with exit 0. os/mkimage-v2.sh's (deleted: PLAN-014) guard is the
  * source of that pairing; without the second half a table with overlapping
  * partitions passes.
  */
@@ -150,7 +150,7 @@ export interface GptPartitionInfo {
 /**
  * Read one partition back OUT of the table that was written.
  *
- * The point is stated in os/mkimage-v2.sh: "sgdisk is free to move a requested
+ * The point is stated in os/mkimage-v2.sh (deleted: PLAN-014): "sgdisk is free to move a requested
  * start sector, so asserting what we asked for proves nothing; this asserts
  * what is actually there."
  *

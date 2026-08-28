@@ -718,7 +718,7 @@ const HWINIT_CHECKS: readonly CheckCase[] = [
 
 const RECONCILER_OWNED: readonly string[] = ['mos-mqttd.service', 'mos-mqtt-broker.service']
 
-// the Bluetooth userland -- os/verify-image-v2.sh:2695-2705, and wifi.conf
+// the Bluetooth userland -- os/verify-image-v2.sh:2695-2705 (deleted: PLAN-014), and wifi.conf
 
 const BLUETOOTH_CHECKS: readonly CheckCase[] = [
   boardRegularFileForFeature(

@@ -2,7 +2,7 @@
 
 - **status**: in progress
 - **priority**: P1
-- **owner**: ai-agent
+- **owner**: (bkd campaign)
 - **createdAt**: 2026-08-17 01:30
 - **claimedAt**: 2026-08-17 01:30
 - **completedAt**: -

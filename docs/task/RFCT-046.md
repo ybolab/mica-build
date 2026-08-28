@@ -2,7 +2,7 @@
 
 - **status**: completed — proposal complete, the process decision and the rename decision are the user's, and both are open
 - **priority**: P1
-- **owner**: ai-agent
+- **owner**: (bkd campaign)
 - **createdAt**: 2026-08-19 10:17
 - **claimedAt**: 2026-08-19 13:00
 - **completedAt**: 2026-08-19 14:30

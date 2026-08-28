@@ -4,7 +4,7 @@
   except `make docs-verify`, which fails only on this record's deliberately
   absent index entry (see "Checks" below)
 - **priority**: P1
-- **owner**: ai-agent
+- **owner**: (bkd campaign)
 - **createdAt**: 2026-08-19 15:20
 - **claimedAt**: 2026-08-19 15:20
 - **completedAt**: 2026-08-19 15:45

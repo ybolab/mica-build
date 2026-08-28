@@ -246,7 +246,7 @@ Four things make it a mechanism rather than a flag:
   ordering question: `--without <that feature>` would drop one of them, leave
   the other in the image, and exit 0 reporting the feature declined.
 
-`WITH_CONTAINERS=0` / `WITH_MOSD=0` and `board/<name>/containers.env` still
+`WITH_CONTAINERS=0` / `WITH_MOSD=0` and `os/boards/<name>/bsp/containers.env` still
 select the same thing; `../build-v2.sh` translates them into `--without`.
 
 `_out/<board>/rootfs-stages.txt` records the declined set, and prints
@@ -328,7 +328,7 @@ documented as one that "may be an empty dir (boards without hw-init facts)".
 | `BOARD_INIT_DIR` | `$BOARD_DIR/init` | the board declares no hardware facts |
 
 **The firmware is filtered, and by the board's own list.**
-`board/<b>/rootfs/firmware` is the vendor BSP drop — 32 files for cx3576, most
+`os/boards/<b>/bsp/rootfs/firmware` is the vendor BSP drop — 32 files for cx3576, most
 of them other AIC parts (8800dc, 8800dw) and other silicon revisions — and only
 the confirmed runtime set may enter a signed root. That set is
 `BOARD_FIRMWARE_FILES` in `os/boards/<b>/board.env`, which is also what the

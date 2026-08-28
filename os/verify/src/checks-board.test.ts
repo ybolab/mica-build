@@ -10,9 +10,9 @@
 //
 // `status-led-absent`, check_status_led's BOARD_HAS_STATUS_LED=0 branch, had
 // never been observed failing anywhere in this tree: it runs on x64's real image
-// and passes (os/verify-image-v2.sh:549, dispatched unconditionally at :1348),
+// and passes (os/verify-image-v2.sh:549, dispatched unconditionally at :1348; deleted: PLAN-014),
 // and os/tests/ui-location-test.sh:55 drives fixture mode with cx3576's
-// board.env, which declares 1, while os/verify-image-v2.sh:2716 leans on it to
+// board.env, which declares 1, while os/verify-image-v2.sh:2716 (deleted: PLAN-014) leans on it to
 // claim both directions are covered. `the =0 branch FAILS when the image carries
 // the unit anyway` below is the first time its failing arm has been driven, and
 // it needs the x64-shaped packed-root fixture in `checks-fixture.ts`.
@@ -177,7 +177,7 @@ describe('check_status_led, BOARD_HAS_STATUS_LED=0 (x64)', () => {
   })
 
   test('the =0 branch FAILS when the image carries the unit anyway', async () => {
-    // The direction that had never run. os/verify-image-v2.sh:2716 claims
+    // The direction that had never run. os/verify-image-v2.sh:2716 (deleted: PLAN-014) claims
     // check_status_led "asserts the ABSENCE for those boards, so the two
     // together cover both directions" -- and until this case, the absence
     // assertion had only ever been observed agreeing.

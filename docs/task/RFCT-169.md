@@ -2,7 +2,7 @@
 
 - **status**: completed
 - **priority**: P2
-- **owner**: ai-agent
+- **owner**: (bkd campaign)
 - **createdAt**: 2026-08-27
 - **claimedAt**: 2026-08-27
 - **completedAt**: 2026-08-27
@@ -159,7 +159,7 @@ One further edit belongs to the same class and is named for it:
 
 ## Withdrawn: removing the dead `tough` pin
 
-M5's spec asked for `os/pkgs/mosd/Cargo.toml:42-44` to be deleted once (a) was
+M5's spec asked for `os/pkgs/mosd/Cargo.toml:51-53` to be deleted once (a) was
 rewritten — the pin is dead, no member declares it, and it has left the lock.
 It was queried before acting and the licence was then **withdrawn**, on two
 independent grounds. `os/pkgs/mosd/Cargo.toml` is byte-identical in this
@@ -228,7 +228,7 @@ history, Decisions item 4) and `*.zh.md`.
    carries `'pkgs'`: `checks-connd.ts:53`, `checks-system.ts:52`,
    `smoke-pins.ts:31` and `:134`, `smoke-pins.test.ts:157`, `smoke.test.ts:378`
    and `:379`. One new survivor, not on the briefed list:
-   `os/pkgs/mosd/apid/tests/e2e.rs:50` — `.join("mosd")` is the cargo target-dir
+   `os/pkgs/mosd/apid/tests/e2e.rs:73` — `.join("mosd")` is the cargo target-dir
    **binary name**, not a repo path.
 3. **Escaped-regex literals** spelled `mosd\/` inside `.toThrow(/.../)`: one hit
    tree-wide, `os/build/src/boot-cx3576.test.ts:119`, and it is
@@ -304,7 +304,7 @@ here: 17 bare-`mosd` occurrences across the three stages files, and 3
   PLAN-018 rot in a file P1 does not name.
 ### Follow-up: the dead `tough` pin needs its own plan
 
-`tough` is declared at `os/pkgs/mosd/Cargo.toml:42-44`. **No workspace member
+`tough` is declared at `os/pkgs/mosd/Cargo.toml:51-53`. **No workspace member
 declares it**, and it has left `os/pkgs/mosd/Cargo.lock` entirely. Removing it
 is a correct future change. It is not a small one, and it does not belong to
 this campaign, for two reasons:
@@ -336,7 +336,7 @@ this campaign, for two reasons:
    dependency**. Re-derive each target by locating its content, the way
    RFCT-167 re-derived its six.
 
-- **`os/pkgs/mosd/Cargo.toml:41`** — `url = "2"` may be dead in that workspace
+- **`os/pkgs/mosd/Cargo.toml:50`** — `url = "2"` may be dead in that workspace
   too; `os/pkgs/rauc-sign/Cargo.toml:35` asserts the mosd lock "does not contain
   `tough` or `url` at all". Not measured here; named with the `tough` pin, and
   it belongs in the same future plan.

@@ -2,7 +2,7 @@
 // status-LED device tree, the compiled boot script, the verity env pair, and
 // the regions that must ship zero-filled.
 //
-// Six families in one module, because every one reads either `board/<board>/out/`
+// Six families in one module, because every one reads either `os/boards/<board>/bsp/out/`
 // or a file mcopy'd out of a boot slot, and three share the five SKIP lines a
 // grub board prints in their place.
 //

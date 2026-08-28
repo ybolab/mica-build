@@ -2,7 +2,7 @@
 
 - **status**: completed — implementation complete, `bash os/ui-location-test.sh` green (39/39 cases), full image chain green; two of the image verifier's three standing failures were this one defect
 - **priority**: P1
-- **owner**: ai-agent
+- **owner**: (bkd campaign)
 - **createdAt**: 2026-08-23 02:40
 - **claimedAt**: 2026-08-23 02:40
 
