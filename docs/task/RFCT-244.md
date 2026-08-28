@@ -49,7 +49,7 @@ instruction and is also what keeps the two credentials one shape.
 
 Section 3.2 is why a token is minted here where the browser wizard mints none:
 *"a caller who drove first-run setup over the API demonstrably wants API access
-— but the browser wizard does not"* (`docs/design/api.md:2073-2075`). The token
+— but the browser wizard does not"* (`docs/design/api.md:2100-2102`). The token
 is labelled `const SETUP_TOKEN_NAME: &str = "first-run setup";`
 (`os/pkgs/mosd/apid/src/routes.rs:4014`) rather than
 from a request field, because the body has no name member and inventing one

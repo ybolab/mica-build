@@ -548,12 +548,12 @@ there is nothing to revoke."* (`docs/design/api.md:1470-1471`)
 
 **(2) Section 3.2 decides it, the other way, as a property with an
 obligation.** *"**Changing the admin password does not revoke any token.** That
-is deliberate"* (`docs/design/api.md:2136-2137`), with the reason
+is deliberate"* (`docs/design/api.md:2163-2164`), with the reason
 *"a human rotating their own password must not break every script"*
-(`docs/design/api.md:2137-2138`) and the obligation
-*"The UI's password pane has to say so."* (`docs/design/api.md:2138-2139`) Section 9
+(`docs/design/api.md:2164-2165`) and the obligation
+*"The UI's password pane has to say so."* (`docs/design/api.md:2165-2166`) Section 9
 treats it as settled and reasons from it
-(`docs/design/api.md:4493`).
+(`docs/design/api.md:4520`).
 
 **(3) The shipped code already revokes the adjacent thing.** The
 `change_password` helper ends with
@@ -585,7 +585,7 @@ opposite treatment from arguments that would each apply to the other: a script
 is as inconvenienced by a dead token as a second browser tab is by a dead
 session, and a stolen session is exactly as dangerous as a stolen token
 (section 3.2: *"A token can do everything the operator can do over the API."*,
-`docs/design/api.md:2134-2135`). Whichever way this resolves, the asymmetry has
+`docs/design/api.md:2161-2162`). Whichever way this resolves, the asymmetry has
 to be argued rather than inherited.
 
 ### 3.3 Recommendation
@@ -601,14 +601,14 @@ would destroy N credentials the operator cannot see at the moment they act — t
 password pane does not list tokens and cannot, since it is a different resource
 — with no confirmation, no count, and no undo, because tokens are shown once at
 mint and never again (section 3.2: *"never the hash, never the plaintext"*,
-`docs/design/api.md:2087`). An operator doing routine hygiene would silently
+`docs/design/api.md:2114`). An operator doing routine hygiene would silently
 kill production automation. Sessions are different in exactly the way that
 matters: a dead session costs a re-login, and the operator holds the credential
 that fixes it.
 
 The cost of keeping it, stated plainly: **"I changed my password" is not a
 containment action**, and that is section 3.2's own wording
-(`docs/design/api.md:2138-2139`).
+(`docs/design/api.md:2165-2166`).
 
 **What an operator who believes a password change contains a breach actually has
 to do.** Six steps, in this order, and every one of them is a separate
@@ -618,7 +618,7 @@ operation:
    (`os/pkgs/mosd/apid/src/routes.rs:4489-4491`) and no token.
 2. `GET /api/v1/tokens`, then `DELETE /api/v1/tokens/{id}` **for every id
    returned** — including ones they do not recognise, which is the point.
-   Revocation takes effect on the next request (`docs/design/api.md:2088-2090`).
+   Revocation takes effect on the next request (`docs/design/api.md:2115-2117`).
    Neither route exists yet; M2 ships them.
 3. `GET /api/v1/settings/access.ssh` and remove every authorized key that is not
    theirs. Every key is a root key
@@ -630,7 +630,7 @@ operation:
 5. Check `/srv/ui/current`. Section 7.4 already requires this of any revocation
    runbook, because a bundle installed with a stolen credential survives the
    credential's revocation and survives an A/B update
-   (`docs/design/api.md:3685-3693`).
+   (`docs/design/api.md:3712-3720`).
 6. Accept that step 2's list is the only inventory that exists. Nothing on the
    device records which credential served which request — section 3.3 records
    that absence — so "was this token used?" is unanswerable.
@@ -701,7 +701,7 @@ deliberately"* (`docs/design/release-signing.md:291-292`).
 
 **One thing that is not in scope of this memo, and should not be confused with
 it.** `docs/design/api.md` section 7.4 already recommends **not** signing UI
-bundles in phase 1 (`docs/design/api.md:3648-3651`), and this memo does not
+bundles in phase 1 (`docs/design/api.md:3675-3678`), and this memo does not
 reopen that. What follows is about the **release** signing keys — the ones that
 authorise a kernel and rootfs replacement.
 

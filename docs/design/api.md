@@ -1906,27 +1906,54 @@ nicer. They are consequences of there being one credential.
 
 ### 3.2 The proposal: a bearer API token — **[proposed]**
 
-**What ships: none of it.** There is no bearer token on this device.
-`Authorization` appears nowhere in the crate as an accepted credential; the
-only header the daemon reads for authentication is `Cookie`, through
-`pub fn cookie_from_headers(headers: &HeaderMap) -> Option<String> {`
-(`os/pkgs/mosd/apid/src/session.rs:130`). `access.apiTokens` does not exist in the
-settings model — `struct Settings` has seven fields and that is not one of them
-(`os/pkgs/mosd/mosd-settings/src/model.rs:16-38`) — so there is nowhere to store a
-token even if one were minted. There is no `POST /api/v1/tokens` and no
-`DELETE /api/v1/tokens/{id}`: the four served paths are `GET` only
-(`os/pkgs/mosd/apid/openapi.json:8-2165`).
+<!-- The two paragraphs this note replaces read "What ships: none of it" and
+     "This section is the answer to that, and it is unbuilt". Both were true
+     when written and neither is now. PLAN-023 built this section: M2
+     (RFCT-211) shipped the token, M9 (RFCT-245) closed the window below. -->
 
-**What the shipped API uses instead, and what that costs.** The three guarded
-`/api` routes accept the **browser session cookie**, verified by the
-`ApiSession` extractor (`os/pkgs/mosd/apid/src/routes.rs:3098-3134`) against the same
-in-memory store the HTML panes use (`os/pkgs/mosd/apid/src/session.rs:30-33`). Every
-property §3.1 objects to is therefore still a property of the shipped API,
-except the redirect: a script must log in with a URL-encoded form post, keep a
-cookie, lose it on every daemon restart and therefore on every A/B image
-update, re-mint it at most 24 hours later, and hold the operator's own password
-to do any of that. **This section is the answer to that, and it is unbuilt.**
-The rest of it is the proposal, unchanged.
+**What ships: this section, as written.** The bearer token exists, is minted,
+is stored hashed under `access.apiTokens`, and is the only credential
+`/api/v1/` accepts. The extractor is `pub(crate) struct ApiBearer;`
+(`os/pkgs/mosd/apid/src/routes.rs:3141`) and its whole test is
+`if bearer_is_stored(state, &parts.headers).await {`
+(`os/pkgs/mosd/apid/src/routes.rs:3150`). Everything below this note is the design
+as it was proposed; it is now also the description of what runs.
+
+**Dated note: the dual-credential window, and its close.**
+
+There was a period in which the "**only** accepted credential" sentence below
+was false, and it was false on purpose. It is recorded here rather than
+quietly repaired, because a reader who finds the sentence and a tree that
+disagreed with it deserves the dates rather than an inference.
+
+| | |
+|---|---|
+| **Opened** | 2026-08-28, PLAN-023 **Amendment 1**, decision 1 — "dual-credential with an in-plan cutover" |
+| **What was true in it** | `/api/v1/` accepted a bearer **or** the session cookie, through an extractor then named `ApiSession`. The three token routes never accepted the cookie: Amendment 1 preserved the credentials of routes that had already shipped, and those had not. |
+| **Why it was opened** | Removing the cookie in the same milestone that added the bearer would have broken a client that existed, on a surface with no other way in. The amendment made the widening additive and named its own end. |
+| **Closed** | 2026-08-28, PLAN-023 **M9** (`docs/task/RFCT-245.md`) |
+| **What closed it** | The cookie's acceptance was removed from `/api/v1/`. `ApiSession` and `ApiBearer` then proved the same thing and are one type, which is why only `ApiBearer` appears above. |
+
+Three things the cutover deliberately did **not** change, because §3.2 designs
+each of them the way it does on purpose:
+
+1. **`POST /builtin/tokens` and `POST /builtin/tokens/revoke` keep the session
+   cookie.** They are the bootstrap and they are not `/api/v1/` routes. Without
+   them no first token could exist — see the bootstrap paragraph below, which
+   is why that paragraph says the resolution is a path rather than an exception.
+2. **`POST /api/v1/setup` stays unauthenticated.** M8 made it the device's one
+   unauthenticated write and M9 does not touch it. It is the one route under
+   the prefix that names no credential extractor at all.
+3. **The HTML panes keep the cookie.** Nothing about the browser surface
+   changed.
+
+And one thing it guarantees, which is the whole reason the window had to close
+rather than lapse: a cookie presented to an `/api/v1/` route is a **401 with
+§2.4's envelope**, never a 303 to `/login`. §3.1's trap is that the redirect
+lands on a 200 HTML page, so a script reads the exchange as success; a client
+that has not noticed the cutover gets something it can parse instead. It is
+asserted in the unit tests and against a live server in `apid`'s end-to-end
+test.
 
 **One mechanism.** A long-lived, revocable bearer token, minted by an
 authenticated admin, stored hashed in the settings tree, sent in an

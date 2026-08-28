@@ -530,7 +530,7 @@ open"*.
 | `privateKey` joining the redaction denylist | additive | no shipped response carries such a field to remove |
 
 Nothing on the breaking list is touched; **no `/api/v2` is required.** This
-also discharges the debt api.md records at `docs/design/api.md:4387-4397`
+also discharges the debt api.md records at `docs/design/api.md:4414-4424`
 — the dot-path fix reaches the published contract as an additive change, not
 a versioned one.
 
