@@ -80,7 +80,7 @@ it"* (`docs/task/RFCT-135.md:28-29`).
 
 The `/network` pane is `.route("/network", get(network_form).post(network_submit))`
 (`os/pkgs/mosd/apid/src/routes.rs:188`). `valid_iface_name` accepts 1–15 bytes
-of alphanumerics plus `.`, `_`, `-` (`os/pkgs/mosd/apid/src/routes.rs:3396-3401`),
+of alphanumerics plus `.`, `_`, `-` (`os/pkgs/mosd/apid/src/routes.rs:3424-3453`),
 and the pane's error text advertises the dot
 (`os/pkgs/mosd/apid/src/routes.rs:3464`). `network_submit` builds the value
 (`os/pkgs/mosd/apid/src/routes.rs:3482-3498`) and writes it as a dot-path,

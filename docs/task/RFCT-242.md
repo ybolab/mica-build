@@ -54,7 +54,7 @@ Re-measured at this HEAD rather than relayed. Four facts, and together they are
 the whole argument:
 
 1. **The rules are relational.** `validate_entries`
-   (`os/pkgs/mosd/apid/src/routes.rs:3720-3760`) enforces four: a VLAN's parent
+   (`os/pkgs/mosd/apid/src/routes.rs:3748-3788`) enforces four: a VLAN's parent
    must name a declared entry, a bridge port must name a declared entry, a
    bridge port must carry no addressing of its own, and no port may be claimed
    by two bridges. Its own comment says why it must run over the tree and not
