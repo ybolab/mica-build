@@ -51,7 +51,7 @@ Each plan is a single line linking to its detail file. All detailed information 
 - [x] [**PLAN-018 Board consolidation - board/ moves under os/boards/, one definition per board**](PLAN-018.md) `2026-08-26`
 - [x] [**PLAN-019 os/pkgs consolidation and a directory-structure pass**](PLAN-019.md) `2026-08-27`
 - [x] [**PLAN-020 Gate hardening - close the eight measured silent spaces**](PLAN-020.md) `2026-08-27`
-- [-] [**PLAN-021 The defect and debt batch - filed tasks, quick fixes, ghost sweeps**](PLAN-021.md) `2026-08-27`
+- [x] [**PLAN-021 The defect and debt batch - filed tasks, quick fixes, ghost sweeps**](PLAN-021.md) `2026-08-27`
 - [x] [**PLAN-022 Native networking - VLAN, bridge, WireGuard (design-first)**](PLAN-022.md) `2026-08-27`
 - [-] [**PLAN-023 API phase 2 - bearer tokens, the write surface, the health route**](PLAN-023.md) `2026-08-28`
 - [x] [**PLAN-024 Legacy plan closeout - PLAN-011/012/013 measured and closed**](PLAN-024.md) `2026-08-28`
