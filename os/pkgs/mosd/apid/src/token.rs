@@ -113,7 +113,12 @@ pub fn parse(token: &str) -> Option<Presented<'_>> {
     if fields.next().is_some() || scheme != SCHEME {
         return None;
     }
-    let hex = |field: &str| !field.is_empty() && field.bytes().all(|b| b.is_ascii_hexdigit() && !b.is_ascii_uppercase());
+    let hex = |field: &str| {
+        !field.is_empty()
+            && field
+                .bytes()
+                .all(|b| b.is_ascii_hexdigit() && !b.is_ascii_uppercase())
+    };
     (hex(id) && hex(secret)).then_some(Presented { id, secret })
 }
 
@@ -200,7 +205,9 @@ fn digests_match(left: &str, right: &str) -> bool {
         mac.update(value.as_bytes());
         mac
     };
-    mac(right).verify_slice(&mac(left).finalize().into_bytes()).is_ok()
+    mac(right)
+        .verify_slice(&mac(left).finalize().into_bytes())
+        .is_ok()
 }
 
 #[cfg(test)]
@@ -330,8 +337,8 @@ mod tests {
 
         assert!(!verify(&[], &minted.wire), "an empty list matches nothing");
 
-        let other = mint(&[entry.clone()]).unwrap();
-        assert!(!verify(&[entry.clone()], &other.wire));
+        let other = mint(std::slice::from_ref(&entry)).unwrap();
+        assert!(!verify(std::slice::from_ref(&entry), &other.wire));
 
         // The stored entry's own id, carrying somebody else's secret.
         let forged = format!("mos_{}_{}", entry.id, parse(&other.wire).unwrap().secret);
@@ -351,9 +358,18 @@ mod tests {
 
     #[test]
     fn the_bearer_scheme_is_read_case_insensitively_and_nothing_else_is_read() {
-        assert_eq!(bearer_from_headers(&header("Bearer mos_a_b")), Some("mos_a_b"));
-        assert_eq!(bearer_from_headers(&header("bearer mos_a_b")), Some("mos_a_b"));
-        assert_eq!(bearer_from_headers(&header("BEARER mos_a_b")), Some("mos_a_b"));
+        assert_eq!(
+            bearer_from_headers(&header("Bearer mos_a_b")),
+            Some("mos_a_b")
+        );
+        assert_eq!(
+            bearer_from_headers(&header("bearer mos_a_b")),
+            Some("mos_a_b")
+        );
+        assert_eq!(
+            bearer_from_headers(&header("BEARER mos_a_b")),
+            Some("mos_a_b")
+        );
         assert_eq!(bearer_from_headers(&header("Basic mos_a_b")), None);
         assert_eq!(bearer_from_headers(&header("mos_a_b")), None);
         assert_eq!(bearer_from_headers(&HeaderMap::new()), None);

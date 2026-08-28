@@ -15,7 +15,8 @@ use std::sync::Arc;
 use axum::Router;
 use axum::body::Body;
 use axum::http::header::{
-    ACCEPT, ALLOW, CACHE_CONTROL, CONTENT_TYPE, COOKIE, LOCATION, RETRY_AFTER, SET_COOKIE,
+    ACCEPT, ALLOW, AUTHORIZATION, CACHE_CONTROL, CONTENT_TYPE, COOKIE, LOCATION, RETRY_AFTER,
+    SET_COOKIE,
 };
 use axum::http::{HeaderName, Request, Response, StatusCode};
 use serde_json::json;
@@ -1564,7 +1565,6 @@ async fn the_api_reservation_answers_every_shape_with_the_envelope() {
         ("GET", "/api/v1/actions/reboot"),
         ("GET", "/api/v1/wifi/client/networks"),
         ("POST", "/api/v1/settings"),
-        ("DELETE", "/api/v1/tokens/1"),
     ] {
         let response = request(&router, method, path, Some(&cookie), Some(BROWSER_ACCEPT)).await;
         assert_eq!(
@@ -5623,6 +5623,8 @@ async fn a_wrong_method_on_a_declared_api_route_answers_the_envelope() {
         ("PUT", "/api/v1/state/uptime", "GET,HEAD"),
         ("GET", "/api/v1/actions/change-password", "POST"),
         ("GET", "/api/v1/actions/wireguard/wg0/rotate-key", "POST"),
+        ("PUT", "/api/v1/tokens", "GET,HEAD,POST"),
+        ("GET", "/api/v1/tokens/deadbeef", "DELETE"),
     ] {
         let response = request(&router, method, path, Some(&cookie), Some(BROWSER_ACCEPT)).await;
         assert_eq!(
@@ -5750,4 +5752,601 @@ fn the_openapi_document_covers_health_and_the_405() {
             );
         }
     }
+}
+
+// RFCT-213: §3.2's bearer token — the credential, the three `/api/v1/tokens`
+// routes, and the bootstrap pane under §6.3's reserved prefix.
+
+/// A stored entry and the plaintext that opens it, both derived from `index`
+/// so two calls differ in every field identity is keyed on.
+///
+/// Built here rather than minted, because a test that needs a full list needs
+/// 32 of them and the mint is one of the things under test.
+fn seeded_token(index: usize) -> (serde_json::Value, String) {
+    let id = format!("{index:08x}");
+    let secret = format!("{index:064x}");
+    (
+        json!({
+            "id": id,
+            "name": format!("seeded-{index}"),
+            "hash": crate::token::digest(&secret),
+            "created": 1,
+        }),
+        format!("mos_{id}_{secret}"),
+    )
+}
+
+/// A configured tree holding `count` usable tokens, with their plaintexts.
+fn token_tree(password: &str, count: usize) -> (serde_json::Value, Vec<String>) {
+    let (entries, wires): (Vec<_>, Vec<_>) = (0..count).map(seeded_token).unzip();
+    let mut tree = configured_tree(password);
+    tree["access"]["apiTokens"] = json!(entries);
+    (tree, wires)
+}
+
+/// A request carrying a bearer token and **no cookie**, which is what makes
+/// every assertion below about the token rather than about the session.
+async fn bearer(
+    router: &Router,
+    method: &str,
+    path: &str,
+    token: &str,
+) -> Response<axum::body::Body> {
+    let builder = Request::builder()
+        .method(method)
+        .uri(path)
+        .header(AUTHORIZATION, format!("Bearer {token}"));
+    send(router, builder.body(Body::empty()).unwrap()).await
+}
+
+/// A JSON body carrying a bearer token and no cookie.
+async fn bearer_json(
+    router: &Router,
+    method: &str,
+    path: &str,
+    token: &str,
+    body: &str,
+) -> Response<axum::body::Body> {
+    let builder = Request::builder()
+        .method(method)
+        .uri(path)
+        .header(CONTENT_TYPE, "application/json")
+        .header(AUTHORIZATION, format!("Bearer {token}"));
+    send(router, builder.body(Body::from(body.to_string())).unwrap()).await
+}
+
+/// Mint through §3.2's bootstrap and return the plaintext.
+///
+/// The pane is the only mint a browser can reach, so this is also the path a
+/// first token has to come down: every bearer assertion below that starts from
+/// a session starts here.
+async fn mint_via_pane(router: &Router, cookie: &str, name: &str) -> String {
+    let response = post_form(
+        router,
+        "/builtin/tokens",
+        &format!("name={name}"),
+        Some(cookie),
+    )
+    .await;
+    assert_eq!(
+        response.status(),
+        StatusCode::OK,
+        "the mint pane answers 200"
+    );
+    let body = body_string(response).await;
+    let rest = body
+        .split_once("<pre>")
+        .unwrap_or_else(|| panic!("the plaintext is displayed once, in a <pre>: {body}"))
+        .1;
+    rest.split_once("</pre>")
+        .expect("a closed <pre>")
+        .0
+        .to_string()
+}
+
+/// The pane's sentence, ratified by `docs/task/RFCT-210.md` §3 and asserted
+/// byte for byte.
+///
+/// Token revocation on a password change stays out — a password change would
+/// otherwise destroy N credentials the operator cannot see, with no
+/// confirmation and no undo — so the pane has to say so. A paraphrase would
+/// quietly drop the containment advice, which is the part of it that matters,
+/// so the assertion is verbatim rather than on keywords.
+#[tokio::test]
+async fn the_password_pane_carries_the_ratified_token_sentence() {
+    const SENTENCE: &str = "API tokens are not affected. Changing this password signs other browsers out, but every API token keeps working. If you are changing this password because you think someone else has access, revoke your API tokens as well, and check the SSH authorized keys — every one of them is a root key.";
+
+    let (router, _) = test_app(configured_tree("hunter2secret"));
+    let cookie = login(&router, "hunter2secret").await;
+
+    let body = body_string(get(&router, "/password", Some(&cookie)).await).await;
+    assert!(
+        body.contains(SENTENCE),
+        "the pane must carry it verbatim: {body}"
+    );
+}
+
+/// The bootstrap end to end: a browser session mints, the plaintext appears
+/// once, the tree keeps only a digest, and the token then authenticates the
+/// API on its own.
+#[tokio::test]
+async fn the_bootstrap_pane_mints_a_token_that_authenticates_the_api() {
+    let (router, fake) = test_app(configured_tree("hunter2secret"));
+    let cookie = login(&router, "hunter2secret").await;
+
+    let wire = mint_via_pane(&router, &cookie, "ci-deploy").await;
+
+    // The write is the whole array at the collection's dot-path: the dot-path
+    // syntax has no array indexing.
+    assert_eq!(fake.set_paths(), vec!["access.apiTokens".to_string()]);
+    let stored = fake.get_settings("access.apiTokens").await.unwrap();
+    let entry = &stored[0];
+    assert_eq!(entry["name"], json!("ci-deploy"));
+    assert_eq!(
+        entry["hash"],
+        json!(crate::token::digest(wire.rsplit('_').next().unwrap()))
+    );
+    // Only the digest is stored. The plaintext is in one response and nowhere
+    // else, ever.
+    assert!(!stored.to_string().contains(&wire), "{stored}");
+
+    // The token is a credential on its own: no cookie on this request.
+    let response = bearer(&router, "GET", "/api/v1/meta", &wire).await;
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(body_string(response).await, meta_body());
+}
+
+/// Amendment 1's dual-credential ruling, on the routes it names: every route
+/// that shipped before the token takes either credential, and neither of them
+/// stopped working.
+#[tokio::test]
+async fn every_shipped_api_route_takes_a_bearer_or_the_cookie() {
+    let (tree, wires) = token_tree("hunter2secret", 1);
+    let (router, fake) = test_app(tree);
+    fake.set_state_entry("uptime", json!(42));
+    let cookie = login(&router, "hunter2secret").await;
+
+    for path in [
+        "/api/v1/meta",
+        "/api/v1/health",
+        "/api/v1/settings/hostname",
+        "/api/v1/state/uptime",
+    ] {
+        assert_eq!(
+            bearer(&router, "GET", path, &wires[0]).await.status(),
+            StatusCode::OK,
+            "{path} must accept a bearer token"
+        );
+        assert_eq!(
+            get(&router, path, Some(&cookie)).await.status(),
+            StatusCode::OK,
+            "{path} must keep accepting the session cookie"
+        );
+    }
+
+    // The one shipped write, which the amendment names beside the four reads.
+    let response = bearer_json(
+        &router,
+        "POST",
+        "/api/v1/actions/change-password",
+        &wires[0],
+        r#"{"currentPassword":"hunter2secret","newPassword":"newsecret9"}"#,
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::NO_CONTENT);
+}
+
+/// The boundary inside Amendment 1: the three token routes take a bearer and
+/// nothing else, and a session cookie presented to any of them is a 401.
+///
+/// §3.2 rejects the cookie-accepting mint by name, because it would put a
+/// permanent-credential factory inside the surface §3.3 makes its strongest
+/// statement about. The amendment preserves the credentials of routes that
+/// already shipped, and these had not.
+#[tokio::test]
+async fn the_token_routes_refuse_a_session_cookie() {
+    let (tree, wires) = token_tree("hunter2secret", 1);
+    let (router, fake) = test_app(tree);
+    let cookie = login(&router, "hunter2secret").await;
+
+    for (method, path, body) in [
+        ("GET", "/api/v1/tokens", None),
+        ("POST", "/api/v1/tokens", Some(r#"{"name":"ci"}"#)),
+        ("DELETE", "/api/v1/tokens/00000000", None),
+    ] {
+        let response = match body {
+            Some(body) => post_json(&router, path, body, Some(&cookie)).await,
+            None => request(&router, method, path, Some(&cookie), None).await,
+        };
+        assert_eq!(
+            response.status(),
+            StatusCode::UNAUTHORIZED,
+            "{method} {path} must refuse a cookie"
+        );
+        // §2.4's envelope and not the gate's HTML redirect.
+        assert_eq!(response.headers().get(LOCATION), None, "{method} {path}");
+        assert_eq!(
+            envelope(response).await["code"],
+            "not_authenticated",
+            "{method} {path}"
+        );
+    }
+    assert!(
+        fake.set_paths().is_empty(),
+        "a refused request must write nothing: {:?}",
+        fake.set_paths()
+    );
+
+    // The same three, with the bearer they do accept.
+    assert_eq!(
+        bearer(&router, "GET", "/api/v1/tokens", &wires[0])
+            .await
+            .status(),
+        StatusCode::OK
+    );
+}
+
+/// The three routes as a lifecycle: mint, list, revoke, and the revoked token
+/// stops being accepted on the next request.
+#[tokio::test]
+async fn the_api_mints_lists_and_revokes() {
+    let (tree, wires) = token_tree("hunter2secret", 1);
+    let (router, _) = test_app(tree);
+
+    let response = bearer_json(
+        &router,
+        "POST",
+        "/api/v1/tokens",
+        &wires[0],
+        r#"{"name":"ci-deploy"}"#,
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::CREATED);
+    assert_api_headers(&response, "POST /api/v1/tokens");
+    let minted: serde_json::Value =
+        serde_json::from_str(&body_string(response).await).expect("a JSON body");
+    let wire = minted["token"].as_str().expect("the plaintext").to_string();
+    let id = minted["id"].as_str().expect("the id").to_string();
+    assert_eq!(minted["name"], json!("ci-deploy"));
+    assert!(crate::token::parse(&wire).is_some(), "{wire}");
+
+    // The listing carries identity and never a secret — neither the digest
+    // that is stored nor the plaintext that is not.
+    let response = bearer(&router, "GET", "/api/v1/tokens", &wire).await;
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = body_string(response).await;
+    assert!(
+        !body.contains(&wire),
+        "the plaintext reached a listing: {body}"
+    );
+    assert!(
+        !body.contains("hash"),
+        "the digest reached a listing: {body}"
+    );
+    let listed: serde_json::Value = serde_json::from_str(&body).unwrap();
+    let names: Vec<&str> = listed
+        .as_array()
+        .expect("an array")
+        .iter()
+        .map(|row| row["name"].as_str().unwrap())
+        .collect();
+    assert_eq!(names, vec!["seeded-0", "ci-deploy"]);
+
+    // Revocation takes effect on the next request.
+    let response = bearer(&router, "DELETE", &format!("/api/v1/tokens/{id}"), &wire).await;
+    assert_eq!(response.status(), StatusCode::NO_CONTENT);
+    assert_eq!(
+        bearer(&router, "GET", "/api/v1/tokens", &wire)
+            .await
+            .status(),
+        StatusCode::UNAUTHORIZED,
+        "a revoked token must stop working"
+    );
+    assert_eq!(
+        bearer(&router, "GET", "/api/v1/tokens", &wires[0])
+            .await
+            .status(),
+        StatusCode::OK,
+        "revoking one token must not revoke another"
+    );
+}
+
+/// The cap is answered at the route, in the caller's terms.
+///
+/// The store makes a full list a hard refusal, so without a check here the
+/// caller meets it as a failed write — a 500 about mosd — instead of an answer
+/// about the request. 409 and not 422: the body is well formed and what refuses
+/// it is the collection's state.
+#[tokio::test]
+async fn a_full_token_list_refuses_the_mint_at_the_route() {
+    let (tree, wires) = token_tree("hunter2secret", mosd_settings::MAX_TOKENS);
+    let (router, fake) = test_app(tree);
+
+    let response = bearer_json(
+        &router,
+        "POST",
+        "/api/v1/tokens",
+        &wires[0],
+        r#"{"name":"one-too-many"}"#,
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::CONFLICT);
+    let error = envelope(response).await;
+    assert_eq!(error["code"], "token_limit_reached");
+    assert_eq!(error["source"], "apid");
+    assert_eq!(error["path"], json!("access.apiTokens"));
+    assert!(
+        error["message"].as_str().unwrap().contains("32"),
+        "the message names the cap: {error}"
+    );
+    assert!(
+        fake.set_paths().is_empty(),
+        "a refused mint must write nothing: {:?}",
+        fake.set_paths()
+    );
+
+    // The pane refuses it too, and says so where the operator is looking.
+    let cookie = login(&router, "hunter2secret").await;
+    let response = post_form(
+        &router,
+        "/builtin/tokens",
+        "name=one-too-many",
+        Some(&cookie),
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::UNPROCESSABLE_ENTITY);
+    assert!(body_string(response).await.contains("maximum of 32"));
+    assert!(fake.set_paths().is_empty());
+}
+
+/// A name the store would refuse is refused at the route, as a 422 about the
+/// body rather than as a failed write.
+#[tokio::test]
+async fn a_name_the_store_refuses_is_a_422() {
+    let (tree, wires) = token_tree("hunter2secret", 1);
+    let (router, fake) = test_app(tree);
+
+    for body in [r#"{"name":""}"#, r#"{"name":"ci\ndeploy"}"#] {
+        let response = bearer_json(&router, "POST", "/api/v1/tokens", &wires[0], body).await;
+        assert_eq!(
+            response.status(),
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "{body}"
+        );
+        assert_eq!(
+            envelope(response).await["code"],
+            "validation_failed",
+            "{body}"
+        );
+    }
+    // And a body that is not this shape at all is a 400, not a 422.
+    let response = bearer_json(&router, "POST", "/api/v1/tokens", &wires[0], "{}").await;
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    assert_eq!(envelope(response).await["code"], "request_invalid");
+
+    assert!(fake.set_paths().is_empty(), "{:?}", fake.set_paths());
+}
+
+/// The collection error contract (`docs/task/RFCT-210.md` §2.4): a well-formed
+/// identifier that names nothing is **404**, and 422 is reserved for an
+/// identifier that is not well formed at all.
+///
+/// Paired with `the_builtin_revoke_pane_answers_422_where_the_api_answers_404`,
+/// which asserts the HTML surface's deliberately different answer to the same
+/// condition.
+#[tokio::test]
+async fn an_absent_token_id_is_404_and_a_malformed_one_is_422() {
+    let (tree, wires) = token_tree("hunter2secret", 1);
+    let (router, fake) = test_app(tree);
+
+    // Well formed, and no entry carries it.
+    let response = bearer(&router, "DELETE", "/api/v1/tokens/deadbeef", &wires[0]).await;
+    assert_eq!(response.status(), StatusCode::NOT_FOUND);
+    let error = envelope(response).await;
+    assert_eq!(error["code"], "settings_not_found");
+    assert_eq!(error["source"], "apid");
+    assert_eq!(error["path"], json!("access.apiTokens"));
+
+    // Not an identifier at all. `{id}` matches one segment and matches zero
+    // characters, so the empty spelling really is this route.
+    for path in [
+        "/api/v1/tokens/NOTHEX",
+        "/api/v1/tokens/ci-deploy",
+        "/api/v1/tokens/",
+    ] {
+        let response = bearer(&router, "DELETE", path, &wires[0]).await;
+        assert_eq!(
+            response.status(),
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "{path}"
+        );
+        assert_eq!(
+            envelope(response).await["code"],
+            "validation_failed",
+            "{path}"
+        );
+    }
+
+    assert!(fake.set_paths().is_empty(), "{:?}", fake.set_paths());
+}
+
+/// The HTML half of the split recorded in `docs/task/RFCT-210.md` §2.4: the
+/// pane answers **422** where `DELETE /api/v1/tokens/{id}` answers **404**, on
+/// the same condition.
+///
+/// The pane's body is a re-rendered page, no consumer on that surface reads the
+/// status, and the condition really is the re-submit-the-form one — the list
+/// may have changed since the page was loaded. Paired with
+/// `an_absent_token_id_is_404_and_a_malformed_one_is_422`.
+#[tokio::test]
+async fn the_builtin_revoke_pane_answers_422_where_the_api_answers_404() {
+    let (tree, wires) = token_tree("hunter2secret", 1);
+    let (router, fake) = test_app(tree);
+    let cookie = login(&router, "hunter2secret").await;
+
+    let html = post_form(
+        &router,
+        "/builtin/tokens/revoke",
+        "id=deadbeef",
+        Some(&cookie),
+    )
+    .await;
+    let api = bearer(&router, "DELETE", "/api/v1/tokens/deadbeef", &wires[0]).await;
+
+    assert_eq!(html.status(), StatusCode::UNPROCESSABLE_ENTITY);
+    assert_eq!(api.status(), StatusCode::NOT_FOUND);
+    assert!(body_string(html).await.contains("reload it and try again"));
+    assert!(fake.set_paths().is_empty(), "{:?}", fake.set_paths());
+}
+
+/// The pane revokes, which is §8.1's capability (iii) in full: an operator
+/// holding only a browser can drop a leaked token without first holding
+/// another one.
+#[tokio::test]
+async fn the_builtin_pane_lists_and_revokes_without_a_token() {
+    let (tree, wires) = token_tree("hunter2secret", 2);
+    let (router, _) = test_app(tree);
+    let cookie = login(&router, "hunter2secret").await;
+
+    // The pane lists identity and never a secret.
+    let body = body_string(get(&router, "/builtin/", Some(&cookie)).await).await;
+    assert!(
+        body.contains("seeded-0") && body.contains("seeded-1"),
+        "{body}"
+    );
+    assert!(!body.contains(&wires[0]), "a plaintext reached the pane");
+    assert!(!body.contains(&crate::token::digest(wires[0].rsplit('_').next().unwrap())));
+
+    let response = post_form(
+        &router,
+        "/builtin/tokens/revoke",
+        "id=00000000",
+        Some(&cookie),
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::OK);
+    assert!(body_string(response).await.contains("has been revoked"));
+
+    assert_eq!(
+        bearer(&router, "GET", "/api/v1/meta", &wires[0])
+            .await
+            .status(),
+        StatusCode::UNAUTHORIZED,
+        "the revoked token stops working on the next request"
+    );
+    assert_eq!(
+        bearer(&router, "GET", "/api/v1/meta", &wires[1])
+            .await
+            .status(),
+        StatusCode::OK
+    );
+}
+
+/// **No GET form of the mint exists, and none may ever be added.**
+///
+/// `SameSite=Lax` withholds the session cookie from a cross-site form POST and
+/// permits it on a top-level cross-site GET navigation, so a GET mint would be
+/// a permanent-credential factory reachable from any link an operator clicks.
+/// The assertion is that neither `/builtin` route answers a GET at all, and
+/// that nothing was written when one was tried.
+#[tokio::test]
+async fn no_get_reaches_the_bootstrap_mint_or_its_revoke() {
+    let (router, fake) = test_app(configured_tree("hunter2secret"));
+    let cookie = login(&router, "hunter2secret").await;
+
+    for path in ["/builtin/tokens", "/builtin/tokens/revoke"] {
+        let response = get(&router, path, Some(&cookie)).await;
+        assert_eq!(
+            response.status(),
+            StatusCode::METHOD_NOT_ALLOWED,
+            "GET {path} must not be served"
+        );
+        assert_eq!(header_value(&response, ALLOW), "POST", "{path}");
+    }
+    assert!(
+        fake.set_paths().is_empty(),
+        "a GET must write nothing: {:?}",
+        fake.set_paths()
+    );
+}
+
+/// **Bearer verification is not rate limited, and must not be.**
+///
+/// 256 bits of `OsRng` is not guessable online, and the login backoff is a
+/// single global counter (`auth::GuardStore`), so a shared counter on the token
+/// path would let anyone holding a bad token lock out every script *and* every
+/// login on the appliance. The assertion is both halves: a good token still
+/// works after a long run of bad ones, and the password path's counter was
+/// never touched by them.
+#[tokio::test]
+async fn a_run_of_bad_bearer_tokens_locks_nobody_out() {
+    let (tree, wires) = token_tree("hunter2secret", 1);
+    let (router, _) = test_app(tree);
+
+    for index in 0..50 {
+        let forged = format!("mos_00000000_{index:064x}");
+        assert_eq!(
+            bearer(&router, "GET", "/api/v1/meta", &forged)
+                .await
+                .status(),
+            StatusCode::UNAUTHORIZED,
+            "attempt {index}"
+        );
+    }
+
+    assert_eq!(
+        bearer(&router, "GET", "/api/v1/meta", &wires[0])
+            .await
+            .status(),
+        StatusCode::OK,
+        "a valid token must not be locked out by other tokens' failures"
+    );
+    // The login guard is global; if the token path armed it, this would be a
+    // 429 rather than a redirect.
+    let response = post_form(&router, "/login", "password=hunter2secret", None).await;
+    assert_eq!(response.status(), StatusCode::SEE_OTHER);
+}
+
+/// The published document describes the routes this milestone adds, and
+/// describes them as the code serves them.
+#[test]
+fn the_openapi_document_covers_the_token_routes() {
+    let document: serde_json::Value =
+        serde_json::from_str(&crate::openapi::document_json()).expect("the document is JSON");
+
+    let collection = &document["paths"]["/api/v1/tokens"];
+    for (method, statuses) in [
+        ("get", vec!["200", "401"]),
+        ("post", vec!["201", "400", "401", "409", "422"]),
+    ] {
+        for status in statuses {
+            assert!(
+                collection[method]["responses"][status].is_object(),
+                "{method} /api/v1/tokens must document {status}: {collection}"
+            );
+        }
+    }
+
+    let item = &document["paths"]["/api/v1/tokens/{id}"]["delete"]["responses"];
+    for status in ["204", "401", "404", "422"] {
+        assert!(
+            item[status].is_object(),
+            "DELETE must document {status}: {item}"
+        );
+    }
+
+    // The listing's row carries identity and never a secret, in the document
+    // as well as on the wire.
+    let summary = &document["components"]["schemas"]["ApiTokenSummary"]["properties"];
+    let members: Vec<&str> = summary
+        .as_object()
+        .expect("properties")
+        .keys()
+        .map(String::as_str)
+        .collect();
+    assert_eq!(members, vec!["created", "id", "name"], "{summary}");
+
+    // The plaintext is a member of the mint's response and of nothing else.
+    let minted = &document["components"]["schemas"]["MintedToken"]["properties"];
+    assert!(minted["token"].is_object(), "{minted}");
 }

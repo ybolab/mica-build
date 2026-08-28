@@ -615,7 +615,7 @@ pub(crate) async fn api_versions() -> Response {
     tag = "discovery",
     responses(
         (status = 200, description = "What this daemon is and which schema it speaks", body = ApiMeta),
-        (status = 401, description = "No session cookie, or one that does not verify", body = ApiError),
+        (status = 401, description = "No accepted credential: neither a bearer API token this device holds nor a session cookie that verifies (`not_authenticated`)", body = ApiError),
         (status = 405, description = "A method this route does not serve (`method_not_allowed`); carries `Allow`", body = ApiError),
     ),
 )]
@@ -700,7 +700,7 @@ pub(crate) struct ApiHealth {
     tag = "diagnostics",
     responses(
         (status = 200, description = "Whether this appliance is manageable. **200 in both states**: a dead mosd is reported as `mosd: \"unreachable\"` in the body, never as a status code", body = ApiHealth),
-        (status = 401, description = "No session cookie, or one that does not verify", body = ApiError),
+        (status = 401, description = "No accepted credential: neither a bearer API token this device holds nor a session cookie that verifies (`not_authenticated`)", body = ApiError),
         (status = 405, description = "A method this route does not serve (`method_not_allowed`); carries `Allow`", body = ApiError),
     ),
 )]
@@ -763,7 +763,7 @@ pub(crate) struct ResourceValue(Value);
     params(("path" = String, Path, description = "The settings dot-path, verbatim: `hostname`, `access.ssh`, `wifi.ap`")),
     responses(
         (status = 200, description = "The value at the dot-path, redacted", body = ResourceValue),
-        (status = 401, description = "No session cookie, or one that does not verify", body = ApiError),
+        (status = 401, description = "No accepted credential: neither a bearer API token this device holds nor a session cookie that verifies (`not_authenticated`)", body = ApiError),
         (status = 404, description = "The dot-path does not exist (`settings_not_found`)", body = ApiError),
         (status = 422, description = "mosd rejected the dot-path (`settings_rejected`)", body = ApiError),
         (status = 500, description = "mosd failed to answer (`settings_io`, `mosd_failed`)", body = ApiError),
@@ -792,7 +792,7 @@ pub(crate) async fn api_v1_settings(
     params(("path" = String, Path, description = "The live-state dot-path, verbatim: `hostname`, `network`, `power`")),
     responses(
         (status = 200, description = "The value at the dot-path, redacted", body = ResourceValue),
-        (status = 401, description = "No session cookie, or one that does not verify", body = ApiError),
+        (status = 401, description = "No accepted credential: neither a bearer API token this device holds nor a session cookie that verifies (`not_authenticated`)", body = ApiError),
         (status = 422, description = "mosd rejected the dot-path (`settings_rejected`), which is also the answer for a dot-path that does not exist", body = ApiError),
         (status = 500, description = "mosd failed to answer (`settings_io`, `mosd_failed`)", body = ApiError),
         (status = 503, description = "The call to mosd could not be made (`mosd_unreachable`); carries `Retry-After`", body = ApiError),
@@ -844,7 +844,7 @@ pub(crate) struct WireguardRotation {
     params(("iface" = String, Path, description = "The `network` entry to rotate, which must be one of kind `wireguard`: `wg0`")),
     responses(
         (status = 200, description = "A new key was drawn; the body carries its public half", body = WireguardRotation),
-        (status = 401, description = "No session cookie, or one that does not verify", body = ApiError),
+        (status = 401, description = "No accepted credential: neither a bearer API token this device holds nor a session cookie that verifies (`not_authenticated`)", body = ApiError),
         (status = 422, description = "mosd refused the interface (`settings_rejected`): not a declared network entry, or not a WireGuard one", body = ApiError),
         (status = 500, description = "mosd failed to rotate (`settings_io`, `mosd_failed`)", body = ApiError),
         (status = 503, description = "The call to mosd could not be made (`mosd_unreachable`); carries `Retry-After`", body = ApiError),
@@ -938,7 +938,7 @@ pub(crate) async fn api_v1_tokens_list(
                 })
                 .collect::<Vec<_>>(),
         ),
-        Err(response) => response,
+        Err(response) => *response,
     }
 }
 
@@ -983,7 +983,7 @@ pub(crate) async fn api_v1_tokens_mint(
     };
     let mut tokens = match stored_tokens(&state).await {
         Ok(tokens) => tokens,
-        Err(response) => return response,
+        Err(response) => return *response,
     };
     // The cap is answered here and not only by the store. The validator makes
     // a full list a hard refusal, and without this check the caller meets that
@@ -1021,7 +1021,7 @@ pub(crate) async fn api_v1_tokens_mint(
         created: device_clock_seconds(),
     });
     if let Err(response) = write_tokens(&state, &tokens).await {
-        return response;
+        return *response;
     }
     api_response(
         StatusCode::CREATED,
@@ -1077,14 +1077,14 @@ pub(crate) async fn api_v1_tokens_revoke(
     }
     let mut tokens = match stored_tokens(&state).await {
         Ok(tokens) => tokens,
-        Err(response) => return response,
+        Err(response) => return *response,
     };
     let Some(index) = tokens.iter().position(|entry| entry.id == id) else {
         return item_not_found(API_TOKENS_PATH, &id);
     };
     tokens.remove(index);
     if let Err(response) = write_tokens(&state, &tokens).await {
-        return response;
+        return *response;
     }
     (
         StatusCode::NO_CONTENT,
@@ -1121,20 +1121,20 @@ fn item_not_found(collection: &str, identifier: &str) -> Response {
 /// The read is direct rather than from the gate's `access` cache: this is the
 /// read half of a read-modify-write, and the freshest list is the one least
 /// likely to drop somebody else's entry.
-async fn stored_tokens(state: &AppState) -> Result<Vec<ApiToken>, Response> {
+async fn stored_tokens(state: &AppState) -> Result<Vec<ApiToken>, Box<Response>> {
     let access = match state.api.get_settings(ACCESS_PATH).await {
         Ok(value) => value,
-        Err(err) => return Err(bus_api_error(&err, API_TOKENS_PATH)),
+        Err(err) => return Err(Box::new(bus_api_error(&err, API_TOKENS_PATH))),
     };
     parse_tokens(&access).map_err(|err| {
-        api_response(
+        Box::new(api_response(
             StatusCode::INTERNAL_SERVER_ERROR,
             ApiError::apid(
                 "settings_invalid",
                 format!("the stored token list could not be read: {err}"),
             )
             .at(API_TOKENS_PATH),
-        )
+        ))
     })
 }
 
@@ -1160,20 +1160,20 @@ fn parse_tokens(access: &Value) -> Result<Vec<ApiToken>, serde_json::Error> {
 /// own copy, and the second write wins. It is recorded and not fixed; §3.2
 /// names it as a cost inherited from the tree, and the alternative is a locking
 /// scheme this codebase does not have.
-async fn write_tokens(state: &AppState, tokens: &[ApiToken]) -> Result<(), Response> {
+async fn write_tokens(state: &AppState, tokens: &[ApiToken]) -> Result<(), Box<Response>> {
     // The same validator mosd runs, so a list this route accepts is one the
     // store will accept too. Its message names an entry index and never echoes
     // a digest or an id.
     if let Err(err) = validate_api_tokens(tokens) {
-        return Err(api_response(
+        return Err(Box::new(api_response(
             StatusCode::UNPROCESSABLE_ENTITY,
             ApiError::apid("validation_failed", key_error_message(&err)).at(API_TOKENS_PATH),
-        ));
+        )));
     }
     // Infallible: `ApiToken` is a struct of scalars with no map keys to collide.
     let value = serde_json::to_value(tokens).expect("api tokens serialize");
     if let Err(err) = state.api.set_settings(API_TOKENS_PATH, &value).await {
-        return Err(bus_api_error(&err, API_TOKENS_PATH));
+        return Err(Box::new(bus_api_error(&err, API_TOKENS_PATH)));
     }
     // apid knows its own `access` write happened, so the gate's cache is
     // dropped here rather than waiting for the `SettingsChanged` round trip.
@@ -2453,7 +2453,7 @@ pub(crate) struct ChangePasswordRequest {
     responses(
         (status = 204, description = "The password was changed; every session except the calling one was dropped"),
         (status = 400, description = "The body is not JSON, or not this shape (`request_invalid`)", body = ApiError),
-        (status = 401, description = "No session cookie, or one that does not verify", body = ApiError),
+        (status = 401, description = "No accepted credential: neither a bearer API token this device holds nor a session cookie that verifies (`not_authenticated`)", body = ApiError),
         (status = 403, description = "The current password does not verify (`wrong_password`)", body = ApiError),
         (status = 422, description = "The new password is shorter than 8 characters (`validation_failed`)", body = ApiError),
         (status = 500, description = "Hashing failed (`hashing_failed`), or mosd failed to answer (`settings_io`, `mosd_failed`)", body = ApiError),
