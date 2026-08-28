@@ -728,7 +728,7 @@ in the same four positions so the change is legible rather than overwritten.
    returns nothing, but neither hit is an asset: `os/pkgs/mosd/apid/src/routes.rs:10`
    is the module doc **stating** the rule — *"no `include_str!`, no
    `include_bytes!`, no asset directory"* — and
-   `os/pkgs/mosd/apid/src/tests.rs:1808` reads the committed `openapi.json` so a test
+   `os/pkgs/mosd/apid/src/tests.rs:1820` reads the committed `openapi.json` so a test
    can assert the generated document matches it. The built-in UI is still
    markup built by `maud` at request time, and the reason is recorded at
    `os/pkgs/mosd/apid/src/routes.rs:11-14`: dm-verity is the only protection on

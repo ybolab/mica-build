@@ -1583,7 +1583,13 @@ async fn the_api_reservation_answers_every_shape_with_the_envelope() {
         ("GET", "/api/v1"),
         ("GET", "/api/versions/extra"),
         ("GET", "/api/v1/settings"),
-        ("GET", "/api/v1/actions/reboot"),
+        // `/api/v1/actions/reboot` was here until PLAN-023 M7 declared it, and
+        // its prefix and trailing-slash spelling take its place for the reason
+        // the WiFi collection's did: neither is a route this router serves, so
+        // both must still reach the reservation rather than the three action
+        // routes beside them.
+        ("GET", "/api/v1/actions"),
+        ("GET", "/api/v1/actions/"),
         // `/api/v1/wifi/client/networks` was here until PLAN-023 M5 declared
         // it. Its prefix and its trailing-slash spelling took its place, and
         // they are the more useful cases: neither is a route this router
@@ -1759,8 +1765,14 @@ async fn every_other_api_path_keeps_both_of_its_answers() {
     // `/api/v1/ssh/authorized-keys` left this list when PLAN-023 M5 declared
     // it: it is now a served collection, and the test that holds its answers
     // is `the_ssh_key_collection_lists_adds_and_removes`.
-    const UNDECLARED: [&str; 5] = [
-        "/api/v1/actions/reboot",
+    //
+    // `/api/v1/actions/reboot` left it the same way when PLAN-023 M7 declared
+    // it. A `GET` on it is now a declared route answering 405 rather than an
+    // undeclared path answering 404, which is the whole of what M7 changed
+    // about it; the tests that hold its answers are
+    // `a_wrong_method_on_a_declared_api_route_answers_the_envelope` for the
+    // 405 and `the_power_routes_answer_202_like_the_form_path` for the POST.
+    const UNDECLARED: [&str; 4] = [
         "/api/v1/settings",
         "/api/v1/settings/",
         "/api/v1/state",
