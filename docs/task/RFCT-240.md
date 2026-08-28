@@ -22,12 +22,12 @@ neighbouring cluster would spend that property on nothing.
 
 `PUT /api/v1/settings/{path}`, declared on the shipped read's own route as
 `get(api_v1_settings).put(api_v1_settings_write),`
-(`os/pkgs/mosd/apid/src/routes.rs:412`) and authenticated by `ApiSession` —
+(`os/pkgs/mosd/apid/src/routes.rs:421`) and authenticated by `ApiSession` —
 bearer **or** cookie.
 
 | Dot-path | Body | Success |
 |---|---|---|
-| `hostname` | a JSON string accepted by `fn valid_hostname(name: &str) -> bool {` (`os/pkgs/mosd/apid/src/routes.rs:3430`) | `204` |
+| `hostname` | a JSON string accepted by `fn valid_hostname(name: &str) -> bool {` (`os/pkgs/mosd/apid/src/routes.rs:3482`) | `204` |
 | `access.ssh.enabled` | `true` or `false` | `204` |
 | `container.enabled` | `true` or `false` | `204` |
 | `mqtt.enabled` | `true` or `false` | `204` |
@@ -45,7 +45,7 @@ construction.
 
 **The hostname is not trimmed, and the form path trims.** `hostname_submit`
 trims -- `let hostname = form.hostname.trim();`
-(`os/pkgs/mosd/apid/src/routes.rs:5566`) -- because a browser sends whatever
+(`os/pkgs/mosd/apid/src/routes.rs:5910`) -- because a browser sends whatever
 was typed into a text input; a client that built a JSON string
 chose its bytes, and writing something other than what it sent is the worse
 answer. `" mos "` is a 422 here and a successful `mos` there. Recorded as a
@@ -57,7 +57,7 @@ for anything under `access`: *"the whole tree, `access` itself, or anything
 under it"* (`os/pkgs/mosd/apid/src/access_cache.rs:35-37`). That is what the
 `access.ssh` form path already relies on, whose whole write is
 `.set_settings("access.ssh.enabled", &Value::Bool(enabled))`
-(`os/pkgs/mosd/apid/src/routes.rs:5872`). The token routes invalidate by
+(`os/pkgs/mosd/apid/src/routes.rs:6216`). The token routes invalidate by
 hand because a revocation has to bite on the very next request; nothing this
 route writes is a credential.
 
@@ -105,9 +105,9 @@ value falls back to the status class, so a new token is not free: every client
 that wants to branch on it has to learn it. `validation_failed` is already the
 code apid raises when it refuses a body at 422 — for the token name,
 `ApiError::apid("validation_failed", key_error_message(&err))`
-(`os/pkgs/mosd/apid/src/routes.rs:1629`), and for the token id,
+(`os/pkgs/mosd/apid/src/routes.rs:1647`), and for the token id,
 *"a token id is 1 to 64 lowercase hex characters"*
-(`os/pkgs/mosd/apid/src/routes.rs:1532`) — and that is what this is: apid
+(`os/pkgs/mosd/apid/src/routes.rs:1550`) — and that is what this is: apid
 inspected the body and refused it. `source` is `apid`, because no bus call was
 made. The message names the sentinel, so a client that reads only the message
 still learns which value was the problem.
@@ -148,7 +148,7 @@ class impossible instead of arguing about each member of it.
 ### 3.2 The three answers, and why they are not interchangeable
 
 `fn settings_write_refusal(path: &str) -> Response {`
-(`os/pkgs/mosd/apid/src/routes.rs:1054`) gives one of three, in this order:
+(`os/pkgs/mosd/apid/src/routes.rs:1072`) gives one of three, in this order:
 
 1. **422 `validation_failed`** — the path is not a dot-path: an empty segment,
    an unterminated quote, text after a closing quote. This is the *malformed*
@@ -156,7 +156,7 @@ class impossible instead of arguing about each member of it.
 2. **404 `settings_not_found`** — the path is well formed and names nothing.
    Answered by the shared helper M2 landed,
    `fn item_not_found(collection: &str, identifier: &str) -> Response {`
-   (`os/pkgs/mosd/apid/src/routes.rs:1567`), so the rule is inherited by
+   (`os/pkgs/mosd/apid/src/routes.rs:1585`), so the rule is inherited by
    reaching for the function rather than by remembering a decision.
 3. **409 `settings_read_only`** — the path names something real that this route
    does not write. 409 for the condition section 2.4 already spends it on and
@@ -207,7 +207,7 @@ Everything else gets one sentence naming the four paths this route writes.
 ## 4. Auth
 
 Bearer **or** cookie, matching `pub(crate) struct ApiSession;`
-(`os/pkgs/mosd/apid/src/routes.rs:3097`) after M2. PLAN-023 Amendment 1's
+(`os/pkgs/mosd/apid/src/routes.rs:3125`) after M2. PLAN-023 Amendment 1's
 bearer-only rule is about the token routes specifically — a permanent-credential
 factory must not sit behind a browser session — not about new routes in
 general. A write route that took only a bearer would make the shipped panes'
@@ -215,7 +215,7 @@ credential unusable on a surface the panes' own operations are being moved to.
 
 `is_declared_api_route` needed no change: it tests the path and not the
 method, ending at `|| resource_dot_path(leaf).is_some()`
-(`os/pkgs/mosd/apid/src/routes.rs:537`), so the gate already handed a `PUT`
+(`os/pkgs/mosd/apid/src/routes.rs:554`), so the gate already handed a `PUT`
 under `/api/v1/settings/` to the route that now serves it. The 401 is the
 envelope and never the gate's redirect, in both gate modes, and that is
 asserted rather than inherited.
