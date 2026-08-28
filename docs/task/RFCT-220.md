@@ -83,7 +83,7 @@ deleted"* (`docs/plan/PLAN-015.md:167`) — as 751 lines of defect register,
 *"`docs/design/api.md` §10 (751 lines) is a defect register"*
 (`docs/plan/PLAN-015.md:81`). The decision itself was restated in place, in §2's
 own register: *"reaches the same two actions through the item tree instead: the
-shipped path is"* (`docs/design/api.md:357`). So the substance survives at a new
+shipped path is"* (`docs/design/api.md:446`). So the substance survives at a new
 anchor and only PLAN-011's pointer is dead.
 
 ### 2.3 M3 — implemented

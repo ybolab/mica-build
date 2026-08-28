@@ -321,7 +321,7 @@ enablement check has nothing to judge if the unit is absent, and it is
 
 **And the setting would have had nothing behind it.** `access.ssh.enabled`
 is seeded false by both image profiles (`docs/design/access.md:357`) and
-toggled at runtime by mosd — `docs/design/api.md:178`,
+toggled at runtime by mosd — `docs/design/api.md:191`,
 `SetSettings("access.ssh.enabled", …)`. A setting that enables a daemon the
 image may not carry is a switch wired to nothing, and the failure mode is
 silent: the operator ticks the box and no sshd starts.
